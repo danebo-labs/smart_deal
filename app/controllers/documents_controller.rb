@@ -5,13 +5,13 @@ class DocumentsController < ApplicationController
     uploaded_file = params[:file]
     
     if uploaded_file.nil?
-      render json: { error: "No file provided" }, status: :bad_request
+      render turbo_stream: turbo_stream.update("document_info", partial: "documents/error", locals: { message: "No file provided" })
       return
     end
 
     # Validar que sea un PDF
     unless uploaded_file.content_type == 'application/pdf' || uploaded_file.original_filename&.downcase&.end_with?('.pdf')
-      render json: { error: "File must be a PDF" }, status: :bad_request
+      render turbo_stream: turbo_stream.update("document_info", partial: "documents/error", locals: { message: "File must be a PDF" })
       return
     end
 
@@ -20,25 +20,30 @@ class DocumentsController < ApplicationController
       text = extract_text_from_pdf(uploaded_file)
       
       if text.strip.empty?
-        render json: { error: "Could not extract text from PDF. The file might be empty or corrupted." }, status: :unprocessable_entity
+        render turbo_stream: turbo_stream.update("document_info", partial: "documents/error", locals: { message: "Could not extract text from PDF. The file might be empty or corrupted." })
         return
       end
       
       # Procesar con IA (placeholder por ahora)
       summary = analyze_text(text)
       
-      render json: { 
-        success: true, 
-        summary: summary,
-        filename: uploaded_file.original_filename,
-        file_size: uploaded_file.size
-      }
+      # Actualizar ambas secciones con Turbo Streams
+      # Usamos 'update' en lugar de 'replace' para preservar los turbo-frames
+      render turbo_stream: [
+        turbo_stream.update("document_info", partial: "documents/info", locals: { 
+          filename: uploaded_file.original_filename,
+          file_size: uploaded_file.size
+        }),
+        turbo_stream.update("ai_summary", partial: "documents/summary", locals: { 
+          summary: summary 
+        })
+      ]
     rescue PDF::Reader::MalformedPDFError => e
-      render json: { error: "Invalid PDF file: #{e.message}" }, status: :unprocessable_entity
+      render turbo_stream: turbo_stream.update("document_info", partial: "documents/error", locals: { message: "Invalid PDF file: #{e.message}" })
     rescue => e
       Rails.logger.error "Error processing PDF: #{e.message}"
       Rails.logger.error e.backtrace.join("\n")
-      render json: { error: "Error processing file: #{e.message}" }, status: :unprocessable_entity
+      render turbo_stream: turbo_stream.update("document_info", partial: "documents/error", locals: { message: "Error processing file: #{e.message}" })
     end
   end
 

@@ -98,39 +98,19 @@
 <!-- Main Content Container -->
 <div class="document-page">
   <div class="document-container">
-    <!-- Left: Document Preview -->
-    <div class="document-preview">
+    <!-- Box 1: Upload Document -->
+    <div class="upload-box" data-controller="document-upload">
       <div class="figma-card">
-        <div class="preview-placeholder" id="previewPlaceholder">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="file-icon">
-            <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <path d="M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          <p class="preview-text">Vista previa del documento</p>
-        </div>
-        <div class="preview-content" id="previewContent" style="display: none;">
-          <p class="preview-label">Documento cargado:</p>
-          <div class="preview-file-info">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="file-icon-large">
-              <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-              <path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            </svg>
-            <div class="file-details">
-              <p class="file-name" id="fileName">-</p>
-              <p class="file-size" id="fileSize">-</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Center: Upload Area -->
-    <div class="document-upload">
-      <div class="figma-card">
-        <div class="upload-area" id="uploadArea">
-          <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.txt" style="display: none;">
-          <div class="upload-dashed-border">
+        <div class="upload-area">
+          <input type="file" 
+                 id="fileInput" 
+                 accept=".pdf" 
+                 style="display: none;"
+                 data-document-upload-target="fileInput"
+                 data-action="change->document-upload#selectFile">
+          <div class="upload-dashed-border" 
+               data-document-upload-target="dashedBorder"
+               data-action="click->document-upload#clickUpload dragover->document-upload#dragOver dragleave->document-upload#dragLeave drop->document-upload#drop">
             <div class="upload-content">
               <div class="upload-icon-wrapper">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="upload-icon">
@@ -143,46 +123,69 @@
                 <p class="upload-main-text">Drag & drop your document here</p>
                 <p class="upload-secondary-text">or click to browse</p>
               </div>
-              <button class="figma-button" id="uploadButton">Upload Document</button>
+              <button type="button" 
+                      class="figma-button" 
+                      data-document-upload-target="uploadButton"
+                      data-action="click->document-upload#clickButton">Upload Document</button>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Right: Document Explanation -->
-    <div class="document-explanation">
-      <div class="figma-card">
-        <div class="explanation-header">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="sparkles-icon">
-            <path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <path d="M19 17L20 19L22 20L20 21L19 23L18 21L16 20L18 19L19 17Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <path d="M5 19L5.5 20.5L7 21L5.5 21.5L5 23L4.5 21.5L3 21L4.5 20.5L5 19Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
-          <h2 class="explanation-title">AI Summary</h2>
+    <!-- Box 2: AI Summary (Divided vertically) -->
+    <div class="summary-box">
+      <div class="figma-card summary-card">
+        <!-- Top Section: Document Info -->
+        <div class="document-info-section">
+          <h3 class="section-title">Document Information</h3>
+          <turbo-frame id="document_info">
+            <div class="document-info-placeholder">
+              <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="document-placeholder-icon">
+                <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <path d="M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <p class="document-placeholder-text">No document uploaded yet</p>
+            </div>
+          </turbo-frame>
         </div>
-        
-        <div class="explanation-content-wrapper">
-          <div class="explanation-content" id="explanationContent">
-            <p class="explanation-placeholder">
-              Upload a document to see the AI-generated summary here. The analysis will include key points, main topics, and important insights extracted from your document.
-            </p>
-            
-            <div class="explanation-features">
-              <div class="feature-item">
-                <span class="feature-bullet">•</span>
-                <p>Automatic extraction of key concepts and themes</p>
-              </div>
-              <div class="feature-item">
-                <span class="feature-bullet">•</span>
-                <p>Concise summaries of long documents</p>
-              </div>
-              <div class="feature-item">
-                <span class="feature-bullet">•</span>
-                <p>Identification of important action items</p>
+
+        <!-- Bottom Section: AI Summary -->
+        <div class="ai-summary-section">
+          <div class="explanation-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="sparkles-icon">
+              <path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <path d="M19 17L20 19L22 20L20 21L19 23L18 21L16 20L18 19L19 17Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <path d="M5 19L5.5 20.5L7 21L5.5 21.5L5 23L4.5 21.5L3 21L4.5 20.5L5 19Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            <h2 class="explanation-title">AI Summary</h2>
+          </div>
+          
+          <turbo-frame id="ai_summary">
+            <div class="explanation-content-wrapper">
+              <div class="explanation-content">
+                <p class="explanation-placeholder">
+                  Upload a document to see the AI-generated summary here. The analysis will include key points, main topics, and important insights extracted from your document.
+                </p>
+                
+                <div class="explanation-features">
+                  <div class="feature-item">
+                    <span class="feature-bullet">•</span>
+                    <p>Automatic extraction of key concepts and themes</p>
+                  </div>
+                  <div class="feature-item">
+                    <span class="feature-bullet">•</span>
+                    <p>Concise summaries of long documents</p>
+                  </div>
+                  <div class="feature-item">
+                    <span class="feature-bullet">•</span>
+                    <p>Identification of important action items</p>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </turbo-frame>
         </div>
       </div>
     </div>
@@ -200,13 +203,14 @@
 }
 
 .document-container {
-  max-width: 1280px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 0 1rem;
+  padding: 0 2rem;
   display: grid;
-  grid-template-columns: 1fr 1.2fr 1fr;
-  gap: 1.5rem;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
   align-items: start;
+  justify-items: center;
 }
 
 /* Figma Card Component - Glass morphism effect */
@@ -223,55 +227,77 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
-/* Left: Document Preview */
-.document-preview {
+/* Box 1: Upload Document */
+.upload-box {
+  width: 100%;
+  max-width: 500px;
+}
+
+/* Box 2: AI Summary */
+.summary-box {
+  width: 100%;
+  max-width: 500px;
+}
+
+.summary-card {
   display: flex;
   flex-direction: column;
+  gap: 1.5rem;
+  min-height: 600px;
 }
 
-.preview-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  text-align: center;
-}
-
-.file-icon {
-  color: #4a5568;
-  width: 64px;
-  height: 64px;
-}
-
-.preview-text {
-  margin-top: 1rem;
-  color: #718096;
-  font-size: 0.875rem;
-  font-weight: 400;
-}
-
-.preview-content {
+/* Document Info Section (Top) */
+.document-info-section {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.preview-label {
-  font-size: 0.875rem;
-  color: #718096;
+.section-title {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #2d3748;
   margin: 0;
 }
 
-.preview-file-info {
-  background: #f7fafc;
-  border-radius: 0.625rem;
-  padding: 1.5rem;
+.document-info-placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
+  min-height: 200px;
+  text-align: center;
+  background: #f7fafc;
+  border-radius: 0.625rem;
+  border: 2px dashed #cbd5e0;
+  padding: 2rem;
+}
+
+.document-placeholder-icon {
+  color: #cbd5e0;
+  width: 80px;
+  height: 80px;
+  margin-bottom: 1rem;
+}
+
+.document-placeholder-text {
+  color: #a0aec0;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.document-info-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.document-info-card {
+  background: #f7fafc;
+  border-radius: 0.625rem;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
   border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
@@ -279,10 +305,12 @@
   color: #4a5568;
   width: 48px;
   height: 48px;
+  flex-shrink: 0;
 }
 
-.file-details {
-  text-align: center;
+.file-info-details {
+  flex: 1;
+  min-width: 0;
 }
 
 .file-name {
@@ -290,6 +318,7 @@
   color: #2d3748;
   font-weight: 500;
   margin: 0 0 0.25rem 0;
+  word-break: break-word;
 }
 
 .file-size {
@@ -298,15 +327,17 @@
   margin: 0;
 }
 
-/* Center: Upload Area */
-.document-upload {
+/* AI Summary Section (Bottom) */
+.ai-summary-section {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
 }
 
 .upload-area {
   width: 100%;
+  cursor: pointer;
 }
 
 .upload-dashed-border {
@@ -426,7 +457,8 @@
   background: #f7fafc;
   border-radius: 0.625rem;
   padding: 1.5rem;
-  min-height: 400px;
+  flex: 1;
+  min-height: 300px;
   border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
@@ -472,8 +504,17 @@
 @media (max-width: 1024px) {
   .document-container {
     grid-template-columns: 1fr;
-    gap: 1.5rem;
+    gap: 2rem;
     max-width: 600px;
+  }
+
+  .upload-box,
+  .summary-box {
+    max-width: 100%;
+  }
+
+  .summary-card {
+    min-height: auto;
   }
 }
 
@@ -503,176 +544,6 @@
 }
 </style>
 
-<script>
-// Upload functionality - Figma Design
-document.addEventListener('DOMContentLoaded', function() {
-  const uploadArea = document.getElementById('uploadArea');
-  const uploadButton = document.getElementById('uploadButton');
-  const fileInput = document.getElementById('fileInput');
-  const dashedBorder = document.querySelector('.upload-dashed-border');
-  const previewPlaceholder = document.getElementById('previewPlaceholder');
-  const previewContent = document.getElementById('previewContent');
-  const fileName = document.getElementById('fileName');
-  const fileSize = document.getElementById('fileSize');
-  const explanationContent = document.getElementById('explanationContent');
-
-  function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-  }
-
-  function showLoadingState() {
-    if (explanationContent) {
-      explanationContent.innerHTML = `
-        <div style="text-align: center; padding: 2rem;">
-          <div style="width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
-          <p style="color: #718096;">Processing document...</p>
-        </div>
-        <style>
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        </style>
-      `;
-    }
-  }
-
-  function showError(message) {
-    if (explanationContent) {
-      explanationContent.innerHTML = `
-        <div style="background: #fee; border: 1px solid #fcc; border-radius: 0.5rem; padding: 1rem; color: #c33;">
-          <strong>Error:</strong> ${message}
-        </div>
-      `;
-    }
-  }
-
-  function showSummary(summary) {
-    if (explanationContent) {
-      explanationContent.innerHTML = `
-        <div class="explanation-placeholder" style="white-space: pre-wrap; line-height: 1.8;">
-          ${summary.replace(/\n/g, '<br>')}
-        </div>
-      `;
-    }
-  }
-
-  async function handleFile(file) {
-    console.log('File selected:', file.name);
-    
-    // Validate file type
-    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
-      showError('Please upload a PDF file.');
-      return;
-    }
-    
-    // Update preview
-    if (previewPlaceholder && previewContent) {
-      previewPlaceholder.style.display = 'none';
-      previewContent.style.display = 'flex';
-    }
-    
-    if (fileName) {
-      fileName.textContent = file.name;
-    }
-    
-    if (fileSize) {
-      fileSize.textContent = formatFileSize(file.size);
-    }
-
-    // Show loading state
-    showLoadingState();
-
-    // Send file to backend
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      // Get CSRF token
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || 
-                       document.querySelector('input[name="authenticity_token"]')?.value;
-
-      const response = await fetch('/documents/process', {
-        method: 'POST',
-        body: formData,
-        headers: csrfToken ? {
-          'X-CSRF-Token': csrfToken
-        } : {}
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        showSummary(data.summary);
-      } else {
-        showError(data.error || 'Error processing document');
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      showError('Failed to process document. Please try again.');
-    }
-  }
-
-  // Click to upload - area
-  if (uploadArea && fileInput) {
-    uploadArea.addEventListener('click', function(e) {
-      // Don't trigger if clicking the button
-      if (e.target !== uploadButton && !uploadButton.contains(e.target)) {
-        fileInput.click();
-      }
-    });
-  }
-
-  // Click to upload - button
-  if (uploadButton && fileInput) {
-    uploadButton.addEventListener('click', function(e) {
-      e.stopPropagation();
-      fileInput.click();
-    });
-  }
-
-  // Drag and drop
-  if (dashedBorder) {
-    dashedBorder.addEventListener('dragover', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      dashedBorder.style.borderColor = '#2563eb';
-      dashedBorder.style.backgroundColor = '#eff6ff';
-    });
-
-    dashedBorder.addEventListener('dragleave', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      dashedBorder.style.borderColor = '#cbd5e0';
-      dashedBorder.style.backgroundColor = '#f7fafc';
-    });
-
-    dashedBorder.addEventListener('drop', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      dashedBorder.style.borderColor = '#cbd5e0';
-      dashedBorder.style.backgroundColor = '#f7fafc';
-      
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        handleFile(files[0]);
-      }
-    });
-  }
-
-  // File input change
-  if (fileInput) {
-    fileInput.addEventListener('change', function(e) {
-      if (e.target.files.length > 0) {
-        handleFile(e.target.files[0]);
-      }
-    });
-  }
-});
-</script>
 
 
 

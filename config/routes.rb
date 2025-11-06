@@ -12,4 +12,7 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   root "home#index"
+
+  # Document processing
+  post "documents/process", to: "documents#create"
 end

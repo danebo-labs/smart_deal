@@ -45,6 +45,7 @@ gem "ruby-openai"
 
 # AWS Bedrock integration
 gem "aws-sdk-bedrockruntime"
+gem "aws-sdk-bedrock"
 
 group :development, :test do
   # Environment variables management

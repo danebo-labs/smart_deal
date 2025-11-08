@@ -2,9 +2,9 @@
 
 ## Requisitos
 
-1. **Credenciales AWS**: Necesitas `access_key_id` y `secret_access_key` de AWS
-2. **Region**: `us-east-1` (configurada por defecto)
-3. **Modelo**: `anthropic.claude-3-5-haiku-20241022-v1:0`
+1. **Credenciales AWS**: Necesitas `access_key_id` y `secret_access_key` de AWS **o** un API Key (Bearer Token) generado en la consola de Bedrock
+2. **Región**: `us-east-1` (configurada por defecto)
+3. **Inference Profile**: `us.anthropic.claude-3-5-haiku-20241022-v1:0` (perfil administrado por Bedrock para Claude 3.5 Haiku)
 
 ## Configuración de Credenciales
 
@@ -21,6 +21,8 @@
      access_key_id: YOUR_AWS_ACCESS_KEY_ID
      secret_access_key: YOUR_AWS_SECRET_ACCESS_KEY
      region: us-east-1
+     bedrock_bearer_token: YOUR_AWS_BEDROCK_BEARER_TOKEN (opcional)
+     bedrock_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
    ```
 
 3. Guarda el archivo (en vim/nano: `:wq` o `Ctrl+X` luego `Y`)
@@ -32,6 +34,17 @@ export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_REGION=us-east-1
 ```
+
+### Opción 3: API Key (Bearer Token de Bedrock)
+
+Si generaste una API key en la consola de Bedrock:
+
+```bash
+export AWS_BEARER_TOKEN_BEDROCK=tu_api_key_generada
+export AWS_REGION=us-east-1
+```
+
+> **Importante:** Las llaves de Bedrock pueden expirar (por ejemplo, en 24 horas). Cuando caduquen, genera una nueva y actualiza la variable de entorno.
 
 ## Configuración del Proveedor de IA
 
@@ -62,6 +75,8 @@ aws:
   access_key_id: YOUR_ACCESS_KEY
   secret_access_key: YOUR_SECRET_KEY
   region: us-east-1
+  bedrock_bearer_token: YOUR_BEDROCK_BEARER_TOKEN (si aplicable)
+  bedrock_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
 
 # Configuración del proveedor de IA
 ai_provider: bedrock  # o openai, anthropic, geia
@@ -123,6 +138,10 @@ La aplicación usa una arquitectura flexible con servicios separados:
 ### Error: "Bedrock error: AccessDeniedException"
 - Verifica que tus credenciales AWS tengan permisos para Bedrock
 - Verifica que el modelo esté habilitado en tu región AWS
+
+### Error: "Bedrock error: ... inference profile"
+- Verifica que `BEDROCK_MODEL_ID` apunte a un inference profile válido. Por defecto usamos `us.anthropic.claude-3-5-haiku-20241022-v1:0` (Haiku en us-east-1)
+- Si trabajas en otra región, consulta la consola de Bedrock en **Cross-region inference** para obtener el profile correcto.
 
 ### Error: "API key not configured"
 - Verifica que las credenciales estén en Rails credentials o variables de entorno

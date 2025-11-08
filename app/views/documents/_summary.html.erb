@@ -1,8 +1,6 @@
-<div class="explanation-content-wrapper">
-  <div class="explanation-content">
-    <div class="explanation-placeholder" style="white-space: pre-wrap; line-height: 1.8;">
-      <%= simple_format(summary) %>
-    </div>
+<div class="explanation-content-wrapper" data-controller="ai-summary" data-ai-summary-line-delay-value="110">
+  <div class="explanation-content" data-ai-summary-target="container">
+    <%= simple_format(summary) %>
   </div>
 </div>
 

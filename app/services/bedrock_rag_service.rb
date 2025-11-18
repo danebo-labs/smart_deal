@@ -75,14 +75,43 @@ class BedrockRagService
 
     Rails.logger.info("Knowledge Base response received successfully")
     
-    # Log citations for debugging
+    # Log citations for debugging - first inspect the structure
     if response.citations && response.citations.any?
       Rails.logger.info("Found #{response.citations.length} citation(s):")
+      
+      # Inspect first citation structure for debugging
+      first_citation = response.citations.first
+      Rails.logger.debug("First citation structure: #{first_citation.inspect}")
+      
       response.citations.each_with_index do |citation, index|
         if citation.retrieved_references && citation.retrieved_references.any?
-          citation.retrieved_references.each do |ref|
-            file_name = ref.location&.uri&.split('/')&.last || 'Unknown'
-            Rails.logger.info("  Citation #{index + 1}: #{file_name} (URI: #{ref.location&.uri})")
+          citation.retrieved_references.each_with_index do |ref, ref_index|
+            # Inspect location structure
+            location = ref.location
+            Rails.logger.debug("  Citation #{index + 1}, Reference #{ref_index + 1} location: #{location.inspect}")
+            
+            # Try different ways to access the URI/S3 location
+            file_uri = nil
+            file_name = 'Unnamed document'
+            
+            if location.respond_to?(:s3_location)
+              s3_loc = location.s3_location
+              if s3_loc
+                file_uri = s3_loc.uri if s3_loc.respond_to?(:uri)
+                file_name = file_uri&.split('/')&.last || s3_loc.to_s
+              end
+            elsif location.respond_to?(:uri)
+              file_uri = location.uri
+              file_name = file_uri.split('/').last
+            elsif location.is_a?(Hash)
+              file_uri = location[:uri] || location['uri'] || location[:s3_location]&.dig(:uri) || location['s3_location']&.dig('uri')
+              file_name = file_uri&.split('/')&.last || 'Document'
+            else
+              # Fallback: use location as string representation
+              file_name = location.to_s
+            end
+            
+            Rails.logger.info("  Citation #{index + 1}, Reference #{ref_index + 1}: #{file_name} (URI: #{file_uri || 'N/A'})")
           end
         end
       end
@@ -96,11 +125,38 @@ class BedrockRagService
       response.citations.each do |citation|
         if citation.retrieved_references && citation.retrieved_references.any?
           citation.retrieved_references.each do |ref|
-            file_name = ref.location&.uri&.split('/')&.last || 'Documento sin nombre'
+            location = ref.location
+            file_uri = nil
+            file_name = 'Unnamed document'
+            
+            # Access URI based on actual structure
+            if location.respond_to?(:s3_location)
+              s3_loc = location.s3_location
+              if s3_loc && s3_loc.respond_to?(:uri)
+                file_uri = s3_loc.uri
+                file_name = file_uri.split('/').last
+              end
+            elsif location.respond_to?(:uri)
+              file_uri = location.uri
+              file_name = file_uri.split('/').last
+            elsif location.is_a?(Hash)
+              file_uri = location[:uri] || location['uri'] || location[:s3_location]&.dig(:uri) || location['s3_location']&.dig('uri')
+              file_name = file_uri&.split('/')&.last || 'Document'
+            else
+              file_name = location.to_s
+            end
+            
+            # Safely extract content text, handling potential errors
+            content_text = begin
+              ref.content&.text&.truncate(200) if ref.content&.text
+            rescue
+              nil
+            end
+            
             formatted_citations << {
               file_name: file_name,
-              uri: ref.location&.uri,
-              content: ref.content&.text&.truncate(200) # Primeros 200 caracteres del contenido
+              uri: file_uri,
+              content: content_text # First 200 characters of content
             }
           end
         end
@@ -118,67 +174,5 @@ class BedrockRagService
     raise "Failed to query Knowledge Base: #{e.message}"
   end
 
-  # Alternative: Use Retrieve API to get sources, then generate with BedrockClient
-  # This gives more control over the generation process
-  def query_with_sources(question, model_id: nil, max_tokens: 2000, temperature: 0.7)
-    raise "Knowledge Base ID not configured" unless @knowledge_base_id
-
-    # Step 1: Retrieve relevant chunks from Knowledge Base
-    retrieve_response = @client.retrieve({
-      knowledge_base_id: @knowledge_base_id,
-      retrieval_query: {
-        text: question
-      },
-      retrieval_configuration: {
-        vector_search_configuration: {
-          numberOfResults: 5, # Get top 5 most relevant chunks
-          override_search_type: "SEMANTIC"
-        }
-      }
-    })
-
-    # Step 2: Build context from retrieved chunks
-    context_chunks = retrieve_response.retrieval_results.map do |result|
-      {
-        content: result.content.text,
-        metadata: result.metadata,
-        score: result.score
-      }
-    end
-
-    # Step 3: Build prompt with context
-    context_text = context_chunks.map { |chunk| chunk[:content] }.join("\n\n---\n\n")
-    
-    prompt = <<~PROMPT
-      Eres un asistente experto que responde preguntas basándose únicamente en el contexto proporcionado.
-
-      Contexto de los documentos:
-      #{context_text}
-
-      Instrucciones:
-      - Responde la pregunta del usuario basándote ÚNICAMENTE en el contexto proporcionado
-      - Si la información no está en el contexto, di claramente que no tienes esa información
-      - Responde en el mismo idioma que la pregunta
-      - Sé conciso pero completo
-
-      Pregunta del usuario: #{question}
-
-      Respuesta:
-    PROMPT
-
-    # Step 4: Generate answer using BedrockClient
-    bedrock_client = BedrockClient.new
-    answer = bedrock_client.generate_text(prompt, model_id: model_id, max_tokens: max_tokens, temperature: temperature)
-
-    {
-      answer: answer,
-      sources: context_chunks.map { |chunk| chunk[:metadata] }.compact,
-      citations: context_chunks.length
-    }
-  rescue => e
-    Rails.logger.error("Bedrock RAG error: #{e.message}")
-    Rails.logger.error(e.backtrace.join("\n"))
-    raise "Failed to query Knowledge Base: #{e.message}"
-  end
 end
 

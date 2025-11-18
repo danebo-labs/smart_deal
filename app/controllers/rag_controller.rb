@@ -8,7 +8,7 @@ class RagController < ApplicationController
 
     unless question.present?
       render json: { 
-        message: "La pregunta no puede estar vacía",
+        message: "Question cannot be empty",
         status: "error"
       }, status: :bad_request
       return
@@ -31,7 +31,7 @@ class RagController < ApplicationController
       Rails.logger.error(e.backtrace.join("\n"))
       
       render json: {
-        message: "Error al procesar la pregunta: #{e.message}",
+        message: "Error processing question: #{e.message}",
         status: "error"
       }, status: :unprocessable_entity
     end

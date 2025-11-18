@@ -26,7 +26,7 @@ export default class extends Controller {
     this.inputTarget.disabled = true
     if (this.hasSendButtonTarget) {
       this.sendButtonTarget.disabled = true
-      this.sendButtonTarget.textContent = "Enviando..."
+      this.sendButtonTarget.textContent = "Sending..."
     }
 
     // Add user message to chat
@@ -36,7 +36,7 @@ export default class extends Controller {
     this.inputTarget.value = ""
 
     // Show loading message
-    const loadingId = this.addMessage("Pensando...", "assistant", true)
+    const loadingId = this.addMessage("Thinking...", "assistant", true)
 
     try {
       const response = await fetch('/rag/ask', {
@@ -61,11 +61,11 @@ export default class extends Controller {
         // Show citations with details if available
         if (data.citations && data.citations.length > 0) {
           let citationsHtml = `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.1);">`
-          citationsHtml += `<div style="font-weight: 600; margin-bottom: 0.5rem;">📚 ${data.citations.length} documento(s) consultado(s):</div>`
+          citationsHtml += `<div style="font-weight: 600; margin-bottom: 0.5rem;">📚 ${data.citations.length} document(s) consulted:</div>`
           
           data.citations.forEach((citation, index) => {
             citationsHtml += `<div style="margin-bottom: 0.25rem; font-size: 0.875rem; opacity: 0.9;">`
-            citationsHtml += `  ${index + 1}. <strong>${citation.file_name || 'Documento'}</strong>`
+            citationsHtml += `  ${index + 1}. <strong>${citation.file_name || 'Document'}</strong>`
             if (citation.uri) {
               citationsHtml += ` <span style="opacity: 0.7;">(${citation.uri.split('/').pop()})</span>`
             }
@@ -78,10 +78,10 @@ export default class extends Controller {
           this.addMessageWithHtml(citationsHtml, "system")
         } else {
           // Warn if no citations found
-          this.addMessage("⚠️ No se encontraron documentos relacionados con tu pregunta.", "system")
+          this.addMessage("⚠️ No documents found related to your question.", "system")
         }
       } else {
-        throw new Error(data.message || 'Error desconocido')
+        throw new Error(data.message || 'Unknown error')
       }
     } catch (error) {
       console.error('RAG query error:', error)
@@ -94,7 +94,7 @@ export default class extends Controller {
       this.inputTarget.disabled = false
       if (this.hasSendButtonTarget) {
         this.sendButtonTarget.disabled = false
-        this.sendButtonTarget.textContent = "Enviar"
+        this.sendButtonTarget.textContent = "Send"
       }
       // Focus on input for next question
       this.inputTarget.focus()

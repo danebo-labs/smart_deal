@@ -133,6 +133,45 @@
       </div>
     </div>
 
+    <!-- Box 1.5: RAG Chat with Knowledge Base -->
+    <div class="chat-box" data-controller="rag-chat">
+      <div class="figma-card">
+        <div class="chat-header">
+          <div class="chat-icon-wrapper">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="chat-icon">
+              <path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3 class="chat-title">Chat con Knowledge Base</h3>
+          <p class="chat-subtitle">Haz preguntas sobre los documentos indexados</p>
+        </div>
+        <div class="chat-container" data-rag-chat-target="chatContainer">
+          <div class="chat-messages" data-rag-chat-target="messages">
+            <div class="chat-message chat-message-system">
+              <div class="chat-message-text">
+                👋 ¡Hola! Hazme cualquier pregunta sobre los documentos en la Knowledge Base.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-container">
+          <form data-action="submit->rag-chat#sendMessage">
+            <textarea 
+              class="chat-input" 
+              data-rag-chat-target="input"
+              data-action="keydown->rag-chat#handleKeyPress"
+              placeholder="Escribe tu pregunta aquí..."
+              rows="2"></textarea>
+            <button type="submit" 
+                    class="figma-button chat-send-button"
+                    data-rag-chat-target="sendButton">
+              Enviar
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Box 2: AI Summary (Divided vertically) -->
     <div class="summary-box">
       <div class="figma-card summary-card">
@@ -231,6 +270,168 @@
 .upload-box {
   width: 100%;
   max-width: 500px;
+}
+
+/* Box 1.5: RAG Chat */
+.chat-box {
+  width: 100%;
+  max-width: 500px;
+}
+
+.chat-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  margin-bottom: 1rem;
+}
+
+.chat-icon-wrapper {
+  width: 40px;
+  height: 40px;
+  background: #eff6ff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.chat-icon {
+  color: #2563eb;
+  width: 20px;
+  height: 20px;
+}
+
+.chat-title {
+  color: #1f2937;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.chat-subtitle {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin: 0;
+  text-align: center;
+}
+
+.chat-container {
+  height: 400px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-message {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  max-width: 80%;
+  word-wrap: break-word;
+}
+
+.chat-message-user {
+  align-self: flex-end;
+  background: #2563eb;
+  color: white;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.chat-message-assistant {
+  align-self: flex-start;
+  background: white;
+  color: #1f2937;
+  border: 1px solid #e5e7eb;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.chat-message-system {
+  align-self: center;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 0.875rem;
+  text-align: center;
+  max-width: 90%;
+}
+
+.chat-message-error {
+  align-self: center;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+  max-width: 90%;
+}
+
+.chat-message-text {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chat-input-container {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-input-container form {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  align-items: flex-end;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.chat-input:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.chat-send-button {
+  height: 44px;
+  padding: 0 1.5rem;
+  white-space: nowrap;
+}
+
+.chat-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-container::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 9999px;
+}
+
+.chat-container::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Box 2: AI Summary */
@@ -594,6 +795,7 @@
   }
 
   .upload-box,
+  .chat-box,
   .summary-box {
     max-width: 100%;
   }

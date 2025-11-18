@@ -114,15 +114,57 @@ export default class extends Controller {
         'Accept': 'text/vnd.turbo-stream.html',
         'X-CSRF-Token': csrfToken
       },
-      credentials: 'same-origin'
+      credentials: 'same-origin',
+      redirect: 'manual' // Handle redirects manually
     })
     .then(response => {
-      if (response.ok) {
-        return response.text()
+      console.log("Response status:", response.status, "ok:", response.ok, "type:", response.type)
+      
+      // When redirect: 'manual' is used, redirects become "opaqueredirect" with status 0
+      // Headers are not accessible for security reasons, but we know it's a redirect
+      if (response.type === 'opaqueredirect' || (response.status === 0 && response.type !== 'error')) {
+        console.log("Opaque redirect detected (likely auth redirect), redirecting to login")
+        this.clearLoading()
+        // Redirect immediately without showing any error
+        Turbo.visit('/users/sign_in')
+        // Return early to prevent any further processing
+        throw new Error('AUTH_REDIRECT') // Use throw to prevent catch from showing user-facing error
       }
-      throw new Error('Network response was not ok')
+      
+      // Check for redirect Location header (for accessible redirects)
+      const redirectUrl = response.headers.get('Location')
+      
+      // Handle explicit redirects (302, 303, etc.)
+      if (redirectUrl || (response.status >= 300 && response.status < 400)) {
+        console.log("Redirect detected, Location:", redirectUrl)
+        this.clearLoading()
+        const finalUrl = redirectUrl || '/users/sign_in'
+        Turbo.visit(finalUrl)
+        return null
+      }
+      
+      // Handle authentication errors (401, 403) - direct errors without redirect
+      if (response.status === 401 || response.status === 403) {
+        console.log("Authentication error detected (401/403), redirecting to login")
+        this.clearLoading()
+        Turbo.visit('/users/sign_in')
+        return null
+      }
+      
+      // Handle other errors
+      if (!response.ok) {
+        console.log("Other error detected:", response.status)
+        this.clearLoading()
+        this.showError(`Server error (${response.status}). Please try again.`)
+        return null
+      }
+      
+      return response.text()
     })
     .then(html => {
+      // If html is null, we already handled redirect/error
+      if (!html) return
+      
       console.log("Response received:", html.substring(0, 200))
       
       // Parse the HTML response to get turbo-stream elements
@@ -134,6 +176,7 @@ export default class extends Controller {
       
       if (streamElements.length === 0) {
         console.error("No turbo-stream elements found in response")
+        this.clearLoading()
         return
       }
       
@@ -171,6 +214,22 @@ export default class extends Controller {
     })
     .catch(error => {
       console.error('Error:', error)
+      
+      // Don't show error if it's an auth redirect (we already handled it above)
+      if (error.message === 'AUTH_REDIRECT') {
+        console.log("Auth redirect already handled, ignoring error")
+        return // Exit silently
+      }
+      
+      // Don't show error for network errors that might be from redirects
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        console.log("Network error (possibly from redirect), clearing loading only")
+        this.clearLoading()
+        return // Exit without showing error
+      }
+      
+      // For other errors, show the error message
+      this.clearLoading()
       this.showError('Failed to process document. Please try again.')
     })
   }
@@ -215,6 +274,54 @@ export default class extends Controller {
     }
   }
 
+  clearLoading() {
+    // Clear loading state from both turbo frames
+    const documentInfo = document.getElementById('document_info')
+    const aiSummary = document.getElementById('ai_summary')
+    
+    if (documentInfo) {
+      // Reset to placeholder
+      documentInfo.innerHTML = `
+        <div class="document-info-placeholder">
+          <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="document-placeholder-icon">
+            <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <p class="document-placeholder-text">No document uploaded yet</p>
+        </div>
+      `
+    }
+    
+    if (aiSummary) {
+      // Reset to placeholder
+      aiSummary.innerHTML = `
+        <div class="explanation-content-wrapper">
+          <div class="explanation-content">
+            <p class="explanation-placeholder">
+              Upload a document to see the AI-generated summary here. The analysis will include key points, main topics, and important insights extracted from your document.
+            </p>
+            
+            <div class="explanation-features">
+              <div class="feature-item">
+                <span class="feature-bullet">•</span>
+                <p>Automatic extraction of key concepts and themes</p>
+              </div>
+              <div class="feature-item">
+                <span class="feature-bullet">•</span>
+                <p>Concise summaries of long documents</p>
+              </div>
+              <div class="feature-item">
+                <span class="feature-bullet">•</span>
+                <p>Identification of important action items</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `
+    }
+  }
+
   showError(message) {
     // Show error in document info frame
     const documentInfo = document.getElementById('document_info')
@@ -223,6 +330,20 @@ export default class extends Controller {
         <div class="document-info-content">
           <div style="background: #fee; border: 1px solid #fcc; border-radius: 0.5rem; padding: 1rem; color: #c33;">
             <strong>Error:</strong> ${message}
+          </div>
+        </div>
+      `
+    }
+    
+    // Also clear AI summary loading
+    const aiSummary = document.getElementById('ai_summary')
+    if (aiSummary) {
+      aiSummary.innerHTML = `
+        <div class="explanation-content-wrapper">
+          <div class="explanation-content">
+            <p class="explanation-placeholder">
+              Upload a document to see the AI-generated summary here.
+            </p>
           </div>
         </div>
       `

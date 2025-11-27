@@ -6,7 +6,7 @@ API platform to automate contracts (sales, leases, services) with smart contract
 
 - 🔐 User authentication with Devise
 - 📄 PDF document processing
-- 🤖 AI document analysis (AWS Bedrock, OpenAI, Anthropic, GEIA)
+- 🤖 AI document analysis (AWS Bedrock, OpenAI, Anthropic)
 - 🎨 Modern interface with particle effects
 - ⚡ Hotwire (Turbo + Stimulus) for interactivity
 - 🔄 Flexible architecture to switch between AI providers

@@ -10,7 +10,17 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_03_230920) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_03_233832) do
+  create_table "bedrock_queries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "input_tokens"
+    t.integer "latency_ms"
+    t.string "model_id"
+    t.integer "output_tokens"
+    t.datetime "updated_at", null: false
+    t.text "user_query"
+  end
+
   create_table "cost_metrics", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.date "date", null: false

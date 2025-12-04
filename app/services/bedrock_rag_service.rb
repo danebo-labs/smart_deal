@@ -60,6 +60,7 @@ class BedrockRagService
 
     Rails.logger.info("Querying Knowledge Base with: #{question}")
 
+    start_time = Time.current
     response = @client.retrieve_and_generate({
       input: {
         text: question
@@ -72,8 +73,39 @@ class BedrockRagService
         }
       }
     })
+    latency_ms = ((Time.current - start_time) * 1000).to_i
 
     Rails.logger.info("Knowledge Base response received successfully")
+    
+    # Extract model ID from ARN (e.g., "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0" -> "anthropic.claude-3-sonnet-20240229-v1:0")
+    model_id = model_arn.split("/").last
+    
+    # Extract tokens from response if available, otherwise estimate
+    input_tokens = estimate_tokens(question)
+    output_text = response.output&.text || ""
+    output_tokens = estimate_tokens(output_text)
+    
+    # Try to get actual token usage from response if available
+    if response.respond_to?(:usage) && response.usage
+      input_tokens = response.usage.input_tokens if response.usage.respond_to?(:input_tokens)
+      output_tokens = response.usage.output_tokens if response.usage.respond_to?(:output_tokens)
+    end
+    
+    # Save query to database for metrics tracking
+    begin
+      BedrockQuery.create!(
+        model_id: model_id,
+        input_tokens: input_tokens,
+        output_tokens: output_tokens,
+        user_query: question,
+        latency_ms: latency_ms,
+        created_at: Time.current
+      )
+      Rails.logger.info("✓ Bedrock query tracked: #{input_tokens} input + #{output_tokens} output tokens")
+    rescue => e
+      Rails.logger.error("Failed to track Bedrock query: #{e.message}")
+      # Don't fail the request if tracking fails
+    end
     
     # Log citations for debugging - first inspect the structure
     if response.citations && response.citations.any?
@@ -172,6 +204,15 @@ class BedrockRagService
     Rails.logger.error("Bedrock RAG error: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
     raise "Failed to query Knowledge Base: #{e.message}"
+  end
+
+  private
+
+  def estimate_tokens(text)
+    return 0 if text.nil? || text.empty?
+    # Rough estimation: ~4 characters per token for English text
+    # This is a simple heuristic, actual tokenization varies by model
+    (text.length / 4.0).ceil
   end
 
 end

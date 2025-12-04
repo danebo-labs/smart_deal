@@ -1,6 +1,7 @@
 class BedrockQuery < ApplicationRecord
     validates :model_id, :input_tokens, :output_tokens, presence: true
-    validates :input_tokens, :output_tokens, numericality: { greater_than: 0 }
+    validates :input_tokens, numericality: { greater_than: 0 }
+    validates :output_tokens, numericality: { greater_than_or_equal_to: 0 }
   
     BEDROCK_PRICING = {
       "anthropic.claude-3-5-sonnet-20241022-v2:0" => { input: 0.003,   output: 0.015 },

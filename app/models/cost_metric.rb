@@ -13,6 +13,11 @@ class CostMetric < ApplicationRecord
     validates :value, presence: true, numericality: true
   
     scope :current_month, -> { where(date: Date.current.beginning_of_month..Date.current) }
+    scope :last_month, -> { 
+      last_month_start = 1.month.ago.beginning_of_month
+      last_month_end = 1.month.ago.end_of_month
+      where(date: last_month_start..last_month_end)
+    }
     scope :last_30_days, -> { where(date: 30.days.ago..Date.current) }
   
     def self.total_for_month(metric_type)
@@ -21,6 +26,14 @@ class CostMetric < ApplicationRecord
   
     def self.avg_for_month(metric_type)
       current_month.where(metric_type: metric_type).average(:value) || 0
+    end
+
+    def self.total_for_last_month(metric_type)
+      last_month.where(metric_type: metric_type).sum(:value)
+    end
+
+    def self.avg_for_last_month(metric_type)
+      last_month.where(metric_type: metric_type).average(:value) || 0
     end
   end
   

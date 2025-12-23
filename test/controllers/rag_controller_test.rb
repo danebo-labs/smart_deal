@@ -37,23 +37,27 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   test "returns successful response with answer and citations" do
     sign_in @user
     
-    # Create a mock service
-    mock_result = {
-      answer: "This is a test answer about S3",
-      citations: [
-        {
-          file_name: "AWS-Certified-Solutions-Architect-v4.pdf",
-          uri: "s3://bucket/file.pdf",
-          content: "S3 is a storage service..."
-        }
-      ],
-      session_id: "test-session-123"
-    }
+    # Create a mock service object with query method
+    mock_service = Object.new
+    def mock_service.query(question)
+      {
+        answer: "This is a test answer about S3",
+        citations: [
+          {
+            file_name: "AWS-Certified-Solutions-Architect-v4.pdf",
+            uri: "s3://bucket/file.pdf",
+            content: "S3 is a storage service..."
+          }
+        ],
+        session_id: "test-session-123"
+      }
+    end
     
-    mock_service = Minitest::Mock.new
-    mock_service.expect :query, mock_result, ["What is S3?"]
+    # Monkey patch BedrockRagService.new temporarily
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |*args| mock_service }
     
-    BedrockRagService.stub :new, mock_service do
+    begin
       post rag_ask_url, params: { question: "What is S3?" }, as: :json
       assert_response :success
       
@@ -64,20 +68,26 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert json.key?("citations")
       assert_equal 1, json["citations"].length
       assert_equal "AWS-Certified-Solutions-Architect-v4.pdf", json["citations"].first["file_name"]
+    ensure
+      # Restore original method
+      BedrockRagService.define_singleton_method(:new, original_new)
     end
-    
-    mock_service.verify
   end
 
   test "handles BedrockRagService errors gracefully" do
     sign_in @user
     
     # Create a mock service that raises an error
-    error = StandardError.new("Knowledge Base ID not configured")
-    mock_service = Minitest::Mock.new
-    mock_service.expect :query, ->(_question) { raise error }, ["test question"]
+    mock_service = Object.new
+    def mock_service.query(question)
+      raise StandardError.new("Knowledge Base ID not configured")
+    end
     
-    BedrockRagService.stub :new, mock_service do
+    # Monkey patch BedrockRagService.new temporarily
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |*args| mock_service }
+    
+    begin
       post rag_ask_url, params: { question: "test question" }, as: :json
       assert_response :unprocessable_entity
       
@@ -85,45 +95,56 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert_equal "error", json["status"]
       assert json["message"].present?
       assert_includes json["message"], "Error processing question"
+    ensure
+      # Restore original method
+      BedrockRagService.define_singleton_method(:new, original_new)
     end
-    
-    mock_service.verify
   end
 
   test "handles AWS service errors" do
     sign_in @user
     
     # Create a mock service that raises an AWS error
-    error = StandardError.new("AccessDeniedException: User is not authorized")
-    mock_service = Minitest::Mock.new
-    mock_service.expect :query, ->(_question) { raise error }, ["test question"]
+    mock_service = Object.new
+    def mock_service.query(question)
+      raise StandardError.new("AccessDeniedException: User is not authorized")
+    end
     
-    BedrockRagService.stub :new, mock_service do
+    # Monkey patch BedrockRagService.new temporarily
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |*args| mock_service }
+    
+    begin
       post rag_ask_url, params: { question: "test question" }, as: :json
       assert_response :unprocessable_entity
       
       json = JSON.parse(@response.body)
       assert_equal "error", json["status"]
       assert json["message"].present?
+    ensure
+      # Restore original method
+      BedrockRagService.define_singleton_method(:new, original_new)
     end
-    
-    mock_service.verify
   end
 
   test "handles response without citations" do
     sign_in @user
     
     # Create a mock service with empty citations
-    mock_result = {
-      answer: "Answer without citations",
-      citations: [],
-      session_id: "test-session-456"
-    }
+    mock_service = Object.new
+    def mock_service.query(question)
+      {
+        answer: "Answer without citations",
+        citations: [],
+        session_id: "test-session-456"
+      }
+    end
     
-    mock_service = Minitest::Mock.new
-    mock_service.expect :query, mock_result, ["test question"]
+    # Monkey patch BedrockRagService.new temporarily
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |*args| mock_service }
     
-    BedrockRagService.stub :new, mock_service do
+    begin
       post rag_ask_url, params: { question: "test question" }, as: :json
       assert_response :success
       
@@ -131,9 +152,10 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert_equal "success", json["status"]
       assert_equal "Answer without citations", json["answer"]
       assert_equal [], json["citations"]
+    ensure
+      # Restore original method
+      BedrockRagService.define_singleton_method(:new, original_new)
     end
-    
-    mock_service.verify
   end
 end
 

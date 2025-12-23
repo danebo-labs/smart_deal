@@ -2,24 +2,16 @@
 
 class AiProvider
   def initialize(provider: nil)
-    @provider = provider || ENV.fetch("AI_PROVIDER", "bedrock").downcase
+    # Only Bedrock is supported. Other providers were removed as they were never used.
+    @provider = (provider || ENV.fetch("AI_PROVIDER", "bedrock")).downcase
+    
+    unless @provider == "bedrock"
+      raise "Unknown AI provider: #{@provider}. Only 'bedrock' is supported."
+    end
   end
 
   def query(prompt, **options)
-    client = case @provider
-             when "bedrock"
-               BedrockClient.new
-             when "anthropic"
-               AnthropicClient.new
-             when "geia"
-               GeiaClient.new
-             when "openai"
-               OpenAiClient.new
-             else
-               raise "Unknown AI provider: #{@provider}. Supported: bedrock, anthropic, geia, openai"
-             end
-
-    client.query(prompt, **options)
+    BedrockClient.new.query(prompt, **options)
   rescue => e
     Rails.logger.error("AiProvider error with #{@provider}: #{e.message}")
     raise e

@@ -48,22 +48,15 @@ export AWS_REGION=us-east-1
 
 ## Configuración del Proveedor de IA
 
+**Nota:** Actualmente solo AWS Bedrock está soportado. Los otros proveedores (OpenAI, Anthropic, GEIA) fueron removidos por falta de uso.
+
 ### Variable de Entorno AI_PROVIDER
 
-Cambia entre proveedores usando la variable de entorno `AI_PROVIDER`:
+Por defecto se usa Bedrock:
 
 ```bash
-# AWS Bedrock (por defecto)
+# AWS Bedrock (único proveedor disponible)
 export AI_PROVIDER=bedrock
-
-# OpenAI
-export AI_PROVIDER=openai
-
-# Anthropic (directo - no implementado aún)
-export AI_PROVIDER=anthropic
-
-# GEIA (servicio interno de Globant)
-export AI_PROVIDER=geia
 ```
 
 ### En Rails Credentials
@@ -78,8 +71,8 @@ aws:
   bedrock_bearer_token: YOUR_BEDROCK_BEARER_TOKEN (si aplicable)
   bedrock_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
 
-# Configuración del proveedor de IA
-ai_provider: bedrock  # o openai, anthropic, geia
+# Configuración del proveedor de IA (solo bedrock disponible)
+ai_provider: bedrock
 ```
 
 ## Probar la Integración
@@ -88,30 +81,28 @@ ai_provider: bedrock  # o openai, anthropic, geia
 
 Ve a `http://localhost:3000` y sube un PDF. El sistema procesará el documento con Bedrock automáticamente.
 
-### 2. Endpoint REST API
+### 2. Endpoint REST API para RAG (Knowledge Base)
 
-También puedes probar directamente el endpoint:
+Puedes consultar la Knowledge Base directamente:
 
 ```bash
-curl -X POST http://localhost:3000/ai/ask \
+curl -X POST http://localhost:3000/rag/ask \
   -H "Content-Type: application/json" \
   -H "Cookie: [tu_cookie_de_sesion]" \
   -d '{
-    "prompt": "Resume este contrato en 3 puntos",
-    "max_tokens": 500,
-    "temperature": 0.7
+    "question": "¿Qué es S3?"
   }'
 ```
 
+**Nota:** El endpoint `/ai/ask` fue removido. Para procesar documentos, usa la interfaz web o el endpoint `/documents/process`.
+
 ## Estructura de Servicios
 
-La aplicación usa una arquitectura flexible con servicios separados:
+La aplicación usa los siguientes servicios:
 
 - `app/services/bedrock_client.rb` - Cliente de AWS Bedrock
-- `app/services/open_ai_client.rb` - Cliente de OpenAI
-- `app/services/anthropic_client.rb` - Cliente de Anthropic (placeholder)
-- `app/services/geia_client.rb` - Cliente de GEIA (placeholder)
-- `app/services/ai_provider.rb` - Facade que despacha al proveedor activo
+- `app/services/bedrock_rag_service.rb` - Servicio RAG para consultas a Knowledge Base
+- `app/services/ai_provider.rb` - Facade que usa BedrockClient (solo Bedrock disponible)
 
 ## Verificación
 
@@ -133,7 +124,7 @@ La aplicación usa una arquitectura flexible con servicios separados:
 ## Troubleshooting
 
 ### Error: "Unknown AI provider"
-- Verifica que `AI_PROVIDER` tenga un valor válido: `bedrock`, `openai`, `anthropic`, `geia`
+- Solo `bedrock` está disponible. Verifica que `AI_PROVIDER` sea `bedrock` o esté sin configurar (usa bedrock por defecto)
 
 ### Error: "Bedrock error: AccessDeniedException"
 - Verifica que tus credenciales AWS tengan permisos para Bedrock

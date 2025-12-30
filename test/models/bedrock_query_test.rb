@@ -31,8 +31,8 @@ class BedrockQueryTest < ActiveSupport::TestCase
       output_tokens: 1000
     )
 
-    # default pricing: input=0.003, output=0.015
-    expected_cost = (1 * 0.003) + (1 * 0.015)
+    # default pricing: input=0.00025, output=0.00125 (Haiku pricing)
+    expected_cost = (1 * 0.00025) + (1 * 0.00125)
 
     assert_equal expected_cost.round(6), q.cost
   end

@@ -17,16 +17,51 @@ class DailyMetricsJobTest < ActiveJob::TestCase
     end
   end
 
+  class FakeRDS
+    def initialize(*); end
+
+    def describe_db_clusters(*)
+      OpenStruct.new(db_clusters: [])
+    end
+  end
+
   def setup_aws_mocks
     # Create mock AWS modules and classes
     aws_module = Module.new
     cloudwatch_module = Module.new
     s3_module = Module.new
+    rds_module = Module.new
+    cloudwatch_errors_module = Module.new
+    rds_errors_module = Module.new
+    s3_errors_module = Module.new
+    static_token_provider_module = Module.new
 
     cloudwatch_module.const_set(:Client, FakeCloudWatch)
     s3_module.const_set(:Client, FakeS3)
+    rds_module.const_set(:Client, FakeRDS)
+    
+    # Mock error classes
+    cloudwatch_errors_module.const_set(:ServiceError, Class.new(StandardError))
+    rds_errors_module.const_set(:DBClusterNotFoundFault, Class.new(StandardError))
+    s3_errors_module.const_set(:ServiceError, Class.new(StandardError))
+    s3_errors_module.const_set(:NoSuchBucket, Class.new(StandardError))
+    s3_errors_module.const_set(:AccessDenied, Class.new(StandardError))
+    
+    cloudwatch_module.const_set(:Errors, cloudwatch_errors_module)
+    rds_module.const_set(:Errors, rds_errors_module)
+    s3_module.const_set(:Errors, s3_errors_module)
+    
+    # Mock StaticTokenProvider (needed for require "aws-sdk-core/static_token_provider")
+    static_token_provider_class = Class.new do
+      def initialize(token); end
+    end
+    static_token_provider_module.const_set(:StaticTokenProvider, static_token_provider_class)
+    static_token_provider_module.const_set(:TokenProvider, Module.new) # For the require
+    
     aws_module.const_set(:CloudWatch, cloudwatch_module)
     aws_module.const_set(:S3, s3_module)
+    aws_module.const_set(:RDS, rds_module)
+    aws_module.const_set(:StaticTokenProvider, static_token_provider_module)
 
     # Temporarily replace Aws constant to use our mocks
     @original_aws = Object.const_get(:Aws) if Object.const_defined?(:Aws)

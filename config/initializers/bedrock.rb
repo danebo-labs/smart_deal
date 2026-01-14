@@ -20,6 +20,4 @@ end
 
 module BedrockProfiles
   CLAUDE_35_HAIKU = ENV.fetch("BEDROCK_PROFILE_CLAUDE35_HAIKU", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
-  CLAUDE_35_SONNET = ENV.fetch("BEDROCK_PROFILE_CLAUDE35_SONNET", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
-  CLAUDE_3_OPUS    = ENV.fetch("BEDROCK_PROFILE_CLAUDE3_OPUS", "us.anthropic.claude-3-opus-20240229-v1:0")
 end

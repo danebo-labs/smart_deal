@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "aws-sdk-bedrock"
 require "aws-sdk-bedrockruntime"
 
 DEFAULT_BEDROCK_REGION = ENV.fetch("AWS_REGION", "us-east-1")

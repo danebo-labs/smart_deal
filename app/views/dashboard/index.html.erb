@@ -16,19 +16,19 @@
           value: number_with_delimiter(@current_metrics[:today_tokens]),
           color: "text-blue-600"
         } %>
-  
+
         <%= render partial: "metric_card", locals: {
           title: "Cost Today",
           value: "$#{@current_metrics[:today_cost].round(4)}",
           color: "text-red-600"
         } %>
-  
+
         <%= render partial: "metric_card", locals: {
           title: "Queries Today",
           value: @current_metrics[:today_queries],
           color: "text-green-600"
         } %>
-  
+
         <!-- Aurora ACU with explanation -->
         <div class="bg-white p-4 rounded-lg shadow">
           <div class="text-sm text-gray-500">Aurora ACU</div>
@@ -68,34 +68,34 @@
   
       <!-- MONTHLY TOTALS PANEL + CHART -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-  
+
         <!-- Monthly totals summary -->
         <div class="bg-white p-6 rounded-xl shadow">
           <h3 class="text-lg font-semibold text-gray-800 mb-3">Monthly Summary</h3>
-  
+
           <div class="space-y-2 text-sm">
             <div class="flex justify-between">
               <span class="text-gray-600">Tokens:</span>
               <span class="font-bold"><%= number_with_delimiter(@monthly_totals[:total_tokens]) %></span>
             </div>
-  
+
             <div class="flex justify-between">
               <span class="text-gray-600">Cost:</span>
               <span class="font-bold text-red-600">$<%= @monthly_totals[:total_cost].round(2) %></span>
             </div>
-  
+
             <div class="flex justify-between">
               <span class="text-gray-600">Queries:</span>
               <span class="font-bold"><%= @monthly_totals[:total_queries] %></span>
             </div>
-  
+
             <div class="flex justify-between">
               <span class="text-gray-600">Average ACU:</span>
               <span class="font-bold"><%= @monthly_totals[:avg_acu] %></span>
             </div>
           </div>
         </div>
-  
+
         <!-- 30-day cost chart -->
         <div class="md:col-span-3 bg-white p-6 rounded-xl shadow">
           <h3 class="text-lg font-semibold text-gray-800 mb-4">Cost Last 30 Days</h3>

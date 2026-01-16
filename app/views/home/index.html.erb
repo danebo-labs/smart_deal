@@ -228,7 +228,7 @@
           </div>
         </div>
 
-        <!-- Bottom Section: Usage & Cost -->
+        <!-- Bottom Section: Usage -->
         <div class="ai-summary-section">
           <div class="explanation-header">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="sparkles-icon">
@@ -236,7 +236,11 @@
               <path d="M7 16L12 11L16 15L21 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M21 10V3H14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <h2 class="explanation-title">Usage & Cost - Today</h2>
+            <div class="explanation-title-wrapper">
+              <h2 class="explanation-title">Usage - Today</h2>
+              <p class="explanation-subtitle">LLM Model: <%= @current_llm_model %></p>
+              <p class="explanation-subtitle">Embedding Model: <%= @current_embedding_model %></p>
+            </div>
           </div>
           
           <div class="explanation-content-wrapper">
@@ -249,25 +253,9 @@
                     <span class="metric-value"><%= number_with_delimiter(@current_metrics[:today_tokens]) %></span>
                   </div>
                   <div class="metric-item">
-                    <span class="metric-label">Cost</span>
-                    <span class="metric-value cost-value">$<%= @current_metrics[:today_cost].round(4) %></span>
-                  </div>
-                  <div class="metric-item">
                     <span class="metric-label">Queries</span>
                     <span class="metric-value"><%= @current_metrics[:today_queries] %></span>
                   </div>
-                  <div class="metric-item">
-                    <span class="metric-label">Aurora ACU</span>
-                    <span class="metric-value"><%= @current_metrics[:aurora_acu].round(1) %></span>
-                  </div>
-                </div>
-                <div class="system-status <%= @current_metrics[:aurora_acu] == 0.0 ? 'status-container-paused' : 'status-container-active' %>">
-                  <span class="status-label">System Status:</span>
-                  <% if @current_metrics[:aurora_acu] == 0.0 %>
-                    <span class="status-badge status-paused">Paused</span>
-                  <% else %>
-                    <span class="status-badge status-active">Active</span>
-                  <% end %>
                 </div>
               </div>
             </div>
@@ -946,7 +934,7 @@
 
 .explanation-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
 }
 
@@ -956,11 +944,25 @@
   height: 20px;
 }
 
+.explanation-title-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .explanation-title {
   font-size: 1.05rem;
   font-weight: 600;
   color: #0f172a;
   margin: 0;
+}
+
+.explanation-subtitle {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: #6b7280;
+  margin: 0;
+  letter-spacing: 0.01em;
 }
 
 .explanation-content-wrapper {

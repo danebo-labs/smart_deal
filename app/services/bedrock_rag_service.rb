@@ -1,6 +1,7 @@
 # app/services/bedrock_rag_service.rb
 
 require "aws-sdk-bedrockagentruntime"
+require "aws-sdk-bedrockruntime"
 require "aws-sdk-core/static_token_provider"
 require "json"
 
@@ -47,39 +48,65 @@ class BedrockRagService
     Rails.logger.info("Querying Knowledge Base with: #{question}")
 
     start_time = Time.current
-    response = @client.retrieve_and_generate({
-      input: {
-        text: question
-      },
-      retrieve_and_generate_configuration: {
-        type: "KNOWLEDGE_BASE",
-        knowledge_base_configuration: {
-          knowledge_base_id: @knowledge_base_id,
-          model_arn: model_arn  # Use foundation-model ARN (e.g., Claude 3 Sonnet)
+    
+    # Step 1: Retrieve documents with metadata
+    retrieval_response = @client.retrieve({
+      knowledge_base_id: @knowledge_base_id,
+      retrieval_query: { text: question },
+      retrieval_configuration: {
+        vector_search_configuration: {
+          number_of_results: 5,
+          override_search_type: "HYBRID"
         }
       }
     })
-    latency_ms = ((Time.current - start_time) * 1000).to_i
-
-    Rails.logger.info("Knowledge Base response received successfully")
     
-    # Extract model ID from ARN (e.g., "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0" -> "anthropic.claude-3-haiku-20240307-v1:0")
-    model_id = model_arn.split("/").last
+    Rails.logger.info("Retrieval completed: #{retrieval_response.retrieval_results.length} results")
     
-    # Extract tokens from response - prioritize actual usage data from response
-    input_tokens = nil
-    output_tokens = nil
-    
-    # Try to get actual token usage from response if available
-    if response.respond_to?(:usage) && response.usage
-      input_tokens = response.usage.input_tokens if response.usage.respond_to?(:input_tokens) && response.usage.input_tokens
-      output_tokens = response.usage.output_tokens if response.usage.respond_to?(:output_tokens) && response.usage.output_tokens
+    # Step 2: Process retrieval results to extract chunk, similarity_score, file_name, rank
+    sources_with_scores = retrieval_response.retrieval_results.map do |result|
+      s3_uri = result.location.s3_location.uri
+      file_name = File.basename(s3_uri)
+      
+      {
+        file_name: file_name,
+        chunk: result.content.text,
+        similarity_score: result.score
+      }
+    end.sort_by { |source| -source[:similarity_score] }.map.with_index do |source, index|
+      source[:rank] = index + 1
+      source
     end
     
-    # Fallback to estimation if usage data not available
-    input_tokens ||= estimate_tokens(question)
-    output_text = response.output&.text || ""
-    output_tokens ||= estimate_tokens(output_text)
+    # Step 3: Build context from chunks
+    context = sources_with_scores.map { |source| source[:chunk] }.join("\n\n")
+    
+    # Step 4: Generate response using LLM
+    model_id = model_arn.split("/").last
+    prompt = build_rag_prompt(question, context)
+    
+    bedrock_runtime_client = Aws::BedrockRuntime::Client.new(build_aws_client_options)
+    llm_response = bedrock_runtime_client.invoke_model({
+      model_id: model_id,
+      content_type: "application/json",
+      body: {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": [{ "role": "user", "content": prompt }]
+      }.to_json
+    })
+    
+    llm_result = JSON.parse(llm_response.body.read)
+    output_text = llm_result.dig("content", 0, "text") || llm_result.to_s
+    
+    latency_ms = ((Time.current - start_time) * 1000).to_i
+    
+    Rails.logger.info("LLM response generated successfully")
+    
+    # Extract tokens - estimate from input and output
+    input_tokens = estimate_tokens(question + context)
+    output_tokens = estimate_tokens(output_text)
     
     # Save query to database for metrics tracking
     begin
@@ -97,98 +124,26 @@ class BedrockRagService
       # Don't fail the request if tracking fails
     end
     
-    # Log citations for debugging - first inspect the structure
-    if response.citations && response.citations.any?
-      Rails.logger.info("Found #{response.citations.length} citation(s):")
-      
-      # Inspect first citation structure for debugging
-      first_citation = response.citations.first
-      Rails.logger.debug("First citation structure: #{first_citation.inspect}")
-      
-      response.citations.each_with_index do |citation, index|
-        if citation.retrieved_references && citation.retrieved_references.any?
-          citation.retrieved_references.each_with_index do |ref, ref_index|
-            # Inspect location structure
-            location = ref.location
-            Rails.logger.debug("  Citation #{index + 1}, Reference #{ref_index + 1} location: #{location.inspect}")
-            
-            # Try different ways to access the URI/S3 location
-            file_uri = nil
-            file_name = 'Unnamed document'
-            
-            if location.respond_to?(:s3_location)
-              s3_loc = location.s3_location
-              if s3_loc
-                file_uri = s3_loc.uri if s3_loc.respond_to?(:uri)
-                file_name = file_uri&.split('/')&.last || s3_loc.to_s
-              end
-            elsif location.respond_to?(:uri)
-              file_uri = location.uri
-              file_name = file_uri.split('/').last
-            elsif location.is_a?(Hash)
-              file_uri = location[:uri] || location['uri'] || location[:s3_location]&.dig(:uri) || location['s3_location']&.dig('uri')
-              file_name = file_uri&.split('/')&.last || 'Document'
-            else
-              # Fallback: use location as string representation
-              file_name = location.to_s
-            end
-            
-            Rails.logger.info("  Citation #{index + 1}, Reference #{ref_index + 1}: #{file_name} (URI: #{file_uri || 'N/A'})")
-          end
-        end
-      end
-    else
-      Rails.logger.warn("No citations found in response")
+    # Log citations for debugging
+    Rails.logger.info("Found #{sources_with_scores.length} citation(s):")
+    sources_with_scores.each do |source|
+      Rails.logger.info("  Citation #{source[:rank]}: #{source[:file_name]} (score: #{source[:similarity_score]})")
     end
 
-    # Format citations for easier display
-    formatted_citations = []
-    if response.citations && response.citations.any?
-      response.citations.each do |citation|
-        if citation.retrieved_references && citation.retrieved_references.any?
-          citation.retrieved_references.each do |ref|
-            location = ref.location
-            file_uri = nil
-            file_name = 'Unnamed document'
-            
-            # Access URI based on actual structure
-            if location.respond_to?(:s3_location)
-              s3_loc = location.s3_location
-              if s3_loc && s3_loc.respond_to?(:uri)
-                file_uri = s3_loc.uri
-                file_name = file_uri.split('/').last
-              end
-            elsif location.respond_to?(:uri)
-              file_uri = location.uri
-              file_name = file_uri.split('/').last
-            elsif location.is_a?(Hash)
-              file_uri = location[:uri] || location['uri'] || location[:s3_location]&.dig(:uri) || location['s3_location']&.dig('uri')
-              file_name = file_uri&.split('/')&.last || 'Document'
-            else
-              file_name = location.to_s
-            end
-            
-            # Safely extract content text, handling potential errors
-            content_text = begin
-              ref.content&.text&.truncate(200) if ref.content&.text
-            rescue
-              nil
-            end
-            
-            formatted_citations << {
-              file_name: file_name,
-              uri: file_uri,
-              content: content_text # First 200 characters of content
-            }
-          end
-        end
-      end
+    # Format citations with new structure
+    formatted_citations = sources_with_scores.map do |source|
+      {
+        file_name: source[:file_name],
+        chunk: source[:chunk],
+        similarity_score: source[:similarity_score],
+        rank: source[:rank]
+      }
     end
 
     {
-      answer: response.output.text,
+      answer: output_text,
       citations: formatted_citations,
-      session_id: response.session_id
+      session_id: nil  # retrieve API doesn't return session_id
     }
   rescue => e
     Rails.logger.error("Bedrock RAG error: #{e.message}")
@@ -197,6 +152,22 @@ class BedrockRagService
   end
 
   private
+
+  def build_rag_prompt(question, context)
+    """
+    Contexto de documentos relevantes:
+    #{context}
+    
+    Pregunta del usuario: #{question}
+    
+    Instrucciones:
+    - Responde basándote únicamente en el contexto proporcionado
+    - Si no encuentras información relevante, indica que no tienes suficiente información
+    - Sé preciso y conciso
+    
+    Respuesta:
+    """
+  end
 
   def estimate_tokens(text)
     return 0 if text.nil? || text.empty?

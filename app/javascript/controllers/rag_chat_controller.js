@@ -60,15 +60,29 @@ export default class extends Controller {
         
         // Show citations with details if available
         if (data.citations && data.citations.length > 0) {
-          let citationsHtml = `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.1);">`
-          citationsHtml += `<div style="font-weight: 600; margin-bottom: 0.5rem;">📚 ${data.citations.length} document(s) consulted:</div>`
+          let citationsHtml = `<div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(0,0,0,0.1);">`
+          citationsHtml += `<div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.875rem; color: #4b5563;">📚 ${data.citations.length} document(s) consulted:</div>`
           
-          data.citations.forEach((citation, index) => {
-            citationsHtml += `<div style="margin-bottom: 0.25rem; font-size: 0.875rem; opacity: 0.9;">`
-            citationsHtml += `  ${index + 1}. <strong>${citation.file_name || 'Document'}</strong>`
-            if (citation.uri) {
-              citationsHtml += ` <span style="opacity: 0.7;">(${citation.uri.split('/').pop()})</span>`
+          data.citations.forEach((citation) => {
+            const rank = citation.rank || 0
+            const fileName = citation.file_name || 'Document'
+            const similarityScore = citation.similarity_score ? (citation.similarity_score * 100).toFixed(1) : 'N/A'
+            const chunk = citation.chunk || ''
+            
+            citationsHtml += `<div style="margin-bottom: 1rem; padding: 0.75rem; background: #f9fafb; border-radius: 0.5rem; border-left: 3px solid #2563eb;">`
+            citationsHtml += `  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">`
+            citationsHtml += `    <span style="font-weight: 700; color: #2563eb; font-size: 0.875rem;">#${rank}</span>`
+            citationsHtml += `    <strong style="font-size: 0.875rem; color: #1f2937;">${fileName}</strong>`
+            citationsHtml += `    <span style="font-size: 0.75rem; color: #6b7280; background: #e5e7eb; padding: 0.125rem 0.5rem; border-radius: 0.25rem;">${similarityScore}% match</span>`
+            citationsHtml += `  </div>`
+            
+            if (chunk) {
+              const truncatedChunk = chunk.length > 300 ? chunk.substring(0, 300) + '...' : chunk
+              citationsHtml += `  <div style="font-size: 0.8125rem; color: #4b5563; line-height: 1.5; font-style: italic; padding: 0.5rem; background: white; border-radius: 0.25rem; border: 1px solid #e5e7eb;">`
+              citationsHtml += `    "${truncatedChunk}"`
+              citationsHtml += `  </div>`
             }
+            
             citationsHtml += `</div>`
           })
           

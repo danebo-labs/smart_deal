@@ -1,5 +1,6 @@
 require "test_helper"
 require "ostruct"
+require "aws-sdk-bedrockruntime"
 
 class BedrockRagServiceTest < ActiveSupport::TestCase
   # Disable parallelization for this test class because it manipulates
@@ -25,76 +26,109 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   # Fake AWS BedrockAgentRuntime Client
   class FakeBedrockAgentRuntimeClient
-    attr_accessor :retrieve_and_generate_response, :should_raise_error, :error_message
+    attr_accessor :retrieve_response, :should_raise_error, :error_message
 
     def initialize(*)
-      @retrieve_and_generate_response = nil
+      @retrieve_response = nil
       @should_raise_error = false
       @error_message = nil
     end
 
-    def retrieve_and_generate(params)
+    def retrieve(params)
       raise StandardError.new(@error_message || "AWS Error") if @should_raise_error
-      @retrieve_and_generate_response || default_response
+      @retrieve_response || default_retrieve_response
     end
 
     private
 
-    def default_response
-      # Create a mock response object that mimics AWS SDK response structure
+    def default_retrieve_response
+      # Create a mock retrieve response with retrieval_results
       ::OpenStruct.new(
-        output: ::OpenStruct.new(
-          text: "This is a test answer about AWS S3."
-        ),
-        citations: [
+        retrieval_results: [
           ::OpenStruct.new(
-            retrieved_references: [
-              ::OpenStruct.new(
-                location: ::OpenStruct.new(
-                  s3_location: ::OpenStruct.new(
-                    uri: "s3://bucket/documents/AWS-Certified-Solutions-Architect-v4.pdf"
-                  )
-                ),
-                content: ::OpenStruct.new(
-                  text: "Amazon S3 is a storage service that provides object storage..."
-                )
+            content: ::OpenStruct.new(
+              text: "Amazon S3 is a storage service that provides object storage..."
+            ),
+            location: ::OpenStruct.new(
+              s3_location: ::OpenStruct.new(
+                uri: "s3://bucket/documents/AWS-Certified-Solutions-Architect-v4.pdf"
               )
-            ]
+            ),
+            score: 0.85,
+            metadata: {}
           )
-        ],
-        session_id: TEST_SESSION_ID,
-        usage: ::OpenStruct.new(
-          input_tokens: 50,
-          output_tokens: 100
-        )
+        ]
       )
     end
   end
 
-  # Helper method to stub AWS BedrockAgentRuntime client
-  def with_mock_bedrock_client(mock_response: nil, should_raise: false, error_message: nil)
-    fake_client = FakeBedrockAgentRuntimeClient.new
+  # Fake AWS BedrockRuntime Client for LLM invocation
+  class FakeBedrockRuntimeClient
+    attr_accessor :invoke_model_response, :should_raise_error, :error_message
+
+    def initialize(*)
+      @invoke_model_response = nil
+      @should_raise_error = false
+      @error_message = nil
+    end
+
+    def invoke_model(params)
+      raise StandardError.new(@error_message || "AWS Error") if @should_raise_error
+      @invoke_model_response || default_invoke_model_response
+    end
+
+    private
+
+    def default_invoke_model_response
+      # Create a mock LLM response
+      response_body = {
+        "content" => [
+          {
+            "text" => "This is a test answer about AWS S3."
+          }
+        ]
+      }.to_json
+      
+      ::OpenStruct.new(
+        body: ::OpenStruct.new(read: response_body)
+      )
+    end
+  end
+
+  # Helper method to stub AWS BedrockAgentRuntime and BedrockRuntime clients
+  def with_mock_bedrock_client(mock_retrieve_response: nil, mock_llm_response: nil, should_raise: false, error_message: nil)
+    fake_agent_client = FakeBedrockAgentRuntimeClient.new
+    fake_runtime_client = FakeBedrockRuntimeClient.new
     
-    if mock_response
-      fake_client.retrieve_and_generate_response = mock_response
+    if mock_retrieve_response
+      fake_agent_client.retrieve_response = mock_retrieve_response
+    end
+    
+    if mock_llm_response
+      fake_runtime_client.invoke_model_response = mock_llm_response
     end
     
     if should_raise
-      fake_client.should_raise_error = true
-      fake_client.error_message = error_message
+      fake_agent_client.should_raise_error = true
+      fake_agent_client.error_message = error_message
     end
     
-    # Save original .new method
-    original_new = Aws::BedrockAgentRuntime::Client.method(:new)
+    # Save original .new methods
+    original_agent_new = Aws::BedrockAgentRuntime::Client.method(:new)
+    original_runtime_new = Aws::BedrockRuntime::Client.method(:new)
     
-    # Stub the .new method to return our fake client
-    Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args| fake_client }
+    # Stub the .new methods to return our fake clients
+    Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args| fake_agent_client }
+    Aws::BedrockRuntime::Client.define_singleton_method(:new) { |*args| fake_runtime_client }
     
-    yield fake_client
+    yield fake_agent_client
   ensure
-    # Restore original method
-    if original_new
-      Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    # Restore original methods
+    if original_agent_new
+      Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args| original_agent_new.call(*args) }
+    end
+    if original_runtime_new
+      Aws::BedrockRuntime::Client.define_singleton_method(:new) { |*args| original_runtime_new.call(*args) }
     end
   end
 
@@ -126,14 +160,15 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       result = service.query("What is S3?")
 
       assert_equal "This is a test answer about AWS S3.", result[:answer]
-      assert_equal TEST_SESSION_ID, result[:session_id]
+      assert_nil result[:session_id]  # retrieve API doesn't return session_id
       assert result[:citations].is_a?(Array)
       assert_equal 1, result[:citations].length
       
       citation = result[:citations].first
       assert_equal "AWS-Certified-Solutions-Architect-v4.pdf", citation[:file_name]
-      assert_equal "s3://bucket/documents/AWS-Certified-Solutions-Architect-v4.pdf", citation[:uri]
-      assert_not_nil citation[:content], "Citation content should not be nil"
+      assert_equal "Amazon S3 is a storage service that provides object storage...", citation[:chunk]
+      assert_equal 0.85, citation[:similarity_score]
+      assert_equal 1, citation[:rank]
     end
   end
 
@@ -147,8 +182,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       
       query = BedrockQuery.last
       assert_equal "anthropic.claude-3-haiku-20240307-v1:0", query.model_id
-      assert_equal 50, query.input_tokens
-      assert_equal 100, query.output_tokens
+      # Tokens are now estimated, so just verify they're positive numbers
+      assert query.input_tokens > 0, "input_tokens should be > 0"
+      assert query.output_tokens > 0, "output_tokens should be > 0"
       assert_equal "What is S3?", query.user_query
       assert_kind_of Numeric, query.latency_ms, "latency_ms should be a number"
       assert query.latency_ms >= 0, "latency_ms should be >= 0, got #{query.latency_ms}"
@@ -156,32 +192,38 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test "query handles response without citations" do
-    response_without_citations = ::OpenStruct.new(
-      output: ::OpenStruct.new(text: "Answer without citations"),
-      citations: [],
-      session_id: "test-session-456",
-      usage: ::OpenStruct.new(input_tokens: 30, output_tokens: 50)
+    retrieve_response_without_results = ::OpenStruct.new(
+      retrieval_results: []
+    )
+    
+    llm_response = ::OpenStruct.new(
+      body: ::OpenStruct.new(
+        read: { "content" => [{ "text" => "Answer without citations" }] }.to_json
+      )
     )
 
-    with_mock_bedrock_client(mock_response: response_without_citations) do
+    with_mock_bedrock_client(mock_retrieve_response: retrieve_response_without_results, mock_llm_response: llm_response) do
       service = BedrockRagService.new
       result = service.query("Test question")
 
       assert_equal "Answer without citations", result[:answer]
       assert_equal [], result[:citations]
-      assert_equal "test-session-456", result[:session_id]
+      assert_nil result[:session_id]
     end
   end
 
   test "query handles response without usage data and estimates tokens" do
-    response_without_usage = ::OpenStruct.new(
-      output: ::OpenStruct.new(text: "This is a longer answer that should generate some tokens for estimation purposes."),
-      citations: [],
-      session_id: "test-session-789"
-      # No usage field
+    retrieve_response = ::OpenStruct.new(
+      retrieval_results: []
+    )
+    
+    llm_response = ::OpenStruct.new(
+      body: ::OpenStruct.new(
+        read: { "content" => [{ "text" => "This is a longer answer that should generate some tokens for estimation purposes." }] }.to_json
+      )
     )
 
-    with_mock_bedrock_client(mock_response: response_without_usage) do
+    with_mock_bedrock_client(mock_retrieve_response: retrieve_response, mock_llm_response: llm_response) do
       service = BedrockRagService.new
       question = "What is AWS?"
       
@@ -222,63 +264,71 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test "query formats citations with different location structures" do
-    # Test citation with direct URI (not s3_location)
-    citation_with_uri = ::OpenStruct.new(
-      retrieved_references: [
+    # Test citation with s3_location structure
+    retrieve_response = ::OpenStruct.new(
+      retrieval_results: [
         ::OpenStruct.new(
+          content: ::OpenStruct.new(text: "Content from document"),
           location: ::OpenStruct.new(
-            uri: "s3://bucket/direct-uri-document.pdf"
+            s3_location: ::OpenStruct.new(
+              uri: "s3://bucket/direct-uri-document.pdf"
+            )
           ),
-          content: ::OpenStruct.new(text: "Content from direct URI")
+          score: 0.75,
+          metadata: {}
         )
       ]
     )
-
-    response_with_uri = ::OpenStruct.new(
-      output: ::OpenStruct.new(text: "Answer with URI citation"),
-      citations: [citation_with_uri],
-      session_id: "test-session-uri",
-      usage: ::OpenStruct.new(input_tokens: 40, output_tokens: 80)
+    
+    llm_response = ::OpenStruct.new(
+      body: ::OpenStruct.new(
+        read: { "content" => [{ "text" => "Answer with URI citation" }] }.to_json
+      )
     )
 
-    with_mock_bedrock_client(mock_response: response_with_uri) do
+    with_mock_bedrock_client(mock_retrieve_response: retrieve_response, mock_llm_response: llm_response) do
       service = BedrockRagService.new
       result = service.query("Test question")
 
       assert_equal 1, result[:citations].length
       citation = result[:citations].first
       assert_equal "direct-uri-document.pdf", citation[:file_name]
-      assert_equal "s3://bucket/direct-uri-document.pdf", citation[:uri]
+      assert_equal "Content from document", citation[:chunk]
+      assert_equal 0.75, citation[:similarity_score]
+      assert_equal 1, citation[:rank]
     end
   end
 
-  test "query truncates citation content to 200 characters" do
+  test "query returns full chunk text without truncation" do
     long_content = "A" * 300 # 300 characters
     
-    citation_with_long_content = ::OpenStruct.new(
-      retrieved_references: [
+    retrieve_response = ::OpenStruct.new(
+      retrieval_results: [
         ::OpenStruct.new(
+          content: ::OpenStruct.new(text: long_content),
           location: ::OpenStruct.new(
             s3_location: ::OpenStruct.new(uri: "s3://bucket/long-doc.pdf")
           ),
-          content: ::OpenStruct.new(text: long_content)
+          score: 0.80,
+          metadata: {}
         )
       ]
     )
-
-    response_with_long_content = ::OpenStruct.new(
-      output: ::OpenStruct.new(text: "Answer"),
-      citations: [citation_with_long_content],
-      session_id: "test-session",
-      usage: ::OpenStruct.new(input_tokens: 30, output_tokens: 60)
+    
+    llm_response = ::OpenStruct.new(
+      body: ::OpenStruct.new(
+        read: { "content" => [{ "text" => "Answer" }] }.to_json
+      )
     )
 
-    with_mock_bedrock_client(mock_response: response_with_long_content) do
+    with_mock_bedrock_client(mock_retrieve_response: retrieve_response, mock_llm_response: llm_response) do
       service = BedrockRagService.new
       result = service.query("Test question")
 
       citation = result[:citations].first
-      assert citation[:content].length <= 200
+      # Chunk should not be truncated in the service (truncation happens in UI)
+      assert_equal 300, citation[:chunk].length
+      assert_equal long_content, citation[:chunk]
     end
   end
 
@@ -310,29 +360,27 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test "query handles citation content extraction errors gracefully" do
-    # Citation with content that raises error when accessing .text
-    citation_with_error = ::OpenStruct.new(
-      retrieved_references: [
+    # Citation with nil content text
+    retrieve_response = ::OpenStruct.new(
+      retrieval_results: [
         ::OpenStruct.new(
+          content: ::OpenStruct.new(text: nil),
           location: ::OpenStruct.new(
             s3_location: ::OpenStruct.new(uri: "s3://bucket/error-doc.pdf")
           ),
-          content: ::OpenStruct.new(
-            # Simulate error when accessing text
-            text: nil
-          )
+          score: 0.70,
+          metadata: {}
         )
       ]
     )
-
-    response_with_error = ::OpenStruct.new(
-      output: ::OpenStruct.new(text: "Answer"),
-      citations: [citation_with_error],
-      session_id: "test-session",
-      usage: ::OpenStruct.new(input_tokens: 30, output_tokens: 60)
+    
+    llm_response = ::OpenStruct.new(
+      body: ::OpenStruct.new(
+        read: { "content" => [{ "text" => "Answer" }] }.to_json
+      )
     )
 
-    with_mock_bedrock_client(mock_response: response_with_error) do
+    with_mock_bedrock_client(mock_retrieve_response: retrieve_response, mock_llm_response: llm_response) do
       service = BedrockRagService.new
       
       # Should not raise error, just handle gracefully
@@ -340,7 +388,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       
       assert_equal 1, result[:citations].length
       citation = result[:citations].first
-      assert_nil citation[:content]
+      assert_nil citation[:chunk]
+      assert_equal "error-doc.pdf", citation[:file_name]
     end
   end
 end

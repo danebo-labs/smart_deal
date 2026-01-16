@@ -17,7 +17,7 @@ class RagController < ApplicationController
     begin
       rag_service = BedrockRagService.new
       
-      # Use the simpler retrieve_and_generate method for direct RAG
+      # Query using retrieve + explicit LLM call for detailed citations
       result = rag_service.query(question)
       
       render json: {

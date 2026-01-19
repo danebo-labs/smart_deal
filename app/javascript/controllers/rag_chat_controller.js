@@ -58,35 +58,34 @@ export default class extends Controller {
         // Add assistant response
         this.addMessage(data.answer, "assistant")
         
-        // Show citations with details if available
+        // Show citations with details if available (minimalist design)
         if (data.citations && data.citations.length > 0) {
-          let citationsHtml = `<div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(0,0,0,0.1);">`
-          citationsHtml += `<div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.875rem; color: #4b5563;">📚 ${data.citations.length} document(s) consulted:</div>`
+          const citationCount = data.citations.length
+          const citationText = citationCount === 1 ? 'fuente consultada' : 'fuentes consultadas'
+          
+          let citationsHtml = `<div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(0,0,0,0.08); width: 100%; text-align: left;">`
+          citationsHtml += `<p style="font-size: 0.75rem; color: rgba(107, 114, 128, 0.7); margin: 0 0 0.5rem 0; font-weight: 400; text-align: left;">${citationCount} ${citationText}</p>`
+          citationsHtml += `<ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; width: 100%; text-align: left;">`
           
           data.citations.forEach((citation) => {
-            const rank = citation.rank || 0
             const fileName = citation.file_name || 'Document'
-            const similarityScore = citation.similarity_score ? (citation.similarity_score * 100).toFixed(1) : 'N/A'
             const chunk = citation.chunk || ''
+            const similarityScore = citation.similarity_score 
+              ? Math.round(citation.similarity_score * 100) 
+              : 'N/A'
             
-            citationsHtml += `<div style="margin-bottom: 1rem; padding: 0.75rem; background: #f9fafb; border-radius: 0.5rem; border-left: 3px solid #2563eb;">`
-            citationsHtml += `  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">`
-            citationsHtml += `    <span style="font-weight: 700; color: #2563eb; font-size: 0.875rem;">#${rank}</span>`
-            citationsHtml += `    <strong style="font-size: 0.875rem; color: #1f2937;">${fileName}</strong>`
-            citationsHtml += `    <span style="font-size: 0.75rem; color: #6b7280; background: #e5e7eb; padding: 0.125rem 0.5rem; border-radius: 0.25rem;">${similarityScore}% match</span>`
-            citationsHtml += `  </div>`
+            const titleAttr = `title="${fileName}"`
             
-            if (chunk) {
-              const truncatedChunk = chunk.length > 300 ? chunk.substring(0, 300) + '...' : chunk
-              citationsHtml += `  <div style="font-size: 0.8125rem; color: #4b5563; line-height: 1.5; font-style: italic; padding: 0.5rem; background: white; border-radius: 0.25rem; border: 1px solid #e5e7eb;">`
-              citationsHtml += `    "${truncatedChunk}"`
-              citationsHtml += `  </div>`
-            }
-            
-            citationsHtml += `</div>`
+            // Minimalist citation: chunk on first line (truncated by CSS to fit width), score on second line
+            citationsHtml += `<li style="font-size: 0.75rem; color: rgba(107, 114, 128, 0.6); display: flex; flex-direction: column; gap: 0.125rem; line-height: 1.5; width: 100%; text-align: left; align-items: flex-start;">`
+            // First line: chunk text (truncated by CSS ellipsis to fit available width, with tooltip showing file_name)
+            citationsHtml += `  <span style="color: rgba(107, 114, 128, 0.6); cursor: help; transition: color 0.15s ease; display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;" ${titleAttr} onmouseover="this.style.color='rgba(107, 114, 128, 0.8)'" onmouseout="this.style.color='rgba(107, 114, 128, 0.6)'">${chunk}</span>`
+            // Second line: score
+            citationsHtml += `  <span style="font-size: 0.6875rem; color: rgba(107, 114, 128, 0.4); text-align: left;">score: ${similarityScore}%</span>`
+            citationsHtml += `</li>`
           })
           
-          citationsHtml += `</div>`
+          citationsHtml += `</ul></div>`
           
           // Add citations as a system message with HTML content
           this.addMessageWithHtml(citationsHtml, "system")

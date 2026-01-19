@@ -73,9 +73,12 @@ class BedrockRagService
       s3_uri = result.location.s3_location.uri
       file_name = File.basename(s3_uri)
       
+      # Extract chunk text for citations (no truncation - handled in UI with CSS)
+      chunk_text = result.content&.text
+      
       {
         file_name: file_name,
-        chunk: result.content&.text,
+        chunk: chunk_text,
         similarity_score: result.score.to_f
       }
     end.sort_by { |source| -source[:similarity_score] }.map.with_index do |source, index|
@@ -84,7 +87,11 @@ class BedrockRagService
     end
     
     # Step 3: Build context from chunks (only non-nil chunks)
-    context = sources_with_scores.filter_map { |source| source[:chunk] }.join("\n\n")
+    # Use full chunks for LLM context (truncation happens in UI with CSS)
+    full_chunks = retrieval_response.retrieval_results.filter_map do |result|
+      result.content&.text
+    end
+    context = full_chunks.join("\n\n")
     context = context[0, MAX_CONTEXT_CHARS] if context.length > MAX_CONTEXT_CHARS
     
     # Step 4: Generate response using LLM

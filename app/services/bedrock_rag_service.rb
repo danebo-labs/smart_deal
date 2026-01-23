@@ -6,9 +6,14 @@ require 'aws-sdk-bedrockagentruntime'
 require 'aws-sdk-core/static_token_provider'
 require 'json'
 require_relative 's3_documents_service'
+require_relative 'bedrock/citation_processor'
 
 class BedrockRagService
   include AwsClientInitializer
+
+  # Custom error classes
+  class MissingKnowledgeBaseError < StandardError; end
+  class BedrockServiceError < StandardError; end
 
   # Build complete optimized configuration for retrieve_and_generate API
   # This method constructs the config dynamically to include prompt templates
@@ -63,7 +68,7 @@ class BedrockRagService
         
         # Custom prompt template for generation
         prompt_template: {
-          text_prompt_template: self.class.build_generation_prompt_template
+          text_prompt_template: self.class.load_generation_prompt_template
         },
         
         # Additional model request fields (model-specific parameters)
@@ -103,7 +108,7 @@ class BedrockRagService
         
         # Custom prompt template for orchestration
         prompt_template: {
-          text_prompt_template: self.class.build_orchestration_prompt_template
+          text_prompt_template: self.class.load_orchestration_prompt_template
         },
         
         # Additional model request fields for orchestration
@@ -123,6 +128,7 @@ class BedrockRagService
     @client = Aws::BedrockAgentRuntime::Client.new(client_options)
     @knowledge_base_id = Rails.application.credentials.dig(:bedrock, :knowledge_base_id) ||
                          ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil)
+    @citation_processor = Bedrock::CitationProcessor.new
 
     # Use Claude 3 Haiku by default for cost optimization (12x cheaper than Sonnet)
     # Alternative: Can use Claude 3 Sonnet, Opus, or other models that support foundation-model ARN
@@ -148,7 +154,7 @@ class BedrockRagService
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
-      raise error_msg
+      raise MissingKnowledgeBaseError, error_msg
     end
 
     Rails.logger.info("Querying Knowledge Base with: #{question}")
@@ -183,22 +189,22 @@ class BedrockRagService
 
       # Process response
       answer_text = response.output.text
-      citations = extract_citations(response.citations)
+      citations = @citation_processor.extract_citations(response.citations)
       session_id = response.session_id
 
       # Get S3 documents list to map citations to document numbers in Data Source
       s3_documents = S3DocumentsService.new.list_documents
       
       # Build mapping from Bedrock citation numbers to Data Source numbers
-      citation_to_datasource_map = build_citation_mapping(citations, s3_documents)
+      citation_to_datasource_map = @citation_processor.build_citation_mapping(citations, s3_documents)
       
       # Replace Bedrock citation numbers [1], [2] with Data Source numbers in answer text
-      answer_text = replace_citation_numbers(answer_text, citation_to_datasource_map)
+      answer_text = @citation_processor.replace_citation_numbers(answer_text, citation_to_datasource_map)
       
       # If answer doesn't contain citations but we have citations from Bedrock,
       # add them automatically at the end of sentences/phrases
       if citations.any? && !answer_text.match(/\[\d+\]/)
-        answer_text = add_citations_to_answer(answer_text, citations, citation_to_datasource_map)
+        answer_text = @citation_processor.add_citations_to_answer(answer_text, citations, citation_to_datasource_map)
         Rails.logger.info("Added citations automatically to answer text")
       end
 
@@ -230,11 +236,11 @@ class BedrockRagService
       end
 
       # Extract numbered citations from answer text and map to documents
-      numbered_references = build_numbered_references(citations, answer_text, s3_documents)
+      numbered_references = @citation_processor.build_numbered_references(citations, answer_text, s3_documents)
 
       Rails.logger.info("Found #{citations.length} citation(s)")
       numbered_references.each do |ref|
-        Rails.logger.info("  Citation #{ref[:number]}: #{ref[:title]} (#{ref[:filename]}) -> Data Source doc #{ref[:data_source_number]}")
+        Rails.logger.info("  Citation #{ref[:number]}: #{ref[:title]} (#{ref[:filename]}) -> Data Source doc #{ref[:number]}")
       end
 
       {
@@ -245,7 +251,7 @@ class BedrockRagService
     rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
       Rails.logger.error("Bedrock RAG error: #{e.message}")
       Rails.logger.error(e.backtrace.join("\n"))
-      raise "Failed to query Knowledge Base: #{e.message}"
+      raise BedrockServiceError, "Failed to query Knowledge Base: #{e.message}"
     end
   end
 
@@ -253,213 +259,12 @@ class BedrockRagService
 
   # ===== CUSTOM PROMPT TEMPLATES =====
   
-  def self.build_generation_prompt_template
-    """
-    You are an expert assistant in artificial intelligence and AI agents. Your task is to provide accurate, complete, and well-structured answers based on the provided context.
-
-    SPECIFIC INSTRUCTIONS:
-    1. Carefully analyze all the context provided in $search_results$
-    2. LANGUAGE REQUIREMENT - CRITICAL: You MUST respond in the EXACT SAME LANGUAGE as the user's question ($query$). If the question is in Spanish, you MUST respond entirely in Spanish. If the question is in English, you MUST respond entirely in English. Never mix languages. Always match the user's language exactly.
-    3. Respond in a clear, organized, and professional manner
-    4. Use bullets, numbering, or structure when appropriate
-    5. Include specific examples from the context when relevant
-    6. If information is not complete in the context, indicate it clearly
-    7. Maintain a professional but accessible tone
-    8. Prioritize accuracy over brevity
-    9. Include relevant technical details when appropriate
-    10. CRITICAL: You MUST include numbered citations in square brackets [1], [2], [3], etc. whenever you use information from the search results. Place citations immediately after the relevant information. You can use multiple citations like [1][2] if information comes from multiple sources. Number citations sequentially based on the order of sources in the search results (first source is [1], second is [2], etc.).
-
-    SEARCH CONTEXT:
-    $search_results$
-
-    USER QUESTION:
-    $query$
-
-    IMPORTANT: Respond in the same language as the question above. If the question is in Spanish, write your entire answer in Spanish. If the question is in English, write your entire answer in English.
-
-    DETAILED AND STRUCTURED ANSWER (remember to include numbered citations [1], [2], etc.):
-    """
+  def self.load_generation_prompt_template
+    Rails.root.join('app', 'prompts', 'bedrock', 'generation.txt').read
   end
 
-  def self.build_orchestration_prompt_template
-    """
-    Your task is to analyze the user's query and optimize it for effective search in the knowledge base about artificial intelligence and AI agents.
-
-    QUERY PROCESSING INSTRUCTIONS:
-    1. Identify key concepts in the query
-    2. Break down complex queries into more specific sub-queries
-    3. Identify synonyms and relevant related terms
-    4. Consider the context of AI and intelligent agents
-    5. Optimize for both semantic and keyword search
-
-    ORIGINAL QUERY: $query$
-
-    CONVERSATION HISTORY: $conversation_history$
-
-    FORMAT INSTRUCTIONS: $output_format_instructions$
-
-    OPTIMIZED QUERY FOR SEARCH:
-    """
-  end
-
-  # Extract citations from Bedrock response
-  def extract_citations(citations)
-    return [] unless citations
-
-    citations.flat_map do |citation|
-      citation.retrieved_references.map do |ref|
-        location = extract_location_info(ref.location)
-        {
-          content: ref.content&.text,
-          location: location,
-          metadata: ref.metadata || {}
-        }
-      end
-    end
-  end
-
-  # Extract location information from citation
-  def extract_location_info(location)
-    return nil unless location&.s3_location&.uri
-
-    uri = location.s3_location.uri
-    uri_parts = uri.split('/')
-    {
-      bucket: uri_parts[2],
-      key: uri_parts[3..-1].join('/'),
-      uri: uri,
-      type: 's3'
-    }
-  end
-
-  # Build mapping from Bedrock citation numbers to Data Source numbers
-  def build_citation_mapping(citations, s3_documents)
-    return {} if citations.empty? || s3_documents.empty?
-
-    # Build a map of S3 documents by filename for quick lookup
-    s3_doc_map = {}
-    s3_documents.each_with_index do |doc, index|
-      doc_name = doc[:name] || doc['name']
-      s3_doc_map[doc_name] = index + 1 if doc_name
-    end
-
-    # Map Bedrock citation index to Data Source number
-    mapping = {}
-    citations.each_with_index do |citation, index|
-      bedrock_num = index + 1
-      location = citation[:location]
-      metadata = citation[:metadata] || {}
-
-      # Extract filename from S3 URI
-      filename = if location && location[:key]
-                   File.basename(location[:key])
-                 elsif location && location[:uri]
-                   File.basename(location[:uri])
-                 else
-                   nil
-                 end
-
-      # Use title from metadata if available, otherwise use filename
-      title = metadata['title'] || metadata[:title] || filename
-
-      # Find matching document in Data Source by filename or title
-      data_source_num = s3_doc_map[filename] || s3_doc_map[title] || bedrock_num
-      mapping[bedrock_num] = data_source_num
-    end
-
-    mapping
-  end
-
-  # Replace Bedrock citation numbers with Data Source numbers in answer text
-  def replace_citation_numbers(answer_text, citation_map)
-    return answer_text if citation_map.empty?
-
-    # Replace all citation numbers [1], [2], [1][3] with Data Source numbers
-    answer_text.gsub(/\[(\d+)\]/) do |match|
-      bedrock_num = $1.to_i
-      data_source_num = citation_map[bedrock_num] || bedrock_num
-      "[#{data_source_num}]"
-    end
-  end
-
-  # Add citations to answer text if they're missing
-  # This adds [1], [2], etc. at the end of sentences when citations are available
-  def add_citations_to_answer(answer_text, citations, citation_map = {})
-    return answer_text if citations.empty?
-
-    # Split answer into sentences
-    sentences = answer_text.split(/([.!?]\s+)/)
-    result = []
-    citation_index = 0
-
-    sentences.each_with_index do |sentence, index|
-      result << sentence
-      
-      # Add citation after every 2-3 sentences, or at the end
-      if citation_index < citations.length && (index % 3 == 2 || index == sentences.length - 1)
-        bedrock_num = citation_index + 1
-        # Use Data Source number if mapping exists, otherwise use Bedrock number
-        citation_num = citation_map[bedrock_num] || bedrock_num
-        result << "[#{citation_num}]"
-        citation_index += 1
-      end
-    end
-
-    result.join
-  end
-
-  # Build numbered references by extracting citation numbers from answer text
-  # and mapping them to documents from Data Source
-  # Note: citation numbers in answer_text are now Data Source numbers (already replaced)
-  def build_numbered_references(citations, answer_text, s3_documents = [])
-    # Extract all citation numbers from answer text (e.g., [1], [2], [1][3])
-    # These are now Data Source numbers, not Bedrock numbers
-    citation_numbers = answer_text.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq.sort
-
-    # Build a map of S3 documents by filename for quick lookup
-    s3_doc_map = {}
-    s3_documents.each_with_index do |doc, index|
-      doc_name = doc[:name] || doc['name']
-      s3_doc_map[doc_name] = index + 1 if doc_name
-    end
-
-    # Build reverse map: Data Source number -> citation data
-    # We need to find which Bedrock citation corresponds to each Data Source number
-    references = {}
-    
-    citations.each_with_index do |citation, index|
-      location = citation[:location]
-      metadata = citation[:metadata] || {}
-
-      # Extract filename from S3 URI
-      filename = if location && location[:key]
-                   File.basename(location[:key])
-                 elsif location && location[:uri]
-                   File.basename(location[:uri])
-                 else
-                   'Document'
-                 end
-
-      # Use title from metadata if available, otherwise use filename
-      title = metadata['title'] || metadata[:title] || filename
-
-      # Find matching document in Data Source by filename
-      data_source_number = s3_doc_map[filename] || s3_doc_map[title]
-      
-      if data_source_number
-        references[data_source_number] = {
-          number: data_source_number, # Data Source number (used in answer text)
-          title: title,
-          filename: filename,
-          content: citation[:content],
-          location: location,
-          metadata: metadata
-        }
-      end
-    end
-
-    # Return references in order of appearance in answer text (by Data Source number)
-    citation_numbers.filter_map { |num| references[num] }.uniq
+  def self.load_orchestration_prompt_template
+    Rails.root.join('app', 'prompts', 'bedrock', 'orchestration.txt').read
   end
 
   def estimate_tokens(text)

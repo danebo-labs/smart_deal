@@ -1,0 +1,16 @@
+    Your task is to analyze the user's query and optimize it for effective search in the knowledge base about artificial intelligence and AI agents.
+
+    QUERY PROCESSING INSTRUCTIONS:
+    1. Identify key concepts in the query
+    2. Break down complex queries into more specific sub-queries
+    3. Identify synonyms and relevant related terms
+    4. Consider the context of AI and intelligent agents
+    5. Optimize for both semantic and keyword search
+
+    ORIGINAL QUERY: $query$
+
+    CONVERSATION HISTORY: $conversation_history$
+
+    FORMAT INSTRUCTIONS: $output_format_instructions$
+
+    OPTIMIZED QUERY FOR SEARCH:

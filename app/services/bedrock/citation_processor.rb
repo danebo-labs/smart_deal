@@ -54,11 +54,11 @@ class Bedrock::CitationProcessor
       # Extract filename from S3 URI
       filename = if location && location[:key]
                    File.basename(location[:key])
-                 elsif location && location[:uri]
+      elsif location && location[:uri]
                    File.basename(location[:uri])
-                 else
+      else
                    nil
-                 end
+      end
 
       # Use title from metadata if available, otherwise use filename
       title = metadata['title'] || metadata[:title] || filename
@@ -95,7 +95,7 @@ class Bedrock::CitationProcessor
 
     sentences.each_with_index do |sentence, index|
       result << sentence
-      
+
       # Add citation after every 2-3 sentences, or at the end
       if citation_index < citations.length && (index % 3 == 2 || index == sentences.length - 1)
         bedrock_num = citation_index + 1
@@ -127,7 +127,7 @@ class Bedrock::CitationProcessor
     # Build reverse map: Data Source number -> citation data
     # We need to find which Bedrock citation corresponds to each Data Source number
     references = {}
-    
+
     citations.each_with_index do |citation, index|
       location = citation[:location]
       metadata = citation[:metadata] || {}
@@ -135,18 +135,18 @@ class Bedrock::CitationProcessor
       # Extract filename from S3 URI
       filename = if location && location[:key]
                    File.basename(location[:key])
-                 elsif location && location[:uri]
+      elsif location && location[:uri]
                    File.basename(location[:uri])
-                 else
+      else
                    'Document'
-                 end
+      end
 
       # Use title from metadata if available, otherwise use filename
       title = metadata['title'] || metadata[:title] || filename
 
       # Find matching document in Data Source by filename
       data_source_number = s3_doc_map[filename] || s3_doc_map[title]
-      
+
       if data_source_number
         references[data_source_number] = {
           number: data_source_number, # Data Source number (used in answer text)

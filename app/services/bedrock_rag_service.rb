@@ -24,10 +24,10 @@ class BedrockRagService
         vector_search_configuration: {
           # Source chunks optimized
           number_of_results: 20,              # Was 5 by default
-          
+
           # Search type optimized
           override_search_type: "HYBRID",     # HYBRID vs SEMANTIC
-          
+
           # Reranking configuration
           # Note: The reranking will use the number_of_results from vector_search_configuration above
           reranking_configuration: {
@@ -38,7 +38,7 @@ class BedrockRagService
               }
             }
           }
-          
+
           # Metadata filtering (optional) - removed empty filter as API requires at least one filter type
           # To add filtering, uncomment and configure:
           # filter: {
@@ -53,7 +53,7 @@ class BedrockRagService
           # }
         }
       },
-      
+
       # ===== GENERATION CONFIGURATION =====
       generation_configuration: {
         # Optimized inference parameters
@@ -65,38 +65,38 @@ class BedrockRagService
             stop_sequences: []               # Stop sequences (empty, without "observation")
           }
         },
-        
+
         # Custom prompt template for generation
         prompt_template: {
           text_prompt_template: self.class.load_generation_prompt_template
         },
-        
+
         # Additional model request fields (model-specific parameters)
         additional_model_request_fields: {
           # Specific parameters for Claude
           # "top_k" => 250,
           # "anthropic_version" => "bedrock-2023-05-31"
         },
-        
+
         # Guardrails (optional)
         # guardrail_configuration: {
         #   guardrail_identifier: "your-guardrail-id",
         #   guardrail_version: "DRAFT"
         # },
-        
+
         # Performance configuration
         performance_config: {
           latency: "standard"  # "standard" | "optimized"
         }
       },
-      
+
       # ===== ORCHESTRATION CONFIGURATION =====
       orchestration_configuration: {
         # Query transformation (Query decomposition - Break down queries)
         query_transformation_configuration: {
           type: "QUERY_DECOMPOSITION"        # ENABLE break down queries
         },
-        
+
         # Inference config for orchestration
         inference_config: {
           text_inference_config: {
@@ -105,15 +105,15 @@ class BedrockRagService
             max_tokens: 2048
           }
         },
-        
+
         # Custom prompt template for orchestration
         prompt_template: {
           text_prompt_template: self.class.load_orchestration_prompt_template
         },
-        
+
         # Additional model request fields for orchestration
         additional_model_request_fields: {},
-        
+
         # Performance config for orchestration
         performance_config: {
           latency: "optimized"  # Faster for query processing
@@ -165,11 +165,11 @@ class BedrockRagService
       # Get region from client options
       client_options = build_aws_client_options
       region = client_options[:region] || 'us-east-1'
-      
+
       # Build complete optimized configuration and merge with custom config
       base_config = build_complete_optimized_config(region: region)
       config = deep_merge_configs(base_config, custom_config)
-      
+
       # Use retrieve_and_generate API - combines retrieval and generation in one call
       # Apply all optimized configuration (retrieval, generation, orchestration)
       response = @client.retrieve_and_generate({
@@ -194,13 +194,13 @@ class BedrockRagService
 
       # Get S3 documents list to map citations to document numbers in Data Source
       s3_documents = S3DocumentsService.new.list_documents
-      
+
       # Build mapping from Bedrock citation numbers to Data Source numbers
       citation_to_datasource_map = @citation_processor.build_citation_mapping(citations, s3_documents)
-      
+
       # Replace Bedrock citation numbers [1], [2] with Data Source numbers in answer text
       answer_text = @citation_processor.replace_citation_numbers(answer_text, citation_to_datasource_map)
-      
+
       # If answer doesn't contain citations but we have citations from Bedrock,
       # add them automatically at the end of sentences/phrases
       if citations.any? && !answer_text.match(/\[\d+\]/)
@@ -258,13 +258,13 @@ class BedrockRagService
   private
 
   # ===== CUSTOM PROMPT TEMPLATES =====
-  
+
   def self.load_generation_prompt_template
-    Rails.root.join('app', 'prompts', 'bedrock', 'generation.txt').read
+    Rails.root.join("app/prompts/bedrock/generation.txt").read
   end
 
   def self.load_orchestration_prompt_template
-    Rails.root.join('app', 'prompts', 'bedrock', 'orchestration.txt').read
+    Rails.root.join("app/prompts/bedrock/orchestration.txt").read
   end
 
   def estimate_tokens(text)
@@ -278,7 +278,7 @@ class BedrockRagService
   # Deep merge configurations (supports nested hashes)
   def deep_merge_configs(base_config, custom_config)
     return base_config if custom_config.empty?
-    
+
     base_config.merge(custom_config) do |key, old_val, new_val|
       if old_val.is_a?(Hash) && new_val.is_a?(Hash)
         deep_merge_configs(old_val, new_val)

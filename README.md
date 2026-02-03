@@ -1,27 +1,25 @@
 # Smart Deal
 
-API platform to automate contracts (sales, leases, services) with smart contracts integrated to payment gateways and legal compliance by country.
+Platform that enables interaction and communication through RAG (Retrieval-Augmented Generation) across different communication channels, facilitating contextualized access to information based on a knowledge base.
 
 ## Features
 
-- 🔐 User authentication with Devise
-- 📄 PDF document processing
-- 🤖 AI document analysis (AWS Bedrock, OpenAI, Anthropic)
-- 🎨 Modern interface with particle effects
-- ⚡ Hotwire (Turbo + Stimulus) for interactivity
-- 🔄 Flexible architecture to switch between AI providers
-- 💬 RAG chat with Knowledge Base integration
+- **User authentication** with Devise
+- **Document processing**
+- **AI document analysis – RAG** — AWS Bedrock, Knowledge Base, LLMs, embeddings, and prompt templates
+- **Hotwire** for DOM updates (Turbo and Stimulus)
+- **RAG chat with Knowledge Base integration** — LLMs, embeddings, prompt templates, and custom model configuration, optimized for inference and better results
 
 ## AI API Configuration
 
-The application supports multiple AI providers that can be switched with a single environment variable `AI_PROVIDER`.
+The application supports multiple AI providers, selectable via the `AI_PROVIDER` environment variable.
 
 ### Supported Providers
 
-- **AWS Bedrock** (default) - Claude 3.5 Haiku for summaries, Claude 3 Sonnet for RAG
-- **OpenAI** - GPT-4o-mini, GPT-4o, etc.
-- **Anthropic** - Direct integration (coming soon)
-- **GEIA** - Internal Globant service (coming soon)
+- **AWS Bedrock** (default) — Claude 3.5 Haiku for summaries, Claude 3 Sonnet for RAG
+- **OpenAI** — GPT-4o-mini, GPT-4o, etc.
+- **Anthropic** — Direct integration (coming soon)
+- **GEIA** — Internal Globant service (coming soon)
 
 ### AWS Bedrock Configuration (Recommended)
 
@@ -43,7 +41,7 @@ The application supports multiple AI providers that can be switched with a singl
      model_id: anthropic.claude-3-sonnet-20240229-v1:0
    ```
 
-3. Save the file
+3. Save the file.
 
 #### Option 2: Environment Variables
 
@@ -63,7 +61,7 @@ export AI_PROVIDER=bedrock
      api_key: your-openai-api-key
    ```
 
-2. Or environment variable:
+2. Or via environment variable:
    ```bash
    export OPENAI_API_KEY=your-api-key
    export AI_PROVIDER=openai
@@ -71,7 +69,7 @@ export AI_PROVIDER=bedrock
 
 ### Changing the Provider
 
-You only need to change the `AI_PROVIDER` environment variable:
+Set the `AI_PROVIDER` environment variable:
 
 ```bash
 export AI_PROVIDER=bedrock    # AWS Bedrock (default)
@@ -80,7 +78,7 @@ export AI_PROVIDER=anthropic  # Anthropic (coming soon)
 export AI_PROVIDER=geia       # GEIA (coming soon)
 ```
 
-**See detailed documentation**: [BEDROCK_SETUP.md](BEDROCK_SETUP.md)
+See [BEDROCK_SETUP.md](BEDROCK_SETUP.md) for detailed setup.
 
 ## Installation
 
@@ -89,34 +87,38 @@ export AI_PROVIDER=geia       # GEIA (coming soon)
    bundle install
    ```
 
-2. Set up the database:
+2. Configure the credentials master key (only on a new machine):
+   - If you have the project master key (from the original repo or another developer), create `config/master.key` with that key (single line, no spaces). This file is not committed to git.
+   - Or set the environment variable: `export RAILS_MASTER_KEY=your_key_here`
+   - Without this key, commands such as `rails db:create` will fail with `ActiveSupport::MessageEncryptor::InvalidMessage`.
+
+3. Set up the database:
    ```bash
    rails db:create
    rails db:migrate
    ```
 
-3. Configure the AI API key (see previous section)
+4. Configure the AI API (see AI API Configuration above).
 
-4. Start the server:
+5. Start the server:
    ```bash
    bin/dev
    ```
 
-5. Open your browser at `http://localhost:3000`
+6. Open http://localhost:3000 in your browser.
 
 ## Usage
 
-1. Register a new user or sign in
-2. Upload a PDF document
-3. The AI will analyze the document and automatically generate a summary
-4. Use the RAG chat to ask questions about documents indexed in the Knowledge Base
+1. Sign up or sign in.
+2. Upload a PDF document; the AI will analyze it and generate a summary.
+3. Use the RAG chat to ask questions about documents indexed in the Knowledge Base.
 
 ## Development
 
-- Ruby version: See `.ruby-version`
-- Rails version: 8.1.1
+- Ruby: see `.ruby-version`
+- Rails: 8.1.1
 - Database: SQLite3 (development)
 
 ## Architecture
 
-For detailed information about the application architecture, design decisions, and patterns used, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For architecture, design decisions, and patterns, see [ARCHITECTURE.md](ARCHITECTURE.md).

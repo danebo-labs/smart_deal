@@ -58,6 +58,8 @@ gem 'aws-sdk-s3', '>= 1.208.0'
 
 gem 'twilio-ruby'
 
+gem "appsignal"
+
 
 
 group :development, :test do

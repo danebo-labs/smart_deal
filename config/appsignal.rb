@@ -4,11 +4,11 @@
 Appsignal.configure do |config|
   config.activate_if_environment("development", "production")
   config.name = "Danebo.ia"
-  # The application's Push API key
-  # We recommend removing this line and setting this option with the
-  # APPSIGNAL_PUSH_API_KEY environment variable instead.
+
+  # Push API key from Rails credentials or APPSIGNAL_PUSH_API_KEY env var.
   # https://docs.appsignal.com/ruby/configuration/options.html#option-push_api_key
-  config.push_api_key = "c7212c24-0909-447e-81c1-1fb4726a6ce5"
+  config.push_api_key = Rails.application.credentials.dig(:appsignal, :push_api_key) ||
+                         ENV.fetch("APPSIGNAL_PUSH_API_KEY", nil)
 
   # Configure actions that should not be monitored by AppSignal.
   # For more information see our docs:

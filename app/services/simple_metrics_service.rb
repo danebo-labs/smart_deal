@@ -21,8 +21,8 @@ class SimpleMetricsService
 
     # Get configuration from Rails credentials or environment variables
     @knowledge_base_bucket = resolve_knowledge_base_bucket
-    @aurora_cluster_identifier = Rails.application.credentials.dig(:aws, :aurora_db_cluster_identifier) ||
-                                 ENV.fetch('AURORA_DB_CLUSTER_IDENTIFIER', nil)
+    @aurora_cluster_identifier = ENV.fetch('AURORA_DB_CLUSTER_IDENTIFIER', nil).presence ||
+                                 Rails.application.credentials.dig(:aws, :aurora_db_cluster_identifier)
   end
 
   # Update only database-based metrics (tokens, cost, queries) without calling CloudWatch
@@ -120,8 +120,8 @@ class SimpleMetricsService
 
   def get_aurora_acu_average
     cluster_id = @aurora_cluster_identifier ||
+                 ENV.fetch("AURORA_DB_CLUSTER_IDENTIFIER", nil).presence ||
                  Rails.application.credentials.dig(:aws, :aurora_db_cluster_identifier) ||
-                 ENV["AURORA_DB_CLUSTER_IDENTIFIER"] ||
                  (Rails.env.development? ? 'knowledgebasequickcreateaurora-407-auroradbcluster-bb0lvonokgdy' : nil)
 
     return 0.0 if cluster_id.blank?
@@ -279,9 +279,9 @@ class SimpleMetricsService
 
   def resolve_knowledge_base_bucket
     # Priority: ENV > Rails credentials > hardcoded (development only)
-    bucket = Rails.application.credentials.dig(:bedrock, :knowledge_base_s3_bucket) ||
-             Rails.application.credentials.dig(:aws, :knowledge_base_s3_bucket) ||
-             ENV['KNOWLEDGE_BASE_S3_BUCKET']
+    bucket = ENV['KNOWLEDGE_BASE_S3_BUCKET'].presence ||
+             Rails.application.credentials.dig(:bedrock, :knowledge_base_s3_bucket) ||
+             Rails.application.credentials.dig(:aws, :knowledge_base_s3_bucket)
 
     # Only allow hardcoded bucket in development
     if bucket.blank? && Rails.env.development?

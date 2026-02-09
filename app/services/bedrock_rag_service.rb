@@ -76,18 +76,13 @@ class BedrockRagService
           # Specific parameters for Claude
           # "top_k" => 250,
           # "anthropic_version" => "bedrock-2023-05-31"
-        },
+        }
 
         # Guardrails (optional)
         # guardrail_configuration: {
         #   guardrail_identifier: "your-guardrail-id",
         #   guardrail_version: "DRAFT"
-        # },
-
-        # Performance configuration
-        performance_config: {
-          latency: "standard"  # "standard" | "optimized"
-        }
+        # }
       },
 
       # ===== ORCHESTRATION CONFIGURATION =====
@@ -112,12 +107,7 @@ class BedrockRagService
         },
 
         # Additional model request fields for orchestration
-        additional_model_request_fields: {},
-
-        # Performance config for orchestration
-        performance_config: {
-          latency: "optimized"  # Faster for query processing
-        }
+        additional_model_request_fields: {}
       }
     }
   end
@@ -126,27 +116,25 @@ class BedrockRagService
     client_options = build_aws_client_options
     region = client_options[:region]
     @client = Aws::BedrockAgentRuntime::Client.new(client_options)
-    @knowledge_base_id = Rails.application.credentials.dig(:bedrock, :knowledge_base_id) ||
-                         ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil)
+    @knowledge_base_id = ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
+                         Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
     @citation_processor = Bedrock::CitationProcessor.new
 
     # Use Claude 3 Haiku by default for cost optimization (12x cheaper than Sonnet)
     # Alternative: Can use Claude 3 Sonnet, Opus, or other models that support foundation-model ARN
     # Set BEDROCK_MODEL_ID env var or configure in Rails credentials to override
-    default_model_id = ENV.fetch('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0')
-    model_id = Rails.application.credentials.dig(:bedrock, :model_id) || default_model_id
+    model_id = ENV.fetch('BEDROCK_MODEL_ID', nil).presence ||
+               Rails.application.credentials.dig(:bedrock, :model_id) ||
+               'anthropic.claude-3-haiku-20240307-v1:0'
 
-    # Remove 'us.' prefix if present (not needed for foundation-model ARN)
-    model_id = model_id.gsub(/^us\./, '') if model_id.start_with?('us.')
-
-    # Build foundation-model ARN for Knowledge Base
-    # Format: arn:aws:bedrock:{region}::foundation-model/{model_id}
-    # Example: arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0
-    @model_arn = "arn:aws:bedrock:#{region}::foundation-model/#{model_id}"
+    # Use the model ID directly as the model_arn.
+    # Newer models (e.g., us.anthropic.claude-3-5-haiku) require an inference profile ID,
+    # NOT a foundation-model ARN. The inference profile ID is the model_id itself.
+    @model_arn = model_id
 
     # Debug logging
     Rails.logger.info("BedrockRagService initialized - Knowledge Base ID: #{@knowledge_base_id.presence || 'NOT SET'}")
-    Rails.logger.info("BedrockRagService initialized - Model ARN: #{@model_arn}")
+    Rails.logger.info("BedrockRagService initialized - Model ID: #{@model_arn}")
   end
 
   # Query the Knowledge Base using RAG with retrieve_and_generate API

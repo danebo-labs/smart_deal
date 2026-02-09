@@ -22,15 +22,15 @@ module ModelNameHelper
     if last_query&.model_id
       last_query.model_id
     else
-      Rails.application.credentials.dig(:bedrock, :model_id) ||
-        ENV['BEDROCK_MODEL_ID'] ||
+      ENV['BEDROCK_MODEL_ID'].presence ||
+        Rails.application.credentials.dig(:bedrock, :model_id) ||
         'anthropic.claude-3-haiku-20240307-v1:0'
     end
   end
 
   def current_embedding_model_id
-    Rails.application.credentials.dig(:bedrock, :embedding_model_id) ||
-      ENV['BEDROCK_EMBEDDING_MODEL_ID'] ||
+    ENV['BEDROCK_EMBEDDING_MODEL_ID'].presence ||
+      Rails.application.credentials.dig(:bedrock, :embedding_model_id) ||
       'amazon.titan-embed-text-v1'
   end
 

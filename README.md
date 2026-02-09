@@ -1,4 +1,4 @@
-# Smart Deal
+# Danebo RAG
 
 Platform that enables interaction and communication through RAG (Retrieval-Augmented Generation) across different communication channels, facilitating contextualized access to information based on a knowledge base.
 
@@ -10,102 +10,55 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 - **Hotwire** for DOM updates (Turbo and Stimulus)
 - **RAG chat with Knowledge Base integration** — LLMs, embeddings, prompt templates, and custom model configuration, optimized for inference and better results
 
-## AI API Configuration
+## Setup
 
-The application supports multiple AI providers, selectable via the `AI_PROVIDER` environment variable.
+### Prerequisites
 
-### Supported Providers
+- Ruby (see `.ruby-version`)
+- Rails 8.1.2
+- SQLite3
 
-- **AWS Bedrock** (default) — Claude 3.5 Haiku for summaries, Claude 3 Sonnet for RAG
-- **OpenAI** — GPT-4o-mini, GPT-4o, etc.
-- **Anthropic** — Direct integration (coming soon)
-- **GEIA** — Internal Globant service (coming soon)
-
-### AWS Bedrock Configuration (Recommended)
-
-#### Option 1: Rails Credentials
-
-1. Run:
-   ```bash
-   bin/rails credentials:edit
-   ```
-
-2. Add:
-   ```yaml
-   aws:
-     access_key_id: YOUR_AWS_ACCESS_KEY_ID
-     secret_access_key: YOUR_AWS_SECRET_ACCESS_KEY
-     region: us-east-1
-   bedrock:
-     knowledge_base_id: YOUR_KNOWLEDGE_BASE_ID
-     model_id: anthropic.claude-3-sonnet-20240229-v1:0
-   ```
-
-3. Save the file.
-
-#### Option 2: Environment Variables
+### First-time installation
 
 ```bash
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-export AWS_REGION=us-east-1
-export BEDROCK_KNOWLEDGE_BASE_ID=your_knowledge_base_id
-export AI_PROVIDER=bedrock
+# 1. Clone the repo
+git clone git@github.com:danebo-labs/smart_deal.git && cd smart_deal
+
+# 2. Get the master key from a team member, then:
+echo 'THE_MASTER_KEY' > config/master.key
+
+# 3. Run setup (installs deps, creates .env, prepares DB)
+bin/setup --skip-server
+
+# 4. Open .env and fill in your AWS keys and other secrets
+#    (see .env.sample comments for guidance)
+
+# 5. Start the server
+bin/dev
 ```
 
-### OpenAI Configuration
+Open http://localhost:3000 in your browser.
 
-1. In Rails credentials:
-   ```yaml
-   openai:
-     api_key: your-openai-api-key
-   ```
+### Secrets management
 
-2. Or via environment variable:
-   ```bash
-   export OPENAI_API_KEY=your-api-key
-   export AI_PROVIDER=openai
-   ```
+ENV vars (`.env`) take priority in development. Rails encrypted credentials are the fallback (used in production where `.env` doesn't exist).
 
-### Changing the Provider
+| File | Purpose |
+|------|---------|
+| `.env` | Your local secrets — loaded automatically, never committed |
+| `.env.sample` | Template with all available variables and defaults |
+| `config/credentials.yml.enc` | Encrypted secrets for production |
+| `config/credentials.example.yml` | Template showing the credentials structure |
 
-Set the `AI_PROVIDER` environment variable:
+To edit encrypted credentials:
 
 ```bash
-export AI_PROVIDER=bedrock    # AWS Bedrock (default)
-export AI_PROVIDER=openai     # OpenAI
-export AI_PROVIDER=anthropic  # Anthropic (coming soon)
-export AI_PROVIDER=geia       # GEIA (coming soon)
+EDITOR="cursor --wait" bin/rails credentials:edit
 ```
 
-See [BEDROCK_SETUP.md](BEDROCK_SETUP.md) for detailed setup.
+> **Note:** `.env` and `config/master.key` are in `.gitignore`. Never commit them.
 
-## Installation
-
-1. Install dependencies:
-   ```bash
-   bundle install
-   ```
-
-2. Configure the credentials master key (only on a new machine):
-   - If you have the project master key (from the original repo or another developer), create `config/master.key` with that key (single line, no spaces). This file is not committed to git.
-   - Or set the environment variable: `export RAILS_MASTER_KEY=your_key_here`
-   - Without this key, commands such as `rails db:create` will fail with `ActiveSupport::MessageEncryptor::InvalidMessage`.
-
-3. Set up the database:
-   ```bash
-   rails db:create
-   rails db:migrate
-   ```
-
-4. Configure the AI API (see AI API Configuration above).
-
-5. Start the server:
-   ```bash
-   bin/dev
-   ```
-
-6. Open http://localhost:3000 in your browser.
+For detailed Bedrock configuration, see [BEDROCK_SETUP.md](BEDROCK_SETUP.md).
 
 ## Usage
 
@@ -119,7 +72,7 @@ This section describes how to enable and test the integration between the Rails 
 
 ### Overview
 
-The application is integrated with WhatsApp via Twilio. Incoming WhatsApp messages are received by a webhook and trigger the app’s RAG (Retrieval-Augmented Generation) flow, so users can query the knowledge base and get contextual answers through WhatsApp.
+The application is integrated with WhatsApp via Twilio. Incoming WhatsApp messages are received by a webhook and trigger the app's RAG (Retrieval-Augmented Generation) flow, so users can query the knowledge base and get contextual answers through WhatsApp.
 
 ### Prerequisites
 
@@ -154,7 +107,7 @@ The application is integrated with WhatsApp via Twilio. Incoming WhatsApp messag
 
    - Open the Twilio Console: [https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn](https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn)
    - Go to **Develop → Messaging → Send a WhatsApp message**
-   - In the **“When a message comes in”** section:
+   - In the **"When a message comes in"** section:
      - Paste your Ngrok public URL
      - Set the HTTP method to **POST**
      - Append the Rails webhook path so the full URL points to your app (e.g. `https://xxxxx.ngrok-free.dev/twilio/webhook`)
@@ -178,17 +131,13 @@ The application is integrated with WhatsApp via Twilio. Incoming WhatsApp messag
 
 ### Important Notes
 
-- **Webhook URL updates:** Every time you restart Ngrok, the public URL changes. You must update the “When a message comes in” URL in the Twilio Console with the new Ngrok URL.
-- **Development use:** This setup is intended for local development and testing. For production, use a stable public URL and follow Twilio’s production WhatsApp requirements.
-- **RAG flow:** Incoming WhatsApp messages hit the `/twilio/webhook` endpoint and trigger the application’s RAG flow, which queries the knowledge base and replies via WhatsApp.
+- **Webhook URL updates:** Every time you restart Ngrok, the public URL changes. You must update the "When a message comes in" URL in the Twilio Console with the new Ngrok URL.
+- **Development use:** This setup is intended for local development and testing. For production, use a stable public URL and follow Twilio's production WhatsApp requirements.
+- **RAG flow:** Incoming WhatsApp messages hit the `/twilio/webhook` endpoint and trigger the application's RAG flow, which queries the knowledge base and replies via WhatsApp.
 
 ## Development
 
-- Ruby: see `.ruby-version`
-- Rails: 8.1.1
-- Database: SQLite3 (development)
-
-Run `bin/setup` to install Git hooks. The pre-commit hook runs RuboCop with autocorrect on staged Ruby files; fixes are staged automatically, and the commit is blocked if unfixable offenses remain (use `git commit --no-verify` to skip).
+Run `bin/setup` to install dependencies, Git hooks, create `.env`, and prepare the database. The pre-commit hook runs RuboCop with autocorrect on staged Ruby files; fixes are staged automatically, and the commit is blocked if unfixable offenses remain (use `git commit --no-verify` to skip).
 
 ## Architecture
 

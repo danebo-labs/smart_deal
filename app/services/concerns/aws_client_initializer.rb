@@ -6,21 +6,26 @@ module AwsClientInitializer
 
   private
 
-  # Builds AWS client options with credentials from Rails credentials or ENV
-  # Supports both bearer token and access_key/secret_key authentication
+  # Builds AWS client options from ENV (loaded from .env in dev) or Rails credentials.
+  # ENV takes priority so .env "just works" in development.
+  # In production (no .env file), Rails encrypted credentials are used.
+  # Supports both bearer token and access_key/secret_key authentication.
   #
   # @param region [String, nil] AWS region (defaults to us-east-1)
   # @return [Hash] Options hash for AWS client initialization
   def build_aws_client_options(region: nil)
-    region ||= ENV.fetch('AWS_REGION', 'us-east-1')
+    region ||= ENV.fetch('AWS_REGION', nil).presence ||
+               Rails.application.credentials.dig(:aws, :region) ||
+               'us-east-1'
 
-    access_key_id = Rails.application.credentials.dig(:aws, :access_key_id) || ENV.fetch('AWS_ACCESS_KEY_ID', nil)
-    secret_access_key = Rails.application.credentials.dig(:aws,
-                                                          :secret_access_key) || ENV.fetch('AWS_SECRET_ACCESS_KEY', nil)
-    bearer_token = Rails.application.credentials.dig(:aws, :bedrock_bearer_token) ||
-                   Rails.application.credentials.dig(:aws, :bedrock_api_key) ||
-                   ENV['AWS_BEARER_TOKEN_BEDROCK'] ||
-                   ENV.fetch('AWS_BEDROCK_BEARER_TOKEN', nil)
+    access_key_id = ENV.fetch('AWS_ACCESS_KEY_ID', nil).presence ||
+                    Rails.application.credentials.dig(:aws, :access_key_id)
+    secret_access_key = ENV.fetch('AWS_SECRET_ACCESS_KEY', nil).presence ||
+                        Rails.application.credentials.dig(:aws, :secret_access_key)
+    bearer_token = ENV['AWS_BEARER_TOKEN_BEDROCK'].presence ||
+                   ENV.fetch('AWS_BEDROCK_BEARER_TOKEN', nil).presence ||
+                   Rails.application.credentials.dig(:aws, :bedrock_bearer_token) ||
+                   Rails.application.credentials.dig(:aws, :bedrock_api_key)
 
     ca_bundle_path = ENV['AWS_CA_BUNDLE'].presence || ENV['SSL_CERT_FILE'].presence
 

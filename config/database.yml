@@ -39,3 +39,15 @@ production:
     <<: *default
     database: storage/production_cable.sqlite3
     migrations_paths: db/cable_migrate
+
+# Client business database (Text-to-SQL queries).
+# This is a separate PostgreSQL database containing the client's operational data.
+# The connection is isolated via the ClientDatabase abstract model.
+# Future multi-tenant: this will be replaced with per-tenant configuration.
+client_db:
+  adapter: postgresql
+  host: localhost
+  port: 5432
+  database: app_db
+  username: app_user
+  password: karateca

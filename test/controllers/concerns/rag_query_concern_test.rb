@@ -20,30 +20,31 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     @controller = TestController.new
   end
 
-  # Helper method to stub BedrockRagService.new at the class level.
-  def with_mock_bedrock_rag_service(mock_service)
-    original_new = BedrockRagService.method(:new)
-    BedrockRagService.define_singleton_method(:new) { |*_args| mock_service }
+  # Helper method to stub QueryOrchestratorService.new at the class level.
+  # The concern now routes through the orchestrator, not BedrockRagService directly.
+  def with_mock_orchestrator(mock_orchestrator)
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) { |*_args| mock_orchestrator }
     yield
   ensure
-    BedrockRagService.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    QueryOrchestratorService.define_singleton_method(:new) { |*args| original_new.call(*args) }
   end
 
-  # Helper to create a mock BedrockRagService
-  def create_mock_service(answer:, citations: [], session_id: 'test-session', should_raise: false,
-                          error_class: StandardError, error_message: nil)
-    mock_session_id = session_id
-    mock_service = Object.new
-    mock_service.define_singleton_method(:query) do |_question, session_id: nil, **_kwargs|
+  # Helper to create a mock QueryOrchestratorService.
+  # The orchestrator exposes a single #execute method that returns { answer:, citations:, session_id: }.
+  def create_mock_orchestrator(answer:, citations: [], session_id: 'test-session',
+                               should_raise: false, error_class: StandardError, error_message: nil)
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
       raise error_class, error_message || 'Service error' if should_raise
 
       {
         answer: answer,
         citations: citations,
-        session_id: session_id || mock_session_id
+        session_id: session_id
       }
     end
-    mock_service
+    mock
   end
 
   # ============================================
@@ -51,13 +52,13 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   # ============================================
 
   test 'execute_rag_query returns success result with valid question' do
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: 'Test answer',
       citations: [ 'doc1.pdf' ],
       session_id: 'session-123'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       result = @controller.send(:execute_rag_query, 'What is S3?')
 
       assert result.success?
@@ -91,14 +92,14 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   end
 
   test 'execute_rag_query handles MissingKnowledgeBaseError' do
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: BedrockRagService::MissingKnowledgeBaseError,
       error_message: 'KB not configured'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       result = @controller.send(:execute_rag_query, 'test question')
 
       assert_not result.success?
@@ -108,14 +109,14 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   end
 
   test 'execute_rag_query handles BedrockServiceError' do
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: BedrockRagService::BedrockServiceError,
       error_message: 'AWS error'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       result = @controller.send(:execute_rag_query, 'test question')
 
       assert_not result.success?
@@ -124,15 +125,32 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
+  test 'execute_rag_query handles SqlExecutionError' do
+    mock = create_mock_orchestrator(
+      answer: '',
+      should_raise: true,
+      error_class: SqlGenerationService::SqlExecutionError,
+      error_message: 'SQL execution failed'
+    )
+
+    with_mock_orchestrator(mock) do
+      result = @controller.send(:execute_rag_query, 'test question')
+
+      assert_not result.success?
+      assert_equal :service_error, result.error_type
+      assert_equal 'SQL execution failed', result.error_message
+    end
+  end
+
   test 'execute_rag_query handles StandardError' do
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: StandardError,
       error_message: 'Unexpected error'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       result = @controller.send(:execute_rag_query, 'test question')
 
       assert_not result.success?

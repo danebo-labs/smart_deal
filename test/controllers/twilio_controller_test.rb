@@ -7,45 +7,45 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
   TEST_QUESTION = 'What is S3?'
   TEST_ANSWER = 'This is a test answer about S3'
 
-  # Helper method to stub BedrockRagService.new at the class level.
-  def with_mock_bedrock_rag_service(mock_service)
-    original_new = BedrockRagService.method(:new)
-    BedrockRagService.define_singleton_method(:new) { |*_args| mock_service }
+  # Helper method to stub QueryOrchestratorService.new at the class level.
+  # The concern (used by TwilioController) now routes through the orchestrator.
+  def with_mock_orchestrator(mock_orchestrator)
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) { |*_args| mock_orchestrator }
     yield
   ensure
-    BedrockRagService.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    QueryOrchestratorService.define_singleton_method(:new) { |*args| original_new.call(*args) }
   end
 
-  # Helper to create a mock BedrockRagService
-  def create_mock_service(answer:, citations: [], session_id: TEST_SESSION_ID, should_raise: false,
-                          error_class: StandardError, error_message: nil)
-    mock_session_id = session_id
-    mock_service = Object.new
-    mock_service.define_singleton_method(:query) do |_question, session_id: nil, **_kwargs|
+  # Helper to create a mock QueryOrchestratorService.
+  def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
+                               should_raise: false, error_class: StandardError, error_message: nil)
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
       raise error_class, error_message || 'Service error' if should_raise
 
       {
         answer: answer,
         citations: citations,
-        session_id: session_id || mock_session_id
+        session_id: session_id
       }
     end
-    mock_service
+    mock
   end
 
   test 'webhook does not require authentication' do
-    mock_service = create_mock_service(answer: TEST_ANSWER)
+    mock = create_mock_orchestrator(answer: TEST_ANSWER)
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
       assert_response :success
     end
   end
 
   test 'webhook returns TwiML XML response' do
-    mock_service = create_mock_service(answer: TEST_ANSWER)
+    mock = create_mock_orchestrator(answer: TEST_ANSWER)
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
 
       assert_response :success
@@ -63,9 +63,9 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
 
   test 'webhook returns answer with citations' do
     citations = [ 'document1.pdf', 'document2.pdf' ]
-    mock_service = create_mock_service(answer: TEST_ANSWER, citations: citations)
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: citations)
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
 
       assert_response :success
@@ -100,14 +100,14 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
   end
 
   test 'webhook handles MissingKnowledgeBaseError' do
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: BedrockRagService::MissingKnowledgeBaseError,
       error_message: 'Knowledge Base ID not configured'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
 
       assert_response :success
@@ -117,14 +117,14 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
   end
 
   test 'webhook handles BedrockServiceError' do
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: BedrockRagService::BedrockServiceError,
       error_message: 'Failed to query Knowledge Base'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
 
       assert_response :success
@@ -135,14 +135,14 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
   end
 
   test 'webhook handles unexpected StandardError' do
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: StandardError,
       error_message: 'Unexpected database error'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
 
       assert_response :success
@@ -153,9 +153,9 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
   end
 
   test 'webhook returns fallback message when answer is empty' do
-    mock_service = create_mock_service(answer: '')
+    mock = create_mock_orchestrator(answer: '')
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
 
       assert_response :success
@@ -164,9 +164,9 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
   end
 
   test 'webhook returns fallback message when answer is nil' do
-    mock_service = create_mock_service(answer: nil)
+    mock = create_mock_orchestrator(answer: nil)
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post twilio_webhook_url, params: { 'Body' => TEST_QUESTION, 'From' => 'whatsapp:+56912345678' }
 
       assert_response :success

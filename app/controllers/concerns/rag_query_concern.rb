@@ -1,17 +1,21 @@
 # frozen_string_literal: true
 
 # app/controllers/concerns/rag_query_concern.rb
-# Shared logic for RAG queries across controllers (API and Twilio/WhatsApp)
+# Shared logic for hybrid queries (RAG + Text-to-SQL) across controllers.
+# Used by RagController (API/JSON) and TwilioController (WhatsApp).
 
 module RagQueryConcern
   extend ActiveSupport::Concern
 
-  # Result object for RAG queries
+  # Result object for queries (works for both RAG and SQL responses)
   RagResult = Struct.new(:success?, :answer, :citations, :session_id, :error_type, :error_message, keyword_init: true)
 
   private
 
-  # Executes a RAG query and returns a structured result
+  # Executes a query through the orchestrator, which classifies intent
+  # and delegates to either BedrockRagService (knowledge base) or
+  # SqlGenerationService (database) as appropriate.
+  #
   # @param question [String] The question to query
   # @return [RagResult] Structured result with success status and data or error info
   def execute_rag_query(question)
@@ -21,8 +25,10 @@ module RagQueryConcern
       return RagResult.new(success?: false, error_type: :blank_question)
     end
 
-    rag_service = BedrockRagService.new
-    result = rag_service.query(question)
+    # Route through the orchestrator instead of calling BedrockRagService directly.
+    # The orchestrator classifies the intent first, then delegates to the right service.
+    # Both services return a normalized { answer:, citations:, session_id: } hash.
+    result = QueryOrchestratorService.new(question).execute
 
     RagResult.new(
       success?: true,
@@ -36,8 +42,11 @@ module RagQueryConcern
   rescue BedrockRagService::BedrockServiceError => e
     log_rag_error("RAG AWS error", e)
     RagResult.new(success?: false, error_type: :service_error, error_message: e.message)
+  rescue SqlGenerationService::SqlExecutionError => e
+    log_rag_error("SQL execution error", e)
+    RagResult.new(success?: false, error_type: :service_error, error_message: e.message)
   rescue StandardError => e
-    log_rag_error("RAG unexpected error", e, include_backtrace: true)
+    log_rag_error("Query unexpected error", e, include_backtrace: true)
     RagResult.new(success?: false, error_type: :unexpected_error, error_message: e.message)
   end
 

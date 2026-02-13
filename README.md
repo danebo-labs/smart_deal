@@ -9,6 +9,8 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 - **AI document analysis – RAG** — AWS Bedrock, Knowledge Base, LLMs, embeddings, and prompt templates
 - **Hotwire** for DOM updates (Turbo and Stimulus)
 - **RAG chat with Knowledge Base integration** — LLMs, embeddings, prompt templates, and custom model configuration, optimized for inference and better results
+- **Hybrid Query Orchestrator (RAG + Text-to-SQL)** — intelligent intent classification routes queries to the Knowledge Base, the client's business database, or both in parallel. Supports three modes: `DATABASE_QUERY`, `KNOWLEDGE_BASE_QUERY`, and `HYBRID_QUERY`
+- **WhatsApp integration** via Twilio webhook — all query modes available through WhatsApp
 
 ## Setup
 
@@ -17,6 +19,7 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 - Ruby (see `.ruby-version`)
 - Rails 8.1.2
 - SQLite3
+- PostgreSQL (for client business database / Text-to-SQL)
 
 ### First-time installation
 
@@ -141,4 +144,53 @@ Run `bin/setup` to install dependencies, Git hooks, create `.env`, and prepare t
 
 ## Architecture
 
-For architecture, design decisions, and patterns, see [ARCHITECTURE.md](ARCHITECTURE.md).
+### Hybrid Query Orchestrator
+
+The application uses an "orchestration first" pattern: a fast, cheap LLM call classifies the user's intent before any expensive operation (RAG retrieval, database query) runs. This avoids unnecessary work and routes to the optimal data source.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Concern as RagQueryConcern
+    participant Orchestrator as QueryOrchestratorService
+    participant LLM as AiProvider/Bedrock
+    participant RAG as BedrockRagService
+    participant SQL as SqlGenerationService
+    participant DB as ClientDatabase
+
+    User->>Concern: question
+    Concern->>Orchestrator: execute(question)
+    Orchestrator->>LLM: classify intent (fast call)
+    LLM-->>Orchestrator: DATABASE_QUERY / KNOWLEDGE_BASE_QUERY / HYBRID_QUERY
+
+    alt DATABASE_QUERY
+        Orchestrator->>SQL: execute
+        SQL->>LLM: generate SQL from schema
+        SQL->>DB: execute SQL (SELECT only)
+        SQL->>LLM: synthesize answer
+        SQL-->>Orchestrator: {answer, citations, session_id}
+    else KNOWLEDGE_BASE_QUERY
+        Orchestrator->>RAG: query(question)
+        RAG-->>Orchestrator: {answer, citations, session_id}
+    else HYBRID_QUERY
+        Orchestrator->>SQL: execute (parallel thread)
+        Orchestrator->>RAG: query (parallel thread)
+        SQL-->>Orchestrator: DB result
+        RAG-->>Orchestrator: KB result
+        Orchestrator->>LLM: merge both answers
+        LLM-->>Orchestrator: unified answer
+    end
+
+    Orchestrator-->>Concern: normalized result hash
+    Concern-->>User: JSON (web) or TwiML (WhatsApp)
+```
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| **QueryOrchestratorService** | `app/services/query_orchestrator_service.rb` | Intent classification and routing |
+| **SqlGenerationService** | `app/services/sql_generation_service.rb` | Text-to-SQL generation, execution, and answer synthesis |
+| **BedrockRagService** | `app/services/bedrock_rag_service.rb` | Knowledge Base retrieval and generation (RAG) |
+| **ClientDatabase** | `app/models/client_database.rb` | Isolated DB connection to the client's business database |
+| **RagQueryConcern** | `app/controllers/concerns/rag_query_concern.rb` | Shared query logic for all channels (web API, WhatsApp) |
+
+For additional architecture details and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).

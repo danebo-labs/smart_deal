@@ -7,10 +7,10 @@ require 'aws-sdk-core/static_token_provider'
 class S3DocumentsService
   include AwsClientInitializer
 
-  def initialize
+  def initialize(bucket_name: nil)
     client_options = build_aws_client_options
     @s3 = Aws::S3::Client.new(client_options)
-    @bucket_name = find_bucket_name
+    @bucket_name = bucket_name.presence || find_bucket_name
   end
 
   # Returns array of document info hashes
@@ -47,6 +47,30 @@ class S3DocumentsService
       Rails.logger.error(e.backtrace.first(5).join("\n"))
       []
     end
+  end
+
+  # Uploads a file to the KB S3 bucket for future indexing.
+  # @param filename [String] The filename (e.g., "photo_20260215_123456.png")
+  # @param binary_data [String] Raw binary content of the file
+  # @param content_type [String] MIME type (e.g., "image/png")
+  # @return [String, nil] The S3 key if successful, nil on failure
+  def upload_file(filename, binary_data, content_type)
+    return nil unless @bucket_name
+
+    key = "uploads/#{Date.current.iso8601}/#{filename}"
+
+    @s3.put_object(
+      bucket: @bucket_name,
+      key: key,
+      body: binary_data,
+      content_type: content_type
+    )
+
+    Rails.logger.info("S3 upload successful: s3://#{@bucket_name}/#{key}")
+    key
+  rescue StandardError => e
+    Rails.logger.error("S3 upload failed: #{e.message}")
+    nil
   end
 
   private

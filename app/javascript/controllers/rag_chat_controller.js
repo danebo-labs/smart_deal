@@ -5,26 +5,80 @@ import { formatAnswer } from "rag/citation_formatter"
 import { renderReferences } from "rag/references_renderer"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "imagePreview", "imageThumb", "imageName"]
+
+  static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024
+  static SUPPORTED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
   connect() {
+    this.pendingImage = null
     this.inputTarget?.focus()
+  }
+
+  clickAttach() {
+    this.fileInputTarget.click()
+  }
+
+  selectImage(event) {
+    const file = event.target.files[0]
+    if (!file) return
+
+    if (!this.constructor.SUPPORTED_TYPES.includes(file.type)) {
+      this.addMessage("Solo se permiten imágenes PNG, JPEG, GIF o WebP.", "error")
+      this.fileInputTarget.value = ""
+      return
+    }
+
+    if (file.size > this.constructor.MAX_IMAGE_SIZE) {
+      this.addMessage("La imagen excede el límite de 3.75 MB.", "error")
+      this.fileInputTarget.value = ""
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const base64Full = e.target.result
+      const base64Data = base64Full.split(",")[1]
+
+      this.pendingImage = { data: base64Data, media_type: file.type }
+
+      this.imageThumbTarget.src = base64Full
+      this.imageNameTarget.textContent = file.name
+      this.imagePreviewTarget.style.display = "block"
+    }
+    reader.readAsDataURL(file)
+  }
+
+  removeImage() {
+    this.pendingImage = null
+    this.fileInputTarget.value = ""
+    this.imagePreviewTarget.style.display = "none"
   }
 
   async sendMessage(event) {
     event.preventDefault()
 
     const question = this.inputTarget.value.trim()
-    if (!question) return
+    const hasImage = this.pendingImage !== null
+
+    if (!question && !hasImage) return
 
     this.disableForm()
-    this.addMessage(question, "user")
+
+    if (hasImage) {
+      this.addImageMessage(this.imageThumbTarget.src, question)
+    } else {
+      this.addMessage(question, "user")
+    }
+
     this.inputTarget.value = ""
+    const imageToSend = this.pendingImage
+    this.removeImage()
 
     const loadingId = this.addMessage("Thinking…", "assistant", true)
 
     try {
-      const data = await this.ask(question)
+      const data = await this.ask(question, imageToSend)
       this.removeMessage(loadingId)
 
       if (data.status !== "success") {
@@ -38,7 +92,6 @@ export default class extends Controller {
         this.addMessageHtml(renderReferences(data.citations), "assistant")
       }
 
-      // Update metrics using Turbo Stream (Hotwire handles DOM updates automatically)
       this.updateMetrics()
     } catch (error) {
       this.removeMessage(loadingId)
@@ -48,7 +101,10 @@ export default class extends Controller {
     }
   }
 
-  async ask(question) {
+  async ask(question, image = null) {
+    const payload = { question }
+    if (image) payload.image = image
+
     const response = await fetch("/rag/ask", {
       method: "POST",
       headers: {
@@ -57,7 +113,7 @@ export default class extends Controller {
         "X-CSRF-Token": document.querySelector("meta[name=csrf-token]")?.content
       },
       credentials: "same-origin",
-      body: JSON.stringify({ question })
+      body: JSON.stringify(payload)
     })
 
     if (!response.ok) {
@@ -95,6 +151,18 @@ export default class extends Controller {
     return id
   }
 
+  addImageMessage(imageSrc, text) {
+    const div = document.createElement("div")
+    div.className = "chat-message chat-message-user"
+
+    let html = `<img src="${imageSrc}" style="max-width: 200px; max-height: 150px; border-radius: 8px; display: block; margin-bottom: 4px;" />`
+    if (text) html += `<span>${this.escapeHtml(text)}</span>`
+
+    div.innerHTML = html
+    this.messagesTarget.appendChild(div)
+    this.scroll()
+  }
+
   addMessageHtml(html, type) {
     const div = document.createElement("div")
     div.className = `chat-message chat-message-${type}`
@@ -120,6 +188,12 @@ export default class extends Controller {
       event.preventDefault()
       this.sendMessage(event)
     }
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement("div")
+    div.textContent = text
+    return div.innerHTML
   }
 
   async updateMetrics() {

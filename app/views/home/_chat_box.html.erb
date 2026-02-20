@@ -14,19 +14,43 @@
       <div class="chat-messages" data-rag-chat-target="messages">
       </div>
     </div>
+    <div class="chat-image-preview" data-rag-chat-target="imagePreview" style="display: none;">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f0f4ff; border-radius: 8px; margin: 0 12px 8px;">
+        <img data-rag-chat-target="imageThumb" style="max-height: 48px; max-width: 48px; border-radius: 4px; object-fit: cover;" />
+        <span data-rag-chat-target="imageName" style="flex: 1; font-size: 12px; color: #4a5568; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+        <button type="button" data-action="click->rag-chat#removeImage" style="background: none; border: none; cursor: pointer; color: #e53e3e; font-size: 18px; padding: 0 4px;" title="Quitar imagen">&times;</button>
+      </div>
+    </div>
     <div class="chat-input-container">
       <form data-action="submit->rag-chat#sendMessage">
-        <textarea 
-          class="chat-input" 
-          data-rag-chat-target="input"
-          data-action="keydown->rag-chat#handleKeyPress"
-          placeholder="Escribe tu pregunta aquí..."
-          rows="2"></textarea>
-        <button type="submit" 
-                class="figma-button chat-send-button"
-                data-rag-chat-target="sendButton">
-          Enviar
-        </button>
+        <input type="file"
+               data-rag-chat-target="fileInput"
+               data-action="change->rag-chat#selectImage"
+               accept="image/png, image/jpeg, image/gif, image/webp"
+               style="display: none;">
+        <div style="display: flex; align-items: flex-end; gap: 8px;">
+          <button type="button"
+                  class="chat-attach-button"
+                  data-action="click->rag-chat#clickAttach"
+                  title="Adjuntar imagen"
+                  style="background: none; border: 1px solid #cbd5e0; border-radius: 8px; padding: 8px; cursor: pointer; color: #718096; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M21.44 11.05L12.25 20.24C11.1242 21.3658 9.59723 21.9983 8.005 21.9983C6.41277 21.9983 4.88583 21.3658 3.76 20.24C2.63417 19.1142 2.00166 17.5872 2.00166 15.995C2.00166 14.4028 2.63417 12.8758 3.76 11.75L12.95 2.56C13.7006 1.80944 14.7186 1.3877 15.78 1.3877C16.8414 1.3877 17.8594 1.80944 18.61 2.56C19.3606 3.31057 19.7823 4.32863 19.7823 5.39C19.7823 6.45137 19.3606 7.46943 18.61 8.22L9.41 17.41C9.03472 17.7853 8.52572 17.9961 7.995 17.9961C7.46428 17.9961 6.95528 17.7853 6.58 17.41C6.20472 17.0347 5.99389 16.5257 5.99389 15.995C5.99389 15.4643 6.20472 14.9553 6.58 14.58L15.07 6.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <textarea 
+            class="chat-input" 
+            data-rag-chat-target="input"
+            data-action="keydown->rag-chat#handleKeyPress"
+            placeholder="Escribe tu pregunta aquí..."
+            rows="2"
+            style="flex: 1;"></textarea>
+          <button type="submit" 
+                  class="figma-button chat-send-button"
+                  data-rag-chat-target="sendButton">
+            Enviar
+          </button>
+        </div>
       </form>
     </div>
   </div>

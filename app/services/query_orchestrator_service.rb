@@ -12,22 +12,31 @@
 #   - KNOWLEDGE_BASE_QUERY: documents/policies from the AWS Knowledge Base
 #   - HYBRID_QUERY: both sources queried in parallel, results merged
 class QueryOrchestratorService
-  # Define the "tools" available to our agent.
   TOOLS = {
     DATABASE_QUERY: 'DATABASE_QUERY',
     KNOWLEDGE_BASE_QUERY: 'KNOWLEDGE_BASE_QUERY',
     HYBRID_QUERY: 'HYBRID_QUERY'
   }.freeze
 
-  def initialize(query)
+  DEFAULT_IMAGE_PROMPT = <<~PROMPT.freeze
+    Describe esta imagen en detalle. Identifica toda la información relevante.
+    Responde siempre en español.
+  PROMPT
+
+  # @param query [String] The user's question
+  # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
+  def initialize(query, images: [])
     @query = query
-    # For intent classification and hybrid synthesis, we use the existing AiProvider.
-    # A fast and cheap model is ideal to minimize latency on these steps.
+    @images = images || []
     @ai_provider = AiProvider.new
   end
 
-  # Main entry point. Orchestrates the entire query process.
+  # Main entry point. When images are present, always runs a multimodal
+  # analysis in parallel with a KB lookup, then merges results.
+  # Without images, uses the standard intent classification flow.
   def execute
+    return execute_multimodal_query if @images.any?
+
     tool_to_use = classify_query_intent
 
     case tool_to_use
@@ -50,6 +59,45 @@ class QueryOrchestratorService
   end
 
   private
+
+  # Multimodal flow: analyzes the image directly via invoke_model (Sonnet).
+  # The image is also uploaded to S3 in background for future KB queries.
+  # No KB query or merge step — keeps response time under Twilio's 15s timeout.
+  def execute_multimodal_query
+    Rails.logger.info("QueryOrchestrator: MULTIMODAL query with #{@images.size} image(s) for: '#{@query}'")
+
+    prompt = @query.presence || DEFAULT_IMAGE_PROMPT
+    image_result = @ai_provider.query(prompt, images: @images, max_tokens: 3000)
+
+    Thread.new do
+      upload_and_sync_images
+    rescue StandardError => e
+      Rails.logger.error("QueryOrchestrator MULTIMODAL - S3 upload/sync failed: #{e.message}")
+    end
+
+    image_answer = image_result.to_s.strip.presence
+
+    Rails.logger.info("QueryOrchestrator MULTIMODAL - Image answer present: #{image_answer.present?}")
+
+    if image_answer.present?
+      { answer: image_answer, citations: [], session_id: nil }
+    else
+      { answer: "No pude analizar la imagen. Por favor, intenta de nuevo.", citations: [], session_id: nil }
+    end
+  end
+
+  def upload_and_sync_images
+    s3 = S3DocumentsService.new
+
+    @images.each_with_index do |img, idx|
+      ext = img[:media_type]&.split('/')&.last || 'png'
+      filename = "whatsapp_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
+      binary_data = Base64.decode64(img[:data] || img['data'])
+      s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
+    end
+
+    KbSyncService.new.sync!
+  end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,
   # then merges the results into a single coherent answer via an LLM synthesis step.

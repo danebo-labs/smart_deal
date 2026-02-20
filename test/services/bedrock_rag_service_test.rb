@@ -104,7 +104,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args| original_agent_new.call(*args) }
     end
     if original_s3_docs_new
-      S3DocumentsService.define_singleton_method(:new) { |*args| original_s3_docs_new.call(*args) }
+      S3DocumentsService.define_singleton_method(:new) { |**kwargs| original_s3_docs_new.call(**kwargs) }
     end
   end
 

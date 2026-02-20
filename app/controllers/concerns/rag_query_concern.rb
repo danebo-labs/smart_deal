@@ -17,18 +17,17 @@ module RagQueryConcern
   # SqlGenerationService (database) as appropriate.
   #
   # @param question [String] The question to query
+  # @param images [Array<Hash>] Optional images as [{ data: "base64...", media_type: "image/png" }]
   # @return [RagResult] Structured result with success status and data or error info
-  def execute_rag_query(question)
+  def execute_rag_query(question, images: [])
     question = question.to_s.strip
+    images = Array(images).compact
 
-    if question.blank?
+    if question.blank? && images.empty?
       return RagResult.new(success?: false, error_type: :blank_question)
     end
 
-    # Route through the orchestrator instead of calling BedrockRagService directly.
-    # The orchestrator classifies the intent first, then delegates to the right service.
-    # Both services return a normalized { answer:, citations:, session_id: } hash.
-    result = QueryOrchestratorService.new(question).execute
+    result = QueryOrchestratorService.new(question, images: images).execute
 
     RagResult.new(
       success?: true,

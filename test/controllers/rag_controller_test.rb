@@ -13,34 +13,27 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     @user = users(:one)
   end
 
-  # Helper method to stub BedrockRagService.new at the class level.
-  def with_mock_bedrock_rag_service(mock_service)
-    original_new = BedrockRagService.method(:new)
-    BedrockRagService.define_singleton_method(:new) { |*_args| mock_service }
+  def with_mock_orchestrator(mock_orchestrator)
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) { |*_args| mock_orchestrator }
     yield
   ensure
-    BedrockRagService.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    QueryOrchestratorService.define_singleton_method(:new) { |*args| original_new.call(*args) }
   end
 
-  # Helper to create a mock BedrockRagService that simulates the contract of
-  # BedrockRagService#query. The mock returns a hash with the expected structure:
-  # { answer: String, citations: Array, session_id: String }
-  def create_mock_service(answer:, citations: [], session_id: TEST_SESSION_ID, should_raise: false,
-                          error_class: StandardError, error_message: nil)
-    mock_session_id = session_id
-    mock_service = Object.new
-    mock_service.define_singleton_method(:query) do |_question, session_id: nil, **kwargs|
-      if should_raise
-        raise error_class, error_message || 'Service error'
-      end
+  def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
+                               should_raise: false, error_class: StandardError, error_message: nil)
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
+      raise error_class, error_message || 'Service error' if should_raise
 
       {
         answer: answer,
         citations: citations,
-        session_id: session_id || mock_session_id
+        session_id: session_id
       }
     end
-    mock_service
+    mock
   end
 
   test 'requires authentication' do
@@ -65,13 +58,13 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
     citations = [{ filename: 'test.pdf', title: 'Test Document' }]
 
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: TEST_ANSWER,
       citations: citations,
       session_id: TEST_SESSION_ID
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
       assert_response :success
 
@@ -87,18 +80,17 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test 'handles BedrockRagService errors gracefully' do
+  test 'handles MissingKnowledgeBaseError gracefully' do
     sign_in @user
 
-    # Test MissingKnowledgeBaseError
-    mock_service = create_mock_service(
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: BedrockRagService::MissingKnowledgeBaseError,
       error_message: 'Knowledge Base ID not configured'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post rag_ask_url, params: { question: 'test question' }, as: :json
       assert_response :internal_server_error
 
@@ -106,16 +98,19 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert_equal 'error', json['status']
       assert_equal 'RAG service is not properly configured', json['message']
     end
+  end
 
-    # Test BedrockServiceError
-    mock_service = create_mock_service(
+  test 'handles BedrockServiceError gracefully' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: BedrockRagService::BedrockServiceError,
       error_message: 'Failed to query Knowledge Base'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post rag_ask_url, params: { question: 'test question' }, as: :json
       assert_response :bad_gateway
 
@@ -123,16 +118,19 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert_equal 'error', json['status']
       assert_equal 'Error querying knowledge base', json['message']
     end
+  end
 
-    # Test generic StandardError
-    mock_service = create_mock_service(
+  test 'handles unexpected StandardError gracefully' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
       answer: '',
       should_raise: true,
       error_class: StandardError,
       error_message: 'Unexpected error'
     )
 
-    with_mock_bedrock_rag_service(mock_service) do
+    with_mock_orchestrator(mock) do
       post rag_ask_url, params: { question: 'test question' }, as: :json
       assert_response :internal_server_error
 
@@ -144,7 +142,6 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   private
 
-  # Helper to parse JSON response body
   def json_response
     JSON.parse(@response.body)
   end

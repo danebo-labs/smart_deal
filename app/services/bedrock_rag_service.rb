@@ -112,11 +112,12 @@ class BedrockRagService
     }
   end
 
-  def initialize
+  def initialize(knowledge_base_id: nil)
     client_options = build_aws_client_options
     region = client_options[:region]
     @client = Aws::BedrockAgentRuntime::Client.new(client_options)
-    @knowledge_base_id = ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
+    @knowledge_base_id = knowledge_base_id.presence ||
+                         ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
                          Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
     @citation_processor = Bedrock::CitationProcessor.new
 

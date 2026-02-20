@@ -50,6 +50,7 @@ gem 'ruby-openai'
 
 # AWS Bedrock integration
 gem 'aws-sdk-bedrock'
+gem 'aws-sdk-bedrockagent'
 gem 'aws-sdk-bedrockagentruntime'
 gem 'aws-sdk-bedrockruntime'
 

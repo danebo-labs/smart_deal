@@ -28,7 +28,7 @@ class RagController < ApplicationController
 
   def extract_images_from_params
     image_param = params[:image]
-    return [] unless image_param.present?
+    return [] if image_param.blank?
 
     if image_param.is_a?(Array)
       image_param.select { |img| img[:data].present? && img[:media_type].present? }

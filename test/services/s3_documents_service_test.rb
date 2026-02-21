@@ -154,7 +154,7 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
       service = S3DocumentsService.new
       docs = service.list_documents
 
-      assert_equal %w[large.pdf medium.pdf small.pdf], docs.map { |d| d[:name] }
+      assert_equal %w[large.pdf medium.pdf small.pdf], docs.pluck(:name)
     end
   end
 

@@ -19,9 +19,10 @@ development:
 test:
   <<: *default
   database: storage/test.sqlite3
-  # Increase pool size for parallel test execution
-  # Use number of processors + 2 to ensure enough connections for parallel tests
-  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { [Concurrent.processor_count + 2, 10].min } %>
+  # Increase pool size significantly for CI parallel test execution
+  # GitHub Actions runners have multiple cores and need more connections
+  pool: 20
+  max_connections: 20
 
 
 # Store production database in the storage/ directory, which by default

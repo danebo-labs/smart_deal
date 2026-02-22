@@ -82,6 +82,9 @@ group :development, :test do
   gem 'rubocop-rails-omakase', require: false
 
   gem 'rubocop-capybara', require: false
+
+  # OpenStruct for Ruby 4.0 compatibility
+  gem 'ostruct'
 end
 
 group :development do

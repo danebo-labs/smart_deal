@@ -21,9 +21,7 @@ class SqlGenerationService
   def initialize(query)
     @query = query
     @ai_provider = AiProvider.new
-    # Connection is obtained from the isolated ClientDatabase abstract class,
-    # ensuring it never interferes with the primary application database.
-    @db_connection = ClientDatabase.connection
+    # Connection will be established lazily when needed
   end
 
   def execute
@@ -56,11 +54,16 @@ class SqlGenerationService
 
   private
 
+  # Lazy-loaded database connection to avoid establishing connection during service initialization
+  def db_connection
+    @db_connection ||= ClientDatabase.connection
+  end
+
   # Reads the schema of all tables in the client database.
   # Returns a concise string representation the LLM can understand.
   def get_database_schema
-    @db_connection.tables.map do |table|
-      columns = @db_connection.columns(table).map do |col|
+    db_connection.tables.map do |table|
+      columns = db_connection.columns(table).map do |col|
         "#{col.name} (#{col.type})"
       end
       "Table: #{table} | Columns: #{columns.join(', ')}"
@@ -69,7 +72,7 @@ class SqlGenerationService
 
   # Detects the database engine from the adapter to guide SQL dialect in the prompt.
   def database_engine
-    adapter = @db_connection.adapter_name.downcase
+    adapter = db_connection.adapter_name.downcase
     case adapter
     when /postgres/
       'PostgreSQL'
@@ -118,7 +121,7 @@ class SqlGenerationService
       raise SqlExecutionError, "Generated SQL is not a SELECT statement: #{sql.truncate(200)}"
     end
 
-    @db_connection.exec_query(sql)
+    db_connection.exec_query(sql)
   rescue ActiveRecord::StatementInvalid => e
     raise SqlExecutionError, "SQL execution failed: #{e.message}"
   end

@@ -19,6 +19,9 @@ development:
 test:
   <<: *default
   database: storage/test.sqlite3
+  # Increase pool size for parallel test execution
+  # Use number of processors + 2 to ensure enough connections for parallel tests
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { [Concurrent.processor_count + 2, 10].min } %>
 
 
 # Store production database in the storage/ directory, which by default

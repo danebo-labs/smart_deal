@@ -21,8 +21,8 @@ test:
   database: storage/test.sqlite3
   # Conservative pool size for single-threaded CI execution
   # Prevents connection pool exhaustion while maintaining reliability
-  pool: 5
-  max_connections: 5
+  pool: 20
+  max_connections: 20
 
 
 # Store production database in the storage/ directory, which by default

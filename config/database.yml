@@ -19,10 +19,10 @@ development:
 test:
   <<: *default
   database: storage/test.sqlite3
-  # Increase pool size significantly for CI parallel test execution
-  # GitHub Actions runners have multiple cores and need more connections
-  pool: 20
-  max_connections: 20
+  # Conservative pool size for single-threaded CI execution
+  # Prevents connection pool exhaustion while maintaining reliability
+  pool: 5
+  max_connections: 5
 
 
 # Store production database in the storage/ directory, which by default

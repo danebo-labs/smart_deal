@@ -9,6 +9,10 @@ class ModelNameHelperTest < ActionView::TestCase
     BedrockQuery.destroy_all
   end
 
+  teardown do
+    ActiveRecord::Base.connection_pool.disconnect!
+  end
+
   test 'current_llm_model_name uses last query model_id' do
     BedrockQuery.create!(
       model_id: 'anthropic.claude-3-sonnet-20240229-v1:0',

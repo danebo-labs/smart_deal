@@ -7,9 +7,10 @@ require 'rails/test_help'
 module ActiveSupport
   class TestCase
     # Run tests in parallel with specified workers
-    # Use fewer workers in CI to prevent connection pool exhaustion
+    # Disable parallelization completely in CI to prevent connection pool exhaustion
+    # Keep full parallelization for local development
     if ENV['CI']
-      parallelize(workers: 2) # Conservative for CI environment
+      parallelize(workers: 1) # Single worker in CI to prevent connection issues
     else
       parallelize(workers: :number_of_processors)
     end

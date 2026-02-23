@@ -6,6 +6,10 @@ class CostMetricTest < ActiveSupport::TestCase
   # No fixtures for this model - tests create their own specific data
   # This avoids conflicts and makes tests more explicit and controllable
 
+  teardown do
+    ActiveRecord::Base.connection_pool.disconnect!
+  end
+
   test 'requires date, metric_type, and value' do
     metric = CostMetric.new
 

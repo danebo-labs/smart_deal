@@ -50,6 +50,8 @@ class S3DocumentsService
   end
 
   # Uploads a file to the KB S3 bucket for future indexing.
+  # Uses tech-docs/uploads/ so files are under the data source's inclusion prefix (tech-docs/).
+  # Bedrock allows only 1 inclusion prefix, so we must nest uploads under tech-docs/.
   # @param filename [String] The filename (e.g., "photo_20260215_123456.png")
   # @param binary_data [String] Raw binary content of the file
   # @param content_type [String] MIME type (e.g., "image/png")
@@ -57,7 +59,7 @@ class S3DocumentsService
   def upload_file(filename, binary_data, content_type)
     return nil unless @bucket_name
 
-    key = "uploads/#{Date.current.iso8601}/#{filename}"
+    key = "tech-docs/uploads/#{Date.current.iso8601}/#{filename}"
 
     @s3.put_object(
       bucket: @bucket_name,

@@ -5,7 +5,7 @@ import { formatAnswer } from "rag/citation_formatter"
 import { renderReferences } from "rag/references_renderer"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "imagePreview", "imageThumb", "imageName"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "imagePreview", "imageThumb", "imageName", "modelSelect"]
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024
   static SUPPORTED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
@@ -104,6 +104,9 @@ export default class extends Controller {
   async ask(question, image = null) {
     const payload = { question }
     if (image) payload.image = image
+    if (this.hasModelSelectTarget && this.modelSelectTarget.value) {
+      payload.model = this.modelSelectTarget.value
+    }
 
     const response = await fetch("/rag/ask", {
       method: "POST",

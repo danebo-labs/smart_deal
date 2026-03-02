@@ -112,9 +112,9 @@ class BedrockRagService
     }
   end
 
-  def initialize(knowledge_base_id: nil)
+  def initialize(knowledge_base_id: nil, model_id: nil)
     client_options = build_aws_client_options
-    region = client_options[:region]
+    @region = client_options[:region] || 'us-east-1'
     @client = Aws::BedrockAgentRuntime::Client.new(client_options)
     @knowledge_base_id = knowledge_base_id.presence ||
                          ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
@@ -124,18 +124,19 @@ class BedrockRagService
     # Use Claude 3 Haiku by default for cost optimization (12x cheaper than Sonnet)
     # Alternative: Can use Claude 3 Sonnet, Opus, or other models that support foundation-model ARN
     # Set BEDROCK_MODEL_ID env var or configure in Rails credentials to override
-    model_id = ENV.fetch('BEDROCK_MODEL_ID', nil).presence ||
+    model_id = model_id.presence ||
+               ENV.fetch('BEDROCK_MODEL_ID', nil).presence ||
                Rails.application.credentials.dig(:bedrock, :model_id) ||
                'anthropic.claude-3-haiku-20240307-v1:0'
 
-    # Use the model ID directly as the model_arn.
-    # Newer models (e.g., us.anthropic.claude-3-5-haiku) require an inference profile ID,
-    # NOT a foundation-model ARN. The inference profile ID is the model_id itself.
-    @model_arn = model_id
+    # @model_ref holds either a Bedrock inference profile ID or a full foundation-model ARN.
+    # Newer Claude models use short-form inference profile IDs (e.g. anthropic.claude-sonnet-4-6)
+    # rather than full ARNs, so we store it under a neutral name and pass it directly.
+    @model_ref = model_id
 
     # Debug logging
     Rails.logger.info("BedrockRagService initialized - Knowledge Base ID: #{@knowledge_base_id.presence || 'NOT SET'}")
-    Rails.logger.info("BedrockRagService initialized - Model ID: #{@model_arn}")
+    Rails.logger.info("BedrockRagService initialized - Model ID: #{@model_ref}")
   end
 
   # Query the Knowledge Base using RAG with retrieve_and_generate API
@@ -151,12 +152,8 @@ class BedrockRagService
     start_time = Time.current
 
     begin
-      # Get region from client options
-      client_options = build_aws_client_options
-      region = client_options[:region] || 'us-east-1'
-
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: region)
+      base_config = build_complete_optimized_config(region: @region)
       config = deep_merge_configs(base_config, custom_config)
 
       # Use retrieve_and_generate API - combines retrieval and generation in one call
@@ -169,7 +166,7 @@ class BedrockRagService
           type: 'KNOWLEDGE_BASE',
           knowledge_base_configuration: {
             knowledge_base_id: @knowledge_base_id,
-            model_arn: @model_arn,
+            model_arn: @model_ref,
             **config  # All optimized configuration
           }
         },
@@ -198,7 +195,7 @@ class BedrockRagService
       end
 
       latency_ms = ((Time.current - start_time) * 1000).to_i
-      model_id = @model_arn.split('/').last
+      tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
 
       # Extract tokens - estimate from input and output
       input_tokens = estimate_tokens(question)
@@ -208,7 +205,7 @@ class BedrockRagService
       # Metrics tracking failure should not fail the request
       begin
         BedrockQuery.create!(
-          model_id: model_id,
+          model_id: tracked_model_id,
           input_tokens: input_tokens,
           output_tokens: output_tokens,
           user_query: question,

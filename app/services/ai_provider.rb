@@ -7,13 +7,13 @@ class AiProvider
     # Only Bedrock is supported. Other providers were removed as they were never used.
     @provider = (provider || ENV.fetch('AI_PROVIDER', 'bedrock')).downcase
 
-    return if @provider == 'bedrock'
+    raise "Unknown AI provider: #{@provider}. Only 'bedrock' is supported." unless @provider == 'bedrock'
 
-    raise "Unknown AI provider: #{@provider}. Only 'bedrock' is supported."
+    @client = BedrockClient.new
   end
 
   def query(prompt, **)
-    BedrockClient.new.query(prompt, **)
+    @client.query(prompt, **)
   rescue StandardError => e
     Rails.logger.error("AiProvider error with #{@provider}: #{e.message}")
     raise e

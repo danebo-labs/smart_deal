@@ -25,9 +25,11 @@ class QueryOrchestratorService
 
   # @param query [String] The user's question
   # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
-  def initialize(query, images: [])
+  # @param model_id [String] Optional Bedrock model ID to use
+  def initialize(query, images: [], model_id: nil)
     @query = query
     @images = images || []
+    @model_id = model_id
     @ai_provider = AiProvider.new
   end
 
@@ -42,10 +44,10 @@ class QueryOrchestratorService
     case tool_to_use
     when TOOLS[:DATABASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
-      SqlGenerationService.new(@query).execute
+      SqlGenerationService.new(@query, model_id: @model_id).execute
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
-      BedrockRagService.new.query(@query)
+      BedrockRagService.new(model_id: @model_id).query(@query)
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
       execute_hybrid_query
@@ -54,7 +56,7 @@ class QueryOrchestratorService
         "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
         "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
       )
-      BedrockRagService.new.query(@query)
+      BedrockRagService.new(model_id: @model_id).query(@query)
     end
   end
 
@@ -67,7 +69,7 @@ class QueryOrchestratorService
     Rails.logger.info("QueryOrchestrator: MULTIMODAL query with #{@images.size} image(s) for: '#{@query}'")
 
     prompt = @query.presence || DEFAULT_IMAGE_PROMPT
-    image_result = @ai_provider.query(prompt, images: @images, max_tokens: 3000)
+    image_result = @ai_provider.query(prompt, images: @images, max_tokens: 3000, model_id: @model_id)
 
     Thread.new do
       upload_and_sync_images
@@ -108,14 +110,14 @@ class QueryOrchestratorService
     # Run both queries in parallel to minimize total latency.
     # Instead of ~DB_time + ~KB_time, we pay only ~max(DB_time, KB_time).
     db_thread = Thread.new do
-      db_result = SqlGenerationService.new(@query).execute
+      db_result = SqlGenerationService.new(@query, model_id: @model_id).execute
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - DB thread failed: #{e.message}")
       db_result = { answer: nil, citations: [], session_id: nil }
     end
 
     kb_thread = Thread.new do
-      kb_result = BedrockRagService.new.query(@query)
+      kb_result = BedrockRagService.new(model_id: @model_id).query(@query)
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")
       kb_result = { answer: nil, citations: [], session_id: nil }
@@ -161,7 +163,7 @@ class QueryOrchestratorService
       Write the unified answer:
     PROMPT
 
-    @ai_provider.query(synthesis_prompt).to_s.strip
+    @ai_provider.query(synthesis_prompt, model_id: @model_id).to_s.strip
   end
 
   # This is the cheap, fast, first step. It uses an LLM to classify the task.
@@ -179,6 +181,9 @@ class QueryOrchestratorService
       Based on the user's question, which is the correct tool? Respond with ONLY the tool name (DATABASE_QUERY, KNOWLEDGE_BASE_QUERY, or HYBRID_QUERY). Do not include any other text.
     PROMPT
 
+    # NOTE: @model_id is intentionally NOT passed here. Classification is a cheap
+    # routing step that does not justify using an expensive model. The selected
+    # model_id is only propagated to the services that generate the final answer.
     response = @ai_provider.query(classification_prompt).to_s.strip
 
     # Extract the tool name even if the LLM adds extra text around it.

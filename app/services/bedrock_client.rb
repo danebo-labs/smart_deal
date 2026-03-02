@@ -10,7 +10,26 @@ require 'json'
 class BedrockClient
   include AwsClientInitializer
 
-  DEFAULT_MODEL_ID = ENV.fetch('BEDROCK_MODEL_ID', BedrockProfiles::CLAUDE_35_HAIKU)
+  CLAUDE_35_HAIKU = ENV.fetch('BEDROCK_PROFILE_CLAUDE35_HAIKU', 'us.anthropic.claude-3-5-haiku-20241022-v1:0')
+
+  MODELS_MAP = {
+    # Inference Profiles Globales (máximo throughput, recomendados)
+    'Anthropic Claude Sonnet 4.5 (Global)' => 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    'Anthropic Claude Haiku 4.5 (Global)'  => 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'Anthropic Claude Opus 4.5 (Global)'   => 'global.anthropic.claude-opus-4-5-20251101-v1:0',
+    # Inference Profiles Regionales US (residencia de datos)
+    'Anthropic Claude Sonnet 4.5 (US)'     => 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    'Anthropic Claude Haiku 4.5 (US)'      => 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'Anthropic Claude Opus 4.5 (US)'       => 'us.anthropic.claude-opus-4-5-20251101-v1:0',
+    # Modelos directos Claude 3.x
+    'Anthropic Claude 3.7 Sonnet'          => 'anthropic.claude-3-7-sonnet-20250219-v1:0',
+    'Anthropic Claude 3.5 Sonnet v2'       => 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    'Anthropic Claude 3.5 Sonnet'          => 'anthropic.claude-3-5-sonnet-20240620-v1:0'
+  }.freeze
+
+  ALLOWED_MODEL_IDS = MODELS_MAP.values.freeze
+
+  DEFAULT_MODEL_ID = ENV.fetch('BEDROCK_MODEL_ID', CLAUDE_35_HAIKU)
   VISION_MODEL_ID = ENV.fetch('BEDROCK_VISION_MODEL_ID', 'us.anthropic.claude-3-5-sonnet-20241022-v2:0')
 
   def initialize(region: nil)
@@ -19,6 +38,7 @@ class BedrockClient
   end
 
   def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, images: [])
+    model_id ||= DEFAULT_MODEL_ID
     content = build_message_content(prompt, images)
 
     # Haiku on Bedrock does not support image input — auto-switch to Sonnet for vision

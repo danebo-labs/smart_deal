@@ -6,11 +6,22 @@ class BedrockQuery < ApplicationRecord
   validates :output_tokens, numericality: { greater_than_or_equal_to: 0 }
 
   BEDROCK_PRICING = {
-    'anthropic.claude-3-5-sonnet-20241022-v2:0' => { input: 0.003, output: 0.015 },
-    'anthropic.claude-3-sonnet-20240229-v1:0' => { input: 0.003, output: 0.015 },
-    'anthropic.claude-3-haiku-20240307-v1:0' => { input: 0.00025, output: 0.00125 },
-    'amazon.titan-embed-text-v1' => { input: 0.0001, output: 0.0 },
-    'default' => { input: 0.00025, output: 0.00125 } # Default to Haiku for cost optimization
+    # Claude 4.5 — Inference Profiles Globales (prices per 1K tokens)
+    'global.anthropic.claude-sonnet-4-5-20250929-v1:0' => { input: 0.003,   output: 0.015  },
+    'global.anthropic.claude-haiku-4-5-20251001-v1:0'  => { input: 0.0008,  output: 0.004  },
+    'global.anthropic.claude-opus-4-5-20251101-v1:0'   => { input: 0.015,   output: 0.075  },
+    # Claude 4.5 — Inference Profiles Regionales US
+    'us.anthropic.claude-sonnet-4-5-20250929-v1:0'     => { input: 0.003,   output: 0.015  },
+    'us.anthropic.claude-haiku-4-5-20251001-v1:0'      => { input: 0.0008,  output: 0.004  },
+    'us.anthropic.claude-opus-4-5-20251101-v1:0'       => { input: 0.015,   output: 0.075  },
+    # Claude 3.x family
+    'anthropic.claude-3-7-sonnet-20250219-v1:0'        => { input: 0.003,   output: 0.015  },
+    'anthropic.claude-3-5-sonnet-20241022-v2:0'        => { input: 0.003,   output: 0.015  },
+    'anthropic.claude-3-5-sonnet-20240620-v1:0'        => { input: 0.003,   output: 0.015  },
+    'anthropic.claude-3-sonnet-20240229-v1:0'          => { input: 0.003,   output: 0.015  },
+    'anthropic.claude-3-haiku-20240307-v1:0'           => { input: 0.00025, output: 0.00125 },
+    'amazon.titan-embed-text-v1'                       => { input: 0.0001,  output: 0.0    },
+    'default' => { input: 0.00025, output: 0.00125 } # Fallback to Haiku cost estimate
   }.freeze
 
   def cost

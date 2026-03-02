@@ -8,8 +8,10 @@ class RagController < ApplicationController
 
   def ask
     images = extract_images_from_params
+    documents = extract_documents_from_params
 
-    result = execute_rag_query(params[:question], images: images)
+    model_id = resolve_model_id(params[:model])
+    result = execute_rag_query(params[:question], images: images, documents: documents, model_id: model_id)
 
     unless result.success?
       render_rag_json_error(result)
@@ -26,6 +28,17 @@ class RagController < ApplicationController
 
   private
 
+  def resolve_model_id(requested)
+    return nil if requested.blank?
+
+    if BedrockClient::ALLOWED_MODEL_IDS.include?(requested)
+      requested
+    else
+      Rails.logger.warn("RagController: Unknown model_id '#{requested}', falling back to default")
+      nil
+    end
+  end
+
   def extract_images_from_params
     image_param = params[:image]
     return [] if image_param.blank?
@@ -37,6 +50,18 @@ class RagController < ApplicationController
     else
       []
     end
+  rescue StandardError
+    []
+  end
+
+  def extract_documents_from_params
+    doc_param = params[:document]
+    return [] if doc_param.blank?
+
+    docs = doc_param.is_a?(Array) ? doc_param : [ doc_param ]
+    docs.select do |d|
+      d[:data].present? && (d[:media_type].present? || d[:filename].present?)
+    end.map { |d| d.to_unsafe_h.symbolize_keys }
   rescue StandardError
     []
   end

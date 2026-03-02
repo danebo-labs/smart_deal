@@ -35,11 +35,19 @@ module ModelNameHelper
   end
 
   def format_llm_model_name(model_id)
-    # Remove 'us.' prefix if present
-    model_id = model_id.gsub(/^us\./, '') if model_id.start_with?('us.')
+    # Strip inference profile prefixes (global. / us. / eu.) to normalize for matching
+    model_id = model_id.sub(/^(global|us|eu)\./, '')
 
     # Format model name for display
-    if model_id.include?('claude-3-5')
+    if model_id.include?('claude-sonnet-4')
+      'Claude Sonnet 4'
+    elsif model_id.include?('claude-opus-4')
+      'Claude Opus 4'
+    elsif model_id.include?('claude-haiku-4')
+      'Claude Haiku 4'
+    elsif model_id.include?('claude-3-7')
+      'Claude 3.7 Sonnet'
+    elsif model_id.include?('claude-3-5')
       'Claude 3.5 Sonnet'
     elsif model_id.include?('claude-3-sonnet')
       'Claude 3 Sonnet'

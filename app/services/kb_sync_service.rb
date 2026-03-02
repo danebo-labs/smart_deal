@@ -21,6 +21,7 @@ class KbSyncService
 
   # Starts an ingestion job. Safe to call frequently — Bedrock will queue
   # if another job is already running.
+  # Ensures the data source includes uploads/ before syncing (for chat uploads).
   def sync!
     unless @kb_id
       Rails.logger.warn("KbSyncService: KB ID not configured, skipping sync")

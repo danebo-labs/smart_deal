@@ -5,13 +5,16 @@ import { formatAnswer } from "rag/citation_formatter"
 import { renderReferences } from "rag/references_renderer"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "imagePreview", "imageThumb", "imageName"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "modelSelect"]
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024
-  static SUPPORTED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+  static MAX_DOC_SIZE = 10 * 1024 * 1024 // 10 MB (Bedrock KB limit is 50 MB)
+  static SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+  static SUPPORTED_DOC_TYPES = ["text/plain", "text/markdown", "text/html", "text/csv"]
+  static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv"]
 
   connect() {
-    this.pendingImage = null
+    this.pendingFile = null
     this.inputTarget?.focus()
   }
 
@@ -19,66 +22,98 @@ export default class extends Controller {
     this.fileInputTarget.click()
   }
 
-  selectImage(event) {
+  selectFile(event) {
     const file = event.target.files[0]
     if (!file) return
 
-    if (!this.constructor.SUPPORTED_TYPES.includes(file.type)) {
-      this.addMessage("Solo se permiten imágenes PNG, JPEG, GIF o WebP.", "error")
+    const isImage = this.constructor.SUPPORTED_IMAGE_TYPES.includes(file.type)
+    const isDoc = this.constructor.SUPPORTED_DOC_TYPES.includes(file.type) ||
+      this.constructor.DOC_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))
+
+    if (!isImage && !isDoc) {
+      this.addMessage("Solo se permiten imágenes (PNG, JPEG, GIF, WebP) o documentos (.txt, .md, .html, .csv).", "error")
       this.fileInputTarget.value = ""
       return
     }
 
-    if (file.size > this.constructor.MAX_IMAGE_SIZE) {
-      this.addMessage("La imagen excede el límite de 3.75 MB.", "error")
+    const maxSize = isImage ? this.constructor.MAX_IMAGE_SIZE : this.constructor.MAX_DOC_SIZE
+    const maxLabel = isImage ? "3.75 MB" : "10 MB"
+    if (file.size > maxSize) {
+      this.addMessage(`El archivo excede el límite de ${maxLabel}.`, "error")
       this.fileInputTarget.value = ""
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const base64Full = e.target.result
-      const base64Data = base64Full.split(",")[1]
-
-      this.pendingImage = { data: base64Data, media_type: file.type }
-
-      this.imageThumbTarget.src = base64Full
-      this.imageNameTarget.textContent = file.name
-      this.imagePreviewTarget.style.display = "block"
+    if (isImage) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const base64Full = e.target.result
+        const base64Data = base64Full.split(",")[1]
+        this.pendingFile = { data: base64Data, media_type: file.type, filename: file.name, type: "image" }
+        this.showPreview(base64Full, file.name, "image")
+      }
+      reader.readAsDataURL(file)
+    } else {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const text = e.target.result
+        const base64Data = btoa(unescape(encodeURIComponent(text)))
+        const mimeType = this.getDocMimeType(file.name, file.type)
+        this.pendingFile = { data: base64Data, media_type: mimeType, filename: file.name, type: "document" }
+        this.showPreview(null, file.name, "document")
+      }
+      reader.readAsText(file, "UTF-8")
     }
-    reader.readAsDataURL(file)
   }
 
-  removeImage() {
-    this.pendingImage = null
+  getDocMimeType(filename, fallbackType) {
+    const ext = filename.toLowerCase().split(".").pop()
+    const map = { txt: "text/plain", md: "text/markdown", html: "text/html", csv: "text/csv" }
+    return map[ext] || fallbackType || "text/plain"
+  }
+
+  showPreview(imageDataUrl, name, fileType) {
+    this.imageThumbTarget.style.display = fileType === "image" ? "block" : "none"
+    this.imageThumbTarget.src = imageDataUrl || ""
+    this.docIconTarget.style.display = fileType === "document" ? "block" : "none"
+    this.fileNameTarget.textContent = name
+    this.filePreviewTarget.style.display = "block"
+  }
+
+  removeFile() {
+    this.pendingFile = null
     this.fileInputTarget.value = ""
-    this.imagePreviewTarget.style.display = "none"
+    this.filePreviewTarget.style.display = "none"
   }
 
   async sendMessage(event) {
     event.preventDefault()
 
     const question = this.inputTarget.value.trim()
-    const hasImage = this.pendingImage !== null
+    const hasFile = this.pendingFile !== null
 
-    if (!question && !hasImage) return
+    if (!question && !hasFile) return
 
     this.disableForm()
 
-    if (hasImage) {
-      this.addImageMessage(this.imageThumbTarget.src, question)
+    if (hasFile) {
+      if (this.pendingFile.type === "image") {
+        this.addImageMessage(this.imageThumbTarget.src, question)
+      } else {
+        this.addDocumentMessage(this.pendingFile.filename, question)
+      }
     } else {
       this.addMessage(question, "user")
     }
 
     this.inputTarget.value = ""
-    const imageToSend = this.pendingImage
-    this.removeImage()
+    const fileToSend = this.pendingFile
+    this.removeFile()
 
     const loadingId = this.addMessage("Thinking…", "assistant", true)
 
     try {
-      const data = await this.ask(question, imageToSend)
+      const data = await this.ask(question, fileToSend)
       this.removeMessage(loadingId)
 
       if (data.status !== "success") {
@@ -101,9 +136,18 @@ export default class extends Controller {
     }
   }
 
-  async ask(question, image = null) {
+  async ask(question, file = null) {
     const payload = { question }
-    if (image) payload.image = image
+    if (file) {
+      if (file.type === "image") {
+        payload.image = { data: file.data, media_type: file.media_type }
+      } else {
+        payload.document = { data: file.data, media_type: file.media_type, filename: file.filename }
+      }
+    }
+    if (this.hasModelSelectTarget && this.modelSelectTarget.value) {
+      payload.model = this.modelSelectTarget.value
+    }
 
     const response = await fetch("/rag/ask", {
       method: "POST",
@@ -157,6 +201,18 @@ export default class extends Controller {
 
     let html = `<img src="${imageSrc}" style="max-width: 200px; max-height: 150px; border-radius: 8px; display: block; margin-bottom: 4px;" />`
     if (text) html += `<span>${this.escapeHtml(text)}</span>`
+
+    div.innerHTML = html
+    this.messagesTarget.appendChild(div)
+    this.scroll()
+  }
+
+  addDocumentMessage(filename, text) {
+    const div = document.createElement("div")
+    div.className = "chat-message chat-message-user"
+
+    let html = `<span style="font-size: 12px; color: #4a5568;">📄 ${this.escapeHtml(filename)}</span>`
+    if (text) html += `<br><span>${this.escapeHtml(text)}</span>`
 
     div.innerHTML = html
     this.messagesTarget.appendChild(div)

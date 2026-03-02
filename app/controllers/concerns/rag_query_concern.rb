@@ -18,16 +18,19 @@ module RagQueryConcern
   #
   # @param question [String] The question to query
   # @param images [Array<Hash>] Optional images as [{ data: "base64...", media_type: "image/png" }]
+  # @param documents [Array<Hash>] Optional docs as [{ data: "base64...", media_type: "text/plain", filename: "x.txt" }]
+  # @param model_id [String] Optional Bedrock model ID to use
   # @return [RagResult] Structured result with success status and data or error info
-  def execute_rag_query(question, images: [])
+  def execute_rag_query(question, images: [], documents: [], model_id: nil)
     question = question.to_s.strip
     images = Array(images).compact
+    documents = Array(documents).compact
 
-    if question.blank? && images.empty?
+    if question.blank? && images.empty? && documents.empty?
       return RagResult.new(success?: false, error_type: :blank_question)
     end
 
-    result = QueryOrchestratorService.new(question, images: images).execute
+    result = QueryOrchestratorService.new(question, images: images, documents: documents, model_id: model_id).execute
 
     RagResult.new(
       success?: true,

@@ -15,10 +15,10 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   def with_mock_orchestrator(mock_orchestrator)
     original_new = QueryOrchestratorService.method(:new)
-    QueryOrchestratorService.define_singleton_method(:new) { |*_args| mock_orchestrator }
+    QueryOrchestratorService.define_singleton_method(:new) { |*_args, **_kwargs| mock_orchestrator }
     yield
   ensure
-    QueryOrchestratorService.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end
 
   def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
@@ -43,7 +43,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     assert json.key?('error')
   end
 
-  test 'rejects empty question' do
+  test 'rejects empty question when no attachments' do
     sign_in @user
     post rag_ask_url, params: { question: '' }, as: :json
     assert_response :bad_request
@@ -51,6 +51,34 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     json = json_response
     assert_equal 'error', json['status']
     assert_includes json['message'].downcase, 'empty'
+  end
+
+  test 'accepts document with empty question and returns success' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
+      answer: 'Documentos subidos correctamente. La indexación en la base de conocimientos está en proceso.',
+      citations: [],
+      session_id: nil
+    )
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url,
+           params: {
+             question: '',
+             document: {
+               data: Base64.strict_encode64('Hello world'),
+               media_type: 'text/plain',
+               filename: 'test.txt'
+             }
+           },
+           as: :json
+      assert_response :success
+
+      json = json_response
+      assert_equal 'success', json['status']
+      assert_includes json['answer'], 'Documentos subidos'
+    end
   end
 
   test 'returns successful response with answer and citations' do

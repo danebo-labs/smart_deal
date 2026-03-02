@@ -176,7 +176,7 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
       service = S3DocumentsService.new
       key = service.upload_file('photo.png', 'binary-data', 'image/png')
 
-      assert_match %r{uploads/\d{4}-\d{2}-\d{2}/photo\.png}, key
+      assert_match %r{tech-docs/uploads/\d{4}-\d{2}-\d{2}/photo\.png}, key
       assert_equal 1, fake.uploaded.length
       assert_equal 'binary-data', fake.uploaded.first[:body]
       assert_equal 'image/png', fake.uploaded.first[:content_type]

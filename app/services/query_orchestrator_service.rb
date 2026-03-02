@@ -25,27 +25,47 @@ class QueryOrchestratorService
 
   # @param query [String] The user's question
   # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
-  def initialize(query, images: [])
+  # @param documents [Array<Hash>] Optional array of { data: base64, media_type: "text/plain", filename: "x.txt" }
+  # @param model_id [String] Optional Bedrock model ID to use
+  def initialize(query, images: [], documents: [], model_id: nil)
     @query = query
     @images = images || []
+    @documents = documents || []
+    @model_id = model_id
     @ai_provider = AiProvider.new
   end
 
-  # Main entry point. When images are present, always runs a multimodal
-  # analysis in parallel with a KB lookup, then merges results.
-  # Without images, uses the standard intent classification flow.
+  # Main entry point. When images are present, runs multimodal analysis.
+  # Documents/images are uploaded to S3 and KB synced in background on submit.
   def execute
+    if @images.any? || @documents.any?
+      Thread.new do
+        upload_and_sync_attachments
+      rescue StandardError => e
+        Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
+      end
+    end
+
     return execute_multimodal_query if @images.any?
+
+    if @documents.any? && @query.blank?
+      return {
+        answer: "Documentos subidos correctamente. La indexación en la base de conocimientos está en proceso. " \
+                "Podrás consultarlos en unos minutos.",
+        citations: [],
+        session_id: nil
+      }
+    end
 
     tool_to_use = classify_query_intent
 
     case tool_to_use
     when TOOLS[:DATABASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
-      SqlGenerationService.new(@query).execute
+      SqlGenerationService.new(@query, model_id: @model_id).execute
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
-      BedrockRagService.new.query(@query)
+      BedrockRagService.new(model_id: @model_id).query(@query)
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
       execute_hybrid_query
@@ -54,7 +74,7 @@ class QueryOrchestratorService
         "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
         "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
       )
-      BedrockRagService.new.query(@query)
+      BedrockRagService.new(model_id: @model_id).query(@query)
     end
   end
 
@@ -67,13 +87,7 @@ class QueryOrchestratorService
     Rails.logger.info("QueryOrchestrator: MULTIMODAL query with #{@images.size} image(s) for: '#{@query}'")
 
     prompt = @query.presence || DEFAULT_IMAGE_PROMPT
-    image_result = @ai_provider.query(prompt, images: @images, max_tokens: 3000)
-
-    Thread.new do
-      upload_and_sync_images
-    rescue StandardError => e
-      Rails.logger.error("QueryOrchestrator MULTIMODAL - S3 upload/sync failed: #{e.message}")
-    end
+    image_result = @ai_provider.query(prompt, images: @images, max_tokens: 3000, model_id: @model_id)
 
     image_answer = image_result.to_s.strip.presence
 
@@ -86,17 +100,25 @@ class QueryOrchestratorService
     end
   end
 
-  def upload_and_sync_images
+  def upload_and_sync_attachments
     s3 = S3DocumentsService.new
 
     @images.each_with_index do |img, idx|
       ext = img[:media_type]&.split('/')&.last || 'png'
-      filename = "whatsapp_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
+      filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
       binary_data = Base64.decode64(img[:data] || img['data'])
       s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
     end
 
-    KbSyncService.new.sync!
+    @documents.each_with_index do |doc, idx|
+      filename = doc[:filename].presence || "doc_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.txt"
+      filename = File.basename(filename) # Avoid path traversal
+      binary_data = Base64.decode64(doc[:data] || doc['data'])
+      media_type = doc[:media_type] || doc['media_type'] || 'text/plain'
+      s3.upload_file(filename, binary_data, media_type)
+    end
+
+    KbSyncService.new.sync! if @images.any? || @documents.any?
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,
@@ -108,14 +130,14 @@ class QueryOrchestratorService
     # Run both queries in parallel to minimize total latency.
     # Instead of ~DB_time + ~KB_time, we pay only ~max(DB_time, KB_time).
     db_thread = Thread.new do
-      db_result = SqlGenerationService.new(@query).execute
+      db_result = SqlGenerationService.new(@query, model_id: @model_id).execute
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - DB thread failed: #{e.message}")
       db_result = { answer: nil, citations: [], session_id: nil }
     end
 
     kb_thread = Thread.new do
-      kb_result = BedrockRagService.new.query(@query)
+      kb_result = BedrockRagService.new(model_id: @model_id).query(@query)
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")
       kb_result = { answer: nil, citations: [], session_id: nil }
@@ -161,7 +183,7 @@ class QueryOrchestratorService
       Write the unified answer:
     PROMPT
 
-    @ai_provider.query(synthesis_prompt).to_s.strip
+    @ai_provider.query(synthesis_prompt, model_id: @model_id).to_s.strip
   end
 
   # This is the cheap, fast, first step. It uses an LLM to classify the task.
@@ -179,6 +201,9 @@ class QueryOrchestratorService
       Based on the user's question, which is the correct tool? Respond with ONLY the tool name (DATABASE_QUERY, KNOWLEDGE_BASE_QUERY, or HYBRID_QUERY). Do not include any other text.
     PROMPT
 
+    # NOTE: @model_id is intentionally NOT passed here. Classification is a cheap
+    # routing step that does not justify using an expensive model. The selected
+    # model_id is only propagated to the services that generate the final answer.
     response = @ai_provider.query(classification_prompt).to_s.strip
 
     # Extract the tool name even if the LLM adds extra text around it.

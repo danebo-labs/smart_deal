@@ -25,19 +25,37 @@ class QueryOrchestratorService
 
   # @param query [String] The user's question
   # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
+  # @param documents [Array<Hash>] Optional array of { data: base64, media_type: "text/plain", filename: "x.txt" }
   # @param model_id [String] Optional Bedrock model ID to use
-  def initialize(query, images: [], model_id: nil)
+  def initialize(query, images: [], documents: [], model_id: nil)
     @query = query
     @images = images || []
+    @documents = documents || []
     @model_id = model_id
     @ai_provider = AiProvider.new
   end
 
-  # Main entry point. When images are present, always runs a multimodal
-  # analysis in parallel with a KB lookup, then merges results.
-  # Without images, uses the standard intent classification flow.
+  # Main entry point. When images are present, runs multimodal analysis.
+  # Documents/images are uploaded to S3 and KB synced in background on submit.
   def execute
+    if @images.any? || @documents.any?
+      Thread.new do
+        upload_and_sync_attachments
+      rescue StandardError => e
+        Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
+      end
+    end
+
     return execute_multimodal_query if @images.any?
+
+    if @documents.any? && @query.blank?
+      return {
+        answer: "Documentos subidos correctamente. La indexación en la base de conocimientos está en proceso. " \
+                "Podrás consultarlos en unos minutos.",
+        citations: [],
+        session_id: nil
+      }
+    end
 
     tool_to_use = classify_query_intent
 
@@ -71,12 +89,6 @@ class QueryOrchestratorService
     prompt = @query.presence || DEFAULT_IMAGE_PROMPT
     image_result = @ai_provider.query(prompt, images: @images, max_tokens: 3000, model_id: @model_id)
 
-    Thread.new do
-      upload_and_sync_images
-    rescue StandardError => e
-      Rails.logger.error("QueryOrchestrator MULTIMODAL - S3 upload/sync failed: #{e.message}")
-    end
-
     image_answer = image_result.to_s.strip.presence
 
     Rails.logger.info("QueryOrchestrator MULTIMODAL - Image answer present: #{image_answer.present?}")
@@ -88,17 +100,25 @@ class QueryOrchestratorService
     end
   end
 
-  def upload_and_sync_images
+  def upload_and_sync_attachments
     s3 = S3DocumentsService.new
 
     @images.each_with_index do |img, idx|
       ext = img[:media_type]&.split('/')&.last || 'png'
-      filename = "whatsapp_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
+      filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
       binary_data = Base64.decode64(img[:data] || img['data'])
       s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
     end
 
-    KbSyncService.new.sync!
+    @documents.each_with_index do |doc, idx|
+      filename = doc[:filename].presence || "doc_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.txt"
+      filename = File.basename(filename) # Avoid path traversal
+      binary_data = Base64.decode64(doc[:data] || doc['data'])
+      media_type = doc[:media_type] || doc['media_type'] || 'text/plain'
+      s3.upload_file(filename, binary_data, media_type)
+    end
+
+    KbSyncService.new.sync! if @images.any? || @documents.any?
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,

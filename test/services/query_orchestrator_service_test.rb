@@ -263,4 +263,36 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal 'HYBRID_QUERY', QueryOrchestratorService::TOOLS[:HYBRID_QUERY]
     assert_equal 3, QueryOrchestratorService::TOOLS.size
   end
+
+  # ============================================
+  # Tests: Document upload flow
+  # ============================================
+
+  test 'documents only with blank question returns upload confirmation' do
+    result = QueryOrchestratorService.new(
+      '',
+      documents: [
+        { data: Base64.strict_encode64('test content'), media_type: 'text/plain', filename: 'doc.txt' }
+      ]
+    ).execute
+
+    assert result.is_a?(Hash)
+    assert_includes result[:answer], 'Documentos subidos'
+    assert_includes result[:answer], 'indexación'
+    assert_equal [], result[:citations]
+    assert_nil result[:session_id]
+  end
+
+  test 'documents with question routes to classification' do
+    with_all_mocks(classification: 'KNOWLEDGE_BASE_QUERY') do
+      result = QueryOrchestratorService.new(
+        'What is in the document?',
+        documents: [
+          { data: Base64.strict_encode64('content'), media_type: 'text/markdown', filename: 'readme.md' }
+        ]
+      ).execute
+
+      assert_equal KB_RESPONSE[:answer], result[:answer]
+    end
+  end
 end

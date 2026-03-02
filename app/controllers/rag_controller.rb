@@ -8,9 +8,10 @@ class RagController < ApplicationController
 
   def ask
     images = extract_images_from_params
+    documents = extract_documents_from_params
 
     model_id = resolve_model_id(params[:model])
-    result = execute_rag_query(params[:question], images: images, model_id: model_id)
+    result = execute_rag_query(params[:question], images: images, documents: documents, model_id: model_id)
 
     unless result.success?
       render_rag_json_error(result)
@@ -49,6 +50,18 @@ class RagController < ApplicationController
     else
       []
     end
+  rescue StandardError
+    []
+  end
+
+  def extract_documents_from_params
+    doc_param = params[:document]
+    return [] if doc_param.blank?
+
+    docs = doc_param.is_a?(Array) ? doc_param : [ doc_param ]
+    docs.select do |d|
+      d[:data].present? && (d[:media_type].present? || d[:filename].present?)
+    end.map { |d| d.to_unsafe_h.symbolize_keys }
   rescue StandardError
     []
   end

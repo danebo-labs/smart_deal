@@ -18,8 +18,9 @@ module RagQueryConcern
   #
   # @param question [String] The question to query
   # @param images [Array<Hash>] Optional images as [{ data: "base64...", media_type: "image/png" }]
+  # @param model_id [String] Optional Bedrock model ID to use
   # @return [RagResult] Structured result with success status and data or error info
-  def execute_rag_query(question, images: [])
+  def execute_rag_query(question, images: [], model_id: nil)
     question = question.to_s.strip
     images = Array(images).compact
 
@@ -27,7 +28,7 @@ module RagQueryConcern
       return RagResult.new(success?: false, error_type: :blank_question)
     end
 
-    result = QueryOrchestratorService.new(question, images: images).execute
+    result = QueryOrchestratorService.new(question, images: images, model_id: model_id).execute
 
     RagResult.new(
       success?: true,

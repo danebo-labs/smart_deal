@@ -275,8 +275,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     result = QueryOrchestratorService.new('', documents: docs).execute
 
     assert result.is_a?(Hash)
-    assert_includes result[:answer], 'Documentos subidos'
-    assert_includes result[:answer], 'indexación'
+    assert_includes result[:answer], 'document'
+    assert_includes result[:answer], 'index'
     assert_equal [], result[:citations]
     assert_nil result[:session_id]
   end

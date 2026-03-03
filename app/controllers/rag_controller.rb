@@ -18,12 +18,14 @@ class RagController < ApplicationController
       return
     end
 
-    render json: {
+    json = {
       answer: result.answer,
       citations: result.citations,
       session_id: result.session_id,
       status: 'success'
     }
+    json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
+    render json: json
   end
 
   private

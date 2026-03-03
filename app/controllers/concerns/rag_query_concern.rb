@@ -8,7 +8,7 @@ module RagQueryConcern
   extend ActiveSupport::Concern
 
   # Result object for queries (works for both RAG and SQL responses)
-  RagResult = Struct.new(:success?, :answer, :citations, :session_id, :error_type, :error_message, keyword_init: true)
+  RagResult = Struct.new(:success?, :answer, :citations, :session_id, :documents_uploaded, :error_type, :error_message, keyword_init: true)
 
   private
 
@@ -36,7 +36,8 @@ module RagQueryConcern
       success?: true,
       answer: result[:answer],
       citations: result[:citations],
-      session_id: result[:session_id]
+      session_id: result[:session_id],
+      documents_uploaded: result[:documents_uploaded]
     )
   rescue BedrockRagService::MissingKnowledgeBaseError => e
     log_rag_error("RAG config error", e)

@@ -49,11 +49,13 @@ class QueryOrchestratorService
     return execute_multimodal_query if @images.any?
 
     if @documents.any? && @query.blank?
+      # Top-level thread (started above) runs upload_and_sync_attachments
+      filenames = @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
       return {
-        answer: "Documentos subidos correctamente. La indexación en la base de conocimientos está en proceso. " \
-                "Podrás consultarlos en unos minutos.",
+        answer: I18n.t('rag.document_indexing_message'),
         citations: [],
-        session_id: nil
+        session_id: nil,
+        documents_uploaded: filenames
       }
     end
 
@@ -101,24 +103,36 @@ class QueryOrchestratorService
   end
 
   def upload_and_sync_attachments
+    upload_and_sync_with_filenames([])
+  end
+
+  # @param precollected_filenames [Array<String>] Optional; when empty, uses collected uploads
+  def upload_and_sync_with_filenames(precollected_filenames = [])
     s3 = S3DocumentsService.new
+    uploaded_filenames = []
 
     @images.each_with_index do |img, idx|
       ext = img[:media_type]&.split('/')&.last || 'png'
       filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
       binary_data = Base64.decode64(img[:data] || img['data'])
       s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
+      uploaded_filenames << filename
     end
 
     @documents.each_with_index do |doc, idx|
       filename = doc[:filename].presence || "doc_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.txt"
-      filename = File.basename(filename) # Avoid path traversal
+      filename = File.basename(filename)
       binary_data = Base64.decode64(doc[:data] || doc['data'])
       media_type = doc[:media_type] || doc['media_type'] || 'text/plain'
       s3.upload_file(filename, binary_data, media_type)
+      uploaded_filenames << filename
     end
 
-    KbSyncService.new.sync! if @images.any? || @documents.any?
+    filenames_for_sync = precollected_filenames.any? ? precollected_filenames : uploaded_filenames
+    return unless @images.any? || @documents.any?
+
+    job_id = KbSyncService.new.sync!(uploaded_filenames: filenames_for_sync)
+    BedrockIngestionJob.perform_later(job_id, filenames_for_sync) if job_id.present?
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,

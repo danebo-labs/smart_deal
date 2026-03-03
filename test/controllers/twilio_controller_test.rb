@@ -11,10 +11,10 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
   # The concern (used by TwilioController) now routes through the orchestrator.
   def with_mock_orchestrator(mock_orchestrator)
     original_new = QueryOrchestratorService.method(:new)
-    QueryOrchestratorService.define_singleton_method(:new) { |*_args| mock_orchestrator }
+    QueryOrchestratorService.define_singleton_method(:new) { |*_args, **_kwargs| mock_orchestrator }
     yield
   ensure
-    QueryOrchestratorService.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end
 
   # Helper to create a mock QueryOrchestratorService.

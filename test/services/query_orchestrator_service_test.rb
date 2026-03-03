@@ -52,10 +52,10 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       raise error_class, 'SQL service error' if should_raise
       response
     end
-    SqlGenerationService.define_singleton_method(:new) { |*_args| mock_service }
+    SqlGenerationService.define_singleton_method(:new) { |*_args, **_kwargs| mock_service }
     yield
   ensure
-    SqlGenerationService.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    SqlGenerationService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end
 
   # Stubs BedrockRagService to return a controlled response.
@@ -66,10 +66,10 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       raise error_class, 'KB service error' if should_raise
       response
     end
-    BedrockRagService.define_singleton_method(:new) { |*_args| mock_service }
+    BedrockRagService.define_singleton_method(:new) { |*_args, **_kwargs| mock_service }
     yield
   ensure
-    BedrockRagService.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    BedrockRagService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end
 
   # Combines all three mocks for convenience.

@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 Rails.application.routes.draw do
+  mount ActionCable.server => "/cable"
+
   root 'home#index'
 
   get  'home/metrics',       to: 'home#metrics'
+  get  'home/documents',    to: 'home#documents'
   get  'dashboard',          to: 'dashboard#index'
   get  'dashboard/metrics',  to: 'dashboard#metrics'
   post 'dashboard/refresh',  to: 'dashboard#refresh'

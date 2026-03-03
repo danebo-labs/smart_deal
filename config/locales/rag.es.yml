@@ -1,0 +1,6 @@
+# RAG / chat messages
+es:
+  rag:
+    document_indexing_message: "Estamos procesando tu documento. Estará listo para consultas en breve. Puedes seguir haciendo consultas sobre los documentos ya indexados."
+    document_indexed_message: "Documento listo para consultas RAG"
+    document_indexing_failed_message: "La indexación del documento falló. Por favor, inténtalo de nuevo."

@@ -1,6 +1,7 @@
 // app/javascript/controllers/rag_chat_controller.js
 
 import { Controller } from "@hotwired/stimulus"
+import { createConsumer } from "@rails/actioncable"
 import { formatAnswer } from "rag/citation_formatter"
 import { renderReferences } from "rag/references_renderer"
 
@@ -15,7 +16,29 @@ export default class extends Controller {
 
   connect() {
     this.pendingFile = null
+    this.subscribeToKbSync()
     this.inputTarget?.focus()
+  }
+
+  disconnect() {
+    this.kbSyncSubscription?.unsubscribe()
+  }
+
+  subscribeToKbSync() {
+    if (window.location.pathname !== "/" && window.location.pathname !== "/home") return
+
+    const controller = this
+    const consumer = createConsumer()
+    this.kbSyncSubscription = consumer.subscriptions.create("KbSyncChannel", {
+      received(data) {
+        if (data.status === "indexed" || data.status === "failed") {
+          controller.refreshDocuments()
+          if (data.status === "failed" && data.message) {
+            controller.addMessage(data.message, "error")
+          }
+        }
+      }
+    })
   }
 
   clickAttach() {
@@ -120,11 +143,16 @@ export default class extends Controller {
         throw new Error(data.message || "Unknown error")
       }
 
-      const answerHtml = formatAnswer(data.answer, data.citations)
-      this.addMessageHtml(answerHtml, "assistant")
-
-      if (data.citations?.length) {
-        this.addMessageHtml(renderReferences(data.citations), "assistant")
+      if (data.documents_uploaded?.length) {
+        this.addMessage(data.answer, "system")
+        this.refreshDocuments()
+        setTimeout(() => this.refreshDocuments(), 2000)
+      } else {
+        const answerHtml = formatAnswer(data.answer, data.citations)
+        this.addMessageHtml(answerHtml, "assistant")
+        if (data.citations?.length) {
+          this.addMessageHtml(renderReferences(data.citations), "assistant")
+        }
       }
 
       this.updateMetrics()
@@ -250,6 +278,34 @@ export default class extends Controller {
     const div = document.createElement("div")
     div.textContent = text
     return div.innerHTML
+  }
+
+  async refreshDocuments() {
+    if (window.location.pathname !== '/' && window.location.pathname !== '/home') return
+
+    try {
+      const response = await fetch('/home/documents', {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/vnd.turbo-stream.html',
+          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content
+        },
+        credentials: 'same-origin'
+      })
+      if (!response.ok) return
+
+      const html = await response.text()
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, 'text/html')
+      const streams = doc.querySelectorAll('turbo-stream')
+      streams.forEach(stream => {
+        const clone = stream.cloneNode(true)
+        document.body.appendChild(clone)
+        setTimeout(() => clone.remove(), 100)
+      })
+    } catch (error) {
+      console.error('Error refreshing documents:', error)
+    }
   }
 
   async updateMetrics() {

@@ -1,0 +1,6 @@
+# RAG / chat messages
+en:
+  rag:
+    document_indexing_message: "We are processing your document. It will be ready for queries shortly. You can still ask questions about other indexed documents."
+    document_indexed_message: "Document ready for RAG queries"
+    document_indexing_failed_message: "Document indexing failed. Please try again."

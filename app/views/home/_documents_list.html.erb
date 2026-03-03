@@ -1,11 +1,27 @@
+<% indexing_document_names ||= [] %>
 <div class="knowledge-base-content">
   <% if documents.any? %>
     <div class="documents-list">
       <% documents.each_with_index do |doc, index| %>
+        <% is_indexing = indexing_document_names.include?(doc[:name]) %>
         <div class="document-item-card">
           <div class="document-item-header">
             <span class="document-number">[<%= index + 1 %>]</span>
             <span class="document-name-primary" title="<%= doc[:name] %>"><%= doc[:name] %></span>
+            <% if is_indexing %>
+              <span class="document-status document-status-indexing" title="Indexando">
+                <svg class="document-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"/>
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+              </span>
+            <% else %>
+              <span class="document-status document-status-indexed" title="Indexado">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+            <% end %>
           </div>
           <div class="document-meta-secondary">
             <%= number_to_human_size(doc[:size_bytes]) %> • 

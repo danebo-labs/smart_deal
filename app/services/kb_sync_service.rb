@@ -21,8 +21,9 @@ class KbSyncService
 
   # Starts an ingestion job. Safe to call frequently — Bedrock will queue
   # if another job is already running.
-  # Ensures the data source includes uploads/ before syncing (for chat uploads).
-  def sync!
+  # @param uploaded_filenames [Array<String>] Document names being indexed (for status UI)
+  # @return [String, nil] Ingestion job ID
+  def sync!(uploaded_filenames: [])
     unless @kb_id
       Rails.logger.warn("KbSyncService: KB ID not configured, skipping sync")
       return nil
@@ -36,8 +37,11 @@ class KbSyncService
       data_source_id: ds_id
     )
 
-    Rails.logger.info("KbSyncService: Ingestion job started — #{job.ingestion_job.ingestion_job_id} (#{job.ingestion_job.status})")
-    job.ingestion_job.ingestion_job_id
+    job_id = job.ingestion_job.ingestion_job_id
+    Rails.logger.info("KbSyncService: Ingestion job started — #{job_id} (#{job.ingestion_job.status})")
+
+    IngestionStatusService.new.register_ingestion(job_id, uploaded_filenames)
+    job_id
   rescue StandardError => e
     Rails.logger.error("KbSyncService: Failed to start ingestion — #{e.message}")
     nil

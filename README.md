@@ -40,6 +40,13 @@ bin/setup --skip-server
 bin/dev
 ```
 
+`bin/dev` runs [Foreman](https://github.com/ddollar/foreman) with `Procfile.dev`, which starts:
+
+- **web** — Rails server on port 3000
+- **css** — Tailwind CSS watcher (rebuilds styles on change)
+
+Foreman is installed automatically by `bin/dev` if missing.
+
 Open http://localhost:3000 in your browser.
 
 ### Secrets management

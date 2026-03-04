@@ -11,6 +11,10 @@
       <span class="metric-label">Queries</span>
       <span class="metric-value" data-metric-value="queries"><%= current_metrics[:today_queries] %></span>
     </div>
+    <div class="metric-item" data-metric-type="cost">
+      <span class="metric-label">Costo hoy</span>
+      <span class="metric-value" data-metric-value="cost">$<%= current_metrics[:today_cost].round(4) %></span>
+    </div>
   </div>
 </div>
 

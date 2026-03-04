@@ -14,9 +14,11 @@ class BedrockQuery < ApplicationRecord
     'us.anthropic.claude-sonnet-4-5-20250929-v1:0'     => { input: 0.003,   output: 0.015  },
     'us.anthropic.claude-haiku-4-5-20251001-v1:0'      => { input: 0.0008,  output: 0.004  },
     'us.anthropic.claude-opus-4-5-20251101-v1:0'       => { input: 0.015,   output: 0.075  },
-    # Claude 3.x family
+    # Claude 3.x family (incl. US inference profiles)
     'anthropic.claude-3-7-sonnet-20250219-v1:0'        => { input: 0.003,   output: 0.015  },
     'anthropic.claude-3-5-sonnet-20241022-v2:0'        => { input: 0.003,   output: 0.015  },
+    'us.anthropic.claude-3-5-sonnet-20241022-v2:0'     => { input: 0.003,   output: 0.015  },
+    'us.anthropic.claude-3-5-haiku-20241022-v1:0'      => { input: 0.00025, output: 0.00125 },
     'anthropic.claude-3-5-sonnet-20240620-v1:0'        => { input: 0.003,   output: 0.015  },
     'anthropic.claude-3-sonnet-20240229-v1:0'          => { input: 0.003,   output: 0.015  },
     'anthropic.claude-3-haiku-20240307-v1:0'           => { input: 0.00025, output: 0.00125 },

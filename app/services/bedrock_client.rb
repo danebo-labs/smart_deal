@@ -55,6 +55,7 @@ class BedrockClient
       messages: [{ role: 'user', content: content }]
     }
 
+    start_time = Time.current
     response = @client.invoke_model(
       model_id: effective_model,
       content_type: 'application/json',
@@ -62,7 +63,11 @@ class BedrockClient
     )
 
     result = JSON.parse(response.body.read)
-    result.dig('content', 0, 'text') || result.to_s
+    text = result.dig('content', 0, 'text') || result.to_s
+
+    track_usage(result, effective_model, prompt, start_time)
+
+    text
   rescue StandardError => e
     Rails.logger.error("Bedrock error: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
@@ -75,6 +80,28 @@ class BedrockClient
   end
 
   private
+
+  def track_usage(result, model_id, prompt, start_time)
+    usage = result['usage'] || {}
+    input_tokens = (usage['input_tokens'] || usage['inputTokens']).to_i
+    output_tokens = (usage['output_tokens'] || usage['outputTokens']).to_i
+
+    return if input_tokens <= 0
+
+    latency_ms = ((Time.current - start_time) * 1000).to_i
+    BedrockQuery.create!(
+      model_id: model_id,
+      input_tokens: input_tokens,
+      output_tokens: output_tokens,
+      user_query: prompt.to_s.truncate(500),
+      latency_ms: latency_ms,
+      created_at: Time.current
+    )
+    SimpleMetricsService.update_database_metrics_only
+    Rails.logger.info("BedrockClient: tracked #{input_tokens} in + #{output_tokens} out tokens")
+  rescue StandardError => e
+    Rails.logger.error("BedrockClient: failed to track usage: #{e.message}")
+  end
 
   # Builds the content field for the Anthropic Messages API.
   # With images: returns an array of image + text blocks (multimodal).

@@ -516,6 +516,7 @@ DEPENDENCIES
   rubocop-capybara
   rubocop-rails-omakase
   ruby-openai
+  ruby-vips
   selenium-webdriver
   solid_cable
   solid_cache

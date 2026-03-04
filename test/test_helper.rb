@@ -1,15 +1,16 @@
 # frozen_string_literal: true
 
 ENV['RAILS_ENV'] ||= 'test'
-require_relative '../config/environment'
-require 'rails/test_help'
 
+# Load vips (or mock) before environment—image_processing may require it during boot.
 begin
   require 'vips'
 rescue LoadError
-  # vips not installed, load mock
   require_relative 'support/mock_vips'
 end
+
+require_relative '../config/environment'
+require 'rails/test_help'
 
 module ActiveSupport
   class TestCase

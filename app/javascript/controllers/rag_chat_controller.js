@@ -11,8 +11,9 @@ export default class extends Controller {
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024
   static MAX_DOC_SIZE = 10 * 1024 * 1024 // 10 MB (Bedrock KB limit is 50 MB)
   static SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
-  static SUPPORTED_DOC_TYPES = ["text/plain", "text/markdown", "text/html", "text/csv"]
-  static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv"]
+  static SUPPORTED_DOC_TYPES = ["text/plain", "text/markdown", "text/html", "text/csv", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]
+  static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
+  static BINARY_DOC_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"]
 
   connect() {
     this.pendingFile = null
@@ -54,7 +55,7 @@ export default class extends Controller {
       this.constructor.DOC_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))
 
     if (!isImage && !isDoc) {
-      this.addMessage("Solo se permiten imágenes (PNG, JPEG, GIF, WebP) o documentos (.txt, .md, .html, .csv).", "error")
+      this.addMessage("Solo se permiten imágenes (PNG, JPEG, GIF, WebP) o documentos (.txt, .md, .html, .csv, .pdf, .doc, .docx, .xls, .xlsx).", "error")
       this.fileInputTarget.value = ""
       return
     }
@@ -77,22 +78,49 @@ export default class extends Controller {
       }
       reader.readAsDataURL(file)
     } else {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const text = e.target.result
-        const base64Data = btoa(unescape(encodeURIComponent(text)))
-        const mimeType = this.getDocMimeType(file.name, file.type)
-        this.pendingFile = { data: base64Data, media_type: mimeType, filename: file.name, type: "document" }
-        this.showPreview(null, file.name, "document")
+      const isBinary = this.constructor.BINARY_DOC_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))
+      if (isBinary) {
+        file.arrayBuffer().then((buffer) => {
+          const base64Data = this.arrayBufferToBase64(buffer)
+          const mimeType = this.getDocMimeType(file.name, file.type)
+          this.pendingFile = { data: base64Data, media_type: mimeType, filename: file.name, type: "document" }
+          this.showPreview(null, file.name, "document")
+        }).catch(() => {
+          this.addMessage("Error al leer el archivo.", "error")
+          this.fileInputTarget.value = ""
+        })
+      } else {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const text = e.target.result
+          const base64Data = btoa(unescape(encodeURIComponent(text)))
+          const mimeType = this.getDocMimeType(file.name, file.type)
+          this.pendingFile = { data: base64Data, media_type: mimeType, filename: file.name, type: "document" }
+          this.showPreview(null, file.name, "document")
+        }
+        reader.readAsText(file, "UTF-8")
       }
-      reader.readAsText(file, "UTF-8")
     }
   }
 
   getDocMimeType(filename, fallbackType) {
-    const ext = filename.toLowerCase().split(".").pop()
-    const map = { txt: "text/plain", md: "text/markdown", html: "text/html", csv: "text/csv" }
-    return map[ext] || fallbackType || "text/plain"
+    const ext = (filename || "").toLowerCase().split(".").pop()
+    const map = {
+      txt: "text/plain", md: "text/markdown", html: "text/html", csv: "text/csv",
+      pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+    return map[ext] || fallbackType || "application/octet-stream"
+  }
+
+  arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer)
+    let binary = ""
+    const chunk = 8192
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+    }
+    return btoa(binary)
   }
 
   showPreview(imageDataUrl, name, fileType) {
@@ -146,7 +174,7 @@ export default class extends Controller {
       if (data.documents_uploaded?.length) {
         this.addMessage(data.answer, "system")
         this.refreshDocuments()
-        setTimeout(() => this.refreshDocuments(), 2000)
+        [ 2000, 5000 ].forEach(ms => setTimeout(() => this.refreshDocuments(), ms))
       } else {
         const answerHtml = formatAnswer(data.answer, data.citations)
         this.addMessageHtml(answerHtml, "assistant")

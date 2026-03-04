@@ -37,20 +37,29 @@ class QueryOrchestratorService
 
   # Main entry point. When images are present, runs multimodal analysis.
   # Documents/images are uploaded to S3 and KB synced in background on submit.
+  # For documents-only (no question): blocks on S3 upload + sync so UI can show doc with
+  # spinner immediately; server does NOT block on indexing (that runs in a job).
   def execute
+    documents_only = @documents.any? && @query.blank? && @images.empty?
+    uploaded_filenames = []
+
     if @images.any? || @documents.any?
-      Thread.new do
-        upload_and_sync_attachments
-      rescue StandardError => e
-        Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
+      if documents_only
+        # Synchronous upload so doc appears in S3 before response; client sees spinner via ActionCable
+        uploaded_filenames = upload_and_sync_attachments
+      else
+        Thread.new do
+          upload_and_sync_attachments
+        rescue StandardError => e
+          Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
+        end
       end
     end
 
     return execute_multimodal_query if @images.any?
 
     if @documents.any? && @query.blank?
-      # Top-level thread (started above) runs upload_and_sync_attachments
-      filenames = @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
+      filenames = uploaded_filenames.presence || @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
       return {
         answer: I18n.t('rag.document_indexing_message'),
         citations: [],
@@ -102,6 +111,7 @@ class QueryOrchestratorService
     end
   end
 
+  # @return [Array<String>] filenames that were successfully uploaded
   def upload_and_sync_attachments
     upload_and_sync_with_filenames([])
   end
@@ -115,8 +125,8 @@ class QueryOrchestratorService
       ext = img[:media_type]&.split('/')&.last || 'png'
       filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
       binary_data = Base64.decode64(img[:data] || img['data'])
-      s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
-      uploaded_filenames << filename
+      key = s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
+      uploaded_filenames << filename if key.present?
     end
 
     @documents.each_with_index do |doc, idx|
@@ -124,15 +134,16 @@ class QueryOrchestratorService
       filename = File.basename(filename)
       binary_data = Base64.decode64(doc[:data] || doc['data'])
       media_type = doc[:media_type] || doc['media_type'] || 'text/plain'
-      s3.upload_file(filename, binary_data, media_type)
-      uploaded_filenames << filename
+      key = s3.upload_file(filename, binary_data, media_type)
+      uploaded_filenames << filename if key.present?
     end
 
     filenames_for_sync = precollected_filenames.any? ? precollected_filenames : uploaded_filenames
-    return unless @images.any? || @documents.any?
+    return [] unless filenames_for_sync.any?
 
     job_id = KbSyncService.new.sync!(uploaded_filenames: filenames_for_sync)
     BedrockIngestionJob.perform_later(job_id, filenames_for_sync) if job_id.present?
+    uploaded_filenames
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,

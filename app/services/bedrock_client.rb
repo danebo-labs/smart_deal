@@ -23,8 +23,7 @@ class BedrockClient
     'Anthropic Claude Opus 4.5 (US)'       => 'us.anthropic.claude-opus-4-5-20251101-v1:0',
     # Modelos directos Claude 3.x
     'Anthropic Claude 3.7 Sonnet'          => 'anthropic.claude-3-7-sonnet-20250219-v1:0',
-    'Anthropic Claude 3.5 Sonnet v2'       => 'anthropic.claude-3-5-sonnet-20241022-v2:0',
-    'Anthropic Claude 3.5 Sonnet'          => 'anthropic.claude-3-5-sonnet-20240620-v1:0'
+    'Anthropic Claude 3.5 Sonnet v2'       => 'anthropic.claude-3-5-sonnet-20241022-v2:0'
   }.freeze
 
   ALLOWED_MODEL_IDS = MODELS_MAP.values.freeze

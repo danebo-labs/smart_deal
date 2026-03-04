@@ -45,15 +45,28 @@ class RagController < ApplicationController
     image_param = params[:image]
     return [] if image_param.blank?
 
-    if image_param.is_a?(Array)
+    images = if image_param.is_a?(Array)
       image_param.select { |img| img[:data].present? && img[:media_type].present? }
     elsif image_param[:data].present? && image_param[:media_type].present?
       [ image_param.to_unsafe_h ]
     else
       []
     end
-  rescue StandardError
+
+    compress_images(images)
+  rescue StandardError => e
+    Rails.logger.error("RagController: Failed to extract/compress images: #{e.message}")
     []
+  end
+
+  def compress_images(images)
+    images.map do |img|
+      result = ImageCompressionService.compress(img[:data], img[:media_type])
+      { data: result[:data], media_type: result[:media_type] }
+    end
+  rescue ImageCompressionService::CompressionError => e
+    Rails.logger.error("RagController: Image compression failed: #{e.message}")
+    raise
   end
 
   def extract_documents_from_params

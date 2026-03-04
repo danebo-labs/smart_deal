@@ -23,6 +23,10 @@
      region: us-east-1
      bedrock_bearer_token: YOUR_AWS_BEDROCK_BEARER_TOKEN (opcional)
      bedrock_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
+
+   bedrock:
+     knowledge_base_id: YOUR_KNOWLEDGE_BASE_ID
+     data_source_id: YOUR_DATA_SOURCE_ID (opcional)
    ```
 
 3. Guarda el archivo (en vim/nano: `:wq` o `Ctrl+X` luego `Y`)
@@ -33,6 +37,8 @@
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_REGION=us-east-1
+export BEDROCK_KNOWLEDGE_BASE_ID=your_kb_id
+export BEDROCK_DATA_SOURCE_ID=your_data_source_id  # Opcional, usa el preferido si está disponible
 ```
 
 ### Opción 3: API Key (Bearer Token de Bedrock)
@@ -45,6 +51,32 @@ export AWS_REGION=us-east-1
 ```
 
 > **Importante:** Las llaves de Bedrock pueden expirar (por ejemplo, en 24 horas). Cuando caduquen, genera una nueva y actualiza la variable de entorno.
+
+## Configuración del Knowledge Base
+
+El sistema usa AWS Bedrock Knowledge Base para RAG (Retrieval-Augmented Generation).
+
+### Variables Requeridas
+
+```bash
+BEDROCK_KNOWLEDGE_BASE_ID=your_kb_id          # Requerido
+BEDROCK_DATA_SOURCE_ID=your_data_source_id    # Opcional
+```
+
+### Selección de Data Source
+
+- Si configuras `BEDROCK_DATA_SOURCE_ID`, el sistema verificará que existe en la lista de data sources disponibles y lo usará.
+- Si no existe o no está configurado, usará el primer data source disponible.
+- Para ver los data sources disponibles, ejecuta:
+
+```bash
+bin/rails kb:status
+```
+
+Este comando mostrará:
+- El Knowledge Base ID actual
+- El Data Source ID preferido (si está configurado)
+- Todos los data sources disponibles con sus detalles
 
 ## Configuración del Proveedor de IA
 
@@ -70,6 +102,10 @@ aws:
   region: us-east-1
   bedrock_bearer_token: YOUR_BEDROCK_BEARER_TOKEN (si aplicable)
   bedrock_model_id: us.anthropic.claude-3-5-haiku-20241022-v1:0
+
+bedrock:
+  knowledge_base_id: YOUR_KNOWLEDGE_BASE_ID
+  data_source_id: YOUR_DATA_SOURCE_ID (opcional)
 
 # Configuración del proveedor de IA (solo bedrock disponible)
 ai_provider: bedrock

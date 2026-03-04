@@ -51,7 +51,24 @@ class KbSyncService
 
   def find_data_source_id
     ds_list = @client.list_data_sources(knowledge_base_id: @kb_id)
-    ds_list.data_source_summaries.first&.data_source_id
+    summaries = ds_list.data_source_summaries
+
+    return nil if summaries.empty?
+
+    preferred_id = ENV['BEDROCK_DATA_SOURCE_ID'].presence ||
+                   Rails.application.credentials.dig(:bedrock, :data_source_id)
+
+    if preferred_id
+      ds = summaries.find { |s| s.data_source_id == preferred_id }
+      if ds
+        Rails.logger.info("KbSyncService: Using preferred data source — #{preferred_id}")
+        return ds.data_source_id
+      else
+        Rails.logger.warn("KbSyncService: Preferred data source #{preferred_id} not found, using first available")
+      end
+    end
+
+    summaries.first&.data_source_id
   rescue StandardError => e
     Rails.logger.error("KbSyncService: Failed to list data sources — #{e.message}")
     nil

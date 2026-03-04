@@ -13,11 +13,13 @@ class KbSyncServiceTest < ActiveSupport::TestCase
   setup do
     ENV['BEDROCK_KNOWLEDGE_BASE_ID'] = TEST_KB_ID
     ENV['AWS_REGION'] = 'us-east-1'
+    ENV.delete('BEDROCK_DATA_SOURCE_ID')
   end
 
   teardown do
     ENV.delete('BEDROCK_KNOWLEDGE_BASE_ID')
     ENV.delete('AWS_REGION')
+    ENV.delete('BEDROCK_DATA_SOURCE_ID')
   end
 
   class FakeBedrockAgentClient
@@ -155,6 +157,53 @@ class KbSyncServiceTest < ActiveSupport::TestCase
       service = KbSyncService.new
 
       assert_nil service.sync!
+    end
+  end
+
+  # ============================================
+  # Preferred data source logic
+  # ============================================
+
+  test 'uses preferred data source when it exists in list' do
+    preferred_id = 'preferred-ds-id'
+    other_id = 'other-ds-id'
+
+    with_env_vars('BEDROCK_DATA_SOURCE_ID' => preferred_id) do
+      with_fake_agent_client do |client|
+        client.data_sources = [
+          OpenStruct.new(data_source_id: other_id),
+          OpenStruct.new(data_source_id: preferred_id)
+        ]
+        service = KbSyncService.new
+        job_id = service.sync!
+
+        assert_equal TEST_JOB_ID, job_id
+      end
+    end
+  end
+
+  test 'falls back to first data source when preferred not found' do
+    with_env_vars('BEDROCK_DATA_SOURCE_ID' => 'nonexistent-ds-id') do
+      with_fake_agent_client do |client|
+        client.data_sources = [ OpenStruct.new(data_source_id: TEST_DS_ID) ]
+        service = KbSyncService.new
+        job_id = service.sync!
+
+        assert_equal TEST_JOB_ID, job_id
+      end
+    end
+  end
+
+  test 'uses first data source when no preferred data source configured' do
+    with_fake_agent_client do |client|
+      client.data_sources = [
+        OpenStruct.new(data_source_id: 'first-ds'),
+        OpenStruct.new(data_source_id: 'second-ds')
+      ]
+      service = KbSyncService.new
+      job_id = service.sync!
+
+      assert_equal TEST_JOB_ID, job_id
     end
   end
 end

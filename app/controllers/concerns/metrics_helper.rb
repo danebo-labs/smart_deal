@@ -8,6 +8,12 @@ module MetricsHelper
 
   def current_metrics
     today = Date.current
+
+    # Ensure today's DB metrics (tokens, cost, queries) are synced from BedrockQuery.
+    # CostMetric is only populated after each query; without this, metrics would show 0
+    # on first page load or after server restart before any query runs.
+    sync_today_database_metrics_if_missing(today)
+
     s3_size_bytes = CostMetric.find_by(date: today, metric_type: :s3_total_size)&.value || 0
 
     {
@@ -19,6 +25,14 @@ module MetricsHelper
       s3_size_mb: (s3_size_bytes / 1.megabyte.to_f).round(2),
       s3_size_gb: (s3_size_bytes / 1.gigabyte.to_f).round(2)
     }
+  end
+
+  def sync_today_database_metrics_if_missing(today)
+    return if CostMetric.exists?(date: today, metric_type: :daily_tokens)
+
+    return unless BedrockQuery.exists?(created_at: today.all_day)
+
+    SimpleMetricsService.update_database_metrics_only
   end
 
   def monthly_totals

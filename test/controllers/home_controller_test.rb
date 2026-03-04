@@ -58,4 +58,23 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_match(/metrics-group/, response.body)
   end
+
+  test 'metrics sync from BedrockQuery when CostMetric missing for today' do
+    today = Date.current
+    BedrockQuery.create!(
+      model_id: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      input_tokens: 100,
+      output_tokens: 50,
+      user_query: 'test',
+      latency_ms: 100,
+      created_at: today.beginning_of_day
+    )
+
+    get root_path
+    assert_response :success
+
+    assert CostMetric.exists?(date: today, metric_type: :daily_tokens),
+           'CostMetric should be synced from BedrockQuery on first load'
+    assert_select '.metric-value[data-metric-value="tokens"]', text: /150/
+  end
 end

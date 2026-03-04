@@ -44,7 +44,13 @@ class TwilioController < ApplicationController
       image_data = download_twilio_media(media_url)
       next unless image_data
 
-      images << { data: Base64.strict_encode64(image_data), media_type: media_type }
+      base64_data = Base64.strict_encode64(image_data)
+      compressed = ImageCompressionService.compress(base64_data, media_type)
+      images << { data: compressed[:data], media_type: compressed[:media_type] }
+    rescue ImageCompressionService::CompressionError => e
+      Rails.logger.error("TwilioController: Image compression failed — #{e.message}")
+      # Skip this image; others may still succeed
+      next
     end
 
     images

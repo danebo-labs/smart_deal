@@ -10,7 +10,8 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
 
     assert_equal small_image_base64, result[:data]
     assert_equal result[:original_size], result[:compressed_size]
-    assert_operator result[:original_size], :<, 500_000
+    # Small images (decoded <= 3.75 MB) skip compression
+    assert_operator Base64.decode64(small_image_base64).bytesize, :<=, ImageCompressionService::MAX_BINARY_SIZE_KB
   end
 
   test "returns proper hash structure" do
@@ -25,8 +26,8 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
   end
 
   test "raises error for invalid image data" do
-    # Create data that's large enough to trigger compression but is not a valid image
-    invalid_image = Base64.strict_encode64("X" * 600_000) # Large but not an image
+    # Create data large enough to trigger compression (> 3.75 MB decoded) but not a valid image
+    invalid_image = Base64.strict_encode64("X" * 4_000_000)
 
     error = assert_raises(ImageCompressionService::CompressionError) do
       ImageCompressionService.compress(invalid_image, "image/jpeg")

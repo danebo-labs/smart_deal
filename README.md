@@ -20,6 +20,7 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 - Rails 8.1.2
 - SQLite3
 - PostgreSQL (for client business database / Text-to-SQL)
+- libvips (for image processing/compression)
 
 ### First-time installation
 
@@ -27,16 +28,22 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 # 1. Clone the repo
 git clone git@github.com:danebo-labs/smart_deal.git && cd smart_deal
 
-# 2. Get the master key from a team member, then:
+# 2. Install libvips for image processing
+# macOS:
+brew install vips
+# Ubuntu/Debian:
+# sudo apt-get install libvips-dev
+
+# 3. Get the master key from a team member, then:
 echo 'THE_MASTER_KEY' > config/master.key
 
-# 3. Run setup (installs deps, creates .env, prepares DB)
+# 4. Run setup (installs deps, creates .env, prepares DB)
 bin/setup --skip-server
 
-# 4. Open .env and fill in your AWS keys and other secrets
+# 5. Open .env and fill in your AWS keys and other secrets
 #    (see .env.sample comments for guidance)
 
-# 5. Start the server
+# 6. Start the server
 bin/dev
 ```
 
@@ -69,6 +76,109 @@ EDITOR="cursor --wait" bin/rails credentials:edit
 > **Note:** `.env` and `config/master.key` are in `.gitignore`. Never commit them.
 
 For detailed Bedrock configuration, see [BEDROCK_SETUP.md](BEDROCK_SETUP.md).
+
+## Model Configuration
+
+### Configurable Bedrock Models
+
+The application supports flexible configuration of Bedrock models via environment variables, enabling cost optimization and precision tuning.
+
+#### Available Environment Variables
+
+```bash
+# Primary model for RAG response generation
+BEDROCK_MODEL_ID=us.anthropic.claude-3-5-haiku-20241022-v1:0
+
+# Model for multimodal queries (with images)
+BEDROCK_VISION_MODEL_ID=us.anthropic.claude-3-5-sonnet-20241022-v2:0
+
+# Embedding model for vectorization (configured in AWS Knowledge Base)
+BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v1
+
+# Knowledge Base ID
+BEDROCK_KNOWLEDGE_BASE_ID=YOUR_KB_ID
+
+# Data Source ID
+BEDROCK_DATA_SOURCE_ID=YOUR_DS_ID
+```
+
+#### Available Models
+
+##### Claude 4.5 (Latest - Recommended)
+- `global.anthropic.claude-sonnet-4-5-20250929-v1:0` - Sonnet 4.5 Global (recommended for production)
+- `global.anthropic.claude-haiku-4-5-20251001-v1:0` - Haiku 4.5 Global (most economical)
+- `global.anthropic.claude-opus-4-5-20251101-v1:0` - Opus 4.5 Global (maximum precision)
+- `us.anthropic.claude-sonnet-4-5-20250929-v1:0` - Sonnet 4.5 US (data residency)
+- `us.anthropic.claude-haiku-4-5-20251001-v1:0` - Haiku 4.5 US
+- `us.anthropic.claude-opus-4-5-20251101-v1:0` - Opus 4.5 US
+
+##### Claude 3.x
+- `anthropic.claude-3-7-sonnet-20250219-v1:0` - Claude 3.7 Sonnet
+- `anthropic.claude-3-5-sonnet-20241022-v2:0` - Claude 3.5 Sonnet v2
+
+#### Model Comparison
+
+| Model | Cost (input/output per 1K tokens) | Speed | Precision | Recommended Use |
+|-------|-----------------------------------|-------|-----------|-----------------|
+| Haiku 4.5 | $0.0008 / $0.004 | ⚡⚡⚡ | ⭐⭐⭐ | Simple queries, high volume |
+| Sonnet 4.5 | $0.003 / $0.015 | ⚡⚡ | ⭐⭐⭐⭐⭐ | Optimal balance (recommended) |
+| Opus 4.5 | $0.015 / $0.075 | ⚡ | ⭐⭐⭐⭐⭐⭐ | Complex analysis, maximum quality |
+
+**Global vs US Regional Profiles:**
+- **Global**: Maximum throughput, better latency, same price as US regional
+- **US Regional**: Data residency in US region (compliance requirements)
+
+#### Testing Different Models
+
+To test different models, simply update `.env` and restart the server:
+
+```bash
+# Edit .env
+BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
+
+# Restart server
+bin/dev
+```
+
+#### UI Model Selector
+
+Users can also select models directly from the chat interface without changing environment variables. This enables:
+- Real-time A/B testing
+- Per-query model selection
+- Cost and precision comparison
+
+### IAM Permissions
+
+All configured models require IAM permissions in the Knowledge Base role.
+
+**Quick setup:**
+1. Copy policy from `docs/bedrock-iam-policy.json`
+2. AWS Console → IAM → Roles → `BedrockKnowledgeBaseRole-chat-bot`
+3. Add permissions → Create inline policy → Paste JSON
+4. Name: `BedrockModelInvokePermissions`
+5. Save
+
+See detailed instructions in `docs/AWS_IAM_PERMISSIONS.md`
+
+### Image Compression
+
+Images uploaded via the UI are automatically compressed before sending to Bedrock to meet the 10MB limit for Custom Data Sources:
+- Resizes to max 1024x1024 pixels
+- Converts to JPEG (80% quality)
+- Skips compression for images < 500KB
+- Validates final size doesn't exceed limits
+
+See `docs/IMAGE_COMPRESSION.md` for technical details.
+
+### Multi-Tenant Architecture (Future)
+
+The current architecture uses environment variables for configuration. For multi-tenant deployments:
+- Configuration will move to database (`bedrock_configs` table)
+- Each tenant can have independent Knowledge Base and model settings
+- Per-tenant cost tracking and quotas
+- Tenant isolation at the data and configuration level
+
+See `docs/MULTI_TENANT_ARCHITECTURE.md` for design details.
 
 ## Usage
 

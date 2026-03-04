@@ -31,13 +31,13 @@ class RagController < ApplicationController
   private
 
   def resolve_model_id(requested)
-    return nil if requested.blank?
+    return BedrockClient::DEFAULT_MODEL_ID if requested.blank?
 
     if BedrockClient::ALLOWED_MODEL_IDS.include?(requested)
       requested
     else
       Rails.logger.warn("RagController: Unknown model_id '#{requested}', falling back to default")
-      nil
+      BedrockClient::DEFAULT_MODEL_ID
     end
   end
 
@@ -62,7 +62,9 @@ class RagController < ApplicationController
   def compress_images(images)
     images.map do |img|
       result = ImageCompressionService.compress(img[:data], img[:media_type])
-      { data: result[:data], media_type: result[:media_type] }
+      out = { data: result[:data], media_type: result[:media_type] }
+      out[:filename] = img[:filename].presence || img['filename'].presence
+      out
     end
   rescue ImageCompressionService::CompressionError => e
     Rails.logger.error("RagController: Image compression failed: #{e.message}")

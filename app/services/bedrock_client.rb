@@ -10,9 +10,12 @@ require 'json'
 class BedrockClient
   include AwsClientInitializer
 
-  CLAUDE_35_HAIKU = ENV.fetch('BEDROCK_PROFILE_CLAUDE35_HAIKU', 'us.anthropic.claude-3-5-haiku-20241022-v1:0')
+  # Default model from env (BEDROCK_MODEL_ID or BEDROCK_PROFILE_CLAUDE35_HAIKU → Haiku 3.5)
+  DEFAULT_MODEL_ID = ENV.fetch('BEDROCK_MODEL_ID', nil).presence || BedrockProfiles::CLAUDE_35_HAIKU
 
   MODELS_MAP = {
+    # Default from env (Haiku 3.5)
+    'Anthropic Claude 3.5 Haiku (US)'     => 'us.anthropic.claude-3-5-haiku-20241022-v1:0',
     # Inference Profiles Globales (máximo throughput, recomendados)
     'Anthropic Claude Sonnet 4.5 (Global)' => 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
     'Anthropic Claude Haiku 4.5 (Global)'  => 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -26,9 +29,7 @@ class BedrockClient
     'Anthropic Claude 3.5 Sonnet v2'       => 'anthropic.claude-3-5-sonnet-20241022-v2:0'
   }.freeze
 
-  ALLOWED_MODEL_IDS = MODELS_MAP.values.freeze
-
-  DEFAULT_MODEL_ID = ENV.fetch('BEDROCK_MODEL_ID', CLAUDE_35_HAIKU)
+  ALLOWED_MODEL_IDS = (MODELS_MAP.values + [DEFAULT_MODEL_ID]).uniq.freeze
   VISION_MODEL_ID = ENV.fetch('BEDROCK_VISION_MODEL_ID', 'us.anthropic.claude-3-5-sonnet-20241022-v2:0')
 
   def initialize(region: nil)

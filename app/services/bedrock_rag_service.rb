@@ -60,7 +60,6 @@ class BedrockRagService
         inference_config: {
           text_inference_config: {
             temperature: 0.3,                 # Creativity control
-            top_p: 0.9,                      # Token diversity
             max_tokens: 3000,                # Maximum output tokens (was 2048)
             stop_sequences: []               # Stop sequences (empty, without "observation")
           }
@@ -96,7 +95,6 @@ class BedrockRagService
         inference_config: {
           text_inference_config: {
             temperature: 0.1,                # More deterministic for query processing
-            top_p: 0.8,
             max_tokens: 2048
           }
         },
@@ -121,13 +119,12 @@ class BedrockRagService
                          Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
     @citation_processor = Bedrock::CitationProcessor.new
 
-    # Use Claude 3 Haiku by default for cost optimization (12x cheaper than Sonnet)
-    # Alternative: Can use Claude 3 Sonnet, Opus, or other models that support foundation-model ARN
+    # Use Haiku 4.5 US by default (cost-effective, in UI list)
     # Set BEDROCK_MODEL_ID env var or configure in Rails credentials to override
     model_id = model_id.presence ||
                ENV.fetch('BEDROCK_MODEL_ID', nil).presence ||
                Rails.application.credentials.dig(:bedrock, :model_id) ||
-               'anthropic.claude-3-haiku-20240307-v1:0'
+               BedrockClient::DEFAULT_MODEL_ID
 
     # @model_ref holds either a Bedrock inference profile ID or a full foundation-model ARN.
     # Newer Claude models use short-form inference profile IDs (e.g. anthropic.claude-sonnet-4-6)

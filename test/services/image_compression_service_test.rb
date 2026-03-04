@@ -44,8 +44,6 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
   private
 
   def create_test_image_base64(width, height, format: "jpeg")
-    require 'vips'
-
     image = Vips::Image.black(width, height)
     buffer = image.write_to_buffer(".#{format}")
     Base64.strict_encode64(buffer)

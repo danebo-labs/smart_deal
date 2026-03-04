@@ -4,6 +4,13 @@ ENV['RAILS_ENV'] ||= 'test'
 require_relative '../config/environment'
 require 'rails/test_help'
 
+begin
+  require 'vips'
+rescue LoadError
+  # vips not installed, load mock
+  require_relative 'support/mock_vips'
+end
+
 module ActiveSupport
   class TestCase
     # Run tests in parallel with specified workers

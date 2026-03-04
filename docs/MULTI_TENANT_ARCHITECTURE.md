@@ -12,7 +12,7 @@ This document describes the architecture for converting the application from sin
 # .env
 BEDROCK_MODEL_ID=us.anthropic.claude-3-5-haiku-20241022-v1:0
 BEDROCK_KNOWLEDGE_BASE_ID=AMFSKKPEZN
-BEDROCK_DATA_SOURCE_ID=ODB2CP0WTH
+BEDROCK_DATA_SOURCE_ID=<data_source_id>  # Use multimodal data source (e.g. CBXXGAKRZ3) for JPEG/PNG support
 ```
 
 ### Limitations

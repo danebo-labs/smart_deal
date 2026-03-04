@@ -67,6 +67,7 @@ BEDROCK_DATA_SOURCE_ID=your_data_source_id    # Opcional
 
 - Si configuras `BEDROCK_DATA_SOURCE_ID`, el sistema verificará que existe en la lista de data sources disponibles y lo usará.
 - Si no existe o no está configurado, usará el primer data source disponible.
+- **Para subir imágenes (JPEG/PNG)**: usa un data source con parser multimodal (Bedrock Data Automation o Foundation Model). Lista los data sources con `bin/rails kb:status` y configura el ID del que soporte multimodal.
 - Para ver los data sources disponibles, ejecuta:
 
 ```bash

@@ -196,7 +196,7 @@ export default class extends Controller {
     const payload = { question }
     if (file) {
       if (file.type === "image") {
-        payload.image = { data: file.data, media_type: file.media_type }
+        payload.image = { data: file.data, media_type: file.media_type, filename: file.filename }
       } else {
         payload.document = { data: file.data, media_type: file.media_type, filename: file.filename }
       }

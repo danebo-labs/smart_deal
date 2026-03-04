@@ -123,7 +123,9 @@ class QueryOrchestratorService
 
     @images.each_with_index do |img, idx|
       ext = img[:media_type]&.split('/')&.last || 'png'
-      filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}"
+      filename = (img[:filename] || img['filename']).presence
+      filename = File.basename(filename) if filename.present?
+      filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}" if filename.blank?
       binary_data = Base64.decode64(img[:data] || img['data'])
       key = s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
       uploaded_filenames << filename if key.present?

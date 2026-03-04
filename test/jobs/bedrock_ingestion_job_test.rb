@@ -14,6 +14,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
       result
     end
     mock_service.define_singleton_method(:clear_when_complete) { |_job_id| true }
+    mock_service.define_singleton_method(:failure_reasons) { |_job_id| [] }
 
     original_new = IngestionStatusService.method(:new)
     IngestionStatusService.define_singleton_method(:new) { |*_args| mock_service }

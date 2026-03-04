@@ -30,7 +30,13 @@ module RagQueryConcern
       return RagResult.new(success?: false, error_type: :blank_question)
     end
 
-    result = QueryOrchestratorService.new(question, images: images, documents: documents, model_id: model_id).execute
+    result = QueryOrchestratorService.new(
+      question,
+      images: images,
+      documents: documents,
+      model_id: model_id,
+      tenant: rag_tenant
+    ).execute
 
     RagResult.new(
       success?: true,
@@ -39,6 +45,9 @@ module RagQueryConcern
       session_id: result[:session_id],
       documents_uploaded: result[:documents_uploaded]
     )
+  rescue ImageCompressionService::CompressionError => e
+    log_rag_error("Image compression", e)
+    RagResult.new(success?: false, error_type: :image_compression, error_message: e.message)
   rescue BedrockRagService::MissingKnowledgeBaseError => e
     log_rag_error("RAG config error", e)
     RagResult.new(success?: false, error_type: :config_error, error_message: e.message)
@@ -69,6 +78,8 @@ module RagQueryConcern
     case error_type
     when :blank_question
       "Please send a question (message cannot be empty)."
+    when :image_compression
+      I18n.t('rag.image_compression_failed')
     when :config_error
       "The query service is not properly configured."
     when :service_error
@@ -96,6 +107,8 @@ module RagQueryConcern
     case error_type
     when :blank_question
       { message: 'Question cannot be empty', http_status: :bad_request }
+    when :image_compression
+      { message: I18n.t('rag.image_compression_failed'), http_status: :bad_request }
     when :config_error
       { message: 'RAG service is not properly configured', http_status: :internal_server_error }
     when :service_error
@@ -105,6 +118,14 @@ module RagQueryConcern
     else
       { message: 'Unknown error', http_status: :internal_server_error }
     end
+  end
+
+  # Tenant for multi-tenant data source selection (nil when single-tenant or User has no tenant)
+  def rag_tenant
+    return nil unless respond_to?(:current_user)
+    user = current_user
+    return nil unless user&.respond_to?(:tenant)
+    user.tenant
   end
 
   # Centralized error logging for RAG operations

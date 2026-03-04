@@ -27,11 +27,13 @@ class QueryOrchestratorService
   # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
   # @param documents [Array<Hash>] Optional array of { data: base64, media_type: "text/plain", filename: "x.txt" }
   # @param model_id [String] Optional Bedrock model ID to use
-  def initialize(query, images: [], documents: [], model_id: nil)
+  # @param tenant [Tenant, nil] Optional tenant for multi-tenant data source selection
+  def initialize(query, images: [], documents: [], model_id: nil, tenant: nil)
     @query = query
     @images = images || []
     @documents = documents || []
     @model_id = model_id
+    @tenant = tenant
     @ai_provider = AiProvider.new
   end
 
@@ -143,8 +145,15 @@ class QueryOrchestratorService
     filenames_for_sync = precollected_filenames.any? ? precollected_filenames : uploaded_filenames
     return [] unless filenames_for_sync.any?
 
-    job_id = KbSyncService.new.sync!(uploaded_filenames: filenames_for_sync)
-    BedrockIngestionJob.perform_later(job_id, filenames_for_sync) if job_id.present?
+    result = KbSyncService.new(tenant: @tenant || current_tenant).sync!(uploaded_filenames: filenames_for_sync)
+    if result.present?
+      BedrockIngestionJob.perform_later(
+        result[:job_id],
+        filenames_for_sync,
+        kb_id: result[:kb_id],
+        data_source_id: result[:data_source_id]
+      )
+    end
     uploaded_filenames
   end
 
@@ -244,5 +253,9 @@ class QueryOrchestratorService
     else
       response
     end
+  end
+
+  def current_tenant
+    Object.const_defined?("Current") && Current.respond_to?(:tenant) ? Current.tenant : nil
   end
 end

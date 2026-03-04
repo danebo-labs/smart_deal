@@ -76,27 +76,30 @@ class KbSyncServiceTest < ActiveSupport::TestCase
   test 'uses injected kb_id over env var' do
     with_fake_agent_client do |_client|
       service = KbSyncService.new(kb_id: 'injected-kb-id')
-      job_id = service.sync!
+      result = service.sync!
 
-      assert_equal TEST_JOB_ID, job_id
+      assert_equal TEST_JOB_ID, result[:job_id]
+      assert_equal 'injected-kb-id', result[:kb_id]
+      assert_equal TEST_DS_ID, result[:data_source_id]
     end
   end
 
   test 'falls back to env var when kb_id is nil' do
     with_fake_agent_client do |_client|
       service = KbSyncService.new
-      job_id = service.sync!
+      result = service.sync!
 
-      assert_equal TEST_JOB_ID, job_id
+      assert_equal TEST_JOB_ID, result[:job_id]
+      assert_equal TEST_DS_ID, result[:data_source_id]
     end
   end
 
   test 'ignores blank kb_id and falls back to env var' do
     with_fake_agent_client do |_client|
       service = KbSyncService.new(kb_id: '')
-      job_id = service.sync!
+      result = service.sync!
 
-      assert_equal TEST_JOB_ID, job_id
+      assert_equal TEST_JOB_ID, result[:job_id]
     end
   end
 
@@ -124,12 +127,14 @@ class KbSyncServiceTest < ActiveSupport::TestCase
     Rails.application.define_singleton_method(:credentials, original_method)
   end
 
-  test 'sync! returns ingestion job id on success' do
+  test 'sync! returns hash with job_id kb_id data_source_id on success' do
     with_fake_agent_client do |_client|
       service = KbSyncService.new
-      job_id = service.sync!
+      result = service.sync!
 
-      assert_equal TEST_JOB_ID, job_id
+      assert_equal TEST_JOB_ID, result[:job_id]
+      assert_equal TEST_KB_ID, result[:kb_id]
+      assert_equal TEST_DS_ID, result[:data_source_id]
     end
   end
 
@@ -175,9 +180,10 @@ class KbSyncServiceTest < ActiveSupport::TestCase
           OpenStruct.new(data_source_id: preferred_id)
         ]
         service = KbSyncService.new
-        job_id = service.sync!
+        result = service.sync!
 
-        assert_equal TEST_JOB_ID, job_id
+        assert_equal TEST_JOB_ID, result[:job_id]
+        assert_equal preferred_id, result[:data_source_id]
       end
     end
   end
@@ -187,9 +193,9 @@ class KbSyncServiceTest < ActiveSupport::TestCase
       with_fake_agent_client do |client|
         client.data_sources = [ OpenStruct.new(data_source_id: TEST_DS_ID) ]
         service = KbSyncService.new
-        job_id = service.sync!
+        result = service.sync!
 
-        assert_equal TEST_JOB_ID, job_id
+        assert_equal TEST_JOB_ID, result[:job_id]
       end
     end
   end
@@ -201,9 +207,10 @@ class KbSyncServiceTest < ActiveSupport::TestCase
         OpenStruct.new(data_source_id: 'second-ds')
       ]
       service = KbSyncService.new
-      job_id = service.sync!
+      result = service.sync!
 
-      assert_equal TEST_JOB_ID, job_id
+      assert_equal TEST_JOB_ID, result[:job_id]
+      assert_equal 'first-ds', result[:data_source_id]
     end
   end
 end

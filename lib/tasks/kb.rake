@@ -3,9 +3,9 @@
 namespace :kb do
   desc 'Trigger Knowledge Base ingestion sync'
   task sync: :environment do
-    job_id = KbSyncService.new.sync!
-    if job_id
-      puts "✓ Ingestion job started: #{job_id}"
+    result = KbSyncService.new.sync!
+    if result && result[:job_id]
+      puts "✓ Ingestion job started: #{result[:job_id]} (data source: #{result[:data_source_id]})"
     else
       puts '✗ Failed to start ingestion job. Check logs and AWS configuration.'
     end

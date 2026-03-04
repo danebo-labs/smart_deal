@@ -4,6 +4,8 @@
 #
 # Tracks Knowledge Base ingestion job status to show which documents are
 # currently being indexed vs already indexed.
+#
+# Multi-tenant: pass data_source_id: when polling from a job (worker has no tenant context).
 
 require 'aws-sdk-bedrockagent'
 
@@ -13,10 +15,13 @@ class IngestionStatusService
   CACHE_KEY = 'kb_ingestion_info'
   CACHE_TTL = 2.hours
 
-  def initialize(kb_id: nil)
+  def initialize(kb_id: nil, data_source_id: nil, tenant: nil)
     client_options = build_aws_client_options
     @client = Aws::BedrockAgent::Client.new(client_options)
+    @data_source_id_override = data_source_id
+    @tenant = tenant
     @kb_id = kb_id.presence ||
+             (tenant&.bedrock_config&.knowledge_base_id if tenant&.respond_to?(:bedrock_config)) ||
              ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
              Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
   end
@@ -56,6 +61,23 @@ class IngestionStatusService
     fetch_job_status(job_id)
   end
 
+  # Returns failure reasons from a failed ingestion job (for user-facing messages).
+  # @return [Array<String>] Empty if job succeeded or reasons unavailable
+  def failure_reasons(job_id)
+    ds_id = find_data_source_id
+    return [] unless ds_id
+
+    resp = @client.get_ingestion_job(
+      knowledge_base_id: @kb_id,
+      data_source_id: ds_id,
+      ingestion_job_id: job_id
+    )
+    Array(resp.ingestion_job&.failure_reasons).compact
+  rescue StandardError => e
+    Rails.logger.error("IngestionStatusService: get_ingestion_job failed — #{e.message}")
+    []
+  end
+
   # Clears indexing state when job completes (call from polling or callback).
   def clear_when_complete(job_id)
     info = Rails.cache.read(CACHE_KEY)
@@ -89,13 +111,16 @@ class IngestionStatusService
   end
 
   def find_data_source_id
+    return @data_source_id_override if @data_source_id_override.present?
+
     ds_list = @client.list_data_sources(knowledge_base_id: @kb_id)
     summaries = ds_list.data_source_summaries
 
     return nil if summaries.empty?
 
-    preferred_id = ENV['BEDROCK_DATA_SOURCE_ID'].presence ||
-                   Rails.application.credentials.dig(:bedrock, :data_source_id)
+    preferred_id = @tenant&.bedrock_config&.data_source_id if @tenant&.respond_to?(:bedrock_config)
+    preferred_id ||= ENV['BEDROCK_DATA_SOURCE_ID'].presence
+    preferred_id ||= Rails.application.credentials.dig(:bedrock, :data_source_id)
 
     if preferred_id
       ds = summaries.find { |s| s.data_source_id == preferred_id }

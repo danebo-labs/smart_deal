@@ -16,7 +16,7 @@ class BedrockIngestionJob < ApplicationJob
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil)
     return if ingestion_job_id.blank?
 
-    service = IngestionStatusService.new(kb_id: kb_id)
+    service = IngestionStatusService.new(kb_id: kb_id, data_source_id: data_source_id)
     started_at = Time.current
 
     loop do
@@ -34,7 +34,9 @@ class BedrockIngestionJob < ApplicationJob
     if status == "COMPLETE"
       broadcast_indexed(uploaded_filenames)
     else
-      broadcast_failed(uploaded_filenames, status)
+      reasons = status == "FAILED" ? service.failure_reasons(ingestion_job_id) : []
+      message = ingestion_failure_message(reasons)
+      broadcast_failed(uploaded_filenames, status, message)
     end
   rescue StandardError => e
     Rails.logger.error("BedrockIngestionJob failed: #{e.message}")
@@ -42,6 +44,17 @@ class BedrockIngestionJob < ApplicationJob
   end
 
   private
+
+  def ingestion_failure_message(failure_reasons)
+    reasons_text = failure_reasons.join(" ").downcase
+    if reasons_text.include?("maximumfilesizesupported") || reasons_text.include?("52428800")
+      I18n.t("rag.ingestion_failed_file_too_large")
+    elsif reasons_text.include?("format") && (reasons_text.include?("not supported") || reasons_text.include?("unsupported"))
+      I18n.t("rag.ingestion_failed_format_not_supported")
+    else
+      I18n.t("rag.document_indexing_failed_message")
+    end
+  end
 
   def broadcast_indexed(filenames)
     ActionCable.server.broadcast("kb_sync", {
@@ -51,13 +64,12 @@ class BedrockIngestionJob < ApplicationJob
     })
   end
 
-  def broadcast_failed(filenames, reason, error_message = nil)
+  def broadcast_failed(filenames, reason, message = nil)
     ActionCable.server.broadcast("kb_sync", {
       status: "failed",
       filenames: Array(filenames).compact,
       reason: reason,
-      error_message: error_message,
-      message: I18n.t("rag.document_indexing_failed_message")
+      message: message.presence || I18n.t("rag.document_indexing_failed_message")
     })
   end
 end

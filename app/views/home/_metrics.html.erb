@@ -3,6 +3,10 @@
 <%# Usa variable local 'current_metrics' pasada desde el controller %>
 <div class="metrics-group" data-metrics-container="true">
   <div class="metrics-grid">
+    <div class="metric-item" data-metric-type="cost">
+      <span class="metric-label">Costo hoy</span>
+      <span class="metric-value" data-metric-value="cost">$<%= current_metrics[:today_cost].round(4) %></span>
+    </div>
     <div class="metric-item" data-metric-type="tokens">
       <span class="metric-label">Tokens</span>
       <span class="metric-value" data-metric-value="tokens"><%= number_with_delimiter(current_metrics[:today_tokens]) %></span>
@@ -11,10 +15,7 @@
       <span class="metric-label">Queries</span>
       <span class="metric-value" data-metric-value="queries"><%= current_metrics[:today_queries] %></span>
     </div>
-    <div class="metric-item" data-metric-type="cost">
-      <span class="metric-label">Costo hoy</span>
-      <span class="metric-value" data-metric-value="cost">$<%= current_metrics[:today_cost].round(4) %></span>
-    </div>
+    
   </div>
 </div>
 

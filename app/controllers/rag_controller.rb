@@ -26,6 +26,8 @@ class RagController < ApplicationController
     }
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     render json: json
+  rescue ImageCompressionService::CompressionError
+    render json: { status: 'error', message: I18n.t('rag.image_compression_failed') }, status: :bad_request
   end
 
   private
@@ -54,6 +56,9 @@ class RagController < ApplicationController
     end
 
     compress_images(images)
+  rescue ImageCompressionService::CompressionError => e
+    Rails.logger.error("RagController: Image compression failed: #{e.message}")
+    raise
   rescue StandardError => e
     Rails.logger.error("RagController: Failed to extract/compress images: #{e.message}")
     []

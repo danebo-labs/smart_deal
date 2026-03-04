@@ -4,3 +4,7 @@ es:
     document_indexing_message: "Estamos procesando tu documento. Estará listo para consultas en breve. Puedes seguir haciendo consultas sobre los documentos ya indexados."
     document_indexed_message: "Documento listo para consultas RAG"
     document_indexing_failed_message: "La indexación del documento falló. Por favor, inténtalo de nuevo."
+    image_compression_failed: "La imagen excede el límite de 3.75 MB. Comprímela o reduce su tamaño e inténtalo de nuevo."
+    ingestion_failed_file_too_large: "Un archivo supera el límite (imágenes: 3.75 MB, documentos: 50 MB). Redúcelo e inténtalo de nuevo."
+    ingestion_failed_format_not_supported: "Formato no soportado por Bedrock. Imágenes: JPEG o PNG. Documentos: .txt, .md, .html, .pdf, .doc, .docx, .csv, .xls, .xlsx."
+    file_limits_hint: "Imágenes: máx. 3.75 MB (JPEG/PNG). Documentos: máx. 50 MB."

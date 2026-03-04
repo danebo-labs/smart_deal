@@ -8,8 +8,8 @@ import { renderReferences } from "rag/references_renderer"
 export default class extends Controller {
   static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "modelSelect"]
 
-  static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024
-  static MAX_DOC_SIZE = 10 * 1024 * 1024 // 10 MB (Bedrock KB limit is 50 MB)
+  static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
+  static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
   static SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
   static SUPPORTED_DOC_TYPES = ["text/plain", "text/markdown", "text/html", "text/csv", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]
   static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
@@ -55,15 +55,18 @@ export default class extends Controller {
       this.constructor.DOC_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))
 
     if (!isImage && !isDoc) {
-      this.addMessage("Solo se permiten imágenes (PNG, JPEG, GIF, WebP) o documentos (.txt, .md, .html, .csv, .pdf, .doc, .docx, .xls, .xlsx).", "error")
+      this.addMessage("Formato no soportado. Imágenes: JPEG o PNG (máx. 3.75 MB). Documentos: .txt, .md, .html, .csv, .pdf, .doc, .docx, .xls, .xlsx (máx. 50 MB).", "error")
       this.fileInputTarget.value = ""
       return
     }
 
     const maxSize = isImage ? this.constructor.MAX_IMAGE_SIZE : this.constructor.MAX_DOC_SIZE
-    const maxLabel = isImage ? "3.75 MB" : "10 MB"
+    const maxLabel = isImage ? "3.75 MB" : "50 MB"
     if (file.size > maxSize) {
-      this.addMessage(`El archivo excede el límite de ${maxLabel}.`, "error")
+      const msg = isImage
+        ? "La imagen excede el límite de 3.75 MB (Knowledge Base). Comprímela o reduce su tamaño."
+        : "El documento excede el límite de 50 MB."
+      this.addMessage(msg, "error")
       this.fileInputTarget.value = ""
       return
     }

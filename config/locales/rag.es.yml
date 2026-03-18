@@ -6,7 +6,7 @@ es:
     document_indexed_message: "El archivo %{filename} terminó de sincronizarse en la Base de Conocimiento y está listo para consultas."
     documents_indexed_message: "%{count} archivos fueron sincronizados en la Base de Conocimiento y están listos para consultas."
     document_indexing_failed_message: "La indexación del documento falló. Por favor, inténtalo de nuevo."
-    no_results_found: "No se encontró información en la Base de Conocimiento para responder a tu consulta. Puedes consultar sobre los documentos indexados o subir un nuevo documento para ampliar la base de conocimiento."
+    no_results_found: "No se encontró información sobre tu consulta. Sube un archivo para ampliar la base de conocimiento y, una vez sincronizado, podrás hacer consultas sobre ese archivo."
     image_compression_failed: "La imagen excede el límite de 3.75 MB. Comprímela o reduce su tamaño e inténtalo de nuevo."
     ingestion_failed_file_too_large: "Un archivo supera el límite (imágenes: 3.75 MB, documentos: 50 MB). Redúcelo e inténtalo de nuevo."
     ingestion_failed_format_not_supported: "Formato no soportado por Bedrock. Imágenes: JPEG o PNG. Documentos: .txt, .md, .html, .pdf, .doc, .docx, .csv, .xls, .xlsx."

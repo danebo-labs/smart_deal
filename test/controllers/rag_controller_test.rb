@@ -22,16 +22,19 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   end
 
   def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
-                               should_raise: false, error_class: StandardError, error_message: nil)
+                               should_raise: false, error_class: StandardError, error_message: nil,
+                               documents_uploaded: nil)
     mock = Object.new
     mock.define_singleton_method(:execute) do
       raise error_class, error_message || 'Service error' if should_raise
 
-      {
+      result = {
         answer: answer,
         citations: citations,
         session_id: session_id
       }
+      result[:documents_uploaded] = documents_uploaded if documents_uploaded.present?
+      result
     end
     mock
   end
@@ -57,9 +60,10 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     mock = create_mock_orchestrator(
-      answer: 'Documentos subidos correctamente. La indexación en la base de conocimientos está en proceso.',
+      answer: I18n.t('rag.document_indexing_message'),
       citations: [],
-      session_id: nil
+      session_id: nil,
+      documents_uploaded: ['test.txt']
     )
 
     with_mock_orchestrator(mock) do
@@ -77,7 +81,94 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
       json = json_response
       assert_equal 'success', json['status']
-      assert_includes json['answer'], 'Documentos subidos'
+      assert_equal ['test.txt'], json['documents_uploaded']
+      assert_includes json['answer'], 'procesado'
+    end
+  end
+
+  test 'document upload returns Spanish message when Accept-Language is es' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
+      answer: I18n.t('rag.document_indexing_message'),
+      citations: [],
+      session_id: nil,
+      documents_uploaded: ['archivo.txt']
+    )
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url,
+           params: {
+             question: '',
+             document: {
+               data: Base64.strict_encode64('contenido'),
+               media_type: 'text/plain',
+               filename: 'archivo.txt'
+             }
+           },
+           headers: { "HTTP_ACCEPT_LANGUAGE" => "es" },
+           as: :json
+      assert_response :success
+
+      json = json_response
+      assert_includes json["answer"], "Tu documento está siendo procesado"
+    end
+  end
+
+  test 'document upload returns English message when Accept-Language is en' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
+      answer: I18n.t('rag.document_indexing_message'),
+      citations: [],
+      session_id: nil,
+      documents_uploaded: ['file.txt']
+    )
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url,
+           params: {
+             question: '',
+             document: {
+               data: Base64.strict_encode64('content'),
+               media_type: 'text/plain',
+               filename: 'file.txt'
+             }
+           },
+           headers: { "HTTP_ACCEPT_LANGUAGE" => "en" },
+           as: :json
+      assert_response :success
+
+      json = json_response
+      assert_includes json["answer"], "Your document is being processed"
+    end
+  end
+
+  test 'document upload uses default locale (es) when Accept-Language is absent' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
+      answer: I18n.t('rag.document_indexing_message'),
+      citations: [],
+      session_id: nil,
+      documents_uploaded: ['doc.txt']
+    )
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url,
+           params: {
+             question: '',
+             document: {
+               data: Base64.strict_encode64('texto'),
+               media_type: 'text/plain',
+               filename: 'doc.txt'
+             }
+           },
+           as: :json
+      assert_response :success
+
+      json = json_response
+      assert_includes json["answer"], "Tu documento está siendo procesado"
     end
   end
 
@@ -165,6 +256,49 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       json = json_response
       assert_equal 'error', json['status']
       assert_equal 'Unexpected error processing request', json['message']
+    end
+  end
+
+  test 'returns no_results message in Spanish when Accept-Language is es' do
+    sign_in @user
+
+    # Mock returns I18n.t which uses the locale set by set_locale before_action
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
+      { answer: I18n.t("rag.no_results_found"), citations: [], session_id: nil }
+    end
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url,
+           params: { question: '¿Qué es EC2?' },
+           headers: { "HTTP_ACCEPT_LANGUAGE" => "es" },
+           as: :json
+      assert_response :success
+
+      json = json_response
+      assert_equal "success", json["status"]
+      assert_includes json["answer"], "No se encontró información"
+    end
+  end
+
+  test 'returns no_results message in English when Accept-Language is en' do
+    sign_in @user
+
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
+      { answer: I18n.t("rag.no_results_found"), citations: [], session_id: nil }
+    end
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url,
+           params: { question: "What is EC2?" },
+           headers: { "HTTP_ACCEPT_LANGUAGE" => "en" },
+           as: :json
+      assert_response :success
+
+      json = json_response
+      assert_equal "success", json["status"]
+      assert_includes json["answer"], "No information was found"
     end
   end
 

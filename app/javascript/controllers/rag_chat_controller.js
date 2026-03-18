@@ -193,10 +193,11 @@ export default class extends Controller {
         this.refreshDocuments()
         [ 2000, 5000 ].forEach(ms => setTimeout(() => this.refreshDocuments(), ms))
       } else {
-        const answerHtml = formatAnswer(data.answer, data.citations)
+        const citations = Array.isArray(data.citations) ? data.citations : []
+        const answerHtml = formatAnswer(data.answer, citations)
         this.addMessageHtml(answerHtml, "assistant")
-        if (data.citations?.length) {
-          this.addMessageHtml(renderReferences(data.citations), "assistant")
+        if (citations.length) {
+          this.addMessageHtml(renderReferences(citations), "assistant")
         }
       }
 
@@ -221,10 +222,11 @@ export default class extends Controller {
         throw new Error(data.message || "Unknown error")
       }
 
-      const answerHtml = formatAnswer(data.answer, data.citations)
+      const citations = Array.isArray(data.citations) ? data.citations : []
+      const answerHtml = formatAnswer(data.answer, citations)
       this.addMessageHtml(answerHtml, "assistant")
-      if (data.citations?.length) {
-        this.addMessageHtml(renderReferences(data.citations), "assistant")
+      if (citations.length) {
+        this.addMessageHtml(renderReferences(citations), "assistant")
       }
       this.updateMetrics()
     } catch (error) {
@@ -249,6 +251,7 @@ export default class extends Controller {
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "Accept-Language": document.documentElement.lang || navigator.language || "es",
         "X-CSRF-Token": document.querySelector("meta[name=csrf-token]")?.content
       },
       credentials: "same-origin",

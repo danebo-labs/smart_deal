@@ -37,6 +37,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
       assert_equal 1, messages.size
       assert_equal "indexed", messages.first["status"]
       assert_equal [ "doc.txt" ], messages.first["filenames"]
+      assert_includes messages.first["message"], "doc.txt"
     end
   end
 

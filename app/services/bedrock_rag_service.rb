@@ -5,7 +5,6 @@
 require 'aws-sdk-bedrockagentruntime'
 require 'aws-sdk-core/static_token_provider'
 require 'json'
-require_relative 's3_documents_service'
 require_relative 'bedrock/citation_processor'
 
 class BedrockRagService
@@ -15,18 +14,30 @@ class BedrockRagService
   class MissingKnowledgeBaseError < StandardError; end
   class BedrockServiceError < StandardError; end
 
+  # Matches the default Bedrock guardrail response when no KB results are found.
+  BEDROCK_NO_RESULTS_PATTERN = /\AI'?m sorry[,.]|sorry,?\s+i\s+(am\s+)?unable\s+to\s+(assist|help)/i.freeze
+
+  # Default RAG config (safety-critical for elevator domain).
+  # Overridden by ENV (BEDROCK_RAG_*) and tenant.bedrock_config.rag_config when present.
+  DEFAULT_RAG_CONFIG = {
+    number_of_results: 15,
+    search_type: "HYBRID",
+    generation_temperature: 0.0,
+    generation_max_tokens: 3000,
+    orchestration_temperature: 0.0,
+    orchestration_max_tokens: 2048
+  }.freeze
+
   # Build complete optimized configuration for retrieve_and_generate API
   # This method constructs the config dynamically to include prompt templates
   def build_complete_optimized_config(region: 'us-east-1')
+    cfg = @rag_config
     {
       # ===== RETRIEVAL CONFIGURATION =====
       retrieval_configuration: {
         vector_search_configuration: {
-          # Source chunks optimized
-          number_of_results: 20,              # Was 5 by default
-
-          # Search type optimized
-          override_search_type: "HYBRID",     # HYBRID vs SEMANTIC
+          number_of_results: cfg[:number_of_results],
+          override_search_type: cfg[:search_type],
 
           # Reranking configuration
           # Note: The reranking will use the number_of_results from vector_search_configuration above
@@ -56,12 +67,11 @@ class BedrockRagService
 
       # ===== GENERATION CONFIGURATION =====
       generation_configuration: {
-        # Optimized inference parameters
         inference_config: {
           text_inference_config: {
-            temperature: 0.3,                 # Creativity control
-            max_tokens: 3000,                # Maximum output tokens (was 2048)
-            stop_sequences: []               # Stop sequences (empty, without "observation")
+            temperature: cfg[:generation_temperature],
+            max_tokens: cfg[:generation_max_tokens],
+            stop_sequences: []
           }
         },
 
@@ -94,8 +104,8 @@ class BedrockRagService
         # Inference config for orchestration
         inference_config: {
           text_inference_config: {
-            temperature: 0.1,                # More deterministic for query processing
-            max_tokens: 2048
+            temperature: cfg[:orchestration_temperature],
+            max_tokens: cfg[:orchestration_max_tokens]
           }
         },
 
@@ -110,28 +120,23 @@ class BedrockRagService
     }
   end
 
-  def initialize(knowledge_base_id: nil, model_id: nil)
+  # @param knowledge_base_id [String, nil] Override KB ID (takes precedence)
+  # @param tenant [Tenant, nil] Optional tenant for per-KB config (tenant.bedrock_config.rag_config)
+  def initialize(knowledge_base_id: nil, tenant: nil)
     client_options = build_aws_client_options
     @region = client_options[:region] || 'us-east-1'
     @client = Aws::BedrockAgentRuntime::Client.new(client_options)
+    @tenant = tenant
     @knowledge_base_id = knowledge_base_id.presence ||
+                         tenant&.bedrock_config&.knowledge_base_id ||
                          ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
                          Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
     @citation_processor = Bedrock::CitationProcessor.new
-
-    # Use Haiku 4.5 US by default (cost-effective, in UI list)
-    # Set BEDROCK_MODEL_ID env var or configure in Rails credentials to override
-    model_id = model_id.presence ||
-               ENV.fetch('BEDROCK_MODEL_ID', nil).presence ||
-               Rails.application.credentials.dig(:bedrock, :model_id) ||
-               BedrockClient::DEFAULT_MODEL_ID
+    @rag_config = resolve_rag_config
 
     # @model_ref holds either a Bedrock inference profile ID or a full foundation-model ARN.
-    # Newer Claude models use short-form inference profile IDs (e.g. anthropic.claude-sonnet-4-6)
-    # rather than full ARNs, so we store it under a neutral name and pass it directly.
-    @model_ref = model_id
+    @model_ref = BedrockClient::QUERY_MODEL_ID
 
-    # Debug logging
     Rails.logger.info("BedrockRagService initialized - Knowledge Base ID: #{@knowledge_base_id.presence || 'NOT SET'}")
     Rails.logger.info("BedrockRagService initialized - Model ID: #{@model_ref}")
   end
@@ -171,23 +176,16 @@ class BedrockRagService
       })
 
       # Process response
-      answer_text = response.output.text
+      raw_answer = response.output.text
+      # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
+      answer_text = bedrock_no_results?(raw_answer) ? I18n.t("rag.no_results_found") : raw_answer
       citations = @citation_processor.extract_citations(response.citations)
       session_id = response.session_id
 
-      # Get S3 documents list to map citations to document numbers in Data Source
-      s3_documents = S3DocumentsService.new.list_documents
-
-      # Build mapping from Bedrock citation numbers to Data Source numbers
-      citation_to_datasource_map = @citation_processor.build_citation_mapping(citations, s3_documents)
-
-      # Replace Bedrock citation numbers [1], [2] with Data Source numbers in answer text
-      answer_text = @citation_processor.replace_citation_numbers(answer_text, citation_to_datasource_map)
-
-      # If answer doesn't contain citations but we have citations from Bedrock,
-      # add them automatically at the end of sentences/phrases
+      # If answer doesn't contain inline citations but Bedrock returned source chunks,
+      # distribute [n] markers across the answer automatically.
       if citations.any? && !answer_text.match(/\[\d+\]/)
-        answer_text = @citation_processor.add_citations_to_answer(answer_text, citations, citation_to_datasource_map)
+        answer_text = @citation_processor.add_citations_to_answer(answer_text, citations)
         Rails.logger.info("Added citations automatically to answer text")
       end
 
@@ -218,12 +216,12 @@ class BedrockRagService
         Rails.logger.error("Failed to track query or update metrics: #{e.message}")
       end
 
-      # Extract numbered citations from answer text and map to documents
-      numbered_references = @citation_processor.build_numbered_references(citations, answer_text, s3_documents)
+      # Build numbered references from the KB response — no S3 listing required.
+      numbered_references = @citation_processor.build_numbered_references(citations, answer_text)
 
       Rails.logger.info("Found #{citations.length} citation(s)")
       numbered_references.each do |ref|
-        Rails.logger.info("  Citation #{ref[:number]}: #{ref[:title]} (#{ref[:filename]}) -> Data Source doc #{ref[:number]}")
+        Rails.logger.info("  Citation [#{ref[:number]}]: #{ref[:title]} (#{ref[:filename]})")
       end
 
       {
@@ -239,6 +237,38 @@ class BedrockRagService
   end
 
   private
+
+  # Resolves RAG config: defaults + ENV + tenant.bedrock_config.rag_config.
+  # Precedence: tenant config > ENV > defaults.
+  def resolve_rag_config
+    from_env = {
+      number_of_results: parse_int(ENV['BEDROCK_RAG_NUMBER_OF_RESULTS']),
+      search_type: ENV['BEDROCK_RAG_SEARCH_TYPE'].presence,
+      generation_temperature: parse_float(ENV['BEDROCK_RAG_GENERATION_TEMPERATURE']),
+      generation_max_tokens: parse_int(ENV['BEDROCK_RAG_GENERATION_MAX_TOKENS']),
+      orchestration_temperature: parse_float(ENV['BEDROCK_RAG_ORCHESTRATION_TEMPERATURE']),
+      orchestration_max_tokens: parse_int(ENV['BEDROCK_RAG_ORCHESTRATION_MAX_TOKENS'])
+    }.compact
+    from_tenant = @tenant&.bedrock_config&.rag_config
+    from_tenant = from_tenant&.symbolize_keys&.compact || {}
+    DEFAULT_RAG_CONFIG.merge(from_env).merge(from_tenant)
+  end
+
+  def parse_int(val)
+    return nil if val.blank?
+    val.to_i
+  end
+
+  def parse_float(val)
+    return nil if val.blank?
+    val.to_f
+  end
+
+  # Returns true when Bedrock's retrieve_and_generate responds with its built-in
+  # "no relevant results" guardrail message instead of a real answer.
+  def bedrock_no_results?(text)
+    text.to_s.strip.match?(BEDROCK_NO_RESULTS_PATTERN)
+  end
 
   # ===== CUSTOM PROMPT TEMPLATES =====
 

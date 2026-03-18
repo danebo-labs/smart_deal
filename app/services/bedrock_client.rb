@@ -10,55 +10,31 @@ require 'json'
 class BedrockClient
   include AwsClientInitializer
 
-  # Default model from env (BEDROCK_MODEL_ID or BEDROCK_PROFILE_CLAUDE35_HAIKU → Haiku 3.5)
-  DEFAULT_MODEL_ID = ENV.fetch('BEDROCK_MODEL_ID', nil).presence || BedrockProfiles::CLAUDE_35_HAIKU
+  # Fixed query model: Claude Haiku 4.5 (cost-effective, fast). Override via BEDROCK_MODEL_ID env var.
+  QUERY_MODEL_ID = (ENV.fetch('BEDROCK_MODEL_ID', nil).presence ||
+                    Rails.application.credentials.dig(:bedrock, :model_id) ||
+                    'global.anthropic.claude-haiku-4-5-20251001-v1:0').freeze
 
-  MODELS_MAP = {
-    # Default from env (Haiku 3.5)
-    'Anthropic Claude 3.5 Haiku (US)'     => 'us.anthropic.claude-3-5-haiku-20241022-v1:0',
-    # Inference Profiles Globales (máximo throughput, recomendados)
-    'Anthropic Claude Sonnet 4.5 (Global)' => 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    'Anthropic Claude Haiku 4.5 (Global)'  => 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-    'Anthropic Claude Opus 4.5 (Global)'   => 'global.anthropic.claude-opus-4-5-20251101-v1:0',
-    # Inference Profiles Regionales US (residencia de datos)
-    'Anthropic Claude Sonnet 4.5 (US)'     => 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    'Anthropic Claude Haiku 4.5 (US)'      => 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-    'Anthropic Claude Opus 4.5 (US)'       => 'us.anthropic.claude-opus-4-5-20251101-v1:0',
-    # Modelos directos Claude 3.x
-    'Anthropic Claude 3.7 Sonnet'          => 'anthropic.claude-3-7-sonnet-20250219-v1:0',
-    'Anthropic Claude 3.5 Sonnet v2'       => 'anthropic.claude-3-5-sonnet-20241022-v2:0'
-  }.freeze
-
-  ALLOWED_MODEL_IDS = (MODELS_MAP.values + [DEFAULT_MODEL_ID]).uniq.freeze
-  VISION_MODEL_ID = ENV.fetch('BEDROCK_VISION_MODEL_ID', 'us.anthropic.claude-3-5-sonnet-20241022-v2:0')
+  DEFAULT_MODEL_ID = QUERY_MODEL_ID
 
   def initialize(region: nil)
     client_options = build_aws_client_options(region: region)
     @client = Aws::BedrockRuntime::Client.new(client_options)
   end
 
-  def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, images: [])
+  def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7)
     model_id ||= DEFAULT_MODEL_ID
-    content = build_message_content(prompt, images)
-
-    # Haiku on Bedrock does not support image input — auto-switch to Sonnet for vision
-    effective_model = if images.present? && model_id == DEFAULT_MODEL_ID
-                        Rails.logger.info("BedrockClient: Switching to vision model #{VISION_MODEL_ID} for image input")
-                        VISION_MODEL_ID
-    else
-                        model_id
-    end
 
     body = {
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: max_tokens,
       temperature: temperature,
-      messages: [{ role: 'user', content: content }]
+      messages: [{ role: 'user', content: prompt }]
     }
 
     start_time = Time.current
     response = @client.invoke_model(
-      model_id: effective_model,
+      model_id: model_id,
       content_type: 'application/json',
       body: body.to_json
     )
@@ -66,7 +42,7 @@ class BedrockClient
     result = JSON.parse(response.body.read)
     text = result.dig('content', 0, 'text') || result.to_s
 
-    track_usage(result, effective_model, prompt, start_time)
+    track_usage(result, model_id, prompt, start_time)
 
     text
   rescue StandardError => e
@@ -76,8 +52,9 @@ class BedrockClient
   end
 
   # Compatibility method for AiProvider
-  def query(prompt, **)
-    generate_text(prompt, **)
+  def query(prompt, **opts)
+    opts.delete(:images)
+    generate_text(prompt, **opts)
   end
 
   private
@@ -102,25 +79,5 @@ class BedrockClient
     Rails.logger.info("BedrockClient: tracked #{input_tokens} in + #{output_tokens} out tokens")
   rescue StandardError => e
     Rails.logger.error("BedrockClient: failed to track usage: #{e.message}")
-  end
-
-  # Builds the content field for the Anthropic Messages API.
-  # With images: returns an array of image + text blocks (multimodal).
-  # Without images: returns the prompt string (text-only, backward compatible).
-  def build_message_content(prompt, images)
-    return prompt if images.blank?
-
-    image_blocks = images.map do |img|
-      {
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: img[:media_type] || img['media_type'],
-          data: img[:data] || img['data']
-        }
-      }
-    end
-
-    image_blocks + [{ type: 'text', text: prompt }]
   end
 end

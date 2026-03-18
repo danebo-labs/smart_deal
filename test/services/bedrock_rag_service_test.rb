@@ -28,14 +28,17 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # Fake AWS BedrockAgentRuntime Client
   class FakeBedrockAgentRuntimeClient
     attr_accessor :retrieve_and_generate_response, :should_raise_error, :error_message
+    attr_reader :last_retrieve_and_generate_params
 
     def initialize(*)
       @retrieve_and_generate_response = nil
       @should_raise_error = false
       @error_message = nil
+      @last_retrieve_and_generate_params = nil
     end
 
-    def retrieve_and_generate(_params)
+    def retrieve_and_generate(params)
+      @last_retrieve_and_generate_params = params
       if @should_raise_error
         # Raise a real instance of Aws::BedrockAgentRuntime::Errors::ServiceError
         # This will be properly caught by the service's rescue clause
@@ -85,27 +88,23 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       fake_agent_client.error_message = error_message
     end
 
-    # Save original .new method
     original_agent_new = Aws::BedrockAgentRuntime::Client.method(:new)
-    original_s3_docs_new = S3DocumentsService.method(:new)
-
-    # Stub the .new methods to return our fake clients
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*_args| fake_agent_client }
-
-    # Mock S3DocumentsService to return empty list by default
-    mock_s3_service = Object.new
-    mock_s3_service.define_singleton_method(:list_documents) { [] }
-    S3DocumentsService.define_singleton_method(:new) { |*_args| mock_s3_service }
 
     yield fake_agent_client
   ensure
-    # Restore original methods
     if original_agent_new
       Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args| original_agent_new.call(*args) }
     end
-    if original_s3_docs_new
-      S3DocumentsService.define_singleton_method(:new) { |**kwargs| original_s3_docs_new.call(**kwargs) }
-    end
+  end
+
+  # Builds a fake retrieve_and_generate response with the given answer text.
+  def fake_response(answer_text)
+    ::OpenStruct.new(
+      output: ::OpenStruct.new(text: answer_text),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
   end
 
   # Helper method to temporarily modify environment variables
@@ -184,7 +183,6 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     with_mock_bedrock_client do
       service = BedrockRagService.new
 
-      # Stub BedrockQuery.create! using singleton_class to avoid ActiveRecord issues
       original_create = BedrockQuery.method(:create!)
       BedrockQuery.singleton_class.define_method(:create!) do |*_args|
         raise StandardError, 'Database error'
@@ -193,15 +191,64 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       begin
         result = service.query('What is S3?')
 
-        # Should still return successful response despite metrics failure
         assert result.is_a?(Hash)
         assert result.key?(:answer)
         assert result.key?(:citations)
         assert result.key?(:session_id)
       ensure
-        # Restore original method
         BedrockQuery.singleton_class.define_method(:create!, original_create)
       end
+    end
+  end
+
+  test 'query replaces Bedrock no-results guardrail message with user-friendly I18n message' do
+    bedrock_sorry = "Sorry, I am unable to assist you with this request."
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(bedrock_sorry)) do
+      service = BedrockRagService.new
+      result = service.query('que es EC2')
+
+      assert_equal I18n.t('rag.no_results_found'), result[:answer]
+      assert_equal [], result[:citations]
+    end
+  end
+
+  test 'query does not alter a real answer that happens to start with sorry' do
+    real_answer = "Sorry for the delay in this documentation — the procedure is as follows."
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(real_answer)) do
+      service = BedrockRagService.new
+      result = service.query('What is the procedure?')
+
+      assert_equal real_answer, result[:answer]
+    end
+  end
+
+  test 'uses BEDROCK_RAG_* env vars when set' do
+    with_env_vars(
+      'BEDROCK_RAG_NUMBER_OF_RESULTS' => '12',
+      'BEDROCK_RAG_GENERATION_TEMPERATURE' => '0.1'
+    ) do
+      with_mock_bedrock_client do |client|
+        service = BedrockRagService.new
+        service.query('Test question')
+
+        params = client.last_retrieve_and_generate_params
+        kb_config = params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration)
+        retrieval = kb_config[:retrieval_configuration][:vector_search_configuration]
+        gen_inference = kb_config.dig(:generation_configuration, :inference_config, :text_inference_config)
+
+        assert_equal 12, retrieval[:number_of_results]
+        assert_equal 0.1, gen_inference[:temperature]
+      end
+    end
+  end
+
+  test 'works with tenant nil (single-tenant)' do
+    with_mock_bedrock_client do
+      service = BedrockRagService.new(tenant: nil)
+      result = service.query('What is S3?')
+
+      assert result.key?(:answer)
+      assert result.key?(:citations)
     end
   end
 end

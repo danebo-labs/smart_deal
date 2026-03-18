@@ -57,10 +57,17 @@ class BedrockIngestionJob < ApplicationJob
   end
 
   def broadcast_indexed(filenames)
+    filenames = Array(filenames).compact
+    message = if filenames.size == 1
+      I18n.t("rag.document_indexed_message", filename: filenames.first)
+    else
+      I18n.t("rag.documents_indexed_message", count: filenames.size)
+    end
+
     ActionCable.server.broadcast("kb_sync", {
       status: "indexed",
-      filenames: Array(filenames).compact,
-      message: I18n.t("rag.document_indexed_message")
+      filenames: filenames,
+      message: message
     })
   end
 

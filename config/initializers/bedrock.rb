@@ -22,7 +22,3 @@ if aws_access_key.present? && aws_secret_key.present?
 else
   Aws.config.update(region: DEFAULT_BEDROCK_REGION)
 end
-
-module BedrockProfiles
-  CLAUDE_35_HAIKU = ENV.fetch('BEDROCK_PROFILE_CLAUDE35_HAIKU', 'us.anthropic.claude-3-5-haiku-20241022-v1:0')
-end

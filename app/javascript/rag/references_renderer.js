@@ -1,7 +1,8 @@
 // app/javascript/rag/references_renderer.js
 
 export function renderReferences(citations = []) {
-  if (!citations.length) return ""
+  const safeCitations = Array.isArray(citations) ? citations : []
+  if (!safeCitations.length) return ""
 
   const escape = (text = "") => {
     const div = document.createElement("div")
@@ -13,7 +14,7 @@ export function renderReferences(citations = []) {
     <div class="chat-references">
       <p class="chat-references-title">References</p>
       <ul class="chat-references-list">
-        ${citations.map(c => {
+        ${safeCitations.map(c => {
           const title = escape(c.title || c.filename || "Document")
           const number = c.number || ""
           return `

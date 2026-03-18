@@ -19,7 +19,7 @@ class RagController < ApplicationController
 
     json = {
       answer: result.answer,
-      citations: result.citations,
+      citations: Array(result.citations),
       session_id: result.session_id,
       status: 'success'
     }

@@ -1,6 +1,7 @@
 // app/javascript/rag/citation_formatter.js
 
 export function formatAnswer(answerText, citations = []) {
+  const safeCitations = Array.isArray(citations) ? citations : []
   const escapeHtml = (text = "") => {
     const div = document.createElement("div")
     div.textContent = text
@@ -8,7 +9,7 @@ export function formatAnswer(answerText, citations = []) {
   }
 
   const citationMap = {}
-  citations.forEach(c => {
+  safeCitations.forEach(c => {
     if (c.number) citationMap[c.number] = c
   })
 

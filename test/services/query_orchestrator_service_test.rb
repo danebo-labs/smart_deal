@@ -85,6 +85,28 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     end
   end
 
+  # Stubs S3DocumentsService and KbSyncService so document/image upload tests
+  # never hit AWS. The background thread spawned by execute will use these mocks.
+  def with_mock_upload_services
+    mock_s3 = Object.new
+    mock_s3.define_singleton_method(:upload_file) { |*_args| 'uploads/test/fake-key' }
+
+    mock_kb_sync = Object.new
+    mock_kb_sync.define_singleton_method(:sync!) { |*_args| nil }
+
+    original_s3_new = S3DocumentsService.method(:new)
+    original_kb_new = KbSyncService.method(:new)
+
+    S3DocumentsService.define_singleton_method(:new) { |*_args| mock_s3 }
+    KbSyncService.define_singleton_method(:new) { |*_args| mock_kb_sync }
+
+    yield
+    sleep 0.2 # Allow background thread to complete before restoring stubs
+  ensure
+    S3DocumentsService.define_singleton_method(:new) { |*args, **kwargs| original_s3_new.call(*args, **kwargs) }
+    KbSyncService.define_singleton_method(:new) { |*args, **kwargs| original_kb_new.call(*args, **kwargs) }
+  end
+
   # ============================================
   # Tests: Intent classification and routing
   # ============================================
@@ -269,29 +291,33 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   # ============================================
 
   test 'documents only with blank question returns upload confirmation' do
-    docs = [
-      { data: Base64.strict_encode64('test content'), media_type: 'text/plain', filename: 'doc.txt' }
-    ]
-    result = QueryOrchestratorService.new('', documents: docs).execute
+    with_mock_upload_services do
+      docs = [
+        { data: Base64.strict_encode64('test content'), media_type: 'text/plain', filename: 'doc.txt' }
+      ]
+      result = QueryOrchestratorService.new('', documents: docs).execute
 
-    assert result.is_a?(Hash)
-    assert_includes result[:answer], 'document'
-    assert_includes result[:answer], 'index'
-    assert_equal [], result[:citations]
-    assert_nil result[:session_id]
+      assert result.is_a?(Hash)
+      assert_includes result[:answer], 'document'
+      assert_includes result[:answer], 'index'
+      assert_equal [], result[:citations]
+      assert_nil result[:session_id]
+    end
   end
 
   test 'documents with question returns processing message immediately without querying KB' do
     # When a document is attached (even with a question), we always respond immediately
     # with the indexing message — the KB cannot answer about a document not yet indexed.
-    docs = [
-      { data: Base64.strict_encode64('content'), media_type: 'text/markdown', filename: 'readme.md' }
-    ]
-    result = QueryOrchestratorService.new('What is in the document?', documents: docs).execute
+    with_mock_upload_services do
+      docs = [
+        { data: Base64.strict_encode64('content'), media_type: 'text/markdown', filename: 'readme.md' }
+      ]
+      result = QueryOrchestratorService.new('What is in the document?', documents: docs).execute
 
-    assert_equal I18n.t('rag.document_indexing_message'), result[:answer]
-    assert_equal [], result[:citations]
-    assert_includes result[:documents_uploaded], 'readme.md'
+      assert_equal I18n.t('rag.document_indexing_message'), result[:answer]
+      assert_equal [], result[:citations]
+      assert_includes result[:documents_uploaded], 'readme.md'
+    end
   end
 
   # ============================================
@@ -299,69 +325,81 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   # ============================================
 
   test 'image with question returns image indexing message immediately' do
-    images = [
-      { data: Base64.strict_encode64('fake-png-bytes'), media_type: 'image/png', filename: 'chart.png' }
-    ]
-    result = QueryOrchestratorService.new('What does this chart show?', images: images).execute
+    with_mock_upload_services do
+      images = [
+        { data: Base64.strict_encode64('fake-png-bytes'), media_type: 'image/png', filename: 'chart.png' }
+      ]
+      result = QueryOrchestratorService.new('What does this chart show?', images: images).execute
 
-    assert_equal I18n.t('rag.image_indexing_message'), result[:answer]
-    assert_equal [], result[:citations]
-    assert_nil result[:session_id]
-    assert_includes result[:images_uploaded], 'chart.png'
+      assert_equal I18n.t('rag.image_indexing_message'), result[:answer]
+      assert_equal [], result[:citations]
+      assert_nil result[:session_id]
+      assert_includes result[:images_uploaded], 'chart.png'
+    end
   end
 
   test 'image without question returns image indexing message' do
-    images = [
-      { data: Base64.strict_encode64('fake-jpeg-bytes'), media_type: 'image/jpeg', filename: 'photo.jpg' }
-    ]
-    result = QueryOrchestratorService.new('', images: images).execute
+    with_mock_upload_services do
+      images = [
+        { data: Base64.strict_encode64('fake-jpeg-bytes'), media_type: 'image/jpeg', filename: 'photo.jpg' }
+      ]
+      result = QueryOrchestratorService.new('', images: images).execute
 
-    assert_equal I18n.t('rag.image_indexing_message'), result[:answer]
-    assert_includes result[:images_uploaded], 'photo.jpg'
+      assert_equal I18n.t('rag.image_indexing_message'), result[:answer]
+      assert_includes result[:images_uploaded], 'photo.jpg'
+    end
   end
 
   test 'image upload response includes images_uploaded key with filenames' do
-    images = [
-      { data: Base64.strict_encode64('a'), media_type: 'image/png', filename: 'first.png' },
-      { data: Base64.strict_encode64('b'), media_type: 'image/jpeg', filename: 'second.jpg' }
-    ]
-    result = QueryOrchestratorService.new('Describe these images', images: images).execute
+    with_mock_upload_services do
+      images = [
+        { data: Base64.strict_encode64('a'), media_type: 'image/png', filename: 'first.png' },
+        { data: Base64.strict_encode64('b'), media_type: 'image/jpeg', filename: 'second.jpg' }
+      ]
+      result = QueryOrchestratorService.new('Describe these images', images: images).execute
 
-    assert result.key?(:images_uploaded)
-    assert_includes result[:images_uploaded], 'first.png'
-    assert_includes result[:images_uploaded], 'second.jpg'
+      assert result.key?(:images_uploaded)
+      assert_includes result[:images_uploaded], 'first.png'
+      assert_includes result[:images_uploaded], 'second.jpg'
+    end
   end
 
   test 'image upload response does NOT include documents_uploaded key' do
-    images = [
-      { data: Base64.strict_encode64('fake'), media_type: 'image/png', filename: 'img.png' }
-    ]
-    result = QueryOrchestratorService.new('test', images: images).execute
+    with_mock_upload_services do
+      images = [
+        { data: Base64.strict_encode64('fake'), media_type: 'image/png', filename: 'img.png' }
+      ]
+      result = QueryOrchestratorService.new('test', images: images).execute
 
-    assert_not result.key?(:documents_uploaded)
+      assert_not result.key?(:documents_uploaded)
+    end
   end
 
   test 'image response has correct shape' do
-    images = [
-      { data: Base64.strict_encode64('fake'), media_type: 'image/png', filename: 'img.png' }
-    ]
-    result = QueryOrchestratorService.new('test', images: images).execute
+    with_mock_upload_services do
+      images = [
+        { data: Base64.strict_encode64('fake'), media_type: 'image/png', filename: 'img.png' }
+      ]
+      result = QueryOrchestratorService.new('test', images: images).execute
 
-    assert result.is_a?(Hash)
-    assert result.key?(:answer)
-    assert result.key?(:citations)
-    assert result.key?(:session_id)
-    assert result.key?(:images_uploaded)
+      assert result.is_a?(Hash)
+      assert result.key?(:answer)
+      assert result.key?(:citations)
+      assert result.key?(:session_id)
+      assert result.key?(:images_uploaded)
+    end
   end
 
   test 'image with unnamed file receives generated filename in images_uploaded' do
-    images = [
-      { data: Base64.strict_encode64('fake'), media_type: 'image/png' }
-    ]
-    result = QueryOrchestratorService.new('test', images: images).execute
+    with_mock_upload_services do
+      images = [
+        { data: Base64.strict_encode64('fake'), media_type: 'image/png' }
+      ]
+      result = QueryOrchestratorService.new('test', images: images).execute
 
-    assert_equal 1, result[:images_uploaded].size
-    assert_match(/image_1/, result[:images_uploaded].first)
+      assert_equal 1, result[:images_uploaded].size
+      assert_match(/image_1/, result[:images_uploaded].first)
+    end
   end
 
   test 'image path does NOT call AiProvider (no vision model invocation)' do
@@ -374,7 +412,9 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     ]
 
     with_mock_ai_provider(mock_provider) do
-      QueryOrchestratorService.new('What is this?', images: images).execute
+      with_mock_upload_services do
+        QueryOrchestratorService.new('What is this?', images: images).execute
+      end
     end
 
     assert_not invoked, 'AiProvider should NOT be called when an image is submitted'

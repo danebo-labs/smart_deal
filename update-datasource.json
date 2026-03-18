@@ -1,0 +1,30 @@
+{
+  "name": "knowledge-base-quick-start-hi85x-data-source",
+  "dataSourceConfiguration": {
+    "type": "S3",
+    "s3Configuration": {
+      "bucketArn": "arn:aws:s3:::multimodal-source-destination"
+    }
+  },
+  "vectorIngestionConfiguration": {
+    "chunkingConfiguration": {
+      "chunkingStrategy": "HIERARCHICAL",
+      "hierarchicalChunkingConfiguration": {
+        "levelConfigurations": [
+          { "maxTokens": 1200 },
+          { "maxTokens": 256 }
+        ],
+        "overlapTokens": 40
+      }
+    },
+    "parsingConfiguration": {
+      "parsingStrategy": "BEDROCK_FOUNDATION_MODEL",
+      "bedrockFoundationModelConfiguration": {
+        "modelArn": "arn:aws:bedrock:us-east-1:935142957735:inference-profile/global.anthropic.claude-opus-4-6-v1",
+        "parsingPrompt": {
+          "parsingPromptText": "__PROMPT_CONTENT__"
+        }
+      }
+    }
+  }
+}

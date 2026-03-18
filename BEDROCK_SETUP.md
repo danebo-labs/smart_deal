@@ -59,15 +59,40 @@ El sistema usa AWS Bedrock Knowledge Base para RAG (Retrieval-Augmented Generati
 ### Variables Requeridas
 
 ```bash
-BEDROCK_KNOWLEDGE_BASE_ID=your_kb_id          # Requerido
-BEDROCK_DATA_SOURCE_ID=your_data_source_id    # Opcional
+BEDROCK_KNOWLEDGE_BASE_ID=your_kb_id          # Requerido (ej: AMFSKKPEZN)
+BEDROCK_DATA_SOURCE_ID=your_data_source_id    # Opcional, recomendado si hay varios
+KNOWLEDGE_BASE_S3_BUCKET=your-bucket-name     # Bucket del data source del KB
 ```
+
+### RAG retrieve_and_generate (opcional)
+
+Parámetros de retrieval y generación. Valores por defecto optimizados para dominios safety-critical (ej. ascensores). En multi-tenant, cada tenant puede sobreescribir vía `bedrock_config.rag_config`.
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `BEDROCK_RAG_NUMBER_OF_RESULTS` | 15 | Chunks recuperados antes del reranking |
+| `BEDROCK_RAG_SEARCH_TYPE` | HYBRID | HYBRID (semántico + keyword) o SEMANTIC |
+| `BEDROCK_RAG_GENERATION_TEMPERATURE` | 0.0 | Determinismo en la respuesta (0 = máximo) |
+| `BEDROCK_RAG_GENERATION_MAX_TOKENS` | 3000 | Máximo tokens de salida |
+| `BEDROCK_RAG_ORCHESTRATION_TEMPERATURE` | 0.0 | Determinismo en query decomposition |
+| `BEDROCK_RAG_ORCHESTRATION_MAX_TOKENS` | 2048 | Máximo tokens para orquestación |
+
+```bash
+# Ejemplo (opcional; los defaults ya son seguros)
+BEDROCK_RAG_NUMBER_OF_RESULTS=15
+BEDROCK_RAG_SEARCH_TYPE=HYBRID
+BEDROCK_RAG_GENERATION_TEMPERATURE=0.0
+BEDROCK_RAG_ORCHESTRATION_TEMPERATURE=0.0
+```
+
+**Nota sobre el data source actual**: No tiene inclusion prefix configurado; Bedrock indexa todo el bucket. Los documentos se suben en `uploads/{fecha}/{archivo}`.
 
 ### Selección de Data Source
 
 - Si configuras `BEDROCK_DATA_SOURCE_ID`, el sistema verificará que existe en la lista de data sources disponibles y lo usará.
 - Si no existe o no está configurado, usará el primer data source disponible.
 - **Para subir imágenes (JPEG/PNG)**: usa un data source con parser multimodal (Bedrock Data Automation o Foundation Model). Lista los data sources con `bin/rails kb:status` y configura el ID del que soporte multimodal.
+- **Sin inclusion prefix**: El data source actual no tiene inclusion prefix configurado; Bedrock indexa todo el bucket. Los documentos se suben bajo `uploads/{fecha}/{archivo}`.
 - Para ver los data sources disponibles, ejecuta:
 
 ```bash
@@ -78,6 +103,35 @@ Este comando mostrará:
 - El Knowledge Base ID actual
 - El Data Source ID preferido (si está configurado)
 - Todos los data sources disponibles con sus detalles
+
+### Modelo de Embeddings (Embedding Model)
+
+El modelo de embeddings se configura **en AWS al crear el Knowledge Base**, no en la app. La variable `BEDROCK_EMBEDDING_MODEL_ID` en `.env` es solo **para mostrar en la UI**; no afecta al funcionamiento del KB.
+
+Para ver qué embedding model usa tu Knowledge Base (desde AWS):
+
+```bash
+bin/rails kb:embedding_model
+```
+
+Requiere permiso IAM `bedrock:GetKnowledgeBase` en el ARN del Knowledge Base.
+
+**Nota importante**: No se puede cambiar el embedding model de un KB ya creado. `embeddingModelArn` es inmutable. Para usar otro modelo (ej. Cohere en lugar de Titan), hay que crear un nuevo Knowledge Base con ese modelo y re-indexar los documentos. Los embeddings existentes no se sobrescriben porque cada modelo genera vectores con dimensiones distintas.
+
+### Modelo Vision (para imágenes en el chat)
+
+El **vision model** es el LLM que analiza **imágenes que el usuario adjunta** en el chat (ej. "¿qué hay en esta foto?"). Es distinto del embedding model:
+
+| Concepto        | Uso                                                      | Configuración                          |
+|-----------------|----------------------------------------------------------|----------------------------------------|
+| **Embedding**   | Convierte texto a vectores para búsqueda semántica en KB | AWS al crear el KB (Titan, Cohere…)    |
+| **Vision**      | Procesa imágenes adjuntas en el chat (multimodal)       | `BEDROCK_VISION_MODEL_ID` en `.env`    |
+
+Haiku no soporta imágenes; cuando el usuario adjunta una foto y el modelo por defecto es Haiku, la app usa automáticamente el vision model. Configuración opcional:
+
+```bash
+BEDROCK_VISION_MODEL_ID=global.anthropic.claude-sonnet-4-6
+```
 
 ## Configuración del Proveedor de IA
 
@@ -158,7 +212,67 @@ La aplicación usa los siguientes servicios:
    bin/dev
    ```
 
+## Permisos IAM para el Usuario de la Aplicación
+
+Las credenciales AWS que usa la app (ej: `bedrock-integration-user`) necesitan estos permisos para RAG:
+
+| Acción | Recurso | Motivo |
+|--------|---------|--------|
+| `bedrock:RetrieveAndGenerate` | Knowledge Base | Consultar el Knowledge Base vía API |
+| `bedrock:Retrieve` | Knowledge Base | Búsqueda vectorial (usado internamente por RetrieveAndGenerate) |
+| `bedrock:Rerank` | Modelo Cohere | Reranking de resultados (configurado en el servicio) |
+| `bedrock:InvokeModel` | Foundation models | Generar respuestas con Claude |
+| `bedrock:GetKnowledgeBase` | Knowledge Base | Opcional: para `bin/rails kb:embedding_model` |
+
+**Política mínima para el usuario IAM** (reemplaza `YOUR_ACCOUNT_ID` y `YOUR_KB_ID`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RetrieveAndRetrieveAndGenerate",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:Retrieve",
+        "bedrock:RetrieveAndGenerate",
+        "bedrock:GetKnowledgeBase"
+      ],
+      "Resource": "arn:aws:bedrock:us-east-1:YOUR_ACCOUNT_ID:knowledge-base/YOUR_KB_ID"
+    },
+    {
+      "Sid": "Rerank",
+      "Effect": "Allow",
+      "Action": "bedrock:Rerank",
+      "Resource": "arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0"
+    },
+    {
+      "Sid": "InvokeModel",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "arn:aws:bedrock:us-east-1::foundation-model/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "arn:aws:bedrock:us-east-1::foundation-model/*"
+      ]
+    }
+  ]
+}
+```
+
+Para varios Knowledge Bases: `arn:aws:bedrock:us-east-1:YOUR_ACCOUNT_ID:knowledge-base/*`
+
+Ver `docs/bedrock-app-user-iam-policy.json` para una política completa lista para adjuntar.
+
 ## Troubleshooting
+
+### Error: "is not authorized to perform: bedrock:RetrieveAndGenerate" o "bedrock:Retrieve"
+- El usuario IAM (ej: `bedrock-integration-user`) no tiene `bedrock:RetrieveAndGenerate` ni `bedrock:Retrieve`.
+- **Solución**: Añade la política de la sección "Permisos IAM para el Usuario de la Aplicación" al usuario en IAM → Users → [tu usuario] → Add permissions → Create inline policy.
+
+### Error: "is not authorized to perform: bedrock:GetKnowledgeBase"
+- Aparece al ejecutar `bin/rails kb:embedding_model`.
+- **Solución**: Añade `bedrock:GetKnowledgeBase` al statement del Knowledge Base en la política IAM (ver tabla de permisos arriba).
 
 ### Error: "Unknown AI provider"
 - Solo `bedrock` está disponible. Verifica que `AI_PROVIDER` sea `bedrock` o esté sin configurar (usa bedrock por defecto)

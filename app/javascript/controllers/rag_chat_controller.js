@@ -6,7 +6,7 @@ import { formatAnswer } from "rag/citation_formatter"
 import { renderReferences } from "rag/references_renderer"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "modelSelect"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName"]
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
   static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
@@ -17,6 +17,7 @@ export default class extends Controller {
 
   connect() {
     this.pendingFile = null
+    this.pendingImageQuery = null
     this.subscribeToKbSync()
     this.inputTarget?.focus()
   }
@@ -34,8 +35,17 @@ export default class extends Controller {
       received(data) {
         if (data.status === "indexed" || data.status === "failed") {
           controller.refreshDocuments()
-          if (data.status === "failed" && data.message) {
-            controller.addMessage(data.message, "error")
+          if (data.message) {
+            const type = data.status === "indexed" ? "system" : "error"
+            controller.addMessage(data.message, type)
+          }
+
+          if (data.status === "indexed" && controller.pendingImageQuery) {
+            const query = controller.pendingImageQuery
+            controller.pendingImageQuery = null
+            controller.sendTextQuery(query)
+          } else if (data.status === "failed") {
+            controller.pendingImageQuery = null
           }
         }
       }
@@ -174,7 +184,11 @@ export default class extends Controller {
         throw new Error(data.message || "Unknown error")
       }
 
-      if (data.documents_uploaded?.length) {
+      if (data.images_uploaded?.length) {
+        this.addMessage(data.answer, "system")
+        if (question) this.pendingImageQuery = question
+        this.refreshDocuments()
+      } else if (data.documents_uploaded?.length) {
         this.addMessage(data.answer, "system")
         this.refreshDocuments()
         [ 2000, 5000 ].forEach(ms => setTimeout(() => this.refreshDocuments(), ms))
@@ -195,6 +209,32 @@ export default class extends Controller {
     }
   }
 
+  async sendTextQuery(question) {
+    this.disableForm()
+    const loadingId = this.addMessage("Thinking…", "assistant", true)
+
+    try {
+      const data = await this.ask(question, null)
+      this.removeMessage(loadingId)
+
+      if (data.status !== "success") {
+        throw new Error(data.message || "Unknown error")
+      }
+
+      const answerHtml = formatAnswer(data.answer, data.citations)
+      this.addMessageHtml(answerHtml, "assistant")
+      if (data.citations?.length) {
+        this.addMessageHtml(renderReferences(data.citations), "assistant")
+      }
+      this.updateMetrics()
+    } catch (error) {
+      this.removeMessage(loadingId)
+      this.addMessage(`Error: ${error.message}`, "error")
+    } finally {
+      this.enableForm()
+    }
+  }
+
   async ask(question, file = null) {
     const payload = { question }
     if (file) {
@@ -204,10 +244,6 @@ export default class extends Controller {
         payload.document = { data: file.data, media_type: file.media_type, filename: file.filename }
       }
     }
-    if (this.hasModelSelectTarget && this.modelSelectTarget.value) {
-      payload.model = this.modelSelectTarget.value
-    }
-
     const response = await fetch("/rag/ask", {
       method: "POST",
       headers: {

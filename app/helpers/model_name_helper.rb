@@ -19,13 +19,11 @@ module ModelNameHelper
 
   def current_llm_model_id
     last_query = BedrockQuery.order(created_at: :desc).first
-    if last_query&.model_id
-      last_query.model_id
-    else
-      ENV['BEDROCK_MODEL_ID'].presence ||
-        Rails.application.credentials.dig(:bedrock, :model_id) ||
-        'anthropic.claude-3-haiku-20240307-v1:0'
-    end
+    return last_query.model_id if last_query&.model_id.present?
+
+    ENV['BEDROCK_MODEL_ID'].presence ||
+      Rails.application.credentials.dig(:bedrock, :model_id) ||
+      BedrockClient::DEFAULT_MODEL_ID
   end
 
   def current_embedding_model_id
@@ -45,6 +43,8 @@ module ModelNameHelper
       'Claude Opus 4'
     elsif model_id.include?('claude-haiku-4')
       'Claude Haiku 4'
+    elsif model_id.include?('nova-pro') || model_id.include?('nova-2-pro')
+      'Amazon Nova Pro'
     elsif model_id.include?('claude-3-7')
       'Claude 3.7 Sonnet'
     elsif model_id.include?('claude-3-5')

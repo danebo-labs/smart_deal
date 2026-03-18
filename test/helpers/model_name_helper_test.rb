@@ -39,7 +39,7 @@ class ModelNameHelperTest < ActionView::TestCase
     BedrockQuery.delete_all
     ENV.delete('BEDROCK_MODEL_ID')
 
-    assert_equal 'Claude 3 Haiku', current_llm_model_name
+    assert_equal 'Claude Haiku 4', current_llm_model_name
   end
 
   test 'current_embedding_model_name uses configuration' do

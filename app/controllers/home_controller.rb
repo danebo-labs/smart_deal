@@ -5,8 +5,7 @@ class HomeController < ApplicationController
 
   def index
     @current_metrics = current_metrics
-    @s3_documents_list = S3DocumentsService.new.list_documents
-    @indexing_document_names = IngestionStatusService.new.indexing_document_names
+    @documents = fetch_documents
   end
 
   def metrics
@@ -14,12 +13,30 @@ class HomeController < ApplicationController
   end
 
   def documents
-    documents = S3DocumentsService.new.list_documents
-    indexing_docs = IngestionStatusService.new.indexing_document_names
     render turbo_stream: turbo_stream.update(
       "documents-list-container",
       partial: "home/documents_list",
-      locals: { documents: documents, indexing_document_names: indexing_docs }
+      locals: { documents: fetch_documents }
     )
+  end
+
+  private
+
+  # Merges KB-indexed documents with any currently-processing documents from IngestionStatusService.
+  # KB API is source of truth; IngestionStatusService overlays docs not yet visible in the KB API.
+  def fetch_documents
+    indexed = S3DocumentsService.new.list_indexed_documents
+    processing_names = IngestionStatusService.new.indexing_document_names
+
+    indexed_names = indexed.pluck(:name).to_set
+    processing_overlay = processing_names
+      .reject { |name| indexed_names.include?(name) }
+      .map { |name| { name: name, status: :indexing, updated_at: nil } }
+
+    (processing_overlay + indexed).sort_by { |d| [ status_sort_order(d[:status]), d[:name] ] }
+  end
+
+  def status_sort_order(status)
+    { indexed: 0, indexing: 1, failed: 2 }.fetch(status, 3)
   end
 end

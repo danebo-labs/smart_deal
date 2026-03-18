@@ -11,6 +11,11 @@
 #   - DATABASE_QUERY: business data from the client's database
 #   - KNOWLEDGE_BASE_QUERY: documents/policies from the AWS Knowledge Base
 #   - HYBRID_QUERY: both sources queried in parallel, results merged
+#
+# Images are never sent to the LLM directly. They are always uploaded to S3 and
+# indexed into the Knowledge Base in a background thread, just like documents.
+# The frontend (rag_chat_controller.js) listens for the ActionCable "indexed"
+# event and re-sends the original text query once indexing completes.
 class QueryOrchestratorService
   TOOLS = {
     DATABASE_QUERY: 'DATABASE_QUERY',
@@ -18,50 +23,38 @@ class QueryOrchestratorService
     HYBRID_QUERY: 'HYBRID_QUERY'
   }.freeze
 
-  DEFAULT_IMAGE_PROMPT = <<~PROMPT.freeze
-    Describe esta imagen en detalle. Identifica toda la información relevante.
-    Responde siempre en español.
-  PROMPT
-
   # @param query [String] The user's question
   # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
   # @param documents [Array<Hash>] Optional array of { data: base64, media_type: "text/plain", filename: "x.txt" }
-  # @param model_id [String] Optional Bedrock model ID to use
   # @param tenant [Tenant, nil] Optional tenant for multi-tenant data source selection
-  def initialize(query, images: [], documents: [], model_id: nil, tenant: nil)
+  def initialize(query, images: [], documents: [], tenant: nil)
     @query = query
     @images = images || []
     @documents = documents || []
-    @model_id = model_id
     @tenant = tenant
     @ai_provider = AiProvider.new
   end
 
-  # Main entry point. When images are present, runs multimodal analysis.
-  # Documents/images are uploaded to S3 and KB synced in background on submit.
-  # For documents-only (no question): blocks on S3 upload + sync so UI can show doc with
-  # spinner immediately; server does NOT block on indexing (that runs in a job).
+  # Main entry point. Routing logic:
+  #
+  # 1. Documents only: respond immediately with an "indexing" message and run
+  #    S3 upload + KB ingestion in a background thread.
+  #
+  # 2. Images (with or without documents): same as documents — respond immediately
+  #    with an "indexing" message and run S3 upload + KB ingestion in background.
+  #    The frontend stores the original query and re-sends it as a text-only
+  #    request after the ActionCable "indexed" event arrives.
+  #    Images are NEVER sent to the LLM; all generation uses Haiku 4.5 (text).
+  #
+  # 3. Text-only query: classify intent and delegate to the appropriate service.
   def execute
-    documents_only = @documents.any? && @query.blank? && @images.empty?
-    uploaded_filenames = []
-
-    if @images.any? || @documents.any?
-      if documents_only
-        # Synchronous upload so doc appears in S3 before response; client sees spinner via ActionCable
-        uploaded_filenames = upload_and_sync_attachments
-      else
-        Thread.new do
-          upload_and_sync_attachments
-        rescue StandardError => e
-          Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
-        end
+    if @documents.any? && @images.empty?
+      filenames = @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
+      Thread.new do
+        upload_and_sync_attachments
+      rescue StandardError => e
+        Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
       end
-    end
-
-    return execute_multimodal_query if @images.any?
-
-    if @documents.any? && @query.blank?
-      filenames = uploaded_filenames.presence || @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
       return {
         answer: I18n.t('rag.document_indexing_message'),
         citations: [],
@@ -70,15 +63,33 @@ class QueryOrchestratorService
       }
     end
 
+    if @images.any?
+      filenames = @images.each_with_index.map do |img, idx|
+        name = (img[:filename] || img['filename']).presence
+        name ? File.basename(name) : "image_#{idx + 1}"
+      end
+      Thread.new do
+        upload_and_sync_attachments
+      rescue StandardError => e
+        Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
+      end
+      return {
+        answer: I18n.t('rag.image_indexing_message'),
+        citations: [],
+        session_id: nil,
+        images_uploaded: filenames
+      }
+    end
+
     tool_to_use = classify_query_intent
 
     case tool_to_use
     when TOOLS[:DATABASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
-      SqlGenerationService.new(@query, model_id: @model_id).execute
+      SqlGenerationService.new(@query).execute
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
-      BedrockRagService.new(model_id: @model_id).query(@query)
+      BedrockRagService.new(tenant: @tenant || current_tenant).query(@query)
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
       execute_hybrid_query
@@ -87,39 +98,17 @@ class QueryOrchestratorService
         "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
         "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
       )
-      BedrockRagService.new(model_id: @model_id).query(@query)
+      BedrockRagService.new(tenant: @tenant || current_tenant).query(@query)
     end
   end
 
   private
 
-  # Multimodal flow: analyzes the image directly via invoke_model (Sonnet).
-  # The image is also uploaded to S3 in background for future KB queries.
-  # No KB query or merge step — keeps response time under Twilio's 15s timeout.
-  def execute_multimodal_query
-    Rails.logger.info("QueryOrchestrator: MULTIMODAL query with #{@images.size} image(s) for: '#{@query}'")
-
-    prompt = @query.presence || DEFAULT_IMAGE_PROMPT
-    image_result = @ai_provider.query(prompt, images: @images, max_tokens: 3000, model_id: @model_id)
-
-    image_answer = image_result.to_s.strip.presence
-
-    Rails.logger.info("QueryOrchestrator MULTIMODAL - Image answer present: #{image_answer.present?}")
-
-    if image_answer.present?
-      { answer: image_answer, citations: [], session_id: nil }
-    else
-      { answer: "No pude analizar la imagen. Por favor, intenta de nuevo.", citations: [], session_id: nil }
-    end
-  end
-
-  # @return [Array<String>] filenames that were successfully uploaded
+  # Uploads all pending images and documents to S3, then starts a Bedrock KB
+  # ingestion job via KbSyncService. BedrockIngestionJob polls for completion
+  # and broadcasts the result via ActionCable.
+  # @return [Array<String>] filenames that were successfully uploaded to S3
   def upload_and_sync_attachments
-    upload_and_sync_with_filenames([])
-  end
-
-  # @param precollected_filenames [Array<String>] Optional; when empty, uses collected uploads
-  def upload_and_sync_with_filenames(precollected_filenames = [])
     s3 = S3DocumentsService.new
     uploaded_filenames = []
 
@@ -142,14 +131,13 @@ class QueryOrchestratorService
       uploaded_filenames << filename if key.present?
     end
 
-    filenames_for_sync = precollected_filenames.any? ? precollected_filenames : uploaded_filenames
-    return [] unless filenames_for_sync.any?
+    return [] unless uploaded_filenames.any?
 
-    result = KbSyncService.new(tenant: @tenant || current_tenant).sync!(uploaded_filenames: filenames_for_sync)
+    result = KbSyncService.new(tenant: @tenant || current_tenant).sync!(uploaded_filenames: uploaded_filenames)
     if result.present?
       BedrockIngestionJob.perform_later(
         result[:job_id],
-        filenames_for_sync,
+        uploaded_filenames,
         kb_id: result[:kb_id],
         data_source_id: result[:data_source_id]
       )
@@ -166,14 +154,14 @@ class QueryOrchestratorService
     # Run both queries in parallel to minimize total latency.
     # Instead of ~DB_time + ~KB_time, we pay only ~max(DB_time, KB_time).
     db_thread = Thread.new do
-      db_result = SqlGenerationService.new(@query, model_id: @model_id).execute
+      db_result = SqlGenerationService.new(@query).execute
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - DB thread failed: #{e.message}")
       db_result = { answer: nil, citations: [], session_id: nil }
     end
 
     kb_thread = Thread.new do
-      kb_result = BedrockRagService.new(model_id: @model_id).query(@query)
+      kb_result = BedrockRagService.new(tenant: @tenant || current_tenant).query(@query)
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")
       kb_result = { answer: nil, citations: [], session_id: nil }
@@ -219,7 +207,7 @@ class QueryOrchestratorService
       Write the unified answer:
     PROMPT
 
-    @ai_provider.query(synthesis_prompt, model_id: @model_id).to_s.strip
+    @ai_provider.query(synthesis_prompt).to_s.strip
   end
 
   # This is the cheap, fast, first step. It uses an LLM to classify the task.
@@ -237,9 +225,6 @@ class QueryOrchestratorService
       Based on the user's question, which is the correct tool? Respond with ONLY the tool name (DATABASE_QUERY, KNOWLEDGE_BASE_QUERY, or HYBRID_QUERY). Do not include any other text.
     PROMPT
 
-    # NOTE: @model_id is intentionally NOT passed here. Classification is a cheap
-    # routing step that does not justify using an expensive model. The selected
-    # model_id is only propagated to the services that generate the final answer.
     response = @ai_provider.query(classification_prompt).to_s.strip
 
     # Extract the tool name even if the LLM adds extra text around it.

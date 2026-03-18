@@ -1,18 +1,25 @@
-<% indexing_document_names ||= [] %>
 <div class="knowledge-base-content">
   <% if documents.any? %>
     <div class="documents-list">
       <% documents.each_with_index do |doc, index| %>
-        <% is_indexing = indexing_document_names.include?(doc[:name]) %>
         <div class="document-item-card">
           <div class="document-item-header">
             <span class="document-number">[<%= index + 1 %>]</span>
             <span class="document-name-primary" title="<%= doc[:name] %>"><%= doc[:name] %></span>
-            <% if is_indexing %>
+            <% case doc[:status] %>
+            <% when :indexing %>
               <span class="document-status document-status-indexing" title="Indexando">
                 <svg class="document-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"/>
                   <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+              </span>
+            <% when :failed %>
+              <span class="document-status document-status-failed" title="Error al indexar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5"/>
+                  <line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+                  <line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
                 </svg>
               </span>
             <% else %>
@@ -23,21 +30,18 @@
               </span>
             <% end %>
           </div>
-          <div class="document-meta-secondary">
-            <%= number_to_human_size(doc[:size_bytes]) %> • 
-            <%= format_document_date(doc[:modified]) %>
-          </div>
+          <% if doc[:updated_at] %>
+            <div class="document-meta-secondary">
+              <%= format_document_date(doc[:updated_at]) %>
+            </div>
+          <% end %>
         </div>
       <% end %>
     </div>
     <div class="documents-summary">
       <div class="summary-item">
         <span class="summary-label">Total Documents:</span>
-        <span class="summary-value"><%= documents.count %></span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">Total Storage:</span>
-        <span class="summary-value"><%= total_storage_mb(documents) %> MB</span>
+        <span class="summary-value"><%= documents.count { |d| d[:status] == :indexed } %></span>
       </div>
     </div>
   <% else %>

@@ -12,7 +12,7 @@
         Data Source
       </h3>
       <div id="documents-list-container">
-        <%= render partial: "home/documents_list", locals: { documents: @s3_documents_list, indexing_document_names: @indexing_document_names || [] } %>
+        <%= render partial: "home/documents_list", locals: { documents: @documents || [] } %>
       </div>
     </div>
 

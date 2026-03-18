@@ -12,7 +12,8 @@ This document describes the architecture for converting the application from sin
 # .env
 BEDROCK_MODEL_ID=us.anthropic.claude-3-5-haiku-20241022-v1:0
 BEDROCK_KNOWLEDGE_BASE_ID=AMFSKKPEZN
-BEDROCK_DATA_SOURCE_ID=<data_source_id>  # Use multimodal data source (e.g. CBXXGAKRZ3) for JPEG/PNG support
+BEDROCK_DATA_SOURCE_ID=<data_source_id>  # Use multimodal data source (e.g. CBXXGAKRZ3) for JPEG/PNG
+KNOWLEDGE_BASE_S3_BUCKET=<bucket>        # Data source sin inclusion prefix; indexa todo el bucket
 ```
 
 ### Limitations
@@ -85,6 +86,10 @@ class CreateBedrockConfigs < ActiveRecord::Migration[8.0]
       t.boolean :multimodal_enabled, default: true
       t.boolean :sql_generation_enabled, default: false
       t.boolean :whatsapp_enabled, default: false
+      
+      # RAG config overrides (per-tenant). Keys: number_of_results, search_type,
+      # generation_temperature, generation_max_tokens, orchestration_temperature, orchestration_max_tokens
+      t.jsonb :rag_config, default: {}
       
       t.timestamps
     end

@@ -18,9 +18,8 @@ class SqlGenerationService
   # Custom error for SQL-related failures
   class SqlExecutionError < StandardError; end
 
-  def initialize(query, model_id: nil)
+  def initialize(query)
     @query = query
-    @model_id = model_id
     @ai_provider = AiProvider.new
     # Connection will be established lazily when needed
   end
@@ -105,7 +104,7 @@ class SqlGenerationService
       Question: #{@query}
     PROMPT
 
-    raw_response = @ai_provider.query(sql_prompt, model_id: @model_id).to_s.strip
+    raw_response = @ai_provider.query(sql_prompt).to_s.strip
 
     # Clean up: remove markdown code fences and sql language tags if present
     raw_response
@@ -143,7 +142,7 @@ class SqlGenerationService
       Database Results (JSON): #{results_summary}
     PROMPT
 
-    @ai_provider.query(synthesis_prompt, model_id: @model_id).to_s.strip
+    @ai_provider.query(synthesis_prompt).to_s.strip
   end
 
   # Returns a standardized error response hash matching BedrockRagService shape.

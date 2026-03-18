@@ -302,6 +302,50 @@ canvas {
   text-align: center;
 }
 
+.model-select-wrapper {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.model-select-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.model-select {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  background: white;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.model-select:hover {
+  border-color: #94a3b8;
+}
+
+.model-select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.vision-fallback-banner {
+  margin: 8px 12px;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  color: #1e40af;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+}
+
 .chat-container {
   height: 450px;
   overflow-y: auto;

@@ -1,9 +1,12 @@
 # RAG / chat messages
 en:
   rag:
-    document_indexing_message: "We are processing your document. It will be ready for queries shortly. You can still ask questions about other indexed documents."
-    document_indexed_message: "Document ready for RAG queries"
+    document_indexing_message: "Your document is being processed. It will be available for queries shortly. You can still ask questions about other already-indexed documents."
+    image_indexing_message: "Your image is being indexed in the Knowledge Base. Your query will be sent automatically once indexing completes."
+    document_indexed_message: "The file %{filename} has been synchronized to the Knowledge Base and is ready for queries."
+    documents_indexed_message: "%{count} files have been synchronized to the Knowledge Base and are ready for queries."
     document_indexing_failed_message: "Document indexing failed. Please try again."
+    no_results_found: "No information was found in the Knowledge Base to answer your query. You can ask questions about the indexed documents, or upload a new document to expand the knowledge base."
     image_compression_failed: "Image exceeds 3.75 MB limit. Compress or reduce size and try again."
     ingestion_failed_file_too_large: "A file exceeds the limit (images: 3.75 MB, documents: 50 MB). Reduce it and try again."
     ingestion_failed_format_not_supported: "Format not supported by Bedrock. Images: JPEG or PNG. Documents: .txt, .md, .html, .pdf, .doc, .docx, .csv, .xls, .xlsx."

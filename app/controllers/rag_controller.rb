@@ -10,8 +10,7 @@ class RagController < ApplicationController
     images = extract_images_from_params
     documents = extract_documents_from_params
 
-    model_id = resolve_model_id(params[:model])
-    result = execute_rag_query(params[:question], images: images, documents: documents, model_id: model_id)
+    result = execute_rag_query(params[:question], images: images, documents: documents)
 
     unless result.success?
       render_rag_json_error(result)
@@ -31,17 +30,6 @@ class RagController < ApplicationController
   end
 
   private
-
-  def resolve_model_id(requested)
-    return BedrockClient::DEFAULT_MODEL_ID if requested.blank?
-
-    if BedrockClient::ALLOWED_MODEL_IDS.include?(requested)
-      requested
-    else
-      Rails.logger.warn("RagController: Unknown model_id '#{requested}', falling back to default")
-      BedrockClient::DEFAULT_MODEL_ID
-    end
-  end
 
   def extract_images_from_params
     image_param = params[:image]

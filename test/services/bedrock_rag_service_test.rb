@@ -207,7 +207,19 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       service = BedrockRagService.new
       result = service.query('que es EC2')
 
-      assert_equal I18n.t('rag.no_results_found'), result[:answer]
+      # Spanish question -> Spanish response (detected from question text)
+      assert_includes result[:answer], 'No se encontró información'
+      assert_equal [], result[:citations]
+    end
+  end
+
+  test 'query returns English no-results message when question is in English' do
+    bedrock_sorry = "Sorry, I am unable to assist you with this request."
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(bedrock_sorry)) do
+      service = BedrockRagService.new
+      result = service.query('What is S3?')
+
+      assert_includes result[:answer], 'No information was found'
       assert_equal [], result[:citations]
     end
   end

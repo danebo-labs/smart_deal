@@ -30,7 +30,8 @@ class BedrockRagService
 
   # Build complete optimized configuration for retrieve_and_generate API
   # This method constructs the config dynamically to include prompt templates
-  def build_complete_optimized_config(region: 'us-east-1')
+  # @param question [String] Used to detect response language from the user's query text
+  def build_complete_optimized_config(region: 'us-east-1', question: nil)
     cfg = @rag_config
     {
       # ===== RETRIEVAL CONFIGURATION =====
@@ -75,9 +76,9 @@ class BedrockRagService
           }
         },
 
-        # Custom prompt template for generation
+        # Custom prompt template for generation (includes language instruction from question text)
         prompt_template: {
-          text_prompt_template: self.class.load_generation_prompt_template
+          text_prompt_template: load_generation_prompt_with_locale(question)
         },
 
         # Additional model request fields (model-specific parameters)
@@ -155,7 +156,7 @@ class BedrockRagService
 
     begin
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region)
+      base_config = build_complete_optimized_config(region: @region, question: question)
       config = deep_merge_configs(base_config, custom_config)
 
       # Use retrieve_and_generate API - combines retrieval and generation in one call
@@ -178,7 +179,8 @@ class BedrockRagService
       # Process response
       raw_answer = response.output.text
       # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
-      answer_text = bedrock_no_results?(raw_answer) ? I18n.t("rag.no_results_found") : raw_answer
+      response_locale = detect_language_from_question(question)
+      answer_text = bedrock_no_results?(raw_answer) ? localized_no_results(response_locale) : raw_answer
       citations = @citation_processor.extract_citations(response.citations)
       session_id = response.session_id
 
@@ -271,6 +273,42 @@ class BedrockRagService
   end
 
   # ===== CUSTOM PROMPT TEMPLATES =====
+
+  # Loads generation prompt with explicit language instruction.
+  # Detects language from question text (definitive) or falls back to I18n.locale.
+  def load_generation_prompt_with_locale(question = nil)
+    base = self.class.load_generation_prompt_template
+    locale = question.present? ? detect_language_from_question(question) : I18n.locale
+    lang_name = locale_to_language_name(locale)
+    return base if lang_name.blank?
+
+    # Inject explicit language instruction after LANGUAGE POLICY header
+    base.sub(
+      /(# LANGUAGE POLICY — MANDATORY\n\n)/,
+      "\\1CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}.\n\n"
+    )
+  end
+
+  # Detects response language from the question text. Does not depend on browser/headers.
+  # Returns :es for Spanish, :en otherwise.
+  def detect_language_from_question(question)
+    return I18n.locale if question.blank?
+
+    text = question.to_s.strip.downcase
+    return :es if text.match?(/[áéíóúñ¿¡]/)
+    return :es if text.match?(/\b(que|qué|cómo|cuál|cuáles|dónde|quién|por qué|para qué|cuándo|cuánto|cuánta|necesito|quiero|explica|explicame|dime|dame|busco|buscar|información|informacion|sobre|instalación|instalacion|reparar|mantenimiento|documentación|documentacion)\b/i)
+    return :es if text.match?(/\b(es|son|está|están|hay|tiene|tienen|puedo|puede|pueden)\b/) && text.length < 80
+
+    :en
+  end
+
+  def locale_to_language_name(locale)
+    { es: "Spanish", en: "English" }[locale.to_sym]
+  end
+
+  def localized_no_results(locale)
+    I18n.with_locale(locale) { I18n.t("rag.no_results_found") }
+  end
 
   def self.load_generation_prompt_template
     Rails.root.join("app/prompts/bedrock/generation.txt").read

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Actualiza el prompt de parsing del data source de Bedrock Knowledge Base.
-# Ver docs/ACTUALIZAR_PROMPT_PARSING.md para instrucciones completas.
+# El promot va en el archivo docs/master_prompt.txt
+# para ejecutar bin/update-parsing-prompt.sh 
+
 set -euo pipefail
 
 KB_ID="VBB72VKABV"
 DS_ID="OWRPGSX6XK"
-PROMPT_FILE="master_prompt.txt"
+PROMPT_FILE="docs/master_prompt.txt"
 TEMPLATE_FILE="update-datasource.json"
 OUTPUT_FILE="/tmp/update-datasource-filled.json"
 

@@ -351,7 +351,6 @@ module KbConfigHelpers
 
     def build_app_config(region)
       gen_path = Rails.root.join('app/prompts/bedrock/generation.txt')
-      orch_path = Rails.root.join('app/prompts/bedrock/orchestration.txt')
 
       {
         env: {
@@ -361,18 +360,14 @@ module KbConfigHelpers
           region: region
         },
         rag_params: {
-          number_of_results: ENV['BEDROCK_RAG_NUMBER_OF_RESULTS'].presence || '15',
+          number_of_results: ENV['BEDROCK_RAG_NUMBER_OF_RESULTS'].presence || '10',
           search_type: ENV['BEDROCK_RAG_SEARCH_TYPE'].presence || 'HYBRID',
-          generation_temperature: ENV['BEDROCK_RAG_GENERATION_TEMPERATURE'].presence || '0.0',
-          generation_max_tokens: ENV['BEDROCK_RAG_GENERATION_MAX_TOKENS'].presence || '3000',
-          orchestration_temperature: ENV['BEDROCK_RAG_ORCHESTRATION_TEMPERATURE'].presence || '0.0',
-          orchestration_max_tokens: ENV['BEDROCK_RAG_ORCHESTRATION_MAX_TOKENS'].presence || '2048'
+          generation_temperature: ENV['BEDROCK_RAG_GENERATION_TEMPERATURE'].presence || '0.3',
+          generation_max_tokens: ENV['BEDROCK_RAG_GENERATION_MAX_TOKENS'].presence || '3000'
         },
         prompts: {
           generation: gen_path.exist? ? gen_path.to_s : nil,
-          orchestration: orch_path.exist? ? orch_path.to_s : nil,
-          generation_size_bytes: gen_path.exist? ? File.size(gen_path) : nil,
-          orchestration_size_bytes: orch_path.exist? ? File.size(orch_path) : nil
+          generation_size_bytes: gen_path.exist? ? File.size(gen_path) : nil
         }.compact
       }
     end
@@ -460,7 +455,7 @@ module KbConfigHelpers
         puts "  RAG: number_of_results=#{rag[:number_of_results]}, search_type=#{rag[:search_type]}, temp=#{rag[:generation_temperature]}"
       end
       if (prompts = app[:prompts])
-        puts "  Prompts: generation=#{prompts[:generation]}, orchestration=#{prompts[:orchestration]}"
+        puts "  Prompts: generation=#{prompts[:generation]}"
       end
 
       puts "\n" + "=" * 70 + "\n"

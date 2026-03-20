@@ -99,8 +99,7 @@ smart_deal/
 │   │   ├── cost_metric.rb                  # Daily cost/usage metrics
 │   │   └── user.rb                         # Devise authentication
 │   ├── prompts/bedrock/
-│   │   ├── generation.txt                  # Answer generation template
-│   │   └── orchestration.txt               # Query optimization template
+│   │   └── generation.txt                  # Answer generation template
 │   ├── services/
 │   │   ├── concerns/
 │   │   │   └── aws_client_initializer.rb   # Shared AWS credential resolution
@@ -247,7 +246,6 @@ Bearer token auth (via `Aws::StaticTokenProvider`) is supported alongside IAM ac
 | Search type        | `HYBRID`                | Semantic + keyword fusion           |
 | Number of results  | 20                      | Top-K chunks from vector store      |
 | Reranking model    | Cohere `rerank-v3-5:0`  | Applied over the 20 retrieved chunks|
-| Query transform    | `QUERY_DECOMPOSITION`   | Breaks complex queries into sub-queries |
 
 ### 6.2 Generation Configuration
 
@@ -257,15 +255,6 @@ Bearer token auth (via `Aws::StaticTokenProvider`) is supported alongside IAM ac
 | Top-p         | 0.9    |
 | Max tokens    | 3000   |
 | Prompt        | `app/prompts/bedrock/generation.txt` (custom template) |
-
-### 6.3 Orchestration Configuration
-
-| Parameter     | Value  |
-| ------------- | ------ |
-| Temperature   | 0.1    |
-| Top-p         | 0.8    |
-| Max tokens    | 2048   |
-| Prompt        | `app/prompts/bedrock/orchestration.txt` (custom template) |
 
 ### 6.4 Models Used
 

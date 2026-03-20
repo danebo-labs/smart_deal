@@ -20,12 +20,10 @@ class BedrockRagService
   # Default RAG config (safety-critical for elevator domain).
   # Overridden by ENV (BEDROCK_RAG_*) and tenant.bedrock_config.rag_config when present.
   DEFAULT_RAG_CONFIG = {
-    number_of_results: 15,
+    number_of_results: 10,
     search_type: "HYBRID",
-    generation_temperature: 0.0,
-    generation_max_tokens: 3000,
-    orchestration_temperature: 0.0,
-    orchestration_max_tokens: 2048
+    generation_temperature: 0.3,
+    generation_max_tokens: 3000
   }.freeze
 
   # Build complete optimized configuration for retrieve_and_generate API
@@ -93,31 +91,8 @@ class BedrockRagService
         #   guardrail_identifier: "your-guardrail-id",
         #   guardrail_version: "DRAFT"
         # }
-      },
-
-      # ===== ORCHESTRATION CONFIGURATION =====
-      orchestration_configuration: {
-        # Query transformation (Query decomposition - Break down queries)
-        query_transformation_configuration: {
-          type: "QUERY_DECOMPOSITION"        # ENABLE break down queries
-        },
-
-        # Inference config for orchestration
-        inference_config: {
-          text_inference_config: {
-            temperature: cfg[:orchestration_temperature],
-            max_tokens: cfg[:orchestration_max_tokens]
-          }
-        },
-
-        # Custom prompt template for orchestration
-        prompt_template: {
-          text_prompt_template: self.class.load_orchestration_prompt_template
-        },
-
-        # Additional model request fields for orchestration
-        additional_model_request_fields: {}
       }
+
     }
   end
 
@@ -160,7 +135,7 @@ class BedrockRagService
       config = deep_merge_configs(base_config, custom_config)
 
       # Use retrieve_and_generate API - combines retrieval and generation in one call
-      # Apply all optimized configuration (retrieval, generation, orchestration)
+      bedrock_start_time = Time.current
       response = @client.retrieve_and_generate({
         input: {
           text: question
@@ -170,11 +145,13 @@ class BedrockRagService
           knowledge_base_configuration: {
             knowledge_base_id: @knowledge_base_id,
             model_arn: @model_ref,
-            **config  # All optimized configuration
+            **config
           }
         },
         session_id: session_id
       })
+      bedrock_latency_ms = ((Time.current - bedrock_start_time) * 1000).to_i
+      Rails.logger.info("BedrockRagService: retrieve_and_generate #{bedrock_latency_ms}ms")
 
       # Process response
       raw_answer = response.output.text
@@ -237,9 +214,7 @@ class BedrockRagService
       number_of_results: parse_int(ENV['BEDROCK_RAG_NUMBER_OF_RESULTS']),
       search_type: ENV['BEDROCK_RAG_SEARCH_TYPE'].presence,
       generation_temperature: parse_float(ENV['BEDROCK_RAG_GENERATION_TEMPERATURE']),
-      generation_max_tokens: parse_int(ENV['BEDROCK_RAG_GENERATION_MAX_TOKENS']),
-      orchestration_temperature: parse_float(ENV['BEDROCK_RAG_ORCHESTRATION_TEMPERATURE']),
-      orchestration_max_tokens: parse_int(ENV['BEDROCK_RAG_ORCHESTRATION_MAX_TOKENS'])
+      generation_max_tokens: parse_int(ENV['BEDROCK_RAG_GENERATION_MAX_TOKENS'])
     }.compact
     from_tenant = @tenant&.bedrock_config&.rag_config
     from_tenant = from_tenant&.symbolize_keys&.compact || {}
@@ -302,10 +277,6 @@ class BedrockRagService
 
   def self.load_generation_prompt_template
     Rails.root.join("app/prompts/bedrock/generation.txt").read
-  end
-
-  def self.load_orchestration_prompt_template
-    Rails.root.join("app/prompts/bedrock/orchestration.txt").read
   end
 
   def estimate_tokens(text)

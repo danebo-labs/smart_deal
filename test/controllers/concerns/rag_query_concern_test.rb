@@ -175,19 +175,22 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_equal 'This is the answer', formatted
   end
 
-  test 'format_rag_response_for_whatsapp includes citations' do
+  test 'format_rag_response_for_whatsapp includes citations as numbered filenames' do
     result = RagQueryConcern::RagResult.new(
       success?: true,
       answer: 'This is the answer',
-      citations: [ 'doc1.pdf', 'doc2.pdf' ]
+      citations: [
+        { number: 1, filename: 'doc1.pdf', title: 'Doc 1' },
+        { number: 2, filename: 'doc2.pdf', title: 'Doc 2' }
+      ]
     )
 
     formatted = @controller.send(:format_rag_response_for_whatsapp, result)
 
     assert_includes formatted, 'This is the answer'
-    assert_includes formatted, 'Sources:'
-    assert_includes formatted, 'doc1.pdf'
-    assert_includes formatted, 'doc2.pdf'
+    assert_includes formatted, 'Fuentes:'
+    assert_includes formatted, '[1] doc1.pdf'
+    assert_includes formatted, '[2] doc2.pdf'
   end
 
   test 'format_rag_response_for_whatsapp returns fallback for empty answer' do
@@ -303,5 +306,65 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_equal 'error', @controller.rendered_json[:status]
     assert_equal 'Unexpected error processing request', @controller.rendered_json[:message]
     assert_equal :internal_server_error, @controller.rendered_status
+  end
+
+  # ============================================
+  # Tests for split_for_whatsapp
+  # ============================================
+
+  test 'split_for_whatsapp returns single chunk when text fits within limit' do
+    short_text = 'A' * 100
+    chunks = @controller.send(:split_for_whatsapp, short_text)
+
+    assert_equal 1, chunks.size
+    assert_equal short_text, chunks.first
+  end
+
+  test 'split_for_whatsapp returns single chunk at exactly the limit' do
+    text = 'A' * RagQueryConcern::WHATSAPP_CHUNK_SIZE
+    chunks = @controller.send(:split_for_whatsapp, text)
+
+    assert_equal 1, chunks.size
+  end
+
+  test 'split_for_whatsapp splits long text into multiple chunks' do
+    long_text = 'A' * (RagQueryConcern::WHATSAPP_CHUNK_SIZE * 3)
+    chunks = @controller.send(:split_for_whatsapp, long_text)
+
+    assert chunks.size > 1
+    chunks.each { |c| assert c.length <= RagQueryConcern::WHATSAPP_CHUNK_SIZE }
+  end
+
+  test 'split_for_whatsapp preserves all content across chunks' do
+    long_text = ('word ' * 600).strip
+    chunks = @controller.send(:split_for_whatsapp, long_text)
+
+    assert chunks.size > 1
+    # Reassembled content (ignoring whitespace normalization from rstrip/lstrip) must cover all words
+    reassembled = chunks.join(' ')
+    original_words = long_text.split
+    original_words.each { |w| assert_includes reassembled, w }
+  end
+
+  test 'split_for_whatsapp prefers paragraph breaks over hard cuts' do
+    para1 = 'First paragraph. ' * 55
+    para2 = 'Second paragraph. ' * 55
+    text  = "#{para1.rstrip}\n\n#{para2.rstrip}"
+
+    chunks = @controller.send(:split_for_whatsapp, text)
+
+    assert chunks.size >= 2
+    # The first chunk must not bleed into para2 content
+    assert_not_includes chunks.first, 'Second paragraph'
+  end
+
+  test 'split_for_whatsapp each chunk is within the character limit' do
+    mixed = (1..50).map { |i| "Paragraph #{i}: " + ('text ' * 20) }.join("\n\n")
+    chunks = @controller.send(:split_for_whatsapp, mixed)
+
+    chunks.each_with_index do |chunk, i|
+      assert chunk.length <= RagQueryConcern::WHATSAPP_CHUNK_SIZE,
+             "Chunk #{i} exceeds limit: #{chunk.length} chars"
+    end
   end
 end

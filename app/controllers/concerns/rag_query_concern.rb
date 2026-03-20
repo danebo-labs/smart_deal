@@ -60,15 +60,52 @@ module RagQueryConcern
     RagResult.new(success?: false, error_type: :unexpected_error, error_message: e.message)
   end
 
-  # Formats RAG result for WhatsApp/SMS text responses
+  WHATSAPP_CHUNK_SIZE = 1550
+
+  # Formats RAG result for WhatsApp/SMS text responses.
+  # Returns the full answer — callers must use split_for_whatsapp before sending
+  # via Twilio REST API (1600 char/message limit).
   # @param result [RagResult] The result from execute_rag_query
-  # @return [String] Human-readable text response
+  # @return [String] Human-readable text response (may exceed 1600 chars)
   def format_rag_response_for_whatsapp(result)
     return whatsapp_error_message(result.error_type, result.error_message) unless result.success?
 
     text = result.answer.to_s
-    text += "\n\nSources: #{result.citations.join(', ')}" if result.citations.present?
+
+    if result.citations.present?
+      refs = result.citations.map { |c| "[#{c[:number]}] #{c[:filename]}" }.join("\n")
+      text += "\n\nFuentes:\n#{refs}"
+    end
+
     text.presence || "I couldn't find an answer."
+  end
+
+  # Splits a response string into chunks that fit within Twilio's 1600-char limit.
+  # Cuts at paragraph → line → sentence → word boundaries (in that priority order)
+  # so logical blocks are never broken mid-thought.
+  # @param text [String]
+  # @return [Array<String>]
+  def split_for_whatsapp(text)
+    return [ text ] if text.length <= WHATSAPP_CHUNK_SIZE
+
+    chunks    = []
+    remaining = text.dup
+
+    while remaining.length > WHATSAPP_CHUNK_SIZE
+      slice = remaining[0, WHATSAPP_CHUNK_SIZE]
+
+      cut = slice.rindex("\n\n") ||
+            slice.rindex("\n")   ||
+            slice.rindex(". ")   ||
+            slice.rindex(" ")    ||
+            WHATSAPP_CHUNK_SIZE
+
+      chunks    << remaining[0, cut].rstrip
+      remaining  = remaining[cut..].lstrip
+    end
+
+    chunks << remaining if remaining.present?
+    chunks
   end
 
   # Maps error types to WhatsApp-friendly messages

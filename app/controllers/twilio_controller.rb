@@ -12,19 +12,28 @@ class TwilioController < ApplicationController
 
   def webhook
     message_body = params['Body']
-    images = extract_media_from_params
+    from         = params['From']
+    to           = params['To']
+    images       = extract_media_from_params
 
     if images.any?
       Rails.logger.info("TwilioController: Received #{images.size} image(s) from WhatsApp")
     end
 
-    result = execute_rag_query(message_body, images: images)
-    rag_response = format_rag_response_for_whatsapp(result)
+    if images.any?
+      # Image path still handled synchronously (download + compress already done above)
+      result = execute_rag_query(message_body, images: images)
+      rag_response = format_rag_response_for_whatsapp(result)
 
-    response = Twilio::TwiML::MessagingResponse.new
-    response.message { |m| m.body(rag_response) }
+      twiml = Twilio::TwiML::MessagingResponse.new
+      twiml.message { |m| m.body(rag_response) }
+      render xml: twiml.to_s
+    else
+      # Text-only: enqueue job so we respond to Twilio within the 15-second timeout.
+      SendWhatsappReplyJob.perform_later(to: from, from: to, body: message_body)
 
-    render xml: response.to_s
+      render xml: Twilio::TwiML::MessagingResponse.new.to_s
+    end
   end
 
   private

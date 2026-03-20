@@ -7,6 +7,15 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
 
   JOB_PARAMS = { to: 'whatsapp:+56912345678', from: 'whatsapp:+14155238886', body: 'que es SOPREL?' }.freeze
 
+  setup do
+    @previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+  end
+
+  teardown do
+    Rails.cache = @previous_cache
+  end
+
   # -----------------------------------------------------------------------
   # Helpers
   # -----------------------------------------------------------------------

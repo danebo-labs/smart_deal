@@ -10,6 +10,10 @@ module RagQueryConcern
   # Result object for queries (works for both RAG and SQL responses)
   RagResult = Struct.new(:success?, :answer, :citations, :session_id, :documents_uploaded, :error_type, :error_message, keyword_init: true)
 
+  # Short follow-ups (e.g. "modernización") keep the thread language instead of re-inferring from Spanish UI labels.
+  WHATSAPP_SHORT_FOLLOWUP_MAX_CHARS = 200
+  WHATSAPP_CONV_CACHE_TTL = 7.days
+
   private
 
   # Executes a query through the orchestrator, which classifies intent
@@ -19,8 +23,11 @@ module RagQueryConcern
   # @param question [String] The question to query
   # @param images [Array<Hash>] Optional images as [{ data: "base64...", media_type: "image/png" }]
   # @param documents [Array<Hash>] Optional docs as [{ data: "base64...", media_type: "text/plain", filename: "x.txt" }]
+  # @param session_id [String, nil] Bedrock session for multi-turn (web/API); merged with whatsapp_to cache when blank
+  # @param response_locale [Symbol, String, nil] Force :en / :es for generation; nil = detect from question (and WhatsApp sticky rules)
+  # @param whatsapp_to [String, nil] Recipient id (e.g. whatsapp:+...) — enables session + locale persistence across messages
   # @return [RagResult] Structured result with success status and data or error info
-  def execute_rag_query(question, images: [], documents: [])
+  def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil, whatsapp_to: nil)
     question = question.to_s.strip
     images = Array(images).compact
     documents = Array(documents).compact
@@ -29,12 +36,48 @@ module RagQueryConcern
       return RagResult.new(success?: false, error_type: :blank_question)
     end
 
+    body_stripped = question
+    detected = BedrockRagService.detect_language_from_question(body_stripped)
+    cache_key = nil
+    cached_locale = nil
+
+    if whatsapp_to.present?
+      cache_key = "rag_whatsapp_conv/v1/#{whatsapp_to}"
+      raw = Rails.cache.read(cache_key)
+      # Handle legacy Hash format written by a previous deploy ({ "locale" => "en", ... })
+      cached_locale = (raw.is_a?(Hash) ? raw["locale"] : raw)&.to_sym
+    end
+
+    # For WhatsApp threads: short follow-ups (e.g. "modernización") should inherit
+    # the language of the FIRST message rather than being re-detected from the word alone.
+    # session_id is intentionally NOT forwarded to Bedrock for WhatsApp — stateless KB
+    # retrieval produces better results for short follow-ups than session-narrowed search.
+    resolved_response_locale = if response_locale.present?
+      response_locale.to_sym
+    elsif whatsapp_to.present?
+      if cached_locale.present? && body_stripped.length <= WHATSAPP_SHORT_FOLLOWUP_MAX_CHARS
+        cached_locale
+      else
+        detected
+      end
+    else
+      detected
+    end
+
     result = QueryOrchestratorService.new(
       question,
       images: images,
       documents: documents,
-      tenant: rag_tenant
+      tenant: rag_tenant,
+      session_id: session_id,
+      response_locale: resolved_response_locale
     ).execute
+
+    if whatsapp_to.present? && cache_key
+      # Update cached locale only when the message is long enough to reliably detect language.
+      new_locale = body_stripped.length > WHATSAPP_SHORT_FOLLOWUP_MAX_CHARS ? detected : (cached_locale.presence || detected)
+      Rails.cache.write(cache_key, new_locale.to_s, expires_in: WHATSAPP_CONV_CACHE_TTL)
+    end
 
     RagResult.new(
       success?: true,

@@ -10,7 +10,12 @@ class RagController < ApplicationController
     images = extract_images_from_params
     documents = extract_documents_from_params
 
-    result = execute_rag_query(params[:question], images: images, documents: documents)
+    result = execute_rag_query(
+      params[:question],
+      images: images,
+      documents: documents,
+      session_id: params[:session_id].presence
+    )
 
     unless result.success?
       render_rag_json_error(result)

@@ -15,7 +15,7 @@ class SendWhatsappReplyJob < ApplicationJob
   # @param from [String] Twilio WhatsApp number, e.g. "whatsapp:+14155238886"
   # @param body [String] The user's message text
   def perform(to:, from:, body:)
-    result = execute_rag_query(body)
+    result = execute_rag_query(body, whatsapp_to: to)
     reply  = format_rag_response_for_whatsapp(result)
     chunks = split_for_whatsapp(reply)
 

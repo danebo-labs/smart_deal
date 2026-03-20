@@ -224,6 +224,33 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'query uses response_locale for no-results message when question text looks Spanish' do
+    bedrock_sorry = "Sorry, I am unable to assist you with this request."
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(bedrock_sorry)) do
+      service = BedrockRagService.new
+      result = service.query('modernización', response_locale: :en)
+
+      assert_includes result[:answer], 'No information was found'
+      assert_equal [], result[:citations]
+    end
+  end
+
+  test 'query injects English prompt when response_locale is :en despite Spanish-looking question' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('modernización', response_locale: :en)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, 'You MUST respond entirely in English'
+    end
+  end
+
   test 'query does not alter a real answer that happens to start with sorry' do
     real_answer = "Sorry for the delay in this documentation — the procedure is as follows."
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(real_answer)) do

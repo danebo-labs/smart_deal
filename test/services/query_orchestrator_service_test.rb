@@ -73,16 +73,28 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   end
 
   # Combines all three mocks for convenience.
+  # Yields a tenant mock with DB access so classification logic is active.
+  # Pass tenant: nil explicitly in tests that want to verify rag_only bypass.
   def with_all_mocks(classification:, db_response: DB_RESPONSE, kb_response: KB_RESPONSE,
-                     db_should_raise: false, kb_should_raise: false, synthesis_response: nil)
+                     db_should_raise: false, kb_should_raise: false, synthesis_response: nil,
+                     tenant: :default)
+    resolved_tenant = tenant == :default ? mock_tenant_with_db : tenant
     provider = mock_ai_provider(classification, synthesis_response: synthesis_response)
     with_mock_ai_provider(provider) do
       with_mock_sql_service(response: db_response, should_raise: db_should_raise) do
         with_mock_kb_service(response: kb_response, should_raise: kb_should_raise) do
-          yield
+          yield resolved_tenant
         end
       end
     end
+  end
+
+  # Creates a mock tenant with both data sources — enables classification logic.
+  def mock_tenant_with_db
+    tenant = Object.new
+    tenant.define_singleton_method(:data_sources) { [ "rag", "db" ] }
+    tenant.define_singleton_method(:try) { |method_name| public_send(method_name) if respond_to?(method_name) }
+    tenant
   end
 
   # Stubs S3DocumentsService and KbSyncService so document/image upload tests
@@ -112,8 +124,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   # ============================================
 
   test 'routes DATABASE_QUERY to SqlGenerationService' do
-    with_all_mocks(classification: 'DATABASE_QUERY') do
-      result = QueryOrchestratorService.new('How many customers do we have?').execute
+    with_all_mocks(classification: 'DATABASE_QUERY') do |tenant|
+      result = QueryOrchestratorService.new('How many customers do we have?', tenant: tenant).execute
 
       assert_equal DB_RESPONSE[:answer], result[:answer]
       assert_equal [], result[:citations]
@@ -122,8 +134,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   end
 
   test 'routes KNOWLEDGE_BASE_QUERY to BedrockRagService' do
-    with_all_mocks(classification: 'KNOWLEDGE_BASE_QUERY') do
-      result = QueryOrchestratorService.new('What is EC2?').execute
+    with_all_mocks(classification: 'KNOWLEDGE_BASE_QUERY') do |tenant|
+      result = QueryOrchestratorService.new('What is EC2?', tenant: tenant).execute
 
       assert_equal KB_RESPONSE[:answer], result[:answer]
       assert_equal KB_RESPONSE[:citations], result[:citations]
@@ -135,8 +147,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     with_all_mocks(
       classification: 'HYBRID_QUERY',
       synthesis_response: 'Combined answer about EC2 from both sources.'
-    ) do
-      result = QueryOrchestratorService.new('What EC2 data do we have and what are its features?').execute
+    ) do |tenant|
+      result = QueryOrchestratorService.new('What EC2 data do we have and what are its features?', tenant: tenant).execute
 
       assert_equal 'Combined answer about EC2 from both sources.', result[:answer]
       # Citations come from KB
@@ -146,8 +158,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   end
 
   test 'falls back to KNOWLEDGE_BASE_QUERY when classification is unclear' do
-    with_all_mocks(classification: 'I am not sure which tool to use') do
-      result = QueryOrchestratorService.new('Something ambiguous').execute
+    with_all_mocks(classification: 'I am not sure which tool to use') do |tenant|
+      result = QueryOrchestratorService.new('Something ambiguous', tenant: tenant).execute
 
       assert_equal KB_RESPONSE[:answer], result[:answer]
       assert_equal KB_RESPONSE[:citations], result[:citations]
@@ -159,16 +171,16 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   # ============================================
 
   test 'extracts DATABASE_QUERY even with extra text' do
-    with_all_mocks(classification: 'The correct tool is DATABASE_QUERY for this question.') do
-      result = QueryOrchestratorService.new('How many orders?').execute
+    with_all_mocks(classification: 'The correct tool is DATABASE_QUERY for this question.') do |tenant|
+      result = QueryOrchestratorService.new('How many orders?', tenant: tenant).execute
 
       assert_equal DB_RESPONSE[:answer], result[:answer]
     end
   end
 
   test 'extracts KNOWLEDGE_BASE_QUERY even with extra text' do
-    with_all_mocks(classification: 'I would recommend using KNOWLEDGE_BASE_QUERY here.') do
-      result = QueryOrchestratorService.new('Explain IAM policies').execute
+    with_all_mocks(classification: 'I would recommend using KNOWLEDGE_BASE_QUERY here.') do |tenant|
+      result = QueryOrchestratorService.new('Explain IAM policies', tenant: tenant).execute
 
       assert_equal KB_RESPONSE[:answer], result[:answer]
     end
@@ -178,8 +190,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     with_all_mocks(
       classification: 'This requires HYBRID_QUERY since it needs both.',
       synthesis_response: 'Merged.'
-    ) do
-      result = QueryOrchestratorService.new('List EC2 records and explain features').execute
+    ) do |tenant|
+      result = QueryOrchestratorService.new('List EC2 records and explain features', tenant: tenant).execute
 
       assert_equal 'Merged.', result[:answer]
     end
@@ -191,8 +203,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     with_all_mocks(
       classification: 'Use HYBRID_QUERY not DATABASE_QUERY',
       synthesis_response: 'Hybrid result.'
-    ) do
-      result = QueryOrchestratorService.new('test').execute
+    ) do |tenant|
+      result = QueryOrchestratorService.new('test', tenant: tenant).execute
 
       assert_equal 'Hybrid result.', result[:answer]
     end
@@ -203,8 +215,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   # ============================================
 
   test 'HYBRID returns KB result when DB fails' do
-    with_all_mocks(classification: 'HYBRID_QUERY', db_should_raise: true) do
-      result = QueryOrchestratorService.new('test hybrid with db failure').execute
+    with_all_mocks(classification: 'HYBRID_QUERY', db_should_raise: true) do |tenant|
+      result = QueryOrchestratorService.new('test hybrid with db failure', tenant: tenant).execute
 
       assert_equal KB_RESPONSE[:answer], result[:answer]
       assert_equal KB_RESPONSE[:citations], result[:citations]
@@ -212,8 +224,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   end
 
   test 'HYBRID returns DB result when KB fails' do
-    with_all_mocks(classification: 'HYBRID_QUERY', kb_should_raise: true) do
-      result = QueryOrchestratorService.new('test hybrid with kb failure').execute
+    with_all_mocks(classification: 'HYBRID_QUERY', kb_should_raise: true) do |tenant|
+      result = QueryOrchestratorService.new('test hybrid with kb failure', tenant: tenant).execute
 
       assert_equal DB_RESPONSE[:answer], result[:answer]
       assert_equal [], result[:citations]
@@ -225,8 +237,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       classification: 'HYBRID_QUERY',
       db_should_raise: true,
       kb_should_raise: true
-    ) do
-      result = QueryOrchestratorService.new('test hybrid with total failure').execute
+    ) do |tenant|
+      result = QueryOrchestratorService.new('test hybrid with total failure', tenant: tenant).execute
 
       # Both failed, so DB result (first checked) has nil answer, KB result also nil.
       # The service returns KB result when DB answer is blank.
@@ -239,8 +251,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   # ============================================
 
   test 'DATABASE_QUERY response has correct shape' do
-    with_all_mocks(classification: 'DATABASE_QUERY') do
-      result = QueryOrchestratorService.new('count customers').execute
+    with_all_mocks(classification: 'DATABASE_QUERY') do |tenant|
+      result = QueryOrchestratorService.new('count customers', tenant: tenant).execute
 
       assert result.is_a?(Hash)
       assert result.key?(:answer)
@@ -250,8 +262,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   end
 
   test 'KNOWLEDGE_BASE_QUERY response has correct shape' do
-    with_all_mocks(classification: 'KNOWLEDGE_BASE_QUERY') do
-      result = QueryOrchestratorService.new('what is S3?').execute
+    with_all_mocks(classification: 'KNOWLEDGE_BASE_QUERY') do |tenant|
+      result = QueryOrchestratorService.new('what is S3?', tenant: tenant).execute
 
       assert result.is_a?(Hash)
       assert result.key?(:answer)
@@ -264,13 +276,66 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     with_all_mocks(
       classification: 'HYBRID_QUERY',
       synthesis_response: 'Merged answer.'
-    ) do
-      result = QueryOrchestratorService.new('hybrid question').execute
+    ) do |tenant|
+      result = QueryOrchestratorService.new('hybrid question', tenant: tenant).execute
 
       assert result.is_a?(Hash)
       assert result.key?(:answer)
       assert result.key?(:citations)
       assert result.key?(:session_id)
+    end
+  end
+
+  # ============================================
+  # Tests: RAG-only bypass (MVP / nil tenant)
+  # ============================================
+
+  test 'nil tenant bypasses classification and routes directly to KB' do
+    ai_invoked = false
+    mock_provider = Object.new
+    mock_provider.define_singleton_method(:query) { |*_| ai_invoked = true; 'SHOULD NOT BE CALLED' }
+
+    with_mock_ai_provider(mock_provider) do
+      with_mock_kb_service do
+        result = QueryOrchestratorService.new('What is the elevator manual?').execute
+
+        assert_not ai_invoked, 'AiProvider (classification) must NOT be called for nil tenant'
+        assert_equal KB_RESPONSE[:answer], result[:answer]
+      end
+    end
+  end
+
+  test 'rag-only tenant (data_sources: ["rag"]) bypasses classification' do
+    rag_tenant = Object.new
+    rag_tenant.define_singleton_method(:data_sources) { [ "rag" ] }
+    rag_tenant.define_singleton_method(:try) { |m| respond_to?(m) ? public_send(m) : nil }
+
+    ai_invoked = false
+    mock_provider = Object.new
+    mock_provider.define_singleton_method(:query) { |*_| ai_invoked = true; 'SHOULD NOT BE CALLED' }
+
+    with_mock_ai_provider(mock_provider) do
+      with_mock_kb_service do
+        result = QueryOrchestratorService.new('What is the elevator manual?', tenant: rag_tenant).execute
+
+        assert_not ai_invoked, 'AiProvider (classification) must NOT be called for rag-only tenant'
+        assert_equal KB_RESPONSE[:answer], result[:answer]
+      end
+    end
+  end
+
+  test 'tenant with db data_sources triggers classification' do
+    ai_invoked = false
+    mock_provider = Object.new
+    mock_provider.define_singleton_method(:query) { |*_| ai_invoked = true; 'KNOWLEDGE_BASE_QUERY' }
+
+    with_mock_ai_provider(mock_provider) do
+      with_mock_kb_service do
+        tenant = mock_tenant_with_db
+        QueryOrchestratorService.new('test', tenant: tenant).execute
+
+        assert ai_invoked, 'AiProvider (classification) MUST be called when tenant has db source'
+      end
     end
   end
 

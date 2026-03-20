@@ -28,8 +28,9 @@ class BedrockRagService
 
   # Build complete optimized configuration for retrieve_and_generate API
   # This method constructs the config dynamically to include prompt templates
-  # @param question [String] Used to detect response language from the user's query text
-  def build_complete_optimized_config(region: 'us-east-1', question: nil)
+  # @param question [String] Used to detect response language when response_locale is nil
+  # @param response_locale [Symbol, nil] When set (:en / :es), overrides question-based detection for the generation prompt
+  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil)
     cfg = @rag_config
     {
       # ===== RETRIEVAL CONFIGURATION =====
@@ -76,7 +77,7 @@ class BedrockRagService
 
         # Custom prompt template for generation (includes language instruction from question text)
         prompt_template: {
-          text_prompt_template: load_generation_prompt_with_locale(question)
+          text_prompt_template: load_generation_prompt_with_locale(question, response_locale: response_locale)
         },
 
         # Additional model request fields (model-specific parameters)
@@ -118,7 +119,7 @@ class BedrockRagService
   end
 
   # Query the Knowledge Base using RAG with retrieve_and_generate API
-  def query(question, session_id: nil, custom_config: {})
+  def query(question, session_id: nil, custom_config: {}, response_locale: nil)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -131,7 +132,7 @@ class BedrockRagService
 
     begin
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region, question: question)
+      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale)
       config = deep_merge_configs(base_config, custom_config)
 
       # Use retrieve_and_generate API - combines retrieval and generation in one call
@@ -156,8 +157,8 @@ class BedrockRagService
       # Process response
       raw_answer = response.output.text
       # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
-      response_locale = detect_language_from_question(question)
-      answer_text = bedrock_no_results?(raw_answer) ? localized_no_results(response_locale) : raw_answer
+      no_results_locale = effective_response_locale(question, response_locale: response_locale)
+      answer_text = bedrock_no_results?(raw_answer) ? localized_no_results(no_results_locale) : raw_answer
       citations = @citation_processor.extract_citations(response.citations)
       session_id = response.session_id
 
@@ -207,6 +208,10 @@ class BedrockRagService
 
   private
 
+  def effective_response_locale(question, response_locale: nil)
+    response_locale.present? ? response_locale.to_sym : detect_language_from_question(question)
+  end
+
   # Resolves RAG config: defaults + ENV + tenant.bedrock_config.rag_config.
   # Precedence: tenant config > ENV > defaults.
   def resolve_rag_config
@@ -240,10 +245,16 @@ class BedrockRagService
   # ===== CUSTOM PROMPT TEMPLATES =====
 
   # Loads generation prompt with explicit language instruction.
-  # Detects language from question text (definitive) or falls back to I18n.locale.
-  def load_generation_prompt_with_locale(question = nil)
+  # Uses response_locale when set; otherwise detects from question or I18n.locale.
+  def load_generation_prompt_with_locale(question = nil, response_locale: nil)
     base = self.class.load_generation_prompt_template
-    locale = question.present? ? detect_language_from_question(question) : I18n.locale
+    locale = if response_locale.present?
+      response_locale.to_sym
+    elsif question.present?
+      detect_language_from_question(question)
+    else
+      I18n.locale
+    end
     lang_name = locale_to_language_name(locale)
     return base if lang_name.blank?
 
@@ -257,6 +268,10 @@ class BedrockRagService
   # Detects response language from the question text. Does not depend on browser/headers.
   # Returns :es for Spanish, :en otherwise.
   def detect_language_from_question(question)
+    self.class.detect_language_from_question(question)
+  end
+
+  def self.detect_language_from_question(question)
     return I18n.locale if question.blank?
 
     text = question.to_s.strip.downcase

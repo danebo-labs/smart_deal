@@ -27,11 +27,15 @@ class QueryOrchestratorService
   # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
   # @param documents [Array<Hash>] Optional array of { data: base64, media_type: "text/plain", filename: "x.txt" }
   # @param tenant [Tenant, nil] Optional tenant for multi-tenant data source selection
-  def initialize(query, images: [], documents: [], tenant: nil)
+  # @param session_id [String, nil] Bedrock multi-turn session (e.g. WhatsApp thread)
+  # @param response_locale [Symbol, nil] :en / :es to force generation language; nil = infer from query text
+  def initialize(query, images: [], documents: [], tenant: nil, session_id: nil, response_locale: nil)
     @query = query
     @images = images || []
     @documents = documents || []
     @tenant = tenant
+    @session_id = session_id
+    @response_locale = response_locale
     @ai_provider = AiProvider.new
   end
 
@@ -81,7 +85,7 @@ class QueryOrchestratorService
       }
     end
 
-    tool_to_use = classify_query_intent
+    tool_to_use = rag_only_tenant? ? TOOLS[:KNOWLEDGE_BASE_QUERY] : classify_query_intent
 
     case tool_to_use
     when TOOLS[:DATABASE_QUERY]
@@ -89,7 +93,11 @@ class QueryOrchestratorService
       SqlGenerationService.new(@query).execute
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
-      BedrockRagService.new(tenant: @tenant || current_tenant).query(@query)
+      BedrockRagService.new(tenant: @tenant || current_tenant).query(
+        @query,
+        session_id: @session_id,
+        response_locale: @response_locale
+      )
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
       execute_hybrid_query
@@ -98,7 +106,11 @@ class QueryOrchestratorService
         "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
         "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
       )
-      BedrockRagService.new(tenant: @tenant || current_tenant).query(@query)
+      BedrockRagService.new(tenant: @tenant || current_tenant).query(
+        @query,
+        session_id: @session_id,
+        response_locale: @response_locale
+      )
     end
   end
 
@@ -161,7 +173,11 @@ class QueryOrchestratorService
     end
 
     kb_thread = Thread.new do
-      kb_result = BedrockRagService.new(tenant: @tenant || current_tenant).query(@query)
+      kb_result = BedrockRagService.new(tenant: @tenant || current_tenant).query(
+        @query,
+        session_id: @session_id,
+        response_locale: @response_locale
+      )
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")
       kb_result = { answer: nil, citations: [], session_id: nil }
@@ -238,6 +254,10 @@ class QueryOrchestratorService
     else
       response
     end
+  end
+
+  def rag_only_tenant?
+    @tenant.nil? || Array(@tenant.try(:data_sources)).exclude?("db")
   end
 
   def current_tenant

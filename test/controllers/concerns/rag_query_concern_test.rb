@@ -18,6 +18,12 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
   setup do
     @controller = TestController.new
+    @previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+  end
+
+  teardown do
+    Rails.cache = @previous_cache
   end
 
   # Helper method to stub QueryOrchestratorService.new at the class level.
@@ -50,6 +56,53 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   # ============================================
   # Tests for execute_rag_query
   # ============================================
+
+  test 'whatsapp short follow-up keeps cached locale' do
+    to = 'whatsapp:+15550001111'
+    cache_key = "rag_whatsapp_conv/v1/#{to}"
+    Rails.cache.write(cache_key, "en", expires_in: 7.days)
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "Answer", citations: [], session_id: "new-sid" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "modernización", whatsapp_to: to)
+
+      assert_nil captured[:kwargs][:session_id]
+      assert_equal :en, captured[:kwargs][:response_locale]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'whatsapp first message uses locale detected from body only' do
+    to = 'whatsapp:+15550002222'
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "Answer", citations: [], session_id: "s1" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "modernización", whatsapp_to: to)
+
+      assert_nil captured[:kwargs][:session_id]
+      assert_equal :es, captured[:kwargs][:response_locale]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
 
   test 'execute_rag_query returns success result with valid question' do
     mock = create_mock_orchestrator(

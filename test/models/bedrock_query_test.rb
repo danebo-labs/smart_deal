@@ -4,11 +4,13 @@ require 'test_helper'
 
 class BedrockQueryTest < ActiveSupport::TestCase
   test 'requires model_id and tokens' do
-    q = BedrockQuery.new
-    assert_not q.valid?
-    assert_includes q.errors[:model_id], "can't be blank"
-    assert_includes q.errors[:input_tokens], "can't be blank"
-    assert_includes q.errors[:output_tokens], "can't be blank"
+    I18n.with_locale(:en) do
+      q = BedrockQuery.new
+      assert_not q.valid?
+      assert_includes q.errors[:model_id], "can't be blank"
+      assert_includes q.errors[:input_tokens], "can't be blank"
+      assert_includes q.errors[:output_tokens], "can't be blank"
+    end
   end
 
   test 'cost calculation works for known model' do

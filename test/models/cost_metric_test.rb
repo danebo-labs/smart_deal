@@ -11,12 +11,14 @@ class CostMetricTest < ActiveSupport::TestCase
   end
 
   test 'requires date, metric_type, and value' do
-    metric = CostMetric.new
+    I18n.with_locale(:en) do
+      metric = CostMetric.new
 
-    assert_not metric.valid?
-    assert_includes metric.errors[:date], "can't be blank"
-    assert_includes metric.errors[:metric_type], "can't be blank"
-    assert_includes metric.errors[:value], "can't be blank"
+      assert_not metric.valid?
+      assert_includes metric.errors[:date], "can't be blank"
+      assert_includes metric.errors[:metric_type], "can't be blank"
+      assert_includes metric.errors[:value], "can't be blank"
+    end
   end
 
   test 'enforces uniqueness of date + metric_type' do
@@ -32,8 +34,10 @@ class CostMetricTest < ActiveSupport::TestCase
       value: 50
     )
 
-    assert_not duplicate.valid?
-    assert_includes duplicate.errors[:date], 'has already been taken'
+    I18n.with_locale(:en) do
+      assert_not duplicate.valid?
+      assert_includes duplicate.errors[:date], 'has already been taken'
+    end
   end
 
   test '.total_for_month sums values correctly' do

@@ -198,25 +198,15 @@ class BedrockRagService
       input_tokens = estimate_tokens(question)
       output_tokens = estimate_tokens(answer_text)
 
-      # Save query to database for metrics tracking
-      # Metrics tracking failure should not fail the request
-      begin
-        BedrockQuery.create!(
-          model_id: tracked_model_id,
-          input_tokens: input_tokens,
-          output_tokens: output_tokens,
-          user_query: question,
-          latency_ms: latency_ms,
-          created_at: Time.current
-        )
-        Rails.logger.info("✓ Bedrock query tracked: #{input_tokens} input + #{output_tokens} output tokens")
-
-        # Update metrics automatically after each query
-        SimpleMetricsService.update_database_metrics_only
-        Rails.logger.info("✓ Metrics updated after query")
-      rescue StandardError => e
-        Rails.logger.error("Failed to track query or update metrics: #{e.message}")
-      end
+      # Enqueue tracking asynchronously — never block the response on DB writes.
+      TrackBedrockQueryJob.perform_later(
+        model_id: tracked_model_id,
+        input_tokens: input_tokens,
+        output_tokens: output_tokens,
+        user_query: question,
+        latency_ms: latency_ms
+      )
+      Rails.logger.info("✓ BedrockQuery tracking enqueued (#{input_tokens} in + #{output_tokens} out tokens)")
 
       # Build numbered references from the KB response — no S3 listing required.
       numbered_references = @citation_processor.build_numbered_references(citations, answer_text)
@@ -282,10 +272,10 @@ class BedrockRagService
     lang_name = locale_to_language_name(locale)
     return base if lang_name.blank?
 
-    # Inject explicit language instruction after LANGUAGE POLICY header
+    # Inject explicit language instruction after LANGUAGE & TONE header
     base.sub(
-      /(# LANGUAGE POLICY — MANDATORY\n\n)/,
-      "\\1CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}.\n\n"
+      /(# LANGUAGE & TONE\n)/,
+      "\\1- CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}.\n"
     )
   end
 

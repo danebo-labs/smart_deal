@@ -119,7 +119,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     mock = create_mock_orchestrator(
-      answer: I18n.t('rag.document_indexing_message'),
+      answer: I18n.t('rag.document_indexing_message', locale: :en),
       citations: [],
       session_id: nil,
       documents_uploaded: ['file.txt']
@@ -148,7 +148,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     mock = create_mock_orchestrator(
-      answer: I18n.t('rag.document_indexing_message'),
+      answer: I18n.t('rag.document_indexing_message', locale: :es),
       citations: [],
       session_id: nil,
       documents_uploaded: ['doc.txt']

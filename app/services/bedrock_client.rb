@@ -67,17 +67,17 @@ class BedrockClient
     return if input_tokens <= 0
 
     latency_ms = ((Time.current - start_time) * 1000).to_i
-    BedrockQuery.create!(
+
+    # Enqueue tracking asynchronously — never block the response on DB writes.
+    TrackBedrockQueryJob.perform_later(
       model_id: model_id,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       user_query: prompt.to_s.truncate(500),
-      latency_ms: latency_ms,
-      created_at: Time.current
+      latency_ms: latency_ms
     )
-    SimpleMetricsService.update_database_metrics_only
-    Rails.logger.info("BedrockClient: tracked #{input_tokens} in + #{output_tokens} out tokens")
+    Rails.logger.info("BedrockClient: query tracking enqueued (#{input_tokens} in + #{output_tokens} out tokens)")
   rescue StandardError => e
-    Rails.logger.error("BedrockClient: failed to track usage: #{e.message}")
+    Rails.logger.error("BedrockClient: failed to enqueue tracking: #{e.message}")
   end
 end

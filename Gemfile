@@ -23,7 +23,10 @@ gem 'stimulus-rails'
 gem 'jbuilder'
 
 # Authentication
-gem 'devise'
+gem 'devise', '>= 5.0.3'
+
+# Patched Trix (Rails actiontext dependency; bundler-audit GHSA-qmpg-8xg6-ph5q)
+gem 'action_text-trix', '>= 2.1.17'
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem 'tzinfo-data', platforms: %i[windows jruby]

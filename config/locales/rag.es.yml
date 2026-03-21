@@ -11,3 +11,6 @@ es:
     ingestion_failed_file_too_large: "Un archivo supera el límite (imágenes: 3.75 MB, documentos: 50 MB). Redúcelo e inténtalo de nuevo."
     ingestion_failed_format_not_supported: "Formato no soportado por Bedrock. Imágenes: JPEG o PNG. Documentos: .txt, .md, .html, .pdf, .doc, .docx, .csv, .xls, .xlsx."
     file_limits_hint: "Imágenes: máx. 3.75 MB (JPEG/PNG). Documentos: máx. 50 MB."
+    whatsapp_image_received: "Recibimos tu imagen y la estamos procesando. Te avisamos cuando esté lista."
+    whatsapp_indexed_ask_again: "✅ Tu imagen fue indexada. Ya puedes hacer preguntas sobre ella con un mensaje de texto."
+    whatsapp_indexing_failed: "No pudimos procesar tu imagen. Por favor intenta de nuevo."

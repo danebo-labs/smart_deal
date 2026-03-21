@@ -13,7 +13,10 @@ class BedrockIngestionJob < ApplicationJob
   POLL_INTERVAL = 5.seconds
   TIMEOUT = 15.minutes
 
-  def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil)
+  # @param whatsapp_from [String, nil] Twilio sender number (our number) — for WhatsApp notify
+  # @param whatsapp_to   [String, nil] Recipient (end user) — for WhatsApp notify
+  def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
+              whatsapp_from: nil, whatsapp_to: nil)
     return if ingestion_job_id.blank?
 
     service = IngestionStatusService.new(kb_id: kb_id, data_source_id: data_source_id)
@@ -33,14 +36,17 @@ class BedrockIngestionJob < ApplicationJob
 
     if status == "COMPLETE"
       broadcast_indexed(uploaded_filenames)
+      notify_whatsapp(whatsapp_from, whatsapp_to, I18n.t('rag.whatsapp_indexed_ask_again'))
     else
       reasons = status == "FAILED" ? service.failure_reasons(ingestion_job_id) : []
       message = ingestion_failure_message(reasons)
       broadcast_failed(uploaded_filenames, status, message)
+      notify_whatsapp(whatsapp_from, whatsapp_to, I18n.t('rag.whatsapp_indexing_failed'))
     end
   rescue StandardError => e
     Rails.logger.error("BedrockIngestionJob failed: #{e.message}")
     broadcast_failed(uploaded_filenames, "error", e.message)
+    notify_whatsapp(whatsapp_from, whatsapp_to, I18n.t('rag.whatsapp_indexing_failed'))
   end
 
   private
@@ -69,6 +75,16 @@ class BedrockIngestionJob < ApplicationJob
       filenames: filenames,
       message: message
     })
+  end
+
+  def notify_whatsapp(from, to, body)
+    return unless from.present? && to.present?
+
+    Twilio::REST::Client
+      .new(ENV.fetch('TWILIO_ACCOUNT_SID'), ENV.fetch('TWILIO_AUTH_TOKEN'))
+      .messages.create(from: from, to: to, body: body)
+  rescue StandardError => e
+    Rails.logger.error("BedrockIngestionJob: WhatsApp notify failed — #{e.message}")
   end
 
   def broadcast_failed(filenames, reason, message = nil)

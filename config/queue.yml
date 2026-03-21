@@ -3,10 +3,23 @@ default: &default
     - polling_interval: 1
       batch_size: 500
   workers:
-    - queues: "*"
+    # RAG + Bedrock queries for WhatsApp (Bedrock rate-limit aware: max 3 concurrent)
+    - queues: whatsapp_rag
       threads: 3
       processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
       polling_interval: 0.1
+
+    # Media download → S3 → KB ingestion (I/O heavy, keep separate to avoid starving RAG)
+    - queues: whatsapp_media
+      threads: 2
+      processes: 1
+      polling_interval: 0.5
+
+    # Bedrock KB ingestion polling (long-running, low concurrency)
+    - queues: default
+      threads: 2
+      processes: 1
+      polling_interval: 1
 
 development:
   <<: *default

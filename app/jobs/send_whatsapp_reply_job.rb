@@ -9,7 +9,7 @@
 class SendWhatsappReplyJob < ApplicationJob
   include RagQueryConcern
 
-  queue_as :default
+  queue_as :whatsapp_rag
 
   # @param to   [String] Recipient WhatsApp number, e.g. "whatsapp:+5491122334455"
   # @param from [String] Twilio WhatsApp number, e.g. "whatsapp:+14155238886"

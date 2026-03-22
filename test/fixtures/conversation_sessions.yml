@@ -1,0 +1,2 @@
+# frozen_string_literal: true
+# No fixture data — sessions are created programmatically in tests

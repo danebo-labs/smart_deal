@@ -11,10 +11,13 @@ class SendWhatsappReplyJob < ApplicationJob
 
   queue_as :whatsapp_rag
 
-  # @param to   [String] Recipient WhatsApp number, e.g. "whatsapp:+5491122334455"
-  # @param from [String] Twilio WhatsApp number, e.g. "whatsapp:+14155238886"
-  # @param body [String] The user's message text
-  def perform(to:, from:, body:)
+  # @param to              [String]  Recipient WhatsApp number, e.g. "whatsapp:+5491122334455"
+  # @param from            [String]  Twilio WhatsApp number, e.g. "whatsapp:+14155238886"
+  # @param body            [String]  The user's message text
+  # @param conv_session_id [Integer] ConversationSession#id for history tracking
+  def perform(to:, from:, body:, conv_session_id: nil)
+    conv_session = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
+
     result = execute_rag_query(body, whatsapp_to: to)
     reply  = format_rag_response_for_whatsapp(result)
     chunks = split_for_whatsapp(reply)
@@ -28,6 +31,8 @@ class SendWhatsappReplyJob < ApplicationJob
       client.messages.create(from: from, to: to, body: "#{prefix}#{chunk}")
       sleep(0.5) if i < chunks.size - 1
     end
+
+    conv_session&.add_to_history("assistant", reply)
 
     Rails.logger.info("SendWhatsappReplyJob: delivered #{chunks.size} message(s) (#{reply.length} chars) to #{to}")
   rescue Twilio::REST::RestError => e

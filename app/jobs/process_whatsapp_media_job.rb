@@ -30,7 +30,7 @@ class ProcessWhatsappMediaJob < ApplicationJob
     end
   end
 
-  def perform(from:, to:, body:, media:, message_sid: nil)
+  def perform(from:, to:, body:, media:, message_sid: nil, conv_session_id: nil)
     images = download_and_compress(media)
 
     if images.empty?

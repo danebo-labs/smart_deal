@@ -58,15 +58,46 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, TEST_ANSWER
   end
 
-  test 'webhook enqueues job with correct to/from/body params' do
-    assert_enqueued_with(
-      job: SendWhatsappReplyJob,
-      args: [ { to: 'whatsapp:+56912345678', from: 'whatsapp:+14155238886', body: TEST_QUESTION } ]
-    ) do
-      post twilio_webhook_url, params: text_params(TEST_QUESTION,
-                                                   from: 'whatsapp:+56912345678',
-                                                   to:   'whatsapp:+14155238886')
+  test 'webhook enqueues job with correct to/from/body and a valid conv_session_id' do
+    post twilio_webhook_url, params: text_params(TEST_QUESTION,
+                                                 from: 'whatsapp:+56912345678',
+                                                 to:   'whatsapp:+14155238886')
+
+    enqueued = ActiveJob::Base.queue_adapter.enqueued_jobs.find { |j| j[:job] == SendWhatsappReplyJob }
+    assert enqueued, 'SendWhatsappReplyJob was not enqueued'
+
+    args = enqueued[:args].first
+    assert_equal 'whatsapp:+56912345678', args['to']
+    assert_equal 'whatsapp:+14155238886', args['from']
+    assert_equal TEST_QUESTION,           args['body']
+
+    session = ConversationSession.find_by(identifier: 'whatsapp:+56912345678', channel: 'whatsapp')
+    assert session
+    assert_equal session.id, args['conv_session_id']
+  end
+
+  test 'webhook creates a ConversationSession for the sender' do
+    assert_difference 'ConversationSession.count', 1 do
+      post twilio_webhook_url, params: text_params(TEST_QUESTION, from: 'whatsapp:+56912345678')
     end
+
+    session = ConversationSession.find_by(identifier: 'whatsapp:+56912345678', channel: 'whatsapp')
+    assert session
+    assert_not session.expired?
+    assert_equal 1, session.conversation_history.size
+    assert_equal 'user',        session.conversation_history.first['role']
+    assert_equal TEST_QUESTION, session.conversation_history.first['content']
+  end
+
+  test 'webhook reuses existing active session for repeat sender' do
+    post twilio_webhook_url, params: text_params('First message', from: 'whatsapp:+56912345678')
+
+    assert_no_difference 'ConversationSession.count' do
+      post twilio_webhook_url, params: text_params('Second message', from: 'whatsapp:+56912345678')
+    end
+
+    session = ConversationSession.find_by(identifier: 'whatsapp:+56912345678', channel: 'whatsapp')
+    assert_equal 2, session.conversation_history.size
   end
 
   # -----------------------------------------------------------------------

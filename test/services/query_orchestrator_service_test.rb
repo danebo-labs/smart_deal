@@ -80,10 +80,12 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
                      tenant: :default)
     resolved_tenant = tenant == :default ? mock_tenant_with_db : tenant
     provider = mock_ai_provider(classification, synthesis_response: synthesis_response)
-    with_mock_ai_provider(provider) do
-      with_mock_sql_service(response: db_response, should_raise: db_should_raise) do
-        with_mock_kb_service(response: kb_response, should_raise: kb_should_raise) do
-          yield resolved_tenant
+    with_query_routing(enabled: true) do
+      with_mock_ai_provider(provider) do
+        with_mock_sql_service(response: db_response, should_raise: db_should_raise) do
+          with_mock_kb_service(response: kb_response, should_raise: kb_should_raise) do
+            yield resolved_tenant
+          end
         end
       end
     end
@@ -95,6 +97,15 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     tenant.define_singleton_method(:data_sources) { [ "rag", "db" ] }
     tenant.define_singleton_method(:try) { |method_name| public_send(method_name) if respond_to?(method_name) }
     tenant
+  end
+
+  # Temporarily overrides QUERY_ROUTING_ENABLED for the duration of the block.
+  def with_query_routing(enabled:)
+    original = ENV['QUERY_ROUTING_ENABLED']
+    ENV['QUERY_ROUTING_ENABLED'] = enabled.to_s
+    yield
+  ensure
+    original.nil? ? ENV.delete('QUERY_ROUTING_ENABLED') : ENV['QUERY_ROUTING_ENABLED'] = original
   end
 
   # Stubs S3DocumentsService and KbSyncService so document/image upload tests
@@ -324,17 +335,37 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'tenant with db data_sources triggers classification' do
+  test 'tenant with db data_sources triggers classification when routing is enabled' do
     ai_invoked = false
     mock_provider = Object.new
     mock_provider.define_singleton_method(:query) { |*_| ai_invoked = true; 'KNOWLEDGE_BASE_QUERY' }
 
-    with_mock_ai_provider(mock_provider) do
-      with_mock_kb_service do
-        tenant = mock_tenant_with_db
-        QueryOrchestratorService.new('test', tenant: tenant).execute
+    with_query_routing(enabled: true) do
+      with_mock_ai_provider(mock_provider) do
+        with_mock_kb_service do
+          tenant = mock_tenant_with_db
+          QueryOrchestratorService.new('test', tenant: tenant).execute
 
-        assert ai_invoked, 'AiProvider (classification) MUST be called when tenant has db source'
+          assert ai_invoked, 'AiProvider (classification) MUST be called when tenant has db source and routing is on'
+        end
+      end
+    end
+  end
+
+  test 'QUERY_ROUTING_ENABLED=false bypasses classification even for DB tenant' do
+    ai_invoked = false
+    mock_provider = Object.new
+    mock_provider.define_singleton_method(:query) { |*_| ai_invoked = true; 'DATABASE_QUERY' }
+
+    with_query_routing(enabled: false) do
+      with_mock_ai_provider(mock_provider) do
+        with_mock_kb_service do
+          tenant = mock_tenant_with_db
+          result = QueryOrchestratorService.new('How many customers?', tenant: tenant).execute
+
+          assert_not ai_invoked, 'AiProvider must NOT be called when QUERY_ROUTING_ENABLED=false'
+          assert_equal KB_RESPONSE[:answer], result[:answer]
+        end
       end
     end
   end

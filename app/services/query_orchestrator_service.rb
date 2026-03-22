@@ -76,7 +76,10 @@ class QueryOrchestratorService
       end
     end
 
-    tool_to_use = rag_only_tenant? ? TOOLS[:KNOWLEDGE_BASE_QUERY] : classify_query_intent
+    # QUERY_ROUTING_ENABLED (ENV) gates the classification call globally.
+    # Default: false — skips the extra invoke_model round-trip and always uses RAG (KB).
+    # Set to true when multi-tenant DB routing is needed.
+    tool_to_use = skip_routing? ? TOOLS[:KNOWLEDGE_BASE_QUERY] : classify_query_intent
 
     case tool_to_use
     when TOOLS[:DATABASE_QUERY]
@@ -245,6 +248,14 @@ class QueryOrchestratorService
     else
       response
     end
+  end
+
+  def skip_routing?
+    !self.class.query_routing_enabled? || rag_only_tenant?
+  end
+
+  def self.query_routing_enabled?
+    ENV.fetch('QUERY_ROUTING_ENABLED', 'false').casecmp?('true')
   end
 
   def rag_only_tenant?

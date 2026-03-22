@@ -131,12 +131,6 @@ class BedrockRagService
       base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale)
       config = deep_merge_configs(base_config, custom_config)
 
-      # ── DIAGNOSTIC LOGGING (temporary) ──────────────────────────────────────
-      Rails.logger.info("[RAG_DIAG] session_id sent: #{session_id.inspect}")
-      prompt_preview = config.dig(:generation_configuration, :prompt_template, :text_prompt_template).to_s[0, 200]
-      Rails.logger.info("[RAG_DIAG] prompt_template[0..200]: #{prompt_preview}")
-      Rails.logger.info("[RAG_DIAG] retrieval_configuration: #{config[:retrieval_configuration].inspect}")
-      # ────────────────────────────────────────────────────────────────────────
 
       # Use retrieve_and_generate API - combines retrieval and generation in one call
       # Wraps call with retry logic for Aurora Serverless auto-pause cold-start.
@@ -158,22 +152,8 @@ class BedrockRagService
       })
       bedrock_latency_ms = ((Time.current - bedrock_start_time) * 1000).to_i
 
-      # ── DIAGNOSTIC: raw response ─────────────────────────────────────────────
       raw_citations = response.citations || []
       total_refs = raw_citations.sum { |c| c.retrieved_references&.size.to_i }
-      Rails.logger.info("[RAG_DIAG] response.session_id: #{response.session_id.inspect}")
-      Rails.logger.info("[RAG_DIAG] citation groups: #{raw_citations.size}, total retrieved_references: #{total_refs}")
-      Rails.logger.info("[RAG_DIAG] raw output text[0..300]: #{response.output.text.to_s[0, 300]}")
-      if total_refs.zero?
-        Rails.logger.warn("[RAG_DIAG] ⚠ ZERO retrieved_references — $search_results$ was empty when Haiku generated the response. Likely cause: reranker misconfiguration or filter discarding all chunks.")
-      else
-        raw_citations.each_with_index do |cit, ci|
-          cit.retrieved_references.each_with_index do |ref, ri|
-            Rails.logger.info("[RAG_DIAG] ref[#{ci}][#{ri}] score=#{ref.score rescue 'n/a'} uri=#{ref.location&.s3_location&.uri} content[0..100]=#{ref.content&.text.to_s[0, 100]}")
-          end
-        end
-      end
-      # ────────────────────────────────────────────────────────────────────────
 
       Rails.logger.info("BedrockRagService: retrieve_and_generate #{bedrock_latency_ms}ms")
 

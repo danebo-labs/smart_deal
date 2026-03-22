@@ -52,37 +52,28 @@ class QueryOrchestratorService
   #
   # 3. Text-only query: classify intent and delegate to the appropriate service.
   def execute
-    if @documents.any? && @images.empty?
-      filenames = @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
-      Thread.new do
-        upload_and_sync_attachments
-      rescue StandardError => e
-        Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
+    if @documents.any? || @images.any?
+      has_images = @images.any?
+      filenames = if has_images
+        @images.each_with_index.map do |img, idx|
+          name = (img[:filename] || img['filename']).presence
+          name ? File.basename(name) : "image_#{idx + 1}"
+        end
+      else
+        @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
       end
-      return {
-        answer: I18n.t('rag.document_indexing_message'),
-        citations: [],
-        session_id: nil,
-        documents_uploaded: filenames
-      }
-    end
 
-    if @images.any?
-      filenames = @images.each_with_index.map do |img, idx|
-        name = (img[:filename] || img['filename']).presence
-        name ? File.basename(name) : "image_#{idx + 1}"
-      end
       Thread.new do
         upload_and_sync_attachments
       rescue StandardError => e
         Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
       end
-      return {
-        answer: I18n.t('rag.image_indexing_message'),
-        citations: [],
-        session_id: nil,
-        images_uploaded: filenames
-      }
+
+      if @query.blank?
+        key = has_images ? :images_uploaded : :documents_uploaded
+        msg = has_images ? I18n.t('rag.image_indexing_message') : I18n.t('rag.document_indexing_message')
+        return { answer: msg, citations: [], session_id: nil }.merge(key => filenames)
+      end
     end
 
     tool_to_use = rag_only_tenant? ? TOOLS[:KNOWLEDGE_BASE_QUERY] : classify_query_intent

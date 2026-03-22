@@ -39,16 +39,12 @@ class BedrockRagService
           number_of_results: cfg[:number_of_results],
           override_search_type: cfg[:search_type],
 
-          # Reranking configuration
-          # Note: The reranking will use the number_of_results from vector_search_configuration above
-          reranking_configuration: {
-            type: "BEDROCK_RERANKING_MODEL",
-            bedrock_reranking_configuration: {
-              model_configuration: {
-                model_arn: "arn:aws:bedrock:#{region}::foundation-model/cohere.rerank-v3-5:0"
-              }
-            }
-          }
+          # Reranking — disabled by default until ARN / availability confirmed.
+          # Enable via BEDROCK_RERANKER_ENABLED=true after verifying the model is
+          # accessible in your region and the ARN is correct.
+          # WARNING: if the reranker fails silently, retrieved_references = 0 and
+          # Haiku generates a response from parametric memory ($search_results$ = empty).
+          **reranking_config(region)
 
           # Metadata filtering (optional) - removed empty filter as API requires at least one filter type
           # To add filtering, uncomment and configure:
@@ -135,9 +131,18 @@ class BedrockRagService
       base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale)
       config = deep_merge_configs(base_config, custom_config)
 
+      # ── DIAGNOSTIC LOGGING (temporary) ──────────────────────────────────────
+      Rails.logger.info("[RAG_DIAG] session_id sent: #{session_id.inspect}")
+      prompt_preview = config.dig(:generation_configuration, :prompt_template, :text_prompt_template).to_s[0, 200]
+      Rails.logger.info("[RAG_DIAG] prompt_template[0..200]: #{prompt_preview}")
+      Rails.logger.info("[RAG_DIAG] retrieval_configuration: #{config[:retrieval_configuration].inspect}")
+      # ────────────────────────────────────────────────────────────────────────
+
       # Use retrieve_and_generate API - combines retrieval and generation in one call
+      # Wraps call with retry logic for Aurora Serverless auto-pause cold-start.
+      # Aurora can take 20-60s to resume; we back off and retry up to 3 times.
       bedrock_start_time = Time.current
-      response = @client.retrieve_and_generate({
+      response = retrieve_and_generate_with_retry({
         input: {
           text: question
         },
@@ -152,6 +157,24 @@ class BedrockRagService
         session_id: session_id
       })
       bedrock_latency_ms = ((Time.current - bedrock_start_time) * 1000).to_i
+
+      # ── DIAGNOSTIC: raw response ─────────────────────────────────────────────
+      raw_citations = response.citations || []
+      total_refs = raw_citations.sum { |c| c.retrieved_references&.size.to_i }
+      Rails.logger.info("[RAG_DIAG] response.session_id: #{response.session_id.inspect}")
+      Rails.logger.info("[RAG_DIAG] citation groups: #{raw_citations.size}, total retrieved_references: #{total_refs}")
+      Rails.logger.info("[RAG_DIAG] raw output text[0..300]: #{response.output.text.to_s[0, 300]}")
+      if total_refs.zero?
+        Rails.logger.warn("[RAG_DIAG] ⚠ ZERO retrieved_references — $search_results$ was empty when Haiku generated the response. Likely cause: reranker misconfiguration or filter discarding all chunks.")
+      else
+        raw_citations.each_with_index do |cit, ci|
+          cit.retrieved_references.each_with_index do |ref, ri|
+            Rails.logger.info("[RAG_DIAG] ref[#{ci}][#{ri}] score=#{ref.score rescue 'n/a'} uri=#{ref.location&.s3_location&.uri} content[0..100]=#{ref.content&.text.to_s[0, 100]}")
+          end
+        end
+      end
+      # ────────────────────────────────────────────────────────────────────────
+
       Rails.logger.info("BedrockRagService: retrieve_and_generate #{bedrock_latency_ms}ms")
 
       # Process response
@@ -172,7 +195,10 @@ class BedrockRagService
       latency_ms = ((Time.current - start_time) * 1000).to_i
       tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
 
-      # Extract tokens - estimate from input and output
+      # Prefer actual usage from Bedrock response; fall back to local estimate.
+      # Note: retrieve_and_generate does NOT return token counts in the response struct,
+      # so we estimate from text length. The "input_tokens: 4" log is estimate_tokens(question),
+      # not from Bedrock — this is expected and does NOT indicate chunks were skipped.
       input_tokens = estimate_tokens(question)
       output_tokens = estimate_tokens(answer_text)
 
@@ -207,6 +233,45 @@ class BedrockRagService
   end
 
   private
+
+  AURORA_RESUME_PATTERN = /aurora.*auto-paused|resuming after being auto-paused/i.freeze
+  AURORA_RETRY_DELAYS   = [ 15, 30, 45 ].freeze  # seconds between attempts
+
+  # Retries the retrieve_and_generate call when Aurora Serverless is cold-starting.
+  # Aurora can take up to 60s to resume; three attempts cover the typical warm-up window.
+  def retrieve_and_generate_with_retry(params)
+    attempts = 0
+    begin
+      attempts += 1
+      @client.retrieve_and_generate(params)
+    rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
+      delay = AURORA_RETRY_DELAYS[attempts - 1]
+      if delay && e.message.match?(AURORA_RESUME_PATTERN)
+        Rails.logger.warn("[RAG] Aurora auto-pause detected (attempt #{attempts}). Waiting #{delay}s before retry...")
+        sleep(delay)
+        retry
+      end
+      raise
+    end
+  end
+
+  # Returns reranking_configuration hash when BEDROCK_RERANKER_ENABLED=true,
+  # otherwise returns an empty hash (no reranking step — safest default).
+  # Reranking uses Cohere Rerank v3.5 when enabled.
+  def reranking_config(region)
+    return {} unless ENV['BEDROCK_RERANKER_ENABLED'].to_s.downcase == 'true'
+
+    {
+      reranking_configuration: {
+        type: "BEDROCK_RERANKING_MODEL",
+        bedrock_reranking_configuration: {
+          model_configuration: {
+            model_arn: "arn:aws:bedrock:#{region}::foundation-model/cohere.rerank-v3-5:0"
+          }
+        }
+      }
+    }
+  end
 
   def effective_response_locale(question, response_locale: nil)
     response_locale.present? ? response_locale.to_sym : detect_language_from_question(question)

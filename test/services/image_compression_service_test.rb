@@ -11,7 +11,7 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
     assert_equal small_image_base64, result[:data]
     assert_equal result[:original_size], result[:compressed_size]
     # Small images (decoded <= 3.75 MB) skip compression
-    assert_operator Base64.decode64(small_image_base64).bytesize, :<=, ImageCompressionService::MAX_BINARY_SIZE_KB
+    assert_operator Base64.decode64(small_image_base64).bytesize, :<=, ImageCompressionService::MAX_BINARY_BYTES
   end
 
   test "returns proper hash structure" do
@@ -20,9 +20,12 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
 
     assert result.key?(:data)
     assert result.key?(:media_type)
+    assert result.key?(:binary)
     assert result.key?(:original_size)
     assert result.key?(:compressed_size)
     assert_equal "image/jpeg", result[:media_type]
+    assert_kind_of String, result[:binary]
+    assert_not result[:binary].empty?
   end
 
   test "raises error for invalid image data" do

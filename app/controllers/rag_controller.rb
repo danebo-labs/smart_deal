@@ -60,9 +60,12 @@ class RagController < ApplicationController
   def compress_images(images)
     images.map do |img|
       result = ImageCompressionService.compress(img[:data], img[:media_type])
-      out = { data: result[:data], media_type: result[:media_type] }
-      out[:filename] = img[:filename].presence || img['filename'].presence
-      out
+      {
+        data:       result[:data],
+        media_type: result[:media_type],
+        binary:     result[:binary],
+        filename:   img[:filename].presence || img['filename'].presence
+      }
     end
   rescue ImageCompressionService::CompressionError => e
     Rails.logger.error("RagController: Image compression failed: #{e.message}")

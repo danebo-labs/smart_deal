@@ -84,10 +84,15 @@ export default class extends Controller {
     if (isImage) {
       const reader = new FileReader()
       reader.onload = (e) => {
-        const base64Full = e.target.result
-        const base64Data = base64Full.split(",")[1]
-        this.pendingFile = { data: base64Data, media_type: file.type, filename: file.name, type: "image" }
-        this.showPreview(base64Full, file.name, "image")
+        this.compressImageOnClient(e.target.result).then(({ base64, dataUrl }) => {
+          this.pendingFile = { data: base64, media_type: "image/jpeg", filename: file.name, type: "image" }
+          this.showPreview(dataUrl, file.name, "image")
+        }).catch(() => {
+          // Fallback: send as-is if Canvas fails (e.g. cross-origin taint)
+          const base64Data = e.target.result.split(",")[1]
+          this.pendingFile = { data: base64Data, media_type: file.type, filename: file.name, type: "image" }
+          this.showPreview(e.target.result, file.name, "image")
+        })
       }
       reader.readAsDataURL(file)
     } else {
@@ -134,6 +139,39 @@ export default class extends Controller {
       binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
     }
     return btoa(binary)
+  }
+
+  // Compresses an image client-side via Canvas before uploading.
+  // Resizes to MAX_DIMENSION and encodes as JPEG at the given quality.
+  // Returns { base64: string, dataUrl: string }.
+  compressImageOnClient(dataUrl, maxDim = 1024, quality = 0.82) {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height)
+          width  = Math.round(width  * ratio)
+          height = Math.round(height * ratio)
+        }
+        const canvas = document.createElement("canvas")
+        canvas.width  = width
+        canvas.height = height
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height)
+        canvas.toBlob((blob) => {
+          if (!blob) { reject(new Error("Canvas toBlob failed")); return }
+          const reader = new FileReader()
+          reader.onerror = reject
+          reader.onload = (e) => {
+            const resultDataUrl = e.target.result
+            resolve({ base64: resultDataUrl.split(",")[1], dataUrl: resultDataUrl })
+          }
+          reader.readAsDataURL(blob)
+        }, "image/jpeg", quality)
+      }
+      img.src = dataUrl
+    })
   }
 
   showPreview(imageDataUrl, name, fileType) {

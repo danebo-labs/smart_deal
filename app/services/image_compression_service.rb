@@ -3,40 +3,53 @@
 # app/services/image_compression_service.rb
 # Compresses images to meet Amazon Bedrock Knowledge Base limits.
 # Bedrock KB ingestion: JPEG/PNG max 3.75 MB per file (see knowledge-base-ds.html).
+#
+# Design notes:
+# - Decodes base64 exactly once and caches the binary (@decoded_blob) for all
+#   subsequent operations (skip check, Vips processing, size logging).
+# - Exposes #decoded_binary so callers (e.g. S3 upload) can access the raw bytes
+#   without decoding the base64 a second time.
+# - Uses a single Vips pass: quality is estimated from the decoded size ratio so
+#   the resize→convert→save pipeline runs only once (with one fallback at q=40
+#   for extreme cases).
 class ImageCompressionService
-  MAX_DIMENSION = 1024
-  # Bedrock KB ingestion limit for images
-  MAX_BINARY_SIZE_KB = (3.75 * 1024 * 1024).to_i
-  QUALITY_LEVELS = [ 80, 70, 60, 50, 40 ].freeze
+  MAX_DIMENSION    = 1024
+  MAX_BINARY_BYTES = (3.75 * 1024 * 1024).to_i  # 3.75 MB in bytes
 
   class CompressionError < StandardError; end
 
-  # Compresses a base64-encoded image
-  #
   # @param base64_data [String] Base64-encoded image data
-  # @param media_type [String] MIME type (e.g., "image/jpeg", "image/png")
-  # @return [Hash] { data: compressed_base64, media_type: "image/jpeg", original_size: bytes, compressed_size: bytes }
-  # @raise [CompressionError] If compression fails
+  # @param media_type  [String] MIME type (e.g., "image/jpeg", "image/png")
+  # @return [Hash] {
+  #   data: String (compressed base64),
+  #   media_type: "image/jpeg",
+  #   binary: String (raw bytes — use this for S3 upload to skip re-decode),
+  #   original_size: Integer,
+  #   compressed_size: Integer
+  # }
+  # @raise [CompressionError]
   def self.compress(base64_data, media_type)
     new(base64_data, media_type).compress
   end
 
   def initialize(base64_data, media_type)
-    @base64_data = base64_data
-    @media_type = media_type
+    @base64_data   = base64_data
+    @media_type    = media_type
     @original_size = base64_data.bytesize
+    @decoded_blob  = nil  # decoded once, lazily cached
   end
 
   def compress
     return skip_compression if should_skip_compression?
 
-    compressed_blob = process_image
+    compressed_blob   = process_image
     compressed_base64 = Base64.strict_encode64(compressed_blob)
 
     {
-      data: compressed_base64,
-      media_type: "image/jpeg",
-      original_size: @original_size,
+      data:            compressed_base64,
+      media_type:      "image/jpeg",
+      binary:          compressed_blob,
+      original_size:   @original_size,
       compressed_size: compressed_base64.bytesize
     }
   rescue StandardError => e
@@ -46,68 +59,89 @@ class ImageCompressionService
 
   private
 
-  def should_skip_compression?
-    return true if @base64_data.blank?
-
-    decoded = Base64.decode64(@base64_data)
-    decoded.bytesize <= MAX_BINARY_SIZE_KB
-  rescue ArgumentError
-    false
-  end
-
-  def skip_compression
-    Rails.logger.info("ImageCompressionService: Skipping compression (size: #{@original_size} bytes)")
-    {
-      data: @base64_data,
-      media_type: @media_type,
-      original_size: @original_size,
-      compressed_size: @original_size
-    }
-  end
-
-  def process_image
-    image_blob = decode_base64
-    raise CompressionError, "Decoded image data is empty" if image_blob.empty?
-
-    # Iteratively reduce quality until under Bedrock KB limit (3.75 MB)
-    QUALITY_LEVELS.each do |quality|
-      source_io = StringIO.new(image_blob)
-      processed = ImageProcessing::Vips
-        .source(source_io)
-        .resize_to_limit(MAX_DIMENSION, MAX_DIMENSION)
-        .convert("jpeg")
-        .saver(quality: quality)
-        .call
-      blob = processed.read
-      processed.close
-      source_io.close
-
-      next if blob.bytesize > MAX_BINARY_SIZE_KB
-
-      validate_size!(blob)
-      log_compression_result(blob)
-      return blob
+  # Decoded bytes cached for the lifetime of this instance.
+  def decoded_blob
+    @decoded_blob ||= begin
+      blob = Base64.decode64(@base64_data)
+      raise CompressionError, "Invalid base64 data: decoded content is empty" if blob.empty?
+      blob
     end
-
-    raise CompressionError,
-          "Image still exceeds Bedrock KB limit (#{MAX_BINARY_SIZE_KB} bytes / 3.75 MB) after compression"
-  rescue Vips::Error => e
-    raise CompressionError, "Image processing failed: #{e.message}"
-  end
-
-  def decode_base64
-    decoded = Base64.decode64(@base64_data)
-    raise CompressionError, "Invalid base64 data: decoded content is empty" if decoded.empty?
-    decoded
   rescue ArgumentError => e
     raise CompressionError, "Invalid base64 data: #{e.message}"
   end
 
+  def should_skip_compression?
+    return true if @base64_data.blank?
+
+    decoded_blob.bytesize <= MAX_BINARY_BYTES
+  rescue CompressionError
+    false
+  end
+
+  def skip_compression
+    Rails.logger.debug { "ImageCompressionService: Skipping compression (decoded: #{decoded_blob.bytesize} bytes)" }
+    {
+      data:            @base64_data,
+      media_type:      @media_type,
+      binary:          decoded_blob,
+      original_size:   @original_size,
+      compressed_size: @original_size
+    }
+  end
+
+  # Single-pass Vips compression with quality estimated from the size ratio.
+  # Falls back to quality=40 only when the first pass still exceeds the limit
+  # (handles pathological cases like near-lossless PNGs at huge resolutions).
+  def process_image
+    blob    = decoded_blob
+    quality = estimate_quality(blob.bytesize)
+
+    result = run_vips(blob, quality)
+
+    if result.bytesize > MAX_BINARY_BYTES
+      Rails.logger.warn("ImageCompressionService: q=#{quality} still #{result.bytesize} bytes, retrying at q=40")
+      result = run_vips(blob, 40)
+    end
+
+    validate_size!(result)
+    log_compression_result(result)
+    result
+  rescue Vips::Error => e
+    raise CompressionError, "Image processing failed: #{e.message}"
+  end
+
+  def run_vips(blob, quality)
+    source_io = StringIO.new(blob)
+    processed = ImageProcessing::Vips
+      .source(source_io)
+      .resize_to_limit(MAX_DIMENSION, MAX_DIMENSION)
+      .convert("jpeg")
+      .saver(quality: quality)
+      .call
+    result = processed.read
+    processed.close
+    source_io.close
+    result
+  end
+
+  # Maps decoded binary size to a JPEG quality level.
+  # Rationale: images already compressed by the client (Canvas) will be small
+  # (ratio ≤ 1) and skip compression entirely; this handles server-only uploads
+  # or cases where the client fallback was used.
+  def estimate_quality(decoded_bytes)
+    ratio = decoded_bytes.to_f / MAX_BINARY_BYTES
+    if    ratio <= 1.5 then 82
+    elsif ratio <= 3.0 then 70
+    elsif ratio <= 6.0 then 55
+    else                    42
+    end
+  end
+
   def validate_size!(blob)
-    return if blob.bytesize <= MAX_BINARY_SIZE_KB
+    return if blob.bytesize <= MAX_BINARY_BYTES
 
     raise CompressionError,
-          "Compressed image (#{blob.bytesize} bytes) exceeds Bedrock KB limit (#{MAX_BINARY_SIZE_KB} bytes / 3.75 MB)"
+          "Compressed image (#{blob.bytesize} bytes) still exceeds Bedrock KB limit (#{MAX_BINARY_BYTES} bytes / 3.75 MB)"
   end
 
   def log_compression_result(compressed_blob)

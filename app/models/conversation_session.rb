@@ -4,6 +4,7 @@ class ConversationSession < ApplicationRecord
   EXPIRY_MINUTES = 30
   MAX_HISTORY    = 20
   MAX_ENTITIES   = 5
+  MAX_MSG_LENGTH = 300
 
   CHANNELS = %w[whatsapp web].freeze
 
@@ -52,7 +53,7 @@ class ConversationSession < ApplicationRecord
 
   def add_to_history(role, content)
     history = conversation_history.last(MAX_HISTORY - 1)
-    history << { "role" => role, "content" => content, "ts" => Time.current.iso8601 }
+    history << { "role" => role, "content" => content.to_s.truncate(MAX_MSG_LENGTH), "ts" => Time.current.iso8601 }
     update!(conversation_history: history)
   end
 
@@ -60,19 +61,118 @@ class ConversationSession < ApplicationRecord
     conversation_history.map { |m| { role: m["role"], content: m["content"] } }
   end
 
+  def recent_history_for_prompt(turns: 3)
+    conversation_history.last(turns).map { |m| { role: m["role"], content: m["content"] } }
+  end
+
   # ─── Entities ───────────────────────────────────────────────────────────────
 
-  def add_entity(name, context_chunks)
-    return false if active_entities.size >= MAX_ENTITIES
+  # Stores metadata-only (no chunks). FIFO eviction when count exceeds MAX_ENTITIES.
+  # Deduplicates: if name already matches any existing entity (by canonical key,
+  # wa_filename, or any alias), the existing record is kept unchanged.
+  def add_entity(name, metadata = {})
+    return true if find_entity_by_name_or_alias(name)
 
-    entities = active_entities.merge(
-      name => { "chunks" => context_chunks, "added_at" => Time.current.iso8601 }
-    )
+    entities = active_entities.dup
+    entities[name] = metadata.merge("added_at" => Time.current.iso8601)
+    evict_oldest!(entities)
     update!(active_entities: entities)
     true
   end
 
+  # Registers a named entity with its full alias set.
+  # If any of canonical_name or any alias already matches an existing entity,
+  # merges the new aliases into it instead of creating a duplicate.
+  # @param canonical_name [String]  human-readable document name (key in hash)
+  # @param aliases [Array<String>]  all known aliases (semantic + technical + wa_filename)
+  # @param metadata [Hash]
+  def add_entity_with_aliases(canonical_name, aliases = [], metadata = {})
+    entities = active_entities.dup
+
+    existing_key = find_entity_by_name_or_alias(canonical_name) ||
+                   aliases.lazy.filter_map { |a| find_entity_by_name_or_alias(a) }.first
+
+    if existing_key
+      existing = entities[existing_key].dup
+      merged   = sanitize_aliases(((existing["aliases"] || []) + aliases).map(&:to_s))
+      entities[existing_key] = existing.merge("aliases" => merged)
+    else
+      entities[canonical_name] = metadata.merge(
+        "canonical_name" => canonical_name,
+        "aliases"        => sanitize_aliases(aliases.map(&:to_s)),
+        "added_at"       => Time.current.iso8601
+      )
+      evict_oldest!(entities)
+    end
+
+    update!(active_entities: entities)
+    true
+  end
+
+  # Case-insensitive lookup across canonical keys, wa_filename, and aliases.
+  # @return [String, nil] the canonical key if found
+  def find_entity_by_name_or_alias(name)
+    return nil if name.blank?
+
+    term = name.to_s.strip
+    active_entities.each_key do |key|
+      next unless key.casecmp?(term) ||
+                  active_entities[key]["wa_filename"].to_s.casecmp?(term) ||
+                  Array(active_entities[key]["aliases"]).any? { |a| a.to_s.casecmp?(term) }
+
+      return key
+    end
+    nil
+  end
+
+  def has_active_entities?
+    active_entities.present?
+  end
+
+  def active_document_names
+    active_entities.keys
+  end
+
   def entity_count
     active_entities.size
+  end
+
+  private
+
+  def sanitize_aliases(aliases_array)
+    seen   = {}
+    result = []
+
+    aliases_array.each do |raw|
+      s = raw.to_s.strip
+      next if s.length < 2 || s.length > 60
+      next if s.start_with?("|")
+      next if s.include?("|")
+      next if s.include?("**")
+      next if s.include?("##")
+      next if s.include?("⚠️")
+      next if s.include?("→")
+      next if s.include?("←")
+      next if s.include?("http://")
+      next if s.include?("https://")
+      next if s.include?("s3://")
+      next if s.count(" ") > 8
+
+      key = s.downcase
+      next if seen[key]
+
+      seen[key] = true
+      result << s
+      break if result.size >= 15
+    end
+
+    result
+  end
+
+  def evict_oldest!(entities)
+    return unless entities.size > MAX_ENTITIES
+
+    oldest_key = entities.min_by { |_, v| v["added_at"].to_s }.first
+    entities.delete(oldest_key)
   end
 end

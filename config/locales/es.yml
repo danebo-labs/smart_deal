@@ -1,0 +1,5 @@
+# Spanish locale (partial; RAG strings also in config/locales/rag.es.yml)
+es:
+  rag:
+    whatsapp_indexed_generic: "✅ Documento procesado y disponible.\nArchivo: %{filename}\nPregúntame sobre este documento."
+    whatsapp_indexed_with_aliases: "✅ %{name}\nConsúltame por: %{aliases}"

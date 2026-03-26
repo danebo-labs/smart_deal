@@ -7,14 +7,27 @@ class RagController < ApplicationController
   include RagQueryConcern
 
   def ask
-    images = extract_images_from_params
+    images    = extract_images_from_params
     documents = extract_documents_from_params
+    question  = params[:question].to_s.strip
+
+    conv_session = ConversationSession.find_or_create_for(
+      identifier: current_user.id.to_s,
+      channel:    "web",
+      user_id:    current_user.id
+    )
+    conv_session.refresh!
+    conv_session.add_to_history("user", question) if question.present?
+
+    session_context = SessionContextBuilder.build(conv_session)
 
     result = execute_rag_query(
-      params[:question],
-      images: images,
-      documents: documents,
-      session_id: params[:session_id].presence
+      question,
+      images:          images,
+      documents:       documents,
+      session_id:      params[:session_id].presence,
+      session_context: session_context,
+      conv_session:    conv_session
     )
 
     unless result.success?
@@ -22,11 +35,21 @@ class RagController < ApplicationController
       return
     end
 
+    EntityExtractorService.new(conv_session).extract_and_update(
+      Array(result.citations),
+      user_message:  question,
+      answer:        result.answer,
+      all_retrieved: Array(result.retrieved_citations),
+      doc_refs:      result[:doc_refs]
+    )
+
+    conv_session.add_to_history("assistant", result.answer.to_s)
+
     json = {
-      answer: result.answer,
-      citations: Array(result.citations),
+      answer:     result.answer,
+      citations:  Array(result.citations),
       session_id: result.session_id,
-      status: 'success'
+      status:     'success'
     }
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     render json: json

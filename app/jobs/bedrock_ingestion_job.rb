@@ -13,10 +13,11 @@ class BedrockIngestionJob < ApplicationJob
   POLL_INTERVAL = 5.seconds
   TIMEOUT = 15.minutes
 
-  # @param whatsapp_from [String, nil] Twilio sender number (our number) — for WhatsApp notify
-  # @param whatsapp_to   [String, nil] Recipient (end user) — for WhatsApp notify
+  # @param whatsapp_from   [String, nil] Twilio sender number (our number) — for WhatsApp notify
+  # @param whatsapp_to     [String, nil] Recipient (end user) — for WhatsApp notify
+  # @param conv_session_id [Integer, nil] ConversationSession#id — for alias registration
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
-              whatsapp_from: nil, whatsapp_to: nil)
+              whatsapp_from: nil, whatsapp_to: nil, conv_session_id: nil)
     return if ingestion_job_id.blank?
 
     service = IngestionStatusService.new(kb_id: kb_id, data_source_id: data_source_id)
@@ -36,7 +37,8 @@ class BedrockIngestionJob < ApplicationJob
 
     if status == "COMPLETE"
       broadcast_indexed(uploaded_filenames)
-      notify_whatsapp(whatsapp_from, whatsapp_to, I18n.t('rag.whatsapp_indexed_ask_again'))
+      notify_indexed(uploaded_filenames, kb_id: kb_id, whatsapp_from: whatsapp_from,
+                     whatsapp_to: whatsapp_to, conv_session_id: conv_session_id)
     else
       reasons = status == "FAILED" ? service.failure_reasons(ingestion_job_id) : []
       message = ingestion_failure_message(reasons)
@@ -75,6 +77,74 @@ class BedrockIngestionJob < ApplicationJob
       filenames: filenames,
       message: message
     })
+  end
+
+  def notify_indexed(uploaded_filenames, kb_id:, whatsapp_from:, whatsapp_to:, conv_session_id:)
+    session = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
+
+    Array(uploaded_filenames).each do |wa_filename|
+      result = extract_aliases(wa_filename, kb_id) if session
+      register_entity(session, wa_filename, result) if session
+      body = build_indexed_notification(wa_filename, result)
+      notify_whatsapp(whatsapp_from, whatsapp_to, body)
+    end
+  end
+
+  def extract_aliases(wa_filename, kb_id)
+    effective_kb_id = kb_id.presence ||
+                      ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
+                      Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
+    return nil unless effective_kb_id
+
+    ChunkAliasExtractor.new(kb_id: effective_kb_id).call(wa_filename)
+  rescue StandardError => e
+    Rails.logger.error("BedrockIngestionJob: alias extraction failed for #{wa_filename} — #{e.message}")
+    nil
+  end
+
+  def register_entity(session, wa_filename, result)
+    stem = wa_filename.sub(/\.[^.]+\z/, '')
+
+    if result
+      key = result[:canonical_name]
+      all_aliases = [ wa_filename, stem ] + result[:aliases]
+      session.add_entity_with_aliases(
+        key,
+        all_aliases,
+        "source"            => "image_upload",
+        "doc_type"          => "field_image",
+        "wa_filename"       => wa_filename,
+        "extraction_method" => "chunk_aliases"
+      )
+      Rails.logger.info("BedrockIngestionJob: registered entity '#{key}' with #{all_aliases.size} aliases for #{wa_filename}")
+    else
+      session.add_entity_with_aliases(
+        stem,
+        [ wa_filename ],
+        "source"            => "image_upload",
+        "doc_type"          => "field_image",
+        "wa_filename"       => wa_filename,
+        "extraction_method" => "pending_first_query"
+      )
+      Rails.logger.info("BedrockIngestionJob: registered placeholder entity '#{stem}' for #{wa_filename}")
+    end
+  end
+
+  MAX_WHATSAPP_BODY = 1500
+
+  def build_indexed_notification(wa_filename, result)
+    body = if result
+      name    = result[:canonical_name]
+      aliases = result[:aliases].first(5).map { |a| a.truncate(60) }.join(", ")
+      I18n.t('rag.whatsapp_indexed_with_aliases',
+             name: name, aliases: aliases,
+             default: "✅ #{name}\nConsúltame por: #{aliases}")
+    else
+      I18n.t('rag.whatsapp_indexed_generic',
+             filename: wa_filename,
+             default: "✅ Documento procesado.\nArchivo: #{wa_filename}\nPregúntame sobre este documento.")
+    end
+    body.truncate(MAX_WHATSAPP_BODY)
   end
 
   def notify_whatsapp(from, to, body)

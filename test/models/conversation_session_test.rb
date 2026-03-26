@@ -150,35 +150,319 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_nil prompt_history.first[:ts]
   end
 
-  # ─── add_entity ─────────────────────────────────────────────────────────────
+  # ─── add_to_history truncation ──────────────────────────────────────────────
 
-  test 'add_entity stores entity and returns true' do
+  test 'add_to_history truncates content to MAX_MSG_LENGTH' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+55500000001',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    long_msg = 'x' * 500
+    s.add_to_history('user', long_msg)
+    s.reload
+
+    assert s.conversation_history.first['content'].length <= ConversationSession::MAX_MSG_LENGTH
+  end
+
+  # ─── recent_history_for_prompt ──────────────────────────────────────────────
+
+  test 'recent_history_for_prompt returns last N turns' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+55500000002',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    10.times { |i| s.add_to_history('user', "msg #{i}") }
+    s.reload
+
+    recent = s.recent_history_for_prompt(turns: 3)
+    assert_equal 3, recent.size
+    assert_equal 'msg 9', recent.last[:content]
+  end
+
+  # ─── add_entity (metadata-only + FIFO) ──────────────────────────────────────
+
+  test 'add_entity stores metadata and returns true' do
     s = ConversationSession.create!(
       identifier: 'whatsapp:+88888888888',
       channel:    'whatsapp',
       expires_at: 30.minutes.from_now
     )
 
-    result = s.add_entity('schema.pdf', [ 'chunk1', 'chunk2' ])
+    result = s.add_entity('schema.pdf', { 'source' => 'retrieve_result' })
     s.reload
 
     assert result
     assert s.active_entities.key?('schema.pdf')
-    assert_equal [ 'chunk1', 'chunk2' ], s.active_entities['schema.pdf']['chunks']
+    assert_equal 'retrieve_result', s.active_entities['schema.pdf']['source']
+    assert s.active_entities['schema.pdf']['added_at'].present?
   end
 
-  test 'add_entity returns false when MAX_ENTITIES reached' do
+  test 'add_entity does not duplicate an entity already present under same name' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+88800000001',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    s.add_entity('dup.pdf', { 'source' => 'retrieve_result' })
+    original_at = s.reload.active_entities['dup.pdf']['added_at']
+
+    s.add_entity('dup.pdf', { 'source' => 'retrieve_result' })
+    s.reload
+
+    assert_equal 1, s.entity_count
+    assert_equal original_at, s.active_entities['dup.pdf']['added_at']
+  end
+
+  test 'add_entity applies FIFO eviction when exceeding MAX_ENTITIES' do
     s = ConversationSession.create!(
       identifier: 'whatsapp:+99999999999',
       channel:    'whatsapp',
       expires_at: 30.minutes.from_now
     )
 
-    ConversationSession::MAX_ENTITIES.times { |i| s.add_entity("doc_#{i}.pdf", []) }
-    result = s.add_entity('overflow.pdf', [])
+    # Pre-fill MAX_ENTITIES slots with distinct past timestamps directly so
+    # the real clock (used when adding overflow.pdf) is always newer.
+    base_time = 1.hour.ago
+    prefilled = {}
+    ConversationSession::MAX_ENTITIES.times do |i|
+      prefilled["doc_#{i}.pdf"] = {
+        "source"   => "retrieve_result",
+        "added_at" => (base_time + i.seconds).iso8601
+      }
+    end
+    s.update!(active_entities: prefilled)
+    s.reload
 
-    assert_not result
-    assert_equal ConversationSession::MAX_ENTITIES, s.reload.entity_count
+    # doc_0.pdf has the earliest added_at — it must be evicted
+    s.add_entity('overflow.pdf', { 'source' => 'retrieve_result' })
+    s.reload
+
+    assert_equal ConversationSession::MAX_ENTITIES, s.entity_count
+    assert_not s.active_entities.key?('doc_0.pdf'), 'Oldest entity should have been evicted'
+    assert s.active_entities.key?('overflow.pdf'), 'New entity should be present'
+  end
+
+  # ─── add_entity_with_aliases ────────────────────────────────────────────────
+
+  test 'add_entity_with_aliases stores canonical name, aliases, and wa_filename' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000001',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+
+    s.add_entity_with_aliases(
+      'Junction Box Car Top',
+      %w[junction cartop DRG\ 6061-05-014 wa_20260323_214702_0.jpeg],
+      'source' => 'image_upload', 'wa_filename' => 'wa_20260323_214702_0.jpeg'
+    )
+    s.reload
+
+    entity = s.active_entities['Junction Box Car Top']
+    assert entity.present?
+    assert_equal 'Junction Box Car Top', entity['canonical_name']
+    assert_includes entity['aliases'], 'cartop'
+    assert_includes entity['aliases'], 'DRG 6061-05-014'
+    assert_equal 'image_upload', entity['source']
+  end
+
+  test 'add_entity_with_aliases does not create a duplicate when canonical already exists' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000002',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+
+    s.add_entity_with_aliases('My Doc', %w[alias1], 'source' => 'image_upload')
+    s.add_entity_with_aliases('My Doc', %w[alias2], 'source' => 'image_upload')
+    s.reload
+
+    assert_equal 1, s.entity_count
+    assert_includes s.active_entities['My Doc']['aliases'], 'alias1'
+    assert_includes s.active_entities['My Doc']['aliases'], 'alias2'
+  end
+
+  test 'add_entity_with_aliases merges when matched by an alias (not canonical key)' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000003',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+
+    s.add_entity_with_aliases('Junction Box Car Top', %w[cartop sounder], 'source' => 'image_upload')
+    # Second call uses an alias that matches the existing entity
+    s.add_entity_with_aliases('Junction Box Car Top', %w[DRG\ 05-015], 'source' => 'image_upload')
+    s.reload
+
+    assert_equal 1, s.entity_count
+    entity = s.active_entities['Junction Box Car Top']
+    assert_includes entity['aliases'], 'cartop'
+    assert_includes entity['aliases'], 'DRG 05-015'
+  end
+
+  # ─── sanitize_aliases ───────────────────────────────────────────────────────
+
+  test 'sanitize_aliases passes normal alias' do
+    s = build_session
+    assert_equal [ 'enclosure view A' ], s.send(:sanitize_aliases, [ 'enclosure view A' ])
+  end
+
+  test 'sanitize_aliases rejects long alias' do
+    s = build_session
+    long = 'x' * 80
+    assert_empty s.send(:sanitize_aliases, [ long ])
+  end
+
+  test 'sanitize_aliases rejects pipe' do
+    s = build_session
+    assert_empty s.send(:sanitize_aliases, [ '| Ref | Component |' ])
+  end
+
+  test 'sanitize_aliases rejects markdown bold' do
+    s = build_session
+    assert_empty s.send(:sanitize_aliases, [ '**Safety Bar 2**' ])
+  end
+
+  test 'sanitize_aliases rejects s3 url' do
+    s = build_session
+    assert_empty s.send(:sanitize_aliases, [ 's3://bucket/file.pdf' ])
+  end
+
+  test 'sanitize_aliases rejects too short' do
+    s = build_session
+    assert_empty s.send(:sanitize_aliases, [ 'A' ])
+  end
+
+  test 'sanitize_aliases rejects paragraphs' do
+    s = build_session
+    paragraph = 'This is a very long sentence with way too many spaces in it here'
+    assert_empty s.send(:sanitize_aliases, [ paragraph ])
+  end
+
+  test 'sanitize_aliases deduplicates case insensitive' do
+    s = build_session
+    assert_equal [ 'Box' ], s.send(:sanitize_aliases, %w[Box box BOX])
+  end
+
+  test 'sanitize_aliases limits to 15' do
+    s = build_session
+    twenty = 20.times.map { |i| "alias#{i}" }
+    out = s.send(:sanitize_aliases, twenty)
+    assert_equal 15, out.size
+    assert_equal (0...15).map { |i| "alias#{i}" }, out
+  end
+
+  test 'add_entity_with_aliases sanitizes before persisting' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000008',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+
+    s.add_entity_with_aliases(
+      'Sanitize Doc',
+      [
+        'good_one',
+        'good two',
+        '**bad**',
+        '| pipe row |',
+        's3://bad/path',
+        'A',
+        'x' * 80,
+        'This is a very long sentence with way too many spaces in it here',
+        'good_three'
+      ],
+      'source' => 'image_upload'
+    )
+    s.reload
+
+    aliases = s.active_entities['Sanitize Doc']['aliases']
+    assert_equal Set.new([ 'good_one', 'good two', 'good_three' ]), Set.new(aliases)
+  end
+
+  # ─── find_entity_by_name_or_alias ───────────────────────────────────────────
+
+  test 'find_entity_by_name_or_alias finds by canonical key (case-insensitive)' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000004',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    s.add_entity_with_aliases('Junction Box Car Top', %w[cartop], 'source' => 'image_upload')
+
+    assert_equal 'Junction Box Car Top', s.find_entity_by_name_or_alias('junction box car top')
+    assert_equal 'Junction Box Car Top', s.find_entity_by_name_or_alias('JUNCTION BOX CAR TOP')
+  end
+
+  test 'find_entity_by_name_or_alias finds by alias (case-insensitive)' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000005',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    s.add_entity_with_aliases('My Doc', %w[DRG\ 05-015 cartop], 'source' => 'image_upload')
+
+    assert_equal 'My Doc', s.find_entity_by_name_or_alias('cartop')
+    assert_equal 'My Doc', s.find_entity_by_name_or_alias('drg 05-015')
+    assert_equal 'My Doc', s.find_entity_by_name_or_alias('DRG 05-015')
+  end
+
+  test 'find_entity_by_name_or_alias finds by wa_filename' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000006',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    s.add_entity_with_aliases('My Doc', [], 'source' => 'image_upload', 'wa_filename' => 'wa_20260323_214702_0.jpeg')
+
+    assert_equal 'My Doc', s.find_entity_by_name_or_alias('wa_20260323_214702_0.jpeg')
+  end
+
+  test 'find_entity_by_name_or_alias returns nil when no match' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700000007',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    assert_nil s.find_entity_by_name_or_alias('unknown')
+  end
+
+  # ─── helpers ────────────────────────────────────────────────────────────────
+
+  test 'has_active_entities? returns false when empty' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+55500000003',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    assert_not s.has_active_entities?
+  end
+
+  test 'has_active_entities? returns true after add_entity' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+55500000004',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    s.add_entity('doc.pdf', { 'source' => 'retrieve_result' })
+    assert s.has_active_entities?
+  end
+
+  test 'active_document_names returns entity keys' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+55500000005',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    s.add_entity('a.pdf', { 'source' => 'retrieve_result' })
+    s.add_entity('b.png', { 'source' => 'image_upload' })
+    s.reload
+
+    names = s.active_document_names
+    assert_includes names, 'a.pdf'
+    assert_includes names, 'b.png'
   end
 
   # ─── reset_procedure! ───────────────────────────────────────────────────────

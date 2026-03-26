@@ -185,6 +185,105 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
     end
   end
 
+  # -----------------------------------------------------------------------
+  # Session context + EntityExtractor wiring
+  # -----------------------------------------------------------------------
+
+  test 'perform builds session context when conv_session_id is present' do
+    session = ConversationSession.create!(
+      identifier: 'whatsapp:+56912345678',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    session.add_entity('manual.pdf', { 'source' => 'retrieve_result' })
+
+    context_built = nil
+    original_build = SessionContextBuilder.method(:build)
+    SessionContextBuilder.define_singleton_method(:build) do |sess|
+      context_built = sess
+      original_build.call(sess)
+    end
+
+    citations = [ { number: 1, filename: 'manual.pdf', title: 'Manual' } ]
+    with_mock_orchestrator(answer: 'ok', citations: citations) do
+      stub_twilio_client do |_sent|
+        with_twilio_env do
+          SendWhatsappReplyJob.new.perform(**JOB_PARAMS, conv_session_id: session.id)
+        end
+      end
+    end
+
+    assert_equal session.id, context_built.id
+  ensure
+    SessionContextBuilder.define_singleton_method(:build) { |*a| original_build.call(*a) }
+  end
+
+  test 'perform calls EntityExtractor after successful RAG query (citation path)' do
+    session = ConversationSession.create!(
+      identifier: 'whatsapp:+56912345678',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+
+    citations = [ { number: 1, filename: 'new_doc.pdf', title: 'New Doc' } ]
+    with_mock_orchestrator(answer: 'answer', citations: citations) do
+      stub_twilio_client do |_sent|
+        with_twilio_env do
+          SendWhatsappReplyJob.new.perform(**JOB_PARAMS, conv_session_id: session.id)
+        end
+      end
+    end
+
+    session.reload
+    assert session.active_entities.key?('new_doc.pdf'), 'Entity should have been extracted via citation'
+  end
+
+  test 'perform registers entity via fallback when citations=0 but answer valid and filename in body' do
+    session = ConversationSession.create!(
+      identifier: 'whatsapp:+56912345678',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+
+    # No citations, but valid answer — body contains the filename
+    with_mock_orchestrator(answer: 'Es un diagrama técnico.', citations: []) do
+      stub_twilio_client do |_sent|
+        with_twilio_env do
+          SendWhatsappReplyJob.new.perform(
+            to:              'whatsapp:+56912345678',
+            from:            'whatsapp:+14155238886',
+            body:            'Que es circuito2_.jpeg ?',
+            conv_session_id: session.id
+          )
+        end
+      end
+    end
+
+    session.reload
+    assert session.active_entities.key?('circuito2_.jpeg'),
+           'Filename mentioned in body should be registered via fallback'
+  end
+
+  test 'perform adds assistant reply to history' do
+    session = ConversationSession.create!(
+      identifier: 'whatsapp:+56912345678',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+
+    with_mock_orchestrator(answer: 'My answer') do
+      stub_twilio_client do |_sent|
+        with_twilio_env do
+          SendWhatsappReplyJob.new.perform(**JOB_PARAMS, conv_session_id: session.id)
+        end
+      end
+    end
+
+    session.reload
+    assert_equal 1, session.conversation_history.size
+    assert_equal 'assistant', session.conversation_history.first['role']
+  end
+
   private
 
   def with_twilio_env

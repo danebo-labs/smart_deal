@@ -290,4 +290,38 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert result.key?(:citations)
     end
   end
+
+  test 'query appends session_context to generation prompt when provided' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      ctx = "## Session Focus\n- [document] manual.pdf"
+      service.query('What is S3?', session_context: ctx)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, '## Session Focus'
+      assert_includes template, '[document] manual.pdf'
+    end
+  end
+
+  test 'query does not append session_context when nil' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('What is S3?', session_context: nil)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_not_includes template, 'Session Focus'
+    end
+  end
 end

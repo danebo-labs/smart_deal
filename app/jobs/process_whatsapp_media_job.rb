@@ -39,7 +39,7 @@ class ProcessWhatsappMediaJob < ApplicationJob
       return
     end
 
-    upload_and_sync(images, whatsapp_from: to, whatsapp_to: from)
+    upload_and_sync(images, whatsapp_from: to, whatsapp_to: from, conv_session_id: conv_session_id)
   end
 
   private
@@ -67,7 +67,8 @@ class ProcessWhatsappMediaJob < ApplicationJob
     images
   end
 
-  def upload_and_sync(images, whatsapp_from:, whatsapp_to:)
+  # @return [Array<String>] basenames successfully uploaded to S3
+  def upload_and_sync(images, whatsapp_from:, whatsapp_to:, conv_session_id: nil)
     s3        = S3DocumentsService.new
     uploaded  = []
 
@@ -79,19 +80,22 @@ class ProcessWhatsappMediaJob < ApplicationJob
       uploaded << filename if key.present?
     end
 
-    return unless uploaded.any?
+    return [] unless uploaded.any?
 
     result = KbSyncService.new.sync!(uploaded_filenames: uploaded)
-    return if result.blank?
+    return uploaded if result.blank?
 
     BedrockIngestionJob.perform_later(
       result[:job_id],
       uploaded,
-      kb_id:           result[:kb_id],
-      data_source_id:  result[:data_source_id],
-      whatsapp_from:   whatsapp_from,
-      whatsapp_to:     whatsapp_to
+      kb_id:            result[:kb_id],
+      data_source_id:   result[:data_source_id],
+      whatsapp_from:    whatsapp_from,
+      whatsapp_to:      whatsapp_to,
+      conv_session_id:  conv_session_id
     )
+
+    uploaded
   end
 
   def send_message(from:, to:, body:)

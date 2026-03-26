@@ -8,7 +8,7 @@ module RagQueryConcern
   extend ActiveSupport::Concern
 
   # Result object for queries (works for both RAG and SQL responses)
-  RagResult = Struct.new(:success?, :answer, :citations, :session_id, :documents_uploaded, :error_type, :error_message, keyword_init: true)
+  RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs, :session_id, :documents_uploaded, :error_type, :error_message, keyword_init: true)
 
   # Short follow-ups (e.g. "modernización") keep the thread language instead of re-inferring from Spanish UI labels.
   WHATSAPP_SHORT_FOLLOWUP_MAX_CHARS = 200
@@ -27,7 +27,8 @@ module RagQueryConcern
   # @param response_locale [Symbol, String, nil] Force :en / :es for generation; nil = detect from question (and WhatsApp sticky rules)
   # @param whatsapp_to [String, nil] Recipient id (e.g. whatsapp:+...) — enables session + locale persistence across messages
   # @return [RagResult] Structured result with success status and data or error info
-  def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil, whatsapp_to: nil)
+  def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil, whatsapp_to: nil, session_context: nil,
+                         conv_session: nil)
     question = question.to_s.strip
     images = Array(images).compact
     documents = Array(documents).compact
@@ -70,7 +71,9 @@ module RagQueryConcern
       documents: documents,
       tenant: rag_tenant,
       session_id: session_id,
-      response_locale: resolved_response_locale
+      response_locale: resolved_response_locale,
+      session_context: session_context,
+      conv_session: conv_session
     ).execute
 
     if whatsapp_to.present? && cache_key
@@ -80,11 +83,13 @@ module RagQueryConcern
     end
 
     RagResult.new(
-      success?: true,
-      answer: result[:answer],
-      citations: result[:citations],
-      session_id: result[:session_id],
-      documents_uploaded: result[:documents_uploaded]
+      success?:            true,
+      answer:              result[:answer],
+      citations:           result[:citations],
+      retrieved_citations: result[:retrieved_citations],
+      doc_refs:            result[:doc_refs],
+      session_id:          result[:session_id],
+      documents_uploaded:  result[:documents_uploaded]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

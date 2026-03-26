@@ -16,9 +16,10 @@ class SendWhatsappReplyJob < ApplicationJob
   # @param body            [String]  The user's message text
   # @param conv_session_id [Integer] ConversationSession#id for history tracking
   def perform(to:, from:, body:, conv_session_id: nil)
-    conv_session = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
+    conv_session    = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
+    session_context = conv_session ? SessionContextBuilder.build(conv_session) : nil
 
-    result = execute_rag_query(body, whatsapp_to: to)
+    result = execute_rag_query(body, whatsapp_to: to, session_context: session_context, conv_session: conv_session)
     reply  = format_rag_response_for_whatsapp(result)
     chunks = split_for_whatsapp(reply)
 
@@ -30,6 +31,16 @@ class SendWhatsappReplyJob < ApplicationJob
       prefix  = chunks.size > 1 ? "(#{i + 1}/#{chunks.size}) " : ""
       client.messages.create(from: from, to: to, body: "#{prefix}#{chunk}")
       sleep(0.5) if i < chunks.size - 1
+    end
+
+    if conv_session && result.success?
+      EntityExtractorService.new(conv_session).extract_and_update(
+        Array(result.citations),
+        user_message:  body,
+        answer:        result.answer,
+        all_retrieved: Array(result.retrieved_citations),
+        doc_refs:      result[:doc_refs]
+      )
     end
 
     conv_session&.add_to_history("assistant", reply)

@@ -302,6 +302,105 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # ─── Session / history / entity wiring ─────────────────────────────────────
+
+  test 'ask creates a web ConversationSession for current_user' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
+    assert_difference 'ConversationSession.where(channel: "web").count', 1 do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+      end
+    end
+  end
+
+  test 'ask reuses existing web session for the same user' do
+    sign_in @user
+
+    ConversationSession.find_or_create_for(
+      identifier: @user.id.to_s,
+      channel:    'web',
+      user_id:    @user.id
+    )
+
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
+    assert_no_difference 'ConversationSession.count' do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+      end
+    end
+  end
+
+  test 'ask adds user and assistant messages to conversation_history' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+    end
+
+    session = ConversationSession.find_by(identifier: @user.id.to_s, channel: 'web')
+    assert session.present?
+
+    history = session.conversation_history
+    assert history.any? { |h| h['role'] == 'user' && h['content'].include?(TEST_QUESTION) }
+    assert history.any? { |h| h['role'] == 'assistant' }
+  end
+
+  test 'ask calls EntityExtractor and populates active_entities from citations' do
+    sign_in @user
+
+    citations = [ { number: 1, filename: 'guide.pdf', title: 'Guide' } ]
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: citations)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+    end
+
+    session = ConversationSession.find_by(identifier: @user.id.to_s, channel: 'web')
+    assert session.active_entities.key?('guide.pdf')
+    assert_equal 'citation_filename_fallback', session.active_entities['guide.pdf']['source']
+  end
+
+  test 'ask registers entity via fallback when citations empty but answer valid and question has filename' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
+      answer:    'Es un diagrama técnico de circuito de seguridad.',
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: 'que es circuito2_.jpeg ?' }, as: :json
+    end
+
+    assert_response :success
+    session = ConversationSession.find_by(identifier: @user.id.to_s, channel: 'web')
+    assert session.active_entities.key?('circuito2_.jpeg'),
+           'Filename from question should be registered via fallback'
+  end
+
+  test 'ask does NOT register entity when answer is no-results guardrail' do
+    sign_in @user
+
+    guardrail = 'No se encontró información sobre tu consulta. Sube un archivo...'
+    mock = create_mock_orchestrator(answer: guardrail, citations: [], session_id: nil)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: 'que es schema.pdf ?' }, as: :json
+    end
+
+    assert_response :success
+    session = ConversationSession.find_by(identifier: @user.id.to_s, channel: 'web')
+    assert_equal 0, session.entity_count,
+                 'No entity should be registered when answer is guardrail'
+  end
+
   private
 
   def json_response

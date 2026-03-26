@@ -29,13 +29,17 @@ class QueryOrchestratorService
   # @param tenant [Tenant, nil] Optional tenant for multi-tenant data source selection
   # @param session_id [String, nil] Bedrock multi-turn session (e.g. WhatsApp thread)
   # @param response_locale [Symbol, nil] :en / :es to force generation language; nil = infer from query text
-  def initialize(query, images: [], documents: [], tenant: nil, session_id: nil, response_locale: nil)
+  # @param conv_session [ConversationSession, nil] Web/API session — passed to ingestion job for entity registration
+  def initialize(query, images: [], documents: [], tenant: nil, session_id: nil, response_locale: nil, session_context: nil,
+                 conv_session: nil)
     @query = query
     @images = images || []
     @documents = documents || []
     @tenant = tenant
     @session_id = session_id
     @response_locale = response_locale
+    @session_context = session_context
+    @conv_session = conv_session
     @ai_provider = AiProvider.new
   end
 
@@ -90,7 +94,8 @@ class QueryOrchestratorService
       BedrockRagService.new(tenant: @tenant || current_tenant).query(
         @query,
         session_id: @session_id,
-        response_locale: @response_locale
+        response_locale: @response_locale,
+        session_context: @session_context
       )
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
@@ -103,7 +108,8 @@ class QueryOrchestratorService
       BedrockRagService.new(tenant: @tenant || current_tenant).query(
         @query,
         session_id: @session_id,
-        response_locale: @response_locale
+        response_locale: @response_locale,
+        session_context: @session_context
       )
     end
   end
@@ -146,7 +152,8 @@ class QueryOrchestratorService
         result[:job_id],
         uploaded_filenames,
         kb_id: result[:kb_id],
-        data_source_id: result[:data_source_id]
+        data_source_id: result[:data_source_id],
+        conv_session_id: @conv_session&.id
       )
     end
     uploaded_filenames
@@ -171,7 +178,8 @@ class QueryOrchestratorService
       kb_result = BedrockRagService.new(tenant: @tenant || current_tenant).query(
         @query,
         session_id: @session_id,
-        response_locale: @response_locale
+        response_locale: @response_locale,
+        session_context: @session_context
       )
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")
@@ -195,6 +203,8 @@ class QueryOrchestratorService
     {
       answer: merged_answer,
       citations: kb_result[:citations] || [],
+      retrieved_citations: kb_result[:retrieved_citations],
+      doc_refs: kb_result[:doc_refs],
       session_id: kb_result[:session_id]
     }
   end

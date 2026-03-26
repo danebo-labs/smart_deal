@@ -29,3 +29,6 @@
 
 en:
   hello: "Hello world"
+  rag:
+    whatsapp_indexed_generic: "✅ Document processed and available.\nFile: %{filename}\nAsk me about this document."
+    whatsapp_indexed_with_aliases: "✅ %{name}\nAsk me by: %{aliases}"

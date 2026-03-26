@@ -17,6 +17,8 @@ class BedrockRagService
   # Matches the default Bedrock guardrail response when no KB results are found.
   BEDROCK_NO_RESULTS_PATTERN = /\AI'?m sorry[,.]|sorry,?\s+i\s+(am\s+)?unable\s+to\s+(assist|help)/i.freeze
 
+  DOC_REFS_PATTERN = /<DOC_REFS>\s*(.*?)\s*<\/DOC_REFS>/m.freeze
+
   # Default RAG config (safety-critical for elevator domain).
   # Overridden by ENV (BEDROCK_RAG_*) and tenant.bedrock_config.rag_config when present.
   DEFAULT_RAG_CONFIG = {
@@ -30,7 +32,7 @@ class BedrockRagService
   # This method constructs the config dynamically to include prompt templates
   # @param question [String] Used to detect response language when response_locale is nil
   # @param response_locale [Symbol, nil] When set (:en / :es), overrides question-based detection for the generation prompt
-  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil)
+  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil)
     cfg = @rag_config
     {
       # ===== RETRIEVAL CONFIGURATION =====
@@ -73,7 +75,7 @@ class BedrockRagService
 
         # Custom prompt template for generation (includes language instruction from question text)
         prompt_template: {
-          text_prompt_template: load_generation_prompt_with_locale(question, response_locale: response_locale)
+          text_prompt_template: load_generation_prompt_with_locale(question, response_locale: response_locale, session_context: session_context)
         },
 
         # Additional model request fields (model-specific parameters)
@@ -115,7 +117,7 @@ class BedrockRagService
   end
 
   # Query the Knowledge Base using RAG with retrieve_and_generate API
-  def query(question, session_id: nil, custom_config: {}, response_locale: nil)
+  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -128,7 +130,7 @@ class BedrockRagService
 
     begin
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale)
+      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context)
       config = deep_merge_configs(base_config, custom_config)
 
 
@@ -162,6 +164,10 @@ class BedrockRagService
       # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
       no_results_locale = effective_response_locale(question, response_locale: response_locale)
       answer_text = bedrock_no_results?(raw_answer) ? localized_no_results(no_results_locale) : raw_answer
+      doc_refs_result = extract_doc_refs(answer_text)
+      answer_text = doc_refs_result[:clean_answer]
+      doc_refs = doc_refs_result[:doc_refs]
+      Rails.logger.info("BedrockRagService: doc_refs=#{doc_refs&.size || 'nil'}") if doc_refs
       citations = @citation_processor.extract_citations(response.citations)
       session_id = response.session_id
 
@@ -201,9 +207,19 @@ class BedrockRagService
       end
 
       {
-        answer: answer_text,
-        citations: numbered_references,
-        session_id: session_id
+        answer:              answer_text,
+        citations:           numbered_references,
+        # Chunks that Haiku actually cited anywhere in the answer (superset of
+        # numbered_references, which only includes those with explicit [n] markers).
+        # NOTE: these are NOT "all retrieved chunks" — Bedrock's vector search
+        # retrieves top-N chunks and passes ALL of them to Haiku as $search_results$,
+        # but only the ones Haiku chose to cite appear in response.citations[].
+        # retrieved_references[]. Uncited chunks are not returned by the API.
+        # EntityExtractorService uses this to parse DOCUMENT_ALIASES from S0-section
+        # chunks that were cited but happened to not get an explicit [n] marker.
+        retrieved_citations: citations,
+        doc_refs:            doc_refs,
+        session_id:          session_id
       }
     rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
       Rails.logger.error("Bedrock RAG error: #{e.message}")
@@ -291,7 +307,7 @@ class BedrockRagService
 
   # Loads generation prompt with explicit language instruction.
   # Uses response_locale when set; otherwise detects from question or I18n.locale.
-  def load_generation_prompt_with_locale(question = nil, response_locale: nil)
+  def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil)
     base = self.class.load_generation_prompt_template
     locale = if response_locale.present?
       response_locale.to_sym
@@ -301,13 +317,16 @@ class BedrockRagService
       I18n.locale
     end
     lang_name = locale_to_language_name(locale)
-    return base if lang_name.blank?
 
-    # Inject explicit language instruction after LANGUAGE & TONE header
-    base.sub(
-      /(# LANGUAGE & TONE\n)/,
-      "\\1- CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}.\n"
-    )
+    if lang_name.present?
+      base = base.sub(
+        /(# LANGUAGE & TONE\n)/,
+        "\\1- CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}.\n"
+      )
+    end
+
+    base = "#{base}\n\n#{session_context}" if session_context.present?
+    base
   end
 
   # Detects response language from the question text. Does not depend on browser/headers.
@@ -357,6 +376,42 @@ class BedrockRagService
       else
         new_val
       end
+    end
+  end
+
+  def extract_doc_refs(answer_text)
+    match = answer_text.match(DOC_REFS_PATTERN)
+    return { clean_answer: answer_text, doc_refs: nil } unless match
+
+    begin
+      parsed = JSON.parse(match[1].strip)
+
+      unless parsed.is_a?(Array) && parsed.all? { |r| r.is_a?(Hash) && r["canonical_name"].present? }
+        Rails.logger.warn("BedrockRagService: <DOC_REFS> JSON valid but unexpected structure")
+        return { clean_answer: answer_text, doc_refs: nil }
+      end
+
+      sanitized = parsed.map do |ref|
+        aliases = Array(ref["aliases"])
+          .map { |a| a.to_s.strip }
+          .select { |a| a.length.between?(2, 60) }
+          .reject { |a| a.match?(/[|⚠️→←]|\*\*|^\#/) }
+          .first(10)
+
+        {
+          "source_uri"     => ref["source_uri"].to_s,
+          "canonical_name" => ref["canonical_name"].to_s.strip,
+          "aliases"        => aliases,
+          "doc_type"       => ref["doc_type"].to_s.presence || "unknown"
+        }
+      end
+
+      clean = answer_text.sub(DOC_REFS_PATTERN, '').rstrip
+      { clean_answer: clean, doc_refs: sanitized }
+
+    rescue JSON::ParserError => e
+      Rails.logger.warn("BedrockRagService: <DOC_REFS> JSON parse failed: #{e.message}")
+      { clean_answer: answer_text, doc_refs: nil }
     end
   end
 end

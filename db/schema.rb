@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_21_133924) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_26_192938) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -51,6 +51,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_21_133924) do
     t.decimal "value", precision: 20, scale: 6, null: false
     t.index [ "date", "metric_type" ], name: "index_cost_metrics_on_date_and_metric_type", unique: true
     t.index [ "date" ], name: "index_cost_metrics_on_date"
+  end
+
+  create_table "technician_documents", force: :cascade do |t|
+    t.jsonb "aliases", default: [], null: false
+    t.string "canonical_name", null: false
+    t.string "channel", default: "whatsapp", null: false
+    t.datetime "created_at", null: false
+    t.string "doc_type"
+    t.string "identifier", null: false
+    t.integer "interaction_count", default: 1, null: false
+    t.datetime "last_used_at", null: false
+    t.string "source_uri"
+    t.datetime "updated_at", null: false
+    t.string "wa_filename"
+    t.index [ "identifier", "channel", "canonical_name" ], name: "idx_tech_docs_unique", unique: true
+    t.index [ "identifier", "channel", "last_used_at" ], name: "idx_tech_docs_recent"
   end
 
   create_table "users", force: :cascade do |t|

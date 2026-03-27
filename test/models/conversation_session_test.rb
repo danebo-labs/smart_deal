@@ -482,4 +482,69 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal({}, s.current_procedure)
     assert_equal 'active', s.session_status
   end
+
+  # ─── 3.4 — preload_recent_entities ──────────────────────────────────────────
+
+  test 'find_or_create_for preloads recent TechnicianDocuments into a new session' do
+    TechnicianDocument.delete_all
+    identifier = "whatsapp:+56900000099"
+    channel    = "whatsapp"
+
+    TechnicianDocument.create!(
+      identifier:        identifier,
+      channel:           channel,
+      canonical_name:    "Junction Box Car Top",
+      aliases:           [ "junction box" ],
+      source_uri:        "s3://bucket/junction_box.pdf",
+      doc_type:          "diagram",
+      last_used_at:      1.hour.ago,
+      interaction_count: 3
+    )
+
+    ConversationSession.where(identifier: identifier, channel: channel).destroy_all
+
+    session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
+    session.reload
+
+    assert session.active_entities.key?("Junction Box Car Top"),
+           "Expected preloaded entity from TechnicianDocument"
+    entity = session.active_entities["Junction Box Car Top"]
+    assert_equal "preloaded_from_history", entity["extraction_method"]
+    assert_equal "s3://bucket/junction_box.pdf", entity["source_uri"]
+  end
+
+  test 'find_or_create_for does not preload when session already exists and is active' do
+    TechnicianDocument.delete_all
+    identifier = "whatsapp:+56900000098"
+    channel    = "whatsapp"
+
+    existing = ConversationSession.create!(
+      identifier: identifier, channel: channel, expires_at: 25.minutes.from_now
+    )
+    existing.add_entity("existing.pdf", { "source" => "retrieve_result" })
+
+    TechnicianDocument.create!(
+      identifier: identifier, channel: channel, canonical_name: "Should Not Load",
+      last_used_at: Time.current, interaction_count: 1
+    )
+
+    session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
+    session.reload
+
+    assert_not session.active_entities.key?("Should Not Load"),
+               "preload must NOT run for an existing active session"
+    assert session.active_entities.key?("existing.pdf")
+  end
+
+  test 'preload_recent_entities is no-op when no TechnicianDocuments exist' do
+    TechnicianDocument.delete_all
+    identifier = "whatsapp:+56900000097"
+    channel    = "whatsapp"
+    ConversationSession.where(identifier: identifier, channel: channel).destroy_all
+
+    session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
+    session.reload
+
+    assert_equal({}, session.active_entities)
+  end
 end

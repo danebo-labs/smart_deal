@@ -294,7 +294,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query appends session_context to generation prompt when provided' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
-      ctx = "## Session Focus\n- [document] manual.pdf"
+      ctx = "## Session Focus\nThe following documents/images have been referenced\n- [document] manual.pdf"
       service.query('What is S3?', session_context: ctx)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -304,7 +304,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :prompt_template,
         :text_prompt_template
       )
-      assert_includes template, '## Session Focus'
+      assert_includes template, "## Session Focus\nThe following documents"
       assert_includes template, '[document] manual.pdf'
     end
   end
@@ -321,7 +321,103 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :prompt_template,
         :text_prompt_template
       )
-      assert_not_includes template, 'Session Focus'
+      # RULE 9 in the base prompt contains the quoted text "## Session Focus" but not
+      # the injected block header followed by its descriptive line. That combination
+      # only appears when SessionContextBuilder.build injects real session content.
+      assert_not_includes template, "## Session Focus\nThe following documents"
+    end
+  end
+
+  # ============================================
+  # 3.1 — Entity-Aware Retrieval Filter
+  # ============================================
+
+  test 'build_complete_optimized_config adds or_all filter when 2+ entity_s3_uris given' do
+    service = BedrockRagService.new
+    uris = [ 's3://bucket/doc1.pdf', 's3://bucket/doc2.pdf' ]
+    config = service.build_complete_optimized_config(entity_s3_uris: uris)
+
+    filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+    assert_not_nil filter
+    assert_equal 2, filter[:or_all].size
+    assert_equal 's3://bucket/doc1.pdf', filter[:or_all][0][:equals][:value]
+  end
+
+  test 'build_complete_optimized_config uses equals filter for single entity_s3_uri' do
+    service = BedrockRagService.new
+    config = service.build_complete_optimized_config(entity_s3_uris: [ 's3://bucket/only.pdf' ])
+
+    filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+    assert_not_nil filter
+    assert_nil filter[:or_all], "Should not use or_all for a single URI"
+    assert_equal 's3://bucket/only.pdf', filter.dig(:equals, :value)
+  end
+
+  test 'build_complete_optimized_config omits filter when entity_s3_uris empty' do
+    service = BedrockRagService.new
+    config = service.build_complete_optimized_config(entity_s3_uris: [])
+
+    filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+    assert_nil filter
+  end
+
+  test 'query sends filter params to Bedrock when entity_s3_uris provided and query is short' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
+
+      filter = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :retrieval_configuration,
+        :vector_search_configuration,
+        :filter
+      )
+      assert_not_nil filter, "Expected filter to be present for short query"
+    end
+  end
+
+  test 'query omits filter when query is long and names a different document' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('Show me information about the MotorController installation manual please',
+                    entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
+
+      filter = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :retrieval_configuration,
+        :vector_search_configuration,
+        :filter
+      )
+      assert_nil filter, "Expected filter to be absent when query names a different document"
+    end
+  end
+
+  test 'query retries without filter when filtered result returns no results' do
+    call_count = 0
+    no_results_text = "I'm sorry, I couldn't find relevant information."
+    real_answer     = "Here are the torque values: 10 Nm."
+
+    with_mock_bedrock_client do |client|
+      client.define_singleton_method(:retrieve_and_generate) do |params|
+        call_count += 1
+        filter_present = params.dig(
+          :retrieve_and_generate_configuration,
+          :knowledge_base_configuration,
+          :retrieval_configuration,
+          :vector_search_configuration,
+          :filter
+        ).present?
+        text = filter_present ? no_results_text : real_answer
+        ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: [], session_id: 'sid')
+      end
+
+      service = BedrockRagService.new
+      result = service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
+
+      assert_equal 2, call_count, "Expected 2 calls: one with filter, one without"
+      assert_equal real_answer, result[:answer]
     end
   end
 end

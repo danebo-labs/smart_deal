@@ -293,4 +293,108 @@ class EntityExtractorServiceTest < ActiveSupport::TestCase
     assert_equal "haiku_doc_refs", entity["extraction_method"]
     assert_includes entity["aliases"], "other_doc.pdf"
   end
+
+  # ============================================
+  # 3.3 — first_answer_summary stored in entity
+  # ============================================
+
+  test 'stores first_answer_summary in entity metadata when answer is provided' do
+    session  = build_session
+    service  = EntityExtractorService.new(session)
+    doc_refs = [ {
+      "source_uri"     => "s3://bucket/junction_box.pdf",
+      "canonical_name" => "Junction Box Car Top",
+      "aliases"        => [],
+      "doc_type"       => "diagram"
+    } ]
+    answer = "The Junction Box Car Top is mounted on the car top and contains the safety chain relay."
+    service.extract_and_update([], user_message: "qué es?", doc_refs: doc_refs, answer: answer)
+    session.reload
+
+    entity = session.active_entities["Junction Box Car Top"]
+    assert_not_nil entity["first_answer_summary"]
+    assert_includes entity["first_answer_summary"], "safety chain relay"
+  end
+
+  test 'first_answer_summary is truncated to 200 chars' do
+    session  = build_session
+    service  = EntityExtractorService.new(session)
+    doc_refs = [ {
+      "source_uri"     => "s3://bucket/manual.pdf",
+      "canonical_name" => "Big Manual",
+      "aliases"        => [],
+      "doc_type"       => "manual"
+    } ]
+    long_answer = "x" * 500
+    service.extract_and_update([], user_message: "info", doc_refs: doc_refs, answer: long_answer)
+    session.reload
+
+    summary = session.active_entities["Big Manual"]["first_answer_summary"]
+    assert_equal 200, summary.length
+  end
+
+  test 'first_answer_summary is absent when answer is blank' do
+    session  = build_session
+    service  = EntityExtractorService.new(session)
+    doc_refs = [ {
+      "source_uri"     => "s3://bucket/doc.pdf",
+      "canonical_name" => "Doc",
+      "aliases"        => [],
+      "doc_type"       => "manual"
+    } ]
+    service.extract_and_update([], user_message: "info", doc_refs: doc_refs, answer: nil)
+    session.reload
+
+    entity = session.active_entities["Doc"]
+    assert_nil entity["first_answer_summary"]
+  end
+
+  # ============================================
+  # 3.4 — persist_to_technician_documents called
+  # ============================================
+
+  test 'persist_to_technician_documents creates TechnicianDocument on doc_refs registration' do
+    TechnicianDocument.delete_all
+    session  = build_session
+    service  = EntityExtractorService.new(session)
+    doc_refs = [ {
+      "source_uri"     => "s3://bucket/junction_box.pdf",
+      "canonical_name" => "Junction Box Car Top",
+      "aliases"        => [ "junction box" ],
+      "doc_type"       => "diagram"
+    } ]
+
+    service.extract_and_update([], user_message: "qué es?", doc_refs: doc_refs)
+
+    td = TechnicianDocument.find_by(
+      identifier:     session.identifier,
+      channel:        session.channel,
+      canonical_name: "Junction Box Car Top"
+    )
+    assert_not_nil td, "Expected TechnicianDocument to be created"
+    assert_equal "s3://bucket/junction_box.pdf", td.source_uri
+    assert_includes td.aliases, "junction box"
+  end
+
+  test 'persist failure does not raise and entity is still registered' do
+    session  = build_session
+    service  = EntityExtractorService.new(session)
+    doc_refs = [ {
+      "source_uri"     => "s3://bucket/motor.pdf",
+      "canonical_name" => "Motor Controller",
+      "aliases"        => [],
+      "doc_type"       => "manual"
+    } ]
+
+    original = TechnicianDocument.method(:upsert_from_entity)
+    TechnicianDocument.define_singleton_method(:upsert_from_entity) { |**_| raise "DB down" }
+
+    begin
+      assert_nothing_raised { service.extract_and_update([], user_message: "info", doc_refs: doc_refs) }
+      session.reload
+      assert session.active_entities.key?("Motor Controller"), "Entity must still be registered"
+    ensure
+      TechnicianDocument.define_singleton_method(:upsert_from_entity) { |**kwargs| original.call(**kwargs) }
+    end
+  end
 end

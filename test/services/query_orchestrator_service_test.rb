@@ -518,4 +518,27 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
 
     assert_not invoked, 'AiProvider should NOT be called when tenant is nil (rag_only bypass)'
   end
+
+  # ============================================
+  # 3.1 — entity_s3_uris forwarded to KB service
+  # ============================================
+
+  test 'passes entity_s3_uris to BedrockRagService#query' do
+    received_uris = nil
+    original_new  = BedrockRagService.method(:new)
+    mock_service  = Object.new
+    mock_service.define_singleton_method(:query) do |_q, **kwargs|
+      received_uris = kwargs[:entity_s3_uris]
+      KB_RESPONSE
+    end
+    BedrockRagService.define_singleton_method(:new) { |**_| mock_service }
+
+    begin
+      uris = [ 's3://bucket/doc.pdf' ]
+      QueryOrchestratorService.new('dame los torques', entity_s3_uris: uris).execute
+      assert_equal uris, received_uris
+    ensure
+      BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) }
+    end
+  end
 end

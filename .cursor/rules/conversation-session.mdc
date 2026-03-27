@@ -1,0 +1,28 @@
+---
+description: ConversationSession, entities, session context
+globs:
+  - app/models/conversation_session.rb
+  - app/services/entity_extractor_service.rb
+  - app/services/session_context_builder.rb
+  - test/models/conversation_session_test.rb
+  - test/services/entity_extractor_service_test.rb
+  - test/services/session_context_builder_test.rb
+---
+ConversationSession Architecture:
+- active_entities: jsonb, capped at MAX_ENTITIES, FIFO eviction via evict_oldest!
+- conversation_history: jsonb, capped at MAX_HISTORY msgs, truncated to MAX_MSG_LENGTH chars
+- current_procedure: jsonb, default {} — stores step-by-step procedure state when active
+- session_status: "active" | "in_procedure" — controls TTL and message routing behavior
+- Session TTL: EXPIRY_MINUTES (dynamic — extended during active procedures). Refreshed on each interaction.
+- find_or_create_for: destroys expired, creates new. Unique index on [identifier, channel]
+- Dedup: find_entity_by_name_or_alias (case-insensitive on keys, wa_filename, aliases)
+Entity extraction_methods (ordered by quality):
+  haiku_doc_refs > chunk_aliases > pending_first_query > filename_only > filename_from_text
+EntityExtractorService flow:
+  1. Primary: doc_refs present → register_from_doc_refs → promote or add_entity_with_aliases
+  2. Fallback: no doc_refs → register_from_citation_filenames → add_entity
+  3. promote_pending_entity: ALWAYS preserve wa_filename when old starts with "wa_"
+SessionContextBuilder.build(session) → String injected into generation prompt:
+  - ## Session Focus (entities with type + aliases)
+  - ## Recent Conversation (last 3 turns)
+Tests create sessions programmatically (no fixtures for conversation_sessions)

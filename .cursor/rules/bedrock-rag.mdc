@@ -1,0 +1,29 @@
+---
+description: Bedrock RAG pipeline, retrieval, generation, prompts
+globs:
+  - app/services/bedrock*.rb
+  - app/services/bedrock/**
+  - app/prompts/**
+  - app/services/ai_provider.rb
+  - app/services/chunk_alias_extractor.rb
+---
+Bedrock RAG Architecture:
+- retrieve_and_generate API with HYBRID search, Haiku 4.5 generation
+- DOC_REFS (RULE 8): <DOC_REFS>[JSON]</DOC_REFS> — mandatory, parsed by extract_doc_refs in bedrock_rag_service.rb
+- Aurora cold-start: exponential backoff 15/30/45s in retrieve_and_generate_with_retry
+- Chunk identity: **Document:** and **DOCUMENT_ALIASES:** headers in chunks (injected by Opus parsing)
+- ChunkAliasExtractor uses `retrieve` API (vector only, no LLM) with metadata filter by S3 URI
+- NEVER send images to LLM. Always S3 → KB → retrieve
+- Reranker gated by BEDROCK_RERANKER_ENABLED env var (default off)
+- session_context (from SessionContextBuilder) appended to generation prompt
+- KB/bucket resolution: ENV → credentials.dig(:bedrock, ...) → defaults
+- Stubs in tests: FakeBedrockAgentClient inner classes, define_singleton_method pattern (NO Mocha)
+
+AWS KB Infrastructure (from kb:config):
+- Vector store: Amazon Aurora PostgreSQL (RDS) — cold-start backoff applies
+- Chunking: HIERARCHICAL (parent/child levels with overlap)
+- Parsing: Opus foundation model with custom prompt (identity injection: DOCUMENT + DOCUMENT_ALIASES headers)
+- Post-chunking: Lambda custom transformation injects [DOCUMENT:] and [SEARCH_ALIASES:] into each chunk
+- Embedding: Titan Embeddings (dimensions configured in KB)
+- Multimodal: supplemental S3 storage for image chunks
+- Search: HYBRID (vector + keyword), configurable via BEDROCK_RAG_SEARCH_TYPE

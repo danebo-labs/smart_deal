@@ -1,0 +1,18 @@
+---
+description: Minitest conventions and patterns
+globs:
+  - test/**
+---
+Testing Conventions (Minitest — NOT RSpec):
+- ActiveSupport::TestCase for services/models
+- ActiveJob::TestCase for jobs
+- ActionDispatch::IntegrationTest for controllers
+- NO Mocha gem. Stubs via define_singleton_method on class + ensure restore original Method
+- Fake AWS clients as inner classes (FakeBedrockAgentClient, FakeS3Client, etc.)
+- parallelize(workers: 1) when tests touch global singletons, AWS clients, or Rails.cache
+- ConversationSession: always create! programmatically with unique identifier, never fixtures
+- ActionCable: include ActionCable::TestHelper, capture_broadcasts("kb_sync")
+- RagController: include Devise::Test::IntegrationHelpers, sign_in users(:one), as: :json
+- ENV stubs: save original, set in setup/block, restore in teardown/ensure
+- fixtures :all is loaded globally via test_helper.rb (users, bedrock_queries)
+- Always verify bin/rails test passes after changes

@@ -1,0 +1,19 @@
+---
+description: WhatsApp channel via Twilio
+globs:
+  - app/controllers/twilio_controller.rb
+  - app/jobs/send_whatsapp_reply_job.rb
+  - app/jobs/process_whatsapp_media_job.rb
+  - test/controllers/twilio_controller_test.rb
+  - test/jobs/send_whatsapp_reply_job_test.rb
+---
+WhatsApp Channel Rules:
+- Idempotency: Rails.cache key "twilio_msg:#{MessageSid}" 24h via Solid Cache
+- Reply chunks: max 1550 chars, split_for_whatsapp, 0.5s gap between Twilio sends
+- NO Markdown tables in WhatsApp output. Use ① ② ③, emojis, plain text
+- Media flow: ProcessWhatsappMediaJob → compress (ruby-vips) → S3 upload (wa_YYYYMMDD_HHMMSS_N.ext) → KbSyncService → BedrockIngestionJob
+- conv_session_id MUST be passed through entire job chain
+- Locale: sticky per-thread via Rails.cache (7d TTL), short follow-ups (≤200 chars) inherit previous locale
+- session_id is NOT forwarded to Bedrock for WhatsApp (stateless retrieval — intentional design choice)
+- TwilioController responds with empty TwiML immediately; actual RAG runs in background job
+- whatsapp_from = our Twilio number (to from webhook), whatsapp_to = end user (from from webhook)

@@ -18,8 +18,9 @@ class SendWhatsappReplyJob < ApplicationJob
   def perform(to:, from:, body:, conv_session_id: nil)
     conv_session    = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
     session_context = conv_session ? SessionContextBuilder.build(conv_session) : nil
+    entity_s3_uris  = SessionContextBuilder.entity_s3_uris(conv_session)
 
-    result = execute_rag_query(body, whatsapp_to: to, session_context: session_context, conv_session: conv_session)
+    result = execute_rag_query(body, whatsapp_to: to, session_context: session_context, conv_session: conv_session, entity_s3_uris: entity_s3_uris)
     reply  = format_rag_response_for_whatsapp(result)
     chunks = split_for_whatsapp(reply)
 

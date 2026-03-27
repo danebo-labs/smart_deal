@@ -17,9 +17,11 @@ class SessionContextBuilder
       entities.each do |key, meta|
         type    = meta["source"] == "image_upload" ? "image" : "document"
         aliases = Array(meta["aliases"]).compact_blank
+        summary = meta["first_answer_summary"]
 
-        alias_note = aliases.any? ? "  (also: #{aliases.join(', ')})" : ""
-        lines << "- [#{type}] #{key}#{alias_note}"
+        alias_note   = aliases.any? ? "  (also: #{aliases.join(', ')})" : ""
+        summary_note = summary.present? ? "\n    Summary: #{summary}" : ""
+        lines << "- [#{type}] #{key}#{alias_note}#{summary_note}"
       end
 
       parts << <<~BLOCK.strip
@@ -40,5 +42,21 @@ class SessionContextBuilder
     end
 
     parts.join("\n\n")
+  end
+
+  # Returns S3 URIs of all active entities that have a known source_uri.
+  # Used by BedrockRagService to scope KB retrieval to session documents.
+  # Rejects fabricated URIs (e.g. s3://unknown-bucket/...) that Haiku sometimes
+  # invents when it can't find the real sourceUrl in the chunk metadata.
+  FABRICATED_URI_PATTERN = %r{\As3://(unknown|placeholder|no[_-]?bucket)}i.freeze
+
+  def self.entity_s3_uris(session)
+    return [] if session.nil?
+
+    session.active_entities.values
+      .filter_map { |meta| meta["source_uri"] }
+      .select { |uri| uri.start_with?("s3://") }
+      .reject { |uri| uri.match?(FABRICATED_URI_PATTERN) }
+      .uniq
   end
 end

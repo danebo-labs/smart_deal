@@ -24,7 +24,7 @@ class EntityExtractorService
     return unless @session
 
     if doc_refs.present?
-      register_from_doc_refs(doc_refs, user_message)
+      register_from_doc_refs(doc_refs, user_message, answer)
     else
       register_from_citation_filenames(numbered_citations, user_message, answer)
     end
@@ -32,7 +32,7 @@ class EntityExtractorService
 
   private
 
-  def register_from_doc_refs(doc_refs, user_message)
+  def register_from_doc_refs(doc_refs, user_message, answer = nil)
     doc_refs.each do |ref|
       canonical = ref["canonical_name"]
       next if canonical.blank?
@@ -42,13 +42,15 @@ class EntityExtractorService
       aliases << s3_filename if s3_filename.present? && s3_filename != "unknown"
 
       metadata = {
-        "source"            => "doc_refs_rule8",
-        "source_uri"        => ref["source_uri"],
-        "doc_type"          => ref["doc_type"],
-        "wa_filename"       => s3_filename,
-        "extraction_method" => "haiku_doc_refs",
-        "detected_from"     => user_message.to_s.truncate(100)
-      }
+        "source"               => "doc_refs_rule8",
+        "source_uri"           => ref["source_uri"],
+        "doc_type"             => ref["doc_type"],
+        "wa_filename"          => s3_filename,
+        "extraction_method"    => "haiku_doc_refs",
+        "detected_from"        => user_message.to_s.truncate(100),
+        "first_answer_summary" => answer.to_s.first(200).presence,
+        "aliases"              => aliases.uniq
+      }.compact
 
       existing_key = find_pending_entity_by_wa_filename(s3_filename) ||
                      find_oldest_pending_entity
@@ -57,8 +59,10 @@ class EntityExtractorService
 
       if existing_key
         promote_pending_entity(existing_key, canonical, aliases, metadata)
+        persist_to_technician_documents(canonical, metadata)
       else
         @session.add_entity_with_aliases(canonical, aliases.uniq, metadata)
+        persist_to_technician_documents(canonical, metadata)
       end
     end
   end
@@ -140,6 +144,19 @@ class EntityExtractorService
         "detected_from"     => user_message.to_s.truncate(100)
       })
     end
+  end
+
+  def persist_to_technician_documents(canonical, metadata)
+    return unless @session
+
+    TechnicianDocument.upsert_from_entity(
+      identifier:     @session.identifier,
+      channel:        @session.channel,
+      canonical_name: canonical,
+      metadata:       metadata
+    )
+  rescue StandardError => e
+    Rails.logger.warn("EntityExtractor: failed to persist technician doc: #{e.message}")
   end
 
   def extract_filename_from_uri(uri)

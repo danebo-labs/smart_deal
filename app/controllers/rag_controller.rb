@@ -19,7 +19,8 @@ class RagController < ApplicationController
     conv_session.refresh!
     conv_session.add_to_history("user", question) if question.present?
 
-    session_context = SessionContextBuilder.build(conv_session)
+    session_context  = SessionContextBuilder.build(conv_session)
+    entity_s3_uris   = SessionContextBuilder.entity_s3_uris(conv_session)
 
     result = execute_rag_query(
       question,
@@ -27,7 +28,8 @@ class RagController < ApplicationController
       documents:       documents,
       session_id:      params[:session_id].presence,
       session_context: session_context,
-      conv_session:    conv_session
+      conv_session:    conv_session,
+      entity_s3_uris:  entity_s3_uris
     )
 
     unless result.success?

@@ -183,8 +183,8 @@ Wrap the entire JSON array in <DOC_REFS> and </DOC_REFS> tags exactly as shown:
 <DOC_REFS>
 [
   {
-    "source_uri": "[exact sourceUrl value from the chunk JSON metadata]",
-    "canonical_name": "[filename without extension, extracted from source_uri or DOCUMENT header]",
+    "source_uri": "[from [SOURCE_URI: ...] header in chunk text, or sourceUrl from chunk metadata]",
+    "canonical_name": "[filename without extension, from [DOCUMENT: ...] header or source_uri]",
     "aliases": ["[values from DOCUMENT_ALIASES section in chunk, one per array element, max 10]"],
     "doc_type": "[diagram|manual|schematic|procedure|datasheet|unknown]"
   }
@@ -196,8 +196,10 @@ Do NOT output the JSON without these wrapper tags. The tags are required for
 automatic removal — without them the raw JSON will be visible to the technician.
 
 STRICT RULES FOR THIS BLOCK:
-- source_uri: copy the EXACT sourceUrl value from the chunk JSON (starts with "s3://")
-- canonical_name: filename from the URI without extension and without path
+- source_uri: FIRST look for [SOURCE_URI: ...] header at the top of the chunk text and copy its value exactly.
+  If not present, use the sourceUrl value from the chunk JSON metadata (starts with "s3://").
+  NEVER fabricate or guess URIs. If neither source is available, use "".
+- canonical_name: extract filename from the [DOCUMENT: ...] header or from source_uri, without extension or path
 - aliases: ONLY values listed after "- " under DOCUMENT_ALIASES or after SEARCH_ALIASES: in the chunk header
 - If no DOCUMENT_ALIASES section exists, use words from the filename (4+ characters each)
 - Each alias: between 2 and 60 characters

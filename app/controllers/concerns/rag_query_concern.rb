@@ -28,7 +28,7 @@ module RagQueryConcern
   # @param whatsapp_to [String, nil] Recipient id (e.g. whatsapp:+...) — enables session + locale persistence across messages
   # @return [RagResult] Structured result with success status and data or error info
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil, whatsapp_to: nil, session_context: nil,
-                         conv_session: nil)
+                         conv_session: nil, entity_s3_uris: [])
     question = question.to_s.strip
     images = Array(images).compact
     documents = Array(documents).compact
@@ -73,7 +73,8 @@ module RagQueryConcern
       session_id: session_id,
       response_locale: resolved_response_locale,
       session_context: session_context,
-      conv_session: conv_session
+      conv_session: conv_session,
+      entity_s3_uris: Array(entity_s3_uris)
     ).execute
 
     if whatsapp_to.present? && cache_key

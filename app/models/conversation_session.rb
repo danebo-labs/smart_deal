@@ -32,9 +32,24 @@ class ConversationSession < ApplicationRecord
         user_id:     user_id,
         expires_at:  EXPIRY_MINUTES.minutes.from_now
       )
+      preload_recent_entities(record)
     end
 
     record
+  end
+
+  def self.preload_recent_entities(session)
+    TechnicianDocument.recent_for(session.identifier, session.channel, limit: 3).each do |td|
+      session.add_entity_with_aliases(td.canonical_name, td.aliases, {
+        "source"            => "technician_memory",
+        "wa_filename"       => td.wa_filename,
+        "source_uri"        => td.source_uri,
+        "doc_type"          => td.doc_type,
+        "extraction_method" => "preloaded_from_history"
+      })
+    end
+  rescue StandardError => e
+    Rails.logger.warn("ConversationSession: preload_recent_entities failed: #{e.message}")
   end
 
   def expired?

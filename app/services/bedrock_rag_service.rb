@@ -32,35 +32,35 @@ class BedrockRagService
   # This method constructs the config dynamically to include prompt templates
   # @param question [String] Used to detect response language when response_locale is nil
   # @param response_locale [Symbol, nil] When set (:en / :es), overrides question-based detection for the generation prompt
-  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil)
+  # @param entity_s3_uris [Array<String>] S3 URIs of active session documents; when non-empty, adds metadata filter
+  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [])
     cfg = @rag_config
+
+    vector_config = {
+      number_of_results: cfg[:number_of_results],
+      override_search_type: cfg[:search_type],
+      **reranking_config(region)
+    }
+
+    # Narrow retrieval to session-active documents when URIs are known.
+    # Reduces cross-document pollution for short/ambiguous follow-up queries.
+    # AWS requires orAll to have >= 2 members; use equals directly for a single URI.
+    if entity_s3_uris.size == 1
+      vector_config[:filter] = {
+        equals: { key: "x-amz-bedrock-kb-source-uri", value: entity_s3_uris.first }
+      }
+    elsif entity_s3_uris.size >= 2
+      vector_config[:filter] = {
+        or_all: entity_s3_uris.map { |uri|
+          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } }
+        }
+      }
+    end
+
     {
       # ===== RETRIEVAL CONFIGURATION =====
       retrieval_configuration: {
-        vector_search_configuration: {
-          number_of_results: cfg[:number_of_results],
-          override_search_type: cfg[:search_type],
-
-          # Reranking — disabled by default until ARN / availability confirmed.
-          # Enable via BEDROCK_RERANKER_ENABLED=true after verifying the model is
-          # accessible in your region and the ARN is correct.
-          # WARNING: if the reranker fails silently, retrieved_references = 0 and
-          # Haiku generates a response from parametric memory ($search_results$ = empty).
-          **reranking_config(region)
-
-          # Metadata filtering (optional) - removed empty filter as API requires at least one filter type
-          # To add filtering, uncomment and configure:
-          # filter: {
-          #   and_all: [
-          #     {
-          #       equals: {
-          #         key: "document_type",
-          #         value: "manual"
-          #       }
-          #     }
-          #   ]
-          # }
-        }
+        vector_search_configuration: vector_config
       },
 
       # ===== GENERATION CONFIGURATION =====
@@ -117,7 +117,9 @@ class BedrockRagService
   end
 
   # Query the Knowledge Base using RAG with retrieve_and_generate API
-  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil)
+  # @param entity_s3_uris [Array<String>] S3 URIs from active session entities; used to
+  #   scope retrieval when the query is short/ambiguous and doesn't name a different document.
+  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [])
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -129,19 +131,19 @@ class BedrockRagService
     start_time = Time.current
 
     begin
+      # Apply entity filter only when the query is short/ambiguous and doesn't
+      # explicitly name a document that isn't in the current session.
+      apply_filter = entity_s3_uris.any? && !query_names_different_document?(question, entity_s3_uris)
+      filtered_uris = apply_filter ? entity_s3_uris : []
+
+      Rails.logger.info("BedrockRagService: entity_filter=#{apply_filter} uris=#{filtered_uris.size}") if entity_s3_uris.any?
+
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context)
+      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: filtered_uris)
       config = deep_merge_configs(base_config, custom_config)
 
-
-      # Use retrieve_and_generate API - combines retrieval and generation in one call
-      # Wraps call with retry logic for Aurora Serverless auto-pause cold-start.
-      # Aurora can take 20-60s to resume; we back off and retry up to 3 times.
-      bedrock_start_time = Time.current
-      response = retrieve_and_generate_with_retry({
-        input: {
-          text: question
-        },
+      params = {
+        input: { text: question },
         retrieve_and_generate_configuration: {
           type: 'KNOWLEDGE_BASE',
           knowledge_base_configuration: {
@@ -151,7 +153,28 @@ class BedrockRagService
           }
         },
         session_id: session_id
-      })
+      }
+
+      # Use retrieve_and_generate API - combines retrieval and generation in one call
+      # Wraps call with retry logic for Aurora Serverless auto-pause cold-start.
+      # Aurora can take 20-60s to resume; we back off and retry up to 3 times.
+      bedrock_start_time = Time.current
+      response = retrieve_and_generate_with_retry(params)
+
+      # Fallback: if filter produced no results, retry without filter.
+      if apply_filter && bedrock_no_results?(response.output.text)
+        Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter")
+        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: [])
+        unfiltered_params = params.merge(
+          retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
+            knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
+              **deep_merge_configs(unfiltered_config, custom_config)
+            )
+          )
+        )
+        response = retrieve_and_generate_with_retry(unfiltered_params)
+      end
+
       bedrock_latency_ms = ((Time.current - bedrock_start_time) * 1000).to_i
 
       raw_citations = response.citations || []
@@ -377,6 +400,28 @@ class BedrockRagService
         new_val
       end
     end
+  end
+
+  # Returns true when the query length exceeds the short-query threshold or
+  # explicitly names a word that doesn't appear in any of the session URIs.
+  # In that case the user is asking about a different document — don't filter.
+  SHORT_QUERY_MAX_CHARS = 60
+  def query_names_different_document?(question, entity_s3_uris)
+    return false if question.to_s.length <= SHORT_QUERY_MAX_CHARS
+
+    # Extract basenames (without extension) from the session URIs.
+    session_stems = entity_s3_uris.map { |uri|
+      File.basename(uri.to_s, ".*").downcase.gsub(/[_\-]/, " ")
+    }
+
+    # Cheap heuristic: look for long capitalised words that look like a document name
+    # but don't match any session stem.
+    candidate_names = question.to_s.scan(/[A-Z][a-zA-Z0-9]{3,}(?:\s+[A-Z][a-zA-Z0-9]{3,})*/).map(&:downcase)
+    return false if candidate_names.empty?
+
+    candidate_names.any? { |name|
+      session_stems.none? { |stem| stem.include?(name) || name.include?(stem) }
+    }
   end
 
   def extract_doc_refs(answer_text)

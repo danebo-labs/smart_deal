@@ -30,8 +30,9 @@ class QueryOrchestratorService
   # @param session_id [String, nil] Bedrock multi-turn session (e.g. WhatsApp thread)
   # @param response_locale [Symbol, nil] :en / :es to force generation language; nil = infer from query text
   # @param conv_session [ConversationSession, nil] Web/API session — passed to ingestion job for entity registration
+  # @param entity_s3_uris [Array<String>] S3 URIs of active session documents for retrieval scoping
   def initialize(query, images: [], documents: [], tenant: nil, session_id: nil, response_locale: nil, session_context: nil,
-                 conv_session: nil)
+                 conv_session: nil, entity_s3_uris: [])
     @query = query
     @images = images || []
     @documents = documents || []
@@ -40,6 +41,7 @@ class QueryOrchestratorService
     @response_locale = response_locale
     @session_context = session_context
     @conv_session = conv_session
+    @entity_s3_uris = Array(entity_s3_uris)
     @ai_provider = AiProvider.new
   end
 
@@ -95,7 +97,8 @@ class QueryOrchestratorService
         @query,
         session_id: @session_id,
         response_locale: @response_locale,
-        session_context: @session_context
+        session_context: @session_context,
+        entity_s3_uris: @entity_s3_uris
       )
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
@@ -109,7 +112,8 @@ class QueryOrchestratorService
         @query,
         session_id: @session_id,
         response_locale: @response_locale,
-        session_context: @session_context
+        session_context: @session_context,
+        entity_s3_uris: @entity_s3_uris
       )
     end
   end
@@ -179,7 +183,8 @@ class QueryOrchestratorService
         @query,
         session_id: @session_id,
         response_locale: @response_locale,
-        session_context: @session_context
+        session_context: @session_context,
+        entity_s3_uris: @entity_s3_uris
       )
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")

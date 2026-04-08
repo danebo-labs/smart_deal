@@ -57,6 +57,7 @@ class SessionContextBuilder
       .filter_map { |meta| meta["source_uri"] }
       .select { |uri| uri.start_with?("s3://") }
       .reject { |uri| uri.match?(FABRICATED_URI_PATTERN) }
+      .reject { |uri| uri.include?("PIPELINE_INJECTED") }
       .uniq
   end
 end

@@ -376,6 +376,142 @@ class EntityExtractorServiceTest < ActiveSupport::TestCase
     assert_includes td.aliases, "junction box"
   end
 
+  test 'doc_refs without source_uri still sets wa_filename from session resolved_uri' do
+    TechnicianDocument.delete_all
+    session = build_session
+    wa_file   = "wa_20260327_160921_0.jpeg"
+    s3_uri    = "s3://multimodal-source-destination/uploads/2026-03-27/#{wa_file}"
+    session.add_entity_with_aliases(
+      "placeholder_stem",
+      [ wa_file ],
+      "source"            => "image_upload",
+      "doc_type"          => "field_image",
+      "wa_filename"       => wa_file,
+      "source_uri"        => s3_uri,
+      "extraction_method" => "pending_first_query"
+    )
+    session.reload
+
+    service = EntityExtractorService.new(session)
+    doc_refs = [ {
+      "source_uri"     => "",
+      "canonical_name" => "Orona elevator controller PCB main processor board photograph",
+      "aliases"        => [],
+      "doc_type"       => "field_image"
+    } ]
+
+    service.extract_and_update([], user_message: "qué es esto?", doc_refs: doc_refs)
+    session.reload
+
+    entity = session.active_entities["Orona elevator controller PCB main processor board photograph"]
+    assert_not_nil entity
+    assert_equal wa_file, entity["wa_filename"]
+    assert_equal s3_uri, entity["source_uri"]
+
+    td = TechnicianDocument.find_by(
+      identifier:     session.identifier,
+      channel:        session.channel,
+      canonical_name: "Orona elevator controller PCB main processor board photograph"
+    )
+    assert_not_nil td
+    assert_equal wa_file, td.wa_filename
+    assert_equal s3_uri, td.source_uri
+  end
+
+  test 'already-promoted entity (haiku_doc_refs) preserves source_uri on follow-up doc_ref with empty uri' do
+    TechnicianDocument.delete_all
+    session = build_session
+    wa_file = "wa_20260327_160921_0.jpeg"
+    s3_uri  = "s3://multimodal-source-destination/uploads/2026-03-27/#{wa_file}"
+    canonical = "Orona elevator controller PCB main processor board photograph"
+
+    # Simulate entity already promoted to haiku_doc_refs (not in PROMOTABLE_METHODS)
+    session.add_entity_with_aliases(
+      canonical,
+      [ wa_file ],
+      "source"            => "doc_refs_rule8",
+      "doc_type"          => "field_image",
+      "wa_filename"       => wa_file,
+      "source_uri"        => s3_uri,
+      "extraction_method" => "haiku_doc_refs"
+    )
+    session.reload
+
+    service = EntityExtractorService.new(session)
+    doc_refs = [ {
+      "source_uri"     => "",
+      "canonical_name" => canonical,
+      "aliases"        => [ "Orona CPU board" ],
+      "doc_type"       => "field_image"
+    } ]
+
+    service.extract_and_update([], user_message: "dame los torques", doc_refs: doc_refs)
+    session.reload
+
+    entity = session.active_entities[canonical]
+    assert_equal s3_uri, entity["source_uri"]
+    assert_equal wa_file, entity["wa_filename"]
+
+    td = TechnicianDocument.find_by(identifier: session.identifier, channel: session.channel, canonical_name: canonical)
+    assert_not_nil td
+    assert_equal s3_uri,  td.source_uri
+    assert_equal wa_file, td.wa_filename
+  end
+
+  test 'canonical match takes priority over oldest_pending — no cross-entity corruption' do
+    TechnicianDocument.delete_all
+    session = build_session
+
+    orona_file = "wa_20260327_160921_0.jpeg"
+    orona_uri  = "s3://multimodal-source-destination/uploads/2026-03-27/#{orona_file}"
+    purple_file = "wa_20260327_163952_0.jpeg"
+    purple_uri  = "s3://multimodal-source-destination/uploads/2026-03-27/#{purple_file}"
+
+    # Orona already promoted to haiku_doc_refs (not promotable)
+    session.add_entity_with_aliases(
+      "Orona PCB",
+      [ orona_file ],
+      "source"            => "doc_refs_rule8",
+      "wa_filename"       => orona_file,
+      "source_uri"        => orona_uri,
+      "extraction_method" => "haiku_doc_refs"
+    )
+    # Purple PCB still pending (chunk_aliases — promotable)
+    session.add_entity_with_aliases(
+      "purple_stem",
+      [ purple_file ],
+      "source"            => "image_upload",
+      "wa_filename"       => purple_file,
+      "source_uri"        => purple_uri,
+      "extraction_method" => "chunk_aliases"
+    )
+    session.reload
+
+    service = EntityExtractorService.new(session)
+    # Haiku returns doc_ref only for Orona, with empty source_uri
+    doc_refs = [ {
+      "source_uri"     => "",
+      "canonical_name" => "Orona PCB",
+      "aliases"        => [],
+      "doc_type"       => "field_image"
+    } ]
+
+    service.extract_and_update([], user_message: "dame los torques", doc_refs: doc_refs)
+    session.reload
+
+    # Purple PCB must remain untouched — not promoted with Orona's data
+    purple_entity = session.active_entities["purple_stem"]
+    assert_not_nil purple_entity, "Purple PCB entity must still exist under its own key"
+    assert_equal purple_uri,  purple_entity["source_uri"]
+    assert_equal purple_file, purple_entity["wa_filename"]
+    assert_equal "chunk_aliases", purple_entity["extraction_method"]
+
+    # Orona must have correct source_uri
+    orona_entity = session.active_entities["Orona PCB"]
+    assert_not_nil orona_entity
+    assert_equal orona_uri, orona_entity["source_uri"]
+  end
+
   test 'persist failure does not raise and entity is still registered' do
     session  = build_session
     service  = EntityExtractorService.new(session)

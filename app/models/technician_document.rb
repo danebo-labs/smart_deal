@@ -14,10 +14,11 @@ class TechnicianDocument < ApplicationRecord
   # Evicts oldest records beyond MAX_PER_TECHNICIAN after each upsert.
   def self.upsert_from_entity(identifier:, channel:, canonical_name:, metadata: {})
     record = find_or_initialize_by(identifier: identifier, channel: channel, canonical_name: canonical_name)
-    record.aliases           = (record.aliases + Array(metadata["aliases"])).uniq.first(15)
-    record.wa_filename       = metadata["wa_filename"]  if metadata["wa_filename"].present?
-    record.source_uri        = metadata["source_uri"]   if metadata["source_uri"].present?
-    record.doc_type          = metadata["doc_type"]     if metadata["doc_type"].present?
+    record.aliases              = (record.aliases + Array(metadata["aliases"])).uniq.first(15)
+    record.wa_filename          = metadata["wa_filename"]          if metadata["wa_filename"].present?
+    record.source_uri           = metadata["source_uri"]           if metadata["source_uri"].present?
+    record.doc_type             = metadata["doc_type"]             if metadata["doc_type"].present?
+    record.first_answer_summary = metadata["first_answer_summary"] if metadata["first_answer_summary"].present?
     record.interaction_count = record.new_record? ? 1 : record.interaction_count + 1
     record.last_used_at      = Time.current
     record.save!

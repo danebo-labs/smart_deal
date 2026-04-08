@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_26_192938) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_27_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -59,6 +59,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_192938) do
     t.string "channel", default: "whatsapp", null: false
     t.datetime "created_at", null: false
     t.string "doc_type"
+    t.string "first_answer_summary"
     t.string "identifier", null: false
     t.integer "interaction_count", default: 1, null: false
     t.datetime "last_used_at", null: false

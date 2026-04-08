@@ -103,7 +103,8 @@ class BedrockIngestionJob < ApplicationJob
   end
 
   def register_entity(session, wa_filename, result)
-    stem = wa_filename.sub(/\.[^.]+\z/, '')
+    stem   = wa_filename.sub(/\.[^.]+\z/, '')
+    s3_uri = build_s3_uri_for_filename(wa_filename)
 
     if result
       key = result[:canonical_name]
@@ -114,6 +115,7 @@ class BedrockIngestionJob < ApplicationJob
         "source"            => "image_upload",
         "doc_type"          => "field_image",
         "wa_filename"       => wa_filename,
+        "source_uri"        => s3_uri,
         "extraction_method" => "chunk_aliases"
       )
       Rails.logger.info("BedrockIngestionJob: registered entity '#{key}' with #{all_aliases.size} aliases for #{wa_filename}")
@@ -124,10 +126,18 @@ class BedrockIngestionJob < ApplicationJob
         "source"            => "image_upload",
         "doc_type"          => "field_image",
         "wa_filename"       => wa_filename,
+        "source_uri"        => s3_uri,
         "extraction_method" => "pending_first_query"
       )
       Rails.logger.info("BedrockIngestionJob: registered placeholder entity '#{stem}' for #{wa_filename}")
     end
+  end
+
+  def build_s3_uri_for_filename(filename)
+    m      = filename.match(/\A(?:wa|chat)_(\d{4})(\d{2})(\d{2})_/)
+    date   = m ? "#{m[1]}-#{m[2]}-#{m[3]}" : Date.current.iso8601
+    bucket = ENV.fetch('KNOWLEDGE_BASE_S3_BUCKET', 'multimodal-source-destination')
+    "s3://#{bucket}/uploads/#{date}/#{filename}"
   end
 
   MAX_WHATSAPP_BODY = 1500

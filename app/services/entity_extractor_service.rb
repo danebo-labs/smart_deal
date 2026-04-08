@@ -8,8 +8,9 @@
 # Fallback path: when doc_refs is nil, registers entities using filenames
 #   from numbered citations only. NO regex parsing of chunk content.
 class EntityExtractorService
-  FILENAME_PATTERN   = /\b[\w\-_.]+\.(?:pdf|jpe?g|png|gif|webp|txt|md|docx?|xlsx?|csv|pptx?)\b/i.freeze
-  NO_RESULTS_PATTERN = /\A(No se encontró información|No information was found)/i.freeze
+  FILENAME_PATTERN       = /\b[\w\-_.]+\.(?:pdf|jpe?g|png|gif|webp|txt|md|docx?|xlsx?|csv|pptx?)\b/i.freeze
+  NO_RESULTS_PATTERN     = /\A(No se encontró información|No information was found)/i.freeze
+  FABRICATED_URI_PATTERN = %r{\As3://(unknown|placeholder|no[_-]?bucket)}i.freeze
 
   def initialize(session)
     @session = session
@@ -18,13 +19,13 @@ class EntityExtractorService
   # @param numbered_citations [Array] hashes with :filename, :content, :location, :metadata
   # @param user_message [String]
   # @param answer [String, nil]
-  # @param all_retrieved [Array] kept for signature compatibility
+  # @param all_retrieved [Array] raw Bedrock citations — used to backfill source_uri for batch docs
   # @param doc_refs [Array, nil] from BedrockRagService RULE 8
   def extract_and_update(numbered_citations, user_message:, answer: nil, all_retrieved: [], doc_refs: nil)
     return unless @session
 
     if doc_refs.present?
-      register_from_doc_refs(doc_refs, user_message, answer)
+      register_from_doc_refs(doc_refs, user_message, answer, all_retrieved)
     else
       register_from_citation_filenames(numbered_citations, user_message, answer)
     end
@@ -32,18 +33,30 @@ class EntityExtractorService
 
   private
 
-  def register_from_doc_refs(doc_refs, user_message, answer = nil)
+  def register_from_doc_refs(doc_refs, user_message, answer = nil, all_retrieved = [])
+    backfill_source_uris_from_citations(doc_refs, all_retrieved)
+
     doc_refs.each do |ref|
       canonical = ref["canonical_name"]
       next if canonical.blank?
 
       aliases = Array(ref["aliases"])
-      s3_filename = extract_filename_from_uri(ref["source_uri"])
+      haiku_uri   = ref["source_uri"].to_s
+      s3_from_ref = extract_filename_from_uri(ref["source_uri"])
+
+      existing_key = find_pending_entity_by_wa_filename(s3_from_ref) ||
+                     @session.find_entity_by_name_or_alias(canonical) ||
+                     find_oldest_pending_entity
+      existing_uri = existing_key && @session.active_entities.dig(existing_key, "source_uri")
+      resolved_uri = real_s3_uri?(haiku_uri) ? haiku_uri : (existing_uri.presence || haiku_uri.presence)
+
+      # Haiku often omits source_uri in <DOC_REFS>; basename must come from resolved session URI.
+      s3_filename = s3_from_ref.presence || extract_filename_from_uri(resolved_uri)
       aliases << s3_filename if s3_filename.present? && s3_filename != "unknown"
 
       metadata = {
         "source"               => "doc_refs_rule8",
-        "source_uri"           => ref["source_uri"],
+        "source_uri"           => resolved_uri,
         "doc_type"             => ref["doc_type"],
         "wa_filename"          => s3_filename,
         "extraction_method"    => "haiku_doc_refs",
@@ -52,10 +65,7 @@ class EntityExtractorService
         "aliases"              => aliases.uniq
       }.compact
 
-      existing_key = find_pending_entity_by_wa_filename(s3_filename) ||
-                     find_oldest_pending_entity
-
-      Rails.logger.info("EntityExtractor: doc_ref canonical=#{canonical.inspect} source_uri=#{ref['source_uri'].inspect} s3_filename=#{s3_filename.inspect} matched_key=#{existing_key.inspect}")
+      Rails.logger.info("EntityExtractor: doc_ref canonical=#{canonical.inspect} source_uri=#{resolved_uri.inspect} s3_filename=#{s3_filename.inspect} matched_key=#{existing_key.inspect}")
 
       if existing_key
         promote_pending_entity(existing_key, canonical, aliases, metadata)
@@ -112,6 +122,11 @@ class EntityExtractorService
       metadata = metadata.merge("wa_filename" => old_meta["wa_filename"]) if preserve
     end
 
+    # Preserve real source_uri from the original entity when incoming one is fabricated/missing.
+    if old_meta["source_uri"].present? && old_meta["source_uri"].start_with?("s3://")
+      metadata = metadata.merge("source_uri" => old_meta["source_uri"]) unless real_s3_uri?(metadata["source_uri"])
+    end
+
     entities[canonical] = old_meta.merge(metadata).merge(
       "canonical_name" => canonical,
       "aliases"        => merged_aliases
@@ -157,6 +172,36 @@ class EntityExtractorService
     )
   rescue StandardError => e
     Rails.logger.warn("EntityExtractor: failed to persist technician doc: #{e.message}")
+  end
+
+  def real_s3_uri?(uri)
+    uri.present? &&
+      uri.start_with?("s3://") &&
+      !uri.match?(FABRICATED_URI_PATTERN) &&
+      uri != "PIPELINE_INJECTED"
+  end
+
+  # Enriches doc_refs in-place: for each ref missing a real S3 URI, finds a matching
+  # citation from Bedrock's raw response and uses its location URI.
+  # This covers batch-indexed documents where Haiku can't reliably extract the URI.
+  def backfill_source_uris_from_citations(doc_refs, all_retrieved)
+    return if all_retrieved.blank?
+
+    doc_refs.each do |ref|
+      next if real_s3_uri?(ref["source_uri"].to_s)
+
+      matching = all_retrieved.find do |c|
+        citation_uri = c.dig(:location, :uri).to_s
+        next false if citation_uri.blank?
+
+        filename = File.basename(citation_uri, ".*").downcase
+        canonical_lower = ref["canonical_name"].to_s.downcase.first(20)
+        filename.include?(canonical_lower) ||
+          Array(ref["aliases"]).any? { |a| filename.include?(a.to_s.downcase.first(20)) }
+      end
+
+      ref["source_uri"] = matching.dig(:location, :uri) if matching
+    end
   end
 
   def extract_filename_from_uri(uri)

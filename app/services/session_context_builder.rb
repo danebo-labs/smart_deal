@@ -48,13 +48,15 @@ class SessionContextBuilder
   # Used by BedrockRagService to scope KB retrieval to session documents.
   # Rejects fabricated URIs (e.g. s3://unknown-bucket/...) that Haiku sometimes
   # invents when it can't find the real sourceUrl in the chunk metadata.
-  FABRICATED_URI_PATTERN = %r{\As3://(unknown|placeholder|no[_-]?bucket)}i.freeze
+  FABRICATED_URI_PATTERN = %r{\As3://(unknown|unknown-bucket|placeholder|no[_-]?bucket)/}i.freeze
 
   def self.entity_s3_uris(session)
     return [] if session.nil?
 
-    session.active_entities.values
-      .filter_map { |meta| meta["source_uri"] }
+    from_session = session.active_entities.values.filter_map { |meta| meta["source_uri"] }
+    from_db      = TechnicianDocument.where.not(source_uri: [ nil, "" ]).pluck(:source_uri)
+
+    (from_session + from_db)
       .select { |uri| uri.start_with?("s3://") }
       .reject { |uri| uri.match?(FABRICATED_URI_PATTERN) }
       .reject { |uri| uri.include?("PIPELINE_INJECTED") }

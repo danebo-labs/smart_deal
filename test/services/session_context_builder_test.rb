@@ -3,11 +3,26 @@
 require 'test_helper'
 
 class SessionContextBuilderTest < ActiveSupport::TestCase
-  def build_session
+  setup do
+    TechnicianDocument.delete_all
+  end
+
+  def build_session(channel: "web")
     ConversationSession.create!(
-      identifier: "web:builder_test_#{SecureRandom.hex(4)}",
-      channel:    "web",
+      identifier: "#{channel}:builder_test_#{SecureRandom.hex(4)}",
+      channel:    channel,
       expires_at: 30.minutes.from_now
+    )
+  end
+
+  def create_tech_doc(canonical_name:, source_uri:, channel: "whatsapp", identifier: "whatsapp:+34600000001")
+    TechnicianDocument.create!(
+      identifier:        identifier,
+      channel:           channel,
+      canonical_name:    canonical_name,
+      source_uri:        source_uri,
+      last_used_at:      Time.current,
+      interaction_count: 1
     )
   end
 
@@ -195,5 +210,74 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     context = SessionContextBuilder.build(session)
 
     assert_not_includes context, 'Summary:'
+  end
+
+  # ============================================
+  # Cross-channel visibility (MVP global pool)
+  # ============================================
+
+  test 'entity_s3_uris includes URIs from TechnicianDocument uploaded via a different channel' do
+    create_tech_doc(
+      canonical_name: "Junction Box Manual",
+      source_uri:     "s3://bucket/junction_box.pdf",
+      channel:        "whatsapp"
+    )
+
+    web_session = build_session(channel: "web")
+
+    uris = SessionContextBuilder.entity_s3_uris(web_session)
+
+    assert_includes uris, "s3://bucket/junction_box.pdf"
+  end
+
+  test 'entity_s3_uris merges session active_entities with TechnicianDocument URIs' do
+    create_tech_doc(
+      canonical_name: "WA Doc",
+      source_uri:     "s3://bucket/wa_doc.pdf",
+      channel:        "whatsapp"
+    )
+
+    web_session = build_session(channel: "web")
+    web_session.add_entity("Web Doc", {
+      "source"     => "doc_refs_rule8",
+      "source_uri" => "s3://bucket/web_doc.pdf"
+    })
+
+    uris = SessionContextBuilder.entity_s3_uris(web_session)
+
+    assert_includes uris, "s3://bucket/wa_doc.pdf"
+    assert_includes uris, "s3://bucket/web_doc.pdf"
+  end
+
+  test 'entity_s3_uris deduplicates when same URI is in session and TechnicianDocument' do
+    create_tech_doc(
+      canonical_name: "Shared Doc",
+      source_uri:     "s3://bucket/shared.pdf",
+      channel:        "whatsapp"
+    )
+
+    session = build_session
+    session.add_entity("Shared Doc", {
+      "source"     => "doc_refs_rule8",
+      "source_uri" => "s3://bucket/shared.pdf"
+    })
+
+    uris = SessionContextBuilder.entity_s3_uris(session)
+
+    assert_equal 1, uris.count { |u| u == "s3://bucket/shared.pdf" }
+  end
+
+  test 'entity_s3_uris excludes TechnicianDocument rows with fabricated URIs' do
+    create_tech_doc(
+      canonical_name: "Bad Doc",
+      source_uri:     "s3://unknown-bucket/fake.pdf",
+      channel:        "whatsapp"
+    )
+
+    session = build_session
+
+    uris = SessionContextBuilder.entity_s3_uris(session)
+
+    assert_not_includes uris, "s3://unknown-bucket/fake.pdf"
   end
 end

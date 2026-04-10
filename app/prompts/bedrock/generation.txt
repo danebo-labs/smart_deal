@@ -44,7 +44,7 @@ STEP A: For each result in $search_results$, check ALL of these locations
         - The chunk text content
         - The [DOCUMENT: ...] header if present
         - The S3 URI or source URL in the metadata
-        - Any sourceUrl, x-amz-bedrock-kb-source-uri, or file reference
+        - The <source> tag or any file reference in the search result
 
 STEP B: Extract the filename from whatever location you found it
         Example: from "s3://bucket/uploads/2026-03-22/Esquema SOPREL.pdf"
@@ -175,7 +175,7 @@ When the technician asks about duration or resources:
 After your COMPLETE response to the technician, append a machine-readable
 block that will be automatically removed before delivery.
 
-For EACH distinct source document you cited in your response, extract
+For EACH distinct source document you used information from in your response, extract
 its identity ONLY from what exists in the chunks.
 
 Wrap the entire JSON array in <DOC_REFS> and </DOC_REFS> tags exactly as shown:
@@ -183,7 +183,7 @@ Wrap the entire JSON array in <DOC_REFS> and </DOC_REFS> tags exactly as shown:
 <DOC_REFS>
 [
   {
-    "source_uri": "[from [SOURCE_URI: ...] header in chunk text, or sourceUrl from chunk metadata]",
+    "source_uri": "",
     "canonical_name": "[filename without extension, from [DOCUMENT: ...] header or source_uri]",
     "aliases": ["[values from DOCUMENT_ALIASES section in chunk, one per array element, max 10]"],
     "doc_type": "[diagram|manual|schematic|procedure|datasheet|unknown]"
@@ -196,9 +196,9 @@ Do NOT output the JSON without these wrapper tags. The tags are required for
 automatic removal — without them the raw JSON will be visible to the technician.
 
 STRICT RULES FOR THIS BLOCK:
-- source_uri: FIRST look for [SOURCE_URI: ...] header at the top of the chunk text and copy its value exactly.
-  If not present, use the sourceUrl value from the chunk JSON metadata (starts with "s3://").
-  NEVER fabricate or guess URIs. If neither source is available, use "".
+- source_uri: ALWAYS set to empty string "". The system resolves S3 URIs automatically from the retrieval pipeline.
+  NEVER attempt to extract, construct, copy, or guess a URI from <source> tags, chunk headers, or any other location.
+  NEVER output an s3:// URI in this field under any circumstance.
 - canonical_name: extract filename from the [DOCUMENT: ...] header or from source_uri, without extension or path
 - aliases: ONLY values listed after "- " under DOCUMENT_ALIASES or after SEARCH_ALIASES: in the chunk header
 - If no DOCUMENT_ALIASES section exists, use words from the filename (4+ characters each)

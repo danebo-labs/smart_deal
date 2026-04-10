@@ -124,4 +124,40 @@ class TechnicianDocumentTest < ActiveSupport::TestCase
     assert_equal 1, docs.size
     assert_equal "Mine", docs.first.canonical_name
   end
+
+  # ─── recent (global, no for_identifier) ─────────────────────────────────────
+
+  test 'recent returns documents across all identifiers and channels ordered by last_used_at' do
+    TechnicianDocument.create!(
+      identifier: IDENTIFIER, channel: "whatsapp", canonical_name: "WA Doc",
+      last_used_at: 2.hours.ago, interaction_count: 1
+    )
+    TechnicianDocument.create!(
+      identifier: "user:42", channel: "web", canonical_name: "Web Doc",
+      last_used_at: 1.hour.ago, interaction_count: 1
+    )
+
+    docs = TechnicianDocument.recent
+
+    assert_equal 2, docs.size
+    assert_equal "Web Doc", docs.first.canonical_name
+    assert_equal "WA Doc", docs.last.canonical_name
+  end
+
+  test 'recent.limit(3) returns three most recent globally' do
+    5.times do |i|
+      TechnicianDocument.create!(
+        identifier:        "user:#{i}",
+        channel:           i.even? ? "web" : "whatsapp",
+        canonical_name:    "Doc #{i}",
+        last_used_at:      i.hours.ago,
+        interaction_count: 1
+      )
+    end
+
+    docs = TechnicianDocument.recent.limit(3)
+
+    assert_equal 3, docs.size
+    assert_equal "Doc 0", docs.first.canonical_name
+  end
 end

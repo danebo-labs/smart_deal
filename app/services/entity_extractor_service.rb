@@ -10,7 +10,7 @@
 class EntityExtractorService
   FILENAME_PATTERN       = /\b[\w\-_.]+\.(?:pdf|jpe?g|png|gif|webp|txt|md|docx?|xlsx?|csv|pptx?)\b/i.freeze
   NO_RESULTS_PATTERN     = /\A(No se encontró información|No information was found)/i.freeze
-  FABRICATED_URI_PATTERN = %r{\As3://(unknown|placeholder|no[_-]?bucket)}i.freeze
+  FABRICATED_URI_PATTERN = %r{\As3://(unknown|unknown-bucket|placeholder|no[_-]?bucket)/}i.freeze
 
   def initialize(session)
     @session = session
@@ -175,29 +175,58 @@ class EntityExtractorService
   end
 
   def real_s3_uri?(uri)
-    uri.present? &&
-      uri.start_with?("s3://") &&
-      !uri.match?(FABRICATED_URI_PATTERN) &&
-      uri != "PIPELINE_INJECTED"
+    return false unless uri.present? &&
+                        uri.start_with?("s3://") &&
+                        !uri.match?(FABRICATED_URI_PATTERN) &&
+                        uri != "PIPELINE_INJECTED"
+
+    # Real S3 objects always have a file extension (e.g. .pdf, .jpeg).
+    # Haiku sometimes constructs credible-looking URIs using the user's query as
+    # the filename with no extension — this catches that fabrication pattern.
+    File.extname(File.basename(uri)).present?
   end
 
   # Enriches doc_refs in-place: for each ref missing a real S3 URI, finds a matching
   # citation from Bedrock's raw response and uses its location URI.
-  # This covers batch-indexed documents where Haiku can't reliably extract the URI.
+  # This covers batch-indexed documents where Haiku can't reliably extract the URI,
+  # including files where PIPELINE_INJECTED prevents filename injection into the chunk.
+  #
+  # Matching strategy (ordered by precision):
+  #   1. S3 filename contains canonical name or alias (original behaviour)
+  #   2. Chunk content contains canonical name or alias (handles PIPELINE_INJECTED)
+  #   3. Single doc_ref + single citation → unambiguous match, assign directly
   def backfill_source_uris_from_citations(doc_refs, all_retrieved)
     return if all_retrieved.blank?
 
+    # Fast path: 1 doc_ref, 1 citation — unambiguous, no matching required.
+    if doc_refs.size == 1 && all_retrieved.size == 1
+      ref = doc_refs.first
+      unless real_s3_uri?(ref["source_uri"].to_s)
+        uri = all_retrieved.first.dig(:location, :uri)
+        ref["source_uri"] = uri if uri.present?
+      end
+      return
+    end
+
     doc_refs.each do |ref|
       next if real_s3_uri?(ref["source_uri"].to_s)
+
+      canonical_d = ref["canonical_name"].to_s.downcase
+      aliases_d   = Array(ref["aliases"]).map { |a| a.to_s.downcase }
 
       matching = all_retrieved.find do |c|
         citation_uri = c.dig(:location, :uri).to_s
         next false if citation_uri.blank?
 
-        filename = File.basename(citation_uri, ".*").downcase
-        canonical_lower = ref["canonical_name"].to_s.downcase.first(20)
-        filename.include?(canonical_lower) ||
-          Array(ref["aliases"]).any? { |a| filename.include?(a.to_s.downcase.first(20)) }
+        filename      = File.basename(citation_uri, ".*").downcase
+        chunk_content = c[:content].to_s.downcase
+
+        # 1. S3 filename ↔ canonical/alias (original)
+        filename.include?(canonical_d.first(20)) ||
+          aliases_d.any? { |a| filename.include?(a.first(20)) } ||
+          # 2. Chunk content ↔ canonical/alias (handles PIPELINE_INJECTED)
+          chunk_content.include?(canonical_d) ||
+          aliases_d.any? { |a| a.length >= 5 && chunk_content.include?(a) }
       end
 
       ref["source_uri"] = matching.dig(:location, :uri) if matching

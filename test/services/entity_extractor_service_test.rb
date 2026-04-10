@@ -512,6 +512,96 @@ class EntityExtractorServiceTest < ActiveSupport::TestCase
     assert_equal orona_uri, orona_entity["source_uri"]
   end
 
+  # ─── backfill_source_uris_from_citations — PIPELINE_INJECTED coverage ────────
+
+  test 'backfill: single doc_ref + single citation assigns URI directly' do
+    TechnicianDocument.delete_all
+    session = build_session
+    service = EntityExtractorService.new(session)
+
+    doc_refs = [ {
+      "source_uri"     => "",
+      "canonical_name" => "Foremcaro 6118/81 Electrical Schematic",
+      "aliases"        => [ "Esquema Eléctrico Elevador", "Planta U150" ],
+      "doc_type"       => "schematic"
+    } ]
+
+    citation = {
+      content:  "# S0 — Foremcaro 6118/81 Electrical Schematic ...",
+      location: { uri: "s3://bucket/uploads/2026-03-27/Esquema SOPREL.pdf", type: "s3" },
+      metadata: {}
+    }
+
+    service.extract_and_update([], user_message: "Qué es el Esquema Eléctrico?",
+                               doc_refs: doc_refs, all_retrieved: [ citation ])
+    session.reload
+
+    entity = session.active_entities["Foremcaro 6118/81 Electrical Schematic"]
+    assert_not_nil entity
+    assert_equal "s3://bucket/uploads/2026-03-27/Esquema SOPREL.pdf", entity["source_uri"]
+
+    td = TechnicianDocument.find_by(canonical_name: "Foremcaro 6118/81 Electrical Schematic")
+    assert_not_nil td
+    assert_equal "s3://bucket/uploads/2026-03-27/Esquema SOPREL.pdf", td.source_uri
+  end
+
+  test 'backfill: chunk content match resolves PIPELINE_INJECTED filename mismatch' do
+    TechnicianDocument.delete_all
+    session = build_session
+    service = EntityExtractorService.new(session)
+
+    doc_refs = [
+      { "source_uri" => "", "canonical_name" => "Doc Alpha",
+        "aliases" => [ "alpha manual" ], "doc_type" => "manual" },
+      { "source_uri" => "", "canonical_name" => "Doc Beta",
+        "aliases" => [ "beta schematic" ], "doc_type" => "schematic" }
+    ]
+
+    citations = [
+      { content:  "**Document:** Doc Alpha | **File:** PIPELINE_INJECTED\nalpha manual details here",
+        location: { uri: "s3://bucket/uploads/file_alpha_xyz.pdf", type: "s3" },
+        metadata: {} },
+      { content:  "**Document:** Doc Beta | **File:** PIPELINE_INJECTED\nbeta schematic details here",
+        location: { uri: "s3://bucket/uploads/file_beta_xyz.pdf", type: "s3" },
+        metadata: {} }
+    ]
+
+    service.extract_and_update([], user_message: "info",
+                               doc_refs: doc_refs, all_retrieved: citations)
+    session.reload
+
+    alpha = session.active_entities["Doc Alpha"]
+    beta  = session.active_entities["Doc Beta"]
+
+    assert_equal "s3://bucket/uploads/file_alpha_xyz.pdf", alpha&.dig("source_uri")
+    assert_equal "s3://bucket/uploads/file_beta_xyz.pdf",  beta&.dig("source_uri")
+  end
+
+  test 'backfill: skips refs that already have a real source_uri' do
+    session = build_session
+    service = EntityExtractorService.new(session)
+
+    original_uri = "s3://bucket/real.pdf"
+    doc_refs = [ {
+      "source_uri"     => original_uri,
+      "canonical_name" => "Real Doc",
+      "aliases"        => [],
+      "doc_type"       => "manual"
+    } ]
+    citation = {
+      content:  "Real Doc content here",
+      location: { uri: "s3://bucket/other.pdf", type: "s3" },
+      metadata: {}
+    }
+
+    service.extract_and_update([], user_message: "info",
+                               doc_refs: doc_refs, all_retrieved: [ citation ])
+    session.reload
+
+    entity = session.active_entities["Real Doc"]
+    assert_equal original_uri, entity["source_uri"]
+  end
+
   test 'persist failure does not raise and entity is still registered' do
     session  = build_session
     service  = EntityExtractorService.new(session)

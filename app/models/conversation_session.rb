@@ -39,7 +39,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def self.preload_recent_entities(session)
-    TechnicianDocument.all_recent.limit(3).each do |td|
+    TechnicianDocument.recent.limit(3).each do |td|
       session.add_entity_with_aliases(td.canonical_name, td.aliases, {
         "source"               => "technician_memory",
         "wa_filename"          => td.wa_filename,

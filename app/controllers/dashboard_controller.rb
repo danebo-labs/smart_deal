@@ -8,7 +8,10 @@ class DashboardController < ApplicationController
     @monthly_totals = monthly_totals
     @last_month_totals = last_month_totals
     @chart_data = chart_data
-    @s3_documents_list = S3DocumentsService.new.list_documents
+    s3 = S3DocumentsService.new
+    @s3_bucket_name = s3.bucket_name
+    @kb_doc_index = KbDocument.all.index_by { |kb| KbDocument.object_key_for_match(kb.s3_key) }
+    @s3_documents_list = KbDocument.sort_s3_documents_by_kb_created_at(s3.list_documents, @kb_doc_index)
     @performance_metrics = performance_metrics
   end
 

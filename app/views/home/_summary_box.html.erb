@@ -9,10 +9,10 @@
           <path d="M14 5V11H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           <path d="M9 13H15M9 17H15M9 9H11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        Data Source
+        Archivos
       </h3>
       <div id="documents-list-container">
-        <%= render partial: "home/documents_list", locals: { documents: @documents || [] } %>
+        <%= render partial: "home/documents_list", locals: { kb_documents: @kb_documents || KbDocument.none } %>
       </div>
     </div>
 

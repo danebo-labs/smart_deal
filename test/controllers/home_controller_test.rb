@@ -10,19 +10,18 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     BedrockQuery.destroy_all
   end
 
-  def with_mock_s3_documents_service(mock_documents)
-    original_new = S3DocumentsService.method(:new)
-    mock_service = Object.new
-    mock_service.define_singleton_method(:list_documents) { mock_documents }
-    S3DocumentsService.define_singleton_method(:new) { |*_args| mock_service }
-    yield
-  ensure
-    S3DocumentsService.define_singleton_method(:new) { |*args| original_new.call(*args) }
-  end
-
   test 'should get index' do
     get root_path
     assert_response :success
+  end
+
+  test 'index lists kb_documents as Archivos with display_name' do
+    KbDocument.create!(s3_key: 'uploads/2026/home_ui.pdf', display_name: 'Manual ascensor', aliases: [])
+
+    get root_path
+    assert_response :success
+    assert_select 'h3.section-title', text: /Archivos/
+    assert_select '.document-name-primary', text: 'Manual ascensor'
   end
 
   test 'should render index with metrics' do

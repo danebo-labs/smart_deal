@@ -2,11 +2,12 @@
 
 # app/services/s3_documents_service.rb
 require 'aws-sdk-s3'
-require 'aws-sdk-bedrockagent'
 require 'aws-sdk-core/static_token_provider'
 
 class S3DocumentsService
   include AwsClientInitializer
+
+  attr_reader :bucket_name
 
   def initialize(bucket_name: nil)
     client_options = build_aws_client_options
@@ -70,90 +71,18 @@ class S3DocumentsService
     )
 
     Rails.logger.info("S3 upload successful: s3://#{@bucket_name}/#{key}")
+    begin
+      KbDocument.ensure_for_s3_key!(key)
+    rescue StandardError => e
+      Rails.logger.warn("S3DocumentsService: KbDocument.ensure_for_s3_key! failed — #{e.message}")
+    end
     key
   rescue StandardError => e
     Rails.logger.error("S3 upload failed: #{e.message}")
     nil
   end
 
-  # Returns documents actually indexed (or being indexed/failed) in the Bedrock KB data source.
-  # Paginates through all pages of list_knowledge_base_documents.
-  #
-  # @return [Array<Hash>] Array with keys: :name, :status (:indexed | :indexing | :failed), :updated_at
-  def list_indexed_documents(kb_id: nil, data_source_id: nil)
-    kb_id = resolve_kb_id(kb_id)
-    return [] unless kb_id
-
-    agent_client = Aws::BedrockAgent::Client.new(build_aws_client_options)
-    data_source_id = resolve_data_source_id(agent_client, kb_id, data_source_id)
-    return [] unless data_source_id
-
-    documents = []
-    next_token = nil
-
-    loop do
-      resp = agent_client.list_knowledge_base_documents(
-        knowledge_base_id: kb_id,
-        data_source_id: data_source_id,
-        next_token: next_token
-      )
-      documents.concat(resp.document_details || [])
-      next_token = resp.next_token
-      break unless next_token
-    end
-
-    documents.filter_map do |doc|
-      name = extract_document_name(doc)
-      next unless name
-
-      { name: name, status: map_kb_status(doc.status), updated_at: doc.updated_at }
-    end
-  rescue StandardError => e
-    Rails.logger.error("S3DocumentsService#list_indexed_documents failed: #{e.message}")
-    []
-  end
-
   private
-
-  def resolve_kb_id(kb_id)
-    kb_id.presence ||
-      ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
-      Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
-  end
-
-  def resolve_data_source_id(agent_client, kb_id, data_source_id)
-    return data_source_id if data_source_id.present?
-
-    preferred = ENV.fetch('BEDROCK_DATA_SOURCE_ID', nil).presence ||
-                Rails.application.credentials.dig(:bedrock, :data_source_id)
-    return preferred if preferred.present?
-
-    resp = agent_client.list_data_sources(knowledge_base_id: kb_id)
-    resp.data_source_summaries.first&.data_source_id
-  rescue StandardError => e
-    Rails.logger.error("S3DocumentsService: list_data_sources failed — #{e.message}")
-    nil
-  end
-
-  def extract_document_name(doc)
-    uri = doc.identifier&.s3&.uri
-    return nil if uri.blank?
-
-    uri.split('/').last.presence
-  end
-
-  def map_kb_status(status)
-    case status.to_s.upcase
-    when 'INDEXED', 'METADATA_PARTIALLY_INDEXED'
-      :indexed
-    when 'INGESTION_IN_PROGRESS', 'PENDING'
-      :indexing
-    when 'FAILED', 'IGNORED'
-      :failed
-    else
-      :indexed
-    end
-  end
 
   def find_bucket_name
     ENV['KNOWLEDGE_BASE_S3_BUCKET'] ||

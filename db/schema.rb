@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_27_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_10_020007) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -51,6 +51,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_27_000001) do
     t.decimal "value", precision: 20, scale: 6, null: false
     t.index [ "date", "metric_type" ], name: "index_cost_metrics_on_date_and_metric_type", unique: true
     t.index [ "date" ], name: "index_cost_metrics_on_date"
+  end
+
+  create_table "kb_documents", force: :cascade do |t|
+    t.jsonb "aliases", default: [], null: false
+    t.datetime "created_at", null: false
+    t.string "display_name"
+    t.string "s3_key", null: false
+    t.datetime "updated_at", null: false
+    t.index [ "s3_key" ], name: "index_kb_documents_on_s3_key", unique: true
   end
 
   create_table "technician_documents", force: :cascade do |t|

@@ -4,6 +4,7 @@ import { Controller } from "@hotwired/stimulus"
 import { createConsumer } from "@rails/actioncable"
 import { formatAnswer } from "rag/citation_formatter"
 import { renderReferences } from "rag/references_renderer"
+import { renderDocumentsConsulted } from "rag/documents_consulted_renderer"
 
 export default class extends Controller {
   static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName"]
@@ -232,6 +233,9 @@ export default class extends Controller {
         [ 2000, 5000 ].forEach(ms => setTimeout(() => this.refreshDocuments(), ms))
       } else {
         const citations = Array.isArray(data.citations) ? data.citations : []
+        if (citations.length) {
+          this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
+        }
         const answerHtml = formatAnswer(data.answer, citations)
         this.addMessageHtml(answerHtml, "assistant")
         if (citations.length) {
@@ -261,6 +265,9 @@ export default class extends Controller {
       }
 
       const citations = Array.isArray(data.citations) ? data.citations : []
+      if (citations.length) {
+        this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
+      }
       const answerHtml = formatAnswer(data.answer, citations)
       this.addMessageHtml(answerHtml, "assistant")
       if (citations.length) {

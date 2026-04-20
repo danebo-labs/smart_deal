@@ -124,28 +124,22 @@ but they do **not** drive document deduplication — that is handled at the pool
 
 See `docs/MULTI_TENANT_ARCHITECTURE.md` for design details.
 
-## Usage
+### WhatsApp integration (Twilio + Ngrok)
 
-1. Sign up or sign in.
-2. Upload a PDF document; the AI will analyze it and generate a summary.
-3. Use the RAG chat to ask questions about documents indexed in the Knowledge Base.
+This section describes how to enable and test WhatsApp locally using Twilio (WhatsApp Sandbox) and Ngrok.
 
-## WhatsApp Integration (Twilio + Ngrok)
-
-This section describes how to enable and test the integration between the Rails application and WhatsApp using Twilio (WhatsApp Sandbox) and Ngrok from a local environment.
-
-### Overview
+#### Overview
 
 The application is integrated with WhatsApp via Twilio. Incoming WhatsApp messages are received by a webhook and trigger the app's RAG (Retrieval-Augmented Generation) flow, so users can query the knowledge base and get contextual answers through WhatsApp.
 
-### Prerequisites
+#### Prerequisites
 
 - Ruby on Rails application running locally
 - Twilio account with access to the WhatsApp Sandbox
 - Ngrok installed
 - Rails server listening on port 3000
 
-### Steps to Enable the Integration Locally
+#### Steps to enable the integration locally
 
 1. **Start the Rails application**
 
@@ -193,11 +187,17 @@ The application is integrated with WhatsApp via Twilio. Incoming WhatsApp messag
 
    After that, those users can send messages to the sandbox number and receive RAG responses from the application.
 
-### Important Notes
+#### Important notes
 
 - **Webhook URL updates:** Every time you restart Ngrok, the public URL changes. You must update the "When a message comes in" URL in the Twilio Console with the new Ngrok URL.
 - **Development use:** This setup is intended for local development and testing. For production, use a stable public URL and follow Twilio's production WhatsApp requirements.
 - **RAG flow:** Incoming WhatsApp messages hit the `/twilio/webhook` endpoint and trigger the application's RAG flow, which queries the knowledge base and replies via WhatsApp.
+
+## Usage
+
+1. Sign up or sign in.
+2. Upload a PDF document; the AI will analyze it and generate a summary.
+3. Use the RAG chat to ask questions about documents indexed in the Knowledge Base.
 
 ## Development
 

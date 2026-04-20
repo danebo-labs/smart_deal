@@ -75,22 +75,19 @@ EDITOR="cursor --wait" bin/rails credentials:edit
 
 > **Note:** `.env` and `config/master.key` are in `.gitignore`. Never commit them.
 
-For detailed Bedrock configuration, see [BEDROCK_SETUP.md](BEDROCK_SETUP.md).
+For detailed Bedrock configuration (models, KB, env vars), see [BEDROCK_SETUP.md](BEDROCK_SETUP.md) and `.env.sample`.
 
-## Model Configuration
+### Bedrock IAM (quick reference)
 
-
-
-**Quick setup:**
 1. Copy policy from `docs/bedrock-iam-policy.json`
 2. AWS Console → IAM → Roles → `BedrockKnowledgeBaseRole-chat-bot`
 3. Add permissions → Create inline policy → Paste JSON
 4. Name: `BedrockModelInvokePermissions`
 5. Save
 
-See detailed instructions in `docs/AWS_IAM_PERMISSIONS.md`
+See `docs/AWS_IAM_PERMISSIONS.md` for full instructions.
 
-### Image Compression
+### Image compression
 
 Images uploaded via the UI are automatically compressed before sending to Bedrock to meet the 10MB limit for Custom Data Sources:
 - Resizes to max 1024x1024 pixels
@@ -100,7 +97,7 @@ Images uploaded via the UI are automatically compressed before sending to Bedroc
 
 See `docs/IMAGE_COMPRESSION.md` for technical details.
 
-### Multi-Tenant Architecture (Roadmap)
+### Multi-tenant architecture (roadmap)
 
 The current architecture uses environment variables for configuration. The tenancy model will evolve in stages:
 

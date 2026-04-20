@@ -195,6 +195,63 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
+  # ============================================
+  # Catalog-level pre-resolution (KbDocumentResolver integration)
+  # ============================================
+
+  test 'execute_rag_query injects resolver URIs and context into the orchestrator' do
+    KbDocument.delete_all
+    KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/Esquema SOPREL.pdf",
+      display_name: "Esquema SOPREL",
+      aliases:      [ "Foremcaro 6118/81" ]
+    )
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "que es el Esquema SOPREL?", session_context: "prior ctx")
+
+      assert_includes captured[:kwargs][:entity_s3_uris].join(" "), "Esquema SOPREL.pdf"
+      assert_includes captured[:kwargs][:session_context], "Query Resolution"
+      assert_includes captured[:kwargs][:session_context], "Esquema SOPREL"
+      assert_includes captured[:kwargs][:session_context], "prior ctx"
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query is a no-op on resolver when no catalog match' do
+    KbDocument.delete_all
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "query with no catalog hits", session_context: "prior")
+
+      assert_equal [], captured[:kwargs][:entity_s3_uris]
+      assert_equal "prior", captured[:kwargs][:session_context]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
   test 'execute_rag_query handles StandardError' do
     mock = create_mock_orchestrator(
       answer: '',
@@ -228,10 +285,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_equal 'This is the answer', formatted
   end
 
-  test 'format_rag_response_for_whatsapp includes citations as numbered filenames' do
+  test 'format_rag_response_for_whatsapp includes header + sources footer with citations' do
     result = RagQueryConcern::RagResult.new(
       success?: true,
-      answer: 'This is the answer',
+      answer: 'Esta es la respuesta',
       citations: [
         { number: 1, filename: 'doc1.pdf', title: 'Doc 1' },
         { number: 2, filename: 'doc2.pdf', title: 'Doc 2' }
@@ -240,10 +297,59 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
     formatted = @controller.send(:format_rag_response_for_whatsapp, result)
 
-    assert_includes formatted, 'This is the answer'
+    # Opening header (bold, circled numerals) — in Spanish to match answer locale
+    assert_includes formatted, '📄 *Documentos consultados:*'
+    assert_includes formatted, '① doc1.pdf'
+    assert_includes formatted, '② doc2.pdf'
+
+    # Answer body sandwiched between header and footer
+    assert_includes formatted, 'Esta es la respuesta'
+
+    # Sources footer — localized
     assert_includes formatted, 'Fuentes:'
     assert_includes formatted, '[1] doc1.pdf'
     assert_includes formatted, '[2] doc2.pdf'
+
+    # Structural order: header → body → footer
+    header_idx = formatted.index('Documentos consultados')
+    body_idx   = formatted.index('Esta es la respuesta')
+    footer_idx = formatted.index('Fuentes:')
+    assert header_idx < body_idx && body_idx < footer_idx,
+           "Expected header → body → footer order, got #{[ header_idx, body_idx, footer_idx ].inspect}"
+  end
+
+  test 'format_rag_response_for_whatsapp uses English labels when answer is in English' do
+    result = RagQueryConcern::RagResult.new(
+      success?: true,
+      answer: 'This is the answer to your question.',
+      citations: [ { number: 1, filename: 'manual.pdf', title: 'Manual' } ]
+    )
+
+    formatted = @controller.send(:format_rag_response_for_whatsapp, result)
+
+    assert_includes formatted, '📄 *Documents consulted:*'
+    assert_includes formatted, 'Sources:'
+  end
+
+  test 'format_rag_response_for_whatsapp deduplicates repeated filenames in header' do
+    result = RagQueryConcern::RagResult.new(
+      success?: true,
+      answer: 'Respuesta con dos citas al mismo doc.',
+      citations: [
+        { number: 1, filename: 'same.pdf', title: 'Same' },
+        { number: 2, filename: 'same.pdf', title: 'Same' }
+      ]
+    )
+
+    formatted = @controller.send(:format_rag_response_for_whatsapp, result)
+
+    assert_equal 1, formatted.scan(/① same\.pdf/).size,
+                 "Header should list 'same.pdf' once with ①"
+    assert_not_includes formatted, '② same.pdf'
+
+    # Footer keeps both [n] entries (for inline cross-reference)
+    assert_includes formatted, '[1] same.pdf'
+    assert_includes formatted, '[2] same.pdf'
   end
 
   test 'format_rag_response_for_whatsapp returns fallback for empty answer' do

@@ -194,6 +194,21 @@ class BedrockRagService
       citations = @citation_processor.extract_citations(response.citations)
       session_id = response.session_id
 
+      # GAP: Bedrock only populates response.citations for chunks that Haiku
+      # inline-cites ([n] markers). When Haiku emits <DOC_REFS> but omits inline
+      # citations, response.citations is empty and EntityExtractorService has
+      # no metadata to resolve source_uri. Fall back to the Retrieve API —
+      # cheap vector search — to obtain the authoritative s3_uri metadata.
+      retrieved_for_extraction =
+        if citations.any?
+          citations
+        elsif doc_refs&.any?
+          Rails.logger.info("BedrockRagService: post-gen citations empty; using Retrieve API fallback for source_uri resolution")
+          fallback_retrieve(question)
+        else
+          []
+        end
+
       # If answer doesn't contain inline citations but Bedrock returned source chunks,
       # distribute [n] markers across the answer automatically.
       if citations.any? && !answer_text.match(/\[\d+\]/)
@@ -240,7 +255,7 @@ class BedrockRagService
         # retrieved_references[]. Uncited chunks are not returned by the API.
         # EntityExtractorService uses this to parse DOCUMENT_ALIASES from S0-section
         # chunks that were cited but happened to not get an explicit [n] marker.
-        retrieved_citations: citations,
+        retrieved_citations: retrieved_for_extraction,
         doc_refs:            doc_refs,
         session_id:          session_id
       }
@@ -252,6 +267,41 @@ class BedrockRagService
   end
 
   private
+
+  # Fallback when retrieve_and_generate returns no inline citations: call the
+  # Retrieve API directly to obtain the raw retrieval results. These ALWAYS
+  # carry the authoritative s3_uri in `metadata["x-amz-bedrock-kb-source-uri"]`
+  # (and `location.s3_location.uri`), which is what EntityExtractorService
+  # needs to dedup documents by physical identity.
+  #
+  # Output shape matches CitationProcessor#extract_citations for drop-in use.
+  def fallback_retrieve(question)
+    params = {
+      knowledge_base_id: @knowledge_base_id,
+      retrieval_query: { text: question },
+      retrieval_configuration: {
+        vector_search_configuration: {
+          number_of_results: @rag_config[:number_of_results] || 5,
+          override_search_type: @rag_config[:search_type] || "HYBRID"
+        }
+      }
+    }
+    resp = @client.retrieve(params)
+    results = Array(resp.retrieval_results).map do |r|
+      uri = r.location&.s3_location&.uri
+      location = uri ? { bucket: uri.split('/')[2], key: uri.split('/')[3..].join('/'), uri: uri, type: 's3' } : nil
+      {
+        content:  r.content&.text,
+        location: location,
+        metadata: r.metadata || {}
+      }
+    end
+    Rails.logger.info("BedrockRagService: fallback Retrieve returned #{results.size} chunk(s)")
+    results
+  rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
+    Rails.logger.warn("BedrockRagService: fallback_retrieve failed — #{e.message}")
+    []
+  end
 
   AURORA_RESUME_PATTERN = /aurora.*auto-paused|resuming after being auto-paused/i.freeze
   AURORA_RETRY_DELAYS   = [ 15, 30, 45 ].freeze  # seconds between attempts
@@ -330,6 +380,14 @@ class BedrockRagService
 
   # Loads generation prompt with explicit language instruction.
   # Uses response_locale when set; otherwise detects from question or I18n.locale.
+  #
+  # Language directive is injected at THREE positions to survive Haiku's
+  # attention decay over a long prompt with English chunks ($search_results$)
+  # and possibly English conversation history in session_context:
+  #   1. TOP (before # ROLE) — highest attention slot.
+  #   2. MIDDLE (under # LANGUAGE & TONE) — contextual reinforcement.
+  #   3. TAIL (after session_context) — last signal before generation, overrides
+  #      any English leakage from Recent Conversation or retrieved chunks.
   def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil)
     base = self.class.load_generation_prompt_template
     locale = if response_locale.present?
@@ -344,16 +402,72 @@ class BedrockRagService
     if lang_name.present?
       base = base.sub(
         /(# LANGUAGE & TONE\n)/,
-        "\\1- CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}.\n"
+        "\\1- CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}, even if the retrieved documents or recent conversation are in a different language.\n"
       )
+      base = "#{language_directive_header(lang_name)}\n\n#{base}"
     end
 
     base = "#{base}\n\n#{session_context}" if session_context.present?
+    base = "#{base}\n\n#{language_directive_footer(lang_name)}" if lang_name.present?
     base
+  end
+
+  # Top-of-prompt banner — first thing Haiku reads.
+  def language_directive_header(lang_name)
+    <<~HEADER.strip
+      # RESPONSE LANGUAGE (ABSOLUTE PRIORITY)
+      You MUST write your ENTIRE response in #{lang_name}.
+      - This overrides the language of the retrieved documents and any prior conversation.
+      - If chunks are in another language, translate the relevant content into #{lang_name}.
+      - Section headers, bullet labels, time estimates, safety notes, and the closing must all be in #{lang_name}.
+    HEADER
+  end
+
+  # Tail reminder — placed AFTER session_context so it is the last instruction
+  # Haiku sees before producing the answer. Counteracts language drift caused
+  # by English assistant turns in Recent Conversation history.
+  def language_directive_footer(lang_name)
+    <<~FOOTER.strip
+      # FINAL LANGUAGE REMINDER
+      Regardless of the language used in the retrieved documents or in the recent conversation above, your answer MUST be written entirely in #{lang_name}. Do not mix languages.
+    FOOTER
   end
 
   # Detects response language from the question text. Does not depend on browser/headers.
   # Returns :es for Spanish, :en otherwise.
+  #
+  # Heuristic (robust to accent-less Spanish typical of WhatsApp/field typing):
+  #   1. Any Spanish diacritic or inverted punctuation (á é í ó ú ü ñ ¿ ¡) → :es
+  #   2. At least 2 distinct ASCII-only Spanish stopwords present → :es
+  #   3. Else → :en
+  #
+  # The token list is kept intentionally conservative: only words with no common
+  # English homograph ("is", "the", "a" are excluded) so that 2 hits is a strong
+  # signal without false-positives on English queries mentioning Spanish names.
+  ES_TOKENS = %w[
+    el la los las un una unos unas
+    ellos ellas nosotros vosotros ustedes
+    esto eso este ese esta estos estas esos esas
+    aquel aquella aquellos aquellas
+    mi tu su sus mis tus
+    para por con sin desde hasta hacia entre segun sobre
+    pero porque aunque mientras cuando donde como cual quien
+    cuanto cuanta cuantos cuantas que
+    es son esta estan estas estamos hay tiene tienen tenemos
+    puedo puede pueden podemos podria podrian
+    deseo quiero quieres quiere queremos quieren
+    tengo tenemos
+    hacer hace hacen hago hiciste
+    decir dice dicen digo
+    guiame dame dime busco buscar necesito explica explicame ayudame ayuda
+    paso pasos tiempo tarda tardar tardara duracion integracion
+    instalacion reparar mantenimiento documentacion informacion
+    hola gracias buenos buenas
+  ].freeze
+  ES_TOKEN_SET = Set.new(ES_TOKENS).freeze
+
+  ES_DIACRITIC_PATTERN = /[áéíóúüñ¿¡]/.freeze
+
   def detect_language_from_question(question)
     self.class.detect_language_from_question(question)
   end
@@ -362,9 +476,12 @@ class BedrockRagService
     return I18n.locale if question.blank?
 
     text = question.to_s.strip.downcase
-    return :es if text.match?(/[áéíóúñ¿¡]/)
-    return :es if text.match?(/\b(que|qué|cómo|cuál|cuáles|dónde|quién|por qué|para qué|cuándo|cuánto|cuánta|necesito|quiero|explica|explicame|dime|dame|busco|buscar|información|informacion|sobre|instalación|instalacion|reparar|mantenimiento|documentación|documentacion)\b/i)
-    return :es if text.match?(/\b(es|son|está|están|hay|tiene|tienen|puedo|puede|pueden)\b/) && text.length < 80
+    return :es if text.match?(ES_DIACRITIC_PATTERN)
+
+    # Tokenize on ASCII letters (diacritic case already handled above).
+    tokens  = text.scan(/\b[a-z]+\b/).uniq
+    matches = tokens.count { |t| ES_TOKEN_SET.include?(t) }
+    return :es if matches >= 2
 
     :en
   end
@@ -402,26 +519,31 @@ class BedrockRagService
     end
   end
 
-  # Returns true when the query length exceeds the short-query threshold or
-  # explicitly names a word that doesn't appear in any of the session URIs.
-  # In that case the user is asking about a different document — don't filter.
+  # Returns true when the query explicitly names a document not in the session URIs,
+  # or when the query is long enough to suggest a new document context.
+  # Checking explicit names first ensures short queries like "Que es el Esquema SOPREL?"
+  # are not incorrectly filtered to the current session document.
   SHORT_QUERY_MAX_CHARS = 60
   def query_names_different_document?(question, entity_s3_uris)
-    return false if question.to_s.length <= SHORT_QUERY_MAX_CHARS
-
     # Extract basenames (without extension) from the session URIs.
     session_stems = entity_s3_uris.map { |uri|
       File.basename(uri.to_s, ".*").downcase.gsub(/[_\-]/, " ")
     }
 
-    # Cheap heuristic: look for long capitalised words that look like a document name
-    # but don't match any session stem.
+    # Always check for capitalised words that look like a document name.
+    # This catches short queries like "Que es el Esquema SOPREL?" where the
+    # length heuristic alone would incorrectly apply the session filter.
     candidate_names = question.to_s.scan(/[A-Z][a-zA-Z0-9]{3,}(?:\s+[A-Z][a-zA-Z0-9]{3,})*/).map(&:downcase)
-    return false if candidate_names.empty?
+    if candidate_names.any?
+      return true if candidate_names.any? { |name|
+        session_stems.none? { |stem| stem.include?(name) || name.include?(stem) }
+      }
+    end
 
-    candidate_names.any? { |name|
-      session_stems.none? { |stem| stem.include?(name) || name.include?(stem) }
-    }
+    # No explicit document name signal — for short queries assume same-document follow-up.
+    return false if question.to_s.length <= SHORT_QUERY_MAX_CHARS
+
+    false
   end
 
   def extract_doc_refs(answer_text)

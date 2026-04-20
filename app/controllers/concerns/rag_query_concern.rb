@@ -65,6 +65,15 @@ module RagQueryConcern
       detected
     end
 
+    # Catalog-level pre-resolution: if the query mentions a document by its
+    # human-facing name (display_name) or any stored alias, we inject its
+    # source_uri into entity_s3_uris so retrieval is scoped to it, and we
+    # append an explicit equivalence block to session_context so Haiku
+    # bridges the user's vocabulary and the chunks' internal canonical.
+    resolver_matches       = KbDocumentResolver.resolve(question)
+    merged_entity_s3_uris  = merge_resolver_uris(entity_s3_uris, resolver_matches)
+    merged_session_context = merge_resolver_context(session_context, resolver_matches)
+
     result = QueryOrchestratorService.new(
       question,
       images: images,
@@ -72,9 +81,9 @@ module RagQueryConcern
       tenant: rag_tenant,
       session_id: session_id,
       response_locale: resolved_response_locale,
-      session_context: session_context,
+      session_context: merged_session_context,
       conv_session: conv_session,
-      entity_s3_uris: Array(entity_s3_uris)
+      entity_s3_uris: merged_entity_s3_uris
     ).execute
 
     if whatsapp_to.present? && cache_key
@@ -111,6 +120,10 @@ module RagQueryConcern
 
   WHATSAPP_CHUNK_SIZE = 1550
 
+  # Circled numerals for the "Documents consulted" header (UX: quick visual scan
+  # for a technician in the field). Falls back to "N." beyond the 10th citation.
+  WHATSAPP_CIRCLED_NUMERALS = %w[① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩].freeze
+
   # Formats RAG result for WhatsApp/SMS text responses.
   # Returns the full answer — callers must use split_for_whatsapp before sending
   # via Twilio REST API (1600 char/message limit).
@@ -122,11 +135,42 @@ module RagQueryConcern
     text = result.answer.to_s
 
     if result.citations.present?
-      refs = result.citations.map { |c| "[#{c[:number]}] #{c[:filename]}" }.join("\n")
-      text += "\n\nFuentes:\n#{refs}"
+      text = "#{build_documents_consulted_header(result)}\n\n#{text}\n\n#{build_sources_footer(result)}"
     end
 
     text.presence || "I couldn't find an answer."
+  end
+
+  # Builds the opening header that tells the technician, at a glance, which
+  # documents were used to answer their question. Bold filename list with
+  # circled numerals. Locale matches the answer text.
+  def build_documents_consulted_header(result)
+    locale = whatsapp_response_locale(result)
+    title  = I18n.with_locale(locale) { I18n.t("rag.documents_consulted_header") }
+
+    unique_names = Array(result.citations).filter_map { |c| c[:filename].presence }.uniq
+    lines = unique_names.each_with_index.map do |name, i|
+      bullet = WHATSAPP_CIRCLED_NUMERALS[i] || "#{i + 1}."
+      "#{bullet} #{name}"
+    end
+
+    "📄 *#{title}:*\n#{lines.join("\n")}"
+  end
+
+  # Builds the legacy "Sources:" footer with [n]-indexed filenames for
+  # cross-reference with inline [n] markers in the answer body.
+  def build_sources_footer(result)
+    locale = whatsapp_response_locale(result)
+    label  = I18n.with_locale(locale) { I18n.t("rag.sources_label") }
+    refs   = Array(result.citations).map { |c| "[#{c[:number]}] #{c[:filename]}" }.join("\n")
+
+    "#{label}\n#{refs}"
+  end
+
+  # Detects the language of the answer so the header/footer labels match.
+  # Delegates to BedrockRagService which already owns the es/en heuristics.
+  def whatsapp_response_locale(result)
+    BedrockRagService.detect_language_from_question(result.answer.to_s)
   end
 
   # Splits a response string into chunks that fit within Twilio's 1600-char limit.
@@ -210,6 +254,38 @@ module RagQueryConcern
     user = current_user
     return nil unless user&.respond_to?(:tenant)
     user.tenant
+  end
+
+  # Merges resolver-derived s3 URIs into the list passed by the caller,
+  # de-duplicated and order-preserving. Caller URIs come first (session takes
+  # precedence over catalog hints).
+  def merge_resolver_uris(caller_uris, resolver_matches)
+    return Array(caller_uris) if resolver_matches.blank?
+
+    bucket = ENV.fetch('KNOWLEDGE_BASE_S3_BUCKET', 'multimodal-source-destination')
+    resolver_uris = resolver_matches.filter_map { |d| d.display_s3_uri(bucket) }
+    (Array(caller_uris) + resolver_uris).uniq
+  end
+
+  # Appends a "Query Resolution" block to session_context so Haiku treats the
+  # matched documents as the SAME entity regardless of which alias the user
+  # used. Returns the original context unchanged when there are no matches.
+  def merge_resolver_context(session_context, resolver_matches)
+    return session_context if resolver_matches.blank?
+
+    lines = resolver_matches.map do |doc|
+      aliases = Array(doc.aliases).map(&:to_s).compact_blank.first(5)
+      alias_note = aliases.any? ? " (aka: #{aliases.join(', ')})" : ""
+      "- \"#{doc.display_name}\" → #{doc.s3_key}#{alias_note}"
+    end
+
+    block = <<~BLOCK.strip
+      ## Query Resolution
+      The user's query mentions documents that exist in the catalog. Treat the names below and any of their aliases as references to the SAME physical document. Do NOT claim the document is not found.
+      #{lines.join("\n")}
+    BLOCK
+
+    [ session_context.presence, block ].compact.join("\n\n")
   end
 
   # Centralized error logging for RAG operations

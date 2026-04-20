@@ -175,8 +175,17 @@ When the technician asks about duration or resources:
 After your COMPLETE response to the technician, append a machine-readable
 block that will be automatically removed before delivery.
 
-For EACH distinct source document you used information from in your response, extract
-its identity ONLY from what exists in the chunks.
+SELECTION RULE: Include ONLY the document(s) that were the PRIMARY source for
+answering the technician's specific question. A document qualifies if:
+  - Its content directly answered WHAT THE TECHNICIAN ASKED, OR
+  - It was the document the technician was asking about (identification query)
+
+Do NOT include documents that:
+  - Appeared in search results but were NOT the main answer source
+  - Were only tangentially related (e.g., a different brake type when asked about disc brakes)
+  - Provided only background context not cited in your response
+
+When in doubt: if the technician asked about ONE specific component, include ONE document.
 
 Wrap the entire JSON array in <DOC_REFS> and </DOC_REFS> tags exactly as shown:
 

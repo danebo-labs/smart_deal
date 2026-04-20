@@ -125,6 +125,18 @@ class ConversationSession < ApplicationRecord
     true
   end
 
+  # Physical-identity lookup: returns the canonical key whose entity has the
+  # given source_uri. Used to dedup entities across aliases — two different
+  # canonical_names with the same s3_uri are the same physical document.
+  # @return [String, nil]
+  def find_entity_by_source_uri(uri)
+    return nil if uri.blank?
+    active_entities.each do |key, meta|
+      return key if meta["source_uri"].to_s == uri.to_s
+    end
+    nil
+  end
+
   # Case-insensitive lookup across canonical keys, wa_filename, and aliases.
   # @return [String, nil] the canonical key if found
   def find_entity_by_name_or_alias(name)

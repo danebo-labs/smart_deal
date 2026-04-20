@@ -83,7 +83,9 @@ class BedrockIngestionJob < ApplicationJob
     session = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
 
     Array(uploaded_filenames).each do |wa_filename|
-      result = extract_aliases(wa_filename, kb_id) if session
+      # Alias extraction requires a session (guards against unnecessary KB queries on sessionless calls).
+      result = session ? extract_aliases(wa_filename, kb_id) : nil
+      upsert_kb_document(wa_filename, result)
       register_entity(session, wa_filename, result) if session
       body = build_indexed_notification(wa_filename, result)
       notify_whatsapp(whatsapp_from, whatsapp_to, body)
@@ -131,6 +133,69 @@ class BedrockIngestionJob < ApplicationJob
       )
       Rails.logger.info("BedrockIngestionJob: registered placeholder entity '#{stem}' for #{wa_filename}")
     end
+
+    persist_to_technician_documents(session, wa_filename, result, s3_uri)
+  end
+
+  # Creates the KbDocument row only after Bedrock confirms COMPLETE.
+  # Uses find_or_initialize_by so re-runs are idempotent (e.g. manual retries).
+  #
+  # Naming rules (see KbDocument#display_name_promotable? for the full criterion):
+  #   - Web uploads (human-chosen filename): the stem is the display_name and
+  #     is NEVER overwritten. Opus canonical is stored as an alias.
+  #   - WhatsApp/chat uploads (machine-generated filename): the Opus canonical
+  #     replaces the machine stem on first extraction; stem is NOT aliased
+  #     (no human searches for "wa 20260410 ...").
+  def upsert_kb_document(wa_filename, result)
+    m      = wa_filename.match(/\A(?:wa|chat)_(\d{4})(\d{2})(\d{2})_/)
+    date   = m ? "#{m[1]}-#{m[2]}-#{m[3]}" : Date.current.iso8601
+    s3_key = "uploads/#{date}/#{wa_filename}"
+    stem   = File.basename(wa_filename, ".*").tr("_-", " ").strip
+    canonical = result&.dig(:canonical_name).to_s.strip.presence
+    machine_name = KbDocument.machine_generated_filename?(wa_filename)
+
+    kb_doc = KbDocument.find_or_initialize_by(s3_key: s3_key)
+
+    if machine_name
+      # wa_/chat_: promote Opus canonical while display_name is the placeholder stem.
+      kb_doc.display_name = canonical if canonical.present? && kb_doc.display_name_promotable?
+      kb_doc.display_name ||= stem
+    else
+      # Human-chosen filename: preserve it as display_name; canonical becomes an alias.
+      kb_doc.display_name ||= stem
+    end
+
+    extra_aliases = [ canonical ]
+    extra_aliases << stem unless machine_name
+    kb_doc.aliases = (Array(kb_doc.aliases) + extra_aliases + Array(result&.dig(:aliases)))
+                       .map { |a| a.to_s.strip }
+                       .compact_blank
+                       .uniq
+                       .first(15)
+    kb_doc.save!
+    Rails.logger.info("BedrockIngestionJob: upserted KbDocument #{s3_key} → '#{kb_doc.display_name}' (machine_name=#{machine_name}, aliases=#{kb_doc.aliases.size})")
+  rescue StandardError => e
+    Rails.logger.warn("BedrockIngestionJob: failed to upsert KbDocument for #{wa_filename} — #{e.message}")
+  end
+
+  def persist_to_technician_documents(session, wa_filename, result, s3_uri)
+    return unless session
+
+    canonical = result ? result[:canonical_name] : wa_filename.sub(/\.[^.]+\z/, '')
+    TechnicianDocument.upsert_from_entity(
+      identifier:     session.identifier,
+      channel:        session.channel,
+      canonical_name: canonical,
+      metadata: {
+        "aliases"     => result ? result[:aliases] : [],
+        "wa_filename" => wa_filename,
+        "source_uri"  => s3_uri,
+        "doc_type"    => "field_image"
+      }
+    )
+    Rails.logger.info("BedrockIngestionJob: persisted TechnicianDocument '#{canonical}' for #{session.identifier}")
+  rescue StandardError => e
+    Rails.logger.warn("BedrockIngestionJob: failed to persist TechnicianDocument for #{wa_filename} — #{e.message}")
   end
 
   def build_s3_uri_for_filename(filename)
@@ -143,12 +208,18 @@ class BedrockIngestionJob < ApplicationJob
   MAX_WHATSAPP_BODY = 1500
 
   def build_indexed_notification(wa_filename, result)
-    body = if result
+    body = if result && result[:canonical_name].present?
       name    = result[:canonical_name]
-      aliases = result[:aliases].first(5).map { |a| a.truncate(60) }.join(", ")
-      I18n.t('rag.whatsapp_indexed_with_aliases',
-             name: name, aliases: aliases,
-             default: "✅ #{name}\nConsúltame por: #{aliases}")
+      aliases = Array(result[:aliases]).first(5).map { |a| a.truncate(60) }
+      if aliases.any?
+        I18n.t('rag.whatsapp_indexed_with_aliases',
+               name: name, aliases: aliases.join(", "),
+               default: "✅ #{name}\nConsúltame por: #{aliases.join(', ')}")
+      else
+        I18n.t('rag.whatsapp_indexed_canonical_only',
+               name: name,
+               default: "✅ #{name}\nPregúntame sobre este documento.")
+      end
     else
       I18n.t('rag.whatsapp_indexed_generic',
              filename: wa_filename,

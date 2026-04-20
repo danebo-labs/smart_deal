@@ -213,43 +213,52 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   # ============================================
-  # Cross-channel visibility (MVP global pool)
+  # Session-scoped filtering (TechnicianDocument NO longer auto-merged)
+  #
+  # Rationale: the KB retrieval filter must mirror what the user (and Haiku,
+  # via Session Focus) actually see in the current conversation. Historical
+  # TechnicianDocument rows that are not active in the session would pollute
+  # retrieval with unrelated docs. Queries that legitimately target a doc
+  # outside the session are caught by BedrockRagService#query_names_different_document?
+  # (explicit name match) and the retry-without-filter fallback.
   # ============================================
 
-  test 'entity_s3_uris includes URIs from TechnicianDocument uploaded via a different channel' do
+  test 'entity_s3_uris EXCLUDES TechnicianDocuments not present in session' do
     create_tech_doc(
       canonical_name: "Junction Box Manual",
       source_uri:     "s3://bucket/junction_box.pdf",
       channel:        "whatsapp"
     )
 
-    web_session = build_session(channel: "web")
+    session = build_session(channel: "whatsapp")
 
-    uris = SessionContextBuilder.entity_s3_uris(web_session)
+    uris = SessionContextBuilder.entity_s3_uris(session)
 
-    assert_includes uris, "s3://bucket/junction_box.pdf"
+    assert_not_includes uris, "s3://bucket/junction_box.pdf"
+    assert_equal [], uris
   end
 
-  test 'entity_s3_uris merges session active_entities with TechnicianDocument URIs' do
+  test 'entity_s3_uris returns ONLY session active_entities even when TechnicianDocuments exist' do
     create_tech_doc(
       canonical_name: "WA Doc",
       source_uri:     "s3://bucket/wa_doc.pdf",
       channel:        "whatsapp"
     )
 
-    web_session = build_session(channel: "web")
-    web_session.add_entity("Web Doc", {
+    session = build_session(channel: "whatsapp")
+    session.add_entity("Web Doc", {
       "source"     => "doc_refs_rule8",
       "source_uri" => "s3://bucket/web_doc.pdf"
     })
 
-    uris = SessionContextBuilder.entity_s3_uris(web_session)
+    uris = SessionContextBuilder.entity_s3_uris(session)
 
-    assert_includes uris, "s3://bucket/wa_doc.pdf"
+    assert_not_includes uris, "s3://bucket/wa_doc.pdf"
     assert_includes uris, "s3://bucket/web_doc.pdf"
+    assert_equal 1, uris.size
   end
 
-  test 'entity_s3_uris deduplicates when same URI is in session and TechnicianDocument' do
+  test 'entity_s3_uris returns session URI even if same URI exists as TechnicianDocument' do
     create_tech_doc(
       canonical_name: "Shared Doc",
       source_uri:     "s3://bucket/shared.pdf",
@@ -264,20 +273,6 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
     uris = SessionContextBuilder.entity_s3_uris(session)
 
-    assert_equal 1, uris.count { |u| u == "s3://bucket/shared.pdf" }
-  end
-
-  test 'entity_s3_uris excludes TechnicianDocument rows with fabricated URIs' do
-    create_tech_doc(
-      canonical_name: "Bad Doc",
-      source_uri:     "s3://unknown-bucket/fake.pdf",
-      channel:        "whatsapp"
-    )
-
-    session = build_session
-
-    uris = SessionContextBuilder.entity_s3_uris(session)
-
-    assert_not_includes uris, "s3://unknown-bucket/fake.pdf"
+    assert_equal [ "s3://bucket/shared.pdf" ], uris
   end
 end

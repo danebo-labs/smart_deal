@@ -251,6 +251,40 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  # Regression: long accent-less Spanish queries were detected as :es but Haiku
+  # still answered in English because the language directive sat in the middle
+  # of the prompt while English chunks + English conversation history were the
+  # last signals before generation. Directive must now appear at top, middle,
+  # AND after session_context (last position = highest recency weight).
+  test 'query reinforces Spanish language directive at top, middle, and tail of prompt' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      session_context = "## Recent Conversation\nUser: prior question\nAssistant: prior English answer"
+      service.query(
+        'si deseo hacer una integracion entre ellos guiame paso a paso',
+        session_context: session_context
+      )
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, '# RESPONSE LANGUAGE (ABSOLUTE PRIORITY)'
+      assert_includes template, 'You MUST write your ENTIRE response in Spanish'
+      assert_includes template, 'You MUST respond entirely in Spanish'
+      assert_includes template, '# FINAL LANGUAGE REMINDER'
+      idx_header = template.index('# RESPONSE LANGUAGE (ABSOLUTE PRIORITY)')
+      idx_role   = template.index('# ROLE')
+      idx_ctx    = template.index('## Recent Conversation')
+      idx_footer = template.index('# FINAL LANGUAGE REMINDER')
+      assert idx_header < idx_role, 'language header must precede # ROLE'
+      assert idx_ctx < idx_footer,  'final reminder must come after session_context'
+    end
+  end
+
   test 'query does not alter a real answer that happens to start with sorry' do
     real_answer = "Sorry for the delay in this documentation — the procedure is as follows."
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(real_answer)) do
@@ -394,6 +428,25 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'query omits filter when short query explicitly names a document not in session URIs' do
+    # Regression: "Que es el Esquema SOPREL?" (short, 25 chars) was incorrectly filtered
+    # to the session document (Orona CPU board), returning wrong results.
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('Que es el Esquema SOPREL?',
+                    entity_s3_uris: [ 's3://bucket/Orona CPU board.pdf' ])
+
+      filter = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :retrieval_configuration,
+        :vector_search_configuration,
+        :filter
+      )
+      assert_nil filter, "Expected no filter: SOPREL is not in the session URIs even though query is short"
+    end
+  end
+
   test 'query retries without filter when filtered result returns no results' do
     call_count = 0
     no_results_text = "I'm sorry, I couldn't find relevant information."
@@ -418,6 +471,48 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 2, call_count, "Expected 2 calls: one with filter, one without"
       assert_equal real_answer, result[:answer]
+    end
+  end
+
+  # ===== detect_language_from_question =====
+  # Heuristic must survive accent-less Spanish typed in the field (gloves, mobile keyboards).
+
+  test 'detect_language_from_question: accent/ñ/inverted punctuation → :es' do
+    assert_equal :es, BedrockRagService.detect_language_from_question('¿Cuánto tarda?')
+    assert_equal :es, BedrockRagService.detect_language_from_question('modernización')
+    assert_equal :es, BedrockRagService.detect_language_from_question('año')
+  end
+
+  test 'detect_language_from_question: long accent-less Spanish query → :es (regression)' do
+    # Real user query that was previously misclassified as English because:
+    # - no diacritics
+    # - "cuanto" without tilde not in old keyword list
+    # - length (94) exceeded the old 80-char cutoff for short-verb heuristic
+    q = 'si deseo hacer una integracoon entre ellos guiame paso a paso y cuanto tiempo puede tardar ?'
+    assert_equal :es, BedrockRagService.detect_language_from_question(q)
+  end
+
+  test 'detect_language_from_question: short accent-less Spanish → :es when >=2 tokens' do
+    assert_equal :es, BedrockRagService.detect_language_from_question('dame los torques')
+    assert_equal :es, BedrockRagService.detect_language_from_question('como instalar esto')
+    assert_equal :es, BedrockRagService.detect_language_from_question('cuanto tiempo tarda')
+  end
+
+  test 'detect_language_from_question: English queries → :en' do
+    assert_equal :en, BedrockRagService.detect_language_from_question('How do I install this?')
+    assert_equal :en, BedrockRagService.detect_language_from_question('What is the torque specification for the brake?')
+    assert_equal :en, BedrockRagService.detect_language_from_question('Show me the maintenance procedure')
+  end
+
+  test 'detect_language_from_question: single-hit Spanish word in English context stays :en' do
+    # "entre" and "sobre" exist as loan-words in English; a single match must not flip locale.
+    assert_equal :en, BedrockRagService.detect_language_from_question('tell me about entre nous philosophy')
+  end
+
+  test 'detect_language_from_question: blank falls back to I18n.locale' do
+    I18n.with_locale(:es) do
+      assert_equal :es, BedrockRagService.detect_language_from_question('')
+      assert_equal :es, BedrockRagService.detect_language_from_question(nil)
     end
   end
 end

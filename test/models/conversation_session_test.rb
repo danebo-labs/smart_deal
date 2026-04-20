@@ -382,6 +382,33 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal Set.new([ 'good_one', 'good two', 'good_three' ]), Set.new(aliases)
   end
 
+  # ─── find_entity_by_source_uri ──────────────────────────────────────────────
+
+  test 'find_entity_by_source_uri returns canonical key for matching s3 uri' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700008001',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    uri = 's3://bucket/uploads/2026-04-15/wa_abc.jpeg'
+    s.add_entity_with_aliases('Elevator brake', %w[disc\ brake], 'source_uri' => uri)
+
+    assert_equal 'Elevator brake', s.find_entity_by_source_uri(uri)
+  end
+
+  test 'find_entity_by_source_uri returns nil for unknown uri' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+77700008002',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    s.add_entity_with_aliases('Some Doc', [], 'source_uri' => 's3://bucket/a.jpeg')
+
+    assert_nil s.find_entity_by_source_uri('s3://bucket/other.jpeg')
+    assert_nil s.find_entity_by_source_uri(nil)
+    assert_nil s.find_entity_by_source_uri('')
+  end
+
   # ─── find_entity_by_name_or_alias ───────────────────────────────────────────
 
   test 'find_entity_by_name_or_alias finds by canonical key (case-insensitive)' do
@@ -546,5 +573,40 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.reload
 
     assert_equal({}, session.active_entities)
+  end
+
+  test 'preload_recent_entities loads docs from global pool regardless of identifier or channel' do
+    TechnicianDocument.delete_all
+    my_identifier    = "whatsapp:+56900000090"
+    other_identifier = "whatsapp:+56900000091"
+    channel          = "whatsapp"
+
+    ConversationSession.where(identifier: my_identifier, channel: channel).destroy_all
+
+    TechnicianDocument.create!(
+      identifier: other_identifier, channel: channel,
+      canonical_name: "Other Technician Doc",
+      last_used_at: 5.minutes.ago, interaction_count: 1
+    )
+    TechnicianDocument.create!(
+      identifier: my_identifier, channel: channel,
+      canonical_name: "My Technician Doc",
+      last_used_at: 1.minute.ago, interaction_count: 1
+    )
+    TechnicianDocument.create!(
+      identifier: "user:42", channel: "web",
+      canonical_name: "Web Uploaded Doc",
+      last_used_at: 2.minutes.ago, interaction_count: 1
+    )
+
+    session = ConversationSession.find_or_create_for(identifier: my_identifier, channel: channel)
+    session.reload
+
+    assert session.active_entities.key?("My Technician Doc"),
+           "Should preload own doc"
+    assert session.active_entities.key?("Other Technician Doc"),
+           "Should preload doc from other WhatsApp user (global pool)"
+    assert session.active_entities.key?("Web Uploaded Doc"),
+           "Should preload doc uploaded via web (global pool)"
   end
 end

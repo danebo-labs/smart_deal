@@ -3,6 +3,10 @@
 Rails.application.routes.draw do
   mount ActionCable.server => "/cable"
 
+  unless Rails.env.test?
+    mount MissionControl::Jobs::Engine, at: '/jobs'
+  end
+
   root 'home#index'
 
   get  'home/metrics',       to: 'home#metrics'

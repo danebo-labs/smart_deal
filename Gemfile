@@ -10,7 +10,7 @@ gem 'propshaft'
 # Use sqlite3 as the database for Active Record
 gem 'sqlite3', '>= 2.1'
 # PostgreSQL adapter for client business databases (Text-to-SQL)
-gem 'pg'
+gem 'pg', '~> 1.5.0'
 # Use the Puma web server [https://github.com/puma/puma]
 gem 'puma', '>= 5.0'
 # Use JavaScript with ESM import maps [https://github.com/rails/importmap-rails]
@@ -35,6 +35,7 @@ gem 'tzinfo-data', platforms: %i[windows jruby]
 gem 'solid_cable'
 gem 'solid_cache'
 gem 'solid_queue'
+gem 'mission_control-jobs'
 
 # Reduces boot times through caching; required in config/boot.rb
 gem 'bootsnap', require: false

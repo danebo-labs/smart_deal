@@ -79,77 +79,7 @@ For detailed Bedrock configuration, see [BEDROCK_SETUP.md](BEDROCK_SETUP.md).
 
 ## Model Configuration
 
-### Configurable Bedrock Models
 
-The application supports flexible configuration of Bedrock models via environment variables, enabling cost optimization and precision tuning.
-
-#### Available Environment Variables
-
-```bash
-# Primary model for RAG response generation
-BEDROCK_MODEL_ID=us.anthropic.claude-3-5-haiku-20241022-v1:0
-
-# Model for multimodal queries (with images)
-BEDROCK_VISION_MODEL_ID=us.anthropic.claude-3-5-sonnet-20241022-v2:0
-
-# Embedding model for vectorization (configured in AWS Knowledge Base)
-BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v1
-
-# Knowledge Base ID
-BEDROCK_KNOWLEDGE_BASE_ID=YOUR_KB_ID
-
-# Data Source ID
-BEDROCK_DATA_SOURCE_ID=YOUR_DS_ID
-```
-
-#### Available Models
-
-##### Claude 4.5 (Latest - Recommended)
-- `global.anthropic.claude-sonnet-4-5-20250929-v1:0` - Sonnet 4.5 Global (recommended for production)
-- `global.anthropic.claude-haiku-4-5-20251001-v1:0` - Haiku 4.5 Global (most economical)
-- `global.anthropic.claude-opus-4-5-20251101-v1:0` - Opus 4.5 Global (maximum precision)
-- `us.anthropic.claude-sonnet-4-5-20250929-v1:0` - Sonnet 4.5 US (data residency)
-- `us.anthropic.claude-haiku-4-5-20251001-v1:0` - Haiku 4.5 US
-- `us.anthropic.claude-opus-4-5-20251101-v1:0` - Opus 4.5 US
-
-##### Claude 3.x
-- `anthropic.claude-3-7-sonnet-20250219-v1:0` - Claude 3.7 Sonnet
-- `anthropic.claude-3-5-sonnet-20241022-v2:0` - Claude 3.5 Sonnet v2
-
-#### Model Comparison
-
-| Model | Cost (input/output per 1K tokens) | Speed | Precision | Recommended Use |
-|-------|-----------------------------------|-------|-----------|-----------------|
-| Haiku 4.5 | $0.0008 / $0.004 | ⚡⚡⚡ | ⭐⭐⭐ | Simple queries, high volume |
-| Sonnet 4.5 | $0.003 / $0.015 | ⚡⚡ | ⭐⭐⭐⭐⭐ | Optimal balance (recommended) |
-| Opus 4.5 | $0.015 / $0.075 | ⚡ | ⭐⭐⭐⭐⭐⭐ | Complex analysis, maximum quality |
-
-**Global vs US Regional Profiles:**
-- **Global**: Maximum throughput, better latency, same price as US regional
-- **US Regional**: Data residency in US region (compliance requirements)
-
-#### Testing Different Models
-
-To test different models, simply update `.env` and restart the server:
-
-```bash
-# Edit .env
-BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
-
-# Restart server
-bin/dev
-```
-
-#### UI Model Selector
-
-Users can also select models directly from the chat interface without changing environment variables. This enables:
-- Real-time A/B testing
-- Per-query model selection
-- Cost and precision comparison
-
-### IAM Permissions
-
-All configured models require IAM permissions in the Knowledge Base role.
 
 **Quick setup:**
 1. Copy policy from `docs/bedrock-iam-policy.json`
@@ -170,13 +100,30 @@ Images uploaded via the UI are automatically compressed before sending to Bedroc
 
 See `docs/IMAGE_COMPRESSION.md` for technical details.
 
-### Multi-Tenant Architecture (Future)
+### Multi-Tenant Architecture (Roadmap)
 
-The current architecture uses environment variables for configuration. For multi-tenant deployments:
-- Configuration will move to database (`bedrock_configs` table)
-- Each tenant can have independent Knowledge Base and model settings
-- Per-tenant cost tracking and quotas
-- Tenant isolation at the data and configuration level
+The current architecture uses environment variables for configuration. The tenancy model will evolve in stages:
+
+```
+Stage 0 — MVP (current)
+  Global shared document pool. All documents uploaded (via WhatsApp or web)
+  are visible to all sessions. technician_documents scoped globally (account_id = nil).
+
+Stage 1 — Multi-tenant
+  Account (tenant) isolation. Each account has its own KB config, document pool,
+  and Bedrock settings. technician_documents scoped by account_id.
+  Configuration moves to database (bedrock_configs table).
+  Per-tenant cost tracking and quotas.
+
+Stage 2 — Multi-project
+  A Project belongs to an Account and groups users across channels.
+  Documents are scoped by project_id. A WhatsApp user and a web user
+  in the same project share the same document pool.
+  technician_documents scoped by [account_id, project_id].
+```
+
+`identifier` and `channel` remain on `conversation_sessions` for Twilio/web routing,
+but they do **not** drive document deduplication — that is handled at the pool scope level.
 
 See `docs/MULTI_TENANT_ARCHITECTURE.md` for design details.
 
@@ -311,3 +258,61 @@ sequenceDiagram
 | **RagQueryConcern** | `app/controllers/concerns/rag_query_concern.rb` | Shared query logic for all channels (web API, WhatsApp) |
 
 For additional architecture details and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### Session-Scoped KB Retrieval & Document Memory Architecture
+
+Three interdependent storage layers track document context at different time horizons:
+
+```
+kb_documents         → "What exists in S3?"                       (global catalog, 1 row per file, admin dashboard)
+technician_documents → "What has this technician used?"           (durable per-technician memory, survives sessions)
+active_entities      → "What is the technician working on now?"   (session working set, 30-min TTL)
+```
+
+**`kb_documents`** — Global S3 catalog. One row per uploaded S3 key. Created on upload; enriched with `display_name`, `aliases`, and `size_bytes` as the pipeline processes the file. Powers the admin dashboard at `/dashboard`. Not scoped to any technician or session.
+
+**`technician_documents`** — Durable document memory. Written in two stages: immediately after Bedrock ingestion completes (`BedrockIngestionJob` via `ChunkAliasExtractor`), and again after the first RAG response with enriched Haiku-derived aliases (`EntityExtractorService`). Tracks `interaction_count` for future relevance ranking. This is the source of truth that outlives sessions.
+
+> **MVP scope:** The pool is global (`account_id = nil`). Deduplication is by `canonical_name` (or `source_uri`) across all uploaders — a document uploaded via WhatsApp and later via web is stored once. `identifier` and `channel` are preserved for audit but do not drive uniqueness.
+> **Stage 1+:** `account_id` will be added; uniqueness becomes `[account_id, canonical_name]`. Stage 2 adds `project_id`.
+
+**`conversation_sessions.active_entities`** — Session-scoped working set (JSONB, max 5 entities, 30-min TTL). Seeded from `technician_documents` on session creation (`preload_recent_entities`). Drives session-scoped KB retrieval filters so follow-up queries only search documents already active in the conversation.
+
+The relationship is a **cache/source pattern**: `technician_documents` is the durable source; `active_entities` is the ephemeral working copy rebuilt from it on each new session. There is no `expired_at` on `technician_documents` because eviction is by space (FIFO max 20), not by time — a manual may be relevant weeks later when a technician returns to the same building.
+
+#### Data flow: WhatsApp image upload → context
+
+```
+WhatsApp upload
+  └─ S3 put_object
+       └─ kb_documents.ensure_for_s3_key!  (display_name, size_bytes — immediate)
+  └─ BedrockIngestionJob (polls until COMPLETE)
+       ├─ kb_documents          ← enrich display_name + aliases (ChunkAliasExtractor)
+       ├─ technician_documents  ← upsert_from_entity (immediate insert, no RAG query required)
+       ├─ active_entities       ← add_entity_with_aliases
+       └─ WhatsApp notify       ← canonical name sent back to technician
+
+Technician asks follow-up question
+  └─ retrieve_and_generate (session-scoped URI filter)
+       └─ EntityExtractorService (doc_refs path)
+            ├─ active_entities       ← promote/add entity
+            ├─ technician_documents  ← upsert_from_entity (richer Haiku aliases)
+            └─ kb_documents          ← merge aliases (up to 15)
+```
+
+#### Session-scoped retrieval filter logic
+
+Before each `retrieve_and_generate` call, the system evaluates three conditions in order:
+
+1. No active entities in session → search full KB (no filter).
+2. Query ≤ 60 chars → apply URI filter. Short queries are unambiguous follow-ups.
+3. Long query contains capitalized words not matching any session document → assume new document, search full KB.
+4. Otherwise → apply URI filter.
+
+If the filter returns no results (Bedrock guardrail), the system retries automatically against the full KB.
+
+| Layer | Scope (MVP) | Scope (Stage 1+) | Eviction | Written by |
+|---|---|---|---|---|
+| `kb_documents` | Global | Global per account | Never | Upload + ingestion + RAG |
+| `technician_documents` | Global pool (`account_id = nil`) | Per `[account_id, project_id]` | FIFO max 20 | Ingestion + RAG (EntityExtractor) |
+| `active_entities` | Per session | Per session | 30-min TTL, max 5 | Ingestion + RAG, seeded from `technician_documents` |

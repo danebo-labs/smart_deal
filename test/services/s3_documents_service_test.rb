@@ -171,16 +171,12 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
   # upload_file
   # ============================================
 
-  test 'upload_file returns S3 key on success' do
+  test 'upload_file returns S3 key on success and does not create KbDocument' do
     with_fake_s3_client do |fake|
       service = S3DocumentsService.new
-      assert_difference -> { KbDocument.count }, +1 do
+      assert_no_difference -> { KbDocument.count } do
         key = service.upload_file('photo.png', 'binary-data', 'image/png')
-
         assert_match %r{uploads/\d{4}-\d{2}-\d{2}/photo\.png}, key
-        kb = KbDocument.find_by!(s3_key: key)
-        assert_equal 'photo', kb.display_name
-        assert_equal [], kb.aliases
       end
       assert_equal 1, fake.uploaded.length
       assert_equal 'binary-data', fake.uploaded.first[:body]
@@ -193,9 +189,7 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
       fake.should_raise_on_put = true
 
       service = S3DocumentsService.new
-      assert_no_difference -> { KbDocument.count } do
-        assert_nil service.upload_file('photo.png', 'data', 'image/png')
-      end
+      assert_nil service.upload_file('photo.png', 'data', 'image/png')
     end
   end
 

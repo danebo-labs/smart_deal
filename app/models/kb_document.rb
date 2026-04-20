@@ -22,6 +22,44 @@ class KbDocument < ApplicationRecord
     "s3://#{bucket_name}/#{key}"
   end
 
+  # Machine-generated upload names (WhatsApp/web chat). These filenames carry
+  # no human value ("wa_20260410_174231_0.jpeg") and are never useful as
+  # search aliases. Presence of this pattern is the ONLY signal that allows
+  # overwriting a stored display_name with a richer canonical.
+  MACHINE_FILENAME_PATTERN = /\A(?:wa|chat)_\d{8}_\d{6}_\d+\./.freeze
+
+  def self.machine_generated_filename?(s3_key_or_filename)
+    File.basename(s3_key_or_filename.to_s).match?(MACHINE_FILENAME_PATTERN)
+  end
+
+  def machine_generated_filename?
+    self.class.machine_generated_filename?(s3_key)
+  end
+
+  # Plain-text derivation of the display name from s3_key. Used as the
+  # fallback display_name when no canonical is available, and as the marker
+  # for "auto-assigned placeholder" when deciding whether a display_name
+  # is safe to overwrite with a richer canonical (display_name_promotable?).
+  def stem_from_s3_key
+    base = File.basename(s3_key.to_s)
+    File.basename(base, ".*").tr("_-", " ").strip
+  end
+
+  # True when the current display_name is a machine-generated placeholder and
+  # may therefore be replaced with a canonical discovered later (Opus/Haiku).
+  #
+  # A display_name is promotable when:
+  #   - it is blank (new row, nothing to preserve), OR
+  #   - the underlying filename is machine-generated (wa_*/chat_*) AND the
+  #     display_name still equals its stem (no human label has been set).
+  #
+  # Human-chosen filenames (web uploads with descriptive names) are ALWAYS
+  # treated as immutable: the technician's vocabulary wins.
+  def display_name_promotable?
+    return true if display_name.blank?
+    machine_generated_filename? && display_name == stem_from_s3_key
+  end
+
   # docs: hashes from S3DocumentsService#list_documents (:full_path). kb_by_object_key: index by object_key_for_match.
   # Newest KbDocument#created_at first; S3 objects without a KB row last (tamaño sigue alineado por fila).
   def self.sort_s3_documents_by_kb_created_at(docs, kb_by_object_key)
@@ -33,7 +71,7 @@ class KbDocument < ApplicationRecord
 
   # First successful upload wins: creates row with optional human display_name from filename stem.
   # Does not overwrite an existing row.
-  def self.ensure_for_s3_key!(key)
+  def self.ensure_for_s3_key!(key, size_bytes: nil)
     return if key.blank?
 
     record = find_or_initialize_by(s3_key: key)
@@ -42,6 +80,7 @@ class KbDocument < ApplicationRecord
     stem = File.basename(key)
     record.display_name = File.basename(stem, ".*").tr("_-", " ").strip.presence
     record.aliases = [] if record.aliases.nil?
+    record.size_bytes = size_bytes if size_bytes.present?
     record.save!
     record
   end

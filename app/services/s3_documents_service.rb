@@ -71,11 +71,6 @@ class S3DocumentsService
     )
 
     Rails.logger.info("S3 upload successful: s3://#{@bucket_name}/#{key}")
-    begin
-      KbDocument.ensure_for_s3_key!(key)
-    rescue StandardError => e
-      Rails.logger.warn("S3DocumentsService: KbDocument.ensure_for_s3_key! failed — #{e.message}")
-    end
     key
   rescue StandardError => e
     Rails.logger.error("S3 upload failed: #{e.message}")

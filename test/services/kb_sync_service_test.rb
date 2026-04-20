@@ -147,21 +147,21 @@ class KbSyncServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'sync! returns nil when list_data_sources fails' do
+  test 'sync! re-raises when list_data_sources fails' do
     with_fake_agent_client do |client|
       client.should_raise_on_list = true
       service = KbSyncService.new
 
-      assert_nil service.sync!
+      assert_raises(StandardError) { service.sync! }
     end
   end
 
-  test 'sync! returns nil when start_ingestion_job fails' do
+  test 'sync! re-raises when start_ingestion_job fails' do
     with_fake_agent_client do |client|
       client.should_raise_on_ingest = true
       service = KbSyncService.new
 
-      assert_nil service.sync!
+      assert_raises(StandardError) { service.sync! }
     end
   end
 

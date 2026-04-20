@@ -73,21 +73,20 @@ class TechnicianDocumentTest < ActiveSupport::TestCase
 
   # ─── evict_oldest ────────────────────────────────────────────────────────────
 
-  test 'evicts oldest records beyond MAX_PER_TECHNICIAN' do
+  test 'evicts oldest records globally beyond MAX_PER_TECHNICIAN' do
     (TechnicianDocument::MAX_PER_TECHNICIAN + 3).times do |i|
       TechnicianDocument.create!(
-        identifier:        IDENTIFIER,
-        channel:           CHANNEL,
+        identifier:        "user:#{i}",
+        channel:           i.even? ? "whatsapp" : "web",
         canonical_name:    "Doc #{i}",
         last_used_at:      i.minutes.ago,
         interaction_count: 1
       )
     end
 
-    TechnicianDocument.evict_oldest(IDENTIFIER, CHANNEL)
+    TechnicianDocument.evict_oldest
 
-    assert_equal TechnicianDocument::MAX_PER_TECHNICIAN,
-                 TechnicianDocument.for_identifier(IDENTIFIER, CHANNEL).count
+    assert_equal TechnicianDocument::MAX_PER_TECHNICIAN, TechnicianDocument.count
   end
 
   # ─── recent_for ──────────────────────────────────────────────────────────────
@@ -109,7 +108,7 @@ class TechnicianDocumentTest < ActiveSupport::TestCase
     assert_equal "Doc 0", docs.first.canonical_name
   end
 
-  test 'recent_for scopes to identifier and channel' do
+  test 'recent_for (audit) scopes to identifier and channel' do
     TechnicianDocument.create!(
       identifier: IDENTIFIER, channel: CHANNEL, canonical_name: "Mine",
       last_used_at: Time.current, interaction_count: 1
@@ -123,6 +122,89 @@ class TechnicianDocumentTest < ActiveSupport::TestCase
 
     assert_equal 1, docs.size
     assert_equal "Mine", docs.first.canonical_name
+  end
+
+  # ─── source_uri deduplication (physical file identity) ──────────────────────
+
+  test 'upsert_from_entity deduplicates by source_uri — same S3 file referenced by different alias is 1 record' do
+    # First query: Haiku names the doc "Elevator brake assembly unit"
+    TechnicianDocument.upsert_from_entity(
+      identifier: IDENTIFIER, channel: CHANNEL,
+      canonical_name: "Elevator brake assembly unit",
+      metadata: {
+        "source_uri" => "s3://bucket/uploads/wa_20260415_171242_0.jpeg",
+        "aliases"    => [ "Electromagnetic disc brake", "BIMORE brake component" ]
+      }
+    )
+
+    # Second query: Haiku names the SAME file "BIMORE brake component"
+    doc = TechnicianDocument.upsert_from_entity(
+      identifier: IDENTIFIER, channel: CHANNEL,
+      canonical_name: "BIMORE brake component",
+      metadata: {
+        "source_uri" => "s3://bucket/uploads/wa_20260415_171242_0.jpeg",
+        "aliases"    => [ "Traction machine brake module" ]
+      }
+    )
+
+    assert_equal 1, TechnicianDocument.count,
+                 "Same S3 file referenced by different alias must produce 1 record"
+    assert_equal 2, doc.interaction_count
+    assert_includes doc.aliases, "Electromagnetic disc brake"
+    assert_includes doc.aliases, "Traction machine brake module"
+  end
+
+  test 'upsert_from_entity falls back to canonical_name dedup when source_uri is blank' do
+    TechnicianDocument.upsert_from_entity(
+      identifier: IDENTIFIER, channel: CHANNEL,
+      canonical_name: "Elevator brake assembly unit",
+      metadata: { "source_uri" => "", "aliases" => [ "disc brake" ] }
+    )
+
+    doc = TechnicianDocument.upsert_from_entity(
+      identifier: IDENTIFIER, channel: CHANNEL,
+      canonical_name: "Elevator brake assembly unit",
+      metadata: { "source_uri" => "", "aliases" => [ "EM brake" ] }
+    )
+
+    assert_equal 1, TechnicianDocument.count
+    assert_equal 2, doc.interaction_count
+  end
+
+  # ─── case-insensitive deduplication ─────────────────────────────────────────
+
+  test 'upsert_from_entity deduplicates case-insensitively — different capitalisation is one record' do
+    TechnicianDocument.upsert_from_entity(
+      identifier: IDENTIFIER, channel: CHANNEL, canonical_name: "Electromagnetic disc brake",
+      metadata: { "aliases" => [ "disc brake" ] }
+    )
+
+    doc = TechnicianDocument.upsert_from_entity(
+      identifier: IDENTIFIER, channel: CHANNEL, canonical_name: "Electromagnetic Disc Brake",
+      metadata: { "aliases" => [ "EM brake" ] }
+    )
+
+    assert_equal 1, TechnicianDocument.count, "Expected 1 record, got duplicates"
+    assert_equal 2, doc.interaction_count
+    assert_includes doc.aliases, "disc brake"
+    assert_includes doc.aliases, "EM brake"
+  end
+
+  test 'upsert_from_entity deduplicates globally — same canonical_name from different channel' do
+    TechnicianDocument.upsert_from_entity(
+      identifier: IDENTIFIER, channel: "whatsapp", canonical_name: "Shared Doc",
+      metadata: { "source_uri" => "s3://bucket/shared.pdf", "aliases" => [ "shared" ] }
+    )
+
+    doc = TechnicianDocument.upsert_from_entity(
+      identifier: "user:42", channel: "web", canonical_name: "Shared Doc",
+      metadata: { "aliases" => [ "web alias" ] }
+    )
+
+    assert_equal 1, TechnicianDocument.count
+    assert_equal 2, doc.interaction_count
+    assert_includes doc.aliases, "shared"
+    assert_includes doc.aliases, "web alias"
   end
 
   # ─── recent (global, no for_identifier) ─────────────────────────────────────

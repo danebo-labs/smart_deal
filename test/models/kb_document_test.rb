@@ -92,4 +92,26 @@ class KbDocumentTest < ActiveSupport::TestCase
     assert_equal list, kb.aliases
     assert_instance_of Array, kb.aliases
   end
+
+  test 'ensure_for_s3_key! stores size_bytes when provided' do
+    key = 'uploads/2026-04-10/sized_doc.pdf'
+    KbDocument.ensure_for_s3_key!(key, size_bytes: 98_765)
+    doc = KbDocument.find_by!(s3_key: key)
+    assert_equal 98_765, doc.size_bytes
+  end
+
+  test 'ensure_for_s3_key! size_bytes is nil when not provided' do
+    key = 'uploads/2026-04-10/no_size_doc.pdf'
+    KbDocument.ensure_for_s3_key!(key)
+    doc = KbDocument.find_by!(s3_key: key)
+    assert_nil doc.size_bytes
+  end
+
+  test 'ensure_for_s3_key! does not overwrite size_bytes on existing record' do
+    key = 'uploads/2026-04-10/idempotent_size.pdf'
+    KbDocument.ensure_for_s3_key!(key, size_bytes: 111)
+    KbDocument.ensure_for_s3_key!(key, size_bytes: 999)
+    doc = KbDocument.find_by!(s3_key: key)
+    assert_equal 111, doc.size_bytes
+  end
 end

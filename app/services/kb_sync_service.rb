@@ -29,7 +29,8 @@ class KbSyncService
   # Starts an ingestion job. Safe to call frequently — Bedrock will queue
   # if another job is already running.
   # @param uploaded_filenames [Array<String>] Document names being indexed (for status UI)
-  # @return [Hash, nil] { job_id:, kb_id:, data_source_id: } or nil on failure
+  # @return [Hash, nil] { job_id:, kb_id:, data_source_id: } or nil on config error
+  # @raise [StandardError] re-raises transient AWS/Aurora errors so callers can retry
   def sync!(uploaded_filenames: [])
     unless @kb_id
       Rails.logger.warn("KbSyncService: KB ID not configured, skipping sync")
@@ -51,7 +52,7 @@ class KbSyncService
     { job_id: job_id, kb_id: @kb_id, data_source_id: ds_id }
   rescue StandardError => e
     Rails.logger.error("KbSyncService: Failed to start ingestion — #{e.message}")
-    nil
+    raise
   end
 
   private
@@ -80,6 +81,6 @@ class KbSyncService
     summaries.first&.data_source_id
   rescue StandardError => e
     Rails.logger.error("KbSyncService: Failed to list data sources — #{e.message}")
-    nil
+    raise
   end
 end

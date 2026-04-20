@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_10_020007) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_193449) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -58,11 +58,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_020007) do
     t.datetime "created_at", null: false
     t.string "display_name"
     t.string "s3_key", null: false
+    t.bigint "size_bytes"
     t.datetime "updated_at", null: false
     t.index [ "s3_key" ], name: "index_kb_documents_on_s3_key", unique: true
   end
 
   create_table "technician_documents", force: :cascade do |t|
+    t.integer "account_id"
     t.jsonb "aliases", default: [], null: false
     t.string "canonical_name", null: false
     t.string "channel", default: "whatsapp", null: false
@@ -75,8 +77,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_10_020007) do
     t.string "source_uri"
     t.datetime "updated_at", null: false
     t.string "wa_filename"
-    t.index [ "identifier", "channel", "canonical_name" ], name: "idx_tech_docs_unique", unique: true
-    t.index [ "identifier", "channel", "last_used_at" ], name: "idx_tech_docs_recent"
+    t.index "lower((canonical_name)::text)", name: "idx_tech_docs_canonical_icase_unique", unique: true
+    t.index [ "last_used_at" ], name: "idx_tech_docs_recent_global"
+    t.index [ "source_uri" ], name: "idx_tech_docs_source_uri", where: "((source_uri IS NOT NULL) AND ((source_uri)::text <> ''::text))"
   end
 
   create_table "users", force: :cascade do |t|

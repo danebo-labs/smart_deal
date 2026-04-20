@@ -3,3 +3,4 @@ es:
   rag:
     whatsapp_indexed_generic: "✅ Documento procesado y disponible.\nArchivo: %{filename}\nPregúntame sobre este documento."
     whatsapp_indexed_with_aliases: "✅ %{name}\nConsúltame por: %{aliases}"
+    whatsapp_indexed_canonical_only: "✅ %{name}\nPregúntame sobre este documento."

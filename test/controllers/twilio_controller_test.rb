@@ -32,6 +32,16 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
     { 'Body' => body, 'NumMedia' => '0', 'From' => from, 'To' => to }
   end
 
+  # Temporarily replaces the NullStore (test default) with an in-memory cache
+  # so that dedup logic can be exercised within a single test.
+  def with_memory_cache
+    original = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    yield
+  ensure
+    Rails.cache = original
+  end
+
   # -----------------------------------------------------------------------
   # Authentication
   # -----------------------------------------------------------------------
@@ -98,6 +108,44 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
 
     session = ConversationSession.find_by(identifier: 'whatsapp:+56912345678', channel: 'whatsapp')
     assert_equal 2, session.conversation_history.size
+  end
+
+  # -----------------------------------------------------------------------
+  # Idempotency: Twilio retries with the SAME MessageSid are deduplicated.
+  # User re-asking the same question (different SID) is NOT blocked — body
+  # duplication is handled at the persistence layer (TechnicianDocument).
+  # -----------------------------------------------------------------------
+
+  test 'webhook deduplicates Twilio retry with same MessageSid' do
+    with_memory_cache do
+      assert_enqueued_jobs 1, only: SendWhatsappReplyJob do
+        post twilio_webhook_url, params: text_params(
+          'que es Electromagnetic disc brake ?',
+          from: 'whatsapp:+56999000001'
+        ).merge('MessageSid' => 'SMSAMESID')
+
+        post twilio_webhook_url, params: text_params(
+          'que es Electromagnetic disc brake ?',
+          from: 'whatsapp:+56999000001'
+        ).merge('MessageSid' => 'SMSAMESID')
+      end
+    end
+  end
+
+  test 'webhook does NOT block user re-asking identical question (different SIDs)' do
+    with_memory_cache do
+      assert_enqueued_jobs 2, only: SendWhatsappReplyJob do
+        post twilio_webhook_url, params: text_params(
+          'que es Electromagnetic disc brake ?',
+          from: 'whatsapp:+56999000005'
+        ).merge('MessageSid' => 'SMRETRY1')
+
+        post twilio_webhook_url, params: text_params(
+          'que es Electromagnetic disc brake ?',
+          from: 'whatsapp:+56999000005'
+        ).merge('MessageSid' => 'SMRETRY2')
+      end
+    end
   end
 
   # -----------------------------------------------------------------------

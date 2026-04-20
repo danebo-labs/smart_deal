@@ -132,7 +132,7 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
       { number: 1, filename: 'Esquema_SOPREL.pdf', title: 'Esquema SOPREL' }
     ]
 
-    with_mock_orchestrator(answer: 'Respuesta con fuente.', citations: citations) do
+    with_mock_orchestrator(answer: 'Información técnica sobre el esquema eléctrico.', citations: citations) do
       stub_twilio_client do |sent|
         with_twilio_env do
           SendWhatsappReplyJob.new.perform(**JOB_PARAMS)
@@ -141,6 +141,26 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
         full_text = sent.pluck(:body).join(' ')
         assert_includes full_text, 'Fuentes:'
         assert_includes full_text, '[1] Esquema_SOPREL.pdf'
+      end
+    end
+  end
+
+  test 'perform prepends Documentos consultados header when citations present' do
+    citations = [
+      { number: 1, filename: 'Esquema_SOPREL.pdf', title: 'Esquema SOPREL' },
+      { number: 2, filename: 'Manual_Mitsubishi.pdf', title: 'Manual' }
+    ]
+
+    with_mock_orchestrator(answer: 'Información técnica consolidada desde dos manuales.', citations: citations) do
+      stub_twilio_client do |sent|
+        with_twilio_env do
+          SendWhatsappReplyJob.new.perform(**JOB_PARAMS)
+        end
+
+        full_text = sent.pluck(:body).join(' ')
+        assert_includes full_text, '📄 *Documentos consultados:*'
+        assert_includes full_text, '① Esquema_SOPREL.pdf'
+        assert_includes full_text, '② Manual_Mitsubishi.pdf'
       end
     end
   end

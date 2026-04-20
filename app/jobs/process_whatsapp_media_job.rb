@@ -10,6 +10,29 @@ class ProcessWhatsappMediaJob < ApplicationJob
   queue_as :whatsapp_media
 
   MAX_ATTEMPTS = 3
+  # Bedrock allows only one ingestion job per data source at a time (60–90 s typical).
+  # 5 attempts × 35 s wait gives ~140 s window — enough to clear a concurrent job.
+  CONFLICT_ATTEMPTS = 5
+  CONFLICT_WAIT     = 35.seconds
+
+  # ConflictException MUST be declared before StandardError so it takes precedence
+  # (ActiveSupport::Rescuable searches handlers in reverse-definition order).
+  retry_on Aws::BedrockAgent::Errors::ConflictException,
+           wait: CONFLICT_WAIT, attempts: CONFLICT_ATTEMPTS do |job, _error|
+    args        = job.arguments.first || {}
+    whatsapp_to = args[:from] || args['from']
+    twilio_from = args[:to]   || args['to']
+    next unless whatsapp_to && twilio_from
+
+    begin
+      Twilio::REST::Client
+        .new(ENV.fetch('TWILIO_ACCOUNT_SID'), ENV.fetch('TWILIO_AUTH_TOKEN'))
+        .messages.create(from: twilio_from, to: whatsapp_to,
+                         body: I18n.t('rag.whatsapp_indexing_conflict'))
+    rescue StandardError => send_err
+      Rails.logger.error("ProcessWhatsappMediaJob: failed to notify user — #{send_err.message}")
+    end
+  end
 
   retry_on StandardError, wait: :polynomially_longer, attempts: MAX_ATTEMPTS do |job, _error|
     args        = job.arguments.first || {}

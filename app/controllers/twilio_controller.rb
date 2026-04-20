@@ -13,7 +13,11 @@ class TwilioController < ApplicationController
     body        = params['Body'].to_s.strip
     num_media   = params['NumMedia'].to_i
 
-    # Twilio retries webhooks on timeout — deduplicate by MessageSid
+    # Deduplicate by MessageSid (Twilio retries on timeout with the same SID).
+    # Duplication at the persistence layer (same physical document referenced
+    # twice) is handled in TechnicianDocument.upsert_from_entity via source_uri
+    # lookup — so we do NOT block the user from legitimately re-asking the
+    # same question.
     if message_sid.present? && Rails.cache.exist?("twilio_msg:#{message_sid}")
       render xml: Twilio::TwiML::MessagingResponse.new.to_s and return
     end

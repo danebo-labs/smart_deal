@@ -34,6 +34,16 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
 
   # Temporarily replaces the NullStore (test default) with an in-memory cache
   # so that dedup logic can be exercised within a single test.
+  def stub_shared_enabled(enabled)
+    orig = SharedSession::ENABLED
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, enabled)
+    yield
+  ensure
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, orig)
+  end
+
   def with_memory_cache
     original = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
@@ -145,6 +155,27 @@ class TwilioControllerTest < ActionDispatch::IntegrationTest
           from: 'whatsapp:+56999000005'
         ).merge('MessageSid' => 'SMRETRY2')
       end
+    end
+  end
+
+  # -----------------------------------------------------------------------
+  # SharedSession: all WhatsApp numbers collapse to one row when ENABLED
+  # -----------------------------------------------------------------------
+
+  test 'two WhatsApp webhooks from different numbers share the same conv_session_id in shared mode' do
+    stub_shared_enabled(true) do
+      ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).destroy_all
+
+      before_count = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+      post twilio_webhook_url, params: text_params('hello', from: 'whatsapp:+56911110010')
+      post twilio_webhook_url, params: text_params('world', from: 'whatsapp:+56922220010')
+
+      new_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs[before_count..].select { |j| j[:job] == SendWhatsappReplyJob }
+      assert_equal 2, new_jobs.size
+      session_ids = new_jobs.map { |j| j[:args].first['conv_session_id'] }
+      assert_equal 1, session_ids.uniq.size, 'Both jobs must reference the same shared conv_session_id'
+
+      assert_equal 1, ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).count
     end
   end
 

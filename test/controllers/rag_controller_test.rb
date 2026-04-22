@@ -401,7 +401,55 @@ class RagControllerTest < ActionDispatch::IntegrationTest
                  'No entity should be registered when answer is guardrail'
   end
 
+  # ─── SharedSession ──────────────────────────────────────────────────────────
+
+  test 'with shared session enabled, ask uses shared identifier and stores nil user_id' do
+    stub_shared_enabled(true) do
+      ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).destroy_all
+      sign_in @user
+      mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+      end
+      assert_response :success
+
+      session = ConversationSession.find_by(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL)
+      assert session.present?, 'Shared session must be created'
+      assert_nil session.user_id, 'user_id must be nil in shared mode to avoid ownership confusion'
+    end
+  end
+
+  test 'with shared session enabled, two web requests reuse the same conv_session row' do
+    stub_shared_enabled(true) do
+      ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).destroy_all
+      sign_in @user
+      mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
+      with_mock_orchestrator(mock) do
+        assert_difference 'ConversationSession.count', 1 do
+          post rag_ask_url, params: { question: 'first question' }, as: :json
+        end
+        assert_no_difference 'ConversationSession.count' do
+          post rag_ask_url, params: { question: 'second question' }, as: :json
+        end
+      end
+
+      assert_equal 1, ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).count
+    end
+  end
+
   private
+
+  def stub_shared_enabled(enabled)
+    orig = SharedSession::ENABLED
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, enabled)
+    yield
+  ensure
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, orig)
+  end
 
   def json_response
     JSON.parse(@response.body)

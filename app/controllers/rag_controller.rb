@@ -11,10 +11,12 @@ class RagController < ApplicationController
     documents = extract_documents_from_params
     question  = params[:question].to_s.strip
 
+    # In shared-session mode, omit user_id to avoid storing "last web user" as owner of the shared row.
+    effective_user_id = SharedSession::ENABLED ? nil : current_user.id
     conv_session = ConversationSession.find_or_create_for(
       identifier: current_user.id.to_s,
       channel:    "web",
-      user_id:    current_user.id
+      user_id:    effective_user_id
     )
     conv_session.refresh!
     conv_session.add_to_history("user", question) if question.present?

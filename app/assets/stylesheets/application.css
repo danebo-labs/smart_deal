@@ -395,6 +395,27 @@ canvas {
   border-bottom-left-radius: 0.25rem;
 }
 
+/* Web answer prose — scoped to assistant bubble only */
+.chat-message-assistant p.answer-p {
+  margin: 0 0 0.6rem 0;
+  line-height: 1.6;
+}
+.chat-message-assistant p.answer-p:last-child {
+  margin-bottom: 0;
+}
+.chat-message-assistant strong {
+  font-weight: 600;
+  color: #111827;
+}
+.chat-message-assistant em {
+  font-style: italic;
+}
+.chat-message-assistant hr.answer-hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 0.75rem 0;
+}
+
 .chat-message-system {
   align-self: center;
   background: #f3f4f6;

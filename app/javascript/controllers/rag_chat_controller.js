@@ -2,9 +2,9 @@
 
 import { Controller } from "@hotwired/stimulus"
 import { createConsumer } from "@rails/actioncable"
-import { formatAnswer } from "rag/citation_formatter"
 import { renderReferences } from "rag/references_renderer"
 import { renderDocumentsConsulted } from "rag/documents_consulted_renderer"
+import { formatAnswerForWeb } from "rag/answer_presenter"
 
 export default class extends Controller {
   static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName"]
@@ -236,7 +236,7 @@ export default class extends Controller {
         if (citations.length) {
           this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
         }
-        const answerHtml = formatAnswer(data.answer, citations)
+        const answerHtml = formatAnswerForWeb(data.answer, citations)
         this.addMessageHtml(answerHtml, "assistant")
         if (citations.length) {
           this.addMessageHtml(renderReferences(citations), "assistant")
@@ -268,7 +268,7 @@ export default class extends Controller {
       if (citations.length) {
         this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
       }
-      const answerHtml = formatAnswer(data.answer, citations)
+      const answerHtml = formatAnswerForWeb(data.answer, citations)
       this.addMessageHtml(answerHtml, "assistant")
       if (citations.length) {
         this.addMessageHtml(renderReferences(citations), "assistant")

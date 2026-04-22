@@ -343,6 +343,111 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'query appends DELIVERY CHANNEL block when output_channel is :whatsapp' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('What is S3?', output_channel: :whatsapp)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, '# DELIVERY CHANNEL'
+      assert_includes template, 'sent via WhatsApp'
+      assert_includes template, '① ② ③'
+    end
+  end
+
+  test 'DELIVERY CHANNEL block prohibits double-asterisk bold' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('test', output_channel: :whatsapp)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, 'NEVER use **double asterisk**'
+    end
+  end
+
+  test 'DELIVERY CHANNEL block declares safety warnings as NON-NEGOTIABLE' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('test', output_channel: :whatsapp)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, 'NON-NEGOTIABLE'
+      assert_includes template, 'REQUIRES_FIELD_VERIFICATION'
+      assert_includes template, 'VOLTAJE NO VERIFICADO'
+    end
+  end
+
+  test 'DELIVERY CHANNEL block includes intent-aware word limit rules' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('test', output_channel: :whatsapp)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, 'IDENTIFICATION / OVERVIEW'
+      assert_includes template, 'EMERGENCY / RESCUE'
+      assert_includes template, 'No word cap'
+    end
+  end
+
+  test 'DELIVERY CHANNEL block includes fixed closing menu' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('test', output_channel: :whatsapp)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, 'riesgos'
+      assert_includes template, 'modernizar'
+      assert_includes template, 'parámetros'
+      assert_includes template, 'secciones'
+    end
+  end
+
+  test 'query does NOT append DELIVERY CHANNEL block for web/default channel' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('What is S3?', output_channel: :web)
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_not_includes template, '# DELIVERY CHANNEL'
+    end
+  end
+
   test 'query does not append session_context when nil' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new

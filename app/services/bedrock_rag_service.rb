@@ -33,7 +33,7 @@ class BedrockRagService
   # @param question [String] Used to detect response language when response_locale is nil
   # @param response_locale [Symbol, nil] When set (:en / :es), overrides question-based detection for the generation prompt
   # @param entity_s3_uris [Array<String>] S3 URIs of active session documents; when non-empty, adds metadata filter
-  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [])
+  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [], output_channel: nil)
     cfg = @rag_config
 
     vector_config = {
@@ -75,7 +75,7 @@ class BedrockRagService
 
         # Custom prompt template for generation (includes language instruction from question text)
         prompt_template: {
-          text_prompt_template: load_generation_prompt_with_locale(question, response_locale: response_locale, session_context: session_context)
+          text_prompt_template: load_generation_prompt_with_locale(question, response_locale: response_locale, session_context: session_context, output_channel: output_channel)
         },
 
         # Additional model request fields (model-specific parameters)
@@ -119,7 +119,7 @@ class BedrockRagService
   # Query the Knowledge Base using RAG with retrieve_and_generate API
   # @param entity_s3_uris [Array<String>] S3 URIs from active session entities; used to
   #   scope retrieval when the query is short/ambiguous and doesn't name a different document.
-  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [])
+  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [], output_channel: nil)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -139,7 +139,7 @@ class BedrockRagService
       Rails.logger.info("BedrockRagService: entity_filter=#{apply_filter} uris=#{filtered_uris.size}") if entity_s3_uris.any?
 
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: filtered_uris)
+      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: filtered_uris, output_channel: output_channel)
       config = deep_merge_configs(base_config, custom_config)
 
       params = {
@@ -164,7 +164,7 @@ class BedrockRagService
       # Fallback: if filter produced no results, retry without filter.
       if apply_filter && bedrock_no_results?(response.output.text)
         Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter")
-        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: [])
+        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: [], output_channel: output_channel)
         unfiltered_params = params.merge(
           retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
             knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
@@ -388,7 +388,7 @@ class BedrockRagService
   #   2. MIDDLE (under # LANGUAGE & TONE) — contextual reinforcement.
   #   3. TAIL (after session_context) — last signal before generation, overrides
   #      any English leakage from Recent Conversation or retrieved chunks.
-  def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil)
+  def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil, output_channel: nil)
     base = self.class.load_generation_prompt_template
     locale = if response_locale.present?
       response_locale.to_sym
@@ -409,7 +409,48 @@ class BedrockRagService
 
     base = "#{base}\n\n#{session_context}" if session_context.present?
     base = "#{base}\n\n#{language_directive_footer(lang_name)}" if lang_name.present?
+    base = "#{base}\n\n#{whatsapp_delivery_channel_directive}" if output_channel&.to_sym == :whatsapp
     base
+  end
+
+  # Appended only when delivering via WhatsApp. Forces the model to keep the
+  # answer scannable on a phone screen with gloves and harsh light.
+  #
+  # Rules are ordered by priority:
+  #   1. Safety warnings are NON-NEGOTIABLE (no word limit applies to them).
+  #   2. Word limit applies only to non-safety content.
+  #   3. Intent-aware limits: identification/overview ≤ 280 words;
+  #      safety / diagnosis / rescue / emergency → include ALL relevant content, no cap.
+  #   4. Closing menu reduces cognitive load (no open-ended question).
+  def whatsapp_delivery_channel_directive
+    <<~DIRECTIVE.strip
+      # DELIVERY CHANNEL
+      This response will be sent via WhatsApp (small screen, gloves, harsh light). Follow ALL rules below:
+
+      ## FORMATTING
+      - Use only *single asterisk* for bold. NEVER use **double asterisk** or __underscores__.
+      - Use _single underscore_ for italic if needed. Never ~~strikethrough~~ unless marking a fault.
+      - No ## or ### headers. Replace section titles with a SHORT CAPS label on its own line.
+      - No markdown tables. Convert any table to a ① ② ③ numbered list.
+      - Double blank line between logical blocks.
+
+      ## WORD LIMIT (intent-aware)
+      - IDENTIFICATION / OVERVIEW queries: keep the human-readable body under 280 words.
+      - DIAGNOSIS / TROUBLESHOOTING / INSTALLATION / CALIBRATION / COMPONENT REPLACEMENT: include ALL relevant steps and specs. No word cap.
+      - EMERGENCY / RESCUE / SAFETY PROTOCOL: include EVERYTHING. No word cap. Do NOT compress.
+
+      ## SAFETY WARNINGS — NON-NEGOTIABLE
+      These MUST appear verbatim in every response where chunks contain them, regardless of word limit:
+      - If chunks contain REQUIRES_FIELD_VERIFICATION → write exactly: ⚠️ *REQUIERE VERIFICACIÓN EN CAMPO*
+      - If chunks mark DATA_NOT_AVAILABLE → write exactly: ⚠️ *DATO NO DISPONIBLE*
+      - If chunks mark LOW confidence → include the value AND write: (confianza BAJA — verificar)
+      - If chunks indicate DEGRADED / UNUSABLE image → write: 🛑 *DOCUMENTO DEGRADADO — no usar para intervenciones sin verificar en sitio*
+      - If voltage is unverified → write: ⚠️ *VOLTAJE NO VERIFICADO — confirmar antes de intervenir*
+
+      ## CLOSING
+      Do NOT end with an open question. End with a fixed short menu on its own line:
+      Responde: *riesgos* · *modernizar* · *parámetros* · *secciones*
+    DIRECTIVE
   end
 
   # Top-of-prompt banner — first thing Haiku reads.

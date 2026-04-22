@@ -22,6 +22,7 @@ class SendWhatsappReplyJob < ApplicationJob
 
     result = execute_rag_query(body, whatsapp_to: to, session_context: session_context, conv_session: conv_session, entity_s3_uris: entity_s3_uris)
     reply  = format_rag_response_for_whatsapp(result)
+    log_whatsapp_safety_coverage(reply, to: to) if result.success?
     chunks = split_for_whatsapp(reply)
 
     account_sid = ENV.fetch('TWILIO_ACCOUNT_SID') { raise "TWILIO_ACCOUNT_SID not set in environment" }

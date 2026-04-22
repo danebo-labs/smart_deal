@@ -312,6 +312,37 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
     end
   end
 
+  # -----------------------------------------------------------------------
+  # Safety coverage logging (#5)
+  # -----------------------------------------------------------------------
+
+  test 'perform logs WA_SAFETY info when answer contains safety markers' do
+    answer_with_warning = 'REQUIERE VERIFICACIÓN EN CAMPO antes de cualquier intervención.'
+    log_output = capture_log_output do
+      with_mock_orchestrator(answer: answer_with_warning) do
+        stub_twilio_client do
+          with_twilio_env { SendWhatsappReplyJob.new.perform(**JOB_PARAMS) }
+        end
+      end
+    end
+
+    assert_match(/\[WA_SAFETY\].*REQUIERE VERIFICACIÓN EN CAMPO/, log_output,
+                 "Expected [WA_SAFETY] log with marker name")
+  end
+
+  test 'perform does not log WA_SAFETY markers-present when answer has no safety markers' do
+    log_output = capture_log_output do
+      with_mock_orchestrator(answer: 'Respuesta normal sin advertencias.') do
+        stub_twilio_client do
+          with_twilio_env { SendWhatsappReplyJob.new.perform(**JOB_PARAMS) }
+        end
+      end
+    end
+
+    assert_no_match(/\[WA_SAFETY\].*markers present/, log_output,
+                    "Should not log markers-present when none are in the answer")
+  end
+
   def with_env(vars)
     original = {}
     vars.each_key { |k| original[k] = ENV[k.to_s] }
@@ -319,5 +350,18 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
     yield
   ensure
     vars.each_key { |k| original[k].nil? ? ENV.delete(k.to_s) : ENV[k.to_s] = original[k] }
+  end
+
+  # Captures Rails.logger output during a block by temporarily broadcasting
+  # to a StringIO device. Compatible with ActiveSupport::BroadcastLogger (Rails 8).
+  def capture_log_output
+    io = StringIO.new
+    tmp_logger = ActiveSupport::Logger.new(io)
+    tmp_logger.level = Logger::DEBUG
+    Rails.logger.broadcast_to(tmp_logger)
+    yield
+    io.string
+  ensure
+    Rails.logger.stop_broadcasting_to(tmp_logger)
   end
 end

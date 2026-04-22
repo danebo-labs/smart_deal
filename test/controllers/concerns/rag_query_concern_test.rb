@@ -526,4 +526,136 @@ class RagQueryConcernTest < ActiveSupport::TestCase
              "Chunk #{i} exceeds limit: #{chunk.length} chars"
     end
   end
+
+  # ============================================
+  # Tests for sanitize_answer (Phase 1a)
+  # ============================================
+
+  test 'sanitize_answer strips markdown headers but keeps heading text' do
+    text = "# Title\n## Subtitle\n### Sub-sub\nbody line"
+    out  = @controller.send(:sanitize_answer, text)
+
+    assert_includes out, 'Title'
+    assert_includes out, 'Subtitle'
+    assert_includes out, 'Sub-sub'
+    assert_includes out, 'body line'
+    assert_not_includes out, '#'
+  end
+
+  test 'sanitize_answer does not strip a hash that appears mid-sentence' do
+    text = "Voltage spec is #5 wire gauge required"
+    out  = @controller.send(:sanitize_answer, text)
+    assert_includes out, '#5 wire gauge'
+  end
+
+  test 'sanitize_answer converts a markdown table to a numbered list' do
+    text = <<~MD
+      Intro line.
+
+      | Parameter | Value | Confidence |
+      |---|---|---|
+      | Voltage | 380V | LOW |
+      | Motor | Trifásico | MEDIA |
+
+      After table line.
+    MD
+
+    out = @controller.send(:sanitize_answer, text)
+
+    assert_not_includes out, '|'
+    assert_includes out, '① Voltage — Value: 380V — Confidence: LOW'
+    assert_includes out, '② Motor — Value: Trifásico — Confidence: MEDIA'
+    assert_includes out, 'Intro line.'
+    assert_includes out, 'After table line.'
+  end
+
+  test 'sanitize_answer collapses 3+ blank lines to 2' do
+    text = "line1\n\n\n\nline2"
+    out  = @controller.send(:sanitize_answer, text)
+    assert_equal "line1\n\nline2", out
+  end
+
+  test 'sanitize_answer preserves inline citation markers like [1]' do
+    text = "## Section\nThe valve [1] must be closed [2]."
+    out  = @controller.send(:sanitize_answer, text)
+    assert_includes out, '[1]'
+    assert_includes out, '[2]'
+  end
+
+  test 'sanitize_answer returns empty string for blank input' do
+    assert_equal "", @controller.send(:sanitize_answer, nil)
+    assert_equal "", @controller.send(:sanitize_answer, "")
+  end
+
+  test 'execute_rag_query sanitizes orchestrator answer before returning' do
+    mock = create_mock_orchestrator(
+      answer: "## Title\n\n\n\nbody"
+    )
+
+    with_mock_orchestrator(mock) do
+      result = @controller.send(:execute_rag_query, 'q')
+      assert_equal "Title\n\nbody", result.answer
+    end
+  end
+
+  # ============================================
+  # Tests for output_channel propagation (Phase 1b)
+  # ============================================
+
+  test 'execute_rag_query infers :whatsapp output_channel when whatsapp_to is set' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "hello", whatsapp_to: 'whatsapp:+5550001')
+      assert_equal :whatsapp, captured[:kwargs][:output_channel]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query defaults to :web output_channel without whatsapp_to' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "hello")
+      assert_equal :web, captured[:kwargs][:output_channel]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query honors explicit output_channel override' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "hello", whatsapp_to: 'whatsapp:+5550001', output_channel: :web)
+      assert_equal :web, captured[:kwargs][:output_channel]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
 end

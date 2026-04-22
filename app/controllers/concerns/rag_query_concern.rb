@@ -28,7 +28,7 @@ module RagQueryConcern
   # @param whatsapp_to [String, nil] Recipient id (e.g. whatsapp:+...) — enables session + locale persistence across messages
   # @return [RagResult] Structured result with success status and data or error info
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil, whatsapp_to: nil, session_context: nil,
-                         conv_session: nil, entity_s3_uris: [])
+                         conv_session: nil, entity_s3_uris: [], output_channel: nil)
     question = question.to_s.strip
     images = Array(images).compact
     documents = Array(documents).compact
@@ -74,6 +74,10 @@ module RagQueryConcern
     merged_entity_s3_uris  = merge_resolver_uris(entity_s3_uris, resolver_matches)
     merged_session_context = merge_resolver_context(session_context, resolver_matches)
 
+    # Channel for prompt-side adaptation (e.g. WA short, no markdown tables).
+    # Explicit output_channel wins; otherwise infer :whatsapp when whatsapp_to present.
+    resolved_output_channel = output_channel&.to_sym || (whatsapp_to.present? ? :whatsapp : :web)
+
     result = QueryOrchestratorService.new(
       question,
       images: images,
@@ -83,7 +87,8 @@ module RagQueryConcern
       response_locale: resolved_response_locale,
       session_context: merged_session_context,
       conv_session: conv_session,
-      entity_s3_uris: merged_entity_s3_uris
+      entity_s3_uris: merged_entity_s3_uris,
+      output_channel: resolved_output_channel
     ).execute
 
     if whatsapp_to.present? && cache_key
@@ -94,7 +99,7 @@ module RagQueryConcern
 
     RagResult.new(
       success?:            true,
-      answer:              result[:answer],
+      answer:              sanitize_answer(result[:answer], channel: resolved_output_channel),
       citations:           result[:citations],
       retrieved_citations: result[:retrieved_citations],
       doc_refs:            result[:doc_refs],
@@ -123,6 +128,76 @@ module RagQueryConcern
   # Circled numerals for the "Documents consulted" header (UX: quick visual scan
   # for a technician in the field). Falls back to "N." beyond the 10th citation.
   WHATSAPP_CIRCLED_NUMERALS = %w[① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩].freeze
+
+  # Defensive sanitizer applied to model answers before delivery (web JSON +
+  # WhatsApp formatter). Only normalizes/strips noise that hurts both channels:
+  #   - Strips leading "# / ## / ###" markdown headers (keeps the heading text).
+  #   - Converts pipe-table blocks (`| col | col |` + `|---|---|`) into a
+  #     numbered list ① ② ③ … (falls back to "N." past the 10th row).
+  #   - Collapses 3+ consecutive blank lines to 2.
+  # Does NOT add new markup (no `*bold*`, no emojis), so web's formatAnswer
+  # keeps working unchanged.
+  # @param text [String, nil] raw answer from BedrockRagService (already DOC_REFS-stripped)
+  # @param channel [Symbol] :web | :whatsapp — reserved for future per-channel rules
+  # @return [String]
+  def sanitize_answer(text, channel: :web) # rubocop:disable Lint/UnusedMethodArgument
+    return "" if text.blank?
+
+    out = text.dup
+    out = strip_markdown_headers(out)
+    out = convert_markdown_tables(out)
+    out = collapse_blank_lines(out)
+    out.strip
+  end
+
+  def strip_markdown_headers(text)
+    # Only at start of line; preserves a `#` that appears mid-sentence.
+    text.gsub(/^[ \t]*\#{1,6}\s+/, '')
+  end
+
+  TABLE_ROW_PATTERN     = /\A\s*\|.*\|\s*\z/.freeze
+  TABLE_DIVIDER_PATTERN = /\A\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*\z/.freeze
+
+  def convert_markdown_tables(text)
+    lines = text.split("\n", -1)
+    out   = []
+    i     = 0
+
+    while i < lines.length
+      line = lines[i]
+      nxt  = lines[i + 1]
+
+      if line&.match?(TABLE_ROW_PATTERN) && nxt&.match?(TABLE_DIVIDER_PATTERN)
+        header_cells = split_table_row(line)
+        i += 2
+        row_idx = 0
+        while i < lines.length && lines[i].match?(TABLE_ROW_PATTERN)
+          row_cells = split_table_row(lines[i])
+          bullet    = WHATSAPP_CIRCLED_NUMERALS[row_idx] || "#{row_idx + 1}."
+          label     = row_cells.first.to_s.strip
+          rest      = header_cells.drop(1).zip(row_cells.drop(1)).map { |h, v|
+            "#{h.to_s.strip}: #{v.to_s.strip}"
+          }.reject { |s| s.end_with?(": ") }.join(" — ")
+          out << (rest.empty? ? "#{bullet} #{label}" : "#{bullet} #{label} — #{rest}")
+          row_idx += 1
+          i += 1
+        end
+      else
+        out << line
+        i += 1
+      end
+    end
+
+    out.join("\n")
+  end
+
+  def split_table_row(row)
+    row.strip.sub(/\A\|/, '').sub(/\|\z/, '').split('|').map(&:strip)
+  end
+
+  def collapse_blank_lines(text)
+    text.gsub(/\n{3,}/, "\n\n")
+  end
 
   # Formats RAG result for WhatsApp/SMS text responses.
   # Returns the full answer — callers must use split_for_whatsapp before sending
@@ -286,6 +361,32 @@ module RagQueryConcern
     BLOCK
 
     [ session_context.presence, block ].compact.join("\n\n")
+  end
+
+  # Logs a warning when expected safety markers are absent from a WhatsApp
+  # answer whose source chunks contained them. Produces observable signal
+  # (grep-able in log) without blocking delivery.
+  # @param answer [String] the sanitized answer delivered to the technician
+  WHATSAPP_SAFETY_MARKERS = [
+    "REQUIERE VERIFICACIÓN EN CAMPO",
+    "DATO NO DISPONIBLE",
+    "DOCUMENTO DEGRADADO",
+    "VOLTAJE NO VERIFICADO",
+    "REQUIRES_FIELD_VERIFICATION",
+    "DATA_NOT_AVAILABLE"
+  ].freeze
+
+  def log_whatsapp_safety_coverage(answer, to:)
+    present = WHATSAPP_SAFETY_MARKERS.select { |m| answer.include?(m) }
+    absent  = WHATSAPP_SAFETY_MARKERS - present
+
+    if present.any?
+      Rails.logger.info("[WA_SAFETY] #{to} — markers present: #{present.join(', ')}")
+    end
+
+    if absent.any?
+      Rails.logger.debug { "[WA_SAFETY] #{to} — markers absent (may be ok if chunks lacked them): #{absent.join(', ')}" }
+    end
   end
 
   # Centralized error logging for RAG operations

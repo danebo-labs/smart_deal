@@ -410,7 +410,33 @@ class BedrockRagService
     base = "#{base}\n\n#{session_context}" if session_context.present?
     base = "#{base}\n\n#{language_directive_footer(lang_name)}" if lang_name.present?
     base = "#{base}\n\n#{whatsapp_delivery_channel_directive}" if output_channel&.to_sym == :whatsapp
+    base = "#{base}\n\n#{web_delivery_channel_directive}"       if output_channel&.to_sym == :web
     base
+  end
+
+  # Appended only when delivering via web chat. Instructs the model to produce
+  # structured but conversational Markdown that the web renderer can display
+  # (bold, italic, paragraph breaks). Does NOT apply to WhatsApp.
+  def web_delivery_channel_directive
+    <<~DIRECTIVE.strip
+      # DELIVERY CHANNEL
+      This response will be rendered in a web chat interface (desktop or tablet, full screen width).
+      Follow ALL rules below:
+
+      ## FORMATTING
+      - Use **double asterisk** for bold on key technical terms, values, or critical warnings (max 3 per section).
+      - Use *single asterisk* for light emphasis on specific values or notes only when necessary.
+      - NEVER use ALL CAPS for section titles. Use a leading emoji + short label instead: "⚙️ Circuito de puertas"
+      - Use ## section headers ONLY if the response exceeds 300 words and has 3 or more clearly distinct sections.
+      - NEVER use --- as a visual divider. Separate sections with a single blank line.
+      - No markdown tables. Use the ① ② ③ labeled list format you already default to.
+
+      ## TONE & STRUCTURE
+      - Start with a 2–3 sentence direct answer. Details and sections follow — never lead with them.
+      - Skip filler intro phrases: no "El documento consiste en...", no "Based on the retrieved chunks..."
+      - Field-mentor tone: cordial, direct, technically precise. Not academic, not bureaucratic.
+      - Safety warnings remain NON-NEGOTIABLE: include ALL ⚠️ and 🛑 blocks from the chunks regardless of length.
+    DIRECTIVE
   end
 
   # Appended only when delivering via WhatsApp. Forces the model to keep the

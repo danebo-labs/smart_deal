@@ -432,7 +432,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'query does NOT append DELIVERY CHANNEL block for web/default channel' do
+  test 'web channel appends its own DELIVERY CHANNEL block with web-specific rules' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('What is S3?', output_channel: :web)
@@ -444,7 +444,10 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :prompt_template,
         :text_prompt_template
       )
-      assert_not_includes template, '# DELIVERY CHANNEL'
+      assert_includes template, '# DELIVERY CHANNEL'
+      assert_includes template, 'web chat interface'
+      assert_includes template, '**double asterisk**'
+      assert_not_includes template, 'sent via WhatsApp'
     end
   end
 

@@ -3,6 +3,16 @@
 require 'test_helper'
 
 class ConversationSessionTest < ActiveSupport::TestCase
+  def stub_shared_enabled(enabled)
+    orig = SharedSession::ENABLED
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, enabled)
+    yield
+  ensure
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, orig)
+  end
+
   def build_session(overrides = {})
     ConversationSession.new({
       identifier: 'whatsapp:+56912345678',
@@ -490,6 +500,60 @@ class ConversationSessionTest < ActiveSupport::TestCase
     names = s.active_document_names
     assert_includes names, 'a.pdf'
     assert_includes names, 'b.png'
+  end
+
+  # ─── SharedSession flag ─────────────────────────────────────────────────────
+
+  test 'find_or_create_for collapses to shared row when ENABLED is true' do
+    stub_shared_enabled(true) do
+      ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).destroy_all
+
+      session_a = ConversationSession.find_or_create_for(identifier: 'whatsapp:+56911110001', channel: 'whatsapp')
+      session_b = nil
+      assert_no_difference 'ConversationSession.count' do
+        session_b = ConversationSession.find_or_create_for(identifier: 'user:42', channel: 'web')
+      end
+
+      assert_equal session_a.id, session_b.id
+      assert_equal SharedSession::IDENTIFIER, session_a.identifier
+      assert_equal SharedSession::CHANNEL,    session_a.channel
+    end
+  end
+
+  test 'find_or_create_for isolates by identifier+channel when ENABLED is false' do
+    stub_shared_enabled(false) do
+      session_a = ConversationSession.find_or_create_for(identifier: 'whatsapp:+56911110002', channel: 'whatsapp')
+      session_b = nil
+      assert_difference 'ConversationSession.count', 1 do
+        session_b = ConversationSession.find_or_create_for(identifier: 'user:99', channel: 'web')
+      end
+      assert_not_equal session_a.id, session_b.id
+    end
+  end
+
+  test 'preload_recent_entities loads up to MAX_ENTITIES docs (not hardcoded 3)' do
+    stub_shared_enabled(false) do
+      TechnicianDocument.delete_all
+      identifier = "whatsapp:+56911110003"
+      channel    = "whatsapp"
+      ConversationSession.where(identifier: identifier, channel: channel).destroy_all
+
+      (ConversationSession::MAX_ENTITIES + 2).times do |i|
+        TechnicianDocument.create!(
+          identifier:     "whatsapp:+5690#{i.to_s.rjust(7, '0')}",
+          channel:        'whatsapp',
+          canonical_name: "Preload Doc #{i}",
+          last_used_at:   i.minutes.ago,
+          interaction_count: 1
+        )
+      end
+
+      session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
+      session.reload
+
+      assert session.entity_count > 3,       "Should load more than the old hardcoded limit of 3"
+      assert session.entity_count <= ConversationSession::MAX_ENTITIES, "Should not exceed MAX_ENTITIES"
+    end
   end
 
   # ─── reset_procedure! ───────────────────────────────────────────────────────

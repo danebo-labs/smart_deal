@@ -3,10 +3,10 @@
 class ConversationSession < ApplicationRecord
   EXPIRY_MINUTES = 30
   MAX_HISTORY    = 20
-  MAX_ENTITIES   = 5
+  MAX_ENTITIES   = ENV.fetch('SESSION_MAX_ENTITIES', 10).to_i
   MAX_MSG_LENGTH = 300
 
-  CHANNELS = %w[whatsapp web].freeze
+  CHANNELS = %w[whatsapp web shared].freeze
 
   belongs_to :user, optional: true
 
@@ -22,6 +22,10 @@ class ConversationSession < ApplicationRecord
   # ─── Lifecycle ──────────────────────────────────────────────────────────────
 
   def self.find_or_create_for(identifier:, channel: "whatsapp", user_id: nil)
+    if SharedSession::ENABLED
+      identifier = SharedSession::IDENTIFIER
+      channel    = SharedSession::CHANNEL
+    end
     record = find_by(identifier: identifier, channel: channel)
 
     if record.nil? || record.expired?
@@ -39,7 +43,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def self.preload_recent_entities(session)
-    TechnicianDocument.recent.limit(3).each do |td|
+    TechnicianDocument.recent.limit(MAX_ENTITIES).each do |td|
       session.add_entity_with_aliases(td.canonical_name, td.aliases, {
         "source"               => "technician_memory",
         "wa_filename"          => td.wa_filename,

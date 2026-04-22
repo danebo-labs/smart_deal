@@ -2,6 +2,14 @@
 
 Platform that enables interaction and communication through RAG (Retrieval-Augmented Generation) across different communication channels, facilitating contextualized access to information based on a knowledge base.
 
+## MVP pilot (dry run / *marcha blanca*)
+
+**Stage 0** is a controlled pilot to validate **minimum viable operation (MVO)** with a **single elevator-project knowledge base** and a **small group of field technicians** (WhatsApp and/or web). The goal is not full multi-tenant product behavior yet, but to prove end-to-end flows: uploads, RAG answers, session context, and WhatsApp reliability under real-ish usage.
+
+For that pilot you can optionally run **one shared conversation session** for everyone: all sandbox WhatsApp numbers and all signed-in web users resolve to the same `conversation_sessions` row (`identifier` + `channel` = shared). That lets the squad **see one continuous thread**—history, active document entities, and procedure state—while they stress-test queries against the same KB. See [MVP configuration: shared conversation session](#mvp-configuration-shared-conversation-session) below.
+
+When shared session is **off**, each WhatsApp number and each web user keeps a **separate** session (per `identifier` + `channel`), which is the default path toward later per-tenant / per-project isolation.
+
 ## Features
 
 - **User authentication** with Devise
@@ -77,6 +85,44 @@ EDITOR="cursor --wait" bin/rails credentials:edit
 
 For detailed Bedrock configuration (models, KB, env vars), see [BEDROCK_SETUP.md](BEDROCK_SETUP.md) and `.env.sample`.
 
+### MVP configuration: shared conversation session
+
+Use these **only for the MVP pilot** when you want a **single shared thread** for all technicians (WhatsApp + web). Values are read at boot from `.env` (see `.env.sample`).
+
+| Variable | Purpose |
+|----------|---------|
+| `SHARED_SESSION_ENABLED` | Set to `true` to collapse every lookup to one session row. Omit or set to `false` for normal per-number / per-user sessions. |
+| `SHARED_SESSION_IDENTIFIER` | Stable DB key for that row (default `mvp-shared`). Change if you need a new shared row without touching data. |
+| `SHARED_SESSION_CHANNEL` | Channel value stored on the row (default `shared`). Must stay in sync with app validation (`ConversationSession::CHANNELS`). |
+| `SESSION_MAX_ENTITIES` | Optional. Caps **both** the working set (`active_entities`) and how many `technician_documents` rows are **preloaded** into a brand-new session (default **10** in code if unset). |
+
+Example for a pilot box:
+
+```bash
+SHARED_SESSION_ENABLED=true
+# SHARED_SESSION_IDENTIFIER=mvp-shared
+# SHARED_SESSION_CHANNEL=shared
+# SESSION_MAX_ENTITIES=10
+```
+
+**Web RAG:** When shared mode is on, the web `RAG` controller passes **`user_id: nil`** on that row so the shared session is not “owned” by whichever web user asked last.
+
+### Post-MVP session configuration (per-technician isolation)
+
+When moving past the single-thread pilot:
+
+1. Set `SHARED_SESSION_ENABLED=false` or **remove** it from `.env` (default is off).
+2. Leave `SHARED_SESSION_IDENTIFIER` / `SHARED_SESSION_CHANNEL` unset unless you have a special reason; they are ignored when shared mode is off.
+3. Tune `SESSION_MAX_ENTITIES` if you want a smaller or larger session working set and preload fan-out (still bounded by model / prompt limits).
+
+Each WhatsApp sender and each web user identity again gets **their own** `conversation_sessions` row (same as pre–shared-session behavior).
+
+### Automated tests and `SharedSession`
+
+In **`Rails.env.test?`**, `SharedSession::ENABLED` is **forced to `false` at load time**, even if your local `.env` sets `SHARED_SESSION_ENABLED=true` (dotenv-rails loads `.env` in test). That keeps the suite **deterministic**: examples assume **isolated** sessions unless they explicitly opt into shared behavior.
+
+Specs that need shared mode **temporarily flip** the constant inside the example (e.g. `stub_shared_enabled(true)` in `conversation_session`, `rag_controller`, and `twilio_controller` tests). Do not rely on ENV alone in test for global shared mode.
+
 ### Bedrock IAM (quick reference)
 
 1. Copy policy from `docs/bedrock-iam-policy.json`
@@ -105,6 +151,8 @@ The current architecture uses environment variables for configuration. The tenan
 Stage 0 — MVP (current)
   Global shared document pool. All documents uploaded (via WhatsApp or web)
   are visible to all sessions. technician_documents scoped globally (account_id = nil).
+  Optional: SHARED_SESSION_ENABLED — one conversation_sessions row for every channel
+  identity (pilot / marcha blanca). Default off: one session per WhatsApp number / web user.
 
 Stage 1 — Multi-tenant
   Account (tenant) isolation. Each account has its own KB config, document pool,
@@ -273,7 +321,9 @@ active_entities      → "What is the technician working on now?"   (session wor
 > **MVP scope:** The pool is global (`account_id = nil`). Deduplication is by `canonical_name` (or `source_uri`) across all uploaders — a document uploaded via WhatsApp and later via web is stored once. `identifier` and `channel` are preserved for audit but do not drive uniqueness.
 > **Stage 1+:** `account_id` will be added; uniqueness becomes `[account_id, canonical_name]`. Stage 2 adds `project_id`.
 
-**`conversation_sessions.active_entities`** — Session-scoped working set (JSONB, max 5 entities, 30-min TTL). Seeded from `technician_documents` on session creation (`preload_recent_entities`). Drives session-scoped KB retrieval filters so follow-up queries only search documents already active in the conversation.
+**`conversation_sessions.active_entities`** — Session-scoped working set (JSONB, **max `ConversationSession::MAX_ENTITIES`** — default **10**, overridable with `SESSION_MAX_ENTITIES`; 30‑minute TTL). Drives session-scoped KB retrieval filters so follow-up queries can narrow to documents already active in the conversation.
+
+**Bootstrap preload (“session memory”):** When `find_or_create_for` **creates a new** session row (first-ever contact for that `identifier`+`channel`, or the previous row had **expired**), it calls `preload_recent_entities`. That loads up to **`MAX_ENTITIES`** rows from **`technician_documents`** (globally **most recently used**, `TechnicianDocument.recent`) into `active_entities`, with metadata such as `source: technician_memory` and `extraction_method: preloaded_from_history`. It is **not** run on every inbound message—only on that fresh row—so it acts as a **short-lived working copy** seeded from the **durable** technician document pool (the same cache/source idea as below). RAG and ingestion keep enriching both layers on subsequent turns.
 
 The relationship is a **cache/source pattern**: `technician_documents` is the durable source; `active_entities` is the ephemeral working copy rebuilt from it on each new session. There is no `expired_at` on `technician_documents` because eviction is by space (FIFO max 20), not by time — a manual may be relevant weeks later when a technician returns to the same building.
 
@@ -312,4 +362,4 @@ If the filter returns no results (Bedrock guardrail), the system retries automat
 |---|---|---|---|---|
 | `kb_documents` | Global | Global per account | Never | Upload + ingestion + RAG |
 | `technician_documents` | Global pool (`account_id = nil`) | Per `[account_id, project_id]` | FIFO max 20 | Ingestion + RAG (EntityExtractor) |
-| `active_entities` | Per session | Per session | 30-min TTL, max 5 | Ingestion + RAG, seeded from `technician_documents` |
+| `active_entities` | Per session (or one shared session in MVP pilot mode) | Per session | 30-min TTL, max `MAX_ENTITIES` (default 10) | Ingestion + RAG; **on new session only**, seeded via `preload_recent_entities` from `technician_documents` |

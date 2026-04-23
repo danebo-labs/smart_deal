@@ -18,3 +18,36 @@ es:
     whatsapp_indexed_with_aliases_suffix: "indexado y listo."
     whatsapp_indexing_failed: "⚠️ No se pudo indexar el archivo después de 3 intentos. Puedes seguir consultando otros documentos. Si lo necesitas, vuelve a enviar la imagen."
     whatsapp_indexing_conflict: "⚠️ Había otra carga en curso cuando enviaste tu imagen y no se pudo indexar después de 5 intentos. Espera 1-2 minutos y vuelve a enviarla."
+    wa_menu:
+      title: "Opciones:"
+      back_label: "regresar"
+      home_label: "inicio"
+      commands: "regresar · inicio"
+      default_labels:
+        riesgos: "Riesgos"
+        parametros: "Parámetros"
+        secciones: "Secciones"
+        detalle: "Detalle"
+    wa_no_context_help: "No tengo una consulta previa activa. Escribe tu pregunta (ej: \"¿qué es la PCB Orona?\")."
+    wa_reset_ack: |-
+      Listo, contexto reiniciado. ¿Qué quieres consultar? 🛠
+
+      1 - archivos recientes
+      2 - archivos existentes
+
+      O escribe tu pregunta directamente.
+    wa_processing_ack: "🛠 Consultando la base de conocimiento… (unos segundos)"
+    wa_post_reset_recent_header: "Archivos recientes:"
+    wa_post_reset_all_header: "Archivos disponibles:"
+    wa_post_reset_empty_list: "No hay archivos disponibles en esta lista."
+    wa_post_reset_seed_query: "Describe %{name}"
+    wa_post_reset_back_label: "atrás"
+    wa_empty_facet_notice: "No hay %{facet} documentado para esta consulta. Prueba con: %{alternatives}."
+    wa_missing_topic_in_facet: "No hay %{topic} documentado en este archivo."
+    wa_doc_source_prefix: "*%{doc}* (fuente)"
+    wa_doc_source_inline: "(del documento *%{doc}*)"
+    wa_facet_names:
+      riesgos: "riesgos"
+      parametros: "parámetros"
+      secciones: "secciones"
+      detalle: "detalle"

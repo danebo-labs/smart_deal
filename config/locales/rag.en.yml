@@ -18,3 +18,36 @@ en:
     whatsapp_indexed_with_aliases_suffix: "indexed and ready."
     whatsapp_indexing_failed: "⚠️ File could not be indexed after 3 attempts. You can keep querying other documents. Send the image again if needed."
     whatsapp_indexing_conflict: "⚠️ Another file upload was in progress when your image arrived and it could not be indexed after 5 attempts. Wait 1–2 minutes and resend it."
+    wa_menu:
+      title: "Options:"
+      back_label: "back"
+      home_label: "home"
+      commands: "back · home"
+      default_labels:
+        riesgos: "Risks"
+        parametros: "Parameters"
+        secciones: "Sections"
+        detalle: "Detail"
+    wa_no_context_help: "I don't have a previous query in context. Type your question (e.g., \"what is the Orona PCB?\")."
+    wa_reset_ack: |-
+      Done, context cleared. What do you want to ask? 🛠
+
+      1 - recent files
+      2 - available files
+
+      Or type your question directly.
+    wa_processing_ack: "🛠 Looking this up in the knowledge base… (a few seconds)"
+    wa_post_reset_recent_header: "Recent files:"
+    wa_post_reset_all_header: "Available files:"
+    wa_post_reset_empty_list: "No files available in this list."
+    wa_post_reset_seed_query: "Describe %{name}"
+    wa_post_reset_back_label: "back"
+    wa_empty_facet_notice: "No %{facet} documented for this query. Try: %{alternatives}."
+    wa_missing_topic_in_facet: "No %{topic} documented in this file."
+    wa_doc_source_prefix: "*%{doc}* (source)"
+    wa_doc_source_inline: "(from document *%{doc}*)"
+    wa_facet_names:
+      riesgos: "risks"
+      parametros: "parameters"
+      secciones: "sections"
+      detalle: "detail"

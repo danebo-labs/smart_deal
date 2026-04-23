@@ -119,6 +119,50 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal [ 'doc1.pdf' ], result.citations
       assert_equal 'session-123', result.session_id
       assert_nil result.error_type
+      assert_nil result.faceted, 'web channel should not build a faceted answer'
+    end
+  end
+
+  test 'execute_rag_query parses faceted answer for whatsapp channel' do
+    faceted_raw = <<~ANS
+      [INTENT] IDENTIFICATION
+      [RESUMEN]
+      Orona PCB Mainboard — placa de control del ascensor.
+      [RIESGOS]
+      (—)
+      [PARÁMETROS]
+      ① 24VDC
+      [SECCIONES]
+      - Diagnóstico
+      [DETALLE]
+      Detalle técnico.
+      [MENU]
+      1 | Riesgos | riesgos
+      2 | Parámetros | parametros
+    ANS
+    mock = create_mock_orchestrator(answer: faceted_raw, citations: [], session_id: 'sess-1')
+
+    with_mock_orchestrator(mock) do
+      result = @controller.send(:execute_rag_query, 'Que es la PCB?', whatsapp_to: 'whatsapp:+1234')
+
+      assert result.success?
+      assert_not_nil result.faceted
+      assert_equal :identification, result.faceted.intent
+      assert_match(/Orona PCB Mainboard/, result.faceted.facets[:resumen])
+      assert result.faceted.facet_empty?(:riesgos)
+      assert_equal 2, result.faceted.menu.size
+    end
+  end
+
+  test 'execute_rag_query faceted falls back to :detalle when labels missing' do
+    mock = create_mock_orchestrator(answer: 'Legacy plain answer with no labels.', citations: [], session_id: 's')
+
+    with_mock_orchestrator(mock) do
+      result = @controller.send(:execute_rag_query, 'Hola', whatsapp_to: 'whatsapp:+999')
+
+      assert_not_nil result.faceted
+      assert result.faceted.legacy?
+      assert_equal 'Legacy plain answer with no labels.', result.faceted.facets[:detalle]
     end
   end
 

@@ -395,7 +395,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'DELIVERY CHANNEL block includes intent-aware word limit rules' do
+  test 'DELIVERY CHANNEL block enumerates intent tokens for faceted output' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('test', output_channel: :whatsapp)
@@ -407,13 +407,15 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :prompt_template,
         :text_prompt_template
       )
-      assert_includes template, 'IDENTIFICATION / OVERVIEW'
-      assert_includes template, 'EMERGENCY / RESCUE'
-      assert_includes template, 'No word cap'
+      assert_includes template, 'OUTPUT STRUCTURE'
+      assert_includes template, 'IDENTIFICATION'
+      assert_includes template, 'TROUBLESHOOTING'
+      assert_includes template, 'EMERGENCY'
+      assert_includes template, 'EMERGENCY OVERRIDE'
     end
   end
 
-  test 'DELIVERY CHANNEL block includes fixed closing menu' do
+  test 'DELIVERY CHANNEL block defines faceted labels and menu facet_keys' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('test', output_channel: :whatsapp)
@@ -425,10 +427,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :prompt_template,
         :text_prompt_template
       )
-      assert_includes template, 'riesgos'
-      assert_includes template, 'modernizar'
-      assert_includes template, 'parámetros'
-      assert_includes template, 'secciones'
+      %w[[INTENT] [RESUMEN] [RIESGOS] [PARÁMETROS] [SECCIONES] [DETALLE] [MENU]].each do |label|
+        assert_includes template, label, "expected prompt to document label #{label}"
+      end
+      %w[riesgos parametros secciones detalle].each do |key|
+        assert_includes template, key, "expected prompt to list facet_key #{key}"
+      end
     end
   end
 

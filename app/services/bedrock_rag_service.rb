@@ -456,26 +456,45 @@ class BedrockRagService
       ## FORMATTING
       - Use only *single asterisk* for bold. NEVER use **double asterisk** or __underscores__.
       - Use _single underscore_ for italic if needed. Never ~~strikethrough~~ unless marking a fault.
-      - No ## or ### headers. Replace section titles with a SHORT CAPS label on its own line.
+      - No ## or ### headers inside block contents.
       - No markdown tables. Convert any table to a ① ② ③ numbered list.
-      - Double blank line between logical blocks.
+      - Single blank line between paragraphs inside a block.
 
-      ## WORD LIMIT (intent-aware)
-      - IDENTIFICATION / OVERVIEW queries: keep the human-readable body under 280 words.
-      - DIAGNOSIS / TROUBLESHOOTING / INSTALLATION / CALIBRATION / COMPONENT REPLACEMENT: include ALL relevant steps and specs. No word cap.
-      - EMERGENCY / RESCUE / SAFETY PROTOCOL: include EVERYTHING. No word cap. Do NOT compress.
+      ## OUTPUT STRUCTURE (MANDATORY — FACETED FOR CACHED FOLLOW-UP)
+      You MUST emit your response as LABELED BLOCKS, in this exact order, each label on its own line.
+      The delivery layer parses these blocks and shows ONLY [RESUMEN] + [MENU] to the technician first;
+      the remaining blocks are served on demand from cache when the technician taps the menu (no extra LLM call).
+
+      [INTENT] <one token: IDENTIFICATION | MAINTENANCE | TROUBLESHOOTING | REPLACEMENT | INSTALLATION | MODERNIZATION | CALIBRATION | EMERGENCY>
+      [RESUMEN]
+      Friendly field-mentor tone. 2-4 sentences. Under 60 words total. Start with the document or subject name. No bullets. At most 1 emoji at the very end.
+      [RIESGOS]
+      Only safety warnings drawn from the chunks (LOTO, ESD, voltage, pinch points, mechanical, fall hazards). Verbatim markers where applicable. If the chunks contain NO safety content, output exactly: (—)
+      [PARÁMETROS]
+      Specs, torques, voltages, clearances, dimensions as a ① ② ③ numbered list. If none apply, output exactly: (—)
+      [SECCIONES]
+      One line per logical section available in the source document (for navigation). Format: "- <section name>". If unclear, output: (—)
+      [DETALLE]
+      Full procedural/technical expansion. This is what the technician sees when they tap "4 Detalle" or ask "más". Include steps, tools, time estimates. Can be longer than [RESUMEN].
+      [MENU]
+      Choose 3-4 menu items relevant to [INTENT]. One per line in the form: "N | LABEL | facet_key"
+      Valid facet_keys: riesgos | parametros | secciones | detalle
+      Example for IDENTIFICATION:
+      1 | ⚠️ Riesgos | riesgos
+      2 | 📏 Parámetros | parametros
+      3 | 📋 Secciones | secciones
+      4 | 🔧 Detalle | detalle
+
+      ## EMERGENCY OVERRIDE
+      If [INTENT] is EMERGENCY: put the COMPLETE rescue/emergency protocol inline in [RESUMEN] (ignore the 60-word limit). [RIESGOS], [PARÁMETROS], [SECCIONES], [DETALLE] still filled normally. [MENU] block may be empty ("(—)") — the delivery layer will not render a menu for EMERGENCY.
 
       ## SAFETY WARNINGS — NON-NEGOTIABLE
-      These MUST appear verbatim in every response where chunks contain them, regardless of word limit:
+      These MUST appear verbatim inside [RIESGOS] (and in [RESUMEN] for EMERGENCY) when the chunks contain them:
       - If chunks contain REQUIRES_FIELD_VERIFICATION → write exactly: ⚠️ *REQUIERE VERIFICACIÓN EN CAMPO*
       - If chunks mark DATA_NOT_AVAILABLE → write exactly: ⚠️ *DATO NO DISPONIBLE*
       - If chunks mark LOW confidence → include the value AND write: (confianza BAJA — verificar)
       - If chunks indicate DEGRADED / UNUSABLE image → write: 🛑 *DOCUMENTO DEGRADADO — no usar para intervenciones sin verificar en sitio*
       - If voltage is unverified → write: ⚠️ *VOLTAJE NO VERIFICADO — confirmar antes de intervenir*
-
-      ## CLOSING
-      Do NOT end with an open question. End with a fixed short menu on its own line:
-      Responde: *riesgos* · *modernizar* · *parámetros* · *secciones*
     DIRECTIVE
   end
 

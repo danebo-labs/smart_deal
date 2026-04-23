@@ -108,6 +108,13 @@ class ProcessWhatsappMediaJob < ApplicationJob
     result = KbSyncService.new.sync!(uploaded_filenames: uploaded)
     return uploaded if result.blank?
 
+    # New doc uploaded → user's cached faceted answer is stale. Invalidate so the
+    # next question triggers a fresh retrieve_and_generate over the expanded KB.
+    if whatsapp_to.present?
+      Rag::WhatsappAnswerCache.invalidate(whatsapp_to)
+      Rails.logger.info("[WA_CACHE] to=#{whatsapp_to} op=invalidate reason=media_upload")
+    end
+
     BedrockIngestionJob.perform_later(
       result[:job_id],
       uploaded,

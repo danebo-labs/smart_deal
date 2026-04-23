@@ -10,10 +10,16 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
   setup do
     @previous_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    # These tests assert exact chunking/body contents; the processing ack would
+    # add a preceding bubble and break those assertions. The ack is exercised
+    # separately in send_whatsapp_reply_job_faceted_test.rb.
+    @prev_ack = ENV["WA_PROCESSING_ACK_ENABLED"]
+    ENV["WA_PROCESSING_ACK_ENABLED"] = "false"
   end
 
   teardown do
     Rails.cache = @previous_cache
+    ENV["WA_PROCESSING_ACK_ENABLED"] = @prev_ack
   end
 
   # -----------------------------------------------------------------------

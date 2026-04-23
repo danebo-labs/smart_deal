@@ -7,8 +7,10 @@
 module RagQueryConcern
   extend ActiveSupport::Concern
 
-  # Result object for queries (works for both RAG and SQL responses)
-  RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs, :session_id, :documents_uploaded, :error_type, :error_message, keyword_init: true)
+  # Result object for queries (works for both RAG and SQL responses).
+  # :faceted is populated ONLY for :whatsapp output_channel — parsed from the
+  # labeled WA answer by Rag::FacetedAnswer. Web/API consumers keep using :answer.
+  RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs, :session_id, :documents_uploaded, :faceted, :error_type, :error_message, keyword_init: true)
 
   # Short follow-ups (e.g. "modernización") keep the thread language instead of re-inferring from Spanish UI labels.
   WHATSAPP_SHORT_FOLLOWUP_MAX_CHARS = 200
@@ -97,14 +99,18 @@ module RagQueryConcern
       Rails.cache.write(cache_key, new_locale.to_s, expires_in: WHATSAPP_CONV_CACHE_TTL)
     end
 
+    sanitized_answer = sanitize_answer(result[:answer], channel: resolved_output_channel)
+    faceted          = build_faceted_answer(result[:answer], resolved_output_channel)
+
     RagResult.new(
       success?:            true,
-      answer:              sanitize_answer(result[:answer], channel: resolved_output_channel),
+      answer:              sanitized_answer,
       citations:           result[:citations],
       retrieved_citations: result[:retrieved_citations],
       doc_refs:            result[:doc_refs],
       session_id:          result[:session_id],
-      documents_uploaded:  result[:documents_uploaded]
+      documents_uploaded:  result[:documents_uploaded],
+      faceted:             faceted
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)
@@ -148,6 +154,18 @@ module RagQueryConcern
     out = convert_markdown_tables(out)
     out = collapse_blank_lines(out)
     out.strip
+  end
+
+  # Parses the raw WA answer into facets and runs sanitize_answer on each block
+  # independently (so tables inside [PARÁMETROS] still become ① ② ③ lists).
+  # Returns nil for non-WA channels — web keeps its current rendering.
+  def build_faceted_answer(raw, channel)
+    return nil unless channel.to_s == "whatsapp"
+    return nil if raw.blank?
+
+    parsed = Rag::FacetedAnswer.parse(raw)
+    clean  = parsed.facets.transform_values { |content| sanitize_answer(content, channel: :whatsapp) }
+    Rag::FacetedAnswer.new(intent: parsed.intent, facets: clean, menu: parsed.menu, raw: parsed.raw)
   end
 
   def strip_markdown_headers(text)

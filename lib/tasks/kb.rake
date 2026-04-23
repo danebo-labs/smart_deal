@@ -1,6 +1,14 @@
 # frozen_string_literal: true
 
+# Knowledge Base (Bedrock Agent API) helpers.
+#
+# Uses BEDROCK_KNOWLEDGE_BASE_ID, BEDROCK_DATA_SOURCE_ID, AWS_REGION from ENV or
+# Rails credentials (`bedrock.*`, `aws.region`). Equivalent AWS CLI profile/region applies.
+#
 namespace :kb do
+  # Prints the full RAG setup as seen by AWS: KB metadata, embedding model, vector store,
+  # each data source (S3 prefixes, chunking, parsing model/prompt, Lambda transforms), and
+  # a snapshot of app-side env/RAG prompts. JSON with KB_CONFIG_JSON=1 for scripting.
   desc 'Show complete RAG configuration (KB, data sources, S3, parsing, Lambda, embedding, storage, app prompts)'
   task config: :environment do
     require 'aws-sdk-bedrockagent'
@@ -34,6 +42,9 @@ namespace :kb do
     puts e.backtrace.first(5).join("\n")
     exit 1
   end
+
+  # Starts an ingestion/sync job for the configured data source (same path as production sync).
+  # Useful after uploading new objects to the KB bucket so Bedrock picks them up.
   desc 'Trigger Knowledge Base ingestion sync'
   task sync: :environment do
     result = KbSyncService.new.sync!
@@ -44,6 +55,8 @@ namespace :kb do
     end
   end
 
+  # Lists data sources attached to the KB (IDs, names, status). Does not enumerate individual
+  # indexed files — use kb:documents for Bedrock’s document-level listing.
   desc 'List all data sources for the Knowledge Base'
   task status: :environment do
     require 'aws-sdk-bedrockagent'
@@ -84,6 +97,7 @@ namespace :kb do
     end
   end
 
+  # Reads `GetKnowledgeBase` and prints the embedding model ARN from the vector KB config.
   desc 'Show the embedding model ARN configured for the Knowledge Base (from AWS)'
   task embedding_model: :environment do
     require 'aws-sdk-bedrockagent'
@@ -119,6 +133,84 @@ namespace :kb do
       puts "✗ Failed to get Knowledge Base config: #{e.message}"
       exit 1
     end
+  end
+
+  # Calls Bedrock `ListKnowledgeBaseDocuments` for the configured KB + data source: documents
+  # Bedrock tracks for that datasource (status, identifiers). Paginates until exhausted.
+  #
+  # Equivalent AWS CLI (replace IDs/region):
+  #   aws bedrock-agent list-knowledge-base-documents \
+  #     --knowledge-base-id VBB72VKABV \
+  #     --data-source-id OWRPGSX6XK \
+  #     --region us-east-1
+  #
+  # Compact columns (S3 URI + status only), same idea as:
+  #   --query "documentDetails[].{uri: identifier.s3.uri, status: status}"
+  #   KB_DOCUMENTS_FORMAT=indexed bin/rails kb:documents
+  #
+  # Raw JSON array of hashes: KB_DOCUMENTS_JSON=1 bin/rails kb:documents
+  desc 'List KB documents from Bedrock (ListKnowledgeBaseDocuments). KB_DOCUMENTS_FORMAT=indexed for uri+status only'
+  task documents: :environment do
+    require Rails.root.join("lib/kb_documents_rake_helper.rb").to_s
+    require 'aws-sdk-bedrockagent'
+    require 'json'
+
+    kb_id = ENV['BEDROCK_KNOWLEDGE_BASE_ID'].presence ||
+            Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
+    ds_id = ENV['BEDROCK_DATA_SOURCE_ID'].presence ||
+            Rails.application.credentials.dig(:bedrock, :data_source_id)
+    region = ENV['AWS_REGION'].presence ||
+             Rails.application.credentials.dig(:aws, :region) ||
+             'us-east-1'
+    indexed_only = ENV['KB_DOCUMENTS_FORMAT'].to_s.casecmp('indexed').zero?
+    json_out = ENV['KB_DOCUMENTS_JSON'] == '1'
+
+    unless kb_id && ds_id
+      puts '✗ BEDROCK_KNOWLEDGE_BASE_ID and BEDROCK_DATA_SOURCE_ID required (env or credentials)'
+      exit 1
+    end
+
+    client = Aws::BedrockAgent::Client.new(region: region)
+    details = KbDocumentsRakeHelper.collect_document_details(client, kb_id, ds_id)
+
+    if json_out
+      puts JSON.pretty_generate(details.map { |d| KbDocumentsRakeHelper.detail_as_hash(d) })
+    elsif indexed_only
+      puts "\nKnowledge Base: #{kb_id}"
+      puts "Data Source: #{ds_id}"
+      puts "Region: #{region}"
+      puts "\n#{'URI'.ljust(72)} STATUS"
+      puts '-' * 90
+      details.each do |d|
+        uri = KbDocumentsRakeHelper.s3_uri_from_detail(d) || '(non-S3 identifier)'
+        label = uri.to_s.length > 72 ? "#{uri.to_s[0, 69]}..." : uri.to_s
+        puts "#{label.ljust(72)} #{d.status}"
+      end
+      puts "\nTotal: #{details.size}\n"
+    else
+      puts "\nKnowledge Base: #{kb_id}"
+      puts "Data Source: #{ds_id}"
+      puts "Region: #{region}\n"
+
+      details.each_with_index do |d, i|
+        puts "\n[#{i + 1}] status: #{d.status}"
+        puts "    updated_at: #{d.updated_at}" if d.updated_at
+        puts "    status_reason: #{d.status_reason}" if d.status_reason.present?
+        id = d.identifier
+        if id&.s3&.uri.present?
+          puts "    s3.uri: #{id.s3.uri}"
+        elsif id&.custom&.id.present?
+          puts "    custom.id: #{id.custom.id}"
+        elsif id
+          puts "    identifier.data_source_type: #{id.data_source_type}" if id.data_source_type
+        end
+      end
+      puts "\nTotal: #{details.size}\n"
+    end
+  rescue StandardError => e
+    puts "✗ Failed to list knowledge base documents: #{e.message}"
+    puts e.backtrace.first(5).join("\n")
+    exit 1
   end
 end
 

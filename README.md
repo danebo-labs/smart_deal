@@ -6,6 +6,8 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 
 **Stage 0** is a controlled pilot to validate **minimum viable operation (MVO)** with a **single elevator-project knowledge base** and a **small group of field technicians** (WhatsApp and/or web). The goal is not full multi-tenant product behavior yet, but to prove end-to-end flows: uploads, RAG answers, session context, and WhatsApp reliability under real-ish usage.
 
+**Typical MVO setup:** enable [**one shared `conversation_sessions` row**](#mvp-configuration-shared-conversation-session) (`SHARED_SESSION_ENABLED=true`) so the whole squad shares **one thread** of history and `active_entities` while testing one KB. WhatsApp still uses [**R2**](#whatsapp-answer-cache--follow-up-classifier-r2): the **faceted answer cache is per technician phone** (`whatsapp:+…`), not per session, so two phones never share the same in-flight menu or topic card.
+
 For that pilot you can optionally run **one shared conversation session** for everyone: all sandbox WhatsApp numbers and all signed-in web users resolve to the same `conversation_sessions` row (`identifier` + `channel` = shared). That lets the squad **see one continuous thread**—history, active document entities, and procedure state—while they stress-test queries against the same KB. See [MVP configuration: shared conversation session](#mvp-configuration-shared-conversation-session) below.
 
 When shared session is **off**, each WhatsApp number and each web user keeps a **separate** session (per `identifier` + `channel`), which is the default path toward later per-tenant / per-project isolation.
@@ -106,6 +108,24 @@ SHARED_SESSION_ENABLED=true
 ```
 
 **Web RAG:** When shared mode is on, the web `RAG` controller passes **`user_id: nil`** on that row so the shared session is not “owned” by whichever web user asked last.
+
+On WhatsApp, MVP pilots also benefit from an orthogonal short-term cache ([`Rag::WhatsappAnswerCache`](#whatsapp-answer-cache--follow-up-classifier-r2), per-number, 30-min TTL) that serves follow-up taps (`1`, `riesgos`, `menu`, `nuevo`) without hitting Bedrock again. That cache is **independent** from the shared `conversation_sessions` row: the session keeps durable project memory (`active_entities`, history), while the cache keeps the current faceted answer and menu. See [WhatsApp Answer Cache & Follow-up Classifier (R2)](#whatsapp-answer-cache--follow-up-classifier-r2) for details.
+
+#### MVO pilot: how to enable / disable environment flags
+
+Rails loads `.env` when each process **starts**. After changing any flag, restart the **web** process **and** Solid Queue **workers** (e.g. restart `bin/dev`), or the old `ENV` values remain in memory.
+
+| Variable | Default when unset | Turn **ON** | Turn **OFF** |
+|----------|-------------------|-------------|---------------|
+| `SHARED_SESSION_ENABLED` | off | `SHARED_SESSION_ENABLED=true` in `.env` | `false` or remove the line |
+| `SHARED_SESSION_IDENTIFIER` | `mvp-shared` (only when shared is on) | optional override in `.env` | ignored when shared is off |
+| `SHARED_SESSION_CHANNEL` | `shared` (only when shared is on) | optional; must stay in `ConversationSession::CHANNELS` | ignored when shared is off |
+| `SESSION_MAX_ENTITIES` | **10** in code | set an integer in `.env` | remove to use default |
+| `WA_FACETED_OUTPUT_ENABLED` | **on** | `true` or omit | `false` → `perform_legacy` (no R2 cache / menu) |
+| `WA_NANO_CLASSIFIER_ENABLED` | **on** | `true` or omit | `false` → no Haiku nano; ambiguous short follow-ups go to full RAG |
+| `WA_PROCESSING_ACK_ENABLED` | **on** | `true` or omit | `false` → no *“Consultando…”* bubble before full RAG |
+
+Use [`.env.sample`](.env.sample) as the checklist; copy lines into `.env` (never commit `.env`).
 
 ### Post-MVP session configuration (per-technician isolation)
 
@@ -363,3 +383,118 @@ If the filter returns no results (Bedrock guardrail), the system retries automat
 | `kb_documents` | Global | Global per account | Never | Upload + ingestion + RAG |
 | `technician_documents` | Global pool (`account_id = nil`) | Per `[account_id, project_id]` | FIFO max 20 | Ingestion + RAG (EntityExtractor) |
 | `active_entities` | Per session (or one shared session in MVP pilot mode) | Per session | 30-min TTL, max `MAX_ENTITIES` (default 10) | Ingestion + RAG; **on new session only**, seeded via `preload_recent_entities` from `technician_documents` |
+
+### WhatsApp Answer Cache & Follow-up Classifier (R2)
+
+A short-lived **conversational UI cache** sits on top of the three storage layers above. Its job is to make WhatsApp replies feel lightweight: the first answer is compact with a numbered menu, and follow-ups (`1`, `riesgos`, `y el voltaje?`, `menu`, `nuevo`, etc.) **expand from cache without re-invoking Bedrock RAG** when the message is still about the same topic. It **does not replace** `ConversationSession`; both coexist.
+
+```
+ConversationSession  →  project / entity memory, history, URI-scoped retrieval
+Rag::WhatsappAnswerCache  →  last RAG “card” (facets + menu) for menu UX, per recipient
+```
+
+| Layer | Time horizon | Scope | Backing store |
+|---|---|---|---|
+| `conversation_sessions` | Session (30 min, sliding) | `identifier` + `channel` (one shared row in MVP pilot) | PostgreSQL `conversation_sessions` |
+| `Rag::WhatsappAnswerCache` | Turn-set | **Per WhatsApp `to` number** (not shared across technicians) | `Rails.cache` (Solid Cache) key `rag_wa_faceted/v3/<whatsapp_to>` — TTL **1800s** (30 min). Bumped v2 → v3 when `document_label` was added to the schema; stale v2 payloads are invalidated as `op=corrupt`. |
+| Sticky thread locale | Longer follow-up | Same `to` | `rag_whatsapp_conv/v1/<whatsapp_to>` (written by `RagQueryConcern`; TTL **7 days**) so very short follow-ups can inherit language after the 30 min faceted TTL expires. |
+
+**Why per-number cache even in shared-session MVP?** The pilot may use one `ConversationSession` row for everyone, but two technicians on different phones must not share the same in-progress menu/answer: collision would mix topics and is unsafe. Isolation is by `whatsapp:+…` (cache key), not by shared session.
+
+#### Cache value schema (`Rag::WhatsappAnswerCache`)
+
+`WhatsappAnswerCache` validates a fixed set of keys (`SCHEMA_KEYS` in `app/services/rag/whatsapp_answer_cache.rb`). A typical payload:
+
+```ruby
+{
+  question:         String,              # last user question that produced this card
+  question_hash:    String,              # SHA1 prefix for nano / debug
+  faceted: {                             # from Rag::FacetedAnswer#to_cache_hash + :entities
+    intent:  Symbol,                    # e.g. :identification, :troubleshooting, :emergency
+    facets:  { resumen:, riesgos:, parametros:, secciones:, detalle: },
+    menu:    Array,                      # [{ n:, facet_key:, label: }, …]
+    raw:     String,
+    entities: [String, ...]            # display names of docs tied to this answer
+  },
+  citations:         Array,             # result citations
+  doc_refs:          Array,            # result doc_refs
+  locale:            Symbol,            # :es | :en
+  entity_signature:  String,         # 12 hex chars: SHA1 of sorted active_entities keys; drift can invalidate
+  generated_at:      Integer,          # unix time (age_s in logs = now - generated_at)
+  document_label:    String            # short doc name (from active_entities or doc_refs); rendered in facet headers
+}
+```
+
+- **EMERGENCY** intent is **never written** to cache (`[WA_CACHE] op=skip_write reason=emergency`); safety answers are always full RAG.
+- **Corrupt / schema drift (missing keys)** on read: entry deleted, `nil` returned, log line `[WA_CACHE] op=corrupt …`.
+- **Entity drift** (cached signature ≠ live `active_entities`): `invalidate` + miss — **skipped** when `SharedSession::ENABLED` (see `SharedSession` in code), because shared pilots mutate the same entity set for unrelated reasons.
+
+#### Components
+
+| Component | File | Role |
+|---|---|---|
+| `Rag::FacetedAnswer` | `app/services/rag/faceted_answer.rb` | Parses labeled Bedrock output (`[INTENT]`, `[RESUMEN]`, `[RIESGOS]`, …) and renders first message + per-facet bodies. |
+| `Rag::WhatsappAnswerCache` | `app/services/rag/whatsapp_answer_cache.rb` | Read/write/invalidation + logs: `op=read|write|corrupt|skip_write` and `op=invalidate` when **entity_drift** is detected (non–shared mode). |
+| `Rag::WhatsappFollowupClassifier` | `app/services/rag/whatsapp_followup_classifier.rb` | Cascade: reset → menu redraw → no cache / menu w/o cache → new entity / strong shift → deterministic menu → `mas` → synonym map → long message → optional Haiku nano. Emits `[WA_CLASSIFIER] route=… reason=…`. |
+| `Rag::WhatsappPostResetState` | `app/services/rag/whatsapp_post_reset_state.rb` | Short-lived (5 min) Rails.cache state after `:reset_ack`: `picking_source` → `picking_from_list` until the user picks a doc or abandons with free text / `0` / home tokens. |
+| `Rag::WhatsappDocumentPicker` | `app/services/rag/whatsapp_document_picker.rb` | Builds numbered lists for **recent** (`TechnicianDocument.recent`) vs **all** (`KbDocument`) and seeds `Describe <name>` into the normal `:new_query` RAG path. |
+| `SendWhatsappReplyJob` | `app/jobs/send_whatsapp_reply_job.rb` | `perform_faceted` / `perform_legacy`; post-reset picker short-circuits before the classifier when `WhatsappPostResetState` is present. Orchestrates cache, classifier, RAG, `infer_locale` (cache → sticky conv key → history heuristic → body → `I18n.default_locale`). |
+| `ProcessWhatsappMediaJob` | `app/jobs/process_whatsapp_media_job.rb` | After a successful `KbSyncService` upload: `invalidate(whatsapp_to)` and `[WA_CACHE] op=invalidate reason=media_upload` so the next user question runs RAG over the updated KB. |
+
+#### Classifier cascade (order in code; first match wins)
+
+1. **`:user_reset`** — `nuevo`, `nueva`, `new`, `reset`, `inicio`, `start`, `home`, numeric **`6`** (same row as *inicio* in the rendered menu) → invalidate cache, ack with **1=recientes / 2=existentes** sub-menu, arm `WhatsappPostResetState`, **no** RAG.
+2. **`:show_menu` / `menu_redraw`** — `menu`, `volver`, `regresar`, `resumen`, `ficha`, `overview`, `summary`, numeric **`5`** when cache is present (same row as *regresar*).
+3. **Empty cache + menu-shaped input** — e.g. `1`–`4` or `riesgos`… → `:no_context_help` (`reason=:menu_without_cache`); not a token → see next.
+4. **Empty cache, any input** — `:new_query` (`reason=:no_cache`) — RAG.
+5. **`:new_entity_detected`** — `KbDocumentResolver` matches a document not listed in the cached `faceted[:entities]`.
+6. **`:strong_intent_shift`** — `STRONG_INTENT_PHRASES` in classifier while cached `intent` is not already `emergency` → RAG, no nano.
+7. **`:deterministic_token`** — `MENU_TOKEN_RE` after `normalize` maps a digit or `riesgos`/`parametros`/… to a **non-empty** cached facet.
+8. **`mas`** — repeat last facet inferred from the last assistant line in `conversation_session` history (`:deterministic_mas_last_facet`).
+9. **`:synonym_match`** — e.g. `voltaje` → `parametros` when that facet has content (skipped if the facet is empty or `(—)`). Populates `Decision#matched_token` so the renderer can hoist the matching line (e.g. "Voltaje de operación: …") above the rest of the facet, or emit an explicit *"No hay X documentado en este archivo"* notice if the term is absent.
+10. **`:message_too_long`** — `> 120` chars → `:new_query`.
+11. **Haiku nano** (`ENV["WA_NANO_CLASSIFIER_ENABLED"]` default `true`) — `facet_hit` vs `new_query` with JSON + threshold; reasons e.g. `nano_decision`, `nano_new_query`, `nano_low_confidence_fallback`, or parse error → fall through.
+12. **Default** — `:new_query` (`reason` may be `:nano_disabled_fallback`).
+
+If the model omits faceted labels (`FacetedAnswer#legacy?`), the job does not populate the Whatsapp answer cache; behavior matches pre-R2 formatting.
+
+#### Observability & scripts
+
+- **`bin/wa_dev_sim "<mensaje>"`** — one-off POST to `/twilio/webhook` (needs Rails + Solid Queue worker); logs a marker in `development.log`.
+- **`bin/wa_e2e_monitor`** — highlights `[WA_CLASSIFIER]`, `[WA_CACHE]`, `[WA_FACET_DELIVERY]`, and Bedrock lines in `log/development.log`.
+- **`bin/wa_e2e_run`** — E2E markers per case (`E2E_CASE_12`, …) for grepping a single run.
+- **`bin/wa_metrics_daily`** — rollups of cache ops and classifiers (see script).
+- **`bin/wa_dev_clear <whatsapp:+…>`** — deletes `rag_wa_faceted/v3/...`, `rag_wa_post_reset/v1/...`, and `rag_whatsapp_conv/v1/...` for a number. When shared session is on, it does **not** destroy the `mvp-shared` row (prints a one-liner to do that manually if needed).
+
+#### R2-only flags (detail)
+
+The same three WhatsApp R2 flags appear in the [MVO pilot flags](#mvo-pilot-how-to-enable--disable-environment-flags) table above. Summary:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `WA_FACETED_OUTPUT_ENABLED` | `true` | `false` → `SendWhatsappReplyJob` uses `perform_legacy` (pre-R2 single message, no read-through cache). |
+| `WA_NANO_CLASSIFIER_ENABLED` | `true` | `false` → after heuristics, short ambiguous messages go straight to `new_query` (no tiny Haiku call). |
+| `WA_PROCESSING_ACK_ENABLED` | `true` | `false` → suppresses the *"🛠 Consultando la base de conocimiento…"* bubble. Ack is sent before **every** full RAG call: faceted `:new_query` **and** `perform_legacy` (rollback path). Cache hits, menu redraws, resets, post-reset picker, and facet follow-ups stay silent. Log line: `[WA_ACK] to=<to> reason=new_query_before_rag`. |
+
+Typical follow-up from cache: **0** Bedrock RAG and **0**–**1** nano call when enabled; `new_query` path runs full `retrieve_and_generate` (7–60s in dev depending on cold KB / network), preceded by the processing ack bubble when the flag is on.
+
+#### Facet rendering (R2 UX)
+
+- **Vertical text-only menu** — first message and facet footers render facet options one per line (`N - <label>`). Emojis from the model’s `[MENU]` labels are stripped in the WhatsApp render (labels come from `rag.wa_menu.default_labels` / parsed text). After a blank line, two **navigation** rows are always appended: **`5 - regresar`** / **`back`** and **`6 - inicio`** / **`home`** (`rag.wa_menu.back_label` / `home_label`). **`5`** / **`regresar`** map to `:show_menu` (redraw first message from cache); **`6`** / **`inicio`** map to `:reset_ack`.
+- **Document label in headers** — when `document_label` is cached, facet headers compose as `*Riesgos · PCB Mainboard Orona*`. If the combined header would exceed ~55 chars, it falls back to two lines: `*Riesgos*\n(del documento *PCB Mainboard Orona*)`. The first message adds a `*<doc>* (fuente)` banner above the summary so the technician never loses track of what document is being discussed. Label source: first entity in `conv_session.active_entities` (fallback: first `doc_refs[:short_name|title|filename]`), truncated to 40 chars.
+- **Reduced emoji load** — safety markers (`⚠️`, `🛑`) and processing ack stay; facet/menu rows avoid decorative emoji so repeated bubbles stay readable on small screens.
+- **Semantic hoist** — when a synonym routed the user to a facet (e.g. `"¿y el voltaje?"` → `:parametros`), the renderer looks for a line in the cached facet containing the matched term (accent/case-insensitive) and surfaces it above the rest:
+
+  ```
+  🔎 *Voltaje*
+  ⚠️ Voltaje de operación: DATO NO DISPONIBLE
+
+  ──────
+  ① Tipo: CR2032
+  ② …
+  ```
+
+  If no matching line exists, the hoist emits an explicit `No hay <término> documentado en este archivo.` notice before the facet so the user doesn't infer a generic parameter dump as the answer. Zero Bedrock tokens.
+- **Reset + file picker** — after `inicio` / `nuevo` / `6`, the ack shows **1 — archivos recientes** (`TechnicianDocument`, per-identifier/channel) and **2 — archivos existentes** (`KbDocument`). Choosing **1** or **2** lists up to nine names; the user replies with a digit to seed **`Describe <name>`** into a normal `:new_query` (then state clears). Free-text after reset clears the picker state so normal RAG applies. **`0`** returns to the 1/2 prompt; home-like tokens re-show the reset ack.
+
+For multi-tenant work later, keep treating **session row** and **per-number faceted cache** as separate concerns: a future `account_id` / `project_id` can scope the session and KB, while the WhatsApp cache key should remain tied to the **recipient address** to avoid cross-user menu bleed.

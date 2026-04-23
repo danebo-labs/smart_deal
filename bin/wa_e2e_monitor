@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# wa_e2e_monitor — tails development.log and highlights the R2 decision signals
+# so you can watch live what the classifier/cache did during manual e2e testing
+# in the Twilio sandbox.
+#
+# Usage: bin/wa_e2e_monitor [path/to/log]
+# Default log: log/development.log
+
+set -euo pipefail
+
+LOG="${1:-log/development.log}"
+if [[ ! -f "$LOG" ]]; then
+  echo "Log file not found: $LOG" >&2
+  exit 1
+fi
+
+echo "Monitoring $LOG for R2 signals. Ctrl+C to quit."
+echo
+
+# grep -E for a single regex; --line-buffered so output appears immediately.
+tail -n 0 -F "$LOG" | grep --line-buffered -E \
+  '\[WA_CLASSIFIER\]|\[WA_CACHE\]|\[WA_FACET_DELIVERY\]|\[WA_SAFETY\]|SendWhatsappReplyJob:|BedrockRagService|retrieve_and_generate'

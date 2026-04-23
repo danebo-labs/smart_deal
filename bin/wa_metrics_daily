@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# wa_metrics_daily — quick stats for the R2 WhatsApp cache/classifier.
+# Usage: bin/wa_metrics_daily [path/to/log]
+# Default log: log/production.log
+
+set -euo pipefail
+
+LOG="${1:-log/production.log}"
+if [[ ! -f "$LOG" ]]; then
+  echo "Log file not found: $LOG" >&2
+  exit 1
+fi
+
+echo "=== Classifier routes ==="
+grep '\[WA_CLASSIFIER\]' "$LOG" | grep -oE 'route=\w+' | sort | uniq -c | sort -rn
+
+echo
+echo "=== Classifier reasons ==="
+grep '\[WA_CLASSIFIER\]' "$LOG" | grep -oE 'reason=\w+' | sort | uniq -c | sort -rn
+
+echo
+echo "=== Cache reads (hit vs miss) ==="
+grep '\[WA_CACHE\] .* op=read' "$LOG" | grep -oE 'hit=\w+' | sort | uniq -c
+
+echo
+echo "=== Cache invalidations by reason ==="
+grep '\[WA_CACHE\] .* op=invalidate' "$LOG" | grep -oE 'reason=\w+' | sort | uniq -c | sort -rn
+
+echo
+echo "=== Facet delivery distribution ==="
+grep '\[WA_FACET_DELIVERY\]' "$LOG" | grep -oE 'facet_key=\w+' | sort | uniq -c | sort -rn
+
+echo
+echo "=== Classifier latency (ms) ==="
+grep '\[WA_CLASSIFIER\]' "$LOG" | grep -oE 'latency_ms=[0-9]+' | awk -F= '{print $2}' | sort -n | \
+  awk 'BEGIN { c = 0 }
+       { a[c++] = $1 }
+       END {
+         if (c == 0) { print "no samples"; exit }
+         p50 = a[int(c*0.5)]; p95 = a[int(c*0.95)]
+         printf "n=%d p50=%s p95=%s max=%s\n", c, p50, p95, a[c-1]
+       }'

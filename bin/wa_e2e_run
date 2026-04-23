@@ -1,0 +1,299 @@
+#!/usr/bin/env bash
+# wa_e2e_run — Non-interactive R2 E2E suite (cases 12 → 21).
+#
+# Runs every automatable scenario that remains meaningful under the current
+# R2 logic + MVP shared-session mode. Each turn is wrapped with log markers
+# ([E2E_CASE_N] begin/end) so you can extract per-case traces afterwards with:
+#
+#   grep -n "E2E_CASE_" log/development.log
+#   awk '/E2E_CASE_12] begin/,/E2E_CASE_12] end/' log/development.log
+#
+# Prerequisites:
+#   - Rails server running (default http://localhost:3000)
+#   - Solid Queue worker processing the :whatsapp_rag queue
+#   - WA_FACETED_OUTPUT_ENABLED=true (default)
+#
+# Usage:
+#   bin/wa_e2e_run                       # defaults below
+#   bin/wa_e2e_run --from whatsapp:+56959156893 --sleep 10
+#
+# Cases covered (and why — adjusted to current code):
+#   11  idempotency (duplicate MessageSid)
+#   12  short locale-switch message keeps sticky ES
+#   15  corrupt cache payload → rescued, rebuilt
+#   16  conversation_history coherence (diagnostic via runner)
+#   17  empty facet (—)  → empty_facet_notice
+#   19  synonym 'voltaje' → parametros facet
+#   20  normalization: Riesgos / RIESGOS / ' riesgos ' / riésgos / riesgos!
+#   21  strong intent shift → new_query
+#
+# Cases deliberately SKIPPED (and why):
+#   13  media upload mid-thread  — needs a real image + media pipeline;
+#                                 invalidation hook is covered by job unit tests.
+#   14  nano-classifier failure  — requires flipping an ENV + restarting the
+#                                 worker; run manually when needed.
+#   18  entity_signature drift   — IGNORED by design in SharedSession::ENABLED
+#                                  (see whatsapp_answer_cache.rb). No longer
+#                                  a valid assertion in MVP shared mode.
+
+set -euo pipefail
+
+FROM="whatsapp:+56959156893"
+TO="whatsapp:+14155238886"
+URL="http://localhost:3000/twilio/webhook"
+LOG="log/development.log"
+SLEEP_FAST=3      # for cache-hit turns (< 1s server-side)
+SLEEP_SLOW=10     # for RAG turns (Bedrock latency)
+RUN_ID="E2E_$(date +%s)"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from)       FROM="$2"; shift 2;;
+    --to)         TO="$2";   shift 2;;
+    --url)        URL="$2";  shift 2;;
+    --log)        LOG="$2";  shift 2;;
+    --sleep)      SLEEP_SLOW="$2"; shift 2;;
+    --sleep-fast) SLEEP_FAST="$2"; shift 2;;
+    *) echo "Unknown flag: $1" >&2; exit 1;;
+  esac
+done
+
+if [[ ! -f "$LOG" ]]; then
+  echo "Log file not found: $LOG" >&2
+  exit 1
+fi
+
+# ── helpers ────────────────────────────────────────────────────────────────
+
+mark() {
+  # mark <case_n> <begin|end> [note]
+  local msg="[${RUN_ID}][E2E_CASE_$1] $2"
+  [[ $# -ge 3 ]] && msg="$msg — $3"
+  echo "$msg" >> "$LOG"
+  echo ">> $msg"
+}
+
+post() {
+  # post <body> [--sid <fixed_sid>]
+  local body="$1"; shift || true
+  local sid="SMe2e$(date +%s%N | cut -c-14)"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --sid) sid="$2"; shift 2;;
+      *) shift;;
+    esac
+  done
+  curl -sS -X POST "$URL" \
+    --data-urlencode "MessageSid=$sid" \
+    --data-urlencode "From=$FROM" \
+    --data-urlencode "To=$TO" \
+    --data-urlencode "Body=$body" \
+    --data-urlencode "NumMedia=0" \
+    -o /dev/null -w "   HTTP %{http_code}  sid=$sid  body=\"$body\"\n" || true
+}
+
+runner() {
+  # runner <ruby-string> — inline rails runner, output surfaced with indent.
+  bin/rails runner "$1" 2>&1 | sed 's/^/   /'
+}
+
+seed_pcb_cache() {
+  local case_n="$1"
+  mark "$case_n" "seed-pcb" "priming cache with PCB mainboard query"
+  post "¿Qué es la PCB Mainboard Orona?"
+  sleep "$SLEEP_SLOW"
+}
+
+# ── preflight ──────────────────────────────────────────────────────────────
+
+echo "=== wa_e2e_run ($RUN_ID) ==="
+echo "  from=$FROM"
+echo "  url=$URL"
+echo "  log=$LOG"
+echo "  sleep: fast=${SLEEP_FAST}s slow=${SLEEP_SLOW}s"
+echo
+
+if ! curl -sS -o /dev/null -w '%{http_code}' "$URL" | grep -qE '^[0-9]{3}$'; then
+  echo "!! Cannot reach $URL. Is the Rails server running?" >&2
+  exit 2
+fi
+
+echo "[$RUN_ID] suite begin @ $(date -u +%FT%TZ)" >> "$LOG"
+
+# ── Clean slate (shared-mode-aware thanks to wa_dev_clear) ─────────────────
+
+mark "00" "begin" "resetting R2 state for $FROM"
+bin/wa_dev_clear "$FROM" 2>&1 | sed 's/^/   /'
+mark "00" "end"
+
+# ===========================================================================
+# Case 12 — Short locale-switch message keeps sticky ES
+# ===========================================================================
+# Precondition: fresh ES conversation in cache. Short EN message (< 200 chars)
+# must NOT flip locale — infer_locale prefers the sticky rag_whatsapp_conv/v1
+# key and the cached answer's :locale.
+# Expected logs:
+#   [WA_CACHE] op=read hit=true
+#   [WA_CLASSIFIER] route=facet_hit|... reply rendered in ES
+seed_pcb_cache 12
+mark "12" "begin" "short EN follow-up must keep sticky ES locale"
+post "switch to english please"
+sleep "$SLEEP_SLOW"
+mark "12" "end"
+
+# ===========================================================================
+# Case 15 — Corrupt cache payload is rescued
+# ===========================================================================
+# Force a non-Hash value under the cache key. Next turn must rescue, invalidate
+# and route :new_query (or :no_context_help for a bare menu token).
+# Expected logs:
+#   [WA_CACHE] op=corrupt reason=...
+#   route=new_query
+mark "15" "begin" "inject corrupt cache payload"
+runner "Rails.cache.write(Rag::WhatsappAnswerCache.key('$FROM'), 'not-a-hash'); puts 'corrupt payload written'"
+post "¿Qué es la PCB Mainboard Orona?"
+sleep "$SLEEP_SLOW"
+mark "15" "end"
+
+# ===========================================================================
+# Case 16 — conversation_history coherence
+# ===========================================================================
+# Diagnostic only: after several turns, dump the shared-session history and
+# assert it contains user + assistant turns (no raw facet dumps). We rely on
+# the prior turns (case 12 + 15) plus one extra cache-hit follow-up.
+mark "16" "begin" "inspect conversation_history on the active session"
+post "1"
+sleep "$SLEEP_FAST"
+runner "
+  id      = SharedSession::ENABLED ? SharedSession::IDENTIFIER : '$FROM'
+  channel = SharedSession::ENABLED ? SharedSession::CHANNEL    : 'whatsapp'
+  cs = ConversationSession.find_by(identifier: id, channel: channel)
+  if cs.nil?
+    puts 'NO conversation_session row found'
+  else
+    puts \"session#=#{cs.id} identifier=#{cs.identifier} channel=#{cs.channel}\"
+    puts \"active_entities=#{cs.active_entities.keys}\"
+    puts \"history.size=#{cs.conversation_history.size}\"
+    cs.conversation_history.last(8).each_with_index do |h, i|
+      puts \"  [#{i}] #{h['role']}: #{h['content'].to_s[0..100].inspect}\"
+    end
+  end
+"
+mark "16" "end"
+
+# ===========================================================================
+# Case 17 — Empty facet (—) → empty_facet_notice
+# ===========================================================================
+# Inject a cache payload where [RIESGOS] is empty, then request facet 1.
+# Job must render empty_facet_notice (see rag.wa_empty_facet_notice i18n key)
+# and never deliver a blank Twilio body.
+# Expected logs:
+#   [WA_FACET_DELIVERY] facet_key=riesgos length>0
+#   rendered via empty_facet_notice_message (copy contains 'menu' / alternates)
+mark "17" "begin" "inject cache with empty RIESGOS facet"
+runner "
+  to   = '$FROM'
+  body = 'que es la PCB?'
+  faceted = Rag::FacetedAnswer.new(
+    intent: :identification,
+    facets: {
+      resumen:    'La Orona PCB Mainboard es la placa controladora principal.',
+      riesgos:    '(—)',
+      parametros: '① batería CR2032',
+      secciones:  '—',
+      detalle:    '—'
+    },
+    menu: [
+      { n: '1', label: '⚠️ Riesgos',    facet_key: :riesgos },
+      { n: '2', label: '📏 Parámetros', facet_key: :parametros },
+      { n: '3', label: '📋 Secciones',  facet_key: :secciones },
+      { n: '4', label: '🔧 Detalle',    facet_key: :detalle }
+    ],
+    raw: ''
+  )
+  Rag::WhatsappAnswerCache.write(to, {
+    question:         body,
+    question_hash:    Rag::WhatsappAnswerCache.question_hash(body),
+    faceted:          faceted.to_cache_hash.merge(entities: []),
+    citations:        [],
+    doc_refs:         [],
+    locale:           :es,
+    entity_signature: '',
+    intent:           :identification
+  })
+  puts 'empty-facet cache primed'
+"
+post "1"
+sleep "$SLEEP_FAST"
+mark "17" "end"
+
+# ===========================================================================
+# Case 18 — SKIPPED (obsolete in SharedSession::ENABLED)
+# ===========================================================================
+mark "18" "skip" "entity_signature drift ignored by design in shared mode"
+
+# ===========================================================================
+# Case 19 — Synonym 'voltaje' → parametros facet
+# ===========================================================================
+# Reprime ES PCB cache so [PARÁMETROS] is populated by the model, then hit
+# with a pure synonym.
+# Expected logs:
+#   [WA_CLASSIFIER] route=facet_hit reason=synonym_match facet_key=parametros
+#   [WA_FACET_DELIVERY] facet_key=parametros
+#   (zero retrieve_and_generate lines for this turn)
+seed_pcb_cache 19
+mark "19" "begin" "synonym 'voltaje' should map to parametros facet"
+post "y el voltaje?"
+sleep "$SLEEP_FAST"
+mark "19" "end"
+
+# ===========================================================================
+# Case 20 — Normalization variants all resolve to riesgos
+# ===========================================================================
+# Expected logs (per send):
+#   [WA_CLASSIFIER] reason=deterministic_token facet_key=riesgos
+mark "20" "begin" "normalization variants → :riesgos"
+for variant in "Riesgos" "RIESGOS" " riesgos " "riésgos" "riesgos!"; do
+  echo "   variant=\"$variant\""
+  post "$variant"
+  sleep "$SLEEP_FAST"
+done
+mark "20" "end"
+
+# ===========================================================================
+# Case 21 — Strong intent shift forces new_query
+# ===========================================================================
+# With PCB cache still live, a troubleshooting question bypasses nano and
+# routes :new_query → retrieve_and_generate → new cache.
+# Expected logs:
+#   [WA_CLASSIFIER] route=new_query reason=strong_intent_shift
+#   BedrockRagService retrieve_and_generate ...
+#   [WA_CACHE] op=write intent=<new>
+mark "21" "begin" "strong intent shift → new_query"
+post "cómo diagnosticar falla de puertas"
+sleep "$SLEEP_SLOW"
+mark "21" "end"
+
+# ===========================================================================
+# Case 11 — Twilio idempotency (duplicate MessageSid)
+# ===========================================================================
+# Send the same MessageSid twice. TwilioController must enqueue only one
+# SendWhatsappReplyJob; the second POST returns empty TwiML.
+DUP_SID="SMdup$(date +%s%N | cut -c-12)"
+mark "11" "begin" "duplicate MessageSid $DUP_SID"
+post "idempotency ping" --sid "$DUP_SID"
+sleep 1
+post "idempotency ping" --sid "$DUP_SID"
+sleep "$SLEEP_FAST"
+mark "11" "end"
+
+# ── Summary ────────────────────────────────────────────────────────────────
+
+echo
+echo "=== suite finished ==="
+echo "[$RUN_ID] suite end @ $(date -u +%FT%TZ)" >> "$LOG"
+echo "Inspect this run's logs with:"
+echo "  grep -n '$RUN_ID' $LOG"
+echo "  grep -n 'E2E_CASE_' $LOG | tail -40"
+echo "Per-case window example (case 19):"
+echo "  awk '/E2E_CASE_19\\] begin/,/E2E_CASE_19\\] end/' $LOG"

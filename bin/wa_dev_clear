@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# wa_dev_clear — reset R2 state for a WhatsApp recipient so you can start a
+# clean E2E scenario. Always drops:
+#   - Rag::WhatsappAnswerCache (30-min faceted cache, per-number)
+#   - "rag_whatsapp_conv/v1/<to>" sticky locale (7d, per-number)
+#
+# Also drops the ConversationSession ONLY when shared mode is OFF. In shared
+# mode the row is the pilot-wide "mvp-shared" thread and destroying it wipes
+# every tester's history at once — which is rarely what you want mid-marcha
+# blanca. Reset it manually via `bin/rails runner` if really needed.
+#
+# Usage:
+#   bin/wa_dev_clear <whatsapp_number>
+#   bin/wa_dev_clear whatsapp:+56912345678
+
+set -euo pipefail
+
+NUM="${1:-}"
+if [[ -z "$NUM" ]]; then
+  echo "Usage: bin/wa_dev_clear <whatsapp:+...>" >&2
+  exit 1
+fi
+
+bin/rails runner "
+  to = '$NUM'
+  [
+    Rag::WhatsappAnswerCache.key(to),
+    Rag::WhatsappPostResetState.key(to),
+    \"rag_whatsapp_conv/v1/#{to}\"
+  ].each do |k|
+    existed = Rails.cache.delete(k)
+    puts \"cache delete #{k}: #{existed ? 'ok' : 'miss'}\"
+  end
+
+  if SharedSession::ENABLED
+    puts \"shared mode ON — NOT destroying ConversationSession (identifier=#{SharedSession::IDENTIFIER}, channel=#{SharedSession::CHANNEL}).\"
+    puts 'to reset the shared thread manually, run:'
+    puts \"  ConversationSession.find_by(identifier: '#{SharedSession::IDENTIFIER}', channel: '#{SharedSession::CHANNEL}')&.destroy\"
+  else
+    sess = ConversationSession.find_by(identifier: to, channel: 'whatsapp')
+    if sess
+      puts \"destroying ConversationSession##{sess.id} (entities=#{sess.active_entities.size}, turns=#{sess.conversation_history.size})\"
+      sess.destroy!
+    else
+      puts 'no ConversationSession to destroy'
+    end
+  end
+"

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# wa_dev_sim — simulate a Twilio WhatsApp webhook POST against the local Rails
+# app, then show the SendWhatsappReplyJob log entries for the matching turn.
+#
+# Requirements:
+#   - Rails server running (default: http://localhost:3000)
+#   - Solid Queue worker running (so the job actually executes)
+#   - Logs are tailed from log/development.log
+#
+# Usage:
+#   bin/wa_dev_sim <message> [--from whatsapp:+56912345678] [--url http://localhost:3000/twilio/webhook]
+#
+# Examples:
+#   bin/wa_dev_sim "que es Orona PCB Mainboard"
+#   bin/wa_dev_sim "1"
+#   bin/wa_dev_sim "menu"
+#   bin/wa_dev_sim "nuevo"
+
+set -euo pipefail
+
+MESSAGE="${1:-}"
+if [[ -z "$MESSAGE" ]]; then
+  echo "Usage: bin/wa_dev_sim <message> [--from <whatsapp:+...>] [--url <webhook_url>]" >&2
+  exit 1
+fi
+shift || true
+
+FROM="whatsapp:+56912345678"
+TO="whatsapp:+14155238886"
+URL="http://localhost:3000/twilio/webhook"
+LOG="log/development.log"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from) FROM="$2"; shift 2;;
+    --to)   TO="$2";   shift 2;;
+    --url)  URL="$2";  shift 2;;
+    --log)  LOG="$2";  shift 2;;
+    *) echo "Unknown flag: $1" >&2; exit 1;;
+  esac
+done
+
+MSG_SID="SMdev$(date +%s%N | cut -c-16)"
+
+echo "→ POST $URL"
+echo "  From=$FROM  Body=\"$MESSAGE\"  MessageSid=$MSG_SID"
+echo
+
+LOG_MARK="WA_SIM_MARK_$$_$(date +%s)"
+echo "[$LOG_MARK] begin" >> "$LOG" || true
+
+curl -sS -X POST "$URL" \
+  --data-urlencode "MessageSid=$MSG_SID" \
+  --data-urlencode "From=$FROM" \
+  --data-urlencode "To=$TO" \
+  --data-urlencode "Body=$MESSAGE" \
+  --data-urlencode "NumMedia=0" \
+  -o /tmp/wa_dev_sim_response.xml -w "HTTP %{http_code}\n"
+
+echo
+echo "Webhook response (TwiML):"
+cat /tmp/wa_dev_sim_response.xml
+echo
+echo
+
+echo "Waiting 8s for the job to run…"
+sleep 8
+echo
+
+echo "=== Relevant log entries for this turn ==="
+# Grab from the marker we wrote; if missing fall back to last 200 lines.
+if grep -q "$LOG_MARK" "$LOG"; then
+  awk -v mark="$LOG_MARK" '
+    index($0, mark) { found = 1 }
+    found
+  ' "$LOG" | grep -E '\[WA_CLASSIFIER\]|\[WA_CACHE\]|\[WA_FACET_DELIVERY\]|SendWhatsappReplyJob:|retrieve_and_generate|BedrockRagService|Twilio delivery|Twilio send' || true
+else
+  tail -n 200 "$LOG" | grep -E '\[WA_CLASSIFIER\]|\[WA_CACHE\]|\[WA_FACET_DELIVERY\]|SendWhatsappReplyJob:|retrieve_and_generate|BedrockRagService|Twilio delivery' || true
+fi

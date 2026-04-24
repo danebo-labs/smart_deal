@@ -35,8 +35,8 @@ class TrackBedrockQueryJob < ApplicationJob
 
   private
 
-  # Pushes a Turbo Stream replace to the "metrics-container" DOM element.
-  # The home view subscribes via `turbo_stream_from "metrics"`.
+  # Pushes Turbo Stream update to #chat-usage-metrics-container (home chat footer).
+  # Subscribes via `turbo_stream_from "metrics"`.
   def broadcast_metrics_update
     today = Date.current
     s3_bytes = CostMetric.find_by(date: today, metric_type: :s3_total_size)&.value || 0
@@ -53,8 +53,8 @@ class TrackBedrockQueryJob < ApplicationJob
 
     Turbo::StreamsChannel.broadcast_update_to(
       "metrics",
-      target: "metrics-container",
-      partial: "home/metrics",
+      target: "chat-usage-metrics-container",
+      partial: "home/chat_usage_footer_metrics",
       locals: { current_metrics: current_metrics }
     )
   rescue StandardError => e

@@ -11,7 +11,11 @@ class HomeController < ApplicationController
   end
 
   def metrics
-    render turbo_stream: turbo_stream.update("metrics-container", partial: "home/metrics", locals: { current_metrics: current_metrics })
+    render turbo_stream: turbo_stream.update(
+      "chat-usage-metrics-container",
+      partial: "home/chat_usage_footer_metrics",
+      locals: { current_metrics: current_metrics }
+    )
   end
 
   def documents

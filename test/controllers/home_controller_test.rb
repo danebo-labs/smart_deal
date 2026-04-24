@@ -26,10 +26,21 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_select '.document-name-primary', text: 'Manual ascensor'
   end
 
-  test 'index renders three summary panels beside chat' do
+  test 'index renders two summary panels beside chat' do
     get root_path
     assert_response :success
-    assert_select '.document-container > .summary-box', count: 3
+    assert_select '.document-container > .summary-box', count: 2
+  end
+
+  test 'index places overview card between chat and knowledge base files card' do
+    get root_path
+    assert_response :success
+
+    doc = Nokogiri::HTML(response.body)
+    summary_boxes = doc.at_css('.document-container')&.css('> .summary-box')
+    assert_equal 2, summary_boxes&.size
+    assert_match(/Recientes consultados/, summary_boxes[0].text)
+    assert_match(/Archivos en Base de Conocimiento/, summary_boxes[1].text)
   end
 
   test 'index overview lists TechnicianDocument canonical_name numbered' do
@@ -103,7 +114,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     get root_path
     assert_response :success
-    assert_select '.metrics-group', minimum: 1
+    assert_select '[data-chat-usage-metrics]', minimum: 1
   end
 
   test 'should render index without metrics' do
@@ -117,17 +128,17 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_equal TURBO_STREAM_CONTENT_TYPE, response.content_type
     assert_match(/turbo-stream/, response.body)
     assert_match(/action="update"/, response.body)
-    assert_match(/target="metrics-container"/, response.body)
+    assert_match(/target="chat-usage-metrics-container"/, response.body)
   end
 
-  test 'metrics turbo_stream should include metrics partial' do
+  test 'metrics turbo_stream should include chat usage footer partial' do
     today = Date.current
     CostMetric.create!(date: today, metric_type: :daily_tokens, value: 5000)
     CostMetric.create!(date: today, metric_type: :daily_queries, value: 25)
 
     get '/home/metrics'
     assert_response :success
-    assert_match(/metrics-group/, response.body)
+    assert_match(/chat-usage-footer-metrics/, response.body)
   end
 
   test 'metrics sync from BedrockQuery when CostMetric missing for today' do
@@ -146,7 +157,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     assert CostMetric.exists?(date: today, metric_type: :daily_tokens),
            'CostMetric should be synced from BedrockQuery on first load'
-    assert_select '.metric-value[data-metric-value="tokens"]', text: /150/
+    assert_select '#chat-usage-metrics-container [data-metric-value="tokens"]', text: /150/
   end
 
   def stub_shared_session_enabled_for_home_test(enabled)

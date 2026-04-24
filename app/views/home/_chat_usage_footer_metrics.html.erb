@@ -1,0 +1,11 @@
+<%# Tokens + cost only; target id chat-usage-metrics-container for Turbo updates %>
+<div class="chat-usage-footer-metrics" data-chat-usage-metrics="true">
+  <div class="chat-usage-footer-metric" data-metric-type="tokens">
+    <span class="chat-usage-footer-label">Tokens</span>
+    <span class="chat-usage-footer-value" data-metric-value="tokens"><%= number_with_delimiter(current_metrics[:today_tokens]) %></span>
+  </div>
+  <div class="chat-usage-footer-metric" data-metric-type="cost">
+    <span class="chat-usage-footer-label">Costo hoy</span>
+    <span class="chat-usage-footer-value chat-usage-footer-value--cost" data-metric-value="cost">$<%= current_metrics[:today_cost].round(4) %></span>
+  </div>
+</div>

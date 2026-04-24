@@ -19,12 +19,33 @@ export default class extends Controller {
   connect() {
     this.pendingFile = null
     this.pendingImageQuery = null
+    this.metricsRefreshTimers = []
     this.subscribeToKbSync()
     this.inputTarget?.focus()
   }
 
   disconnect() {
     this.kbSyncSubscription?.unsubscribe()
+    this.clearMetricsRefreshTimers()
+  }
+
+  clearMetricsRefreshTimers() {
+    (this.metricsRefreshTimers || []).forEach((id) => clearTimeout(id))
+    this.metricsRefreshTimers = []
+  }
+
+  /**
+   * TrackBedrockQueryJob runs async (perform_later); metrics are not in DB until it finishes.
+   * In dev, Cable often runs in the web process while jobs run in a separate worker, so Turbo
+   * broadcasts from the job may never reach the browser — poll /home/metrics a few times.
+   */
+  scheduleMetricsRefresh() {
+    this.clearMetricsRefreshTimers()
+    this.updateMetrics()
+    const delays = [400, 1200, 3000, 7000]
+    delays.forEach((ms) => {
+      this.metricsRefreshTimers.push(setTimeout(() => this.updateMetrics(), ms))
+    })
   }
 
   subscribeToKbSync() {
@@ -243,7 +264,7 @@ export default class extends Controller {
         }
       }
 
-      this.updateMetrics()
+      this.scheduleMetricsRefresh()
     } catch (error) {
       this.removeMessage(loadingId)
       this.addMessage(`Error: ${error.message}`, "error")
@@ -273,7 +294,7 @@ export default class extends Controller {
       if (citations.length) {
         this.addMessageHtml(renderReferences(citations), "assistant")
       }
-      this.updateMetrics()
+      this.scheduleMetricsRefresh()
     } catch (error) {
       this.removeMessage(loadingId)
       this.addMessage(`Error: ${error.message}`, "error")

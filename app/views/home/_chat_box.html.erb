@@ -1,6 +1,7 @@
 <!-- Box 1.5: RAG Chat with Knowledge Base -->
 <div class="chat-box" data-controller="rag-chat">
-  <div class="figma-card">
+  <div class="figma-card chat-card-with-footer">
+    <div class="chat-card-body">
     <div class="chat-header">
       <div class="chat-icon-wrapper">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="chat-icon">
@@ -61,5 +62,11 @@
         </div>
       </form>
     </div>
+    </div>
+    <footer class="chat-card-footer" aria-label="Tokens y costo hoy">
+      <div id="chat-usage-metrics-container" class="chat-card-footer-metrics">
+        <%= render partial: "home/chat_usage_footer_metrics", locals: { current_metrics: @current_metrics } %>
+      </div>
+    </footer>
   </div>
 </div>

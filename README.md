@@ -17,10 +17,30 @@ When shared session is **off**, each WhatsApp number and each web user keeps a *
 - **User authentication** with Devise
 - **Document processing**
 - **AI document analysis – RAG** — AWS Bedrock, Knowledge Base, LLMs, embeddings, and prompt templates
-- **Hotwire** for DOM updates (Turbo and Stimulus)
 - **RAG chat with Knowledge Base integration** — LLMs, embeddings, prompt templates, and custom model configuration, optimized for inference and better results
 - **Hybrid Query Orchestrator (RAG + Text-to-SQL)** — intelligent intent classification routes queries to the Knowledge Base, the client's business database, or both in parallel. Supports three modes: `DATABASE_QUERY`, `KNOWLEDGE_BASE_QUERY`, and `HYBRID_QUERY`
 - **WhatsApp integration** via Twilio webhook — all query modes available through WhatsApp
+
+## Stack
+
+Engineering snapshot of what powers the app (complement to [Setup](#setup) and [Architecture](#architecture)).
+
+| Area | Technologies |
+|------|----------------|
+| **Runtime** | Ruby (see [`.ruby-version`](.ruby-version)), **Rails 8.1.2** |
+| **Web UI** | Server-rendered **ERB**; [**Hotwire**](https://hotwired.dev/) — **Turbo** (including Turbo Streams for live DOM updates) and **Stimulus** for small controllers in `app/javascript/controllers/` |
+| **Frontend delivery** | [**Importmap**](https://github.com/rails/importmap-rails) — JavaScript modules pinned in `config/importmap.rb` without a Node bundler on the default path |
+| **CSS** | [**Tailwind CSS**](https://tailwindcss.com/) (watcher via `bin/dev` / `Procfile.dev`) |
+| **Pattern** | **HTML over the wire**: responses are mostly HTML/Turbo from Rails, not a separate SPA framework (React/Vue) |
+| **Jobs** | **Active Job** backed by [**Solid Queue**](https://github.com/rails/solid_queue) (database-backed; no Redis for queues) |
+| **Cache** | [**Solid Cache**](https://github.com/rails/solid_cache) (`Rails.cache`, e.g. WhatsApp faceted answer cache) |
+| **Real-time** | [**Solid Cable**](https://github.com/rails/solid_cable) + **Action Cable** for Turbo Stream broadcasts |
+| **App database** | **PostgreSQL** — primary schema plus separate DBs for queue, cache, and cable (see `config/database.yml`) |
+| **Client / Text-to-SQL DB** | **PostgreSQL** in development and production; **SQLite** file (`storage/client_test.sqlite3`) for the isolated `client_db` connection in **test** only |
+| **AI / RAG** | **AWS Bedrock** (Knowledge Bases, retrieve-and-generate, model invocation) — see [BEDROCK_SETUP.md](BEDROCK_SETUP.md) |
+| **Messaging** | **Twilio** (WhatsApp webhook → Rails) |
+| **Auth** | **Devise** |
+| **Tests** | **Minitest** (Rails default) |
 
 ## Setup
 
@@ -28,8 +48,8 @@ When shared session is **off**, each WhatsApp number and each web user keeps a *
 
 - Ruby (see `.ruby-version`)
 - Rails 8.1.2
-- SQLite3
-- PostgreSQL (for client business database / Text-to-SQL)
+- SQLite3 (used only for the isolated **client** Text-to-SQL DB in **test**; see [Stack](#stack))
+- PostgreSQL (application DB, Solid DBs, and client business database / Text-to-SQL in dev and production)
 - libvips (for image processing/compression)
 
 ### First-time installation

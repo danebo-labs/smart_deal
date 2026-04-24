@@ -43,6 +43,17 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_match(/Archivos en Base de Conocimiento/, summary_boxes[1].text)
   end
 
+  test 'index overview card lists session files panel above recent documents panel' do
+    get root_path
+    assert_response :success
+
+    body = response.body
+    idx_session = body.index('id="session-entities-list-container"')
+    idx_recent = body.index('id="technician-documents-list-container"')
+    assert idx_session && idx_recent && idx_session < idx_recent,
+           'session entities block should render before recent technician documents block'
+  end
+
   test 'index overview lists TechnicianDocument canonical_name numbered' do
     TechnicianDocument.delete_all
     TechnicianDocument.create!(

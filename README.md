@@ -122,7 +122,6 @@ Rails loads `.env` when each process **starts**. After changing any flag, restar
 | `SHARED_SESSION_CHANNEL` | `shared` (only when shared is on) | optional; must stay in `ConversationSession::CHANNELS` | ignored when shared is off |
 | `SESSION_MAX_ENTITIES` | **10** in code | set an integer in `.env` | remove to use default |
 | `WA_FACETED_OUTPUT_ENABLED` | **on** | `true` or omit | `false` → `perform_legacy` (no R2 cache / menu) |
-| `WA_NANO_CLASSIFIER_ENABLED` | **on** | `true` or omit | `false` → no Haiku nano; ambiguous short follow-ups go to full RAG |
 | `WA_PROCESSING_ACK_ENABLED` | **on** | `true` or omit | `false` → no *“Consultando…”* bubble before full RAG |
 
 Use [`.env.sample`](.env.sample) as the checklist; copy lines into `.env` (never commit `.env`).
@@ -386,7 +385,9 @@ If the filter returns no results (Bedrock guardrail), the system retries automat
 
 ### WhatsApp Answer Cache & Follow-up Classifier (R2)
 
-A short-lived **conversational UI cache** sits on top of the three storage layers above. Its job is to make WhatsApp replies feel lightweight: the first answer is compact with a numbered menu, and follow-ups (`1`, `riesgos`, `y el voltaje?`, `menu`, `nuevo`, etc.) **expand from cache without re-invoking Bedrock RAG** when the message is still about the same topic. It **does not replace** `ConversationSession`; both coexist.
+A short-lived **conversational UI cache** sits on top of the three storage layers above. Its job is to make WhatsApp **navigation** feel lightweight: the first answer is compact with a numbered menu, and **explicit menu interactions** (`1`–`4`, `riesgos`, `parametros`, `secciones`, `detalle`, `mas`, `menu`, `volver`, `nuevo`, `inicio`, …) **expand from cache without re-invoking Bedrock RAG**. It **does not replace** `ConversationSession`; both coexist.
+
+> **Safety policy — closed allowlist.** The cache only serves messages that match an explicit set of **navigation tokens** (the rendered menu options + their aliases). **Free-text questions are never served from cache**, even when they look like they "match" a cached facet (e.g. `voltaje`, `torque tornillo m8`, `pasos cambio freno`). Field elevator technicians don't write grammatically perfect questions — no `?`, often no verbs, just keywords — so heuristics that "guess intent" from short free text are **unsafe** in this domain: a wrong cache hit would show OLD facet text as if it answered a NEW question. Trade-off: lower cache hit rate on free text, higher Bedrock cost. That cost is intentional: **safety > token spend**. See `Rag::WhatsappFollowupClassifier` docstring.
 
 ```
 ConversationSession  →  project / entity memory, history, URI-scoped retrieval
@@ -435,7 +436,7 @@ Rag::WhatsappAnswerCache  →  last RAG “card” (facets + menu) for menu UX, 
 |---|---|---|
 | `Rag::FacetedAnswer` | `app/services/rag/faceted_answer.rb` | Parses labeled Bedrock output (`[INTENT]`, `[RESUMEN]`, `[RIESGOS]`, …) and renders first message + per-facet bodies. |
 | `Rag::WhatsappAnswerCache` | `app/services/rag/whatsapp_answer_cache.rb` | Read/write/invalidation + logs: `op=read|write|corrupt|skip_write` and `op=invalidate` when **entity_drift** is detected (non–shared mode). |
-| `Rag::WhatsappFollowupClassifier` | `app/services/rag/whatsapp_followup_classifier.rb` | Cascade: reset → menu redraw → no cache / menu w/o cache → new entity / strong shift → deterministic menu → `mas` → synonym map → long message → optional Haiku nano. Emits `[WA_CLASSIFIER] route=… reason=…`. |
+| `Rag::WhatsappFollowupClassifier` | `app/services/rag/whatsapp_followup_classifier.rb` | Closed-allowlist cascade (safety-first): reset → menu redraw → no-cache help → deterministic menu (`1`–`4` / facet word) → `mas` → **default `:new_query`** for everything else (free-text content questions). Empty cached facets degrade to `:new_query` (`empty_facet_reconsult`). Emits `[WA_CLASSIFIER] route=… reason=…`. |
 | `Rag::WhatsappPostResetState` | `app/services/rag/whatsapp_post_reset_state.rb` | Short-lived (5 min) Rails.cache state after `:reset_ack`: `picking_source` → `picking_from_list` until the user picks a doc or abandons with free text / `0` / home tokens. |
 | `Rag::WhatsappDocumentPicker` | `app/services/rag/whatsapp_document_picker.rb` | Builds numbered lists for **recent** (`TechnicianDocument.recent`) vs **all** (`KbDocument`) and seeds `Describe <name>` into the normal `:new_query` RAG path. |
 | `SendWhatsappReplyJob` | `app/jobs/send_whatsapp_reply_job.rb` | `perform_faceted` / `perform_legacy`; post-reset picker short-circuits before the classifier when `WhatsappPostResetState` is present. Orchestrates cache, classifier, RAG, `infer_locale` (cache → sticky conv key → history heuristic → body → `I18n.default_locale`). |
@@ -443,18 +444,17 @@ Rag::WhatsappAnswerCache  →  last RAG “card” (facets + menu) for menu UX, 
 
 #### Classifier cascade (order in code; first match wins)
 
-1. **`:user_reset`** — `nuevo`, `nueva`, `new`, `reset`, `inicio`, `start`, `home`, numeric **`6`** (same row as *inicio* in the rendered menu) → invalidate cache, ack with **1=recientes / 2=existentes** sub-menu, arm `WhatsappPostResetState`, **no** RAG.
-2. **`:show_menu` / `menu_redraw`** — `menu`, `volver`, `regresar`, `resumen`, `ficha`, `overview`, `summary`, numeric **`5`** when cache is present (same row as *regresar*).
-3. **Empty cache + menu-shaped input** — e.g. `1`–`4` or `riesgos`… → `:no_context_help` (`reason=:menu_without_cache`); not a token → see next.
-4. **Empty cache, any input** — `:new_query` (`reason=:no_cache`) — RAG.
-5. **`:new_entity_detected`** — `KbDocumentResolver` matches a document not listed in the cached `faceted[:entities]`.
-6. **`:strong_intent_shift`** — `STRONG_INTENT_PHRASES` in classifier while cached `intent` is not already `emergency` → RAG, no nano.
-7. **`:deterministic_token`** — `MENU_TOKEN_RE` after `normalize` maps a digit or `riesgos`/`parametros`/… to a **non-empty** cached facet.
-8. **`mas`** — repeat last facet inferred from the last assistant line in `conversation_session` history (`:deterministic_mas_last_facet`).
-9. **`:synonym_match`** — e.g. `voltaje` → `parametros` when that facet has content (skipped if the facet is empty or `(—)`). Populates `Decision#matched_token` so the renderer can hoist the matching line (e.g. "Voltaje de operación: …") above the rest of the facet, or emit an explicit *"No hay X documentado en este archivo"* notice if the term is absent.
-10. **`:message_too_long`** — `> 120` chars → `:new_query`.
-11. **Haiku nano** (`ENV["WA_NANO_CLASSIFIER_ENABLED"]` default `true`) — `facet_hit` vs `new_query` with JSON + threshold; reasons e.g. `nano_decision`, `nano_new_query`, `nano_low_confidence_fallback`, or parse error → fall through.
-12. **Default** — `:new_query` (`reason` may be `:nano_disabled_fallback`).
+The classifier is a **closed allowlist** of navigation tokens. Anything outside the allowlist falls through to `:new_query` and is anchored to fresh KB retrieval. There is **no** synonym map, no length heuristic, and no LLM-based "intent guessing" step (all removed for safety reasons — see the safety policy callout above).
+
+1. **`:user_reset`** — `nuevo`, `nueva`, `new`, `reset`, `inicio`, `start`, `home`, numeric **`6`** → invalidate cache, ack with **1=recientes / 2=existentes** sub-menu, arm `WhatsappPostResetState`, **no** RAG.
+2. **`:show_menu` / `menu_redraw`** — `menu`, `volver`, `regresar`, `resumen`, `ficha`, `overview`, `summary`, `back`, numeric **`5`** (when cache is present) → re-render the first message from cache.
+3. **Empty cache + menu-shaped input** — e.g. `1`–`4` or `riesgos`… → `:no_context_help` (`reason=:menu_without_cache`).
+4. **Empty cache + anything else** — `:new_query` (`reason=:no_cache`) — RAG.
+5. **`:deterministic_token`** — exact normalized digit `1`–`4` or facet word (`riesgos` / `parametros` / `secciones` / `detalle`). If the resolved facet is **non-empty** in cache → `:facet_hit`; if **empty** → `:new_query` (`reason=:empty_facet_reconsult`) so we re-consult the KB instead of rendering a `(—)` placeholder.
+6. **`mas`** — repeat the last facet inferred from the last assistant line in `conversation_session` history (`:deterministic_mas_last_facet`). Empty-facet rule applies (degrades to `:empty_facet_reconsult`).
+7. **Default — `:new_query` (`reason=:content_query`)** — every free-text message lands here: `voltaje`, `torque tornillo m8`, `pasos cambio freno`, `que opciones del menu hay`, long descriptions, etc. They all run full RAG with fresh citations.
+
+Matching is on the **fully normalized token** (NFD → strip accents → lowercase → strip → collapse spaces), not substring presence. So a navigation word inside a sentence (e.g. `"que opciones del menu hay"`) does **not** trigger menu redraw.
 
 If the model omits faceted labels (`FacetedAnswer#legacy?`), the job does not populate the Whatsapp answer cache; behavior matches pre-R2 formatting.
 
@@ -468,33 +468,23 @@ If the model omits faceted labels (`FacetedAnswer#legacy?`), the job does not po
 
 #### R2-only flags (detail)
 
-The same three WhatsApp R2 flags appear in the [MVO pilot flags](#mvo-pilot-how-to-enable--disable-environment-flags) table above. Summary:
+The WhatsApp R2 flags appear in the [MVO pilot flags](#mvo-pilot-how-to-enable--disable-environment-flags) table above. Summary:
 
 | Variable | Default | Effect |
 |---|---|---|
 | `WA_FACETED_OUTPUT_ENABLED` | `true` | `false` → `SendWhatsappReplyJob` uses `perform_legacy` (pre-R2 single message, no read-through cache). |
-| `WA_NANO_CLASSIFIER_ENABLED` | `true` | `false` → after heuristics, short ambiguous messages go straight to `new_query` (no tiny Haiku call). |
 | `WA_PROCESSING_ACK_ENABLED` | `true` | `false` → suppresses the *"🛠 Consultando la base de conocimiento…"* bubble. Ack is sent before **every** full RAG call: faceted `:new_query` **and** `perform_legacy` (rollback path). Cache hits, menu redraws, resets, post-reset picker, and facet follow-ups stay silent. Log line: `[WA_ACK] to=<to> reason=new_query_before_rag`. |
 
-Typical follow-up from cache: **0** Bedrock RAG and **0**–**1** nano call when enabled; `new_query` path runs full `retrieve_and_generate` (7–60s in dev depending on cold KB / network), preceded by the processing ack bubble when the flag is on.
+> **Removed flag (`WA_NANO_CLASSIFIER_ENABLED`).** The Haiku-nano sub-classifier and the synonym map were removed as part of the safety-policy refactor: in this product (field elevator technicians, harsh conditions) the cost of a wrong cache hit on a content question is higher than the cost of running RAG. The flag is no longer read; remove it from your `.env` if present.
+
+Typical interaction: **0** Bedrock calls when the technician taps a menu number / nav token; **1** full RAG call when they type free text. The full RAG path (7–60s in dev depending on cold KB / network) is preceded by the processing-ack bubble when the flag is on.
 
 #### Facet rendering (R2 UX)
 
 - **Vertical text-only menu** — first message and facet footers render facet options one per line (`N - <label>`). Emojis from the model’s `[MENU]` labels are stripped in the WhatsApp render (labels come from `rag.wa_menu.default_labels` / parsed text). After a blank line, two **navigation** rows are always appended: **`5 - regresar`** / **`back`** and **`6 - inicio`** / **`home`** (`rag.wa_menu.back_label` / `home_label`). **`5`** / **`regresar`** map to `:show_menu` (redraw first message from cache); **`6`** / **`inicio`** map to `:reset_ack`.
 - **Document label in headers** — when `document_label` is cached, facet headers compose as `*Riesgos · PCB Mainboard Orona*`. If the combined header would exceed ~55 chars, it falls back to two lines: `*Riesgos*\n(del documento *PCB Mainboard Orona*)`. The first message adds a `*<doc>* (fuente)` banner above the summary so the technician never loses track of what document is being discussed. Label source: first entity in `conv_session.active_entities` (fallback: first `doc_refs[:short_name|title|filename]`), truncated to 40 chars.
 - **Reduced emoji load** — safety markers (`⚠️`, `🛑`) and processing ack stay; facet/menu rows avoid decorative emoji so repeated bubbles stay readable on small screens.
-- **Semantic hoist** — when a synonym routed the user to a facet (e.g. `"¿y el voltaje?"` → `:parametros`), the renderer looks for a line in the cached facet containing the matched term (accent/case-insensitive) and surfaces it above the rest:
-
-  ```
-  🔎 *Voltaje*
-  ⚠️ Voltaje de operación: DATO NO DISPONIBLE
-
-  ──────
-  ① Tipo: CR2032
-  ② …
-  ```
-
-  If no matching line exists, the hoist emits an explicit `No hay <término> documentado en este archivo.` notice before the facet so the user doesn't infer a generic parameter dump as the answer. Zero Bedrock tokens.
+- **No semantic hoist from cache.** A previous version routed messages like `"¿y el voltaje?"` to the cached `:parametros` facet via a synonym map and "hoisted" the matching line. That behavior was **removed** (safety-policy refactor): a free-text question like `"voltaje"` or `"y el voltaje?"` is now treated as `:content_query` and runs a fresh RAG call. The hoist helper (`Rag::FacetedAnswer#hoist_highlight`) is left in place for callers that explicitly pass a `highlight:` value, but the classifier never sets one.
 - **Reset + file picker** — after `inicio` / `nuevo` / `6`, the ack shows **1 — archivos recientes** (`TechnicianDocument`, per-identifier/channel) and **2 — archivos existentes** (`KbDocument`). Choosing **1** or **2** lists up to nine names; the user replies with a digit to seed **`Describe <name>`** into a normal `:new_query` (then state clears). Free-text after reset clears the picker state so normal RAG applies. **`0`** returns to the 1/2 prompt; home-like tokens re-show the reset ack.
 
 For multi-tenant work later, keep treating **session row** and **per-number faceted cache** as separate concerns: a future `account_id` / `project_id` can scope the session and KB, while the WhatsApp cache key should remain tied to the **recipient address** to avoid cross-user menu bleed.

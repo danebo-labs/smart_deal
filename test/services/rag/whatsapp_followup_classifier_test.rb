@@ -46,16 +46,7 @@ module Rag
       end.new([ { role: "assistant", content: content } ])
     end
 
-    setup do
-      @orig_nano = ENV["WA_NANO_CLASSIFIER_ENABLED"]
-      ENV["WA_NANO_CLASSIFIER_ENABLED"] = "false"
-    end
-
-    teardown do
-      ENV["WA_NANO_CLASSIFIER_ENABLED"] = @orig_nano
-    end
-
-    # --- deterministic routes ---
+    # --- deterministic navigation routes (allowlist) -------------------------
 
     test "number token resolves via cached menu → :facet_hit" do
       d = WhatsappFollowupClassifier.classify(message: "1", cached: cached, conv_session: nil, locale: :es)
@@ -64,10 +55,24 @@ module Rag
       assert_equal :deterministic_token, d.reason
     end
 
-    test "literal keyword with accents/casing is normalized → :facet_hit" do
+    test "literal facet keyword with accents/casing is normalized → :facet_hit" do
       d = WhatsappFollowupClassifier.classify(message: "  RIESGOS ", cached: cached, conv_session: nil, locale: :es)
       assert_equal :facet_hit, d.route
       assert_equal :riesgos, d.facet_key
+    end
+
+    test "deterministic number on empty facet → :new_query reason=:empty_facet_reconsult" do
+      empty_params = cached(facets: default_facets.merge(parametros: "(—)"))
+      d = WhatsappFollowupClassifier.classify(message: "2", cached: empty_params, conv_session: nil, locale: :es)
+      assert_equal :new_query, d.route
+      assert_equal :empty_facet_reconsult, d.reason
+    end
+
+    test "deterministic facet word on empty facet → :new_query reason=:empty_facet_reconsult" do
+      empty_riesgos = cached(facets: default_facets.merge(riesgos: "(—)"))
+      d = WhatsappFollowupClassifier.classify(message: "riesgos", cached: empty_riesgos, conv_session: nil, locale: :es)
+      assert_equal :new_query, d.route
+      assert_equal :empty_facet_reconsult, d.reason
     end
 
     test "menu token with empty cache → :no_context_help" do
@@ -126,30 +131,7 @@ module Rag
       assert_equal :no_cache, d.reason
     end
 
-    # --- synonym map ---
-
-    test "'voltaje' routes to :parametros when facet is populated" do
-      d = WhatsappFollowupClassifier.classify(message: "voltaje", cached: cached, conv_session: nil, locale: :es)
-      assert_equal :facet_hit, d.route
-      assert_equal :parametros, d.facet_key
-      assert_equal :synonym_match, d.reason
-    end
-
-    test "synonym match populates Decision#matched_token for downstream hoist" do
-      d = WhatsappFollowupClassifier.classify(message: "¿y el voltaje?", cached: cached, conv_session: nil, locale: :es)
-      assert_equal :synonym_match, d.reason
-      assert_equal "voltaje", d.matched_token
-    end
-
-    test "synonym is ignored when facet is empty → falls through to nano/fallback" do
-      empty_params = cached(facets: default_facets.merge(parametros: "(—)"))
-      d = WhatsappFollowupClassifier.classify(message: "voltaje", cached: empty_params, conv_session: nil, locale: :es)
-      # nano disabled in setup → nano_disabled_fallback
-      assert_equal :new_query, d.route
-      assert_equal :nano_disabled_fallback, d.reason
-    end
-
-    # --- "más" via history ---
+    # --- "más" via history ---------------------------------------------------
 
     test "'más' tras turno assistant '📏 Parámetros — …' → :facet_hit :parametros" do
       sess = session_with_assistant("📏 Parámetros — 24VDC")
@@ -159,103 +141,59 @@ module Rag
       assert_equal :deterministic_mas_last_facet, d.reason
     end
 
-    # --- strong intent shift ---
+    test "'más' on empty last facet → :new_query reason=:empty_facet_reconsult" do
+      sess  = session_with_assistant("📏 Parámetros — 24VDC")
+      empty = cached(facets: default_facets.merge(parametros: "(—)"))
+      d = WhatsappFollowupClassifier.classify(message: "más", cached: empty, conv_session: sess, locale: :es)
+      assert_equal :new_query, d.route
+      assert_equal :empty_facet_reconsult, d.reason
+    end
 
-    test "strong intent phrase 'procedimiento de rescate' → :new_query reason=:strong_intent_shift" do
+    # --- safety policy: free text always → :new_query ------------------------
+
+    test "single domain keyword 'voltaje' → :new_query (NOT served from cache)" do
+      d = WhatsappFollowupClassifier.classify(message: "voltaje", cached: cached, conv_session: nil, locale: :es)
+      assert_equal :new_query, d.route
+      assert_equal :content_query, d.reason
+      assert_nil d.matched_token, "synonym map removed; matched_token must always be nil"
+    end
+
+    test "short field-style queries without '?' all go to :new_query" do
+      [
+        "voltaje componente",
+        "torque tornillo m8",
+        "pasos cambio freno",
+        "riesgo abrir tablero",
+        "puedo desconectar fase",
+        "como diagnosticar fallo placa"
+      ].each do |msg|
+        d = WhatsappFollowupClassifier.classify(message: msg, cached: cached, conv_session: nil, locale: :es)
+        assert_equal :new_query, d.route, "#{msg.inspect} must go to RAG"
+        assert_equal :content_query, d.reason, "#{msg.inspect} reason"
+      end
+    end
+
+    test "free text containing a navigation word in a sentence is NOT a nav token" do
+      # Matching is on the FULLY normalized token; substring presence
+      # ("menu" inside a sentence) must not redraw the menu.
+      d = WhatsappFollowupClassifier.classify(message: "que opciones del menu hay", cached: cached, conv_session: nil, locale: :es)
+      assert_equal :new_query, d.route
+      assert_equal :content_query, d.reason
+    end
+
+    test "long free-text query → :new_query reason=:content_query" do
+      long = "explícame con detalle el sistema eléctrico, los fusibles y la topología en redundancia"
+      d = WhatsappFollowupClassifier.classify(message: long, cached: cached, conv_session: nil, locale: :es)
+      assert_equal :new_query, d.route
+      assert_equal :content_query, d.reason
+    end
+
+    test "'rescate' (was strong_intent_shift) now falls through as content_query" do
       d = WhatsappFollowupClassifier.classify(
         message: "procedimiento de rescate", cached: cached, conv_session: nil, locale: :es
       )
       assert_equal :new_query, d.route
-      assert_equal :strong_intent_shift, d.reason
-    end
-
-    test "strong intent phrase is suppressed when cached intent is emergency" do
-      d = WhatsappFollowupClassifier.classify(
-        message: "rescate", cached: cached(intent: :emergency), conv_session: nil, locale: :es
-      )
-      # Falls through past step 3; 'rescate' isn't a menu token nor in SYNONYM_MAP for a non-empty facet.
-      # Nano disabled → nano_disabled_fallback (short message, not > 120 chars).
-      assert_equal :new_query, d.route
-      assert_equal :nano_disabled_fallback, d.reason
-    end
-
-    # --- length heuristic ---
-
-    test "message > 120 chars → :new_query reason=:message_too_long" do
-      long = "a" * 130
-      d = WhatsappFollowupClassifier.classify(message: long, cached: cached, conv_session: nil, locale: :es)
-      assert_equal :new_query, d.route
-      assert_equal :message_too_long, d.reason
-    end
-
-    # --- nano disabled + enabled ---
-
-    test "short ambiguous message + nano disabled → :nano_disabled_fallback" do
-      d = WhatsappFollowupClassifier.classify(message: "eeh", cached: cached, conv_session: nil, locale: :es)
-      assert_equal :new_query, d.route
-      assert_equal :nano_disabled_fallback, d.reason
-    end
-
-    test "nano returns facet_hit with confidence over threshold" do
-      ENV["WA_NANO_CLASSIFIER_ENABLED"] = "true"
-      with_stubbed_ai('{"route":"facet_hit","facet_key":"parametros","confidence":0.9}') do
-        d = WhatsappFollowupClassifier.classify(message: "hmm", cached: cached, conv_session: nil, locale: :es)
-        assert_equal :facet_hit, d.route
-        assert_equal :parametros, d.facet_key
-        assert_equal :nano_decision, d.reason
-      end
-    end
-
-    test "nano low confidence → :new_query reason=:nano_low_confidence_fallback" do
-      ENV["WA_NANO_CLASSIFIER_ENABLED"] = "true"
-      with_stubbed_ai('{"route":"facet_hit","facet_key":"parametros","confidence":0.5}') do
-        d = WhatsappFollowupClassifier.classify(message: "hmm", cached: cached, conv_session: nil, locale: :es)
-        assert_equal :new_query, d.route
-        assert_equal :nano_low_confidence_fallback, d.reason
-      end
-    end
-
-    test "nano requests empty facet → fallback to :detalle" do
-      ENV["WA_NANO_CLASSIFIER_ENABLED"] = "true"
-      empty_params = cached(facets: default_facets.merge(parametros: "(—)"))
-      with_stubbed_ai('{"route":"facet_hit","facet_key":"parametros","confidence":0.9}') do
-        d = WhatsappFollowupClassifier.classify(message: "hmm", cached: empty_params, conv_session: nil, locale: :es)
-        assert_equal :facet_hit, d.route
-        assert_equal :detalle, d.facet_key
-        assert_equal :empty_facet_fallback_detalle, d.reason
-      end
-    end
-
-    test "nano raises → returns nil and falls through to :nano_disabled_fallback" do
-      ENV["WA_NANO_CLASSIFIER_ENABLED"] = "true"
-      with_stubbed_ai(-> { raise "boom" }) do
-        d = WhatsappFollowupClassifier.classify(message: "hmm", cached: cached, conv_session: nil, locale: :es)
-        assert_equal :new_query, d.route
-        assert_equal :nano_disabled_fallback, d.reason
-      end
-    end
-
-    test "nano parse error → falls through to :nano_disabled_fallback" do
-      ENV["WA_NANO_CLASSIFIER_ENABLED"] = "true"
-      with_stubbed_ai("not json") do
-        d = WhatsappFollowupClassifier.classify(message: "hmm", cached: cached, conv_session: nil, locale: :es)
-        assert_equal :new_query, d.route
-        assert_equal :nano_disabled_fallback, d.reason
-      end
-    end
-
-    private
-
-    # Stubs AiProvider#query. Accepts a static string (returned as-is) or a proc
-    # (called each invocation). Kept Mocha-free for parity with the repo style.
-    def with_stubbed_ai(response)
-      original = AiProvider.instance_method(:query)
-      AiProvider.define_method(:query) do |*_args, **_opts|
-        response.respond_to?(:call) ? response.call : response
-      end
-      yield
-    ensure
-      AiProvider.define_method(:query, original)
+      assert_equal :content_query, d.reason
     end
   end
 end

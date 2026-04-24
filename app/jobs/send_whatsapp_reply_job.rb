@@ -5,9 +5,12 @@
 #
 # R2 — Faceted follow-up cache:
 #   1. Read cached faceted answer for this recipient.
-#   2. Classify incoming message (deterministic → heuristic → Haiku-nano).
-#   3. Route to :facet_hit (cache hit, 0 Bedrock tokens), :no_context_help,
-#      :empty_facet_notice, or :new_query (retrieve_and_generate + write cache).
+#   2. Classify incoming message via the closed-allowlist policy (see
+#      Rag::WhatsappFollowupClassifier docstring — safety-first: anything
+#      outside the navigation allowlist is treated as a content query).
+#   3. Route to :facet_hit / :show_menu / :reset_ack / :no_context_help
+#      (all 0 Bedrock tokens), or :new_query (retrieve_and_generate +
+#      write cache).
 # Feature-flagged via `WA_FACETED_OUTPUT_ENABLED` (default true) → rollback is
 # one env flip away.
 class SendWhatsappReplyJob < ApplicationJob
@@ -80,11 +83,12 @@ class SendWhatsappReplyJob < ApplicationJob
         msg     = faceted.to_facet_message(
           decision.facet_key,
           locale:         cached[:locale] || locale,
-          document_label: cached[:document_label],
-          highlight:      decision.matched_token
+          document_label: cached[:document_label]
         )
         if msg.blank?
-          # Requested facet is empty in cache → graceful notice instead of empty Twilio body.
+          # Defensive: classifier guards against empty facets (:empty_facet_reconsult),
+          # but if the renderer still produces a blank body, fall back to a notice
+          # rather than emit an empty Twilio body.
           msg = empty_facet_notice_message(cached: cached, requested_key: decision.facet_key, locale: cached[:locale] || locale)
         end
         log_facet_delivery(to: to, facet_key: decision.facet_key, length: msg.length)
@@ -104,8 +108,6 @@ class SendWhatsappReplyJob < ApplicationJob
         [ msg, msg ]
       when :no_context_help
         [ no_context_help_message(locale: locale), nil ]
-      when :empty_facet_notice
-        [ empty_facet_notice_message(cached: cached, requested_key: decision.facet_key, locale: locale), nil ]
       else
         Rag::WhatsappAnswerCache.invalidate(to)
         deliver_processing_ack(to: to, from: from, locale: locale) if processing_ack_enabled?

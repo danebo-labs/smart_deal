@@ -32,13 +32,10 @@ class SendWhatsappReplyJobFacetedTest < ActiveJob::TestCase
   setup do
     @prev_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    @orig_nano  = ENV["WA_NANO_CLASSIFIER_ENABLED"]
-    ENV["WA_NANO_CLASSIFIER_ENABLED"] = "false"
   end
 
   teardown do
     Rails.cache = @prev_cache
-    ENV["WA_NANO_CLASSIFIER_ENABLED"] = @orig_nano
     Rag::WhatsappAnswerCache.invalidate(TO)
     Rag::WhatsappPostResetState.clear(TO)
   end
@@ -207,18 +204,17 @@ class SendWhatsappReplyJobFacetedTest < ActiveJob::TestCase
                  "Expected the no-context help message in either locale")
   end
 
-  test "new_query invalidates the cache before calling Bedrock" do
+  test "free-text question invalidates the cache before calling Bedrock (content_query → new_query)" do
     run_job(body: "que es la PCB?")
     assert_not_nil Rails.cache.read(Rag::WhatsappAnswerCache.key(TO))
 
-    # Long message triggers :message_too_long → :new_query
-    long = "explícame con todo el detalle el sistema eléctrico, los fusibles, los breakers, " \
-           "la topología en redundancia y los procedimientos de mantenimiento completos"
+    # Any message outside the navigation allowlist is treated as content_query.
+    free_text = "explícame el sistema eléctrico"
 
     with_mock_orchestrator(answer: FACETED_ANSWER) do
       stub_twilio_client do |_s|
         with_twilio_env do
-          SendWhatsappReplyJob.new.perform(to: TO, from: FROM, body: long)
+          SendWhatsappReplyJob.new.perform(to: TO, from: FROM, body: free_text)
         end
       end
     end
@@ -293,32 +289,62 @@ class SendWhatsappReplyJobFacetedTest < ActiveJob::TestCase
     ENV["WA_PROCESSING_ACK_ENABLED"] = orig
   end
 
-  test "'voltaje' hoists the voltage line above the parametros block" do
-    # Seed cache with a parametros facet whose 5th line mentions voltage.
-    params_with_voltage = <<~TXT.strip
-      ① Tipo: CR2032
-      ② Arquitectura: mixta
-      ③ Conectores: IDC
-      ④ LEDs de diagnóstico
-      ⚠️ Voltaje de operación: DATO NO DISPONIBLE
-    TXT
-    seeded = FACETED_ANSWER.sub(/\[PARÁMETROS\]\n.*?\n\[SECCIONES\]/m, "[PARÁMETROS]\n#{params_with_voltage}\n[SECCIONES]")
-    with_mock_orchestrator(answer: seeded) do
-      stub_twilio_client do |_|
+  test "safety policy: free-text content question routes to RAG (NOT served from cache)" do
+    # Seed cache with a populated parametros facet.
+    run_job(body: "que es la PCB?")
+    assert_not_nil Rag::WhatsappAnswerCache.read(TO)
+
+    # A semantic question about the same component must NOT be answered from
+    # cache — even though the parametros facet has content. The classifier's
+    # closed allowlist forces :content_query → :new_query → fresh RAG.
+    called_with = nil
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
+      called_with = :hit
+      { answer: FACETED_ANSWER, citations: [], session_id: "sess-content" }
+    end
+    original = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) { |*_a, **_k| mock }
+
+    stub_twilio_client do |_s|
+      with_twilio_env { SendWhatsappReplyJob.new.perform(to: TO, from: FROM, body: "y el voltaje?") }
+    end
+
+    assert_equal :hit, called_with,
+      "Free-text content questions must hit Bedrock, not the cache (safety policy)"
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original.call(*a, **k) }
+  end
+
+  test "deterministic facet tap on EMPTY cached facet re-runs RAG instead of showing '(—)'" do
+    # First answer: parametros facet is empty in the model output.
+    empty_params_answer = FACETED_ANSWER.sub(/\[PARÁMETROS\]\n.*?\n\[SECCIONES\]/m, "[PARÁMETROS]\n(—)\n[SECCIONES]")
+    with_mock_orchestrator(answer: empty_params_answer) do
+      stub_twilio_client do |_s|
         with_twilio_env { SendWhatsappReplyJob.new.perform(to: TO, from: FROM, body: "que es la PCB?") }
       end
     end
 
-    sent = stub_twilio_client do |s|
-      with_twilio_env { SendWhatsappReplyJob.new.perform(to: TO, from: FROM, body: "y el voltaje?") }
-      s
+    # User taps "2" (parametros). The classifier sees the cached facet is
+    # empty and degrades to :new_query so we re-consult the KB instead of
+    # rendering an empty/placeholder bubble.
+    called_with = nil
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
+      called_with = :hit
+      { answer: FACETED_ANSWER, citations: [], session_id: "sess-empty" }
     end
-    body_text = sent.pluck(:body).join("\n")
-    assert_match(/🔎 \*Voltaje\*/, body_text)
-    voltage_pos = body_text.index("Voltaje de operación")
-    tipo_pos    = body_text.index("Tipo: CR2032")
-    assert voltage_pos && tipo_pos, "both lines must be present"
-    assert voltage_pos < tipo_pos, "voltage line must be hoisted above the rest of the facet"
+    original = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) { |*_a, **_k| mock }
+
+    stub_twilio_client do |_s|
+      with_twilio_env { SendWhatsappReplyJob.new.perform(to: TO, from: FROM, body: "2") }
+    end
+
+    assert_equal :hit, called_with,
+      "Tapping a number whose cached facet is empty must re-run RAG (empty_facet_reconsult)"
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original.call(*a, **k) }
   end
 
   test "'inicio' invalidates cache, sends numbered sub-menu, and arms post-reset state" do

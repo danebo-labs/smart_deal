@@ -223,13 +223,13 @@ canvas {
 }
 
 .document-container {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 0 2rem;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) repeat(3, minmax(0, 1fr));
   gap: 2rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 /* Figma Card Component - Glass morphism effect */
@@ -257,8 +257,16 @@ canvas {
 .chat-box {
   width: 100%;
   min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-box > .figma-card {
+  flex: 1;
+  min-height: 0;
 }
 
 .chat-header {
@@ -616,8 +624,11 @@ canvas {
 .summary-box {
   width: 100%;
   min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
   background: transparent;
+  display: flex;
+  flex-direction: column;
 }
 
 .summary-box .figma-card {
@@ -630,6 +641,7 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  flex: 1;
   min-height: 600px;
   position: sticky;
   top: 100px;
@@ -638,6 +650,117 @@ canvas {
   border: 1px solid rgba(148, 163, 184, 0.25);
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
   overflow: hidden;
+}
+
+.summary-box > .figma-card.summary-card {
+  flex: 1;
+  min-height: 600px;
+}
+
+/* KB files panel: single section fills card height */
+.summary-card-documents {
+  gap: 0;
+}
+
+.document-info-section--fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-card-documents #documents-list-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.summary-card-documents .knowledge-base-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.summary-card-documents .documents-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.summary-card-documents .document-info-placeholder {
+  flex: 1;
+  min-height: 12rem;
+  justify-content: center;
+}
+
+.summary-card-overview {
+  gap: 0;
+  min-height: 0;
+}
+
+.session-overview-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.document-info-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(209, 213, 219, 0.8);
+  padding: 1rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.document-info-panel--fill {
+  min-height: 0;
+}
+
+.document-info-panel--half {
+  flex: 1 1 0;
+}
+
+.documents-list-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.overview-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 4rem;
+  padding: 0.75rem;
+  text-align: center;
+  background: #f8fafc;
+  border-radius: 0.625rem;
+  border: 1px dashed #d1d5db;
+}
+
+.summary-card-usage {
+  gap: 0;
+}
+
+.summary-card-usage .ai-summary-section {
+  flex: 1;
+  min-height: 0;
 }
 
 .upload-box .figma-card,
@@ -850,6 +973,16 @@ canvas {
   line-height: 1;
 }
 
+/* last_used_at en recientes: sin viñeta (::before del alias line) */
+#technician-documents-list-container .document-alias-line {
+  display: block;
+}
+
+#technician-documents-list-container .document-alias-line::before {
+  content: none;
+  display: none;
+}
+
 .document-alias-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -857,16 +990,19 @@ canvas {
   min-width: 0;
 }
 
-.documents-list::-webkit-scrollbar {
+.documents-list::-webkit-scrollbar,
+.documents-list-scroll::-webkit-scrollbar {
   width: 6px;
 }
 
-.documents-list::-webkit-scrollbar-thumb {
+.documents-list::-webkit-scrollbar-thumb,
+.documents-list-scroll::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.5);
   border-radius: 9999px;
 }
 
-.documents-list::-webkit-scrollbar-track {
+.documents-list::-webkit-scrollbar-track,
+.documents-list-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 

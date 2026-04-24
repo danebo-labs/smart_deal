@@ -1,0 +1,26 @@
+<div class="summary-box">
+  <div class="figma-card summary-card summary-card-usage">
+    <div class="ai-summary-section">
+      <div class="explanation-header">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="sparkles-icon">
+          <path d="M3 3V21H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M7 16L12 11L16 15L21 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M21 10V3H14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="explanation-title-wrapper">
+          <h2 class="explanation-title">Usage - Today</h2>
+          <p class="explanation-subtitle">LLM Model: <%= current_llm_model_name %></p>
+          <p class="explanation-subtitle">Embedding Model: <%= current_embedding_model_name %></p>
+        </div>
+      </div>
+
+      <div class="explanation-content-wrapper">
+        <div class="explanation-content">
+          <div id="metrics-container">
+            <%= render partial: "home/metrics", locals: { current_metrics: @current_metrics } %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -3,6 +3,8 @@
 require 'test_helper'
 
 class HomeControllerTest < ActionDispatch::IntegrationTest
+  include Devise::Test::IntegrationHelpers
+
   TURBO_STREAM_CONTENT_TYPE = 'text/vnd.turbo-stream.html; charset=utf-8'
 
   setup do
@@ -15,13 +17,83 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test 'index lists kb_documents as Archivos with display_name' do
+  test 'index lists kb_documents under Archivos en Base de Conocimiento with display_name' do
     KbDocument.create!(s3_key: 'uploads/2026/home_ui.pdf', display_name: 'Manual ascensor', aliases: [])
 
     get root_path
     assert_response :success
-    assert_select 'h3.section-title', text: /Archivos/
+    assert_select 'h3.section-title', text: /Archivos en Base de Conocimiento/
     assert_select '.document-name-primary', text: 'Manual ascensor'
+  end
+
+  test 'index renders three summary panels beside chat' do
+    get root_path
+    assert_response :success
+    assert_select '.document-container > .summary-box', count: 3
+  end
+
+  test 'index overview lists TechnicianDocument canonical_name numbered' do
+    TechnicianDocument.delete_all
+    TechnicianDocument.create!(
+      identifier: "whatsapp:+56900000000",
+      channel: "whatsapp",
+      canonical_name: "Manual técnico overview",
+      last_used_at: Time.current
+    )
+
+    get root_path
+    assert_response :success
+    assert_select "h3.section-title", text: "Recientes consultados"
+    assert_select "#technician-documents-list-container .document-number", text: "[1]"
+    assert_select "#technician-documents-list-container .document-name-primary", text: "Manual técnico overview"
+    assert_select "#technician-documents-list-container .document-meta-secondary.document-aliases .document-alias-text", minimum: 1
+  end
+
+  test 'shared MVP session shows active_entities on home without sign_in' do
+    stub_shared_session_enabled_for_home_test(true) do
+      ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).delete_all
+      ConversationSession.create!(
+        identifier: SharedSession::IDENTIFIER,
+        channel: SharedSession::CHANNEL,
+        expires_at: 1.hour.from_now,
+        active_entities: { "Entidad sesión compartida MVP" => { "source" => "test" } }
+      )
+
+      get root_path
+      assert_response :success
+      assert_select "#session-entities-list-container .document-name-primary", text: "Entidad sesión compartida MVP"
+    end
+  end
+
+  test 'index overview uses first ConversationSession when scoped session has no entities' do
+    ConversationSession.delete_all
+    ConversationSession.create!(
+      identifier: "whatsapp:+56900009999",
+      channel: "whatsapp",
+      expires_at: 1.hour.from_now,
+      active_entities: { "Doc único en BD" => { "source" => "test" } }
+    )
+
+    get root_path
+    assert_response :success
+    assert_select "#session-entities-list-container .document-name-primary", text: "Doc único en BD"
+  end
+
+  test 'index overview lists active web session entity keys when signed in' do
+    user = users(:one)
+    ConversationSession.where(identifier: user.id.to_s, channel: "web").delete_all
+    ConversationSession.create!(
+      identifier: user.id.to_s,
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      active_entities: { "Esquema bomba" => { "source" => "test" } }
+    )
+
+    sign_in user, scope: :user
+    get root_path
+    assert_response :success
+    assert_select "h3.section-title", text: "Archivos en la sesión"
+    assert_select "#session-entities-list-container .document-name-primary", text: "Esquema bomba"
   end
 
   test 'should render index with metrics' do
@@ -75,5 +147,15 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert CostMetric.exists?(date: today, metric_type: :daily_tokens),
            'CostMetric should be synced from BedrockQuery on first load'
     assert_select '.metric-value[data-metric-value="tokens"]', text: /150/
+  end
+
+  def stub_shared_session_enabled_for_home_test(enabled)
+    orig = SharedSession::ENABLED
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, enabled)
+    yield
+  ensure
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, orig)
   end
 end

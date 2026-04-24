@@ -1,0 +1,51 @@
+<div class="summary-box">
+  <div class="figma-card summary-card summary-card-overview">
+    <div class="session-overview-stack">
+      <div class="document-info-panel document-info-panel--fill document-info-panel--half">
+        <h3 class="section-title">Recientes consultados</h3>
+        <div id="technician-documents-list-container" class="documents-list-scroll">
+          <% if @technician_documents_recent.any? %>
+            <% @technician_documents_recent.each_with_index do |td, index| %>
+              <% used_label = l(td.last_used_at, format: :short) %>
+              <div class="document-item-card">
+                <div class="document-item-header">
+                  <span class="document-number">[<%= index + 1 %>]</span>
+                  <span class="document-name-primary" title="<%= td.canonical_name %>"><%= td.canonical_name %></span>
+                </div>
+                <div class="document-meta-secondary document-aliases" aria-label="<%= used_label %>">
+                  <span class="document-alias-line" title="<%= td.last_used_at.iso8601 %>">
+                    <span class="document-alias-text"><%= used_label %></span>
+                  </span>
+                </div>
+              </div>
+            <% end %>
+          <% else %>
+            <div class="overview-list-empty">
+              <p class="document-placeholder-text">Sin registros</p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="document-info-panel document-info-panel--fill document-info-panel--half">
+        <h3 class="section-title">Archivos en la sesión</h3>
+        <div id="session-entities-list-container" class="documents-list-scroll">
+          <% if @session_entity_keys.any? %>
+            <% @session_entity_keys.each_with_index do |key, index| %>
+              <div class="document-item-card">
+                <div class="document-item-header">
+                  <span class="document-number">[<%= index + 1 %>]</span>
+                  <span class="document-name-primary" title="<%= key %>"><%= key %></span>
+                </div>
+              </div>
+            <% end %>
+          <% else %>
+            <div class="overview-list-empty">
+              <p class="document-placeholder-text">Sin sesión activa o sin archivos</p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

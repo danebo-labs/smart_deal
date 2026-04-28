@@ -41,6 +41,9 @@
 # Ignore Cline rules (local development configuration)
 .clinerules/
 
+# VS Code / Cursor workspace (local)
+.vscode/
+
 # Ignore personal meeting notes
 meeting*.txt
 

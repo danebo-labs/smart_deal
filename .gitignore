@@ -47,5 +47,8 @@ meeting*.txt
 /app/assets/builds/*
 !/app/assets/builds/.keep
 
-# Local Next.js UI export snapshots (generated; do not commit)
+# Local Next.js UI export snapshots + export helper (generated; do not commit)
 /b_50FI0lfi5Ny/
+/b_I0BM7kf3sAV/
+/bin/export_ui_for_ai
+/test/bin/export_ui_for_ai_test.rb

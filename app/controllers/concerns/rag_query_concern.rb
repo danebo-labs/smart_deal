@@ -8,8 +8,9 @@ module RagQueryConcern
   extend ActiveSupport::Concern
 
   # Result object for queries (works for both RAG and SQL responses).
-  # :faceted is populated ONLY for :whatsapp output_channel — parsed from the
-  # labeled WA answer by Rag::FacetedAnswer. Web/API consumers keep using :answer.
+  # :faceted carries the STRUCTURED parsed answer (Rag::FacetedAnswer) for
+  # :whatsapp output_channel — resumen / riesgos / dynamic sections / menu.
+  # Web/API consumers keep using :answer.
   RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs, :session_id, :documents_uploaded, :faceted, :error_type, :error_message, keyword_init: true)
 
   # Short follow-ups (e.g. "modernización") keep the thread language instead of re-inferring from Spanish UI labels.
@@ -28,9 +29,12 @@ module RagQueryConcern
   # @param session_id [String, nil] Bedrock session for multi-turn (web/API); merged with whatsapp_to cache when blank
   # @param response_locale [Symbol, String, nil] Force :en / :es for generation; nil = detect from question (and WhatsApp sticky rules)
   # @param whatsapp_to [String, nil] Recipient id (e.g. whatsapp:+...) — enables session + locale persistence across messages
+  # @param force_entity_filter [Boolean] When true, forces BedrockRagService to scope
+  #   retrieval to entity_s3_uris regardless of the question text. Use when the
+  #   query is a synthetic seed bound to a specific document (e.g. WhatsApp picker).
   # @return [RagResult] Structured result with success status and data or error info
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil, whatsapp_to: nil, session_context: nil,
-                         conv_session: nil, entity_s3_uris: [], output_channel: nil)
+                         conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false)
     question = question.to_s.strip
     images = Array(images).compact
     documents = Array(documents).compact
@@ -90,7 +94,8 @@ module RagQueryConcern
       session_context: merged_session_context,
       conv_session: conv_session,
       entity_s3_uris: merged_entity_s3_uris,
-      output_channel: resolved_output_channel
+      output_channel: resolved_output_channel,
+      force_entity_filter: force_entity_filter
     ).execute
 
     if whatsapp_to.present? && cache_key
@@ -156,16 +161,29 @@ module RagQueryConcern
     out.strip
   end
 
-  # Parses the raw WA answer into facets and runs sanitize_answer on each block
-  # independently (so tables inside [PARÁMETROS] still become ① ② ③ lists).
+  # Parses the raw WA answer into the structured schema and runs
+  # sanitize_answer on each text block (resumen, riesgos, section bodies) so
+  # tables become ① ② ③ lists and stray markdown headers are stripped.
   # Returns nil for non-WA channels — web keeps its current rendering.
   def build_faceted_answer(raw, channel)
     return nil unless channel.to_s == "whatsapp"
     return nil if raw.blank?
 
     parsed = Rag::FacetedAnswer.parse(raw)
-    clean  = parsed.facets.transform_values { |content| sanitize_answer(content, channel: :whatsapp) }
-    Rag::FacetedAnswer.new(intent: parsed.intent, facets: clean, menu: parsed.menu, raw: parsed.raw)
+    clean_sections = parsed.sections.map do |s|
+      s.merge(body: sanitize_answer(s[:body], channel: :whatsapp))
+    end
+
+    Rag::FacetedAnswer.new(
+      intent:   parsed.intent,
+      docs:     parsed.docs,
+      resumen:  sanitize_answer(parsed.resumen, channel: :whatsapp),
+      riesgos:  sanitize_answer(parsed.riesgos, channel: :whatsapp),
+      sections: clean_sections,
+      menu:     parsed.menu,
+      raw:      parsed.raw,
+      legacy:   parsed.legacy?
+    )
   end
 
   def strip_markdown_headers(text)

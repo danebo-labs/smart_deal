@@ -275,4 +275,142 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
     assert_equal [ "s3://bucket/shared.pdf" ], uris
   end
+
+  # ============================================
+  # 4 — Recency ordering + fresh upload tag in Session Focus
+  #
+  # Rationale (see thread on the "marca de ascensor" trace): the multi-doc
+  # working set is by design (technician accumulates context through the
+  # day). When a brand-new image upload joins the set, Haiku still needs to
+  # synthesize across everything but should PREFER the just-uploaded photo
+  # for identification-style queries. We surface that preference via a
+  # recency-ordered Session Focus + an explicit "📸 just uploaded" tag.
+  # Retrieval scope (entity_s3_uris) is intentionally NOT narrowed.
+  # ============================================
+
+  test 'Session Focus orders entities most-recent first by added_at' do
+    session = build_session
+    older = (10.minutes.ago).iso8601
+    newer = Time.current.iso8601
+    session.update!(active_entities: {
+      "Old Doc"   => { "source" => "retrieve_result", "added_at" => older },
+      "Fresh Doc" => { "source" => "retrieve_result", "added_at" => newer }
+    })
+
+    context = SessionContextBuilder.build(session)
+    fresh_idx = context.index("Fresh Doc")
+    old_idx   = context.index("Old Doc")
+
+    assert fresh_idx < old_idx, "most-recent entity must appear first in Session Focus"
+  end
+
+  test 'Session Focus tags fresh image_upload entity with 📸 just uploaded marker' do
+    session = build_session
+    session.add_entity_with_aliases("Photograph of MRL elevator", [], {
+      "source"     => "image_upload",
+      "source_uri" => "s3://bucket/uploads/2026-04-24/wa_20260424_211657_0.jpeg",
+      "added_at"   => Time.current.iso8601
+    })
+
+    context = SessionContextBuilder.build(session)
+
+    assert_match(/Photograph of MRL elevator.*just uploaded/i, context)
+  end
+
+  test 'Session Focus does NOT tag image_upload as fresh once it has a first_answer_summary' do
+    session = build_session
+    session.add_entity_with_aliases("Already Queried Photo", [], {
+      "source"               => "image_upload",
+      "added_at"             => Time.current.iso8601,
+      "first_answer_summary" => "Voltage rating 220V observed."
+    })
+
+    context = SessionContextBuilder.build(session)
+
+    assert_no_match(/just uploaded/, context)
+  end
+
+  test 'Session Focus does NOT tag image_upload as fresh once outside the recency window' do
+    session = build_session
+    session.update!(active_entities: {
+      "Older Photo" => {
+        "source"   => "image_upload",
+        "added_at" => (10.minutes.ago).iso8601
+      }
+    })
+
+    context = SessionContextBuilder.build(session)
+
+    assert_no_match(/just uploaded/, context)
+  end
+
+  # ============================================
+  # 5 — fresh_upload_entity helper (consumed by SendWhatsappReplyJob banner)
+  # ============================================
+
+  test 'fresh_upload_entity returns nil for nil session' do
+    assert_nil SessionContextBuilder.fresh_upload_entity(nil)
+  end
+
+  test 'fresh_upload_entity returns nil when session has no image_upload entities' do
+    session = build_session
+    session.add_entity("manual.pdf", { "source" => "retrieve_result" })
+
+    assert_nil SessionContextBuilder.fresh_upload_entity(session)
+  end
+
+  test 'fresh_upload_entity returns the entity hash when a recent image_upload exists' do
+    session = build_session
+    session.add_entity_with_aliases("Photograph of MRL elevator", [ "Panoramic MRL Elevator" ], {
+      "source"     => "image_upload",
+      "source_uri" => "s3://bucket/uploads/2026-04-24/wa_image.jpeg",
+      "added_at"   => Time.current.iso8601
+    })
+
+    fresh = SessionContextBuilder.fresh_upload_entity(session)
+
+    assert_equal "Photograph of MRL elevator", fresh[:canonical_name]
+    assert_includes fresh[:aliases], "Panoramic MRL Elevator"
+    assert_equal "s3://bucket/uploads/2026-04-24/wa_image.jpeg", fresh[:source_uri]
+  end
+
+  test 'fresh_upload_entity ignores image_upload that already has first_answer_summary' do
+    session = build_session
+    session.add_entity_with_aliases("Already Queried", [], {
+      "source"               => "image_upload",
+      "added_at"             => Time.current.iso8601,
+      "first_answer_summary" => "Already analyzed."
+    })
+
+    assert_nil SessionContextBuilder.fresh_upload_entity(session)
+  end
+
+  test 'fresh_upload_entity ignores image_upload outside the recency window' do
+    session = build_session
+    session.update!(active_entities: {
+      "Old Photo" => {
+        "source"   => "image_upload",
+        "added_at" => (5.minutes.ago).iso8601
+      }
+    })
+
+    assert_nil SessionContextBuilder.fresh_upload_entity(session)
+  end
+
+  test 'fresh_upload_entity prefers the most recent image_upload when multiple qualify' do
+    session = build_session
+    session.update!(active_entities: {
+      "Older Photo" => {
+        "source"   => "image_upload",
+        "added_at" => (30.seconds.ago).iso8601
+      },
+      "Newer Photo" => {
+        "source"   => "image_upload",
+        "added_at" => Time.current.iso8601
+      }
+    })
+
+    fresh = SessionContextBuilder.fresh_upload_entity(session)
+    assert_equal "Newer Photo", fresh[:canonical_name]
+  end
 end

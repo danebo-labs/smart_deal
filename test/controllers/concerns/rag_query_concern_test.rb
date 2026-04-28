@@ -123,38 +123,49 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
-  test 'execute_rag_query parses faceted answer for whatsapp channel' do
-    faceted_raw = <<~ANS
-      [INTENT] IDENTIFICATION
+  test 'execute_rag_query parses structured answer for whatsapp channel' do
+    structured_raw = <<~ANS
+      [INTENT] INSTALLATION
+      [DOCS]
+      ["Manual Orono A1", "Transformadores.pdf"]
       [RESUMEN]
-      Orona PCB Mainboard — placa de control del ascensor.
+      Instalación Orono A1 con alimentación desde Transformadores.pdf.
       [RIESGOS]
-      (—)
-      [PARÁMETROS]
-      ① 24VDC
+      ⚠️ LOTO obligatorio.
       [SECCIONES]
-      - Diagnóstico
-      [DETALLE]
-      Detalle técnico.
+      ## Consideraciones iniciales | Manual Orono A1
+      Validar plomada.
+
+      ## Componentes | Manual Orono A1, Transformadores.pdf
+      ① Contrapeso.
       [MENU]
-      1 | Riesgos | riesgos
-      2 | Parámetros | parametros
+      1 | ⚠️ Riesgos | __riesgos__
+      2 | Consideraciones iniciales | __sec_1__
+      3 | Componentes | __sec_2__
+      4 | 🔄 Nueva consulta | __new_query__
     ANS
-    mock = create_mock_orchestrator(answer: faceted_raw, citations: [], session_id: 'sess-1')
+    mock = create_mock_orchestrator(answer: structured_raw, citations: [], session_id: 'sess-1')
 
     with_mock_orchestrator(mock) do
-      result = @controller.send(:execute_rag_query, 'Que es la PCB?', whatsapp_to: 'whatsapp:+1234')
+      result = @controller.send(:execute_rag_query, 'Como instalo Orono A1?', whatsapp_to: 'whatsapp:+1234')
 
       assert result.success?
       assert_not_nil result.faceted
-      assert_equal :identification, result.faceted.intent
-      assert_match(/Orona PCB Mainboard/, result.faceted.facets[:resumen])
-      assert result.faceted.facet_empty?(:riesgos)
-      assert_equal 2, result.faceted.menu.size
+      assert_equal :installation, result.faceted.intent
+      assert_equal [ 'Manual Orono A1', 'Transformadores.pdf' ], result.faceted.docs
+      assert_match(/Instalación Orono A1/, result.faceted.resumen)
+      assert_equal 2, result.faceted.sections.length
+      assert_equal [ 'Manual Orono A1', 'Transformadores.pdf' ], result.faceted.sections[1][:sources]
+      # 1 (riesgos) + 2 (sections) + 2 (list_recent + list_all). Legacy
+      # __new_query__ row is stripped by FacetedAnswer.append_list_options.
+      assert_equal 5, result.faceted.menu.size
+      assert_not result.faceted.menu.any? { |m| m[:kind] == :new_query }, '__new_query__ row must be stripped'
+      assert_equal :list_recent, result.faceted.menu[-2][:kind]
+      assert_equal :list_all,    result.faceted.menu[-1][:kind]
     end
   end
 
-  test 'execute_rag_query faceted falls back to :detalle when labels missing' do
+  test 'execute_rag_query structured falls back to legacy plain answer when labels missing' do
     mock = create_mock_orchestrator(answer: 'Legacy plain answer with no labels.', citations: [], session_id: 's')
 
     with_mock_orchestrator(mock) do
@@ -162,7 +173,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
       assert_not_nil result.faceted
       assert result.faceted.legacy?
-      assert_equal 'Legacy plain answer with no labels.', result.faceted.facets[:detalle]
+      # Plain text is retained inside a single synthetic section so the
+      # renderer can still ship something, even when the model ignored labels.
+      assert_equal 1, result.faceted.sections.length
+      assert_match(/Legacy plain answer with no labels\./, result.faceted.sections.first[:body])
     end
   end
 

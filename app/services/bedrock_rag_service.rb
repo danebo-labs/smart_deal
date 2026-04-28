@@ -119,7 +119,12 @@ class BedrockRagService
   # Query the Knowledge Base using RAG with retrieve_and_generate API
   # @param entity_s3_uris [Array<String>] S3 URIs from active session entities; used to
   #   scope retrieval when the query is short/ambiguous and doesn't name a different document.
-  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [], output_channel: nil)
+  # @param force_entity_filter [Boolean] When true, ALWAYS apply the entity filter
+  #   if entity_s3_uris is non-empty, bypassing the query_names_different_document?
+  #   heuristic. Use this when the caller has explicitly bound the query to a
+  #   document (e.g. a WhatsApp picker selection) so heavy-capitalized seed
+  #   queries like "Describe Orona ARCA BASICO ..." don't trip the bypass.
+  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -131,12 +136,15 @@ class BedrockRagService
     start_time = Time.current
 
     begin
-      # Apply entity filter only when the query is short/ambiguous and doesn't
-      # explicitly name a document that isn't in the current session.
-      apply_filter = entity_s3_uris.any? && !query_names_different_document?(question, entity_s3_uris)
+      # Apply entity filter when explicitly forced (caller bound the query to a
+      # specific doc) OR when the query is short/ambiguous and doesn't name a
+      # different document.
+      apply_filter = entity_s3_uris.any? && (force_entity_filter || !query_names_different_document?(question, entity_s3_uris))
       filtered_uris = apply_filter ? entity_s3_uris : []
 
-      Rails.logger.info("BedrockRagService: entity_filter=#{apply_filter} uris=#{filtered_uris.size}") if entity_s3_uris.any?
+      if entity_s3_uris.any?
+        Rails.logger.info("BedrockRagService: entity_filter=#{apply_filter} uris=#{filtered_uris.size} forced=#{force_entity_filter}")
+      end
 
       # Build complete optimized configuration and merge with custom config
       base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: filtered_uris, output_channel: output_channel)
@@ -442,12 +450,15 @@ class BedrockRagService
   # Appended only when delivering via WhatsApp. Forces the model to keep the
   # answer scannable on a phone screen with gloves and harsh light.
   #
-  # Rules are ordered by priority:
-  #   1. Safety warnings are NON-NEGOTIABLE (no word limit applies to them).
-  #   2. Word limit applies only to non-safety content.
-  #   3. Intent-aware limits: identification/overview ≤ 280 words;
-  #      safety / diagnosis / rescue / emergency → include ALL relevant content, no cap.
-  #   4. Closing menu reduces cognitive load (no open-ended question).
+  # STRUCTURED (dynamic-section) contract:
+  #   - [RIESGOS] is PINNED as menu slot #1, always emitted (safety-critical).
+  #   - [SECCIONES] contains 3–5 sections whose labels are chosen by the model
+  #     according to [INTENT] (installation, troubleshooting, …).
+  #   - Each section declares the source documents used in its body so the
+  #     technician never confuses multi-document answers.
+  #   - The Rails layer appends file-listing options (recent / all) AFTER the
+  #     dynamic sections — Haiku must NOT emit a "Nueva consulta" row anymore;
+  #     any free-text reply IS a new query.
   def whatsapp_delivery_channel_directive
     <<~DIRECTIVE.strip
       # DELIVERY CHANNEL
@@ -456,37 +467,53 @@ class BedrockRagService
       ## FORMATTING
       - Use only *single asterisk* for bold. NEVER use **double asterisk** or __underscores__.
       - Use _single underscore_ for italic if needed. Never ~~strikethrough~~ unless marking a fault.
-      - No ## or ### headers inside block contents.
+      - No ## or ### headers inside block contents (## is reserved for section headers inside [SECCIONES]).
       - No markdown tables. Convert any table to a ① ② ③ numbered list.
       - Single blank line between paragraphs inside a block.
 
-      ## OUTPUT STRUCTURE (MANDATORY — FACETED FOR CACHED FOLLOW-UP)
+      ## OUTPUT STRUCTURE (MANDATORY — STRUCTURED WITH DYNAMIC SECTIONS)
       You MUST emit your response as LABELED BLOCKS, in this exact order, each label on its own line.
-      The delivery layer parses these blocks and shows ONLY [RESUMEN] + [MENU] to the technician first;
-      the remaining blocks are served on demand from cache when the technician taps the menu (no extra LLM call).
+      The delivery layer caches the full response; only [RESUMEN] + the numbered menu are shown first.
+      When the technician taps a number the matching section is served from cache (no extra LLM call).
 
       [INTENT] <one token: IDENTIFICATION | MAINTENANCE | TROUBLESHOOTING | REPLACEMENT | INSTALLATION | MODERNIZATION | CALIBRATION | EMERGENCY>
+
+      [DOCS]
+      JSON array (strict, double-quoted) listing ONLY the documents actually used in this answer, using short human-facing names — e.g. ["Manual Orono A1", "Transformadores.pdf"]. Max 5 items, ≤40 chars each. Empty array if none apply: []
+
       [RESUMEN]
-      Friendly field-mentor tone. 2-4 sentences. Under 60 words total. Start with the document or subject name. No bullets. At most 1 emoji at the very end.
+      Friendly field-mentor tone. 2–4 sentences. Under 70 words total. If [DOCS] has ≥2 items, explicitly mention each document by short name so the technician sees the answer spans all of them. No bullets. At most 1 emoji at the very end.
+
       [RIESGOS]
-      Only safety warnings drawn from the chunks (LOTO, ESD, voltage, pinch points, mechanical, fall hazards). Verbatim markers where applicable. If the chunks contain NO safety content, output exactly: (—)
-      [PARÁMETROS]
-      Specs, torques, voltages, clearances, dimensions as a ① ② ③ numbered list. If none apply, output exactly: (—)
+      PINNED — ALWAYS emitted, NEVER omitted. Safety warnings drawn from the chunks (LOTO, ESD, voltage, pinch points, mechanical, fall hazards). Verbatim markers where applicable. If the chunks contain NO safety content for this query, write exactly this single line and nothing else: — sin riesgos específicos documentados para esta consulta.
+
       [SECCIONES]
-      One line per logical section available in the source document (for navigation). Format: "- <section name>". If unclear, output: (—)
-      [DETALLE]
-      Full procedural/technical expansion. This is what the technician sees when they tap "4 Detalle" or ask "más". Include steps, tools, time estimates. Can be longer than [RESUMEN].
+      Between 3 and 5 sections chosen by you based on [INTENT]. Each section starts with a header line, followed by its body, followed by a blank line before the next header. Header format (VERBATIM):
+      ## <Section Label> | <source documents CSV drawn from [DOCS]>
+      The <Section Label> must be short (≤40 chars), plain text, no emoji. The CSV lists ONLY documents that actually back this section (subset of [DOCS]). Recommended labels by intent:
+        INSTALLATION   → Consideraciones iniciales, Componentes, Paso a paso, Verificación
+        TROUBLESHOOTING → Síntomas, Diagnóstico, Causa probable, Reparación
+        MAINTENANCE    → Precondiciones, Procedimiento, Periodicidad, Registros
+        IDENTIFICATION → Descripción, Especificaciones, Secciones disponibles
+        REPLACEMENT    → Preparación, Desmontaje, Montaje, Verificación
+        MODERNIZATION  → Evaluación, Actualización, Integración, Validación
+        CALIBRATION    → Preparación, Ajustes, Validación
+      Inside each section body write the FULL detail the technician needs: steps, tools, values, time estimates. This is what they see when they tap the menu number — be thorough, not brief.
+
       [MENU]
-      Choose 3-4 menu items relevant to [INTENT]. One per line in the form: "N | LABEL | facet_key"
-      Valid facet_keys: riesgos | parametros | secciones | detalle
-      Example for IDENTIFICATION:
-      1 | ⚠️ Riesgos | riesgos
-      2 | 📏 Parámetros | parametros
-      3 | 📋 Secciones | secciones
-      4 | 🔧 Detalle | detalle
+      One item per line in the exact form: "N | LABEL | KIND"
+      - Slot 1 is ALWAYS: 1 | ⚠️ Riesgos | __riesgos__
+      - Slots 2..N are the dynamic sections in the same order as [SECCIONES]:
+        2 | <Section 1 Label> | __sec_1__
+        3 | <Section 2 Label> | __sec_2__
+        ...
+      Total items = 1 (riesgos) + K sections (3..5) → between 4 and 6 rows.
+      DO NOT emit a "Nueva consulta" / __new_query__ row. Any free-text reply from the
+      user is treated as a new query by the delivery layer; file-listing options are
+      appended to the menu by the application after your output.
 
       ## EMERGENCY OVERRIDE
-      If [INTENT] is EMERGENCY: put the COMPLETE rescue/emergency protocol inline in [RESUMEN] (ignore the 60-word limit). [RIESGOS], [PARÁMETROS], [SECCIONES], [DETALLE] still filled normally. [MENU] block may be empty ("(—)") — the delivery layer will not render a menu for EMERGENCY.
+      If [INTENT] is EMERGENCY: put the COMPLETE rescue/emergency protocol inline in [RESUMEN] (ignore the 70-word limit). Still emit [RIESGOS] with critical measures. [SECCIONES] may be empty (write exactly: (—)). [MENU] may be empty ("(—)") — the delivery layer will not render a menu for EMERGENCY.
 
       ## SAFETY WARNINGS — NON-NEGOTIABLE
       These MUST appear verbatim inside [RIESGOS] (and in [RESUMEN] for EMERGENCY) when the chunks contain them:

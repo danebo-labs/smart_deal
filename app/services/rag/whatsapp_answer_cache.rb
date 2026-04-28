@@ -16,13 +16,15 @@ require "digest"
 module Rag
   class WhatsappAnswerCache
     TTL         = 30.minutes
-    # Bumped v2 → v3 when document_label was added to the schema; forces a
-    # controlled miss on deploy (old payloads won't satisfy SCHEMA_KEYS and
-    # are invalidated transparently as op=corrupt).
-    VERSION     = "v3"
+    # Bumped v4 → v5 when the [MENU] structure changed: __new_query__ slot was
+    # removed and two file-listing slots (__list_recent__, __list_all__) are
+    # appended deterministically by Rag::FacetedAnswer at parse time. Old v4
+    # caches still satisfy SCHEMA_KEYS but would render the old menu — the
+    # version bump invalidates them cleanly.
+    VERSION     = "v5"
     SCHEMA_KEYS = %i[
-      question question_hash faceted citations doc_refs locale
-      entity_signature intent generated_at document_label
+      question question_hash structured citations doc_refs locale
+      entity_signature intent generated_at
     ].freeze
 
     class << self

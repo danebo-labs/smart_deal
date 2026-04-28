@@ -25,9 +25,8 @@ es:
       commands: "regresar · inicio"
       default_labels:
         riesgos: "Riesgos"
-        parametros: "Parámetros"
-        secciones: "Secciones"
-        detalle: "Detalle"
+      list_recent_label: "Archivos recientes consultados"
+      list_all_label: "Todos los archivos"
     wa_no_context_help: "No tengo una consulta previa activa. Escribe tu pregunta (ej: \"¿qué es la PCB Orona?\")."
     wa_reset_ack: |-
       Listo, contexto reiniciado. ¿Qué quieres consultar? 🛠
@@ -36,18 +35,18 @@ es:
       2 - archivos existentes
 
       O escribe tu pregunta directamente.
+    wa_new_query_ack: "Listo, contexto reiniciado. Envíame tu próxima consulta. 🛠"
+    wa_docs_banner: "📚 *Fuentes consultadas:* %{docs}"
+    wa_fresh_upload_banner: "📸 *Recién subido:* %{name}"
+    wa_section_header_inline: "(fuentes: *%{sources}*)"
     wa_processing_ack: "🛠 Consultando la base de conocimiento… (unos segundos)"
     wa_post_reset_recent_header: "Archivos recientes:"
     wa_post_reset_all_header: "Archivos disponibles:"
     wa_post_reset_empty_list: "No hay archivos disponibles en esta lista."
     wa_post_reset_seed_query: "Describe %{name}"
     wa_post_reset_back_label: "atrás"
-    wa_empty_facet_notice: "No hay %{facet} documentado para esta consulta. Prueba con: %{alternatives}."
-    wa_missing_topic_in_facet: "No hay %{topic} documentado en este archivo."
-    wa_doc_source_prefix: "*%{doc}* (fuente)"
-    wa_doc_source_inline: "(del documento *%{doc}*)"
-    wa_facet_names:
-      riesgos: "riesgos"
-      parametros: "parámetros"
-      secciones: "secciones"
-      detalle: "detalle"
+    wa_post_reset_back_to_answer_label: "volver al resultado"
+    wa_post_reset_home_action_label: "reiniciar"
+    wa_post_reset_page_indicator: "Página %{current}/%{total}"
+    wa_post_reset_next_page_label: "siguiente página"
+    wa_post_reset_prev_page_label: "página anterior"

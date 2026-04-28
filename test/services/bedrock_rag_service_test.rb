@@ -415,7 +415,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'DELIVERY CHANNEL block defines faceted labels and menu facet_keys' do
+  test 'DELIVERY CHANNEL block defines structured labels and dynamic menu kinds' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('test', output_channel: :whatsapp)
@@ -427,12 +427,21 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :prompt_template,
         :text_prompt_template
       )
-      %w[[INTENT] [RESUMEN] [RIESGOS] [PARÁMETROS] [SECCIONES] [DETALLE] [MENU]].each do |label|
+      %w[[INTENT] [DOCS] [RESUMEN] [RIESGOS] [SECCIONES] [MENU]].each do |label|
         assert_includes template, label, "expected prompt to document label #{label}"
       end
-      %w[riesgos parametros secciones detalle].each do |key|
-        assert_includes template, key, "expected prompt to list facet_key #{key}"
+      %w[__riesgos__ __sec_1__ __new_query__].each do |kind|
+        assert_includes template, kind, "expected prompt to list menu kind #{kind}"
       end
+
+      # Legacy facet labels must be gone (they leaked multi-doc queries into a
+      # single-document frame before the refactor).
+      assert_not_includes template, '[PARÁMETROS]'
+      assert_not_includes template, '[DETALLE]'
+
+      # Pinned-riesgos safety contract must be explicit.
+      assert_includes template, 'PINNED'
+      assert_includes template, 'sin riesgos específicos documentados'
     end
   end
 
@@ -556,6 +565,33 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :filter
       )
       assert_nil filter, "Expected no filter: SOPREL is not in the session URIs even though query is short"
+    end
+  end
+
+  test 'query applies entity filter when force_entity_filter is true even if query names a different document' do
+    # Regression: WhatsApp post-reset doc picker seeds queries like
+    # "Describe Orona ARCA BASICO ..." that contain many capitalized words.
+    # Without force_entity_filter, query_names_different_document? would
+    # bypass the filter and Bedrock would search the whole KB.
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query(
+        'Describe Orona ARCA BASICO Safety Circuit Electrical Schematic',
+        entity_s3_uris:      [ 's3://bucket/orona_arca_basico.pdf' ],
+        force_entity_filter: true
+      )
+
+      filter = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :retrieval_configuration,
+        :vector_search_configuration,
+        :filter
+      )
+      assert_not_nil filter, "force_entity_filter must scope retrieval to the picked doc"
+      assert_equal 's3://bucket/orona_arca_basico.pdf',
+                   filter.dig(:equals, :value),
+                   "filter must target the explicitly bound source URI"
     end
   end
 

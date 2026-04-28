@@ -18,17 +18,29 @@ module Rag
       @previous_cache = Rails.cache
       Rails.cache     = ActiveSupport::Cache::MemoryStore.new
       @to             = "whatsapp:+56912345678"
-      @base_value     = {
+      @structured     = {
+        intent:   :identification,
+        docs:     [ "Manual Orono A1" ],
+        resumen:  "Orona PCB — placa principal.",
+        riesgos:  "LOTO requerido.",
+        sections: [ { n: 1, key: :sec_1, label: "Descripción", sources: [ "Manual Orono A1" ], body: "Placa principal." } ],
+        menu:     [
+          { n: 1, label: "Riesgos", kind: :riesgos, section_key: :riesgos },
+          { n: 2, label: "Descripción", kind: :section, section_key: :sec_1 },
+          { n: 3, label: "Nueva consulta", kind: :new_query, section_key: nil }
+        ],
+        raw:      "[INTENT] IDENTIFICATION\n"
+      }
+      @base_value = {
         question:         "que es la PCB?",
         question_hash:    WhatsappAnswerCache.question_hash("que es la PCB?"),
-        faceted:          { intent: :identification, facets: { resumen: "x" }, menu: [], raw: "[INTENT] IDENTIFICATION\n" },
+        structured:       @structured,
         citations:        [],
         doc_refs:         [],
         locale:           :es,
         entity_signature: "abc123abc123",
         intent:           :identification,
-        generated_at:     nil,
-        document_label:   nil
+        generated_at:     nil
       }
     end
 
@@ -44,6 +56,8 @@ module Rag
       assert_equal :identification, value[:intent]
       assert_equal "que es la PCB?", value[:question]
       assert value[:generated_at].is_a?(Integer), "generated_at should be stamped on write"
+      assert_equal [ "Manual Orono A1" ], value[:structured][:docs]
+      assert_equal 3, value[:structured][:menu].length
     end
 
     test "read miss returns nil" do
@@ -63,24 +77,16 @@ module Rag
         stale_session = Struct.new(:active_entities).new({ "orona_pcb" => {} })
         fresh_session = Struct.new(:active_entities).new({ "otis_gen3" => {} })
 
-        # Writing the baseline, then reading with a session that yields a different
-        # signature than stored. The stored signature is "abc123abc123"; both Struct
-        # sessions above yield their own sha signatures which differ.
         assert_nil WhatsappAnswerCache.read(@to, conv_session: stale_session)
 
-        # after drift detection the key must be purged
         WhatsappAnswerCache.write(@to, @base_value)
-        assert_not_nil WhatsappAnswerCache.read(@to) # baseline still works without session
+        assert_not_nil WhatsappAnswerCache.read(@to)
 
-        # now drift again with a different session
         assert_nil WhatsappAnswerCache.read(@to, conv_session: fresh_session)
         assert_nil Rails.cache.read(WhatsappAnswerCache.key(@to))
       end
     end
 
-    # MVP shared-session mode: every tester mutates the same active_entities
-    # set, so signature drift is expected and must NOT invalidate the cache
-    # (per-number key already isolates technicians; TTL guards freshness).
     test "entity drift is IGNORED when SharedSession::ENABLED is true" do
       stub_shared_enabled(true) do
         WhatsappAnswerCache.write(@to, @base_value)
@@ -114,19 +120,26 @@ module Rag
       assert_nil WhatsappAnswerCache.read(@to)
     end
 
-    test "v2 payload (missing document_label) is treated as corrupt and purged" do
-      # Simulate a payload written by the previous deploy (v2 schema).
-      v2_payload = @base_value.reject { |k, _| k == :document_label }.merge(generated_at: Time.current.to_i)
-      Rails.cache.write(WhatsappAnswerCache.key(@to), v2_payload)
-      assert_nil WhatsappAnswerCache.read(@to), "v2 schema must no longer satisfy v3 SCHEMA_KEYS"
+    test "v3 payload (with faceted + document_label) is treated as corrupt and purged" do
+      v3_payload = {
+        question:         "q",
+        question_hash:    "q1",
+        faceted:          { intent: :identification, facets: {}, menu: [], raw: "" },
+        citations:        [],
+        doc_refs:         [],
+        locale:           :es,
+        entity_signature: "sig",
+        intent:           :identification,
+        generated_at:     Time.current.to_i,
+        document_label:   "PCB Orona"
+      }
+      Rails.cache.write(WhatsappAnswerCache.key(@to), v3_payload)
+      assert_nil WhatsappAnswerCache.read(@to), "v3 schema must no longer satisfy v4 SCHEMA_KEYS"
       assert_nil Rails.cache.read(WhatsappAnswerCache.key(@to))
     end
 
-    test "document_label survives the write/read round-trip" do
-      labelled = @base_value.merge(document_label: "PCB Mainboard Orona")
-      WhatsappAnswerCache.write(@to, labelled)
-      value = WhatsappAnswerCache.read(@to)
-      assert_equal "PCB Mainboard Orona", value[:document_label]
+    test "cache key carries the v5 version prefix" do
+      assert_match %r{\Arag_wa_faceted/v5/}, WhatsappAnswerCache.key(@to)
     end
 
     test "invalidate purges the key" do

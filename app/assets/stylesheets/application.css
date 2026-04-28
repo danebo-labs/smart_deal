@@ -638,11 +638,80 @@ canvas {
   gap: 0.5rem;
 }
 
-.chat-input-container form {
+.chat-composer-form {
   display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+
+.chat-composer-row {
+  display: flex;
+  align-items: flex-end;
   gap: 0.5rem;
   width: 100%;
-  align-items: flex-end;
+  min-width: 0;
+}
+
+/* Campo único: clip + textarea (vanguardia: borde compartido, sin caja aparte) */
+.chat-input-field-wrap {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 44px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 0.875rem;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-input-field-wrap:focus-within {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.12), 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.chat-attach-inside {
+  flex-shrink: 0;
+  width: 2.75rem;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(100, 116, 139, 0.85);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.chat-attach-inside:hover {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.chat-attach-inside:active {
+  color: #1d4ed8;
+}
+
+.chat-upload-limits-hint {
+  margin: 0;
+  padding: 0 0.25rem 0 0.35rem;
+  font-size: 0.625rem;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  font-weight: 400;
+  color: rgba(148, 163, 184, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-input {
@@ -657,7 +726,24 @@ canvas {
   max-height: 120px;
 }
 
-.chat-input:focus {
+.chat-input--embed {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0.25rem;
+  padding-right: 0.75rem;
+}
+
+.chat-input--embed:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.chat-input:focus:not(.chat-input--embed) {
   outline: none;
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);

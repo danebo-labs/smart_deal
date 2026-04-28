@@ -31,8 +31,12 @@ class QueryOrchestratorService
   # @param response_locale [Symbol, nil] :en / :es to force generation language; nil = infer from query text
   # @param conv_session [ConversationSession, nil] Web/API session — passed to ingestion job for entity registration
   # @param entity_s3_uris [Array<String>] S3 URIs of active session documents for retrieval scoping
+  # @param force_entity_filter [Boolean] When true, BedrockRagService bypasses its
+  #   "query names a different document" heuristic and always scopes retrieval to
+  #   entity_s3_uris. Use when the caller has explicitly bound the query to a
+  #   specific document (e.g. WhatsApp post-reset picker selection).
   def initialize(query, images: [], documents: [], tenant: nil, session_id: nil, response_locale: nil, session_context: nil,
-                 conv_session: nil, entity_s3_uris: [], output_channel: nil)
+                 conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false)
     @query = query
     @images = images || []
     @documents = documents || []
@@ -43,6 +47,7 @@ class QueryOrchestratorService
     @conv_session = conv_session
     @entity_s3_uris = Array(entity_s3_uris)
     @output_channel = output_channel
+    @force_entity_filter = force_entity_filter
     @ai_provider = AiProvider.new
   end
 
@@ -100,7 +105,8 @@ class QueryOrchestratorService
         response_locale: @response_locale,
         session_context: @session_context,
         entity_s3_uris: @entity_s3_uris,
-        output_channel: @output_channel
+        output_channel: @output_channel,
+        force_entity_filter: @force_entity_filter
       )
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
@@ -116,7 +122,8 @@ class QueryOrchestratorService
         response_locale: @response_locale,
         session_context: @session_context,
         entity_s3_uris: @entity_s3_uris,
-        output_channel: @output_channel
+        output_channel: @output_channel,
+        force_entity_filter: @force_entity_filter
       )
     end
   end
@@ -188,7 +195,8 @@ class QueryOrchestratorService
         response_locale: @response_locale,
         session_context: @session_context,
         entity_s3_uris: @entity_s3_uris,
-        output_channel: @output_channel
+        output_channel: @output_channel,
+        force_entity_filter: @force_entity_filter
       )
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")

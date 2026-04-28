@@ -25,9 +25,8 @@ en:
       commands: "back · home"
       default_labels:
         riesgos: "Risks"
-        parametros: "Parameters"
-        secciones: "Sections"
-        detalle: "Detail"
+      list_recent_label: "Recently consulted files"
+      list_all_label: "All files"
     wa_no_context_help: "I don't have a previous query in context. Type your question (e.g., \"what is the Orona PCB?\")."
     wa_reset_ack: |-
       Done, context cleared. What do you want to ask? 🛠
@@ -36,18 +35,18 @@ en:
       2 - available files
 
       Or type your question directly.
+    wa_new_query_ack: "Done, context cleared. Send me your next question. 🛠"
+    wa_docs_banner: "📚 *Sources consulted:* %{docs}"
+    wa_fresh_upload_banner: "📸 *Just uploaded:* %{name}"
+    wa_section_header_inline: "(sources: *%{sources}*)"
     wa_processing_ack: "🛠 Looking this up in the knowledge base… (a few seconds)"
     wa_post_reset_recent_header: "Recent files:"
     wa_post_reset_all_header: "Available files:"
     wa_post_reset_empty_list: "No files available in this list."
     wa_post_reset_seed_query: "Describe %{name}"
     wa_post_reset_back_label: "back"
-    wa_empty_facet_notice: "No %{facet} documented for this query. Try: %{alternatives}."
-    wa_missing_topic_in_facet: "No %{topic} documented in this file."
-    wa_doc_source_prefix: "*%{doc}* (source)"
-    wa_doc_source_inline: "(from document *%{doc}*)"
-    wa_facet_names:
-      riesgos: "risks"
-      parametros: "parameters"
-      secciones: "sections"
-      detalle: "detail"
+    wa_post_reset_back_to_answer_label: "back to previous answer"
+    wa_post_reset_home_action_label: "reset"
+    wa_post_reset_page_indicator: "Page %{current}/%{total}"
+    wa_post_reset_next_page_label: "next page"
+    wa_post_reset_prev_page_label: "previous page"

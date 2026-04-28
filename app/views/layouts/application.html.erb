@@ -1,65 +1,124 @@
 <!DOCTYPE html>
-<html>
+<html lang="es" class="bg-[hsl(220,20%,97%)]">
   <head>
-    <title><%= content_for(:title) || "Danebo Rag" %></title>
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title><%= content_for(:title) || "Danebo.ia" %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="application-name" content="Danebo Rag">
+    <meta name="application-name" content="Danebo.ia">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="description" content="Plataforma de IA empresarial para soluciones B2B">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= action_cable_meta_tag %>
-
     <%= yield :head %>
-
-    <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
-    <%#= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>
-
-    <%= tag.link rel: "icon", href: "/favicon.ico?v=#{Time.now.to_i}", type: "image/x-icon" %>
-    <%= tag.link rel: "icon", href: "/icon.png?v=#{Time.now.to_i}", type: "image/png" %>
-    <%= tag.link rel: "shortcut icon", href: "/icon.png?v=#{Time.now.to_i}", type: "image/png" %>
-    <%= tag.link rel: "apple-touch-icon", href: "/icon.png?v=#{Time.now.to_i}" %>
-
-    <%# Includes all stylesheet files in app/assets/stylesheets %>
+    <%= tag.link rel: "icon", href: "/favicon.ico", type: "image/x-icon" %>
+    <%= tag.link rel: "apple-touch-icon", href: "/icon.png" %>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= stylesheet_link_tag "tailwind", "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
-    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
   </head>
 
-  <body>
-    <!-- Navigation -->
-    <nav class="main-nav">
-      <div class="nav-container">
-        <div class="nav-brand">
-          <%= link_to "Danebo Rag", root_path, class: "nav-logo" %>
+  <body class="font-sans antialiased min-h-screen text-[hsl(222,47%,10%)] bg-[hsl(220,20%,97%)]">
+
+    <%# Orbital background — subtle protagonist in light mode %>
+    <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
+      <%# Soft base gradient %>
+      <div class="absolute inset-0 bg-gradient-to-br from-[hsl(217,91%,50%,0.04)] via-transparent to-[hsl(217,91%,50%,0.02)]"></div>
+
+      <%# Orbital rings centered %>
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+        <%# Central glow %>
+        <div class="absolute w-32 h-32 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[hsl(217,91%,50%)] opacity-[0.06] blur-3xl"></div>
+
+        <%# Ring 1 — innermost, most visible, primary color %>
+        <div class="absolute w-[420px] h-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[hsl(217,91%,50%)] opacity-[0.12] animate-spin-slow"></div>
+
+        <%# Orbiting dot on ring 1 %>
+        <div class="absolute w-[420px] h-[420px] -translate-x-1/2 -translate-y-1/2 animate-spin-slow">
+          <div class="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[hsl(217,91%,50%)] opacity-60 blur-[1px]"></div>
         </div>
-        <div class="nav-links">
+
+        <%# Ring 2 — medium %>
+        <div class="absolute w-[680px] h-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[hsl(217,91%,50%)] opacity-[0.07] animate-spin-slower"></div>
+
+        <%# Ring 3 — outer, barely visible %>
+        <div class="absolute w-[940px] h-[940px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[hsl(217,91%,50%)] opacity-[0.04]"></div>
+      </div>
+
+      <%# Ambient blobs %>
+      <div class="absolute top-1/4 right-1/3 w-72 h-72 bg-[hsl(217,91%,50%)] opacity-[0.03] rounded-full blur-3xl"></div>
+      <div class="absolute bottom-1/3 left-1/4 w-48 h-48 bg-[hsl(217,91%,50%)] opacity-[0.025] rounded-full blur-3xl"></div>
+    </div>
+
+    <%# Fixed nav %>
+    <nav class="fixed top-0 left-0 right-0 z-50 border-b border-[hsl(215,20%,88%)] bg-white/80 backdrop-blur-xl">
+      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+        <%# Logo %>
+        <div class="flex items-center gap-3">
+          <div style="width:32px;height:32px;">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+              <defs>
+                <linearGradient id="nav-orbital" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="hsl(217,91%,55%)"/>
+                  <stop offset="100%" stop-color="hsl(240,60%,50%)"/>
+                </linearGradient>
+              </defs>
+              <circle cx="50" cy="50" r="42" stroke="url(#nav-orbital)" stroke-width="3.5" fill="none"
+                stroke-linecap="round" stroke-dasharray="180 85" transform="rotate(-45 50 50)"/>
+              <circle cx="50" cy="50" r="32" stroke="hsl(217,91%,65%)" stroke-width="1.5" fill="none"
+                stroke-linecap="round" stroke-dasharray="60 140" transform="rotate(60 50 50)" opacity="0.5"/>
+              <text x="50" y="58" text-anchor="middle" fill="hsl(222,47%,10%)"
+                font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="300">d</text>
+              <circle cx="50" cy="8" r="3" fill="hsl(217,91%,55%)" transform="rotate(-45 50 50)" opacity="0.9"/>
+            </svg>
+          </div>
+          <div class="flex items-baseline gap-0.5">
+            <span class="font-sans font-light tracking-tight text-lg text-[hsl(222,47%,10%)]">danebo</span>
+            <span class="font-sans font-light tracking-widest uppercase opacity-50 text-xs text-[hsl(222,47%,10%)]">.ia</span>
+          </div>
+        </div>
+
+        <%# User actions %>
+        <div class="flex items-center gap-4">
           <% if user_signed_in? %>
-            <div class="nav-user-group">
-              <span class="nav-user"><%= current_user.email %></span>
-              <%= link_to "Cerrar Sesión", destroy_user_session_path, 
-                  data: { turbo_method: :delete }, 
-                  class: "nav-btn nav-btn-logout" %>
-            </div>
+            <span class="text-sm text-[hsl(215,20%,42%)] hidden sm:inline"><%= current_user.email %></span>
+            <%= link_to destroy_user_session_path,
+                data: { turbo_method: :delete },
+                class: "flex items-center gap-2 text-sm text-[hsl(215,20%,42%)] hover:text-[hsl(222,47%,10%)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[hsl(215,20%,93%)]" do %>
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+              </svg>
+              <span class="hidden sm:inline">Cerrar Sesión</span>
+            <% end %>
           <% else %>
-            <%= link_to "Iniciar Sesión", new_user_session_path, 
-                class: "nav-btn nav-btn-login" %>
-            <%= link_to "Registrarse", new_user_registration_path, 
-                class: "nav-btn nav-btn-signup" %>
+            <%= link_to "Iniciar Sesión", new_user_session_path,
+                class: "text-sm text-[hsl(215,20%,42%)] hover:text-[hsl(222,47%,10%)] transition-colors px-3 py-1.5 rounded-lg border border-[hsl(215,20%,88%)] hover:bg-[hsl(215,20%,93%)]" %>
           <% end %>
         </div>
       </div>
     </nav>
 
-    <!-- Flash messages -->
+    <%# Flash messages %>
     <% if notice %>
-      <p class="notice"><%= notice %></p>
+      <div class="fixed bottom-4 right-4 z-50 bg-white/95 backdrop-blur-sm border border-[hsl(215,20%,88%)] rounded-lg px-4 py-3 shadow-sm"
+           data-controller="flash" data-flash-delay-value="5000">
+        <p class="text-sm text-[hsl(222,47%,10%)]"><%= notice %></p>
+      </div>
     <% end %>
     <% if alert %>
-      <p class="alert"><%= alert %></p>
+      <div class="fixed bottom-4 right-4 z-50 bg-red-50 backdrop-blur-sm border border-red-200 rounded-lg px-4 py-3 shadow-sm"
+           data-controller="flash" data-flash-delay-value="5000">
+        <p class="text-sm text-red-700"><%= alert %></p>
+      </div>
     <% end %>
 
-    <%= yield %>
+    <%# Main content %>
+    <div class="relative z-10">
+      <%= yield %>
+    </div>
+
   </body>
 </html>

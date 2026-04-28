@@ -17,30 +17,32 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test 'index lists kb_documents under Archivos en Base de Conocimiento with display_name' do
+  test 'index lists kb_documents under Base de Conocimiento with display_name' do
     KbDocument.create!(s3_key: 'uploads/2026/home_ui.pdf', display_name: 'Manual ascensor', aliases: [])
 
     get root_path
     assert_response :success
-    assert_select 'h3.section-title', text: /Archivos en Base de Conocimiento/
-    assert_select '.document-name-primary', text: 'Manual ascensor'
+    assert_select 'h3', text: 'Base de Conocimiento'
+    assert_select '#documents-list-container p.truncate', text: 'Manual ascensor'
   end
 
-  test 'index renders two summary panels beside chat' do
+  test 'index renders session, recent, and knowledge base panels beside chat' do
     get root_path
     assert_response :success
-    assert_select '.document-container > .summary-box', count: 2
+    assert_select '#session-entities-list-container'
+    assert_select '#technician-documents-list-container'
+    assert_select '#documents-list-container'
   end
 
-  test 'index places overview card between chat and knowledge base files card' do
+  test 'index places session and recent panels before knowledge base files card' do
     get root_path
     assert_response :success
 
-    doc = Nokogiri::HTML(response.body)
-    summary_boxes = doc.at_css('.document-container')&.css('> .summary-box')
-    assert_equal 2, summary_boxes&.size
-    assert_match(/Recientes consultados/, summary_boxes[0].text)
-    assert_match(/Archivos en Base de Conocimiento/, summary_boxes[1].text)
+    body = response.body
+    idx_session = body.index('Archivos en la sesión')
+    idx_recent = body.index('Recientes consultados')
+    idx_kb = body.index('Base de Conocimiento')
+    assert idx_session && idx_recent && idx_kb && idx_session < idx_recent && idx_recent < idx_kb
   end
 
   test 'index overview card lists session files panel above recent documents panel' do
@@ -65,10 +67,12 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     get root_path
     assert_response :success
-    assert_select "h3.section-title", text: "Recientes consultados"
-    assert_select "#technician-documents-list-container .document-number", text: "[1]"
-    assert_select "#technician-documents-list-container .document-name-primary", text: "Manual técnico overview"
-    assert_select "#technician-documents-list-container .document-meta-secondary.document-aliases .document-alias-text", minimum: 1
+    assert_select 'h3', text: 'Recientes consultados'
+    assert_select "#technician-documents-list-container p.truncate", text: 'Manual técnico overview'
+    assert_match(
+      %r{<span[^>]*>\s*1\s*</span>.*Manual técnico overview}m,
+      response.body
+    )
   end
 
   test 'shared MVP session shows active_entities on home without sign_in' do
@@ -83,7 +87,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
       get root_path
       assert_response :success
-      assert_select "#session-entities-list-container .document-name-primary", text: "Entidad sesión compartida MVP"
+      assert_select "#session-entities-list-container span.truncate", text: "Entidad sesión compartida MVP"
     end
   end
 
@@ -98,7 +102,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     get root_path
     assert_response :success
-    assert_select "#session-entities-list-container .document-name-primary", text: "Doc único en BD"
+    assert_select "#session-entities-list-container span.truncate", text: "Doc único en BD"
   end
 
   test 'index overview lists active web session entity keys when signed in' do
@@ -114,8 +118,8 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     sign_in user, scope: :user
     get root_path
     assert_response :success
-    assert_select "h3.section-title", text: "Archivos en la sesión"
-    assert_select "#session-entities-list-container .document-name-primary", text: "Esquema bomba"
+    assert_select 'h3', text: 'Archivos en la sesión'
+    assert_select "#session-entities-list-container span.truncate", text: "Esquema bomba"
   end
 
   test 'should render index with metrics' do
@@ -149,7 +153,8 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     get '/home/metrics'
     assert_response :success
-    assert_match(/chat-usage-footer-metrics/, response.body)
+    assert_match(/data-chat-usage-metrics="true"/, response.body)
+    assert_match(/data-metric-value="tokens"/, response.body)
   end
 
   test 'metrics sync from BedrockQuery when CostMetric missing for today' do

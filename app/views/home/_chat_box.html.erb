@@ -1,73 +1,93 @@
-<!-- Box 1.5: RAG Chat with Knowledge Base -->
-<div class="chat-box" data-controller="rag-chat">
-  <div class="figma-card chat-card-with-footer">
-    <div class="chat-card-body">
-    <div class="chat-header">
-      <div class="chat-icon-wrapper">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="chat-icon">
-          <path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<%# Chat section — spans 2 columns on lg screens %>
+<div class="lg:col-span-2" data-controller="rag-chat">
+  <div class="flex h-[calc(100vh-220px)] min-h-[600px] flex-col overflow-hidden rounded-2xl border border-[hsl(215,20%,88%)] bg-white shadow-sm">
+
+    <%# Chat header %>
+    <div class="flex items-center gap-3 border-b border-[hsl(215,20%,90%)] px-6 py-4 flex-shrink-0">
+      <div class="flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(217,91%,50%,0.08)] flex-shrink-0">
+        <svg class="h-5 w-5 text-[hsl(217,91%,50%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 15c0 .53-.21 1.04-.59 1.41-.37.38-.88.59-1.41.59H7l-4 4V5c0-.53.21-1.04.59-1.41C3.96 3.21 4.47 3 5 3h14c.53 0 1.04.21 1.41.59.38.37.59.88.59 1.41v10z"/>
         </svg>
       </div>
-      <h3 class="chat-title">Chat con Knowledge Base</h3>
-      <p class="chat-subtitle">Haz preguntas sobre los documentos indexados</p>
-    </div>
-    <div class="chat-container" data-rag-chat-target="chatContainer">
-      <div class="chat-messages" data-rag-chat-target="messages">
+      <div>
+        <p class="text-sm font-medium text-[hsl(222,47%,10%)]">Consulta los archivos disponibles en la base de conocimiento</p>
       </div>
     </div>
-    <div class="chat-image-preview" data-rag-chat-target="filePreview" style="display: none;">
-      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f0f4ff; border-radius: 8px; margin: 0 12px 8px;">
-        <img data-rag-chat-target="imageThumb" style="max-height: 48px; max-width: 48px; border-radius: 4px; object-fit: cover; display: none;" />
-        <svg data-rag-chat-target="docIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none; flex-shrink: 0; color: #4a5568;">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+
+    <%# Messages area %>
+    <div class="flex-1 overflow-y-auto px-6 py-4 bg-[hsl(220,20%,98%)]" data-rag-chat-target="chatContainer">
+      <div class="flex flex-col gap-4" data-rag-chat-target="messages"></div>
+    </div>
+
+    <%# File preview %>
+    <div class="chat-image-preview mx-6 mb-2" data-rag-chat-target="filePreview" style="display:none;">
+      <div class="flex items-center gap-2 rounded-lg bg-[hsl(215,20%,95%)] border border-[hsl(215,20%,88%)] px-3 py-2">
+        <img data-rag-chat-target="imageThumb" class="max-h-12 max-w-12 rounded object-cover hidden" alt="">
+        <svg data-rag-chat-target="docIcon" class="h-8 w-8 text-[hsl(215,20%,50%)] hidden flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
           <line x1="16" y1="13" x2="8" y2="13"/>
           <line x1="16" y1="17" x2="8" y2="17"/>
           <polyline points="10 9 9 9 8 9"/>
         </svg>
-        <span data-rag-chat-target="fileName" style="flex: 1; font-size: 12px; color: #4a5568; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
-        <button type="button" data-action="click->rag-chat#removeFile" style="background: none; border: none; cursor: pointer; color: #e53e3e; font-size: 18px; padding: 0 4px;" title="Quitar archivo">&times;</button>
+        <span data-rag-chat-target="fileName" class="flex-1 text-xs text-[hsl(215,20%,42%)] truncate"></span>
+        <button type="button" data-action="click->rag-chat#removeFile"
+                class="rounded-full p-1 hover:bg-[hsl(215,20%,88%)] text-[hsl(215,20%,50%)] hover:text-[hsl(222,47%,10%)] transition-colors"
+                aria-label="Quitar archivo">
+          <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
       </div>
     </div>
-    <div class="chat-input-container">
+
+    <%# Input area %>
+    <div class="border-t border-[hsl(215,20%,90%)] p-4 bg-white flex-shrink-0">
       <form class="chat-composer-form" data-action="submit->rag-chat#sendMessage">
         <input type="file"
                data-rag-chat-target="fileInput"
                data-action="change->rag-chat#selectFile"
-               accept="image/png, image/jpeg, image/gif, image/webp, .txt, .md, .html, .csv, .pdf, .doc, .docx, .xls, .xlsx, text/plain, text/markdown, text/html, text/csv, application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-               style="display: none;">
-        <div class="chat-composer-row">
-          <div class="chat-input-field-wrap">
+               accept="image/png,image/jpeg,image/gif,image/webp,.txt,.md,.html,.csv,.pdf,.doc,.docx,.xls,.xlsx"
+               class="hidden">
+
+        <div class="flex items-end gap-3">
+          <div class="flex flex-1 items-center gap-2 rounded-xl border border-[hsl(215,20%,86%)] bg-[hsl(220,20%,98%)] px-3 py-2 focus-within:border-[hsl(217,91%,50%)] focus-within:ring-1 focus-within:ring-[hsl(217,91%,50%,0.2)]">
             <button type="button"
-                    class="chat-attach-inside"
                     data-action="click->rag-chat#clickAttach"
-                    title="Adjuntar imagen (PNG, JPEG, GIF, WebP) o documento (PDF, Word, Excel, .txt, .md, .html, .csv)"
-                    aria-label="Adjuntar archivo">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="M21.44 11.05L12.25 20.24C11.1242 21.3658 9.59723 21.9983 8.005 21.9983C6.41277 21.9983 4.88583 21.3658 3.76 20.24C2.63417 19.1142 2.00166 17.5872 2.00166 15.995C2.00166 14.4028 2.63417 12.8758 3.76 11.75L12.95 2.56C13.7006 1.80944 14.7186 1.3877 15.78 1.3877C16.8414 1.3877 17.8594 1.80944 18.61 2.56C19.3606 3.31057 19.7823 4.32863 19.7823 5.39C19.7823 6.45137 19.3606 7.46943 18.61 8.22L9.41 17.41C9.03472 17.7853 8.52572 17.9961 7.995 17.9961C7.46428 17.9961 6.95528 17.7853 6.58 17.41C6.20472 17.0347 5.99389 16.5257 5.99389 15.995C5.99389 15.4643 6.20472 14.9553 6.58 14.58L15.07 6.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    class="shrink-0 rounded-lg p-2 text-[hsl(215,20%,50%)] hover:bg-[hsl(215,20%,92%)] hover:text-[hsl(222,47%,10%)] transition-colors"
+                    title="Adjuntar imagen o documento" aria-label="Adjuntar archivo">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
               </svg>
             </button>
             <textarea
-              class="chat-input chat-input--embed"
+              class="min-h-[44px] max-h-[120px] flex-1 resize-none bg-transparent text-sm text-[hsl(222,47%,10%)] placeholder:text-[hsl(215,20%,62%)] focus:outline-none"
               data-rag-chat-target="input"
               data-action="keydown->rag-chat#handleKeyPress"
               placeholder="Escribe tu pregunta aquí..."
               rows="2"></textarea>
           </div>
           <button type="submit"
-                  class="figma-button chat-send-button"
+                  class="h-11 flex items-center gap-2 rounded-xl bg-[hsl(217,91%,50%)] hover:bg-[hsl(217,91%,44%)] text-white font-medium px-5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                   data-rag-chat-target="sendButton">
-            Enviar
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+            </svg>
+            <span class="hidden sm:inline">Enviar</span>
           </button>
         </div>
-        <p class="chat-upload-limits-hint">Imágenes máx. 3.75 MB (JPEG/PNG) · Documentos máx. 50 MB</p>
+        <p class="mt-2 text-center text-[10px] text-[hsl(215,20%,58%)]">
+          Imágenes máx. 3.75 MB (JPEG/PNG) · Documentos máx. 50 MB
+        </p>
       </form>
     </div>
-    </div>
-    <footer class="chat-card-footer" aria-label="Tokens y costo hoy">
-      <div id="chat-usage-metrics-container" class="chat-card-footer-metrics">
+
+    <%# Footer metrics %>
+    <div class="flex items-center justify-end gap-6 border-t border-[hsl(215,20%,90%)] bg-[hsl(220,20%,98%)] px-6 py-3 flex-shrink-0">
+      <div id="chat-usage-metrics-container">
         <%= render partial: "home/chat_usage_footer_metrics", locals: { current_metrics: @current_metrics } %>
       </div>
-    </footer>
+    </div>
+
   </div>
 </div>

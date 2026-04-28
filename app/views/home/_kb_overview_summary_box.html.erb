@@ -1,51 +1,53 @@
-<div class="summary-box">
-  <div class="figma-card summary-card summary-card-overview">
-    <div class="session-overview-stack">
-      <div class="document-info-panel document-info-panel--fill document-info-panel--half">
-        <h3 class="section-title">Archivos en la sesión</h3>
-        <div id="session-entities-list-container" class="documents-list-scroll">
-          <% if @session_entity_keys.any? %>
-            <% @session_entity_keys.each_with_index do |key, index| %>
-              <div class="document-item-card">
-                <div class="document-item-header">
-                  <span class="document-number">[<%= index + 1 %>]</span>
-                  <span class="document-name-primary" title="<%= key %>"><%= key %></span>
-                </div>
-              </div>
-            <% end %>
-          <% else %>
-            <div class="overview-list-empty">
-              <p class="document-placeholder-text">Sin sesión activa o sin archivos</p>
-            </div>
-          <% end %>
+<%# Session Files %>
+<div class="rounded-2xl border border-[hsl(215,20%,88%)] bg-white p-5 shadow-sm">
+  <div class="mb-4 flex items-center gap-2">
+    <svg class="h-4 w-4 text-[hsl(217,91%,50%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M4 7a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"/>
+      <path stroke-linecap="round" stroke-linejoin="round" d="M14 2v5h5"/>
+    </svg>
+    <h3 class="text-sm font-medium text-[hsl(222,47%,10%)]">Archivos en la sesión</h3>
+  </div>
+  <div id="session-entities-list-container" class="space-y-1">
+    <% if @session_entity_keys.any? %>
+      <% @session_entity_keys.each_with_index do |key, index| %>
+        <div class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-[hsl(215,20%,95%)] transition-colors">
+          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[hsl(215,20%,92%)] text-xs font-medium text-[hsl(215,20%,42%)]">
+            <%= index + 1 %>
+          </span>
+          <span class="truncate text-sm text-[hsl(222,47%,10%)]" title="<%= key %>"><%= key %></span>
         </div>
-      </div>
+      <% end %>
+    <% else %>
+      <p class="py-4 text-center text-sm text-[hsl(215,20%,55%)]">Sin sesión activa o sin archivos</p>
+    <% end %>
+  </div>
+</div>
 
-      <div class="document-info-panel document-info-panel--fill document-info-panel--half">
-        <h3 class="section-title">Recientes consultados</h3>
-        <div id="technician-documents-list-container" class="documents-list-scroll">
-          <% if @technician_documents_recent.any? %>
-            <% @technician_documents_recent.each_with_index do |td, index| %>
-              <% used_label = l(td.last_used_at, format: :short) %>
-              <div class="document-item-card">
-                <div class="document-item-header">
-                  <span class="document-number">[<%= index + 1 %>]</span>
-                  <span class="document-name-primary" title="<%= td.canonical_name %>"><%= td.canonical_name %></span>
-                </div>
-                <div class="document-meta-secondary document-aliases" aria-label="<%= used_label %>">
-                  <span class="document-alias-line" title="<%= td.last_used_at.iso8601 %>">
-                    <span class="document-alias-text"><%= used_label %></span>
-                  </span>
-                </div>
-              </div>
-            <% end %>
-          <% else %>
-            <div class="overview-list-empty">
-              <p class="document-placeholder-text">Sin registros</p>
-            </div>
-          <% end %>
+<%# Recent documents %>
+<div class="rounded-2xl border border-[hsl(215,20%,88%)] bg-white p-5 shadow-sm">
+  <div class="mb-4 flex items-center gap-2">
+    <svg class="h-4 w-4 text-[hsl(217,91%,50%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </svg>
+    <h3 class="text-sm font-medium text-[hsl(222,47%,10%)]">Recientes consultados</h3>
+  </div>
+  <div id="technician-documents-list-container" class="space-y-1">
+    <% if @technician_documents_recent.any? %>
+      <% @technician_documents_recent.each_with_index do |td, index| %>
+        <% used_label = l(td.last_used_at, format: :short) %>
+        <div class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-[hsl(215,20%,95%)] transition-colors">
+          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[hsl(215,20%,92%)] text-xs font-medium text-[hsl(215,20%,42%)]">
+            <%= index + 1 %>
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm text-[hsl(222,47%,10%)]" title="<%= td.canonical_name %>"><%= td.canonical_name %></p>
+            <p class="text-xs text-[hsl(215,20%,55%)]" title="<%= td.last_used_at.iso8601 %>"><%= used_label %></p>
+          </div>
         </div>
-      </div>
-    </div>
+      <% end %>
+    <% else %>
+      <p class="py-4 text-center text-sm text-[hsl(215,20%,55%)]">Sin registros</p>
+    <% end %>
   </div>
 </div>

@@ -20,6 +20,7 @@ When shared session is **off**, each WhatsApp number and each web user keeps a *
 - **RAG chat with Knowledge Base integration** — LLMs, embeddings, prompt templates, and custom model configuration, optimized for inference and better results
 - **Hybrid Query Orchestrator (RAG + Text-to-SQL)** — intelligent intent classification routes queries to the Knowledge Base, the client's business database, or both in parallel. Supports three modes: `DATABASE_QUERY`, `KNOWLEDGE_BASE_QUERY`, and `HYBRID_QUERY`
 - **WhatsApp integration** via Twilio webhook — all query modes available through WhatsApp
+- **LLM usage metrics** — async tracking of Bedrock tokens by **source** (`query` vs ingestion parse/embed), WhatsApp **cache hits** (estimated tokens saved), daily rollups in `cost_metrics`, and a **live home footer** updated via Turbo Streams (Solid Queue uses separate worker lanes for WhatsApp RAG, media, and metrics jobs — see [LLM usage metrics & Solid Queue](#llm-usage-metrics--solid-queue))
 
 ## Stack
 
@@ -342,6 +343,34 @@ sequenceDiagram
 | **RagQueryConcern** | `app/controllers/concerns/rag_query_concern.rb` | Shared query logic for all channels (web API, WhatsApp) |
 
 For additional architecture details and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### LLM usage metrics & Solid Queue
+
+Model usage is recorded **asynchronously** so Bedrock calls never wait on DB writes or dashboard broadcasts. `bedrock_queries` stores each event with a **`source`** so interactive chat and ingestion are accounted for separately:
+
+| `source` | Meaning |
+|----------|---------|
+| `query` | End-user RAG / orchestrated LLM usage (**web chat** and **WhatsApp** both funnel here when Bedrock runs) |
+| `ingestion_parse` | Estimated parser tokens after a document finishes KB ingestion |
+| `ingestion_embed` | Estimated embedding tokens for that upload |
+
+**Jobs & data:**
+
+- **`TrackBedrockQueryJob`** (`queue: default`) — enqueued from `BedrockRagService` / `BedrockClient` after each real invocation. Creates a `BedrockQuery`, runs `SimpleMetricsService.update_database_metrics_only` (upserts `CostMetric` for the current day, including per-source tokens and cost), and **broadcasts** a Turbo Stream on the **`metrics`** channel so the **home** chat footer refreshes without reload.
+- **`TrackIngestionUsageJob`** (`default`) — after `BedrockIngestionJob` completes, estimates parse/embed tokens per file and writes the `ingestion_*` rows above.
+- **`TrackWhatsappCacheHitJob`** (`default`) — when WhatsApp serves a reply from **`Rag::WhatsappAnswerCache`** (R3 menu / navigation **without** a new Bedrock call), records a **`WhatsappCacheHit`** (route + optional tokens-saved estimate). Those counts roll into the same daily metrics as real LLM usage.
+
+**Why three Solid Queue worker lanes** (`config/queue.yml`): WhatsApp conversation work and heavy media ingestion must not block **metrics** jobs or each other.
+
+| Queue | Example jobs | Role |
+|-------|----------------|------|
+| **`whatsapp_rag`** | `SendWhatsappReplyJob` | Full WhatsApp reply path (classifier, optional RAG, Twilio). Concurrency is capped to stay within Bedrock rate limits. |
+| **`whatsapp_media`** | `ProcessWhatsappMediaJob` | Download → S3 → KB pipeline; I/O-bound, isolated so it does not starve RAG. |
+| **`default`** | `TrackBedrockQueryJob`, `TrackIngestionUsageJob`, `TrackWhatsappCacheHitJob`, `BedrockIngestionJob`, `DailyMetricsJob` | Token persistence, footer updates, ingestion polling, scheduled metric refresh. |
+
+So: **web** and **WhatsApp** share the same tracking services, but **WhatsApp** runs its reply orchestration on **`whatsapp_rag`** while **every async metrics write and Turbo broadcast** runs on **`default`**. **`DailyMetricsJob`** also refreshes database rollups for the dashboard when scheduled or triggered.
+
+For local development, run **`bin/dev`** (see `Procfile.dev`) so **web**, **CSS**, and **Solid Queue workers** are all up; otherwise enqueued metrics jobs will not run and the footer will look stale.
 
 ### Session-Scoped KB Retrieval & Document Memory Architecture
 

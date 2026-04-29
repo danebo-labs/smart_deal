@@ -17,13 +17,21 @@ module MetricsHelper
     s3_size_bytes = CostMetric.find_by(date: today, metric_type: :s3_total_size)&.value || 0
 
     {
-      today_tokens: CostMetric.find_by(date: today, metric_type: :daily_tokens)&.value || 0,
-      today_cost: CostMetric.find_by(date: today, metric_type: :daily_cost)&.value || 0,
-      today_queries: CostMetric.find_by(date: today, metric_type: :daily_queries)&.value || 0,
-      aurora_acu: CostMetric.find_by(date: today, metric_type: :aurora_acu_avg)&.value || 0,
-      s3_documents: CostMetric.find_by(date: today, metric_type: :s3_documents_count)&.value || 0,
-      s3_size_mb: (s3_size_bytes / 1.megabyte.to_f).round(2),
-      s3_size_gb: (s3_size_bytes / 1.gigabyte.to_f).round(2)
+      today_tokens:        CostMetric.find_by(date: today, metric_type: :daily_tokens)&.value        || 0,
+      today_cost:          CostMetric.find_by(date: today, metric_type: :daily_cost)&.value          || 0,
+      today_queries:       CostMetric.find_by(date: today, metric_type: :daily_queries)&.value       || 0,
+      today_tokens_query:  CostMetric.find_by(date: today, metric_type: :daily_tokens_query)&.value  || 0,
+      today_tokens_parse:  CostMetric.find_by(date: today, metric_type: :daily_tokens_parse)&.value  || 0,
+      today_tokens_embed:  CostMetric.find_by(date: today, metric_type: :daily_tokens_embed)&.value  || 0,
+      today_cost_query:    CostMetric.find_by(date: today, metric_type: :daily_cost_query)&.value    || 0,
+      today_cost_parse:    CostMetric.find_by(date: today, metric_type: :daily_cost_parse)&.value    || 0,
+      today_cost_embed:    CostMetric.find_by(date: today, metric_type: :daily_cost_embed)&.value    || 0,
+      today_cache_hits:    CostMetric.find_by(date: today, metric_type: :daily_cache_hits)&.value    || 0,
+      today_tokens_saved:  CostMetric.find_by(date: today, metric_type: :daily_tokens_saved)&.value  || 0,
+      aurora_acu:          CostMetric.find_by(date: today, metric_type: :aurora_acu_avg)&.value      || 0,
+      s3_documents:        CostMetric.find_by(date: today, metric_type: :s3_documents_count)&.value  || 0,
+      s3_size_mb:          (s3_size_bytes / 1.megabyte.to_f).round(2),
+      s3_size_gb:          (s3_size_bytes / 1.gigabyte.to_f).round(2)
     }
   end
 

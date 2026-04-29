@@ -29,25 +29,40 @@ class SimpleMetricsService
   # This is faster and should be called after each query
   def self.update_database_metrics_only
     today = Date.current
-    queries = BedrockQuery.where(created_at: today.all_day)
+    queries_today = BedrockQuery.where(created_at: today.all_day)
 
-    # Calculate tokens and count using SQL (efficient)
-    tokens = queries.sum("input_tokens + output_tokens")
-    query_count = queries.count
-
-    # Calculate cost using pluck to avoid loading full objects (cost depends on model_id)
-    cost = queries.pluck(:model_id, :input_tokens, :output_tokens).sum do |model_id, input, output|
-      BedrockQuery.new(model_id: model_id, input_tokens: input, output_tokens: output).cost
+    # Per-source breakdown (query / ingestion_parse / ingestion_embed)
+    source_totals = {}
+    %w[query ingestion_parse ingestion_embed].each do |src|
+      rows = queries_today.where(source: src).pluck(:model_id, :input_tokens, :output_tokens)
+      source_totals[src] = {
+        tokens: rows.sum { |_, i, o| i + o },
+        cost:   rows.sum { |m, i, o| BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o).cost }
+      }
     end
 
-    # Use upsert_all for atomic, efficient updates
+    total_tokens = source_totals.values.sum { |v| v[:tokens] }
+    total_cost   = source_totals.values.sum { |v| v[:cost] }
+    query_count  = queries_today.where(source: :query).count
+
+    cache_hits    = WhatsappCacheHit.today.count
+    tokens_saved  = WhatsappCacheHit.today.sum(:tokens_saved_estimate).to_i
+
     # rubocop:disable Rails/SkipsModelValidations
     CostMetric.upsert_all(
       [
-        { date: today, metric_type: :daily_tokens, value: tokens, created_at: Time.current, updated_at: Time.current },
-        { date: today, metric_type: :daily_cost, value: cost, created_at: Time.current, updated_at: Time.current },
-        { date: today, metric_type: :daily_queries, value: query_count, created_at: Time.current, updated_at: Time.current }
-      ],
+        { metric_type: :daily_tokens,       value: total_tokens },
+        { metric_type: :daily_cost,         value: total_cost },
+        { metric_type: :daily_queries,      value: query_count },
+        { metric_type: :daily_tokens_query, value: source_totals["query"][:tokens] },
+        { metric_type: :daily_tokens_parse, value: source_totals["ingestion_parse"][:tokens] },
+        { metric_type: :daily_tokens_embed, value: source_totals["ingestion_embed"][:tokens] },
+        { metric_type: :daily_cost_query,   value: source_totals["query"][:cost] },
+        { metric_type: :daily_cost_parse,   value: source_totals["ingestion_parse"][:cost] },
+        { metric_type: :daily_cost_embed,   value: source_totals["ingestion_embed"][:cost] },
+        { metric_type: :daily_cache_hits,   value: cache_hits },
+        { metric_type: :daily_tokens_saved, value: tokens_saved }
+      ].map { |h| h.merge(date: today, created_at: Time.current, updated_at: Time.current) },
       unique_by: [:date, :metric_type]
     )
     # rubocop:enable Rails/SkipsModelValidations

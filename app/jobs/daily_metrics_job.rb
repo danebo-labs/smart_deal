@@ -12,6 +12,11 @@ class DailyMetricsJob < ApplicationJob
 
     start_time = Time.current
     SimpleMetricsService.new(date).save_daily_metrics
+    # Refresh per-source breakdown + WhatsApp cache_hits / tokens_saved.
+    # save_daily_metrics only writes 6 aggregates (tokens/cost/queries/aurora/s3*);
+    # the dashboard "Actualizar Métricas" button would otherwise leave the home
+    # footer detail metrics stale on a day with no incoming queries.
+    SimpleMetricsService.update_database_metrics_only if date == Date.current
     duration = Time.current - start_time
 
     Rails.logger.info("[DailyMetricsJob] Completed successfully for #{date} in #{duration.round(2)}s")

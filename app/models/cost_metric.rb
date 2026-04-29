@@ -7,7 +7,15 @@ class CostMetric < ApplicationRecord
     daily_queries: 2,
     aurora_acu_avg: 3,
     s3_documents_count: 4,
-    s3_total_size: 5
+    s3_total_size: 5,
+    daily_tokens_query: 6,
+    daily_tokens_parse: 7,
+    daily_tokens_embed: 8,
+    daily_cost_query: 9,
+    daily_cost_parse: 10,
+    daily_cost_embed: 11,
+    daily_cache_hits: 12,
+    daily_tokens_saved: 13
   }
 
   # Ensure metric_type always returns a symbol

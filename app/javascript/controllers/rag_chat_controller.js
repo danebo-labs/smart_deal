@@ -19,33 +19,12 @@ export default class extends Controller {
   connect() {
     this.pendingFile = null
     this.pendingImageQuery = null
-    this.metricsRefreshTimers = []
     this.subscribeToKbSync()
     this.inputTarget?.focus()
   }
 
   disconnect() {
     this.kbSyncSubscription?.unsubscribe()
-    this.clearMetricsRefreshTimers()
-  }
-
-  clearMetricsRefreshTimers() {
-    (this.metricsRefreshTimers || []).forEach((id) => clearTimeout(id))
-    this.metricsRefreshTimers = []
-  }
-
-  /**
-   * TrackBedrockQueryJob runs async (perform_later); metrics are not in DB until it finishes.
-   * In dev, Cable often runs in the web process while jobs run in a separate worker, so Turbo
-   * broadcasts from the job may never reach the browser — poll /home/metrics a few times.
-   */
-  scheduleMetricsRefresh() {
-    this.clearMetricsRefreshTimers()
-    this.updateMetrics()
-    const delays = [400, 1200, 3000, 7000]
-    delays.forEach((ms) => {
-      this.metricsRefreshTimers.push(setTimeout(() => this.updateMetrics(), ms))
-    })
   }
 
   subscribeToKbSync() {
@@ -57,9 +36,10 @@ export default class extends Controller {
       received(data) {
         if (data.status === "indexed" || data.status === "failed") {
           controller.refreshDocuments()
-          if (data.message) {
-            const type = data.status === "indexed" ? "system" : "error"
-            controller.addMessage(data.message, type)
+          if (data.status === "indexed") {
+            controller.addIndexedMessage(data)
+          } else if (data.message) {
+            controller.addMessage(data.message, "error")
           }
 
           if (data.status === "indexed" && controller.pendingImageQuery) {
@@ -251,7 +231,6 @@ export default class extends Controller {
       } else if (data.documents_uploaded?.length) {
         this.addMessage(data.answer, "system")
         this.refreshDocuments()
-        [ 2000, 5000 ].forEach(ms => setTimeout(() => this.refreshDocuments(), ms))
       } else {
         const citations = Array.isArray(data.citations) ? data.citations : []
         if (citations.length) {
@@ -263,8 +242,6 @@ export default class extends Controller {
           this.addMessageHtml(renderReferences(citations), "assistant")
         }
       }
-
-      this.scheduleMetricsRefresh()
     } catch (error) {
       this.removeMessage(loadingId)
       this.addMessage(`Error: ${error.message}`, "error")
@@ -294,7 +271,6 @@ export default class extends Controller {
       if (citations.length) {
         this.addMessageHtml(renderReferences(citations), "assistant")
       }
-      this.scheduleMetricsRefresh()
     } catch (error) {
       this.removeMessage(loadingId)
       this.addMessage(`Error: ${error.message}`, "error")
@@ -416,6 +392,26 @@ export default class extends Controller {
     return div.innerHTML
   }
 
+  addIndexedMessage(data) {
+    const div = document.createElement("div")
+    div.className = "chat-message chat-message-system"
+
+    const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Documento"
+    const aliases = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
+
+    let html = `<span>✅ <strong>${this.escapeHtml(canonical)}</strong> indexado correctamente.</span>`
+    if (aliases) {
+      const pills = aliases.map(a =>
+        `<span style="display:inline-block;background:#e2e8f0;border-radius:9999px;padding:1px 8px;font-size:11px;margin:2px 2px 0 0;">${this.escapeHtml(a)}</span>`
+      ).join("")
+      html += `<div style="margin-top:4px;font-size:12px;color:#4a5568;">Consúltame por: ${pills}</div>`
+    }
+
+    div.innerHTML = html
+    this.messagesTarget.appendChild(div)
+    this.scroll()
+  }
+
   async refreshDocuments() {
     if (window.location.pathname !== '/' && window.location.pathname !== '/home') return
 
@@ -444,39 +440,4 @@ export default class extends Controller {
     }
   }
 
-  async updateMetrics() {
-    // Only update if we're on the home page
-    if (window.location.pathname !== '/' && window.location.pathname !== '/home') {
-      return
-    }
-
-    try {
-      const response = await fetch('/home/metrics', {
-        method: 'GET',
-        headers: {
-          'Accept': 'text/vnd.turbo-stream.html',
-          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content
-        },
-        credentials: 'same-origin'
-      })
-
-      if (!response.ok) return
-
-      // Turbo automatically processes streams when added to DOM
-      const html = await response.text()
-      const parser = new DOMParser()
-      const doc = parser.parseFromString(html, 'text/html')
-      const streams = doc.querySelectorAll('turbo-stream')
-
-      streams.forEach(stream => {
-        const clone = stream.cloneNode(true)
-        document.body.appendChild(clone)
-        // Turbo processes synchronously, remove after a brief delay
-        setTimeout(() => clone.remove(), 100)
-      })
-    } catch (error) {
-      // Silently fail - metrics update is not critical
-      console.error('Error updating metrics:', error)
-    }
-  }
 }

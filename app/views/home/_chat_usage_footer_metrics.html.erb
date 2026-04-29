@@ -1,15 +1,49 @@
-<%# Tokens + cost — targeted by Turbo Stream updates %>
-<div class="flex items-center gap-6" data-chat-usage-metrics="true">
-  <div class="flex items-baseline gap-2" data-metric-type="tokens">
-    <span class="text-[10px] font-semibold tracking-wider text-[hsl(215,20%,52%)] uppercase">Tokens</span>
-    <span class="font-mono text-sm font-semibold text-[hsl(222,47%,10%)] tabular-nums" data-metric-value="tokens">
-      <%= number_with_delimiter(current_metrics[:today_tokens]) %>
-    </span>
+<%# Tokens + cost breakdown — targeted by Turbo Stream updates %>
+<div class="flex flex-col gap-1" data-chat-usage-metrics="true">
+  <div class="flex items-center gap-5 flex-wrap justify-end">
+    <%= render partial: "home/usage_pill", locals: {
+      label:  "Consultas (Haiku)",
+      tokens: current_metrics[:today_tokens_query],
+      cost:   current_metrics[:today_cost_query],
+      strong: false
+    } %>
+
+    <div class="w-px h-6 bg-[hsl(215,20%,88%)]"></div>
+
+    <%= render partial: "home/usage_pill", locals: {
+      label:  "Parsing (Opus)",
+      tokens: current_metrics[:today_tokens_parse],
+      cost:   current_metrics[:today_cost_parse],
+      strong: false
+    } %>
+
+    <div class="w-px h-6 bg-[hsl(215,20%,88%)]"></div>
+
+    <%= render partial: "home/usage_pill", locals: {
+      label:  "Embeddings (Nova)",
+      tokens: current_metrics[:today_tokens_embed],
+      cost:   current_metrics[:today_cost_embed],
+      strong: false
+    } %>
+
+    <div class="w-px h-6 bg-[hsl(215,20%,88%)]"></div>
+
+    <%= render partial: "home/usage_pill", locals: {
+      label:  "Total hoy",
+      tokens: current_metrics[:today_tokens],
+      cost:   current_metrics[:today_cost],
+      strong: true
+    } %>
   </div>
-  <div class="flex items-baseline gap-2" data-metric-type="cost">
-    <span class="text-[10px] font-semibold tracking-wider text-[hsl(215,20%,52%)] uppercase">Costo hoy</span>
-    <span class="font-mono text-sm font-semibold tabular-nums text-red-500" data-metric-value="cost">
-      $<%= current_metrics[:today_cost].round(4) %>
-    </span>
-  </div>
+
+  <% if current_metrics[:today_cache_hits].to_i.positive? %>
+    <p class="text-[10px] text-emerald-600 text-right tabular-nums">
+      Cache WA: <%= number_with_delimiter(current_metrics[:today_cache_hits].to_i) %> hits
+      · ahorro estimado <%= number_with_delimiter(current_metrics[:today_tokens_saved].to_i) %> tok
+    </p>
+  <% end %>
+
+  <p class="text-[10px] text-[hsl(215,20%,55%)] text-right">
+    Estimado · puede variar ±10% vs AWS Cost Explorer
+  </p>
 </div>

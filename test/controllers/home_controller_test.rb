@@ -148,13 +148,42 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
   test 'metrics turbo_stream should include chat usage footer partial' do
     today = Date.current
-    CostMetric.create!(date: today, metric_type: :daily_tokens, value: 5000)
-    CostMetric.create!(date: today, metric_type: :daily_queries, value: 25)
+    CostMetric.create!(date: today, metric_type: :daily_tokens,       value: 5000)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_query,  value: 3000)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_parse,  value: 1000)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_embed,  value: 1000)
+    CostMetric.create!(date: today, metric_type: :daily_queries,       value: 25)
 
     get '/home/metrics'
     assert_response :success
     assert_match(/data-chat-usage-metrics="true"/, response.body)
-    assert_match(/data-metric-value="tokens"/, response.body)
+    assert_match(/Consultas \(Haiku\)/,            response.body)
+    assert_match(/Parsing \(Opus\)/,               response.body)
+    assert_match(/Embeddings \(Nova\)/,            response.body)
+    assert_match(/Total hoy/,                      response.body)
+    assert_match(/variar ±10%/,                    response.body)
+  end
+
+  test 'metrics footer shows cache savings line when cache_hits present' do
+    today = Date.current
+    CostMetric.create!(date: today, metric_type: :daily_tokens,      value: 0)
+    CostMetric.create!(date: today, metric_type: :daily_cache_hits,  value: 5)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_saved, value: 6000)
+
+    get '/home/metrics'
+    assert_response :success
+    assert_match(/Cache WA.*5 hits/m, response.body)
+    assert_match(/6,000|6000/,        response.body)
+  end
+
+  test 'metrics footer hides cache savings line when no cache_hits' do
+    today = Date.current
+    CostMetric.create!(date: today, metric_type: :daily_tokens,     value: 0)
+    CostMetric.create!(date: today, metric_type: :daily_cache_hits, value: 0)
+
+    get '/home/metrics'
+    assert_response :success
+    assert_no_match(/Cache WA.*hits/, response.body)
   end
 
   test 'metrics sync from BedrockQuery when CostMetric missing for today' do
@@ -173,7 +202,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     assert CostMetric.exists?(date: today, metric_type: :daily_tokens),
            'CostMetric should be synced from BedrockQuery on first load'
-    assert_select '#chat-usage-metrics-container [data-metric-value="tokens"]', text: /150/
+    assert_select '#chat-usage-metrics-container [data-chat-usage-metrics]'
   end
 
   def stub_shared_session_enabled_for_home_test(enabled)

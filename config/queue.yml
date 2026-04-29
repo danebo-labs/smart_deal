@@ -15,11 +15,13 @@ default: &default
       processes: 1
       polling_interval: 0.5
 
-    # Bedrock KB ingestion polling (long-running, low concurrency)
+    # Default queue: hosts TrackBedrockQueryJob → metrics-footer broadcast.
+    # 0.25s polling keeps perceived metrics latency under the Doherty 250ms
+    # threshold (cost: 4 SELECTs/sec on solid_queue_ready_executions, trivial).
     - queues: default
       threads: 2
       processes: 1
-      polling_interval: 1
+      polling_interval: 0.25
 
 development:
   <<: *default

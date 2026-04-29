@@ -48,9 +48,14 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
         BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ])
       end
       assert_equal 1, messages.size
-      assert_equal "indexed", messages.first["status"]
-      assert_equal [ "doc.txt" ], messages.first["filenames"]
-      assert_includes messages.first["message"], "doc.txt"
+      payload = messages.first
+      assert_equal "indexed",       payload["status"]
+      assert_equal [ "doc.txt" ],   payload["filenames"]
+      # New contract: message uses canonical_name (stem without extension);
+      # raw filename is preserved in payload["filenames"] for the UI to render.
+      assert_equal "doc",           payload["canonical_name"]
+      assert_equal [],              payload["aliases"]
+      assert_includes payload["message"], "doc"
     end
   end
 

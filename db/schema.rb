@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_17_193449) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_29_000058) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -20,8 +20,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_17_193449) do
     t.integer "latency_ms"
     t.string "model_id"
     t.integer "output_tokens"
+    t.string "source", default: "query", null: false
     t.datetime "updated_at", null: false
     t.text "user_query"
+    t.index [ "source", "created_at" ], name: "index_bedrock_queries_on_source_and_created_at"
   end
 
   create_table "conversation_sessions", force: :cascade do |t|

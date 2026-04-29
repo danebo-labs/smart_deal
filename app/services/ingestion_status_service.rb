@@ -78,6 +78,33 @@ class IngestionStatusService
     []
   end
 
+  # Returns statistics for a completed ingestion job.
+  # Useful for detecting re-ingestions beyond the files the app explicitly uploaded.
+  # @return [Hash] keys: scanned, new_indexed, modified_indexed, deleted, failed
+  def job_statistics(job_id)
+    ds_id = find_data_source_id
+    return {} unless ds_id
+
+    resp  = @client.get_ingestion_job(
+      knowledge_base_id: @kb_id,
+      data_source_id:    ds_id,
+      ingestion_job_id:  job_id
+    )
+    stats = resp.ingestion_job&.statistics
+    return {} unless stats
+
+    {
+      scanned:          stats.number_of_documents_scanned.to_i,
+      new_indexed:      stats.number_of_new_documents_indexed.to_i,
+      modified_indexed: stats.number_of_modified_documents_indexed.to_i,
+      deleted:          stats.number_of_documents_deleted.to_i,
+      failed:           stats.number_of_documents_failed.to_i
+    }
+  rescue StandardError => e
+    Rails.logger.error("IngestionStatusService.job_statistics failed: #{e.message}")
+    {}
+  end
+
   # Clears indexing state when job completes (call from polling or callback).
   def clear_when_complete(job_id)
     info = Rails.cache.read(CACHE_KEY)

@@ -5,6 +5,12 @@ class BedrockQuery < ApplicationRecord
   validates :input_tokens, numericality: { greater_than: 0 }
   validates :output_tokens, numericality: { greater_than_or_equal_to: 0 }
 
+  enum :source, {
+    query:            "query",
+    ingestion_parse:  "ingestion_parse",
+    ingestion_embed:  "ingestion_embed"
+  }, default: :query
+
   BEDROCK_PRICING = {
     # Claude 4.6 / 4.5 — Inference Profiles Globales (prices per 1K tokens, i.e. $/1M)
     'global.anthropic.claude-sonnet-4-6'               => { input: 0.003,  output: 0.015  },
@@ -27,6 +33,7 @@ class BedrockQuery < ApplicationRecord
     'anthropic.claude-3-sonnet-20240229-v1:0'          => { input: 0.003,   output: 0.015  },
     'anthropic.claude-3-haiku-20240307-v1:0'           => { input: 0.00025, output: 0.00125 },
     'amazon.titan-embed-text-v1'                       => { input: 0.0001,  output: 0.0    },
+    'amazon.nova-2-multimodal-embeddings-v1:0'         => { input: 0.0006,  output: 0.0    },
     'default' => { input: 0.00025, output: 0.00125 } # Fallback to Haiku cost estimate
   }.freeze
 

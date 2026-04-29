@@ -14,13 +14,15 @@ class TrackBedrockQueryJob < ApplicationJob
   # @param output_tokens [Integer] Tokens in the completion
   # @param user_query    [String]  Original user question (truncated to 500 chars)
   # @param latency_ms    [Integer] End-to-end latency of the Bedrock call in ms
-  def perform(model_id:, input_tokens:, output_tokens:, user_query:, latency_ms:)
+  # @param source        [String]  Origin: "query" | "ingestion_parse" | "ingestion_embed"
+  def perform(model_id:, input_tokens:, output_tokens:, user_query:, latency_ms:, source: "query")
     BedrockQuery.create!(
       model_id: model_id,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       user_query: user_query.to_s.truncate(500),
-      latency_ms: latency_ms
+      latency_ms: latency_ms,
+      source: source.to_s
     )
 
     SimpleMetricsService.update_database_metrics_only
@@ -42,13 +44,21 @@ class TrackBedrockQueryJob < ApplicationJob
     s3_bytes = CostMetric.find_by(date: today, metric_type: :s3_total_size)&.value || 0
 
     current_metrics = {
-      today_tokens:  CostMetric.find_by(date: today, metric_type: :daily_tokens)&.value  || 0,
-      today_cost:    CostMetric.find_by(date: today, metric_type: :daily_cost)&.value    || 0,
-      today_queries: CostMetric.find_by(date: today, metric_type: :daily_queries)&.value || 0,
-      aurora_acu:    CostMetric.find_by(date: today, metric_type: :aurora_acu_avg)&.value || 0,
-      s3_documents:  CostMetric.find_by(date: today, metric_type: :s3_documents_count)&.value || 0,
-      s3_size_mb:    (s3_bytes / 1.megabyte.to_f).round(2),
-      s3_size_gb:    (s3_bytes / 1.gigabyte.to_f).round(2)
+      today_tokens:        CostMetric.find_by(date: today, metric_type: :daily_tokens)&.value        || 0,
+      today_cost:          CostMetric.find_by(date: today, metric_type: :daily_cost)&.value          || 0,
+      today_queries:       CostMetric.find_by(date: today, metric_type: :daily_queries)&.value       || 0,
+      today_tokens_query:  CostMetric.find_by(date: today, metric_type: :daily_tokens_query)&.value  || 0,
+      today_tokens_parse:  CostMetric.find_by(date: today, metric_type: :daily_tokens_parse)&.value  || 0,
+      today_tokens_embed:  CostMetric.find_by(date: today, metric_type: :daily_tokens_embed)&.value  || 0,
+      today_cost_query:    CostMetric.find_by(date: today, metric_type: :daily_cost_query)&.value    || 0,
+      today_cost_parse:    CostMetric.find_by(date: today, metric_type: :daily_cost_parse)&.value    || 0,
+      today_cost_embed:    CostMetric.find_by(date: today, metric_type: :daily_cost_embed)&.value    || 0,
+      today_cache_hits:    CostMetric.find_by(date: today, metric_type: :daily_cache_hits)&.value    || 0,
+      today_tokens_saved:  CostMetric.find_by(date: today, metric_type: :daily_tokens_saved)&.value  || 0,
+      aurora_acu:          CostMetric.find_by(date: today, metric_type: :aurora_acu_avg)&.value      || 0,
+      s3_documents:        CostMetric.find_by(date: today, metric_type: :s3_documents_count)&.value  || 0,
+      s3_size_mb:          (s3_bytes / 1.megabyte.to_f).round(2),
+      s3_size_gb:          (s3_bytes / 1.gigabyte.to_f).round(2)
     }
 
     Turbo::StreamsChannel.broadcast_update_to(

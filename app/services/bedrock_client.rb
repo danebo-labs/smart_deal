@@ -74,7 +74,8 @@ class BedrockClient
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       user_query: prompt.to_s.truncate(500),
-      latency_ms: latency_ms
+      latency_ms: latency_ms,
+      source: "query"
     )
     Rails.logger.info("BedrockClient: query tracking enqueued (#{input_tokens} in + #{output_tokens} out tokens)")
   rescue StandardError => e

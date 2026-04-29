@@ -36,9 +36,14 @@ class BedrockIngestionJob < ApplicationJob
     service.clear_when_complete(ingestion_job_id)
 
     if status == "COMPLETE"
-      broadcast_indexed(uploaded_filenames)
       notify_indexed(uploaded_filenames, kb_id: kb_id, whatsapp_from: whatsapp_from,
                      whatsapp_to: whatsapp_to, conv_session_id: conv_session_id)
+      TrackIngestionUsageJob.perform_later(
+        uploaded_filenames: Array(uploaded_filenames),
+        ingestion_job_id:   ingestion_job_id,
+        kb_id:              kb_id,
+        data_source_id:     data_source_id
+      )
     else
       reasons = status == "FAILED" ? service.failure_reasons(ingestion_job_id) : []
       message = ingestion_failure_message(reasons)
@@ -64,18 +69,29 @@ class BedrockIngestionJob < ApplicationJob
     end
   end
 
-  def broadcast_indexed(filenames)
-    filenames = Array(filenames).compact
-    message = if filenames.size == 1
-      I18n.t("rag.document_indexed_message", filename: filenames.first)
+  # Broadcasts per-file indexing completion to web clients via ActionCable.
+  # Called after canonical name / alias extraction so the UI can display
+  # the human-readable name and known aliases — same richness as WhatsApp.
+  def broadcast_indexed(filename, result = nil)
+    canonical = result&.dig(:canonical_name).to_s.strip.presence || File.basename(filename, ".*").tr("_-", " ").strip
+    aliases   = Array(result&.dig(:aliases)).first(5).map(&:to_s).compact_blank
+
+    message = if aliases.any?
+      I18n.t("rag.whatsapp_indexed_with_aliases",
+             name: canonical, aliases: aliases.join(", "),
+             default: "✅ #{canonical}\n#{I18n.t('rag.indexed_ask_me_about', default: 'Consúltame por')}: #{aliases.join(', ')}")
     else
-      I18n.t("rag.documents_indexed_message", count: filenames.size)
+      I18n.t("rag.whatsapp_indexed_canonical_only",
+             name: canonical,
+             default: "✅ #{canonical}")
     end
 
     ActionCable.server.broadcast("kb_sync", {
-      status: "indexed",
-      filenames: filenames,
-      message: message
+      status:         "indexed",
+      filenames:      [ filename ],
+      canonical_name: canonical,
+      aliases:        aliases,
+      message:        message
     })
   end
 
@@ -88,6 +104,7 @@ class BedrockIngestionJob < ApplicationJob
       upsert_kb_document(wa_filename, result)
       register_entity(session, wa_filename, result) if session
       body = build_indexed_notification(wa_filename, result)
+      broadcast_indexed(wa_filename, result)
       notify_whatsapp(whatsapp_from, whatsapp_to, body)
     end
   end

@@ -663,4 +663,32 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_equal :es, BedrockRagService.detect_language_from_question(nil)
     end
   end
+
+  # --- Token tracking: AnthropicTokenCounter replaces estimate_tokens ---
+
+  test 'query enqueues TrackBedrockQueryJob with AnthropicTokenCounter tokens, not length/4' do
+    orig_count_query = AnthropicTokenCounter.method(:count_query)
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |**|
+      { input_tokens: 5000, output_tokens: 600 }
+    end
+
+    with_mock_bedrock_client do
+      jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+
+      svc = BedrockRagService.new
+      svc.query('test question')
+
+      track_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs[jobs_before..].select do |j|
+        j[:job] == TrackBedrockQueryJob
+      end
+
+      assert_equal 1, track_jobs.size, 'TrackBedrockQueryJob must be enqueued exactly once'
+      args = track_jobs.first[:args].first
+      assert_equal 5000,    args['input_tokens'],  'input_tokens must come from AnthropicTokenCounter'
+      assert_equal 600,     args['output_tokens'], 'output_tokens must come from AnthropicTokenCounter'
+      assert_equal 'query', args['source'],        'source must be "query"'
+    end
+  ensure
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig_count_query.call(**kwargs) }
+  end
 end

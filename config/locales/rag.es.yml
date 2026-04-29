@@ -16,7 +16,7 @@ es:
     sources_label: "Fuentes:"
     whatsapp_indexed_ask_again: "✅ Archivo indexado y listo para consultas."
     whatsapp_indexed_with_aliases_suffix: "indexado y listo."
-    whatsapp_indexing_failed: "⚠️ No se pudo indexar el archivo después de 3 intentos. Puedes seguir consultando otros documentos. Si lo necesitas, vuelve a enviar la imagen."
+    whatsapp_indexing_failed: "⚠️ No se pudo cargar la imagen. Vuelve a enviarla en unos segundos."
     whatsapp_indexing_conflict: "⚠️ Había otra carga en curso cuando enviaste tu imagen y no se pudo indexar después de 5 intentos. Espera 1-2 minutos y vuelve a enviarla."
     wa_menu:
       title: "Opciones:"

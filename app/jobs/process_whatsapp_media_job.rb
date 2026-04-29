@@ -53,13 +53,17 @@ class ProcessWhatsappMediaJob < ApplicationJob
     end
   end
 
+  # Raised when no images survive download_and_compress (e.g. transient SSL reset).
+  # Subclasses StandardError so retry_on StandardError fires and the user only
+  # gets notified after all MAX_ATTEMPTS are exhausted.
+  class MediaDownloadError < StandardError; end
+
   def perform(from:, to:, body:, media:, message_sid: nil, conv_session_id: nil)
     images = download_and_compress(media)
 
     if images.empty?
       Rails.logger.warn("ProcessWhatsappMediaJob: no usable images for MessageSid=#{message_sid}")
-      send_message(from: to, to: from, body: I18n.t('rag.whatsapp_indexing_failed'))
-      return
+      raise MediaDownloadError, "No usable images downloaded for MessageSid=#{message_sid}"
     end
 
     upload_and_sync(images, whatsapp_from: to, whatsapp_to: from, conv_session_id: conv_session_id)

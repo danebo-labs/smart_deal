@@ -82,17 +82,16 @@ class SendWhatsappReplyJob < ApplicationJob
         structured = Rag::FacetedAnswer.from_cache(cached[:structured])
         msg        = structured.to_section_message(decision.section_key, locale: cached[:locale] || locale)
         if msg.blank?
-          # Defensive: classifier guards against empty sections, but if the
-          # renderer still produces a blank body, fall back to re-rendering
-          # the menu rather than emit an empty Twilio body.
           msg = structured.to_whatsapp_first_message(locale: cached[:locale] || locale)
         end
         log_facet_delivery(to: to, facet_key: decision.section_key, length: msg.length)
+        TrackWhatsappCacheHitJob.perform_later(recipient: to, route: "section_hit")
         [ msg, msg.truncate(200) ]
       when :show_doc_list
         msg = render_doc_list_and_arm_picker(
           to: to, source: decision.source, locale: locale, conv_session: conv_session
         )
+        TrackWhatsappCacheHitJob.perform_later(recipient: to, route: "show_doc_list")
         [ msg, msg.truncate(200) ]
       when :reset_ack_with_picker
         Rag::WhatsappAnswerCache.invalidate(to)
@@ -102,12 +101,14 @@ class SendWhatsappReplyJob < ApplicationJob
           origin: Rag::WhatsappPostResetState::ORIGIN_RESET_PICKER
         )
         msg = reset_ack_message(locale: locale)
+        TrackWhatsappCacheHitJob.perform_later(recipient: to, route: "reset_ack_with_picker")
         [ msg, msg ]
       when :user_reset
         Rag::WhatsappAnswerCache.invalidate(to)
         msg = new_query_ack_message(locale: locale)
         [ msg, msg ]
       when :no_context_help
+        TrackWhatsappCacheHitJob.perform_later(recipient: to, route: "no_context_help")
         [ no_context_help_message(locale: locale), nil ]
       else
         Rag::WhatsappAnswerCache.invalidate(to)

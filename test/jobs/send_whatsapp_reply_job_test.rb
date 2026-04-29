@@ -370,4 +370,39 @@ class SendWhatsappReplyJobTest < ActiveJob::TestCase
   ensure
     Rails.logger.stop_broadcasting_to(tmp_logger)
   end
+
+  # -----------------------------------------------------------------------
+  # Cache consistency: cache hit MUST NOT enqueue TrackBedrockQueryJob
+  # (no Bedrock call = no tokens consumed)
+  # -----------------------------------------------------------------------
+
+  test 'section_hit route enqueues TrackWhatsappCacheHitJob and NOT TrackBedrockQueryJob' do
+    # Pre-seed a valid faceted answer in cache
+    faceted = Rag::FacetedAnswer.new(
+      intent: "IDENTIFICATION", docs: [ "Manual" ], resumen: "Test summary",
+      riesgos: "— sin riesgos específicos documentados para esta consulta.",
+      sections: [ { key: :sec_1, label: "Descripción", body: "Test body", sources: "Manual" } ],
+      menu: [ { slot: 1, label: "⚠️ Riesgos", kind: "__riesgos__" }, { slot: 2, label: "Descripción", kind: "__sec_1__" } ],
+      raw: "", legacy: false
+    )
+    Rag::WhatsappAnswerCache.write(JOB_PARAMS[:to], {
+      question: "original question", question_hash: "abc",
+      structured: faceted.to_cache_hash, citations: [], doc_refs: [],
+      locale: :es, entity_signature: "", intent: "IDENTIFICATION"
+    })
+
+    jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+
+    stub_twilio_client do
+      SendWhatsappReplyJob.perform_now(**JOB_PARAMS.merge(body: "2"))
+    end
+
+    new_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs[jobs_before..]
+    enqueued_types = new_jobs.pluck(:job)
+
+    assert_includes enqueued_types, TrackWhatsappCacheHitJob,
+                    "section_hit must enqueue TrackWhatsappCacheHitJob"
+    assert_not_includes enqueued_types, TrackBedrockQueryJob,
+                    "section_hit must NOT enqueue TrackBedrockQueryJob (cache hit → 0 tokens)"
+  end
 end

@@ -16,15 +16,22 @@ export default class extends Controller {
   static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
   static BINARY_DOC_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"]
 
+  // SVG icons for mobile message avatars
+  static USER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`
+  static BOT_SVG  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`
+
   connect() {
     this.pendingFile = null
     this.pendingImageQuery = null
     this.subscribeToKbSync()
     this.inputTarget?.focus()
+    this.setupMobileLayout()
   }
 
   disconnect() {
     this.kbSyncSubscription?.unsubscribe()
+    this.mobilePanelObserver?.disconnect()
+    window.removeEventListener("resize", this._onResize)
   }
 
   subscribeToKbSync() {
@@ -214,7 +221,7 @@ export default class extends Controller {
     const fileToSend = this.pendingFile
     this.removeFile()
 
-    const loadingId = this.addMessage("Thinking…", "assistant", true)
+    const loadingId = this.addLoadingMessage()
 
     try {
       const data = await this.ask(question, fileToSend)
@@ -252,7 +259,7 @@ export default class extends Controller {
 
   async sendTextQuery(question) {
     this.disableForm()
-    const loadingId = this.addMessage("Thinking…", "assistant", true)
+    const loadingId = this.addLoadingMessage()
 
     try {
       const data = await this.ask(question, null)
@@ -320,50 +327,109 @@ export default class extends Controller {
     this.inputTarget.focus()
   }
 
-  addMessage(text, type, temporary = false) {
-    const id = `msg-${Date.now()}`
-    const div = document.createElement("div")
+  // ── Mobile layout: expand docs panel when chat is empty ──────────────────
 
-    div.id = id
-    div.className = `chat-message chat-message-${type}`
-    if (temporary) div.dataset.temporary = true
+  setupMobileLayout() {
+    this.updateMobileLayout()
+    this.mobilePanelObserver = new MutationObserver(() => this.updateMobileLayout())
+    this.mobilePanelObserver.observe(this.messagesTarget, { childList: true })
+    this._onResize = () => this.updateMobileLayout()
+    window.addEventListener("resize", this._onResize, { passive: true })
+  }
 
-    div.textContent = text
-    this.messagesTarget.appendChild(div)
+  updateMobileLayout() {
+    const docsPanel = this.element.querySelector(".mobile-docs-panel")
+    if (!docsPanel) return
+    // Only apply on mobile — when md:hidden is active, display is "none"
+    if (window.getComputedStyle(docsPanel).display === "none") return
+
+    const hasMessages = this.messagesTarget.children.length > 0
+    if (hasMessages) {
+      docsPanel.style.cssText = "flex: 0 0 42%;"
+      this.chatContainerTarget.style.cssText = ""
+    } else {
+      // Empty chat: docs panel fills all available space; messages area collapses
+      docsPanel.style.cssText = "flex: 1 1 0%;"
+      this.chatContainerTarget.style.cssText = "flex: 0 0 0%; overflow: hidden;"
+    }
+  }
+
+  // ── Message row builder (avatar + bubble wrapper) ─────────────────────────
+  // Each message is wrapped in a flex row:
+  //   user      → flex-row-reverse (avatar right, bubble left, both pushed right)
+  //   assistant → flex-row (avatar left, bubble right)
+  //   system    → centered, no avatar
+
+  _buildMessageRow(type, id = null, temporary = false) {
+    const isUser   = type === "user"
+    const isSystem = type === "system"
+
+    const row = document.createElement("div")
+    row.className = `chat-row chat-row-${isUser ? "user" : isSystem ? "system" : "assistant"}`
+    if (id) row.id = id
+    if (temporary) row.dataset.temporary = true
+
+    if (!isSystem) {
+      const avatar = document.createElement("div")
+      avatar.className = `chat-avatar ${isUser ? "chat-avatar-user" : "chat-avatar-bot"}`
+      avatar.innerHTML = isUser ? this.constructor.USER_SVG : this.constructor.BOT_SVG
+      row.appendChild(avatar)
+    }
+
+    const bubble = document.createElement("div")
+    bubble.className = `chat-message chat-message-${type}`
+    row.appendChild(bubble)
+
+    return row
+  }
+
+  addLoadingMessage() {
+    const id  = `msg-${Date.now()}`
+    const row = this._buildMessageRow("assistant", id, true)
+    row.querySelector(".chat-message").innerHTML =
+      `<span style="display:inline-flex;gap:5px;align-items:center;padding:2px 0;">` +
+      `<span class="chat-typing-dot"></span>` +
+      `<span class="chat-typing-dot"></span>` +
+      `<span class="chat-typing-dot"></span>` +
+      `</span>`
+    this.messagesTarget.appendChild(row)
     this.scroll()
-
     return id
   }
 
+  addMessage(text, type, temporary = false) {
+    const id  = `msg-${Date.now()}`
+    const row = this._buildMessageRow(type, id, temporary)
+    row.querySelector(".chat-message").textContent = text
+    this.messagesTarget.appendChild(row)
+    this.scroll()
+    return id
+  }
+
+  addMessageHtml(html, type) {
+    const row = this._buildMessageRow(type)
+    row.querySelector(".chat-message").innerHTML = html
+    this.messagesTarget.appendChild(row)
+    this.scroll()
+  }
+
   addImageMessage(imageSrc, text) {
-    const div = document.createElement("div")
-    div.className = "chat-message chat-message-user"
-
-    let html = `<img src="${imageSrc}" style="max-width: 200px; max-height: 150px; border-radius: 8px; display: block; margin-bottom: 4px;" />`
+    const row = this._buildMessageRow("user")
+    const bubble = row.querySelector(".chat-message")
+    let html = `<img src="${imageSrc}" style="max-width:200px;max-height:150px;border-radius:8px;display:block;margin-bottom:4px;" />`
     if (text) html += `<span>${this.escapeHtml(text)}</span>`
-
-    div.innerHTML = html
-    this.messagesTarget.appendChild(div)
+    bubble.innerHTML = html
+    this.messagesTarget.appendChild(row)
     this.scroll()
   }
 
   addDocumentMessage(filename, text) {
-    const div = document.createElement("div")
-    div.className = "chat-message chat-message-user"
-
-    let html = `<span style="font-size: 12px; color: #4a5568;">📄 ${this.escapeHtml(filename)}</span>`
+    const row = this._buildMessageRow("user")
+    const bubble = row.querySelector(".chat-message")
+    let html = `<span style="font-size:12px;color:#4a5568;">📄 ${this.escapeHtml(filename)}</span>`
     if (text) html += `<br><span>${this.escapeHtml(text)}</span>`
-
-    div.innerHTML = html
-    this.messagesTarget.appendChild(div)
-    this.scroll()
-  }
-
-  addMessageHtml(html, type) {
-    const div = document.createElement("div")
-    div.className = `chat-message chat-message-${type}`
-    div.innerHTML = html
-    this.messagesTarget.appendChild(div)
+    bubble.innerHTML = html
+    this.messagesTarget.appendChild(row)
     this.scroll()
   }
 
@@ -386,6 +452,29 @@ export default class extends Controller {
     }
   }
 
+  // Mobile: tap a KB document card to append/remove [DocName] from the textarea
+  toggleDocSelection(event) {
+    const btn = event.currentTarget
+    const docName = btn.dataset.docName
+    const docTag = `[${docName}]`
+    const isSelected = btn.dataset.selected === "true"
+    const checkbox = btn.querySelector(".mobile-doc-checkbox")
+
+    if (isSelected) {
+      btn.dataset.selected = "false"
+      if (checkbox) checkbox.innerHTML = ""
+      const lines = this.inputTarget.value.split("\n")
+      this.inputTarget.value = lines.filter(l => l.trim() !== docTag).join("\n").trim()
+    } else {
+      btn.dataset.selected = "true"
+      if (checkbox) {
+        checkbox.innerHTML = `<svg style="width:14px;height:14px;display:block;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
+      }
+      const current = this.inputTarget.value.trim()
+      this.inputTarget.value = current ? `${current}\n${docTag}` : docTag
+    }
+  }
+
   escapeHtml(text) {
     const div = document.createElement("div")
     div.textContent = text
@@ -393,8 +482,8 @@ export default class extends Controller {
   }
 
   addIndexedMessage(data) {
-    const div = document.createElement("div")
-    div.className = "chat-message chat-message-system"
+    const row = this._buildMessageRow("system")
+    const bubble = row.querySelector(".chat-message")
 
     const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Documento"
     const aliases = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
@@ -407,8 +496,8 @@ export default class extends Controller {
       html += `<div style="margin-top:4px;font-size:12px;color:#4a5568;">Consúltame por: ${pills}</div>`
     }
 
-    div.innerHTML = html
-    this.messagesTarget.appendChild(div)
+    bubble.innerHTML = html
+    this.messagesTarget.appendChild(row)
     this.scroll()
   }
 

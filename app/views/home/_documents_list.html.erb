@@ -11,7 +11,7 @@
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-[hsl(222,47%,10%)]" title="<%= title %>"><%= title %></p>
           <% if aliases_line.any? %>
-            <div class="mt-1 flex flex-wrap gap-1">
+            <div class="mt-1 hidden sm:flex flex-wrap gap-1">
               <% aliases_line.each do |alias_text| %>
                 <span class="rounded bg-[hsl(217,91%,96%)] border border-[hsl(217,91%,88%)] px-1.5 py-0.5 text-[10px] text-[hsl(217,91%,40%)]" title="<%= alias_text %>">
                   <%= alias_text %>
@@ -19,6 +19,7 @@
               <% end %>
             </div>
           <% end %>
+          <p class="text-xs text-[hsl(215,20%,55%)]"><%= l(doc.created_at, format: :short) %></p>
         </div>
         <svg class="h-4 w-4 shrink-0 text-[hsl(215,20%,62%)] opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/>

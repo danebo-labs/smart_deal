@@ -1,9 +1,14 @@
 <%# Chat section — spans 2 columns on lg screens %>
 <div class="lg:col-span-2" data-controller="rag-chat">
-  <div class="flex h-[calc(100vh-220px)] min-h-[600px] flex-col overflow-hidden rounded-2xl border border-[hsl(215,20%,88%)] bg-white shadow-sm">
+  <%#
+    Mobile:  full viewport height minus the fixed nav (56 px = h-14) + gradient bar (2 px).
+    Desktop: viewport minus nav + page header + page padding.
+  %>
+  <div class="flex h-[calc(100vh-58px)] md:h-[calc(100vh-220px)] md:min-h-[600px] flex-col overflow-hidden
+              rounded-none md:rounded-2xl border-0 md:border border-[hsl(215,20%,88%)] bg-white md:shadow-sm">
 
-    <%# Chat header %>
-    <div class="flex items-center gap-3 border-b border-[hsl(215,20%,90%)] px-6 py-4 flex-shrink-0">
+    <%# Chat header — desktop only %>
+    <div class="hidden md:flex items-center gap-3 border-b border-[hsl(215,20%,90%)] px-6 py-4 flex-shrink-0">
       <div class="flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(217,91%,50%,0.08)] flex-shrink-0">
         <svg class="h-5 w-5 text-[hsl(217,91%,50%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 15c0 .53-.21 1.04-.59 1.41-.37.38-.88.59-1.41.59H7l-4 4V5c0-.53.21-1.04.59-1.41C3.96 3.21 4.47 3 5 3h14c.53 0 1.04.21 1.41.59.38.37.59.88.59 1.41v10z"/>
@@ -14,13 +19,76 @@
       </div>
     </div>
 
-    <%# Messages area %>
-    <div class="flex-1 overflow-y-auto px-6 py-4 bg-[hsl(220,20%,98%)]" data-rag-chat-target="chatContainer">
-      <div class="flex flex-col gap-4" data-rag-chat-target="messages"></div>
-    </div>
+    <%# Content area: flex column, takes all remaining height %>
+    <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+      <%# ── MOBILE: KB documents panel ──
+           Default h managed by JS (updateMobileLayout):
+           • empty chat  → flex: 1 1 0% (fills almost all space)
+           • active chat → flex: 0 0 42%
+      %>
+      <div class="mobile-docs-panel md:hidden border-b border-[hsl(215,20%,90%)] overflow-y-auto overscroll-contain">
+        <% kb_docs = @kb_documents || KbDocument.none %>
+        <% if kb_docs.any? %>
+          <div class="space-y-1.5 p-3">
+            <% kb_docs.each do |doc| %>
+              <% doc_ext = File.extname(doc.s3_key.to_s).downcase %>
+              <% doc_is_image = %w[.png .jpg .jpeg].include?(doc_ext) %>
+              <% aliases_list = doc.simplest_display_aliases(1) %>
+              <% title = doc.display_name.presence || aliases_list.first.presence || doc.s3_key.to_s %>
+              <button type="button"
+                      data-action="click->rag-chat#toggleDocSelection"
+                      data-doc-name="<%= title %>"
+                      data-selected="false"
+                      class="mobile-doc-btn group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left border-2 border-transparent bg-[hsl(215,20%,96%)] transition-all duration-200 active:scale-[0.98]">
+                <%# Thumbnail %>
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[hsl(215,20%,90%)] overflow-hidden">
+                  <% if doc_is_image %>
+                    <svg class="h-5 w-5 text-[hsl(215,20%,52%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                      <circle cx="9" cy="9" r="2"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                    </svg>
+                  <% else %>
+                    <svg class="h-5 w-5 text-[hsl(215,20%,52%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="9" y1="13" x2="15" y2="13"/>
+                      <line x1="9" y1="17" x2="15" y2="17"/>
+                    </svg>
+                  <% end %>
+                </div>
+                <%# Doc info %>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium text-[hsl(222,47%,10%)]"><%= title %></p>
+                  <p class="truncate text-[11px] text-[hsl(215,20%,52%)] mt-0.5"><%= l(doc.created_at, format: :short) %></p>
+                </div>
+                <%# Checkbox indicator %>
+                <span class="mobile-doc-checkbox flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[hsl(215,20%,88%)] transition-all"></span>
+              </button>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="flex flex-col items-center justify-center h-full gap-3 py-8">
+            <svg class="h-10 w-10 text-[hsl(215,20%,75%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <p class="text-sm text-[hsl(215,20%,55%)]">Sin documentos en la base de conocimiento</p>
+          </div>
+        <% end %>
+      </div>
+
+      <%# ── Messages scroll area (mobile bottom 58 % + full desktop) ── %>
+      <div class="flex-1 overflow-y-auto overscroll-contain px-4 md:px-6 py-4 bg-[hsl(220,20%,98%)]"
+           data-rag-chat-target="chatContainer">
+        <div class="flex flex-col gap-4" data-rag-chat-target="messages"></div>
+      </div>
+
+    </div><%# /content area %>
 
     <%# File preview %>
-    <div class="chat-image-preview mx-6 mb-2" data-rag-chat-target="filePreview" style="display:none;">
+    <div class="chat-image-preview mx-3 md:mx-6 mb-2" data-rag-chat-target="filePreview" style="display:none;">
       <div class="flex items-center gap-2 rounded-lg bg-[hsl(215,20%,95%)] border border-[hsl(215,20%,88%)] px-3 py-2">
         <img data-rag-chat-target="imageThumb" class="max-h-12 max-w-12 rounded object-cover hidden" alt="">
         <svg data-rag-chat-target="docIcon" class="h-8 w-8 text-[hsl(215,20%,50%)] hidden flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -42,7 +110,7 @@
     </div>
 
     <%# Input area %>
-    <div class="border-t border-[hsl(215,20%,90%)] p-4 bg-white flex-shrink-0">
+    <div class="border-t border-[hsl(215,20%,90%)] p-3 md:p-4 bg-white flex-shrink-0">
       <form class="chat-composer-form" data-action="submit->rag-chat#sendMessage">
         <input type="file"
                data-rag-chat-target="fileInput"
@@ -50,40 +118,56 @@
                accept="image/png,image/jpeg,image/gif,image/webp,.txt,.md,.html,.csv,.pdf,.doc,.docx,.xls,.xlsx"
                class="hidden">
 
-        <div class="flex items-end gap-3">
-          <div class="flex flex-1 items-center gap-2 rounded-xl border border-[hsl(215,20%,86%)] bg-[hsl(220,20%,98%)] px-3 py-2 focus-within:border-[hsl(217,91%,50%)] focus-within:ring-1 focus-within:ring-[hsl(217,91%,50%,0.2)]">
-            <button type="button"
-                    data-action="click->rag-chat#clickAttach"
-                    class="shrink-0 rounded-lg p-2 text-[hsl(215,20%,50%)] hover:bg-[hsl(215,20%,92%)] hover:text-[hsl(222,47%,10%)] transition-colors"
-                    title="Adjuntar imagen o documento" aria-label="Adjuntar archivo">
-              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-              </svg>
-            </button>
-            <textarea
-              class="min-h-[44px] max-h-[120px] flex-1 resize-none bg-transparent text-sm text-[hsl(222,47%,10%)] placeholder:text-[hsl(215,20%,62%)] focus:outline-none"
-              data-rag-chat-target="input"
-              data-action="keydown->rag-chat#handleKeyPress"
-              placeholder="Escribe tu pregunta aquí..."
-              rows="2"></textarea>
-          </div>
+        <%# Textarea wrapper — full width, bordered %>
+        <div class="flex items-center gap-2 rounded-xl border border-[hsl(215,20%,86%)] bg-[hsl(220,20%,98%)] px-3 py-2 mb-3 focus-within:border-[hsl(217,91%,50%)] focus-within:ring-1 focus-within:ring-[hsl(217,91%,50%,0.2)]">
+          <%# Attach button inside box — desktop only %>
+          <button type="button"
+                  data-action="click->rag-chat#clickAttach"
+                  class="hidden sm:flex shrink-0 rounded-lg p-2 text-[hsl(215,20%,50%)] hover:bg-[hsl(215,20%,92%)] hover:text-[hsl(222,47%,10%)] transition-colors"
+                  title="Adjuntar imagen o documento" aria-label="Adjuntar archivo">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+          <textarea
+            class="min-h-[40px] max-h-[120px] flex-1 resize-none bg-transparent text-sm text-[hsl(222,47%,10%)] placeholder:text-[hsl(215,20%,62%)] focus:outline-none"
+            data-rag-chat-target="input"
+            data-action="keydown->rag-chat#handleKeyPress"
+            placeholder="Escribe tu pregunta aquí..."
+            rows="1"></textarea>
+        </div>
+
+        <%# Action row: attach (mobile-only, left) ↔ send (right) %>
+        <div class="flex items-center justify-between sm:justify-end gap-2">
+          <%# Attach — icon button, mobile only %>
+          <button type="button"
+                  data-action="click->rag-chat#clickAttach"
+                  class="sm:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[hsl(215,20%,86%)] bg-[hsl(220,20%,98%)] text-[hsl(215,20%,50%)] hover:bg-[hsl(215,20%,92%)] hover:text-[hsl(222,47%,10%)] transition-colors"
+                  title="Adjuntar imagen o documento" aria-label="Adjuntar archivo">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+
+          <%# Send — icon only on mobile, icon + "Enviar" on desktop %>
           <button type="submit"
-                  class="h-11 flex items-center gap-2 rounded-xl bg-[hsl(217,91%,50%)] hover:bg-[hsl(217,91%,44%)] text-white font-medium px-5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                  class="flex shrink-0 h-10 items-center justify-center gap-2 rounded-xl bg-[hsl(217,91%,50%)] hover:bg-[hsl(217,91%,44%)] text-white font-medium px-4 sm:px-5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   data-rag-chat-target="sendButton">
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
             </svg>
             <span class="hidden sm:inline">Enviar</span>
           </button>
         </div>
-        <p class="mt-2 text-center text-[10px] text-[hsl(215,20%,58%)]">
+
+        <p class="mt-2 text-center text-[10px] text-[hsl(215,20%,58%)] hidden md:block">
           Imágenes máx. 3.75 MB (JPEG/PNG) · Documentos máx. 50 MB
         </p>
       </form>
     </div>
 
-    <%# Footer metrics %>
-    <div class="flex items-center justify-end gap-6 border-t border-[hsl(215,20%,90%)] bg-[hsl(220,20%,98%)] px-6 py-3 flex-shrink-0">
+    <%# Footer metrics — hidden on mobile %>
+    <div class="hidden sm:flex items-center justify-end gap-6 border-t border-[hsl(215,20%,90%)] bg-[hsl(220,20%,98%)] px-6 py-3 flex-shrink-0">
       <div id="chat-usage-metrics-container">
         <%= render partial: "home/chat_usage_footer_metrics", locals: { current_metrics: @current_metrics } %>
       </div>

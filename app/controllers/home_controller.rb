@@ -3,6 +3,8 @@
 class HomeController < ApplicationController
   include MetricsHelper
 
+  before_action :authenticate_user!
+
   def index
     @current_metrics = current_metrics
     @kb_documents = KbDocument.order(created_at: :desc)

@@ -1,11 +1,21 @@
 <%# Live metrics Turbo Stream %>
 <%= turbo_stream_from "metrics" %>
 
-<main class="mx-auto max-w-7xl px-6 pb-12 pt-24">
+<%# Mobile gradient accent bar below fixed nav %>
+<div class="md:hidden h-0.5 mt-14 bg-gradient-to-r from-[hsl(217,91%,50%,0.15)] via-[hsl(217,91%,50%,0.45)] to-[hsl(217,91%,50%,0.15)]"></div>
+
+<main class="mx-auto max-w-7xl px-0 md:px-6 pb-0 md:pb-12 pt-0 md:pt-24">
+  <%# Page header — desktop only %>
+  <div class="mb-8 hidden md:block">
+    <h1 class="text-2xl font-light tracking-tight text-[hsl(222,47%,10%)]">Knowledge Base Chat</h1>
+    <p class="mt-1 text-sm text-[hsl(215,20%,42%)]">Consulta documentos indexados con inteligencia artificial</p>
+  </div>
+
   <%# Dashboard grid: 2/3 chat + 1/3 sidebar %>
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+  <div class="grid grid-cols-1 gap-0 md:gap-6 lg:grid-cols-3">
     <%= render partial: "home/chat_box" %>
-    <div class="flex flex-col gap-6">
+    <%# Sidebar — desktop only %>
+    <div class="hidden lg:flex flex-col gap-6">
       <%= render partial: "home/kb_overview_summary_box" %>
       <%= render partial: "home/documents_summary_box" %>
     </div>

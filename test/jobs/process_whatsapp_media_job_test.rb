@@ -109,13 +109,22 @@ class ProcessWhatsappMediaJobTest < ActiveJob::TestCase
 
   # ─── Download failure ─────────────────────────────────────────────────────────
 
-  test "sends failure notification immediately when no images can be downloaded" do
+  test "sends failure notification when no images can be downloaded after retries exhaust" do
     original_parse = URI.method(:parse)
-    URI.define_singleton_method(:parse) { |_url| raise SocketError, "connection refused" }
+    # Only fail Twilio media fetch URLs; Twilio REST client still uses URI.parse internally.
+    URI.define_singleton_method(:parse) do |url|
+      if url.to_s.include?("api.twilio.com/fake/media")
+        raise SocketError, "connection refused"
+      else
+        original_parse.call(url)
+      end
+    end
 
     with_env("TWILIO_ACCOUNT_SID" => "ACtest", "TWILIO_AUTH_TOKEN" => "tok") do
       stub_twilio_client do |sent|
-        ProcessWhatsappMediaJob.perform_now(**JOB_ARGS)
+        perform_enqueued_jobs do
+          ProcessWhatsappMediaJob.perform_later(**JOB_ARGS)
+        end
         assert_equal 1, sent.size
         assert_equal I18n.t("rag.whatsapp_indexing_failed"), sent.first[:body]
         assert_equal "whatsapp:+14155238886", sent.first[:from]

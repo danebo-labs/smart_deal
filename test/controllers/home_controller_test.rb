@@ -10,6 +10,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
   setup do
     CostMetric.destroy_all
     BedrockQuery.destroy_all
+    sign_in users(:one), scope: :user
   end
 
   test 'should get index' do
@@ -75,7 +76,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
-  test 'shared MVP session shows active_entities on home without sign_in' do
+  test 'shared MVP session shows active_entities on home when signed in' do
     stub_shared_session_enabled_for_home_test(true) do
       ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).delete_all
       ConversationSession.create!(
@@ -105,7 +106,8 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_select "#session-entities-list-container span.truncate", text: "Doc único en BD"
   end
 
-  test 'index overview lists active web session entity keys when signed in' do
+  test 'index overview lists active web session entity keys when SharedSession off' do
+    stub_shared_session_enabled_for_home_test(false) do
     user = users(:one)
     ConversationSession.where(identifier: user.id.to_s, channel: "web").delete_all
     ConversationSession.create!(
@@ -115,11 +117,11 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
       active_entities: { "Esquema bomba" => { "source" => "test" } }
     )
 
-    sign_in user, scope: :user
     get root_path
     assert_response :success
     assert_select 'h3', text: 'Archivos en la sesión'
     assert_select "#session-entities-list-container span.truncate", text: "Esquema bomba"
+    end
   end
 
   test 'should render index with metrics' do

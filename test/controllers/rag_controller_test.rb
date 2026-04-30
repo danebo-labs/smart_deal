@@ -281,7 +281,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test 'returns no_results message in English when Accept-Language is en' do
+  test 'returns no_results message in Spanish (app locale fixed to :es)' do
     sign_in @user
 
     mock = Object.new
@@ -298,7 +298,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
       json = json_response
       assert_equal "success", json["status"]
-      assert_includes json["answer"], "No information was found"
+      assert_includes json["answer"], "No se encontró información"
     end
   end
 

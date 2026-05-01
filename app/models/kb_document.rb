@@ -58,7 +58,7 @@ class KbDocument < ApplicationRecord
   end
 
   # docs: hashes from S3DocumentsService#list_documents (:full_path). kb_by_object_key: index by object_key_for_match.
-  # Newest KbDocument#created_at first; S3 objects without a KB row last (tamaño sigue alineado por fila).
+  # Newest KbDocument#created_at first; S3 objects without a KB row last (size stays row-aligned).
   def self.sort_s3_documents_by_kb_created_at(docs, kb_by_object_key)
     docs.sort_by do |doc|
       kb = kb_by_object_key[doc[:full_path]]

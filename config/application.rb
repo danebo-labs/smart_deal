@@ -25,7 +25,7 @@ module SmartDeal
     # in config/environments, which are processed later.
     #
     config.time_zone = "America/Santiago"
-    # Las filas siguen guardándose en UTC en la DB (c
+    # Rows are still stored in UTC in the database.
     # config.eager_load_paths << Rails.root.join("extras")
   end
 end

@@ -48,7 +48,7 @@ class SendWhatsappReplyJob < ApplicationJob
     ENV.fetch("WA_PROCESSING_ACK_ENABLED", "true") == "true"
   end
 
-  # Sends a short "🛠 Consultando…" bubble before the real RAG reply is
+  # Sends a short processing bubble before the real RAG reply is
   # generated. Fires ONLY on the :new_query branch so cache hits / resets
   # stay silent. Any Twilio failure is swallowed: the ack is a UX nicety,
   # not something that should abort the real answer.
@@ -195,7 +195,7 @@ class SendWhatsappReplyJob < ApplicationJob
     [ first_message, first_message.truncate(500) ]
   end
 
-  # Prepends a one-line "📸 Recién subido: <name>" banner to the first
+  # Prepends a one-line fresh-upload banner to the first
   # message of the new-query branch when the session carries a fresh image
   # upload (≤ FRESH_UPLOAD_WINDOW old, no first_answer_summary yet). The
   # multi-doc retrieval contract is intentionally preserved — this is purely
@@ -360,8 +360,8 @@ class SendWhatsappReplyJob < ApplicationJob
   POST_RESET_BACK_TOKENS = (POST_RESET_HOME_TOKENS + POST_RESET_BACK_ONE_STEP_TOKENS).uniq.freeze
   # Page navigation inside PHASE_PICKING_FROM_LIST. Single-char `+`/`-`
   # tokens are the canonical UX (1 keystroke with gloves); the word aliases
-  # exist so a verbose technician isn't punished. `mas` covers "más" because
-  # WhatsappFollowupClassifier.normalize strips accents before matching.
+  # exist so a verbose technician isn't punished. `mas` covers the accented
+  # Spanish equivalent because WhatsappFollowupClassifier.normalize strips accents.
   POST_RESET_NEXT_PAGE_TOKENS = %w[+ mas siguiente next].freeze
   POST_RESET_PREV_PAGE_TOKENS = %w[- prev anterior previous].freeze
 

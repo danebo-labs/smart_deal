@@ -4,7 +4,7 @@ class DailyMetricsJob < ApplicationJob
   queue_as :default
 
   def perform(date = Date.current)
-    # Observabilidad temporal: rastrear ejecuciones para análisis de uso
+    # Temporary observability: track executions for usage analysis.
     execution_context = caller_locations(1, 3).map(&:to_s).join(' <- ')
     Rails.logger.info("[DailyMetricsJob] Starting execution for #{date}")
     Rails.logger.info("[DailyMetricsJob] Execution context: #{execution_context}")
@@ -14,7 +14,7 @@ class DailyMetricsJob < ApplicationJob
     SimpleMetricsService.new(date).save_daily_metrics
     # Refresh per-source breakdown + WhatsApp cache_hits / tokens_saved.
     # save_daily_metrics only writes 6 aggregates (tokens/cost/queries/aurora/s3*);
-    # the dashboard "Actualizar Métricas" button would otherwise leave the home
+    # the dashboard refresh button would otherwise leave the home
     # footer detail metrics stale on a day with no incoming queries.
     SimpleMetricsService.update_database_metrics_only if date == Date.current
     duration = Time.current - start_time

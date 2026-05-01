@@ -32,11 +32,11 @@
 #
 # Cascade (first match wins):
 #   1. RESET_PICKER_TOKENS (inicio/start/home)    → :reset_ack_with_picker
-#   2. NEW_QUERY_TOKENS   (nuevo/nueva/new/reset) → :user_reset
+#   2. NEW_QUERY_TOKENS   (Spanish and English reset tokens) → :user_reset
 #   3. Cache empty  + digit                       → :no_context_help
 #   4. Cache empty  + anything else               → :new_query (no_cache)
 #   5. Digit N resolves against cached[:structured][:menu]:
-#        kind :riesgos     → :section_hit(:riesgos)
+#        risk slot         → :section_hit(:riesgos)
 #        kind :section     → :section_hit(:sec_<k>)
 #        kind :list_recent → :show_doc_list(source: :recent)
 #        kind :list_all    → :show_doc_list(source: :all)
@@ -50,7 +50,7 @@ module Rag
     Decision = Struct.new(:route, :section_key, :source, :confidence, :reason, :matched_token, keyword_init: true)
 
     # Tokens that force a hard reset ack + post-reset picker (kept separate
-    # from plain "new query" so the existing UX — 1=recientes / 2=existentes —
+    # from plain "new query" so the existing UX — 1=recent / 2=all —
     # stays reachable via a natural word).
     RESET_PICKER_TOKENS = %w[inicio start home].freeze
 

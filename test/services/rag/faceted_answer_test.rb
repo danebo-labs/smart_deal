@@ -55,7 +55,7 @@ module Rag
       assert_equal [ "Manual Orono A1" ], f.sections.first[:sources]
       assert_equal [ "Manual Orono A1", "Transformadores.pdf" ], f.sections[1][:sources]
 
-      # 1 (riesgos) + 4 (sections) + 2 (list_recent + list_all). The legacy
+      # 1 risk slot + 4 sections + 2 listing slots. The legacy
       # __new_query__ row from Haiku is stripped by append_list_options.
       assert_equal 7, f.menu.length
       assert_equal :riesgos,     f.menu[0][:kind]
@@ -184,7 +184,7 @@ module Rag
       msg = FacetedAnswer.parse(INSTALL_SAMPLE).to_whatsapp_first_message(locale: :es)
       assert_match(/📚 \*Fuentes consultadas:\* Manual Orono A1, Transformadores\.pdf/, msg)
       assert_match(/Manual Orono A1/, msg)
-      # 1 riesgos + 4 sections + 2 listing slots → 7 rows. "Nueva consulta" gone.
+      # 1 risks slot + 4 sections + 2 listing slots → 7 rows. Legacy new-query row removed.
       assert_match(/^1 - Riesgos$/, msg)
       assert_no_match(/Nueva consulta/, msg)
       assert_match(/^6 - Archivos recientes consultados$/, msg)
@@ -272,7 +272,7 @@ module Rag
 
     test "menu separates the file-listing slots from query options with a blank line" do
       msg = FacetedAnswer.parse(INSTALL_SAMPLE).to_whatsapp_first_message(locale: :es)
-      # "5 - Verificación" → blank line → "6 - Archivos recientes consultados".
+      # The last dynamic section is followed by a blank line before the file-list slots.
       assert_match(/^5 - Verificación\n\n6 - Archivos recientes consultados$/m, msg)
       # The two list rows themselves stay tight (no extra blank line between them).
       assert_match(/^6 - Archivos recientes consultados\n7 - Todos los archivos$/m, msg)

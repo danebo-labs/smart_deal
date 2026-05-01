@@ -158,7 +158,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_match(/Instalación Orono A1/, result.faceted.resumen)
       assert_equal 2, result.faceted.sections.length
       assert_equal [ 'Manual Orono A1', 'Transformadores.pdf' ], result.faceted.sections[1][:sources]
-      # 1 (riesgos) + 2 (sections) + 2 (list_recent + list_all). Legacy
+      # 1 risk slot + 2 sections + 2 listing slots. Legacy
       # __new_query__ row is stripped by FacetedAnswer.append_list_options.
       assert_equal 5, result.faceted.menu.size
       assert_not result.faceted.menu.any? { |m| m[:kind] == :new_query }, '__new_query__ row must be stripped'

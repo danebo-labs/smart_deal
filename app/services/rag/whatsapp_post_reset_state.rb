@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Transient per-WhatsApp-number state tracking the two-step post-reset picker
-# (1=recientes / 2=existentes → list → pick document → seed query).
+# (1=recent / 2=all → list → pick document → seed query).
 #
 # Lives in Rails.cache (Solid Cache) with a short TTL (5 min). Invariants:
 #   - Only written after :reset_ack (so it never collides with an active

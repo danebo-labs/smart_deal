@@ -3,7 +3,7 @@
 require "digest"
 
 # Per-thread cache of the faceted WhatsApp answer so that menu follow-ups
-# ("1", "riesgos", "voltaje", etc.) can be served without re-invoking
+# ("1", a risk-slot token, "voltage", etc.) can be served without re-invoking
 # Bedrock. Backed by Rails.cache (Solid Cache in this app).
 #
 # Design decisions (see /Users/lahirisan/.cursor/plans/r2_wa_menu_followup_cache_9cca96f4.plan.md):

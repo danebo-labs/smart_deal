@@ -444,7 +444,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_not_includes template, '[PARÁMETROS]'
       assert_not_includes template, '[DETALLE]'
 
-      # Pinned-riesgos safety contract must be explicit.
+      # Pinned risk-section safety contract must be explicit.
       assert_includes template, 'PINNED'
       assert_includes template, 'sin riesgos específicos documentados'
     end

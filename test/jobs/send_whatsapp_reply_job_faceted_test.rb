@@ -134,7 +134,7 @@ class SendWhatsappReplyJobFacetedTest < ActiveJob::TestCase
     body_text = sent.pluck(:body).join("\n")
     assert_match(/📚 \*Fuentes consultadas:\* Manual Orono A1, Transformadores\.pdf/, body_text)
     assert_includes body_text, "Instalación Orono A1"
-    # Menu: 1 riesgos + 4 sections + 2 file-listing slots → 7 rows. No "Nueva consulta".
+    # Menu: 1 risks slot + 4 sections + 2 file-listing slots → 7 rows. Legacy new-query row removed.
     assert_match(/^1 - Riesgos$/, body_text)
     assert_no_match(/Nueva consulta/, body_text)
     assert_match(/^6 - Archivos recientes consultados$/, body_text)
@@ -577,7 +577,7 @@ class SendWhatsappReplyJobFacetedTest < ActiveJob::TestCase
   end
 
   test "tap on empty :riesgos slot re-runs RAG (empty_section_reconsult)" do
-    # First answer has the sentinel "— sin riesgos ..." line
+    # First answer has the "no risks" sentinel line.
     with_mock_orchestrator(answer: SINGLE_DOC_ANSWER) do
       stub_twilio_client do |_s|
         with_twilio_env { SendWhatsappReplyJob.new.perform(to: TO, from: FROM, body: "que es soprel?") }
@@ -684,7 +684,7 @@ class SendWhatsappReplyJobFacetedTest < ActiveJob::TestCase
     QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original.call(*a, **k) }
   end
 
-  # --- back-to-cached-answer (Opción A) ------------------------------------
+  # --- back-to-cached-answer (Option A) ------------------------------------
 
   test "menu list_recent → '0' restores the cached faceted answer (no Bedrock, no reset_ack)" do
     TechnicianDocument.delete_all

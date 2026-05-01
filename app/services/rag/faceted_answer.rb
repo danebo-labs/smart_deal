@@ -6,9 +6,9 @@ require "json"
 #
 #   [INTENT]
 #   [DOCS]      JSON array of short doc names actually used in this answer
-#   [RESUMEN]   compact body shown first
-#   [RIESGOS]   PINNED safety block, ALWAYS present (slot #1 of the menu)
-#   [SECCIONES] 3–5 sections, each "## <label> | <sources csv>" + body
+#   [RESUMEN]   summary block shown first
+#   [RIESGOS]   pinned safety/risk block, ALWAYS present (slot #1 of the menu)
+#   [SECCIONES] 3–5 section blocks, each "## <label> | <sources csv>" + body
 #   [MENU]      "N | LABEL | KIND" (__riesgos__ | __sec_<n>__ | __new_query__)
 #
 # The delivery layer renders ONLY [RESUMEN] + the numbered menu first, then
@@ -174,7 +174,7 @@ module Rag
       resumen.strip.empty? && sections.empty?
     end
 
-    # @param section_key [Symbol] :riesgos or :sec_<n>
+    # @param section_key [Symbol] risk slot (:riesgos) or :sec_<n>
     def section_empty?(section_key)
       return riesgos_empty? if section_key.to_sym == :riesgos
       section = find_section(section_key)
@@ -220,7 +220,7 @@ module Rag
     end
 
     # Follow-up message for a tapped menu slot.
-    # @param section_key [Symbol] :riesgos | :sec_<n>
+    # @param section_key [Symbol] risk slot (:riesgos) or :sec_<n>
     # @param locale      [Symbol]
     # @return [String]
     def to_section_message(section_key, locale: :es)
@@ -286,7 +286,7 @@ module Rag
     # written under a different one.
     #
     # A blank line is inserted right before the first file-listing slot so the
-    # technician visually separates "answers about this query" (riesgos +
+    # technician visually separates "answers about this query" (risks +
     # sections) from "switch context" actions (browse files).
     def render_menu_block(locale:, full:, exclude: nil)
       items =
@@ -428,8 +428,8 @@ module Rag
       end
 
       # [MENU] items: "N | LABEL | __riesgos__|__sec_<n>__|__new_query__"
-      # The parser still accepts legacy tokens (riesgos/parametros/secciones/
-      # detalle) and maps them to :section so old prompts don't break rendering.
+      # The parser still accepts legacy Spanish protocol tokens and maps them
+      # to :section so old prompts don't break rendering.
       def parse_menu(block, sections_count:)
         return [] if block.blank?
         lines = block.to_s.strip.split("\n").map(&:strip).reject(&:empty?)
@@ -481,7 +481,7 @@ module Rag
         end
       end
 
-      # Strips any legacy "Nueva consulta" (__new_query__) row from Haiku's
+      # Strips any legacy new-query (__new_query__) row from Haiku's
       # output, then appends two file-listing slots so the technician can
       # always reach: their recent docs (technician_documents) or the full KB
       # catalog (kb_documents) without typing.

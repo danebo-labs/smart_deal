@@ -15,6 +15,12 @@ es:
   time:
     formats:
       short: "%d/%m/%Y %H:%M"
+  home:
+    lightbox:
+      close:      "Cerrar"
+      aria_label: "Vista ampliada de la imagen"
+      open_aria:  "Ver imagen %{name} en tamaño completo"
+      load_error: "Error al cargar la imagen"
   rag:
     whatsapp_indexed_generic: "✅ Documento procesado y disponible.\nArchivo: %{filename}\nPregúntame sobre este documento."
     whatsapp_indexed_with_aliases: "✅ %{name}\nConsúltame por: %{aliases}"

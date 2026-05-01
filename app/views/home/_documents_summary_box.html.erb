@@ -1,8 +1,9 @@
 <%= render partial: "home/kb_docs_card",
            locals: {
-             kb_documents: @kb_documents || KbDocument.none,
-             has_more:     @kb_docs_has_more || false,
-             variant:      :desktop,
-             next_page:    1,
-             pinned_uris:  @pinned_uris || Set.new
+             kb_documents:      @kb_documents || KbDocument.none,
+             has_more:          @kb_docs_has_more || false,
+             variant:           :desktop,
+             next_page:         1,
+             pinned_uris:       @pinned_uris || Set.new,
+             image_url_service: @image_url_service
            } %>

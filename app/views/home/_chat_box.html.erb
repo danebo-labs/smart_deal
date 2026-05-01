@@ -35,11 +35,12 @@
       <div class="mobile-docs-panel md:hidden border-b border-[hsl(215,20%,90%)] overflow-y-auto overscroll-contain min-h-0">
         <%= render partial: "home/kb_docs_card",
                    locals: {
-                     kb_documents: @kb_documents || KbDocument.none,
-                     has_more:     @kb_docs_has_more || false,
-                     variant:      :mobile,
-                     next_page:    1,
-                     pinned_uris:  @pinned_uris || Set.new
+                     kb_documents:      @kb_documents || KbDocument.none,
+                     has_more:          @kb_docs_has_more || false,
+                     variant:           :mobile,
+                     next_page:         1,
+                     pinned_uris:       @pinned_uris || Set.new,
+                     image_url_service: @image_url_service
                    } %>
       </div>
 

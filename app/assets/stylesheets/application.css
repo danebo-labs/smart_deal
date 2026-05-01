@@ -295,3 +295,97 @@
   background-color: hsl(217, 91%, 50%);
   color: #ffffff;
 }
+
+/* ─── Image Lightbox (injected by image_lightbox_controller.js) ─── */
+.image-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-lightbox-overlay.hidden { display: none; }
+
+.image-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.image-lightbox-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  touch-action: pinch-zoom;
+}
+
+.image-lightbox-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+  filter: blur(12px);
+  transform: scale(1.02);
+  transition: filter 220ms ease-out, transform 220ms ease-out;
+}
+.image-lightbox-stage img[data-loaded="true"] {
+  filter: blur(0);
+  transform: scale(1);
+}
+
+@media (min-width: 768px) {
+  .image-lightbox-stage img {
+    max-width: none;
+    max-height: none;
+  }
+}
+
+.image-lightbox-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  text-align: center;
+  color: rgba(255,255,255,0.92);
+  font-size: 13px;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+.image-lightbox-close {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.image-lightbox-close:hover,
+.image-lightbox-close:focus-visible {
+  background: rgba(0,0,0,0.85);
+  outline: 2px solid hsl(217, 91%, 60%);
+  outline-offset: 2px;
+}

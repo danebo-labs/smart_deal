@@ -25,8 +25,8 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     get root_path
     assert_response :success
     assert_select 'h3', text: 'Base de Conocimiento'
-    assert_select '#kb-docs-desktop-items button[data-doc-name="Manual ascensor"]'
-    assert_select '#kb-docs-mobile-items  button[data-doc-name="Manual ascensor"]'
+    assert_select '#kb-docs-desktop-items [data-doc-name="Manual ascensor"]'
+    assert_select '#kb-docs-mobile-items  [data-doc-name="Manual ascensor"]'
   end
 
   test 'documents action returns turbo_stream updates for both desktop and mobile items' do
@@ -74,14 +74,33 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
   end
 
   test 'kb_docs_card renders thumbnail img only for image extensions with thumbnail row' do
-    pdf = KbDocument.create!(s3_key: 'uploads/2026/foo.pdf', display_name: 'PDF', aliases: [])
-    jpg = KbDocument.create!(s3_key: 'uploads/2026/foo.jpg', display_name: 'JPG', aliases: [])
+    _pdf = KbDocument.create!(s3_key: 'uploads/2026/foo.pdf', display_name: 'PDF', aliases: [])
+    jpg  = KbDocument.create!(s3_key: 'uploads/2026/foo.jpg', display_name: 'JPG', aliases: [])
     jpg.create_thumbnail!(data: "fake", content_type: "image/jpeg", byte_size: 4)
 
+    # Service returns nil gracefully in test (no AWS creds) — thumbnail img still renders via fallback div
     get root_path
-    # One img per layout (desktop + mobile) = 2 total
-    assert_select %(button[data-doc-name="JPG"] img), 2
-    assert_select %(button[data-doc-name="PDF"] img), 0
+    # 2 layouts × 1 image doc × 1 thumb img = 2
+    assert_select %([data-doc-name="JPG"] img), 2
+    assert_select %([data-doc-name="PDF"] img), 0
+  end
+
+  test 'image docs render lightbox data attributes; non-image docs do not' do
+    _pdf = KbDocument.create!(s3_key: 'uploads/2026/foo.pdf', display_name: 'PDF', aliases: [])
+    jpg  = KbDocument.create!(s3_key: 'uploads/2026/foo.jpg', display_name: 'JPG', aliases: [])
+    jpg.create_thumbnail!(data: "fake", content_type: "image/jpeg", byte_size: 4)
+
+    fake_url = "https://signed.example.com/foo.jpg?X-Amz-Signature=fake"
+    fake_svc = Object.new
+    fake_svc.define_singleton_method(:call) { |doc| doc.s3_key.end_with?('.jpg') ? fake_url : nil }
+
+    with_patched_image_url_service(fake_svc) do
+      get root_path
+    end
+    assert_response :ok
+    assert_match(/data-image-lightbox-full-url-value="#{Regexp.escape(fake_url)}"/, response.body)
+    assert_match(/data-image-lightbox-thumb-url-value="data:image\/jpeg;base64,/, response.body)
+    assert_no_match(/data-doc-name="PDF"[^>]*data-image-lightbox-full-url-value/, response.body)
   end
 
   test 'should render index with metrics' do
@@ -200,6 +219,15 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  # Temporarily replace KbDocumentImageUrlService.new with a factory that returns +fake_svc+.
+  # Pure Ruby — no mock library required.
+  def with_patched_image_url_service(fake_svc)
+    KbDocumentImageUrlService.define_singleton_method(:new) { |**_| fake_svc }
+    yield
+  ensure
+    KbDocumentImageUrlService.singleton_class.remove_method(:new)
+  end
 
   def stub_shared_enabled(enabled)
     orig = SharedSession::ENABLED

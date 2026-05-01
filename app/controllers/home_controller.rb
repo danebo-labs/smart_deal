@@ -8,10 +8,11 @@ class HomeController < ApplicationController
   before_action :authenticate_user!
 
   def index
-    @current_metrics  = current_metrics
-    @kb_documents     = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
-    @kb_docs_has_more = KbDocument.count > PAGE_SIZE
-    @pinned_uris      = pinned_uris_for_current_session
+    @current_metrics   = current_metrics
+    @kb_documents      = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
+    @kb_docs_has_more  = KbDocument.count > PAGE_SIZE
+    @pinned_uris       = pinned_uris_for_current_session
+    @image_url_service = KbDocumentImageUrlService.new
   end
 
   def metrics
@@ -25,15 +26,18 @@ class HomeController < ApplicationController
   # Refreshes BOTH the desktop and mobile KB doc lists after an indexing event.
   # Called by rag_chat_controller#refreshDocuments after KbSyncChannel "indexed".
   def documents
-    kb_docs     = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
-    has_more    = KbDocument.count > PAGE_SIZE
-    pinned_uris = pinned_uris_for_current_session
+    kb_docs           = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
+    has_more          = KbDocument.count > PAGE_SIZE
+    pinned_uris       = pinned_uris_for_current_session
+    image_url_service = KbDocumentImageUrlService.new
 
     render turbo_stream: [
       turbo_stream.update("kb-docs-desktop-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
+        partial: "home/kb_docs_card_rows",
+        locals: { kb_documents: kb_docs, pinned_uris: pinned_uris, image_url_service: image_url_service }),
       turbo_stream.update("kb-docs-mobile-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
+        partial: "home/kb_docs_card_rows",
+        locals: { kb_documents: kb_docs, pinned_uris: pinned_uris, image_url_service: image_url_service }),
       sentinel_stream(:desktop, has_more: has_more, page: 1),
       sentinel_stream(:mobile,  has_more: has_more, page: 1)
     ]
@@ -41,20 +45,23 @@ class HomeController < ApplicationController
 
   # Infinite-scroll page fetch (page param is 0-indexed; first scroll fetches page=1).
   def documents_page
-    page        = [ params[:page].to_i, 1 ].max
-    docs        = KbDocument.includes(:thumbnail)
-                            .order(created_at: :desc)
-                            .offset(page * PAGE_SIZE)
-                            .limit(PAGE_SIZE + 1)
-    has_more    = docs.size > PAGE_SIZE
-    kb_docs     = docs.first(PAGE_SIZE)
-    pinned_uris = pinned_uris_for_current_session
+    page              = [ params[:page].to_i, 1 ].max
+    docs              = KbDocument.includes(:thumbnail)
+                                  .order(created_at: :desc)
+                                  .offset(page * PAGE_SIZE)
+                                  .limit(PAGE_SIZE + 1)
+    has_more          = docs.size > PAGE_SIZE
+    kb_docs           = docs.first(PAGE_SIZE)
+    pinned_uris       = pinned_uris_for_current_session
+    image_url_service = KbDocumentImageUrlService.new
 
     streams = [
       turbo_stream.append("kb-docs-desktop-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
+        partial: "home/kb_docs_card_rows",
+        locals: { kb_documents: kb_docs, pinned_uris: pinned_uris, image_url_service: image_url_service }),
       turbo_stream.append("kb-docs-mobile-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
+        partial: "home/kb_docs_card_rows",
+        locals: { kb_documents: kb_docs, pinned_uris: pinned_uris, image_url_service: image_url_service }),
       sentinel_stream(:desktop, has_more: has_more, page: page + 1),
       sentinel_stream(:mobile,  has_more: has_more, page: page + 1)
     ]

@@ -29,6 +29,12 @@
 
 en:
   hello: "Hello world"
+  home:
+    lightbox:
+      close:      "Close"
+      aria_label: "Image full view"
+      open_aria:  "View image %{name} at full size"
+      load_error: "Failed to load image"
   rag:
     whatsapp_indexed_generic: "✅ Document processed and available.\nFile: %{filename}\nAsk me about this document."
     whatsapp_indexed_with_aliases: "✅ %{name}\nAsk me by: %{aliases}"

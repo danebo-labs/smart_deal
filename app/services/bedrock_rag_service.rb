@@ -452,6 +452,11 @@ class BedrockRagService
       - Skip filler intro phrases: no "El documento consiste en...", no "Based on the retrieved chunks..."
       - Field-mentor tone: cordial, direct, technically precise. Not academic, not bureaucratic.
       - Safety warnings remain NON-NEGOTIABLE: include ALL ⚠️ and 🛑 blocks from the chunks regardless of length.
+
+      ## CITATIONS BEYOND USER SELECTION
+      If a "## Session Focus" block is present (the user has explicitly pinned documents) AND your answer references material from documents NOT listed there, call out those documents in **bold** with a brief, human note woven naturally into the prose.
+      Example: "También encontré información relevante en **Manual Orona 3G** que extiende lo que tenías seleccionado."
+      Do NOT list them as a separate section. Do NOT apologize. Just signal it cleanly so the technician knows the response went beyond their pinned set.
     DIRECTIVE
   end
 

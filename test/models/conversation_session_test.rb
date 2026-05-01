@@ -531,31 +531,6 @@ class ConversationSessionTest < ActiveSupport::TestCase
     end
   end
 
-  test 'preload_recent_entities loads up to MAX_ENTITIES docs (not hardcoded 3)' do
-    stub_shared_enabled(false) do
-      TechnicianDocument.delete_all
-      identifier = "whatsapp:+56911110003"
-      channel    = "whatsapp"
-      ConversationSession.where(identifier: identifier, channel: channel).destroy_all
-
-      (ConversationSession::MAX_ENTITIES + 2).times do |i|
-        TechnicianDocument.create!(
-          identifier:     "whatsapp:+5690#{i.to_s.rjust(7, '0')}",
-          channel:        'whatsapp',
-          canonical_name: "Preload Doc #{i}",
-          last_used_at:   i.minutes.ago,
-          interaction_count: 1
-        )
-      end
-
-      session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
-      session.reload
-
-      assert session.entity_count > 3,       "Should load more than the old hardcoded limit of 3"
-      assert session.entity_count <= ConversationSession::MAX_ENTITIES, "Should not exceed MAX_ENTITIES"
-    end
-  end
-
   # ─── reset_procedure! ───────────────────────────────────────────────────────
 
   test 'reset_procedure! clears current_procedure and resets status' do
@@ -574,103 +549,81 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal 'active', s.session_status
   end
 
-  # ─── 3.4 — preload_recent_entities ──────────────────────────────────────────
+  # ─── TTL (30-day sliding window) ────────────────────────────────────────────
 
-  test 'find_or_create_for preloads recent TechnicianDocuments into a new session' do
-    TechnicianDocument.delete_all
-    identifier = "whatsapp:+56900000099"
-    channel    = "whatsapp"
-
-    TechnicianDocument.create!(
-      identifier:        identifier,
-      channel:           channel,
-      canonical_name:    "Junction Box Car Top",
-      aliases:           [ "junction box" ],
-      source_uri:        "s3://bucket/junction_box.pdf",
-      doc_type:          "diagram",
-      last_used_at:      1.hour.ago,
-      interaction_count: 3
-    )
-
-    ConversationSession.where(identifier: identifier, channel: channel).destroy_all
-
-    session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
-    session.reload
-
-    assert session.active_entities.key?("Junction Box Car Top"),
-           "Expected preloaded entity from TechnicianDocument"
-    entity = session.active_entities["Junction Box Car Top"]
-    assert_equal "preloaded_from_history", entity["extraction_method"]
-    assert_equal "s3://bucket/junction_box.pdf", entity["source_uri"]
+  test 'find_or_create_for sets expires_at to 30 days for new web session' do
+    session = ConversationSession.find_or_create_for(identifier: "user-ttl-1", channel: "web")
+    assert_in_delta 30.days.from_now.to_i, session.expires_at.to_i, 5
   end
 
-  test 'find_or_create_for does not preload when session already exists and is active' do
-    TechnicianDocument.delete_all
-    identifier = "whatsapp:+56900000098"
-    channel    = "whatsapp"
-
-    existing = ConversationSession.create!(
-      identifier: identifier, channel: channel, expires_at: 25.minutes.from_now
-    )
-    existing.add_entity("existing.pdf", { "source" => "retrieve_result" })
-
-    TechnicianDocument.create!(
-      identifier: identifier, channel: channel, canonical_name: "Should Not Load",
-      last_used_at: Time.current, interaction_count: 1
-    )
-
-    session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
-    session.reload
-
-    assert_not session.active_entities.key?("Should Not Load"),
-               "preload must NOT run for an existing active session"
-    assert session.active_entities.key?("existing.pdf")
+  test 'refresh! extends expires_at by 30 days (sliding window)' do
+    session = ConversationSession.find_or_create_for(identifier: "user-ttl-2", channel: "web")
+    session.update!(expires_at: 1.day.from_now)
+    session.refresh!
+    assert_in_delta 30.days.from_now.to_i, session.expires_at.to_i, 5
   end
 
-  test 'preload_recent_entities is no-op when no TechnicianDocuments exist' do
-    TechnicianDocument.delete_all
-    identifier = "whatsapp:+56900000097"
-    channel    = "whatsapp"
-    ConversationSession.where(identifier: identifier, channel: channel).destroy_all
+  test 'find_or_create_for reuses an existing non-expired session' do
+    s1 = ConversationSession.find_or_create_for(identifier: "user-ttl-3", channel: "web")
+    s2 = ConversationSession.find_or_create_for(identifier: "user-ttl-3", channel: "web")
+    assert_equal s1.id, s2.id
+  end
 
-    session = ConversationSession.find_or_create_for(identifier: identifier, channel: channel)
+  test 'find_or_create_for destroys and recreates on expiry' do
+    s1 = ConversationSession.find_or_create_for(identifier: "user-ttl-4", channel: "web")
+    s1.update!(expires_at: 1.minute.ago)
+    s2 = ConversationSession.find_or_create_for(identifier: "user-ttl-4", channel: "web")
+    assert_not_equal s1.id, s2.id
+    assert_nil ConversationSession.find_by(id: s1.id)
+  end
+
+  test 'find_or_create_for creates new session with empty active_entities (no preload)' do
+    ConversationSession.where(identifier: "user-ttl-5", channel: "web").destroy_all
+    session = ConversationSession.find_or_create_for(identifier: "user-ttl-5", channel: "web")
     session.reload
-
     assert_equal({}, session.active_entities)
   end
 
-  test 'preload_recent_entities loads docs from global pool regardless of identifier or channel' do
-    TechnicianDocument.delete_all
-    my_identifier    = "whatsapp:+56900000090"
-    other_identifier = "whatsapp:+56900000091"
-    channel          = "whatsapp"
+  # ─── Pin / Unpin ────────────────────────────────────────────────────────────
 
-    ConversationSession.where(identifier: my_identifier, channel: channel).destroy_all
+  test 'pin_kb_document! adds entity with source: user_pin and source_uri' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-1", channel: "web")
+    kb_doc  = KbDocument.create!(s3_key: "uploads/2026/test_pin.pdf", display_name: "Test Pin", aliases: [ "TP" ])
 
-    TechnicianDocument.create!(
-      identifier: other_identifier, channel: channel,
-      canonical_name: "Other Technician Doc",
-      last_used_at: 5.minutes.ago, interaction_count: 1
-    )
-    TechnicianDocument.create!(
-      identifier: my_identifier, channel: channel,
-      canonical_name: "My Technician Doc",
-      last_used_at: 1.minute.ago, interaction_count: 1
-    )
-    TechnicianDocument.create!(
-      identifier: "user:42", channel: "web",
-      canonical_name: "Web Uploaded Doc",
-      last_used_at: 2.minutes.ago, interaction_count: 1
-    )
-
-    session = ConversationSession.find_or_create_for(identifier: my_identifier, channel: channel)
+    assert session.pin_kb_document!(kb_doc)
     session.reload
 
-    assert session.active_entities.key?("My Technician Doc"),
-           "Should preload own doc"
-    assert session.active_entities.key?("Other Technician Doc"),
-           "Should preload doc from other WhatsApp user (global pool)"
-    assert session.active_entities.key?("Web Uploaded Doc"),
-           "Should preload doc uploaded via web (global pool)"
+    entity = session.active_entities["Test Pin"]
+    assert_equal "user_pin", entity["source"]
+    assert_equal "s3://multimodal-source-destination/uploads/2026/test_pin.pdf", entity["source_uri"]
+    assert_includes entity["aliases"], "TP"
+  end
+
+  test 'pin_kb_document! is idempotent by source_uri' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-2", channel: "web")
+    kb_doc  = KbDocument.create!(s3_key: "uploads/2026/idem.pdf", display_name: "Idem", aliases: [])
+
+    session.pin_kb_document!(kb_doc)
+    session.pin_kb_document!(kb_doc)
+    session.reload
+
+    assert_equal 1, session.active_entities.size
+  end
+
+  test 'unpin_kb_document! removes the entity' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-3", channel: "web")
+    kb_doc  = KbDocument.create!(s3_key: "uploads/2026/unpin.pdf", display_name: "Unpin", aliases: [])
+
+    session.pin_kb_document!(kb_doc)
+    assert session.unpin_kb_document!(kb_doc)
+    session.reload
+
+    assert_empty session.active_entities
+  end
+
+  test 'unpin_kb_document! returns false if doc was not pinned' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-4", channel: "web")
+    kb_doc  = KbDocument.create!(s3_key: "uploads/2026/never_pinned.pdf", display_name: "X", aliases: [])
+    assert_not session.unpin_kb_document!(kb_doc)
   end
 end

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ConversationSession < ApplicationRecord
-  EXPIRY_MINUTES = 30
+  EXPIRY_DURATION = 30.days  # web workspace TTL; sliding window via refresh!
   MAX_HISTORY    = 20
   MAX_ENTITIES   = ENV.fetch('SESSION_MAX_ENTITIES', 10).to_i
   MAX_MSG_LENGTH = 300
@@ -34,27 +34,11 @@ class ConversationSession < ApplicationRecord
         identifier:  identifier,
         channel:     channel,
         user_id:     user_id,
-        expires_at:  EXPIRY_MINUTES.minutes.from_now
+        expires_at:  EXPIRY_DURATION.from_now
       )
-      preload_recent_entities(record)
     end
 
     record
-  end
-
-  def self.preload_recent_entities(session)
-    TechnicianDocument.recent.limit(MAX_ENTITIES).each do |td|
-      session.add_entity_with_aliases(td.canonical_name, td.aliases, {
-        "source"               => "technician_memory",
-        "wa_filename"          => td.wa_filename,
-        "source_uri"           => td.source_uri,
-        "doc_type"             => td.doc_type,
-        "first_answer_summary" => td.first_answer_summary,
-        "extraction_method"    => "preloaded_from_history"
-      })
-    end
-  rescue StandardError => e
-    Rails.logger.warn("ConversationSession: preload_recent_entities failed: #{e.message}")
   end
 
   def expired?
@@ -62,7 +46,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def refresh!
-    update!(expires_at: EXPIRY_MINUTES.minutes.from_now)
+    update!(expires_at: EXPIRY_DURATION.from_now)
   end
 
   def reset_procedure!
@@ -167,6 +151,45 @@ class ConversationSession < ApplicationRecord
 
   def entity_count
     active_entities.size
+  end
+
+  # ─── Pinned KB documents (UI checkbox) ─────────────────────────────────────
+
+  # Pin a KbDocument into the session: registers it as a user-driven entity
+  # with source: "user_pin". Idempotent — if a pin with the same source_uri
+  # already exists (regardless of canonical_name), no-op and return true.
+  # @param kb_doc [KbDocument]
+  # @return [Boolean] true on success/no-op, false if URI cannot be resolved
+  def pin_kb_document!(kb_doc)
+    s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+    return false if s3_uri.blank?
+    return true  if find_entity_by_source_uri(s3_uri)
+
+    canonical = kb_doc.display_name.presence || File.basename(kb_doc.s3_key.to_s, ".*")
+    add_entity_with_aliases(
+      canonical,
+      Array(kb_doc.aliases),
+      "source"            => "user_pin",
+      "source_uri"        => s3_uri,
+      "wa_filename"       => File.basename(kb_doc.s3_key.to_s),
+      "extraction_method" => "user_pin"
+    )
+    true
+  end
+
+  # Unpin a KbDocument from the session by source_uri match.
+  # Returns false if the doc was not pinned (no-op).
+  def unpin_kb_document!(kb_doc)
+    s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+    return false if s3_uri.blank?
+
+    key = find_entity_by_source_uri(s3_uri)
+    return false unless key
+
+    entities = active_entities.dup
+    entities.delete(key)
+    update!(active_entities: entities)
+    true
   end
 
   private

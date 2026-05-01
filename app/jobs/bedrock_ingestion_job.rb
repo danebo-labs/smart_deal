@@ -104,7 +104,7 @@ class BedrockIngestionJob < ApplicationJob
         Rails.logger.warn("BedrockIngestionJob: kb_document_id=#{ids[idx]} not found; falling back to filename lookup")
       end
       enrich_kb_document(filename, result, kb_doc: kb_doc)
-      register_entity(session, filename, result) if session
+      register_entity(session, filename, result, kb_doc: kb_doc) if session
       broadcast_indexed(filename, result)
     end
   end
@@ -121,37 +121,17 @@ class BedrockIngestionJob < ApplicationJob
     nil
   end
 
-  def register_entity(session, wa_filename, result)
-    stem   = wa_filename.sub(/\.[^.]+\z/, '')
-    s3_uri = build_s3_uri_for_filename(wa_filename)
-
-    if result
-      key = result[:canonical_name]
-      all_aliases = [ wa_filename, stem ] + result[:aliases]
-      session.add_entity_with_aliases(
-        key,
-        all_aliases,
-        "source"            => "image_upload",
-        "doc_type"          => "field_image",
-        "wa_filename"       => wa_filename,
-        "source_uri"        => s3_uri,
-        "extraction_method" => "chunk_aliases"
-      )
-      Rails.logger.info("BedrockIngestionJob: registered entity '#{key}' with #{all_aliases.size} aliases for #{wa_filename}")
-    else
-      session.add_entity_with_aliases(
-        stem,
-        [ wa_filename ],
-        "source"            => "image_upload",
-        "doc_type"          => "field_image",
-        "wa_filename"       => wa_filename,
-        "source_uri"        => s3_uri,
-        "extraction_method" => "pending_first_query"
-      )
-      Rails.logger.info("BedrockIngestionJob: registered placeholder entity '#{stem}' for #{wa_filename}")
+  def register_entity(session, wa_filename, result, kb_doc:)
+    if kb_doc.nil?
+      Rails.logger.warn("BedrockIngestionJob: register_entity skipped — no KbDocument for #{wa_filename}")
+      return
     end
 
-    persist_to_technician_documents(session, wa_filename, result, s3_uri)
+    if session.pin_kb_document!(kb_doc)
+      Rails.logger.info("BedrockIngestionJob: auto-pinned KbDocument #{kb_doc.id} (#{wa_filename}) to session #{session.id}")
+    end
+
+    persist_to_technician_documents(session, wa_filename, result, kb_doc.display_s3_uri(KbDocument::KB_BUCKET))
   end
 
   # Enriches the pre-created KbDocument row with the Opus canonical name + aliases.
@@ -208,13 +188,6 @@ class BedrockIngestionJob < ApplicationJob
     Rails.logger.info("BedrockIngestionJob: persisted TechnicianDocument '#{canonical}' for #{session.identifier}")
   rescue StandardError => e
     Rails.logger.warn("BedrockIngestionJob: failed to persist TechnicianDocument for #{wa_filename} — #{e.message}")
-  end
-
-  def build_s3_uri_for_filename(filename)
-    m      = filename.match(/\A(?:wa|chat)_(\d{4})(\d{2})(\d{2})_/)
-    date   = m ? "#{m[1]}-#{m[2]}-#{m[3]}" : Date.current.iso8601
-    bucket = ENV.fetch('KNOWLEDGE_BASE_S3_BUCKET', 'multimodal-source-destination')
-    "s3://#{bucket}/uploads/#{date}/#{filename}"
   end
 
   def broadcast_failed(filenames, reason, message = nil)

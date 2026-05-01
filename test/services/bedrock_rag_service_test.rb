@@ -696,4 +696,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   ensure
     AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig_count_query.call(**kwargs) }
   end
+
+  test 'web_delivery_channel_directive includes CITATIONS BEYOND USER SELECTION section' do
+    svc = BedrockRagService.allocate
+    out = svc.send(:web_delivery_channel_directive)
+    assert_match(/CITATIONS BEYOND USER SELECTION/, out)
+    assert_match(/Manual Orona 3G/, out)
+    assert_match(/extiende lo que ten/, out)
+  end
 end

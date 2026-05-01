@@ -260,7 +260,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   # Catalog-level pre-resolution (KbDocumentResolver integration)
   # ============================================
 
-  test 'execute_rag_query injects resolver URIs and context into the orchestrator' do
+  test 'execute_rag_query injects resolver context (not URIs) into the orchestrator' do
     KbDocument.delete_all
     KbDocument.create!(
       s3_key:       "uploads/2026-04-10/Esquema SOPREL.pdf",
@@ -281,10 +281,12 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     begin
       @controller.send(:execute_rag_query, "que es el Esquema SOPREL?", session_context: "prior ctx")
 
-      assert_includes captured[:kwargs][:entity_s3_uris].join(" "), "Esquema SOPREL.pdf"
+      # Resolver only contributes ## Query Resolution to session_context; NOT to entity_s3_uris.
       assert_includes captured[:kwargs][:session_context], "Query Resolution"
       assert_includes captured[:kwargs][:session_context], "Esquema SOPREL"
       assert_includes captured[:kwargs][:session_context], "prior ctx"
+      # entity_s3_uris comes only from pins — empty here since no session
+      assert_equal [], captured[:kwargs][:entity_s3_uris]
     ensure
       QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
     end

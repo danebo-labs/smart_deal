@@ -384,7 +384,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     assert history.any? { |h| h['role'] == 'assistant' }
   end
 
-  test 'ask calls EntityExtractor and populates active_entities from citations' do
+  test 'ask calls KbDocumentEnrichmentService (no session entity registration from citations)' do
     sign_in @user
 
     citations = [ { number: 1, filename: 'guide.pdf', title: 'Guide' } ]
@@ -394,28 +394,10 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
     end
 
-    session = ConversationSession.find_by(identifier: @user.id.to_s, channel: 'web')
-    assert session.active_entities.key?('guide.pdf')
-    assert_equal 'citation_filename_fallback', session.active_entities['guide.pdf']['source']
-  end
-
-  test 'ask registers entity via fallback when citations empty but answer valid and question has filename' do
-    sign_in @user
-
-    mock = create_mock_orchestrator(
-      answer:    'Es un diagrama técnico de circuito de seguridad.',
-      citations: [],
-      session_id: TEST_SESSION_ID
-    )
-
-    with_mock_orchestrator(mock) do
-      post rag_ask_url, params: { question: 'que es circuito2_.jpeg ?' }, as: :json
-    end
-
     assert_response :success
+    # Haiku citations no longer register session entities — only pins do.
     session = ConversationSession.find_by(identifier: @user.id.to_s, channel: 'web')
-    assert session.active_entities.key?('circuito2_.jpeg'),
-           'Filename from question should be registered via fallback'
+    assert_empty session.active_entities
   end
 
   test 'ask does NOT register entity when answer is no-results guardrail' do
@@ -502,6 +484,34 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   ensure
     SharedSession.send(:remove_const, :ENABLED)
     SharedSession.const_set(:ENABLED, orig)
+  end
+
+  test 'ask passes force_entity_filter: true when session has pins' do
+    sign_in @user
+
+    kb_doc  = KbDocument.create!(s3_key: "uploads/2026/q.pdf", display_name: "Q", aliases: [])
+    session = ConversationSession.find_or_create_for(identifier: @user.id.to_s, channel: "web")
+    session.pin_kb_document!(kb_doc)
+
+    captured = {}
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*args, **kwargs|
+      captured.merge!(kwargs)
+      obj = Object.new
+      obj.define_singleton_method(:execute) do
+        { answer: "x", citations: [], retrieved_citations: [], doc_refs: nil, session_id: nil }
+      end
+      obj
+    end
+
+    begin
+      post rag_ask_url, params: { question: "test" }, as: :json
+      assert_response :ok
+      assert_equal true, captured[:force_entity_filter]
+      assert_includes captured[:entity_s3_uris], kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+    end
   end
 
   def json_response

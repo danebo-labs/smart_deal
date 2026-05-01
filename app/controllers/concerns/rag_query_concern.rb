@@ -31,7 +31,7 @@ module RagQueryConcern
   # @return [RagResult]
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil,
                         session_context: nil, conv_session: nil, entity_s3_uris: [],
-                        output_channel: nil, force_entity_filter: false)
+                        output_channel: nil, force_entity_filter: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -43,10 +43,11 @@ module RagQueryConcern
     resolved_response_locale = resolve_response_locale(question, conv_session, override: response_locale)
 
     resolver_matches       = KbDocumentResolver.resolve(question)
-    merged_entity_s3_uris  = merge_resolver_uris(entity_s3_uris, resolver_matches)
+    pinned_uris            = Array(entity_s3_uris).compact
     merged_session_context = merge_resolver_context(session_context, resolver_matches)
 
     resolved_output_channel = output_channel&.to_sym || :web
+    resolved_force_filter   = force_entity_filter.nil? ? pinned_uris.any? : force_entity_filter
 
     result = QueryOrchestratorService.new(
       question,
@@ -57,9 +58,9 @@ module RagQueryConcern
       response_locale:     resolved_response_locale,
       session_context:     merged_session_context,
       conv_session:        conv_session,
-      entity_s3_uris:      merged_entity_s3_uris,
+      entity_s3_uris:      pinned_uris,
       output_channel:      resolved_output_channel,
-      force_entity_filter: force_entity_filter
+      force_entity_filter: resolved_force_filter
     ).execute
 
     sanitized_answer = sanitize_answer(result[:answer], channel: resolved_output_channel)
@@ -220,14 +221,6 @@ module RagQueryConcern
       return locale if locale == :es
     end
     nil
-  end
-
-  def merge_resolver_uris(caller_uris, resolver_matches)
-    return Array(caller_uris) if resolver_matches.blank?
-
-    bucket = ENV.fetch('KNOWLEDGE_BASE_S3_BUCKET', 'multimodal-source-destination')
-    resolver_uris = resolver_matches.filter_map { |d| d.display_s3_uri(bucket) }
-    (Array(caller_uris) + resolver_uris).uniq
   end
 
   def merge_resolver_context(session_context, resolver_matches)

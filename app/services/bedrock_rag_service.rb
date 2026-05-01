@@ -426,8 +426,7 @@ class BedrockRagService
 
     base = "#{base}\n\n#{session_context}" if session_context.present?
     base = "#{base}\n\n#{language_directive_footer(lang_name)}" if lang_name.present?
-    base = "#{base}\n\n#{whatsapp_delivery_channel_directive}" if output_channel&.to_sym == :whatsapp
-    base = "#{base}\n\n#{web_delivery_channel_directive}"       if output_channel&.to_sym == :web
+    base = "#{base}\n\n#{web_delivery_channel_directive}" if output_channel&.to_sym == :web
     base
   end
 
@@ -453,84 +452,6 @@ class BedrockRagService
       - Skip filler intro phrases: no "El documento consiste en...", no "Based on the retrieved chunks..."
       - Field-mentor tone: cordial, direct, technically precise. Not academic, not bureaucratic.
       - Safety warnings remain NON-NEGOTIABLE: include ALL ⚠️ and 🛑 blocks from the chunks regardless of length.
-    DIRECTIVE
-  end
-
-  # Appended only when delivering via WhatsApp. Forces the model to keep the
-  # answer scannable on a phone screen with gloves and harsh light.
-  #
-  # STRUCTURED (dynamic-section) contract:
-  #   - [RIESGOS] is PINNED as menu slot #1, always emitted (safety-critical).
-  #   - [SECCIONES] contains 3–5 sections whose labels are chosen by the model
-  #     according to [INTENT] (installation, troubleshooting, …).
-  #   - Each section declares the source documents used in its body so the
-  #     technician never confuses multi-document answers.
-  #   - The Rails layer appends file-listing options (recent / all) AFTER the
-  #     dynamic sections — Haiku must NOT emit a "Nueva consulta" row anymore;
-  #     any free-text reply IS a new query.
-  def whatsapp_delivery_channel_directive
-    <<~DIRECTIVE.strip
-      # DELIVERY CHANNEL
-      This response will be sent via WhatsApp (small screen, gloves, harsh light). Follow ALL rules below:
-
-      ## FORMATTING
-      - Use only *single asterisk* for bold. NEVER use **double asterisk** or __underscores__.
-      - Use _single underscore_ for italic if needed. Never ~~strikethrough~~ unless marking a fault.
-      - No ## or ### headers inside block contents (## is reserved for section headers inside [SECCIONES]).
-      - No markdown tables. Convert any table to a ① ② ③ numbered list.
-      - Single blank line between paragraphs inside a block.
-
-      ## OUTPUT STRUCTURE (MANDATORY — STRUCTURED WITH DYNAMIC SECTIONS)
-      You MUST emit your response as LABELED BLOCKS, in this exact order, each label on its own line.
-      The delivery layer caches the full response; only [RESUMEN] + the numbered menu are shown first.
-      When the technician taps a number the matching section is served from cache (no extra LLM call).
-
-      [INTENT] <one token: IDENTIFICATION | MAINTENANCE | TROUBLESHOOTING | REPLACEMENT | INSTALLATION | MODERNIZATION | CALIBRATION | EMERGENCY>
-
-      [DOCS]
-      JSON array (strict, double-quoted) listing ONLY the documents actually used in this answer, using short human-facing names — e.g. ["Manual Orono A1", "Transformadores.pdf"]. Max 5 items, ≤40 chars each. Empty array if none apply: []
-
-      [RESUMEN]
-      Friendly field-mentor tone. 2–4 sentences. Under 70 words total. If [DOCS] has ≥2 items, explicitly mention each document by short name so the technician sees the answer spans all of them. No bullets. At most 1 emoji at the very end.
-
-      [RIESGOS]
-      PINNED — ALWAYS emitted, NEVER omitted. Safety warnings drawn from the chunks (LOTO, ESD, voltage, pinch points, mechanical, fall hazards). Verbatim markers where applicable. If the chunks contain NO safety content for this query, write exactly this single line and nothing else: — sin riesgos específicos documentados para esta consulta.
-
-      [SECCIONES]
-      Between 3 and 5 sections chosen by you based on [INTENT]. Each section starts with a header line, followed by its body, followed by a blank line before the next header. Header format (VERBATIM):
-      ## <Section Label> | <source documents CSV drawn from [DOCS]>
-      The <Section Label> must be short (≤40 chars), plain text, no emoji. The CSV lists ONLY documents that actually back this section (subset of [DOCS]). Recommended labels by intent:
-        INSTALLATION   → Consideraciones iniciales, Componentes, Paso a paso, Verificación
-        TROUBLESHOOTING → Síntomas, Diagnóstico, Causa probable, Reparación
-        MAINTENANCE    → Precondiciones, Procedimiento, Periodicidad, Registros
-        IDENTIFICATION → Descripción, Especificaciones, Secciones disponibles
-        REPLACEMENT    → Preparación, Desmontaje, Montaje, Verificación
-        MODERNIZATION  → Evaluación, Actualización, Integración, Validación
-        CALIBRATION    → Preparación, Ajustes, Validación
-      Inside each section body write the FULL detail the technician needs: steps, tools, values, time estimates. This is what they see when they tap the menu number — be thorough, not brief.
-
-      [MENU]
-      One item per line in the exact form: "N | LABEL | KIND"
-      - Slot 1 is ALWAYS: 1 | ⚠️ Riesgos | __riesgos__
-      - Slots 2..N are the dynamic sections in the same order as [SECCIONES]:
-        2 | <Section 1 Label> | __sec_1__
-        3 | <Section 2 Label> | __sec_2__
-        ...
-      Total items = 1 (riesgos) + K sections (3..5) → between 4 and 6 rows.
-      DO NOT emit a "Nueva consulta" / __new_query__ row. Any free-text reply from the
-      user is treated as a new query by the delivery layer; file-listing options are
-      appended to the menu by the application after your output.
-
-      ## EMERGENCY OVERRIDE
-      If [INTENT] is EMERGENCY: put the COMPLETE rescue/emergency protocol inline in [RESUMEN] (ignore the 70-word limit). Still emit [RIESGOS] with critical measures. [SECCIONES] may be empty (write exactly: (—)). [MENU] may be empty ("(—)") — the delivery layer will not render a menu for EMERGENCY.
-
-      ## SAFETY WARNINGS — NON-NEGOTIABLE
-      These MUST appear verbatim inside [RIESGOS] (and in [RESUMEN] for EMERGENCY) when the chunks contain them:
-      - If chunks contain REQUIRES_FIELD_VERIFICATION → write exactly: ⚠️ *REQUIERE VERIFICACIÓN EN CAMPO*
-      - If chunks mark DATA_NOT_AVAILABLE → write exactly: ⚠️ *DATO NO DISPONIBLE*
-      - If chunks mark LOW confidence → include the value AND write: (confianza BAJA — verificar)
-      - If chunks indicate DEGRADED / UNUSABLE image → write: 🛑 *DOCUMENTO DEGRADADO — no usar para intervenciones sin verificar en sitio*
-      - If voltage is unverified → write: ⚠️ *VOLTAJE NO VERIFICADO — confirmar antes de intervenir*
     DIRECTIVE
   end
 

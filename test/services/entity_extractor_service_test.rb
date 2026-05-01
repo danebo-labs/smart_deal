@@ -1013,7 +1013,7 @@ class EntityExtractorServiceTest < ActiveSupport::TestCase
     assert_nothing_raised { service.extract_and_update([], user_message: "info", doc_refs: doc_refs) }
   end
 
-  test 'enrich_kb_document preserves a human-chosen display_name and still appends canonical to aliases' do
+  test 'enrich_kb_document promotes canonical to display_name and stores prior stem in aliases' do
     kb = KbDocument.create!(
       s3_key: "uploads/2026-04-10/Esquema SOPREL.pdf",
       display_name: "Esquema SOPREL",
@@ -1032,9 +1032,10 @@ class EntityExtractorServiceTest < ActiveSupport::TestCase
     service.extract_and_update([], user_message: "que es Esquema SOPREL?", doc_refs: doc_refs)
 
     kb.reload
-    assert_equal "Esquema SOPREL", kb.display_name,
-                 "Human-chosen display_name must not be overwritten by Haiku's canonical"
-    assert_includes kb.aliases, "Foremcaro 6118/81 — Colegio Sta. Doroteia"
+    assert_equal "Foremcaro 6118/81 — Colegio Sta. Doroteia", kb.display_name,
+                 "Haiku canonical must win and become display_name"
+    assert_includes kb.aliases, "Esquema SOPREL",
+                    "Prior display_name must be preserved as alias so resolver still matches it"
     assert_includes kb.aliases, "Esquema Eléctrico"
   end
 end

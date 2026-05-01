@@ -235,10 +235,9 @@ class EntityExtractorService
 
   # Per-query enrichment driven by Haiku's <DOC_REFS>. `display_name` is only
   # (re)assigned while it still looks like the auto-assigned stem placeholder
-  # (display_name_promotable?). Once a real canonical is stored, it is treated
-  # as immutable so the human-facing label does not drift across queries.
-  # New canonicals from Haiku are always added as aliases so the RAG resolver
-  # recognises them on future queries.
+  # (display_name_promotable? always returns true — canonical always wins).
+  # New canonicals from Haiku overwrite display_name; prior display_name is
+  # kept in aliases so the RAG resolver still recognises it on future queries.
   def enrich_kb_document(canonical, metadata)
     source_uri = metadata["source_uri"]
     return if source_uri.blank?
@@ -249,10 +248,13 @@ class EntityExtractorService
     kb_doc = KbDocument.find_by(s3_key: s3_key)
     return unless kb_doc
 
-    kb_doc.display_name = canonical if canonical.present? && kb_doc.display_name_promotable?
-    kb_doc.aliases = (Array(kb_doc.aliases) + [ canonical ] + Array(metadata["aliases"]))
+    prior_display_name = kb_doc.display_name.presence
+    kb_doc.display_name = canonical if canonical.present?
+
+    kb_doc.aliases = (Array(kb_doc.aliases) + [ prior_display_name ] + Array(metadata["aliases"]))
                        .map { |a| a.to_s.strip }
                        .compact_blank
+                       .reject { |a| a.casecmp?(kb_doc.display_name.to_s) }
                        .uniq
                        .first(15)
     kb_doc.save! if kb_doc.changed?

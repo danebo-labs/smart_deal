@@ -58,6 +58,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   # ============================================
 
   test 'whatsapp short follow-up keeps cached locale' do
+    skip "WA channel disabled for MVP — whatsapp_to / locale stickiness removed"
     to = 'whatsapp:+15550001111'
     cache_key = "rag_whatsapp_conv/v1/#{to}"
     Rails.cache.write(cache_key, "en", expires_in: 7.days)
@@ -83,6 +84,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   end
 
   test 'whatsapp first message uses locale detected from body only' do
+    skip "WA channel disabled for MVP — whatsapp_to / locale stickiness removed"
     to = 'whatsapp:+15550002222'
     captured = {}
     mock = Object.new
@@ -119,11 +121,11 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal [ 'doc1.pdf' ], result.citations
       assert_equal 'session-123', result.session_id
       assert_nil result.error_type
-      assert_nil result.faceted, 'web channel should not build a faceted answer'
     end
   end
 
   test 'execute_rag_query parses structured answer for whatsapp channel' do
+    skip "WA channel disabled for MVP — whatsapp_to / faceted answer removed"
     structured_raw = <<~ANS
       [INTENT] INSTALLATION
       [DOCS]
@@ -166,6 +168,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   end
 
   test 'execute_rag_query structured falls back to legacy plain answer when labels missing' do
+    skip "WA channel disabled for MVP — whatsapp_to / faceted answer removed"
     mock = create_mock_orchestrator(answer: 'Legacy plain answer with no labels.', citations: [], session_id: 's')
 
     with_mock_orchestrator(mock) do
@@ -698,7 +701,120 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
+  # ============================================
+  # Tests for response_locale stickiness (conversation continuity)
+  # ============================================
+  # Field technicians type short, accent-less follow-ups (e.g. "Instalar"). The
+  # question-only detector classifies those as :en, which made the assistant
+  # switch languages mid-thread. We now bias toward :es when any recent turn
+  # was confidently Spanish.
+
+  test 'execute_rag_query keeps Spanish when current question is ambiguous but history is Spanish' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    conv_session = Object.new
+    conv_session.define_singleton_method(:conversation_history) do
+      [
+        { "role" => "user",      "content" => "Que relación tienen con mis componentes indexados ?" },
+        { "role" => "assistant", "content" => "Tus componentes indexados están directamente interconectados." },
+        { "role" => "user",      "content" => "Instalar" }
+      ]
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "Instalar", conv_session: conv_session)
+      assert_equal :es, captured[:kwargs][:response_locale],
+                   "Short ambiguous follow-ups must inherit Spanish from history"
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query stays English when both question and history are English' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    conv_session = Object.new
+    conv_session.define_singleton_method(:conversation_history) do
+      [
+        { "role" => "user",      "content" => "What is the maintenance schedule for the controller?" },
+        { "role" => "assistant", "content" => "The controller requires inspection every six months." },
+        { "role" => "user",      "content" => "Install" }
+      ]
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "Install", conv_session: conv_session)
+      assert_equal :en, captured[:kwargs][:response_locale]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query honors explicit response_locale override regardless of history' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    conv_session = Object.new
+    conv_session.define_singleton_method(:conversation_history) do
+      [ { "role" => "user", "content" => "Que es el cuadro de maniobra ?" } ]
+    end
+
+    begin
+      @controller.send(:execute_rag_query, "Instalar", conv_session: conv_session, response_locale: :en)
+      assert_equal :en, captured[:kwargs][:response_locale]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  # ============================================
+  # Tests for images_uploaded propagation
+  # ============================================
+
+  test 'execute_rag_query forwards images_uploaded from orchestrator result' do
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
+      {
+        answer:           "Tu imagen está siendo indexada en la Base de Conocimiento.",
+        citations:        [],
+        session_id:       nil,
+        images_uploaded:  [ "diagram.jpg" ]
+      }
+    end
+
+    with_mock_orchestrator(mock) do
+      result = @controller.send(:execute_rag_query, "", images: [ { data: "x", media_type: "image/jpeg" } ])
+
+      assert result.success?
+      assert_equal [ "diagram.jpg" ], result.images_uploaded
+    end
+  end
+
   test 'execute_rag_query honors explicit output_channel override' do
+    skip "WA channel disabled for MVP — whatsapp_to removed from execute_rag_query"
     captured = {}
     mock = Object.new
     mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }

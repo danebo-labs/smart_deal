@@ -344,6 +344,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'query appends DELIVERY CHANNEL block when output_channel is :whatsapp' do
+    skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('What is S3?', output_channel: :whatsapp)
@@ -362,6 +363,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'DELIVERY CHANNEL block prohibits double-asterisk bold' do
+    skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('test', output_channel: :whatsapp)
@@ -378,6 +380,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'DELIVERY CHANNEL block declares safety warnings as NON-NEGOTIABLE' do
+    skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('test', output_channel: :whatsapp)
@@ -396,6 +399,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'DELIVERY CHANNEL block enumerates intent tokens for faceted output' do
+    skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('test', output_channel: :whatsapp)
@@ -416,6 +420,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'DELIVERY CHANNEL block defines structured labels and dynamic menu kinds' do
+    skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       service.query('test', output_channel: :whatsapp)

@@ -41,33 +41,37 @@ class CostMetricTest < ActiveSupport::TestCase
   end
 
   test '.total_for_month sums values correctly' do
-    CostMetric.create!(
-      date: Date.current.beginning_of_month,
-      metric_type: :daily_tokens,
-      value: 100
-    )
-    CostMetric.create!(
-      date: Date.current,
-      metric_type: :daily_tokens,
-      value: 200
-    )
+    travel_to(Time.zone.local(2026, 6, 15)) do
+      CostMetric.create!(
+        date: Date.current.beginning_of_month,
+        metric_type: :daily_tokens,
+        value: 100
+      )
+      CostMetric.create!(
+        date: Date.current,
+        metric_type: :daily_tokens,
+        value: 200
+      )
 
-    assert_equal 300, CostMetric.total_for_month(:daily_tokens)
+      assert_equal 300, CostMetric.total_for_month(:daily_tokens)
+    end
   end
 
   test '.avg_for_month returns correct average' do
-    CostMetric.create!(
-      date: Date.current.beginning_of_month,
-      metric_type: :aurora_acu_avg,
-      value: 1.0
-    )
-    CostMetric.create!(
-      date: Date.current,
-      metric_type: :aurora_acu_avg,
-      value: 3.0
-    )
+    travel_to(Time.zone.local(2026, 6, 15)) do
+      CostMetric.create!(
+        date: Date.current.beginning_of_month,
+        metric_type: :aurora_acu_avg,
+        value: 1.0
+      )
+      CostMetric.create!(
+        date: Date.current,
+        metric_type: :aurora_acu_avg,
+        value: 3.0
+      )
 
-    assert_equal 2.0, CostMetric.avg_for_month(:aurora_acu_avg)
+      assert_equal 2.0, CostMetric.avg_for_month(:aurora_acu_avg)
+    end
   end
 
   test '.avg_for_month returns 0 when no records exist' do

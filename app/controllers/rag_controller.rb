@@ -18,8 +18,12 @@ class RagController < ApplicationController
       channel:    "web",
       user_id:    effective_user_id
     )
-    conv_session.refresh!
-    conv_session.add_to_history("user", question) if question.present?
+    if question.present?
+      # Single UPDATE instead of refresh! + add_to_history (2 UPDATEs).
+      conv_session.add_to_history_and_refresh("user", question)
+    else
+      conv_session.refresh!
+    end
 
     session_context  = SessionContextBuilder.build(conv_session)
     entity_s3_uris   = SessionContextBuilder.entity_s3_uris(conv_session)
@@ -39,10 +43,12 @@ class RagController < ApplicationController
       return
     end
 
-    KbDocumentEnrichmentService.new.call(
-      doc_refs:      result[:doc_refs],
-      all_retrieved: Array(result.retrieved_citations)
-    )
+    if result[:doc_refs].present?
+      KbDocumentEnrichmentJob.perform_later(
+        doc_refs:       result[:doc_refs],
+        retrieved_meta: minimal_retrieved_for_enrichment(Array(result.retrieved_citations))
+      )
+    end
 
     conv_session.add_to_history("assistant", result.answer.to_s)
 
@@ -111,5 +117,18 @@ class RagController < ApplicationController
     end.map { |d| d.to_unsafe_h.symbolize_keys }
   rescue StandardError
     []
+  end
+
+  # Strip chunk :content from citations before sending to the enrichment job.
+  # KbDocumentEnrichmentService only reads metadata + location.uri; the chunk
+  # text is the heaviest part of the citation (~10–50 KB each) and serializing
+  # it into solid_queue_jobs.arguments wastes DB space and Cable payload size.
+  def minimal_retrieved_for_enrichment(citations)
+    Array(citations).map do |c|
+      {
+        metadata: c[:metadata] || c["metadata"] || {},
+        location: c[:location] || c["location"]
+      }
+    end
   end
 end

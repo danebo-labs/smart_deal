@@ -16,6 +16,12 @@ export default class extends Controller {
   static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
   static BINARY_DOC_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"]
 
+  // Show a "taking longer than usual" notice if the KbSync `indexed` broadcast
+  // has not arrived within this window. WebSockets can drop on flaky mobile
+  // networks (technician inside an elevator shaft) and Solid Cable does not
+  // replay missed messages, so the only recovery is a manual reload.
+  static INDEXING_STALL_MS = 90 * 1000
+
   // SVG icons for mobile message avatars
   static USER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`
   static BOT_SVG  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`
@@ -24,6 +30,8 @@ export default class extends Controller {
     this.pendingFile = null
     this.pendingImageQuery = null
     this.indexingLoadingId = null
+    this.indexingStallTimer = null
+    this.indexingStallNoticeId = null
     this._docsPanelExpanded = true  // tracks empty-chat state on mobile
     this.subscribeToKbSync()
     this.setupMobileLayout()
@@ -39,6 +47,7 @@ export default class extends Controller {
     this.mobilePanelObserver?.disconnect()
     window.removeEventListener("resize", this._onResize)
     this.teardownKeyboardLift()
+    this.clearIndexingStallTimer()
   }
 
   subscribeToKbSync() {
@@ -49,6 +58,7 @@ export default class extends Controller {
     this.kbSyncSubscription = consumer.subscriptions.create("KbSyncChannel", {
       received(data) {
         if (data.status === "indexed" || data.status === "failed") {
+          controller.clearIndexingStallTimer()
           if (controller.indexingLoadingId) {
             controller.removeMessage(controller.indexingLoadingId)
             controller.indexingLoadingId = null
@@ -248,9 +258,11 @@ export default class extends Controller {
       if (data.images_uploaded?.length) {
         this.indexingLoadingId = loadingId
         if (question) this.pendingImageQuery = question
+        this.startIndexingStallTimer()
         this.refreshDocuments()
       } else if (data.documents_uploaded?.length) {
         this.indexingLoadingId = loadingId
+        this.startIndexingStallTimer()
         this.refreshDocuments()
       } else {
         this.removeMessage(loadingId)
@@ -596,6 +608,33 @@ export default class extends Controller {
     const div = document.createElement("div")
     div.textContent = text
     return div.innerHTML
+  }
+
+  // ── Stall notice while waiting for KbSync `indexed` broadcast ─────────────
+  // Backend ingestion runs ~30-90s for a typical image (S3 upload + Bedrock
+  // ingestion poll + Opus chunk-alias extraction). If the WebSocket dropped
+  // mid-flight (Solid Cable does not replay), the dots animation hangs forever
+  // until the user reloads. This timer surfaces a recovery hint.
+  startIndexingStallTimer() {
+    this.clearIndexingStallTimer()
+    this.indexingStallTimer = setTimeout(() => {
+      this.indexingStallNoticeId = this.addMessage(
+        "⚠️ Está tardando más de lo normal — recarga la página si no se actualiza.",
+        "system",
+        true  // temporary: removed alongside other temp rows on next removeMessage()
+      )
+    }, this.constructor.INDEXING_STALL_MS)
+  }
+
+  clearIndexingStallTimer() {
+    if (this.indexingStallTimer) {
+      clearTimeout(this.indexingStallTimer)
+      this.indexingStallTimer = null
+    }
+    if (this.indexingStallNoticeId) {
+      document.getElementById(this.indexingStallNoticeId)?.remove()
+      this.indexingStallNoticeId = null
+    }
   }
 
   addIndexedMessage(data) {

@@ -3,19 +3,7 @@ default: &default
     - polling_interval: 1
       batch_size: 500
   workers:
-    # RAG + Bedrock queries for WhatsApp (Bedrock rate-limit aware: max 3 concurrent)
-    - queues: whatsapp_rag
-      threads: 3
-      processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
-      polling_interval: 0.1
-
-    # Media download → S3 → KB ingestion (I/O heavy, keep separate to avoid starving RAG)
-    - queues: whatsapp_media
-      threads: 2
-      processes: 1
-      polling_interval: 0.5
-
-    # Default queue: hosts TrackBedrockQueryJob → metrics-footer broadcast.
+    # Default queue: hosts BedrockIngestionJob, TrackBedrockQueryJob → metrics-footer broadcast.
     # 0.25s polling keeps perceived metrics latency under the Doherty 250ms
     # threshold (cost: 4 SELECTs/sec on solid_queue_ready_executions, trivial).
     - queues: default

@@ -29,3 +29,20 @@ module ActiveSupport
     # Add more helper methods to be used by all tests here...
   end
 end
+
+# WA channel is disabled for MVP. Flip to false to re-enable dormant WA test files.
+WHATSAPP_CHANNEL_DISABLED = ENV.fetch("WHATSAPP_CHANNEL_DISABLED", "true").casecmp?("true")
+
+module WhatsappDisabledSkip
+  def setup
+    super
+    if WHATSAPP_CHANNEL_DISABLED &&
+        (self.class.name.match?(/Whatsapp|Twilio/i) || name.to_s.match?(/whatsapp/i))
+      skip "WhatsApp channel disabled for MVP (WHATSAPP_CHANNEL_DISABLED=true)"
+    end
+  end
+end
+
+ActiveSupport.on_load(:active_support_test_case) do
+  include WhatsappDisabledSkip
+end

@@ -9,8 +9,9 @@ Rails.application.routes.draw do
 
   root 'home#index'
 
-  get  'home/metrics',       to: 'home#metrics'
-  get  'home/documents',    to: 'home#documents'
+  get  'home/metrics',        to: 'home#metrics'
+  get  'home/documents',      to: 'home#documents'
+  get  'home/documents_page', to: 'home#documents_page'
   get  'dashboard',          to: 'dashboard#index'
   get  'dashboard/metrics',  to: 'dashboard#metrics'
   post 'dashboard/refresh',  to: 'dashboard#refresh'
@@ -29,5 +30,5 @@ Rails.application.routes.draw do
   # RAG endpoint for Knowledge Base queries
   post '/rag/ask', to: 'rag#ask'
 
-  post '/twilio/webhook', to: 'twilio#webhook'
+  # post '/twilio/webhook', to: 'twilio#webhook'  # WA channel disabled for MVP
 end

@@ -39,12 +39,9 @@ class RagController < ApplicationController
       return
     end
 
-    EntityExtractorService.new(conv_session).extract_and_update(
-      Array(result.citations),
-      user_message:  question,
-      answer:        result.answer,
-      all_retrieved: Array(result.retrieved_citations),
-      doc_refs:      result[:doc_refs]
+    KbDocumentEnrichmentService.new.call(
+      doc_refs:      result[:doc_refs],
+      all_retrieved: Array(result.retrieved_citations)
     )
 
     conv_session.add_to_history("assistant", result.answer.to_s)

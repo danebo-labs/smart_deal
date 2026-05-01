@@ -5,6 +5,10 @@
 class KbDocument < ApplicationRecord
   has_one :thumbnail, class_name: "KbDocumentThumbnail", dependent: :destroy
 
+  # Centralized KB bucket constant. Single source of truth for s3_uri building
+  # across the app (was duplicated in rag_query_concern + bedrock_ingestion_job).
+  KB_BUCKET = ENV.fetch('KNOWLEDGE_BASE_S3_BUCKET', 'multimodal-source-destination').freeze
+
   # DB: jsonb, default []. Stored as JSON array of strings; exposed as Array in Ruby.
   validates :s3_key, presence: true, uniqueness: true
 

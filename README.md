@@ -10,7 +10,7 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 - **WhatsApp / Twilio — decoupled (dormant):** the inbound webhook is **not mounted** (`config/routes.rb` comments out `post '/twilio/webhook'`). **`config/queue.yml`** runs a **single** Solid Queue worker lane (`default` only); `whatsapp_rag` / `whatsapp_media` workers were removed. Shared code paths (`RagQueryConcern`, `BedrockRagService`, `BedrockIngestionJob`, orchestrator) no longer drive a live **`:whatsapp`** RAG branch. **Legacy stack remains in the repo** for a future reactivation: `TwilioController`, `SendWhatsappReplyJob`, `ProcessWhatsappMediaJob`, `TrackWhatsappCacheHitJob`, `app/services/rag/whatsapp_*.rb`, models, locales, and DB tables are **not deleted** — treat them as **deprecated architecture** until re-wired.
 - **Tests:** `test/test_helper.rb` sets **`WHATSAPP_CHANNEL_DISABLED`** (default `true` via `ENV.fetch`) and skips test classes whose name matches `Whatsapp` / `Twilio` (case-insensitive). Export **`WHATSAPP_CHANNEL_DISABLED=false`** to run those suites when working on a WA re-launch.
 
-## MVP pilot (dry run / *marcha blanca*)
+## MVP pilot (dry run)
 
 **Stage 0** is a controlled pilot to validate **minimum viable operation (MVO)** with a **single elevator-project knowledge base** and a **small group of field technicians** on the **web** app. The goal is not full multi-tenant product behavior yet, but to prove end-to-end flows: uploads, RAG answers, session context, and reliable KB-backed answers under real-ish usage.
 
@@ -30,7 +30,7 @@ When shared session is **off**, each web user keeps a **separate** session (per 
 - **RAG chat with Knowledge Base integration** — LLMs, embeddings, prompt templates, and custom model configuration, optimized for inference and better results
 - **Hybrid Query Orchestrator (RAG + Text-to-SQL)** — intelligent intent classification routes queries to the Knowledge Base, the client's business database, or both in parallel. Supports three modes: `DATABASE_QUERY`, `KNOWLEDGE_BASE_QUERY`, and `HYBRID_QUERY`
 - **Responsive web home** — Tailwind breakpoints (`sm:`, `lg:`): chat input **stacks on narrow viewports** (attach + send row under the textarea), **usage metrics** in the chat footer use `hidden sm:flex` so they stay off small screens, and the **KB area** follows the same mobile/desktop rules as the rest of the grid.
-- **Unified KB documents card** — one partial stack for **desktop sidebar** and **mobile** strip (`_kb_docs_card`, `_kb_docs_card_rows`, `_kb_docs_card_sentinel`). Same row chrome (thumbnail slot, title, date, pin affordance) everywhere; legacy sidebar overview cards (“Archivos en la sesión” / recientes) were **removed**. `data-controller="rag-chat"` sits on the **home grid** in `index.html.erb` so sidebar rows share Stimulus with the chat column.
+- **Unified KB documents card** — one partial stack for **desktop sidebar** and **mobile** strip (`_kb_docs_card`, `_kb_docs_card_rows`, `_kb_docs_card_sentinel`). Same row chrome (thumbnail slot, title, date, pin affordance) everywhere; legacy sidebar overview cards (“session files” / recent files) were **removed**. `data-controller="rag-chat"` sits on the **home grid** in `index.html.erb` so sidebar rows share Stimulus with the chat column.
 - **KB list pagination & live refresh** — `HomeController::PAGE_SIZE` (20), `GET /home/documents` and `GET /home/documents_page` return Turbo Streams that update **both** `#kb-docs-desktop-items` and `#kb-docs-mobile-items`; `docs_scroll_controller.js` uses an **IntersectionObserver** sentinel for infinite scroll.
 - **Indexing UX** — after a file upload from chat, a **three-dot loading** bubble (`addLoadingMessage` in `rag_chat_controller.js`) replaces the old long system string until `KbSyncChannel` reports **indexed** or **failed**, then the doc list refreshes.
 - **LLM usage metrics** — async tracking of Bedrock tokens by **source** (`query` vs ingestion parse/embed), optional **WhatsApp cache hit** accounting when that channel is re-enabled, daily rollups in `cost_metrics`, and a **live home footer** updated via Turbo Streams on the **`default`** Solid Queue lane (see [LLM usage metrics & Solid Queue](#llm-usage-metrics--solid-queue))
@@ -122,6 +122,32 @@ EDITOR="cursor --wait" bin/rails credentials:edit
 > **Note:** `.env` and `config/master.key` are in `.gitignore`. Never commit them.
 
 For detailed Bedrock configuration (models, KB, env vars), see [BEDROCK_SETUP.md](BEDROCK_SETUP.md) and `.env.sample`.
+
+### Current Bedrock / RAG configuration
+
+Use `bin/rails kb:config` as the source of truth before changing Bedrock, S3, or ingestion settings. The current pilot configuration is:
+
+| Setting | Value |
+|---------|-------|
+| Region | `us-east-1` |
+| Knowledge Base | `VBB72VKABV` (`knowledge-base-multimodal`) |
+| Preferred data source | `OWRPGSX6XK` |
+| Query model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| Retrieval | `HYBRID`, `BEDROCK_RAG_NUMBER_OF_RESULTS=10` |
+| Generation temperature | `BEDROCK_RAG_GENERATION_TEMPERATURE=0.3` |
+| Generation prompt | `app/prompts/bedrock/generation.txt` |
+
+AWS-side KB shape:
+
+- **Embeddings:** `amazon.nova-2-multimodal-embeddings-v1:0`, 1024 dimensions. This is configured in AWS when the KB is created; `.env` only selects the query/generation model.
+- **Vector store:** Amazon Aurora PostgreSQL. Treat cold starts as expected; retry/backoff belongs in the RAG service layer.
+- **Source bucket:** `s3://multimodal-source-destination`; uploaded documents land under the app-managed S3 keys and are synced through the preferred data source.
+- **Multimodal storage destination:** `s3://multimodal-store-destination`.
+- **Chunking:** hierarchical, parent `1200` tokens, child `256` tokens, `40` overlap.
+- **Parsing:** Bedrock Foundation Model parser using Opus via inference profile `global.anthropic.claude-opus-4-6-v1`; parser prompt is safety-first for elevator technical documents and requires explicit uncertainty / field verification.
+- **Post-chunk transform:** Lambda `bedrock-kb-postchunk-identity-injector` at `POST_CHUNKING`, with intermediate bucket `s3://multimodal-lambda-intermediate-storage`. It injects document identity/search aliases into chunks for retrieval and `<DOC_REFS>` enrichment.
+
+Do **not** copy AWS credential secret ARNs into `.env` or app docs. Keep runtime config to `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_DATA_SOURCE_ID`, `BEDROCK_MODEL_ID`, `AWS_REGION`, `KNOWLEDGE_BASE_S3_BUCKET`, and the `BEDROCK_RAG_*` knobs.
 
 ### MVP configuration: shared conversation session
 
@@ -484,7 +510,7 @@ Follow-up RAG (web)
 
 > **Status (dormant):** the **R3** stack below (`Rag::WhatsappAnswerCache`, `SendWhatsappReplyJob`, classifier, faceted renderers) remains **in the codebase** but is **not exercised** while Twilio is decoupled. Read this section when **re-enabling WhatsApp**.
 
-A short-lived **conversational UI cache** was designed to make WhatsApp **navigation** feel lightweight: the first message shows `[RESUMEN]` plus a **numbered menu** (pinned **1 = Riesgos**; `2`..`N-1` = model-chosen section labels such as *Consideraciones* / *Componentes* / *Paso a paso* for an installation; **last slot = Nueva consulta**). Tapping a number or an allowlisted command **expands from the cached full text without re-invoking Bedrock** — the full structured answer (including all section bodies) was already produced in one RAG call and is stored in cache. It **does not replace** `ConversationSession`; both coexist. Multi-document questions are first-class: `[DOCS]` + per-section `## <label> | <sources>` keep attribution correct.
+A short-lived **conversational UI cache** was designed to make WhatsApp **navigation** feel lightweight: the first message shows `[RESUMEN]` plus a **numbered menu** (pinned **1 = risks**; `2`..`N-1` = model-chosen section labels such as considerations / components / step-by-step for an installation; **last slot = new query**). Tapping a number or an allowlisted command **expands from the cached full text without re-invoking Bedrock** — the full structured answer (including all section bodies) was already produced in one RAG call and is stored in cache. It **does not replace** `ConversationSession`; both coexist. Multi-document questions are first-class: `[DOCS]` + per-section `## <label> | <sources>` keep attribution correct.
 
 > **Safety policy — closed allowlist.** The cache only serves messages that match an explicit set of **navigation tokens** (digits that appear in the cached `menu` row for this answer, or fixed words for redraw/reset; **not** open-ended “facet keywords”). **Free-text questions are never served from cache** — e.g. `voltaje`, `torque tornillo m8` always run a fresh RAG. Trade-off: lower cache hit rate on free text, higher Bedrock cost. **Safety > token spend**. See `Rag::WhatsappFollowupClassifier` docstring.
 
@@ -496,7 +522,7 @@ Rag::WhatsappAnswerCache  →  last RAG “card” (structured sections + menu) 
 | Layer | Time horizon | Scope | Backing store |
 |---|---|---|---|
 | `conversation_sessions` | Row TTL **30 days** sliding by default (`EXPIRY_DURATION`; refreshed on pin flows) | `identifier` + `channel` (one shared row in MVP pilot when enabled) | PostgreSQL `conversation_sessions` |
-| `Rag::WhatsappAnswerCache` | Turn-set | **Per WhatsApp `to` number** (not shared across technicians) | `Rails.cache` (Solid Cache) key `rag_wa_faceted/v4/<whatsapp_to>` — TTL **1800s** (30 min). Bumped v3 → v4 when the payload switched from `faceted`+`document_label` to `structured` (no session-derived document label; avoids stale “(fuente)” mix); stale v3 payloads are invalidated as `op=corrupt`. |
+| `Rag::WhatsappAnswerCache` | Turn-set | **Per WhatsApp `to` number** (not shared across technicians) | `Rails.cache` (Solid Cache) key `rag_wa_faceted/v4/<whatsapp_to>` — TTL **1800s** (30 min). Bumped v3 → v4 when the payload switched from `faceted`+`document_label` to `structured` (no session-derived document label; avoids stale source-label mix); stale v3 payloads are invalidated as `op=corrupt`. |
 | Sticky thread locale | Longer follow-up | Same `to` | `rag_whatsapp_conv/v1/<whatsapp_to>` (written by `RagQueryConcern`; TTL **7 days**) so very short follow-ups can inherit language after the 30 min faceted TTL expires. |
 
 **Why per-number cache even in shared-session MVP?** The pilot may use one `ConversationSession` row for everyone, but two technicians on different phones must not share the same in-progress menu/answer: collision would mix topics and is unsafe. Isolation is by `whatsapp:+…` (cache key), not by shared session.
@@ -512,8 +538,8 @@ Rag::WhatsappAnswerCache  →  last RAG “card” (structured sections + menu) 
   structured: {              # from Rag::FacetedAnswer#to_cache_hash
     intent:   Symbol,        # e.g. :identification, :installation, :emergency
     docs:     [String, ...], # from [DOCS] JSON in the model output
-    resumen:  String,
-    riesgos:  String,        # pinned block; always slot 1 in [MENU] as __riesgos__
+    resumen:  String,        # summary block
+    riesgos:  String,        # risks block; always slot 1 in [MENU] as __riesgos__
     sections: [ { n:, key: :sec_1, label:, sources: [String, ...], body: String }, ... ],
     menu:     [ { n:, label:, kind: :riesgos | :section | :new_query, section_key: ... }, ... ],
     raw:      String
@@ -534,19 +560,19 @@ Rag::WhatsappAnswerCache  →  last RAG “card” (structured sections + menu) 
 
 | Component | File | Role |
 |---|---|---|
-| `Rag::FacetedAnswer` | `app/services/rag/faceted_answer.rb` | Parses Bedrock’s structured blocks (`[INTENT]`, `[DOCS]`, `[RESUMEN]`, `[RIESGOS]` pinned, `[SECCIONES]`, `[MENU]`) and renders the first message + per-section detail from cache. `legacy?` = model emitted no structure → plain `format_rag_response_for_whatsapp` + no cache write. |
+| `Rag::FacetedAnswer` | `app/services/rag/faceted_answer.rb` | Parses Bedrock’s structured blocks (`[INTENT]`, `[DOCS]`, `[RESUMEN]`, `[RIESGOS]` pinned, `[SECCIONES]`, `[MENU]`) and renders the first message + per-section detail from cache. `legacy?` = model emitted no structure → plain `format_rag_response_for_whatsapp` + no cache write. Block names are Spanish protocol literals from the prompt contract. |
 | `Rag::WhatsappAnswerCache` | `app/services/rag/whatsapp_answer_cache.rb` | Read/write/invalidation + logs: `op=read|write|corrupt|skip_write` and `op=invalidate` when **entity_drift** is detected (non–shared mode). |
-| `Rag::WhatsappFollowupClassifier` | `app/services/rag/whatsapp_followup_classifier.rb` | **Strict** closed-allowlist: `inicio`/`start`/`home` → `reset_ack_with_picker` · `nuevo`/`nueva`/`new`/`reset` → `user_reset` (cache only) · digits `1`..`N` resolved against the **cached** `menu` (slots include `__list_recent__` → `:show_doc_list :recent`, `__list_all__` → `:show_doc_list :all`, legacy `__new_query__` → reset) · everything else (including former redraw words like `menu`/`volver`/`mas`) is **`:new_query`** — the menu is rendered as a footer on every message so a redraw shortcut is unnecessary. Emits `[WA_CLASSIFIER] route=… reason=…`. |
+| `Rag::WhatsappFollowupClassifier` | `app/services/rag/whatsapp_followup_classifier.rb` | **Strict** closed-allowlist: `inicio`/`start`/`home` → `reset_ack_with_picker` · `nuevo`/`nueva`/`new`/`reset` → `user_reset` (cache only) · digits `1`..`N` resolved against the **cached** `menu` (slots include `__list_recent__` → `:show_doc_list :recent`, `__list_all__` → `:show_doc_list :all`, legacy `__new_query__` → reset) · everything else (including former redraw words like `menu`/`volver`/`mas`) is **`:new_query`** — the menu is rendered as a footer on every message so a redraw shortcut is unnecessary. Spanish tokens are accepted user commands. Emits `[WA_CLASSIFIER] route=… reason=…`. |
 | `Rag::WhatsappPostResetState` | `app/services/rag/whatsapp_post_reset_state.rb` | Short-lived (5 min) Rails.cache state after **picker reset** (`:reset_ack_with_picker`): `picking_source` → `picking_from_list` until the user picks a doc or abandons. |
 | `Rag::WhatsappDocumentPicker` | `app/services/rag/whatsapp_document_picker.rb` | Builds numbered lists for **recent** vs **all** and seeds `Describe <name>` into the normal `:new_query` RAG path. |
-| `SendWhatsappReplyJob` | `app/jobs/send_whatsapp_reply_job.rb` | `perform_faceted` / `perform_legacy`; post-reset picker short-circuits before the classifier when `WhatsappPostResetState` is present. Orchestrates cache, classifier, RAG, `infer_locale` (cache → sticky conv key → history heuristic → body → `I18n.default_locale`). **Does not** prepend a separate “Documentos consultados” header to structured first messages — sources come from `[DOCS]` and section headers. |
+| `SendWhatsappReplyJob` | `app/jobs/send_whatsapp_reply_job.rb` | `perform_faceted` / `perform_legacy`; post-reset picker short-circuits before the classifier when `WhatsappPostResetState` is present. Orchestrates cache, classifier, RAG, `infer_locale` (cache → sticky conv key → history heuristic → body → `I18n.default_locale`). **Does not** prepend a separate “consulted documents” header to structured first messages — sources come from `[DOCS]` and section headers. |
 | `ProcessWhatsappMediaJob` | `app/jobs/process_whatsapp_media_job.rb` | After a successful `KbSyncService` upload: `invalidate(whatsapp_to)` and `[WA_CACHE] op=invalidate reason=media_upload` so the next user question runs RAG over the updated KB. |
 
 #### Classifier cascade (order in code; first match wins)
 
 The classifier is a **strict closed allowlist** of navigation inputs: a digit that resolves against the cached menu, or one of the explicit reset tokens. Anything else — including former soft-nav words like `menu`, `volver`, `regresar`, or `mas` — is treated as a content question, the cache is invalidated, and a fresh RAG call runs. There is **no** synonym map, no length heuristic, no LLM-based "intent guessing", and no menu-redraw shortcut (the menu is already rendered as a footer on every message).
 
-1. **`:reset_ack_with_picker`** — `inicio`, `start`, `home` → invalidate cache, static ack with **1=recientes / 2=existentes**, arm `WhatsappPostResetState` (**no** RAG on this turn for the RAG part).
+1. **`:reset_ack_with_picker`** — `inicio`, `start`, `home` → invalidate cache, static ack with **1=recent / 2=all**, arm `WhatsappPostResetState` (**no** RAG on this turn for the RAG part).
 2. **`:user_reset`** — `nuevo`, `nueva`, `new`, `reset` **or** the menu digit whose `kind` is `:new_query` (legacy cache compat) → invalidate cache, short ack (no file-picker); **no** RAG.
 3. **Empty cache + only digits** that look like a menu pick → `:no_context_help` (`:menu_without_cache` or `:digit_out_of_range`).
 4. **Empty cache + free text** — `:new_query` (`:no_cache`).
@@ -563,7 +589,7 @@ If the model omits structured labels (`FacetedAnswer#legacy?`), the job does not
 
 #### Observability & scripts (WhatsApp path — re-mount webhook to use)
 
-- **`bin/wa_dev_sim "<mensaje>"`** — one-off POST to `/twilio/webhook` (requires route + workers restored); logs a marker in `development.log`.
+- **`bin/wa_dev_sim "<message>"`** — one-off POST to `/twilio/webhook` (requires route + workers restored); logs a marker in `development.log`.
 - **`bin/wa_e2e_monitor`** — highlights `[WA_CLASSIFIER]`, `[WA_CACHE]`, `[WA_FACET_DELIVERY]`, and Bedrock lines in `log/development.log`.
 - **`bin/wa_e2e_run`** — E2E markers per case (`E2E_CASE_12`, …) for grepping a single run.
 - **`bin/wa_metrics_daily`** — rollups of cache ops and classifiers (see script).
@@ -576,7 +602,7 @@ The WhatsApp structured-cache flags appear in the [MVO pilot flags](#mvo-pilot-h
 | Variable | Default | Effect |
 |---|---|---|
 | `WA_FACETED_OUTPUT_ENABLED` | `true` | `false` → `SendWhatsappReplyJob` uses `perform_legacy` (single message, no read-through cache). |
-| `WA_PROCESSING_ACK_ENABLED` | `true` | `false` → suppresses the *"🛠 Consultando la base de conocimiento…"* bubble. Ack is sent before **every** full RAG call: `:new_query` **and** `perform_legacy`. Cache hits, doc-list slots (6/7), and section follow-ups stay silent. Log line: `[WA_ACK] to=<to> reason=new_query_before_rag`. |
+| `WA_PROCESSING_ACK_ENABLED` | `true` | `false` → suppresses the processing bubble before full RAG calls. Ack is sent before **every** full RAG call: `:new_query` **and** `perform_legacy`. Cache hits, doc-list slots (6/7), and section follow-ups stay silent. Log line: `[WA_ACK] to=<to> reason=new_query_before_rag`. |
 
 > **Removed flag (`WA_NANO_CLASSIFIER_ENABLED`).** The Haiku-nano sub-classifier and the synonym map were removed as part of the safety-policy refactor. Remove it from your `.env` if present.
 
@@ -584,10 +610,10 @@ Typical interaction **when Twilio is active:** **0** Bedrock calls when the tech
 
 #### Section rendering (R3 UX)
 
-- **Vertical text-only menu** — first message lists `N - <label>` for each `[MENU]` row. Emojis from the model are stripped in render. The application appends two file-listing slots after Haiku's dynamic sections: **Archivos recientes consultados** (`__list_recent__`) and **Todos los archivos** (`__list_all__`); the legacy "Nueva consulta" slot was removed (any free-text reply is a new query).
+- **Vertical text-only menu** — first message lists `N - <label>` for each `[MENU]` row. Emojis from the model are stripped in render. The application appends two file-listing slots after Haiku's dynamic sections: **recent consulted files** (`__list_recent__`) and **all files** (`__list_all__`); the legacy "new query" slot was removed (any free-text reply is a new query).
 - **Multi-doc banner** — if `[DOCS]` has **≥2** entries, a `rag.wa_docs_banner` line appears *above* `[RESUMEN]`; single-doc answers skip the banner. Section follow-ups use `*<Section> · <sources>*` (or a two-line fallback for very long source lists) — sources come from each `##` header, not from `active_entities` (fixes the old stale-label bug).
-- **Riesgos pinned** — always menu slot 1; body comes from the `[RIESGOS]` block (safety).
-- **Reset + file picker** — **`inicio` / `start` / `home`** (not the last *Nueva consulta* digit) show the **1 — recientes / 2 — existentes** prompt and arm `WhatsappPostResetState`. Picking a doc seeds `Describe <name>`. **`nuevo` / `nueva` / `new` / `reset`**, or the **Nueva consulta** menu number, only invalidate the faceted cache and show a short ack (no file list).
+- **Pinned risks** — always menu slot 1; body comes from the `[RIESGOS]` block (safety).
+- **Reset + file picker** — **`inicio` / `start` / `home`** (not the last new-query digit) show the **1 — recent / 2 — all** prompt and arm `WhatsappPostResetState`. Picking a doc seeds `Describe <name>`. **`nuevo` / `nueva` / `new` / `reset`**, or the new-query menu number, only invalidate the faceted cache and show a short ack (no file list).
 - **No semantic “keyword → cached facet” routing** — `voltaje`, `riesgos` as free text, etc. are always full RAG (`:content_query`).
 
 For multi-tenant work later, keep treating **session row** and **per-number faceted cache** as separate concerns: a future `account_id` / `project_id` can scope the session and KB, while the WhatsApp cache key should remain tied to the **recipient address** to avoid cross-user menu bleed.

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_29_000104) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -28,7 +28,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_29_000104) do
 
   create_table "conversation_sessions", force: :cascade do |t|
     t.jsonb "active_entities", default: {}, null: false
-    t.string "channel", default: "whatsapp", null: false
+    t.string "channel", default: "web", null: false
     t.jsonb "conversation_history", default: [], null: false
     t.datetime "created_at", null: false
     t.jsonb "current_procedure", default: {}, null: false
@@ -55,6 +55,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_29_000104) do
     t.index [ "date" ], name: "index_cost_metrics_on_date"
   end
 
+  create_table "kb_document_thumbnails", force: :cascade do |t|
+    t.integer "byte_size"
+    t.string "content_type", default: "image/jpeg", null: false
+    t.datetime "created_at", null: false
+    t.binary "data", null: false
+    t.integer "height"
+    t.bigint "kb_document_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "width"
+    t.index [ "kb_document_id" ], name: "index_kb_document_thumbnails_on_kb_document_id", unique: true
+  end
+
   create_table "kb_documents", force: :cascade do |t|
     t.jsonb "aliases", default: [], null: false
     t.datetime "created_at", null: false
@@ -69,7 +81,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_29_000104) do
     t.integer "account_id"
     t.jsonb "aliases", default: [], null: false
     t.string "canonical_name", null: false
-    t.string "channel", default: "whatsapp", null: false
+    t.string "channel", default: "web", null: false
     t.datetime "created_at", null: false
     t.string "doc_type"
     t.string "first_answer_summary"

@@ -27,6 +27,8 @@ Rails.application.routes.draw do
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
+  resources :pinned_documents, only: %i[create destroy]
+
   # RAG endpoint for Knowledge Base queries
   post '/rag/ask', to: 'rag#ask'
 

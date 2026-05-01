@@ -11,6 +11,7 @@ class HomeController < ApplicationController
     @current_metrics  = current_metrics
     @kb_documents     = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
     @kb_docs_has_more = KbDocument.count > PAGE_SIZE
+    @pinned_uris      = pinned_uris_for_current_session
   end
 
   def metrics
@@ -24,14 +25,15 @@ class HomeController < ApplicationController
   # Refreshes BOTH the desktop and mobile KB doc lists after an indexing event.
   # Called by rag_chat_controller#refreshDocuments after KbSyncChannel "indexed".
   def documents
-    kb_docs  = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
-    has_more = KbDocument.count > PAGE_SIZE
+    kb_docs     = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
+    has_more    = KbDocument.count > PAGE_SIZE
+    pinned_uris = pinned_uris_for_current_session
 
     render turbo_stream: [
       turbo_stream.update("kb-docs-desktop-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
       turbo_stream.update("kb-docs-mobile-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
       sentinel_stream(:desktop, has_more: has_more, page: 1),
       sentinel_stream(:mobile,  has_more: has_more, page: 1)
     ]
@@ -39,19 +41,20 @@ class HomeController < ApplicationController
 
   # Infinite-scroll page fetch (page param is 0-indexed; first scroll fetches page=1).
   def documents_page
-    page     = [ params[:page].to_i, 1 ].max
-    docs     = KbDocument.includes(:thumbnail)
-                         .order(created_at: :desc)
-                         .offset(page * PAGE_SIZE)
-                         .limit(PAGE_SIZE + 1)
-    has_more = docs.size > PAGE_SIZE
-    kb_docs  = docs.first(PAGE_SIZE)
+    page        = [ params[:page].to_i, 1 ].max
+    docs        = KbDocument.includes(:thumbnail)
+                            .order(created_at: :desc)
+                            .offset(page * PAGE_SIZE)
+                            .limit(PAGE_SIZE + 1)
+    has_more    = docs.size > PAGE_SIZE
+    kb_docs     = docs.first(PAGE_SIZE)
+    pinned_uris = pinned_uris_for_current_session
 
     streams = [
       turbo_stream.append("kb-docs-desktop-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
       turbo_stream.append("kb-docs-mobile-items",
-        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs, pinned_uris: pinned_uris }),
       sentinel_stream(:desktop, has_more: has_more, page: page + 1),
       sentinel_stream(:mobile,  has_more: has_more, page: page + 1)
     ]
@@ -59,6 +62,18 @@ class HomeController < ApplicationController
   end
 
   private
+
+  # Returns Set<String> of s3_uris currently pinned in the user's web ConversationSession.
+  # Mirrors find_or_create_for: resolves to the SharedSession row when ENABLED, so
+  # checkboxes survive a page refresh in shared-workspace mode.
+  # Empty Set when no session exists yet (first-ever visit before any interaction).
+  def pinned_uris_for_current_session
+    identifier = SharedSession::ENABLED ? SharedSession::IDENTIFIER : current_user.id.to_s
+    channel    = SharedSession::ENABLED ? SharedSession::CHANNEL    : "web"
+    session    = ConversationSession.find_by(identifier: identifier, channel: channel)
+    return Set.new if session.nil?
+    Set.new(SessionContextBuilder.entity_s3_uris(session))
+  end
 
   # Replaces the old sentinel with a fresh one bumped to the next page,
   # OR removes it when no more pages exist.

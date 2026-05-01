@@ -3,5 +3,6 @@
              kb_documents: @kb_documents || KbDocument.none,
              has_more:     @kb_docs_has_more || false,
              variant:      :desktop,
-             next_page:    1
+             next_page:    1,
+             pinned_uris:  @pinned_uris || Set.new
            } %>

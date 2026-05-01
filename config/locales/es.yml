@@ -1,5 +1,17 @@
 # Spanish locale (partial; RAG strings also in config/locales/rag.es.yml)
 es:
+  errors:
+    messages:
+      taken: "ya está en uso"
+      blank: "no puede estar en blanco"
+      invalid: "no es válido"
+      too_short: "es demasiado corto (mínimo %{count} caracteres)"
+      too_long: "es demasiado largo (máximo %{count} caracteres)"
+      inclusion: "no está incluido en la lista"
+  activerecord:
+    errors:
+      messages:
+        record_invalid: "La validación falló: %{errors}"
   time:
     formats:
       short: "%d/%m/%Y %H:%M"

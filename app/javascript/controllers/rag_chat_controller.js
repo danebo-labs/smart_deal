@@ -510,26 +510,85 @@ export default class extends Controller {
     }
   }
 
-  // Mobile: tap a KB document card to append/remove [DocName] from the textarea
-  toggleDocSelection(event) {
+  // Click on a KB doc card → toggle pin via POST/DELETE /pinned_documents.
+  // Optimistic UI flip + textarea append/remove with revert on server failure.
+  async toggleDocSelection(event) {
     const btn = event.currentTarget
-    const docName = btn.dataset.docName
-    const docTag = `[${docName}]`
-    const isSelected = btn.dataset.selected === "true"
-    const checkbox = btn.querySelector(".kb-doc-checkbox")
+    const docId = btn.dataset.docId
+    if (!docId) return
 
-    if (isSelected) {
-      btn.dataset.selected = "false"
-      if (checkbox) checkbox.innerHTML = ""
-      const lines = this.inputTarget.value.split("\n")
-      this.inputTarget.value = lines.filter(l => l.trim() !== docTag).join("\n").trim()
+    const wasSelected = btn.dataset.selected === "true"
+    const checkbox = btn.querySelector(".kb-doc-checkbox")
+    const docName = btn.dataset.docName || ""
+
+    this._setSelectedUI(btn, checkbox, !wasSelected)
+    this._updateTextareaWithDocName(docName, !wasSelected)
+
+    try {
+      const url = wasSelected ? `/pinned_documents/${docId}` : `/pinned_documents`
+      const method = wasSelected ? "DELETE" : "POST"
+      const body = wasSelected ? null : JSON.stringify({ kb_document_id: docId })
+      const res = await fetch(url, {
+        method,
+        headers: this._jsonHeaders(),
+        credentials: "same-origin",
+        body
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    } catch (err) {
+      this._setSelectedUI(btn, checkbox, wasSelected)
+      this._updateTextareaWithDocName(docName, wasSelected)
+      console.error("toggleDocSelection failed:", err)
+    }
+  }
+
+  // Append doc name to textarea on check; remove it on uncheck.
+  // Preserves any existing user-typed text around the inserted names.
+  _updateTextareaWithDocName(name, add) {
+    if (!name || !this.hasInputTarget) return
+    const ta = this.inputTarget
+
+    if (add) {
+      if (!ta.value.includes(name)) {
+        ta.value = ta.value ? `${ta.value.trimEnd()} ${name}` : name
+      }
     } else {
-      btn.dataset.selected = "true"
+      ta.value = ta.value
+        .replace(new RegExp(`\\s*${this._escapeRegex(name)}`, "g"), "")
+        .trim()
+    }
+  }
+
+  _escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  }
+
+  _setSelectedUI(btn, checkbox, isSelected) {
+    btn.dataset.selected = isSelected ? "true" : "false"
+    if (isSelected) {
+      btn.classList.remove("border-transparent", "bg-[hsl(215,20%,96%)]")
+      btn.classList.add("border-[hsl(217,91%,50%)]", "bg-[hsl(217,91%,50%,0.06)]")
       if (checkbox) {
+        checkbox.classList.remove("bg-[hsl(215,20%,88%)]")
+        checkbox.classList.add("bg-[hsl(217,91%,50%)]", "text-white")
         checkbox.innerHTML = `<svg style="width:14px;height:14px;display:block;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
       }
-      const current = this.inputTarget.value.trim()
-      this.inputTarget.value = current ? `${current}\n${docTag}` : docTag
+    } else {
+      btn.classList.add("border-transparent", "bg-[hsl(215,20%,96%)]")
+      btn.classList.remove("border-[hsl(217,91%,50%)]", "bg-[hsl(217,91%,50%,0.06)]")
+      if (checkbox) {
+        checkbox.classList.add("bg-[hsl(215,20%,88%)]")
+        checkbox.classList.remove("bg-[hsl(217,91%,50%)]", "text-white")
+        checkbox.innerHTML = ""
+      }
+    }
+  }
+
+  _jsonHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "X-CSRF-Token": document.querySelector("meta[name=csrf-token]")?.content
     }
   }
 

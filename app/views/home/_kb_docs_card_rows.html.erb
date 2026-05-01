@@ -1,13 +1,15 @@
 <% kb_documents.each do |doc| %>
-  <% doc_ext     = File.extname(doc.s3_key.to_s).downcase %>
+  <% doc_ext      = File.extname(doc.s3_key.to_s).downcase %>
   <% doc_is_image = %w[.png .jpg .jpeg].include?(doc_ext) %>
   <% aliases_list = doc.simplest_display_aliases(1) %>
   <% title        = doc.display_name.presence || aliases_list.first.presence || doc.s3_key.to_s %>
+  <% is_pinned    = pinned_uris.include?(doc.display_s3_uri(KbDocument::KB_BUCKET)) %>
   <button type="button"
           data-action="click->rag-chat#toggleDocSelection"
+          data-doc-id="<%= doc.id %>"
           data-doc-name="<%= title %>"
-          data-selected="false"
-          class="kb-doc-btn group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left border-2 border-transparent bg-[hsl(215,20%,96%)] transition-all duration-200 active:scale-[0.98]">
+          data-selected="<%= is_pinned %>"
+          class="kb-doc-btn group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left border-2 <%= is_pinned ? 'border-[hsl(217,91%,50%)] bg-[hsl(217,91%,50%,0.06)]' : 'border-transparent bg-[hsl(215,20%,96%)]' %> transition-all duration-200 active:scale-[0.98]">
     <%# Thumbnail — real JPEG when indexed, SVG fallback otherwise %>
     <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[hsl(215,20%,90%)] overflow-hidden">
       <% if doc_is_image && doc.thumbnail %>
@@ -34,6 +36,10 @@
       <p class="truncate text-sm font-medium text-[hsl(222,47%,10%)]"><%= title %></p>
       <p class="truncate text-[11px] text-[hsl(215,20%,52%)] mt-0.5"><%= l(doc.created_at, format: :short) %></p>
     </div>
-    <span class="kb-doc-checkbox flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[hsl(215,20%,88%)] transition-all"></span>
+    <span class="kb-doc-checkbox flex h-6 w-6 shrink-0 items-center justify-center rounded-md <%= is_pinned ? 'bg-[hsl(217,91%,50%)] text-white' : 'bg-[hsl(215,20%,88%)]' %> transition-all">
+      <% if is_pinned %>
+        <svg style="width:14px;height:14px;display:block;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+      <% end %>
+    </span>
   </button>
 <% end %>

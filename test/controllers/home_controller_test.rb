@@ -138,6 +138,38 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_match(/6,000|6000/,        response.body)
   end
 
+  test 'index passes pinned_uris and marks pinned cards with data-selected=true' do
+    pinned_doc = KbDocument.create!(s3_key: "uploads/2026/pinned.pdf", display_name: "Pinned", aliases: [])
+    KbDocument.create!(s3_key: "uploads/2026/unpinned.pdf", display_name: "Unpinned", aliases: [])
+
+    session = ConversationSession.find_or_create_for(identifier: users(:one).id.to_s, channel: "web")
+    session.pin_kb_document!(pinned_doc)
+
+    get root_path
+    assert_response :ok
+    assert_match(/data-doc-id="#{pinned_doc.id}"[^>]*data-selected="true"/, response.body)
+    assert_match(/data-selected="false"/, response.body)
+  end
+
+  test 'index marks pinned cards as checked in SharedSession mode on refresh' do
+    stub_shared_enabled(true) do
+      ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).destroy_all
+
+      pinned_doc = KbDocument.create!(s3_key: "uploads/2026/shared_pinned.pdf", display_name: "SharedDoc", aliases: [])
+      KbDocument.create!(s3_key: "uploads/2026/shared_unpinned.pdf", display_name: "SharedUnpinned", aliases: [])
+
+      shared_sess = ConversationSession.find_or_create_for(
+        identifier: SharedSession::IDENTIFIER,
+        channel:    SharedSession::CHANNEL
+      )
+      shared_sess.pin_kb_document!(pinned_doc)
+
+      get root_path
+      assert_response :ok
+      assert_match(/data-doc-id="#{pinned_doc.id}"[^>]*data-selected="true"/, response.body)
+    end
+  end
+
   test 'metrics footer hides cache savings line when no cache_hits' do
     today = Date.current
     CostMetric.create!(date: today, metric_type: :daily_tokens,     value: 0)
@@ -165,5 +197,17 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert CostMetric.exists?(date: today, metric_type: :daily_tokens),
            'CostMetric should be synced from BedrockQuery on first load'
     assert_select '#chat-usage-metrics-container [data-chat-usage-metrics]'
+  end
+
+  private
+
+  def stub_shared_enabled(enabled)
+    orig = SharedSession::ENABLED
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, enabled)
+    yield
+  ensure
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, orig)
   end
 end

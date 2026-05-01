@@ -10,9 +10,10 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_01_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+  enable_extension "pg_trgm"
 
   create_table "bedrock_queries", force: :cascade do |t|
     t.datetime "created_at", null: false
@@ -74,6 +75,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_30_000003) do
     t.string "s3_key", null: false
     t.bigint "size_bytes"
     t.datetime "updated_at", null: false
+    t.index "lower((aliases)::text) gin_trgm_ops", name: "idx_kb_documents_aliases_text_trgm", using: :gin
+    t.index "lower((display_name)::text) gin_trgm_ops", name: "idx_kb_documents_display_name_trgm", using: :gin
     t.index [ "s3_key" ], name: "index_kb_documents_on_s3_key", unique: true
   end
 

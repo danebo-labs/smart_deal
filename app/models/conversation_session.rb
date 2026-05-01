@@ -6,7 +6,8 @@ class ConversationSession < ApplicationRecord
   MAX_ENTITIES   = ENV.fetch('SESSION_MAX_ENTITIES', 10).to_i
   MAX_MSG_LENGTH = 300
 
-  CHANNELS = %w[whatsapp web shared].freeze
+  # WA channel disabled for MVP. "whatsapp" kept in CHANNELS so legacy rows (if any) remain valid.
+  CHANNELS = %w[web shared whatsapp].freeze
 
   belongs_to :user, optional: true
 
@@ -14,14 +15,13 @@ class ConversationSession < ApplicationRecord
   validates :channel,    inclusion: { in: CHANNELS }
   validates :expires_at, presence: true
 
-  scope :active,   -> { where("expires_at > ?", Time.current) }
-  scope :expired,  -> { where(expires_at: ..Time.current) }
-  scope :whatsapp, -> { where(channel: "whatsapp") }
-  scope :web,      -> { where(channel: "web") }
+  scope :active,  -> { where("expires_at > ?", Time.current) }
+  scope :expired, -> { where(expires_at: ..Time.current) }
+  scope :web,     -> { where(channel: "web") }
 
   # ─── Lifecycle ──────────────────────────────────────────────────────────────
 
-  def self.find_or_create_for(identifier:, channel: "whatsapp", user_id: nil)
+  def self.find_or_create_for(identifier:, channel: "web", user_id: nil)
     if SharedSession::ENABLED
       identifier = SharedSession::IDENTIFIER
       channel    = SharedSession::CHANNEL

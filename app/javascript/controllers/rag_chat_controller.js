@@ -7,7 +7,7 @@ import { renderDocumentsConsulted } from "rag/documents_consulted_renderer"
 import { formatAnswerForWeb } from "rag/answer_presenter"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack"]
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
   static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
@@ -23,15 +23,22 @@ export default class extends Controller {
   connect() {
     this.pendingFile = null
     this.pendingImageQuery = null
+    this.indexingLoadingId = null
+    this._docsPanelExpanded = true  // tracks empty-chat state on mobile
     this.subscribeToKbSync()
-    this.inputTarget?.focus()
     this.setupMobileLayout()
+    this.setupKeyboardLift()
+    // Focus AFTER layout setup; on mobile the browser will not auto-open the
+    // keyboard from a programmatic focus without a user gesture, so this is
+    // safe and doesn't trigger a layout shift.
+    this.inputTarget?.focus()
   }
 
   disconnect() {
     this.kbSyncSubscription?.unsubscribe()
     this.mobilePanelObserver?.disconnect()
     window.removeEventListener("resize", this._onResize)
+    this.teardownKeyboardLift()
   }
 
   subscribeToKbSync() {
@@ -42,6 +49,10 @@ export default class extends Controller {
     this.kbSyncSubscription = consumer.subscriptions.create("KbSyncChannel", {
       received(data) {
         if (data.status === "indexed" || data.status === "failed") {
+          if (controller.indexingLoadingId) {
+            controller.removeMessage(controller.indexingLoadingId)
+            controller.indexingLoadingId = null
+          }
           controller.refreshDocuments()
           if (data.status === "indexed") {
             controller.addIndexedMessage(data)
@@ -225,20 +236,24 @@ export default class extends Controller {
 
     try {
       const data = await this.ask(question, fileToSend)
-      this.removeMessage(loadingId)
 
       if (data.status !== "success") {
+        this.removeMessage(loadingId)
         throw new Error(data.message || "Unknown error")
       }
 
+      // For image/document uploads, KEEP the same dots bubble alive until
+      // KbSyncChannel signals "indexed" (or "failed"). No intermediate text
+      // bubble is shown — only the typing animation, then the ✅ canonical name.
       if (data.images_uploaded?.length) {
-        this.addMessage(data.answer, "system")
+        this.indexingLoadingId = loadingId
         if (question) this.pendingImageQuery = question
         this.refreshDocuments()
       } else if (data.documents_uploaded?.length) {
-        this.addMessage(data.answer, "system")
+        this.indexingLoadingId = loadingId
         this.refreshDocuments()
       } else {
+        this.removeMessage(loadingId)
         const citations = Array.isArray(data.citations) ? data.citations : []
         if (citations.length) {
           this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
@@ -345,13 +360,56 @@ export default class extends Controller {
 
     const hasMessages = this.messagesTarget.children.length > 0
     if (hasMessages) {
-      docsPanel.style.cssText = "flex: 0 0 42%;"
-      this.chatContainerTarget.style.cssText = ""
+      // When transitioning from the expanded (empty-chat) state, reset the
+      // docs scroll so the user always sees the top of the list (newest doc).
+      if (this._docsPanelExpanded) {
+        this._docsPanelExpanded = false
+        requestAnimationFrame(() => docsPanel.scrollTo({ top: 0 }))
+      }
+      // Active chat: docs panel locked to (50svh - 58px) so the WHOLE chat
+      // block (messages + file preview + input) takes at most 50% of the
+      // small viewport. Both panes stay independently scrollable.
+      docsPanel.style.cssText = "flex: 0 0 calc(50svh - 58px); min-height: 0;"
+      this.chatContainerTarget.style.cssText = "flex: 1 1 0%; min-height: 0;"
     } else {
       // Empty chat: docs panel fills all available space; messages area collapses
+      this._docsPanelExpanded = true
       docsPanel.style.cssText = "flex: 1 1 0%;"
       this.chatContainerTarget.style.cssText = "flex: 0 0 0%; overflow: hidden;"
     }
+  }
+
+  // ── Keyboard lift (mobile only) ───────────────────────────────────────────
+  // Uses the VisualViewport API to detect the on-screen keyboard and exposes
+  // its height as the CSS variable --kbd-h on <html>. CSS in application.css
+  // (.chat-input-stack) consumes that variable to translate the input bar up
+  // and keep the textarea anchored above the keyboard. The rest of the UI
+  // (KB list + chat messages) does NOT move — body height is locked to 100svh.
+  setupKeyboardLift() {
+    const vv = window.visualViewport
+    if (!vv) return  // very old browsers — silently no-op (layout still works)
+
+    this._onVvChange = () => {
+      // Keyboard height = layout viewport bottom - visual viewport bottom.
+      // Clamp at 0 so non-keyboard resizes (URL bar, rotation) don't lift.
+      const layoutH = window.innerHeight
+      const visualBottom = vv.height + vv.offsetTop
+      const kbdH = Math.max(0, Math.round(layoutH - visualBottom))
+      document.documentElement.style.setProperty("--kbd-h", `${kbdH}px`)
+    }
+
+    vv.addEventListener("resize", this._onVvChange)
+    vv.addEventListener("scroll", this._onVvChange)
+    this._onVvChange()
+  }
+
+  teardownKeyboardLift() {
+    const vv = window.visualViewport
+    if (!vv || !this._onVvChange) return
+    vv.removeEventListener("resize", this._onVvChange)
+    vv.removeEventListener("scroll", this._onVvChange)
+    document.documentElement.style.removeProperty("--kbd-h")
+    this._onVvChange = null
   }
 
   // ── Message row builder (avatar + bubble wrapper) ─────────────────────────
@@ -458,7 +516,7 @@ export default class extends Controller {
     const docName = btn.dataset.docName
     const docTag = `[${docName}]`
     const isSelected = btn.dataset.selected === "true"
-    const checkbox = btn.querySelector(".mobile-doc-checkbox")
+    const checkbox = btn.querySelector(".kb-doc-checkbox")
 
     if (isSelected) {
       btn.dataset.selected = "false"
@@ -523,6 +581,17 @@ export default class extends Controller {
         const clone = stream.cloneNode(true)
         document.body.appendChild(clone)
         setTimeout(() => clone.remove(), 100)
+      })
+
+      // Turbo processes the stream asynchronously — wait one animation frame so
+      // the DOM is updated before we reset the scroll position to reveal the
+      // newest document at the top of the list.
+      requestAnimationFrame(() => {
+        this.element.querySelector(".mobile-docs-panel")?.scrollTo({ top: 0 })
+        document
+          .querySelector("#kb-docs-desktop-items")
+          ?.closest(".overflow-y-auto")
+          ?.scrollTo({ top: 0 })
       })
     } catch (error) {
       console.error('Error refreshing documents:', error)

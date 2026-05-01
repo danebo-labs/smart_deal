@@ -114,4 +114,10 @@ class KbDocumentTest < ActiveSupport::TestCase
     doc = KbDocument.find_by!(s3_key: key)
     assert_equal 111, doc.size_bytes
   end
+
+  test 'display_name_promotable? always returns true (canonical always wins)' do
+    assert KbDocument.new(s3_key: 'uploads/2026/human_name.pdf', display_name: 'Human Name').display_name_promotable?
+    assert KbDocument.new(s3_key: 'uploads/2026/wa_20260410_174231_0.jpeg', display_name: 'wa 20260410 174231 0').display_name_promotable?
+    assert KbDocument.new(s3_key: 'uploads/2026/x.pdf', display_name: '').display_name_promotable?
+  end
 end

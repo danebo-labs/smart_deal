@@ -4,6 +4,40 @@
  * All layout/nav/card styles are handled by Tailwind in tailwind/application.css.
  */
 
+/* ─── Mobile viewport lock + keyboard-aware input stack ────────────────────
+   Goal on mobile (chat page only — body.app-locked):
+     • The page chrome (header + KB list + chat messages) must stay 100% still
+       when the on-screen keyboard opens or closes — no layout shift, ever.
+     • Only the textarea/file-preview block (.chat-input-stack) lifts up to
+       sit anchored above the keyboard. Lift amount comes from --kbd-h which
+       rag_chat_controller computes from window.visualViewport.
+   Implementation:
+     • Body & html locked to the SMALL viewport height (100svh) so the layout
+       does not respond to keyboard / URL-bar visibility changes.
+     • overflow: hidden + overscroll-behavior: none so nothing can be scrolled
+       off the visible area (fixes the bug where the header used to overlap
+       the chat after the keyboard closed).
+   Cross-browser: 100svh + VisualViewport API are supported in iOS Safari
+   ≥ 15.4, Android Chrome ≥ 108, Samsung Internet, Firefox Mobile, Edge Mobile.
+*/
+@media (max-width: 767px) {
+  html:has(body.app-locked),
+  body.app-locked {
+    height: 100svh;
+    min-height: 0;             /* override Tailwind's min-h-screen on body */
+    overflow: hidden;
+    overscroll-behavior: none; /* no rubber-band / pull-to-refresh */
+  }
+
+  body.app-locked .chat-input-stack {
+    transform: translateY(calc(-1 * var(--kbd-h, 0px)));
+    transition: transform 0.18s ease-out;
+    will-change: transform;
+    position: relative;
+    z-index: 10;               /* always on top of messages while floating */
+  }
+}
+
 /* ─── Chat message bubbles (injected by rag-chat_controller.js) ─── */
 
 /* Row wrapper: avatar + bubble side by side */

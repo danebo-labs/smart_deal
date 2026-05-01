@@ -45,6 +45,44 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
     skip "Manual integration test: Upload a large JPEG (>500KB) via UI to verify compression"
   end
 
+  # ── compress_with_thumbnail ────────────────────────────────────────────────
+
+  test "compress_with_thumbnail returns thumbnail keys" do
+    img_base64 = create_test_image_base64(200, 150)
+    result = ImageCompressionService.compress_with_thumbnail(img_base64, "image/jpeg")
+
+    assert result.key?(:thumbnail_binary)
+    assert result.key?(:thumbnail_content_type)
+    assert result.key?(:thumbnail_width)
+    assert result.key?(:thumbnail_height)
+    assert_equal "image/jpeg", result[:thumbnail_content_type]
+  end
+
+  test "compress_with_thumbnail produces thumbnail within expected size" do
+    img_base64 = create_test_image_base64(400, 300)
+    result = ImageCompressionService.compress_with_thumbnail(img_base64, "image/jpeg")
+
+    assert result[:thumbnail_binary].is_a?(String)
+    assert_operator result[:thumbnail_binary].bytesize, :>, 0
+    assert_operator result[:thumbnail_binary].bytesize, :<=, 30_000, "thumbnail should be ≤30 KB"
+  end
+
+  test "compress_with_thumbnail thumbnail width does not exceed THUMB_MAX_WIDTH" do
+    img_base64 = create_test_image_base64(400, 300)
+    result = ImageCompressionService.compress_with_thumbnail(img_base64, "image/jpeg")
+
+    assert_operator result[:thumbnail_width], :<=, ImageCompressionService::THUMB_MAX_WIDTH
+  end
+
+  test "compress_with_thumbnail still returns main compressed image" do
+    img_base64 = create_test_image_base64(200, 150)
+    result = ImageCompressionService.compress_with_thumbnail(img_base64, "image/jpeg")
+
+    assert result.key?(:data)
+    assert result.key?(:binary)
+    assert_equal "image/jpeg", result[:media_type]
+  end
+
   private
 
   def create_test_image_base64(width, height, format: "jpeg")

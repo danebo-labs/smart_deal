@@ -1,0 +1,8 @@
+<%# IntersectionObserver target. Fetches GET /home/documents_page?page=N when visible.
+    Replaced by next sentinel (or removed) on each fetch. %>
+<div id="<%= sentinel_id %>"
+     data-controller="docs-scroll"
+     data-docs-scroll-url-value="/home/documents_page"
+     data-docs-scroll-page-value="<%= page %>"
+     data-docs-scroll-target-value="<%= sentinel_id.sub('-sentinel', '-items') %>"
+     class="h-1 w-full"></div>

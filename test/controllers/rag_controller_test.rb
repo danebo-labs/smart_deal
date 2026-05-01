@@ -23,7 +23,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
                                should_raise: false, error_class: StandardError, error_message: nil,
-                               documents_uploaded: nil)
+                               documents_uploaded: nil, images_uploaded: nil)
     mock = Object.new
     mock.define_singleton_method(:execute) do
       raise error_class, error_message || 'Service error' if should_raise
@@ -34,6 +34,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
         session_id: session_id
       }
       result[:documents_uploaded] = documents_uploaded if documents_uploaded.present?
+      result[:images_uploaded]    = images_uploaded    if images_uploaded.present?
       result
     end
     mock
@@ -141,6 +142,38 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
       json = json_response
       assert_includes json["answer"], "Your document is being processed"
+    end
+  end
+
+  test 'image upload returns images_uploaded so frontend shows dots-only ack' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(
+      answer:          I18n.t('rag.image_indexing_message', locale: :es),
+      citations:       [],
+      session_id:      nil,
+      images_uploaded: [ 'circuit.jpeg' ]
+    )
+
+    stub_compression_with_thumbnail do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url,
+             params: {
+               question: '',
+               image: {
+                 data: Base64.strict_encode64('fake-bytes'),
+                 media_type: 'image/jpeg',
+                 filename: 'circuit.jpeg'
+               }
+             },
+             as: :json
+        assert_response :success
+
+        json = json_response
+        assert_equal 'success', json['status']
+        assert_equal [ 'circuit.jpeg' ], json['images_uploaded'],
+                     'images_uploaded must be present so the chat shows only the typing dots until KbSync indexed event'
+      end
     end
   end
 
@@ -440,6 +473,26 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  # Bypasses Vips/libvips so we can test the controller's image upload branch
+  # with a fake base64 payload.
+  def stub_compression_with_thumbnail
+    original = ImageCompressionService.method(:compress_with_thumbnail)
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) do |base64, media_type|
+      {
+        data:                   base64,
+        media_type:             media_type,
+        binary:                 Base64.decode64(base64),
+        thumbnail_binary:       "thumb",
+        thumbnail_content_type: "image/jpeg",
+        thumbnail_width:        44,
+        thumbnail_height:       44
+      }
+    end
+    yield
+  ensure
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) { |*a, **k| original.call(*a, **k) }
+  end
 
   def stub_shared_enabled(enabled)
     orig = SharedSession::ENABLED

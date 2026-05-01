@@ -10,6 +10,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
   setup do
     CostMetric.destroy_all
     BedrockQuery.destroy_all
+    KbDocument.destroy_all
     sign_in users(:one), scope: :user
   end
 
@@ -24,104 +25,63 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     get root_path
     assert_response :success
     assert_select 'h3', text: 'Base de Conocimiento'
-    assert_select '#documents-list-container p.truncate', text: 'Manual ascensor'
+    assert_select '#kb-docs-desktop-items button[data-doc-name="Manual ascensor"]'
+    assert_select '#kb-docs-mobile-items  button[data-doc-name="Manual ascensor"]'
   end
 
-  test 'index renders session, recent, and knowledge base panels beside chat' do
-    get root_path
+  test 'documents action returns turbo_stream updates for both desktop and mobile items' do
+    KbDocument.create!(s3_key: 'uploads/2026/a.pdf', display_name: 'A', aliases: [])
+
+    get '/home/documents'
     assert_response :success
-    assert_select '#session-entities-list-container'
-    assert_select '#technician-documents-list-container'
-    assert_select '#documents-list-container'
+    assert_equal TURBO_STREAM_CONTENT_TYPE, response.content_type
+    assert_match(/target="kb-docs-desktop-items"/, response.body)
+    assert_match(/target="kb-docs-mobile-items"/,  response.body)
   end
 
-  test 'index places session and recent panels before knowledge base files card' do
+  test 'index shows sentinel when more than PAGE_SIZE docs exist' do
+    21.times { |i| KbDocument.create!(s3_key: "uploads/2026/d#{i}.pdf", display_name: "Doc #{i}", aliases: []) }
     get root_path
-    assert_response :success
-
-    body = response.body
-    idx_session = body.index('Archivos en la sesión')
-    idx_recent = body.index('Recientes consultados')
-    idx_kb = body.index('Base de Conocimiento')
-    assert idx_session && idx_recent && idx_kb && idx_session < idx_recent && idx_recent < idx_kb
+    assert_select '#kb-docs-desktop-sentinel'
+    assert_select '#kb-docs-mobile-sentinel'
   end
 
-  test 'index overview card lists session files panel above recent documents panel' do
+  test 'index hides sentinel when at most PAGE_SIZE docs exist' do
+    20.times { |i| KbDocument.create!(s3_key: "uploads/2026/d#{i}.pdf", display_name: "Doc #{i}", aliases: []) }
     get root_path
+    assert_select '#kb-docs-desktop-sentinel', count: 0
+    assert_select '#kb-docs-mobile-sentinel',  count: 0
+  end
+
+  test 'documents_page appends next 20 rows and removes sentinel when no more pages' do
+    25.times { |i| KbDocument.create!(s3_key: "uploads/2026/p#{i}.pdf", display_name: "Page #{i}", aliases: []) }
+
+    get '/home/documents_page', params: { page: 1 }
     assert_response :success
-
-    body = response.body
-    idx_session = body.index('id="session-entities-list-container"')
-    idx_recent = body.index('id="technician-documents-list-container"')
-    assert idx_session && idx_recent && idx_session < idx_recent,
-           'session entities block should render before recent technician documents block'
+    assert_match(/action="append" target="kb-docs-desktop-items"/, response.body)
+    assert_match(/action="append" target="kb-docs-mobile-items"/,  response.body)
+    # 25 total, page 0 has 20, page 1 has 5 → no more pages, sentinels removed
+    assert_match(/action="remove" target="kb-docs-desktop-sentinel"/, response.body)
+    assert_match(/action="remove" target="kb-docs-mobile-sentinel"/,  response.body)
   end
 
-  test 'index overview lists TechnicianDocument canonical_name numbered' do
-    TechnicianDocument.delete_all
-    TechnicianDocument.create!(
-      identifier: "whatsapp:+56900000000",
-      channel: "whatsapp",
-      canonical_name: "Manual técnico overview",
-      last_used_at: Time.current
-    )
+  test 'documents_page replaces sentinel when more pages remain' do
+    45.times { |i| KbDocument.create!(s3_key: "uploads/2026/p#{i}.pdf", display_name: "P#{i}", aliases: []) }
 
-    get root_path
-    assert_response :success
-    assert_select 'h3', text: 'Recientes consultados'
-    assert_select "#technician-documents-list-container p.truncate", text: 'Manual técnico overview'
-    assert_match(
-      %r{<span[^>]*>\s*1\s*</span>.*Manual técnico overview}m,
-      response.body
-    )
+    get '/home/documents_page', params: { page: 1 }
+    assert_match(/action="replace" target="kb-docs-desktop-sentinel"/, response.body)
+    assert_match(/data-docs-scroll-page-value="2"/, response.body)
   end
 
-  test 'shared MVP session shows active_entities on home when signed in' do
-    stub_shared_session_enabled_for_home_test(true) do
-      ConversationSession.where(identifier: SharedSession::IDENTIFIER, channel: SharedSession::CHANNEL).delete_all
-      ConversationSession.create!(
-        identifier: SharedSession::IDENTIFIER,
-        channel: SharedSession::CHANNEL,
-        expires_at: 1.hour.from_now,
-        active_entities: { "Entidad sesión compartida MVP" => { "source" => "test" } }
-      )
-
-      get root_path
-      assert_response :success
-      assert_select "#session-entities-list-container span.truncate", text: "Entidad sesión compartida MVP"
-    end
-  end
-
-  test 'index overview uses first ConversationSession when scoped session has no entities' do
-    ConversationSession.delete_all
-    ConversationSession.create!(
-      identifier: "whatsapp:+56900009999",
-      channel: "whatsapp",
-      expires_at: 1.hour.from_now,
-      active_entities: { "Doc único en BD" => { "source" => "test" } }
-    )
+  test 'kb_docs_card renders thumbnail img only for image extensions with thumbnail row' do
+    pdf = KbDocument.create!(s3_key: 'uploads/2026/foo.pdf', display_name: 'PDF', aliases: [])
+    jpg = KbDocument.create!(s3_key: 'uploads/2026/foo.jpg', display_name: 'JPG', aliases: [])
+    jpg.create_thumbnail!(data: "fake", content_type: "image/jpeg", byte_size: 4)
 
     get root_path
-    assert_response :success
-    assert_select "#session-entities-list-container span.truncate", text: "Doc único en BD"
-  end
-
-  test 'index overview lists active web session entity keys when SharedSession off' do
-    stub_shared_session_enabled_for_home_test(false) do
-    user = users(:one)
-    ConversationSession.where(identifier: user.id.to_s, channel: "web").delete_all
-    ConversationSession.create!(
-      identifier: user.id.to_s,
-      channel: "web",
-      expires_at: 1.hour.from_now,
-      active_entities: { "Esquema bomba" => { "source" => "test" } }
-    )
-
-    get root_path
-    assert_response :success
-    assert_select 'h3', text: 'Archivos en la sesión'
-    assert_select "#session-entities-list-container span.truncate", text: "Esquema bomba"
-    end
+    # One img per layout (desktop + mobile) = 2 total
+    assert_select %(button[data-doc-name="JPG"] img), 2
+    assert_select %(button[data-doc-name="PDF"] img), 0
   end
 
   test 'should render index with metrics' do
@@ -205,15 +165,5 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert CostMetric.exists?(date: today, metric_type: :daily_tokens),
            'CostMetric should be synced from BedrockQuery on first load'
     assert_select '#chat-usage-metrics-container [data-chat-usage-metrics]'
-  end
-
-  def stub_shared_session_enabled_for_home_test(enabled)
-    orig = SharedSession::ENABLED
-    SharedSession.send(:remove_const, :ENABLED)
-    SharedSession.const_set(:ENABLED, enabled)
-    yield
-  ensure
-    SharedSession.send(:remove_const, :ENABLED)
-    SharedSession.const_set(:ENABLED, orig)
   end
 end

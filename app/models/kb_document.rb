@@ -3,6 +3,8 @@
 # Global catalog row per S3 object key in the KB bucket. Created once on first upload;
 # aliases can be enriched later (e.g. from entity extraction).
 class KbDocument < ApplicationRecord
+  has_one :thumbnail, class_name: "KbDocumentThumbnail", dependent: :destroy
+
   # DB: jsonb, default []. Stored as JSON array of strings; exposed as Array in Ruby.
   validates :s3_key, presence: true, uniqueness: true
 
@@ -45,19 +47,10 @@ class KbDocument < ApplicationRecord
     File.basename(base, ".*").tr("_-", " ").strip
   end
 
-  # True when the current display_name is a machine-generated placeholder and
-  # may therefore be replaced with a canonical discovered later (Opus/Haiku).
-  #
-  # A display_name is promotable when:
-  #   - it is blank (new row, nothing to preserve), OR
-  #   - the underlying filename is machine-generated (wa_*/chat_*) AND the
-  #     display_name still equals its stem (no human label has been set).
-  #
-  # Human-chosen filenames (web uploads with descriptive names) are ALWAYS
-  # treated as immutable: the technician's vocabulary wins.
+  # Always true: the Opus canonical discovered at ingestion wins over whatever
+  # stem was stored at upload time. The original filename stem is kept in aliases.
   def display_name_promotable?
-    return true if display_name.blank?
-    machine_generated_filename? && display_name == stem_from_s3_key
+    true
   end
 
   # docs: hashes from S3DocumentsService#list_documents (:full_path). kb_by_object_key: index by object_key_for_match.

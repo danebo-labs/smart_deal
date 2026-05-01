@@ -13,8 +13,10 @@
 #   the resize→convert→save pipeline runs only once (with one fallback at q=40
 #   for extreme cases).
 class ImageCompressionService
-  MAX_DIMENSION    = 1024
-  MAX_BINARY_BYTES = (3.75 * 1024 * 1024).to_i  # 3.75 MB in bytes
+  MAX_DIMENSION      = 1024
+  MAX_BINARY_BYTES   = (3.75 * 1024 * 1024).to_i  # 3.75 MB in bytes
+  THUMB_MAX_WIDTH    = 88   # px — fits 44×44 Tailwind h-11 w-11 at 2x DPR
+  THUMB_QUALITY      = 70
 
   class CompressionError < StandardError; end
 
@@ -30,6 +32,17 @@ class ImageCompressionService
   # @raise [CompressionError]
   def self.compress(base64_data, media_type)
     new(base64_data, media_type).compress
+  end
+
+  # Same as compress but also produces a small JPEG thumbnail in a single Vips load.
+  # Thumbnail is 88 px wide (2x DPR of the 44 px mobile cell), q=70 — typically ≤15 KB.
+  # @return [Hash] compress result merged with:
+  #   thumbnail_binary:       String (raw JPEG bytes)
+  #   thumbnail_content_type: "image/jpeg"
+  #   thumbnail_width:        Integer
+  #   thumbnail_height:       Integer
+  def self.compress_with_thumbnail(base64_data, media_type)
+    new(base64_data, media_type).compress_with_thumbnail
   end
 
   def initialize(base64_data, media_type)
@@ -55,6 +68,19 @@ class ImageCompressionService
   rescue StandardError => e
     Rails.logger.error("ImageCompressionService: Failed to compress image: #{e.message}")
     raise CompressionError, "Failed to compress image: #{e.message}"
+  end
+
+  # Compresses the main image AND generates a thumbnail in a single Vips load.
+  # Falls back to compress-only (no thumbnail) on any Vips error so the upload
+  # still succeeds even if thumbnail generation fails.
+  def compress_with_thumbnail
+    result        = compress
+    thumb_payload = build_thumbnail(decoded_blob)
+
+    result.merge(thumb_payload)
+  rescue StandardError => e
+    Rails.logger.warn("ImageCompressionService: thumbnail generation failed (#{e.message}); proceeding without thumb")
+    compress.merge(thumbnail_binary: nil, thumbnail_content_type: nil, thumbnail_width: nil, thumbnail_height: nil)
   end
 
   private
@@ -108,6 +134,19 @@ class ImageCompressionService
     result
   rescue Vips::Error => e
     raise CompressionError, "Image processing failed: #{e.message}"
+  end
+
+  def build_thumbnail(blob)
+    img        = Vips::Image.new_from_buffer(blob, "").thumbnail_image(THUMB_MAX_WIDTH, size: :down)
+    thumb_blob = img.write_to_buffer(".jpg[Q=#{THUMB_QUALITY}]")
+    {
+      thumbnail_binary:       thumb_blob,
+      thumbnail_content_type: "image/jpeg",
+      thumbnail_width:        img.width,
+      thumbnail_height:       img.height
+    }
+  rescue Vips::Error => e
+    raise CompressionError, "Thumbnail generation failed: #{e.message}"
   end
 
   def run_vips(blob, quality)

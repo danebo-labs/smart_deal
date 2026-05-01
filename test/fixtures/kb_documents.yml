@@ -1,0 +1,6 @@
+manual_uno:
+  s3_key: uploads/2026/manual_uno.pdf
+  display_name: Manual uno
+  aliases: []
+  created_at: <%= 1.hour.ago.iso8601 %>
+  updated_at: <%= 1.hour.ago.iso8601 %>

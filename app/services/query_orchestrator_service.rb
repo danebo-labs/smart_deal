@@ -130,23 +130,28 @@ class QueryOrchestratorService
 
   private
 
-  # Uploads all pending images and documents to S3, then starts a Bedrock KB
-  # ingestion job via KbSyncService. BedrockIngestionJob polls for completion
-  # and broadcasts the result via ActionCable.
+  # Uploads all pending images and documents to S3, creates KbDocument + thumbnail
+  # synchronously in this thread (same process, data in memory), then enqueues
+  # BedrockIngestionJob with explicit kb_document_ids for enrichment-only work.
   # @return [Array<String>] filenames that were successfully uploaded to S3
   def upload_and_sync_attachments
     s3 = S3DocumentsService.new
     uploaded_filenames = []
+    kb_document_ids    = []
 
     @images.each_with_index do |img, idx|
       ext = img[:media_type]&.split('/')&.last || 'jpeg'
       filename = (img[:filename] || img['filename']).presence
       filename = File.basename(filename) if filename.present?
       filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}" if filename.blank?
-      # Prefer pre-decoded binary from ImageCompressionService to avoid a redundant Base64.decode64 call.
       binary_data = img[:binary] || img['binary'] || Base64.decode64(img[:data] || img['data'])
       key = s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
-      uploaded_filenames << filename if key.present?
+      next if key.blank?
+
+      uploaded_filenames << filename
+      kb_doc = ensure_kb_document_for(key)
+      persist_thumbnail_for(kb_doc, img)
+      kb_document_ids << kb_doc.id
     end
 
     @documents.each_with_index do |doc, idx|
@@ -155,22 +160,54 @@ class QueryOrchestratorService
       binary_data = Base64.decode64(doc[:data] || doc['data'])
       media_type = doc[:media_type] || doc['media_type'] || 'text/plain'
       key = s3.upload_file(filename, binary_data, media_type)
-      uploaded_filenames << filename if key.present?
+      next if key.blank?
+
+      uploaded_filenames << filename
+      kb_doc = ensure_kb_document_for(key)
+      kb_document_ids << kb_doc.id
     end
 
-    return [] unless uploaded_filenames.any?
+    return [] if uploaded_filenames.empty?
 
     result = KbSyncService.new(tenant: @tenant || current_tenant).sync!(uploaded_filenames: uploaded_filenames)
     if result.present?
       BedrockIngestionJob.perform_later(
         result[:job_id],
         uploaded_filenames,
-        kb_id: result[:kb_id],
-        data_source_id: result[:data_source_id],
-        conv_session_id: @conv_session&.id
+        kb_id:           result[:kb_id],
+        data_source_id:  result[:data_source_id],
+        conv_session_id: @conv_session&.id,
+        kb_document_ids: kb_document_ids
       )
     end
     uploaded_filenames
+  end
+
+  # Idempotent: uses s3_key as unique key. Recovers from a race-condition
+  # RecordNotUnique by re-finding the row the winner thread created.
+  def ensure_kb_document_for(s3_key)
+    KbDocument.find_or_create_by!(s3_key: s3_key) do |d|
+      d.display_name = File.basename(s3_key, ".*").tr("_-", " ").strip.presence
+      d.aliases      = []
+    end
+  rescue ActiveRecord::RecordNotUnique
+    KbDocument.find_by!(s3_key: s3_key)
+  end
+
+  def persist_thumbnail_for(kb_doc, img)
+    thumb_binary = img[:thumbnail_binary] || img['thumbnail_binary']
+    return if thumb_binary.blank?
+    return if kb_doc.thumbnail.present?
+
+    kb_doc.create_thumbnail!(
+      data:         thumb_binary,
+      content_type: img[:thumbnail_content_type] || img['thumbnail_content_type'] || "image/jpeg",
+      width:        img[:thumbnail_width]  || img['thumbnail_width'],
+      height:       img[:thumbnail_height] || img['thumbnail_height'],
+      byte_size:    thumb_binary.bytesize
+    )
+  rescue StandardError => e
+    Rails.logger.warn("QueryOrchestrator: thumbnail persist failed for kb_doc=#{kb_doc.id} — #{e.message}")
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,

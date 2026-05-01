@@ -88,37 +88,11 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
   end
 
   test "sends generic indexed WhatsApp message per file with filename" do
-    with_mock_ingestion_service(%w[COMPLETE]) do
-      stub_twilio_client do |sent|
-        with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
-          BedrockIngestionJob.perform_now(
-            "job-123", [ "wa_20260323_214702_0.jpeg" ],
-            kb_id: "kb-1", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2"
-          )
-        end
-
-        assert_equal 1, sent.size
-        expected = I18n.t("rag.whatsapp_indexed_generic", filename: "wa_20260323_214702_0.jpeg")
-        assert_equal expected, sent.first[:body]
-      end
-    end
+    skip "WA channel disabled for MVP — notify_whatsapp removed from BedrockIngestionJob"
   end
 
   test "sends one WhatsApp message per uploaded filename" do
-    with_mock_ingestion_service(%w[COMPLETE]) do
-      stub_twilio_client do |sent|
-        with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
-          BedrockIngestionJob.perform_now(
-            "job-123", %w[a.pdf b.pdf],
-            kb_id: "kb-1", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2"
-          )
-        end
-
-        assert_equal 2, sent.size
-        assert_equal I18n.t("rag.whatsapp_indexed_generic", filename: "a.pdf"), sent[0][:body]
-        assert_equal I18n.t("rag.whatsapp_indexed_generic", filename: "b.pdf"), sent[1][:body]
-      end
-    end
+    skip "WA channel disabled for MVP — notify_whatsapp removed from BedrockIngestionJob"
   end
 
   # ─── Entity registration on ingestion ─────────────────────────────────────────
@@ -151,8 +125,6 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
           assert_includes entity["aliases"], "Car Top Junction Box"
           assert_includes entity["aliases"], "wa_20260323_214702_0.jpeg"
           assert_includes entity["aliases"], "wa_20260323_214702_0"
-
-          assert_includes sent.first[:body], "Junction Box Car Top"
         end
       end
     end
@@ -180,9 +152,6 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
           entity = session.active_entities["wa_20260323_214702_0"]
           assert_not_nil entity
           assert_equal "pending_first_query", entity["extraction_method"]
-
-          expected = I18n.t("rag.whatsapp_indexed_generic", filename: "wa_20260323_214702_0.jpeg")
-          assert_equal expected, sent.first[:body]
         end
       end
     end
@@ -272,7 +241,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
   test "creates KbDocument with canonical name after successful ingestion" do
     wa_filename = "wa_20260410_174231_0.jpeg"
     s3_key      = "uploads/2026-04-10/#{wa_filename}"
-    assert_nil KbDocument.find_by(s3_key: s3_key), "should not exist before indexing"
+    kb          = KbDocument.create!(s3_key: s3_key, display_name: "wa 20260410 174231 0")
 
     session = ConversationSession.create!(
       identifier: "whatsapp:+99900000005",
@@ -284,11 +253,11 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
       with_mock_ingestion_service(%w[COMPLETE]) do
         stub_twilio_client do |_sent|
           with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
-            assert_difference -> { KbDocument.count }, +1 do
+            assert_no_difference -> { KbDocument.count } do
               BedrockIngestionJob.perform_now(
                 "job-123", [ wa_filename ],
                 kb_id: "kb-test", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2",
-                conv_session_id: session.id
+                conv_session_id: session.id, kb_document_ids: [ kb.id ]
               )
             end
           end
@@ -296,7 +265,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
       end
     end
 
-    kb = KbDocument.find_by!(s3_key: s3_key)
+    kb.reload
     assert_equal "Gearless Traction Machine", kb.display_name
     assert_includes kb.aliases, "sheave"
   end
@@ -304,7 +273,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
   test "upserts KbDocument when row already exists (idempotent re-run)" do
     wa_filename = "wa_20260410_174231_0.jpeg"
     s3_key      = "uploads/2026-04-10/#{wa_filename}"
-    KbDocument.create!(s3_key: s3_key, display_name: "wa 20260410 174231 0", aliases: [])
+    kb          = KbDocument.create!(s3_key: s3_key, display_name: "wa 20260410 174231 0", aliases: [])
 
     session = ConversationSession.create!(
       identifier: "whatsapp:+99900000005b",
@@ -320,7 +289,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
               BedrockIngestionJob.perform_now(
                 "job-123", [ wa_filename ],
                 kb_id: "kb-test", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2",
-                conv_session_id: session.id
+                conv_session_id: session.id, kb_document_ids: [ kb.id ]
               )
             end
           end
@@ -328,7 +297,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
       end
     end
 
-    kb = KbDocument.find_by!(s3_key: s3_key)
+    kb.reload
     assert_equal "Gearless Traction Machine", kb.display_name
     assert_includes kb.aliases, "sheave"
   end
@@ -348,69 +317,39 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
     assert_equal [], kb.aliases
   end
 
-  test "preserves human-chosen web filename as display_name; canonical goes to aliases" do
+  test "canonical from Opus replaces web-uploaded human stem as display_name; stem becomes alias" do
     web_filename = "Esquema SOPREL.pdf"
     s3_key       = "uploads/#{Date.current.iso8601}/#{web_filename}"
+    kb           = KbDocument.create!(s3_key: s3_key, display_name: "Esquema SOPREL", aliases: [])
     session      = ConversationSession.create!(
       identifier: "web:user-web-1",
       channel:    "web",
       expires_at: 30.minutes.from_now
     )
 
-    with_mock_chunk_extractor({ canonical_name: "Foremcaro 6118/81 — Colegio Sta. Doroteia", aliases: [ "Esquema Eléctrico", "Portas de Patamar" ] }) do
+    with_mock_chunk_extractor({ canonical_name: "Foremcaro 6118/81", aliases: [ "Esquema Eléctrico" ] }) do
       with_mock_ingestion_service(%w[COMPLETE]) do
         stub_twilio_client do |_sent|
           with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
             BedrockIngestionJob.perform_now(
               "job-web", [ web_filename ],
-              kb_id: "kb-test", conv_session_id: session.id
+              kb_id: "kb-test", conv_session_id: session.id, kb_document_ids: [ kb.id ]
             )
           end
         end
       end
     end
 
-    kb = KbDocument.find_by!(s3_key: s3_key)
-    # Human-chosen filename wins over Opus canonical (web path).
-    assert_equal "Esquema SOPREL", kb.display_name
-    # Canonical from Opus and the stem both live in aliases so the resolver matches either.
-    assert_includes kb.aliases, "Foremcaro 6118/81 — Colegio Sta. Doroteia"
+    kb.reload
+    assert_equal "Foremcaro 6118/81", kb.display_name
     assert_includes kb.aliases, "Esquema SOPREL"
     assert_includes kb.aliases, "Esquema Eléctrico"
-  end
-
-  test "does not overwrite an existing human display_name on re-ingestion" do
-    web_filename = "Esquema SOPREL.pdf"
-    s3_key       = "uploads/#{Date.current.iso8601}/#{web_filename}"
-    KbDocument.create!(s3_key: s3_key, display_name: "Custom Label By Admin", aliases: [])
-
-    session = ConversationSession.create!(
-      identifier: "web:user-web-2",
-      channel:    "web",
-      expires_at: 30.minutes.from_now
-    )
-
-    with_mock_chunk_extractor({ canonical_name: "Foremcaro 6118/81", aliases: [] }) do
-      with_mock_ingestion_service(%w[COMPLETE]) do
-        stub_twilio_client do |_sent|
-          with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
-            BedrockIngestionJob.perform_now(
-              "job-web-2", [ web_filename ],
-              kb_id: "kb-test", conv_session_id: session.id
-            )
-          end
-        end
-      end
-    end
-
-    kb = KbDocument.find_by!(s3_key: s3_key)
-    assert_equal "Custom Label By Admin", kb.display_name
-    assert_includes kb.aliases, "Foremcaro 6118/81"
   end
 
   test "does not store the machine stem as an alias for wa_* filenames" do
     wa_filename = "wa_20260410_200000_0.jpeg"
     s3_key      = "uploads/2026-04-10/#{wa_filename}"
+    kb          = KbDocument.create!(s3_key: s3_key, display_name: "wa 20260410 200000 0")
     session     = ConversationSession.create!(
       identifier: "whatsapp:+99900000009",
       channel:    "whatsapp",
@@ -421,19 +360,20 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
       with_mock_ingestion_service(%w[COMPLETE]) do
         stub_twilio_client do |_sent|
           with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
-            BedrockIngestionJob.perform_now(
-              "job-wa", [ wa_filename ],
-              kb_id: "kb-test", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2",
-              conv_session_id: session.id
-            )
+            assert_no_difference -> { KbDocument.count } do
+              BedrockIngestionJob.perform_now(
+                "job-wa", [ wa_filename ],
+                kb_id: "kb-test", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2",
+                conv_session_id: session.id, kb_document_ids: [ kb.id ]
+              )
+            end
           end
         end
       end
     end
 
-    kb = KbDocument.find_by!(s3_key: s3_key)
+    kb.reload
     assert_equal "Brake Assembly", kb.display_name
-    assert_includes kb.aliases, "Brake Assembly"
     assert_includes kb.aliases, "caliper"
     assert_not_includes kb.aliases, "wa 20260410 200000 0",
                         "Machine-generated stems must never be stored as human-searchable aliases"
@@ -442,52 +382,23 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
   # ─── build_indexed_notification fix ─────────────────────────────────────────
 
   test "sends canonical_only notification when result has no aliases" do
-    session = ConversationSession.create!(
-      identifier: "whatsapp:+99900000007",
-      channel:    "whatsapp",
-      expires_at: 30.minutes.from_now
-    )
-
-    with_mock_chunk_extractor({ canonical_name: "Brake Assembly Unit", aliases: [] }) do
-      with_mock_ingestion_service(%w[COMPLETE]) do
-        stub_twilio_client do |sent|
-          with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
-            BedrockIngestionJob.perform_now(
-              "job-123", [ "wa_20260410_174231_0.jpeg" ],
-              kb_id: "kb-test", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2",
-              conv_session_id: session.id
-            )
-          end
-
-          expected = I18n.t("rag.whatsapp_indexed_canonical_only", name: "Brake Assembly Unit")
-          assert_equal expected, sent.first[:body]
-          assert_not_includes sent.first[:body], "Consúltame por:"
-        end
-      end
-    end
+    skip "WA channel disabled for MVP — build_indexed_notification removed from BedrockIngestionJob"
   end
 
   test "sends with_aliases notification when result has aliases" do
-    session = ConversationSession.create!(
-      identifier: "whatsapp:+99900000008",
-      channel:    "whatsapp",
-      expires_at: 30.minutes.from_now
-    )
+    skip "WA channel disabled for MVP — build_indexed_notification removed from BedrockIngestionJob"
+  end
 
-    with_mock_chunk_extractor({ canonical_name: "Brake Assembly", aliases: [ "brake", "caliper" ] }) do
-      with_mock_ingestion_service(%w[COMPLETE]) do
-        stub_twilio_client do |sent|
-          with_env('TWILIO_ACCOUNT_SID' => 'ACtest', 'TWILIO_AUTH_TOKEN' => 'tok') do
-            BedrockIngestionJob.perform_now(
-              "job-123", [ "wa_20260410_174231_0.jpeg" ],
-              kb_id: "kb-test", whatsapp_from: "whatsapp:+1", whatsapp_to: "whatsapp:+2",
-              conv_session_id: session.id
-            )
-          end
+  # ─── Thumbnail responsibility moved to orchestrator ──────────────────────────
 
-          expected = I18n.t("rag.whatsapp_indexed_with_aliases", name: "Brake Assembly", aliases: "brake, caliper")
-          assert_equal expected, sent.first[:body]
-        end
+  test "job does not touch thumbnails (responsibility moved to orchestrator)" do
+    filename = "chat_20260430_000001_0.jpeg"
+    s3_key   = "uploads/2026-04-30/#{filename}"
+    kb_doc   = KbDocument.create!(s3_key: s3_key, display_name: "test")
+
+    with_mock_ingestion_service(%w[COMPLETE]) do
+      assert_no_difference -> { KbDocumentThumbnail.count } do
+        BedrockIngestionJob.perform_now("job-x", [ filename ], kb_document_ids: [ kb_doc.id ])
       end
     end
   end

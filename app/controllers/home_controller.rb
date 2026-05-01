@@ -3,13 +3,14 @@
 class HomeController < ApplicationController
   include MetricsHelper
 
+  PAGE_SIZE = 20
+
   before_action :authenticate_user!
 
   def index
-    @current_metrics = current_metrics
-    @kb_documents = KbDocument.order(created_at: :desc)
-    @technician_documents_recent = TechnicianDocument.recent.to_a
-    @session_entity_keys = session_entity_keys_for_home
+    @current_metrics  = current_metrics
+    @kb_documents     = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
+    @kb_docs_has_more = KbDocument.count > PAGE_SIZE
   end
 
   def metrics
@@ -20,40 +21,55 @@ class HomeController < ApplicationController
     )
   end
 
+  # Refreshes BOTH the desktop and mobile KB doc lists after an indexing event.
+  # Called by rag_chat_controller#refreshDocuments after KbSyncChannel "indexed".
   def documents
-    render turbo_stream: turbo_stream.update(
-      "documents-list-container",
-      partial: "home/documents_list",
-      locals: { kb_documents: KbDocument.order(created_at: :desc) }
-    )
+    kb_docs  = KbDocument.includes(:thumbnail).order(created_at: :desc).limit(PAGE_SIZE)
+    has_more = KbDocument.count > PAGE_SIZE
+
+    render turbo_stream: [
+      turbo_stream.update("kb-docs-desktop-items",
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+      turbo_stream.update("kb-docs-mobile-items",
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+      sentinel_stream(:desktop, has_more: has_more, page: 1),
+      sentinel_stream(:mobile,  has_more: has_more, page: 1)
+    ]
+  end
+
+  # Infinite-scroll page fetch (page param is 0-indexed; first scroll fetches page=1).
+  def documents_page
+    page     = [ params[:page].to_i, 1 ].max
+    docs     = KbDocument.includes(:thumbnail)
+                         .order(created_at: :desc)
+                         .offset(page * PAGE_SIZE)
+                         .limit(PAGE_SIZE + 1)
+    has_more = docs.size > PAGE_SIZE
+    kb_docs  = docs.first(PAGE_SIZE)
+
+    streams = [
+      turbo_stream.append("kb-docs-desktop-items",
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+      turbo_stream.append("kb-docs-mobile-items",
+        partial: "home/kb_docs_card_rows", locals: { kb_documents: kb_docs }),
+      sentinel_stream(:desktop, has_more: has_more, page: page + 1),
+      sentinel_stream(:mobile,  has_more: has_more, page: page + 1)
+    ]
+    render turbo_stream: streams
   end
 
   private
 
-  # Read-only: do not find_or_create (avoids side effects on every home load).
-  #
-  # MVP (SharedSession::ENABLED): una sola fila para web + WhatsApp; el home usa esa
-  # sesión para verificar active_entities sin exigir login.
-  def conversation_session_for_home_dashboard
-    if SharedSession::ENABLED
-      ConversationSession.active.find_by(
-        identifier: SharedSession::IDENTIFIER,
-        channel: SharedSession::CHANNEL
-      )
-    elsif user_signed_in?
-      ConversationSession.active.find_by(identifier: current_user.id.to_s, channel: "web")
+  # Replaces the old sentinel with a fresh one bumped to the next page,
+  # OR removes it when no more pages exist.
+  def sentinel_stream(variant, has_more:, page:)
+    sentinel_id = "kb-docs-#{variant}-sentinel"
+    if has_more
+      turbo_stream.replace(sentinel_id,
+        partial: "home/kb_docs_card_sentinel",
+        locals: { sentinel_id: sentinel_id, page: page })
+    else
+      turbo_stream.remove(sentinel_id)
     end
-  end
-
-  # Entidades: sesión acotada arriba; si vacío, primera fila (p. ej. una sola sesión en BD en pruebas).
-  def session_entity_keys_for_home
-    keys = entity_keys_array(conversation_session_for_home_dashboard)
-    return keys if keys.any?
-
-    entity_keys_array(ConversationSession.order(:id).first)
-  end
-
-  def entity_keys_array(session)
-    session&.active_entities&.presence&.keys&.map(&:to_s) || []
   end
 end

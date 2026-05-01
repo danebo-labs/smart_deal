@@ -13,11 +13,12 @@ class BedrockIngestionJob < ApplicationJob
   POLL_INTERVAL = 5.seconds
   TIMEOUT = 15.minutes
 
-  # @param whatsapp_from   [String, nil] Twilio sender number (our number) — for WhatsApp notify
-  # @param whatsapp_to     [String, nil] Recipient (end user) — for WhatsApp notify
   # @param conv_session_id [Integer, nil] ConversationSession#id — for alias registration
+  # whatsapp_from / whatsapp_to accepted but ignored — WA channel disabled for MVP.
+  # Kept in signature so any serialized jobs still in Solid Queue deserialize cleanly.
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
-              whatsapp_from: nil, whatsapp_to: nil, conv_session_id: nil)
+              whatsapp_from: nil, whatsapp_to: nil, conv_session_id: nil,
+              kb_document_ids: nil) # rubocop:disable Lint/UnusedMethodArgument
     return if ingestion_job_id.blank?
 
     service = IngestionStatusService.new(kb_id: kb_id, data_source_id: data_source_id)
@@ -36,8 +37,7 @@ class BedrockIngestionJob < ApplicationJob
     service.clear_when_complete(ingestion_job_id)
 
     if status == "COMPLETE"
-      notify_indexed(uploaded_filenames, kb_id: kb_id, whatsapp_from: whatsapp_from,
-                     whatsapp_to: whatsapp_to, conv_session_id: conv_session_id)
+      notify_indexed(uploaded_filenames, kb_id: kb_id, conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
       TrackIngestionUsageJob.perform_later(
         uploaded_filenames: Array(uploaded_filenames),
         ingestion_job_id:   ingestion_job_id,
@@ -48,12 +48,10 @@ class BedrockIngestionJob < ApplicationJob
       reasons = status == "FAILED" ? service.failure_reasons(ingestion_job_id) : []
       message = ingestion_failure_message(reasons)
       broadcast_failed(uploaded_filenames, status, message)
-      notify_whatsapp(whatsapp_from, whatsapp_to, I18n.t('rag.whatsapp_indexing_failed'))
     end
   rescue StandardError => e
     Rails.logger.error("BedrockIngestionJob failed: #{e.message}")
     broadcast_failed(uploaded_filenames, "error", e.message)
-    notify_whatsapp(whatsapp_from, whatsapp_to, I18n.t('rag.whatsapp_indexing_failed'))
   end
 
   private
@@ -95,17 +93,19 @@ class BedrockIngestionJob < ApplicationJob
     })
   end
 
-  def notify_indexed(uploaded_filenames, kb_id:, whatsapp_from:, whatsapp_to:, conv_session_id:)
+  def notify_indexed(uploaded_filenames, kb_id:, conv_session_id:, kb_document_ids: nil)
     session = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
+    ids     = Array(kb_document_ids)
 
-    Array(uploaded_filenames).each do |wa_filename|
-      # Alias extraction requires a session (guards against unnecessary KB queries on sessionless calls).
-      result = session ? extract_aliases(wa_filename, kb_id) : nil
-      upsert_kb_document(wa_filename, result)
-      register_entity(session, wa_filename, result) if session
-      body = build_indexed_notification(wa_filename, result)
-      broadcast_indexed(wa_filename, result)
-      notify_whatsapp(whatsapp_from, whatsapp_to, body)
+    Array(uploaded_filenames).each_with_index do |filename, idx|
+      result = session ? extract_aliases(filename, kb_id) : nil
+      kb_doc = ids[idx] ? KbDocument.find_by(id: ids[idx]) : nil
+      if ids.any? && kb_doc.nil?
+        Rails.logger.warn("BedrockIngestionJob: kb_document_id=#{ids[idx]} not found; falling back to filename lookup")
+      end
+      enrich_kb_document(filename, result, kb_doc: kb_doc)
+      register_entity(session, filename, result) if session
+      broadcast_indexed(filename, result)
     end
   end
 
@@ -154,45 +154,40 @@ class BedrockIngestionJob < ApplicationJob
     persist_to_technician_documents(session, wa_filename, result, s3_uri)
   end
 
-  # Creates the KbDocument row only after Bedrock confirms COMPLETE.
-  # Uses find_or_initialize_by so re-runs are idempotent (e.g. manual retries).
-  #
-  # Naming rules (see KbDocument#display_name_promotable? for the full criterion):
-  #   - Web uploads (human-chosen filename): the stem is the display_name and
-  #     is NEVER overwritten. Opus canonical is stored as an alias.
-  #   - WhatsApp/chat uploads (machine-generated filename): the Opus canonical
-  #     replaces the machine stem on first extraction; stem is NOT aliased
-  #     (no human searches for "wa 20260410 ...").
-  def upsert_kb_document(wa_filename, result)
-    m      = wa_filename.match(/\A(?:wa|chat)_(\d{4})(\d{2})(\d{2})_/)
-    date   = m ? "#{m[1]}-#{m[2]}-#{m[3]}" : Date.current.iso8601
-    s3_key = "uploads/#{date}/#{wa_filename}"
-    stem   = File.basename(wa_filename, ".*").tr("_-", " ").strip
+  # Enriches the pre-created KbDocument row with the Opus canonical name + aliases.
+  # Policy: canonical always wins over the stored stem (web + WhatsApp gallery +
+  # chat uploads). The original filename stem (and machine-generated stems) are
+  # preserved as aliases so the resolver still matches either.
+  def enrich_kb_document(wa_filename, result, kb_doc: nil)
+    kb_doc ||= legacy_lookup_or_initialize(wa_filename)
+    return if kb_doc.nil?
+
+    stem      = File.basename(wa_filename, ".*").tr("_-", " ").strip
     canonical = result&.dig(:canonical_name).to_s.strip.presence
-    machine_name = KbDocument.machine_generated_filename?(wa_filename)
+    machine   = KbDocument.machine_generated_filename?(wa_filename)
 
-    kb_doc = KbDocument.find_or_initialize_by(s3_key: s3_key)
+    kb_doc.display_name = canonical || kb_doc.display_name.presence || stem
 
-    if machine_name
-      # wa_/chat_: promote Opus canonical while display_name is the placeholder stem.
-      kb_doc.display_name = canonical if canonical.present? && kb_doc.display_name_promotable?
-      kb_doc.display_name ||= stem
-    else
-      # Human-chosen filename: preserve it as display_name; canonical becomes an alias.
-      kb_doc.display_name ||= stem
-    end
+    alias_candidates = Array(kb_doc.aliases) + Array(result&.dig(:aliases))
+    alias_candidates << stem unless machine  # never surface wa_*/chat_* stems to users
 
-    extra_aliases = [ canonical ]
-    extra_aliases << stem unless machine_name
-    kb_doc.aliases = (Array(kb_doc.aliases) + extra_aliases + Array(result&.dig(:aliases)))
+    kb_doc.aliases = alias_candidates
                        .map { |a| a.to_s.strip }
                        .compact_blank
+                       .reject { |a| a.casecmp?(kb_doc.display_name.to_s) }
                        .uniq
                        .first(15)
     kb_doc.save!
-    Rails.logger.info("BedrockIngestionJob: upserted KbDocument #{s3_key} → '#{kb_doc.display_name}' (machine_name=#{machine_name}, aliases=#{kb_doc.aliases.size})")
+    Rails.logger.info("BedrockIngestionJob: enriched KbDocument #{kb_doc.s3_key} → '#{kb_doc.display_name}' (machine=#{machine}, aliases=#{kb_doc.aliases.size})")
   rescue StandardError => e
-    Rails.logger.warn("BedrockIngestionJob: failed to upsert KbDocument for #{wa_filename} — #{e.message}")
+    Rails.logger.warn("BedrockIngestionJob: failed to enrich KbDocument for #{wa_filename} — #{e.message}")
+  end
+
+  # Used only for jobs already serialised in Solid Queue before this change.
+  def legacy_lookup_or_initialize(wa_filename)
+    m    = wa_filename.match(/\A(?:wa|chat)_(\d{4})(\d{2})(\d{2})_/)
+    date = m ? "#{m[1]}-#{m[2]}-#{m[3]}" : Date.current.iso8601
+    KbDocument.find_or_initialize_by(s3_key: "uploads/#{date}/#{wa_filename}")
   end
 
   def persist_to_technician_documents(session, wa_filename, result, s3_uri)
@@ -220,39 +215,6 @@ class BedrockIngestionJob < ApplicationJob
     date   = m ? "#{m[1]}-#{m[2]}-#{m[3]}" : Date.current.iso8601
     bucket = ENV.fetch('KNOWLEDGE_BASE_S3_BUCKET', 'multimodal-source-destination')
     "s3://#{bucket}/uploads/#{date}/#{filename}"
-  end
-
-  MAX_WHATSAPP_BODY = 1500
-
-  def build_indexed_notification(wa_filename, result)
-    body = if result && result[:canonical_name].present?
-      name    = result[:canonical_name]
-      aliases = Array(result[:aliases]).first(5).map { |a| a.truncate(60) }
-      if aliases.any?
-        I18n.t('rag.whatsapp_indexed_with_aliases',
-               name: name, aliases: aliases.join(", "),
-               default: "✅ #{name}\nConsúltame por: #{aliases.join(', ')}")
-      else
-        I18n.t('rag.whatsapp_indexed_canonical_only',
-               name: name,
-               default: "✅ #{name}\nPregúntame sobre este documento.")
-      end
-    else
-      I18n.t('rag.whatsapp_indexed_generic',
-             filename: wa_filename,
-             default: "✅ Documento procesado.\nArchivo: #{wa_filename}\nPregúntame sobre este documento.")
-    end
-    body.truncate(MAX_WHATSAPP_BODY)
-  end
-
-  def notify_whatsapp(from, to, body)
-    return unless from.present? && to.present?
-
-    Twilio::REST::Client
-      .new(ENV.fetch('TWILIO_ACCOUNT_SID'), ENV.fetch('TWILIO_AUTH_TOKEN'))
-      .messages.create(from: from, to: to, body: body)
-  rescue StandardError => e
-    Rails.logger.error("BedrockIngestionJob: WhatsApp notify failed — #{e.message}")
   end
 
   def broadcast_failed(filenames, reason, message = nil)

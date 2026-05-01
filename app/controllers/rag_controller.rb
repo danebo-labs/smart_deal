@@ -56,6 +56,7 @@ class RagController < ApplicationController
       status:     'success'
     }
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
+    json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
     render json: json
   rescue ImageCompressionService::CompressionError
     render json: { status: 'error', message: I18n.t('rag.image_compression_failed') }, status: :bad_request
@@ -86,12 +87,16 @@ class RagController < ApplicationController
 
   def compress_images(images)
     images.map do |img|
-      result = ImageCompressionService.compress(img[:data], img[:media_type])
+      result = ImageCompressionService.compress_with_thumbnail(img[:data], img[:media_type])
       {
-        data:       result[:data],
-        media_type: result[:media_type],
-        binary:     result[:binary],
-        filename:   img[:filename].presence || img['filename'].presence
+        data:              result[:data],
+        media_type:        result[:media_type],
+        binary:            result[:binary],
+        filename:          img[:filename].presence || img['filename'].presence,
+        thumbnail_binary:       result[:thumbnail_binary],
+        thumbnail_content_type: result[:thumbnail_content_type],
+        thumbnail_width:        result[:thumbnail_width],
+        thumbnail_height:       result[:thumbnail_height]
       }
     end
   rescue ImageCompressionService::CompressionError => e

@@ -2,7 +2,11 @@
 <html lang="es" class="bg-[hsl(220,20%,97%)]">
   <head>
     <title><%= content_for(:title) || "Danebo.ia" %></title>
-    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+    <%# interactive-widget=resizes-visual: when the on-screen keyboard opens,
+        only the *visual* viewport shrinks (the layout viewport stays the same).
+        This lets us keep the page chrome 100% static and lift only the textarea
+        via the VisualViewport API (see rag_chat_controller#setupKeyboardLift). %>
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,interactive-widget=resizes-visual">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="application-name" content="Danebo.ia">
     <meta name="mobile-web-app-capable" content="yes">
@@ -21,7 +25,7 @@
     <%= javascript_importmap_tags %>
   </head>
 
-  <body class="font-sans antialiased min-h-screen text-[hsl(222,47%,10%)] bg-[hsl(220,20%,97%)]">
+  <body class="font-sans antialiased min-h-screen text-[hsl(222,47%,10%)] bg-[hsl(220,20%,97%)] <%= yield :body_class %>">
 
     <%# Orbital background — subtle protagonist in light mode %>
     <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">

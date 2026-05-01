@@ -19,9 +19,18 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
   end
 
   setup do
+    # The test env defaults to :null_store, but the service relies on Rails.cache
+    # to hand back the same URL within an hour-bucket. Swap to a memory store
+    # for these tests so we can verify the cache contract end-to-end.
+    @original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
     @fake = FakePresigner.new
     @svc  = KbDocumentImageUrlService.new(bucket: TEST_BUCKET)
     @svc.instance_variable_set(:@presigner, @fake)
+  end
+
+  teardown do
+    Rails.cache = @original_cache if @original_cache
   end
 
   test "returns nil for non-image extensions" do
@@ -84,5 +93,37 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
     map = @svc.call_many([ img, pdf ])
     assert_match(/X-Amz-Signature=/, map[img])
     assert_nil map[pdf]
+  end
+
+  # ─── Per-hour Solid Cache caching of presigned URLs ──────────────────────────
+
+  test "two calls within the same UTC hour return the same URL and call presigner once" do
+    doc = KbDocument.create!(s3_key: 'uploads/2026-04-30/cached.jpg', display_name: 'c', aliases: [])
+
+    travel_to Time.utc(2026, 5, 1, 12, 5, 0) do
+      url1 = @svc.call(doc)
+      url2 = @svc.call(doc)
+      assert_equal url1, url2,                'browser cache hinges on URL stability within an hour'
+      assert_equal 1, @fake.calls.size,       'presigner must be hit exactly once per (key, hour)'
+    end
+  end
+
+  test "calls in different UTC hours produce different URLs and rotate the cache" do
+    doc = KbDocument.create!(s3_key: 'uploads/2026-04-30/rotated.jpg', display_name: 'r', aliases: [])
+
+    travel_to Time.utc(2026, 5, 1, 12, 5, 0) do
+      @svc.call(doc)
+    end
+    # Build a fresh service so its presigner counter reflects only the new hour
+    fake2 = FakePresigner.new
+    svc2  = KbDocumentImageUrlService.new(bucket: TEST_BUCKET)
+    svc2.instance_variable_set(:@presigner, fake2)
+
+    travel_to Time.utc(2026, 5, 1, 13, 5, 0) do
+      svc2.call(doc)
+    end
+
+    assert_equal 1, @fake.calls.size, "first hour: presigner called once"
+    assert_equal 1, fake2.calls.size, "second hour: presigner called once after cache rotation"
   end
 end

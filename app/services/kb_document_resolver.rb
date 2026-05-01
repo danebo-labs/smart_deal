@@ -56,22 +56,35 @@ class KbDocumentResolver
     text.to_s.downcase.scan(TOKEN_RE).uniq.reject { |t| STOPWORDS.include?(t) }
   end
 
-  # Single SQL fetch: any row whose display_name OR any alias contains ANY
-  # query token as a whole word. POSIX word boundaries (\m, \M) prevent
-  # accidental substring hits like "esquemadocumento" for "esquema".
+  # Single SQL fetch: any row whose display_name OR any alias CONTAINS any
+  # query token as a substring. ILIKE is index-friendly (pg_trgm GIN) while
+  # the regex \m...\M (POSIX word boundary) was NOT — it forced a seq scan.
+  #
+  # Word-boundary semantics are preserved by post-filtering in Ruby inside
+  # `resolve` (the `haystack.match?(/\b...\b/)` call). The pre-filter widens
+  # the candidate set conservatively (LIMIT 50) so the post-filter still
+  # rejects substring noise like "esquemadocumento" for "esquema".
   def self.candidates_for(tokens)
     conditions = []
     params     = []
 
     tokens.each do |tok|
-      pattern = "\\m#{Regexp.escape(tok)}\\M"
-      conditions << "LOWER(display_name) ~* ?"
+      pattern = "%#{tok}%"
+      conditions << "LOWER(display_name) ILIKE ?"
       params     << pattern
-      conditions << "EXISTS (SELECT 1 FROM jsonb_array_elements_text(aliases) AS a WHERE LOWER(a) ~* ?)"
+      # Pre-filter against `lower(aliases::text)` — index-friendly. The Ruby
+      # post-filter below restores strict word-boundary semantics.
+      conditions << "LOWER(aliases::text) ILIKE ?"
       params     << pattern
     end
 
-    KbDocument.where(conditions.join(" OR "), *params).limit(20).to_a
+    prelim = KbDocument.where(conditions.join(" OR "), *params).limit(50).to_a
+
+    # Strict word-boundary post-filter to preserve the resolver's accuracy.
+    prelim.select do |doc|
+      haystack = build_haystack(doc)
+      tokens.any? { |t| haystack.match?(/\b#{Regexp.escape(t)}\b/) }
+    end.first(20)
   end
 
   def self.build_haystack(doc)

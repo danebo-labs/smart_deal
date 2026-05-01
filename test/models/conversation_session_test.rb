@@ -160,6 +160,42 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_nil prompt_history.first[:ts]
   end
 
+  # ─── add_to_history_and_refresh: single UPDATE for the request hot path ────
+
+  test 'add_to_history_and_refresh appends message AND bumps expires_at in one UPDATE' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+55500009000',
+      channel:    'whatsapp',
+      expires_at: 1.minute.from_now
+    )
+    original_exp = s.expires_at
+
+    queries = []
+    cb = ->(*, payload) { queries << payload[:sql] if payload[:sql] =~ /UPDATE.*conversation_sessions/i && payload[:name] != "SCHEMA" }
+    ActiveSupport::Notifications.subscribed(cb, "sql.active_record") do
+      s.add_to_history_and_refresh('user', 'hi')
+    end
+
+    s.reload
+    assert_equal 1, s.conversation_history.size
+    assert_equal 'hi', s.conversation_history.first['content']
+    assert s.expires_at > original_exp + 1.day, 'expires_at must be pushed out by EXPIRY_DURATION'
+    assert_equal 1, queries.size, 'must run a single UPDATE (not refresh! + add_to_history = 2)'
+  end
+
+  test 'add_to_history_and_refresh respects MAX_HISTORY eviction' do
+    s = ConversationSession.create!(
+      identifier: 'whatsapp:+55500009001',
+      channel:    'whatsapp',
+      expires_at: 30.minutes.from_now
+    )
+    (ConversationSession::MAX_HISTORY + 5).times do |i|
+      s.add_to_history_and_refresh('user', "m#{i}")
+    end
+    s.reload
+    assert_equal ConversationSession::MAX_HISTORY, s.conversation_history.size
+  end
+
   # ─── add_to_history truncation ──────────────────────────────────────────────
 
   test 'add_to_history truncates content to MAX_MSG_LENGTH' do

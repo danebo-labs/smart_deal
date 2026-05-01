@@ -61,6 +61,15 @@ class ConversationSession < ApplicationRecord
     update!(conversation_history: history)
   end
 
+  # Combines `refresh!` (TTL bump) + `add_to_history` into a single UPDATE.
+  # Used by the request-bound RAG path (RagController#ask) so we save one
+  # round-trip to PostgreSQL on every user turn (3 writes → 2).
+  def add_to_history_and_refresh(role, content)
+    history = conversation_history.last(MAX_HISTORY - 1)
+    history << { "role" => role, "content" => content.to_s.truncate(MAX_MSG_LENGTH), "ts" => Time.current.iso8601 }
+    update!(conversation_history: history, expires_at: EXPIRY_DURATION.from_now)
+  end
+
   def history_for_prompt
     conversation_history.map { |m| { role: m["role"], content: m["content"] } }
   end

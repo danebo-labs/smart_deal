@@ -77,13 +77,18 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
     end
   end
 
-  test "polls until COMPLETE" do
-    with_mock_ingestion_service(%w[IN_PROGRESS IN_PROGRESS COMPLETE]) do
-      messages = capture_broadcasts("kb_sync") do
-        BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ])
+  test "polls until COMPLETE (legacy mode)" do
+    # Multi-poll behavior is legacy-mode only. With INGESTION_REENQUEUE=true
+    # (production default) a single perform sees IN_PROGRESS → re-enqueues
+    # itself; that path is covered by the dedicated re-enqueue tests below.
+    with_env(INGESTION_REENQUEUE: "false") do
+      with_mock_ingestion_service(%w[IN_PROGRESS IN_PROGRESS COMPLETE]) do
+        messages = capture_broadcasts("kb_sync") do
+          BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ])
+        end
+        assert_equal 1, messages.size
+        assert_equal "indexed", messages.first["status"]
       end
-      assert_equal 1, messages.size
-      assert_equal "indexed", messages.first["status"]
     end
   end
 
@@ -360,6 +365,75 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
 
   test "sends with_aliases notification when result has aliases" do
     skip "WA channel disabled for MVP — build_indexed_notification removed from BedrockIngestionJob"
+  end
+
+  # ─── INGESTION_REENQUEUE=true: single-shot status check + re-enqueue ────────
+
+  test "re-enqueue mode: COMPLETE finalizes and does NOT re-enqueue" do
+    with_env(INGESTION_REENQUEUE: "true") do
+      with_mock_ingestion_service(%w[COMPLETE]) do
+        messages = capture_broadcasts("kb_sync") do
+          assert_no_enqueued_jobs(only: BedrockIngestionJob) do
+            BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ])
+          end
+        end
+        assert_equal 1, messages.size
+        assert_equal "indexed", messages.first["status"]
+      end
+    end
+  end
+
+  test "re-enqueue mode: IN_PROGRESS re-enqueues itself with wait 5s and propagates started_at_iso" do
+    with_env(INGESTION_REENQUEUE: "true") do
+      with_mock_ingestion_service(%w[IN_PROGRESS]) do
+        assert_no_broadcasts("kb_sync") do
+          assert_enqueued_with(job: BedrockIngestionJob) do
+            BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ], kb_id: "kb-x", conv_session_id: nil, kb_document_ids: nil)
+          end
+        end
+        enq = ActiveJob::Base.queue_adapter.enqueued_jobs.last
+        kwargs = enq[:args].last
+        assert_kind_of Hash, kwargs
+        assert_kind_of String, kwargs["started_at_iso"], "must propagate started_at_iso so TIMEOUT spans re-enqueues"
+      end
+    end
+  end
+
+  test "re-enqueue mode: re-enqueue chain finalizes when subsequent perform sees COMPLETE" do
+    with_env(INGESTION_REENQUEUE: "true") do
+      # First perform: IN_PROGRESS → re-enqueues
+      with_mock_ingestion_service(%w[IN_PROGRESS]) do
+        BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ])
+      end
+      enq = ActiveJob::Base.queue_adapter.enqueued_jobs.last
+      raw_kwargs = enq[:args].last
+      # Strip ActiveJob's keyword serialization markers + map to symbol keys.
+      kwargs = raw_kwargs
+                 .reject { |k, _| k.to_s.start_with?("_aj_") }
+                 .transform_keys(&:to_sym)
+
+      # Second perform (the one re-enqueued): COMPLETE → finalize
+      with_mock_ingestion_service(%w[COMPLETE]) do
+        messages = capture_broadcasts("kb_sync") do
+          BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ], **kwargs)
+        end
+        assert_equal 1, messages.size
+        assert_equal "indexed", messages.first["status"]
+      end
+    end
+  end
+
+  test "re-enqueue mode: raises Timeout when started_at_iso older than TIMEOUT" do
+    with_env(INGESTION_REENQUEUE: "true") do
+      stale = (Time.current - (BedrockIngestionJob::TIMEOUT + 1.minute)).iso8601
+      with_mock_ingestion_service(%w[IN_PROGRESS]) do
+        # rescue at the job level converts Timeout::Error into a "failed" broadcast
+        messages = capture_broadcasts("kb_sync") do
+          BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ], started_at_iso: stale)
+        end
+        assert_equal "failed", messages.first["status"]
+      end
+    end
   end
 
   # ─── Thumbnail responsibility moved to orchestrator ──────────────────────────

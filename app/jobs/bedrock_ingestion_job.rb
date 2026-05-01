@@ -3,9 +3,26 @@
 # Monitors a Bedrock Knowledge Base ingestion job until completion, then broadcasts
 # the result via ActionCable so the UI can update spinners to check marks.
 #
-# @see Amazon Q recommendation: Use jobs in background with wait_for_completion
+# Two execution modes (gated by INGESTION_REENQUEUE):
+#   * legacy (default): one perform call blocks on `loop { sleep POLL_INTERVAL }`
+#     until terminal status. Simple but holds a Solid Queue worker thread for up
+#     to TIMEOUT minutes.
+#   * re-enqueue: one perform call does a single status check and, when the job
+#     is still pending, re-enqueues itself with `wait: POLL_INTERVAL`. Frees the
+#     worker thread between polls so concurrent uploads + tracking jobs share
+#     the lane fairly.
+#
+# Activate in production by setting INGESTION_REENQUEUE=true AFTER draining the
+# queue (or accept that any in-flight legacy jobs keep blocking until they hit a
+# terminal status).
 class BedrockIngestionJob < ApplicationJob
-  queue_as :default
+  # Dedicated lane (see config/queue.yml). Isolates long-running poll jobs from
+  # the default lane that hosts TrackBedrockQueryJob → metrics-footer broadcast.
+  queue_as :ingestion
+
+  # Args are small (ids + filenames), but `kb_document_ids` and friends still
+  # generate noisy lines for every poll re-enqueue. Disable for log clarity.
+  self.log_arguments = false
 
   retry_on Timeout::Error, wait: :polynomially_longer, attempts: 2
   discard_on ActiveJob::DeserializationError
@@ -14,13 +31,64 @@ class BedrockIngestionJob < ApplicationJob
   TIMEOUT = 15.minutes
 
   # @param conv_session_id [Integer, nil] ConversationSession#id — for alias registration
+  # @param started_at_iso [String, nil] ISO8601 timestamp of the FIRST perform; only used
+  #   in re-enqueue mode to enforce TIMEOUT across re-enqueues.
   # whatsapp_from / whatsapp_to accepted but ignored — WA channel disabled for MVP.
   # Kept in signature so any serialized jobs still in Solid Queue deserialize cleanly.
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
               whatsapp_from: nil, whatsapp_to: nil, conv_session_id: nil,
-              kb_document_ids: nil) # rubocop:disable Lint/UnusedMethodArgument
+              kb_document_ids: nil, started_at_iso: nil) # rubocop:disable Lint/UnusedMethodArgument
     return if ingestion_job_id.blank?
 
+    if reenqueue_mode?
+      perform_reenqueue(ingestion_job_id, uploaded_filenames,
+                        kb_id: kb_id, data_source_id: data_source_id,
+                        conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
+                        started_at_iso: started_at_iso)
+    else
+      perform_legacy(ingestion_job_id, uploaded_filenames,
+                     kb_id: kb_id, data_source_id: data_source_id,
+                     conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
+    end
+  rescue StandardError => e
+    Rails.logger.error("BedrockIngestionJob failed: #{e.message}")
+    broadcast_failed(uploaded_filenames, "error", e.message)
+  end
+
+  private
+
+  def reenqueue_mode?
+    ENV.fetch('INGESTION_REENQUEUE', 'false').to_s.downcase == 'true'
+  end
+
+  # Single status check + finalize-or-reenqueue. Frees the worker thread between
+  # polls so other queued jobs (TrackBedrockQueryJob, TrackIngestionUsageJob, a
+  # second concurrent upload) make progress while Bedrock is still indexing.
+  def perform_reenqueue(ingestion_job_id, uploaded_filenames, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:, started_at_iso:)
+    started_at = parse_started_at(started_at_iso)
+    raise Timeout::Error, "Ingestion #{ingestion_job_id} timed out" if Time.current - started_at > TIMEOUT
+
+    service = IngestionStatusService.new(kb_id: kb_id, data_source_id: data_source_id)
+    status  = service.job_status(ingestion_job_id)
+
+    if status.in?(%w[COMPLETE FAILED STOPPED])
+      finalize(ingestion_job_id, status, uploaded_filenames, service,
+               kb_id: kb_id, data_source_id: data_source_id,
+               conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
+    else
+      self.class.set(wait: POLL_INTERVAL).perform_later(
+        ingestion_job_id, uploaded_filenames,
+        kb_id:           kb_id,
+        data_source_id:  data_source_id,
+        conv_session_id: conv_session_id,
+        kb_document_ids: kb_document_ids,
+        started_at_iso:  started_at.iso8601
+      )
+    end
+  end
+
+  # Legacy path: one perform call blocks until terminal status (or TIMEOUT).
+  def perform_legacy(ingestion_job_id, uploaded_filenames, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:)
     service = IngestionStatusService.new(kb_id: kb_id, data_source_id: data_source_id)
     started_at = Time.current
 
@@ -34,6 +102,13 @@ class BedrockIngestionJob < ApplicationJob
     end
 
     status = service.job_status(ingestion_job_id)
+    finalize(ingestion_job_id, status, uploaded_filenames, service,
+             kb_id: kb_id, data_source_id: data_source_id,
+             conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
+  end
+
+  # Shared completion path for both legacy and re-enqueue modes.
+  def finalize(ingestion_job_id, status, uploaded_filenames, service, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:)
     service.clear_when_complete(ingestion_job_id)
 
     if status == "COMPLETE"
@@ -49,12 +124,11 @@ class BedrockIngestionJob < ApplicationJob
       message = ingestion_failure_message(reasons)
       broadcast_failed(uploaded_filenames, status, message)
     end
-  rescue StandardError => e
-    Rails.logger.error("BedrockIngestionJob failed: #{e.message}")
-    broadcast_failed(uploaded_filenames, "error", e.message)
   end
 
-  private
+  def parse_started_at(iso)
+    iso.present? ? Time.zone.parse(iso) : Time.current
+  end
 
   def ingestion_failure_message(failure_reasons)
     reasons_text = failure_reasons.join(" ").downcase

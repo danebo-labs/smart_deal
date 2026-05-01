@@ -3,13 +3,22 @@ default: &default
     - polling_interval: 1
       batch_size: 500
   workers:
-    # Default queue: hosts BedrockIngestionJob, TrackBedrockQueryJob → metrics-footer broadcast.
-    # 0.25s polling keeps perceived metrics latency under the Doherty 250ms
-    # threshold (cost: 4 SELECTs/sec on solid_queue_ready_executions, trivial).
+    # Default lane: TrackBedrockQueryJob (metrics footer), TrackIngestionUsageJob,
+    # KbDocumentEnrichmentJob, UploadAndSyncAttachmentsJob, etc. 0.25s polling
+    # keeps perceived metrics latency under the Doherty 250ms threshold.
     - queues: default
-      threads: 2
+      threads: 4
       processes: 1
       polling_interval: 0.25
+
+    # Dedicated ingestion lane: BedrockIngestionJob can spend 1–15 min waiting
+    # for Bedrock to finish indexing. Isolated so that two concurrent uploads
+    # never starve TrackBedrockQueryJob (which controls the visible metrics
+    # footer) on the default lane.
+    - queues: ingestion
+      threads: 1
+      processes: 1
+      polling_interval: 1
 
 development:
   <<: *default

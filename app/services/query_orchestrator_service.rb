@@ -75,11 +75,17 @@ class QueryOrchestratorService
         @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
       end
 
-      Thread.new do
-        upload_and_sync_attachments
-      rescue StandardError => e
-        Rails.logger.error("QueryOrchestrator - S3 upload/KB sync failed: #{e.message}")
-      end
+      # Off-request via Solid Queue lane (NOT Thread.new). The previous
+      # Thread.new pattern leaked AR connections during Puma graceful
+      # shutdowns and had no retry / observability. The job rebuilds the
+      # orchestrator in the worker process and calls the same private
+      # method, so behavior is preserved.
+      UploadAndSyncAttachmentsJob.perform_later(
+        images_payload:    UploadAndSyncAttachmentsJob.prepare_images_for_async(@images),
+        documents_payload: @documents,
+        conv_session_id:   @conv_session&.id,
+        tenant_id:         @tenant&.id
+      )
 
       if @query.blank?
         key = has_images ? :images_uploaded : :documents_uploaded

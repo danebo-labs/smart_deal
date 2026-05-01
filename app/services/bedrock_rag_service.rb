@@ -227,9 +227,11 @@ class BedrockRagService
       latency_ms = ((Time.current - start_time) * 1000).to_i
       tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
 
-      # Build the full prompt that was sent to the model so we can count tokens accurately.
+      # Build the full prompt that was sent to the model so the job can count tokens accurately.
       # retrieved_for_extraction holds the chunks Haiku actually cited; using them as a
       # proxy for $search_results$ gives ~95% accuracy without a second Bedrock call.
+      # NOTE: token counting is deferred to TrackBedrockQueryJob to avoid up to ~16s of
+      # request-blocking latency when the Anthropic count_tokens endpoint is slow.
       chunks_text = Array(retrieved_for_extraction).filter_map { |c| c[:content].presence }.join("\n\n")
       full_prompt = [
         load_generation_prompt_with_locale(question,
@@ -240,18 +242,16 @@ class BedrockRagService
         question
       ].compact_blank.join("\n\n")
 
-      usage = AnthropicTokenCounter.count_query(prompt: full_prompt, answer: answer_text, model: :haiku)
-
-      # Enqueue tracking asynchronously — never block the response on DB writes.
       TrackBedrockQueryJob.perform_later(
-        model_id: tracked_model_id,
-        input_tokens: usage[:input_tokens],
-        output_tokens: usage[:output_tokens],
-        user_query: question,
-        latency_ms: latency_ms,
-        source: "query"
+        model_id:           tracked_model_id,
+        prompt_text:        full_prompt,
+        answer_text:        answer_text,
+        user_query:         question,
+        latency_ms:         latency_ms,
+        source:             "query",
+        model_for_counting: "haiku"
       )
-      Rails.logger.info("✓ BedrockQuery tracking enqueued (#{usage[:input_tokens]} in + #{usage[:output_tokens]} out tokens)")
+      Rails.logger.info("✓ BedrockQuery tracking enqueued (token counting deferred to job)")
 
       # Build numbered references from the KB response — no S3 listing required.
       numbered_references = @citation_processor.build_numbered_references(citations, answer_text)
@@ -542,8 +542,17 @@ class BedrockRagService
     I18n.with_locale(locale) { I18n.t("rag.no_results_found") }
   end
 
+  # Reads `app/prompts/bedrock/generation.txt` once per process in production
+  # (and per call in dev/test so prompt edits are picked up without a restart).
+  # Each RAG request renders the prompt twice (build_complete_optimized_config
+  # + the post-response token-count assembly) — without memoization that means
+  # 2 File.read syscalls per request multiplied by N concurrent requests.
   def self.load_generation_prompt_template
-    Rails.root.join("app/prompts/bedrock/generation.txt").read
+    if Rails.env.production?
+      @generation_prompt_template ||= Rails.root.join("app/prompts/bedrock/generation.txt").read
+    else
+      Rails.root.join("app/prompts/bedrock/generation.txt").read
+    end
   end
 
   def estimate_tokens(text)

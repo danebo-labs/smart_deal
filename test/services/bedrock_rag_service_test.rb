@@ -669,14 +669,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  # --- Token tracking: AnthropicTokenCounter replaces estimate_tokens ---
+  # --- Token tracking: counting deferred to TrackBedrockQueryJob ---
 
-  test 'query enqueues TrackBedrockQueryJob with AnthropicTokenCounter tokens, not length/4' do
-    orig_count_query = AnthropicTokenCounter.method(:count_query)
-    AnthropicTokenCounter.define_singleton_method(:count_query) do |**|
-      { input_tokens: 5000, output_tokens: 600 }
-    end
-
+  test 'query enqueues TrackBedrockQueryJob with raw prompt/answer text (counting deferred)' do
     with_mock_bedrock_client do
       jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
 
@@ -689,12 +684,31 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 1, track_jobs.size, 'TrackBedrockQueryJob must be enqueued exactly once'
       args = track_jobs.first[:args].first
-      assert_equal 5000,    args['input_tokens'],  'input_tokens must come from AnthropicTokenCounter'
-      assert_equal 600,     args['output_tokens'], 'output_tokens must come from AnthropicTokenCounter'
-      assert_equal 'query', args['source'],        'source must be "query"'
+      assert_nil   args['input_tokens'],       'input_tokens must NOT be precomputed in the RAG path'
+      assert_nil   args['output_tokens'],      'output_tokens must NOT be precomputed in the RAG path'
+      assert_kind_of String, args['prompt_text'], 'prompt_text must be passed for deferred counting'
+      assert_kind_of String, args['answer_text'], 'answer_text must be passed for deferred counting'
+      assert_equal 'haiku', args['model_for_counting']
+      assert_equal 'query', args['source'],         'source must be "query"'
     end
+  end
+
+  test 'query does NOT call AnthropicTokenCounter inline (counting deferred to job)' do
+    called = false
+    orig = AnthropicTokenCounter.method(:count_query)
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |**kwargs|
+      called = true
+      orig.call(**kwargs)
+    end
+
+    with_mock_bedrock_client do
+      svc = BedrockRagService.new
+      svc.query('test question')
+    end
+
+    assert_not called, 'BedrockRagService must NOT count tokens during the request'
   ensure
-    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig_count_query.call(**kwargs) }
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
   end
 
   test 'web_delivery_channel_directive includes CITATIONS BEYOND USER SELECTION section' do

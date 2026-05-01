@@ -10,12 +10,28 @@ class TrackBedrockQueryJob < ApplicationJob
   queue_as :default
 
   # @param model_id      [String]  Bedrock model identifier
-  # @param input_tokens  [Integer] Tokens in the prompt
-  # @param output_tokens [Integer] Tokens in the completion
-  # @param user_query    [String]  Original user question (truncated to 500 chars)
-  # @param latency_ms    [Integer] End-to-end latency of the Bedrock call in ms
-  # @param source        [String]  Origin: "query" | "ingestion_parse" | "ingestion_embed"
-  def perform(model_id:, input_tokens:, output_tokens:, user_query:, latency_ms:, source: "query")
+  # @param input_tokens  [Integer, nil] Tokens in the prompt (precounted by caller, e.g. BedrockClient)
+  # @param output_tokens [Integer, nil] Tokens in the completion (precounted by caller)
+  # @param prompt_text   [String, nil]  Raw assembled prompt; counted here when input_tokens is nil
+  # @param answer_text   [String, nil]  Raw answer; counted here when output_tokens is nil
+  # @param user_query    [String]       Original user question (truncated to 500 chars)
+  # @param latency_ms    [Integer]      End-to-end latency of the Bedrock call in ms
+  # @param source        [String]       Origin: "query" | "ingestion_parse" | "ingestion_embed"
+  # @param model_for_counting [Symbol]  Tokenizer model when counting here (default :haiku)
+  def perform(model_id:, user_query:, latency_ms:,
+              input_tokens: nil, output_tokens: nil,
+              prompt_text: nil, answer_text: nil,
+              source: "query", model_for_counting: :haiku)
+    if input_tokens.nil? || output_tokens.nil?
+      usage = AnthropicTokenCounter.count_query(
+        prompt: prompt_text.to_s,
+        answer: answer_text.to_s,
+        model:  model_for_counting.to_sym
+      )
+      input_tokens  ||= usage[:input_tokens]
+      output_tokens ||= usage[:output_tokens]
+    end
+
     BedrockQuery.create!(
       model_id: model_id,
       input_tokens: input_tokens,
@@ -40,32 +56,11 @@ class TrackBedrockQueryJob < ApplicationJob
   # Pushes Turbo Stream update to #chat-usage-metrics-container (home chat footer).
   # Subscribes via `turbo_stream_from "metrics"`.
   def broadcast_metrics_update
-    today = Date.current
-    s3_bytes = CostMetric.find_by(date: today, metric_type: :s3_total_size)&.value || 0
-
-    current_metrics = {
-      today_tokens:        CostMetric.find_by(date: today, metric_type: :daily_tokens)&.value        || 0,
-      today_cost:          CostMetric.find_by(date: today, metric_type: :daily_cost)&.value          || 0,
-      today_queries:       CostMetric.find_by(date: today, metric_type: :daily_queries)&.value       || 0,
-      today_tokens_query:  CostMetric.find_by(date: today, metric_type: :daily_tokens_query)&.value  || 0,
-      today_tokens_parse:  CostMetric.find_by(date: today, metric_type: :daily_tokens_parse)&.value  || 0,
-      today_tokens_embed:  CostMetric.find_by(date: today, metric_type: :daily_tokens_embed)&.value  || 0,
-      today_cost_query:    CostMetric.find_by(date: today, metric_type: :daily_cost_query)&.value    || 0,
-      today_cost_parse:    CostMetric.find_by(date: today, metric_type: :daily_cost_parse)&.value    || 0,
-      today_cost_embed:    CostMetric.find_by(date: today, metric_type: :daily_cost_embed)&.value    || 0,
-      today_cache_hits:    CostMetric.find_by(date: today, metric_type: :daily_cache_hits)&.value    || 0,
-      today_tokens_saved:  CostMetric.find_by(date: today, metric_type: :daily_tokens_saved)&.value  || 0,
-      aurora_acu:          CostMetric.find_by(date: today, metric_type: :aurora_acu_avg)&.value      || 0,
-      s3_documents:        CostMetric.find_by(date: today, metric_type: :s3_documents_count)&.value  || 0,
-      s3_size_mb:          (s3_bytes / 1.megabyte.to_f).round(2),
-      s3_size_gb:          (s3_bytes / 1.gigabyte.to_f).round(2)
-    }
-
     Turbo::StreamsChannel.broadcast_update_to(
       "metrics",
       target: "chat-usage-metrics-container",
       partial: "home/chat_usage_footer_metrics",
-      locals: { current_metrics: current_metrics }
+      locals: { current_metrics: CostMetric.daily_snapshot(Date.current) }
     )
   rescue StandardError => e
     Rails.logger.warn("[TrackBedrockQueryJob] metrics broadcast failed: #{e.message}")

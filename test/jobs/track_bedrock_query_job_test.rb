@@ -116,6 +116,75 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
     end
   end
 
+  # ── Deferred token counting (RAG path) ───────────────────────────────────────
+
+  test 'counts tokens via AnthropicTokenCounter when input/output tokens are nil' do
+    orig = AnthropicTokenCounter.method(:count_query)
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |prompt:, answer:, model:|
+      { input_tokens: 4321, output_tokens: 123 }
+    end
+
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        model_id:    VALID_PARAMS[:model_id],
+        user_query:  VALID_PARAMS[:user_query],
+        latency_ms:  VALID_PARAMS[:latency_ms],
+        prompt_text: 'full prompt with chunks',
+        answer_text: 'the answer'
+      )
+    end
+
+    record = BedrockQuery.last
+    assert_equal 4321, record.input_tokens
+    assert_equal 123,  record.output_tokens
+  ensure
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
+  end
+
+  test 'precounted tokens win over text counting (BedrockClient path stays untouched)' do
+    counter_called = false
+    orig = AnthropicTokenCounter.method(:count_query)
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |**|
+      counter_called = true
+      { input_tokens: 1, output_tokens: 1 }
+    end
+
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(**VALID_PARAMS)
+    end
+
+    assert_not counter_called, 'count_query must not run when both token counts are provided'
+    record = BedrockQuery.last
+    assert_equal VALID_PARAMS[:input_tokens],  record.input_tokens
+    assert_equal VALID_PARAMS[:output_tokens], record.output_tokens
+  ensure
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
+  end
+
+  test 'string symbol-equivalent for model_for_counting is converted to symbol' do
+    received_model = nil
+    orig = AnthropicTokenCounter.method(:count_query)
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |prompt:, answer:, model:|
+      received_model = model
+      { input_tokens: 10, output_tokens: 5 }
+    end
+
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        model_id:           VALID_PARAMS[:model_id],
+        user_query:         VALID_PARAMS[:user_query],
+        latency_ms:         VALID_PARAMS[:latency_ms],
+        prompt_text:        'p',
+        answer_text:        'a',
+        model_for_counting: 'haiku'
+      )
+    end
+
+    assert_equal :haiku, received_model
+  ensure
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
+  end
+
   private
 
   # Stubs Turbo::StreamsChannel.broadcast_update_to to avoid ActionCable

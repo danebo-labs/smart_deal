@@ -450,11 +450,37 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 - **`TrackIngestionUsageJob`** (`default`) — after `BedrockIngestionJob` completes, estimates parse/embed tokens per file and writes the `ingestion_*` rows above.
 - **`TrackWhatsappCacheHitJob`** (`default`, **dormant**) — when the WhatsApp faceted path runs again, records cache-hit metrics into the same rollups.
 
-**Solid Queue (`config/queue.yml`):** only the **`default`** worker lane is configured (metrics, ingestion, broadcasts). Dedicated **`whatsapp_rag`** / **`whatsapp_media`** processes were **removed** with the WA decouple; re-add them if you restore the webhook and want isolation again.
+**Solid Queue (`config/queue.yml`):** two worker lanes — **`default`** for short-lived jobs (metrics, broadcasts, enrichment, attachment uploads) and **`ingestion`** for the long-running `BedrockIngestionJob` poll loop. Isolating the ingestion poll prevents two concurrent uploads from starving `TrackBedrockQueryJob` (which drives the home footer). Dedicated **`whatsapp_rag`** / **`whatsapp_media`** processes were **removed** with the WA decouple; re-add them if you restore the webhook and want isolation again.
 
 | Queue | Example jobs | Role |
 |-------|----------------|------|
-| **`default`** | `TrackBedrockQueryJob`, `TrackIngestionUsageJob`, `TrackWhatsappCacheHitJob` (inactive), `BedrockIngestionJob`, `DailyMetricsJob`, `SendWhatsappReplyJob` (not enqueued without WA) | Token persistence, footer Turbo updates, ingestion polling, scheduled metric refresh |
+| **`default`** | `TrackBedrockQueryJob`, `TrackIngestionUsageJob`, `TrackWhatsappCacheHitJob` (inactive), `KbDocumentEnrichmentJob`, `UploadAndSyncAttachmentsJob`, `DailyMetricsJob`, `SendWhatsappReplyJob` (not enqueued without WA) | Token persistence, footer Turbo updates, async enrichment, scheduled metric refresh |
+| **`ingestion`** | `BedrockIngestionJob` | Long poll on Bedrock KB ingestion (≤ 15 min); legacy mode blocks one worker, `INGESTION_REENQUEUE=true` re-enqueues every 5s |
+
+**Production sizing (floors):** `RAILS_MAX_THREADS=5`, AR `pool=RAILS_MAX_THREADS+2` (auto), `AWS_HTTP_READ_TIMEOUT=90` (covers Aurora Serverless cold-start ≤ 60s). See `.env.sample` for the full block.
+
+#### Pre-deploy runtime checklist (public web)
+
+Verify each before flipping the public DNS:
+
+1. `QUERY_ROUTING_ENABLED` **absent or `false`** — keeps every web request on the KB lane (no extra `invoke_model` for routing). Code default in `QueryOrchestratorService.query_routing_enabled?`.
+2. `BEDROCK_RERANKER_ENABLED` **absent or `false`** — Cohere Rerank is disabled by default; toggle ON only after measuring impact in staging.
+3. `SHARED_SESSION_ENABLED` set explicitly (`true` for the pilot single-thread, `false` for per-user). The default-when-unset is `false` in `Rails.env.production`.
+4. `ANTHROPIC_API_KEY` present **only if you want exact tokenization**. Without it, `AnthropicTokenCounter` falls back to `LocalTokenizer` (chars/3.5, ±5%). The async `TrackBedrockQueryJob` now does the network call, so a slow Anthropic endpoint never blocks the request.
+5. `INGESTION_REENQUEUE` ⇒ activate **after draining the Solid Queue** (legacy serialized jobs keep blocking until terminal otherwise).
+6. `MissionControl::Jobs` (`/jobs`) credentials live in **`config/credentials.yml.enc`**, **not** in `.env` for the production process.
+7. `/dashboard` — confirm Devise role/admin guard before the public route flips, or accept that anonymous users see CostMetric rollups.
+
+##### p95 latency alarm (raw SQL, no extra service required)
+
+```sql
+SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
+FROM bedrock_queries
+WHERE created_at >= NOW() - INTERVAL '1 hour'
+  AND source = 'query';
+```
+
+Suggested alert threshold: **> 8 000 ms** sustained for 15 min (cron job → Slack/PagerDuty).
 
 **Web metrics:** every async metrics write and Turbo broadcast for the home footer runs on **`default`**. **`DailyMetricsJob`** also refreshes database rollups for the dashboard when scheduled or triggered.
 

@@ -1,7 +1,10 @@
 default: &default
   adapter: postgresql
   encoding: unicode
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  # AR pool must be ≥ Puma threads + a small buffer for ActionCable + Solid Queue
+  # connection housekeeping. Without the buffer, Puma threads occasionally block
+  # waiting for a free connection during peak (upload + RAG ask + metrics broadcast).
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i + 2 %>
   host:     <%= ENV.fetch("DB_HOST",     "localhost") %>
   username: <%= ENV.fetch("DB_USERNAME", "app_user") %>
   password: <%= ENV.fetch("DB_PASSWORD", "karateca") %>

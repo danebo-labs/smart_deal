@@ -40,6 +40,15 @@ module AwsClientInitializer
 
     client_options[:ssl_ca_bundle] = ca_bundle_path if ca_bundle_path.present? && File.exist?(ca_bundle_path)
 
+    # Explicit HTTP timeouts. Without these, slow/dead AWS endpoints can hang
+    # Puma threads indefinitely (default open_timeout in Net::HTTP is 60s but
+    # read_timeout has historically been "no limit" → unbounded blocking).
+    # AWS_HTTP_READ_TIMEOUT must comfortably exceed Aurora Serverless cold-start
+    # (≤ 60s) plus generation time → 90s default keeps RAG responses safe.
+    client_options[:http_open_timeout] = (ENV.fetch('AWS_HTTP_OPEN_TIMEOUT', 5)).to_i
+    client_options[:http_read_timeout] = (ENV.fetch('AWS_HTTP_READ_TIMEOUT', 90)).to_i
+    client_options[:http_idle_timeout] = (ENV.fetch('AWS_HTTP_IDLE_TIMEOUT', 5)).to_i
+
     client_options
   end
 end

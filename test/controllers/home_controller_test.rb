@@ -19,6 +19,13 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test 'chat panel desktop header uses robot icon matching RAG assistant avatar' do
+    get root_path
+    assert_response :success
+    assert_match(/M12 8V4H8/, response.body)
+    assert_no_match(/M21 15c0 \.53-\.21 1\.04-\.59 1\.41/, response.body)
+  end
+
   test 'index lists kb_documents under Archivos Disponibles with display_name' do
     KbDocument.create!(s3_key: 'uploads/2026/home_ui.pdf', display_name: 'Manual ascensor', aliases: [])
 

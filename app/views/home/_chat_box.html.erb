@@ -13,12 +13,18 @@
     <%# Chat header — desktop only %>
     <div class="hidden md:flex items-center gap-3 border-b border-[hsl(215,20%,90%)] px-6 py-4 flex-shrink-0">
       <div class="flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(217,91%,50%,0.08)] flex-shrink-0">
-        <svg class="h-5 w-5 text-[hsl(217,91%,50%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21 15c0 .53-.21 1.04-.59 1.41-.37.38-.88.59-1.41.59H7l-4 4V5c0-.53.21-1.04.59-1.41C3.96 3.21 4.47 3 5 3h14c.53 0 1.04.21 1.41.59.38.37.59.88.59 1.41v10z"/>
+        <%# Same robot mark as rag_chat_controller BOT_SVG / assistant avatars %>
+        <svg class="h-5 w-5 text-[hsl(217,91%,50%)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8V4H8"/>
+          <rect width="16" height="12" x="4" y="8" rx="2"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2 14h2"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 14h2"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 13v2"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 13v2"/>
         </svg>
       </div>
       <div>
-        <p class="text-sm font-medium text-[hsl(222,47%,10%)]">Consulta los archivos disponibles en la base de conocimiento</p>
+        <p class="text-sm font-medium text-[hsl(222,47%,10%)]">Chat</p>
       </div>
     </div>
 

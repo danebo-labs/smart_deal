@@ -49,24 +49,18 @@
 .chat-row-user    { flex-direction: row-reverse; }   /* bubble left of avatar, both on the right */
 .chat-row-system  { justify-content: center; }
 
-/* Avatar circle — hidden on desktop, visible on mobile */
+/* Avatar circle — same user / bot iconography on mobile and desktop (rag_chat_controller) */
 .chat-avatar {
-  display: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;       /* h-7 */
+  height: 1.75rem;      /* w-7 */
+  border-radius: 9999px;
+  flex-shrink: 0;
 }
-
-@media (max-width: 767px) {
-  .chat-avatar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.75rem;       /* h-7 */
-    height: 1.75rem;      /* w-7 */
-    border-radius: 9999px;
-    flex-shrink: 0;
-  }
-  .chat-avatar-user { background-color: hsl(217, 91%, 50%); color: #ffffff; }
-  .chat-avatar-bot  { background-color: hsl(215, 20%, 92%); color: hsl(215, 20%, 42%); }
-}
+.chat-avatar-user { background-color: hsl(217, 91%, 50%); color: #ffffff; }
+.chat-avatar-bot  { background-color: hsl(215, 20%, 92%); color: hsl(215, 20%, 42%); }
 
 .chat-messages {
   display: flex;

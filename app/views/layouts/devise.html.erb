@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+  <head>
+    <title><%= content_for(:title) || "Danebo.ia" %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Danebo.ia">
+    <meta name="description" content="Plataforma de IA empresarial para soluciones B2B">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <%= yield :head %>
+    <%= tag.link rel: "icon", href: "/favicon.ico", type: "image/x-icon" %>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag "tailwind", "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body class="font-sans antialiased h-full">
+
+    <%# Auth error alert %>
+    <% if alert %>
+      <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-full shadow-sm"
+           data-controller="flash" data-flash-delay-value="5000">
+        <svg class="h-3.5 w-3.5 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 12 12" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" d="M6 4v3M6 9h.01"/>
+        </svg>
+        <p class="text-xs font-medium text-red-700"><%= alert %></p>
+      </div>
+    <% end %>
+
+    <% if notice %>
+      <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-full shadow-sm"
+           data-controller="flash" data-flash-delay-value="4000">
+        <svg class="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" fill="none" viewBox="0 0 12 12" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2 6l3 3 5-5"/>
+        </svg>
+        <p class="text-xs font-medium text-emerald-700"><%= notice %></p>
+      </div>
+    <% end %>
+
+    <%= yield %>
+
+  </body>
+</html>

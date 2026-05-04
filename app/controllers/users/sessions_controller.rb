@@ -2,6 +2,7 @@
 
 module Users
   class SessionsController < Devise::SessionsController
+    layout "devise"
     respond_to :html
 
     def after_sign_in_path_for(_resource)

@@ -19,12 +19,12 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test 'index lists kb_documents under Base de Conocimiento with display_name' do
+  test 'index lists kb_documents under Archivos Disponibles with display_name' do
     KbDocument.create!(s3_key: 'uploads/2026/home_ui.pdf', display_name: 'Manual ascensor', aliases: [])
 
     get root_path
     assert_response :success
-    assert_select 'h3', text: 'Base de Conocimiento'
+    assert_select 'h3', text: 'Archivos Disponibles'
     assert_select '#kb-docs-desktop-items [data-doc-name="Manual ascensor"]'
     assert_select '#kb-docs-mobile-items  [data-doc-name="Manual ascensor"]'
   end

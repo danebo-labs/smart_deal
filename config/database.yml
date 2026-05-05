@@ -9,6 +9,7 @@ default: &default
   username: <%= ENV.fetch("DB_USERNAME", "app_user") %>
   password: <%= ENV.fetch("DB_PASSWORD", "karateca") %>
   gssencmode: disable
+  sslmode: <%= ENV.fetch("DB_SSLMODE", Rails.env.production? ? "require" : "disable") %>
 
 development:
   primary: &development_primary

@@ -50,8 +50,8 @@ Smart Deal is a **Rails 8.1** application that exposes an intelligent **RAG (Ret
 | Layer              | Technology                                     |
 | ------------------ | ---------------------------------------------- |
 | Framework          | Ruby on Rails 8.1.1 (Ruby ~> 3.4)             |
-| Primary DB         | SQLite 3 (app data, cache, queue, cable)       |
-| Client DB          | PostgreSQL (external business data)            |
+| Primary DB         | PostgreSQL (app data + Solid Cache/Queue/Cable separate DBs) |
+| Client DB          | PostgreSQL (external business data; SQLite only in `test`) |
 | Frontend           | Hotwire (Turbo + Stimulus), Importmap          |
 | Assets             | Propshaft                                      |
 | Auth               | Devise                                         |
@@ -119,7 +119,7 @@ smart_deal/
 ├── config/
 │   ├── initializers/
 │   │   └── bedrock.rb                      # AWS global config + BedrockProfiles
-│   ├── database.yml                        # SQLite (primary) + PostgreSQL (client_db)
+│   ├── database.yml                        # PostgreSQL (app + Solid DBs + client_db)
 │   ├── routes.rb
 │   └── recurring.yml                       # Solid Queue recurring jobs
 ├── db/
@@ -136,17 +136,20 @@ smart_deal/
 
 ## 4. Data Architecture
 
-### 4.1 Primary Database (SQLite)
+### 4.1 Primary Database (PostgreSQL)
 
-Stores application-level data. Three tables:
+Stores application-level data. Core tables include:
 
 | Table             | Purpose                                       |
 | ----------------- | --------------------------------------------- |
 | `users`           | Devise auth (email, encrypted password, etc.) |
 | `bedrock_queries` | Per-query telemetry: model, tokens, latency   |
 | `cost_metrics`    | Daily aggregates: tokens, cost, Aurora ACU, S3|
+| `kb_documents`    | Global S3 catalog (display name, aliases, thumbnail) |
+| `conversation_sessions` | Per-channel session, `active_entities` JSONB |
+| `technician_documents`  | Audit / FIFO ingestion log                |
 
-Production also provisions separate SQLite databases for **Solid Cache**, **Solid Queue**, and **Action Cable**.
+**Solid Cache**, **Solid Queue**, and **Action Cable** use **separate PostgreSQL databases** (`*_cache`, `*_queue`, `*_cable`) inside the same RDS cluster — see `config/database.yml`. This eliminates Redis as an operational dependency.
 
 ### 4.2 Client Database (PostgreSQL)
 
@@ -369,14 +372,15 @@ Every RAG query is persisted to `bedrock_queries` with:
 
 ```
 ┌──────────────────────────────────────────────────┐
-│               SQLite (Primary)                   │
+│            PostgreSQL (App cluster — RDS)         │
 │                                                  │
-│  development.sqlite3  ←  dev                     │
-│  test.sqlite3         ←  test                    │
-│  production.sqlite3   ←  prod (app data)         │
-│  production_cache.sqlite3  ←  Solid Cache        │
-│  production_queue.sqlite3  ←  Solid Queue        │
-│  production_cable.sqlite3  ←  Action Cable       │
+│  smart_deal_<env>           ←  app data          │
+│  smart_deal_<env>_cache     ←  Solid Cache       │
+│  smart_deal_<env>_queue     ←  Solid Queue       │
+│  smart_deal_<env>_cable     ←  Action Cable      │
+│                                                  │
+│  Single RDS instance hosts all four DBs.         │
+│  AR pool sized as RAILS_MAX_THREADS + 2.         │
 └──────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────┐
@@ -385,6 +389,8 @@ Every RAG query is persisted to `bedrock_queries` with:
 │  Connected via ClientDatabase abstract model     │
 │  Used exclusively by SqlGenerationService        │
 │  Read-only access (SELECT only)                  │
+│  SQLite (`storage/client_test.sqlite3`) is used  │
+│  ONLY in the `test` environment for isolation.   │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -404,8 +410,8 @@ Every RAG query is persisted to `bedrock_queries` with:
 
 | Decision | Rationale |
 | -------- | --------- |
-| SQLite as primary DB | Rails 8 default; sufficient for app metadata and metrics at current scale. Production cache/queue/cable in separate SQLite DBs. |
-| Separate PostgreSQL for client data | Isolation via abstract model prevents cross-contamination. Enables future multi-tenant per-tenant configuration. |
+| PostgreSQL as primary DB | Single RDS instance hosts the app DB plus separate Solid Cache/Queue/Cable DBs — eliminates Redis as an operational dependency in MVO. |
+| Separate PostgreSQL for client data | Isolation via abstract model prevents cross-contamination. Enables future multi-tenant per-tenant configuration. SQLite is used only for the `test` `client_db` to keep CI hermetic. |
 | Haiku as default model | 12x cheaper than Sonnet. Sufficient for classification, SQL gen, and RAG generation. Sonnet reserved for vision only. |
 | Hybrid search + Cohere reranking | Combines semantic and keyword retrieval for better recall, then reranks for precision. |
 | Query decomposition | Breaks complex questions into sub-queries for more thorough retrieval. |

@@ -8,6 +8,7 @@ class HomeController < ApplicationController
   before_action :authenticate_user!
 
   def index
+    WarmBedrockKbJob.perform_later
     @current_metrics   = current_metrics
     @kb_documents, @kb_docs_has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE)
     @pinned_uris       = pinned_uris_for_current_session

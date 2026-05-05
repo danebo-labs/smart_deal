@@ -6,6 +6,7 @@ module Users
     respond_to :html
 
     def after_sign_in_path_for(_resource)
+      WarmBedrockKbJob.perform_later
       root_path
     end
 

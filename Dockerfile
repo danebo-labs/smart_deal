@@ -16,7 +16,7 @@ WORKDIR /rails
 
 # Install base packages
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 libvips sqlite3 && \
+    apt-get install --no-install-recommends -y curl libjemalloc2 libvips sqlite3 postgresql-client libpq5 && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
@@ -30,10 +30,13 @@ ENV RAILS_ENV="production" \
 # Throw-away build stage to reduce size of final image
 FROM base AS build
 
-# Install packages needed to build gems
+# Install packages needed to build gems (libpq-dev = headers para compilar el gem `pg`)
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential git libyaml-dev pkg-config && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+    apt-get install --no-install-recommends -y build-essential git libyaml-dev libpq-dev pkg-config && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives && \
+    # VERIFY libpq-dev is actually installed — fails the build loudly if not
+    test -f /usr/include/postgresql/libpq-fe.h && \
+    pg_config --version
 
 # Install application gems
 COPY Gemfile Gemfile.lock vendor ./

@@ -55,3 +55,4 @@ meeting*.txt
 /b_I0BM7kf3sAV/
 /bin/export_ui_for_ai
 /test/bin/export_ui_for_ai_test.rb
+.kamal/secrets

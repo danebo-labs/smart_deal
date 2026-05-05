@@ -1,0 +1,77 @@
+service: smart-deal
+image: lahirisan80/smart-deal
+
+servers:
+  web:
+    hosts:
+      - 54.163.248.39
+    options:
+      memory: 1g
+      cpus: 1.5
+
+  worker_default:
+    hosts:
+      - 54.163.248.39
+    cmd: bundle exec rake solid_queue:start
+    env:
+      clear:
+        SOLID_QUEUE_PROCESS: default
+    options:
+      memory: 384m
+
+  worker_ingestion:
+    hosts:
+      - 54.163.248.39
+    cmd: bundle exec rake solid_queue:start
+    env:
+      clear:
+        SOLID_QUEUE_PROCESS: ingestion
+    options:
+      memory: 384m
+
+proxy:
+  ssl: true
+  host: chat.danebo.ai
+  app_port: 80
+
+registry:
+  server: docker.io
+  username: lahirisan80
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+
+env:
+  clear:
+    RAILS_ENV: production
+    RAILS_LOG_TO_STDOUT: "true"
+    RAILS_SERVE_STATIC_FILES: "true"
+    RAILS_MAX_THREADS: "8"
+    AWS_REGION: us-east-1
+    DB_HOST: smart-deal-db.c7m2cecbyzsy.us-east-1.rds.amazonaws.com
+    DB_USERNAME: app_user
+    DB_NAME: smart_deal_production
+    DB_CACHE_NAME: smart_deal_production_cache
+    DB_QUEUE_NAME: smart_deal_production_queue
+    DB_CABLE_NAME: smart_deal_production_cable
+    BEDROCK_KNOWLEDGE_BASE_ID: VBB72VKABV
+    BEDROCK_DATA_SOURCE_ID: OWRPGSX6XK
+    BEDROCK_MODEL_ID: global.anthropic.claude-haiku-4-5-20251001-v1:0
+    KNOWLEDGE_BASE_S3_BUCKET: multimodal-source-destination
+    INGESTION_REENQUEUE: "true"
+    AWS_HTTP_READ_TIMEOUT: "90"
+  secret:
+    - RAILS_MASTER_KEY
+    - DB_PASSWORD
+
+aliases:
+  console: app exec --interactive --reuse "bin/rails console"
+  shell:   app exec --interactive --reuse "bash"
+  logs:    app logs -f
+  dbc:     app exec --interactive --reuse "bin/rails dbconsole -p"
+
+ssh:
+  user: ubuntu
+  keys: ["~/.ssh/smart-deal-deploy.pem"]

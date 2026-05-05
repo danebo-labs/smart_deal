@@ -18,25 +18,14 @@
 
     <%# Logo %>
     <div class="relative z-10 flex items-center gap-3">
-      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-16 h-16">
-        <defs>
-          <linearGradient id="og-light" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#4a6fa5"/>
-            <stop offset="50%" stop-color="#2d4a7c"/>
-            <stop offset="100%" stop-color="#1a3a5c"/>
-          </linearGradient>
-          <linearGradient id="ig-light" x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#3d5a80"/>
-            <stop offset="100%" stop-color="#5c7caa"/>
-          </linearGradient>
-        </defs>
-        <circle cx="50" cy="50" r="44" stroke="url(#og-light)" stroke-width="8" fill="none" stroke-linecap="round"/>
-        <path d="M 50 10 A 40 40 0 0 1 90 50" stroke="url(#ig-light)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.6"/>
-        <text x="50" y="58" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-size="42" font-family="Inter, system-ui, sans-serif" font-weight="300" letter-spacing="-0.02em">d</text>
-      </svg>
+      <%= image_tag "logo.png",
+          alt: "danebo",
+          class: "w-16 h-16 rounded-2xl object-contain shadow-lg ring-1 ring-white/10 shrink-0",
+          width: 64,
+          height: 64 %>
       <div class="flex flex-col">
         <span class="font-light text-2xl text-white tracking-tight leading-none">danebo</span>
-        <span class="text-xs font-light tracking-widest uppercase text-white/60">.ai</span>
+        <span class="text-xs font-light tracking-widest uppercase text-white/60">.IA</span>
       </div>
     </div>
 
@@ -68,22 +57,11 @@
       <%# Mobile logo %>
       <div class="lg:hidden mb-10 flex justify-center">
         <div class="flex items-center gap-3">
-          <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-14 h-14">
-            <defs>
-              <linearGradient id="og-dark" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#4a6fa5"/>
-                <stop offset="50%" stop-color="#2d4a7c"/>
-                <stop offset="100%" stop-color="#1a3a5c"/>
-              </linearGradient>
-              <linearGradient id="ig-dark" x1="0%" y1="100%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#3d5a80"/>
-                <stop offset="100%" stop-color="#5c7caa"/>
-              </linearGradient>
-            </defs>
-            <circle cx="50" cy="50" r="44" stroke="url(#og-dark)" stroke-width="8" fill="none" stroke-linecap="round"/>
-            <path d="M 50 10 A 40 40 0 0 1 90 50" stroke="url(#ig-dark)" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.6"/>
-            <text x="50" y="58" text-anchor="middle" dominant-baseline="middle" fill="#1a3a5c" font-size="42" font-family="Inter, system-ui, sans-serif" font-weight="300" letter-spacing="-0.02em">d</text>
-          </svg>
+          <%= image_tag "logo.png",
+              alt: "danebo",
+              class: "w-14 h-14 rounded-2xl object-contain shadow-md ring-1 ring-[hsl(215,20%,88%)] shrink-0",
+              width: 56,
+              height: 56 %>
           <div class="flex flex-col">
             <span class="font-light text-2xl text-[hsl(222,47%,10%)] tracking-tight leading-none">danebo</span>
             <span class="text-xs font-light tracking-widest uppercase text-[hsl(215,20%,42%)]">.ai</span>
@@ -133,10 +111,10 @@
                   class: "text-xs text-[hsl(215,20%,42%)] hover:text-[hsl(222,47%,10%)] transition-colors" %>
             <% end %>
           </div>
-          <%= f.password_field :password,
+          <%= password_field_with_toggle f, :password,
               autocomplete: "current-password",
               placeholder: "••••••••",
-              class: "w-full h-11 px-3 text-sm bg-white border border-[hsl(215,20%,88%)] rounded-lg text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30 focus:border-[hsl(217,91%,50%)] transition" %>
+              class: "w-full h-11 text-sm bg-white border border-[hsl(215,20%,88%)] rounded-lg text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30 focus:border-[hsl(217,91%,50%)] transition" %>
         </div>
 
         <% if devise_mapping.rememberable? %>

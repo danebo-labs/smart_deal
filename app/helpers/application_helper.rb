@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  # Wraps +form.password_field+ with a show/hide toggle (type="button", aria, touch target).
+  def password_field_with_toggle(form, field, **html_options)
+    render "shared/password_field_toggle", form: form, field: field, html_options: html_options
+  end
+
   def number_to_human_size(size)
     return '0 B' if size.nil? || size.zero?
 

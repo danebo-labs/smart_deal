@@ -7,7 +7,7 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 ## Product scope (current build)
 
 - **Active channel:** signed-in **web** home — responsive layout, RAG chat, KB list, pins, and thumbnails/lightbox (see [Web home: responsive layout, KB card, and lightbox](#web-home-responsive-layout-kb-card-and-lightbox)).
-- **WhatsApp / Twilio — decoupled (dormant):** the inbound webhook is **not mounted** (`config/routes.rb` comments out `post '/twilio/webhook'`). **`config/queue.yml`** runs a **single** Solid Queue worker lane (`default` only); `whatsapp_rag` / `whatsapp_media` workers were removed. Shared code paths (`RagQueryConcern`, `BedrockRagService`, `BedrockIngestionJob`, orchestrator) no longer drive a live **`:whatsapp`** RAG branch. **Legacy stack remains in the repo** for a future reactivation: `TwilioController`, `SendWhatsappReplyJob`, `ProcessWhatsappMediaJob`, `TrackWhatsappCacheHitJob`, `app/services/rag/whatsapp_*.rb`, models, locales, and DB tables are **not deleted** — treat them as **deprecated architecture** until re-wired.
+- **WhatsApp / Twilio — decoupled (dormant):** the inbound webhook is **not mounted** (`config/routes.rb` comments out `post '/twilio/webhook'`). **`config/queue.yml`** defines two Solid Queue **lanes** — `default` (short jobs: metrics, enrichment, uploads) and `ingestion` (`BedrockIngestionJob` poll loop). In **production Kamal** those lanes run inside **one** `worker` container (see [Kamal production (AWS)](#kamal-production-aws)). Jobs that target `whatsapp_rag` / `whatsapp_media` still exist in code but are **not enqueued** while the webhook is unmounted. Shared code paths (`RagQueryConcern`, `BedrockRagService`, `BedrockIngestionJob`, orchestrator) no longer drive a live **`:whatsapp`** RAG branch. **Legacy stack remains in the repo** for a future reactivation: `TwilioController`, `SendWhatsappReplyJob`, `ProcessWhatsappMediaJob`, `TrackWhatsappCacheHitJob`, `app/services/rag/whatsapp_*.rb`, models, locales, and DB tables are **not deleted** — treat them as **deprecated architecture** until re-wired.
 - **Tests:** `test/test_helper.rb` sets **`WHATSAPP_CHANNEL_DISABLED`** (default `true` via `ENV.fetch`) and skips test classes whose name matches `Whatsapp` / `Twilio` (case-insensitive). Export **`WHATSAPP_CHANNEL_DISABLED=false`** to run those suites when working on a WA re-launch.
 
 ## MVP pilot (dry run)
@@ -57,6 +57,7 @@ Engineering snapshot of what powers the app (complement to [Setup](#setup) and [
 | **Messaging** | **Twilio** (`twilio-ruby` still bundled; inbound **WhatsApp webhook not mounted** — see [Product scope](#product-scope-current-build)) |
 | **Auth** | **Devise** |
 | **Tests** | **Minitest** (Rails default) |
+| **Production deploy** | **[Kamal](https://kamal-deploy.org/)** on EC2 + Docker Hub; TLS and routing via **kamal-proxy** (see [Kamal production (AWS)](#kamal-production-aws)) |
 
 ## Setup
 
@@ -149,6 +150,134 @@ AWS-side KB shape:
 
 Do **not** copy AWS credential secret ARNs into `.env` or app docs. Keep runtime config to `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_DATA_SOURCE_ID`, `BEDROCK_MODEL_ID`, `AWS_REGION`, `KNOWLEDGE_BASE_S3_BUCKET`, and the `BEDROCK_RAG_*` knobs.
 
+### Kamal production (AWS)
+
+End-to-end notes from shipping **web-first** production on **one EC2** (Ubuntu + Docker), **RDS PostgreSQL** (primary + separate DBs for Solid Cache / Queue / Cable), **Kamal** + **kamal-proxy** (Traefik, Let’s Encrypt), and **Docker Hub** as the image registry. Full step-by-step infra lives in **`~/.claude/plans/production-deployment-runbook.md`** (or your local copy of the production runbook) on the operator’s machine; this section captures **critical constraints**, **architecture**, **commands**, and **troubleshooting** so the repo stays the source of truth.
+
+#### Critical infrastructure
+
+| Topic | Requirement |
+|-------|---------------|
+| **EC2 size** | **At least `t3.medium` (4 GiB RAM)** for `web` + `worker` + `kamal-proxy` + Docker/OS headroom. `t3.micro` (~1 GiB) causes Puma/worker **OOM** (`Exited (137)`), SSH TLS “banner” hangs, and crashloops. `t3.small` is tight; `medium` is the practical floor for MVO. |
+| **RDS** | Primary DB **plus** three auxiliary DBs (`*_cache`, `*_queue`, `*_cable`) — create them from the EC2 host with `psql` (RDS is private; laptop cannot connect). |
+| **IAM role on EC2** | Instance profile must allow Bedrock invoke/retrieve, KB ingestion read, S3 KB buckets, SSM read for secrets. For **`BEDROCK_MODEL_ID`** values with prefix **`global.`** (inference profile), IAM **must** include **`bedrock:GetInferenceProfile`** (and **Bedrock model access** enabled in console). Missing it surfaces as app **`502`** on `/rag/ask` with `Not authorized to call GetInferenceProfile`. |
+| **`kamal-proxy`** | **Do not remove.** It terminates TLS and routes to the app. Only `web` + `worker` + `kamal-proxy` should run in steady state. |
+| **Run Kamal from the repo** | Always `cd` into the **project root** (where `Gemfile` and `config/deploy.yml` live). Running `bundle exec kamal` from `$HOME` fails with “Could not locate Gemfile” / wrong `config/deploy.yml` path. |
+
+#### Architecture (production)
+
+| Piece | Role |
+|-------|------|
+| **`config/deploy.yml`** | Kamal: `servers.web`, `servers.worker`, `proxy` (`host`, `app_port: 80`), registry, `env`, `ssh`. Memory/CPU limits are set per role. |
+| **Single `worker` container** | One process runs `bundle exec rake solid_queue:start` and loads **`config/queue.yml`**, which registers **two lanes**: `default` (4 threads, `polling_interval: 1`) and `ingestion` (1 thread, `polling_interval: 2`). This **isolates long ingestion polls** from short jobs **without** running two duplicate Rails worker processes. |
+| **Solid Queue polling vs Aurora warmup** | Worker **`polling_interval`** only controls how often Solid Queue **polls the queue DB** (RDS `solid_queue_*` tables). It does **not** wake the Bedrock KB vector store. **Aurora / KB warmup** is **`WarmBedrockKbJob`** (throttled retrieve against the KB), enqueued from **`HomeController#index`** and **`Users::SessionsController#after_sign_in_path_for`**. |
+| **Metrics footer** | Updated when **`TrackBedrockQueryJob`** runs (after a real Bedrock path) and broadcasts Turbo Streams; there is **no** browser polling. Slower Solid Queue polling delays the footer slightly; it does not affect answer latency. |
+| **Default KB list rows** | **Not** hardcoded in the UI. **`RecentKbDocumentsQuery`** reads **`kb_documents`**. Seed rows come from **`db/seeds.rb`** (`KB_DOCUMENT_SEEDS`); real uploads add rows via **`QueryOrchestratorService#ensure_kb_document_for`**. |
+
+#### EC2 stop / start — avoid SSL 404 and “half-dead” proxy
+
+Stopping the instance **without** bringing the app up cleanly can leave **`kamal-proxy` running** (restored state) while **`smart-deal-web` / `smart-deal-worker` are stopped** → HTTP `404` from the proxy on `/up`, `ERR_SSL_PROTOCOL_ERROR` / TLS handshake errors (`unknown server name`), or empty `service`/`target` in proxy logs.
+
+**Recommended:**
+
+1. Before stop (optional but cleaner): from repo, `bundle exec kamal app stop`.
+2. `aws ec2 stop-instances` …
+3. After start: `aws ec2 wait instance-running`, wait **60–90 s** for Docker.
+4. From repo: **`bundle exec kamal deploy`** (preferred) or `bundle exec kamal app boot` — then confirm **`docker ps`** shows **three** containers: `kamal-proxy`, `smart-deal-web-<sha>`, `smart-deal-worker-<sha>` (same image tag).
+
+**Do not** assume `curl https://…/up` after boot without checking containers.
+
+#### Indispensable commands (operator laptop)
+
+From **`/path/to/smart_deal`**:
+
+```bash
+bundle exec kamal config
+bundle exec kamal deploy
+bundle exec kamal app details
+bundle exec kamal app logs --roles=web -f
+bundle exec kamal app logs --roles=worker -f
+bundle exec kamal proxy logs -n 200
+```
+
+**Rails console** (uses `--reuse` per `deploy.yml` aliases):
+
+```bash
+bundle exec kamal console
+```
+
+**DB console** (Postgres inside the web container):
+
+```bash
+bundle exec kamal dbc
+```
+
+**One-off command** (prefer `--reuse` to avoid a cold pull when `web` is healthy):
+
+```bash
+bundle exec kamal app exec --reuse 'bin/rails runner "puts KbDocument.count"'
+```
+
+Migrations (four databases):
+
+```bash
+bundle exec kamal app exec --reuse "bin/rails db:migrate"
+bundle exec kamal app exec --reuse "bin/rails db:migrate:cache"
+bundle exec kamal app exec --reuse "bin/rails db:migrate:queue"
+bundle exec kamal app exec --reuse "bin/rails db:migrate:cable"
+```
+
+**Validate `config/queue.yml` with Ruby 3.4+** (YAML merge keys need aliases):
+
+```bash
+ruby -ryaml -e 'p YAML.load_file("config/queue.yml", aliases: true).dig("production", "workers").size'
+# expect 2 worker lane definitions
+```
+
+#### SSH + Docker on the server
+
+```bash
+ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@<EC2_IP>
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+docker stats --no-stream
+free -m
+sudo ss -tlnp | grep -E ':80|:443'
+docker logs kamal-proxy --tail 100
+```
+
+**Orphan containers:** if you **rename** Kamal roles (e.g. two workers → one), old containers (`smart-deal-worker_*` old names) may keep running until **`docker rm -f …`**. Kamal does not always delete roles it no longer manages.
+
+#### Connect to RDS PostgreSQL
+
+RDS is **private** — connect **from the EC2** box (after `postgresql-client` is installed), not from the laptop:
+
+```bash
+# On EC2 — use real host/password from SSM or your runbook
+export PGHOST=<rds-endpoint>
+export PGUSER=app_user
+export PGPASSWORD='<secret>'
+psql -d smart_deal_production -c '\conninfo'
+```
+
+Or one-liner from laptop via SSH:
+
+```bash
+ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@<EC2_IP> \
+  "PGPASSWORD='...' psql -h <rds-endpoint> -U app_user -d smart_deal_production -c 'SELECT 1'"
+```
+
+#### Troubleshooting (quick map)
+
+| Symptom | Likely cause | What to check |
+|---------|----------------|---------------|
+| **`502`** on `/rag/ask`, log: **`GetInferenceProfile`** / not authorized | EC2 role missing **`bedrock:GetInferenceProfile`** and/or Bedrock **model access** off for Haiku profile | IAM policy + Bedrock console; on EC2: `aws bedrock get-inference-profile --inference-profile-identifier <id> --region us-east-1` |
+| **`ERR_SSL_PROTOCOL_ERROR`** / HTTP **`404`** on `/up` for `chat.danebo.ai` | Only **`kamal-proxy`** up; **web/worker** down after instance stop/start | `docker ps`; then `kamal deploy` from repo root |
+| **`Exited (137)`** on web | **OOM** (instance too small or memory limit too low) | `free -m`; `dmesg \| grep -i oom`; resize EC2 or lower `deploy.yml` memory **carefully** |
+| **`app boot` / unhealthy web with `:latest`** | Stale or wrong **`latest`** image on registry vs known-good **git SHA** tag | Prefer **`kamal deploy`** (builds/pushes current SHA) |
+| **`unknown server name`** in proxy logs | Client without SNI, scanners — often noise; if **your** browser fails, fix router/cert state first | `curl -vk https://chat.danebo.ai/up` |
+| **Duplicate workers processing** | Old **orphan** containers after role change | `docker ps -a`; remove stopped/old names |
+| **`kamal app exec` hangs on `docker login`** | Exec without **`--reuse`** pulls a fresh image | Use **`--reuse`** when `web` is running |
+
 ### MVP configuration: shared conversation session
 
 Use these **only for the MVP pilot** when you want a **single shared thread** for all **web** technicians. Values are read at boot from `.env` (see `.env.sample`).
@@ -209,6 +338,8 @@ Specs that need shared mode **temporarily flip** the constant inside the example
 3. Add permissions → Create inline policy → Paste JSON
 4. Name: `BedrockModelInvokePermissions`
 5. Save
+
+**EC2 app role (production):** if `BEDROCK_MODEL_ID` uses a **`global.*`** inference profile, the instance role must also allow **`bedrock:GetInferenceProfile`** (see [Kamal production (AWS)](#kamal-production-aws)). Enable the model in **Bedrock → Model access** for the account/region.
 
 See `docs/AWS_IAM_PERMISSIONS.md` for full instructions.
 
@@ -450,7 +581,7 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 - **`TrackIngestionUsageJob`** (`default`) — after `BedrockIngestionJob` completes, estimates parse/embed tokens per file and writes the `ingestion_*` rows above.
 - **`TrackWhatsappCacheHitJob`** (`default`, **dormant**) — when the WhatsApp faceted path runs again, records cache-hit metrics into the same rollups.
 
-**Solid Queue (`config/queue.yml`):** two worker lanes — **`default`** for short-lived jobs (metrics, broadcasts, enrichment, attachment uploads) and **`ingestion`** for the long-running `BedrockIngestionJob` poll loop. Isolating the ingestion poll prevents two concurrent uploads from starving `TrackBedrockQueryJob` (which drives the home footer). Dedicated **`whatsapp_rag`** / **`whatsapp_media`** processes were **removed** with the WA decouple; re-add them if you restore the webhook and want isolation again.
+**Solid Queue (`config/queue.yml`):** two worker **lanes** — **`default`** for short-lived jobs (metrics, broadcasts, enrichment, attachment uploads) and **`ingestion`** for the long-running `BedrockIngestionJob` poll loop. Isolating the ingestion poll prevents two concurrent uploads from starving `TrackBedrockQueryJob` (which drives the home footer). In **Kamal production**, both lanes run in **one** `worker` container (see [Kamal production (AWS)](#kamal-production-aws)). Dedicated **`whatsapp_rag`** / **`whatsapp_media`** queues exist in code but are **not exercised** while the Twilio webhook stays unmounted; re-add dedicated processes if you restore the webhook and want isolation again.
 
 | Queue | Example jobs | Role |
 |-------|----------------|------|

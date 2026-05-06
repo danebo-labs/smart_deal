@@ -56,3 +56,6 @@ meeting*.txt
 /bin/export_ui_for_ai
 /test/bin/export_ui_for_ai_test.rb
 .kamal/secrets
+
+# Kamal: real hosts and env-specific IDs stay local (template: deploy.yml.example).
+/config/deploy.yml

@@ -1,17 +1,27 @@
+# Kamal deployment template — copy to config/deploy.yml and customize.
+#
+#   cp config/deploy.yml.example config/deploy.yml
+#
+# config/deploy.yml is gitignored. Never commit real hosts, registry passwords,
+# or production-only identifiers if the repo is public.
+#
+# Secrets Kamal injects (RAILS_MASTER_KEY, DB_PASSWORD, KAMAL_REGISTRY_PASSWORD)
+# live in .kamal/secrets (also gitignored). See README “Secrets and Kamal”.
+
 service: smart-deal
-image: lahirisan80/smart-deal
+image: YOUR_DOCKERHUB_USER/smart-deal
 
 servers:
   web:
     hosts:
-      - 54.163.248.39
+      - YOUR_EC2_PUBLIC_IP
     options:
       memory: 1500m
       cpus: 1.5
 
   worker:
     hosts:
-      - 54.163.248.39
+      - YOUR_EC2_PUBLIC_IP
     cmd: bundle exec rake solid_queue:start
     options:
       memory: 1g
@@ -19,12 +29,12 @@ servers:
 
 proxy:
   ssl: true
-  host: chat.danebo.ai
+  host: app.example.com
   app_port: 80
 
 registry:
   server: docker.io
-  username: lahirisan80
+  username: YOUR_DOCKERHUB_USER
   password:
     - KAMAL_REGISTRY_PASSWORD
 
@@ -38,16 +48,16 @@ env:
     RAILS_SERVE_STATIC_FILES: "true"
     RAILS_MAX_THREADS: "5"
     AWS_REGION: us-east-1
-    DB_HOST: smart-deal-db.c7m2cecbyzsy.us-east-1.rds.amazonaws.com
+    DB_HOST: your-app.rds.amazonaws.com
     DB_USERNAME: app_user
     DB_NAME: smart_deal_production
     DB_CACHE_NAME: smart_deal_production_cache
     DB_QUEUE_NAME: smart_deal_production_queue
     DB_CABLE_NAME: smart_deal_production_cable
-    BEDROCK_KNOWLEDGE_BASE_ID: VBB72VKABV
-    BEDROCK_DATA_SOURCE_ID: OWRPGSX6XK
+    BEDROCK_KNOWLEDGE_BASE_ID: your-kb-id
+    BEDROCK_DATA_SOURCE_ID: your-data-source-id
     BEDROCK_MODEL_ID: global.anthropic.claude-haiku-4-5-20251001-v1:0
-    KNOWLEDGE_BASE_S3_BUCKET: multimodal-source-destination
+    KNOWLEDGE_BASE_S3_BUCKET: your-kb-source-bucket
     INGESTION_REENQUEUE: "true"
     AWS_HTTP_READ_TIMEOUT: "90"
   secret:
@@ -62,4 +72,4 @@ aliases:
 
 ssh:
   user: ubuntu
-  keys: ["~/.ssh/smart-deal-deploy.pem"]
+  keys: ["~/.ssh/your-deploy-key.pem"]

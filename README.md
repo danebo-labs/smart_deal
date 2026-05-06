@@ -111,6 +111,8 @@ ENV vars (`.env`) take priority in development. Rails encrypted credentials are 
 |------|---------|
 | `.env` | Your local secrets — loaded automatically, never committed |
 | `.env.sample` | Template with all available variables and defaults |
+| `config/deploy.yml` | **Local only** (gitignored). Copy from `config/deploy.yml.example` for Kamal; holds non-secret production hostnames/IDs for your deploy. |
+| `config/deploy.yml.example` | Committed template; safe to push (placeholders only). |
 | `config/credentials.yml.enc` | Encrypted secrets for production |
 | `config/credentials.example.yml` | Template showing the credentials structure |
 
@@ -120,7 +122,7 @@ To edit encrypted credentials:
 EDITOR="cursor --wait" bin/rails credentials:edit
 ```
 
-> **Note:** `.env` and `config/master.key` are in `.gitignore`. Never commit them.
+> **Note:** `.env`, `config/master.key`, **`config/deploy.yml`**, and **`.kamal/secrets`** are in `.gitignore` (or should only exist locally). Never commit them.
 
 For detailed Bedrock configuration (models, KB, env vars), see [BEDROCK_SETUP.md](BEDROCK_SETUP.md) and `.env.sample`.
 
@@ -154,6 +156,21 @@ Do **not** copy AWS credential secret ARNs into `.env` or app docs. Keep runtime
 
 End-to-end notes from shipping **web-first** production on **one EC2** (Ubuntu + Docker), **RDS PostgreSQL** (primary + separate DBs for Solid Cache / Queue / Cable), **Kamal** + **kamal-proxy** (Traefik, Let’s Encrypt), and **Docker Hub** as the image registry. Full step-by-step infra lives in **`~/.claude/plans/production-deployment-runbook.md`** (or your local copy of the production runbook) on the operator’s machine; this section captures **critical constraints**, **architecture**, **commands**, and **troubleshooting** so the repo stays the source of truth.
 
+#### Secrets and Kamal (credentials)
+
+**Do not commit or push:** `config/master.key`, `.env`, **`.kamal/secrets`**, or **`config/deploy.yml`** (those last two are listed in `.gitignore`). The repo only ships **[`config/deploy.yml.example`](config/deploy.yml.example)** as a template.
+
+| Surface | What to use |
+|---------|-------------|
+| **Local dev** | **`.env`** (from [`.env.sample`](.env.sample)) for Postgres (`DB_*`, `CLIENT_DB_*`) and optional AWS keys. Never commit `.env`. |
+| **`config/credentials.yml.enc`** | Encrypted secrets for Rails (`bin/rails credentials:edit`); requires **`config/master.key`** locally. Fine to commit the `.enc` file; **never** commit `master.key`. |
+| **Kamal (laptop / CI)** | Create **`config/deploy.yml`** with `cp config/deploy.yml.example config/deploy.yml` and edit hosts, Docker image name, registry username, and non-secret `env.clear` values (region, bucket names, KB IDs, DB names). |
+| **`.kamal/secrets`** | Dotenv-style file at the **project root** (same level as `Gemfile`). Kamal reads it when you deploy; it must define every name listed under `secret:` and `registry.password` in `deploy.yml`, for example: `RAILS_MASTER_KEY=...`, `DB_PASSWORD=...`, `KAMAL_REGISTRY_PASSWORD=...` (use a **Docker Hub access token**, not your main password, if possible). |
+| **Production AWS auth** | Prefer an **IAM instance profile** on EC2 for Bedrock/S3. Avoid putting `AWS_SECRET_ACCESS_KEY` in `deploy.yml` or in `.kamal/secrets` unless you have no instance role. |
+| **Docker Hub** | Only `KAMAL_REGISTRY_PASSWORD` (or CI secret) needs the registry token; the image name and username live in `deploy.yml` (still no password in the YAML file itself). |
+
+If a real **`config/deploy.yml`** with production hosts or IDs was ever pushed to a **public** remote, treat it as a disclosure: rotate **`DB_PASSWORD`**, review **security groups**, and consider **new KB/S3 exposure** only if you pasted secrets (IDs alone are not credentials but ease reconnaissance).
+
 #### Critical infrastructure
 
 | Topic | Requirement |
@@ -162,13 +179,13 @@ End-to-end notes from shipping **web-first** production on **one EC2** (Ubuntu +
 | **RDS** | Primary DB **plus** three auxiliary DBs (`*_cache`, `*_queue`, `*_cable`) — create them from the EC2 host with `psql` (RDS is private; laptop cannot connect). |
 | **IAM role on EC2** | Instance profile must allow Bedrock invoke/retrieve, KB ingestion read, S3 KB buckets, SSM read for secrets. For **`BEDROCK_MODEL_ID`** values with prefix **`global.`** (inference profile), IAM **must** include **`bedrock:GetInferenceProfile`** (and **Bedrock model access** enabled in console). Missing it surfaces as app **`502`** on `/rag/ask` with `Not authorized to call GetInferenceProfile`. |
 | **`kamal-proxy`** | **Do not remove.** It terminates TLS and routes to the app. Only `web` + `worker` + `kamal-proxy` should run in steady state. |
-| **Run Kamal from the repo** | Always `cd` into the **project root** (where `Gemfile` and `config/deploy.yml` live). Running `bundle exec kamal` from `$HOME` fails with “Could not locate Gemfile” / wrong `config/deploy.yml` path. |
+| **Run Kamal from the repo** | Always `cd` into the **project root** (where the `Gemfile` lives). Ensure **`config/deploy.yml`** exists (`cp config/deploy.yml.example config/deploy.yml` first). Running `bundle exec kamal` from `$HOME` fails with “Could not locate Gemfile” or the wrong config path. |
 
 #### Architecture (production)
 
 | Piece | Role |
 |-------|------|
-| **`config/deploy.yml`** | Kamal: `servers.web`, `servers.worker`, `proxy` (`host`, `app_port: 80`), registry, `env`, `ssh`. Memory/CPU limits are set per role. |
+| **`config/deploy.yml`** | **Not in git** — copy from [`config/deploy.yml.example`](config/deploy.yml.example). Kamal: `servers.web`, `servers.worker`, `proxy` (`host`, `app_port: 80`), registry, `env`, `ssh`. Memory/CPU limits are set per role. |
 | **Single `worker` container** | One process runs `bundle exec rake solid_queue:start` and loads **`config/queue.yml`**, which registers **two lanes**: `default` (4 threads, `polling_interval: 1`) and `ingestion` (1 thread, `polling_interval: 2`). This **isolates long ingestion polls** from short jobs **without** running two duplicate Rails worker processes. |
 | **Solid Queue polling vs Aurora warmup** | Worker **`polling_interval`** only controls how often Solid Queue **polls the queue DB** (RDS `solid_queue_*` tables). It does **not** wake the Bedrock KB vector store. **Aurora / KB warmup** is **`WarmBedrockKbJob`** (throttled retrieve against the KB), enqueued from **`HomeController#index`** and **`Users::SessionsController#after_sign_in_path_for`**. |
 | **Metrics footer** | Updated when **`TrackBedrockQueryJob`** runs (after a real Bedrock path) and broadcasts Turbo Streams; there is **no** browser polling. Slower Solid Queue polling delays the footer slightly; it does not affect answer latency. |

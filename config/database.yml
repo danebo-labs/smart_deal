@@ -7,7 +7,7 @@ default: &default
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i + 2 %>
   host:     <%= ENV.fetch("DB_HOST",     "localhost") %>
   username: <%= ENV.fetch("DB_USERNAME", "app_user") %>
-  password: <%= ENV.fetch("DB_PASSWORD", "karateca") %>
+  password: <%= ENV.fetch("DB_PASSWORD", "") %>
   gssencmode: disable
   sslmode: <%= ENV.fetch("DB_SSLMODE", Rails.env.production? ? "require" : "disable") %>
 
@@ -77,10 +77,10 @@ client_db:
   timeout: 5000
 <% else %>
   adapter: postgresql
-  host: localhost
-  port: 5432
-  database: app_db
-  username: app_user
-  password: karateca
+  host: <%= ENV.fetch("CLIENT_DB_HOST", "localhost") %>
+  port: <%= ENV.fetch("CLIENT_DB_PORT", 5432) %>
+  database: <%= ENV.fetch("CLIENT_DB_NAME", "app_db") %>
+  username: <%= ENV.fetch("CLIENT_DB_USERNAME", "app_user") %>
+  password: <%= ENV.fetch("CLIENT_DB_PASSWORD", "") %>
   gssencmode: disable
 <% end %>

@@ -4,21 +4,22 @@ default: &default
       batch_size: 500
   workers:
     # Default lane: TrackBedrockQueryJob (metrics footer), TrackIngestionUsageJob,
-    # KbDocumentEnrichmentJob, UploadAndSyncAttachmentsJob, etc. 0.25s polling
-    # keeps perceived metrics latency under the Doherty 250ms threshold.
+    # KbDocumentEnrichmentJob, UploadAndSyncAttachmentsJob, etc.
+    # 1s polling = ~4 SELECTs/s on RDS in idle. Footer updates ~1s after a query
+    # response, which is acceptable for a non-critical cost metric (the model
+    # answer arrives several seconds before the footer either way).
     - queues: default
       threads: 4
       processes: 1
-      polling_interval: 0.25
+      polling_interval: 1
 
     # Dedicated ingestion lane: BedrockIngestionJob can spend 1–15 min waiting
     # for Bedrock to finish indexing. Isolated so that two concurrent uploads
-    # never starve TrackBedrockQueryJob (which controls the visible metrics
-    # footer) on the default lane.
+    # never starve the default lane jobs.
     - queues: ingestion
       threads: 1
       processes: 1
-      polling_interval: 1
+      polling_interval: 2
 
 development:
   <<: *default

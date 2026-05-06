@@ -6,28 +6,16 @@ servers:
     hosts:
       - 54.163.248.39
     options:
-      memory: 1g
+      memory: 1500m
       cpus: 1.5
 
-  worker_default:
+  worker:
     hosts:
       - 54.163.248.39
     cmd: bundle exec rake solid_queue:start
-    env:
-      clear:
-        SOLID_QUEUE_PROCESS: default
     options:
-      memory: 384m
-
-  worker_ingestion:
-    hosts:
-      - 54.163.248.39
-    cmd: bundle exec rake solid_queue:start
-    env:
-      clear:
-        SOLID_QUEUE_PROCESS: ingestion
-    options:
-      memory: 384m
+      memory: 1g
+      cpus: 1.0
 
 proxy:
   ssl: true
@@ -48,7 +36,7 @@ env:
     RAILS_ENV: production
     RAILS_LOG_TO_STDOUT: "true"
     RAILS_SERVE_STATIC_FILES: "true"
-    RAILS_MAX_THREADS: "8"
+    RAILS_MAX_THREADS: "5"
     AWS_REGION: us-east-1
     DB_HOST: smart-deal-db.c7m2cecbyzsy.us-east-1.rds.amazonaws.com
     DB_USERNAME: app_user

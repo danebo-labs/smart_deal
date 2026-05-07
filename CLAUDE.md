@@ -1,16 +1,19 @@
 # Danebo RAG — Engineering Guidelines
 
+**Canonical product/build scope:** README.md § *Product scope (current build)* — **live channel is signed-in web** (RAG home, KB list, uploads). **WhatsApp / Twilio is dormant:** inbound webhook **not mounted** (`config/routes.rb`), WA-specific jobs **not enqueued** on the default setup; legacy stack stays in-repo for reactivation (see README). Default implementation work assumes **web** unless explicitly reviving WA.
+
 ## Role
 Senior Rails 8.1+ engineer. Stack: Hotwire (Turbo/Stimulus) + Importmap,
 Tailwind (watcher runs via bin/dev), Solid Queue/Cache/Cable (no Redis),
 SQLite (app) + PostgreSQL (client business DB), AWS Bedrock (RAG + Text-to-SQL),
-Twilio WhatsApp, Minitest. Ruby 3.3+, Rails 8.1.2.
+**Twilio/WhatsApp code paths dormant** (see README), Minitest. Ruby 3.3+, Rails 8.1.2.
 
 ## Product lens
-End user is a field elevator technician on WhatsApp or a tablet: harsh light,
+End user is a field elevator technician on the **web app** (tablet or phone): harsh light,
 gloves, flaky connectivity. Judge every change by: clarity, minimal typing,
 idempotency, perceived latency. Prefer semantic names/aliases over raw
 filenames. Optimize for technician UX, not just technical correctness.
+WhatsApp-era UX constraints below apply **when** that channel is re-wired — do not gate web-only changes on WA behavior unless touching shared RAG/session code WA will reuse.
 
 ## Response style (token + latency budget)
 - Direct, technical shorthand. No filler, no narration of what you're about
@@ -25,7 +28,7 @@ filenames. Optimize for technician UX, not just technical correctness.
 If a change worsens perceived latency, flag it.
 - Never call Bedrock / Twilio / external APIs synchronously from a controller.
   ACK fast, offload to a Solid Queue job.
-- WhatsApp: reply with empty TwiML immediately; RAG/media runs in a job.
+- Twilio/WhatsApp (**when webhook is active again**): reply with empty TwiML immediately; RAG/media runs in a job. While WA is dormant, do not assume `/twilio/webhook` traffic or WA queue isolation in production.
 - Minimize round-trips: batch DB, use pluck/select, avoid N+1, keep
   transactions short, add indexes only where queries need them.
 - Idempotency over retries — webhooks, job enqueues, S3 uploads must tolerate
@@ -46,7 +49,7 @@ Query orchestration
 - QueryOrchestratorService classifies intent (DATABASE_QUERY /
   KNOWLEDGE_BASE_QUERY / HYBRID_QUERY) before any expensive work.
 - HYBRID runs SQL + RAG in parallel threads and merges via LLM.
-- RagQueryConcern is the shared entry point for web + WhatsApp.
+- RagQueryConcern is the shared RAG entry; **web** is the exercised path today. WhatsApp-specific branches are **collapsed / dormant** until the route and workers are restored (README architecture + dormant sections).
 
 Bedrock / RAG
 - retrieve_and_generate (HYBRID search) for answers; retrieve (vector only)
@@ -62,14 +65,15 @@ Session / memory (3 layers)
 - kb_documents — global S3 catalog (not user-scoped).
 - technician_documents — durable per-technician memory, FIFO max 20,
   survives sessions.
-- conversation_sessions.active_entities — ephemeral JSONB working set,
-  capped, ~30-min TTL, FIFO evict. TTL extends while session_status =
-  in_procedure.
+- conversation_sessions.active_entities — JSONB working set (pins + auto-pins),
+  capped (`MAX_ENTITIES`), FIFO eviction when over cap; session row TTL
+  `EXPIRY_DURATION` (30 days, sliding via `refresh!`).
 - When promoting/merging entities, preserve wa_filename if the prior key
   starts with wa_ (audit trail).
 - conversation_history is capped + truncated; never grow it unbounded.
 
-WhatsApp channel
+WhatsApp channel (dormant — preserve for re-launch; see README *WhatsApp / Twilio — decoupled*, *R3*, Ngrok/Twilio reactivation)
+- **Status:** webhook **unmounted**, `whatsapp_rag` / `whatsapp_media` queues unused in practice; Twilio/`SendWhatsappReplyJob`/R3 cache stack remains in code, not the default architecture for new features.
 - Idempotency via Solid Cache key twilio_msg:<MessageSid> (~24h).
 - Reply chunks default ~1550 chars with a small gap between Twilio sends.
 - Plain text + ① ② ③ / emojis. No Markdown tables (WhatsApp renders poorly).
@@ -93,6 +97,7 @@ Frontend
 - Minitest, not RSpec. No Mocha: stub with define_singleton_method
   (save + restore) or fake inner classes (FakeBedrockAgentClient,
   FakeS3Client, …).
+- **`WHATSAPP_CHANNEL_DISABLED`** (test helper default `true`): classes whose name matches `Whatsapp` / `Twilio` are **skipped** unless `WHATSAPP_CHANNEL_DISABLED=false` — see README *Product scope*. Run WA suites only when touching a Twilio/WA relaunch.
 - ActiveSupport::TestCase (services/models), ActiveJob::TestCase (jobs),
   ActionDispatch::IntegrationTest (controllers).
 - parallelize(workers: 1) when tests touch global singletons, AWS clients,

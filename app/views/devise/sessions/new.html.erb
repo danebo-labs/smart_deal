@@ -16,9 +16,9 @@
       <div class="w-[200px] h-[200px] rounded-full bg-gradient-to-br from-[#2d4a7c]/20 to-transparent blur-3xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
     </div>
 
-    <%# Logo %>
+    <%# Logo (desktop split panel) %>
     <div class="relative z-10 flex items-center gap-3">
-      <%= image_tag "logo.png",
+      <%= image_tag "logo_desktop2.jpg",
           alt: "danebo",
           class: "w-16 h-16 rounded-2xl object-contain shadow-lg ring-1 ring-white/10 shrink-0",
           width: 64,
@@ -29,14 +29,21 @@
       </div>
     </div>
 
-    <%# Tagline %>
+    <%# Hero copy %>
     <div class="relative z-10 max-w-md">
       <h1 class="text-3xl xl:text-4xl font-light text-white leading-tight mb-6">
-        Inteligencia Artificial para decisiones empresariales
+        Convierte la información de tu empresa en decisiones y automatización
       </h1>
-      <p class="text-white/60 text-base leading-relaxed">
-        Plataforma RAG avanzada para análisis de contratos y documentos corporativos.
-        Extrae insights en segundos, no en horas.
+      <div class="space-y-4 text-white/60 text-base leading-relaxed">
+        <p>
+          Las empresas tienen grandes volúmenes de información, pero no conocimiento accionable.
+        </p>
+        <p>
+          Danebo transforma documentación interna, procesos y datos en conocimiento útil, integrado directamente en los flujos de trabajo.
+        </p>
+      </div>
+      <p class="mt-5 text-sm text-white/50 leading-relaxed">
+        No es solo análisis. Es ejecución. IA que automatiza tareas y mejora cómo trabajan tus equipos.
       </p>
     </div>
 
@@ -57,7 +64,7 @@
       <%# Mobile logo %>
       <div class="lg:hidden mb-10 flex justify-center">
         <div class="flex items-center gap-3">
-          <%= image_tag "logo.png",
+          <%= image_tag "logo_mobile.png",
               alt: "danebo",
               class: "w-14 h-14 rounded-2xl object-contain shadow-md ring-1 ring-[hsl(215,20%,88%)] shrink-0",
               width: 56,

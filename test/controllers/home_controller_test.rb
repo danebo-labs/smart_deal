@@ -19,6 +19,21 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test 'layout includes png favicon asset' do
+    get root_path
+    assert_response :success
+    assert_select 'link[rel="icon"][type="image/png"]' do |elements|
+      assert(elements.any? { |e| e['href'].to_s.include?('favicon') })
+    end
+  end
+
+  test 'nav includes responsive logo assets' do
+    get root_path
+    assert_response :success
+    assert_select 'img[alt="Danebo.ia"][src*="logo_desktop2"]', count: 1
+    assert_select 'img[alt="Danebo.ia"][src*="logo_mobile"]', count: 1
+  end
+
   test 'chat panel desktop header uses robot icon matching RAG assistant avatar' do
     get root_path
     assert_response :success

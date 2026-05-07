@@ -15,7 +15,7 @@
     <%= csp_meta_tag %>
     <%= action_cable_meta_tag %>
     <%= yield :head %>
-    <%= tag.link rel: "icon", href: "/favicon.ico", type: "image/x-icon" %>
+    <%= favicon_link_tag "favicon.png", type: "image/png" %>
     <%= tag.link rel: "apple-touch-icon", href: "/icon.png" %>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,9 +60,10 @@
     <%# Fixed nav %>
     <nav class="fixed top-0 left-0 right-0 z-50 border-b border-[hsl(215,20%,88%)] bg-white/80 backdrop-blur-xl">
       <div class="mx-auto flex h-14 md:h-16 max-w-7xl items-center justify-between px-6">
-        <%# Logo %>
+        <%# Logo — responsive assets %>
         <div class="flex items-center gap-3">
-          <%= image_tag "logo.png", class: "w-8 h-8 object-contain", alt: "Danebo.ia" %>
+          <%= image_tag "logo_mobile.png", class: "w-8 h-8 object-contain md:hidden", alt: "Danebo.ia" %>
+          <%= image_tag "logo_desktop2.jpg", class: "hidden w-8 h-8 object-contain md:block", alt: "Danebo.ia" %>
           <div class="flex items-baseline gap-0">
             <span class="brand-wordmark font-semibold text-[15px] text-[hsl(222,47%,10%)] leading-none">danebo</span>
             <span class="brand-suffix font-light text-[15px] text-[hsl(222,47%,10%)] opacity-[0.72] leading-none">.ia</span>

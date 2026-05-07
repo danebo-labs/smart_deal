@@ -1,0 +1,29 @@
+<%# locals: title (req), subtitle (opt), hide_bottom_links (opt), hide_legal_footer (opt) %>
+<div class="flex min-h-screen">
+  <%= render "devise/shared/auth_brand_panel" %>
+
+  <div class="flex flex-1 items-center justify-center bg-[hsl(220,20%,97%)] p-5 sm:p-12">
+    <div class="w-full max-w-sm">
+      <%= render "devise/shared/auth_mobile_brand" %>
+
+      <header class="mb-7 sm:mb-8">
+        <h2 class="mb-1.5 text-2xl font-light text-[hsl(222,47%,10%)]"><%= title %></h2>
+        <% if local_assigns[:subtitle].presence %>
+          <p class="text-sm leading-snug text-[hsl(215,20%,42%)]"><%= subtitle %></p>
+        <% end %>
+      </header>
+
+      <%= yield %>
+
+      <% unless local_assigns[:hide_bottom_links] %>
+        <div class="mt-8 border-t border-[hsl(215,20%,88%)] pt-6">
+          <%= render "devise/shared/links" %>
+        </div>
+      <% end %>
+
+      <% unless local_assigns[:hide_legal_footer] %>
+        <%= render "devise/shared/auth_legal_footer" %>
+      <% end %>
+    </div>
+  </div>
+</div>

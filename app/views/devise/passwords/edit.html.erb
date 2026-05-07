@@ -1,25 +1,37 @@
-<h2>Change your password</h2>
-
-<%= form_for(resource, as: resource_name, url: password_path(resource_name), html: { method: :put }) do |f| %>
+<%= render layout: "devise/shared/auth_form_shell",
+           locals: {
+             title: "Nueva contraseña",
+             subtitle: "Elige una contraseña segura para volver a acceder."
+           } do %>
   <%= render "devise/shared/error_messages", resource: resource %>
-  <%= f.hidden_field :reset_password_token %>
 
-  <div class="field">
-    <%= f.label :password, "New password" %><br />
-    <% if @minimum_password_length %>
-      <em>(<%= @minimum_password_length %> characters minimum)</em><br />
-    <% end %>
-    <%= f.password_field :password, autofocus: true, autocomplete: "new-password" %>
-  </div>
+  <%= form_for(resource, as: resource_name, url: password_path(resource_name),
+               html: { method: :put, class: "space-y-5" }) do |f| %>
+    <%= f.hidden_field :reset_password_token %>
 
-  <div class="field">
-    <%= f.label :password_confirmation, "Confirm new password" %><br />
-    <%= f.password_field :password_confirmation, autocomplete: "new-password" %>
-  </div>
+    <div class="space-y-1.5">
+      <%= f.label :password, "Nueva contraseña",
+          class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <% if @minimum_password_length %>
+        <p class="text-xs text-[hsl(215,20%,52%)]">Mínimo <%= @minimum_password_length %> caracteres</p>
+      <% end %>
+      <%= password_field_with_toggle f, :password,
+          autofocus: true,
+          autocomplete: "new-password",
+          placeholder: "••••••••",
+          class: "h-11 w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white text-sm text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] transition focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
 
-  <div class="actions">
-    <%= f.submit "Change my password" %>
-  </div>
+    <div class="space-y-1.5">
+      <%= f.label :password_confirmation, "Confirmar contraseña",
+          class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= password_field_with_toggle f, :password_confirmation,
+          autocomplete: "new-password",
+          placeholder: "••••••••",
+          class: "h-11 w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white text-sm text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] transition focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+
+    <%= f.submit "Guardar contraseña",
+        class: "h-11 w-full cursor-pointer rounded-lg bg-[hsl(217,91%,50%)] text-sm font-medium text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+  <% end %>
 <% end %>
-
-<%= render "devise/shared/links" %>

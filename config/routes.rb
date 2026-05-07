@@ -16,7 +16,12 @@ Rails.application.routes.draw do
   get  'dashboard/metrics',  to: 'dashboard#metrics'
   post 'dashboard/refresh',  to: 'dashboard#refresh'
 
-  devise_for :users, controllers: { sessions: 'users/sessions' }
+  devise_for :users,
+             controllers: {
+               sessions: 'users/sessions',
+               passwords: 'users/passwords',
+               registrations: 'users/registrations'
+             }
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.

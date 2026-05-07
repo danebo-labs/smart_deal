@@ -1,0 +1,52 @@
+<%# Left column — split auth (lg+) %>
+<div class="relative hidden overflow-hidden bg-[#0f1729] lg:flex lg:w-1/2 lg:flex-col lg:justify-between xl:w-3/5 p-12 xl:p-16">
+
+  <%# Subtle grid pattern %>
+  <div class="absolute inset-0 opacity-[0.03]"
+       style="background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
+
+  <%# Orbital rings %>
+  <div class="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+    <div class="absolute left-1/2 top-1/2 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/5 animate-spin-slow"></div>
+    <div class="absolute left-1/2 top-1/2 h-[380px] w-[380px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 animate-spin-slower"></div>
+    <div class="absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/5 animate-spin-slow"></div>
+    <div class="absolute left-1/2 top-1/2 h-[200px] w-[200px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-[#2d4a7c]/20 to-transparent blur-3xl"></div>
+  </div>
+
+  <div class="relative z-10 flex items-center gap-3">
+    <%= image_tag "logo_desktop2.jpg",
+        alt: "danebo",
+        class: "h-16 w-16 shrink-0 rounded-2xl object-contain shadow-lg ring-1 ring-white/10",
+        width: 64,
+        height: 64 %>
+    <div class="flex flex-col">
+      <span class="text-2xl font-light leading-none tracking-tight text-white">danebo</span>
+      <span class="text-xs font-light uppercase tracking-widest text-white/60">.ai</span>
+    </div>
+  </div>
+
+  <div class="relative z-10 max-w-md">
+    <h1 class="mb-6 text-3xl font-light leading-tight text-white xl:text-4xl">
+      Convierte la información de tu empresa en decisiones y automatización
+    </h1>
+    <div class="space-y-4 text-base leading-relaxed text-white/60">
+      <p>
+        Las empresas tienen grandes volúmenes de información, pero no conocimiento accionable.
+      </p>
+      <p>
+        Danebo transforma documentación interna, procesos y datos en conocimiento útil, integrado directamente en los flujos de trabajo.
+      </p>
+    </div>
+    <p class="mt-5 text-sm leading-relaxed text-white/50">
+      No es solo análisis. Es ejecución. IA que automatiza tareas y mejora cómo trabajan tus equipos.
+    </p>
+  </div>
+
+  <div class="relative z-10 flex items-center gap-6 text-sm text-white/40">
+    <span>Seguro</span>
+    <span class="h-1 w-1 rounded-full bg-white/20"></span>
+    <span>Escalable</span>
+    <span class="h-1 w-1 rounded-full bg-white/20"></span>
+    <span>Empresarial</span>
+  </div>
+</div>

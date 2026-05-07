@@ -1,16 +1,23 @@
-<h2>Forgot your password?</h2>
-
-<%= form_for(resource, as: resource_name, url: password_path(resource_name), html: { method: :post }) do |f| %>
+<%= render layout: "devise/shared/auth_form_shell",
+           locals: {
+             title: "Recuperar contraseña",
+             subtitle: "Si el correo está registrado, recibirás un enlace para restablecerla."
+           } do %>
   <%= render "devise/shared/error_messages", resource: resource %>
 
-  <div class="field">
-    <%= f.label :email %><br />
-    <%= f.email_field :email, autofocus: true, autocomplete: "email" %>
-  </div>
+  <%= form_for(resource, as: resource_name, url: password_path(resource_name),
+               html: { method: :post, class: "space-y-5" }) do |f| %>
+    <div class="space-y-1.5">
+      <%= f.label :email, "Correo electrónico",
+          class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.email_field :email,
+          autofocus: true,
+          autocomplete: "email",
+          placeholder: "tu@empresa.com",
+          class: "h-11 w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-3 text-sm text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] transition focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
 
-  <div class="actions">
-    <%= f.submit "Send me reset password instructions" %>
-  </div>
+    <%= f.submit "Enviar instrucciones",
+        class: "h-11 w-full cursor-pointer rounded-lg bg-[hsl(217,91%,50%)] text-sm font-medium text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+  <% end %>
 <% end %>
-
-<%= render "devise/shared/links" %>

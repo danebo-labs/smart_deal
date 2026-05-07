@@ -27,11 +27,11 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test 'nav includes responsive logo assets' do
+  test 'layout uses mobile logo and danebo.ai branding' do
     get root_path
     assert_response :success
-    assert_select 'img[alt="Danebo.ia"][src*="logo_desktop2"]', count: 1
-    assert_select 'img[alt="Danebo.ia"][src*="logo_mobile"]', count: 1
+    assert_select 'img[alt="danebo.ai"][src*="logo_mobile"]', minimum: 1
+    assert_select 'img[src*="logo_desktop2"]', count: 0
   end
 
   test 'chat panel desktop header uses robot icon matching RAG assistant avatar' do

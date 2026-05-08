@@ -492,25 +492,34 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # 3.1 — Entity-Aware Retrieval Filter
   # ============================================
 
-  test 'build_complete_optimized_config adds or_all filter when 2+ entity_s3_uris given' do
+  test 'build_complete_optimized_config adds or_all filter spanning legacy and batch metadata keys for 2+ entity_s3_uris' do
     service = BedrockRagService.new
     uris = [ 's3://bucket/doc1.pdf', 's3://bucket/doc2.pdf' ]
     config = service.build_complete_optimized_config(entity_s3_uris: uris)
 
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
     assert_not_nil filter
-    assert_equal 2, filter[:or_all].size
-    assert_equal 's3://bucket/doc1.pdf', filter[:or_all][0][:equals][:value]
+    # Each URI is OR-ed against BOTH x-amz-bedrock-kb-source-uri (legacy) and
+    # original_source_uri (batch sidecar) → 2 URIs × 2 keys = 4 clauses.
+    assert_equal 4, filter[:or_all].size
+
+    keys_for_doc1 = filter[:or_all]
+                      .select { |c| c[:equals][:value] == 's3://bucket/doc1.pdf' }
+                      .map { |c| c[:equals][:key] }
+    assert_equal %w[x-amz-bedrock-kb-source-uri original_source_uri].sort, keys_for_doc1.sort
   end
 
-  test 'build_complete_optimized_config uses equals filter for single entity_s3_uri' do
+  test 'build_complete_optimized_config uses or_all even for a single entity_s3_uri so batch chunks are matched' do
     service = BedrockRagService.new
     config = service.build_complete_optimized_config(entity_s3_uris: [ 's3://bucket/only.pdf' ])
 
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
     assert_not_nil filter
-    assert_nil filter[:or_all], "Should not use or_all for a single URI"
-    assert_equal 's3://bucket/only.pdf', filter.dig(:equals, :value)
+    # Single URI must still OR across both keys (legacy + batch); orAll requires >= 2 members.
+    assert_equal 2, filter[:or_all].size
+    assert filter[:or_all].all? { |c| c[:equals][:value] == 's3://bucket/only.pdf' }
+    assert_equal %w[x-amz-bedrock-kb-source-uri original_source_uri].sort,
+                 filter[:or_all].map { |c| c[:equals][:key] }.sort
   end
 
   test 'build_complete_optimized_config omits filter when entity_s3_uris empty' do
@@ -594,9 +603,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :filter
       )
       assert_not_nil filter, "force_entity_filter must scope retrieval to the picked doc"
-      assert_equal 's3://bucket/orona_arca_basico.pdf',
-                   filter.dig(:equals, :value),
-                   "filter must target the explicitly bound source URI"
+      values = filter[:or_all].map { |c| c[:equals][:value] }.uniq
+      assert_equal [ 's3://bucket/orona_arca_basico.pdf' ], values,
+                   "filter must target the explicitly bound source URI on every clause"
+      keys = filter[:or_all].map { |c| c[:equals][:key] }.sort
+      assert_equal %w[original_source_uri x-amz-bedrock-kb-source-uri], keys
     end
   end
 

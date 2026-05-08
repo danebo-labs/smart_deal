@@ -44,17 +44,27 @@ class BedrockRagService
 
     # Narrow retrieval to session-active documents when URIs are known.
     # Reduces cross-document pollution for short/ambiguous follow-up queries.
-    # AWS requires orAll to have >= 2 members; use equals directly for a single URI.
-    if entity_s3_uris.size == 1
-      vector_config[:filter] = {
-        equals: { key: "x-amz-bedrock-kb-source-uri", value: entity_s3_uris.first }
-      }
-    elsif entity_s3_uris.size >= 2
-      vector_config[:filter] = {
-        or_all: entity_s3_uris.map { |uri|
-          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } }
-        }
-      }
+    #
+    # Each pinned URI matches against TWO metadata keys (OR):
+    #   - x-amz-bedrock-kb-source-uri  — Bedrock-injected, points at the file
+    #     ingested into the KB. For the legacy data source (Bedrock-FM parser +
+    #     POST_CHUNKING Lambda) this IS the original asset URI.
+    #   - original_source_uri          — customMetadata sidecar value written by
+    #     BatchResultsParserService. For the batch data source the chunk file is
+    #     `bulk_chunks/.../chunk_N.txt`, so x-amz-bedrock-kb-source-uri is NOT the
+    #     original asset; original_source_uri IS.
+    #
+    # OR-ing both keys lets pin-based filtering work uniformly across both
+    # ingestion paths without breaking existing chunks.
+    if entity_s3_uris.size >= 1
+      filters = entity_s3_uris.flat_map do |uri|
+        [
+          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } },
+          { equals: { key: "original_source_uri",        value: uri } }
+        ]
+      end
+      # AWS requires orAll to have >= 2 members; we always have >= 2 (one per key).
+      vector_config[:filter] = { or_all: filters }
     end
 
     {

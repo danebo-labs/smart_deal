@@ -354,15 +354,23 @@ class EntityExtractorService
     end
   end
 
-  # Returns the AUTHORITATIVE s3_uri for a Bedrock citation.
-  # Priority: Bedrock response metadata > Bedrock response location.
-  # Never uses URIs extracted from chunk content — the pipeline MLM sometimes
-  # injects "PIPELINE_INJECTED" placeholders into the text, but the Bedrock
-  # response metadata ALWAYS carries the true S3 URI.
+  # Returns the AUTHORITATIVE original-asset s3_uri for a Bedrock citation.
+  #
+  # Priority:
+  #   1. customMetadata `original_source_uri` (sidecar set by
+  #      BatchResultsParserService for the batch data source — points at the
+  #      original asset, not the .txt chunk file actually ingested into the KB).
+  #   2. Bedrock-reserved `x-amz-bedrock-kb-source-uri` (legacy data source
+  #      with FM parser + POST_CHUNKING Lambda — already the original asset URI).
+  #   3. citation.location.uri fallback.
+  #
+  # Never uses URIs extracted from chunk content — the parser sometimes injects
+  # "PIPELINE_INJECTED" placeholders, but Bedrock metadata is always trustworthy.
   def citation_source_uri(citation)
     return nil if citation.blank?
     meta = citation[:metadata] || citation["metadata"] || {}
-    (meta["x-amz-bedrock-kb-source-uri"] || meta[:"x-amz-bedrock-kb-source-uri"]).to_s.presence ||
+    (meta["original_source_uri"] || meta[:original_source_uri]).to_s.presence ||
+      (meta["x-amz-bedrock-kb-source-uri"] || meta[:"x-amz-bedrock-kb-source-uri"]).to_s.presence ||
       citation.dig(:location, :uri).presence ||
       citation.dig("location", "uri").presence
   end

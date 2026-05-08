@@ -34,10 +34,14 @@ class SimpleMetricsService
     # Per-source breakdown (query / ingestion_parse / ingestion_embed)
     source_totals = {}
     %w[query ingestion_parse ingestion_embed].each do |src|
-      rows = queries_today.where(source: src).pluck(:model_id, :input_tokens, :output_tokens)
+      rows = queries_today.where(source: src)
+                          .pluck(:model_id, :input_tokens, :output_tokens, :cache_read_tokens, :cache_creation_tokens)
       source_totals[src] = {
-        tokens: rows.sum { |_, i, o| i + o },
-        cost:   rows.sum { |m, i, o| BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o).cost }
+        tokens: rows.sum { |_, i, o, cr, cc| i.to_i + o.to_i + cr.to_i + cc.to_i },
+        cost:   rows.sum { |m, i, o, cr, cc|
+          BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o,
+                           cache_read_tokens: cr, cache_creation_tokens: cc).cost
+        }
       }
     end
 
@@ -108,10 +112,10 @@ class SimpleMetricsService
   def calculate_daily_db_metrics
     queries = BedrockQuery.where(created_at: @date.all_day)
     {
-      tokens: queries.sum("input_tokens + output_tokens"),
-      # Cost calculation uses pluck to avoid loading full objects (cost depends on model_id)
-      cost: queries.pluck(:model_id, :input_tokens, :output_tokens).sum do |model_id, input, output|
-        BedrockQuery.new(model_id: model_id, input_tokens: input, output_tokens: output).cost
+      tokens: queries.sum("COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) + COALESCE(cache_read_tokens, 0) + COALESCE(cache_creation_tokens, 0)"),
+      cost: queries.pluck(:model_id, :input_tokens, :output_tokens, :cache_read_tokens, :cache_creation_tokens).sum do |m, i, o, cr, cc|
+        BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o,
+                         cache_read_tokens: cr, cache_creation_tokens: cc).cost
       end,
       count: queries.count
     }

@@ -10,12 +10,14 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_01_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
 
   create_table "bedrock_queries", force: :cascade do |t|
+  t.integer "cache_creation_tokens"
+  t.integer "cache_read_tokens"
     t.datetime "created_at", null: false
     t.integer "input_tokens"
     t.integer "latency_ms"

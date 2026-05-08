@@ -12,6 +12,9 @@ class BedrockQuery < ApplicationRecord
   }, default: :query
 
   BEDROCK_PRICING = {
+    # Anthropic direct API — Batch (50% off standard). Used by bulk ingestion pipeline.
+    # cache_read: 10% of base input; cache_creation: 125% of base input — both at batch rate.
+    'claude-opus-4-7'                                  => { input: 0.0075,  output: 0.0375,  cache_read: 0.00075,  cache_creation: 0.009375 },
     # Claude 4.6 / 4.5 — Inference Profiles Globales (prices per 1K tokens, i.e. $/1M)
     'global.anthropic.claude-sonnet-4-6'               => { input: 0.003,  output: 0.015  },
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },
@@ -38,9 +41,14 @@ class BedrockQuery < ApplicationRecord
   }.freeze
 
   def cost
-    pricing = BEDROCK_PRICING[model_id] || BEDROCK_PRICING['default']
-    input_cost  = (input_tokens  / 1000.0) * pricing[:input]
-    output_cost = (output_tokens / 1000.0) * pricing[:output]
-    (input_cost + output_cost).round(6)
+    pricing = BEDROCK_PRICING[model_id] ||
+              BEDROCK_PRICING.each_with_object(nil) { |(k, v), _| break v if k != 'default' && model_id.to_s.start_with?(k) } ||
+              BEDROCK_PRICING['default']
+
+    input_cost          = (input_tokens.to_i          / 1000.0) * pricing[:input]
+    output_cost         = (output_tokens.to_i          / 1000.0) * pricing[:output]
+    cache_read_cost     = (cache_read_tokens.to_i      / 1000.0) * (pricing[:cache_read]     || pricing[:input] * 0.1)
+    cache_creation_cost = (cache_creation_tokens.to_i  / 1000.0) * (pricing[:cache_creation] || pricing[:input] * 1.25)
+    (input_cost + output_cost + cache_read_cost + cache_creation_cost).round(6)
   end
 end

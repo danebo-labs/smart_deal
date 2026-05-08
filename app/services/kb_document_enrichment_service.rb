@@ -123,10 +123,16 @@ class KbDocumentEnrichmentService
     end
   end
 
+  # Mirrors EntityExtractorService#citation_source_uri — see that doc for the
+  # priority order. Prefers customMetadata `original_source_uri` (batch data
+  # source) over the Bedrock-reserved `x-amz-bedrock-kb-source-uri` (legacy
+  # data source) so KbDocument dedup keys on the original asset URI in both
+  # ingestion paths.
   def citation_source_uri(citation)
     return nil if citation.blank?
     meta = citation[:metadata] || citation["metadata"] || {}
-    (meta["x-amz-bedrock-kb-source-uri"] || meta[:"x-amz-bedrock-kb-source-uri"]).to_s.presence ||
+    (meta["original_source_uri"] || meta[:original_source_uri]).to_s.presence ||
+      (meta["x-amz-bedrock-kb-source-uri"] || meta[:"x-amz-bedrock-kb-source-uri"]).to_s.presence ||
       citation.dig(:location, :uri).presence ||
       citation.dig("location", "uri").presence
   end

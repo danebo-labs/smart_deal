@@ -176,7 +176,7 @@ If a real **`config/deploy.yml`** with production hosts or IDs was ever pushed t
 | Topic | Requirement |
 |-------|---------------|
 | **EC2 size** | **At least `t3.medium` (4 GiB RAM)** for `web` + `worker` + `kamal-proxy` + Docker/OS headroom. `t3.micro` (~1 GiB) causes Puma/worker **OOM** (`Exited (137)`), SSH TLS “banner” hangs, and crashloops. `t3.small` is tight; `medium` is the practical floor for MVO. |
-| **RDS** | Primary DB **plus** three auxiliary DBs (`*_cache`, `*_queue`, `*_cable`) — create them from the EC2 host with `psql` (RDS is private; laptop cannot connect). |
+| **RDS (Postgres)** | **Primary** app DB **plus** three auxiliary DBs for Solid Stack (`*_cache`, `*_queue`, `*_cable`) — see [`config/database.yml`](config/database.yml). Create them from the EC2 host with `psql` (RDS is private; laptop cannot connect). **Text-to-SQL** uses a **separate** `client_db` connection (`CLIENT_DB_*` in the same file): provision another database (or cluster) for the client’s business data and set those env vars in Kamal — the committed [`config/deploy.yml.example`](config/deploy.yml.example) only lists the four Rails multi-db names; add `CLIENT_DB_*` to your real `deploy.yml` when HYBRID / database queries are enabled. |
 | **IAM role on EC2** | Instance profile must allow Bedrock invoke/retrieve, KB ingestion read, S3 KB buckets, SSM read for secrets. For **`BEDROCK_MODEL_ID`** values with prefix **`global.`** (inference profile), IAM **must** include **`bedrock:GetInferenceProfile`** (and **Bedrock model access** enabled in console). Missing it surfaces as app **`502`** on `/rag/ask` with `Not authorized to call GetInferenceProfile`. |
 | **`kamal-proxy`** | **Do not remove.** It terminates TLS and routes to the app. Only `web` + `worker` + `kamal-proxy` should run in steady state. |
 | **Run Kamal from the repo** | Always `cd` into the **project root** (where the `Gemfile` lives). Ensure **`config/deploy.yml`** exists (`cp config/deploy.yml.example config/deploy.yml` first). Running `bundle exec kamal` from `$HOME` fails with “Could not locate Gemfile” or the wrong config path. |
@@ -191,6 +191,17 @@ If a real **`config/deploy.yml`** with production hosts or IDs was ever pushed t
 | **Metrics footer** | Updated when **`TrackBedrockQueryJob`** runs (after a real Bedrock path) and broadcasts Turbo Streams; there is **no** browser polling. Slower Solid Queue polling delays the footer slightly; it does not affect answer latency. |
 | **Default KB list rows** | **Not** hardcoded in the UI. **`RecentKbDocumentsQuery`** reads **`kb_documents`**. Seed rows come from **`db/seeds.rb`** (`KB_DOCUMENT_SEEDS`); real uploads add rows via **`QueryOrchestratorService#ensure_kb_document_for`**. |
 
+#### Production config map (committed templates)
+
+This is the **in-repo** picture operators extend when building `config/deploy.yml` (the example is not a full production env — hosts, KB IDs, buckets, and `CLIENT_DB_*` are placeholders).
+
+| File | What production derives from it |
+|------|----------------------------------|
+| [`config/deploy.yml.example`](config/deploy.yml.example) | **Kamal:** `service: smart-deal`, **one host** runs both **`web`** (Puma, `memory`/`cpus` limits) and **`worker`** (`bundle exec rake solid_queue:start`). **`proxy`:** TLS, public host, `app_port: 80` to Puma. **Registry:** Docker Hub (`KAMAL_REGISTRY_PASSWORD` in `.kamal/secrets`). **`env.clear`:** `RAILS_ENV`, logging/static flags, `RAILS_MAX_THREADS`, `AWS_REGION`, `DB_HOST` / `DB_USERNAME` / `DB_NAME` / `DB_{CACHE,QUEUE,CABLE}_NAME`, Bedrock KB + model IDs, `KNOWLEDGE_BASE_S3_BUCKET`, `INGESTION_REENQUEUE`, `AWS_HTTP_READ_TIMEOUT`. **`secret`:** `RAILS_MASTER_KEY`, `DB_PASSWORD`. **SSH** user + key path. |
+| [`config/database.yml`](config/database.yml) | **Rails 8 multi-database:** `primary`, `cache`, `queue`, `cable` (all PostgreSQL in production; separate DB **names** on RDS). **Connection pool:** `RAILS_MAX_THREADS + 2`. **`client_db`:** PostgreSQL in dev/prod via `CLIENT_DB_*`; SQLite file only in **test**. |
+| [`config/queue.yml`](config/queue.yml) | **Solid Queue** production inherits **two worker definitions:** `default` (4 threads, 1s poll) and `ingestion` (1 thread, 2s poll) — one OS process inside the Kamal **worker** container. |
+| [`config/routes.rb`](config/routes.rb) | **`MissionControl::Jobs`** mounted at **`/jobs`** in non-test envs (HTTP auth via credentials — see pre-deploy checklist). Health: **`/up`**. Twilio webhook remains commented out. |
+
 #### EC2 stop / start — avoid SSL 404 and “half-dead” proxy
 
 Stopping the instance **without** bringing the app up cleanly can leave **`kamal-proxy` running** (restored state) while **`smart-deal-web` / `smart-deal-worker` are stopped** → HTTP `404` from the proxy on `/up`, `ERR_SSL_PROTOCOL_ERROR` / TLS handshake errors (`unknown server name`), or empty `service`/`target` in proxy logs.
@@ -198,11 +209,73 @@ Stopping the instance **without** bringing the app up cleanly can leave **`kamal
 **Recommended:**
 
 1. Before stop (optional but cleaner): from repo, `bundle exec kamal app stop`.
-2. `aws ec2 stop-instances` …
-3. After start: `aws ec2 wait instance-running`, wait **60–90 s** for Docker.
+2. `aws ec2 stop-instances --instance-ids i-…` (see [AWS EC2 from your laptop](#aws-ec2-from-your-laptop-cli)).
+3. After start: `aws ec2 wait instance-running --instance-ids i-…`, wait **60–90 s** for Docker.
 4. From repo: **`bundle exec kamal deploy`** (preferred) or `bundle exec kamal app boot` — then confirm **`docker ps`** shows **three** containers: `kamal-proxy`, `smart-deal-web-<sha>`, `smart-deal-worker-<sha>` (same image tag).
 
 **Do not** assume `curl https://…/up` after boot without checking containers.
+
+#### AWS EC2 from your laptop (CLI)
+
+Use the **AWS CLI** from your machine when you want to power-cycle the VM **without** opening the AWS console (same IAM permissions you use for the account/region as in the console: typically `ec2:StartInstances`, `StopInstances`, `RebootInstances`, `DescribeInstances`).
+
+**Profile and region** (adjust to your setup):
+
+```bash
+export AWS_PROFILE=your-profile   # if you use named profiles
+export AWS_REGION=us-east-1       # match the instance region
+# If this profile uses IAM Identity Center (SSO):
+# aws sso login --profile your-profile
+```
+
+**Resolve instance IDs** — replace the tag filter with your naming convention (or use the EC2 console **Instance ID** column):
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+  --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,Name:Tags[?Key==`Name`].Value|[0],Ip:PublicIpAddress}' \
+  --output table
+```
+
+**Start** (instance was `stopped` — billing for compute stops while stopped; **Elastic IP** may incur charges if associated):
+
+```bash
+aws ec2 start-instances --instance-ids i-0123456789abcdef0
+# Multiple hosts in one call — separate IDs with spaces:
+# aws ec2 start-instances --instance-ids i-aaa i-bbb
+aws ec2 wait instance-running --instance-ids i-0123456789abcdef0
+```
+
+Then wait **60–90 s** for Docker and run **`bundle exec kamal deploy`** or **`bundle exec kamal app boot`** from the repo root; verify **`docker ps`** on the host.
+
+**Stop** (schedule downtime / save cost):
+
+```bash
+# Optional first — graceful stop of app containers (from repo root):
+bundle exec kamal app stop
+
+aws ec2 stop-instances --instance-ids i-0123456789abcdef0
+# Optional: wait until fully stopped (useful in scripts)
+aws ec2 wait instance-stopped --instance-ids i-0123456789abcdef0
+```
+
+To bring the **same** containers back after **`kamal app stop`** (no new image yet): **`bundle exec kamal app start`** from the repo root. Prefer **`kamal deploy`** when you need a fresh build or config roll-forward.
+
+**Reboot** (guest OS restart; **ephemeral state only** — volumes persist). Useful after kernel patches or a wedged host; Docker/containers **may** come back depending on restart policy — **always verify**:
+
+```bash
+aws ec2 reboot-instances --instance-ids i-0123456789abcdef0
+```
+
+After reboot, SSH in and run **`docker ps`**; if **web/worker** are missing while **`kamal-proxy`** is up, run **`bundle exec kamal deploy`** from the laptop (same recovery as stop/start).
+
+**Hotfix / normal deploy** — you usually **do not** stop EC2:
+
+1. Commit and push from your branch.
+2. **`cd`** to the **project root** (where the `Gemfile` lives); ensure **`config/deploy.yml`** and **`.kamal/secrets`** exist.
+3. **`bundle exec kamal deploy`** — builds (unless you change build settings), pushes the image, restarts containers.
+
+Use **`bundle exec kamal console`** when you need **Rails console** against production without SSH. For a **maintenance window** where you halt compute: **`kamal app stop`** → **`aws ec2 stop-instances`** (order as above).
 
 #### Indispensable commands (operator laptop)
 
@@ -526,6 +599,50 @@ When enabled, the app received WhatsApp messages via Twilio; the webhook trigger
 ## Development
 
 Run `bin/setup` to install dependencies, Git hooks, create `.env`, and prepare the database. The pre-commit hook runs RuboCop with autocorrect on staged Ruby files; fixes are staged automatically, and the commit is blocked if unfixable offenses remain (use `git commit --no-verify` to skip).
+
+### Rake tasks (project)
+
+Custom tasks live under `lib/tasks/`. **`bin/rails -T`** lists these plus every built-in Rails task (`db:migrate:*`, `tailwindcss:*`, `solid_queue:start`, etc.).
+
+#### Knowledge Base — `kb:`
+
+| Task | What it does |
+|------|----------------|
+| `kb:config` | Prints the full Bedrock KB setup (vector store, data sources, chunking/parsing, Lambdas) and a snapshot of app env/RAG prompt paths. **`KB_CONFIG_JSON=1`** → machine-readable JSON. |
+| `kb:status` | Lists data source IDs attached to the configured Knowledge Base. |
+| `kb:embedding_model` | Prints the embedding model ARN from `GetKnowledgeBase`. |
+| `kb:sync` | Starts a **Knowledge Base ingestion sync** on the default data source (same path as `KbSyncService` in production). |
+| `kb:documents` | Paginates **`ListKnowledgeBaseDocuments`** for the configured KB + data source. **`KB_DOCUMENTS_FORMAT=indexed`** → compact URI + status columns; **`KB_DOCUMENTS_JSON=1`** → JSON. |
+| `kb:thumbnails:backfill` | For **image** `KbDocument` rows missing a `kb_document_thumbnail`, downloads from S3, generates a thumbnail, and saves it (needs AWS env/credentials like other S3 tasks). |
+
+#### Cost / metrics — `metrics:`
+
+| Task | What it does |
+|------|----------------|
+| `metrics:collect[date]` | Runs `SimpleMetricsService` for one day ( **`date` optional**, defaults to today) and upserts daily `CostMetric` / related rollups. |
+| `metrics:collect_last_month` | Runs `metrics:collect` for every calendar day in the previous month. |
+| `metrics:collect_range[start_date,end_date]` | Same as collect, for an inclusive date range (`YYYY-MM-DD`). |
+| `metrics:create_sample_query[model_id,input_tokens,output_tokens]` | Inserts a **`BedrockQuery`** row with optional token counts (defaults provided) for dashboard or metric testing. |
+
+#### Operations / debugging — `debug:`
+
+These tasks hit AWS or local DBs; some **`debug:*`** steps still use **hard-coded** bucket or Aurora cluster IDs from an earlier environment—verify before relying on output.
+
+| Task | What it does |
+|------|----------------|
+| `debug:verify_bucket[bucket_name]` | `head_bucket` + paginated object count/size + sample keys; suggests `KNOWLEDGE_BASE_S3_BUCKET` if the name looks KB-like. |
+| `debug:find_kb_bucket` | Lists S3 buckets in the account whose names look KB-related and picks a suggestion by object count. |
+| `debug:complete` | Prints a one-line “health” report: today’s `BedrockQuery` stats, Aurora ACU (via metrics helpers), S3 doc counts, today’s `CostMetric` rows, and key env/credentials presence. |
+| `debug:s3_detailed` | Detailed listing for a **fixed** bucket name in code (`document-chatbot-generic-tech-info`); useful as a template, not guaranteed to match your deploy. |
+| `debug:aurora` | RDS/CloudWatch snapshot for a **fixed** cluster id in code; same caveat as `s3_detailed`. |
+
+**Solid Queue process:** Rails ships **`solid_queue:start`** (what Kamal **worker** runs). Locally, **`bin/jobs start`** (see `Procfile.dev`) wraps the same supervisor.
+
+#### Mission Control — Solid Queue UI (gem)
+
+| Task | What it does |
+|------|----------------|
+| `mission_control:jobs:authentication:configure` | Interactive generator to set HTTP Basic auth (or similar) for the Mission Control jobs dashboard, if you mount it in routes. |
 
 ## Architecture
 

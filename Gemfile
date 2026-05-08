@@ -69,6 +69,12 @@ gem 'twilio-ruby'
 gem "appsignal"
 gem 'httparty'
 
+# Anthropic Claude API (Batch API for bulk ingestion)
+gem 'anthropic'
+
+# ZIP file extraction for bulk uploads
+gem 'rubyzip'
+
 
 
 group :development, :test do

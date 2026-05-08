@@ -10,14 +10,14 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_07_211531) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
 
   create_table "bedrock_queries", force: :cascade do |t|
-  t.integer "cache_creation_tokens"
-  t.integer "cache_read_tokens"
+    t.integer "cache_creation_tokens"
+    t.integer "cache_read_tokens"
     t.datetime "created_at", null: false
     t.integer "input_tokens"
     t.integer "latency_ms"
@@ -26,7 +26,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.string "source", default: "query", null: false
     t.datetime "updated_at", null: false
     t.text "user_query"
-    t.index [ "source", "created_at" ], name: "index_bedrock_queries_on_source_and_created_at"
+    t.index ["source", "created_at"], name: "index_bedrock_queries_on_source_and_created_at"
+  end
+
+  create_table "bulk_upload_assets", force: :cascade do |t|
+    t.jsonb "aliases", default: [], null: false
+    t.bigint "bulk_upload_id", null: false
+    t.string "canonical_name"
+    t.integer "chunks_count"
+    t.string "chunks_s3_prefix"
+    t.integer "claude_input_tokens"
+    t.integer "claude_output_tokens"
+    t.string "content_type"
+    t.datetime "created_at", null: false
+    t.string "custom_id", null: false
+    t.text "error_message"
+    t.string "filename", null: false
+    t.bigint "kb_document_id"
+    t.string "s3_key"
+    t.string "sha256", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["bulk_upload_id", "custom_id"], name: "index_bulk_upload_assets_on_bulk_upload_id_and_custom_id"
+    t.index ["bulk_upload_id"], name: "index_bulk_upload_assets_on_bulk_upload_id"
+    t.index ["custom_id"], name: "index_bulk_upload_assets_on_custom_id", unique: true
+    t.index ["kb_document_id"], name: "index_bulk_upload_assets_on_kb_document_id"
+    t.index ["status"], name: "index_bulk_upload_assets_on_status"
+  end
+
+  create_table "bulk_uploads", force: :cascade do |t|
+    t.integer "asset_count", default: 0, null: false
+    t.string "bedrock_ingestion_job_id"
+    t.string "claude_batch_id"
+    t.datetime "created_at", null: false
+    t.text "error_message"
+    t.string "original_filename", null: false
+    t.string "sha256", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["sha256"], name: "index_bulk_uploads_on_sha256", unique: true
+    t.index ["status"], name: "index_bulk_uploads_on_status"
+    t.index ["user_id"], name: "index_bulk_uploads_on_user_id"
   end
 
   create_table "conversation_sessions", force: :cascade do |t|
@@ -40,11 +81,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.string "session_status", default: "active", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
-    t.index [ "active_entities" ], name: "index_conversation_sessions_on_active_entities", using: :gin
-    t.index [ "conversation_history" ], name: "index_conversation_sessions_on_conversation_history", using: :gin
-    t.index [ "expires_at" ], name: "index_conversation_sessions_on_expires_at"
-    t.index [ "identifier", "channel" ], name: "index_conversation_sessions_on_identifier_and_channel", unique: true
-    t.index [ "user_id" ], name: "index_conversation_sessions_on_user_id"
+    t.index ["active_entities"], name: "index_conversation_sessions_on_active_entities", using: :gin
+    t.index ["conversation_history"], name: "index_conversation_sessions_on_conversation_history", using: :gin
+    t.index ["expires_at"], name: "index_conversation_sessions_on_expires_at"
+    t.index ["identifier", "channel"], name: "index_conversation_sessions_on_identifier_and_channel", unique: true
+    t.index ["user_id"], name: "index_conversation_sessions_on_user_id"
   end
 
   create_table "cost_metrics", force: :cascade do |t|
@@ -54,8 +95,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.integer "metric_type", null: false
     t.datetime "updated_at", null: false
     t.decimal "value", precision: 20, scale: 6, null: false
-    t.index [ "date", "metric_type" ], name: "index_cost_metrics_on_date_and_metric_type", unique: true
-    t.index [ "date" ], name: "index_cost_metrics_on_date"
+    t.index ["date", "metric_type"], name: "index_cost_metrics_on_date_and_metric_type", unique: true
+    t.index ["date"], name: "index_cost_metrics_on_date"
   end
 
   create_table "kb_document_thumbnails", force: :cascade do |t|
@@ -67,7 +108,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.bigint "kb_document_id", null: false
     t.datetime "updated_at", null: false
     t.integer "width"
-    t.index [ "kb_document_id" ], name: "index_kb_document_thumbnails_on_kb_document_id", unique: true
+    t.index ["kb_document_id"], name: "index_kb_document_thumbnails_on_kb_document_id", unique: true
   end
 
   create_table "kb_documents", force: :cascade do |t|
@@ -79,7 +120,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.datetime "updated_at", null: false
     t.index "lower((aliases)::text) gin_trgm_ops", name: "idx_kb_documents_aliases_text_trgm", using: :gin
     t.index "lower((display_name)::text) gin_trgm_ops", name: "idx_kb_documents_display_name_trgm", using: :gin
-    t.index [ "s3_key" ], name: "index_kb_documents_on_s3_key", unique: true
+    t.index ["s3_key"], name: "index_kb_documents_on_s3_key", unique: true
   end
 
   create_table "technician_documents", force: :cascade do |t|
@@ -97,8 +138,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.datetime "updated_at", null: false
     t.string "wa_filename"
     t.index "lower((canonical_name)::text)", name: "idx_tech_docs_canonical_icase_unique", unique: true
-    t.index [ "last_used_at" ], name: "idx_tech_docs_recent_global"
-    t.index [ "source_uri" ], name: "idx_tech_docs_source_uri", where: "((source_uri IS NOT NULL) AND ((source_uri)::text <> ''::text))"
+    t.index ["last_used_at"], name: "idx_tech_docs_recent_global"
+    t.index ["source_uri"], name: "idx_tech_docs_source_uri", where: "((source_uri IS NOT NULL) AND ((source_uri)::text <> ''::text))"
   end
 
   create_table "users", force: :cascade do |t|
@@ -109,8 +150,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
     t.datetime "updated_at", null: false
-    t.index [ "email" ], name: "index_users_on_email", unique: true
-    t.index [ "reset_password_token" ], name: "index_users_on_reset_password_token", unique: true
+    t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
   create_table "whatsapp_cache_hits", force: :cascade do |t|
@@ -119,7 +160,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_07_202127) do
     t.string "route", null: false
     t.integer "tokens_saved_estimate"
     t.datetime "updated_at", null: false
-    t.index [ "recipient", "created_at" ], name: "index_whatsapp_cache_hits_on_recipient_and_created_at"
-    t.index [ "route", "created_at" ], name: "index_whatsapp_cache_hits_on_route_and_created_at"
+    t.index ["recipient", "created_at"], name: "index_whatsapp_cache_hits_on_recipient_and_created_at"
+    t.index ["route", "created_at"], name: "index_whatsapp_cache_hits_on_route_and_created_at"
   end
 end

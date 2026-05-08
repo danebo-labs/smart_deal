@@ -1,0 +1,41 @@
+<% content_for :title, "Carga masiva — danebo" %>
+
+<main class="mx-auto max-w-2xl px-4 pt-24 pb-12">
+  <div class="rounded-2xl border border-[hsl(215,20%,88%)] bg-white p-8 shadow-sm">
+    <h1 class="mb-1 text-xl font-semibold text-[hsl(222,47%,10%)]">Carga masiva de documentos</h1>
+    <p class="mb-6 text-sm text-[hsl(215,20%,52%)]">
+      Sube un archivo ZIP con imágenes (JPEG, PNG) o PDFs. Cada archivo será procesado,
+      indexado y quedará disponible en la base de conocimiento.
+    </p>
+
+    <%= form_with url: bulk_uploads_path, method: :post, multipart: true, local: true,
+                  class: "space-y-5" do |f| %>
+
+      <% if flash[:alert].present? %>
+        <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <%= flash[:alert] %>
+        </div>
+      <% end %>
+
+      <div class="flex flex-col gap-2">
+        <%= f.label :zip_file, "Archivo ZIP", class: "text-sm font-medium text-[hsl(222,47%,20%)]" %>
+        <%= f.file_field :zip_file, accept: ".zip",
+              class: "block w-full text-sm text-[hsl(215,20%,45%)]
+                      file:mr-4 file:rounded-lg file:border-0
+                      file:bg-[hsl(217,91%,50%)] file:px-4 file:py-2
+                      file:text-sm file:font-medium file:text-white
+                      hover:file:bg-[hsl(217,91%,44%)]
+                      cursor-pointer" %>
+        <p class="text-xs text-[hsl(215,20%,58%)]">
+          Máximo 50 MB por archivo · 500 MB descomprimido · imágenes o PDF únicamente
+        </p>
+      </div>
+
+      <%= f.submit "Iniciar procesamiento",
+            class: "w-full rounded-xl bg-[hsl(217,91%,50%)] px-6 py-3 text-sm font-semibold
+                    text-white shadow-sm hover:bg-[hsl(217,91%,44%)] focus:outline-none
+                    focus:ring-2 focus:ring-[hsl(217,91%,50%)] focus:ring-offset-2
+                    disabled:opacity-60 cursor-pointer transition-colors" %>
+    <% end %>
+  </div>
+</main>

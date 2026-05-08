@@ -193,6 +193,33 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
     end
   end
 
+  # ============================================
+  # upload_text
+  # ============================================
+
+  test 'upload_text returns key on success with text/plain content-type' do
+    with_fake_s3_client do |fake|
+      service = S3DocumentsService.new
+      key = service.upload_text('bulk_chunks/2026-05-07/abc/chunk_0.txt', 'hello world')
+
+      assert_equal 'bulk_chunks/2026-05-07/abc/chunk_0.txt', key
+      assert_equal 1, fake.uploaded.length
+      uploaded = fake.uploaded.first
+      assert_equal 'hello world', uploaded[:body]
+      assert_match(/text\/plain/, uploaded[:content_type])
+      assert_equal 'bulk_chunks/2026-05-07/abc/chunk_0.txt', uploaded[:key]
+    end
+  end
+
+  test 'upload_text returns nil on S3 error' do
+    with_fake_s3_client do |fake|
+      fake.should_raise_on_put = true
+
+      service = S3DocumentsService.new
+      assert_nil service.upload_text('bulk_chunks/test/chunk_0.txt', 'content')
+    end
+  end
+
   test 'upload_file returns nil when bucket is not configured' do
     ENV.delete('KNOWLEDGE_BASE_S3_BUCKET')
 

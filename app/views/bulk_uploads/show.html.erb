@@ -1,0 +1,57 @@
+<% content_for :title, "#{@bulk_upload.original_filename} — danebo" %>
+
+<%# Live updates for this bulk upload %>
+<%= turbo_stream_from "bulk_upload_#{@bulk_upload.id}" %>
+
+<main class="mx-auto max-w-3xl px-4 pt-24 pb-12">
+  <% if @bulk_upload.error_message.present? %>
+    <div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <%= @bulk_upload.error_message %>
+    </div>
+  <% end %>
+
+  <div class="mb-6 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-[hsl(222,47%,10%)]"><%= @bulk_upload.original_filename %></h1>
+      <p class="mt-0.5 text-sm text-[hsl(215,20%,52%)]">
+        <%= @bulk_upload.bulk_upload_assets.count %> archivo<%= "s" if @bulk_upload.bulk_upload_assets.count != 1 %>
+      </p>
+    </div>
+    <%= link_to "Nueva carga", new_bulk_upload_path,
+          class: "rounded-lg border border-[hsl(215,20%,85%)] px-4 py-2 text-sm
+                  font-medium text-[hsl(215,20%,40%)] hover:bg-[hsl(215,20%,96%)]
+                  transition-colors" %>
+  </div>
+
+  <%# Progress bar — only shown while processing %>
+  <% complete_count = @bulk_upload.bulk_upload_assets.count { |a| a.status == "complete" } %>
+  <% total_count    = @bulk_upload.bulk_upload_assets.count %>
+  <% if @bulk_upload.status != "complete" && total_count > 0 %>
+    <div class="mb-6 rounded-xl border border-[hsl(215,20%,88%)] bg-white p-5 shadow-sm">
+      <div class="mb-2 flex justify-between text-xs font-medium text-[hsl(215,20%,45%)]">
+        <span>Progreso</span>
+        <span><%= complete_count %> / <%= total_count %></span>
+      </div>
+      <div class="h-2 w-full overflow-hidden rounded-full bg-[hsl(215,20%,92%)]">
+        <div class="h-full rounded-full bg-[hsl(217,91%,50%)] transition-all duration-500"
+             style="width: <%= total_count > 0 ? (complete_count * 100 / total_count) : 0 %>%">
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <%# Asset list — id="assets-list" is the Turbo Stream append target for new rows %>
+  <div id="assets-list" class="space-y-2">
+    <% @bulk_upload.bulk_upload_assets.each do |asset| %>
+      <%= render partial: "bulk_uploads/asset", locals: { asset: asset } %>
+    <% end %>
+
+    <% if @bulk_upload.bulk_upload_assets.empty? %>
+      <div id="assets-empty"
+           class="rounded-xl border border-[hsl(215,20%,88%)] bg-white px-6 py-8
+                  text-center text-sm text-[hsl(215,20%,52%)] shadow-sm">
+        Preparando archivos…
+      </div>
+    <% end %>
+  </div>
+</main>

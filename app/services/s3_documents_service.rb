@@ -77,6 +77,28 @@ class S3DocumentsService
     nil
   end
 
+  # Writes a plain-text string to S3 at an explicit key (no prefix added).
+  # Used by BatchResultsParserService to store pre-chunked .txt files under bulk_chunks/.
+  # @param key [String] Full S3 key, e.g. "bulk_chunks/2026-05-07/abc123/chunk_0.txt"
+  # @param content [String] UTF-8 text content
+  # @return [String, nil] The key on success, nil on failure
+  def upload_text(key, content)
+    return nil unless @bucket_name
+
+    @s3.put_object(
+      bucket: @bucket_name,
+      key: key,
+      body: content,
+      content_type: "text/plain; charset=utf-8"
+    )
+
+    Rails.logger.info("S3 text upload: s3://#{@bucket_name}/#{key}")
+    key
+  rescue StandardError => e
+    Rails.logger.error("S3 text upload failed: #{e.message}")
+    nil
+  end
+
   private
 
   def find_bucket_name

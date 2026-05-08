@@ -21,6 +21,15 @@ default: &default
       processes: 1
       polling_interval: 2
 
+    # Bulk ingestion lane: ProcessBulkUploadJob, SubmitClaudeBatchJob,
+    # PollClaudeBatchJob, IngestBatchResultsJob, PollBulkBedrockIngestionJob.
+    # Poll jobs use re-enqueue pattern (one check per perform + wait) so thread
+    # utilisation is low; 2 threads cover concurrent bulk uploads on the MVP pilot.
+    - queues: bulk_ingestion
+      threads: 2
+      processes: 1
+      polling_interval: 2
+
 development:
   <<: *default
 

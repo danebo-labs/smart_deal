@@ -6,8 +6,8 @@ Platform that enables interaction and communication through RAG (Retrieval-Augme
 
 ## Product scope (current build)
 
-- **Active channel:** signed-in **web** home — responsive layout, RAG chat, KB list, pins, and thumbnails/lightbox (see [Web home: responsive layout, KB card, and lightbox](#web-home-responsive-layout-kb-card-and-lightbox)).
-- **WhatsApp / Twilio — decoupled (dormant):** the inbound webhook is **not mounted** (`config/routes.rb` comments out `post '/twilio/webhook'`). **`config/queue.yml`** defines two Solid Queue **lanes** — `default` (short jobs: metrics, enrichment, uploads) and `ingestion` (`BedrockIngestionJob` poll loop). In **production Kamal** those lanes run inside **one** `worker` container (see [Kamal production (AWS)](#kamal-production-aws)). Jobs that target `whatsapp_rag` / `whatsapp_media` still exist in code but are **not enqueued** while the webhook is unmounted. Shared code paths (`RagQueryConcern`, `BedrockRagService`, `BedrockIngestionJob`, orchestrator) no longer drive a live **`:whatsapp`** RAG branch. **Legacy stack remains in the repo** for a future reactivation: `TwilioController`, `SendWhatsappReplyJob`, `ProcessWhatsappMediaJob`, `TrackWhatsappCacheHitJob`, `app/services/rag/whatsapp_*.rb`, models, locales, and DB tables are **not deleted** — treat them as **deprecated architecture** until re-wired.
+- **Active channel:** signed-in **web** home — responsive layout, RAG chat, KB list, pins, thumbnails/lightbox, and **bulk ZIP ingestion** at `/bulk_uploads` (see [Bulk ZIP ingestion (web)](#bulk-zip-ingestion-web)).
+- **WhatsApp / Twilio — decoupled (dormant):** the inbound webhook is **not mounted** (`config/routes.rb` comments out `post '/twilio/webhook'`). **`config/queue.yml`** defines three Solid Queue **lanes** — `default` (short jobs: metrics, enrichment, chat uploads), `ingestion` (`BedrockIngestionJob` poll loop), and **`bulk_ingestion`** (ZIP → Anthropic Batch → KB sync pipeline). In **production Kamal** those lanes run inside **one** `worker` container (see [Kamal production (AWS)](#kamal-production-aws)). Jobs that target `whatsapp_rag` / `whatsapp_media` still exist in code but are **not enqueued** while the webhook is unmounted. Shared code paths (`RagQueryConcern`, `BedrockRagService`, `BedrockIngestionJob`, orchestrator) no longer drive a live **`:whatsapp`** RAG branch. **Legacy stack remains in the repo** for a future reactivation: `TwilioController`, `SendWhatsappReplyJob`, `ProcessWhatsappMediaJob`, `TrackWhatsappCacheHitJob`, `app/services/rag/whatsapp_*.rb`, models, locales, and DB tables are **not deleted** — treat them as **deprecated architecture** until re-wired.
 - **Tests:** `test/test_helper.rb` sets **`WHATSAPP_CHANNEL_DISABLED`** (default `true` via `ENV.fetch`) and skips test classes whose name matches `Whatsapp` / `Twilio` (case-insensitive). Export **`WHATSAPP_CHANNEL_DISABLED=false`** to run those suites when working on a WA re-launch.
 
 ## MVP pilot (dry run)
@@ -26,6 +26,8 @@ When shared session is **off**, each web user keeps a **separate** session (per 
 
 - **User authentication** with Devise
 - **Document processing**
+- **Bulk ZIP ingestion (signed-in web)** — **`/bulk_uploads`**: fast controller ACK → Solid Queue **`bulk_ingestion`** lane extracts ZIP, uploads to S3, runs **Anthropic Message Batches** (**`claude-opus-4-7`**, **`BatchChunkingPrompt`**), parses JSONL into chunk `.txt` files with pipeline-injected identity headers, syncs via optional **`BEDROCK_BULK_DATA_SOURCE_ID`**, polls Bedrock ingestion, links **`KbDocument`**, and **Turbo Streams** asset rows on the show page. See [Bulk ZIP ingestion (web)](#bulk-zip-ingestion-web).
+- **Bedrock prompt-cache telemetry & Aurora KB chunk reference** — `bedrock_queries` stores **`cache_read_tokens`** / **`cache_creation_tokens`** when Bedrock returns them; async metrics + **`BedrockKbChunk`** abstract model document the KB vector schema for engineers (`app/models/bedrock_kb_chunk.rb`).
 - **AI document analysis – RAG** — AWS Bedrock, Knowledge Base, LLMs, embeddings, and prompt templates
 - **RAG chat with Knowledge Base integration** — LLMs, embeddings, prompt templates, and custom model configuration, optimized for inference and better results
 - **Hybrid Query Orchestrator (RAG + Text-to-SQL)** — intelligent intent classification routes queries to the Knowledge Base, the client's business database, or both in parallel. Supports three modes: `DATABASE_QUERY`, `KNOWLEDGE_BASE_QUERY`, and `HYBRID_QUERY`
@@ -54,6 +56,7 @@ Engineering snapshot of what powers the app (complement to [Setup](#setup) and [
 | **App database** | **PostgreSQL** — primary schema plus separate DBs for queue, cache, and cable (see `config/database.yml`) |
 | **Client / Text-to-SQL DB** | **PostgreSQL** in development and production; **SQLite** file (`storage/client_test.sqlite3`) for the isolated `client_db` connection in **test** only |
 | **AI / RAG** | **AWS Bedrock** (Knowledge Bases, retrieve-and-generate, model invocation) — see [BEDROCK_SETUP.md](BEDROCK_SETUP.md) |
+| **Bulk ZIP / Anthropic Batch** | **`rubyzip`** (extract), **`anthropic`** gem **Message Batches API** + optional `count_tokens` (`ANTHROPIC_API_KEY` — required for bulk ingestion, optional exact tokenizer for chat metrics) |
 | **Messaging** | **Twilio** (`twilio-ruby` still bundled; inbound **WhatsApp webhook not mounted** — see [Product scope](#product-scope-current-build)) |
 | **Auth** | **Devise** |
 | **Tests** | **Minitest** (Rails default) |
@@ -139,6 +142,7 @@ Use `bin/rails kb:config` as the source of truth before changing Bedrock, S3, or
 | Retrieval | `HYBRID`, `BEDROCK_RAG_NUMBER_OF_RESULTS=10` |
 | Generation temperature | `BEDROCK_RAG_GENERATION_TEMPERATURE=0.3` |
 | Generation prompt | `app/prompts/bedrock/generation.txt` |
+| Bulk ZIP data source (optional) | Set **`BEDROCK_BULK_DATA_SOURCE_ID`** when the KB has a **second** S3 data source with **no Bedrock chunking** for batch-produced `.txt` chunks; if unset, **`BulkKbSyncService`** falls back to **`BEDROCK_DATA_SOURCE_ID`** |
 
 AWS-side KB shape:
 
@@ -186,7 +190,7 @@ If a real **`config/deploy.yml`** with production hosts or IDs was ever pushed t
 | Piece | Role |
 |-------|------|
 | **`config/deploy.yml`** | **Not in git** — copy from [`config/deploy.yml.example`](config/deploy.yml.example). Kamal: `servers.web`, `servers.worker`, `proxy` (`host`, `app_port: 80`), registry, `env`, `ssh`. Memory/CPU limits are set per role. |
-| **Single `worker` container** | One process runs `bundle exec rake solid_queue:start` and loads **`config/queue.yml`**, which registers **two lanes**: `default` (4 threads, `polling_interval: 1`) and `ingestion` (1 thread, `polling_interval: 2`). This **isolates long ingestion polls** from short jobs **without** running two duplicate Rails worker processes. |
+| **Single `worker` container** | One process runs `bundle exec rake solid_queue:start` and loads **`config/queue.yml`**, which registers **three lanes**: `default` (4 threads, `polling_interval: 1`), `ingestion` (1 thread, `polling_interval: 2`), and **`bulk_ingestion`** (2 threads, `polling_interval: 2`) for **`ProcessBulkUploadJob`**, **`SubmitClaudeBatchJob`**, **`PollClaudeBatchJob`**, **`IngestBatchResultsJob`**, **`PollBulkBedrockIngestionJob`**. Long polls stay off the `default` lane **without** extra worker containers. |
 | **Solid Queue polling vs Aurora warmup** | Worker **`polling_interval`** only controls how often Solid Queue **polls the queue DB** (RDS `solid_queue_*` tables). It does **not** wake the Bedrock KB vector store. **Aurora / KB warmup** is **`WarmBedrockKbJob`** (throttled retrieve against the KB), enqueued from **`HomeController#index`** and **`Users::SessionsController#after_sign_in_path_for`**. |
 | **Metrics footer** | Updated when **`TrackBedrockQueryJob`** runs (after a real Bedrock path) and broadcasts Turbo Streams; there is **no** browser polling. Slower Solid Queue polling delays the footer slightly; it does not affect answer latency. |
 | **Default KB list rows** | **Not** hardcoded in the UI. **`RecentKbDocumentsQuery`** reads **`kb_documents`**. Seed rows come from **`db/seeds.rb`** (`KB_DOCUMENT_SEEDS`); real uploads add rows via **`QueryOrchestratorService#ensure_kb_document_for`**. |
@@ -199,8 +203,8 @@ This is the **in-repo** picture operators extend when building `config/deploy.ym
 |------|----------------------------------|
 | [`config/deploy.yml.example`](config/deploy.yml.example) | **Kamal:** `service: smart-deal`, **one host** runs both **`web`** (Puma, `memory`/`cpus` limits) and **`worker`** (`bundle exec rake solid_queue:start`). **`proxy`:** TLS, public host, `app_port: 80` to Puma. **Registry:** Docker Hub (`KAMAL_REGISTRY_PASSWORD` in `.kamal/secrets`). **`env.clear`:** `RAILS_ENV`, logging/static flags, `RAILS_MAX_THREADS`, `AWS_REGION`, `DB_HOST` / `DB_USERNAME` / `DB_NAME` / `DB_{CACHE,QUEUE,CABLE}_NAME`, Bedrock KB + model IDs, `KNOWLEDGE_BASE_S3_BUCKET`, `INGESTION_REENQUEUE`, `AWS_HTTP_READ_TIMEOUT`. **`secret`:** `RAILS_MASTER_KEY`, `DB_PASSWORD`. **SSH** user + key path. |
 | [`config/database.yml`](config/database.yml) | **Rails 8 multi-database:** `primary`, `cache`, `queue`, `cable` (all PostgreSQL in production; separate DB **names** on RDS). **Connection pool:** `RAILS_MAX_THREADS + 2`. **`client_db`:** PostgreSQL in dev/prod via `CLIENT_DB_*`; SQLite file only in **test**. |
-| [`config/queue.yml`](config/queue.yml) | **Solid Queue** production inherits **two worker definitions:** `default` (4 threads, 1s poll) and `ingestion` (1 thread, 2s poll) — one OS process inside the Kamal **worker** container. |
-| [`config/routes.rb`](config/routes.rb) | **`MissionControl::Jobs`** mounted at **`/jobs`** in non-test envs (HTTP auth via credentials — see pre-deploy checklist). Health: **`/up`**. Twilio webhook remains commented out. |
+| [`config/queue.yml`](config/queue.yml) | **Solid Queue** production inherits **three worker definitions:** `default`, `ingestion`, and **`bulk_ingestion`** — one OS process inside the Kamal **worker** container. |
+| [`config/routes.rb`](config/routes.rb) | **`MissionControl::Jobs`** mounted at **`/jobs`** in non-test envs (HTTP auth via credentials — see pre-deploy checklist). **`resources :bulk_uploads`** — `new`, `create`, `show` (signed-in bulk ZIP flow). Health: **`/up`**. Twilio webhook remains commented out. |
 
 #### EC2 stop / start — avoid SSL 404 and “half-dead” proxy
 
@@ -321,7 +325,7 @@ bundle exec kamal app exec --reuse "bin/rails db:migrate:cable"
 
 ```bash
 ruby -ryaml -e 'p YAML.load_file("config/queue.yml", aliases: true).dig("production", "workers").size'
-# expect 2 worker lane definitions
+# expect 3 worker lane definitions
 ```
 
 #### SSH + Docker on the server
@@ -546,8 +550,9 @@ When enabled, the app received WhatsApp messages via Twilio; the webhook trigger
 ## Usage
 
 1. Sign up or sign in.
-2. Upload documents (PDFs, images, etc.); the pipeline sends them to the Knowledge Base and surfaces them in the home **document list**.
-3. Use the RAG chat to ask questions about indexed content. **Pin** documents from the list to steer retrieval; for **images** with a thumbnail, **tap the thumbnail** to view the stored file full-size in the lightbox.
+2. Upload documents (PDFs, images, etc.) from chat; the pipeline sends them to the Knowledge Base and surfaces them in the home **document list**.
+3. Optionally open **`/bulk_uploads`** to upload a **ZIP** of many files — track per-file status on the bulk show page while Solid Queue runs extraction, Claude Batch chunking, S3 writes, and Bedrock sync.
+4. Use the RAG chat to ask questions about indexed content. **Pin** documents from the list to steer retrieval; for **images** with a thumbnail, **tap the thumbnail** to view the stored file full-size in the lightbox.
 
 ## Web home: responsive layout, KB card, and lightbox
 
@@ -624,6 +629,12 @@ Custom tasks live under `lib/tasks/`. **`bin/rails -T`** lists these plus every 
 | `metrics:collect_range[start_date,end_date]` | Same as collect, for an inclusive date range (`YYYY-MM-DD`). |
 | `metrics:create_sample_query[model_id,input_tokens,output_tokens]` | Inserts a **`BedrockQuery`** row with optional token counts (defaults provided) for dashboard or metric testing. |
 
+#### Solid Queue maintenance — `solid_queue:`
+
+| Task | What it does |
+|------|----------------|
+| `solid_queue:purge_all` | Deletes all **`SolidQueue::Job`** / worker bookkeeping rows; removes **`tmp/bulk_uploads/*.zip`**. Refuses production unless **`FORCE_PURGE_QUEUE=1`**. Optional **`CLEAN_BULK_UPLOADS=1`** destroys **`BulkUpload`** records. **Stop workers first.** |
+
 #### Operations / debugging — `debug:`
 
 These tasks hit AWS or local DBs; some **`debug:*`** steps still use **hard-coded** bucket or Aurora cluster IDs from an earlier environment—verify before relying on output.
@@ -697,11 +708,31 @@ sequenceDiagram
 | **ClientDatabase** | `app/models/client_database.rb` | Isolated DB connection to the client's business database |
 | **RagQueryConcern** | `app/controllers/concerns/rag_query_concern.rb` | Shared RAG orchestration for **web**; WhatsApp-specific branches were **collapsed** off the hot path (Twilio re-launch would reintroduce routing + queues). |
 
+### Bulk ZIP ingestion (web)
+
+Signed-in technicians can seed many documents at once without chat uploads. The flow is **HTML + Turbo Streams** (not a separate JSON API).
+
+| HTTP | Path | Role |
+|------|------|------|
+| `GET` | `/bulk_uploads/new` | multipart form (ZIP file field `zip_file`) |
+| `POST` | `/bulk_uploads` | validates ZIP, **SHA-256 dedupe** (`BulkUpload`), saves to `tmp/bulk_uploads/`, enqueues **`ProcessBulkUploadJob`**, redirects to show |
+| `GET` | `/bulk_uploads/:id` | progress UI; **`turbo_stream_from "bulk_upload_<id>"`** drives live updates as assets move through statuses |
+
+**Job chain** (all on **`queue_as :bulk_ingestion`**): `ProcessBulkUploadJob` → `SubmitClaudeBatchJob` → `PollClaudeBatchJob` (re-enqueue poll) → `IngestBatchResultsJob` → `PollBulkBedrockIngestionJob` (re-enqueue poll). Services: `ZipExtractionService`, `BatchIngestionService`, `BatchResultsParserService`, `BulkKbSyncService`, `ClaudeBatchClient`, **`BatchChunkingPrompt`** (`app/prompts/batch_chunking_prompt.rb`).
+
+**Infra / KB design:** batch-produced chunks usually land on a **Bedrock data source with chunking disabled** (optional **`BEDROCK_BULK_DATA_SOURCE_ID`**); identity markers (**`Document:`**, **`DOCUMENT_ALIASES:`**, **`SOURCE_URI`**) are injected by **`BatchResultsParserService`** because there is no POST_CHUNKING Lambda on that path. **`BedrockRagService`** builds retrieval filters with **`orAll`** across **`x-amz-bedrock-kb-source-uri`** and **`original_source_uri`** so batch-ingested files still honor **pinned-entity** scoping.
+
+**Persistence:** `bulk_uploads` (overall ZIP run + `claude_batch_id` / `bedrock_ingestion_job_id`), `bulk_upload_assets` (per extracted file, S3 key, Claude token estimates, `kb_document_id` when linked).
+
+**Aurora schema discovery:** **`BedrockKbChunk`** (`app/models/bedrock_kb_chunk.rb`) is an **`abstract_class`** documenting AWS KB field mappings (embedding dim, `bedrock_integration.bedrock_knowledge_base`, JSONB metadata keys to confirm out-of-band). It does **not** connect to the app Primary DB or SQLite at boot.
+
+**Operator tooling:** `bin/rails solid_queue:purge_all` clears Solid Queue rows and `tmp/bulk_uploads/*.zip`; optional **`CLEAN_BULK_UPLOADS=1`** destroys `BulkUpload` rows; production requires **`FORCE_PURGE_QUEUE=1`** (see `lib/tasks/solid_queue_purge.rake`).
+
 For additional architecture details and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### LLM usage metrics & Solid Queue
 
-Model usage is recorded **asynchronously** so Bedrock calls never wait on DB writes or dashboard broadcasts. `bedrock_queries` stores each event with a **`source`** so interactive chat and ingestion are accounted for separately:
+Model usage is recorded **asynchronously** so Bedrock calls never wait on DB writes or dashboard broadcasts. `bedrock_queries` stores each event with a **`source`** plus **`input_tokens`**, **`output_tokens`**, **`latency_ms`**, and **Anthropic prompt-cache usage** (**`cache_read_tokens`**, **`cache_creation_tokens`**) when the invoke response includes them; **`TrackBedrockQueryJob`** persists those fields and **`SimpleMetricsService`** folds cache-adjusted cost into **`CostMetric`** rollups (Batch-priced rows exist on `BedrockQuery` for Anthropic Batch–style estimates).
 
 | `source` | Meaning |
 |----------|---------|
@@ -711,16 +742,17 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 
 **Jobs & data:**
 
-- **`TrackBedrockQueryJob`** (`queue: default`) — enqueued from `BedrockRagService` / `BedrockClient` after each real invocation. Creates a `BedrockQuery`, runs `SimpleMetricsService.update_database_metrics_only` (upserts `CostMetric` for the current day, including per-source tokens and cost), and **broadcasts** a Turbo Stream on the **`metrics`** channel so the **home** chat footer refreshes without reload.
+- **`TrackBedrockQueryJob`** (`queue: default`) — enqueued from `BedrockRagService` / `BedrockClient` after each real invocation. Creates a `BedrockQuery` (including cache token columns when present), runs `SimpleMetricsService.update_database_metrics_only` (upserts `CostMetric` for the current day, including per-source tokens and cost), and **broadcasts** a Turbo Stream on the **`metrics`** channel so the **home** chat footer refreshes without reload.
 - **`TrackIngestionUsageJob`** (`default`) — after `BedrockIngestionJob` completes, estimates parse/embed tokens per file and writes the `ingestion_*` rows above.
 - **`TrackWhatsappCacheHitJob`** (`default`, **dormant**) — when the WhatsApp faceted path runs again, records cache-hit metrics into the same rollups.
 
-**Solid Queue (`config/queue.yml`):** two worker **lanes** — **`default`** for short-lived jobs (metrics, broadcasts, enrichment, attachment uploads) and **`ingestion`** for the long-running `BedrockIngestionJob` poll loop. Isolating the ingestion poll prevents two concurrent uploads from starving `TrackBedrockQueryJob` (which drives the home footer). In **Kamal production**, both lanes run in **one** `worker` container (see [Kamal production (AWS)](#kamal-production-aws)). Dedicated **`whatsapp_rag`** / **`whatsapp_media`** queues exist in code but are **not exercised** while the Twilio webhook stays unmounted; re-add dedicated processes if you restore the webhook and want isolation again.
+**Solid Queue (`config/queue.yml`):** three worker **lanes** — **`default`** (short jobs), **`ingestion`** (`BedrockIngestionJob` poll loop), **`bulk_ingestion`** (ZIP → Claude Batch → KB sync polls). Isolating long polls keeps **`TrackBedrockQueryJob`** (home footer) responsive. In **Kamal production**, all lanes run in **one** `worker` container (see [Kamal production (AWS)](#kamal-production-aws)). Dedicated **`whatsapp_rag`** / **`whatsapp_media`** queues exist in code but are **not exercised** while the Twilio webhook stays unmounted; re-add dedicated processes if you restore the webhook and want isolation again.
 
 | Queue | Example jobs | Role |
 |-------|----------------|------|
 | **`default`** | `TrackBedrockQueryJob`, `TrackIngestionUsageJob`, `TrackWhatsappCacheHitJob` (inactive), `KbDocumentEnrichmentJob`, `UploadAndSyncAttachmentsJob`, `DailyMetricsJob`, `SendWhatsappReplyJob` (not enqueued without WA) | Token persistence, footer Turbo updates, async enrichment, scheduled metric refresh |
-| **`ingestion`** | `BedrockIngestionJob` | Long poll on Bedrock KB ingestion (≤ 15 min); legacy mode blocks one worker, `INGESTION_REENQUEUE=true` re-enqueues every 5s |
+| **`ingestion`** | `BedrockIngestionJob` | Long poll on Bedrock KB ingestion (≤ 15 min); legacy mode blocks one worker thread, `INGESTION_REENQUEUE=true` re-enqueues every 5s |
+| **`bulk_ingestion`** | `ProcessBulkUploadJob`, `SubmitClaudeBatchJob`, `PollClaudeBatchJob`, `IngestBatchResultsJob`, `PollBulkBedrockIngestionJob` | Bulk ZIP extraction, Anthropic batch lifecycle, chunk ingest + Bedrock sync polls (2 threads in template config) |
 
 **Production sizing (floors):** `RAILS_MAX_THREADS=5`, AR `pool=RAILS_MAX_THREADS+2` (auto), `AWS_HTTP_READ_TIMEOUT=90` (covers Aurora Serverless cold-start ≤ 60s). See `.env.sample` for the full block.
 
@@ -731,7 +763,7 @@ Verify each before flipping the public DNS:
 1. `QUERY_ROUTING_ENABLED` **absent or `false`** — keeps every web request on the KB lane (no extra `invoke_model` for routing). Code default in `QueryOrchestratorService.query_routing_enabled?`.
 2. `BEDROCK_RERANKER_ENABLED` **absent or `false`** — Cohere Rerank is disabled by default; toggle ON only after measuring impact in staging.
 3. `SHARED_SESSION_ENABLED` set explicitly (`true` for the pilot single-thread, `false` for per-user). The default-when-unset is `false` in `Rails.env.production`.
-4. `ANTHROPIC_API_KEY` present **only if you want exact tokenization**. Without it, `AnthropicTokenCounter` falls back to `LocalTokenizer` (chars/3.5, ±5%). The async `TrackBedrockQueryJob` now does the network call, so a slow Anthropic endpoint never blocks the request.
+4. **`ANTHROPIC_API_KEY`** (or **`credentials.dig(:anthropic, :api_key)`**) — **required** for **`/bulk_uploads`** (Anthropic Message Batches via `ClaudeBatchClient`). Separately, omitting it falls back to `LocalTokenizer` for **`AnthropicTokenCounter`** on chat metrics (chars/3.5, ±5%); counting runs inside **`TrackBedrockQueryJob`**, so a slow Anthropic endpoint never blocks **`POST /rag/ask`**.
 5. `INGESTION_REENQUEUE` ⇒ activate **after draining the Solid Queue** (legacy serialized jobs keep blocking until terminal otherwise).
 6. `MissionControl::Jobs` (`/jobs`) credentials live in **`config/credentials.yml.enc`**, **not** in `.env` for the production process.
 7. `/dashboard` — confirm Devise role/admin guard before the public route flips, or accept that anonymous users see CostMetric rollups.

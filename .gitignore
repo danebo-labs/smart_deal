@@ -10,6 +10,7 @@
 
 # Ignore bundler config.
 /.bundle
+/vendor/bundle
 
 # Ignore all environment files (but keep the sample template).
 /.env*

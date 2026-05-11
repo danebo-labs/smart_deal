@@ -1,0 +1,46 @@
+---
+alwaysApply: true
+---
+
+---
+
+description: Rails 8 stack and architecture rules
+globs:
+
+* app/**/*.rb
+
+---
+
+# Stack
+
+* Rails 8.1
+* Ruby 3.3+
+* PostgreSQL
+* Hotwire
+* Importmap
+* Tailwind
+* Solid Queue
+* Solid Cable
+* AWS Bedrock
+
+# Architecture
+
+* Thin controllers
+* Service Objects in app/services
+* Query Objects for retrieval/filtering
+* Keep models free from infrastructure SDK logic
+* Prefer PORO services
+* Prefer explicit code over metaprogramming
+
+# Rails-native First
+
+* Prefer Rails-native patterns before external gems
+* Prefer Hotwire over SPA patterns
+* Prefer Solid Stack over Redis-based solutions
+* Avoid unnecessary abstractions
+
+# Product Stage
+
+* MVP / operational validation
+* Prioritize simplicity and maintainability
+* Avoid premature enterprise architecture

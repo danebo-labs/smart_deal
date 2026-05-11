@@ -1,0 +1,36 @@
+---
+
+description: AWS Bedrock and RAG optimization rules
+globs:
+
+* app/services/bedrock/**
+* app/services/rag/**
+* app/services/query_orchestrator_service.rb
+* app/services/sql_generation_service.rb
+* app/prompts/**
+
+
+---
+
+# RAG Rules
+
+* Prefer single-pass retrieval/generation flows
+* Minimize retrieval payload size
+* Prefer metadata filtering before semantic expansion
+* Avoid unnecessary reranking
+* Avoid chained LLM calls unless accuracy materially improves
+* Avoid unnecessary orchestration stages
+* Prefer simpler retrieval paths
+
+# Cost & Latency
+
+* Optimize for production latency
+* Minimize Bedrock round trips
+* Reuse existing retrieval context whenever possible
+* Prefer smaller high-relevance context windows
+
+# Safety
+
+* Never fabricate technical data
+* Missing data -> DATA_NOT_AVAILABLE
+* Ambiguous data -> REQUIRE_FIELD_VERIFICATION

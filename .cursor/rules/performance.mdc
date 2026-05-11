@@ -1,0 +1,44 @@
+---
+alwaysApply: true
+---
+
+---
+
+description: Performance and latency optimization rules
+globs:
+
+* app/**/*.rb
+* app/**/*.js
+  
+---
+
+# Performance Priorities
+
+Optimize for production latency and operational simplicity.
+
+# Rules
+
+* Minimize Bedrock/API calls
+* Minimize DB queries
+* Avoid unnecessary orchestration
+* Avoid unnecessary async jobs
+* Avoid fan-out architectures
+* Avoid polling when unnecessary
+* Avoid unnecessary Turbo broadcasts
+* Avoid unnecessary callbacks
+* Avoid N+1 queries
+* Prefer direct execution paths
+* Prefer deterministic Rails logic over additional LLM calls
+* Prefer low-query-count solutions
+* Optimize hot request paths
+
+# Database
+
+* Prefer pluck/select/exists? when appropriate
+* Avoid unnecessary ActiveRecord instantiation
+* Avoid callback-heavy flows in latency-sensitive paths
+
+# Async
+
+* Use jobs only for genuinely long-running work
+* Keep user-facing request cycles minimal

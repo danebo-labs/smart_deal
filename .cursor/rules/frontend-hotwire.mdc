@@ -1,0 +1,39 @@
+---
+alwaysApply: true
+---
+
+---
+
+description: Hotwire and frontend rules
+globs:
+
+* app/views/**/*.erb
+* app/javascript/**/*.js
+
+---
+
+# Frontend Rules
+
+* Optimize for mobile-first responsive UX
+* Prioritize fast perceived responsiveness
+* Minimize frontend complexity
+* Prefer Turbo/Stimulus over custom JS
+* Avoid SPA-like patterns
+* Avoid unnecessary frontend state
+
+# UX Context
+
+Primary users are field elevator technicians:
+
+* low light
+* gloves
+* unreliable connectivity
+* small mobile screens
+
+# UI Priorities
+
+* minimal typing
+* high clarity
+* low interaction friction
+* large tap targets
+* concise UI

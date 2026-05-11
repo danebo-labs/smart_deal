@@ -14,13 +14,15 @@ require 'rails/test_help'
 
 module ActiveSupport
   class TestCase
-    # Run tests in parallel with specified workers
-    # Disable parallelization completely in CI to prevent connection pool exhaustion
-    # Keep full parallelization for local development
+    # Run tests in parallel with specified workers.
+    # - CI: single worker (avoids connection-pool exhaustion in the GH runner).
+    # - Local: capped at 2 by default to limit Postgres test-DB proliferation
+    #   (Rails creates 4 DBs × N workers: smart_deal_test{,_cache,_queue,_cable}-N).
+    #   Override with TEST_WORKERS=N when you need a faster local run.
     if ENV['CI']
-      parallelize(workers: 1) # Single worker in CI to prevent connection issues
+      parallelize(workers: 1)
     else
-      parallelize(workers: :number_of_processors)
+      parallelize(workers: ENV.fetch('TEST_WORKERS', 2).to_i)
     end
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.

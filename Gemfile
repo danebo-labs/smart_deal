@@ -25,8 +25,11 @@ gem 'jbuilder'
 # Authentication
 gem 'devise', '>= 5.0.3'
 
-# Patched Trix (Rails actiontext dependency; bundler-audit GHSA-qmpg-8xg6-ph5q)
-gem 'action_text-trix', '>= 2.1.17'
+# Patched Trix (Rails actiontext; GHSA-53p3-c7vp-4mcc / prior GHSA-qmpg-8xg6-ph5q)
+gem 'action_text-trix', '>= 2.1.18'
+
+# Bundler-audit: GHSA-c4rq-3m3g-8wgx, GHSA-v2fc-qm4h-8hqv (nokogiri < 1.19.3)
+gem 'nokogiri', '>= 1.19.3'
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem 'tzinfo-data', platforms: %i[windows jruby]

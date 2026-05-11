@@ -46,12 +46,14 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
     end
 
     def results_each(batch_id:)
+      message = OpenStruct.new(
+        content: [ OpenStruct.new(type: "text", text: CHUNK_JSON) ],
+        model:   "claude-3-5-haiku-20241022",
+        usage:   OpenStruct.new(input_tokens: 10, output_tokens: 20)
+      )
       yield OpenStruct.new(
         custom_id: @custom_id || "unknown",
-        result:    OpenStruct.new(
-          type:    "succeeded",
-          message: OpenStruct.new(content: [ OpenStruct.new(type: "text", text: CHUNK_JSON) ])
-        )
+        result:    OpenStruct.new(type: "succeeded", message: message)
       )
     end
   end

@@ -79,7 +79,9 @@ class IngestBatchResultsJob < ApplicationJob
   private
 
   def track_asset_usage(asset, message)
-    usage              = message.usage
+    usage = message.respond_to?(:usage) ? message.usage : nil
+    return if usage.nil?
+
     input_tokens       = usage.input_tokens.to_i
     output_tokens      = usage.output_tokens.to_i
     cache_read         = usage.respond_to?(:cache_read_input_tokens) ? usage.cache_read_input_tokens.to_i : 0

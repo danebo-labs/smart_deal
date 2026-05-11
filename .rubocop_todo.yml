@@ -47,11 +47,6 @@ Layout/SpaceInsideArrayLiteralBrackets:
     - 'test/services/bedrock_rag_service_test.rb'
     - 'test/services/simple_metrics_service_test.rb'
 
-# Offense count: 1
-Rails/I18nLocaleTexts:
-  Exclude:
-    - 'app/controllers/dashboard_controller.rb'
-
 # Offense count: 745
 # This cop supports safe autocorrection (--autocorrect).
 # Configuration parameters: EnforcedStyle, ConsistentQuotesInMultiline.

@@ -17,7 +17,7 @@ class BulkUploadsController < ApplicationController
     zip_param = params[:zip_file]
 
     if zip_param.blank?
-      flash[:alert] = "Selecciona un archivo ZIP."
+      flash[:alert] = t("bulk_uploads.select_zip")
       redirect_to new_bulk_upload_path and return
     end
 

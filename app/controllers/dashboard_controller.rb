@@ -27,7 +27,7 @@ class DashboardController < ApplicationController
 
   def refresh
     DailyMetricsJob.perform_later(Date.current)
-    redirect_to dashboard_path, notice: 'Métricas actualizándose...'
+    redirect_to dashboard_path, notice: t("dashboard.metrics_refreshing")
   end
 
   private

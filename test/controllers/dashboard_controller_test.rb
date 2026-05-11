@@ -22,5 +22,7 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_enqueued_with(job: DailyMetricsJob) do
       post dashboard_refresh_url
     end
+    assert_redirected_to dashboard_path
+    assert_equal I18n.t("dashboard.metrics_refreshing"), flash[:notice]
   end
 end

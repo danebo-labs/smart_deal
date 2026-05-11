@@ -29,6 +29,10 @@
 
 en:
   hello: "Hello world"
+  dashboard:
+    metrics_refreshing: "Metrics are updating…"
+  bulk_uploads:
+    select_zip: "Select a ZIP file."
   home:
     lightbox:
       close:      "Close"

@@ -31,7 +31,7 @@ class IngestBatchResultsJob < ApplicationJob
         parser.call(asset: asset, result: result)
         track_asset_usage(asset, result.result.message)
       else
-        msg = "Batch result type '#{result.result.type.to_s}' for #{asset.filename}"
+        msg = "Batch result type '#{result.result.type}' for #{asset.filename}"
         asset.update_columns(status: "failed", error_message: msg)
         asset.broadcast_replace!
         Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: #{msg}")

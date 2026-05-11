@@ -16,3 +16,13 @@ AllCops:
 
 Rails:
   Enabled: true
+
+# Bulk ingestion / failure paths use update_columns and update_all on purpose
+# (avoid callback storms, keep job latency low).
+Rails/SkipsModelValidations:
+  Exclude:
+    - "app/jobs/**/*.rb"
+    - "app/services/batch_ingestion_service.rb"
+    - "app/services/batch_results_parser_service.rb"
+    - "app/models/bulk_upload.rb"
+    - "test/integration/bulk_upload_flow_test.rb"

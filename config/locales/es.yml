@@ -1,5 +1,9 @@
 # Spanish locale (partial; RAG strings also in config/locales/rag.es.yml)
 es:
+  dashboard:
+    metrics_refreshing: "Métricas actualizándose…"
+  bulk_uploads:
+    select_zip: "Selecciona un archivo ZIP."
   errors:
     messages:
       taken: "ya está en uso"

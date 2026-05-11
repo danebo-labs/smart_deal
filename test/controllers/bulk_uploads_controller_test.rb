@@ -69,7 +69,7 @@ class BulkUploadsControllerTest < ActionDispatch::IntegrationTest
     post bulk_uploads_path, params: {}
     assert_redirected_to new_bulk_upload_path
     follow_redirect!
-    assert_select "div", text: /Selecciona un archivo ZIP/
+    assert_select "div", text: /#{Regexp.escape(I18n.t("bulk_uploads.select_zip"))}/
   end
 
   test "POST create redirects unauthenticated user" do

@@ -106,6 +106,73 @@ Foreman is installed automatically by `bin/dev` if missing.
 
 Open http://localhost:3000 in your browser.
 
+### New engineer onboarding
+
+Goal: go from **clone** to **running locally** and, when needed, **`bundle exec kamal deploy`** without rediscovering the same pitfalls.
+
+#### 1. Local app (everyone)
+
+Follow [First-time installation](#first-time-installation): `config/master.key` from a teammate, `bin/setup --skip-server`, fill `.env` from [`.env.sample`](.env.sample), then `bin/dev`.
+
+#### 2. What is **not** in Git (get from the team securely)
+
+| Artifact | Purpose |
+|----------|---------|
+| `config/master.key` | Decrypt `config/credentials.yml.enc` locally |
+| `.env` | Local dev secrets (optional copy from teammate template) |
+| `config/deploy.yml` | Kamal hosts, registry, env, SSH — copy from [`config/deploy.yml.example`](config/deploy.yml.example) and align with production |
+| `.kamal/secrets` | `RAILS_MASTER_KEY`, `DB_PASSWORD`, `KAMAL_REGISTRY_PASSWORD`, etc. — dotenv format at **repo root** (same level as `Gemfile`) |
+| EC2 SSH **private** key | The `.pem` (or other private key) whose public half is in `ubuntu`’s `~/.ssh/authorized_keys` on the server — see below |
+
+Never commit these; rotate if leaked.
+
+#### 3. Kamal from a **new laptop** (macOS checklist)
+
+Kamal builds the image **on your machine** (`docker buildx`), then SSHs to EC2. All commands from the **repo root** (where `Gemfile` lives).
+
+1. **Docker engine running** — open **Docker Desktop** (or start **Colima**). `docker info` must show a **Server** section without “cannot connect to the docker API”.
+2. **Buildx** — Docker Desktop includes it. If you use **Homebrew’s `docker` CLI only**, install the plugin and wire it up:
+
+   ```bash
+   brew install docker-buildx
+   mkdir -p ~/.docker/cli-plugins
+   ln -sf "$(brew --prefix docker-buildx)/bin/docker-buildx" ~/.docker/cli-plugins/docker-buildx
+   ```
+
+   Confirm: `docker buildx version`.
+
+3. **`config/deploy.yml`** — `cp config/deploy.yml.example config/deploy.yml`, then set real hosts, `image` / registry username, `proxy.host`, DB host names, Bedrock IDs, and **`ssh.user`** + **`ssh.keys`**. Prefer an **absolute path** for keys (e.g. `/Users/you/.ssh/key`) so `~` expansion is never ambiguous.
+
+4. **`.kamal/secrets`** — every `secret:` and `registry.password` name in `deploy.yml` must be set. **`KAMAL_REGISTRY_PASSWORD`** must be the **literal** Docker Hub access token (e.g. `dckr_pat_…`). Kamal does **not** run shell for secrets: patterns like `$(cat ~/.dockerhub-token)` resolve empty and break `docker login` with `flag needs an argument: 'p' in -p`. `docker login` succeeding with “existing credentials” on your Mac does **not** replace this file.
+
+5. **SSH before Kamal** — verify:
+
+   ```bash
+   ssh -i /path/to/private_key -o IdentitiesOnly=yes ubuntu@YOUR_EC2_IP
+   ```
+
+   **`Permission denied (publickey)`** means the server does not have that key’s **public** line in `~/.ssh/authorized_keys`. Fix by copying the launch **`.pem`** to the new laptop (secure channel) **or** having someone who can already SSH append your new machine’s `*.pub` to `authorized_keys` (see [Kamal production (AWS)](#kamal-production-aws) and SSH notes there).
+
+6. **Corporate laptops** — allow outbound SSH (22) to the EC2 IP and HTTPS to Docker Hub; some networks block them until VPN or firewall rules are updated.
+
+7. **Deploy** — `bundle exec kamal deploy`. First build/push can take many minutes.
+
+**EC2 Instance Connect** “Failed to connect” is usually **security group** (TCP 22), **no public IP / private subnet** without an Instance Connect endpoint, or NACLs — not Kamal itself.
+
+#### 4. Project owner / maintainer: provisioning a new engineer
+
+Use **company-standard tooling** for anything sensitive (shared **password manager** vault, **internal docs** with access control, **CI secret store**, or **SOPS** in a **private** infra repo). Do **not** distribute `deploy.yml` fragments or Kamal secrets through informal chat or long-lived plaintext.
+
+| Step | Recommended approach |
+|------|----------------------|
+| **`config/deploy.yml`** | Keep a **canonical non-secret** template aligned with production (hosts, `image`, registry username, `env.clear`, `ssh.user`) in a **controlled location** (e.g. vault **Secure Note**, private wiki, or private repo). New engineers **copy fields** into local `config/deploy.yml` (still gitignored). Omit or redact anything that should stay in credentials only. |
+| **`.kamal/secrets`** | Store **`RAILS_MASTER_KEY`**, **`DB_PASSWORD`**, **`KAMAL_REGISTRY_PASSWORD`**, and any other `secret:` entries as fields in the same **vault item** (or inject them only in **CI** for deploy). Grant the new engineer **vault access** to that item; they assemble `.kamal/secrets` locally. Rotate and revoke vault access on offboarding. |
+| **Docker Hub** | Prefer a **Docker Hub organization** (or **ECR**). Issue a **scoped access token** per engineer or per automation identity; label tokens (e.g. `kamal-laptop-jane`). Set `KAMAL_REGISTRY_PASSWORD` from the vault field. Revoke tokens when access ends. Long term, a **CI service account** alone may hold push rights if deploys run from the pipeline. |
+| **SSH / host access** | Prefer **AWS Systems Manager Session Manager** (IAM-gated shell, no public SSH) or **EC2 Instance Connect** with correct **VPC endpoints / security groups**. Add the engineer’s **public** key to `authorized_keys` only when your access model still requires classic SSH for Kamal; perform that change **over SSM or an audited session**, not from an undocumented personal laptop as the sole gate. |
+| **Deploy path** | Target **GitHub Actions** (or equivalent) running **`bundle exec kamal deploy`** from `main` with secrets from the **CI store** and a **deploy IAM role** / **OIDC**, so production releases do not depend on each laptop having registry tokens and SSH keys. Until that exists, document who may deploy and how secrets are rotated. |
+
+**Rollout:** you do not need every row on day one. Typical order: **(1)** vault-backed Kamal secrets + `deploy.yml` template, **(2)** CI deploy to remove shared laptop credentials from the hot path, **(3)** SSM (or org bastion) instead of a single shared `.pem`.
+
 ### Secrets management
 
 ENV vars (`.env`) take priority in development. Rails encrypted credentials are the fallback (used in production where `.env` doesn't exist).
@@ -157,6 +224,8 @@ AWS-side KB shape:
 Do **not** copy AWS credential secret ARNs into `.env` or app docs. Keep runtime config to `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_DATA_SOURCE_ID`, `BEDROCK_MODEL_ID`, `AWS_REGION`, `KNOWLEDGE_BASE_S3_BUCKET`, and the `BEDROCK_RAG_*` knobs.
 
 ### Kamal production (AWS)
+
+If you are **onboarding a laptop for the first time**, read **[New engineer onboarding](#new-engineer-onboarding)** first (Docker, buildx, `.kamal/secrets`, SSH keys).
 
 End-to-end notes from shipping **web-first** production on **one EC2** (Ubuntu + Docker), **RDS PostgreSQL** (primary + separate DBs for Solid Cache / Queue / Cable), **Kamal** + **kamal-proxy** (Traefik, Let’s Encrypt), and **Docker Hub** as the image registry. Full step-by-step infra lives in **`~/.claude/plans/production-deployment-runbook.md`** (or your local copy of the production runbook) on the operator’s machine; this section captures **critical constraints**, **architecture**, **commands**, and **troubleshooting** so the repo stays the source of truth.
 
@@ -280,6 +349,24 @@ After reboot, SSH in and run **`docker ps`**; if **web/worker** are missing whil
 3. **`bundle exec kamal deploy`** — builds (unless you change build settings), pushes the image, restarts containers.
 
 Use **`bundle exec kamal console`** when you need **Rails console** against production without SSH. For a **maintenance window** where you halt compute: **`kamal app stop`** → **`aws ec2 stop-instances`** (order as above).
+
+#### AWS RDS PostgreSQL — stop / start
+
+To **stop** the application Postgres instance (saves RDS compute when the stack is down; adjust `--db-instance-identifier` if yours differs). IAM needs `rds:StopDBInstance` / `rds:StartDBInstance` (and `DescribeDBInstances` for status). You can run these from **your laptop** with the AWS CLI (same profile/region pattern as [EC2 above](#aws-ec2-from-your-laptop-cli)) or from **AWS CloudShell** in the console (pre-authenticated to the account; paste the commands there).
+
+**Stop:**
+
+```bash
+aws rds stop-db-instance --db-instance-identifier smart-deal-db --region us-east-1
+```
+
+**Start:**
+
+```bash
+aws rds start-db-instance --db-instance-identifier smart-deal-db --region us-east-1
+```
+
+After **start**, wait until the instance status is **`available`** before starting EC2 / Kamal or expecting DB connections. RDS stopped instances are subject to AWS auto-start rules (see [Stopping an RDS DB instance temporarily](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html)); plan longer idle windows accordingly.
 
 #### Indispensable commands (operator laptop)
 

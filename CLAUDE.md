@@ -51,6 +51,27 @@ Query orchestration
 - HYBRID runs SQL + RAG in parallel threads and merges via LLM.
 - RagQueryConcern is the shared RAG entry; **web** is the exercised path today. WhatsApp-specific branches are **collapsed / dormant** until the route and workers are restored (README architecture + dormant sections).
 
+Web upload ingestion (custom chunking path — **`CUSTOM_CHUNKING_WEB_ENABLED`**)
+- ENV `CUSTOM_CHUNKING_WEB_ENABLED=true` activates the optimized web path in
+  `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments`.
+- Default: **false** (legacy OWRPGSX6XK data source with Bedrock FM-parsing).
+- When enabled: `CustomChunkingPipeline` → `SingleFileChunkingService` →
+  `FileMultimodalRouter` (model selection: Sonnet 4.6 text, Opus 4.7 multimodal) →
+  `ClaudeChunkingClient` (Anthropic Messages API, sync, 1 call per file or N parallel per PDF page) →
+  `BatchResultsParserService` (ingestion_path="web_v1") → `BulkKbSyncService` (BEDROCK_BULK_DATA_SOURCE_ID, chunking=NONE).
+- PDF pages filtered by `PageRelevanceFilter` (heuristics + Haiku 4.5 gating) before Claude calls.
+- Conservative downgrade: pages with text_chars>500 & image_ratio<0.20 → Sonnet (not Opus).
+- Scanned images (text_layer<100, image_ratio>0.7): kept, forced to Opus.
+- Parallel page calls capped at `MAX_PARALLEL_PAGES=8` (wave processing).
+- Fallback on any error: `KbSyncService` (OWRPGSX6XK legacy). User never loses the upload.
+- Cost tracking: `TrackBedrockQueryJob` with `model_id` suffix `-direct` (distinguishes from batch-API rates).
+  `user_query: "web_parse: <filename>"` or `"web_parse: <filename> p<N>/<M>"` for pages.
+- Office documents (.docx, .xlsx, etc.) converted to PDF via `OfficeToPdfConverter` (LibreOffice headless).
+- Alias fallback: `LambdaParityAliasFallback` fires when LLM returns empty aliases (Lambda generate_aliases port).
+- No new DB columns: ChunkAsset is a plain Struct (not AR). `ingestion_path="web_v1"` in sidecar metadata.
+- Rollout: deploy with flag OFF → smoke-test staging with flag ON → `CUSTOM_CHUNKING_WEB_ENABLED=true` in prod.
+- TODO multi-tenant Stage 1: pass tenant from job.arguments into SingleFileChunkingService.
+
 Bedrock / RAG
 - retrieve_and_generate (HYBRID search) for answers; retrieve (vector only)
   for alias extraction.

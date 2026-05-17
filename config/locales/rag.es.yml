@@ -2,10 +2,13 @@
 es:
   rag:
     document_indexing_message: "Tu documento está siendo procesado. Estará listo para consultas en breve. Puedes seguir haciendo consultas sobre los documentos ya indexados."
-    image_indexing_message: "Tu imagen está siendo indexada en la Base de Conocimiento. Tu consulta se enviará automáticamente cuando la indexación finalice."
+    image_indexing_message: "Recibí tu foto, la estoy preparando. En unos segundos te cuento qué veo y puedes preguntarme lo que necesites."
+    image_summary_invite: "Cuéntame qué necesitas — estoy aquí para lo que sea, cualquier pregunta está bien."
     document_indexed_message: "El archivo %{filename} terminó de sincronizarse en la Base de Conocimiento y está listo para consultas."
     documents_indexed_message: "%{count} archivos fueron sincronizados en la Base de Conocimiento y están listos para consultas."
-    document_indexing_failed_message: "La indexación del documento falló. Por favor, inténtalo de nuevo."
+    document_indexing_failed_message: "No pude terminar con tu archivo. Prueba enviarlo de nuevo en unos segundos."
+    upload_retrying_aurora: "Está tardando un poco más de lo habitual — sigo con tu foto, en un momento te cuento."
+    image_indexing_stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     no_results_found: "No se encontró información sobre tu consulta. Sube un archivo para ampliar la base de conocimiento y, una vez sincronizado, podrás hacer consultas sobre ese archivo."
     image_compression_failed: "La imagen excede el límite de 3.75 MB. Comprímela o reduce su tamaño e inténtalo de nuevo."
     ingestion_failed_file_too_large: "Un archivo supera el límite (imágenes: 3.75 MB, documentos: 50 MB). Redúcelo e inténtalo de nuevo."

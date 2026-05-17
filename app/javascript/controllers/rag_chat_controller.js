@@ -16,11 +16,23 @@ export default class extends Controller {
   static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
   static BINARY_DOC_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"]
 
-  // Show a "taking longer than usual" notice if the KbSync `indexed` broadcast
-  // has not arrived within this window. WebSockets can drop on flaky mobile
-  // networks (technician inside an elevator shaft) and Solid Cable does not
-  // replay missed messages, so the only recovery is a manual reload.
+  // First warm nudge shown inside the loading bubble if `indexed` has not
+  // arrived after this short window — gives the technician human company
+  // while waiting, especially on flaky field connections.
+  static INDEXING_NUDGE_MS = 10 * 1000
+
+  // Last-resort notice if `indexed` still hasn't arrived — prompts reload.
+  // WebSockets can drop on flaky mobile networks (technician inside an elevator
+  // shaft) and Solid Cable does not replay missed messages.
   static INDEXING_STALL_MS = 90 * 1000
+
+  // Typing dots inside the assistant bubble while waiting for KB indexing or retry copy.
+  static INDEXING_TYPING_DOTS_HTML =
+    `<span style="display:inline-flex;gap:5px;align-items:center;padding:2px 0;">` +
+    `<span class="chat-typing-dot"></span>` +
+    `<span class="chat-typing-dot"></span>` +
+    `<span class="chat-typing-dot"></span>` +
+    `</span>`
 
   // SVG icons for message avatars (mobile + desktop)
   static USER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`
@@ -30,6 +42,9 @@ export default class extends Controller {
     this.pendingFile = null
     this.pendingImageQuery = null
     this.indexingLoadingId = null
+    this.kbSyncInProgress = false
+    this.retryNoticeId = null
+    this.indexingNudgeTimer = null
     this.indexingStallTimer = null
     this.indexingStallNoticeId = null
     this._docsPanelExpanded = true  // tracks empty-chat state on mobile
@@ -47,6 +62,7 @@ export default class extends Controller {
     this.mobilePanelObserver?.disconnect()
     window.removeEventListener("resize", this._onResize)
     this.teardownKeyboardLift()
+    this.clearIndexingNudgeTimer()
     this.clearIndexingStallTimer()
   }
 
@@ -57,7 +73,18 @@ export default class extends Controller {
     const consumer = createConsumer()
     this.kbSyncSubscription = consumer.subscriptions.create("KbSyncChannel", {
       received(data) {
+        if (data.status === "retrying") {
+          controller.updateIndexingLoadingForRetry(data)
+          controller.clearIndexingNudgeTimer()
+          controller.clearIndexingStallTimer()
+          controller.startIndexingStallTimer()
+          return
+        }
+
         if (data.status === "indexed" || data.status === "failed") {
+          controller.kbSyncInProgress = false
+          controller.clearIndexingNudgeTimer()
+          controller.clearRetryFallbackNotice()
           controller.clearIndexingStallTimer()
           if (controller.indexingLoadingId) {
             controller.removeMessage(controller.indexingLoadingId)
@@ -65,7 +92,11 @@ export default class extends Controller {
           }
           controller.refreshDocuments()
           if (data.status === "indexed") {
-            controller.addIndexedMessage(data)
+            if (data.summary && !controller.pendingImageQuery) {
+              controller.addImageSummaryMessage(data)
+            } else {
+              controller.addIndexedMessage(data)
+            }
           } else if (data.message) {
             controller.addMessage(data.message, "error")
           }
@@ -253,15 +284,21 @@ export default class extends Controller {
       }
 
       // For image/document uploads, KEEP the same dots bubble alive until
-      // KbSyncChannel signals "indexed" (or "failed"). No intermediate text
-      // bubble is shown — only the typing animation, then the ✅ canonical name.
+      // KbSyncChannel signals "indexed" (or "failed"). Show an immediate warm
+      // acknowledgment inside the bubble, then a nudge at 10 s if still waiting.
       if (data.images_uploaded?.length) {
         this.indexingLoadingId = loadingId
+        this.kbSyncInProgress = true
         if (question) this.pendingImageQuery = question
+        this.setIndexingLoadingAcknowledgment(data.answer || this._indexingWarmCopy("ack"))
+        this.startIndexingNudgeTimer()
         this.startIndexingStallTimer()
         this.refreshDocuments()
       } else if (data.documents_uploaded?.length) {
         this.indexingLoadingId = loadingId
+        this.kbSyncInProgress = true
+        this.setIndexingLoadingAcknowledgment(data.answer || this._indexingWarmCopy("ack"))
+        this.startIndexingNudgeTimer()
         this.startIndexingStallTimer()
         this.refreshDocuments()
       } else {
@@ -278,7 +315,11 @@ export default class extends Controller {
       }
     } catch (error) {
       this.removeMessage(loadingId)
-      this.addMessage(`Error: ${error.message}`, "error")
+      const lang = (document.documentElement.lang || "es").toLowerCase()
+      const friendlyError = lang.startsWith("en")
+        ? "Something went wrong on my end. Please try again in a moment."
+        : "Algo falló de mi parte. Inténtalo de nuevo en un momento."
+      this.addMessage(friendlyError, "error")
     } finally {
       this.enableForm()
     }
@@ -457,11 +498,9 @@ export default class extends Controller {
     const id  = `msg-${Date.now()}`
     const row = this._buildMessageRow("assistant", id, true)
     row.querySelector(".chat-message").innerHTML =
-      `<span style="display:inline-flex;gap:5px;align-items:center;padding:2px 0;">` +
-      `<span class="chat-typing-dot"></span>` +
-      `<span class="chat-typing-dot"></span>` +
-      `<span class="chat-typing-dot"></span>` +
-      `</span>`
+      `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
+      this.constructor.INDEXING_TYPING_DOTS_HTML +
+      `</div>`
     this.messagesTarget.appendChild(row)
     this.scroll()
     return id
@@ -503,11 +542,75 @@ export default class extends Controller {
     this.scroll()
   }
 
+  // Drops the row by id, then removes any other [data-temporary] chat rows (e.g. stall banner).
+  // Aurora retry copy lives inside the indexing loading bubble, so it is not a separate temporary row.
   removeMessage(id) {
     document.getElementById(id)?.remove()
     this.messagesTarget
       .querySelectorAll("[data-temporary]")
       .forEach(el => el.remove())
+  }
+
+  clearRetryFallbackNotice() {
+    if (!this.retryNoticeId) return
+    document.getElementById(this.retryNoticeId)?.remove()
+    this.retryNoticeId = null
+  }
+
+  // KbSync `retrying`: update the active indexing spinner with dots + server message.
+  // Every `retrying` broadcast replaces only the bubble content; dots are re-injected so
+  // the animation continues. Scrolls the row into view. Fallback (no indexing bubble yet)
+  // injects an equivalent dots+message assistant bubble, cleared on indexed/failed.
+  _indexingWarmCopy(kind) {
+    const lang = (document.documentElement.lang || "es").toLowerCase()
+    const table = lang.startsWith("en") ? {
+      ack:   "Got your photo, I'm getting it ready — ask me anything you need.",
+      nudge: "Still working on your photo — sometimes it takes a moment, especially with the connection in the field. I'll be with you shortly.",
+      retry: "Taking a bit longer than usual — still on your photo, I'll be with you in a moment.",
+      stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
+    } : {
+      ack:   "Recibí tu foto, la estoy preparando — puedes preguntarme lo que necesites.",
+      nudge: "Sigo con tu foto — a veces tarda un poco más por la señal en campo. En un momento te cuento qué veo.",
+      retry: "Está tardando un poco más de lo habitual — sigo con tu foto, en un momento te cuento.",
+      stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
+    }
+    return table[kind] || table.retry
+  }
+
+  updateIndexingLoadingForRetry(data) {
+    const message = (data.message && data.message.trim()) || this._indexingWarmCopy("retry")
+
+    const retryInnerHtml =
+      `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
+      this.constructor.INDEXING_TYPING_DOTS_HTML +
+      `<span style="font-size:13px;line-height:1.45;font-weight:500;">${this.escapeHtml(message)}</span>` +
+      `</div>`
+
+    if (this.indexingLoadingId) {
+      this.clearRetryFallbackNotice()
+      const row    = document.getElementById(this.indexingLoadingId)
+      const bubble = row?.querySelector(".chat-message")
+      if (!bubble) return
+
+      bubble.innerHTML = retryInnerHtml
+      row.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      this.scroll()
+      return
+    }
+
+    // Fallback: no indexing bubble (race — kbSyncInProgress or late cable subscribe).
+    // Reuse or create a persistent assistant bubble with the same dots+message layout.
+    if (this.retryNoticeId) {
+      const bubble = document.getElementById(this.retryNoticeId)?.querySelector(".chat-message")
+      if (bubble) bubble.innerHTML = retryInnerHtml
+    } else {
+      const id  = `msg-${Date.now()}`
+      const row = this._buildMessageRow("assistant", id, false)
+      row.querySelector(".chat-message").innerHTML = retryInnerHtml
+      this.messagesTarget.appendChild(row)
+      this.retryNoticeId = id
+    }
+    this.scroll()
   }
 
   scroll() {
@@ -610,6 +713,37 @@ export default class extends Controller {
     return div.innerHTML
   }
 
+  // ── Immediate acknowledgment in the loading bubble ────────────────────────
+  // Updates the dots bubble with a warm first line so the technician sees
+  // human company from the very first second, not just a spinner.
+  setIndexingLoadingAcknowledgment(text) {
+    if (!this.indexingLoadingId) return
+    const row    = document.getElementById(this.indexingLoadingId)
+    const bubble = row?.querySelector(".chat-message")
+    if (!bubble) return
+    bubble.innerHTML =
+      `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
+      this.constructor.INDEXING_TYPING_DOTS_HTML +
+      `<span style="font-size:13px;line-height:1.45;">${this.escapeHtml(text)}</span>` +
+      `</div>`
+  }
+
+  // ── 10-second nudge — still waiting, stay calm ────────────────────────────
+  startIndexingNudgeTimer() {
+    this.clearIndexingNudgeTimer()
+    this.indexingNudgeTimer = setTimeout(() => {
+      if (!this.kbSyncInProgress) return
+      this.setIndexingLoadingAcknowledgment(this._indexingWarmCopy("nudge"))
+    }, this.constructor.INDEXING_NUDGE_MS)
+  }
+
+  clearIndexingNudgeTimer() {
+    if (this.indexingNudgeTimer) {
+      clearTimeout(this.indexingNudgeTimer)
+      this.indexingNudgeTimer = null
+    }
+  }
+
   // ── Stall notice while waiting for KbSync `indexed` broadcast ─────────────
   // Backend ingestion runs ~30-90s for a typical image (S3 upload + Bedrock
   // ingestion poll + Opus chunk-alias extraction). If the WebSocket dropped
@@ -619,8 +753,8 @@ export default class extends Controller {
     this.clearIndexingStallTimer()
     this.indexingStallTimer = setTimeout(() => {
       this.indexingStallNoticeId = this.addMessage(
-        "⚠️ Está tardando más de lo normal — recarga la página si no se actualiza.",
-        "system",
+        this._indexingWarmCopy("stall"),
+        "assistant",
         true  // temporary: removed alongside other temp rows on next removeMessage()
       )
     }, this.constructor.INDEXING_STALL_MS)
@@ -638,19 +772,58 @@ export default class extends Controller {
   }
 
   addIndexedMessage(data) {
-    const row = this._buildMessageRow("system")
+    const row = this._buildMessageRow("assistant")
     const bubble = row.querySelector(".chat-message")
 
     const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Documento"
-    const aliases = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
+    const aliases   = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
+    const lang      = (document.documentElement.lang || "es").toLowerCase()
+    const readyLine = lang.startsWith("en")
+      ? "Ready — you can ask me anything about this."
+      : "Listo, ya puedes preguntarme lo que necesites sobre esto."
 
-    let html = `<span>✅ <strong>${this.escapeHtml(canonical)}</strong> indexado correctamente.</span>`
+    let html = `<div style="font-weight:600;">${this.escapeHtml(canonical)}</div>`
     if (aliases) {
       const pills = aliases.map(a =>
-        `<span style="display:inline-block;background:#e2e8f0;border-radius:9999px;padding:1px 8px;font-size:11px;margin:2px 2px 0 0;">${this.escapeHtml(a)}</span>`
+        `<span style="display:inline-block;background:#e2e8f0;border-radius:9999px;padding:1px 8px;font-size:11px;margin:2px 2px 0 0;color:#4a5568;">${this.escapeHtml(a)}</span>`
       ).join("")
-      html += `<div style="margin-top:4px;font-size:12px;color:#4a5568;">Consúltame por: ${pills}</div>`
+      html += `<div style="margin-top:4px;">${pills}</div>`
     }
+    html += `<div style="margin-top:6px;">${this.escapeHtml(readyLine)}</div>`
+
+    bubble.innerHTML = html
+    this.messagesTarget.appendChild(row)
+    this.scroll()
+  }
+
+  addImageSummaryMessage(data) {
+    const row = this._buildMessageRow("assistant")
+    const bubble = row.querySelector(".chat-message")
+
+    const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Imagen"
+    const aliases   = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
+    const lang      = (document.documentElement.lang || "es").toLowerCase()
+
+    const inviteFallback = lang.startsWith("en")
+      ? "Tell me what you need — you can ask in just a word or two, that\u2019s fine."
+      : "Cu\u00e9ntame qu\u00e9 necesitas, puedo ayudarte aunque me preguntes con pocas palabras."
+    const invite = (data.companion_offer && data.companion_offer.trim())
+      ? data.companion_offer.trim()
+      : inviteFallback
+
+    let html = `<div style="font-weight:600;">${this.escapeHtml(canonical)}</div>`
+
+    if (aliases) {
+      const pills = aliases.map(a =>
+        `<span style="display:inline-block;background:#e2e8f0;border-radius:9999px;padding:1px 8px;font-size:11px;margin:2px 2px 0 0;color:#4a5568;">${this.escapeHtml(a)}</span>`
+      ).join("")
+      html += `<div style="margin-top:5px;">${pills}</div>`
+    }
+
+    if (data.summary) {
+      html += `<div style="margin-top:10px;line-height:1.55;">${this.escapeHtml(data.summary)}</div>`
+    }
+    html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
 
     bubble.innerHTML = html
     this.messagesTarget.appendChild(row)

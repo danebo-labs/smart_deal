@@ -10,7 +10,7 @@
   
       <!-- DAILY METRICS CARDS -->
       <!-- Each card uses a shared partial -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-8">
   
         <%= render partial: "metric_card", locals: {
           title: "Tokens Hoy",
@@ -53,6 +53,24 @@
             📄 <%= @current_metrics[:s3_size_mb] %> MB
           </div>
         </div>
+
+        <%= render partial: "metric_card", locals: {
+          title: "Haiku (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_haiku].to_i),
+          color: "text-yellow-600"
+        } %>
+
+        <%= render partial: "metric_card", locals: {
+          title: "Parsing Opus (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_parse_opus].to_i),
+          color: "text-orange-600"
+        } %>
+
+        <%= render partial: "metric_card", locals: {
+          title: "Parsing Sonnet 4.6 (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_parse_sonnet].to_i),
+          color: "text-indigo-600"
+        } %>
   
       </div>
   

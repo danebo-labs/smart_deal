@@ -15,6 +15,11 @@ class BedrockQuery < ApplicationRecord
     # Anthropic direct API — Batch (50% off standard). Used by bulk ingestion pipeline.
     # cache_read: 10% of base input; cache_creation: 125% of base input — both at batch rate.
     'claude-opus-4-7'                                  => { input: 0.0075,  output: 0.0375,  cache_read: 0.00075,  cache_creation: 0.009375 },
+    # Anthropic direct API — Standard (non-batch). Used by web custom chunking path (CUSTOM_CHUNKING_WEB_ENABLED).
+    # Suffix -direct distinguishes direct-API rates from batch rates in analytics.
+    'claude-opus-4-7-direct'                           => { input: 0.015,   output: 0.075,   cache_read: 0.0015,   cache_creation: 0.01875  },
+    'claude-sonnet-4-6-direct'                         => { input: 0.003,   output: 0.015,   cache_read: 0.0003,   cache_creation: 0.00375  },
+    'claude-haiku-4-5-20251001-direct'                 => { input: 0.0008,  output: 0.004,   cache_read: 0.00008,  cache_creation: 0.001    },
     # Claude 4.6 / 4.5 — Inference Profiles Globales (prices per 1K tokens, i.e. $/1M)
     'global.anthropic.claude-sonnet-4-6'               => { input: 0.003,  output: 0.015  },
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },

@@ -2,9 +2,9 @@
 <div class="flex flex-col gap-1" data-chat-usage-metrics="true">
   <div class="flex items-center gap-5 flex-wrap justify-end">
     <%= render partial: "home/usage_pill", locals: {
-      label:  "Consultas (Haiku)",
-      tokens: current_metrics[:today_tokens_query],
-      cost:   current_metrics[:today_cost_query],
+      label:  "Haiku",
+      tokens: current_metrics[:today_tokens_haiku],
+      cost:   current_metrics[:today_cost_haiku],
       strong: false
     } %>
 
@@ -12,8 +12,17 @@
 
     <%= render partial: "home/usage_pill", locals: {
       label:  "Parsing (Opus)",
-      tokens: current_metrics[:today_tokens_parse],
-      cost:   current_metrics[:today_cost_parse],
+      tokens: current_metrics[:today_tokens_parse_opus],
+      cost:   current_metrics[:today_cost_parse_opus],
+      strong: false
+    } %>
+
+    <div class="w-px h-6 bg-[hsl(215,20%,88%)]"></div>
+
+    <%= render partial: "home/usage_pill", locals: {
+      label:  "Parsing (Sonnet 4.6)",
+      tokens: current_metrics[:today_tokens_parse_sonnet],
+      cost:   current_metrics[:today_cost_parse_sonnet],
       strong: false
     } %>
 

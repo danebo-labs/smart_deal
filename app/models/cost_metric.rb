@@ -15,7 +15,13 @@ class CostMetric < ApplicationRecord
     daily_cost_parse: 10,
     daily_cost_embed: 11,
     daily_cache_hits: 12,
-    daily_tokens_saved: 13
+    daily_tokens_saved: 13,
+    daily_tokens_haiku:        14,
+    daily_cost_haiku:          15,
+    daily_tokens_parse_opus:   16,
+    daily_cost_parse_opus:     17,
+    daily_tokens_parse_sonnet: 18,
+    daily_cost_parse_sonnet:   19
   }
 
   # Ensure metric_type always returns a symbol
@@ -45,6 +51,9 @@ class CostMetric < ApplicationRecord
     daily_cost_query daily_cost_parse daily_cost_embed
     daily_cache_hits daily_tokens_saved
     aurora_acu_avg s3_documents_count s3_total_size
+    daily_tokens_haiku daily_cost_haiku
+    daily_tokens_parse_opus daily_cost_parse_opus
+    daily_tokens_parse_sonnet daily_cost_parse_sonnet
   ].freeze
 
   # Returns the view-shape hash consumed by `home/_chat_usage_footer_metrics`
@@ -72,6 +81,12 @@ class CostMetric < ApplicationRecord
       today_cost_embed:    by_type[:daily_cost_embed]    || 0,
       today_cache_hits:    by_type[:daily_cache_hits]    || 0,
       today_tokens_saved:  by_type[:daily_tokens_saved]  || 0,
+      today_tokens_haiku:        by_type[:daily_tokens_haiku]        || 0,
+      today_cost_haiku:          by_type[:daily_cost_haiku]          || 0,
+      today_tokens_parse_opus:   by_type[:daily_tokens_parse_opus]   || 0,
+      today_cost_parse_opus:     by_type[:daily_cost_parse_opus]     || 0,
+      today_tokens_parse_sonnet: by_type[:daily_tokens_parse_sonnet] || 0,
+      today_cost_parse_sonnet:   by_type[:daily_cost_parse_sonnet]   || 0,
       aurora_acu:          by_type[:aurora_acu_avg]      || 0,
       s3_documents:        by_type[:s3_documents_count]  || 0,
       s3_size_mb:          (s3_bytes / 1.megabyte.to_f).round(2),

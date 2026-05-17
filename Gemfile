@@ -52,6 +52,7 @@ gem 'ruby-vips'
 
 # PDF processing
 gem 'pdf-reader'
+gem 'hexapdf'
 
 # OpenAI integration
 gem 'ruby-openai'

@@ -330,24 +330,13 @@ class BedrockRagService
     []
   end
 
-  AURORA_RESUME_PATTERN = /aurora.*auto-paused|resuming after being auto-paused/i.freeze
-  AURORA_RETRY_DELAYS   = [ 15, 30, 45 ].freeze  # seconds between attempts
-
   # Retries the retrieve_and_generate call when Aurora Serverless is cold-starting.
-  # Aurora can take up to 60s to resume; three attempts cover the typical warm-up window.
+  # Delegates to Bedrock::AuroraColdStartRetry (shared with KbSyncService).
   def retrieve_and_generate_with_retry(params)
-    attempts = 0
-    begin
-      attempts += 1
+    Bedrock::AuroraColdStartRetry.with_retry(
+      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
+    ) do
       @client.retrieve_and_generate(params)
-    rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
-      delay = AURORA_RETRY_DELAYS[attempts - 1]
-      if delay && e.message.match?(AURORA_RESUME_PATTERN)
-        Rails.logger.warn("[RAG] Aurora auto-pause detected (attempt #{attempts}). Waiting #{delay}s before retry...")
-        sleep(delay)
-        retry
-      end
-      raise
     end
   end
 

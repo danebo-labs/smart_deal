@@ -213,4 +213,92 @@ class KbSyncServiceTest < ActiveSupport::TestCase
       assert_equal 'first-ds', result[:data_source_id]
     end
   end
+
+  # ============================================
+  # Aurora cold-start retry (Fix 2)
+  # ============================================
+
+  class AuroraColdStartFakeClient < FakeBedrockAgentClient
+    attr_accessor :fail_count
+
+    def initialize(*)
+      super
+      @fail_count = 1
+      @calls = 0
+    end
+
+    def start_ingestion_job(params)
+      @calls += 1
+      if @calls <= @fail_count
+        raise Aws::BedrockAgent::Errors::ServiceError.new(
+          nil,
+          "resuming after being auto-paused"
+        )
+      end
+      super
+    end
+  end
+
+  def with_fast_aurora_sleep
+    orig = Bedrock::AuroraColdStartRetry.method(:sleep_for)
+    sleep_calls = []
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for) { |n| sleep_calls << n }
+    yield sleep_calls
+  ensure
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for, orig)
+  end
+
+  test 'retries once on Aurora cold-start and succeeds' do
+    fake_client = AuroraColdStartFakeClient.new
+    original_new = Aws::BedrockAgent::Client.method(:new)
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |*_args| fake_client }
+
+    with_fast_aurora_sleep do |sleep_calls|
+      service = KbSyncService.new
+      result = service.sync!(uploaded_filenames: [ 'pump.pdf' ])
+      assert_equal TEST_JOB_ID, result[:job_id]
+      assert_equal [ 15 ], sleep_calls, "expected exactly one retry sleep of 15s"
+    end
+  ensure
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |*args| original_new.call(*args) }
+  end
+
+  test 'broadcasts retrying on Aurora cold-start' do
+    fake_client = AuroraColdStartFakeClient.new
+    original_new = Aws::BedrockAgent::Client.method(:new)
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |*_args| fake_client }
+
+    broadcasts = []
+    orig_broadcast = ActionCable.server.method(:broadcast)
+    ActionCable.server.define_singleton_method(:broadcast) do |channel, payload|
+      broadcasts << payload if channel == "kb_sync"
+    end
+
+    with_fast_aurora_sleep do |_sleep_calls|
+      service = KbSyncService.new
+      service.sync!(uploaded_filenames: [ 'pump.pdf' ])
+    end
+
+    retrying = broadcasts.find { |b| b[:status] == "retrying" }
+    assert retrying, "expected a retrying broadcast"
+    assert_equal [ 'pump.pdf' ], retrying[:filenames]
+    assert_equal 1, retrying[:attempt]
+  ensure
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |*args| original_new.call(*args) }
+    ActionCable.server.define_singleton_method(:broadcast, orig_broadcast)
+  end
+
+  test 'raises after exhausting all retry attempts' do
+    fake_client = AuroraColdStartFakeClient.new
+    fake_client.fail_count = 10
+    original_new = Aws::BedrockAgent::Client.method(:new)
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |*_args| fake_client }
+
+    with_fast_aurora_sleep do |_sleep_calls|
+      service = KbSyncService.new
+      assert_raises(Aws::BedrockAgent::Errors::ServiceError) { service.sync! }
+    end
+  ensure
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |*args| original_new.call(*args) }
+  end
 end

@@ -40,10 +40,17 @@ class KbSyncService
     ds_id = find_data_source_id
     return nil unless ds_id
 
-    job = @client.start_ingestion_job(
-      knowledge_base_id: @kb_id,
-      data_source_id: ds_id
-    )
+    job = Bedrock::AuroraColdStartRetry.with_retry(
+      error_classes: [ Aws::BedrockAgent::Errors::ServiceError ],
+      on_retry: ->(attempt, delay) {
+        KbSyncBroadcaster.retrying(filenames: uploaded_filenames, attempt: attempt, delay: delay)
+      }
+    ) do
+      @client.start_ingestion_job(
+        knowledge_base_id: @kb_id,
+        data_source_id: ds_id
+      )
+    end
 
     job_id = job.ingestion_job.ingestion_job_id
     Rails.logger.info("KbSyncService: Ingestion job started — #{job_id} (#{job.ingestion_job.status})")
@@ -51,7 +58,8 @@ class KbSyncService
     IngestionStatusService.new(kb_id: @kb_id, data_source_id: ds_id).register_ingestion(job_id, uploaded_filenames)
     { job_id: job_id, kb_id: @kb_id, data_source_id: ds_id }
   rescue StandardError => e
-    Rails.logger.error("KbSyncService: Failed to start ingestion — #{e.message}")
+    Rails.logger.error("KbSyncService: Failed to start ingestion — #{e.class}: #{e.message}")
+    Rails.logger.error(e.backtrace.first(10).join("\n"))
     raise
   end
 
@@ -80,7 +88,8 @@ class KbSyncService
 
     summaries.first&.data_source_id
   rescue StandardError => e
-    Rails.logger.error("KbSyncService: Failed to list data sources — #{e.message}")
+    Rails.logger.error("KbSyncService: Failed to list data sources — #{e.class}: #{e.message}")
+    Rails.logger.error(e.backtrace.first(10).join("\n"))
     raise
   end
 end

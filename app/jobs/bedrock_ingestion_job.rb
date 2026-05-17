@@ -30,28 +30,31 @@ class BedrockIngestionJob < ApplicationJob
   POLL_INTERVAL = 5.seconds
   TIMEOUT = 15.minutes
 
-  # @param conv_session_id [Integer, nil] ConversationSession#id — for alias registration
-  # @param started_at_iso [String, nil] ISO8601 timestamp of the FIRST perform; only used
-  #   in re-enqueue mode to enforce TIMEOUT across re-enqueues.
-  # whatsapp_from / whatsapp_to accepted but ignored — WA channel disabled for MVP.
-  # Kept in signature so any serialized jobs still in Solid Queue deserialize cleanly.
+  # @param conv_session_id   [Integer, nil] ConversationSession#id — for entity registration
+  # @param web_v1_metadata   [Array<Hash>, nil] canonical_name + aliases per filename,
+  #   built by CustomChunkingPipeline. When present, KbDocument enrichment uses this
+  #   directly — no Bedrock retrieve call needed.
+  # **_legacy_kwargs captures whatsapp_from/whatsapp_to from jobs already serialised
+  # in Solid Queue before this deploy; they are silently ignored.
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
-              whatsapp_from: nil, whatsapp_to: nil, conv_session_id: nil,
-              kb_document_ids: nil, started_at_iso: nil) # rubocop:disable Lint/UnusedMethodArgument
+              conv_session_id: nil, kb_document_ids: nil, started_at_iso: nil,
+              web_v1_metadata: nil, **_legacy_kwargs)
     return if ingestion_job_id.blank?
 
     if reenqueue_mode?
       perform_reenqueue(ingestion_job_id, uploaded_filenames,
                         kb_id: kb_id, data_source_id: data_source_id,
                         conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
-                        started_at_iso: started_at_iso)
+                        started_at_iso: started_at_iso, web_v1_metadata: web_v1_metadata)
     else
       perform_legacy(ingestion_job_id, uploaded_filenames,
                      kb_id: kb_id, data_source_id: data_source_id,
-                     conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
+                     conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
+                     web_v1_metadata: web_v1_metadata)
     end
   rescue StandardError => e
-    Rails.logger.error("BedrockIngestionJob failed: #{e.message}")
+    Rails.logger.error("BedrockIngestionJob failed: #{e.class}: #{e.message}")
+    Rails.logger.error(e.backtrace.first(10).join("\n"))
     broadcast_failed(uploaded_filenames, "error", e.message)
   end
 
@@ -64,7 +67,7 @@ class BedrockIngestionJob < ApplicationJob
   # Single status check + finalize-or-reenqueue. Frees the worker thread between
   # polls so other queued jobs (TrackBedrockQueryJob, TrackIngestionUsageJob, a
   # second concurrent upload) make progress while Bedrock is still indexing.
-  def perform_reenqueue(ingestion_job_id, uploaded_filenames, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:, started_at_iso:)
+  def perform_reenqueue(ingestion_job_id, uploaded_filenames, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:, started_at_iso:, web_v1_metadata:)
     started_at = parse_started_at(started_at_iso)
     raise Timeout::Error, "Ingestion #{ingestion_job_id} timed out" if Time.current - started_at > TIMEOUT
 
@@ -74,21 +77,23 @@ class BedrockIngestionJob < ApplicationJob
     if status.in?(%w[COMPLETE FAILED STOPPED])
       finalize(ingestion_job_id, status, uploaded_filenames, service,
                kb_id: kb_id, data_source_id: data_source_id,
-               conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
+               conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
+               web_v1_metadata: web_v1_metadata)
     else
       self.class.set(wait: POLL_INTERVAL).perform_later(
         ingestion_job_id, uploaded_filenames,
-        kb_id:           kb_id,
-        data_source_id:  data_source_id,
-        conv_session_id: conv_session_id,
-        kb_document_ids: kb_document_ids,
-        started_at_iso:  started_at.iso8601
+        kb_id:            kb_id,
+        data_source_id:   data_source_id,
+        conv_session_id:  conv_session_id,
+        kb_document_ids:  kb_document_ids,
+        started_at_iso:   started_at.iso8601,
+        web_v1_metadata:  web_v1_metadata
       )
     end
   end
 
   # Legacy path: one perform call blocks until terminal status (or TIMEOUT).
-  def perform_legacy(ingestion_job_id, uploaded_filenames, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:)
+  def perform_legacy(ingestion_job_id, uploaded_filenames, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:, web_v1_metadata:)
     service = IngestionStatusService.new(kb_id: kb_id, data_source_id: data_source_id)
     started_at = Time.current
 
@@ -104,15 +109,17 @@ class BedrockIngestionJob < ApplicationJob
     status = service.job_status(ingestion_job_id)
     finalize(ingestion_job_id, status, uploaded_filenames, service,
              kb_id: kb_id, data_source_id: data_source_id,
-             conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
+             conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
+             web_v1_metadata: web_v1_metadata)
   end
 
   # Shared completion path for both legacy and re-enqueue modes.
-  def finalize(ingestion_job_id, status, uploaded_filenames, service, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:)
+  def finalize(ingestion_job_id, status, uploaded_filenames, service, kb_id:, data_source_id:, conv_session_id:, kb_document_ids:, web_v1_metadata:)
     service.clear_when_complete(ingestion_job_id)
 
     if status == "COMPLETE"
-      notify_indexed(uploaded_filenames, kb_id: kb_id, conv_session_id: conv_session_id, kb_document_ids: kb_document_ids)
+      notify_indexed(uploaded_filenames, kb_id: kb_id, conv_session_id: conv_session_id,
+                     kb_document_ids: kb_document_ids, web_v1_metadata: web_v1_metadata)
       TrackIngestionUsageJob.perform_later(
         uploaded_filenames: Array(uploaded_filenames),
         ingestion_job_id:   ingestion_job_id,
@@ -141,12 +148,11 @@ class BedrockIngestionJob < ApplicationJob
     end
   end
 
-  # Broadcasts per-file indexing completion to web clients via ActionCable.
-  # Called after canonical name / alias extraction so the UI can display
-  # the human-readable name and known aliases — same richness as WhatsApp.
   def broadcast_indexed(filename, result = nil)
-    canonical = result&.dig(:canonical_name).to_s.strip.presence || File.basename(filename, ".*").tr("_-", " ").strip
-    aliases   = Array(result&.dig(:aliases)).first(5).map(&:to_s).compact_blank
+    canonical       = result&.dig(:canonical_name).to_s.strip.presence || File.basename(filename, ".*").tr("_-", " ").strip
+    aliases         = Array(result&.dig(:aliases)).first(5).map(&:to_s).compact_blank
+    summary         = result&.dig(:summary).to_s.presence
+    companion_offer = result&.dig(:companion_offer).to_s.presence
 
     message = if aliases.any?
       I18n.t("rag.whatsapp_indexed_with_aliases",
@@ -159,72 +165,66 @@ class BedrockIngestionJob < ApplicationJob
     end
 
     ActionCable.server.broadcast("kb_sync", {
-      status:         "indexed",
-      filenames:      [ filename ],
-      canonical_name: canonical,
-      aliases:        aliases,
-      message:        message
+      status:          "indexed",
+      filenames:       [ filename ],
+      canonical_name:  canonical,
+      aliases:         aliases,
+      summary:         summary,
+      companion_offer: companion_offer,
+      message:         message
     })
   end
 
-  def notify_indexed(uploaded_filenames, kb_id:, conv_session_id:, kb_document_ids: nil)
+  # Enriches KbDocuments and registers session entities for each uploaded file.
+  # Identity (canonical_name + aliases) comes from web_v1_metadata when present —
+  # no Bedrock retrieve call required. Falls back to filename stem when metadata
+  # is absent (e.g. jobs serialised before this deploy, or fallback_to_legacy path).
+  def notify_indexed(uploaded_filenames, kb_id:, conv_session_id:, kb_document_ids: nil, web_v1_metadata: nil)
     session = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
     ids     = Array(kb_document_ids)
+    lookup  = Array(web_v1_metadata).index_by { |m| m["filename"] }
 
     Array(uploaded_filenames).each_with_index do |filename, idx|
-      result = session ? extract_aliases(filename, kb_id) : nil
-      kb_doc = ids[idx] ? KbDocument.find_by(id: ids[idx]) : nil
-      if ids.any? && kb_doc.nil?
-        Rails.logger.warn("BedrockIngestionJob: kb_document_id=#{ids[idx]} not found; falling back to filename lookup")
+      result = lookup[filename]&.then do |m|
+        {
+          canonical_name:  m["canonical_name"],
+          aliases:         Array(m["aliases"]),
+          summary:         m["summary"].to_s.presence,
+          companion_offer: m["companion_offer"].to_s.presence
+        }
       end
+      kb_doc = ids[idx] ? KbDocument.find_by(id: ids[idx]) : nil
+      Rails.logger.warn("BedrockIngestionJob: kb_document_id=#{ids[idx]} not found") if ids.any? && kb_doc.nil?
       enrich_kb_document(filename, result, kb_doc: kb_doc)
       register_entity(session, filename, result, kb_doc: kb_doc) if session
       broadcast_indexed(filename, result)
     end
   end
 
-  def extract_aliases(wa_filename, kb_id)
-    effective_kb_id = kb_id.presence ||
-                      ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
-                      Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
-    return nil unless effective_kb_id
-
-    ChunkAliasExtractor.new(kb_id: effective_kb_id).call(wa_filename)
-  rescue StandardError => e
-    Rails.logger.error("BedrockIngestionJob: alias extraction failed for #{wa_filename} — #{e.message}")
-    nil
-  end
-
-  def register_entity(session, wa_filename, result, kb_doc:)
+  def register_entity(session, filename, result, kb_doc:)
     if kb_doc.nil?
-      Rails.logger.warn("BedrockIngestionJob: register_entity skipped — no KbDocument for #{wa_filename}")
+      Rails.logger.warn("BedrockIngestionJob: register_entity skipped — no KbDocument for #{filename}")
       return
     end
 
     if session.pin_kb_document!(kb_doc)
-      Rails.logger.info("BedrockIngestionJob: auto-pinned KbDocument #{kb_doc.id} (#{wa_filename}) to session #{session.id}")
+      Rails.logger.info("BedrockIngestionJob: auto-pinned KbDocument #{kb_doc.id} (#{filename}) to session #{session.id}")
     end
 
-    persist_to_technician_documents(session, wa_filename, result, kb_doc.display_s3_uri(KbDocument::KB_BUCKET))
+    persist_to_technician_documents(session, filename, result, kb_doc.display_s3_uri(KbDocument::KB_BUCKET))
   end
 
-  # Enriches the pre-created KbDocument row with the Opus canonical name + aliases.
-  # Policy: canonical always wins over the stored stem (web + WhatsApp gallery +
-  # chat uploads). The original filename stem (and machine-generated stems) are
-  # preserved as aliases so the resolver still matches either.
-  def enrich_kb_document(wa_filename, result, kb_doc: nil)
-    kb_doc ||= legacy_lookup_or_initialize(wa_filename)
+  # Enriches the pre-created KbDocument row with the canonical name + aliases from
+  # web_v1_metadata. If no kb_doc is provided, skips enrichment gracefully.
+  def enrich_kb_document(filename, result, kb_doc: nil)
     return if kb_doc.nil?
 
-    stem      = File.basename(wa_filename, ".*").tr("_-", " ").strip
+    stem      = File.basename(filename, ".*").tr("_-", " ").strip
     canonical = result&.dig(:canonical_name).to_s.strip.presence
-    machine   = KbDocument.machine_generated_filename?(wa_filename)
 
     kb_doc.display_name = canonical || kb_doc.display_name.presence || stem
 
-    alias_candidates = Array(kb_doc.aliases) + Array(result&.dig(:aliases))
-    alias_candidates << stem unless machine  # never surface wa_*/chat_* stems to users
-
+    alias_candidates = Array(kb_doc.aliases) + Array(result&.dig(:aliases)) + [ stem ]
     kb_doc.aliases = alias_candidates
                        .map { |a| a.to_s.strip }
                        .compact_blank
@@ -232,44 +232,32 @@ class BedrockIngestionJob < ApplicationJob
                        .uniq
                        .first(15)
     kb_doc.save!
-    Rails.logger.info("BedrockIngestionJob: enriched KbDocument #{kb_doc.s3_key} → '#{kb_doc.display_name}' (machine=#{machine}, aliases=#{kb_doc.aliases.size})")
+    Rails.logger.info("BedrockIngestionJob: enriched KbDocument #{kb_doc.s3_key} → '#{kb_doc.display_name}' (aliases=#{kb_doc.aliases.size})")
   rescue StandardError => e
-    Rails.logger.warn("BedrockIngestionJob: failed to enrich KbDocument for #{wa_filename} — #{e.message}")
+    Rails.logger.warn("BedrockIngestionJob: failed to enrich KbDocument for #{filename} — #{e.message}")
   end
 
-  # Used only for jobs already serialised in Solid Queue before this change.
-  def legacy_lookup_or_initialize(wa_filename)
-    m    = wa_filename.match(/\A(?:wa|chat)_(\d{4})(\d{2})(\d{2})_/)
-    date = m ? "#{m[1]}-#{m[2]}-#{m[3]}" : Date.current.iso8601
-    KbDocument.find_or_initialize_by(s3_key: "uploads/#{date}/#{wa_filename}")
-  end
-
-  def persist_to_technician_documents(session, wa_filename, result, s3_uri)
+  def persist_to_technician_documents(session, filename, result, s3_uri)
     return unless session
 
-    canonical = result ? result[:canonical_name] : wa_filename.sub(/\.[^.]+\z/, '')
+    canonical = result ? result[:canonical_name] : filename.sub(/\.[^.]+\z/, '')
     TechnicianDocument.upsert_from_entity(
       identifier:     session.identifier,
       channel:        session.channel,
       canonical_name: canonical,
       metadata: {
         "aliases"     => result ? result[:aliases] : [],
-        "wa_filename" => wa_filename,
+        "wa_filename" => filename,
         "source_uri"  => s3_uri,
         "doc_type"    => "field_image"
       }
     )
     Rails.logger.info("BedrockIngestionJob: persisted TechnicianDocument '#{canonical}' for #{session.identifier}")
   rescue StandardError => e
-    Rails.logger.warn("BedrockIngestionJob: failed to persist TechnicianDocument for #{wa_filename} — #{e.message}")
+    Rails.logger.warn("BedrockIngestionJob: failed to persist TechnicianDocument for #{filename} — #{e.message}")
   end
 
   def broadcast_failed(filenames, reason, message = nil)
-    ActionCable.server.broadcast("kb_sync", {
-      status: "failed",
-      filenames: Array(filenames).compact,
-      reason: reason,
-      message: message.presence || I18n.t("rag.document_indexing_failed_message")
-    })
+    KbSyncBroadcaster.failed(filenames: filenames, reason: reason, message: message)
   end
 end

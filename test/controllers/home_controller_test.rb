@@ -151,20 +151,28 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
   test 'metrics turbo_stream should include chat usage footer partial' do
     today = Date.current
-    CostMetric.create!(date: today, metric_type: :daily_tokens,       value: 5000)
-    CostMetric.create!(date: today, metric_type: :daily_tokens_query,  value: 3000)
-    CostMetric.create!(date: today, metric_type: :daily_tokens_parse,  value: 1000)
-    CostMetric.create!(date: today, metric_type: :daily_tokens_embed,  value: 1000)
-    CostMetric.create!(date: today, metric_type: :daily_queries,       value: 25)
+    CostMetric.create!(date: today, metric_type: :daily_tokens,              value: 5000)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_query,        value: 3000)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_parse,        value: 1500)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_embed,        value: 500)
+    CostMetric.create!(date: today, metric_type: :daily_queries,             value: 25)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_haiku,        value: 3350)
+    CostMetric.create!(date: today, metric_type: :daily_cost_haiku,          value: 0.003)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_parse_opus,   value: 1000)
+    CostMetric.create!(date: today, metric_type: :daily_cost_parse_opus,     value: 0.015)
+    CostMetric.create!(date: today, metric_type: :daily_tokens_parse_sonnet, value: 500)
+    CostMetric.create!(date: today, metric_type: :daily_cost_parse_sonnet,   value: 0.002)
 
     get '/home/metrics'
     assert_response :success
     assert_match(/data-chat-usage-metrics="true"/, response.body)
-    assert_match(/Consultas \(Haiku\)/,            response.body)
+    assert_match(/\bHaiku\b/,                      response.body)
     assert_match(/Parsing \(Opus\)/,               response.body)
+    assert_match(/Parsing \(Sonnet 4\.6\)/,        response.body)
     assert_match(/Embeddings \(Nova\)/,            response.body)
     assert_match(/Total hoy/,                      response.body)
     assert_match(/variar ±10%/,                    response.body)
+    assert_no_match(/Consultas \(Haiku\)/,         response.body)
   end
 
   test 'metrics footer shows cache savings line when cache_hits present' do

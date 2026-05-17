@@ -251,6 +251,43 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'update_database_metrics_only segregates haiku unified, opus parse, and sonnet parse' do
+    today = Date.current
+
+    create_bedrock_query(
+      input_tokens: 1000, output_tokens: 200,
+      model_id: 'claude-haiku-4-5-20251001-direct',
+      source: 'query', created_at: today.beginning_of_day
+    )
+    create_bedrock_query(
+      input_tokens: 300, output_tokens: 50,
+      model_id: 'claude-haiku-4-5-20251001-direct',
+      source: 'ingestion_parse', created_at: today.beginning_of_day
+    )
+    create_bedrock_query(
+      input_tokens: 2000, output_tokens: 400,
+      model_id: 'claude-opus-4-7-direct',
+      source: 'ingestion_parse', created_at: today.beginning_of_day
+    )
+    create_bedrock_query(
+      input_tokens: 1500, output_tokens: 300,
+      model_id: 'claude-sonnet-4-6-direct',
+      source: 'ingestion_parse', created_at: today.beginning_of_day
+    )
+
+    SimpleMetricsService.update_database_metrics_only
+
+    haiku_tok = CostMetric.find_by!(date: today, metric_type: :daily_tokens_haiku).value
+    opus_tok  = CostMetric.find_by!(date: today, metric_type: :daily_tokens_parse_opus).value
+    son_tok   = CostMetric.find_by!(date: today, metric_type: :daily_tokens_parse_sonnet).value
+
+    assert_equal 1200 + 350, haiku_tok.to_i
+    assert_equal 2400, opus_tok.to_i
+    assert_equal 1800, son_tok.to_i
+
+    assert_not_equal haiku_tok, opus_tok
+  end
+
   test 'returns 0 for all metrics when no data exists' do
     with_mock_aws_clients do |fake_cloudwatch, fake_s3, fake_rds|
       fake_cloudwatch.datapoints = []
@@ -276,6 +313,7 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
     input_tokens:, output_tokens:, model_id: 'anthropic.claude-3-haiku-20240307-v1:0',
     user_query: 'Test query',
     latency_ms: 100,
+    source: 'query',
     created_at: @test_date.beginning_of_day
   )
     BedrockQuery.create!(
@@ -284,6 +322,7 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
       output_tokens: output_tokens,
       user_query: user_query,
       latency_ms: latency_ms,
+      source: source,
       created_at: created_at
     )
   end

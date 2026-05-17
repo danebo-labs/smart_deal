@@ -1,0 +1,268 @@
+# frozen_string_literal: true
+
+# Orchestrates the web custom chunking pipeline for a single file.
+#
+# INVARIANT: one upload (filename + binary in one #call) = one identity.
+# Regardless of how many Claude requests are made internally (1 for images/text/PDFs,
+# N for pdf_mixed pages), the result is always one ChunkAsset with one canonical
+# document_name and one unified aliases list. Today only pdf_mixed issues N>1 calls;
+# the two-wave + hint + ChunkMergerService pattern extends to any future multi-call split.
+#
+# Steps:
+#   1. FileMultimodalRouter classifies the file (model + mode).
+#   2. Optional Office → PDF conversion.
+#   3. PageRelevanceFilter (per page, PDFs only).
+#   4. ClaudeChunkingClient calls — single-shot or two-wave for pdf_mixed:
+#        Wave A: anchor page (lowest kept page number) → establishes document_name.
+#        Wave B: remaining pages in parallel, receives document_name_hint.
+#   5. ChunkMergerService for pdf_mixed.
+#   6. BatchResultsParserService writes chunks + sidecars to S3.
+#
+# Returns the populated ChunkAsset (canonical_name, aliases, chunks_count, etc.).
+# Raises on unrecoverable errors — callers (CustomChunkingPipeline) handle fallback.
+#
+# @param binary        [String]  raw file bytes
+# @param content_type  [String]  MIME type
+# @param filename      [String]  original filename
+# @param s3_key        [String]  S3 key where the original file was uploaded
+# @param sha256        [String]  SHA-256 hex digest of the binary
+# @param s3_service    [#upload_text] injectable S3 client (for tests)
+class SingleFileChunkingService
+  def initialize(binary:, content_type:, filename:, s3_key:, sha256:, s3_service: nil, locale: nil)
+    @binary       = binary
+    @content_type = content_type
+    @filename     = filename
+    @s3_key       = s3_key
+    @sha256       = sha256
+    @locale       = locale
+    @s3           = s3_service || S3DocumentsService.new
+    @asset        = ChunkAsset.new(filename: filename, sha256: sha256, s3_key: s3_key, content_type: content_type)
+  end
+
+  def call
+    classification = FileMultimodalRouter.classify(
+      binary:       @binary,
+      content_type: @content_type,
+      filename:     @filename
+    )
+
+    case classification.mode
+    when :office       then handle_office
+    when :text         then handle_text
+    when :image        then handle_image(classification.model)
+    when :pdf_text_only then handle_pdf_text_only(classification.model)
+    when :pdf_mixed    then handle_pdf_mixed(classification.pages)
+    else
+      handle_text
+    end
+  end
+
+  private
+
+  # ─── Mode handlers ────────────────────────────────────────────────────────
+
+  def handle_text
+    content = BatchChunkingPrompt.text_user_content(
+      text:     @binary.dup.force_encoding("UTF-8"),
+      filename: @filename
+    )
+    result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
+      user_content: content,
+      filename:     @filename
+    )
+    parse_and_write(result[:text])
+  end
+
+  def handle_image(model)
+    content = BatchChunkingPrompt.user_content(
+      binary:       @binary,
+      content_type: @content_type,
+      filename:     @filename,
+      locale:       @locale
+    )
+    result = client_for(model).call(
+      user_content: content,
+      filename:     @filename
+    )
+    parse_and_write(result[:text])
+  end
+
+  def handle_pdf_text_only(model)
+    content = BatchChunkingPrompt.user_content(
+      binary:       @binary,
+      content_type: "application/pdf",
+      filename:     @filename
+    )
+    result = client_for(model).call(
+      user_content: content,
+      filename:     @filename
+    )
+    parse_and_write(result[:text])
+  end
+
+  def handle_pdf_mixed(pages)
+    total         = pages.count
+    repeated_texts = build_repeated_texts(pages)
+
+    kept_pages = pages.select do |page|
+      filter = PageRelevanceFilter.new(
+        page.binary,
+        page_number:    page.number,
+        total_pages:    total,
+        filename:       @filename,
+        repeated_texts: repeated_texts
+      ).call
+
+      keep = filter[:keep]
+
+      if filter[:force_opus] && keep
+        # Scanned image page — override router's model decision
+        page.model      = BatchChunkingPrompt::MODEL_MULTIMODAL
+        page.force_opus = true
+      end
+
+      Rails.logger.info(
+        "PageRelevanceFilter: #{@filename} p#{page.number} " \
+        "#{keep ? 'keep' : 'drop'} (#{filter[:reason]}, #{filter[:source]})"
+      )
+      keep
+    end
+
+    if kept_pages.empty?
+      Rails.logger.warn("SingleFileChunkingService: all pages dropped for #{@filename} — skipping")
+      return @asset
+    end
+
+    page_results = chunk_pages_with_identity_hint(kept_pages, total)
+    merged_json  = ChunkMergerService.merge(page_results)
+    parse_and_write(merged_json)
+  end
+
+  def handle_office
+    ext        = File.extname(@filename)
+    pdf_binary = OfficeToPdfConverter.convert(@binary, extension: ext)
+
+    # Re-classify as PDF now that we have the converted binary
+    classification = FileMultimodalRouter.classify(
+      binary:       pdf_binary,
+      content_type: "application/pdf",
+      filename:     @filename
+    )
+
+    case classification.mode
+    when :pdf_mixed    then handle_pdf_mixed(classification.pages)
+    when :pdf_text_only then handle_pdf_text_only_binary(pdf_binary, classification.model)
+    else
+      handle_text_binary(pdf_binary)
+    end
+  end
+
+  # ─── Helpers ──────────────────────────────────────────────────────────────
+
+  # Two-wave approach enforcing the 1 file = 1 identity invariant for pdf_mixed:
+  #   Wave A: single call for the anchor page (lowest kept page number) to establish
+  #           the document_name for this file.
+  #   Wave B: remaining pages in parallel waves, each receiving the hint so Claude
+  #           emits the same document_name across all parts of the same file.
+  # For single-page inputs, falls through to a direct call (no hint needed).
+  def chunk_pages_with_identity_hint(pages, total)
+    return [ call_claude_for_page(pages.first, total, document_name_hint: nil) ] if pages.size == 1
+
+    anchor = pages.min_by(&:number)
+    rest   = pages.reject { |p| p.number == anchor.number }
+
+    anchor_result = call_claude_for_page(anchor, total, document_name_hint: nil)
+
+    hint = begin
+      JSON.parse(anchor_result[:text].to_s)["document_name"].to_s.presence
+    rescue JSON::ParserError
+      nil
+    end
+
+    Rails.logger.info("SingleFileChunkingService: pdf_mixed #{@filename} wave-A anchor=p#{anchor.number} hint=#{hint.inspect}")
+
+    rest_results = chunk_pages_parallel(rest, total, document_name_hint: hint)
+    [ anchor_result ] + rest_results
+  end
+
+  def chunk_pages_parallel(pages, total, document_name_hint: nil)
+    pages.each_slice(FileMultimodalRouter::MAX_PARALLEL_PAGES).flat_map do |batch|
+      futures = batch.map do |page|
+        pg = page
+        Concurrent::Promises.future do
+          call_claude_for_page(pg, total, document_name_hint: document_name_hint)
+        end
+      end
+      futures.map(&:value!)
+    end
+  end
+
+  def call_claude_for_page(page, total, document_name_hint:)
+    model    = page.model
+    page_num = page.number
+    content  = BatchChunkingPrompt.page_user_content(
+      binary:             page.binary,
+      page_number:        page_num,
+      total_pages:        total,
+      filename:           @filename,
+      document_name_hint: document_name_hint
+    )
+    result = ClaudeChunkingClient.new(model: model).call(
+      user_content: content,
+      filename:     @filename,
+      page_number:  page_num,
+      total_pages:  total
+    )
+    { page_number: page_num, text: result[:text], usage: result[:usage], model: model }
+  end
+
+  def handle_pdf_text_only_binary(pdf_binary, model)
+    content = BatchChunkingPrompt.user_content(
+      binary:       pdf_binary,
+      content_type: "application/pdf",
+      filename:     @filename
+    )
+    result = client_for(model).call(user_content: content, filename: @filename)
+    parse_and_write(result[:text])
+  end
+
+  def handle_text_binary(binary)
+    content = BatchChunkingPrompt.text_user_content(
+      text:     binary.dup.force_encoding("UTF-8"),
+      filename: @filename
+    )
+    result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
+      user_content: content,
+      filename:     @filename
+    )
+    parse_and_write(result[:text])
+  end
+
+  def build_repeated_texts(pages)
+    counts = Hash.new(0)
+    pages.each do |page|
+      text = extract_page_text(page.binary)
+      counts[text] += 1 if text.length > 20
+    end
+    Set.new(counts.select { |_, c| c >= 3 }.keys)
+  end
+
+  def extract_page_text(binary)
+    PDF::Reader.new(StringIO.new(binary)).pages.first&.text.to_s.strip
+  rescue StandardError
+    ""
+  end
+
+  def parse_and_write(raw_json)
+    BatchResultsParserService.new(s3_service: @s3).call(
+      asset:          @asset,
+      raw_json:       raw_json,
+      ingestion_path: "web_v1"
+    )
+  end
+
+  def client_for(model)
+    @clients       ||= {}
+    @clients[model] ||= ClaudeChunkingClient.new(model: model)
+  end
+end

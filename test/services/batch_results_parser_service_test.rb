@@ -41,11 +41,11 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
   ALIASES  = [ "HPM-400", "pump manual" ]
 
   def chunk0_text
-    "**Document: #{DOC_NAME}**\n**DOCUMENT_ALIASES:**\n- #{ALIASES[0]}\n- #{ALIASES[1]}\n\nHydraulic pressure: 3000 PSI max."
+    "# S0 — DOCUMENT IDENTIFICATION\nHydraulic pressure: 3000 PSI max."
   end
 
   def chunk1_text
-    "**Document: #{DOC_NAME}**\n\nOil viscosity: ISO 46."
+    "# S6 — ELECTRICAL\nOil viscosity: ISO 46."
   end
 
   def golden_parsed
@@ -205,33 +205,32 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
   end
 
   test "raises ParseError when chunk[0] missing Document header" do
-    bad_chunks = golden_parsed.merge(
-      "chunks" => [
-        { "text" => "Missing headers. Some content.", "page" => 1 }
-      ]
-    )
-    asset  = make_asset
-    parser = build_parser
-
-    assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: bad_chunks.to_json))
-    end
-
-    assert_equal "failed", asset.reload.status
+    skip "Marker validation removed — identity is 100% Rails-injected (identity_header + sidecar)"
   end
 
   test "raises ParseError when chunk[0] missing DOCUMENT_ALIASES header" do
-    bad_chunks = golden_parsed.merge(
-      "chunks" => [
-        { "text" => "**Document: #{DOC_NAME}**\n\nNo aliases block.", "page" => 1 }
+    skip "Marker validation removed — identity is 100% Rails-injected (identity_header + sidecar)"
+  end
+
+  test "parses chunks without **Document:**/**DOCUMENT_ALIASES:** body markers" do
+    plain_chunks = {
+      "document_name" => DOC_NAME,
+      "aliases"        => ALIASES,
+      "chunks"         => [
+        { "text" => "# S0 — DOCUMENT IDENTIFICATION\nContent here.", "page" => 1 },
+        { "text" => "# S4 — SAFETY SYSTEM\nEmergency stop details.", "page" => 1 }
       ]
-    )
+    }
     asset  = make_asset
     parser = build_parser
 
-    assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: bad_chunks.to_json))
-    end
+    parser.call(asset: asset, result: make_result(json_text: plain_chunks.to_json))
+
+    asset.reload
+    assert_equal "parsed",  asset.status
+    assert_equal DOC_NAME,  asset.canonical_name
+    assert_equal ALIASES,   asset.aliases
+    assert_equal 2,         asset.chunks_count
   end
 
   test "raises ParseError when required keys are missing" do
@@ -251,5 +250,133 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_raises(BatchResultsParserService::ParseError) do
       parser.call(asset: asset, result: make_result(json_text: empty.to_json))
     end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Fenced JSON (Fix 1) — bulk path via result, web path via raw_json
+  # ---------------------------------------------------------------------------
+
+  test "parses fenced JSON in bulk path (```json fence)" do
+    fenced = "```json\n#{golden_parsed.to_json}\n```"
+    asset  = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: fenced))
+
+    asset.reload
+    assert_equal "parsed", asset.status
+    assert_equal DOC_NAME, asset.canonical_name
+    assert_equal 2,        asset.chunks_count
+  end
+
+  test "parses fenced JSON in bulk path (plain ``` fence)" do
+    fenced = "```\n#{golden_parsed.to_json}\n```"
+    asset  = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: fenced))
+
+    asset.reload
+    assert_equal "parsed", asset.status
+  end
+
+  test "parses fenced JSON in web path via raw_json" do
+    fenced = "```json\n#{golden_parsed.to_json}\n```"
+    sha256 = SecureRandom.hex(32)
+    chunk_asset = ChunkAsset.new(
+      filename:     "manual.pdf",
+      sha256:       sha256,
+      s3_key:       "uploads/manual.pdf",
+      content_type: "application/pdf"
+    )
+    parser = build_parser
+
+    parser.call(asset: chunk_asset, raw_json: fenced, ingestion_path: "web_v1")
+
+    assert_equal DOC_NAME, chunk_asset.canonical_name
+    assert_equal ALIASES,  chunk_asset.aliases
+    assert_equal 2,        chunk_asset.chunks_count
+    assert_not_nil         chunk_asset.chunks_s3_prefix
+  end
+
+  # ---------------------------------------------------------------------------
+  # Web path: summary field
+  # ---------------------------------------------------------------------------
+
+  test "web path: persists summary on ChunkAsset when present" do
+    payload = golden_parsed.merge("summary" => "Foto de un controlador Schindler 5500. Muestra los conectores J1 y J2.")
+    chunk_asset = ChunkAsset.new(
+      filename: "controller.jpg", sha256: SecureRandom.hex(32),
+      s3_key:   "uploads/controller.jpg", content_type: "image/jpeg"
+    )
+    parser = build_parser
+
+    parser.call(asset: chunk_asset, raw_json: payload.to_json, ingestion_path: "web_v1")
+
+    assert_match(/Schindler 5500/, chunk_asset.summary)
+  end
+
+  test "web path: summary nil when omitted by Claude (PDF/text path)" do
+    chunk_asset = ChunkAsset.new(
+      filename: "manual.pdf", sha256: SecureRandom.hex(32),
+      s3_key:   "uploads/manual.pdf", content_type: "application/pdf"
+    )
+    parser = build_parser
+
+    parser.call(asset: chunk_asset, raw_json: golden_parsed.to_json, ingestion_path: "web_v1")
+
+    assert_nil chunk_asset.summary
+  end
+
+  test "bulk path: summary not required and not crashed by extra field" do
+    asset   = make_asset
+    parser  = build_parser
+    payload = golden_parsed.merge("summary" => "ignored on bulk path")
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    assert_equal "parsed", asset.reload.status
+  end
+
+  # ---------------------------------------------------------------------------
+  # Web path: companion_offer field
+  # ---------------------------------------------------------------------------
+
+  test "web path: persists companion_offer on ChunkAsset when present" do
+    payload = golden_parsed.merge(
+      "summary"         => "Parece el cuadro de un Schindler.",
+      "companion_offer" => "Pregúntame lo que necesites, aunque sea con pocas palabras."
+    )
+    chunk_asset = ChunkAsset.new(
+      filename: "controller.jpg", sha256: SecureRandom.hex(32),
+      s3_key:   "uploads/controller.jpg", content_type: "image/jpeg"
+    )
+    parser = build_parser
+
+    parser.call(asset: chunk_asset, raw_json: payload.to_json, ingestion_path: "web_v1")
+
+    assert_match(/Pregúntame/, chunk_asset.companion_offer)
+  end
+
+  test "web path: companion_offer nil when omitted by Claude" do
+    chunk_asset = ChunkAsset.new(
+      filename: "manual.pdf", sha256: SecureRandom.hex(32),
+      s3_key:   "uploads/manual.pdf", content_type: "application/pdf"
+    )
+    parser = build_parser
+
+    parser.call(asset: chunk_asset, raw_json: golden_parsed.to_json, ingestion_path: "web_v1")
+
+    assert_nil chunk_asset.companion_offer
+  end
+
+  test "bulk path: companion_offer not required and does not crash" do
+    asset   = make_asset
+    parser  = build_parser
+    payload = golden_parsed.merge("companion_offer" => "ignored on bulk path")
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    assert_equal "parsed", asset.reload.status
   end
 end

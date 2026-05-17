@@ -1,0 +1,19 @@
+{
+  "_comment": "Representative Lambda post-chunking output for 952408286-Orona-basic-arc-arca-I.pdf. Used by lambda_parity_test.rb to verify BatchResultsParserService identity header matches the Lambda byte-for-byte.",
+  "filename": "952408286-Orona-basic-arc-arca-I.pdf",
+  "s3_key": "uploads/2026-01-01/952408286-Orona-basic-arc-arca-I.pdf",
+  "s3_bucket": "multimodal-source-destination",
+  "aliases": ["952408286", "952408286 orona", "arca", "basic", "orona", "orona basic"],
+  "document_name": "Orona Basic Arc Arca I Manual",
+  "chunks": [
+    {
+      "contentBody": "**Document: Orona Basic Arc Arca I Manual**\n**DOCUMENT_ALIASES:**\n- 952408286\n- arca\n- basic\n- orona\n- orona basic\n- basic arca\n\n# S0 — DOCUMENT IDENTIFICATION\n| Field | Value |\n|-|-|\n| ORIGINAL_FILE_NAME | PIPELINE_INJECTED |\n| NORMALIZED_FILE_NAME | PIPELINE_INJECTED |\n| TECHNICAL_ID | Orona Arc Arca I |\n| REGIONAL_NORMATIVE | EN 81-20 |\n| IMAGE_QUALITY | CLEAR |\n| CONFIDENCE | HIGH |\n| ERA | TRANSITIONAL |",
+      "page": 1
+    }
+  ],
+  "lambda_injected_header": "[DOCUMENT: 952408286-Orona-basic-arc-arca-I.pdf]\n[SOURCE_URI: s3://multimodal-source-destination/uploads/2026-01-01/952408286-Orona-basic-arc-arca-I.pdf]\n[SEARCH_ALIASES: 952408286, 952408286 orona, arca, basic, orona, orona basic]\n\n",
+  "lambda_customMetadata": {
+    "x-amz-bedrock-kb-source-uri": "s3://multimodal-source-destination/uploads/2026-01-01/952408286-Orona-basic-arc-arca-I.pdf",
+    "x-amz-bedrock-kb-data-source-id": "OWRPGSX6XK"
+  }
+}

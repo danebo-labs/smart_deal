@@ -1,0 +1,185 @@
+# frozen_string_literal: true
+
+# Decides whether a single extracted PDF page is worth chunking.
+# Applied per-page inside SingleFileChunkingService before any expensive API calls.
+#
+# Returns: { keep: Boolean, reason: String, source: :heuristic | :haiku }
+#
+# Pipeline (cascade, first match wins):
+#   1. Heuristic rules (zero LLM) — deterministic fast path
+#   2. Haiku 4.5 gating call — for ambiguous pages (50–800 chars, no clear signal)
+#
+# Special case — scanned_image:
+#   text_layer_chars < 100 AND image_area_ratio > 0.7 → keep (force Opus 4.7, skip Haiku)
+#
+# @param repeated_texts [Set<String>] texts that appear on >= 3 pages in this document
+#   (running headers/footers). Built by the caller from all page texts before filtering.
+class PageRelevanceFilter
+  HAIKU_MODEL              = "claude-haiku-4-5-20251001"
+  HAIKU_TRACKING_MODEL_ID  = "claude-haiku-4-5-20251001-direct"
+  HAIKU_MAX_TOKENS         = 64
+
+  TOC_LINE_FRACTION = 0.30  # ≥30% of lines ending in a page number → ToC
+  TOC_MIN_LINES     = 10
+
+  BOILERPLATE_PATTERN = /
+    intended\s+audience | how\s+to\s+use\s+this | copyright | all\s+rights\s+reserved |
+    prefacio | índice | introducción | preface | table\s+of\s+contents | índice\s+general
+  /xi.freeze
+
+  TITLE_PATTERN = /manual|user|guide|guía|manual\s+de/i.freeze
+
+  HAIKU_SYSTEM = <<~PROMPT.strip.freeze
+    You are a classifier for elevator technician manuals. Return ONLY valid JSON.
+    Schema: {"keep":bool,"reason":"<10 words"}
+    keep=true  → page has useful technical content (specs, diagrams, troubleshooting, procedures, wiring)
+    keep=false → page is boilerplate (index, preface, copyright, blank, table of contents)
+  PROMPT
+
+  # @param page_binary    [String]       raw single-page PDF bytes
+  # @param page_number    [Integer]      1-indexed position in original document
+  # @param total_pages    [Integer]      total page count in document
+  # @param filename       [String]       document filename (for tracking)
+  # @param repeated_texts [Set<String>]  texts seen >= 3 times across all pages
+  # @param haiku_client   [#call]        injectable Anthropic client (for tests)
+  def initialize(page_binary, page_number:, total_pages:, filename:,
+                 repeated_texts: Set.new, haiku_client: nil)
+    @page_binary    = page_binary
+    @page_number    = page_number
+    @total_pages    = total_pages
+    @filename       = filename
+    @repeated_texts = repeated_texts
+    @haiku_client   = haiku_client
+  end
+
+  # @return [Hash] { keep: Boolean, reason: String, source: :heuristic | :haiku }
+  def call
+    density = PageImageDensityAnalyzer.analyze(@page_binary)
+    @text   = extract_text
+    @lines  = @text.lines
+
+    heuristic_result = apply_heuristics(density)
+    return heuristic_result if heuristic_result
+
+    # Scanned image: text layer thin but image covers most of page → keep, force Opus
+    if density[:text_layer_chars] < 100 && density[:image_area_ratio] > 0.7
+      Rails.logger.info("PageRelevanceFilter p#{@page_number}: scanned_image (chars=#{density[:text_layer_chars]}, ratio=#{density[:image_area_ratio].round(3)})")
+      return { keep: true, reason: :scanned_image, source: :heuristic, force_opus: true }
+    end
+
+    # High-confidence content: long text or large meaningful image
+    if @text.length > 800 || (density[:has_images] && density[:image_area_ratio] >= 0.25)
+      return { keep: true, reason: :high_confidence_content, source: :heuristic }
+    end
+
+    # Ambiguous — delegate to Haiku gating
+    haiku_gate(density)
+  end
+
+  private
+
+  def extract_text
+    reader = PDF::Reader.new(StringIO.new(@page_binary))
+    reader.pages.first&.text.to_s.strip
+  rescue StandardError
+    ""
+  end
+
+  def apply_heuristics(density)
+    # Title page: check first for page 1 so short cover pages are classified correctly
+    # before the blank rule catches them (covers are often < 50 chars).
+    if @page_number == 1 && @text.length < 400 && @text.match?(TITLE_PATTERN)
+      return { keep: false, reason: :title_page, source: :heuristic }
+    end
+
+    # Boilerplate: check before blank so known phrases on short pages are classified correctly
+    if @text.length < 600 && @text.match?(BOILERPLATE_PATTERN)
+      return { keep: false, reason: :boilerplate, source: :heuristic }
+    end
+
+    # Running header/footer artifact: text identical to >= 3 other pages
+    # Guard: text.length > 20 avoids false positives on scanned blank pages
+    if @text.length > 20 && @repeated_texts.include?(@text)
+      return { keep: false, reason: :repeated_artifact, source: :heuristic }
+    end
+
+    # Blank: almost no text and no images (after named patterns so short meaningful text wins)
+    if @text.length < 50 && !density[:has_images]
+      return { keep: false, reason: :blank, source: :heuristic }
+    end
+
+    # Table of contents: many lines with trailing page numbers
+    if toc?
+      return { keep: false, reason: :table_of_contents, source: :heuristic }
+    end
+
+    nil
+  end
+
+  def toc?
+    return false if @lines.count < TOC_MIN_LINES
+
+    trailing_digit_lines = @lines.count { |l| l.strip.match?(/\d+\s*$/) }
+    trailing_digit_lines.to_f / @lines.count >= TOC_LINE_FRACTION
+  end
+
+  def haiku_gate(density)
+    client     = @haiku_client || build_haiku_client
+    start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    content = [
+      {
+        type: "document",
+        source: {
+          type:       "base64",
+          media_type: "application/pdf",
+          data:       Base64.strict_encode64(@page_binary)
+        }
+      },
+      { type: "text", text: "Is this page useful technical content or boilerplate?" }
+    ]
+
+    response = client.messages.create(
+      model:      HAIKU_MODEL,
+      max_tokens: HAIKU_MAX_TOKENS,
+      system:     HAIKU_SYSTEM,
+      messages:   [ { role: "user", content: content } ]
+    )
+
+    latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+    text_block = response.content.find { |b| b.type.to_s == "text" }
+    parsed     = JSON.parse(text_block.text.to_s)
+
+    keep   = parsed["keep"] != false
+    reason = parsed["reason"].to_s.presence || (keep ? "haiku_keep" : "haiku_drop")
+
+    track_haiku_usage(response, latency_ms)
+
+    { keep: keep, reason: reason.to_sym, source: :haiku }
+  rescue StandardError => e
+    Rails.logger.warn("PageRelevanceFilter Haiku gate p#{@page_number} failed (#{e.class}): #{e.message} — defaulting keep=true")
+    { keep: true, reason: :haiku_error_fallback, source: :haiku }
+  end
+
+  def build_haiku_client
+    api_key = ENV.fetch("ANTHROPIC_API_KEY", nil).presence ||
+              Rails.application.credentials.dig(:anthropic, :api_key)
+    Anthropic::Client.new(api_key: api_key)
+  end
+
+  def track_haiku_usage(response, latency_ms)
+    usage = response.usage
+    TrackBedrockQueryJob.perform_later(
+      model_id:              HAIKU_TRACKING_MODEL_ID,
+      user_query:            "page_filter: #{@filename} p#{@page_number}/#{@total_pages}",
+      latency_ms:            latency_ms,
+      input_tokens:          usage.input_tokens.to_i,
+      output_tokens:         usage.output_tokens.to_i,
+      cache_read_tokens:     usage.respond_to?(:cache_read_input_tokens) && usage.cache_read_input_tokens.to_i > 0 ? usage.cache_read_input_tokens.to_i : nil,
+      cache_creation_tokens: usage.respond_to?(:cache_creation_input_tokens) && usage.cache_creation_input_tokens.to_i > 0 ? usage.cache_creation_input_tokens.to_i : nil,
+      source:                "ingestion_parse"
+    )
+  rescue StandardError => e
+    Rails.logger.warn("PageRelevanceFilter: failed to enqueue tracking job — #{e.message}")
+  end
+end

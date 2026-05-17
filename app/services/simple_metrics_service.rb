@@ -52,6 +52,25 @@ class SimpleMetricsService
     cache_hits    = WhatsappCacheHit.today.count
     tokens_saved  = WhatsappCacheHit.today.sum(:tokens_saved_estimate).to_i
 
+    parse_rows = queries_today.where(source: :ingestion_parse)
+                              .pluck(:model_id, :input_tokens, :output_tokens,
+                                     :cache_read_tokens, :cache_creation_tokens)
+
+    haiku_parse  = parse_rows.select { |m, *| m.to_s.include?("haiku") }
+    opus_parse   = parse_rows.select { |m, *| m.to_s.include?("opus") }
+    sonnet_parse = parse_rows.select { |m, *| m.to_s.include?("sonnet-4-6") }
+
+    token_sum = ->(rows) { rows.sum { |_, i, o, cr, cc| i.to_i + o.to_i + cr.to_i + cc.to_i } }
+    cost_sum  = ->(rows) {
+      rows.sum { |m, i, o, cr, cc|
+        BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o,
+                         cache_read_tokens: cr, cache_creation_tokens: cc).cost
+      }
+    }
+
+    haiku_unified_tokens = source_totals["query"][:tokens] + token_sum.call(haiku_parse)
+    haiku_unified_cost   = source_totals["query"][:cost]   + cost_sum.call(haiku_parse)
+
     # rubocop:disable Rails/SkipsModelValidations
     CostMetric.upsert_all(
       [
@@ -65,7 +84,13 @@ class SimpleMetricsService
         { metric_type: :daily_cost_parse,   value: source_totals["ingestion_parse"][:cost] },
         { metric_type: :daily_cost_embed,   value: source_totals["ingestion_embed"][:cost] },
         { metric_type: :daily_cache_hits,   value: cache_hits },
-        { metric_type: :daily_tokens_saved, value: tokens_saved }
+        { metric_type: :daily_tokens_saved, value: tokens_saved },
+        { metric_type: :daily_tokens_haiku,        value: haiku_unified_tokens },
+        { metric_type: :daily_cost_haiku,          value: haiku_unified_cost },
+        { metric_type: :daily_tokens_parse_opus,   value: token_sum.call(opus_parse) },
+        { metric_type: :daily_cost_parse_opus,     value: cost_sum.call(opus_parse) },
+        { metric_type: :daily_tokens_parse_sonnet, value: token_sum.call(sonnet_parse) },
+        { metric_type: :daily_cost_parse_sonnet,   value: cost_sum.call(sonnet_parse) }
       ].map { |h| h.merge(date: today, created_at: Time.current, updated_at: Time.current) },
       unique_by: [:date, :metric_type]
     )

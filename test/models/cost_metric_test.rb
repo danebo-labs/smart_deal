@@ -77,4 +77,27 @@ class CostMetricTest < ActiveSupport::TestCase
   test '.avg_for_month returns 0 when no records exist' do
     assert_equal 0, CostMetric.avg_for_month(:daily_cost)
   end
+
+  test 'daily_snapshot includes haiku_unified and parse_by_model keys' do
+    today = Date.current
+    [
+      [ :daily_tokens_haiku,        500 ],
+      [ :daily_cost_haiku,          0.04 ],
+      [ :daily_tokens_parse_opus,   2000 ],
+      [ :daily_cost_parse_opus,     0.03 ],
+      [ :daily_tokens_parse_sonnet, 1500 ],
+      [ :daily_cost_parse_sonnet,   0.005 ]
+    ].each do |mt, val|
+      CostMetric.create!(date: today, metric_type: mt, value: val)
+    end
+
+    snap = CostMetric.daily_snapshot(today)
+
+    assert_equal 500,   snap[:today_tokens_haiku].to_i
+    assert_in_delta 0.04, snap[:today_cost_haiku].to_f, 0.0001
+    assert_equal 2000,  snap[:today_tokens_parse_opus].to_i
+    assert_equal 1500,  snap[:today_tokens_parse_sonnet].to_i
+    assert snap.key?(:today_cost_parse_opus),   'snapshot debe incluir today_cost_parse_opus'
+    assert snap.key?(:today_cost_parse_sonnet), 'snapshot debe incluir today_cost_parse_sonnet'
+  end
 end

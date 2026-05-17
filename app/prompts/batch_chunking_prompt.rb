@@ -1,28 +1,26 @@
 # frozen_string_literal: true
 
-# Prompt + payload builder for the Anthropic Batch API path of bulk ingestion.
+# Prompt + payload builder for the Anthropic Messages API path (web_v1) and Batch API
+# path (batch_v1) of document ingestion.
 #
 # Why this prompt is special:
-#   The Bedrock data source used for bulk-uploaded chunks (BEDROCK_BULK_DATA_SOURCE_ID,
+#   The Bedrock data source used for chunked uploads (BEDROCK_BULK_DATA_SOURCE_ID,
 #   today 8DUTRUCDTS) is configured with `Chunking: NONE` and has NO post-chunking Lambda.
 #   That means each .txt this pipeline writes to S3 becomes a chunk verbatim in the KB.
 #
-#   The legacy data source (OWRPGSX6XK) uses Bedrock-Foundation-Model parsing (Opus) plus
-#   a POST_CHUNKING Lambda (`bedrock-kb-postchunk-identity-injector`) that prepends a
-#   `[DOCUMENT: ...] / [SOURCE_URI: ...] / [SEARCH_ALIASES: ...]` identity header to every
-#   chunk. That header is what `bedrock/generation.txt` (STEP A/B and RULE 8) and
-#   `EntityExtractorService` / `ChunkAliasExtractor` rely on at retrieval time.
+#   Identity ([DOCUMENT:] / [SOURCE_URI:] / [SEARCH_ALIASES:]) is 100% Rails-injected
+#   by `BatchResultsParserService#identity_header` after this prompt produces structured
+#   chunks. The prompt does NOT need to embed **Document:** / **DOCUMENT_ALIASES:** markers
+#   inside chunk bodies — those are legacy artifacts from the OWRPGSX6XK Lambda path.
 #
-#   In the batch flow there is no Lambda; identity headers are injected by
-#   `BatchResultsParserService` *after* this prompt produces structured chunks.
-#   Therefore the prompt:
-#     - keeps the safety-first / anti-hallucination contract of the OWRPGSX6XK parser,
-#     - emits structured S0/S4/S6/S7/S10/S16/S17/S18 sections,
-#     - guarantees the `**Document:**` and `**DOCUMENT_ALIASES:**` markers parsed by
-#       ChunkAliasExtractor and EntityExtractorService,
-#     - DOES NOT fabricate filename / S3 URI — those are PIPELINE_INJECTED downstream.
+#   Canonical name + aliases travel as structured JSON fields (`document_name`, `aliases`)
+#   → `BatchResultsParserService` → `ChunkAsset` → `CustomChunkingPipeline#web_v1_metadata`
+#   → `BedrockIngestionJob` → `KbDocument`. No in-body marker parsing required.
 module BatchChunkingPrompt
-  MODEL      = "claude-opus-4-7"
+  MODEL_MULTIMODAL = "claude-opus-4-7"
+  MODEL_TEXT       = "claude-sonnet-4-6"
+  # Legacy alias kept for callers that reference MODEL directly (bulk batch path).
+  MODEL      = MODEL_MULTIMODAL
   MAX_TOKENS = 32_000
 
   SYSTEM_BLOCKS = [
@@ -53,6 +51,8 @@ module BatchChunkingPrompt
         {
           "document_name": "<canonical 3-7 word human name>",
           "aliases": ["<alias 1>", "<alias 2>", ...],
+          "summary": "<1-2 friendly sentences, no jargon, in the requested language; OMIT for non-image inputs>",
+          "companion_offer": "<1 warm sentence inviting questions in plain language; OMIT for non-image inputs>",
           "chunks": [
             { "text": "<chunk body — see CHUNK FORMAT below>", "page": <integer or null> }
           ]
@@ -64,6 +64,59 @@ module BatchChunkingPrompt
         legacy POST_CHUNKING Lambda). DO NOT fabricate, guess, or echo them.
         - Inside chunk bodies, set ORIGINAL_FILE_NAME / NORMALIZED_FILE_NAME / SOURCE_URI
           to the literal token PIPELINE_INJECTED whenever you would otherwise emit them.
+
+        # SUMMARY (image inputs only — shown to the technician immediately after upload)
+        Emit `summary` ONLY for single images (jpg/png/webp/gif). OMIT entirely for PDFs, Office, text.
+
+        CONTEXT: The technician receiving this is in the field — poor light, gloves on, possibly
+        slow or intermittent internet. They may be stressed or unsure. You are their most trusted
+        senior colleague: you have seen everything, you stay calm, and you always have an answer
+        or know where to find one. You never make them feel they asked a dumb question.
+
+        The summary is the first thing they read after uploading a photo. Make it feel like a
+        trusted coworker glancing at their screen and saying in two sentences what they see.
+        Warm, plain language. No jargon. No report format. No specs unless unavoidable.
+
+        Rules:
+        - 1-2 sentences max, ~20-35 words total. Plain text only — NO Markdown, NO lists, NO tables.
+        - Start with what you see ("Parece...", "Veo...", "Diría que...", "Looks like...", "Veo aquí...").
+        - Mention equipment type and brand/model ONLY if clearly visible in the image.
+        - Mention general condition if notable ("se ve en buen estado", "algo desgastado") — no specs.
+        - NEVER include: voltage, torque, current, dimensions, section codes (S0/S4...), CONFIDENCE,
+          IMAGE_QUALITY, normatives, part numbers, or auditor-style language.
+        - NEVER start with "This image shows" or "The image depicts" — speak as a person, not a system.
+        - Use the language from the "Summary language: <code>" hint in user content. Default: Spanish.
+
+        Good examples:
+          "Parece el cuadro de maniobras de un Schindler — el cableado del frente se ve ordenado y en buen estado."
+          "Veo una placa de bornes, todo bastante legible y sin daños visibles."
+          "Diría que es la placa de control de un KONE — se ve limpia y fácil de leer."
+          "Looks like an Otis controller panel — wiring looks intact and everything is clearly labeled."
+
+        Bad examples (DO NOT produce these):
+          "S0 — DOCUMENT IDENTIFICATION. TECHNICAL_ID: Schindler 5500. CONFIDENCE: HIGH."
+          "The image shows an elevator control panel with 380V AC terminals and EN 81-20 compliance."
+          "This image depicts a motor drive unit with visible terminal blocks J1 and J2."
+
+        # COMPANION_OFFER (image inputs only — the warm invitation shown below the summary)
+        Emit `companion_offer` ONLY for single images. OMIT for PDFs, Office, text.
+
+        One short, warm sentence that invites the technician to ask anything, no matter how basic.
+        Speak as the trusted senior colleague you are — reassuring, never dismissive. The technician
+        may be in a difficult situation: reinforce that you are there and that any question is valid.
+        Do NOT repeat information from `summary`. Use the same language as `summary`.
+
+        Good examples:
+          "Pregúntame lo que necesites — estoy aquí para lo que sea."
+          "Cuéntame qué ves o qué necesitas resolver, aunque sea con una sola palabra."
+          "Dime qué quieres saber, cualquier pregunta está bien."
+          "Ask me anything — I'm here to help, no matter how simple the question."
+          "Tell me what you need — even just a word and I'll take it from there."
+
+        Bad examples (DO NOT produce these):
+          "Please submit your technical query regarding this elevator component."
+          "Consulta la base de conocimiento para más información."
+          "Para más detalles técnicos, realiza una consulta específica."
 
         # DOCUMENT_NAME + ALIASES (CRITICAL — drives retrieval)
         - document_name: 3-7 words, human-readable, derived from visible content
@@ -81,20 +134,15 @@ module BatchChunkingPrompt
           Do NOT shred into one-sentence atoms — Haiku reads whole sections.
         - Preserve exact numeric values, units, part numbers, codes, terminal labels
           and manufacturer text VERBATIM.
-        - chunks[0].text MUST begin with EXACTLY:
-              **Document: {document_name}**
-              **DOCUMENT_ALIASES:**
-              - <alias 1>
-              - <alias 2>
-              ...
-              <blank line>
-              # S0 — DOCUMENT IDENTIFICATION
-              <S0 body>
-        - Every subsequent chunk (index ≥ 1) MUST begin with EXACTLY:
-              **Document: {document_name}**
-
-              <blank line, then content>
+        - chunks[0].text MUST contain the S0 — DOCUMENT IDENTIFICATION section.
         - page: 1-indexed integer if determinable from a multi-page document; otherwise null.
+
+        # ONE FILE = ONE IDENTITY
+        This input (page, fragment, image, or complete document) belongs to a single
+        file the user uploaded. The JSON `document_name` and `aliases` identify that
+        file — not a distinct document per invocation. If this input is one part of a
+        larger file processed across multiple calls, use the same `document_name` as the
+        other parts of that same file (exact match or minor formatting correction only).
 
         # STRUCTURED EXTRACTION (one chunk per section when content is present)
         Emit chunks for as many of these sections as the document supports.
@@ -111,7 +159,7 @@ module BatchChunkingPrompt
         emit a chunk that only says "DATA_NOT_AVAILABLE" with no other content.
 
         ## S0 chunk content (mandatory fields)
-        After the **DOCUMENT_ALIASES:** block, include a small identification table:
+        Include a small identification table directly in the S0 section:
             | Field | Value |
             |-|-|
             | ORIGINAL_FILE_NAME | PIPELINE_INJECTED |
@@ -156,12 +204,16 @@ module BatchChunkingPrompt
     }
   ].freeze
 
+  FILENAME_HINT = "Filename hint (DO NOT echo into ORIGINAL_FILE_NAME — keep PIPELINE_INJECTED): "
+
   # Builds the user content array for a single Anthropic messages request.
   # @param binary       [String] Raw binary bytes of the file
   # @param content_type [String] "image/jpeg", "image/png", "image/webp", "image/gif", or "application/pdf"
   # @param filename     [String] Original filename (context hint only — model MUST NOT echo it as ORIGINAL_FILE_NAME)
+  # @param locale       [String, nil] ISO 639-1 ("es", "en") — instructs Claude to emit `summary` and
+  #   `companion_offer` in this language. nil/omitted for non-image inputs and bulk batch path.
   # @return [Array<Hash>]
-  def self.user_content(binary:, content_type:, filename:)
+  def self.user_content(binary:, content_type:, filename:, locale: nil)
     media_block = if content_type == "application/pdf"
       {
         type: "document",
@@ -182,12 +234,52 @@ module BatchChunkingPrompt
       }
     end
 
-    [
+    blocks = [
       media_block,
+      { type: "text", text: "#{FILENAME_HINT}#{filename}" }
+    ]
+    blocks << { type: "text", text: "Summary language: #{locale}." } if locale.present?
+    blocks
+  end
+
+  # Content block for plain-text files (txt, md, csv, html).
+  # Sends the text as a text block — no base64 encoding.
+  # @param text     [String] UTF-8 decoded file content
+  # @param filename [String] Original filename (context hint only)
+  # @return [Array<Hash>]
+  def self.text_user_content(text:, filename:)
+    [
+      { type: "text", text: text.to_s },
+      { type: "text", text: "#{FILENAME_HINT}#{filename}" }
+    ]
+  end
+
+  # Content block for a single page extracted from a mixed PDF.
+  # Instructs the model to chunk only this page and skip S0 unless page 1.
+  # @param binary             [String]  Raw bytes of the single-page PDF
+  # @param page_number        [Integer] 1-indexed page number in the original document
+  # @param total_pages        [Integer] Total pages in the document (after relevance filtering)
+  # @param filename           [String]  Original document filename (context hint only)
+  # @param document_name_hint [String, nil] Canonical name derived from page 1 (passed to pages 2+)
+  # @return [Array<Hash>]
+  def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil)
+    instruction = +"Page #{page_number} of #{total_pages}. " \
+      "This page is part of a single uploaded file — emit the same `document_name` " \
+      "across all pages of this document. " \
+      "Return ONLY chunks for this page, each with \"page\": #{page_number} set explicitly."
+    instruction << " Document name hint: #{document_name_hint}." if document_name_hint.present?
+    instruction << " #{FILENAME_HINT}#{filename}"
+
+    [
       {
-        type: "text",
-        text: "Filename hint (DO NOT echo into ORIGINAL_FILE_NAME — keep PIPELINE_INJECTED): #{filename}"
-      }
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: Base64.strict_encode64(binary)
+        }
+      },
+      { type: "text", text: instruction }
     ]
   end
 end

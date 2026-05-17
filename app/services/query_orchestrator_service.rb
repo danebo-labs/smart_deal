@@ -35,8 +35,9 @@ class QueryOrchestratorService
   #   "query names a different document" heuristic and always scopes retrieval to
   #   entity_s3_uris. Use when the caller has explicitly bound the query to a
   #   specific document (e.g. WhatsApp post-reset picker selection).
+  # @param locale [String, nil] ISO 639-1 locale for image summary generation ("es", "en")
   def initialize(query, images: [], documents: [], tenant: nil, session_id: nil, response_locale: nil, session_context: nil,
-                 conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false)
+                 conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, locale: nil)
     @query = query
     @images = images || []
     @documents = documents || []
@@ -48,6 +49,7 @@ class QueryOrchestratorService
     @entity_s3_uris = Array(entity_s3_uris)
     @output_channel = output_channel
     @force_entity_filter = force_entity_filter
+    @locale = locale
     @ai_provider = AiProvider.new
   end
 
@@ -84,7 +86,8 @@ class QueryOrchestratorService
         images_payload:    UploadAndSyncAttachmentsJob.prepare_images_for_async(@images),
         documents_payload: @documents,
         conv_session_id:   @conv_session&.id,
-        tenant_id:         @tenant&.id
+        tenant_id:         @tenant&.id,
+        locale:            I18n.locale.to_s
       )
 
       if @query.blank?
@@ -141,6 +144,18 @@ class QueryOrchestratorService
   # BedrockIngestionJob with explicit kb_document_ids for enrichment-only work.
   # @return [Array<String>] filenames that were successfully uploaded to S3
   def upload_and_sync_attachments
+    # Web custom chunking path: Anthropic Messages API + BulkKbSyncService (chunking=NONE DS).
+    # Flag default: false (OWRPGSX6XK legacy path). Enable via CUSTOM_CHUNKING_WEB_ENABLED=true.
+    if custom_chunking_web_enabled?
+      return CustomChunkingPipeline.new(
+        images:       @images,
+        documents:    @documents,
+        conv_session: @conv_session,
+        tenant:       @tenant || current_tenant,
+        locale:       @locale
+      ).run!
+    end
+
     s3 = S3DocumentsService.new
     uploaded_filenames = []
     kb_document_ids    = []
@@ -201,19 +216,7 @@ class QueryOrchestratorService
   end
 
   def persist_thumbnail_for(kb_doc, img)
-    thumb_binary = img[:thumbnail_binary] || img['thumbnail_binary']
-    return if thumb_binary.blank?
-    return if kb_doc.thumbnail.present?
-
-    kb_doc.create_thumbnail!(
-      data:         thumb_binary,
-      content_type: img[:thumbnail_content_type] || img['thumbnail_content_type'] || "image/jpeg",
-      width:        img[:thumbnail_width]  || img['thumbnail_width'],
-      height:       img[:thumbnail_height] || img['thumbnail_height'],
-      byte_size:    thumb_binary.bytesize
-    )
-  rescue StandardError => e
-    Rails.logger.warn("QueryOrchestrator: thumbnail persist failed for kb_doc=#{kb_doc.id} — #{e.message}")
+    KbDocumentThumbnailPersister.call(kb_doc: kb_doc, img: img)
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,
@@ -331,6 +334,10 @@ class QueryOrchestratorService
 
   def rag_only_tenant?
     @tenant.nil? || Array(@tenant.try(:data_sources)).exclude?("db")
+  end
+
+  def custom_chunking_web_enabled?
+    Rails.application.config.x.custom_chunking_web_enabled
   end
 
   def current_tenant

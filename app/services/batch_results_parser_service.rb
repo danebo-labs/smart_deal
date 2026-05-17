@@ -1,19 +1,22 @@
 # frozen_string_literal: true
 
-# Parses a single Anthropic batch result for a BulkUploadAsset:
+# Parses a single Claude response for a file asset:
 #   1. Extracts and validates the JSON from Claude's response.
-#   2. Prepends the legacy identity header (DOCUMENT / SOURCE_URI / SEARCH_ALIASES)
-#      to each chunk so retrieval (`bedrock/generation.txt`, EntityExtractorService,
-#      ChunkAliasExtractor) sees the same shape the post-chunking Lambda produces
-#      for the OWRPGSX6XK data source.
-#   3. Writes each chunk as a .txt file PLUS a `<key>.metadata.json` sidecar to S3
-#      under bulk_chunks/{date}/{sha256}/. The sidecar carries `customMetadata`
-#      that maps each chunk back to the ORIGINAL asset URI — Bedrock's S3 connector
-#      auto-attaches it to the chunk's customMetadata column, which is the seam
-#      retrieval-side filtering will use to restore pin behavior for batch chunks
-#      and to plug in tenant scoping later.
-#   4. Persists canonical_name, aliases, chunks_count, chunks_s3_prefix on the asset.
-#   5. Transitions the asset status to "parsed" (or "failed" on error).
+#   2. Applies LambdaParityAliasFallback when the LLM returns empty aliases.
+#   3. Prepends the identity header ([DOCUMENT:] / [SOURCE_URI:] / [SEARCH_ALIASES:])
+#      to each chunk — identity is 100% Rails-injected; no dependency on in-body markers.
+#   4. Writes each chunk as a .txt file PLUS a `<key>.metadata.json` sidecar to S3.
+#   5. For BulkUploadAsset (AR): persists canonical_name, aliases, chunks_count,
+#      chunks_s3_prefix, status, and broadcasts a Turbo replace.
+#      For ChunkAsset (Struct): sets the same fields in-memory (no AR, no broadcast).
+#
+# Accepts two asset shapes via duck-typing:
+#   BulkUploadAsset (ActiveRecord) — bulk ingestion path, responds to update! + broadcast_replace!
+#   ChunkAsset (Struct)             — web custom chunking path
+#
+# @param ingestion_path [String] written to sidecar metadataAttributes["ingestion_path"].
+#   "batch_v1" = bulk path (default, backward-compatible)
+#   "web_v1"   = web custom chunking path
 class BatchResultsParserService
   class ParseError < StandardError; end
 
@@ -23,43 +26,68 @@ class BatchResultsParserService
     @s3 = s3_service || S3DocumentsService.new
   end
 
-  # @param asset  [BulkUploadAsset]
-  # @param result [Object] Anthropic batch individual response (.custom_id, .result.type, .result.message)
-  # @return [BulkUploadAsset] with status "parsed"
-  # @raise [ParseError] propagated after marking asset failed
-  def call(asset:, result:)
-    unless result.result.type.to_s == "succeeded"
-      raise ParseError, "Result type '#{result.result.type}' for #{asset.filename}"
+  # @param asset         [BulkUploadAsset | ChunkAsset]
+  # @param result        [Object, nil]  Anthropic batch result (.result.type, .result.message)
+  # @param raw_json      [String, nil]  pre-parsed JSON string (web path — skips result unwrap)
+  # @param ingestion_path [String]      "batch_v1" | "web_v1"
+  # @return asset with parsed fields set
+  # @raise [ParseError]
+  def call(asset:, result: nil, raw_json: nil, ingestion_path: "batch_v1")
+    text = if raw_json
+      raw_json
+    else
+      unless result.result.type.to_s == "succeeded"
+        raise ParseError, "Result type '#{result.result.type}' for #{asset.filename}"
+      end
+      extract_text(result.result.message)
     end
 
-    text   = extract_text(result.result.message)
-    parsed = parse_json(text)
+    parsed  = parse_json(text)
     validate!(parsed, asset)
 
     date_prefix   = Date.current.iso8601
     chunks_prefix = format(CHUNK_PREFIX_TPL, date_prefix, asset.sha256)
     aliases       = Array(parsed["aliases"])
 
+    # Alias fallback: never write [SEARCH_ALIASES: ] empty even if LLM returns nothing.
+    # Applies to both web and bulk paths.
+    aliases = LambdaParityAliasFallback.generate(asset.filename) if aliases.all?(&:blank?)
+
     write_chunks_to_s3(
       prefix:         chunks_prefix,
       chunks:         parsed["chunks"],
       asset:          asset,
       canonical_name: parsed["document_name"],
-      aliases:        aliases
+      aliases:        aliases,
+      ingestion_path: ingestion_path
     )
 
-    asset.update!(
-      canonical_name:   parsed["document_name"],
-      aliases:          aliases,
-      chunks_count:     parsed["chunks"].length,
-      chunks_s3_prefix: chunks_prefix,
-      status:           "parsed"
-    )
-    asset.broadcast_replace!
+    if asset.respond_to?(:update!)
+      # BulkUploadAsset — ActiveRecord path
+      asset.update!(
+        canonical_name:   parsed["document_name"],
+        aliases:          aliases,
+        chunks_count:     parsed["chunks"].length,
+        chunks_s3_prefix: chunks_prefix,
+        status:           "parsed"
+      )
+      asset.broadcast_replace!
+    else
+      # ChunkAsset — in-memory struct, no AR
+      asset.canonical_name    = parsed["document_name"]
+      asset.aliases           = aliases
+      asset.summary           = parsed["summary"].to_s.strip.presence
+      asset.companion_offer   = parsed["companion_offer"].to_s.strip.presence
+      asset.chunks_count      = parsed["chunks"].length
+      asset.chunks_s3_prefix  = chunks_prefix
+    end
+
     asset
   rescue ParseError => e
-    asset.update_columns(status: "failed", error_message: e.message)
-    asset.broadcast_replace!
+    if asset.respond_to?(:update_columns)
+      asset.update_columns(status: "failed", error_message: e.message)
+      asset.broadcast_replace!
+    end
     raise
   end
 
@@ -74,8 +102,15 @@ class BatchResultsParserService
     raise ParseError, "No text block in Claude response"
   end
 
+  def normalize_json_text(text)
+    s = text.to_s.strip
+    return s unless s.start_with?("```")
+
+    s.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip
+  end
+
   def parse_json(text)
-    JSON.parse(text.strip)
+    JSON.parse(normalize_json_text(text))
   rescue JSON::ParserError => e
     raise ParseError, "Invalid JSON from Claude: #{e.message}"
   end
@@ -90,26 +125,17 @@ class BatchResultsParserService
 
     chunks = parsed["chunks"]
     raise ParseError, "No chunks in response for #{asset.filename}" if chunks.blank?
-
-    first_text = chunks.first["text"].to_s
-    doc_name   = parsed["document_name"].to_s
-
-    unless first_text.start_with?("**Document: #{doc_name}**")
-      raise ParseError, "chunk[0].text missing **Document:** header for #{asset.filename}"
-    end
-    unless first_text.include?("**DOCUMENT_ALIASES:**")
-      raise ParseError, "chunk[0].text missing **DOCUMENT_ALIASES:** header for #{asset.filename}"
-    end
   end
 
-  def write_chunks_to_s3(prefix:, chunks:, asset:, canonical_name:, aliases:)
+  def write_chunks_to_s3(prefix:, chunks:, asset:, canonical_name:, aliases:, ingestion_path:)
     original_uri = original_source_uri(asset)
     header       = identity_header(asset: asset, aliases: aliases, original_uri: original_uri)
     sidecar_json = sidecar_metadata(
       asset:          asset,
       canonical_name: canonical_name,
       aliases:        aliases,
-      original_uri:   original_uri
+      original_uri:   original_uri,
+      ingestion_path: ingestion_path
     )
 
     chunks.each_with_index do |chunk, idx|
@@ -132,19 +158,19 @@ class BatchResultsParserService
   end
 
   # Sidecar JSON consumed by the Bedrock S3 connector as `customMetadata` on the
-  # resulting chunk. Keys are intentionally non-reserved (Bedrock owns the
-  # `x-amz-bedrock-kb-*` namespace). `original_source_uri` is the seam retrieval
-  # filtering should OR alongside `x-amz-bedrock-kb-source-uri` to make pin-based
-  # filters work for batch chunks. `account_id` / `project_id` are reserved here
-  # as multi-tenant seams — left absent today (MVP is global pool).
-  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:)
+  # resulting chunk. Keys are intentionally non-reserved (Bedrock owns x-amz-bedrock-kb-*).
+  # `original_source_uri` is the seam retrieval filtering ORs alongside
+  # `x-amz-bedrock-kb-source-uri` to make pin-based filters work for batch/web chunks.
+  # `ingestion_path` distinguishes web_v1 (optimized) from batch_v1 (bulk) in telemetry.
+  # `account_id` / `project_id` are reserved here as multi-tenant seams — absent today (MVP).
+  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:)
     JSON.generate(
       "metadataAttributes" => {
         "original_source_uri" => original_uri,
         "original_filename"   => asset.filename,
         "canonical_name"      => canonical_name.to_s,
         "doc_sha256"          => asset.sha256.to_s,
-        "ingestion_path"      => "batch_v1",
+        "ingestion_path"      => ingestion_path,
         "aliases"             => Array(aliases).map(&:to_s)
       }
     )

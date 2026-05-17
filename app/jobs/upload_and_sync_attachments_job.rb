@@ -28,18 +28,31 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
   # @param documents_payload [Array<Hash>] sanitized document payloads
   # @param conv_session_id   [Integer, nil] ConversationSession#id for entity registration
   # @param tenant_id         [Integer, nil] Tenant#id for KB selection
-  def perform(images_payload:, documents_payload:, conv_session_id: nil, tenant_id: nil)
+  # @param locale            [String, nil] ISO 639-1 locale — forwarded to QOS for image summary
+  def perform(images_payload:, documents_payload:, conv_session_id: nil, tenant_id: nil, locale: nil)
     images    = restore_images(Array(images_payload))
     documents = Array(documents_payload).map { |d| d.transform_keys(&:to_sym) }
     tenant    = tenant_id ? Tenant.find_by(id: tenant_id) : nil
     session   = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
 
     QueryOrchestratorService
-      .new("", images: images, documents: documents, tenant: tenant, conv_session: session)
+      .new("", images: images, documents: documents, tenant: tenant, conv_session: session, locale: locale)
       .send(:upload_and_sync_attachments)
   rescue StandardError => e
-    Rails.logger.error("UploadAndSyncAttachmentsJob failed: #{e.message}")
+    if CustomChunkingNoFallbackTest.active?
+      Rails.logger.error(
+        "UploadAndSyncAttachmentsJob: fail-fast re-raise (CUSTOM_CHUNKING_NO_FALLBACK) " \
+        "— #{e.class}: #{e.message}"
+      )
+      Rails.logger.error(e.backtrace.first(15).join("\n"))
+      raise
+    end
+
+    Rails.logger.error("UploadAndSyncAttachmentsJob failed: #{e.class}: #{e.message}")
     Rails.logger.error(e.backtrace.first(10).join("\n"))
+    filenames = (Array(images_payload) + Array(documents_payload))
+                  .map { |a| a[:filename] || a["filename"] }.compact
+    KbSyncBroadcaster.failed(filenames: filenames, reason: "upload_error")
   end
 
   # Strips/wraps raw binary fields so the payload is JSON-safe AND smaller.

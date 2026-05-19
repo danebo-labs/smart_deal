@@ -42,7 +42,7 @@ Open http://localhost:3000. `bin/dev` runs Rails + Tailwind (Foreman / `Procfile
 | **Index (start here for depth)** | [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md) |
 | Web custom chunking (flags, pipeline) | [docs/WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
 | Bulk ZIP ingestion | [docs/BULK_INGESTION.md](docs/BULK_INGESTION.md) |
-| Production / Kamal / AWS | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
+| Production / Kamal / AWS | [docs/PRODUCTION.md](docs/PRODUCTION.md) (cold start/stop cheat sheet: [§ Cold start / cold stop](docs/PRODUCTION.md#cold-start--cold-stop--full-sequence-cheat-sheet)) |
 | Bedrock KB & env | [BEDROCK_SETUP.md](BEDROCK_SETUP.md) |
 | Pins & session retrieval | [docs/SESSION_AND_RETRIEVAL.md](docs/SESSION_AND_RETRIEVAL.md) |
 | Home UI (KB card, lightbox) | [docs/WEB_HOME.md](docs/WEB_HOME.md) |
@@ -120,6 +120,7 @@ Per-user sessions: omit `SHARED_SESSION_ENABLED` or set `false`. In **test**, sh
 1. Local app: [Quick start](#quick-start) above.  
 2. Get from team (vault): `config/master.key`, `.env` template, `config/deploy.yml`, `.kamal/secrets`, SSH key.  
 3. Production deploy: [docs/PRODUCTION.md](docs/PRODUCTION.md) (Docker, buildx, Kamal, troubleshooting).
+4. Power‑cycling production (RDS + EC2 + Kamal in order): [docs/PRODUCTION.md § Cold start / cold stop](docs/PRODUCTION.md#cold-start--cold-stop--full-sequence-cheat-sheet).
 
 ## Development
 

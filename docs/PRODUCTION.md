@@ -8,6 +8,162 @@ Full step-by-step infra may also live in your team's **production deployment run
 
 ---
 
+## Cold start / cold stop — full sequence (cheat sheet)
+
+This is the **canonical order** to bring the stack up from a fully stopped state (RDS stopped + EC2 stopped + containers down) or to take it down cleanly. Detailed flags, IAM notes, and troubleshooting live in the sections below.
+
+**Run the steps in order.** Do **not** declare `EC2_ID` / `RDS_ID` upfront with placeholders — they are unknown until Steps 2 and 3 resolve them. Only Step 4 exports the real values.
+
+### Step 1 — AWS context (run first, in every new shell)
+
+```bash
+export AWS_PROFILE=your-profile        # only if you use named profiles
+export AWS_REGION=us-east-1            # match the region of the EC2 + RDS resources
+# aws sso login --profile "$AWS_PROFILE"   # only if the profile uses IAM Identity Center
+aws sts get-caller-identity            # sanity check — must show the expected Account/User
+```
+
+### Step 2 — Discover the EC2 instance ID
+
+List every EC2 instance in the region (Id, state, `Name` tag, public IP) and pick the app host from the output:
+
+```bash
+aws ec2 describe-instances --region "$AWS_REGION" \
+  --filters "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+  --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,Name:Tags[?Key==`Name`].Value|[0],Ip:PublicIpAddress}' \
+  --output table
+```
+
+Shortcut — if you already know the `Name` tag (e.g. `smart-deal-web`):
+
+```bash
+aws ec2 describe-instances --region "$AWS_REGION" \
+  --filters "Name=tag:Name,Values=smart-deal-web" \
+  --query 'Reservations[].Instances[].InstanceId' --output text
+```
+
+Shortcut — derive it from the host listed in `config/deploy.yml` (`servers.web.hosts`):
+
+```bash
+APP_IP=$(grep -A1 '^\s*web:' config/deploy.yml | grep -oE '[0-9]+(\.[0-9]+){3}' | head -1)
+aws ec2 describe-instances --region "$AWS_REGION" \
+  --filters "Name=ip-address,Values=$APP_IP" \
+  --query 'Reservations[].Instances[].InstanceId' --output text
+```
+
+Copy the `i-…` value — you will export it in **Step 4**.
+
+### Step 3 — Discover the RDS instance ID (standalone PostgreSQL only, NOT Aurora)
+
+The app connects to a **standalone RDS PostgreSQL** instance (engine `postgres`). Aurora variants (`aurora-postgresql`, `aurora-mysql`) belong to clusters and use **different** start/stop commands (`aws rds start-db-cluster`). The query below **filters those out**:
+
+```bash
+aws rds describe-db-instances --region "$AWS_REGION" \
+  --query "DBInstances[?Engine=='postgres'].{Id:DBInstanceIdentifier,Status:DBInstanceStatus,Endpoint:Endpoint.Address,Class:DBInstanceClass}" \
+  --output table
+```
+
+Shortcut — derive it from `DB_HOST` in `.env` / `config/deploy.yml`. The **first segment** of an RDS endpoint (`<id>.<random>.<region>.rds.amazonaws.com`) is the instance identifier:
+
+```bash
+grep '^DB_HOST=' .env | cut -d= -f2 | cut -d. -f1
+# or, from deploy.yml:
+# awk '/DB_HOST:/ {print $2}' config/deploy.yml | cut -d. -f1
+```
+
+Confirm the candidate is plain Postgres (not Aurora) before using it:
+
+```bash
+aws rds describe-db-instances --db-instance-identifier <candidate-id> --region "$AWS_REGION" \
+  --query 'DBInstances[0].Engine' --output text
+# → expect: postgres   (NOT aurora-postgresql)
+```
+
+### Step 4 — Export the real IDs
+
+Now that Steps 2 and 3 returned concrete values, export them once per shell:
+
+```bash
+export EC2_ID=i-09db5c5fc53e973b0     # paste the value from Step 2
+export RDS_ID=smart-deal-db            # paste the value from Step 3
+export APP_HOST=chat.example.com       # public host from config/deploy.yml proxy.host (only used by the /up check)
+```
+
+Quick status check before proceeding:
+
+```bash
+aws ec2 describe-instances --instance-ids "$EC2_ID" --region "$AWS_REGION" \
+  --query 'Reservations[0].Instances[0].State.Name' --output text   # running | stopped | pending | stopping
+aws rds describe-db-instances --db-instance-identifier "$RDS_ID" --region "$AWS_REGION" \
+  --query 'DBInstances[0].DBInstanceStatus' --output text           # available | stopped | starting | stopping
+```
+
+### Step 5a — Cold start (bring production UP)
+
+Run from the **operator laptop**, **from the project root** (where `Gemfile` lives). `config/deploy.yml` and `.kamal/secrets` must already exist locally.
+
+```bash
+# 1) Start RDS first — the DB must be 'available' before Rails boots
+aws rds start-db-instance --db-instance-identifier "$RDS_ID" --region "$AWS_REGION"
+aws rds wait db-instance-available --db-instance-identifier "$RDS_ID" --region "$AWS_REGION"
+
+# 2) Start EC2
+aws ec2 start-instances --instance-ids "$EC2_ID" --region "$AWS_REGION"
+aws ec2 wait instance-running --instance-ids "$EC2_ID" --region "$AWS_REGION"
+sleep 75   # let Docker / cloud-init settle (~60–90 s)
+
+# 3) Boot the app via Kamal (from repo root, NOT $HOME)
+bundle exec kamal deploy
+# If no code/config changed and you only want the existing image back up:
+# bundle exec kamal app boot
+
+# 4) Verify — must see THREE containers: kamal-proxy, smart-deal-web-<sha>, smart-deal-worker-<sha>
+bundle exec kamal app details
+curl -sf "https://$APP_HOST/up" && echo OK
+```
+
+If `/up` returns `404` or `ERR_SSL_PROTOCOL_ERROR`, only `kamal-proxy` is up — re-run `bundle exec kamal deploy`. See [EC2 stop / start](#ec2-stop--start--avoid-ssl-404-and-half-dead-proxy) and [Troubleshooting](#troubleshooting-quick-map).
+
+### Step 5b — Cold stop (bring production DOWN)
+
+**Reverse order of cold start.** Stopping EC2 while `kamal-proxy` still manages traffic leaves a "half‑dead" proxy on next boot — always stop the app cleanly first. Uses the same env vars exported in Step 4.
+
+```bash
+# 1) Stop app containers cleanly (from repo root, so Kamal reads config/deploy.yml)
+bundle exec kamal app stop
+bundle exec kamal app details   # confirm web + worker are 'stopped' (kamal-proxy stays up — that is fine)
+
+# 2) Stop EC2
+aws ec2 stop-instances --instance-ids "$EC2_ID" --region "$AWS_REGION"
+aws ec2 wait instance-stopped --instance-ids "$EC2_ID" --region "$AWS_REGION"
+
+# 3) Stop RDS last (so the app never tries to write to a missing DB)
+aws rds stop-db-instance --db-instance-identifier "$RDS_ID" --region "$AWS_REGION"
+aws rds wait db-instance-stopped --db-instance-identifier "$RDS_ID" --region "$AWS_REGION"
+
+# 4) Verify both are down
+aws ec2 describe-instances --instance-ids "$EC2_ID" --region "$AWS_REGION" \
+  --query 'Reservations[0].Instances[0].State.Name' --output text   # → stopped
+aws rds describe-db-instances --db-instance-identifier "$RDS_ID" --region "$AWS_REGION" \
+  --query 'DBInstances[0].DBInstanceStatus' --output text           # → stopped
+```
+
+> **AWS auto‑start:** stopped RDS instances are auto‑started by AWS after ~7 days. Plan longer idle windows accordingly. See [Stopping an RDS DB instance temporarily](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html).
+>
+> **Skip step 1 only if EC2 is already unreachable** (already stopped, network broken). `bundle exec kamal app stop` will hang trying to SSH; in that case go straight to step 2.
+
+### Hot deploy (RDS + EC2 already running)
+
+The normal workflow — **do not** stop infra:
+
+```bash
+git push                       # from your branch
+bundle exec kamal deploy       # from repo root
+bundle exec kamal app logs --roles=web -f
+```
+
+---
+
 ### Kamal production (AWS)
 
 If you are **onboarding a laptop for the first time**, read **[New engineer onboarding](../README.md#new-engineer-onboarding)** first (Docker, buildx, `.kamal/secrets`, SSH keys).

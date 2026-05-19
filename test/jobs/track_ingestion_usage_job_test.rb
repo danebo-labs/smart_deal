@@ -66,7 +66,7 @@ class TrackIngestionUsageJobTest < ActiveJob::TestCase
     end
   end
 
-  test "skips file if already tracked within idempotency window" do
+  test "skips file if parse already tracked within idempotency window" do
     label = "[parse] #{SAMPLE_FILENAME}".truncate(500)
     BedrockQuery.create!(
       model_id: "global.anthropic.claude-opus-4-6-v1",
@@ -81,6 +81,43 @@ class TrackIngestionUsageJobTest < ActiveJob::TestCase
         end
       end
     end
+  end
+
+  test "skips file if embed already tracked within idempotency window" do
+    label = "[embed] #{SAMPLE_FILENAME}".truncate(500)
+    BedrockQuery.create!(
+      model_id: "amazon.nova-2-multimodal-embeddings-v1:0",
+      input_tokens: 500, output_tokens: 0,
+      user_query: label, latency_ms: 0, source: :ingestion_embed
+    )
+
+    with_fake_s3 do
+      with_turbo_stubbed do
+        assert_no_difference "BedrockQuery.count" do
+          TrackIngestionUsageJob.perform_now(uploaded_filenames: [ SAMPLE_FILENAME ])
+        end
+      end
+    end
+  end
+
+  test "web_v1: only embed record — no Opus parse estimate" do
+    metadata = [ { "filename" => SAMPLE_FILENAME, "canonical_name" => "Doc", "aliases" => [] } ]
+
+    with_fake_s3 do
+      with_turbo_stubbed do
+        assert_difference "BedrockQuery.count", 1 do
+          TrackIngestionUsageJob.perform_now(
+            uploaded_filenames: [ SAMPLE_FILENAME ],
+            web_v1_metadata:    metadata
+          )
+        end
+      end
+    end
+
+    assert_nil BedrockQuery.find_by(source: "ingestion_parse", user_query: "[parse] #{SAMPLE_FILENAME}".truncate(500))
+    embed_rec = BedrockQuery.find_by(source: "ingestion_embed")
+    assert embed_rec
+    assert_equal "amazon.nova-2-multimodal-embeddings-v1:0", embed_rec.model_id
   end
 
   test "skips gracefully when S3 key not found" do

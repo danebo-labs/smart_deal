@@ -167,7 +167,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_match(/data-chat-usage-metrics="true"/, response.body)
     assert_match(/\bHaiku\b/,                      response.body)
-    assert_match(/Parsing \(Opus\)/,               response.body)
+    assert_match(/Parsing \(Opus, legacy\)/,       response.body)
     assert_match(/Parsing \(Sonnet 4\.6\)/,        response.body)
     assert_match(/Embeddings \(Nova\)/,            response.body)
     assert_match(/Total hoy/,                      response.body)

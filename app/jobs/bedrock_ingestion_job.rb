@@ -124,7 +124,8 @@ class BedrockIngestionJob < ApplicationJob
         uploaded_filenames: Array(uploaded_filenames),
         ingestion_job_id:   ingestion_job_id,
         kb_id:              kb_id,
-        data_source_id:     data_source_id
+        data_source_id:     data_source_id,
+        web_v1_metadata:    web_v1_metadata
       )
     else
       reasons = status == "FAILED" ? service.failure_reasons(ingestion_job_id) : []

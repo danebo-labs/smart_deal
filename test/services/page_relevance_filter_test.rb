@@ -44,6 +44,43 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     attr_reader :messages
   end
 
+  # Batch fake: returns {"pages":[...]} JSON
+  class FakeBatchHaikuContent
+    attr_reader :type, :text
+
+    def initialize(pages_array)
+      @type = "text"
+      @text = JSON.generate({ "pages" => pages_array })
+    end
+  end
+
+  class FakeBatchHaikuResponse
+    attr_reader :content, :usage
+
+    def initialize(pages_array)
+      @content = [ FakeBatchHaikuContent.new(pages_array) ]
+      @usage   = OpenStruct.new(input_tokens: 20, output_tokens: 40)
+    end
+  end
+
+  class FakeBatchHaikuMessages
+    def initialize(pages_array)
+      @response = FakeBatchHaikuResponse.new(pages_array)
+    end
+
+    def create(**) = @response
+  end
+
+  class FakeBatchHaikuClient
+    def initialize(pages_array)
+      @messages = FakeBatchHaikuMessages.new(pages_array)
+    end
+
+    attr_reader :messages
+  end
+
+  FakePage = Struct.new(:number, :binary) unless defined?(FakePage)
+
   # ---------------------------------------------------------------------------
   # Stubs for PDF analysis
   # ---------------------------------------------------------------------------
@@ -241,5 +278,158 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
 
     result = make_filter(haiku_client: bad_client).call
     assert_equal true, result[:keep]
+  end
+
+  # ---------------------------------------------------------------------------
+  # call_batch
+  # ---------------------------------------------------------------------------
+
+  setup do
+    @orig_tbq_later = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+  end
+
+  teardown do
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, @orig_tbq_later)
+  end
+
+  test "call_batch returns empty hash for empty pages" do
+    result = PageRelevanceFilter.call_batch(pages: [], filename: "deck.pptx")
+    assert_equal({}, result)
+  end
+
+  test "call_batch drops p1/p2 and keeps p3/p4 with force_opus" do
+    pages = [
+      FakePage.new(1, "fake_p1_bytes"),
+      FakePage.new(2, "fake_p2_bytes"),
+      FakePage.new(3, "fake_p3_bytes"),
+      FakePage.new(4, "fake_p4_bytes")
+    ]
+
+    batch_response = [
+      { "page" => 1, "keep" => false, "reason" => "cover" },
+      { "page" => 2, "keep" => false, "reason" => "agenda" },
+      { "page" => 3, "keep" => true,  "reason" => "diagram" },
+      { "page" => 4, "keep" => true,  "reason" => "schematic" }
+    ]
+    client = FakeBatchHaikuClient.new(batch_response)
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "deck.pptx", haiku_client: client)
+
+    assert_equal 4, result.size
+
+    assert_equal false,       result[1][:keep]
+    assert_equal :cover,      result[1][:reason]
+    assert_equal :haiku_batch, result[1][:source]
+    assert_equal false,       result[1][:force_opus]
+
+    assert_equal false,       result[2][:keep]
+    assert_equal :agenda,     result[2][:reason]
+
+    assert_equal true,        result[3][:keep]
+    assert_equal :diagram,    result[3][:reason]
+    assert_equal :haiku_batch, result[3][:source]
+    assert_equal true,        result[3][:force_opus]
+
+    assert_equal true,        result[4][:keep]
+    assert_equal :schematic,  result[4][:reason]
+    assert_equal true,        result[4][:force_opus]
+  end
+
+  test "call_batch defaults missing page to keep=true with :missing_in_response" do
+    pages = [
+      FakePage.new(1, "fake_p1_bytes"),
+      FakePage.new(2, "fake_p2_bytes")
+    ]
+
+    # Haiku only returns page 1; page 2 is absent
+    batch_response = [ { "page" => 1, "keep" => false, "reason" => "cover" } ]
+    client = FakeBatchHaikuClient.new(batch_response)
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "deck.pptx", haiku_client: client)
+
+    assert_equal true,                  result[2][:keep]
+    assert_equal :missing_in_response,  result[2][:reason]
+    assert_equal :haiku_batch,          result[2][:source]
+  end
+
+  test "call_batch parses JSON wrapped in markdown fences" do
+    pages = [
+      FakePage.new(1, "fake_p1_bytes"),
+      FakePage.new(2, "fake_p2_bytes")
+    ]
+
+    fenced_json = "```json\n{\"pages\":[{\"page\":1,\"keep\":false,\"reason\":\"cover\"},{\"page\":2,\"keep\":true,\"reason\":\"diagram\"}]}\n```"
+    fenced_response = OpenStruct.new(
+      content: [ OpenStruct.new(type: "text", text: fenced_json) ],
+      usage:   OpenStruct.new(input_tokens: 20, output_tokens: 40)
+    )
+    fenced_client = FakeBatchHaikuClient.new([])
+    fenced_client.messages.define_singleton_method(:create) { |**| fenced_response }
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "deck.pptx", haiku_client: fenced_client)
+
+    assert_equal false,       result[1][:keep]
+    assert_equal :cover,      result[1][:reason]
+    assert_equal true,        result[2][:keep]
+    assert_equal :diagram,    result[2][:reason]
+  end
+
+  test "call_batch parses JSON wrapped in plain markdown fences (no language tag)" do
+    pages = [ FakePage.new(1, "fake_p1_bytes") ]
+
+    fenced_json = "```\n{\"pages\":[{\"page\":1,\"keep\":false,\"reason\":\"agenda\"}]}\n```"
+    fenced_response = OpenStruct.new(
+      content: [ OpenStruct.new(type: "text", text: fenced_json) ],
+      usage:   OpenStruct.new(input_tokens: 10, output_tokens: 20)
+    )
+    fenced_client = FakeBatchHaikuClient.new([])
+    fenced_client.messages.define_singleton_method(:create) { |**| fenced_response }
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "deck.pptx", haiku_client: fenced_client)
+
+    assert_equal false,  result[1][:keep]
+    assert_equal :agenda, result[1][:reason]
+  end
+
+  test "call_batch falls back to keep all on Haiku crash" do
+    pages = [
+      FakePage.new(1, "fake_p1_bytes"),
+      FakePage.new(2, "fake_p2_bytes")
+    ]
+
+    crash_client = FakeBatchHaikuClient.new([])
+    crash_client.messages.define_singleton_method(:create) { |**| raise RuntimeError, "connection refused" }
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "deck.pptx", haiku_client: crash_client)
+
+    assert_equal 2, result.size
+    result.each_value do |r|
+      assert_equal true,                        r[:keep]
+      assert_equal :haiku_batch_error_fallback,  r[:reason]
+      assert_equal :haiku_batch,                 r[:source]
+    end
+  end
+
+  test "call_batch enqueues TrackBedrockQueryJob with page_filter_batch user_query" do
+    pages = [ FakePage.new(1, "fake_p1_bytes"), FakePage.new(2, "fake_p2_bytes") ]
+
+    batch_response = [
+      { "page" => 1, "keep" => false, "reason" => "cover" },
+      { "page" => 2, "keep" => true,  "reason" => "diagram" }
+    ]
+    client = FakeBatchHaikuClient.new(batch_response)
+
+    enqueued_args = nil
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) do |**kwargs|
+      enqueued_args = kwargs
+    end
+
+    PageRelevanceFilter.call_batch(pages: pages, filename: "slides.pptx", haiku_client: client)
+
+    assert_not_nil enqueued_args, "expected TrackBedrockQueryJob to be enqueued"
+    assert_match(/page_filter_batch: slides\.pptx/, enqueued_args[:user_query])
+    assert_equal PageRelevanceFilter::HAIKU_TRACKING_MODEL_ID, enqueued_args[:model_id]
+    assert_equal "ingestion_parse", enqueued_args[:source]
   end
 end

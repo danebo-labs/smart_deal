@@ -10,19 +10,18 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
 
   setup do
-    # Stub PdfImageDetector so we can control what it reports
+    # PdfImageDetector — thread-local so parallel-safe
     @orig_image_pages = PdfImageDetector.method(:image_pages)
     @orig_has_images  = PdfImageDetector.method(:has_images?)
+    Thread.current[:pdf_image_pages] = Set.new
+    PdfImageDetector.define_singleton_method(:image_pages) { |_| Thread.current[:pdf_image_pages] }
+    PdfImageDetector.define_singleton_method(:has_images?) { |_| Thread.current[:pdf_image_pages]&.any? }
 
-    @pdf_image_pages = Set.new  # override per test
+    # PdfPageSplitterService.page_count — default 1 (single-page) so existing text-only tests pass
+    @orig_page_count = PdfPageSplitterService.instance_method(:page_count)
+    PdfPageSplitterService.define_method(:page_count) { 1 }
 
-    PdfImageDetector.define_singleton_method(:image_pages) { |_| FileMultimodalRouterTest.instance_variable_get(:@pdf_image_pages) }
-    PdfImageDetector.define_singleton_method(:has_images?) { |b| FileMultimodalRouterTest.instance_variable_get(:@pdf_image_pages).any? }
-
-    # Stub PdfPageSplitterService so we don't need real PDF bytes
-    @orig_splitter_new = nil  # patched below when needed
-
-    # Stub PageImageDensityAnalyzer
+    # PageImageDensityAnalyzer — default: no images, pure text
     @orig_analyzer = PageImageDensityAnalyzer.method(:analyze)
     PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
       { has_images: false, text_layer_chars: 0, image_area_ratio: 0.0 }
@@ -32,18 +31,8 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
   teardown do
     PdfImageDetector.define_singleton_method(:image_pages, @orig_image_pages)
     PdfImageDetector.define_singleton_method(:has_images?,  @orig_has_images)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
     PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
-  end
-
-  # Store for cross-method access in setup/teardown
-  def self.instance_variable_get(name) = class_variable_get(:"@@#{name.to_s.delete('@')}") rescue nil
-  def self.instance_variable_set(name, val) = class_variable_set(:"@@#{name.to_s.delete('@')}", val)
-
-  # Use thread-local to avoid class var collisions in parallel runs
-  setup do
-    Thread.current[:pdf_image_pages] = Set.new
-    PdfImageDetector.define_singleton_method(:image_pages) { |_| Thread.current[:pdf_image_pages] }
-    PdfImageDetector.define_singleton_method(:has_images?) { |_| Thread.current[:pdf_image_pages]&.any? }
   end
 
   # ---------------------------------------------------------------------------
@@ -86,11 +75,11 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
   # PDF without images → :pdf_text_only
   # ---------------------------------------------------------------------------
 
-  test "classifies PDF with no images as pdf_text_only with MODEL_TEXT" do
-    Thread.current[:pdf_image_pages] = Set.new  # no image pages
+  test "classifies single-page PDF as pdf_text_only regardless of XObjects" do
+    # page_count=1 (setup default) → pdf_text_only; image_pages irrelevant
     r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "doc.pdf")
-    assert_equal :pdf_text_only,                          r.mode
-    assert_equal BatchChunkingPrompt::MODEL_TEXT,          r.model
+    assert_equal :pdf_text_only,                   r.mode
+    assert_equal BatchChunkingPrompt::MODEL_TEXT,  r.model
     assert_empty r.pages
   end
 
@@ -98,20 +87,19 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
   # PDF with images → :pdf_mixed (splitter stubbed)
   # ---------------------------------------------------------------------------
 
-  test "classifies PDF with images as pdf_mixed" do
+  test "classifies multi-page PDF with images as pdf_mixed" do
     Thread.current[:pdf_image_pages] = Set.new([ 1 ])
-
     orig_each_page = PdfPageSplitterService.instance_method(:each_page)
-    PdfPageSplitterService.define_method(:each_page) do |&block|
-      block.call(1, "fake_page_binary")
-    end
+    PdfPageSplitterService.define_method(:page_count) { 2 }
+    PdfPageSplitterService.define_method(:each_page) { |&b| b.call(1, "fake_page_binary") }
 
     r = FileMultimodalRouter.classify(binary: "%PDF-mixed", content_type: "application/pdf", filename: "mixed.pdf")
     assert_equal :pdf_mixed, r.mode
     assert_equal 1,          r.pages.count
     assert_equal 1,          r.pages.first.number
   ensure
-    PdfPageSplitterService.define_method(:each_page, orig_each_page) if defined?(orig_each_page)
+    PdfPageSplitterService.define_method(:each_page, orig_each_page)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
   end
 
   # ---------------------------------------------------------------------------
@@ -128,6 +116,16 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
     assert_equal :office, r.mode
   end
 
+  test "classifies .pptx extension as office mode" do
+    r = FileMultimodalRouter.classify(binary: "PK...", content_type: "application/octet-stream", filename: "deck.pptx")
+    assert_equal :office, r.mode
+  end
+
+  test "classifies .ppt extension as office mode" do
+    r = FileMultimodalRouter.classify(binary: "D0CF", content_type: "application/octet-stream", filename: "legacy.ppt")
+    assert_equal :office, r.mode
+  end
+
   test "classifies application/msword MIME as office regardless of extension" do
     r = FileMultimodalRouter.classify(binary: "D0CF", content_type: "application/msword", filename: "legacy.doc")
     assert_equal :office, r.mode
@@ -140,7 +138,7 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
   test "page with has_images and text_chars>500, image_ratio<0.20 routes to MODEL_TEXT (downgrade)" do
     Thread.current[:pdf_image_pages] = Set.new([ 1 ])
     orig = PdfPageSplitterService.instance_method(:each_page)
-
+    PdfPageSplitterService.define_method(:page_count) { 2 }
     PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
       { has_images: true, text_layer_chars: 800, image_area_ratio: 0.10 }
     end
@@ -151,13 +149,14 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
     assert_equal BatchChunkingPrompt::MODEL_TEXT,    r.pages.first.model
   ensure
     PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
     PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
   end
 
   test "page with has_images and text_chars<=500 routes to MODEL_MULTIMODAL (no downgrade)" do
     Thread.current[:pdf_image_pages] = Set.new([ 1 ])
     orig = PdfPageSplitterService.instance_method(:each_page)
-
+    PdfPageSplitterService.define_method(:page_count) { 2 }
     PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
       { has_images: true, text_layer_chars: 200, image_area_ratio: 0.50 }
     end
@@ -167,13 +166,14 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
     assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, r.pages.first.model
   ensure
     PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
     PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
   end
 
   test "page with image_area_ratio>=0.20 even with many text_chars routes to MODEL_MULTIMODAL" do
     Thread.current[:pdf_image_pages] = Set.new([ 1 ])
     orig = PdfPageSplitterService.instance_method(:each_page)
-
+    PdfPageSplitterService.define_method(:page_count) { 2 }
     PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
       { has_images: true, text_layer_chars: 600, image_area_ratio: 0.25 }
     end
@@ -183,6 +183,87 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
     assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, r.pages.first.model
   ensure
     PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
+    PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
+  end
+
+  # ---------------------------------------------------------------------------
+  # New: multi-page no XObjects → pdf_mixed (the PPT/LibreOffice bug case)
+  # ---------------------------------------------------------------------------
+
+  test "converted Office PDF re-classified with .pptx filename uses pdf path not office" do
+    Thread.current[:pdf_image_pages] = Set.new
+    orig = PdfPageSplitterService.instance_method(:each_page)
+    PdfPageSplitterService.define_method(:page_count) { 4 }
+    PdfPageSplitterService.define_method(:each_page) { |&b| b.call(1, "fake") }
+
+    r = FileMultimodalRouter.classify(
+      binary:       "%PDF",
+      content_type: "application/pdf",
+      filename:     "deck.pptx"
+    )
+    assert_equal :pdf_mixed, r.mode
+  ensure
+    PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
+  end
+
+  test "multi-page PDF with no XObjects classifies as pdf_mixed" do
+    # image_pages empty simulates LibreOffice flatten — no XObjects detected
+    Thread.current[:pdf_image_pages] = Set.new
+    orig = PdfPageSplitterService.instance_method(:each_page)
+    PdfPageSplitterService.define_method(:page_count) { 4 }
+    PdfPageSplitterService.define_method(:each_page) { |&b| b.call(1, "fake") }
+
+    r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "deck.pdf")
+    assert_equal :pdf_mixed,                              r.mode
+    assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL,  r.model
+  ensure
+    PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
+  end
+
+  # ---------------------------------------------------------------------------
+  # New: route_page — density-detected rasterized slide (no XObjects, high ratio)
+  # ---------------------------------------------------------------------------
+
+  test "route_page promotes rasterized slide to MODEL_MULTIMODAL via density (has_images=false, img_ratio=0.8)" do
+    Thread.current[:pdf_image_pages] = Set.new  # no XObjects → has_images=false for all pages
+    orig = PdfPageSplitterService.instance_method(:each_page)
+    PdfPageSplitterService.define_method(:page_count) { 4 }
+    PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+      { has_images: false, text_layer_chars: 50, image_area_ratio: 0.80 }
+    end
+    PdfPageSplitterService.define_method(:each_page) { |&b| b.call(1, "fake") }
+
+    r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "slide.pdf")
+    assert_equal :pdf_mixed,                              r.mode
+    assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL,  r.pages.first.model
+  ensure
+    PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
+    PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
+  end
+
+  # ---------------------------------------------------------------------------
+  # New: route_page — pure text page (no XObjects, zero density) → MODEL_TEXT
+  # ---------------------------------------------------------------------------
+
+  test "route_page keeps pure-text page at MODEL_TEXT when density reports no images" do
+    Thread.current[:pdf_image_pages] = Set.new
+    orig = PdfPageSplitterService.instance_method(:each_page)
+    PdfPageSplitterService.define_method(:page_count) { 4 }
+    PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+      { has_images: false, text_layer_chars: 1200, image_area_ratio: 0.0 }
+    end
+    PdfPageSplitterService.define_method(:each_page) { |&b| b.call(1, "fake") }
+
+    r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "manual.pdf")
+    assert_equal :pdf_mixed,                         r.mode
+    assert_equal BatchChunkingPrompt::MODEL_TEXT,    r.pages.first.model
+  ensure
+    PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
     PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
   end
 end

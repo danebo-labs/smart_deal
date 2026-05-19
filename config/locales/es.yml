@@ -26,6 +26,7 @@ es:
       open_aria:  "Ver imagen %{name} en tamaño completo"
       load_error: "Error al cargar la imagen"
   rag:
+    office_parse_failed: "No pude leer este archivo Office. Vuelve a intentarlo en un momento, o súbelo como PDF si puedes."
     whatsapp_indexed_generic: "✅ Documento procesado y disponible.\nArchivo: %{filename}\nPregúntame sobre este documento."
     whatsapp_indexed_with_aliases: "✅ %{name}\nConsúltame por: %{aliases}"
     whatsapp_indexed_canonical_only: "✅ %{name}\nPregúntame sobre este documento."

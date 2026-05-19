@@ -8,6 +8,13 @@ class PdfPageSplitterService
     @binary = binary
   end
 
+  def page_count
+    HexaPDF::Document.new(io: StringIO.new(@binary)).pages.count
+  rescue StandardError => e
+    Rails.logger.warn("PdfPageSplitterService.page_count: #{e.class} — #{e.message}")
+    0
+  end
+
   # @yield [page_number, binary]
   # @yieldparam page_number [Integer] 1-indexed position in the original document
   # @yieldparam binary      [String]  raw PDF bytes for this single page

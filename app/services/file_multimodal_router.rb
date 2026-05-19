@@ -73,7 +73,11 @@ class FileMultimodalRouter
   def image? = IMAGE_MIME_TYPES.include?(@content_type)
   def pdf?   = @content_type == "application/pdf"
 
+  # After OfficeToPdfConverter, callers re-classify with application/pdf bytes but the
+  # original filename may still be .pptx — must not treat that as :office again.
   def office?
+    return false if pdf?
+
     OFFICE_MIME_TYPES.include?(@content_type) ||
       OFFICE_EXTENSIONS.include?(File.extname(@filename).downcase)
   end
@@ -83,12 +87,13 @@ class FileMultimodalRouter
   end
 
   def classify_pdf
-    image_pages = PdfImageDetector.image_pages(@binary)
+    total_pages = PdfPageSplitterService.new(@binary).page_count
 
-    if image_pages.empty?
+    if total_pages <= 1
       return Result.new(model: BatchChunkingPrompt::MODEL_TEXT, mode: :pdf_text_only, pages: [])
     end
 
+    image_pages = PdfImageDetector.image_pages(@binary)
     pages = build_page_infos(image_pages)
     Result.new(model: BatchChunkingPrompt::MODEL_MULTIMODAL, mode: :pdf_mixed, pages: pages)
   end
@@ -115,18 +120,22 @@ class FileMultimodalRouter
   end
 
   # Determines per-page model with conservative image-to-text downgrade.
+  # Always calls PageImageDensityAnalyzer so rasterized slides (no XObjects) are detected.
   # @return [model, text_layer_chars, image_area_ratio]
   def route_page(page_binary, has_images:, page_num:)
-    unless has_images
-      return [ BatchChunkingPrompt::MODEL_TEXT, 0, 0.0 ]
+    analysis           = PageImageDensityAnalyzer.analyze(page_binary)
+    text_chars         = analysis[:text_layer_chars]
+    img_ratio          = analysis[:image_area_ratio]
+    density_has_images = analysis[:has_images]
+
+    effective_has_images = has_images || density_has_images || img_ratio >= 0.20
+
+    unless effective_has_images
+      return [ BatchChunkingPrompt::MODEL_TEXT, text_chars, img_ratio ]
     end
 
-    analysis   = PageImageDensityAnalyzer.analyze(page_binary)
-    text_chars = analysis[:text_layer_chars]
-    img_ratio  = analysis[:image_area_ratio]
-
     if text_chars > 500 && img_ratio < 0.20
-      Rails.logger.info("PageRouter: page #{page_num} downgraded — image_ratio=#{img_ratio.round(3)}, text_chars=#{text_chars}")
+      Rails.logger.info("PageRouter: p#{page_num} downgraded — image_ratio=#{img_ratio.round(3)}, text_chars=#{text_chars}")
       return [ BatchChunkingPrompt::MODEL_TEXT, text_chars, img_ratio ]
     end
 

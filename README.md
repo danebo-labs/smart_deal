@@ -13,10 +13,11 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 | Area | Summary |
 |------|---------|
 | **RAG chat** | Bedrock Knowledge Base, hybrid orchestrator (optional Text-to-SQL) |
-| **Chat uploads** | Legacy Bedrock FM parse, or **custom Claude chunking** when `CUSTOM_CHUNKING_WEB_ENABLED=true` |
+| **Chat uploads** | Legacy Bedrock FM parse, or **custom Claude chunking** when `CUSTOM_CHUNKING_WEB_ENABLED=true` — supports images, text, PDF, **Word, Excel, PowerPoint** (via LibreOffice) |
+| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, **single Haiku call** that classifies an entire slide deck, locale-aware summaries — see [docs/WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md#claude-message-api-cost-optimizations-web_v1) |
 | **Bulk ZIP** | `/bulk_uploads` — Anthropic Message Batches, Turbo progress UI |
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
-| **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet), live chat footer |
+| **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet, web_v1 vs legacy split), live chat footer |
 | **Auth** | Devise |
 
 Detail: [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md).

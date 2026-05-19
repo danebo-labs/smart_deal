@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "timeout"
 require "tmpdir"
 
 # Converts Office documents (doc, docx, xls, xlsx, ppt, pptx, odt, ods, odp)
@@ -36,24 +37,25 @@ class OfficeToPdfConverter
 
       File.binwrite(input_path, @binary)
 
-      stdout, stderr, status = Open3.capture3(
-        SOFFICE_BIN,
-        "--headless",
-        "--convert-to", "pdf",
-        "--outdir", tmpdir,
-        input_path,
-        stdin_data: "",
-        timeout:    TIMEOUT_SECONDS
-      )
-
-      unless status.success?
-        raise Error, "LibreOffice exited #{status.exitstatus}: #{stderr.strip.truncate(300)}"
+      stdout, stderr, status = Timeout.timeout(TIMEOUT_SECONDS) do
+        Open3.capture3(
+          SOFFICE_BIN,
+          "--headless",
+          "--convert-to", "pdf",
+          "--outdir", tmpdir,
+          "-env:UserInstallation=file://#{tmpdir}/profile",
+          input_path,
+          stdin_data: ""
+        )
       end
 
+      raise Error, "LibreOffice exited #{status.exitstatus}: #{stderr.strip.truncate(300)}" unless status.success?
       raise Error, "LibreOffice produced no output — stdout=#{stdout.strip.truncate(200)}" unless File.exist?(output_path)
 
       File.binread(output_path)
     end
+  rescue Timeout::Error
+    raise Error, "LibreOffice conversion exceeded #{TIMEOUT_SECONDS}s"
   rescue Errno::ENOENT
     raise Error, "LibreOffice (#{SOFFICE_BIN}) not found — install libreoffice-core in this environment"
   end

@@ -7,11 +7,16 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
   ALIASES1 = %w[HPM-400 orona hydraulic]
   ALIASES2 = %w[HPM-400 pump specs]  # HPM-400 duplicated
 
-  def page1_json
+  PAGE1_SUMMARY         = "Parece un manual de hidráulica Orona — cubre seguridad y puesta en marcha."
+  PAGE1_COMPANION_OFFER = "Dime qué necesitas saber, cualquier pregunta está bien."
+
+  def page1_json(summary: PAGE1_SUMMARY, companion_offer: PAGE1_COMPANION_OFFER)
     {
-      "document_name" => DOC_NAME,
-      "aliases"       => ALIASES1,
-      "chunks"        => [
+      "document_name"   => DOC_NAME,
+      "aliases"         => ALIASES1,
+      "summary"         => summary,
+      "companion_offer" => companion_offer,
+      "chunks"          => [
         {
           "text" => "# S0 — DOCUMENT IDENTIFICATION\nContent page 1 chunk 0.",
           "page" => 1
@@ -28,6 +33,7 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     {
       "document_name" => DOC_NAME,
       "aliases"       => ALIASES2,
+      "summary"       => "Page 3 summary — should not be used.",
       "chunks"        => [
         {
           "text" => "# S6 — ELECTRICAL\nContent page 3 chunk 0.",
@@ -129,5 +135,50 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_equal DOC_NAME, parsed["document_name"]
     # Only page 1's chunks should be present (page 2 is malformed → empty)
     assert_equal 2, parsed["chunks"].count
+  end
+
+  # ─── summary + companion_offer from anchor ────────────────────────────────────
+
+  test "merged JSON includes summary from anchor page (page 1)" do
+    parsed = JSON.parse(ChunkMergerService.merge(page_results))
+    assert_equal PAGE1_SUMMARY, parsed["summary"]
+  end
+
+  test "merged JSON includes companion_offer from anchor page (page 1)" do
+    parsed = JSON.parse(ChunkMergerService.merge(page_results))
+    assert_equal PAGE1_COMPANION_OFFER, parsed["companion_offer"]
+  end
+
+  test "summary comes from lowest-page anchor when page 1 is absent" do
+    p2_json = {
+      "document_name"   => "Manual Page 2",
+      "aliases"         => %w[p2],
+      "summary"         => "Summary from page 2.",
+      "companion_offer" => "Offer from page 2.",
+      "chunks"          => [ { "text" => "c2", "page" => 2 } ]
+    }.to_json
+    p5_json = {
+      "document_name" => "Manual Page 5",
+      "aliases"       => %w[p5],
+      "summary"       => "Should not be used.",
+      "chunks"        => [ { "text" => "c5", "page" => 5 } ]
+    }.to_json
+
+    results = [
+      { page_number: 2, text: p2_json, usage: nil, model: "claude-opus-4-7" },
+      { page_number: 5, text: p5_json, usage: nil, model: "claude-opus-4-7" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+    assert_equal "Summary from page 2.", parsed["summary"]
+    assert_equal "Offer from page 2.",   parsed["companion_offer"]
+  end
+
+  test "summary is nil when anchor page returns no summary" do
+    no_summary_results = [
+      { page_number: 1, text: page1_json(summary: nil, companion_offer: nil), usage: nil, model: "claude-sonnet-4-6" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(no_summary_results))
+    assert_nil parsed["summary"]
+    assert_nil parsed["companion_offer"]
   end
 end

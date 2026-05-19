@@ -34,7 +34,7 @@ class ChunkMergerService
       parse_page(r[:text], idx, r[:page_number])
     end
 
-    doc_name    = canonical_name(parsed_pages)
+    doc_name, chosen_idx = canonical_name(parsed_pages)
     all_aliases = parsed_pages.flat_map { |p| Array(p["aliases"]).map(&:to_s).map(&:strip) }
                                .reject(&:empty?)
                                .uniq
@@ -47,9 +47,11 @@ class ChunkMergerService
     end
 
     JSON.generate({
-      "document_name" => doc_name,
-      "aliases"       => all_aliases,
-      "chunks"        => all_chunks
+      "document_name"   => doc_name,
+      "aliases"         => all_aliases,
+      "summary"         => parsed_pages[chosen_idx]&.dig("summary").to_s.presence,
+      "companion_offer" => parsed_pages[chosen_idx]&.dig("companion_offer").to_s.presence,
+      "chunks"          => all_chunks
     })
   end
 
@@ -59,6 +61,7 @@ class ChunkMergerService
   #   1. Use page 1's document_name if page 1 is in the result set and non-empty.
   #   2. Otherwise use the lowest page_number with a non-empty document_name.
   # Logs a warning when names differ across pages (drift indicates prompt inconsistency).
+  # Returns [name, chosen_idx] so callers can also extract summary/companion_offer from the anchor.
   def canonical_name(parsed_pages)
     page_one_idx = @page_results.index { |r| r[:page_number] == 1 }
     chosen_idx   = if page_one_idx && parsed_pages[page_one_idx]["document_name"].to_s.presence
@@ -77,7 +80,7 @@ class ChunkMergerService
       )
     end
 
-    name
+    [ name, chosen_idx ]
   end
 
   def parse_page(text, idx, page_number)

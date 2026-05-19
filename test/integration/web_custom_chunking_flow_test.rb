@@ -265,6 +265,76 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
   # Fallback on error
   # ---------------------------------------------------------------------------
 
+  # ─── Office failure — no legacy fallback ─────────────────────────────────────
+
+  test "Office file: SingleFileChunkingService failure does NOT call KbSyncService (legacy)" do
+    orig_convert = OfficeToPdfConverter.method(:convert)
+    OfficeToPdfConverter.define_singleton_method(:convert) { |_, **| raise OfficeToPdfConverter::Error, "LibreOffice not found" }
+
+    legacy_called  = false
+    orig_kb        = KbSyncService.method(:new)
+    KbSyncService.define_singleton_method(:new) do |**|
+      legacy_called = true
+      stub = Object.new
+      stub.define_singleton_method(:sync!) { |**| nil }
+      stub
+    end
+
+    broadcaster_failed_called = false
+    orig_failed = KbSyncBroadcaster.method(:failed)
+    KbSyncBroadcaster.define_singleton_method(:failed) do |**|
+      broadcaster_failed_called = true
+    end
+
+    binary = "PK fake pptx bytes"
+    doc_payload = [ {
+      filename:   "deck.pptx",
+      data:       Base64.strict_encode64(binary),
+      media_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    } ]
+
+    orchestrator = QueryOrchestratorService.new("any query", documents: doc_payload)
+    orchestrator.send(:upload_and_sync_attachments)
+
+    assert_not legacy_called,          "KbSyncService (legacy) must NOT be called for Office parse failures"
+    assert     broadcaster_failed_called, "KbSyncBroadcaster.failed must be called to notify the user"
+  ensure
+    OfficeToPdfConverter.define_singleton_method(:convert, orig_convert)
+    KbSyncService.define_singleton_method(:new, orig_kb) if defined?(orig_kb)
+    KbSyncBroadcaster.define_singleton_method(:failed, orig_failed) if defined?(orig_failed)
+  end
+
+  test "PDF file: SingleFileChunkingService failure DOES fall back to KbSyncService (non-Office)" do
+    orig_anthropic = Anthropic::Client.method(:new)
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      client = OpenStruct.new(api_key: "fake")
+      msgs   = OpenStruct.new
+      msgs.define_singleton_method(:stream) { |_| raise StandardError, "Simulated PDF parse failure" }
+      client.define_singleton_method(:messages) { msgs }
+      client
+    end
+
+    legacy_called = false
+    orig_kb       = KbSyncService.method(:new)
+    KbSyncService.define_singleton_method(:new) do |**|
+      legacy_called = true
+      stub = Object.new
+      stub.define_singleton_method(:sync!) { |**| nil }
+      stub
+    end
+
+    orig_no_fallback = ENV["CUSTOM_CHUNKING_NO_FALLBACK"]
+    ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = "false"
+
+    run_pipeline(filename: "guide.pdf", content_type: "application/pdf")
+
+    assert legacy_called, "KbSyncService (legacy) must be called for non-Office failures"
+  ensure
+    Anthropic::Client.define_singleton_method(:new, orig_anthropic) if defined?(orig_anthropic)
+    KbSyncService.define_singleton_method(:new, orig_kb) if defined?(orig_kb)
+    ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = orig_no_fallback
+  end
+
   test "with flag ON: falls back to KbSyncService when Anthropic raises" do
     Anthropic::Client.define_singleton_method(:new) do |**|
       client = OpenStruct.new(api_key: "fake")

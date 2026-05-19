@@ -11,6 +11,7 @@
 # Called from QueryOrchestratorService#upload_and_sync_attachments when
 # Rails.application.config.x.custom_chunking_web_enabled is true.
 class CustomChunkingPipeline
+  OFFICE_EXTENSIONS = FileMultimodalRouter::OFFICE_EXTENSIONS
   # @param images       [Array<Hash>] same shape as QOS @images
   # @param documents    [Array<Hash>] same shape as QOS @documents
   # @param conv_session [ConversationSession, nil]
@@ -128,14 +129,30 @@ class CustomChunkingPipeline
     @kb_document_ids    << kb_doc.id
     @uploaded_filenames << filename
 
-    chunk_asset = SingleFileChunkingService.new(
-      binary:       binary,
-      content_type: content_type,
-      filename:     filename,
-      s3_key:       s3_key,
-      sha256:       sha256,
-      locale:       @locale
-    ).call
+    begin
+      chunk_asset = SingleFileChunkingService.new(
+        binary:       binary,
+        content_type: content_type,
+        filename:     filename,
+        s3_key:       s3_key,
+        sha256:       sha256,
+        locale:       @locale
+      ).call
+    rescue StandardError => e
+      if office?(filename)
+        Rails.logger.error("CustomChunking: Office parse failed for #{filename} — #{e.class}: #{e.message}")
+        Rails.logger.error(e.backtrace.first(10).join("\n"))
+        @uploaded_filenames.delete(filename)
+        @kb_document_ids.delete(kb_doc.id)
+        KbSyncBroadcaster.failed(
+          filenames: [ filename ],
+          reason:    "office_parse_error",
+          message:   I18n.t("rag.office_parse_failed")
+        )
+        return
+      end
+      raise
+    end
 
     @web_v1_metadata << {
       "filename"        => filename,
@@ -153,6 +170,10 @@ class CustomChunkingPipeline
     end
   rescue ActiveRecord::RecordNotUnique
     KbDocument.find_by!(s3_key: s3_key)
+  end
+
+  def office?(filename)
+    OFFICE_EXTENSIONS.include?(File.extname(filename.to_s).downcase)
   end
 
   def fallback_to_legacy

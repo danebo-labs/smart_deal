@@ -12,12 +12,17 @@
 # Special case — scanned_image:
 #   text_layer_chars < 100 AND image_area_ratio > 0.7 → keep (force Opus 4.7, skip Haiku)
 #
+# Batch mode (Office/PPT origin):
+#   PageRelevanceFilter.call_batch classifies all N slides in a single Haiku call,
+#   avoiding the scanned_image short-circuit that would keep covers/indexes.
+#
 # @param repeated_texts [Set<String>] texts that appear on >= 3 pages in this document
 #   (running headers/footers). Built by the caller from all page texts before filtering.
 class PageRelevanceFilter
   HAIKU_MODEL              = "claude-haiku-4-5-20251001"
   HAIKU_TRACKING_MODEL_ID  = "claude-haiku-4-5-20251001-direct"
   HAIKU_MAX_TOKENS         = 64
+  HAIKU_BATCH_MAX_TOKENS   = 256
 
   TOC_LINE_FRACTION = 0.30  # ≥30% of lines ending in a page number → ToC
   TOC_MIN_LINES     = 10
@@ -35,6 +40,18 @@ class PageRelevanceFilter
     keep=true  → page has useful technical content (specs, diagrams, troubleshooting, procedures, wiring)
     keep=false → page is boilerplate (index, preface, copyright, blank, table of contents)
   PROMPT
+
+  # Batch classifier for Office/PPT origin: one Haiku call classifies all N slides.
+  #
+  # @param pages        [Array<#number, #binary>]  page infos with single-page PDF bytes
+  # @param filename     [String]                   document filename (for tracking)
+  # @param haiku_client [#messages]                injectable Anthropic client (for tests)
+  # @return [Hash{Integer => Hash}] page_number => { keep:, reason:, source: :haiku_batch, force_opus: }
+  def self.call_batch(pages:, filename:, haiku_client: nil)
+    return {} if pages.empty?
+
+    BatchFilter.new(pages: pages, filename: filename, haiku_client: haiku_client).call
+  end
 
   # @param page_binary    [String]       raw single-page PDF bytes
   # @param page_number    [Integer]      1-indexed position in original document
@@ -181,5 +198,116 @@ class PageRelevanceFilter
     )
   rescue StandardError => e
     Rails.logger.warn("PageRelevanceFilter: failed to enqueue tracking job — #{e.message}")
+  end
+
+  # ─── Batch filter (Office/PPT origin) ─────────────────────────────────────
+
+  # Single Haiku call that classifies all N rasterized slides at once.
+  # Used exclusively from PageRelevanceFilter.call_batch — do not instantiate directly.
+  class BatchFilter
+    HAIKU_BATCH_SYSTEM = <<~PROMPT.strip.freeze
+      You classify rasterized PRESENTATION slides for elevator technicians.
+      Return ONLY raw JSON. Do NOT wrap in markdown fences. Do NOT add any prose.
+      Schema: {"pages":[{"page":N,"keep":bool,"reason":"<10 words"},...]}
+      keep=false → cover/title slide, agenda/index/table of contents, section divider, blank
+      keep=true  → technical diagrams, photos with components, procedures, data tables
+      Be aggressive dropping covers and indexes.
+    PROMPT
+
+    def initialize(pages:, filename:, haiku_client:)
+      @pages        = pages
+      @filename     = filename
+      @haiku_client = haiku_client
+    end
+
+    def call
+      client     = @haiku_client || build_client
+      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      response = client.messages.create(
+        model:      PageRelevanceFilter::HAIKU_MODEL,
+        max_tokens: PageRelevanceFilter::HAIKU_BATCH_MAX_TOKENS,
+        system:     HAIKU_BATCH_SYSTEM,
+        messages:   [ { role: "user", content: build_content } ]
+      )
+
+      latency_ms   = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+      text_block   = response.content.find { |b| b.type.to_s == "text" }
+      json_str     = strip_markdown_fences(text_block.text.to_s)
+      parsed_pages = JSON.parse(json_str).fetch("pages")
+      result       = build_result(parsed_pages)
+
+      track_usage(response, latency_ms)
+      result
+    rescue StandardError => e
+      Rails.logger.warn("PageRelevanceFilter.call_batch #{@filename} failed (#{e.class}): #{e.message} — keeping all pages")
+      @pages.each_with_object({}) do |page, h|
+        h[page.number] = { keep: true, reason: :haiku_batch_error_fallback, source: :haiku_batch }
+      end
+    end
+
+    private
+
+    def build_content
+      content = []
+      @pages.each do |page|
+        content << { type: "text", text: "Page #{page.number}:" }
+        content << {
+          type:   "document",
+          source: {
+            type:       "base64",
+            media_type: "application/pdf",
+            data:       Base64.strict_encode64(page.binary)
+          }
+        }
+      end
+      content << { type: "text", text: "Classify each slide. Return ONLY the JSON object." }
+      content
+    end
+
+    def build_result(parsed_pages)
+      result = @pages.each_with_object({}) do |page, h|
+        h[page.number] = { keep: true, reason: :missing_in_response, source: :haiku_batch, force_opus: false }
+      end
+
+      parsed_pages.each do |entry|
+        num    = entry["page"].to_i
+        keep   = entry["keep"] != false
+        reason = entry["reason"].to_s.presence&.to_sym || (keep ? :haiku_batch_keep : :haiku_batch_drop)
+        result[num] = { keep: keep, reason: reason, source: :haiku_batch, force_opus: keep }
+      end
+
+      result
+    end
+
+    def strip_markdown_fences(text)
+      text.strip
+          .sub(/\A```(?:json)?\s*/i, "")
+          .sub(/```\s*\z/, "")
+          .strip
+    end
+
+    def build_client
+      api_key = ENV.fetch("ANTHROPIC_API_KEY", nil).presence ||
+                Rails.application.credentials.dig(:anthropic, :api_key)
+      Anthropic::Client.new(api_key: api_key)
+    end
+
+    def track_usage(response, latency_ms)
+      usage = response.usage
+      n     = @pages.size
+      TrackBedrockQueryJob.perform_later(
+        model_id:              PageRelevanceFilter::HAIKU_TRACKING_MODEL_ID,
+        user_query:            "page_filter_batch: #{@filename} 1..#{n}/#{n}",
+        latency_ms:            latency_ms,
+        input_tokens:          usage.input_tokens.to_i,
+        output_tokens:         usage.output_tokens.to_i,
+        cache_read_tokens:     usage.respond_to?(:cache_read_input_tokens) && usage.cache_read_input_tokens.to_i > 0 ? usage.cache_read_input_tokens.to_i : nil,
+        cache_creation_tokens: usage.respond_to?(:cache_creation_input_tokens) && usage.cache_creation_input_tokens.to_i > 0 ? usage.cache_creation_input_tokens.to_i : nil,
+        source:                "ingestion_parse"
+      )
+    rescue StandardError => e
+      Rails.logger.warn("PageRelevanceFilter.call_batch: failed to enqueue tracking job — #{e.message}")
+    end
   end
 end

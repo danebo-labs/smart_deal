@@ -29,14 +29,15 @@
 # @param s3_service    [#upload_text] injectable S3 client (for tests)
 class SingleFileChunkingService
   def initialize(binary:, content_type:, filename:, s3_key:, sha256:, s3_service: nil, locale: nil)
-    @binary       = binary
-    @content_type = content_type
-    @filename     = filename
-    @s3_key       = s3_key
-    @sha256       = sha256
-    @locale       = locale
-    @s3           = s3_service || S3DocumentsService.new
-    @asset        = ChunkAsset.new(filename: filename, sha256: sha256, s3_key: s3_key, content_type: content_type)
+    @binary         = binary
+    @content_type   = content_type
+    @filename       = filename
+    @s3_key         = s3_key
+    @sha256         = sha256
+    @locale         = locale
+    @s3             = s3_service || S3DocumentsService.new
+    @asset          = ChunkAsset.new(filename: filename, sha256: sha256, s3_key: s3_key, content_type: content_type)
+    @office_origin  = false
   end
 
   def call
@@ -64,7 +65,8 @@ class SingleFileChunkingService
   def handle_text
     content = BatchChunkingPrompt.text_user_content(
       text:     @binary.dup.force_encoding("UTF-8"),
-      filename: @filename
+      filename: @filename,
+      locale:   @locale
     )
     result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
       user_content: content,
@@ -80,10 +82,7 @@ class SingleFileChunkingService
       filename:     @filename,
       locale:       @locale
     )
-    result = client_for(model).call(
-      user_content: content,
-      filename:     @filename
-    )
+    result = call_with_page_cap_retry(client: client_for(model), user_content: content)
     parse_and_write(result[:text])
   end
 
@@ -91,7 +90,8 @@ class SingleFileChunkingService
     content = BatchChunkingPrompt.user_content(
       binary:       @binary,
       content_type: "application/pdf",
-      filename:     @filename
+      filename:     @filename,
+      locale:       @locale
     )
     result = client_for(model).call(
       user_content: content,
@@ -101,31 +101,28 @@ class SingleFileChunkingService
   end
 
   def handle_pdf_mixed(pages)
-    total         = pages.count
-    repeated_texts = build_repeated_texts(pages)
+    total = pages.count
+
+    filter_results =
+      if @office_origin && pages.size > 1
+        PageRelevanceFilter.call_batch(pages: pages, filename: @filename)
+      else
+        build_per_page_filters(pages, total)
+      end
 
     kept_pages = pages.select do |page|
-      filter = PageRelevanceFilter.new(
-        page.binary,
-        page_number:    page.number,
-        total_pages:    total,
-        filename:       @filename,
-        repeated_texts: repeated_texts
-      ).call
+      r = filter_results[page.number] || { keep: true, reason: :missing, source: :fallback }
 
-      keep = filter[:keep]
-
-      if filter[:force_opus] && keep
-        # Scanned image page — override router's model decision
+      if r[:force_opus] && r[:keep]
         page.model      = BatchChunkingPrompt::MODEL_MULTIMODAL
         page.force_opus = true
       end
 
       Rails.logger.info(
         "PageRelevanceFilter: #{@filename} p#{page.number} " \
-        "#{keep ? 'keep' : 'drop'} (#{filter[:reason]}, #{filter[:source]})"
+        "#{r[:keep] ? 'keep' : 'drop'} (#{r[:reason]}, #{r[:source]})"
       )
-      keep
+      r[:keep]
     end
 
     if kept_pages.empty?
@@ -142,6 +139,8 @@ class SingleFileChunkingService
     ext        = File.extname(@filename)
     pdf_binary = OfficeToPdfConverter.convert(@binary, extension: ext)
 
+    @office_origin = true
+
     # Re-classify as PDF now that we have the converted binary
     classification = FileMultimodalRouter.classify(
       binary:       pdf_binary,
@@ -153,7 +152,7 @@ class SingleFileChunkingService
     when :pdf_mixed    then handle_pdf_mixed(classification.pages)
     when :pdf_text_only then handle_pdf_text_only_binary(pdf_binary, classification.model)
     else
-      handle_text_binary(pdf_binary)
+      handle_pdf_text_only_binary(pdf_binary, BatchChunkingPrompt::MODEL_TEXT)
     end
   end
 
@@ -166,12 +165,12 @@ class SingleFileChunkingService
   #           emits the same document_name across all parts of the same file.
   # For single-page inputs, falls through to a direct call (no hint needed).
   def chunk_pages_with_identity_hint(pages, total)
-    return [ call_claude_for_page(pages.first, total, document_name_hint: nil) ] if pages.size == 1
+    return [ call_claude_for_page(pages.first, total, document_name_hint: nil, locale: @locale) ] if pages.size == 1
 
     anchor = pages.min_by(&:number)
     rest   = pages.reject { |p| p.number == anchor.number }
 
-    anchor_result = call_claude_for_page(anchor, total, document_name_hint: nil)
+    anchor_result = call_claude_for_page(anchor, total, document_name_hint: nil, locale: @locale)
 
     hint = begin
       JSON.parse(anchor_result[:text].to_s)["document_name"].to_s.presence
@@ -197,7 +196,7 @@ class SingleFileChunkingService
     end
   end
 
-  def call_claude_for_page(page, total, document_name_hint:)
+  def call_claude_for_page(page, total, document_name_hint:, locale: nil)
     model    = page.model
     page_num = page.number
     content  = BatchChunkingPrompt.page_user_content(
@@ -205,22 +204,51 @@ class SingleFileChunkingService
       page_number:        page_num,
       total_pages:        total,
       filename:           @filename,
-      document_name_hint: document_name_hint
+      document_name_hint: document_name_hint,
+      locale:             locale
     )
-    result = ClaudeChunkingClient.new(model: model).call(
+    result = call_with_page_cap_retry(
+      client:       ClaudeChunkingClient.new(model: model),
       user_content: content,
-      filename:     @filename,
       page_number:  page_num,
       total_pages:  total
     )
     { page_number: page_num, text: result[:text], usage: result[:usage], model: model }
   end
 
+  def call_with_page_cap_retry(client:, user_content:, page_number: nil, total_pages: nil)
+    result = client.call(
+      user_content: user_content,
+      filename:     @filename,
+      page_number:  page_number,
+      total_pages:  total_pages,
+      max_tokens:   BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS
+    )
+
+    return result unless result[:stop_reason] == "max_tokens"
+
+    Rails.logger.warn(
+      "SingleFileChunkingService: #{@filename}" \
+      "#{page_number ? " p#{page_number}" : ''} truncated at " \
+      "#{BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS} — retrying with " \
+      "#{BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS}"
+    )
+
+    client.call(
+      user_content: user_content,
+      filename:     @filename,
+      page_number:  page_number,
+      total_pages:  total_pages,
+      max_tokens:   BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS
+    )
+  end
+
   def handle_pdf_text_only_binary(pdf_binary, model)
     content = BatchChunkingPrompt.user_content(
       binary:       pdf_binary,
       content_type: "application/pdf",
-      filename:     @filename
+      filename:     @filename,
+      locale:       @locale
     )
     result = client_for(model).call(user_content: content, filename: @filename)
     parse_and_write(result[:text])
@@ -228,14 +256,28 @@ class SingleFileChunkingService
 
   def handle_text_binary(binary)
     content = BatchChunkingPrompt.text_user_content(
-      text:     binary.dup.force_encoding("UTF-8"),
-      filename: @filename
+      text:     binary.dup.force_encoding("UTF-8").scrub,
+      filename: @filename,
+      locale:   @locale
     )
     result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
       user_content: content,
       filename:     @filename
     )
     parse_and_write(result[:text])
+  end
+
+  def build_per_page_filters(pages, total)
+    repeated_texts = build_repeated_texts(pages)
+    pages.each_with_object({}) do |page, h|
+      h[page.number] = PageRelevanceFilter.new(
+        page.binary,
+        page_number:    page.number,
+        total_pages:    total,
+        filename:       @filename,
+        repeated_texts: repeated_texts
+      ).call
+    end
   end
 
   def build_repeated_texts(pages)

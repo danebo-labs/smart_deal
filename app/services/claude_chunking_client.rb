@@ -31,26 +31,38 @@ class ClaudeChunkingClient
   # @param filename      [String]      original filename (for tracking)
   # @param page_number   [Integer, nil] current page number (for pdf_mixed tracking)
   # @param total_pages   [Integer, nil] total pages in this document (for pdf_mixed tracking)
-  # @return [Hash] { text: String, usage: usage_object, model: String }
+  # @param max_tokens    [Integer]     token cap; defaults to MAX_TOKENS (32k) for single-shot paths;
+  #   callers that process ≤1 page pass WEB_PAGE_MAX_TOKENS (4k) with retry logic
+  # @return [Hash] { text: String, usage: usage_object, model: String, stop_reason: String | nil }
   # @raise [ApiError]
-  def call(user_content:, filename:, page_number: nil, total_pages: nil)
+  def call(user_content:, filename:, page_number: nil, total_pages: nil,
+           max_tokens: BatchChunkingPrompt::MAX_TOKENS)
     start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     response = @client.messages.stream(
       model:      @model,
-      max_tokens: BatchChunkingPrompt::MAX_TOKENS,
+      max_tokens: max_tokens,
       system:     BatchChunkingPrompt::SYSTEM_BLOCKS,
       messages:   [ { role: "user", content: user_content } ]
     ).accumulated_message
 
-    latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
-
-    text_block = response.content.find { |b| b.type.to_s == "text" }
+    latency_ms  = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+    text_block  = response.content.find { |b| b.type.to_s == "text" }
     raise ApiError, "No text block in Anthropic response (model=#{@model})" unless text_block
+
+    raw_stop    = response.respond_to?(:stop_reason) ? response.stop_reason.to_s : nil
+    stop_reason = raw_stop == "max_tokens" ? "max_tokens" : nil
+
+    if stop_reason == "max_tokens"
+      Rails.logger.warn(
+        "ClaudeChunkingClient: #{@model} hit max_tokens cap (#{max_tokens}) " \
+        "for #{user_query_for_log(filename, page_number, total_pages)}"
+      )
+    end
 
     track_usage(response.usage, filename, page_number, total_pages, latency_ms)
 
-    { text: text_block.text, usage: response.usage, model: response.model }
+    { text: text_block.text, usage: response.usage, model: response.model, stop_reason: stop_reason }
   rescue Anthropic::Errors::APIError => e
     raise ApiError, "Anthropic API error (model=#{@model}): #{e.message}"
   rescue ArgumentError => e
@@ -63,6 +75,10 @@ class ClaudeChunkingClient
     api_key = ENV.fetch("ANTHROPIC_API_KEY", nil).presence ||
               Rails.application.credentials.dig(:anthropic, :api_key)
     Anthropic::Client.new(api_key: api_key)
+  end
+
+  def user_query_for_log(filename, page_number, total_pages)
+    page_number && total_pages ? "#{filename} p#{page_number}/#{total_pages}" : filename
   end
 
   def track_usage(usage, filename, page_number, total_pages, latency_ms)

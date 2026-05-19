@@ -175,4 +175,57 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
     assert_equal 500, job_args["cache_read_tokens"]
     assert_nil        job_args["cache_creation_tokens"]
   end
+
+  # ---------------------------------------------------------------------------
+  # max_tokens parameter + stop_reason
+  # ---------------------------------------------------------------------------
+
+  test "passes MAX_TOKENS by default when max_tokens not specified" do
+    client = make_client
+    client.call(user_content: [ { type: "text", text: "doc" } ], filename: "test.pdf")
+
+    last = client.instance_variable_get(:@client).messages.last_params
+    assert_equal BatchChunkingPrompt::MAX_TOKENS, last[:max_tokens]
+  end
+
+  test "passes custom max_tokens value to Anthropic stream call" do
+    client = make_client
+    client.call(
+      user_content: [ { type: "text", text: "doc" } ],
+      filename:     "test.pdf",
+      max_tokens:   BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS
+    )
+
+    last = client.instance_variable_get(:@client).messages.last_params
+    assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, last[:max_tokens]
+  end
+
+  test "stop_reason is nil when response does not report max_tokens" do
+    client = make_client
+    result = client.call(user_content: [ { type: "text", text: "doc" } ], filename: "test.pdf")
+
+    assert_nil result[:stop_reason]
+  end
+
+  test "stop_reason is 'max_tokens' when response reports truncation" do
+    response = FakeResponse.new(text: GOLDEN_JSON)
+    response.define_singleton_method(:stop_reason) { "max_tokens" }
+
+    fake = FakeAnthropicClient.new(response: response)
+    client = ClaudeChunkingClient.new(model: "claude-opus-4-7", client: fake)
+
+    result = client.call(user_content: [], filename: "big.pdf")
+    assert_equal "max_tokens", result[:stop_reason]
+  end
+
+  test "stop_reason is nil when response reports end_turn" do
+    response = FakeResponse.new(text: GOLDEN_JSON)
+    response.define_singleton_method(:stop_reason) { "end_turn" }
+
+    fake = FakeAnthropicClient.new(response: response)
+    client = ClaudeChunkingClient.new(model: "claude-opus-4-7", client: fake)
+
+    result = client.call(user_content: [], filename: "ok.pdf")
+    assert_nil result[:stop_reason]
+  end
 end

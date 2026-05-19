@@ -23,6 +23,11 @@ module BatchChunkingPrompt
   MODEL      = MODEL_MULTIMODAL
   MAX_TOKENS = 32_000
 
+  # Per-page / per-image cap for pdf_mixed and handle_image paths.
+  # First attempt: conservative cap. Retry at WEB_PAGE_RETRY_MAX_TOKENS if truncated.
+  WEB_PAGE_MAX_TOKENS       = 4_000
+  WEB_PAGE_RETRY_MAX_TOKENS = 16_000
+
   SYSTEM_BLOCKS = [
     {
       type: "text",
@@ -51,8 +56,8 @@ module BatchChunkingPrompt
         {
           "document_name": "<canonical 3-7 word human name>",
           "aliases": ["<alias 1>", "<alias 2>", ...],
-          "summary": "<1-2 friendly sentences, no jargon, in the requested language; OMIT for non-image inputs>",
-          "companion_offer": "<1 warm sentence inviting questions in plain language; OMIT for non-image inputs>",
+          "summary": "<2-3 friendly sentences, no jargon, in the requested language; always emit>",
+          "companion_offer": "<1 warm sentence inviting questions in plain language; always emit>",
           "chunks": [
             { "text": "<chunk body — see CHUNK FORMAT below>", "page": <integer or null> }
           ]
@@ -65,53 +70,60 @@ module BatchChunkingPrompt
         - Inside chunk bodies, set ORIGINAL_FILE_NAME / NORMALIZED_FILE_NAME / SOURCE_URI
           to the literal token PIPELINE_INJECTED whenever you would otherwise emit them.
 
-        # SUMMARY (image inputs only — shown to the technician immediately after upload)
-        Emit `summary` ONLY for single images (jpg/png/webp/gif). OMIT entirely for PDFs, Office, text.
+        # SUMMARY (shown to the technician immediately after upload — emit for ALL input types)
+        Always emit `summary`. Never omit it, regardless of input type (image, PDF, Office, text).
 
         CONTEXT: The technician receiving this is in the field — poor light, gloves on, possibly
         slow or intermittent internet. They may be stressed or unsure. You are their most trusted
         senior colleague: you have seen everything, you stay calm, and you always have an answer
         or know where to find one. You never make them feel they asked a dumb question.
 
-        The summary is the first thing they read after uploading a photo. Make it feel like a
-        trusted coworker glancing at their screen and saying in two sentences what they see.
+        The summary is the first thing they read after uploading. Make it feel like a trusted
+        coworker glancing at their screen and saying in 2-3 sentences what they see.
         Warm, plain language. No jargon. No report format. No specs unless unavoidable.
 
         Rules:
-        - 1-2 sentences max, ~20-35 words total. Plain text only — NO Markdown, NO lists, NO tables.
-        - Start with what you see ("Parece...", "Veo...", "Diría que...", "Looks like...", "Veo aquí...").
-        - Mention equipment type and brand/model ONLY if clearly visible in the image.
-        - Mention general condition if notable ("se ve en buen estado", "algo desgastado") — no specs.
+        - 2-3 sentences max, ~30-60 words total. Plain text only — NO Markdown, NO lists, NO tables.
+        - For images: start with what you see ("Parece...", "Veo...", "Diría que...", "Looks like...").
+        - For documents (PDF, Office, text): describe what the document covers in plain terms.
+          ("Parece un manual de...", "Es una hoja de cálculo con...", "Veo instrucciones de...").
+        - Mention equipment type and brand/model ONLY if clearly visible or explicitly stated.
+        - Mention general condition for images if notable — no specs.
         - NEVER include: voltage, torque, current, dimensions, section codes (S0/S4...), CONFIDENCE,
           IMAGE_QUALITY, normatives, part numbers, or auditor-style language.
         - NEVER start with "This image shows" or "The image depicts" — speak as a person, not a system.
         - Use the language from the "Summary language: <code>" hint in user content. Default: Spanish.
 
-        Good examples:
+        Good examples — images:
           "Parece el cuadro de maniobras de un Schindler — el cableado del frente se ve ordenado y en buen estado."
           "Veo una placa de bornes, todo bastante legible y sin daños visibles."
-          "Diría que es la placa de control de un KONE — se ve limpia y fácil de leer."
           "Looks like an Otis controller panel — wiring looks intact and everything is clearly labeled."
+
+        Good examples — documents (PDF, Office, text):
+          "Parece un manual de Orona ARCA II — habla sobre cableado, seguridad y puesta en marcha."
+          "Es una hoja de cálculo con planes de mantenimiento por mes — está bastante completa."
+          "Veo instrucciones de instalación de una puerta automática — tiene diagramas y lista de piezas."
 
         Bad examples (DO NOT produce these):
           "S0 — DOCUMENT IDENTIFICATION. TECHNICAL_ID: Schindler 5500. CONFIDENCE: HIGH."
-          "The image shows an elevator control panel with 380V AC terminals and EN 81-20 compliance."
+          "The document contains 380V AC terminals and EN 81-20 compliance specifications."
           "This image depicts a motor drive unit with visible terminal blocks J1 and J2."
 
-        # COMPANION_OFFER (image inputs only — the warm invitation shown below the summary)
-        Emit `companion_offer` ONLY for single images. OMIT for PDFs, Office, text.
+        # COMPANION_OFFER (warm invitation shown below the summary — emit for ALL input types)
+        Always emit `companion_offer`. Never omit it.
 
         One short, warm sentence that invites the technician to ask anything, no matter how basic.
         Speak as the trusted senior colleague you are — reassuring, never dismissive. The technician
         may be in a difficult situation: reinforce that you are there and that any question is valid.
         Do NOT repeat information from `summary`. Use the same language as `summary`.
+        For documents, invite them to ask what they want to know about the document.
 
         Good examples:
           "Pregúntame lo que necesites — estoy aquí para lo que sea."
-          "Cuéntame qué ves o qué necesitas resolver, aunque sea con una sola palabra."
-          "Dime qué quieres saber, cualquier pregunta está bien."
+          "Cuéntame qué necesitas resolver, cualquier duda vale."
+          "Dime qué quieres saber sobre este documento, lo que sea está bien."
           "Ask me anything — I'm here to help, no matter how simple the question."
-          "Tell me what you need — even just a word and I'll take it from there."
+          "Tell me what you need to know about this document — any question is fine."
 
         Bad examples (DO NOT produce these):
           "Please submit your technical query regarding this elevator component."
@@ -246,29 +258,35 @@ module BatchChunkingPrompt
   # Sends the text as a text block — no base64 encoding.
   # @param text     [String] UTF-8 decoded file content
   # @param filename [String] Original filename (context hint only)
+  # @param locale   [String, nil] ISO 639-1 — instructs Claude to emit summary in this language
   # @return [Array<Hash>]
-  def self.text_user_content(text:, filename:)
-    [
+  def self.text_user_content(text:, filename:, locale: nil)
+    blocks = [
       { type: "text", text: text.to_s },
       { type: "text", text: "#{FILENAME_HINT}#{filename}" }
     ]
+    blocks << { type: "text", text: "Summary language: #{locale}." } if locale.present?
+    blocks
   end
 
   # Content block for a single page extracted from a mixed PDF.
   # Instructs the model to chunk only this page and skip S0 unless page 1.
+  # locale is forwarded only for the anchor page (page 1 / lowest kept); wave-B pages omit it.
   # @param binary             [String]  Raw bytes of the single-page PDF
   # @param page_number        [Integer] 1-indexed page number in the original document
   # @param total_pages        [Integer] Total pages in the document (after relevance filtering)
   # @param filename           [String]  Original document filename (context hint only)
   # @param document_name_hint [String, nil] Canonical name derived from page 1 (passed to pages 2+)
+  # @param locale             [String, nil] ISO 639-1 — forwarded only for anchor page
   # @return [Array<Hash>]
-  def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil)
+  def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil, locale: nil)
     instruction = +"Page #{page_number} of #{total_pages}. " \
       "This page is part of a single uploaded file — emit the same `document_name` " \
       "across all pages of this document. " \
       "Return ONLY chunks for this page, each with \"page\": #{page_number} set explicitly."
     instruction << " Document name hint: #{document_name_hint}." if document_name_hint.present?
     instruction << " #{FILENAME_HINT}#{filename}"
+    instruction << " Summary language: #{locale}." if locale.present?
 
     [
       {

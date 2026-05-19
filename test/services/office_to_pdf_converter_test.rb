@@ -75,4 +75,37 @@ class OfficeToPdfConverterTest < ActiveSupport::TestCase
   ensure
     Open3.define_singleton_method(:capture3, original)
   end
+
+  test "raises Error on timeout — no ArgumentError from timeout: kwarg" do
+    original = Open3.method(:capture3)
+    Open3.define_singleton_method(:capture3) { |*_, **__| raise Timeout::Error }
+
+    err = assert_raises(OfficeToPdfConverter::Error) do
+      OfficeToPdfConverter.convert("bytes", extension: ".pptx")
+    end
+    assert_match(/exceeded/, err.message)
+  ensure
+    Open3.define_singleton_method(:capture3, original)
+  end
+
+  test "UserInstallation flag is passed to soffice — concurrent jobs use isolated profiles" do
+    args_captured = []
+    original = Open3.method(:capture3)
+
+    Open3.define_singleton_method(:capture3) do |*args, **kwargs|
+      args_captured.concat(args)
+      fake_status = OpenStruct.new(success?: true, exitstatus: 0)
+      # Write fake output so converter can read it
+      outdir = args.each_cons(2).find { |a, _| a == "--outdir" }&.last
+      File.binwrite(File.join(outdir, "input.pdf"), "%PDF-1.4 fake") if outdir
+      [ "", "", fake_status ]
+    end
+
+    OfficeToPdfConverter.convert("fake bytes", extension: ".docx")
+
+    assert args_captured.any? { |a| a.to_s.start_with?("-env:UserInstallation=") },
+           "expected -env:UserInstallation= flag in soffice args for profile isolation"
+  ensure
+    Open3.define_singleton_method(:capture3, original)
+  end
 end

@@ -176,6 +176,48 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     OfficeToPdfConverter.define_singleton_method(:convert, orig_convert)
   end
 
+  test "pptx office extension triggers OfficeToPdfConverter before routing" do
+    orig_convert = OfficeToPdfConverter.method(:convert)
+    converted = false
+    OfficeToPdfConverter.define_singleton_method(:convert) do |_, **|
+      converted = true
+      "%PDF-1.4 fake"
+    end
+
+    asset = build_service(
+      filename:     "deck.pptx",
+      content_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      binary:       "PK fake"
+    ).call
+    assert converted, "expected OfficeToPdfConverter.convert to be called for pptx"
+    assert_equal DOC_NAME, asset.canonical_name
+  ensure
+    OfficeToPdfConverter.define_singleton_method(:convert, orig_convert)
+  end
+
+  test "office handle_office falls back to pdf_text_only when router returns unknown mode" do
+    # Simulates the case where FileMultimodalRouter classifies the converted PDF
+    # with a mode other than :pdf_mixed / :pdf_text_only (e.g. :text).
+    # Before the fix this called handle_text_binary(pdf_binary) which blew up with
+    # JSON::GeneratorError when the PDF bytes were serialised as UTF-8 text.
+    orig_convert = OfficeToPdfConverter.method(:convert)
+    OfficeToPdfConverter.define_singleton_method(:convert) { |_, **| "%PDF-1.4 fake" }
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      FileMultimodalRouter::Result.new(model: BatchChunkingPrompt::MODEL_TEXT, mode: :text, pages: [])
+    end
+
+    # Should not raise — previously raised JSON::GeneratorError
+    asset = assert_nothing_raised do
+      build_service(filename: "slides.pptx", content_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation", binary: "PK fake").call
+    end
+    assert_equal DOC_NAME, asset.canonical_name
+  ensure
+    OfficeToPdfConverter.define_singleton_method(:convert, orig_convert)
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+  end
+
   # ─── pdf_mixed: two-wave identity hint ────────────────────────────────────────
 
   # Invariant: 1 upload = 1 identity, regardless of N Claude calls.
@@ -285,7 +327,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_match(/Schindler 5500/, asset.summary)
   end
 
-  test "pdf mode: summary remains nil (no locale block sent)" do
+  test "pdf mode: summary is nil when Claude response omits it (still emitted by prompt)" do
+    # golden_json fixture has no summary field — asset.summary reflects what Claude returns.
     asset = build_service.call  # default content_type application/pdf
     assert_nil asset.summary
   end
@@ -304,8 +347,395 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_match(/Pregúntame/, asset.companion_offer)
   end
 
-  test "pdf mode: companion_offer remains nil" do
+  test "pdf mode: companion_offer is nil when Claude response omits it" do
     asset = build_service.call
     assert_nil asset.companion_offer
+  end
+
+  # ─── locale forwarding for non-image types ───────────────────────────────────
+
+  test "text mode: locale is forwarded as 'Summary language' text block" do
+    captured_text_blocks = []
+    self_ref             = self
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        blocks = Array(params.dig(:messages)&.first&.dig(:content))
+        captured_text_blocks.concat(
+          blocks.select { |b| b.is_a?(Hash) && b[:type] == "text" }.map { |b| b[:text] }
+        )
+        content = [ OpenStruct.new(type: "text", text: self_ref.instance_variable_get(:@response_json)) ]
+        usage   = OpenStruct.new(input_tokens: 10, output_tokens: 20,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    SingleFileChunkingService.new(
+      binary: "hello world", content_type: "text/plain", filename: "note.txt",
+      s3_key: "uploads/note.txt", sha256: Digest::SHA256.hexdigest("hello world"),
+      s3_service: @fake_s3, locale: "en"
+    ).call
+
+    assert(captured_text_blocks.any? { |t| t.include?("Summary language: en") },
+           "expected 'Summary language: en' text block in Claude request for text mode")
+  end
+
+  test "pdf_text_only mode: locale is forwarded as 'Summary language' hint" do
+    captured_text_blocks = []
+    self_ref             = self
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        blocks = Array(params.dig(:messages)&.first&.dig(:content))
+        captured_text_blocks.concat(
+          blocks.select { |b| b.is_a?(Hash) && b[:type] == "text" }.map { |b| b[:text] }
+        )
+        content = [ OpenStruct.new(type: "text", text: self_ref.instance_variable_get(:@response_json)) ]
+        usage   = OpenStruct.new(input_tokens: 10, output_tokens: 20,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    SingleFileChunkingService.new(
+      binary: "%PDF-1.4", content_type: "application/pdf", filename: "manual.pdf",
+      s3_key: "uploads/manual.pdf", sha256: Digest::SHA256.hexdigest("%PDF-1.4"),
+      s3_service: @fake_s3, locale: "es"
+    ).call
+
+    assert(captured_text_blocks.any? { |t| t.include?("Summary language: es") },
+           "expected 'Summary language: es' text block in Claude request for pdf_text_only mode")
+  end
+
+  # ─── office_origin → call_batch routing ──────────────────────────────────────
+
+  BPRFakePdfPage = Struct.new(:number, :binary, :model, :force_opus) unless defined?(BPRFakePdfPage)
+
+  test "pptx handle_office sets office_origin and pdf_mixed uses call_batch" do
+    pages = (1..4).map { |n| BPRFakePdfPage.new(n, "%PDF-fake-p#{n}", BatchChunkingPrompt::MODEL_MULTIMODAL, false) }
+
+    orig_convert  = OfficeToPdfConverter.method(:convert)
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_call_batch = PageRelevanceFilter.method(:call_batch)
+    orig_prf_new    = PageRelevanceFilter.method(:new)
+
+    OfficeToPdfConverter.define_singleton_method(:convert) { |_, **| "%PDF-1.4 fake" }
+
+    # First classify call (original binary, pptx content-type) → :office
+    # Second classify call (converted PDF binary) → :pdf_mixed with pages
+    classify_call_count = 0
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      classify_call_count += 1
+      if classify_call_count == 1
+        OpenStruct.new(mode: :office, pages: [])
+      else
+        OpenStruct.new(mode: :pdf_mixed, pages: pages)
+      end
+    end
+
+    call_batch_invoked = false
+    prf_new_invoked    = false
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |**_kwargs|
+      call_batch_invoked = true
+      # Drop p1/p2, keep p3/p4
+      {
+        1 => { keep: false, reason: :cover,   source: :haiku_batch, force_opus: false },
+        2 => { keep: false, reason: :agenda,  source: :haiku_batch, force_opus: false },
+        3 => { keep: true,  reason: :diagram, source: :haiku_batch, force_opus: true  },
+        4 => { keep: true,  reason: :schema,  source: :haiku_batch, force_opus: true  }
+      }
+    end
+
+    PageRelevanceFilter.define_singleton_method(:new) do |*|
+      prf_new_invoked = true
+      OpenStruct.new(call: { keep: true, reason: "stub", source: "stub" })
+    end
+
+    # Track which page numbers reach Claude (stream calls)
+    claude_page_numbers = []
+    response_text       = golden_json
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        text_blocks = Array(params.dig(:messages)&.find { |m| m[:role] == "user" }&.dig(:content))
+                        .select { |b| b.is_a?(Hash) && b[:type] == "text" }
+                        .map { |b| b[:text] }
+                        .join(" ")
+        if (m = text_blocks.match(/Page (\d+) of/))
+          claude_page_numbers << m[1].to_i
+        end
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 100, output_tokens: 200,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "deck.pptx",
+                  content_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                  binary: "PK fake").call
+
+    assert call_batch_invoked, "expected call_batch to be used for office origin"
+    assert_not prf_new_invoked, "expected per-page PageRelevanceFilter.new NOT to be used for office origin"
+    assert_not_includes claude_page_numbers, 1, "p1 (cover) must not reach Claude"
+    assert_not_includes claude_page_numbers, 2, "p2 (agenda) must not reach Claude"
+  ensure
+    OfficeToPdfConverter.define_singleton_method(:convert, orig_convert)
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_call_batch)
+    PageRelevanceFilter.define_singleton_method(:new, orig_prf_new)
+  end
+
+  test "native PDF pdf_mixed uses per-page filter, not call_batch" do
+    pages = (1..2).map { |n| BPRFakePdfPage.new(n, "%PDF-fake-p#{n}", BatchChunkingPrompt::MODEL_MULTIMODAL, false) }
+
+    orig_classify   = FileMultimodalRouter.method(:classify)
+    orig_call_batch = PageRelevanceFilter.method(:call_batch)
+    orig_prf_new    = PageRelevanceFilter.method(:new)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: pages)
+    end
+
+    call_batch_invoked = false
+    prf_new_count      = 0
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |**|
+      call_batch_invoked = true
+      {}
+    end
+
+    PageRelevanceFilter.define_singleton_method(:new) do |*|
+      prf_new_count += 1
+      OpenStruct.new(call: { keep: true, reason: "content", source: :heuristic })
+    end
+
+    build_service(filename: "manual.pdf").call
+
+    assert_not call_batch_invoked, "native PDF must not use call_batch"
+    assert_equal 2, prf_new_count, "expected per-page filter for each of the 2 pages"
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_call_batch)
+    PageRelevanceFilter.define_singleton_method(:new, orig_prf_new)
+  end
+
+  # ─── cap + retry (WEB_PAGE_MAX_TOKENS) ────────────────────────────────────────
+
+  RetryFakePdfPage = Struct.new(:number, :binary, :model, :force_opus) unless defined?(RetryFakePdfPage)
+
+  # Helper that builds a streaming fake where each successive call consumes the next response.
+  def build_sequential_anthropic_client(responses)
+    call_idx = 0
+    mutex    = Mutex.new
+    msgs = Object.new
+    msgs.define_singleton_method(:stream) do |params|
+      idx = mutex.synchronize { call_idx.tap { call_idx += 1 } }
+      resp_text, stop = responses[idx] || responses.last
+      content = [ OpenStruct.new(type: "text", text: resp_text) ]
+      usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                               cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+      message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+                               stop_reason: stop)
+      OpenStruct.new(accumulated_message: message, last_params: params)
+    end
+    msgs.define_singleton_method(:last_params) { nil }
+
+    client = OpenStruct.new(messages: msgs, api_key: "fake")
+    client
+  end
+
+  test "pdf_mixed: retries with WEB_PAGE_RETRY_MAX_TOKENS when first call is truncated (Opus)" do
+    page1 = RetryFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_MULTIMODAL, false)
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_prf_new  = PageRelevanceFilter.method(:new)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1 ])
+    end
+    PageRelevanceFilter.define_singleton_method(:new) do |*|
+      OpenStruct.new(call: { keep: true, reason: "content", source: :heuristic })
+    end
+
+    response_json = golden_json
+    captured_max_tokens = []
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      call_idx = 0
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        stop   = call_idx == 0 ? "max_tokens" : "end_turn"
+        text   = response_json
+        call_idx += 1
+        content = [ OpenStruct.new(type: "text", text: text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+                                 stop_reason: stop)
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "manual.pdf").call
+
+    assert_equal 2, captured_max_tokens.size, "expected exactly 2 Claude calls (first + retry)"
+    assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,       captured_max_tokens[0]
+    assert_equal BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS, captured_max_tokens[1]
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:new, orig_prf_new)
+  end
+
+  test "pdf_mixed: no retry when first call succeeds (end_turn), uses WEB_PAGE_MAX_TOKENS only" do
+    page1 = RetryFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_prf_new  = PageRelevanceFilter.method(:new)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1 ])
+    end
+    PageRelevanceFilter.define_singleton_method(:new) do |*|
+      OpenStruct.new(call: { keep: true, reason: "content", source: :heuristic })
+    end
+
+    captured_max_tokens = []
+    response_text = golden_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
+                                 stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "manual.pdf").call
+
+    assert_equal 1, captured_max_tokens.size, "expected exactly 1 Claude call when not truncated"
+    assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, captured_max_tokens[0]
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:new, orig_prf_new)
+  end
+
+  test "handle_image: retries with WEB_PAGE_RETRY_MAX_TOKENS on truncation, succeeds on retry" do
+    captured_max_tokens = []
+    response_text = golden_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      call_idx = 0
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        stop  = call_idx == 0 ? "max_tokens" : "end_turn"
+        call_idx += 1
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+                                 stop_reason: stop)
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
+
+    assert_equal 2, captured_max_tokens.size, "expected 2 calls: initial + retry"
+    assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,       captured_max_tokens[0]
+    assert_equal BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS, captured_max_tokens[1]
+    assert_equal DOC_NAME, asset.canonical_name
+  end
+
+  test "handle_image: no retry when first call succeeds, uses WEB_PAGE_MAX_TOKENS" do
+    captured_max_tokens = []
+    response_text = golden_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+                                 stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
+
+    assert_equal 1, captured_max_tokens.size
+    assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, captured_max_tokens[0]
+  end
+
+  test "pdf_text_only path uses MAX_TOKENS (no cap), not WEB_PAGE_MAX_TOKENS" do
+    captured_max_tokens = []
+    response_text = golden_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
+                                 stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "manual.pdf", content_type: "application/pdf", binary: "%PDF-1.4").call
+
+    assert_equal 1, captured_max_tokens.size
+    assert_equal BatchChunkingPrompt::MAX_TOKENS, captured_max_tokens[0]
+  end
+
+  test "handle_text path uses MAX_TOKENS (no cap), not WEB_PAGE_MAX_TOKENS" do
+    captured_max_tokens = []
+    response_text = golden_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
+                                 stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "note.txt", content_type: "text/plain", binary: "hello world").call
+
+    assert_equal 1, captured_max_tokens.size
+    assert_equal BatchChunkingPrompt::MAX_TOKENS, captured_max_tokens[0]
   end
 end

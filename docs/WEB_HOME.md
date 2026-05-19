@@ -20,7 +20,7 @@ Mobile-first layout for field technicians.
 | `_kb_docs_card_rows.html.erb` | Rows only — reused by initial HTML and Turbo Stream fragments. |
 | `_kb_docs_card_sentinel.html.erb` | 1px **IntersectionObserver** target; `docs_scroll_controller.js` fetches `/home/documents_page?page=N` as Turbo Stream. |
 | `HomeController` | `PAGE_SIZE` **20**; `#documents` replaces both item containers + sentinels after indexing; `#documents_page` **appends** next page to desktop and mobile. |
-| `rag_chat_controller.js` | Subscribes to `KbSyncChannel`; typing-dots loading bubble, 10s nudge, 90s stall hint; `refreshDocuments()` after **indexed** / **failed**. |
+| `rag_chat_controller.js` | Subscribes to `KbSyncChannel`; typing-dots loading bubble, 15s nudge, 90s stall hint (both upload and text-query flows); `refreshDocuments()` after **indexed** / **failed**. |
 
 ### Thumbnails & full-size lightbox
 

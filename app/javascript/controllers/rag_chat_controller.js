@@ -12,19 +12,24 @@ export default class extends Controller {
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
   static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
   static SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
-  static SUPPORTED_DOC_TYPES = ["text/plain", "text/markdown", "text/html", "text/csv", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]
-  static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]
-  static BINARY_DOC_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"]
+  static SUPPORTED_DOC_TYPES = ["text/plain", "text/markdown", "text/html", "text/csv", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]
+  static DOC_EXTENSIONS = [".txt", ".md", ".html", ".csv", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+  static BINARY_DOC_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
 
-  // First warm nudge shown inside the loading bubble if `indexed` has not
-  // arrived after this short window — gives the technician human company
-  // while waiting, especially on flaky field connections.
-  static INDEXING_NUDGE_MS = 10 * 1000
+  // First warm nudge shown inside the loading bubble — upload: if `indexed` has not
+  // arrived; text query: if `ask()` has not resolved. Gives the technician human
+  // company while waiting on flaky field connections.
+  static CHAT_WARM_NUDGE_MS = 15 * 1000
 
-  // Last-resort notice if `indexed` still hasn't arrived — prompts reload.
+  // Last-resort stall notice — upload: if `indexed` still hasn't arrived;
+  // text query: if `ask()` still hasn't resolved. Prompts reload.
   // WebSockets can drop on flaky mobile networks (technician inside an elevator
   // shaft) and Solid Cable does not replay missed messages.
-  static INDEXING_STALL_MS = 90 * 1000
+  static CHAT_STALL_HINT_MS = 90 * 1000
+
+  // Back-compat aliases so the indexing path keeps working without rename churn.
+  static get INDEXING_NUDGE_MS() { return this.CHAT_WARM_NUDGE_MS }
+  static get INDEXING_STALL_MS() { return this.CHAT_STALL_HINT_MS }
 
   // Typing dots inside the assistant bubble while waiting for KB indexing or retry copy.
   static INDEXING_TYPING_DOTS_HTML =
@@ -47,6 +52,9 @@ export default class extends Controller {
     this.indexingNudgeTimer = null
     this.indexingStallTimer = null
     this.indexingStallNoticeId = null
+    this.queryNudgeTimer = null
+    this.queryStallTimer = null
+    this.queryStallNoticeId = null
     this._docsPanelExpanded = true  // tracks empty-chat state on mobile
     this.subscribeToKbSync()
     this.setupMobileLayout()
@@ -64,6 +72,8 @@ export default class extends Controller {
     this.teardownKeyboardLift()
     this.clearIndexingNudgeTimer()
     this.clearIndexingStallTimer()
+    this.clearQueryNudgeTimer()
+    this.clearQueryStallTimer()
   }
 
   subscribeToKbSync() {
@@ -126,7 +136,7 @@ export default class extends Controller {
       this.constructor.DOC_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))
 
     if (!isImage && !isDoc) {
-      this.addMessage("Formato no soportado. Imágenes: JPEG o PNG (máx. 3.75 MB). Documentos: .txt, .md, .html, .csv, .pdf, .doc, .docx, .xls, .xlsx (máx. 50 MB).", "error")
+      this.addMessage("Formato no soportado. Imágenes: PNG, JPEG, GIF o WebP (máx. 3.75 MB). Documentos: .txt, .md, .html, .csv, .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx (máx. 50 MB).", "error")
       this.fileInputTarget.value = ""
       return
     }
@@ -187,7 +197,8 @@ export default class extends Controller {
     const map = {
       txt: "text/plain", md: "text/markdown", html: "text/html", csv: "text/csv",
       pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     }
     return map[ext] || fallbackType || "application/octet-stream"
   }
@@ -329,6 +340,23 @@ export default class extends Controller {
     this.disableForm()
     const loadingId = this.addLoadingMessage()
 
+    this.queryNudgeTimer = setTimeout(() => {
+      if (!document.getElementById(loadingId)) return
+      const row    = document.getElementById(loadingId)
+      const bubble = row?.querySelector(".chat-message")
+      if (!bubble) return
+      bubble.innerHTML =
+        `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
+        this.constructor.INDEXING_TYPING_DOTS_HTML +
+        `<span style="font-size:13px;line-height:1.45;">${this.escapeHtml(this._queryWarmCopy("nudge"))}</span>` +
+        `</div>`
+    }, this.constructor.CHAT_WARM_NUDGE_MS)
+
+    this.queryStallTimer = setTimeout(() => {
+      if (!document.getElementById(loadingId)) return
+      this.queryStallNoticeId = this.addMessage(this._queryWarmCopy("stall"), "assistant", true)
+    }, this.constructor.CHAT_STALL_HINT_MS)
+
     try {
       const data = await this.ask(question, null)
       this.removeMessage(loadingId)
@@ -350,6 +378,8 @@ export default class extends Controller {
       this.removeMessage(loadingId)
       this.addMessage(`Error: ${error.message}`, "error")
     } finally {
+      this.clearQueryNudgeTimer()
+      this.clearQueryStallTimer()
       this.enableForm()
     }
   }
@@ -564,17 +594,29 @@ export default class extends Controller {
   _indexingWarmCopy(kind) {
     const lang = (document.documentElement.lang || "es").toLowerCase()
     const table = lang.startsWith("en") ? {
-      ack:   "Got your photo, I'm getting it ready — ask me anything you need.",
-      nudge: "Still working on your photo — sometimes it takes a moment, especially with the connection in the field. I'll be with you shortly.",
-      retry: "Taking a bit longer than usual — still on your photo, I'll be with you in a moment.",
+      ack:   "Got your file, I'm getting it ready — ask me anything you need.",
+      nudge: "Still working on your file — sometimes it takes a moment, especially with the connection in the field. I'll share a quick summary in a few seconds.",
+      retry: "Taking a bit longer than usual — still on your file, I'll be with you in a moment.",
       stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     } : {
-      ack:   "Recibí tu foto, la estoy preparando — puedes preguntarme lo que necesites.",
-      nudge: "Sigo con tu foto — a veces tarda un poco más por la señal en campo. En un momento te cuento qué veo.",
-      retry: "Está tardando un poco más de lo habitual — sigo con tu foto, en un momento te cuento.",
+      ack:   "Recibí tu archivo, lo estoy preparando — puedes preguntarme lo que necesites.",
+      nudge: "Sigo con tu archivo — a veces tarda un poco más por la señal en campo. En unos segundos te doy un resumen del análisis.",
+      retry: "Está tardando un poco más de lo habitual — sigo con tu archivo, en un momento te cuento.",
       stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     }
     return table[kind] || table.retry
+  }
+
+  _queryWarmCopy(kind) {
+    const lang = (document.documentElement.lang || "es").toLowerCase()
+    const table = lang.startsWith("en") ? {
+      nudge: "Still working on your query — sometimes it takes a moment, especially with the connection in the field. I'll respond shortly.",
+      stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
+    } : {
+      nudge: "Sigo procesando tu consulta — a veces tarda un poco más por la señal en campo. En unos segundos te respondo.",
+      stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
+    }
+    return table[kind] || table.nudge
   }
 
   updateIndexingLoadingForRetry(data) {
@@ -728,7 +770,7 @@ export default class extends Controller {
       `</div>`
   }
 
-  // ── 10-second nudge — still waiting, stay calm ────────────────────────────
+  // ── 15-second nudge — still waiting, stay calm ────────────────────────────
   startIndexingNudgeTimer() {
     this.clearIndexingNudgeTimer()
     this.indexingNudgeTimer = setTimeout(() => {
@@ -768,6 +810,24 @@ export default class extends Controller {
     if (this.indexingStallNoticeId) {
       document.getElementById(this.indexingStallNoticeId)?.remove()
       this.indexingStallNoticeId = null
+    }
+  }
+
+  clearQueryNudgeTimer() {
+    if (this.queryNudgeTimer) {
+      clearTimeout(this.queryNudgeTimer)
+      this.queryNudgeTimer = null
+    }
+  }
+
+  clearQueryStallTimer() {
+    if (this.queryStallTimer) {
+      clearTimeout(this.queryStallTimer)
+      this.queryStallTimer = null
+    }
+    if (this.queryStallNoticeId) {
+      document.getElementById(this.queryStallNoticeId)?.remove()
+      this.queryStallNoticeId = null
     }
   }
 

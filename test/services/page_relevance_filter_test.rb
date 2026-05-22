@@ -411,6 +411,62 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     end
   end
 
+  # ---------------------------------------------------------------------------
+  # filter_pages — unified routing
+  # ---------------------------------------------------------------------------
+
+  test "filter_pages returns empty hash for empty pages" do
+    result = PageRelevanceFilter.filter_pages(pages: [], filename: "empty.pdf")
+    assert_equal({}, result)
+  end
+
+  test "filter_pages with 2-page PDF delegates to call_batch" do
+    pages = [ FakePage.new(1, "fake_p1"), FakePage.new(2, "fake_p2") ]
+
+    batch_response = [
+      { "page" => 1, "keep" => false, "reason" => "cover" },
+      { "page" => 2, "keep" => true,  "reason" => "diagram" }
+    ]
+    client = FakeBatchHaikuClient.new(batch_response)
+
+    call_batch_called = false
+    orig_cb = PageRelevanceFilter.method(:call_batch)
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |**kwargs|
+      call_batch_called = true
+      orig_cb.call(**kwargs)
+    end
+
+    result = PageRelevanceFilter.filter_pages(pages: pages, filename: "test.pdf", haiku_client: client)
+
+    assert call_batch_called, "filter_pages with 2 pages must delegate to call_batch"
+    assert_equal 2, result.size
+    assert_equal false, result[1][:keep]
+    assert_equal true,  result[2][:keep]
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+  end
+
+  test "filter_pages with 1-page PDF uses per-page filter, not call_batch" do
+    pages = [ FakePage.new(1, "fake_p1") ]
+
+    call_batch_called = false
+    orig_cb  = PageRelevanceFilter.method(:call_batch)
+    PageRelevanceFilter.define_singleton_method(:call_batch) { |**| call_batch_called = true; {} }
+
+    @page_text = "Technical specifications for elevator braking system " * 5
+    PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+      { has_images: false, text_layer_chars: 300, image_area_ratio: 0.0 }
+    end
+
+    result = PageRelevanceFilter.filter_pages(pages: pages, filename: "single.pdf")
+
+    assert_not call_batch_called, "filter_pages with 1 page must NOT use call_batch"
+    assert_equal 1, result.size
+    assert result[1][:keep]
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+  end
+
   test "call_batch enqueues TrackBedrockQueryJob with page_filter_batch user_query" do
     pages = [ FakePage.new(1, "fake_p1_bytes"), FakePage.new(2, "fake_p2_bytes") ]
 

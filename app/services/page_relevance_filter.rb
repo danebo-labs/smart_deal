@@ -16,9 +16,10 @@
 # Special case — scanned_image (fallback after heuristics):
 #   text_layer_chars < 100 AND image_area_ratio > 0.7 → keep (force Opus 4.7, skip Haiku)
 #
-# Batch mode (Office/PPT origin):
-#   PageRelevanceFilter.call_batch classifies all N slides in a single Haiku call,
-#   avoiding the scanned_image short-circuit that would keep covers/indexes.
+# Batch mode (multi-page docs — PDF native or Office/PPT):
+#   PageRelevanceFilter.filter_pages routes to call_batch for pages.size > 1,
+#   classifying all N pages in a single Haiku call (avoids scanned_image short-circuit
+#   that would keep covers/indexes).
 #
 # @param repeated_texts [Set<String>] texts that appear on >= 3 pages in this document
 #   (running headers/footers). Built by the caller from all page texts before filtering.
@@ -45,7 +46,23 @@ class PageRelevanceFilter
     keep=false → page is boilerplate (index, preface, copyright, blank, table of contents)
   PROMPT
 
-  # Batch classifier for Office/PPT origin: one Haiku call classifies all N slides.
+  # Unified routing: call_batch for multi-page docs, per-page filter for single-page.
+  # pages must respond to #number and #binary.
+  # @return [Hash{Integer => Hash}] page_number => { keep:, reason:, source:, force_opus: }
+  def self.filter_pages(pages:, filename:, haiku_client: nil)
+    return {} if pages.empty?
+
+    if pages.size > 1
+      call_batch(pages: pages, filename: filename, haiku_client: haiku_client)
+    else
+      page   = pages.first
+      result = new(page.binary, page_number: page.number, total_pages: 1,
+                   filename: filename, haiku_client: haiku_client).call
+      { page.number => result }
+    end
+  end
+
+  # Batch classifier for all pages in a single Haiku call.
   #
   # @param pages        [Array<#number, #binary>]  page infos with single-page PDF bytes
   # @param filename     [String]                   document filename (for tracking)
@@ -212,17 +229,17 @@ class PageRelevanceFilter
     Rails.logger.warn("PageRelevanceFilter: failed to enqueue tracking job — #{e.message}")
   end
 
-  # ─── Batch filter (Office/PPT origin) ─────────────────────────────────────
+  # ─── Batch filter (multi-page PDFs and Office/PPT) ────────────────────────
 
-  # Single Haiku call that classifies all N rasterized slides at once.
+  # Single Haiku call that classifies all N rasterized pages at once.
   # Used exclusively from PageRelevanceFilter.call_batch — do not instantiate directly.
   class BatchFilter
     HAIKU_BATCH_SYSTEM = <<~PROMPT.strip.freeze
-      You classify rasterized PRESENTATION slides for elevator technicians.
+      You classify rasterized pages (PDF manuals or presentation slides) for elevator technicians.
       Return ONLY raw JSON. Do NOT wrap in markdown fences. Do NOT add any prose.
       Schema: {"pages":[{"page":N,"keep":bool,"reason":"<10 words"},...]}
-      keep=false → cover/title slide, agenda/index/table of contents, section divider, blank
-      keep=true  → technical diagrams, photos with components, procedures, data tables
+      keep=false → cover/title page, agenda/index/table of contents, section divider, blank, preface, copyright
+      keep=true  → technical diagrams, wiring, photos with components, procedures, specs, data tables
       Be aggressive dropping covers and indexes.
     PROMPT
 

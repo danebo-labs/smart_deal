@@ -80,7 +80,7 @@ Web upload ingestion (custom chunking path — **`CUSTOM_CHUNKING_WEB_ENABLED`**
   - **Cost tracking:** `field_photo_v1` → `-direct` suffix; `manual_batch_v1` → batch pricing
     `user_query: "web_batch: <filename> p<N>/<M>"`.
   - **Full ADR + cost matrix:** `docs/INGESTION_COST_V2.md`
-- PDF pages filtered by `PageRelevanceFilter` (heuristics + Haiku 4.5 gating) before Claude calls.
+- PDF pages filtered by `PageRelevanceFilter.filter_pages` — Haiku `call_batch` for all multi-page PDFs (native or Office), per-page heuristic + Haiku gate for single-page. Unified routing eliminates `office_origin` condition across all 3 consumers (`SingleFileChunkingService`, `ManualBatchIngestionService`, `BulkCostV2RequestBuilder`).
 - Conservative downgrade: pages with text_chars>500 & image_ratio<0.20 → Sonnet (not Opus).
 - Scanned images (text_layer<100, image_ratio>0.7): kept, forced to Opus.
 - Parallel page calls capped at `MAX_PARALLEL_PAGES=8` (wave processing, sync path).

@@ -1,6 +1,6 @@
 # Bulk ZIP ingestion (web)
 
-> **Cost v2 (2026-05-22):** With `CUSTOM_CHUNKING_COST_V2_ENABLED=true`, the ZIP bulk path now uses the same cost-v2 routing as the web chat: photos → Sonnet via `FieldPhotoPrompt` + `FieldPhotoDensityGate`, PDFs → per-page filter + Sonnet Batch (`BulkCostV2RequestBuilder`), Office entries → `OfficeToPdfConverter`. Legacy whole-file Opus remains the default (`CUSTOM_CHUNKING_COST_V2_ENABLED=false`). See [INGESTION_COST_V2.md](INGESTION_COST_V2.md) for the full cost matrix.
+> **Cost v2 (2026-05-22):** With `CUSTOM_CHUNKING_COST_V2_ENABLED=true`, the ZIP bulk path now uses the same cost-v2 routing as the web chat: photos → Sonnet via `FieldPhotoPrompt` + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` for multi-page, per-page for single-page) + Sonnet Batch (`BulkCostV2RequestBuilder`), Office entries → `OfficeToPdfConverter`. Legacy whole-file Opus remains the default (`CUSTOM_CHUNKING_COST_V2_ENABLED=false`). See [INGESTION_COST_V2.md](INGESTION_COST_V2.md) for the full cost matrix.
 
 Signed-in technicians seed many documents at once via **`/bulk_uploads`** (HTML + Turbo Streams, not a JSON API).
 
@@ -34,7 +34,7 @@ Signed-in technicians seed many documents at once via **`/bulk_uploads`** (HTML 
 
 1. **Migrate:** `bin/rails db:migrate` (adds `bulk_upload_assets.batch_custom_ids`, `ingestion_path`).
 2. **`.env`:** `ANTHROPIC_API_KEY`, AWS creds, `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_BULK_DATA_SOURCE_ID`, `KNOWLEDGE_BASE_S3_BUCKET`.
-3. **Flag (optional):** `CUSTOM_CHUNKING_COST_V2_ENABLED=true` — Sonnet photos + per-page PDF batch; default **off** = legacy Opus whole-file.
+3. **Flag (optional):** `CUSTOM_CHUNKING_COST_V2_ENABLED=true` — Sonnet photos + PDF batch via `filter_pages`; default **off** = legacy Opus whole-file.
 4. **Processes:** `bin/dev` (or `bin/rails server` + `bin/jobs` for Solid Queue `bulk_ingestion`).
 5. **LibreOffice** (`soffice`) if the ZIP includes Office files (`.docx`, `.pptx`, …).
 6. **UI:** sign in → **`http://localhost:3000/bulk_uploads/new`** → upload ZIP → progress at **`/bulk_uploads/:id`**.

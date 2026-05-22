@@ -529,7 +529,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:new, orig_prf_new)
   end
 
-  test "native PDF pdf_mixed uses per-page filter, not call_batch" do
+  test "native PDF pdf_mixed with 2 pages uses call_batch, not per-page" do
     pages = (1..2).map { |n| BPRFakePdfPage.new(n, "%PDF-fake-p#{n}", BatchChunkingPrompt::MODEL_MULTIMODAL, false) }
 
     orig_classify   = FileMultimodalRouter.method(:classify)
@@ -541,22 +541,23 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     end
 
     call_batch_invoked = false
-    prf_new_count      = 0
+    prf_new_invoked    = false
 
     PageRelevanceFilter.define_singleton_method(:call_batch) do |**|
       call_batch_invoked = true
-      {}
+      { 1 => { keep: true, reason: :content, source: :haiku_batch, force_opus: false },
+        2 => { keep: true, reason: :content, source: :haiku_batch, force_opus: false } }
     end
 
     PageRelevanceFilter.define_singleton_method(:new) do |*|
-      prf_new_count += 1
+      prf_new_invoked = true
       OpenStruct.new(call: { keep: true, reason: "content", source: :heuristic })
     end
 
     build_service(filename: "manual.pdf").call
 
-    assert_not call_batch_invoked, "native PDF must not use call_batch"
-    assert_equal 2, prf_new_count, "expected per-page filter for each of the 2 pages"
+    assert call_batch_invoked,   "native PDF 2p must use call_batch (filter_pages routing)"
+    assert_not prf_new_invoked,  "native PDF 2p must NOT use per-page PageRelevanceFilter.new"
   ensure
     FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_call_batch)

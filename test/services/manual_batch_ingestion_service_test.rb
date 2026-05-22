@@ -51,16 +51,16 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
   end
 
   test "submits N batch requests = pages kept after filter" do
-    # Stub PageRelevanceFilter to keep all pages
-    orig_prf = PageRelevanceFilter.instance_method(:call)
-    PageRelevanceFilter.define_method(:call) { { keep: true, reason: :test, source: :heuristic } }
-
-    # Stub TrackBedrockQueryJob
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
     orig_track = TrackBedrockQueryJob.method(:perform_later)
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
 
     fake_client = FakeBatchClient.new
     pdf_binary  = build_fake_pdf_binary(3)
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
 
     result = ManualBatchIngestionService.new(batch_client: fake_client).submit!(
       binary:   pdf_binary,
@@ -73,15 +73,18 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     assert_equal 3, result[:kept_pages].size
     assert result[:batch_id].present?
   ensure
-    PageRelevanceFilter.define_method(:call, orig_prf)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
   end
 
   test "all submitted requests use MODEL_TEXT (Sonnet) by default" do
-    orig_prf = PageRelevanceFilter.instance_method(:call)
-    PageRelevanceFilter.define_method(:call) { { keep: true, reason: :test, source: :heuristic } }
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
     orig_track = TrackBedrockQueryJob.method(:perform_later)
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
 
     fake_client = FakeBatchClient.new
     pdf_binary  = build_fake_pdf_binary(2)
@@ -94,24 +97,21 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     assert models.all? { |m| m == BatchChunkingPrompt::MODEL_TEXT },
            "expected Sonnet for all requests, got: #{models.inspect}"
   ensure
-    PageRelevanceFilter.define_method(:call, orig_prf)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
   end
 
   test "force_opus pages use MODEL_MULTIMODAL" do
-    call_count = 0
-    orig_prf   = PageRelevanceFilter.instance_method(:call)
-    PageRelevanceFilter.define_method(:call) do
-      call_count += 1
-      # First page: force_opus; others: normal
-      if instance_variable_get(:@page_number) == 1
-        { keep: true, reason: :scanned_image, source: :heuristic, force_opus: true }
-      else
-        { keep: true, reason: :test, source: :heuristic }
-      end
-    end
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
     orig_track = TrackBedrockQueryJob.method(:perform_later)
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      {
+        pages.first.number => { keep: true, reason: :scanned_image, source: :haiku_batch, force_opus: true },
+        pages.last.number  => { keep: true, reason: :test,          source: :haiku_batch, force_opus: false }
+      }
+    end
 
     fake_client = FakeBatchClient.new
     pdf_binary  = build_fake_pdf_binary(2)
@@ -126,15 +126,18 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     assert_equal BatchChunkingPrompt::MODEL_TEXT, models.last,
                  "p2 (normal) should use Sonnet"
   ensure
-    PageRelevanceFilter.define_method(:call, orig_prf)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
   end
 
   test "page_customs maps page numbers to stable custom_ids" do
-    orig_prf = PageRelevanceFilter.instance_method(:call)
-    PageRelevanceFilter.define_method(:call) { { keep: true, reason: :test, source: :heuristic } }
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
     orig_track = TrackBedrockQueryJob.method(:perform_later)
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
 
     sha256     = "e" * 64
     pdf_binary = build_fake_pdf_binary(2)
@@ -148,19 +151,21 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
       assert custom_id.include?("_p#{page_num}"), "custom_id should embed page number"
     end
   ensure
-    PageRelevanceFilter.define_method(:call, orig_prf)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
   end
 
   test "dropped pages are excluded from batch requests" do
-    orig_prf = PageRelevanceFilter.instance_method(:call)
-    PageRelevanceFilter.define_method(:call) do
-      # Drop page 1 (title/boilerplate heuristic)
-      keep = instance_variable_get(:@page_number) != 1
-      { keep: keep, reason: keep ? :content : :title_page, source: :heuristic }
-    end
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
     orig_track = TrackBedrockQueryJob.method(:perform_later)
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) do |p, h|
+        keep = p.number != 1
+        h[p.number] = { keep: keep, reason: keep ? :content : :cover, source: :haiku_batch, force_opus: false }
+      end
+    end
 
     fake_client = FakeBatchClient.new
     pdf_binary  = build_fake_pdf_binary(3)
@@ -172,7 +177,36 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     assert_equal 2, fake_client.submitted_requests.size, "only pages 2+3 should be submitted"
     assert_equal [ 2, 3 ], result[:kept_pages].sort
   ensure
-    PageRelevanceFilter.define_method(:call, orig_prf)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+  end
+
+  test "native PDF 2p: p1 dropped via batch → 1 batch request submitted" do
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
+    orig_track = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    call_batch_received_pages = nil
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      call_batch_received_pages = pages.map(&:number)
+      {
+        1 => { keep: false, reason: :cover, source: :haiku_batch, force_opus: false },
+        2 => { keep: true,  reason: :content, source: :haiku_batch, force_opus: false }
+      }
+    end
+
+    fake_client = FakeBatchClient.new
+    pdf_binary  = build_fake_pdf_binary(2)
+
+    result = ManualBatchIngestionService.new(batch_client: fake_client).submit!(
+      binary: pdf_binary, filename: "manual.pdf", sha256: "0" * 64, s3_key: "key"
+    )
+
+    assert_equal [ 1, 2 ], call_batch_received_pages, "call_batch must receive both pages"
+    assert_equal 1, fake_client.submitted_requests.size, "only p2 kept"
+    assert_equal [ 2 ], result[:kept_pages]
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
   end
 end

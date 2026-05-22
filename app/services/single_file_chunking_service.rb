@@ -11,7 +11,7 @@
 # Steps:
 #   1. FileMultimodalRouter classifies the file (model + mode).
 #   2. Optional Office → PDF conversion.
-#   3. PageRelevanceFilter (per page, PDFs only).
+#   3. PageRelevanceFilter.filter_pages (PDFs only — call_batch for multi-page, per-page for 1-page).
 #   4. ClaudeChunkingClient calls — single-shot or two-wave for pdf_mixed:
 #        Wave A: anchor page (lowest kept page number) → establishes document_name.
 #        Wave B: remaining pages in parallel, receives document_name_hint.
@@ -126,12 +126,7 @@ class SingleFileChunkingService
   def handle_pdf_mixed(pages)
     total = pages.count
 
-    filter_results =
-      if @office_origin && pages.size > 1
-        PageRelevanceFilter.call_batch(pages: pages, filename: @filename)
-      else
-        build_per_page_filters(pages, total)
-      end
+    filter_results = PageRelevanceFilter.filter_pages(pages: pages, filename: @filename)
 
     kept_pages = pages.select do |page|
       r = filter_results[page.number] || { keep: true, reason: :missing, source: :fallback }
@@ -288,34 +283,6 @@ class SingleFileChunkingService
       filename:     @filename
     )
     parse_and_write(result[:text])
-  end
-
-  def build_per_page_filters(pages, total)
-    repeated_texts = build_repeated_texts(pages)
-    pages.each_with_object({}) do |page, h|
-      h[page.number] = PageRelevanceFilter.new(
-        page.binary,
-        page_number:    page.number,
-        total_pages:    total,
-        filename:       @filename,
-        repeated_texts: repeated_texts
-      ).call
-    end
-  end
-
-  def build_repeated_texts(pages)
-    counts = Hash.new(0)
-    pages.each do |page|
-      text = extract_page_text(page.binary)
-      counts[text] += 1 if text.length > 20
-    end
-    Set.new(counts.select { |_, c| c >= 3 }.keys)
-  end
-
-  def extract_page_text(binary)
-    PDF::Reader.new(StringIO.new(binary)).pages.first&.text.to_s.strip
-  rescue StandardError
-    ""
   end
 
   def parse_and_write(raw_json, ingestion_path: "web_v1")

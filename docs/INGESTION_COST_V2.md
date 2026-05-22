@@ -51,7 +51,7 @@ flowchart TB
 
   subgraph manual [Path Manual — batch default]
     RouteBatch{force_sync?}
-    PageFilter[PageRelevanceFilter per page — Haiku gate]
+    PageFilter[PageRelevanceFilter.filter_pages — Haiku batch multipágina, per-page si 1p]
     BatchSonnet[Sonnet Batch API per kept page]
     SyncSonnet[Sonnet Sync per kept page]
     Merger[ChunkMergerService]
@@ -88,7 +88,7 @@ flowchart TB
 
 ## 3. Decisiones de diseño (ADR)
 
-### 3.1 Manual default = Batch async + PageRelevanceFilter per-page Sonnet
+### 3.1 Manual default = Batch async + PageRelevanceFilter.filter_pages Sonnet
 
 **Context:** El path anterior (`SingleFileChunkingService` sync) llamaba Opus de forma bloqueante en la request. ~$60/técnico/mes.
 
@@ -232,6 +232,7 @@ Ahorro: **~87%** en costo de ingesta.
 
 ## Riesgos documentados
 
-- **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs per-page + `PageRelevanceFilter`, Office→PDF vía `OfficeToPdfConverter`. Flag `CUSTOM_CHUNKING_COST_V2_ENABLED` (default `false`) activa ambos caminos (web + bulk) simultáneamente.
+- **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` para multipágina, per-page para 1p), Office→PDF vía `OfficeToPdfConverter`. Flag `CUSTOM_CHUNKING_COST_V2_ENABLED` (default `false`) activa ambos caminos (web + bulk) simultáneamente.
+- **Filtro unificado (2026-05-22):** `PageRelevanceFilter.filter_pages` reemplaza la lógica triplicada `office_origin && pages.size > 1`. Todos los PDFs nativos ≥2p ahora usan Haiku `call_batch` (igual que PPT/Office). Ahorro ~$0.08–0.10/doc con portada rasterizada; costo filtro ~$0.004/doc.
 - Manual muy escaneado puede subir costo Opus: un manual de 50 páginas con 30 páginas escaneadas → 30 × $0.041 ≈ $1.23 en ese manual solo. Monitorear `force_opus` count.
 - SHA dedup sin `kb_documents.content_sha256` indexed puede ser O(n) si hay muchos `BulkUploadAsset.complete`. Indexar en Stage 1 tenancy migration.

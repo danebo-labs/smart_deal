@@ -101,24 +101,9 @@ class BulkCostV2RequestBuilder
     pages
   end
 
-  def build_filter_results(pages, filename, office_origin = false)
-    if office_origin && pages.size > 1
-      proxies = pages.map { |p| PageProxy.new(p[:number], p[:binary]) }
-      return PageRelevanceFilter.call_batch(pages: proxies, filename: filename)
-    end
-
-    total          = pages.size
-    repeated_texts = build_repeated_texts(pages)
-
-    pages.each_with_object({}) do |page, h|
-      h[page[:number]] = PageRelevanceFilter.new(
-        page[:binary],
-        page_number:    page[:number],
-        total_pages:    total,
-        filename:       filename,
-        repeated_texts: repeated_texts
-      ).call
-    end
+  def build_filter_results(pages, filename, _office_origin = false)
+    proxies = pages.map { |p| PageProxy.new(p[:number], p[:binary]) }
+    PageRelevanceFilter.filter_pages(pages: proxies, filename: filename)
   end
 
   def apply_filters(pages, filter_results, filename)
@@ -185,21 +170,6 @@ class BulkCostV2RequestBuilder
 
   def page_custom_id(sha256, page_number)
     format(PAGE_ID_PATTERN, sha256[0, 16], page_number)
-  end
-
-  def build_repeated_texts(pages)
-    counts = Hash.new(0)
-    pages.each do |page|
-      text = extract_page_text(page[:binary])
-      counts[text] += 1 if text.length > 20
-    end
-    Set.new(counts.select { |_, c| c >= 3 }.keys)
-  end
-
-  def extract_page_text(binary)
-    PDF::Reader.new(StringIO.new(binary)).pages.first&.text.to_s.strip
-  rescue StandardError
-    ""
   end
 
   def download_binary_for(asset)

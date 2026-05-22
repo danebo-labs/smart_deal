@@ -79,21 +79,17 @@ class BulkCostV2RequestBuilderTest < ActiveSupport::TestCase
   # ── PDF → per-page path ───────────────────────────────────────────────────────
 
   test "PDF asset produces one request per kept page with _pN custom_ids" do
-    page1 = { number: 1, binary: PDF_BINARY, model: BatchChunkingPrompt::MODEL_TEXT, force_opus: false }
-    page2 = { number: 2, binary: PDF_BINARY, model: BatchChunkingPrompt::MODEL_TEXT, force_opus: false }
-    page3 = { number: 3, binary: PDF_BINARY, model: BatchChunkingPrompt::MODEL_TEXT, force_opus: false }
+    orig_count = PdfPageSplitterService.instance_method(:page_count)
+    orig_each  = PdfPageSplitterService.instance_method(:each_page)
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
 
-    # Stub splitter to return 3 pages
-    orig_count   = PdfPageSplitterService.instance_method(:page_count)
-    orig_each    = PdfPageSplitterService.instance_method(:each_page)
     PdfPageSplitterService.define_method(:page_count) { 3 }
     PdfPageSplitterService.define_method(:each_page) do |&blk|
-      [ page1, page2, page3 ].each { |p| blk.call(p[:number], p[:binary]) }
+      [ 1, 2, 3 ].each { |n| blk.call(n, PDF_BINARY) }
     end
-
-    # Stub filter to keep all
-    orig_prf = PageRelevanceFilter.instance_method(:call)
-    PageRelevanceFilter.define_method(:call) { { keep: true, reason: :test, source: :heuristic } }
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
 
     builder = BulkCostV2RequestBuilder.new
     stub_download(builder, PDF_BINARY)
@@ -109,31 +105,29 @@ class BulkCostV2RequestBuilderTest < ActiveSupport::TestCase
   ensure
     PdfPageSplitterService.define_method(:page_count, orig_count)
     PdfPageSplitterService.define_method(:each_page,  orig_each)
-    PageRelevanceFilter.define_method(:call, orig_prf)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
   end
 
   test "PDF drops filtered pages and force_opus uses Opus model" do
     orig_count = PdfPageSplitterService.instance_method(:page_count)
     orig_each  = PdfPageSplitterService.instance_method(:each_page)
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
+
     PdfPageSplitterService.define_method(:page_count) { 3 }
     PdfPageSplitterService.define_method(:each_page) do |&blk|
       [ 1, 2, 3 ].each { |n| blk.call(n, PDF_BINARY) }
     end
-
-    orig_prf = PageRelevanceFilter.instance_method(:call)
-    call_count = 0
-    PageRelevanceFilter.define_method(:call) do
-      call_count += 1
-      case @page_number
-      when 1 then { keep: false, reason: :cover, source: :heuristic }
-      when 2 then { keep: true,  reason: :text,  source: :heuristic }
-      when 3 then { keep: true,  reason: :scan,  source: :heuristic, force_opus: true }
-      end
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      {
+        1 => { keep: false, reason: :cover, source: :haiku_batch, force_opus: false },
+        2 => { keep: true,  reason: :text,  source: :haiku_batch, force_opus: false },
+        3 => { keep: true,  reason: :scan,  source: :haiku_batch, force_opus: true  }
+      }
     end
 
     builder = BulkCostV2RequestBuilder.new
     stub_download(builder, PDF_BINARY)
-    asset          = fake_pdf_asset
+    asset           = fake_pdf_asset
     requests, _meta = builder.build_all!([ asset ])
 
     assert_equal 2, requests.size
@@ -142,7 +136,40 @@ class BulkCostV2RequestBuilderTest < ActiveSupport::TestCase
   ensure
     PdfPageSplitterService.define_method(:page_count, orig_count)
     PdfPageSplitterService.define_method(:each_page,  orig_each)
-    PageRelevanceFilter.define_method(:call, orig_prf)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+  end
+
+  test "native PDF 2p without office_origin uses call_batch, p1 cover dropped" do
+    orig_count = PdfPageSplitterService.instance_method(:page_count)
+    orig_each  = PdfPageSplitterService.instance_method(:each_page)
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
+
+    PdfPageSplitterService.define_method(:page_count) { 2 }
+    PdfPageSplitterService.define_method(:each_page) do |&blk|
+      [ 1, 2 ].each { |n| blk.call(n, PDF_BINARY) }
+    end
+
+    call_batch_called = false
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      call_batch_called = true
+      {
+        1 => { keep: false, reason: :cover, source: :haiku_batch, force_opus: false },
+        2 => { keep: true,  reason: :content, source: :haiku_batch, force_opus: false }
+      }
+    end
+
+    builder = BulkCostV2RequestBuilder.new
+    stub_download(builder, PDF_BINARY)
+    asset           = fake_pdf_asset(office_origin: false)
+    requests, _meta = builder.build_all!([ asset ])
+
+    assert call_batch_called, "native PDF must use call_batch (not per-page)"
+    assert_equal 1, requests.size, "only p2 kept after cover drop"
+    assert_match(/_p2$/, requests.first[:custom_id])
+  ensure
+    PdfPageSplitterService.define_method(:page_count, orig_count)
+    PdfPageSplitterService.define_method(:each_page,  orig_each)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
   end
 
   # ── Legacy path (flag off) ────────────────────────────────────────────────────

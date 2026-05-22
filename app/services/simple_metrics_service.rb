@@ -25,51 +25,56 @@ class SimpleMetricsService
                                  Rails.application.credentials.dig(:aws, :aurora_db_cluster_identifier)
   end
 
-  # Update only database-based metrics (tokens, cost, queries) without calling CloudWatch
-  # This is faster and should be called after each query
+  # Update only database-based metrics (tokens, cost, queries) without calling CloudWatch.
+  # Called after each query via TrackBedrockQueryJob.
   def self.update_database_metrics_only
     today = Date.current
-    queries_today = BedrockQuery.where(created_at: today.all_day)
+    all_rows = BedrockQuery.where(created_at: today.all_day)
+                           .pluck(:source, :model_id, :input_tokens, :output_tokens,
+                                  :cache_read_tokens, :cache_creation_tokens)
 
-    # Per-source breakdown (query / ingestion_parse / ingestion_embed)
-    source_totals = {}
-    %w[query ingestion_parse ingestion_embed].each do |src|
-      rows = queries_today.where(source: src)
-                          .pluck(:model_id, :input_tokens, :output_tokens, :cache_read_tokens, :cache_creation_tokens)
-      source_totals[src] = {
-        tokens: rows.sum { |_, i, o, cr, cc| i.to_i + o.to_i + cr.to_i + cc.to_i },
-        cost:   rows.sum { |m, i, o, cr, cc|
-          BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o,
-                           cache_read_tokens: cr, cache_creation_tokens: cc).cost
-        }
-      }
-    end
-
-    total_tokens = source_totals.values.sum { |v| v[:tokens] }
-    total_cost   = source_totals.values.sum { |v| v[:cost] }
-    query_count  = queries_today.where(source: :query).count
-
-    cache_hits    = WhatsappCacheHit.today.count
-    tokens_saved  = WhatsappCacheHit.today.sum(:tokens_saved_estimate).to_i
-
-    parse_rows = queries_today.where(source: :ingestion_parse)
-                              .pluck(:model_id, :input_tokens, :output_tokens,
-                                     :cache_read_tokens, :cache_creation_tokens)
-
-    haiku_parse  = parse_rows.select { |m, *| m.to_s.include?("haiku") }
-    opus_parse   = parse_rows.select { |m, *| m.to_s.include?("opus") }
-    sonnet_parse = parse_rows.select { |m, *| m.to_s.include?("sonnet-4-6") }
-
-    token_sum = ->(rows) { rows.sum { |_, i, o, cr, cc| i.to_i + o.to_i + cr.to_i + cc.to_i } }
+    token_sum = ->(rows) { rows.sum { |_, _, i, o, cr, cc| i.to_i + o.to_i + cr.to_i + cc.to_i } }
     cost_sum  = ->(rows) {
-      rows.sum { |m, i, o, cr, cc|
+      rows.sum { |_, m, i, o, cr, cc|
         BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o,
                          cache_read_tokens: cr, cache_creation_tokens: cc).cost
       }
     }
 
-    haiku_unified_tokens = source_totals["query"][:tokens] + token_sum.call(haiku_parse)
-    haiku_unified_cost   = source_totals["query"][:cost]   + cost_sum.call(haiku_parse)
+    # Per-source aggregates (single pass)
+    by_source = all_rows.group_by { |src, *| src }
+
+    query_rows  = by_source["query"]           || []
+    parse_rows  = by_source["ingestion_parse"] || []
+    embed_rows  = by_source["ingestion_embed"] || []
+
+    total_tokens = token_sum.call(all_rows)
+    total_cost   = cost_sum.call(all_rows)
+    query_count  = query_rows.size
+
+    cache_hits   = WhatsappCacheHit.today.count
+    tokens_saved = WhatsappCacheHit.today.sum(:tokens_saved_estimate).to_i
+
+    # Legacy buckets (kept at 0 now that channel buckets are the source of truth)
+    haiku_parse  = parse_rows.select { |_, m, *| m.to_s.include?("haiku") }
+    opus_parse   = parse_rows.select { |_, m, *| m.to_s.include?("opus") }
+    sonnet_parse = parse_rows.select { |_, m, *| m.to_s.include?("sonnet-4-6") || m.to_s.include?("sonnet-4") }
+
+    haiku_unified_tokens = token_sum.call(query_rows) + token_sum.call(haiku_parse)
+    haiku_unified_cost   = cost_sum.call(query_rows)  + cost_sum.call(haiku_parse)
+
+    # Channel buckets via LlmUsageChannel classifier
+    channels = Hash.new { |h, k| h[k] = { tokens: 0, cost: 0 } }
+    all_rows.each do |src, mid, i, o, cr, cc|
+      ch = LlmUsageChannel.for(model_id: mid.to_s, source: src.to_s)
+      next if ch == :unknown
+
+      channels[ch][:tokens] += i.to_i + o.to_i + cr.to_i + cc.to_i
+      channels[ch][:cost]   += BedrockQuery.new(
+        model_id: mid, input_tokens: i, output_tokens: o,
+        cache_read_tokens: cr, cache_creation_tokens: cc
+      ).cost
+    end
 
     # rubocop:disable Rails/SkipsModelValidations
     CostMetric.upsert_all(
@@ -77,12 +82,12 @@ class SimpleMetricsService
         { metric_type: :daily_tokens,       value: total_tokens },
         { metric_type: :daily_cost,         value: total_cost },
         { metric_type: :daily_queries,      value: query_count },
-        { metric_type: :daily_tokens_query, value: source_totals["query"][:tokens] },
-        { metric_type: :daily_tokens_parse, value: source_totals["ingestion_parse"][:tokens] },
-        { metric_type: :daily_tokens_embed, value: source_totals["ingestion_embed"][:tokens] },
-        { metric_type: :daily_cost_query,   value: source_totals["query"][:cost] },
-        { metric_type: :daily_cost_parse,   value: source_totals["ingestion_parse"][:cost] },
-        { metric_type: :daily_cost_embed,   value: source_totals["ingestion_embed"][:cost] },
+        { metric_type: :daily_tokens_query, value: token_sum.call(query_rows) },
+        { metric_type: :daily_tokens_parse, value: token_sum.call(parse_rows) },
+        { metric_type: :daily_tokens_embed, value: token_sum.call(embed_rows) },
+        { metric_type: :daily_cost_query,   value: cost_sum.call(query_rows) },
+        { metric_type: :daily_cost_parse,   value: cost_sum.call(parse_rows) },
+        { metric_type: :daily_cost_embed,   value: cost_sum.call(embed_rows) },
         { metric_type: :daily_cache_hits,   value: cache_hits },
         { metric_type: :daily_tokens_saved, value: tokens_saved },
         { metric_type: :daily_tokens_haiku,        value: haiku_unified_tokens },
@@ -90,7 +95,19 @@ class SimpleMetricsService
         { metric_type: :daily_tokens_parse_opus,   value: token_sum.call(opus_parse) },
         { metric_type: :daily_cost_parse_opus,     value: cost_sum.call(opus_parse) },
         { metric_type: :daily_tokens_parse_sonnet, value: token_sum.call(sonnet_parse) },
-        { metric_type: :daily_cost_parse_sonnet,   value: cost_sum.call(sonnet_parse) }
+        { metric_type: :daily_cost_parse_sonnet,   value: cost_sum.call(sonnet_parse) },
+        { metric_type: :daily_tokens_anthropic_haiku_direct,   value: channels[:anthropic_haiku_direct][:tokens] },
+        { metric_type: :daily_cost_anthropic_haiku_direct,     value: channels[:anthropic_haiku_direct][:cost] },
+        { metric_type: :daily_tokens_anthropic_sonnet_direct,  value: channels[:anthropic_sonnet_direct][:tokens] },
+        { metric_type: :daily_cost_anthropic_sonnet_direct,    value: channels[:anthropic_sonnet_direct][:cost] },
+        { metric_type: :daily_tokens_anthropic_opus_direct,    value: channels[:anthropic_opus_direct][:tokens] },
+        { metric_type: :daily_cost_anthropic_opus_direct,      value: channels[:anthropic_opus_direct][:cost] },
+        { metric_type: :daily_tokens_anthropic_sonnet_batch,   value: channels[:anthropic_sonnet_batch][:tokens] },
+        { metric_type: :daily_cost_anthropic_sonnet_batch,     value: channels[:anthropic_sonnet_batch][:cost] },
+        { metric_type: :daily_tokens_anthropic_opus_batch,     value: channels[:anthropic_opus_batch][:tokens] },
+        { metric_type: :daily_cost_anthropic_opus_batch,       value: channels[:anthropic_opus_batch][:cost] },
+        { metric_type: :daily_tokens_bedrock_legacy_parse,     value: channels[:bedrock_legacy_parse][:tokens] },
+        { metric_type: :daily_cost_bedrock_legacy_parse,       value: channels[:bedrock_legacy_parse][:cost] }
       ].map { |h| h.merge(date: today, created_at: Time.current, updated_at: Time.current) },
       unique_by: [:date, :metric_type]
     )

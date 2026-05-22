@@ -10,6 +10,26 @@ module ModelNameHelper
 
   # Get the current embedding model name for display
   # Reads from configuration
+  # Returns a display label that includes the billing channel suffix.
+  # e.g. "claude-sonnet-4-6-direct" → "Claude Sonnet 4 · Anthropic Direct"
+  #      "us.anthropic.claude-haiku-4-5-..." → "Claude Haiku 4 · Bedrock"
+  def format_model_label_with_channel(model_id)
+    m = model_id.to_s
+    base = format_llm_model_name(m.sub(/-direct$|-batch$/, ''))
+
+    channel = if m.end_with?("-direct")
+      "Anthropic Direct"
+    elsif m.end_with?("-batch")
+      "Anthropic Batch"
+    elsif m.match?(/\A(global|us|eu)\./)
+      "Bedrock"
+    else
+      nil
+    end
+
+    channel ? "#{base} · #{channel}" : base
+  end
+
   def current_embedding_model_name
     model_id = current_embedding_model_id
     format_embedding_model_name(model_id)

@@ -288,6 +288,36 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
     assert_not_equal haiku_tok, opus_tok
   end
 
+  test 'update_database_metrics_only writes channel buckets via LlmUsageChannel' do
+    today = Date.current
+
+    create_bedrock_query(input_tokens: 1000, output_tokens: 200,
+      model_id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', source: 'query',
+      created_at: today.beginning_of_day)
+    create_bedrock_query(input_tokens: 500, output_tokens: 100,
+      model_id: 'claude-sonnet-4-6-direct', source: 'ingestion_parse',
+      created_at: today.beginning_of_day)
+    create_bedrock_query(input_tokens: 2000, output_tokens: 400,
+      model_id: 'claude-opus-4-7-batch', source: 'ingestion_parse',
+      created_at: today.beginning_of_day)
+    create_bedrock_query(input_tokens: 300, output_tokens: 60,
+      model_id: 'global.anthropic.claude-opus-4-6-v1', source: 'ingestion_parse',
+      created_at: today.beginning_of_day)
+    create_bedrock_query(input_tokens: 50, output_tokens: 0,
+      model_id: 'amazon.titan-embed-text-v1', source: 'ingestion_embed',
+      created_at: today.beginning_of_day)
+
+    SimpleMetricsService.update_database_metrics_only
+
+    assert_equal 1200, CostMetric.find_by!(date: today, metric_type: :daily_tokens_query).value.to_i
+    assert_equal 600,  CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_sonnet_direct).value.to_i
+    assert_equal 2400, CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_opus_batch).value.to_i
+    assert_equal 360,  CostMetric.find_by!(date: today, metric_type: :daily_tokens_bedrock_legacy_parse).value.to_i
+    assert_equal 50,   CostMetric.find_by!(date: today, metric_type: :daily_tokens_embed).value.to_i
+    assert_equal 0,    CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_haiku_direct).value.to_i
+    assert_equal 0,    CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_sonnet_batch).value.to_i
+  end
+
   test 'returns 0 for all metrics when no data exists' do
     with_mock_aws_clients do |fake_cloudwatch, fake_s3, fake_rds|
       fake_cloudwatch.datapoints = []

@@ -21,7 +21,19 @@ class CostMetric < ApplicationRecord
     daily_tokens_parse_opus:   16,
     daily_cost_parse_opus:     17,
     daily_tokens_parse_sonnet: 18,
-    daily_cost_parse_sonnet:   19
+    daily_cost_parse_sonnet:   19,
+    daily_tokens_anthropic_haiku_direct:   20,
+    daily_cost_anthropic_haiku_direct:     21,
+    daily_tokens_anthropic_sonnet_direct:  22,
+    daily_cost_anthropic_sonnet_direct:    23,
+    daily_tokens_anthropic_opus_direct:    24,
+    daily_cost_anthropic_opus_direct:      25,
+    daily_tokens_anthropic_sonnet_batch:   26,
+    daily_cost_anthropic_sonnet_batch:     27,
+    daily_tokens_anthropic_opus_batch:     28,
+    daily_cost_anthropic_opus_batch:       29,
+    daily_tokens_bedrock_legacy_parse:     30,
+    daily_cost_bedrock_legacy_parse:       31
   }
 
   # Ensure metric_type always returns a symbol
@@ -54,6 +66,12 @@ class CostMetric < ApplicationRecord
     daily_tokens_haiku daily_cost_haiku
     daily_tokens_parse_opus daily_cost_parse_opus
     daily_tokens_parse_sonnet daily_cost_parse_sonnet
+    daily_tokens_anthropic_haiku_direct daily_cost_anthropic_haiku_direct
+    daily_tokens_anthropic_sonnet_direct daily_cost_anthropic_sonnet_direct
+    daily_tokens_anthropic_opus_direct daily_cost_anthropic_opus_direct
+    daily_tokens_anthropic_sonnet_batch daily_cost_anthropic_sonnet_batch
+    daily_tokens_anthropic_opus_batch daily_cost_anthropic_opus_batch
+    daily_tokens_bedrock_legacy_parse daily_cost_bedrock_legacy_parse
   ].freeze
 
   # Returns the view-shape hash consumed by `home/_chat_usage_footer_metrics`
@@ -87,6 +105,18 @@ class CostMetric < ApplicationRecord
       today_cost_parse_opus:     by_type[:daily_cost_parse_opus]     || 0,
       today_tokens_parse_sonnet: by_type[:daily_tokens_parse_sonnet] || 0,
       today_cost_parse_sonnet:   by_type[:daily_cost_parse_sonnet]   || 0,
+      today_tokens_anthropic_haiku_direct:   by_type[:daily_tokens_anthropic_haiku_direct]   || 0,
+      today_cost_anthropic_haiku_direct:     by_type[:daily_cost_anthropic_haiku_direct]     || 0,
+      today_tokens_anthropic_sonnet_direct:  by_type[:daily_tokens_anthropic_sonnet_direct]  || 0,
+      today_cost_anthropic_sonnet_direct:    by_type[:daily_cost_anthropic_sonnet_direct]    || 0,
+      today_tokens_anthropic_opus_direct:    by_type[:daily_tokens_anthropic_opus_direct]    || 0,
+      today_cost_anthropic_opus_direct:      by_type[:daily_cost_anthropic_opus_direct]      || 0,
+      today_tokens_anthropic_sonnet_batch:   by_type[:daily_tokens_anthropic_sonnet_batch]   || 0,
+      today_cost_anthropic_sonnet_batch:     by_type[:daily_cost_anthropic_sonnet_batch]     || 0,
+      today_tokens_anthropic_opus_batch:     by_type[:daily_tokens_anthropic_opus_batch]     || 0,
+      today_cost_anthropic_opus_batch:       by_type[:daily_cost_anthropic_opus_batch]       || 0,
+      today_tokens_bedrock_legacy_parse:     by_type[:daily_tokens_bedrock_legacy_parse]     || 0,
+      today_cost_bedrock_legacy_parse:       by_type[:daily_cost_bedrock_legacy_parse]       || 0,
       aurora_acu:          by_type[:aurora_acu_avg]      || 0,
       s3_documents:        by_type[:s3_documents_count]  || 0,
       s3_size_mb:          (s3_bytes / 1.megabyte.to_f).round(2),

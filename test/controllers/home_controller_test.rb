@@ -165,14 +165,17 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     get '/home/metrics'
     assert_response :success
-    assert_match(/data-chat-usage-metrics="true"/, response.body)
-    assert_match(/\bHaiku\b/,                      response.body)
-    assert_match(/Parsing \(Opus, legacy\)/,       response.body)
-    assert_match(/Parsing \(Sonnet 4\.6\)/,        response.body)
-    assert_match(/Embeddings \(Nova\)/,            response.body)
-    assert_match(/Total hoy/,                      response.body)
-    assert_match(/variar ±10%/,                    response.body)
-    assert_no_match(/Consultas \(Haiku\)/,         response.body)
+    assert_match(/data-chat-usage-metrics="true"/,   response.body)
+    assert_match(/Consultas \(Bedrock Haiku\)/,       response.body)
+    assert_match(/Parse sync \(Sonnet\)/,             response.body)
+    assert_match(/Parse sync \(Opus\)/,               response.body)
+    assert_match(/Parse batch \(Sonnet\)/,            response.body)
+    assert_match(/Parse batch \(Opus\)/,              response.body)
+    assert_match(/Embeddings \(Nova\)/,               response.body)
+    assert_match(/Total hoy/,                         response.body)
+    assert_match(/variar ±10%/,                       response.body)
+    assert_no_match(/Parsing \(Opus, legacy\)/,       response.body)
+    assert_no_match(/Parsing \(Sonnet 4\.6\)/,        response.body)
   end
 
   test 'metrics footer shows cache savings line when cache_hits present' do

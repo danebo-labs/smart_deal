@@ -55,21 +55,33 @@
         </div>
 
         <%= render partial: "metric_card", locals: {
-          title: "Haiku (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_haiku].to_i),
+          title: "Bedrock Haiku RAG (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_query].to_i),
           color: "text-yellow-600"
         } %>
 
         <%= render partial: "metric_card", locals: {
-          title: "Parsing Opus legacy (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_parse_opus].to_i),
+          title: "Parse direct Sonnet (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_sonnet_direct].to_i),
+          color: "text-indigo-600"
+        } %>
+
+        <%= render partial: "metric_card", locals: {
+          title: "Parse batch Sonnet (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_sonnet_batch].to_i),
+          color: "text-violet-600"
+        } %>
+
+        <%= render partial: "metric_card", locals: {
+          title: "Parse direct Opus (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_opus_direct].to_i),
           color: "text-orange-600"
         } %>
 
         <%= render partial: "metric_card", locals: {
-          title: "Parsing Sonnet 4.6 (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_parse_sonnet].to_i),
-          color: "text-indigo-600"
+          title: "Parse batch Opus (hoy)",
+          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_opus_batch].to_i),
+          color: "text-red-500"
         } %>
   
       </div>
@@ -121,7 +133,7 @@
             <% BedrockQuery.where(created_at: 24.hours.ago..Time.current).group_by(&:model_id).each do |model_id, queries| %>
               <% model_cost = queries.sum(&:cost) %>
               <% model_tokens = queries.sum { |q| q.input_tokens + q.output_tokens } %>
-              <% model_label = model_id.to_s.include?("haiku") ? "Claude Haiku" : model_id.to_s.include?("sonnet") ? "Claude Sonnet" : model_id.to_s[0, 25] %>
+              <% model_label = format_model_label_with_channel(model_id.to_s) %>
 
               <div class="p-4 bg-gray-50 rounded-lg text-center">
                 <p class="text-sm text-gray-500"><%= model_label %></p>

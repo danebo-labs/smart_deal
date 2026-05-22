@@ -10,7 +10,26 @@ Async token/cost tracking — Bedrock calls never wait on DB writes.
 
 Model usage is recorded **asynchronously** so Bedrock calls never wait on DB writes or dashboard broadcasts. `bedrock_queries` stores each event with a **`source`** plus **`input_tokens`**, **`output_tokens`**, **`latency_ms`**, and **Anthropic prompt-cache usage** (**`cache_read_tokens`**, **`cache_creation_tokens`**) when the invoke response includes them; **`TrackBedrockQueryJob`** persists those fields and **`SimpleMetricsService`** folds cache-adjusted cost into **`CostMetric`** rollups (Batch-priced rows exist on `BedrockQuery` for Anthropic Batch–style estimates).
 
-**Dashboard / home footer (web):** daily rollups split **Haiku** (RAG query lane) from **Parsing Opus (legacy)** and **Parsing Sonnet 4.6** (direct Anthropic parse on the custom chunking path). The "Opus (legacy)" pill is the **estimate** written by `TrackIngestionUsageJob` only on the legacy `OWRPGSX6XK` Bedrock-FM-parse data source; the custom chunking (`web_v1`) path records its parse tokens in real time as `claude-*-direct` rows from `ClaudeChunkingClient` and is **not** double-counted by the ingestion estimator. Legacy `daily_tokens_query` / `daily_cost_query` remain for backward compatibility; the home footer pills prefer the Haiku-specific columns when present.
+**Dashboard / home footer (web):** daily rollups are split by **billing channel** via `LlmUsageChannel` (app/services/llm_usage_channel.rb). The classifier maps each `bedrock_queries` row to one of the channels below using `source` + `model_id` suffix (`-direct`, `-batch`, Bedrock profile prefix). Legacy `daily_tokens_haiku` / `daily_tokens_parse_opus` / `daily_tokens_parse_sonnet` columns are still written (set to the same values as before cost_v2) for backward compatibility with any cached dashboard queries until those views are fully migrated.
+
+#### LlmUsageChannel mapping
+
+| Channel | `source` | `model_id` pattern | `CostMetric` enum |
+|---------|----------|-------------------|-------------------|
+| `bedrock_rag` | `query` | any | `daily_tokens_query` / `daily_cost_query` (existing) |
+| `anthropic_haiku_direct` | `ingestion_parse` | `*haiku*-direct` | 20/21 |
+| `anthropic_sonnet_direct` | `ingestion_parse` | `*sonnet*-direct` | 22/23 |
+| `anthropic_opus_direct` | `ingestion_parse` | `*opus*-direct` | 24/25 |
+| `anthropic_sonnet_batch` | `ingestion_parse` | `*sonnet*-batch` | 26/27 |
+| `anthropic_opus_batch` | `ingestion_parse` | `*opus*-batch` | 28/29 |
+| `bedrock_legacy_parse` | `ingestion_parse` | no suffix (TrackIngestionUsageJob estimate) | 30/31 |
+| `bedrock_embed` | `ingestion_embed` | any | `daily_tokens_embed` / `daily_cost_embed` (existing) |
+
+`model_id` suffixes written by each path:
+- `ClaudeChunkingClient` (sync) → `-direct` (e.g. `claude-sonnet-4-6-direct`)
+- `ManualBatchIngestionService` → `-batch` (e.g. `claude-sonnet-4-6-batch`)
+- Bedrock invoke (RAG) → inference profile prefix (`us.anthropic.…` / `global.anthropic.…`)
+- `TrackIngestionUsageJob` legacy estimate → raw model id, no suffix
 
 | `source` | Meaning |
 |----------|---------|

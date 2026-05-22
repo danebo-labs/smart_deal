@@ -46,8 +46,15 @@ class KbDocumentThumbnailFromS3
   end
 
   def download_blob
-    s3 = S3DocumentsService.new
+    s3  = S3DocumentsService.new
     key = KbDocument.object_key_for_match(@kb_doc.s3_key)
-    s3.download(key)
+    normalize_binary(s3.download(key))
+  end
+
+  # S3 .read may tag JPEG bytes as UTF-8; blank? / Base64 need BINARY encoding.
+  def normalize_binary(blob)
+    return nil if blob.nil?
+
+    blob.dup.force_encoding(Encoding::BINARY)
   end
 end

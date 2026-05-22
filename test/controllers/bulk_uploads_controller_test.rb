@@ -51,6 +51,37 @@ class BulkUploadsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to bulk_upload_path(bulk_upload)
   end
 
+  test "POST create re-enqueues when duplicate ZIP matches a failed BulkUpload" do
+    zip_data = minimal_zip_binary
+    sha256   = Digest::SHA256.hexdigest(zip_data)
+
+    failed = BulkUpload.create!(
+      sha256:            sha256,
+      original_filename: "failed_batch.zip",
+      status:            "failed",
+      error_message:     "credit balance too low",
+      user:              @user
+    )
+    failed.bulk_upload_assets.create!(
+      custom_id:    "deadbeef",
+      sha256:       sha256,
+      s3_key:       "bulk_uploads/2026-01-01/x.pdf",
+      filename:     "x.pdf",
+      content_type: "application/pdf",
+      status:       "failed"
+    )
+
+    assert_enqueued_with(job: ProcessBulkUploadJob) do
+      post bulk_uploads_path, params: { zip_file: zip_upload(zip_data) }
+    end
+
+    assert_redirected_to bulk_upload_path(failed)
+    failed.reload
+    assert_equal "pending", failed.status
+    assert_nil failed.error_message
+    assert_equal 0, failed.bulk_upload_assets.count
+  end
+
   test "POST create is idempotent: duplicate ZIP redirects to existing BulkUpload" do
     zip_data = minimal_zip_binary
 
@@ -63,6 +94,43 @@ class BulkUploadsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to bulk_upload_path(first_upload)
     assert_equal 1, BulkUpload.where(sha256: first_upload.sha256).count
+  end
+
+  test "POST create flashes already_complete when duplicate ZIP matches complete BulkUpload" do
+    zip_data = minimal_zip_binary
+    sha256   = Digest::SHA256.hexdigest(zip_data)
+
+    BulkUpload.create!(
+      sha256:            sha256,
+      original_filename: "done.zip",
+      status:            "complete",
+      user:              @user
+    )
+
+    assert_no_enqueued_jobs only: ProcessBulkUploadJob do
+      post bulk_uploads_path, params: { zip_file: zip_upload(zip_data) }
+    end
+
+    assert_equal I18n.t("bulk_uploads.already_complete"), flash[:notice]
+  end
+
+  test "POST create flashes already_in_progress when duplicate ZIP matches processing BulkUpload" do
+    zip_data = minimal_zip_binary
+    sha256   = Digest::SHA256.hexdigest(zip_data)
+
+    upload = BulkUpload.create!(
+      sha256:            sha256,
+      original_filename: "running.zip",
+      status:            "processing",
+      user:              @user
+    )
+
+    assert_no_enqueued_jobs only: ProcessBulkUploadJob do
+      post bulk_uploads_path, params: { zip_file: zip_upload(zip_data) }
+    end
+
+    assert_redirected_to bulk_upload_path(upload)
+    assert_equal I18n.t("bulk_uploads.already_in_progress"), flash[:notice]
   end
 
   test "POST create with no file redirects back to new with alert" do

@@ -4,6 +4,11 @@ es:
     metrics_refreshing: "Métricas actualizándose…"
   bulk_uploads:
     select_zip: "Selecciona un archivo ZIP."
+    retry_enqueued: "Carga anterior fallida — se volvió a encolar el procesamiento del ZIP."
+    already_complete: "Este ZIP ya se procesó correctamente. No se volvió a enviar a Claude."
+    already_in_progress: "Este ZIP ya está en curso. Mostrando el progreso actual."
+    asset_content_dedup: "Ya en KB"
+    asset_content_dedup_title: "Mismo archivo ya indexado — se reutilizó sin volver a llamar a Claude."
   errors:
     messages:
       taken: "ya está en uso"

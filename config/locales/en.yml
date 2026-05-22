@@ -33,6 +33,11 @@ en:
     metrics_refreshing: "Metrics are updating…"
   bulk_uploads:
     select_zip: "Select a ZIP file."
+    retry_enqueued: "Previous upload failed — re-queued ZIP processing."
+    already_complete: "This ZIP was already processed successfully. It was not sent to Claude again."
+    already_in_progress: "This ZIP is already being processed. Showing current progress."
+    asset_content_dedup: "Already in KB"
+    asset_content_dedup_title: "Same file was already indexed — reused without calling Claude again."
   home:
     lightbox:
       close:      "Close"

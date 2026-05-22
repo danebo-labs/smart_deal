@@ -1,0 +1,11 @@
+<% if flash[:notice].present? %>
+  <div class="mb-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+    <%= flash[:notice] %>
+  </div>
+<% end %>
+
+<% if flash[:alert].present? %>
+  <div class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <%= flash[:alert] %>
+  </div>
+<% end %>

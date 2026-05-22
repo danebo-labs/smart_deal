@@ -25,6 +25,15 @@ class BulkUploadsController < ApplicationController
 
     bulk_upload = BulkUpload.find_or_initialize_by(sha256: sha256)
     if bulk_upload.persisted?
+      if bulk_upload.status == "failed"
+        zip_path = persist_zip(zip_param.tempfile.path, sha256)
+        reenqueue_failed_upload!(bulk_upload, zip_path)
+        flash[:notice] = t("bulk_uploads.retry_enqueued")
+      elsif bulk_upload.status == "complete"
+        flash[:notice] = t("bulk_uploads.already_complete")
+      else
+        flash[:notice] = t("bulk_uploads.already_in_progress")
+      end
       redirect_to bulk_upload_path(bulk_upload) and return
     end
 
@@ -44,6 +53,18 @@ class BulkUploadsController < ApplicationController
 
 
   private
+
+  def reenqueue_failed_upload!(bulk_upload, zip_path)
+    bulk_upload.bulk_upload_assets.delete_all
+    bulk_upload.update!(
+      status:                  "pending",
+      error_message:           nil,
+      claude_batch_id:         nil,
+      bedrock_ingestion_job_id: nil,
+      asset_count:             0
+    )
+    ProcessBulkUploadJob.perform_later(bulk_upload.id, zip_path)
+  end
 
   def persist_zip(tempfile_path, sha256)
     dir  = Rails.root.join("tmp/bulk_uploads")

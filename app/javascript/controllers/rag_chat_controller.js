@@ -285,6 +285,8 @@ export default class extends Controller {
     this.removeFile()
 
     const loadingId = this.addLoadingMessage()
+    const ragTextQuery = !fileToSend
+    if (ragTextQuery) this.startQueryWaitTimers(loadingId)
 
     try {
       const data = await this.ask(question, fileToSend)
@@ -332,6 +334,10 @@ export default class extends Controller {
         : "Algo falló de mi parte. Inténtalo de nuevo en un momento."
       this.addMessage(friendlyError, "error")
     } finally {
+      if (ragTextQuery) {
+        this.clearQueryNudgeTimer()
+        this.clearQueryStallTimer()
+      }
       this.enableForm()
     }
   }
@@ -339,23 +345,7 @@ export default class extends Controller {
   async sendTextQuery(question) {
     this.disableForm()
     const loadingId = this.addLoadingMessage()
-
-    this.queryNudgeTimer = setTimeout(() => {
-      if (!document.getElementById(loadingId)) return
-      const row    = document.getElementById(loadingId)
-      const bubble = row?.querySelector(".chat-message")
-      if (!bubble) return
-      bubble.innerHTML =
-        `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
-        this.constructor.INDEXING_TYPING_DOTS_HTML +
-        `<span style="font-size:13px;line-height:1.45;">${this.escapeHtml(this._queryWarmCopy("nudge"))}</span>` +
-        `</div>`
-    }, this.constructor.CHAT_WARM_NUDGE_MS)
-
-    this.queryStallTimer = setTimeout(() => {
-      if (!document.getElementById(loadingId)) return
-      this.queryStallNoticeId = this.addMessage(this._queryWarmCopy("stall"), "assistant", true)
-    }, this.constructor.CHAT_STALL_HINT_MS)
+    this.startQueryWaitTimers(loadingId)
 
     try {
       const data = await this.ask(question, null)
@@ -811,6 +801,27 @@ export default class extends Controller {
       document.getElementById(this.indexingStallNoticeId)?.remove()
       this.indexingStallNoticeId = null
     }
+  }
+
+  startQueryWaitTimers(loadingId) {
+    this.clearQueryNudgeTimer()
+    this.clearQueryStallTimer()
+    this.queryNudgeTimer = setTimeout(() => {
+      if (!document.getElementById(loadingId)) return
+      const row    = document.getElementById(loadingId)
+      const bubble = row?.querySelector(".chat-message")
+      if (!bubble) return
+      bubble.innerHTML =
+        `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
+        this.constructor.INDEXING_TYPING_DOTS_HTML +
+        `<span style="font-size:13px;line-height:1.45;">${this.escapeHtml(this._queryWarmCopy("nudge"))}</span>` +
+        `</div>`
+    }, this.constructor.CHAT_WARM_NUDGE_MS)
+
+    this.queryStallTimer = setTimeout(() => {
+      if (!document.getElementById(loadingId)) return
+      this.queryStallNoticeId = this.addMessage(this._queryWarmCopy("stall"), "assistant", true)
+    }, this.constructor.CHAT_STALL_HINT_MS)
   }
 
   clearQueryNudgeTimer() {

@@ -2,7 +2,7 @@
 
 Async token/cost tracking — Bedrock calls never wait on DB writes.
 
-**Related:** [Production](PRODUCTION.md) · [README — Configuration flags](../README.md#configuration-flags)
+**Related:** [Production](PRODUCTION.md) · [Ingestion routing](INGESTION_ROUTING.md) · [README — Configuration flags](../README.md#configuration-flags)
 
 ---
 

@@ -4,6 +4,8 @@
 **Benchmark date:** 2026-05-21  
 **Supersedes:** inline routing in `FileMultimodalRouter` (Opus default for images)
 
+**Canonical routing reference (file types, page filter, LLM matrix):** [INGESTION_ROUTING.md](INGESTION_ROUTING.md)
+
 ---
 
 ## 1. Contexto y evidencia

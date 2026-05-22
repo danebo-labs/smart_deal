@@ -2,7 +2,7 @@
 
 Feature-flagged path for **file attachments from the home RAG chat**. Default: **off** (`CUSTOM_CHUNKING_WEB_ENABLED` unset or `false`).
 
-**Related:** [Bulk ZIP ingestion](BULK_INGESTION.md) · [Bedrock setup](../BEDROCK_SETUP.md) · [Engineering snapshot](../CLAUDE.md)
+**Related:** [Bulk ZIP ingestion](BULK_INGESTION.md) · [Ingestion routing (types, filter, LLM matrix)](INGESTION_ROUTING.md) · [Bedrock setup](../BEDROCK_SETUP.md) · [Engineering snapshot](../CLAUDE.md)
 
 ## Environment variables
 
@@ -41,7 +41,7 @@ When **`CUSTOM_CHUNKING_WEB_ENABLED=true`**, a file attached in the home RAG cha
 | `SubmitManualBatchJob` | *(cost_v2)* Submits batch; stores context in Solid Cache; schedules `IngestManualBatchResultsJob` |
 | `IngestManualBatchResultsJob` | *(cost_v2)* Polls batch, merges via `ChunkMergerService`, `ingestion_path: "manual_batch_v1"` |
 | `ClaudeChunkingClient` | Sync Anthropic Messages API (`-direct` cost rows in `bedrock_queries`); accepts a `max_tokens` arg and exposes `stop_reason` so the caller can retry truncated calls |
-| `PageRelevanceFilter` | Drops boilerplate PDF pages (heuristics + optional Haiku 4.5 gate) before spendy Opus calls; **`call_batch`** classifies all slides of an Office deck in one Haiku call |
+| `PageRelevanceFilter` | Drops boilerplate PDF pages before Sonnet/Opus parse. **`filter_pages`**: ≥2 pages → one Haiku **`call_batch`**; 1 page → heuristics + optional Haiku gate. See [INGESTION_ROUTING.md](INGESTION_ROUTING.md) |
 | `BatchResultsParserService` | Same parser as bulk ZIP; `ingestion_path: "web_v1"` (sync) / `"field_photo_v1"` / `"manual_batch_v1"` (cost_v2) |
 | `BulkKbSyncService` | Starts ingestion on **`BEDROCK_BULK_DATA_SOURCE_ID`** (chunking disabled) |
 | `LambdaParityAliasFallback` | Deterministic alias fill-in when the model returns empty aliases |
@@ -58,7 +58,7 @@ When **`CUSTOM_CHUNKING_WEB_ENABLED=true`**, a file attached in the home RAG cha
 The direct Claude path is the dominant ingestion cost on the web flow. Three knobs keep it tight:
 
 1. **Per-page output cap with retry** — `BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS = 4_000` (down from the 32k default) on `pdf_mixed` page calls and `image` calls. `ClaudeChunkingClient` surfaces `stop_reason: "max_tokens"`; `SingleFileChunkingService#call_with_page_cap_retry` retries once at `WEB_PAGE_RETRY_MAX_TOKENS = 16_000`. Single-shot paths (`text`, `pdf_text_only`) keep `MAX_TOKENS = 32_000` because they emit the whole document in one response.
-2. **Batch Haiku slide classifier for Office decks** — `PageRelevanceFilter.call_batch` makes **one** Haiku 4.5 call that classifies **all N slides** of a converted PPT/PPTX in a single message (one cover/agenda/diagram JSON for the whole deck), instead of one Haiku call per page. `SingleFileChunkingService` flips `@office_origin = true` in `handle_office` and routes multi-page Office origins through `call_batch` (cost row: `page_filter_batch: <filename> 1..N/N`). Native PDFs keep the per-page heuristic + Haiku gate. For a 30-slide deck this drops Haiku traffic from 30 calls to 1.
+2. **Batch Haiku page classifier (multi-page docs)** — `PageRelevanceFilter.filter_pages` routes **all documents with ≥2 pages** (native PDFs and Office/PPT after LibreOffice convert) through **`call_batch`**: one Haiku 4.5 call classifies every page in a single message (cost row: `page_filter_batch: <filename> 1..N/N`). Single-page PDFs use the per-page heuristic cascade + optional Haiku gate (`page_filter: …`). For a 30-page manual this drops filter traffic from 30 calls to 1. Full rules: [INGESTION_ROUTING.md § Page relevance filter](INGESTION_ROUTING.md#step-2--page-relevance-filter).
 3. **Locale-aware summaries on all input types** — `summary` and `companion_offer` are now emitted for every input type (image, PDF, Office, text) and the locale travels through `text_user_content` / `page_user_content` as a `Summary language: <code>` block. `ChunkMergerService` extracts the anchor page's summary so the technician sees a Spanish summary on the first response without a second Claude round-trip.
 
 **Realtime UX:** `KbSyncBroadcaster` emits Turbo Cable events on the session stream; the chat shows typing dots, optional **retrying** copy during Aurora wake-up, then **indexed** / **failed** and refreshes the KB list.
@@ -80,7 +80,7 @@ When **`CUSTOM_CHUNKING_COST_V2_ENABLED=true`** (requires `CUSTOM_CHUNKING_WEB_E
 
 **Foto path:** `FieldPhotoDensityGate` checks image size (heuristic) + optional Haiku 1-call → `:sonnet` or `:opus`. Sonnet result → `FieldPhotoResultsParser` → 1 lightweight chunk (`ingestion_path: "field_photo_v1"`). Opus result → monolithic `BatchChunkingPrompt` (fallback).
 
-**Manual path:** `ManualBatchIngestionService` splits PDF per page → `PageRelevanceFilter` per page → 1 Anthropic Batch request per kept page (Sonnet; Opus for `force_opus` scanned pages). Results arrive in `IngestManualBatchResultsJob` → `ChunkMergerService` → `BatchResultsParserService` (`ingestion_path: "manual_batch_v1"`) → `BulkKbSyncService`.
+**Manual path:** `ManualBatchIngestionService` splits PDF per page → `PageRelevanceFilter.filter_pages` (batch Haiku for ≥2 pages) → 1 Anthropic Batch request per **kept** page (Sonnet; Opus for `force_opus` scanned pages). Results arrive in `IngestManualBatchResultsJob` → `ChunkMergerService` → `BatchResultsParserService` (`ingestion_path: "manual_batch_v1"`) → `BulkKbSyncService`.
 
 **SHA dedup:** `ContentDedupService.find_completed(sha256:)` fires before any parse. Hit → skip parse entirely, reuse canonical_name/aliases from `BulkUploadAsset.complete`.
 

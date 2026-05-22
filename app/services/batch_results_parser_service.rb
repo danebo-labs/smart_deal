@@ -15,8 +15,10 @@
 #   ChunkAsset (Struct)             — web custom chunking path
 #
 # @param ingestion_path [String] written to sidecar metadataAttributes["ingestion_path"].
-#   "batch_v1" = bulk path (default, backward-compatible)
-#   "web_v1"   = web custom chunking path
+#   "batch_v1"       = bulk path (default, backward-compatible)
+#   "web_v1"         = web custom chunking (text/PDF/Office via SingleFileChunkingService)
+#   "field_photo_v1" = web photo path (Sonnet + FieldPhotoPrompt, direct-API cost)
+#   "manual_batch_v1" = web PDF async path (Batch API via ManualBatchIngestionService)
 class BatchResultsParserService
   class ParseError < StandardError; end
 

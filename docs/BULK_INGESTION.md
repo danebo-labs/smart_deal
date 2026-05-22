@@ -1,5 +1,7 @@
 # Bulk ZIP ingestion (web)
 
+> **Cost v2 (2026-05-22):** With `CUSTOM_CHUNKING_COST_V2_ENABLED=true`, the ZIP bulk path now uses the same cost-v2 routing as the web chat: photos → Sonnet via `FieldPhotoPrompt` + `FieldPhotoDensityGate`, PDFs → per-page filter + Sonnet Batch (`BulkCostV2RequestBuilder`), Office entries → `OfficeToPdfConverter`. Legacy whole-file Opus remains the default (`CUSTOM_CHUNKING_COST_V2_ENABLED=false`). See [INGESTION_COST_V2.md](INGESTION_COST_V2.md) for the full cost matrix.
+
 Signed-in technicians seed many documents at once via **`/bulk_uploads`** (HTML + Turbo Streams, not a JSON API).
 
 **Related:** [Web custom chunking](WEB_CUSTOM_CHUNKING.md) · [Production deploy](PRODUCTION.md)
@@ -25,3 +27,20 @@ Signed-in technicians seed many documents at once via **`/bulk_uploads`** (HTML 
 **Aurora schema discovery:** **`BedrockKbChunk`** (`app/models/bedrock_kb_chunk.rb`) is an **`abstract_class`** documenting AWS KB field mappings (embedding dim, `bedrock_integration.bedrock_knowledge_base`, JSONB metadata keys to confirm out-of-band). It does **not** connect to the app Primary DB or SQLite at boot.
 
 **Operator tooling:** `bin/rails solid_queue:purge_all` clears Solid Queue rows and `tmp/bulk_uploads/*.zip`; optional **`CLEAN_BULK_UPLOADS=1`** destroys `BulkUpload` rows; production requires **`FORCE_PURGE_QUEUE=1`** (see `lib/tasks/solid_queue_purge.rake`).
+
+---
+
+## Local (cost-v2 bulk smoke)
+
+1. **Migrate:** `bin/rails db:migrate` (adds `bulk_upload_assets.batch_custom_ids`, `ingestion_path`).
+2. **`.env`:** `ANTHROPIC_API_KEY`, AWS creds, `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_BULK_DATA_SOURCE_ID`, `KNOWLEDGE_BASE_S3_BUCKET`.
+3. **Flag (optional):** `CUSTOM_CHUNKING_COST_V2_ENABLED=true` — Sonnet photos + per-page PDF batch; default **off** = legacy Opus whole-file.
+4. **Processes:** `bin/dev` (or `bin/rails server` + `bin/jobs` for Solid Queue `bulk_ingestion`).
+5. **LibreOffice** (`soffice`) if the ZIP includes Office files (`.docx`, `.pptx`, …).
+6. **UI:** sign in → **`http://localhost:3000/bulk_uploads/new`** → upload ZIP → progress at **`/bulk_uploads/:id`**.
+
+`CUSTOM_CHUNKING_WEB_ENABLED` is **not** required for bulk ZIP.
+
+**Suggested test ZIP:** 2× JPEG + 1× PDF (~10 pages) + optional `.pptx`.
+
+**Verify:** logs `BulkCostV2RequestBuilder filter`, `bulk_batch:` / `bulk_parse:` in `bedrock_queries`; assets reach **Disponible**; `model_id` ends with `-batch` when cost-v2 is on.

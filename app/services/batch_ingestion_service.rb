@@ -36,12 +36,35 @@ class BatchIngestionService
       asset = BulkUploadAsset.find_or_initialize_by(
         custom_id: BulkUploadAsset.custom_id_for(entry[:binary])
       )
+
+      dedup = ContentDedupService.find_completed(sha256: entry[:sha256])
+
+      if dedup.hit
+        asset.assign_attributes(
+          bulk_upload:    bulk_upload,
+          sha256:         entry[:sha256],
+          s3_key:         key,
+          filename:       entry[:filename],
+          content_type:   entry[:content_type],
+          canonical_name: dedup.canonical_name,
+          aliases:        dedup.aliases,
+          ingestion_path: BulkUploadAsset::INGESTION_CONTENT_DEDUP,
+          status:         "complete"
+        )
+        created = !asset.persisted?
+        asset.save!
+        asset.broadcast_append! if created
+        Rails.logger.info("BatchIngestionService: dedup hit #{entry[:filename]} sha=#{entry[:sha256][0, 16]}")
+        next
+      end
+
       asset.assign_attributes(
         bulk_upload:  bulk_upload,
         sha256:       entry[:sha256],
         s3_key:       key,
         filename:     entry[:filename],
         content_type: entry[:content_type],
+        office_origin: entry[:office_origin] || false,
         status:       "uploaded_s3"
       )
       created = !asset.persisted?
@@ -56,17 +79,50 @@ class BatchIngestionService
   # @param bulk_upload [BulkUpload]
   # @return [Anthropic::Models::Messages::MessageBatch]
   def submit!(bulk_upload)
-    assets   = bulk_upload.bulk_upload_assets.where(status: "uploaded_s3")
-    requests = build_requests(assets)
-    batch    = @batch_client.submit_batch(requests: requests)
+    assets = bulk_upload.bulk_upload_assets.where(status: "uploaded_s3")
 
-    bulk_upload.update!(claude_batch_id: batch.id)
-    assets.update_all(status: "in_batch")
+    if cost_v2_enabled?
+      requests, meta = BulkCostV2RequestBuilder.new.build_all!(assets)
+      batch = @batch_client.submit_batch(requests: requests)
+      bulk_upload.update!(claude_batch_id: batch.id)
+      persist_batch_custom_ids!(assets, meta)
+    else
+      requests = build_requests(assets)
+      batch    = @batch_client.submit_batch(requests: requests)
+      bulk_upload.update!(claude_batch_id: batch.id)
+      assets.update_all(status: "in_batch")
+    end
 
     batch
   end
 
   private
+
+  def cost_v2_enabled?
+    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"].to_s == "true"
+  end
+
+  def persist_batch_custom_ids!(assets, meta)
+    assets.each do |asset|
+      page_ids = Array(meta[asset.id])
+      asset.update_columns(
+        batch_custom_ids: page_ids,
+        ingestion_path:   detect_ingestion_path(asset, page_ids),
+        status:           "in_batch"
+      )
+      asset.broadcast_replace!
+    end
+  end
+
+  def detect_ingestion_path(asset, page_ids)
+    if %w[image/jpeg image/png image/webp image/gif].include?(asset.content_type)
+      "field_photo_v1"
+    elsif page_ids.any? { |id| id.include?("_p") }
+      "manual_batch_v1"
+    else
+      "batch_v1"
+    end
+  end
 
   def build_requests(assets)
     assets.map do |asset|

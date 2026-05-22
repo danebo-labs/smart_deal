@@ -5,6 +5,7 @@ class BulkUploadAsset < ApplicationRecord
   belongs_to :kb_document, optional: true
 
   STATUSES = %w[pending uploaded_s3 in_batch parsed syncing complete failed].freeze
+  INGESTION_CONTENT_DEDUP = "content_dedup"
 
   validates :custom_id, presence: true, uniqueness: true
   validates :sha256, presence: true
@@ -16,6 +17,12 @@ class BulkUploadAsset < ApplicationRecord
   scope :syncing,   -> { where(status: "syncing") }
   scope :in_batch,  -> { where(status: "in_batch") }
 
+  # Returns all custom_ids associated with this asset — the primary custom_id
+  # plus any per-page ids written during cost_v2 batch submission.
+  def all_custom_ids
+    ([ custom_id ] + Array(batch_custom_ids)).uniq
+  end
+
   # SHA-256 of raw binary truncated to 32 hex chars — stable cross-upload idempotency key.
   def self.custom_id_for(binary)
     Digest::SHA256.hexdigest(binary)[0..31]
@@ -23,6 +30,10 @@ class BulkUploadAsset < ApplicationRecord
 
   def display_name
     canonical_name.presence || filename
+  end
+
+  def content_deduped?
+    status == "complete" && ingestion_path == INGESTION_CONTENT_DEDUP
   end
 
   # Called for status transitions on an already-visible asset row.

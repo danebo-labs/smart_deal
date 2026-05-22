@@ -12,17 +12,21 @@
 # Rails.application.config.x.custom_chunking_web_enabled is true.
 class CustomChunkingPipeline
   OFFICE_EXTENSIONS = FileMultimodalRouter::OFFICE_EXTENSIONS
+  PDF_CONTENT_TYPES = %w[application/pdf].freeze
+
   # @param images       [Array<Hash>] same shape as QOS @images
   # @param documents    [Array<Hash>] same shape as QOS @documents
   # @param conv_session [ConversationSession, nil]
   # @param tenant       [Tenant, nil]
   # @param locale       [String, nil] ISO 639-1 — forwarded to SingleFileChunkingService for image summary
-  def initialize(images:, documents:, conv_session: nil, tenant: nil, locale: nil)
+  # @param force_sync   [Boolean] when true, PDFs use sync parse even if cost_v2 batch is enabled
+  def initialize(images:, documents:, conv_session: nil, tenant: nil, locale: nil, force_sync: false)
     @images         = Array(images)
     @documents      = Array(documents)
     @conv_session   = conv_session
     @tenant         = tenant
     @locale         = locale
+    @force_sync     = force_sync
     @uploaded_filenames = []
     @kb_document_ids    = []
     @web_v1_metadata    = []
@@ -129,6 +133,33 @@ class CustomChunkingPipeline
     @kb_document_ids    << kb_doc.id
     @uploaded_filenames << filename
 
+    # SHA dedup: skip parse when identical binary was already indexed.
+    dedup = ContentDedupService.find_completed(sha256: sha256)
+    if dedup.hit
+      @web_v1_metadata << {
+        "filename"        => filename,
+        "canonical_name"  => dedup.canonical_name.to_s,
+        "aliases"         => Array(dedup.aliases),
+        "summary"         => nil,
+        "companion_offer" => nil
+      }
+      return
+    end
+
+    # Cost v2: route PDFs/Office to ManualBatchIngestionService (async Batch API) unless sync forced.
+    if cost_v2_enabled? && !sync_forced? && pdf_or_office?(content_type, filename)
+      SubmitManualBatchJob.perform_later(
+        s3_key:          s3_key,
+        filename:        filename,
+        sha256:          sha256,
+        kb_doc_id:       kb_doc.id,
+        locale:          @locale,
+        conv_session_id: @conv_session&.id
+      )
+      # ACK fast: add to uploaded list without web_v1_metadata (parsed async)
+      return
+    end
+
     begin
       chunk_asset = SingleFileChunkingService.new(
         binary:       binary,
@@ -174,6 +205,18 @@ class CustomChunkingPipeline
 
   def office?(filename)
     OFFICE_EXTENSIONS.include?(File.extname(filename.to_s).downcase)
+  end
+
+  def pdf_or_office?(content_type, filename)
+    PDF_CONTENT_TYPES.include?(content_type.to_s) || office?(filename)
+  end
+
+  def cost_v2_enabled?
+    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"].to_s == "true"
+  end
+
+  def sync_forced?
+    @force_sync || ENV["MANUAL_FORCE_SYNC"].to_s == "true"
   end
 
   def fallback_to_legacy

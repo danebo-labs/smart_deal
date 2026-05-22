@@ -14,7 +14,7 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 |------|---------|
 | **RAG chat** | Bedrock Knowledge Base, hybrid orchestrator (optional Text-to-SQL) |
 | **Chat uploads** | Legacy Bedrock FM parse, or **custom Claude chunking** when `CUSTOM_CHUNKING_WEB_ENABLED=true` — supports images, text, PDF, **Word, Excel, PowerPoint** (via LibreOffice) |
-| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, **single Haiku call** that classifies an entire slide deck, locale-aware summaries — see [docs/WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md#claude-message-api-cost-optimizations-web_v1) |
+| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, **single Haiku call** for slide deck classify, locale-aware summaries — see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md). **Cost v2 (2026-05-21 benchmark):** Sonnet default for images (↓5×), Anthropic Batch per-page for manuals (~50% off), SHA dedup — target ~$7-10/técnico/mes vs ~$60 legacy. `CUSTOM_CHUNKING_COST_V2_ENABLED=true`. Full ADR: [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
 | **Bulk ZIP** | `/bulk_uploads` — Anthropic Message Batches, Turbo progress UI |
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
 | **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet, web_v1 vs legacy split), live chat footer |

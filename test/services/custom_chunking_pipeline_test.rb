@@ -7,6 +7,9 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
   parallelize(workers: 1)
 
   setup do
+    @orig_cost_v2 = ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"]
+    ENV.delete("CUSTOM_CHUNKING_COST_V2_ENABLED")
+
     @orig_s3_new  = S3DocumentsService.method(:new)
     @orig_sfc_new = SingleFileChunkingService.method(:new)
     @orig_bulk    = BulkKbSyncService.instance_method(:sync!)
@@ -26,6 +29,11 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
     SingleFileChunkingService.define_singleton_method(:new, @orig_sfc_new)
     BulkKbSyncService.define_method(:sync!, @orig_bulk)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, @orig_track)
+    if @orig_cost_v2
+      ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = @orig_cost_v2
+    else
+      ENV.delete("CUSTOM_CHUNKING_COST_V2_ENABLED")
+    end
   end
 
   def fake_sfc(canonical_name:, aliases:, summary:, filename:)

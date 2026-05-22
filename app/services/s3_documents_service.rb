@@ -99,6 +99,18 @@ class S3DocumentsService
     nil
   end
 
+  # Downloads an object from S3 and returns its raw binary.
+  # @param key [String] S3 object key
+  # @return [String, nil] raw bytes on success, nil on failure
+  def download(key)
+    return nil unless @bucket_name
+
+    @s3.get_object(bucket: @bucket_name, key: key).body.read
+  rescue StandardError => e
+    Rails.logger.error("S3DocumentsService#download failed for #{key}: #{e.message}")
+    nil
+  end
+
   private
 
   def find_bucket_name

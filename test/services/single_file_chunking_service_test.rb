@@ -10,8 +10,9 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
   # Shared fixtures
   # ---------------------------------------------------------------------------
 
-  DOC_NAME = "Orona Hydraulic Manual"
-  ALIASES  = %w[HPM-400 orona hydraulic]
+  DOC_NAME   = "Orona Hydraulic Manual"
+  ALIASES    = %w[HPM-400 orona hydraulic]
+  PHOTO_NAME = "Door Operator Motor"
 
   def golden_json
     {
@@ -24,6 +25,21 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         }
       ]
     }.to_json
+  end
+
+  # FieldPhotoPrompt-compatible JSON (for image/* paths)
+  def field_photo_json(summary: nil, companion_offer: nil)
+    base = {
+      "canonical_component"      => PHOTO_NAME,
+      "manufacturer"             => "Schindler",
+      "model"                    => "5500",
+      "subsystem"                => "DOOR_OPERATOR",
+      "condition"                => "GOOD",
+      "aliases"                  => ALIASES,
+      "anti_hallucination_notes" => "Manufacturer visible on label."
+    }
+    base["summary"] = summary if summary
+    base.to_json
   end
 
   # ---------------------------------------------------------------------------
@@ -129,9 +145,42 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_operator 1, :<=, @fake_s3.uploads.count
   end
 
-  test "image/jpeg: writes chunks" do
+  test "image/jpeg: writes chunks via field_photo_v1 path" do
+    @response_json = field_photo_json
     asset = build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
-    assert_equal DOC_NAME, asset.canonical_name
+    assert_equal PHOTO_NAME, asset.canonical_name
+  end
+
+  test "image/jpeg: sidecar ingestion_path is field_photo_v1" do
+    @response_json = field_photo_json
+    build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
+    sidecar_key = @fake_s3.uploads.keys.find { |k| k.end_with?(".metadata.json") }
+    assert_not_nil sidecar_key
+    attrs = JSON.parse(@fake_s3.uploads[sidecar_key])["metadataAttributes"]
+    assert_equal "field_photo_v1", attrs["ingestion_path"]
+  end
+
+  test "image/jpeg: uses Sonnet model (FieldPhotoDensityGate default)" do
+    captured_models = []
+    photo_response  = field_photo_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_models << params[:model]
+        content = [ OpenStruct.new(type: "text", text: photo_response) ]
+        usage   = OpenStruct.new(input_tokens: 10, output_tokens: 20,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: params[:model])
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
+
+    assert captured_models.all? { |m| m == BatchChunkingPrompt::MODEL_TEXT },
+           "expected Sonnet (MODEL_TEXT) for all image calls, got: #{captured_models.inspect}"
   end
 
   test "ingestion_path is web_v1 in sidecar metadataAttributes" do
@@ -281,12 +330,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
 
   test "image mode: locale is forwarded as 'Summary language' text-block" do
     captured_text_blocks = []
-    golden_response = {
-      "document_name" => DOC_NAME,
-      "aliases"       => ALIASES,
-      "summary"       => "Descripción de la imagen.",
-      "chunks"        => [ { "text" => "# S0", "page" => 1 } ]
-    }.to_json
+    photo_response       = field_photo_json(summary: "Descripción de la imagen.")
 
     Anthropic::Client.define_singleton_method(:new) do |**|
       msgs = Object.new
@@ -295,10 +339,10 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         captured_text_blocks.concat(
           blocks.select { |b| b.is_a?(Hash) && b[:type] == "text" }.map { |b| b[:text] }
         )
-        content = [ OpenStruct.new(type: "text", text: golden_response) ]
+        content = [ OpenStruct.new(type: "text", text: photo_response) ]
         usage   = OpenStruct.new(input_tokens: 10, output_tokens: 20,
                                  cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7")
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6")
         OpenStruct.new(accumulated_message: message)
       end
       OpenStruct.new(messages: msgs, api_key: "fake")
@@ -315,12 +359,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
   end
 
   test "image mode: summary populated on ChunkAsset when Claude returns it" do
-    @response_json = {
-      "document_name" => DOC_NAME,
-      "aliases"       => ALIASES,
-      "summary"       => "Imagen del cuadro de maniobras de un Schindler 5500.",
-      "chunks"        => [ { "text" => "# S0", "page" => 1 } ]
-    }.to_json
+    @response_json = field_photo_json(summary: "Imagen del cuadro de maniobras de un Schindler 5500.")
 
     asset = build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
 
@@ -333,18 +372,12 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_nil asset.summary
   end
 
-  test "image mode: companion_offer populated on ChunkAsset when Claude returns it" do
-    @response_json = {
-      "document_name"   => DOC_NAME,
-      "aliases"         => ALIASES,
-      "summary"         => "Parece el cuadro de un Schindler.",
-      "companion_offer" => "Pregúntame lo que necesites, aunque sea con pocas palabras.",
-      "chunks"          => [ { "text" => "# S0", "page" => 1 } ]
-    }.to_json
+  test "image mode: companion_offer is nil (field_photo_v1 schema has no companion_offer)" do
+    @response_json = field_photo_json(summary: "Parece el cuadro de un Schindler.")
 
     asset = build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
 
-    assert_match(/Pregúntame/, asset.companion_offer)
+    assert_nil asset.companion_offer
   end
 
   test "pdf mode: companion_offer is nil when Claude response omits it" do
@@ -640,7 +673,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
 
   test "handle_image: retries with WEB_PAGE_RETRY_MAX_TOKENS on truncation, succeeds on retry" do
     captured_max_tokens = []
-    response_text = golden_json
+    response_text       = field_photo_json
 
     Anthropic::Client.define_singleton_method(:new) do |**|
       call_idx = 0
@@ -652,7 +685,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         content = [ OpenStruct.new(type: "text", text: response_text) ]
         usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
                                  cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
                                  stop_reason: stop)
         OpenStruct.new(accumulated_message: message)
       end
@@ -664,12 +697,12 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal 2, captured_max_tokens.size, "expected 2 calls: initial + retry"
     assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,       captured_max_tokens[0]
     assert_equal BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS, captured_max_tokens[1]
-    assert_equal DOC_NAME, asset.canonical_name
+    assert_equal PHOTO_NAME, asset.canonical_name
   end
 
   test "handle_image: no retry when first call succeeds, uses WEB_PAGE_MAX_TOKENS" do
     captured_max_tokens = []
-    response_text = golden_json
+    response_text       = field_photo_json
 
     Anthropic::Client.define_singleton_method(:new) do |**|
       msgs = Object.new
@@ -678,7 +711,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         content = [ OpenStruct.new(type: "text", text: response_text) ]
         usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
                                  cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
                                  stop_reason: "end_turn")
         OpenStruct.new(accumulated_message: message)
       end

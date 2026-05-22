@@ -9,6 +9,9 @@ Feature-flagged path for **file attachments from the home RAG chat**. Default: *
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `CUSTOM_CHUNKING_WEB_ENABLED` | off | Enable direct Claude parse + bulk data source |
+| `CUSTOM_CHUNKING_COST_V2_ENABLED` | off | Enable cost-v2 routing: Sonnet default + Batch manual + SHA dedup (see [INGESTION_COST_V2.md](INGESTION_COST_V2.md)) |
+| `MANUAL_FORCE_SYNC` | off | Force sync parse for all manual PDFs (ops override for cost_v2) |
+| `FIELD_PHOTO_HAIKU_GATE_ENABLED` | off | Activate optional Haiku pre-gate for dense scanned images (cost_v2) |
 | `CUSTOM_CHUNKING_NO_FALLBACK` | off | **Dev/staging only** — fail fast, no legacy `OWRPGSX6XK` fallback |
 | `BEDROCK_BULK_DATA_SOURCE_ID` | falls back to `BEDROCK_DATA_SOURCE_ID` | KB data source with **no Bedrock chunking** |
 | `ANTHROPIC_API_KEY` | — | Required when flag is on (sync Messages API) |
@@ -29,10 +32,17 @@ When **`CUSTOM_CHUNKING_WEB_ENABLED=true`**, a file attached in the home RAG cha
 | `QueryOrchestratorService#upload_and_sync_attachments` | Routes to `CustomChunkingPipeline` when the flag is on, else legacy `KbSyncService` |
 | `CustomChunkingPipeline` | Per-file orchestration, builds `web_v1_metadata` (canonical name + aliases), enqueues `BedrockIngestionJob`, **fallback** to legacy on error |
 | `SingleFileChunkingService` | One file end-to-end: optional Office→PDF, PDF page split, relevance filter, Claude calls, S3 chunk writes |
-| `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** from text density / image ratio per page; promotes rasterized slides (no XObjects but high pixel density) to Opus so LibreOffice-flattened PowerPoint slides don't fall through to text mode |
+| `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per page. **cost_v2:** `:image` default is Sonnet (not Opus); Opus only via `FieldPhotoDensityGate force_opus`. Rasterized slides still promote to Opus. |
+| `FieldPhotoDensityGate` | *(cost_v2)* Heuristic + optional Haiku gate for image uploads → `:sonnet` or `:opus` |
+| `FieldPhotoPrompt` | *(cost_v2)* Specialized photo system prompt; `ingestion_path: "field_photo_v1"`, 1 lightweight chunk |
+| `FieldPhotoResultsParser` | *(cost_v2)* `FieldPhotoPrompt` JSON → standard `{document_name, aliases, chunks}` envelope |
+| `ContentDedupService` | *(cost_v2)* SHA-256 dedup before any parse — `BulkUploadAsset.complete` hit skips Claude call |
+| `ManualBatchIngestionService` | *(cost_v2)* Splits PDF + `PageRelevanceFilter` + Anthropic Batch per kept page (Sonnet; Opus on `force_opus`) |
+| `SubmitManualBatchJob` | *(cost_v2)* Submits batch; stores context in Solid Cache; schedules `IngestManualBatchResultsJob` |
+| `IngestManualBatchResultsJob` | *(cost_v2)* Polls batch, merges via `ChunkMergerService`, `ingestion_path: "manual_batch_v1"` |
 | `ClaudeChunkingClient` | Sync Anthropic Messages API (`-direct` cost rows in `bedrock_queries`); accepts a `max_tokens` arg and exposes `stop_reason` so the caller can retry truncated calls |
 | `PageRelevanceFilter` | Drops boilerplate PDF pages (heuristics + optional Haiku 4.5 gate) before spendy Opus calls; **`call_batch`** classifies all slides of an Office deck in one Haiku call |
-| `BatchResultsParserService` | Same parser as bulk ZIP; `ingestion_path: "web_v1"` in sidecar metadata |
+| `BatchResultsParserService` | Same parser as bulk ZIP; `ingestion_path: "web_v1"` (sync) / `"field_photo_v1"` / `"manual_batch_v1"` (cost_v2) |
 | `BulkKbSyncService` | Starts ingestion on **`BEDROCK_BULK_DATA_SOURCE_ID`** (chunking disabled) |
 | `LambdaParityAliasFallback` | Deterministic alias fill-in when the model returns empty aliases |
 | `BedrockIngestionJob` | Polls ingestion; with `web_v1_metadata`, enriches `KbDocument` **without** a Bedrock retrieve call |
@@ -58,6 +68,27 @@ The direct Claude path is the dominant ingestion cost on the web flow. Three kno
 **Rollout:** deploy with flag **OFF** → enable in staging → `CUSTOM_CHUNKING_WEB_ENABLED=true` in production. Optional dev flag **`CUSTOM_CHUNKING_NO_FALLBACK=true`** disables legacy fallback (fail-fast for debugging; **do not** use in prod).
 
 **Tests:** `test/integration/web_custom_chunking_flow_test.rb`, service tests under `test/services/*chunk*`, `test/services/lambda_parity_test.rb`, golden fixture `test/fixtures/files/lambda_chunk_golden.json`.
+
+### Cost v2 — photo + manual batch routing (2026-05-21)
+
+When **`CUSTOM_CHUNKING_COST_V2_ENABLED=true`** (requires `CUSTOM_CHUNKING_WEB_ENABLED=true`):
+
+| File type | Default path | Sync fallback trigger |
+|-----------|-------------|----------------------|
+| Images (JPEG/PNG/…) | `SingleFileChunkingService` → Sonnet + `FieldPhotoPrompt` (sync direct) | — (always sync) |
+| PDF / Office | `SubmitManualBatchJob` → `ManualBatchIngestionService` → Batch API async | `force_sync: true` OR `MANUAL_FORCE_SYNC=true` OR query present in request |
+
+**Foto path:** `FieldPhotoDensityGate` checks image size (heuristic) + optional Haiku 1-call → `:sonnet` or `:opus`. Sonnet result → `FieldPhotoResultsParser` → 1 lightweight chunk (`ingestion_path: "field_photo_v1"`). Opus result → monolithic `BatchChunkingPrompt` (fallback).
+
+**Manual path:** `ManualBatchIngestionService` splits PDF per page → `PageRelevanceFilter` per page → 1 Anthropic Batch request per kept page (Sonnet; Opus for `force_opus` scanned pages). Results arrive in `IngestManualBatchResultsJob` → `ChunkMergerService` → `BatchResultsParserService` (`ingestion_path: "manual_batch_v1"`) → `BulkKbSyncService`.
+
+**SHA dedup:** `ContentDedupService.find_completed(sha256:)` fires before any parse. Hit → skip parse entirely, reuse canonical_name/aliases from `BulkUploadAsset.complete`.
+
+**Cost tracking:** `web_batch: <filename> p<N>/<M>` rows in `bedrock_queries` (no `-direct` suffix — Batch API pricing). `field_photo_v1` rows with `-direct` suffix.
+
+**Full ADR + cost matrix:** [INGESTION_COST_V2.md](INGESTION_COST_V2.md)
+
+---
 
 ### Web chat upload ingestion vs bulk ZIP
 

@@ -20,10 +20,15 @@
 class ClaudeChunkingClient
   class ApiError < StandardError; end
 
-  # @param model      [String]  Anthropic model ID, e.g. BatchChunkingPrompt::MODEL_MULTIMODAL
+  MAX_OVERLOADED_RETRIES = 2
+  OVERLOADED_BACKOFF_SECONDS = [ 2, 4 ].freeze
+
+  # @param model      [String]    Anthropic model ID
+  # @param system     [Array]     system blocks; defaults to BatchChunkingPrompt::SYSTEM_BLOCKS
   # @param client     [#messages] injectable Anthropic client (default: Anthropic::Client)
-  def initialize(model:, client: nil)
+  def initialize(model:, system: BatchChunkingPrompt::SYSTEM_BLOCKS, client: nil)
     @model  = model
+    @system = system
     @client = client || build_client
   end
 
@@ -37,36 +42,49 @@ class ClaudeChunkingClient
   # @raise [ApiError]
   def call(user_content:, filename:, page_number: nil, total_pages: nil,
            max_tokens: BatchChunkingPrompt::MAX_TOKENS)
-    start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    attempt = 0
+    begin
+      attempt += 1
+      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-    response = @client.messages.stream(
-      model:      @model,
-      max_tokens: max_tokens,
-      system:     BatchChunkingPrompt::SYSTEM_BLOCKS,
-      messages:   [ { role: "user", content: user_content } ]
-    ).accumulated_message
+      response = @client.messages.stream(
+        model:      @model,
+        max_tokens: max_tokens,
+        system:     @system,
+        messages:   [ { role: "user", content: user_content } ]
+      ).accumulated_message
 
-    latency_ms  = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
-    text_block  = response.content.find { |b| b.type.to_s == "text" }
-    raise ApiError, "No text block in Anthropic response (model=#{@model})" unless text_block
+      latency_ms  = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+      text_block  = response.content.find { |b| b.type.to_s == "text" }
+      raise ApiError, "No text block in Anthropic response (model=#{@model})" unless text_block
 
-    raw_stop    = response.respond_to?(:stop_reason) ? response.stop_reason.to_s : nil
-    stop_reason = raw_stop == "max_tokens" ? "max_tokens" : nil
+      raw_stop    = response.respond_to?(:stop_reason) ? response.stop_reason.to_s : nil
+      stop_reason = raw_stop == "max_tokens" ? "max_tokens" : nil
 
-    if stop_reason == "max_tokens"
-      Rails.logger.warn(
-        "ClaudeChunkingClient: #{@model} hit max_tokens cap (#{max_tokens}) " \
-        "for #{user_query_for_log(filename, page_number, total_pages)}"
-      )
+      if stop_reason == "max_tokens"
+        Rails.logger.warn(
+          "ClaudeChunkingClient: #{@model} hit max_tokens cap (#{max_tokens}) " \
+          "for #{user_query_for_log(filename, page_number, total_pages)}"
+        )
+      end
+
+      track_usage(response.usage, filename, page_number, total_pages, latency_ms)
+
+      { text: text_block.text, usage: response.usage, model: response.model, stop_reason: stop_reason }
+    rescue Anthropic::Errors::APIError => e
+      if e.message.to_s.include?("overloaded") && attempt <= MAX_OVERLOADED_RETRIES
+        delay = OVERLOADED_BACKOFF_SECONDS[attempt - 1] || OVERLOADED_BACKOFF_SECONDS.last
+        Rails.logger.warn(
+          "ClaudeChunkingClient: overloaded (attempt #{attempt}/#{MAX_OVERLOADED_RETRIES + 1}) " \
+          "for #{user_query_for_log(filename, page_number, total_pages)} — retrying in #{delay}s"
+        )
+        sleep delay
+        retry
+      end
+      raise ApiError, "Anthropic API error (model=#{@model}): #{e.message}"
+    rescue ArgumentError => e
+      raise ApiError, "Anthropic client error (model=#{@model}): #{e.message}"
     end
-
-    track_usage(response.usage, filename, page_number, total_pages, latency_ms)
-
-    { text: text_block.text, usage: response.usage, model: response.model, stop_reason: stop_reason }
-  rescue Anthropic::Errors::APIError => e
-    raise ApiError, "Anthropic API error (model=#{@model}): #{e.message}"
-  rescue ArgumentError => e
-    raise ApiError, "Anthropic client error (model=#{@model}): #{e.message}"
   end
 
   private

@@ -9,7 +9,8 @@ require 'digest'
 class ZipExtractionService
   class Error < StandardError; end
 
-  ALLOWED_MIME_TYPES = %w[image/jpeg image/png application/pdf].freeze
+  ALLOWED_MIME_TYPES = %w[image/jpeg image/png image/webp image/gif application/pdf].freeze
+  OFFICE_EXTENSIONS  = FileMultimodalRouter::OFFICE_EXTENSIONS.freeze
   MAX_FILE_BYTES     = 50 * 1024 * 1024   # 50 MB per entry
   MAX_TOTAL_BYTES    = 500 * 1024 * 1024  # 500 MB total uncompressed
   MAX_RATIO          = 100                 # compression ratio cap (zip-bomb guard)
@@ -44,18 +45,33 @@ class ZipExtractionService
           raise Error, "ZIP total uncompressed size exceeds 500 MB limit"
         end
 
-        binary = entry.get_input_stream.read
-        mime   = detect_mime(binary, entry.name)
+        binary        = entry.get_input_stream.read
+        ext           = File.extname(entry.name).downcase
+        filename      = sanitize_filename(entry.name)
+        office_origin = OFFICE_EXTENSIONS.include?(ext)
+
+        if office_origin
+          begin
+            binary   = OfficeToPdfConverter.convert(binary, extension: ext)
+            filename = "#{File.basename(filename, ext)}.pdf"
+            mime     = "application/pdf"
+          rescue OfficeToPdfConverter::Error => e
+            raise Error, "Office conversion failed for #{entry.name}: #{e.message}"
+          end
+        else
+          mime = detect_mime(binary, entry.name)
+        end
 
         unless ALLOWED_MIME_TYPES.include?(mime)
           raise Error, "Unsupported file type '#{mime}' for #{entry.name}. Allowed: #{ALLOWED_MIME_TYPES.join(', ')}"
         end
 
         yield({
-          filename:     sanitize_filename(entry.name),
+          filename:     filename,
           binary:       binary,
           content_type: mime,
-          sha256:       Digest::SHA256.hexdigest(binary)
+          sha256:       Digest::SHA256.hexdigest(binary),
+          office_origin: office_origin
         })
       end
     end
@@ -66,6 +82,9 @@ class ZipExtractionService
   JPEG_MAGIC = "\xFF\xD8\xFF".b
   PNG_MAGIC  = "\x89PNG\r\n\x1A\n".b
   PDF_MAGIC  = "%PDF".b
+  WEBP_RIFF  = "RIFF".b
+  WEBP_TYPE  = "WEBP".b
+  GIF_MAGIC  = "GIF".b
 
   # ZIP entry names without the UTF-8 flag come back as ASCII-8BIT.
   # Force UTF-8 interpretation; fall back to Windows-1252 (common on macOS/Windows zips) if invalid.
@@ -78,17 +97,22 @@ class ZipExtractionService
   end
 
   def detect_mime(binary, filename)
-    header = binary.b[0, 8]
+    header = binary.b[0, 12]
 
     return "image/jpeg"       if header.start_with?(JPEG_MAGIC)
     return "image/png"        if header.start_with?(PNG_MAGIC)
     return "application/pdf"  if header.start_with?(PDF_MAGIC)
+    return "image/gif"        if header.start_with?(GIF_MAGIC)
+    # WEBP: bytes 0-3 are "RIFF", bytes 8-11 are "WEBP"
+    return "image/webp"       if header[0, 4] == WEBP_RIFF && header[8, 4] == WEBP_TYPE
 
     # Extension fallback when magic bytes are ambiguous
     case File.extname(filename).downcase
     when ".jpg", ".jpeg" then "image/jpeg"
     when ".png"          then "image/png"
     when ".pdf"          then "application/pdf"
+    when ".webp"         then "image/webp"
+    when ".gif"          then "image/gif"
     else "application/octet-stream"
     end
   end

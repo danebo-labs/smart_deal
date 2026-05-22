@@ -9,7 +9,11 @@
 #   1. Heuristic rules (zero LLM) — deterministic fast path
 #   2. Haiku 4.5 gating call — for ambiguous pages (50–800 chars, no clear signal)
 #
-# Special case — scanned_image:
+# Special case — cover_slide (runs first in apply_heuristics, p1 only):
+#   page_number == 1 AND text_layer_chars < 10 AND image_area_ratio > 0.7 AND text < 50 → drop.
+#   Catches fully-rasterized covers in native PDFs. Office-origin files use call_batch instead.
+#
+# Special case — scanned_image (fallback after heuristics):
 #   text_layer_chars < 100 AND image_area_ratio > 0.7 → keep (force Opus 4.7, skip Haiku)
 #
 # Batch mode (Office/PPT origin):
@@ -103,6 +107,14 @@ class PageRelevanceFilter
   end
 
   def apply_heuristics(density)
+    # Rasterized cover (p1 only): truly zero text layer + high image ratio — drop without pattern match.
+    # Conservative threshold (< 10) avoids intercepting scanned technical pages that have thin but
+    # non-zero text detection (those still fall through to scanned_image → keep + Opus).
+    # Office-origin files use call_batch instead and never reach this path.
+    if @page_number == 1 && density[:text_layer_chars] < 10 && density[:image_area_ratio] > 0.7 && @text.length < 50
+      return { keep: false, reason: :cover_slide, source: :heuristic }
+    end
+
     # Title page: check first for page 1 so short cover pages are classified correctly
     # before the blank rule catches them (covers are often < 50 chars).
     if @page_number == 1 && @text.length < 400 && @text.match?(TITLE_PATTERN)

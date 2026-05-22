@@ -57,13 +57,14 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # Image MIME types → :image mode, Opus
+  # Image MIME types → :image mode, Sonnet (cost_v2: was Opus, downgraded 2026-05-21)
+  # FieldPhotoDensityGate may upgrade to Opus at parse time; router default is Sonnet.
   # ---------------------------------------------------------------------------
 
-  test "classifies image/jpeg as image mode with MODEL_MULTIMODAL" do
+  test "classifies image/jpeg as image mode with MODEL_TEXT" do
     r = FileMultimodalRouter.classify(binary: "\xFF\xD8", content_type: "image/jpeg", filename: "photo.jpg")
-    assert_equal :image,                                   r.mode
-    assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL,    r.model
+    assert_equal :image,                             r.mode
+    assert_equal BatchChunkingPrompt::MODEL_TEXT,    r.model
   end
 
   test "classifies image/png as image mode" do

@@ -15,7 +15,7 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 | `source` | Meaning |
 |----------|---------|
 | `query` | End-user RAG / orchestrated LLM usage (**web chat** today; Twilio path would use the same `source` if re-enabled) |
-| `ingestion_parse` | Parser tokens recorded after a document finishes KB ingestion. **Legacy path** writes an estimate (Opus); **`web_v1`** path skips the estimate because real `web_parse: …` and `page_filter_batch: …` rows are already persisted by `TrackBedrockQueryJob` from the direct Claude calls. |
+| `ingestion_parse` | Parser tokens recorded after a document finishes KB ingestion. **Legacy path** writes an estimate (Opus); **`web_v1`** path skips the estimate (real `web_parse: …` rows already persisted by `ClaudeChunkingClient`). **cost_v2 paths:** `field_photo_v1` rows have `-direct` suffix; `manual_batch_v1` rows use batch pricing (no `-direct`; `user_query: "web_batch: <filename> p<N>/<M>"`). |
 | `ingestion_embed` | Estimated embedding tokens for that upload (Nova multimodal). Always written for both paths. |
 
 **Jobs & data:**

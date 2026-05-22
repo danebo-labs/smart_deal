@@ -4,7 +4,7 @@
 
 1. **AWS credentials:** `access_key_id` and `secret_access_key`, or a Bedrock API key / bearer token generated in the AWS console.
 2. **Region:** `us-east-1` by default.
-3. **Inference Profile:** `global.anthropic.claude-haiku-4-5-20251001-v1:0`, the Bedrock-managed global profile for Claude Haiku 4.5.
+3. **Inference Profile:** `us.anthropic.claude-haiku-4-5-20251001-v1:0`, the US-region profile for Claude Haiku 4.5 (20% cheaper than `global.` with same quality; routes within us-east-1).
 
 ## Credentials
 
@@ -22,7 +22,7 @@
      secret_access_key: YOUR_AWS_SECRET_ACCESS_KEY
      region: us-east-1
      bedrock_bearer_token: YOUR_AWS_BEDROCK_BEARER_TOKEN (optional)
-     bedrock_model_id: global.anthropic.claude-haiku-4-5-20251001-v1:0
+     bedrock_model_id: us.anthropic.claude-haiku-4-5-20251001-v1:0
 
    bedrock:
      knowledge_base_id: YOUR_KNOWLEDGE_BASE_ID
@@ -153,7 +153,7 @@ aws:
   secret_access_key: YOUR_SECRET_KEY
   region: us-east-1
   bedrock_bearer_token: YOUR_BEDROCK_BEARER_TOKEN (if applicable)
-  bedrock_model_id: global.anthropic.claude-haiku-4-5-20251001-v1:0
+  bedrock_model_id: us.anthropic.claude-haiku-4-5-20251001-v1:0
 
 bedrock:
   knowledge_base_id: YOUR_KNOWLEDGE_BASE_ID
@@ -284,8 +284,8 @@ See `docs/bedrock-app-user-iam-policy.json` for a complete policy ready to attac
 
 ### Error: "Bedrock error: ... inference profile"
 
-- Verify that `BEDROCK_MODEL_ID` points to a valid inference profile. The default is `global.anthropic.claude-haiku-4-5-20251001-v1:0` (global Haiku 4.5).
-- If you work in another region, check the Bedrock console under **Cross-region inference** for the correct profile.
+- Verify that `BEDROCK_MODEL_ID` points to a valid inference profile. The default is `us.anthropic.claude-haiku-4-5-20251001-v1:0` (US-region Haiku 4.5, 20% cheaper than `global.`).
+- The `us.` prefix routes within US regions only. If you work outside us-east-1, use `global.anthropic.claude-haiku-4-5-20251001-v1:0` instead.
 
 ### Error: "API key not configured"
 

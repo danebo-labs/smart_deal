@@ -60,7 +60,7 @@ class FileMultimodalRouter
   def classify
     return classify_office if office?
     return Result.new(model: BatchChunkingPrompt::MODEL_TEXT, mode: :text, pages: []) if text?
-    return Result.new(model: BatchChunkingPrompt::MODEL_MULTIMODAL, mode: :image, pages: []) if image?
+    return Result.new(model: BatchChunkingPrompt::MODEL_TEXT, mode: :image, pages: []) if image?
     return classify_pdf if pdf?
 
     # Unknown MIME — treat as text (safe default)

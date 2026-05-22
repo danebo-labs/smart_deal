@@ -5,10 +5,14 @@ require 'zip'
 require 'tmpdir'
 
 class ZipExtractionServiceTest < ActiveSupport::TestCase
+  parallelize(workers: 1)
+
   # Minimal valid file binaries (magic bytes only — force binary encoding)
   JPEG_BINARY = ("\xFF\xD8\xFF\xE0" + ("x" * 100)).b
   PNG_BINARY  = ("\x89PNG\r\n\x1A\n" + ("x" * 100)).b
   PDF_BINARY  = ("%PDF-1.4\n" + ("x" * 100)).b
+  GIF_BINARY  = ("GIF89a" + ("x" * 100)).b
+  WEBP_BINARY = ("RIFF\x00\x00\x00\x00WEBP" + ("x" * 100)).b
 
   def build_zip(entries:)
     path = Tempfile.new([ 'test_zip', '.zip' ]).path
@@ -37,6 +41,7 @@ class ZipExtractionServiceTest < ActiveSupport::TestCase
     assert_equal 'image/jpeg', jpg[:content_type]
     assert_equal Digest::SHA256.hexdigest(JPEG_BINARY), jpg[:sha256]
     assert_equal JPEG_BINARY, jpg[:binary]
+    assert_equal false, jpg[:office_origin]
   end
 
   test 'skips directories and hidden files' do
@@ -69,12 +74,78 @@ class ZipExtractionServiceTest < ActiveSupport::TestCase
   end
 
   # ============================================
+  # Webp / GIF detection
+  # ============================================
+
+  test 'detects WEBP by magic bytes' do
+    path = build_zip(entries: { 'photo.webp' => WEBP_BINARY })
+    results = []
+    ZipExtractionService.new(path).each_entry { |e| results << e }
+
+    assert_equal 1, results.size
+    assert_equal 'image/webp', results.first[:content_type]
+    assert_equal 'photo.webp', results.first[:filename]
+  end
+
+  test 'detects GIF by magic bytes' do
+    path = build_zip(entries: { 'anim.gif' => GIF_BINARY })
+    results = []
+    ZipExtractionService.new(path).each_entry { |e| results << e }
+
+    assert_equal 1, results.size
+    assert_equal 'image/gif', results.first[:content_type]
+  end
+
+  # ============================================
+  # Office → PDF conversion
+  # ============================================
+
+  test 'converts Office entry to PDF via OfficeToPdfConverter' do
+    docx_binary = ("PK\x03\x04" + ("x" * 100)).b  # fake DOCX bytes
+    pdf_result  = PDF_BINARY
+    orig_convert = OfficeToPdfConverter.method(:convert)
+
+    OfficeToPdfConverter.define_singleton_method(:convert) do |_binary, extension:|
+      raise OfficeToPdfConverter::Error, "unsupported" unless extension == ".docx"
+      pdf_result
+    end
+
+    path = build_zip(entries: { 'manual.docx' => docx_binary })
+    results = []
+    ZipExtractionService.new(path).each_entry { |e| results << e }
+
+    assert_equal 1, results.size
+    assert_equal 'application/pdf', results.first[:content_type]
+    assert_equal 'manual.pdf',      results.first[:filename]
+    assert_equal pdf_result,        results.first[:binary]
+    assert_equal true,              results.first[:office_origin]
+  ensure
+    OfficeToPdfConverter.define_singleton_method(:convert, orig_convert) if defined?(orig_convert)
+  end
+
+  test 'raises Error when OfficeToPdfConverter fails for Office entry' do
+    docx_binary = ("PK\x03\x04" + ("x" * 100)).b
+    orig_convert = OfficeToPdfConverter.method(:convert)
+
+    OfficeToPdfConverter.define_singleton_method(:convert) do |_binary, extension:|
+      raise OfficeToPdfConverter::Error, "LibreOffice not found"
+    end
+
+    path = build_zip(entries: { 'doc.docx' => docx_binary })
+    err = assert_raises(ZipExtractionService::Error) do
+      ZipExtractionService.new(path).each_entry { }
+    end
+    assert_match(/Office conversion failed/, err.message)
+  ensure
+    OfficeToPdfConverter.define_singleton_method(:convert, orig_convert) if defined?(orig_convert)
+  end
+
+  # ============================================
   # MIME allowlist enforcement
   # ============================================
 
   test 'raises Error for disallowed MIME type' do
-    gif_binary = "GIF89a" + ("x" * 100)
-    path = build_zip(entries: { 'anim.gif' => gif_binary })
+    path = build_zip(entries: { 'readme.bin' => ("UNKNOWN" + ("x" * 100)).b })
 
     err = assert_raises(ZipExtractionService::Error) do
       ZipExtractionService.new(path).each_entry { }

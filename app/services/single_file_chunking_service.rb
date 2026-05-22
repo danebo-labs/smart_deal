@@ -75,15 +75,38 @@ class SingleFileChunkingService
     parse_and_write(result[:text])
   end
 
-  def handle_image(model)
-    content = BatchChunkingPrompt.user_content(
+  def handle_image(_router_model)
+    route = FieldPhotoDensityGate.decide(
       binary:       @binary,
       content_type: @content_type,
-      filename:     @filename,
-      locale:       @locale
+      filename:     @filename
     )
-    result = call_with_page_cap_retry(client: client_for(model), user_content: content)
-    parse_and_write(result[:text])
+
+    if route == :sonnet
+      model   = BatchChunkingPrompt::MODEL_TEXT
+      content = FieldPhotoPrompt.user_content(
+        binary:       @binary,
+        content_type: @content_type,
+        filename:     @filename,
+        locale:       @locale
+      )
+      result   = call_with_page_cap_retry(
+        client:       client_for(model, system: FieldPhotoPrompt::SYSTEM_BLOCKS),
+        user_content: content
+      )
+      envelope = FieldPhotoResultsParser.to_envelope(result[:text])
+      parse_and_write(envelope.to_json, ingestion_path: "field_photo_v1")
+    else
+      model   = BatchChunkingPrompt::MODEL_MULTIMODAL
+      content = BatchChunkingPrompt.user_content(
+        binary:       @binary,
+        content_type: @content_type,
+        filename:     @filename,
+        locale:       @locale
+      )
+      result = call_with_page_cap_retry(client: client_for(model), user_content: content)
+      parse_and_write(result[:text], ingestion_path: "web_v1")
+    end
   end
 
   def handle_pdf_text_only(model)
@@ -295,16 +318,16 @@ class SingleFileChunkingService
     ""
   end
 
-  def parse_and_write(raw_json)
+  def parse_and_write(raw_json, ingestion_path: "web_v1")
     BatchResultsParserService.new(s3_service: @s3).call(
       asset:          @asset,
       raw_json:       raw_json,
-      ingestion_path: "web_v1"
+      ingestion_path: ingestion_path
     )
   end
 
-  def client_for(model)
-    @clients       ||= {}
-    @clients[model] ||= ClaudeChunkingClient.new(model: model)
+  def client_for(model, system: BatchChunkingPrompt::SYSTEM_BLOCKS)
+    @clients                       ||= {}
+    @clients[[ model, system.object_id ]] ||= ClaudeChunkingClient.new(model: model, system: system)
   end
 end

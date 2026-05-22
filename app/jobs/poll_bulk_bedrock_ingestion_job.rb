@@ -94,10 +94,19 @@ class PollBulkBedrockIngestionJob < ApplicationJob
                        .uniq
                        .first(15)
     kb_doc.save!
+    KbDocumentThumbnailFromS3.call(kb_doc) if image_asset?(asset)
     kb_doc
   rescue StandardError => e
     Rails.logger.warn("PollBulkBedrockIngestionJob: upsert_kb_document failed for asset #{asset.id} — #{e.message}")
     nil
+  end
+
+  IMAGE_CONTENT_TYPES = %w[image/jpeg image/jpg image/png image/webp image/gif].freeze
+  IMAGE_EXTENSIONS    = %w[.jpg .jpeg .png .webp .gif].freeze
+
+  def image_asset?(asset)
+    IMAGE_CONTENT_TYPES.include?(asset.content_type.to_s) ||
+      IMAGE_EXTENSIONS.include?(File.extname(asset.s3_key.to_s).downcase)
   end
 
   def mark_timed_out(bulk_upload, job_id)

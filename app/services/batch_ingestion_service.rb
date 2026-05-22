@@ -54,6 +54,7 @@ class BatchIngestionService
         created = !asset.persisted?
         asset.save!
         asset.broadcast_append! if created
+        backfill_thumbnail_if_image(asset)
         Rails.logger.info("BatchIngestionService: dedup hit #{entry[:filename]} sha=#{entry[:sha256][0, 16]}")
         next
       end
@@ -146,6 +147,16 @@ class BatchIngestionService
         }
       }
     end
+  end
+
+  def backfill_thumbnail_if_image(asset)
+    return unless %w[image/jpeg image/jpg image/png image/webp image/gif].include?(asset.content_type.to_s)
+
+    kb_doc = asset.kb_document_id ? KbDocument.find_by(id: asset.kb_document_id)
+                                   : KbDocument.find_by(s3_key: asset.s3_key)
+    KbDocumentThumbnailFromS3.call(kb_doc) if kb_doc
+  rescue StandardError => e
+    Rails.logger.warn("BatchIngestionService: thumbnail backfill failed for asset #{asset.id} — #{e.message}")
   end
 
   def compress_if_image(binary, content_type)

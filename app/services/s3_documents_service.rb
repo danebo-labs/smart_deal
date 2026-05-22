@@ -105,7 +105,7 @@ class S3DocumentsService
   def download(key)
     return nil unless @bucket_name
 
-    @s3.get_object(bucket: @bucket_name, key: key).body.read
+    @s3.get_object(bucket: @bucket_name, key: key).body.read.force_encoding(Encoding::BINARY)
   rescue StandardError => e
     Rails.logger.error("S3DocumentsService#download failed for #{key}: #{e.message}")
     nil

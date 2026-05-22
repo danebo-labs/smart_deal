@@ -215,4 +215,42 @@ class PollBulkBedrockIngestionJobTest < ActiveJob::TestCase
       end
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Thumbnail generation
+  # ---------------------------------------------------------------------------
+
+  test "COMPLETE: calls KbDocumentThumbnailFromS3 for image assets" do
+    upload = make_bulk_upload
+    asset  = make_asset(upload, s3_key: "bulk_uploads/2026-05-22/motor.jpg")
+
+    thumbnail_called_for = []
+    original_call = KbDocumentThumbnailFromS3.method(:call)
+    KbDocumentThumbnailFromS3.define_singleton_method(:call) { |kb_doc| thumbnail_called_for << kb_doc.s3_key }
+
+    stub_ingestion_service("COMPLETE") do
+      PollBulkBedrockIngestionJob.perform_now(upload.id, started_at_iso: 1.minute.ago.iso8601)
+    end
+
+    assert_includes thumbnail_called_for, asset.s3_key
+  ensure
+    KbDocumentThumbnailFromS3.define_singleton_method(:call) { |kb_doc| original_call.call(kb_doc) }
+  end
+
+  test "COMPLETE: does not call KbDocumentThumbnailFromS3 for non-image assets" do
+    upload = make_bulk_upload
+    make_asset(upload, s3_key: "bulk_uploads/2026-05-22/manual.pdf")
+
+    thumbnail_called = false
+    original_call = KbDocumentThumbnailFromS3.method(:call)
+    KbDocumentThumbnailFromS3.define_singleton_method(:call) { |_kb_doc| thumbnail_called = true }
+
+    stub_ingestion_service("COMPLETE") do
+      PollBulkBedrockIngestionJob.perform_now(upload.id, started_at_iso: 1.minute.ago.iso8601)
+    end
+
+    assert_not thumbnail_called
+  ensure
+    KbDocumentThumbnailFromS3.define_singleton_method(:call) { |kb_doc| original_call.call(kb_doc) }
+  end
 end

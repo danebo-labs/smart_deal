@@ -247,16 +247,15 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :prompt_template,
         :text_prompt_template
       )
-      assert_includes template, 'You MUST respond entirely in English'
+      assert_includes template, 'You MUST write your ENTIRE response in English'
     end
   end
 
   # Regression: long accent-less Spanish queries were detected as :es but Haiku
-  # still answered in English because the language directive sat in the middle
-  # of the prompt while English chunks + English conversation history were the
-  # last signals before generation. Directive must now appear at top, middle,
-  # AND after session_context (last position = highest recency weight).
-  test 'query reinforces Spanish language directive at top, middle, and tail of prompt' do
+  # still answered in English because only a middle bullet was injected.
+  # Directive now appears at TOP (before # ROLE) and TAIL (after session_context).
+  # Middle injection removed (cost_opt 2026-05-22: saves ~30-40 tokens/query).
+  test 'query reinforces Spanish language directive at top and tail of prompt' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new
       session_context = "## Recent Conversation\nUser: prior question\nAssistant: prior English answer"
@@ -274,7 +273,6 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       )
       assert_includes template, '# RESPONSE LANGUAGE (ABSOLUTE PRIORITY)'
       assert_includes template, 'You MUST write your ENTIRE response in Spanish'
-      assert_includes template, 'You MUST respond entirely in Spanish'
       assert_includes template, '# FINAL LANGUAGE REMINDER'
       idx_header = template.index('# RESPONSE LANGUAGE (ABSOLUTE PRIORITY)')
       idx_role   = template.index('# ROLE')
@@ -309,7 +307,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         retrieval = kb_config[:retrieval_configuration][:vector_search_configuration]
         gen_inference = kb_config.dig(:generation_configuration, :inference_config, :text_inference_config)
 
-        assert_equal 12, retrieval[:number_of_results]
+        # number_of_results is now controlled by RagRetrievalProfile (no-pin → 8),
+        # not by BEDROCK_RAG_NUMBER_OF_RESULTS. Temperature still comes from ENV.
+        assert_equal 8, retrieval[:number_of_results]
         assert_equal 0.1, gen_inference[:temperature]
       end
     end

@@ -114,6 +114,7 @@ class QueryOrchestratorService
         response_locale: @response_locale,
         session_context: @session_context,
         entity_s3_uris: @entity_s3_uris,
+        entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter
       )
@@ -131,6 +132,7 @@ class QueryOrchestratorService
         response_locale: @response_locale,
         session_context: @session_context,
         entity_s3_uris: @entity_s3_uris,
+        entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter
       )
@@ -152,7 +154,8 @@ class QueryOrchestratorService
         documents:    @documents,
         conv_session: @conv_session,
         tenant:       @tenant || current_tenant,
-        locale:       @locale
+        locale:       @locale,
+        force_sync:   manual_sync_forced?
       ).run!
     end
 
@@ -241,6 +244,7 @@ class QueryOrchestratorService
         response_locale: @response_locale,
         session_context: @session_context,
         entity_s3_uris: @entity_s3_uris,
+        entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter
       )
@@ -340,7 +344,23 @@ class QueryOrchestratorService
     Rails.application.config.x.custom_chunking_web_enabled
   end
 
+  # Sync fallback triggers (plan §Fase 5):
+  #   1. ENV["MANUAL_FORCE_SYNC"] = "true"
+  #   2. A query accompanies the upload (technician needs answer now)
+  def manual_sync_forced?
+    return true if ENV["MANUAL_FORCE_SYNC"].to_s == "true"
+    return true if @query.to_s.strip.present?
+
+    false
+  end
+
   def current_tenant
     Object.const_defined?("Current") && Current.respond_to?(:tenant) ? Current.tenant : nil
+  end
+
+  # Derives entity source types from pinned session entities for RagRetrievalProfile.
+  def entity_sources
+    return [] unless @conv_session.respond_to?(:active_entities)
+    @conv_session.active_entities.values.filter_map { |meta| meta["source"] }
   end
 end

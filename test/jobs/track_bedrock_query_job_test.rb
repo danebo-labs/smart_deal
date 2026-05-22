@@ -6,7 +6,7 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
   parallelize(workers: 1)
 
   VALID_PARAMS = {
-    model_id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+    model_id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     input_tokens: 120,
     output_tokens: 80,
     user_query: 'What is the elevator maintenance schedule?',

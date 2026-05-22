@@ -3,6 +3,16 @@
 require "test_helper"
 
 class QueryOrchestratorServiceTest < ActiveSupport::TestCase
+  # These tests assert legacy path (S3 + KbDocument + KbSyncService), not CustomChunkingPipeline.
+  setup do
+    @orig_custom_chunking = Rails.application.config.x.custom_chunking_web_enabled
+    Rails.application.config.x.custom_chunking_web_enabled = false
+  end
+
+  teardown do
+    Rails.application.config.x.custom_chunking_web_enabled = @orig_custom_chunking
+  end
+
   test "upload_and_sync_attachments creates KbDocument + thumbnail synchronously" do
     image = {
       data:                   Base64.strict_encode64("fake-jpeg-bytes"),

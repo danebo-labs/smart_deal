@@ -33,11 +33,13 @@ class BedrockRagService
   # @param question [String] Used to detect response language when response_locale is nil
   # @param response_locale [Symbol, nil] When set (:en / :es), overrides question-based detection for the generation prompt
   # @param entity_s3_uris [Array<String>] S3 URIs of active session documents; when non-empty, adds metadata filter
-  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [], output_channel: nil)
+  # @param entity_sources [Array<String>] Source types of pinned entities ("image_upload"|"document"); used by RagRetrievalProfile
+  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [], entity_sources: [], output_channel: nil)
     cfg = @rag_config
+    profile = RagRetrievalProfile.new(entity_sources: entity_sources)
 
     vector_config = {
-      number_of_results: cfg[:number_of_results],
+      number_of_results: profile.number_of_results,
       override_search_type: cfg[:search_type],
       **reranking_config(region)
     }
@@ -79,7 +81,9 @@ class BedrockRagService
           text_inference_config: {
             temperature: cfg[:generation_temperature],
             max_tokens: cfg[:generation_max_tokens],
-            stop_sequences: []
+            # Stop before </DOC_REFS> is emitted to trim tail noise.
+            # query() re-appends the tag before extract_doc_refs so the regex still matches.
+            stop_sequences: ["</DOC_REFS>"]
           }
         },
 
@@ -134,7 +138,7 @@ class BedrockRagService
   #   heuristic. Use this when the caller has explicitly bound the query to a
   #   document (e.g. a WhatsApp picker selection) so heavy-capitalized seed
   #   queries like "Describe Orona ARCA BASICO ..." don't trip the bypass.
-  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false)
+  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -157,7 +161,7 @@ class BedrockRagService
       end
 
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: filtered_uris, output_channel: output_channel)
+      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
       config = deep_merge_configs(base_config, custom_config)
 
       params = {
@@ -182,7 +186,7 @@ class BedrockRagService
       # Fallback: if filter produced no results, retry without filter.
       if apply_filter && bedrock_no_results?(response.output.text)
         Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter")
-        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: [], output_channel: output_channel)
+        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: [], entity_sources: entity_sources, output_channel: output_channel)
         unfiltered_params = params.merge(
           retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
             knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
@@ -205,6 +209,9 @@ class BedrockRagService
       # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
       no_results_locale = effective_response_locale(question, response_locale: response_locale)
       answer_text = bedrock_no_results?(raw_answer) ? localized_no_results(no_results_locale) : raw_answer
+      # stop_sequences ["</DOC_REFS>"] causes the model to stop before emitting the closing tag.
+      # Re-append it so DOC_REFS_PATTERN can match.
+      answer_text = normalize_doc_refs_tag(answer_text)
       doc_refs_result = extract_doc_refs(answer_text)
       answer_text = doc_refs_result[:clean_answer]
       doc_refs = doc_refs_result[:doc_refs]
@@ -222,7 +229,7 @@ class BedrockRagService
           citations
         elsif doc_refs&.any?
           Rails.logger.info("BedrockRagService: post-gen citations empty; using Retrieve API fallback for source_uri resolution")
-          fallback_retrieve(question)
+          fallback_retrieve(question, entity_s3_uris: filtered_uris)
         else
           []
         end
@@ -301,17 +308,31 @@ class BedrockRagService
   # (and `location.s3_location.uri`), which is what EntityExtractorService
   # needs to dedup documents by physical identity.
   #
+  # Uses N=3 (not the main query's number_of_results) — we only need enough
+  # to resolve canonical_name/source_uri, not to feed generation context.
+  # Scopes to the same entity filter applied in the main query when provided.
+  #
   # Output shape matches CitationProcessor#extract_citations for drop-in use.
-  def fallback_retrieve(question)
+  def fallback_retrieve(question, entity_s3_uris: [])
+    vector_cfg = {
+      number_of_results: 3,
+      override_search_type: @rag_config[:search_type] || "HYBRID"
+    }
+
+    if entity_s3_uris.size >= 1
+      filters = entity_s3_uris.flat_map do |uri|
+        [
+          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } },
+          { equals: { key: "original_source_uri",        value: uri } }
+        ]
+      end
+      vector_cfg[:filter] = { or_all: filters }
+    end
+
     params = {
       knowledge_base_id: @knowledge_base_id,
       retrieval_query: { text: question },
-      retrieval_configuration: {
-        vector_search_configuration: {
-          number_of_results: @rag_config[:number_of_results] || 5,
-          override_search_type: @rag_config[:search_type] || "HYBRID"
-        }
-      }
+      retrieval_configuration: { vector_search_configuration: vector_cfg }
     }
     resp = @client.retrieve(params)
     results = Array(resp.retrieval_results).map do |r|
@@ -397,12 +418,9 @@ class BedrockRagService
   # Loads generation prompt with explicit language instruction.
   # Uses response_locale when set; otherwise detects from question or I18n.locale.
   #
-  # Language directive is injected at THREE positions to survive Haiku's
-  # attention decay over a long prompt with English chunks ($search_results$)
-  # and possibly English conversation history in session_context:
-  #   1. TOP (before # ROLE) — highest attention slot.
-  #   2. MIDDLE (under # LANGUAGE & TONE) — contextual reinforcement.
-  #   3. TAIL (after session_context) — last signal before generation, overrides
+  # Language directive injected at TWO positions (reduced from 3 to save ~30–40 tokens/query):
+  #   1. TOP (before # ROLE) — highest attention slot, first thing Haiku reads.
+  #   2. TAIL (after session_context) — last signal before generation, overrides
   #      any English leakage from Recent Conversation or retrieved chunks.
   def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil, output_channel: nil)
     base = self.class.load_generation_prompt_template
@@ -415,13 +433,7 @@ class BedrockRagService
     end
     lang_name = locale_to_language_name(locale)
 
-    if lang_name.present?
-      base = base.sub(
-        /(# LANGUAGE & TONE\n)/,
-        "\\1- CRITICAL: The user's query is in #{lang_name}. You MUST respond entirely in #{lang_name}, even if the retrieved documents or recent conversation are in a different language.\n"
-      )
-      base = "#{language_directive_header(lang_name)}\n\n#{base}"
-    end
+    base = "#{language_directive_header(lang_name)}\n\n#{base}" if lang_name.present?
 
     base = "#{base}\n\n#{session_context}" if session_context.present?
     base = "#{base}\n\n#{language_directive_footer(lang_name)}" if lang_name.present?
@@ -600,6 +612,15 @@ class BedrockRagService
     return false if question.to_s.length <= SHORT_QUERY_MAX_CHARS
 
     false
+  end
+
+  # When stop_sequences includes "</DOC_REFS>", the model halts before emitting the
+  # closing tag. Re-append it so DOC_REFS_PATTERN can still match the block.
+  def normalize_doc_refs_tag(text)
+    return text if text.blank?
+    return text if text.include?("</DOC_REFS>")
+    return "#{text}</DOC_REFS>" if text.include?("<DOC_REFS>")
+    text
   end
 
   def extract_doc_refs(answer_text)

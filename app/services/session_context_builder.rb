@@ -7,6 +7,11 @@
 # active_entities now contains ONLY user-pinned documents (UI checkbox or
 # upload auto-pin). Haiku citations never register here.
 class SessionContextBuilder
+  # Hard cap on session context injected into the generation prompt.
+  # Prevents runaway entity lists + long histories from blowing the input budget.
+  # ~500 tokens at Haiku tokenization rates; covers ~3 pinned docs + 3 turns comfortably.
+  MAX_CONTEXT_CHARS = 2000
+
   # @param session [ConversationSession, nil]
   # @return [String] context block to append to generation prompt (empty string when nothing)
   def self.build(session)
@@ -51,7 +56,8 @@ class SessionContextBuilder
       BLOCK
     end
 
-    parts.join("\n\n")
+    result = parts.join("\n\n")
+    result.length > MAX_CONTEXT_CHARS ? result[0, MAX_CONTEXT_CHARS] : result
   end
 
   # Returns S3 URIs of all active entities (= pinned docs) that have a known source_uri.

@@ -42,7 +42,7 @@ class TrackWhatsappCacheHitJobTest < ActiveJob::TestCase
   test "tokens_saved_estimate reflects avg of last 50 query records" do
     3.times do |i|
       BedrockQuery.create!(
-        model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        model_id: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         input_tokens: 1000, output_tokens: 200,
         user_query: "q#{i}", latency_ms: 100, source: :query
       )

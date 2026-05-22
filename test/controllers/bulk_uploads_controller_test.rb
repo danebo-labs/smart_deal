@@ -171,6 +171,33 @@ class BulkUploadsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  # ---------------------------------------------------------------------------
+  # _asset partial — Consultar link
+  # ---------------------------------------------------------------------------
+
+  test "complete asset renders Consultar link pointing to root_path" do
+    upload = BulkUpload.create!(
+      sha256:            SecureRandom.hex(16),
+      original_filename: "demo.zip",
+      status:            "complete",
+      asset_count:       1,
+      user:              @user
+    )
+    upload.bulk_upload_assets.create!(
+      custom_id:    SecureRandom.hex(16),
+      sha256:       SecureRandom.hex(32),
+      filename:     "motor.jpg",
+      s3_key:       "bulk_uploads/2026-05-22/motor.jpg",
+      content_type: "image/jpeg",
+      status:       "complete"
+    )
+
+    get bulk_upload_path(upload)
+    assert_response :success
+    assert_select "a[href='#{root_path}']", text: /Consultar/
+    assert_select "a[href='/rag/ask']", count: 0
+  end
+
   private
 
   # Minimal valid ZIP (contains no entries — still parseable by Zip::File).

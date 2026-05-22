@@ -88,6 +88,19 @@ class OfficeToPdfConverterTest < ActiveSupport::TestCase
     Open3.define_singleton_method(:capture3, original)
   end
 
+  test "raises Error for unsupported extension (allowlist enforcement)" do
+    err = assert_raises(OfficeToPdfConverter::Error) do
+      OfficeToPdfConverter.convert("bytes", extension: ".exe")
+    end
+    assert_match(/Unsupported extension/, err.message)
+  end
+
+  test "raises Error for extension containing shell metacharacters" do
+    assert_raises(OfficeToPdfConverter::Error) do
+      OfficeToPdfConverter.convert("bytes", extension: "docx; rm -rf /")
+    end
+  end
+
   test "UserInstallation flag is passed to soffice — concurrent jobs use isolated profiles" do
     args_captured = []
     original = Open3.method(:capture3)

@@ -14,8 +14,9 @@ require "tmpdir"
 class OfficeToPdfConverter
   class Error < StandardError; end
 
-  TIMEOUT_SECONDS = 120
-  SOFFICE_BIN     = "soffice"
+  TIMEOUT_SECONDS    = 120
+  SOFFICE_BIN        = "soffice"
+  ALLOWED_EXTENSIONS = %w[doc docx xls xlsx ppt pptx odt ods odp rtf csv txt].freeze
 
   # @param binary    [String] raw bytes of the Office document
   # @param extension [String] original file extension, e.g. ".docx" or "docx"
@@ -28,6 +29,10 @@ class OfficeToPdfConverter
   def initialize(binary, extension:)
     @binary    = binary
     @extension = extension.to_s.downcase.delete_prefix(".")
+
+    unless ALLOWED_EXTENSIONS.include?(@extension)
+      raise Error, "Unsupported extension: #{@extension.inspect}"
+    end
   end
 
   def convert

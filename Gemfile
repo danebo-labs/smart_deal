@@ -23,10 +23,13 @@ gem 'stimulus-rails'
 gem 'jbuilder'
 
 # Authentication
-gem 'devise', '>= 5.0.3'
+gem 'devise', '>= 5.0.4'
 
 # Patched Trix (Rails actiontext; GHSA-53p3-c7vp-4mcc / prior GHSA-qmpg-8xg6-ph5q)
 gem 'action_text-trix', '>= 2.1.18'
+
+# Bundler-audit: GHSA-h27x-rffw-24p4 (addressable < 2.9.0 ReDoS in templates)
+gem 'addressable', '>= 2.9.0'
 
 # Bundler-audit: GHSA-c4rq-3m3g-8wgx, GHSA-v2fc-qm4h-8hqv (nokogiri < 1.19.3)
 gem 'nokogiri', '>= 1.19.3'

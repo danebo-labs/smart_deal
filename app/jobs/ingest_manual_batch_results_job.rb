@@ -134,8 +134,11 @@ class IngestManualBatchResultsJob < ApplicationJob
     usage = message.respond_to?(:usage) ? message.usage : nil
     return if usage.nil?
 
+    model_id = message.model.to_s
+    model_id = "#{model_id}-batch" unless model_id.end_with?("-batch")
+
     TrackBedrockQueryJob.perform_later(
-      model_id:              message.model.to_s,
+      model_id:              model_id,
       user_query:            "web_batch: #{filename} p#{page_num}/#{total_kept}",
       latency_ms:            0,
       input_tokens:          usage.input_tokens.to_i,

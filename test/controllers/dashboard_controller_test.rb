@@ -6,6 +6,11 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
   test 'should get index' do
     get dashboard_url
     assert_response :success
+    assert_match(/Desglose de costos \(hoy\)/, response.body)
+    assert_match(/Consultas \(Bedrock Haiku\)/, response.body)
+    assert_match(/Parse batch \(Sonnet\)/, response.body)
+    assert_match(/Total hoy/, response.body)
+    assert_no_match(/Uso por Modelo/, response.body)
   end
 
   test 'should return metrics as JSON' do

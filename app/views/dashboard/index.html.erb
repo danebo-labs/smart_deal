@@ -8,10 +8,9 @@
         <p class="text-xs text-gray-400 mt-1">No incluye: EC2, Route 53, VPC, Secrets Manager (infra compartida)</p>
       </div>
   
-      <!-- DAILY METRICS CARDS -->
-      <!-- Each card uses a shared partial -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-8">
-  
+      <!-- DAILY SUMMARY CARDS -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+
         <%= render partial: "metric_card", locals: {
           title: "Tokens Hoy",
           value: number_with_delimiter(@current_metrics[:today_tokens]),
@@ -54,36 +53,6 @@
           </div>
         </div>
 
-        <%= render partial: "metric_card", locals: {
-          title: "Bedrock Haiku RAG (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_query].to_i),
-          color: "text-yellow-600"
-        } %>
-
-        <%= render partial: "metric_card", locals: {
-          title: "Parse direct Sonnet (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_sonnet_direct].to_i),
-          color: "text-indigo-600"
-        } %>
-
-        <%= render partial: "metric_card", locals: {
-          title: "Parse batch Sonnet (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_sonnet_batch].to_i),
-          color: "text-violet-600"
-        } %>
-
-        <%= render partial: "metric_card", locals: {
-          title: "Parse direct Opus (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_opus_direct].to_i),
-          color: "text-orange-600"
-        } %>
-
-        <%= render partial: "metric_card", locals: {
-          title: "Parse batch Opus (hoy)",
-          value: number_with_delimiter(@current_metrics[:today_tokens_anthropic_opus_batch].to_i),
-          color: "text-red-500"
-        } %>
-  
       </div>
   
       <!-- MONTHLY TOTALS PANEL + CHART -->
@@ -123,27 +92,11 @@
         </div>
       </div>
   
-      <!-- MODEL USAGE SECTION (if any Bedrock queries exist) -->
-      <% if BedrockQuery.exists? %>
-        <div class="bg-white p-6 rounded-xl shadow mb-8">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">Uso por Modelo (últimas 24h)</h3>
-
-          <!-- Cards per model with cost -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            <% BedrockQuery.where(created_at: 24.hours.ago..Time.current).group_by(&:model_id).each do |model_id, queries| %>
-              <% model_cost = queries.sum(&:cost) %>
-              <% model_tokens = queries.sum { |q| q.input_tokens + q.output_tokens } %>
-              <% model_label = format_model_label_with_channel(model_id.to_s) %>
-
-              <div class="p-4 bg-gray-50 rounded-lg text-center">
-                <p class="text-sm text-gray-500"><%= model_label %></p>
-                <p class="text-xl font-bold text-red-600">$<%= model_cost.round(4) %></p>
-                <p class="text-xs text-gray-400"><%= number_with_delimiter(model_tokens) %> tokens · <%= queries.size %> queries</p>
-              </div>
-            <% end %>
-          </div>
-        </div>
-      <% end %>
+      <!-- DAILY USAGE BREAKDOWN — same channels as home chat footer -->
+      <div class="bg-white p-6 rounded-xl shadow mb-8">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Desglose de costos (hoy)</h3>
+        <%= render partial: "shared/usage_channel_cards", locals: { current_metrics: @current_metrics } %>
+      </div>
 
       <!-- S3 DOCUMENTS LIST SECTION -->
       <% if @s3_documents_list.any? %>

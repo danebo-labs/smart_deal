@@ -1,0 +1,28 @@
+<%# locals: current_metrics — same hash as home footer / CostMetric.daily_snapshot %>
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+  <% daily_usage_channel_rows(current_metrics).each do |row| %>
+    <div class="p-4 bg-gray-50 rounded-lg text-center">
+      <p class="text-sm text-gray-500"><%= row[:label] %></p>
+      <p class="text-xl font-bold text-red-600">$<%= row[:cost].round(4) %></p>
+      <p class="text-xs text-gray-400 tabular-nums"><%= number_with_delimiter(row[:tokens]) %> tok</p>
+    </div>
+  <% end %>
+
+  <% total = daily_usage_total_row(current_metrics) %>
+  <div class="p-4 bg-gray-100 rounded-lg text-center border border-gray-200 sm:col-span-2 md:col-span-3 lg:col-span-4">
+    <p class="text-sm font-semibold text-gray-700"><%= total[:label] %></p>
+    <p class="text-2xl font-bold text-red-700">$<%= total[:cost].round(4) %></p>
+    <p class="text-xs text-gray-500 tabular-nums"><%= number_with_delimiter(total[:tokens]) %> tok</p>
+  </div>
+</div>
+
+<p class="text-xs text-gray-400 mt-3">
+  Mismo desglose que el footer del chat · estimado · puede variar ±10% vs AWS Cost Explorer
+</p>
+
+<% if current_metrics[:today_cache_hits].to_i.positive? %>
+  <p class="text-xs text-emerald-600 mt-1 tabular-nums">
+    Cache WA: <%= number_with_delimiter(current_metrics[:today_cache_hits].to_i) %> hits
+    · ahorro estimado <%= number_with_delimiter(current_metrics[:today_tokens_saved].to_i) %> tok
+  </p>
+<% end %>

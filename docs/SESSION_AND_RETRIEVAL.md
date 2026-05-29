@@ -16,7 +16,7 @@ technician_documents → "Ingestion / usage audit rows"  (still written from job
 active_entities      → "Pinned KB docs for this session" (UI + auto-pin after indexed upload)
 ```
 
-**`kb_documents`** — Global S3 catalog. One row per uploaded S3 key. Created on upload; enriched with `display_name`, `aliases`, and `size_bytes` as the pipeline processes the file. Powers the admin dashboard at `/dashboard` and the **home knowledge base list** (with optional `KbDocumentThumbnail` for images). Haiku-derived names/aliases from answers update **`kb_documents` only** via **`KbDocumentEnrichmentService`** (`RagController#ask`); that path does **not** add session pins.
+**`kb_documents`** — Global S3 catalog. One row per uploaded S3 key. Created on upload; enriched with `display_name`, `aliases`, and `size_bytes` as the pipeline processes the file. Powers the tenant dashboard at `/dashboard` (KB document list) and the **home knowledge base list** (with optional `KbDocumentThumbnail` for images). Haiku-derived names/aliases from answers update **`kb_documents` only** via **`KbDocumentEnrichmentService`** (`RagController#ask`); that path does **not** add session pins.
 
 > **MVP scope:** The pool is global (`account_id = nil`). Deduplication is by `canonical_name` (or `source_uri`) across all uploaders. `identifier` and `channel` are preserved for audit but do not drive uniqueness.
 > **Stage 1+:** `account_id` will be added; uniqueness becomes `[account_id, canonical_name]`. Stage 2 adds `project_id`.

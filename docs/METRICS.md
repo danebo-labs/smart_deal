@@ -10,7 +10,9 @@ Async token/cost tracking — Bedrock calls never wait on DB writes.
 
 Model usage is recorded **asynchronously** so Bedrock calls never wait on DB writes or dashboard broadcasts. `bedrock_queries` stores each event with a **`source`** plus **`input_tokens`**, **`output_tokens`**, **`latency_ms`**, and **Anthropic prompt-cache usage** (**`cache_read_tokens`**, **`cache_creation_tokens`**) when the invoke response includes them; **`TrackBedrockQueryJob`** persists those fields and **`SimpleMetricsService`** folds cache-adjusted cost into **`CostMetric`** rollups (Batch-priced rows exist on `BedrockQuery` for Anthropic Batch–style estimates).
 
-**Dashboard / home footer (web):** daily rollups are split by **billing channel** via `LlmUsageChannel` (app/services/llm_usage_channel.rb). The classifier maps each `bedrock_queries` row to one of the channels below using `source` + `model_id` suffix (`-direct`, `-batch`, Bedrock profile prefix). Legacy `daily_tokens_haiku` / `daily_tokens_parse_opus` / `daily_tokens_parse_sonnet` columns are still written (set to the same values as before cost_v2) for backward compatibility with any cached dashboard queries until those views are fully migrated.
+**Dashboard (tenant admin):** `/dashboard` shows **LLM consumption only** — cost today/month, chat query count, channel breakdown, calendar-month chart, KB documents, chat latency. **No** Aurora ACU, S3 infra, or AWS refresh in the UI. Scope and multi-tenant roadmap: [DASHBOARD.md](DASHBOARD.md).
+
+**Home footer (web):** daily rollups are split by **billing channel** via `LlmUsageChannel` (app/services/llm_usage_channel.rb). The classifier maps each `bedrock_queries` row to one of the channels below using `source` + `model_id` suffix (`-direct`, `-batch`, Bedrock profile prefix). Legacy `daily_tokens_haiku` / `daily_tokens_parse_opus` / `daily_tokens_parse_sonnet` columns are still written (set to the same values as before cost_v2) for backward compatibility with any cached dashboard queries until those views are fully migrated.
 
 #### LlmUsageChannel mapping
 
@@ -63,7 +65,7 @@ Verify each before flipping the public DNS:
 4. **`ANTHROPIC_API_KEY`** (or **`credentials.dig(:anthropic, :api_key)`**) — **required** for **`/bulk_uploads`** (Anthropic Message Batches via `ClaudeBatchClient`). Separately, omitting it falls back to `LocalTokenizer` for **`AnthropicTokenCounter`** on chat metrics (chars/3.5, ±5%); counting runs inside **`TrackBedrockQueryJob`**, so a slow Anthropic endpoint never blocks **`POST /rag/ask`**.
 5. `INGESTION_REENQUEUE` ⇒ activate **after draining the Solid Queue** (legacy serialized jobs keep blocking until terminal otherwise).
 6. `MissionControl::Jobs` (`/jobs`) credentials live in **`config/credentials.yml.enc`**, **not** in `.env` for the production process.
-7. `/dashboard` — confirm Devise role/admin guard before the public route flips, or accept that anonymous users see CostMetric rollups.
+7. `/dashboard` — tenant usage view (LLM cost only); confirm Devise admin guard before public launch. See [DASHBOARD.md](DASHBOARD.md). Infra metrics (Aurora/S3) are platform-internal, not shown to tenants.
 8. **`CUSTOM_CHUNKING_WEB_ENABLED`** — leave **off** until `BEDROCK_BULK_DATA_SOURCE_ID` (or equivalent no-chunking DS) and **`ANTHROPIC_API_KEY`** are set in Kamal; enable only after staging upload smoke tests.
 
 ##### p95 latency alarm (raw SQL, no extra service required)
@@ -77,6 +79,6 @@ WHERE created_at >= NOW() - INTERVAL '1 hour'
 
 Suggested alert threshold: **> 8 000 ms** sustained for 15 min (cron job → Slack/PagerDuty).
 
-**Web metrics:** every async metrics write and Turbo broadcast for the home footer runs on **`default`**. **`DailyMetricsJob`** also refreshes database rollups for the dashboard when scheduled or triggered.
+**Web metrics:** every async metrics write and Turbo broadcast for the home footer runs on **`default`**. **`DailyMetricsJob`** still collects Aurora/S3 rollups for **platform ops** (rake tasks, scheduled jobs) — not exposed on the tenant dashboard.
 
 For local development, run **`bin/dev`** (see `Procfile.dev`) so **web**, **CSS**, and **Solid Queue workers** are all up; otherwise enqueued metrics jobs will not run and the footer will look stale.

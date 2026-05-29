@@ -468,7 +468,7 @@ end
 
 ### Phase 3: UI Updates
 1. Tenant settings page
-2. Usage dashboard per tenant
+2. Usage dashboard per tenant — **implemented (MVP global pool);** tenant scoping per [DASHBOARD.md](DASHBOARD.md) Stage 1
 3. Admin panel for tenant management
 
 ### Phase 4: Testing & Rollout

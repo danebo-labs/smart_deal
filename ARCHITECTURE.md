@@ -335,9 +335,7 @@ Every RAG query is persisted to `bedrock_queries` with:
 
 ### 9.3 Dashboard
 
-`DashboardController` serves a metrics UI with:
-- Metric cards, comparisons, and trends.
-- `POST /dashboard/refresh` triggers on-demand metric recalculation.
+`DashboardController` serves a **tenant-facing** usage UI (LLM consumption estimates, channel chart, KB catalog, chat latency). Infra metrics (Aurora ACU, S3 bucket stats) and on-demand AWS refresh were removed from the UI — see [docs/DASHBOARD.md](docs/DASHBOARD.md).
 
 ### 9.4 External Monitoring
 
@@ -429,9 +427,8 @@ Every RAG query is persisted to `bedrock_queries` with:
 ```
 GET  /                    → home#index           (main page + chat)
 GET  /home/metrics        → home#metrics         (inline metrics)
-GET  /dashboard           → dashboard#index      (metrics dashboard)
+GET  /dashboard           → dashboard#index      (tenant usage dashboard)
 GET  /dashboard/metrics   → dashboard#metrics    (metrics JSON)
-POST /dashboard/refresh   → dashboard#refresh    (recalculate metrics)
 POST /documents/process   → documents#create     (PDF upload)
 POST /rag/ask             → rag#ask              (RAG query — web)
 POST /twilio/webhook      → twilio#webhook       (RAG query — WhatsApp)

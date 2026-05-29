@@ -1,5 +1,8 @@
 # Spanish locale (partial; RAG strings also in config/locales/rag.es.yml)
 es:
+  date:
+    month_names: [~, enero, febrero, marzo, abril, mayo, junio, julio, agosto, septiembre, octubre, noviembre, diciembre]
+    abbr_month_names: [~, ene, feb, mar, abr, may, jun, jul, ago, sep, oct, nov, dic]
   dashboard:
     metrics_refreshing: "Métricas actualizándose…"
   bulk_uploads:

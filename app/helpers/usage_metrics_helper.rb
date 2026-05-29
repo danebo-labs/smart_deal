@@ -13,6 +13,15 @@ module UsageMetricsHelper
     { label: "Embeddings (Nova)", tokens: :today_tokens_embed, cost: :today_cost_embed, group: :embed }
   ].freeze
 
+  def self.chart_channels
+    DAILY_USAGE_CHANNELS.map do |row|
+      {
+        label: row[:label],
+        metric_type: row[:cost].to_s.sub("today_", "daily_").to_sym
+      }
+    end
+  end
+
   def daily_usage_channel_rows(metrics)
     DAILY_USAGE_CHANNELS.map do |row|
       {

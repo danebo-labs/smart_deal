@@ -247,12 +247,20 @@
   border-radius: 6px;
 }
 
-/* ─── Scrollbar: light theme ─── */
-.chat-messages::-webkit-scrollbar { width: 4px; }
+/* ─── Scrollbar: light theme (shared .app-scroll + legacy .chat-messages) ─── */
+.app-scroll,
+.chat-messages {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(215, 20%, 82%) transparent;
+}
+.app-scroll::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar { width: 4px; height: 4px; }
+.app-scroll::-webkit-scrollbar-thumb,
 .chat-messages::-webkit-scrollbar-thumb {
   background: hsl(215, 20%, 82%);
   border-radius: 9999px;
 }
+.app-scroll::-webkit-scrollbar-track,
 .chat-messages::-webkit-scrollbar-track { background: transparent; }
 
 /* ─── Flash: thin animated bar at nav bottom edge ─── */

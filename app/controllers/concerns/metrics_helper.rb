@@ -27,10 +27,8 @@ module MetricsHelper
 
   def monthly_totals
     {
-      total_tokens: CostMetric.total_for_month(:daily_tokens),
       total_cost: CostMetric.total_for_month(:daily_cost),
-      total_queries: CostMetric.total_for_month(:daily_queries),
-      avg_acu: CostMetric.avg_for_month(:aurora_acu_avg).round(2)
+      total_queries: CostMetric.total_for_month(:daily_queries)
     }
   end
 end

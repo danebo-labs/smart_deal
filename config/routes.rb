@@ -14,7 +14,6 @@ Rails.application.routes.draw do
   get  'home/documents_page', to: 'home#documents_page'
   get  'dashboard',          to: 'dashboard#index'
   get  'dashboard/metrics',  to: 'dashboard#metrics'
-  post 'dashboard/refresh',  to: 'dashboard#refresh'
 
   devise_for :users,
              controllers: {

@@ -1,207 +1,161 @@
+<% content_for :head do %>
+  <script src="/vendor/chart.umd.min.js" defer data-turbo-track="reload"></script>
+<% end %>
+
 <div class="min-h-screen bg-gray-100 py-8">
-    <div class="max-w-7xl mx-auto px-4">
-  
-      <!-- HEADER -->
-      <div class="mb-8">
-        <h1 class="text-3xl font-extrabold text-gray-900">Costos del Servicio RAG</h1>
-        <p class="text-gray-600 text-sm">Costos facturables: Bedrock (Claude, Cohere), Vector Store, S3</p>
-        <p class="text-xs text-gray-400 mt-1">No incluye: EC2, Route 53, VPC, Secrets Manager (infra compartida)</p>
-      </div>
-  
-      <!-- DAILY SUMMARY CARDS -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+  <div class="max-w-7xl mx-auto px-4">
 
-        <%= render partial: "metric_card", locals: {
-          title: "Tokens Hoy",
-          value: number_with_delimiter(@current_metrics[:today_tokens]),
-          color: "text-blue-600"
-        } %>
-
-        <%= render partial: "metric_card", locals: {
-          title: "Costo Hoy",
-          value: "$#{@current_metrics[:today_cost].round(4)}",
-          color: "text-red-600"
-        } %>
-
-        <%= render partial: "metric_card", locals: {
-          title: "Queries Hoy",
-          value: @current_metrics[:today_queries],
-          color: "text-green-600"
-        } %>
-
-        <!-- Vector Store (Aurora) -->
-        <div class="bg-white p-4 rounded-lg shadow">
-          <div class="text-sm text-gray-500">Vector Store (Aurora ACU)</div>
-          <div class="text-2xl font-bold text-purple-600">
-            <%= @current_metrics[:aurora_acu].round(1) %>
-          </div>
-          <% if @current_metrics[:aurora_acu] == 0.0 %>
-            <div class="text-xs text-gray-400 mt-1">
-              💤 Pausado
-            </div>
-          <% end %>
-        </div>
-
-        <!-- S3 Documents -->
-        <div class="bg-white p-4 rounded-lg shadow">
-          <div class="text-sm text-gray-500">Documentos S3</div>
-          <div class="text-2xl font-bold text-yellow-600">
-            <%= @current_metrics[:s3_documents].to_i %>
-          </div>
-          <div class="text-xs text-gray-400 mt-1">
-            📄 <%= @current_metrics[:s3_size_mb] %> MB
-          </div>
-        </div>
-
-      </div>
-  
-      <!-- MONTHLY TOTALS PANEL + CHART -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-
-        <!-- Monthly totals summary -->
-        <div class="bg-white p-6 rounded-xl shadow">
-          <h3 class="text-lg font-semibold text-gray-800 mb-3">Resumen del Mes</h3>
-
-          <div class="space-y-2 text-sm">
-            <div class="flex justify-between">
-              <span class="text-gray-600">Tokens:</span>
-              <span class="font-bold"><%= number_with_delimiter(@monthly_totals[:total_tokens]) %></span>
-            </div>
-
-            <div class="flex justify-between">
-              <span class="text-gray-600">Costo Bedrock:</span>
-              <span class="font-bold text-red-600">$<%= @monthly_totals[:total_cost].round(4) %></span>
-            </div>
-
-            <div class="flex justify-between">
-              <span class="text-gray-600">Queries:</span>
-              <span class="font-bold"><%= @monthly_totals[:total_queries] %></span>
-            </div>
-
-            <div class="flex justify-between">
-              <span class="text-gray-600">Vector Store ACU:</span>
-              <span class="font-bold"><%= @monthly_totals[:avg_acu] %></span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 30-day cost chart -->
-        <div class="md:col-span-3 bg-white p-6 rounded-xl shadow">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">Costo RAG (últimos 30 días)</h3>
-          <canvas id="costsChart" height="120"></canvas>
-        </div>
-      </div>
-  
-      <!-- DAILY USAGE BREAKDOWN — same channels as home chat footer -->
-      <div class="bg-white p-6 rounded-xl shadow mb-8">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">Desglose de costos (hoy)</h3>
-        <%= render partial: "shared/usage_channel_cards", locals: { current_metrics: @current_metrics } %>
-      </div>
-
-      <!-- S3 DOCUMENTS LIST SECTION -->
-      <% if @s3_documents_list.any? %>
-        <div class="bg-white p-6 rounded-xl shadow mb-8">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">📁 S3 Documents</h3>
-          
-          <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aliases</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Archivo S3</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tamaño</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Registro KB</th>
-                </tr>
-              </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
-                <% @s3_documents_list.each do |doc| %>
-                  <% kb = @kb_doc_index[doc[:full_path]] %>
-                  <% s3_uri = kb ? kb.display_s3_uri(@s3_bucket_name) : (@s3_bucket_name.present? ? "s3://#{@s3_bucket_name}/#{doc[:full_path]}" : doc[:full_path]) %>
-                  <tr>
-                    <td class="px-4 py-3 align-top text-sm text-gray-900">
-                      <%= kb&.display_name.presence || doc[:name] %>
-                    </td>
-                    <td class="px-4 py-3 align-top text-xs text-gray-600 max-w-md">
-                      <% if kb&.aliases&.any? %>
-                        <%= kb.aliases.join(" · ") %>
-                      <% else %>
-                        <span class="text-gray-400">—</span>
-                      <% end %>
-                    </td>
-                    <td class="px-4 py-3 align-top">
-                      <div class="text-xs text-gray-900 font-mono break-all max-w-xs sm:max-w-md">
-                        <%= s3_uri %>
-                      </div>
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap align-top">
-                      <div class="text-sm text-gray-900">
-                        <%= doc[:size_mb] %> MB
-                      </div>
-                      <div class="text-xs text-gray-500">
-                        <%= number_to_human_size(doc[:size_bytes]) %>
-                      </div>
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 align-top">
-                      <% if kb %>
-                        <%= kb.created_at.strftime("%Y-%m-%d %H:%M") %>
-                      <% else %>
-                        <span class="text-gray-400">—</span>
-                      <% end %>
-                    </td>
-                  </tr>
-                <% end %>
-              </tbody>
-            </table>
-          </div>
-          
-          <div class="mt-4 text-sm text-gray-500">
-            Total: <%= @s3_documents_list.count %> documents, <%= @current_metrics[:s3_size_mb] %> MB
-          </div>
-        </div>
-      <% end %>
-
-      <!-- PERFORMANCE METRICS SECTION -->
-      <% if @performance_metrics[:total_queries] > 0 %>
-        <div class="bg-white p-6 rounded-xl shadow mb-8">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">⚡ Rendimiento (hoy)</h3>
-          
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div class="p-4 bg-gray-50 rounded-lg">
-              <div class="text-sm text-gray-500">Latencia promedio</div>
-              <div class="text-2xl font-bold text-gray-900">
-                <%= @performance_metrics[:avg_latency] %>ms
-              </div>
-            </div>
-            
-            <div class="p-4 bg-gray-50 rounded-lg">
-              <div class="text-sm text-gray-500">Query más rápida</div>
-              <div class="text-2xl font-bold text-green-600">
-                <%= @performance_metrics[:fastest_query] %>ms
-              </div>
-            </div>
-            
-            <div class="p-4 bg-gray-50 rounded-lg">
-              <div class="text-sm text-gray-500">Query más lenta</div>
-              <div class="text-2xl font-bold text-red-600">
-                <%= @performance_metrics[:slowest_query] %>ms
-              </div>
-            </div>
-          </div>
-        </div>
-      <% end %>
-  
-      <!-- REFRESH BUTTON (pull metrics from AWS) -->
-      <div class="text-center mt-10">
-        <%= button_to "Actualizar Métricas",
-            dashboard_refresh_path,
-            method: :post,
-            class: "bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 shadow",
-            data: { disable_with: "Actualizando..." } %>
-      </div>
-  
+    <!-- HEADER -->
+    <div class="mb-8">
+      <h1 class="text-3xl font-extrabold text-gray-900">Uso y consumo</h1>
+      <p class="text-gray-600 text-sm">Consumo estimado de LLM (consultas, ingestión de documentos, embeddings)</p>
+      <p class="text-xs text-gray-400 mt-1">Estimado · puede variar ±10% vs facturación AWS · no incluye infra compartida (Aurora, EC2, red)</p>
     </div>
+
+    <!-- DAILY SUMMARY CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+
+      <%= render partial: "metric_card", locals: {
+        title: "Costo hoy",
+        value: "$#{@current_metrics[:today_cost].round(4)}",
+        color: "text-red-600"
+      } %>
+
+      <%= render partial: "metric_card", locals: {
+        title: "Costo del mes",
+        value: "$#{@monthly_totals[:total_cost].round(4)}",
+        color: "text-red-700"
+      } %>
+
+      <%= render partial: "metric_card", locals: {
+        title: "Consultas chat hoy",
+        value: @current_metrics[:today_queries].to_i,
+        color: "text-green-600"
+      } %>
+
+    </div>
+
+    <!-- MONTHLY TOTALS PANEL + CHART -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+
+      <div class="bg-white p-6 rounded-xl shadow">
+        <h3 class="text-lg font-semibold text-gray-800 mb-3">Resumen del mes</h3>
+
+        <div class="space-y-2 text-sm">
+          <div class="flex justify-between">
+            <span class="text-gray-600">Costo estimado:</span>
+            <span class="font-bold text-red-600">$<%= @monthly_totals[:total_cost].round(4) %></span>
+          </div>
+
+          <div class="flex justify-between">
+            <span class="text-gray-600">Consultas chat:</span>
+            <span class="font-bold"><%= @monthly_totals[:total_queries].to_i %></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="md:col-span-3 bg-white p-6 rounded-xl shadow">
+        <h3 class="text-lg font-semibold text-gray-800 mb-1">Costo por canal LLM</h3>
+        <p class="text-sm text-gray-500 mb-4"><%= @chart_data[:title] %> · USD diario</p>
+        <% if @chart_data[:datasets].any? %>
+          <%= tag.canvas(
+            data: {
+              controller: "cost-chart",
+              cost_chart_config_value: @chart_data
+            },
+            height: 120
+          ) %>
+        <% else %>
+          <p class="text-sm text-gray-400 py-8 text-center">Sin costos registrados este mes.</p>
+        <% end %>
+      </div>
+    </div>
+
+    <!-- DAILY USAGE BREAKDOWN — same channels as home chat footer -->
+    <div class="bg-white p-6 rounded-xl shadow mb-8">
+      <h3 class="text-lg font-semibold text-gray-800 mb-4">Desglose de costos (hoy)</h3>
+      <%= render partial: "shared/usage_channel_cards", locals: { current_metrics: @current_metrics } %>
+    </div>
+
+    <!-- KB DOCUMENTS -->
+    <% if @kb_documents.any? %>
+      <div class="bg-white p-6 rounded-xl shadow mb-8">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Documentos en KB</h3>
+
+        <div class="app-scroll max-h-[min(32rem,calc(100vh-18rem))] overflow-auto overscroll-contain pr-1 -mr-1">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50 sticky top-0 z-10 shadow-[0_1px_0_0_rgb(229_231_235)]">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aliases</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tamaño</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indexado</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <% @kb_documents.each do |kb| %>
+                <tr>
+                  <td class="px-4 py-3 align-top text-sm text-gray-900">
+                    <%= kb.display_name.presence || kb.stem_from_s3_key %>
+                  </td>
+                  <td class="px-4 py-3 align-top text-xs text-gray-600 max-w-md">
+                    <% if kb.aliases&.any? %>
+                      <%= kb.aliases.join(" · ") %>
+                    <% else %>
+                      <span class="text-gray-400">—</span>
+                    <% end %>
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap align-top text-sm text-gray-900">
+                    <% if kb.size_bytes.present? %>
+                      <%= number_to_human_size(kb.size_bytes) %>
+                    <% else %>
+                      <span class="text-gray-400">—</span>
+                    <% end %>
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 align-top">
+                    <%= kb.created_at.strftime("%Y-%m-%d %H:%M") %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-4 text-sm text-gray-500">
+          Total: <%= @kb_documents.size %> documentos
+        </div>
+      </div>
+    <% end %>
+
+    <!-- CHAT QUERY LATENCY -->
+    <% if @performance_metrics[:total_queries].positive? %>
+      <div class="bg-white p-6 rounded-xl shadow mb-8">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Rendimiento consultas chat (hoy)</h3>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="p-4 bg-gray-50 rounded-lg">
+            <div class="text-sm text-gray-500">Latencia promedio</div>
+            <div class="text-2xl font-bold text-gray-900">
+              <%= @performance_metrics[:avg_latency] %>ms
+            </div>
+          </div>
+
+          <div class="p-4 bg-gray-50 rounded-lg">
+            <div class="text-sm text-gray-500">Consulta más rápida</div>
+            <div class="text-2xl font-bold text-green-600">
+              <%= @performance_metrics[:fastest_query] %>ms
+            </div>
+          </div>
+
+          <div class="p-4 bg-gray-50 rounded-lg">
+            <div class="text-sm text-gray-500">Consulta más lenta</div>
+            <div class="text-2xl font-bold text-red-600">
+              <%= @performance_metrics[:slowest_query] %>ms
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
   </div>
-  
-  <!-- CHART.JS LOADER
-  
+</div>

@@ -34,6 +34,12 @@ gem 'addressable', '>= 2.9.0'
 # Bundler-audit: GHSA-c4rq-3m3g-8wgx, GHSA-v2fc-qm4h-8hqv (nokogiri < 1.19.3)
 gem 'nokogiri', '>= 1.19.3'
 
+# Bundler-audit: CVE-2026-33637 (faraday < 2.14.2, via twilio-ruby / ruby-openai)
+gem 'faraday', '>= 2.14.2'
+
+# Bundler-audit: CVE-2026-45363 (jwt < 3.2.0, via twilio-ruby)
+gem 'jwt', '>= 3.2.0'
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem 'tzinfo-data', platforms: %i[windows jruby]
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es" class="bg-[hsl(220,20%,97%)]">
+<html lang="<%= I18n.locale %>" class="bg-[hsl(220,20%,97%)]">
   <head>
     <title><%= content_for(:title) || "danebo" %></title>
     <%# interactive-widget=resizes-visual: when the on-screen keyboard opens,
@@ -71,6 +71,7 @@
 
         <%# User actions — compact icon targets on xs; texto desde sm (apps móviles) %>
         <div class="flex shrink-0 items-center gap-1.5 sm:gap-4">
+          <%= render "shared/locale_switcher" %>
           <% if user_signed_in? %>
             <span class="hidden max-w-[9rem] truncate text-sm text-[hsl(215,20%,42%)] sm:inline md:max-w-[14rem] lg:max-w-xs"
                   title="<%= current_user.email %>"><%= current_user.email %></span>

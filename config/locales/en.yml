@@ -33,7 +33,7 @@ en:
     brand:
       headline: "Turn your company's information and data into operational value."
       paragraph_1: "Organizations generate large volumes of information, but turning it into useful knowledge remains a challenge."
-      paragraph_2: "Danebo transforms documentation, processes, and data into actionable knowledge, integrated directly into your team's workflows."
+      paragraph_2: "Danebo transforms documentation, processes, and data into actionable knowledge."
       tagline: "It's not just analysis. It's execution."
       closing: "AI that automates tasks, accelerates decision-making, and boosts your teams' productivity."
       secure: "Secure"
@@ -80,6 +80,10 @@ en:
       terms: "Terms of Service"
       conjunction: "and"
       privacy: "Privacy Policy"
+    locale:
+      label: "Language"
+      es: "ES"
+      en: "EN"
   dashboard:
     metrics_refreshing: "Metrics are updating…"
   bulk_uploads:

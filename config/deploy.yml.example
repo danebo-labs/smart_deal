@@ -29,7 +29,10 @@ servers:
 
 proxy:
   ssl: true
-  host: app.example.com
+  hosts:
+    - example.com
+    - www.example.com
+    - chat.example.com
   app_port: 80
 
 registry:

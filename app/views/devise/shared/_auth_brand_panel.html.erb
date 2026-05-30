@@ -15,7 +15,7 @@
 
   <div class="relative z-10 flex items-center gap-3">
     <%= image_tag "logo_desktop2.jpg",
-        alt: "danebo",
+        alt: t("auth.brand.logo_alt"),
         class: "h-16 w-16 shrink-0 rounded-2xl object-contain shadow-lg ring-1 ring-white/10",
         width: 64,
         height: 64 %>
@@ -27,26 +27,23 @@
 
   <div class="relative z-10 max-w-md">
     <h1 class="mb-6 text-3xl font-light leading-tight text-white xl:text-4xl">
-      Convierte la información de tu empresa en decisiones y automatización
+      <%= t("auth.brand.headline") %>
     </h1>
     <div class="space-y-4 text-base leading-relaxed text-white/60">
-      <p>
-        Las empresas tienen grandes volúmenes de información, pero no conocimiento accionable.
-      </p>
-      <p>
-        Danebo transforma documentación interna, procesos y datos en conocimiento útil, integrado directamente en los flujos de trabajo.
-      </p>
+      <p><%= t("auth.brand.paragraph_1") %></p>
+      <p><%= t("auth.brand.paragraph_2") %></p>
     </div>
     <p class="mt-5 text-sm leading-relaxed text-white/50">
-      No es solo análisis. Es ejecución. IA que automatiza tareas y mejora cómo trabajan tus equipos.
+      <%= t("auth.brand.tagline") %>
+      <%= t("auth.brand.closing") %>
     </p>
   </div>
 
   <div class="relative z-10 flex items-center gap-6 text-sm text-white/40">
-    <span>Seguro</span>
+    <span><%= t("auth.brand.secure") %></span>
     <span class="h-1 w-1 rounded-full bg-white/20"></span>
-    <span>Escalable</span>
+    <span><%= t("auth.brand.scalable") %></span>
     <span class="h-1 w-1 rounded-full bg-white/20"></span>
-    <span>Empresarial</span>
+    <span><%= t("auth.brand.enterprise") %></span>
   </div>
 </div>

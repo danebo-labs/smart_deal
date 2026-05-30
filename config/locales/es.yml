@@ -1,5 +1,56 @@
 # Spanish locale (partial; RAG strings also in config/locales/rag.es.yml)
 es:
+  auth:
+    brand:
+      headline: "Convierte la información y los datos de tu empresa en valor operacional."
+      paragraph_1: "Las organizaciones generan grandes volúmenes de información, pero convertirla en conocimiento útil sigue siendo un desafío."
+      paragraph_2: "Danebo transforma documentación, procesos y datos en conocimiento accionable, integrado directamente en los flujos de trabajo de tu equipo."
+      tagline: "No es solo análisis. Es ejecución."
+      closing: "IA que automatiza tareas, acelera la toma de decisiones y potencia la productividad de tus equipos."
+      secure: "Seguro"
+      scalable: "Escalable"
+      enterprise: "Empresarial"
+      logo_alt: "danebo"
+    shared:
+      email: "Correo electrónico"
+      email_placeholder: "tu@empresa.com"
+      password: "Contraseña"
+      password_placeholder: "••••••••"
+      password_confirmation: "Confirmar contraseña"
+      password_min_length: "Mínimo %{count} caracteres"
+      new_password: "Nueva contraseña"
+    sessions:
+      title: "Iniciar sesión"
+      subtitle: "Ingresa tus credenciales para acceder a la plataforma"
+      forgot_password: "¿Olvidaste tu contraseña?"
+      remember_me: "Mantener sesión iniciada"
+      submit: "Continuar"
+    passwords:
+      new:
+        title: "Recuperar contraseña"
+        subtitle: "Si el correo está registrado, recibirás un enlace para restablecerla."
+        submit: "Enviar instrucciones"
+      edit:
+        title: "Nueva contraseña"
+        subtitle: "Elige una contraseña segura para volver a acceder."
+        submit: "Guardar contraseña"
+    registrations:
+      new:
+        title: "Crear cuenta"
+        subtitle: "Solicita acceso con tu correo corporativo."
+        submit: "Registrarse"
+    links:
+      sign_in: "Iniciar sesión"
+      no_account: "¿No tienes una cuenta?"
+      request_access: "Solicita acceso"
+      confirmation: "¿No recibiste el correo de confirmación?"
+      unlock: "¿No recibiste las instrucciones de desbloqueo?"
+      sign_in_with: "Iniciar sesión con %{provider}"
+    legal:
+      preamble: "Al continuar, aceptas nuestros"
+      terms: "Términos de Servicio"
+      conjunction: "y"
+      privacy: "Política de Privacidad"
   date:
     month_names: [~, enero, febrero, marzo, abril, mayo, junio, julio, agosto, septiembre, octubre, noviembre, diciembre]
     abbr_month_names: [~, ene, feb, mar, abr, may, jun, jul, ago, sep, oct, nov, dic]

@@ -1,34 +1,34 @@
 <div class="flex flex-col items-center gap-2 text-sm">
   <%- if controller_name != 'sessions' %>
-    <%= link_to "Iniciar sesión",
+    <%= link_to t("auth.links.sign_in"),
         new_session_path(resource_name),
         class: "text-[hsl(217,91%,50%)] hover:text-[hsl(217,91%,40%)] font-medium transition-colors" %>
   <% end %>
 
   <%- if devise_mapping.registerable? && controller_name != 'registrations' %>
     <p class="text-[hsl(215,20%,42%)]">
-      ¿No tienes una cuenta?
-      <%= link_to "Solicita acceso",
+      <%= t("auth.links.no_account") %>
+      <%= link_to t("auth.links.request_access"),
           new_registration_path(resource_name),
           class: "text-[hsl(217,91%,50%)] hover:text-[hsl(217,91%,40%)] font-medium transition-colors" %>
     </p>
   <% end %>
 
   <%- if devise_mapping.confirmable? && controller_name != 'confirmations' %>
-    <%= link_to "¿No recibiste el correo de confirmación?",
+    <%= link_to t("auth.links.confirmation"),
         new_confirmation_path(resource_name),
         class: "text-[hsl(215,20%,42%)] hover:text-[hsl(222,47%,10%)] transition-colors" %>
   <% end %>
 
   <%- if devise_mapping.lockable? && resource_class.unlock_strategy_enabled?(:email) && controller_name != 'unlocks' %>
-    <%= link_to "¿No recibiste las instrucciones de desbloqueo?",
+    <%= link_to t("auth.links.unlock"),
         new_unlock_path(resource_name),
         class: "text-[hsl(215,20%,42%)] hover:text-[hsl(222,47%,10%)] transition-colors" %>
   <% end %>
 
   <%- if devise_mapping.omniauthable? %>
     <%- resource_class.omniauth_providers.each do |provider| %>
-      <%= button_to "Iniciar sesión con #{OmniAuth::Utils.camelize(provider)}",
+      <%= button_to t("auth.links.sign_in_with", provider: OmniAuth::Utils.camelize(provider)),
           omniauth_authorize_path(resource_name, provider),
           data: { turbo: false },
           class: "text-[hsl(215,20%,42%)] hover:text-[hsl(222,47%,10%)] transition-colors" %>

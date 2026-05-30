@@ -29,6 +29,57 @@
 
 en:
   hello: "Hello world"
+  auth:
+    brand:
+      headline: "Turn your company's information and data into operational value."
+      paragraph_1: "Organizations generate large volumes of information, but turning it into useful knowledge remains a challenge."
+      paragraph_2: "Danebo transforms documentation, processes, and data into actionable knowledge, integrated directly into your team's workflows."
+      tagline: "It's not just analysis. It's execution."
+      closing: "AI that automates tasks, accelerates decision-making, and boosts your teams' productivity."
+      secure: "Secure"
+      scalable: "Scalable"
+      enterprise: "Enterprise-ready"
+      logo_alt: "danebo"
+    shared:
+      email: "Email address"
+      email_placeholder: "you@company.com"
+      password: "Password"
+      password_placeholder: "••••••••"
+      password_confirmation: "Confirm password"
+      password_min_length: "Minimum %{count} characters"
+      new_password: "New password"
+    sessions:
+      title: "Sign in"
+      subtitle: "Enter your credentials to access the platform"
+      forgot_password: "Forgot your password?"
+      remember_me: "Keep me signed in"
+      submit: "Continue"
+    passwords:
+      new:
+        title: "Reset password"
+        subtitle: "If the email is registered, you will receive a link to reset it."
+        submit: "Send instructions"
+      edit:
+        title: "New password"
+        subtitle: "Choose a secure password to access your account again."
+        submit: "Save password"
+    registrations:
+      new:
+        title: "Create account"
+        subtitle: "Request access with your work email."
+        submit: "Sign up"
+    links:
+      sign_in: "Sign in"
+      no_account: "Don't have an account?"
+      request_access: "Request access"
+      confirmation: "Didn't receive the confirmation email?"
+      unlock: "Didn't receive unlock instructions?"
+      sign_in_with: "Sign in with %{provider}"
+    legal:
+      preamble: "By continuing, you agree to our"
+      terms: "Terms of Service"
+      conjunction: "and"
+      privacy: "Privacy Policy"
   dashboard:
     metrics_refreshing: "Metrics are updating…"
   bulk_uploads:

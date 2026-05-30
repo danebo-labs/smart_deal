@@ -1,7 +1,7 @@
 <%= render layout: "devise/shared/auth_form_shell",
            locals: {
-             title: "Crear cuenta",
-             subtitle: "Solicita acceso con tu correo corporativo."
+             title: t("auth.registrations.new.title"),
+             subtitle: t("auth.registrations.new.subtitle")
            } do %>
   <%= render "devise/shared/error_messages", resource: resource %>
 
@@ -9,37 +9,37 @@
                html: { class: "space-y-5" }) do |f| %>
 
     <div class="space-y-1.5">
-      <%= f.label :email, "Correo electrónico",
+      <%= f.label :email, t("auth.shared.email"),
           class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
       <%= f.email_field :email,
           autofocus: true,
           autocomplete: "email",
-          placeholder: "tu@empresa.com",
+          placeholder: t("auth.shared.email_placeholder"),
           class: "h-11 w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-3 text-sm text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] transition focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
     </div>
 
     <div class="space-y-1.5">
-      <%= f.label :password, "Contraseña",
+      <%= f.label :password, t("auth.shared.password"),
           class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
       <% if @minimum_password_length %>
-        <p class="text-xs text-[hsl(215,20%,52%)]">Mínimo <%= @minimum_password_length %> caracteres</p>
+        <p class="text-xs text-[hsl(215,20%,52%)]"><%= t("auth.shared.password_min_length", count: @minimum_password_length) %></p>
       <% end %>
       <%= password_field_with_toggle f, :password,
           autocomplete: "new-password",
-          placeholder: "••••••••",
+          placeholder: t("auth.shared.password_placeholder"),
           class: "h-11 w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white text-sm text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] transition focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
     </div>
 
     <div class="space-y-1.5">
-      <%= f.label :password_confirmation, "Confirmar contraseña",
+      <%= f.label :password_confirmation, t("auth.shared.password_confirmation"),
           class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
       <%= password_field_with_toggle f, :password_confirmation,
           autocomplete: "new-password",
-          placeholder: "••••••••",
+          placeholder: t("auth.shared.password_placeholder"),
           class: "h-11 w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white text-sm text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] transition focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
     </div>
 
-    <%= f.submit "Registrarse",
+    <%= f.submit t("auth.registrations.new.submit"),
         class: "h-11 w-full cursor-pointer rounded-lg bg-[hsl(217,91%,50%)] text-sm font-medium text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
   <% end %>
 <% end %>

@@ -1,23 +1,23 @@
 <%= render layout: "devise/shared/auth_form_shell",
            locals: {
-             title: "Recuperar contraseña",
-             subtitle: "Si el correo está registrado, recibirás un enlace para restablecerla."
+             title: t("auth.passwords.new.title"),
+             subtitle: t("auth.passwords.new.subtitle")
            } do %>
   <%= render "devise/shared/error_messages", resource: resource %>
 
   <%= form_for(resource, as: resource_name, url: password_path(resource_name),
                html: { method: :post, class: "space-y-5" }) do |f| %>
     <div class="space-y-1.5">
-      <%= f.label :email, "Correo electrónico",
+      <%= f.label :email, t("auth.shared.email"),
           class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
       <%= f.email_field :email,
           autofocus: true,
           autocomplete: "email",
-          placeholder: "tu@empresa.com",
+          placeholder: t("auth.shared.email_placeholder"),
           class: "h-11 w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-3 text-sm text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] transition focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
     </div>
 
-    <%= f.submit "Enviar instrucciones",
+    <%= f.submit t("auth.passwords.new.submit"),
         class: "h-11 w-full cursor-pointer rounded-lg bg-[hsl(217,91%,50%)] text-sm font-medium text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
   <% end %>
 <% end %>

@@ -128,7 +128,9 @@ class PageRelevanceFilter
     # Conservative threshold (< 10) avoids intercepting scanned technical pages that have thin but
     # non-zero text detection (those still fall through to scanned_image → keep + Opus).
     # Office-origin files use call_batch instead and never reach this path.
-    if @page_number == 1 && density[:text_layer_chars] < 10 && density[:image_area_ratio] > 0.7 && @text.length < 50
+    # CRITICAL: only applies when total_pages > 1 — a 1-page PDF cannot be a "cover" (nothing behind it).
+    # Single-page raster diagrams/schematics fall through to scanned_image → keep + force_opus.
+    if @total_pages > 1 && @page_number == 1 && density[:text_layer_chars] < 10 && density[:image_area_ratio] > 0.7 && @text.length < 50
       return { keep: false, reason: :cover_slide, source: :heuristic }
     end
 

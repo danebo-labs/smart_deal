@@ -221,6 +221,36 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
+  # Heuristic: cover_slide (only applies when total_pages > 1)
+  # ---------------------------------------------------------------------------
+
+  test "drops cover_slide: page 1 of multi-page PDF with rasterized cover" do
+    @page_text = ""  # < 50 chars
+    PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+      { has_images: true, text_layer_chars: 5, image_area_ratio: 0.85 }
+    end
+
+    result = make_filter(page_number: 1, total_pages: 10).call
+    assert_equal false,       result[:keep]
+    assert_equal :cover_slide, result[:reason]
+    assert_equal :heuristic,  result[:source]
+  end
+
+  test "keeps 1-page raster diagram (SOPREL case): cover_slide does NOT apply when total_pages=1" do
+    @page_text = ""  # < 50 chars
+    PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+      { has_images: true, text_layer_chars: 5, image_area_ratio: 0.85 }
+    end
+
+    # total_pages=1 → cover_slide is skipped → falls through to scanned_image
+    result = make_filter(page_number: 1, total_pages: 1, filename: "Esquema SOPREL.pdf").call
+    assert_equal true,          result[:keep]
+    assert_equal :scanned_image, result[:reason]
+    assert_equal :heuristic,    result[:source]
+    assert_equal true,          result[:force_opus]
+  end
+
+  # ---------------------------------------------------------------------------
   # Heuristic: high_confidence_content
   # ---------------------------------------------------------------------------
 

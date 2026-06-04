@@ -144,8 +144,21 @@ class SingleFileChunkingService
     end
 
     if kept_pages.empty?
-      Rails.logger.warn("SingleFileChunkingService: all pages dropped for #{@filename} — skipping")
-      return @asset
+      Rails.logger.warn("SingleFileChunkingService: all pages dropped for #{@filename} — falling back to whole-file parse")
+      # Fallback: parse entire PDF as one document rather than silently dropping.
+      # Prevents losing documents with technical value (e.g. single-page raster diagrams
+      # that heuristics misclassified but Haiku would catch).
+      content = BatchChunkingPrompt.user_content(
+        binary:       @binary,
+        content_type: "application/pdf",
+        filename:     @filename,
+        locale:       @locale
+      )
+      result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
+        user_content: content,
+        filename:     @filename
+      )
+      return parse_and_write(result[:text])
     end
 
     page_results = chunk_pages_with_identity_hint(kept_pages, total)

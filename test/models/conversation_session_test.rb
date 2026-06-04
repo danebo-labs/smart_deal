@@ -631,7 +631,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
     entity = session.active_entities["Test Pin"]
     assert_equal "user_pin", entity["source"]
-    assert_equal "s3://multimodal-source-destination/uploads/2026/test_pin.pdf", entity["source_uri"]
+    assert_equal "s3://#{KbDocument::KB_BUCKET}/uploads/2026/test_pin.pdf", entity["source_uri"]
     assert_includes entity["aliases"], "TP"
   end
 

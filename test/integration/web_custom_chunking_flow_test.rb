@@ -3,7 +3,7 @@
 require "test_helper"
 require "ostruct"
 
-# Integration test for the web custom chunking path (CUSTOM_CHUNKING_WEB_ENABLED=true).
+# Integration test for the web custom chunking path.
 # Verifies the complete flow from QueryOrchestratorService#upload_and_sync_attachments
 # through CustomChunkingPipeline → SingleFileChunkingService → BatchResultsParserService
 # without making real Anthropic or AWS calls.
@@ -83,9 +83,6 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
     @fake_s3       = FakeS3.new
     self_ref       = self
 
-    # Enable feature flag
-    Rails.application.config.x.custom_chunking_web_enabled = true
-
     # Stub Anthropic::Client
     @orig_anthropic_new = Anthropic::Client.method(:new)
     Anthropic::Client.define_singleton_method(:new) do |**|
@@ -120,7 +117,6 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
   end
 
   teardown do
-    Rails.application.config.x.custom_chunking_web_enabled = false
     Anthropic::Client.define_singleton_method(:new, @orig_anthropic_new)
     S3DocumentsService.define_singleton_method(:new, @orig_s3_new)
     PdfImageDetector.define_singleton_method(:image_pages, @orig_image_pages)
@@ -167,16 +163,16 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # Flag ON — uses custom chunking pipeline
+  # Custom chunking pipeline flow
   # ---------------------------------------------------------------------------
 
-  test "with flag ON: orchestrator uses CustomChunkingPipeline and returns filenames" do
+  test "orchestrator uses CustomChunkingPipeline and returns filenames" do
     result = run_pipeline
 
     assert_includes result, "guide.txt"
   end
 
-  test "with flag ON: chunks are written to S3 with web_v1 ingestion_path" do
+  test "chunks are written to S3 with web_v1 ingestion_path" do
     run_pipeline
 
     sidecar = @fake_s3.uploads.values.find { |v|
@@ -187,13 +183,13 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
     assert_equal "web_v1", parsed["metadataAttributes"]["ingestion_path"]
   end
 
-  test "with flag ON: KbDocument is created for the uploaded file" do
+  test "KbDocument is created for the uploaded file" do
     assert_difference "KbDocument.count", 1 do
       run_pipeline
     end
   end
 
-  test "with flag ON: identity header is written to chunk txt" do
+  test "identity header is written to chunk txt" do
     run_pipeline
 
     chunk_txt = @fake_s3.uploads.values.find { |v|
@@ -203,7 +199,7 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
     assert_includes chunk_txt, "[SEARCH_ALIASES:"
   end
 
-  test "with flag ON: image upload persists KbDocumentThumbnail before chunking" do
+  test "image upload persists KbDocumentThumbnail before chunking" do
     assert_difference "KbDocument.count", 1 do
       assert_difference "KbDocumentThumbnail.count", 1 do
         run_pipeline_image
@@ -217,7 +213,7 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
     assert_equal 66, kb.thumbnail.height
   end
 
-  test "with flag ON: web_v1_metadata with canonical_name and aliases is passed to BedrockIngestionJob" do
+  test "web_v1_metadata with canonical_name and aliases is passed to BedrockIngestionJob" do
     job_kwargs_captured = nil
     orig_later = BedrockIngestionJob.method(:perform_later)
     BedrockIngestionJob.define_singleton_method(:perform_later) do |*_args, **kwargs|
@@ -240,32 +236,8 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # Flag OFF — falls back to legacy path
+  # Office parse error — no legacy fallback
   # ---------------------------------------------------------------------------
-
-  test "with flag OFF: orchestrator does NOT call BulkKbSyncService" do
-    Rails.application.config.x.custom_chunking_web_enabled = false
-
-    kb_sync_called = false
-    orig           = KbSyncService.method(:new)
-    KbSyncService.define_singleton_method(:new) do |**|
-      kb_sync_called = true
-      stub = Object.new
-      stub.define_singleton_method(:sync!) { |**| nil }
-      stub
-    end
-
-    run_pipeline
-    assert kb_sync_called, "expected KbSyncService (legacy) to be called when flag is OFF"
-  ensure
-    KbSyncService.define_singleton_method(:new, orig) if defined?(orig)
-  end
-
-  # ---------------------------------------------------------------------------
-  # Fallback on error
-  # ---------------------------------------------------------------------------
-
-  # ─── Office failure — no legacy fallback ─────────────────────────────────────
 
   test "Office file: SingleFileChunkingService failure does NOT call KbSyncService (legacy)" do
     orig_convert = OfficeToPdfConverter.method(:convert)
@@ -302,66 +274,5 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
     OfficeToPdfConverter.define_singleton_method(:convert, orig_convert)
     KbSyncService.define_singleton_method(:new, orig_kb) if defined?(orig_kb)
     KbSyncBroadcaster.define_singleton_method(:failed, orig_failed) if defined?(orig_failed)
-  end
-
-  test "PDF file: SingleFileChunkingService failure DOES fall back to KbSyncService (non-Office)" do
-    orig_anthropic = Anthropic::Client.method(:new)
-    Anthropic::Client.define_singleton_method(:new) do |**|
-      client = OpenStruct.new(api_key: "fake")
-      msgs   = OpenStruct.new
-      msgs.define_singleton_method(:stream) { |_| raise StandardError, "Simulated PDF parse failure" }
-      client.define_singleton_method(:messages) { msgs }
-      client
-    end
-
-    legacy_called = false
-    orig_kb       = KbSyncService.method(:new)
-    KbSyncService.define_singleton_method(:new) do |**|
-      legacy_called = true
-      stub = Object.new
-      stub.define_singleton_method(:sync!) { |**| nil }
-      stub
-    end
-
-    orig_no_fallback = ENV["CUSTOM_CHUNKING_NO_FALLBACK"]
-    ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = "false"
-
-    run_pipeline(filename: "guide.pdf", content_type: "application/pdf")
-
-    assert legacy_called, "KbSyncService (legacy) must be called for non-Office failures"
-  ensure
-    Anthropic::Client.define_singleton_method(:new, orig_anthropic) if defined?(orig_anthropic)
-    KbSyncService.define_singleton_method(:new, orig_kb) if defined?(orig_kb)
-    ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = orig_no_fallback
-  end
-
-  test "with flag ON: falls back to KbSyncService when Anthropic raises" do
-    Anthropic::Client.define_singleton_method(:new) do |**|
-      client = OpenStruct.new(api_key: "fake")
-      msgs   = OpenStruct.new
-      msgs.define_singleton_method(:stream) { |_| raise Anthropic::Errors::APIError.new(url: "https://api.anthropic.com/v1/messages", status: 529, body: { error: "overloaded" }) }
-      client.define_singleton_method(:messages) { msgs }
-      client
-    end
-
-    fallback_called = false
-    orig_ks         = KbSyncService.method(:new)
-    KbSyncService.define_singleton_method(:new) do |**|
-      fallback_called = true
-      stub = Object.new
-      stub.define_singleton_method(:sync!) { |**| nil }
-      stub
-    end
-
-    # Disable no-fallback mode so the rescue path runs instead of re-raising
-    orig_no_fallback = ENV["CUSTOM_CHUNKING_NO_FALLBACK"]
-    ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = "false"
-
-    result = run_pipeline
-    assert fallback_called, "expected KbSyncService fallback when Anthropic fails"
-    assert_includes result, "guide.txt"
-  ensure
-    ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = orig_no_fallback
-    KbSyncService.define_singleton_method(:new, orig_ks) if defined?(orig_ks)
   end
 end

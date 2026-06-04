@@ -141,85 +141,19 @@ class QueryOrchestratorService
 
   private
 
-  # Uploads all pending images and documents to S3, creates KbDocument + thumbnail
-  # synchronously in this thread (same process, data in memory), then enqueues
-  # BedrockIngestionJob with explicit kb_document_ids for enrichment-only work.
-  # @return [Array<String>] filenames that were successfully uploaded to S3
+  # Delegates all attachment uploads + chunking to CustomChunkingPipeline.
+  # urgent: true when a query accompanies the upload — PDFs parse sync so the
+  # answer can reference the doc immediately.
+  # @return [Array<String>] filenames successfully uploaded to S3
   def upload_and_sync_attachments
-    # Web custom chunking path: Anthropic Messages API + BulkKbSyncService (chunking=NONE DS).
-    # Flag default: false (OWRPGSX6XK legacy path). Enable via CUSTOM_CHUNKING_WEB_ENABLED=true.
-    if custom_chunking_web_enabled?
-      return CustomChunkingPipeline.new(
-        images:       @images,
-        documents:    @documents,
-        conv_session: @conv_session,
-        tenant:       @tenant || current_tenant,
-        locale:       @locale,
-        force_sync:   manual_sync_forced?
-      ).run!
-    end
-
-    s3 = S3DocumentsService.new
-    uploaded_filenames = []
-    kb_document_ids    = []
-
-    @images.each_with_index do |img, idx|
-      ext = img[:media_type]&.split('/')&.last || 'jpeg'
-      filename = (img[:filename] || img['filename']).presence
-      filename = File.basename(filename) if filename.present?
-      filename = "chat_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.#{ext}" if filename.blank?
-      binary_data = img[:binary] || img['binary'] || Base64.decode64(img[:data] || img['data'])
-      key = s3.upload_file(filename, binary_data, img[:media_type] || img['media_type'])
-      next if key.blank?
-
-      uploaded_filenames << filename
-      kb_doc = ensure_kb_document_for(key)
-      persist_thumbnail_for(kb_doc, img)
-      kb_document_ids << kb_doc.id
-    end
-
-    @documents.each_with_index do |doc, idx|
-      filename = doc[:filename].presence || "doc_#{Time.current.strftime('%Y%m%d_%H%M%S')}_#{idx}.txt"
-      filename = File.basename(filename)
-      binary_data = Base64.decode64(doc[:data] || doc['data'])
-      media_type = doc[:media_type] || doc['media_type'] || 'text/plain'
-      key = s3.upload_file(filename, binary_data, media_type)
-      next if key.blank?
-
-      uploaded_filenames << filename
-      kb_doc = ensure_kb_document_for(key)
-      kb_document_ids << kb_doc.id
-    end
-
-    return [] if uploaded_filenames.empty?
-
-    result = KbSyncService.new(tenant: @tenant || current_tenant).sync!(uploaded_filenames: uploaded_filenames)
-    if result.present?
-      BedrockIngestionJob.perform_later(
-        result[:job_id],
-        uploaded_filenames,
-        kb_id:           result[:kb_id],
-        data_source_id:  result[:data_source_id],
-        conv_session_id: @conv_session&.id,
-        kb_document_ids: kb_document_ids
-      )
-    end
-    uploaded_filenames
-  end
-
-  # Idempotent: uses s3_key as unique key. Recovers from a race-condition
-  # RecordNotUnique by re-finding the row the winner thread created.
-  def ensure_kb_document_for(s3_key)
-    KbDocument.find_or_create_by!(s3_key: s3_key) do |d|
-      d.display_name = File.basename(s3_key, ".*").tr("_-", " ").strip.presence
-      d.aliases      = []
-    end
-  rescue ActiveRecord::RecordNotUnique
-    KbDocument.find_by!(s3_key: s3_key)
-  end
-
-  def persist_thumbnail_for(kb_doc, img)
-    KbDocumentThumbnailPersister.call(kb_doc: kb_doc, img: img)
+    CustomChunkingPipeline.new(
+      images:       @images,
+      documents:    @documents,
+      conv_session: @conv_session,
+      tenant:       @tenant || current_tenant,
+      locale:       @locale,
+      urgent:       @query.to_s.strip.present?
+    ).run!
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,
@@ -338,20 +272,6 @@ class QueryOrchestratorService
 
   def rag_only_tenant?
     @tenant.nil? || Array(@tenant.try(:data_sources)).exclude?("db")
-  end
-
-  def custom_chunking_web_enabled?
-    Rails.application.config.x.custom_chunking_web_enabled
-  end
-
-  # Sync fallback triggers (plan §Fase 5):
-  #   1. ENV["MANUAL_FORCE_SYNC"] = "true"
-  #   2. A query accompanies the upload (technician needs answer now)
-  def manual_sync_forced?
-    return true if ENV["MANUAL_FORCE_SYNC"].to_s == "true"
-    return true if @query.to_s.strip.present?
-
-    false
   end
 
   def current_tenant

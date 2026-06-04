@@ -3,7 +3,8 @@
 require "test_helper"
 require "ostruct"
 
-# Tests for CUSTOM_CHUNKING_COST_V2_ENABLED routing in CustomChunkingPipeline.
+# Tests for CustomChunkingPipeline routing: image/office → sync,
+# PDF urgent or short (page_count ≤ SYNC_PAGES) → sync, PDF long non-urgent → SubmitManualBatchJob.
 class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
   parallelize(workers: 1)
 
@@ -14,6 +15,7 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     @orig_track   = TrackBedrockQueryJob.method(:perform_later)
     @orig_smb     = SubmitManualBatchJob.method(:perform_later)
     @orig_dedup   = ContentDedupService.method(:find_completed)
+    @orig_splitter = PdfPageSplitterService.method(:new)
 
     fake_s3 = Object.new
     fake_s3.define_singleton_method(:upload_file) { |fn, _bin, _ct| "uploads/#{fn}" }
@@ -23,19 +25,16 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     BulkKbSyncService.define_method(:sync!) { |**| nil }
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
 
-    # Default dedup: no hit
     ContentDedupService.define_singleton_method(:find_completed) do |sha256:|
       ContentDedupService::Result.new(hit: false, asset: nil, canonical_name: nil, aliases: [])
     end
 
-    # Default SubmitManualBatchJob: track calls
     @batch_job_calls = []
     batch_job_calls  = @batch_job_calls
     SubmitManualBatchJob.define_singleton_method(:perform_later) do |**kwargs|
       batch_job_calls << kwargs
     end
 
-    # Default SingleFileChunkingService: returns a simple ChunkAsset
     SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
       asset = ChunkAsset.new(
         filename: kwargs[:filename], sha256: "abc",
@@ -45,9 +44,6 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
       asset.aliases        = []
       OpenStruct.new(call: asset)
     end
-
-    @orig_env_v2   = ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"]
-    @orig_env_sync = ENV["MANUAL_FORCE_SYNC"]
   end
 
   teardown do
@@ -57,94 +53,101 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     TrackBedrockQueryJob.define_singleton_method(:perform_later, @orig_track)
     SubmitManualBatchJob.define_singleton_method(:perform_later, @orig_smb)
     ContentDedupService.define_singleton_method(:find_completed, @orig_dedup)
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = @orig_env_v2
-    ENV["MANUAL_FORCE_SYNC"]               = @orig_env_sync
+    PdfPageSplitterService.define_singleton_method(:new, @orig_splitter)
   end
 
-  test "PDF routes to batch when cost_v2 enabled and no force_sync" do
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = "true"
+  def stub_pdf_page_count(count)
+    fake = Object.new
+    fake.define_singleton_method(:page_count) { count }
+    PdfPageSplitterService.define_singleton_method(:new) { |_binary| fake }
+  end
 
-    doc = { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: "manual.pdf" }
-    CustomChunkingPipeline.new(images: [], documents: [ doc ], conv_session: nil).run!
+  def pdf_doc(filename: "manual.pdf")
+    { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: filename }
+  end
 
-    assert_equal 1, @batch_job_calls.size, "expected SubmitManualBatchJob.perform_later for PDF"
+  # ── Routing tests ────────────────────────────────────────────────────────────
+
+  test "PDF non-urgent, page_count > SYNC_PAGES → SubmitManualBatchJob (async Batch)" do
+    stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES + 1)
+
+    CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: false).run!
+
+    assert_equal 1, @batch_job_calls.size, "expected SubmitManualBatchJob for long non-urgent PDF"
     assert_equal "manual.pdf", @batch_job_calls.first[:filename]
   end
 
-  test "PDF routes to sync when cost_v2 enabled but force_sync=true" do
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = "true"
+  test "PDF urgent (query present) → sync regardless of page_count" do
+    stub_pdf_page_count(10)
 
-    doc = { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: "manual.pdf" }
     sfc_calls = 0
     SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
       sfc_calls += 1
-      asset = ChunkAsset.new(
-        filename: kwargs[:filename], sha256: "abc",
-        s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type]
-      )
+      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "abc",
+                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
       asset.canonical_name = "Test Doc"
       asset.aliases        = []
       OpenStruct.new(call: asset)
     end
 
-    CustomChunkingPipeline.new(images: [], documents: [ doc ], conv_session: nil, force_sync: true).run!
+    CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: true).run!
 
-    assert_equal 0, @batch_job_calls.size, "batch job should NOT fire with force_sync=true"
-    assert_equal 1, sfc_calls, "SingleFileChunkingService should be called for sync path"
+    assert_equal 0, @batch_job_calls.size, "urgent PDF must NOT go to batch"
+    assert_equal 1, sfc_calls, "urgent PDF must use SingleFileChunkingService"
   end
 
-  test "PDF routes to sync when MANUAL_FORCE_SYNC env set" do
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = "true"
-    ENV["MANUAL_FORCE_SYNC"]               = "true"
+  test "PDF non-urgent, page_count <= SYNC_PAGES → sync" do
+    stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES)
 
-    doc      = { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: "manual.pdf" }
-    pipeline = CustomChunkingPipeline.new(images: [], documents: [ doc ], conv_session: nil)
-    pipeline.run!
-
-    assert_equal 0, @batch_job_calls.size, "batch job should NOT fire when MANUAL_FORCE_SYNC=true"
-  end
-
-  test "PDF routes to sync (not batch) when cost_v2 flag is OFF" do
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = nil
-
-    doc      = { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: "manual.pdf" }
     sfc_calls = 0
     SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
       sfc_calls += 1
-      asset = ChunkAsset.new(
-        filename: kwargs[:filename], sha256: "def",
-        s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type]
-      )
+      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "abc",
+                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
       asset.canonical_name = "Test Doc"
       asset.aliases        = []
       OpenStruct.new(call: asset)
     end
 
-    CustomChunkingPipeline.new(images: [], documents: [ doc ], conv_session: nil).run!
+    CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: false).run!
 
-    assert_equal 0, @batch_job_calls.size
-    assert_equal 1, sfc_calls
+    assert_equal 0, @batch_job_calls.size, "short PDF must NOT go to batch"
+    assert_equal 1, sfc_calls, "short PDF must use SingleFileChunkingService"
   end
 
-  test "images always use sync path regardless of cost_v2 flag" do
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = "true"
-
-    image     = { data: Base64.strict_encode64("img"), media_type: "image/jpeg", filename: "photo.jpg" }
+  test "Office file (.docx) always routes to sync regardless of urgent" do
     sfc_calls = 0
     SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
       sfc_calls += 1
-      asset = ChunkAsset.new(
-        filename: kwargs[:filename], sha256: "ghi",
-        s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type]
-      )
+      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "abc",
+                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
+      asset.canonical_name = "Test Doc"
+      asset.aliases        = []
+      OpenStruct.new(call: asset)
+    end
+
+    doc = { data: Base64.strict_encode64("docx"), media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename: "manual.docx" }
+    CustomChunkingPipeline.new(images: [], documents: [ doc ], conv_session: nil, urgent: false).run!
+
+    assert_equal 0, @batch_job_calls.size, "Office docs must NOT go to batch"
+    assert_equal 1, sfc_calls, "Office docs must always use SingleFileChunkingService"
+  end
+
+  test "images always route to sync" do
+    sfc_calls = 0
+    SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
+      sfc_calls += 1
+      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "ghi",
+                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
       asset.canonical_name = "Photo Doc"
       asset.aliases        = []
       OpenStruct.new(call: asset)
     end
 
+    image = { data: Base64.strict_encode64("img"), media_type: "image/jpeg", filename: "photo.jpg" }
     CustomChunkingPipeline.new(images: [ image ], documents: [], conv_session: nil).run!
 
-    assert_equal 0, @batch_job_calls.size, "images should NOT go through batch"
-    assert_equal 1, sfc_calls, "images should always use SingleFileChunkingService"
+    assert_equal 0, @batch_job_calls.size, "images must NOT go through batch"
+    assert_equal 1, sfc_calls, "images must always use SingleFileChunkingService"
   end
 end

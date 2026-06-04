@@ -772,4 +772,51 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal 1, captured_max_tokens.size
     assert_equal BatchChunkingPrompt::MAX_TOKENS, captured_max_tokens[0]
   end
+
+  # ─── handle_pdf_mixed: fallback when all pages filtered ──────────────────────
+
+  test "handle_pdf_mixed: falls back to whole-file when all pages filtered" do
+    pages = (1..2).map { |n| BPRFakePdfPage.new(n, "%PDF-fake-p#{n}", BatchChunkingPrompt::MODEL_MULTIMODAL, false) }
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: pages)
+    end
+
+    # Simulate all pages being filtered out
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |**|
+      {
+        1 => { keep: false, reason: :cover, source: :heuristic },
+        2 => { keep: false, reason: :blank, source: :heuristic }
+      }
+    end
+
+    claude_call_count = 0
+    response_text     = golden_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        claude_call_count += 1
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
+                                 stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = build_service(filename: "manual.pdf").call
+
+    assert_equal 1, claude_call_count, "expected 1 whole-file call after all pages filtered"
+    assert_equal DOC_NAME, asset.canonical_name, "expected asset to be populated via fallback"
+    assert_not_nil asset.chunks_count
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
 end

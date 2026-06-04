@@ -39,15 +39,6 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
       .new("", images: images, documents: documents, tenant: tenant, conv_session: session, locale: locale)
       .send(:upload_and_sync_attachments)
   rescue StandardError => e
-    if CustomChunkingNoFallbackTest.active?
-      Rails.logger.error(
-        "UploadAndSyncAttachmentsJob: fail-fast re-raise (CUSTOM_CHUNKING_NO_FALLBACK) " \
-        "— #{e.class}: #{e.message}"
-      )
-      Rails.logger.error(e.backtrace.first(15).join("\n"))
-      raise
-    end
-
     Rails.logger.error("UploadAndSyncAttachmentsJob failed: #{e.class}: #{e.message}")
     Rails.logger.error(e.backtrace.first(10).join("\n"))
     filenames = (Array(images_payload) + Array(documents_payload))

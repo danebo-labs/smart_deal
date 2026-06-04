@@ -63,10 +63,7 @@ class UploadAndSyncAttachmentsJobTest < ActiveJob::TestCase
     QueryOrchestratorService.define_method(:upload_and_sync_attachments, orig_method)
   end
 
-  test "broadcasts failed when upload raises and does not re-raise (Fix 4)" do
-    orig_no_fallback = ENV.fetch("CUSTOM_CHUNKING_NO_FALLBACK", nil)
-    ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = "false"
-
+  test "broadcasts failed when upload raises and does not re-raise" do
     orig_method = QueryOrchestratorService.instance_method(:upload_and_sync_attachments)
     QueryOrchestratorService.define_method(:upload_and_sync_attachments) do
       raise RuntimeError, "boom"
@@ -93,7 +90,6 @@ class UploadAndSyncAttachmentsJobTest < ActiveJob::TestCase
     assert_includes failed[:filenames], "b.pdf"
     assert_equal "upload_error", failed[:reason]
   ensure
-    orig_no_fallback.nil? ? ENV.delete("CUSTOM_CHUNKING_NO_FALLBACK") : ENV["CUSTOM_CHUNKING_NO_FALLBACK"] = orig_no_fallback
     QueryOrchestratorService.define_method(:upload_and_sync_attachments, orig_method)
     ActionCable.server.define_singleton_method(:broadcast, orig_broadcast)
   end

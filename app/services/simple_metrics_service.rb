@@ -31,11 +31,11 @@ class SimpleMetricsService
     today = Date.current
     all_rows = BedrockQuery.where(created_at: today.all_day)
                            .pluck(:source, :model_id, :input_tokens, :output_tokens,
-                                  :cache_read_tokens, :cache_creation_tokens)
+                                  :cache_read_tokens, :cache_creation_tokens, :user_query)
 
-    token_sum = ->(rows) { rows.sum { |_, _, i, o, cr, cc| i.to_i + o.to_i + cr.to_i + cc.to_i } }
+    token_sum = ->(rows) { rows.sum { |_, _, i, o, cr, cc, _| i.to_i + o.to_i + cr.to_i + cc.to_i } }
     cost_sum  = ->(rows) {
-      rows.sum { |_, m, i, o, cr, cc|
+      rows.sum { |_, m, i, o, cr, cc, _|
         BedrockQuery.new(model_id: m, input_tokens: i, output_tokens: o,
                          cache_read_tokens: cr, cache_creation_tokens: cc).cost
       }
@@ -55,18 +55,21 @@ class SimpleMetricsService
     cache_hits   = WhatsappCacheHit.today.count
     tokens_saved = WhatsappCacheHit.today.sum(:tokens_saved_estimate).to_i
 
-    # Legacy buckets (kept at 0 now that channel buckets are the source of truth)
-    haiku_parse  = parse_rows.select { |_, m, *| m.to_s.include?("haiku") }
-    opus_parse   = parse_rows.select { |_, m, *| m.to_s.include?("opus") }
-    sonnet_parse = parse_rows.select { |_, m, *| m.to_s.include?("sonnet-4-6") || m.to_s.include?("sonnet-4") }
+    # Legacy rollup buckets (batch_v1 Opus + Bedrock FM [parse] estimates)
+    batch_v1_opus_rows = parse_rows.select { |*, q| q.to_s.start_with?("batch_parse:") }
+    haiku_parse  = parse_rows.select { |_, m, *, q| m.to_s.include?("haiku") && !q.to_s.start_with?("batch_parse:") }
+    opus_parse   = batch_v1_opus_rows
+    sonnet_parse = parse_rows.select { |_, m, *, q|
+      (m.to_s.include?("sonnet-4-6") || m.to_s.include?("sonnet-4")) && !q.to_s.start_with?("batch_parse:")
+    }
 
     haiku_unified_tokens = token_sum.call(query_rows) + token_sum.call(haiku_parse)
     haiku_unified_cost   = cost_sum.call(query_rows)  + cost_sum.call(haiku_parse)
 
     # Channel buckets via LlmUsageChannel classifier
     channels = Hash.new { |h, k| h[k] = { tokens: 0, cost: 0 } }
-    all_rows.each do |src, mid, i, o, cr, cc|
-      ch = LlmUsageChannel.for(model_id: mid.to_s, source: src.to_s)
+    all_rows.each do |src, mid, i, o, cr, cc, uq|
+      ch = LlmUsageChannel.for(model_id: mid.to_s, source: src.to_s, user_query: uq.to_s)
       next if ch == :unknown
 
       channels[ch][:tokens] += i.to_i + o.to_i + cr.to_i + cc.to_i

@@ -10,7 +10,7 @@ module UsageMetricsHelper
     { label: "Parse sync (Haiku)", tokens: :today_tokens_anthropic_haiku_direct, cost: :today_cost_anthropic_haiku_direct, group: :parse_sync },
     { label: "Parse batch (Sonnet)", tokens: :today_tokens_anthropic_sonnet_batch, cost: :today_cost_anthropic_sonnet_batch, group: :parse_batch },
     { label: "Parse batch (Opus)", tokens: :today_tokens_anthropic_opus_batch, cost: :today_cost_anthropic_opus_batch, group: :parse_batch },
-    { label: "Embeddings (Nova)", tokens: :today_tokens_embed, cost: :today_cost_embed, group: :embed }
+    { label: "Embeddings (Titan)", tokens: :today_tokens_embed, cost: :today_cost_embed, group: :embed }
   ].freeze
 
   def self.chart_channels

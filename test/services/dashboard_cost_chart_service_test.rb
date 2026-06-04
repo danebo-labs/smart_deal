@@ -25,7 +25,7 @@ class DashboardCostChartServiceTest < ActiveSupport::TestCase
     labels = result[:datasets].pluck(:label)
 
     assert_includes labels, "Consultas (Bedrock Haiku)"
-    assert_includes labels, "Embeddings (Nova)"
+    assert_includes labels, "Embeddings (Titan)"
     assert_not_includes labels, "Parse sync (Sonnet)"
   end
 

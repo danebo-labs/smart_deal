@@ -18,7 +18,8 @@ class UsageMetricsHelperTest < ActionView::TestCase
     assert_includes labels, "Consultas (Bedrock Haiku)"
     assert_includes labels, "Parse sync (Sonnet)"
     assert_includes labels, "Parse batch (Sonnet)"
-    assert_includes labels, "Embeddings (Nova)"
+    assert_includes labels, "Embeddings (Titan)"
+    assert_not_includes labels, "Bulk ZIP Opus (batch v1)"
     assert_equal UsageMetricsHelper::DAILY_USAGE_CHANNELS.size, labels.size
   end
 

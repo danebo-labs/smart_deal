@@ -267,7 +267,8 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
     create_bedrock_query(
       input_tokens: 2000, output_tokens: 400,
       model_id: 'claude-opus-4-7-direct',
-      source: 'ingestion_parse', created_at: today.beginning_of_day
+      source: 'ingestion_parse', user_query: 'web_parse: manual.pdf',
+      created_at: today.beginning_of_day
     )
     create_bedrock_query(
       input_tokens: 1500, output_tokens: 300,
@@ -282,10 +283,28 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
     son_tok   = CostMetric.find_by!(date: today, metric_type: :daily_tokens_parse_sonnet).value
 
     assert_equal 1200 + 350, haiku_tok.to_i
-    assert_equal 2400, opus_tok.to_i
+    assert_equal 0, opus_tok.to_i
     assert_equal 1800, son_tok.to_i
+  end
 
-    assert_not_equal haiku_tok, opus_tok
+  test 'update_database_metrics_only routes batch_parse to parse_opus not opus_batch channel' do
+    today = Date.current
+
+    create_bedrock_query(
+      input_tokens: 9000, output_tokens: 17000,
+      model_id: 'claude-opus-4-7', source: 'ingestion_parse',
+      user_query: 'batch_parse: file.pdf', created_at: today.beginning_of_day
+    )
+    create_bedrock_query(
+      input_tokens: 2000, output_tokens: 1800,
+      model_id: 'claude-opus-4-7-batch', source: 'ingestion_parse',
+      user_query: 'bulk_parse: photo.png', created_at: today.beginning_of_day
+    )
+
+    SimpleMetricsService.update_database_metrics_only
+
+    assert_equal 26_000, CostMetric.find_by!(date: today, metric_type: :daily_tokens_parse_opus).value.to_i
+    assert_equal 3800,  CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_opus_batch).value.to_i
   end
 
   test 'update_database_metrics_only writes channel buckets via LlmUsageChannel' do
@@ -299,10 +318,10 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
       created_at: today.beginning_of_day)
     create_bedrock_query(input_tokens: 2000, output_tokens: 400,
       model_id: 'claude-opus-4-7-batch', source: 'ingestion_parse',
-      created_at: today.beginning_of_day)
+      user_query: 'bulk_parse: file.pdf', created_at: today.beginning_of_day)
     create_bedrock_query(input_tokens: 300, output_tokens: 60,
       model_id: 'global.anthropic.claude-opus-4-6-v1', source: 'ingestion_parse',
-      created_at: today.beginning_of_day)
+      user_query: '[parse] legacy.pdf', created_at: today.beginning_of_day)
     create_bedrock_query(input_tokens: 50, output_tokens: 0,
       model_id: 'amazon.titan-embed-text-v1', source: 'ingestion_embed',
       created_at: today.beginning_of_day)

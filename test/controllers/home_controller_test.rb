@@ -171,7 +171,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_match(/Parse sync \(Opus\)/,               response.body)
     assert_match(/Parse batch \(Sonnet\)/,            response.body)
     assert_match(/Parse batch \(Opus\)/,              response.body)
-    assert_match(/Embeddings \(Nova\)/,               response.body)
+    assert_match(/Embeddings \(Titan\)/,               response.body)
     assert_match(/Total hoy/,                         response.body)
     assert_match(/variar ±10%/,                       response.body)
     assert_no_match(/Parsing \(Opus, legacy\)/,       response.body)

@@ -76,9 +76,6 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
   # ── Setup / Teardown ──────────────────────────────────────────────────────────
 
   setup do
-    @orig_cost_v2      = ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"]
-    ENV.delete("CUSTOM_CHUNKING_COST_V2_ENABLED")
-
     @orig_upload_text  = S3DocumentsService.instance_method(:upload_text)
     @orig_sync         = BulkKbSyncService.instance_method(:sync!)
     @orig_client_new   = ClaudeBatchClient.method(:new)
@@ -103,11 +100,6 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     BulkKbSyncService.define_method(:sync!, @orig_sync)
     ClaudeBatchClient.singleton_class.remove_method(:new) rescue nil
     PollBulkBedrockIngestionJob.define_singleton_method(:set, @orig_poll_set)
-    if @orig_cost_v2
-      ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = @orig_cost_v2
-    else
-      ENV.delete("CUSTOM_CHUNKING_COST_V2_ENABLED")
-    end
   end
 
   # ── Helper ─────────────────────────────────────────────────────────────────────
@@ -162,8 +154,7 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     end
   end
 
-  test "cost_v2: photo → field_photo_v1 parsed; PDF pages merged → manual_batch_v1 parsed" do
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = "true"
+  test "photo → field_photo_v1 parsed; PDF pages merged → manual_batch_v1 parsed" do
     bulk, photo_asset, pdf_asset, pdf_sha_prefix = create_bulk_with_assets
 
     @fake_client.results = [
@@ -201,8 +192,7 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     bulk&.destroy
   end
 
-  test "cost_v2: TrackBedrockQueryJob emitted with -batch suffix for PDF pages" do
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"] = "true"
+  test "TrackBedrockQueryJob emitted with -batch suffix for PDF pages" do
     bulk, _photo_asset, pdf_asset, pdf_sha_prefix = create_bulk_with_assets
 
     # Only PDF pages — skip photo for this assertion
@@ -227,57 +217,6 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
            "Expected at least one TrackBedrockQueryJob with -batch model_id"
     assert tracking.any? { |a| a["user_query"]&.start_with?("bulk_batch:") },
            "Expected user_query to start with 'bulk_batch:'"
-  ensure
-    bulk&.bulk_upload_assets&.destroy_all
-    bulk&.destroy
-  end
-
-  test "legacy path (flag off): uses batch_v1 ingestion_path, no -batch suffix" do
-    bulk = BulkUpload.create!(
-      sha256: Digest::SHA256.hexdigest("legacy_#{SecureRandom.hex(8)}"),
-      original_filename: "legacy.zip",
-      status: "processing",
-      claude_batch_id: "msgbatch_legacy_001"
-    )
-    sha = Digest::SHA256.hexdigest("legacy_binary")
-    asset = BulkUploadAsset.create!(
-      bulk_upload:  bulk,
-      custom_id:    sha[0, 32],
-      sha256:       sha,
-      s3_key:       "bulk_uploads/doc.pdf",
-      filename:     "doc.pdf",
-      content_type: "application/pdf",
-      status:       "in_batch"
-    )
-
-    full_doc_json = JSON.generate({
-      "document_name" => "Legacy Doc",
-      "aliases" => [ "legacy" ],
-      "summary" => "A doc.",
-      "companion_offer" => "Ask.",
-      "chunks" => [ { "text" => "content", "page" => 1 } ]
-    })
-
-    @fake_client.results = [
-      FakeBatchResult.new(
-        custom_id: asset.custom_id,
-        result:    FakeResult.new(type: "succeeded",
-                                 message: make_message(full_doc_json, model: "claude-opus-4-7"))
-      )
-    ]
-
-    IngestBatchResultsJob.perform_now(bulk.id)
-
-    asset.reload
-    assert_equal "syncing",    asset.status
-    assert_equal "Legacy Doc", asset.canonical_name
-
-    tracking_model_ids = enqueued_jobs
-      .select { |j| j[:job] == TrackBedrockQueryJob }
-      .map { |j| j[:args].first&.dig("model_id") }
-
-    assert tracking_model_ids.none? { |m| m&.end_with?("-batch") },
-           "Legacy path must NOT append -batch to model_id"
   ensure
     bulk&.bulk_upload_assets&.destroy_all
     bulk&.destroy

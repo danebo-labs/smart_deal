@@ -34,11 +34,6 @@ class BulkCostV2RequestBuilder
         pdf_requests, page_ids = build_for_pdf(asset, binary)
         requests.concat(pdf_requests)
         meta[asset.id] = page_ids
-
-      else
-        # Fallback: whole-file Opus (safe default for unknown types)
-        requests << legacy_request(asset, binary)
-        meta[asset.id] = [ asset.custom_id ]
       end
     end
 
@@ -85,7 +80,9 @@ class BulkCostV2RequestBuilder
 
     filter_results = build_filter_results(pages, asset.filename, asset.office_origin)
     kept_pages     = apply_filters(pages, filter_results, asset.filename)
-    return [ [], [ asset.custom_id ] ] if kept_pages.empty?
+    # When all pages filtered → return empty page_ids (distinguishes from valid asset)
+    # BatchIngestionService will mark asset as failed rather than in_batch.
+    return [ [], [] ] if kept_pages.empty?
 
     requests = build_page_requests(kept_pages, asset)
     page_ids = kept_pages.map { |p| page_custom_id(asset.sha256, p[:number]) }
@@ -147,25 +144,6 @@ class BulkCostV2RequestBuilder
         }
       }
     end
-  end
-
-  def legacy_request(asset, binary)
-    {
-      custom_id: asset.custom_id,
-      params: {
-        model:      BatchChunkingPrompt::MODEL,
-        max_tokens: BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
-        system:     BatchChunkingPrompt::SYSTEM_BLOCKS,
-        messages: [ {
-          role:    "user",
-          content: BatchChunkingPrompt.user_content(
-            binary:       binary,
-            content_type: asset.content_type,
-            filename:     asset.filename
-          )
-        } ]
-      }
-    }
   end
 
   def page_custom_id(sha256, page_number)

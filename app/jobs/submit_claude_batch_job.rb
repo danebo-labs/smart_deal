@@ -8,7 +8,9 @@ class SubmitClaudeBatchJob < ApplicationJob
   def perform(bulk_upload_id)
     bulk_upload = BulkUpload.find(bulk_upload_id)
 
-    BatchIngestionService.new.submit!(bulk_upload)
+    batch = BatchIngestionService.new.submit!(bulk_upload)
+    return unless batch  # safety: no uploaded_s3 assets — nothing to poll
+
     PollClaudeBatchJob.set(wait: 30.seconds).perform_later(
       bulk_upload_id,
       started_at_iso: Time.current.iso8601

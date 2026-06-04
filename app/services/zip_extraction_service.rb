@@ -5,7 +5,8 @@ require 'digest'
 
 # Streams entries out of a ZIP file with safety guardrails.
 # Yields { filename:, binary:, content_type:, sha256: } for each allowed entry.
-# Raises ZipExtractionService::Error on policy violations.
+# Raises ZipExtractionService::Error on global policy violations (bomb, size).
+# Per-file MIME/Office failures are accumulated in skipped_entries instead of raising.
 class ZipExtractionService
   class Error < StandardError; end
 
@@ -17,10 +18,19 @@ class ZipExtractionService
 
   def initialize(zip_path)
     @zip_path = zip_path
+    @skipped  = []
+  end
+
+  # Entries skipped due to unsupported MIME or failed Office conversion.
+  # Each element: { filename:, binary:, reason:, sha256: }
+  # Only valid after each_entry has completed.
+  def skipped_entries
+    @skipped.freeze
   end
 
   # Yields each valid entry as a hash. Skips directories and hidden files.
-  # Raises Error for violations (bomb, oversized, bad MIME).
+  # Raises Error for global violations (bomb, oversized ZIP total).
+  # Per-file MIME/Office issues accumulate in skipped_entries.
   def each_entry
     total_bytes = 0
 
@@ -29,7 +39,7 @@ class ZipExtractionService
         next if entry.directory?
         next if File.basename(entry.name).start_with?('.')
 
-        compressed_size = entry.compressed_size
+        compressed_size   = entry.compressed_size
         uncompressed_size = entry.size
 
         if compressed_size > 0 && (uncompressed_size.to_f / compressed_size) > MAX_RATIO
@@ -56,21 +66,31 @@ class ZipExtractionService
             filename = "#{File.basename(filename, ext)}.pdf"
             mime     = "application/pdf"
           rescue OfficeToPdfConverter::Error => e
-            raise Error, "Office conversion failed for #{entry.name}: #{e.message}"
+            record_skip(
+              entry.name, binary,
+              "bulk_uploads.office_conversion_failed",
+              filename: entry.name, detail: e.message
+            )
+            next
           end
         else
           mime = detect_mime(binary, entry.name)
         end
 
         unless ALLOWED_MIME_TYPES.include?(mime)
-          raise Error, "Unsupported file type '#{mime}' for #{entry.name}. Allowed: #{ALLOWED_MIME_TYPES.join(', ')}"
+          record_skip(
+            entry.name, binary,
+            "bulk_uploads.unsupported_file_type",
+            mime: mime, filename: entry.name, allowed: ALLOWED_MIME_TYPES.join(", ")
+          )
+          next
         end
 
         yield({
-          filename:     filename,
-          binary:       binary,
-          content_type: mime,
-          sha256:       Digest::SHA256.hexdigest(binary),
+          filename:      filename,
+          binary:        binary,
+          content_type:  mime,
+          sha256:        Digest::SHA256.hexdigest(binary),
           office_origin: office_origin
         })
       end
@@ -78,6 +98,16 @@ class ZipExtractionService
   end
 
   private
+
+  def record_skip(entry_name, binary, reason_key, **reason_params)
+    @skipped << {
+      filename:      sanitize_filename(entry_name),
+      binary:        binary,
+      reason_key:    reason_key,
+      reason_params: reason_params,
+      sha256:        Digest::SHA256.hexdigest(binary)
+    }
+  end
 
   JPEG_MAGIC = "\xFF\xD8\xFF".b
   PNG_MAGIC  = "\x89PNG\r\n\x1A\n".b

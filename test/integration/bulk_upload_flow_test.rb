@@ -71,7 +71,14 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
       assets = bulk_upload.bulk_upload_assets.where(status: "uploaded_s3")
       batch  = OpenStruct.new(id: FAKE_BATCH_ID)
       bulk_upload.update!(claude_batch_id: batch.id)
-      assets.update_all(status: "in_batch")
+      assets.each do |asset|
+        page_id = "#{asset.sha256[0, 16]}_p1"
+        asset.update_columns(
+          batch_custom_ids: [ page_id ],
+          ingestion_path:   "manual_batch_v1",
+          status:           "in_batch"
+        )
+      end
       batch
     end
   end
@@ -129,7 +136,7 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
         status:         "uploaded_s3",
         s3_key:         "bulk_uploads/2026-05-07/photo.jpg"
       )
-      fake_batch.custom_id = asset.custom_id
+      fake_batch.custom_id = "#{asset.sha256[0, 16]}_p1"
 
       # SubmitClaudeBatchJob → stores batch id, transitions assets to in_batch
       SubmitClaudeBatchJob.perform_now(upload.id)

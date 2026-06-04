@@ -93,6 +93,12 @@ en:
     already_in_progress: "This ZIP is already being processed. Showing current progress."
     asset_content_dedup: "Already in KB"
     asset_content_dedup_title: "Same file was already indexed — reused without calling Claude again."
+    no_uploadable_files: "No files in the ZIP could be processed."
+    empty_zip: "The ZIP contains no valid files."
+    partial_complete: "%{complete} processed, %{failed} skipped."
+    unsupported_file_type: "Unsupported file type '%{mime}' for %{filename}. Allowed: %{allowed}"
+    office_conversion_failed: "Office conversion failed for %{filename}: %{detail}"
+    all_pages_filtered: "All pages were filtered out for %{filename}. Re-upload individually if it has technical content."
   home:
     lightbox:
       close:      "Close"

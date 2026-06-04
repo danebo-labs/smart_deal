@@ -2,13 +2,10 @@
 
 # Streams JSONL results from Anthropic for a completed bulk batch, then:
 #
-# cost_v2 path (CUSTOM_CHUNKING_COST_V2_ENABLED=true):
 #   - Images  (field_photo_v1): FieldPhotoResultsParser → BatchResultsParserService.
 #   - PDFs    (manual_batch_v1): accumulate page results → ChunkMergerService → parser.
 #   - Tokens  accumulated (+=) across all pages per asset; model_id gets "-batch" suffix.
 #   - user_query: "bulk_parse: <filename>" (images) | "bulk_batch: <filename> pN/M" (pages).
-#
-# Legacy path (flag off): whole-file Opus result → BatchResultsParserService (batch_v1).
 #
 # After all results → BulkKbSyncService#sync!, bedrock_ingestion_job_id, → PollBulkBedrock.
 class IngestBatchResultsJob < ApplicationJob
@@ -47,14 +44,14 @@ class IngestBatchResultsJob < ApplicationJob
       if result.result.type.to_s == "succeeded"
         message = result.result.message
 
-        if cost_v2_enabled? && page_id?(result.custom_id)
+        if page_id?(result.custom_id)
           # PDF page — buffer for ChunkMerger
           page_num    = PAGE_ID_REGEX.match(result.custom_id)[1].to_i
           text        = extract_text(message)
           stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s : nil
           page_buffers[asset.id] << { page_number: page_num, text: text, model: message.model.to_s, usage: message.usage, stop_reason: stop_reason }
 
-        elsif cost_v2_enabled? && asset.ingestion_path == "field_photo_v1"
+        elsif asset.ingestion_path == "field_photo_v1"
           # Photo — parse with FieldPhotoResultsParser
           text        = extract_text(message)
           raw_json    = FieldPhotoResultsParser.to_envelope(text)
@@ -69,15 +66,11 @@ class IngestBatchResultsJob < ApplicationJob
             ingestion_path: ingestion_p)
 
         else
-          # Legacy whole-file or unknown — standard parser
-          begin
-            parser.call(asset: asset, result: result, ingestion_path: asset.ingestion_path.presence || "batch_v1")
-          rescue BatchResultsParserService::ParseError => e
-            Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: parse failed #{asset.filename} — #{e.message}")
-          end
-          track_asset_usage(asset, message,
-            user_query:     "batch_parse: #{asset.filename}",
-            ingestion_path: asset.ingestion_path.presence || "batch_v1")
+          # Defensive: unknown custom_id type — log and skip rather than silently swallow
+          Rails.logger.warn(
+            "IngestBatchResultsJob[#{bulk_upload_id}]: unexpected result type for #{asset.filename} " \
+            "(custom_id=#{result.custom_id}, ingestion_path=#{asset.ingestion_path.inspect}) — skipping"
+          )
         end
 
       else
@@ -94,7 +87,7 @@ class IngestBatchResultsJob < ApplicationJob
       next unless asset
 
       page_results.sort_by! { |r| r[:page_number] }
-      page_results = retry_truncated_pages!(asset, page_results) if cost_v2_enabled?
+      page_results = retry_truncated_pages!(asset, page_results)
       total_kept = page_results.size
 
       begin
@@ -157,10 +150,6 @@ class IngestBatchResultsJob < ApplicationJob
 
   private
 
-  def cost_v2_enabled?
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"].to_s == "true"
-  end
-
   def page_id?(custom_id)
     PAGE_ID_REGEX.match?(custom_id)
   end
@@ -189,7 +178,8 @@ class IngestBatchResultsJob < ApplicationJob
       claude_output_tokens: asset.claude_output_tokens.to_i + output_tokens
     )
 
-    model_id = cost_v2_enabled? ? "#{message.model}-batch" : message.model
+    # Always -batch: results come from Anthropic Batch API (batch pricing), regardless of cost_v2 routing.
+    model_id = "#{message.model}-batch"
 
     TrackBedrockQueryJob.perform_later(
       model_id:              model_id,

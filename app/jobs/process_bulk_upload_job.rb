@@ -6,11 +6,28 @@ class ProcessBulkUploadJob < ApplicationJob
 
   # @param bulk_upload_id [Integer]
   # @param zip_path       [String] absolute path to the ZIP file on disk
-  def perform(bulk_upload_id, zip_path)
+  # @param upload_locale  [String, nil] UI locale from upload request (session). Not named
+  #                       +locale+ — ActiveJob reserves that for job-level I18n.
+  def perform(bulk_upload_id, zip_path, upload_locale = nil)
+    I18n.with_locale(normalize_locale(upload_locale)) do
+      perform_with_locale(bulk_upload_id, zip_path)
+    end
+  end
+
+  private
+
+  def perform_with_locale(bulk_upload_id, zip_path)
     bulk_upload = BulkUpload.find(bulk_upload_id)
 
     BatchIngestionService.new.process!(bulk_upload, zip_path)
-    SubmitClaudeBatchJob.perform_later(bulk_upload_id)
+
+    if bulk_upload.bulk_upload_assets.exists?(status: "uploaded_s3")
+      SubmitClaudeBatchJob.perform_later(bulk_upload_id)
+    elsif bulk_upload.bulk_upload_assets.exists?(status: "failed")
+      bulk_upload.update!(status: "failed", error_message: I18n.t("bulk_uploads.no_uploadable_files"))
+    else
+      bulk_upload.update!(status: "failed", error_message: I18n.t("bulk_uploads.empty_zip"))
+    end
   rescue ZipExtractionService::Error => e
     mark_failed(bulk_upload_id, e.message)
     Rails.logger.error("ProcessBulkUploadJob[#{bulk_upload_id}] ZIP error: #{e.message}")
@@ -20,7 +37,10 @@ class ProcessBulkUploadJob < ApplicationJob
     raise
   end
 
-  private
+  def normalize_locale(upload_locale)
+    sym = upload_locale.to_s.presence&.to_sym
+    LocaleSwitchable::ALLOWED_LOCALES.include?(sym) ? sym : I18n.default_locale
+  end
 
   def mark_failed(bulk_upload_id, message)
     BulkUpload.where(id: bulk_upload_id).update_all(status: "failed", error_message: message)

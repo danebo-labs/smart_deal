@@ -172,30 +172,65 @@ class BulkCostV2RequestBuilderTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
   end
 
-  # ── Legacy path (flag off) ────────────────────────────────────────────────────
+  test "1-page raster PDF (SOPREL case) produces 1 request with force_opus" do
+    orig_count  = PdfPageSplitterService.instance_method(:page_count)
+    orig_each   = PdfPageSplitterService.instance_method(:each_page)
+    orig_filter = PageRelevanceFilter.method(:filter_pages)
 
-  test "legacy build_requests uses Opus whole-file model" do
-    asset = fake_image_asset
+    PdfPageSplitterService.define_method(:page_count) { 1 }
+    PdfPageSplitterService.define_method(:each_page) do |&blk|
+      blk.call(1, PDF_BINARY)
+    end
 
-    # Access private method via service instance to confirm shape
-    service = BatchIngestionService.new
-    service.instance_variable_set(:@s3, OpenStruct.new(get_object: OpenStruct.new(body: StringIO.new(JPEG_BINARY))))
-    service.instance_variable_set(:@bucket, "bucket")
+    # Simulate PageRelevanceFilter detecting scanned_image for 1-page PDF
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      { 1 => { keep: true, reason: :scanned_image, source: :heuristic, force_opus: true } }
+    end
 
-    orig_download = service.method(:download_binary) rescue nil
-    service.define_singleton_method(:download_binary) { |_key| JPEG_BINARY }
+    builder = BulkCostV2RequestBuilder.new
+    stub_download(builder, PDF_BINARY)
+    asset = fake_pdf_asset
+    asset.filename = "Esquema SOPREL.pdf"
+    requests, meta = builder.build_all!([ asset ])
 
-    reqs = service.send(:build_requests, [
-      BulkUploadAsset.new(
-        custom_id:    "test",
-        sha256:       "a" * 64,
-        s3_key:       "key",
-        filename:     "f.jpg",
-        content_type: "image/jpeg",
-        status:       "uploaded_s3"
-      )
-    ])
+    assert_equal 1, requests.size
+    assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, requests.first[:params][:model], "force_opus → MODEL_MULTIMODAL"
+    sha_prefix = asset.sha256[0, 16]
+    assert_equal [ "#{sha_prefix}_p1" ], meta[asset.id]
+  ensure
+    PdfPageSplitterService.define_method(:page_count, orig_count)
+    PdfPageSplitterService.define_method(:each_page,  orig_each)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
 
-    assert_equal BatchChunkingPrompt::MODEL, reqs.first[:params][:model]
+  test "PDF where all pages filtered returns empty requests and empty page_ids" do
+    orig_count  = PdfPageSplitterService.instance_method(:page_count)
+    orig_each   = PdfPageSplitterService.instance_method(:each_page)
+    orig_filter = PageRelevanceFilter.method(:filter_pages)
+
+    PdfPageSplitterService.define_method(:page_count) { 2 }
+    PdfPageSplitterService.define_method(:each_page) do |&blk|
+      [ 1, 2 ].each { |n| blk.call(n, PDF_BINARY) }
+    end
+
+    # All pages filtered out
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      {
+        1 => { keep: false, reason: :cover, source: :heuristic },
+        2 => { keep: false, reason: :blank, source: :heuristic }
+      }
+    end
+
+    builder = BulkCostV2RequestBuilder.new
+    stub_download(builder, PDF_BINARY)
+    asset           = fake_pdf_asset
+    requests, meta  = builder.build_all!([ asset ])
+
+    assert_equal [], requests, "no requests when all pages filtered"
+    assert_equal [], meta[asset.id], "empty page_ids signals 'all filtered' to BatchIngestionService"
+  ensure
+    PdfPageSplitterService.define_method(:page_count, orig_count)
+    PdfPageSplitterService.define_method(:each_page,  orig_each)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
   end
 end

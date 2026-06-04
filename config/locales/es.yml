@@ -67,6 +67,12 @@ es:
     already_in_progress: "Este ZIP ya está en curso. Mostrando el progreso actual."
     asset_content_dedup: "Ya en KB"
     asset_content_dedup_title: "Mismo archivo ya indexado — se reutilizó sin volver a llamar a Claude."
+    no_uploadable_files: "Ningún archivo del ZIP pudo procesarse."
+    empty_zip: "El ZIP no contiene archivos válidos."
+    partial_complete: "%{complete} procesados, %{failed} omitidos."
+    unsupported_file_type: "Tipo de archivo no compatible «%{mime}» en %{filename}. Permitidos: %{allowed}"
+    office_conversion_failed: "No se pudo convertir Office %{filename}: %{detail}"
+    all_pages_filtered: "Todas las páginas se filtraron para %{filename}. Vuelve a subir individualmente si tiene contenido técnico."
   errors:
     messages:
       taken: "ya está en uso"

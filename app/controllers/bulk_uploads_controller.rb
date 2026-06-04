@@ -46,7 +46,7 @@ class BulkUploadsController < ApplicationController
     bulk_upload.save!
 
     zip_path = persist_zip(zip_param.tempfile.path, sha256)
-    ProcessBulkUploadJob.perform_later(bulk_upload.id, zip_path)
+    ProcessBulkUploadJob.perform_later(bulk_upload.id, zip_path, I18n.locale.to_s)
 
     redirect_to bulk_upload_path(bulk_upload)
   end
@@ -63,7 +63,7 @@ class BulkUploadsController < ApplicationController
       bedrock_ingestion_job_id: nil,
       asset_count:             0
     )
-    ProcessBulkUploadJob.perform_later(bulk_upload.id, zip_path)
+    ProcessBulkUploadJob.perform_later(bulk_upload.id, zip_path, I18n.locale.to_s)
   end
 
   def persist_zip(tempfile_path, sha256)

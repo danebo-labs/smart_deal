@@ -102,4 +102,89 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
     assert_not_nil asset
     assert_equal "uploaded_s3", asset.status
   end
+
+  # ── Per-file skip via ZipExtractionService#skipped_entries ───────────────────
+
+  test "process! creates failed asset for skipped MIME entry, valid entry stays uploaded_s3" do
+    avif_binary = ("AVIF" + ("x" * 100)).b
+    zip_path    = build_zip(entries: {
+      "photo.jpg"  => JPEG_BINARY,
+      "photo.avif" => avif_binary
+    })
+
+    service = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    service.process!(@bulk_upload, zip_path)
+
+    assets = BulkUploadAsset.where(bulk_upload: @bulk_upload).order(:filename)
+    assert_equal 2, assets.size
+
+    valid   = assets.find { |a| a.filename == "photo.jpg" }
+    skipped = assets.find { |a| a.filename == "photo.avif" }
+
+    assert_not_nil valid
+    assert_equal "uploaded_s3", valid.status
+    assert_nil valid.error_message
+
+    assert_not_nil skipped
+    assert_equal "failed", skipped.status
+    assert_match(/Tipo de archivo no compatible/, BulkUploadAssetErrorMessage.display(skipped.error_message))
+    assert_nil skipped.s3_key
+  end
+
+  test "process! creates failed asset without s3_key for skipped entry" do
+    avif_binary = ("AVIF" + ("x" * 100)).b
+    zip_path    = build_zip(entries: { "bad.avif" => avif_binary })
+
+    service = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    service.process!(@bulk_upload, zip_path)
+
+    asset = BulkUploadAsset.find_by(bulk_upload: @bulk_upload)
+    assert_not_nil asset
+    assert_equal "failed",  asset.status
+    assert_nil asset.s3_key
+    assert_match(/Tipo de archivo no compatible/, BulkUploadAssetErrorMessage.display(asset.error_message))
+  end
+
+  test "submit! returns nil when no uploaded_s3 assets exist" do
+    service = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    result = service.submit!(@bulk_upload)
+    assert_nil result
+  end
+
+  test "persist_batch_custom_ids! marks asset failed when page_ids is empty (all pages filtered)" do
+    asset = BulkUploadAsset.create!(
+      bulk_upload:   @bulk_upload,
+      custom_id:     "abc123",
+      sha256:        "a" * 64,
+      s3_key:        "bulk_uploads/filtered.pdf",
+      filename:      "filtered.pdf",
+      content_type:  "application/pdf",
+      status:        "uploaded_s3"
+    )
+
+    service = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    # Simulate BulkCostV2RequestBuilder returning empty page_ids for this asset
+    meta = { asset.id => [] }
+
+    service.send(:persist_batch_custom_ids!, [ asset ], meta)
+
+    asset.reload
+    assert_equal "failed", asset.status
+    assert_match(/Todas las páginas se filtraron/, BulkUploadAssetErrorMessage.display(asset.error_message))
+    assert_nil asset.ingestion_path
+  ensure
+    asset&.destroy
+  end
 end

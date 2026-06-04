@@ -112,19 +112,21 @@ class ZipExtractionServiceTest < ActiveSupport::TestCase
 
     path = build_zip(entries: { 'manual.docx' => docx_binary })
     results = []
-    ZipExtractionService.new(path).each_entry { |e| results << e }
+    svc = ZipExtractionService.new(path)
+    svc.each_entry { |e| results << e }
 
     assert_equal 1, results.size
     assert_equal 'application/pdf', results.first[:content_type]
     assert_equal 'manual.pdf',      results.first[:filename]
     assert_equal pdf_result,        results.first[:binary]
     assert_equal true,              results.first[:office_origin]
+    assert_empty svc.skipped_entries
   ensure
     OfficeToPdfConverter.define_singleton_method(:convert, orig_convert) if defined?(orig_convert)
   end
 
-  test 'raises Error when OfficeToPdfConverter fails for Office entry' do
-    docx_binary = ("PK\x03\x04" + ("x" * 100)).b
+  test 'skips Office entry when OfficeToPdfConverter fails (per-file, no global raise)' do
+    docx_binary  = ("PK\x03\x04" + ("x" * 100)).b
     orig_convert = OfficeToPdfConverter.method(:convert)
 
     OfficeToPdfConverter.define_singleton_method(:convert) do |_binary, extension:|
@@ -132,33 +134,88 @@ class ZipExtractionServiceTest < ActiveSupport::TestCase
     end
 
     path = build_zip(entries: { 'doc.docx' => docx_binary })
-    err = assert_raises(ZipExtractionService::Error) do
-      ZipExtractionService.new(path).each_entry { }
+    results = []
+    svc = ZipExtractionService.new(path)
+    svc.each_entry { |e| results << e }
+
+    assert_empty results
+    assert_equal 1, svc.skipped_entries.size
+    assert_equal 'doc.docx', svc.skipped_entries.first[:filename]
+    assert_equal "bulk_uploads.office_conversion_failed", svc.skipped_entries.first[:reason_key]
+  ensure
+    OfficeToPdfConverter.define_singleton_method(:convert, orig_convert) if defined?(orig_convert)
+  end
+
+  test 'skips Office entry alongside a valid PDF' do
+    docx_binary  = ("PK\x03\x04" + ("x" * 100)).b
+    orig_convert = OfficeToPdfConverter.method(:convert)
+
+    OfficeToPdfConverter.define_singleton_method(:convert) do |_binary, extension:|
+      raise OfficeToPdfConverter::Error, "LibreOffice not found"
     end
-    assert_match(/Office conversion failed/, err.message)
+
+    path = build_zip(entries: { 'bad.docx' => docx_binary, 'good.pdf' => PDF_BINARY })
+    results = []
+    svc = ZipExtractionService.new(path)
+    svc.each_entry { |e| results << e }
+
+    assert_equal 1, results.size
+    assert_equal 'good.pdf', results.first[:filename]
+    assert_equal 1, svc.skipped_entries.size
+    assert_equal 'bad.docx', svc.skipped_entries.first[:filename]
   ensure
     OfficeToPdfConverter.define_singleton_method(:convert, orig_convert) if defined?(orig_convert)
   end
 
   # ============================================
-  # MIME allowlist enforcement
+  # MIME allowlist enforcement — per-file skip (no global raise)
   # ============================================
 
-  test 'raises Error for disallowed MIME type' do
+  test 'skips entry with disallowed MIME type and accumulates in skipped_entries' do
     path = build_zip(entries: { 'readme.bin' => ("UNKNOWN" + ("x" * 100)).b })
 
-    err = assert_raises(ZipExtractionService::Error) do
-      ZipExtractionService.new(path).each_entry { }
-    end
-    assert_match(/Unsupported file type/, err.message)
+    results = []
+    svc = ZipExtractionService.new(path)
+    svc.each_entry { |e| results << e }
+
+    assert_empty results
+    assert_equal 1, svc.skipped_entries.size
+    assert_equal "bulk_uploads.unsupported_file_type", svc.skipped_entries.first[:reason_key]
+    assert_equal 'readme.bin', svc.skipped_entries.first[:filename]
   end
 
-  test 'raises Error for plain text files' do
+  test 'skips plain text file and accumulates in skipped_entries' do
     path = build_zip(entries: { 'readme.txt' => 'hello world' })
 
-    assert_raises(ZipExtractionService::Error) do
-      ZipExtractionService.new(path).each_entry { }
-    end
+    results = []
+    svc = ZipExtractionService.new(path)
+    svc.each_entry { |e| results << e }
+
+    assert_empty results
+    assert_equal 1, svc.skipped_entries.size
+    assert_equal 'readme.txt', svc.skipped_entries.first[:filename]
+  end
+
+  test 'yields valid entries and skips invalid in mixed ZIP' do
+    avif_binary = ("AVIF" + ("x" * 100)).b
+    path = build_zip(entries: {
+      'photo.jpg'  => JPEG_BINARY,
+      'photo.avif' => avif_binary,
+      'manual.pdf' => PDF_BINARY
+    })
+
+    results = []
+    svc = ZipExtractionService.new(path)
+    svc.each_entry { |e| results << e }
+
+    assert_equal 2, results.size
+    filenames = results.pluck(:filename)
+    assert_includes filenames, 'photo.jpg'
+    assert_includes filenames, 'manual.pdf'
+
+    assert_equal 1, svc.skipped_entries.size
+    assert_equal 'photo.avif', svc.skipped_entries.first[:filename]
+    assert_equal "bulk_uploads.unsupported_file_type", svc.skipped_entries.first[:reason_key]
   end
 
   # ============================================

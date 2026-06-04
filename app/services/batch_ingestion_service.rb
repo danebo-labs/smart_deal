@@ -9,8 +9,8 @@ require "aws-sdk-s3"
 #   Called by ProcessBulkUploadJob.
 #
 # Phase 2 — submit!(bulk_upload):
-#   Download assets from S3 → build Anthropic batch requests → submit batch →
-#   persist claude_batch_id → mark assets in_batch.
+#   Download assets from S3 → build Anthropic batch requests (cost_v2 path) →
+#   submit batch → persist claude_batch_id → mark assets in_batch.
 #   Called by SubmitClaudeBatchJob.
 class BatchIngestionService
   include AwsClientInitializer
@@ -23,12 +23,15 @@ class BatchIngestionService
   end
 
   # Phase 1: extract ZIP, upload originals to S3, create asset rows.
+  # Per-file MIME/Office failures create failed asset rows via record_skipped_asset!.
+  # Global ZIP errors (bomb, size) propagate as ZipExtractionService::Error.
   # @param bulk_upload [BulkUpload]
   # @param zip_path    [String] path to the ZIP file on disk
   def process!(bulk_upload, zip_path)
     date_prefix = Date.current.iso8601
+    extractor   = ZipExtractionService.new(zip_path)
 
-    ZipExtractionService.new(zip_path).each_entry do |entry|
+    extractor.each_entry do |entry|
       binary = compress_if_image(entry[:binary], entry[:content_type])
       key    = "bulk_uploads/#{date_prefix}/#{entry[:filename]}"
       upload_binary(key, binary, entry[:content_type])
@@ -60,52 +63,76 @@ class BatchIngestionService
       end
 
       asset.assign_attributes(
-        bulk_upload:  bulk_upload,
-        sha256:       entry[:sha256],
-        s3_key:       key,
-        filename:     entry[:filename],
-        content_type: entry[:content_type],
+        bulk_upload:   bulk_upload,
+        sha256:        entry[:sha256],
+        s3_key:        key,
+        filename:      entry[:filename],
+        content_type:  entry[:content_type],
         office_origin: entry[:office_origin] || false,
-        status:       "uploaded_s3"
+        status:        "uploaded_s3"
       )
       created = !asset.persisted?
       asset.save!
       asset.broadcast_append! if created
     end
 
+    extractor.skipped_entries.each { |skip| record_skipped_asset!(bulk_upload, skip) }
+
     bulk_upload.update!(status: "processing")
   end
 
   # Phase 2: build Anthropic batch requests from uploaded assets and submit.
+  # Returns nil if there are no uploaded_s3 assets (all entries were skipped/failed).
   # @param bulk_upload [BulkUpload]
-  # @return [Anthropic::Models::Messages::MessageBatch]
+  # @return [Anthropic::Models::Messages::MessageBatch, nil]
   def submit!(bulk_upload)
     assets = bulk_upload.bulk_upload_assets.where(status: "uploaded_s3")
+    return nil if assets.none?
 
-    if cost_v2_enabled?
-      requests, meta = BulkCostV2RequestBuilder.new.build_all!(assets)
-      batch = @batch_client.submit_batch(requests: requests)
-      bulk_upload.update!(claude_batch_id: batch.id)
-      persist_batch_custom_ids!(assets, meta)
-    else
-      requests = build_requests(assets)
-      batch    = @batch_client.submit_batch(requests: requests)
-      bulk_upload.update!(claude_batch_id: batch.id)
-      assets.update_all(status: "in_batch")
-    end
-
+    requests, meta = BulkCostV2RequestBuilder.new.build_all!(assets)
+    batch = @batch_client.submit_batch(requests: requests)
+    bulk_upload.update!(claude_batch_id: batch.id)
+    persist_batch_custom_ids!(assets, meta)
     batch
   end
 
   private
 
-  def cost_v2_enabled?
-    ENV["CUSTOM_CHUNKING_COST_V2_ENABLED"].to_s == "true"
+  def record_skipped_asset!(bulk_upload, skip)
+    asset = BulkUploadAsset.find_or_initialize_by(
+      custom_id: BulkUploadAsset.custom_id_for(skip[:binary])
+    )
+    asset.assign_attributes(
+      bulk_upload:   bulk_upload,
+      sha256:        skip[:sha256],
+      filename:      skip[:filename],
+      error_message: BulkUploadAssetErrorMessage.encode(skip[:reason_key], skip[:reason_params]),
+      status:        "failed"
+    )
+    created = !asset.persisted?
+    asset.save!
+    asset.broadcast_append! if created
+    asset.broadcast_replace! unless created
+    Rails.logger.info(
+      "BatchIngestionService: skipped #{skip[:filename]} — #{skip[:reason_key]} #{skip[:reason_params]}"
+    )
   end
 
   def persist_batch_custom_ids!(assets, meta)
     assets.each do |asset|
       page_ids = Array(meta[asset.id])
+
+      # All pages filtered out → mark failed, don't send to in_batch
+      if page_ids.empty?
+        asset.update_columns(
+          status:        "failed",
+          error_message: BulkUploadAssetErrorMessage.encode("bulk_uploads.all_pages_filtered", filename: asset.filename)
+        )
+        asset.broadcast_replace!
+        Rails.logger.warn("BatchIngestionService: all pages filtered for #{asset.filename}")
+        next
+      end
+
       asset.update_columns(
         batch_custom_ids: page_ids,
         ingestion_path:   detect_ingestion_path(asset, page_ids),
@@ -122,30 +149,6 @@ class BatchIngestionService
       "manual_batch_v1"
     else
       "batch_v1"
-    end
-  end
-
-  def build_requests(assets)
-    assets.map do |asset|
-      binary = download_binary(asset.s3_key)
-      {
-        custom_id: asset.custom_id,
-        params: {
-          model:      BatchChunkingPrompt::MODEL,
-          max_tokens: BatchChunkingPrompt::MAX_TOKENS,
-          system:     BatchChunkingPrompt::SYSTEM_BLOCKS,
-          messages: [
-            {
-              role:    "user",
-              content: BatchChunkingPrompt.user_content(
-                binary:       binary,
-                content_type: asset.content_type,
-                filename:     asset.filename
-              )
-            }
-          ]
-        }
-      }
     end
   end
 

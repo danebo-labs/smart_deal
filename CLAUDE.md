@@ -60,39 +60,29 @@ RAG query cost optimization (2026-05-22)
 - **RULE 8 compacted** in generation.txt: removed duplicate NEVER clauses + verbose CRITICAL block (~200 tokens/query saved).
 - **`SessionContextBuilder::MAX_CONTEXT_CHARS = 2000`**: hard budget cap preventing runaway entity lists from blowing input cost.
 
-Web upload ingestion (custom chunking path — **`CUSTOM_CHUNKING_WEB_ENABLED`**)
-- ENV `CUSTOM_CHUNKING_WEB_ENABLED=true` activates the optimized web path in
-  `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments`.
-- Default: **false** (legacy OWRPGSX6XK data source with Bedrock FM-parsing).
-- When enabled (web_v1 baseline): `CustomChunkingPipeline` → `SingleFileChunkingService` →
-  `FileMultimodalRouter` → `ClaudeChunkingClient` (Anthropic Messages API, sync) →
-  `BatchResultsParserService` (ingestion_path="web_v1") → `BulkKbSyncService` (BEDROCK_BULK_DATA_SOURCE_ID, chunking=NONE).
-- **Cost v2 (2026-05-21 benchmark): add `CUSTOM_CHUNKING_COST_V2_ENABLED=true`**
-  - **Images (field photos):** `FileMultimodalRouter` `:image` → **Sonnet** (not Opus). `FieldPhotoDensityGate`
-    determines `:sonnet` vs `:opus` (heuristic + opt-in Haiku gate). Sonnet path: `FieldPhotoPrompt::SYSTEM_BLOCKS`
-    + `FieldPhotoResultsParser` → 1 lightweight chunk (ingestion_path="field_photo_v1"). Opus path: monolithic fallback.
-  - **Manual PDFs (default async):** `SubmitManualBatchJob` → `ManualBatchIngestionService` →
+Web upload ingestion (single path — no feature flags)
+- `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments` →
+  `CustomChunkingPipeline` (the only path; no legacy OWRPGSX6XK fallback).
+- **Per-file routing in `CustomChunkingPipeline`:**
+  - **Images:** `SingleFileChunkingService` sync → `FieldPhotoDensityGate` (size ≥1.5 MB → Opus, else Sonnet;
+    zero LLM calls) → `FieldPhotoPrompt` → `FieldPhotoResultsParser` → ingestion_path="field_photo_v1".
+  - **Office (.docx/.pptx/…):** always sync → `SingleFileChunkingService#handle_office` (LibreOffice converts to PDF).
+  - **PDF urgent** (query in same turn, `urgent: true`): sync via `SingleFileChunkingService`.
+  - **PDF short** (page_count ≤ 2): sync via `SingleFileChunkingService`.
+  - **PDF long** (page_count > 2, non-urgent): `SubmitManualBatchJob` → `ManualBatchIngestionService` →
     Anthropic Batch per kept page (Sonnet; Opus for `force_opus` scanned pages) →
     `IngestManualBatchResultsJob` → `ChunkMergerService` → ingestion_path="manual_batch_v1".
-  - **Manual PDFs (sync fallback):** triggered when query present OR `MANUAL_FORCE_SYNC=true` —
-    same filter + Sonnet logic via `SingleFileChunkingService` (existing sync path, Sonnet default).
   - **SHA dedup:** `ContentDedupService.find_completed(sha256:)` skips parse when binary already indexed.
-  - **Cost tracking:** `field_photo_v1` → `-direct` suffix; `manual_batch_v1` → batch pricing
-    `user_query: "web_batch: <filename> p<N>/<M>"`.
-  - **Full ADR + cost matrix:** `docs/INGESTION_COST_V2.md`
-  - **Routing reference (file type, page filter, LLM matrix):** `docs/INGESTION_ROUTING.md`
-- PDF pages filtered by `PageRelevanceFilter.filter_pages` — Haiku `call_batch` for all multi-page PDFs (native or Office), per-page heuristic + Haiku gate for single-page. Unified routing eliminates `office_origin` condition across all 3 consumers (`SingleFileChunkingService`, `ManualBatchIngestionService`, `BulkCostV2RequestBuilder`).
+- PDF pages filtered by `PageRelevanceFilter.filter_pages` — Haiku `call_batch` for all multi-page PDFs (native or Office), per-page heuristic for single-page.
 - Conservative downgrade: pages with text_chars>500 & image_ratio<0.20 → Sonnet (not Opus).
 - Scanned images (text_layer<100, image_ratio>0.7): kept, forced to Opus.
 - Parallel page calls capped at `MAX_PARALLEL_PAGES=8` (wave processing, sync path).
-- Fallback on any error: `KbSyncService` (OWRPGSX6XK legacy). User never loses the upload.
-- Cost tracking: `TrackBedrockQueryJob` with `model_id` suffix `-direct` (sync direct-API rates).
-  `user_query: "web_parse: <filename>"` or `"web_parse: <filename> p<N>/<M>"` for pages.
-- Office documents (.docx, .xlsx, etc.) converted to PDF via `OfficeToPdfConverter` (LibreOffice headless).
-- Alias fallback: `LambdaParityAliasFallback` fires when LLM returns empty aliases (Lambda generate_aliases port).
+- On error: propagates to job → `KbSyncBroadcaster.failed`; Solid Queue retries. No OWRPGSX6XK gasto.
+- Cost tracking: `TrackBedrockQueryJob` with `model_id` suffix `-direct` (sync) or `-batch` (Batch API).
+  `user_query: "web_parse: <filename>"` or `"web_batch: <filename> p<N>/<M>"` for pages.
+- Office: `OfficeToPdfConverter` (LibreOffice headless). Alias fallback: `LambdaParityAliasFallback`.
 - No new DB columns: ChunkAsset is a plain Struct (not AR). `ingestion_path="web_v1"` in sidecar metadata.
-- Rollout: deploy with flag OFF → smoke-test staging with flag ON → `CUSTOM_CHUNKING_WEB_ENABLED=true` in prod.
-- TODO multi-tenant Stage 1: pass tenant from job.arguments into SingleFileChunkingService.
+- **Full ADR + cost matrix:** `docs/INGESTION_COST_V2.md`. **Routing reference:** `docs/INGESTION_ROUTING.md`.
 - TODO multi-tenant Stage 1: pass tenant from job.arguments into SingleFileChunkingService.
 
 Bedrock / RAG

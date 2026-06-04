@@ -13,23 +13,7 @@ How the app decides **what to parse**, **which pages to keep**, and **which Clau
 | **Chat attachment** | Home RAG → `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments` | `default` | Sync Messages (default) or Anthropic Batch (cost v2 manuals) |
 | **Bulk ZIP** | `/bulk_uploads` → `ProcessBulkUploadJob` → … → `SubmitClaudeBatchJob` | `bulk_ingestion` | Anthropic Message Batches (always async) |
 
-Both paths share the same **classification**, **page filter**, and **model routing** services when custom chunking / cost v2 flags are on. Without flags, chat uploads use legacy Bedrock FM parse (`BEDROCK_DATA_SOURCE_ID` / `OWRPGSX6XK`); bulk ZIP uses whole-file Opus batch requests.
-
----
-
-## Feature flags (summary)
-
-| Flag | Default | Effect |
-|------|---------|--------|
-| `CUSTOM_CHUNKING_WEB_ENABLED` | off | Chat uploads → direct Claude parse + `BEDROCK_BULK_DATA_SOURCE_ID` (chunking NONE) |
-| `CUSTOM_CHUNKING_COST_V2_ENABLED` | off | Sonnet default for photos; manuals → per-page Batch; unified `PageRelevanceFilter.filter_pages`; SHA dedup |
-| `MANUAL_FORCE_SYNC` | off | Force sync parse for all manual PDFs/Office (ops override) |
-| `FIELD_PHOTO_HAIKU_GATE_ENABLED` | off | Optional Haiku pre-gate on borderline field photos |
-| `CUSTOM_CHUNKING_NO_FALLBACK` | off | Dev only — no legacy OWRPGSX6XK fallback on chat errors |
-
-Bulk ZIP does **not** require `CUSTOM_CHUNKING_WEB_ENABLED`. `CUSTOM_CHUNKING_COST_V2_ENABLED` applies to **both** chat and bulk when set.
-
-Full rollout: [INGESTION_COST_V2.md §6](INGESTION_COST_V2.md#6-flags-y-rollout).
+Both paths share the same **classification**, **page filter**, and **model routing** services. No feature flags gate these paths — `CustomChunkingPipeline` and `BulkCostV2RequestBuilder` are the only active code paths.
 
 ---
 
@@ -168,12 +152,11 @@ Models (`BatchChunkingPrompt`):
 
 | File type | Filter | Parse model | Prompt | API mode (chat) | API mode (bulk) |
 |-----------|--------|-------------|--------|-----------------|-----------------|
-| **Field photo** | `FieldPhotoDensityGate` (size ≥1.5 MB → Opus; optional Haiku gate) | Sonnet (default) or Opus | `FieldPhotoPrompt` (Sonnet) / `BatchChunkingPrompt` (Opus) | Sync | Batch |
-| **Text file** | — | Sonnet | `BatchChunkingPrompt` | Sync | Batch (legacy whole-file) |
-| **PDF 1 page** | Per-page filter if routed through mixed path; else whole doc | Sonnet | `BatchChunkingPrompt` | Sync | Batch per kept page (v2) |
-| **PDF ≥2 pages** | `filter_pages` → Haiku batch | Sonnet per kept page; Opus if `force_opus` | `BatchChunkingPrompt` | Sync (v1) or Batch async (v2 default) | Batch per kept page (v2) |
-| **Office** | Convert → same as PDF | Same as PDF | Same | Sync or Batch | Batch (after convert in ZIP extract) |
-| **Legacy (flags off)** | None | Opus whole file | `BatchChunkingPrompt` | Bedrock FM | Batch whole file |
+| **Field photo** | `FieldPhotoDensityGate` (size ≥1.5 MB → Opus) | Sonnet (default) or Opus | `FieldPhotoPrompt` (Sonnet) / `BatchChunkingPrompt` (Opus) | Sync | Batch |
+| **Text file** | — | Sonnet | `BatchChunkingPrompt` | Sync | — |
+| **PDF short (≤2 pages) or urgent** | Per-page filter | Sonnet | `BatchChunkingPrompt` | Sync | Batch per kept page |
+| **PDF long (>2 pages, non-urgent)** | `filter_pages` → Haiku batch | Sonnet per kept page; Opus if `force_opus` | `BatchChunkingPrompt` | Async Batch (`SubmitManualBatchJob`) | Batch per kept page |
+| **Office** | Convert → same as PDF | Same as PDF | Same | Sync (handle_office converts) | Batch (after convert in ZIP extract) |
 
 **Ingestion path metadata** (sidecar / metrics):
 
@@ -189,25 +172,21 @@ Models (`BatchChunkingPrompt`):
 
 ## Chat upload — path selection
 
-Requires `CUSTOM_CHUNKING_WEB_ENABLED=true`.
-
 ```
 UploadAndSyncAttachmentsJob
   → CustomChunkingPipeline (per file)
       → ContentDedupService (skip parse on hit)
-      → if cost_v2 && PDF/Office && !force_sync:
-            SubmitManualBatchJob → ManualBatchIngestionService (async Batch)
-         else:
-            SingleFileChunkingService (sync Messages API)
+      → image                              → SingleFileChunkingService (sync)
+      → office (.docx/.pptx/…)            → SingleFileChunkingService (sync, handle_office converts)
+      → pdf, urgent? (query present)       → SingleFileChunkingService (sync)
+      → pdf, page_count ≤ SYNC_PAGES (2)  → SingleFileChunkingService (sync)
+      → pdf, long + non-urgent            → SubmitManualBatchJob → ManualBatchIngestionService (async Batch)
   → BulkKbSyncService → BedrockIngestionJob
 ```
 
-**Sync fallback triggers** (manual PDF/Office uses sync even with cost v2):
+**urgent?** — true when the technician attaches a file **and** sends a query in the same turn. Parsed sync so the answer can reference the doc immediately.
 
-1. Technician attaches file **and** sends a query in the same turn (`force_sync: true`)
-2. `MANUAL_FORCE_SYNC=true`
-
-**Office failure:** no silent fallback to legacy OWRPGSX6XK — user sees `rag.office_parse_failed`. PDF/image/text errors still fall back unless `CUSTOM_CHUNKING_NO_FALLBACK`.
+**Office failure:** user sees `rag.office_parse_failed` via `KbSyncBroadcaster.failed`. No legacy OWRPGSX6XK fallback — errors propagate to `UploadAndSyncAttachmentsJob`, which broadcasts failed and lets Solid Queue retry.
 
 Detail: [WEB_CUSTOM_CHUNKING.md](WEB_CUSTOM_CHUNKING.md).
 
@@ -215,15 +194,10 @@ Detail: [WEB_CUSTOM_CHUNKING.md](WEB_CUSTOM_CHUNKING.md).
 
 ## Bulk ZIP — path selection
 
-Does not use `CUSTOM_CHUNKING_WEB_ENABLED`.
-
 ```
 ProcessBulkUploadJob → BatchIngestionService#process! (extract, S3, dedup)
   → SubmitClaudeBatchJob → BatchIngestionService#submit!
-      → if CUSTOM_CHUNKING_COST_V2_ENABLED:
-            BulkCostV2RequestBuilder (photos + per-page PDF)
-         else:
-            whole-file Opus requests (legacy)
+      → BulkCostV2RequestBuilder (photos + per-page PDF)
   → PollClaudeBatchJob → IngestBatchResultsJob → BulkKbSyncService
 ```
 

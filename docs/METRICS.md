@@ -37,12 +37,12 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 |----------|---------|
 | `query` | End-user RAG / orchestrated LLM usage (**web chat** today; Twilio path would use the same `source` if re-enabled) |
 | `ingestion_parse` | Parser tokens recorded after a document finishes KB ingestion. **Legacy path** writes an estimate (Opus); **`web_v1`** path skips the estimate (real `web_parse: …` rows already persisted by `ClaudeChunkingClient`). **cost_v2 paths:** `field_photo_v1` rows have `-direct` suffix; `manual_batch_v1` rows use batch pricing (no `-direct`; `user_query: "web_batch: <filename> p<N>/<M>"`). |
-| `ingestion_embed` | Estimated embedding tokens for that upload (Nova multimodal). Always written for both paths. |
+| `ingestion_embed` | Estimated embedding tokens for chunk text indexed by the KB (Titan Text v2). Written after chat or bulk Bedrock sync completes. |
 
 **Jobs & data:**
 
 - **`TrackBedrockQueryJob`** (`queue: default`) — enqueued from `BedrockRagService` / `BedrockClient` after each real invocation, and from `ClaudeChunkingClient` / `PageRelevanceFilter` for direct Anthropic parse + slide-deck batch classification. Creates a `BedrockQuery` (including cache token columns when present), runs `SimpleMetricsService.update_database_metrics_only` (upserts `CostMetric` for the current day, including per-source tokens and cost), and **broadcasts** a Turbo Stream on the **`metrics`** channel so the **home** chat footer refreshes without reload.
-- **`TrackIngestionUsageJob`** (`default`) — after `BedrockIngestionJob` completes, branches on the `web_v1_metadata` payload: legacy uploads get both an Opus parse estimate **and** a Nova embed estimate; `web_v1` uploads get **only** the Nova embed estimate (parse is already in `bedrock_queries` from the direct Claude path). Idempotency window covers both `[parse]` and `[embed]` user-query labels so retries don't double-write.
+- **`TrackIngestionUsageJob`** (`default`) — after `BedrockIngestionJob` (chat) or `PollBulkBedrockIngestionJob` (bulk) completes, estimates **Titan Text v2** embed tokens from chunk `.txt` files on S3 (`chunks_s3_prefix`). Legacy FM uploads also get an Opus parse estimate; `web_v1` / bulk custom chunking get **embed only** (parse already in `bedrock_queries`). Idempotency window covers both `[parse]` and `[embed]` user-query labels so retries don't double-write.
 - **`TrackWhatsappCacheHitJob`** (`default`, **dormant**) — when the WhatsApp faceted path runs again, records cache-hit metrics into the same rollups.
 
 **Solid Queue (`config/queue.yml`):** three worker **lanes** — **`default`** (short jobs), **`ingestion`** (`BedrockIngestionJob` poll loop), **`bulk_ingestion`** (ZIP → Claude Batch → KB sync polls). Isolating long polls keeps **`TrackBedrockQueryJob`** (home footer) responsive. In **Kamal production**, all lanes run in **one** `worker` container (see [Kamal production (AWS)](PRODUCTION.md)). Dedicated **`whatsapp_rag`** / **`whatsapp_media`** queues exist in code but are **not exercised** while the Twilio webhook stays unmounted; re-add dedicated processes if you restore the webhook and want isolation again.
@@ -66,7 +66,7 @@ Verify each before flipping the public DNS:
 5. `INGESTION_REENQUEUE` ⇒ activate **after draining the Solid Queue** (legacy serialized jobs keep blocking until terminal otherwise).
 6. `MissionControl::Jobs` (`/jobs`) credentials live in **`config/credentials.yml.enc`**, **not** in `.env` for the production process.
 7. `/dashboard` — tenant usage view (LLM cost only); confirm Devise admin guard before public launch. See [DASHBOARD.md](DASHBOARD.md). Infra metrics (Aurora/S3) are platform-internal, not shown to tenants.
-8. **`CUSTOM_CHUNKING_WEB_ENABLED`** — leave **off** until `BEDROCK_BULK_DATA_SOURCE_ID` (or equivalent no-chunking DS) and **`ANTHROPIC_API_KEY`** are set in Kamal; enable only after staging upload smoke tests.
+8. **`ANTHROPIC_API_KEY`** (required for web uploads) and **`BEDROCK_BULK_DATA_SOURCE_ID`** (no-chunking DS) — confirm both are set in Kamal before going live with uploads. Smoke-test one web upload (photo + PDF + Office) and one bulk ZIP before launch.
 
 ##### p95 latency alarm (raw SQL, no extra service required)
 

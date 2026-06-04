@@ -1,6 +1,6 @@
 # Bulk ZIP ingestion (web)
 
-> **Cost v2 (2026-05-22):** With `CUSTOM_CHUNKING_COST_V2_ENABLED=true`, the ZIP bulk path now uses the same cost-v2 routing as the web chat: photos → Sonnet via `FieldPhotoPrompt` + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` for multi-page, per-page for single-page) + Sonnet Batch (`BulkCostV2RequestBuilder`), Office entries → `OfficeToPdfConverter`. Legacy whole-file Opus remains the default (`CUSTOM_CHUNKING_COST_V2_ENABLED=false`). See [INGESTION_COST_V2.md](INGESTION_COST_V2.md) for the full cost matrix. **Routing detail:** [INGESTION_ROUTING.md](INGESTION_ROUTING.md).
+> **Bulk ZIP path:** photos → Sonnet via `FieldPhotoPrompt` + `FieldPhotoDensityGate` (size heuristic only); PDFs → `PageRelevanceFilter.filter_pages` + Sonnet Batch (`BulkCostV2RequestBuilder`); Office entries → `OfficeToPdfConverter` before batch build. See [INGESTION_COST_V2.md](INGESTION_COST_V2.md) for the full cost matrix. **Routing detail:** [INGESTION_ROUTING.md](INGESTION_ROUTING.md).
 
 Signed-in technicians seed many documents at once via **`/bulk_uploads`** (HTML + Turbo Streams, not a JSON API).
 
@@ -8,17 +8,16 @@ Signed-in technicians seed many documents at once via **`/bulk_uploads`** (HTML 
 
 ---
 
-## File routing (cost v2 vs legacy)
+## File routing
 
-After ZIP extract and S3 upload, `SubmitClaudeBatchJob` calls `BatchIngestionService#submit!`:
+After ZIP extract and S3 upload, `SubmitClaudeBatchJob` calls `BatchIngestionService#submit!` → `BulkCostV2RequestBuilder`:
 
-| Asset type | `CUSTOM_CHUNKING_COST_V2_ENABLED=false` (default) | `=true` |
-|------------|---------------------------------------------------|---------|
-| **Image** (JPEG/PNG/…) | Whole-file Opus batch request | `FieldPhotoDensityGate` → Sonnet or Opus; `FieldPhotoPrompt` when Sonnet |
-| **PDF multipágina** | Whole-file Opus (all pages) | Split pages → `PageRelevanceFilter.filter_pages` (1 Haiku batch classify) → **Sonnet batch per kept page** (Opus if `force_opus`) |
-| **PDF 1 página** | Whole-file Opus | Per-page filter + Sonnet batch if kept |
-| **Office** (`.docx`, `.pptx`, …) | Whole-file Opus on original bytes | Convert to PDF in extract phase → same as PDF row |
-| **SHA dedup hit** | Asset marked `complete` — no batch row | Same |
+| Asset type | Routing |
+|------------|---------|
+| **Image** (JPEG/PNG/…) | `FieldPhotoDensityGate` (size heuristic) → Sonnet or Opus; `FieldPhotoPrompt` when Sonnet |
+| **PDF** | Split pages → `PageRelevanceFilter.filter_pages` → **Sonnet batch per kept page** (Opus if `force_opus` on scanned pages) |
+| **Office** (`.docx`, `.pptx`, …) | Converted to PDF in extract phase → same as PDF row |
+| **SHA dedup hit** | Asset marked `complete` — no batch row |
 
 Boilerplate pages (portada, índice, copyright, dedicatoria, agenda) are dropped by the page filter **before** Sonnet/Opus parse — see [INGESTION_ROUTING.md § Page relevance filter](INGESTION_ROUTING.md#step-2--page-relevance-filter).
 
@@ -50,12 +49,9 @@ Boilerplate pages (portada, índice, copyright, dedicatoria, agenda) are dropped
 
 1. **Migrate:** `bin/rails db:migrate` (adds `bulk_upload_assets.batch_custom_ids`, `ingestion_path`).
 2. **`.env`:** `ANTHROPIC_API_KEY`, AWS creds, `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_BULK_DATA_SOURCE_ID`, `KNOWLEDGE_BASE_S3_BUCKET`.
-3. **Flag (optional):** `CUSTOM_CHUNKING_COST_V2_ENABLED=true` — Sonnet photos + PDF batch via `filter_pages`; default **off** = legacy Opus whole-file.
-4. **Processes:** `bin/dev` (or `bin/rails server` + `bin/jobs` for Solid Queue `bulk_ingestion`).
-5. **LibreOffice** (`soffice`) if the ZIP includes Office files (`.docx`, `.pptx`, …).
-6. **UI:** sign in → **`http://localhost:3000/bulk_uploads/new`** → upload ZIP → progress at **`/bulk_uploads/:id`**.
-
-`CUSTOM_CHUNKING_WEB_ENABLED` is **not** required for bulk ZIP.
+3. **Processes:** `bin/dev` (or `bin/rails server` + `bin/jobs` for Solid Queue `bulk_ingestion`).
+4. **LibreOffice** (`soffice`) if the ZIP includes Office files (`.docx`, `.pptx`, …).
+5. **UI:** sign in → **`http://localhost:3000/bulk_uploads/new`** → upload ZIP → progress at **`/bulk_uploads/:id`**.
 
 **Suggested test ZIP:** 2× JPEG + 1× PDF (~10 pages) + optional `.pptx`.
 

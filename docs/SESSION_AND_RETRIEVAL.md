@@ -30,7 +30,7 @@ active_entities      → "Pinned KB docs for this session" (UI + auto-pin after 
 ```
 Upload (web chat; same job shape for other channels)
   └─ S3 + kb_documents.ensure / enrich
-  └─ [optional] CustomChunkingPipeline → Claude parse → bulk DS chunks (web_v1)
+  └─ CustomChunkingPipeline → Claude parse → bulk DS chunks (web_v1)
   └─ BedrockIngestionJob (polls until COMPLETE)
        ├─ kb_documents           ← display_name + aliases (web_v1_metadata or chunk pipeline)
        ├─ technician_documents   ← persist_to_technician_documents (audit)

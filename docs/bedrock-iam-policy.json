@@ -2,20 +2,18 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "BedrockInvokeModelPermissions",
+      "Sid": "BedrockModelsAndInferenceProfiles",
       "Effect": "Allow",
-      "Action": "bedrock:InvokeModel",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock:GetInferenceProfile"
+      ],
       "Resource": [
-        "arn:aws:bedrock:us-east-1::foundation-model/us.anthropic.claude-3-5-haiku-20241022-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/global.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/global.anthropic.claude-haiku-4-5-20251001-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/global.anthropic.claude-opus-4-5-20251101-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/us.anthropic.claude-opus-4-5-20251101-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0",
-        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0"
+        "arn:aws:bedrock:us-east-1::foundation-model/*",
+        "arn:aws:bedrock:us-east-2::foundation-model/*",
+        "arn:aws:bedrock:us-west-2::foundation-model/*",
+        "arn:aws:bedrock:us-east-1:935142957735:inference-profile/*"
       ]
     }
   ]

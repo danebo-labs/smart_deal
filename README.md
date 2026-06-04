@@ -13,8 +13,8 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 | Area | Summary |
 |------|---------|
 | **RAG chat** | Bedrock Knowledge Base, hybrid orchestrator (optional Text-to-SQL) |
-| **Chat uploads** | Legacy Bedrock FM parse, or **custom Claude chunking** when `CUSTOM_CHUNKING_WEB_ENABLED=true` — supports images, text, PDF, **Word, Excel, PowerPoint** (via LibreOffice) |
-| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, **single Haiku call** to classify multi-page PDFs (covers, index, dedications dropped before parse), locale-aware summaries — see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md). **Routing matrix:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md). **Cost v2 (2026-05-21 benchmark):** Sonnet default for images (↓5×), Anthropic Batch per-page for manuals (~50% off), SHA dedup — target ~$7-10/técnico/mes vs ~$60 legacy. `CUSTOM_CHUNKING_COST_V2_ENABLED=true`. Full ADR: [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
+| **Chat uploads** | Direct Claude chunking via `CustomChunkingPipeline` — images, text, PDF, **Word, Excel, PowerPoint** (via LibreOffice); see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
+| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, **single Haiku call** to classify multi-page PDFs (covers, index, dedications dropped before parse), locale-aware summaries. Sonnet default for images (↓5×), Anthropic Batch per-page for long non-urgent manuals (~50% off), SHA dedup — target ~$7-10/técnico/mes. **Routing matrix:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md). Full ADR: [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
 | **Bulk ZIP** | `/bulk_uploads` — Anthropic Message Batches, Turbo progress UI |
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
 | **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet, web_v1 vs legacy split), live chat footer |
@@ -69,7 +69,7 @@ Open http://localhost:3000. `bin/dev` runs Rails + Tailwind (Foreman / `Procfile
 ### Prerequisites
 
 - Ruby, Rails 8.1.2, PostgreSQL, libvips  
-- **LibreOffice** — only if testing Office uploads with `CUSTOM_CHUNKING_WEB_ENABLED=true` (included in production Dockerfile)
+- **LibreOffice** — only if testing Office uploads (included in production Dockerfile)
 
 ### Secrets
 
@@ -93,13 +93,8 @@ Restart **web and workers** after changing `.env`.
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `SHARED_SESSION_ENABLED` | off | MVP: one shared chat thread for all web users |
-| `CUSTOM_CHUNKING_WEB_ENABLED` | off | Direct Claude parse for chat uploads — [doc](docs/WEB_CUSTOM_CHUNKING.md) |
-| `CUSTOM_CHUNKING_COST_V2_ENABLED` | off | Sonnet photos + batch manuals + unified page filter — [routing](docs/INGESTION_ROUTING.md) · [ADR](docs/INGESTION_COST_V2.md) |
-| `MANUAL_FORCE_SYNC` | off | Force sync parse for manual PDFs/Office (ops) |
-| `FIELD_PHOTO_HAIKU_GATE_ENABLED` | off | Optional Haiku pre-gate on large/borderline field photos |
-| `CUSTOM_CHUNKING_NO_FALLBACK` | off | Dev only: disable legacy fallback |
-| `BEDROCK_BULK_DATA_SOURCE_ID` | optional | No-chunking data source for bulk ZIP + custom chunking |
-| `ANTHROPIC_API_KEY` | — | Required for bulk ZIP and custom chunking |
+| `BEDROCK_BULK_DATA_SOURCE_ID` | optional | No-chunking data source for bulk ZIP + web uploads |
+| `ANTHROPIC_API_KEY` | — | Required for bulk ZIP and web uploads |
 | `INGESTION_REENQUEUE` | — | See [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 
 Full list including dormant WhatsApp flags: [`.env.sample`](.env.sample).

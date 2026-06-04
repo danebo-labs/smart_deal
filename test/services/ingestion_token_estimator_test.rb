@@ -36,27 +36,33 @@ class IngestionTokenEstimatorTest < ActiveSupport::TestCase
 
   # --- PNG ---
 
-  test "estimates image token bounds for tiny PNG fixture" do
+  test "estimates image embed tokens from text caption proxy" do
     bytes = File.binread(FIXTURES_PATH.join("tiny.png"))
     result = IngestionTokenEstimator.estimate(filename: "tiny.png", bytes: bytes)
 
-    # 1x1 image: ceil(1*1/1024) = 1 → clamped to NOVA_IMAGE_BASE_TOKENS (258)
-    assert_equal IngestionTokenEstimator::NOVA_IMAGE_BASE_TOKENS, result[:embed][:input_tokens]
+    assert result[:embed][:input_tokens] >= IngestionTokenEstimator::MIN_EMBED_TOKENS
     assert_equal 0, result[:embed][:output_tokens]
     assert result[:parse][:input_tokens] > 0
   end
 
-  test "nova image tokens are clamped to NOVA_IMAGE_BASE_TOKENS minimum" do
-    bytes = File.binread(FIXTURES_PATH.join("tiny.png"))
-    result = IngestionTokenEstimator.estimate(filename: "test.jpg", bytes: bytes)
-    assert result[:embed][:input_tokens] >= IngestionTokenEstimator::NOVA_IMAGE_BASE_TOKENS
-  end
+  test "estimate_embed_from_chunks sums chunk object sizes" do
+    fake_client = Object.new
+    fake_client.define_singleton_method(:list_objects_v2) do |**kwargs|
+      Struct.new(:contents, :is_truncated, :next_continuation_token).new(
+        [
+          Struct.new(:key, :size).new("bulk_chunks/2026-01-01/abc/chunk_0.txt", 700),
+          Struct.new(:key, :size).new("bulk_chunks/2026-01-01/abc/chunk_0.txt.metadata.json", 200)
+        ],
+        false,
+        nil
+      )
+    end
 
-  test "image embed tokens never exceed NOVA_IMAGE_MAX_TOKENS" do
-    # Use tiny.png; even if vips can't read dims, clamping should hold
-    bytes = File.binread(FIXTURES_PATH.join("tiny.png"))
-    result = IngestionTokenEstimator.estimate(filename: "large.png", bytes: bytes)
-    assert result[:embed][:input_tokens] <= IngestionTokenEstimator::NOVA_IMAGE_MAX_TOKENS
+    tokens = IngestionTokenEstimator.estimate_embed_from_chunks(
+      s3: fake_client, bucket: "test-bucket", prefix: "bulk_chunks/2026-01-01/abc"
+    )
+
+    assert_equal 200, tokens
   end
 
   # --- TXT fixture ---

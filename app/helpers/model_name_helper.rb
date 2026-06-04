@@ -47,9 +47,7 @@ module ModelNameHelper
   end
 
   def current_embedding_model_id
-    ENV['BEDROCK_EMBEDDING_MODEL_ID'].presence ||
-      Rails.application.credentials.dig(:bedrock, :embedding_model_id) ||
-      'amazon.titan-embed-text-v1'
+    BedrockEmbeddingModel.model_id
   end
 
   def format_llm_model_name(model_id)

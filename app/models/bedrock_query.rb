@@ -15,10 +15,11 @@ class BedrockQuery < ApplicationRecord
     # Anthropic direct API — Batch (50% off standard). Used by bulk ingestion pipeline.
     # cache_read: 10% of base input; cache_creation: 125% of base input — both at batch rate.
     'claude-opus-4-7'                                  => { input: 0.0075,  output: 0.0375,  cache_read: 0.00075,  cache_creation: 0.009375 },
-    # Explicit -batch suffix: emitted by IngestBatchResultsJob (cost_v2 path) for correct rate attribution.
+    'claude-sonnet-4-6'                                => { input: 0.0015,  output: 0.0075,  cache_read: 0.00015,  cache_creation: 0.001875 },
+    # Explicit -batch suffix: emitted by IngestBatchResultsJob for correct rate attribution.
     'claude-opus-4-7-batch'                            => { input: 0.0075,  output: 0.0375,  cache_read: 0.00075,  cache_creation: 0.009375 },
     'claude-sonnet-4-6-batch'                          => { input: 0.0015,  output: 0.0075,  cache_read: 0.00015,  cache_creation: 0.001875 },
-    # Anthropic direct API — Standard (non-batch). Used by web custom chunking path (CUSTOM_CHUNKING_WEB_ENABLED).
+    # Anthropic direct API — Standard (non-batch). Used by CustomChunkingPipeline (sync web uploads).
     # Suffix -direct distinguishes direct-API rates from batch rates in analytics.
     'claude-opus-4-7-direct'                           => { input: 0.015,   output: 0.075,   cache_read: 0.0015,   cache_creation: 0.01875  },
     'claude-sonnet-4-6-direct'                         => { input: 0.003,   output: 0.015,   cache_read: 0.0003,   cache_creation: 0.00375  },
@@ -44,6 +45,7 @@ class BedrockQuery < ApplicationRecord
     'anthropic.claude-3-sonnet-20240229-v1:0'          => { input: 0.003,   output: 0.015  },
     'anthropic.claude-3-haiku-20240307-v1:0'           => { input: 0.00025, output: 0.00125 },
     'amazon.titan-embed-text-v1'                       => { input: 0.0001,  output: 0.0    },
+    'amazon.titan-embed-text-v2:0'                     => { input: 0.00002, output: 0.0    },
     'amazon.nova-2-multimodal-embeddings-v1:0'         => { input: 0.0006,  output: 0.0    },
     'default' => { input: 0.00025, output: 0.00125 } # Fallback to Haiku cost estimate
   }.freeze

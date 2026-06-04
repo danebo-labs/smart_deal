@@ -36,16 +36,18 @@ class PollBulkBedrockIngestionJobTest < ActiveJob::TestCase
   end
 
   def make_asset(bulk_upload, status: "syncing", s3_key: "bulk_uploads/2026-05-07/test.jpg",
-                 canonical_name: "Manual técnico A", aliases: [ "manual A", "técnico A" ])
+                 canonical_name: "Manual técnico A", aliases: [ "manual A", "técnico A" ],
+                 chunks_s3_prefix: nil)
     BulkUploadAsset.create!(
-      bulk_upload:    bulk_upload,
-      custom_id:      SecureRandom.hex(16),
-      sha256:         SecureRandom.hex(32),
-      filename:       "test.jpg",
-      status:         status,
-      s3_key:         s3_key,
-      canonical_name: canonical_name,
-      aliases:        aliases
+      bulk_upload:      bulk_upload,
+      custom_id:        SecureRandom.hex(16),
+      sha256:           SecureRandom.hex(32),
+      filename:         "test.jpg",
+      status:           status,
+      s3_key:           s3_key,
+      canonical_name:   canonical_name,
+      aliases:          aliases,
+      chunks_s3_prefix: chunks_s3_prefix
     )
   end
 
@@ -78,6 +80,17 @@ class PollBulkBedrockIngestionJobTest < ActiveJob::TestCase
     assert_equal "Manual técnico A", kb_doc.display_name
     assert_includes kb_doc.aliases, "manual A"
     assert_equal kb_doc.id, asset.kb_document_id
+  end
+
+  test "COMPLETE: enqueues TrackIngestionUsageJob for embed cost when chunks_s3_prefix present" do
+    upload = make_bulk_upload
+    make_asset(upload, chunks_s3_prefix: "bulk_chunks/2026-06-03/abc123")
+
+    stub_ingestion_service("COMPLETE") do
+      assert_enqueued_with(job: TrackIngestionUsageJob) do
+        PollBulkBedrockIngestionJob.perform_now(upload.id, started_at_iso: 1.minute.ago.iso8601)
+      end
+    end
   end
 
   test "COMPLETE: derives BulkUpload status to complete when all assets done" do

@@ -49,7 +49,7 @@ class TrackIngestionUsageJobTest < ActiveJob::TestCase
     assert parse_rec, "ingestion_parse record must be created"
     assert embed_rec, "ingestion_embed record must be created"
     assert_equal "global.anthropic.claude-opus-4-6-v1", parse_rec.model_id
-    assert_equal "amazon.nova-2-multimodal-embeddings-v1:0", embed_rec.model_id
+    assert_equal "amazon.titan-embed-text-v2:0", embed_rec.model_id
     assert parse_rec.input_tokens > 0
     assert_equal 0, embed_rec.output_tokens
     assert_includes parse_rec.user_query, "[parse]"
@@ -86,7 +86,7 @@ class TrackIngestionUsageJobTest < ActiveJob::TestCase
   test "skips file if embed already tracked within idempotency window" do
     label = "[embed] #{SAMPLE_FILENAME}".truncate(500)
     BedrockQuery.create!(
-      model_id: "amazon.nova-2-multimodal-embeddings-v1:0",
+      model_id: "amazon.titan-embed-text-v2:0",
       input_tokens: 500, output_tokens: 0,
       user_query: label, latency_ms: 0, source: :ingestion_embed
     )
@@ -117,7 +117,7 @@ class TrackIngestionUsageJobTest < ActiveJob::TestCase
     assert_nil BedrockQuery.find_by(source: "ingestion_parse", user_query: "[parse] #{SAMPLE_FILENAME}".truncate(500))
     embed_rec = BedrockQuery.find_by(source: "ingestion_embed")
     assert embed_rec
-    assert_equal "amazon.nova-2-multimodal-embeddings-v1:0", embed_rec.model_id
+    assert_equal "amazon.titan-embed-text-v2:0", embed_rec.model_id
   end
 
   test "skips gracefully when S3 key not found" do

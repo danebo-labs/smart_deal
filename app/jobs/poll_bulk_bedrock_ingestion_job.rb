@@ -79,6 +79,22 @@ class PollBulkBedrockIngestionJob < ApplicationJob
 
     bulk_upload.derive_status!
     Rails.logger.info("PollBulkBedrockIngestionJob: BulkUpload##{bulk_upload.id} → #{status} (#{syncing_assets.size} assets)")
+
+    track_embed_usage(syncing_assets) if status == "COMPLETE" && syncing_assets.any?
+  end
+
+  def track_embed_usage(assets)
+    sources = assets.filter_map do |asset|
+      next if asset.chunks_s3_prefix.blank?
+
+      {
+        "filename"         => asset.filename,
+        "chunks_s3_prefix" => asset.chunks_s3_prefix
+      }
+    end
+    return if sources.empty?
+
+    TrackIngestionUsageJob.perform_later(embed_chunk_sources: sources)
   end
 
   def upsert_kb_document(asset)

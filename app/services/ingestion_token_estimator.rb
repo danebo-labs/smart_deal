@@ -10,9 +10,8 @@
 #             identity headers. Input ≈ full text × HIERARCHICAL_OVERLAP_FACTOR;
 #             output ≈ input × OPUS_OUTPUT_EXPANSION.
 #
-#   :embed — Nova multimodal embedding model. Processes each chunk + any images.
-#            Image tokens are calculated from pixel dimensions (Nova patch grid).
-#            No output tokens for embedding.
+#   :embed — Titan text embedding model (KB indexes chunk .txt files).
+#            One embed call per chunk; estimate from chunk text size (or file text proxy).
 #
 # All multipliers are documented approximations — see constants below.
 # Actual AWS costs may differ ±10%; shown in UI with a disclaimer.
@@ -25,11 +24,12 @@ class IngestionTokenEstimator
   # headers per chunk. Output is typically 10–20% larger than input.
   OPUS_OUTPUT_EXPANSION = 1.15
 
-  # Nova multimodal: minimum patch tokens per image (≤ 512px side).
-  NOVA_IMAGE_BASE_TOKENS = 258
+  # Minimum embed tokens when chunk bytes cannot be read (empty prefix / S3 miss).
+  MIN_EMBED_TOKENS = 100
 
-  # Nova multimodal: maximum patch tokens per image (capped at ~1024×1024).
-  NOVA_IMAGE_MAX_TOKENS = 1290
+  # Legacy Nova multimodal image patch bounds — kept for backward-compatible tests only.
+  NOVA_IMAGE_BASE_TOKENS = 258
+  NOVA_IMAGE_MAX_TOKENS  = 1290
 
   # LocalTokenizer chars/token ratio (calibrated for Spanish/English technical docs).
   CHARS_PER_TOKEN = 3.5
@@ -64,13 +64,9 @@ class IngestionTokenEstimator
   # --- private ---
 
   def self.estimate_image(bytes)
-    image_tokens = nova_image_tokens_from_bytes(bytes)
-    # Images go directly to embedding; Opus parsing produces a minimal caption chunk
-    parse_input  = image_tokens  # Opus sees the image as a patch grid
-    parse_output = (parse_input * OPUS_OUTPUT_EXPANSION).ceil
-
-    { parse: { input_tokens: parse_input,  output_tokens: parse_output },
-      embed:  { input_tokens: image_tokens, output_tokens: 0 } }
+    # Custom chunking writes a text chunk (field photo summary); Titan embeds text, not pixels.
+    caption_chars = (bytes.to_s.bytesize * 0.05).to_i.clamp(400, 4_000)
+    estimate_from_text("x" * caption_chars)
   end
   private_class_method :estimate_image
 
@@ -125,17 +121,43 @@ class IngestionTokenEstimator
   end
   private_class_method :extract_pdf_text
 
-  # Calculate Nova multimodal image tokens from raw image bytes.
-  # Formula: ceil(width * height / 1024), clamped to [BASE, MAX].
-  # Falls back to BASE when dimensions cannot be read.
-  def self.nova_image_tokens_from_bytes(bytes)
-    require "vips"
-    io    = Vips::Image.new_from_buffer(bytes.to_s, "")
-    w, h  = io.width, io.height
-    raw   = ((w * h) / 1024.0).ceil
-    raw.clamp(NOVA_IMAGE_BASE_TOKENS, NOVA_IMAGE_MAX_TOKENS)
-  rescue StandardError
-    NOVA_IMAGE_BASE_TOKENS
+  # Sum S3 object sizes for chunk_*.txt under a prefix (proxy for Titan input tokens).
+  # Avoids N get_object calls; ±10% vs actual tokenizer is acceptable for UI cost.
+  def self.estimate_embed_from_chunks(s3:, bucket:, prefix:)
+    return nil if prefix.blank? || bucket.blank?
+
+    total_bytes = 0
+    resp = s3.list_objects_v2(bucket: bucket, prefix: "#{prefix}/")
+    loop do
+      (resp.contents || []).each do |obj|
+        key = obj.key.to_s
+        next unless key.end_with?(".txt")
+        next if key.end_with?(".metadata.json")
+
+        total_bytes += obj.size.to_i
+      end
+      break unless resp.is_truncated
+
+      resp = s3.list_objects_v2(bucket: bucket, prefix: "#{prefix}/", continuation_token: resp.next_continuation_token)
+    end
+
+    return nil if total_bytes.zero?
+
+    tokens_from_bytes(total_bytes)
+  rescue StandardError => e
+    Rails.logger.warn("[IngestionTokenEstimator] chunk prefix estimate failed for #{prefix}: #{e.message}")
+    nil
   end
-  private_class_method :nova_image_tokens_from_bytes
+
+  def self.tokens_from_bytes(byte_count)
+    chars  = byte_count.clamp(MIN_EMBED_TOKENS, 2_000_000)
+    tokens = (chars / CHARS_PER_TOKEN).ceil
+    tokens.clamp(MIN_EMBED_TOKENS, 500_000)
+  end
+  private_class_method :tokens_from_bytes
+
+  def self.embed_only(input_tokens)
+    { parse: { input_tokens: 0, output_tokens: 0 },
+      embed: { input_tokens: input_tokens.clamp(MIN_EMBED_TOKENS, 500_000), output_tokens: 0 } }
+  end
 end

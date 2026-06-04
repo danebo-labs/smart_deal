@@ -7,37 +7,54 @@
 #
 #   Legacy path (Bedrock FM parse on raw upload):
 #     - 1 BedrockQuery (source: :ingestion_parse) for Opus foundation model parsing
-#     - 1 BedrockQuery (source: :ingestion_embed) for Nova multimodal embedding
+#     - 1 BedrockQuery (source: :ingestion_embed) for Titan text embedding
 #
 #   Custom chunking (web_v1 — chunks already written, chunking=NONE on bulk DS):
 #     - Parse tokens are NOT estimated here; they are recorded by TrackBedrockQueryJob
 #       when ClaudeChunkingClient runs (claude-*-direct, source: :ingestion_parse).
-#     - Only Nova embed estimate is persisted (Bedrock still embeds chunk files).
+#     - Titan embed estimate from chunk .txt files on S3 (text-only KB index).
 #
-# Called from BedrockIngestionJob after status COMPLETE.
+#   Bulk ZIP (embed_chunk_sources):
+#     - Same embed-only path after PollBulkBedrockIngestionJob COMPLETE.
+#
+# Called from BedrockIngestionJob (chat) and PollBulkBedrockIngestionJob (bulk).
 # Idempotent: skips a filename if parse or embed was already tracked within the window.
 class TrackIngestionUsageJob < ApplicationJob
   queue_as :default
 
-  OPUS_MODEL_ID  = "global.anthropic.claude-opus-4-6-v1"
-  NOVA_MODEL_ID  = "amazon.nova-2-multimodal-embeddings-v1:0"
+  OPUS_MODEL_ID      = "global.anthropic.claude-opus-4-6-v1"
   IDEMPOTENCY_WINDOW = 5.minutes
 
-  def perform(uploaded_filenames:, ingestion_job_id: nil, kb_id: nil, data_source_id: nil,
-              web_v1_metadata: nil)
+  def perform(uploaded_filenames: nil, ingestion_job_id: nil, kb_id: nil, data_source_id: nil,
+              web_v1_metadata: nil, embed_chunk_sources: nil)
     bucket = ENV.fetch("KNOWLEDGE_BASE_S3_BUCKET", "multimodal-source-destination")
     s3     = build_s3_client
-    web_v1_filenames = web_v1_filename_set(web_v1_metadata)
+    web_v1_by_filename = web_v1_index(web_v1_metadata)
+
+    Array(embed_chunk_sources).compact.each do |entry|
+      track_embed_from_chunks(entry, s3: s3, bucket: bucket)
+    end
 
     Array(uploaded_filenames).compact.each do |fname|
       next if already_tracked?(fname)
+
+      meta   = web_v1_by_filename[fname] || {}
+      prefix = meta["chunks_s3_prefix"].presence
+
+      if prefix.present?
+        track_embed_from_chunks(
+          { "filename" => fname, "chunks_s3_prefix" => prefix },
+          s3: s3, bucket: bucket
+        )
+        next
+      end
 
       bytes = fetch_from_s3(s3, bucket, fname)
       next if bytes.nil?
 
       usage = IngestionTokenEstimator.estimate(filename: fname, bytes: bytes)
 
-      if web_v1_filenames.include?(fname)
+      if web_v1_by_filename.key?(fname)
         persist_web_v1_usage(fname, usage)
       else
         persist_legacy_usage(fname, usage)
@@ -53,11 +70,43 @@ class TrackIngestionUsageJob < ApplicationJob
 
   private
 
-  def web_v1_filename_set(web_v1_metadata)
-    Array(web_v1_metadata).filter_map do |entry|
+  def web_v1_index(web_v1_metadata)
+    Array(web_v1_metadata).each_with_object({}) do |entry, acc|
       h = entry.respond_to?(:stringify_keys) ? entry.stringify_keys : entry.to_h.stringify_keys
-      h["filename"].presence
-    end.to_set
+      fname = h["filename"].presence
+      acc[fname] = h if fname.present?
+    end
+  end
+
+  def track_embed_from_chunks(entry, s3:, bucket:)
+    h     = entry.respond_to?(:stringify_keys) ? entry.stringify_keys : entry.to_h.stringify_keys
+    fname = h["filename"].presence
+    return if fname.blank?
+    return if embed_already_tracked?(fname)
+
+    prefix = h["chunks_s3_prefix"].presence
+    tokens = IngestionTokenEstimator.estimate_embed_from_chunks(s3: s3, bucket: bucket, prefix: prefix)
+    usage  = tokens ? IngestionTokenEstimator.embed_only(tokens) : nil
+
+    unless usage
+      bytes = fetch_from_s3(s3, bucket, fname)
+      usage = bytes ? IngestionTokenEstimator.estimate(filename: fname, bytes: bytes) : nil
+    end
+    return if usage.nil?
+
+    persist_embed(fname, usage)
+    Rails.logger.info(
+      "[TrackIngestionUsageJob] embed #{fname} prefix=#{prefix.presence || 'n/a'} — " \
+      "#{usage[:embed][:input_tokens]}in"
+    )
+  rescue StandardError => e
+    Rails.logger.error("[TrackIngestionUsageJob] embed failed for #{fname}: #{e.message}")
+  end
+
+  def embed_already_tracked?(fname)
+    since = IDEMPOTENCY_WINDOW.ago
+    embed_label = "[embed] #{fname}".truncate(500)
+    BedrockQuery.exists?(source: :ingestion_embed, user_query: embed_label, created_at: since..)
   end
 
   # Guard: skip if parse or embed for this filename was created recently (retries).
@@ -126,7 +175,7 @@ class TrackIngestionUsageJob < ApplicationJob
 
   def persist_embed(fname, usage)
     BedrockQuery.create!(
-      model_id:      NOVA_MODEL_ID,
+      model_id:      BedrockEmbeddingModel.model_id,
       input_tokens:  usage[:embed][:input_tokens],
       output_tokens: 0,
       user_query:    "[embed] #{fname}".truncate(500),

@@ -18,7 +18,7 @@
 #   "batch_v1"       = bulk path (default, backward-compatible)
 #   "web_v1"         = web custom chunking (text/PDF/Office via SingleFileChunkingService)
 #   "field_photo_v1" = web photo path (Sonnet + FieldPhotoPrompt, direct-API cost)
-#   "manual_batch_v1" = web PDF async path (Batch API via ManualBatchIngestionService)
+#   "manual_batch_v1" = PDF page batch path (bulk ZIP, or dormant manual batch)
 class BatchResultsParserService
   class ParseError < StandardError; end
 

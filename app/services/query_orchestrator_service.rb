@@ -141,9 +141,10 @@ class QueryOrchestratorService
 
   private
 
-  # Delegates all attachment uploads + chunking to CustomChunkingPipeline.
-  # urgent: true when a query accompanies the upload — PDFs parse sync so the
-  # answer can reference the doc immediately.
+  # Delegates all web/chat attachment uploads + chunking to CustomChunkingPipeline.
+  # Web/chat uploads always parse via the sync cost-v2 Messages path so field
+  # technicians are not routed through async Batch latency. Bulk/backoffice
+  # uploads use the separate /bulk_uploads pipeline.
   # @return [Array<String>] filenames successfully uploaded to S3
   def upload_and_sync_attachments
     CustomChunkingPipeline.new(
@@ -152,7 +153,7 @@ class QueryOrchestratorService
       conv_session: @conv_session,
       tenant:       @tenant || current_tenant,
       locale:       @locale,
-      urgent:       @query.to_s.strip.present?
+      urgent:       true
     ).run!
   end
 

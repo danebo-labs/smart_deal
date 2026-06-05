@@ -77,7 +77,7 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     assert_equal "manual.pdf", @batch_job_calls.first[:filename]
   end
 
-  test "PDF urgent (query present) → sync regardless of page_count" do
+  test "PDF urgent flag true → sync regardless of page_count" do
     stub_pdf_page_count(10)
 
     sfc_calls = 0

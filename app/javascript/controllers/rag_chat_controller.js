@@ -21,15 +21,19 @@ export default class extends Controller {
   // company while waiting on flaky field connections.
   static CHAT_WARM_NUDGE_MS = 15 * 1000
 
-  // Last-resort stall notice — upload: if `indexed` still hasn't arrived;
-  // text query: if `ask()` still hasn't resolved. Prompts reload.
+  // Last-resort stall notice for text queries if `ask()` still hasn't resolved.
+  // Prompts reload because this usually means the request or response got stuck.
   // WebSockets can drop on flaky mobile networks (technician inside an elevator
   // shaft) and Solid Cable does not replay missed messages.
   static CHAT_STALL_HINT_MS = 90 * 1000
 
+  // Uploads can include long manuals that parse sync inside Solid Queue before
+  // the KB `indexed` event. Give them more room before showing a recovery hint.
+  static CHAT_UPLOAD_STALL_HINT_MS = 3 * 60 * 1000
+
   // Back-compat aliases so the indexing path keeps working without rename churn.
   static get INDEXING_NUDGE_MS() { return this.CHAT_WARM_NUDGE_MS }
-  static get INDEXING_STALL_MS() { return this.CHAT_STALL_HINT_MS }
+  static get INDEXING_STALL_MS() { return this.CHAT_UPLOAD_STALL_HINT_MS }
 
   // Typing dots inside the assistant bubble while waiting for KB indexing or retry copy.
   static INDEXING_TYPING_DOTS_HTML =
@@ -585,12 +589,12 @@ export default class extends Controller {
     const lang = (document.documentElement.lang || "es").toLowerCase()
     const table = lang.startsWith("en") ? {
       ack:   "Got your file, I'm getting it ready — ask me anything you need.",
-      nudge: "Still working on your file — sometimes it takes a moment, especially with the connection in the field. I'll share a quick summary in a few seconds.",
+      nudge: "Still working on your file — large documents can take a little longer in the field. I'll let you know as soon as it's ready.",
       retry: "Taking a bit longer than usual — still on your file, I'll be with you in a moment.",
       stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     } : {
       ack:   "Recibí tu archivo, lo estoy preparando — puedes preguntarme lo que necesites.",
-      nudge: "Sigo con tu archivo — a veces tarda un poco más por la señal en campo. En unos segundos te doy un resumen del análisis.",
+      nudge: "Sigo con tu archivo — los documentos grandes pueden tardar un poco más en campo. Te aviso en cuanto quede listo.",
       retry: "Está tardando un poco más de lo habitual — sigo con tu archivo, en un momento te cuento.",
       stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     }
@@ -777,10 +781,11 @@ export default class extends Controller {
   }
 
   // ── Stall notice while waiting for KbSync `indexed` broadcast ─────────────
-  // Backend ingestion runs ~30-90s for a typical image (S3 upload + Bedrock
-  // ingestion poll + Opus chunk-alias extraction). If the WebSocket dropped
-  // mid-flight (Solid Cable does not replay), the dots animation hangs forever
-  // until the user reloads. This timer surfaces a recovery hint.
+  // Backend ingestion can run for a while on large documents: S3 upload, sync
+  // page parsing, Bedrock ingestion poll, and metadata enrichment. If the
+  // WebSocket dropped mid-flight (Solid Cable does not replay), the dots
+  // animation hangs forever until the user reloads. This timer surfaces a
+  // recovery hint after the normal long-document window.
   startIndexingStallTimer() {
     this.clearIndexingStallTimer()
     this.indexingStallTimer = setTimeout(() => {

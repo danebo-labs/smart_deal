@@ -4,8 +4,9 @@
 #   1. Upload each file to S3 (creates KbDocument).
 #   2. Route and parse each file:
 #      - Images + Office → SingleFileChunkingService (sync).
-#      - PDF urgent (query present) or short (page_count <= SYNC_PAGES) → sync.
-#      - PDF long and non-urgent → SubmitManualBatchJob (async Batch API, ~50% cheaper).
+#      - PDF urgent or short (page_count <= SYNC_PAGES) → sync.
+#      - PDF long and non-urgent → SubmitManualBatchJob (dormant for web/chat;
+#        QueryOrchestratorService passes urgent=true, bulk_uploads uses its own path).
 #   3. Trigger BulkKbSyncService + BedrockIngestionJob to index via BEDROCK_BULK_DATA_SOURCE_ID.
 #
 # On error: propagates to the calling job (UploadAndSyncAttachmentsJob), which broadcasts
@@ -14,8 +15,8 @@ class CustomChunkingPipeline
   OFFICE_EXTENSIONS = FileMultimodalRouter::OFFICE_EXTENSIONS
   PDF_CONTENT_TYPE  = "application/pdf"
 
-  # Short PDFs (≤ SYNC_PAGES) parse sync so the technician gets near-instant feedback.
-  # Longer manuals go to async Batch API (~50% cost reduction).
+  # Short PDFs (≤ SYNC_PAGES) parse sync when this pipeline is called with urgent=false.
+  # Web/chat callers pass urgent=true, so long manuals also stay on sync Messages.
   SYNC_PAGES = 2
 
   # @param images       [Array<Hash>] same shape as QOS @images
@@ -23,7 +24,8 @@ class CustomChunkingPipeline
   # @param conv_session [ConversationSession, nil]
   # @param tenant       [Tenant, nil]
   # @param locale       [String, nil] ISO 639-1 — forwarded to SingleFileChunkingService for image summary
-  # @param urgent       [Boolean] when true (query accompanies upload), PDFs always parse sync
+  # @param urgent       [Boolean] when true, PDFs always parse sync. Web/chat
+  #                     always passes true; bulk_uploads does not use this pipeline.
   def initialize(images:, documents:, conv_session: nil, tenant: nil, locale: nil, urgent: false)
     @images         = Array(images)
     @documents      = Array(documents)
@@ -127,7 +129,8 @@ class CustomChunkingPipeline
       return
     end
 
-    # Long non-urgent PDFs → async Batch API (~50% cheaper). Office always sync (handle_office converts).
+    # Long non-urgent PDFs can still use the dormant async Batch branch.
+    # Web/chat sets urgent=true in QueryOrchestratorService; bulk_uploads uses its own pipeline.
     if content_type.to_s == PDF_CONTENT_TYPE && !office?(filename) && !@urgent &&
         pdf_page_count(binary) > SYNC_PAGES
       SubmitManualBatchJob.perform_later(

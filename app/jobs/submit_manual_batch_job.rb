@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
-# Phase 1 of web manual batch ingestion:
+# Phase 1 of the dormant web manual batch ingestion path:
 #   Downloads PDF from S3, applies PageRelevanceFilter, submits Anthropic Batch,
 #   stores batch context in Solid Cache, then schedules polling.
 #
-# Enqueued by CustomChunkingPipeline for long, non-urgent PDF uploads.
+# Active web/chat uploads pass urgent=true and parse sync. This job is only
+# reached if a caller explicitly invokes CustomChunkingPipeline with urgent=false.
 # Falls back to direct sync parse if submission fails.
 class SubmitManualBatchJob < ApplicationJob
   queue_as :default

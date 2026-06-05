@@ -235,6 +235,55 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
     BedrockIngestionJob.define_singleton_method(:perform_later, orig_later)
   end
 
+  test "web chat PDF upload without question parses sync and does not enqueue manual batch" do
+    orig_submit_manual = SubmitManualBatchJob.method(:perform_later)
+    orig_sfc_new       = SingleFileChunkingService.method(:new)
+    orig_splitter_new  = PdfPageSplitterService.method(:new)
+
+    batch_calls = []
+    sfc_calls   = []
+
+    SubmitManualBatchJob.define_singleton_method(:perform_later) do |**kwargs|
+      batch_calls << kwargs
+    end
+
+    fake_splitter = Object.new
+    fake_splitter.define_singleton_method(:page_count) { CustomChunkingPipeline::SYNC_PAGES + 3 }
+    PdfPageSplitterService.define_singleton_method(:new) { |_binary| fake_splitter }
+
+    SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
+      sfc_calls << kwargs
+      asset = ChunkAsset.new(
+        filename: kwargs[:filename],
+        sha256: kwargs[:sha256],
+        s3_key: kwargs[:s3_key],
+        content_type: kwargs[:content_type]
+      )
+      asset.canonical_name = DOC_NAME
+      asset.aliases        = ALIASES
+      OpenStruct.new(call: asset)
+    end
+
+    binary = "%PDF long manual bytes"
+    doc_payload = [ {
+      filename: "long_manual.pdf",
+      data: Base64.strict_encode64(binary),
+      media_type: "application/pdf"
+    } ]
+
+    QueryOrchestratorService
+      .new("", documents: doc_payload)
+      .send(:upload_and_sync_attachments)
+
+    assert_empty batch_calls, "web/chat uploads must not enqueue SubmitManualBatchJob"
+    assert_equal 1, sfc_calls.size, "long PDFs from web/chat must parse sync"
+    assert_equal "long_manual.pdf", sfc_calls.first[:filename]
+  ensure
+    SubmitManualBatchJob.define_singleton_method(:perform_later, orig_submit_manual)
+    SingleFileChunkingService.define_singleton_method(:new, orig_sfc_new)
+    PdfPageSplitterService.define_singleton_method(:new, orig_splitter_new)
+  end
+
   # ---------------------------------------------------------------------------
   # Office parse error — no legacy fallback
   # ---------------------------------------------------------------------------

@@ -11,14 +11,18 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
   PDF_BINARY  = ("%PDF-1.4\n" + ("x" * 100)).b
 
   def build_zip(entries:)
-    path = Tempfile.new([ "test_zip", ".zip" ]).path
-    Zip::OutputStream.open(path) do |zos|
+    # Keep a reference so the Tempfile finalizer doesn't delete the file
+    # before the test's service.process! call (which may happen after GC).
+    @_zip_tempfiles ||= []
+    tmpfile = Tempfile.new([ "test_zip", ".zip" ])
+    @_zip_tempfiles << tmpfile
+    Zip::OutputStream.open(tmpfile.path) do |zos|
       entries.each do |name, content|
         zos.put_next_entry(name)
         zos.write(content)
       end
     end
-    path
+    tmpfile.path
   end
 
   class FakeS3Client
@@ -40,6 +44,7 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
   teardown do
     BulkUploadAsset.where(bulk_upload: @bulk_upload).destroy_all
     @bulk_upload.destroy
+    @_zip_tempfiles&.each { |f| f.close! rescue nil }
   end
 
   # ── ContentDedup skip ─────────────────────────────────────────────────────────

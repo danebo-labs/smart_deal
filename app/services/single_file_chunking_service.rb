@@ -124,7 +124,8 @@ class SingleFileChunkingService
   end
 
   def handle_pdf_mixed(pages)
-    total = pages.count
+    total      = pages.count
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     filter_results = PageRelevanceFilter.filter_pages(pages: pages, filename: @filename)
 
@@ -144,6 +145,17 @@ class SingleFileChunkingService
     end
 
     if kept_pages.empty?
+      if total > PageRelevanceFilter::BATCH_WINDOW_SIZE
+        Rails.logger.warn(
+          "SingleFileChunkingService: all pages dropped for #{@filename} " \
+          "(#{total} pages) — falling back to per-page keep-all"
+        )
+        page_results = chunk_pages_with_identity_hint(pages, total)
+        merged_json  = ChunkMergerService.merge(page_results)
+        log_pdf_mixed_metrics(total: total, parsed_pages: pages, fallback: "per_page_keep_all", started_at: started_at)
+        return parse_and_write(merged_json)
+      end
+
       Rails.logger.warn("SingleFileChunkingService: all pages dropped for #{@filename} — falling back to whole-file parse")
       # Fallback: parse entire PDF as one document rather than silently dropping.
       # Prevents losing documents with technical value (e.g. single-page raster diagrams
@@ -158,11 +170,13 @@ class SingleFileChunkingService
         user_content: content,
         filename:     @filename
       )
+      log_pdf_mixed_metrics(total: total, parsed_pages: [], fallback: "whole_file", started_at: started_at)
       return parse_and_write(result[:text])
     end
 
     page_results = chunk_pages_with_identity_hint(kept_pages, total)
     merged_json  = ChunkMergerService.merge(page_results)
+    log_pdf_mixed_metrics(total: total, parsed_pages: kept_pages, fallback: nil, started_at: started_at)
     parse_and_write(merged_json)
   end
 
@@ -245,6 +259,34 @@ class SingleFileChunkingService
       total_pages:  total
     )
     { page_number: page_num, text: result[:text], usage: result[:usage], model: model }
+  end
+
+  def log_pdf_mixed_metrics(total:, parsed_pages:, fallback:, started_at:)
+    parsed_count = parsed_pages.size
+    duration_ms  = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+
+    Rails.logger.info(
+      JSON.generate(
+        event:       "single_file_chunking_pdf_mixed",
+        filename:    @filename,
+        total_pages: total,
+        kept_pages:  parsed_count,
+        dropped_pages: total - parsed_count,
+        opus_pages:  parsed_pages.count { |page| page.respond_to?(:force_opus) && page.force_opus },
+        parse_waves: parse_waves_count(parsed_pages),
+        duration_ms: duration_ms,
+        fallback:    fallback
+      )
+    )
+  rescue StandardError => e
+    Rails.logger.warn("SingleFileChunkingService: failed to log pdf_mixed metrics — #{e.message}")
+  end
+
+  def parse_waves_count(pages)
+    return 0 if pages.empty?
+    return 1 if pages.size == 1
+
+    1 + ((pages.size - 1).fdiv(FileMultimodalRouter::MAX_PARALLEL_PAGES).ceil)
   end
 
   def call_with_page_cap_retry(client:, user_content:, page_number: nil, total_pages: nil)

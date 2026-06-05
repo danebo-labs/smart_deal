@@ -18,8 +18,8 @@
 #
 # Batch mode (multi-page docs — PDF native or Office/PPT):
 #   PageRelevanceFilter.filter_pages routes to call_batch for pages.size > 1,
-#   classifying all N pages in a single Haiku call (avoids scanned_image short-circuit
-#   that would keep covers/indexes).
+#   classifying pages in Haiku windows (pages + bytes) to avoid truncation and
+#   oversized Anthropic payloads.
 #
 # @param repeated_texts [Set<String>] texts that appear on >= 3 pages in this document
 #   (running headers/footers). Built by the caller from all page texts before filtering.
@@ -28,6 +28,9 @@ class PageRelevanceFilter
   HAIKU_TRACKING_MODEL_ID  = "claude-haiku-4-5-20251001-direct"
   HAIKU_MAX_TOKENS         = 64
   HAIKU_BATCH_MAX_TOKENS   = 256
+  BATCH_WINDOW_SIZE        = 20
+  MAX_WINDOW_BYTES         = 22 * 1024 * 1024
+  PER_PAGE_OUTPUT_TOKENS   = 32
 
   TOC_LINE_FRACTION = 0.30  # ≥30% of lines ending in a page number → ToC
   TOC_MIN_LINES     = 10
@@ -62,7 +65,7 @@ class PageRelevanceFilter
     end
   end
 
-  # Batch classifier for all pages in a single Haiku call.
+  # Batch classifier for all pages, split into bounded Haiku windows.
   #
   # @param pages        [Array<#number, #binary>]  page infos with single-page PDF bytes
   # @param filename     [String]                   document filename (for tracking)
@@ -71,8 +74,81 @@ class PageRelevanceFilter
   def self.call_batch(pages:, filename:, haiku_client: nil)
     return {} if pages.empty?
 
-    BatchFilter.new(pages: pages, filename: filename, haiku_client: haiku_client).call
+    total_pages      = pages.map(&:number).compact.max || pages.size
+    windows          = build_batch_windows(pages)
+    fallback_windows = []
+
+    results = windows.each_with_object({}) do |window, h|
+      filter = BatchFilter.new(
+        pages:        window,
+        filename:     filename,
+        haiku_client: haiku_client,
+        total_pages:  total_pages
+      )
+      h.merge!(filter.call)
+      fallback_windows << window_range(window) if filter.fallback?
+    end
+
+    log_batch_windows(filename: filename, total_pages: total_pages, windows: windows, fallback_windows: fallback_windows)
+    results
   end
+
+  def self.build_batch_windows(pages)
+    windows       = []
+    current       = []
+    current_bytes = 0
+
+    pages.each do |page|
+      page_bytes = page.binary.to_s.bytesize
+
+      if current.any? && (current.size >= BATCH_WINDOW_SIZE || current_bytes + page_bytes > MAX_WINDOW_BYTES)
+        windows << current
+        current       = []
+        current_bytes = 0
+      end
+
+      current << page
+      current_bytes += page_bytes
+
+      if page_bytes > MAX_WINDOW_BYTES
+        windows << current
+        current       = []
+        current_bytes = 0
+      end
+    end
+
+    windows << current if current.any?
+    windows
+  end
+  private_class_method :build_batch_windows
+
+  def self.window_range(pages)
+    numbers = pages.map(&:number).compact
+    "#{numbers.min}..#{numbers.max}"
+  end
+  private_class_method :window_range
+
+  def self.window_bytes(pages)
+    pages.sum { |page| page.binary.to_s.bytesize }
+  end
+  private_class_method :window_bytes
+
+  def self.log_batch_windows(filename:, total_pages:, windows:, fallback_windows:)
+    Rails.logger.info(
+      JSON.generate(
+        event:            "page_relevance_filter_batch_windows",
+        filename:         filename,
+        total_pages:      total_pages,
+        windows_count:    windows.size,
+        window_ranges:    windows.map { |window| window_range(window) },
+        window_bytes:     windows.map { |window| window_bytes(window) },
+        fallback_windows: fallback_windows
+      )
+    )
+  rescue StandardError => e
+    Rails.logger.warn("PageRelevanceFilter.call_batch: failed to log window metrics — #{e.message}")
+  end
+  private_class_method :log_batch_windows
 
   # @param page_binary    [String]       raw single-page PDF bytes
   # @param page_number    [Integer]      1-indexed position in original document
@@ -233,9 +309,11 @@ class PageRelevanceFilter
 
   # ─── Batch filter (multi-page PDFs and Office/PPT) ────────────────────────
 
-  # Single Haiku call that classifies all N rasterized pages at once.
+  # Single Haiku call that classifies one bounded window of rasterized pages.
   # Used exclusively from PageRelevanceFilter.call_batch — do not instantiate directly.
   class BatchFilter
+    attr_reader :fallback_reason
+
     HAIKU_BATCH_SYSTEM = <<~PROMPT.strip.freeze
       You classify rasterized pages (PDF manuals or presentation slides) for elevator technicians.
       Return ONLY raw JSON. Do NOT wrap in markdown fences. Do NOT add any prose.
@@ -245,39 +323,79 @@ class PageRelevanceFilter
       Be aggressive dropping covers and indexes.
     PROMPT
 
-    def initialize(pages:, filename:, haiku_client:)
+    def initialize(pages:, filename:, haiku_client:, total_pages:)
       @pages        = pages
       @filename     = filename
       @haiku_client = haiku_client
+      @total_pages  = total_pages
+    end
+
+    def fallback?
+      @fallback_reason.present?
     end
 
     def call
       client     = @haiku_client || build_client
-      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      max_tokens = dynamic_max_tokens
 
+      response, latency_ms = invoke(client, max_tokens: max_tokens)
+      parse_result(response, latency_ms)
+    rescue JSON::ParserError => e
+      retry_after_parse_error(client, max_tokens, e)
+    rescue StandardError => e
+      fallback_result(e)
+    end
+
+    private
+
+    def retry_after_parse_error(client, max_tokens, error)
+      retry_max_tokens = max_tokens * 2
+      Rails.logger.warn(
+        "PageRelevanceFilter.call_batch #{@filename} #{window_label} JSON parse failed " \
+        "(#{error.class}): #{error.message} — retrying with max_tokens=#{retry_max_tokens}"
+      )
+
+      response, latency_ms = invoke(client, max_tokens: retry_max_tokens)
+      parse_result(response, latency_ms)
+    rescue JSON::ParserError => e
+      fallback_result(e)
+    rescue StandardError => e
+      fallback_result(e)
+    end
+
+    def invoke(client, max_tokens:)
+      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       response = client.messages.create(
         model:      PageRelevanceFilter::HAIKU_MODEL,
-        max_tokens: PageRelevanceFilter::HAIKU_BATCH_MAX_TOKENS,
+        max_tokens: max_tokens,
         system:     HAIKU_BATCH_SYSTEM,
         messages:   [ { role: "user", content: build_content } ]
       )
+      latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+      [ response, latency_ms ]
+    end
 
-      latency_ms   = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+    def parse_result(response, latency_ms)
+      track_usage(response, latency_ms)
+
       text_block   = response.content.find { |b| b.type.to_s == "text" }
       json_str     = strip_markdown_fences(text_block.text.to_s)
       parsed_pages = JSON.parse(json_str).fetch("pages")
-      result       = build_result(parsed_pages)
 
-      track_usage(response, latency_ms)
-      result
-    rescue StandardError => e
-      Rails.logger.warn("PageRelevanceFilter.call_batch #{@filename} failed (#{e.class}): #{e.message} — keeping all pages")
+      build_result(parsed_pages)
+    end
+
+    def fallback_result(error)
+      @fallback_reason = :haiku_batch_error_fallback
+      Rails.logger.warn(
+        "PageRelevanceFilter.call_batch #{@filename} #{window_label} failed " \
+        "(#{error.class}): #{error.message} — keeping window pages"
+      )
+
       @pages.each_with_object({}) do |page, h|
         h[page.number] = { keep: true, reason: :haiku_batch_error_fallback, source: :haiku_batch }
       end
     end
-
-    private
 
     def build_content
       content = []
@@ -294,6 +412,13 @@ class PageRelevanceFilter
       end
       content << { type: "text", text: "Classify each slide. Return ONLY the JSON object." }
       content
+    end
+
+    def dynamic_max_tokens
+      [
+        PageRelevanceFilter::HAIKU_BATCH_MAX_TOKENS,
+        64 + @pages.size * PageRelevanceFilter::PER_PAGE_OUTPUT_TOKENS
+      ].max
     end
 
     def build_result(parsed_pages)
@@ -346,10 +471,9 @@ class PageRelevanceFilter
 
     def track_usage(response, latency_ms)
       usage = response.usage
-      n     = @pages.size
       TrackBedrockQueryJob.perform_later(
         model_id:              PageRelevanceFilter::HAIKU_TRACKING_MODEL_ID,
-        user_query:            "page_filter_batch: #{@filename} 1..#{n}/#{n}",
+        user_query:            "page_filter_batch: #{@filename} #{window_label}/#{@total_pages}",
         latency_ms:            latency_ms,
         input_tokens:          usage.input_tokens.to_i,
         output_tokens:         usage.output_tokens.to_i,
@@ -359,6 +483,11 @@ class PageRelevanceFilter
       )
     rescue StandardError => e
       Rails.logger.warn("PageRelevanceFilter.call_batch: failed to enqueue tracking job — #{e.message}")
+    end
+
+    def window_label
+      numbers = @pages.map(&:number).compact
+      "#{numbers.min}..#{numbers.max}"
     end
   end
 end

@@ -79,6 +79,41 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     attr_reader :messages
   end
 
+  class CapturingBatchHaikuResponse
+    attr_reader :content, :usage
+
+    def initialize(text)
+      @content = [ OpenStruct.new(type: "text", text: text) ]
+      @usage   = OpenStruct.new(input_tokens: 20, output_tokens: 40)
+    end
+  end
+
+  class CapturingBatchHaikuMessages
+    attr_reader :calls
+
+    def initialize(&responder)
+      @calls     = []
+      @responder = responder
+    end
+
+    def create(**kwargs)
+      @calls << kwargs
+      response = @responder.call(kwargs, @calls.size)
+      raise response if response.is_a?(Exception)
+
+      text = response.is_a?(String) ? response : JSON.generate({ "pages" => response })
+      CapturingBatchHaikuResponse.new(text)
+    end
+  end
+
+  class CapturingBatchHaikuClient
+    attr_reader :messages
+
+    def initialize(&responder)
+      @messages = CapturingBatchHaikuMessages.new(&responder)
+    end
+  end
+
   FakePage = Struct.new(:number, :binary) unless defined?(FakePage)
 
   # ---------------------------------------------------------------------------
@@ -127,6 +162,28 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
       calls << binary if calls
       map.fetch(binary) { { has_images: false, text_layer_chars: 500, image_area_ratio: 0.0 } }
     end
+  end
+
+  def batch_page_numbers(params)
+    Array(params[:messages].first[:content]).filter_map do |block|
+      next unless block.is_a?(Hash) && block[:type] == "text"
+
+      block[:text].to_s[/\APage (\d+):\z/, 1]&.to_i
+    end
+  end
+
+  def batch_response_for_params(params, keep: true, reason: "content")
+    batch_page_numbers(params).map { |page| { "page" => page, "keep" => keep, "reason" => reason } }
+  end
+
+  def with_page_relevance_constant(name, value)
+    original = PageRelevanceFilter.const_get(name)
+    PageRelevanceFilter.send(:remove_const, name)
+    PageRelevanceFilter.const_set(name, value)
+    yield
+  ensure
+    PageRelevanceFilter.send(:remove_const, name)
+    PageRelevanceFilter.const_set(name, original)
   end
 
   # ---------------------------------------------------------------------------
@@ -333,6 +390,131 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
   test "call_batch returns empty hash for empty pages" do
     result = PageRelevanceFilter.call_batch(pages: [], filename: "deck.pptx")
     assert_equal({}, result)
+  end
+
+  test "call_batch windows by page count and merges all window results" do
+    pages = (1..(PageRelevanceFilter::BATCH_WINDOW_SIZE + 1)).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = CapturingBatchHaikuClient.new do |params, _idx|
+      batch_response_for_params(params, keep: true, reason: "window_keep")
+    end
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal 2, client.messages.calls.size
+    assert_equal (1..PageRelevanceFilter::BATCH_WINDOW_SIZE).to_a, batch_page_numbers(client.messages.calls[0])
+    assert_equal [ PageRelevanceFilter::BATCH_WINDOW_SIZE + 1 ], batch_page_numbers(client.messages.calls[1])
+    assert_equal pages.map(&:number).sort, result.keys.sort
+    assert result.values.all? { |r| r[:keep] }
+  end
+
+  test "call_batch windows by bytes and sends oversized page alone" do
+    with_page_relevance_constant(:MAX_WINDOW_BYTES, 10) do
+      pages = [
+        FakePage.new(1, "a" * 6),
+        FakePage.new(2, "b" * 6),
+        FakePage.new(3, "c" * 20),
+        FakePage.new(4, "d" * 4)
+      ]
+      client = CapturingBatchHaikuClient.new do |params, _idx|
+        batch_response_for_params(params, keep: true, reason: "window_keep")
+      end
+
+      PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+      assert_equal [ [ 1 ], [ 2 ], [ 3 ], [ 4 ] ], client.messages.calls.map { |params| batch_page_numbers(params) }
+    end
+  end
+
+  test "call_batch uses one call when pages fit in one window" do
+    pages = (1..4).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = CapturingBatchHaikuClient.new do |params, _idx|
+      batch_response_for_params(params, keep: true, reason: "content")
+    end
+
+    PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal 1, client.messages.calls.size
+    assert_equal [ 1, 2, 3, 4 ], batch_page_numbers(client.messages.calls.first)
+  end
+
+  test "call_batch scales max_tokens with window size" do
+    pages = (1..10).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = CapturingBatchHaikuClient.new do |params, _idx|
+      batch_response_for_params(params, keep: true, reason: "content")
+    end
+
+    PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal 64 + 10 * PageRelevanceFilter::PER_PAGE_OUTPUT_TOKENS,
+                 client.messages.calls.first[:max_tokens]
+  end
+
+  test "call_batch retries JSON parse failure once then falls back only for that window" do
+    pages = (1..(PageRelevanceFilter::BATCH_WINDOW_SIZE + 1)).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = CapturingBatchHaikuClient.new do |params, idx|
+      case idx
+      when 1 then "not json {{"
+      when 2 then "still not json {{"
+      else
+        batch_response_for_params(params, keep: false, reason: "cover")
+      end
+    end
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    expected_initial_tokens = 64 + PageRelevanceFilter::BATCH_WINDOW_SIZE * PageRelevanceFilter::PER_PAGE_OUTPUT_TOKENS
+    assert_equal 3, client.messages.calls.size
+    assert_equal expected_initial_tokens, client.messages.calls[0][:max_tokens]
+    assert_equal expected_initial_tokens * 2, client.messages.calls[1][:max_tokens]
+    assert_equal PageRelevanceFilter::HAIKU_BATCH_MAX_TOKENS, client.messages.calls[2][:max_tokens]
+
+    (1..PageRelevanceFilter::BATCH_WINDOW_SIZE).each do |page_number|
+      assert_equal true, result[page_number][:keep]
+      assert_equal :haiku_batch_error_fallback, result[page_number][:reason]
+    end
+
+    assert_equal false, result[PageRelevanceFilter::BATCH_WINDOW_SIZE + 1][:keep]
+    assert_equal :cover, result[PageRelevanceFilter::BATCH_WINDOW_SIZE + 1][:reason]
+  end
+
+  test "call_batch keeps API error fallback to one window without retry" do
+    pages = (1..(PageRelevanceFilter::BATCH_WINDOW_SIZE + 1)).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = CapturingBatchHaikuClient.new do |params, idx|
+      if idx == 1
+        RuntimeError.new("payload too large")
+      else
+        batch_response_for_params(params, keep: false, reason: "cover")
+      end
+    end
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal 2, client.messages.calls.size
+    (1..PageRelevanceFilter::BATCH_WINDOW_SIZE).each do |page_number|
+      assert_equal true, result[page_number][:keep]
+      assert_equal :haiku_batch_error_fallback, result[page_number][:reason]
+    end
+
+    assert_equal false, result[PageRelevanceFilter::BATCH_WINDOW_SIZE + 1][:keep]
+    assert_equal :cover, result[PageRelevanceFilter::BATCH_WINDOW_SIZE + 1][:reason]
+  end
+
+  test "call_batch tracks real window ranges against total pages" do
+    pages = (1..(PageRelevanceFilter::BATCH_WINDOW_SIZE * 2)).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = CapturingBatchHaikuClient.new do |params, _idx|
+      batch_response_for_params(params, keep: true, reason: "content")
+    end
+    user_queries = []
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) do |**kwargs|
+      user_queries << kwargs[:user_query]
+    end
+
+    PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal [
+      "page_filter_batch: manual.pdf 1..20/40",
+      "page_filter_batch: manual.pdf 21..40/40"
+    ], user_queries
   end
 
   test "call_batch drops p1/p2 and keeps p3/p4 without force_opus for normal density" do

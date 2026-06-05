@@ -283,9 +283,11 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       OpenStruct.new(mode: :pdf_mixed, pages: [ page1, page3 ])
     end
 
-    orig_prf_new = PageRelevanceFilter.method(:new)
-    PageRelevanceFilter.define_singleton_method(:new) do |*|
-      OpenStruct.new(call: { keep: true, reason: "test", source: "stub" })
+    orig_filter = PageRelevanceFilter.method(:filter_pages)
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) do |page, h|
+        h[page.number] = { keep: true, reason: :test, source: :stub, force_opus: false }
+      end
     end
 
     page1_json = { "document_name" => "Anchor Manual", "aliases" => %w[anchor], "chunks" => [ { "text" => "# S0", "page" => 1 } ] }.to_json
@@ -323,7 +325,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal "Anchor Manual", asset.canonical_name
   ensure
     FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
-    PageRelevanceFilter.define_singleton_method(:new, orig_prf_new)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
   end
 
   # ─── Image summary + locale ──────────────────────────────────────────────────
@@ -815,6 +817,57 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal 1, claude_call_count, "expected 1 whole-file call after all pages filtered"
     assert_equal DOC_NAME, asset.canonical_name, "expected asset to be populated via fallback"
     assert_not_nil asset.chunks_count
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
+
+  test "handle_pdf_mixed: large all-filtered PDF falls back to per-page keep-all" do
+    pages = (1..(PageRelevanceFilter::BATCH_WINDOW_SIZE + 1)).map do |n|
+      BPRFakePdfPage.new(n, "%PDF-fake-p#{n}", BatchChunkingPrompt::MODEL_TEXT, false)
+    end
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: pages)
+    end
+
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |**|
+      pages.each_with_object({}) do |page, h|
+        h[page.number] = { keep: false, reason: :blank, source: :haiku_batch }
+      end
+    end
+
+    mutex = Mutex.new
+    captured_texts = []
+    response_text  = golden_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        text_blocks = Array(params.dig(:messages)&.find { |m| m[:role] == "user" }&.dig(:content))
+                        .select { |b| b.is_a?(Hash) && b[:type] == "text" }
+                        .map { |b| b[:text] }
+                        .join(" ")
+        mutex.synchronize { captured_texts << text_blocks }
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
+                                 stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = build_service(filename: "large-manual.pdf").call
+
+    assert_equal pages.size, captured_texts.size
+    assert captured_texts.all? { |text| text.match?(/Page \d+ of #{pages.size}/) },
+           "expected every fallback Claude call to be page-scoped"
+    assert_equal DOC_NAME, asset.canonical_name
   ensure
     FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)

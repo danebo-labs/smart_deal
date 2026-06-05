@@ -122,6 +122,13 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     )
   end
 
+  def stub_density_by_binary(map, calls: nil)
+    PageImageDensityAnalyzer.define_singleton_method(:analyze) do |binary|
+      calls << binary if calls
+      map.fetch(binary) { { has_images: false, text_layer_chars: 500, image_area_ratio: 0.0 } }
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Heuristic: blank
   # ---------------------------------------------------------------------------
@@ -328,7 +335,7 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     assert_equal({}, result)
   end
 
-  test "call_batch drops p1/p2 and keeps p3/p4 with force_opus" do
+  test "call_batch drops p1/p2 and keeps p3/p4 without force_opus for normal density" do
     pages = [
       FakePage.new(1, "fake_p1_bytes"),
       FakePage.new(2, "fake_p2_bytes"),
@@ -343,10 +350,19 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
       { "page" => 4, "keep" => true,  "reason" => "schematic" }
     ]
     client = FakeBatchHaikuClient.new(batch_response)
+    calls = []
+    stub_density_by_binary(
+      {
+        "fake_p3_bytes" => { has_images: false, text_layer_chars: 600, image_area_ratio: 0.1 },
+        "fake_p4_bytes" => { has_images: true,  text_layer_chars: 450, image_area_ratio: 0.4 }
+      },
+      calls: calls
+    )
 
     result = PageRelevanceFilter.call_batch(pages: pages, filename: "deck.pptx", haiku_client: client)
 
     assert_equal 4, result.size
+    assert_equal [ "fake_p3_bytes", "fake_p4_bytes" ], calls
 
     assert_equal false,       result[1][:keep]
     assert_equal :cover,      result[1][:reason]
@@ -359,11 +375,80 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     assert_equal true,        result[3][:keep]
     assert_equal :diagram,    result[3][:reason]
     assert_equal :haiku_batch, result[3][:source]
-    assert_equal true,        result[3][:force_opus]
+    assert_equal false,       result[3][:force_opus]
 
     assert_equal true,        result[4][:keep]
     assert_equal :schematic,  result[4][:reason]
-    assert_equal true,        result[4][:force_opus]
+    assert_equal false,       result[4][:force_opus]
+  end
+
+  test "call_batch force_opus only for kept scanned dense pages" do
+    pages = [
+      FakePage.new(1, "dense_page_bytes"),
+      FakePage.new(2, "normal_page_bytes")
+    ]
+    batch_response = [
+      { "page" => 1, "keep" => true, "reason" => "diagram" },
+      { "page" => 2, "keep" => true, "reason" => "procedure" }
+    ]
+    client = FakeBatchHaikuClient.new(batch_response)
+    stub_density_by_binary({
+      "dense_page_bytes"  => { has_images: true,  text_layer_chars: 50,  image_area_ratio: 0.85 },
+      "normal_page_bytes" => { has_images: false, text_layer_chars: 900, image_area_ratio: 0.0 }
+    })
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal true,  result[1][:keep]
+    assert_equal true,  result[1][:force_opus]
+    assert_equal true,  result[2][:keep]
+    assert_equal false, result[2][:force_opus]
+  end
+
+  test "call_batch does not analyze dropped pages even when they are dense" do
+    pages = [ FakePage.new(1, "dense_cover_bytes") ]
+    batch_response = [ { "page" => 1, "keep" => false, "reason" => "cover" } ]
+    client = FakeBatchHaikuClient.new(batch_response)
+    calls = []
+    stub_density_by_binary(
+      { "dense_cover_bytes" => { has_images: true, text_layer_chars: 20, image_area_ratio: 0.95 } },
+      calls: calls
+    )
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal false, result[1][:keep]
+    assert_equal false, result[1][:force_opus]
+    assert_empty calls
+  end
+
+  test "call_batch applies scanned density to missing_in_response fallback pages" do
+    pages = [
+      FakePage.new(1, "returned_cover_bytes"),
+      FakePage.new(2, "missing_dense_bytes"),
+      FakePage.new(3, "missing_normal_bytes")
+    ]
+    batch_response = [ { "page" => 1, "keep" => false, "reason" => "cover" } ]
+    client = FakeBatchHaikuClient.new(batch_response)
+    calls = []
+    stub_density_by_binary(
+      {
+        "missing_dense_bytes"  => { has_images: true,  text_layer_chars: 10,  image_area_ratio: 0.9 },
+        "missing_normal_bytes" => { has_images: false, text_layer_chars: 700, image_area_ratio: 0.0 }
+      },
+      calls: calls
+    )
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal false, result[1][:keep]
+    assert_equal true,  result[2][:keep]
+    assert_equal :missing_in_response, result[2][:reason]
+    assert_equal true,  result[2][:force_opus]
+    assert_equal true,  result[3][:keep]
+    assert_equal :missing_in_response, result[3][:reason]
+    assert_equal false, result[3][:force_opus]
+    assert_equal [ "missing_dense_bytes", "missing_normal_bytes" ], calls
   end
 
   test "call_batch defaults missing page to keep=true with :missing_in_response" do

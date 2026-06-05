@@ -297,18 +297,38 @@ class PageRelevanceFilter
     end
 
     def build_result(parsed_pages)
-      result = @pages.each_with_object({}) do |page, h|
-        h[page.number] = { keep: true, reason: :missing_in_response, source: :haiku_batch, force_opus: false }
+      entries = parsed_pages.each_with_object({}) do |entry, h|
+        next unless entry.is_a?(Hash)
+
+        page_number = entry["page"].to_i
+        h[page_number] = entry if page_number.positive?
       end
 
-      parsed_pages.each do |entry|
-        num    = entry["page"].to_i
-        keep   = entry["keep"] != false
-        reason = entry["reason"].to_s.presence&.to_sym || (keep ? :haiku_batch_keep : :haiku_batch_drop)
-        result[num] = { keep: keep, reason: reason, source: :haiku_batch, force_opus: keep }
-      end
+      @pages.each_with_object({}) do |page, h|
+        entry = entries[page.number]
 
-      result
+        if entry
+          keep   = entry["keep"] != false
+          reason = entry["reason"].to_s.presence&.to_sym || (keep ? :haiku_batch_keep : :haiku_batch_drop)
+        else
+          keep   = true
+          reason = :missing_in_response
+        end
+
+        h[page.number] = {
+          keep:       keep,
+          reason:     reason,
+          source:     :haiku_batch,
+          force_opus: keep && scanned_dense?(page.binary)
+        }
+      end
+    end
+
+    def scanned_dense?(binary)
+      return false if binary.blank?
+
+      density = PageImageDensityAnalyzer.analyze(binary)
+      density[:text_layer_chars].to_i < 100 && density[:image_area_ratio].to_f > 0.7
     end
 
     def strip_markdown_fences(text)

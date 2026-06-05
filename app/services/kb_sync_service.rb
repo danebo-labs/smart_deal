@@ -29,9 +29,10 @@ class KbSyncService
   # Starts an ingestion job. Safe to call frequently — Bedrock will queue
   # if another job is already running.
   # @param uploaded_filenames [Array<String>] Document names being indexed (for status UI)
+  # @param locale             [String, nil]  ISO 639-1 — forwarded to KbSyncBroadcaster.retrying
   # @return [Hash, nil] { job_id:, kb_id:, data_source_id: } or nil on config error
   # @raise [StandardError] re-raises transient AWS/Aurora errors so callers can retry
-  def sync!(uploaded_filenames: [])
+  def sync!(uploaded_filenames: [], locale: nil)
     unless @kb_id
       Rails.logger.warn("KbSyncService: KB ID not configured, skipping sync")
       return nil
@@ -43,7 +44,7 @@ class KbSyncService
     job = Bedrock::AuroraColdStartRetry.with_retry(
       error_classes: [ Aws::BedrockAgent::Errors::ServiceError ],
       on_retry: ->(attempt, delay) {
-        KbSyncBroadcaster.retrying(filenames: uploaded_filenames, attempt: attempt, delay: delay)
+        KbSyncBroadcaster.retrying(filenames: uploaded_filenames, attempt: attempt, delay: delay, locale: locale)
       }
     ) do
       @client.start_ingestion_job(

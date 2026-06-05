@@ -36,11 +36,18 @@ class FieldPhotoResultsParserTest < ActiveSupport::TestCase
     assert_includes body, "Notes: Manufacturer visible on label."
   end
 
-  test "missing canonical_component falls back to Unknown Component" do
+  test "missing canonical_component falls back to i18n unknown_component (en)" do
     json     = BENCHMARK_JSON.except("canonical_component").to_json
-    envelope = FieldPhotoResultsParser.to_envelope(json)
+    envelope = I18n.with_locale(:en) { FieldPhotoResultsParser.to_envelope(json) }
 
     assert_equal "Unknown Component", envelope["document_name"]
+  end
+
+  test "missing canonical_component falls back to i18n unknown_component (es)" do
+    json     = BENCHMARK_JSON.except("canonical_component").to_json
+    envelope = I18n.with_locale(:es) { FieldPhotoResultsParser.to_envelope(json) }
+
+    assert_equal "Componente desconocido", envelope["document_name"]
   end
 
   test "nil summary when JSON has no summary key" do

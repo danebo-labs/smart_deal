@@ -21,7 +21,7 @@ class BulkKbSyncServiceTest < ActiveSupport::TestCase
       @last_call_args      = nil
     end
 
-    def sync!(uploaded_filenames: [])
+    def sync!(uploaded_filenames: [], locale: nil)
       @last_call_args = { uploaded_filenames: uploaded_filenames }
       { job_id: TEST_JOB_ID, kb_id: "kb-123", data_source_id: @last_data_source_id }
     end

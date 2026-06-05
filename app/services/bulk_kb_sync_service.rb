@@ -12,8 +12,9 @@ class BulkKbSyncService
   end
 
   # @param uploaded_filenames [Array<String>] canonical names — forwarded to IngestionStatusService for UI
+  # @param locale             [String, nil]  ISO 639-1 — forwarded to KbSyncBroadcaster.retrying on Aurora retry
   # @return [Hash, nil] { job_id:, kb_id:, data_source_id: } or nil on config error
-  def sync!(uploaded_filenames: [])
-    @service.sync!(uploaded_filenames: uploaded_filenames)
+  def sync!(uploaded_filenames: [], locale: nil)
+    @service.sync!(uploaded_filenames: uploaded_filenames, locale: locale)
   end
 end

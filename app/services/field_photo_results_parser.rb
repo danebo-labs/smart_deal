@@ -15,7 +15,7 @@ class FieldPhotoResultsParser
   def to_envelope
     parsed = parse_json(@raw)
     {
-      "document_name" => parsed["canonical_component"].to_s.presence || "Unknown Component",
+      "document_name" => parsed["canonical_component"].to_s.presence || I18n.t("rag.unknown_component"),
       "aliases"       => Array(parsed["aliases"]),
       "summary"       => parsed["summary"].to_s.presence,
       "chunks"        => [ { "text" => build_body(parsed), "page" => 1 } ]

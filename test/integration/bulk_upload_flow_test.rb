@@ -84,7 +84,7 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
   end
 
   class FakeKbSync
-    def sync!(uploaded_filenames: [])
+    def sync!(uploaded_filenames: [], locale: nil)
       { job_id: FAKE_BEDROCK_JOB, kb_id: "kb-test", data_source_id: "ds-bulk" }
     end
   end

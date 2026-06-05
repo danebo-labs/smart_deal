@@ -44,7 +44,7 @@ class CustomChunkingPipeline
     upload_and_chunk_all(s3)
     return [] if @uploaded_filenames.empty?
 
-    result = BulkKbSyncService.new.sync!(uploaded_filenames: @uploaded_filenames)
+    result = BulkKbSyncService.new.sync!(uploaded_filenames: @uploaded_filenames, locale: @locale)
     if result.present?
       BedrockIngestionJob.perform_later(
         result[:job_id],
@@ -53,7 +53,8 @@ class CustomChunkingPipeline
         data_source_id:  result[:data_source_id],
         conv_session_id: @conv_session&.id,
         kb_document_ids: @kb_document_ids,
-        web_v1_metadata: @web_v1_metadata
+        web_v1_metadata: @web_v1_metadata,
+        locale:          @locale
       )
     end
 
@@ -182,7 +183,7 @@ class CustomChunkingPipeline
 
     @web_v1_metadata << {
       "filename"         => filename,
-      "canonical_name"   => chunk_asset.canonical_name.to_s,
+      "canonical_name"   => chunk_asset.canonical_name.to_s.strip.presence || "",
       "aliases"          => Array(chunk_asset.aliases),
       "summary"          => chunk_asset.summary.to_s.presence,
       "companion_offer"  => chunk_asset.companion_offer.to_s.presence,

@@ -38,24 +38,27 @@ class BedrockIngestionJob < ApplicationJob
   # in Solid Queue before this deploy; they are silently ignored.
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
               conv_session_id: nil, kb_document_ids: nil, started_at_iso: nil,
-              web_v1_metadata: nil, **_legacy_kwargs)
+              web_v1_metadata: nil, locale: nil, **_legacy_kwargs)
+    @locale = locale&.to_sym || :es
     return if ingestion_job_id.blank?
 
-    if reenqueue_mode?
-      perform_reenqueue(ingestion_job_id, uploaded_filenames,
-                        kb_id: kb_id, data_source_id: data_source_id,
-                        conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
-                        started_at_iso: started_at_iso, web_v1_metadata: web_v1_metadata)
-    else
-      perform_legacy(ingestion_job_id, uploaded_filenames,
-                     kb_id: kb_id, data_source_id: data_source_id,
-                     conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
-                     web_v1_metadata: web_v1_metadata)
+    I18n.with_locale(@locale) do
+      if reenqueue_mode?
+        perform_reenqueue(ingestion_job_id, uploaded_filenames,
+                          kb_id: kb_id, data_source_id: data_source_id,
+                          conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
+                          started_at_iso: started_at_iso, web_v1_metadata: web_v1_metadata)
+      else
+        perform_legacy(ingestion_job_id, uploaded_filenames,
+                       kb_id: kb_id, data_source_id: data_source_id,
+                       conv_session_id: conv_session_id, kb_document_ids: kb_document_ids,
+                       web_v1_metadata: web_v1_metadata)
+      end
     end
   rescue StandardError => e
     Rails.logger.error("BedrockIngestionJob failed: #{e.class}: #{e.message}")
     Rails.logger.error(e.backtrace.first(10).join("\n"))
-    broadcast_failed(uploaded_filenames, "error", e.message)
+    I18n.with_locale(@locale || :es) { broadcast_failed(uploaded_filenames, "error", e.message) }
   end
 
   private
@@ -87,7 +90,8 @@ class BedrockIngestionJob < ApplicationJob
         conv_session_id:  conv_session_id,
         kb_document_ids:  kb_document_ids,
         started_at_iso:   started_at.iso8601,
-        web_v1_metadata:  web_v1_metadata
+        web_v1_metadata:  web_v1_metadata,
+        locale:           @locale&.to_s
       )
     end
   end
@@ -229,6 +233,10 @@ class BedrockIngestionJob < ApplicationJob
 
     stem      = File.basename(filename, ".*").tr("_-", " ").strip
     canonical = result&.dig(:canonical_name).to_s.strip.presence
+
+    if canonical.blank?
+      Rails.logger.warn("BedrockIngestionJob: canonical_name blank for #{filename} — falling back to display_name or stem")
+    end
 
     kb_doc.display_name = canonical || kb_doc.display_name.presence || stem
 

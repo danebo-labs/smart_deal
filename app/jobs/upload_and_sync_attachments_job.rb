@@ -35,15 +35,17 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
     tenant    = tenant_id ? Tenant.find_by(id: tenant_id) : nil
     session   = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
 
-    QueryOrchestratorService
-      .new("", images: images, documents: documents, tenant: tenant, conv_session: session, locale: locale)
-      .send(:upload_and_sync_attachments)
+    I18n.with_locale(locale || :es) do
+      QueryOrchestratorService
+        .new("", images: images, documents: documents, tenant: tenant, conv_session: session, locale: locale)
+        .send(:upload_and_sync_attachments)
+    end
   rescue StandardError => e
     Rails.logger.error("UploadAndSyncAttachmentsJob failed: #{e.class}: #{e.message}")
     Rails.logger.error(e.backtrace.first(10).join("\n"))
     filenames = (Array(images_payload) + Array(documents_payload))
                   .map { |a| a[:filename] || a["filename"] }.compact
-    KbSyncBroadcaster.failed(filenames: filenames, reason: "upload_error")
+    KbSyncBroadcaster.failed(filenames: filenames, reason: "upload_error", locale: locale)
   end
 
   # Strips/wraps raw binary fields so the payload is JSON-safe AND smaller.

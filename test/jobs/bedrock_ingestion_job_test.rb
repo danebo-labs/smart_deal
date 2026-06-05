@@ -481,6 +481,41 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
     end
   end
 
+  # ─── Locale flow ─────────────────────────────────────────────────────────────
+
+  test "broadcasts failed message in English when locale='en'" do
+    with_mock_ingestion_service(%w[FAILED]) do
+      messages = capture_broadcasts("kb_sync") do
+        BedrockIngestionJob.perform_now("job-locale-en", [ "doc.txt" ], locale: "en")
+      end
+      assert_equal "failed", messages.first["status"]
+      assert_includes messages.first["message"], I18n.t("rag.document_indexing_failed_message", locale: :en)
+    end
+  end
+
+  test "broadcasts failed message in Spanish when locale='es'" do
+    with_mock_ingestion_service(%w[FAILED]) do
+      messages = capture_broadcasts("kb_sync") do
+        BedrockIngestionJob.perform_now("job-locale-es", [ "doc.txt" ], locale: "es")
+      end
+      assert_equal "failed", messages.first["status"]
+      assert_includes messages.first["message"], I18n.t("rag.document_indexing_failed_message", locale: :es)
+    end
+  end
+
+  test "re-enqueue mode: propagates locale in re-enqueued job args" do
+    with_env(INGESTION_REENQUEUE: "true") do
+      with_mock_ingestion_service(%w[IN_PROGRESS]) do
+        assert_enqueued_with(job: BedrockIngestionJob) do
+          BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ], locale: "en")
+        end
+        enq    = ActiveJob::Base.queue_adapter.enqueued_jobs.last
+        kwargs = enq[:args].last
+        assert_equal "en", kwargs["locale"], "locale must be forwarded in re-enqueued job"
+      end
+    end
+  end
+
   private
 
   def with_env(vars)

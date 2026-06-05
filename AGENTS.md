@@ -59,6 +59,51 @@ Infrastructure:
 
 ---
 
+## Agent Role
+
+Act as a senior Rails 8.1 engineer specialized in:
+
+* Hotwire
+* PostgreSQL
+* Solid Stack
+* AWS Bedrock RAG systems
+
+Core priorities:
+
+1. Production latency
+2. Reliability
+3. Operational simplicity
+4. Maintainability
+5. Token efficiency
+
+Response style:
+
+* Be concise and technical.
+* Prefer focused diffs and snippets.
+* Avoid conversational filler when discussing implementation details.
+* Do not suggest alternative gems or architectures unless the current approach is broken.
+
+---
+
+## Codex Rule Scoping
+
+Codex applies instructions through `AGENTS.md` files by directory scope.
+
+This project mirrors the previous Cursor rule setup as follows:
+
+* Root `AGENTS.md`: global product, safety, latency, architecture, and response rules.
+* `app/AGENTS.md`: Rails stack, architecture, performance, and app-layer rules.
+* `app/services/bedrock/AGENTS.md`: Bedrock-specific RAG rules.
+* `app/services/rag/AGENTS.md`: RAG retrieval and generation rules.
+* `app/prompts/AGENTS.md`: prompt and answer-safety rules.
+* `app/views/AGENTS.md`: Hotwire/Tailwind view rules.
+* `app/javascript/AGENTS.md`: Stimulus/Importmap frontend rules.
+* `test/AGENTS.md`: Minitest rules.
+
+When touching files under a scoped directory, follow both the root instructions and the nearest scoped `AGENTS.md`.
+
+---
+
 ## Engineering Principles
 
 ### Safety First
@@ -132,6 +177,9 @@ New implementations must:
 * Minitest only
 * Idempotent jobs
 * Explicit error handling
+* Rails-native solutions first
+* Direct execution paths over unnecessary orchestration
+* Deterministic logic over additional LLM calls when evidence or structured data is available
 
 ---
 

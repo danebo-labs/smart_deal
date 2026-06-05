@@ -872,4 +872,140 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
   end
+
+  # ─── degraded_pages: truncated page in pdf_mixed ─────────────────────────────
+
+  test "pdf_mixed: truncated page sets asset.degraded_pages and preserves clean pages' chunks" do
+    page1 = BPRFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+    page2 = BPRFakePdfPage.new(2, "%PDF-fake-p2", BatchChunkingPrompt::MODEL_TEXT, false)
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1, page2 ])
+    end
+
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
+    end
+
+    page1_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "# S0 p1", "page" => 1 } ] }.to_json
+    page2_json = { "document_name" => DOC_NAME, "aliases" => [],       "chunks" => [ { "text" => "# S4 p2", "page" => 2 } ] }.to_json
+
+    mutex      = Mutex.new
+    call_count = 0
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        idx = mutex.synchronize { call_count.tap { call_count += 1 } }
+        # call 0 = page 1 anchor (normal)
+        # call 1 = page 2 first attempt (max_tokens → triggers retry)
+        # call 2 = page 2 retry        (max_tokens → still truncated)
+        is_page2_truncated = idx >= 1
+        content    = [ OpenStruct.new(type: "text", text: is_page2_truncated ? page2_json : page1_json) ]
+        usage      = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                   cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        stop       = is_page2_truncated ? "max_tokens" : "end_turn"
+        message    = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6", stop_reason: stop)
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = build_service(filename: "manual.pdf").call
+
+    assert_equal [ 2 ], asset.degraded_pages, "expected page 2 in degraded_pages"
+    assert_equal DOC_NAME, asset.canonical_name
+    # page 1 chunk + page 2 real chunk + page 2 marker = 3
+    assert_equal 3, asset.chunks_count
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
+
+  test "pdf_mixed: non-truncated pages have empty degraded_pages" do
+    page1 = BPRFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+    page2 = BPRFakePdfPage.new(2, "%PDF-fake-p2", BatchChunkingPrompt::MODEL_TEXT, false)
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1, page2 ])
+    end
+
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
+    end
+
+    page_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "# S0", "page" => 1 } ] }.to_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |_|
+        content = [ OpenStruct.new(type: "text", text: page_json) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6", stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = build_service(filename: "manual.pdf").call
+
+    assert_equal [], Array(asset.degraded_pages)
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
+
+  test "call_with_page_cap_retry logs warn when retry still truncated" do
+    page1 = BPRFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1 ])
+    end
+
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
+    end
+
+    page_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "partial", "page" => 1 } ] }.to_json
+    call_count = 0
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |_|
+        call_count += 1
+        content = [ OpenStruct.new(type: "text", text: page_json) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6", stop_reason: "max_tokens")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    warn_logged = false
+    orig_warn   = Rails.logger.method(:warn)
+    Rails.logger.define_singleton_method(:warn) do |msg|
+      warn_logged = true if msg.to_s.include?("still truncated after retry")
+      orig_warn.call(msg)
+    end
+
+    build_service(filename: "manual.pdf").call
+
+    assert warn_logged, "expected warn log for retry-still-truncated"
+    assert_equal 2, call_count, "expected 2 Claude calls (first attempt + retry)"
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+    Rails.logger.define_singleton_method(:warn, orig_warn) if defined?(orig_warn)
+  end
 end

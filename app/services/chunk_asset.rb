@@ -14,5 +14,6 @@
 ChunkAsset = Struct.new(
   :filename, :sha256, :s3_key, :content_type,
   :canonical_name, :aliases, :summary, :companion_offer, :chunks_count, :chunks_s3_prefix,
+  :degraded_pages,
   keyword_init: true
 )

@@ -851,10 +851,11 @@ export default class extends Controller {
     const row = this._buildMessageRow("assistant")
     const bubble = row.querySelector(".chat-message")
 
-    const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Documento"
-    const aliases   = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
-    const lang      = (document.documentElement.lang || "es").toLowerCase()
-    const readyLine = lang.startsWith("en")
+    const canonical     = data.canonical_name || (data.filenames && data.filenames[0]) || "Documento"
+    const aliases       = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
+    const partialPages  = Array.isArray(data.partial_pages) ? data.partial_pages.filter(p => p != null) : []
+    const lang          = (document.documentElement.lang || "es").toLowerCase()
+    const readyLine     = lang.startsWith("en")
       ? "Ready — you can ask me anything about this."
       : "Listo, ya puedes preguntarme lo que necesites sobre esto."
 
@@ -866,6 +867,13 @@ export default class extends Controller {
       html += `<div style="margin-top:4px;">${pills}</div>`
     }
     html += `<div style="margin-top:6px;">${this.escapeHtml(readyLine)}</div>`
+
+    if (partialPages.length > 0) {
+      const warningText = lang.startsWith("en")
+        ? `⚠️ Pages ${partialPages.join(", ")} could not be fully extracted. Re-upload the file to reprocess them.`
+        : `⚠️ Las páginas ${partialPages.join(", ")} no se procesaron completamente. Vuelve a subir el archivo para reprocesarlas.`
+      html += `<div style="margin-top:6px;color:#b45309;font-size:13px;">${this.escapeHtml(warningText)}</div>`
+    }
 
     bubble.innerHTML = html
     this.messagesTarget.appendChild(row)

@@ -125,16 +125,75 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { ChunkMergerService.merge([]) }
   end
 
-  test "gracefully handles malformed JSON in one page" do
+  test "gracefully handles malformed JSON in one page — degraded marker added" do
     bad_results = [
       { page_number: 1, text: page1_json,    usage: nil, model: "claude-opus-4-7" },
       { page_number: 2, text: "not json {{", usage: nil, model: "claude-opus-4-7" }
     ]
-    # Should not raise — bad page produces empty chunks
+    # Should not raise — bad page produces 1 degradation marker chunk
     parsed = JSON.parse(ChunkMergerService.merge(bad_results))
     assert_equal DOC_NAME, parsed["document_name"]
-    # Only page 1's chunks should be present (page 2 is malformed → empty)
-    assert_equal 2, parsed["chunks"].count
+    # page 1 (2 chunks) + page 2 marker (1 chunk) = 3
+    assert_equal 3, parsed["chunks"].count
+    marker_chunk = parsed["chunks"].find { |c| c["page"] == 2 }
+    assert_not_nil marker_chunk
+    assert_includes marker_chunk["text"], "REQUIRES_FIELD_VERIFICATION"
+    assert_includes marker_chunk["text"], "p2"
+  end
+
+  # ─── degradation marker ───────────────────────────────────────────────────────
+
+  test "truncated page (stop_reason max_tokens) keeps parsed chunks and appends marker" do
+    truncated_text = {
+      "document_name" => DOC_NAME,
+      "aliases"       => %w[HPM],
+      "chunks"        => [ { "text" => "# S4 content", "page" => 2 } ]
+    }.to_json
+
+    results = [
+      { page_number: 1, text: page1_json,      stop_reason: nil,          usage: nil, model: "claude-sonnet-4-6" },
+      { page_number: 2, text: truncated_text,  stop_reason: "max_tokens", usage: nil, model: "claude-sonnet-4-6" }
+    ]
+
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+    # page 1 (2 chunks) + page 2 real chunk (1) + page 2 marker (1) = 4
+    assert_equal 4, parsed["chunks"].count
+    marker = parsed["chunks"].select { |c| c["page"] == 2 }.find { |c| c["text"].include?("REQUIRES_FIELD_VERIFICATION") }
+    assert_not_nil marker, "expected degradation marker for page 2"
+    real   = parsed["chunks"].select { |c| c["page"] == 2 }.find { |c| c["text"].include?("S4 content") }
+    assert_not_nil real, "expected real chunk from page 2 to be preserved"
+  end
+
+  test "non-truncated pages produce empty degraded_pages" do
+    report = ChunkMergerService.merge_with_report(page_results)
+    assert_equal [], report[:degraded_pages]
+    assert report[:json].is_a?(String)
+  end
+
+  test "merge_with_report reports degraded_pages for truncated and malformed pages" do
+    truncated_text = {
+      "document_name" => DOC_NAME,
+      "aliases"       => [],
+      "chunks"        => [ { "text" => "partial", "page" => 2 } ]
+    }.to_json
+
+    results = [
+      { page_number: 1, text: page1_json,      stop_reason: nil,          usage: nil, model: "claude-sonnet-4-6" },
+      { page_number: 2, text: truncated_text,  stop_reason: "max_tokens", usage: nil, model: "claude-sonnet-4-6" },
+      { page_number: 3, text: "bad {{",        stop_reason: nil,          usage: nil, model: "claude-sonnet-4-6" }
+    ]
+
+    report = ChunkMergerService.merge_with_report(results)
+    assert_includes report[:degraded_pages], 2
+    assert_includes report[:degraded_pages], 3
+    assert_not_includes report[:degraded_pages], 1
+  end
+
+  test "merge backward-compatible: still returns JSON string" do
+    result = ChunkMergerService.merge(page_results)
+    assert result.is_a?(String)
+    parsed = JSON.parse(result)
+    assert_equal DOC_NAME, parsed["document_name"]
   end
 
   # ─── summary + companion_offer from anchor ────────────────────────────────────

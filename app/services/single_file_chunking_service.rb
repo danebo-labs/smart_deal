@@ -151,9 +151,11 @@ class SingleFileChunkingService
           "(#{total} pages) — falling back to per-page keep-all"
         )
         page_results = chunk_pages_with_identity_hint(pages, total)
-        merged_json  = ChunkMergerService.merge(page_results)
+        report       = ChunkMergerService.merge_with_report(page_results)
         log_pdf_mixed_metrics(total: total, parsed_pages: pages, fallback: "per_page_keep_all", started_at: started_at)
-        return parse_and_write(merged_json)
+        parse_and_write(report[:json])
+        @asset.degraded_pages = report[:degraded_pages]
+        return @asset
       end
 
       Rails.logger.warn("SingleFileChunkingService: all pages dropped for #{@filename} — falling back to whole-file parse")
@@ -175,9 +177,11 @@ class SingleFileChunkingService
     end
 
     page_results = chunk_pages_with_identity_hint(kept_pages, total)
-    merged_json  = ChunkMergerService.merge(page_results)
+    report       = ChunkMergerService.merge_with_report(page_results)
     log_pdf_mixed_metrics(total: total, parsed_pages: kept_pages, fallback: nil, started_at: started_at)
-    parse_and_write(merged_json)
+    parse_and_write(report[:json])
+    @asset.degraded_pages = report[:degraded_pages]
+    @asset
   end
 
   def handle_office
@@ -258,7 +262,7 @@ class SingleFileChunkingService
       page_number:  page_num,
       total_pages:  total
     )
-    { page_number: page_num, text: result[:text], usage: result[:usage], model: model }
+    { page_number: page_num, text: result[:text], usage: result[:usage], model: model, stop_reason: result[:stop_reason] }
   end
 
   def log_pdf_mixed_metrics(total:, parsed_pages:, fallback:, started_at:)
@@ -272,7 +276,7 @@ class SingleFileChunkingService
         total_pages: total,
         kept_pages:  parsed_count,
         dropped_pages: total - parsed_count,
-        opus_pages:  parsed_pages.count { |page| page.respond_to?(:force_opus) && page.force_opus },
+        opus_pages:  parsed_pages.count { |page| page.model == BatchChunkingPrompt::MODEL_MULTIMODAL },
         parse_waves: parse_waves_count(parsed_pages),
         duration_ms: duration_ms,
         fallback:    fallback
@@ -307,13 +311,23 @@ class SingleFileChunkingService
       "#{BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS}"
     )
 
-    client.call(
+    retry_result = client.call(
       user_content: user_content,
       filename:     @filename,
       page_number:  page_number,
       total_pages:  total_pages,
       max_tokens:   BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS
     )
+
+    if retry_result[:stop_reason] == "max_tokens"
+      Rails.logger.warn(
+        "SingleFileChunkingService: #{@filename}" \
+        "#{page_number ? " p#{page_number}" : ''} still truncated after retry at " \
+        "#{BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS} — page will be marked as degraded"
+      )
+    end
+
+    retry_result
   end
 
   def handle_pdf_text_only_binary(pdf_binary, model)

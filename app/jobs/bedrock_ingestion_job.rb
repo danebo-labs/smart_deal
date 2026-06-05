@@ -154,6 +154,7 @@ class BedrockIngestionJob < ApplicationJob
     aliases         = Array(result&.dig(:aliases)).first(5).map(&:to_s).compact_blank
     summary         = result&.dig(:summary).to_s.presence
     companion_offer = result&.dig(:companion_offer).to_s.presence
+    partial_pages   = Array(result&.dig(:partial_pages)).compact
 
     message = if aliases.any?
       I18n.t("rag.whatsapp_indexed_with_aliases",
@@ -165,6 +166,10 @@ class BedrockIngestionJob < ApplicationJob
              default: "✅ #{canonical}")
     end
 
+    if partial_pages.any?
+      message = "#{message}\n#{I18n.t('rag.partial_pages_warning', pages: partial_pages.join(', '))}"
+    end
+
     ActionCable.server.broadcast("kb_sync", {
       status:          "indexed",
       filenames:       [ filename ],
@@ -172,6 +177,7 @@ class BedrockIngestionJob < ApplicationJob
       aliases:         aliases,
       summary:         summary,
       companion_offer: companion_offer,
+      partial_pages:   partial_pages,
       message:         message
     })
   end
@@ -191,7 +197,8 @@ class BedrockIngestionJob < ApplicationJob
           canonical_name:  m["canonical_name"],
           aliases:         Array(m["aliases"]),
           summary:         m["summary"].to_s.presence,
-          companion_offer: m["companion_offer"].to_s.presence
+          companion_offer: m["companion_offer"].to_s.presence,
+          partial_pages:   Array(m["partial_pages"])
         }
       end
       kb_doc = ids[idx] ? KbDocument.find_by(id: ids[idx]) : nil

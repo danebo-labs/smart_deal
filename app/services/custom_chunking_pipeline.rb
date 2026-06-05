@@ -176,7 +176,8 @@ class CustomChunkingPipeline
       "aliases"          => Array(chunk_asset.aliases),
       "summary"          => chunk_asset.summary.to_s.presence,
       "companion_offer"  => chunk_asset.companion_offer.to_s.presence,
-      "chunks_s3_prefix" => chunk_asset.chunks_s3_prefix.to_s.presence
+      "chunks_s3_prefix" => chunk_asset.chunks_s3_prefix.to_s.presence,
+      "partial_pages"    => Array(chunk_asset.degraded_pages)
     }
   end
 

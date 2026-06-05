@@ -16,22 +16,39 @@
 #   - chunks:        concat of all pages' chunks in page-number order
 #   - chunk["page"]: original 1-indexed page number (gaps allowed — NOT renumbered)
 class ChunkMergerService
+  # S0-style marker surfaced to Haiku when a page could not be fully extracted.
+  # %{page} is interpolated with the 1-indexed page number.
+  DEGRADATION_MARKER = \
+    "# S0 - EXTRACCION PARCIAL\n" \
+    "Esta pagina (p%<page>d) no se proceso por completo durante la ingesta " \
+    "(salida truncada o ilegible). REQUIRES_FIELD_VERIFICATION. " \
+    "No fue indexada completa: vuelve a subir el archivo o solicita reprocesar esta pagina."
+
   # @param page_results [Array<Hash>]
-  #   Each: { page_number: Integer, text: String (Claude JSON), usage:, model: String }
-  # @return [String] merged JSON
+  #   Each: { page_number: Integer, text: String (Claude JSON), stop_reason: String|nil, usage:, model: String }
+  # @return [String] merged JSON (backward-compatible)
   def self.merge(page_results)
-    new(page_results).merge
+    merge_with_report(page_results)[:json]
+  end
+
+  # @return [Hash] { json: String, degraded_pages: Array<Integer> }
+  def self.merge_with_report(page_results)
+    new(page_results).merge_with_report
   end
 
   def initialize(page_results)
     @page_results = page_results.sort_by { |r| r[:page_number] }
   end
 
-  def merge
+  def merge_with_report
     raise ArgumentError, "No page results to merge" if @page_results.empty?
 
+    degraded_pages = []
+
     parsed_pages = @page_results.map.with_index do |r, idx|
-      parse_page(r[:text], idx, r[:page_number])
+      parsed, degraded = parse_page_result(r, idx)
+      degraded_pages << r[:page_number] if degraded
+      parsed
     end
 
     doc_name, chosen_idx = canonical_name(parsed_pages)
@@ -46,16 +63,47 @@ class ChunkMergerService
       end
     end
 
-    JSON.generate({
+    json = JSON.generate({
       "document_name"   => doc_name,
       "aliases"         => all_aliases,
       "summary"         => parsed_pages[chosen_idx]&.dig("summary").to_s.presence,
       "companion_offer" => parsed_pages[chosen_idx]&.dig("companion_offer").to_s.presence,
       "chunks"          => all_chunks
     })
+
+    { json: json, degraded_pages: degraded_pages }
   end
 
   private
+
+  # Returns [parsed_hash, degraded_boolean].
+  # Three cases:
+  #   - parse OK, not truncated  → normal parsed hash, not degraded
+  #   - parse OK, max_tokens     → parsed chunks + marker appended, degraded
+  #   - parse fails              → marker-only hash, degraded
+  def parse_page_result(r, idx)
+    page_number = r[:page_number]
+    text        = r[:text].to_s.strip
+    stop_reason = r[:stop_reason]
+
+    parsed = JSON.parse(text)
+
+    if stop_reason == "max_tokens"
+      marker  = degradation_marker_chunk(page_number)
+      patched = parsed.merge("chunks" => Array(parsed["chunks"]) + [ marker ])
+      [ patched, true ]
+    else
+      [ parsed, false ]
+    end
+  rescue JSON::ParserError => e
+    Rails.logger.error("ChunkMergerService: JSON parse error page #{page_number} (idx #{idx}): #{e.message}")
+    marker = degradation_marker_chunk(page_number)
+    [ { "document_name" => "", "aliases" => [], "chunks" => [ marker ] }, true ]
+  end
+
+  def degradation_marker_chunk(page_number)
+    { "text" => format(DEGRADATION_MARKER, page: page_number), "page" => page_number }
+  end
 
   # Canonical document_name selection:
   #   1. Use page 1's document_name if page 1 is in the result set and non-empty.
@@ -81,12 +129,5 @@ class ChunkMergerService
     end
 
     [ name, chosen_idx ]
-  end
-
-  def parse_page(text, idx, page_number)
-    JSON.parse(text.to_s.strip)
-  rescue JSON::ParserError => e
-    Rails.logger.error("ChunkMergerService: JSON parse error page #{page_number} (idx #{idx}): #{e.message}")
-    { "document_name" => "", "aliases" => [], "chunks" => [] }
   end
 end

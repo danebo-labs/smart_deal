@@ -53,3 +53,4 @@ es:
     wa_post_reset_page_indicator: "Página %{current}/%{total}"
     wa_post_reset_next_page_label: "siguiente página"
     wa_post_reset_prev_page_label: "página anterior"
+    partial_pages_warning: "⚠️ Las páginas %{pages} no se indexaron completamente (salida truncada o ilegible). Vuelve a subir el archivo para reprocesarlas."

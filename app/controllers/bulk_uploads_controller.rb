@@ -12,7 +12,7 @@ class BulkUploadsController < ApplicationController
     @bulk_upload = BulkUpload.new
   end
 
-  # ACK <100 ms: validate + sha256 + find_or_create BulkUpload + enqueue + redirect.
+  # Validate, deduplicate, stage the ZIP in S3, enqueue processing, and redirect.
   def create
     zip_param = params[:zip_file]
 
@@ -26,8 +26,8 @@ class BulkUploadsController < ApplicationController
     bulk_upload = BulkUpload.find_or_initialize_by(sha256: sha256)
     if bulk_upload.persisted?
       if bulk_upload.status == "failed"
-        zip_path = persist_zip(zip_param.tempfile.path, sha256)
-        reenqueue_failed_upload!(bulk_upload, zip_path)
+        archive_key = persist_zip(zip_param.tempfile.path, sha256)
+        reenqueue_failed_upload!(bulk_upload, archive_key)
         flash[:notice] = t("bulk_uploads.retry_enqueued")
       elsif bulk_upload.status == "complete"
         flash[:notice] = t("bulk_uploads.already_complete")
@@ -43,10 +43,10 @@ class BulkUploadsController < ApplicationController
       asset_count:       0,
       user:              current_user
     )
+    archive_key = persist_zip(zip_param.tempfile.path, sha256)
     bulk_upload.save!
 
-    zip_path = persist_zip(zip_param.tempfile.path, sha256)
-    ProcessBulkUploadJob.perform_later(bulk_upload.id, zip_path, I18n.locale.to_s)
+    ProcessBulkUploadJob.perform_later(bulk_upload.id, archive_key, I18n.locale.to_s)
 
     redirect_to bulk_upload_path(bulk_upload)
   end
@@ -54,7 +54,7 @@ class BulkUploadsController < ApplicationController
 
   private
 
-  def reenqueue_failed_upload!(bulk_upload, zip_path)
+  def reenqueue_failed_upload!(bulk_upload, archive_key)
     bulk_upload.bulk_upload_assets.delete_all
     bulk_upload.update!(
       status:                  "pending",
@@ -63,15 +63,11 @@ class BulkUploadsController < ApplicationController
       bedrock_ingestion_job_id: nil,
       asset_count:             0
     )
-    ProcessBulkUploadJob.perform_later(bulk_upload.id, zip_path, I18n.locale.to_s)
+    ProcessBulkUploadJob.perform_later(bulk_upload.id, archive_key, I18n.locale.to_s)
   end
 
   def persist_zip(tempfile_path, sha256)
-    dir  = Rails.root.join("tmp/bulk_uploads")
-    FileUtils.mkdir_p(dir)
-    dest = dir.join("#{sha256}.zip").to_s
-    FileUtils.cp(tempfile_path, dest) unless File.exist?(dest)
-    dest
+    BulkUploadArchiveService.new.upload(local_path: tempfile_path, sha256: sha256)
   end
 
   def not_found

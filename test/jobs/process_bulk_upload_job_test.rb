@@ -29,6 +29,22 @@ class ProcessBulkUploadJobTest < ActiveJob::TestCase
     end
   end
 
+  class FakeArchiveService
+    attr_reader :deleted_keys
+
+    def initialize
+      @deleted_keys = []
+    end
+
+    def with_downloaded(key)
+      yield key
+    end
+
+    def delete(key)
+      @deleted_keys << key
+    end
+  end
+
   def make_bulk(sha_suffix: SecureRandom.hex(8))
     BulkUpload.create!(
       sha256:            Digest::SHA256.hexdigest("process_job_#{sha_suffix}"),
@@ -41,6 +57,10 @@ class ProcessBulkUploadJobTest < ActiveJob::TestCase
     @zip_tempfiles = []
     @bulk   = make_bulk
     @fake_s3 = FakeS3Client.new
+    @fake_archive = FakeArchiveService.new
+    @orig_archive_new = BulkUploadArchiveService.method(:new)
+    fake_archive = @fake_archive
+    BulkUploadArchiveService.define_singleton_method(:new) { |**| fake_archive }
     orig_new = BatchIngestionService.method(:new)
     @orig_batch_new = orig_new
     BatchIngestionService.define_singleton_method(:new) do
@@ -53,6 +73,7 @@ class ProcessBulkUploadJobTest < ActiveJob::TestCase
 
   teardown do
     BatchIngestionService.define_singleton_method(:new, @orig_batch_new) if defined?(@orig_batch_new)
+    BulkUploadArchiveService.define_singleton_method(:new, @orig_archive_new)
     BulkUploadAsset.where(bulk_upload: @bulk).destroy_all
     @bulk.destroy
     @zip_tempfiles&.each(&:close!)
@@ -66,6 +87,7 @@ class ProcessBulkUploadJobTest < ActiveJob::TestCase
     end
 
     assert @bulk.reload.bulk_upload_assets.exists?(status: "uploaded_s3")
+    assert_includes @fake_archive.deleted_keys, zip
   end
 
   test "does not enqueue SubmitClaudeBatchJob when all entries are skipped" do
@@ -114,7 +136,26 @@ class ProcessBulkUploadJobTest < ActiveJob::TestCase
     @bulk.reload
     assert_equal "failed", @bulk.status
     assert_match(/ZIP bomb/, @bulk.error_message)
+    assert_includes @fake_archive.deleted_keys, zip
   ensure
     ZipExtractionService.define_method(:each_entry, orig_each)
+  end
+
+  test "marks bulk failed and deletes archive on unexpected error without re-raising" do
+    BatchIngestionService.define_singleton_method(:new) do
+      svc = Object.new
+      def svc.process!(*) = raise(StandardError, "boom")
+      svc
+    end
+    zip = build_zip(entries: { "photo.jpg" => JPEG_BINARY })
+
+    assert_no_enqueued_jobs(only: SubmitClaudeBatchJob) do
+      assert_nothing_raised { ProcessBulkUploadJob.perform_now(@bulk.id, zip, "es") }
+    end
+
+    @bulk.reload
+    assert_equal "failed", @bulk.status
+    assert_match(/boom/, @bulk.error_message)
+    assert_includes @fake_archive.deleted_keys, zip
   end
 end

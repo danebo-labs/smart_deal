@@ -28,6 +28,12 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
     def bucket_name = "test-bucket"
   end
 
+  class FakeArchiveService
+    def upload(local_path:, sha256:)
+      "bulk_upload_archives/#{sha256}.zip"
+    end
+  end
+
   class FakeBatchClient
     attr_writer :custom_id
 
@@ -100,6 +106,8 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
 
   test "POST create enqueues ProcessBulkUploadJob and show page renders" do
     sign_in users(:one)
+    original_archive_new = BulkUploadArchiveService.method(:new)
+    BulkUploadArchiveService.define_singleton_method(:new) { |**| FakeArchiveService.new }
 
     assert_enqueued_with(job: ProcessBulkUploadJob) do
       post bulk_uploads_path, params: { zip_file: empty_zip_upload }
@@ -112,6 +120,8 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
     get bulk_upload_path(upload)
     assert_response :success
     assert_match upload.original_filename, response.body
+  ensure
+    BulkUploadArchiveService.define_singleton_method(:new, original_archive_new) if original_archive_new
   end
 
   # ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ Boilerplate pages (portada, índice, copyright, dedicatoria, agenda) are dropped
 | HTTP | Path | Role |
 |------|------|------|
 | `GET` | `/bulk_uploads/new` | multipart form (ZIP file field `zip_file`) |
-| `POST` | `/bulk_uploads` | validates ZIP, **SHA-256 dedupe** (`BulkUpload`), saves to `tmp/bulk_uploads/`, enqueues **`ProcessBulkUploadJob`**, redirects to show |
+| `POST` | `/bulk_uploads` | validates ZIP, **SHA-256 dedupe** (`BulkUpload`), stages the archive under `bulk_upload_archives/` in S3, enqueues **`ProcessBulkUploadJob`**, redirects to show |
 | `GET` | `/bulk_uploads/:id` | progress UI; **`turbo_stream_from "bulk_upload_<id>"`** drives live updates as assets move through statuses |
 
 **Job chain** (all on **`queue_as :bulk_ingestion`**): `ProcessBulkUploadJob` → `SubmitClaudeBatchJob` → `PollClaudeBatchJob` (re-enqueue poll) → `IngestBatchResultsJob` → `PollBulkBedrockIngestionJob` (re-enqueue poll). Services: `ZipExtractionService`, `BatchIngestionService`, `BatchResultsParserService`, `BulkKbSyncService`, `ClaudeBatchClient`, **`BatchChunkingPrompt`** (`app/prompts/batch_chunking_prompt.rb`).
@@ -41,7 +41,7 @@ Boilerplate pages (portada, índice, copyright, dedicatoria, agenda) are dropped
 
 **Aurora schema discovery:** **`BedrockKbChunk`** (`app/models/bedrock_kb_chunk.rb`) is an **`abstract_class`** documenting AWS KB field mappings (embedding dim, `bedrock_integration.bedrock_knowledge_base`, JSONB metadata keys to confirm out-of-band). It does **not** connect to the app Primary DB or SQLite at boot.
 
-**Operator tooling:** `bin/rails solid_queue:purge_all` clears Solid Queue rows and `tmp/bulk_uploads/*.zip`; optional **`CLEAN_BULK_UPLOADS=1`** destroys `BulkUpload` rows; production requires **`FORCE_PURGE_QUEUE=1`** (see `lib/tasks/solid_queue_purge.rake`).
+Temporary ZIP archives are removed from S3 after `ProcessBulkUploadJob` downloads and processes them. **Operator tooling:** `bin/rails solid_queue:purge_all` clears Solid Queue rows and legacy `tmp/bulk_uploads/*.zip`; optional **`CLEAN_BULK_UPLOADS=1`** destroys `BulkUpload` rows; production requires **`FORCE_PURGE_QUEUE=1`** (see `lib/tasks/solid_queue_purge.rake`).
 
 ---
 

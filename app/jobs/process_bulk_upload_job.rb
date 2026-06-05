@@ -5,21 +5,28 @@ class ProcessBulkUploadJob < ApplicationJob
   discard_on ActiveRecord::RecordNotFound
 
   # @param bulk_upload_id [Integer]
-  # @param zip_path       [String] absolute path to the ZIP file on disk
+  # @param archive_key    [String] temporary S3 key for the uploaded ZIP
   # @param upload_locale  [String, nil] UI locale from upload request (session). Not named
   #                       +locale+ — ActiveJob reserves that for job-level I18n.
-  def perform(bulk_upload_id, zip_path, upload_locale = nil)
+  def perform(bulk_upload_id, archive_key, upload_locale = nil)
     I18n.with_locale(normalize_locale(upload_locale)) do
-      perform_with_locale(bulk_upload_id, zip_path)
+      perform_with_locale(bulk_upload_id, archive_key)
     end
   end
 
   private
 
-  def perform_with_locale(bulk_upload_id, zip_path)
+  def perform_with_locale(bulk_upload_id, archive_key)
     bulk_upload = BulkUpload.find(bulk_upload_id)
 
-    BatchIngestionService.new.process!(bulk_upload, zip_path)
+    archive_service = BulkUploadArchiveService.new
+    begin
+      archive_service.with_downloaded(archive_key) do |zip_path|
+        BatchIngestionService.new.process!(bulk_upload, zip_path)
+      end
+    ensure
+      archive_service.delete(archive_key)
+    end
 
     if bulk_upload.bulk_upload_assets.exists?(status: "uploaded_s3")
       SubmitClaudeBatchJob.perform_later(bulk_upload_id)
@@ -32,9 +39,9 @@ class ProcessBulkUploadJob < ApplicationJob
     mark_failed(bulk_upload_id, e.message)
     Rails.logger.error("ProcessBulkUploadJob[#{bulk_upload_id}] ZIP error: #{e.message}")
   rescue StandardError => e
+    # Terminal: the archive is deleted in ensure, so recovery requires a new upload.
     mark_failed(bulk_upload_id, e.message)
     Rails.logger.error("ProcessBulkUploadJob[#{bulk_upload_id}] failed: #{e.message}")
-    raise
   end
 
   def normalize_locale(upload_locale)

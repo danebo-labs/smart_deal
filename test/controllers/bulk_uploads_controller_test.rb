@@ -6,9 +6,30 @@ require "benchmark"
 class BulkUploadsControllerTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
 
+  class FakeArchiveService
+    attr_reader :uploads
+
+    def initialize
+      @uploads = []
+    end
+
+    def upload(local_path:, sha256:)
+      @uploads << { local_path: local_path, sha256: sha256 }
+      "bulk_upload_archives/#{sha256}.zip"
+    end
+  end
+
   setup do
     @user = users(:one)
     sign_in @user
+    @archive_service = FakeArchiveService.new
+    @original_archive_new = BulkUploadArchiveService.method(:new)
+    archive_service = @archive_service
+    BulkUploadArchiveService.define_singleton_method(:new) { |**| archive_service }
+  end
+
+  teardown do
+    BulkUploadArchiveService.define_singleton_method(:new, @original_archive_new)
   end
 
   # ---------------------------------------------------------------------------
@@ -47,6 +68,7 @@ class BulkUploadsControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil bulk_upload
     assert_equal "test_batch.zip", bulk_upload.original_filename
     assert_equal "pending", bulk_upload.status
+    assert_equal bulk_upload.sha256, @archive_service.uploads.last[:sha256]
 
     assert_redirected_to bulk_upload_path(bulk_upload)
   end

@@ -51,9 +51,9 @@ flowchart TB
     FotoParser[FieldPhotoResultsParser → 1 chunk liviano]
   end
 
-  subgraph manual [Path Manual — batch default]
-    RouteBatch{force_sync?}
-    PageFilter[PageRelevanceFilter.filter_pages — Haiku batch multipágina, per-page si 1p]
+  subgraph manual [Path Manual — chat sync / bulk batch]
+    RouteBatch{entrypoint}
+    PageFilter[PageRelevanceFilter.filter_pages — Haiku batch por ventanas, per-page si 1p]
     BatchSonnet[Sonnet Batch API per kept page]
     SyncSonnet[Sonnet Sync per kept page]
     Merger[ChunkMergerService]
@@ -76,31 +76,33 @@ flowchart TB
   OpusFoto --> FotoParser
 
   Pdf --> RouteBatch
-  RouteBatch -->|default| PageFilter --> BatchSonnet --> Merger
-  RouteBatch -->|sync fallback| PageFilter --> SyncSonnet --> Merger
+  RouteBatch -->|bulk_uploads| PageFilter --> BatchSonnet --> Merger
+  RouteBatch -->|web/chat| PageFilter --> SyncSonnet --> Merger
 ```
 
 | Path | Input | Prompt | Modelo | API |
 |------|-------|--------|--------|-----|
 | Foto | JPEG/PNG campo | `FieldPhotoPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 | Sync direct |
-| Manual | PDF multipágina + Office | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 (Opus excepción `force_opus`) | Batch async (default) / sync fallback |
+| Manual web/chat | PDF multipágina + Office | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 (Opus excepción `force_opus`) | Sync direct |
+| Manual bulk | PDF multipágina + Office en `/bulk_uploads` | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 (Opus excepción `force_opus`) | Batch async |
 | Consulta RAG | Texto query | — | Haiku 4.5 | Bedrock `retrieve_and_generate` |
 
 ---
 
 ## 3. Decisiones de diseño (ADR)
 
-### 3.1 Manual default = Batch async + PageRelevanceFilter.filter_pages Sonnet
+### 3.1 Manual web/chat sync; bulk manual Batch async
 
 **Context:** El path anterior (`SingleFileChunkingService` sync) llamaba Opus de forma bloqueante en la request. ~$60/técnico/mes.
 
-**Decision:** PDF adjunto sin query urgente → `SubmitManualBatchJob` → `ManualBatchIngestionService` → Anthropic Batch API (Sonnet, ~50% off). Resultado llega vía `IngestManualBatchResultsJob` + poll.
+**Decision:** Todo PDF/Office adjunto desde web/chat pasa por `SingleFileChunkingService` sync cost-v2 (Messages API). La indexación sigue fuera del request en `UploadAndSyncAttachmentsJob`, pero no entra a Anthropic Batch. Manuales de carga inicial/backoffice usan `/bulk_uploads` → Anthropic Batch API (Sonnet, ~50% off).
 
 **Consequences:**
-- UX: ACK rápido para el técnico; indexación en background (~minutos).
-- Costo: ~$0.66/mes vs ~$40/mes anterior (5 manuales × 10 págs filtradas).
-- Riesgo: si el técnico necesita el manual de inmediato, no puede usarlo hasta que el batch complete.
-- Mitigación: sync fallback automático cuando hay query adjunta.
+- UX web/chat: ACK rápido; parse sync dentro de Solid Queue; `indexed` confirma que el documento quedó consultable sin esperar a Batch.
+- Costo: manuales planificados deben ir por `/bulk_uploads` para conservar batch pricing.
+- Riesgo: subir manuales grandes desde chat cuesta más que bulk; se acepta para preservar asistencia operativa inmediata.
+- Mitigación: `PageRelevanceFilter` descarta portada, índice, separadores y páginas vacías antes de Sonnet/Opus.
+- PDFs grandes: `PageRelevanceFilter.call_batch` clasifica en ventanas de hasta 20 páginas y 22 MB, con `max_tokens` dinámico, retry 1x solo ante JSON truncado y fallback keep-all acotado a la ventana.
 
 ### 3.2 Foto Sonnet + FieldPhotoPrompt; Haiku gate; Opus `force_opus` only
 
@@ -133,12 +135,11 @@ flowchart TB
 
 **Consequences:** Cero parse duplicados para binarios idénticos. Zero-migration hoy.
 
-### 3.6 Sync fallback manual
+### 3.6 Web/chat manual siempre sync
 
-**Decision:** Triggers para sync inmediato:
-1. `urgent: true` en `CustomChunkingPipeline` — QOS lo activa cuando `@query.present?` (técnico adjunta y pregunta simultáneamente)
+**Decision:** `QueryOrchestratorService#upload_and_sync_attachments` pasa `urgent: true` siempre. La presencia de pregunta ya no decide el routing del chat; Batch queda para `/bulk_uploads`.
 
-**Consequences:** Técnico que adjunta un manual Y hace una pregunta recibe parse sync (más caro pero la respuesta llega en la misma sesión).
+**Consequences:** Un manual PDF largo subido desde chat sin pregunta también usa sync Messages API y no encola `SubmitManualBatchJob`.
 
 ### 3.7 Diagrama suelto fuera de scope v1
 
@@ -153,6 +154,8 @@ Pricing de `BedrockQuery::BEDROCK_PRICING` ($/1K tokens):
 | Recurso | Modelo | API | Input $/1K | Output $/1K | ~tokens/call | ~$/call |
 |---------|--------|-----|-----------|------------|-------------|---------|
 | Foto campo | Sonnet 4.6 direct | Sync | $0.003 | $0.015 | ~2.000 in / ~300 out | ~$0.0105 |
+| Pág. manual web/chat | Sonnet 4.6 direct | Sync | $0.003 | $0.015 | ~3.000 in / ~500 out | ~$0.0165 |
+| Pág. manual web/chat Opus | Opus 4.7 direct | Sync | ~$0.015 | ~$0.075 | ~3.000 in / ~500 out | ~$0.083 |
 | Pág. manual | Sonnet 4.6 batch | Batch | ~$0.0015 | ~$0.0075 | ~3.000 in / ~500 out | ~$0.008 |
 | Pág. manual Opus | Opus 4.7 batch | Batch | ~$0.0075 | ~$0.0375 | ~3.000 in / ~500 out | ~$0.041 |
 | Haiku filter | Haiku 4.5 direct | Sync | $0.0008 | $0.004 | ~1.000 in / ~10 out | ~$0.00084 |
@@ -162,15 +165,17 @@ Pricing de `BedrockQuery::BEDROCK_PRICING` ($/1K tokens):
 
 ## 5. Proyección mensual — 1 técnico
 
-Volumen: **1.000 consultas**, **200 fotos**, **5 manuales × 10 pág** (PageRelevanceFilter ~75% kept → 38 págs reales)
+Volumen: **1.000 consultas**, **200 fotos**, **5 manuales planificados × 10 pág vía `/bulk_uploads`** (PageRelevanceFilter ~75% kept → 38 págs reales)
 
 | Línea | Stack | ~$/mes |
 |-------|-------|--------|
 | Consultas RAG | Haiku `retrieve_and_generate` | ~$5.00 |
 | Haiku page filter | Haiku 4.5 batch (38 págs) | ~$0.03 |
 | Fotos campo | Sonnet 4.6 direct sync | ~$2.10 |
-| Manuales | Sonnet 4.6 batch per-page | ~$0.30 |
+| Manuales planificados | Sonnet 4.6 batch per-page vía `/bulk_uploads` | ~$0.30 |
 | **Total v2** | | **~$7.43** |
+
+Si esos mismos manuales se suben desde chat, usan sync direct por decisión UX: ~38 páginas × ~$0.0165 ≈ **$0.63**. El delta se acepta para soporte operativo urgente; backoffice debe usar `/bulk_uploads`.
 
 **HOY (pre-v2):** Fotos → Opus sync (~$40), Manuales → ningún parse web batch → **~$60/técnico/mes estimado**.
 
@@ -185,8 +190,8 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 **Smoke post-deploy:**
 1. Subir una foto de campo y verificar `field_photo_v1`.
 2. Subir un PDF corto y verificar parse sync.
-3. Subir un manual PDF >2 páginas sin pregunta adjunta y verificar `SubmitManualBatchJob` / batch id.
-4. Subir un ZIP en `/bulk_uploads` y verificar assets completos.
+3. Subir un manual PDF >2 páginas desde chat, sin pregunta adjunta, y verificar `web_parse` / sin `SubmitManualBatchJob`.
+4. Subir un ZIP en `/bulk_uploads` y verificar Batch API + assets completos.
 
 ---
 
@@ -207,11 +212,13 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 | `FileMultimodalRouter` `:image` | `MODEL_MULTIMODAL` (Opus) | `MODEL_TEXT` (Sonnet) |
 | Handle image | `BatchChunkingPrompt` monolithic | `FieldPhotoPrompt` specialized + `FieldPhotoResultsParser` |
 | `ingestion_path` foto | `"web_v1"` | `"field_photo_v1"` |
-| Manual PDF default | `SingleFileChunkingService` sync | `ManualBatchIngestionService` → Batch API (async) |
+| Manual PDF web/chat | `SingleFileChunkingService` sync | `SingleFileChunkingService` sync cost-v2 (Messages API) |
+| Manual PDF bulk | Legacy bulk batch | `BulkCostV2RequestBuilder` → Batch API |
 | Manual prompt | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sin cambio (mismo) |
-| `ingestion_path` manual | `"web_v1"` | `"manual_batch_v1"` |
+| `ingestion_path` manual chat | `"web_v1"` | `"web_v1"` |
+| `ingestion_path` manual bulk | `"batch_v1"` | `"manual_batch_v1"` |
 | SHA dedup | No | `ContentDedupService` antes de parse |
-| Sync fallback manual | N/A | `urgent:` param cuando hay query adjunta |
+| Sync fallback manual | N/A | Chat siempre pasa `urgent: true`; Batch solo `/bulk_uploads` |
 
 ---
 
@@ -222,12 +229,13 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 | Costo real | ¿Footer Haiku+Sonnet batch ≈ $7-10/técnico/mes? | `bedrock_queries` rollup 7d |
 | Dedup hit rate | ¿Cuántos uploads skip parse? | log `ContentDedupService hit` |
 | force_opus rate | ¿Opus <15% páginas manual? | count `force_opus` / total pages |
-| Batch latency UX | ¿Técnicos toleran indexación async manuales? | time upload→indexed Turbo event |
+| Chat manual latency UX | ¿Manual grande sync entrega `indexed` en una ventana aceptable? | time upload→indexed Turbo event |
 | Foto quality | ¿RAG responde bien con chunk liviano field_photo_v1? | spot-check 10 fotos reales |
 
 ## Riesgos documentados
 
-- **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` para multipágina, per-page para 1p), Office→PDF vía `OfficeToPdfConverter`.
+- **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` por ventanas para multipágina, per-page para 1p), Office→PDF vía `OfficeToPdfConverter`.
 - **Filtro unificado (2026-05-22):** `PageRelevanceFilter.filter_pages` reemplaza la lógica triplicada `office_origin && pages.size > 1`. Todos los PDFs nativos ≥2p ahora usan Haiku `call_batch` (igual que PPT/Office). Ahorro ~$0.08–0.10/doc con portada rasterizada; costo filtro ~$0.004/doc.
+- **Windowing del filtro (2026-06-05):** `call_batch` divide por páginas+bytes para evitar truncamiento y payloads >32 MB; si una ventana falla, solo esa ventana cae a keep-all.
 - Manual muy escaneado puede subir costo Opus: un manual de 50 páginas con 30 páginas escaneadas → 30 × $0.041 ≈ $1.23 en ese manual solo. Monitorear `force_opus` count.
 - SHA dedup sin `kb_documents.content_sha256` indexed puede ser O(n) si hay muchos `BulkUploadAsset.complete`. Indexar en Stage 1 tenancy migration.

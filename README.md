@@ -14,7 +14,7 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 |------|---------|
 | **RAG chat** | Bedrock Knowledge Base, hybrid orchestrator (optional Text-to-SQL) |
 | **Chat uploads** | Direct Claude chunking via `CustomChunkingPipeline` — images, text, PDF, **Word, Excel, PowerPoint** (via LibreOffice); see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
-| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, **single Haiku call** to classify multi-page PDFs (covers, index, dedications dropped before parse), locale-aware summaries. Sonnet default for images (↓5×), Anthropic Batch per-page for long non-urgent manuals (~50% off), SHA dedup — target ~$7-10/técnico/mes. **Routing matrix:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md). Full ADR: [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
+| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, windowed Haiku classification for multi-page PDFs (covers, index, dedications dropped before parse), locale-aware summaries. Sonnet default for images (↓5×), sync Messages for chat manuals, Anthropic Batch per-page for `/bulk_uploads` manuals (~50% off), SHA dedup — target ~$7-10/técnico/mes for planned bulk loads. **Routing matrix:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md). Full ADR: [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
 | **Bulk ZIP** | `/bulk_uploads` — Anthropic Message Batches, Turbo progress UI |
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
 | **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet, web_v1 vs legacy split), live chat footer |

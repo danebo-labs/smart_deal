@@ -63,23 +63,26 @@ RAG query cost optimization (2026-05-22)
 Web upload ingestion (single path — no feature flags)
 - `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments` →
   `CustomChunkingPipeline` (the only path; no legacy OWRPGSX6XK fallback).
+- `QueryOrchestratorService` passes `urgent: true` for every web/chat upload.
+  Chat attachments always parse through sync cost-v2 Messages API; Anthropic
+  Batch is reserved for `/bulk_uploads` backoffice/manual seeding.
 - **Per-file routing in `CustomChunkingPipeline`:**
   - **Images:** `SingleFileChunkingService` sync → `FieldPhotoDensityGate` (size ≥1.5 MB → Opus, else Sonnet;
     zero LLM calls) → `FieldPhotoPrompt` → `FieldPhotoResultsParser` → ingestion_path="field_photo_v1".
   - **Office (.docx/.pptx/…):** always sync → `SingleFileChunkingService#handle_office` (LibreOffice converts to PDF).
-  - **PDF urgent** (query in same turn, `urgent: true`): sync via `SingleFileChunkingService`.
-  - **PDF short** (page_count ≤ 2): sync via `SingleFileChunkingService`.
-  - **PDF long** (page_count > 2, non-urgent): `SubmitManualBatchJob` → `ManualBatchIngestionService` →
-    Anthropic Batch per kept page (Sonnet; Opus for `force_opus` scanned pages) →
-    `IngestManualBatchResultsJob` → `ChunkMergerService` → ingestion_path="manual_batch_v1".
+  - **PDFs:** sync via `SingleFileChunkingService` regardless of page count or query text.
+    Long non-urgent PDF batch jobs remain in-repo as a dormant/manual path, not
+    the active web/chat route.
   - **SHA dedup:** `ContentDedupService.find_completed(sha256:)` skips parse when binary already indexed.
-- PDF pages filtered by `PageRelevanceFilter.filter_pages` — Haiku `call_batch` for all multi-page PDFs (native or Office), per-page heuristic for single-page.
+- PDF pages filtered by `PageRelevanceFilter.filter_pages` — Haiku `call_batch` for multi-page PDFs (native or Office) splits into bounded windows (`BATCH_WINDOW_SIZE=20`, `MAX_WINDOW_BYTES=22MB`), per-page heuristic for single-page.
+- Batch filter windows use dynamic `max_tokens`, retry once only on JSON parse/truncation failure, and keep-all only for the failed window on fallback.
 - Conservative downgrade: pages with text_chars>500 & image_ratio<0.20 → Sonnet (not Opus).
 - Scanned images (text_layer<100, image_ratio>0.7): kept, forced to Opus.
 - Parallel page calls capped at `MAX_PARALLEL_PAGES=8` (wave processing, sync path).
 - On error: propagates to job → `KbSyncBroadcaster.failed`; Solid Queue retries. No OWRPGSX6XK gasto.
-- Cost tracking: `TrackBedrockQueryJob` with `model_id` suffix `-direct` (sync) or `-batch` (Batch API).
-  `user_query: "web_parse: <filename>"` or `"web_batch: <filename> p<N>/<M>"` for pages.
+- Cost tracking: web/chat parse rows use `TrackBedrockQueryJob` with `model_id`
+  suffix `-direct` and `user_query: "web_parse: <filename>"` for files/pages.
+  Bulk ZIP batch rows use the `-batch` pricing suffix.
 - Office: `OfficeToPdfConverter` (LibreOffice headless). Alias fallback: `LambdaParityAliasFallback`.
 - No new DB columns: ChunkAsset is a plain Struct (not AR). `ingestion_path="web_v1"` in sidecar metadata.
 - **Full ADR + cost matrix:** `docs/INGESTION_COST_V2.md`. **Routing reference:** `docs/INGESTION_ROUTING.md`.

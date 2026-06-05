@@ -1,6 +1,6 @@
 # Ingestion Cost V2 — ADR & Cost Architecture
 
-**Status:** Production-ready behind `CUSTOM_CHUNKING_COST_V2_ENABLED`  
+**Status:** Active production path for web and bulk uploads
 **Benchmark date:** 2026-05-21  
 **Supersedes:** inline routing in `FileMultimodalRouter` (Opus default for images)
 
@@ -106,12 +106,12 @@ flowchart TB
 
 **Context:** `FileMultimodalRouter` enviaba toda imagen a Opus. Benchmark: Sonnet score 16.7 vs Opus 16.7 en fotos — empate, 5× diferencia de precio.
 
-**Decision:** `:image → MODEL_TEXT` (Sonnet). `FieldPhotoDensityGate` corre heurística (tamaño) + optional Haiku 1-call (`FIELD_PHOTO_HAIKU_GATE_ENABLED=true`) para escaneados densos. Opus solo cuando gate retorna `:opus`.
+**Decision:** `:image → MODEL_TEXT` (Sonnet). `FieldPhotoDensityGate` corre una heurística determinística por tamaño para escaneados densos. Opus solo cuando gate retorna `:opus`.
 
 **Consequences:**
 - Costo foto: ~$0.009/foto → ~$1.86/mes (200 fotos) vs ~$8/mes anterior.
 - `FieldPhotoResultsParser` produce 1 chunk liviano (ingestion_path `field_photo_v1`) en vez de S0-S18.
-- Haiku gate es opt-in (`FIELD_PHOTO_HAIKU_GATE_ENABLED`), deshabilitado por defecto.
+- No hay Haiku gate en producción; la decisión de foto es determinística y sin costo LLM.
 
 ### 3.3 Manual monolithic (NO specialized recortado)
 
@@ -136,8 +136,7 @@ flowchart TB
 ### 3.6 Sync fallback manual
 
 **Decision:** Triggers para sync inmediato:
-1. `ENV["MANUAL_FORCE_SYNC"] = "true"` (ops)
-2. `@force_sync: true` en `CustomChunkingPipeline` — QOS lo activa cuando `@query.present?` (técnico adjunta y pregunta simultáneamente)
+1. `urgent: true` en `CustomChunkingPipeline` — QOS lo activa cuando `@query.present?` (técnico adjunta y pregunta simultáneamente)
 
 **Consequences:** Técnico que adjunta un manual Y hace una pregunta recibe parse sync (más caro pero la respuesta llega en la misma sesión).
 
@@ -179,21 +178,15 @@ Ahorro: **~87%** en costo de ingesta.
 
 ---
 
-## 6. Flags y rollout
+## 6. Rollout actual
 
-| Flag | Default | Propósito |
-|------|---------|-----------|
-| `CUSTOM_CHUNKING_WEB_ENABLED` | `false` | Activa toda la pipeline direct-Claude (v1 + v2) |
-| `CUSTOM_CHUNKING_COST_V2_ENABLED` | `false` | Activa routing v2: batch manual + foto Sonnet |
-| `MANUAL_FORCE_SYNC` | `false` | Fuerza sync para todos los manuales (ops override) |
-| `FIELD_PHOTO_HAIKU_GATE_ENABLED` | `false` | Activa Haiku pre-gate en fotos (opt-in) |
-| `CUSTOM_CHUNKING_NO_FALLBACK` | `false` | Dev/staging only — sin fallback OWRPGSX6XK |
+La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads web y bulk. No requiere flags de activación en `deploy.yml`.
 
-**Orden de deploy:**
-1. Deploy con todos OFF → smoke-test legacy.
-2. `CUSTOM_CHUNKING_WEB_ENABLED=true` → smoke-test v1 sync.
-3. `CUSTOM_CHUNKING_COST_V2_ENABLED=true` → smoke 1 manual 10p + 1 foto → verificar batch_id en logs.
-4. `CUSTOM_CHUNKING_COST_V2_ENABLED=true` en prod.
+**Smoke post-deploy:**
+1. Subir una foto de campo y verificar `field_photo_v1`.
+2. Subir un PDF corto y verificar parse sync.
+3. Subir un manual PDF >2 páginas sin pregunta adjunta y verificar `SubmitManualBatchJob` / batch id.
+4. Subir un ZIP en `/bulk_uploads` y verificar assets completos.
 
 ---
 
@@ -218,7 +211,7 @@ Ahorro: **~87%** en costo de ingesta.
 | Manual prompt | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sin cambio (mismo) |
 | `ingestion_path` manual | `"web_v1"` | `"manual_batch_v1"` |
 | SHA dedup | No | `ContentDedupService` antes de parse |
-| Sync fallback manual | N/A | `force_sync:` param + `MANUAL_FORCE_SYNC` env |
+| Sync fallback manual | N/A | `urgent:` param cuando hay query adjunta |
 
 ---
 
@@ -234,7 +227,7 @@ Ahorro: **~87%** en costo de ingesta.
 
 ## Riesgos documentados
 
-- **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` para multipágina, per-page para 1p), Office→PDF vía `OfficeToPdfConverter`. Flag `CUSTOM_CHUNKING_COST_V2_ENABLED` (default `false`) activa ambos caminos (web + bulk) simultáneamente.
+- **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` para multipágina, per-page para 1p), Office→PDF vía `OfficeToPdfConverter`.
 - **Filtro unificado (2026-05-22):** `PageRelevanceFilter.filter_pages` reemplaza la lógica triplicada `office_origin && pages.size > 1`. Todos los PDFs nativos ≥2p ahora usan Haiku `call_batch` (igual que PPT/Office). Ahorro ~$0.08–0.10/doc con portada rasterizada; costo filtro ~$0.004/doc.
 - Manual muy escaneado puede subir costo Opus: un manual de 50 páginas con 30 páginas escaneadas → 30 × $0.041 ≈ $1.23 en ese manual solo. Monitorear `force_opus` count.
 - SHA dedup sin `kb_documents.content_sha256` indexed puede ser O(n) si hay muchos `BulkUploadAsset.complete`. Indexar en Stage 1 tenancy migration.

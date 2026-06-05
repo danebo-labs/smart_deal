@@ -4,7 +4,7 @@
 #   Downloads PDF from S3, applies PageRelevanceFilter, submits Anthropic Batch,
 #   stores batch context in Solid Cache, then schedules polling.
 #
-# Enqueued by CustomChunkingPipeline for PDF uploads when CUSTOM_CHUNKING_COST_V2_ENABLED=true.
+# Enqueued by CustomChunkingPipeline for long, non-urgent PDF uploads.
 # Falls back to direct sync parse if submission fails.
 class SubmitManualBatchJob < ApplicationJob
   queue_as :default

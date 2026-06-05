@@ -38,7 +38,7 @@ export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_REGION=us-east-1
 export BEDROCK_KNOWLEDGE_BASE_ID=your_kb_id
-export BEDROCK_DATA_SOURCE_ID=your_data_source_id  # Optional; preferred when multiple data sources exist.
+export BEDROCK_BULK_DATA_SOURCE_ID=your_bulk_no_chunking_data_source_id
 ```
 
 ### Option 3: Bedrock API Key / Bearer Token
@@ -59,9 +59,9 @@ The app uses AWS Bedrock Knowledge Bases for RAG (Retrieval-Augmented Generation
 ### Required Variables
 
 ```bash
-BEDROCK_KNOWLEDGE_BASE_ID=your_kb_id          # Required (current pilot: VBB72VKABV)
-BEDROCK_DATA_SOURCE_ID=your_data_source_id    # Recommended when multiple data sources exist (current pilot: OWRPGSX6XK)
-KNOWLEDGE_BASE_S3_BUCKET=your-bucket-name     # KB data source bucket (current pilot: multimodal-source-destination)
+BEDROCK_KNOWLEDGE_BASE_ID=your_kb_id
+BEDROCK_BULK_DATA_SOURCE_ID=your_bulk_no_chunking_data_source_id
+KNOWLEDGE_BASE_S3_BUCKET=your-bucket-name
 ```
 
 ### RAG retrieve_and_generate (optional)
@@ -82,13 +82,13 @@ BEDROCK_RAG_SEARCH_TYPE=HYBRID
 BEDROCK_RAG_GENERATION_TEMPERATURE=0.3
 ```
 
-**Current data source note:** `OWRPGSX6XK` points to `s3://multimodal-source-destination` and has no inclusion prefix, so Bedrock indexes the whole bucket. Documents are uploaded under `uploads/{date}/{file}`.
+**Current data source note:** production IDs live in `config/deploy.yml` and should not be copied into committed templates or local sample files.
 
 ### Data Source Selection
 
-- If `BEDROCK_DATA_SOURCE_ID` is configured, the system verifies that it exists in the available data source list and uses it.
-- If it is missing or invalid, the system uses the first available data source.
-- **For image uploads (JPEG/PNG):** use a data source with a multimodal parser (Bedrock Data Automation or Foundation Model). List data sources with `bin/rails kb:status` and configure the ID that supports multimodal parsing.
+- Web and bulk uploads should use `BEDROCK_BULK_DATA_SOURCE_ID`, a data source with Bedrock chunking disabled for app-generated chunks.
+- `BEDROCK_DATA_SOURCE_ID` is legacy and only remains as a fallback in older operator tasks/services.
+- If the legacy data source is missing or invalid, those older paths use the first available data source.
 - **No inclusion prefix:** the current data source has no inclusion prefix, so Bedrock indexes the whole bucket. Documents are uploaded under `uploads/{date}/{file}`.
 - To list available data sources, run:
 

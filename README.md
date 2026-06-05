@@ -95,6 +95,7 @@ Restart **web and workers** after changing `.env`.
 | `SHARED_SESSION_ENABLED` | off | MVP: one shared chat thread for all web users |
 | `BEDROCK_BULK_DATA_SOURCE_ID` | optional | No-chunking data source for bulk ZIP + web uploads |
 | `ANTHROPIC_API_KEY` | — | Required for bulk ZIP and web uploads |
+| `APPSIGNAL_PUSH_API_KEY` | — | Required only for AppSignal production error/performance monitoring |
 | `INGESTION_REENQUEUE` | — | See [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 
 Full list including dormant WhatsApp flags: [`.env.sample`](.env.sample).

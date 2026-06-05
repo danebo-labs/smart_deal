@@ -8,7 +8,7 @@ Active path for **file attachments from the home RAG chat**. No feature flags â€
 
 | Variable | Purpose |
 |----------|---------|
-| `BEDROCK_BULK_DATA_SOURCE_ID` | KB data source with **no Bedrock chunking** (falls back to `BEDROCK_DATA_SOURCE_ID`) |
+| `BEDROCK_BULK_DATA_SOURCE_ID` | KB data source with **no Bedrock chunking** for web and bulk upload chunks |
 | `ANTHROPIC_API_KEY` | Required for sync Messages API calls (web uploads) |
 
 **Local Office uploads:** install LibreOffice (see [README â€” Setup](../README.md#setup)).

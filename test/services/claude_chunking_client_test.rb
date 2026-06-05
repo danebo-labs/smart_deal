@@ -228,4 +228,51 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
     result = client.call(user_content: [], filename: "ok.pdf")
     assert_nil result[:stop_reason]
   end
+
+  # ---------------------------------------------------------------------------
+  # CreditBalanceError
+  # ---------------------------------------------------------------------------
+
+  test "raises CreditBalanceError (subclass of ApiError) when Anthropic returns credit balance error" do
+    fake_client = FakeAnthropicClient.new(response: nil)
+    err_class = Class.new(Anthropic::Errors::APIError) do
+      def initialize = super(url: "https://api.anthropic.com/v1/messages", status: 400, body: {})
+      def message    = "Your credit balance is too low to make this request."
+    end
+    fake_client.messages.define_singleton_method(:stream) { |_| raise err_class }
+
+    client = ClaudeChunkingClient.new(model: "claude-opus-4-7", client: fake_client)
+
+    assert_raises(ClaudeChunkingClient::CreditBalanceError) do
+      client.call(user_content: [], filename: "big.pdf")
+    end
+  end
+
+  test "CreditBalanceError is a subclass of ApiError" do
+    assert ClaudeChunkingClient::CreditBalanceError < ClaudeChunkingClient::ApiError
+  end
+
+  test "logs ALERT for credit balance error" do
+    fake_client = FakeAnthropicClient.new(response: nil)
+    err_class = Class.new(Anthropic::Errors::APIError) do
+      def initialize = super(url: "https://api.anthropic.com/v1/messages", status: 400, body: {})
+      def message    = "Your credit balance is too low to make this request."
+    end
+    fake_client.messages.define_singleton_method(:stream) { |_| raise err_class }
+
+    client = ClaudeChunkingClient.new(model: "claude-opus-4-7", client: fake_client)
+
+    logged = []
+    orig_error = Rails.logger.method(:error)
+    Rails.logger.define_singleton_method(:error) { |msg| logged << msg; orig_error.call(msg) }
+
+    assert_raises(ClaudeChunkingClient::CreditBalanceError) do
+      client.call(user_content: [], filename: "x.pdf")
+    end
+
+    assert logged.any? { |m| m.include?("ALERT anthropic_credit_balance_low") },
+           "expected ALERT log for credit balance error, got: #{logged.inspect}"
+  ensure
+    Rails.logger.define_singleton_method(:error, orig_error) if defined?(orig_error)
+  end
 end

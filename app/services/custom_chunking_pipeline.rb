@@ -154,6 +154,16 @@ class CustomChunkingPipeline
         sha256:       sha256,
         locale:       @locale
       ).call
+    rescue ClaudeChunkingClient::CreditBalanceError
+      @uploaded_filenames.delete(filename)
+      @kb_document_ids.delete(kb_doc.id)
+      kb_doc.destroy
+      KbSyncBroadcaster.failed(
+        filenames: [ filename ],
+        reason:    "credit_balance_low",
+        message:   I18n.t("rag.service_unavailable_credits")
+      )
+      return
     rescue StandardError => e
       if office?(filename)
         Rails.logger.error("CustomChunking: Office parse failed for #{filename} — #{e.class}: #{e.message}")

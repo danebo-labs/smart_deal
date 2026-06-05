@@ -54,3 +54,4 @@ es:
     wa_post_reset_next_page_label: "siguiente página"
     wa_post_reset_prev_page_label: "página anterior"
     partial_pages_warning: "⚠️ Las páginas %{pages} no se indexaron completamente (salida truncada o ilegible). Vuelve a subir el archivo para reprocesarlas."
+    service_unavailable_credits: "El servicio de análisis no está disponible temporalmente (saldo insuficiente). Inténtalo de nuevo más tarde."

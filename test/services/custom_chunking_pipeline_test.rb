@@ -112,6 +112,34 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
     assert_nil metadata["summary"]
   end
 
+  test "CreditBalanceError destroys KbDocument and broadcasts failed" do
+    broadcast_calls = []
+    orig_failed = KbSyncBroadcaster.method(:failed)
+    KbSyncBroadcaster.define_singleton_method(:failed) { |**kwargs| broadcast_calls << kwargs }
+
+    SingleFileChunkingService.define_singleton_method(:new) do |**|
+      raise ClaudeChunkingClient::CreditBalanceError
+    end
+
+    image = { data: Base64.strict_encode64("xx"), media_type: "image/jpeg", filename: "photo.jpg" }
+
+    pipeline = CustomChunkingPipeline.new(
+      images: [ image ], documents: [], conv_session: nil, tenant: nil, locale: "es"
+    )
+    pipeline.run!
+
+    assert_empty pipeline.instance_variable_get(:@uploaded_filenames), "filename must be removed"
+    assert_empty pipeline.instance_variable_get(:@web_v1_metadata),    "no metadata on credit failure"
+
+    assert_equal 1, broadcast_calls.size
+    assert_equal "credit_balance_low", broadcast_calls.first[:reason]
+    assert_includes broadcast_calls.first[:filenames], "photo.jpg"
+
+    assert_equal 0, KbDocument.where(s3_key: "uploads/photo.jpg").count, "KbDocument must be destroyed"
+  ensure
+    KbSyncBroadcaster.define_singleton_method(:failed, orig_failed)
+  end
+
   test "locale is forwarded to SingleFileChunkingService" do
     captured_locale = nil
 

@@ -54,3 +54,4 @@ en:
     wa_post_reset_next_page_label: "next page"
     wa_post_reset_prev_page_label: "previous page"
     partial_pages_warning: "⚠️ Pages %{pages} could not be fully indexed (truncated or unreadable output). Re-upload the file to reprocess them."
+    service_unavailable_credits: "Analysis service is temporarily unavailable (insufficient credit balance). Please try again later."

@@ -19,6 +19,7 @@
 #   source: "ingestion_parse"
 class ClaudeChunkingClient
   class ApiError < StandardError; end
+  class CreditBalanceError < ApiError; end
 
   MAX_OVERLOADED_RETRIES = 2
   OVERLOADED_BACKOFF_SECONDS = [ 2, 4 ].freeze
@@ -72,6 +73,13 @@ class ClaudeChunkingClient
 
       { text: text_block.text, usage: response.usage, model: response.model, stop_reason: stop_reason }
     rescue Anthropic::Errors::APIError => e
+      if e.message.to_s.downcase.include?("credit balance is too low")
+        Rails.logger.error(
+          "ALERT anthropic_credit_balance_low: model=#{@model} " \
+          "file=#{user_query_for_log(filename, page_number, total_pages)} error=#{e.message}"
+        )
+        raise CreditBalanceError, "Anthropic credit balance too low (model=#{@model}): #{e.message}"
+      end
       if e.message.to_s.include?("overloaded") && attempt <= MAX_OVERLOADED_RETRIES
         delay = OVERLOADED_BACKOFF_SECONDS[attempt - 1] || OVERLOADED_BACKOFF_SECONDS.last
         Rails.logger.warn(

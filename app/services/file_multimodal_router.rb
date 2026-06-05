@@ -95,7 +95,7 @@ class FileMultimodalRouter
 
     image_pages = PdfImageDetector.image_pages(@binary)
     pages = build_page_infos(image_pages)
-    Result.new(model: BatchChunkingPrompt::MODEL_MULTIMODAL, mode: :pdf_mixed, pages: pages)
+    Result.new(model: BatchChunkingPrompt::MODEL_TEXT, mode: :pdf_mixed, pages: pages)
   end
 
   def build_page_infos(image_pages)
@@ -119,26 +119,20 @@ class FileMultimodalRouter
     page_infos
   end
 
-  # Determines per-page model with conservative image-to-text downgrade.
+  # Determines per-page model. Default is Sonnet (MODEL_TEXT); Opus only for
+  # fully scanned/rasterized pages (text_layer_chars < 100 AND image_area_ratio > 0.7).
   # Always calls PageImageDensityAnalyzer so rasterized slides (no XObjects) are detected.
   # @return [model, text_layer_chars, image_area_ratio]
   def route_page(page_binary, has_images:, page_num:)
     analysis           = PageImageDensityAnalyzer.analyze(page_binary)
     text_chars         = analysis[:text_layer_chars]
     img_ratio          = analysis[:image_area_ratio]
-    density_has_images = analysis[:has_images]
 
-    effective_has_images = has_images || density_has_images || img_ratio >= 0.20
-
-    unless effective_has_images
-      return [ BatchChunkingPrompt::MODEL_TEXT, text_chars, img_ratio ]
+    if text_chars < 100 && img_ratio > 0.7
+      Rails.logger.info("PageRouter: p#{page_num} scanned_dense → Opus (text_chars=#{text_chars}, image_ratio=#{img_ratio.round(3)})")
+      return [ BatchChunkingPrompt::MODEL_MULTIMODAL, text_chars, img_ratio ]
     end
 
-    if text_chars > 500 && img_ratio < 0.20
-      Rails.logger.info("PageRouter: p#{page_num} downgraded — image_ratio=#{img_ratio.round(3)}, text_chars=#{text_chars}")
-      return [ BatchChunkingPrompt::MODEL_TEXT, text_chars, img_ratio ]
-    end
-
-    [ BatchChunkingPrompt::MODEL_MULTIMODAL, text_chars, img_ratio ]
+    [ BatchChunkingPrompt::MODEL_TEXT, text_chars, img_ratio ]
   end
 end

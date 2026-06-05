@@ -76,8 +76,7 @@ Web upload ingestion (single path — no feature flags)
   - **SHA dedup:** `ContentDedupService.find_completed(sha256:)` skips parse when binary already indexed.
 - PDF pages filtered by `PageRelevanceFilter.filter_pages` — Haiku `call_batch` for multi-page PDFs (native or Office) splits into bounded windows (`BATCH_WINDOW_SIZE=20`, `MAX_WINDOW_BYTES=22MB`), per-page heuristic for single-page.
 - Batch filter windows use dynamic `max_tokens`, retry once only on JSON parse/truncation failure, and keep-all only for the failed window on fallback.
-- Conservative downgrade: pages with text_chars>500 & image_ratio<0.20 → Sonnet (not Opus).
-- Scanned images (text_layer<100, image_ratio>0.7): kept, forced to Opus.
+- Per-page model: **Sonnet default**; Opus only for scanned/rasterized pages (`text_layer_chars<100` AND `image_ratio>0.7`). Same threshold as `PageRelevanceFilter#scanned_dense?`.
 - Parallel page calls capped at `MAX_PARALLEL_PAGES=8` (wave processing, sync path).
 - On error: propagates to job → `KbSyncBroadcaster.failed`; Solid Queue retries. No OWRPGSX6XK gasto.
 - Cost tracking: web/chat parse rows use `TrackBedrockQueryJob` with `model_id`

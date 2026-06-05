@@ -82,11 +82,11 @@ flowchart TB
 | PDF, ≥2 pages | `:pdf_mixed` | Per-page (see below) | Split → `PageRelevanceFilter` → N calls on kept pages |
 | Office (.docx, .xlsx, .pptx, …) | `:office` | — | `OfficeToPdfConverter` → re-classify as PDF |
 
-**Per-page model downgrade** (inside `:pdf_mixed`, before relevance filter):
+**Per-page model selection** (inside `:pdf_mixed`, via `route_page` in `FileMultimodalRouter`):
 
-- Text-only page → Sonnet
-- Page with images but `text_chars > 500` and `image_area_ratio < 0.20` → **downgrade to Sonnet** (conservative)
-- Scanned / rasterized page (`text_layer < 100`, `image_ratio > 0.7`, or high pixel density without XObjects) → **Opus** (`force_opus` from filter)
+- **Default: Sonnet** (`MODEL_TEXT`) for all pages.
+- **Opus** (`MODEL_MULTIMODAL`) only when the page is scanned/rasterized: `text_layer_chars < 100` **and** `image_area_ratio > 0.7`. Same threshold used by `PageRelevanceFilter#scanned_dense?` and `BatchFilter#scanned_dense?`.
+- Pages with images but sufficient text or moderate image coverage use Sonnet — no longer upgraded to Opus.
 
 Parallelism: up to **`MAX_PARALLEL_PAGES=8`** concurrent page requests on the sync path.
 

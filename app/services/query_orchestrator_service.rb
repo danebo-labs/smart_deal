@@ -90,7 +90,7 @@ class QueryOrchestratorService
         locale:            I18n.locale.to_s
       )
 
-      if @query.blank?
+      if has_images || @query.blank?
         key = has_images ? :images_uploaded : :documents_uploaded
         msg = has_images ? I18n.t('rag.image_indexing_message') : I18n.t('rag.document_indexing_message')
         return { answer: msg, citations: [], session_id: nil }.merge(key => filenames)

@@ -2,7 +2,7 @@
 # Visit our documentation for a list of all available configuration options.
 # https://docs.appsignal.com/ruby/configuration/options.html
 Appsignal.configure do |config|
-  config.activate_if_environment("development", "production")
+  config.activate_if_environment("production")
   config.name = "Danebo.ia"
 
   # Push API key from Rails credentials or APPSIGNAL_PUSH_API_KEY env var.

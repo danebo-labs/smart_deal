@@ -262,11 +262,22 @@ class BedrockRagService
       TrackBedrockQueryJob.perform_later(
         model_id:           tracked_model_id,
         prompt_text:        full_prompt,
-        answer_text:        answer_text,
+        answer_text:        raw_answer,
+        visible_answer_text: answer_text,
         user_query:         question,
         latency_ms:         latency_ms,
         source:             "query",
-        model_for_counting: "haiku"
+        model_for_counting: "haiku",
+        regression_context: regression_context(
+          config: config,
+          observed_chunks: retrieved_for_extraction,
+          observed_chunk_basis: citations.any? ? "bedrock_citations" : (doc_refs&.any? ? "fallback_retrieve_top3" : "none"),
+          bedrock_cited_references_count: total_refs,
+          doc_refs_present: raw_answer.include?("<DOC_REFS>"),
+          doc_refs_valid: doc_refs.present?,
+          doc_refs_count: doc_refs&.size.to_i,
+          entity_filter_applied: apply_filter
+        )
       )
       Rails.logger.info("✓ BedrockQuery tracking enqueued (token counting deferred to job)")
 
@@ -301,6 +312,53 @@ class BedrockRagService
   end
 
   private
+
+  # Bedrock retrieve_and_generate does not expose every top-N chunk in its response.
+  # This telemetry records only chunks observable through citations or the explicit
+  # Retrieve fallback, so regression analysis does not mistake them for the full set.
+  def regression_context(config:, observed_chunks:, observed_chunk_basis:,
+                         bedrock_cited_references_count:, doc_refs_present:,
+                         doc_refs_valid:, doc_refs_count:, entity_filter_applied:)
+    inference = config.dig(
+      :generation_configuration,
+      :inference_config,
+      :text_inference_config
+    ) || {}
+    retrieval = config.dig(
+      :retrieval_configuration,
+      :vector_search_configuration
+    ) || {}
+    descriptors = Array(observed_chunks).map { |chunk| observed_chunk_descriptor(chunk) }
+
+    {
+      "configured_max_tokens" => inference[:max_tokens],
+      "temperature" => inference[:temperature],
+      "requested_result_count" => retrieval[:number_of_results],
+      "input_token_basis" => "prompt_template_plus_observed_chunks",
+      "observed_chunk_basis" => observed_chunk_basis,
+      "observed_chunk_count" => descriptors.size,
+      "observed_chunks" => descriptors,
+      "bedrock_cited_references_count" => bedrock_cited_references_count,
+      "doc_refs_present" => doc_refs_present,
+      "doc_refs_valid" => doc_refs_valid,
+      "doc_refs_count" => doc_refs_count,
+      "entity_filter_applied" => entity_filter_applied
+    }
+  end
+
+  def observed_chunk_descriptor(chunk)
+    metadata = (chunk[:metadata] || chunk["metadata"] || {}).to_h
+    location = (chunk[:location] || chunk["location"] || {}).to_h
+
+    {
+      "canonical_name" => metadata["canonical_name"] || metadata[:canonical_name],
+      "doc_sha256" => metadata["doc_sha256"] || metadata[:doc_sha256],
+      "ingestion_path" => metadata["ingestion_path"] || metadata[:ingestion_path],
+      "original_source_uri" => metadata["original_source_uri"] || metadata[:original_source_uri],
+      "retrieved_source_uri" => location[:uri] || location["uri"] ||
+        metadata["x-amz-bedrock-kb-source-uri"] || metadata[:"x-amz-bedrock-kb-source-uri"]
+    }.compact
+  end
 
   # Fallback when retrieve_and_generate returns no inline citations: call the
   # Retrieve API directly to obtain the raw retrieval results. These ALWAYS

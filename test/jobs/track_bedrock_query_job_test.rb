@@ -119,8 +119,10 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
   # ── Deferred token counting (RAG path) ───────────────────────────────────────
 
   test 'counts tokens via AnthropicTokenCounter when input/output tokens are nil' do
+    counted_answer = nil
     orig = AnthropicTokenCounter.method(:count_query)
     AnthropicTokenCounter.define_singleton_method(:count_query) do |prompt:, answer:, model:|
+      counted_answer = answer
       { input_tokens: 4321, output_tokens: 123 }
     end
 
@@ -137,8 +139,69 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
     record = BedrockQuery.last
     assert_equal 4321, record.input_tokens
     assert_equal 123,  record.output_tokens
+    assert_equal 'the answer', counted_answer
   ensure
     AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
+  end
+
+  test 'persists raw billed output and logs visible-output regression telemetry separately' do
+    raw_answer = "Documented answer.\n<DOC_REFS>[{\"canonical_name\":\"Manual\"}]"
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    counted_raw_answer = nil
+    counted_visible_answer = nil
+    original_query_counter = AnthropicTokenCounter.method(:count_query)
+    original_counter = AnthropicTokenCounter.method(:count)
+
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |prompt:, answer:, model:|
+      counted_raw_answer = answer
+      { input_tokens: 900, output_tokens: 120 }
+    end
+    AnthropicTokenCounter.define_singleton_method(:count) do |text:, model:|
+      counted_visible_answer = text
+      45
+    end
+
+    Rails.logger.broadcast_to(capture_logger)
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        model_id: VALID_PARAMS[:model_id],
+        user_query: VALID_PARAMS[:user_query],
+        latency_ms: VALID_PARAMS[:latency_ms],
+        prompt_text: "prompt plus observed chunks",
+        answer_text: raw_answer,
+        visible_answer_text: "Documented answer.",
+        regression_context: {
+          configured_max_tokens: 3000,
+          observed_chunk_basis: "bedrock_citations",
+          observed_chunks: [
+            {
+              canonical_name: "Manual",
+              doc_sha256: "abc123",
+              ingestion_path: "manual_batch_v1"
+            }
+          ]
+        }
+      )
+    end
+
+    assert_equal 120, BedrockQuery.last.output_tokens
+    assert_equal raw_answer, counted_raw_answer
+    assert_equal "Documented answer.", counted_visible_answer
+    line = log_output.string.lines.find { |message| message.include?("[RAG_REGRESSION] ") }
+    assert line, "structured regression telemetry must be logged"
+
+    payload = JSON.parse(line.split("[RAG_REGRESSION] ", 2).last)
+    assert_equal 120, payload["raw_output_tokens"]
+    assert_equal 45, payload["visible_output_tokens"]
+    assert_equal 75, payload["hidden_output_tokens"]
+    assert_equal 0.04, payload["raw_output_utilization"]
+    assert_equal false, payload["possible_truncation"]
+    assert_equal "manual_batch_v1", payload.dig("observed_chunks", 0, "ingestion_path")
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| original_query_counter.call(**kwargs) }
+    AnthropicTokenCounter.define_singleton_method(:count) { |**kwargs| original_counter.call(**kwargs) }
   end
 
   test 'precounted tokens win over text counting (BedrockClient path stays untouched)' do

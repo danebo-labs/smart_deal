@@ -717,8 +717,60 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_nil   args['output_tokens'],      'output_tokens must NOT be precomputed in the RAG path'
       assert_kind_of String, args['prompt_text'], 'prompt_text must be passed for deferred counting'
       assert_kind_of String, args['answer_text'], 'answer_text must be passed for deferred counting'
+      assert_kind_of String, args['visible_answer_text'], 'visible answer must be tracked separately'
       assert_equal 'haiku', args['model_for_counting']
       assert_equal 'query', args['source'],         'source must be "query"'
+      assert_equal 'prompt_template_plus_observed_chunks',
+                   args.dig('regression_context', 'input_token_basis')
+      assert_equal 'bedrock_citations',
+                   args.dig('regression_context', 'observed_chunk_basis')
+    end
+  end
+
+  test 'query tracks raw DOC_REFS output while returning a clean visible answer' do
+    raw_answer = <<~ANSWER.strip
+      The documented value is 13.
+      <DOC_REFS>[{"source_uri":"s3://bucket/manual.pdf","canonical_name":"Manual","aliases":[],"doc_type":"manual"}]</DOC_REFS>
+    ANSWER
+    citation = ::OpenStruct.new(
+      retrieved_references: [
+        ::OpenStruct.new(
+          content: ::OpenStruct.new(text: "Documented value: 13"),
+          location: ::OpenStruct.new(
+            s3_location: ::OpenStruct.new(uri: "s3://bucket/chunks/manual-1.txt")
+          ),
+          metadata: {
+            "canonical_name" => "Manual",
+            "doc_sha256" => "sha-manual",
+            "ingestion_path" => "manual_batch_v1",
+            "original_source_uri" => "s3://bucket/manual.pdf"
+          }
+        )
+      ]
+    )
+    response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: raw_answer),
+      citations: [ citation ],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: response) do
+      jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+      result = BedrockRagService.new.query("What is the documented value?")
+      job = ActiveJob::Base.queue_adapter.enqueued_jobs[jobs_before..].find do |candidate|
+        candidate[:job] == TrackBedrockQueryJob
+      end
+      args = job[:args].first
+
+      assert_equal "The documented value is 13.[1]", result[:answer]
+      assert_equal raw_answer, args["answer_text"]
+      assert_equal result[:answer], args["visible_answer_text"]
+      assert_equal true, args.dig("regression_context", "doc_refs_present")
+      assert_equal true, args.dig("regression_context", "doc_refs_valid")
+      assert_equal "sha-manual",
+                   args.dig("regression_context", "observed_chunks", 0, "doc_sha256")
+      assert_equal "manual_batch_v1",
+                   args.dig("regression_context", "observed_chunks", 0, "ingestion_path")
     end
   end
 

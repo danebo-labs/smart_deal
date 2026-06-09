@@ -19,7 +19,7 @@ require "digest"
 #   → `BatchResultsParserService` → `ChunkAsset` → `CustomChunkingPipeline#web_v1_metadata`
 #   → `BedrockIngestionJob` → `KbDocument`. No in-body marker parsing required.
 module BatchChunkingPrompt
-  MODEL_MULTIMODAL = "claude-opus-4-7"
+  MODEL_MULTIMODAL = "claude-opus-4-8"
   MODEL_TEXT       = "claude-sonnet-4-6"
   # Legacy alias kept for callers that reference MODEL directly (bulk batch path).
   MODEL      = MODEL_MULTIMODAL

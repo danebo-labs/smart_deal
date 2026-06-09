@@ -52,7 +52,7 @@ Query orchestration
 - RagQueryConcern is the shared RAG entry; **web** is the exercised path today. WhatsApp-specific branches are **collapsed / dormant** until the route and workers are restored (README architecture + dormant sections).
 
 RAG query cost optimization (2026-05-22)
-- **Inference profile:** `us.anthropic.claude-haiku-4-5-20251001-v1:0` — 20% cheaper than `global.`, same model, same quality. Set via `BEDROCK_MODEL_ID`.
+- **Inference profile:** `global.anthropic.claude-haiku-4-5-20251001-v1:0` — ~10% cheaper than `us.`, same model, higher throughput. Set via `BEDROCK_MODEL_ID`.
 - **`RagRetrievalProfile`** (app/services/rag_retrieval_profile.rb): adaptive `number_of_results` from pin signal and intent. Photos-only→10, docs/mixed focused→3, stop/failure/repair→5, no-pin→8, exhaustive checklist→15 candidates (optionally reranked to 12). Derived from the URI-aligned pinned entity subset in `QueryOrchestratorService` with zero extra DB queries.
 - **`stop_sequences: ["</DOC_REFS>"]`** in `textInferenceConfig`: cuts tail noise after the DOC_REFS block (~10–40 output tokens/query). `normalize_doc_refs_tag` re-appends the closing tag before `extract_doc_refs` so the regex always matches.
 - **`fallback_retrieve`** (PR3): fixed entity filter bug — now scopes to `filtered_uris` when available, N=3 (was N=10). Only used for source_uri resolution, not generation context.

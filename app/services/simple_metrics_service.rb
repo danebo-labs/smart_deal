@@ -27,8 +27,10 @@ class SimpleMetricsService
 
   # Update only database-based metrics (tokens, cost, queries) without calling CloudWatch.
   # Called after each query via TrackBedrockQueryJob.
-  def self.update_database_metrics_only
-    today = Date.current
+  # Accepts an optional date: keyword to rebuild rollups for a past date (backfill).
+  # Default (no argument) preserves the existing hot-path behaviour.
+  def self.update_database_metrics_only(date: Date.current)
+    today = date
     all_rows = BedrockQuery.where(created_at: today.all_day)
                            .pluck(:source, :model_id, :input_tokens, :output_tokens,
                                   :cache_read_tokens, :cache_creation_tokens, :user_query)
@@ -52,8 +54,8 @@ class SimpleMetricsService
     total_cost   = cost_sum.call(all_rows)
     query_count  = query_rows.size
 
-    cache_hits   = WhatsappCacheHit.today.count
-    tokens_saved = WhatsappCacheHit.today.sum(:tokens_saved_estimate).to_i
+    cache_hits   = WhatsappCacheHit.where(created_at: today.all_day).count
+    tokens_saved = WhatsappCacheHit.where(created_at: today.all_day).sum(:tokens_saved_estimate).to_i
 
     # Legacy rollup buckets (batch_v1 Opus + Bedrock FM [parse] estimates)
     batch_v1_opus_rows = parse_rows.select { |*, q| q.to_s.start_with?("batch_parse:") }

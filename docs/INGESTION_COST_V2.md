@@ -181,11 +181,11 @@ Pricing de `BedrockQuery::BEDROCK_PRICING` ($/1K tokens):
 |---------|--------|-----|-----------|------------|-------------|---------|
 | Foto campo | Sonnet 4.6 direct | Sync | $0.003 | $0.015 | ~2.000 in / ~300 out | ~$0.0105 |
 | Pág. manual web/chat | Sonnet 4.6 direct | Sync | $0.003 | $0.015 | ~3.000 in / ~500 out | ~$0.0165 |
-| Pág. manual web/chat Opus | Opus 4.7 direct | Sync | ~$0.015 | ~$0.075 | ~3.000 in / ~500 out | ~$0.083 |
+| Pág. manual web/chat Opus | Opus 4.8 direct | Sync | ~$0.005 | ~$0.025 | ~3.000 in / ~500 out | ~$0.028 |
 | Pág. manual | Sonnet 4.6 batch | Batch | ~$0.0015 | ~$0.0075 | ~3.000 in / ~500 out | ~$0.008 |
-| Pág. manual Opus | Opus 4.7 batch | Batch | ~$0.0075 | ~$0.0375 | ~3.000 in / ~500 out | ~$0.041 |
-| Haiku filter | Haiku 4.5 direct | Sync | $0.0008 | $0.004 | ~1.000 in / ~10 out | ~$0.00084 |
-| Query RAG | Haiku 4.5 via Bedrock | `retrieve_and_generate` | ~$0.0008 | ~$0.004 | benchmark mixto | **~$0.00699** |
+| Pág. manual Opus | Opus 4.8 batch | Batch | ~$0.0025 | ~$0.0125 | ~3.000 in / ~500 out | ~$0.014 |
+| Haiku filter | Haiku 4.5 direct | Sync | $0.001 | $0.005 | ~1.000 in / ~10 out | ~$0.00105 |
+| Query RAG | Haiku 4.5 via Bedrock | `retrieve_and_generate` | ~$0.001 | ~$0.005 | benchmark mixto | **~$0.00699** |
 
 ---
 
@@ -263,5 +263,5 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 - **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` por ventanas para multipágina, per-page para 1p), Office→PDF vía `OfficeToPdfConverter`.
 - **Filtro unificado (2026-05-22):** `PageRelevanceFilter.filter_pages` reemplaza la lógica triplicada `office_origin && pages.size > 1`. Todos los PDFs nativos ≥2p ahora usan Haiku `call_batch` (igual que PPT/Office). Ahorro ~$0.08–0.10/doc con portada rasterizada; costo filtro ~$0.004/doc.
 - **Windowing del filtro (2026-06-05):** `call_batch` divide por páginas+bytes para evitar truncamiento y payloads >32 MB; si una ventana falla, solo esa ventana cae a keep-all.
-- Manual muy escaneado puede subir costo Opus: un manual de 50 páginas con 30 páginas escaneadas → 30 × $0.041 ≈ $1.23 en ese manual solo. Monitorear `force_opus` count.
+- Manual muy escaneado puede subir costo Opus: un manual de 50 páginas con 30 páginas escaneadas → 30 × $0.014 ≈ $0.42 en ese manual solo. Monitorear `force_opus` count.
 - SHA dedup sin `kb_documents.content_sha256` indexed puede ser O(n) si hay muchos `BulkUploadAsset.complete`. Indexar en Stage 1 tenancy migration.

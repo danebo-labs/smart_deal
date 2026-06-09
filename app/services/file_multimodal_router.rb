@@ -4,7 +4,7 @@
 # Deterministic, zero-LLM — all model decisions are made here before any API call.
 #
 # Result fields:
-#   model  [String]          "claude-sonnet-4-6" | "claude-opus-4-7"
+#   model  [String]          "claude-sonnet-4-6" | "claude-opus-4-8"
 #   mode   [Symbol]          :text | :image | :pdf_text_only | :pdf_mixed | :office
 #   pages  [Array<PageInfo>] per-page routing detail for :pdf_mixed; empty otherwise
 #

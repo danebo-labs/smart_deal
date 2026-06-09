@@ -61,7 +61,7 @@ env:
     BEDROCK_KNOWLEDGE_BASE_ID: your-kb-id
     BEDROCK_BULK_DATA_SOURCE_ID: your-bulk-no-chunking-data-source-id
     BEDROCK_EMBEDDING_MODEL_ID: amazon.titan-embed-text-v2:0
-    BEDROCK_MODEL_ID: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    BEDROCK_MODEL_ID: global.anthropic.claude-haiku-4-5-20251001-v1:0
     KNOWLEDGE_BASE_S3_BUCKET: your-kb-source-bucket
     INGESTION_REENQUEUE: "true"
     AWS_HTTP_READ_TIMEOUT: "90"

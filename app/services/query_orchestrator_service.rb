@@ -279,9 +279,14 @@ class QueryOrchestratorService
     Object.const_defined?("Current") && Current.respond_to?(:tenant) ? Current.tenant : nil
   end
 
-  # Derives entity source types from pinned session entities for RagRetrievalProfile.
+  # Derives media types from pinned session entities for RagRetrievalProfile.
+  # Legacy image_upload rows remain images; other legacy rows default to documents.
   def entity_sources
     return [] unless @conv_session.respond_to?(:active_entities)
-    @conv_session.active_entities.values.filter_map { |meta| meta["source"] }
+
+    @conv_session.active_entities.values.map do |meta|
+      entity_type = meta["entity_type"].presence || meta["source"]
+      entity_type == "image_upload" ? "image_upload" : "document"
+    end
   end
 end

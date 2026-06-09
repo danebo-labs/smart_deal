@@ -24,7 +24,8 @@ class SessionContextBuilder
       lines            = []
 
       ordered_entities.each do |key, meta|
-        type    = meta["source"] == "image_upload" ? "image" : "document"
+        entity_type = meta["entity_type"].presence || meta["source"]
+        type    = entity_type == "image_upload" ? "image" : "document"
         aliases = Array(meta["aliases"]).compact_blank
         summary = meta["first_answer_summary"]
 

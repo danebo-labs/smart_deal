@@ -631,6 +631,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
     entity = session.active_entities["Test Pin"]
     assert_equal "user_pin", entity["source"]
+    assert_equal "document", entity["entity_type"]
     assert_equal "s3://#{KbDocument::KB_BUCKET}/uploads/2026/test_pin.pdf", entity["source_uri"]
     assert_includes entity["aliases"], "TP"
   end
@@ -664,6 +665,8 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.reload
 
     assert_equal 2, session.entity_count
+    assert_equal "image_upload", session.active_entities["Hydraulic Board"]["entity_type"]
+    assert_equal "document", session.active_entities["Platform Manual"]["entity_type"]
     assert_equal(
       [ image, manual ].map { |doc| doc.display_s3_uri(KbDocument::KB_BUCKET) }.sort,
       SessionContextBuilder.entity_s3_uris(session).sort
@@ -731,6 +734,23 @@ class ConversationSessionTest < ActiveSupport::TestCase
       [ kb_doc.display_s3_uri(KbDocument::KB_BUCKET) ],
       SessionContextBuilder.entity_s3_uris(session)
     )
+    assert_equal "document", session.active_entities.fetch("Movable Manual").fetch("entity_type")
+  end
+
+  test 'pin_kb_document! refreshes entity_type when the physical file extension changes' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-type-refresh", channel: "web")
+    kb_doc = KbDocument.create!(
+      s3_key: "uploads/2026/inspection.pdf",
+      display_name: "Inspection",
+      aliases: []
+    )
+
+    session.pin_kb_document!(kb_doc)
+    kb_doc.update!(s3_key: "uploads/2026/inspection.jpg")
+    session.pin_kb_document!(kb_doc)
+
+    entity = session.reload.active_entities.fetch("Inspection")
+    assert_equal "image_upload", entity["entity_type"]
   end
 
   test 'unpin_kb_document! removes only the matching uri when aliases overlap' do

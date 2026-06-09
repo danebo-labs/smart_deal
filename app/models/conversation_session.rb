@@ -5,6 +5,7 @@ class ConversationSession < ApplicationRecord
   MAX_HISTORY    = 20
   MAX_ENTITIES   = ENV.fetch('SESSION_MAX_ENTITIES', 10).to_i
   MAX_MSG_LENGTH = 300
+  PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
 
   # WA channel disabled for MVP. "whatsapp" kept in CHANNELS so legacy rows (if any) remain valid.
   CHANNELS = %w[web shared whatsapp].freeze
@@ -179,6 +180,7 @@ class ConversationSession < ApplicationRecord
       existing_key = entities.find { |_, meta| meta["kb_document_id"].to_s == kb_doc.id.to_s }&.first
     end
     canonical = kb_doc.display_name.presence || File.basename(kb_doc.s3_key.to_s, ".*")
+    entity_type = pinned_entity_type(kb_doc)
 
     if existing_key
       existing = entities[existing_key].dup
@@ -189,6 +191,7 @@ class ConversationSession < ApplicationRecord
         "kb_document_id" => kb_doc.id,
         "source_uri"     => s3_uri,
         "wa_filename"    => File.basename(kb_doc.s3_key.to_s),
+        "entity_type"    => entity_type,
         "aliases"        => merged_aliases
       )
       return true if refreshed == existing
@@ -210,6 +213,7 @@ class ConversationSession < ApplicationRecord
         "canonical_name"    => canonical,
         "kb_document_id"    => kb_doc.id,
         "source"            => "user_pin",
+        "entity_type"       => entity_type,
         "source_uri"        => s3_uri,
         "wa_filename"       => File.basename(kb_doc.s3_key.to_s),
         "extraction_method" => "user_pin",
@@ -239,6 +243,11 @@ class ConversationSession < ApplicationRecord
   end
 
   private
+
+  def pinned_entity_type(kb_doc)
+    extension = File.extname(kb_doc.s3_key.to_s).downcase
+    PINNED_IMAGE_EXTENSIONS.include?(extension) ? "image_upload" : "document"
+  end
 
   def sanitize_aliases(aliases_array)
     seen   = {}

@@ -13,7 +13,7 @@
 # | Pin signal          | number_of_results | rationale                          |
 # |---------------------|-------------------|------------------------------------|
 # | photos only         | 10                | small chunks; 10 ≈ 3 manual tokens |
-# | documents only      | 5                 | heavy chunks; 5 covers the topic   |
+# | documents only      | 7                 | preserve manual recall             |
 # | mixed photo+doc     | 7                 | balanced budget                    |
 # | no pin (open query) | 8                 | slight savings vs legacy default   |
 class RagRetrievalProfile
@@ -30,7 +30,7 @@ class RagRetrievalProfile
     if photo_count > 0 && doc_count == 0
       10
     elsif doc_count > 0 && photo_count == 0
-      5
+      7
     else
       7
     end

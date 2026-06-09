@@ -54,6 +54,23 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     assert_includes context, '[image] wa_photo.jpg'
   end
 
+  test 'prefers entity_type over pin provenance when labeling session focus' do
+    session = build_session
+    session.add_entity('field_photo.jpg', {
+      'source' => 'user_pin',
+      'entity_type' => 'image_upload'
+    })
+    session.add_entity('manual.pdf', {
+      'source' => 'user_pin',
+      'entity_type' => 'document'
+    })
+
+    context = SessionContextBuilder.build(session)
+
+    assert_includes context, '[image] field_photo.jpg'
+    assert_includes context, '[document] manual.pdf'
+  end
+
   test 'includes both retrieve_result and image_upload entities' do
     session = build_session
     session.add_entity('doc.pdf',    { 'source' => 'retrieve_result' })

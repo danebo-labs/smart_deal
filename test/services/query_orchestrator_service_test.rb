@@ -62,4 +62,24 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
   ensure
     BedrockRagService.define_method(:query, orig_rag)
   end
+
+  test "entity_sources separates media type from user pin provenance" do
+    session = Struct.new(:active_entities).new({
+      "Photo" => { "source" => "user_pin", "entity_type" => "image_upload" },
+      "Manual" => { "source" => "user_pin", "entity_type" => "document" }
+    })
+    service = QueryOrchestratorService.new("Question", conv_session: session)
+
+    assert_equal [ "image_upload", "document" ], service.send(:entity_sources)
+  end
+
+  test "entity_sources keeps legacy image uploads and defaults other legacy pins to documents" do
+    session = Struct.new(:active_entities).new({
+      "Photo" => { "source" => "image_upload" },
+      "Manual" => { "source" => "user_pin" }
+    })
+    service = QueryOrchestratorService.new("Question", conv_session: session)
+
+    assert_equal [ "image_upload", "document" ], service.send(:entity_sources)
+  end
 end

@@ -24,7 +24,7 @@ class BedrockRagService
   DEFAULT_RAG_CONFIG = {
     number_of_results: 10,
     search_type: "HYBRID",
-    generation_temperature: 0.3,
+    generation_temperature: 0.1,
     generation_max_tokens: 3000
   }.freeze
 
@@ -462,7 +462,7 @@ class BedrockRagService
       - Start with a 2–3 sentence direct answer. Details and sections follow — never lead with them.
       - Skip filler intro phrases: no "El documento consiste en...", no "Based on the retrieved chunks..."
       - Field-mentor tone: cordial, direct, technically precise. Not academic, not bureaucratic.
-      - Safety warnings remain NON-NEGOTIABLE: include ALL ⚠️ and 🛑 blocks from the chunks regardless of length.
+      - Include relevant documented safety warnings without expanding their meaning.
 
       ## CITATIONS BEYOND USER SELECTION
       If a "## Session Focus" block is present (the user has explicitly pinned documents) AND your answer references material from documents NOT listed there, call out those documents in **bold** with a brief, human note woven naturally into the prose.

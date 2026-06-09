@@ -72,14 +72,14 @@ Retrieval and generation parameters. Defaults are tuned for safety-critical doma
 |----------|---------|-------------|
 | `BEDROCK_RAG_NUMBER_OF_RESULTS` | 10 | Chunks retrieved before reranking |
 | `BEDROCK_RAG_SEARCH_TYPE` | HYBRID | HYBRID (semantic + keyword) or SEMANTIC |
-| `BEDROCK_RAG_GENERATION_TEMPERATURE` | 0.3 | Balance between consistency and answer synthesis |
+| `BEDROCK_RAG_GENERATION_TEMPERATURE` | 0.1 | Favor documentary consistency over creative synthesis |
 | `BEDROCK_RAG_GENERATION_MAX_TOKENS` | 3000 | Maximum output tokens |
 
 ```bash
 # Optional example matching the current service defaults.
 BEDROCK_RAG_NUMBER_OF_RESULTS=10
 BEDROCK_RAG_SEARCH_TYPE=HYBRID
-BEDROCK_RAG_GENERATION_TEMPERATURE=0.3
+BEDROCK_RAG_GENERATION_TEMPERATURE=0.1
 ```
 
 **Current data source note:** production IDs live in `config/deploy.yml` and should not be copied into committed templates or local sample files.

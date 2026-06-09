@@ -315,6 +315,24 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'uses documentary fidelity defaults when RAG env vars are absent' do
+    with_env_vars(
+      'BEDROCK_RAG_GENERATION_TEMPERATURE' => nil,
+      'BEDROCK_RAG_GENERATION_MAX_TOKENS' => nil
+    ) do
+      service = BedrockRagService.new
+      config = service.build_complete_optimized_config
+      inference = config.dig(
+        :generation_configuration,
+        :inference_config,
+        :text_inference_config
+      )
+
+      assert_equal 0.1, inference[:temperature]
+      assert_equal 3000, inference[:max_tokens]
+    end
+  end
+
   test 'works with tenant nil (single-tenant)' do
     with_mock_bedrock_client do
       service = BedrockRagService.new(tenant: nil)

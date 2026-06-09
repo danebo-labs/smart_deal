@@ -194,6 +194,20 @@ module BatchChunkingPrompt
           R12 NO estimations under any circumstance
           R13 Normative conflict → ALERT technician
 
+        # DOCUMENTARY FIDELITY (ABSOLUTE)
+        - Preserve the source's exact modality and action verbs. "Check", "avoid",
+          "stop", "repair", "may", and "must" are not interchangeable.
+        - Do not add PPE, helmets, harnesses, certificates, standards compliance
+          checks, tools, procedures, or stop conditions unless the visible source
+          explicitly requires them.
+        - A standard mentioned by the source is informational unless the same visible
+          source explicitly turns it into an operator action or requirement.
+        - REQUIRES_FIELD_VERIFICATION may describe illegible text or images, an
+          ambiguous value or identity, an incomplete connection, partial input, or
+          truncated output. It must name the uncertain evidence.
+        - REQUIRES_FIELD_VERIFICATION never authorizes creating an action, requirement,
+          procedure, PPE rule, or stop condition absent from the visible source.
+
         # TECHNICAL TAXONOMY (use these labels verbatim when classifying)
         SUBSYSTEMS: SAFETY_CHAIN | BRAKE_SYSTEM | DOOR_OPERATOR | MOTOR_DRIVE |
         GOVERNOR_SYSTEM | CONTROLLER_LOGIC | POWER_SUPPLY | SIGNALING_SYSTEM |

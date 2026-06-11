@@ -17,8 +17,8 @@
 | Path | Doc |
 |------|-----|
 | **Ingestion routing** — file type, page filter (portada/índice/dedicatoria), LLM matrix | [INGESTION_ROUTING.md](INGESTION_ROUTING.md) |
-| Chat file upload (Claude direct, flag) | [WEB_CUSTOM_CHUNKING.md](WEB_CUSTOM_CHUNKING.md) |
-| Chat upload — cost v2 (Sonnet+Batch, 2026-05-21) | [INGESTION_COST_V2.md](INGESTION_COST_V2.md) |
+| Web/chat file upload (`CustomChunkingPipeline`, sync Messages API) | [WEB_CUSTOM_CHUNKING.md](WEB_CUSTOM_CHUNKING.md) |
+| Ingestion cost model & routing ADR (Sonnet/Batch, 2026-05-21) | [INGESTION_COST_V2.md](INGESTION_COST_V2.md) |
 | Bulk ZIP (`/bulk_uploads`, Anthropic Batch) | [BULK_INGESTION.md](BULK_INGESTION.md) |
 | Legacy FM parse (`BEDROCK_DATA_SOURCE_ID`) | [BEDROCK_SETUP.md](../BEDROCK_SETUP.md) |
 

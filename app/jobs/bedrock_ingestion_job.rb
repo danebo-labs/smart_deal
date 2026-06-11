@@ -189,7 +189,7 @@ class BedrockIngestionJob < ApplicationJob
   # Enriches KbDocuments and registers session entities for each uploaded file.
   # Identity (canonical_name + aliases) comes from web_v1_metadata when present —
   # no Bedrock retrieve call required. Falls back to filename stem when metadata
-  # is absent (e.g. jobs serialised before this deploy, or fallback_to_legacy path).
+  # is absent (e.g. jobs serialised before a deploy, or async batch uploads still parsing).
   def notify_indexed(uploaded_filenames, kb_id:, conv_session_id:, kb_document_ids: nil, web_v1_metadata: nil)
     session = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
     ids     = Array(kb_document_ids)

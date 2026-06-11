@@ -293,41 +293,61 @@ class SingleFileChunkingService
     1 + ((pages.size - 1).fdiv(FileMultimodalRouter::MAX_PARALLEL_PAGES).ceil)
   end
 
+  # Escalation ladder for per-page / per-image calls. A rung fails when the
+  # output is truncated (stop_reason=max_tokens) OR is not parseable JSON —
+  # both previously degraded the page to a marker-only placeholder, losing all
+  # content (benchmark defect D1). Each failed rung retries at the next cap;
+  # only failing pages pay the extra calls.
+  PAGE_TOKEN_LADDER = [
+    BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
+    BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS,
+    BatchChunkingPrompt::MAX_TOKENS
+  ].freeze
+
   def call_with_page_cap_retry(client:, user_content:, page_number: nil, total_pages: nil)
-    result = client.call(
-      user_content: user_content,
-      filename:     @filename,
-      page_number:  page_number,
-      total_pages:  total_pages,
-      max_tokens:   BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS
-    )
+    result = nil
+    page_label = page_number ? " p#{page_number}" : ""
 
-    return result unless result[:stop_reason] == "max_tokens"
-
-    Rails.logger.warn(
-      "SingleFileChunkingService: #{@filename}" \
-      "#{page_number ? " p#{page_number}" : ''} truncated at " \
-      "#{BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS} — retrying with " \
-      "#{BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS}"
-    )
-
-    retry_result = client.call(
-      user_content: user_content,
-      filename:     @filename,
-      page_number:  page_number,
-      total_pages:  total_pages,
-      max_tokens:   BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS
-    )
-
-    if retry_result[:stop_reason] == "max_tokens"
-      Rails.logger.warn(
-        "SingleFileChunkingService: #{@filename}" \
-        "#{page_number ? " p#{page_number}" : ''} still truncated after retry at " \
-        "#{BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS} — page will be marked as degraded"
+    PAGE_TOKEN_LADDER.each_with_index do |cap, index|
+      result = client.call(
+        user_content: user_content,
+        filename:     @filename,
+        page_number:  page_number,
+        total_pages:  total_pages,
+        max_tokens:   cap
       )
+
+      truncated  = result[:stop_reason] == "max_tokens"
+      parseable  = parseable_json?(result[:text])
+      return result if !truncated && parseable
+
+      reason = truncated ? "truncated" : "unparseable JSON"
+      if index < PAGE_TOKEN_LADDER.size - 1
+        Rails.logger.warn(
+          "SingleFileChunkingService: #{@filename}#{page_label} #{reason} at " \
+          "max_tokens=#{cap} — retrying with #{PAGE_TOKEN_LADDER[index + 1]}"
+        )
+      else
+        Rails.logger.warn(
+          "SingleFileChunkingService: #{@filename}#{page_label} still #{reason} at " \
+          "max_tokens=#{cap} — page will be marked as degraded"
+        )
+      end
     end
 
-    retry_result
+    result
+  end
+
+  # Fence-tolerant, mirroring ChunkMergerService#parse_page_result and
+  # BatchResultsParserService#normalize_json_text so the ladder and the
+  # downstream consumers accept exactly the same outputs.
+  def parseable_json?(text)
+    s = text.to_s.strip
+    s = s.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip if s.start_with?("```")
+    JSON.parse(s)
+    true
+  rescue JSON::ParserError
+    false
   end
 
   def handle_pdf_text_only_binary(pdf_binary, model)

@@ -12,10 +12,14 @@
 #   - document_name: canonical rule — page 1's name if page 1 is in the result set
 #     and its document_name is non-empty; otherwise the lowest page_number present
 #     with a non-empty document_name. Drift across pages triggers a warn log.
-#   - aliases:       union across all pages, deduped, preserving insertion order
+#   - aliases:       document-level union, deduped and capped
 #   - chunks:        concat of all pages' chunks in page-number order
+#   - chunk aliases: page/chunk-specific aliases, capped for discriminative retrieval
 #   - chunk["page"]: original 1-indexed page number (gaps allowed — NOT renumbered)
 class ChunkMergerService
+  DOCUMENT_ALIAS_LIMIT = 15
+  CHUNK_ALIAS_LIMIT    = 8
+
   # S0-style marker surfaced to Haiku when a page could not be fully extracted.
   # %{page} is interpolated with the 1-indexed page number.
   DEGRADATION_MARKER = \
@@ -52,20 +56,27 @@ class ChunkMergerService
     end
 
     doc_name, chosen_idx = canonical_name(parsed_pages)
-    all_aliases = parsed_pages.flat_map { |p| Array(p["aliases"]).map(&:to_s).map(&:strip) }
-                               .reject(&:empty?)
-                               .uniq
+    document_aliases = sanitize_aliases(
+      parsed_pages.flat_map { |page| Array(page["aliases"]) },
+      limit: DOCUMENT_ALIAS_LIMIT
+    )
 
     all_chunks = parsed_pages.flat_map.with_index do |parsed, idx|
       orig_page = @page_results[idx][:page_number]
+      page_aliases = sanitize_aliases(parsed["aliases"], limit: CHUNK_ALIAS_LIMIT)
+
       Array(parsed["chunks"]).map do |chunk|
-        chunk.merge("page" => (chunk["page"] || orig_page).to_i)
+        chunk_aliases = sanitize_aliases(chunk["aliases"], limit: CHUNK_ALIAS_LIMIT)
+        chunk.merge(
+          "page" => (chunk["page"] || orig_page).to_i,
+          "aliases" => chunk_aliases.presence || page_aliases
+        )
       end
     end
 
     json = JSON.generate({
       "document_name"   => doc_name,
-      "aliases"         => all_aliases,
+      "aliases"         => document_aliases,
       "summary"         => parsed_pages[chosen_idx]&.dig("summary").to_s.presence,
       "companion_offer" => parsed_pages[chosen_idx]&.dig("companion_offer").to_s.presence,
       "chunks"          => all_chunks
@@ -76,6 +87,18 @@ class ChunkMergerService
 
   private
 
+  def sanitize_aliases(values, limit:)
+    seen = {}
+
+    Array(values).filter_map do |value|
+      alias_name = value.to_s.strip
+      next if alias_name.blank? || seen[alias_name.downcase]
+
+      seen[alias_name.downcase] = true
+      alias_name
+    end.first(limit)
+  end
+
   # Returns [parsed_hash, degraded_boolean].
   # Three cases:
   #   - parse OK, not truncated  → normal parsed hash, not degraded
@@ -85,6 +108,10 @@ class ChunkMergerService
     page_number = r[:page_number]
     text        = r[:text].to_s.strip
     stop_reason = r[:stop_reason]
+
+    # Fence tolerance mirrors BatchResultsParserService#normalize_json_text so a
+    # ```json-wrapped page is parsed instead of degraded to a marker chunk.
+    text = text.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip if text.start_with?("```")
 
     parsed = JSON.parse(text)
 
@@ -102,7 +129,11 @@ class ChunkMergerService
   end
 
   def degradation_marker_chunk(page_number)
-    { "text" => format(DEGRADATION_MARKER, page: page_number), "page" => page_number }
+    {
+      "text" => format(DEGRADATION_MARKER, page: page_number),
+      "page" => page_number,
+      "field_records" => []
+    }
   end
 
   # Canonical document_name selection:

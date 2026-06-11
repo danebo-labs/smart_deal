@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 # Prompt + payload builder for the Anthropic Messages API path (web_v1) and Batch API
 # path (batch_v1) of document ingestion.
 #
@@ -22,6 +24,23 @@ module BatchChunkingPrompt
   # Legacy alias kept for callers that reference MODEL directly (bulk batch path).
   MODEL      = MODEL_MULTIMODAL
   MAX_TOKENS = 32_000
+
+  # Semantic version of the chunks[].field_records extraction contract. Bump when
+  # the schema or extraction semantics change so dedup never reuses chunks parsed
+  # under an older contract (see ContentDedupService).
+  # v2: page-continuation preservation, functional-test-section typing,
+  #     verbatim-result rule.
+  # v3: schematic-symbol fidelity — ISO/conventional symbol recognition and
+  #     acronym expansion are not documentary evidence.
+  INGESTION_CONTRACT_VERSION = "field_records_v3"
+
+  # SHA-256 of the exact system prompt text — persisted in chunk sidecars so an
+  # index can be audited against the prompt that produced it.
+  def self.prompt_fingerprint_sha256
+    @prompt_fingerprint_sha256 ||= Digest::SHA256.hexdigest(
+      SYSTEM_BLOCKS.pluck(:text).join("\n")
+    )
+  end
 
   # Per-page / per-image cap for pdf_mixed and handle_image paths.
   # First attempt: conservative cap. Retry at WEB_PAGE_RETRY_MAX_TOKENS if truncated.
@@ -59,7 +78,20 @@ module BatchChunkingPrompt
           "summary": "<2-3 friendly sentences, no jargon, in the requested language; always emit>",
           "companion_offer": "<1 warm sentence inviting questions in plain language; always emit>",
           "chunks": [
-            { "text": "<chunk body — see CHUNK FORMAT below>", "page": <integer or null> }
+            {
+              "text": "<chunk body — see CHUNK FORMAT below>",
+              "page": <integer or null>,
+              "aliases": ["<2-8 terms specific to this chunk>"],
+              "field_records": [
+                {
+                  "k": "<record type>",
+                  "h": "<visible heading/figure/table or DATA_NOT_AVAILABLE>",
+                  "a": "<exact action/check/test>",
+                  "r": "<exact expected result or DATA_NOT_AVAILABLE>",
+                  "ev": "<short exact supporting phrase>"
+                }
+              ]
+            }
           ]
         }
 
@@ -133,12 +165,17 @@ module BatchChunkingPrompt
         # DOCUMENT_NAME + ALIASES (CRITICAL — drives retrieval)
         - document_name: 3-7 words, human-readable, derived from visible content
           (model/part name, drawing title, equipment label). No file extensions.
-        - aliases: 2-10 entries, each 2-60 chars, derived ONLY from visible content
+        - top-level aliases: 2-10 entries, each 2-60 chars, derived ONLY from visible content
           (component names, drawing references, part numbers, model codes,
           manufacturer names if explicitly present, common technician shorthand).
           No technical values (voltages, dimensions, torques) as aliases.
-          These aliases feed both the in-chunk DOCUMENT_ALIASES block and the
-          downstream SEARCH_ALIASES header — be thorough, be specific.
+          These identify the whole document.
+        - chunks[].aliases: 2-8 terms that are explicitly present in or uniquely
+          identify that chunk. Do not repeat unrelated aliases from other pages or
+          sections. For a single-image chunk, include all visible labels needed for
+          literal lookup, without assigning functions to those labels.
+          For procedural chunks, include explicit controller/block names and
+          distinguishing directions or states that a technician may search for.
 
         # CHUNK FORMAT (every chunk is self-contained at retrieval time)
         - Divide content into self-contained semantic chunks, one per logical section
@@ -148,6 +185,26 @@ module BatchChunkingPrompt
           and manufacturer text VERBATIM.
         - chunks[0].text MUST contain the S0 — DOCUMENT IDENTIFICATION section.
         - page: 1-indexed integer if determinable from a multi-page document; otherwise null.
+        - field_records: always emit an array. Use [] when the chunk has no qualifying
+          evidence. Records belong in the same semantic chunk as their source evidence.
+          Do not create a separate one-sentence chunk for each record.
+        - If one source section yields more than 8 records, split it into multiple
+          self-contained chunks at original headings or test blocks. Never split a
+          single record across chunks.
+
+        # PAGE CONTINUATION (CRITICAL for per-page parses)
+        A page may BEGIN mid-section: steps, results, table rows, or warnings whose
+        heading sits on the previous page. NEVER drop that content.
+        - Emit it as the FIRST chunk of the page, body verbatim, before any chunk
+          that starts at a visible heading.
+        - For its field_records use h="(continuación de página anterior)" — the
+          heading is genuinely not visible on this page.
+        - Result lines at the top of a page ("Resultado: ...") belong to the
+          action listed immediately before them in the source flow; extract the
+          action/result pair the page makes visible, and only what it makes visible.
+        - Symmetrically, when a section's results continue on the NEXT page, keep
+          the actions of this page with r=DATA_NOT_AVAILABLE and note the
+          continuation in u. Do not invent the missing result.
 
         # ONE FILE = ONE IDENTITY
         This input (page, fragment, image, or complete document) belongs to a single
@@ -194,6 +251,19 @@ module BatchChunkingPrompt
           R12 NO estimations under any circumstance
           R13 Normative conflict → ALERT technician
 
+        # SCHEMATIC / DIAGRAM SYMBOL FIDELITY (ABSOLUTE)
+        Recognizing an ISO/conventional schematic symbol (solenoid valve, check
+        valve, relief valve, orifice, flow regulator, pressure/tank port, brake
+        line, motor glyph) is NOT documentary evidence. On schematic or diagram
+        pages:
+        - Name a component's type or function ONLY when printed text on the page
+          states it (e.g. a label reading "Hoisting Cylinder").
+        - Otherwise keep the literal identifier (SV1, FRRV1, ORF1, BRK, P, T, M…)
+          and use DATA_NOT_AVAILABLE for type, function, and connection — in the
+          narrative, in tables, and in SCHEMATIC_LABEL records alike.
+        - Acronym expansion (BRK→brake, RV→relief valve, ORF→orifice, P→pressure)
+          is inference, never evidence.
+
         # DOCUMENTARY FIDELITY (ABSOLUTE)
         - Preserve the source's exact modality and action verbs. "Check", "avoid",
           "stop", "repair", "may", and "must" are not interchangeable.
@@ -207,6 +277,44 @@ module BatchChunkingPrompt
           truncated output. It must name the uncertain evidence.
         - REQUIRES_FIELD_VERIFICATION never authorizes creating an action, requirement,
           procedure, PPE rule, or stop condition absent from the visible source.
+
+        # FIELD-SAFETY EVIDENCE RECORDS
+        For explicit maintenance, inspection, certification, test, fault,
+        troubleshooting, repair, stop-work, rescue, installation, commissioning,
+        modernization, schematic, safety, or documentation evidence, emit one
+        independently verifiable record per result.
+
+        k types: MAINTENANCE_TASK | INSPECTION_CHECK | CERTIFICATION_REQUIREMENT |
+        FUNCTIONAL_TEST | TROUBLESHOOTING_STEP | FAULT_CONDITION | REPAIR_ACTION |
+        STOP_WORK_CONDITION | EMERGENCY_OR_RESCUE | INSTALLATION_STEP |
+        COMMISSIONING_STEP | MODERNIZATION_STEP | SCHEMATIC_LABEL |
+        SAFETY_WARNING | DOCUMENTATION_REQUIREMENT
+
+        Keys: k=type, h=visible source heading, a=exact action/check/label,
+        r=exact result, ev=exact quote (max 16 words). Optional:
+        x=explicit details, sw=[trigger, stop/prohibit/mark action],
+        ra=explicit repair/reset authority, u=LOW/UNVERIFIABLE/RFV reason.
+
+        - Omit absent optional keys and record IDs. Rails creates IDs.
+        - Current input only; preserve terms, order, codes, labels, units, modality.
+        - Never merge opposing states or separate results; repeat minimum context.
+        - Preparation stays in a. Missing result/criteria uses r=DATA_NOT_AVAILABLE.
+        - r must be derivable verbatim from a visible result/outcome statement.
+          If the source states NO outcome for an action, r=DATA_NOT_AVAILABLE —
+          NEVER restate the action's intent as its result (e.g. "gire el volante"
+          does NOT yield r="la máquina responde a la dirección").
+        - Steps and checks presented INSIDE a functional-test section (headings
+          like "Prueba de …", "Prueba por …", "Test …"), including preparation and
+          diagnostic-readout steps the test instructs, are k=FUNCTIONAL_TEST.
+          Use COMMISSIONING_STEP / INSTALLATION_STEP only for startup, assembly,
+          or handover procedures outside test sections.
+        - x is one compact line using only applicable labels: role=; scope=;
+          precondition=; criteria=; limit=; tools=; PPE=; output=; function=;
+          connection=; value=. Never put unavailable placeholders in x.
+        - STOP_WORK_CONDITION requires both sw elements from the same visible fragment;
+          otherwise use another type. Never infer a stop condition.
+        - SCHEMATIC_LABEL keeps the literal label; undocumented meaning stays unavailable.
+        - Keep narrative orienting, not duplicative; records hold atomic evidence.
 
         # TECHNICAL TAXONOMY (use these labels verbatim when classifying)
         SUBSYSTEMS: SAFETY_CHAIN | BRAKE_SYSTEM | DOOR_OPERATOR | MOTOR_DRIVE |
@@ -297,7 +405,10 @@ module BatchChunkingPrompt
     instruction = +"Page #{page_number} of #{total_pages}. " \
       "This page is part of a single uploaded file — emit the same `document_name` " \
       "across all pages of this document. " \
-      "Return ONLY chunks for this page, each with \"page\": #{page_number} set explicitly."
+      "Return ONLY chunks for this page, each with \"page\": #{page_number} set explicitly. " \
+      "If the page begins mid-section (content before the first visible heading), " \
+      "that content continues the previous page: emit it verbatim as the FIRST " \
+      "chunk with its field_records — never drop it."
     instruction << " Document name hint: #{document_name_hint}." if document_name_hint.present?
     instruction << " #{FILENAME_HINT}#{filename}"
     instruction << " Summary language: #{locale}." if locale.present?

@@ -69,7 +69,8 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
       "chunks"        => [
         {
           "text" => "# S0 — DOCUMENT IDENTIFICATION\nTechnical content.",
-          "page" => 1
+          "page" => 1,
+          "field_records" => []
         }
       ]
     }.to_json

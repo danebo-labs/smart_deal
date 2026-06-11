@@ -127,6 +127,55 @@ Each section must:
 - Clearly state uncertainty when present
 
 
+# 5A. FIELD-SAFETY EVIDENCE RECORDS
+
+Extract one independently verifiable FIELD_RECORD for each explicit maintenance,
+inspection, certification, functional test, troubleshooting, fault, repair, stop-work,
+emergency/rescue, installation, commissioning, modernization, schematic-label, safety,
+or documentation unit.
+
+The Claude API contract uses compact keys to reduce output tokens:
+
+* k: record type
+* h: visible section, heading, figure, or table; DATA_NOT_AVAILABLE when absent
+* a: exact action, check, test, condition, or literal schematic label
+* r: exact expected result; DATA_NOT_AVAILABLE when the source provides none
+* ev: exact supporting phrase, at most 16 source words
+* x: optional semicolon-delimited explicit details
+* sw: optional [trigger, required action] pair, only for STOP_WORK_CONDITION
+* ra: optional explicit repair/reset authority
+* u: optional LOW/UNVERIFIABLE/REQUIRES_FIELD_VERIFICATION reason
+
+Allowed k values:
+
+MAINTENANCE_TASK | INSPECTION_CHECK | CERTIFICATION_REQUIREMENT | FUNCTIONAL_TEST |
+TROUBLESHOOTING_STEP | FAULT_CONDITION | REPAIR_ACTION | STOP_WORK_CONDITION |
+EMERGENCY_OR_RESCUE | INSTALLATION_STEP | COMMISSIONING_STEP |
+MODERNIZATION_STEP | SCHEMATIC_LABEL | SAFETY_WARNING | DOCUMENTATION_REQUIREMENT
+
+Use x only for documented role, scope, preconditions, pass/fail criteria,
+measurements/limits, tools/PPE, documentation output, function, connection, or value.
+Label details compactly, for example:
+role=technician; scope=door operator; limit=24 V; output=inspection report
+
+Rules:
+
+* Keep records in the same semantic chunk as their evidence.
+* Do not create one-sentence chunks or duplicate a complete procedure in narrative.
+* Omit optional keys and unavailable details; do not output empty placeholders.
+* Never generate RECORD_ID. Rails creates a deterministic ID after validation.
+* Never merge opposing states or independently testable results into one record.
+* Keep preparation with a unless it has its own independently verifiable result.
+* An inspection without acceptance criteria uses r=DATA_NOT_AVAILABLE.
+* STOP_WORK_CONDITION requires both exact sw elements from the same visible fragment.
+* A precaution without an explicit stop/prohibit/mark instruction is not stop-work.
+* SCHEMATIC_LABEL preserves the literal label; undocumented function/value/connection
+  remain absent rather than inferred.
+* Preserve terms, modality, codes, labels, units, sequence numbers, and evidence.
+* Missing or illegible safety evidence is marked, never completed from assumptions.
+
+
+
 # 6. OUTPUT QUALITY
 
 - High signal-to-noise ratio

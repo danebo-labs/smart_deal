@@ -9,8 +9,16 @@ module RagQueryConcern
 
   # Result object for queries.
   RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs,
+                         :retrieval_trace,
                          :session_id, :documents_uploaded, :images_uploaded,
-                         :error_type, :error_message, keyword_init: true)
+                         :error_type, :error_message,
+                         # Deterministic-path observability (benchmark plan Fase 7/8).
+                         # nil on the generative path.
+                         :generation_mode, :model_invoked,
+                         :parsed_record_ids, :rendered_record_ids,
+                         :record_counts_by_type, :record_ledger_sha256,
+                         :retrieved_chunk_sha256s, :deterministic_validation,
+                         keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
   CIRCLED_NUMERALS = %w[① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩].freeze
@@ -44,6 +52,7 @@ module RagQueryConcern
 
     resolver_matches       = KbDocumentResolver.resolve(question)
     pinned_uris            = Array(entity_s3_uris).compact
+    pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
     merged_session_context = merge_resolver_context(session_context, resolver_matches)
 
     resolved_output_channel = output_channel&.to_sym || :web
@@ -71,9 +80,18 @@ module RagQueryConcern
       citations:           result[:citations],
       retrieved_citations: result[:retrieved_citations],
       doc_refs:            result[:doc_refs],
+      retrieval_trace:     result[:retrieval_trace],
       session_id:          result[:session_id],
       documents_uploaded:  result[:documents_uploaded],
-      images_uploaded:     result[:images_uploaded]
+      images_uploaded:     result[:images_uploaded],
+      generation_mode:     result[:generation_mode],
+      model_invoked:       result.key?(:model_invoked) ? result[:model_invoked] : nil,
+      parsed_record_ids:   result[:parsed_record_ids],
+      rendered_record_ids: result[:rendered_record_ids],
+      record_counts_by_type:    result[:record_counts_by_type],
+      record_ledger_sha256:     result[:record_ledger_sha256],
+      retrieved_chunk_sha256s:  result[:retrieved_chunk_sha256s],
+      deterministic_validation: result[:deterministic_validation]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)
@@ -239,6 +257,25 @@ module RagQueryConcern
     BLOCK
 
     [ session_context.presence, block ].compact.join("\n\n")
+  end
+
+  def resolve_pinned_scope(question, conv_session, pinned_uris)
+    return pinned_uris unless pinned_uris.many?
+    return pinned_uris unless conv_session.respond_to?(:active_entities)
+
+    result = Rag::PinnedEntityScopeResolver.new(
+      question: question,
+      active_entities: conv_session.active_entities,
+      allowed_uris: pinned_uris
+    ).resolve
+
+    if result.narrowed
+      Rails.logger.info(
+        "RagQueryConcern: narrowed pinned retrieval to #{result.matched_keys.join(', ')}"
+      )
+    end
+
+    result.uris
   end
 
   def log_rag_error(prefix, error, include_backtrace: false)

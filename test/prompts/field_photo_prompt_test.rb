@@ -13,6 +13,10 @@ class FieldPhotoPromptTest < ActiveSupport::TestCase
     assert_equal "text", block[:type]
     assert_equal({ type: "ephemeral" }, block[:cache_control])
     assert_includes block[:text], "canonical_component"
+    assert_includes block[:text], "documented_functions"
+    assert_includes block[:text], "documented_connections"
+    assert_includes block[:text], "documented_values"
+    assert_includes block[:text], "does NOT prove function"
   end
 
   test "user_content returns array with image block for jpeg" do

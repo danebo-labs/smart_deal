@@ -112,20 +112,43 @@ flowchart TB
 
 **Consequences:**
 - Costo foto: ~$0.009/foto → ~$1.86/mes (200 fotos) vs ~$8/mes anterior.
-- `FieldPhotoResultsParser` produce 1 chunk liviano (ingestion_path `field_photo_v1`) en vez de S0-S18.
+- `FieldPhotoResultsParser` produce 1 chunk liviano (ingestion_path
+  `field_photo_v1`) en vez de S0-S18. El chunk conserva evidencia técnica
+  explícita, pero no infiere funciones desde siglas o símbolos.
 - No hay Haiku gate en producción; la decisión de foto es determinística y sin costo LLM.
 
-### 3.3 Manual monolithic (NO specialized recortado)
+### 3.3 Manual monolithic, con evidencia atómica compacta
 
 **Context:** Benchmark mostró que el prompt specialized para manual (SPEC_MANUAL_BLOCKS en el script) produce peor score (14.7 vs 15.0 monolithic).
 
-**Decision:** Manuales usan `BatchChunkingPrompt::SYSTEM_BLOCKS` sin cambios. `SPEC_MANUAL_BLOCKS` queda en el script de benchmark como referencia histórica; NO se mueve a producción.
+**Decision:** Manuales siguen usando un solo `BatchChunkingPrompt::SYSTEM_BLOCKS`.
+No se crea un prompt specialized recortado. El contrato monolítico incorpora
+`field_records` compactos para pruebas, inspecciones, acciones, resultados y
+condiciones de detención explícitas.
 
-**Consequences:** Ningún cambio de prompt para manuales. Mayor coherencia con los chunks S0-S18 ya indexados.
+Claude emite sólo cinco claves obligatorias (`k`, `h`, `a`, `r`, `ev`) y omite
+detalles opcionales ausentes (`x`, `sw`, `ra`, `u`). Rails valida el esquema,
+genera el ID y expande etiquetas legibles antes de indexar. Así se evita pagar
+por campos repetidos con `DATA_NOT_AVAILABLE` y se conserva el esquema completo
+para retrieval.
 
-### 3.4 Consultas Haiku sin cambio
+**Consequences:**
+- Se mantienen los chunks semánticos S0-S18 y el routing Sonnet/Opus ya validado.
+- No se agrega otra llamada LLM ni otro prompt por tipo de sección.
+- La narrativa no duplica procedimientos completos que ya están en `field_records`.
+- El baseline histórico de ~500 output tokens/página debe revalidarse con el
+  corpus real antes de reindexar; el gate compara mediana, p95 y truncaciones.
 
-**Decision:** `BedrockClient::QUERY_MODEL_ID` (Haiku) no se toca. El benchmark solo validó ingesta; el retrievar con Haiku está bien calibrado.
+### 3.4 Consultas Haiku: retrieval adaptativo validado por calidad
+
+**Decision:** Se mantiene `BedrockClient::QUERY_MODEL_ID` en Haiku 4.5, pero el
+payload de retrieval ya no es fijo. `RagRetrievalProfile` usa 3 resultados para
+consultas documentales enfocadas, 5 para intención de detener/falla/reparación,
+10 para fotos, 8 sin pins y 15 para listas exhaustivas.
+
+El benchmark RAG del 2026-06-09 redujo el costo proyectado de consultas de
+**$14.00 a $6.99 por 1.000** (-50.1%) sin aceptar reranking que omitiera pruebas.
+Ver [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md).
 
 ### 3.5 SHA dedup antes de parse
 
@@ -141,9 +164,12 @@ flowchart TB
 
 **Consequences:** Un manual PDF largo subido desde chat sin pregunta también usa sync Messages API y no encola `SubmitManualBatchJob`.
 
-### 3.7 Diagrama suelto fuera de scope v1
+### 3.7 Foto de circuito o diagrama tomada en campo
 
-**Decision:** Diagramas JPEG raros en obra van dentro del PDF manual; no se optimizan como path separado. El campo `subsystem: "UNKNOWN"` en `FieldPhotoPrompt` cubre el caso.
+**Decision:** Sigue usando el path compacto `field_photo_v1`; no se crea un
+pipeline topológico separado. Sin embargo, el schema conserva texto, funciones,
+conexiones, valores y advertencias cuando son explícitos y legibles. Si solo hay
+identificadores sin leyenda, sus funciones permanecen `DATA_NOT_AVAILABLE`.
 
 ---
 
@@ -159,7 +185,7 @@ Pricing de `BedrockQuery::BEDROCK_PRICING` ($/1K tokens):
 | Pág. manual | Sonnet 4.6 batch | Batch | ~$0.0015 | ~$0.0075 | ~3.000 in / ~500 out | ~$0.008 |
 | Pág. manual Opus | Opus 4.7 batch | Batch | ~$0.0075 | ~$0.0375 | ~3.000 in / ~500 out | ~$0.041 |
 | Haiku filter | Haiku 4.5 direct | Sync | $0.0008 | $0.004 | ~1.000 in / ~10 out | ~$0.00084 |
-| Query RAG | Haiku 4.5 via Bedrock | `retrieve_and_generate` | ~$0.0008 | ~$0.004 | ~4.000 in / ~500 out | ~$0.005 |
+| Query RAG | Haiku 4.5 via Bedrock | `retrieve_and_generate` | ~$0.0008 | ~$0.004 | benchmark mixto | **~$0.00699** |
 
 ---
 
@@ -169,11 +195,11 @@ Volumen: **1.000 consultas**, **200 fotos**, **5 manuales planificados × 10 pá
 
 | Línea | Stack | ~$/mes |
 |-------|-------|--------|
-| Consultas RAG | Haiku `retrieve_and_generate` | ~$5.00 |
+| Consultas RAG | Haiku `retrieve_and_generate` (benchmark 2026-06-09) | **~$6.99** |
 | Haiku page filter | Haiku 4.5 batch (38 págs) | ~$0.03 |
 | Fotos campo | Sonnet 4.6 direct sync | ~$2.10 |
 | Manuales planificados | Sonnet 4.6 batch per-page vía `/bulk_uploads` | ~$0.30 |
-| **Total v2** | | **~$7.43** |
+| **Total v2** | | **~$9.42** |
 
 Si esos mismos manuales se suben desde chat, usan sync direct por decisión UX: ~38 páginas × ~$0.0165 ≈ **$0.63**. El delta se acepta para soporte operativo urgente; backoffice debe usar `/bulk_uploads`.
 
@@ -214,7 +240,7 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 | `ingestion_path` foto | `"web_v1"` | `"field_photo_v1"` |
 | Manual PDF web/chat | `SingleFileChunkingService` sync | `SingleFileChunkingService` sync cost-v2 (Messages API) |
 | Manual PDF bulk | Legacy bulk batch | `BulkCostV2RequestBuilder` → Batch API |
-| Manual prompt | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sin cambio (mismo) |
+| Manual prompt | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Mismo prompt monolítico + `field_records` compactos |
 | `ingestion_path` manual chat | `"web_v1"` | `"web_v1"` |
 | `ingestion_path` manual bulk | `"batch_v1"` | `"manual_batch_v1"` |
 | SHA dedup | No | `ContentDedupService` antes de parse |

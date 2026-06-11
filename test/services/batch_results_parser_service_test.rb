@@ -53,10 +53,21 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
       "document_name" => DOC_NAME,
       "aliases"        => ALIASES,
       "chunks"         => [
-        { "text" => chunk0_text, "page" => 1 },
-        { "text" => chunk1_text, "page" => 2 }
+        { "text" => chunk0_text, "page" => 1, "field_records" => [] },
+        { "text" => chunk1_text, "page" => 2, "field_records" => [] }
       ]
     }
+  end
+
+  def field_record(overrides = {})
+    {
+      "k" => "FUNCTIONAL_TEST",
+      "h" => "Section 2.4",
+      "a" => "Press the horn button.",
+      "r" => "The horn sounds.",
+      "ev" => "Pulse el botón de la bocina.",
+      "x" => "role=operator; scope=lift platform; precondition=platform controller selected"
+    }.merge(overrides)
   end
 
   def make_result(json_text: golden_parsed.to_json, result_type: "succeeded")
@@ -145,6 +156,142 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     ENV.delete("KNOWLEDGE_BASE_S3_BUCKET")
   end
 
+  test "uses chunk aliases for each SEARCH_ALIASES header" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["aliases"] = [ "P41", "platform pressure" ]
+    payload["chunks"][1]["aliases"] = [ "BRK", "brake circuit" ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    prefix = asset.reload.chunks_s3_prefix
+    assert_includes @fake_s3.uploads["#{prefix}/chunk_0.txt"],
+                    "[SEARCH_ALIASES: P41, platform pressure]"
+    assert_includes @fake_s3.uploads["#{prefix}/chunk_1.txt"],
+                    "[SEARCH_ALIASES: BRK, brake circuit]"
+  end
+
+  test "renders field records into a canonical retrieval block" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][1]["field_records"] = [
+      field_record(
+        "h" => "2.4.2 Prueba por controlador de plataforma",
+      )
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_1.txt"]
+    assert_includes chunk, "# FIELD-SAFETY EVIDENCE RECORDS"
+    assert_match(/RECORD_ID: FR-[0-9A-F]{16}/, chunk)
+    assert_includes chunk, "RECORD_TYPE: FUNCTIONAL_TEST"
+    assert_includes chunk, "ACTION: Press the horn button."
+    assert_includes chunk, "EXPECTED_RESULT: The horn sounds."
+    assert_includes chunk, "DETAILS: role=operator; scope=lift platform"
+    assert_includes chunk, "EVIDENCE: Pulse el botón de la bocina."
+    assert_includes chunk, "END_FIELD_RECORD"
+  end
+
+  test "generates deterministic field record identifiers" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record(
+        "h" => "Section 2",
+        "k" => "INSPECTION_CHECK",
+        "a" => "Inspect the cable.",
+        "r" => "DATA_NOT_AVAILABLE",
+        "ev" => "Inspect the cable."
+      )
+    ]
+    parser = build_parser
+    first_asset = make_asset
+    second_asset = make_asset
+
+    parser.call(asset: first_asset, result: make_result(json_text: payload.to_json))
+    first_chunk = @fake_s3.uploads["#{first_asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    first_id = first_chunk[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+
+    parser.call(asset: second_asset, result: make_result(json_text: payload.to_json))
+    second_chunk = @fake_s3.uploads["#{second_asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    second_id = second_chunk[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+
+    assert_not_nil first_id
+    assert_equal first_id, second_id
+  end
+
+  test "rejects stop-work records without a complete evidence pair" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record(
+        "h" => "Inspection",
+        "k" => "STOP_WORK_CONDITION",
+        "a" => "Check for oil leaks.",
+        "r" => "No leak observed.",
+        "sw" => [ "Oil leak", "DATA_NOT_AVAILABLE" ],
+        "ev" => "Check for oil leaks."
+      )
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    error = assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    assert_includes error.message, "Incomplete stop-work evidence pair"
+    assert_equal "failed", asset.reload.status
+  end
+
+  test "renders a complete stop-work evidence pair" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record(
+        "h" => "Inspection",
+        "k" => "STOP_WORK_CONDITION",
+        "a" => "Inspect the hydraulic line.",
+        "r" => "No oil leak is visible.",
+        "sw" => [ "Oil leak is visible.", "Mark the platform out of service." ],
+        "ra" => "Qualified service technician",
+        "ev" => "If leakage is visible, mark out of service."
+      )
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    assert_includes chunk, "STOP_WORK_TRIGGER: Oil leak is visible."
+    assert_includes chunk, "STOP_WORK_REQUIRED_ACTION: Mark the platform out of service."
+    assert_includes chunk, "REPAIR_AUTHORITY: Qualified service technician"
+  end
+
+  test "caps document aliases at 15 and chunk aliases at 8" do
+    aliases = 20.times.map { |index| "alias #{index}" }
+    payload = golden_parsed.merge(
+      "aliases" => aliases,
+      "chunks" => [
+        { "text" => chunk0_text, "page" => 1, "aliases" => aliases, "field_records" => [] }
+      ]
+    )
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    prefix = asset.reload.chunks_s3_prefix
+    chunk = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
+    sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"])
+
+    alias_line = chunk.lines.find { |line| line.start_with?("[SEARCH_ALIASES:") }
+    assert_equal 8, alias_line.delete_prefix("[SEARCH_ALIASES: ").delete_suffix("]\n").split(", ").size
+    assert_equal 15, asset.reload.aliases.size
+    assert_equal 15, sidecar.dig("metadataAttributes", "aliases").size
+  end
+
   test "metadata.json sidecar carries original_source_uri and canonical_name for retrieval filtering" do
     ENV["KNOWLEDGE_BASE_S3_BUCKET"] = "multimodal-source-destination"
     asset  = make_asset
@@ -163,8 +310,30 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_equal asset.sha256,            attrs["doc_sha256"]
     assert_equal "batch_v1",              attrs["ingestion_path"]
     assert_equal ALIASES,                 attrs["aliases"]
+    assert_equal BatchChunkingPrompt::INGESTION_CONTRACT_VERSION, attrs["ingestion_contract_version"]
+    assert_equal BatchChunkingPrompt.prompt_fingerprint_sha256,   attrs["prompt_fingerprint_sha256"]
   ensure
     ENV.delete("KNOWLEDGE_BASE_S3_BUCKET")
+  end
+
+  test "field_photo_v1 sidecar declares the photo contract version and fingerprint" do
+    asset  = make_asset
+    parser = build_parser
+
+    envelope = {
+      "document_name" => DOC_NAME,
+      "aliases"       => ALIASES,
+      "chunks"        => [ { "text" => "photo identity chunk", "page" => nil } ]
+    }
+    parser.call(asset: asset, raw_json: envelope.to_json, ingestion_path: "field_photo_v1")
+
+    prefix = asset.reload.chunks_s3_prefix
+    attrs  = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+
+    assert_equal "field_photo_v1", attrs["ingestion_path"]
+    assert_equal FieldPhotoPrompt::INGESTION_CONTRACT_VERSION, attrs["ingestion_contract_version"]
+    assert_equal FieldPhotoPrompt.prompt_fingerprint_sha256,   attrs["prompt_fingerprint_sha256"]
+    assert_not_equal BatchChunkingPrompt.prompt_fingerprint_sha256, attrs["prompt_fingerprint_sha256"]
   end
 
   test "chunks_s3_prefix uses bulk_chunks/<date>/<sha256> pattern" do
@@ -217,8 +386,8 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
       "document_name" => DOC_NAME,
       "aliases"        => ALIASES,
       "chunks"         => [
-        { "text" => "# S0 — DOCUMENT IDENTIFICATION\nContent here.", "page" => 1 },
-        { "text" => "# S4 — SAFETY SYSTEM\nEmergency stop details.", "page" => 1 }
+        { "text" => "# S0 — DOCUMENT IDENTIFICATION\nContent here.", "page" => 1, "field_records" => [] },
+        { "text" => "# S4 — SAFETY SYSTEM\nEmergency stop details.", "page" => 1, "field_records" => [] }
       ]
     }
     asset  = make_asset
@@ -250,6 +419,19 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_raises(BatchResultsParserService::ParseError) do
       parser.call(asset: asset, result: make_result(json_text: empty.to_json))
     end
+  end
+
+  test "raises ParseError when a manual chunk omits field_records" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0].delete("field_records")
+    asset = make_asset
+    parser = build_parser
+
+    error = assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    assert_includes error.message, "Missing field_records array in chunk 0"
   end
 
   # ---------------------------------------------------------------------------

@@ -82,4 +82,24 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
 
     assert_equal [ "image_upload", "document" ], service.send(:entity_sources)
   end
+
+  test "entity_sources aligns with the narrowed URI subset" do
+    session = Struct.new(:active_entities).new({
+      "Photo" => {
+        "source_uri" => "s3://bucket/photo.jpg",
+        "entity_type" => "image_upload"
+      },
+      "Manual" => {
+        "source_uri" => "s3://bucket/manual.pdf",
+        "entity_type" => "document"
+      }
+    })
+    service = QueryOrchestratorService.new(
+      "Question",
+      conv_session: session,
+      entity_s3_uris: [ "s3://bucket/manual.pdf" ]
+    )
+
+    assert_equal [ "document" ], service.send(:entity_sources)
+  end
 end

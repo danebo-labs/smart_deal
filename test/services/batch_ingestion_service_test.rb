@@ -51,11 +51,13 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
 
   test "process! marks asset complete and skips batch when dedup hit" do
     sha256    = Digest::SHA256.hexdigest(PDF_BINARY)
-    custom_id = sha256[0, 32]
+    custom_id = BulkUploadAsset.custom_id_for_sha(
+      sha256, contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+    )
 
     zip_path = build_zip(entries: { "manual.pdf" => PDF_BINARY })
 
-    # Seed a completed asset so dedup finds it
+    # Seed a completed asset under the SAME contract version so dedup finds it
     prior_asset = BulkUploadAsset.create!(
       bulk_upload:    @bulk_upload,
       custom_id:      custom_id,
@@ -65,7 +67,8 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
       content_type:   "application/pdf",
       status:         "complete",
       canonical_name: "Prior Elevator Manual",
-      aliases:        [ "PRIOR-001" ]
+      aliases:        [ "PRIOR-001" ],
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
     )
 
     service = BatchIngestionService.new

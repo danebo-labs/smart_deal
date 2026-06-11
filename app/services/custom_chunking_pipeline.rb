@@ -117,8 +117,15 @@ class CustomChunkingPipeline
     @kb_document_ids    << kb_doc.id
     @uploaded_filenames << filename
 
-    # SHA dedup: skip parse when identical binary was already indexed.
-    dedup = ContentDedupService.find_completed(sha256: sha256)
+    # SHA dedup: skip parse when identical binary was already indexed under the
+    # SAME ingestion contract. Images declare the field-photo contract; documents
+    # the field_records contract — a version mismatch is always a miss.
+    contract_version = if attrs[:content_type].to_s.start_with?("image/")
+      FieldPhotoPrompt::INGESTION_CONTRACT_VERSION
+    else
+      BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+    end
+    dedup = ContentDedupService.find_completed(sha256: sha256, contract_version: contract_version)
     if dedup.hit
       @web_v1_metadata << {
         "filename"        => filename,

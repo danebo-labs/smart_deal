@@ -10,29 +10,66 @@
 # constant regardless of pin type, reducing unnecessary input cost for document
 # sessions while preserving recall for photo sessions.
 #
-# | Pin signal          | number_of_results | rationale                          |
-# |---------------------|-------------------|------------------------------------|
-# | photos only         | 10                | small chunks; 10 ≈ 3 manual tokens |
-# | documents only      | 7                 | preserve manual recall             |
-# | mixed photo+doc     | 7                 | balanced budget                    |
-# | no pin (open query) | 8                 | slight savings vs legacy default   |
+# | Pin signal          | normal | exhaustive | rationale                         |
+# |---------------------|--------|------------|-----------------------------------|
+# | photos only         | 10     | 10         | photo chunks are small            |
+# | documents only      | 3      | 15 -> 12   | rerank full-list candidates       |
+# | mixed photo+doc     | 3      | 15 -> 12   | same document budget              |
+# | no pin (open query) | 8      | 15         | broader catalog search            |
 class RagRetrievalProfile
-  def initialize(entity_sources: [])
+  PINNED_DOCUMENT_RESULTS = 3
+  PHOTO_RESULTS = 10
+  OPEN_RESULTS = 8
+  SAFETY_CRITICAL_RESULTS = 5
+  EXHAUSTIVE_CANDIDATES = 15
+  EXHAUSTIVE_RERANKED_RESULTS = 12
+
+  EXHAUSTIVE_PATTERNS = [
+    /\b(?:todas|todos|cada)\s+(?:las|los)?\s*(?:pruebas|comprobaciones|pasos|controles|revisiones)\b/i,
+    /\b(?:lista|listado)\s+(?:completa|completo)\b/i,
+    /\b(?:enumera|enumerar|detalla)\s+(?:todas|todos)\b/i,
+    /\b(?:que|qué|cuales|cuáles)\s+(?:son\s+)?(?:las\s+)?pruebas\s+(?:funcionales?|de\s+funcionamiento)\b/i,
+    /\bpruebas\s+(?:funcionales?|de\s+funcionamiento)\s+(?:previas?\s+al\s+uso\s+)?(?:indica|debo|hay)\b/i,
+    /\b(?:exhaustiv[oa]s?|complet[oa]s?)\b/i,
+    /\b(?:all|every)\s+(?:tests?|checks?|steps?|controls?)\b/i,
+    /\bcomplete\s+(?:list|checklist|procedure)\b/i
+  ].freeze
+
+  SAFETY_CRITICAL_PATTERNS = [
+    /\b(?:detener|detenga|parar|pare|stop|prohibir|fuera\s+de\s+servicio)\b/i,
+    /\b(?:falla|fallo|fallar|defecto|defectuosa?|mal\s+funcionamiento)\b/i,
+    /\b(?:reparar|reparaci[oó]n|qui[eé]n\s+(?:puede|est[aá]\s+autorizado))\b/i
+  ].freeze
+
+  def initialize(entity_sources: [], question: nil)
     @entity_sources = Array(entity_sources).compact
+    @question = question.to_s
   end
 
   def number_of_results
-    return 8 if @entity_sources.empty?
+    return EXHAUSTIVE_CANDIDATES if exhaustive_query?
+    return OPEN_RESULTS if @entity_sources.empty?
+    return SAFETY_CRITICAL_RESULTS if safety_critical_query?
 
     photo_count = @entity_sources.count { |s| s == "image_upload" }
     doc_count   = @entity_sources.count { |s| s == "document" }
 
     if photo_count > 0 && doc_count == 0
-      10
-    elsif doc_count > 0 && photo_count == 0
-      7
+      PHOTO_RESULTS
     else
-      7
+      PINNED_DOCUMENT_RESULTS
     end
+  end
+
+  def number_of_reranked_results
+    EXHAUSTIVE_RERANKED_RESULTS if exhaustive_query?
+  end
+
+  def exhaustive_query?
+    EXHAUSTIVE_PATTERNS.any? { |pattern| @question.match?(pattern) }
+  end
+
+  def safety_critical_query?
+    SAFETY_CRITICAL_PATTERNS.any? { |pattern| @question.match?(pattern) }
   end
 end

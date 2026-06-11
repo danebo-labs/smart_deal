@@ -74,6 +74,7 @@ Retrieval and generation parameters. Defaults are tuned for safety-critical doma
 | `BEDROCK_RAG_SEARCH_TYPE` | HYBRID | HYBRID (semantic + keyword) or SEMANTIC |
 | `BEDROCK_RAG_GENERATION_TEMPERATURE` | 0.1 | Favor documentary consistency over creative synthesis |
 | `BEDROCK_RAG_GENERATION_MAX_TOKENS` | 3000 | Maximum output tokens |
+| `BEDROCK_RERANKER_ENABLED` | false | Experimental Cohere reranking for exhaustive queries only. Keep disabled until it passes the documented RAG quality gate. |
 
 ```bash
 # Optional example matching the current service defaults.
@@ -217,7 +218,7 @@ The AWS credentials used by the app, for example `bedrock-integration-user`, nee
 |--------|----------|--------|
 | `bedrock:RetrieveAndGenerate` | Knowledge Base | Query the Knowledge Base through the API |
 | `bedrock:Retrieve` | Knowledge Base | Vector retrieval, used internally by RetrieveAndGenerate |
-| `bedrock:Rerank` | Cohere model | Result reranking |
+| `bedrock:Rerank` | `*` | Optional result reranking. AWS does not expose resource-level scoping for this action. |
 | `bedrock:InvokeModel` | Foundation models | Generate Claude answers |
 | `bedrock:GetKnowledgeBase` | Knowledge Base | Optional; used by `bin/rails kb:embedding_model` |
 
@@ -241,7 +242,7 @@ The AWS credentials used by the app, for example `bedrock-integration-user`, nee
       "Sid": "Rerank",
       "Effect": "Allow",
       "Action": "bedrock:Rerank",
-      "Resource": "arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0"
+      "Resource": "*"
     },
     {
       "Sid": "InvokeModel",
@@ -258,6 +259,13 @@ The AWS credentials used by the app, for example `bedrock-integration-user`, nee
 ```
 
 For multiple Knowledge Bases, use `arn:aws:bedrock:us-east-1:YOUR_ACCOUNT_ID:knowledge-base/*`.
+
+`bedrock:Rerank` is intentionally shown with `"Resource": "*"` because the AWS
+service authorization reference does not define a resource type for that action.
+The application still selects the fixed Cohere Rerank v3.5 model ARN in code.
+Reranking is disabled by default after the
+[2026-06-09 quality benchmark](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) found
+that reducing 15 candidates to 9 or 12 omitted functional-test evidence.
 
 See `docs/bedrock-app-user-iam-policy.json` for a complete policy ready to attach.
 

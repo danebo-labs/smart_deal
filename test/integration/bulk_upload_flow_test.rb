@@ -41,7 +41,7 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
       document_name: "Manual de Prueba",
       aliases:       [ "manual prueba" ],
       chunks:        [
-        { text: "**Document: Manual de Prueba**\n**DOCUMENT_ALIASES:**\n- manual prueba\nContenido.", page: 1 }
+        { text: "**Document: Manual de Prueba**\n**DOCUMENT_ALIASES:**\n- manual prueba\nContenido.", page: 1, field_records: [] }
       ]
     )
 

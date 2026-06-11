@@ -27,15 +27,15 @@ A file attached in the home RAG chat follows a **direct Claude parse** path via 
 | `SingleFileChunkingService` | One file end-to-end: optional Office→PDF, PDF page split, relevance filter, Claude calls, S3 chunk writes |
 | `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per page. `:image` default is Sonnet; Opus only via `FieldPhotoDensityGate force_opus`. Rasterized slides still promote to Opus. |
 | `FieldPhotoDensityGate` | Size-heuristic routing for image uploads → `:sonnet` (< 1.5 MB) or `:opus` (≥ 1.5 MB). Zero LLM calls. |
-| `FieldPhotoPrompt` | Specialized photo system prompt; `ingestion_path: "field_photo_v1"`, 1 lightweight chunk |
-| `FieldPhotoResultsParser` | `FieldPhotoPrompt` JSON → standard `{document_name, aliases, chunks}` envelope |
+| `FieldPhotoPrompt` | Specialized photo prompt; `ingestion_path: "field_photo_v1"`, 1 compact chunk with literal labels and optional explicit visible functions/connections/values/warnings |
+| `FieldPhotoResultsParser` | `FieldPhotoPrompt` JSON → standard `{document_name, aliases, chunks}` envelope; undocumented label meaning remains `DATA_NOT_AVAILABLE` |
 | `ContentDedupService` | SHA-256 dedup before any parse — hit skips Claude call entirely |
 | `ManualBatchIngestionService` | Dormant for chat; retained for the old long-manual batch branch |
 | `SubmitManualBatchJob` | Dormant for chat; not enqueued by the web/chat orchestrator |
 | `IngestManualBatchResultsJob` | Dormant for chat; polls manual batch results when that branch is invoked manually |
 | `ClaudeChunkingClient` | Sync Anthropic Messages API (`-direct` cost rows in `bedrock_queries`); accepts a `max_tokens` arg and exposes `stop_reason` so the caller can retry truncated calls |
 | `PageRelevanceFilter` | Drops boilerplate PDF pages before Sonnet/Opus parse. **`filter_pages`**: ≥2 pages → Haiku **`call_batch`** in bounded windows; 1 page → heuristics + optional Haiku gate. See [INGESTION_ROUTING.md](INGESTION_ROUTING.md) |
-| `BatchResultsParserService` | Same parser as bulk ZIP; web/chat sync writes `ingestion_path: "web_v1"` / `"field_photo_v1"` |
+| `BatchResultsParserService` | Same parser as bulk ZIP; web/chat sync writes `ingestion_path: "web_v1"` / `"field_photo_v1"` and renders manual `field_records` as canonical retrieval blocks with deterministic IDs |
 | `BulkKbSyncService` | Starts ingestion on **`BEDROCK_BULK_DATA_SOURCE_ID`** (chunking disabled) |
 | `LambdaParityAliasFallback` | Deterministic alias fill-in when the model returns empty aliases |
 | `BedrockIngestionJob` | Polls ingestion; with `web_v1_metadata`, enriches `KbDocument` **without** a Bedrock retrieve call |
@@ -56,6 +56,7 @@ A file attached in the home RAG chat follows a **direct Claude parse** path via 
 1. **Per-page output cap with retry** — `BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS = 4_000` on `pdf_mixed` page calls and `image` calls. `ClaudeChunkingClient` surfaces `stop_reason: "max_tokens"`; `SingleFileChunkingService#call_with_page_cap_retry` retries once at `WEB_PAGE_RETRY_MAX_TOKENS = 16_000`.
 2. **Batch Haiku page classifier (multi-page docs)** — `PageRelevanceFilter.filter_pages` routes **all documents with ≥2 pages** through **`call_batch`**: Haiku 4.5 classifies windows of up to 20 pages and 22 MB raw PDF bytes. Each window gets dynamic output tokens, retries once only when JSON parsing fails, and falls back to keep-all only for that window.
 3. **Locale-aware summaries** — `summary` and `companion_offer` emitted for every input type; locale travels through `text_user_content` / `page_user_content`. `ChunkMergerService` extracts the anchor page's summary.
+4. **Compact manual evidence** — Sonnet/Opus emit short-key `field_records` only for qualifying evidence and omit absent optional fields. Rails validates, assigns deterministic IDs, and expands canonical labels before S3 upload; no additional LLM call is introduced.
 
 **Realtime UX:** `KbSyncBroadcaster` emits Turbo Cable events; the chat shows typing dots, optional **retrying** copy during Aurora wake-up, then **indexed** / **failed** and refreshes the KB list.
 

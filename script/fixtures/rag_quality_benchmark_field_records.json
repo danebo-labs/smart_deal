@@ -1,0 +1,970 @@
+{
+  "version": "2026-06-10-v2-field-records-v1",
+  "corpus": {
+    "manual": {
+      "s3_key": "uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf",
+      "sha256": "852f508da648aa7f06dcbaeb49a28ab714ae361d1591f9b4dadb3dd36652c064"
+    },
+    "image": {
+      "s3_key": "uploads/2026-06-10/pagina_16_esquema_hidraulico.png",
+      "sha256": "b9293866d4aa0b947b2c4aed5760963cbb9d3d351d44b57cc78dc04357bde3c5"
+    }
+  },
+  "ingestion_contract_version": "field_records_v3",
+  "ingestion_prompt_fingerprint_sha256": "879c5cb543751e5aa2a90a456f791e236a90f51376867f5a361477135d603101",
+  "functional_test_cases": {
+    "case_keys": [
+      "isolated:5",
+      "conversation:5"
+    ],
+    "expected_record_ids": [
+      "FR-13AD5CC9C9A7F783",
+      "FR-1C8E9C47F0E6D0BE",
+      "FR-1D53B8C4AAF44687",
+      "FR-33936C53D1A192CB",
+      "FR-3B8365A42BDD472F",
+      "FR-3D563F673CCFBD20",
+      "FR-3DB14755CE5AEC7A",
+      "FR-42CB35BDD788E2B3",
+      "FR-48F54EBC4119CB37",
+      "FR-5ACDF352A60AD18E",
+      "FR-5EFB0240A3655A74",
+      "FR-604D36715D546EAB",
+      "FR-62C9FE583254381B",
+      "FR-6E12D4E663199FC3",
+      "FR-6E41A743D06F3CB1",
+      "FR-72FB8E975F85761C",
+      "FR-7D695F2CE53BCE0C",
+      "FR-7F8D63E41E0D1511",
+      "FR-82B022DE341E406F",
+      "FR-86B5FBFC49380258",
+      "FR-8874C3B052E27250",
+      "FR-8E805FFE3879BAC8",
+      "FR-9447A9B6ED5975D6",
+      "FR-96E6F7A34188AA0E",
+      "FR-9AEBFE08DCE4D426",
+      "FR-9C530E935218CB7E",
+      "FR-9D0B2310C1F9AF95",
+      "FR-9DF5FE818474D1E9",
+      "FR-9E7F1965B5B8B90F",
+      "FR-A2429373AA474966",
+      "FR-AD94271D7BACCA87",
+      "FR-ADBCD3F682B125E7",
+      "FR-AFDE752DE10F1685",
+      "FR-C041B0183DA9CFCF",
+      "FR-C549D7DF4DF80026",
+      "FR-D837B001100DE6E8",
+      "FR-E42CEB6477F978CE",
+      "FR-E816388A5EB6D671",
+      "FR-F4E555F8528E241E",
+      "FR-FF91FC325B2F88CF"
+    ],
+    "records": [
+      {
+        "record_id": "FR-6E12D4E663199FC3",
+        "type": "FUNCTIONAL_TEST",
+        "source": "2.4 Prueba de funcionamiento — Principio básico",
+        "action": "Probar todas las funciones de la máquina en instrucciones paso a paso antes de comenzar a usarla",
+        "expected_result": "No se detectan fallas antes de comenzar a usar la máquina",
+        "evidence": "Las pruebas funcionales se utilizan para detectar fallas antes de comenzar a usar la máquina",
+        "chunk_sha256s": [
+          "3aa8a0da48adb6bedcf9113005c053002f8780d1a0c8badcd14386e00b30b067"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-5ACDF352A60AD18E",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dirección",
+        "action": "Pararse en la plataforma mirando hacia el extremo de la dirección de la máquina antes de realizar la prueba de función de dirección y conducción.",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "párese en la plataforma, mirando hacia el extremo de la dirección de la máquina",
+        "chunk_sha256s": [
+          "ee53f566de323170be22b4064174faaf88eb520f5a732085b9ebd5b6ede75edd"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-AFDE752DE10F1685",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dirección",
+        "action": "Pulsar el botón de selección de función de conducción y verificar que la luz indicadora esté encendida.",
+        "expected_result": "La luz indicadora está encendida.",
+        "evidence": "la luz indicadora está encendida",
+        "chunk_sha256s": [
+          "ee53f566de323170be22b4064174faaf88eb520f5a732085b9ebd5b6ede75edd"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-3D563F673CCFBD20",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dirección",
+        "action": "Mantener presionado el botón de inicio de función en el joystick y presionar el interruptor basculante de pulgar en la parte superior del joystick como lo indica la flecha izquierda en el Panel de control.",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Presione el interruptor basculante de pulgar en la parte superior del joystick",
+        "chunk_sha256s": [
+          "ee53f566de323170be22b4064174faaf88eb520f5a732085b9ebd5b6ede75edd"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-C549D7DF4DF80026",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Sin presionar el botón de inicio de función en el joystick, mover el joystick lentamente en la dirección de la flecha azul y luego en la dirección de la flecha amarilla.",
+        "expected_result": "No se ejecutarán todas las funciones.",
+        "evidence": "No se ejecutarán todas las funciones",
+        "chunk_sha256s": [
+          "40ef591afb0218edca4a19bc3cbfd0d1a7c223d3338318871ae51db7a455ac0e"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-42CB35BDD788E2B3",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Pulsar el botón de selección de la función de elevación, mantener presionado el botón de inicio de función en el joystick y mover lentamente el joystick en la dirección indicada por la flecha azul.",
+        "expected_result": "La plataforma debería elevarse. El dispositivo de protección contra fosos debe estar desplegado.",
+        "evidence": "La plataforma debería elevarse. El dispositivo de protección contra fosos debe estar desplegado",
+        "chunk_sha256s": [
+          "40ef591afb0218edca4a19bc3cbfd0d1a7c223d3338318871ae51db7a455ac0e"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-6E41A743D06F3CB1",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Soltar la palanca de mando.",
+        "expected_result": "La plataforma debería dejar de subir.",
+        "evidence": "La plataforma debería dejar de subir",
+        "chunk_sha256s": [
+          "40ef591afb0218edca4a19bc3cbfd0d1a7c223d3338318871ae51db7a455ac0e"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-9D0B2310C1F9AF95",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Mantener presionado el botón de inicio de función y mover el joystick lentamente como lo indica la flecha amarilla.",
+        "expected_result": "La plataforma debería caer. Cuando la plataforma cae, debe sonar la alarma de caída.",
+        "evidence": "La plataforma debería caer. Cuando la plataforma cae, debe sonar la alarma de caída",
+        "chunk_sha256s": [
+          "40ef591afb0218edca4a19bc3cbfd0d1a7c223d3338318871ae51db7a455ac0e"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-13AD5CC9C9A7F783",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de función de conducción y freno",
+        "action": "Mantenga presionado el botón de inicio de función en el joystick; siga la flecha hacia arriba en el panel de control para mover el joystick lentamente hasta que la máquina comience a moverse y luego regrese la manija al centro",
+        "expected_result": "La máquina debe moverse en la dirección indicada por la flecha hacia arriba en el panel de control y luego se detiene repentinamente",
+        "evidence": "La máquina debe moverse en la dirección indicada por la flecha hacia arriba y luego se detiene repentinamente",
+        "chunk_sha256s": [
+          "7d303f3f9d5a2098e11a16e9bf485335ea4279447f5ea9f13e844f3939083f00"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-ADBCD3F682B125E7",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de función de conducción y freno",
+        "action": "Mantenga presionado el botón de inicio de función en el joystick; mueva el joystick lentamente hasta que la máquina comience a moverse en la dirección indicada por la flecha hacia abajo en el panel de control y luego regrese la manija al centro",
+        "expected_result": "La máquina debe moverse en la dirección indicada por la flecha hacia abajo en el panel de control y luego detenerse repentinamente",
+        "evidence": "La máquina debe moverse en la dirección indicada por la flecha hacia abajo y luego detenerse repentinamente",
+        "chunk_sha256s": [
+          "7d303f3f9d5a2098e11a16e9bf485335ea4279447f5ea9f13e844f3939083f00"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-62C9FE583254381B",
+        "type": "FUNCTIONAL_TEST",
+        "source": "(continuación de página anterior)",
+        "action": "Verificar que la función de conducción no funcione en ninguna dirección cuando la plataforma está elevada y hay obstáculo",
+        "expected_result": "La función de conducción no debería funcionar en ninguna dirección",
+        "evidence": "la función de conducción no debería funcionar en ninguna dirección",
+        "chunk_sha256s": [
+          "948473cb1e064cd46548d59722f75fdb96709959603ec82b6604639796e497fe"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-7D695F2CE53BCE0C",
+        "type": "FUNCTIONAL_TEST",
+        "source": "(continuación de página anterior)",
+        "action": "Bajar la plataforma y dejar la máquina alejada del obstáculo",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Baje la plataforma y deje la máquina alejada del obstáculo",
+        "chunk_sha256s": [
+          "948473cb1e064cd46548d59722f75fdb96709959603ec82b6604639796e497fe"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-33936C53D1A192CB",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de parada de emergencia",
+        "action": "Presionar el botón rojo de parada de emergencia de la plataforma a la posición \"APAGADO\".",
+        "expected_result": "No se ejecutarán todas las funciones.",
+        "evidence": "No se ejecutarán todas las funciones",
+        "chunk_sha256s": [
+          "b950ed65ad0b9f860d7be53339de4e220b1834e1462ed24abf16e46c3fe847a5"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-9C530E935218CB7E",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de parada de emergencia",
+        "action": "Tirar del botón rojo de parada de emergencia a la posición \"ON\".",
+        "expected_result": "El indicador LED de diagnóstico se iluminará.",
+        "evidence": "el indicador LED de diagnóstico se iluminará",
+        "chunk_sha256s": [
+          "b950ed65ad0b9f860d7be53339de4e220b1834e1462ed24abf16e46c3fe847a5"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-8E805FFE3879BAC8",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de bocina",
+        "action": "Pulsar el botón de la bocina.",
+        "expected_result": "Sonará la bocina.",
+        "evidence": "Resultado: Sonará la bocina",
+        "chunk_sha256s": [
+          "b950ed65ad0b9f860d7be53339de4e220b1834e1462ed24abf16e46c3fe847a5"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-5EFB0240A3655A74",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de parada auxiliar",
+        "action": "Presionar el botón rojo de parada de emergencia de la plataforma a la posición \"APAGADO\".",
+        "expected_result": "No se ejecutarán todas las funciones.",
+        "evidence": "No se ejecutarán todas las funciones",
+        "chunk_sha256s": [
+          "a66b95f2aac814ee02f5cdad86b69745b3c2ddc3fcd9c6303f52326189137edb"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-E816388A5EB6D671",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de parada auxiliar",
+        "action": "Tirar del botón rojo de parada de emergencia a la posición \"ON\".",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Tire del botón rojo de parada de emergencia a la posición \"ON\"",
+        "chunk_sha256s": [
+          "a66b95f2aac814ee02f5cdad86b69745b3c2ddc3fcd9c6303f52326189137edb"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-7F8D63E41E0D1511",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de velocidad de conducción limitada",
+        "action": "Presione el botón de selección de la función de elevación, mantenga presionada la función de inicio en el joystick y levante la plataforma a unos 2 m del suelo",
+        "expected_result": "El dispositivo de protección contra fosas está desplegado",
+        "evidence": "El dispositivo de protección contra fosas está desplegado",
+        "chunk_sha256s": [
+          "5fd69031f6b340e06350e1a84be969fb6af891f21a30b16b955975de772edaa9"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-1C8E9C47F0E6D0BE",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de velocidad de conducción limitada",
+        "action": "Pulse el botón de selección de función de conducción (luz indicadora encendida); mantenga presionado el botón de inicio de funciones en el joystick para mover lentamente el joystick a posición conducida",
+        "expected_result": "la velocidad máxima de conducción no debe exceder los 20 cm/s cuando la plataforma está elevada",
+        "evidence": "la velocidad máxima de conducción no debe exceder los 20 cm/s cuando la plataforma está elevada",
+        "chunk_sha256s": [
+          "5fd69031f6b340e06350e1a84be969fb6af891f21a30b16b955975de772edaa9"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-604D36715D546EAB",
+        "type": "FUNCTIONAL_TEST",
+        "source": "(continuación de página anterior)",
+        "action": "Verificar que el volante gira en la dirección indicada por la flecha izquierda en el Panel de control",
+        "expected_result": "El volante debe girarse en la dirección indicada por la flecha izquierda en el Panel de control",
+        "evidence": "El volante debe girarse en la dirección indicada por la flecha izquierda",
+        "chunk_sha256s": [
+          "23aaa4fd431057b29fb734faca9e31f6567b97e6d63fe5b0645e198ffebc2f51"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-C041B0183DA9CFCF",
+        "type": "FUNCTIONAL_TEST",
+        "source": "(continuación de página anterior)",
+        "action": "Presione el interruptor basculante de pulgar en la dirección indicada por la flecha hacia la derecha en el panel de control",
+        "expected_result": "el volante debe girarse en la dirección indicada por la flecha hacia la derecha en el chasis de la unidad",
+        "evidence": "el volante debe girarse en la dirección indicada por la flecha hacia la derecha en el chasis",
+        "chunk_sha256s": [
+          "23aaa4fd431057b29fb734faca9e31f6567b97e6d63fe5b0645e198ffebc2f51"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-82B022DE341E406F",
+        "type": "FUNCTIONAL_TEST",
+        "source": "2.4.1 Prueba por controlador de tierra",
+        "action": "Seleccionar un área de prueba sólida, horizontal y libre de obstrucciones.",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Seleccione un área de prueba sólida, horizontal y libre de obstrucciones",
+        "chunk_sha256s": [
+          "be20c4c60b13cd390186b6ca1c879e76298b3a181a4364044a7474c83a3833d0"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-9E7F1965B5B8B90F",
+        "type": "FUNCTIONAL_TEST",
+        "source": "2.4.1 Prueba por controlador de tierra",
+        "action": "Asegurarse de que el paquete de baterías esté conectado.",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Asegúrese de que el paquete de baterías esté conectado",
+        "chunk_sha256s": [
+          "be20c4c60b13cd390186b6ca1c879e76298b3a181a4364044a7474c83a3833d0"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-F4E555F8528E241E",
+        "type": "FUNCTIONAL_TEST",
+        "source": "2.4.1 Prueba por controlador de tierra",
+        "action": "Tirar del botón rojo de parada de emergencia en la plataforma y bajar hasta la posición \"encendido\".",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Tire del botón rojo de parada de emergencia en la plataforma y baje hasta la posición \"encendido\"",
+        "chunk_sha256s": [
+          "be20c4c60b13cd390186b6ca1c879e76298b3a181a4364044a7474c83a3833d0"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-A2429373AA474966",
+        "type": "FUNCTIONAL_TEST",
+        "source": "2.4.1 Prueba por controlador de tierra",
+        "action": "Girar la llave de contacto hasta el controlador de suelo.",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Gire la llave de contacto hasta el controlador de suelo",
+        "chunk_sha256s": [
+          "be20c4c60b13cd390186b6ca1c879e76298b3a181a4364044a7474c83a3833d0"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-72FB8E975F85761C",
+        "type": "FUNCTIONAL_TEST",
+        "source": "2.4.1 Prueba por controlador de tierra",
+        "action": "Observar los LED en el controlador de plataforma — Dispositivo de lectura de diagnóstico.",
+        "expected_result": "El LED debe ser como se muestra en la figura del documento fuente.",
+        "evidence": "el LED debe ser como se muestra a la derecha",
+        "chunk_sha256s": [
+          "be20c4c60b13cd390186b6ca1c879e76298b3a181a4364044a7474c83a3833d0"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-E42CEB6477F978CE",
+        "type": "FUNCTIONAL_TEST",
+        "source": "(continuación de página anterior)",
+        "action": "Verificar que el indicador LED de diagnóstico se ilumine tras la acción descrita en la página anterior.",
+        "expected_result": "El indicador LED de diagnóstico se iluminará.",
+        "evidence": "el indicador LED de diagnóstico se iluminará",
+        "chunk_sha256s": [
+          "3efad9114dc1c3b86d5e0c623766b19506078c587632fad08f32c4e80abd3583"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-8874C3B052E27250",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de parada de emergencia",
+        "action": "Empujar el botón rojo de parada de emergencia a tierra a la posición \"APAGADO\".",
+        "expected_result": "No se puede ejecutar ninguna función.",
+        "evidence": "No se puede ejecutar ninguna función",
+        "chunk_sha256s": [
+          "f6be74fc87ea4606b966147cf6b5d6209297320b70e7382d6bf0bf7c45494f5d"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-86B5FBFC49380258",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de parada de emergencia",
+        "action": "Tirar del botón rojo de parada de emergencia a la posición \"ON\".",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Tire del botón rojo de parada de emergencia a la posición \"ON\"",
+        "chunk_sha256s": [
+          "f6be74fc87ea4606b966147cf6b5d6209297320b70e7382d6bf0bf7c45494f5d"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-AD94271D7BACCA87",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de funcionamiento del sensor de inclinación",
+        "action": "Coloque las dos ruedas de un lado sobre una plataforma de 3,5 x 20 cm; eleve la plataforma al menos 2 m",
+        "expected_result": "la plataforma debería dejar de moverse y la alarma de inclinación debería sonar 150 veces por minuto",
+        "evidence": "la plataforma debería dejar de moverse y la alarma de inclinación debería sonar 150 veces por minuto",
+        "chunk_sha256s": [
+          "8ecf7e1b670a2c094b4c636355b2c9592ae93d183b4e1d35dbb5c58354817969"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-D837B001100DE6E8",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de funcionamiento del sensor de inclinación",
+        "action": "Mueva el joystick en la dirección indicada por la flecha hacia arriba y luego muévase en la dirección indicada por la flecha hacia abajo",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Mueva el joystick en la dirección indicada por la flecha hacia arriba",
+        "chunk_sha256s": [
+          "8ecf7e1b670a2c094b4c636355b2c9592ae93d183b4e1d35dbb5c58354817969"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-FF91FC325B2F88CF",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Girar la llave de contacto a la posición de control de la plataforma o \"apagado\" y levantar y mantener presionado el interruptor de elevación de la plataforma.",
+        "expected_result": "La plataforma no sube.",
+        "evidence": "La plataforma no sube",
+        "chunk_sha256s": [
+          "70b02a27b55beafdd1862e7510afe702c03bc9ed1c0ed1e6f61bedc1374fe735"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-3B8365A42BDD472F",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Girar la llave de contacto a la posición de control desde el suelo. Levantar y mantener presionado el interruptor de elevación de la plataforma.",
+        "expected_result": "La plataforma debería elevarse.",
+        "evidence": "La plataforma debería elevarse",
+        "chunk_sha256s": [
+          "70b02a27b55beafdd1862e7510afe702c03bc9ed1c0ed1e6f61bedc1374fe735"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-9DF5FE818474D1E9",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Bajar y mantener presionado el interruptor de elevación de la plataforma.",
+        "expected_result": "La plataforma debería caer. Cuando la plataforma cae, debe sonar la alarma de caída. Cuando la plataforma cae a 2 m, deja de caer.",
+        "evidence": "La plataforma debería caer. Cuando la plataforma cae a 2 m, deja de caer",
+        "chunk_sha256s": [
+          "70b02a27b55beafdd1862e7510afe702c03bc9ed1c0ed1e6f61bedc1374fe735"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-96E6F7A34188AA0E",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Función arriba/abajo y prueba de inicio de función",
+        "action": "Bajar y mantener presionado el interruptor de elevación de la plataforma nuevamente.",
+        "expected_result": "La plataforma debería caer a la posición más baja. Cuando la plataforma cae, debe sonar la alarma.",
+        "evidence": "La plataforma debería caer a la posición más baja. Cuando la plataforma cae, la gota debe sonar la alarma",
+        "chunk_sha256s": [
+          "70b02a27b55beafdd1862e7510afe702c03bc9ed1c0ed1e6f61bedc1374fe735"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-1D53B8C4AAF44687",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dispositivo de protección de pozos",
+        "action": "Elevar la plataforma y verificar que el dispositivo de protección antibaches se despliegue automáticamente al alcanzar 2 m del suelo",
+        "expected_result": "Cuando la plataforma se eleve a 2 m del suelo, el dispositivo de protección antibaches debe ser desplegado",
+        "evidence": "Cuando la plataforma se eleve a 2 m del suelo, el dispositivo de protección antibaches debe ser desplegado",
+        "chunk_sha256s": [
+          "b0129b5a719d31e586129e5ee6c8902a833410c2f68fa9ff651074e4c6b3296d"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-48F54EBC4119CB37",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dispositivo de protección de pozos",
+        "action": "Con plataforma elevada, presionar y sostener un lado del dispositivo de protección contra fosas, luego presionar el otro lado",
+        "expected_result": "El dispositivo de protección contra fosas no se moverá",
+        "evidence": "El dispositivo de protección contra fosas no se moverá",
+        "chunk_sha256s": [
+          "b0129b5a719d31e586129e5ee6c8902a833410c2f68fa9ff651074e4c6b3296d"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-9AEBFE08DCE4D426",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dispositivo de protección de pozos",
+        "action": "Bajar la plataforma y verificar retorno del dispositivo de protección contra fosos",
+        "expected_result": "El dispositivo de protección contra fosos debe volver a la posición de almacenamiento",
+        "evidence": "El dispositivo de protección contra fosos debe volver a la posición de almacenamiento",
+        "chunk_sha256s": [
+          "b0129b5a719d31e586129e5ee6c8902a833410c2f68fa9ff651074e4c6b3296d"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-3DB14755CE5AEC7A",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dispositivo de protección de pozos",
+        "action": "Colocar una pieza de madera de 3,5x20 cm o similar debajo del dispositivo de protección contra fosas y levantar la plataforma",
+        "expected_result": "Cuando la plataforma se eleve a 2 m del suelo, sonará la alarma y la función de traccion no se puede ejecutar en este momento",
+        "evidence": "sonará la alarma y la función de traccion no se puede ejecutar en este momento",
+        "chunk_sha256s": [
+          "b0129b5a719d31e586129e5ee6c8902a833410c2f68fa9ff651074e4c6b3296d"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-9447A9B6ED5975D6",
+        "type": "FUNCTIONAL_TEST",
+        "source": "Prueba de dispositivo de protección de pozos",
+        "action": "Bajar la plataforma y retirar el bloque de 3,5x20 cm",
+        "expected_result": "DATA_NOT_AVAILABLE",
+        "evidence": "Baje la plataforma y retire el bloque de 3,5x20 cm",
+        "chunk_sha256s": [
+          "b0129b5a719d31e586129e5ee6c8902a833410c2f68fa9ff651074e4c6b3296d"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      }
+    ]
+  },
+  "stop_work_cases": {
+    "case_keys": [
+      "isolated:3",
+      "conversation:3"
+    ],
+    "expected_mandatory_record_ids": [
+      "FR-16CA529ADAF49091",
+      "FR-480A25A947279253",
+      "FR-7CB5544444B37D08",
+      "FR-83721CBE0DF567B8",
+      "FR-AAB3DFBC4BC172AD",
+      "FR-B688FDD1F0DA922F"
+    ],
+    "expected_record_ids": [
+      "FR-049654350622E69E",
+      "FR-04AB1F832DEC9175",
+      "FR-05F2E93CDBC21296",
+      "FR-0741C38A0111E0D0",
+      "FR-0A3638601A670B77",
+      "FR-0CEA1692EBE80AA3",
+      "FR-16CA529ADAF49091",
+      "FR-1D859F812681DEA0",
+      "FR-2260CACCDCA917D8",
+      "FR-22EC848EB36A8F8D",
+      "FR-23E704E058BD2443",
+      "FR-34DE386FEF29FC7F",
+      "FR-36AB085FBC3823C3",
+      "FR-3D31D6F4EFE6261D",
+      "FR-3FA36FC56D9609D4",
+      "FR-42523CB9A8A4DF40",
+      "FR-4716F5E53C1EEC58",
+      "FR-480A25A947279253",
+      "FR-4A7DAFE6F9BA47A1",
+      "FR-4ECAD97FE92AC38B",
+      "FR-50BE0F7319908DDD",
+      "FR-56DE3A0C50A4F84E",
+      "FR-5A49D29C7CF74601",
+      "FR-5A9D7DECCB7750F0",
+      "FR-5E6FDE1A6992EE2A",
+      "FR-603E6DC5975A79F8",
+      "FR-6192B5DB5C61B8C1",
+      "FR-6195968891BEE817",
+      "FR-63AE420F82EAE1FB",
+      "FR-68615FB205D61F12",
+      "FR-6A776E815B0C8A60",
+      "FR-790AAD0BB36FE1DF",
+      "FR-7CB5544444B37D08",
+      "FR-7E4FDFB6D18A9B78",
+      "FR-83721CBE0DF567B8",
+      "FR-8D6BC18F077CBE3B",
+      "FR-91B62759382246D6",
+      "FR-97AFB6EE6FEC3D80",
+      "FR-9C983B4925EAEBAF",
+      "FR-9D6A3A4BF9816E2C",
+      "FR-A280D4CD2E0E906F",
+      "FR-A34E2470CC9B7920",
+      "FR-A44292258CEBDA2F",
+      "FR-A513F13124ECD372",
+      "FR-A83C62E02BBA3A17",
+      "FR-AAB3DFBC4BC172AD",
+      "FR-AAD471AADAE16E85",
+      "FR-B61E5D8466B5FA3D",
+      "FR-B688FDD1F0DA922F",
+      "FR-B7F198D47D6A967B",
+      "FR-C4B98D3397D41754",
+      "FR-C963358E71A69360",
+      "FR-C9D163C922C528FF",
+      "FR-CAF68F12C3347BE5",
+      "FR-CB6C197F4BB90E62",
+      "FR-CC37B6A13CB7E1A1",
+      "FR-D1C35C84D8858CB0",
+      "FR-D434467457871ABC",
+      "FR-D47D12E4AC665FC8",
+      "FR-DB479996CFCAC3BE",
+      "FR-E06250F4C7578B9E",
+      "FR-E2320B7EB0A8FCA0",
+      "FR-E900606F3A073F03",
+      "FR-F05D4C883727F8BB",
+      "FR-F12BE376CF62CA74",
+      "FR-F47E937409EA3E35",
+      "FR-F48333EA7905DE8C",
+      "FR-F75190C64E30D07B",
+      "FR-FD1077718A29F6C3"
+    ],
+    "mandatory_records": [
+      {
+        "record_id": "FR-480A25A947279253",
+        "type": "STOP_WORK_CONDITION",
+        "source": "Principio básico",
+        "action": "Inspeccionar la máquina en busca de daños o cambios no autorizados en el estado de fábrica.",
+        "expected_result": "Si se encuentran daños o cambios no autorizados en el estado de fábrica, la máquina debe marcarse y detenerse.",
+        "stop_trigger": "daños o cambios no autorizados en el estado de fábrica",
+        "stop_action": "la máquina debe marcarse y detenerse",
+        "evidence": "la máquina debe marcarse y detenerse",
+        "chunk_sha256s": [
+          "38f4ee6e3cb51c9a0925291365192d5521538ebae3bfd2a68d7caa52a599bef9"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-B688FDD1F0DA922F",
+        "type": "STOP_WORK_CONDITION",
+        "source": "2.4 Prueba de funcionamiento — Principio básico",
+        "action": "Prohibir el uso de la máquina si ocurre un mal funcionamiento; marcar y detener la máquina",
+        "expected_result": "Máquina marcada y detenida hasta reparación por técnico calificado",
+        "stop_trigger": "mal funcionamiento detectado",
+        "stop_action": "prohibir uso; marcar y detener la máquina",
+        "evidence": "Si ocurre un mal funcionamiento, la máquina debe marcarse y detenerse",
+        "chunk_sha256s": [
+          "3aa8a0da48adb6bedcf9113005c053002f8780d1a0c8badcd14386e00b30b067"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-83721CBE0DF567B8",
+        "type": "STOP_WORK_CONDITION",
+        "source": "Control de plataforma",
+        "action": "Presione el botón de parada de emergencia rojo (4) a la posición \"OFF\"",
+        "expected_result": "Se detienen todas las funciones",
+        "stop_trigger": "activación botón parada emergencia OFF",
+        "stop_action": "detener todas las funciones",
+        "evidence": "Presione el botón de parada de emergencia rojo a la posición \"OFF\" para detener todas las funciones",
+        "chunk_sha256s": [
+          "c6c83825ea5b355aab10ecfea8b42b0244c2854d9406fe8510e1137df8510920"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-AAB3DFBC4BC172AD",
+        "type": "STOP_WORK_CONDITION",
+        "source": "Prueba de velocidad de conducción limitada",
+        "action": "Verificar que la velocidad máxima de desplazamiento no supere los 20 cm/s con la plataforma elevada",
+        "expected_result": "si la velocidad máxima de desplazamiento supera los 20 cm/s cuando la plataforma está elevada, marque la máquina inmediatamente y deje de funcionar",
+        "stop_trigger": "velocidad máxima de desplazamiento supera los 20 cm/s cuando la plataforma está elevada",
+        "stop_action": "marque la máquina inmediatamente y deje de funcionar",
+        "evidence": "marque la máquina inmediatamente y deje de funcionar",
+        "chunk_sha256s": [
+          "5fd69031f6b340e06350e1a84be969fb6af891f21a30b16b955975de772edaa9"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-16CA529ADAF49091",
+        "type": "STOP_WORK_CONDITION",
+        "source": "(continuación de página anterior)",
+        "action": "Verificar que la pendiente medida no supere la pendiente máxima ni la clasificación de pendiente lateral.",
+        "expected_result": "Si la pendiente supera la pendiente máxima o la clasificación de pendiente lateral, la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa.",
+        "stop_trigger": "pendiente supera pendiente máxima o clasificación de pendiente lateral",
+        "stop_action": "no operar; levantar o transportar por la rampa; consultar sección Transporte y elevación",
+        "evidence": "la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa",
+        "chunk_sha256s": [
+          "8246043a1e02e57f0bf0bafb41f90eba70313eac5cd49c4c2e84c85066c424b8"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      },
+      {
+        "record_id": "FR-7CB5544444B37D08",
+        "type": "STOP_WORK_CONDITION",
+        "source": "2.1.1 Controles de tierra — Parada de emergencia",
+        "action": "Presione el botón de parada de emergencia a su posición 'apagado'",
+        "expected_result": "Se detienen todas las funciones",
+        "stop_trigger": "emergencia / necesidad de parada total",
+        "stop_action": "presionar botón rojo a posición apagado",
+        "evidence": "Presione el botón de parada de emergencia a su posición 'apagado' para detener todas las funciones",
+        "chunk_sha256s": [
+          "a1a847687359e3086474d7f0ca7802e5ffc457f83b3a73526603c5cf98e972a4"
+        ],
+        "uris": [
+          "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
+        ]
+      }
+    ],
+    "precaution_sentinels": {
+      "dizziness-stays-precaution": [
+        "FR-63AE420F82EAE1FB"
+      ],
+      "unauthorized-stays-precaution": [
+        "FR-23E704E058BD2443",
+        "FR-B7F198D47D6A967B"
+      ]
+    }
+  },
+  "functional_units": {
+    "ground-diagnostic-led": {
+      "record_ids": [
+        "FR-72FB8E975F85761C",
+        "FR-E42CEB6477F978CE"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "ground-emergency-off": {
+      "record_ids": [
+        "FR-8874C3B052E27250"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "ground-key-platform-blocks-lift": {
+      "record_ids": [
+        "FR-FF91FC325B2F88CF"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "ground-key-ground-allows-lift": {
+      "record_ids": [
+        "FR-3B8365A42BDD472F"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "ground-first-descent": {
+      "record_ids": [
+        "FR-9DF5FE818474D1E9"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "ground-second-descent": {
+      "record_ids": [
+        "FR-96E6F7A34188AA0E"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "platform-emergency-off": {
+      "record_ids": [
+        "FR-33936C53D1A192CB",
+        "FR-5EFB0240A3655A74"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "platform-emergency-on-led": {
+      "record_ids": [
+        "FR-9C530E935218CB7E"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "platform-horn": {
+      "record_ids": [
+        "FR-8E805FFE3879BAC8"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "platform-no-enable-blocks-motion": {
+      "record_ids": [
+        "FR-C549D7DF4DF80026"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "platform-lift-and-pit-deploy": {
+      "record_ids": [
+        "FR-42CB35BDD788E2B3"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "platform-release-stops-lift": {
+      "record_ids": [
+        "FR-6E41A743D06F3CB1"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "platform-descent-alarm": {
+      "record_ids": [
+        "FR-9D0B2310C1F9AF95"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "steering-left": {
+      "record_ids": [
+        "FR-604D36715D546EAB"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "steering-right": {
+      "record_ids": [
+        "FR-C041B0183DA9CFCF"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "drive-brake-forward": {
+      "record_ids": [
+        "FR-13AD5CC9C9A7F783"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "drive-brake-reverse": {
+      "record_ids": [
+        "FR-ADBCD3F682B125E7"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "limited-speed-setup-pit-deploy": {
+      "record_ids": [
+        "FR-7F8D63E41E0D1511"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "limited-speed-20cm": {
+      "record_ids": [
+        "FR-1C8E9C47F0E6D0BE"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "tilt-sensor-stop-alarm": {
+      "record_ids": [
+        "FR-AD94271D7BACCA87"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "pit-deploy-at-2m": {
+      "record_ids": [
+        "FR-1D53B8C4AAF44687"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "pit-pressure-immobility": {
+      "record_ids": [
+        "FR-48F54EBC4119CB37"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "pit-storage-return": {
+      "record_ids": [
+        "FR-9AEBFE08DCE4D426"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    },
+    "pit-obstacle-blocks-traction": {
+      "record_ids": [
+        "FR-3DB14755CE5AEC7A"
+      ],
+      "verdict": "supported (PDF §2.4 pp.8-11 review 2026-06-10)"
+    }
+  },
+  "review": {
+    "method": "records compared against source PDF pages 8-11 (§2.4 complete) and pages 3/9/10/18 readings",
+    "reviewer": "claude-fable-5 + operator sign-off pending",
+    "date": "2026-06-10"
+  }
+}

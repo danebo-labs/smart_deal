@@ -1,0 +1,305 @@
+{
+  "version": "2026-06-10-v1",
+  "benchmark_version": "2026-06-10-v2",
+  "retrieval_preflight": {
+    "path": "tmp/rag_quality_retrieval_preflight.json",
+    "sha256": "118147398913a2646a4451b5315429d8cf6fcb032b7ae0c0899665c0ef28ec38",
+    "code_fingerprint_sha256": "6d90af032113cf2ff53ce4ddb9fbd510a01c34a0ef880e75670e8cc8af8c7954",
+    "vector_search_configuration_sha256": "b6f28b74788058c93fff94f6b9a171797f5c247963e55da657acc0cff94f19ce",
+    "number_of_results": 15,
+    "search_type": "HYBRID"
+  },
+  "source_uri": "s3://smart-deal-dev-kb/uploads/2026-06-09/danebo_fidelity_v2_22_paginas.pdf",
+  "units": {
+    "ground-diagnostic-led": {
+      "block": "Controlador de tierra",
+      "expected_action": "Preparar el área y la alimentación, seleccionar control de suelo y observar los LED de diagnóstico.",
+      "expected_result": "El patrón exacto de LED requiere verificación contra la imagen del manual.",
+      "test_patterns": ["(?:control(?:ador)? de (?:tierra|suelo)|diagnostico.*(?:tierra|suelo))", "led|diagnost"],
+      "action_patterns": ["observ|verific", "led"],
+      "result_patterns": ["requir.*field.*verification|verific.*(?:manual|campo)|patron.*led"],
+      "chunk_sha256": "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56"
+    },
+    "ground-emergency-off": {
+      "block": "Controlador de tierra",
+      "expected_action": "Empujar la parada de emergencia de tierra a APAGADO.",
+      "expected_result": "No se puede ejecutar ninguna función.",
+      "test_patterns": ["parada.*emergencia", "tierra|suelo"],
+      "action_patterns": ["empuj|presion", "apagado|off"],
+      "result_patterns": ["no .*funcion|ninguna funcion"],
+      "chunk_sha256": "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56"
+    },
+    "ground-key-platform-blocks-lift": {
+      "block": "Controlador de tierra",
+      "expected_action": "Poner la llave en control de plataforma o apagado y mantener elevación.",
+      "expected_result": "La plataforma no sube.",
+      "test_patterns": ["llave|elevacion", "tierra|suelo"],
+      "action_patterns": ["llave.*(?:plataforma|apagado|off)", "elev|sub"],
+      "result_patterns": ["no (?:sube|se eleva)|no .*elev"],
+      "chunk_sha256": "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56"
+    },
+    "ground-key-ground-allows-lift": {
+      "block": "Controlador de tierra",
+      "expected_action": "Poner la llave en control de suelo y mantener elevación.",
+      "expected_result": "La plataforma se eleva.",
+      "test_patterns": ["elevacion|subida", "tierra|suelo"],
+      "action_patterns": ["llave.*(?:tierra|suelo)", "elev|sub"],
+      "result_patterns": ["eleva|sube"],
+      "chunk_sha256": "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56"
+    },
+    "ground-first-descent": {
+      "block": "Controlador de tierra",
+      "expected_action": "Mantener el mando de descenso.",
+      "expected_result": "La plataforma desciende con alarma y se detiene al llegar a 2 m.",
+      "test_patterns": ["descenso|bajada", "tierra|suelo", "2 ?m"],
+      "action_patterns": ["baj|descen"],
+      "result_patterns": ["cae|baja|desciende", "alarma", "2 ?m", "detien|deja de"],
+      "chunk_sha256": "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56"
+    },
+    "ground-second-descent": {
+      "block": "Controlador de tierra",
+      "expected_action": "Accionar descenso nuevamente.",
+      "expected_result": "La plataforma baja a la posición más baja y suena la alarma.",
+      "test_patterns": ["segund|final|posicion.*(?:baja|inferior)", "descenso|bajada"],
+      "action_patterns": ["nuevamente|segunda|baj|descen"],
+      "result_patterns": ["posicion.*(?:baja|inferior)|hasta abajo", "alarma"],
+      "chunk_sha256": "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56"
+    },
+    "platform-emergency-off": {
+      "block": "Controlador de plataforma",
+      "expected_action": "Presionar la parada de emergencia de plataforma a APAGADO.",
+      "expected_result": "No se ejecuta ninguna función.",
+      "test_patterns": ["parada.*emergencia", "plataforma"],
+      "action_patterns": ["presion|empuj", "apagado|off"],
+      "result_patterns": ["no .*funcion|ninguna funcion"],
+      "chunk_sha256": "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06"
+    },
+    "platform-emergency-on-led": {
+      "block": "Controlador de plataforma",
+      "expected_action": "Tirar de la parada de emergencia de plataforma a ON.",
+      "expected_result": "Se ilumina el LED de diagnóstico.",
+      "test_patterns": ["parada.*emergencia", "plataforma", "on|encendido|led"],
+      "action_patterns": ["tir|extra", "on|encendido"],
+      "result_patterns": ["led|indicador", "ilumin|enciend"],
+      "chunk_sha256": "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06"
+    },
+    "platform-horn": {
+      "block": "Controlador de plataforma",
+      "expected_action": "Pulsar el botón de bocina.",
+      "expected_result": "Suena la bocina.",
+      "test_patterns": ["bocina", "plataforma"],
+      "action_patterns": ["puls|presion", "bocina"],
+      "result_patterns": ["suena|sonar", "bocina"],
+      "chunk_sha256": "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06"
+    },
+    "platform-no-enable-blocks-motion": {
+      "block": "Controlador de plataforma",
+      "expected_action": "Sin pulsar inicio/habilitación, mover el joystick en ambas direcciones indicadas.",
+      "expected_result": "No se ejecuta ninguna función.",
+      "test_patterns": ["inicio|habilit", "plataforma"],
+      "action_patterns": ["no .*presion|sin .*puls", "joystick|palanca"],
+      "result_patterns": ["no .*funcion|ninguna funcion"],
+      "chunk_sha256": "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06"
+    },
+    "platform-lift-and-pit-deploy": {
+      "block": "Controlador de plataforma",
+      "expected_action": "Seleccionar elevación, mantener inicio y mover el joystick hacia la flecha azul.",
+      "expected_result": "La plataforma se eleva y la protección contra fosos se despliega.",
+      "test_patterns": ["elevacion|subida", "plataforma"],
+      "action_patterns": ["seleccion.*elev|funcion.*elev", "inicio|habilit", "azul|arriba"],
+      "result_patterns": ["eleva|sube", "foso|pozo|antibache", "desplieg"],
+      "chunk_sha256": "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06"
+    },
+    "platform-release-stops-lift": {
+      "block": "Controlador de plataforma",
+      "expected_action": "Soltar el joystick durante la elevación.",
+      "expected_result": "La plataforma deja de subir.",
+      "test_patterns": ["soltar|liberar", "joystick|palanca"],
+      "action_patterns": ["solt|liber", "joystick|palanca"],
+      "result_patterns": ["deja de subir|detien.*(?:subida|elevacion)|para.*(?:subir|elevar)"],
+      "chunk_sha256": "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06"
+    },
+    "platform-descent-alarm": {
+      "block": "Controlador de plataforma",
+      "expected_action": "Mantener inicio y mover el joystick hacia la flecha amarilla.",
+      "expected_result": "La plataforma desciende y suena la alarma de caída.",
+      "test_patterns": ["descenso|bajada", "plataforma"],
+      "action_patterns": ["inicio|habilit", "amarill|abajo"],
+      "result_patterns": ["cae|baja|desciende", "alarma"],
+      "chunk_sha256": "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06"
+    },
+    "steering-left": {
+      "block": "Controlador de plataforma / dirección",
+      "expected_action": "Accionar el interruptor de pulgar hacia la izquierda.",
+      "expected_result": "El volante gira en la dirección indicada por la flecha izquierda.",
+      "test_patterns": ["direccion.*izquierda|giro.*izquierda"],
+      "action_patterns": ["interruptor|pulgar|basculante", "izquierda"],
+      "result_patterns": ["gira|girar", "izquierda|direccion indicada"],
+      "chunk_sha256": "218e41b740283140537f8ccb09847d63a3ae4bea1637e6a362eae641d95ff4ce"
+    },
+    "steering-right": {
+      "block": "Controlador de plataforma / dirección",
+      "expected_action": "Accionar el interruptor de pulgar hacia la derecha.",
+      "expected_result": "El volante gira en la dirección indicada por la flecha derecha.",
+      "test_patterns": ["direccion.*derecha|giro.*derecha"],
+      "action_patterns": ["interruptor|pulgar|basculante", "derecha"],
+      "result_patterns": ["gira|girar", "derecha|direccion indicada"],
+      "chunk_sha256": "218e41b740283140537f8ccb09847d63a3ae4bea1637e6a362eae641d95ff4ce"
+    },
+    "drive-brake-forward": {
+      "block": "Conducción y freno",
+      "expected_action": "Mantener inicio, mover hacia la flecha arriba y regresar la manija al centro.",
+      "expected_result": "La máquina avanza en la dirección indicada y se detiene.",
+      "test_patterns": ["conduccion|traccion|freno", "arriba|avance|adelante"],
+      "action_patterns": ["inicio|habilit", "arriba|avance|adelante", "centro|solt"],
+      "result_patterns": ["mueve|avanza", "detien|para"],
+      "chunk_sha256": "cebc68373a8b310a353f43e1c0285efd7064cc30091d4c4bfd02a5ba32c19974"
+    },
+    "drive-brake-reverse": {
+      "block": "Conducción y freno",
+      "expected_action": "Mantener inicio, mover hacia la flecha abajo y regresar la manija al centro.",
+      "expected_result": "La máquina retrocede en la dirección indicada y se detiene.",
+      "test_patterns": ["conduccion|traccion|freno", "abajo|retroceso|atras"],
+      "action_patterns": ["inicio|habilit", "abajo|retroceso|atras", "centro|solt"],
+      "result_patterns": ["mueve|retrocede", "detien|para"],
+      "chunk_sha256": "cebc68373a8b310a353f43e1c0285efd7064cc30091d4c4bfd02a5ba32c19974"
+    },
+    "limited-speed-setup-pit-deploy": {
+      "block": "Velocidad de conducción limitada",
+      "expected_action": "Seleccionar elevación y elevar la plataforma a aproximadamente 2 m.",
+      "expected_result": "La protección contra fosos está desplegada.",
+      "test_patterns": ["velocidad.*limit|limit.*velocidad", "prepar|proteccion|foso|pozo"],
+      "action_patterns": ["elev|sub", "2 ?m"],
+      "result_patterns": ["foso|pozo|antibache", "desplieg"],
+      "chunk_sha256": "cebc68373a8b310a353f43e1c0285efd7064cc30091d4c4bfd02a5ba32c19974"
+    },
+    "limited-speed-20cm": {
+      "block": "Velocidad de conducción limitada",
+      "expected_action": "Seleccionar conducción y mover lentamente el joystick con la plataforma elevada.",
+      "expected_result": "La velocidad máxima no supera 20 cm/s.",
+      "test_patterns": ["velocidad.*limit|20 ?cm"],
+      "action_patterns": ["conduccion|traccion", "joystick|palanca"],
+      "result_patterns": ["20 ?cm\\s*/?\\s*s", "no .*exced|no .*super|velocidad maxima"],
+      "chunk_sha256": "cebc68373a8b310a353f43e1c0285efd7064cc30091d4c4bfd02a5ba32c19974"
+    },
+    "tilt-sensor-stop-alarm": {
+      "block": "Sensor de inclinación",
+      "expected_action": "Colocar las ruedas de un lado sobre un bloque de 3,5 × 20 cm y elevar al menos 2 m.",
+      "expected_result": "La plataforma se detiene y la alarma de inclinación suena 150 veces por minuto.",
+      "test_patterns": ["sensor.*inclinacion|inclinacion"],
+      "action_patterns": ["3[,.]5.*20 ?cm", "2 ?m", "elev|sub"],
+      "result_patterns": ["detien|deja de mover", "alarma", "150"],
+      "chunk_sha256": "218e41b740283140537f8ccb09847d63a3ae4bea1637e6a362eae641d95ff4ce"
+    },
+    "pit-deploy-at-2m": {
+      "block": "Protección contra fosos",
+      "expected_action": "Elevar la plataforma.",
+      "expected_result": "A 2 m, la protección contra fosos se despliega.",
+      "test_patterns": ["proteccion.*(?:foso|pozo)|antibache", "desplieg"],
+      "action_patterns": ["elev|sub"],
+      "result_patterns": ["2 ?m", "desplieg"],
+      "chunk_sha256": "790fa2396256f9033885bf65af46c3bc3fcf7141851b3babe875a199fffba26b"
+    },
+    "pit-pressure-immobility": {
+      "block": "Protección contra fosos",
+      "expected_action": "Presionar y sostener primero un lado y luego el otro.",
+      "expected_result": "La protección contra fosos no se mueve.",
+      "test_patterns": ["proteccion.*(?:foso|pozo)|antibache", "presion|inmovil"],
+      "action_patterns": ["presion|sosten", "lado"],
+      "result_patterns": ["no se mueve|inmovil"],
+      "chunk_sha256": "790fa2396256f9033885bf65af46c3bc3fcf7141851b3babe875a199fffba26b"
+    },
+    "pit-storage-return": {
+      "block": "Protección contra fosos",
+      "expected_action": "Bajar la plataforma.",
+      "expected_result": "La protección contra fosos vuelve a la posición de almacenamiento.",
+      "test_patterns": ["proteccion.*(?:foso|pozo)|antibache", "almacen|retorno"],
+      "action_patterns": ["baj|descen"],
+      "result_patterns": ["vuelve|retorna|regresa", "almacen"],
+      "chunk_sha256": "790fa2396256f9033885bf65af46c3bc3fcf7141851b3babe875a199fffba26b"
+    },
+    "pit-obstacle-blocks-traction": {
+      "block": "Protección contra fosos",
+      "expected_action": "Colocar un bloque de 3,5 × 20 cm bajo la protección y elevar la plataforma.",
+      "expected_result": "A 2 m suena la alarma y no se puede ejecutar tracción.",
+      "test_patterns": ["proteccion.*(?:foso|pozo)|antibache", "obstac|bloque|madera"],
+      "action_patterns": ["3[,.]5.*20 ?cm", "elev|sub"],
+      "result_patterns": ["alarma", "traccion|conduccion", "no .*ejecut|bloque"],
+      "chunk_sha256": "790fa2396256f9033885bf65af46c3bc3fcf7141851b3babe875a199fffba26b"
+    }
+  },
+  "cases": {
+    "isolated:5": {
+      "unit_ids": [
+        "ground-diagnostic-led",
+        "ground-emergency-off",
+        "ground-key-platform-blocks-lift",
+        "ground-key-ground-allows-lift",
+        "ground-first-descent",
+        "ground-second-descent",
+        "platform-emergency-off",
+        "platform-emergency-on-led",
+        "platform-horn",
+        "platform-no-enable-blocks-motion",
+        "platform-lift-and-pit-deploy",
+        "platform-release-stops-lift",
+        "platform-descent-alarm",
+        "steering-left",
+        "steering-right",
+        "drive-brake-forward",
+        "drive-brake-reverse",
+        "limited-speed-setup-pit-deploy",
+        "limited-speed-20cm",
+        "tilt-sensor-stop-alarm",
+        "pit-deploy-at-2m",
+        "pit-pressure-immobility",
+        "pit-storage-return",
+        "pit-obstacle-blocks-traction"
+      ],
+      "evidence_ranks": {
+        "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56": 3,
+        "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06": 4,
+        "cebc68373a8b310a353f43e1c0285efd7064cc30091d4c4bfd02a5ba32c19974": 7,
+        "790fa2396256f9033885bf65af46c3bc3fcf7141851b3babe875a199fffba26b": 10,
+        "218e41b740283140537f8ccb09847d63a3ae4bea1637e6a362eae641d95ff4ce": 12
+      },
+      "coverage": "complete"
+    },
+    "conversation:5": {
+      "unit_ids": [
+        "ground-diagnostic-led",
+        "ground-emergency-off",
+        "ground-key-platform-blocks-lift",
+        "ground-key-ground-allows-lift",
+        "ground-first-descent",
+        "ground-second-descent",
+        "platform-emergency-off",
+        "platform-emergency-on-led",
+        "platform-horn",
+        "platform-no-enable-blocks-motion",
+        "platform-lift-and-pit-deploy",
+        "platform-release-stops-lift",
+        "platform-descent-alarm",
+        "steering-left",
+        "steering-right",
+        "drive-brake-forward",
+        "drive-brake-reverse",
+        "limited-speed-setup-pit-deploy",
+        "limited-speed-20cm",
+        "tilt-sensor-stop-alarm",
+        "pit-deploy-at-2m",
+        "pit-pressure-immobility",
+        "pit-storage-return",
+        "pit-obstacle-blocks-traction"
+      ],
+      "evidence_ranks": {
+        "1eb881b866b0fa7e863911a356c7b3d0bedd7de9f61b0745a7555c5081b94c56": 1,
+        "e48384517d48440b0b47fa80930adf0be8afaed2f68185126f829f96888aba06": 2,
+        "cebc68373a8b310a353f43e1c0285efd7064cc30091d4c4bfd02a5ba32c19974": 5,
+        "218e41b740283140537f8ccb09847d63a3ae4bea1637e6a362eae641d95ff4ce": 9,
+        "790fa2396256f9033885bf65af46c3bc3fcf7141851b3babe875a199fffba26b": 10
+      },
+      "coverage": "complete"
+    }
+  }
+}

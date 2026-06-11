@@ -27,14 +27,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   # Fake AWS BedrockAgentRuntime Client
   class FakeBedrockAgentRuntimeClient
-    attr_accessor :retrieve_and_generate_response, :should_raise_error, :error_message
-    attr_reader :last_retrieve_and_generate_params
+    attr_accessor :retrieve_and_generate_response, :retrieve_response,
+                  :should_raise_error, :error_message
+    attr_reader :last_retrieve_and_generate_params, :last_retrieve_params
 
     def initialize(*)
       @retrieve_and_generate_response = nil
       @should_raise_error = false
       @error_message = nil
       @last_retrieve_and_generate_params = nil
+      @last_retrieve_params = nil
     end
 
     def retrieve_and_generate(params)
@@ -47,6 +49,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       end
 
       @retrieve_and_generate_response || default_retrieve_and_generate_response
+    end
+
+    def retrieve(params)
+      @last_retrieve_params = params
+      @retrieve_response || ::OpenStruct.new(retrieval_results: [])
     end
 
     private
@@ -333,6 +340,39 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'reranks exhaustive candidates from 15 down to 12 when enabled' do
+    with_env_vars('BEDROCK_RERANKER_ENABLED' => 'true') do
+      service = BedrockRagService.new
+      config = service.build_complete_optimized_config(
+        question: "Enumera todas las pruebas de funcionamiento",
+        entity_sources: [ "document" ]
+      )
+      vector = config.dig(:retrieval_configuration, :vector_search_configuration)
+
+      assert_equal 15, vector[:number_of_results]
+      assert_equal 12,
+                   vector.dig(
+                     :reranking_configuration,
+                     :bedrock_reranking_configuration,
+                     :number_of_reranked_results
+                   )
+    end
+  end
+
+  test 'does not pay for reranking on focused queries' do
+    with_env_vars('BEDROCK_RERANKER_ENABLED' => 'true') do
+      service = BedrockRagService.new
+      config = service.build_complete_optimized_config(
+        question: "Como pruebo el freno?",
+        entity_sources: [ "document" ]
+      )
+      vector = config.dig(:retrieval_configuration, :vector_search_configuration)
+
+      assert_equal 3, vector[:number_of_results]
+      assert_nil vector[:reranking_configuration]
+    end
+  end
+
   test 'works with tenant nil (single-tenant)' do
     with_mock_bedrock_client do
       service = BedrockRagService.new(tenant: nil)
@@ -481,8 +521,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :text_prompt_template
       )
       assert_includes template, '# DELIVERY CHANNEL'
-      assert_includes template, 'web chat interface'
-      assert_includes template, '**double asterisk**'
+      assert_includes template, 'technician using web chat'
+      assert_includes template, 'under 300 words'
       assert_not_includes template, 'sent via WhatsApp'
     end
   end
@@ -629,6 +669,50 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'query appends photo label safety override for photo-only pins' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query(
+        'Que componentes aparecen?',
+        entity_s3_uris: [ 's3://bucket/photo.jpg' ],
+        entity_sources: [ 'image_upload' ],
+        output_channel: :web,
+        force_entity_filter: true
+      )
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, "PHOTO LABEL SAFETY OVERRIDE"
+      assert_includes template, "Do not group labels under inferred categories"
+      assert_includes template, "Safe form: `<LABEL>: identificador visible"
+      assert template.index("# DELIVERY CHANNEL") < template.index("PHOTO LABEL SAFETY OVERRIDE")
+    end
+  end
+
+  test 'query appends stop-work evidence override only for stop-work intent' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new
+      service.query('Cuando debo detener el trabajo?')
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+      assert_includes template, "STOP-WORK EVIDENCE OVERRIDE"
+      assert_includes template, "Precauciones e inspecciones"
+      assert_includes template, "Detención obligatoria con evidencia explícita"
+      assert_match(/Prior conversation context never promotes a precaution/, template)
+    end
+  end
+
   test 'query retries without filter when filtered result returns no results' do
     call_count = 0
     no_results_text = "I'm sorry, I couldn't find relevant information."
@@ -653,6 +737,34 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 2, call_count, "Expected 2 calls: one with filter, one without"
       assert_equal real_answer, result[:answer]
+    end
+  end
+
+  test 'forced pinned query never retries globally when filtered result has no evidence' do
+    call_count = 0
+    no_results_text = "I'm sorry, I couldn't find relevant information."
+
+    with_mock_bedrock_client do |client|
+      client.define_singleton_method(:retrieve_and_generate) do |_params|
+        call_count += 1
+        ::OpenStruct.new(
+          output: ::OpenStruct.new(text: no_results_text),
+          citations: [],
+          session_id: "sid"
+        )
+      end
+
+      service = BedrockRagService.new
+      result = service.query(
+        "dame el procedimiento inexistente",
+        entity_s3_uris: [ "s3://bucket/manual.pdf" ],
+        force_entity_filter: true,
+        response_locale: :es
+      )
+
+      assert_equal 1, call_count
+      assert_includes result[:answer], "DATA_NOT_AVAILABLE"
+      assert_includes result[:answer], "documentos pineados"
     end
   end
 
@@ -792,11 +904,103 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
   end
 
-  test 'web_delivery_channel_directive includes CITATIONS BEYOND USER SELECTION section' do
+  test 'web_delivery_channel_directive favors concise field answers' do
     svc = BedrockRagService.allocate
     out = svc.send(:web_delivery_channel_directive)
-    assert_match(/CITATIONS BEYOND USER SELECTION/, out)
-    assert_match(/Manual Orona 3G/, out)
-    assert_match(/extiende lo que ten/, out)
+    assert_match(/under 300 words/, out)
+    assert_match(/Do not repeat the conclusion/, out)
+    assert_match(/preserve every retrieved fact/, out)
+  end
+
+  test 'exhaustive queries override the web answer length target' do
+    svc = BedrockRagService.allocate
+    out = svc.send(
+      :load_generation_prompt_with_locale,
+      'Enumera todas las pruebas de funcionamiento antes de operar',
+      response_locale: :es,
+      output_channel: :web
+    )
+
+    assert_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
+    assert_match(/the 300-word target\s+does not apply/, out)
+    assert_match(/final entry count must equal the ledger count/, out)
+    assert_match(/Associate each result only with the numbered action/, out)
+    assert_match(/keep left\/right, forward\/reverse/, out)
+    assert_match(/ground\/platform controls as\s+separate entries/, out)
+    assert_match(/Begin immediately with the first\s+`Prueba:` line/, out)
+    assert_includes out, 'Do not name or invent a counterpart'
+    assert_not_includes out, '# DELIVERY CHANNEL'
+    assert out.index('# FINAL LANGUAGE REMINDER') < out.index('# EXHAUSTIVE COMPLETENESS OVERRIDE')
+  end
+
+  test 'focused queries do not receive the exhaustive completeness override' do
+    svc = BedrockRagService.allocate
+    out = svc.send(
+      :load_generation_prompt_with_locale,
+      '¿Cómo pruebo el freno?',
+      response_locale: :es,
+      output_channel: :web
+    )
+
+    assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
+  end
+
+  test 'query returns the resolved scope and filter actually applied' do
+    with_mock_bedrock_client do
+      result = BedrockRagService.new.query(
+        '¿Cómo pruebo el freno?',
+        entity_s3_uris: [ 's3://bucket/manual.pdf' ],
+        entity_sources: [ 'document' ],
+        force_entity_filter: true
+      )
+      trace = result[:retrieval_trace]
+
+      assert_equal [ 's3://bucket/manual.pdf' ], trace[:resolved_scope_s3_uris]
+      assert_equal [ 's3://bucket/manual.pdf' ], trace[:applied_filter_s3_uris]
+      assert_equal true, trace[:force_entity_filter]
+      assert_equal 3, trace.dig(:vector_search_configuration, 'number_of_results')
+      assert_match(/\A[0-9a-f]{64}\z/, trace[:vector_search_configuration_sha256])
+    end
+  end
+
+  test 'retrieve preflight shares the production vector configuration builder' do
+    with_mock_bedrock_client do |client|
+      client.retrieve_response = ::OpenStruct.new(
+        retrieval_results: [
+          ::OpenStruct.new(
+            content: ::OpenStruct.new(text: 'Prueba documentada'),
+            score: 0.9,
+            metadata: { 'original_source_uri' => 's3://bucket/manual.pdf' },
+            location: ::OpenStruct.new(
+              s3_location: ::OpenStruct.new(uri: 's3://bucket/chunks/manual-1.txt')
+            )
+          )
+        ]
+      )
+      service = BedrockRagService.new
+      result = service.retrieve_chunks(
+        'Enumera todas las pruebas de funcionamiento',
+        entity_s3_uris: [ 's3://bucket/manual.pdf' ],
+        entity_sources: [ 'document' ],
+        force_entity_filter: true,
+        number_of_results: 15
+      )
+      applied = client.last_retrieve_params.dig(
+        :retrieval_configuration,
+        :vector_search_configuration
+      )
+      production = service.build_vector_search_configuration(
+        question: 'Enumera todas las pruebas de funcionamiento',
+        entity_s3_uris: [ 's3://bucket/manual.pdf' ],
+        entity_sources: [ 'document' ],
+        number_of_results: 15
+      )
+
+      assert_equal production, applied
+      assert_equal applied.deep_stringify_keys,
+                   result.dig(:retrieval_trace, :vector_search_configuration)
+      assert_equal Digest::SHA256.hexdigest('Prueba documentada'),
+                   result.dig(:chunks, 0, :chunk_sha256)
+    end
   end
 end

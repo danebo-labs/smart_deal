@@ -1,0 +1,25 @@
+{
+  "version": "2026-06-10-v2",
+  "objects": {
+    "manual": {
+      "s3_key": "uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf",
+      "sha256": "852f508da648aa7f06dcbaeb49a28ab714ae361d1591f9b4dadb3dd36652c064"
+    },
+    "image": {
+      "s3_key": "uploads/2026-06-10/pagina_16_esquema_hidraulico.png",
+      "sha256": "b9293866d4aa0b947b2c4aed5760963cbb9d3d351d44b57cc78dc04357bde3c5"
+    }
+  },
+  "retired_cohorts": {
+    "2026-06-10-v1": {
+      "manual": {
+        "s3_key": "uploads/2026-06-09/danebo_fidelity_v2_22_paginas.pdf",
+        "sha256": "987ab3889ddfa44da8392258ddaeb71cf2da228acb324d2a9dceae9c4c8f5fc5"
+      },
+      "image": {
+        "s3_key": "uploads/2026-06-09/IMG_20260609_121243.jpg",
+        "sha256": "0eb045080c60f14697e383cbcdd56fbfa62b1931de7190826cb7b34e8c0d4eb7"
+      }
+    }
+  }
+}

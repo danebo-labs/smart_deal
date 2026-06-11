@@ -23,9 +23,15 @@ class BulkUploadAsset < ApplicationRecord
     ([ custom_id ] + Array(batch_custom_ids)).uniq
   end
 
-  # SHA-256 of raw binary truncated to 32 hex chars — stable cross-upload idempotency key.
-  def self.custom_id_for(binary)
-    Digest::SHA256.hexdigest(binary)[0..31]
+  # Contract-versioned idempotency key: same bytes under a NEW ingestion contract
+  # must produce a new asset row (and re-parse) instead of colliding with — or
+  # dedup-hitting — chunks produced under an older contract.
+  def self.custom_id_for(binary, contract_version:)
+    custom_id_for_sha(Digest::SHA256.hexdigest(binary), contract_version: contract_version)
+  end
+
+  def self.custom_id_for_sha(sha256, contract_version:)
+    Digest::SHA256.hexdigest("#{sha256}:#{contract_version}")[0..31]
   end
 
   def display_name

@@ -22,6 +22,7 @@ class FieldPhotoResultsParserTest < ActiveSupport::TestCase
     assert_equal "Parece el motor del operador de puerta de un Schindler.", envelope["summary"]
     assert_equal 1, envelope["chunks"].size
     assert_equal 1, envelope["chunks"].first["page"]
+    assert_equal %w[HPM-400 orona hydraulic], envelope["chunks"].first["aliases"]
   end
 
   test "chunk body includes identification fields" do
@@ -31,9 +32,62 @@ class FieldPhotoResultsParserTest < ActiveSupport::TestCase
     assert_includes body, "Component: Door Operator Motor"
     assert_includes body, "Manufacturer: Schindler"
     assert_includes body, "Model: 5500"
-    assert_includes body, "Subsystem: DOOR_OPERATOR"
+    assert_not_includes body, "Subsystem:"
     assert_includes body, "Condition: GOOD"
+    assert_includes body, "Visible labels: HPM-400, orona, hydraulic"
+    assert_includes body, "Technical evidence: DATA_NOT_AVAILABLE beyond visible identification."
     assert_includes body, "Notes: Manufacturer visible on label."
+  end
+
+  test "preserves explicit technical evidence from a photographed diagram" do
+    payload = BENCHMARK_JSON.merge(
+      "visible_text" => [ "P41 TEST PORT", "24 VDC" ],
+      "documented_functions" => [
+        {
+          "label" => "P41",
+          "function" => "Pressure test port",
+          "evidence" => "Legend: P41 TEST PORT"
+        }
+      ],
+      "documented_connections" => [
+        {
+          "from" => "P41",
+          "to" => "RV1",
+          "evidence" => "Continuous visible line between P41 and RV1"
+        }
+      ],
+      "documented_values" => [
+        {
+          "label" => "X1",
+          "value" => "24",
+          "unit" => "VDC",
+          "evidence" => "Printed text: X1 24 VDC"
+        }
+      ],
+      "documented_warnings" => [ "Disconnect power before service" ]
+    )
+
+    body = FieldPhotoResultsParser.to_envelope(payload.to_json)["chunks"].first["text"]
+
+    assert_includes body, "Visible text:\n- P41 TEST PORT\n- 24 VDC"
+    assert_includes body, "P41: Pressure test port | Evidence: Legend: P41 TEST PORT"
+    assert_includes body, "P41 -> RV1 | Evidence: Continuous visible line between P41 and RV1"
+    assert_includes body, "X1: 24 VDC | Evidence: Printed text: X1 24 VDC"
+    assert_includes body, "Documented warnings:\n- Disconnect power before service"
+    assert_not_includes body, "Technical evidence: DATA_NOT_AVAILABLE"
+  end
+
+  test "ignores malformed structured evidence entries" do
+    payload = BENCHMARK_JSON.merge(
+      "documented_functions" => [ "not a hash", nil ],
+      "documented_connections" => [ 123 ],
+      "documented_values" => [ [] ]
+    )
+
+    body = FieldPhotoResultsParser.to_envelope(payload.to_json)["chunks"].first["text"]
+
+    assert_includes body, "Technical evidence: DATA_NOT_AVAILABLE beyond visible identification."
+    assert_not_includes body, "Documented functions:"
   end
 
   test "missing canonical_component falls back to i18n unknown_component (en)" do

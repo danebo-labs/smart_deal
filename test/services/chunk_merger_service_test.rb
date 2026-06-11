@@ -55,10 +55,64 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_equal DOC_NAME, parsed["document_name"]
   end
 
-  test "aliases are union of all pages with duplicates removed" do
+  test "document aliases are union of all pages with duplicates removed" do
     parsed = JSON.parse(ChunkMergerService.merge(page_results))
     combined = (ALIASES1 + ALIASES2).uniq
     assert_equal combined.sort, parsed["aliases"].sort
+  end
+
+  test "chunks keep aliases from their own page" do
+    parsed = JSON.parse(ChunkMergerService.merge(page_results))
+
+    assert_equal ALIASES1, parsed["chunks"][0]["aliases"]
+    assert_equal ALIASES1, parsed["chunks"][1]["aliases"]
+    assert_equal ALIASES2, parsed["chunks"][2]["aliases"]
+  end
+
+  test "explicit chunk aliases override page aliases" do
+    page = JSON.parse(page1_json)
+    page["chunks"][0]["aliases"] = [ "P41", "hydraulic label" ]
+    results = [ { page_number: 1, text: page.to_json, usage: nil, model: "claude-sonnet-4-6" } ]
+
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+
+    assert_equal [ "P41", "hydraulic label" ], parsed["chunks"][0]["aliases"]
+    assert_equal ALIASES1, parsed["chunks"][1]["aliases"]
+  end
+
+  test "preserves field records on their original chunk" do
+    page = JSON.parse(page1_json)
+    record = {
+      "source_section_or_page" => "Section 2.4",
+      "record_type" => "FUNCTIONAL_TEST",
+      "action" => "Press the horn button.",
+      "expected_result" => "The horn sounds."
+    }
+    page["chunks"][1]["field_records"] = [ record ]
+    results = [ { page_number: 1, text: page.to_json, usage: nil, model: "claude-sonnet-4-6" } ]
+
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+
+    assert_nil parsed["chunks"][0]["field_records"]
+    assert_equal [ record ], parsed["chunks"][1]["field_records"]
+  end
+
+  test "caps document aliases at 15 and chunk aliases at 8" do
+    aliases = 20.times.map { |index| "alias #{index}" }
+    page = {
+      "document_name" => DOC_NAME,
+      "aliases" => aliases,
+      "chunks" => [ { "text" => "content", "page" => 1, "aliases" => aliases } ]
+    }
+
+    parsed = JSON.parse(
+      ChunkMergerService.merge([
+        { page_number: 1, text: page.to_json, usage: nil, model: "claude-sonnet-4-6" }
+      ])
+    )
+
+    assert_equal 15, parsed["aliases"].size
+    assert_equal 8, parsed["chunks"].first["aliases"].size
   end
 
   test "chunks from all pages are concatenated in page order" do

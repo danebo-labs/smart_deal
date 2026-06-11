@@ -154,7 +154,7 @@ Models (`BatchChunkingPrompt`):
 
 | File type | Filter | Parse model | Prompt | API mode (chat) | API mode (bulk) |
 |-----------|--------|-------------|--------|-----------------|-----------------|
-| **Field photo** | `FieldPhotoDensityGate` (size ≥1.5 MB → Opus) | Sonnet (default) or Opus | `FieldPhotoPrompt` (Sonnet) / `BatchChunkingPrompt` (Opus) | Sync | Batch |
+| **Field photo** | `FieldPhotoDensityGate` (size ≥1.5 MB → Opus) | Sonnet (default) or Opus | `FieldPhotoPrompt` compact explicit-evidence schema (Sonnet) / `BatchChunkingPrompt` (Opus) | Sync | Batch |
 | **Text file** | — | Sonnet | `BatchChunkingPrompt` | Sync | — |
 | **PDF, any page count** | `filter_pages` → Haiku batch for ≥2 pages | Sonnet per kept page; Opus if `force_opus` | `BatchChunkingPrompt` | Sync | Batch per kept page |
 | **Office** | Convert → same as PDF | Same as PDF | Same | Sync (handle_office converts) | Batch (after convert in ZIP extract) |
@@ -248,3 +248,29 @@ Example `user_query` labels:
 | Merge multi-page | `ChunkMergerService`, `BatchResultsParserService` |
 | KB sync | `BulkKbSyncService`, `BedrockIngestionJob` |
 | Dedup | `ContentDedupService` |
+
+## Retrieval-oriented chunk identity
+
+Ingestion produces two alias levels:
+
+- **Document aliases:** identify the complete source; deduplicated and capped at 15.
+- **Chunk aliases:** identify only the current page/section; capped at 8 and written
+  into that chunk's `SEARCH_ALIASES` header.
+
+Chunk aliases prevent a code found on one page from being copied into every chunk
+of the manual. Exact identifiers such as `P41` remain available to HYBRID search
+without adding unrelated aliases to generation context.
+
+Manual parsing can also emit structured `field_records` for atomic inspections,
+tests, expected results, stop-work pairs, repair authority, and documented
+schematic labels. `BatchResultsParserService` renders those records into canonical
+`FIELD_RECORD` blocks with deterministic IDs inside the same semantic chunk.
+This improves lexical and semantic retrieval without depending on Sonnet/Opus
+Markdown formatting. The Claude response uses five required short keys and omits
+absent optional fields; Rails expands them after validation to control output-token
+cost. Existing KB chunks gain these records only after reingestion.
+
+For field photos, the compact chunk may include `Visible text`, `Documented
+functions`, `Documented connections`, `Documented values`, and `Documented
+warnings`, but only when the image explicitly supports them. Conventional
+schematic symbols or acronym meanings are not evidence.

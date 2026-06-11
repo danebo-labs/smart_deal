@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.tool_input.file_path // .tool_response.filePath' 2>/dev/null); if [ -n \"$FILE\" ]; then bash /Users/lahirisan/smart_deal/.claude/detect-context.sh \"$FILE\"; fi",
+            "async": true,
+            "statusMessage": "Detecting context-specific rules..."
+          }
+        ]
+      }
+    ]
+  }
+}

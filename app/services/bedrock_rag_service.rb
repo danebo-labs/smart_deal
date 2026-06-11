@@ -4,6 +4,7 @@
 
 require 'aws-sdk-bedrockagentruntime'
 require 'aws-sdk-core/static_token_provider'
+require 'digest'
 require 'json'
 require_relative 'bedrock/citation_processor'
 
@@ -24,7 +25,7 @@ class BedrockRagService
   DEFAULT_RAG_CONFIG = {
     number_of_results: 10,
     search_type: "HYBRID",
-    generation_temperature: 0.3,
+    generation_temperature: 0.1,
     generation_max_tokens: 3000
   }.freeze
 
@@ -36,38 +37,12 @@ class BedrockRagService
   # @param entity_sources [Array<String>] Source types of pinned entities ("image_upload"|"document"); used by RagRetrievalProfile
   def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [], entity_sources: [], output_channel: nil)
     cfg = @rag_config
-    profile = RagRetrievalProfile.new(entity_sources: entity_sources)
-
-    vector_config = {
-      number_of_results: profile.number_of_results,
-      override_search_type: cfg[:search_type],
-      **reranking_config(region)
-    }
-
-    # Narrow retrieval to session-active documents when URIs are known.
-    # Reduces cross-document pollution for short/ambiguous follow-up queries.
-    #
-    # Each pinned URI matches against TWO metadata keys (OR):
-    #   - x-amz-bedrock-kb-source-uri  — Bedrock-injected, points at the file
-    #     ingested into the KB. For the legacy data source (Bedrock-FM parser +
-    #     POST_CHUNKING Lambda) this IS the original asset URI.
-    #   - original_source_uri          — customMetadata sidecar value written by
-    #     BatchResultsParserService. For the batch data source the chunk file is
-    #     `bulk_chunks/.../chunk_N.txt`, so x-amz-bedrock-kb-source-uri is NOT the
-    #     original asset; original_source_uri IS.
-    #
-    # OR-ing both keys lets pin-based filtering work uniformly across both
-    # ingestion paths without breaking existing chunks.
-    if entity_s3_uris.size >= 1
-      filters = entity_s3_uris.flat_map do |uri|
-        [
-          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } },
-          { equals: { key: "original_source_uri",        value: uri } }
-        ]
-      end
-      # AWS requires orAll to have >= 2 members; we always have >= 2 (one per key).
-      vector_config[:filter] = { or_all: filters }
-    end
+    vector_config = build_vector_search_configuration(
+      region: region,
+      question: question,
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_sources
+    )
 
     {
       # ===== RETRIEVAL CONFIGURATION =====
@@ -107,6 +82,30 @@ class BedrockRagService
       }
 
     }
+  end
+
+  def build_vector_search_configuration(region: @region, question: nil, entity_s3_uris: [],
+                                        entity_sources: [], number_of_results: nil,
+                                        reranking: true)
+    profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
+    vector_config = {
+      number_of_results: number_of_results || profile.number_of_results,
+      override_search_type: @rag_config[:search_type],
+      **(reranking ? reranking_config(region, profile: profile) : {})
+    }
+
+    uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
+    if uris.any?
+      filters = uris.flat_map do |uri|
+        [
+          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } },
+          { equals: { key: "original_source_uri", value: uri } }
+        ]
+      end
+      vector_config[:filter] = { or_all: filters }
+    end
+
+    vector_config
   end
 
   # @param knowledge_base_id [String, nil] Override KB ID (takes precedence)
@@ -155,14 +154,19 @@ class BedrockRagService
       # different document.
       apply_filter = entity_s3_uris.any? && (force_entity_filter || !query_names_different_document?(question, entity_s3_uris))
       filtered_uris = apply_filter ? entity_s3_uris : []
+      effective_session_context = session_context_with_entity_safety(
+        session_context,
+        entity_sources: entity_sources
+      )
 
       if entity_s3_uris.any?
         Rails.logger.info("BedrockRagService: entity_filter=#{apply_filter} uris=#{filtered_uris.size} forced=#{force_entity_filter}")
       end
 
       # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
+      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
       config = deep_merge_configs(base_config, custom_config)
+      applied_filter_uris = filtered_uris
 
       params = {
         input: { text: question },
@@ -184,9 +188,9 @@ class BedrockRagService
       response = retrieve_and_generate_with_retry(params)
 
       # Fallback: if filter produced no results, retry without filter.
-      if apply_filter && bedrock_no_results?(response.output.text)
+      if apply_filter && !force_entity_filter && bedrock_no_results?(response.output.text)
         Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter")
-        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: session_context, entity_s3_uris: [], entity_sources: entity_sources, output_channel: output_channel)
+        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: [], entity_sources: entity_sources, output_channel: output_channel)
         unfiltered_params = params.merge(
           retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
             knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
@@ -194,6 +198,12 @@ class BedrockRagService
             )
           )
         )
+        params = unfiltered_params
+        config = params.dig(
+          :retrieve_and_generate_configuration,
+          :knowledge_base_configuration
+        ).except(:knowledge_base_id, :model_arn)
+        applied_filter_uris = []
         response = retrieve_and_generate_with_retry(unfiltered_params)
       end
 
@@ -208,7 +218,14 @@ class BedrockRagService
       raw_answer = response.output.text
       # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
       no_results_locale = effective_response_locale(question, response_locale: response_locale)
-      answer_text = bedrock_no_results?(raw_answer) ? localized_no_results(no_results_locale) : raw_answer
+      answer_text =
+        if bedrock_no_results?(raw_answer) && apply_filter && force_entity_filter
+          localized_pinned_no_results(no_results_locale)
+        elsif bedrock_no_results?(raw_answer)
+          localized_no_results(no_results_locale)
+        else
+          raw_answer
+        end
       # stop_sequences ["</DOC_REFS>"] causes the model to stop before emitting the closing tag.
       # Re-append it so DOC_REFS_PATTERN can match.
       answer_text = normalize_doc_refs_tag(answer_text)
@@ -253,7 +270,7 @@ class BedrockRagService
       full_prompt = [
         load_generation_prompt_with_locale(question,
                                            response_locale: response_locale,
-                                           session_context: session_context,
+                                           session_context: effective_session_context,
                                            output_channel: output_channel),
         chunks_text,
         question
@@ -262,11 +279,22 @@ class BedrockRagService
       TrackBedrockQueryJob.perform_later(
         model_id:           tracked_model_id,
         prompt_text:        full_prompt,
-        answer_text:        answer_text,
+        answer_text:        raw_answer,
+        visible_answer_text: answer_text,
         user_query:         question,
         latency_ms:         latency_ms,
         source:             "query",
-        model_for_counting: "haiku"
+        model_for_counting: "haiku",
+        regression_context: regression_context(
+          config: config,
+          observed_chunks: retrieved_for_extraction,
+          observed_chunk_basis: citations.any? ? "bedrock_citations" : (doc_refs&.any? ? "fallback_retrieve_top3" : "none"),
+          bedrock_cited_references_count: total_refs,
+          doc_refs_present: raw_answer.include?("<DOC_REFS>"),
+          doc_refs_valid: doc_refs.present?,
+          doc_refs_count: doc_refs&.size.to_i,
+          entity_filter_applied: apply_filter
+        )
       )
       Rails.logger.info("✓ BedrockQuery tracking enqueued (token counting deferred to job)")
 
@@ -291,7 +319,16 @@ class BedrockRagService
         # chunks that were cited but happened to not get an explicit [n] marker.
         retrieved_citations: retrieved_for_extraction,
         doc_refs:            doc_refs,
-        session_id:          session_id
+        session_id:          session_id,
+        retrieval_trace: retrieval_trace(
+          resolved_scope_s3_uris: entity_s3_uris,
+          applied_filter_s3_uris: applied_filter_uris,
+          force_entity_filter: force_entity_filter,
+          vector_search_configuration: config.dig(
+            :retrieval_configuration,
+            :vector_search_configuration
+          )
+        )
       }
     rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
       Rails.logger.error("Bedrock RAG error: #{e.message}")
@@ -300,7 +337,134 @@ class BedrockRagService
     end
   end
 
+  def retrieve_chunks(question, entity_s3_uris: [], entity_sources: [],
+                      force_entity_filter: false, number_of_results: nil)
+    unless @knowledge_base_id
+      raise MissingKnowledgeBaseError, "Knowledge Base ID not configured"
+    end
+
+    resolved_uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
+    apply_filter = resolved_uris.any? &&
+      (force_entity_filter || !query_names_different_document?(question, resolved_uris))
+    applied_uris = apply_filter ? resolved_uris : []
+    vector_config = build_vector_search_configuration(
+      region: @region,
+      question: question,
+      entity_s3_uris: applied_uris,
+      entity_sources: entity_sources,
+      number_of_results: number_of_results
+    )
+    response = retrieve_with_retry(
+      knowledge_base_id: @knowledge_base_id,
+      retrieval_query: { text: question },
+      retrieval_configuration: { vector_search_configuration: vector_config }
+    )
+
+    chunks = Array(response.retrieval_results).each_with_index.map do |result, index|
+      metadata = result.metadata.to_h
+      source_uri = result.location&.s3_location&.uri
+      content = result.content&.text.to_s
+
+      {
+        rank: index + 1,
+        content: content,
+        score: result.score,
+        original_source_uri: metadata["original_source_uri"] || metadata[:original_source_uri],
+        bedrock_source_uri: metadata["x-amz-bedrock-kb-source-uri"] ||
+          metadata[:"x-amz-bedrock-kb-source-uri"],
+        location_uri: source_uri,
+        metadata: metadata,
+        chunk_sha256: Digest::SHA256.hexdigest(content)
+      }
+    end
+
+    {
+      chunks: chunks,
+      retrieval_trace: retrieval_trace(
+        resolved_scope_s3_uris: resolved_uris,
+        applied_filter_s3_uris: applied_uris,
+        force_entity_filter: force_entity_filter,
+        vector_search_configuration: vector_config
+      )
+    }
+  rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
+    raise BedrockServiceError, "Failed to retrieve Knowledge Base chunks: #{e.message}"
+  end
+
   private
+
+  def retrieval_trace(resolved_scope_s3_uris:, applied_filter_s3_uris:,
+                      force_entity_filter:, vector_search_configuration:)
+    vector_config = vector_search_configuration.to_h.deep_stringify_keys
+
+    {
+      resolved_scope_s3_uris: Array(resolved_scope_s3_uris).map(&:to_s).compact_blank.uniq.sort,
+      applied_filter_s3_uris: Array(applied_filter_s3_uris).map(&:to_s).compact_blank.uniq.sort,
+      force_entity_filter: force_entity_filter,
+      vector_search_configuration: vector_config,
+      vector_search_configuration_sha256: Digest::SHA256.hexdigest(
+        JSON.generate(deep_sort(vector_config))
+      )
+    }
+  end
+
+  def deep_sort(value)
+    case value
+    when Hash
+      value.keys.sort.index_with { |key| deep_sort(value[key]) }
+    when Array
+      value.map { |item| deep_sort(item) }
+    else
+      value
+    end
+  end
+
+  # Bedrock retrieve_and_generate does not expose every top-N chunk in its response.
+  # This telemetry records only chunks observable through citations or the explicit
+  # Retrieve fallback, so regression analysis does not mistake them for the full set.
+  def regression_context(config:, observed_chunks:, observed_chunk_basis:,
+                         bedrock_cited_references_count:, doc_refs_present:,
+                         doc_refs_valid:, doc_refs_count:, entity_filter_applied:)
+    inference = config.dig(
+      :generation_configuration,
+      :inference_config,
+      :text_inference_config
+    ) || {}
+    retrieval = config.dig(
+      :retrieval_configuration,
+      :vector_search_configuration
+    ) || {}
+    descriptors = Array(observed_chunks).map { |chunk| observed_chunk_descriptor(chunk) }
+
+    {
+      "configured_max_tokens" => inference[:max_tokens],
+      "temperature" => inference[:temperature],
+      "requested_result_count" => retrieval[:number_of_results],
+      "input_token_basis" => "prompt_template_plus_observed_chunks",
+      "observed_chunk_basis" => observed_chunk_basis,
+      "observed_chunk_count" => descriptors.size,
+      "observed_chunks" => descriptors,
+      "bedrock_cited_references_count" => bedrock_cited_references_count,
+      "doc_refs_present" => doc_refs_present,
+      "doc_refs_valid" => doc_refs_valid,
+      "doc_refs_count" => doc_refs_count,
+      "entity_filter_applied" => entity_filter_applied
+    }
+  end
+
+  def observed_chunk_descriptor(chunk)
+    metadata = (chunk[:metadata] || chunk["metadata"] || {}).to_h
+    location = (chunk[:location] || chunk["location"] || {}).to_h
+
+    {
+      "canonical_name" => metadata["canonical_name"] || metadata[:canonical_name],
+      "doc_sha256" => metadata["doc_sha256"] || metadata[:doc_sha256],
+      "ingestion_path" => metadata["ingestion_path"] || metadata[:ingestion_path],
+      "original_source_uri" => metadata["original_source_uri"] || metadata[:original_source_uri],
+      "retrieved_source_uri" => location[:uri] || location["uri"] ||
+        metadata["x-amz-bedrock-kb-source-uri"] || metadata[:"x-amz-bedrock-kb-source-uri"]
+    }.compact
+  end
 
   # Fallback when retrieve_and_generate returns no inline citations: call the
   # Retrieve API directly to obtain the raw retrieval results. These ALWAYS
@@ -314,20 +478,12 @@ class BedrockRagService
   #
   # Output shape matches CitationProcessor#extract_citations for drop-in use.
   def fallback_retrieve(question, entity_s3_uris: [])
-    vector_cfg = {
+    vector_cfg = build_vector_search_configuration(
+      question: question,
+      entity_s3_uris: entity_s3_uris,
       number_of_results: 3,
-      override_search_type: @rag_config[:search_type] || "HYBRID"
-    }
-
-    if entity_s3_uris.size >= 1
-      filters = entity_s3_uris.flat_map do |uri|
-        [
-          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } },
-          { equals: { key: "original_source_uri",        value: uri } }
-        ]
-      end
-      vector_cfg[:filter] = { or_all: filters }
-    end
+      reranking: false
+    )
 
     params = {
       knowledge_base_id: @knowledge_base_id,
@@ -361,16 +517,25 @@ class BedrockRagService
     end
   end
 
-  # Returns reranking_configuration hash when BEDROCK_RERANKER_ENABLED=true,
-  # otherwise returns an empty hash (no reranking step — safest default).
-  # Reranking uses Cohere Rerank v3.5 when enabled.
-  def reranking_config(region)
+  def retrieve_with_retry(params)
+    Bedrock::AuroraColdStartRetry.with_retry(
+      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
+    ) do
+      @client.retrieve(params)
+    end
+  end
+
+  # Exhaustive queries retrieve broadly, then rerank down before generation.
+  # Focused queries skip reranking to avoid an unnecessary paid model call.
+  def reranking_config(region, profile:)
     return {} unless ENV['BEDROCK_RERANKER_ENABLED'].to_s.downcase == 'true'
+    return {} unless profile.exhaustive_query?
 
     {
       reranking_configuration: {
         type: "BEDROCK_RERANKING_MODEL",
         bedrock_reranking_configuration: {
+          number_of_reranked_results: profile.number_of_reranked_results,
           model_configuration: {
             model_arn: "arn:aws:bedrock:#{region}::foundation-model/cohere.rerank-v3-5:0"
           }
@@ -432,13 +597,52 @@ class BedrockRagService
       I18n.locale
     end
     lang_name = locale_to_language_name(locale)
+    safety_directive = query_safety_directive(question)
+    completeness_directive = query_completeness_directive(question)
+    visual_directive = visual_label_directive(question)
 
     base = "#{language_directive_header(lang_name)}\n\n#{base}" if lang_name.present?
 
+    if output_channel&.to_sym == :web && completeness_directive.blank?
+      base = "#{base}\n\n#{web_delivery_channel_directive}"
+    end
     base = "#{base}\n\n#{session_context}" if session_context.present?
     base = "#{base}\n\n#{language_directive_footer(lang_name)}" if lang_name.present?
-    base = "#{base}\n\n#{web_delivery_channel_directive}" if output_channel&.to_sym == :web
+    base = "#{base}\n\n#{safety_directive}" if safety_directive.present?
+    base = "#{base}\n\n#{completeness_directive}" if completeness_directive.present?
+    base = "#{base}\n\n#{visual_directive}" if visual_directive.present?
     base
+  end
+
+  # Question-triggered counterpart of the photo-only override: fires whenever
+  # the question asks for functions/identification of schematic/diagram labels,
+  # regardless of the pinned scope (a schematic page inside a pinned manual
+  # carries the same inference risk as a pinned photo).
+  def visual_label_directive(question)
+    text = question.to_s
+    return nil unless text.match?(/esquema|diagrama|plano|etiqueta|schematic|diagram|label/i) &&
+                      text.match?(/funci[oó]n|identifica|componentes|qu[eé] es/i)
+
+    literal_label_rules
+  end
+
+  def literal_label_rules
+    <<~DIRECTIVE.strip
+      # LITERAL LABEL RULES (schematic/diagram identifiers)
+      For any identifier whose function the retrieved evidence does not state in
+      printed words:
+      - Render each such identifier as EXACTLY ONE line in this safe form:
+        `<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`.
+        No multi-line entries, no location prose, no neighboring-symbol
+        descriptions — one line per identifier, nothing else about it.
+      - Acronym expansion (BRK→freno, P→presión, T→tanque, RV→alivio, ORF→orificio)
+        is forbidden. Never use the words puerto, válvula, solenoide, alivio,
+        retención, orificio, freno, presión, diodo for these identifiers — not as
+        descriptions, not as category headings, not for neighboring symbols.
+      - Output undocumented identifiers as ONE flat list without category headers.
+      - Locate identifiers with neutral position language only (bloque, línea,
+        zona, esquina) and call printed numbers "marcas numeradas visibles".
+    DIRECTIVE
   end
 
   # Appended only when delivering via web chat. Instructs the model to produce
@@ -447,27 +651,138 @@ class BedrockRagService
   def web_delivery_channel_directive
     <<~DIRECTIVE.strip
       # DELIVERY CHANNEL
-      This response will be rendered in a web chat interface (desktop or tablet, full screen width).
-      Follow ALL rules below:
+      Render concise Markdown for a technician using web chat.
+      - Start with one direct sentence. Do not restate the question.
+      - Keep focused answers under 300 words. Exhaustive checklists may be longer only
+        to preserve every retrieved fact and expected result.
+      - Use short paragraphs or numbered lists; no tables or horizontal rules.
+      - Use bold sparingly for critical values or warnings.
+      - Do not repeat the conclusion or recommend extra documents unless the selected
+        evidence is insufficient.
+      - Preserve relevant documented safety warnings without broadening them.
+    DIRECTIVE
+  end
 
-      ## FORMATTING
-      - Use **double asterisk** for bold on key technical terms, values, or critical warnings (max 3 per section).
-      - Use *single asterisk* for light emphasis on specific values or notes only when necessary.
-      - NEVER use ALL CAPS for section titles. Use a leading emoji + short label instead: "⚙️ Circuito de puertas"
-      - Use ## section headers ONLY if the response exceeds 300 words and has 3 or more clearly distinct sections.
-      - NEVER use --- as a visual divider. Separate sections with a single blank line.
-      - No markdown tables. Use the ① ② ③ labeled list format you already default to.
+  def session_context_with_entity_safety(session_context, entity_sources:)
+    sources = Array(entity_sources).compact
+    return session_context unless sources.any? && sources.all? { |source| source == "image_upload" }
 
-      ## TONE & STRUCTURE
-      - Start with a 2–3 sentence direct answer. Details and sections follow — never lead with them.
-      - Skip filler intro phrases: no "El documento consiste en...", no "Based on the retrieved chunks..."
-      - Field-mentor tone: cordial, direct, technically precise. Not academic, not bureaucratic.
-      - Safety warnings remain NON-NEGOTIABLE: include ALL ⚠️ and 🛑 blocks from the chunks regardless of length.
+    directive = <<~DIRECTIVE.strip
+      # PHOTO LABEL SAFETY OVERRIDE
+      The only selected evidence is a field-photo identity record. When it contains
+      `Visible labels:` and says no legend or functional description is available:
+      - Reproduce identifiers exactly as a flat list.
+      - State DATA_NOT_AVAILABLE for category, function, acronym expansion, value,
+        connection, translation, or procedure.
+      - Do not group labels under inferred categories and do not describe what their
+        prefixes, symbols, positions, or conventional names usually mean.
+      - NEVER organize undocumented identifiers under category headings such as
+        "Válvulas", "Diodos", "Puertos", "Orificios", "Relés", "Solenoides",
+        "Componentes de alivio" — output ONE flat list of identifiers. A category
+        heading over a label IS an inferred classification.
+      - When locating an undocumented label, use neutral position language only
+        (bloque, línea, zona, esquina). Do not name neighboring symbols by type
+        (símbolo de válvula/bomba/motor/diodo) and do not call printed numbers
+        "puertos" — refer to them as "marcas numeradas visibles".
+      - Words such as valve, relief, check, orifice, pressure, brake, port, solenoid,
+        válvula, alivio, retención, orificio, presión, freno and puerto are forbidden
+        classifications unless those exact meanings appear under `Documented functions`,
+        `Documented connections`, `Documented values`, or explicit visible text.
+      - Safe form: `<LABEL>: identificador visible; categoría y función:
+        DATA_NOT_AVAILABLE`.
+      This override applies even when the user asks which "components" appear.
+    DIRECTIVE
 
-      ## CITATIONS BEYOND USER SELECTION
-      If a "## Session Focus" block is present (the user has explicitly pinned documents) AND your answer references material from documents NOT listed there, call out those documents in **bold** with a brief, human note woven naturally into the prose.
-      Example: "También encontré información relevante en **Manual Orona 3G** que extiende lo que tenías seleccionado."
-      Do NOT list them as a separate section. Do NOT apologize. Just signal it cleanly so the technician knows the response went beyond their pinned set.
+    [ session_context.presence, directive ].compact.join("\n\n")
+  end
+
+  def query_safety_directive(question)
+    return nil unless question.to_s.match?(/\b(?:detener|detenga|parar|pare|stop|prohibir|fuera de servicio)\b/i)
+
+    <<~DIRECTIVE.strip
+      # STOP-WORK EVIDENCE OVERRIDE
+      Separate inspection precautions from mandatory stop-work actions.
+      - Use the exact text label `Precauciones e inspecciones` for findings,
+        operator conditions, and preventive checks that the retrieved evidence
+        does not explicitly pair with stopping, prohibiting operation, marking
+        the machine, or taking it out of service.
+      - Use the exact text label `Detención obligatoria con evidencia explícita`
+        only for triggers that the retrieved evidence explicitly pairs with one
+        of those mandatory actions.
+      - When both evidence classes exist, include both labeled sections.
+      - Inside `Detención obligatoria con evidencia explícita`, emit each item
+        using exactly two non-empty lines, followed by one blank line:
+        `Disparador: ...`
+        `Acción obligatoria: ...`
+      - Do not use bullets, sub-bullets, duplicated labels, multiline fields, or
+        mandatory trigger prose outside those two-line items.
+      - The trigger and its explicit mark/stop/prohibit/out-of-service action must
+        come from the same retrieved evidence fragment. Never transfer an action
+        from a neighboring sentence, another trigger, or prior conversation.
+      - If the same fragment does not contain the mandatory action, place the
+        finding under `Precauciones e inspecciones`.
+      - Prior conversation context never promotes a precaution, including
+        dizziness, unauthorized-person interference, leaks, missing labels, or
+        electrical/hydraulic findings into mandatory stop-work.
+      Do not invent stop-work rules or broaden the retrieved evidence.
+    DIRECTIVE
+  end
+
+  def query_completeness_directive(question)
+    profile = RagRetrievalProfile.new(question: question)
+    return nil unless profile.exhaustive_query?
+
+    <<~DIRECTIVE.strip
+      # EXHAUSTIVE COMPLETENESS OVERRIDE
+      The user requested a complete list.
+      - Use prior conversation only to resolve the referent. Never treat a partial
+        earlier list as coverage; rebuild the answer from the chunks retrieved for
+        this turn.
+      - Silently build a ledger of every explicit `Resultado` or `Resultado esperado`
+        statement in the retrieved functional-test blocks, keyed by its controller
+        or section heading. Drive entries from that result ledger, not from the list
+        of actions: the final entry count must equal the ledger count.
+      - Treat every separate source occurrence labeled `Resultado`, `Resultados`,
+        `Resultado esperado`, or `Resultados esperados` as an independent ledger
+        item. Do not deduplicate, merge, or suppress occurrences because their
+        wording or expected behavior resembles another test.
+      - Associate each result only with the numbered action that immediately governs
+        it under the same heading: a result line belongs to the nearest preceding
+        numbered action before the next numbered action. Preserve every result
+        clause in that entry. Preserve a following REQUIRES_FIELD_VERIFICATION note
+        in the same result instead of replacing it with a concrete observation.
+      - Keep preparation steps without an independent result inside the `Acción`
+        that enables the next verifiable result; never invent a result for
+        preparation. A reset, reactivation, setup, or cleanup step with no explicit
+        result is not an entry. Merge it into the next supported action when
+        relevant, otherwise omit it. Never borrow a result from a preceding or
+        following action, and never infer that a system is ready, normal, or
+        restored.
+      - Every entry must use exactly three non-empty lines, followed by one blank
+        line, with these exact labels:
+        `Prueba: ...`
+        `Acción: ...`
+        `Resultado esperado: ...`
+        The three lines must be consecutive, with no blank line between fields.
+        Put exactly one blank line only after `Resultado esperado`.
+      - For this exhaustive response, override the general instruction to start
+        with a direct sentence or numbered list. Begin immediately with the first
+        `Prueba:` line.
+      - The entire visible response must consist only of those entries. Do not use
+        a title, introduction, section header, bullets, separators, notes, warnings,
+        duplicated labels, multiline fields, conclusions, or test prose outside
+        entries.
+      - One entry may satisfy only one action-result unit. Do not combine multiple
+        documented results into a summary entry.
+      - Each `Prueba:` value must identify the source controller or section and the
+        distinguishing action so every entry remains independently traceable.
+      - Preserve documentary grouping and order. Never merge symmetric or opposite
+        units: keep left/right, forward/reverse, and ground/platform controls as
+        separate entries whenever the retrieved evidence documents both.
+      - Before answering, silently audit every retrieved heading and test, including
+        those symmetric pairs, against the entries you will emit.
+      - Do not omit retrieved units for brevity; the 300-word target does not apply.
+      - Do not name or invent a counterpart that is absent from the retrieved chunks.
     DIRECTIVE
   end
 
@@ -551,6 +866,10 @@ class BedrockRagService
 
   def localized_no_results(locale)
     I18n.with_locale(locale) { I18n.t("rag.no_results_found") }
+  end
+
+  def localized_pinned_no_results(locale)
+    I18n.with_locale(locale) { I18n.t("rag.pinned_no_results") }
   end
 
   # Reads `app/prompts/bedrock/generation.txt` once per process in production

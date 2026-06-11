@@ -10,6 +10,7 @@ en:
     upload_retrying_aurora: "Taking a bit longer than usual — still on your file, I'll be with you in a moment."
     image_indexing_stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     no_results_found: "No information was found in the Knowledge Base to answer your query. You can ask questions about the indexed documents, or upload a new document to expand the knowledge base."
+    pinned_no_results: "DATA_NOT_AVAILABLE: the pinned documents do not contain enough evidence to answer this query."
     image_compression_failed: "Image exceeds 3.75 MB limit. Compress or reduce size and try again."
     ingestion_failed_file_too_large: "A file exceeds the limit (images: 3.75 MB, documents: 50 MB). Reduce it and try again."
     ingestion_failed_format_not_supported: "Format not supported by Bedrock. Images: JPEG or PNG. Documents: .txt, .md, .html, .pdf, .doc, .docx, .csv, .xls, .xlsx."

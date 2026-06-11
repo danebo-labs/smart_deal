@@ -15,7 +15,9 @@ class TrackBedrockQueryJob < ApplicationJob
   # @param cache_read_tokens      [Integer, nil] Tokens served from prompt cache (cheaper rate)
   # @param cache_creation_tokens  [Integer, nil] Tokens written to prompt cache (slightly higher rate)
   # @param prompt_text            [String, nil]  Raw prompt; counted here when input_tokens is nil
-  # @param answer_text            [String, nil]  Raw answer; counted here when output_tokens is nil
+  # @param answer_text            [String, nil]  Raw billed answer; counted here when output_tokens is nil
+  # @param visible_answer_text    [String, nil]  Answer returned to the user after hidden metadata is removed
+  # @param regression_context     [Hash, nil]    RAG settings and observed chunk identity for regression analysis
   # @param user_query             [String]       Original user question (truncated to 500 chars)
   # @param latency_ms             [Integer]      End-to-end latency of the API call in ms
   # @param source                 [String]       "query" | "ingestion_parse" | "ingestion_embed"
@@ -23,7 +25,8 @@ class TrackBedrockQueryJob < ApplicationJob
   def perform(model_id:, user_query:, latency_ms:,
               input_tokens: nil, output_tokens: nil,
               cache_read_tokens: nil, cache_creation_tokens: nil,
-              prompt_text: nil, answer_text: nil,
+              prompt_text: nil, answer_text: nil, visible_answer_text: nil,
+              regression_context: nil,
               source: "query", model_for_counting: :haiku)
     if input_tokens.nil? || output_tokens.nil?
       usage = AnthropicTokenCounter.count_query(
@@ -35,7 +38,7 @@ class TrackBedrockQueryJob < ApplicationJob
       output_tokens ||= usage[:output_tokens]
     end
 
-    BedrockQuery.create!(
+    bedrock_query = BedrockQuery.create!(
       model_id:              model_id,
       input_tokens:          input_tokens,
       output_tokens:         output_tokens,
@@ -54,9 +57,59 @@ class TrackBedrockQueryJob < ApplicationJob
       "[TrackBedrockQueryJob] tracked #{input_tokens} in + #{output_tokens} out tokens " \
       "(#{latency_ms}ms, model: #{model_id})"
     )
+
+    log_regression_telemetry(
+      regression_context: regression_context,
+      raw_answer_text: answer_text,
+      visible_answer_text: visible_answer_text,
+      input_tokens: input_tokens,
+      output_tokens: output_tokens,
+      model_for_counting: model_for_counting,
+      bedrock_query_id: bedrock_query.id,
+      model_id: model_id,
+      latency_ms: latency_ms
+    )
   end
 
   private
+
+  def log_regression_telemetry(regression_context:, raw_answer_text:, visible_answer_text:,
+                               input_tokens:, output_tokens:, model_for_counting:,
+                               bedrock_query_id:, model_id:, latency_ms:)
+    return if regression_context.blank?
+
+    visible_tokens =
+      if visible_answer_text.nil?
+        nil
+      elsif visible_answer_text.to_s == raw_answer_text.to_s
+        output_tokens
+      else
+        AnthropicTokenCounter.count(
+          text: visible_answer_text.to_s,
+          model: model_for_counting.to_sym
+        )
+      end
+
+    payload = regression_context.to_h.deep_stringify_keys.merge(
+      "bedrock_query_id" => bedrock_query_id,
+      "model_id" => model_id,
+      "latency_ms" => latency_ms,
+      "input_tokens_estimate" => input_tokens,
+      "raw_output_tokens" => output_tokens,
+      "visible_output_tokens" => visible_tokens,
+      "hidden_output_tokens" => visible_tokens.nil? ? nil : [ output_tokens.to_i - visible_tokens.to_i, 0 ].max,
+      "raw_output_chars" => raw_answer_text.to_s.length,
+      "visible_output_chars" => visible_answer_text.to_s.length
+    )
+
+    max_tokens = payload["configured_max_tokens"].to_i
+    if max_tokens.positive?
+      payload["raw_output_utilization"] = (output_tokens.to_f / max_tokens).round(4)
+      payload["possible_truncation"] = output_tokens.to_i >= (max_tokens * 0.95).floor
+    end
+
+    Rails.logger.info("[RAG_REGRESSION] #{JSON.generate(payload)}")
+  end
 
   # Pushes Turbo Stream update to #chat-usage-metrics-container (home chat footer).
   # Subscribes via `turbo_stream_from "metrics"`.

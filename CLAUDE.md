@@ -53,7 +53,7 @@ Query orchestration
 
 RAG query cost optimization (2026-05-22)
 - **Inference profile:** `us.anthropic.claude-haiku-4-5-20251001-v1:0` — 20% cheaper than `global.`, same model, same quality. Set via `BEDROCK_MODEL_ID`.
-- **`RagRetrievalProfile`** (app/services/rag_retrieval_profile.rb): adaptive `number_of_results` from pin signal. Photos-only→10, docs-only→5, mixed→7, no-pin→8. Derived from `active_entities[*]["source"]` in `QueryOrchestratorService` — zero extra DB queries.
+- **`RagRetrievalProfile`** (app/services/rag_retrieval_profile.rb): adaptive `number_of_results` from pin signal and intent. Photos-only→10, docs/mixed focused→3, stop/failure/repair→5, no-pin→8, exhaustive checklist→15 candidates (optionally reranked to 12). Derived from the URI-aligned pinned entity subset in `QueryOrchestratorService` with zero extra DB queries.
 - **`stop_sequences: ["</DOC_REFS>"]`** in `textInferenceConfig`: cuts tail noise after the DOC_REFS block (~10–40 output tokens/query). `normalize_doc_refs_tag` re-appends the closing tag before `extract_doc_refs` so the regex always matches.
 - **`fallback_retrieve`** (PR3): fixed entity filter bug — now scopes to `filtered_uris` when available, N=3 (was N=10). Only used for source_uri resolution, not generation context.
 - **Language injection 3→2:** removed middle LANGUAGE & TONE bullet injection; kept TOP header + TAIL footer (~30–40 tokens/query saved).
@@ -68,7 +68,9 @@ Web upload ingestion (single path — no feature flags)
   Batch is reserved for `/bulk_uploads` backoffice/manual seeding.
 - **Per-file routing in `CustomChunkingPipeline`:**
   - **Images:** `SingleFileChunkingService` sync → `FieldPhotoDensityGate` (size ≥1.5 MB → Opus, else Sonnet;
-    zero LLM calls) → `FieldPhotoPrompt` → `FieldPhotoResultsParser` → ingestion_path="field_photo_v1".
+    zero LLM calls) → `FieldPhotoPrompt` compact explicit-evidence schema → `FieldPhotoResultsParser` →
+    ingestion_path="field_photo_v1". Sonnet preserves visible labels, functions, connections, values, and
+    warnings only when the photo explicitly documents them.
   - **Office (.docx/.pptx/…):** always sync → `SingleFileChunkingService#handle_office` (LibreOffice converts to PDF).
   - **PDFs:** sync via `SingleFileChunkingService` regardless of page count or query text.
     Long non-urgent PDF batch jobs remain in-repo as a dormant/manual path, not
@@ -149,6 +151,52 @@ MVP is a global shared pool (account_id = nil). Stage 1 adds account scoping
 ([account_id, canonical_name]); Stage 2 adds project scoping. When adding new
 scoped behavior, leave a seam that maps cleanly to account_id / project_id
 later — don't hard-code globals.
+
+## Context-Specific Rules (apply when editing relevant paths)
+
+### Rails Stack & Architecture (`app/**/*.rb`)
+**Always apply to Ruby files:**
+- Thin controllers → Service Objects → Models
+- Prefer Rails-native patterns before external gems (Hotwire > SPA, Solid Stack > Redis)
+- Prefer PORO services and Query Objects for retrieval/filtering
+- Keep models free from infrastructure SDK logic
+- Prefer explicit code over metaprogramming
+- Service Objects flat in app/services/; Bedrock helpers in app/services/bedrock/
+- Avoid unnecessary abstractions — premature enterprise architecture conflicts with MVP stage
+
+### Frontend Rules (`app/views/**/*.erb` and `app/javascript/**/*.js`)
+**Apply when editing templates or frontend code:**
+- Optimize for mobile-first responsive UX for field technicians (harsh light, gloves, small screens)
+- Prioritize fast perceived responsiveness
+- Minimize frontend complexity; avoid SPA-like patterns
+- Prefer Turbo Streams / frames over full redirects
+- Prefer Turbo/Stimulus over custom JS
+- Avoid unnecessary frontend state
+- **UX priorities:** minimal typing, high clarity, low interaction friction, large tap targets, concise UI
+- Tailwind watcher runs via bin/dev — don't re-run builds
+
+### Bedrock & RAG Rules (`app/services/bedrock/**`, `app/services/rag/**`, `QueryOrchestratorService`, prompts)
+**Apply when editing RAG/LLM integration code:**
+- Prefer single-pass retrieval/generation flows
+- Minimize retrieval payload size
+- Prefer metadata filtering before semantic expansion
+- Avoid unnecessary reranking
+- Avoid chained LLM calls unless accuracy materially improves
+- Minimize Bedrock round trips; reuse existing retrieval context whenever possible
+- Prefer smaller high-relevance context windows over exhaustive expansion
+- Optimize for production latency and token efficiency
+- **Safety critical:** Never fabricate technical data; use DATA_NOT_AVAILABLE or REQUIRE_FIELD_VERIFICATION for missing/ambiguous data
+
+### Performance Rules (applies to all code: `app/**/*.rb`, `app/**/*.js`)
+**Latency-first optimization across the board:**
+- Minimize Bedrock/API calls — no synchronous external API calls from controllers
+- Minimize DB queries — use pluck/select/exists?, avoid N+1, avoid unnecessary ActiveRecord instantiation
+- Avoid unnecessary orchestration, async jobs, fan-out architectures, polling, Turbo broadcasts, callbacks
+- Prefer direct execution paths over complex routing
+- Prefer deterministic Rails logic over additional LLM calls
+- Keep database transactions short; add indexes only where queries need them
+- Use jobs only for genuinely long-running work; keep user-facing request cycles minimal
+- Hot request paths must be optimized; measure perceived latency first
 
 ## When to push back
 If a request conflicts with latency-first, technician UX, idempotency, or

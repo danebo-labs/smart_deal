@@ -28,6 +28,7 @@
 |-------|-----|
 | Home layout, KB list, lightbox | [WEB_HOME.md](WEB_HOME.md) |
 | Pins, `active_entities`, scoped RAG | [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) |
+| RAG quality/cost benchmark, regression gate, known gaps | [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md) |
 | Intent routing (RAG / SQL / hybrid) | [QUERY_ORCHESTRATOR.md](QUERY_ORCHESTRATOR.md) |
 
 ## Operations & other
@@ -50,3 +51,16 @@
 5. Idempotent uploads and jobs  
 
 Not active: WhatsApp-first workflows, Twilio conversational UX as primary channel.
+
+## Current retrieval contract
+
+- Pins are the technician's explicit evidence scope. A pinned miss returns
+  `DATA_NOT_AVAILABLE`; it does not search the global catalog.
+- Multiple pins may be narrowed deterministically when the question explicitly
+  names one source or excludes another. Ambiguous questions retain all pins.
+- Retrieval depth is adaptive: focused document queries use a small context;
+  safety-critical and exhaustive questions retrieve more evidence.
+- Field photos preserve only explicit visible knowledge. Labels without a legend
+  remain literal identifiers with unknown function.
+- Cohere reranking is implemented behind `BEDROCK_RERANKER_ENABLED`, but remains
+  disabled because the 2026-06-09 quality benchmark found recall regressions.

@@ -37,10 +37,16 @@ class BatchIngestionService
       upload_binary(key, binary, entry[:content_type])
 
       asset = BulkUploadAsset.find_or_initialize_by(
-        custom_id: BulkUploadAsset.custom_id_for(entry[:binary])
+        custom_id: BulkUploadAsset.custom_id_for(
+          entry[:binary],
+          contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+        )
       )
 
-      dedup = ContentDedupService.find_completed(sha256: entry[:sha256])
+      dedup = ContentDedupService.find_completed(
+        sha256: entry[:sha256],
+        contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+      )
 
       if dedup.hit
         asset.assign_attributes(
@@ -52,6 +58,7 @@ class BatchIngestionService
           canonical_name: dedup.canonical_name,
           aliases:        dedup.aliases,
           ingestion_path: BulkUploadAsset::INGESTION_CONTENT_DEDUP,
+          ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
           status:         "complete"
         )
         created = !asset.persisted?
@@ -69,6 +76,7 @@ class BatchIngestionService
         filename:      entry[:filename],
         content_type:  entry[:content_type],
         office_origin: entry[:office_origin] || false,
+        ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
         status:        "uploaded_s3"
       )
       created = !asset.persisted?
@@ -100,7 +108,10 @@ class BatchIngestionService
 
   def record_skipped_asset!(bulk_upload, skip)
     asset = BulkUploadAsset.find_or_initialize_by(
-      custom_id: BulkUploadAsset.custom_id_for(skip[:binary])
+      custom_id: BulkUploadAsset.custom_id_for(
+        skip[:binary],
+        contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+      )
     )
     asset.assign_attributes(
       bulk_upload:   bulk_upload,

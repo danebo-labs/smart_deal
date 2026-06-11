@@ -315,6 +315,48 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
+  test 'execute_rag_query narrows multiple pins when the question names one pinned document' do
+    manual_uri = "s3://bucket/manual.pdf"
+    image_uri = "s3://bucket/photo.jpg"
+    session = Struct.new(:active_entities, :conversation_history).new(
+      {
+        "Manual Plataforma Elevadora Batería" => {
+          "canonical_name" => "Manual Plataforma Elevadora Batería",
+          "source_uri" => manual_uri,
+          "aliases" => [ "Plataforma Tijera Manual" ]
+        },
+        "Hydraulic Schematic Diagram" => {
+          "canonical_name" => "Hydraulic Schematic Diagram",
+          "source_uri" => image_uri,
+          "aliases" => [ "P41", "esquema hidráulico" ]
+        }
+      },
+      []
+    )
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(
+        :execute_rag_query,
+        "Según el Manual Plataforma Elevadora Bateria, ¿qué debo revisar?",
+        conv_session: session,
+        entity_s3_uris: [ manual_uri, image_uri ]
+      )
+
+      assert_equal [ manual_uri ], captured.dig(:kwargs, :entity_s3_uris)
+      assert_equal true, captured.dig(:kwargs, :force_entity_filter)
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
   test 'execute_rag_query handles StandardError' do
     mock = create_mock_orchestrator(
       answer: '',

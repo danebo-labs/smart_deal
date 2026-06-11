@@ -47,6 +47,6 @@ Mobile-first layout for field technicians.
 | `RagQueryConcern#execute_rag_query` | Pinned URIs only for the metadata filter; `force_entity_filter` defaults to **true** when any pin exists. `KbDocumentResolver` still contributes **`## Query Resolution`** text to the prompt—it does **not** merge resolver hits into filter URIs. |
 | `KbDocumentEnrichmentService` | Post-answer enrichment of **`kb_documents`** from Haiku doc refs + retrieved citations. |
 | `BedrockIngestionJob#register_entity` | Auto-`pin_kb_document!` the `KbDocument` for the session that started the upload. |
-| `BedrockRagService` | Web delivery directive includes **CITATIONS BEYOND USER SELECTION** when the model cites material outside pinned docs (e.g. after unfiltered retry). |
+| `BedrockRagService` | Web delivery favors concise field answers; forced pinned queries remain scoped to selected documents and return `DATA_NOT_AVAILABLE` instead of retrying globally. |
 
 **Tests (non-exhaustive):** `test/models/conversation_session_test.rb` (TTL, pin/unpin), `test/controllers/pinned_documents_controller_test.rb`, `test/services/kb_document_enrichment_service_test.rb`, `test/services/session_context_builder_test.rb`, ingestion/RAG tests updated for auto-pin and `force_entity_filter`.

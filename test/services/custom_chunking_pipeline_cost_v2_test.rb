@@ -25,7 +25,7 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     BulkKbSyncService.define_method(:sync!) { |**| nil }
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
 
-    ContentDedupService.define_singleton_method(:find_completed) do |sha256:|
+    ContentDedupService.define_singleton_method(:find_completed) do |sha256:, contract_version:|
       ContentDedupService::Result.new(hit: false, asset: nil, canonical_name: nil, aliases: [])
     end
 

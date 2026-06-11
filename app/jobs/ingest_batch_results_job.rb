@@ -93,7 +93,7 @@ class IngestBatchResultsJob < ApplicationJob
       begin
         merged_json = ChunkMergerService.merge(page_results)
         parser.call(asset: asset, raw_json: merged_json, ingestion_path: "manual_batch_v1")
-      rescue ChunkMergerService::ArgumentError, BatchResultsParserService::ParseError => e
+      rescue ArgumentError, BatchResultsParserService::ParseError => e
         asset.update_columns(status: "failed", error_message: e.message)
         asset.broadcast_replace!
         Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: merge/parse failed #{asset.filename} — #{e.message}")

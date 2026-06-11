@@ -45,7 +45,7 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     "aliases" => [ "ARCA II" ],
     "summary" => "Manual.",
     "companion_offer" => "Pregunta.",
-    "chunks" => [ { "text" => "S0 page 1 content", "page" => 1 } ]
+    "chunks" => [ { "text" => "S0 page 1 content", "page" => 1, "field_records" => [] } ]
   })
 
   PAGE2_JSON = JSON.generate({
@@ -53,7 +53,7 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     "aliases" => [ "ARCA II", "installation" ],
     "summary" => "Parte 2.",
     "companion_offer" => "Cualquier duda.",
-    "chunks" => [ { "text" => "S16 page 2 content", "page" => 2 } ]
+    "chunks" => [ { "text" => "S16 page 2 content", "page" => 2, "field_records" => [] } ]
   })
 
   def make_usage(input: 100, output: 50, cache_read: 10, cache_creation: 5)

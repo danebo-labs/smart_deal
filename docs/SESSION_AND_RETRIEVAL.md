@@ -45,7 +45,36 @@ Follow-up RAG (web)
 #### Session-scoped retrieval filter logic
 
 1. **No pinned S3 URIs** in the session → Bedrock runs against the **full** knowledge base (no source-uri metadata filter from pins).
-2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on pinned URIs regardless of question shape; if the filtered call returns nothing, **`BedrockRagService`** retries **without** the filter, and the web prompt directive asks the model to **call out** any grounding outside the pinned set (**CITATIONS BEYOND USER SELECTION**).
+2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`; forced pinned queries never retry against the global catalog.
+3. **Multiple pins + explicit identity** → `Rag::PinnedEntityScopeResolver`
+   narrows the allowed URI set only when there is one confident source match.
+   It matches canonical names, filenames, aliases, and literal codes; understands
+   negative clauses such as “no uses el esquema”; and keeps all pins for ambiguous
+   semantic questions or ties.
+4. `QueryOrchestratorService#entity_sources` is calculated from the narrowed URI
+   subset so retrieval budgeting and photo-only safety directives describe the
+   evidence actually sent to Bedrock.
+
+#### Adaptive retrieval profile
+
+`RagRetrievalProfile` chooses `number_of_results` from the narrowed pin types and
+the current question:
+
+| Profile | Results |
+|---------|---------|
+| Focused document or mixed pins | 3 |
+| Stop-work, failure, or repair intent | 5 |
+| Photo-only pins | 10 |
+| No pins | 8 |
+| Exhaustive checklist/test request | 15 |
+
+Exhaustive queries also receive a prompt override that preserves every distinct
+retrieved item even when the normal web answer target is under 300 words.
+Reranking the 15 candidates to 9 or 12 caused recall regressions in the
+2026-06-09 benchmark, so `BEDROCK_RERANKER_ENABLED` remains `false`.
+
+See [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md)
+for the test matrix and measured tradeoffs.
 
 | Layer | Scope (MVP) | Scope (Stage 1+) | Eviction / cap | Written by |
 |---|---|---|---|---|

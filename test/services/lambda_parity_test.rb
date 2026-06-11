@@ -109,7 +109,7 @@ class LambdaParityTest < ActiveSupport::TestCase
     raw_json = JSON.generate({
       "document_name" => doc_name,
       "aliases"       => aliases,
-      "chunks"        => [ { "text" => chunk_text, "page" => 1 } ]
+      "chunks"        => [ { "text" => chunk_text, "page" => 1, "field_records" => [] } ]
     })
 
     asset = ChunkAsset.new(

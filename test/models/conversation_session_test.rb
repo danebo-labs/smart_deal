@@ -631,6 +631,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
     entity = session.active_entities["Test Pin"]
     assert_equal "user_pin", entity["source"]
+    assert_equal "document", entity["entity_type"]
     assert_equal "s3://#{KbDocument::KB_BUCKET}/uploads/2026/test_pin.pdf", entity["source_uri"]
     assert_includes entity["aliases"], "TP"
   end
@@ -644,6 +645,191 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.reload
 
     assert_equal 1, session.active_entities.size
+  end
+
+  test 'pin_kb_document! keeps documents with a shared alias as separate entities' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-shared-alias", channel: "web")
+    image = KbDocument.create!(
+      s3_key: "uploads/2026/hydraulic.jpg",
+      display_name: "Hydraulic Board",
+      aliases: [ "Hoisting Cylinder" ]
+    )
+    manual = KbDocument.create!(
+      s3_key: "uploads/2026/platform-manual.pdf",
+      display_name: "Platform Manual",
+      aliases: [ "hoisting cylinder" ]
+    )
+
+    session.pin_kb_document!(image)
+    session.pin_kb_document!(manual)
+    session.reload
+
+    assert_equal 2, session.entity_count
+    assert_equal "image_upload", session.active_entities["Hydraulic Board"]["entity_type"]
+    assert_equal "document", session.active_entities["Platform Manual"]["entity_type"]
+    assert_equal(
+      [ image, manual ].map { |doc| doc.display_s3_uri(KbDocument::KB_BUCKET) }.sort,
+      SessionContextBuilder.entity_s3_uris(session).sort
+    )
+  end
+
+  test 'pin_kb_document! suffixes the key when different documents share a canonical name' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-shared-name", channel: "web")
+    first = KbDocument.create!(
+      s3_key: "uploads/2026/controller-a.pdf",
+      display_name: "Controller Manual",
+      aliases: []
+    )
+    second = KbDocument.create!(
+      s3_key: "uploads/2026/controller-b.pdf",
+      display_name: "Controller Manual",
+      aliases: []
+    )
+
+    session.pin_kb_document!(first)
+    session.pin_kb_document!(second)
+    session.reload
+
+    assert_equal 2, session.entity_count
+    assert session.active_entities.key?("Controller Manual")
+    assert session.active_entities.key?("Controller Manual (kb##{second.id})")
+  end
+
+  test 'pin_kb_document! merges new aliases when re-pinning the same document' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-refresh", channel: "web")
+    kb_doc = KbDocument.create!(
+      s3_key: "uploads/2026/refresh.pdf",
+      display_name: "Refresh Manual",
+      aliases: [ "Original Alias" ]
+    )
+
+    session.pin_kb_document!(kb_doc)
+    original_added_at = session.reload.active_entities.fetch("Refresh Manual").fetch("added_at")
+    kb_doc.update!(aliases: [ "Updated Alias" ])
+    session.pin_kb_document!(kb_doc)
+    session.reload
+
+    entity = session.active_entities.fetch("Refresh Manual")
+    assert_equal 1, session.entity_count
+    assert_equal original_added_at, entity["added_at"]
+    assert_includes entity["aliases"], "Original Alias"
+    assert_includes entity["aliases"], "Updated Alias"
+  end
+
+  test 'pin_kb_document! updates source_uri when the same kb_document_id is re-pinned' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-uri-refresh", channel: "web")
+    kb_doc = KbDocument.create!(
+      s3_key: "uploads/2026/original-location.pdf",
+      display_name: "Movable Manual",
+      aliases: []
+    )
+
+    session.pin_kb_document!(kb_doc)
+    kb_doc.update!(s3_key: "uploads/2026/new-location.pdf")
+    session.pin_kb_document!(kb_doc)
+    session.reload
+
+    assert_equal 1, session.entity_count
+    assert_equal(
+      [ kb_doc.display_s3_uri(KbDocument::KB_BUCKET) ],
+      SessionContextBuilder.entity_s3_uris(session)
+    )
+    assert_equal "document", session.active_entities.fetch("Movable Manual").fetch("entity_type")
+  end
+
+  test 'pin_kb_document! refreshes entity_type when the physical file extension changes' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-type-refresh", channel: "web")
+    kb_doc = KbDocument.create!(
+      s3_key: "uploads/2026/inspection.pdf",
+      display_name: "Inspection",
+      aliases: []
+    )
+
+    session.pin_kb_document!(kb_doc)
+    kb_doc.update!(s3_key: "uploads/2026/inspection.jpg")
+    session.pin_kb_document!(kb_doc)
+
+    entity = session.reload.active_entities.fetch("Inspection")
+    assert_equal "image_upload", entity["entity_type"]
+  end
+
+  test 'unpin_kb_document! removes only the matching uri when aliases overlap' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-selective-unpin", channel: "web")
+    first = KbDocument.create!(
+      s3_key: "uploads/2026/overlap-a.pdf",
+      display_name: "Overlap A",
+      aliases: [ "Shared Component" ]
+    )
+    second = KbDocument.create!(
+      s3_key: "uploads/2026/overlap-b.pdf",
+      display_name: "Overlap B",
+      aliases: [ "shared component" ]
+    )
+
+    session.pin_kb_document!(first)
+    session.pin_kb_document!(second)
+    session.unpin_kb_document!(first)
+    session.reload
+
+    assert_equal 1, session.entity_count
+    assert_equal(
+      [ second.display_s3_uri(KbDocument::KB_BUCKET) ],
+      SessionContextBuilder.entity_s3_uris(session)
+    )
+  end
+
+  test 'pin_kb_document! preserves FIFO eviction at MAX_ENTITIES' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-fifo", channel: "web")
+    base_time = 1.hour.ago
+    prefilled = {}
+    ConversationSession::MAX_ENTITIES.times do |i|
+      prefilled["pinned_#{i}"] = {
+        "source"     => "user_pin",
+        "source_uri" => "s3://bucket/pinned_#{i}.pdf",
+        "added_at"   => (base_time + i.seconds).iso8601
+      }
+    end
+    session.update!(active_entities: prefilled)
+    newest = KbDocument.create!(
+      s3_key: "uploads/2026/newest-pin.pdf",
+      display_name: "Newest Pin",
+      aliases: []
+    )
+
+    session.pin_kb_document!(newest)
+    session.reload
+
+    assert_equal ConversationSession::MAX_ENTITIES, session.entity_count
+    assert_not session.active_entities.key?("pinned_0")
+    assert session.active_entities.key?("Newest Pin")
+  end
+
+  test 'shared session keeps distinct pinned documents in the same row' do
+    stub_shared_enabled(true) do
+      ConversationSession.where(
+        identifier: SharedSession::IDENTIFIER,
+        channel: SharedSession::CHANNEL
+      ).destroy_all
+      first = KbDocument.create!(
+        s3_key: "uploads/2026/shared-pin-a.pdf",
+        display_name: "Shared A",
+        aliases: [ "Shared Alias" ]
+      )
+      second = KbDocument.create!(
+        s3_key: "uploads/2026/shared-pin-b.pdf",
+        display_name: "Shared B",
+        aliases: [ "shared alias" ]
+      )
+
+      session_a = ConversationSession.find_or_create_for(identifier: "user-a", channel: "web")
+      session_a.pin_kb_document!(first)
+      session_b = ConversationSession.find_or_create_for(identifier: "user-b", channel: "web")
+      session_b.pin_kb_document!(second)
+      session_a.reload
+
+      assert_equal session_a.id, session_b.id
+      assert_equal 2, session_a.entity_count
+    end
   end
 
   test 'unpin_kb_document! removes the entity' do

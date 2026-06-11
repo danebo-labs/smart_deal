@@ -107,6 +107,19 @@ class QueryOrchestratorService
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
       SqlGenerationService.new(@query).execute
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
+      deterministic = Rag::DeterministicRenderer.build(
+        question:            @query,
+        entity_s3_uris:      @entity_s3_uris,
+        entity_sources:      entity_sources,
+        force_entity_filter: @force_entity_filter,
+        response_locale:     @response_locale,
+        tenant:              @tenant || current_tenant
+      )
+      if deterministic
+        Rails.logger.info("QueryOrchestrator: Routing to #{deterministic.generation_mode} for: '#{@query}'")
+        return deterministic.execute
+      end
+
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
       BedrockRagService.new(tenant: @tenant || current_tenant).query(
         @query,
@@ -207,6 +220,7 @@ class QueryOrchestratorService
       citations: kb_result[:citations] || [],
       retrieved_citations: kb_result[:retrieved_citations],
       doc_refs: kb_result[:doc_refs],
+      retrieval_trace: kb_result[:retrieval_trace],
       session_id: kb_result[:session_id]
     }
   end
@@ -279,9 +293,20 @@ class QueryOrchestratorService
     Object.const_defined?("Current") && Current.respond_to?(:tenant) ? Current.tenant : nil
   end
 
-  # Derives entity source types from pinned session entities for RagRetrievalProfile.
+  # Derives media types from pinned session entities for RagRetrievalProfile.
+  # Legacy image_upload rows remain images; other legacy rows default to documents.
   def entity_sources
     return [] unless @conv_session.respond_to?(:active_entities)
-    @conv_session.active_entities.values.filter_map { |meta| meta["source"] }
+
+    entities = @conv_session.active_entities.values
+    if @entity_s3_uris.any?
+      allowed_uris = @entity_s3_uris.to_set
+      entities = entities.select { |meta| allowed_uris.include?(meta["source_uri"].to_s) }
+    end
+
+    entities.map do |meta|
+      entity_type = meta["entity_type"].presence || meta["source"]
+      entity_type == "image_upload" ? "image_upload" : "document"
+    end
   end
 end

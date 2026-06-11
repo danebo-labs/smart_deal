@@ -21,7 +21,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       "chunks"        => [
         {
           "text" => "# S0 — DOCUMENT IDENTIFICATION\nContent here.",
-          "page" => 1
+          "page" => 1,
+          "field_records" => []
         }
       ]
     }.to_json
@@ -160,6 +161,35 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal "field_photo_v1", attrs["ingestion_path"]
   end
 
+  test "image/jpeg: Sonnet path preserves explicit photographed diagram evidence" do
+    @response_json = JSON.parse(field_photo_json).merge(
+      "visible_text" => [ "P41 TEST PORT" ],
+      "documented_functions" => [
+        {
+          "label" => "P41",
+          "function" => "Pressure test port",
+          "evidence" => "Legend: P41 TEST PORT"
+        }
+      ],
+      "documented_connections" => [],
+      "documented_values" => [],
+      "documented_warnings" => []
+    ).to_json
+
+    asset = build_service(
+      filename: "compressed_circuit.jpg",
+      content_type: "image/jpeg",
+      binary: "\xFF\xD8 compact diagram"
+    ).call
+
+    chunk_key = @fake_s3.uploads.keys.find { |key| key.end_with?("chunk_0.txt") }
+    chunk = @fake_s3.uploads.fetch(chunk_key)
+
+    assert_equal PHOTO_NAME, asset.canonical_name
+    assert_includes chunk, "Visible text:\n- P41 TEST PORT"
+    assert_includes chunk, "P41: Pressure test port | Evidence: Legend: P41 TEST PORT"
+  end
+
   test "image/jpeg: uses Sonnet model (FieldPhotoDensityGate default)" do
     captured_models = []
     photo_response  = field_photo_json
@@ -199,7 +229,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       "chunks"        => [
         {
           "text" => "# S0 content",
-          "page" => 1
+          "page" => 1,
+          "field_records" => []
         }
       ]
     }.to_json
@@ -290,8 +321,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       end
     end
 
-    page1_json = { "document_name" => "Anchor Manual", "aliases" => %w[anchor], "chunks" => [ { "text" => "# S0", "page" => 1 } ] }.to_json
-    page3_json = { "document_name" => "Anchor Manual", "aliases" => %w[manual],  "chunks" => [ { "text" => "# S4", "page" => 3 } ] }.to_json
+    page1_json = { "document_name" => "Anchor Manual", "aliases" => %w[anchor], "chunks" => [ { "text" => "# S0", "page" => 1, "field_records" => [] } ] }.to_json
+    page3_json = { "document_name" => "Anchor Manual", "aliases" => %w[manual],  "chunks" => [ { "text" => "# S4", "page" => 3, "field_records" => [] } ] }.to_json
 
     mutex          = Mutex.new
     captured_texts = []
@@ -703,6 +734,64 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal PHOTO_NAME, asset.canonical_name
   end
 
+  test "handle_image: escalates to MAX_TOKENS when retry is still truncated (D1 ladder)" do
+    captured_max_tokens = []
+    response_text       = field_photo_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      call_idx = 0
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        stop  = call_idx < 2 ? "max_tokens" : "end_turn"
+        call_idx += 1
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
+                                 stop_reason: stop)
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
+
+    assert_equal [
+      BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
+      BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS,
+      BatchChunkingPrompt::MAX_TOKENS
+    ], captured_max_tokens
+    assert_equal PHOTO_NAME, asset.canonical_name
+  end
+
+  test "handle_image: unparseable JSON retries even with end_turn stop (D1 ladder)" do
+    captured_max_tokens = []
+    good_json           = field_photo_json
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      call_idx = 0
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        captured_max_tokens << params[:max_tokens]
+        text = call_idx == 0 ? good_json[0, 40] : good_json
+        call_idx += 1
+        content = [ OpenStruct.new(type: "text", text: text) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        message = OpenStruct.new(content: content, usage: usage, model: "claude-sonnet-4-6",
+                                 stop_reason: "end_turn")
+        OpenStruct.new(accumulated_message: message)
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake").call
+
+    assert_equal 2, captured_max_tokens.size, "expected an unparseable first response to trigger a retry"
+    assert_equal PHOTO_NAME, asset.canonical_name
+  end
+
   test "handle_image: no retry when first call succeeds, uses WEB_PAGE_MAX_TOKENS" do
     captured_max_tokens = []
     response_text       = field_photo_json
@@ -890,8 +979,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
     end
 
-    page1_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "# S0 p1", "page" => 1 } ] }.to_json
-    page2_json = { "document_name" => DOC_NAME, "aliases" => [],       "chunks" => [ { "text" => "# S4 p2", "page" => 2 } ] }.to_json
+    page1_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "# S0 p1", "page" => 1, "field_records" => [] } ] }.to_json
+    page2_json = { "document_name" => DOC_NAME, "aliases" => [],       "chunks" => [ { "text" => "# S4 p2", "page" => 2, "field_records" => [] } ] }.to_json
 
     mutex      = Mutex.new
     call_count = 0
@@ -940,7 +1029,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
     end
 
-    page_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "# S0", "page" => 1 } ] }.to_json
+    page_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "# S0", "page" => 1, "field_records" => [] } ] }.to_json
 
     Anthropic::Client.define_singleton_method(:new) do |**|
       msgs = Object.new
@@ -976,7 +1065,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
     end
 
-    page_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "partial", "page" => 1 } ] }.to_json
+    page_json = { "document_name" => DOC_NAME, "aliases" => ALIASES, "chunks" => [ { "text" => "partial", "page" => 1, "field_records" => [] } ] }.to_json
     call_count = 0
 
     Anthropic::Client.define_singleton_method(:new) do |**|
@@ -995,14 +1084,14 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     warn_logged = false
     orig_warn   = Rails.logger.method(:warn)
     Rails.logger.define_singleton_method(:warn) do |msg|
-      warn_logged = true if msg.to_s.include?("still truncated after retry")
+      warn_logged = true if msg.to_s.match?(/still truncated at max_tokens=#{BatchChunkingPrompt::MAX_TOKENS}/)
       orig_warn.call(msg)
     end
 
     build_service(filename: "manual.pdf").call
 
-    assert warn_logged, "expected warn log for retry-still-truncated"
-    assert_equal 2, call_count, "expected 2 Claude calls (first attempt + retry)"
+    assert warn_logged, "expected warn log when the last ladder rung is still truncated"
+    assert_equal 3, call_count, "expected 3 Claude calls (full token ladder)"
   ensure
     FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)

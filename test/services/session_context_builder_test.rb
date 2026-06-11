@@ -54,6 +54,23 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     assert_includes context, '[image] wa_photo.jpg'
   end
 
+  test 'prefers entity_type over pin provenance when labeling session focus' do
+    session = build_session
+    session.add_entity('field_photo.jpg', {
+      'source' => 'user_pin',
+      'entity_type' => 'image_upload'
+    })
+    session.add_entity('manual.pdf', {
+      'source' => 'user_pin',
+      'entity_type' => 'document'
+    })
+
+    context = SessionContextBuilder.build(session)
+
+    assert_includes context, '[image] field_photo.jpg'
+    assert_includes context, '[document] manual.pdf'
+  end
+
   test 'includes both retrieve_result and image_upload entities' do
     session = build_session
     session.add_entity('doc.pdf',    { 'source' => 'retrieve_result' })
@@ -63,6 +80,20 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
     assert_includes context, '[document] doc.pdf'
     assert_includes context, '[image] photo.jpg'
+  end
+
+  test 'caps aliases per entity in prompt context' do
+    session = build_session
+    session.add_entity('manual.pdf', {
+      'source' => 'retrieve_result',
+      'aliases' => %w[one two three four five six seven]
+    })
+
+    context = SessionContextBuilder.build(session)
+
+    assert_includes context, 'one, two, three, four, five'
+    assert_not_includes context, 'six'
+    assert_not_includes context, 'seven'
   end
 
   test 'includes Recent Conversation block when history present' do

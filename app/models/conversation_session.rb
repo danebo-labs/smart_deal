@@ -5,6 +5,7 @@ class ConversationSession < ApplicationRecord
   MAX_HISTORY    = 20
   MAX_ENTITIES   = ENV.fetch('SESSION_MAX_ENTITIES', 10).to_i
   MAX_MSG_LENGTH = 300
+  PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
 
   # WA channel disabled for MVP. "whatsapp" kept in CHANNELS so legacy rows (if any) remain valid.
   CHANNELS = %w[web shared whatsapp].freeze
@@ -164,25 +165,65 @@ class ConversationSession < ApplicationRecord
 
   # ─── Pinned KB documents (UI checkbox) ─────────────────────────────────────
 
-  # Pin a KbDocument into the session: registers it as a user-driven entity
-  # with source: "user_pin". Idempotent — if a pin with the same source_uri
-  # already exists (regardless of canonical_name), no-op and return true.
+  # Pin a KbDocument into the session: registers it as a user-driven entity.
+  # Physical identity is source_uri, with kb_document_id as a stable fallback.
+  # Names and aliases are descriptive only and never collapse distinct files.
   # @param kb_doc [KbDocument]
-  # @return [Boolean] true on success/no-op, false if URI cannot be resolved
+  # @return [Boolean] true on success/idempotent re-pin, false if URI cannot be resolved
   def pin_kb_document!(kb_doc)
     s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
     return false if s3_uri.blank?
-    return true  if find_entity_by_source_uri(s3_uri)
 
+    entities     = active_entities.dup
+    existing_key = find_entity_by_source_uri(s3_uri)
+    if existing_key.nil? && kb_doc.id.present?
+      existing_key = entities.find { |_, meta| meta["kb_document_id"].to_s == kb_doc.id.to_s }&.first
+    end
     canonical = kb_doc.display_name.presence || File.basename(kb_doc.s3_key.to_s, ".*")
-    add_entity_with_aliases(
-      canonical,
-      Array(kb_doc.aliases),
-      "source"            => "user_pin",
-      "source_uri"        => s3_uri,
-      "wa_filename"       => File.basename(kb_doc.s3_key.to_s),
-      "extraction_method" => "user_pin"
-    )
+    entity_type = pinned_entity_type(kb_doc)
+
+    if existing_key
+      existing = entities[existing_key].dup
+      merged_aliases = sanitize_aliases(
+        (Array(existing["aliases"]) + Array(kb_doc.aliases)).map(&:to_s)
+      )
+      refreshed = existing.merge(
+        "kb_document_id" => kb_doc.id,
+        "source_uri"     => s3_uri,
+        "wa_filename"    => File.basename(kb_doc.s3_key.to_s),
+        "entity_type"    => entity_type,
+        "aliases"        => merged_aliases
+      )
+      return true if refreshed == existing
+
+      entities[existing_key] = refreshed
+    else
+      key = canonical
+      if entities.key?(key)
+        base_key = "#{canonical} (kb##{kb_doc.id})"
+        key      = base_key
+        suffix   = 2
+        while entities.key?(key)
+          key = "#{base_key}-#{suffix}"
+          suffix += 1
+        end
+      end
+
+      entities[key] = {
+        "canonical_name"    => canonical,
+        "kb_document_id"    => kb_doc.id,
+        "source"            => "user_pin",
+        "entity_type"       => entity_type,
+        "source_uri"        => s3_uri,
+        "wa_filename"       => File.basename(kb_doc.s3_key.to_s),
+        "extraction_method" => "user_pin",
+        "aliases"           => sanitize_aliases(Array(kb_doc.aliases).map(&:to_s)),
+        "added_at"          => Time.current.iso8601
+      }
+      evict_oldest!(entities)
+    end
+
+    update!(active_entities: entities)
     true
   end
 
@@ -202,6 +243,11 @@ class ConversationSession < ApplicationRecord
   end
 
   private
+
+  def pinned_entity_type(kb_doc)
+    extension = File.extname(kb_doc.s3_key.to_s).downcase
+    PINNED_IMAGE_EXTENSIONS.include?(extension) ? "image_upload" : "document"
+  end
 
   def sanitize_aliases(aliases_array)
     seen   = {}

@@ -1,10 +1,11 @@
 ---
 name: Cierre RAG 100% con FIELD_RECORD
-version: 2026-06-10-v8.2
+version: 2026-06-11-v9 (CERRADO)
 corpus_cohort: 2026-06-10-v2
-status: VALIDADO INDEPENDIENTEMENTE 2026-06-10 — ACEPTADO PARA IMPLEMENTACION (cohorte v2)
+status: CERTIFICADO 2026-06-11 — 3/3 corridas PASS, cohorte reproducible, costo $7.14/1000 <= $7.50
 implementation_blocked: false
-paid_calls_blocked: solo via gates B-I en orden (sin generacion pagada antes de Gate E)
+paid_calls_blocked: n/a — plan ejecutado; evidencia en docs/RAG_CERTIFICATION_2026-06-11.md
+resultado: 100% de fidelidad documental para el corpus y matriz versionados (no es certificacion universal de seguridad)
 ---
 
 # Plan de cierre del benchmark RAG al 100% de fidelidad documental

@@ -53,12 +53,32 @@ class RagQualityBenchmarkTest < ActiveSupport::TestCase
 
   test "certification rejects dirty git state" do
     benchmark = build_benchmark("RAG_BENCHMARK_MODE" => "certification")
+    # Deterministic: code_fingerprint shells out to the real `git status`, so
+    # without this stub the test outcome would depend on the developer's
+    # working tree state.
+    benchmark.define_singleton_method(:code_fingerprint) do
+      { sha256: "a" * 64, git_revision: "abc123", git_dirty: true, paths: [] }
+    end
 
     error = assert_raises(RagQualityBenchmark::PreflightError) do
       benchmark.preflight!
     end
 
     assert_includes error.message, "Certification requires git_dirty=false"
+  end
+
+  test "certification passes the git gate when the tree is clean" do
+    benchmark = build_benchmark("RAG_BENCHMARK_MODE" => "certification")
+    benchmark.define_singleton_method(:code_fingerprint) do
+      { sha256: "a" * 64, git_revision: "abc123", git_dirty: false, paths: [] }
+    end
+
+    error = assert_raises(RagQualityBenchmark::PreflightError) do
+      benchmark.preflight!
+    end
+
+    # Still fails on the stubbed missing corpus manifest, but NOT on git state.
+    assert_not_includes error.message, "Certification requires git_dirty=false"
   end
 
   test "diagnostic targets expand conversational dependencies in matrix order" do

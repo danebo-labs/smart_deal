@@ -387,7 +387,12 @@ class RagQualityBenchmarkEvaluator
 
         normalized_trigger = normalize(trigger)
         normalized_action = normalize(action)
-        unless normalized_action.match?(/\bmarc|\bdeten|\bprohib|\bfuera de servicio/)
+        # Explicit stop vocabulary: marcar (incl. "marque"), detener, prohibir,
+        # fuera de servicio, prohibitions ("no operar…"), and the documented
+        # emergency-stop action (red button to OFF stops all functions).
+        unless normalized_action.match?(
+          /\bmar[cq]|\bdeten|\bprohib|\bfuera de servicio|\bno (?:operar|conducir|usar|utilizar)|bot[oó]?n rojo.*\bapagado/
+        )
           fail_case("stop_work", key, "mandatory item #{index + 1} lacks explicit action")
         end
         if normalized_trigger.match?(/\bmareo|\bpersonal no autorizado|\bpersonas no autorizadas|\binterfier/)
@@ -459,7 +464,7 @@ class RagQualityBenchmarkEvaluator
       # "con puerto(s) [numerados] N" describes printed digit markings next to a
       # symbol — visible text, not a category/function assignment. Strip that
       # phrase; flag only if a category word remains.
-      stripped = normalized.gsub(/con puertos? (?:numerad\w+ )?\d[\d, y]*/, " ")
+      stripped = normalized.gsub(/con puertos? (?:numerad\w+ |marcad\w+ )?\d[\d, y]*/, " ")
       next unless stripped.match?(category)
 
       normalized

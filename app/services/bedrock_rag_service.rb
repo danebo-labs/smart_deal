@@ -631,7 +631,10 @@ class BedrockRagService
       # LITERAL LABEL RULES (schematic/diagram identifiers)
       For any identifier whose function the retrieved evidence does not state in
       printed words:
-      - Keep the identifier literal and state `Función: DATA_NOT_AVAILABLE` for it.
+      - Render each such identifier as EXACTLY ONE line in this safe form:
+        `<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`.
+        No multi-line entries, no location prose, no neighboring-symbol
+        descriptions — one line per identifier, nothing else about it.
       - Acronym expansion (BRK→freno, P→presión, T→tanque, RV→alivio, ORF→orificio)
         is forbidden. Never use the words puerto, válvula, solenoide, alivio,
         retención, orificio, freno, presión, diodo for these identifiers — not as

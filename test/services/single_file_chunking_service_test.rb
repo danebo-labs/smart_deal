@@ -63,7 +63,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         input_tokens: 100, output_tokens: 200,
         cache_read_input_tokens: 0, cache_creation_input_tokens: 0
       )
-      message  = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7")
+      message  = OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_MULTIMODAL)
       OpenStruct.new(accumulated_message: message)
     end
   end
@@ -342,7 +342,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         content  = [ OpenStruct.new(type: "text", text: response_text) ]
         usage    = OpenStruct.new(input_tokens: 100, output_tokens: 200,
                                   cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-        message  = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7")
+        message  = OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_MULTIMODAL)
         OpenStruct.new(accumulated_message: message)
       end
       OpenStruct.new(messages: msgs, api_key: "fake")
@@ -541,7 +541,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         content = [ OpenStruct.new(type: "text", text: response_text) ]
         usage   = OpenStruct.new(input_tokens: 100, output_tokens: 200,
                                  cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7")
+        message = OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_MULTIMODAL)
         OpenStruct.new(accumulated_message: message)
       end
       OpenStruct.new(messages: msgs, api_key: "fake")
@@ -612,7 +612,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       content = [ OpenStruct.new(type: "text", text: resp_text) ]
       usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
                                cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-      message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+      message = OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_MULTIMODAL,
                                stop_reason: stop)
       OpenStruct.new(accumulated_message: message, last_params: params)
     end
@@ -649,7 +649,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
         content = [ OpenStruct.new(type: "text", text: text) ]
         usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
                                  cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-        message = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7",
+        message = OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_MULTIMODAL,
                                  stop_reason: stop)
         OpenStruct.new(accumulated_message: message)
       end

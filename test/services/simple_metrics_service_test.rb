@@ -337,6 +337,79 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
     assert_equal 0,    CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_sonnet_batch).value.to_i
   end
 
+  test 'update_database_metrics_only accepts date keyword for past date' do
+    past = Date.new(2024, 1, 10)
+    today = Date.current
+
+    create_bedrock_query(input_tokens: 800, output_tokens: 200,
+      model_id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', source: 'query',
+      created_at: past.beginning_of_day)
+    create_bedrock_query(input_tokens: 500, output_tokens: 100,
+      model_id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', source: 'query',
+      created_at: today.beginning_of_day)
+
+    SimpleMetricsService.update_database_metrics_only(date: past)
+
+    past_metric = CostMetric.find_by!(date: past, metric_type: :daily_tokens_query)
+    assert_equal 1000, past_metric.value.to_i
+
+    assert_nil CostMetric.find_by(date: today, metric_type: :daily_tokens_query),
+               "past-date rebuild must not touch today's metrics"
+  end
+
+  test 'update_database_metrics_only idempotent: second run replaces not duplicates' do
+    past = Date.new(2024, 1, 12)
+
+    create_bedrock_query(input_tokens: 1000, output_tokens: 200,
+      model_id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', source: 'query',
+      created_at: past.beginning_of_day)
+
+    SimpleMetricsService.update_database_metrics_only(date: past)
+    count_after_first = CostMetric.where(date: past).count
+
+    SimpleMetricsService.update_database_metrics_only(date: past)
+    count_after_second = CostMetric.where(date: past).count
+
+    assert_equal count_after_first, count_after_second, "upsert must not duplicate rows"
+    assert_equal 1200, CostMetric.find_by!(date: past, metric_type: :daily_tokens_query).value.to_i
+  end
+
+  test 'update_database_metrics_only global haiku routes to bedrock_rag channel' do
+    today = Date.current
+
+    create_bedrock_query(input_tokens: 1000, output_tokens: 200,
+      model_id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', source: 'query',
+      created_at: today.beginning_of_day)
+
+    SimpleMetricsService.update_database_metrics_only
+
+    assert_equal 1200, CostMetric.find_by!(date: today, metric_type: :daily_tokens_query).value.to_i
+  end
+
+  test 'update_database_metrics_only opus 4.8 direct routes to anthropic_opus_direct' do
+    today = Date.current
+
+    create_bedrock_query(input_tokens: 2000, output_tokens: 400,
+      model_id: 'claude-opus-4-8-direct', source: 'ingestion_parse',
+      user_query: 'web_parse: photo.jpg', created_at: today.beginning_of_day)
+
+    SimpleMetricsService.update_database_metrics_only
+
+    assert_equal 2400, CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_opus_direct).value.to_i
+  end
+
+  test 'update_database_metrics_only opus 4.8 batch routes to anthropic_opus_batch' do
+    today = Date.current
+
+    create_bedrock_query(input_tokens: 3000, output_tokens: 600,
+      model_id: 'claude-opus-4-8-batch', source: 'ingestion_parse',
+      user_query: 'bulk_parse: manual.pdf', created_at: today.beginning_of_day)
+
+    SimpleMetricsService.update_database_metrics_only
+
+    assert_equal 3600, CostMetric.find_by!(date: today, metric_type: :daily_tokens_anthropic_opus_batch).value.to_i
+  end
+
   test 'returns 0 for all metrics when no data exists' do
     with_mock_aws_clients do |fake_cloudwatch, fake_s3, fake_rds|
       fake_cloudwatch.datapoints = []

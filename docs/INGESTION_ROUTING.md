@@ -47,7 +47,7 @@ flowchart TB
 
   subgraph parse [Parse]
     Sonnet[Sonnet 4.6]
-    Opus[Opus 4.7]
+    Opus[Opus 4.8]
     HaikuRAG[Haiku 4.5 — RAG queries only]
   end
 
@@ -149,7 +149,7 @@ Typical yield: ~**75%** of pages kept on 10-page manuals (see [INGESTION_COST_V2
 Models (`BatchChunkingPrompt`):
 
 - **Sonnet 4.6** — `MODEL_TEXT` — default parse
-- **Opus 4.7** — `MODEL_MULTIMODAL` — dense scans, large field photos
+- **Opus 4.8** — `MODEL_MULTIMODAL` — dense scans, large field photos
 - **Haiku 4.5** — page filter + optional photo gate only (not chunk generation)
 
 | File type | Filter | Parse model | Prompt | API mode (chat) | API mode (bulk) |

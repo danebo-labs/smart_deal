@@ -59,9 +59,9 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
     called = false
     original = SimpleMetricsService.method(:update_database_metrics_only)
 
-    SimpleMetricsService.define_singleton_method(:update_database_metrics_only) do
+    SimpleMetricsService.define_singleton_method(:update_database_metrics_only) do |**kwargs|
       called = true
-      original.call
+      original.call(**kwargs)
     end
 
     with_turbo_broadcast_stubbed do
@@ -70,7 +70,7 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
 
     assert called, 'update_database_metrics_only should have been called'
   ensure
-    SimpleMetricsService.define_singleton_method(:update_database_metrics_only) { |*args| original.call(*args) }
+    SimpleMetricsService.define_singleton_method(:update_database_metrics_only) { |**kwargs| original.call(**kwargs) }
   end
 
   test 'updates CostMetric records after execution' do

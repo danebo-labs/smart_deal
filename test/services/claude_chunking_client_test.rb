@@ -36,7 +36,7 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
   class FakeResponse
     attr_reader :content, :usage, :model
 
-    def initialize(text:, model: "claude-opus-4-7", usage: FakeUsage.new)
+    def initialize(text:, model: BatchChunkingPrompt::MODEL_MULTIMODAL, usage: FakeUsage.new)
       @content = [ FakeContent.new(type: "text", text: text) ]
       @usage   = usage
       @model   = model
@@ -82,7 +82,7 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
     {"document_name":"Pump Manual","aliases":["HPM-400"],"chunks":[{"text":"**Document: Pump Manual**\\n**DOCUMENT_ALIASES:**\\n- HPM-400\\n\\n# S0 — DOCUMENT IDENTIFICATION\\n| Field | Value |\\n|-|-|\\n| ORIGINAL_FILE_NAME | PIPELINE_INJECTED |","page":1}]}
   JSON
 
-  def make_client(text: GOLDEN_JSON, model: "claude-opus-4-7", usage: FakeUsage.new)
+  def make_client(text: GOLDEN_JSON, model: BatchChunkingPrompt::MODEL_MULTIMODAL, usage: FakeUsage.new)
     response = FakeResponse.new(text: text, model: model, usage: usage)
     fake     = FakeAnthropicClient.new(response: response)
     ClaudeChunkingClient.new(model: model, client: fake)
@@ -105,7 +105,7 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
     client.call(user_content: [ { type: "text", text: "doc" } ], filename: "test.pdf")
 
     last = client.instance_variable_get(:@client).messages.last_params
-    assert_equal "claude-opus-4-7",                   last[:model]
+    assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, last[:model]
     assert_equal BatchChunkingPrompt::SYSTEM_BLOCKS,   last[:system]
     assert_equal BatchChunkingPrompt::MAX_TOKENS,      last[:max_tokens]
   end

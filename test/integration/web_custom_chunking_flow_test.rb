@@ -21,7 +21,7 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
       content  = [ OpenStruct.new(type: "text", text: @response_json) ]
       usage    = OpenStruct.new(input_tokens: 50, output_tokens: 100,
                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
-      message  = OpenStruct.new(content: content, usage: usage, model: "claude-opus-4-7")
+      message  = OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_MULTIMODAL)
       OpenStruct.new(accumulated_message: message)
     end
   end

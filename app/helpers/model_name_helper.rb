@@ -61,18 +61,6 @@ module ModelNameHelper
       'Claude Opus 4'
     elsif model_id.include?('claude-haiku-4')
       'Claude Haiku 4'
-    elsif model_id.include?('nova-pro') || model_id.include?('nova-2-pro')
-      'Amazon Nova Pro'
-    elsif model_id.include?('claude-3-7')
-      'Claude 3.7 Sonnet'
-    elsif model_id.include?('claude-3-5')
-      'Claude 3.5 Sonnet'
-    elsif model_id.include?('claude-3-sonnet')
-      'Claude 3 Sonnet'
-    elsif model_id.include?('claude-3-haiku')
-      'Claude 3 Haiku'
-    elsif model_id.include?('claude-3-opus')
-      'Claude 3 Opus'
     else
       # Fallback: extract readable name from model_id
       model_id.split('.').last.split('-').map(&:capitalize).join(' ')

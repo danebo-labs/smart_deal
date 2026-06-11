@@ -15,14 +15,14 @@ class BedrockQueryTest < ActiveSupport::TestCase
 
   test 'cost calculation works for known model' do
     q = BedrockQuery.new(
-      model_id: 'anthropic.claude-3-haiku-20240307-v1:0',
+      model_id: 'claude-sonnet-4-6-direct',
       input_tokens: 1000,
       output_tokens: 2000
     )
 
-    # input: 1000 → 1 * 0.00025 = 0.00025
-    # output: 2000 → 2 * 0.00125 = 0.0025
-    expected_cost = 0.00025 + 0.0025
+    # input: 1000 → 1 * 0.003 = 0.003
+    # output: 2000 → 2 * 0.015 = 0.03
+    expected_cost = 0.003 + 0.03
 
     assert_equal expected_cost.round(6), q.cost
   end
@@ -99,7 +99,7 @@ class BedrockQueryTest < ActiveSupport::TestCase
 
   test 'opus 4.8 batch pricing: $2.5/$12.5 per 1M' do
     q = BedrockQuery.new(
-      model_id: 'claude-opus-4-8',
+      model_id: 'claude-opus-4-8-batch',
       input_tokens: 1000, output_tokens: 1000
     )
     assert_equal 0.015, q.cost

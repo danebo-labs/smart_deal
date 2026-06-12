@@ -9,7 +9,9 @@ class DashboardCostChartServiceTest < ActiveSupport::TestCase
   end
 
   test "returns all calendar days for the month" do
-    result = DashboardCostChartService.new(month: @month).call
+    result = I18n.with_locale(:es) do
+      DashboardCostChartService.new(month: @month).call
+    end
 
     assert_equal 31, result[:labels].length
     assert_equal "1", result[:labels].first

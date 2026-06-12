@@ -61,6 +61,10 @@ module ModelNameHelper
       'Claude Opus 4'
     elsif model_id.include?('claude-haiku-4')
       'Claude Haiku 4'
+    elsif (match = model_id.match(/claude-3-5-(sonnet|haiku|opus)/))
+      "Claude 3.5 #{match[1].capitalize}"
+    elsif (match = model_id.match(/claude-3-(sonnet|haiku|opus)/))
+      "Claude 3 #{match[1].capitalize}"
     else
       # Fallback: extract readable name from model_id
       model_id.split('.').last.split('-').map(&:capitalize).join(' ')

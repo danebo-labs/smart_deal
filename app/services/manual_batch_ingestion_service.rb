@@ -41,7 +41,7 @@ class ManualBatchIngestionService
     pages = collect_page_infos(splitter, total_pages)
     return empty_result if pages.empty?
 
-    filter_results = build_filter_results(pages, filename)
+    filter_results = build_filter_results(pages, filename, sha256)
     kept_pages     = apply_filters(pages, filter_results)
 
     return empty_result if kept_pages.empty?
@@ -81,9 +81,13 @@ class ManualBatchIngestionService
     pages
   end
 
-  def build_filter_results(pages, filename)
+  def build_filter_results(pages, filename, sha256)
     proxies = pages.map { |p| PageProxy.new(p[:number], p[:binary]) }
-    PageRelevanceFilter.filter_pages(pages: proxies, filename: filename)
+    PageRelevanceFilter.filter_pages(
+      pages:          proxies,
+      filename:       filename,
+      correlation_id: "ingest:#{sha256.to_s[0, 12]}"
+    )
   end
 
   def apply_filters(pages, filter_results)

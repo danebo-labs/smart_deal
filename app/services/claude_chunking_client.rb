@@ -38,14 +38,18 @@ class ClaudeChunkingClient
   # @param page_number   [Integer, nil] current page number (for pdf_mixed tracking)
   # @param total_pages   [Integer, nil] total pages in this document (for pdf_mixed tracking)
   # @param max_tokens    [Integer]     token cap; defaults to MAX_TOKENS (32k) for single-shot paths;
-  #   callers that process ≤1 page pass WEB_PAGE_MAX_TOKENS (4k) with retry logic
+  #   callers that process ≤1 page pass WEB_PAGE_MAX_TOKENS (8k) with ladder retry logic
+  # @param attempt        [Integer]     1-based ladder attempt for the same logical unit (Gate 9R I0)
+  # @param correlation_id [String, nil] groups all attempts of one page/document ("ingest:<sha12>[:pN]")
+  # @param route          [String]      billing route for telemetry ("sync" | "bulk_retry")
   # @return [Hash] { text: String, usage: usage_object, model: String, stop_reason: String | nil }
   # @raise [ApiError]
   def call(user_content:, filename:, page_number: nil, total_pages: nil,
-           max_tokens: BatchChunkingPrompt::MAX_TOKENS, tracking_prefix: "web_parse")
-    attempt = 0
+           max_tokens: BatchChunkingPrompt::MAX_TOKENS, tracking_prefix: "web_parse",
+           attempt: 1, correlation_id: nil, route: "sync")
+    overloaded_attempt = 0
     begin
-      attempt += 1
+      overloaded_attempt += 1
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       response = @client.messages.stream(
@@ -69,7 +73,9 @@ class ClaudeChunkingClient
         )
       end
 
-      track_usage(response.usage, filename, page_number, total_pages, latency_ms, tracking_prefix)
+      track_usage(response.usage, filename, page_number, total_pages, latency_ms, tracking_prefix,
+                  max_tokens: max_tokens, raw_stop_reason: raw_stop,
+                  attempt: attempt, correlation_id: correlation_id, route: route)
 
       { text: text_block.text, usage: response.usage, model: response.model, stop_reason: stop_reason }
     rescue Anthropic::Errors::APIError => e
@@ -80,10 +86,10 @@ class ClaudeChunkingClient
         )
         raise CreditBalanceError, "Anthropic credit balance too low (model=#{@model}): #{e.message}"
       end
-      if e.message.to_s.include?("overloaded") && attempt <= MAX_OVERLOADED_RETRIES
-        delay = OVERLOADED_BACKOFF_SECONDS[attempt - 1] || OVERLOADED_BACKOFF_SECONDS.last
+      if e.message.to_s.include?("overloaded") && overloaded_attempt <= MAX_OVERLOADED_RETRIES
+        delay = OVERLOADED_BACKOFF_SECONDS[overloaded_attempt - 1] || OVERLOADED_BACKOFF_SECONDS.last
         Rails.logger.warn(
-          "ClaudeChunkingClient: overloaded (attempt #{attempt}/#{MAX_OVERLOADED_RETRIES + 1}) " \
+          "ClaudeChunkingClient: overloaded (attempt #{overloaded_attempt}/#{MAX_OVERLOADED_RETRIES + 1}) " \
           "for #{user_query_for_log(filename, page_number, total_pages)} — retrying in #{delay}s"
         )
         sleep delay
@@ -107,7 +113,8 @@ class ClaudeChunkingClient
     page_number && total_pages ? "#{filename} p#{page_number}/#{total_pages}" : filename
   end
 
-  def track_usage(usage, filename, page_number, total_pages, latency_ms, tracking_prefix)
+  def track_usage(usage, filename, page_number, total_pages, latency_ms, tracking_prefix,
+                  max_tokens:, raw_stop_reason:, attempt:, correlation_id:, route:)
     user_query = if page_number && total_pages
       "#{tracking_prefix}: #{filename} p#{page_number}/#{total_pages}"
     else
@@ -122,6 +129,11 @@ class ClaudeChunkingClient
       output_tokens:         usage.output_tokens.to_i,
       cache_read_tokens:     safe_token(usage, :cache_read_input_tokens),
       cache_creation_tokens: safe_token(usage, :cache_creation_input_tokens),
+      route:                 route,
+      attempt:               attempt,
+      max_tokens:            max_tokens,
+      stop_reason:           raw_stop_reason.presence,
+      correlation_id:        correlation_id,
       source:                "ingestion_parse"
     )
   rescue StandardError => e

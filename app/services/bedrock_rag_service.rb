@@ -165,7 +165,7 @@ class BedrockRagService
 
       # Build complete optimized configuration and merge with custom config
       base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
-      config = deep_merge_configs(base_config, custom_config)
+      config = enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config))
       applied_filter_uris = filtered_uris
 
       params = {
@@ -181,6 +181,11 @@ class BedrockRagService
         session_id: session_id
       }
 
+      # Gate 9R I0: groups every billable invocation of this turn (filtered
+      # attempt + global fallback) so the cost matrix can count real calls/query.
+      query_correlation_id = "query:#{SecureRandom.uuid}"
+      generation_attempt   = 1
+
       # Use retrieve_and_generate API - combines retrieval and generation in one call
       # Wraps call with retry logic for Aurora Serverless auto-pause cold-start.
       # Aurora can take 20-60s to resume; we back off and retry up to 3 times.
@@ -190,11 +195,24 @@ class BedrockRagService
       # Fallback: if filter produced no results, retry without filter.
       if apply_filter && !force_entity_filter && bedrock_no_results?(response.output.text)
         Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter")
+        # The filtered attempt is a billable generation in its own right — track it
+        # before re-running so the turn leaves one row per invocation (I0).
+        track_filtered_no_results_attempt(
+          question:        question,
+          raw_answer:      response.output.text,
+          config:          config,
+          correlation_id:  query_correlation_id,
+          latency_ms:      ((Time.current - bedrock_start_time) * 1000).to_i,
+          response_locale: response_locale,
+          session_context: effective_session_context,
+          output_channel:  output_channel
+        )
+        generation_attempt = 2
         unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: [], entity_sources: entity_sources, output_channel: output_channel)
         unfiltered_params = params.merge(
           retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
             knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
-              **deep_merge_configs(unfiltered_config, custom_config)
+              **enforce_query_contractual_limits(deep_merge_configs(unfiltered_config, custom_config))
             )
           )
         )
@@ -283,6 +301,13 @@ class BedrockRagService
         visible_answer_text: answer_text,
         user_query:         question,
         latency_ms:         latency_ms,
+        # route reflects the retrieval scope of THIS generation call:
+        # "rag_filtered" = entity filter applied; "rag_global" = unscoped
+        # (either no filter or the attempt-2 no-results fallback).
+        route:              applied_filter_uris.any? ? "rag_filtered" : "rag_global",
+        attempt:            generation_attempt,
+        max_tokens:         config.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens),
+        correlation_id:     query_correlation_id,
         source:             "query",
         model_for_counting: "haiku",
         regression_context: regression_context(
@@ -466,6 +491,39 @@ class BedrockRagService
     }.compact
   end
 
+  # Gate 9R I0: one row for the filtered retrieve_and_generate attempt that hit
+  # Bedrock's no-results guardrail before the global (unfiltered) re-run.
+  # Token counting is deferred to the job. prompt_text omits $search_results$
+  # because a no-results response carries no usable citations — the input
+  # estimate is a documented undercount for this row, but the invocation itself
+  # is recorded once with its route/attempt/correlation.
+  def track_filtered_no_results_attempt(question:, raw_answer:, config:, correlation_id:,
+                                        latency_ms:, response_locale:, session_context:, output_channel:)
+    tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
+
+    TrackBedrockQueryJob.perform_later(
+      model_id:       tracked_model_id,
+      prompt_text:    [
+        load_generation_prompt_with_locale(question,
+                                           response_locale: response_locale,
+                                           session_context: session_context,
+                                           output_channel: output_channel),
+        question
+      ].compact_blank.join("\n\n"),
+      answer_text:    raw_answer,
+      user_query:     question,
+      latency_ms:     latency_ms,
+      route:          "rag_filtered",
+      attempt:        1,
+      max_tokens:     config.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens),
+      correlation_id: correlation_id,
+      source:         "query",
+      model_for_counting: "haiku"
+    )
+  rescue StandardError => e
+    Rails.logger.warn("BedrockRagService: failed to track filtered no-results attempt — #{e.message}")
+  end
+
   # Fallback when retrieve_and_generate returns no inline citations: call the
   # Retrieve API directly to obtain the raw retrieval results. These ALWAYS
   # carry the authoritative s3_uri in `metadata["x-amz-bedrock-kb-source-uri"]`
@@ -475,6 +533,10 @@ class BedrockRagService
   # Uses N=3 (not the main query's number_of_results) — we only need enough
   # to resolve canonical_name/source_uri, not to feed generation context.
   # Scopes to the same entity filter applied in the main query when provided.
+  #
+  # Gate 9R I0 note: Retrieve is vector-only — no Claude tokens are billed and
+  # the API returns no usage block, so it intentionally leaves no BedrockQuery
+  # row. The billable invocations of a turn are the retrieve_and_generate calls.
   #
   # Output shape matches CitationProcessor#extract_citations for drop-in use.
   def fallback_retrieve(question, entity_s3_uris: [])
@@ -904,6 +966,27 @@ class BedrockRagService
         new_val
       end
     end
+  end
+
+  # Keep pricing and runtime behavior aligned even when ENV, tenant config or a
+  # caller-supplied custom_config requests a larger generation/retrieval budget.
+  def enforce_query_contractual_limits(config)
+    bounded = config.deep_dup
+    limits  = ContractualLimits::QUERY
+
+    vector = bounded.dig(:retrieval_configuration, :vector_search_configuration)
+    if vector
+      requested = vector[:number_of_results].to_i
+      vector[:number_of_results] = requested.clamp(1, limits[:max_top_k])
+    end
+
+    inference = bounded.dig(:generation_configuration, :inference_config, :text_inference_config)
+    if inference
+      requested = inference[:max_tokens].to_i
+      inference[:max_tokens] = requested.clamp(1, limits[:max_output_tokens])
+    end
+
+    bounded
   end
 
   # Returns true when the query explicitly names a document not in the session URIs,

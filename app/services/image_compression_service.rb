@@ -58,6 +58,8 @@ class ImageCompressionService
     compressed_blob   = process_image
     compressed_base64 = Base64.strict_encode64(compressed_blob)
 
+    log_compression_event(skipped: false, output_blob: compressed_blob)
+
     {
       data:            compressed_base64,
       media_type:      "image/jpeg",
@@ -106,6 +108,7 @@ class ImageCompressionService
 
   def skip_compression
     Rails.logger.debug { "ImageCompressionService: Skipping compression (decoded: #{decoded_blob.bytesize} bytes)" }
+    log_compression_event(skipped: true, output_blob: decoded_blob)
     {
       data:            @base64_data,
       media_type:      @media_type,
@@ -188,5 +191,57 @@ class ImageCompressionService
     Rails.logger.info(
       "ImageCompressionService: Compressed #{@original_size} -> #{compressed_blob.bytesize} bytes (#{reduction_pct}% reduction)"
     )
+  end
+
+  # Gate 9R O1′ prep: structured before/after telemetry so the photo cohort can be
+  # measured (bytes AND dimensions) before changing should_skip_compression?, which
+  # today skips any resize when the decoded binary is ≤ MAX_BINARY_BYTES (3.75 MB).
+  # Dimension reads are header-only; failures never affect the compression result.
+  def log_compression_event(skipped:, output_blob:)
+    before_dims = dimensions_for(decoded_blob)
+    after_dims  = skipped ? before_dims : dimensions_for(output_blob)
+
+    Rails.logger.info(
+      JSON.generate(
+        event:             "image_compression",
+        skipped:           skipped,
+        skip_reason:       skipped ? "bytes<=#{MAX_BINARY_BYTES}" : nil,
+        media_type:        @media_type,
+        bytes_before:      decoded_blob.bytesize,
+        bytes_after:       output_blob.bytesize,
+        width_before:      before_dims[:width],
+        height_before:     before_dims[:height],
+        width_after:       after_dims[:width],
+        height_after:      after_dims[:height],
+        max_dimension:     MAX_DIMENSION,
+        max_binary_bytes:  MAX_BINARY_BYTES
+      )
+    )
+  rescue StandardError => e
+    Rails.logger.warn("ImageCompressionService: telemetry failed — #{e.message}")
+  end
+
+  def dimensions_for(blob)
+    return { width: nil, height: nil } unless plausible_image_header?(blob)
+
+    img = Vips::Image.new_from_buffer(blob, "")
+    { width: img.width, height: img.height }
+  rescue StandardError
+    { width: nil, height: nil }
+  end
+
+  def plausible_image_header?(blob)
+    case @media_type
+    when "image/jpeg"
+      blob.start_with?("\xFF\xD8".b) && blob.end_with?("\xFF\xD9".b)
+    when "image/png"
+      blob.start_with?("\x89PNG\r\n\x1A\n".b)
+    when "image/webp"
+      blob.start_with?("RIFF".b) && blob.byteslice(8, 4) == "WEBP".b
+    when "image/gif"
+      blob.start_with?("GIF87a".b, "GIF89a".b)
+    else
+      false
+    end
   end
 end

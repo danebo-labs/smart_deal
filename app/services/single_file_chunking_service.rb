@@ -60,6 +60,14 @@ class SingleFileChunkingService
 
   private
 
+  # Gate 9R I0: groups all billable attempts of this upload (and, with the
+  # :p<N> suffix, of each page) so the cost matrix can rebuild first/retry/
+  # wasted splits per document. Prefix-matches "ingest:<sha12>".
+  def correlation_id(page_number = nil)
+    base = "ingest:#{@sha256.to_s[0, 12]}"
+    page_number ? "#{base}:p#{page_number}" : base
+  end
+
   # ─── Mode handlers ────────────────────────────────────────────────────────
 
   def handle_text
@@ -69,8 +77,9 @@ class SingleFileChunkingService
       locale:   @locale
     )
     result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
-      user_content: content,
-      filename:     @filename
+      user_content:   content,
+      filename:       @filename,
+      correlation_id: correlation_id
     )
     parse_and_write(result[:text])
   end
@@ -117,8 +126,9 @@ class SingleFileChunkingService
       locale:       @locale
     )
     result = client_for(model).call(
-      user_content: content,
-      filename:     @filename
+      user_content:   content,
+      filename:       @filename,
+      correlation_id: correlation_id
     )
     parse_and_write(result[:text])
   end
@@ -127,7 +137,7 @@ class SingleFileChunkingService
     total      = pages.count
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-    filter_results = PageRelevanceFilter.filter_pages(pages: pages, filename: @filename)
+    filter_results = PageRelevanceFilter.filter_pages(pages: pages, filename: @filename, correlation_id: correlation_id)
 
     kept_pages = pages.select do |page|
       r = filter_results[page.number] || { keep: true, reason: :missing, source: :fallback }
@@ -169,8 +179,9 @@ class SingleFileChunkingService
         locale:       @locale
       )
       result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
-        user_content: content,
-        filename:     @filename
+        user_content:   content,
+        filename:       @filename,
+        correlation_id: correlation_id
       )
       log_pdf_mixed_metrics(total: total, parsed_pages: [], fallback: "whole_file", started_at: started_at)
       return parse_and_write(result[:text])
@@ -293,11 +304,11 @@ class SingleFileChunkingService
     1 + ((pages.size - 1).fdiv(FileMultimodalRouter::MAX_PARALLEL_PAGES).ceil)
   end
 
-  # Escalation ladder for per-page / per-image calls. A rung fails when the
-  # output is truncated (stop_reason=max_tokens) OR is not parseable JSON —
-  # both previously degraded the page to a marker-only placeholder, losing all
-  # content (benchmark defect D1). Each failed rung retries at the next cap;
-  # only failing pages pay the extra calls.
+  # Escalation ladder for per-page / per-image calls (O3′: 8k → 16k → 32k).
+  # A rung fails when the output is truncated (stop_reason=max_tokens) OR is
+  # not parseable JSON — both previously degraded the page to a marker-only
+  # placeholder, losing all content (benchmark defect D1). Each failed rung
+  # retries at the next cap; only failing pages pay the extra calls.
   PAGE_TOKEN_LADDER = [
     BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
     BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS,
@@ -310,11 +321,13 @@ class SingleFileChunkingService
 
     PAGE_TOKEN_LADDER.each_with_index do |cap, index|
       result = client.call(
-        user_content: user_content,
-        filename:     @filename,
-        page_number:  page_number,
-        total_pages:  total_pages,
-        max_tokens:   cap
+        user_content:   user_content,
+        filename:       @filename,
+        page_number:    page_number,
+        total_pages:    total_pages,
+        max_tokens:     cap,
+        attempt:        index + 1,
+        correlation_id: correlation_id(page_number)
       )
 
       truncated  = result[:stop_reason] == "max_tokens"
@@ -357,7 +370,11 @@ class SingleFileChunkingService
       filename:     @filename,
       locale:       @locale
     )
-    result = client_for(model).call(user_content: content, filename: @filename)
+    result = client_for(model).call(
+      user_content:   content,
+      filename:       @filename,
+      correlation_id: correlation_id
+    )
     parse_and_write(result[:text])
   end
 
@@ -368,8 +385,9 @@ class SingleFileChunkingService
       locale:   @locale
     )
     result = client_for(BatchChunkingPrompt::MODEL_TEXT).call(
-      user_content: content,
-      filename:     @filename
+      user_content:   content,
+      filename:       @filename,
+      correlation_id: correlation_id
     )
     parse_and_write(result[:text])
   end

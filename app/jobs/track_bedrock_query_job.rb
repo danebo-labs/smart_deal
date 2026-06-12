@@ -22,11 +22,19 @@ class TrackBedrockQueryJob < ApplicationJob
   # @param latency_ms             [Integer]      End-to-end latency of the API call in ms
   # @param source                 [String]       "query" | "ingestion_parse" | "ingestion_embed"
   # @param model_for_counting     [Symbol]       Tokenizer model when counting here (default :haiku)
+  # @param route                  [String, nil]  Billing route ("sync"|"batch"|"bulk_retry"|"page_filter"|
+  #                                              "rag_filtered"|"rag_global"|"query_direct")
+  # @param attempt                [Integer, nil] 1-based attempt within the same logical unit
+  # @param max_tokens             [Integer, nil] Configured output cap (ladder rung) for this invocation
+  # @param stop_reason            [String, nil]  Raw provider stop reason
+  # @param correlation_id         [String, nil]  Groups all attempts of one page/document/query
   def perform(model_id:, user_query:, latency_ms:,
               input_tokens: nil, output_tokens: nil,
               cache_read_tokens: nil, cache_creation_tokens: nil,
               prompt_text: nil, answer_text: nil, visible_answer_text: nil,
               regression_context: nil,
+              route: nil, attempt: nil, max_tokens: nil,
+              stop_reason: nil, correlation_id: nil,
               source: "query", model_for_counting: :haiku)
     if input_tokens.nil? || output_tokens.nil?
       usage = AnthropicTokenCounter.count_query(
@@ -46,6 +54,11 @@ class TrackBedrockQueryJob < ApplicationJob
       cache_creation_tokens: cache_creation_tokens.presence,
       user_query:            user_query.to_s.truncate(500),
       latency_ms:            latency_ms,
+      route:                 route.presence,
+      attempt:               attempt,
+      max_tokens:            max_tokens,
+      stop_reason:           stop_reason.presence,
+      correlation_id:        correlation_id.presence,
       source:                source.to_s
     )
 

@@ -83,7 +83,52 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
     assert_equal "image/jpeg", result[:media_type]
   end
 
+  # ── Gate 9R O1′ prep: before/after telemetry ────────────────────────────────
+
+  test "skip path emits image_compression event with bytes and dimensions (skipped: true)" do
+    img_base64 = create_test_image_base64(120, 80)
+
+    logged = capture_info_logs do
+      ImageCompressionService.compress(img_base64, "image/jpeg")
+    end
+
+    line = logged.find { |l| l.include?("\"event\":\"image_compression\"") }
+    assert line, "expected an image_compression telemetry event"
+
+    event = JSON.parse(line)
+    assert event["skipped"], "≤3.75MB binaries must skip the resize (current behavior)"
+    assert_equal "bytes<=#{ImageCompressionService::MAX_BINARY_BYTES}", event["skip_reason"]
+    assert_equal Base64.decode64(img_base64).bytesize, event["bytes_before"]
+    assert_equal event["bytes_before"], event["bytes_after"], "skip must not change bytes"
+    assert_equal 120, event["width_before"]
+    assert_equal 80,  event["height_before"]
+    assert_equal 120, event["width_after"]
+    assert_equal 80,  event["height_after"]
+  end
+
+  test "telemetry failure does not break compression result" do
+    img_base64 = create_test_image_base64(60, 40)
+
+    original = Rails.logger.method(:info)
+    Rails.logger.define_singleton_method(:info) { |*| raise "logger down" }
+
+    result = ImageCompressionService.compress(img_base64, "image/jpeg")
+    assert_equal img_base64, result[:data]
+  ensure
+    Rails.logger.define_singleton_method(:info) { |msg = nil, &blk| original.call(msg, &blk) }
+  end
+
   private
+
+  def capture_info_logs
+    logged = []
+    original = Rails.logger.method(:info)
+    Rails.logger.define_singleton_method(:info) { |msg = nil, &blk| logged << (msg || blk&.call).to_s }
+    yield
+    logged
+  ensure
+    Rails.logger.define_singleton_method(:info) { |msg = nil, &blk| original.call(msg, &blk) }
+  end
 
   def create_test_image_base64(width, height, format: "jpeg")
     image = Vips::Image.black(width, height)

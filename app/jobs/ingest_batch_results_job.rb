@@ -49,7 +49,10 @@ class IngestBatchResultsJob < ApplicationJob
           page_num    = PAGE_ID_REGEX.match(result.custom_id)[1].to_i
           text        = extract_text(message)
           stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s : nil
-          page_buffers[asset.id] << { page_number: page_num, text: text, model: message.model.to_s, usage: message.usage, stop_reason: stop_reason }
+          # batch_stop_reason is immutable (telemetry for the Batch attempt);
+          # stop_reason is overwritten by retry_truncated_pages! with the latest attempt.
+          page_buffers[asset.id] << { page_number: page_num, text: text, model: message.model.to_s,
+                                      usage: message.usage, stop_reason: stop_reason, batch_stop_reason: stop_reason }
 
         elsif asset.ingestion_path == "field_photo_v1"
           # Photo — parse with FieldPhotoResultsParser
@@ -63,7 +66,8 @@ class IngestBatchResultsJob < ApplicationJob
           end
           track_asset_usage(asset, message,
             user_query:     "bulk_parse: #{asset.filename}",
-            ingestion_path: ingestion_p)
+            ingestion_path: ingestion_p,
+            correlation_id: correlation_id_for(asset))
 
         else
           # Defensive: unknown custom_id type — log and skip rather than silently swallow
@@ -100,12 +104,16 @@ class IngestBatchResultsJob < ApplicationJob
         next
       end
 
-      # Accumulate tokens across all pages
+      # Accumulate tokens across all pages.
+      # pr[:usage] / pr[:batch_stop_reason] are always the ORIGINAL Batch attempt:
+      # retry_truncated_pages! mutates text/stop_reason but tracks its own direct
+      # usage separately (one row per retry call) — no double counting.
       page_results.each do |pr|
         next unless pr[:usage]
         track_asset_usage_accumulate(asset, pr[:usage], pr[:model],
-          page_num:   pr[:page_number],
-          total_kept: total_kept)
+          page_num:    pr[:page_number],
+          total_kept:  total_kept,
+          stop_reason: pr[:batch_stop_reason])
       end
     end
 
@@ -163,8 +171,15 @@ class IngestBatchResultsJob < ApplicationJob
     raise BatchResultsParserService::ParseError, "No text block in Claude response"
   end
 
+  # Gate 9R I0: same scheme as SingleFileChunkingService#correlation_id so the
+  # cost matrix groups attempts identically across sync and batch routes.
+  def correlation_id_for(asset, page_num = nil)
+    base = "ingest:#{asset.sha256.to_s[0, 12]}"
+    page_num ? "#{base}:p#{page_num}" : base
+  end
+
   # Single-call tracking: token update + TrackBedrockQueryJob (non-accumulating — for images/legacy).
-  def track_asset_usage(asset, message, user_query:, ingestion_path:)
+  def track_asset_usage(asset, message, user_query:, ingestion_path:, correlation_id: nil)
     usage = message.respond_to?(:usage) ? message.usage : nil
     return if usage.nil?
 
@@ -189,12 +204,17 @@ class IngestBatchResultsJob < ApplicationJob
       output_tokens:         output_tokens,
       cache_read_tokens:     cache_read.positive?     ? cache_read     : nil,
       cache_creation_tokens: cache_creation.positive? ? cache_creation : nil,
+      route:                 "batch",
+      attempt:               1,
+      max_tokens:            BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
+      stop_reason:           (message.respond_to?(:stop_reason) ? message.stop_reason.to_s.presence : nil),
+      correlation_id:        correlation_id,
       source:                "ingestion_parse"
     )
   end
 
   # Per-page token accumulation for PDF batches.
-  def track_asset_usage_accumulate(asset, usage, model, page_num:, total_kept:)
+  def track_asset_usage_accumulate(asset, usage, model, page_num:, total_kept:, stop_reason: nil)
     input_tokens   = usage.input_tokens.to_i
     output_tokens  = usage.output_tokens.to_i
     cache_read     = safe_token(usage, :cache_read_input_tokens)
@@ -219,6 +239,11 @@ class IngestBatchResultsJob < ApplicationJob
       output_tokens:         output_tokens,
       cache_read_tokens:     cache_read.positive?     ? cache_read     : nil,
       cache_creation_tokens: cache_creation.positive? ? cache_creation : nil,
+      route:                 "batch",
+      attempt:               1,
+      max_tokens:            BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
+      stop_reason:           stop_reason.presence,
+      correlation_id:        correlation_id_for(asset, page_num),
       source:                "ingestion_parse"
     )
   end
@@ -228,11 +253,20 @@ class IngestBatchResultsJob < ApplicationJob
     val.positive? ? val : 0
   end
 
+  # O3′ ladder for the Batch route: the Batch attempt runs at WEB_PAGE_MAX_TOKENS (8k);
+  # pages truncated there retry sync-direct at the remaining rungs (16k → 32k).
+  # Each rung is one billable call tracked once by ClaudeChunkingClient
+  # (route "bulk_retry", attempt 2..3, shared correlation_id with the Batch row).
+  RETRY_TOKEN_LADDER = [
+    BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS,
+    BatchChunkingPrompt::MAX_TOKENS
+  ].freeze
+
   def retry_truncated_pages!(asset, page_results)
     truncated = page_results.select { |pr| pr[:stop_reason] == "max_tokens" }
     return page_results if truncated.empty?
 
-    Rails.logger.warn("IngestBatchResultsJob: #{asset.filename} has #{truncated.size} truncated page(s) — retrying sync 16k")
+    Rails.logger.warn("IngestBatchResultsJob: #{asset.filename} has #{truncated.size} truncated page(s) — retrying sync #{RETRY_TOKEN_LADDER.first / 1000}k")
 
     begin
       s3       = Aws::S3::Client.new(build_aws_client_options)
@@ -259,21 +293,31 @@ class IngestBatchResultsJob < ApplicationJob
         filename:    asset.filename
       )
 
-      begin
+      RETRY_TOKEN_LADDER.each_with_index do |cap, index|
         result = client.call(
-          user_content: user_content,
-          filename:     asset.filename,
-          page_number:  pr[:page_number],
-          total_pages:  total_kept,
-          max_tokens:   BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS,
-          tracking_prefix: "bulk_retry"
+          user_content:    user_content,
+          filename:        asset.filename,
+          page_number:     pr[:page_number],
+          total_pages:     total_kept,
+          max_tokens:      cap,
+          tracking_prefix: "bulk_retry",
+          route:           "bulk_retry",
+          attempt:         index + 2, # Batch attempt was 1
+          correlation_id:  correlation_id_for(asset, pr[:page_number])
         )
 
         pr[:text]        = result[:text]
         pr[:stop_reason] = result[:stop_reason]
         accumulate_asset_usage(asset, result[:usage])
+        break if result[:stop_reason] != "max_tokens"
+
+        Rails.logger.warn(
+          "IngestBatchResultsJob: #{asset.filename} p#{pr[:page_number]} still truncated at #{cap} — " \
+          "#{index < RETRY_TOKEN_LADDER.size - 1 ? "escalating to #{RETRY_TOKEN_LADDER[index + 1]}" : 'giving up (degraded page)'}"
+        )
       rescue ClaudeChunkingClient::ApiError => e
         Rails.logger.error("IngestBatchResultsJob: retry failed #{asset.filename} p#{pr[:page_number]} — #{e.message}")
+        break
       end
     end
 

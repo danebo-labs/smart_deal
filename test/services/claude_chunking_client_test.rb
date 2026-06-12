@@ -247,6 +247,63 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
+  # Gate 9R I0 telemetry
+  # ---------------------------------------------------------------------------
+
+  test "tracks max_tokens, raw stop_reason, attempt, correlation_id and route" do
+    response = FakeResponse.new(text: GOLDEN_JSON)
+    response.define_singleton_method(:stop_reason) { "end_turn" }
+    client = ClaudeChunkingClient.new(model: "claude-sonnet-4-6", client: FakeAnthropicClient.new(response: response))
+
+    assert_enqueued_with(job: TrackBedrockQueryJob) do
+      client.call(
+        user_content:   [],
+        filename:       "manual.pdf",
+        page_number:    7,
+        total_pages:    24,
+        max_tokens:     16_000,
+        tracking_prefix: "bulk_retry",
+        attempt:        2,
+        correlation_id: "ingest:abcdef123456:p7",
+        route:          "bulk_retry"
+      )
+    end
+
+    job_args = enqueued_jobs.last[:args].first
+    assert_equal 16_000,                   job_args["max_tokens"]
+    assert_equal "end_turn",               job_args["stop_reason"]
+    assert_equal 2,                        job_args["attempt"]
+    assert_equal "ingest:abcdef123456:p7", job_args["correlation_id"]
+    assert_equal "bulk_retry",             job_args["route"]
+  end
+
+  test "tracking defaults: route sync, attempt 1, max_tokens = configured cap" do
+    client = make_client(model: "claude-sonnet-4-6")
+
+    assert_enqueued_with(job: TrackBedrockQueryJob) do
+      client.call(user_content: [], filename: "doc.pdf")
+    end
+
+    job_args = enqueued_jobs.last[:args].first
+    assert_equal "sync",                          job_args["route"]
+    assert_equal 1,                               job_args["attempt"]
+    assert_equal BatchChunkingPrompt::MAX_TOKENS, job_args["max_tokens"]
+    assert_nil job_args["correlation_id"]
+  end
+
+  test "raw stop_reason max_tokens is recorded in telemetry (not normalized away)" do
+    response = FakeResponse.new(text: GOLDEN_JSON)
+    response.define_singleton_method(:stop_reason) { "max_tokens" }
+    client = ClaudeChunkingClient.new(model: "claude-sonnet-4-6", client: FakeAnthropicClient.new(response: response))
+
+    client.call(user_content: [], filename: "big.pdf", max_tokens: 8_000)
+
+    job_args = enqueued_jobs.last[:args].first
+    assert_equal "max_tokens", job_args["stop_reason"]
+    assert_equal 8_000,        job_args["max_tokens"]
+  end
+
+  # ---------------------------------------------------------------------------
   # CreditBalanceError
   # ---------------------------------------------------------------------------
 

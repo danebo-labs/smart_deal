@@ -52,15 +52,17 @@ class PageRelevanceFilter
   # Unified routing: call_batch for multi-page docs, per-page filter for single-page.
   # pages must respond to #number and #binary.
   # @return [Hash{Integer => Hash}] page_number => { keep:, reason:, source:, force_opus: }
-  def self.filter_pages(pages:, filename:, haiku_client: nil)
+  # @param correlation_id [String, nil] Gate 9R I0 — document-level "ingest:<sha12>"
+  #   so filter calls group with the parse calls of the same upload.
+  def self.filter_pages(pages:, filename:, haiku_client: nil, correlation_id: nil)
     return {} if pages.empty?
 
     if pages.size > 1
-      call_batch(pages: pages, filename: filename, haiku_client: haiku_client)
+      call_batch(pages: pages, filename: filename, haiku_client: haiku_client, correlation_id: correlation_id)
     else
       page   = pages.first
       result = new(page.binary, page_number: page.number, total_pages: 1,
-                   filename: filename, haiku_client: haiku_client).call
+                   filename: filename, haiku_client: haiku_client, correlation_id: correlation_id).call
       { page.number => result }
     end
   end
@@ -71,7 +73,7 @@ class PageRelevanceFilter
   # @param filename     [String]                   document filename (for tracking)
   # @param haiku_client [#messages]                injectable Anthropic client (for tests)
   # @return [Hash{Integer => Hash}] page_number => { keep:, reason:, source: :haiku_batch, force_opus: }
-  def self.call_batch(pages:, filename:, haiku_client: nil)
+  def self.call_batch(pages:, filename:, haiku_client: nil, correlation_id: nil)
     return {} if pages.empty?
 
     total_pages      = pages.map(&:number).compact.max || pages.size
@@ -80,10 +82,11 @@ class PageRelevanceFilter
 
     results = windows.each_with_object({}) do |window, h|
       filter = BatchFilter.new(
-        pages:        window,
-        filename:     filename,
-        haiku_client: haiku_client,
-        total_pages:  total_pages
+        pages:          window,
+        filename:       filename,
+        haiku_client:   haiku_client,
+        total_pages:    total_pages,
+        correlation_id: correlation_id
       )
       h.merge!(filter.call)
       fallback_windows << window_range(window) if filter.fallback?
@@ -157,13 +160,14 @@ class PageRelevanceFilter
   # @param repeated_texts [Set<String>]  texts seen >= 3 times across all pages
   # @param haiku_client   [#call]        injectable Anthropic client (for tests)
   def initialize(page_binary, page_number:, total_pages:, filename:,
-                 repeated_texts: Set.new, haiku_client: nil)
+                 repeated_texts: Set.new, haiku_client: nil, correlation_id: nil)
     @page_binary    = page_binary
     @page_number    = page_number
     @total_pages    = total_pages
     @filename       = filename
     @repeated_texts = repeated_texts
     @haiku_client   = haiku_client
+    @correlation_id = correlation_id
   end
 
   # @return [Hash] { keep: Boolean, reason: String, source: :heuristic | :haiku }
@@ -301,6 +305,11 @@ class PageRelevanceFilter
       output_tokens:         usage.output_tokens.to_i,
       cache_read_tokens:     usage.respond_to?(:cache_read_input_tokens) && usage.cache_read_input_tokens.to_i > 0 ? usage.cache_read_input_tokens.to_i : nil,
       cache_creation_tokens: usage.respond_to?(:cache_creation_input_tokens) && usage.cache_creation_input_tokens.to_i > 0 ? usage.cache_creation_input_tokens.to_i : nil,
+      route:                 "page_filter",
+      attempt:               1,
+      max_tokens:            HAIKU_MAX_TOKENS,
+      stop_reason:           (response.respond_to?(:stop_reason) ? response.stop_reason.to_s.presence : nil),
+      correlation_id:        @correlation_id,
       source:                "ingestion_parse"
     )
   rescue StandardError => e
@@ -323,11 +332,12 @@ class PageRelevanceFilter
       Be aggressive dropping covers and indexes.
     PROMPT
 
-    def initialize(pages:, filename:, haiku_client:, total_pages:)
-      @pages        = pages
-      @filename     = filename
-      @haiku_client = haiku_client
-      @total_pages  = total_pages
+    def initialize(pages:, filename:, haiku_client:, total_pages:, correlation_id: nil)
+      @pages          = pages
+      @filename       = filename
+      @haiku_client   = haiku_client
+      @total_pages    = total_pages
+      @correlation_id = correlation_id
     end
 
     def fallback?
@@ -339,7 +349,7 @@ class PageRelevanceFilter
       max_tokens = dynamic_max_tokens
 
       response, latency_ms = invoke(client, max_tokens: max_tokens)
-      parse_result(response, latency_ms)
+      parse_result(response, latency_ms, max_tokens: max_tokens, attempt: 1)
     rescue JSON::ParserError => e
       retry_after_parse_error(client, max_tokens, e)
     rescue StandardError => e
@@ -356,7 +366,7 @@ class PageRelevanceFilter
       )
 
       response, latency_ms = invoke(client, max_tokens: retry_max_tokens)
-      parse_result(response, latency_ms)
+      parse_result(response, latency_ms, max_tokens: retry_max_tokens, attempt: 2)
     rescue JSON::ParserError => e
       fallback_result(e)
     rescue StandardError => e
@@ -375,8 +385,8 @@ class PageRelevanceFilter
       [ response, latency_ms ]
     end
 
-    def parse_result(response, latency_ms)
-      track_usage(response, latency_ms)
+    def parse_result(response, latency_ms, max_tokens:, attempt:)
+      track_usage(response, latency_ms, max_tokens: max_tokens, attempt: attempt)
 
       text_block   = response.content.find { |b| b.type.to_s == "text" }
       json_str     = strip_markdown_fences(text_block.text.to_s)
@@ -469,7 +479,7 @@ class PageRelevanceFilter
       Anthropic::Client.new(api_key: api_key)
     end
 
-    def track_usage(response, latency_ms)
+    def track_usage(response, latency_ms, max_tokens:, attempt:)
       usage = response.usage
       TrackBedrockQueryJob.perform_later(
         model_id:              PageRelevanceFilter::HAIKU_TRACKING_MODEL_ID,
@@ -479,6 +489,11 @@ class PageRelevanceFilter
         output_tokens:         usage.output_tokens.to_i,
         cache_read_tokens:     usage.respond_to?(:cache_read_input_tokens) && usage.cache_read_input_tokens.to_i > 0 ? usage.cache_read_input_tokens.to_i : nil,
         cache_creation_tokens: usage.respond_to?(:cache_creation_input_tokens) && usage.cache_creation_input_tokens.to_i > 0 ? usage.cache_creation_input_tokens.to_i : nil,
+        route:                 "page_filter",
+        attempt:               attempt,
+        max_tokens:            max_tokens,
+        stop_reason:           (response.respond_to?(:stop_reason) ? response.stop_reason.to_s.presence : nil),
+        correlation_id:        @correlation_id,
         source:                "ingestion_parse"
       )
     rescue StandardError => e

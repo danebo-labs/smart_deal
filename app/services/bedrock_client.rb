@@ -42,7 +42,7 @@ class BedrockClient
     result = JSON.parse(response.body.read)
     text = result.dig('content', 0, 'text') || result.to_s
 
-    track_usage(result, model_id, prompt, start_time)
+    track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens)
 
     text
   rescue StandardError => e
@@ -59,7 +59,7 @@ class BedrockClient
 
   private
 
-  def track_usage(result, model_id, prompt, start_time)
+  def track_usage(result, model_id, prompt, start_time, max_tokens: nil)
     usage = result['usage'] || {}
     input_tokens = (usage['input_tokens'] || usage['inputTokens']).to_i
     output_tokens = (usage['output_tokens'] || usage['outputTokens']).to_i
@@ -75,6 +75,10 @@ class BedrockClient
       output_tokens: output_tokens,
       user_query: prompt.to_s.truncate(500),
       latency_ms: latency_ms,
+      route: "query_direct",
+      attempt: 1,
+      max_tokens: max_tokens,
+      stop_reason: result['stop_reason'].presence,
       source: "query"
     )
     Rails.logger.info("BedrockClient: query tracking enqueued (#{input_tokens} in + #{output_tokens} out tokens)")

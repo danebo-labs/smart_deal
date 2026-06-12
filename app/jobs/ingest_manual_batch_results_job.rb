@@ -71,10 +71,18 @@ class IngestManualBatchResultsJob < ApplicationJob
       end
 
       if result.result.type.to_s == "succeeded"
-        text  = extract_text(result.result.message)
-        model = result.result.message.model.to_s
-        track_page_usage(result.result.message, filename, page_num, ctx[:kept_pages]&.size || page_customs.size)
-        page_results << { page_number: page_num, text: text, model: model }
+        message     = result.result.message
+        text        = extract_text(message)
+        model       = message.model.to_s
+        # O3′: capture stop_reason so truncated pages are visible in telemetry and
+        # ready for the shared bounded retry that E3a will port to this chain.
+        stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s.presence : nil
+        track_page_usage(message, filename, page_num, ctx[:kept_pages]&.size || page_customs.size,
+                         sha256: sha256, stop_reason: stop_reason)
+        if stop_reason == "max_tokens"
+          Rails.logger.warn("IngestManualBatchResultsJob: #{filename} p#{page_num} truncated at batch cap (no retry in dormant chain — E3a)")
+        end
+        page_results << { page_number: page_num, text: text, model: model, stop_reason: stop_reason }
       else
         Rails.logger.warn("IngestManualBatchResultsJob: #{filename} p#{page_num} #{result.result.type} — skipping")
       end
@@ -130,7 +138,7 @@ class IngestManualBatchResultsJob < ApplicationJob
     raise "No text block in batch result message"
   end
 
-  def track_page_usage(message, filename, page_num, total_kept)
+  def track_page_usage(message, filename, page_num, total_kept, sha256: nil, stop_reason: nil)
     usage = message.respond_to?(:usage) ? message.usage : nil
     return if usage.nil?
 
@@ -145,6 +153,11 @@ class IngestManualBatchResultsJob < ApplicationJob
       output_tokens:         usage.output_tokens.to_i,
       cache_read_tokens:     safe_token(usage, :cache_read_input_tokens),
       cache_creation_tokens: safe_token(usage, :cache_creation_input_tokens),
+      route:                 "batch",
+      attempt:               1,
+      max_tokens:            BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
+      stop_reason:           stop_reason,
+      correlation_id:        sha256.present? ? "ingest:#{sha256.to_s[0, 12]}:p#{page_num}" : nil,
       source:                "ingestion_parse"
     )
   rescue StandardError => e

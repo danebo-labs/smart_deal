@@ -34,4 +34,50 @@ class FieldPhotoDensityGateTest < ActiveSupport::TestCase
     )
     assert_equal :opus, route
   end
+
+  # ── Gate 9R O1′ prep: telemetry without changing the decision ───────────────
+
+  def capture_info_logs
+    logged = []
+    original = Rails.logger.method(:info)
+    Rails.logger.define_singleton_method(:info) { |msg = nil, &blk| logged << (msg || blk&.call).to_s }
+    yield
+    logged
+  ensure
+    Rails.logger.define_singleton_method(:info) { |msg = nil, &blk| original.call(msg, &blk) }
+  end
+
+  test "emits a field_photo_gate event with bytes, route and format metadata" do
+    binary = Vips::Image.black(120, 80).write_to_buffer(".jpg")
+
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "motor.jpg")
+    end
+
+    line = logged.find { |l| l.include?("field_photo_gate") }
+    assert line, "expected a field_photo_gate telemetry event"
+
+    event = JSON.parse(line)
+    assert_equal "motor.jpg",      event["filename"]
+    assert_equal "sonnet",         event["route"]
+    assert_equal binary.bytesize,  event["bytes"]
+    assert_equal FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD, event["threshold"]
+    assert_equal 120, event["width"]
+    assert_equal 80, event["height"]
+    assert_equal "image/jpeg", event["content_type"]
+  end
+
+  test "telemetry failure never changes the routing decision" do
+    original = Rails.logger.method(:info)
+    Rails.logger.define_singleton_method(:info) { |*| raise "logger down" }
+
+    route = FieldPhotoDensityGate.decide(
+      binary:       "x" * FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD,
+      content_type: "image/jpeg",
+      filename:     "scan.jpg"
+    )
+    assert_equal :opus, route
+  ensure
+    Rails.logger.define_singleton_method(:info) { |msg = nil, &blk| original.call(msg, &blk) }
+  end
 end

@@ -222,6 +222,142 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     bulk&.destroy
   end
 
+  test "batch page rows carry route, attempt 1, 8k cap and page correlation_id (I0)" do
+    bulk, _photo_asset, pdf_asset, pdf_sha_prefix = create_bulk_with_assets
+
+    @fake_client.results = [
+      FakeBatchResult.new(
+        custom_id: "#{pdf_sha_prefix}_p1",
+        result:    FakeResult.new(type: "succeeded", message: make_message(PAGE1_JSON))
+      ),
+      FakeBatchResult.new(
+        custom_id: "#{pdf_sha_prefix}_p2",
+        result:    FakeResult.new(type: "succeeded", message: make_message(PAGE2_JSON))
+      )
+    ]
+
+    IngestBatchResultsJob.perform_now(bulk.id)
+
+    tracking = enqueued_jobs
+      .select { |j| j[:job] == TrackBedrockQueryJob }
+      .map { |j| j[:args].first }
+      .select { |a| a["user_query"].to_s.start_with?("bulk_batch:") }
+      .sort_by { |a| a["user_query"] }
+
+    assert_equal 2, tracking.size
+    expected_prefix = "ingest:#{pdf_asset.sha256[0, 12]}"
+    tracking.each_with_index do |args, idx|
+      assert_equal "batch",                              args["route"]
+      assert_equal 1,                                    args["attempt"]
+      assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, args["max_tokens"]
+      assert_equal "#{expected_prefix}:p#{idx + 1}",     args["correlation_id"]
+    end
+  ensure
+    bulk&.bulk_upload_assets&.destroy_all
+    bulk&.destroy
+  end
+
+  test "retry ladder escalates 16k → 32k while truncated, attempts 2 and 3 share correlation (O3')" do
+    bulk, _photo_asset, pdf_asset, = create_bulk_with_assets
+    initial_usage = make_usage(input: 100, output: 8_000, cache_read: 10, cache_creation: 5)
+    retry_usage_1 = make_usage(input: 120, output: 16_000, cache_read: 0, cache_creation: 0)
+    retry_usage_2 = make_usage(input: 130, output: 9_000,  cache_read: 0, cache_creation: 0)
+    page_results = [ {
+      page_number: 1,
+      text: PAGE1_JSON,
+      model: "claude-sonnet-4-6",
+      usage: initial_usage,
+      stop_reason: "max_tokens"
+    } ]
+
+    fake_s3 = Object.new
+    fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
+    fake_splitter = Object.new
+    fake_splitter.define_singleton_method(:each_page) { |&block| block.call(1, "page-pdf") }
+
+    calls = []
+    usages = [ retry_usage_1, retry_usage_2 ]
+    fake_retry_client = Object.new
+    fake_retry_client.define_singleton_method(:call) do |**kwargs|
+      calls << kwargs
+      # First retry still truncated; second one fits.
+      stop = calls.size == 1 ? "max_tokens" : nil
+      { text: PAGE1_JSON, usage: usages[calls.size - 1], stop_reason: stop }
+    end
+
+    original_s3_new           = Aws::S3::Client.method(:new)
+    original_splitter_new     = PdfPageSplitterService.method(:new)
+    original_retry_client_new = ClaudeChunkingClient.method(:new)
+    Aws::S3::Client.define_singleton_method(:new) { |*_, **_| fake_s3 }
+    PdfPageSplitterService.define_singleton_method(:new) { |_| fake_splitter }
+    ClaudeChunkingClient.define_singleton_method(:new) { |**_| fake_retry_client }
+
+    result = IngestBatchResultsJob.new.send(:retry_truncated_pages!, pdf_asset, page_results)
+
+    assert_equal 2, calls.size, "expected 16k retry then 32k escalation"
+    assert_equal [ BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS, BatchChunkingPrompt::MAX_TOKENS ],
+                 calls.pluck(:max_tokens)
+    assert_equal [ 2, 3 ],                       calls.pluck(:attempt)
+    assert_equal %w[bulk_retry bulk_retry],      calls.pluck(:route)
+    expected_correlation = "ingest:#{pdf_asset.sha256[0, 12]}:p1"
+    assert calls.all? { |c| c[:correlation_id] == expected_correlation },
+           "all retry attempts must share the page correlation_id"
+
+    # Batch usage preserved; both retries accumulated on the asset.
+    assert_same initial_usage, result.first[:usage]
+    assert_equal 120 + 130, pdf_asset.reload.claude_input_tokens
+    assert_equal 16_000 + 9_000, pdf_asset.claude_output_tokens
+    assert_nil result.first[:stop_reason]
+  ensure
+    Aws::S3::Client.define_singleton_method(:new, original_s3_new) if defined?(original_s3_new)
+    PdfPageSplitterService.define_singleton_method(:new, original_splitter_new) if defined?(original_splitter_new)
+    ClaudeChunkingClient.define_singleton_method(:new, original_retry_client_new) if defined?(original_retry_client_new)
+    bulk&.bulk_upload_assets&.destroy_all
+    bulk&.destroy
+  end
+
+  test "retry ladder stops at 16k when no longer truncated (single retry call)" do
+    bulk, _photo_asset, pdf_asset, = create_bulk_with_assets
+    page_results = [ {
+      page_number: 1,
+      text: PAGE1_JSON,
+      model: "claude-sonnet-4-6",
+      usage: make_usage(input: 100, output: 8_000),
+      stop_reason: "max_tokens"
+    } ]
+
+    fake_s3 = Object.new
+    fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
+    fake_splitter = Object.new
+    fake_splitter.define_singleton_method(:each_page) { |&block| block.call(1, "page-pdf") }
+
+    calls = []
+    usage_for_retry = make_usage(input: 120, output: 5_000, cache_read: 0, cache_creation: 0)
+    fake_retry_client = Object.new
+    fake_retry_client.define_singleton_method(:call) do |**kwargs|
+      calls << kwargs
+      { text: PAGE1_JSON, usage: usage_for_retry, stop_reason: nil }
+    end
+
+    original_s3_new           = Aws::S3::Client.method(:new)
+    original_splitter_new     = PdfPageSplitterService.method(:new)
+    original_retry_client_new = ClaudeChunkingClient.method(:new)
+    Aws::S3::Client.define_singleton_method(:new) { |*_, **_| fake_s3 }
+    PdfPageSplitterService.define_singleton_method(:new) { |_| fake_splitter }
+    ClaudeChunkingClient.define_singleton_method(:new) { |**_| fake_retry_client }
+
+    IngestBatchResultsJob.new.send(:retry_truncated_pages!, pdf_asset, page_results)
+
+    assert_equal 1, calls.size, "no 32k escalation when 16k retry fits"
+    assert_equal BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS, calls.first[:max_tokens]
+  ensure
+    Aws::S3::Client.define_singleton_method(:new, original_s3_new) if defined?(original_s3_new)
+    PdfPageSplitterService.define_singleton_method(:new, original_splitter_new) if defined?(original_splitter_new)
+    ClaudeChunkingClient.define_singleton_method(:new, original_retry_client_new) if defined?(original_retry_client_new)
+    bulk&.bulk_upload_assets&.destroy_all
+    bulk&.destroy
+  end
+
   test "truncated batch retry keeps original batch usage and does not enqueue duplicate tracking" do
     bulk, _photo_asset, pdf_asset, = create_bulk_with_assets
     initial_usage = make_usage(input: 100, output: 4_000, cache_read: 10, cache_creation: 5)

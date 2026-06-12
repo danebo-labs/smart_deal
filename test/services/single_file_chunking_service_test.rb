@@ -734,6 +734,72 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal PHOTO_NAME, asset.canonical_name
   end
 
+  test "ladder tracks attempt 1..2 with shared page correlation_id (I0)" do
+    page1 = RetryFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_prf_new  = PageRelevanceFilter.method(:new)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1 ])
+    end
+    PageRelevanceFilter.define_singleton_method(:new) do |*|
+      OpenStruct.new(call: { keep: true, reason: "content", source: :heuristic })
+    end
+
+    response_json = golden_json
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      call_idx = 0
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |_params|
+        stop = call_idx == 0 ? "max_tokens" : "end_turn"
+        call_idx += 1
+        content = [ OpenStruct.new(type: "text", text: response_json) ]
+        usage   = OpenStruct.new(input_tokens: 50, output_tokens: 80,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        OpenStruct.new(accumulated_message: OpenStruct.new(content: content, usage: usage,
+                                                           model: "claude-sonnet-4-6", stop_reason: stop))
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    tracked = []
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| tracked << kwargs }
+
+    binary = "%PDF-1.4"
+    build_service(filename: "manual.pdf", binary: binary).call
+
+    parse_rows = tracked.select { |t| t[:user_query].to_s.start_with?("web_parse:") }
+    assert_equal 2, parse_rows.size, "one tracking row per ladder attempt"
+    assert_equal [ 1, 2 ], parse_rows.pluck(:attempt)
+    assert_equal [ BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS ],
+                 parse_rows.pluck(:max_tokens)
+    assert_equal %w[max_tokens end_turn], parse_rows.pluck(:stop_reason)
+    assert_equal %w[sync sync],           parse_rows.pluck(:route)
+
+    expected_correlation = "ingest:#{Digest::SHA256.hexdigest(binary)[0, 12]}:p1"
+    assert parse_rows.all? { |t| t[:correlation_id] == expected_correlation },
+           "all ladder attempts must share the page correlation_id, got #{parse_rows.pluck(:correlation_id)}"
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:new, orig_prf_new)
+  end
+
+  test "handle_image: photo tracking carries document-level correlation_id (no page suffix)" do
+    tracked = []
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| tracked << kwargs }
+
+    @response_json = field_photo_json
+    binary = "\xFF\xD8 fake"
+    build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: binary).call
+
+    parse_rows = tracked.select { |t| t[:user_query].to_s.start_with?("web_parse:") }
+    assert_equal 1, parse_rows.size
+    assert_equal "ingest:#{Digest::SHA256.hexdigest(binary)[0, 12]}", parse_rows.first[:correlation_id]
+    assert_equal 1,      parse_rows.first[:attempt]
+    assert_equal "sync", parse_rows.first[:route]
+  end
+
   test "handle_image: escalates to MAX_TOKENS when retry is still truncated (D1 ladder)" do
     captured_max_tokens = []
     response_text       = field_photo_json

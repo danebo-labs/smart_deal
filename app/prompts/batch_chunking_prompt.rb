@@ -42,9 +42,13 @@ module BatchChunkingPrompt
     )
   end
 
-  # Per-page / per-image cap for pdf_mixed and handle_image paths.
-  # First attempt: conservative cap. Retry at WEB_PAGE_RETRY_MAX_TOKENS if truncated.
-  WEB_PAGE_MAX_TOKENS       = 4_000
+  # Per-page / per-image cap for pdf_mixed, handle_image and per-page Batch builders.
+  # O3′ (Gate 9R): universal initial cap 8k — the largest observed final page output
+  # is 5,650 tokens (run4 retries: 5,233 / 5,650 / 4,219), so 8k avoids the
+  # truncate-then-retry double billing that 4k caused on dense pages.
+  # Ladder on truncation/unparseable: 8k → 16k → 32k (see
+  # SingleFileChunkingService::PAGE_TOKEN_LADDER and IngestBatchResultsJob retry).
+  WEB_PAGE_MAX_TOKENS       = 8_000
   WEB_PAGE_RETRY_MAX_TOKENS = 16_000
 
   SYSTEM_BLOCKS = [

@@ -1003,4 +1003,100 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
                    result.dig(:chunks, 0, :chunk_sha256)
     end
   end
+
+  # ── Gate 9R I0: one row per billable invocation, filtered + global correlated ──
+
+  def capture_tracking_jobs
+    captured = []
+    original = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| captured << kwargs }
+    yield
+    captured
+  ensure
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| original.call(**kwargs) }
+  end
+
+  test 'filtered no-results fallback leaves two correlated rows: rag_filtered then rag_global' do
+    bedrock_sorry = "Sorry, I am unable to assist you with this request."
+
+    with_mock_bedrock_client do |client|
+      call_count = 0
+      sorry_response = fake_response(bedrock_sorry)
+      good_response  = fake_response("Documented torque: 25 Nm.")
+      client.define_singleton_method(:retrieve_and_generate) do |params|
+        @last_retrieve_and_generate_params = params
+        call_count += 1
+        call_count == 1 ? sorry_response : good_response
+      end
+
+      captured = capture_tracking_jobs do
+        BedrockRagService.new.query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
+      end
+
+      assert_equal 2, call_count, 'expected filtered attempt + global fallback'
+      assert_equal 2, captured.size, 'one BedrockQuery row per billable invocation'
+
+      filtered, global = captured
+      assert_equal 'rag_filtered', filtered[:route]
+      assert_equal 1,              filtered[:attempt]
+      assert_equal 'rag_global',   global[:route]
+      assert_equal 2,              global[:attempt]
+
+      assert filtered[:correlation_id].to_s.start_with?('query:'), 'correlation must use the query: scheme'
+      assert_equal filtered[:correlation_id], global[:correlation_id],
+                   'both invocations of the turn must share the correlation_id'
+      assert_equal 3000, filtered[:max_tokens]
+      assert_equal 3000, global[:max_tokens]
+      assert_equal bedrock_sorry, filtered[:answer_text], 'filtered row bills the guardrail answer'
+    end
+  end
+
+  test 'single filtered query leaves one rag_filtered row with attempt 1' do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('Par de apriete: 25 Nm.')) do
+      captured = capture_tracking_jobs do
+        BedrockRagService.new.query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
+      end
+
+      assert_equal 1, captured.size
+      assert_equal 'rag_filtered', captured.first[:route]
+      assert_equal 1,              captured.first[:attempt]
+      assert captured.first[:correlation_id].to_s.start_with?('query:')
+    end
+  end
+
+  test 'unfiltered query (no entities) leaves one rag_global row' do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
+      captured = capture_tracking_jobs do
+        BedrockRagService.new.query('What is S3?')
+      end
+
+      assert_equal 1, captured.size
+      assert_equal 'rag_global', captured.first[:route]
+      assert_equal 1,            captured.first[:attempt]
+    end
+  end
+
+  test 'query runtime clamps oversized custom retrieval and output budgets to contractual limits' do
+    service = BedrockRagService.allocate
+    config = {
+      retrieval_configuration: {
+        vector_search_configuration: { number_of_results: 999 }
+      },
+      generation_configuration: {
+        inference_config: {
+          text_inference_config: { max_tokens: 99_999 }
+        }
+      }
+    }
+
+    bounded = service.send(:enforce_query_contractual_limits, config)
+
+    assert_equal ContractualLimits::QUERY[:max_top_k],
+                 bounded.dig(:retrieval_configuration, :vector_search_configuration, :number_of_results)
+    assert_equal ContractualLimits::QUERY[:max_output_tokens],
+                 bounded.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens)
+    assert_equal 999,
+                 config.dig(:retrieval_configuration, :vector_search_configuration, :number_of_results),
+                 'the caller config must not be mutated'
+  end
 end

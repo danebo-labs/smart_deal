@@ -116,6 +116,53 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
     end
   end
 
+  # ── Gate 9R I0 telemetry fields ──────────────────────────────────────────────
+
+  test 'persists route, attempt, max_tokens, stop_reason and correlation_id' do
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        **VALID_PARAMS,
+        route:          'bulk_retry',
+        attempt:        2,
+        max_tokens:     16_000,
+        stop_reason:    'end_turn',
+        correlation_id: 'ingest:abcdef123456:p7'
+      )
+    end
+
+    record = BedrockQuery.last
+    assert_equal 'bulk_retry',             record.route
+    assert_equal 2,                        record.attempt
+    assert_equal 16_000,                   record.max_tokens
+    assert_equal 'end_turn',               record.stop_reason
+    assert_equal 'ingest:abcdef123456:p7', record.correlation_id
+  end
+
+  test 'I0 fields default to nil and blank strings are normalized to nil' do
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(**VALID_PARAMS.merge(route: '', stop_reason: '', correlation_id: ''))
+    end
+
+    record = BedrockQuery.last
+    assert_nil record.route
+    assert_nil record.attempt
+    assert_nil record.max_tokens
+    assert_nil record.stop_reason
+    assert_nil record.correlation_id
+  end
+
+  test 'correlation_id groups multiple rows of the same logical unit' do
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(**VALID_PARAMS, route: 'batch',      attempt: 1, correlation_id: 'ingest:aa11:p3')
+      TrackBedrockQueryJob.perform_now(**VALID_PARAMS, route: 'bulk_retry', attempt: 2, correlation_id: 'ingest:aa11:p3')
+    end
+
+    rows = BedrockQuery.where(correlation_id: 'ingest:aa11:p3').order(:attempt)
+    assert_equal 2, rows.count
+    assert_equal %w[batch bulk_retry], rows.pluck(:route)
+    assert_equal [ 1, 2 ],             rows.pluck(:attempt)
+  end
+
   # ── Deferred token counting (RAG path) ───────────────────────────────────────
 
   test 'counts tokens via AnthropicTokenCounter when input/output tokens are nil' do

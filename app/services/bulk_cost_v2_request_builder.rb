@@ -78,7 +78,7 @@ class BulkCostV2RequestBuilder
     pages = collect_pages(splitter)
     return [ [], [ asset.custom_id ] ] if pages.empty?
 
-    filter_results = build_filter_results(pages, asset.filename, asset.office_origin)
+    filter_results = build_filter_results(pages, asset.filename, asset.sha256)
     kept_pages     = apply_filters(pages, filter_results, asset.filename)
     # When all pages filtered → return empty page_ids (distinguishes from valid asset)
     # BatchIngestionService will mark asset as failed rather than in_batch.
@@ -98,9 +98,13 @@ class BulkCostV2RequestBuilder
     pages
   end
 
-  def build_filter_results(pages, filename, _office_origin = false)
+  def build_filter_results(pages, filename, sha256 = nil)
     proxies = pages.map { |p| PageProxy.new(p[:number], p[:binary]) }
-    PageRelevanceFilter.filter_pages(pages: proxies, filename: filename)
+    PageRelevanceFilter.filter_pages(
+      pages:          proxies,
+      filename:       filename,
+      correlation_id: sha256.present? ? "ingest:#{sha256.to_s[0, 12]}" : nil
+    )
   end
 
   def apply_filters(pages, filter_results, filename)

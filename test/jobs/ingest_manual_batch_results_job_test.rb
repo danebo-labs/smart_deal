@@ -42,4 +42,22 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
     args = enqueued_jobs.find { |j| j[:job] == TrackBedrockQueryJob }[:args].first
     assert_equal "claude-opus-4-7-batch", args["model_id"]
   end
+
+  test "track_page_usage records stop_reason, batch route, 8k cap and page correlation (I0/O3')" do
+    job = IngestManualBatchResultsJob.new
+    sha = Digest::SHA256.hexdigest("manual-bytes")
+    msg = FakeMessage.new(
+      model: "claude-sonnet-4-6",
+      usage: FakeUsage.new(input_tokens: 2000, output_tokens: 8000)
+    )
+
+    job.send(:track_page_usage, msg, "manual.pdf", 3, 20, sha256: sha, stop_reason: "max_tokens")
+
+    args = enqueued_jobs.find { |j| j[:job] == TrackBedrockQueryJob }[:args].first
+    assert_equal "batch",                          args["route"]
+    assert_equal 1,                                args["attempt"]
+    assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, args["max_tokens"]
+    assert_equal "max_tokens",                     args["stop_reason"]
+    assert_equal "ingest:#{sha[0, 12]}:p3",        args["correlation_id"]
+  end
 end

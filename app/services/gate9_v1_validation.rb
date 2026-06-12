@@ -4,6 +4,7 @@ require "aws-sdk-s3"
 require "aws-sdk-sts"
 require "digest"
 require "json"
+require "set"
 
 # Executes the paid Gate 9R V1 validation cohort without mutating S3 or the
 # Knowledge Base. Preflight is the default; paid calls require the explicit
@@ -202,6 +203,7 @@ class Gate9V1Validation
   def photo_manifest(path)
     binary = File.binread(path)
     content_type = content_type_for(path)
+    dimensions = image_dimensions(binary)
     {
       path: path,
       filename: File.basename(path),
@@ -209,6 +211,9 @@ class Gate9V1Validation
       bytes: binary.bytesize,
       sha256: Digest::SHA256.hexdigest(binary),
       content_type: content_type,
+      width: dimensions[:width],
+      height: dimensions[:height],
+      format: dimensions[:format],
       route: FieldPhotoDensityGate.decide(
         binary: binary,
         content_type: content_type,
@@ -427,21 +432,126 @@ class Gate9V1Validation
   end
 
   def compare_manual_quality(memory)
-    current_text = memory.text_chunks.values.join("\n")
-    baseline_text = baseline_chunk_texts.join("\n")
-    current_ids = current_text.scan(/RECORD_ID:\s*(FR-[A-F0-9]+)/).flatten.uniq.sort
-    baseline_ids = baseline_text.scan(/RECORD_ID:\s*(FR-[A-F0-9]+)/).flatten.uniq.sort
-    retained = baseline_ids & current_ids
+    current_chunks = memory.text_chunks.values
+    baseline_chunks = baseline_chunk_texts
+    current_ledger = evidence_ledger(current_chunks)
+    baseline_ledger = evidence_ledger(baseline_chunks)
+    matches = semantic_matches(critical_evidence_records, current_ledger.records)
+    mandatory_ids = critical_evidence_manifest.dig("stop_work_cases", "expected_mandatory_record_ids") || []
+    mandatory_matches = matches.select { |match| mandatory_ids.include?(match[:expected_id]) }
+    critical_recall = matches.count { |match| match[:score] >= 0.5 }.fdiv(matches.size).round(4)
+    current_ids = current_ledger.record_ids.sort
+    baseline_ids = baseline_ledger.record_ids.sort
+    chunk_ratio = current_chunks.size.fdiv(baseline_chunks.size).round(4)
+    record_ratio = current_ledger.records.size.fdiv(baseline_ledger.records.size).round(4)
+    material_evidence_retained =
+      current_ledger.valid? &&
+      chunk_ratio >= 0.8 &&
+      record_ratio >= 0.8 &&
+      critical_recall >= 0.8 &&
+      mandatory_matches.all? { |match| match[:score] >= 0.6 }
 
     {
-      baseline_chunks: baseline_chunk_texts.size,
-      current_chunks: memory.text_chunks.size,
-      baseline_record_ids: baseline_ids.size,
-      current_record_ids: current_ids.size,
-      retained_record_ids: retained.size,
-      record_id_recall: baseline_ids.empty? ? nil : (retained.size.to_f / baseline_ids.size).round(4),
-      missing_record_ids: baseline_ids - current_ids
+      material_evidence_retained: material_evidence_retained,
+      baseline_chunks: baseline_chunks.size,
+      current_chunks: current_chunks.size,
+      chunk_ratio: chunk_ratio,
+      baseline_records: baseline_ledger.records.size,
+      current_records: current_ledger.records.size,
+      record_ratio: record_ratio,
+      current_records_by_type: current_ledger.records.group_by(&:type).transform_values(&:size),
+      invalid_current_records: current_ledger.invalid_records.size,
+      conflicting_current_record_ids: current_ledger.conflicting_ids,
+      critical_cases: matches.size,
+      critical_semantic_recall_at_0_5: critical_recall,
+      mandatory_semantic_matches: mandatory_matches,
+      exact_record_id_overlap: (baseline_ids & current_ids).size,
+      exact_record_id_recall_diagnostic: baseline_ids.empty? ? nil :
+        ((baseline_ids & current_ids).size.to_f / baseline_ids.size).round(4)
     }
+  end
+
+  def evidence_ledger(text_chunks)
+    chunks = text_chunks.map.with_index do |text, index|
+      {
+        content: text,
+        rank: index + 1,
+        chunk_sha256: Digest::SHA256.hexdigest(text)
+      }
+    end
+    Rag::FieldRecordParser.parse_chunks(chunks)
+  end
+
+  def semantic_matches(expected_records, actual_records)
+    candidates = expected_records.each_with_index.flat_map do |expected, expected_index|
+      actual_records.each_with_index.filter_map do |actual, actual_index|
+        next unless actual.type == expected["type"]
+
+        {
+          expected_index: expected_index,
+          actual_index: actual_index,
+          score: evidence_similarity(expected, actual)
+        }
+      end
+    end.sort_by { |candidate| -candidate[:score] }
+
+    used_expected = Set.new
+    used_actual = Set.new
+    assigned = {}
+    candidates.each do |candidate|
+      next if used_expected.include?(candidate[:expected_index])
+      next if used_actual.include?(candidate[:actual_index])
+
+      used_expected << candidate[:expected_index]
+      used_actual << candidate[:actual_index]
+      assigned[candidate[:expected_index]] = candidate
+    end
+
+    expected_records.map.with_index do |expected, index|
+      candidate = assigned[index]
+      {
+        expected_id: expected["record_id"],
+        type: expected["type"],
+        score: candidate ? candidate[:score].round(4) : 0.0,
+        matched_id: candidate && actual_records[candidate[:actual_index]].record_id
+      }
+    end
+  end
+
+  def evidence_similarity(expected, actual)
+    expected_tokens = evidence_tokens(expected)
+    actual_tokens = evidence_tokens(actual)
+    union = expected_tokens | actual_tokens
+    return 0.0 if union.empty?
+
+    (expected_tokens & actual_tokens).size.to_f / union.size
+  end
+
+  def evidence_tokens(record)
+    values =
+      if record.respond_to?(:type)
+        %i[type source action expected_result stop_trigger stop_action evidence].map do |attribute|
+          record.public_send(attribute)
+        end
+      else
+        %w[type source action expected_result stop_trigger stop_action evidence].map do |attribute|
+          record[attribute]
+        end
+      end
+
+    I18n.transliterate(values.compact.join(" ").downcase).scan(/[a-z0-9]{3,}/).to_set
+  end
+
+  def critical_evidence_records
+    manifest = critical_evidence_manifest
+    Array(manifest.dig("functional_test_cases", "records")) +
+      Array(manifest.dig("stop_work_cases", "mandatory_records"))
+  end
+
+  def critical_evidence_manifest
+    @critical_evidence_manifest ||= JSON.parse(
+      Rails.root.join("script/fixtures/rag_quality_benchmark_field_records.json").read
+    )
   end
 
   def baseline_chunk_texts
@@ -492,14 +602,16 @@ class Gate9V1Validation
           @stages.dig(:manual_batch, :degraded_pages).empty?
       ),
       manual_quality: gate(
-        quality[:baseline_record_ids].to_i.positive? &&
-          quality[:record_id_recall].to_f >= 0.95,
+        quality[:material_evidence_retained] == true,
         quality: quality
       ),
       photo_cohort: gate(
         @stages.dig(:photos, :count).to_i.between?(8, 10) &&
           @stages.dig(:photos, :unique_sha256_count) == @stages.dig(:photos, :count) &&
-          @stages.dig(:photos, :routes, :opus).to_i.positive?
+          @stages.dig(:photos, :routes, :opus).to_i.positive? &&
+          Array(@stages.dig(:photos, :items)).all? do |photo|
+            photo[:width].to_i.positive? && photo[:height].to_i.positive?
+          end
       ),
       query_profiles: gate(
         query_cases.all? { |item| item[:actual_top_k].to_i == item[:expected_top_k] }
@@ -599,6 +711,17 @@ class Gate9V1Validation
     when ".gif" then "image/gif"
     else "image/jpeg"
     end
+  end
+
+  def image_dimensions(binary)
+    image = Vips::Image.new_from_buffer(binary, "")
+    {
+      width: image.width,
+      height: image.height,
+      format: image.get("vips-loader")
+    }
+  rescue StandardError
+    { width: nil, height: nil, format: nil }
   end
 
   def load_aws_identity

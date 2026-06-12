@@ -6,8 +6,12 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
   setup do
     @manual = build_pdf(24, "gate9-manual")
     @sync_pdf = build_pdf(3, "gate9-sync")
-    @photos = 7.times.map { |index| write_file("photo-#{index}.jpg", "photo-#{index}") }
-    @photos << write_file("opus.bin", "x" * (FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD + 1))
+    @photos = 7.times.map do |index|
+      write_file("photo-#{index}.jpg", test_image(".jpg", index))
+    end
+    opus = test_image(".png", 8)
+    opus << "x" * (FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD + 1 - opus.bytesize)
+    @photos << write_file("opus.png", opus)
   end
 
   test "preflight accepts the bounded V1 cohort without paid calls" do
@@ -21,6 +25,7 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     assert_equal 3, preflight.dig(:inputs, :sync_pdf, :pages)
     assert_equal 8, preflight.dig(:inputs, :photos).size
     assert_includes preflight.dig(:routing, :photo_routes).values, :opus
+    assert preflight.dig(:inputs, :photos).all? { |photo| photo[:width] == 4 && photo[:height] == 3 }
   end
 
   test "preflight rejects a dirty tree" do
@@ -46,6 +51,34 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     error = assert_raises(Gate9V1Validation::PreflightError) { validation.preflight! }
 
     assert_includes error.message, "estimated cohort cost exceeds budget"
+  end
+
+  test "semantic evidence matching does not depend on generated record ids" do
+    expected = {
+      "record_id" => "FR-OLD",
+      "type" => "STOP_WORK_CONDITION",
+      "source" => "Prueba de funcionamiento",
+      "action" => "Marcar y detener la máquina si ocurre un mal funcionamiento",
+      "expected_result" => "Máquina detenida hasta reparación",
+      "stop_trigger" => "mal funcionamiento detectado",
+      "stop_action" => "marcar y detener la máquina",
+      "evidence" => "la máquina debe marcarse y detenerse"
+    }
+    actual = Rag::FieldRecordParser::Record.new(
+      record_id: "FR-NEW",
+      type: "STOP_WORK_CONDITION",
+      source: "Prueba de funcionamiento",
+      action: "Si ocurre un mal funcionamiento, marcar y detener la máquina",
+      expected_result: "La máquina queda detenida hasta reparación",
+      stop_trigger: "mal funcionamiento detectado",
+      stop_action: "marcar y detener la máquina",
+      evidence: "la máquina debe marcarse y detenerse"
+    )
+
+    match = build_validation.send(:semantic_matches, [ expected ], [ actual ]).sole
+
+    assert_equal "FR-NEW", match[:matched_id]
+    assert_operator match[:score], :>=, 0.6
   end
 
   private
@@ -86,5 +119,9 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     path = Rails.root.join("tmp", "test-#{SecureRandom.hex(4)}-#{name}")
     File.binwrite(path, content)
     path.to_s
+  end
+
+  def test_image(extension, value)
+    Vips::Image.black(4, 3).new_from_image([ value, value, value ]).write_to_buffer(extension)
   end
 end

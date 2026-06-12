@@ -14,7 +14,7 @@
 #
 # Emits one TrackBedrockQueryJob per call with:
 #   model_id: "#{model}-direct"  (distinguishes direct-API cost from batch-API cost)
-#   user_query: "web_parse: #{filename}" or "web_parse: #{filename} p#{N}/#{M}"
+#   user_query: "<tracking_prefix>: #{filename}" or "<tracking_prefix>: #{filename} p#{N}/#{M>"
 #   latency_ms: real wall-clock latency (unlike bulk path which sets 0)
 #   source: "ingestion_parse"
 class ClaudeChunkingClient
@@ -42,7 +42,7 @@ class ClaudeChunkingClient
   # @return [Hash] { text: String, usage: usage_object, model: String, stop_reason: String | nil }
   # @raise [ApiError]
   def call(user_content:, filename:, page_number: nil, total_pages: nil,
-           max_tokens: BatchChunkingPrompt::MAX_TOKENS)
+           max_tokens: BatchChunkingPrompt::MAX_TOKENS, tracking_prefix: "web_parse")
     attempt = 0
     begin
       attempt += 1
@@ -69,7 +69,7 @@ class ClaudeChunkingClient
         )
       end
 
-      track_usage(response.usage, filename, page_number, total_pages, latency_ms)
+      track_usage(response.usage, filename, page_number, total_pages, latency_ms, tracking_prefix)
 
       { text: text_block.text, usage: response.usage, model: response.model, stop_reason: stop_reason }
     rescue Anthropic::Errors::APIError => e
@@ -107,11 +107,11 @@ class ClaudeChunkingClient
     page_number && total_pages ? "#{filename} p#{page_number}/#{total_pages}" : filename
   end
 
-  def track_usage(usage, filename, page_number, total_pages, latency_ms)
+  def track_usage(usage, filename, page_number, total_pages, latency_ms, tracking_prefix)
     user_query = if page_number && total_pages
-      "web_parse: #{filename} p#{page_number}/#{total_pages}"
+      "#{tracking_prefix}: #{filename} p#{page_number}/#{total_pages}"
     else
-      "web_parse: #{filename}"
+      "#{tracking_prefix}: #{filename}"
     end
 
     TrackBedrockQueryJob.perform_later(

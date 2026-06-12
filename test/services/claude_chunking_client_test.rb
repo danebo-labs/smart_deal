@@ -163,6 +163,23 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
     assert_equal "web_parse: big.pdf p3/10", job_args["user_query"]
   end
 
+  test "user_query accepts a custom tracking prefix" do
+    client = make_client
+
+    assert_enqueued_with(job: TrackBedrockQueryJob) do
+      client.call(
+        user_content: [],
+        filename: "big.pdf",
+        page_number: 3,
+        total_pages: 10,
+        tracking_prefix: "bulk_retry"
+      )
+    end
+
+    job_args = enqueued_jobs.last[:args].first
+    assert_equal "bulk_retry: big.pdf p3/10", job_args["user_query"]
+  end
+
   test "cache_read_tokens included when usage reports non-zero" do
     usage  = FakeUsage.new(input: 5, output: 10, cache_read: 500, cache_creation: 0)
     client = make_client(usage: usage)

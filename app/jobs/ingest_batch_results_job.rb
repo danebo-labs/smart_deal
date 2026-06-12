@@ -265,27 +265,30 @@ class IngestBatchResultsJob < ApplicationJob
           filename:     asset.filename,
           page_number:  pr[:page_number],
           total_pages:  total_kept,
-          max_tokens:   BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS
+          max_tokens:   BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS,
+          tracking_prefix: "bulk_retry"
         )
 
         pr[:text]        = result[:text]
-        pr[:usage]       = result[:usage]
         pr[:stop_reason] = result[:stop_reason]
-
-        TrackBedrockQueryJob.perform_later(
-          model_id:      "#{model}-direct",
-          user_query:    "bulk_retry: #{asset.filename} p#{pr[:page_number]}/#{total_kept}",
-          latency_ms:    0,
-          input_tokens:  result[:usage].input_tokens.to_i,
-          output_tokens: result[:usage].output_tokens.to_i,
-          source:        "ingestion_parse"
-        )
+        accumulate_asset_usage(asset, result[:usage])
       rescue ClaudeChunkingClient::ApiError => e
         Rails.logger.error("IngestBatchResultsJob: retry failed #{asset.filename} p#{pr[:page_number]} — #{e.message}")
       end
     end
 
     page_results
+  end
+
+  def accumulate_asset_usage(asset, usage)
+    cache_read     = safe_token(usage, :cache_read_input_tokens)
+    cache_creation = safe_token(usage, :cache_creation_input_tokens)
+
+    asset.update_columns(
+      claude_input_tokens: asset.claude_input_tokens.to_i +
+        usage.input_tokens.to_i + cache_read + cache_creation,
+      claude_output_tokens: asset.claude_output_tokens.to_i + usage.output_tokens.to_i
+    )
   end
 
   def bucket_name_for_retry

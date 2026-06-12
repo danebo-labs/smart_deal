@@ -87,10 +87,10 @@ BEDROCK_RAG_GENERATION_TEMPERATURE=0.1
 
 ### Data Source Selection
 
-- Web and bulk uploads should use `BEDROCK_BULK_DATA_SOURCE_ID`, a data source with Bedrock chunking disabled for app-generated chunks.
+- Web and bulk uploads use `BEDROCK_BULK_DATA_SOURCE_ID`, a shared S3 data
+  source for app-generated chunks.
 - `BEDROCK_DATA_SOURCE_ID` is legacy and only remains as a fallback in older operator tasks/services.
 - If the legacy data source is missing or invalid, those older paths use the first available data source.
-- **No inclusion prefix:** the current data source has no inclusion prefix, so Bedrock indexes the whole bucket. Documents are uploaded under `uploads/{date}/{file}`.
 - To list available data sources, run:
 
 ```bash
@@ -102,9 +102,138 @@ The command shows:
 - The preferred Data Source ID, when configured
 - All available data sources and their details
 
+### Required S3 Data Source Configuration
+
+The active data source must use this exact ingestion contract:
+
+| Setting | Required value |
+|---------|----------------|
+| Source type | Amazon S3 |
+| S3 URI / inclusion prefix | `s3://<KNOWLEDGE_BASE_S3_BUCKET>/bulk_chunks/` |
+| Chunking strategy | **No chunking** (`NONE`) |
+| Data deletion policy | `DELETE` |
+
+The bucket deliberately contains objects with different responsibilities:
+
+| S3 prefix | Purpose | Indexed by Bedrock |
+|-----------|---------|---------------------|
+| `bulk_chunks/` | App-generated `.txt` chunks and adjacent `.metadata.json` sidecars | Yes |
+| `uploads/` | Original web/chat files used for display, download, audit, and source identity | No |
+| `bulk_uploads/` | Original files extracted from bulk ZIP uploads | No |
+| `bulk_upload_archives/` | Temporary uploaded ZIP archives | No |
+
+`BatchResultsParserService` has already parsed the originals and written
+retrieval-ready text under `bulk_chunks/`. Allowing the data source to scan the
+whole bucket causes Bedrock to process originals again, which can:
+
+- emit `Ignored ... file format was not supported` warnings for image originals
+  on the text/no-chunking data source;
+- index original PDFs alongside app-generated chunks, creating duplicate
+  retrieval evidence;
+- increase sync work and make ingestion statistics misleading.
+
+The original S3 objects must remain in place. The inclusion prefix controls only
+what Bedrock indexes; it does not delete objects from S3.
+
+#### AWS Console
+
+In **Bedrock → Knowledge bases → Data source**, configure the S3 URI as:
+
+```text
+s3://<bucket>/bulk_chunks/
+```
+
+After changing the prefix, run **Sync** once. With deletion policy `DELETE`,
+Bedrock removes previously indexed objects outside `bulk_chunks/` from the
+vector index. It does not remove them from S3.
+
+Expected sync result:
+
+- status `Complete`;
+- failed documents `0`;
+- scanned source documents match the chunk `.txt` objects;
+- metadata documents match their adjacent `.metadata.json` files.
+
+#### AWS CLI verification
+
+```bash
+aws bedrock-agent get-data-source \
+  --knowledge-base-id "$BEDROCK_KNOWLEDGE_BASE_ID" \
+  --data-source-id "$BEDROCK_BULK_DATA_SOURCE_ID" \
+  --region "${AWS_REGION:-us-east-1}" \
+  --query 'dataSource.{status:status,s3:dataSourceConfiguration.s3Configuration,chunking:vectorIngestionConfiguration.chunkingConfiguration}'
+```
+
+The response must contain:
+
+```json
+{
+  "s3": {
+    "bucketArn": "arn:aws:s3:::YOUR_BUCKET",
+    "inclusionPrefixes": ["bulk_chunks/"]
+  },
+  "chunking": {
+    "chunkingStrategy": "NONE"
+  }
+}
+```
+
+Start and inspect a sync:
+
+```bash
+aws bedrock-agent start-ingestion-job \
+  --knowledge-base-id "$BEDROCK_KNOWLEDGE_BASE_ID" \
+  --data-source-id "$BEDROCK_BULK_DATA_SOURCE_ID" \
+  --region "${AWS_REGION:-us-east-1}"
+
+aws bedrock-agent list-ingestion-jobs \
+  --knowledge-base-id "$BEDROCK_KNOWLEDGE_BASE_ID" \
+  --data-source-id "$BEDROCK_BULK_DATA_SOURCE_ID" \
+  --max-results 1 \
+  --sort-by attribute=STARTED_AT,order=DESCENDING \
+  --region "${AWS_REGION:-us-east-1}"
+```
+
+### Multi-Tenant Evolution
+
+The inclusion prefix is not a tenant boundary. The planned SaaS topology keeps
+one Knowledge Base, one S3 data source, and one Aurora/pgvector store shared
+across accounts.
+
+AWS currently allows a maximum of five data sources per Knowledge Base. This is
+a Knowledge Base capacity constraint, not a tenant-isolation mechanism.
+Consequently:
+
+- never allocate one data source per account;
+- reserve data sources for genuinely different shared ingestion contracts;
+- keep all standard customer chunks in the shared `bulk_chunks/` data source;
+- use `account_id` metadata filters, not data source IDs, for tenant isolation.
+
+Do not create an Aurora vector store per tenant. If a customer contract requires
+physical vector-store isolation, provision a dedicated Knowledge Base backed by
+a dedicated Amazon S3 Vectors vector bucket and index. Validate latency and
+query volume for that tier because S3 Vectors is intended primarily for
+cost-effective, infrequent-query workloads.
+
+When multi-tenancy is implemented:
+
+- keep the data source inclusion prefix as `bulk_chunks/`;
+- store chunks under
+  `bulk_chunks/<account_id>/<document_id>/chunk_N.txt`;
+- write `account_id` and `document_id` into every chunk sidecar;
+- apply an `account_id` metadata filter to every Retrieve and
+  RetrieveAndGenerate request;
+- fail closed when account context is missing;
+- never remove the account filter during no-results fallback;
+- scope app records, S3 access, presigned URLs, caches, broadcasts, and metrics
+  by the same account.
+
+See [docs/MULTI_TENANT_ARCHITECTURE.md](docs/MULTI_TENANT_ARCHITECTURE.md) for
+the complete isolation contract.
+
 ### Embedding Model
 
-The embedding model is configured **in AWS when the Knowledge Base is created**, not in the app. The current KB uses `amazon.nova-2-multimodal-embeddings-v1:0` with `1024` dimensions. The `.env` variable `BEDROCK_EMBEDDING_MODEL_ID` is only a UI reference; it does not affect KB behavior.
+The embedding model is configured **in AWS when the Knowledge Base is created**, not in the app. The current KB uses `amazon.titan-embed-text-v2:0` with `1024` dimensions. The `.env` variable `BEDROCK_EMBEDDING_MODEL_ID` is only a UI reference; it does not affect KB behavior.
 
 To see which embedding model your Knowledge Base uses:
 

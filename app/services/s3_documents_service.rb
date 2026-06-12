@@ -52,8 +52,8 @@ class S3DocumentsService
   end
 
   # Uploads a file to the KB S3 bucket for future indexing.
-  # Uses uploads/{date}/ so documents are organized by date. The data source has no inclusion
-  # prefix configured, so the full bucket is indexed by Bedrock.
+  # Uses uploads/{date}/ so originals are organized by date. The active Bedrock
+  # data source indexes only app-generated text under bulk_chunks/.
   # @param filename [String] The filename (e.g., "photo_20260215_123456.png")
   # @param binary_data [String] Raw binary content of the file
   # @param content_type [String] MIME type (e.g., "image/png")

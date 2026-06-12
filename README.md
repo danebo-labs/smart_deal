@@ -95,7 +95,7 @@ Restart **web and workers** after changing `.env`.
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `SHARED_SESSION_ENABLED` | off | MVP: one shared chat thread for all web users |
-| `BEDROCK_BULK_DATA_SOURCE_ID` | optional | No-chunking data source for bulk ZIP + web uploads |
+| `BEDROCK_BULK_DATA_SOURCE_ID` | optional | Shared no-chunking data source for bulk ZIP + web uploads; must include only `bulk_chunks/` |
 | `ANTHROPIC_API_KEY` | — | Required for bulk ZIP and web uploads |
 | `APPSIGNAL_PUSH_API_KEY` | — | Required only for AppSignal production error/performance monitoring |
 | `INGESTION_REENQUEUE` | — | See [docs/PRODUCTION.md](docs/PRODUCTION.md) |

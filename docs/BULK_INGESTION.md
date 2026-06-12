@@ -35,7 +35,16 @@ Boilerplate pages (portada, índice, copyright, dedicatoria, agenda) are dropped
 
 **Anthropic Message Batches — async vs “live” streaming:** bulk ZIP uses the **Message Batches** API, not synchronous `messages.create` per file. The app **submits** one batch (many `custom_id` requests), Anthropic **queues and processes** it on their side, and Rails **polls** batch status (`PollClaudeBatchJob`) until the batch is terminal. Only then does `IngestBatchResultsJob` pull outcomes. The `anthropic` gem exposes that download as **`messages.batches.results_streaming(batch_id)`**; `ClaudeBatchClient#results_each` iterates it. That “streaming” is **incremental delivery of the batch result JSONL** (one line ≈ one request’s `succeeded` / `errored` / … record). It is **not** token-by-token generation streaming like a live chat completion (`stream: true` on the Messages API). Mentally: **async job + streamed result file**, not **SSE of an in-flight answer**.
 
-**Infra / KB design:** batch-produced chunks usually land on a **Bedrock data source with chunking disabled** (optional **`BEDROCK_BULK_DATA_SOURCE_ID`**); identity markers (**`Document:`**, **`DOCUMENT_ALIASES:`**, **`SOURCE_URI`**) are injected by **`BatchResultsParserService`** because there is no POST_CHUNKING Lambda on that path. **`BedrockRagService`** builds retrieval filters with **`orAll`** across **`x-amz-bedrock-kb-source-uri`** and **`original_source_uri`** so batch-ingested files still honor **pinned-entity** scoping.
+**Infra / KB design:** batch-produced chunks land on the shared
+**`BEDROCK_BULK_DATA_SOURCE_ID`**, configured with chunking disabled and S3
+inclusion prefix **`bulk_chunks/`**. Originals under `bulk_uploads/` remain in
+S3 but are not indexed directly. Identity markers (**`Document:`**,
+**`DOCUMENT_ALIASES:`**, **`SOURCE_URI`**) are injected by
+**`BatchResultsParserService`** because there is no POST_CHUNKING Lambda on that
+path. **`BedrockRagService`** builds retrieval filters with **`orAll`** across
+**`x-amz-bedrock-kb-source-uri`** and **`original_source_uri`** so batch-ingested
+files still honor **pinned-entity** scoping. See
+[Bedrock data source configuration](../BEDROCK_SETUP.md#required-s3-data-source-configuration).
 
 **Persistence:** `bulk_uploads` (overall ZIP run + `claude_batch_id` / `bedrock_ingestion_job_id`), `bulk_upload_assets` (per extracted file, S3 key, Claude token estimates, `kb_document_id` when linked).
 

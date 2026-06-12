@@ -159,18 +159,18 @@ bin/dev
 ## Arquitectura Multi-Tenant (Futuro)
 
 Documento completo en `docs/MULTI_TENANT_ARCHITECTURE.md` incluye:
-- Database schema (tenants, bedrock_configs)
-- Service layer updates
-- Tenant identification (subdomain, user-based, header-based)
-- Quota management
-- Billing integration
-- Security considerations
-- Migration path
+- Topología SaaS compartida
+- Aislamiento lógico obligatorio mediante `account_id`
+- Prefijos S3 por cuenta y un único Data Source compartido
+- Filtros Bedrock por cuenta
+- Aislamiento de jobs, cachés, streams y métricas
+- Opción comercial de aislamiento físico
 
 ### Key Features Propuestos:
-- ✅ Configuración por tenant en BD
-- ✅ AWS credentials por tenant (encrypted)
-- ✅ Knowledge Base aislado por tenant
+- ✅ Infraestructura estándar compartida para mantener costos comerciales viables
+- ✅ Un Knowledge Base, Data Source y Aurora/pgvector compartidos
+- ✅ Metadata y filtros `account_id` obligatorios
+- ✅ Amazon S3 Vectors dedicado solo para clientes que contraten aislamiento
 - ✅ Quotas y límites configurables
 - ✅ Cost tracking per tenant
 - ✅ Feature flags por tenant
@@ -230,4 +230,3 @@ app/services/bedrock_client.rb (modelo deprecado removido)
 - AWS Bedrock Pricing: https://aws.amazon.com/bedrock/pricing/
 - Claude Models Comparison: https://docs.anthropic.com/claude/docs/models-overview
 - Image Processing Gem: https://github.com/janko/image_processing
-

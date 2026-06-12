@@ -8,10 +8,15 @@ Active path for **file attachments from the home RAG chat**. No feature flags �
 
 | Variable | Purpose |
 |----------|---------|
-| `BEDROCK_BULK_DATA_SOURCE_ID` | KB data source with **no Bedrock chunking** for web and bulk upload chunks |
+| `BEDROCK_BULK_DATA_SOURCE_ID` | Shared KB data source with **no Bedrock chunking** and S3 inclusion prefix `bulk_chunks/` |
 | `ANTHROPIC_API_KEY` | Required for sync Messages API calls (web uploads) |
 
 **Local Office uploads:** install LibreOffice (see [README — Setup](../README.md#setup)).
+
+The data source must not scan the complete bucket. Original files remain under
+`uploads/`; only the app-generated `.txt` chunks and `.metadata.json` sidecars
+under `bulk_chunks/` are indexed. See
+[Bedrock data source configuration](../BEDROCK_SETUP.md#required-s3-data-source-configuration).
 
 ---
 
@@ -36,7 +41,7 @@ A file attached in the home RAG chat follows a **direct Claude parse** path via 
 | `ClaudeChunkingClient` | Sync Anthropic Messages API (`-direct` cost rows in `bedrock_queries`); accepts a `max_tokens` arg and exposes `stop_reason` so the caller can retry truncated calls |
 | `PageRelevanceFilter` | Drops boilerplate PDF pages before Sonnet/Opus parse. **`filter_pages`**: ≥2 pages → Haiku **`call_batch`** in bounded windows; 1 page → heuristics + optional Haiku gate. See [INGESTION_ROUTING.md](INGESTION_ROUTING.md) |
 | `BatchResultsParserService` | Same parser as bulk ZIP; web/chat sync writes `ingestion_path: "web_v1"` / `"field_photo_v1"` and renders manual `field_records` as canonical retrieval blocks with deterministic IDs |
-| `BulkKbSyncService` | Starts ingestion on **`BEDROCK_BULK_DATA_SOURCE_ID`** (chunking disabled) |
+| `BulkKbSyncService` | Starts ingestion on **`BEDROCK_BULK_DATA_SOURCE_ID`** (chunking disabled, `bulk_chunks/` inclusion prefix) |
 | `LambdaParityAliasFallback` | Deterministic alias fill-in when the model returns empty aliases |
 | `BedrockIngestionJob` | Polls ingestion; with `web_v1_metadata`, enriches `KbDocument` **without** a Bedrock retrieve call |
 

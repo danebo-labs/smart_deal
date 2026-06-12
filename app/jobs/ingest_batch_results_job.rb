@@ -9,8 +9,6 @@
 #
 # After all results → BulkKbSyncService#sync!, bedrock_ingestion_job_id, → PollBulkBedrock.
 class IngestBatchResultsJob < ApplicationJob
-  include AwsClientInitializer
-
   queue_as :bulk_ingestion
   discard_on ActiveRecord::RecordNotFound
 
@@ -253,75 +251,18 @@ class IngestBatchResultsJob < ApplicationJob
     val.positive? ? val : 0
   end
 
-  # O3′ ladder for the Batch route: the Batch attempt runs at WEB_PAGE_MAX_TOKENS (8k);
-  # pages truncated there retry sync-direct at the remaining rungs (16k → 32k).
-  # Each rung is one billable call tracked once by ClaudeChunkingClient
-  # (route "bulk_retry", attempt 2..3, shared correlation_id with the Batch row).
-  RETRY_TOKEN_LADDER = [
-    BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS,
-    BatchChunkingPrompt::MAX_TOKENS
-  ].freeze
-
+  # B.1 paso 12: shared bounded retry (BatchPageRetryService) for pages that are
+  # truncated OR returned invalid JSON — the V1 page-6 failure mode. The Batch
+  # usage row is preserved; each direct retry is tracked once by the client and
+  # accumulated on the asset via on_usage.
   def retry_truncated_pages!(asset, page_results)
-    truncated = page_results.select { |pr| pr[:stop_reason] == "max_tokens" }
-    return page_results if truncated.empty?
-
-    Rails.logger.warn("IngestBatchResultsJob: #{asset.filename} has #{truncated.size} truncated page(s) — retrying sync #{RETRY_TOKEN_LADDER.first / 1000}k")
-
-    begin
-      s3       = Aws::S3::Client.new(build_aws_client_options)
-      pdf_bin  = s3.get_object(bucket: bucket_name_for_retry, key: asset.s3_key).body.read
-      splitter = PdfPageSplitterService.new(pdf_bin)
-      page_binaries = {}
-      splitter.each_page { |num, bin| page_binaries[num] = bin }
-    rescue StandardError => e
-      Rails.logger.error("IngestBatchResultsJob: S3 download failed for retry #{asset.filename} — #{e.message}")
-      return page_results
-    end
-
-    truncated.each do |pr|
-      page_bin = page_binaries[pr[:page_number]]
-      next Rails.logger.warn("IngestBatchResultsJob: no binary for p#{pr[:page_number]} retry") unless page_bin
-
-      total_kept = page_results.size
-      model      = pr[:model].presence || BatchChunkingPrompt::MODEL_TEXT
-      client     = ClaudeChunkingClient.new(model: model)
-      user_content = BatchChunkingPrompt.page_user_content(
-        binary:      page_bin,
-        page_number: pr[:page_number],
-        total_pages: total_kept,
-        filename:    asset.filename
-      )
-
-      RETRY_TOKEN_LADDER.each_with_index do |cap, index|
-        result = client.call(
-          user_content:    user_content,
-          filename:        asset.filename,
-          page_number:     pr[:page_number],
-          total_pages:     total_kept,
-          max_tokens:      cap,
-          tracking_prefix: "bulk_retry",
-          route:           "bulk_retry",
-          attempt:         index + 2, # Batch attempt was 1
-          correlation_id:  correlation_id_for(asset, pr[:page_number])
-        )
-
-        pr[:text]        = result[:text]
-        pr[:stop_reason] = result[:stop_reason]
-        accumulate_asset_usage(asset, result[:usage])
-        break if result[:stop_reason] != "max_tokens"
-
-        Rails.logger.warn(
-          "IngestBatchResultsJob: #{asset.filename} p#{pr[:page_number]} still truncated at #{cap} — " \
-          "#{index < RETRY_TOKEN_LADDER.size - 1 ? "escalating to #{RETRY_TOKEN_LADDER[index + 1]}" : 'giving up (degraded page)'}"
-        )
-      rescue ClaudeChunkingClient::ApiError => e
-        Rails.logger.error("IngestBatchResultsJob: retry failed #{asset.filename} p#{pr[:page_number]} — #{e.message}")
-        break
-      end
-    end
-
-    page_results
+    BatchPageRetryService.new.retry_failed_pages!(
+      page_results: page_results,
+      s3_key:       asset.s3_key,
+      filename:     asset.filename,
+      sha256:       asset.sha256,
+      on_usage:     ->(usage) { accumulate_asset_usage(asset, usage) }
+    )
   end
 
   def accumulate_asset_usage(asset, usage)
@@ -333,12 +274,5 @@ class IngestBatchResultsJob < ApplicationJob
         usage.input_tokens.to_i + cache_read + cache_creation,
       claude_output_tokens: asset.claude_output_tokens.to_i + usage.output_tokens.to_i
     )
-  end
-
-  def bucket_name_for_retry
-    ENV["KNOWLEDGE_BASE_S3_BUCKET"].presence ||
-      Rails.application.credentials.dig(:bedrock, :knowledge_base_s3_bucket) ||
-      Rails.application.credentials.dig(:aws, :knowledge_base_s3_bucket) ||
-      "document-chatbot-generic-tech-info"
   end
 end

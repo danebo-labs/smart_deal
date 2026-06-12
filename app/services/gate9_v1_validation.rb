@@ -16,14 +16,18 @@ class Gate9V1Validation
   class BudgetExceeded < StandardError; end
   class GateFailure < StandardError; end
 
-  VERSION = "2026-06-12-v1"
+  VERSION = "2026-06-12-v2"
   DEFAULT_BUDGET_USD = 1.50
-  EXPECTED_STAGE_COSTS = {
+  FULL_EXPECTED_STAGE_COSTS = {
     manual_batch: 0.85,
     sync_pdf: 0.16,
     photos: 0.30,
     queries: 0.05
   }.freeze
+  MANUAL_ONLY_EXPECTED_STAGE_COSTS = { manual_batch: 1.20 }.freeze
+  MODES = %w[full manual_only].freeze
+  DEFAULT_MAX_RETRY_PAGES = 1
+  DEFAULT_RETRY_RESERVE_USD = 0.30
   MANUAL_SOURCE_KEY = "uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
   MANUAL_BASELINE_PREFIX =
     "bulk_chunks/2026-06-11/852f508da648aa7f06dcbaeb49a28ab714ae361d1591f9b4dadb3dd36652c064/"
@@ -94,10 +98,11 @@ class Gate9V1Validation
     end
   end
 
-  def initialize(env: ENV, identity_loader: nil, git_status_loader: nil)
+  def initialize(env: ENV, identity_loader: nil, git_status_loader: nil, retry_service: nil)
     @env = env
     @identity_loader = identity_loader || method(:load_aws_identity)
     @git_status_loader = git_status_loader || method(:git_status)
+    @retry_service = retry_service || BatchPageRetryService.new
     @stages = {}
     @memory_outputs = {}
   end
@@ -115,12 +120,14 @@ class Gate9V1Validation
     begin
       @stages[:manual_batch] = run_manual_batch
       enforce_budget!("manual_batch")
-      @stages[:sync_pdf] = run_sync_pdf
-      enforce_budget!("sync_pdf")
-      @stages[:photos] = run_photos
-      enforce_budget!("photos")
-      @stages[:queries] = run_queries
-      enforce_budget!("queries")
+      if full_mode?
+        @stages[:sync_pdf] = run_sync_pdf
+        enforce_budget!("sync_pdf")
+        @stages[:photos] = run_photos
+        enforce_budget!("photos")
+        @stages[:queries] = run_queries
+        enforce_budget!("queries")
+      end
       @gates = evaluate_gates
       failed = @gates.select { |_name, gate| gate[:passed] == false }
       raise GateFailure, failed.keys.join(", ") if failed.any?
@@ -142,6 +149,7 @@ class Gate9V1Validation
     errors = []
     load_inputs(errors)
 
+    errors << "GATE9_V1_MODE must be one of: #{MODES.join(', ')}" unless MODES.include?(mode)
     errors << "git working tree must be clean" if @git_status_loader.call.to_s.present?
     errors << "BEDROCK_RERANKER_ENABLED must be false" if truthy?("BEDROCK_RERANKER_ENABLED")
     errors << "QUERY_ROUTING_ENABLED must be false" if truthy?("QUERY_ROUTING_ENABLED")
@@ -156,9 +164,10 @@ class Gate9V1Validation
 
     {
       version: VERSION,
+      mode: mode,
       execute: execute?,
       budget_usd: budget_usd,
-      expected_stage_costs: EXPECTED_STAGE_COSTS,
+      expected_stage_costs: expected_stage_costs,
       expected_total_cost_usd: expected_total_cost,
       aws_identity: identity,
       knowledge_base_id: knowledge_base_id,
@@ -168,7 +177,7 @@ class Gate9V1Validation
       routing: {
         reranker_enabled: false,
         query_routing_enabled: false,
-        photo_routes: @photos.map { |photo| [ photo[:filename], photo[:route] ] }.to_h
+        photo_routes: Array(@photos).map { |photo| [ photo[:filename], photo[:route] ] }.to_h
       },
       git_revision: `git rev-parse HEAD`.strip
     }
@@ -182,18 +191,22 @@ class Gate9V1Validation
     @photo_paths = @env["GATE9_V1_PHOTOS"].to_s.split(",").map(&:strip).compact_blank
 
     errors << "GATE9_V1_MANUAL is missing" unless File.file?(@manual_path)
-    errors << "GATE9_V1_SYNC_PDF is missing" unless File.file?(@sync_pdf_path)
-    missing_photos = @photo_paths.reject { |path| File.file?(path) }
-    errors << "missing photo files: #{missing_photos.join(', ')}" if missing_photos.any?
+    if full_mode?
+      errors << "GATE9_V1_SYNC_PDF is missing" unless File.file?(@sync_pdf_path)
+      missing_photos = @photo_paths.reject { |path| File.file?(path) }
+      errors << "missing photo files: #{missing_photos.join(', ')}" if missing_photos.any?
+    end
     return if errors.any?
 
     @manual_binary = File.binread(@manual_path)
+    manual_pages = PdfPageSplitterService.new(@manual_binary).page_count
+    errors << "manual must have exactly 24 pages (got #{manual_pages})" unless manual_pages == 24
+
+    return unless full_mode?
+
     @sync_pdf_binary = File.binread(@sync_pdf_path)
     @photos = @photo_paths.map { |path| photo_manifest(path) }
-
-    manual_pages = PdfPageSplitterService.new(@manual_binary).page_count
     sync_pages = PdfPageSplitterService.new(@sync_pdf_binary).page_count
-    errors << "manual must have exactly 24 pages (got #{manual_pages})" unless manual_pages == 24
     errors << "sync PDF must have 2-3 pages (got #{sync_pages})" unless (2..3).cover?(sync_pages)
     errors << "photo cohort must contain 8-10 files" unless (8..10).cover?(@photos.size)
     errors << "photo cohort must contain unique binaries" unless @photos.pluck(:sha256).uniq.size == @photos.size
@@ -223,13 +236,18 @@ class Gate9V1Validation
   end
 
   def input_manifest
-    {
-      manual: file_manifest(@manual_path, @manual_binary).merge(pages: 24),
+    manifest = {
+      manual: file_manifest(@manual_path, @manual_binary).merge(pages: 24)
+    }
+    if full_mode?
+      manifest.merge!(
       sync_pdf: file_manifest(@sync_pdf_path, @sync_pdf_binary).merge(
         pages: PdfPageSplitterService.new(@sync_pdf_binary).page_count
       ),
       photos: @photos.map { |photo| photo.except(:binary, :path) }
-    }
+      )
+    end
+    manifest
   end
 
   def file_manifest(path, binary)
@@ -291,6 +309,12 @@ class Gate9V1Validation
       }
     end
 
+    retry_summary = retry_manual_pages!(
+      page_results,
+      s3_key: MANUAL_SOURCE_KEY,
+      filename: filename,
+      sha256: sha256
+    )
     report = ChunkMergerService.merge_with_report(page_results)
     memory = MemoryS3.new
     asset = ChunkAsset.new(
@@ -314,10 +338,49 @@ class Gate9V1Validation
       succeeded_pages: page_results.pluck(:page_number).sort,
       failed_results: failures,
       degraded_pages: report[:degraded_pages],
+      retry: retry_summary,
       chunks_count: parsed.chunks_count,
       canonical_name: parsed.canonical_name,
       stop_reasons: page_results.pluck(:stop_reason).compact.tally,
       quality: compare_manual_quality(memory)
+    }
+  end
+
+  def retry_manual_pages!(page_results, s3_key:, filename:, sha256:)
+    candidates = page_results.select { |page| BatchPageRetryService.needs_retry?(page) }
+    candidate_details = candidates.map do |page|
+      {
+        page: page[:page_number],
+        reason: page[:stop_reason] == "max_tokens" ? "max_tokens" : "invalid_json"
+      }
+    end
+    if candidates.size > max_retry_pages
+      raise GateFailure, "manual batch has #{candidates.size} retry pages; limit is #{max_retry_pages}"
+    end
+
+    projected_cost = actual_cost_usd + candidates.size * retry_reserve_usd
+    if projected_cost > budget_usd
+      raise BudgetExceeded,
+        "manual retry reserve: $#{format('%.4f', projected_cost)} > $#{format('%.2f', budget_usd)}"
+    end
+
+    before_id = BedrockQuery.maximum(:id).to_i
+    @retry_service.retry_failed_pages!(
+      page_results: page_results,
+      s3_key: s3_key,
+      filename: filename,
+      sha256: sha256,
+      tracking_prefix: "web_batch_retry"
+    )
+    retry_rows = BedrockQuery.where("id > ?", before_id).where(route: "bulk_retry").order(:id)
+
+    {
+      candidates: candidate_details,
+      calls: retry_rows.size,
+      attempts: retry_rows.pluck(:attempt),
+      final_failed_pages: page_results
+        .select { |page| BatchPageRetryService.needs_retry?(page) }
+        .pluck(:page_number)
     }
   end
 
@@ -590,13 +653,15 @@ class Gate9V1Validation
     fallback = query_cases.find { |item| item[:key] == "filtered_fallback" }
     quality = @stages.dig(:manual_batch, :quality) || {}
 
-    {
+    gates = {
       budget: gate(actual_cost_usd <= budget_usd, actual: actual_cost_usd, limit: budget_usd),
       telemetry_complete: gate(telemetry_complete, incomplete_ids: rows.reject { |row|
         row.route.present? && row.attempt.present? && row.max_tokens.present? && row.correlation_id.present?
       }.pluck(:id)),
       no_duplicate_invocations: gate(signatures.uniq.size == signatures.size),
-      batch_not_truncated: gate(rows.where(route: "batch", stop_reason: "max_tokens").none?),
+      batch_not_truncated: gate(
+        @stages.dig(:manual_batch, :stop_reasons).to_h["max_tokens"].to_i.zero?
+      ),
       manual_complete: gate(
         @stages.dig(:manual_batch, :failed_results).empty? &&
           @stages.dig(:manual_batch, :degraded_pages).empty?
@@ -604,7 +669,11 @@ class Gate9V1Validation
       manual_quality: gate(
         quality[:material_evidence_retained] == true,
         quality: quality
-      ),
+      )
+    }
+    return gates unless full_mode?
+
+    gates.merge(
       photo_cohort: gate(
         @stages.dig(:photos, :count).to_i.between?(8, 10) &&
           @stages.dig(:photos, :unique_sha256_count) == @stages.dig(:photos, :count) &&
@@ -622,7 +691,7 @@ class Gate9V1Validation
           fallback[:routes] == %w[rag_filtered rag_global] &&
           fallback[:correlation_ids].size == 1
       )
-    }
+    )
   end
 
   def gate(passed, details = {})
@@ -743,7 +812,27 @@ class Gate9V1Validation
   end
 
   def expected_total_cost
-    EXPECTED_STAGE_COSTS.values.sum.round(2)
+    expected_stage_costs.values.sum.round(2)
+  end
+
+  def expected_stage_costs
+    full_mode? ? FULL_EXPECTED_STAGE_COSTS : MANUAL_ONLY_EXPECTED_STAGE_COSTS
+  end
+
+  def mode
+    @env.fetch("GATE9_V1_MODE", "full")
+  end
+
+  def full_mode?
+    mode == "full"
+  end
+
+  def max_retry_pages
+    @env.fetch("GATE9_V1_MAX_RETRY_PAGES", DEFAULT_MAX_RETRY_PAGES).to_i
+  end
+
+  def retry_reserve_usd
+    @env.fetch("GATE9_V1_RETRY_RESERVE_USD", DEFAULT_RETRY_RESERVE_USD).to_f
   end
 
   def budget_usd

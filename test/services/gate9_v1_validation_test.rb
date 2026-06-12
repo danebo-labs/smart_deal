@@ -28,6 +28,22 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     assert preflight.dig(:inputs, :photos).all? { |photo| photo[:width] == 4 && photo[:height] == 3 }
   end
 
+  test "manual-only preflight requires only the 24-page manual and reserves one retry" do
+    validation = build_validation({
+      "GATE9_V1_MODE" => "manual_only",
+      "GATE9_V1_SYNC_PDF" => nil,
+      "GATE9_V1_PHOTOS" => nil
+    })
+
+    preflight = validation.preflight!
+
+    assert_equal "manual_only", preflight[:mode]
+    assert_equal({ manual_batch: 1.20 }, preflight[:expected_stage_costs])
+    assert_equal 1.20, preflight[:expected_total_cost_usd]
+    assert_equal [ :manual ], preflight[:inputs].keys
+    assert_empty preflight.dig(:routing, :photo_routes)
+  end
+
   test "preflight rejects a dirty tree" do
     validation = build_validation(git_status_loader: -> { " M app/example.rb\n" })
 
@@ -81,9 +97,41 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     assert_operator match[:score], :>=, 0.6
   end
 
+  test "manual batch retries invalid JSON before merge" do
+    page_results = [
+      {
+        page_number: 6,
+        text: '{"chunks":[{"text":"bad "quote""}]}',
+        model: "claude-sonnet-4-6",
+        stop_reason: "end_turn"
+      }
+    ]
+    retry_service = Object.new
+    retry_service.define_singleton_method(:retry_failed_pages!) do |page_results:, **|
+      page_results.first[:text] = '{"chunks":[{"text":"valid"}]}'
+      page_results
+    end
+    validation = build_validation(
+      { "GATE9_V1_MODE" => "manual_only" },
+      retry_service: retry_service
+    )
+
+    summary = validation.send(
+      :retry_manual_pages!,
+      page_results,
+      s3_key: "manual.pdf",
+      filename: "manual.pdf",
+      sha256: "a" * 64
+    )
+
+    assert_equal [ { page: 6, reason: "invalid_json" } ], summary[:candidates]
+    assert_empty summary[:final_failed_pages]
+    assert BatchPageRetryService.parseable_json?(page_results.first[:text])
+  end
+
   private
 
-  def build_validation(overrides = {}, git_status_loader: -> { "" })
+  def build_validation(overrides = {}, git_status_loader: -> { "" }, retry_service: nil)
     env = {
       "GATE9_V1_MANUAL" => @manual,
       "GATE9_V1_SYNC_PDF" => @sync_pdf,
@@ -99,7 +147,8 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     Gate9V1Validation.new(
       env: env,
       identity_loader: -> { { account: "123", arn: "arn:test", user_id: "user" } },
-      git_status_loader: git_status_loader
+      git_status_loader: git_status_loader,
+      retry_service: retry_service
     )
   end
 

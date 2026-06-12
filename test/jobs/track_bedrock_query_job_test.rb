@@ -151,6 +151,55 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
     assert_nil record.correlation_id
   end
 
+  test 'token_source is provider_usage when both token counts come from the caller' do
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(**VALID_PARAMS)
+    end
+
+    assert_equal 'provider_usage', BedrockQuery.last.token_source
+    assert_not BedrockQuery.last.estimated_tokens?
+  end
+
+  test 'token_source is estimated when tokens are counted from reconstructed text (B.1 paso 13)' do
+    orig = AnthropicTokenCounter.method(:count_query)
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |**|
+      { input_tokens: 4321, output_tokens: 123 }
+    end
+
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        model_id:    VALID_PARAMS[:model_id],
+        user_query:  VALID_PARAMS[:user_query],
+        latency_ms:  VALID_PARAMS[:latency_ms],
+        prompt_text: 'reconstructed prompt',
+        answer_text: 'answer'
+      )
+    end
+
+    record = BedrockQuery.last
+    assert_equal 'estimated', record.token_source
+    assert record.estimated_tokens?
+  ensure
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
+  end
+
+  test 'token_source is estimated when only one token count is provided' do
+    orig = AnthropicTokenCounter.method(:count_query)
+    AnthropicTokenCounter.define_singleton_method(:count_query) do |**|
+      { input_tokens: 999, output_tokens: 111 }
+    end
+
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        **VALID_PARAMS.merge(output_tokens: nil, answer_text: 'partial')
+      )
+    end
+
+    assert_equal 'estimated', BedrockQuery.last.token_source
+  ensure
+    AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
+  end
+
   test 'correlation_id groups multiple rows of the same logical unit' do
     with_turbo_broadcast_stubbed do
       TrackBedrockQueryJob.perform_now(**VALID_PARAMS, route: 'batch',      attempt: 1, correlation_id: 'ingest:aa11:p3')

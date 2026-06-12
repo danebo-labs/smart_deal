@@ -79,9 +79,6 @@ class IngestManualBatchResultsJob < ApplicationJob
         stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s.presence : nil
         track_page_usage(message, filename, page_num, ctx[:kept_pages]&.size || page_customs.size,
                          sha256: sha256, stop_reason: stop_reason)
-        if stop_reason == "max_tokens"
-          Rails.logger.warn("IngestManualBatchResultsJob: #{filename} p#{page_num} truncated at batch cap (no retry in dormant chain — E3a)")
-        end
         page_results << { page_number: page_num, text: text, model: model, stop_reason: stop_reason }
       else
         Rails.logger.warn("IngestManualBatchResultsJob: #{filename} p#{page_num} #{result.result.type} — skipping")
@@ -94,6 +91,19 @@ class IngestManualBatchResultsJob < ApplicationJob
     end
 
     page_results.sort_by! { |r| r[:page_number] }
+
+    # B.1 paso 12: shared bounded retry for truncated OR invalid-JSON pages
+    # (V1 page-6 failure mode). Retry only — automatic long-manual routing
+    # stays untouched until E3a. No asset ledger row exists on this chain;
+    # each retry is still tracked once by ClaudeChunkingClient.
+    page_results = BatchPageRetryService.new.retry_failed_pages!(
+      page_results:    page_results,
+      s3_key:          s3_key,
+      filename:        filename,
+      sha256:          sha256,
+      tracking_prefix: "web_batch_retry"
+    )
+
     merged_json = ChunkMergerService.merge(page_results)
 
     s3 = S3DocumentsService.new

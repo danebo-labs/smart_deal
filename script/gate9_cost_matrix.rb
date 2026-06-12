@@ -43,9 +43,13 @@ puts "    Batch firsts / direct retry #{fmt.call(manual[:splits][:batch_first_at
 puts "    no-cache penalty (delta)    #{fmt.call(manual[:splits][:cache_penalty_no_cache_delta])}"
 
 queries = report[:queries]
-puts "\nQUERIES — certification cohort (n=#{queries[:n_queries]} queries, #{queries[:n_model_calls]} model calls)"
+puts "\nQUERIES — certification cohort (n=#{queries[:n_queries]} queries, #{queries[:n_model_calls]} model calls; basis: #{queries[:basis]})"
 puts "    expected / 1000             #{fmt.call(queries[:expected_per_1000])}"
 puts "    conservative (100% gen)     #{fmt.call(queries[:conservative_per_1000])}"
+recon = queries[:ledger_reconciliation]
+puts "    V1 ledger reconciliation    app #{fmt.call(recon[:app_ledger_cost])} vs CloudWatch #{fmt.call(recon[:cloudwatch_cost])} " \
+     "(app underestimates #{recon[:app_underestimation_pct]}%)"
+puts "    rule: #{recon[:rule]}"
 
 photos = report[:photos]
 puts "\nPHOTOS — provisional (n=#{photos[:n]}; #{photos[:note]})"

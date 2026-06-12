@@ -36,6 +36,12 @@ class TrackBedrockQueryJob < ApplicationJob
               route: nil, attempt: nil, max_tokens: nil,
               stop_reason: nil, correlation_id: nil,
               source: "query", model_for_counting: :haiku)
+    # B.1 paso 13: rows whose tokens come from the provider usage payload are
+    # exact; rows counted from reconstructed text are estimates (V1 measured a
+    # 29.7% query-cost underestimation) and must be labeled as such wherever
+    # cost is reported commercially.
+    token_source = input_tokens && output_tokens ? "provider_usage" : "estimated"
+
     if input_tokens.nil? || output_tokens.nil?
       usage = AnthropicTokenCounter.count_query(
         prompt: prompt_text.to_s,
@@ -59,6 +65,7 @@ class TrackBedrockQueryJob < ApplicationJob
       max_tokens:            max_tokens,
       stop_reason:           stop_reason.presence,
       correlation_id:        correlation_id.presence,
+      token_source:          token_source,
       source:                source.to_s
     )
 

@@ -39,7 +39,7 @@ class ContractualLimitsTest < ActiveSupport::TestCase
     assert_equal 8_000, BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS
     assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, SingleFileChunkingService::PAGE_TOKEN_LADDER.first
     # Batch retry rungs cover the remainder of the ladder
-    assert_equal SingleFileChunkingService::PAGE_TOKEN_LADDER[1..], IngestBatchResultsJob::RETRY_TOKEN_LADDER
+    assert_equal SingleFileChunkingService::PAGE_TOKEN_LADDER[1..], BatchPageRetryService::RETRY_TOKEN_LADDER
   end
 
   test "query limits match retrieval profile, session context budget and RAG defaults" do

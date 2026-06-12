@@ -109,6 +109,11 @@ class Gate9CostMatrix
   end
 
   # ── Queries (certified 16×3 benchmark tokens, Haiku global) ────────────────
+  #
+  # B.1 paso 13: the commercial basis is CloudWatch tokens. App-side query rows
+  # reconstruct input from observable citations (BedrockQuery token_source
+  # "estimated") and V1 measured a 29.7% cost underestimation on them — they are
+  # never used here except to publish the reconciliation gap itself.
   def query_scenarios
     cert    = @data.fetch("query_certification")
     rates   = PRICING.fetch("haiku_global")
@@ -124,8 +129,30 @@ class Gate9CostMatrix
     {
       n_queries:                 queries.to_i,
       n_model_calls:             calls.to_i,
+      basis:                     "cloudwatch_tokens",
       expected_per_1000:         round4(cert_cost / queries * 1000),
-      conservative_per_1000:     round4(per_call * 1000)
+      conservative_per_1000:     round4(per_call * 1000),
+      ledger_reconciliation:     query_ledger_reconciliation
+    }
+  end
+
+  # V1-measured gap between the app ledger (estimated tokens) and CloudWatch
+  # for the same query cohort. Costs derived from fixture tokens, not stored.
+  def query_ledger_reconciliation
+    recon = @data.fetch("v1_query_ledger_reconciliation")
+    rates = PRICING.fetch("haiku_global")
+
+    app_cost = (recon["app_input_tokens"] * rates[:input] +
+                recon["app_output_tokens"] * rates[:output]) / 1000.0
+    cw_cost  = (recon["cloudwatch_input_tokens"] * rates[:input] +
+                recon["cloudwatch_output_tokens"] * rates[:output]) / 1000.0
+
+    {
+      source:                      recon["source"],
+      app_ledger_cost:             round4(app_cost),
+      cloudwatch_cost:             round4(cw_cost),
+      app_underestimation_pct:     ((1 - app_cost / cw_cost) * 100).round(1),
+      rule:                        "commercial query cost uses CloudWatch tokens; app rows with token_source=estimated are operational diagnosis only"
     }
   end
 

@@ -60,8 +60,8 @@ module ContractualLimits
     # before exceeding it. Until E3a enforces that policy, the true technical
     # maximum must assume every kept page can route to Opus.
     max_opus_page_fraction: 1.0,
-    # Batch first attempt + bounded direct retries (IngestBatchResultsJob
-    # RETRY_TOKEN_LADDER): 8k batch → 16k direct → 32k direct.
+    # Batch first attempt + bounded direct retries (BatchPageRetryService
+    # RETRY_TOKEN_LADDER, on truncation OR invalid JSON): 8k batch → 16k → 32k direct.
     max_attempts_per_page: 3,
     output_token_ladder:   [ 8_000, 16_000, 32_000 ].freeze,
     # No lower token cap exists for a PDF page request. The matrix derives the

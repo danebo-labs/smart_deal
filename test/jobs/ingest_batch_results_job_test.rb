@@ -358,6 +358,52 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     bulk&.destroy
   end
 
+  test "invalid-JSON end_turn page is retried via the shared service (V1 page-6 regression)" do
+    bulk, _photo_asset, pdf_asset, = create_bulk_with_assets
+    invalid_json = '{"document_name":"Manual","chunks":[{"text":"Consulte la sección "Etiquetas"","page":1}]}'
+    page_results = [ {
+      page_number: 1,
+      text: invalid_json,
+      model: "claude-sonnet-4-6",
+      usage: make_usage(input: 100, output: 1_500),
+      stop_reason: "end_turn"
+    } ]
+
+    fake_s3 = Object.new
+    fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
+    fake_splitter = Object.new
+    fake_splitter.define_singleton_method(:each_page) { |&block| block.call(1, "page-pdf") }
+
+    calls = []
+    retry_usage = make_usage(input: 120, output: 2_000, cache_read: 0, cache_creation: 0)
+    fake_retry_client = Object.new
+    fake_retry_client.define_singleton_method(:call) do |**kwargs|
+      calls << kwargs
+      { text: PAGE1_JSON, usage: retry_usage, stop_reason: nil }
+    end
+
+    original_s3_new           = Aws::S3::Client.method(:new)
+    original_splitter_new     = PdfPageSplitterService.method(:new)
+    original_retry_client_new = ClaudeChunkingClient.method(:new)
+    Aws::S3::Client.define_singleton_method(:new) { |*_, **_| fake_s3 }
+    PdfPageSplitterService.define_singleton_method(:new) { |_| fake_splitter }
+    ClaudeChunkingClient.define_singleton_method(:new) { |**_| fake_retry_client }
+
+    result = IngestBatchResultsJob.new.send(:retry_truncated_pages!, pdf_asset, page_results)
+
+    assert_equal 1, calls.size, "end_turn + invalid JSON must trigger the shared retry"
+    assert_equal PAGE1_JSON, result.first[:text]
+    # Retry usage accumulated on the asset; original batch usage object preserved.
+    assert_equal 120, pdf_asset.reload.claude_input_tokens
+    assert_equal 2_000, pdf_asset.claude_output_tokens
+  ensure
+    Aws::S3::Client.define_singleton_method(:new, original_s3_new) if defined?(original_s3_new)
+    PdfPageSplitterService.define_singleton_method(:new, original_splitter_new) if defined?(original_splitter_new)
+    ClaudeChunkingClient.define_singleton_method(:new, original_retry_client_new) if defined?(original_retry_client_new)
+    bulk&.bulk_upload_assets&.destroy_all
+    bulk&.destroy
+  end
+
   test "truncated batch retry keeps original batch usage and does not enqueue duplicate tracking" do
     bulk, _photo_asset, pdf_asset, = create_bulk_with_assets
     initial_usage = make_usage(input: 100, output: 4_000, cache_read: 10, cache_creation: 5)

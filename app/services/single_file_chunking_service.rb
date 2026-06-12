@@ -351,16 +351,11 @@ class SingleFileChunkingService
     result
   end
 
-  # Fence-tolerant, mirroring ChunkMergerService#parse_page_result and
-  # BatchResultsParserService#normalize_json_text so the ladder and the
-  # downstream consumers accept exactly the same outputs.
+  # Canonical fence-tolerant check shared with the Batch retry route so the
+  # sync ladder and BatchPageRetryService accept exactly the same outputs
+  # (mirrors ChunkMergerService#parse_page_result normalization).
   def parseable_json?(text)
-    s = text.to_s.strip
-    s = s.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip if s.start_with?("```")
-    JSON.parse(s)
-    true
-  rescue JSON::ParserError
-    false
+    BatchPageRetryService.parseable_json?(text)
   end
 
   def handle_pdf_text_only_binary(pdf_binary, model)

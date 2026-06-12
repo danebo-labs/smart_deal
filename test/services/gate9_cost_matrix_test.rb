@@ -59,6 +59,19 @@ class Gate9CostMatrixTest < ActiveSupport::TestCase
     assert_equal 8.649,  report[:queries][:conservative_per_1000]
   end
 
+  test "query reporting declares its CloudWatch basis and the V1 ledger reconciliation (B.1 paso 13)" do
+    queries = report[:queries]
+    assert_equal "cloudwatch_tokens", queries[:basis]
+
+    recon = queries[:ledger_reconciliation]
+    # Derived from fixture tokens (22,308/4,426 app vs 41,185/4,413 CloudWatch)
+    # via haiku_global pricing — reproduces GATE9_V1_2026-06-12.md exactly.
+    assert_equal 0.0444, recon[:app_ledger_cost]
+    assert_equal 0.0633, recon[:cloudwatch_cost]
+    assert_equal 29.7,   recon[:app_underestimation_pct]
+    assert_includes recon[:rule], "token_source=estimated"
+  end
+
   test "reproduces photo baseline: $4.6237 expected / $5.2276 high-water (n=4 declared)" do
     assert_equal 4.6237, report[:photos][:expected_per_200]
     assert_equal 5.2276, report[:photos][:conservative_per_200]

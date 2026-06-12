@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_12_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_12_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -29,6 +29,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_150000) do
     t.string "route"
     t.string "source", default: "query", null: false
     t.string "stop_reason"
+    t.string "token_source"
     t.datetime "updated_at", null: false
     t.text "user_query"
     t.index [ "correlation_id" ], name: "index_bedrock_queries_on_correlation_id"

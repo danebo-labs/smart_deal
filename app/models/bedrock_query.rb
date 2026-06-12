@@ -11,6 +11,16 @@ class BedrockQuery < ApplicationRecord
     ingestion_embed:  "ingestion_embed"
   }, default: :query
 
+  scope :estimated_tokens, -> { where(token_source: "estimated") }
+
+  # B.1 paso 13: rows with token_source "estimated" reconstruct input from
+  # observable citations (Bedrock R&G exposes no usage block). V1 measured a
+  # 29.7% query-cost underestimation vs CloudWatch on these rows — #cost is
+  # operational diagnosis there, never invoice truth. NULL = legacy/unknown.
+  def estimated_tokens?
+    token_source == "estimated"
+  end
+
   BEDROCK_PRICING = {
     # Anthropic Batch API (50% off standard). Opus 4.7/4.8: $5/$25 standard → batch $2.50/$12.50
     # cache_read: 10% of base input; cache_creation: 125% of base input — both at batch rate.

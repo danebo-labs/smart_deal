@@ -396,5 +396,13 @@
   "manual_fixed_costs": {
     "embeddings_usd_per_200pp": 0.0083,
     "note": "page_filter cost is derived from the haiku rows in manual_cohort_rows; embeddings measured (Titan v2)"
+  },
+  "v1_query_ledger_reconciliation": {
+    "source": "GATE9_V1_2026-06-12.md - 6 logical queries / 7 generations, 2026-06-12",
+    "note": "App ledger reconstructs RAG input from observable citations (token_source=estimated); CloudWatch tokens are the billing basis. Costs are derived from these tokens via haiku_global pricing - never stored.",
+    "app_input_tokens": 22308,
+    "app_output_tokens": 4426,
+    "cloudwatch_input_tokens": 41185,
+    "cloudwatch_output_tokens": 4413
   }
 }

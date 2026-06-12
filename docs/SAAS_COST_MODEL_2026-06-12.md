@@ -145,6 +145,15 @@ certified mix, before processing the manual.
   original batch usage with retry usage. The 2026-06-12 fix keeps batch usage,
   records each direct retry once, and accumulates both costs on the asset.
 
+- **B.1 (2026-06-12): query rows are explicitly labeled.** `bedrock_queries.token_source`
+  distinguishes `provider_usage` (exact Anthropic/invoke_model usage payloads) from
+  `estimated` (RAG rows whose input is reconstructed from observable citations —
+  Bedrock retrieve_and_generate exposes no usage block). V1 measured a **29.7%
+  query-cost underestimation** on estimated rows (app $0.044438 vs CloudWatch
+  $0.063250 for the same cohort). Commercial query reporting uses CloudWatch
+  tokens (`Gate9CostMatrix` `basis: cloudwatch_tokens`, with the V1 reconciliation
+  published in the matrix); `estimated` rows are operational diagnosis only.
+
 Use CloudWatch/AWS billing data as the financial source of truth. Use local
 `BedrockQuery` and `CostMetric` data for attribution and operational diagnosis.
 

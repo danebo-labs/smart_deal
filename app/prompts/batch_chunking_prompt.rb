@@ -317,6 +317,13 @@ module BatchChunkingPrompt
           connection=; value=. Never put unavailable placeholders in x.
         - STOP_WORK_CONDITION requires both sw elements from the same visible fragment;
           otherwise use another type. Never infer a stop condition.
+        - When the same safety obligation (e.g., emergency stop, lockout, halt) is
+          explicitly described for MULTIPLE DISTINCT control stations, panels, or
+          operating positions, emit ONE SEPARATE STOP_WORK_CONDITION record per station.
+          Use the station-specific section heading or label as `h`. Do not merge
+          records from different documented control positions even if the physical
+          action is the same button press. Distinct documented control positions
+          require independently verifiable records.
         - SCHEMATIC_LABEL keeps the literal label; undocumented meaning stays unavailable.
         - Keep narrative orienting, not duplicative; records hold atomic evidence.
 

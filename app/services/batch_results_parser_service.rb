@@ -248,13 +248,16 @@ class BatchResultsParserService
     record_type = allowlisted_value(values["k"], FIELD_RECORD_TYPES)
     source = field_value(values["h"])
     source = "Page #{page}" if source == "DATA_NOT_AVAILABLE" && page.present?
+    stop_pair = Array(values["sw"])
     record_id = field_record_id(
       page: page,
       source: source,
       record_type: record_type,
       action: values["a"],
       expected_result: values["r"],
-      evidence: values["ev"]
+      evidence: values["ev"],
+      stop_trigger: stop_pair[0],
+      stop_action: stop_pair[1]
     )
 
     lines = [
@@ -277,15 +280,22 @@ class BatchResultsParserService
     lines.join("\n")
   end
 
-  def field_record_id(page:, source:, record_type:, action:, expected_result:, evidence:)
-    fingerprint = [
+  # Append stop-work context only when present. This distinguishes sibling
+  # safety records without changing historical IDs for every other record type.
+  def field_record_id(page:, source:, record_type:, action:, expected_result:,
+                      evidence:, stop_trigger: nil, stop_action: nil)
+    fingerprint_parts = [
       page,
       source,
       record_type,
       field_value(action),
       field_value(expected_result),
       field_value(evidence)
-    ].join("\u001F")
+    ]
+    if stop_trigger.present? || stop_action.present?
+      fingerprint_parts.push(field_value(stop_trigger), field_value(stop_action))
+    end
+    fingerprint = fingerprint_parts.join("\u001F")
 
     "FR-#{Digest::SHA256.hexdigest(fingerprint).first(16).upcase}"
   end

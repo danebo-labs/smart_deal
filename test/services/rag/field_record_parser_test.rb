@@ -163,4 +163,97 @@ class Rag::FieldRecordParserTest < ActiveSupport::TestCase
     assert_equal "LOW visibilidad parcial", record.uncertainty
     assert record.record_id.start_with?("FR-")
   end
+
+  # ---------------------------------------------------------------------------
+  # B.2 — context-distinct stop-work records survive in the ledger
+  # ---------------------------------------------------------------------------
+
+  GROUND_STOP_BLOCK = <<~RECORD
+    FIELD_RECORD:
+    RECORD_ID: FR-GROUND0000000001
+    SOURCE_SECTION_OR_PAGE: 2.1.1 Controles de tierra — Parada de emergencia
+    RECORD_TYPE: STOP_WORK_CONDITION
+    ACTION: Presione el botón de parada de emergencia a posición apagado
+    EXPECTED_RESULT: Se detienen todas las funciones
+    STOP_WORK_TRIGGER: emergencia desde controles de tierra
+    STOP_WORK_REQUIRED_ACTION: presionar botón rojo a posición apagado
+    EVIDENCE: para detener todas las funciones desde controles de tierra
+    END_FIELD_RECORD
+  RECORD
+
+  PLATFORM_STOP_BLOCK = <<~RECORD
+    FIELD_RECORD:
+    RECORD_ID: FR-PLATFORM000000001
+    SOURCE_SECTION_OR_PAGE: Control de plataforma — Parada de emergencia
+    RECORD_TYPE: STOP_WORK_CONDITION
+    ACTION: Presione el botón de parada de emergencia a posición apagado
+    EXPECTED_RESULT: Se detienen todas las funciones
+    STOP_WORK_TRIGGER: emergencia desde control de plataforma
+    STOP_WORK_REQUIRED_ACTION: presionar botón rojo a posición apagado
+    EVIDENCE: para detener todas las funciones desde control de plataforma
+    END_FIELD_RECORD
+  RECORD
+
+  test "ground-control emergency-stop record survives as a distinct record" do
+    result = Rag::FieldRecordParser.parse_text(GROUND_STOP_BLOCK)
+
+    assert_empty result[:invalid]
+    record = result[:records].sole
+    assert record.stop_work?
+    assert_equal "FR-GROUND0000000001", record.record_id
+    assert_includes record.source, "Controles de tierra"
+    assert_equal "emergencia desde controles de tierra", record.stop_trigger
+  end
+
+  test "platform-control emergency-stop record survives as a distinct record" do
+    result = Rag::FieldRecordParser.parse_text(PLATFORM_STOP_BLOCK)
+
+    assert_empty result[:invalid]
+    record = result[:records].sole
+    assert record.stop_work?
+    assert_equal "FR-PLATFORM000000001", record.record_id
+    assert_includes record.source, "Control de plataforma"
+    assert_equal "emergencia desde control de plataforma", record.stop_trigger
+  end
+
+  test "ground and platform stop-work records survive together as distinct records in the ledger" do
+    combined_text = GROUND_STOP_BLOCK + PLATFORM_STOP_BLOCK
+
+    ledger = Rag::FieldRecordParser.parse_chunks([
+      { content: combined_text, rank: 1, chunk_sha256: "sha_combined" }
+    ])
+
+    assert ledger.valid?,
+      "ledger must be valid; conflicting IDs: #{ledger.conflicting_ids.inspect}"
+    stop_records = ledger.records.select(&:stop_work?)
+    assert_equal 2, stop_records.size,
+      "both ground-control and platform-control stop-work records must appear"
+    record_ids = stop_records.map(&:record_id)
+    assert_includes record_ids, "FR-GROUND0000000001"
+    assert_includes record_ids, "FR-PLATFORM000000001"
+  end
+
+  test "physically identical stop-work records deduplicate to one entry" do
+    ledger = Rag::FieldRecordParser.parse_chunks([
+      { content: GROUND_STOP_BLOCK, rank: 1, chunk_sha256: "sha_chunk_a" },
+      { content: GROUND_STOP_BLOCK, rank: 2, chunk_sha256: "sha_chunk_b" }
+    ])
+
+    assert ledger.valid?
+    assert_equal 1, ledger.records.size,
+      "physically identical stop-work records must deduplicate to a single entry"
+    assert_equal 2, ledger.records.sole.provenances.size,
+      "deduped record must carry both chunk provenances"
+  end
+
+  test "absent evidence does not appear in the ledger" do
+    ledger = Rag::FieldRecordParser.parse_chunks([
+      { content: GROUND_STOP_BLOCK, rank: 1, chunk_sha256: "sha_x" }
+    ])
+
+    assert ledger.valid?
+    assert_equal 1, ledger.records.size
+    assert_empty ledger.records.select { |r| r.stop_trigger == "emergencia desde control de plataforma" },
+      "platform-control record must not appear when absent from the extracted chunk"
+  end
 end

@@ -561,4 +561,112 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
 
     assert_equal "parsed", asset.reload.status
   end
+
+  # ---------------------------------------------------------------------------
+  # B.2 — safety-record context: STOP_WORK_CONDITION RECORD_ID includes sw
+  # ---------------------------------------------------------------------------
+
+  test "stop-work records that share action/evidence but differ in stop_trigger get distinct RECORD_IDs" do
+    ground = field_record(
+      "k"  => "STOP_WORK_CONDITION",
+      "h"  => "Controles de tierra",
+      "a"  => "Presione el botón de parada de emergencia a su posición apagado",
+      "r"  => "Se detienen todas las funciones",
+      "ev" => "para detener todas las funciones",
+      "sw" => [ "emergencia desde controles de tierra", "presionar botón rojo a posición apagado" ]
+    )
+    platform = field_record(
+      "k"  => "STOP_WORK_CONDITION",
+      "h"  => "Controles de tierra",
+      "a"  => "Presione el botón de parada de emergencia a su posición apagado",
+      "r"  => "Se detienen todas las funciones",
+      "ev" => "para detener todas las funciones",
+      "sw" => [ "emergencia desde control de plataforma", "presionar botón rojo a posición apagado" ]
+    )
+
+    parser = build_parser
+    id_ground = parser.send(:render_field_record, ground, page: 3)[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+    id_platform = parser.send(:render_field_record, platform, page: 3)[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+
+    assert_not_nil id_ground
+    assert_not_nil id_platform
+    assert_not_equal id_ground, id_platform,
+      "ground-control and platform-control stop-work records must not share a RECORD_ID"
+  end
+
+  test "stop-work records that are physically identical get the same RECORD_ID and deduplicate" do
+    record = field_record(
+      "k"  => "STOP_WORK_CONDITION",
+      "h"  => "Prueba de velocidad",
+      "a"  => "Verificar velocidad con plataforma elevada",
+      "r"  => "No supera 20 cm/s",
+      "ev" => "marque la máquina inmediatamente y deje de funcionar",
+      "sw" => [ "velocidad supera 20 cm/s", "marcar y detener la máquina" ]
+    )
+
+    parser = build_parser
+    id_first  = parser.send(:render_field_record, record, page: 7)[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+    id_second = parser.send(:render_field_record, record, page: 7)[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+
+    assert_not_nil id_first
+    assert_equal id_first, id_second,
+      "physically identical stop-work records must produce the same RECORD_ID for deduplication"
+  end
+
+  test "records without stop-work context retain the historical RECORD_ID" do
+    parser = build_parser
+    values = {
+      page: 3,
+      source: "Section 2.4",
+      record_type: "FUNCTIONAL_TEST",
+      action: "Press the horn button.",
+      expected_result: "The horn sounds.",
+      evidence: "Pulse el botón de la bocina."
+    }
+    legacy_fingerprint = values.values.join("\u001F")
+    expected_id = "FR-#{Digest::SHA256.hexdigest(legacy_fingerprint).first(16).upcase}"
+
+    assert_equal expected_id, parser.send(:field_record_id, **values)
+  end
+
+  test "ground and platform stop-work records survive as distinct entries through the full render-parse cycle" do
+    shared_chunk_text = "# S4 — SAFETY SYSTEM\nPrueba de parada de emergencia."
+    ground_rec = field_record(
+      "k"  => "STOP_WORK_CONDITION",
+      "h"  => "Controles de tierra — Parada de emergencia",
+      "a"  => "Presione el botón rojo de parada de emergencia a posición apagado",
+      "r"  => "Se detienen todas las funciones",
+      "ev" => "para detener todas las funciones",
+      "sw" => [ "emergencia desde controles de tierra", "presionar botón a posición apagado" ]
+    )
+    platform_rec = field_record(
+      "k"  => "STOP_WORK_CONDITION",
+      "h"  => "Control de plataforma — Parada de emergencia",
+      "a"  => "Presione el botón rojo de parada de emergencia a posición apagado",
+      "r"  => "Se detienen todas las funciones",
+      "ev" => "para detener todas las funciones",
+      "sw" => [ "emergencia desde control de plataforma", "presionar botón a posición apagado" ]
+    )
+
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0] = {
+      "text"         => shared_chunk_text,
+      "page"         => 3,
+      "aliases"      => [],
+      "field_records" => [ ground_rec, platform_rec ]
+    }
+
+    asset  = make_asset
+    parser = build_parser
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    chunk_text = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    parsed = Rag::FieldRecordParser.parse_text(chunk_text)
+    stop_work_records = parsed[:records].select(&:stop_work?)
+
+    assert_equal 2, stop_work_records.size,
+      "both ground-control and platform-control stop-work records must survive the render-parse cycle"
+    assert_equal 2, stop_work_records.map(&:record_id).uniq.size,
+      "ground and platform stop-work records must have distinct RECORD_IDs after rendering"
+  end
 end

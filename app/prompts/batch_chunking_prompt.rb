@@ -317,6 +317,10 @@ module BatchChunkingPrompt
           connection=; value=. Never put unavailable placeholders in x.
         - STOP_WORK_CONDITION requires both sw elements from the same visible fragment;
           otherwise use another type. Never infer a stop condition.
+        - Conditional operating-limit statements are STOP_WORK_CONDITION when the
+          same visible fragment says that exceeding the limit requires lifting,
+          transporting, marking, stopping, prohibiting operation, or using another
+          non-driving recovery method.
         - When the same safety obligation (e.g., emergency stop, lockout, halt) is
           explicitly described for MULTIPLE DISTINCT control stations, panels, or
           operating positions, emit ONE SEPARATE STOP_WORK_CONDITION record per station.

@@ -282,6 +282,108 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_includes chunk, "REPAIR_AUTHORITY: Qualified service technician"
   end
 
+  test "adds deterministic stop-work record for conditional transport limit evidence" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0] = {
+      "text" => <<~TEXT,
+        ## Determinar el gradiente (pendiente)
+
+        Mida la pendiente con un inclinómetro digital.
+
+        **Advertencia:** Si la pendiente supera la pendiente máxima o la clasificación de pendiente lateral,
+        la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa.
+        Consulte la sección "Transporte y elevación".
+      TEXT
+      "page" => 14,
+      "field_records" => [
+        field_record(
+          "k" => "SAFETY_WARNING",
+          "h" => "Determinar el gradiente:",
+          "a" => "Verificar que la pendiente no supere la pendiente máxima ni la clasificación de pendiente lateral.",
+          "r" => "Si la pendiente supera los límites, la máquina debe levantarse o transportarse por la rampa.",
+          "ev" => "la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa"
+        )
+      ]
+    }
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    ledger = Rag::FieldRecordParser.parse_text(chunk)
+    stop_work = ledger[:records].select(&:stop_work?).sole
+
+    assert_includes stop_work.source, "Determinar el gradiente"
+    assert_includes stop_work.stop_trigger, "pendiente supera"
+    assert_includes stop_work.stop_action, "levantarse"
+    assert_includes stop_work.evidence, "máquina debe levantarse o transportado"
+  end
+
+  test "does not duplicate deterministic transport stop-work when LLM already emitted it" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0] = {
+      "text" => <<~TEXT,
+        ## Determinar el gradiente (pendiente)
+
+        Si la pendiente supera la pendiente máxima o la clasificación de pendiente lateral,
+        la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa.
+      TEXT
+      "page" => 14,
+      "field_records" => [
+        field_record(
+          "k" => "STOP_WORK_CONDITION",
+          "h" => "Determinar el gradiente:",
+          "a" => "Verificar que la pendiente no supere la pendiente máxima.",
+          "r" => "Si supera los límites, transportar la máquina por la rampa.",
+          "ev" => "la máquina debe levantarse o transportado hacia arriba y hacia abajo",
+          "sw" => [
+            "pendiente supera la pendiente máxima",
+            "la máquina debe levantarse o transportado hacia arriba y hacia abajo"
+          ]
+        )
+      ]
+    }
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    stop_work_records = Rag::FieldRecordParser.parse_text(chunk)[:records].select(&:stop_work?)
+    assert_equal 1, stop_work_records.size
+  end
+
+  test "does not add deterministic stop-work for slope limit without mandatory action" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0] = {
+      "text" => <<~TEXT,
+        ## Conducir en una pendiente
+
+        Grado máximo de pendiente, posición replegada: 25%.
+        Clasificación máxima de pendiente lateral, posición replegada: 25%.
+        Las clasificaciones de pendiente están limitadas por las condiciones del terreno y la tracción.
+      TEXT
+      "page" => 13,
+      "field_records" => [
+        field_record(
+          "k" => "SAFETY_WARNING",
+          "h" => "Conducir en una pendiente",
+          "a" => "Determinar las clasificaciones de pendiente y pendiente lateral.",
+          "r" => "Grado máximo de pendiente: 25%.",
+          "ev" => "Grado máximo de pendiente, posición replegada 25 %"
+        )
+      ]
+    }
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    assert_empty Rag::FieldRecordParser.parse_text(chunk)[:records].select(&:stop_work?)
+  end
+
   test "caps document aliases at 15 and chunk aliases at 8" do
     aliases = 20.times.map { |index| "alias #{index}" }
     payload = golden_parsed.merge(

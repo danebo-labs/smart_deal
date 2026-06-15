@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "set"
 
 # Parses a single Claude response for a file asset:
 #   1. Extracts and validates the JSON from Claude's response.
@@ -36,6 +37,14 @@ class BatchResultsParserService
   FIELD_RECORD_REQUIRED_KEYS = %w[k h a r ev].freeze
   FIELD_RECORD_OPTIONAL_KEYS = %w[x sw ra u].freeze
   FIELD_RECORD_ALLOWED_KEYS = (FIELD_RECORD_REQUIRED_KEYS + FIELD_RECORD_OPTIONAL_KEYS).freeze
+  CONDITIONAL_TRANSPORT_STOP_REGEX = /
+    si\s+
+    (?<trigger>[^.]{1,220}?\b(?:supera|excede|sobrepasa)\b[^.]{1,220}?)
+    [,;]?\s+
+    (?:la\s+)?(?:maquina|máquina|plataforma|equipo)\s+
+    debe\s+
+    (?<action>[^.]{1,220}?\b(?:levantarse|transportarse|levantado|levantada|transportado|transportada|transportar|levantar|no\s+operar|no\s+conducir)\b[^.]{0,220})
+  /ix
 
   def initialize(s3_service: nil)
     @s3 = s3_service || S3DocumentsService.new
@@ -58,6 +67,7 @@ class BatchResultsParserService
     end
 
     parsed  = parse_json(text)
+    enrich_field_records!(parsed, ingestion_path: ingestion_path)
     validate!(parsed, asset, ingestion_path: ingestion_path)
 
     date_prefix   = Date.current.iso8601
@@ -157,6 +167,83 @@ class BatchResultsParserService
         )
       end
     end
+  end
+
+  def enrich_field_records!(parsed, ingestion_path:)
+    return if ingestion_path == "field_photo_v1"
+
+    Array(parsed["chunks"]).each do |chunk|
+      next unless chunk.is_a?(Hash) && chunk["field_records"].is_a?(Array)
+
+      deterministic_stop_work_records(chunk).each do |record|
+        next if stop_work_equivalent_present?(chunk["field_records"], record)
+
+        chunk["field_records"] << record
+      end
+    end
+  end
+
+  def deterministic_stop_work_records(chunk)
+    text = chunk["text"].to_s
+    searchable_text = text.gsub(/\s+/, " ")
+    matches = searchable_text.scan(CONDITIONAL_TRANSPORT_STOP_REGEX)
+    return [] if matches.empty?
+
+    matches.filter_map do |trigger, action|
+      trigger = field_value(trigger)
+      action = field_value(action)
+      evidence = conditional_transport_evidence(text)
+      next if evidence == "DATA_NOT_AVAILABLE"
+
+      {
+        "k" => "STOP_WORK_CONDITION",
+        "h" => semantic_heading(chunk),
+        "a" => "Verificar condición límite documentada: #{trigger}",
+        "r" => evidence,
+        "ev" => evidence,
+        "sw" => [ trigger, action ]
+      }
+    end
+  end
+
+  def conditional_transport_evidence(text)
+    normalized = text.to_s.gsub(/\s+/, " ").strip
+    match = normalized.match(
+      /
+        ((?:la\s+)?(?:máquina|maquina|plataforma|equipo)\s+
+        debe\s+
+        [^.]{0,320}\b(?:levantarse|transportarse|levantado|levantada|transportado|transportada|transportar|levantar|no\s+operar|no\s+conducir)\b
+        [^.]{0,320})
+      /ix
+    )
+    field_value(match && match[1])
+  end
+
+  def semantic_heading(chunk)
+    text = chunk["text"].to_s
+    heading = text[/^##\s+(.+)$/i, 1] ||
+      text[/^\*\*Section:\*\*\s+(.+)$/i, 1] ||
+      "Page #{chunk['page']}"
+    field_value(heading)
+  end
+
+  def stop_work_equivalent_present?(records, candidate)
+    candidate_tokens = semantic_token_set([ candidate["sw"], candidate["ev"] ].flatten.join(" "))
+    Array(records).any? do |record|
+      values = record.deep_stringify_keys
+      next false unless values["k"] == "STOP_WORK_CONDITION"
+
+      existing_tokens = semantic_token_set([ values["sw"], values["ev"] ].flatten.join(" "))
+      (candidate_tokens & existing_tokens).size >= 3
+    end
+  end
+
+  def normalize_semantic_text(text)
+    I18n.transliterate(text.to_s.downcase).gsub(/\s+/, " ")
+  end
+
+  def semantic_token_set(text)
+    normalize_semantic_text(text).scan(/[a-z0-9]{3,}/).to_set
   end
 
   def validate_field_record!(record, asset:, chunk_index:, record_index:)

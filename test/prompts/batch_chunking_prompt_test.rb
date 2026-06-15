@@ -64,6 +64,9 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "STOP_WORK_CONDITION requires both sw elements"
     assert_includes prompt, "from the same visible fragment"
     assert_includes prompt, "otherwise use another type"
+    assert_includes prompt, "Conditional operating-limit statements are STOP_WORK_CONDITION"
+    assert_includes prompt, "exceeding the limit requires lifting"
+    assert_includes prompt, "non-driving recovery method"
   end
 
   test "keeps records with their semantic chunk" do

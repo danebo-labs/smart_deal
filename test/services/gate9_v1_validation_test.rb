@@ -97,6 +97,93 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     assert_operator match[:score], :>=, 0.6
   end
 
+  test "stop-work semantic matching preserves B3 mandatory paraphrases" do
+    pairs = [
+      [
+        {
+          "record_id" => "FR-480A25A947279253",
+          "type" => "STOP_WORK_CONDITION",
+          "source" => "Principio básico",
+          "action" => "Inspeccionar la máquina en busca de daños o cambios no autorizados en el estado de fábrica.",
+          "expected_result" => "Si se encuentran daños o cambios no autorizados en el estado de fábrica, " \
+            "la máquina debe marcarse y detenerse.",
+          "stop_trigger" => "daños o cambios no autorizados en el estado de fábrica",
+          "stop_action" => "la máquina debe marcarse y detenerse",
+          "evidence" => "la máquina debe marcarse y detenerse"
+        },
+        parsed_field_record(
+          record_id: "FR-148BB87FA0EB098B",
+          source: "2.2 Comprobación previa a la operación — Principio básico",
+          action: "Si se encuentran daños o cambios no autorizados en el estado de fábrica, " \
+            "marcar la máquina y detenerla.",
+          expected_result: "Máquina marcada y detenida hasta resolución.",
+          stop_trigger: "daños o cambios no autorizados en el estado de fábrica",
+          stop_action: "detener y marcar la máquina",
+          evidence: "la máquina debe marcarse y detenerse"
+        )
+      ],
+      [
+        {
+          "record_id" => "FR-16CA529ADAF49091",
+          "type" => "STOP_WORK_CONDITION",
+          "source" => "(continuación de página anterior)",
+          "action" => "Verificar que la pendiente medida no supere la pendiente máxima ni la " \
+            "clasificación de pendiente lateral.",
+          "expected_result" => "Si la pendiente supera la pendiente máxima o la clasificación de pendiente " \
+            "lateral, la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa.",
+          "stop_trigger" => "pendiente supera pendiente máxima o clasificación de pendiente lateral",
+          "stop_action" => "no operar; levantar o transportar por la rampa; consultar sección Transporte y elevación",
+          "evidence" => "la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa"
+        },
+        parsed_field_record(
+          record_id: "FR-20474BC5853A2F7E",
+          source: "Determinar el gradiente",
+          action: "Verificar que la pendiente no supere la pendiente máxima ni la clasificación de pendiente " \
+            "lateral antes de operar la máquina.",
+          expected_result: "Si la pendiente supera los límites, la máquina debe levantarse o transportarse " \
+            "hacia arriba y hacia abajo a lo largo de la rampa — no operar en desplazamiento propio.",
+          stop_trigger: "pendiente supera la pendiente máxima o la clasificación de pendiente lateral",
+          stop_action: "la máquina debe levantarse o transportado — consulte sección Transporte y elevación",
+          evidence: "la máquina debe levantarse o transportado hacia arriba y hacia abajo a lo largo de la rampa"
+        )
+      ]
+    ]
+    validation = build_validation
+
+    pairs.each do |expected, actual|
+      match = validation.send(:semantic_matches, [ expected ], [ actual ]).sole
+
+      assert_equal actual.record_id, match[:matched_id]
+      assert_operator match[:score], :>=, 0.6, expected["record_id"]
+    end
+  end
+
+  test "stop-work semantic matching still rejects unrelated safety records" do
+    expected = {
+      "record_id" => "FR-480A25A947279253",
+      "type" => "STOP_WORK_CONDITION",
+      "source" => "Principio básico",
+      "action" => "Inspeccionar la máquina en busca de daños o cambios no autorizados.",
+      "expected_result" => "La máquina debe marcarse y detenerse.",
+      "stop_trigger" => "daños o cambios no autorizados en el estado de fábrica",
+      "stop_action" => "la máquina debe marcarse y detenerse",
+      "evidence" => "la máquina debe marcarse y detenerse"
+    }
+    unrelated = parsed_field_record(
+      record_id: "FR-UNRELATED",
+      source: "Carga de batería",
+      action: "Conectar el cargador a una toma autorizada.",
+      expected_result: "La batería inicia carga.",
+      stop_trigger: "batería descargada",
+      stop_action: "cargar la batería",
+      evidence: "conecte el cargador a la batería"
+    )
+
+    score = build_validation.send(:evidence_similarity, expected, unrelated)
+
+    assert_operator score, :<, 0.6
+  end
+
   test "manual batch retries invalid JSON before merge" do
     page_results = [
       {
@@ -162,6 +249,19 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
   end
 
   private
+
+  def parsed_field_record(record_id:, source:, action:, expected_result:, stop_trigger:, stop_action:, evidence:)
+    Rag::FieldRecordParser::Record.new(
+      record_id: record_id,
+      type: "STOP_WORK_CONDITION",
+      source: source,
+      action: action,
+      expected_result: expected_result,
+      stop_trigger: stop_trigger,
+      stop_action: stop_action,
+      evidence: evidence
+    )
+  end
 
   def build_validation(overrides = {}, git_status_loader: -> { "" }, retry_service: nil)
     env = {

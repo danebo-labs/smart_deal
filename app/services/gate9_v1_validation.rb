@@ -31,6 +31,21 @@ class Gate9V1Validation
   MANUAL_SOURCE_KEY = "uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf"
   MANUAL_BASELINE_PREFIX =
     "bulk_chunks/2026-06-11/852f508da648aa7f06dcbaeb49a28ab714ae361d1591f9b4dadb3dd36652c064/"
+  EVIDENCE_ATTRIBUTES = %w[type source action expected_result stop_trigger stop_action evidence].freeze
+  STOP_WORK_SIMILARITY_WEIGHTS = {
+    "source" => 0.05,
+    "action" => 0.10,
+    "expected_result" => 0.10,
+    "stop_trigger" => 0.25,
+    "stop_action" => 0.25,
+    "evidence" => 0.25
+  }.freeze
+  SEMANTIC_TOKEN_NORMALIZATIONS = {
+    "detenida" => "detener",
+    "detenido" => "detener",
+    "detenidas" => "detener",
+    "detenidos" => "detener"
+  }.freeze
 
   QUERY_CASES = [
     {
@@ -582,8 +597,29 @@ class Gate9V1Validation
   end
 
   def evidence_similarity(expected, actual)
+    return stop_work_similarity(expected, actual) if stop_work_condition?(expected, actual)
+
     expected_tokens = evidence_tokens(expected)
     actual_tokens = evidence_tokens(actual)
+    token_jaccard(expected_tokens, actual_tokens)
+  end
+
+  def stop_work_similarity(expected, actual)
+    total_weight = STOP_WORK_SIMILARITY_WEIGHTS.values.sum
+    weighted_score = STOP_WORK_SIMILARITY_WEIGHTS.sum do |attribute, weight|
+      weight * field_similarity(expected, actual, attribute)
+    end
+
+    weighted_score / total_weight
+  end
+
+  def field_similarity(expected, actual, attribute)
+    expected_tokens = semantic_tokens(record_value(expected, attribute))
+    actual_tokens = semantic_tokens(record_value(actual, attribute))
+    token_jaccard(expected_tokens, actual_tokens)
+  end
+
+  def token_jaccard(expected_tokens, actual_tokens)
     union = expected_tokens | actual_tokens
     return 0.0 if union.empty?
 
@@ -591,18 +627,59 @@ class Gate9V1Validation
   end
 
   def evidence_tokens(record)
-    values =
-      if record.respond_to?(:type)
-        %i[type source action expected_result stop_trigger stop_action evidence].map do |attribute|
-          record.public_send(attribute)
-        end
-      else
-        %w[type source action expected_result stop_trigger stop_action evidence].map do |attribute|
-          record[attribute]
-        end
-      end
+    values = EVIDENCE_ATTRIBUTES.map { |attribute| record_value(record, attribute) }
 
-    I18n.transliterate(values.compact.join(" ").downcase).scan(/[a-z0-9]{3,}/).to_set
+    semantic_tokens(values.compact.join(" "))
+  end
+
+  def semantic_tokens(value)
+    I18n.transliterate(value.to_s.downcase)
+      .scan(/[a-z0-9]{3,}/)
+      .map { |token| normalize_semantic_token(token) }
+      .to_set
+  end
+
+  def normalize_semantic_token(token)
+    return SEMANTIC_TOKEN_NORMALIZATIONS[token] if SEMANTIC_TOKEN_NORMALIZATIONS.key?(token)
+
+    uncliticized = normalize_spanish_clitic(token)
+    return uncliticized if uncliticized
+
+    participle = normalize_spanish_participle(token)
+    return participle if participle
+
+    token
+  end
+
+  def normalize_spanish_clitic(token)
+    %w[se la lo las los].each do |suffix|
+      next unless token.end_with?(suffix)
+
+      stem = token.delete_suffix(suffix)
+      return stem if stem.match?(/[aei]r\z/)
+    end
+
+    nil
+  end
+
+  def normalize_spanish_participle(token)
+    return "#{token.delete_suffix('ado')}ar" if token.length > 6 && token.end_with?("ado")
+    return "#{token.delete_suffix('ada')}ar" if token.length > 6 && token.end_with?("ada")
+
+    nil
+  end
+
+  def stop_work_condition?(expected, actual)
+    record_value(expected, "type") == "STOP_WORK_CONDITION" &&
+      record_value(actual, "type") == "STOP_WORK_CONDITION"
+  end
+
+  def record_value(record, attribute)
+    if record.respond_to?(attribute)
+      record.public_send(attribute)
+    else
+      record[attribute.to_s]
+    end
   end
 
   def critical_evidence_records

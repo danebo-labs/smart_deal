@@ -31,8 +31,7 @@ class FieldPhotoResultsParser
   private
 
   def parse_json(text)
-    s = text.to_s.strip.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip
-    JSON.parse(s)
+    LlmJsonParser.parse(text)
   rescue JSON::ParserError => e
     raise BatchResultsParserService::ParseError,
           "FieldPhotoResultsParser: invalid JSON — #{e.message}"

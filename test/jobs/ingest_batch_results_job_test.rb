@@ -360,7 +360,7 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
 
   test "invalid-JSON end_turn page is retried via the shared service (V1 page-6 regression)" do
     bulk, _photo_asset, pdf_asset, = create_bulk_with_assets
-    invalid_json = '{"document_name":"Manual","chunks":[{"text":"Consulte la sección "Etiquetas"","page":1}]}'
+    invalid_json = '{"document_name":"Manual","chunks":[{"text":"unterminated","page":1}'
     page_results = [ {
       page_number: 1,
       text: invalid_json,

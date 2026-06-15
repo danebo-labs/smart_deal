@@ -138,7 +138,7 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
 
     assert_not_nil skipped
     assert_equal "failed", skipped.status
-    assert_match(/Tipo de archivo no compatible/, BulkUploadAssetErrorMessage.display(skipped.error_message))
+    assert_match(/Tipo de archivo no compatible/, display_error_in_spanish(skipped.error_message))
     assert_nil skipped.s3_key
   end
 
@@ -156,7 +156,7 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
     assert_not_nil asset
     assert_equal "failed",  asset.status
     assert_nil asset.s3_key
-    assert_match(/Tipo de archivo no compatible/, BulkUploadAssetErrorMessage.display(asset.error_message))
+    assert_match(/Tipo de archivo no compatible/, display_error_in_spanish(asset.error_message))
   end
 
   test "submit! returns nil when no uploaded_s3 assets exist" do
@@ -190,9 +190,15 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
 
     asset.reload
     assert_equal "failed", asset.status
-    assert_match(/Todas las páginas se filtraron/, BulkUploadAssetErrorMessage.display(asset.error_message))
+    assert_match(/Todas las páginas se filtraron/, display_error_in_spanish(asset.error_message))
     assert_nil asset.ingestion_path
   ensure
     asset&.destroy
+  end
+
+  private
+
+  def display_error_in_spanish(error_message)
+    I18n.with_locale(:es) { BulkUploadAssetErrorMessage.display(error_message) }
   end
 end

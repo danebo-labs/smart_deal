@@ -101,7 +101,7 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     page_results = [
       {
         page_number: 6,
-        text: '{"chunks":[{"text":"bad "quote""}]}',
+        text: '{"chunks":[{"text":"unterminated","page":6}',
         model: "claude-sonnet-4-6",
         stop_reason: "end_turn"
       }
@@ -125,6 +125,38 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     )
 
     assert_equal [ { page: 6, reason: "invalid_json" } ], summary[:candidates]
+    assert_empty summary[:final_failed_pages]
+    assert BatchPageRetryService.parseable_json?(page_results.first[:text])
+  end
+
+  test "manual batch does not classify recoverable quoted JSON for retry" do
+    page_results = [
+      {
+        page_number: 6,
+        text: '{"chunks":[{"text":"Consulte la sección "Etiquetas"","page":6}]}',
+        model: "claude-sonnet-4-6",
+        stop_reason: "end_turn"
+      }
+    ]
+    retry_service = Object.new
+    retry_service.define_singleton_method(:retry_failed_pages!) do |page_results:, **|
+      page_results
+    end
+    validation = build_validation(
+      { "GATE9_V1_MODE" => "manual_only" },
+      retry_service: retry_service
+    )
+
+    summary = validation.send(
+      :retry_manual_pages!,
+      page_results,
+      s3_key: "manual.pdf",
+      filename: "manual.pdf",
+      sha256: "a" * 64
+    )
+
+    assert_empty summary[:candidates]
+    assert_equal 0, summary[:calls]
     assert_empty summary[:final_failed_pages]
     assert BatchPageRetryService.parseable_json?(page_results.first[:text])
   end

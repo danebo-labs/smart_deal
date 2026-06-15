@@ -123,4 +123,13 @@ class FieldPhotoResultsParserTest < ActiveSupport::TestCase
 
     assert_equal "Door Operator Motor", envelope["document_name"]
   end
+
+  test "repairs unescaped quoted words before transforming benchmark JSON" do
+    raw = '{"canonical_component":"Botón "STOP"","manufacturer":"Schindler","model":"5500",' \
+      '"aliases":["STOP"],"summary":"Botón de parada.","anti_hallucination_notes":"Visible en foto."}'
+
+    envelope = FieldPhotoResultsParser.to_envelope(raw)
+
+    assert_equal 'Botón "STOP"', envelope["document_name"]
+  end
 end

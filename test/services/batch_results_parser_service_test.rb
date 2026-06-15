@@ -195,6 +195,19 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_includes chunk, "END_FIELD_RECORD"
   end
 
+  test "repairs unescaped quoted words in chunk text before writing chunks" do
+    raw_json = '{"document_name":"Hydraulic Pump Manual","aliases":["HPM-400"],' \
+      '"chunks":[{"text":"Presione a posición "encendido" y consulte "Etiquetas".","page":1,"field_records":[]}]}'
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: raw_json))
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    assert_equal "parsed", asset.status
+    assert_includes chunk, 'Presione a posición "encendido" y consulte "Etiquetas".'
+  end
+
   test "generates deterministic field record identifiers" do
     payload = golden_parsed.deep_dup
     payload["chunks"][0]["field_records"] = [

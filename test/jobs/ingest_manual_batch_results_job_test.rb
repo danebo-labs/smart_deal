@@ -46,7 +46,7 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
 
   test "dormant chain retries invalid-JSON pages via shared service with web_batch_retry prefix (B.1)" do
     sha = Digest::SHA256.hexdigest("manual-bytes")
-    invalid_json = '{"document_name":"Manual","chunks":[{"text":"Consulte la sección "Etiquetas"","page":6}]}'
+    invalid_json = '{"document_name":"Manual","chunks":[{"text":"unterminated","page":6}'
     valid_json = JSON.generate(
       "document_name" => "Orona ARCA II Manual",
       "aliases"       => [ "ARCA II" ],

@@ -195,6 +195,33 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_includes marker_chunk["text"], "p2"
   end
 
+  test "repairs B3 unescaped quotes in chunk text without degrading the page" do
+    quoted_json = '{"document_name":"Orona ARCA II Manual","aliases":["ARCA II"],' \
+      '"chunks":[{"text":"Consulte la sección "Etiquetas" y "Mantenimiento".","page":2,"field_records":[]}]}'
+    report = ChunkMergerService.merge_with_report([
+      { page_number: 2, text: quoted_json, usage: nil, model: "claude-sonnet-4-6" }
+    ])
+
+    parsed = JSON.parse(report[:json])
+
+    assert_empty report[:degraded_pages]
+    assert_equal 'Consulte la sección "Etiquetas" y "Mantenimiento".',
+                 parsed.dig("chunks", 0, "text")
+  end
+
+  test "keeps unrecoverable JSON degraded" do
+    broken_json = '{"document_name":"Manual","aliases":[],"chunks":[{"text":"unterminated","page":2}'
+    report = ChunkMergerService.merge_with_report([
+      { page_number: 1, text: page1_json, usage: nil, model: "claude-sonnet-4-6" },
+      { page_number: 2, text: broken_json, usage: nil, model: "claude-sonnet-4-6" }
+    ])
+    parsed = JSON.parse(report[:json])
+
+    assert_includes report[:degraded_pages], 2
+    marker_chunk = parsed["chunks"].find { |chunk| chunk["page"] == 2 }
+    assert_includes marker_chunk["text"], "REQUIRES_FIELD_VERIFICATION"
+  end
+
   # ─── degradation marker ───────────────────────────────────────────────────────
 
   test "truncated page (stop_reason max_tokens) keeps parsed chunks and appends marker" do

@@ -12,9 +12,9 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     "chunks"        => [ { "text" => "S0 content", "page" => 6, "field_records" => [] } ]
   )
 
-  # V1 page-6 failure mode: response ended normally (end_turn) but contained
-  # unescaped quotes inside chunks[].text, so JSON.parse rejects it.
-  INVALID_JSON = '{"document_name":"Manual","chunks":[{"text":"Consulte la sección "Etiquetas"","page":6}]}'
+  # B.3: literal quotes inside chunks[].text are recoverable without a paid retry.
+  RECOVERABLE_QUOTED_JSON = '{"document_name":"Manual","chunks":[{"text":"Consulte la sección "Etiquetas"","page":6}]}'
+  BROKEN_JSON = '{"document_name":"Manual","chunks":[{"text":"unterminated","page":6}'
 
   FakeUsage = Struct.new(:input_tokens, :output_tokens,
                           :cache_read_input_tokens, :cache_creation_input_tokens,
@@ -27,18 +27,20 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
 
   # ── needs_retry? / parseable_json? ──────────────────────────────────────────
 
-  test "parseable_json? accepts plain and fenced JSON, rejects broken JSON and nil" do
+  test "parseable_json? accepts plain, fenced and recoverable quoted JSON, rejects broken JSON and nil" do
     assert BatchPageRetryService.parseable_json?(VALID_JSON)
     assert BatchPageRetryService.parseable_json?("```json\n#{VALID_JSON}\n```")
-    assert_not BatchPageRetryService.parseable_json?(INVALID_JSON)
+    assert BatchPageRetryService.parseable_json?(RECOVERABLE_QUOTED_JSON)
+    assert_not BatchPageRetryService.parseable_json?(BROKEN_JSON)
     assert_not BatchPageRetryService.parseable_json?(nil)
     assert_not BatchPageRetryService.parseable_json?("")
   end
 
-  test "needs_retry? on truncation, on invalid JSON with end_turn (V1 page 6), not on healthy pages" do
+  test "needs_retry? on truncation and unrecoverable JSON, not on healthy or recoverable quoted pages" do
     assert BatchPageRetryService.needs_retry?({ text: VALID_JSON, stop_reason: "max_tokens" })
-    assert BatchPageRetryService.needs_retry?({ text: INVALID_JSON, stop_reason: "end_turn" }),
-           "end_turn with unparseable JSON must trigger a retry (V1 page-6 regression)"
+    assert BatchPageRetryService.needs_retry?({ text: BROKEN_JSON, stop_reason: "end_turn" }),
+           "end_turn with unrecoverable JSON must trigger a retry"
+    assert_not BatchPageRetryService.needs_retry?({ text: RECOVERABLE_QUOTED_JSON, stop_reason: "end_turn" })
     assert_not BatchPageRetryService.needs_retry?({ text: VALID_JSON, stop_reason: "end_turn" })
     assert_not BatchPageRetryService.needs_retry?({ text: VALID_JSON, stop_reason: nil })
   end
@@ -79,10 +81,10 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
   end
 
   def invalid_page(page: 6, model: "claude-sonnet-4-6")
-    { page_number: page, text: INVALID_JSON, model: model, stop_reason: "end_turn" }
+    { page_number: page, text: BROKEN_JSON, model: model, stop_reason: "end_turn" }
   end
 
-  test "retries an invalid-JSON end_turn page once when the retry parses (V1 page-6 fix)" do
+  test "retries an unrecoverable JSON end_turn page once when the retry parses" do
     pages  = [ invalid_page ]
     usages = []
 
@@ -112,7 +114,7 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     pages = [ invalid_page ]
 
     with_retry_harness(client_results: [
-      { text: INVALID_JSON, usage: make_usage, stop_reason: nil },
+      { text: BROKEN_JSON, usage: make_usage, stop_reason: nil },
       { text: VALID_JSON,   usage: make_usage, stop_reason: nil }
     ]) do |calls|
       BatchPageRetryService.new.retry_failed_pages!(
@@ -146,8 +148,8 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     pages = [ invalid_page ]
 
     with_retry_harness(client_results: [
-      { text: INVALID_JSON, usage: make_usage, stop_reason: nil },
-      { text: INVALID_JSON, usage: make_usage, stop_reason: nil }
+      { text: BROKEN_JSON, usage: make_usage, stop_reason: nil },
+      { text: BROKEN_JSON, usage: make_usage, stop_reason: nil }
     ]) do |calls|
       BatchPageRetryService.new.retry_failed_pages!(
         page_results: pages, s3_key: "k", filename: "manual.pdf", sha256: "d" * 64
@@ -155,7 +157,7 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
       assert_equal 2, calls.size, "ladder is bounded at two direct rungs"
     end
 
-    assert_equal INVALID_JSON, pages.first[:text], "degraded page keeps the last attempt for the merger marker"
+    assert_equal BROKEN_JSON, pages.first[:text], "degraded page keeps the last attempt for the merger marker"
   end
 
   test "stops the page ladder on ApiError without raising" do
@@ -170,7 +172,7 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
       assert_equal 1, calls.size
     end
 
-    assert_equal INVALID_JSON, pages.first[:text]
+    assert_equal BROKEN_JSON, pages.first[:text]
   end
 
   test "healthy pages trigger no S3 download and no client calls" do
@@ -198,7 +200,7 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     )
 
     assert_same pages, result
-    assert_equal INVALID_JSON, pages.first[:text]
+    assert_equal BROKEN_JSON, pages.first[:text]
   ensure
     Aws::S3::Client.define_singleton_method(:new, original_s3)
   end

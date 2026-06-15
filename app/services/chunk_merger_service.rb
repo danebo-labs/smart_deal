@@ -109,11 +109,7 @@ class ChunkMergerService
     text        = r[:text].to_s.strip
     stop_reason = r[:stop_reason]
 
-    # Fence tolerance mirrors BatchResultsParserService#normalize_json_text so a
-    # ```json-wrapped page is parsed instead of degraded to a marker chunk.
-    text = text.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip if text.start_with?("```")
-
-    parsed = JSON.parse(text)
+    parsed = LlmJsonParser.parse(text)
 
     if stop_reason == "max_tokens"
       marker  = degradation_marker_chunk(page_number)

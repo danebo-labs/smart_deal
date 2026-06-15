@@ -3,10 +3,10 @@
 # Gate 9R B.1 (paso 12) — shared bounded retry for per-page Batch results.
 #
 # V1 (docs/GATE9_V1_2026-06-12.md) failed because a Batch page ended with
-# stop_reason=end_turn but unparseable JSON (unescaped quotes) and the Batch
-# route only retried max_tokens truncations. A page needs a retry when it is
-# truncated OR its output is not parseable JSON — the same two-signal rule the
-# sync ladder already applies (SingleFileChunkingService#call_with_page_cap_retry).
+# stop_reason=end_turn but unparseable JSON and the Batch route only retried
+# max_tokens truncations. A page needs a retry when it is truncated OR its output
+# remains unparseable after deterministic normalization — the same two-signal
+# rule the sync ladder already applies (SingleFileChunkingService#call_with_page_cap_retry).
 #
 # One service shared by every Batch results consumer:
 #   - IngestBatchResultsJob (bulk ZIP route, active)
@@ -32,7 +32,8 @@ class BatchPageRetryService
   ].freeze
 
   # A page result needs a paid retry when the model hit the output cap OR the
-  # output cannot be parsed — both previously degraded the page to a marker.
+  # output cannot be parsed after deterministic normalization — both previously
+  # degraded the page to a marker.
   # @param page_result [Hash] { text:, stop_reason:, ... }
   def self.needs_retry?(page_result)
     page_result[:stop_reason] == "max_tokens" || !parseable_json?(page_result[:text])
@@ -43,12 +44,7 @@ class BatchPageRetryService
   # normalization so retry decisions and downstream consumers accept exactly
   # the same outputs. SingleFileChunkingService delegates here.
   def self.parseable_json?(text)
-    s = text.to_s.strip
-    s = s.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip if s.start_with?("```")
-    JSON.parse(s)
-    true
-  rescue JSON::ParserError
-    false
+    LlmJsonParser.parseable?(text)
   end
 
   # Retries every failed page in page_results, mutating text/stop_reason in

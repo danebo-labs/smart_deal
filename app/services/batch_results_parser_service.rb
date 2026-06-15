@@ -122,15 +122,8 @@ class BatchResultsParserService
     raise ParseError, "No text block in Claude response"
   end
 
-  def normalize_json_text(text)
-    s = text.to_s.strip
-    return s unless s.start_with?("```")
-
-    s.sub(/\A```(?:json)?\s*\n?/i, "").sub(/\n?```\s*\z/, "").strip
-  end
-
   def parse_json(text)
-    JSON.parse(normalize_json_text(text))
+    LlmJsonParser.parse(text)
   rescue JSON::ParserError => e
     raise ParseError, "Invalid JSON from Claude: #{e.message}"
   end

@@ -225,12 +225,12 @@ class SingleFileChunkingService
   #           emits the same document_name across all parts of the same file.
   # For single-page inputs, falls through to a direct call (no hint needed).
   def chunk_pages_with_identity_hint(pages, total)
-    return [ call_claude_for_page(pages.first, total, document_name_hint: nil, locale: @locale) ] if pages.size == 1
+    return [ call_claude_for_page(pages.first, total, document_name_hint: nil, locale: @locale, anchor: true) ] if pages.size == 1
 
     anchor = pages.min_by(&:number)
     rest   = pages.reject { |p| p.number == anchor.number }
 
-    anchor_result = call_claude_for_page(anchor, total, document_name_hint: nil, locale: @locale)
+    anchor_result = call_claude_for_page(anchor, total, document_name_hint: nil, locale: @locale, anchor: true)
 
     hint = begin
       JSON.parse(anchor_result[:text].to_s)["document_name"].to_s.presence
@@ -256,7 +256,7 @@ class SingleFileChunkingService
     end
   end
 
-  def call_claude_for_page(page, total, document_name_hint:, locale: nil)
+  def call_claude_for_page(page, total, document_name_hint:, locale: nil, anchor: false)
     model    = page.model
     page_num = page.number
     content  = BatchChunkingPrompt.page_user_content(
@@ -265,7 +265,8 @@ class SingleFileChunkingService
       total_pages:        total,
       filename:           @filename,
       document_name_hint: document_name_hint,
-      locale:             locale
+      locale:             locale,
+      anchor:             anchor
     )
     result = call_with_page_cap_retry(
       client:       ClaudeChunkingClient.new(model: model),

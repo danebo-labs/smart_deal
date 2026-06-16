@@ -28,6 +28,10 @@ class ChunkMergerService
     "(salida truncada o ilegible). REQUIRES_FIELD_VERIFICATION. " \
     "No fue indexada completa: vuelve a subir el archivo o solicita reprocesar esta pagina."
 
+  # Used when the anchor page is degraded and emits no summary/companion_offer
+  # (e.g. truncated output, parse failure, or CONTENT_PAGE sent as anchor by mistake).
+  FALLBACK_COMPANION_OFFER = "Pregúntame lo que necesites — estoy aquí para lo que sea."
+
   # @param page_results [Array<Hash>]
   #   Each: { page_number: Integer, text: String (Claude JSON), stop_reason: String|nil, usage:, model: String }
   # @return [String] merged JSON (backward-compatible)
@@ -74,11 +78,21 @@ class ChunkMergerService
       end
     end
 
+    anchor_page  = chosen_idx ? parsed_pages[chosen_idx] : nil
+    raw_summary  = anchor_page&.dig("summary").to_s.presence
+    raw_offer    = anchor_page&.dig("companion_offer").to_s.presence
+
+    if raw_summary.nil?
+      Rails.logger.warn(
+        "ChunkMergerService: anchor page (idx=#{chosen_idx}) has no summary — using deterministic fallback"
+      )
+    end
+
     json = JSON.generate({
       "document_name"   => doc_name,
       "aliases"         => document_aliases,
-      "summary"         => parsed_pages[chosen_idx]&.dig("summary").to_s.presence,
-      "companion_offer" => parsed_pages[chosen_idx]&.dig("companion_offer").to_s.presence,
+      "summary"         => raw_summary || fallback_summary(doc_name),
+      "companion_offer" => raw_offer   || FALLBACK_COMPANION_OFFER,
       "chunks"          => all_chunks
     })
 
@@ -86,6 +100,11 @@ class ChunkMergerService
   end
 
   private
+
+  def fallback_summary(document_name)
+    name = document_name.to_s.strip
+    name.present? ? "#{name}." : "Documento procesado y listo para consultas técnicas."
+  end
 
   def sanitize_aliases(values, limit:)
     seen = {}

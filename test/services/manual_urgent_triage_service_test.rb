@@ -89,6 +89,26 @@ class ManualUrgentTriageServiceTest < ActiveSupport::TestCase
     assert_equal 789, metadata["web_manual_batch_id"]
   end
 
+  test "multi selected pages: first page ANCHOR_PAGE, rest CONTENT_PAGE" do
+    roles = run_triage_capturing_roles(
+      [
+        ManualUrgentPageSelector::Page.new(number: 2, binary: "page 2", model: BatchChunkingPrompt::MODEL_TEXT),
+        ManualUrgentPageSelector::Page.new(number: 5, binary: "page 5", model: BatchChunkingPrompt::MODEL_TEXT)
+      ]
+    )
+
+    assert_includes roles[2], "Page role: ANCHOR_PAGE"
+    assert_includes roles[5], "Page role: CONTENT_PAGE"
+  end
+
+  test "single selected page: page is ANCHOR_PAGE" do
+    roles = run_triage_capturing_roles(
+      [ ManualUrgentPageSelector::Page.new(number: 3, binary: "page 3", model: BatchChunkingPrompt::MODEL_TEXT) ]
+    )
+
+    assert_includes roles[3], "Page role: ANCHOR_PAGE"
+  end
+
   test "raises NoPagesSelected before paid calls when selector returns none" do
     selector = Object.new
     selector.define_singleton_method(:select) { |**| [] }
@@ -112,6 +132,56 @@ class ManualUrgentTriageServiceTest < ActiveSupport::TestCase
   end
 
   private
+
+  # Drives the service end-to-end with all I/O stubbed, returning
+  # { page_number => instruction_text } captured from each per-page Claude call.
+  def run_triage_capturing_roles(selected_pages)
+    fake_splitter = Object.new
+    fake_splitter.define_singleton_method(:page_count) { 8 }
+    PdfPageSplitterService.define_singleton_method(:new) { |_binary| fake_splitter }
+
+    selector = Object.new
+    selector.define_singleton_method(:select) { |**| selected_pages }
+
+    s3 = Object.new
+    s3.define_singleton_method(:delete_prefix) { |_prefix| 0 }
+    s3.define_singleton_method(:upload_text) { |key, _content| key }
+
+    bulk_sync = Object.new
+    bulk_sync.define_singleton_method(:sync!) { |**| { job_id: "j", kb_id: "kb", data_source_id: "ds" } }
+
+    bedrock = Class.new { define_singleton_method(:perform_later) { |*, **| nil } }
+
+    roles = {}
+    json_builder = method(:page_json)
+    client = Object.new
+    client.define_singleton_method(:call) do |page_number:, user_content:, **|
+      roles[page_number] = user_content.last[:text]
+      {
+        text: json_builder.call(page_number),
+        usage: OpenStruct.new(input_tokens: 100, output_tokens: 50),
+        model: BatchChunkingPrompt::MODEL_TEXT,
+        stop_reason: nil
+      }
+    end
+
+    ManualUrgentTriageService.new(
+      selector: selector,
+      s3_service: s3,
+      bulk_sync_service: bulk_sync,
+      bedrock_job: bedrock,
+      client_factory: ->(_model) { client }
+    ).call(
+      binary: "%PDF",
+      filename: "manual.pdf",
+      sha256: Digest::SHA256.hexdigest("manual"),
+      s3_key: "uploads/manual.pdf",
+      query: "rescate emergencia",
+      locale: "es"
+    )
+
+    roles
+  end
 
   def page_json(page_number)
     JSON.generate(

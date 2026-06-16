@@ -8,10 +8,51 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
   end
 
   test "declares a contract version and a stable prompt fingerprint" do
-    assert_equal "field_records_v3", BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+    assert_equal "field_records_v4", BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
     assert_match(/\A[0-9a-f]{64}\z/, BatchChunkingPrompt.prompt_fingerprint_sha256)
     assert_equal BatchChunkingPrompt.prompt_fingerprint_sha256,
                  Digest::SHA256.hexdigest(BatchChunkingPrompt::SYSTEM_BLOCKS.pluck(:text).join("\n"))
+  end
+
+  test "system prompt declares PAGE ROLE section with ANCHOR/CONTENT rules" do
+    assert_includes prompt, "PAGE ROLE"
+    assert_includes prompt, "ANCHOR_PAGE"
+    assert_includes prompt, "CONTENT_PAGE"
+    assert_includes prompt, "ANCHOR_PAGE only for multi-page parses"
+  end
+
+  test "S0 chunks[0] rule is scoped to no-tag or ANCHOR_PAGE and excludes CONTENT_PAGE" do
+    assert_includes prompt, "chunks[0].text MUST contain the S0 — DOCUMENT IDENTIFICATION section"
+    assert_match(/ONLY when there is no "Page role:" tag.*ANCHOR_PAGE/m, prompt)
+    assert_match(/When the tag is CONTENT_PAGE, omit S0 entirely/, prompt)
+  end
+
+  test "system prompt ties summary/companion_offer exceptions to CONTENT_PAGE role" do
+    assert_includes prompt, "Exception for per-page parses: CONTENT_PAGE role omits summary"
+    assert_includes prompt, "Exception for per-page parses: CONTENT_PAGE role omits companion_offer"
+  end
+
+  test "anchor page instruction injects ANCHOR_PAGE role tag" do
+    instruction = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 1, total_pages: 5, filename: "m.pdf", anchor: true
+    ).last.fetch(:text)
+    assert_includes instruction, "Page role: ANCHOR_PAGE"
+    assert_not_includes instruction, "Page role: CONTENT_PAGE"
+  end
+
+  test "content page instruction injects CONTENT_PAGE role tag" do
+    instruction = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 3, total_pages: 5, filename: "m.pdf", anchor: false
+    ).last.fetch(:text)
+    assert_includes instruction, "Page role: CONTENT_PAGE"
+    assert_not_includes instruction, "Page role: ANCHOR_PAGE"
+  end
+
+  test "page_user_content defaults to CONTENT_PAGE when anchor not specified" do
+    instruction = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 10, total_pages: 24, filename: "m.pdf"
+    ).last.fetch(:text)
+    assert_includes instruction, "Page role: CONTENT_PAGE"
   end
 
   test "preserves mid-section page continuations" do

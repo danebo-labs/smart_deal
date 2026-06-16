@@ -129,7 +129,8 @@ class ManualBatchIngestionService
                 page_number: page[:number],
                 total_pages: total,
                 filename:    filename,
-                locale:      page_locale
+                locale:      page_locale,
+                anchor:      idx.zero?
               )
             }
           ]

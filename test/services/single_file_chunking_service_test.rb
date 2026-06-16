@@ -359,6 +359,59 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
   end
 
+  # ─── O4a: anchor/content page role tags ───────────────────────────────────────
+
+  test "pdf_mixed: wave-A (anchor) page receives ANCHOR_PAGE role tag" do
+    FakePdfPage2 = Struct.new(:number, :binary, :model, :force_opus) unless defined?(FakePdfPage2)
+    page1 = FakePdfPage2.new(1, "%PDF-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+    page2 = FakePdfPage2.new(2, "%PDF-p2", BatchChunkingPrompt::MODEL_TEXT, false)
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1, page2 ])
+    end
+
+    orig_filter = PageRelevanceFilter.method(:filter_pages)
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
+    end
+
+    page_json = { "document_name" => "Role Test Manual", "aliases" => %w[rtm], "chunks" => [ { "text" => "# S0", "page" => 1, "field_records" => [] } ] }.to_json
+
+    mutex          = Mutex.new
+    captured_roles = {}
+    call_count     = 0
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        text_block = Array(params.dig(:messages)&.find { |m| m[:role] == "user" }&.dig(:content))
+                       .select { |b| b.is_a?(Hash) && b[:type] == "text" }
+                       .map { |b| b[:text] }
+                       .join(" ")
+        idx = mutex.synchronize { call_count.tap { call_count += 1 } }
+        mutex.synchronize do
+          role = text_block[/Page role: (\w+)/, 1]
+          captured_roles[idx] = role
+        end
+        content = [ OpenStruct.new(type: "text", text: page_json) ]
+        usage   = OpenStruct.new(input_tokens: 100, output_tokens: 200,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        OpenStruct.new(accumulated_message: OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_TEXT))
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "role_test.pdf").call
+
+    assert_equal 2, captured_roles.size
+    assert_equal "ANCHOR_PAGE",  captured_roles[0], "wave-A call must receive ANCHOR_PAGE role"
+    assert_equal "CONTENT_PAGE", captured_roles[1], "wave-B call must receive CONTENT_PAGE role"
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
+
   # ─── Image summary + locale ──────────────────────────────────────────────────
 
   test "image mode: locale is forwarded as 'Summary language' text-block" do

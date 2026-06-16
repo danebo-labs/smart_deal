@@ -175,6 +175,44 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     assert_equal BROKEN_JSON, pages.first[:text]
   end
 
+  test "retrying the anchor (lowest) page preserves its ANCHOR_PAGE role" do
+    pages = [
+      { page_number: 3, text: BROKEN_JSON, model: "claude-sonnet-4-6", stop_reason: "end_turn" },
+      { page_number: 6, text: VALID_JSON,  model: "claude-sonnet-4-6", stop_reason: "end_turn" }
+    ]
+
+    with_retry_harness(
+      client_results: [ { text: VALID_JSON, usage: make_usage, stop_reason: nil } ],
+      page_binaries:  { 3 => "page-3-pdf", 6 => "page-6-pdf" }
+    ) do |calls|
+      BatchPageRetryService.new.retry_failed_pages!(
+        page_results: pages, s3_key: "k", filename: "manual.pdf", sha256: "a" * 64
+      )
+
+      assert_equal 1, calls.size, "only the anchor page (p3) needs a retry"
+      assert_includes calls.first[:user_content].last[:text], "Page role: ANCHOR_PAGE"
+    end
+  end
+
+  test "retrying a non-anchor page uses the CONTENT_PAGE role" do
+    pages = [
+      { page_number: 3, text: VALID_JSON,  model: "claude-sonnet-4-6", stop_reason: "end_turn" },
+      { page_number: 6, text: BROKEN_JSON, model: "claude-sonnet-4-6", stop_reason: "end_turn" }
+    ]
+
+    with_retry_harness(
+      client_results: [ { text: VALID_JSON, usage: make_usage, stop_reason: nil } ],
+      page_binaries:  { 3 => "page-3-pdf", 6 => "page-6-pdf" }
+    ) do |calls|
+      BatchPageRetryService.new.retry_failed_pages!(
+        page_results: pages, s3_key: "k", filename: "manual.pdf", sha256: "b" * 64
+      )
+
+      assert_equal 1, calls.size, "only the non-anchor page (p6) needs a retry"
+      assert_includes calls.first[:user_content].last[:text], "Page role: CONTENT_PAGE"
+    end
+  end
+
   test "healthy pages trigger no S3 download and no client calls" do
     pages = [ { page_number: 1, text: VALID_JSON, model: "claude-sonnet-4-6", stop_reason: "end_turn" } ]
 

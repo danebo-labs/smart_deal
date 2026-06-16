@@ -90,7 +90,8 @@ class ManualUrgentTriageService
         filename: filename,
         sha256: sha256,
         locale: locale,
-        document_total_pages: document_total_pages
+        document_total_pages: document_total_pages,
+        anchor: true
       ) ]
     end
 
@@ -100,7 +101,8 @@ class ManualUrgentTriageService
       filename: filename,
       sha256: sha256,
       locale: locale,
-      document_total_pages: document_total_pages
+      document_total_pages: document_total_pages,
+      anchor: true
     )
     hint = document_name_from(anchor_result[:text])
 
@@ -110,21 +112,23 @@ class ManualUrgentTriageService
         filename: filename,
         sha256: sha256,
         document_name_hint: hint,
-        document_total_pages: document_total_pages
+        document_total_pages: document_total_pages,
+        anchor: false
       )
     end
 
     [ anchor_result ] + rest
   end
 
-  def call_claude_for_page(page, filename:, sha256:, document_total_pages:, locale: nil, document_name_hint: nil)
+  def call_claude_for_page(page, filename:, sha256:, document_total_pages:, locale: nil, document_name_hint: nil, anchor: false)
     user_content = BatchChunkingPrompt.page_user_content(
       binary: page.binary,
       page_number: page.number,
       total_pages: document_total_pages,
       filename: filename,
       document_name_hint: document_name_hint,
-      locale: locale
+      locale: locale,
+      anchor: anchor
     )
 
     result = call_with_page_cap_retry(

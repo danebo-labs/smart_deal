@@ -142,7 +142,8 @@ class BulkCostV2RequestBuilder
               page_number: page[:number],
               total_pages: total,
               filename:    asset.filename,
-              locale:      idx.zero? ? nil : nil
+              locale:      nil,
+              anchor:      idx.zero?
             )
           } ]
         }

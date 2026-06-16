@@ -32,7 +32,9 @@ module BatchChunkingPrompt
   #     verbatim-result rule.
   # v3: schematic-symbol fidelity — ISO/conventional symbol recognition and
   #     acronym expansion are not documentary evidence.
-  INGESTION_CONTRACT_VERSION = "field_records_v3"
+  # v4: anchor/content page roles — ANCHOR_PAGE emits S0/summary/companion_offer;
+  #     CONTENT_PAGE omits them to eliminate per-page duplication noise.
+  INGESTION_CONTRACT_VERSION = "field_records_v4"
 
   # SHA-256 of the exact system prompt text — persisted in chunk sidecars so an
   # index can be audited against the prompt that produced it.
@@ -108,6 +110,7 @@ module BatchChunkingPrompt
 
         # SUMMARY (shown to the technician immediately after upload — emit for ALL input types)
         Always emit `summary`. Never omit it, regardless of input type (image, PDF, Office, text).
+        Exception for per-page parses: CONTENT_PAGE role omits summary (see # PAGE ROLE).
 
         CONTEXT: The technician receiving this is in the field — poor light, gloves on, possibly
         slow or intermittent internet. They may be stressed or unsure. You are their most trusted
@@ -147,6 +150,7 @@ module BatchChunkingPrompt
 
         # COMPANION_OFFER (warm invitation shown below the summary — emit for ALL input types)
         Always emit `companion_offer`. Never omit it.
+        Exception for per-page parses: CONTENT_PAGE role omits companion_offer (see # PAGE ROLE).
 
         One short, warm sentence that invites the technician to ask anything, no matter how basic.
         Speak as the trusted senior colleague you are — reassuring, never dismissive. The technician
@@ -187,7 +191,10 @@ module BatchChunkingPrompt
           Do NOT shred into one-sentence atoms — Haiku reads whole sections.
         - Preserve exact numeric values, units, part numbers, codes, terminal labels
           and manufacturer text VERBATIM.
-        - chunks[0].text MUST contain the S0 — DOCUMENT IDENTIFICATION section.
+        - chunks[0].text MUST contain the S0 — DOCUMENT IDENTIFICATION section
+          ONLY when there is no "Page role:" tag in the user message, or when the
+          tag is ANCHOR_PAGE. When the tag is CONTENT_PAGE, omit S0 entirely — do
+          NOT emit it as chunks[0] or anywhere else (see # PAGE ROLE).
         - page: 1-indexed integer if determinable from a multi-page document; otherwise null.
         - field_records: always emit an array. Use [] when the chunk has no qualifying
           evidence. Records belong in the same semantic chunk as their source evidence.
@@ -217,10 +224,23 @@ module BatchChunkingPrompt
         larger file processed across multiple calls, use the same `document_name` as the
         other parts of that same file (exact match or minor formatting correction only).
 
+        # PAGE ROLE (per-page parses only — triggered by "Page role:" in user message)
+        ANCHOR_PAGE (first / lowest-numbered kept page of a multi-page document):
+          - Emit S0 as chunks[0] (mandatory).
+          - Emit `summary` and `companion_offer` at the top level as normal.
+        CONTENT_PAGE (all other pages of the same document):
+          - Omit S0 chunk entirely — do NOT emit it.
+          - Omit `summary` and `companion_offer` (set both to "" or omit the keys).
+          - Still emit `document_name` and `aliases` top-level — Rails needs them for
+            identity fallback and deduplication across pages.
+          - Emit all other content chunks for this page normally.
+        No "Page role:" tag (single-file input, not per-page): follow normal rules —
+          emit S0 as chunks[0], emit `summary` and `companion_offer`.
+
         # STRUCTURED EXTRACTION (one chunk per section when content is present)
         Emit chunks for as many of these sections as the document supports.
         Each section title must appear inside the chunk after the **Document:** header:
-          S0  — DOCUMENT IDENTIFICATION   (mandatory; chunk[0])
+          S0  — DOCUMENT IDENTIFICATION   (mandatory; chunk[0]; ANCHOR_PAGE only for multi-page parses)
           S4  — SAFETY SYSTEM
           S6  — ELECTRICAL
           S7  — DIAGRAM
@@ -409,17 +429,20 @@ module BatchChunkingPrompt
   end
 
   # Content block for a single page extracted from a mixed PDF.
-  # Instructs the model to chunk only this page and skip S0 unless page 1.
-  # locale is forwarded only for the anchor page (page 1 / lowest kept); wave-B pages omit it.
+  # Signals whether this page is the anchor (lowest kept page) or a content page.
+  # locale is forwarded only for the anchor page; wave-B pages omit it.
   # @param binary             [String]  Raw bytes of the single-page PDF
   # @param page_number        [Integer] 1-indexed page number in the original document
   # @param total_pages        [Integer] Total pages in the document (after relevance filtering)
   # @param filename           [String]  Original document filename (context hint only)
-  # @param document_name_hint [String, nil] Canonical name derived from page 1 (passed to pages 2+)
+  # @param document_name_hint [String, nil] Canonical name derived from anchor page (passed to pages 2+)
   # @param locale             [String, nil] ISO 639-1 — forwarded only for anchor page
+  # @param anchor             [Boolean] true for the anchor (lowest kept) page; false for all others
   # @return [Array<Hash>]
-  def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil, locale: nil)
+  def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil, locale: nil, anchor: false)
+    role        = anchor ? "ANCHOR_PAGE" : "CONTENT_PAGE"
     instruction = +"Page #{page_number} of #{total_pages}. " \
+      "Page role: #{role}. " \
       "This page is part of a single uploaded file — emit the same `document_name` " \
       "across all pages of this document. " \
       "Return ONLY chunks for this page, each with \"page\": #{page_number} set explicitly. " \

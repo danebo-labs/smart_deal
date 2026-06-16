@@ -135,6 +135,10 @@ para retrieval.
 
 **Consequences:**
 - Se mantienen los chunks semánticos S0-S18 y el routing Sonnet/Opus ya validado.
+- En parse per-page de PDF, el contrato `field_records_v4` aplica roles O4a:
+  `ANCHOR_PAGE` emite S0, `summary` y `companion_offer`; `CONTENT_PAGE`
+  omite esa metadata repetida y conserva `document_name` / `aliases` para el
+  merge Rails.
 - No se agrega otra llamada LLM ni otro prompt por tipo de sección.
 - La narrativa no duplica procedimientos completos que ya están en `field_records`.
 - El baseline histórico de ~500 output tokens/página debe revalidarse con el

@@ -181,6 +181,32 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
   end
 
+  test "first kept page is ANCHOR_PAGE, rest are CONTENT_PAGE" do
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
+    orig_track = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
+
+    fake_client = FakeBatchClient.new
+    pdf_binary  = build_fake_pdf_binary(3)
+
+    ManualBatchIngestionService.new(batch_client: fake_client).submit!(
+      binary: pdf_binary, filename: "m.pdf", sha256: "1" * 64, s3_key: "key"
+    )
+
+    instructions = fake_client.submitted_requests.map { |r| r[:params][:messages].first[:content].last[:text] }
+    assert_equal 3, instructions.size
+    assert_includes instructions[0], "Page role: ANCHOR_PAGE"
+    assert_includes instructions[1], "Page role: CONTENT_PAGE"
+    assert_includes instructions[2], "Page role: CONTENT_PAGE"
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+  end
+
   test "native PDF 2p: p1 dropped via batch → 1 batch request submitted" do
     orig_cb    = PageRelevanceFilter.method(:call_batch)
     orig_track = TrackBedrockQueryJob.method(:perform_later)

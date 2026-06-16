@@ -108,6 +108,34 @@ class BulkCostV2RequestBuilderTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
   end
 
+  test "PDF first kept page is ANCHOR_PAGE, rest are CONTENT_PAGE" do
+    orig_count = PdfPageSplitterService.instance_method(:page_count)
+    orig_each  = PdfPageSplitterService.instance_method(:each_page)
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
+
+    PdfPageSplitterService.define_method(:page_count) { 3 }
+    PdfPageSplitterService.define_method(:each_page) do |&blk|
+      [ 1, 2, 3 ].each { |n| blk.call(n, PDF_BINARY) }
+    end
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
+
+    builder = BulkCostV2RequestBuilder.new
+    stub_download(builder, PDF_BINARY)
+    requests, _meta = builder.build_all!([ fake_pdf_asset ])
+
+    instructions = requests.map { |r| r[:params][:messages].first[:content].last[:text] }
+    assert_equal 3, instructions.size
+    assert_includes instructions[0], "Page role: ANCHOR_PAGE"
+    assert_includes instructions[1], "Page role: CONTENT_PAGE"
+    assert_includes instructions[2], "Page role: CONTENT_PAGE"
+  ensure
+    PdfPageSplitterService.define_method(:page_count, orig_count)
+    PdfPageSplitterService.define_method(:each_page,  orig_each)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+  end
+
   test "PDF drops filtered pages and force_opus uses Opus model" do
     orig_count = PdfPageSplitterService.instance_method(:page_count)
     orig_each  = PdfPageSplitterService.instance_method(:each_page)

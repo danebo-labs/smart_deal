@@ -71,10 +71,15 @@ class BatchPageRetryService
     page_binaries = download_page_binaries(s3_key, filename)
     return page_results if page_binaries.nil?
 
+    # The anchor (lowest-numbered kept page) must keep its ANCHOR_PAGE role on
+    # retry so it still emits S0/summary/companion_offer; all others stay CONTENT_PAGE.
+    anchor_page_number = page_results.filter_map { |pr| pr[:page_number] }.min
+
     failed.each do |pr|
       retry_one_page!(pr, page_binaries, page_results.size,
                       filename: filename, sha256: sha256,
-                      tracking_prefix: tracking_prefix, on_usage: on_usage)
+                      tracking_prefix: tracking_prefix, on_usage: on_usage,
+                      anchor_page_number: anchor_page_number)
     end
 
     page_results
@@ -87,7 +92,7 @@ class BatchPageRetryService
   end
 
   def retry_one_page!(page_result, page_binaries, total_kept,
-                      filename:, sha256:, tracking_prefix:, on_usage:)
+                      filename:, sha256:, tracking_prefix:, on_usage:, anchor_page_number: nil)
     page_num = page_result[:page_number]
     page_bin = page_binaries[page_num]
     return Rails.logger.warn("BatchPageRetryService: no binary for p#{page_num} retry") unless page_bin
@@ -98,7 +103,8 @@ class BatchPageRetryService
       binary:      page_bin,
       page_number: page_num,
       total_pages: total_kept,
-      filename:    filename
+      filename:    filename,
+      anchor:      page_num == anchor_page_number
     )
 
     RETRY_TOKEN_LADDER.each_with_index do |cap, index|

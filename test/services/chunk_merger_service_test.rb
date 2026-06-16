@@ -313,12 +313,47 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_equal "Offer from page 2.",   parsed["companion_offer"]
   end
 
-  test "summary is nil when anchor page returns no summary" do
+  test "deterministic fallback summary when anchor page returns no summary" do
     no_summary_results = [
       { page_number: 1, text: page1_json(summary: nil, companion_offer: nil), usage: nil, model: "claude-sonnet-4-6" }
     ]
     parsed = JSON.parse(ChunkMergerService.merge(no_summary_results))
-    assert_nil parsed["summary"]
-    assert_nil parsed["companion_offer"]
+    assert parsed["summary"].present?, "expected fallback summary to be non-nil/non-empty"
+    assert_includes parsed["summary"], DOC_NAME
+  end
+
+  test "deterministic fallback companion_offer when anchor page returns no companion_offer" do
+    no_offer_results = [
+      { page_number: 1, text: page1_json(summary: "Some summary.", companion_offer: nil), usage: nil, model: "claude-sonnet-4-6" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(no_offer_results))
+    assert parsed["companion_offer"].present?, "expected fallback companion_offer to be non-nil/non-empty"
+    assert_equal ChunkMergerService::FALLBACK_COMPANION_OFFER, parsed["companion_offer"]
+  end
+
+  test "fallback summary uses FALLBACK_COMPANION_OFFER constant when anchor fully absent" do
+    degraded_results = [
+      { page_number: 1, text: "not json {{", usage: nil, model: "claude-sonnet-4-6" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(degraded_results))
+    assert parsed["summary"].present?
+    assert_equal ChunkMergerService::FALLBACK_COMPANION_OFFER, parsed["companion_offer"]
+  end
+
+  test "all pages degraded (chosen_idx nil) does not raise and uses deterministic fallbacks" do
+    all_degraded = [
+      { page_number: 2, text: "broken {{",   usage: nil, model: "claude-sonnet-4-6" },
+      { page_number: 5, text: "also bad ]]", usage: nil, model: "claude-sonnet-4-6" }
+    ]
+
+    report = nil
+    assert_nothing_raised { report = ChunkMergerService.merge_with_report(all_degraded) }
+    parsed = JSON.parse(report[:json])
+
+    assert_equal "Unknown Document", parsed["document_name"]
+    assert parsed["summary"].present?
+    assert_equal ChunkMergerService::FALLBACK_COMPANION_OFFER, parsed["companion_offer"]
+    assert_equal [ 2, 5 ], report[:degraded_pages]
+    assert_equal 2, parsed["chunks"].count
   end
 end

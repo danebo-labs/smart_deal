@@ -10,8 +10,7 @@
 #
 # One service shared by every Batch results consumer:
 #   - IngestBatchResultsJob (bulk ZIP route, active)
-#   - IngestManualBatchResultsJob (dormant web manual chain — retry only;
-#     automatic long-manual routing stays untouched until E3a)
+#   - IngestManualBatchResultsJob (web long-manual Batch chain)
 #
 # Billing invariants (I0):
 #   - The original Batch attempt row/usage is never replaced.

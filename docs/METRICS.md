@@ -36,7 +36,7 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 | `source` | Meaning |
 |----------|---------|
 | `query` | End-user RAG / orchestrated LLM usage (**web chat** today; Twilio path would use the same `source` if re-enabled) |
-| `ingestion_parse` | Parser tokens recorded after a document finishes KB ingestion. **Legacy path** writes an estimate (Opus); **`web_v1`** path skips the estimate (real `web_parse: …` rows already persisted by `ClaudeChunkingClient`). **cost_v2 paths:** `field_photo_v1` rows have `-direct` suffix; `manual_batch_v1` rows use batch pricing (no `-direct`; `user_query: "bulk_batch: <filename> p<N>/<M>"` for bulk PDFs, or dormant `web_batch: …` if the manual batch branch is invoked explicitly). |
+| `ingestion_parse` | Parser tokens recorded after a document finishes KB ingestion. **Legacy path** writes an estimate (Opus); **`web_v1`** path skips the estimate (real `web_parse: …` rows already persisted by `ClaudeChunkingClient`). **cost_v2 paths:** `field_photo_v1` rows have `-direct` suffix; `manual_batch_v1` rows use batch pricing (no `-direct`; `user_query: "bulk_batch: <filename> p<N>/<M>"` for bulk PDFs, or `web_batch: …` for long PDFs uploaded through web/chat). |
 | `ingestion_embed` | Estimated embedding tokens for chunk text indexed by the KB (Titan Text v2). Written after chat or bulk Bedrock sync completes. |
 
 **Jobs & data:**
@@ -51,7 +51,7 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 |-------|----------------|------|
 | **`default`** | `TrackBedrockQueryJob`, `TrackIngestionUsageJob`, `TrackWhatsappCacheHitJob` (inactive), `KbDocumentEnrichmentJob`, `UploadAndSyncAttachmentsJob`, `DailyMetricsJob`, `SendWhatsappReplyJob` (not enqueued without WA) | Token persistence, footer Turbo updates, async enrichment, scheduled metric refresh |
 | **`ingestion`** | `BedrockIngestionJob` | Long poll on Bedrock KB ingestion (≤ 15 min); legacy mode blocks one worker thread, `INGESTION_REENQUEUE=true` re-enqueues every 5s |
-| **`bulk_ingestion`** | `ProcessBulkUploadJob`, `SubmitClaudeBatchJob`, `PollClaudeBatchJob`, `IngestBatchResultsJob`, `PollBulkBedrockIngestionJob` | Bulk ZIP extraction, Anthropic batch lifecycle, chunk ingest + Bedrock sync polls (2 threads in template config) |
+| **`bulk_ingestion`** | `ProcessBulkUploadJob`, `SubmitClaudeBatchJob`, `PollClaudeBatchJob`, `IngestBatchResultsJob`, `SubmitManualBatchJob`, `IngestManualBatchResultsJob`, `PollBulkBedrockIngestionJob` | Bulk ZIP extraction, web long-manual Batch lifecycle, Anthropic batch lifecycle, chunk ingest + Bedrock sync polls (2 threads in template config) |
 
 **Production sizing (floors):** `RAILS_MAX_THREADS=5`, AR `pool=RAILS_MAX_THREADS+2` (auto), `AWS_HTTP_READ_TIMEOUT=90` (covers Aurora Serverless cold-start ≤ 60s). See `.env.sample` for the full block.
 

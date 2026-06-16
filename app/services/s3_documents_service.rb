@@ -99,6 +99,30 @@ class S3DocumentsService
     nil
   end
 
+  # Removes all objects under a prefix before a deterministic chunk rewrite.
+  # Used by manual Batch ingestion so retries cannot leave stale chunks behind.
+  # @param prefix [String] S3 prefix, e.g. "bulk_chunks/<sha>/<contract>"
+  # @return [Integer] number of deleted objects
+  def delete_prefix(prefix)
+    return 0 unless @bucket_name
+
+    deleted = 0
+    @s3.list_objects_v2(bucket: @bucket_name, prefix: prefix).each do |response|
+      objects = Array(response.contents).map { |obj| { key: obj.key } }
+      next if objects.empty?
+
+      @s3.delete_objects(
+        bucket: @bucket_name,
+        delete: { objects: objects, quiet: true }
+      )
+      deleted += objects.size
+    end
+    deleted
+  rescue StandardError => e
+    Rails.logger.error("S3 prefix delete failed for #{prefix}: #{e.message}")
+    0
+  end
+
   # Downloads an object from S3 and returns its raw binary.
   # @param key [String] S3 object key
   # @return [String, nil] raw bytes on success, nil on failure

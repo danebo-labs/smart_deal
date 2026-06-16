@@ -27,8 +27,8 @@ export default class extends Controller {
   // shaft) and Solid Cable does not replay missed messages.
   static CHAT_STALL_HINT_MS = 90 * 1000
 
-  // Uploads can include long manuals that parse sync inside Solid Queue before
-  // the KB `indexed` event. Give them more room before showing a recovery hint.
+  // Uploads can include long manuals that finish through async Batch before the
+  // KB `indexed` event. Give them more room before showing a recovery hint.
   static CHAT_UPLOAD_STALL_HINT_MS = 3 * 60 * 1000
 
   // Back-compat aliases so the indexing path keeps working without rename churn.

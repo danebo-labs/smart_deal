@@ -20,13 +20,14 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
   end
 
   class FakeS3Client
-    attr_accessor :objects, :should_raise_on_list, :should_raise_on_put, :uploaded
+    attr_accessor :objects, :should_raise_on_list, :should_raise_on_put, :uploaded, :deleted
 
     def initialize(*)
       @objects = []
       @should_raise_on_list = false
       @should_raise_on_put = false
       @uploaded = []
+      @deleted = []
     end
 
     def list_objects_v2(_params)
@@ -43,6 +44,11 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
 
       @uploaded << params
       OpenStruct.new(etag: '"abc123"')
+    end
+
+    def delete_objects(params)
+      @deleted.concat(params.dig(:delete, :objects).to_a)
+      OpenStruct.new(deleted: @deleted)
     end
   end
 
@@ -217,6 +223,22 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
 
       service = S3DocumentsService.new
       assert_nil service.upload_text('bulk_chunks/test/chunk_0.txt', 'content')
+    end
+  end
+
+  test 'delete_prefix removes every listed object under prefix' do
+    with_fake_s3_client do |fake|
+      fake.objects = [
+        make_s3_object(key: 'bulk_chunks/sha/contract/chunk_p1_1.txt', size: 100),
+        make_s3_object(key: 'bulk_chunks/sha/contract/chunk_p1_1.txt.metadata.json', size: 100)
+      ]
+
+      service = S3DocumentsService.new
+      assert_equal 2, service.delete_prefix('bulk_chunks/sha/contract')
+      assert_equal [
+        { key: 'bulk_chunks/sha/contract/chunk_p1_1.txt' },
+        { key: 'bulk_chunks/sha/contract/chunk_p1_1.txt.metadata.json' }
+      ], fake.deleted
     end
   end
 

@@ -83,7 +83,8 @@ flowchart TB
 | Path | Input | Prompt | Modelo | API |
 |------|-------|--------|--------|-----|
 | Foto | JPEG/PNG campo | `FieldPhotoPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 | Sync direct |
-| Manual web/chat | PDF multipágina + Office | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 (Opus excepción `force_opus`) | Sync direct |
+| Manual web/chat corto | PDF dentro del umbral sync + Office | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 (Opus excepción `force_opus`) | Sync direct |
+| Manual web/chat largo | PDF sobre `WEB_SYNC_PDF_PAGE_THRESHOLD` | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 (Opus excepción `force_opus`) | Batch async |
 | Manual bulk | PDF multipágina + Office en `/bulk_uploads` | `BatchChunkingPrompt::SYSTEM_BLOCKS` | Sonnet 4.6 (Opus excepción `force_opus`) | Batch async |
 | Consulta RAG | Texto query | — | Haiku 4.5 | Bedrock `retrieve_and_generate` |
 
@@ -91,16 +92,16 @@ flowchart TB
 
 ## 3. Decisiones de diseño (ADR)
 
-### 3.1 Manual web/chat sync; bulk manual Batch async
+### 3.1 Manual web/chat corto sync; manual largo Batch async automático
 
 **Context:** El path anterior (`SingleFileChunkingService` sync) llamaba Opus de forma bloqueante en la request. ~$60/técnico/mes.
 
-**Decision:** Todo PDF/Office adjunto desde web/chat pasa por `SingleFileChunkingService` sync cost-v2 (Messages API). La indexación sigue fuera del request en `UploadAndSyncAttachmentsJob`, pero no entra a Anthropic Batch. Manuales de carga inicial/backoffice usan `/bulk_uploads` → Anthropic Batch API (Sonnet, ~50% off).
+**Decision:** PDF/Office corto adjunto desde web/chat pasa por `SingleFileChunkingService` sync cost-v2 (Messages API). PDF largo adjunto desde web/chat se enruta automáticamente a `SubmitManualBatchJob` → `ManualBatchIngestionService` → `IngestManualBatchResultsJob` en `bulk_ingestion`; el usuario no selecciona páginas manualmente. Manuales de carga inicial/backoffice siguen usando `/bulk_uploads` → Anthropic Batch API (Sonnet, ~50% off).
 
 **Consequences:**
-- UX web/chat: ACK rápido; parse sync dentro de Solid Queue; `indexed` confirma que el documento quedó consultable sin esperar a Batch.
-- Costo: manuales planificados deben ir por `/bulk_uploads` para conservar batch pricing.
-- Riesgo: subir manuales grandes desde chat cuesta más que bulk; se acepta para preservar asistencia operativa inmediata.
+- UX web/chat: ACK rápido. Archivos cortos pueden quedar consultables en el ciclo sync; manuales largos avisan procesamiento y quedan consultables cuando el Batch termina.
+- Costo: manuales largos subidos por emergencia desde chat ya usan batch pricing sin bloquear al técnico.
+- Riesgo: el documento largo no está completo inmediatamente; E3b/O posterior debe agregar triage automático de páginas urgentes mientras el Batch corre.
 - Mitigación: `PageRelevanceFilter` descarta portada, índice, separadores y páginas vacías antes de Sonnet/Opus.
 - PDFs grandes: `PageRelevanceFilter.call_batch` clasifica en ventanas de hasta 20 páginas y 22 MB, con `max_tokens` dinámico, retry 1x solo ante JSON truncado y fallback keep-all acotado a la ventana.
 
@@ -158,11 +159,11 @@ Ver [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md).
 
 **Consequences:** Cero parse duplicados para binarios idénticos. Zero-migration hoy.
 
-### 3.6 Web/chat manual siempre sync
+### 3.6 Web/chat manual largo a Batch automático
 
-**Decision:** `QueryOrchestratorService#upload_and_sync_attachments` pasa `urgent: true` siempre. La presencia de pregunta ya no decide el routing del chat; Batch queda para `/bulk_uploads`.
+**Decision:** `QueryOrchestratorService#upload_and_sync_attachments` conserva `urgent: true` por compatibilidad, pero `CustomChunkingPipeline` ya no usa ese flag para forzar sync en PDFs largos. Si `pdf_page_count > WEB_SYNC_PDF_PAGE_THRESHOLD` (default 2), se encola `SubmitManualBatchJob` automáticamente.
 
-**Consequences:** Un manual PDF largo subido desde chat sin pregunta también usa sync Messages API y no encola `SubmitManualBatchJob`.
+**Consequences:** Un manual PDF largo subido desde chat, con o sin pregunta, sí se acepta; no requiere que el usuario seleccione páginas desde el PDF. El documento completo entra por Batch y se indexa cuando `manual_batch_v1` termina.
 
 ### 3.7 Foto de circuito o diagrama tomada en campo
 
@@ -201,7 +202,7 @@ Volumen: **1.000 consultas**, **200 fotos**, **5 manuales planificados × 10 pá
 | Manuales planificados | Sonnet 4.6 batch per-page vía `/bulk_uploads` | ~$0.30 |
 | **Total v2** | | **~$9.42** |
 
-Si esos mismos manuales se suben desde chat, usan sync direct por decisión UX: ~38 páginas × ~$0.0165 ≈ **$0.63**. El delta se acepta para soporte operativo urgente; backoffice debe usar `/bulk_uploads`.
+Si esos mismos manuales largos se suben desde chat, usan Batch automático: costo de parse equivalente al path batch. La diferencia UX es latencia hasta `indexed`; backoffice debe seguir usando `/bulk_uploads` para cargas masivas y trazabilidad de lote.
 
 **HOY (pre-v2):** Fotos → Opus sync (~$40), Manuales → ningún parse web batch → **~$60/técnico/mes estimado**.
 
@@ -216,7 +217,7 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 **Smoke post-deploy:**
 1. Subir una foto de campo y verificar `field_photo_v1`.
 2. Subir un PDF corto y verificar parse sync.
-3. Subir un manual PDF >2 páginas desde chat, sin pregunta adjunta, y verificar `web_parse` / sin `SubmitManualBatchJob`.
+3. Subir un manual PDF >2 páginas desde chat, sin pregunta adjunta, y verificar `SubmitManualBatchJob`, `web_batch` y ausencia de sync inmediato del PDF original.
 4. Subir un ZIP en `/bulk_uploads` y verificar Batch API + assets completos.
 
 ---

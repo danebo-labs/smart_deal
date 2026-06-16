@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_12_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_16_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -163,6 +163,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_210000) do
     t.datetime "updated_at", null: false
     t.index [ "email" ], name: "index_users_on_email", unique: true
     t.index [ "reset_password_token" ], name: "index_users_on_reset_password_token", unique: true
+  end
+
+  create_table "web_manual_batches", force: :cascade do |t|
+    t.jsonb "aliases", default: [], null: false
+    t.string "canonical_name"
+    t.integer "chunks_count"
+    t.string "chunks_s3_prefix"
+    t.string "claude_batch_id"
+    t.datetime "completed_at"
+    t.string "content_type", default: "application/pdf", null: false
+    t.bigint "conv_session_id"
+    t.datetime "created_at", null: false
+    t.text "error_message"
+    t.string "filename", null: false
+    t.string "ingestion_contract_version", null: false
+    t.bigint "kb_document_id"
+    t.jsonb "kept_pages", default: [], null: false
+    t.string "locale"
+    t.jsonb "page_customs", default: {}, null: false
+    t.string "s3_key", null: false
+    t.string "sha256", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "submitted_at"
+    t.integer "total_pages"
+    t.datetime "updated_at", null: false
+    t.index [ "claude_batch_id" ], name: "index_web_manual_batches_on_claude_batch_id", unique: true
+    t.index [ "conv_session_id" ], name: "index_web_manual_batches_on_conv_session_id"
+    t.index [ "kb_document_id" ], name: "index_web_manual_batches_on_kb_document_id"
+    t.index [ "sha256", "s3_key", "ingestion_contract_version" ], name: "idx_web_manual_batches_unique_contract", unique: true
+    t.index [ "status" ], name: "index_web_manual_batches_on_status"
   end
 
   create_table "whatsapp_cache_hits", force: :cascade do |t|

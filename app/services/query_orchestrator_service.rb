@@ -155,9 +155,8 @@ class QueryOrchestratorService
   private
 
   # Delegates all web/chat attachment uploads + chunking to CustomChunkingPipeline.
-  # Web/chat uploads always parse via the sync cost-v2 Messages path so field
-  # technicians are not routed through async Batch latency. Bulk/backoffice
-  # uploads use the separate /bulk_uploads pipeline.
+  # Short files parse via sync Messages; long PDFs route automatically to the
+  # async manual Batch chain. Bulk/backoffice ZIP uploads still use /bulk_uploads.
   # @return [Array<String>] filenames successfully uploaded to S3
   def upload_and_sync_attachments
     CustomChunkingPipeline.new(

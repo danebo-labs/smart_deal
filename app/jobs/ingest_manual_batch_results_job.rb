@@ -2,46 +2,67 @@
 
 # Phase 2 of web manual batch ingestion:
 #   Polls Anthropic Batch status, and when complete:
-#     streams results → ChunkMergerService → BatchResultsParserService (web_v1) →
+#     streams results → ChunkMergerService → BatchResultsParserService (manual_batch_v1) →
 #     BulkKbSyncService → BedrockIngestionJob.
 #
 # Polling: retries up to MAX_ATTEMPTS with exponential backoff via Solid Queue.
-# On terminal failure, logs and gives up (upload is already in KB via S3 original file).
 class IngestManualBatchResultsJob < ApplicationJob
-  queue_as :default
+  queue_as :bulk_ingestion
 
   MAX_ATTEMPTS  = 24   # ~24h with 1h steps
   POLL_INTERVAL = 1.hour
 
   discard_on ActiveJob::DeserializationError
+  discard_on ActiveRecord::RecordNotFound
 
-  # @param batch_id  [String]  Anthropic batch id
-  # @param cache_key [String]  Solid Cache key for batch context
-  # @param attempt   [Integer] current polling attempt (1-based)
-  def perform(batch_id:, cache_key:, attempt: 1)
-    batch_context = Rails.cache.read(cache_key)
+  # @param web_manual_batch_id [Integer, nil] durable context row for new jobs
+  # @param batch_id            [String, nil] legacy Anthropic batch id
+  # @param cache_key           [String, nil] legacy Solid Cache key
+  # @param attempt             [Integer] current polling attempt (1-based)
+  def perform(web_manual_batch_id: nil, batch_id: nil, cache_key: nil, attempt: 1)
+    web_manual_batch = load_web_manual_batch(web_manual_batch_id)
+    batch_context    = web_manual_batch ? context_from_record(web_manual_batch) : Rails.cache.read(cache_key)
+
     unless batch_context
       Rails.logger.warn("IngestManualBatchResultsJob: cache miss for #{cache_key} — batch_id=#{batch_id}")
       return
     end
+
+    batch_context = batch_context.with_indifferent_access
+    batch_id ||= batch_context[:batch_id]
+    return if web_manual_batch&.status.in?(%w[parsed syncing complete])
 
     batch_client = ClaudeBatchClient.new
     status       = batch_client.retrieve(batch_id: batch_id)
 
     case status.processing_status.to_s
     when "in_progress"
+      web_manual_batch&.update!(status: "in_progress")
       if attempt >= MAX_ATTEMPTS
+        web_manual_batch&.update!(
+          status:        "failed",
+          error_message: "Batch still in_progress after #{attempt} attempts"
+        )
+        broadcast_failed(web_manual_batch, batch_context)
         Rails.logger.error("IngestManualBatchResultsJob: batch #{batch_id} still in_progress after #{attempt} attempts — giving up")
         return
       end
-      self.class.set(wait: POLL_INTERVAL).perform_later(batch_id: batch_id, cache_key: cache_key, attempt: attempt + 1)
+      poll_args = web_manual_batch ? { web_manual_batch_id: web_manual_batch.id } : { batch_id: batch_id, cache_key: cache_key }
+      self.class.set(wait: POLL_INTERVAL).perform_later(**poll_args, attempt: attempt + 1)
       nil
     when "ended"
-      ingest_results(batch_context, batch_client)
+      web_manual_batch&.update!(status: "parsing")
+      ingest_results(batch_context, batch_client, web_manual_batch: web_manual_batch)
     else
+      web_manual_batch&.update!(
+        status:        "failed",
+        error_message: "Unexpected batch status #{status.processing_status}"
+      )
+      broadcast_failed(web_manual_batch, batch_context)
       Rails.logger.warn("IngestManualBatchResultsJob: unexpected batch status '#{status.processing_status}' for #{batch_id}")
     end
   rescue StandardError => e
+    web_manual_batch&.update_columns(status: "failed", error_message: e.message)
     Rails.logger.error("IngestManualBatchResultsJob[#{batch_id}]: #{e.class}: #{e.message}")
     Rails.logger.error(e.backtrace.first(10).join("\n"))
     raise
@@ -49,7 +70,8 @@ class IngestManualBatchResultsJob < ApplicationJob
 
   private
 
-  def ingest_results(ctx, batch_client)
+  def ingest_results(ctx, batch_client, web_manual_batch: nil)
+    ctx = ctx.with_indifferent_access
     batch_id     = ctx[:batch_id]
     filename     = ctx[:filename]
     sha256       = ctx[:sha256]
@@ -86,6 +108,8 @@ class IngestManualBatchResultsJob < ApplicationJob
     end
 
     if page_results.empty?
+      web_manual_batch&.update!(status: "failed", error_message: "No succeeded batch results")
+      broadcast_failed(web_manual_batch, ctx)
       Rails.logger.warn("IngestManualBatchResultsJob: no succeeded results for #{filename} batch #{batch_id}")
       return
     end
@@ -114,17 +138,37 @@ class IngestManualBatchResultsJob < ApplicationJob
       ingestion_path: "manual_batch_v1"
     )
 
+    web_manual_batch&.update!(
+      status:           "parsed",
+      canonical_name:   chunk_asset.canonical_name.to_s,
+      aliases:          Array(chunk_asset.aliases),
+      chunks_count:     chunk_asset.chunks_count,
+      chunks_s3_prefix: chunk_asset.chunks_s3_prefix,
+      error_message:    nil
+    )
+
     uploaded_filenames = [ filename ]
     web_v1_metadata    = [ {
-      "filename"        => filename,
-      "canonical_name"  => chunk_asset.canonical_name.to_s,
-      "aliases"         => Array(chunk_asset.aliases),
-      "summary"         => chunk_asset.summary.to_s.presence,
-      "companion_offer" => chunk_asset.companion_offer.to_s.presence
+      "filename"         => filename,
+      "canonical_name"   => chunk_asset.canonical_name.to_s,
+      "aliases"          => Array(chunk_asset.aliases),
+      "summary"          => chunk_asset.summary.to_s.presence,
+      "companion_offer"  => chunk_asset.companion_offer.to_s.presence,
+      "chunks_s3_prefix" => chunk_asset.chunks_s3_prefix.to_s.presence,
+      "partial_pages"    => Array(chunk_asset.degraded_pages)
     } ]
 
-    sync_result = BulkKbSyncService.new.sync!(uploaded_filenames: uploaded_filenames)
-    return if sync_result.blank?
+    sync_result = BulkKbSyncService.new.sync!(uploaded_filenames: uploaded_filenames, locale: ctx[:locale])
+    if sync_result.blank?
+      web_manual_batch&.update!(
+        status:        "failed",
+        error_message: "Bedrock sync did not start"
+      )
+      broadcast_failed(web_manual_batch, ctx)
+      return
+    end
+
+    web_manual_batch&.update!(status: "syncing")
 
     BedrockIngestionJob.perform_later(
       sync_result[:job_id],
@@ -133,10 +177,41 @@ class IngestManualBatchResultsJob < ApplicationJob
       data_source_id:  sync_result[:data_source_id],
       conv_session_id: conv_session_id,
       kb_document_ids: [ kb_doc_id ].compact,
-      web_v1_metadata: web_v1_metadata
+      web_v1_metadata: web_v1_metadata,
+      locale:          ctx[:locale]
     )
 
     Rails.logger.info("IngestManualBatchResultsJob: #{filename} batch #{batch_id} → Bedrock sync started")
+  end
+
+  def load_web_manual_batch(id)
+    return if id.blank?
+
+    WebManualBatch.find(id)
+  end
+
+  def context_from_record(batch)
+    {
+      batch_id:        batch.claude_batch_id,
+      filename:        batch.filename,
+      sha256:          batch.sha256,
+      s3_key:          batch.s3_key,
+      page_customs:    batch.page_customs.to_h.transform_keys(&:to_i),
+      kept_pages:      Array(batch.kept_pages),
+      conv_session_id: batch.conv_session_id,
+      kb_doc_id:       batch.kb_document_id,
+      locale:          batch.locale
+    }
+  end
+
+  def broadcast_failed(web_manual_batch, ctx)
+    KbSyncBroadcaster.failed(
+      filenames: [ ctx[:filename] ],
+      reason:    "manual_batch_failed",
+      locale:    web_manual_batch&.locale || ctx[:locale]
+    )
+  rescue StandardError => e
+    Rails.logger.warn("IngestManualBatchResultsJob: failed to broadcast manual batch failure — #{e.message}")
   end
 
   def extract_text(message)

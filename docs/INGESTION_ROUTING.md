@@ -10,7 +10,7 @@ How the app decides **what to parse**, **which pages to keep**, and **which Clau
 
 | Entry | Route | Job queue | Parse API |
 |-------|-------|-----------|-----------|
-| **Chat attachment** | Home RAG → `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments` | `default` | Sync Messages (cost v2), always |
+| **Chat attachment** | Home RAG → `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments` | `default` + `bulk_ingestion` for long PDFs | Sync Messages for short files; Anthropic Message Batches for long PDFs |
 | **Bulk ZIP** | `/bulk_uploads` → `ProcessBulkUploadJob` → … → `SubmitClaudeBatchJob` | `bulk_ingestion` | Anthropic Message Batches (always async) |
 
 Both paths share the same **classification**, **page filter**, and **model routing** services. No feature flags gate these paths — `CustomChunkingPipeline` and `BulkCostV2RequestBuilder` are the only active code paths.
@@ -156,7 +156,7 @@ Models (`BatchChunkingPrompt`):
 |-----------|--------|-------------|--------|-----------------|-----------------|
 | **Field photo** | `FieldPhotoDensityGate` (size ≥1.5 MB → Opus) | Sonnet (default) or Opus | `FieldPhotoPrompt` compact explicit-evidence schema (Sonnet) / `BatchChunkingPrompt` (Opus) | Sync | Batch |
 | **Text file** | — | Sonnet | `BatchChunkingPrompt` | Sync | — |
-| **PDF, any page count** | `filter_pages` → Haiku batch for ≥2 pages | Sonnet per kept page; Opus if `force_opus` | `BatchChunkingPrompt` | Sync | Batch per kept page |
+| **PDF** | `filter_pages` → Haiku batch for ≥2 pages | Sonnet per kept page; Opus if `force_opus` | `BatchChunkingPrompt` | Sync when ≤ `WEB_SYNC_PDF_PAGE_THRESHOLD` pages; Batch when longer | Batch per kept page |
 | **Office** | Convert → same as PDF | Same as PDF | Same | Sync (handle_office converts) | Batch (after convert in ZIP extract) |
 
 **Ingestion path metadata** (sidecar / metrics):
@@ -165,7 +165,7 @@ Models (`BatchChunkingPrompt`):
 |------|------------------|
 | Sync web parse | `web_v1` |
 | Field photo Sonnet | `field_photo_v1` |
-| PDF page batch (bulk ZIP / dormant manual batch) | `manual_batch_v1` |
+| PDF page batch (bulk ZIP / web long manual batch) | `manual_batch_v1` |
 | Bulk ZIP legacy | `batch_v1` |
 | SHA dedup hit | `content_dedup` |
 
@@ -179,11 +179,12 @@ UploadAndSyncAttachmentsJob
       → ContentDedupService (skip parse on hit)
       → image                              → SingleFileChunkingService (sync)
       → office (.docx/.pptx/…)            → SingleFileChunkingService (sync, handle_office converts)
-      → pdf, any page count                → SingleFileChunkingService (sync cost-v2)
-  → BulkKbSyncService → BedrockIngestionJob
+      → pdf <= WEB_SYNC_PDF_PAGE_THRESHOLD → SingleFileChunkingService (sync cost-v2)
+      → pdf >  WEB_SYNC_PDF_PAGE_THRESHOLD → SubmitManualBatchJob (async Batch)
+  → BulkKbSyncService → BedrockIngestionJob only for chunks ready now
 ```
 
-`QueryOrchestratorService` passes `urgent: true` for every web/chat upload, even when the technician attaches a document with no question. This keeps chat/manual uploads on the sync Messages path and leaves Anthropic Batch for `/bulk_uploads`.
+Long manual routing is automatic. A technician can still upload a long PDF from web/chat; the app acknowledges the upload, submits the manual to Batch on `bulk_ingestion`, and indexes it only after `IngestManualBatchResultsJob` writes `manual_batch_v1` chunks under `bulk_chunks/`. The original PDF under `uploads/` is not indexed directly.
 
 **Office failure:** user sees `rag.office_parse_failed` via `KbSyncBroadcaster.failed`. No legacy OWRPGSX6XK fallback — errors propagate to `UploadAndSyncAttachmentsJob`, which broadcasts failed and lets Solid Queue retry.
 
@@ -226,7 +227,7 @@ Example `user_query` labels:
 | Label | Meaning |
 |-------|---------|
 | `web_parse: manual.pdf p3/12` | Sync page parse |
-| `web_batch: manual.pdf p3/12` | Dormant/manual async batch page parse |
+| `web_batch: manual.pdf p3/12` | Web long-manual async Batch page parse |
 | `page_filter: manual.pdf p2/12` | Single-page Haiku gate |
 | `page_filter_batch: deck.pdf 21..40/55` | Multi-page Haiku batch window classify |
 | `bulk_batch: …` / `bulk_parse: …` | Bulk ZIP paths |
@@ -239,7 +240,7 @@ Example `user_query` labels:
 |---------|---------------|
 | Chat orchestration | `CustomChunkingPipeline`, `QueryOrchestratorService` |
 | Single-file sync parse | `SingleFileChunkingService`, `ClaudeChunkingClient` |
-| Manual async batch (dormant for chat) | `SubmitManualBatchJob`, `ManualBatchIngestionService`, `IngestManualBatchResultsJob` |
+| Web long-manual async batch | `WebManualBatch`, `SubmitManualBatchJob`, `ManualBatchIngestionService`, `IngestManualBatchResultsJob` |
 | Bulk batch | `BatchIngestionService`, `BulkCostV2RequestBuilder`, `ClaudeBatchClient` |
 | Classification | `FileMultimodalRouter` |
 | Page filter | `PageRelevanceFilter` |

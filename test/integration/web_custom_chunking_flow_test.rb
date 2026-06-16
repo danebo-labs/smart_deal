@@ -236,13 +236,17 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
     BedrockIngestionJob.define_singleton_method(:perform_later, orig_later)
   end
 
-  test "web chat PDF upload without question parses sync and does not enqueue manual batch" do
+  test "web chat long PDF upload routes to manual batch without immediate KB sync" do
     orig_submit_manual = SubmitManualBatchJob.method(:perform_later)
     orig_sfc_new       = SingleFileChunkingService.method(:new)
     orig_splitter_new  = PdfPageSplitterService.method(:new)
+    orig_bulk_new      = BulkKbSyncService.method(:new)
+    orig_bedrock_later = BedrockIngestionJob.method(:perform_later)
 
-    batch_calls = []
-    sfc_calls   = []
+    batch_calls  = []
+    sfc_calls    = []
+    sync_calls   = []
+    bedrock_calls = []
 
     SubmitManualBatchJob.define_singleton_method(:perform_later) do |**kwargs|
       batch_calls << kwargs
@@ -265,6 +269,15 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
       OpenStruct.new(call: asset)
     end
 
+    BulkKbSyncService.define_singleton_method(:new) do
+      svc = Object.new
+      svc.define_singleton_method(:sync!) { |**kwargs| sync_calls << kwargs; nil }
+      svc
+    end
+    BedrockIngestionJob.define_singleton_method(:perform_later) do |*args, **kwargs|
+      bedrock_calls << [ args, kwargs ]
+    end
+
     binary = "%PDF long manual bytes"
     doc_payload = [ {
       filename: "long_manual.pdf",
@@ -276,13 +289,17 @@ class WebCustomChunkingFlowTest < ActiveSupport::TestCase
       .new("", documents: doc_payload)
       .send(:upload_and_sync_attachments)
 
-    assert_empty batch_calls, "web/chat uploads must not enqueue SubmitManualBatchJob"
-    assert_equal 1, sfc_calls.size, "long PDFs from web/chat must parse sync"
-    assert_equal "long_manual.pdf", sfc_calls.first[:filename]
+    assert_equal 1, batch_calls.size, "web/chat long PDFs must enqueue SubmitManualBatchJob automatically"
+    assert_equal "long_manual.pdf", batch_calls.first[:filename]
+    assert_empty sfc_calls, "long PDFs from web/chat must not parse sync"
+    assert_empty sync_calls, "long PDFs must not start KB sync until batch chunks are written"
+    assert_empty bedrock_calls, "long PDFs must not enqueue Bedrock ingestion before batch parse"
   ensure
     SubmitManualBatchJob.define_singleton_method(:perform_later, orig_submit_manual)
     SingleFileChunkingService.define_singleton_method(:new, orig_sfc_new)
     PdfPageSplitterService.define_singleton_method(:new, orig_splitter_new)
+    BulkKbSyncService.define_singleton_method(:new, orig_bulk_new)
+    BedrockIngestionJob.define_singleton_method(:perform_later, orig_bedrock_later)
   end
 
   # ---------------------------------------------------------------------------

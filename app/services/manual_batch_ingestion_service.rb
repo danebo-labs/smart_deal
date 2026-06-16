@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-# Orchestrates the dormant async Batch API ingestion path for a single
-# multi-page PDF manual. Active web/chat uploads parse sync; bulk ZIP PDFs use
-# BatchIngestionService + BulkCostV2RequestBuilder.
+# Orchestrates the async Batch API ingestion path for a single multi-page PDF
+# manual uploaded from web/chat. Bulk ZIP PDFs use BatchIngestionService +
+# BulkCostV2RequestBuilder.
 #
 # Contrast with BatchIngestionService (ZIP bulk path, whole-file Opus, no filter):
 #   - This service splits the PDF per-page, applies PageRelevanceFilter per page,
@@ -13,7 +13,7 @@
 # so downstream IngestManualBatchResultsJob can match results by custom_id.
 #
 # Pricing: Anthropic Batch API ~50% off vs sync; tracked with user_query
-# "web_batch: filename pN/M" if this dormant branch is invoked.
+# "web_batch: filename pN/M" for web long-manual uploads.
 # in IngestManualBatchResultsJob (not here — we don't have tokens until results arrive).
 class ManualBatchIngestionService
   CUSTOM_ID_PAGE_PATTERN = "%s_p%d"

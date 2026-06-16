@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# Phase 1 of the dormant web manual batch ingestion path:
+# Phase 1 of the web long-manual batch ingestion path:
 #   Downloads PDF from S3, applies PageRelevanceFilter, submits Anthropic Batch,
-#   stores batch context in Solid Cache, then schedules polling.
-#
-# Active web/chat uploads pass urgent=true and parse sync. This job is only
-# reached if a caller explicitly invokes CustomChunkingPipeline with urgent=false.
-# Falls back to direct sync parse if submission fails.
+#   stores durable batch context, then schedules polling.
 class SubmitManualBatchJob < ApplicationJob
-  queue_as :default
+  queue_as :bulk_ingestion
 
   # @param s3_key         [String]       S3 key for the uploaded PDF
   # @param filename       [String]       original filename
@@ -17,8 +13,26 @@ class SubmitManualBatchJob < ApplicationJob
   # @param locale         [String, nil]  ISO 639-1
   # @param conv_session_id [Integer, nil]
   def perform(s3_key:, filename:, sha256:, kb_doc_id:, locale: nil, conv_session_id: nil)
+    batch = find_or_initialize_batch!(
+      s3_key: s3_key,
+      filename: filename,
+      sha256: sha256,
+      kb_doc_id: kb_doc_id,
+      locale: locale,
+      conv_session_id: conv_session_id
+    )
+
+    if batch.submitted_for_polling?
+      enqueue_poll(batch, wait: 5.minutes)
+      Rails.logger.info("SubmitManualBatchJob: reused #{filename} → batch_id=#{batch.claude_batch_id}")
+      return
+    end
+
+    return if batch.status.in?(%w[parsing parsed syncing complete])
+
     binary = S3DocumentsService.new.download(s3_key)
     if binary.blank?
+      batch.update!(status: "failed", error_message: "S3 download failed for #{s3_key}")
       Rails.logger.error("SubmitManualBatchJob: could not download s3_key=#{s3_key} — skipping")
       return
     end
@@ -32,18 +46,33 @@ class SubmitManualBatchJob < ApplicationJob
     )
 
     if result[:batch_id].blank?
+      batch.update!(
+        status:        "failed",
+        page_customs:  result[:page_customs] || {},
+        kept_pages:    result[:kept_pages] || [],
+        total_pages:   result[:total_pages],
+        error_message: "No pages kept by relevance filter"
+      )
+      KbSyncBroadcaster.failed(
+        filenames: [ filename ],
+        reason:    "manual_batch_no_relevant_pages",
+        locale:    locale
+      )
       Rails.logger.warn("SubmitManualBatchJob: no pages kept for #{filename} — skipping batch")
       return
     end
 
-    cache_key = "web_manual_batch:#{result[:batch_id]}"
-    Rails.cache.write(cache_key, result.merge(kb_doc_id: kb_doc_id, conv_session_id: conv_session_id), expires_in: 72.hours)
-
-    IngestManualBatchResultsJob.set(wait: 5.minutes).perform_later(
-      batch_id:        result[:batch_id],
-      cache_key:       cache_key,
-      attempt:         1
+    batch.update!(
+      claude_batch_id: result[:batch_id],
+      status:          "submitted",
+      page_customs:    result[:page_customs] || {},
+      kept_pages:      result[:kept_pages] || [],
+      total_pages:     result[:total_pages],
+      submitted_at:    Time.current,
+      error_message:   nil
     )
+
+    enqueue_poll(batch, wait: 5.minutes)
 
     Rails.logger.info(
       "SubmitManualBatchJob: #{filename} → batch_id=#{result[:batch_id]} " \
@@ -52,5 +81,33 @@ class SubmitManualBatchJob < ApplicationJob
   rescue StandardError => e
     Rails.logger.error("SubmitManualBatchJob[#{filename}]: #{e.class}: #{e.message}")
     raise
+  end
+
+  private
+
+  def find_or_initialize_batch!(s3_key:, filename:, sha256:, kb_doc_id:, locale:, conv_session_id:)
+    WebManualBatch.find_or_initialize_by(
+      sha256: sha256,
+      s3_key: s3_key,
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+    ).tap do |batch|
+      batch.assign_attributes(
+        filename: filename,
+        content_type: "application/pdf",
+        kb_document_id: kb_doc_id,
+        conv_session_id: conv_session_id,
+        locale: locale
+      )
+      batch.save!
+    end
+  rescue ActiveRecord::RecordNotUnique
+    retry
+  end
+
+  def enqueue_poll(batch, wait:)
+    IngestManualBatchResultsJob.set(wait: wait).perform_later(
+      web_manual_batch_id: batch.id,
+      attempt:             1
+    )
   end
 end

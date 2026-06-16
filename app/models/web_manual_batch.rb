@@ -1,0 +1,31 @@
+# frozen_string_literal: true
+
+class WebManualBatch < ApplicationRecord
+  STATUSES = %w[pending submitted in_progress parsing parsed syncing complete failed].freeze
+
+  belongs_to :kb_document, optional: true
+  belongs_to :conv_session, class_name: "ConversationSession", optional: true
+
+  validates :s3_key, :filename, :sha256, :ingestion_contract_version, presence: true
+  validates :status, inclusion: { in: STATUSES }
+  validates :sha256, uniqueness: { scope: [ :s3_key, :ingestion_contract_version ] }
+  validates :claude_batch_id, uniqueness: true, allow_blank: true
+
+  scope :active, -> { where(status: %w[pending submitted in_progress parsing parsed syncing]) }
+
+  def terminal?
+    complete? || failed?
+  end
+
+  def complete?
+    status == "complete"
+  end
+
+  def failed?
+    status == "failed"
+  end
+
+  def submitted_for_polling?
+    claude_batch_id.present? && %w[submitted in_progress].include?(status)
+  end
+end

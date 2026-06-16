@@ -510,6 +510,19 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_includes prefix, asset.sha256
   end
 
+  test "manual_batch_v1 uses deterministic contract prefix and page chunk keys" do
+    asset  = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result, ingestion_path: "manual_batch_v1")
+
+    prefix = asset.reload.chunks_s3_prefix
+    expected_prefix = "bulk_chunks/#{asset.sha256}/#{BatchChunkingPrompt::INGESTION_CONTRACT_VERSION}"
+    assert_equal expected_prefix, prefix
+    assert_includes @fake_s3.uploads.keys, "#{expected_prefix}/chunk_p1_1.txt"
+    assert_includes @fake_s3.uploads.keys, "#{expected_prefix}/chunk_p2_1.txt"
+  end
+
   # ---------------------------------------------------------------------------
   # Validation failures
   # ---------------------------------------------------------------------------

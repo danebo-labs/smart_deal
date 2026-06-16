@@ -4,7 +4,7 @@ require "test_helper"
 require "ostruct"
 
 # Tests for CustomChunkingPipeline routing: image/office → sync,
-# PDF urgent or short (page_count ≤ SYNC_PAGES) → sync, PDF long non-urgent → SubmitManualBatchJob.
+# short PDF (page_count ≤ SYNC_PAGES) → sync, long PDF → SubmitManualBatchJob.
 class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
   parallelize(workers: 1)
 
@@ -77,7 +77,7 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     assert_equal "manual.pdf", @batch_job_calls.first[:filename]
   end
 
-  test "PDF urgent flag true → sync regardless of page_count" do
+  test "PDF urgent flag true still routes long manuals to batch" do
     stub_pdf_page_count(10)
 
     sfc_calls = 0
@@ -92,8 +92,24 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
 
     CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: true).run!
 
-    assert_equal 0, @batch_job_calls.size, "urgent PDF must NOT go to batch"
-    assert_equal 1, sfc_calls, "urgent PDF must use SingleFileChunkingService"
+    assert_equal 1, @batch_job_calls.size, "long PDF must go to batch even when caller passes urgent"
+    assert_equal 0, sfc_calls, "long PDF must not use sync SingleFileChunkingService"
+  end
+
+  test "long PDF batch upload returns filename without immediate KB sync" do
+    stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES + 1)
+
+    sync_calls = []
+    BulkKbSyncService.define_method(:sync!) do |**kwargs|
+      sync_calls << kwargs
+      nil
+    end
+
+    result = CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: true).run!
+
+    assert_equal [ "manual.pdf" ], result
+    assert_equal 1, @batch_job_calls.size
+    assert_empty sync_calls, "long manual must not sync the original PDF before batch chunks exist"
   end
 
   test "PDF non-urgent, page_count <= SYNC_PAGES → sync" do

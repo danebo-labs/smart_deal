@@ -21,11 +21,12 @@ require "set"
 #   "batch_v1"       = bulk path (default, backward-compatible)
 #   "web_v1"         = web custom chunking (text/PDF/Office via SingleFileChunkingService)
 #   "field_photo_v1" = web photo path (Sonnet + FieldPhotoPrompt, direct-API cost)
-#   "manual_batch_v1" = PDF page batch path (bulk ZIP, or dormant manual batch)
+#   "manual_batch_v1" = PDF page batch path (bulk ZIP, or web long-manual Batch)
 class BatchResultsParserService
   class ParseError < StandardError; end
 
   CHUNK_PREFIX_TPL = "bulk_chunks/%s/%s"
+  MANUAL_BATCH_INGESTION_PATH = "manual_batch_v1"
   DOCUMENT_ALIAS_LIMIT = 15
   CHUNK_ALIAS_LIMIT    = 8
   FIELD_RECORD_TYPES = %w[
@@ -71,8 +72,7 @@ class BatchResultsParserService
     enrich_field_records!(parsed, ingestion_path: ingestion_path)
     validate!(parsed, asset, ingestion_path: ingestion_path)
 
-    date_prefix   = Date.current.iso8601
-    chunks_prefix = format(CHUNK_PREFIX_TPL, date_prefix, asset.sha256)
+    chunks_prefix = chunks_prefix_for(asset, ingestion_path: ingestion_path)
     aliases       = sanitize_aliases(parsed["aliases"], limit: DOCUMENT_ALIAS_LIMIT)
 
     # Alias fallback: never write [SEARCH_ALIASES: ] empty even if LLM returns nothing.
@@ -335,9 +335,11 @@ class BatchResultsParserService
       original_uri:   original_uri,
       ingestion_path: ingestion_path
     )
+    delete_existing_chunks(prefix) if ingestion_path == MANUAL_BATCH_INGESTION_PATH
 
+    page_ordinals = Hash.new(0)
     chunks.each_with_index do |chunk, idx|
-      txt_key = "#{prefix}/chunk_#{idx}.txt"
+      txt_key = "#{prefix}/#{chunk_filename(chunk, idx, ingestion_path: ingestion_path, page_ordinals: page_ordinals)}"
       chunk_aliases = sanitize_aliases(chunk["aliases"], limit: CHUNK_ALIAS_LIMIT)
       chunk_aliases = aliases.first(CHUNK_ALIAS_LIMIT) if chunk_aliases.empty?
       header = identity_header(asset: asset, aliases: chunk_aliases, original_uri: original_uri)
@@ -346,6 +348,27 @@ class BatchResultsParserService
       @s3.upload_text(txt_key, header + body)
       @s3.upload_text("#{txt_key}.metadata.json", sidecar_json)
     end
+  end
+
+  def chunk_filename(chunk, idx, ingestion_path:, page_ordinals:)
+    return "chunk_#{idx}.txt" unless ingestion_path == MANUAL_BATCH_INGESTION_PATH
+
+    page = chunk["page"].presence || "na"
+    page_ordinals[page] += 1
+    "chunk_p#{page}_#{page_ordinals[page]}.txt"
+  end
+
+  def chunks_prefix_for(asset, ingestion_path:)
+    return format(CHUNK_PREFIX_TPL, Date.current.iso8601, asset.sha256) unless ingestion_path == MANUAL_BATCH_INGESTION_PATH
+
+    contract_version, = contract_metadata(ingestion_path)
+    "bulk_chunks/#{asset.sha256}/#{contract_version}"
+  end
+
+  def delete_existing_chunks(prefix)
+    @s3.delete_prefix(prefix) if @s3.respond_to?(:delete_prefix)
+  rescue StandardError => e
+    Rails.logger.warn("BatchResultsParserService: failed to clear #{prefix} before rewrite — #{e.message}")
   end
 
   def append_field_records(text, records, page:)

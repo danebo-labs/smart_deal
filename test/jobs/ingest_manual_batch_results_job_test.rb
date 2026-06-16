@@ -116,4 +116,30 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
     assert_equal "max_tokens",                     args["stop_reason"]
     assert_equal "ingest:#{sha[0, 12]}:p3",        args["correlation_id"]
   end
+
+  test "polling uses durable WebManualBatch context and re-enqueues while in_progress" do
+    batch = WebManualBatch.create!(
+      s3_key: "uploads/manual.pdf",
+      filename: "manual.pdf",
+      sha256: Digest::SHA256.hexdigest("manual"),
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+      claude_batch_id: "msgbatch_poll",
+      status: "submitted",
+      page_customs: { 1 => "custom_p1" },
+      kept_pages: [ 1 ]
+    )
+
+    fake_client = Object.new
+    fake_client.define_singleton_method(:retrieve) { |batch_id:| OpenStruct.new(processing_status: "in_progress") }
+    orig_client_new = ClaudeBatchClient.method(:new)
+    ClaudeBatchClient.define_singleton_method(:new) { fake_client }
+
+    assert_enqueued_with(job: IngestManualBatchResultsJob) do
+      IngestManualBatchResultsJob.perform_now(web_manual_batch_id: batch.id)
+    end
+
+    assert_equal "in_progress", batch.reload.status
+  ensure
+    ClaudeBatchClient.define_singleton_method(:new, orig_client_new) if defined?(orig_client_new)
+  end
 end

@@ -59,7 +59,7 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
     )
     pipeline.run!
 
-    metadata = pipeline.instance_variable_get(:@web_v1_metadata).first
+    metadata = pipeline.instance_variable_get(:@ready_web_v1_metadata).first
     assert_equal "Schindler controller",          metadata["canonical_name"]
     assert_equal "Imagen del cuadro Schindler.",  metadata["summary"]
     assert_equal "Pregúntame lo que necesites.",  metadata["companion_offer"]
@@ -85,7 +85,7 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
     )
     pipeline.run!
 
-    metadata = pipeline.instance_variable_get(:@web_v1_metadata).first
+    metadata = pipeline.instance_variable_get(:@ready_web_v1_metadata).first
     assert_equal "Dime qué quieres saber.", metadata["companion_offer"]
   end
 
@@ -108,7 +108,7 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
     )
     pipeline.run!
 
-    metadata = pipeline.instance_variable_get(:@web_v1_metadata).first
+    metadata = pipeline.instance_variable_get(:@ready_web_v1_metadata).first
     assert_nil metadata["summary"]
   end
 
@@ -129,7 +129,7 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
     pipeline.run!
 
     assert_empty pipeline.instance_variable_get(:@uploaded_filenames), "filename must be removed"
-    assert_empty pipeline.instance_variable_get(:@web_v1_metadata),    "no metadata on credit failure"
+    assert_empty pipeline.instance_variable_get(:@ready_web_v1_metadata), "no metadata on credit failure"
 
     assert_equal 1, broadcast_calls.size
     assert_equal "credit_balance_low", broadcast_calls.first[:reason]

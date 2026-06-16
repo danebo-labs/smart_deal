@@ -4,10 +4,10 @@
 #   1. Upload each file to S3 (creates KbDocument).
 #   2. Route and parse each file:
 #      - Images + Office → SingleFileChunkingService (sync).
-#      - PDF urgent or short (page_count <= SYNC_PAGES) → sync.
-#      - PDF long and non-urgent → SubmitManualBatchJob (dormant for web/chat;
-#        QueryOrchestratorService passes urgent=true, bulk_uploads uses its own path).
-#   3. Trigger BulkKbSyncService + BedrockIngestionJob to index via BEDROCK_BULK_DATA_SOURCE_ID.
+#      - Short PDFs (page_count <= sync threshold) → sync.
+#      - Long PDFs → SubmitManualBatchJob (async Batch).
+#   3. Trigger BulkKbSyncService + BedrockIngestionJob only for files with chunks
+#      ready now. Long PDFs sync after Batch results are parsed.
 #
 # On error: propagates to the calling job (UploadAndSyncAttachmentsJob), which broadcasts
 # KbSyncBroadcaster.failed and lets Solid Queue retry. No legacy OWRPGSX6XK fallback.
@@ -15,8 +15,8 @@ class CustomChunkingPipeline
   OFFICE_EXTENSIONS = FileMultimodalRouter::OFFICE_EXTENSIONS
   PDF_CONTENT_TYPE  = "application/pdf"
 
-  # Short PDFs (≤ SYNC_PAGES) parse sync when this pipeline is called with urgent=false.
-  # Web/chat callers pass urgent=true, so long manuals also stay on sync Messages.
+  # Short PDFs (≤ SYNC_PAGES by default) parse sync; longer PDFs route to Batch.
+  # Override with WEB_SYNC_PDF_PAGE_THRESHOLD for controlled rollout.
   SYNC_PAGES = 2
 
   # @param images       [Array<Hash>] same shape as QOS @images
@@ -24,8 +24,8 @@ class CustomChunkingPipeline
   # @param conv_session [ConversationSession, nil]
   # @param tenant       [Tenant, nil]
   # @param locale       [String, nil] ISO 639-1 — forwarded to SingleFileChunkingService for image summary
-  # @param urgent       [Boolean] when true, PDFs always parse sync. Web/chat
-  #                     always passes true; bulk_uploads does not use this pipeline.
+  # @param urgent       [Boolean] retained for caller compatibility. Long manual
+  #                     routing is automatic; emergency triage is handled separately.
   def initialize(images:, documents:, conv_session: nil, tenant: nil, locale: nil, urgent: false)
     @images         = Array(images)
     @documents      = Array(documents)
@@ -33,9 +33,10 @@ class CustomChunkingPipeline
     @tenant         = tenant
     @locale         = locale
     @urgent         = urgent
-    @uploaded_filenames = []
-    @kb_document_ids    = []
-    @web_v1_metadata    = []
+    @uploaded_filenames   = []
+    @ready_filenames      = []
+    @ready_kb_document_ids = []
+    @ready_web_v1_metadata = []
   end
 
   # @return [Array<String>] successfully uploaded original filenames
@@ -44,16 +45,18 @@ class CustomChunkingPipeline
     upload_and_chunk_all(s3)
     return [] if @uploaded_filenames.empty?
 
-    result = BulkKbSyncService.new.sync!(uploaded_filenames: @uploaded_filenames, locale: @locale)
+    return @uploaded_filenames if @ready_filenames.empty?
+
+    result = BulkKbSyncService.new.sync!(uploaded_filenames: @ready_filenames, locale: @locale)
     if result.present?
       BedrockIngestionJob.perform_later(
         result[:job_id],
-        @uploaded_filenames,
+        @ready_filenames,
         kb_id:           result[:kb_id],
         data_source_id:  result[:data_source_id],
         conv_session_id: @conv_session&.id,
-        kb_document_ids: @kb_document_ids,
-        web_v1_metadata: @web_v1_metadata,
+        kb_document_ids: @ready_kb_document_ids,
+        web_v1_metadata: @ready_web_v1_metadata,
         locale:          @locale
       )
     end
@@ -114,7 +117,6 @@ class CustomChunkingPipeline
     sha256 = Digest::SHA256.hexdigest(binary)
     kb_doc = ensure_kb_document_for(s3_key)
     KbDocumentThumbnailPersister.call(kb_doc: kb_doc, img: attrs) if attrs[:thumbnail_binary].present?
-    @kb_document_ids    << kb_doc.id
     @uploaded_filenames << filename
 
     # SHA dedup: skip parse when identical binary was already indexed under the
@@ -127,20 +129,21 @@ class CustomChunkingPipeline
     end
     dedup = ContentDedupService.find_completed(sha256: sha256, contract_version: contract_version)
     if dedup.hit
-      @web_v1_metadata << {
-        "filename"        => filename,
-        "canonical_name"  => dedup.canonical_name.to_s,
-        "aliases"         => Array(dedup.aliases),
-        "summary"         => nil,
-        "companion_offer" => nil
-      }
+      mark_ready(
+        filename: filename,
+        kb_doc_id: kb_doc.id,
+        metadata: {
+          "filename"        => filename,
+          "canonical_name"  => dedup.canonical_name.to_s,
+          "aliases"         => Array(dedup.aliases),
+          "summary"         => nil,
+          "companion_offer" => nil
+        }
+      )
       return
     end
 
-    # Long non-urgent PDFs can still use the dormant async Batch branch.
-    # Web/chat sets urgent=true in QueryOrchestratorService; bulk_uploads uses its own pipeline.
-    if content_type.to_s == PDF_CONTENT_TYPE && !office?(filename) && !@urgent &&
-        pdf_page_count(binary) > SYNC_PAGES
+    if long_pdf_for_batch?(content_type: content_type, filename: filename, binary: binary)
       SubmitManualBatchJob.perform_later(
         s3_key:          s3_key,
         filename:        filename,
@@ -149,7 +152,6 @@ class CustomChunkingPipeline
         locale:          @locale,
         conv_session_id: @conv_session&.id
       )
-      # ACK fast: add to uploaded list without web_v1_metadata (parsed async)
       return
     end
 
@@ -164,7 +166,6 @@ class CustomChunkingPipeline
       ).call
     rescue ClaudeChunkingClient::CreditBalanceError
       @uploaded_filenames.delete(filename)
-      @kb_document_ids.delete(kb_doc.id)
       kb_doc.destroy
       KbSyncBroadcaster.failed(
         filenames: [ filename ],
@@ -177,7 +178,6 @@ class CustomChunkingPipeline
         Rails.logger.error("CustomChunking: Office parse failed for #{filename} — #{e.class}: #{e.message}")
         Rails.logger.error(e.backtrace.first(10).join("\n"))
         @uploaded_filenames.delete(filename)
-        @kb_document_ids.delete(kb_doc.id)
         KbSyncBroadcaster.failed(
           filenames: [ filename ],
           reason:    "office_parse_error",
@@ -188,15 +188,25 @@ class CustomChunkingPipeline
       raise
     end
 
-    @web_v1_metadata << {
-      "filename"         => filename,
-      "canonical_name"   => chunk_asset.canonical_name.to_s.strip.presence || "",
-      "aliases"          => Array(chunk_asset.aliases),
-      "summary"          => chunk_asset.summary.to_s.presence,
-      "companion_offer"  => chunk_asset.companion_offer.to_s.presence,
-      "chunks_s3_prefix" => chunk_asset.chunks_s3_prefix.to_s.presence,
-      "partial_pages"    => Array(chunk_asset.degraded_pages)
-    }
+    mark_ready(
+      filename: filename,
+      kb_doc_id: kb_doc.id,
+      metadata: {
+        "filename"         => filename,
+        "canonical_name"   => chunk_asset.canonical_name.to_s.strip.presence || "",
+        "aliases"          => Array(chunk_asset.aliases),
+        "summary"          => chunk_asset.summary.to_s.presence,
+        "companion_offer"  => chunk_asset.companion_offer.to_s.presence,
+        "chunks_s3_prefix" => chunk_asset.chunks_s3_prefix.to_s.presence,
+        "partial_pages"    => Array(chunk_asset.degraded_pages)
+      }
+    )
+  end
+
+  def mark_ready(filename:, kb_doc_id:, metadata:)
+    @ready_filenames << filename
+    @ready_kb_document_ids << kb_doc_id
+    @ready_web_v1_metadata << metadata
   end
 
   def ensure_kb_document_for(s3_key)
@@ -210,6 +220,21 @@ class CustomChunkingPipeline
 
   def office?(filename)
     OFFICE_EXTENSIONS.include?(File.extname(filename.to_s).downcase)
+  end
+
+  def long_pdf_for_batch?(content_type:, filename:, binary:)
+    return false unless content_type.to_s == PDF_CONTENT_TYPE
+    return false if office?(filename)
+
+    pdf_page_count(binary) > sync_pdf_page_threshold
+  rescue StandardError => e
+    Rails.logger.warn("CustomChunking: PDF page count failed for #{filename} — #{e.class}: #{e.message}; using sync path")
+    false
+  end
+
+  def sync_pdf_page_threshold
+    value = ENV.fetch("WEB_SYNC_PDF_PAGE_THRESHOLD", SYNC_PAGES).to_i
+    value.positive? ? value : SYNC_PAGES
   end
 
   def pdf_page_count(binary)

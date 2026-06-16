@@ -63,6 +63,33 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     BedrockRagService.define_method(:query, orig_rag)
   end
 
+  test "document with non-blank query returns RAG answer and upload status metadata" do
+    rag_called = false
+    orig_rag = BedrockRagService.instance_method(:query)
+    BedrockRagService.define_method(:query) do |query, **|
+      rag_called = true
+      {
+        answer: "Answer from already indexed documents for #{query}",
+        citations: [],
+        session_id: "session-existing"
+      }
+    end
+
+    doc = { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: "new_manual.pdf" }
+
+    result = QueryOrchestratorService.new(
+      "What does the indexed manual say?",
+      documents: [ doc ]
+    ).execute
+
+    assert rag_called, "RAG must still answer using already-indexed documents"
+    assert_equal "Answer from already indexed documents for What does the indexed manual say?", result[:answer]
+    assert_equal "session-existing", result[:session_id]
+    assert_equal [ "new_manual.pdf" ], result[:documents_uploaded]
+  ensure
+    BedrockRagService.define_method(:query, orig_rag)
+  end
+
   test "entity_sources separates media type from user pin provenance" do
     session = Struct.new(:active_entities).new({
       "Photo" => { "source" => "user_pin", "entity_type" => "image_upload" },

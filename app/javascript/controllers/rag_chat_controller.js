@@ -314,21 +314,15 @@ export default class extends Controller {
       } else if (data.documents_uploaded?.length) {
         this.indexingLoadingId = loadingId
         this.kbSyncInProgress = true
-        this.setIndexingLoadingAcknowledgment(data.answer || this._indexingWarmCopy("ack"))
+        const uploadAck = question ? this._indexingWarmCopy("ack") : (data.answer || this._indexingWarmCopy("ack"))
+        this.setIndexingLoadingAcknowledgment(uploadAck)
         this.startIndexingNudgeTimer()
         this.startIndexingStallTimer()
         this.refreshDocuments()
+        if (question) this.renderAssistantAnswer(data)
       } else {
         this.removeMessage(loadingId)
-        const citations = Array.isArray(data.citations) ? data.citations : []
-        if (citations.length) {
-          this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
-        }
-        const answerHtml = formatAnswerForWeb(data.answer, citations)
-        this.addMessageHtml(answerHtml, "assistant")
-        if (citations.length) {
-          this.addMessageHtml(renderReferences(citations), "assistant")
-        }
+        this.renderAssistantAnswer(data)
       }
     } catch (error) {
       this.removeMessage(loadingId)
@@ -359,15 +353,7 @@ export default class extends Controller {
         throw new Error(data.message || "Unknown error")
       }
 
-      const citations = Array.isArray(data.citations) ? data.citations : []
-      if (citations.length) {
-        this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
-      }
-      const answerHtml = formatAnswerForWeb(data.answer, citations)
-      this.addMessageHtml(answerHtml, "assistant")
-      if (citations.length) {
-        this.addMessageHtml(renderReferences(citations), "assistant")
-      }
+      this.renderAssistantAnswer(data)
     } catch (error) {
       this.removeMessage(loadingId)
       this.addMessage(`Error: ${error.message}`, "error")
@@ -566,13 +552,10 @@ export default class extends Controller {
     this.scroll()
   }
 
-  // Drops the row by id, then removes any other [data-temporary] chat rows (e.g. stall banner).
-  // Aurora retry copy lives inside the indexing loading bubble, so it is not a separate temporary row.
+  // Drops only the requested row. Upload indexing notices can remain active
+  // while a separate text query is being answered.
   removeMessage(id) {
     document.getElementById(id)?.remove()
-    this.messagesTarget
-      .querySelectorAll("[data-temporary]")
-      .forEach(el => el.remove())
   }
 
   clearRetryFallbackNotice() {
@@ -588,13 +571,13 @@ export default class extends Controller {
   _indexingWarmCopy(kind) {
     const lang = (document.documentElement.lang || "es").toLowerCase()
     const table = lang.startsWith("en") ? {
-      ack:   "Got your file, I'm getting it ready — ask me anything you need.",
-      nudge: "Still working on your file — large documents can take a little longer in the field. I'll let you know as soon as it's ready.",
+      ack:   "Got your file and I'm indexing it. You can keep asking about already-indexed documents while it gets ready.",
+      nudge: "Still working on your file — large documents can take a little longer in the field. You can keep asking about documents that are already indexed.",
       retry: "Taking a bit longer than usual — still on your file, I'll be with you in a moment.",
       stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     } : {
-      ack:   "Recibí tu archivo, lo estoy preparando — puedes preguntarme lo que necesites.",
-      nudge: "Sigo con tu archivo — los documentos grandes pueden tardar un poco más en campo. Te aviso en cuanto quede listo.",
+      ack:   "Recibí tu archivo y lo estoy indexando. Puedes seguir consultando documentos ya indexados mientras queda listo.",
+      nudge: "Sigo con tu archivo — los documentos grandes pueden tardar un poco más en campo. Puedes seguir preguntando sobre documentos ya indexados.",
       retry: "Está tardando un poco más de lo habitual — sigo con tu archivo, en un momento te cuento.",
       stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     }
@@ -749,6 +732,18 @@ export default class extends Controller {
     return div.innerHTML
   }
 
+  renderAssistantAnswer(data) {
+    const citations = Array.isArray(data.citations) ? data.citations : []
+    if (citations.length) {
+      this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
+    }
+    const answerHtml = formatAnswerForWeb(data.answer, citations)
+    this.addMessageHtml(answerHtml, "assistant")
+    if (citations.length) {
+      this.addMessageHtml(renderReferences(citations), "assistant")
+    }
+  }
+
   // ── Immediate acknowledgment in the loading bubble ────────────────────────
   // Updates the dots bubble with a warm first line so the technician sees
   // human company from the very first second, not just a spinner.
@@ -757,6 +752,7 @@ export default class extends Controller {
     const row    = document.getElementById(this.indexingLoadingId)
     const bubble = row?.querySelector(".chat-message")
     if (!bubble) return
+    delete row.dataset.temporary
     bubble.innerHTML =
       `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
       this.constructor.INDEXING_TYPING_DOTS_HTML +

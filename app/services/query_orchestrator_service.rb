@@ -66,6 +66,8 @@ class QueryOrchestratorService
   #
   # 3. Text-only query: classify intent and delegate to the appropriate service.
   def execute
+    upload_context = {}
+
     if @documents.any? || @images.any?
       has_images = @images.any?
       filenames = if has_images
@@ -95,6 +97,8 @@ class QueryOrchestratorService
         msg = has_images ? I18n.t('rag.image_indexing_message') : I18n.t('rag.document_indexing_message')
         return { answer: msg, citations: [], session_id: nil }.merge(key => filenames)
       end
+
+      upload_context[:documents_uploaded] = filenames
     end
 
     # QUERY_ROUTING_ENABLED (ENV) gates the classification call globally.
@@ -105,7 +109,7 @@ class QueryOrchestratorService
     case tool_to_use
     when TOOLS[:DATABASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
-      SqlGenerationService.new(@query).execute
+      SqlGenerationService.new(@query).execute.merge(upload_context)
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
       deterministic = Rag::DeterministicRenderer.build(
         question:            @query,
@@ -117,7 +121,7 @@ class QueryOrchestratorService
       )
       if deterministic
         Rails.logger.info("QueryOrchestrator: Routing to #{deterministic.generation_mode} for: '#{@query}'")
-        return deterministic.execute
+        return deterministic.execute.merge(upload_context)
       end
 
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
@@ -130,10 +134,10 @@ class QueryOrchestratorService
         entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter
-      )
+      ).merge(upload_context)
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
-      execute_hybrid_query
+      execute_hybrid_query.merge(upload_context)
     else
       Rails.logger.warn(
         "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
@@ -148,7 +152,7 @@ class QueryOrchestratorService
         entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter
-      )
+      ).merge(upload_context)
     end
   end
 

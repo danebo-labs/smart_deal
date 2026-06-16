@@ -58,6 +58,8 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 
 Long manual routing is automatic. The technician uploads the full PDF from web/chat; the app does not require manual page selection on mobile. `CustomChunkingPipeline` returns the filename for ACK, but it does not call `BulkKbSyncService` for that PDF until Batch results have produced `.txt` chunks under `bulk_chunks/<sha>/<contract>/`.
 
+While a long manual is processing, the chat remains usable for questions over already-indexed documents. If a document upload includes a text question, the API returns the normal RAG answer plus `documents_uploaded`, and the web UI keeps a separate persistent indexing notice until `indexed` / `failed` arrives.
+
 **Office failure UX:** when LibreOffice or Claude parse fails for an Office file, `KbSyncBroadcaster.failed` surfaces `rag.office_parse_failed` on the session stream. No legacy fallback — errors propagate to `UploadAndSyncAttachmentsJob`, which broadcasts failed and lets Solid Queue retry.
 
 ### Claude Message API cost optimizations (web_v1)

@@ -68,6 +68,98 @@ Verify each before flipping the public DNS:
 7. `/dashboard` — tenant usage view (LLM cost only); confirm Devise admin guard before public launch. See [DASHBOARD.md](DASHBOARD.md). Infra metrics (Aurora/S3) are platform-internal, not shown to tenants.
 8. **`ANTHROPIC_API_KEY`** (required for web uploads) and **`BEDROCK_BULK_DATA_SOURCE_ID`** (no-chunking DS) — confirm both are set in Kamal before going live with uploads. Smoke-test one web upload (photo + PDF + Office) and one bulk ZIP before launch.
 
+---
+
+## Image telemetry event schemas (O1′)
+
+`image_compression` is emitted for every uploaded image; `field_photo_gate` only for images that proceed to parse after dedup/routing. Both are structured JSON lines to `Rails.logger.info`; neither creates a DB row. Together on the parse path, they carry the signals needed to cross-reference the KB-indexed parse cost in `bedrock_queries`.
+
+### `image_compression` event
+
+Emitted by `ImageCompressionService#log_compression_event` on **both** the skip path and the compress path. The `output_blob` used to derive `output_correlation_id` is `decoded_blob` on skip and `compressed_blob` on compress — so the key always refers to the binary that the caller will upload to S3 or forward to the gate.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event` | `"image_compression"` | constant |
+| `skipped` | boolean | `true` when `decoded.bytesize <= MAX_BINARY_BYTES` (3.75 MB) — no Vips resize ran |
+| `skip_reason` | String \| null | `"bytes<=3932160"` when skipped, else null |
+| `media_type` | String | original MIME type |
+| `bytes_before` | Integer | decoded binary size |
+| `bytes_after` | Integer | output binary size (equals `bytes_before` when skipped) |
+| `width_before` | Integer \| null | header-only; null on unrecognised format |
+| `height_before` | Integer \| null | |
+| `width_after` | Integer \| null | equals `width_before` when skipped |
+| `height_after` | Integer \| null | |
+| `max_dimension` | Integer | `ImageCompressionService::MAX_DIMENSION` (1024) |
+| `max_binary_bytes` | Integer | `ImageCompressionService::MAX_BINARY_BYTES` (3 932 160) |
+| `resize_applied` | boolean | `true` only on compress path AND Vips reduced at least one dimension |
+| `output_correlation_id` | String | `"ingest:<sha12>"` — SHA-256 of `output_blob`[0,12]; **always present on both paths** |
+| `filename` | String | optional; present when caller supplies it |
+| `correlation_id` | String | optional; `"ingest:<sha12>"` of the source file; **bulk path only** |
+
+### `field_photo_gate` event
+
+Emitted by `FieldPhotoDensityGate#log_gate_decision` after the Sonnet/Opus routing decision.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event` | `"field_photo_gate"` | constant |
+| `filename` | String | passed by caller |
+| `route` | `"sonnet"` \| `"opus"` | the routing decision |
+| `model` | String | `BatchChunkingPrompt::MODEL_TEXT` (sonnet) or `MODEL_MULTIMODAL` (opus) |
+| `bytes` | Integer | binary size entering the gate |
+| `threshold` | Integer | `LARGE_PHOTO_THRESHOLD` (1 500 000) |
+| `width` | Integer \| null | header-only |
+| `height` | Integer \| null | |
+| `format` | String \| null | Vips loader string or content_type fallback |
+| `content_type` | String | |
+| `correlation_id` | String | optional; present when caller supplies it (see join chains below) |
+
+### Join chains
+
+The two events plus `bedrock_queries` can be joined per-photo depending on the ingestion path:
+
+**Web path** (`RagController` → `SingleFileChunkingService`):
+
+```
+image_compression.output_correlation_id
+  == field_photo_gate.correlation_id          ← SingleFileChunkingService#correlation_id = "ingest:#{@sha256[0,12]}"
+  == bedrock_queries.correlation_id
+```
+
+`image_compression.correlation_id` is **absent** on the web path (no source sha exists pre-S3).
+
+**Bulk path** (`BatchIngestionService` → `BulkCostV2RequestBuilder`):
+
+```
+image_compression.correlation_id
+  == field_photo_gate.correlation_id          ← "ingest:#{asset.sha256[0,12]}"
+  == bedrock_queries.correlation_id           ← IngestBatchResultsJob uses asset.sha256
+```
+
+`image_compression.output_correlation_id` is still present (SHA of compressed binary) but is **not** the reliable join key on the bulk path — use `correlation_id` instead.
+
+`filename` is **auxiliary only** — not a reliable join key across ingestion runs.
+
+### Offline inspection recipe
+
+```bash
+# image_compression events (CSV: correlation_id, output_correlation_id, filename, resize_applied, bytes_before, bytes_after)
+grep '"event":"image_compression"' log/development.log | \
+  jq -r '[.correlation_id, .output_correlation_id, .filename, .resize_applied, .bytes_before, .bytes_after] | @csv'
+
+# field_photo_gate events (CSV: correlation_id, model, route, bytes)
+grep '"event":"field_photo_gate"' log/development.log | \
+  jq -r '[.correlation_id, .model, .route, .bytes] | @csv'
+
+# join to DB cost (Rails console)
+# BedrockQuery.where("correlation_id LIKE 'ingest:%'").pluck(:correlation_id, :model_id, :cost_usd)
+```
+
+To join image telemetry to parse cost, match `output_correlation_id` (web) or `correlation_id` (bulk) against `bedrock_queries.correlation_id`.
+
+---
+
 ##### p95 latency alarm (raw SQL, no extra service required)
 
 ```sql

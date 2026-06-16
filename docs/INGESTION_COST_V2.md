@@ -109,7 +109,7 @@ flowchart TB
 
 **Context:** `FileMultimodalRouter` enviaba toda imagen a Opus. Benchmark: Sonnet score 16.7 vs Opus 16.7 en fotos — empate, 5× diferencia de precio.
 
-**Decision:** `:image → MODEL_TEXT` (Sonnet). `FieldPhotoDensityGate` corre una heurística determinística por tamaño para escaneados densos. Opus solo cuando gate retorna `:opus`.
+**Decision:** `:image → MODEL_TEXT` (Sonnet). `FieldPhotoDensityGate` corre una heurística determinística por tamaño para escaneados densos. Opus solo cuando gate retorna `:opus`. El gate emite un evento `field_photo_gate` con `model`, `route`, y `correlation_id` (threaded desde el caller — web: `SingleFileChunkingService#correlation_id`; bulk: `asset.sha256`). Ver [METRICS.md — Image telemetry](METRICS.md#image-telemetry-event-schemas-o1) para el schema completo y join chains.
 
 **Consequences:**
 - Costo foto: ~$0.009/foto → ~$1.86/mes (200 fotos) vs ~$8/mes anterior.

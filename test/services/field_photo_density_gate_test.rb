@@ -67,6 +67,44 @@ class FieldPhotoDensityGateTest < ActiveSupport::TestCase
     assert_equal "image/jpeg", event["content_type"]
   end
 
+  test "emits model key matching MODEL_TEXT for :sonnet route" do
+    binary = "\xFF\xD8".b + ("x" * 100)
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "motor.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_equal BatchChunkingPrompt::MODEL_TEXT, event["model"]
+  end
+
+  test "emits model key matching MODEL_MULTIMODAL for :opus route" do
+    binary = "x" * FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "scan.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, event["model"]
+  end
+
+  test "emits correlation_id when supplied" do
+    binary = "\xFF\xD8".b + ("x" * 100)
+    cid    = "ingest:aabb001122cc"
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg",
+                                   filename: "motor.jpg", correlation_id: cid)
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_equal cid, event["correlation_id"]
+  end
+
+  test "omits correlation_id key when not supplied" do
+    binary = "\xFF\xD8".b + ("x" * 100)
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "motor.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_nil event["correlation_id"], "correlation_id must be absent from web/no-sha callers"
+  end
+
   test "telemetry failure never changes the routing decision" do
     original = Rails.logger.method(:info)
     Rails.logger.define_singleton_method(:info) { |*| raise "logger down" }

@@ -44,9 +44,10 @@ class BulkCostV2RequestBuilder
 
   def build_for_image(asset, binary)
     route = FieldPhotoDensityGate.decide(
-      binary:       binary,
-      content_type: asset.content_type,
-      filename:     asset.filename
+      binary:         binary,
+      content_type:   asset.content_type,
+      filename:       asset.filename,
+      correlation_id: "ingest:#{asset.sha256[0, 12]}"
     )
 
     model         = route == :opus ? BatchChunkingPrompt::MODEL_MULTIMODAL : BatchChunkingPrompt::MODEL_TEXT

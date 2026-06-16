@@ -90,12 +90,13 @@ class RagController < ApplicationController
 
   def compress_images(images)
     images.map do |img|
-      result = ImageCompressionService.compress_with_thumbnail(img[:data], img[:media_type])
+      fname  = img[:filename].presence || img["filename"].presence
+      result = ImageCompressionService.compress_with_thumbnail(img[:data], img[:media_type], filename: fname)
       {
-        data:              result[:data],
-        media_type:        result[:media_type],
-        binary:            result[:binary],
-        filename:          img[:filename].presence || img['filename'].presence,
+        data:                   result[:data],
+        media_type:             result[:media_type],
+        binary:                 result[:binary],
+        filename:               fname,
         thumbnail_binary:       result[:thumbnail_binary],
         thumbnail_content_type: result[:thumbnail_content_type],
         thumbnail_width:        result[:thumbnail_width],

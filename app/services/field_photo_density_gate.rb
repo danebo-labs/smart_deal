@@ -13,14 +13,18 @@ class FieldPhotoDensityGate
   # typical JPEG field photos (phone camera) are 0.3–1.2 MB.
   LARGE_PHOTO_THRESHOLD = 1_500_000
 
-  def self.decide(binary:, content_type:, filename:)
-    new(binary: binary, content_type: content_type, filename: filename).decide
+  # @param correlation_id [String, nil] join key threaded from the caller:
+  #   web path → image_compression.output_correlation_id (from SingleFileChunkingService#correlation_id);
+  #   bulk path → asset.sha256-based key (from BulkCostV2RequestBuilder).
+  def self.decide(binary:, content_type:, filename:, correlation_id: nil)
+    new(binary: binary, content_type: content_type, filename: filename, correlation_id: correlation_id).decide
   end
 
-  def initialize(binary:, content_type:, filename:)
-    @binary       = binary
-    @content_type = content_type
-    @filename     = filename
+  def initialize(binary:, content_type:, filename:, correlation_id: nil)
+    @binary         = binary
+    @content_type   = content_type
+    @filename       = filename
+    @correlation_id = correlation_id
   end
 
   def decide
@@ -36,21 +40,23 @@ class FieldPhotoDensityGate
   end
 
   def log_gate_decision(route)
-    dims = image_dimensions
+    dims    = image_dimensions
+    model   = route == :opus ? BatchChunkingPrompt::MODEL_MULTIMODAL : BatchChunkingPrompt::MODEL_TEXT
+    payload = {
+      event:        "field_photo_gate",
+      filename:     @filename,
+      route:        route,
+      model:        model,
+      bytes:        @binary.bytesize,
+      threshold:    LARGE_PHOTO_THRESHOLD,
+      width:        dims[:width],
+      height:       dims[:height],
+      format:       dims[:format] || @content_type,
+      content_type: @content_type
+    }
+    payload[:correlation_id] = @correlation_id if @correlation_id
 
-    Rails.logger.info(
-      JSON.generate(
-        event:        "field_photo_gate",
-        filename:     @filename,
-        route:        route,
-        bytes:        @binary.bytesize,
-        threshold:    LARGE_PHOTO_THRESHOLD,
-        width:        dims[:width],
-        height:       dims[:height],
-        format:       dims[:format] || @content_type,
-        content_type: @content_type
-      )
-    )
+    Rails.logger.info(JSON.generate(payload))
   rescue StandardError => e
     Rails.logger.warn("FieldPhotoDensityGate: telemetry failed for #{@filename} — #{e.message}")
   end

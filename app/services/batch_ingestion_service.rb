@@ -32,7 +32,8 @@ class BatchIngestionService
     extractor   = ZipExtractionService.new(zip_path)
 
     extractor.each_entry do |entry|
-      binary = compress_if_image(entry[:binary], entry[:content_type])
+      binary = compress_if_image(entry[:binary], entry[:content_type],
+                                  filename: entry[:filename], sha256: entry[:sha256])
       key    = "bulk_uploads/#{date_prefix}/#{entry[:filename]}"
       upload_binary(key, binary, entry[:content_type])
 
@@ -173,10 +174,14 @@ class BatchIngestionService
     Rails.logger.warn("BatchIngestionService: thumbnail backfill failed for asset #{asset.id} — #{e.message}")
   end
 
-  def compress_if_image(binary, content_type)
+  def compress_if_image(binary, content_type, filename: nil, sha256: nil)
     return binary if content_type == "application/pdf"
 
-    result = ImageCompressionService.compress(Base64.strict_encode64(binary), content_type)
+    cid    = sha256 ? "ingest:#{sha256[0, 12]}" : nil
+    result = ImageCompressionService.compress(
+      Base64.strict_encode64(binary), content_type,
+      filename: filename, correlation_id: cid
+    )
     result[:binary]
   rescue ImageCompressionService::CompressionError => e
     Rails.logger.warn("BatchIngestionService: compression failed, using original — #{e.message}")

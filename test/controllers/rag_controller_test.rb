@@ -460,7 +460,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   # with a fake base64 payload.
   def stub_compression_with_thumbnail
     original = ImageCompressionService.method(:compress_with_thumbnail)
-    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) do |base64, media_type|
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) do |base64, media_type, **_kwargs|
       {
         data:                   base64,
         media_type:             media_type,

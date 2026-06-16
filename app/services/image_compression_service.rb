@@ -30,8 +30,10 @@ class ImageCompressionService
   #   compressed_size: Integer
   # }
   # @raise [CompressionError]
-  def self.compress(base64_data, media_type)
-    new(base64_data, media_type).compress
+  # @param filename       [String, nil] original filename — logged as auxiliary label, not a join key
+  # @param correlation_id [String, nil] caller-supplied join key (e.g. "ingest:<sha12>"); bulk path only
+  def self.compress(base64_data, media_type, filename: nil, correlation_id: nil)
+    new(base64_data, media_type, filename: filename, correlation_id: correlation_id).compress
   end
 
   # Same as compress but also produces a small JPEG thumbnail in a single Vips load.
@@ -41,15 +43,17 @@ class ImageCompressionService
   #   thumbnail_content_type: "image/jpeg"
   #   thumbnail_width:        Integer
   #   thumbnail_height:       Integer
-  def self.compress_with_thumbnail(base64_data, media_type)
-    new(base64_data, media_type).compress_with_thumbnail
+  def self.compress_with_thumbnail(base64_data, media_type, filename: nil, correlation_id: nil)
+    new(base64_data, media_type, filename: filename, correlation_id: correlation_id).compress_with_thumbnail
   end
 
-  def initialize(base64_data, media_type)
-    @base64_data   = base64_data
-    @media_type    = media_type
-    @original_size = base64_data.bytesize
-    @decoded_blob  = nil  # decoded once, lazily cached
+  def initialize(base64_data, media_type, filename: nil, correlation_id: nil)
+    @base64_data    = base64_data
+    @media_type     = media_type
+    @filename       = filename
+    @correlation_id = correlation_id
+    @original_size  = base64_data.bytesize
+    @decoded_blob   = nil  # decoded once, lazily cached
   end
 
   def compress
@@ -197,32 +201,46 @@ class ImageCompressionService
   # measured (bytes AND dimensions) before changing should_skip_compression?, which
   # today skips any resize when the decoded binary is ≤ MAX_BINARY_BYTES (3.75 MB).
   # Dimension reads are header-only; failures never affect the compression result.
+  # output_blob is decoded_blob on the skip path, compressed_blob on the compress path.
+  # output_correlation_id is always derived from output_blob so both paths are traceable
+  # without the caller having to supply a sha (useful for web/pre-S3 where no sha exists yet).
   def log_compression_event(skipped:, output_blob:)
-    before_dims = dimensions_for(decoded_blob)
-    after_dims  = skipped ? before_dims : dimensions_for(output_blob)
+    before_dims    = dimensions_for(decoded_blob, media_type: @media_type)
+    # run_vips always outputs JPEG regardless of input format; pass explicit media_type
+    # so plausible_image_header? doesn't reject JPEG bytes when @media_type is png/webp/gif.
+    after_dims     = skipped ? before_dims : dimensions_for(output_blob, media_type: "image/jpeg")
+    resize_applied = !skipped && (
+      (after_dims[:width]  && before_dims[:width]  && after_dims[:width]  < before_dims[:width]) ||
+      (after_dims[:height] && before_dims[:height] && after_dims[:height] < before_dims[:height])
+    ) || false
+    output_cid = "ingest:#{Digest::SHA256.hexdigest(output_blob)[0, 12]}"
 
-    Rails.logger.info(
-      JSON.generate(
-        event:             "image_compression",
-        skipped:           skipped,
-        skip_reason:       skipped ? "bytes<=#{MAX_BINARY_BYTES}" : nil,
-        media_type:        @media_type,
-        bytes_before:      decoded_blob.bytesize,
-        bytes_after:       output_blob.bytesize,
-        width_before:      before_dims[:width],
-        height_before:     before_dims[:height],
-        width_after:       after_dims[:width],
-        height_after:      after_dims[:height],
-        max_dimension:     MAX_DIMENSION,
-        max_binary_bytes:  MAX_BINARY_BYTES
-      )
-    )
+    payload = {
+      event:                "image_compression",
+      skipped:              skipped,
+      skip_reason:          skipped ? "bytes<=#{MAX_BINARY_BYTES}" : nil,
+      media_type:           @media_type,
+      bytes_before:         decoded_blob.bytesize,
+      bytes_after:          output_blob.bytesize,
+      width_before:         before_dims[:width],
+      height_before:        before_dims[:height],
+      width_after:          after_dims[:width],
+      height_after:         after_dims[:height],
+      max_dimension:        MAX_DIMENSION,
+      max_binary_bytes:     MAX_BINARY_BYTES,
+      resize_applied:       resize_applied,
+      output_correlation_id: output_cid
+    }
+    payload[:filename]        = @filename       if @filename
+    payload[:correlation_id]  = @correlation_id if @correlation_id
+
+    Rails.logger.info(JSON.generate(payload))
   rescue StandardError => e
     Rails.logger.warn("ImageCompressionService: telemetry failed — #{e.message}")
   end
 
-  def dimensions_for(blob)
-    return { width: nil, height: nil } unless plausible_image_header?(blob)
+  def dimensions_for(blob, media_type: @media_type)
+    return { width: nil, height: nil } unless plausible_image_header?(blob, media_type: media_type)
 
     img = Vips::Image.new_from_buffer(blob, "")
     { width: img.width, height: img.height }
@@ -230,8 +248,8 @@ class ImageCompressionService
     { width: nil, height: nil }
   end
 
-  def plausible_image_header?(blob)
-    case @media_type
+  def plausible_image_header?(blob, media_type: @media_type)
+    case media_type
     when "image/jpeg"
       blob.start_with?("\xFF\xD8".b) && blob.end_with?("\xFF\xD9".b)
     when "image/png"

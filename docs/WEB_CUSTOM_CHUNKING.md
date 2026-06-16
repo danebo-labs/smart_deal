@@ -31,7 +31,7 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 | `CustomChunkingPipeline` | Per-file routing, builds ready-now `web_v1_metadata`, enqueues `BedrockIngestionJob` only for chunks that exist now. Long PDFs enqueue `SubmitManualBatchJob`; with a nonblank question they also enqueue urgent page triage |
 | `SingleFileChunkingService` | One file end-to-end: optional Office→PDF, PDF page split, relevance filter, Claude calls, S3 chunk writes |
 | `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per page. `:image` default is Sonnet; Opus only via `FieldPhotoDensityGate force_opus`. Rasterized slides still promote to Opus. |
-| `FieldPhotoDensityGate` | Size-heuristic routing for image uploads → `:sonnet` (< 1.5 MB) or `:opus` (≥ 1.5 MB). Zero LLM calls. |
+| `FieldPhotoDensityGate` | Size-heuristic routing for image uploads → `:sonnet` (< 1.5 MB) or `:opus` (≥ 1.5 MB). Zero LLM calls. Emits a `field_photo_gate` JSON event with `model`, `route`, and (web path) `correlation_id = "ingest:<sha12>"` threaded from `SingleFileChunkingService`. See [METRICS.md — Image telemetry](METRICS.md#image-telemetry-event-schemas-o1). |
 | `FieldPhotoPrompt` | Specialized photo prompt; `ingestion_path: "field_photo_v1"`, 1 compact chunk with literal labels and optional explicit visible functions/connections/values/warnings |
 | `FieldPhotoResultsParser` | `FieldPhotoPrompt` JSON → standard `{document_name, aliases, chunks}` envelope; undocumented label meaning remains `DATA_NOT_AVAILABLE` |
 | `ContentDedupService` | SHA-256 dedup before any parse — hit skips Claude call entirely |

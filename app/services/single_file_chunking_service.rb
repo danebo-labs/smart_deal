@@ -86,9 +86,10 @@ class SingleFileChunkingService
 
   def handle_image(_router_model)
     route = FieldPhotoDensityGate.decide(
-      binary:       @binary,
-      content_type: @content_type,
-      filename:     @filename
+      binary:         @binary,
+      content_type:   @content_type,
+      filename:       @filename,
+      correlation_id: correlation_id
     )
 
     if route == :sonnet

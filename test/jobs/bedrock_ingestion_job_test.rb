@@ -96,6 +96,49 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
     end
   end
 
+  test "broadcasts urgent page indexed payload and marks urgent ledger complete" do
+    filename = "manual.pdf"
+    kb_doc = KbDocument.create!(s3_key: "uploads/#{Date.current.iso8601}/#{filename}", display_name: "manual")
+    batch = WebManualBatch.create!(
+      s3_key: kb_doc.s3_key,
+      filename: filename,
+      sha256: Digest::SHA256.hexdigest("manual"),
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+      status: "submitted",
+      urgent_status: "syncing",
+      urgent_pages: [ 2, 5 ],
+      kb_document_id: kb_doc.id
+    )
+    metadata = [ {
+      "filename" => filename,
+      "canonical_name" => "Manual Rescue",
+      "aliases" => [ "rescue" ],
+      "processing_scope" => "urgent_pages",
+      "selected_pages" => [ 2, 5 ],
+      "total_pages" => 8,
+      "web_manual_batch_id" => batch.id
+    } ]
+
+    with_mock_ingestion_service(%w[COMPLETE]) do
+      messages = capture_broadcasts("kb_sync") do
+        BedrockIngestionJob.perform_now(
+          "job-urgent", [ filename ],
+          kb_document_ids: [ kb_doc.id ],
+          web_v1_metadata: metadata
+        )
+      end
+      payload = messages.first
+      assert_equal "indexed", payload["status"]
+      assert_equal "urgent_pages", payload["processing_scope"]
+      assert_equal [ 2, 5 ], payload["selected_pages"]
+      assert_includes payload["message"], "Páginas urgentes"
+    end
+
+    batch.reload
+    assert_equal "complete", batch.urgent_status
+    assert_not_nil batch.urgent_completed_at
+  end
+
   test "broadcasts indexed has nil companion_offer when metadata absent" do
     with_mock_ingestion_service(%w[COMPLETE]) do
       messages = capture_broadcasts("kb_sync") do

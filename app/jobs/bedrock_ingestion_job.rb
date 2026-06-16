@@ -159,8 +159,20 @@ class BedrockIngestionJob < ApplicationJob
     summary         = result&.dig(:summary).to_s.presence
     companion_offer = result&.dig(:companion_offer).to_s.presence
     partial_pages   = Array(result&.dig(:partial_pages)).compact
+    processing_scope = result&.dig(:processing_scope).to_s.presence
+    selected_pages   = Array(result&.dig(:selected_pages)).compact
+    total_pages      = result&.dig(:total_pages)
 
-    message = if aliases.any?
+    message = if processing_scope == ManualUrgentTriageService::PROCESSING_SCOPE
+      pages_label = selected_pages.join(", ")
+      I18n.t(
+        "rag.manual_urgent_pages_indexed",
+        name: canonical,
+        pages: pages_label,
+        total: total_pages,
+        default: "✅ #{canonical}\nPáginas urgentes listas: #{pages_label}. El manual completo sigue procesándose."
+      )
+    elsif aliases.any?
       I18n.t("rag.whatsapp_indexed_with_aliases",
              name: canonical, aliases: aliases.join(", "),
              default: "✅ #{canonical}\n#{I18n.t('rag.indexed_ask_me_about', default: 'Consúltame por')}: #{aliases.join(', ')}")
@@ -182,6 +194,9 @@ class BedrockIngestionJob < ApplicationJob
       summary:         summary,
       companion_offer: companion_offer,
       partial_pages:   partial_pages,
+      processing_scope: processing_scope,
+      selected_pages:   selected_pages,
+      total_pages:      total_pages,
       message:         message
     })
   end
@@ -202,15 +217,43 @@ class BedrockIngestionJob < ApplicationJob
           aliases:         Array(m["aliases"]),
           summary:         m["summary"].to_s.presence,
           companion_offer: m["companion_offer"].to_s.presence,
-          partial_pages:   Array(m["partial_pages"])
+          partial_pages:   Array(m["partial_pages"]),
+          processing_scope: m["processing_scope"].to_s.presence,
+          selected_pages:   Array(m["selected_pages"]),
+          total_pages:      m["total_pages"],
+          web_manual_batch_id: m["web_manual_batch_id"]
         }
       end
       kb_doc = ids[idx] ? KbDocument.find_by(id: ids[idx]) : nil
       Rails.logger.warn("BedrockIngestionJob: kb_document_id=#{ids[idx]} not found") if ids.any? && kb_doc.nil?
       enrich_kb_document(filename, result, kb_doc: kb_doc)
       register_entity(session, filename, result, kb_doc: kb_doc) if session
+      mark_web_manual_batch_complete(result)
       broadcast_indexed(filename, result)
     end
+  end
+
+  def mark_web_manual_batch_complete(result)
+    id = result&.dig(:web_manual_batch_id)
+    return if id.blank?
+
+    attrs = if result[:processing_scope] == ManualUrgentTriageService::PROCESSING_SCOPE
+      {
+        urgent_status: "complete",
+        urgent_completed_at: Time.current,
+        urgent_error_message: nil
+      }
+    else
+      {
+        status: "complete",
+        completed_at: Time.current,
+        error_message: nil
+      }
+    end
+
+    WebManualBatch.where(id: id).update_all(attrs)
+  rescue StandardError => e
+    Rails.logger.warn("BedrockIngestionJob: failed to mark WebManualBatch complete — #{e.message}")
   end
 
   def register_entity(session, filename, result, kb_doc:)

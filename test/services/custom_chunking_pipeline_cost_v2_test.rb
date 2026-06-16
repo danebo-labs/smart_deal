@@ -14,6 +14,7 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     @orig_bulk    = BulkKbSyncService.instance_method(:sync!)
     @orig_track   = TrackBedrockQueryJob.method(:perform_later)
     @orig_smb     = SubmitManualBatchJob.method(:perform_later)
+    @orig_triage  = ProcessManualUrgentTriageJob.method(:perform_later)
     @orig_dedup   = ContentDedupService.method(:find_completed)
     @orig_splitter = PdfPageSplitterService.method(:new)
 
@@ -35,6 +36,12 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
       batch_job_calls << kwargs
     end
 
+    @triage_job_calls = []
+    triage_job_calls = @triage_job_calls
+    ProcessManualUrgentTriageJob.define_singleton_method(:perform_later) do |**kwargs|
+      triage_job_calls << kwargs
+    end
+
     SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
       asset = ChunkAsset.new(
         filename: kwargs[:filename], sha256: "abc",
@@ -52,6 +59,7 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     BulkKbSyncService.define_method(:sync!, @orig_bulk)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, @orig_track)
     SubmitManualBatchJob.define_singleton_method(:perform_later, @orig_smb)
+    ProcessManualUrgentTriageJob.define_singleton_method(:perform_later, @orig_triage)
     ContentDedupService.define_singleton_method(:find_completed, @orig_dedup)
     PdfPageSplitterService.define_singleton_method(:new, @orig_splitter)
   end
@@ -110,6 +118,38 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     assert_equal [ "manual.pdf" ], result
     assert_equal 1, @batch_job_calls.size
     assert_empty sync_calls, "long manual must not sync the original PDF before batch chunks exist"
+  end
+
+  test "long PDF with question enqueues automatic urgent triage alongside full batch" do
+    stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES + 1)
+
+    CustomChunkingPipeline.new(
+      images: [],
+      documents: [ pdf_doc ],
+      conv_session: nil,
+      urgent: true,
+      query: "Como hago rescate de emergencia?"
+    ).run!
+
+    assert_equal 1, @batch_job_calls.size, "full manual batch must still run"
+    assert_equal 1, @triage_job_calls.size, "urgent pages must be selected automatically server-side"
+    assert_equal "manual.pdf", @triage_job_calls.first[:filename]
+    assert_equal "Como hago rescate de emergencia?", @triage_job_calls.first[:query]
+  end
+
+  test "long PDF without question does not enqueue urgent triage" do
+    stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES + 1)
+
+    CustomChunkingPipeline.new(
+      images: [],
+      documents: [ pdf_doc ],
+      conv_session: nil,
+      urgent: true,
+      query: ""
+    ).run!
+
+    assert_equal 1, @batch_job_calls.size
+    assert_empty @triage_job_calls
   end
 
   test "PDF non-urgent, page_count <= SYNC_PAGES → sync" do

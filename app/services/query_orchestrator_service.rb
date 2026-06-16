@@ -89,7 +89,8 @@ class QueryOrchestratorService
         documents_payload: @documents,
         conv_session_id:   @conv_session&.id,
         tenant_id:         @tenant&.id,
-        locale:            I18n.locale.to_s
+        locale:            I18n.locale.to_s,
+        query:             @query.to_s
       )
 
       if has_images || @query.blank?
@@ -169,7 +170,8 @@ class QueryOrchestratorService
       conv_session: @conv_session,
       tenant:       @tenant || current_tenant,
       locale:       @locale,
-      urgent:       true
+      urgent:       true,
+      query:        @query
     ).run!
   end
 

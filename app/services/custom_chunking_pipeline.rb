@@ -26,13 +26,16 @@ class CustomChunkingPipeline
   # @param locale       [String, nil] ISO 639-1 — forwarded to SingleFileChunkingService for image summary
   # @param urgent       [Boolean] retained for caller compatibility. Long manual
   #                     routing is automatic; emergency triage is handled separately.
-  def initialize(images:, documents:, conv_session: nil, tenant: nil, locale: nil, urgent: false)
+  # @param query        [String, nil] original text question; enables automatic
+  #                     urgent-page triage for long PDFs while Batch runs.
+  def initialize(images:, documents:, conv_session: nil, tenant: nil, locale: nil, urgent: false, query: nil)
     @images         = Array(images)
     @documents      = Array(documents)
     @conv_session   = conv_session
     @tenant         = tenant
     @locale         = locale
     @urgent         = urgent
+    @query          = query.to_s
     @uploaded_filenames   = []
     @ready_filenames      = []
     @ready_kb_document_ids = []
@@ -152,6 +155,12 @@ class CustomChunkingPipeline
         locale:          @locale,
         conv_session_id: @conv_session&.id
       )
+      enqueue_urgent_triage(
+        s3_key: s3_key,
+        filename: filename,
+        sha256: sha256,
+        kb_doc_id: kb_doc.id
+      )
       return
     end
 
@@ -207,6 +216,20 @@ class CustomChunkingPipeline
     @ready_filenames << filename
     @ready_kb_document_ids << kb_doc_id
     @ready_web_v1_metadata << metadata
+  end
+
+  def enqueue_urgent_triage(s3_key:, filename:, sha256:, kb_doc_id:)
+    return if @query.blank?
+
+    ProcessManualUrgentTriageJob.perform_later(
+      s3_key: s3_key,
+      filename: filename,
+      sha256: sha256,
+      kb_doc_id: kb_doc_id,
+      query: @query,
+      locale: @locale,
+      conv_session_id: @conv_session&.id
+    )
   end
 
   def ensure_kb_document_for(s3_key)

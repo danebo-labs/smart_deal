@@ -181,10 +181,13 @@ UploadAndSyncAttachmentsJob
       → office (.docx/.pptx/…)            → SingleFileChunkingService (sync, handle_office converts)
       → pdf <= WEB_SYNC_PDF_PAGE_THRESHOLD → SingleFileChunkingService (sync cost-v2)
       → pdf >  WEB_SYNC_PDF_PAGE_THRESHOLD → SubmitManualBatchJob (async Batch)
+        ↳ if upload includes a question    → ProcessManualUrgentTriageJob (selected pages direct)
   → BulkKbSyncService → BedrockIngestionJob only for chunks ready now
 ```
 
-Long manual routing is automatic. A technician can still upload a long PDF from web/chat; the app acknowledges the upload, submits the manual to Batch on `bulk_ingestion`, and indexes it only after `IngestManualBatchResultsJob` writes `manual_batch_v1` chunks under `bulk_chunks/`. The original PDF under `uploads/` is not indexed directly.
+Long manual routing is automatic. A technician can still upload a long PDF from web/chat; the app acknowledges the upload, submits the complete manual to Batch on `bulk_ingestion`, and indexes the complete document only after `IngestManualBatchResultsJob` writes `manual_batch_v1` chunks under `bulk_chunks/`. The original PDF under `uploads/` is not indexed directly.
+
+E3b urgent hybrid path is also automatic. When the long PDF arrives with a nonblank technician question, `ManualUrgentPageSelector` chooses a bounded set of pages server-side using local text/scoring heuristics; the technician does not select pages from the PDF. `ManualUrgentTriageService` parses those pages direct, starts a partial KB sync with `processing_scope: urgent_pages`, and leaves the full Batch chain running. The final Batch sync overwrites the deterministic `bulk_chunks/<sha>/<contract>` prefix with the complete manual.
 
 **Office failure:** user sees `rag.office_parse_failed` via `KbSyncBroadcaster.failed`. No legacy OWRPGSX6XK fallback — errors propagate to `UploadAndSyncAttachmentsJob`, which broadcasts failed and lets Solid Queue retry.
 

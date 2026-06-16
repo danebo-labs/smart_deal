@@ -135,4 +135,30 @@ class UploadAndSyncAttachmentsJobTest < ActiveJob::TestCase
     QueryOrchestratorService.define_method(:initialize, orig_init)
     QueryOrchestratorService.define_method(:upload_and_sync_attachments, orig_upload)
   end
+
+  test "perform forwards original query into QueryOrchestratorService" do
+    captured_query = nil
+    orig_init   = QueryOrchestratorService.instance_method(:initialize)
+    orig_upload = QueryOrchestratorService.instance_method(:upload_and_sync_attachments)
+
+    QueryOrchestratorService.define_method(:initialize) do |question, **kwargs|
+      captured_query = question
+      orig_init.bind(self).call(question, **kwargs)
+    end
+    QueryOrchestratorService.define_method(:upload_and_sync_attachments) { [] }
+
+    UploadAndSyncAttachmentsJob.perform_now(
+      images_payload: [],
+      documents_payload: [],
+      conv_session_id: nil,
+      tenant_id: nil,
+      locale: "es",
+      query: "Necesito revisar el freno"
+    )
+
+    assert_equal "Necesito revisar el freno", captured_query
+  ensure
+    QueryOrchestratorService.define_method(:initialize, orig_init)
+    QueryOrchestratorService.define_method(:upload_and_sync_attachments, orig_upload)
+  end
 end

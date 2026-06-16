@@ -155,7 +155,9 @@ class IngestManualBatchResultsJob < ApplicationJob
       "summary"          => chunk_asset.summary.to_s.presence,
       "companion_offer"  => chunk_asset.companion_offer.to_s.presence,
       "chunks_s3_prefix" => chunk_asset.chunks_s3_prefix.to_s.presence,
-      "partial_pages"    => Array(chunk_asset.degraded_pages)
+      "partial_pages"    => Array(chunk_asset.degraded_pages),
+      "processing_scope" => "full_manual",
+      "web_manual_batch_id" => web_manual_batch&.id
     } ]
 
     sync_result = BulkKbSyncService.new.sync!(uploaded_filenames: uploaded_filenames, locale: ctx[:locale])

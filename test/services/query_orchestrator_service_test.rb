@@ -90,6 +90,29 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     BedrockRagService.define_method(:query, orig_rag)
   end
 
+  test "document upload job receives original query for urgent long-manual triage" do
+    captured = nil
+    UploadAndSyncAttachmentsJob.define_singleton_method(:perform_later) do |**kwargs|
+      captured = kwargs
+    end
+
+    orig_rag = BedrockRagService.instance_method(:query)
+    BedrockRagService.define_method(:query) do |query, **|
+      { answer: "answer #{query}", citations: [], session_id: nil }
+    end
+
+    doc = { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: "new_manual.pdf" }
+
+    QueryOrchestratorService.new(
+      "Necesito rescate de emergencia",
+      documents: [ doc ]
+    ).execute
+
+    assert_equal "Necesito rescate de emergencia", captured[:query]
+  ensure
+    BedrockRagService.define_method(:query, orig_rag) if orig_rag
+  end
+
   test "entity_sources separates media type from user pin provenance" do
     session = Struct.new(:active_entities).new({
       "Photo" => { "source" => "user_pin", "entity_type" => "image_upload" },

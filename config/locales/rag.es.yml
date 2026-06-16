@@ -8,6 +8,8 @@ es:
     documents_indexed_message: "%{count} archivos fueron sincronizados en la Base de Conocimiento y están listos para consultas."
     document_indexing_failed_message: "No pude terminar con tu archivo. Prueba enviarlo de nuevo en unos segundos."
     upload_retrying_aurora: "Está tardando un poco más de lo habitual — sigo con tu archivo, en un momento te cuento."
+    manual_urgent_pages_indexed: "✅ %{name}\nPáginas urgentes listas: %{pages}. El manual completo sigue procesándose."
+    manual_urgent_triage_failed: "No pude preparar páginas urgentes de este manual, pero el manual completo sigue procesándose en segundo plano."
     image_indexing_stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     no_results_found: "No se encontró información sobre tu consulta. Sube un archivo para ampliar la base de conocimiento y, una vez sincronizado, podrás hacer consultas sobre ese archivo."
     pinned_no_results: "DATA_NOT_AVAILABLE: los documentos pineados no contienen evidencia suficiente para responder esta consulta."

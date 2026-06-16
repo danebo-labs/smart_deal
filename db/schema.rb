@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_16_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_16_173000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -188,11 +188,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_16_170000) do
     t.datetime "submitted_at"
     t.integer "total_pages"
     t.datetime "updated_at", null: false
+    t.string "urgent_chunks_s3_prefix"
+    t.datetime "urgent_completed_at"
+    t.text "urgent_error_message"
+    t.jsonb "urgent_pages", default: [], null: false
+    t.datetime "urgent_started_at"
+    t.string "urgent_status"
     t.index [ "claude_batch_id" ], name: "index_web_manual_batches_on_claude_batch_id", unique: true
     t.index [ "conv_session_id" ], name: "index_web_manual_batches_on_conv_session_id"
     t.index [ "kb_document_id" ], name: "index_web_manual_batches_on_kb_document_id"
     t.index [ "sha256", "s3_key", "ingestion_contract_version" ], name: "idx_web_manual_batches_unique_contract", unique: true
     t.index [ "status" ], name: "index_web_manual_batches_on_status"
+    t.index [ "urgent_status" ], name: "index_web_manual_batches_on_urgent_status"
   end
 
   create_table "whatsapp_cache_hits", force: :cascade do |t|

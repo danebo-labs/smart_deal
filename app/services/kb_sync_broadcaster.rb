@@ -25,4 +25,13 @@ class KbSyncBroadcaster
       message:   I18n.with_locale(locale || :es) { I18n.t("rag.upload_retrying_aurora") }
     })
   end
+
+  def self.partial_failed(filenames:, message:, reason: "manual_urgent_triage_failed")
+    ActionCable.server.broadcast(CHANNEL, {
+      status:    "partial_failed",
+      filenames: Array(filenames).compact,
+      reason:    reason,
+      message:   message
+    })
+  end
 end

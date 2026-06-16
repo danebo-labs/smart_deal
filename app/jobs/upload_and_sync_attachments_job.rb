@@ -29,7 +29,8 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
   # @param conv_session_id   [Integer, nil] ConversationSession#id for entity registration
   # @param tenant_id         [Integer, nil] Tenant#id for KB selection
   # @param locale            [String, nil] ISO 639-1 locale — forwarded to QOS for image summary
-  def perform(images_payload:, documents_payload:, conv_session_id: nil, tenant_id: nil, locale: nil)
+  # @param query             [String, nil] original question, used for long-manual urgent triage
+  def perform(images_payload:, documents_payload:, conv_session_id: nil, tenant_id: nil, locale: nil, query: nil)
     images    = restore_images(Array(images_payload))
     documents = Array(documents_payload).map { |d| d.transform_keys(&:to_sym) }
     tenant    = tenant_id ? Tenant.find_by(id: tenant_id) : nil
@@ -37,7 +38,7 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
 
     I18n.with_locale(locale || :es) do
       QueryOrchestratorService
-        .new("", images: images, documents: documents, tenant: tenant, conv_session: session, locale: locale)
+        .new(query.to_s, images: images, documents: documents, tenant: tenant, conv_session: session, locale: locale)
         .send(:upload_and_sync_attachments)
     end
   rescue StandardError => e

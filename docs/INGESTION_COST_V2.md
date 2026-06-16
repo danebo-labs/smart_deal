@@ -99,9 +99,9 @@ flowchart TB
 **Decision:** PDF/Office corto adjunto desde web/chat pasa por `SingleFileChunkingService` sync cost-v2 (Messages API). PDF largo adjunto desde web/chat se enruta automáticamente a `SubmitManualBatchJob` → `ManualBatchIngestionService` → `IngestManualBatchResultsJob` en `bulk_ingestion`; el usuario no selecciona páginas manualmente. Manuales de carga inicial/backoffice siguen usando `/bulk_uploads` → Anthropic Batch API (Sonnet, ~50% off).
 
 **Consequences:**
-- UX web/chat: ACK rápido. Archivos cortos pueden quedar consultables en el ciclo sync; manuales largos avisan procesamiento y quedan consultables cuando el Batch termina.
-- Costo: manuales largos subidos por emergencia desde chat ya usan batch pricing sin bloquear al técnico.
-- Riesgo: el documento largo no está completo inmediatamente; E3b/O posterior debe agregar triage automático de páginas urgentes mientras el Batch corre.
+- UX web/chat: ACK rápido. Archivos cortos pueden quedar consultables en el ciclo sync; manuales largos avisan procesamiento y quedan consultables completos cuando el Batch termina.
+- Costo: manuales largos subidos por emergencia desde chat usan batch pricing para el documento completo sin bloquear al técnico.
+- E3b: si el PDF largo llega con pregunta, se procesa un set acotado de páginas urgentes por direct Messages mientras el manual completo sigue por Batch. La selección es automática server-side; el técnico no elige páginas desde la UI.
 - Mitigación: `PageRelevanceFilter` descarta portada, índice, separadores y páginas vacías antes de Sonnet/Opus.
 - PDFs grandes: `PageRelevanceFilter.call_batch` clasifica en ventanas de hasta 20 páginas y 22 MB, con `max_tokens` dinámico, retry 1x solo ante JSON truncado y fallback keep-all acotado a la ventana.
 
@@ -163,7 +163,7 @@ Ver [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md).
 
 **Decision:** `QueryOrchestratorService#upload_and_sync_attachments` conserva `urgent: true` por compatibilidad, pero `CustomChunkingPipeline` ya no usa ese flag para forzar sync en PDFs largos. Si `pdf_page_count > WEB_SYNC_PDF_PAGE_THRESHOLD` (default 2), se encola `SubmitManualBatchJob` automáticamente.
 
-**Consequences:** Un manual PDF largo subido desde chat, con o sin pregunta, sí se acepta; no requiere que el usuario seleccione páginas desde el PDF. El documento completo entra por Batch y se indexa cuando `manual_batch_v1` termina.
+**Consequences:** Un manual PDF largo subido desde chat, con o sin pregunta, sí se acepta; no requiere que el usuario seleccione páginas desde el PDF. El documento completo entra por Batch y se indexa cuando `manual_batch_v1` termina. Si hay pregunta, E3b encola `ProcessManualUrgentTriageJob`: selecciona páginas por scoring local sobre la pregunta/texto del PDF, parsea sólo esas páginas direct con cap 8k→16k→32k, y emite `processing_scope: urgent_pages` para que la UI muestre disponibilidad parcial sin cerrar el estado del manual completo.
 
 ### 3.7 Foto de circuito o diagrama tomada en campo
 

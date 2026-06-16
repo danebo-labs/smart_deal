@@ -8,6 +8,8 @@ en:
     documents_indexed_message: "%{count} files have been synchronized to the Knowledge Base and are ready for queries."
     document_indexing_failed_message: "I couldn't finish with your file. Try sending it again in a few seconds."
     upload_retrying_aurora: "Taking a bit longer than usual — still on your file, I'll be with you in a moment."
+    manual_urgent_pages_indexed: "✅ %{name}\nUrgent pages ready: %{pages}. The full manual is still processing."
+    manual_urgent_triage_failed: "I couldn't prepare urgent pages from this manual, but the full manual is still processing in the background."
     image_indexing_stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     no_results_found: "No information was found in the Knowledge Base to answer your query. You can ask questions about the indexed documents, or upload a new document to expand the knowledge base."
     pinned_no_results: "DATA_NOT_AVAILABLE: the pinned documents do not contain enough evidence to answer this query."

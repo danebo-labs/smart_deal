@@ -95,6 +95,25 @@ export default class extends Controller {
           return
         }
 
+        if (data.status === "partial_failed") {
+          if (data.message) controller.addMessage(data.message, "assistant")
+          return
+        }
+
+        if (data.status === "indexed" && data.processing_scope === "urgent_pages") {
+          controller.clearIndexingNudgeTimer()
+          controller.clearRetryFallbackNotice()
+          controller.clearIndexingStallTimer()
+          controller.refreshDocuments()
+          controller.addIndexedMessage(data)
+          if (controller.indexingLoadingId) {
+            controller.setIndexingLoadingAcknowledgment(controller._indexingWarmCopy("full"))
+            controller.startIndexingNudgeTimer()
+            controller.startIndexingStallTimer()
+          }
+          return
+        }
+
         if (data.status === "indexed" || data.status === "failed") {
           controller.kbSyncInProgress = false
           controller.clearIndexingNudgeTimer()
@@ -573,11 +592,13 @@ export default class extends Controller {
     const table = lang.startsWith("en") ? {
       ack:   "Got your file and I'm indexing it. You can keep asking about already-indexed documents while it gets ready.",
       nudge: "Still working on your file — large documents can take a little longer in the field. You can keep asking about documents that are already indexed.",
+      full:  "I already prepared the urgent pages I could match. The full manual is still indexing in the background.",
       retry: "Taking a bit longer than usual — still on your file, I'll be with you in a moment.",
       stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     } : {
       ack:   "Recibí tu archivo y lo estoy indexando. Puedes seguir consultando documentos ya indexados mientras queda listo.",
       nudge: "Sigo con tu archivo — los documentos grandes pueden tardar un poco más en campo. Puedes seguir preguntando sobre documentos ya indexados.",
+      full:  "Ya preparé las páginas urgentes que pude asociar a tu consulta. El manual completo sigue indexándose en segundo plano.",
       retry: "Está tardando un poco más de lo habitual — sigo con tu archivo, en un momento te cuento.",
       stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     }
@@ -850,12 +871,24 @@ export default class extends Controller {
     const canonical     = data.canonical_name || (data.filenames && data.filenames[0]) || "Documento"
     const aliases       = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
     const partialPages  = Array.isArray(data.partial_pages) ? data.partial_pages.filter(p => p != null) : []
+    const selectedPages = Array.isArray(data.selected_pages) ? data.selected_pages.filter(p => p != null) : []
+    const isUrgentPages = data.processing_scope === "urgent_pages"
     const lang          = (document.documentElement.lang || "es").toLowerCase()
-    const readyLine     = lang.startsWith("en")
+    const readyLine     = isUrgentPages
+      ? (lang.startsWith("en")
+        ? "Urgent pages are ready. The full manual is still indexing."
+        : "Páginas urgentes listas. El manual completo sigue indexándose.")
+      : lang.startsWith("en")
       ? "Ready — you can ask me anything about this."
       : "Listo, ya puedes preguntarme lo que necesites sobre esto."
 
     let html = `<div style="font-weight:600;">${this.escapeHtml(canonical)}</div>`
+    if (isUrgentPages && selectedPages.length > 0) {
+      const pagesText = lang.startsWith("en")
+        ? `Pages now available: ${selectedPages.join(", ")}`
+        : `Páginas disponibles ahora: ${selectedPages.join(", ")}`
+      html += `<div style="margin-top:4px;color:#4a5568;font-size:13px;">${this.escapeHtml(pagesText)}</div>`
+    }
     if (aliases) {
       const pills = aliases.map(a =>
         `<span style="display:inline-block;background:#e2e8f0;border-radius:9999px;padding:1px 8px;font-size:11px;margin:2px 2px 0 0;color:#4a5568;">${this.escapeHtml(a)}</span>`

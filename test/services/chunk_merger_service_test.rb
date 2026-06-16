@@ -122,6 +122,38 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_includes parsed["chunks"][2]["text"], "page 3 chunk 0"
   end
 
+  test "drops accidental document identification S0 chunks from non-anchor pages" do
+    p1_json = {
+      "document_name" => DOC_NAME,
+      "aliases" => ALIASES1,
+      "chunks" => [
+        { "text" => "# S0 — DOCUMENT IDENTIFICATION\nAnchor identity.", "page" => 2 },
+        { "text" => "# S4 — SAFETY SYSTEM\nAnchor safety.", "page" => 2 }
+      ]
+    }.to_json
+    p2_json = {
+      "document_name" => DOC_NAME,
+      "aliases" => ALIASES2,
+      "chunks" => [
+        { "text" => "# S0 — DOCUMENT IDENTIFICATION\nStray content identity.", "page" => 3 },
+        { "text" => "# S6 — ELECTRICAL\nReal content.", "page" => 3 }
+      ]
+    }.to_json
+
+    parsed = JSON.parse(
+      ChunkMergerService.merge([
+        { page_number: 2, text: p1_json, usage: nil, model: "claude-sonnet-4-6" },
+        { page_number: 3, text: p2_json, usage: nil, model: "claude-sonnet-4-6" }
+      ])
+    )
+
+    texts = parsed["chunks"].pluck("text")
+    assert_equal 3, texts.size
+    assert_includes texts.join("\n"), "Anchor identity"
+    assert_includes texts.join("\n"), "Real content"
+    assert_not_includes texts.join("\n"), "Stray content identity"
+  end
+
   test "preserves original page numbers (no renumbering)" do
     parsed = JSON.parse(ChunkMergerService.merge(page_results))
     assert_equal 1, parsed["chunks"][0]["page"]

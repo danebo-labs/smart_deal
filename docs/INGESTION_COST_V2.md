@@ -141,6 +141,13 @@ para retrieval.
   merge Rails.
 - Validacion minima O4a (2026-06-16): batch `msgbatch_01BpMauhuRC7GDePzWQMU27f`
   sobre 2 paginas del manual de referencia, costo USD 0.04736, `passed=true`.
+- Auditoria offline O4b (2026-06-16): no se promueve v5 ni shadow pagado. El
+  artefacto O4a disponible (`tmp/o4a_min_batch_shadow.json`) muestra que la pagina
+  `CONTENT_PAGE` sin S0/summary/companion emitio mas output que la anchor; la
+  metadata restante (`document_name` / `aliases`) tiene techo estimado bajo y se
+  conserva por fallback/traceability. Solo se aplica limpieza Rails deterministica:
+  total de pagina sync post-filtro y descarte defensivo de S0 de identificacion
+  accidental en paginas no-anchor.
 - No se agrega otra llamada LLM ni otro prompt por tipo de sección.
 - La narrativa no duplica procedimientos completos que ya están en `field_records`.
 - El baseline histórico de ~500 output tokens/página debe revalidarse con el

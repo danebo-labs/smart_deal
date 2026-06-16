@@ -19,6 +19,7 @@
 class ChunkMergerService
   DOCUMENT_ALIAS_LIMIT = 15
   CHUNK_ALIAS_LIMIT    = 8
+  DOCUMENT_IDENTIFICATION_S0_PATTERN = /\A\s*#*\s*S0\s*[—–-]\s*DOCUMENT IDENTIFICATION\b/i
 
   # S0-style marker surfaced to Haiku when a page could not be fully extracted.
   # %{page} is interpolated with the 1-indexed page number.
@@ -65,11 +66,15 @@ class ChunkMergerService
       limit: DOCUMENT_ALIAS_LIMIT
     )
 
+    anchor_page_number = @page_results.first[:page_number]
+
     all_chunks = parsed_pages.flat_map.with_index do |parsed, idx|
       orig_page = @page_results[idx][:page_number]
       page_aliases = sanitize_aliases(parsed["aliases"], limit: CHUNK_ALIAS_LIMIT)
 
-      Array(parsed["chunks"]).map do |chunk|
+      Array(parsed["chunks"]).filter_map do |chunk|
+        next if stray_content_page_s0?(chunk, page_number: orig_page, anchor_page_number: anchor_page_number)
+
         chunk_aliases = sanitize_aliases(chunk["aliases"], limit: CHUNK_ALIAS_LIMIT)
         chunk.merge(
           "page" => (chunk["page"] || orig_page).to_i,
@@ -116,6 +121,12 @@ class ChunkMergerService
       seen[alias_name.downcase] = true
       alias_name
     end.first(limit)
+  end
+
+  def stray_content_page_s0?(chunk, page_number:, anchor_page_number:)
+    page_number != anchor_page_number &&
+      chunk.is_a?(Hash) &&
+      chunk["text"].to_s.match?(DOCUMENT_IDENTIFICATION_S0_PATTERN)
   end
 
   # Returns [parsed_hash, degraded_boolean].

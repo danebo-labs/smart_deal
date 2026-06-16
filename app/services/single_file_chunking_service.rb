@@ -187,7 +187,7 @@ class SingleFileChunkingService
       return parse_and_write(result[:text])
     end
 
-    page_results = chunk_pages_with_identity_hint(kept_pages, total)
+    page_results = chunk_pages_with_identity_hint(kept_pages, kept_pages.size)
     report       = ChunkMergerService.merge_with_report(page_results)
     log_pdf_mixed_metrics(total: total, parsed_pages: kept_pages, fallback: nil, started_at: started_at)
     parse_and_write(report[:json])

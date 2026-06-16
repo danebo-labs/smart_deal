@@ -158,6 +158,60 @@ class Gate9V1ValidationTest < ActiveSupport::TestCase
     end
   end
 
+  test "stop-work semantic matching preserves distinct control stations" do
+    platform_expected = {
+      "record_id" => "FR-83721CBE0DF567B8",
+      "type" => "STOP_WORK_CONDITION",
+      "source" => "Control de plataforma",
+      "action" => "Presione el botón de parada de emergencia rojo a la posición \"OFF\"",
+      "expected_result" => "Se detienen todas las funciones de la máquina",
+      "stop_trigger" => "necesidad de parada de emergencia",
+      "stop_action" => "presionar botón rojo a posición OFF",
+      "evidence" => "presione el botón de parada de emergencia rojo a la posición \"OFF\" para detener todas las funciones"
+    }
+    ground_expected = {
+      "record_id" => "FR-7CB5544444B37D08",
+      "type" => "STOP_WORK_CONDITION",
+      "source" => "2.1.1 Controles de tierra — Parada de emergencia",
+      "action" => "Presione el botón de parada de emergencia a su posición 'apagado'",
+      "expected_result" => "Se detienen todas las funciones",
+      "stop_trigger" => "emergencia / necesidad de parada total",
+      "stop_action" => "presionar botón rojo a posición apagado",
+      "evidence" => "Presione el botón de parada de emergencia a su posición 'apagado' para detener todas las funciones"
+    }
+    ground_actual = parsed_field_record(
+      record_id: "FR-GROUND",
+      source: "Controles de tierra — Parada de emergencia",
+      action: "Presione el botón de parada de emergencia a su posición 'apagado'",
+      expected_result: "Se detienen todas las funciones",
+      stop_trigger: "necesidad de parada inmediata",
+      stop_action: "detener todas las funciones",
+      evidence: "Presione el botón de parada de emergencia a su posición 'apagado' para detener todas las funciones"
+    )
+    platform_actual = parsed_field_record(
+      record_id: "FR-PLATFORM",
+      source: "Control de plataforma",
+      action: "Presionar el botón de parada de emergencia rojo a la posición \"OFF\"",
+      expected_result: "Se detienen todas las funciones de la máquina",
+      stop_trigger: "necesidad de detener la máquina",
+      stop_action: "presionar botón rojo a posición OFF",
+      evidence: "presione el botón de parada de emergencia rojo a la posición \"OFF\" para detener todas las funciones"
+    )
+    validation = build_validation
+
+    matches = validation.send(
+      :semantic_matches,
+      [ platform_expected, ground_expected ],
+      [ ground_actual, platform_actual ]
+    )
+
+    assert_equal "FR-PLATFORM", matches.first[:matched_id]
+    assert_operator matches.first[:score], :>=, 0.6
+    assert_equal "FR-GROUND", matches.second[:matched_id]
+    assert_operator matches.second[:score], :>=, 0.6
+    assert_operator validation.send(:evidence_similarity, platform_expected, ground_actual), :<, 0.6
+  end
+
   test "stop-work semantic matching still rejects unrelated safety records" do
     expected = {
       "record_id" => "FR-480A25A947279253",

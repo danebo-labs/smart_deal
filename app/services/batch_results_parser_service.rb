@@ -67,6 +67,7 @@ class BatchResultsParserService
     end
 
     parsed  = parse_json(text)
+    discard_unverifiable_field_records!(parsed, ingestion_path: ingestion_path)
     enrich_field_records!(parsed, ingestion_path: ingestion_path)
     validate!(parsed, asset, ingestion_path: ingestion_path)
 
@@ -181,6 +182,39 @@ class BatchResultsParserService
         chunk["field_records"] << record
       end
     end
+  end
+
+  def discard_unverifiable_field_records!(parsed, ingestion_path:)
+    return if ingestion_path == "field_photo_v1"
+
+    Array(parsed["chunks"]).each_with_index do |chunk, chunk_index|
+      next unless chunk.is_a?(Hash) && chunk["field_records"].is_a?(Array)
+
+      chunk["field_records"] = chunk["field_records"].filter_map.with_index do |record, record_index|
+        if unverifiable_non_stop_field_record?(record)
+          Rails.logger.warn(
+            "BatchResultsParserService: dropping field_record without evidence " \
+            "in chunk #{chunk_index} field_record #{record_index}"
+          )
+          next
+        end
+
+        record
+      end
+    end
+  end
+
+  def unverifiable_non_stop_field_record?(record)
+    return false unless record.is_a?(Hash)
+
+    values = record.deep_stringify_keys
+    record_type = values["k"].to_s
+    return false unless FIELD_RECORD_TYPES.include?(record_type)
+    return false if record_type == "STOP_WORK_CONDITION"
+
+    !values.key?("ev") ||
+      !values["ev"].is_a?(String) ||
+      field_value(values["ev"]) == "DATA_NOT_AVAILABLE"
   end
 
   def deterministic_stop_work_records(chunk)

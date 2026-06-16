@@ -300,6 +300,8 @@ module BatchChunkingPrompt
         ra=explicit repair/reset authority, u=LOW/UNVERIFIABLE/RFV reason.
 
         - Omit absent optional keys and record IDs. Rails creates IDs.
+        - Never emit a field_record without ev. If no visible quote supports
+          the record, omit that field_record and keep the uncertainty in text.
         - Current input only; preserve terms, order, codes, labels, units, modality.
         - Never merge opposing states or separate results; repeat minimum context.
         - Preparation stays in a. Missing result/criteria uses r=DATA_NOT_AVAILABLE.

@@ -282,6 +282,54 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_includes chunk, "REPAIR_AUTHORITY: Qualified service technician"
   end
 
+  test "drops non stop records without evidence from the ledger" do
+    payload = golden_parsed.deep_dup
+    unverifiable = field_record(
+      "h" => "Prueba de funcionamiento del sensor de inclinación",
+      "a" => "Mover el joystick en la dirección indicada por la flecha hacia arriba.",
+      "r" => "DATA_NOT_AVAILABLE",
+      "u" => "Resultado continúa en página siguiente; no visible en esta página."
+    )
+    unverifiable.delete("ev")
+    payload["chunks"][0]["text"] = <<~TEXT
+      **Section:** Prueba de funcionamiento del sensor de inclinación
+
+      Mueva el joystick en la dirección indicada por la flecha hacia arriba.
+      Resultado: DATA_NOT_AVAILABLE (continúa en página siguiente)
+    TEXT
+    payload["chunks"][0]["field_records"] = [ unverifiable ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    assert_includes chunk, "Mueva el joystick"
+    assert_not_includes chunk, "# FIELD-SAFETY EVIDENCE RECORDS"
+  end
+
+  test "keeps stop-work records without evidence strict" do
+    payload = golden_parsed.deep_dup
+    stop_work = field_record(
+      "h" => "Emergency stop",
+      "k" => "STOP_WORK_CONDITION",
+      "a" => "Press the emergency stop button.",
+      "r" => "All functions stop.",
+      "sw" => [ "Emergency stop button pressed", "All functions stop" ]
+    )
+    stop_work.delete("ev")
+    payload["chunks"][0]["field_records"] = [ stop_work ]
+    asset = make_asset
+    parser = build_parser
+
+    error = assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    assert_includes error.message, "Missing ev"
+    assert_equal "failed", asset.reload.status
+  end
+
   test "adds deterministic stop-work record for conditional transport limit evidence" do
     payload = golden_parsed.deep_dup
     payload["chunks"][0] = {

@@ -40,6 +40,12 @@ class Gate9V1Validation
     "stop_action" => 0.25,
     "evidence" => 0.25
   }.freeze
+  STOP_WORK_SOURCE_MATCH_BONUS = 0.20
+  STOP_WORK_STATION_MISMATCH_CAP = 0.55
+  CONTROL_STATION_TOKENS = {
+    platform: %w[plataforma platform superior upper],
+    ground: %w[tierra suelo ground lower]
+  }.freeze
   SEMANTIC_TOKEN_NORMALIZATIONS = {
     "detenida" => "detener",
     "detenido" => "detener",
@@ -610,7 +616,26 @@ class Gate9V1Validation
       weight * field_similarity(expected, actual, attribute)
     end
 
-    weighted_score / total_weight
+    score = weighted_score / total_weight
+    score += STOP_WORK_SOURCE_MATCH_BONUS if field_similarity(expected, actual, "source") == 1.0
+    score = [ score, STOP_WORK_STATION_MISMATCH_CAP ].min if control_station_mismatch?(expected, actual)
+    [ score, 1.0 ].min
+  end
+
+  def control_station_mismatch?(expected, actual)
+    expected_tags = control_station_tags(record_value(expected, "source"))
+    actual_tags = control_station_tags(record_value(actual, "source"))
+    return false if expected_tags.empty? || actual_tags.empty?
+
+    (expected_tags & actual_tags).empty?
+  end
+
+  def control_station_tags(value)
+    tokens = semantic_tokens(value)
+
+    CONTROL_STATION_TOKENS.each_with_object(Set.new) do |(station, station_tokens), tags|
+      tags << station if station_tokens.any? { |token| tokens.include?(token) }
+    end
   end
 
   def field_similarity(expected, actual, attribute)

@@ -57,6 +57,7 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "# FIELD-SAFETY EVIDENCE RECORDS"
     assert_includes prompt, "independently verifiable record per result"
     assert_includes prompt, "Omit absent optional keys and record IDs. Rails creates IDs"
+    assert_includes prompt, "Never emit a field_record without ev"
     assert_includes prompt, "Never merge opposing states or separate results"
   end
 

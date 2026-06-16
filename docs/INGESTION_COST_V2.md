@@ -139,6 +139,8 @@ para retrieval.
   `ANCHOR_PAGE` emite S0, `summary` y `companion_offer`; `CONTENT_PAGE`
   omite esa metadata repetida y conserva `document_name` / `aliases` para el
   merge Rails.
+- Validacion minima O4a (2026-06-16): batch `msgbatch_01BpMauhuRC7GDePzWQMU27f`
+  sobre 2 paginas del manual de referencia, costo USD 0.04736, `passed=true`.
 - No se agrega otra llamada LLM ni otro prompt por tipo de sección.
 - La narrativa no duplica procedimientos completos que ya están en `field_records`.
 - El baseline histórico de ~500 output tokens/página debe revalidarse con el

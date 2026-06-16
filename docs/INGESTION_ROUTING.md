@@ -169,7 +169,7 @@ Models (`BatchChunkingPrompt`):
 | Bulk ZIP legacy | `batch_v1` |
 | SHA dedup hit | `content_dedup` |
 
-Per-page PDF parses use `BatchChunkingPrompt::INGESTION_CONTRACT_VERSION` (`field_records_v4`) with O4a page roles. The first kept page is tagged `ANCHOR_PAGE` and emits S0, `summary`, and `companion_offer`; remaining kept pages are tagged `CONTENT_PAGE`, omit that repeated metadata, and keep `document_name` / `aliases` for Rails merge and fallback logic.
+Per-page PDF parses use `BatchChunkingPrompt::INGESTION_CONTRACT_VERSION` (`field_records_v4`) with O4a page roles. The first kept page is tagged `ANCHOR_PAGE` and emits S0, `summary`, and `companion_offer`; remaining kept pages are tagged `CONTENT_PAGE`, omit that repeated metadata, and keep `document_name` / `aliases` for Rails merge and fallback logic. Minimal validation passed on 2026-06-16 with batch `msgbatch_01BpMauhuRC7GDePzWQMU27f` (2 pages, USD 0.04736).
 
 ---
 

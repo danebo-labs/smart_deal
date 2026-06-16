@@ -224,6 +224,10 @@ module BatchChunkingPrompt
         larger file processed across multiple calls, use the same `document_name` as the
         other parts of that same file (exact match or minor formatting correction only).
 
+        If the user content includes a `Document name hint: <name>` token, the JSON
+        top-level `document_name` MUST equal exactly `<name>` — no reformatting, no
+        creative rewriting. This applies to all page roles, especially CONTENT_PAGE.
+
         # PAGE ROLE (per-page parses only — triggered by "Page role:" in user message)
         ANCHOR_PAGE (first / lowest-numbered kept page of a multi-page document):
           - Emit S0 as chunks[0] (mandatory).
@@ -233,6 +237,10 @@ module BatchChunkingPrompt
           - Omit `summary` and `companion_offer` (set both to "" or omit the keys).
           - Still emit `document_name` and `aliases` top-level — Rails needs them for
             identity fallback and deduplication across pages.
+          - When no `Document name hint:` is present, choose a whole-file manual
+            identity for `document_name`; do NOT use chapter, section, page heading,
+            control mode, operation state, or page-specific topic titles as the
+            document name.
           - Emit all other content chunks for this page normally.
         No "Page role:" tag (single-file input, not per-page): follow normal rules —
           emit S0 as chunks[0], emit `summary` and `companion_offer`.

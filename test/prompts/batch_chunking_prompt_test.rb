@@ -67,6 +67,37 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_includes instruction, "never drop it"
   end
 
+  test "system prompt enforces exact document_name match when Document name hint is present" do
+    assert_includes prompt, "Document name hint: <name>"
+    assert_match(/document_name.*MUST equal exactly.*<name>/m, prompt)
+    assert_includes prompt, "no reformatting, no\ncreative rewriting"
+    assert_match(/applies to all page roles.*CONTENT_PAGE/m, prompt)
+  end
+
+  test "system prompt rejects page-specific document_name for CONTENT_PAGE without hint" do
+    assert_match(/When no `Document name hint:` is present.*whole-file manual\n\s+identity/m, prompt)
+    assert_includes prompt, "do NOT use chapter, section, page heading"
+    assert_match(/page-specific topic titles as the\s+document name/m, prompt)
+  end
+
+  test "page_user_content includes document_name_hint verbatim in user instruction" do
+    hint = "Manual Plataforma Tijera Operación Controles"
+    instruction = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 3, total_pages: 5, filename: "m.pdf",
+      document_name_hint: hint, anchor: false
+    ).last.fetch(:text)
+    assert_includes instruction, "Document name hint: #{hint}"
+    assert_includes instruction, "Page role: CONTENT_PAGE"
+  end
+
+  test "page_user_content omits document_name_hint line when hint is nil" do
+    instruction = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 2, total_pages: 5, filename: "m.pdf",
+      document_name_hint: nil, anchor: false
+    ).last.fetch(:text)
+    assert_not_includes instruction, "Document name hint:"
+  end
+
   test "types test-section steps as FUNCTIONAL_TEST and forbids restated results" do
     assert_includes prompt, "INSIDE a functional-test section"
     assert_includes prompt, "k=FUNCTIONAL_TEST"

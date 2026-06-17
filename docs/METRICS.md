@@ -113,6 +113,8 @@ Emitted by `FieldPhotoDensityGate#log_gate_decision` after the Sonnet/Opus routi
 | `height` | Integer \| null | |
 | `format` | String \| null | Vips loader string or content_type fallback |
 | `content_type` | String | |
+| `white_ratio` | Float \| absent | Gate 9R O5-A: fraction of pixels with luma >240 on a ≤256px thumbnail (0.0–1.0, 3 decimals). High on line-art schematics; low on continuous-tone field photos. Absent when header/content signal fails. **Does not affect routing.** |
+| `luma_mean` | Float \| absent | Gate 9R O5-A: mean luma on the same thumbnail (0–255, 1 decimal). Absent when header/content signal fails. **Does not affect routing.** |
 | `correlation_id` | String | optional; present when caller supplies it (see join chains below) |
 
 ### Join chains
@@ -148,9 +150,9 @@ image_compression.correlation_id
 grep '"event":"image_compression"' log/development.log | \
   jq -r '[.correlation_id, .output_correlation_id, .filename, .resize_applied, .bytes_before, .bytes_after] | @csv'
 
-# field_photo_gate events (CSV: correlation_id, model, route, bytes)
+# field_photo_gate events (CSV: correlation_id, model, route, bytes, white_ratio, luma_mean)
 grep '"event":"field_photo_gate"' log/development.log | \
-  jq -r '[.correlation_id, .model, .route, .bytes] | @csv'
+  jq -r '[.correlation_id, .model, .route, .bytes, .white_ratio, .luma_mean] | @csv'
 
 # join to DB cost (Rails console)
 # BedrockQuery.where("correlation_id LIKE 'ingest:%'").pluck(:correlation_id, :model_id, :cost_usd)

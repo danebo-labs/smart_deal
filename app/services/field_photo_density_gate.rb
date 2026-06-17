@@ -54,6 +54,7 @@ class FieldPhotoDensityGate
       format:       dims[:format] || @content_type,
       content_type: @content_type
     }
+    payload.merge!(content_signal)
     payload[:correlation_id] = @correlation_id if @correlation_id
 
     Rails.logger.info(JSON.generate(payload))
@@ -70,6 +71,24 @@ class FieldPhotoDensityGate
     { width: img.width, height: img.height, format: img.get("vips-loader") }
   rescue StandardError
     { width: nil, height: nil, format: nil }
+  end
+
+  # Gate 9R O5-A: cheap content signal to distinguish line-art schematics
+  # (white background + lines → high white_ratio) from continuous-tone field
+  # photos. Pixel read on a shrunk copy; never affects routing.
+  def content_signal
+    return {} unless plausible_image_header?
+
+    img    = Vips::Image.new_from_buffer(@binary, "")
+    factor = [ [ img.width, img.height ].max / 256.0, 1.0 ].max
+    small  = factor > 1.0 ? img.shrink(factor, factor) : img
+    bw     = small.colourspace("b-w")
+    {
+      white_ratio: ((bw > 240).avg / 255.0).round(3),
+      luma_mean:   bw.avg.round(1)
+    }
+  rescue StandardError
+    {}
   end
 
   def plausible_image_header?

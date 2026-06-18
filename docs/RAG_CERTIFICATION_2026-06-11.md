@@ -1,5 +1,8 @@
 # Certificación del benchmark RAG — 100% de fidelidad documental (cohorte v2)
 
+> **Snapshot histórico de calidad.** Sus cifras de costo describen esta corrida,
+> no el COGS actual. Pricing vigente: [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
+
 **Fecha:** 2026-06-11
 **Resultado:** **100% de fidelidad documental para el corpus y matriz versionados.**
 No es una certificación universal de seguridad del producto, de todos los

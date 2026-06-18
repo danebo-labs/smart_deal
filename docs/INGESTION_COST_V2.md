@@ -1,15 +1,14 @@
 # Ingestion Cost V2 — ADR & Cost Architecture
 
 **Status:** Active production path for web and bulk uploads
-**Benchmark date:** 2026-05-21  
+**Architecture benchmark:** 2026-05-21
+**Cost reconciliation:** 2026-06-18
 **Supersedes:** inline routing in `FileMultimodalRouter` (Opus default for images)
 
-> **⚠️ Per-unit cost figures below are stale (2026-05-21 v2 benchmark).** The
-> v3 structured output is more expensive: photos are now **~$0.0231/foto**
-> (not ~$0.009) and the observed 200-page manual batch cost **~$5.44** (Gate 9R,
-> 2026-06-18). For current package COGS, contractual ceiling and pricing floor,
-> use **`docs/SAAS_COST_MODEL_2026-06-12.md` (UPDATE 2026-06-18)** — the canonical
-> cost model. The numbers in this ADR are kept for architectural/historical context only.
+> **Current financial source:** [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
+> Recurring variable COGS is ~$9.54 expected / ~$13.27 conservative for 1,000
+> queries + 200 photos. A 200-page manual is $5.32 one-time onboarding. This ADR
+> documents routing and no longer publishes the superseded May unit estimates.
 
 **Canonical routing reference (file types, page filter, LLM matrix):** [INGESTION_ROUTING.md](INGESTION_ROUTING.md)
 
@@ -30,7 +29,7 @@ Scope: 54 extracciones + 54 judge calls ≈ $5.69
 | Input | foto campo, diagrama, manual PDF | specialized **empeora** manual (14.7 vs 15.0) |
 
 **Veredictos:**
-- Default model: **Sonnet** (equivalente a Opus, 5× más barato)
+- Default model: **Sonnet** (quality-equivalent in this benchmark and lower cost)
 - Foto: prompt **specialized** (`FieldPhotoPrompt`) → identificación liviana, no S0-S18
 - Manual: prompt **monolithic** (`BatchChunkingPrompt::SYSTEM_BLOCKS`) — specialized recortado es peor
 - Opus: solo `force_opus` en escaneados densos (heurística `text_layer < 100 && image_ratio > 0.7`)
@@ -101,7 +100,7 @@ flowchart TB
 
 ### 3.1 Manual web/chat corto sync; manual largo Batch async automático
 
-**Context:** El path anterior (`SingleFileChunkingService` sync) llamaba Opus de forma bloqueante en la request. ~$60/técnico/mes.
+**Context:** El path anterior (`SingleFileChunkingService` sync) llamaba Opus de forma bloqueante en la request y mezclaba trabajo largo con latencia interactiva.
 
 **Decision:** PDF/Office corto adjunto desde web/chat pasa por `SingleFileChunkingService` sync cost-v2 (Messages API). PDF largo adjunto desde web/chat se enruta automáticamente a `SubmitManualBatchJob` → `ManualBatchIngestionService` → `IngestManualBatchResultsJob` en `bulk_ingestion`; el usuario no selecciona páginas manualmente. Manuales de carga inicial/backoffice siguen usando `/bulk_uploads` → Anthropic Batch API (Sonnet, ~50% off).
 
@@ -114,12 +113,15 @@ flowchart TB
 
 ### 3.2 Foto Sonnet + FieldPhotoPrompt; Haiku gate; Opus `force_opus` only
 
-**Context:** `FileMultimodalRouter` enviaba toda imagen a Opus. Benchmark: Sonnet score 16.7 vs Opus 16.7 en fotos — empate, 5× diferencia de precio.
+**Context:** `FileMultimodalRouter` enviaba toda imagen a Opus. El benchmark dio
+el mismo score (16.7) a Sonnet y Opus para fotos, por lo que Opus no se justifica
+como ruta por defecto.
 
 **Decision:** `:image → MODEL_TEXT` (Sonnet). `FieldPhotoDensityGate` corre una heurística determinística por tamaño para escaneados densos. Opus solo cuando gate retorna `:opus`. El gate emite un evento `field_photo_gate` con `model`, `route`, `correlation_id` (threaded desde el caller — web: `SingleFileChunkingService#correlation_id`; bulk: `asset.sha256`), y desde O5-A también `white_ratio` + `luma_mean` (telemetría de contenido; routing sin cambio). Ver [METRICS.md — Image telemetry](METRICS.md#image-telemetry-event-schemas-o1) para el schema completo y join chains.
 
 **Consequences:**
-- Costo foto: ~$0.009/foto → ~$1.86/mes (200 fotos) vs ~$8/mes anterior.
+- El paquete actual estima 200 fotos en ~$3.40 con mezcla 80% Sonnet / 20% Opus;
+  sigue pendiente conciliación con una cohorte diversa de producción.
 - `FieldPhotoResultsParser` produce 1 chunk liviano (ingestion_path
   `field_photo_v1`) en vez de S0-S18. El chunk conserva evidencia técnica
   explícita, pero no infiere funciones desde siglas o símbolos.
@@ -167,9 +169,10 @@ payload de retrieval ya no es fijo. `RagRetrievalProfile` usa 3 resultados para
 consultas documentales enfocadas, 5 para intención de detener/falla/reparación,
 10 para fotos, 8 sin pins y 15 para listas exhaustivas.
 
-El benchmark RAG del 2026-06-09 redujo el costo proyectado de consultas de
-**$14.00 a $6.99 por 1.000** (-50.1%) sin aceptar reranking que omitiera pruebas.
-Ver [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md).
+El benchmark RAG del 2026-06-09 validó la configuración de calidad. La
+reconciliación posterior fija el costo esperado actual en $6.14 por 1,000
+consultas; el benchmark conserva valor histórico, no financiero. Ver
+[RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md).
 
 ### 3.5 SHA dedup antes de parse
 
@@ -194,39 +197,36 @@ identificadores sin leyenda, sus funciones permanecen `DATA_NOT_AVAILABLE`.
 
 ---
 
-## 4. Matriz costo unitario
+## 4. Pricing rates
 
-Pricing de `BedrockQuery::BEDROCK_PRICING` ($/1K tokens):
+Money is derived from actual tokens with the versioned table in
+`BedrockQuery::BEDROCK_PRICING`; do not estimate calls from fixed token counts.
 
-| Recurso | Modelo | API | Input $/1K | Output $/1K | ~tokens/call | ~$/call |
-|---------|--------|-----|-----------|------------|-------------|---------|
-| Foto campo | Sonnet 4.6 direct | Sync | $0.003 | $0.015 | ~2.000 in / ~300 out | ~$0.0105 |
-| Pág. manual web/chat | Sonnet 4.6 direct | Sync | $0.003 | $0.015 | ~3.000 in / ~500 out | ~$0.0165 |
-| Pág. manual web/chat Opus | Opus 4.8 direct | Sync | ~$0.005 | ~$0.025 | ~3.000 in / ~500 out | ~$0.028 |
-| Pág. manual | Sonnet 4.6 batch | Batch | ~$0.0015 | ~$0.0075 | ~3.000 in / ~500 out | ~$0.008 |
-| Pág. manual Opus | Opus 4.8 batch | Batch | ~$0.0025 | ~$0.0125 | ~3.000 in / ~500 out | ~$0.014 |
-| Haiku filter | Haiku 4.5 direct | Sync | $0.001 | $0.005 | ~1.000 in / ~10 out | ~$0.00105 |
-| Query RAG | Haiku 4.5 via Bedrock | `retrieve_and_generate` | ~$0.001 | ~$0.005 | benchmark mixto | **~$0.00699** |
+| Model route | Input / 1K | Output / 1K |
+|---|---:|---:|
+| Haiku global / direct | $0.001 | $0.005 |
+| Sonnet direct | $0.003 | $0.015 |
+| Sonnet Batch | $0.0015 | $0.0075 |
+| Opus direct | $0.005 | $0.025 |
+| Opus Batch | $0.0025 | $0.0125 |
+| Titan Text Embeddings V2 | $0.00002 | — |
+
+Cache reads/writes use the model-specific rates in code. Provider invoice and
+model-invocation logs override application estimates.
 
 ---
 
-## 5. Proyección mensual — 1 técnico
+## 5. Package cost boundary
 
-Volumen: **1.000 consultas**, **200 fotos**, **5 manuales planificados × 10 pág vía `/bulk_uploads`** (PageRelevanceFilter ~75% kept → 38 págs reales)
+| Línea | Frecuencia | Costo vigente |
+|---|---|---:|
+| 1,000 consultas RAG | mensual | $6.14 esperado |
+| 200 fotos de campo | mensual | ~$3.40 estimado |
+| **COGS recurrente** | mensual | **~$9.54 esperado / ~$13.27 conservador** |
+| Manual de 200 páginas | onboarding único | **$5.32 reconciliado** |
 
-| Línea | Stack | ~$/mes |
-|-------|-------|--------|
-| Consultas RAG | Haiku `retrieve_and_generate` (benchmark 2026-06-09) | **~$6.99** |
-| Haiku page filter | Haiku 4.5 batch (38 págs) | ~$0.03 |
-| Fotos campo | Sonnet 4.6 direct sync | ~$2.10 |
-| Manuales planificados | Sonnet 4.6 batch per-page vía `/bulk_uploads` | ~$0.30 |
-| **Total v2** | | **~$9.42** |
-
-Si esos mismos manuales largos se suben desde chat, usan Batch automático: costo de parse equivalente al path batch. La diferencia UX es latencia hasta `indexed`; backoffice debe seguir usando `/bulk_uploads` para cargas masivas y trazabilidad de lote.
-
-**HOY (pre-v2):** Fotos → Opus sync (~$40), Manuales → ningún parse web batch → **~$60/técnico/mes estimado**.
-
-Ahorro: **~87%** en costo de ingesta.
+No sumar el manual a cada mes. Para sensibilidad de routing fotográfico,
+pricing floors y límites contractuales, usar el modelo SaaS canónico.
 
 ---
 
@@ -247,7 +247,7 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 - Tabla `FieldPhotoIdentification` (AR para structured photo results)
 - Nova multimodal sidecar dedicado para fotos
 - Path diagrama topológico standalone (components/connections separados del manual)
-- Batch API para fotos (innecesario: sync foto ~$0.009/foto, latencia < 5s)
+- Batch API para fotos (el path actual prioriza disponibilidad sync)
 - Migración `kb_documents.content_sha256` (dedup vía `BulkUploadAsset` es suficiente hoy)
 
 ---
@@ -273,7 +273,7 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 
 | Área | Pregunta | Métrica |
 |------|----------|---------|
-| Costo real | ¿Footer Haiku+Sonnet batch ≈ $7-10/técnico/mes? | `bedrock_queries` rollup 7d |
+| Costo real | ¿COGS recurrente converge a ~$9.54 esperado / ~$13.27 conservador? | invoice + `bedrock_queries` rollup |
 | Dedup hit rate | ¿Cuántos uploads skip parse? | log `ContentDedupService hit` |
 | force_opus rate | ¿Opus <15% páginas manual? | count `force_opus` / total pages |
 | Chat manual latency UX | ¿Manual grande sync entrega `indexed` en una ventana aceptable? | time upload→indexed Turbo event |
@@ -298,7 +298,7 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 
 | imagen | bytes | dims | gate_route | tipo visual | problema |
 |---|---|---|---|---|---|
-| 33.png | 2.7MB | 1596×1192 | **opus** | tablero eléctrico real (cableado) | Opus por peso, no por densidad → 5× coste innecesario |
+| 33.png | 2.7MB | 1596×1192 | **opus** | tablero eléctrico real (cableado) | Opus por peso, no por densidad → ruta cara innecesaria |
 | pagina_16.png | 1.4MB | 1414×1996 | **sonnet** | esquema hidráulico técnico | justo bajo 1.5MB → Sonnet, pero necesita fidelidad de esquema |
 
 El gate bytes-only (≥1.5MB → Opus) no distingue contenido: un tablero fotográfico pesado va a Opus igual que un diagrama técnico denso. Y un esquema técnico liviano (<1.5MB) va a Sonnet aunque requeriría Opus para preservar líneas y anotaciones finas.
@@ -312,7 +312,8 @@ El gate bytes-only (≥1.5MB → Opus) no distingue contenido: un tablero fotogr
 ## Riesgos documentados
 
 - **Bulk ZIP path** migrado a cost-v2 (2026-05-22): `BulkCostV2RequestBuilder` aplica el mismo routing que el chat web — fotos Sonnet + `FieldPhotoDensityGate`, PDFs → `PageRelevanceFilter.filter_pages` (Haiku `call_batch` por ventanas para multipágina, per-page para 1p), Office→PDF vía `OfficeToPdfConverter`.
-- **Filtro unificado (2026-05-22):** `PageRelevanceFilter.filter_pages` reemplaza la lógica triplicada `office_origin && pages.size > 1`. Todos los PDFs nativos ≥2p ahora usan Haiku `call_batch` (igual que PPT/Office). Ahorro ~$0.08–0.10/doc con portada rasterizada; costo filtro ~$0.004/doc.
+- **Filtro unificado (2026-05-22):** `PageRelevanceFilter.filter_pages` reemplaza la lógica triplicada `office_origin && pages.size > 1`. Todos los PDFs nativos ≥2p ahora usan Haiku `call_batch` (igual que PPT/Office).
 - **Windowing del filtro (2026-06-05):** `call_batch` divide por páginas+bytes para evitar truncamiento y payloads >32 MB; si una ventana falla, solo esa ventana cae a keep-all.
-- Manual muy escaneado puede subir costo Opus: un manual de 50 páginas con 30 páginas escaneadas → 30 × $0.014 ≈ $0.42 en ese manual solo. Monitorear `force_opus` count.
+- Manual muy escaneado puede subir costo Opus. Monitorear `force_opus` y derivar
+  costo desde tokens reales; no usar unitarios fijos por página.
 - SHA dedup sin `kb_documents.content_sha256` indexed puede ser O(n) si hay muchos `BulkUploadAsset.complete`. Indexar en Stage 1 tenancy migration.

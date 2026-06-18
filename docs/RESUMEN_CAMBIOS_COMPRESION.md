@@ -1,5 +1,9 @@
 # Resumen de Cambios - Compresión de Imágenes y Configuración de Modelos
 
+> **Documento histórico.** Las comparaciones de costo aquí registran el
+> experimento original y no son pricing vigente. Fuente financiera actual:
+> [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
+
 ## Cambios Implementados
 
 ### 1. ✅ Service Object: `ImageCompressionService`

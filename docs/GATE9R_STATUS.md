@@ -19,12 +19,10 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 ## Branch and merge policy
 
 - Current working branch: `main`.
-- `codex/o4b-ingestion-noise-reduction` was merged locally by `f904c6e` after
-  explicit human authorization and must remain until item 32 is closed.
-- Do not push or delete the temporary branch without explicit authorization.
-- Defer the planned paid application E2E until the general plan's remaining
-  offline work is complete. It still requires an explicit cost cap and human
-  authorization in the same conversation.
+- `codex/o4b-ingestion-noise-reduction` was merged locally by `f904c6e` and is
+  retained for audit. Do not push or delete it without explicit authorization.
+- Any future paid application E2E is a separate optional validation. It requires
+  an explicit cost cap and human authorization in the same conversation.
 
 ## Current pointer
 
@@ -100,36 +98,9 @@ PDF.
 - `page_relevance_filter_test.rb`: 48 runs, 225 assertions, 0 failures, 0 errors.
 - No paid API or network call was executed during this preflight.
 
-## Cost-doc refresh — 2026-06-18
-
-Offline only ($0, no paid API or network call).
-
-- Ran `Gate9CostMatrix#contractual_max` (commit `ef71e81`, pricing version
-  2026-06-12). Deterministic ceiling, re-derived by hand from `ContractualLimits`
-  and matched the matrix exactly:
-  - 1,000 queries: **$424.00**
-  - 200 photos: **$3,224.00** (dominant — one photo can route Opus direct over 1M window; E3a per-photo cap collapses it)
-  - 200-page manual: **$2,712.18**
-  - Full package ceiling: **$6,360.18 / month**.
-- Propagated the observed manual cost (USD 5.4434, batch
-  `msgbatch_017UYaG9fXBGkovuE6ENmaRv`, 168 kept pages, unreconciled) and the
-  contractual ceiling into the three living cost docs:
-  - `docs/SAAS_COST_MODEL_2026-06-12.md` — UPDATE 2026-06-18 block: recalculated
-    package (**$16.55 expected / $18.72–19.32 reserve**), ceiling table, pricing
-    floor ($38.64 / $48.30 / $64.40).
-  - `docs/GATE9_FINAL_MANUAL_AUDIT_2026-06-17.md` — observed $5.4434 row beside
-    the $9.0547 projection.
-  - `docs/INGESTION_COST_V2.md` — stale-figures banner pointing to the SaaS model.
-- Dated historical snapshots (GATE9_V1, RAG_CERTIFICATION, benchmarks) left
-  untouched — they are records, not living estimates.
-- Limitation LIFTED 2026-06-18: the $5.4434 manual cost is now reconciled
-  against the Anthropic invoice (real $5.32, harness +2.3% conservative). See
-  the reconciliation section below.
-
 ## Anthropic billed-cost reconciliation — 2026-06-18 (COMPLETE)
 
-Lifts the "reconciliation pending" limitation recorded in the preflight and
-cost-doc sections above. Source: Anthropic Console cost export
+Source: Anthropic Console cost export
 `claude_api_cost_2026_06_01_to_2026_06_18.csv` (workspace `Default`, key
 `danebo-claude-key`), cross-checked against newly enabled Bedrock
 model-invocation logging.
@@ -151,8 +122,7 @@ model-invocation logging.
   `Converse` records are now the query ground truth (textDataDeliveryEnabled).
 - RAG query estimator (`token_source: "estimated"`): measured **−3.8% on cost**
   across 20 real queries (output exact ±1 token = `stop_sequence`; input −1–3%).
-  The legacy **29.7% underestimation** figure in `CLAUDE.md` / `BedrockQuery`
-  comments is STALE — supersede with **~4%**. Outlier: hybrid
+  The larger historical V1 gap is not the current average. Outlier: hybrid
   "compare-with-schematic" queries can undercount input ~58% because the
   estimator counts only cited chunks, not all retrieved chunks fed to
   `$search_results$`.
@@ -170,9 +140,24 @@ model-invocation logging.
 - Still unvalidated against invoice: field-photo parse (estimate only); blocked
   on n≥50 real production photos (see O1′ / O5-B below).
 
-`ANTHROPIC_API_KEY` in `.env` is a regular key (`sk-ant-api03-`); the org
-`usage_report` / `cost_report` endpoints require an admin key (`sk-ant-admin-`).
-The Console CSV export is the reconciliation source until an admin key exists.
+Canonical package calculations and pricing floors live only in
+`docs/SAAS_COST_MODEL_2026-06-12.md`.
+
+## Documentation consolidation — 2026-06-18
+
+- `SAAS_COST_MODEL_2026-06-12.md` is the only canonical financial model:
+  $9.54 expected / $13.27 conservative recurring COGS and $5.32 one-time
+  manual onboarding.
+- Removed superseded monthly totals that incorrectly included onboarding,
+  unreconciled manual projections and fixed per-call token assumptions from
+  living docs.
+- `INGESTION_COST_V2.md` now documents routing plus current package boundaries;
+  `METRICS.md` records billing authority and the current ~3.8% average query
+  estimator gap.
+- Historical benchmarks remain for audit, carry an explicit historical banner
+  and are not current pricing sources.
+- `Gate9CostMatrix` remains reproducible for historical cohorts and technical
+  ceilings, but its script labels those outputs as non-current COGS.
 
 ## Closed — do not repeat
 
@@ -201,13 +186,11 @@ Paste this:
 
 ```text
 Work in /Users/lahirisan/smart_deal. Read AGENTS.md and
-docs/GATE9R_STATUS.md only. Check git status. Tell me the current item,
-blocker, next single action and whether it costs money. Do not read all docs,
-reopen closed work, execute paid APIs or resubmit batches without approval.
-Confirm that you are on main and that codex/o4b-ingestion-noise-reduction still
-exists. Do not create or switch branches, rebase, merge, push or delete the
-temporary branch. Obtain an explicit cost cap and human authorization before
-the planned paid E2E, which remains deferred until the general plan's offline
-work is complete. When you finish, update docs/GATE9R_STATUS.md in the same
-commit with only the new status, evidence and next action.
+docs/GATE9R_STATUS.md only. Check git status. Gate 9R is CLOSED_PROVISIONAL;
+do not reopen it, require synthetic traffic or resubmit the retained PDF.
+Canonical costs are in docs/SAAS_COST_MODEL_2026-06-12.md: recurring COGS
+$9.54 expected / $13.27 conservative; manual onboarding $5.32 one-time.
+Do not execute paid APIs, push, switch branches or delete the retained branch
+without explicit authorization. Update the checkpoint only for genuinely new
+evidence or a user-authorized state change.
 ```

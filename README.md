@@ -15,7 +15,7 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 | **RAG chat** | Bedrock Knowledge Base, hybrid orchestrator (optional Text-to-SQL) |
 | **Retrieval fidelity** | Pins are authoritative, explicit source narrowing, adaptive retrieval budgets, literal-label safety for photos, and no global fallback after a pinned miss. Quality/cost baseline: [RAG benchmark 2026-06-09](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
 | **Chat uploads** | Direct Claude chunking via `CustomChunkingPipeline` — images, text, PDF, **Word, Excel, PowerPoint** (via LibreOffice); see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
-| **Cost-optimized parse** | Per-page 4 k cap + 16 k retry, windowed Haiku classification for multi-page PDFs (covers, index, dedications dropped before parse), locale-aware summaries. Sonnet default for images (↓5×), sync Messages for chat manuals, Anthropic Batch per-page for `/bulk_uploads` manuals (~50% off), SHA dedup — target ~$7-10/técnico/mes for planned bulk loads. **Routing matrix:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md). Full ADR: [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
+| **Cost-optimized parse** | Per-page 8k cap with bounded 16k/32k retry, windowed Haiku filtering, Sonnet-default photo routing, automatic Batch for long manuals, and SHA dedup. Reconciled variable COGS: **~$9.54 expected / ~$13.27 conservative monthly** for 1,000 queries + 200 photos; a 200-page manual is **$5.32 one-time onboarding**. **Canonical model:** [SAAS_COST_MODEL_2026-06-12.md](docs/SAAS_COST_MODEL_2026-06-12.md). **Routing:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md) |
 | **Bulk ZIP** | `/bulk_uploads` — Anthropic Message Batches, Turbo progress UI |
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
 | **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet, web_v1 vs legacy split), live chat footer |
@@ -41,8 +41,9 @@ Open http://localhost:3000. `bin/dev` runs Rails + Tailwind (Foreman / `Procfile
 | Topic | Document |
 |-------|----------|
 | **Index (start here for depth)** | [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md) |
-| **RAG quality and cost benchmark** (method, 16-query matrix, gates, known gaps) | [docs/RAG_QUALITY_BENCHMARK_2026-06-09.md](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
+| **Historical RAG quality/cost benchmark** (method, 16-query matrix, gates) | [docs/RAG_QUALITY_BENCHMARK_2026-06-09.md](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
 | **Ingestion routing** (file type, page filter, LLM matrix) | [docs/INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md) |
+| Canonical reconciled SaaS COGS and pricing floors | [docs/SAAS_COST_MODEL_2026-06-12.md](docs/SAAS_COST_MODEL_2026-06-12.md) |
 | Web custom chunking (flags, pipeline) | [docs/WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
 | Ingestion cost v2 ADR | [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
 | Bulk ZIP ingestion | [docs/BULK_INGESTION.md](docs/BULK_INGESTION.md) |

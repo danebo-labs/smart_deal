@@ -1,5 +1,9 @@
 # Gate 9R Final Manual Run — FASE I Audit
 
+> **Historical execution record.** The run is complete and must not be
+> resubmitted. Current financial truth is the reconciled $5.32 one-time
+> onboarding cost in [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
+
 ## Post-audit remediation status
 
 The surgical review findings were fixed before any real PDF/API execution:
@@ -36,7 +40,7 @@ Related repo documents that form the evidence base and cost baseline:
 | File | Purpose |
 |------|---------|
 | `docs/GATE9_V1_2026-06-12.md` | Historical Gate 9R V1 run record (B.1 fail 2026-06-12, B.5.1 pass 2026-06-16, batch `msgbatch_01Eg3ipW6tqLPxeszNfuDTQ2`, cost $0.829595) |
-| `docs/SAAS_COST_MODEL_2026-06-12.md` | Measured cost baseline for 200pp manual batch path ($9.0547 expected from 24-page v3 cohort) |
+| `docs/SAAS_COST_MODEL_2026-06-12.md` | Canonical reconciled SaaS costs; manual onboarding $5.32 one-time |
 | `docs/INGESTION_COST_V2.md` | Full ADR + cost matrix for web ingestion pipeline |
 | `docs/INGESTION_ROUTING.md` | Routing reference for `CustomChunkingPipeline` |
 | `docs/project_o1_gate_phase.md` | O1 and O5 gate phase tracking |
@@ -155,31 +159,22 @@ Key test infrastructure:
 
 ---
 
-## 4. Cost Estimates for the Actual Run
+## 4. Reconciled Cost for the Actual Run
 
-From `docs/SAAS_COST_MODEL_2026-06-12.md` (measured 24-page v3 cohort):
+| Evidence | Pages | Cost | Use |
+|---|---:|---:|---|
+| **Anthropic invoice reconciliation** | 168 kept | **$5.32** | Authoritative one-time onboarding COGS |
+| Harness calculation | 168 kept | $5.4434 | Conservative diagnostic (+2.3%) |
 
-> **Reconciled 2026-06-18:** real Anthropic invoice for this batch = **$5.32**
-> (full onboarding incl. filter + retries). Harness $5.4434 was +2.3%,
-> conservative. This is a **one-time onboarding** cost, not monthly. See
-> `docs/GATE9R_STATUS.md` § reconciliation.
+Invoice breakdown: Sonnet Batch $4.51 plus Haiku page filtering and two bounded
+Sonnet-direct retries totaling $0.81. The run had 0 failed pages, 0 degraded
+pages and 0 Opus pages.
 
-| Scenario | Pages | Est. Cost |
-|----------|-------|-----------|
-| **Reconciled invoice (one-time, 2026-06-18)** | 168 kept | **$5.32** |
-| Observed L2 batch run (harness) | 168 kept | $5.4434 |
-| Full 200pp batch (projection) | 200 | $9.0547 |
-| Proportional 136pp (projection) | 136 | ~$6.16 |
-| Contractual max (200pp full-Opus no-cache) | 200 | $2712.18 |
+The prior 24-page-cohort extrapolation is retired and must not be used for
+current pricing. The technical full-Opus ceiling remains a risk bound
+in the canonical SaaS model, not an expected onboarding cost.
 
-The observed run (retained batch `msgbatch_017UYaG9fXBGkovuE6ENmaRv`, 168 kept
-pages, 0 failed, 0 Opus pages) is harness-computed and **not yet reconciled**
-against the Anthropic invoice — see `docs/GATE9R_STATUS.md`. The $9.0547 figure
-is the conservative scaling projection from the 24-page cohort.
-
-Cost components for the 200pp projection: Sonnet parse $4.8589 + Opus parse $3.7558 + PageRelevanceFilter $0.4316 + embeddings $0.0083.
-
-**Cost gate thresholds:** observed ≤ $10, no-cache ≤ $12.
+**Cost gate result:** PASS — reconciled onboarding $5.32 ≤ $10 observed gate.
 
 ---
 
@@ -215,11 +210,8 @@ The following production services are read-only from the harness:
 
 ---
 
-## 7. Next Steps
+## 7. Final State
 
-| Step | Command | Gate |
-|------|---------|------|
-| Commit FASE I | `git add app/services/gate9_final_manual.rb script/gate9_final_manual.rb test/services/gate9_final_manual_test.rb && git commit` | HALT-1 |
-| FASE II preflight | `GATE9_FINAL_MANUAL=/abs/manual-real-200pp.pdf BEDROCK_RERANKER_ENABLED=false QUERY_ROUTING_ENABLED=false bin/rails runner script/gate9_final_manual.rb` | $0 |
-| FASE III paid run | `GATE9_FINAL_EXECUTE=true GATE9_FINAL_MANUAL=/abs/manual-real-200pp.pdf GATE9_FINAL_BUDGET_USD=<MAX_AUTORIZADO> GATE9_FINAL_MAX_RETRY_PAGES=1 ANTHROPIC_API_KEY=<ws_key> KNOWLEDGE_BASE_S3_BUCKET=<isolated-input-bucket> BEDROCK_RERANKER_ENABLED=false QUERY_ROUTING_ENABLED=false bin/rails runner script/gate9_final_manual.rb` | paid |
-| FASE IV verdict | `GATE9_FINAL_VERDICT=pass bin/rails runner script/gate9_final_manual.rb` | $0 |
+The retained run is complete and reconciled. Do not execute the historical
+commands again. Any future application E2E is a separate, explicitly authorized
+validation and must use a new cost cap; it is not a continuation of this run.

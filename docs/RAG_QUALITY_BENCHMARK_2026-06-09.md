@@ -1,5 +1,9 @@
 # RAG quality and cost benchmark — 2026-06-09
 
+> **Historical benchmark.** Cost figures below reproduce this dated cohort and
+> are not current package pricing. Use
+> [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) for reconciled COGS.
+
 **Status:** Reference benchmark for retrieval, documentary fidelity, field-photo
 safety, and query cost.
 

@@ -15,7 +15,9 @@ report = Gate9CostMatrix.new.report
 
 fmt = ->(value) { format("$%.4f", value) }
 
-puts "Gate 9R cost matrix — pricing version #{report[:pricing_version]}"
+puts "Gate 9R historical/technical matrix — NOT current package COGS"
+puts "Canonical current model: docs/SAAS_COST_MODEL_2026-06-12.md"
+puts "Pricing version #{report[:pricing_version]}"
 puts "=" * 72
 
 manual = report[:manual]
@@ -43,7 +45,7 @@ puts "    Batch firsts / direct retry #{fmt.call(manual[:splits][:batch_first_at
 puts "    no-cache penalty (delta)    #{fmt.call(manual[:splits][:cache_penalty_no_cache_delta])}"
 
 queries = report[:queries]
-puts "\nQUERIES — certification cohort (n=#{queries[:n_queries]} queries, #{queries[:n_model_calls]} model calls; basis: #{queries[:basis]})"
+puts "\nQUERIES — HISTORICAL certification cohort (n=#{queries[:n_queries]} queries, #{queries[:n_model_calls]} model calls; basis: #{queries[:basis]})"
 puts "    expected / 1000             #{fmt.call(queries[:expected_per_1000])}"
 puts "    conservative (100% gen)     #{fmt.call(queries[:conservative_per_1000])}"
 recon = queries[:ledger_reconciliation]
@@ -52,7 +54,7 @@ puts "    V1 ledger reconciliation    app #{fmt.call(recon[:app_ledger_cost])} v
 puts "    rule: #{recon[:rule]}"
 
 photos = report[:photos]
-puts "\nPHOTOS — provisional (n=#{photos[:n]}; #{photos[:note]})"
+puts "\nPHOTOS — HISTORICAL provisional sample (n=#{photos[:n]}; #{photos[:note]})"
 puts "    expected / 200              #{fmt.call(photos[:expected_per_200])}"
 puts "    conservative / 200          #{fmt.call(photos[:conservative_per_200])}"
 
@@ -63,3 +65,5 @@ puts "    photos / 200                #{format('$%.2f', cmax[:photos_per_200])}"
 puts "    manual 200pp                #{format('$%.2f', cmax[:manual_200pp])}"
 puts "\nNOTE: p50/p95 describe observed usage; the contractual ceiling above is"
 puts "a finite worst-case from technical limits, not a price."
+puts "Current COGS: $9.54 expected / $13.27 conservative recurring;"
+puts "manual onboarding: $5.32 one-time."

@@ -40,6 +40,7 @@ For Gate 9R, read `GATE9R_STATUS.md` first and do not load every dated report.
 | Topic | Doc |
 |-------|-----|
 | Token/cost metrics, Solid Queue lanes | [METRICS.md](METRICS.md) |
+| Canonical reconciled SaaS COGS and pricing floors | [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) |
 | Image compression | [IMAGE_COMPRESSION.md](IMAGE_COMPRESSION.md) |
 | Multi-tenant roadmap | [MULTI_TENANT_ARCHITECTURE.md](MULTI_TENANT_ARCHITECTURE.md) |
 | Performance constraints | [PERFORMANCE_CONSTRAINTS.md](PERFORMANCE_CONSTRAINTS.md) |
@@ -57,11 +58,11 @@ should only be opened when investigating the specific historical run:
 - `RAG_100_PERCENT_FIDELITY_PLAN_2026-06-10.md`
 - `RAG_CERTIFICATION_2026-06-11.md`
 - `RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md`
-- `SAAS_COST_MODEL_2026-06-12.md`
 - `RESUMEN_CAMBIOS_COMPRESION.md`
 
-Current replacements are `GATE9R_STATUS.md`, `INGESTION_COST_V2.md`,
-`INGESTION_ROUTING.md`, `METRICS.md` and the code/tests themselves.
+Current sources are `GATE9R_STATUS.md`, `SAAS_COST_MODEL_2026-06-12.md`,
+`INGESTION_COST_V2.md`, `INGESTION_ROUTING.md`, `METRICS.md` and the
+code/tests themselves.
 
 ## Priorities (current build)
 

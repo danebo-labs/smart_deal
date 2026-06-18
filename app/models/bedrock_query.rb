@@ -13,10 +13,10 @@ class BedrockQuery < ApplicationRecord
 
   scope :estimated_tokens, -> { where(token_source: "estimated") }
 
-  # B.1 paso 13: rows with token_source "estimated" reconstruct input from
-  # observable citations (Bedrock R&G exposes no usage block). V1 measured a
-  # 29.7% query-cost underestimation vs CloudWatch on these rows — #cost is
-  # operational diagnosis there, never invoice truth. NULL = legacy/unknown.
+  # Rows with token_source "estimated" reconstruct input from observable
+  # citations (Bedrock R&G exposes no usage block). Current reconciliation
+  # measured ~3.8% average cost undercount, with larger hybrid-query outliers.
+  # #cost is operational diagnosis there, never invoice truth. NULL = legacy.
   def estimated_tokens?
     token_source == "estimated"
   end

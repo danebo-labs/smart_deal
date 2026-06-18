@@ -6,6 +6,7 @@ status: CERTIFICADO 2026-06-11 — 3/3 corridas PASS, cohorte reproducible, cost
 implementation_blocked: false
 paid_calls_blocked: n/a — plan ejecutado; evidencia en docs/RAG_CERTIFICATION_2026-06-11.md
 resultado: 100% de fidelidad documental para el corpus y matriz versionados (no es certificacion universal de seguridad)
+financial_status: historical run metrics only; current COGS lives in docs/SAAS_COST_MODEL_2026-06-12.md
 ---
 
 # Plan de cierre del benchmark RAG al 100% de fidelidad documental

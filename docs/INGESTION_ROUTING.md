@@ -140,7 +140,8 @@ Each window uses `max(256, 64 + pages_in_window * 32)` output tokens. If the res
 
 Tracking: `page_filter_batch: <filename> <window_min>..<window_max>/<total_pages>` in `bedrock_queries`. `PageRelevanceFilter` also logs `windows_count`, `window_ranges`, `window_bytes`, and `fallback_windows`.
 
-Typical yield: ~**75%** of pages kept on 10-page manuals (see [INGESTION_COST_V2.md](INGESTION_COST_V2.md) cost projection).
+Observed retained 200-page manual yield: **168/200 pages kept (84%)**. Yield is
+content-dependent; derive cost from actual filtered pages, not a fixed ratio.
 
 ---
 

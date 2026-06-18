@@ -1,5 +1,9 @@
 # Gate 9R — O1′ / O5 phase tracker
 
+> **Historical Gate 9R track.** Gate 9R is closed provisionally. Cost estimates
+> in this file are experimental history, not current COGS; use
+> [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
+
 **Última actualización:** 2026-06-17
 **Branch de referencia:** `codex/o4b-ingestion-noise-reduction`
 **Plan maestro:** `.cursor/plans/rag_precision_cost_plan_578aea0c.plan.md`

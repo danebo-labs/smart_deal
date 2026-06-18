@@ -1,5 +1,8 @@
 # RAG benchmark retrieval evidence — 2026-06-10
 
+> **Historical retrieval evidence.** This file is not a current pricing source;
+> use [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
+
 **Mode:** `retrieval_preflight`  
 **JSON SHA-256:** `118147398913a2646a4451b5315429d8cf6fcb032b7ae0c0899665c0ef28ec38`  
 **Code fingerprint:** `6d90af032113cf2ff53ce4ddb9fbd510a01c34a0ef880e75670e8cc8af8c7954`  

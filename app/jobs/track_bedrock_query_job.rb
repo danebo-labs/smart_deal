@@ -36,10 +36,9 @@ class TrackBedrockQueryJob < ApplicationJob
               route: nil, attempt: nil, max_tokens: nil,
               stop_reason: nil, correlation_id: nil,
               source: "query", model_for_counting: :haiku)
-    # B.1 paso 13: rows whose tokens come from the provider usage payload are
-    # exact; rows counted from reconstructed text are estimates (V1 measured a
-    # 29.7% query-cost underestimation) and must be labeled as such wherever
-    # cost is reported commercially.
+    # Provider usage rows are exact. Reconstructed rows are estimates; current
+    # reconciliation measured ~3.8% average query-cost undercount, with larger
+    # hybrid-query outliers. Commercial reporting must preserve this label.
     token_source = input_tokens && output_tokens ? "provider_usage" : "estimated"
 
     if input_tokens.nil? || output_tokens.nil?

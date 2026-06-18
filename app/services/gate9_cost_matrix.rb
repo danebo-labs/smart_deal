@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
-# Gate 9R cost matrix (plan B3-script — blocking gate).
+# Gate 9R historical/technical matrix (plan B3-script).
+# Current reconciled commercial COGS lives in docs/SAAS_COST_MODEL_2026-06-12.md.
+# Keep this class for cohort reproducibility and deterministic contractual limits.
 #
 # Rebuilds, WITHOUT any external call, three pricing scenarios from telemetry
 # snapshots plus finite technical limits:
@@ -110,10 +112,10 @@ class Gate9CostMatrix
 
   # ── Queries (certified 16×3 benchmark tokens, Haiku global) ────────────────
   #
-  # B.1 paso 13: the commercial basis is CloudWatch tokens. App-side query rows
-  # reconstruct input from observable citations (BedrockQuery token_source
-  # "estimated") and V1 measured a 29.7% cost underestimation on them — they are
-  # never used here except to publish the reconciliation gap itself.
+  # Historical certification scenario retained for reproducibility and
+  # contractual-limit tests. Current commercial COGS comes from the reconciled
+  # SaaS cost model, not this 48-query cohort. Estimated app rows are never used
+  # here as invoice truth.
   def query_scenarios
     cert    = @data.fetch("query_certification")
     rates   = PRICING.fetch("haiku_global")

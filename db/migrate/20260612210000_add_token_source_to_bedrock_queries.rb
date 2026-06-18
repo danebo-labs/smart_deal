@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Gate 9R B.1 (paso 13): V1 showed the app ledger underestimated query cost by
-# 29.7% because Bedrock retrieve_and_generate exposes no usage block and input
+# Historical V1 measured 29.7% because Bedrock retrieve_and_generate exposes no usage block and input
 # tokens are reconstructed from observable citations only.
 #
 #   token_source = "provider_usage" — both token counts came from the provider's

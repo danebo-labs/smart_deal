@@ -10,6 +10,17 @@ Async token/cost tracking — Bedrock calls never wait on DB writes.
 
 Model usage is recorded **asynchronously** so Bedrock calls never wait on DB writes or dashboard broadcasts. `bedrock_queries` stores each event with a **`source`** plus **`input_tokens`**, **`output_tokens`**, **`latency_ms`**, and **Anthropic prompt-cache usage** (**`cache_read_tokens`**, **`cache_creation_tokens`**) when the invoke response includes them; **`TrackBedrockQueryJob`** persists those fields and **`SimpleMetricsService`** folds cache-adjusted cost into **`CostMetric`** rollups (Batch-priced rows exist on `BedrockQuery` for Anthropic Batch–style estimates).
 
+#### Billing accuracy and authority
+
+- `token_source: provider_usage` is exact for direct and normal batch-job parse.
+- `token_source: estimated` is operational attribution, not invoice truth. The
+  current reconciliation measured an average 3.8% query-cost undercount across
+  20 real queries; hybrid compare-with-schematic queries can be larger outliers.
+- Provider invoice/cost export and Bedrock invocation logs override local rows.
+- The reconciled package model is [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md):
+  ~$9.54 expected / ~$13.27 conservative recurring COGS and $5.32 one-time
+  manual onboarding.
+
 **Dashboard (tenant admin):** `/dashboard` shows **LLM consumption only** — cost today/month, chat query count, channel breakdown, calendar-month chart, KB documents, chat latency. **No** Aurora ACU, S3 infra, or AWS refresh in the UI. Scope and multi-tenant roadmap: [DASHBOARD.md](DASHBOARD.md).
 
 **Home footer (web):** daily rollups are split by **billing channel** via `LlmUsageChannel` (app/services/llm_usage_channel.rb). The classifier maps each `bedrock_queries` row to one of the channels below using `source` + `model_id` suffix (`-direct`, `-batch`, Bedrock profile prefix). Legacy `daily_tokens_haiku` / `daily_tokens_parse_opus` / `daily_tokens_parse_sonnet` columns are still written (set to the same values as before cost_v2) for backward compatibility with any cached dashboard queries until those views are fully migrated.

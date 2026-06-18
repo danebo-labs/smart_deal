@@ -1,7 +1,7 @@
 # Gate 9R — Current Status
 
 **Updated:** 2026-06-18
-**Status:** PREFLIGHT_COMPLETE_E2E_DEFERRED
+**Status:** CLOSED_PROVISIONAL
 **Purpose:** single checkpoint for continuing work without rereading historical plans.
 **Master plan:** `/Users/lahirisan/.cursor/plans/rag_precision_cost_plan_578aea0c.plan.md`
 
@@ -28,13 +28,13 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 ## Current pointer
 
-`Gate 9R → Block C → retained 200-page artifact verified offline; provisional closeout next; paid E2E deferred`
+`Gate 9R → CLOSED_PROVISIONAL; retained 200-page artifact verified offline; no further Gate 9R implementation required`
 
 Use stable plan IDs/names rather than bare item numbers: item 32 in the master
 plan's executable sequence is the paid 200-page post-optimization run, not the
 completed deterministic page-relevance guard.
 
-- Checkpoint: `PREFLIGHT_COMPLETE_E2E_DEFERRED`.
+- Checkpoint: `CLOSED_PROVISIONAL`.
 - Branch: `main`; retained source tip: `71f6239`.
 - Retained Batch: `msgbatch_017UYaG9fXBGkovuE6ENmaRv`.
 - Artifact: `tmp/gate9_final/4bbf9b13771e3daf9d774cca3784e3047b9b44a4e2278bcf0e4fc430be19f7f8/`.
@@ -77,12 +77,12 @@ completed deterministic page-relevance guard.
 
 ## Next action
 
-Complete the provisional Gate 9R closeout offline using the retained 200-page
-artifact. Do not resubmit the PDF: the supplied file has the same SHA-256 as the
-retained completed Batch. Preserve the real-production sample limitation and
-pending authoritative billing reconciliation in the final documentation. A new
-web/chat application E2E remains optional and requires a new cost cap and human
-authorization.
+None for Gate 9R. Do not reopen completed implementation or require synthetic
+traffic, 500 real queries or 50 real photos for this provisional closeout.
+Future production telemetry may upgrade provisional commercial estimates but is
+non-blocking. Any new web/chat application E2E is a separate optional validation
+and requires a new cost cap and human authorization. Do not resubmit the retained
+PDF.
 
 ## Final preflight evidence — 2026-06-18
 
@@ -102,7 +102,8 @@ authorization.
 ## Closed — do not repeat
 
 V1/B.1–B.5.1, O3′, E3a, E3b, O4a, O4b-A, O1′ instrumentation, O5-A and the
-final-manual harness implementation.
+final-manual harness implementation. Gate 9R is closed provisionally with the
+limitations recorded below.
 
 ## Blocked / not active
 
@@ -112,12 +113,12 @@ final-manual harness implementation.
 - E1 prompt compaction and E2 context reduction: explicitly deferred and
   non-blocking; combined estimated saving is only USD 0.25–0.60 per 1,000
   queries, before validation cost.
-- Master-plan item 32: paid 200-page post-optimization run deferred to final
-  validation with a new cost cap and human authorization.
+- Master-plan item 32: satisfied provisionally with the retained completed
+  200-page artifact and current-guard offline replay; no resubmission authorized.
 - Item 33 real-production thresholds remain unmet. Synthetic queries/photos may
   support offline quality validation but do not satisfy the statistical
-  production-evidence requirement; Gate 9R can instead close provisionally with
-  that limitation stated explicitly.
+  production-evidence requirement. This limitation is accepted for the
+  provisional closeout and does not keep Gate 9R open.
 
 ## Start a new AI conversation
 

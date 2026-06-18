@@ -412,6 +412,66 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
   end
 
+  test "pdf_mixed: page instructions use kept page count after filtering" do
+    FakePdfPage3 = Struct.new(:number, :binary, :model, :force_opus) unless defined?(FakePdfPage3)
+    pages = (1..4).map { |n| FakePdfPage3.new(n, "%PDF-p#{n}", BatchChunkingPrompt::MODEL_TEXT, false) }
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: pages)
+    end
+
+    orig_filter = PageRelevanceFilter.method(:filter_pages)
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) do |page, h|
+        h[page.number] = {
+          keep: [ 2, 3 ].include?(page.number),
+          reason: :test,
+          source: :stub,
+          force_opus: false
+        }
+      end
+    end
+
+    mutex = Mutex.new
+    captured_page_totals = []
+
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        text_blocks = Array(params.dig(:messages)&.find { |m| m[:role] == "user" }&.dig(:content))
+                        .select { |b| b.is_a?(Hash) && b[:type] == "text" }
+                        .map { |b| b[:text] }
+                        .join(" ")
+        page_number = text_blocks[/Page (\d+) of (\d+)/, 1].to_i
+        total_pages = text_blocks[/Page (\d+) of (\d+)/, 2].to_i
+        mutex.synchronize { captured_page_totals << [ page_number, total_pages ] }
+
+        content = [
+          OpenStruct.new(
+            type: "text",
+            text: {
+              "document_name" => DOC_NAME,
+              "aliases" => ALIASES,
+              "chunks" => [ { "text" => "# S#{page_number} content", "page" => page_number, "field_records" => [] } ]
+            }.to_json
+          )
+        ]
+        usage = OpenStruct.new(input_tokens: 100, output_tokens: 200,
+                               cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        OpenStruct.new(accumulated_message: OpenStruct.new(content: content, usage: usage, model: BatchChunkingPrompt::MODEL_TEXT))
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "kept-total.pdf").call
+
+    assert_equal [ [ 2, 2 ], [ 3, 2 ] ], captured_page_totals.sort
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
+
   # ─── Image summary + locale ──────────────────────────────────────────────────
 
   test "image mode: locale is forwarded as 'Summary language' text-block" do

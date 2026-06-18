@@ -34,6 +34,7 @@ class PageRelevanceFilter
 
   TOC_LINE_FRACTION = 0.30  # ≥30% of lines ending in a page number → ToC
   TOC_MIN_LINES     = 10
+  BOILERPLATE_MAX_CHARS = 600
 
   BOILERPLATE_PATTERN = /
     intended\s+audience | how\s+to\s+use\s+this | copyright | all\s+rights\s+reserved |
@@ -42,12 +43,62 @@ class PageRelevanceFilter
 
   TITLE_PATTERN = /manual|user|guide|guía|manual\s+de/i.freeze
 
+  # Safety/action signal: authorized/qualified personnel, worker coordination,
+  # shutdown/lockout/de-energization, or conditional restart after troubleshooting.
+  SAFETY_ACTION_SIGNAL_PATTERN = /
+    authoriz(?:e[sd]?|ation)?  | qualif(?:ie[sd]?|ication)?   | certif(?:ie[sd]?|ication)   |
+    personal\s+autorizado      | personal\s+calificado         |
+    coordinat(?:e[sd]?|ion)?   | two[\s\-]person               | multi[\s\-]person            |
+    at\s+least\s+two           | al\s+menos\s+dos              |
+    shut\s*down                | lock[\s\-]?out                | de[\s\-]?energi[sz]e?        |
+    isolat(?:e[sd]?|ion)       | aislamiento                   | bloqueo                      |
+    desenergiz                 | re[\s\-]?energi[sz]e?         | reanudar                     |
+    restart                    | troubleshoot                  |
+    after\s+(?:correc|resolv|troubleshoot)                     |
+    después\s+de\s+(?:corregir|solucionar|verificar)
+  /xi.freeze
+
+  # Directive/obligation/conditional language — must co-occur with SAFETY_ACTION_SIGNAL_PATTERN.
+  SAFETY_DIRECTIVE_PATTERN = /
+    \bmust\b | \bshall\b | \brequire(?:d|ments?)?\b | \bimmediate(?:ly)?\b |
+    \bonly\s+after\b | \bdo\s+not\b |
+    \bdebe\b | \bdeberá\b | \bdeberán\b | \bobligatorio\b | \brequisitos?\b |
+    \binmediat(?:o|a|amente)\b | \bsolo\s+después\b | \bno\s+debe\b
+  /xi.freeze
+
   HAIKU_SYSTEM = <<~PROMPT.strip.freeze
     You are a classifier for elevator technician manuals. Return ONLY valid JSON.
     Schema: {"keep":bool,"reason":"<10 words"}
     keep=true  → page has useful technical content (specs, diagrams, troubleshooting, procedures, wiring)
     keep=false → page is boilerplate (index, preface, copyright, blank, table of contents)
   PROMPT
+
+  # Shared PDF text extractor — first page only, safe (returns "" on error).
+  def self.extract_page_text(binary)
+    reader = PDF::Reader.new(StringIO.new(binary.to_s))
+    reader.pages.first&.text.to_s.strip
+  rescue StandardError
+    ""
+  end
+
+  # Returns true when a Haiku-dropped page contains BOTH a safety/action signal and
+  # directive language, after rejecting TOC-like and bounded boilerplate text.
+  def self.safety_action_guard?(text)
+    return false if text.blank?
+    return false if toc?(text)
+    return false if text.length < BOILERPLATE_MAX_CHARS && text.match?(BOILERPLATE_PATTERN)
+
+    text.match?(SAFETY_ACTION_SIGNAL_PATTERN) && text.match?(SAFETY_DIRECTIVE_PATTERN)
+  end
+
+  # Shared ToC detection. Accepts full page text; behavior is identical to the original instance method.
+  def self.toc?(text)
+    lines = text.lines
+    return false if lines.count < TOC_MIN_LINES
+
+    trailing = lines.count { |l| l.strip.match?(/\d+\s*$/) }
+    trailing.to_f / lines.count >= TOC_LINE_FRACTION
+  end
 
   # Unified routing: call_batch for multi-page docs, per-page filter for single-page.
   # pages must respond to #number and #binary.
@@ -174,7 +225,6 @@ class PageRelevanceFilter
   def call
     density = PageImageDensityAnalyzer.analyze(@page_binary)
     @text   = extract_text
-    @lines  = @text.lines
 
     heuristic_result = apply_heuristics(density)
     return heuristic_result if heuristic_result
@@ -197,10 +247,7 @@ class PageRelevanceFilter
   private
 
   def extract_text
-    reader = PDF::Reader.new(StringIO.new(@page_binary))
-    reader.pages.first&.text.to_s.strip
-  rescue StandardError
-    ""
+    self.class.extract_page_text(@page_binary)
   end
 
   def apply_heuristics(density)
@@ -221,7 +268,7 @@ class PageRelevanceFilter
     end
 
     # Boilerplate: check before blank so known phrases on short pages are classified correctly
-    if @text.length < 600 && @text.match?(BOILERPLATE_PATTERN)
+    if @text.length < BOILERPLATE_MAX_CHARS && @text.match?(BOILERPLATE_PATTERN)
       return { keep: false, reason: :boilerplate, source: :heuristic }
     end
 
@@ -245,10 +292,7 @@ class PageRelevanceFilter
   end
 
   def toc?
-    return false if @lines.count < TOC_MIN_LINES
-
-    trailing_digit_lines = @lines.count { |l| l.strip.match?(/\d+\s*$/) }
-    trailing_digit_lines.to_f / @lines.count >= TOC_LINE_FRACTION
+    self.class.toc?(@text)
   end
 
   def haiku_gate(density)
@@ -282,6 +326,8 @@ class PageRelevanceFilter
     reason = parsed["reason"].to_s.presence || (keep ? "haiku_keep" : "haiku_drop")
 
     track_haiku_usage(response, latency_ms)
+
+    return { keep: true, reason: :safety_action_guard, source: :haiku } if !keep && self.class.safety_action_guard?(@text)
 
     { keep: keep, reason: reason.to_sym, source: :haiku }
   rescue StandardError => e
@@ -448,6 +494,14 @@ class PageRelevanceFilter
         else
           keep   = true
           reason = :missing_in_response
+        end
+
+        if !keep
+          page_text = PageRelevanceFilter.extract_page_text(page.binary)
+          if PageRelevanceFilter.safety_action_guard?(page_text)
+            keep   = true
+            reason = :safety_action_guard
+          end
         end
 
         h[page.number] = {

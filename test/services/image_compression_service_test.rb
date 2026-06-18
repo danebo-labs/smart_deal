@@ -106,6 +106,105 @@ class ImageCompressionServiceTest < ActiveSupport::TestCase
     assert_equal 80,  event["height_after"]
   end
 
+  test "skip path emits resize_applied=false" do
+    img_base64 = create_test_image_base64(120, 80)
+    logged = capture_info_logs { ImageCompressionService.compress(img_base64, "image/jpeg") }
+    event  = JSON.parse(logged.find { |l| l.include?('"event":"image_compression"') })
+    assert_equal false, event["resize_applied"]
+  end
+
+  test "compress path emits resize_applied=true when output dims are smaller than input" do
+    # Stub both the skip guard and process_image so we isolate the resize_applied
+    # derivation logic in log_compression_event without needing run_vips to succeed.
+    # decoded_blob → 2000×1500 image; process_image returns a 100×75 JPEG image.
+    large_img  = create_test_image_base64(2000, 1500)
+    small_blob = Base64.decode64(create_test_image_base64(100, 75))
+
+    svc = ImageCompressionService.new(large_img, "image/jpeg")
+    svc.define_singleton_method(:should_skip_compression?) { false }
+    svc.define_singleton_method(:process_image) { small_blob }
+
+    logged = capture_info_logs { svc.compress }
+    event  = JSON.parse(logged.find { |l| l.include?('"event":"image_compression"') })
+    assert_equal true, event["resize_applied"]
+    assert_operator event["bytes_after"], :<, event["bytes_before"]
+  end
+
+  test "PNG input compressed to JPEG: width_after/height_after read from JPEG output and resize_applied is boolean" do
+    # Simulates PNG/WebP/GIF → JPEG conversion: @media_type = "image/png" but
+    # process_image returns a JPEG blob. Without the fix, dimensions_for(output_blob)
+    # rejects the JPEG bytes (wrong header for png) → width_after/height_after nil → resize_applied nil.
+    large_png_base64 = create_test_image_base64(2000, 1500, format: "png")
+    small_jpeg_blob  = Base64.decode64(create_test_image_base64(100, 75))  # JPEG
+
+    svc = ImageCompressionService.new(large_png_base64, "image/png")
+    svc.define_singleton_method(:should_skip_compression?) { false }
+    svc.define_singleton_method(:process_image) { small_jpeg_blob }
+
+    logged = capture_info_logs { svc.compress }
+    event  = JSON.parse(logged.find { |l| l.include?('"event":"image_compression"') })
+
+    assert_equal 2000, event["width_before"],  "before dims must read from PNG input"
+    assert_equal 1500, event["height_before"]
+    assert_equal 100,  event["width_after"],   "after dims must read from JPEG output blob"
+    assert_equal 75,   event["height_after"]
+    assert [ true, false ].include?(event["resize_applied"]), "resize_applied must be boolean, got #{event["resize_applied"].inspect}"
+    assert_equal true, event["resize_applied"]
+  end
+
+  # ── Commit 2: output_correlation_id + optional kwargs ────────────────────────
+
+  test "skip path emits output_correlation_id derived from decoded blob" do
+    img_base64 = create_test_image_base64(120, 80)
+    decoded    = Base64.decode64(img_base64)
+    expected   = "ingest:#{Digest::SHA256.hexdigest(decoded)[0, 12]}"
+
+    logged = capture_info_logs { ImageCompressionService.compress(img_base64, "image/jpeg") }
+    event  = JSON.parse(logged.find { |l| l.include?('"event":"image_compression"') })
+    assert_equal expected, event["output_correlation_id"]
+    assert_nil   event["correlation_id"], "correlation_id must be absent when not supplied"
+  end
+
+  test "compress path emits output_correlation_id derived from process_image result" do
+    large_img  = create_test_image_base64(2000, 1500)
+    small_blob = Base64.decode64(create_test_image_base64(100, 75))
+    expected   = "ingest:#{Digest::SHA256.hexdigest(small_blob)[0, 12]}"
+
+    svc = ImageCompressionService.new(large_img, "image/jpeg")
+    svc.define_singleton_method(:should_skip_compression?) { false }
+    svc.define_singleton_method(:process_image) { small_blob }
+
+    logged = capture_info_logs { svc.compress }
+    event  = JSON.parse(logged.find { |l| l.include?('"event":"image_compression"') })
+    assert_equal expected, event["output_correlation_id"]
+    assert_nil   event["correlation_id"]
+  end
+
+  test "emits correlation_id and filename when caller supplies both (bulk path)" do
+    img_base64 = create_test_image_base64(120, 80)
+    cid        = "ingest:aabb001122cc"
+
+    logged = capture_info_logs do
+      ImageCompressionService.compress(img_base64, "image/jpeg",
+        filename: "pump.jpg", correlation_id: cid)
+    end
+    event = JSON.parse(logged.find { |l| l.include?('"event":"image_compression"') })
+    assert_equal cid,       event["correlation_id"]
+    assert_equal "pump.jpg", event["filename"]
+    assert_match(/\Aingest:[0-9a-f]{12}\z/, event["output_correlation_id"])
+  end
+
+  test "omits correlation_id key when not supplied (web path)" do
+    img_base64 = create_test_image_base64(120, 80)
+
+    logged = capture_info_logs do
+      ImageCompressionService.compress(img_base64, "image/jpeg", filename: "motor.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?('"event":"image_compression"') })
+    assert_nil event["correlation_id"], "web path must not emit correlation_id"
+    assert_equal "motor.jpg", event["filename"]
+  end
+
   test "telemetry failure does not break compression result" do
     img_base64 = create_test_image_base64(60, 40)
 

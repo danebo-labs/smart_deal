@@ -67,6 +67,88 @@ class FieldPhotoDensityGateTest < ActiveSupport::TestCase
     assert_equal "image/jpeg", event["content_type"]
   end
 
+  test "emits model key matching MODEL_TEXT for :sonnet route" do
+    binary = "\xFF\xD8".b + ("x" * 100)
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "motor.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_equal BatchChunkingPrompt::MODEL_TEXT, event["model"]
+  end
+
+  test "emits model key matching MODEL_MULTIMODAL for :opus route" do
+    binary = "x" * FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "scan.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, event["model"]
+  end
+
+  test "emits correlation_id when supplied" do
+    binary = "\xFF\xD8".b + ("x" * 100)
+    cid    = "ingest:aabb001122cc"
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg",
+                                   filename: "motor.jpg", correlation_id: cid)
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_equal cid, event["correlation_id"]
+  end
+
+  test "omits correlation_id key when not supplied" do
+    binary = "\xFF\xD8".b + ("x" * 100)
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "motor.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_nil event["correlation_id"], "correlation_id must be absent from web/no-sha callers"
+  end
+
+  # ── Gate 9R O5-A: content signal instrumentation ────────────────────────────
+
+  test "routing is unchanged: bytes-only decision still holds" do
+    small = "\xFF\xD8".b + ("x" * 100)
+    large = "x" * FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD
+    assert_equal :sonnet, FieldPhotoDensityGate.decide(binary: small, content_type: "image/jpeg", filename: "a.jpg")
+    assert_equal :opus,   FieldPhotoDensityGate.decide(binary: large, content_type: "image/jpeg", filename: "b.jpg")
+  end
+
+  test "emits white_ratio and luma_mean content signal" do
+    binary = Vips::Image.black(300, 200).write_to_buffer(".jpg")
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/jpeg", filename: "f.jpg")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert event.key?("white_ratio"), "expected white_ratio in event"
+    assert event.key?("luma_mean"),   "expected luma_mean in event"
+  end
+
+  test "near-white image yields high white_ratio" do
+    white  = (Vips::Image.black(300, 300) + 255).cast("uchar")
+    binary = white.write_to_buffer(".png")
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/png", filename: "schematic.png")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_operator event["white_ratio"], :>=, 0.95
+  end
+
+  test "black image yields near-zero white_ratio" do
+    binary = Vips::Image.black(300, 300).write_to_buffer(".png")
+    logged = capture_info_logs do
+      FieldPhotoDensityGate.decide(binary: binary, content_type: "image/png", filename: "dark.png")
+    end
+    event = JSON.parse(logged.find { |l| l.include?("field_photo_gate") })
+    assert_operator event["white_ratio"], :<=, 0.05
+  end
+
+  test "content signal failure never breaks telemetry or routing" do
+    binary = "\x89PNG\r\n\x1A\n".b + "garbage"
+    route  = FieldPhotoDensityGate.decide(binary: binary, content_type: "image/png", filename: "broken.png")
+    assert_includes [ :sonnet, :opus ], route
+  end
+
   test "telemetry failure never changes the routing decision" do
     original = Rails.logger.method(:info)
     Rails.logger.define_singleton_method(:info) { |*| raise "logger down" }

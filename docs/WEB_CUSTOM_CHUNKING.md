@@ -31,7 +31,7 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 | `CustomChunkingPipeline` | Per-file routing, builds ready-now `web_v1_metadata`, enqueues `BedrockIngestionJob` only for chunks that exist now. Long PDFs enqueue `SubmitManualBatchJob`; with a nonblank question they also enqueue urgent page triage |
 | `SingleFileChunkingService` | One file end-to-end: optional Office→PDF, PDF page split, relevance filter, Claude calls, S3 chunk writes |
 | `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per page. `:image` default is Sonnet; Opus only via `FieldPhotoDensityGate force_opus`. Rasterized slides still promote to Opus. |
-| `FieldPhotoDensityGate` | Size-heuristic routing for image uploads → `:sonnet` (< 1.5 MB) or `:opus` (≥ 1.5 MB). Zero LLM calls. |
+| `FieldPhotoDensityGate` | Size-heuristic routing for image uploads → `:sonnet` (< 1.5 MB) or `:opus` (≥ 1.5 MB). Zero LLM calls. Emits a `field_photo_gate` JSON event with `model`, `route`, and (web path) `correlation_id = "ingest:<sha12>"` threaded from `SingleFileChunkingService`. See [METRICS.md — Image telemetry](METRICS.md#image-telemetry-event-schemas-o1). |
 | `FieldPhotoPrompt` | Specialized photo prompt; `ingestion_path: "field_photo_v1"`, 1 compact chunk with literal labels and optional explicit visible functions/connections/values/warnings |
 | `FieldPhotoResultsParser` | `FieldPhotoPrompt` JSON → standard `{document_name, aliases, chunks}` envelope; undocumented label meaning remains `DATA_NOT_AVAILABLE` |
 | `ContentDedupService` | SHA-256 dedup before any parse — hit skips Claude call entirely |
@@ -73,6 +73,8 @@ While a long manual is processing, the chat remains usable for questions over al
 4. **Compact manual evidence** — Sonnet/Opus emit short-key `field_records` only for qualifying evidence and omit absent optional fields. Rails validates, assigns deterministic IDs, and expands canonical labels before S3 upload; no additional LLM call is introduced. Manual chunks produced by `BatchChunkingPrompt` use the current `field_records_v4` contract.
 
 **O4a minimal validation (2026-06-16):** a 2-page Anthropic Batch mini-shadow over `manual_plataforma_tijera_24_paginas.pdf` passed with `field_records_v4` (`msgbatch_01BpMauhuRC7GDePzWQMU27f`, USD 0.04736). Page 2 as `ANCHOR_PAGE` emitted S0, `summary`, and `companion_offer`; page 3 as `CONTENT_PAGE` omitted all three. A small `document_name` drift was observed and mitigated by stricter prompt wording; Rails still canonicalizes identity during `ChunkMergerService` merge.
+
+**O4b offline decision (2026-06-16):** no prompt/contract v5 is promoted and no paid shadow is warranted. The only real output artifact available for O4b, `tmp/o4a_min_batch_shadow.json`, showed the CONTENT_PAGE emitted more output tokens than the anchor despite omitting S0, `summary`, and `companion_offer`; remaining safe metadata compaction is below the target and risks retrieval identity. The accepted follow-up is Rails-only: page prompts in sync `pdf_mixed` use the kept-page count after filtering, and `ChunkMergerService` strips accidental document-identification S0 chunks from non-anchor pages before writing KB chunks.
 
 **Realtime UX:** `KbSyncBroadcaster` emits Turbo Cable events; the chat shows typing dots, optional **retrying** copy during Aurora wake-up, partial urgent-page readiness (`processing_scope: urgent_pages`) when applicable, then full **indexed** / **failed** and refreshes the KB list.
 

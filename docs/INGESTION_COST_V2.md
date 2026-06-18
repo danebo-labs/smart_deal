@@ -109,7 +109,7 @@ flowchart TB
 
 **Context:** `FileMultimodalRouter` enviaba toda imagen a Opus. Benchmark: Sonnet score 16.7 vs Opus 16.7 en fotos — empate, 5× diferencia de precio.
 
-**Decision:** `:image → MODEL_TEXT` (Sonnet). `FieldPhotoDensityGate` corre una heurística determinística por tamaño para escaneados densos. Opus solo cuando gate retorna `:opus`.
+**Decision:** `:image → MODEL_TEXT` (Sonnet). `FieldPhotoDensityGate` corre una heurística determinística por tamaño para escaneados densos. Opus solo cuando gate retorna `:opus`. El gate emite un evento `field_photo_gate` con `model`, `route`, `correlation_id` (threaded desde el caller — web: `SingleFileChunkingService#correlation_id`; bulk: `asset.sha256`), y desde O5-A también `white_ratio` + `luma_mean` (telemetría de contenido; routing sin cambio). Ver [METRICS.md — Image telemetry](METRICS.md#image-telemetry-event-schemas-o1) para el schema completo y join chains.
 
 **Consequences:**
 - Costo foto: ~$0.009/foto → ~$1.86/mes (200 fotos) vs ~$8/mes anterior.
@@ -141,6 +141,13 @@ para retrieval.
   merge Rails.
 - Validacion minima O4a (2026-06-16): batch `msgbatch_01BpMauhuRC7GDePzWQMU27f`
   sobre 2 paginas del manual de referencia, costo USD 0.04736, `passed=true`.
+- Auditoria offline O4b (2026-06-16): no se promueve v5 ni shadow pagado. El
+  artefacto O4a disponible (`tmp/o4a_min_batch_shadow.json`) muestra que la pagina
+  `CONTENT_PAGE` sin S0/summary/companion emitio mas output que la anchor; la
+  metadata restante (`document_name` / `aliases`) tiene techo estimado bajo y se
+  conserva por fallback/traceability. Solo se aplica limpieza Rails deterministica:
+  total de pagina sync post-filtro y descarte defensivo de S0 de identificacion
+  accidental en paginas no-anchor.
 - No se agrega otra llamada LLM ni otro prompt por tipo de sección.
 - La narrativa no duplica procedimientos completos que ya están en `field_records`.
 - El baseline histórico de ~500 output tokens/página debe revalidarse con el
@@ -264,6 +271,36 @@ La pipeline custom chunking/cost-v2 ya es el único camino activo para uploads w
 | force_opus rate | ¿Opus <15% páginas manual? | count `force_opus` / total pages |
 | Chat manual latency UX | ¿Manual grande sync entrega `indexed` en una ventana aceptable? | time upload→indexed Turbo event |
 | Foto quality | ¿RAG responde bien con chunk liviano field_photo_v1? | spot-check 10 fotos reales |
+
+## Gate 9R O1′ — Auditoría bytes-only (2026-06-16)
+
+### Decisión: WAIT — no cambiar `should_skip_compression?`
+
+**Cohorte:** 7 imágenes de campo (bulk upload post-cf55444), elevadores/ascensores.
+
+**Flag A rate: 3/7 = 43%** — skip bytes-only dejó pasar dims >1024px sin resize.
+**Señal de tokens Flag-A vs no-A: no medible** — input_tokens Sonnet uniforme (~2048); sin par resized para comparar. H1 no falsable en esta cohorte.
+
+**H3 parcialmente válido:** imágenes livianas (130–384KB) caen ≤1024px efectivos, sin coste evitable. El skip no genera impacto real en ese subgrupo.
+
+**Conclusión O1′:** sin señal de tokens que justifique resize, la regla bytes+dims no procede. Acumular n≥50 en producción con diversidad real (especialmente fotos de campo con dims >>1024 y bytes ≤3.75MB).
+
+### H2 confirmado — input para O5/gate (fuera de scope O1′)
+
+`FieldPhotoDensityGate` tiene fallas simétricas detectadas en la cohorte:
+
+| imagen | bytes | dims | gate_route | tipo visual | problema |
+|---|---|---|---|---|---|
+| 33.png | 2.7MB | 1596×1192 | **opus** | tablero eléctrico real (cableado) | Opus por peso, no por densidad → 5× coste innecesario |
+| pagina_16.png | 1.4MB | 1414×1996 | **sonnet** | esquema hidráulico técnico | justo bajo 1.5MB → Sonnet, pero necesita fidelidad de esquema |
+
+El gate bytes-only (≥1.5MB → Opus) no distingue contenido: un tablero fotográfico pesado va a Opus igual que un diagrama técnico denso. Y un esquema técnico liviano (<1.5MB) va a Sonnet aunque requeriría Opus para preservar líneas y anotaciones finas.
+
+**O5-A (2026-06-17):** instrumentar señal de contenido barata en `field_photo_gate` — `white_ratio` (fracción de píxeles con luma >240 sobre thumbnail ≤256px) y `luma_mean` (promedio de luma en escala de grises). Descartado el proxy PNG vs JPEG (correlación débil con diagramas técnicos en la cohorte O1′). **Routing sin cambio** — umbral bytes-only (≥1.5 MB → Opus) se mantiene.
+
+**Acción futura O5-B:** diseñar gate híbrido bytes + `white_ratio`/`luma_mean` para corregir las fallas simétricas de la tabla anterior. Acumular telemetría n≥50 en producción antes de cambiar routing.
+
+---
 
 ## Riesgos documentados
 

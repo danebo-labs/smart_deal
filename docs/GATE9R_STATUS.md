@@ -30,6 +30,11 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 `Gate 9R → Block C → item 32 → offline quality remediation`
 
+- Checkpoint: `OFFLINE_FIX_PENDING`; not `MERGE_READY`.
+- Working tree verified clean on `codex/o4b-ingestion-noise-reduction`.
+- GitHub evidence (read-only): the only open PRs are #15 (`twilio-integration`)
+  and #16 (`test/reviewdog-demo`). Both are outside Gate 9R; there is no open
+  PR for the current branch, so neither old branch is reopened here.
 - Baseline harness commit: `b765428`.
 - Retained Batch: `msgbatch_017UYaG9fXBGkovuE6ENmaRv`.
 - Artifact: `tmp/gate9_final/4bbf9b13771e3daf9d774cca3784e3047b9b44a4e2278bcf0e4fc430be19f7f8/`.
@@ -63,22 +68,12 @@ final-manual harness implementation.
 - Item 33: pending n≥50 photos and n≥500 real queries; Gate 9R cannot close
   until item 32 is green.
 
-## Next actions
+## Next single action
 
-1. Preserve the current artifact; never resubmit or rewrite it.
-2. Fix the filter offline with a generic safety/action guard. No hardcoded
-   manual, page numbers or fixture phrases; no prompt/contract/model change.
-3. Add tests that keep stop/restart, authorized-personnel and coordination
-   content while still dropping covers, copyright, TOC, dividers and blanks.
-4. Run targeted tests, full suite, RuboCop and `git diff --check`; commit clean.
-5. Mark `MERGE_READY`, review `main...HEAD`, and obtain explicit authorization
-   to merge this temporary branch into `main`.
-6. Use the already planned web/chat PDF onboarding as the sole paid post-fix
-   E2E. Long manuals must route automatically to Batch.
-7. Verify p197–198 are indexed and retrievable with citations. If red, stop and
-   diagnose offline; do not retry for a favorable result.
-
-No artificial shadow or extra harness run is planned. No paid action without an
+Fix `PageRelevanceFilter` offline with a generic safety/action guard and focused
+tests. Preserve the current artifact; do not hardcode the manual, page numbers
+or fixture phrases, and do not change the prompt, contract or model. This action
+has no paid API cost. Do not resubmit a batch or run the paid E2E without an
 explicit cap and human authorization in the same conversation.
 
 ## Start a new AI conversation

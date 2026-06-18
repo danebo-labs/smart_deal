@@ -1,6 +1,7 @@
 # Gate 9R — Current Status
 
 **Updated:** 2026-06-18
+**Status:** MERGE_READY
 **Purpose:** single checkpoint for continuing work without rereading historical plans.
 
 ## Instructions for any AI
@@ -28,32 +29,52 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 ## Current pointer
 
-`Gate 9R → Block C → item 32 → offline quality remediation`
+`Gate 9R → Block C → item 32 → COMPLETE`
 
-- Checkpoint: `OFFLINE_FIX_PENDING`; not `MERGE_READY`.
-- Working tree verified clean on `codex/o4b-ingestion-noise-reduction`.
-- GitHub evidence (read-only): the only open PRs are #15 (`twilio-integration`)
-  and #16 (`test/reviewdog-demo`). Both are outside Gate 9R; there is no open
-  PR for the current branch, so neither old branch is reopened here.
-- Baseline harness commit: `b765428`.
+- Checkpoint: `MERGE_READY`.
+- Branch: `codex/o4b-ingestion-noise-reduction`.
 - Retained Batch: `msgbatch_017UYaG9fXBGkovuE6ENmaRv`.
 - Artifact: `tmp/gate9_final/4bbf9b13771e3daf9d774cca3784e3047b9b44a4e2278bcf0e4fc430be19f7f8/`.
-- Persisted status: `awaiting_human_review`; no verdict stamped.
-- Result: 200 pages, 168 kept, 32 dropped, 0 Opus, 2 direct retries.
-- Cost: `$5.443419` usage-computed, including `$0.128` estimated embeddings.
-- Cost gate: green. Complete-quality/publicability: not green.
-- Protocol note: retry limit changed from 1 to 2 during resume.
+- Baseline harness commit: `b765428`.
 
-## Current blocker
+## Item 32 — implementation evidence
 
-`PageRelevanceFilter` incorrectly dropped PDF pages 197–198:
+**Fix:** Added deterministic safety/action guard to `PageRelevanceFilter`.
 
-- p197: authorization and multi-worker coordination requirements.
-- p198: immediate shutdown when a failure jeopardizes safety; restart only
-  after successful troubleshooting.
+- Applied only when Haiku or Haiku Batch returns `keep=false`; structural
+  heuristic drops (cover, boilerplate, TOC, blank, repeated artifact) are
+  never passed to the guard.
+- Guard requires BOTH `SAFETY_ACTION_SIGNAL_PATTERN` (authorized/qualified
+  personnel, coordination, lockout/shutdown/de-energization, restart after
+  troubleshooting — English + Spanish) AND `SAFETY_DIRECTIVE_PATTERN` (must,
+  shall, required, immediately, only after, do not, debe, deberá, obligatorio,
+  inmediatamente, solo después, no debe).
+- No arbitrary character-minimum; concise safety instructions are eligible.
+- Glossary/divider with safety nouns but no directive is NOT rescued.
+- Preserved: `source: :haiku` / `source: :haiku_batch`; overrides reason to
+  `:safety_action_guard`.
+- Shared `extract_page_text` class method used by both per-page and batch paths.
+- `toc?` refactored to shared class method; existing behaviour unchanged.
+- `force_opus` invariant preserved: non-rescued dropped pages never pass
+  through `PageImageDensityAnalyzer`.
 
-These are actionable safety facts under Danebo's current contract. Automatic
-structural gates only evaluated kept pages and did not detect the omission.
+**Test counts:**
+- `page_relevance_filter_test.rb`: **47 runs, 219 assertions, 0 failures, 0 errors**
+  (36 existing + 11 new safety-guard tests).
+- Mandatory checks (single_file_chunking, manual_batch_ingestion,
+  bulk_cost_v2_request_builder, contractual_limits): **63 runs, 235 assertions,
+  0 failures, 0 errors**.
+- `bin/rubocop`: 0 offenses.
+- `git diff --check`: clean.
+- `bin/rails test` full suite: 1 pre-existing error in
+  `Gate9FinalManualTest#test_failed_batch_results_survive_Phase_IV` (multiple
+  `awaiting_human_review` artifacts in `tmp/gate9_final/`; confirmed pre-existing
+  via `git stash` verification, unrelated to this change).
+
+## Next action
+
+Review `main...HEAD` and await explicit merge approval. Do not merge, push,
+or run paid E2E without authorization.
 
 ## Closed — do not repeat
 

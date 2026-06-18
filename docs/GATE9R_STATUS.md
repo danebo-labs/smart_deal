@@ -3,6 +3,7 @@
 **Updated:** 2026-06-18
 **Status:** MERGED_E2E_DEFERRED
 **Purpose:** single checkpoint for continuing work without rereading historical plans.
+**Master plan:** `/Users/lahirisan/.cursor/plans/rag_precision_cost_plan_578aea0c.plan.md`
 
 ## Instructions for any AI
 
@@ -27,7 +28,11 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 ## Current pointer
 
-`Gate 9R → Block C → item 32 → merged; E2E deferred to final validation`
+`Gate 9R → Block C → deterministic pre-Haiku cascade merged; synthetic validation dataset planned; real-traffic certification deferred`
+
+Use stable plan IDs/names rather than bare item numbers: item 32 in the master
+plan's executable sequence is the paid 200-page post-optimization run, not the
+completed deterministic page-relevance guard.
 
 - Checkpoint: `MERGED_E2E_DEFERRED`.
 - Branch: `main`; retained source tip: `71f6239`.
@@ -72,10 +77,13 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 ## Next action
 
-Continue the next unblocked offline item in the general plan. Keep the web/chat
-PDF onboarding E2E as the final validation step; do not run it until the
-remaining offline plan work is complete and an explicit cost cap and human
-authorization are provided.
+Prepare an offline synthetic validation dataset: 500 hypothetical technician
+queries grounded in a representative PDF plus 50 unique representative field
+photos. Treat it as quality/stress-test evidence only, not real-production
+telemetry and not a basis for production p95. Define the validation plan before
+processing the dataset; do not execute paid APIs without a new cost cap and
+human authorization. Keep the web/chat PDF onboarding E2E and paid 200-page run
+deferred to final validation.
 
 ## Closed — do not repeat
 
@@ -87,8 +95,15 @@ final-manual harness implementation.
 - O1′ functional and O5-B: wait for n≥50 real production photos.
 - O5-manuals: gated; current run had 0 Opus pages.
 - O2: not activated; current run had zero final truncations.
-- Item 33: pending n≥50 photos and n≥500 real queries; Gate 9R cannot close
-  until item 32 is green.
+- E1 prompt compaction and E2 context reduction: explicitly deferred and
+  non-blocking; combined estimated saving is only USD 0.25–0.60 per 1,000
+  queries, before validation cost.
+- Master-plan item 32: paid 200-page post-optimization run deferred to final
+  validation with a new cost cap and human authorization.
+- Item 33 real-production thresholds remain unmet. Synthetic queries/photos may
+  support offline quality validation but do not satisfy the statistical
+  production-evidence requirement; Gate 9R can instead close provisionally with
+  that limitation stated explicitly.
 
 ## Start a new AI conversation
 

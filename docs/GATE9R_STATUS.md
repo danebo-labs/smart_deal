@@ -1,7 +1,7 @@
 # Gate 9R — Current Status
 
 **Updated:** 2026-06-18
-**Status:** MERGED_AWAITING_E2E
+**Status:** MERGED_E2E_DEFERRED
 **Purpose:** single checkpoint for continuing work without rereading historical plans.
 
 ## Instructions for any AI
@@ -18,17 +18,18 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 ## Branch and merge policy
 
 - Current working branch: `main`.
-- `codex/o4b-ingestion-noise-reduction` was merged locally in this commit after
+- `codex/o4b-ingestion-noise-reduction` was merged locally by `f904c6e` after
   explicit human authorization and must remain until item 32 is closed.
 - Do not push or delete the temporary branch without explicit authorization.
-- Do not run the planned paid application E2E without an explicit cost cap and
-  human authorization in the same conversation.
+- Defer the planned paid application E2E until the general plan's remaining
+  offline work is complete. It still requires an explicit cost cap and human
+  authorization in the same conversation.
 
 ## Current pointer
 
-`Gate 9R → Block C → item 32 → merged application E2E pending`
+`Gate 9R → Block C → item 32 → merged; E2E deferred to final validation`
 
-- Checkpoint: `MERGED_AWAITING_E2E`.
+- Checkpoint: `MERGED_E2E_DEFERRED`.
 - Branch: `main`; retained source tip: `71f6239`.
 - Retained Batch: `msgbatch_017UYaG9fXBGkovuE6ENmaRv`.
 - Artifact: `tmp/gate9_final/4bbf9b13771e3daf9d774cca3784e3047b9b44a4e2278bcf0e4fc430be19f7f8/`.
@@ -71,10 +72,10 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 ## Next action
 
-Obtain explicit human authorization and a cost cap for the sole paid web/chat
-PDF onboarding E2E. After that run, verify p197–198 are indexed and retrievable
-with citations; if red, stop and diagnose offline without retrying for a
-favorable result.
+Continue the next unblocked offline item in the general plan. Keep the web/chat
+PDF onboarding E2E as the final validation step; do not run it until the
+remaining offline plan work is complete and an explicit cost cap and human
+authorization are provided.
 
 ## Closed — do not repeat
 
@@ -101,6 +102,7 @@ reopen closed work, execute paid APIs or resubmit batches without approval.
 Confirm that you are on main and that codex/o4b-ingestion-noise-reduction still
 exists. Do not create or switch branches, rebase, merge, push or delete the
 temporary branch. Obtain an explicit cost cap and human authorization before
-the planned paid E2E. When you finish, update docs/GATE9R_STATUS.md in the same
+the planned paid E2E, which remains deferred until the general plan's offline
+work is complete. When you finish, update docs/GATE9R_STATUS.md in the same
 commit with only the new status, evidence and next action.
 ```

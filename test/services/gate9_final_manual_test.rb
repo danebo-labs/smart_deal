@@ -1270,6 +1270,7 @@ class Gate9FinalManualTest < ActiveSupport::TestCase
         harness.run!
 
         phase4 = Gate9FinalManual.new(env: { "GATE9_FINAL_VERDICT" => "pass" })
+        phase4.define_singleton_method(:verdict_base_dir) { File.join("tmp", "gate9_final", sha) }
         phase4.run!
 
         output = JSON.parse(File.read(File.join("tmp", "gate9_final", sha, "output.json")))

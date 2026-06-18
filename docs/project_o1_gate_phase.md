@@ -1,7 +1,7 @@
 # Gate 9R — O1′ / O5 phase tracker
 
-**Última actualización:** 2026-06-17  
-**Branch de referencia:** `codex/o4b-ingestion-noise-reduction`  
+**Última actualización:** 2026-06-17
+**Branch de referencia:** `codex/o4b-ingestion-noise-reduction`
 **Plan maestro:** `.cursor/plans/rag_precision_cost_plan_578aea0c.plan.md`
 
 Este documento rastrea las sub-fases **O1′** (compresión + telemetría foto) y **O5** (señal de contenido / routing Opus). No sustituye [INGESTION_COST_V2.md](INGESTION_COST_V2.md) ni [METRICS.md](METRICS.md) — apunta a ellos para ADR y schemas.
@@ -45,7 +45,7 @@ Acumular **n≥50** fotos de campo en producción e inspeccionar telemetría (`i
 
 ### O5-A — ✅ COMPLETADO (`9f95de3`, 2026-06-17)
 
-**Commit:** `9f95de363cd2db81969f254f73f19b6f1e167868`  
+**Commit:** `9f95de363cd2db81969f254f73f19b6f1e167868`
 **Mensaje:** `feat(ingestion): instrument field photo content signal`
 
 **Entregables:**

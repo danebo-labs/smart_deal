@@ -29,7 +29,7 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 ## Current pointer
 
-`Gate 9R → Block C → item 32 → COMPLETE`
+`Gate 9R → Block C → item 32 → offline fix complete; merge pending`
 
 - Checkpoint: `MERGE_READY`.
 - Branch: `codex/o4b-ingestion-noise-reduction`.
@@ -41,15 +41,17 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 **Fix:** Added deterministic safety/action guard to `PageRelevanceFilter`.
 
-- Applied only when Haiku or Haiku Batch returns `keep=false`; structural
-  heuristic drops (cover, boilerplate, TOC, blank, repeated artifact) are
-  never passed to the guard.
+- Applied only when Haiku or Haiku Batch returns `keep=false`. Per-page
+  structural heuristic drops never reach the guard; the batch path explicitly
+  rejects TOC-like and bounded boilerplate text before rescue.
 - Guard requires BOTH `SAFETY_ACTION_SIGNAL_PATTERN` (authorized/qualified
   personnel, coordination, lockout/shutdown/de-energization, restart after
   troubleshooting — English + Spanish) AND `SAFETY_DIRECTIVE_PATTERN` (must,
   shall, required, immediately, only after, do not, debe, deberá, obligatorio,
   inmediatamente, solo después, no debe).
 - No arbitrary character-minimum; concise safety instructions are eligible.
+- Obligation nouns (`requirement`/`requirements`) and immediate-action forms
+  are covered so authorization/coordination requirements remain eligible.
 - Glossary/divider with safety nouns but no directive is NOT rescued.
 - Preserved: `source: :haiku` / `source: :haiku_batch`; overrides reason to
   `:safety_action_guard`.
@@ -59,17 +61,16 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
   through `PageImageDensityAnalyzer`.
 
 **Test counts:**
-- `page_relevance_filter_test.rb`: **47 runs, 219 assertions, 0 failures, 0 errors**
-  (36 existing + 11 new safety-guard tests).
+- `page_relevance_filter_test.rb`: **48 runs, 225 assertions, 0 failures, 0 errors**.
 - Mandatory checks (single_file_chunking, manual_batch_ingestion,
   bulk_cost_v2_request_builder, contractual_limits): **63 runs, 235 assertions,
   0 failures, 0 errors**.
+- Phase IV failed-batch regression: **1 run, 4 assertions, 0 failures, 0 errors**;
+  the test now selects its own temporary artifact without touching the retained
+  `awaiting_human_review` artifact.
+- Full suite: **1360 runs, 4085 assertions, 0 failures, 0 errors, 164 skips**.
 - `bin/rubocop`: 0 offenses.
 - `git diff --check`: clean.
-- `bin/rails test` full suite: 1 pre-existing error in
-  `Gate9FinalManualTest#test_failed_batch_results_survive_Phase_IV` (multiple
-  `awaiting_human_review` artifacts in `tmp/gate9_final/`; confirmed pre-existing
-  via `git stash` verification, unrelated to this change).
 
 ## Next action
 
@@ -88,14 +89,6 @@ final-manual harness implementation.
 - O2: not activated; current run had zero final truncations.
 - Item 33: pending n≥50 photos and n≥500 real queries; Gate 9R cannot close
   until item 32 is green.
-
-## Next single action
-
-Fix `PageRelevanceFilter` offline with a generic safety/action guard and focused
-tests. Preserve the current artifact; do not hardcode the manual, page numbers
-or fixture phrases, and do not change the prompt, contract or model. This action
-has no paid API cost. Do not resubmit a batch or run the paid E2E without an
-explicit cap and human authorization in the same conversation.
 
 ## Start a new AI conversation
 

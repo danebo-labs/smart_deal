@@ -34,6 +34,7 @@ class PageRelevanceFilter
 
   TOC_LINE_FRACTION = 0.30  # ≥30% of lines ending in a page number → ToC
   TOC_MIN_LINES     = 10
+  BOILERPLATE_MAX_CHARS = 600
 
   BOILERPLATE_PATTERN = /
     intended\s+audience | how\s+to\s+use\s+this | copyright | all\s+rights\s+reserved |
@@ -59,9 +60,10 @@ class PageRelevanceFilter
 
   # Directive/obligation/conditional language — must co-occur with SAFETY_ACTION_SIGNAL_PATTERN.
   SAFETY_DIRECTIVE_PATTERN = /
-    \bmust\b | \bshall\b | \brequired?\b | \bimmediately\b | \bonly\s+after\b | \bdo\s+not\b |
-    \bdebe\b | \bdeberá\b | \bdeberán\b | \bobligatorio\b | \binmediatamente\b |
-    \bsolo\s+después\b | \bno\s+debe\b
+    \bmust\b | \bshall\b | \brequire(?:d|ments?)?\b | \bimmediate(?:ly)?\b |
+    \bonly\s+after\b | \bdo\s+not\b |
+    \bdebe\b | \bdeberá\b | \bdeberán\b | \bobligatorio\b | \brequisitos?\b |
+    \binmediat(?:o|a|amente)\b | \bsolo\s+después\b | \bno\s+debe\b
   /xi.freeze
 
   HAIKU_SYSTEM = <<~PROMPT.strip.freeze
@@ -79,10 +81,12 @@ class PageRelevanceFilter
     ""
   end
 
-  # Returns true when text contains BOTH a safety/action signal and directive language.
-  # Only applied to Haiku-dropped pages; structural heuristic drops are never passed here.
+  # Returns true when a Haiku-dropped page contains BOTH a safety/action signal and
+  # directive language, after rejecting TOC-like and bounded boilerplate text.
   def self.safety_action_guard?(text)
     return false if text.blank?
+    return false if toc?(text)
+    return false if text.length < BOILERPLATE_MAX_CHARS && text.match?(BOILERPLATE_PATTERN)
 
     text.match?(SAFETY_ACTION_SIGNAL_PATTERN) && text.match?(SAFETY_DIRECTIVE_PATTERN)
   end
@@ -264,7 +268,7 @@ class PageRelevanceFilter
     end
 
     # Boilerplate: check before blank so known phrases on short pages are classified correctly
-    if @text.length < 600 && @text.match?(BOILERPLATE_PATTERN)
+    if @text.length < BOILERPLATE_MAX_CHARS && @text.match?(BOILERPLATE_PATTERN)
       return { keep: false, reason: :boilerplate, source: :heuristic }
     end
 

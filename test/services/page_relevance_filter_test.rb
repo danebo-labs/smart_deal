@@ -803,6 +803,18 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     assert_equal :haiku_batch,         result[1][:source]
   end
 
+  test "safety_action_guard recognizes requirement nouns" do
+    @page_text = "Authorization and multi-worker coordination requirements apply to this operation."
+    pages  = [ FakePage.new(1, "requirement_noun_page") ]
+    client = FakeBatchHaikuClient.new([ { "page" => 1, "keep" => false, "reason" => "divider" } ])
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal true,                 result[1][:keep]
+    assert_equal :safety_action_guard, result[1][:reason]
+    assert_equal :haiku_batch,         result[1][:source]
+  end
+
   test "safety_action_guard rescues batch drop for immediate shutdown and conditional restart" do
     @page_text = "De-energize the equipment immediately. Do not restart until successful " \
                  "troubleshooting and correction of the fault have been confirmed."
@@ -842,7 +854,7 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
   end
 
   test "safety_action_guard does not rescue batch cover or copyright page" do
-    @page_text = "© 2024 Elevator Systems Inc. All rights reserved. Printed in USA."
+    @page_text = "Copyright © 2024 Elevator Systems Inc. Only authorized personnel shall reproduce this document."
     pages  = [ FakePage.new(1, "copyright_page") ]
     client = FakeBatchHaikuClient.new([ { "page" => 1, "keep" => false, "reason" => "copyright" } ])
 
@@ -850,28 +862,21 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
 
     assert_equal false,      result[1][:keep]
     assert_equal :copyright, result[1][:reason]
+    assert_not PageRelevanceFilter.safety_action_guard?(@page_text)
   end
 
   test "safety_action_guard does not rescue batch TOC drop with safety chapter titles" do
-    @page_text = <<~TEXT
-      Table of Contents
-      1. Safety Overview ................................. 1
-      2. Lockout Procedures .............................. 5
-      3. Authorized Personnel ............................ 8
-      4. Emergency Shutdown Protocols .................. 12
-      5. Installation and Maintenance .................. 18
-      6. Troubleshooting Guide ......................... 25
-      7. Parts List .................................... 30
-      8. Index ......................................... 35
-      9. Appendix A .................................... 40
-      10. Appendix B ................................... 45
-    TEXT
+    @page_text = (1..10).map do |page_number|
+      "Only authorized personnel shall perform shutdown procedure #{page_number} ........ #{page_number}"
+    end.join("\n")
     pages  = [ FakePage.new(1, "toc_page") ]
     client = FakeBatchHaikuClient.new([ { "page" => 1, "keep" => false, "reason" => "table_of_contents" } ])
 
     result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
 
     assert_equal false, result[1][:keep]
+    assert PageRelevanceFilter.toc?(@page_text)
+    assert_not PageRelevanceFilter.safety_action_guard?(@page_text)
   end
 
   test "safety_action_guard does not rescue blank or very short page" do

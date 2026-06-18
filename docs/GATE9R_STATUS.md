@@ -14,6 +14,18 @@ Read only:
 Do **not** read every file under `docs/` or the historical master plan unless
 this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
+## Branch and merge policy
+
+- Current working branch: `codex/o4b-ingestion-noise-reduction`.
+- This branch is temporary and must eventually be merged into `main`.
+- Keep Gate 9R work on this branch; do not create another branch.
+- Do not switch to `main`, rebase, merge, push or delete the branch without
+  explicit human authorization.
+- After the offline filter fix and all checks are green, mark the branch
+  `MERGE_READY`, show `main...HEAD`, and wait for approval.
+- Merge into `main` before the planned application E2E. Keep the temporary
+  branch until item 32 is closed and the merged application is verified.
+
 ## Current pointer
 
 `Gate 9R → Block C → item 32 → offline quality remediation`
@@ -59,9 +71,11 @@ final-manual harness implementation.
 3. Add tests that keep stop/restart, authorized-personnel and coordination
    content while still dropping covers, copyright, TOC, dividers and blanks.
 4. Run targeted tests, full suite, RuboCop and `git diff --check`; commit clean.
-5. Use the already planned web/chat PDF onboarding as the sole paid post-fix
+5. Mark `MERGE_READY`, review `main...HEAD`, and obtain explicit authorization
+   to merge this temporary branch into `main`.
+6. Use the already planned web/chat PDF onboarding as the sole paid post-fix
    E2E. Long manuals must route automatically to Batch.
-6. Verify p197–198 are indexed and retrievable with citations. If red, stop and
+7. Verify p197–198 are indexed and retrievable with citations. If red, stop and
    diagnose offline; do not retry for a favorable result.
 
 No artificial shadow or extra harness run is planned. No paid action without an
@@ -76,6 +90,9 @@ Work in /Users/lahirisan/smart_deal. Read AGENTS.md and
 docs/GATE9R_STATUS.md only. Check git status. Tell me the current item,
 blocker, next single action and whether it costs money. Do not read all docs,
 reopen closed work, execute paid APIs or resubmit batches without approval.
+Confirm that you are on codex/o4b-ingestion-noise-reduction. Do not create or
+switch branches, rebase, merge, push or delete the branch. When the checkpoint
+says MERGE_READY, show main...HEAD and wait for my explicit merge approval.
 When you finish, update docs/GATE9R_STATUS.md in the same commit with only the
 new status, evidence and next action.
 ```

@@ -159,9 +159,15 @@ Key test infrastructure:
 
 From `docs/SAAS_COST_MODEL_2026-06-12.md` (measured 24-page v3 cohort):
 
+> **Reconciled 2026-06-18:** real Anthropic invoice for this batch = **$5.32**
+> (full onboarding incl. filter + retries). Harness $5.4434 was +2.3%,
+> conservative. This is a **one-time onboarding** cost, not monthly. See
+> `docs/GATE9R_STATUS.md` § reconciliation.
+
 | Scenario | Pages | Est. Cost |
 |----------|-------|-----------|
-| **Observed L2 batch run (2026-06-18)** | 168 kept | **$5.4434** |
+| **Reconciled invoice (one-time, 2026-06-18)** | 168 kept | **$5.32** |
+| Observed L2 batch run (harness) | 168 kept | $5.4434 |
 | Full 200pp batch (projection) | 200 | $9.0547 |
 | Proportional 136pp (projection) | 136 | ~$6.16 |
 | Contractual max (200pp full-Opus no-cache) | 200 | $2712.18 |

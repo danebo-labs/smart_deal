@@ -6,6 +6,32 @@
 > not contractual maxima or customer pricing. Contractual maxima must be
 > regenerated from finite technical limits with the Gate 9R cost matrix.
 
+## RECONCILED 2026-06-18 — steady-state vs onboarding (authoritative)
+
+Supersedes every monthly package total in this file. Source: Anthropic Console
+cost reconciliation + Bedrock model-invocation logging now ENABLED (see
+`docs/GATE9R_STATUS.md` § "Anthropic billed-cost reconciliation").
+
+- **The 200-page manual is ONE-TIME onboarding, not a recurring monthly cost.**
+  Earlier package totals (~$16.55–22) folded it into the month and overstate
+  steady-state COGS.
+- **Manual onboarding (reconciled): $5.32** (harness $5.4434 was +2.3%,
+  conservative). Reconciliation limitation LIFTED.
+- **Monthly recurring COGS:** 1,000 Haiku queries **$6.14 (real)** + 200 field
+  photos (80% Sonnet / 20% Opus) **~$3.40 est.** = **~$9.54 expected /
+  ~$13.27 conservative**.
+- **First month (incl. one-time onboarding): ~$15.**
+- Query estimator gap is now **~4%**, not the legacy 29.7% (that figure in
+  `CLAUDE.md` / `BedrockQuery` comments is stale). Field-photo parse still
+  estimate-only until n≥50 real photos.
+
+Pricing floor on the recurring conservative COGS ($13.27): 50% → $26.54,
+60% → $33.18, 70% → $44.23. (One-time onboarding billed separately or amortized.)
+
+The tables below (UPDATE / Package Totals) remain valid as **first-month /
+matrix-scenario** views; for steady-state subscription pricing use the recurring
+figures above.
+
 ## UPDATE 2026-06-18 — observed 200-page run + contractual ceiling
 
 This section supersedes the manual-cost **projection** below for the *realized*

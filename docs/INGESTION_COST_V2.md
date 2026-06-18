@@ -4,6 +4,13 @@
 **Benchmark date:** 2026-05-21  
 **Supersedes:** inline routing in `FileMultimodalRouter` (Opus default for images)
 
+> **⚠️ Per-unit cost figures below are stale (2026-05-21 v2 benchmark).** The
+> v3 structured output is more expensive: photos are now **~$0.0231/foto**
+> (not ~$0.009) and the observed 200-page manual batch cost **~$5.44** (Gate 9R,
+> 2026-06-18). For current package COGS, contractual ceiling and pricing floor,
+> use **`docs/SAAS_COST_MODEL_2026-06-12.md` (UPDATE 2026-06-18)** — the canonical
+> cost model. The numbers in this ADR are kept for architectural/historical context only.
+
 **Canonical routing reference (file types, page filter, LLM matrix):** [INGESTION_ROUTING.md](INGESTION_ROUTING.md)
 
 ---

@@ -161,11 +161,17 @@ From `docs/SAAS_COST_MODEL_2026-06-12.md` (measured 24-page v3 cohort):
 
 | Scenario | Pages | Est. Cost |
 |----------|-------|-----------|
-| Full 200pp batch | 200 | $9.0547 |
-| Proportional 136pp | 136 | ~$6.16 |
+| **Observed L2 batch run (2026-06-18)** | 168 kept | **$5.4434** |
+| Full 200pp batch (projection) | 200 | $9.0547 |
+| Proportional 136pp (projection) | 136 | ~$6.16 |
 | Contractual max (200pp full-Opus no-cache) | 200 | $2712.18 |
 
-Cost components for 200pp: Sonnet parse $4.8589 + Opus parse $3.7558 + PageRelevanceFilter $0.4316 + embeddings $0.0083.
+The observed run (retained batch `msgbatch_017UYaG9fXBGkovuE6ENmaRv`, 168 kept
+pages, 0 failed, 0 Opus pages) is harness-computed and **not yet reconciled**
+against the Anthropic invoice — see `docs/GATE9R_STATUS.md`. The $9.0547 figure
+is the conservative scaling projection from the 24-page cohort.
+
+Cost components for the 200pp projection: Sonnet parse $4.8589 + Opus parse $3.7558 + PageRelevanceFilter $0.4316 + embeddings $0.0083.
 
 **Cost gate thresholds:** observed ≤ $10, no-cache ≤ $12.
 

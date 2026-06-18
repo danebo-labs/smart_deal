@@ -99,6 +99,32 @@ PDF.
 - `page_relevance_filter_test.rb`: 48 runs, 225 assertions, 0 failures, 0 errors.
 - No paid API or network call was executed during this preflight.
 
+## Cost-doc refresh — 2026-06-18
+
+Offline only ($0, no paid API or network call).
+
+- Ran `Gate9CostMatrix#contractual_max` (commit `ef71e81`, pricing version
+  2026-06-12). Deterministic ceiling, re-derived by hand from `ContractualLimits`
+  and matched the matrix exactly:
+  - 1,000 queries: **$424.00**
+  - 200 photos: **$3,224.00** (dominant — one photo can route Opus direct over 1M window; E3a per-photo cap collapses it)
+  - 200-page manual: **$2,712.18**
+  - Full package ceiling: **$6,360.18 / month**.
+- Propagated the observed manual cost (USD 5.4434, batch
+  `msgbatch_017UYaG9fXBGkovuE6ENmaRv`, 168 kept pages, unreconciled) and the
+  contractual ceiling into the three living cost docs:
+  - `docs/SAAS_COST_MODEL_2026-06-12.md` — UPDATE 2026-06-18 block: recalculated
+    package (**$16.55 expected / $18.72–19.32 reserve**), ceiling table, pricing
+    floor ($38.64 / $48.30 / $64.40).
+  - `docs/GATE9_FINAL_MANUAL_AUDIT_2026-06-17.md` — observed $5.4434 row beside
+    the $9.0547 projection.
+  - `docs/INGESTION_COST_V2.md` — stale-figures banner pointing to the SaaS model.
+- Dated historical snapshots (GATE9_V1, RAG_CERTIFICATION, benchmarks) left
+  untouched — they are records, not living estimates.
+- Limitation unchanged: the $5.4434 manual cost is harness-observed, **not**
+  reconciled against the Anthropic invoice. Next action: none (reconciliation is
+  non-blocking production telemetry).
+
 ## Closed — do not repeat
 
 V1/B.1–B.5.1, O3′, E3a, E3b, O4a, O4b-A, O1′ instrumentation, O5-A and the

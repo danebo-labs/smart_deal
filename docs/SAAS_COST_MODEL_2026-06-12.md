@@ -6,6 +6,65 @@
 > not contractual maxima or customer pricing. Contractual maxima must be
 > regenerated from finite technical limits with the Gate 9R cost matrix.
 
+## UPDATE 2026-06-18 — observed 200-page run + contractual ceiling
+
+This section supersedes the manual-cost **projection** below for the *realized*
+cost view and adds the deterministic contractual ceiling. Sources: observed
+Gate 9R batch run (`docs/GATE9R_STATUS.md`) and `Gate9CostMatrix#contractual_max`
+(commit `ef71e81`, pricing version 2026-06-12). The ceiling numbers were
+re-derived by hand from `ContractualLimits` and matched the matrix exactly.
+
+### Observed 200-page manual (replaces $9.05 projection for realized cost)
+
+- Retained batch `msgbatch_017UYaG9fXBGkovuE6ENmaRv`: **168 kept/succeeded
+  pages, 0 failed, 0 degraded, 2 bounded retries, 0 Opus pages**.
+- **Harness-observed L2 cost: USD 5.4434.** NOT reconciled against the Anthropic
+  invoice — operational figure, do not present as billed truth.
+- The post-fix `PageRelevanceFilter.safety_action_guard?` rescues pages
+  197/198/200 (~3 extra kept pages); cost delta negligible.
+- The earlier **USD 9.0547 batch / USD 14.5276 direct** figures stay valid as the
+  *conservative scaling projection* from the 24-page cohort; the realized run
+  landed ~40% below the batch projection.
+
+### Recalculated package (manual = observed batch $5.4434)
+
+| Scenario | Components | Total |
+|---|---|---:|
+| Expected | queries $6.49 + photos $4.62 + manual $5.44 | **$16.55** |
+| Conservative reserve | queries $8.65 + photos $4.62 + manual $5.44 | **$18.72** |
+| Conservative + photo high-water | queries $8.65 + photos $5.23 + manual $5.44 | **$19.32** |
+
+(Was ~$20.17 expected / ~$22.33 reserve when the manual used the $9.05 projection.)
+
+### Contractual ceiling — `Gate9CostMatrix#contractual_max`
+
+Deterministic worst case: most expensive permitted route, no cache, bounded
+retries, derived only from `ContractualLimits`. This is **NOT** expected cost; it
+bounds abuse and sets where quotas/guards must reject or surcharge *before*
+incurring model cost (`ContractualLimits::ON_QUOTA_EXCEEDED`).
+
+| Unit | Worst-case route | Ceiling |
+|---|---|---:|
+| 1,000 queries | 2× Haiku global calls, 197k in / 3k out each | $424.00 |
+| 200 photos | Opus direct, full 8k→16k→32k ladder over 1M window | $3,224.00 |
+| 200-page manual | every page Opus, 1 batch + 2 direct retries + filter + embeddings | $2,712.18 |
+| **Full package** | | **$6,360.18** |
+
+The **photo line dominates** the ceiling (one photo can route to Opus direct over
+a 1M context window). Enforcing a per-photo input/token cap (E3a) collapses it.
+
+### Updated pricing floor (on conservative reserve $19.32)
+
+| Target gross margin | Minimum price |
+|---|---:|
+| 50% | $38.64 |
+| 60% | $48.30 |
+| 70% | $64.40 |
+
+Still excludes shared infra, payment fees, support, storage, taxes, and margin.
+
+---
+
 ## Scope
 
 Variable COGS for one usage package:

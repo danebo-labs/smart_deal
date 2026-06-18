@@ -1,7 +1,7 @@
 # Gate 9R — Current Status
 
 **Updated:** 2026-06-18
-**Status:** MERGED_E2E_DEFERRED
+**Status:** PREFLIGHT_COMPLETE_E2E_DEFERRED
 **Purpose:** single checkpoint for continuing work without rereading historical plans.
 **Master plan:** `/Users/lahirisan/.cursor/plans/rag_precision_cost_plan_578aea0c.plan.md`
 
@@ -28,13 +28,13 @@ this checkpoint lacks a necessary edge case. Do not reopen completed work.
 
 ## Current pointer
 
-`Gate 9R → Block C → deterministic pre-Haiku cascade merged; synthetic validation dataset planned; real-traffic certification deferred`
+`Gate 9R → Block C → retained 200-page artifact verified offline; provisional closeout next; paid E2E deferred`
 
 Use stable plan IDs/names rather than bare item numbers: item 32 in the master
 plan's executable sequence is the paid 200-page post-optimization run, not the
 completed deterministic page-relevance guard.
 
-- Checkpoint: `MERGED_E2E_DEFERRED`.
+- Checkpoint: `PREFLIGHT_COMPLETE_E2E_DEFERRED`.
 - Branch: `main`; retained source tip: `71f6239`.
 - Retained Batch: `msgbatch_017UYaG9fXBGkovuE6ENmaRv`.
 - Artifact: `tmp/gate9_final/4bbf9b13771e3daf9d774cca3784e3047b9b44a4e2278bcf0e4fc430be19f7f8/`.
@@ -77,13 +77,27 @@ completed deterministic page-relevance guard.
 
 ## Next action
 
-Prepare an offline synthetic validation dataset: 500 hypothetical technician
-queries grounded in a representative PDF plus 50 unique representative field
-photos. Treat it as quality/stress-test evidence only, not real-production
-telemetry and not a basis for production p95. Define the validation plan before
-processing the dataset; do not execute paid APIs without a new cost cap and
-human authorization. Keep the web/chat PDF onboarding E2E and paid 200-page run
-deferred to final validation.
+Complete the provisional Gate 9R closeout offline using the retained 200-page
+artifact. Do not resubmit the PDF: the supplied file has the same SHA-256 as the
+retained completed Batch. Preserve the real-production sample limitation and
+pending authoritative billing reconciliation in the final documentation. A new
+web/chat application E2E remains optional and requires a new cost cap and human
+authorization.
+
+## Final preflight evidence — 2026-06-18
+
+- Supplied PDF: 200 pages, 8,332,393 bytes, unencrypted, text layer present.
+- SHA-256 matches the retained artifact exactly:
+  `4bbf9b13771e3daf9d774cca3784e3047b9b44a4e2278bcf0e4fc430be19f7f8`.
+- Retained Batch `msgbatch_017UYaG9fXBGkovuE6ENmaRv` ended with 168 kept and
+  succeeded pages, 0 failed, 0 degraded and 2 bounded retries.
+- Harness-computed observed L2 cost: USD 5.443419; authoritative Anthropic
+  billed-cost reconciliation remains pending. Do not present it as reconciled.
+- The retained pre-fix filter dropped safety pages 197, 198 and 200. Offline
+  replay against current `PageRelevanceFilter.safety_action_guard?` rescues all
+  three; page 199 remains technical content and does not require rescue.
+- `page_relevance_filter_test.rb`: 48 runs, 225 assertions, 0 failures, 0 errors.
+- No paid API or network call was executed during this preflight.
 
 ## Closed — do not repeat
 

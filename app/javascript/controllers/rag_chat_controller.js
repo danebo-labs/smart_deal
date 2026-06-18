@@ -63,10 +63,12 @@ export default class extends Controller {
     this.subscribeToKbSync()
     this.setupMobileTabs()
     this.setupKeyboardLift()
-    // Focus AFTER layout setup; on mobile the browser will not auto-open the
-    // keyboard from a programmatic focus without a user gesture, so this is
-    // safe and doesn't trigger a layout shift.
-    this.inputTarget?.focus()
+    // Auto-focus only on desktop. On mobile, programmatic focus after a
+    // navigation (e.g. Devise login redirect) opens the on-screen keyboard
+    // immediately, shifting the layout up and hiding the nav + tab bar.
+    if (window.innerWidth >= 768) {
+      this.inputTarget?.focus()
+    }
   }
 
   disconnect() {
@@ -421,7 +423,9 @@ export default class extends Controller {
   enableForm() {
     this.inputTarget.disabled = false
     this.sendButtonTarget?.removeAttribute("disabled")
-    this.inputTarget.focus()
+    if (window.innerWidth >= 768) {
+      this.inputTarget.focus()
+    }
   }
 
   // ── Mobile tabs: Archivos | Chat ─────────────────────────────────────────
@@ -451,6 +455,7 @@ export default class extends Controller {
       if (isMobile) {
         this.archivosPanelTarget.classList.toggle("hidden", !showArchivos)
       }
+      // On desktop md:hidden CSS hides it regardless — no JS override needed
     }
 
     if (this.hasChatPanelTarget) {
@@ -482,6 +487,7 @@ export default class extends Controller {
 
   updateSourcesBadge() {
     if (!this.hasSourcesBadgeTarget) return
+    // Deduplicate by doc-id: each doc appears in both mobile + desktop panels.
     const selectedIds = new Set()
     this.element.querySelectorAll('[data-selected="true"][data-doc-id]').forEach(el => {
       selectedIds.add(el.dataset.docId)
@@ -585,6 +591,7 @@ export default class extends Controller {
     row.querySelector(".chat-message").innerHTML = html
     this.messagesTarget.appendChild(row)
     this.scroll()
+    return row
   }
 
   addImageMessage(imageSrc, text) {
@@ -694,8 +701,16 @@ export default class extends Controller {
       this.chatContainerTarget.scrollHeight
   }
 
+  scrollToMessageTop(element) {
+    const container = this.chatContainerTarget
+    const containerRect = container.getBoundingClientRect()
+    const elementRect = element.getBoundingClientRect()
+    container.scrollTop += elementRect.top - containerRect.top
+  }
+
   handleKeyPress(event) {
     if (event.key === "Enter" && !event.shiftKey) {
+      if (window.innerWidth < 768) return  // mobile: Enter inserts newline, send via button
       event.preventDefault()
       this.sendMessage(event)
     }
@@ -753,6 +768,9 @@ export default class extends Controller {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
 
+  // Syncs selection state for ALL buttons with the given docId (mobile + desktop panels).
+  // The rag-chat controller root spans both panels, so a doc appears twice in the DOM;
+  // updating only the clicked button left the hidden duplicate stale, causing badge count = 1 after deselecting all.
   _setSelectedUI(docId, isSelected) {
     const btns = this.element.querySelectorAll(`[data-doc-id="${docId}"]`)
     btns.forEach(btn => {
@@ -795,14 +813,16 @@ export default class extends Controller {
 
   renderAssistantAnswer(data) {
     const citations = Array.isArray(data.citations) ? data.citations : []
+    let firstRow
     if (citations.length) {
-      this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
+      firstRow = this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
     }
-    const answerHtml = formatAnswerForWeb(data.answer, citations)
-    this.addMessageHtml(answerHtml, "assistant")
+    const answerRow = this.addMessageHtml(formatAnswerForWeb(data.answer, citations), "assistant")
+    if (!firstRow) firstRow = answerRow
     if (citations.length) {
       this.addMessageHtml(renderReferences(citations), "assistant")
     }
+    this.scrollToMessageTop(firstRow)
   }
 
   // ── Immediate acknowledgment in the loading bubble ────────────────────────
@@ -946,7 +966,7 @@ export default class extends Controller {
 
     bubble.innerHTML = html
     this.messagesTarget.appendChild(row)
-    this.scroll()
+    this.scrollToMessageTop(row)
   }
 
   addImageSummaryMessage(data) {
@@ -980,7 +1000,7 @@ export default class extends Controller {
 
     bubble.innerHTML = html
     this.messagesTarget.appendChild(row)
-    this.scroll()
+    this.scrollToMessageTop(row)
   }
 
   async refreshDocuments() {
@@ -1007,9 +1027,6 @@ export default class extends Controller {
         setTimeout(() => clone.remove(), 100)
       })
 
-      // Turbo processes the stream asynchronously — wait one animation frame so
-      // the DOM is updated before we reset the scroll position to reveal the
-      // newest document at the top of the list.
       requestAnimationFrame(() => {
         this.hasArchivosPanelTarget && this.archivosPanelTarget.scrollTo({ top: 0 })
         document

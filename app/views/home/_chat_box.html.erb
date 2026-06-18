@@ -28,17 +28,34 @@
       </div>
     </div>
 
+    <%# Mobile tab bar — two tabs: Archivos | Chat %>
+    <div class="md:hidden flex bg-white flex-shrink-0 border-b border-[hsl(215,20%,90%)]">
+      <button type="button"
+              data-rag-chat-target="archivosTabBtn"
+              data-action="click->rag-chat#switchToArchivosTab"
+              class="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium
+                     text-[hsl(215,20%,52%)] border-b-2 border-transparent transition-colors">
+        Archivos
+        <span data-rag-chat-target="sourcesBadge"
+              class="h-[18px] min-w-[18px] px-1 text-[10px] font-bold rounded-full
+                     bg-[hsl(217,91%,50%)] text-white items-center justify-center leading-none"
+              style="display:none"></span>
+      </button>
+      <button type="button"
+              data-rag-chat-target="chatTabBtn"
+              data-action="click->rag-chat#switchToChatTab"
+              class="flex-1 py-3 text-sm font-medium
+                     text-[hsl(217,91%,50%)] border-b-2 border-[hsl(217,91%,50%)] transition-colors">
+        Chat
+      </button>
+    </div>
+
     <%# Content area: flex column, takes all remaining height %>
     <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
-      <%# ── MOBILE: KB documents panel ──
-           Height managed by JS (updateMobileLayout) so the user can always
-           reach every KB document (including the most recent one at the top):
-           • empty chat  → flex: 1 1 0%                  (fills the viewport)
-           • active chat → flex: 0 0 calc(50svh - 58px)  (KB ≥ 50% of viewport,
-                                                          chat ≤ 50% incl. textarea)
-      %>
-      <div class="mobile-docs-panel md:hidden border-b border-[hsl(215,20%,90%)] overflow-y-auto overscroll-contain min-h-0">
+      <%# ── MOBILE tab 1: Archivos panel ── %>
+      <div data-rag-chat-target="archivosPanel"
+           class="hidden md:hidden flex-1 overflow-y-auto overscroll-contain min-h-0">
         <%= render partial: "home/kb_docs_card",
                    locals: {
                      kb_documents:      @kb_documents || KbDocument.none,
@@ -50,10 +67,13 @@
                    } %>
       </div>
 
-      <%# ── Messages scroll area (mobile bottom 58 % + full desktop) ── %>
-      <div class="flex-1 overflow-y-auto overscroll-contain px-4 md:px-6 py-4 bg-[hsl(220,20%,98%)]"
-           data-rag-chat-target="chatContainer">
-        <div class="flex flex-col gap-4" data-rag-chat-target="messages"></div>
+      <%# ── MOBILE tab 2 + desktop: Chat messages panel ── %>
+      <div data-rag-chat-target="chatPanel"
+           class="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div class="flex-1 overflow-y-auto overscroll-contain px-4 md:px-6 py-4 bg-[hsl(220,20%,98%)]"
+             data-rag-chat-target="chatContainer">
+          <div class="flex flex-col gap-4" data-rag-chat-target="messages"></div>
+        </div>
       </div>
 
     </div><%# /content area %>

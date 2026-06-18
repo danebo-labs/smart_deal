@@ -7,7 +7,7 @@ import { renderDocumentsConsulted } from "rag/documents_consulted_renderer"
 import { formatAnswerForWeb } from "rag/answer_presenter"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack", "archivosTabBtn", "chatTabBtn", "archivosPanel", "chatPanel", "sourcesBadge"]
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
   static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
@@ -59,9 +59,9 @@ export default class extends Controller {
     this.queryNudgeTimer = null
     this.queryStallTimer = null
     this.queryStallNoticeId = null
-    this._docsPanelExpanded = true  // tracks empty-chat state on mobile
+    this._activeMobileTab = "chat"
     this.subscribeToKbSync()
-    this.setupMobileLayout()
+    this.setupMobileTabs()
     this.setupKeyboardLift()
     // Focus AFTER layout setup; on mobile the browser will not auto-open the
     // keyboard from a programmatic focus without a user gesture, so this is
@@ -71,7 +71,6 @@ export default class extends Controller {
 
   disconnect() {
     this.kbSyncSubscription?.unsubscribe()
-    this.mobilePanelObserver?.disconnect()
     window.removeEventListener("resize", this._onResize)
     this.teardownKeyboardLift()
     this.clearIndexingNudgeTimer()
@@ -291,6 +290,7 @@ export default class extends Controller {
 
     if (!question && !hasFile) return
 
+    this.switchToChatTab()
     this.disableForm()
 
     if (hasFile) {
@@ -424,40 +424,76 @@ export default class extends Controller {
     this.inputTarget.focus()
   }
 
-  // ── Mobile layout: expand docs panel when chat is empty ──────────────────
+  // ── Mobile tabs: Archivos | Chat ─────────────────────────────────────────
 
-  setupMobileLayout() {
-    this.updateMobileLayout()
-    this.mobilePanelObserver = new MutationObserver(() => this.updateMobileLayout())
-    this.mobilePanelObserver.observe(this.messagesTarget, { childList: true })
-    this._onResize = () => this.updateMobileLayout()
+  setupMobileTabs() {
+    this.updateMobileTabUI()
+    this.updateSourcesBadge()
+    this._onResize = () => this.updateMobileTabUI()
     window.addEventListener("resize", this._onResize, { passive: true })
   }
 
-  updateMobileLayout() {
-    const docsPanel = this.element.querySelector(".mobile-docs-panel")
-    if (!docsPanel) return
-    // Only apply on mobile — when md:hidden is active, display is "none"
-    if (window.getComputedStyle(docsPanel).display === "none") return
+  switchToArchivosTab() {
+    this._activeMobileTab = "archivos"
+    this.updateMobileTabUI()
+  }
 
-    const hasMessages = this.messagesTarget.children.length > 0
-    if (hasMessages) {
-      // When transitioning from the expanded (empty-chat) state, reset the
-      // docs scroll so the user always sees the top of the list (newest doc).
-      if (this._docsPanelExpanded) {
-        this._docsPanelExpanded = false
-        requestAnimationFrame(() => docsPanel.scrollTo({ top: 0 }))
+  switchToChatTab() {
+    this._activeMobileTab = "chat"
+    this.updateMobileTabUI()
+  }
+
+  updateMobileTabUI() {
+    const isMobile = window.innerWidth < 768
+    const showArchivos = this._activeMobileTab === "archivos"
+
+    if (this.hasArchivosPanelTarget) {
+      if (isMobile) {
+        this.archivosPanelTarget.classList.toggle("hidden", !showArchivos)
       }
-      // Active chat: docs panel locked to (50svh - 58px) so the WHOLE chat
-      // block (messages + file preview + input) takes at most 50% of the
-      // small viewport. Both panes stay independently scrollable.
-      docsPanel.style.cssText = "flex: 0 0 calc(50svh - 58px); min-height: 0;"
-      this.chatContainerTarget.style.cssText = "flex: 1 1 0%; min-height: 0;"
+    }
+
+    if (this.hasChatPanelTarget) {
+      if (isMobile) {
+        this.chatPanelTarget.classList.toggle("hidden", showArchivos)
+      } else {
+        this.chatPanelTarget.classList.remove("hidden")
+      }
+    }
+
+    if (this.hasArchivosTabBtnTarget) {
+      const btn = this.archivosTabBtnTarget
+      const active = showArchivos && isMobile
+      btn.classList.toggle("text-[hsl(217,91%,50%)]", active)
+      btn.classList.toggle("border-[hsl(217,91%,50%)]", active)
+      btn.classList.toggle("text-[hsl(215,20%,52%)]", !active)
+      btn.classList.toggle("border-transparent", !active)
+    }
+
+    if (this.hasChatTabBtnTarget) {
+      const btn = this.chatTabBtnTarget
+      const active = !showArchivos || !isMobile
+      btn.classList.toggle("text-[hsl(217,91%,50%)]", active)
+      btn.classList.toggle("border-[hsl(217,91%,50%)]", active)
+      btn.classList.toggle("text-[hsl(215,20%,52%)]", !active)
+      btn.classList.toggle("border-transparent", !active)
+    }
+  }
+
+  updateSourcesBadge() {
+    if (!this.hasSourcesBadgeTarget) return
+    const selectedIds = new Set()
+    this.element.querySelectorAll('[data-selected="true"][data-doc-id]').forEach(el => {
+      selectedIds.add(el.dataset.docId)
+    })
+    const count = selectedIds.size
+    const badge = this.sourcesBadgeTarget
+    if (count > 0) {
+      badge.textContent = count
+      badge.style.display = "inline-flex"
     } else {
-      // Empty chat: docs panel fills all available space; messages area collapses
-      this._docsPanelExpanded = true
-      docsPanel.style.cssText = "flex: 1 1 0%;"
-      this.chatContainerTarget.style.cssText = "flex: 0 0 0%; overflow: hidden;"
+      badge.textContent = ""
+      badge.style.display = "none"
     }
   }
 
@@ -673,10 +709,9 @@ export default class extends Controller {
     if (!docId) return
 
     const wasSelected = btn.dataset.selected === "true"
-    const checkbox = btn.querySelector(".kb-doc-checkbox")
     const docName = btn.dataset.docName || ""
 
-    this._setSelectedUI(btn, checkbox, !wasSelected)
+    this._setSelectedUI(docId, !wasSelected)
     this._updateTextareaWithDocName(docName, !wasSelected)
 
     try {
@@ -691,7 +726,7 @@ export default class extends Controller {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     } catch (err) {
-      this._setSelectedUI(btn, checkbox, wasSelected)
+      this._setSelectedUI(docId, wasSelected)
       this._updateTextareaWithDocName(docName, wasSelected)
       console.error("toggleDocSelection failed:", err)
     }
@@ -718,25 +753,30 @@ export default class extends Controller {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
 
-  _setSelectedUI(btn, checkbox, isSelected) {
-    btn.dataset.selected = isSelected ? "true" : "false"
-    if (isSelected) {
-      btn.classList.remove("border-transparent", "bg-[hsl(215,20%,96%)]")
-      btn.classList.add("border-[hsl(217,91%,50%)]", "bg-[hsl(217,91%,50%,0.06)]")
-      if (checkbox) {
-        checkbox.classList.remove("bg-[hsl(215,20%,88%)]")
-        checkbox.classList.add("bg-[hsl(217,91%,50%)]", "text-white")
-        checkbox.innerHTML = `<svg style="width:14px;height:14px;display:block;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
+  _setSelectedUI(docId, isSelected) {
+    const btns = this.element.querySelectorAll(`[data-doc-id="${docId}"]`)
+    btns.forEach(btn => {
+      btn.dataset.selected = isSelected ? "true" : "false"
+      const checkbox = btn.querySelector(".kb-doc-checkbox")
+      if (isSelected) {
+        btn.classList.remove("border-transparent", "bg-[hsl(215,20%,96%)]")
+        btn.classList.add("border-[hsl(217,91%,50%)]", "bg-[hsl(217,91%,50%,0.06)]")
+        if (checkbox) {
+          checkbox.classList.remove("bg-[hsl(215,20%,88%)]")
+          checkbox.classList.add("bg-[hsl(217,91%,50%)]", "text-white")
+          checkbox.innerHTML = `<svg style="width:14px;height:14px;display:block;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
+        }
+      } else {
+        btn.classList.add("border-transparent", "bg-[hsl(215,20%,96%)]")
+        btn.classList.remove("border-[hsl(217,91%,50%)]", "bg-[hsl(217,91%,50%,0.06)]")
+        if (checkbox) {
+          checkbox.classList.add("bg-[hsl(215,20%,88%)]")
+          checkbox.classList.remove("bg-[hsl(217,91%,50%)]", "text-white")
+          checkbox.innerHTML = ""
+        }
       }
-    } else {
-      btn.classList.add("border-transparent", "bg-[hsl(215,20%,96%)]")
-      btn.classList.remove("border-[hsl(217,91%,50%)]", "bg-[hsl(217,91%,50%,0.06)]")
-      if (checkbox) {
-        checkbox.classList.add("bg-[hsl(215,20%,88%)]")
-        checkbox.classList.remove("bg-[hsl(217,91%,50%)]", "text-white")
-        checkbox.innerHTML = ""
-      }
-    }
+    })
+    this.updateSourcesBadge()
   }
 
   _jsonHeaders() {
@@ -971,11 +1011,12 @@ export default class extends Controller {
       // the DOM is updated before we reset the scroll position to reveal the
       // newest document at the top of the list.
       requestAnimationFrame(() => {
-        this.element.querySelector(".mobile-docs-panel")?.scrollTo({ top: 0 })
+        this.hasArchivosPanelTarget && this.archivosPanelTarget.scrollTo({ top: 0 })
         document
           .querySelector("#kb-docs-desktop-items")
           ?.closest(".overflow-y-auto")
           ?.scrollTo({ top: 0 })
+        this.updateSourcesBadge()
       })
     } catch (error) {
       console.error('Error refreshing documents:', error)

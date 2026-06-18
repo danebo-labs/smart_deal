@@ -91,8 +91,9 @@ PDF.
   `4bbf9b13771e3daf9d774cca3784e3047b9b44a4e2278bcf0e4fc430be19f7f8`.
 - Retained Batch `msgbatch_017UYaG9fXBGkovuE6ENmaRv` ended with 168 kept and
   succeeded pages, 0 failed, 0 degraded and 2 bounded retries.
-- Harness-computed observed L2 cost: USD 5.443419; authoritative Anthropic
-  billed-cost reconciliation remains pending. Do not present it as reconciled.
+- Harness-computed observed L2 cost: USD 5.443419. **RECONCILED 2026-06-18**
+  against the Anthropic invoice (real full onboarding $5.32; harness +2.3%,
+  conservative). See "Anthropic billed-cost reconciliation — 2026-06-18" below.
 - The retained pre-fix filter dropped safety pages 197, 198 and 200. Offline
   replay against current `PageRelevanceFilter.safety_action_guard?` rescues all
   three; page 199 remains technical content and does not require rescue.
@@ -121,9 +122,57 @@ Offline only ($0, no paid API or network call).
   - `docs/INGESTION_COST_V2.md` — stale-figures banner pointing to the SaaS model.
 - Dated historical snapshots (GATE9_V1, RAG_CERTIFICATION, benchmarks) left
   untouched — they are records, not living estimates.
-- Limitation unchanged: the $5.4434 manual cost is harness-observed, **not**
-  reconciled against the Anthropic invoice. Next action: none (reconciliation is
-  non-blocking production telemetry).
+- Limitation LIFTED 2026-06-18: the $5.4434 manual cost is now reconciled
+  against the Anthropic invoice (real $5.32, harness +2.3% conservative). See
+  the reconciliation section below.
+
+## Anthropic billed-cost reconciliation — 2026-06-18 (COMPLETE)
+
+Lifts the "reconciliation pending" limitation recorded in the preflight and
+cost-doc sections above. Source: Anthropic Console cost export
+`claude_api_cost_2026_06_01_to_2026_06_18.csv` (workspace `Default`, key
+`danebo-claude-key`), cross-checked against newly enabled Bedrock
+model-invocation logging.
+
+**Manual (batch `msgbatch_017UYaG9fXBGkovuE6ENmaRv`, 168 pages, billed 2026-06-18):**
+- Real Anthropic batch (Sonnet 4.6): input $0.50 + cache-write $1.50 +
+  output $2.51 = **$4.51**.
+- Page-filter (Haiku, sync) $0.44 + 2 Sonnet-direct $0.37 = $0.81.
+- **Real full onboarding cost: $5.32.** Harness-observed L2 was $5.4434 →
+  **+2.3%, conservative**. The harness slightly over-estimates; the figure is safe.
+- The batch was launched by a standalone improvement script, outside
+  `IngestManualBatchResultsJob`, so it emitted NO `BedrockQuery` /
+  `TrackBedrockQueryJob` rows. This is expected for one-off script runs and is
+  NOT a production tracking defect — its cost is visible only on the Anthropic
+  invoice, which is why prior in-app totals did not include it.
+
+**Production cost-tracking accuracy (validated against ground truth):**
+- Bedrock model-invocation logging ENABLED → `s3://multimodal-logs/bedrock-invocation-logs/`.
+  `Converse` records are now the query ground truth (textDataDeliveryEnabled).
+- RAG query estimator (`token_source: "estimated"`): measured **−3.8% on cost**
+  across 20 real queries (output exact ±1 token = `stop_sequence`; input −1–3%).
+  The legacy **29.7% underestimation** figure in `CLAUDE.md` / `BedrockQuery`
+  comments is STALE — supersede with **~4%**. Outlier: hybrid
+  "compare-with-schematic" queries can undercount input ~58% because the
+  estimator counts only cited chunks, not all retrieved chunks fed to
+  `$search_results$`.
+- Sync/`-direct` parse and batch-via-jobs parse: **exact** (`token_source:
+  "provider_usage"`, straight from Anthropic `usage`). Daily reconciliation
+  06-15/16/17 matched the invoice to the cent.
+
+**SaaS COGS implication:**
+- Manual ingestion is **one-time onboarding** ($5.32), NOT a monthly recurring
+  cost. The earlier package figure that folded it into monthly overstated
+  steady-state COGS.
+- Measured recurring per client/month: 1,000 Haiku queries **$6.14** (real) +
+  200 field photos (80% Sonnet / 20% Opus) **~$3.40 est.** = **~$9.54 expected /
+  ~$13.27 conservative**. First month incl. manual onboarding: **~$15**.
+- Still unvalidated against invoice: field-photo parse (estimate only); blocked
+  on n≥50 real production photos (see O1′ / O5-B below).
+
+`ANTHROPIC_API_KEY` in `.env` is a regular key (`sk-ant-api03-`); the org
+`usage_report` / `cost_report` endpoints require an admin key (`sk-ant-admin-`).
+The Console CSV export is the reconciliation source until an admin key exists.
 
 ## Closed — do not repeat
 

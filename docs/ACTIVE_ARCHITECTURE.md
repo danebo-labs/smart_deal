@@ -8,9 +8,12 @@
 
 | If you need… | Read |
 |--------------|------|
+| **Current Gate 9R work** — exact phase, blocker, next action | [GATE9R_STATUS.md](GATE9R_STATUS.md) |
 | Clone, run locally, essential flags | [README.md](../README.md) |
 | Bedrock KB, models, env vars | [BEDROCK_SETUP.md](../BEDROCK_SETUP.md) |
 | Deploy / Kamal / EC2 / RDS | [PRODUCTION.md](PRODUCTION.md) |
+
+For Gate 9R, read `GATE9R_STATUS.md` first and do not load every dated report.
 
 ## Ingestion paths
 
@@ -42,6 +45,23 @@
 | Performance constraints | [PERFORMANCE_CONSTRAINTS.md](PERFORMANCE_CONSTRAINTS.md) |
 | WhatsApp R3 (dormant) | [WHATSAPP.md](WHATSAPP.md) |
 | Legacy full architecture (may be stale) | [ARCHITECTURE.md](../ARCHITECTURE.md) |
+
+## Historical evidence — do not read by default
+
+These files remain committed for auditability. They are not startup context and
+should only be opened when investigating the specific historical run:
+
+- `GATE9_FINAL_MANUAL_AUDIT_2026-06-17.md`
+- `GATE9_V1_2026-06-12.md`
+- `project_o1_gate_phase.md`
+- `RAG_100_PERCENT_FIDELITY_PLAN_2026-06-10.md`
+- `RAG_CERTIFICATION_2026-06-11.md`
+- `RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md`
+- `SAAS_COST_MODEL_2026-06-12.md`
+- `RESUMEN_CAMBIOS_COMPRESION.md`
+
+Current replacements are `GATE9R_STATUS.md`, `INGESTION_COST_V2.md`,
+`INGESTION_ROUTING.md`, `METRICS.md` and the code/tests themselves.
 
 ## Priorities (current build)
 

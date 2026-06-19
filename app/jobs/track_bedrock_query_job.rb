@@ -30,16 +30,16 @@ class TrackBedrockQueryJob < ApplicationJob
   # @param correlation_id         [String, nil]  Groups all attempts of one page/document/query
   def perform(model_id:, user_query:, latency_ms:,
               input_tokens: nil, output_tokens: nil,
+              token_source: nil,                          # explicit override from caller
               cache_read_tokens: nil, cache_creation_tokens: nil,
-              prompt_text: nil, answer_text: nil, visible_answer_text: nil,
-              regression_context: nil,
+              prompt_text: nil, answer_text: nil, visible_answer_text: nil,  # LEGACY (in-flight jobs)
+              regression_context: nil,                                        # LEGACY
               route: nil, attempt: nil, max_tokens: nil,
               stop_reason: nil, correlation_id: nil,
-              source: "query", model_for_counting: :haiku)
-    # Provider usage rows are exact. Reconstructed rows are estimates; current
-    # reconciliation measured ~3.8% average query-cost undercount, with larger
-    # hybrid-query outliers. Commercial reporting must preserve this label.
-    token_source = input_tokens && output_tokens ? "provider_usage" : "estimated"
+              source: "query", model_for_counting: :haiku)                    # LEGACY: model_for_counting
+    # Caller may pass token_source: "estimated" with integers (RAG path uses LocalTokenizer).
+    # Without explicit override: integers from provider → "provider_usage"; nil → "estimated".
+    token_source ||= input_tokens && output_tokens ? "provider_usage" : "estimated"
 
     if input_tokens.nil? || output_tokens.nil?
       usage = AnthropicTokenCounter.count_query(

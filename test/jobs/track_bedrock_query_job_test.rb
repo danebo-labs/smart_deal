@@ -160,6 +160,15 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
     assert_not BedrockQuery.last.estimated_tokens?
   end
 
+  test 'explicit token_source: estimated is preserved even when caller supplies both token integers' do
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(**VALID_PARAMS.merge(token_source: "estimated"))
+    end
+
+    assert_equal 'estimated', BedrockQuery.last.token_source
+    assert BedrockQuery.last.estimated_tokens?
+  end
+
   test 'token_source is estimated when tokens are counted from reconstructed text (B.1 paso 13)' do
     orig = AnthropicTokenCounter.method(:count_query)
     AnthropicTokenCounter.define_singleton_method(:count_query) do |**|

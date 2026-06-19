@@ -257,16 +257,29 @@ class BedrockRagService
       # GAP: Bedrock only populates response.citations for chunks that Haiku
       # inline-cites ([n] markers). When Haiku emits <DOC_REFS> but omits inline
       # citations, response.citations is empty and EntityExtractorService has
-      # no metadata to resolve source_uri. Fall back to the Retrieve API —
-      # cheap vector search — to obtain the authoritative s3_uri metadata.
-      retrieved_for_extraction =
+      # no metadata to resolve source_uri.
+      #
+      # With a pin (applied_filter_uris non-empty): the entity is already known;
+      # skip the Retrieve round-trip (+1–2 s) and synthesize metadata from
+      # filtered_uris so KbDocumentEnrichmentService can still backfill
+      # canonical/aliases. Without a pin: call the Retrieve API for authoritative
+      # source_uri resolution.
+      retrieved_for_extraction, observed_chunk_basis, input_token_basis =
         if citations.any?
-          citations
+          [ citations, "bedrock_citations", "prompt_template_plus_observed_chunks" ]
+        elsif doc_refs&.any? && applied_filter_uris.empty?
+          Rails.logger.info("BedrockRagService: post-gen citations empty; Retrieve API fallback for source_uri")
+          chunks = fallback_retrieve(question, entity_s3_uris: filtered_uris)
+          [ chunks, "fallback_retrieve_top3", "prompt_template_plus_observed_chunks" ]
         elsif doc_refs&.any?
-          Rails.logger.info("BedrockRagService: post-gen citations empty; using Retrieve API fallback for source_uri resolution")
-          fallback_retrieve(question, entity_s3_uris: filtered_uris)
+          Rails.logger.info("BedrockRagService: skipping fallback_retrieve — entity known from filter")
+          synth = filtered_uris.map do |uri|
+            { content: nil, location: { uri: uri, type: "s3" },
+              metadata: { "x-amz-bedrock-kb-source-uri" => uri } }
+          end
+          [ synth, "filter_uris_only", "prompt_template_only" ]
         else
-          []
+          [ [], "none", "prompt_template_plus_observed_chunks" ]
         end
 
       # If answer doesn't contain inline citations but Bedrock returned source chunks,
@@ -279,49 +292,28 @@ class BedrockRagService
       latency_ms = ((Time.current - start_time) * 1000).to_i
       tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
 
-      # Build the full prompt that was sent to the model so the job can count tokens accurately.
-      # retrieved_for_extraction holds the chunks Haiku actually cited; using them as a
-      # proxy for $search_results$ gives ~95% accuracy without a second Bedrock call.
-      # NOTE: token counting is deferred to TrackBedrockQueryJob to avoid up to ~16s of
-      # request-blocking latency when the Anthropic count_tokens endpoint is slow.
-      chunks_text = Array(retrieved_for_extraction).filter_map { |c| c[:content].presence }.join("\n\n")
-      full_prompt = [
-        load_generation_prompt_with_locale(question,
-                                           response_locale: response_locale,
-                                           session_context: effective_session_context,
-                                           output_channel: output_channel),
-        chunks_text,
-        question
-      ].compact_blank.join("\n\n")
-
-      TrackBedrockQueryJob.perform_later(
-        model_id:           tracked_model_id,
-        prompt_text:        full_prompt,
-        answer_text:        raw_answer,
-        visible_answer_text: answer_text,
-        user_query:         question,
-        latency_ms:         latency_ms,
-        # route reflects the retrieval scope of THIS generation call:
-        # "rag_filtered" = entity filter applied; "rag_global" = unscoped
-        # (either no filter or the attempt-2 no-results fallback).
-        route:              applied_filter_uris.any? ? "rag_filtered" : "rag_global",
-        attempt:            generation_attempt,
-        max_tokens:         config.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens),
-        correlation_id:     query_correlation_id,
-        source:             "query",
-        model_for_counting: "haiku",
-        regression_context: regression_context(
-          config: config,
-          observed_chunks: retrieved_for_extraction,
-          observed_chunk_basis: citations.any? ? "bedrock_citations" : (doc_refs&.any? ? "fallback_retrieve_top3" : "none"),
-          bedrock_cited_references_count: total_refs,
-          doc_refs_present: raw_answer.include?("<DOC_REFS>"),
-          doc_refs_valid: doc_refs.present?,
-          doc_refs_count: doc_refs&.size.to_i,
-          entity_filter_applied: apply_filter
-        )
+      track_rag_usage(
+        question:                       question,
+        raw_answer:                     raw_answer,
+        visible_answer:                 answer_text,
+        config:                         config,
+        retrieved_chunks:               retrieved_for_extraction,
+        observed_chunk_basis:           observed_chunk_basis,
+        input_token_basis:              input_token_basis,
+        bedrock_cited_references_count: total_refs,
+        doc_refs_present:               raw_answer.include?("<DOC_REFS>"),
+        doc_refs_valid:                 doc_refs.present?,
+        doc_refs_count:                 doc_refs&.size.to_i,
+        entity_filter_applied:          apply_filter,
+        response_locale:                response_locale,
+        session_context:                effective_session_context,
+        output_channel:                 output_channel,
+        correlation_id:                 query_correlation_id,
+        generation_attempt:             generation_attempt,
+        applied_filter_uris:            applied_filter_uris,
+        latency_ms:                     latency_ms,
+        model_id:                       tracked_model_id
       )
-      Rails.logger.info("✓ BedrockQuery tracking enqueued (token counting deferred to job)")
 
       # Build numbered references from the KB response — no S3 listing required.
       numbered_references = @citation_processor.build_numbered_references(citations, answer_text)
@@ -449,7 +441,8 @@ class BedrockRagService
   # Retrieve fallback, so regression analysis does not mistake them for the full set.
   def regression_context(config:, observed_chunks:, observed_chunk_basis:,
                          bedrock_cited_references_count:, doc_refs_present:,
-                         doc_refs_valid:, doc_refs_count:, entity_filter_applied:)
+                         doc_refs_valid:, doc_refs_count:, entity_filter_applied:,
+                         input_token_basis: "prompt_template_plus_observed_chunks")
     inference = config.dig(
       :generation_configuration,
       :inference_config,
@@ -465,7 +458,7 @@ class BedrockRagService
       "configured_max_tokens" => inference[:max_tokens],
       "temperature" => inference[:temperature],
       "requested_result_count" => retrieval[:number_of_results],
-      "input_token_basis" => "prompt_template_plus_observed_chunks",
+      "input_token_basis" => input_token_basis,
       "observed_chunk_basis" => observed_chunk_basis,
       "observed_chunk_count" => descriptors.size,
       "observed_chunks" => descriptors,
@@ -500,28 +493,116 @@ class BedrockRagService
   def track_filtered_no_results_attempt(question:, raw_answer:, config:, correlation_id:,
                                         latency_ms:, response_locale:, session_context:, output_channel:)
     tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
+    prompt_text = [
+      load_generation_prompt_with_locale(question,
+                                         response_locale: response_locale,
+                                         session_context: session_context,
+                                         output_channel: output_channel),
+      question
+    ].compact_blank.join("\n\n")
 
     TrackBedrockQueryJob.perform_later(
       model_id:       tracked_model_id,
-      prompt_text:    [
-        load_generation_prompt_with_locale(question,
-                                           response_locale: response_locale,
-                                           session_context: session_context,
-                                           output_channel: output_channel),
-        question
-      ].compact_blank.join("\n\n"),
-      answer_text:    raw_answer,
+      input_tokens:   AnthropicTokenCounter::LocalTokenizer.estimate(prompt_text),
+      output_tokens:  AnthropicTokenCounter::LocalTokenizer.estimate(raw_answer),
+      token_source:   "estimated",
       user_query:     question,
       latency_ms:     latency_ms,
       route:          "rag_filtered",
       attempt:        1,
       max_tokens:     config.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens),
       correlation_id: correlation_id,
-      source:         "query",
-      model_for_counting: "haiku"
+      source:         "query"
     )
   rescue StandardError => e
     Rails.logger.warn("BedrockRagService: failed to track filtered no-results attempt — #{e.message}")
+  end
+
+  # Builds prompt, estimates tokens via LocalTokenizer (~0 ms), logs [RAG_REGRESSION],
+  # and enqueues TrackBedrockQueryJob. No network calls; safe to call on the request path.
+  def track_rag_usage(question:, raw_answer:, visible_answer:, config:,
+                      retrieved_chunks:, observed_chunk_basis:, input_token_basis:,
+                      bedrock_cited_references_count:, doc_refs_present:, doc_refs_valid:,
+                      doc_refs_count:, entity_filter_applied:, response_locale:,
+                      session_context:, output_channel:, correlation_id:, generation_attempt:,
+                      applied_filter_uris:, latency_ms:, model_id:)
+    chunks_text = Array(retrieved_chunks).filter_map { |c| c[:content].presence }.join("\n\n")
+    full_prompt = [
+      load_generation_prompt_with_locale(question, response_locale: response_locale,
+                                         session_context: session_context, output_channel: output_channel),
+      chunks_text,
+      question
+    ].compact_blank.join("\n\n")
+
+    input_tokens  = AnthropicTokenCounter::LocalTokenizer.estimate(full_prompt)
+    output_tokens = AnthropicTokenCounter::LocalTokenizer.estimate(raw_answer)
+
+    log_rag_regression(
+      config: config, retrieved_chunks: retrieved_chunks, observed_chunk_basis: observed_chunk_basis,
+      input_token_basis: input_token_basis, bedrock_cited_references_count: bedrock_cited_references_count,
+      doc_refs_present: doc_refs_present, doc_refs_valid: doc_refs_valid, doc_refs_count: doc_refs_count,
+      entity_filter_applied: entity_filter_applied, raw_answer: raw_answer, visible_answer: visible_answer,
+      input_tokens: input_tokens, output_tokens: output_tokens, model_id: model_id, latency_ms: latency_ms
+    )
+
+    TrackBedrockQueryJob.perform_later(
+      model_id:       model_id,
+      input_tokens:   input_tokens,
+      output_tokens:  output_tokens,
+      token_source:   "estimated",
+      user_query:     question.to_s.truncate(500),
+      latency_ms:     latency_ms,
+      route:          applied_filter_uris.any? ? "rag_filtered" : "rag_global",
+      attempt:        generation_attempt,
+      max_tokens:     config.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens),
+      correlation_id: correlation_id,
+      source:         "query"
+    )
+  end
+
+  # Port of TrackBedrockQueryJob#log_regression_telemetry — runs in the service so
+  # visible_output_tokens uses LocalTokenizer (zero latency) instead of the API counter.
+  def log_rag_regression(config:, retrieved_chunks:, observed_chunk_basis:, input_token_basis:,
+                         bedrock_cited_references_count:, doc_refs_present:, doc_refs_valid:,
+                         doc_refs_count:, entity_filter_applied:, raw_answer:, visible_answer:,
+                         input_tokens:, output_tokens:, model_id:, latency_ms:)
+    ctx = regression_context(
+      config: config,
+      observed_chunks: retrieved_chunks,
+      observed_chunk_basis: observed_chunk_basis,
+      input_token_basis: input_token_basis,
+      bedrock_cited_references_count: bedrock_cited_references_count,
+      doc_refs_present: doc_refs_present,
+      doc_refs_valid: doc_refs_valid,
+      doc_refs_count: doc_refs_count,
+      entity_filter_applied: entity_filter_applied
+    )
+
+    visible_tokens =
+      if visible_answer.nil? || visible_answer.to_s == raw_answer.to_s
+        output_tokens
+      else
+        AnthropicTokenCounter::LocalTokenizer.estimate(visible_answer.to_s)
+      end
+
+    payload = ctx.merge(
+      "model_id"               => model_id,
+      "latency_ms"             => latency_ms,
+      "input_tokens_estimate"  => input_tokens,
+      "raw_output_tokens"      => output_tokens,
+      "visible_output_tokens"  => visible_tokens,
+      "hidden_output_tokens"   => [ output_tokens.to_i - visible_tokens.to_i, 0 ].max,
+      "raw_output_chars"       => raw_answer.to_s.length,
+      "visible_output_chars"   => visible_answer.to_s.length
+    )
+
+    max_tokens = payload["configured_max_tokens"].to_i
+    if max_tokens.positive?
+      payload["raw_output_utilization"] = (output_tokens.to_f / max_tokens).round(4)
+      payload["possible_truncation"]    = output_tokens.to_i >= (max_tokens * 0.95).floor
+    end
+
+    Rails.logger.info("[RAG_REGRESSION] #{JSON.generate(payload)}")
   end
 
   # Fallback when retrieve_and_generate returns no inline citations: call the

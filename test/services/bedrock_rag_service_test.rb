@@ -812,7 +812,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   # --- Token tracking: counting deferred to TrackBedrockQueryJob ---
 
-  test 'query enqueues TrackBedrockQueryJob with raw prompt/answer text (counting deferred)' do
+  test 'query enqueues TrackBedrockQueryJob with LocalTokenizer-estimated tokens and logs RAG_REGRESSION' do
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(capture_logger)
+
     with_mock_bedrock_client do
       jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
 
@@ -825,21 +829,24 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 1, track_jobs.size, 'TrackBedrockQueryJob must be enqueued exactly once'
       args = track_jobs.first[:args].first
-      assert_nil   args['input_tokens'],       'input_tokens must NOT be precomputed in the RAG path'
-      assert_nil   args['output_tokens'],      'output_tokens must NOT be precomputed in the RAG path'
-      assert_kind_of String, args['prompt_text'], 'prompt_text must be passed for deferred counting'
-      assert_kind_of String, args['answer_text'], 'answer_text must be passed for deferred counting'
-      assert_kind_of String, args['visible_answer_text'], 'visible answer must be tracked separately'
-      assert_equal 'haiku', args['model_for_counting']
-      assert_equal 'query', args['source'],         'source must be "query"'
-      assert_equal 'prompt_template_plus_observed_chunks',
-                   args.dig('regression_context', 'input_token_basis')
-      assert_equal 'bedrock_citations',
-                   args.dig('regression_context', 'observed_chunk_basis')
+      assert_kind_of Integer, args['input_tokens'],  'input_tokens must be precomputed via LocalTokenizer'
+      assert_kind_of Integer, args['output_tokens'], 'output_tokens must be precomputed via LocalTokenizer'
+      assert_nil args['prompt_text'],  'prompt_text must NOT be in job args'
+      assert_nil args['answer_text'],  'answer_text must NOT be in job args'
+      assert_equal 'estimated', args['token_source']
+      assert_equal 'query', args['source'], 'source must be "query"'
+
+      line = log_output.string.lines.find { |l| l.include?("[RAG_REGRESSION]") }
+      assert line, "RAG_REGRESSION must be logged from the service"
+      payload = JSON.parse(line.split("[RAG_REGRESSION] ", 2).last)
+      assert_equal 'prompt_template_plus_observed_chunks', payload['input_token_basis']
+      assert_equal 'bedrock_citations', payload['observed_chunk_basis']
     end
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end
 
-  test 'query tracks raw DOC_REFS output while returning a clean visible answer' do
+  test 'query returns clean visible answer and logs DOC_REFS metadata via RAG_REGRESSION' do
     raw_answer = <<~ANSWER.strip
       The documented value is 13.
       <DOC_REFS>[{"source_uri":"s3://bucket/manual.pdf","canonical_name":"Manual","aliases":[],"doc_type":"manual"}]</DOC_REFS>
@@ -866,6 +873,10 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       session_id: TEST_SESSION_ID
     )
 
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(capture_logger)
+
     with_mock_bedrock_client(mock_retrieve_and_generate_response: response) do
       jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
       result = BedrockRagService.new.query("What is the documented value?")
@@ -875,18 +886,25 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       args = job[:args].first
 
       assert_equal "The documented value is 13.[1]", result[:answer]
-      assert_equal raw_answer, args["answer_text"]
-      assert_equal result[:answer], args["visible_answer_text"]
-      assert_equal true, args.dig("regression_context", "doc_refs_present")
-      assert_equal true, args.dig("regression_context", "doc_refs_valid")
-      assert_equal "sha-manual",
-                   args.dig("regression_context", "observed_chunks", 0, "doc_sha256")
-      assert_equal "manual_batch_v1",
-                   args.dig("regression_context", "observed_chunks", 0, "ingestion_path")
+      assert_kind_of Integer, args['input_tokens']
+      assert_kind_of Integer, args['output_tokens']
+      assert_equal 'estimated', args['token_source']
+      assert_nil args['answer_text'],  'answer_text must not be in job args'
+      assert_nil args['prompt_text'],  'prompt_text must not be in job args'
+
+      line = log_output.string.lines.find { |l| l.include?("[RAG_REGRESSION]") }
+      assert line, "RAG_REGRESSION must be logged"
+      payload = JSON.parse(line.split("[RAG_REGRESSION] ", 2).last)
+      assert_equal true,            payload["doc_refs_present"]
+      assert_equal true,            payload["doc_refs_valid"]
+      assert_equal "sha-manual",    payload.dig("observed_chunks", 0, "doc_sha256")
+      assert_equal "manual_batch_v1", payload.dig("observed_chunks", 0, "ingestion_path")
     end
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end
 
-  test 'query does NOT call AnthropicTokenCounter inline (counting deferred to job)' do
+  test 'query does NOT call AnthropicTokenCounter.count_query (no network API call on request path)' do
     called = false
     orig = AnthropicTokenCounter.method(:count_query)
     AnthropicTokenCounter.define_singleton_method(:count_query) do |**kwargs|
@@ -899,7 +917,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       svc.query('test question')
     end
 
-    assert_not called, 'BedrockRagService must NOT count tokens during the request'
+    assert_not called, 'BedrockRagService must use LocalTokenizer, not the count_query API endpoint'
   ensure
     AnthropicTokenCounter.define_singleton_method(:count_query) { |**kwargs| orig.call(**kwargs) }
   end
@@ -1047,7 +1065,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
                    'both invocations of the turn must share the correlation_id'
       assert_equal 3000, filtered[:max_tokens]
       assert_equal 3000, global[:max_tokens]
-      assert_equal bedrock_sorry, filtered[:answer_text], 'filtered row bills the guardrail answer'
+      assert_kind_of Integer, filtered[:input_tokens],  'filtered row must have precomputed input_tokens'
+      assert_kind_of Integer, filtered[:output_tokens], 'filtered row must have precomputed output_tokens'
+      assert_equal 'estimated', filtered[:token_source]
     end
   end
 
@@ -1073,6 +1093,55 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_equal 1, captured.size
       assert_equal 'rag_global', captured.first[:route]
       assert_equal 1,            captured.first[:attempt]
+    end
+  end
+
+  test 'filtered query with doc_refs but no inline citations synthesizes retrieved_citations without Retrieve API' do
+    doc_refs_answer = "Par de apriete: 25 Nm.\n<DOC_REFS>[{\"source_uri\":\"s3://bucket/manual.pdf\",\"canonical_name\":\"Manual\",\"aliases\":[],\"doc_type\":\"manual\"}]</DOC_REFS>"
+    no_citation_response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: doc_refs_answer),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: no_citation_response) do |client|
+      retrieve_called = false
+      client.define_singleton_method(:retrieve) do |_params|
+        retrieve_called = true
+        raise "fallback_retrieve must not be called when entity is known from filter"
+      end
+
+      result = BedrockRagService.new.query(
+        'torque del freno',
+        entity_s3_uris:      [ 's3://bucket/manual.pdf' ],
+        force_entity_filter: true
+      )
+
+      assert_not retrieve_called, 'Retrieve API must be skipped when entity is known from filter'
+      assert result[:retrieved_citations].any?, 'retrieved_citations must be non-empty from synthesized filter uris'
+      assert_equal 's3://bucket/manual.pdf',
+                   result[:retrieved_citations].first.dig(:metadata, 'x-amz-bedrock-kb-source-uri')
+    end
+  end
+
+  test 'unfiltered query with doc_refs but no inline citations calls Retrieve API for source_uri resolution' do
+    doc_refs_answer = "Answer.\n<DOC_REFS>[{\"source_uri\":\"s3://bucket/manual.pdf\",\"canonical_name\":\"Manual\",\"aliases\":[],\"doc_type\":\"manual\"}]</DOC_REFS>"
+    no_citation_response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: doc_refs_answer),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: no_citation_response) do |client|
+      retrieve_called = false
+      client.define_singleton_method(:retrieve) do |_params|
+        retrieve_called = true
+        ::OpenStruct.new(retrieval_results: [])
+      end
+
+      BedrockRagService.new.query('What is the torque?')  # no entity_s3_uris
+
+      assert retrieve_called, 'Retrieve API must be called when no entity filter is applied'
     end
   end
 

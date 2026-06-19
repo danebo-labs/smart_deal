@@ -212,7 +212,12 @@ Money is derived from actual tokens with the versioned table in
 | Titan Text Embeddings V2 | $0.00002 | — |
 
 Cache reads/writes use the model-specific rates in code. Provider invoice and
-model-invocation logs override application estimates.
+model-invocation logs override application estimates. Since 2026-06-19 the
+invocation-log override is operational for native Bedrock spend:
+`bedrock_daily_costs` (via `BedrockInvocationLogReconciler` /
+`ReconcileBedrockCostJob`) holds the exact per-UTC-day billed tokens. Note this
+covers Bedrock only — `-direct`/`-batch` Anthropic API rows reconcile against the
+Anthropic invoice, not the Bedrock logs.
 
 ---
 

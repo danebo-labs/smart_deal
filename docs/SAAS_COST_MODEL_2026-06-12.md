@@ -1,4 +1,4 @@
-# SaaS Cost Model — Reconciled 2026-06-18
+# SaaS Cost Model — Reconciled 2026-06-18 · measurement upgraded 2026-06-19
 
 **Status:** current canonical source for Danebo variable AI COGS and pricing floors.
 
@@ -6,17 +6,67 @@ This document supersedes prior package totals, benchmark extrapolations and
 unreconciled harness estimates. Historical run documents remain useful for
 quality/audit evidence, but their cost figures are not current pricing inputs.
 
+> **2026-06-19 — cost measurement is now bill-exact.** Authority levels 1–2 below
+> are no longer aspirational: Bedrock Model Invocation Logging is enabled and
+> `BedrockInvocationLogReconciler` reads the exact billed tokens
+> (`inputTokenCount`/`outputTokenCount`/cache) per UTC day straight from S3.
+> `ReconcileBedrockCostJob` persists them daily into `bedrock_daily_costs` (and
+> on demand via `bedrock:reconcile_persist[date]`). This **replaces the
+> ~3.8%-undercounting `BedrockQuery` estimator as the authority for spend**. See
+> *Cost measurement upgrade* below for evidence and scope.
+
 ## Authority order
 
 Use cost evidence in this order:
 
 1. Provider invoice or provider cost export.
-2. Bedrock model-invocation logs / CloudWatch billing telemetry.
+2. Bedrock model-invocation logs / CloudWatch billing telemetry. **Operational:**
+   `bin/rails 'bedrock:reconcile_logs[YYYY-MM-DD]'` (read-only report) or the
+   persisted `bedrock_daily_costs` rows (`ReconcileBedrockCostJob`, daily 04:00).
 3. Provider `usage` token payload persisted with `token_source: provider_usage`.
-4. Application token estimates, explicitly labeled provisional.
+4. Application token estimates, explicitly labeled provisional (`token_source:
+   estimated` — the live `#chat-usage-metrics-container` footer reads these for a
+   provisional "today" figure; the exact value lands next day via level 2).
 
 All figures below are USD variable model costs. They exclude fixed Aurora/S3/
 compute costs, support, taxes and commercial margin.
+
+## Cost measurement upgrade (2026-06-19)
+
+**What changed.** Bedrock `retrieve_and_generate` returns no `usage` block, so
+`BedrockQuery` query rows reconstructed input from cited chunks and undercounted
+(~3.8% average; larger on hybrid). Spend authority has moved from that estimator
+to the **AWS Model Invocation Logs in S3** — the same token counts AWS bills.
+
+**Mechanism (in-repo).**
+
+- `BedrockInvocationLogReconciler#day(date)` — parses `*.json.gz` invocation logs,
+  aggregates exact `inputTokenCount`/`outputTokenCount`/`cacheRead`/`cacheWrite`
+  per model for one UTC day, prices via `BedrockQuery::BEDROCK_PRICING`.
+- `ReconcileBedrockCostJob` — persists that into `bedrock_daily_costs`
+  (idempotent, one row per `[utc_date, model_id]`); scheduled daily 04:00 for the
+  prior UTC day; manual via `bedrock:reconcile_persist[YYYY-MM-DD]`.
+- `BedrockDailyCost.truth_vs_estimate(date)` — exposes the log-vs-estimate drift.
+
+**Evidence (validated against the logs that feed the AWS bill).** Invocation
+logging was enabled **2026-06-18**, so the reconciled window starts there:
+
+| UTC day | Haiku (R&G) inv | input tok | output tok | Titan embeds | **Exact cost** |
+|---|---:|---:|---:|---:|---:|
+| 2026-06-18 (complete) | 52 | 224,097 | 22,213 | 106 | **$0.33518** |
+| 2026-06-19 (in progress) | 14 | 72,570 | 6,732 | 50 | $0.10626 (partial) |
+
+The logs capture **every** Bedrock model invocation that day (RAG generation +
+no-results retries + page-filter + alias-extraction + embeddings), i.e. total
+billable Bedrock spend — not just user-facing queries.
+
+**Scope / honesty.** The *method* is now exact and bill-accurate at the
+daily/aggregate level. It does **not** yet replace the per-1,000-query package
+projection below: only ~1.5 days of low-volume dev/test traffic exist since trace
+activation. The package figures stay as the **conservative projection**; they are
+now anchored to an exact measurement pipeline and will converge to measured truth
+as `bedrock_daily_costs` accumulates production volume. Keep the conservative
+reserve until a representative production cohort is reconciled.
 
 ## Canonical package economics
 
@@ -61,19 +111,27 @@ invoice; retain that value only as a conservative diagnostic, not as billed cost
 
 ## Production tracking accuracy
 
-- RAG query estimates average approximately 3.8% below reconciled cost across
-  the 20-query validation sample.
-- Hybrid compare-with-schematic queries can undercount input much more because
-  the estimator sees cited chunks, not every retrieved chunk sent to generation.
-- Direct parse and normal batch-job parse use provider usage and reconcile to
-  the invoice.
+- **Authoritative spend is now log-exact.** `bedrock_daily_costs` /
+  `bedrock:reconcile_logs` carry the exact billed tokens per UTC day from the AWS
+  invocation logs. This is the number to trust for COGS.
+- The `BedrockQuery` `token_source: estimated` rows remain **operational only**
+  (live footer, latency/route telemetry, retrieval-regression analysis). Their
+  historical ~3.8% average undercount — larger on hybrid compare-with-schematic
+  queries, where the estimator sees cited chunks, not every retrieved chunk sent
+  to generation — no longer affects any reported cost, because spend authority
+  moved to the logs.
+- Direct parse and normal batch-job parse use `provider_usage` and reconcile to
+  the invoice; they are exact independently of the log pipeline.
 - The standalone retained manual run did not emit normal `BedrockQuery` rows;
   its provider invoice is therefore the authoritative source.
 - Photo cost remains the only package line not validated against a sufficiently
-  diverse invoice-backed production cohort.
+  diverse invoice-backed production cohort. Note: field photos bill via the
+  **Anthropic Direct API** (`-direct` rows, `provider_usage` exact) — they do
+  **not** appear in the Bedrock invocation logs and must be validated against the
+  Anthropic invoice, not `bedrock_daily_costs`.
 
 The larger historical query-estimator gap was a V1 cohort result and is no
-longer the current average accuracy statement.
+longer the current average accuracy statement; it is also now moot for pricing.
 
 ## Pricing floor
 
@@ -119,4 +177,8 @@ conservative all-generative query reserve remains intentionally carried forward.
 - Manual execution evidence: [GATE9_FINAL_MANUAL_AUDIT_2026-06-17.md](GATE9_FINAL_MANUAL_AUDIT_2026-06-17.md)
 - Active ingestion architecture: [INGESTION_COST_V2.md](INGESTION_COST_V2.md)
 - Usage tracking semantics: [METRICS.md](METRICS.md)
+- Exact spend reconciliation: `app/services/bedrock_invocation_log_reconciler.rb`,
+  `app/jobs/reconcile_bedrock_cost_job.rb`, `BedrockDailyCost`,
+  `lib/tasks/bedrock_reconcile.rake` (`bedrock:reconcile_logs`,
+  `bedrock:reconcile_persist`)
 - Reproducible historical/contractual matrix: `Gate9CostMatrix`

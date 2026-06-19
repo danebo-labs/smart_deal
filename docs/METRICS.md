@@ -13,9 +13,16 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 #### Billing accuracy and authority
 
 - `token_source: provider_usage` is exact for direct and normal batch-job parse.
-- `token_source: estimated` is operational attribution, not invoice truth. The
-  current reconciliation measured an average 3.8% query-cost undercount across
-  20 real queries; hybrid compare-with-schematic queries can be larger outliers.
+- `token_source: estimated` is **operational attribution, not invoice truth**
+  (live footer, latency/route telemetry, retrieval-regression). The historical
+  reconciliation measured ~3.8% query-cost undercount across 20 real queries;
+  hybrid compare-with-schematic queries can be larger outliers.
+- **Authoritative Bedrock spend (since 2026-06-19) is log-exact:**
+  `BedrockInvocationLogReconciler` reads the exact billed tokens from the S3
+  Model Invocation Logs and `ReconcileBedrockCostJob` persists them per UTC day
+  into `bedrock_daily_costs` (daily 04:00; manual `bedrock:reconcile_persist`).
+  Use that table — not the estimated `BedrockQuery` rows — for COGS. The
+  estimator's undercount no longer affects any reported cost.
 - Provider invoice/cost export and Bedrock invocation logs override local rows.
 - The reconciled package model is [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md):
   ~$9.54 expected / ~$13.27 conservative recurring COGS and $5.32 one-time

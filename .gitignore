@@ -33,6 +33,7 @@
 /tmp/storage/*
 !/tmp/storage/
 !/tmp/storage/.keep
+/db/*.sqlite3
 
 /public/assets
 

@@ -22,5 +22,5 @@
       "note": "Safe: Open3.capture3 with separate args does not invoke a shell, and @extension is validated against ALLOWED_EXTENSIONS allowlist (alphanumeric office/document formats) in #initialize before reaching this call."
     }
   ],
-  "brakeman_version": "8.0.4"
+  "brakeman_version": "8.0.5"
 }

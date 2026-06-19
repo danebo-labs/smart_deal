@@ -10,10 +10,26 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_16_173000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
+
+  create_table "bedrock_daily_costs", force: :cascade do |t|
+    t.bigint "cache_read_tokens", default: 0, null: false
+    t.bigint "cache_write_tokens", default: 0, null: false
+    t.decimal "cost_usd", precision: 20, scale: 6, default: "0.0", null: false
+    t.datetime "created_at", null: false
+    t.bigint "input_tokens", default: 0, null: false
+    t.integer "invocation_count", default: 0, null: false
+    t.string "model_id", null: false
+    t.bigint "output_tokens", default: 0, null: false
+    t.datetime "reconciled_at", null: false
+    t.datetime "updated_at", null: false
+    t.date "utc_date", null: false
+    t.index [ "utc_date", "model_id" ], name: "index_bedrock_daily_costs_on_utc_date_and_model_id", unique: true
+    t.index [ "utc_date" ], name: "index_bedrock_daily_costs_on_utc_date"
+  end
 
   create_table "bedrock_queries", force: :cascade do |t|
     t.integer "attempt"

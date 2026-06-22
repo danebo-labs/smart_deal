@@ -34,6 +34,12 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_select 'img[src*="logo_desktop2"]', count: 0
   end
 
+  test 'layout includes copyright footer' do
+    get root_path
+    assert_response :success
+    assert_select 'footer p', text: '© 2026 danebo.ai'
+  end
+
   test 'chat panel desktop header uses robot icon matching RAG assistant avatar' do
     get root_path
     assert_response :success

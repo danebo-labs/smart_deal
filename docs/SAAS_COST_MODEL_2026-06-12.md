@@ -6,6 +6,14 @@ This document supersedes prior package totals, benchmark extrapolations and
 unreconciled harness estimates. Historical run documents remain useful for
 quality/audit evidence, but their cost figures are not current pricing inputs.
 
+> **2026-06-23 — max_top_k raised 15→20 (schematic tier).** `RagRetrievalProfile::MAX_RESULTS`
+> and `ContractualLimits::QUERY[:max_top_k]` raised from 15 to 20. This tier fires only on
+> no-pin schematic block/connector queries (designador `-Pxxx` + keyword conector/borne/bloque/
+> esquema). Rationale: Climb Gate B revealed that intra-doc recall failed on connector-block
+> queries where the relevant chunk landed outside the former 15-result window. The fix closed
+> the Q6/Q8 ambiguity class. Contractual max unchanged (bounded by Haiku 200k context window,
+> not chunk count). Conservative query reserve updated — see canonical table below.
+
 > **2026-06-19 — cost measurement is now bill-exact.** Authority levels 1–2 below
 > are no longer aspirational: Bedrock Model Invocation Logging is enabled and
 > `BedrockInvocationLogReconciler` reads the exact billed tokens
@@ -72,11 +80,19 @@ reserve until a representative production cohort is reconciled.
 
 | Cost line | Expected | Conservative | Evidence |
 |---|---:|---:|---|
-| 1,000 RAG queries / month | $6.14 | $8.65 | Real query reconciliation; conservative reserve assumes all queries generate |
+| 1,000 RAG queries / month | $6.14 | $9.25 | Run4 cohort + schematic-tier sensitivity (see note below) |
 | 200 field photos / month | ~$3.40 | ~$4.62 | Estimate, 80% Sonnet / 20% Opus; not invoice-validated |
-| **Recurring monthly COGS** | **~$9.54** | **~$13.27** | Queries + photos only |
+| **Recurring monthly COGS** | **~$9.54** | **~$13.87** | Queries + photos only |
 | 200-page manual onboarding | **$5.32 one-time** | **$5.32 measured** | Reconciled Anthropic invoice, 168 kept pages |
-| **First month including onboarding** | **~$14.86 (~$15)** | **~$18.59** | Recurring COGS + one-time onboarding |
+| **First month including onboarding** | **~$14.86 (~$15)** | **~$19.19** | Recurring COGS + one-time onboarding |
+
+**Query conservative reserve note (updated 2026-06-23):** The prior $8.65 figure was the
+run4 all-generative benchmark cohort, which did not include schematic block/connector queries
+at top_k=20. With the new schematic tier (~15% of queries est., +5 chunks × ~800 tokens/chunk
+= +4,000 input tokens/query, Haiku global $0.001/1k): +$0.60/1,000 queries worst-case.
+Rounded reserve $9.25. Carry this until a production cohort with schematic traffic is
+reconciled in `bedrock_daily_costs`. The contractual_max ($424.00) is unchanged — it is
+bounded by the Haiku 200k context window, not chunk count.
 
 The manual is not a monthly recurring cost. It is charged once during
 onboarding, or amortized explicitly as a commercial choice.
@@ -90,7 +106,7 @@ at 90% Sonnet / 10% Opus with the same token profile, the linear sensitivity is:
 - Recurring expected COGS: approximately $9.34.
 - First month including onboarding: approximately $14.66.
 
-This is sensitivity analysis, not reconciled billing truth. Keep the $13.27
+This is sensitivity analysis, not reconciled billing truth. Keep the $13.87
 monthly reserve until at least 50 diverse production photos are invoice-checked.
 
 ## Manual onboarding reconciliation
@@ -135,14 +151,14 @@ longer the current average accuracy statement; it is also now moot for pricing.
 
 ## Pricing floor
 
-Use conservative recurring COGS ($13.27), not first-month onboarding cost, to
+Use conservative recurring COGS ($13.87), not first-month onboarding cost, to
 set the monthly subscription floor.
 
 | Target gross margin | Minimum monthly price |
 |---|---:|
-| 50% | $26.54 |
-| 60% | $33.18 |
-| 70% | $44.23 |
+| 50% | $27.74 |
+| 60% | $34.68 |
+| 70% | $46.23 |
 
 Bill onboarding separately with its own margin, or disclose any amortization.
 

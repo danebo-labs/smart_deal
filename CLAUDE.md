@@ -53,7 +53,7 @@ Query orchestration
 
 RAG query cost optimization (2026-05-22)
 - **Canonical reconciled costs (2026-06-18):** `docs/SAAS_COST_MODEL_2026-06-12.md`.
-  Recurring variable COGS is ~$9.54 expected / ~$13.27 conservative for 1,000
+  Recurring variable COGS is ~$9.54 expected / ~$13.87 conservative for 1,000
   queries + 200 photos. A 200-page manual is $5.32 one-time onboarding, never a
   monthly line. Historical benchmark projections are not current pricing inputs.
 - **Exact spend authority (2026-06-19):** native Bedrock COGS comes from

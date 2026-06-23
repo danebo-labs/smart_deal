@@ -17,3 +17,7 @@ production:
     class: ReconcileBedrockCostJob
     queue: default
     schedule: every day at 4am
+  reconcile_stuck_batches:
+    class: ReconcileStuckBatchesJob
+    queue: default
+    schedule: every 15 minutes

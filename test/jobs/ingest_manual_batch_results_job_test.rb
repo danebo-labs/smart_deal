@@ -56,7 +56,8 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
     ctx = {
       batch_id: "batch_b1", filename: "manual.pdf", sha256: sha,
       s3_key: "uploads/manual.pdf", page_customs: { 6 => "#{sha[0, 16]}_p6" },
-      kept_pages: [ 6 ], conv_session_id: nil, kb_doc_id: nil
+      kept_pages: [ 6 ], conv_session_id: nil, kb_doc_id: nil,
+      account_id: accounts(:legacy).id, document_uid: sha[0, 36]
     }
 
     message = OpenStruct.new(

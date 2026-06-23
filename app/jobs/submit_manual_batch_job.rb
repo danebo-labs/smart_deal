@@ -10,25 +10,32 @@ class SubmitManualBatchJob < ApplicationJob
   # @param filename       [String]       original filename
   # @param sha256         [String]       full SHA-256 hex of the binary
   # @param kb_doc_id      [Integer]      KbDocument id
+  # @param account_id     [Integer]      Account id owning the session/document
+  # @param document_uid   [String]       Stable KbDocument UUID
   # @param locale         [String, nil]  ISO 639-1
   # @param conv_session_id [Integer, nil]
-  def perform(s3_key:, filename:, sha256:, kb_doc_id:, locale: nil, conv_session_id: nil)
+  def perform(s3_key:, filename:, sha256:, kb_doc_id:, account_id:, document_uid:, locale: nil, conv_session_id: nil)
+    assert_owned!(account_id: account_id, document_uid: document_uid, kb_doc_id: kb_doc_id, conv_session_id: conv_session_id)
+
     batch = find_or_initialize_batch!(
       s3_key: s3_key,
       filename: filename,
       sha256: sha256,
       kb_doc_id: kb_doc_id,
+      account_id: account_id,
       locale: locale,
       conv_session_id: conv_session_id
     )
 
-    if batch.submitted_for_polling?
-      enqueue_poll(batch, wait: 5.minutes)
-      Rails.logger.info("SubmitManualBatchJob: reused #{filename} → batch_id=#{batch.claude_batch_id}")
+    unless batch.status == "pending"
+      Rails.logger.info("SubmitManualBatchJob: skipped #{filename}; status=#{batch.status}")
       return
     end
 
-    return if batch.status.in?(%w[parsing parsed syncing complete])
+    locked = WebManualBatch.where(id: batch.id, status: "pending").update_all(status: "submitting", updated_at: Time.current)
+    return unless locked == 1
+
+    batch.reload
 
     binary = S3DocumentsService.new.download(s3_key)
     if binary.blank?
@@ -85,8 +92,10 @@ class SubmitManualBatchJob < ApplicationJob
 
   private
 
-  def find_or_initialize_batch!(s3_key:, filename:, sha256:, kb_doc_id:, locale:, conv_session_id:)
+  def find_or_initialize_batch!(s3_key:, filename:, sha256:, kb_doc_id:, account_id:, locale:, conv_session_id:)
     WebManualBatch.find_or_initialize_by(
+      account_id: account_id,
+      kb_document_id: kb_doc_id,
       sha256: sha256,
       s3_key: s3_key,
       ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
@@ -94,7 +103,6 @@ class SubmitManualBatchJob < ApplicationJob
       batch.assign_attributes(
         filename: filename,
         content_type: "application/pdf",
-        kb_document_id: kb_doc_id,
         conv_session_id: conv_session_id,
         locale: locale
       )
@@ -109,5 +117,21 @@ class SubmitManualBatchJob < ApplicationJob
       web_manual_batch_id: batch.id,
       attempt:             1
     )
+  end
+
+  def assert_owned!(account_id:, document_uid:, kb_doc_id:, conv_session_id:)
+    kb_doc = KbDocument.find(kb_doc_id)
+    unless kb_doc.account_id == account_id && kb_doc.document_uid == document_uid
+      raise UploadAndSyncAttachmentsJob::AccountOwnershipError,
+        "KbDocument #{kb_doc_id} is not owned by account/document #{account_id}/#{document_uid}"
+    end
+
+    return if conv_session_id.blank?
+
+    session = ConversationSession.find(conv_session_id)
+    return if session.account_id == account_id
+
+    raise UploadAndSyncAttachmentsJob::AccountOwnershipError,
+      "ConversationSession #{conv_session_id} is not owned by account #{account_id}"
   end
 end

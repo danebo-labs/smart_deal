@@ -6,9 +6,13 @@
 class KbSyncBroadcaster
   CHANNEL = "kb_sync"
 
-  def self.failed(filenames:, reason: "error", message: nil, locale: nil)
+  def self.channel_for(account_id)
+    account_id ? "account:#{account_id}:kb_sync" : CHANNEL
+  end
+
+  def self.failed(filenames:, account_id: nil, reason: "error", message: nil, locale: nil)
     resolved_message = message.presence || I18n.with_locale(locale || :es) { I18n.t("rag.document_indexing_failed_message") }
-    ActionCable.server.broadcast(CHANNEL, {
+    ActionCable.server.broadcast(channel_for(account_id), {
       status:    "failed",
       filenames: Array(filenames).compact,
       reason:    reason,
@@ -16,8 +20,8 @@ class KbSyncBroadcaster
     })
   end
 
-  def self.retrying(filenames:, attempt:, delay:, locale: nil)
-    ActionCable.server.broadcast(CHANNEL, {
+  def self.retrying(filenames:, attempt:, delay:, account_id: nil, locale: nil)
+    ActionCable.server.broadcast(channel_for(account_id), {
       status:    "retrying",
       filenames: Array(filenames).compact,
       attempt:   attempt,
@@ -26,8 +30,8 @@ class KbSyncBroadcaster
     })
   end
 
-  def self.partial_failed(filenames:, message:, reason: "manual_urgent_triage_failed")
-    ActionCable.server.broadcast(CHANNEL, {
+  def self.partial_failed(filenames:, message:, account_id: nil, reason: "manual_urgent_triage_failed")
+    ActionCable.server.broadcast(channel_for(account_id), {
       status:    "partial_failed",
       filenames: Array(filenames).compact,
       reason:    reason,

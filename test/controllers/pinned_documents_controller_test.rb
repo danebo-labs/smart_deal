@@ -7,7 +7,7 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
 
   setup do
     @user   = users(:one)
-    @kb_doc = KbDocument.create!(s3_key: "uploads/2026/pin_ctl.pdf", display_name: "Pin Ctl", aliases: [])
+    @kb_doc = KbDocument.create!(s3_key: "uploads/2026/pin_ctl.pdf", display_name: "Pin Ctl", aliases: [], account: @user.account)
     sign_in @user
   end
 
@@ -36,6 +36,30 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
 
   test "create returns 404 for unknown document" do
     post pinned_documents_path, params: { kb_document_id: 999_999 }
+    assert_response :not_found
+  end
+
+  test "create returns 404 for another account document" do
+    other_doc = KbDocument.create!(
+      s3_key: "uploads/2026/other_account_pin_ctl.pdf",
+      display_name: "Other Account",
+      aliases: [],
+      account: accounts(:climb)
+    )
+
+    post pinned_documents_path, params: { kb_document_id: other_doc.id }
+    assert_response :not_found
+  end
+
+  test "destroy returns 404 for another account document" do
+    other_doc = KbDocument.create!(
+      s3_key: "uploads/2026/other_account_unpin_ctl.pdf",
+      display_name: "Other Account",
+      aliases: [],
+      account: accounts(:climb)
+    )
+
+    delete pinned_document_path(other_doc.id)
     assert_response :not_found
   end
 

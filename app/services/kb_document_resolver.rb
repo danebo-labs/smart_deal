@@ -31,12 +31,15 @@ class KbDocumentResolver
   ]).freeze
 
   # @param question [String]
+  # @param account [Account]
   # @return [Array<KbDocument>] ranked by match score, max MAX_MATCHES rows
-  def self.resolve(question)
+  def self.resolve(question, account:)
+    raise ArgumentError, "account is required" unless account
+
     tokens = tokenize(question)
     return [] if tokens.empty?
 
-    candidates = candidates_for(tokens)
+    candidates = candidates_for(tokens, account: account)
     return [] if candidates.empty?
 
     scored = candidates.map do |doc|
@@ -64,7 +67,7 @@ class KbDocumentResolver
   # `resolve` (the `haystack.match?(/\b...\b/)` call). The pre-filter widens
   # the candidate set conservatively (LIMIT 50) so the post-filter still
   # rejects substring noise like "esquemadocumento" for "esquema".
-  def self.candidates_for(tokens)
+  def self.candidates_for(tokens, account:)
     conditions = []
     params     = []
 
@@ -78,7 +81,10 @@ class KbDocumentResolver
       params     << pattern
     end
 
-    prelim = KbDocument.where(conditions.join(" OR "), *params).limit(50).to_a
+    prelim = KbDocument.where(account_id: account.id)
+                       .where(conditions.join(" OR "), *params)
+                       .limit(50)
+                       .to_a
 
     # Strict word-boundary post-filter to preserve the resolver's accuracy.
     prelim.select do |doc|

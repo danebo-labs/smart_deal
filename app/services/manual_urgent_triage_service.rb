@@ -21,7 +21,8 @@ class ManualUrgentTriageService
 
   # @return [Hash] selected_pages:, chunks_s3_prefix:, canonical_name:, aliases:
   def call(binary:, filename:, sha256:, s3_key:, query:, kb_doc_id: nil,
-           conv_session_id: nil, locale: nil, web_manual_batch_id: nil)
+           conv_session_id: nil, locale: nil, web_manual_batch_id: nil,
+           account_id: nil, document_uid: nil)
     pages = @selector.select(
       binary: binary,
       filename: filename,
@@ -42,9 +43,11 @@ class ManualUrgentTriageService
 
     asset = ChunkAsset.new(filename: filename, sha256: sha256, s3_key: s3_key, content_type: "application/pdf")
     chunk_asset = BatchResultsParserService.new(s3_service: @s3).call(
-      asset: asset,
-      raw_json: report[:json],
-      ingestion_path: BatchResultsParserService::MANUAL_BATCH_INGESTION_PATH
+      asset:          asset,
+      raw_json:       report[:json],
+      ingestion_path: BatchResultsParserService::MANUAL_BATCH_INGESTION_PATH,
+      account_id:     account_id,
+      document_uid:   document_uid
     )
     chunk_asset.degraded_pages = report[:degraded_pages]
 

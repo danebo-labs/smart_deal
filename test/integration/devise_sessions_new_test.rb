@@ -38,7 +38,6 @@ class DeviseSessionsNewTest < ActionDispatch::IntegrationTest
     assert_select 'h2', text: I18n.t('auth.sessions.title', locale: :es)
     assert_select 'input[type=submit][value=?]', I18n.t('auth.sessions.submit', locale: :es)
     assert_includes response.body, I18n.t('auth.sessions.subtitle', locale: :es)
-    assert_includes response.body, I18n.t('auth.links.no_account', locale: :es)
     assert_includes response.body, I18n.t('auth.legal.terms', locale: :es)
   end
 

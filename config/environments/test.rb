@@ -52,4 +52,7 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # Rails 8.1 FK fixture check requires pg_catalog superuser; skip it (tests run as app user)
+  config.active_record.verify_foreign_keys_for_fixtures = false
 end

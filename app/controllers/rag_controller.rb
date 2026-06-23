@@ -14,9 +14,10 @@ class RagController < ApplicationController
     # In shared-session mode, omit user_id to avoid storing "last web user" as owner of the shared row.
     effective_user_id = SharedSession::ENABLED ? nil : current_user.id
     conv_session = ConversationSession.find_or_create_for(
-      identifier: current_user.id.to_s,
-      channel:    "web",
-      user_id:    effective_user_id
+      identifier:  current_user.id.to_s,
+      channel:     "web",
+      user_id:     effective_user_id,
+      account_id:  current_account.id
     )
     if question.present?
       # Single UPDATE instead of refresh! + add_to_history (2 UPDATEs).
@@ -35,7 +36,8 @@ class RagController < ApplicationController
       session_id:      params[:session_id].presence,
       session_context: session_context,
       conv_session:    conv_session,
-      entity_s3_uris:  entity_s3_uris
+      entity_s3_uris:  entity_s3_uris,
+      account:         current_account
     )
 
     unless result.success?
@@ -46,7 +48,8 @@ class RagController < ApplicationController
     if result[:doc_refs].present?
       KbDocumentEnrichmentJob.perform_later(
         doc_refs:       result[:doc_refs],
-        retrieved_meta: minimal_retrieved_for_enrichment(Array(result.retrieved_citations))
+        retrieved_meta: minimal_retrieved_for_enrichment(Array(result.retrieved_citations)),
+        account_id:     current_account.id
       )
     end
 

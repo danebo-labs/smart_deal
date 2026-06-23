@@ -4,7 +4,7 @@
 # Clients subscribe to receive real-time updates when documents finish indexing.
 class KbSyncChannel < ApplicationCable::Channel
   def subscribed
-    stream_from "kb_sync"
+    stream_from "account:#{current_user.account_id}:kb_sync"
   end
 
   def unsubscribed

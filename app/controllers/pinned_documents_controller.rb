@@ -9,7 +9,7 @@ class PinnedDocumentsController < ApplicationController
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
   def create
-    kb_doc  = KbDocument.find(create_params[:kb_document_id])
+    kb_doc  = current_account.kb_documents.find(create_params[:kb_document_id])
     session = current_conv_session
     if session.pin_kb_document!(kb_doc)
       head :no_content
@@ -19,7 +19,7 @@ class PinnedDocumentsController < ApplicationController
   end
 
   def destroy
-    kb_doc  = KbDocument.find(params[:id])
+    kb_doc  = current_account.kb_documents.find(params[:id])
     session = current_conv_session
     session.unpin_kb_document!(kb_doc)
     head :no_content
@@ -32,9 +32,11 @@ class PinnedDocumentsController < ApplicationController
   end
 
   def current_conv_session
-    effective_user_id = SharedSession::ENABLED ? nil : current_user.id
     ConversationSession.find_or_create_for(
-      identifier: current_user.id.to_s, channel: "web", user_id: effective_user_id
+      identifier:  current_user.id.to_s,
+      channel:     "web",
+      user_id:     current_user.id,
+      account_id:  current_user.account_id
     ).tap(&:refresh!)
   end
 

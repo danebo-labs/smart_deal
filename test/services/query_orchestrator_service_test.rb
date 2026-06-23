@@ -79,7 +79,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
 
     result = QueryOrchestratorService.new(
       "What does the indexed manual say?",
-      documents: [ doc ]
+      documents: [ doc ],
+      account:   accounts(:legacy)
     ).execute
 
     assert rag_called, "RAG must still answer using already-indexed documents"
@@ -105,7 +106,8 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
 
     QueryOrchestratorService.new(
       "Necesito rescate de emergencia",
-      documents: [ doc ]
+      documents: [ doc ],
+      account:   accounts(:legacy)
     ).execute
 
     assert_equal "Necesito rescate de emergencia", captured[:query]

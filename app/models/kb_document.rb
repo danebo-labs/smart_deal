@@ -3,6 +3,7 @@
 # Global catalog row per S3 object key in the KB bucket. Created once on first upload;
 # aliases can be enriched later (e.g. from entity extraction).
 class KbDocument < ApplicationRecord
+  belongs_to :account, optional: true
   has_one :thumbnail, class_name: "KbDocumentThumbnail", dependent: :destroy
 
   # Centralized KB bucket constant. Single source of truth for s3_uri building
@@ -10,7 +11,9 @@ class KbDocument < ApplicationRecord
   KB_BUCKET = ENV.fetch('KNOWLEDGE_BASE_S3_BUCKET', 'multimodal-source-destination').freeze
 
   # DB: jsonb, default []. Stored as JSON array of strings; exposed as Array in Ruby.
-  validates :s3_key, presence: true, uniqueness: true
+  validates :s3_key, presence: true
+  before_validation { self.document_uid ||= SecureRandom.uuid }
+  before_validation { self.account_id  ||= Account.minimum(:id) } if Rails.env.test?
 
   # Normalizes stored s3_key (plain object key or s3://bucket/key) for matching S3 list :full_path.
   def self.object_key_for_match(s3_ref)

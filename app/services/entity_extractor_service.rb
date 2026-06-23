@@ -227,7 +227,8 @@ class EntityExtractorService
       identifier:     @session.identifier,
       channel:        @session.channel,
       canonical_name: canonical,
-      metadata:       metadata
+      metadata:       metadata,
+      account_id:     @session.account_id
     )
   rescue StandardError => e
     Rails.logger.warn("EntityExtractor: failed to persist technician doc: #{e.message}")

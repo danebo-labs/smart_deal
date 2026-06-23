@@ -9,6 +9,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
     # Mock render method for testing render_rag_json_error
     attr_reader :rendered_json, :rendered_status
+    attr_accessor :current_account
 
     def render(json:, status:)
       @rendered_json = json
@@ -18,6 +19,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
   setup do
     @controller = TestController.new
+    @controller.current_account = accounts(:legacy)
     @previous_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
   end
@@ -265,7 +267,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     KbDocument.create!(
       s3_key:       "uploads/2026-04-10/Esquema SOPREL.pdf",
       display_name: "Esquema SOPREL",
-      aliases:      [ "Foremcaro 6118/81" ]
+      aliases:      [ "Foremcaro 6118/81" ],
+      account:      @controller.current_account
     )
 
     captured = {}

@@ -26,7 +26,7 @@ class QueryOrchestratorService
   # @param query [String] The user's question
   # @param images [Array<Hash>] Optional array of { data: base64, media_type: "image/png" }
   # @param documents [Array<Hash>] Optional array of { data: base64, media_type: "text/plain", filename: "x.txt" }
-  # @param tenant [Tenant, nil] Optional tenant for multi-tenant data source selection
+  # @param account [Account] Account for ingestion and retrieval scoping.
   # @param session_id [String, nil] Bedrock multi-turn session (e.g. WhatsApp thread)
   # @param response_locale [Symbol, nil] :en / :es to force generation language; nil = infer from query text
   # @param conv_session [ConversationSession, nil] Web/API session — passed to ingestion job for entity registration
@@ -36,12 +36,13 @@ class QueryOrchestratorService
   #   entity_s3_uris. Use when the caller has explicitly bound the query to a
   #   specific document (e.g. WhatsApp post-reset picker selection).
   # @param locale [String, nil] ISO 639-1 locale for image summary generation ("es", "en")
-  def initialize(query, images: [], documents: [], tenant: nil, session_id: nil, response_locale: nil, session_context: nil,
+  def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, locale: nil)
     @query = query
     @images = images || []
     @documents = documents || []
-    @tenant = tenant
+    @document_uids = Array(document_uids)
+    @account = account
     @session_id = session_id
     @response_locale = response_locale
     @session_context = session_context
@@ -88,7 +89,8 @@ class QueryOrchestratorService
         images_payload:    UploadAndSyncAttachmentsJob.prepare_images_for_async(@images),
         documents_payload: @documents,
         conv_session_id:   @conv_session&.id,
-        tenant_id:         @tenant&.id,
+        account_id:        @account&.id,
+        document_uid:      @document_uids.first,
         locale:            I18n.locale.to_s,
         query:             @query.to_s
       )
@@ -104,7 +106,7 @@ class QueryOrchestratorService
 
     # QUERY_ROUTING_ENABLED (ENV) gates the classification call globally.
     # Default: false — skips the extra invoke_model round-trip and always uses RAG (KB).
-    # Set to true when multi-tenant DB routing is needed.
+    # Set to true when account-specific DB routing is needed.
     tool_to_use = skip_routing? ? TOOLS[:KNOWLEDGE_BASE_QUERY] : classify_query_intent
 
     case tool_to_use
@@ -118,7 +120,7 @@ class QueryOrchestratorService
         entity_sources:      entity_sources,
         force_entity_filter: @force_entity_filter,
         response_locale:     @response_locale,
-        tenant:              @tenant || current_tenant
+        account:             @account
       )
       if deterministic
         Rails.logger.info("QueryOrchestrator: Routing to #{deterministic.generation_mode} for: '#{@query}'")
@@ -126,7 +128,7 @@ class QueryOrchestratorService
       end
 
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
-      BedrockRagService.new(tenant: @tenant || current_tenant).query(
+      BedrockRagService.new(account: @account).query(
         @query,
         session_id: @session_id,
         response_locale: @response_locale,
@@ -144,7 +146,7 @@ class QueryOrchestratorService
         "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
         "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
       )
-      BedrockRagService.new(tenant: @tenant || current_tenant).query(
+      BedrockRagService.new(account: @account).query(
         @query,
         session_id: @session_id,
         response_locale: @response_locale,
@@ -168,7 +170,8 @@ class QueryOrchestratorService
       images:       @images,
       documents:    @documents,
       conv_session: @conv_session,
-      tenant:       @tenant || current_tenant,
+      account_id:   @account&.id,
+      document_uid: @document_uids.first || SecureRandom.uuid,
       locale:       @locale,
       urgent:       true,
       query:        @query
@@ -191,7 +194,7 @@ class QueryOrchestratorService
     end
 
     kb_thread = Thread.new do
-      kb_result = BedrockRagService.new(tenant: @tenant || current_tenant).query(
+      kb_result = BedrockRagService.new(account: @account).query(
         @query,
         session_id: @session_id,
         response_locale: @response_locale,
@@ -283,19 +286,15 @@ class QueryOrchestratorService
   end
 
   def skip_routing?
-    !self.class.query_routing_enabled? || rag_only_tenant?
+    !self.class.query_routing_enabled? || rag_only_account?
   end
 
   def self.query_routing_enabled?
     ENV.fetch('QUERY_ROUTING_ENABLED', 'false').casecmp?('true')
   end
 
-  def rag_only_tenant?
-    @tenant.nil? || Array(@tenant.try(:data_sources)).exclude?("db")
-  end
-
-  def current_tenant
-    Object.const_defined?("Current") && Current.respond_to?(:tenant) ? Current.tenant : nil
+  def rag_only_account?
+    @account.nil? || Array(@account.try(:data_sources)).exclude?("db")
   end
 
   # Derives media types from pinned session entities for RagRetrievalProfile.

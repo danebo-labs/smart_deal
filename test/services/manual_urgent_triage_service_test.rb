@@ -62,15 +62,17 @@ class ManualUrgentTriageServiceTest < ActiveSupport::TestCase
       bedrock_job: bedrock,
       client_factory: ->(_model) { client }
     ).call(
-      binary: "%PDF",
-      filename: "manual.pdf",
-      sha256: Digest::SHA256.hexdigest("manual"),
-      s3_key: "uploads/manual.pdf",
-      query: "rescate emergencia",
-      kb_doc_id: 123,
+      binary:       "%PDF",
+      filename:     "manual.pdf",
+      sha256:       Digest::SHA256.hexdigest("manual"),
+      s3_key:       "uploads/manual.pdf",
+      query:        "rescate emergencia",
+      kb_doc_id:    123,
       conv_session_id: 456,
-      locale: "es",
-      web_manual_batch_id: 789
+      locale:       "es",
+      web_manual_batch_id: 789,
+      account_id:   accounts(:legacy).id,
+      document_uid: SecureRandom.uuid
     )
 
     assert uploaded_keys.any? { |key| key.include?("bulk_chunks/") && key.end_with?(".txt") }
@@ -172,12 +174,14 @@ class ManualUrgentTriageServiceTest < ActiveSupport::TestCase
       bedrock_job: bedrock,
       client_factory: ->(_model) { client }
     ).call(
-      binary: "%PDF",
-      filename: "manual.pdf",
-      sha256: Digest::SHA256.hexdigest("manual"),
-      s3_key: "uploads/manual.pdf",
-      query: "rescate emergencia",
-      locale: "es"
+      binary:       "%PDF",
+      filename:     "manual.pdf",
+      sha256:       Digest::SHA256.hexdigest("manual"),
+      s3_key:       "uploads/manual.pdf",
+      query:        "rescate emergencia",
+      locale:       "es",
+      account_id:   accounts(:legacy).id,
+      document_uid: SecureRandom.uuid
     )
 
     roles

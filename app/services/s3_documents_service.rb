@@ -58,10 +58,15 @@ class S3DocumentsService
   # @param binary_data [String] Raw binary content of the file
   # @param content_type [String] MIME type (e.g., "image/png")
   # @return [String, nil] The S3 key if successful, nil on failure
-  def upload_file(filename, binary_data, content_type)
+  def upload_file(filename, binary_data, content_type, account_id: nil, document_uid: nil)
     return nil unless @bucket_name
 
-    key = "uploads/#{Date.current.iso8601}/#{filename}"
+    key = if account_id.present? && document_uid.present?
+      ext = File.extname(filename.to_s).delete_prefix(".").presence || content_type.to_s.split("/").last.presence || "bin"
+      "uploads/#{account_id}/#{document_uid}/original.#{ext}"
+    else
+      "uploads/#{Date.current.iso8601}/#{filename}"
+    end
 
     @s3.put_object(
       bucket: @bucket_name,

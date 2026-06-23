@@ -12,9 +12,12 @@ class RecentKbDocumentsQuery
   # @param per_page [Integer] page size; the query fetches per_page + 1 to
   #   detect a next page without a separate COUNT.
   # @return [Array(Array<KbDocument>, Boolean)] [docs_for_page, has_more]
-  def self.page(page, per_page:)
+  def self.page(page, per_page:, account:)
+    raise ArgumentError, "account is required" unless account
+
     page_index = [ page.to_i, 0 ].max
-    docs = KbDocument.includes(:thumbnail)
+    docs = KbDocument.where(account_id: account.id)
+                     .includes(:thumbnail)
                      .order(created_at: :desc)
                      .offset(page_index * per_page)
                      .limit(per_page + 1)

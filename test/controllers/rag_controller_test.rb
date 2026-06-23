@@ -11,6 +11,8 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   setup do
     @user = users(:one)
+    @account = Account.create!(slug: "rag-controller-test-#{SecureRandom.hex(4)}")
+    @user.update!(account: @account)
   end
 
   def with_mock_orchestrator(mock_orchestrator)
@@ -355,7 +357,8 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     ConversationSession.find_or_create_for(
       identifier: @user.id.to_s,
       channel:    'web',
-      user_id:    @user.id
+      user_id:    @user.id,
+      account_id: @account.id
     )
 
     mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
@@ -490,7 +493,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     kb_doc  = KbDocument.create!(s3_key: "uploads/2026/q.pdf", display_name: "Q", aliases: [])
-    session = ConversationSession.find_or_create_for(identifier: @user.id.to_s, channel: "web")
+    session = ConversationSession.find_or_create_for(identifier: @user.id.to_s, channel: "web", account_id: @account.id)
     session.pin_kb_document!(kb_doc)
 
     captured = {}

@@ -25,7 +25,8 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
     @original_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
     @fake = FakePresigner.new
-    @svc  = KbDocumentImageUrlService.new(bucket: TEST_BUCKET)
+    @account = accounts(:legacy)
+    @svc  = KbDocumentImageUrlService.new(bucket: TEST_BUCKET, account: @account)
     @svc.instance_variable_set(:@presigner, @fake)
   end
 
@@ -34,7 +35,7 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
   end
 
   test "returns nil for non-image extensions" do
-    pdf = KbDocument.create!(s3_key: 'uploads/2026-04-30/manual.pdf', display_name: 'PDF', aliases: [])
+    pdf = create_doc('uploads/2026-04-30/manual.pdf', 'PDF')
     assert_nil @svc.call(pdf)
     assert_empty @fake.calls
   end
@@ -50,14 +51,14 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
 
   test "generates presigned URL for image extensions" do
     %w[.png .jpg .jpeg .gif .webp].each do |ext|
-      doc = KbDocument.create!(s3_key: "uploads/2026-04-30/photo#{ext}", display_name: "img#{ext}", aliases: [])
+      doc = create_doc("uploads/2026-04-30/photo#{ext}", "img#{ext}")
       url = @svc.call(doc)
       assert_match(/X-Amz-Signature=/, url, "expected signed URL for #{ext}")
     end
   end
 
   test "passes inline disposition and 1h TTL to presigner" do
-    doc = KbDocument.create!(s3_key: 'uploads/2026-04-30/p.jpg', display_name: 'p', aliases: [])
+    doc = create_doc('uploads/2026-04-30/p.jpg', 'p')
     @svc.call(doc)
 
     assert_equal 1, @fake.calls.size
@@ -72,7 +73,7 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
   end
 
   test "strips s3:// prefix from s3_key" do
-    doc = KbDocument.create!(s3_key: 's3://other-bucket/uploads/2026-04-30/p.jpg', display_name: 'p', aliases: [])
+    doc = create_doc('s3://other-bucket/uploads/2026-04-30/p.jpg', 'p')
     @svc.call(doc)
     assert_equal 'uploads/2026-04-30/p.jpg', @fake.calls.first[:opts][:key]
     assert_equal TEST_BUCKET,                @fake.calls.first[:opts][:bucket]
@@ -83,13 +84,13 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
     def raising.presigned_url(*); raise StandardError, 'AWS down'; end
     @svc.instance_variable_set(:@presigner, raising)
 
-    doc = KbDocument.create!(s3_key: 'uploads/2026-04-30/p.jpg', display_name: 'p', aliases: [])
+    doc = create_doc('uploads/2026-04-30/p.jpg', 'p')
     assert_nil @svc.call(doc)
   end
 
   test "call_many returns a Hash keyed by document" do
-    img = KbDocument.create!(s3_key: 'uploads/2026-04-30/p.jpg', display_name: 'i', aliases: [])
-    pdf = KbDocument.create!(s3_key: 'uploads/2026-04-30/d.pdf', display_name: 'd', aliases: [])
+    img = create_doc('uploads/2026-04-30/p.jpg', 'i')
+    pdf = create_doc('uploads/2026-04-30/d.pdf', 'd')
     map = @svc.call_many([ img, pdf ])
     assert_match(/X-Amz-Signature=/, map[img])
     assert_nil map[pdf]
@@ -98,7 +99,7 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
   # ─── Per-hour Solid Cache caching of presigned URLs ──────────────────────────
 
   test "two calls within the same UTC hour return the same URL and call presigner once" do
-    doc = KbDocument.create!(s3_key: 'uploads/2026-04-30/cached.jpg', display_name: 'c', aliases: [])
+    doc = create_doc('uploads/2026-04-30/cached.jpg', 'c')
 
     travel_to Time.utc(2026, 5, 1, 12, 5, 0) do
       url1 = @svc.call(doc)
@@ -109,14 +110,14 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
   end
 
   test "calls in different UTC hours produce different URLs and rotate the cache" do
-    doc = KbDocument.create!(s3_key: 'uploads/2026-04-30/rotated.jpg', display_name: 'r', aliases: [])
+    doc = create_doc('uploads/2026-04-30/rotated.jpg', 'r')
 
     travel_to Time.utc(2026, 5, 1, 12, 5, 0) do
       @svc.call(doc)
     end
     # Build a fresh service so its presigner counter reflects only the new hour
     fake2 = FakePresigner.new
-    svc2  = KbDocumentImageUrlService.new(bucket: TEST_BUCKET)
+    svc2  = KbDocumentImageUrlService.new(bucket: TEST_BUCKET, account: @account)
     svc2.instance_variable_set(:@presigner, fake2)
 
     travel_to Time.utc(2026, 5, 1, 13, 5, 0) do
@@ -125,5 +126,23 @@ class KbDocumentImageUrlServiceTest < ActiveSupport::TestCase
 
     assert_equal 1, @fake.calls.size, "first hour: presigner called once"
     assert_equal 1, fake2.calls.size, "second hour: presigner called once after cache rotation"
+  end
+
+  test "returns nil for another account document without signing" do
+    doc = KbDocument.create!(
+      s3_key: 'uploads/2026-04-30/other.jpg',
+      display_name: 'other',
+      aliases: [],
+      account: accounts(:climb)
+    )
+
+    assert_nil @svc.call(doc)
+    assert_empty @fake.calls
+  end
+
+  private
+
+  def create_doc(s3_key, display_name)
+    KbDocument.create!(s3_key: s3_key, display_name: display_name, aliases: [], account: @account)
   end
 end

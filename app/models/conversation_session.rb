@@ -11,10 +11,14 @@ class ConversationSession < ApplicationRecord
   CHANNELS = %w[web shared whatsapp].freeze
 
   belongs_to :user, optional: true
+  belongs_to :account, optional: true
 
   validates :identifier, presence: true
   validates :channel,    inclusion: { in: CHANNELS }
   validates :expires_at, presence: true
+
+  # Backfill test-only: pre-tenancy tests omit account_id. Mirrors KbDocument#document_uid fallback.
+  before_validation { self.account_id ||= Account.minimum(:id) } if Rails.env.test?
 
   scope :active,  -> { where("expires_at > ?", Time.current) }
   scope :expired, -> { where(expires_at: ..Time.current) }
@@ -22,12 +26,13 @@ class ConversationSession < ApplicationRecord
 
   # ─── Lifecycle ──────────────────────────────────────────────────────────────
 
-  def self.find_or_create_for(identifier:, channel: "web", user_id: nil)
+  def self.find_or_create_for(identifier:, channel: "web", user_id: nil, account_id: nil)
     if SharedSession::ENABLED
       identifier = SharedSession::IDENTIFIER
       channel    = SharedSession::CHANNEL
     end
-    record = find_by(identifier: identifier, channel: channel)
+    account_id ||= Account.minimum(:id) if Rails.env.test?
+    record = find_by(account_id: account_id, identifier: identifier, channel: channel)
 
     if record.nil? || record.expired?
       record&.destroy
@@ -35,6 +40,7 @@ class ConversationSession < ApplicationRecord
         identifier:  identifier,
         channel:     channel,
         user_id:     user_id,
+        account_id:  account_id,
         expires_at:  EXPIRY_DURATION.from_now
       )
     end

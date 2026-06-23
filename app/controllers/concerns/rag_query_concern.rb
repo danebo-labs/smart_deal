@@ -39,7 +39,7 @@ module RagQueryConcern
   # @return [RagResult]
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil,
                         session_context: nil, conv_session: nil, entity_s3_uris: [],
-                        output_channel: nil, force_entity_filter: nil)
+                        output_channel: nil, force_entity_filter: nil, account: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -50,19 +50,22 @@ module RagQueryConcern
 
     resolved_response_locale = resolve_response_locale(question, conv_session, override: response_locale)
 
-    resolver_matches       = KbDocumentResolver.resolve(question)
+    resolved_account        = account || current_account
+    resolver_matches       = KbDocumentResolver.resolve(question, account: resolved_account)
     pinned_uris            = Array(entity_s3_uris).compact
     pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
     merged_session_context = merge_resolver_context(session_context, resolver_matches)
 
     resolved_output_channel = output_channel&.to_sym || :web
     resolved_force_filter   = force_entity_filter.nil? ? pinned_uris.any? : force_entity_filter
+    document_uids           = documents.map { SecureRandom.uuid }
 
     result = QueryOrchestratorService.new(
       question,
       images:              images,
       documents:           documents,
-      tenant:              rag_tenant,
+      document_uids:       document_uids,
+      account:             resolved_account,
       session_id:          session_id,
       response_locale:     resolved_response_locale,
       session_context:     merged_session_context,
@@ -192,13 +195,6 @@ module RagQueryConcern
     else
       { message: 'Unknown error', http_status: :internal_server_error }
     end
-  end
-
-  def rag_tenant
-    return nil unless respond_to?(:current_user)
-    user = current_user
-    return nil unless user&.respond_to?(:tenant)
-    user.tenant
   end
 
   # Resolves the generation locale with conversation continuity.

@@ -10,9 +10,9 @@ class HomeController < ApplicationController
   def index
     WarmBedrockKbJob.perform_later
     @current_metrics   = current_metrics
-    @kb_documents, @kb_docs_has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE)
+    @kb_documents, @kb_docs_has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE, account: current_account)
     @pinned_uris       = pinned_uris_for_current_session
-    @image_url_service = KbDocumentImageUrlService.new
+    @image_url_service = KbDocumentImageUrlService.new(account: current_account)
   end
 
   def metrics
@@ -26,9 +26,9 @@ class HomeController < ApplicationController
   # Refreshes BOTH the desktop and mobile KB doc lists after an indexing event.
   # Called by rag_chat_controller#refreshDocuments after KbSyncChannel "indexed".
   def documents
-    kb_docs, has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE)
+    kb_docs, has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE, account: current_account)
     pinned_uris       = pinned_uris_for_current_session
-    image_url_service = KbDocumentImageUrlService.new
+    image_url_service = KbDocumentImageUrlService.new(account: current_account)
 
     render turbo_stream: [
       turbo_stream.update("kb-docs-desktop-items",
@@ -45,9 +45,9 @@ class HomeController < ApplicationController
   # Infinite-scroll page fetch (page param is 0-indexed; first scroll fetches page=1).
   def documents_page
     page              = [ params[:page].to_i, 1 ].max
-    kb_docs, has_more = RecentKbDocumentsQuery.page(page, per_page: PAGE_SIZE)
+    kb_docs, has_more = RecentKbDocumentsQuery.page(page, per_page: PAGE_SIZE, account: current_account)
     pinned_uris       = pinned_uris_for_current_session
-    image_url_service = KbDocumentImageUrlService.new
+    image_url_service = KbDocumentImageUrlService.new(account: current_account)
 
     streams = [
       turbo_stream.append("kb-docs-desktop-items",

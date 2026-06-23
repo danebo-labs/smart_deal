@@ -15,8 +15,11 @@ class KbDocumentImageUrlService
   URL_TTL_SECONDS   = 3600 # 1h — aligned with response_cache_control below
   CACHE_TTL_SECONDS = 50.minutes # presigner gets 60min — write expires earlier so we always rotate ahead of S3
 
-  def initialize(bucket: nil)
+  def initialize(bucket: nil, account:)
+    raise ArgumentError, "account is required" unless account
+
     @bucket    = bucket.presence || KbDocument::KB_BUCKET
+    @account   = account
     @presigner = nil # built lazily on first call
   end
 
@@ -30,10 +33,12 @@ class KbDocumentImageUrlService
   # current UTC hour so URLs naturally rotate before they expire.
   def call(kb_document)
     return nil if kb_document.nil?
-    return nil if kb_document.s3_key.blank?
-    return nil unless image?(kb_document.s3_key)
+    scoped_document = @account.kb_documents.find_by(id: kb_document.id)
+    return nil unless scoped_document
+    return nil if scoped_document.s3_key.blank?
+    return nil unless image?(scoped_document.s3_key)
 
-    key = KbDocument.object_key_for_match(kb_document.s3_key)
+    key = KbDocument.object_key_for_match(scoped_document.s3_key)
     return nil if key.blank?
 
     cache_key = "kb_url/v1/#{@bucket}/#{key}/#{Time.current.utc.strftime('%Y%m%d%H')}"

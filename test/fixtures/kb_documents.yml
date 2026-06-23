@@ -2,5 +2,7 @@ manual_uno:
   s3_key: uploads/2026/manual_uno.pdf
   display_name: Manual uno
   aliases: []
+  account: legacy
+  document_uid: 00000000-0000-0000-0000-000000000001
   created_at: <%= 1.hour.ago.iso8601 %>
   updated_at: <%= 1.hour.ago.iso8601 %>

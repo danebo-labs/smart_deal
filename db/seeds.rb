@@ -6,6 +6,9 @@
 
 BUCKET = "multimodal-source-destination"
 
+legacy_account = Account.find_or_create_by!(slug: "danebo-legacy")
+Account.find_or_create_by!(slug: "elevadores-climb")
+
 # KB catalog. JPEG rows use full s3:// URI as canonical s3_key; object path still matches S3 list via KbDocument.object_key_for_match.
 KB_DOCUMENT_SEEDS = [
   {
@@ -87,12 +90,19 @@ KB_DOCUMENT_REPAIRS.each do |fix|
   kb.update!(
     s3_key: fix[:s3_key],
     display_name: fix[:display_name],
-    aliases: Array(fix[:aliases])
+    aliases: Array(fix[:aliases]),
+    account_id: kb.account_id || legacy_account.id,
+    document_uid: kb.document_uid || SecureRandom.uuid
   )
 end
 
 # Always sync catalog fields so rows created earlier via ensure_for_s3_key! (aliases []) get filled in.
 KB_DOCUMENT_SEEDS.each do |attrs|
   kb = KbDocument.find_or_initialize_by(s3_key: attrs[:s3_key])
-  kb.update!(display_name: attrs[:display_name], aliases: Array(attrs[:aliases]))
+  kb.update!(
+    display_name: attrs[:display_name],
+    aliases: Array(attrs[:aliases]),
+    account_id: kb.account_id || legacy_account.id,
+    document_uid: kb.document_uid || SecureRandom.uuid
+  )
 end

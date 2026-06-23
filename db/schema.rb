@@ -10,10 +10,17 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_23_000700) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
+
+  create_table "accounts", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.index [ "slug" ], name: "index_accounts_on_slug", unique: true
+  end
 
   create_table "bedrock_daily_costs", force: :cascade do |t|
     t.bigint "cache_read_tokens", default: 0, null: false
@@ -98,6 +105,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
   end
 
   create_table "conversation_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false
     t.jsonb "active_entities", default: {}, null: false
     t.string "channel", default: "web", null: false
     t.jsonb "conversation_history", default: [], null: false
@@ -108,10 +116,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
     t.string "session_status", default: "active", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.index [ "account_id", "identifier", "channel" ], name: "idx_conversation_sessions_account_id_channel", unique: true
+    t.index [ "account_id" ], name: "index_conversation_sessions_on_account_id"
     t.index [ "active_entities" ], name: "index_conversation_sessions_on_active_entities", using: :gin
     t.index [ "conversation_history" ], name: "index_conversation_sessions_on_conversation_history", using: :gin
     t.index [ "expires_at" ], name: "index_conversation_sessions_on_expires_at"
-    t.index [ "identifier", "channel" ], name: "index_conversation_sessions_on_identifier_and_channel", unique: true
     t.index [ "user_id" ], name: "index_conversation_sessions_on_user_id"
   end
 
@@ -139,19 +148,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
   end
 
   create_table "kb_documents", force: :cascade do |t|
+    t.bigint "account_id", null: false
     t.jsonb "aliases", default: [], null: false
     t.datetime "created_at", null: false
     t.string "display_name"
+    t.uuid "document_uid", null: false
     t.string "s3_key", null: false
     t.bigint "size_bytes"
     t.datetime "updated_at", null: false
     t.index "lower((aliases)::text) gin_trgm_ops", name: "idx_kb_documents_aliases_text_trgm", using: :gin
     t.index "lower((display_name)::text) gin_trgm_ops", name: "idx_kb_documents_display_name_trgm", using: :gin
-    t.index [ "s3_key" ], name: "index_kb_documents_on_s3_key", unique: true
+    t.index [ "account_id", "document_uid" ], name: "idx_kb_documents_account_document_uid", unique: true
+    t.index [ "account_id", "s3_key" ], name: "idx_kb_documents_account_s3_key", unique: true
+    t.index [ "account_id" ], name: "index_kb_documents_on_account_id"
   end
 
   create_table "technician_documents", force: :cascade do |t|
-    t.integer "account_id"
+    t.bigint "account_id", null: false
     t.jsonb "aliases", default: [], null: false
     t.string "canonical_name", null: false
     t.string "channel", default: "web", null: false
@@ -164,12 +177,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
     t.string "source_uri"
     t.datetime "updated_at", null: false
     t.string "wa_filename"
-    t.index "lower((canonical_name)::text)", name: "idx_tech_docs_canonical_icase_unique", unique: true
+    t.index "account_id, lower((canonical_name)::text)", name: "idx_tech_docs_account_canonical_icase", unique: true
     t.index [ "last_used_at" ], name: "idx_tech_docs_recent_global"
     t.index [ "source_uri" ], name: "idx_tech_docs_source_uri", where: "((source_uri IS NOT NULL) AND ((source_uri)::text <> ''::text))"
   end
 
   create_table "users", force: :cascade do |t|
+    t.bigint "account_id", null: false
     t.datetime "created_at", null: false
     t.string "email", default: "", null: false
     t.string "encrypted_password", default: "", null: false
@@ -177,11 +191,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
     t.datetime "updated_at", null: false
+    t.index [ "account_id" ], name: "index_users_on_account_id"
     t.index [ "email" ], name: "index_users_on_email", unique: true
     t.index [ "reset_password_token" ], name: "index_users_on_reset_password_token", unique: true
   end
 
   create_table "web_manual_batches", force: :cascade do |t|
+    t.bigint "account_id", null: false
     t.jsonb "aliases", default: [], null: false
     t.string "canonical_name"
     t.integer "chunks_count"
@@ -210,12 +226,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
     t.jsonb "urgent_pages", default: [], null: false
     t.datetime "urgent_started_at"
     t.string "urgent_status"
+    t.index [ "account_id", "sha256", "s3_key", "ingestion_contract_version" ], name: "idx_web_manual_batches_account_contract", unique: true
+    t.index [ "account_id" ], name: "index_web_manual_batches_on_account_id"
     t.index [ "claude_batch_id" ], name: "index_web_manual_batches_on_claude_batch_id", unique: true
     t.index [ "conv_session_id" ], name: "index_web_manual_batches_on_conv_session_id"
     t.index [ "kb_document_id" ], name: "index_web_manual_batches_on_kb_document_id"
-    t.index [ "sha256", "s3_key", "ingestion_contract_version" ], name: "idx_web_manual_batches_unique_contract", unique: true
     t.index [ "status" ], name: "index_web_manual_batches_on_status"
     t.index [ "urgent_status" ], name: "index_web_manual_batches_on_urgent_status"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'submitting'::character varying, 'submitted'::character varying, 'submission_unknown'::character varying, 'in_progress'::character varying, 'parsing'::character varying, 'parsed'::character varying, 'syncing'::character varying, 'complete'::character varying, 'failed'::character varying]::text[])", name: "chk_web_manual_batches_status"
   end
 
   create_table "whatsapp_cache_hits", force: :cascade do |t|
@@ -227,4 +245,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_100000) do
     t.index [ "recipient", "created_at" ], name: "index_whatsapp_cache_hits_on_recipient_and_created_at"
     t.index [ "route", "created_at" ], name: "index_whatsapp_cache_hits_on_route_and_created_at"
   end
+
+  add_foreign_key "technician_documents", "accounts", name: "fk_td_account"
 end

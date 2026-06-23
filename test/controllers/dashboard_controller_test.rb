@@ -3,6 +3,10 @@
 require 'test_helper'
 
 class DashboardControllerTest < ActionDispatch::IntegrationTest
+  def setup
+    skip "Dashboard route disabled for Climb pilot (T-31)"
+  end
+
   test 'should get index' do
     get dashboard_url
     assert_response :success

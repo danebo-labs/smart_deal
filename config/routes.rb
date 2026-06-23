@@ -12,15 +12,15 @@ Rails.application.routes.draw do
   get  'home/metrics',        to: 'home#metrics'
   get  'home/documents',      to: 'home#documents'
   get  'home/documents_page', to: 'home#documents_page'
-  get  'dashboard',          to: 'dashboard#index'
-  get  'dashboard/metrics',  to: 'dashboard#metrics'
+  # get  'dashboard',          to: 'dashboard#index'    # T-31: disabled for pilot
+  # get  'dashboard/metrics',  to: 'dashboard#metrics'  # T-31: disabled for pilot
 
   devise_for :users,
              controllers: {
                sessions: 'users/sessions',
-               passwords: 'users/passwords',
-               registrations: 'users/registrations'
-             }
+               passwords: 'users/passwords'
+             },
+             skip: [ :registrations ]
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
@@ -34,7 +34,7 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   resources :pinned_documents, only: %i[create destroy]
-  resources :bulk_uploads, only: %i[new create show]
+  # resources :bulk_uploads, only: %i[new create show]  # T-31: disabled for pilot
 
   # RAG endpoint for Knowledge Base queries
   post '/rag/ask', to: 'rag#ask'

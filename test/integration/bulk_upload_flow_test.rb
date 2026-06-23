@@ -12,6 +12,10 @@ class BulkUploadFlowTest < ActionDispatch::IntegrationTest
 
   parallelize(workers: 1)
 
+  setup do
+    skip "BulkUpload flow disabled for Climb pilot (T-31)"
+  end
+
   FAKE_BATCH_ID    = "msgbatch_flow_test"
   FAKE_BEDROCK_JOB = "bedrock-job-flow"
 

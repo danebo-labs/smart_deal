@@ -20,6 +20,7 @@ class BulkUploadsControllerTest < ActionDispatch::IntegrationTest
   end
 
   setup do
+    skip "BulkUploads route disabled for Climb pilot (T-31)"
     @user = users(:one)
     sign_in @user
     @archive_service = FakeArchiveService.new

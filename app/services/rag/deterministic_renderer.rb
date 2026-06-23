@@ -27,7 +27,7 @@ module Rag
     # @return [DeterministicRenderer, nil] nil when the question does not match
     #   a deterministic intent or there is no forced pinned scope.
     def self.build(question:, entity_s3_uris:, entity_sources:, force_entity_filter:,
-                   response_locale: nil, tenant: nil, rag_service: nil)
+                   response_locale: nil, account: nil, rag_service: nil)
       return nil unless force_entity_filter && Array(entity_s3_uris).any?
 
       klass =
@@ -43,18 +43,18 @@ module Rag
         entity_s3_uris: Array(entity_s3_uris),
         entity_sources: Array(entity_sources),
         response_locale: response_locale,
-        tenant: tenant,
+        account: account,
         rag_service: rag_service
       )
     end
 
     def initialize(question:, entity_s3_uris:, entity_sources:, response_locale: nil,
-                   tenant: nil, rag_service: nil)
+                   account: nil, rag_service: nil)
       @question        = question
       @entity_s3_uris  = entity_s3_uris
       @entity_sources  = entity_sources
       @response_locale = response_locale
-      @rag_service     = rag_service || BedrockRagService.new(tenant: tenant)
+      @rag_service     = rag_service || BedrockRagService.new(account: account)
     end
 
     def execute

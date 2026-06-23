@@ -233,15 +233,17 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
   # ── orchestration ───────────────────────────────────────────────────────────
 
   test "orchestrator routes deterministic intents and keeps other queries generative" do
+    fake = FakeRagService.new([])
     deterministic = Rag::DeterministicRenderer.build(
       question: Q_FT, entity_s3_uris: URIS, entity_sources: [ "document" ],
-      force_entity_filter: true
+      force_entity_filter: true, rag_service: fake
     )
     assert_instance_of Rag::FunctionalTestRenderer, deterministic
 
     generative = Rag::DeterministicRenderer.build(
       question: "¿Cuál es el propósito de este equipo y cuáles son sus cinco partes principales?",
-      entity_s3_uris: URIS, entity_sources: [ "document" ], force_entity_filter: true
+      entity_s3_uris: URIS, entity_sources: [ "document" ], force_entity_filter: true,
+      rag_service: fake
     )
     assert_nil generative
   end

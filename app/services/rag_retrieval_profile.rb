@@ -23,6 +23,13 @@ class RagRetrievalProfile
   SAFETY_CRITICAL_RESULTS = 5
   EXHAUSTIVE_CANDIDATES = 15
   EXHAUSTIVE_RERANKED_RESULTS = 12
+  # Open queries that name a schematic designator (-PDCM, -PBCM, -J26…) together
+  # with a connector/label keyword need the document's block→connector overview
+  # chunk, which ranks below nearer detail pages (observed rank ~11–16). Widen
+  # recall to MAX_RESULTS so that overview chunk lands in the generation window.
+  # MAX_RESULTS is the largest top-k any path requests and is mirrored by
+  # ContractualLimits::QUERY[:max_top_k] (the cost-contract ceiling).
+  MAX_RESULTS = 20
 
   EXHAUSTIVE_PATTERNS = [
     /\b(?:todas|todos|cada)\s+(?:las|los)?\s*(?:pruebas|comprobaciones|pasos|controles|revisiones)\b/i,
@@ -48,7 +55,13 @@ class RagRetrievalProfile
 
   def number_of_results
     return EXHAUSTIVE_CANDIDATES if exhaustive_query?
-    return OPEN_RESULTS if @entity_sources.empty?
+
+    if @entity_sources.empty?
+      return MAX_RESULTS if schematic_block_query?
+
+      return OPEN_RESULTS
+    end
+
     return SAFETY_CRITICAL_RESULTS if safety_critical_query?
 
     photo_count = @entity_sources.count { |s| s == "image_upload" }
@@ -71,5 +84,16 @@ class RagRetrievalProfile
 
   def safety_critical_query?
     SAFETY_CRITICAL_PATTERNS.any? { |pattern| @question.match?(pattern) }
+  end
+
+  # A schematic designator (-PDCM, -PBCM, -PDCC, -J26…) together with a
+  # connector/label/diagram keyword. Used to widen open-query recall so the
+  # block→connector overview chunk lands in the generation window.
+  SCHEMATIC_DESIGNATOR_PATTERN = /-[A-Z]{1,6}\d{0,3}\b/.freeze
+  SCHEMATIC_KEYWORD_PATTERN = /\b(?:conector(?:es)?|borne(?:s)?|etiquetas?|texto\s+visible|esquema|bloque|se[ñn]al(?:es)?|plano|mazo(?:s)?|cable(?:s)?)\b/i.freeze
+
+  def schematic_block_query?
+    @question.match?(SCHEMATIC_DESIGNATOR_PATTERN) &&
+      @question.match?(SCHEMATIC_KEYWORD_PATTERN)
   end
 end

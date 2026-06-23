@@ -20,8 +20,9 @@ module ContractualLimits
     # global no-results fallback (BedrockRagService#query). The Retrieve-API
     # source_uri fallback is vector-only (no model tokens).
     max_model_calls:       2,
-    # RagRetrievalProfile::EXHAUSTIVE_CANDIDATES — largest permitted top-k.
-    max_top_k:             15,
+    # RagRetrievalProfile::MAX_RESULTS — largest permitted top-k (schematic
+    # block/connector recall tier; exhaustive uses 15, reranked to 12).
+    max_top_k:             20,
     # SessionContextBuilder::MAX_CONTEXT_CHARS hard budget.
     max_context_chars:     2_000,
     # BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens].

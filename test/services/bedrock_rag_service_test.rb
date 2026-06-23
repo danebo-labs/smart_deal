@@ -18,6 +18,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     ENV['AWS_REGION'] = TEST_AWS_REGION
     # Clean up BedrockQuery records between tests
     BedrockQuery.delete_all
+    @account = accounts(:legacy)
   end
 
   teardown do
@@ -149,7 +150,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     begin
       with_env_vars('BEDROCK_KNOWLEDGE_BASE_ID' => nil) do
         with_mock_bedrock_client do
-          service = BedrockRagService.new
+          service = BedrockRagService.new(account: @account)
 
           assert_raises(BedrockRagService::MissingKnowledgeBaseError) do
             service.query('Test question')
@@ -163,7 +164,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query returns answer, citations, and session_id when successful' do
     with_mock_bedrock_client do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.query('What is S3?')
 
       assert result.is_a?(Hash)
@@ -178,7 +179,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query raises BedrockServiceError when AWS Bedrock raises ServiceError' do
     with_mock_bedrock_client(should_raise: true, error_message: 'AccessDeniedException: User is not authorized') do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
 
       assert_raises(BedrockRagService::BedrockServiceError) do
         service.query('Test question')
@@ -188,7 +189,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query returns successful response even if metrics tracking fails' do
     with_mock_bedrock_client do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
 
       original_create = BedrockQuery.method(:create!)
       BedrockQuery.singleton_class.define_method(:create!) do |*_args|
@@ -211,7 +212,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query replaces Bedrock no-results guardrail message with user-friendly I18n message' do
     bedrock_sorry = "Sorry, I am unable to assist you with this request."
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(bedrock_sorry)) do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.query('que es EC2')
 
       # Spanish question -> Spanish response (detected from question text)
@@ -223,7 +224,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query returns English no-results message when question is in English' do
     bedrock_sorry = "Sorry, I am unable to assist you with this request."
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(bedrock_sorry)) do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.query('What is S3?')
 
       assert_includes result[:answer], 'No information was found'
@@ -234,7 +235,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query uses response_locale for no-results message when question text looks Spanish' do
     bedrock_sorry = "Sorry, I am unable to assist you with this request."
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(bedrock_sorry)) do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.query('modernización', response_locale: :en)
 
       assert_includes result[:answer], 'No information was found'
@@ -244,7 +245,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query injects English prompt when response_locale is :en despite Spanish-looking question' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('modernización', response_locale: :en)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -264,7 +265,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # Middle injection removed (cost_opt 2026-05-22: saves ~30-40 tokens/query).
   test 'query reinforces Spanish language directive at top and tail of prompt' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       session_context = "## Recent Conversation\nUser: prior question\nAssistant: prior English answer"
       service.query(
         'si deseo hacer una integracion entre ellos guiame paso a paso',
@@ -293,7 +294,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query does not alter a real answer that happens to start with sorry' do
     real_answer = "Sorry for the delay in this documentation — the procedure is as follows."
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(real_answer)) do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.query('What is the procedure?')
 
       assert_equal real_answer, result[:answer]
@@ -306,7 +307,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       'BEDROCK_RAG_GENERATION_TEMPERATURE' => '0.1'
     ) do
       with_mock_bedrock_client do |client|
-        service = BedrockRagService.new
+        service = BedrockRagService.new(account: @account)
         service.query('Test question')
 
         params = client.last_retrieve_and_generate_params
@@ -327,7 +328,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       'BEDROCK_RAG_GENERATION_TEMPERATURE' => nil,
       'BEDROCK_RAG_GENERATION_MAX_TOKENS' => nil
     ) do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       config = service.build_complete_optimized_config
       inference = config.dig(
         :generation_configuration,
@@ -342,7 +343,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'reranks exhaustive candidates from 15 down to 12 when enabled' do
     with_env_vars('BEDROCK_RERANKER_ENABLED' => 'true') do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       config = service.build_complete_optimized_config(
         question: "Enumera todas las pruebas de funcionamiento",
         entity_sources: [ "document" ]
@@ -361,7 +362,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'does not pay for reranking on focused queries' do
     with_env_vars('BEDROCK_RERANKER_ENABLED' => 'true') do
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       config = service.build_complete_optimized_config(
         question: "Como pruebo el freno?",
         entity_sources: [ "document" ]
@@ -375,7 +376,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'works with tenant nil (single-tenant)' do
     with_mock_bedrock_client do
-      service = BedrockRagService.new(tenant: nil)
+      service = BedrockRagService.new(account: @account)
       result = service.query('What is S3?')
 
       assert result.key?(:answer)
@@ -385,7 +386,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query appends session_context to generation prompt when provided' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       ctx = "## Session Focus\nThe following documents/images have been referenced\n- [document] manual.pdf"
       service.query('What is S3?', session_context: ctx)
 
@@ -404,7 +405,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query appends DELIVERY CHANNEL block when output_channel is :whatsapp' do
     skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('What is S3?', output_channel: :whatsapp)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -423,7 +424,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'DELIVERY CHANNEL block prohibits double-asterisk bold' do
     skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('test', output_channel: :whatsapp)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -440,7 +441,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'DELIVERY CHANNEL block declares safety warnings as NON-NEGOTIABLE' do
     skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('test', output_channel: :whatsapp)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -459,7 +460,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'DELIVERY CHANNEL block enumerates intent tokens for faceted output' do
     skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('test', output_channel: :whatsapp)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -480,7 +481,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'DELIVERY CHANNEL block defines structured labels and dynamic menu kinds' do
     skip "WA channel disabled for MVP — whatsapp_delivery_channel_directive removed"
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('test', output_channel: :whatsapp)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -510,7 +511,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'web channel appends its own DELIVERY CHANNEL block with web-specific rules' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('What is S3?', output_channel: :web)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -529,7 +530,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query does not append session_context when nil' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('What is S3?', session_context: nil)
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -551,46 +552,61 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # ============================================
 
   test 'build_complete_optimized_config adds or_all filter spanning legacy and batch metadata keys for 2+ entity_s3_uris' do
-    service = BedrockRagService.new
+    service = BedrockRagService.new(account: @account)
     uris = [ 's3://bucket/doc1.pdf', 's3://bucket/doc2.pdf' ]
     config = service.build_complete_optimized_config(entity_s3_uris: uris)
 
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
     assert_not_nil filter
+
+    # Account filter is always present; entity filter nested inside and_all
+    # Structure: { and_all: [ account_filter, { or_all: [ ...uri filters... ] } ] }
+    or_all = filter.dig(:and_all, 1, :or_all)
+    assert_not_nil or_all, "entity filter must be wrapped in and_all alongside account filter"
+
     # Each URI is OR-ed against BOTH x-amz-bedrock-kb-source-uri (legacy) and
     # original_source_uri (batch sidecar) → 2 URIs × 2 keys = 4 clauses.
-    assert_equal 4, filter[:or_all].size
+    assert_equal 4, or_all.size
 
-    keys_for_doc1 = filter[:or_all]
+    keys_for_doc1 = or_all
                       .select { |c| c[:equals][:value] == 's3://bucket/doc1.pdf' }
                       .map { |c| c[:equals][:key] }
     assert_equal %w[x-amz-bedrock-kb-source-uri original_source_uri].sort, keys_for_doc1.sort
   end
 
   test 'build_complete_optimized_config uses or_all even for a single entity_s3_uri so batch chunks are matched' do
-    service = BedrockRagService.new
+    service = BedrockRagService.new(account: @account)
     config = service.build_complete_optimized_config(entity_s3_uris: [ 's3://bucket/only.pdf' ])
 
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
     assert_not_nil filter
+
+    # Account filter is always present; entity filter is nested inside and_all
+    # Structure: { and_all: [ account_filter, { or_all: [ ...uri filters... ] } ] }
+    or_all = filter.dig(:and_all, 1, :or_all)
+    assert_not_nil or_all, "entity filter must be wrapped in and_all alongside account filter"
+
     # Single URI must still OR across both keys (legacy + batch); orAll requires >= 2 members.
-    assert_equal 2, filter[:or_all].size
-    assert filter[:or_all].all? { |c| c[:equals][:value] == 's3://bucket/only.pdf' }
+    assert_equal 2, or_all.size
+    assert or_all.all? { |c| c[:equals][:value] == 's3://bucket/only.pdf' }
     assert_equal %w[x-amz-bedrock-kb-source-uri original_source_uri].sort,
-                 filter[:or_all].map { |c| c[:equals][:key] }.sort
+                 or_all.map { |c| c[:equals][:key] }.sort
   end
 
-  test 'build_complete_optimized_config omits filter when entity_s3_uris empty' do
-    service = BedrockRagService.new
+  test 'build_complete_optimized_config uses only account filter when entity_s3_uris empty' do
+    service = BedrockRagService.new(account: @account)
     config = service.build_complete_optimized_config(entity_s3_uris: [])
 
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
-    assert_nil filter
+    # Account filter is always present; no entity/or_all filter when no URIs
+    assert_not_nil filter
+    assert_account_filter filter
+    assert_nil filter[:and_all], "no and_all wrapping needed without entity filter"
   end
 
   test 'query sends filter params to Bedrock when entity_s3_uris provided and query is short' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
       filter = client.last_retrieve_and_generate_params.dig(
@@ -604,9 +620,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'query omits filter when query is long and names a different document' do
+  test 'query omits entity filter when query is long and names a different document' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('Show me information about the MotorController installation manual please',
                     entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
@@ -617,15 +633,18 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :vector_search_configuration,
         :filter
       )
-      assert_nil filter, "Expected filter to be absent when query names a different document"
+      # Account filter always present; entity filter in and_all[1] must be absent
+      assert_not_nil filter, "account filter must always be present"
+      assert_account_filter filter
+      assert_nil filter[:and_all], "no entity filter: query names a different document"
     end
   end
 
-  test 'query omits filter when short query explicitly names a document not in session URIs' do
+  test 'query omits entity filter when short query explicitly names a document not in session URIs' do
     # Regression: "Que es el Esquema SOPREL?" (short, 25 chars) was incorrectly filtered
     # to the session document (Orona CPU board), returning wrong results.
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('Que es el Esquema SOPREL?',
                     entity_s3_uris: [ 's3://bucket/Orona CPU board.pdf' ])
 
@@ -636,7 +655,10 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :vector_search_configuration,
         :filter
       )
-      assert_nil filter, "Expected no filter: SOPREL is not in the session URIs even though query is short"
+      # Account filter always present; entity filter must be absent
+      assert_not_nil filter
+      assert_account_filter filter
+      assert_nil filter[:and_all], "Expected no entity filter: SOPREL is not in the session URIs"
     end
   end
 
@@ -646,7 +668,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     # Without force_entity_filter, query_names_different_document? would
     # bypass the filter and Bedrock would search the whole KB.
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query(
         'Describe Orona ARCA BASICO Safety Circuit Electrical Schematic',
         entity_s3_uris:      [ 's3://bucket/orona_arca_basico.pdf' ],
@@ -661,17 +683,20 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :filter
       )
       assert_not_nil filter, "force_entity_filter must scope retrieval to the picked doc"
-      values = filter[:or_all].map { |c| c[:equals][:value] }.uniq
+      # Filter structure: { and_all: [ account_filter, { or_all: [ uri filters ] } ] }
+      or_all = filter.dig(:and_all, 1, :or_all)
+      assert_not_nil or_all, "entity filter must be in or_all nested inside and_all"
+      values = or_all.map { |c| c[:equals][:value] }.uniq
       assert_equal [ 's3://bucket/orona_arca_basico.pdf' ], values,
                    "filter must target the explicitly bound source URI on every clause"
-      keys = filter[:or_all].map { |c| c[:equals][:key] }.sort
+      keys = or_all.map { |c| c[:equals][:key] }.sort
       assert_equal %w[original_source_uri x-amz-bedrock-kb-source-uri], keys
     end
   end
 
   test 'query appends photo label safety override for photo-only pins' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query(
         'Que componentes aparecen?',
         entity_s3_uris: [ 's3://bucket/photo.jpg' ],
@@ -696,7 +721,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query appends stop-work evidence override only for stop-work intent' do
     with_mock_bedrock_client do |client|
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       service.query('Cuando debo detener el trabajo?')
 
       template = client.last_retrieve_and_generate_params.dig(
@@ -721,18 +746,20 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     with_mock_bedrock_client do |client|
       client.define_singleton_method(:retrieve_and_generate) do |params|
         call_count += 1
-        filter_present = params.dig(
+        vector = params.dig(
           :retrieve_and_generate_configuration,
           :knowledge_base_configuration,
           :retrieval_configuration,
-          :vector_search_configuration,
-          :filter
-        ).present?
-        text = filter_present ? no_results_text : real_answer
+          :vector_search_configuration
+        )
+        filter = vector&.dig(:filter)
+        # Account filter is always present; entity URI filter is inside and_all[1]
+        entity_filter_present = filter&.dig(:and_all, 1)&.present?
+        text = entity_filter_present ? no_results_text : real_answer
         ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: [], session_id: 'sid')
       end
 
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
       assert_equal 2, call_count, "Expected 2 calls: one with filter, one without"
@@ -754,7 +781,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         )
       end
 
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.query(
         "dame el procedimiento inexistente",
         entity_s3_uris: [ "s3://bucket/manual.pdf" ],
@@ -820,7 +847,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     with_mock_bedrock_client do
       jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
 
-      svc = BedrockRagService.new
+      svc = BedrockRagService.new(account: @account)
       svc.query('test question')
 
       track_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs[jobs_before..].select do |j|
@@ -847,6 +874,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'query returns clean visible answer and logs DOC_REFS metadata via RAG_REGRESSION' do
+    KbDocument.create!(
+      s3_key: "manual.pdf",
+      display_name: "Manual",
+      aliases: [],
+      account: @account
+    )
+
     raw_answer = <<~ANSWER.strip
       The documented value is 13.
       <DOC_REFS>[{"source_uri":"s3://bucket/manual.pdf","canonical_name":"Manual","aliases":[],"doc_type":"manual"}]</DOC_REFS>
@@ -879,7 +913,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
     with_mock_bedrock_client(mock_retrieve_and_generate_response: response) do
       jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
-      result = BedrockRagService.new.query("What is the documented value?")
+      result = BedrockRagService.new(account: @account).query("What is the documented value?")
       job = ActiveJob::Base.queue_adapter.enqueued_jobs[jobs_before..].find do |candidate|
         candidate[:job] == TrackBedrockQueryJob
       end
@@ -913,7 +947,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
 
     with_mock_bedrock_client do
-      svc = BedrockRagService.new
+      svc = BedrockRagService.new(account: @account)
       svc.query('test question')
     end
 
@@ -965,7 +999,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query returns the resolved scope and filter actually applied' do
     with_mock_bedrock_client do
-      result = BedrockRagService.new.query(
+      result = BedrockRagService.new(account: @account).query(
         '¿Cómo pruebo el freno?',
         entity_s3_uris: [ 's3://bucket/manual.pdf' ],
         entity_sources: [ 'document' ],
@@ -995,7 +1029,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           )
         ]
       )
-      service = BedrockRagService.new
+      service = BedrockRagService.new(account: @account)
       result = service.retrieve_chunks(
         'Enumera todas las pruebas de funcionamiento',
         entity_s3_uris: [ 's3://bucket/manual.pdf' ],
@@ -1022,7 +1056,166 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'vector configuration always includes account filter without pins' do
+    service = BedrockRagService.new(account: @account)
+    config = service.build_vector_search_configuration(question: "What is S3?")
+
+    assert_account_filter config[:filter]
+  end
+
+  test 'vector configuration keeps account filter with pinned documents' do
+    service = BedrockRagService.new(account: @account)
+    config = service.build_vector_search_configuration(
+      question: "What is this manual?",
+      entity_s3_uris: [ "s3://bucket/manual.pdf" ]
+    )
+
+    assert_account_filter config[:filter]
+    assert_filter_key config[:filter], "original_source_uri"
+  end
+
+  test 'filtered retry preserves account filter when document filter is stripped' do
+    bedrock_sorry = "Sorry, I am unable to assist you with this request."
+
+    with_mock_bedrock_client do |client|
+      call_filters = []
+      sorry_response = fake_response(bedrock_sorry)
+      good_response  = fake_response("Documented torque: 25 Nm.")
+      client.define_singleton_method(:retrieve_and_generate) do |params|
+        @last_retrieve_and_generate_params = params
+        call_filters << params.dig(
+          :retrieve_and_generate_configuration,
+          :knowledge_base_configuration,
+          :retrieval_configuration,
+          :vector_search_configuration,
+          :filter
+        )
+        call_filters.size == 1 ? sorry_response : good_response
+      end
+
+      BedrockRagService.new(account: @account).query(
+        'torque del freno',
+        entity_s3_uris: [ 's3://bucket/manual.pdf' ]
+      )
+
+      assert_equal 2, call_filters.size
+      assert_account_filter call_filters.first
+      assert_filter_key call_filters.first, "original_source_uri"
+      assert_account_filter call_filters.second
+      assert_no_filter_key call_filters.second, "original_source_uri"
+      assert_no_filter_key call_filters.second, "x-amz-bedrock-kb-source-uri"
+    end
+  end
+
+  test 'custom_config cannot overwrite account filter' do
+    with_mock_bedrock_client do |client|
+      BedrockRagService.new(account: @account).query(
+        "What is S3?",
+        custom_config: {
+          retrieval_configuration: {
+            vector_search_configuration: {
+              filter: { equals: { key: "account_id", value: accounts(:climb).id.to_s } }
+            }
+          }
+        }
+      )
+
+      filter = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :retrieval_configuration,
+        :vector_search_configuration,
+        :filter
+      )
+
+      assert_account_filter filter
+    end
+  end
+
+  test 'extract_doc_refs discards source_uri outside current account' do
+    own_doc = KbDocument.create!(
+      s3_key: "own.pdf",
+      display_name: "Own",
+      aliases: [],
+      account: @account
+    )
+    other_doc = KbDocument.create!(
+      s3_key: "other.pdf",
+      display_name: "Other",
+      aliases: [],
+      account: accounts(:climb)
+    )
+    answer = <<~ANSWER
+      Answer.
+      <DOC_REFS>[
+        {"source_uri":"s3://bucket/#{own_doc.s3_key}","canonical_name":"Own","aliases":[],"doc_type":"manual"},
+        {"source_uri":"s3://bucket/#{other_doc.s3_key}","canonical_name":"Other","aliases":[],"doc_type":"manual"}
+      ]</DOC_REFS>
+    ANSWER
+
+    result = BedrockRagService.new(account: @account).send(:extract_doc_refs, answer)
+
+    assert_equal [ "Own" ], result[:doc_refs].pluck("canonical_name")
+  end
+
+  test 'extract_doc_refs preserves blank source_uri for fallback resolution' do
+    answer = <<~ANSWER
+      Answer.
+      <DOC_REFS>[
+        {"source_uri":"","canonical_name":"Manual","aliases":["PDCM"],"doc_type":"manual"}
+      ]</DOC_REFS>
+    ANSWER
+
+    result = BedrockRagService.new(account: @account).send(:extract_doc_refs, answer)
+
+    assert_equal [ "Manual" ], result[:doc_refs].pluck("canonical_name")
+    assert_equal "", result[:doc_refs].first["source_uri"]
+    assert_equal [ "PDCM" ], result[:doc_refs].first["aliases"]
+  end
+
   # ── Gate 9R I0: one row per billable invocation, filtered + global correlated ──
+
+  def assert_account_filter(filter)
+    assert filter_contains?(filter, "account_id", @account.id.to_s),
+           "expected account_id=#{@account.id} filter in #{filter.inspect}"
+  end
+
+  def assert_filter_key(filter, key)
+    assert filter_key_present?(filter, key), "expected #{key} filter in #{filter.inspect}"
+  end
+
+  def assert_no_filter_key(filter, key)
+    assert_not filter_key_present?(filter, key), "did not expect #{key} filter in #{filter.inspect}"
+  end
+
+  def filter_contains?(node, key, value)
+    case node
+    when Hash
+      equals = node[:equals] || node["equals"]
+      return true if equals && (equals[:key] || equals["key"]).to_s == key &&
+                     (equals[:value] || equals["value"]).to_s == value
+
+      node.any? { |_k, v| filter_contains?(v, key, value) }
+    when Array
+      node.any? { |v| filter_contains?(v, key, value) }
+    else
+      false
+    end
+  end
+
+  def filter_key_present?(node, key)
+    case node
+    when Hash
+      equals = node[:equals] || node["equals"]
+      return true if equals && (equals[:key] || equals["key"]).to_s == key
+
+      node.any? { |_k, v| filter_key_present?(v, key) }
+    when Array
+      node.any? { |v| filter_key_present?(v, key) }
+    else
+      false
+    end
+  end
 
   def capture_tracking_jobs
     captured = []
@@ -1048,7 +1241,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       end
 
       captured = capture_tracking_jobs do
-        BedrockRagService.new.query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
+        BedrockRagService.new(account: @account).query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
       end
 
       assert_equal 2, call_count, 'expected filtered attempt + global fallback'
@@ -1074,7 +1267,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'single filtered query leaves one rag_filtered row with attempt 1' do
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('Par de apriete: 25 Nm.')) do
       captured = capture_tracking_jobs do
-        BedrockRagService.new.query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
+        BedrockRagService.new(account: @account).query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
       end
 
       assert_equal 1, captured.size
@@ -1087,7 +1280,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'unfiltered query (no entities) leaves one rag_global row' do
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
       captured = capture_tracking_jobs do
-        BedrockRagService.new.query('What is S3?')
+        BedrockRagService.new(account: @account).query('What is S3?')
       end
 
       assert_equal 1, captured.size
@@ -1097,6 +1290,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'filtered query with doc_refs but no inline citations synthesizes retrieved_citations without Retrieve API' do
+    KbDocument.create!(
+      s3_key: "manual.pdf",
+      display_name: "Manual",
+      aliases: [],
+      account: @account
+    )
     doc_refs_answer = "Par de apriete: 25 Nm.\n<DOC_REFS>[{\"source_uri\":\"s3://bucket/manual.pdf\",\"canonical_name\":\"Manual\",\"aliases\":[],\"doc_type\":\"manual\"}]</DOC_REFS>"
     no_citation_response = ::OpenStruct.new(
       output: ::OpenStruct.new(text: doc_refs_answer),
@@ -1111,7 +1310,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         raise "fallback_retrieve must not be called when entity is known from filter"
       end
 
-      result = BedrockRagService.new.query(
+      result = BedrockRagService.new(account: @account).query(
         'torque del freno',
         entity_s3_uris:      [ 's3://bucket/manual.pdf' ],
         force_entity_filter: true
@@ -1125,6 +1324,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'unfiltered query with doc_refs but no inline citations calls Retrieve API for source_uri resolution' do
+    KbDocument.create!(
+      s3_key: "manual.pdf",
+      display_name: "Manual",
+      aliases: [],
+      account: @account
+    )
     doc_refs_answer = "Answer.\n<DOC_REFS>[{\"source_uri\":\"s3://bucket/manual.pdf\",\"canonical_name\":\"Manual\",\"aliases\":[],\"doc_type\":\"manual\"}]</DOC_REFS>"
     no_citation_response = ::OpenStruct.new(
       output: ::OpenStruct.new(text: doc_refs_answer),
@@ -1139,9 +1344,50 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         ::OpenStruct.new(retrieval_results: [])
       end
 
-      BedrockRagService.new.query('What is the torque?')  # no entity_s3_uris
+      BedrockRagService.new(account: @account).query('What is the torque?')  # no entity_s3_uris
 
       assert retrieve_called, 'Retrieve API must be called when no entity filter is applied'
+    end
+  end
+
+  test 'unfiltered query with blank-source doc_refs uses Retrieve fallback for observed chunks' do
+    doc_refs_answer = "Answer.\n<DOC_REFS>[{\"source_uri\":\"\",\"canonical_name\":\"Manual\",\"aliases\":[\"PDCM\"],\"doc_type\":\"manual\"}]</DOC_REFS>"
+    no_citation_response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: doc_refs_answer),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+    retrieved_result = ::OpenStruct.new(
+      content: ::OpenStruct.new(text: "Relevant chunk text"),
+      location: ::OpenStruct.new(
+        s3_location: ::OpenStruct.new(uri: "s3://bucket/bulk_chunks/manual/chunk_1.txt")
+      ),
+      metadata: {
+        "account_id" => @account.id.to_s,
+        "original_source_uri" => "s3://bucket/manual.pdf",
+        "canonical_name" => "Manual"
+      },
+      score: 0.9
+    )
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: no_citation_response) do |client|
+      retrieve_filter = nil
+      client.define_singleton_method(:retrieve) do |params|
+        retrieve_filter = params.dig(
+          :retrieval_configuration,
+          :vector_search_configuration,
+          :filter
+        )
+        ::OpenStruct.new(retrieval_results: [ retrieved_result ])
+      end
+
+      result = BedrockRagService.new(account: @account).query("What is the torque?")
+
+      assert_account_filter retrieve_filter
+      assert_equal [ "Manual" ], result[:doc_refs].pluck("canonical_name")
+      assert_equal 1, result[:retrieved_citations].size
+      assert_equal "s3://bucket/manual.pdf",
+                   result[:retrieved_citations].first.dig(:metadata, "original_source_uri")
     end
   end
 
@@ -1167,5 +1413,34 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_equal 999,
                  config.dig(:retrieval_configuration, :vector_search_configuration, :number_of_results),
                  'the caller config must not be mutated'
+  end
+
+  # ===== Failure semantics (Gate B) =====
+
+  test 'query appends DATA_NOT_AVAILABLE when answer leads with prose absence and no marker' do
+    prose_absence = 'La documentación recuperada no contiene información sobre el torque de apriete de -PBCM -J26.'
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(prose_absence)) do
+      service = BedrockRagService.new(account: @account)
+      result = service.query('¿Cuál es el torque de apriete de -PBCM -J26?', response_locale: :es)
+      assert_includes result[:answer], 'DATA_NOT_AVAILABLE'
+    end
+  end
+
+  test 'query does not append marker when one is already present' do
+    already_marked = 'El par de apriete: DATA_NOT_AVAILABLE en la documentación recuperada.'
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(already_marked)) do
+      service = BedrockRagService.new(account: @account)
+      result = service.query('¿Cuál es el torque?', response_locale: :es)
+      assert_equal 1, result[:answer].scan('DATA_NOT_AVAILABLE').size
+    end
+  end
+
+  test 'query does not append marker to a grounded affirmative answer' do
+    grounded = 'El número de plano del posicionamiento tipo 3 es 0471226, zona +CC, función =PS.'
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(grounded)) do
+      service = BedrockRagService.new(account: @account)
+      result = service.query('¿Cuál es el número de plano?', response_locale: :es)
+      assert_not_includes result[:answer], 'DATA_NOT_AVAILABLE'
+    end
   end
 end

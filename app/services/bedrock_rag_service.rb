@@ -20,8 +20,26 @@ class BedrockRagService
 
   DOC_REFS_PATTERN = /<DOC_REFS>\s*(.*?)\s*<\/DOC_REFS>/m.freeze
 
+  # Deterministic failure-semantics normalization (Gate B).
+  # Haiku frequently states absence in prose ("la documentación no contiene…")
+  # without emitting the literal protocol marker. When the answer LEADS with an
+  # absence statement and carries no marker, we append DATA_NOT_AVAILABLE so the
+  # safety-critical absence contract is explicit. Lead-scoped to avoid firing on
+  # grounded answers that mention an incidental sub-absence.
+  ABSENCE_MARKER_PATTERN = /DATA_NOT_AVAILABLE|REQUIRE_FIELD_VERIFICATION/.freeze
+  ABSENCE_LEAD_CHARS = 280
+  ABSENCE_LEAD_PATTERNS = [
+    /no\s+(?:se\s+)?proporciona/i,
+    /no\s+(?:se\s+)?especifica/i,
+    /no\s+contiene/i,
+    /no\s+(?:se\s+)?documenta/i,
+    /no\s+se\s+(?:encontr[oó]|encuentra)/i,
+    /(?:does\s+not|doesn'?t|do\s+not)\s+(?:contain|specify|document|provide)/i,
+    /\bnot\s+(?:available|documented|specified|found)\b/i
+  ].freeze
+
   # Default RAG config (safety-critical for elevator domain).
-  # Overridden by ENV (BEDROCK_RAG_*) and tenant.bedrock_config.rag_config when present.
+  # Overridden by ENV (BEDROCK_RAG_*) and account.bedrock_config.rag_config when present.
   DEFAULT_RAG_CONFIG = {
     number_of_results: 10,
     search_type: "HYBRID",
@@ -94,6 +112,7 @@ class BedrockRagService
       **(reranking ? reranking_config(region, profile: profile) : {})
     }
 
+    base_filter = account_filter
     uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
     if uris.any?
       filters = uris.flat_map do |uri|
@@ -102,21 +121,25 @@ class BedrockRagService
           { equals: { key: "original_source_uri", value: uri } }
         ]
       end
-      vector_config[:filter] = { or_all: filters }
+      vector_config[:filter] = and_filter(base_filter, { or_all: filters })
+    else
+      vector_config[:filter] = base_filter
     end
 
     vector_config
   end
 
   # @param knowledge_base_id [String, nil] Override KB ID (takes precedence)
-  # @param tenant [Tenant, nil] Optional tenant for per-KB config (tenant.bedrock_config.rag_config)
-  def initialize(knowledge_base_id: nil, tenant: nil)
+  # @param account [Account] Required account for metadata filter enforcement
+  def initialize(knowledge_base_id: nil, account: nil)
+    raise ArgumentError, "account is required for BedrockRagService" unless account
+
     client_options = build_aws_client_options
     @region = client_options[:region] || 'us-east-1'
     @client = Aws::BedrockAgentRuntime::Client.new(client_options)
-    @tenant = tenant
+    @account = account
     @knowledge_base_id = knowledge_base_id.presence ||
-                         tenant&.bedrock_config&.knowledge_base_id ||
+                         account_bedrock_config&.knowledge_base_id ||
                          ENV.fetch('BEDROCK_KNOWLEDGE_BASE_ID', nil).presence ||
                          Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
     @citation_processor = Bedrock::CitationProcessor.new
@@ -165,7 +188,7 @@ class BedrockRagService
 
       # Build complete optimized configuration and merge with custom config
       base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
-      config = enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config))
+      config = enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
       applied_filter_uris = filtered_uris
 
       params = {
@@ -212,7 +235,7 @@ class BedrockRagService
         unfiltered_params = params.merge(
           retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
             knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
-              **enforce_query_contractual_limits(deep_merge_configs(unfiltered_config, custom_config))
+              **enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(unfiltered_config, custom_config)))
             )
           )
         )
@@ -288,6 +311,10 @@ class BedrockRagService
         answer_text = @citation_processor.add_citations_to_answer(answer_text, citations)
         Rails.logger.info("Added citations automatically to answer text")
       end
+
+      # Failure semantics (Gate B): make prose-only absence explicit with the
+      # literal protocol marker so downstream contracts/telemetry can rely on it.
+      answer_text = normalize_absence_semantics(answer_text)
 
       latency_ms = ((Time.current - start_time) * 1000).to_i
       tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
@@ -633,7 +660,7 @@ class BedrockRagService
       retrieval_query: { text: question },
       retrieval_configuration: { vector_search_configuration: vector_cfg }
     }
-    resp = @client.retrieve(params)
+    resp = retrieve_with_retry(params)
     results = Array(resp.retrieval_results).map do |r|
       uri = r.location&.s3_location&.uri
       location = uri ? { bucket: uri.split('/')[2], key: uri.split('/')[3..].join('/'), uri: uri, type: 's3' } : nil
@@ -691,8 +718,8 @@ class BedrockRagService
     response_locale.present? ? response_locale.to_sym : detect_language_from_question(question)
   end
 
-  # Resolves RAG config: defaults + ENV + tenant.bedrock_config.rag_config.
-  # Precedence: tenant config > ENV > defaults.
+  # Resolves RAG config: defaults + ENV + account.bedrock_config.rag_config.
+  # Precedence: account config > ENV > defaults.
   def resolve_rag_config
     from_env = {
       number_of_results: parse_int(ENV['BEDROCK_RAG_NUMBER_OF_RESULTS']),
@@ -700,9 +727,13 @@ class BedrockRagService
       generation_temperature: parse_float(ENV['BEDROCK_RAG_GENERATION_TEMPERATURE']),
       generation_max_tokens: parse_int(ENV['BEDROCK_RAG_GENERATION_MAX_TOKENS'])
     }.compact
-    from_tenant = @tenant&.bedrock_config&.rag_config
-    from_tenant = from_tenant&.symbolize_keys&.compact || {}
-    DEFAULT_RAG_CONFIG.merge(from_env).merge(from_tenant)
+    from_account = account_bedrock_config&.rag_config
+    from_account = from_account&.symbolize_keys&.compact || {}
+    DEFAULT_RAG_CONFIG.merge(from_env).merge(from_account)
+  end
+
+  def account_bedrock_config
+    @account.bedrock_config if @account.respond_to?(:bedrock_config)
   end
 
   def parse_int(val)
@@ -1049,7 +1080,56 @@ class BedrockRagService
     end
   end
 
-  # Keep pricing and runtime behavior aligned even when ENV, tenant config or a
+  def account_filter
+    {
+      equals: {
+        key: "account_id",
+        value: @account.id.to_s
+      }
+    }
+  end
+
+  def and_filter(*filters)
+    compacted = filters.compact
+    return nil if compacted.empty?
+    return compacted.first if compacted.one?
+
+    { and_all: compacted }
+  end
+
+  def enforce_account_filter(config)
+    guarded = config.deep_dup
+    vector = guarded.dig(:retrieval_configuration, :vector_search_configuration)
+    return guarded unless vector
+
+    vector[:filter] = merge_account_filter(vector[:filter])
+    guarded
+  end
+
+  def merge_account_filter(filter)
+    filter = filter.deep_dup if filter.respond_to?(:deep_dup)
+    return account_filter if filter.blank?
+    return filter if account_filter_present?(filter)
+
+    and_filter(account_filter, filter)
+  end
+
+  def account_filter_present?(filter)
+    case filter
+    when Hash
+      equals = filter[:equals] || filter["equals"]
+      return true if equals && (equals[:key] || equals["key"]).to_s == "account_id" &&
+                     (equals[:value] || equals["value"]).to_s == @account.id.to_s
+
+      filter.any? { |_key, value| account_filter_present?(value) }
+    when Array
+      filter.any? { |value| account_filter_present?(value) }
+    else
+      false
+    end
+  end
+
+  # Keep pricing and runtime behavior aligned even when ENV, account config or a
   # caller-supplied custom_config requests a larger generation/retrieval budget.
   def enforce_query_contractual_limits(config)
     bounded = config.deep_dup
@@ -1106,6 +1186,20 @@ class BedrockRagService
     text
   end
 
+  # Appends the literal DATA_NOT_AVAILABLE marker when the answer LEADS with an
+  # absence statement but emitted no marker. Lead-scoped (first ABSENCE_LEAD_CHARS,
+  # markdown noise stripped) so grounded answers with an incidental sub-absence are
+  # not falsely flagged. Idempotent: never adds a second marker.
+  def normalize_absence_semantics(answer)
+    return answer if answer.blank?
+    return answer if answer.match?(ABSENCE_MARKER_PATTERN)
+
+    lead = answer[0, ABSENCE_LEAD_CHARS].to_s.tr("#*`>_", " ")
+    return answer unless ABSENCE_LEAD_PATTERNS.any? { |re| lead.match?(re) }
+
+    "#{answer.rstrip}\n\n**DATA_NOT_AVAILABLE** — el dato solicitado no está documentado; requiere verificación en campo."
+  end
+
   def extract_doc_refs(answer_text)
     match = answer_text.match(DOC_REFS_PATTERN)
     return { clean_answer: answer_text, doc_refs: nil } unless match
@@ -1118,7 +1212,10 @@ class BedrockRagService
         return { clean_answer: answer_text, doc_refs: nil }
       end
 
-      sanitized = parsed.map do |ref|
+      sanitized = parsed.filter_map do |ref|
+        source_uri = ref["source_uri"].to_s
+        next if source_uri.present? && !source_uri_resolves_to_account_document?(source_uri)
+
         aliases = Array(ref["aliases"])
           .map { |a| a.to_s.strip }
           .select { |a| a.length.between?(2, 60) }
@@ -1126,7 +1223,7 @@ class BedrockRagService
           .first(10)
 
         {
-          "source_uri"     => ref["source_uri"].to_s,
+          "source_uri"     => source_uri,
           "canonical_name" => ref["canonical_name"].to_s.strip,
           "aliases"        => aliases,
           "doc_type"       => ref["doc_type"].to_s.presence || "unknown"
@@ -1140,5 +1237,12 @@ class BedrockRagService
       Rails.logger.warn("BedrockRagService: <DOC_REFS> JSON parse failed: #{e.message}")
       { clean_answer: answer_text, doc_refs: nil }
     end
+  end
+
+  def source_uri_resolves_to_account_document?(source_uri)
+    key = KbDocument.object_key_for_match(source_uri)
+    return false if key.blank?
+
+    KbDocument.exists?(account_id: @account.id, s3_key: [ key, source_uri ])
   end
 end

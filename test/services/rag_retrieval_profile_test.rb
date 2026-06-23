@@ -91,4 +91,32 @@ class RagRetrievalProfileTest < ActiveSupport::TestCase
 
     assert_equal 15, profile.number_of_results
   end
+
+  test "widens open schematic block/connector query to MAX_RESULTS" do
+    [
+      "¿Qué texto visible aparece asociado a -PBCM -J26?",
+      "¿Qué conectores visibles aparecen en el bloque -PDCC?",
+      "¿Qué conectores visibles aparecen en el bloque -PDCM?"
+    ].each do |q|
+      profile = RagRetrievalProfile.new(entity_sources: [], question: q)
+      assert_equal RagRetrievalProfile::MAX_RESULTS, profile.number_of_results,
+                   "expected schematic recall bump for: #{q}"
+    end
+  end
+
+  test "does not widen open query without a schematic designator" do
+    profile = RagRetrievalProfile.new(
+      entity_sources: [],
+      question: "PDCM PBCM POSICIONAMIENTO TIPO 3"
+    )
+    assert_equal 8, profile.number_of_results
+  end
+
+  test "schematic bump does not override a pinned-document budget" do
+    profile = RagRetrievalProfile.new(
+      entity_sources: [ "document" ],
+      question: "¿Qué conectores visibles aparecen en el bloque -PDCC?"
+    )
+    assert_equal 3, profile.number_of_results
+  end
 end

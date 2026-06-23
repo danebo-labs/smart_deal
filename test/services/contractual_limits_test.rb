@@ -43,7 +43,7 @@ class ContractualLimitsTest < ActiveSupport::TestCase
   end
 
   test "query limits match retrieval profile, session context budget and RAG defaults" do
-    assert_equal RagRetrievalProfile::EXHAUSTIVE_CANDIDATES, ContractualLimits::QUERY[:max_top_k]
+    assert_equal RagRetrievalProfile::MAX_RESULTS, ContractualLimits::QUERY[:max_top_k]
     assert_equal SessionContextBuilder::MAX_CONTEXT_CHARS,   ContractualLimits::QUERY[:max_context_chars]
     assert_equal BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
                  ContractualLimits::QUERY[:max_output_tokens]

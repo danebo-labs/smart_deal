@@ -736,7 +736,9 @@ class Gate9FinalManual
     @parsed_asset   = BatchResultsParserService.new(s3_service: memory).call(
       asset:          asset,
       raw_json:       report[:json],
-      ingestion_path: "manual_batch_v1"
+      ingestion_path: "manual_batch_v1",
+      account_id:     "gate9",
+      document_uid:   sha256[0, 36]
     )
     @degraded_pages = report[:degraded_pages]
 

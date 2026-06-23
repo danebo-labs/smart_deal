@@ -110,7 +110,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result)
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result)
 
     asset.reload
     assert_equal "parsed",  asset.status
@@ -124,7 +124,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result)
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result)
 
     prefix = asset.reload.chunks_s3_prefix
     assert_equal 4, @fake_s3.uploads.size
@@ -138,7 +138,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result)
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result)
 
     prefix  = asset.reload.chunks_s3_prefix
     chunk_0 = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
@@ -163,7 +163,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     prefix = asset.reload.chunks_s3_prefix
     assert_includes @fake_s3.uploads["#{prefix}/chunk_0.txt"],
@@ -182,7 +182,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_1.txt"]
     assert_includes chunk, "# FIELD-SAFETY EVIDENCE RECORDS"
@@ -201,7 +201,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: raw_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: raw_json))
 
     chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     assert_equal "parsed", asset.status
@@ -223,11 +223,11 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     first_asset = make_asset
     second_asset = make_asset
 
-    parser.call(asset: first_asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: first_asset, result: make_result(json_text: payload.to_json))
     first_chunk = @fake_s3.uploads["#{first_asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     first_id = first_chunk[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
 
-    parser.call(asset: second_asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: second_asset, result: make_result(json_text: payload.to_json))
     second_chunk = @fake_s3.uploads["#{second_asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     second_id = second_chunk[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
 
@@ -251,7 +251,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser = build_parser
 
     error = assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
     end
 
     assert_includes error.message, "Incomplete stop-work evidence pair"
@@ -274,7 +274,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     assert_includes chunk, "STOP_WORK_TRIGGER: Oil leak is visible."
@@ -301,7 +301,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     assert_includes chunk, "Mueva el joystick"
@@ -323,7 +323,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser = build_parser
 
     error = assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
     end
 
     assert_includes error.message, "Missing ev"
@@ -356,7 +356,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     ledger = Rag::FieldRecordParser.parse_text(chunk)
@@ -395,7 +395,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     stop_work_records = Rag::FieldRecordParser.parse_text(chunk)[:records].select(&:stop_work?)
@@ -426,7 +426,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     assert_empty Rag::FieldRecordParser.parse_text(chunk)[:records].select(&:stop_work?)
@@ -443,7 +443,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     prefix = asset.reload.chunks_s3_prefix
     chunk = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
@@ -460,7 +460,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result)
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result)
 
     prefix = asset.reload.chunks_s3_prefix
     meta   = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"])
@@ -488,7 +488,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
       "aliases"       => ALIASES,
       "chunks"        => [ { "text" => "photo identity chunk", "page" => nil } ]
     }
-    parser.call(asset: asset, raw_json: envelope.to_json, ingestion_path: "field_photo_v1")
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, raw_json: envelope.to_json, ingestion_path: "field_photo_v1")
 
     prefix = asset.reload.chunks_s3_prefix
     attrs  = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
@@ -499,28 +499,26 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_not_equal BatchChunkingPrompt.prompt_fingerprint_sha256, attrs["prompt_fingerprint_sha256"]
   end
 
-  test "chunks_s3_prefix uses bulk_chunks/<date>/<sha256> pattern" do
+  test "chunks_s3_prefix uses bulk_chunks/<account_id>/<document_uid> pattern" do
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result)
+    parser.call(account_id: 42, document_uid: "test-uid-abc", asset: asset, result: make_result)
 
     prefix = asset.reload.chunks_s3_prefix
-    assert_match(%r{\Abulk_chunks/\d{4}-\d{2}-\d{2}/[a-f0-9]+\z}, prefix)
-    assert_includes prefix, asset.sha256
+    assert_equal "bulk_chunks/42/test-uid-abc", prefix
   end
 
-  test "manual_batch_v1 uses deterministic contract prefix and page chunk keys" do
+  test "manual_batch_v1 uses account-scoped prefix and page chunk keys" do
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result, ingestion_path: "manual_batch_v1")
+    parser.call(account_id: 99, document_uid: "manual-uid-xyz", asset: asset, result: make_result, ingestion_path: "manual_batch_v1")
 
     prefix = asset.reload.chunks_s3_prefix
-    expected_prefix = "bulk_chunks/#{asset.sha256}/#{BatchChunkingPrompt::INGESTION_CONTRACT_VERSION}"
-    assert_equal expected_prefix, prefix
-    assert_includes @fake_s3.uploads.keys, "#{expected_prefix}/chunk_p1_1.txt"
-    assert_includes @fake_s3.uploads.keys, "#{expected_prefix}/chunk_p2_1.txt"
+    assert_equal "bulk_chunks/99/manual-uid-xyz", prefix
+    assert_includes @fake_s3.uploads.keys, "#{prefix}/chunk_p1_1.txt"
+    assert_includes @fake_s3.uploads.keys, "#{prefix}/chunk_p2_1.txt"
   end
 
   # ---------------------------------------------------------------------------
@@ -532,7 +530,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser = build_parser
 
     assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(result_type: "errored"))
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(result_type: "errored"))
     end
 
     assert_equal "failed", asset.reload.status
@@ -543,7 +541,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser = build_parser
 
     assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: "not json {{"))
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: "not json {{"))
     end
 
     assert_equal "failed", asset.reload.status
@@ -569,7 +567,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: plain_chunks.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: plain_chunks.to_json))
 
     asset.reload
     assert_equal "parsed",  asset.status
@@ -583,7 +581,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser = build_parser
 
     assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: '{"foo":"bar"}'))
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: '{"foo":"bar"}'))
     end
   end
 
@@ -593,7 +591,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser = build_parser
 
     assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: empty.to_json))
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: empty.to_json))
     end
   end
 
@@ -604,7 +602,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser = build_parser
 
     error = assert_raises(BatchResultsParserService::ParseError) do
-      parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
     end
 
     assert_includes error.message, "Missing field_records array in chunk 0"
@@ -619,7 +617,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: fenced))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: fenced))
 
     asset.reload
     assert_equal "parsed", asset.status
@@ -632,7 +630,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     asset  = make_asset
     parser = build_parser
 
-    parser.call(asset: asset, result: make_result(json_text: fenced))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: fenced))
 
     asset.reload
     assert_equal "parsed", asset.status
@@ -649,7 +647,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     )
     parser = build_parser
 
-    parser.call(asset: chunk_asset, raw_json: fenced, ingestion_path: "web_v1")
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: chunk_asset, raw_json: fenced, ingestion_path: "web_v1")
 
     assert_equal DOC_NAME, chunk_asset.canonical_name
     assert_equal ALIASES,  chunk_asset.aliases
@@ -669,7 +667,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     )
     parser = build_parser
 
-    parser.call(asset: chunk_asset, raw_json: payload.to_json, ingestion_path: "web_v1")
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: chunk_asset, raw_json: payload.to_json, ingestion_path: "web_v1")
 
     assert_match(/Schindler 5500/, chunk_asset.summary)
   end
@@ -681,7 +679,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     )
     parser = build_parser
 
-    parser.call(asset: chunk_asset, raw_json: golden_parsed.to_json, ingestion_path: "web_v1")
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: chunk_asset, raw_json: golden_parsed.to_json, ingestion_path: "web_v1")
 
     assert_nil chunk_asset.summary
   end
@@ -691,7 +689,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser  = build_parser
     payload = golden_parsed.merge("summary" => "ignored on bulk path")
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     assert_equal "parsed", asset.reload.status
   end
@@ -711,7 +709,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     )
     parser = build_parser
 
-    parser.call(asset: chunk_asset, raw_json: payload.to_json, ingestion_path: "web_v1")
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: chunk_asset, raw_json: payload.to_json, ingestion_path: "web_v1")
 
     assert_match(/Pregúntame/, chunk_asset.companion_offer)
   end
@@ -723,7 +721,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     )
     parser = build_parser
 
-    parser.call(asset: chunk_asset, raw_json: golden_parsed.to_json, ingestion_path: "web_v1")
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: chunk_asset, raw_json: golden_parsed.to_json, ingestion_path: "web_v1")
 
     assert_nil chunk_asset.companion_offer
   end
@@ -733,7 +731,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     parser  = build_parser
     payload = golden_parsed.merge("companion_offer" => "ignored on bulk path")
 
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     assert_equal "parsed", asset.reload.status
   end
@@ -834,7 +832,7 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
 
     asset  = make_asset
     parser = build_parser
-    parser.call(asset: asset, result: make_result(json_text: payload.to_json))
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
 
     chunk_text = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
     parsed = Rag::FieldRecordParser.parse_text(chunk_text)
@@ -844,5 +842,67 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
       "both ground-control and platform-control stop-work records must survive the render-parse cycle"
     assert_equal 2, stop_work_records.map(&:record_id).uniq.size,
       "ground and platform stop-work records must have distinct RECORD_IDs after rendering"
+  end
+
+  # ---------------------------------------------------------------------------
+  # P-01 / P-02 — sidecar metadataAttributes include account_id + document_id
+  # ---------------------------------------------------------------------------
+
+  test "P-01: Climb account sidecar has non-empty account_id and document_id" do
+    climb_account = accounts(:climb)
+    climb_uid = SecureRandom.uuid
+    asset  = make_asset
+    parser = build_parser
+
+    parser.call(account_id: climb_account.id, document_uid: climb_uid, asset: asset, result: make_result)
+
+    prefix = asset.reload.chunks_s3_prefix
+    sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"])
+    attrs   = sidecar["metadataAttributes"]
+
+    assert_equal climb_account.id.to_s, attrs["account_id"],  "account_id must match Climb account"
+    assert_equal climb_uid,             attrs["document_id"],  "document_id must match Climb uid"
+    assert attrs["account_id"].present?,  "account_id must not be blank"
+    assert attrs["document_id"].present?, "document_id must not be blank"
+  end
+
+  test "P-02: legacy account sidecar has non-empty account_id and document_id" do
+    legacy_account = accounts(:legacy)
+    legacy_uid = SecureRandom.uuid
+    asset  = make_asset
+    parser = build_parser
+
+    parser.call(account_id: legacy_account.id, document_uid: legacy_uid, asset: asset, result: make_result)
+
+    prefix = asset.reload.chunks_s3_prefix
+    sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"])
+    attrs   = sidecar["metadataAttributes"]
+
+    assert_equal legacy_account.id.to_s, attrs["account_id"],  "account_id must match legacy account"
+    assert_equal legacy_uid,             attrs["document_id"],  "document_id must match legacy uid"
+    assert attrs["account_id"].present?,  "account_id must not be blank"
+    assert attrs["document_id"].present?, "document_id must not be blank"
+  end
+
+  test "P-01/P-02: raises ParseError before any S3 write when account_id is nil" do
+    asset  = make_asset
+    parser = build_parser
+
+    assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(account_id: nil, document_uid: "uid-x", asset: asset, result: make_result)
+    end
+
+    assert_empty @fake_s3.uploads, "no S3 writes must occur when account_id is nil"
+  end
+
+  test "P-01/P-02: raises ParseError before any S3 write when document_uid is nil" do
+    asset  = make_asset
+    parser = build_parser
+
+    assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(account_id: 1, document_uid: nil, asset: asset, result: make_result)
+    end
+
+    assert_empty @fake_s3.uploads, "no S3 writes must occur when document_uid is nil"
   end
 end

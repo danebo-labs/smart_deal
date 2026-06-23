@@ -12,6 +12,9 @@
 # On error: propagates to the calling job (UploadAndSyncAttachmentsJob), which broadcasts
 # KbSyncBroadcaster.failed and lets Solid Queue retry. No legacy OWRPGSX6XK fallback.
 class CustomChunkingPipeline
+  class PerimeterError < StandardError; end
+  class KbDocumentConsistencyError < StandardError; end
+
   OFFICE_EXTENSIONS = FileMultimodalRouter::OFFICE_EXTENSIONS
   PDF_CONTENT_TYPE  = "application/pdf"
 
@@ -22,17 +25,19 @@ class CustomChunkingPipeline
   # @param images       [Array<Hash>] same shape as QOS @images
   # @param documents    [Array<Hash>] same shape as QOS @documents
   # @param conv_session [ConversationSession, nil]
-  # @param tenant       [Tenant, nil]
+  # @param account_id   [Integer] owning account for upload and chunk paths
+  # @param document_uid [String] stable UUID assigned before enqueue
   # @param locale       [String, nil] ISO 639-1 — forwarded to SingleFileChunkingService for image summary
   # @param urgent       [Boolean] retained for caller compatibility. Long manual
   #                     routing is automatic; emergency triage is handled separately.
   # @param query        [String, nil] original text question; enables automatic
   #                     urgent-page triage for long PDFs while Batch runs.
-  def initialize(images:, documents:, conv_session: nil, tenant: nil, locale: nil, urgent: false, query: nil)
+  def initialize(images:, documents:, conv_session: nil, account_id: nil, document_uid: nil, locale: nil, urgent: false, query: nil)
     @images         = Array(images)
     @documents      = Array(documents)
     @conv_session   = conv_session
-    @tenant         = tenant
+    @account_id     = account_id
+    @document_uid   = document_uid
     @locale         = locale
     @urgent         = urgent
     @query          = query.to_s
@@ -44,6 +49,8 @@ class CustomChunkingPipeline
 
   # @return [Array<String>] successfully uploaded original filenames
   def run!
+    validate_pilot_perimeter!
+
     s3 = S3DocumentsService.new
     upload_and_chunk_all(s3)
     return [] if @uploaded_filenames.empty?
@@ -114,37 +121,13 @@ class CustomChunkingPipeline
     binary       = attrs[:binary]
     content_type = attrs[:content_type]
 
-    s3_key = s3.upload_file(filename, binary, content_type)
-    return if s3_key.blank?
+    s3_key = s3.upload_file(filename, binary, content_type, account_id: @account_id, document_uid: @document_uid)
+    raise "S3 upload failed for #{filename}" if s3_key.blank?
 
     sha256 = Digest::SHA256.hexdigest(binary)
     kb_doc = ensure_kb_document_for(s3_key)
     KbDocumentThumbnailPersister.call(kb_doc: kb_doc, img: attrs) if attrs[:thumbnail_binary].present?
     @uploaded_filenames << filename
-
-    # SHA dedup: skip parse when identical binary was already indexed under the
-    # SAME ingestion contract. Images declare the field-photo contract; documents
-    # the field_records contract — a version mismatch is always a miss.
-    contract_version = if attrs[:content_type].to_s.start_with?("image/")
-      FieldPhotoPrompt::INGESTION_CONTRACT_VERSION
-    else
-      BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
-    end
-    dedup = ContentDedupService.find_completed(sha256: sha256, contract_version: contract_version)
-    if dedup.hit
-      mark_ready(
-        filename: filename,
-        kb_doc_id: kb_doc.id,
-        metadata: {
-          "filename"        => filename,
-          "canonical_name"  => dedup.canonical_name.to_s,
-          "aliases"         => Array(dedup.aliases),
-          "summary"         => nil,
-          "companion_offer" => nil
-        }
-      )
-      return
-    end
 
     if long_pdf_for_batch?(content_type: content_type, filename: filename, binary: binary)
       SubmitManualBatchJob.perform_later(
@@ -152,64 +135,15 @@ class CustomChunkingPipeline
         filename:        filename,
         sha256:          sha256,
         kb_doc_id:       kb_doc.id,
+        account_id:      @account_id,
+        document_uid:    @document_uid,
         locale:          @locale,
         conv_session_id: @conv_session&.id
       )
-      enqueue_urgent_triage(
-        s3_key: s3_key,
-        filename: filename,
-        sha256: sha256,
-        kb_doc_id: kb_doc.id
-      )
       return
     end
 
-    begin
-      chunk_asset = SingleFileChunkingService.new(
-        binary:       binary,
-        content_type: content_type,
-        filename:     filename,
-        s3_key:       s3_key,
-        sha256:       sha256,
-        locale:       @locale
-      ).call
-    rescue ClaudeChunkingClient::CreditBalanceError
-      @uploaded_filenames.delete(filename)
-      kb_doc.destroy
-      KbSyncBroadcaster.failed(
-        filenames: [ filename ],
-        reason:    "credit_balance_low",
-        message:   I18n.t("rag.service_unavailable_credits")
-      )
-      return
-    rescue StandardError => e
-      if office?(filename)
-        Rails.logger.error("CustomChunking: Office parse failed for #{filename} — #{e.class}: #{e.message}")
-        Rails.logger.error(e.backtrace.first(10).join("\n"))
-        @uploaded_filenames.delete(filename)
-        KbSyncBroadcaster.failed(
-          filenames: [ filename ],
-          reason:    "office_parse_error",
-          message:   I18n.t("rag.office_parse_failed")
-        )
-        return
-      end
-      raise
-    end
-
-    mark_ready(
-      filename: filename,
-      kb_doc_id: kb_doc.id,
-      metadata: {
-        "filename"         => filename,
-        "canonical_name"   => chunk_asset.canonical_name.to_s.strip.presence || "",
-        "aliases"          => Array(chunk_asset.aliases),
-        "summary"          => chunk_asset.summary.to_s.presence,
-        "companion_offer"  => chunk_asset.companion_offer.to_s.presence,
-        "chunks_s3_prefix" => chunk_asset.chunks_s3_prefix.to_s.presence,
-        "partial_pages"    => Array(chunk_asset.degraded_pages)
-      }
-    )
+    raise PerimeterError, "#{filename} is outside pilot perimeter"
   end
 
   def mark_ready(filename:, kb_doc_id:, metadata:)
@@ -218,27 +152,22 @@ class CustomChunkingPipeline
     @ready_web_v1_metadata << metadata
   end
 
-  def enqueue_urgent_triage(s3_key:, filename:, sha256:, kb_doc_id:)
-    return if @query.blank?
-
-    ProcessManualUrgentTriageJob.perform_later(
-      s3_key: s3_key,
-      filename: filename,
-      sha256: sha256,
-      kb_doc_id: kb_doc_id,
-      query: @query,
-      locale: @locale,
-      conv_session_id: @conv_session&.id
-    )
-  end
-
   def ensure_kb_document_for(s3_key)
-    KbDocument.find_or_create_by!(s3_key: s3_key) do |d|
+    record = KbDocument.find_by(account_id: @account_id, document_uid: @document_uid)
+    if record
+      unless record.s3_key == s3_key
+        raise KbDocumentConsistencyError,
+          "KbDocument #{record.id} has s3_key=#{record.s3_key}, expected #{s3_key}"
+      end
+      return record
+    end
+
+    KbDocument.create!(account_id: @account_id, document_uid: @document_uid, s3_key: s3_key) do |d|
       d.display_name = File.basename(s3_key, ".*").tr("_-", " ").strip.presence
       d.aliases      = []
     end
   rescue ActiveRecord::RecordNotUnique
-    KbDocument.find_by!(s3_key: s3_key)
+    retry
   end
 
   def office?(filename)
@@ -253,6 +182,18 @@ class CustomChunkingPipeline
   rescue StandardError => e
     Rails.logger.warn("CustomChunking: PDF page count failed for #{filename} — #{e.class}: #{e.message}; using sync path")
     false
+  end
+
+  def validate_pilot_perimeter!
+    raise PerimeterError, "account_id is required" if @account_id.blank?
+    raise PerimeterError, "document_uid is required" if @document_uid.blank?
+    raise PerimeterError, "pilot accepts exactly one PDF" unless @images.empty? && @documents.size == 1
+
+    doc = @documents.first
+    filename = (doc[:filename] || doc["filename"]).to_s
+    content_type = (doc[:media_type] || doc["media_type"]).to_s
+    raise PerimeterError, "pilot accepts PDFs only" unless content_type == PDF_CONTENT_TYPE
+    raise PerimeterError, "office files are outside pilot perimeter" if office?(filename)
   end
 
   def sync_pdf_page_threshold

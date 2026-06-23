@@ -119,7 +119,7 @@ class LambdaParityTest < ActiveSupport::TestCase
       content_type: "application/pdf"
     )
 
-    result = @parser.call(asset: asset, raw_json: raw_json, ingestion_path: "web_v1")
+    result = @parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, raw_json: raw_json, ingestion_path: "web_v1")
 
     assert_equal doc_name, result.canonical_name
     assert_equal aliases,  result.aliases

@@ -121,7 +121,9 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       filename:     filename,
       s3_key:       "uploads/2026-01-01/#{filename}",
       sha256:       Digest::SHA256.hexdigest(binary),
-      s3_service:   @fake_s3
+      s3_service:   @fake_s3,
+      account_id:   accounts(:legacy).id,
+      document_uid: SecureRandom.uuid
     )
   end
 
@@ -497,7 +499,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     SingleFileChunkingService.new(
       binary: "\xFF\xD8 fake", content_type: "image/jpeg", filename: "photo.jpg",
       s3_key: "uploads/photo.jpg", sha256: Digest::SHA256.hexdigest("fake"),
-      s3_service: @fake_s3, locale: "es"
+      s3_service: @fake_s3, locale: "es",
+      account_id: accounts(:legacy).id, document_uid: SecureRandom.uuid
     ).call
 
     assert(captured_text_blocks.any? { |t| t.include?("Summary language: es") },
@@ -556,7 +559,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     SingleFileChunkingService.new(
       binary: "hello world", content_type: "text/plain", filename: "note.txt",
       s3_key: "uploads/note.txt", sha256: Digest::SHA256.hexdigest("hello world"),
-      s3_service: @fake_s3, locale: "en"
+      s3_service: @fake_s3, locale: "en",
+      account_id: accounts(:legacy).id, document_uid: SecureRandom.uuid
     ).call
 
     assert(captured_text_blocks.any? { |t| t.include?("Summary language: en") },
@@ -586,7 +590,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     SingleFileChunkingService.new(
       binary: "%PDF-1.4", content_type: "application/pdf", filename: "manual.pdf",
       s3_key: "uploads/manual.pdf", sha256: Digest::SHA256.hexdigest("%PDF-1.4"),
-      s3_service: @fake_s3, locale: "es"
+      s3_service: @fake_s3, locale: "es",
+      account_id: accounts(:legacy).id, document_uid: SecureRandom.uuid
     ).call
 
     assert(captured_text_blocks.any? { |t| t.include?("Summary language: es") },

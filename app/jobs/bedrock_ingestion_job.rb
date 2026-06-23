@@ -38,8 +38,9 @@ class BedrockIngestionJob < ApplicationJob
   # in Solid Queue before this deploy; they are silently ignored.
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
               conv_session_id: nil, kb_document_ids: nil, started_at_iso: nil,
-              web_v1_metadata: nil, locale: nil, **_legacy_kwargs)
-    @locale = locale&.to_sym || :es
+              web_v1_metadata: nil, locale: nil, account_id: nil, **_legacy_kwargs)
+    @locale     = locale&.to_sym || :es
+    @account_id = account_id
     return if ingestion_job_id.blank?
 
     I18n.with_locale(@locale) do
@@ -91,7 +92,8 @@ class BedrockIngestionJob < ApplicationJob
         kb_document_ids:  kb_document_ids,
         started_at_iso:   started_at.iso8601,
         web_v1_metadata:  web_v1_metadata,
-        locale:           @locale&.to_s
+        locale:           @locale&.to_s,
+        account_id:       @account_id
       )
     end
   end
@@ -186,7 +188,7 @@ class BedrockIngestionJob < ApplicationJob
       message = "#{message}\n#{I18n.t('rag.partial_pages_warning', pages: partial_pages.join(', '))}"
     end
 
-    ActionCable.server.broadcast("kb_sync", {
+    ActionCable.server.broadcast(KbSyncBroadcaster.channel_for(@account_id), {
       status:          "indexed",
       filenames:       [ filename ],
       canonical_name:  canonical,
@@ -317,6 +319,6 @@ class BedrockIngestionJob < ApplicationJob
   end
 
   def broadcast_failed(filenames, reason, message = nil)
-    KbSyncBroadcaster.failed(filenames: filenames, reason: reason, message: message)
+    KbSyncBroadcaster.failed(filenames: filenames, reason: reason, message: message, account_id: @account_id)
   end
 end

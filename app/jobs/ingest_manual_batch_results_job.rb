@@ -79,6 +79,8 @@ class IngestManualBatchResultsJob < ApplicationJob
     page_customs = ctx[:page_customs] || {}  # { page_num => custom_id }
     conv_session_id = ctx[:conv_session_id]
     kb_doc_id       = ctx[:kb_doc_id]
+    account_id      = ctx[:account_id]
+    document_uid    = ctx[:document_uid]
 
     # Invert: custom_id → page_num for result lookup
     customs_to_page = page_customs.invert
@@ -135,7 +137,9 @@ class IngestManualBatchResultsJob < ApplicationJob
     chunk_asset = BatchResultsParserService.new(s3_service: s3).call(
       asset:          asset,
       raw_json:       merged_json,
-      ingestion_path: "manual_batch_v1"
+      ingestion_path: "manual_batch_v1",
+      account_id:     account_id,
+      document_uid:   document_uid
     )
 
     web_manual_batch&.update!(
@@ -178,6 +182,8 @@ class IngestManualBatchResultsJob < ApplicationJob
       kb_id:           sync_result[:kb_id],
       data_source_id:  sync_result[:data_source_id],
       conv_session_id: conv_session_id,
+      account_id:      account_id,
+      document_uid:    document_uid,
       kb_document_ids: [ kb_doc_id ].compact,
       web_v1_metadata: web_v1_metadata,
       locale:          ctx[:locale]
@@ -202,6 +208,8 @@ class IngestManualBatchResultsJob < ApplicationJob
       kept_pages:      Array(batch.kept_pages),
       conv_session_id: batch.conv_session_id,
       kb_doc_id:       batch.kb_document_id,
+      account_id:      batch.account_id,
+      document_uid:    batch.kb_document&.document_uid,
       locale:          batch.locale
     }
   end

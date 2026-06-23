@@ -9,6 +9,10 @@
 class KbDocumentEnrichmentService
   FABRICATED_URI_PATTERN = %r{\As3://(unknown|unknown-bucket|placeholder|no[_-]?bucket)/}i.freeze
 
+  def initialize(account_id:)
+    @account_id = account_id
+  end
+
   # @param doc_refs [Array<Hash>, nil] Haiku <DOC_REFS> JSON (BedrockRagService parses it)
   # @param all_retrieved [Array<Hash>] raw Bedrock citations (with metadata + location)
   def call(doc_refs:, all_retrieved: [])
@@ -38,7 +42,7 @@ class KbDocumentEnrichmentService
     s3_key = KbDocument.object_key_for_match(source_uri)
     return if s3_key.blank?
 
-    kb_doc = KbDocument.find_by(s3_key: s3_key)
+    kb_doc = KbDocument.find_by(s3_key: s3_key, account_id: @account_id)
     return unless kb_doc
 
     prior_display_name = kb_doc.display_name.presence

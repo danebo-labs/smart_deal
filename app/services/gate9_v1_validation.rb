@@ -422,13 +422,15 @@ class Gate9V1Validation
     memory = MemoryS3.new
     sha256 = Digest::SHA256.hexdigest(@sync_pdf_binary)
     asset = SingleFileChunkingService.new(
-      binary: @sync_pdf_binary,
+      binary:       @sync_pdf_binary,
       content_type: "application/pdf",
-      filename: File.basename(@sync_pdf_path),
-      s3_key: "gate9-v1/#{File.basename(@sync_pdf_path)}",
-      sha256: sha256,
-      s3_service: memory,
-      locale: "es"
+      filename:     File.basename(@sync_pdf_path),
+      s3_key:       "gate9-v1/#{File.basename(@sync_pdf_path)}",
+      sha256:       sha256,
+      s3_service:   memory,
+      locale:       "es",
+      account_id:   "gate9",
+      document_uid: sha256[0, 36]
     ).call
     @memory_outputs[:sync_pdf] = memory
 
@@ -445,13 +447,15 @@ class Gate9V1Validation
     results = @photos.map do |photo|
       memory = MemoryS3.new
       asset = SingleFileChunkingService.new(
-        binary: photo[:binary],
+        binary:       photo[:binary],
         content_type: photo[:content_type],
-        filename: photo[:filename],
-        s3_key: "gate9-v1/#{photo[:filename]}",
-        sha256: photo[:sha256],
-        s3_service: memory,
-        locale: "es"
+        filename:     photo[:filename],
+        s3_key:       "gate9-v1/#{photo[:filename]}",
+        sha256:       photo[:sha256],
+        s3_service:   memory,
+        locale:       "es",
+        account_id:   "gate9",
+        document_uid: photo[:sha256][0, 36]
       ).call
       @memory_outputs[:"photo_#{photo[:sha256][0, 12]}"] = memory
 
@@ -474,7 +478,8 @@ class Gate9V1Validation
     manual_uri = "s3://#{bucket_name}/#{MANUAL_SOURCE_KEY}"
     image_uri = "s3://#{bucket_name}/uploads/2026-06-10/pagina_16_esquema_hidraulico.png"
     missing_uri = "s3://#{bucket_name}/gate9-v1/missing-#{SecureRandom.hex(8)}.pdf"
-    service = BedrockRagService.new(knowledge_base_id: knowledge_base_id)
+    account = Account.find_by!(slug: "danebo-legacy")
+    service = BedrockRagService.new(knowledge_base_id: knowledge_base_id, account: account)
 
     results = QUERY_CASES.map do |query_case|
       uris = case query_case[:scope]

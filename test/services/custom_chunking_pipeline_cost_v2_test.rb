@@ -9,6 +9,8 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
   parallelize(workers: 1)
 
   setup do
+    @account = Account.create!(slug: "pipeline-test-#{SecureRandom.hex(4)}")
+    @document_uid = SecureRandom.uuid
     @orig_s3_new  = S3DocumentsService.method(:new)
     @orig_sfc_new = SingleFileChunkingService.method(:new)
     @orig_bulk    = BulkKbSyncService.instance_method(:sync!)
@@ -19,16 +21,18 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     @orig_splitter = PdfPageSplitterService.method(:new)
 
     fake_s3 = Object.new
-    fake_s3.define_singleton_method(:upload_file) { |fn, _bin, _ct| "uploads/#{fn}" }
+    fake_s3.define_singleton_method(:upload_file) do |_fn, _bin, _ct, account_id:, document_uid:|
+      "uploads/#{account_id}/#{document_uid}/original.pdf"
+    end
     fake_s3.define_singleton_method(:upload_text) { |key, _content| key }
     S3DocumentsService.define_singleton_method(:new) { |*| fake_s3 }
 
     BulkKbSyncService.define_method(:sync!) { |**| nil }
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
 
-    ContentDedupService.define_singleton_method(:find_completed) do |sha256:, contract_version:|
-      ContentDedupService::Result.new(hit: false, asset: nil, canonical_name: nil, aliases: [])
-    end
+    @dedup_calls = 0
+    dedup_counter = -> { @dedup_calls += 1 }
+    ContentDedupService.define_singleton_method(:find_completed) { |**| dedup_counter.call }
 
     @batch_job_calls = []
     batch_job_calls  = @batch_job_calls
@@ -74,34 +78,39 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
     { data: Base64.strict_encode64("pdf"), media_type: "application/pdf", filename: filename }
   end
 
+  def pipeline(doc: pdf_doc, images: [], query: "", urgent: false)
+    CustomChunkingPipeline.new(
+      images: images,
+      documents: doc ? [ doc ] : [],
+      conv_session: nil,
+      account_id: @account.id,
+      document_uid: @document_uid,
+      urgent: urgent,
+      query: query
+    )
+  end
+
   # ── Routing tests ────────────────────────────────────────────────────────────
 
-  test "PDF non-urgent, page_count > SYNC_PAGES → SubmitManualBatchJob (async Batch)" do
+  test "single long PDF routes to SubmitManualBatchJob with account and document uid" do
     stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES + 1)
 
-    CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: false).run!
+    pipeline.run!
 
     assert_equal 1, @batch_job_calls.size, "expected SubmitManualBatchJob for long non-urgent PDF"
     assert_equal "manual.pdf", @batch_job_calls.first[:filename]
+    assert_equal @account.id, @batch_job_calls.first[:account_id]
+    assert_equal @document_uid, @batch_job_calls.first[:document_uid]
   end
 
-  test "PDF urgent flag true still routes long manuals to batch" do
+  test "pilot bypasses dedup and urgent triage" do
     stub_pdf_page_count(10)
 
-    sfc_calls = 0
-    SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
-      sfc_calls += 1
-      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "abc",
-                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
-      asset.canonical_name = "Test Doc"
-      asset.aliases        = []
-      OpenStruct.new(call: asset)
-    end
+    pipeline(urgent: true, query: "Como hago rescate de emergencia?").run!
 
-    CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: true).run!
-
-    assert_equal 1, @batch_job_calls.size, "long PDF must go to batch even when caller passes urgent"
-    assert_equal 0, sfc_calls, "long PDF must not use sync SingleFileChunkingService"
+    assert_equal 1, @batch_job_calls.size
+    assert_empty @triage_job_calls
+    assert_equal 0, @dedup_calls
   end
 
   test "long PDF batch upload returns filename without immediate KB sync" do
@@ -113,97 +122,34 @@ class CustomChunkingPipelineCostV2Test < ActiveSupport::TestCase
       nil
     end
 
-    result = CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: true).run!
+    result = pipeline(urgent: true).run!
 
     assert_equal [ "manual.pdf" ], result
     assert_equal 1, @batch_job_calls.size
     assert_empty sync_calls, "long manual must not sync the original PDF before batch chunks exist"
   end
 
-  test "long PDF with question enqueues automatic urgent triage alongside full batch" do
-    stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES + 1)
-
-    CustomChunkingPipeline.new(
-      images: [],
-      documents: [ pdf_doc ],
-      conv_session: nil,
-      urgent: true,
-      query: "Como hago rescate de emergencia?"
-    ).run!
-
-    assert_equal 1, @batch_job_calls.size, "full manual batch must still run"
-    assert_equal 1, @triage_job_calls.size, "urgent pages must be selected automatically server-side"
-    assert_equal "manual.pdf", @triage_job_calls.first[:filename]
-    assert_equal "Como hago rescate de emergencia?", @triage_job_calls.first[:query]
-  end
-
-  test "long PDF without question does not enqueue urgent triage" do
-    stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES + 1)
-
-    CustomChunkingPipeline.new(
-      images: [],
-      documents: [ pdf_doc ],
-      conv_session: nil,
-      urgent: true,
-      query: ""
-    ).run!
-
-    assert_equal 1, @batch_job_calls.size
-    assert_empty @triage_job_calls
-  end
-
-  test "PDF non-urgent, page_count <= SYNC_PAGES → sync" do
+  test "short PDF is outside pilot perimeter" do
     stub_pdf_page_count(CustomChunkingPipeline::SYNC_PAGES)
 
-    sfc_calls = 0
-    SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
-      sfc_calls += 1
-      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "abc",
-                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
-      asset.canonical_name = "Test Doc"
-      asset.aliases        = []
-      OpenStruct.new(call: asset)
-    end
+    assert_raises(CustomChunkingPipeline::PerimeterError) { pipeline.run! }
 
-    CustomChunkingPipeline.new(images: [], documents: [ pdf_doc ], conv_session: nil, urgent: false).run!
-
-    assert_equal 0, @batch_job_calls.size, "short PDF must NOT go to batch"
-    assert_equal 1, sfc_calls, "short PDF must use SingleFileChunkingService"
+    assert_empty @batch_job_calls
   end
 
-  test "Office file (.docx) always routes to sync regardless of urgent" do
-    sfc_calls = 0
-    SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
-      sfc_calls += 1
-      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "abc",
-                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
-      asset.canonical_name = "Test Doc"
-      asset.aliases        = []
-      OpenStruct.new(call: asset)
-    end
-
+  test "Office file is outside pilot perimeter" do
     doc = { data: Base64.strict_encode64("docx"), media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename: "manual.docx" }
-    CustomChunkingPipeline.new(images: [], documents: [ doc ], conv_session: nil, urgent: false).run!
 
-    assert_equal 0, @batch_job_calls.size, "Office docs must NOT go to batch"
-    assert_equal 1, sfc_calls, "Office docs must always use SingleFileChunkingService"
+    assert_raises(CustomChunkingPipeline::PerimeterError) { pipeline(doc: doc).run! }
+
+    assert_empty @batch_job_calls
   end
 
-  test "images always route to sync" do
-    sfc_calls = 0
-    SingleFileChunkingService.define_singleton_method(:new) do |**kwargs|
-      sfc_calls += 1
-      asset = ChunkAsset.new(filename: kwargs[:filename], sha256: "ghi",
-                              s3_key: "uploads/#{kwargs[:filename]}", content_type: kwargs[:content_type])
-      asset.canonical_name = "Photo Doc"
-      asset.aliases        = []
-      OpenStruct.new(call: asset)
-    end
-
+  test "images are outside pilot perimeter" do
     image = { data: Base64.strict_encode64("img"), media_type: "image/jpeg", filename: "photo.jpg" }
-    CustomChunkingPipeline.new(images: [ image ], documents: [], conv_session: nil).run!
 
-    assert_equal 0, @batch_job_calls.size, "images must NOT go through batch"
-    assert_equal 1, sfc_calls, "images must always use SingleFileChunkingService"
+    assert_raises(CustomChunkingPipeline::PerimeterError) { pipeline(doc: nil, images: [ image ]).run! }
+
+    assert_empty @batch_job_calls
   end
 end

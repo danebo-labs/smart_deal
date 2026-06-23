@@ -58,7 +58,8 @@ class IngestBatchResultsJob < ApplicationJob
           raw_json    = FieldPhotoResultsParser.to_envelope(text)
           ingestion_p = "field_photo_v1"
           begin
-            parser.call(asset: asset, raw_json: JSON.generate(raw_json), ingestion_path: ingestion_p)
+            parser.call(asset: asset, raw_json: JSON.generate(raw_json), ingestion_path: ingestion_p,
+                        account_id: "bulk_v1", document_uid: asset.sha256[0, 36])
           rescue BatchResultsParserService::ParseError => e
             Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: FieldPhotoResultsParser failed #{asset.filename} — #{e.message}")
           end
@@ -94,7 +95,8 @@ class IngestBatchResultsJob < ApplicationJob
 
       begin
         merged_json = ChunkMergerService.merge(page_results)
-        parser.call(asset: asset, raw_json: merged_json, ingestion_path: "manual_batch_v1")
+        parser.call(asset: asset, raw_json: merged_json, ingestion_path: "manual_batch_v1",
+                    account_id: "bulk_v1", document_uid: asset.sha256[0, 36])
       rescue ArgumentError, BatchResultsParserService::ParseError => e
         asset.update_columns(status: "failed", error_message: e.message)
         asset.broadcast_replace!

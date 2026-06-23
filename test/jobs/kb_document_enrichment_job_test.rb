@@ -5,11 +5,12 @@ require "test_helper"
 class KbDocumentEnrichmentJobTest < ActiveJob::TestCase
   setup do
     KbDocument.delete_all
+    @account = accounts(:legacy)
   end
 
   test "enqueues on default queue" do
     assert_enqueued_with(job: KbDocumentEnrichmentJob, queue: "default") do
-      KbDocumentEnrichmentJob.perform_later(doc_refs: [], retrieved_meta: [])
+      KbDocumentEnrichmentJob.perform_later(doc_refs: [], retrieved_meta: [], account_id: @account.id)
     end
   end
 
@@ -18,15 +19,19 @@ class KbDocumentEnrichmentJobTest < ActiveJob::TestCase
     orig_new = KbDocumentEnrichmentService.method(:new)
     fake = Object.new
     fake.define_singleton_method(:call) do |doc_refs:, all_retrieved:|
-      received = { doc_refs: doc_refs, all_retrieved: all_retrieved }
+      received.merge!(doc_refs: doc_refs, all_retrieved: all_retrieved)
     end
-    KbDocumentEnrichmentService.define_singleton_method(:new) { |*_a, **_kw| fake }
+    KbDocumentEnrichmentService.define_singleton_method(:new) do |*_a, **kw|
+      received = { account_id: kw[:account_id] }
+      fake
+    end
 
     refs = [ { "canonical_name" => "X", "source_uri" => "s3://b/x.pdf", "aliases" => [] } ]
     meta = [ { metadata: { "x-amz-bedrock-kb-source-uri" => "s3://b/x.pdf" }, location: { uri: "s3://b/x.pdf" } } ]
 
-    KbDocumentEnrichmentJob.perform_now(doc_refs: refs, retrieved_meta: meta)
+    KbDocumentEnrichmentJob.perform_now(doc_refs: refs, retrieved_meta: meta, account_id: @account.id)
 
+    assert_equal @account.id, received[:account_id]
     assert_equal refs, received[:doc_refs]
     assert_equal meta, received[:all_retrieved]
   ensure
@@ -35,7 +40,7 @@ class KbDocumentEnrichmentJobTest < ActiveJob::TestCase
 
   test "is idempotent: running twice does not double-add aliases" do
     s3_uri = "s3://bucket/uploads/2026/manual.pdf"
-    KbDocument.create!(s3_key: "uploads/2026/manual.pdf", display_name: "old name", aliases: [])
+    KbDocument.create!(s3_key: "uploads/2026/manual.pdf", display_name: "old name", aliases: [], account: @account)
 
     refs = [ {
       "canonical_name" => "Manual de Operación",
@@ -43,8 +48,8 @@ class KbDocumentEnrichmentJobTest < ActiveJob::TestCase
       "aliases"        => [ "manop", "MO-3000" ]
     } ]
 
-    KbDocumentEnrichmentJob.perform_now(doc_refs: refs, retrieved_meta: [])
-    KbDocumentEnrichmentJob.perform_now(doc_refs: refs, retrieved_meta: [])
+    KbDocumentEnrichmentJob.perform_now(doc_refs: refs, retrieved_meta: [], account_id: @account.id)
+    KbDocumentEnrichmentJob.perform_now(doc_refs: refs, retrieved_meta: [], account_id: @account.id)
 
     kb = KbDocument.find_by(s3_key: "uploads/2026/manual.pdf")
     assert_equal "Manual de Operación", kb.display_name

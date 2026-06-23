@@ -4,7 +4,9 @@ require 'test_helper'
 
 class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
   setup do
-    @svc = KbDocumentEnrichmentService.new
+    @account = accounts(:legacy)
+    @other_account = accounts(:climb)
+    @svc = KbDocumentEnrichmentService.new(account_id: @account.id)
   end
 
   test "no-op when doc_refs is blank" do
@@ -13,7 +15,7 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
   end
 
   test "enriches existing kb_document display_name + aliases" do
-    kb = KbDocument.create!(s3_key: "uploads/2026/enrich.pdf", display_name: "old name", aliases: [ "old alias" ])
+    kb = create_doc("uploads/2026/enrich.pdf", "old name", aliases: [ "old alias" ])
     doc_refs = [ {
       "canonical_name" => "New Canonical",
       "source_uri"     => "s3://#{KbDocument::KB_BUCKET}/uploads/2026/enrich.pdf",
@@ -29,7 +31,8 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
   test "caps aliases at 15 entries" do
     kb = KbDocument.create!(
       s3_key: "uploads/2026/many.pdf", display_name: "old",
-      aliases: (1..10).map { |i| "existing alias #{i}" }
+      aliases: (1..10).map { |i| "existing alias #{i}" },
+      account: @account
     )
     doc_refs = [ {
       "canonical_name" => "Dense Document",
@@ -52,7 +55,7 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
   end
 
   test "collapses multiple doc_refs with same source_uri into one enrichment" do
-    kb = KbDocument.create!(s3_key: "uploads/2026/brake.jpeg", display_name: "old", aliases: [])
+    kb = create_doc("uploads/2026/brake.jpeg", "old")
     s3_uri = "s3://#{KbDocument::KB_BUCKET}/uploads/2026/brake.jpeg"
     doc_refs = [
       { "canonical_name" => "Brake Assembly Unit", "source_uri" => s3_uri, "aliases" => [ "disc brake" ] },
@@ -67,7 +70,7 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
   end
 
   test "backfill: single doc_ref + single citation assigns URI via location" do
-    kb = KbDocument.create!(s3_key: "uploads/2026/schema.pdf", display_name: "old", aliases: [])
+    kb = create_doc("uploads/2026/schema.pdf", "old")
     doc_refs = [ { "canonical_name" => "Schema Doc", "source_uri" => "", "aliases" => [] } ]
     citation = {
       content:  "schema content",
@@ -80,10 +83,35 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
   end
 
   test "skips doc_ref with blank canonical_name" do
-    KbDocument.create!(s3_key: "uploads/2026/orphan.pdf", display_name: "Orphan", aliases: [])
+    create_doc("uploads/2026/orphan.pdf", "Orphan")
     doc_refs = [ { "canonical_name" => "", "source_uri" => "s3://bucket/orphan.pdf", "aliases" => [] } ]
     count_before = KbDocument.count
     @svc.call(doc_refs: doc_refs)
     assert_equal count_before, KbDocument.count
+  end
+
+  test "does not enrich matching s3_key from another account" do
+    other_doc = KbDocument.create!(
+      s3_key: "uploads/2026/other-enrich.pdf",
+      display_name: "old other",
+      aliases: [],
+      account: @other_account
+    )
+
+    @svc.call(doc_refs: [ {
+      "canonical_name" => "Wrong Account",
+      "source_uri" => "s3://#{KbDocument::KB_BUCKET}/uploads/2026/other-enrich.pdf",
+      "aliases" => [ "wrong" ]
+    } ])
+
+    other_doc.reload
+    assert_equal "old other", other_doc.display_name
+    assert_empty other_doc.aliases
+  end
+
+  private
+
+  def create_doc(s3_key, display_name, aliases: [])
+    KbDocument.create!(s3_key: s3_key, display_name: display_name, aliases: aliases, account: @account)
   end
 end

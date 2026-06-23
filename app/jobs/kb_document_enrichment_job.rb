@@ -14,8 +14,8 @@ class KbDocumentEnrichmentJob < ApplicationJob
   # @param retrieved_meta [Array<Hash>] minimal citations: { metadata:, location: } only.
   #   Chunk content is intentionally stripped before enqueue to keep the
   #   solid_queue_jobs.arguments payload small (≤ a few KB instead of ~100 KB).
-  def perform(doc_refs:, retrieved_meta: [])
-    KbDocumentEnrichmentService.new.call(
+  def perform(doc_refs:, retrieved_meta: [], account_id:)
+    KbDocumentEnrichmentService.new(account_id: account_id).call(
       doc_refs:      doc_refs,
       all_retrieved: retrieved_meta
     )

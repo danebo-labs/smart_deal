@@ -28,13 +28,16 @@
 # @param sha256        [String]  SHA-256 hex digest of the binary
 # @param s3_service    [#upload_text] injectable S3 client (for tests)
 class SingleFileChunkingService
-  def initialize(binary:, content_type:, filename:, s3_key:, sha256:, s3_service: nil, locale: nil)
+  def initialize(binary:, content_type:, filename:, s3_key:, sha256:, s3_service: nil, locale: nil,
+                 account_id: nil, document_uid: nil)
     @binary         = binary
     @content_type   = content_type
     @filename       = filename
     @s3_key         = s3_key
     @sha256         = sha256
     @locale         = locale
+    @account_id     = account_id
+    @document_uid   = document_uid
     @s3             = s3_service || S3DocumentsService.new
     @asset          = ChunkAsset.new(filename: filename, sha256: sha256, s3_key: s3_key, content_type: content_type)
     @office_origin  = false
@@ -393,7 +396,9 @@ class SingleFileChunkingService
     BatchResultsParserService.new(s3_service: @s3).call(
       asset:          @asset,
       raw_json:       raw_json,
-      ingestion_path: ingestion_path
+      ingestion_path: ingestion_path,
+      account_id:     @account_id,
+      document_uid:   @document_uid
     )
   end
 

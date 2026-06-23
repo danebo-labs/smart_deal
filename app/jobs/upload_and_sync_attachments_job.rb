@@ -17,6 +17,8 @@
 # `prepare_for_async!` (see below) — raw binary fields are stripped/base64
 # wrapped so the JSONB `solid_queue_jobs.arguments` column accepts them.
 class UploadAndSyncAttachmentsJob < ApplicationJob
+  class AccountOwnershipError < StandardError; end
+
   queue_as :default
 
   # Suppress argument logging: images_payload contains base64-encoded image bytes
@@ -27,36 +29,33 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
   # @param images_payload    [Array<Hash>] sanitized image payloads (see prepare_for_async!)
   # @param documents_payload [Array<Hash>] sanitized document payloads
   # @param conv_session_id   [Integer, nil] ConversationSession#id for entity registration
-  # @param tenant_id         [Integer, nil] Tenant#id for KB selection
+  # @param account_id        [Integer] Account#id for ownership scoping
+  # @param document_uid      [String] UUID assigned by the request before enqueue
   # @param locale            [String, nil] ISO 639-1 locale — forwarded to QOS for image summary
   # @param query             [String, nil] original question, used for long-manual urgent triage
-  def perform(images_payload:, documents_payload:, conv_session_id: nil, tenant_id: nil, locale: nil, query: nil)
+  def perform(images_payload:, documents_payload:, conv_session_id: nil, account_id:, document_uid:, locale: nil, query: nil)
     images    = restore_images(Array(images_payload))
     documents = Array(documents_payload).map { |d| d.transform_keys(&:to_sym) }
-    tenant    = tenant_id ? Tenant.find_by(id: tenant_id) : nil
+    account   = Account.find(account_id)
     session   = conv_session_id ? ConversationSession.find_by(id: conv_session_id) : nil
+    assert_session_account!(session, account) if session
 
     I18n.with_locale(locale || :es) do
       QueryOrchestratorService
-        .new(query.to_s, images: images, documents: documents, tenant: tenant, conv_session: session, locale: locale)
+        .new(query.to_s, images: images, documents: documents, document_uids: [ document_uid ],
+             account: account, conv_session: session, locale: locale)
         .send(:upload_and_sync_attachments)
     end
+  rescue AccountOwnershipError => e
+    Rails.logger.warn("UploadAndSyncAttachmentsJob ownership error: #{e.message}")
+    broadcast_failed(Array(images_payload), Array(documents_payload), locale)
   rescue StandardError => e
     Rails.logger.error("UploadAndSyncAttachmentsJob failed: #{e.class}: #{e.message}")
     Rails.logger.error(e.backtrace.first(10).join("\n"))
-    filenames = (Array(images_payload) + Array(documents_payload))
-                  .map { |a| a[:filename] || a["filename"] }.compact
-    KbSyncBroadcaster.failed(filenames: filenames, reason: "upload_error", locale: locale)
+    broadcast_failed(Array(images_payload), Array(documents_payload), locale)
+    raise
   end
 
-  # Strips/wraps raw binary fields so the payload is JSON-safe AND smaller.
-  # Removes :binary (the orchestrator falls back to Base64.decode64(:data));
-  # base64-wraps :thumbnail_binary so the thumbnail still survives the trip.
-  #
-  # Round-trip invariants tested in test/jobs/upload_and_sync_attachments_job_test.rb.
-  #
-  # @param images [Array<Hash>] same shape RagController#compress_images produces
-  # @return [Array<Hash>] mutated copies safe for ActiveJob serialization
   def self.prepare_images_for_async(images)
     Array(images).map do |img|
       h = img.dup
@@ -70,6 +69,20 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
 
   private
 
+  def broadcast_failed(images_payload, documents_payload, locale)
+    filenames = (Array(images_payload) + Array(documents_payload))
+                  .map { |a| a[:filename] || a["filename"] }.compact
+    KbSyncBroadcaster.failed(filenames: filenames, reason: "upload_error", locale: locale)
+  end
+
+  # Strips/wraps raw binary fields so the payload is JSON-safe AND smaller.
+  # Removes :binary (the orchestrator falls back to Base64.decode64(:data));
+  # base64-wraps :thumbnail_binary so the thumbnail still survives the trip.
+  #
+  # Round-trip invariants tested in test/jobs/upload_and_sync_attachments_job_test.rb.
+  #
+  # @param images [Array<Hash>] same shape RagController#compress_images produces
+  # @return [Array<Hash>] mutated copies safe for ActiveJob serialization
   def restore_images(payloads)
     payloads.map do |raw|
       img = raw.transform_keys(&:to_sym)
@@ -79,5 +92,11 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
       end
       img
     end
+  end
+
+  def assert_session_account!(session, account)
+    return if session.account_id == account.id
+
+    raise AccountOwnershipError, "ConversationSession #{session.id} is not owned by account #{account.id}"
   end
 end

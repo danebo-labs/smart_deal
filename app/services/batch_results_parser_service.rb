@@ -57,7 +57,7 @@ class BatchResultsParserService
   # @param ingestion_path [String]      "batch_v1" | "web_v1"
   # @return asset with parsed fields set
   # @raise [ParseError]
-  def call(asset:, result: nil, raw_json: nil, ingestion_path: "batch_v1")
+  def call(asset:, result: nil, raw_json: nil, ingestion_path: "batch_v1", account_id: nil, document_uid: nil)
     text = if raw_json
       raw_json
     else
@@ -71,8 +71,9 @@ class BatchResultsParserService
     discard_unverifiable_field_records!(parsed, ingestion_path: ingestion_path)
     enrich_field_records!(parsed, ingestion_path: ingestion_path)
     validate!(parsed, asset, ingestion_path: ingestion_path)
+    validate_account_scope!(account_id: account_id, document_uid: document_uid)
 
-    chunks_prefix = chunks_prefix_for(asset, ingestion_path: ingestion_path)
+    chunks_prefix = chunks_prefix_for(asset, account_id: account_id, document_uid: document_uid)
     aliases       = sanitize_aliases(parsed["aliases"], limit: DOCUMENT_ALIAS_LIMIT)
 
     # Alias fallback: never write [SEARCH_ALIASES: ] empty even if LLM returns nothing.
@@ -90,7 +91,9 @@ class BatchResultsParserService
       asset:          asset,
       canonical_name: parsed["document_name"],
       aliases:        aliases,
-      ingestion_path: ingestion_path
+      ingestion_path: ingestion_path,
+      account_id:     account_id,
+      document_uid:   document_uid
     )
 
     if asset.respond_to?(:update!)
@@ -326,14 +329,16 @@ class BatchResultsParserService
     end
   end
 
-  def write_chunks_to_s3(prefix:, chunks:, asset:, canonical_name:, aliases:, ingestion_path:)
+  def write_chunks_to_s3(prefix:, chunks:, asset:, canonical_name:, aliases:, ingestion_path:, account_id:, document_uid:)
     original_uri = original_source_uri(asset)
     sidecar_json = sidecar_metadata(
       asset:          asset,
       canonical_name: canonical_name,
       aliases:        aliases,
       original_uri:   original_uri,
-      ingestion_path: ingestion_path
+      ingestion_path: ingestion_path,
+      account_id:     account_id,
+      document_uid:   document_uid
     )
     delete_existing_chunks(prefix) if ingestion_path == MANUAL_BATCH_INGESTION_PATH
 
@@ -358,11 +363,8 @@ class BatchResultsParserService
     "chunk_p#{page}_#{page_ordinals[page]}.txt"
   end
 
-  def chunks_prefix_for(asset, ingestion_path:)
-    return format(CHUNK_PREFIX_TPL, Date.current.iso8601, asset.sha256) unless ingestion_path == MANUAL_BATCH_INGESTION_PATH
-
-    contract_version, = contract_metadata(ingestion_path)
-    "bulk_chunks/#{asset.sha256}/#{contract_version}"
+  def chunks_prefix_for(_asset, account_id:, document_uid:)
+    format(CHUNK_PREFIX_TPL, account_id, document_uid)
   end
 
   def delete_existing_chunks(prefix)
@@ -465,11 +467,13 @@ class BatchResultsParserService
   # `x-amz-bedrock-kb-source-uri` to make pin-based filters work for batch/web chunks.
   # `ingestion_path` distinguishes web_v1 (optimized) from batch_v1 (bulk) in telemetry.
   # `account_id` / `project_id` are reserved here as multi-tenant seams — absent today (MVP).
-  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:)
+  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:, account_id:, document_uid:)
     contract_version, prompt_fingerprint = contract_metadata(ingestion_path)
 
     JSON.generate(
       "metadataAttributes" => {
+        "account_id"          => account_id.to_s,
+        "document_id"         => document_uid.to_s,
         "original_source_uri" => original_uri,
         "original_filename"   => asset.filename,
         "canonical_name"      => canonical_name.to_s,
@@ -480,6 +484,11 @@ class BatchResultsParserService
         "aliases"             => sanitize_aliases(aliases, limit: DOCUMENT_ALIAS_LIMIT)
       }
     )
+  end
+
+  def validate_account_scope!(account_id:, document_uid:)
+    raise ParseError, "account_id is required before chunk writes" if account_id.blank?
+    raise ParseError, "document_id is required before chunk writes" if document_uid.blank?
   end
 
   # The contract that produced this parse, derived from the ingestion path:

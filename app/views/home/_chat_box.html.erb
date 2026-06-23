@@ -28,26 +28,48 @@
       </div>
     </div>
 
-    <%# Mobile tab bar — two tabs: Archivos | Chat %>
-    <div class="md:hidden flex bg-white flex-shrink-0 border-b border-[hsl(215,20%,90%)]">
-      <button type="button"
-              data-rag-chat-target="archivosTabBtn"
-              data-action="click->rag-chat#switchToArchivosTab"
-              class="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium
-                     text-[hsl(215,20%,52%)] border-b-2 border-transparent transition-colors">
-        Archivos
-        <span data-rag-chat-target="sourcesBadge"
-              class="h-[18px] min-w-[18px] px-1 text-[10px] font-bold rounded-full
-                     bg-[hsl(217,91%,50%)] text-white items-center justify-center leading-none"
-              style="display:none"></span>
-      </button>
-      <button type="button"
-              data-rag-chat-target="chatTabBtn"
-              data-action="click->rag-chat#switchToChatTab"
-              class="flex-1 py-3 text-sm font-medium
-                     text-[hsl(217,91%,50%)] border-b-2 border-[hsl(217,91%,50%)] transition-colors">
-        Chat
-      </button>
+    <%# Mobile segmented tabs — Archivos | Chat (obvious tappable buttons) %>
+    <div class="md:hidden shrink-0 bg-white px-3 pb-3 pt-3 flex-shrink-0">
+      <div class="flex gap-2 rounded-2xl bg-[hsl(215,20%,94%)] p-1.5"
+           role="tablist"
+           aria-label="Secciones principales">
+        <button type="button"
+                role="tab"
+                data-rag-chat-target="archivosTabBtn"
+                data-action="click->rag-chat#switchToArchivosTab"
+                aria-selected="false"
+                class="mobile-tab-segment flex flex-1 items-center justify-center gap-1.5
+                       min-h-[48px] rounded-xl px-4 text-sm font-semibold
+                       transition-all duration-150 ease-out select-none touch-manipulation
+                       active:scale-[0.97] active:duration-75
+                       bg-white text-[hsl(215,20%,42%)] shadow-sm border border-[hsl(215,20%,88%)]
+                       active:bg-[hsl(215,20%,96%)] active:shadow-inner">
+          <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+          </svg>
+          Archivos
+          <span data-rag-chat-target="sourcesBadge"
+                class="mobile-tab-badge inline-flex h-[18px] min-w-[18px] items-center justify-center
+                       rounded-full bg-[hsl(217,91%,50%)] px-1 text-[10px] font-bold leading-none text-white"
+                style="display:none"></span>
+        </button>
+        <button type="button"
+                role="tab"
+                data-rag-chat-target="chatTabBtn"
+                data-action="click->rag-chat#switchToChatTab"
+                aria-selected="true"
+                class="mobile-tab-segment flex flex-1 items-center justify-center gap-1.5
+                       min-h-[48px] rounded-xl px-4 text-sm font-semibold
+                       transition-all duration-150 ease-out select-none touch-manipulation
+                       active:scale-[0.97] active:duration-75
+                       bg-[hsl(217,91%,50%)] text-white shadow-md shadow-[hsl(217,91%,50%,0.35)]
+                       active:shadow-inner active:shadow-[hsl(217,91%,40%,0.5)]">
+          <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          Chat
+        </button>
+      </div>
     </div>
 
     <%# Content area: flex column, takes all remaining height %>
@@ -108,7 +130,7 @@
     </div>
 
     <%# Input area %>
-    <div class="border-t border-[hsl(215,20%,90%)] p-3 md:p-4 bg-white flex-shrink-0 shadow-[0_-1px_6px_rgba(0,0,0,0.06)] md:shadow-none">
+    <div class="border-t border-[hsl(215,20%,90%)] p-3 md:p-4 bg-white flex-shrink-0 shadow-[0_-2px_12px_rgba(0,0,0,0.06)] md:shadow-none">
       <form class="chat-composer-form" data-action="submit->rag-chat#sendMessage">
         <input type="file"
                data-rag-chat-target="fileInput"
@@ -117,24 +139,24 @@
                class="hidden">
 
         <%# Textarea wrapper — attach + textarea + send in one row %>
-        <div class="flex items-end gap-2 rounded-xl border border-[hsl(217,91%,50%)] md:border-[hsl(215,20%,86%)] bg-[hsl(220,20%,98%)] px-3 py-2 ring-1 ring-[hsl(217,91%,50%,0.15)] md:ring-0 focus-within:border-[hsl(217,91%,50%)] focus-within:ring-1 focus-within:ring-[hsl(217,91%,50%,0.25)]">
+        <div class="flex items-end gap-2 rounded-2xl border-2 border-[hsl(217,91%,50%)] md:rounded-xl md:border md:border-[hsl(215,20%,86%)] bg-[hsl(220,20%,98%)] px-3 py-2.5 md:py-2 ring-2 ring-[hsl(217,91%,50%,0.12)] md:ring-1 md:ring-[hsl(217,91%,50%,0.15)] md:ring-0 focus-within:border-[hsl(217,91%,50%)] focus-within:ring-[hsl(217,91%,50%,0.25)] md:focus-within:ring-1">
           <%# Attach button %>
           <button type="button"
                   data-action="click->rag-chat#clickAttach"
-                  class="flex shrink-0 mb-0.5 rounded-lg p-2 text-[hsl(215,20%,50%)] hover:bg-[hsl(215,20%,92%)] hover:text-[hsl(222,47%,10%)] transition-colors"
+                  class="mb-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[hsl(215,20%,50%)] transition-all active:scale-95 active:bg-[hsl(215,20%,92%)] md:h-auto md:w-auto md:rounded-lg md:p-2 md:active:scale-100 hover:bg-[hsl(215,20%,92%)] hover:text-[hsl(222,47%,10%)]"
                   title="Adjuntar imagen o documento" aria-label="Adjuntar archivo">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
             </svg>
           </button>
           <textarea
-            class="min-h-[40px] max-h-[120px] flex-1 resize-none bg-transparent text-sm text-[hsl(222,47%,10%)] placeholder:text-[hsl(215,20%,62%)] focus:outline-none py-1"
+            class="min-h-[44px] max-h-[120px] flex-1 resize-none bg-transparent py-2.5 text-sm text-[hsl(222,47%,10%)] placeholder:text-[hsl(215,20%,62%)] focus:outline-none md:min-h-[40px] md:py-1"
             data-rag-chat-target="input"
             data-action="keydown->rag-chat#handleKeyPress"
             placeholder="Escribe tu pregunta aquí..."
             rows="1"></textarea>
           <button type="submit"
-                  class="flex shrink-0 mb-0.5 h-9 w-9 items-center justify-center rounded-lg bg-[hsl(217,91%,50%)] hover:bg-[hsl(217,91%,44%)] text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  class="mb-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-white transition-all active:scale-95 hover:bg-[hsl(217,91%,44%)] disabled:cursor-not-allowed disabled:opacity-50 md:h-9 md:w-9 md:rounded-lg md:active:scale-100"
                   data-rag-chat-target="sendButton" aria-label="Enviar">
             <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>

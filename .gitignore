@@ -52,6 +52,9 @@ meeting*.txt
 /app/assets/builds/*
 !/app/assets/builds/.keep
 
+# v0.app mobile design lab (local reference only; styles live in app/views)
+/design/v0-mobile/
+
 # Local Next.js UI export snapshots + export helper (generated; do not commit)
 /b_50FI0lfi5Ny/
 /b_I0BM7kf3sAV/

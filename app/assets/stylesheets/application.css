@@ -285,7 +285,11 @@
   letter-spacing: -0.01em;
 }
 
-/* ─── Mobile KB document selection cards ─── */
+/* ─── Mobile segmented tab control ─── */
+.mobile-tab-segment {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .mobile-doc-btn {
   -webkit-tap-highlight-color: transparent;
 }

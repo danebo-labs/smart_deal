@@ -428,7 +428,17 @@ export default class extends Controller {
     }
   }
 
-  // ── Mobile tabs: Archivos | Chat ─────────────────────────────────────────
+  // Segmented mobile tab button states (design/v0-mobile/mobile-home-shell.tsx)
+  static MOBILE_TAB_ACTIVE_CLASSES = [
+    "bg-[hsl(217,91%,50%)]", "text-white", "shadow-md",
+    "shadow-[hsl(217,91%,50%,0.35)]"
+  ]
+  static MOBILE_TAB_INACTIVE_CLASSES = [
+    "bg-white", "text-[hsl(215,20%,42%)]", "shadow-sm",
+    "border", "border-[hsl(215,20%,88%)]"
+  ]
+  static MOBILE_TAB_BADGE_ACTIVE_CLASSES = ["bg-white/25", "text-white"]
+  static MOBILE_TAB_BADGE_INACTIVE_CLASSES = ["bg-[hsl(217,91%,50%)]", "text-white"]
 
   setupMobileTabs() {
     this.updateMobileTabUI()
@@ -467,22 +477,32 @@ export default class extends Controller {
     }
 
     if (this.hasArchivosTabBtnTarget) {
-      const btn = this.archivosTabBtnTarget
-      const active = showArchivos && isMobile
-      btn.classList.toggle("text-[hsl(217,91%,50%)]", active)
-      btn.classList.toggle("border-[hsl(217,91%,50%)]", active)
-      btn.classList.toggle("text-[hsl(215,20%,52%)]", !active)
-      btn.classList.toggle("border-transparent", !active)
+      this._applyMobileTabBtnState(this.archivosTabBtnTarget, showArchivos && isMobile)
     }
 
     if (this.hasChatTabBtnTarget) {
-      const btn = this.chatTabBtnTarget
-      const active = !showArchivos || !isMobile
-      btn.classList.toggle("text-[hsl(217,91%,50%)]", active)
-      btn.classList.toggle("border-[hsl(217,91%,50%)]", active)
-      btn.classList.toggle("text-[hsl(215,20%,52%)]", !active)
-      btn.classList.toggle("border-transparent", !active)
+      this._applyMobileTabBtnState(this.chatTabBtnTarget, !showArchivos && isMobile)
     }
+  }
+
+  _applyMobileTabBtnState(btn, active) {
+    this.constructor.MOBILE_TAB_ACTIVE_CLASSES.forEach((cls) => {
+      btn.classList.toggle(cls, active)
+    })
+    this.constructor.MOBILE_TAB_INACTIVE_CLASSES.forEach((cls) => {
+      btn.classList.toggle(cls, !active)
+    })
+    btn.setAttribute("aria-selected", active ? "true" : "false")
+
+    const badge = btn.querySelector("[data-rag-chat-target='sourcesBadge']")
+    if (!badge) return
+
+    this.constructor.MOBILE_TAB_BADGE_ACTIVE_CLASSES.forEach((cls) => {
+      badge.classList.toggle(cls, active)
+    })
+    this.constructor.MOBILE_TAB_BADGE_INACTIVE_CLASSES.forEach((cls) => {
+      badge.classList.toggle(cls, !active)
+    })
   }
 
   updateSourcesBadge() {

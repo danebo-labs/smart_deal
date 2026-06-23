@@ -47,6 +47,17 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/M21 15c0 \.53-\.21 1\.04-\.59 1\.41/, response.body)
   end
 
+  test 'mobile home uses segmented tab control for Archivos and Chat' do
+    get root_path
+    assert_response :success
+    assert_select '[role="tablist"][aria-label="Secciones principales"]', 1
+    assert_select 'button[role="tab"][data-rag-chat-target="archivosTabBtn"]', text: /Archivos/
+    assert_select 'button[role="tab"][data-rag-chat-target="chatTabBtn"][aria-selected="true"]', text: /Chat/
+    assert_select 'button[role="tab"][data-rag-chat-target="archivosTabBtn"] svg', minimum: 1
+    assert_select 'button[role="tab"][data-rag-chat-target="chatTabBtn"] svg', minimum: 1
+    assert_no_match(/border-b-2 border-\[hsl\(217,91%,50%\)\]/, response.body)
+  end
+
   test 'index lists kb_documents under Archivos Disponibles with display_name' do
     KbDocument.create!(s3_key: 'uploads/2026/home_ui.pdf', display_name: 'Manual ascensor', aliases: [])
 

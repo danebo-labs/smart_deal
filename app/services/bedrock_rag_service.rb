@@ -350,6 +350,16 @@ class BedrockRagService
         Rails.logger.info("  Citation [#{ref[:number]}]: #{ref[:title]} (#{ref[:filename]})")
       end
 
+      log_quality_signal(
+        question:      question,
+        answer:        answer_text,
+        citations:     numbered_references,
+        doc_refs:      doc_refs,
+        raw_citations: raw_citations,
+        latency_ms:    latency_ms,
+        entity_filter: applied_filter_uris
+      )
+
       {
         answer:              answer_text,
         citations:           numbered_references,
@@ -543,6 +553,26 @@ class BedrockRagService
     )
   rescue StandardError => e
     Rails.logger.warn("BedrockRagService: failed to track filtered no-results attempt — #{e.message}")
+  end
+
+  def log_quality_signal(question:, answer:, citations:, doc_refs:, raw_citations:, latency_ms:, entity_filter:)
+    payload = {
+      question:        question.to_s.first(300),
+      answer_snippet:  answer.to_s.first(600),
+      answer_length:   answer.to_s.length,
+      latency_ms:      latency_ms,
+      chunk_count:     raw_citations.size,
+      citations_count: citations.size,
+      citation_titles: citations.map { |c| c[:title].to_s.first(80) },
+      doc_refs:        doc_refs,
+      entity_filter:   Array(entity_filter).first&.to_s&.first(80),
+      entity_filter_count: Array(entity_filter).size,
+      model_id:        @model_ref,
+      kb_id:           @knowledge_base_id
+    }
+    Rails.logger.info("[RAG_QUALITY] #{JSON.generate(payload)}")
+  rescue => e
+    Rails.logger.warn("log_quality_signal failed: #{e.message}")
   end
 
   # Builds prompt, estimates tokens via LocalTokenizer (~0 ms), logs [RAG_REGRESSION],

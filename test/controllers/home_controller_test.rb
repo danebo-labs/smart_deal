@@ -27,6 +27,12 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test 'layout includes apple touch icon asset' do
+    get root_path
+    assert_response :success
+    assert_select 'link[rel="apple-touch-icon"][href="/icon-180.png"][sizes="180x180"]', count: 1
+  end
+
   test 'layout uses mobile logo and danebo.ai branding' do
     get root_path
     assert_response :success

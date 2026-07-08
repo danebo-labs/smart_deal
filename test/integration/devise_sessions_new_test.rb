@@ -18,6 +18,12 @@ class DeviseSessionsNewTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test 'sign in page includes apple touch icon asset' do
+    get new_user_session_path
+    assert_response :success
+    assert_select 'link[rel="apple-touch-icon"][href="/icon-180.png"][sizes="180x180"]', count: 1
+  end
+
   test 'sign in brand panel renders localized copy in Spanish' do
     get new_user_session_path
     assert_response :success

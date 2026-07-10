@@ -8,7 +8,8 @@ gem 'rails', '~> 8.1.1'
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem 'propshaft'
 # Use sqlite3 as the database for Active Record
-gem 'sqlite3', '>= 2.1'
+# Bundler-audit: CVE-2026-54619/54620 (UAF in function redef / aggregates) — need >= 2.9.5
+gem 'sqlite3', '>= 2.9.5'
 # PostgreSQL adapter for client business databases (Text-to-SQL)
 gem 'pg', '~> 1.5.0'
 # Use the Puma web server [https://github.com/puma/puma]
@@ -51,6 +52,9 @@ gem 'json', '>= 2.19.9'
 
 # Bundler-audit: CVE-2026-54522 (msgpack UAF in Buffer#clear) — need >= 1.8.2
 gem 'msgpack', '>= 1.8.2'
+
+# Bundler-audit: CVE-2026-54463/54464/54465 + GHSA-2x63 (websocket-driver DoS) — need >= 0.8.2
+gem 'websocket-driver', '>= 0.8.2'
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem 'tzinfo-data', platforms: %i[windows jruby]

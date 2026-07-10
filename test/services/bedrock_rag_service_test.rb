@@ -938,6 +938,90 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end
 
+  # ===== [RAG_QUALITY] evidence telemetry =====
+
+  test 'RAG_QUALITY logs evidence_present true, evidence_mode bedrock_citations, and source uris when citations exist' do
+    KbDocument.create!(s3_key: "manual.pdf", display_name: "Manual", aliases: [], account: @account)
+
+    raw_answer = <<~ANSWER.strip
+      The documented value is 13.
+      <DOC_REFS>[{"source_uri":"s3://bucket/manual.pdf","canonical_name":"Manual","aliases":[],"doc_type":"manual"}]</DOC_REFS>
+    ANSWER
+    citation = ::OpenStruct.new(
+      retrieved_references: [
+        ::OpenStruct.new(
+          content: ::OpenStruct.new(text: "Documented value: 13"),
+          location: ::OpenStruct.new(
+            s3_location: ::OpenStruct.new(uri: "s3://bucket/chunks/manual-1.txt")
+          ),
+          metadata: {
+            "canonical_name" => "Manual",
+            "doc_sha256" => "sha-manual",
+            "ingestion_path" => "manual_batch_v1",
+            "original_source_uri" => "s3://bucket/manual.pdf"
+          }
+        )
+      ]
+    )
+    response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: raw_answer),
+      citations: [ citation ],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_captured_quality_log do
+      with_mock_bedrock_client(mock_retrieve_and_generate_response: response) do
+        BedrockRagService.new(account: @account).query("What is the documented value?")
+      end
+    end
+
+    payload = captured_quality_payload
+    assert_equal true, payload["evidence_present"]
+    assert_equal "bedrock_citations", payload["evidence_mode"]
+    assert_equal 1, payload["doc_refs_count"]
+    assert_includes payload["retrieved_source_uris"], "s3://bucket/chunks/manual-1.txt"
+  end
+
+  test 'RAG_QUALITY logs evidence_mode filter_uris_only when doc_refs present without inline citations under a pin' do
+    KbDocument.create!(s3_key: "manual.pdf", display_name: "Manual", aliases: [], account: @account)
+    doc_refs_answer = "Par de apriete: 25 Nm.\n<DOC_REFS>[{\"source_uri\":\"s3://bucket/manual.pdf\",\"canonical_name\":\"Manual\",\"aliases\":[],\"doc_type\":\"manual\"}]</DOC_REFS>"
+    no_citation_response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: doc_refs_answer),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_captured_quality_log do
+      with_mock_bedrock_client(mock_retrieve_and_generate_response: no_citation_response) do
+        BedrockRagService.new(account: @account).query(
+          'torque del freno',
+          entity_s3_uris:      [ 's3://bucket/manual.pdf' ],
+          force_entity_filter: true
+        )
+      end
+    end
+
+    payload = captured_quality_payload
+    assert_equal true, payload["evidence_present"]
+    assert_equal "filter_uris_only", payload["evidence_mode"]
+    assert_equal 1, payload["doc_refs_count"]
+    assert_includes payload["retrieved_source_uris"], "s3://bucket/manual.pdf"
+  end
+
+  test 'RAG_QUALITY logs evidence_present false and evidence_mode none when no citations or doc_refs are returned' do
+    with_captured_quality_log do
+      with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
+        BedrockRagService.new(account: @account).query('What is S3?')
+      end
+    end
+
+    payload = captured_quality_payload
+    assert_equal false, payload["evidence_present"]
+    assert_equal "none", payload["evidence_mode"]
+    assert_equal 0, payload["doc_refs_count"]
+    assert_equal [], payload["retrieved_source_uris"]
+  end
+
   test 'query does NOT call AnthropicTokenCounter.count_query (no network API call on request path)' do
     called = false
     orig = AnthropicTokenCounter.method(:count_query)
@@ -1215,6 +1299,24 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     else
       false
     end
+  end
+
+  # Captures Rails.logger output for the duration of the block and stores the
+  # last [RAG_QUALITY] line so callers can assert on its JSON payload.
+  def with_captured_quality_log
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(capture_logger)
+    yield
+    @quality_log_output = log_output
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
+  end
+
+  def captured_quality_payload
+    line = @quality_log_output.string.lines.find { |l| l.include?("[RAG_QUALITY]") }
+    assert line, "[RAG_QUALITY] must be logged"
+    JSON.parse(line.split("[RAG_QUALITY] ", 2).last)
   end
 
   def capture_tracking_jobs

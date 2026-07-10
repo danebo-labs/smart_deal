@@ -63,6 +63,10 @@ class RagController < ApplicationController
     }
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
+    if Array(result.citations).empty?
+      fallback_names = consulted_documents_fallback(result.doc_refs)
+      json[:consulted_documents] = fallback_names if fallback_names.present?
+    end
     render json: json
   rescue ImageCompressionService::CompressionError
     render json: { status: 'error', message: I18n.t('rag.image_compression_failed') }, status: :bad_request
@@ -121,6 +125,16 @@ class RagController < ApplicationController
     end.map { |d| d.to_unsafe_h.symbolize_keys }
   rescue StandardError
     []
+  end
+
+  # Fallback for the UI's "Documentos consultados" block when Haiku emitted
+  # <DOC_REFS> but no inline [n] citations (so no numbered references exist).
+  # Names only — no extra queries, doc_refs are already in memory.
+  def consulted_documents_fallback(doc_refs)
+    Array(doc_refs)
+      .filter_map { |ref| (ref["canonical_name"] || ref[:canonical_name]).presence }
+      .uniq
+      .first(5)
   end
 
   # Strip chunk :content from citations before sending to the enrichment job.

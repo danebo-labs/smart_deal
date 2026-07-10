@@ -833,9 +833,17 @@ export default class extends Controller {
 
   renderAssistantAnswer(data) {
     const citations = Array.isArray(data.citations) ? data.citations : []
+    // Fallback for when Haiku emitted <DOC_REFS> but no inline [n] citations —
+    // no numbered references exist, so we show consulted document names instead.
+    const consultedDocuments = !citations.length && Array.isArray(data.consulted_documents)
+      ? data.consulted_documents
+      : []
     let firstRow
     if (citations.length) {
       firstRow = this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
+    } else if (consultedDocuments.length) {
+      const asCitations = consultedDocuments.map((name) => ({ filename: name }))
+      firstRow = this.addMessageHtml(renderDocumentsConsulted(asCitations), "assistant")
     }
     const answerRow = this.addMessageHtml(formatAnswerForWeb(data.answer, citations), "assistant")
     if (!firstRow) firstRow = answerRow

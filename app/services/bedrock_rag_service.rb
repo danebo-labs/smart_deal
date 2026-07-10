@@ -351,13 +351,15 @@ class BedrockRagService
       end
 
       log_quality_signal(
-        question:      question,
-        answer:        answer_text,
-        citations:     numbered_references,
-        doc_refs:      doc_refs,
-        raw_citations: raw_citations,
-        latency_ms:    latency_ms,
-        entity_filter: applied_filter_uris
+        question:         question,
+        answer:           answer_text,
+        citations:        numbered_references,
+        doc_refs:         doc_refs,
+        raw_citations:    raw_citations,
+        latency_ms:       latency_ms,
+        entity_filter:    applied_filter_uris,
+        evidence_mode:    observed_chunk_basis,
+        retrieved_chunks: retrieved_for_extraction
       )
 
       {
@@ -555,7 +557,13 @@ class BedrockRagService
     Rails.logger.warn("BedrockRagService: failed to track filtered no-results attempt — #{e.message}")
   end
 
-  def log_quality_signal(question:, answer:, citations:, doc_refs:, raw_citations:, latency_ms:, entity_filter:)
+  def log_quality_signal(question:, answer:, citations:, doc_refs:, raw_citations:, latency_ms:,
+                        entity_filter:, evidence_mode:, retrieved_chunks:)
+    retrieved_source_uris = Array(retrieved_chunks)
+      .filter_map { |chunk| observed_chunk_descriptor(chunk)["retrieved_source_uri"] }
+      .uniq
+      .first(10)
+
     payload = {
       question:        question.to_s.first(300),
       answer_snippet:  answer.to_s.first(600),
@@ -567,6 +575,10 @@ class BedrockRagService
       doc_refs:        doc_refs,
       entity_filter:   Array(entity_filter).first&.to_s&.first(80),
       entity_filter_count: Array(entity_filter).size,
+      evidence_present: citations.any? || Array(doc_refs).any? || raw_citations.any?,
+      evidence_mode:    evidence_mode,
+      doc_refs_count:   Array(doc_refs).size,
+      retrieved_source_uris: retrieved_source_uris,
       model_id:        @model_ref,
       kb_id:           @knowledge_base_id
     }

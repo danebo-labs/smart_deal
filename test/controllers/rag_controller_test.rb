@@ -26,7 +26,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
                                should_raise: false, error_class: StandardError, error_message: nil,
-                               documents_uploaded: nil, images_uploaded: nil)
+                               documents_uploaded: nil, images_uploaded: nil, doc_refs: nil)
     mock = Object.new
     mock.define_singleton_method(:execute) do
       raise error_class, error_message || 'Service error' if should_raise
@@ -38,6 +38,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       }
       result[:documents_uploaded] = documents_uploaded if documents_uploaded.present?
       result[:images_uploaded]    = images_uploaded    if images_uploaded.present?
+      result[:doc_refs]           = doc_refs            if doc_refs.present?
       result
     end
     mock
@@ -232,6 +233,56 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert_equal 1, json['citations'].length
       assert_equal 'test.pdf', json['citations'].first['filename']
       assert_equal 'Test Document', json['citations'].first['title']
+    end
+  end
+
+  # ─── Fallback "Documentos consultados" (doc_refs without inline citations) ─
+
+  test 'includes consulted_documents fallback when citations are empty but doc_refs present' do
+    sign_in @user
+
+    doc_refs = [
+      { "source_uri" => "s3://bucket/manual.pdf", "canonical_name" => "Manual", "aliases" => [], "doc_type" => "manual" },
+      { "source_uri" => "s3://bucket/manual.pdf", "canonical_name" => "Manual", "aliases" => [], "doc_type" => "manual" }
+    ]
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [], doc_refs: doc_refs)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+      assert_response :success
+
+      json = json_response
+      assert_equal [ 'Manual' ], json['consulted_documents'], 'must dedup canonical_name across doc_refs'
+    end
+  end
+
+  test 'does not include consulted_documents when citations are present' do
+    sign_in @user
+
+    citations = [ { filename: 'test.pdf', title: 'Test Document' } ]
+    doc_refs  = [ { "source_uri" => "s3://bucket/test.pdf", "canonical_name" => "Test Document" } ]
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: citations, doc_refs: doc_refs)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+      assert_response :success
+
+      json = json_response
+      assert_not json.key?('consulted_documents'), 'must not duplicate sources already shown via citations'
+    end
+  end
+
+  test 'omits consulted_documents when there are neither citations nor doc_refs' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+      assert_response :success
+
+      json = json_response
+      assert_not json.key?('consulted_documents')
     end
   end
 

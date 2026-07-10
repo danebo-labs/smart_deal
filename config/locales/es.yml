@@ -74,6 +74,7 @@ es:
     office_conversion_failed: "No se pudo convertir Office %{filename}: %{detail}"
     all_pages_filtered: "Todas las páginas se filtraron para %{filename}. Vuelve a subir individualmente si tiene contenido técnico."
   errors:
+    host_account_mismatch: "Esta cuenta no pertenece a este sitio. Usa el dominio correcto para tu organización."
     messages:
       taken: "ya está en uso"
       blank: "no puede estar en blanco"

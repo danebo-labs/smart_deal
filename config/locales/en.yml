@@ -84,6 +84,8 @@ en:
       label: "Language"
       es: "ES"
       en: "EN"
+  errors:
+    host_account_mismatch: "This account does not belong to this site. Use your organization's correct domain."
   dashboard:
     metrics_refreshing: "Metrics are updating…"
   bulk_uploads:

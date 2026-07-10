@@ -785,6 +785,36 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
+  test 'execute_rag_query uses English when current question is clearly English despite Spanish history' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    conv_session = Object.new
+    conv_session.define_singleton_method(:conversation_history) do
+      [
+        { "role" => "user",      "content" => "Que relacion tienen con mis componentes indexados ?" },
+        { "role" => "assistant", "content" => "Tus componentes indexados estan directamente interconectados." },
+        { "role" => "user",      "content" => "Instalar" }
+      ]
+    end
+
+    begin
+      question = "What is the maintenance procedure for this elevator?"
+      @controller.send(:execute_rag_query, question, conv_session: conv_session)
+      assert_equal :en, captured[:kwargs][:response_locale],
+                   "Clear English questions must not inherit Spanish from history"
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
   test 'execute_rag_query stays English when both question and history are English' do
     captured = {}
     mock = Object.new

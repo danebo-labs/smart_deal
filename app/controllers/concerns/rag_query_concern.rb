@@ -205,22 +205,30 @@ module RagQueryConcern
   #
   # Precedence:
   #   1. Explicit override (response_locale: ...)
-  #   2. Confident Spanish from current question (diacritics or stopwords)
+  #   2. Confident current question language (:es by detector, or :en with >=4 tokens)
   #   3. Recent conversation language (last ~6 turns)
   #   4. App default (I18n.locale, currently :es)
   HISTORY_LOCALE_LOOKBACK = 6
   HISTORY_MIN_CONTENT_LEN = 8
+  CURRENT_QUERY_LOCALE_MIN_TOKENS = 4
 
   def resolve_response_locale(question, conv_session, override: nil)
     return override.to_sym if override.present?
 
     detected = BedrockRagService.detect_language_from_question(question)
-    return detected if detected == :es
+    return detected if current_question_locale_confident?(question, detected)
 
     history_locale = detect_locale_from_history(conv_session)
     return history_locale if history_locale.present?
 
     detected
+  end
+
+  def current_question_locale_confident?(question, detected)
+    return true if detected == :es
+
+    tokens = question.to_s.downcase.scan(/\b[a-z]+\b/)
+    detected == :en && tokens.size >= CURRENT_QUERY_LOCALE_MIN_TOKENS
   end
 
   def detect_locale_from_history(conv_session)

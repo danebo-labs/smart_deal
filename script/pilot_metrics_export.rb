@@ -13,7 +13,7 @@
 # Complementary log-based signal (NOT computed here — Docker logs rotate;
 # run this extraction the same day as the export, before logs roll over):
 #   kamal app logs --lines 5000 | grep 'RAG_QUALITY' | sed 's/.*\[RAG_QUALITY\] //' | \
-#     jq -s '{records: length, evidence_present: map(select(.evidence_present)) | length, by_mode: group_by(.evidence_mode) | map({mode: .[0].evidence_mode, n: length})}'
+#     jq -s '{records: length, evidence_present: map(select(.evidence_present)) | length, evidence_missing_questions: map(select(.evidence_present == false) | {question, evidence_mode, latency_ms}), by_mode: group_by(.evidence_mode) | map({mode: .[0].evidence_mode, n: length})}'
 
 abort("Run with: bin/rails runner script/pilot_metrics_export.rb") unless defined?(Rails)
 
@@ -81,6 +81,8 @@ absence_counts       = Hash.new(0)
 assistant_msg_count  = 0
 reformulation_count  = 0
 sessions_today       = []
+absence_questions    = []
+document_usage       = Hash.new { |h, k| h[k] = { sessions: 0, name: nil, source_uri: nil, kb_document_id: nil } }
 
 sessions_touched.find_each do |session|
   history = session.conversation_history
@@ -91,6 +93,23 @@ sessions_touched.find_each do |session|
   end
 
   indexed = history.each_with_index.to_a
+  indexed.each do |message, index|
+    next unless message["role"] == "assistant"
+
+    matched_label = ABSENCE_PATTERNS.find { |_label, pattern| message["content"].to_s.match?(pattern) }&.first
+    next unless matched_label
+
+    previous_user = history[0...index].reverse.find { |m| m["role"] == "user" }
+    absence_questions << {
+      session_id:       session.id,
+      account_id:       session.account_id,
+      marker:           matched_label,
+      user_question:    previous_user&.dig("content"),
+      assistant_answer: message["content"],
+      answered_at:      message["ts"]
+    }
+  end
+
   user_entries = indexed.select { |m, _i| m["role"] == "user" }
   user_entries.each_cons(2) do |(u1, i1), (u2, i2)|
     t1 = Time.zone.parse(u1["ts"].to_s) rescue nil
@@ -106,8 +125,24 @@ sessions_touched.find_each do |session|
     reformulation_count += 1 unless useful
   end
 
+  Array(session.active_entities).each do |name, meta|
+    source_uri = meta["source_uri"].presence
+    kb_id      = meta["kb_document_id"].presence
+    key        = source_uri || kb_id || name
+    next if key.blank?
+
+    document_usage[key][:sessions] += 1
+    document_usage[key][:name] ||= meta["canonical_name"].presence || name
+    document_usage[key][:source_uri] ||= source_uri
+    document_usage[key][:kb_document_id] ||= kb_id
+  end
+
   sessions_today << { id: session.id, account_id: session.account_id, history: history }
 end
+
+top_documents_used = document_usage.values
+  .sort_by { |row| [ -row[:sessions], row[:name].to_s ] }
+  .first(20)
 
 # ── Manuals readiness snapshot (not date-scoped — pilot onboarding check) ───
 manual_batches = WebManualBatch.order(:id).pluck(:id, :account_id, :status, :chunks_count, :filename).map do |id, account_id, status, chunks_count, filename|
@@ -122,8 +157,10 @@ output = {
   query_latency_by_route:            query_latency_by_route,
   data_not_available_count:         absence_counts["DATA_NOT_AVAILABLE"],
   require_field_verification_count: absence_counts["REQUIRE_FIELD_VERIFICATION"],
+  absence_questions:                absence_questions.first(50),
   assistant_message_count:          assistant_msg_count,
   reformulation_count:              reformulation_count,
+  top_documents_used:               top_documents_used,
   sessions_today:                   sessions_today,
   manual_batches:                   manual_batches
 }

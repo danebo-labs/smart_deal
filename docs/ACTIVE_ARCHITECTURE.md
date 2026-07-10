@@ -31,6 +31,7 @@ For Gate 9R, read `GATE9R_STATUS.md` first and do not load every dated report.
 | Topic | Doc |
 |-------|-----|
 | Home layout, KB list, lightbox | [WEB_HOME.md](WEB_HOME.md) |
+| **Account branding** (per-host logo, favicon, title) | [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md) |
 | Pins, `active_entities`, scoped RAG | [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) |
 | RAG quality/cost benchmark, regression gate, known gaps | [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md) |
 | Intent routing (RAG / SQL / hybrid) | [QUERY_ORCHESTRATOR.md](QUERY_ORCHESTRATOR.md) |
@@ -43,6 +44,7 @@ For Gate 9R, read `GATE9R_STATUS.md` first and do not load every dated report.
 | Canonical reconciled SaaS COGS and pricing floors | [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) |
 | Image compression | [IMAGE_COMPRESSION.md](IMAGE_COMPRESSION.md) |
 | Multi-tenant roadmap | [MULTI_TENANT_ARCHITECTURE.md](MULTI_TENANT_ARCHITECTURE.md) |
+| **Account branding** (host → tenant visuals) | [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md) |
 | Performance constraints | [PERFORMANCE_CONSTRAINTS.md](PERFORMANCE_CONSTRAINTS.md) |
 | WhatsApp R3 (dormant) | [WHATSAPP.md](WHATSAPP.md) |
 | Legacy full architecture (may be stale) | [ARCHITECTURE.md](../ARCHITECTURE.md) |

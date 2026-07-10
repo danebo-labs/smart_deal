@@ -16,7 +16,7 @@ Mobile-first layout for field technicians.
 
 | Piece | Role |
 |-------|------|
-| `_kb_docs_card.html.erb` | Shared shell for **`:desktop`** (rounded card + scroll) and **`:mobile`** (strip inside `_chat_box`); renders `_kb_docs_card_rows` + optional sentinel. |
+| `_kb_docs_card.html.erb` | Shared shell for **`:desktop`** (rounded card + scroll) and **`:mobile`** (strip inside `_chat_box`); renders `_kb_docs_card_rows` + optional sentinel. Desktop header uses `account_branding` (logo + optional Danebo wordmark). See [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md). |
 | `_kb_docs_card_rows.html.erb` | Rows only — reused by initial HTML and Turbo Stream fragments. |
 | `_kb_docs_card_sentinel.html.erb` | 1px **IntersectionObserver** target; `docs_scroll_controller.js` fetches `/home/documents_page?page=N` as Turbo Stream. |
 | `HomeController` | `PAGE_SIZE` **20**; `#documents` replaces both item containers + sentinels after indexing; `#documents_page` **appends** next page to desktop and mobile. |

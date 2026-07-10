@@ -167,6 +167,8 @@ Rails serves **only** these hosts (see `config/account_hosts.rb` + `config/deplo
 
 Cross-account login is rejected (sign-out + flash). Mailer canonical host: `elevator.danebo.ai`.
 
+**Visual branding:** when `accounts.branded` is `true`, the host shows that account's logo, favicon, page title, and footer instead of Danebo defaults. Live for `elevadores-climb` on `ascensoresclimb.danebo.ai`. Deploy needs no manual asset upload — PNGs are in the Docker image; migration runs on web boot via `db:prepare`. Full runbook: [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md).
+
 #### Route 53 cutover
 
 DNS is managed in **Route 53** hosted zone `danebo.ai` (no IaC in-repo). EC2 public IP example: `54.163.248.39` — confirm against `config/deploy.yml` / live instance.
@@ -190,7 +192,7 @@ Order:
 4. `curl -vk https://elevator.danebo.ai/up` and `curl -vk https://ascensoresclimb.danebo.ai/up`.
 5. Remove or repoint `chat.danebo.ai`.
 
-Confirm account `elevadores-climb` exists in prod (`bin/rails db:seed` via `kamal app exec --reuse` if needed).
+Confirm account `elevadores-climb` exists in prod (`bin/rails db:seed` via `kamal app exec --reuse` if needed). Branding fields (`display_name`, `branded`) are backfilled by migration `20260710010942`; seed is only needed if the account row itself is missing.
 
 #### Local development (Ascensores Climb)
 

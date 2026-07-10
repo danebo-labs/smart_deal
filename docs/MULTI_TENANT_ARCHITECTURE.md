@@ -9,6 +9,18 @@ metadata, retrieval filters, jobs, caches, broadcasts, and metrics.
 This document records the target architecture. It intentionally assumes that
 existing MVP data can be replaced rather than migrated.
 
+### Delivered (Stage 1 — partial)
+
+| Area | Status | Doc |
+|------|--------|-----|
+| Host → `Account.slug` map (`AccountHosts`, `AccountHostResolver`) | Live | [PRODUCTION.md](PRODUCTION.md#tenant-hosts-host--account) |
+| Login / session scoped to host account (`user.account_id` must match) | Live | `Users::SessionsController`, `ApplicationController#ensure_user_belongs_to_host_account!` |
+| KB list and ingestion scoped by `account_id` | Live | [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) |
+| **Visual branding** (`display_name`, `branded`, static logo/favicon per slug) | Live for `elevadores-climb` | [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md) |
+
+Bedrock retrieval `account_id` metadata filter, S3 key prefixes, and full rollout
+gate below remain **not** complete for a second paying customer.
+
 ## Infrastructure Decision
 
 The default SaaS topology is shared infrastructure with logical isolation:
@@ -163,6 +175,8 @@ class Account < ApplicationRecord
   has_many :kb_documents, dependent: :restrict_with_error
   has_many :conversation_sessions, dependent: :destroy
   has_many :bedrock_queries, dependent: :destroy
+  # display_name (string, NOT NULL) — title, footer, logo alt
+  # branded (boolean) — when true, static assets under accounts/<slug>/
 end
 ```
 
@@ -198,7 +212,12 @@ replace explicit application scoping.
 
 ## Request and Job Context
 
-The authenticated user determines the account:
+**Host resolution (live):** `ApplicationController#host_account` resolves the
+tenant from `request.host` via `AccountHostResolver` before auth. Unauthenticated
+surfaces (Devise login) already use host-scoped branding through
+`AccountBranding`.
+
+The authenticated user determines the account for data access:
 
 ```ruby
 Current.account = current_user.account

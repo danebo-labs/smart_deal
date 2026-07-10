@@ -20,6 +20,7 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
 | **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet, web_v1 vs legacy split), live chat footer |
 | **Auth** | Devise |
+| **Tenant branding** | Per-host logo, favicon, title, footer (`elevadores-climb` on `ascensoresclimb.danebo.ai`) — [docs/ACCOUNT_BRANDING.md](docs/ACCOUNT_BRANDING.md) |
 
 Detail: [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md).
 
@@ -56,6 +57,7 @@ Open http://localhost:3000. `bin/dev` runs Rails + Tailwind (Foreman / `Procfile
 | WhatsApp (dormant) | [docs/WHATSAPP.md](docs/WHATSAPP.md) |
 | Cursor / agent engineering rules | [CLAUDE.md](CLAUDE.md) |
 | Multi-tenant roadmap | [docs/MULTI_TENANT_ARCHITECTURE.md](docs/MULTI_TENANT_ARCHITECTURE.md) |
+| **Account branding** (host → logo/favicon/title) | [docs/ACCOUNT_BRANDING.md](docs/ACCOUNT_BRANDING.md) |
 
 ## Stack
 

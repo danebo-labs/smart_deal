@@ -31,14 +31,26 @@ gem 'action_text-trix', '>= 2.1.18'
 # Bundler-audit: GHSA-h27x-rffw-24p4 (addressable < 2.9.0 ReDoS in templates)
 gem 'addressable', '>= 2.9.0'
 
-# Bundler-audit: GHSA-c4rq-3m3g-8wgx, GHSA-v2fc-qm4h-8hqv (nokogiri < 1.19.3)
-gem 'nokogiri', '>= 1.19.3'
+# Bundler-audit: nokogiri advisories (NodeSet OOB, UAF, etc.) — need >= 1.19.4
+gem 'nokogiri', '>= 1.19.4'
 
-# Bundler-audit: CVE-2026-33637 (faraday < 2.14.2, via twilio-ruby / ruby-openai)
-gem 'faraday', '>= 2.14.2'
+# Bundler-audit: CVE-2026-54297 (faraday NestedParamsEncoder DoS) — need >= 2.14.3
+gem 'faraday', '>= 2.14.3'
 
 # Bundler-audit: CVE-2026-45363 (jwt < 3.2.0, via twilio-ruby)
 gem 'jwt', '>= 3.2.0'
+
+# Bundler-audit: CVE-2026-54904/54905/54906 (concurrent-ruby < 1.3.7)
+gem 'concurrent-ruby', '>= 1.3.7'
+
+# Bundler-audit: GHSA-6jxj/6wmf/8vfg/wwpr (crass CSS DoS) — need >= 1.0.7
+gem 'crass', '>= 1.0.7'
+
+# Bundler-audit: CVE-2026-54696 (json generator heap overflow) — need >= 2.19.9
+gem 'json', '>= 2.19.9'
+
+# Bundler-audit: CVE-2026-54522 (msgpack UAF in Buffer#clear) — need >= 1.8.2
+gem 'msgpack', '>= 1.8.2'
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem 'tzinfo-data', platforms: %i[windows jruby]

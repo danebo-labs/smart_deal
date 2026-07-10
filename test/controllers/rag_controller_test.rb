@@ -11,7 +11,8 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   setup do
     @user = users(:one)
-    @account = Account.create!(slug: "rag-controller-test-#{SecureRandom.hex(4)}")
+    # Must match AccountHostResolver for www.example.com (test default host).
+    @account = accounts(:legacy)
     @user.update!(account: @account)
   end
 

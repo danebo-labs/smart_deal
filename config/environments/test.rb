@@ -55,4 +55,9 @@ Rails.application.configure do
 
   # Rails 8.1 FK fixture check requires pg_catalog superuser; skip it (tests run as app user)
   config.active_record.verify_foreign_keys_for_fixtures = false
+
+  # Mirror production host allowlist (dev map includes localhost + www.example.com for integration tests).
+  require Rails.root.join("config/account_hosts")
+  config.hosts = AccountHosts::DEVELOPMENT.keys
+  config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 end

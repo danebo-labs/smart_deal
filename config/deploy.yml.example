@@ -31,9 +31,8 @@ servers:
 proxy:
   ssl: true
   hosts:
-    - example.com
-    - www.example.com
-    - chat.example.com
+    - elevator.danebo.ai
+    - ascensoresclimb.danebo.ai
   app_port: 80
 
 registry:

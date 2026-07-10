@@ -10,7 +10,6 @@ es:
       secure: "Seguro"
       scalable: "Escalable"
       enterprise: "Empresarial"
-      logo_alt: "danebo"
     shared:
       email: "Correo electrónico"
       email_placeholder: "tu@empresa.com"

@@ -10,7 +10,10 @@ BUCKET = "multimodal-source-destination"
 #   danebo.ai / www.danebo.ai / elevator.danebo.ai → danebo-legacy
 #   ascensoresclimb.danebo.ai                      → elevadores-climb
 legacy_account = Account.find_or_create_by!(slug: "danebo-legacy")
-Account.find_or_create_by!(slug: "elevadores-climb")
+legacy_account.update!(display_name: "Danebo", branded: false)
+
+climb_account = Account.find_or_create_by!(slug: "elevadores-climb")
+climb_account.update!(display_name: "Ascensores Climb", branded: true)
 
 # KB catalog. JPEG rows use full s3:// URI as canonical s3_key; object path still matches S3 list via KbDocument.object_key_for_match.
 KB_DOCUMENT_SEEDS = [

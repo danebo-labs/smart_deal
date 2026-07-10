@@ -10,12 +10,16 @@
 <% if variant == :desktop %>
   <div class="flex-1 rounded-2xl border border-[hsl(215,20%,88%)] bg-white p-5 shadow-sm">
     <div class="mb-4 flex items-center gap-3">
-      <%= image_tag "logo_mobile.png", class: "h-9 w-9 shrink-0 object-contain", alt: "danebo.ai" %>
+      <%= image_tag account_branding.logo_path,
+          class: account_branding.branded? ? "h-9 w-auto max-w-[8rem] shrink-0 object-contain" : "h-9 w-9 shrink-0 object-contain",
+          alt: account_branding.logo_alt %>
       <div class="flex min-w-0 flex-col gap-0.5">
-        <div class="flex items-baseline gap-0 leading-none">
-          <span class="brand-wordmark text-[15px] font-semibold text-[hsl(222,47%,10%)]">danebo</span>
-          <span class="brand-suffix text-[15px] font-light text-[hsl(222,47%,10%)] opacity-[0.72]">.ai</span>
-        </div>
+        <% if account_branding.show_danebo_wordmark? %>
+          <div class="flex items-baseline gap-0 leading-none">
+            <span class="brand-wordmark text-[15px] font-semibold text-[hsl(222,47%,10%)]">danebo</span>
+            <span class="brand-suffix text-[15px] font-light text-[hsl(222,47%,10%)] opacity-[0.72]">.ai</span>
+          </div>
+        <% end %>
         <h3 class="text-xs font-medium text-[hsl(215,20%,52%)]">Archivos Disponibles</h3>
       </div>
     </div>

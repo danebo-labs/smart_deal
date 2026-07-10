@@ -1,22 +1,22 @@
 <!DOCTYPE html>
 <html lang="<%= I18n.locale %>" class="bg-[hsl(220,20%,97%)]">
   <head>
-    <title><%= content_for(:title) || "danebo" %></title>
+    <title><%= content_for(:title) || account_branding.display_name %></title>
     <%# interactive-widget=resizes-visual: when the on-screen keyboard opens,
         only the *visual* viewport shrinks (the layout viewport stays the same).
         This lets us keep the page chrome 100% static and lift only the textarea
         via the VisualViewport API (see rag_chat_controller#setupKeyboardLift). %>
     <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,interactive-widget=resizes-visual">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="application-name" content="danebo">
+    <meta name="application-name" content="<%= account_branding.display_name %>">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="description" content="Plataforma de IA empresarial para soluciones B2B">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= action_cable_meta_tag %>
     <%= yield :head %>
-    <%= favicon_link_tag "favicon.png", type: "image/png" %>
-    <%= tag.link rel: "apple-touch-icon", href: "/icon-180.png", sizes: "180x180" %>
+    <%= favicon_link_tag account_branding.favicon_path, type: "image/png" %>
+    <%= tag.link rel: "apple-touch-icon", href: account_branding.apple_touch_href, sizes: "180x180" %>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Manrope:wght@400;500;600&display=swap" rel="stylesheet">
@@ -62,11 +62,15 @@
       <div class="mx-auto flex h-14 md:h-16 max-w-7xl items-center justify-between gap-2 px-3 sm:px-6">
         <%# Logo — responsive assets %>
         <div class="flex min-w-0 items-center gap-2 sm:gap-3">
-          <%= image_tag "logo_mobile.png", class: "h-7 w-7 shrink-0 object-contain sm:h-8 sm:w-8", alt: "danebo.ai" %>
-          <div class="flex items-baseline gap-0">
-            <span class="brand-wordmark text-[13px] font-semibold leading-none text-[hsl(222,47%,10%)] sm:text-[15px]">danebo</span>
-            <span class="brand-suffix text-[13px] font-light leading-none text-[hsl(222,47%,10%)] opacity-[0.72] sm:text-[15px]">.ai</span>
-          </div>
+          <%= image_tag account_branding.logo_path,
+              class: account_branding.branded? ? "h-7 w-auto max-w-[9rem] shrink-0 object-contain sm:h-8" : "h-7 w-7 shrink-0 object-contain sm:h-8 sm:w-8",
+              alt: account_branding.logo_alt %>
+          <% if account_branding.show_danebo_wordmark? %>
+            <div class="flex items-baseline gap-0">
+              <span class="brand-wordmark text-[13px] font-semibold leading-none text-[hsl(222,47%,10%)] sm:text-[15px]">danebo</span>
+              <span class="brand-suffix text-[13px] font-light leading-none text-[hsl(222,47%,10%)] opacity-[0.72] sm:text-[15px]">.ai</span>
+            </div>
+          <% end %>
         </div>
 
         <%# User actions — compact icon targets on xs; texto desde sm (apps móviles) %>

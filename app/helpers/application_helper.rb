@@ -6,6 +6,12 @@ module ApplicationHelper
     render "shared/password_field_toggle", form: form, field: field, html_options: html_options
   end
 
+  # Memoized per view render — current_account is already resolved/memoized
+  # on the controller, so this adds zero extra queries.
+  def account_branding
+    @account_branding ||= AccountBranding.for(current_account)
+  end
+
   def number_to_human_size(size)
     return '0 B' if size.nil? || size.zero?
 

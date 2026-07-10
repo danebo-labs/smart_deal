@@ -39,7 +39,6 @@ en:
       secure: "Secure"
       scalable: "Scalable"
       enterprise: "Enterprise-ready"
-      logo_alt: "danebo"
     shared:
       email: "Email address"
       email_placeholder: "you@company.com"

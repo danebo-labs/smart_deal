@@ -10,13 +10,15 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_23_000700) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_10_010942) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
 
   create_table "accounts", force: :cascade do |t|
+    t.boolean "branded", default: false, null: false
     t.datetime "created_at", null: false
+    t.string "display_name", null: false
     t.string "slug", null: false
     t.datetime "updated_at", null: false
     t.index [ "slug" ], name: "index_accounts_on_slug", unique: true

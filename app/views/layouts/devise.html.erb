@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html lang="<%= I18n.locale %>" class="h-full">
   <head>
-    <title><%= content_for(:title) || "danebo" %></title>
+    <title><%= content_for(:title) || account_branding.display_name %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="application-name" content="danebo">
+    <meta name="application-name" content="<%= account_branding.display_name %>">
     <meta name="description" content="Plataforma de IA empresarial para soluciones B2B">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= yield :head %>
-    <%= favicon_link_tag "favicon.png", type: "image/png" %>
-    <%= tag.link rel: "apple-touch-icon", href: "/icon-180.png", sizes: "180x180" %>
+    <%= favicon_link_tag account_branding.favicon_path, type: "image/png" %>
+    <%= tag.link rel: "apple-touch-icon", href: account_branding.apple_touch_href, sizes: "180x180" %>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">

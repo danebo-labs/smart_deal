@@ -1,7 +1,11 @@
 <footer class="relative z-10 border-t border-[hsl(215,20%,88%)] bg-white/50 backdrop-blur-sm">
   <div class="mx-auto max-w-7xl px-6 py-4">
     <p class="text-center text-[11px] text-[hsl(215,20%,60%)] sm:text-xs">
-      © 2026 danebo.ai
+      <% if account_branding.show_danebo_wordmark? %>
+        © 2026 danebo.ai
+      <% else %>
+        © 2026 <%= account_branding.display_name %>
+      <% end %>
     </p>
   </div>
 </footer>

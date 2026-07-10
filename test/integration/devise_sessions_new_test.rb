@@ -6,8 +6,8 @@ class DeviseSessionsNewTest < ActionDispatch::IntegrationTest
   test 'sign in page renders app logo assets' do
     get new_user_session_path
     assert_response :success
-    assert_select 'img[alt="' + I18n.t('auth.brand.logo_alt') + '"][src*="logo_desktop2"]', count: 1
-    assert_select 'img[alt="' + I18n.t('auth.brand.logo_alt') + '"][src*="logo_mobile"]', count: 1
+    assert_select 'img[alt="danebo.ai"][src*="logo_desktop2"]', count: 1
+    assert_select 'img[alt="danebo.ai"][src*="logo_mobile"]', count: 1
   end
 
   test 'sign in page includes png favicon asset' do

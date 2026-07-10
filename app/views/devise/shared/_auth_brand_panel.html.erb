@@ -14,15 +14,16 @@
   </div>
 
   <div class="relative z-10 flex items-center gap-3">
-    <%= image_tag "logo_desktop2.jpg",
-        alt: t("auth.brand.logo_alt"),
-        class: "h-16 w-16 shrink-0 rounded-2xl object-contain shadow-lg ring-1 ring-white/10",
-        width: 64,
-        height: 64 %>
-    <div class="flex flex-col">
-      <span class="text-2xl font-light leading-none tracking-tight text-white">danebo</span>
-      <span class="text-xs font-light uppercase tracking-widest text-white/60">.ai</span>
-    </div>
+    <%= image_tag account_branding.desktop_logo_path,
+        alt: account_branding.logo_alt,
+        class: account_branding.branded? ? "h-16 w-auto max-w-[13rem] shrink-0 object-contain" : "h-16 w-16 shrink-0 rounded-2xl object-contain shadow-lg ring-1 ring-white/10",
+        **(account_branding.branded? ? { height: 64 } : { width: 64, height: 64 }) %>
+    <% if account_branding.show_danebo_wordmark? %>
+      <div class="flex flex-col">
+        <span class="text-2xl font-light leading-none tracking-tight text-white">danebo</span>
+        <span class="text-xs font-light uppercase tracking-widest text-white/60">.ai</span>
+      </div>
+    <% end %>
   </div>
 
   <div class="relative z-10 max-w-md">

@@ -1,5 +1,9 @@
 legacy:
   slug: danebo-legacy
+  display_name: Danebo
+  branded: false
 
 climb:
   slug: elevadores-climb
+  display_name: Ascensores Climb
+  branded: true

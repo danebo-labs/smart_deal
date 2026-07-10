@@ -31,6 +31,9 @@ servers:
 proxy:
   ssl: true
   hosts:
+    # Temporary: apex/www serve the app until the marketing landing is ready.
+    - danebo.ai
+    - www.danebo.ai
     - elevator.danebo.ai
     - ascensoresclimb.danebo.ai
   app_port: 80

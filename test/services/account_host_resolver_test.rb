@@ -5,6 +5,8 @@ require "test_helper"
 class AccountHostResolverTest < ActiveSupport::TestCase
   test "resolves production hosts to account slugs" do
     assert_equal accounts(:legacy), AccountHostResolver.account_for("elevator.danebo.ai")
+    assert_equal accounts(:legacy), AccountHostResolver.account_for("danebo.ai")
+    assert_equal accounts(:legacy), AccountHostResolver.account_for("www.danebo.ai")
     assert_equal accounts(:climb), AccountHostResolver.account_for("ascensoresclimb.danebo.ai")
   end
 
@@ -18,11 +20,12 @@ class AccountHostResolverTest < ActiveSupport::TestCase
 
   test "returns nil for unknown host" do
     assert_nil AccountHostResolver.account_for("chat.danebo.ai")
-    assert_nil AccountHostResolver.account_for("danebo.ai")
     assert_nil AccountHostResolver.account_for("evil.example.com")
   end
 
   test "allowed_hosts matches active map keys" do
+    assert_includes AccountHostResolver.allowed_hosts, "danebo.ai"
+    assert_includes AccountHostResolver.allowed_hosts, "www.danebo.ai"
     assert_includes AccountHostResolver.allowed_hosts, "elevator.danebo.ai"
     assert_includes AccountHostResolver.allowed_hosts, "ascensoresclimb.danebo.ai"
     assert_includes AccountHostResolver.allowed_hosts, "localhost"

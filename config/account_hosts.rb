@@ -2,8 +2,13 @@
 
 # Host → Account.slug map (single source of truth for tenant routing).
 # Required early from production.rb for config.hosts; also loaded by the initializer.
+#
+# danebo.ai / www.danebo.ai temporarily serve the app (danebo-legacy) until the
+# marketing landing is ready; then remove them from proxy.hosts + this map.
 module AccountHosts
   PRODUCTION = {
+    "danebo.ai"                 => "danebo-legacy",
+    "www.danebo.ai"             => "danebo-legacy",
     "elevator.danebo.ai"        => "danebo-legacy",
     "ascensoresclimb.danebo.ai" => "elevadores-climb"
   }.freeze

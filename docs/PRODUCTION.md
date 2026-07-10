@@ -158,10 +158,12 @@ Rails serves **only** these hosts (see `config/account_hosts.rb` + `config/deplo
 
 | Host | Account slug |
 |------|--------------|
+| `danebo.ai` | `danebo-legacy` (temporary until landing) |
+| `www.danebo.ai` | `danebo-legacy` (temporary until landing) |
 | `elevator.danebo.ai` | `danebo-legacy` |
 | `ascensoresclimb.danebo.ai` | `elevadores-climb` |
 
-`danebo.ai` / `www.danebo.ai` are reserved for a future landing (not this Kamal app). `chat.danebo.ai` is retired.
+`danebo.ai` / `www.danebo.ai` still serve this Rails app until the marketing landing is ready; then drop them from `proxy.hosts` + `AccountHosts`. `chat.danebo.ai` is retired.
 
 Cross-account login is rejected (sign-out + flash). Mailer canonical host: `elevator.danebo.ai`.
 
@@ -176,12 +178,14 @@ DNS is managed in **Route 53** hosted zone `danebo.ai` (no IaC in-repo). EC2 pub
 | `elevator.danebo.ai` | EC2 public IP | Tenant `danebo-legacy` |
 | `ascensoresclimb.danebo.ai` | EC2 public IP | Tenant `elevadores-climb` |
 
-**Retire / do not point at this EC2:** `chat.danebo.ai`, apex `danebo.ai`, `www.danebo.ai`.
+**Keep pointing at this EC2 for now:** `danebo.ai`, `www.danebo.ai` (app until landing), plus the two tenant hosts above.
+
+**Retire / do not point at this EC2:** `chat.danebo.ai`.
 
 Order:
 
-1. Create the two A records in R53; wait for propagation (`dig +short elevator.danebo.ai`).
-2. Set `proxy.hosts` in local `config/deploy.yml` to those two hosts.
+1. Create the tenant A records in R53; wait for propagation (`dig +short elevator.danebo.ai`).
+2. Set `proxy.hosts` in local `config/deploy.yml` to apex/www + the two tenant hosts.
 3. `bundle exec kamal deploy` (Let's Encrypt certs for new names).
 4. `curl -vk https://elevator.danebo.ai/up` and `curl -vk https://ascensoresclimb.danebo.ai/up`.
 5. Remove or repoint `chat.danebo.ai`.

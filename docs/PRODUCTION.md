@@ -86,7 +86,7 @@ Now that Steps 2 and 3 returned concrete values, export them once per shell:
 ```bash
 export EC2_ID=i-09db5c5fc53e973b0     # paste the value from Step 2
 export RDS_ID=smart-deal-db            # paste the value from Step 3
-export APP_HOST=chat.example.com       # public host from config/deploy.yml proxy.host (only used by the /up check)
+export APP_HOST=elevator.danebo.ai     # primary tenant host from config/deploy.yml proxy.hosts (used by /up check)
 ```
 
 Quick status check before proceeding:
@@ -151,6 +151,52 @@ aws rds describe-db-instances --db-instance-identifier "$RDS_ID" --region "$AWS_
 > **AWS auto‑start:** stopped RDS instances are auto‑started by AWS after ~7 days. Plan longer idle windows accordingly. See [Stopping an RDS DB instance temporarily](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html).
 >
 > **Skip step 1 only if EC2 is already unreachable** (already stopped, network broken). `bundle exec kamal app stop` will hang trying to SSH; in that case go straight to step 2.
+
+### Tenant hosts (host → Account)
+
+Rails serves **only** these hosts (see `config/account_hosts.rb` + `config/deploy.yml` `proxy.hosts`):
+
+| Host | Account slug |
+|------|--------------|
+| `elevator.danebo.ai` | `danebo-legacy` |
+| `ascensoresclimb.danebo.ai` | `elevadores-climb` |
+
+`danebo.ai` / `www.danebo.ai` are reserved for a future landing (not this Kamal app). `chat.danebo.ai` is retired.
+
+Cross-account login is rejected (sign-out + flash). Mailer canonical host: `elevator.danebo.ai`.
+
+#### Route 53 cutover
+
+DNS is managed in **Route 53** hosted zone `danebo.ai` (no IaC in-repo). EC2 public IP example: `54.163.248.39` — confirm against `config/deploy.yml` / live instance.
+
+**Create/update** (A, TTL 300 recommended during cutover):
+
+| Record | Value | Purpose |
+|--------|-------|---------|
+| `elevator.danebo.ai` | EC2 public IP | Tenant `danebo-legacy` |
+| `ascensoresclimb.danebo.ai` | EC2 public IP | Tenant `elevadores-climb` |
+
+**Retire / do not point at this EC2:** `chat.danebo.ai`, apex `danebo.ai`, `www.danebo.ai`.
+
+Order:
+
+1. Create the two A records in R53; wait for propagation (`dig +short elevator.danebo.ai`).
+2. Set `proxy.hosts` in local `config/deploy.yml` to those two hosts.
+3. `bundle exec kamal deploy` (Let's Encrypt certs for new names).
+4. `curl -vk https://elevator.danebo.ai/up` and `curl -vk https://ascensoresclimb.danebo.ai/up`.
+5. Remove or repoint `chat.danebo.ai`.
+
+Confirm account `elevadores-climb` exists in prod (`bin/rails db:seed` via `kamal app exec --reuse` if needed).
+
+#### Local development (Ascensores Climb)
+
+`localhost` maps to `danebo-legacy`. To exercise the Climb tenant locally, add to `/etc/hosts`:
+
+```
+127.0.0.1 ascensoresclimb.danebo.ai elevator.danebo.ai
+```
+
+Then open `http://ascensoresclimb.danebo.ai:3000` (or via `bin/dev`).
 
 ### Hot deploy (RDS + EC2 already running)
 
@@ -393,9 +439,9 @@ ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@<EC2_IP> \
 | Symptom | Likely cause | What to check |
 |---------|----------------|---------------|
 | **`502`** on `/rag/ask`, log: **`GetInferenceProfile`** / not authorized | EC2 role missing **`bedrock:GetInferenceProfile`** and/or Bedrock **model access** off for Haiku profile | IAM policy + Bedrock console; on EC2: `aws bedrock get-inference-profile --inference-profile-identifier <id> --region us-east-1` |
-| **`ERR_SSL_PROTOCOL_ERROR`** / HTTP **`404`** on `/up` for `chat.danebo.ai` | Only **`kamal-proxy`** up; **web/worker** down after instance stop/start | `docker ps`; then `kamal deploy` from repo root |
+| **`ERR_SSL_PROTOCOL_ERROR`** / HTTP **`404`** on `/up` for `elevator.danebo.ai` | Only **`kamal-proxy`** up; **web/worker** down after instance stop/start | `docker ps`; then `kamal deploy` from repo root |
 | **`Exited (137)`** on web | **OOM** (instance too small or memory limit too low) | `free -m`; `dmesg \| grep -i oom`; resize EC2 or lower `deploy.yml` memory **carefully** |
 | **`app boot` / unhealthy web with `:latest`** | Stale or wrong **`latest`** image on registry vs known-good **git SHA** tag | Prefer **`kamal deploy`** (builds/pushes current SHA) |
-| **`unknown server name`** in proxy logs | Client without SNI, scanners — often noise; if **your** browser fails, fix router/cert state first | `curl -vk https://chat.danebo.ai/up` |
+| **`unknown server name`** in proxy logs | Client without SNI, scanners — often noise; if **your** browser fails, fix router/cert state first | `curl -vk https://elevator.danebo.ai/up` |
 | **Duplicate workers processing** | Old **orphan** containers after role change | `docker ps -a`; remove stopped/old names |
 | **`kamal app exec` hangs on `docker login`** | Exec without **`--reuse`** pulls a fresh image | Use **`--reuse`** when `web` is running |

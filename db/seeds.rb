@@ -6,6 +6,9 @@
 
 BUCKET = "multimodal-source-destination"
 
+# Host → slug (see config/account_hosts.rb):
+#   elevator.danebo.ai         → danebo-legacy
+#   ascensoresclimb.danebo.ai  → elevadores-climb
 legacy_account = Account.find_or_create_by!(slug: "danebo-legacy")
 Account.find_or_create_by!(slug: "elevadores-climb")
 

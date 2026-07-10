@@ -12,7 +12,7 @@ export function renderReferences(citations = []) {
 
   return `
     <div class="chat-references">
-      <p class="chat-references-title">References</p>
+      <p class="chat-references-title">Referencias</p>
       <ul class="chat-references-list">
         ${safeCitations.map(c => {
           const title = escape(c.title || c.filename || "Document")

@@ -10,7 +10,7 @@ module RagQueryConcern
   # Result object for queries.
   RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs,
                          :retrieval_trace,
-                         :session_id, :documents_uploaded, :images_uploaded,
+                         :session_id, :documents_uploaded, :images_uploaded, :correlation_id,
                          :error_type, :error_message,
                          # Deterministic-path observability (benchmark plan Fase 7/8).
                          # nil on the generative path.
@@ -39,7 +39,8 @@ module RagQueryConcern
   # @return [RagResult]
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil,
                         session_context: nil, conv_session: nil, entity_s3_uris: [],
-                        output_channel: nil, force_entity_filter: nil, account: nil)
+                        output_channel: nil, force_entity_filter: nil, account: nil, user_id: nil,
+                        correlation_id: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -72,7 +73,10 @@ module RagQueryConcern
       conv_session:        conv_session,
       entity_s3_uris:      pinned_uris,
       output_channel:      resolved_output_channel,
-      force_entity_filter: resolved_force_filter
+      force_entity_filter: resolved_force_filter,
+      user_id:             user_id,
+      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      correlation_id:      correlation_id
     ).execute
 
     sanitized_answer = sanitize_answer(result[:answer], channel: resolved_output_channel)
@@ -87,6 +91,7 @@ module RagQueryConcern
       session_id:          result[:session_id],
       documents_uploaded:  result[:documents_uploaded],
       images_uploaded:     result[:images_uploaded],
+      correlation_id:      result[:correlation_id],
       generation_mode:     result[:generation_mode],
       model_invoked:       result.key?(:model_invoked) ? result[:model_invoked] : nil,
       parsed_record_ids:   result[:parsed_record_ids],

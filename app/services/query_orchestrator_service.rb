@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 # app/services/query_orchestrator_service.rb
 #
 # This service acts as an intelligent router. It first determines the user's intent
@@ -12,10 +14,8 @@
 #   - KNOWLEDGE_BASE_QUERY: documents/policies from the AWS Knowledge Base
 #   - HYBRID_QUERY: both sources queried in parallel, results merged
 #
-# Images are never sent to the LLM directly. They are always uploaded to S3 and
-# indexed into the Knowledge Base in a background thread, just like documents.
-# The frontend (rag_chat_controller.js) listens for the ActionCable "indexed"
-# event and re-sends the original text query once indexing completes.
+# Field photos are analyzed directly by Claude in a background job and are never
+# persisted. Documents continue through the S3 + Knowledge Base ingestion path.
 class QueryOrchestratorService
   TOOLS = {
     DATABASE_QUERY: 'DATABASE_QUERY',
@@ -37,7 +37,8 @@ class QueryOrchestratorService
   #   specific document (e.g. WhatsApp post-reset picker selection).
   # @param locale [String, nil] ISO 639-1 locale for image summary generation ("es", "en")
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
-                 conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, locale: nil)
+                 conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, locale: nil,
+                 user_id: nil, conversation_session_id: nil, correlation_id: nil)
     @query = query
     @images = images || []
     @documents = documents || []
@@ -51,34 +52,81 @@ class QueryOrchestratorService
     @output_channel = output_channel
     @force_entity_filter = force_entity_filter
     @locale = locale
+    @user_id = user_id
+    @conversation_session_id = conversation_session_id || (conv_session.id if conv_session.respond_to?(:id))
+    @correlation_id = correlation_id
     @ai_provider = AiProvider.new
   end
 
   # Main entry point. Routing logic:
   #
-  # 1. Documents only: respond immediately with an "indexing" message and run
-  #    S3 upload + KB ingestion in a background thread.
+  # 1. Images: analyze directly with Claude in a background job. No S3/KB writes.
   #
-  # 2. Images (with or without documents): same as documents — respond immediately
-  #    with an "indexing" message and run S3 upload + KB ingestion in background.
-  #    The frontend stores the original query and re-sends it as a text-only
-  #    request after the ActionCable "indexed" event arrives.
-  #    Images are NEVER sent to the LLM; all generation uses Haiku 4.5 (text).
+  # 2. Documents: respond immediately with an "indexing" message and run S3
+  #    upload + KB ingestion in a background job.
   #
   # 3. Text-only query: classify intent and delegate to the appropriate service.
   def execute
     upload_context = {}
 
-    if @documents.any? || @images.any?
-      has_images = @images.any?
-      filenames = if has_images
-        @images.each_with_index.map do |img, idx|
-          name = (img[:filename] || img['filename']).presence
-          name ? File.basename(name) : "image_#{idx + 1}"
-        end
-      else
-        @documents.map { |d| File.basename((d[:filename] || d['filename']).presence || 'doc.txt') }
+    if @images.any?
+      image = @images.first
+      filename = (image[:filename] || image["filename"]).presence
+      filename = filename ? File.basename(filename) : "image_1"
+      content_type = (image[:media_type] || image["media_type"]).presence || "image/jpeg"
+      binary = image[:binary] || image["binary"] || Base64.strict_decode64(image[:data] || image["data"])
+      image_sha256 = Digest::SHA256.hexdigest(binary)
+      locale = (@response_locale || @locale || I18n.locale).to_s
+      correlation_id = @correlation_id.presence || "photo:#{SecureRandom.uuid}"
+      cached = FieldPhotoDiagnosisCache.read(
+        account_id: @account&.id,
+        sha256: image_sha256,
+        locale: locale
+      )
+      image_token = unless cached
+        FieldPhotoPendingImageStore.write(
+          binary: binary,
+          content_type: content_type,
+          filename: filename,
+          account_id: @account&.id
+        )
       end
+
+      FieldPhotoAnalysisJob.perform_later(
+        image_token: image_token,
+        image_sha256: image_sha256,
+        filename: filename,
+        content_type: content_type,
+        account_id: @account&.id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
+        locale: locale,
+        correlation_id: correlation_id
+      )
+
+      PilotUsageLog.log(
+        "photo_submitted",
+        account_id: @account&.id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
+        correlation_id: correlation_id,
+        route: "visual_query",
+        cache_status: cached ? "hit" : "miss",
+        result: "accepted",
+        image_digest_prefix: image_sha256.first(12)
+      )
+
+      return {
+        answer: I18n.t("rag.image_analyzing_message"),
+        citations: [],
+        session_id: nil,
+        images_uploaded: [ filename ],
+        correlation_id: correlation_id
+      }
+    end
+
+    if @documents.any?
+      filenames = @documents.map { |d| File.basename((d[:filename] || d["filename"]).presence || "doc.txt") }
 
       # Off-request via Solid Queue lane (NOT Thread.new). The previous
       # Thread.new pattern leaked AR connections during Puma graceful
@@ -86,19 +134,22 @@ class QueryOrchestratorService
       # orchestrator in the worker process and calls the same private
       # method, so behavior is preserved.
       UploadAndSyncAttachmentsJob.perform_later(
-        images_payload:    UploadAndSyncAttachmentsJob.prepare_images_for_async(@images),
+        images_payload:    [],
         documents_payload: @documents,
-        conv_session_id:   @conv_session&.id,
+        conv_session_id:   @conversation_session_id,
         account_id:        @account&.id,
         document_uid:      @document_uids.first,
         locale:            I18n.locale.to_s,
         query:             @query.to_s
       )
 
-      if has_images || @query.blank?
-        key = has_images ? :images_uploaded : :documents_uploaded
-        msg = has_images ? I18n.t('rag.image_indexing_message') : I18n.t('rag.document_indexing_message')
-        return { answer: msg, citations: [], session_id: nil }.merge(key => filenames)
+      if @query.blank?
+        return {
+          answer: I18n.t("rag.document_indexing_message"),
+          citations: [],
+          session_id: nil,
+          documents_uploaded: filenames
+        }
       end
 
       upload_context[:documents_uploaded] = filenames
@@ -136,7 +187,8 @@ class QueryOrchestratorService
         entity_s3_uris: @entity_s3_uris,
         entity_sources: entity_sources,
         output_channel: @output_channel,
-        force_entity_filter: @force_entity_filter
+        force_entity_filter: @force_entity_filter,
+        **rag_telemetry
       ).merge(upload_context)
     when TOOLS[:HYBRID_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
@@ -154,12 +206,21 @@ class QueryOrchestratorService
         entity_s3_uris: @entity_s3_uris,
         entity_sources: entity_sources,
         output_channel: @output_channel,
-        force_entity_filter: @force_entity_filter
+        force_entity_filter: @force_entity_filter,
+        **rag_telemetry
       ).merge(upload_context)
     end
   end
 
   private
+
+  def rag_telemetry
+    {
+      account_id: @account&.id,
+      user_id: @user_id,
+      conversation_session_id: @conversation_session_id
+    }
+  end
 
   # Delegates all web/chat attachment uploads + chunking to CustomChunkingPipeline.
   # Short files parse via sync Messages; long PDFs route automatically to the
@@ -202,7 +263,8 @@ class QueryOrchestratorService
         entity_s3_uris: @entity_s3_uris,
         entity_sources: entity_sources,
         output_channel: @output_channel,
-        force_entity_filter: @force_entity_filter
+        force_entity_filter: @force_entity_filter,
+        **rag_telemetry
       )
     rescue StandardError => e
       Rails.logger.error("QueryOrchestrator HYBRID - KB thread failed: #{e.message}")

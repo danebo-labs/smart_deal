@@ -10,13 +10,14 @@ class KbSyncBroadcaster
     account_id ? "account:#{account_id}:kb_sync" : CHANNEL
   end
 
-  def self.failed(filenames:, account_id: nil, reason: "error", message: nil, locale: nil)
+  def self.failed(filenames:, account_id: nil, reason: "error", message: nil, locale: nil, correlation_id: nil)
     resolved_message = message.presence || I18n.with_locale(locale || :es) { I18n.t("rag.document_indexing_failed_message") }
     ActionCable.server.broadcast(channel_for(account_id), {
       status:    "failed",
       filenames: Array(filenames).compact,
       reason:    reason,
-      message:   resolved_message
+      message:   resolved_message,
+      correlation_id: correlation_id
     })
   end
 
@@ -36,6 +37,17 @@ class KbSyncBroadcaster
       filenames: Array(filenames).compact,
       reason:    reason,
       message:   message
+    })
+  end
+
+  def self.photo_analyzed(filenames:, analysis:, canonical_name:, aliases:, account_id: nil, correlation_id: nil)
+    ActionCable.server.broadcast(channel_for(account_id), {
+      status: "photo_analyzed",
+      filenames: Array(filenames).compact,
+      summary: analysis,
+      canonical_name: canonical_name,
+      aliases: Array(aliases).compact,
+      correlation_id: correlation_id
     })
   end
 end

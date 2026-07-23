@@ -6,6 +6,10 @@ require "digest"
 # SYSTEM_BLOCKS: compact field-photo schema with explicit visual evidence.
 # user_content: delegates to BatchChunkingPrompt.user_content for the image media block.
 module FieldPhotoPrompt
+  # Cache contract for live-photo diagnoses. Bump whenever the diagnostic
+  # prompt or the cached response schema changes.
+  CONTRACT_VERSION = "v1"
+
   # Independent contract version for the specialized photo path (no field_records
   # schema — explicit-evidence envelope instead). Versioned separately from
   # BatchChunkingPrompt so document-contract bumps don't invalidate photo dedup

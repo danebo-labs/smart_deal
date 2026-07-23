@@ -10,6 +10,7 @@ class RagController < ApplicationController
     images    = extract_images_from_params
     documents = extract_documents_from_params
     question  = params[:question].to_s.strip
+    correlation_id = "photo:#{SecureRandom.uuid}" if images.any?
 
     # In shared-session mode, omit user_id to avoid storing "last web user" as owner of the shared row.
     effective_user_id = SharedSession::ENABLED ? nil : current_user.id
@@ -21,7 +22,12 @@ class RagController < ApplicationController
     )
     if question.present?
       # Single UPDATE instead of refresh! + add_to_history (2 UPDATEs).
-      conv_session.add_to_history_and_refresh("user", question)
+      conv_session.add_to_history_and_refresh(
+        "user",
+        question,
+        user_id: current_user.id,
+        correlation_id: correlation_id
+      )
     else
       conv_session.refresh!
     end
@@ -37,7 +43,9 @@ class RagController < ApplicationController
       session_context: session_context,
       conv_session:    conv_session,
       entity_s3_uris:  entity_s3_uris,
-      account:         current_account
+      account:         current_account,
+      user_id:         current_user.id,
+      correlation_id:  correlation_id
     )
 
     unless result.success?
@@ -53,7 +61,14 @@ class RagController < ApplicationController
       )
     end
 
-    conv_session.add_to_history("assistant", result.answer.to_s)
+    if result.images_uploaded.blank?
+      conv_session.add_to_history(
+        "assistant",
+        result.answer.to_s,
+        user_id: current_user.id,
+        correlation_id: result.correlation_id
+      )
+    end
 
     json = {
       answer:     result.answer,
@@ -63,6 +78,7 @@ class RagController < ApplicationController
     }
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
+    json[:correlation_id]     = result.correlation_id     if result.correlation_id.present?
     if Array(result.citations).empty?
       fallback_names = consulted_documents_fallback(result.doc_refs)
       json[:consulted_documents] = fallback_names if fallback_names.present?

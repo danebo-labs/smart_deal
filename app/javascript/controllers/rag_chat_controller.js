@@ -49,7 +49,8 @@ export default class extends Controller {
 
   connect() {
     this.pendingFile = null
-    this.pendingImageQuery = null
+    this.pendingPhotoCorrelationId = null
+    this.pendingUploadType = null
     this.indexingLoadingId = null
     this.kbSyncInProgress = false
     this.retryNoticeId = null
@@ -88,6 +89,40 @@ export default class extends Controller {
     const consumer = createConsumer()
     this.kbSyncSubscription = consumer.subscriptions.create("KbSyncChannel", {
       received(data) {
+        if (data.status === "photo_analyzed") {
+          if (!controller.matchesPendingPhoto(data)) return
+
+          controller.kbSyncInProgress = false
+          controller.clearIndexingNudgeTimer()
+          controller.clearRetryFallbackNotice()
+          controller.clearIndexingStallTimer()
+          if (controller.indexingLoadingId) {
+            controller.removeMessage(controller.indexingLoadingId)
+            controller.indexingLoadingId = null
+          }
+          controller.addImageSummaryMessage(data)
+          controller.pendingPhotoCorrelationId = null
+          controller.pendingUploadType = null
+          return
+        }
+
+        if (data.status === "failed" && data.correlation_id?.startsWith("photo:")) {
+          if (!controller.matchesPendingPhoto(data)) return
+
+          controller.kbSyncInProgress = false
+          controller.clearIndexingNudgeTimer()
+          controller.clearRetryFallbackNotice()
+          controller.clearIndexingStallTimer()
+          if (controller.indexingLoadingId) {
+            controller.removeMessage(controller.indexingLoadingId)
+            controller.indexingLoadingId = null
+          }
+          if (data.message) controller.addMessage(data.message, "error")
+          controller.pendingPhotoCorrelationId = null
+          controller.pendingUploadType = null
+          return
+        }
+
         if (data.status === "retrying") {
           controller.updateIndexingLoadingForRetry(data)
           controller.clearIndexingNudgeTimer()
@@ -126,7 +161,7 @@ export default class extends Controller {
           }
           controller.refreshDocuments()
           if (data.status === "indexed") {
-            if (data.summary && !controller.pendingImageQuery) {
+            if (data.summary) {
               controller.addImageSummaryMessage(data)
             } else {
               controller.addIndexedMessage(data)
@@ -135,13 +170,7 @@ export default class extends Controller {
             controller.addMessage(data.message, "error")
           }
 
-          if (data.status === "indexed" && controller.pendingImageQuery) {
-            const query = controller.pendingImageQuery
-            controller.pendingImageQuery = null
-            controller.sendTextQuery(query)
-          } else if (data.status === "failed") {
-            controller.pendingImageQuery = null
-          }
+          controller.pendingUploadType = null
         }
       }
     })
@@ -161,7 +190,7 @@ export default class extends Controller {
 
     if (!isImage && !isDoc) {
       this.addMessage("Formato no soportado. Imágenes: PNG, JPEG, GIF o WebP (máx. 3.75 MB). Documentos: .txt, .md, .html, .csv, .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx (máx. 50 MB).", "error")
-      this.fileInputTarget.value = ""
+      this.removeFile()
       return
     }
 
@@ -172,7 +201,7 @@ export default class extends Controller {
         ? "La imagen excede el límite de 3.75 MB (Knowledge Base). Comprímela o reduce su tamaño."
         : "El documento excede el límite de 50 MB."
       this.addMessage(msg, "error")
-      this.fileInputTarget.value = ""
+      this.removeFile()
       return
     }
 
@@ -200,7 +229,7 @@ export default class extends Controller {
           this.showPreview(null, file.name, "document")
         }).catch(() => {
           this.addMessage("Error al leer el archivo.", "error")
-          this.fileInputTarget.value = ""
+          this.removeFile()
         })
       } else {
         const reader = new FileReader()
@@ -327,7 +356,8 @@ export default class extends Controller {
       if (data.images_uploaded?.length) {
         this.indexingLoadingId = loadingId
         this.kbSyncInProgress = true
-        if (question) this.pendingImageQuery = question
+        this.pendingUploadType = "image"
+        this.pendingPhotoCorrelationId = data.correlation_id
         this.setIndexingLoadingAcknowledgment(data.answer || this._indexingWarmCopy("ack"))
         this.startIndexingNudgeTimer()
         this.startIndexingStallTimer()
@@ -335,6 +365,7 @@ export default class extends Controller {
       } else if (data.documents_uploaded?.length) {
         this.indexingLoadingId = loadingId
         this.kbSyncInProgress = true
+        this.pendingUploadType = "document"
         const uploadAck = question ? this._indexingWarmCopy("ack") : (data.answer || this._indexingWarmCopy("ack"))
         this.setIndexingLoadingAcknowledgment(uploadAck)
         this.startIndexingNudgeTimer()
@@ -357,30 +388,6 @@ export default class extends Controller {
         this.clearQueryNudgeTimer()
         this.clearQueryStallTimer()
       }
-      this.enableForm()
-    }
-  }
-
-  async sendTextQuery(question) {
-    this.disableForm()
-    const loadingId = this.addLoadingMessage()
-    this.startQueryWaitTimers(loadingId)
-
-    try {
-      const data = await this.ask(question, null)
-      this.removeMessage(loadingId)
-
-      if (data.status !== "success") {
-        throw new Error(data.message || "Unknown error")
-      }
-
-      this.renderAssistantAnswer(data)
-    } catch (error) {
-      this.removeMessage(loadingId)
-      this.addMessage(`Error: ${error.message}`, "error")
-    } finally {
-      this.clearQueryNudgeTimer()
-      this.clearQueryStallTimer()
       this.enableForm()
     }
   }
@@ -426,6 +433,11 @@ export default class extends Controller {
     if (window.innerWidth >= 768) {
       this.inputTarget.focus()
     }
+  }
+
+  matchesPendingPhoto(data) {
+    return Boolean(this.pendingPhotoCorrelationId) &&
+      data.correlation_id === this.pendingPhotoCorrelationId
   }
 
   // Segmented mobile tab button states (design/v0-mobile/mobile-home-shell.tsx)
@@ -652,6 +664,21 @@ export default class extends Controller {
   // injects an equivalent dots+message assistant bubble, cleared on indexed/failed.
   _indexingWarmCopy(kind) {
     const lang = (document.documentElement.lang || "es").toLowerCase()
+    if (this.pendingUploadType === "image") {
+      const photoTable = lang.startsWith("en") ? {
+        ack:   "I got your photo and I'm analyzing what is directly visible.",
+        nudge: "I'm still analyzing your photo — I'll show the visible details and uncertainties shortly.",
+        retry: "The photo analysis is taking a little longer than usual. I'm still working on it.",
+        stall: "The photo analysis is still taking a while. If nothing updates, try sending it again."
+      } : {
+        ack:   "Recibí tu foto y estoy analizando lo que se ve directamente.",
+        nudge: "Sigo analizando tu foto — en breve te muestro los datos visibles y las incertidumbres.",
+        retry: "El análisis de la foto está tardando un poco más de lo habitual. Sigo trabajando en ella.",
+        stall: "El análisis de la foto sigue tardando. Si no ves novedades, intenta enviarla otra vez."
+      }
+      return photoTable[kind] || photoTable.retry
+    }
+
     const table = lang.startsWith("en") ? {
       ack:   "Got your file and I'm indexing it. You can keep asking about already-indexed documents while it gets ready.",
       nudge: "Still working on your file — large documents can take a little longer in the field. You can keep asking about documents that are already indexed.",
@@ -899,6 +926,7 @@ export default class extends Controller {
         "assistant",
         true  // temporary: removed alongside other temp rows on next removeMessage()
       )
+      if (this.pendingUploadType === "image") this.pendingPhotoCorrelationId = null
     }, this.constructor.INDEXING_STALL_MS)
   }
 
@@ -1022,7 +1050,7 @@ export default class extends Controller {
     }
 
     if (data.summary) {
-      html += `<div style="margin-top:10px;line-height:1.55;">${this.escapeHtml(data.summary)}</div>`
+      html += `<div style="margin-top:10px;line-height:1.55;">${formatAnswerForWeb(data.summary)}</div>`
     }
     html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
 

@@ -36,6 +36,24 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     assert_equal "Custom error", messages.first["message"]
   end
 
+  test ".failed preserves photo correlation and does not broadcast to another account" do
+    legacy_channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    climb_channel = KbSyncBroadcaster.channel_for(accounts(:climb).id)
+
+    assert_no_broadcasts(climb_channel) do
+      messages = capture_broadcasts(legacy_channel) do
+        KbSyncBroadcaster.failed(
+          filenames: [ "photo.jpg" ],
+          account_id: accounts(:legacy).id,
+          reason: "photo_upload_expired",
+          correlation_id: "photo:abc"
+        )
+      end
+
+      assert_equal "photo:abc", messages.first["correlation_id"]
+    end
+  end
+
   test ".retrying broadcasts Spanish message when locale='es'" do
     messages = capture_broadcasts("kb_sync") do
       KbSyncBroadcaster.retrying(filenames: [ "doc.txt" ], attempt: 1, delay: 5, locale: "es")
@@ -56,5 +74,23 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
       KbSyncBroadcaster.retrying(filenames: [ "doc.txt" ], attempt: 1, delay: 5)
     end
     assert_equal I18n.t("rag.upload_retrying_aurora", locale: :es), messages.first["message"]
+  end
+
+  test ".photo_analyzed broadcasts the full analysis on the account channel" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_analyzed(
+        filenames: [ "photo.jpg" ],
+        analysis: "Observed evidence",
+        canonical_name: "Door board",
+        aliases: [ "DB-1" ],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc"
+      )
+    end
+
+    assert_equal "photo_analyzed", messages.first["status"]
+    assert_equal "Observed evidence", messages.first["summary"]
+    assert_equal "photo:abc", messages.first["correlation_id"]
   end
 end

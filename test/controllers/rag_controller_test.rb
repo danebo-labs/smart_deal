@@ -4,6 +4,7 @@ require 'test_helper'
 
 class RagControllerTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
+  include ActiveJob::TestHelper
 
   TEST_SESSION_ID = 'test-session-123'
   TEST_QUESTION = 'What is S3?'
@@ -26,7 +27,8 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
                                should_raise: false, error_class: StandardError, error_message: nil,
-                               documents_uploaded: nil, images_uploaded: nil, doc_refs: nil)
+                               documents_uploaded: nil, images_uploaded: nil, doc_refs: nil,
+                               correlation_id: nil)
     mock = Object.new
     mock.define_singleton_method(:execute) do
       raise error_class, error_message || 'Service error' if should_raise
@@ -38,6 +40,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       }
       result[:documents_uploaded] = documents_uploaded if documents_uploaded.present?
       result[:images_uploaded]    = images_uploaded    if images_uploaded.present?
+      result[:correlation_id]     = correlation_id     if correlation_id.present?
       result[:doc_refs]           = doc_refs            if doc_refs.present?
       result
     end
@@ -153,10 +156,11 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     mock = create_mock_orchestrator(
-      answer:          I18n.t('rag.image_indexing_message', locale: :es),
+      answer:          I18n.t('rag.image_analyzing_message', locale: :es),
       citations:       [],
       session_id:      nil,
-      images_uploaded: [ 'circuit.jpeg' ]
+      images_uploaded: [ 'circuit.jpeg' ],
+      correlation_id:  'photo:controller-test'
     )
 
     stub_compression_with_thumbnail do
@@ -177,8 +181,77 @@ class RagControllerTest < ActionDispatch::IntegrationTest
         assert_equal 'success', json['status']
         assert_equal [ 'circuit.jpeg' ], json['images_uploaded'],
                      'images_uploaded must be present so the chat shows only the typing dots until KbSync indexed event'
+        assert_equal 'photo:controller-test', json['correlation_id']
       end
     end
+  end
+
+  test 'photo question is stored once with attribution and transient analyzing copy is not history' do
+    sign_in @user
+    mock = create_mock_orchestrator(
+      answer: I18n.t('rag.image_analyzing_message', locale: :es),
+      citations: [],
+      session_id: nil,
+      images_uploaded: [ 'panel.jpg' ],
+      correlation_id: 'photo:history-test'
+    )
+
+    stub_compression_with_thumbnail do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url,
+             params: {
+               question: '¿Qué se observa?',
+               image: {
+                 data: Base64.strict_encode64('fake-bytes'),
+                 media_type: 'image/jpeg',
+                 filename: 'panel.jpg'
+               }
+             },
+             as: :json
+      end
+    end
+
+    session = ConversationSession.find_by(identifier: @user.id.to_s, channel: 'web', account: @account)
+    assert_equal 1, session.conversation_history.size
+    message = session.conversation_history.first
+    assert_equal 'user', message['role']
+    assert_equal @user.id, message['user_id']
+    assert_match(/\Aphoto:/, message['correlation_id'])
+  end
+
+  test "text query tracking is attributed to the current account, user, and conversation" do
+    sign_in @user
+    BedrockQuery.delete_all
+    original_new = QueryOrchestratorService.method(:new)
+
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      fake = Object.new
+      fake.define_singleton_method(:execute) do
+        TrackBedrockQueryJob.perform_now(
+          model_id: "claude-sonnet-4-6-direct",
+          input_tokens: 10,
+          output_tokens: 5,
+          user_query: "attributed question",
+          latency_ms: 20,
+          account_id: kwargs.fetch(:account).id,
+          user_id: kwargs[:user_id],
+          conversation_session_id: kwargs[:conversation_session_id]
+        )
+        { answer: "Attributed answer", citations: [], session_id: nil }
+      end
+      fake
+    end
+
+    post rag_ask_url, params: { question: "attributed question" }, as: :json
+
+    assert_response :ok
+    record = BedrockQuery.last
+    session = ConversationSession.find_by(identifier: @user.id.to_s, channel: "web", account: @account)
+    assert_equal @account.id, record.account_id
+    assert_equal @user.id, record.user_id
+    assert_equal session.id, record.conversation_session_id
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) } if original_new
   end
 
   test 'document upload uses default locale (es) when Accept-Language is absent' do

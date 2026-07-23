@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_10_010942) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_22_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -41,9 +41,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_10_010942) do
   end
 
   create_table "bedrock_queries", force: :cascade do |t|
+    t.bigint "account_id"
     t.integer "attempt"
     t.integer "cache_creation_tokens"
     t.integer "cache_read_tokens"
+    t.bigint "conversation_session_id"
     t.string "correlation_id"
     t.datetime "created_at", null: false
     t.integer "input_tokens"
@@ -56,7 +58,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_10_010942) do
     t.string "stop_reason"
     t.string "token_source"
     t.datetime "updated_at", null: false
+    t.bigint "user_id"
     t.text "user_query"
+    t.index [ "account_id", "user_id", "created_at" ], name: "index_bedrock_queries_on_account_id_and_user_id_and_created_at"
     t.index [ "correlation_id" ], name: "index_bedrock_queries_on_correlation_id"
     t.index [ "source", "created_at" ], name: "index_bedrock_queries_on_source_and_created_at"
   end

@@ -129,6 +129,21 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal 'assistant', s.conversation_history.last['role']
   end
 
+  test 'add_to_history stores optional user and correlation metadata without changing prompt history' do
+    s = ConversationSession.create!(
+      identifier: 'history-metadata',
+      channel: 'web',
+      expires_at: 30.minutes.from_now
+    )
+
+    s.add_to_history('user', 'Inspect panel', user_id: users(:one).id, correlation_id: 'photo:abc')
+    message = s.reload.conversation_history.last
+
+    assert_equal users(:one).id, message['user_id']
+    assert_equal 'photo:abc', message['correlation_id']
+    assert_equal({ role: 'user', content: 'Inspect panel' }, s.history_for_prompt.last)
+  end
+
   test 'add_to_history caps at MAX_HISTORY, evicting oldest' do
     s = ConversationSession.create!(
       identifier: 'whatsapp:+66666666666',

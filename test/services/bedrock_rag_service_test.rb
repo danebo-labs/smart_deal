@@ -1329,6 +1329,34 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| original.call(**kwargs) }
   end
 
+  test "query propagates attribution to tracking and RAG_QUALITY" do
+    jobs = nil
+
+    with_mock_bedrock_client do
+      with_captured_quality_log do
+        jobs = capture_tracking_jobs do
+          BedrockRagService.new(account: @account).query(
+            "What is documented?",
+            account_id: @account.id,
+            user_id: 77,
+            conversation_session_id: 88
+          )
+        end
+      end
+    end
+
+    tracked = jobs.find { |job| job[:source] == "query" }
+    assert_equal @account.id, tracked[:account_id]
+    assert_equal 77, tracked[:user_id]
+    assert_equal 88, tracked[:conversation_session_id]
+
+    quality = captured_quality_payload
+    assert_equal @account.id, quality["account_id"]
+    assert_equal 77, quality["user_id"]
+    assert_equal 88, quality["conversation_session_id"]
+    assert_match(/\Aquery:/, quality["correlation_id"])
+  end
+
   test 'filtered no-results fallback leaves two correlated rows: rag_filtered then rag_global' do
     bedrock_sorry = "Sorry, I am unable to assist you with this request."
 

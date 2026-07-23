@@ -62,18 +62,18 @@ class ConversationSession < ApplicationRecord
 
   # ─── History ────────────────────────────────────────────────────────────────
 
-  def add_to_history(role, content)
+  def add_to_history(role, content, user_id: nil, correlation_id: nil)
     history = conversation_history.last(MAX_HISTORY - 1)
-    history << { "role" => role, "content" => content.to_s.truncate(MAX_MSG_LENGTH), "ts" => Time.current.iso8601 }
+    history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
     update!(conversation_history: history)
   end
 
   # Combines `refresh!` (TTL bump) + `add_to_history` into a single UPDATE.
   # Used by the request-bound RAG path (RagController#ask) so we save one
   # round-trip to PostgreSQL on every user turn (3 writes → 2).
-  def add_to_history_and_refresh(role, content)
+  def add_to_history_and_refresh(role, content, user_id: nil, correlation_id: nil)
     history = conversation_history.last(MAX_HISTORY - 1)
-    history << { "role" => role, "content" => content.to_s.truncate(MAX_MSG_LENGTH), "ts" => Time.current.iso8601 }
+    history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
     update!(conversation_history: history, expires_at: EXPIRY_DURATION.from_now)
   end
 
@@ -249,6 +249,17 @@ class ConversationSession < ApplicationRecord
   end
 
   private
+
+  def history_message(role, content, user_id:, correlation_id:)
+    message = {
+      "role" => role,
+      "content" => content.to_s.truncate(MAX_MSG_LENGTH),
+      "ts" => Time.current.iso8601
+    }
+    message["user_id"] = user_id if user_id.present?
+    message["correlation_id"] = correlation_id if correlation_id.present?
+    message
+  end
 
   def pinned_entity_type(kb_doc)
     extension = File.extname(kb_doc.s3_key.to_s).downcase

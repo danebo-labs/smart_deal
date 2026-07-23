@@ -160,7 +160,9 @@ class BedrockRagService
   #   heuristic. Use this when the caller has explicitly bound the query to a
   #   document (e.g. a WhatsApp picker selection) so heavy-capitalized seed
   #   queries like "Describe Orona ARCA BASICO ..." don't trip the bypass.
-  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil, entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false)
+  def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
+            entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
+            account_id: nil, user_id: nil, conversation_session_id: nil)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -170,6 +172,11 @@ class BedrockRagService
     Rails.logger.info("Querying Knowledge Base with: #{question}")
 
     start_time = Time.current
+    attribution = {
+      account_id: account_id || @account&.id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id
+    }
 
     begin
       # Apply entity filter when explicitly forced (caller bound the query to a
@@ -228,7 +235,8 @@ class BedrockRagService
           latency_ms:      ((Time.current - bedrock_start_time) * 1000).to_i,
           response_locale: response_locale,
           session_context: effective_session_context,
-          output_channel:  output_channel
+          output_channel:  output_channel,
+          attribution:     attribution
         )
         generation_attempt = 2
         unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: [], entity_sources: entity_sources, output_channel: output_channel)
@@ -339,7 +347,8 @@ class BedrockRagService
         generation_attempt:             generation_attempt,
         applied_filter_uris:            applied_filter_uris,
         latency_ms:                     latency_ms,
-        model_id:                       tracked_model_id
+        model_id:                       tracked_model_id,
+        attribution:                    attribution
       )
 
       # Build numbered references from the KB response — no S3 listing required.
@@ -359,7 +368,9 @@ class BedrockRagService
         latency_ms:       latency_ms,
         entity_filter:    applied_filter_uris,
         evidence_mode:    observed_chunk_basis,
-        retrieved_chunks: retrieved_for_extraction
+        retrieved_chunks: retrieved_for_extraction,
+        correlation_id:   query_correlation_id,
+        attribution:      attribution
       )
 
       {
@@ -530,7 +541,8 @@ class BedrockRagService
   # estimate is a documented undercount for this row, but the invocation itself
   # is recorded once with its route/attempt/correlation.
   def track_filtered_no_results_attempt(question:, raw_answer:, config:, correlation_id:,
-                                        latency_ms:, response_locale:, session_context:, output_channel:)
+                                        latency_ms:, response_locale:, session_context:, output_channel:,
+                                        attribution:)
     tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
     prompt_text = [
       load_generation_prompt_with_locale(question,
@@ -551,21 +563,28 @@ class BedrockRagService
       attempt:        1,
       max_tokens:     config.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens),
       correlation_id: correlation_id,
-      source:         "query"
+      source:         "query",
+      **attribution
     )
   rescue StandardError => e
     Rails.logger.warn("BedrockRagService: failed to track filtered no-results attempt — #{e.message}")
   end
 
   def log_quality_signal(question:, answer:, citations:, doc_refs:, raw_citations:, latency_ms:,
-                        entity_filter:, evidence_mode:, retrieved_chunks:)
+                        entity_filter:, evidence_mode:, retrieved_chunks:, correlation_id:,
+                        attribution:)
     retrieved_source_uris = Array(retrieved_chunks)
       .filter_map { |chunk| observed_chunk_descriptor(chunk)["retrieved_source_uri"] }
       .uniq
       .first(10)
 
     payload = {
+      ts:              Time.current.iso8601,
       question:        question.to_s.first(300),
+      correlation_id:  correlation_id,
+      account_id:      attribution[:account_id],
+      user_id:         attribution[:user_id],
+      conversation_session_id: attribution[:conversation_session_id],
       answer_snippet:  answer.to_s.first(600),
       answer_length:   answer.to_s.length,
       latency_ms:      latency_ms,
@@ -594,7 +613,7 @@ class BedrockRagService
                       bedrock_cited_references_count:, doc_refs_present:, doc_refs_valid:,
                       doc_refs_count:, entity_filter_applied:, response_locale:,
                       session_context:, output_channel:, correlation_id:, generation_attempt:,
-                      applied_filter_uris:, latency_ms:, model_id:)
+                      applied_filter_uris:, latency_ms:, model_id:, attribution:)
     chunks_text = Array(retrieved_chunks).filter_map { |c| c[:content].presence }.join("\n\n")
     full_prompt = [
       load_generation_prompt_with_locale(question, response_locale: response_locale,
@@ -625,7 +644,8 @@ class BedrockRagService
       attempt:        generation_attempt,
       max_tokens:     config.dig(:generation_configuration, :inference_config, :text_inference_config, :max_tokens),
       correlation_id: correlation_id,
-      source:         "query"
+      source:         "query",
+      **attribution
     )
   end
 

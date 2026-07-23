@@ -180,6 +180,25 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
     assert_equal "bulk_retry: big.pdf p3/10", job_args["user_query"]
   end
 
+  test "visual query forwards attribution and is tracked as query source" do
+    client = make_client
+
+    client.call(
+      user_content: [],
+      filename: "panel.jpg",
+      tracking_prefix: "field_photo_query",
+      route: "visual_query",
+      telemetry: { account_id: 11, user_id: 22, conversation_session_id: 33 }
+    )
+
+    job_args = enqueued_jobs.last[:args].first
+    assert_equal "query", job_args["source"]
+    assert_equal "visual_query", job_args["route"]
+    assert_equal 11, job_args["account_id"]
+    assert_equal 22, job_args["user_id"]
+    assert_equal 33, job_args["conversation_session_id"]
+  end
+
   test "cache_read_tokens included when usage reports non-zero" do
     usage  = FakeUsage.new(input: 5, output: 10, cache_read: 500, cache_creation: 0)
     client = make_client(usage: usage)

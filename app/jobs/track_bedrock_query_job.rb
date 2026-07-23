@@ -28,6 +28,9 @@ class TrackBedrockQueryJob < ApplicationJob
   # @param max_tokens             [Integer, nil] Configured output cap (ladder rung) for this invocation
   # @param stop_reason            [String, nil]  Raw provider stop reason
   # @param correlation_id         [String, nil]  Groups all attempts of one page/document/query
+  # @param account_id             [Integer, nil] Tenant attribution (no FK by design)
+  # @param user_id                [Integer, nil] User attribution (no FK by design)
+  # @param conversation_session_id [Integer, nil] Conversation attribution (no FK by design)
   def perform(model_id:, user_query:, latency_ms:,
               input_tokens: nil, output_tokens: nil,
               token_source: nil,                          # explicit override from caller
@@ -36,6 +39,7 @@ class TrackBedrockQueryJob < ApplicationJob
               regression_context: nil,                                        # LEGACY
               route: nil, attempt: nil, max_tokens: nil,
               stop_reason: nil, correlation_id: nil,
+              account_id: nil, user_id: nil, conversation_session_id: nil,
               source: "query", model_for_counting: :haiku)                    # LEGACY: model_for_counting
     # Caller may pass token_source: "estimated" with integers (RAG path uses LocalTokenizer).
     # Without explicit override: integers from provider → "provider_usage"; nil → "estimated".
@@ -64,6 +68,9 @@ class TrackBedrockQueryJob < ApplicationJob
       max_tokens:            max_tokens,
       stop_reason:           stop_reason.presence,
       correlation_id:        correlation_id.presence,
+      account_id:            account_id,
+      user_id:               user_id,
+      conversation_session_id: conversation_session_id,
       token_source:          token_source,
       source:                source.to_s
     )

@@ -43,6 +43,41 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
     assert_equal VALID_PARAMS[:latency_ms],    record.latency_ms
   end
 
+  test 'persists optional account, user, and conversation attribution' do
+    account = accounts(:legacy)
+    user = users(:one)
+    session = ConversationSession.create!(
+      identifier: "tracking-attribution",
+      channel: "web",
+      account: account,
+      user: user,
+      expires_at: 1.day.from_now
+    )
+
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        **VALID_PARAMS,
+        account_id: account.id,
+        user_id: user.id,
+        conversation_session_id: session.id
+      )
+    end
+
+    record = BedrockQuery.last
+    assert_equal account.id, record.account_id
+    assert_equal user.id, record.user_id
+    assert_equal session.id, record.conversation_session_id
+  end
+
+  test 'legacy callers still persist nil attribution' do
+    with_turbo_broadcast_stubbed { TrackBedrockQueryJob.perform_now(**VALID_PARAMS) }
+
+    record = BedrockQuery.last
+    assert_nil record.account_id
+    assert_nil record.user_id
+    assert_nil record.conversation_session_id
+  end
+
   test 'truncates user_query to 500 characters' do
     long_query = 'x' * 600
 

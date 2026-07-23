@@ -42,11 +42,12 @@ class ClaudeChunkingClient
   # @param attempt        [Integer]     1-based ladder attempt for the same logical unit (Gate 9R I0)
   # @param correlation_id [String, nil] groups all attempts of one page/document ("ingest:<sha12>[:pN]")
   # @param route          [String]      billing route for telemetry ("sync" | "bulk_retry")
+  # @param telemetry      [Hash]        optional account/user/conversation attribution
   # @return [Hash] { text: String, usage: usage_object, model: String, stop_reason: String | nil }
   # @raise [ApiError]
   def call(user_content:, filename:, page_number: nil, total_pages: nil,
            max_tokens: BatchChunkingPrompt::MAX_TOKENS, tracking_prefix: "web_parse",
-           attempt: 1, correlation_id: nil, route: "sync")
+           attempt: 1, correlation_id: nil, route: "sync", telemetry: {})
     overloaded_attempt = 0
     begin
       overloaded_attempt += 1
@@ -75,7 +76,8 @@ class ClaudeChunkingClient
 
       track_usage(response.usage, filename, page_number, total_pages, latency_ms, tracking_prefix,
                   max_tokens: max_tokens, raw_stop_reason: raw_stop,
-                  attempt: attempt, correlation_id: correlation_id, route: route)
+                  attempt: attempt, correlation_id: correlation_id, route: route,
+                  telemetry: telemetry)
 
       { text: text_block.text, usage: response.usage, model: response.model, stop_reason: stop_reason }
     rescue Anthropic::Errors::APIError => e
@@ -114,12 +116,16 @@ class ClaudeChunkingClient
   end
 
   def track_usage(usage, filename, page_number, total_pages, latency_ms, tracking_prefix,
-                  max_tokens:, raw_stop_reason:, attempt:, correlation_id:, route:)
+                  max_tokens:, raw_stop_reason:, attempt:, correlation_id:, route:, telemetry:)
     user_query = if page_number && total_pages
       "#{tracking_prefix}: #{filename} p#{page_number}/#{total_pages}"
     else
       "#{tracking_prefix}: #{filename}"
     end
+
+    attribution = telemetry.to_h.symbolize_keys.slice(
+      :account_id, :user_id, :conversation_session_id
+    )
 
     TrackBedrockQueryJob.perform_later(
       model_id:              "#{@model}-direct",
@@ -134,7 +140,8 @@ class ClaudeChunkingClient
       max_tokens:            max_tokens,
       stop_reason:           raw_stop_reason.presence,
       correlation_id:        correlation_id,
-      source:                "ingestion_parse"
+      source:                route == "visual_query" ? "query" : "ingestion_parse",
+      **attribution
     )
   rescue StandardError => e
     Rails.logger.warn("ClaudeChunkingClient: failed to enqueue TrackBedrockQueryJob — #{e.message}")

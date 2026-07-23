@@ -186,6 +186,19 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     PageRelevanceFilter.const_set(name, original)
   end
 
+  test "batch window sizing uses byte_size without loading page binaries" do
+    disk_page = Struct.new(:number, :byte_size) do
+      def binary
+        raise "window sizing must not read binary"
+      end
+    end
+    pages = [ disk_page.new(1, 5), disk_page.new(2, 7) ]
+
+    windows = PageRelevanceFilter.send(:build_batch_windows, pages)
+
+    assert_equal [ pages ], windows
+  end
+
   # ---------------------------------------------------------------------------
   # Heuristic: blank
   # ---------------------------------------------------------------------------

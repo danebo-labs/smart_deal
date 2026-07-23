@@ -30,7 +30,10 @@ class PdfPageSplitterServiceTest < ActiveSupport::TestCase
 
     def import(page) = page  # cross-document "import" is identity in this fake
 
-    def write(io, **) = io.write("%PDF-1.4 single page fake binary")
+    def write(destination, **)
+      binary = "%PDF-1.4 single page fake binary"
+      destination.respond_to?(:write) ? destination.write(binary) : File.binwrite(destination, binary)
+    end
   end
 
   class FakeSourceDocument
@@ -82,5 +85,21 @@ class PdfPageSplitterServiceTest < ActiveSupport::TestCase
     PdfPageSplitterService.new("fake_binary").each_page { }
     # 1 source + 3 targets = 4 HexaPDF::Document.new calls
     assert_equal 4, @call_count
+  end
+
+  test "each_split_page yields disk-backed proxies with lazy binary and explicit cleanup" do
+    pages = []
+    PdfPageSplitterService.new("fake_binary").each_split_page { |page| pages << page }
+
+    assert_equal [ 1, 2, 3 ], pages.map(&:number)
+    assert pages.all? { |page| File.exist?(page.path) }
+    assert pages.all? { |page| page.byte_size.positive? }
+    assert pages.all? { |page| page.binary.start_with?("%PDF") }
+
+    paths = pages.map(&:path)
+    pages.each(&:cleanup)
+    assert paths.none? { |path| File.exist?(path) }
+  ensure
+    Array(pages).each(&:cleanup)
   end
 end

@@ -101,7 +101,7 @@ class PageRelevanceFilter
   end
 
   # Unified routing: call_batch for multi-page docs, per-page filter for single-page.
-  # pages must respond to #number and #binary.
+  # pages must respond to #number, #binary, #byte_size, and optionally #text.
   # @return [Hash{Integer => Hash}] page_number => { keep:, reason:, source:, force_opus: }
   # @param correlation_id [String, nil] Gate 9R I0 — document-level "ingest:<sha12>"
   #   so filter calls group with the parse calls of the same upload.
@@ -113,6 +113,7 @@ class PageRelevanceFilter
     else
       page   = pages.first
       result = new(page.binary, page_number: page.number, total_pages: 1,
+                   page_text: (page.text if page.respond_to?(:text)),
                    filename: filename, haiku_client: haiku_client, correlation_id: correlation_id).call
       { page.number => result }
     end
@@ -153,7 +154,7 @@ class PageRelevanceFilter
     current_bytes = 0
 
     pages.each do |page|
-      page_bytes = page.binary.to_s.bytesize
+      page_bytes = page_byte_size(page)
 
       if current.any? && (current.size >= BATCH_WINDOW_SIZE || current_bytes + page_bytes > MAX_WINDOW_BYTES)
         windows << current
@@ -183,9 +184,16 @@ class PageRelevanceFilter
   private_class_method :window_range
 
   def self.window_bytes(pages)
-    pages.sum { |page| page.binary.to_s.bytesize }
+    pages.sum { |page| page_byte_size(page) }
   end
   private_class_method :window_bytes
+
+  def self.page_byte_size(page)
+    return page.byte_size.to_i if page.respond_to?(:byte_size)
+
+    page.binary.to_s.bytesize
+  end
+  private_class_method :page_byte_size
 
   def self.log_batch_windows(filename:, total_pages:, windows:, fallback_windows:)
     Rails.logger.info(
@@ -210,12 +218,13 @@ class PageRelevanceFilter
   # @param filename       [String]       document filename (for tracking)
   # @param repeated_texts [Set<String>]  texts seen >= 3 times across all pages
   # @param haiku_client   [#call]        injectable Anthropic client (for tests)
-  def initialize(page_binary, page_number:, total_pages:, filename:,
+  def initialize(page_binary, page_number:, total_pages:, filename:, page_text: nil,
                  repeated_texts: Set.new, haiku_client: nil, correlation_id: nil)
     @page_binary    = page_binary
     @page_number    = page_number
     @total_pages    = total_pages
     @filename       = filename
+    @page_text      = page_text
     @repeated_texts = repeated_texts
     @haiku_client   = haiku_client
     @correlation_id = correlation_id
@@ -247,7 +256,7 @@ class PageRelevanceFilter
   private
 
   def extract_text
-    self.class.extract_page_text(@page_binary)
+    @page_text.nil? ? self.class.extract_page_text(@page_binary) : @page_text.to_s
   end
 
   def apply_heuristics(density)
@@ -497,7 +506,7 @@ class PageRelevanceFilter
         end
 
         if !keep
-          page_text = PageRelevanceFilter.extract_page_text(page.binary)
+          page_text = page.respond_to?(:text) ? page.text.to_s : PageRelevanceFilter.extract_page_text(page.binary)
           if PageRelevanceFilter.safety_action_guard?(page_text)
             keep   = true
             reason = :safety_action_guard

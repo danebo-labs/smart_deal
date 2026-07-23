@@ -15,8 +15,10 @@ module AccountHosts
 
   # www.example.com / example.com: Rails default integration-test host.
   DEVELOPMENT = PRODUCTION.merge(
-    "localhost"        => "danebo-legacy",
-    "www.example.com"  => "danebo-legacy",
-    "example.com"      => "danebo-legacy"
+    "localhost"                    => "danebo-legacy",
+    "elevator.localhost"           => "danebo-legacy",
+    "ascensoresclimb.localhost"    => "elevadores-climb",
+    "www.example.com"              => "danebo-legacy",
+    "example.com"                  => "danebo-legacy"
   ).freeze
 end

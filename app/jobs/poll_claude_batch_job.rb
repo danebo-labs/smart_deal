@@ -31,15 +31,19 @@ class PollClaudeBatchJob < ApplicationJob
       return
     end
 
-    batch_id = bulk_upload.claude_batch_id
-    if batch_id.blank?
+    batch_ids = bulk_upload.processing_batch_ids
+    if batch_ids.empty?
       Rails.logger.warn("PollClaudeBatchJob[#{bulk_upload_id}]: missing claude_batch_id, skipping")
       return
     end
 
-    batch = ClaudeBatchClient.new.retrieve(batch_id: batch_id)
+    client = ClaudeBatchClient.new
+    statuses = batch_ids.to_h do |batch_id|
+      batch = client.retrieve(batch_id: batch_id)
+      [ batch_id, batch.processing_status.to_s ]
+    end
 
-    if batch.processing_status.to_s == "ended"
+    if statuses.values.all?("ended")
       IngestBatchResultsJob.perform_later(bulk_upload_id)
     else
       next_wait = [ wait_seconds * 2, MAX_WAIT ].min
@@ -48,7 +52,10 @@ class PollClaudeBatchJob < ApplicationJob
         started_at_iso: started_at.iso8601,
         wait_seconds:   next_wait
       )
-      Rails.logger.info("PollClaudeBatchJob[#{bulk_upload_id}]: status=#{batch.processing_status}, re-enqueue in #{wait_seconds}s")
+      Rails.logger.info(
+        "PollClaudeBatchJob[#{bulk_upload_id}]: statuses=#{statuses.values.join(',')}, " \
+        "re-enqueue in #{wait_seconds}s"
+      )
     end
   rescue StandardError => e
     Rails.logger.error("PollClaudeBatchJob[#{bulk_upload_id}]: #{e.message}")

@@ -32,55 +32,58 @@ class IngestBatchResultsJob < ApplicationJob
     # page_buffers: asset_id → [{ page_number:, text:, model:, usage: }]
     page_buffers = Hash.new { |h, k| h[k] = [] }
 
-    batch_client.results_each(batch_id: bulk_upload.claude_batch_id) do |result|
-      asset = asset_map[result.custom_id]
-      unless asset
-        Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: unknown custom_id=#{result.custom_id}")
-        next
-      end
-
-      if result.result.type.to_s == "succeeded"
-        message = result.result.message
-
-        if page_id?(result.custom_id)
-          # PDF page — buffer for ChunkMerger
-          page_num    = PAGE_ID_REGEX.match(result.custom_id)[1].to_i
-          text        = extract_text(message)
-          stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s : nil
-          # batch_stop_reason is immutable (telemetry for the Batch attempt);
-          # stop_reason is overwritten by retry_truncated_pages! with the latest attempt.
-          page_buffers[asset.id] << { page_number: page_num, text: text, model: message.model.to_s,
-                                      usage: message.usage, stop_reason: stop_reason, batch_stop_reason: stop_reason }
-
-        elsif asset.ingestion_path == "field_photo_v1"
-          # Photo — parse with FieldPhotoResultsParser
-          text        = extract_text(message)
-          raw_json    = FieldPhotoResultsParser.to_envelope(text)
-          ingestion_p = "field_photo_v1"
-          begin
-            parser.call(asset: asset, raw_json: JSON.generate(raw_json), ingestion_path: ingestion_p,
-                        account_id: "bulk_v1", document_uid: asset.sha256[0, 36])
-          rescue BatchResultsParserService::ParseError => e
-            Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: FieldPhotoResultsParser failed #{asset.filename} — #{e.message}")
-          end
-          track_asset_usage(asset, message,
-            user_query:     "bulk_parse: #{asset.filename}",
-            ingestion_path: ingestion_p,
-            correlation_id: correlation_id_for(asset))
-
-        else
-          # Defensive: unknown custom_id type — log and skip rather than silently swallow
+    bulk_upload.processing_batch_ids.each do |batch_id|
+      batch_client.results_each(batch_id: batch_id) do |result|
+        asset = asset_map[result.custom_id]
+        unless asset
           Rails.logger.warn(
-            "IngestBatchResultsJob[#{bulk_upload_id}]: unexpected result type for #{asset.filename} " \
-            "(custom_id=#{result.custom_id}, ingestion_path=#{asset.ingestion_path.inspect}) — skipping"
+            "IngestBatchResultsJob[#{bulk_upload_id}]: unknown custom_id=#{result.custom_id} batch=#{batch_id}"
           )
+          next
         end
 
-      else
-        msg = "Batch result type '#{result.result.type}' for #{asset.filename}"
-        asset.update_columns(status: "failed", error_message: msg)
-        asset.broadcast_replace!
-        Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: #{msg}")
+        if result.result.type.to_s == "succeeded"
+          message = result.result.message
+
+          if page_id?(result.custom_id)
+            # PDF page — buffer for ChunkMerger
+            page_num    = PAGE_ID_REGEX.match(result.custom_id)[1].to_i
+            text        = extract_text(message)
+            stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s : nil
+            # batch_stop_reason is immutable (telemetry for the Batch attempt);
+            # stop_reason is overwritten by retry_truncated_pages! with the latest attempt.
+            page_buffers[asset.id] << { page_number: page_num, text: text, model: message.model.to_s,
+                                        usage: message.usage, stop_reason: stop_reason, batch_stop_reason: stop_reason }
+
+          elsif asset.ingestion_path == "field_photo_v1"
+            # Photo — parse with FieldPhotoResultsParser
+            text        = extract_text(message)
+            raw_json    = FieldPhotoResultsParser.to_envelope(text)
+            ingestion_p = "field_photo_v1"
+            begin
+              parser.call(asset: asset, raw_json: JSON.generate(raw_json), ingestion_path: ingestion_p,
+                          account_id: "bulk_v1", document_uid: asset.sha256[0, 36])
+            rescue BatchResultsParserService::ParseError => e
+              Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: FieldPhotoResultsParser failed #{asset.filename} — #{e.message}")
+            end
+            track_asset_usage(asset, message,
+              user_query:     "bulk_parse: #{asset.filename}",
+              ingestion_path: ingestion_p,
+              correlation_id: correlation_id_for(asset))
+
+          else
+            Rails.logger.warn(
+              "IngestBatchResultsJob[#{bulk_upload_id}]: unexpected result type for #{asset.filename} " \
+              "(custom_id=#{result.custom_id}, ingestion_path=#{asset.ingestion_path.inspect}) — skipping"
+            )
+          end
+
+        else
+          msg = "Batch result type '#{result.result.type}' for #{asset.filename}"
+          asset.update_columns(status: "failed", error_message: msg)
+          asset.broadcast_replace!
+          Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: #{msg}")
+        end
       end
     end
 

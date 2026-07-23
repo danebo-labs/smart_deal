@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_22_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_23_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -98,6 +98,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_000000) do
     t.integer "asset_count", default: 0, null: false
     t.string "bedrock_ingestion_job_id"
     t.string "claude_batch_id"
+    t.jsonb "claude_batch_ids", default: [], null: false
     t.datetime "created_at", null: false
     t.text "error_message"
     t.string "original_filename", null: false
@@ -209,6 +210,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_000000) do
     t.integer "chunks_count"
     t.string "chunks_s3_prefix"
     t.string "claude_batch_id"
+    t.jsonb "claude_batch_ids", default: [], null: false
     t.datetime "completed_at"
     t.string "content_type", default: "application/pdf", null: false
     t.bigint "conv_session_id"

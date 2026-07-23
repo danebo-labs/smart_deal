@@ -196,6 +196,63 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
     asset&.destroy
   end
 
+  test "submit! fails only oversized asset and persists every bounded batch id for the rest" do
+    assets = 3.times.map do |index|
+      BulkUploadAsset.create!(
+        bulk_upload: @bulk_upload,
+        custom_id: "guardrail_#{index}",
+        sha256: Digest::SHA256.hexdigest("guardrail_#{index}"),
+        s3_key: "bulk_uploads/asset_#{index}.pdf",
+        filename: "asset_#{index}.pdf",
+        content_type: "application/pdf",
+        status: "uploaded_s3"
+      )
+    end
+
+    cleanup = []
+    items = assets.map.with_index do |asset, index|
+      ClaudeBatchRequestItem.new(
+        custom_id: asset.custom_id,
+        byte_size: index.zero? ? 2.megabytes : 10,
+        build: -> { { custom_id: asset.custom_id, params: {} } },
+        cleanup: -> { cleanup << asset.custom_id unless cleanup.include?(asset.custom_id) }
+      )
+    end
+    meta = assets.to_h { |asset| [ asset.id, [ asset.custom_id ] ] }
+
+    fake_builder = Object.new
+    fake_builder.define_singleton_method(:build_items!) { |_assets| [ items, meta ] }
+    original_builder_new = BulkCostV2RequestBuilder.method(:new)
+    BulkCostV2RequestBuilder.define_singleton_method(:new) { fake_builder }
+
+    submitted_groups = []
+    fake_client = Object.new
+    fake_client.define_singleton_method(:submit_batch) do |requests:|
+      submitted_groups << requests
+      OpenStruct.new(id: "batch_#{submitted_groups.size}")
+    end
+
+    old_max_mb = ENV["INGESTION_MAX_BATCH_PAYLOAD_MB"]
+    old_max_requests = ENV["INGESTION_BATCH_MAX_REQUESTS"]
+    ENV["INGESTION_MAX_BATCH_PAYLOAD_MB"] = "1"
+    ENV["INGESTION_BATCH_MAX_REQUESTS"] = "1"
+
+    result = BatchIngestionService.new(batch_client: fake_client).submit!(@bulk_upload)
+
+    assert_equal %w[batch_1 batch_2], result.ids
+    assert_equal "batch_1", @bulk_upload.reload.claude_batch_id
+    assert_equal %w[batch_1 batch_2], @bulk_upload.claude_batch_ids
+    assert_equal "failed", assets.first.reload.status
+    assert_includes assets.first.error_message, "payload exceeds ingestion guardrail"
+    assert assets.drop(1).all? { |asset| asset.reload.status == "in_batch" }
+    assert_equal 2, submitted_groups.size
+    assert_equal assets.map(&:custom_id).sort, cleanup.sort
+  ensure
+    ENV["INGESTION_MAX_BATCH_PAYLOAD_MB"] = old_max_mb
+    ENV["INGESTION_BATCH_MAX_REQUESTS"] = old_max_requests
+    BulkCostV2RequestBuilder.define_singleton_method(:new, original_builder_new) if defined?(original_builder_new)
+  end
+
   private
 
   def display_error_in_spanish(error_message)

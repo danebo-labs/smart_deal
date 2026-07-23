@@ -30,36 +30,45 @@ class IngestManualBatchResultsJob < ApplicationJob
 
     batch_context = batch_context.with_indifferent_access
     batch_id ||= batch_context[:batch_id]
+    batch_ids = Array(batch_context[:batch_ids]).presence || Array(batch_id).compact
     return if web_manual_batch&.status.in?(%w[parsed syncing complete])
+    return if batch_ids.empty?
 
     batch_client = ClaudeBatchClient.new
-    status       = batch_client.retrieve(batch_id: batch_id)
+    statuses = batch_ids.to_h do |current_batch_id|
+      status = batch_client.retrieve(batch_id: current_batch_id)
+      [ current_batch_id, status.processing_status.to_s ]
+    end
+    unexpected = statuses.reject { |_id, status| status.in?(%w[in_progress ended]) }
 
-    case status.processing_status.to_s
-    when "in_progress"
+    if unexpected.any?
+      status_summary = unexpected.map { |id, status| "#{id}=#{status}" }.join(", ")
+      web_manual_batch&.update!(
+        status:        "failed",
+        error_message: "Unexpected batch status #{status_summary}"
+      )
+      broadcast_failed(web_manual_batch, batch_context)
+      Rails.logger.warn("IngestManualBatchResultsJob: unexpected batch statuses #{status_summary}")
+    elsif statuses.value?("in_progress")
       web_manual_batch&.update!(status: "in_progress")
       if attempt >= MAX_ATTEMPTS
         web_manual_batch&.update!(
           status:        "failed",
-          error_message: "Batch still in_progress after #{attempt} attempts"
+          error_message: "One or more batches still in_progress after #{attempt} attempts"
         )
         broadcast_failed(web_manual_batch, batch_context)
-        Rails.logger.error("IngestManualBatchResultsJob: batch #{batch_id} still in_progress after #{attempt} attempts — giving up")
+        Rails.logger.error(
+          "IngestManualBatchResultsJob: batches #{batch_ids.join(',')} still in_progress " \
+          "after #{attempt} attempts — giving up"
+        )
         return
       end
       poll_args = web_manual_batch ? { web_manual_batch_id: web_manual_batch.id } : { batch_id: batch_id, cache_key: cache_key }
       self.class.set(wait: POLL_INTERVAL).perform_later(**poll_args, attempt: attempt + 1)
       nil
-    when "ended"
+    else
       web_manual_batch&.update!(status: "parsing")
       ingest_results(batch_context, batch_client, web_manual_batch: web_manual_batch)
-    else
-      web_manual_batch&.update!(
-        status:        "failed",
-        error_message: "Unexpected batch status #{status.processing_status}"
-      )
-      broadcast_failed(web_manual_batch, batch_context)
-      Rails.logger.warn("IngestManualBatchResultsJob: unexpected batch status '#{status.processing_status}' for #{batch_id}")
     end
   rescue StandardError => e
     web_manual_batch&.update_columns(status: "failed", error_message: e.message)
@@ -73,6 +82,7 @@ class IngestManualBatchResultsJob < ApplicationJob
   def ingest_results(ctx, batch_client, web_manual_batch: nil)
     ctx = ctx.with_indifferent_access
     batch_id     = ctx[:batch_id]
+    batch_ids    = Array(ctx[:batch_ids]).presence || Array(batch_id).compact
     filename     = ctx[:filename]
     sha256       = ctx[:sha256]
     s3_key       = ctx[:s3_key]
@@ -87,32 +97,34 @@ class IngestManualBatchResultsJob < ApplicationJob
 
     page_results = []
 
-    batch_client.results_each(batch_id: batch_id) do |result|
-      page_num = customs_to_page[result.custom_id]
-      unless page_num
-        Rails.logger.warn("IngestManualBatchResultsJob: unknown custom_id=#{result.custom_id} in batch #{batch_id}")
-        next
-      end
+    batch_ids.each do |current_batch_id|
+      batch_client.results_each(batch_id: current_batch_id) do |result|
+        page_num = customs_to_page[result.custom_id]
+        unless page_num
+          Rails.logger.warn(
+            "IngestManualBatchResultsJob: unknown custom_id=#{result.custom_id} in batch #{current_batch_id}"
+          )
+          next
+        end
 
-      if result.result.type.to_s == "succeeded"
-        message     = result.result.message
-        text        = extract_text(message)
-        model       = message.model.to_s
-        # O3′: capture stop_reason so truncated pages are visible in telemetry and
-        # ready for the shared bounded retry that E3a will port to this chain.
-        stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s.presence : nil
-        track_page_usage(message, filename, page_num, ctx[:kept_pages]&.size || page_customs.size,
-                         sha256: sha256, stop_reason: stop_reason)
-        page_results << { page_number: page_num, text: text, model: model, stop_reason: stop_reason }
-      else
-        Rails.logger.warn("IngestManualBatchResultsJob: #{filename} p#{page_num} #{result.result.type} — skipping")
+        if result.result.type.to_s == "succeeded"
+          message     = result.result.message
+          text        = extract_text(message)
+          model       = message.model.to_s
+          stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s.presence : nil
+          track_page_usage(message, filename, page_num, ctx[:kept_pages]&.size || page_customs.size,
+                           sha256: sha256, stop_reason: stop_reason)
+          page_results << { page_number: page_num, text: text, model: model, stop_reason: stop_reason }
+        else
+          Rails.logger.warn("IngestManualBatchResultsJob: #{filename} p#{page_num} #{result.result.type} — skipping")
+        end
       end
     end
 
     if page_results.empty?
       web_manual_batch&.update!(status: "failed", error_message: "No succeeded batch results")
       broadcast_failed(web_manual_batch, ctx)
-      Rails.logger.warn("IngestManualBatchResultsJob: no succeeded results for #{filename} batch #{batch_id}")
+      Rails.logger.warn("IngestManualBatchResultsJob: no succeeded results for #{filename} batches #{batch_ids.join(',')}")
       return
     end
 
@@ -189,7 +201,7 @@ class IngestManualBatchResultsJob < ApplicationJob
       locale:          ctx[:locale]
     )
 
-    Rails.logger.info("IngestManualBatchResultsJob: #{filename} batch #{batch_id} → Bedrock sync started")
+    Rails.logger.info("IngestManualBatchResultsJob: #{filename} batches #{batch_ids.join(',')} → Bedrock sync started")
   end
 
   def load_web_manual_batch(id)
@@ -201,6 +213,7 @@ class IngestManualBatchResultsJob < ApplicationJob
   def context_from_record(batch)
     {
       batch_id:        batch.claude_batch_id,
+      batch_ids:       batch.processing_batch_ids,
       filename:        batch.filename,
       sha256:          batch.sha256,
       s3_key:          batch.s3_key,

@@ -15,6 +15,8 @@ require "aws-sdk-s3"
 class BatchIngestionService
   include AwsClientInitializer
 
+  Submission = Data.define(:id, :ids)
+
   def initialize(batch_client: nil)
     @batch_client = batch_client || ClaudeBatchClient.new
     client_options = build_aws_client_options
@@ -93,16 +95,34 @@ class BatchIngestionService
   # Phase 2: build Anthropic batch requests from uploaded assets and submit.
   # Returns nil if there are no uploaded_s3 assets (all entries were skipped/failed).
   # @param bulk_upload [BulkUpload]
-  # @return [Anthropic::Models::Messages::MessageBatch, nil]
+  # @return [Submission, nil]
   def submit!(bulk_upload)
     assets = bulk_upload.bulk_upload_assets.where(status: "uploaded_s3")
     return nil if assets.none?
 
-    requests, meta = BulkCostV2RequestBuilder.new.build_all!(assets)
-    batch = @batch_client.submit_batch(requests: requests)
-    bulk_upload.update!(claude_batch_id: batch.id)
+    items, meta = BulkCostV2RequestBuilder.new.build_items!(assets)
+    submitter   = ClaudeBatchSubmissionService.new(batch_client: @batch_client)
+
+    oversized_asset_ids = asset_ids_for_custom_ids(
+      meta,
+      items.select { |item| submitter.oversized?(item) }.map(&:custom_id)
+    )
+    mark_oversized_assets!(assets, oversized_asset_ids, items, meta, submitter.max_raw_bytes)
+    items.reject! { |item| oversized_asset_ids.include?(asset_id_for_custom_id(meta, item.custom_id)) }
+
+    if items.empty?
+      persist_batch_custom_ids!(assets, meta)
+      bulk_upload.derive_status!
+      return nil
+    end
+
+    batch_ids = submitter.submit!(items)
+    bulk_upload.update!(claude_batch_id: batch_ids.first, claude_batch_ids: batch_ids)
     persist_batch_custom_ids!(assets, meta)
-    batch
+    bulk_upload.derive_status!
+    Submission.new(batch_ids.first, batch_ids)
+  ensure
+    Array(items).each(&:cleanup)
   end
 
   private
@@ -132,6 +152,8 @@ class BatchIngestionService
 
   def persist_batch_custom_ids!(assets, meta)
     assets.each do |asset|
+      next if asset.reload.status == "failed"
+
       page_ids = Array(meta[asset.id])
 
       # All pages filtered out → mark failed, don't send to in_batch
@@ -152,6 +174,29 @@ class BatchIngestionService
       )
       asset.broadcast_replace!
     end
+  end
+
+  def mark_oversized_assets!(assets, asset_ids, items, meta, max_raw_bytes)
+    return if asset_ids.empty?
+
+    assets.where(id: asset_ids).find_each do |asset|
+      asset_items = items.select { |item| Array(meta[asset.id]).include?(item.custom_id) }
+      raw_bytes   = asset_items.map(&:byte_size).max.to_i
+      message     = "Asset payload exceeds ingestion guardrail " \
+                    "(raw=#{raw_bytes} bytes, max_raw=#{max_raw_bytes} bytes)"
+      asset.update_columns(status: "failed", error_message: message)
+      asset.broadcast_replace!
+      asset_items.each(&:cleanup)
+      Rails.logger.warn("BatchIngestionService: #{asset.filename} — #{message}")
+    end
+  end
+
+  def asset_ids_for_custom_ids(meta, custom_ids)
+    custom_ids.filter_map { |custom_id| asset_id_for_custom_id(meta, custom_id) }.uniq
+  end
+
+  def asset_id_for_custom_id(meta, custom_id)
+    meta.find { |_asset_id, ids| Array(ids).include?(custom_id) }&.first
   end
 
   def detect_ingestion_path(asset, page_ids)

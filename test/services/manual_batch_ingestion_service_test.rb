@@ -207,6 +207,36 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
   end
 
+  test "base64 page payload is preserved after raw binary is freed" do
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
+    orig_track = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
+
+    fake_client = FakeBatchClient.new
+    pdf_binary  = build_fake_pdf_binary(2)
+
+    ManualBatchIngestionService.new(batch_client: fake_client).submit!(
+      binary: pdf_binary, filename: "m.pdf", sha256: "2" * 64, s3_key: "key"
+    )
+
+    assert_equal 2, fake_client.submitted_requests.size
+    fake_client.submitted_requests.each do |req|
+      doc_block = req[:params][:messages].first[:content].first
+      assert_equal "base64", doc_block[:source][:type]
+      assert_not_empty doc_block[:source][:data], "page must carry base64 PDF data"
+      # Decoding proves the binary was still available when encoded (freed only after).
+      assert Base64.strict_decode64(doc_block[:source][:data]).start_with?("%PDF"),
+             "decoded page payload must be a real single-page PDF"
+    end
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+  end
+
   test "native PDF 2p: p1 dropped via batch → 1 batch request submitted" do
     orig_cb    = PageRelevanceFilter.method(:call_batch)
     orig_track = TrackBedrockQueryJob.method(:perform_later)
@@ -234,5 +264,41 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
   ensure
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+  end
+
+  test "cleans dropped and remaining page tempfiles when batch submission fails" do
+    orig_cb = PageRelevanceFilter.method(:call_batch)
+    captured_pages = []
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      captured_pages = pages
+      pages.each_with_object({}) do |page, results|
+        results[page.number] = {
+          keep: page.number != 1,
+          reason: page.number == 1 ? :cover : :content,
+          source: :haiku_batch,
+          force_opus: false
+        }
+      end
+    end
+
+    failing_client = Object.new
+    failing_client.define_singleton_method(:submit_batch) do |requests:|
+      raise Errno::ECONNRESET, "submission failed after payload build"
+    end
+
+    assert_raises(Errno::ECONNRESET) do
+      ManualBatchIngestionService.new(batch_client: failing_client).submit!(
+        binary: build_fake_pdf_binary(3),
+        filename: "cleanup.pdf",
+        sha256: "9" * 64,
+        s3_key: "uploads/cleanup.pdf"
+      )
+    end
+
+    assert_equal 3, captured_pages.size
+    assert captured_pages.all?(&:cleaned?), "all split-page tempfiles must be unlinked"
+  ensure
+    Array(captured_pages).each(&:cleanup)
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb) if defined?(orig_cb)
   end
 end

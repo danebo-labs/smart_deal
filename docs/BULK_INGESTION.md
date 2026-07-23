@@ -38,7 +38,7 @@ Boilerplate pages (portada, índice, copyright, dedicatoria, agenda) are dropped
 
 **Job chain** (all on **`queue_as :bulk_ingestion`**): `ProcessBulkUploadJob` → `SubmitClaudeBatchJob` → `PollClaudeBatchJob` (re-enqueue poll) → `IngestBatchResultsJob` → `PollBulkBedrockIngestionJob` (re-enqueue poll). Services: `ZipExtractionService`, `BatchIngestionService`, `BatchResultsParserService`, `BulkKbSyncService`, `ClaudeBatchClient`, **`BatchChunkingPrompt`** (`app/prompts/batch_chunking_prompt.rb`).
 
-**Anthropic Message Batches — async vs “live” streaming:** bulk ZIP uses the **Message Batches** API, not synchronous `messages.create` per file. The app **submits** one batch (many `custom_id` requests), Anthropic **queues and processes** it on their side, and Rails **polls** batch status (`PollClaudeBatchJob`) until the batch is terminal. Only then does `IngestBatchResultsJob` pull outcomes. The `anthropic` gem exposes that download as **`messages.batches.results_streaming(batch_id)`**; `ClaudeBatchClient#results_each` iterates it. That “streaming” is **incremental delivery of the batch result JSONL** (one line ≈ one request’s `succeeded` / `errored` / … record). It is **not** token-by-token generation streaming like a live chat completion (`stream: true` on the Messages API). Mentally: **async job + streamed result file**, not **SSE of an in-flight answer**.
+**Anthropic Message Batches — async vs “live” streaming:** bulk ZIP uses the **Message Batches** API, not synchronous `messages.create` per file. The app groups requests by raw bytes/count and may submit multiple batches for one upload. Anthropic queues and processes them, and Rails polls until **all** groups are terminal before `IngestBatchResultsJob` merges every result stream. The `anthropic` gem exposes each download as **`messages.batches.results_streaming(batch_id)`**. That “streaming” is incremental delivery of result JSONL, not token-by-token generation.
 
 **Infra / KB design:** batch-produced chunks land on the shared
 **`BEDROCK_BULK_DATA_SOURCE_ID`**, configured with chunking disabled and S3
@@ -51,7 +51,7 @@ path. **`BedrockRagService`** builds retrieval filters with **`orAll`** across
 files still honor **pinned-entity** scoping. See
 [Bedrock data source configuration](../BEDROCK_SETUP.md#required-s3-data-source-configuration).
 
-**Persistence:** `bulk_uploads` (overall ZIP run + `claude_batch_id` / `bedrock_ingestion_job_id`), `bulk_upload_assets` (per extracted file, S3 key, Claude token estimates, `kb_document_id` when linked).
+**Persistence:** `bulk_uploads` keeps `claude_batch_ids` plus the first id in legacy-compatible `claude_batch_id`, and `bedrock_ingestion_job_id`; `bulk_upload_assets` stores per-file state, custom IDs, S3 key, token estimates, and `kb_document_id`.
 
 **Aurora schema discovery:** **`BedrockKbChunk`** (`app/models/bedrock_kb_chunk.rb`) is an **`abstract_class`** documenting AWS KB field mappings (embedding dim, `bedrock_integration.bedrock_knowledge_base`, JSONB metadata keys to confirm out-of-band). It does **not** connect to the app Primary DB or SQLite at boot.
 

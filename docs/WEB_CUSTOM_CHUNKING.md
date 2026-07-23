@@ -38,8 +38,8 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 | `SingleFileChunkingService` | One file end-to-end: optional Office→PDF, PDF page split, relevance filter, Claude calls, S3 chunk writes |
 | `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per indexed document page. Rasterized slides can promote to Opus. |
 | `ContentDedupService` | SHA-256 dedup before any parse — hit skips Claude call entirely |
-| `WebManualBatch` | Durable ledger for web long-manual Batch context (`claude_batch_id`, page map, status, chunk prefix) |
-| `ManualBatchIngestionService` | Splits long PDFs into pages, filters relevance, submits Anthropic Batch |
+| `WebManualBatch` | Durable ledger for web long-manual Batch context (`claude_batch_ids`, first id in `claude_batch_id`, page map, status, chunk prefix) |
+| `ManualBatchIngestionService` | Splits long PDFs to disk-backed pages, filters relevance, and submits bounded Anthropic Batch groups |
 | `SubmitManualBatchJob` | Enqueued automatically for long web/chat PDFs on `bulk_ingestion`; idempotent on existing `claude_batch_id` |
 | `IngestManualBatchResultsJob` | Polls web manual Batch, retries truncated/invalid pages through `BatchPageRetryService`, writes `manual_batch_v1` chunks, then starts KB sync |
 | `ManualUrgentPageSelector` | Deterministically selects a small number of pages from the PDF using the technician question, text extraction, and technical/safety signals. No manual page picking and no page-selection LLM call |

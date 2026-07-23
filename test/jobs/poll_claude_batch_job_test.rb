@@ -13,12 +13,17 @@ class PollClaudeBatchJobTest < ActiveJob::TestCase
   # ---------------------------------------------------------------------------
 
   class FakeBatchClient
-    def initialize(processing_status:)
+    attr_reader :retrieved_ids
+
+    def initialize(processing_status:, statuses: nil)
       @processing_status = processing_status
+      @statuses = statuses
+      @retrieved_ids = []
     end
 
-    def retrieve(batch_id:) # rubocop:disable Lint/UnusedMethodArgument
-      OpenStruct.new(processing_status: @processing_status)
+    def retrieve(batch_id:)
+      @retrieved_ids << batch_id
+      OpenStruct.new(processing_status: @statuses&.fetch(batch_id) || @processing_status)
     end
   end
 
@@ -36,11 +41,11 @@ class PollClaudeBatchJobTest < ActiveJob::TestCase
     )
   end
 
-  def stub_batch_client(processing_status:)
-    fake = FakeBatchClient.new(processing_status: processing_status)
+  def stub_batch_client(processing_status:, statuses: nil)
+    fake = FakeBatchClient.new(processing_status: processing_status, statuses: statuses)
     original_new = ClaudeBatchClient.method(:new)
     ClaudeBatchClient.define_singleton_method(:new) { |**_kw| fake }
-    yield
+    yield fake
   ensure
     ClaudeBatchClient.define_singleton_method(:new) { |*a, **kw| original_new.call(*a, **kw) }
   end
@@ -118,6 +123,35 @@ class PollClaudeBatchJobTest < ActiveJob::TestCase
       assert_no_enqueued_jobs do
         PollClaudeBatchJob.perform_now(upload.id)
       end
+    end
+  end
+
+  test "waits until every persisted batch has ended" do
+    upload = make_bulk_upload
+    upload.update!(claude_batch_ids: %w[batch_1 batch_2])
+
+    stub_batch_client(
+      processing_status: "ended",
+      statuses: { "batch_1" => "ended", "batch_2" => "in_progress" }
+    ) do |fake|
+      assert_enqueued_with(job: PollClaudeBatchJob) do
+        assert_no_enqueued_jobs only: IngestBatchResultsJob do
+          PollClaudeBatchJob.perform_now(upload.id, started_at_iso: 1.minute.ago.iso8601)
+        end
+      end
+      assert_equal %w[batch_1 batch_2], fake.retrieved_ids
+    end
+  end
+
+  test "enqueues ingestion when all persisted batches have ended" do
+    upload = make_bulk_upload
+    upload.update!(claude_batch_ids: %w[batch_1 batch_2])
+
+    stub_batch_client(processing_status: "ended") do |fake|
+      assert_enqueued_with(job: IngestBatchResultsJob, args: [ upload.id ]) do
+        PollClaudeBatchJob.perform_now(upload.id, started_at_iso: 1.minute.ago.iso8601)
+      end
+      assert_equal %w[batch_1 batch_2], fake.retrieved_ids
     end
   end
 end

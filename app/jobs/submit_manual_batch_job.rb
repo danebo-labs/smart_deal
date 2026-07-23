@@ -71,6 +71,7 @@ class SubmitManualBatchJob < ApplicationJob
 
     batch.update!(
       claude_batch_id: result[:batch_id],
+      claude_batch_ids: Array(result[:batch_ids]).presence || Array(result[:batch_id]).compact,
       status:          "submitted",
       page_customs:    result[:page_customs] || {},
       kept_pages:      result[:kept_pages] || [],
@@ -85,6 +86,17 @@ class SubmitManualBatchJob < ApplicationJob
       "SubmitManualBatchJob: #{filename} → batch_id=#{result[:batch_id]} " \
       "kept=#{result[:kept_pages].size}/#{result[:total_pages]}"
     )
+  rescue ClaudeBatchSubmissionService::PayloadTooLargeError => e
+    batch&.update!(
+      status:        "failed",
+      error_message: e.message
+    )
+    KbSyncBroadcaster.failed(
+      filenames: [ filename ],
+      reason:    "manual_batch_payload_too_large",
+      locale:    locale
+    )
+    Rails.logger.warn("SubmitManualBatchJob[#{filename}]: #{e.message}")
   rescue StandardError => e
     Rails.logger.error("SubmitManualBatchJob[#{filename}]: #{e.class}: #{e.message}")
     raise

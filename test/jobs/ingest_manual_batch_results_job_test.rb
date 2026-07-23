@@ -143,4 +143,42 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
   ensure
     ClaudeBatchClient.define_singleton_method(:new, orig_client_new) if defined?(orig_client_new)
   end
+
+  test "polls all batch ids and consumes every result stream only after all have ended" do
+    batch = WebManualBatch.create!(
+      s3_key: "uploads/multi.pdf",
+      filename: "multi.pdf",
+      sha256: Digest::SHA256.hexdigest("multi"),
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+      claude_batch_id: "batch_1",
+      claude_batch_ids: %w[batch_1 batch_2],
+      status: "submitted",
+      page_customs: { 1 => "custom_p1", 2 => "custom_p2" },
+      kept_pages: [ 1, 2 ]
+    )
+
+    retrieved = []
+    streamed = []
+    fake_client = Object.new
+    fake_client.define_singleton_method(:retrieve) do |batch_id:|
+      retrieved << batch_id
+      OpenStruct.new(processing_status: "ended")
+    end
+    fake_client.define_singleton_method(:results_each) do |batch_id:, &block|
+      streamed << batch_id
+    end
+    orig_client_new = ClaudeBatchClient.method(:new)
+    ClaudeBatchClient.define_singleton_method(:new) { fake_client }
+
+    assert_no_enqueued_jobs only: IngestManualBatchResultsJob do
+      IngestManualBatchResultsJob.perform_now(web_manual_batch_id: batch.id)
+    end
+
+    assert_equal %w[batch_1 batch_2], retrieved
+    assert_equal %w[batch_1 batch_2], streamed
+    assert_equal "failed", batch.reload.status
+    assert_includes batch.error_message, "No succeeded batch results"
+  ensure
+    ClaudeBatchClient.define_singleton_method(:new, orig_client_new) if defined?(orig_client_new)
+  end
 end

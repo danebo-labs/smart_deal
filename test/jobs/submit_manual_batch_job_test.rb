@@ -34,6 +34,7 @@ class SubmitManualBatchJobTest < ActiveJob::TestCase
     fake_manual.define_singleton_method(:submit!) do |**|
       {
         batch_id: "msgbatch_web_123",
+        batch_ids: %w[msgbatch_web_123 msgbatch_web_456],
         page_customs: { 1 => "#{sha[0, 16]}_p1" },
         kept_pages: [ 1 ],
         total_pages: 3
@@ -57,6 +58,7 @@ class SubmitManualBatchJobTest < ActiveJob::TestCase
     batch = WebManualBatch.find_by!(sha256: sha)
     assert_equal "submitted", batch.status
     assert_equal "msgbatch_web_123", batch.claude_batch_id
+    assert_equal %w[msgbatch_web_123 msgbatch_web_456], batch.claude_batch_ids
     assert_equal({ "1" => "#{sha[0, 16]}_p1" }, batch.page_customs)
     assert_equal [ 1 ], batch.kept_pages
     assert_equal kb_doc.id, batch.kb_document_id
@@ -202,5 +204,48 @@ class SubmitManualBatchJobTest < ActiveJob::TestCase
     batch = WebManualBatch.find_by!(sha256: sha)
     assert_equal "failed", batch.status
     assert_includes batch.error_message, "S3 download failed"
+  end
+
+  test "payload guardrail marks chat batch failed and broadcasts without retrying" do
+    sha = Digest::SHA256.hexdigest("oversized-manual")
+    kb_doc = KbDocument.create!(
+      account: @account,
+      document_uid: SecureRandom.uuid,
+      s3_key: "uploads/#{@account.id}/oversized/original.pdf",
+      display_name: "oversized"
+    )
+
+    fake_s3 = Object.new
+    fake_s3.define_singleton_method(:download) { |_| "%PDF bytes" }
+    S3DocumentsService.define_singleton_method(:new) { fake_s3 }
+
+    error = ClaudeBatchSubmissionService::PayloadTooLargeError.new(
+      custom_id: "#{sha[0, 16]}_p1",
+      raw_bytes: 151.megabytes,
+      max_raw_bytes: 150.megabytes
+    )
+    fake_manual = Object.new
+    fake_manual.define_singleton_method(:submit!) { |**| raise error }
+    ManualBatchIngestionService.define_singleton_method(:new) { fake_manual }
+
+    original_failed = KbSyncBroadcaster.method(:failed)
+    broadcast = nil
+    KbSyncBroadcaster.define_singleton_method(:failed) { |**args| broadcast = args }
+
+    SubmitManualBatchJob.perform_now(
+      s3_key: kb_doc.s3_key,
+      filename: "oversized.pdf",
+      sha256: sha,
+      kb_doc_id: kb_doc.id,
+      account_id: @account.id,
+      document_uid: kb_doc.document_uid
+    )
+
+    batch = WebManualBatch.find_by!(sha256: sha)
+    assert_equal "failed", batch.status
+    assert_includes batch.error_message, "payload guardrail"
+    assert_equal "manual_batch_payload_too_large", broadcast[:reason]
+  ensure
+    KbSyncBroadcaster.define_singleton_method(:failed, original_failed) if defined?(original_failed)
   end
 end

@@ -36,6 +36,10 @@ class WebManualBatch < ApplicationRecord
   end
 
   def submitted_for_polling?
-    claude_batch_id.present? && %w[submitted in_progress].include?(status)
+    processing_batch_ids.any? && %w[submitted in_progress].include?(status)
+  end
+
+  def processing_batch_ids
+    Array(claude_batch_ids).presence || Array(claude_batch_id).compact
   end
 end

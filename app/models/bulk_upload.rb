@@ -14,6 +14,10 @@ class BulkUpload < ApplicationRecord
   scope :complete,   -> { where(status: "complete") }
   scope :failed,     -> { where(status: "failed") }
 
+  def processing_batch_ids
+    Array(claude_batch_ids).presence || Array(claude_batch_id).compact
+  end
+
   def derive_status!
     counts    = bulk_upload_assets.group(:status).count
     total     = counts.values.sum

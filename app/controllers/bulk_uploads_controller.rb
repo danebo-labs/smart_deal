@@ -60,6 +60,7 @@ class BulkUploadsController < ApplicationController
       status:                  "pending",
       error_message:           nil,
       claude_batch_id:         nil,
+      claude_batch_ids:        [],
       bedrock_ingestion_job_id: nil,
       asset_count:             0
     )

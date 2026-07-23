@@ -17,13 +17,17 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
 
   class FakeBatchClient
     attr_accessor :results
+    attr_reader :streamed_batch_ids
 
     def initialize(results = [])
       @results = results
+      @streamed_batch_ids = []
     end
 
     def results_each(batch_id:)
-      @results.each { |r| yield r }
+      @streamed_batch_ids << batch_id
+      batch_results = @results.is_a?(Hash) ? @results.fetch(batch_id, []) : @results
+      batch_results.each { |result| yield result }
     end
   end
 
@@ -190,6 +194,33 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
   ensure
     bulk&.bulk_upload_assets&.destroy_all
     bulk&.destroy
+  end
+
+  test "merges PDF page results streamed from multiple batches before missing-result detection" do
+    bulk, photo_asset, pdf_asset, pdf_sha_prefix = create_bulk_with_assets
+    bulk.update!(claude_batch_ids: %w[batch_1 batch_2])
+
+    @fake_client.results = {
+      "batch_1" => [
+        FakeBatchResult.new(
+          custom_id: "#{pdf_sha_prefix}_p1",
+          result: FakeResult.new(type: "succeeded", message: make_message(PAGE1_JSON))
+        )
+      ],
+      "batch_2" => [
+        FakeBatchResult.new(
+          custom_id: "#{pdf_sha_prefix}_p2",
+          result: FakeResult.new(type: "succeeded", message: make_message(PAGE2_JSON))
+        )
+      ]
+    }
+
+    IngestBatchResultsJob.perform_now(bulk.id)
+
+    assert_equal %w[batch_1 batch_2], @fake_client.streamed_batch_ids
+    assert_equal "syncing", pdf_asset.reload.status
+    assert_equal "failed", photo_asset.reload.status
+    assert_includes photo_asset.error_message, "No batch result returned"
   end
 
   test "TrackBedrockQueryJob emitted with -batch suffix for PDF pages" do

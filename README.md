@@ -94,6 +94,8 @@ Restart **web and workers** after changing `.env`.
 | `SHOW_USAGE_METRICS` | off | Shows the internal token/cost footer; keep hidden in customer demos unless explicitly needed |
 | `BEDROCK_BULK_DATA_SOURCE_ID` | optional | Shared no-chunking data source for bulk ZIP + web uploads; must include only `bulk_chunks/` |
 | `ANTHROPIC_API_KEY` | — | Required for bulk ZIP and web uploads |
+| `INGESTION_BATCH_TARGET_MB` | `50` | Raw-byte target per Anthropic Batch group; long manuals are submitted as multiple groups |
+| `INGESTION_MAX_BATCH_PAYLOAD_MB` | `150` | Per-request raw-byte guardrail before base64/JSON serialization |
 | `APPSIGNAL_PUSH_API_KEY` | — | Required only for AppSignal production error/performance monitoring |
 | `INGESTION_REENQUEUE` | — | See [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 

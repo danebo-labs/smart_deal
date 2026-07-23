@@ -153,14 +153,15 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     CostMetric.create!(date: today, metric_type: :daily_tokens, value: 1000)
     CostMetric.create!(date: today, metric_type: :daily_queries, value: 10)
 
-    get root_path
+    with_usage_metrics { get root_path }
     assert_response :success
     assert_select '[data-chat-usage-metrics]', minimum: 1
   end
 
-  test 'should render index without metrics' do
+  test 'should hide usage metrics by default' do
     get root_path
     assert_response :success
+    assert_select '#chat-usage-metrics-container', count: 0
   end
 
   test 'should render metrics as turbo_stream' do
@@ -271,10 +272,18 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     assert CostMetric.exists?(date: today, metric_type: :daily_tokens),
            'CostMetric should be synced from BedrockQuery on first load'
-    assert_select '#chat-usage-metrics-container [data-chat-usage-metrics]'
+    assert_select '#chat-usage-metrics-container', count: 0
   end
 
   private
+
+  def with_usage_metrics
+    previous = ENV["SHOW_USAGE_METRICS"]
+    ENV["SHOW_USAGE_METRICS"] = "true"
+    yield
+  ensure
+    ENV["SHOW_USAGE_METRICS"] = previous
+  end
 
   # Temporarily replace KbDocumentImageUrlService.new with a factory that returns +fake_svc+.
   # Pure Ruby — no mock library required.

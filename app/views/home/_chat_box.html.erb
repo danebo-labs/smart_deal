@@ -172,12 +172,14 @@
 
     </div><%# /chat-input-stack %>
 
-    <%# Footer metrics — hidden on mobile %>
-    <div class="hidden sm:flex items-center justify-end gap-6 border-t border-[hsl(215,20%,90%)] bg-[hsl(220,20%,98%)] px-6 py-3 flex-shrink-0">
-      <div id="chat-usage-metrics-container">
-        <%= render partial: "home/chat_usage_footer_metrics", locals: { current_metrics: @current_metrics } %>
+    <% if ENV["SHOW_USAGE_METRICS"] == "true" %>
+      <%# Footer metrics — hidden on mobile and opt-in for internal/demo diagnostics %>
+      <div class="hidden sm:flex items-center justify-end gap-6 border-t border-[hsl(215,20%,90%)] bg-[hsl(220,20%,98%)] px-6 py-3 flex-shrink-0">
+        <div id="chat-usage-metrics-container">
+          <%= render partial: "home/chat_usage_footer_metrics", locals: { current_metrics: @current_metrics } %>
+        </div>
       </div>
-    </div>
+    <% end %>
 
   </div>
 </div>

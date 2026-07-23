@@ -1,7 +1,8 @@
 # Dashboard — tenant usage view
 
 **Audience:** tenant administrators (B2B customers).  
-**Route:** `GET /dashboard`  
+**MVP status:** implementation preserved; `/dashboard` and
+`/dashboard/metrics` routes are disabled for the pilot in `config/routes.rb`.
 **Related:** [METRICS.md](METRICS.md) · [MULTI_TENANT_ARCHITECTURE.md](MULTI_TENANT_ARCHITECTURE.md)
 
 ---
@@ -53,9 +54,11 @@ Uso y consumo
 
 ---
 
-## Multi-tenant projection (Stage 1+)
+## Multi-tenant projection (historical plan)
 
-**Today (MVP):** all metrics and `KbDocument` rows are **global** — suitable for a single pilot tenant only.
+`account_id` is now present on `BedrockQuery` attribution and mandatory on
+`KbDocument`. The remaining text in this section is retained as design history;
+verify current scoping in code before re-enabling the dashboard.
 
 **Before exposing `/dashboard` to multiple paying tenants:**
 

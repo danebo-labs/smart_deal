@@ -2,14 +2,17 @@
 
 ## Status
 
-Danebo is currently a single-tenant MVP. Before onboarding multiple customer
-accounts, tenant isolation must be implemented across Rails, S3, Bedrock
-metadata, retrieval filters, jobs, caches, broadcasts, and metrics.
+Danebo is an account-aware MVP with partial tenant isolation. Account ownership,
+host resolution, authentication checks, account-scoped Rails records, branding,
+and account-scoped web broadcasts are delivered. Full S3/Bedrock metadata and
+retrieval isolation remains a rollout gate before onboarding unrelated paying
+customers on shared knowledge infrastructure.
 
-This document records the target architecture. It intentionally assumes that
-existing MVP data can be replaced rather than migrated.
+This document records the target invariants and implementation history. It is
+not the canonical description of the active product; see
+[README.md](README.md) and [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md).
 
-### Delivered (Stage 1 — partial)
+### Delivered (account-aware MVP — partial isolation)
 
 | Area | Status | Doc |
 |------|--------|-----|
@@ -166,6 +169,11 @@ Direct ingestion improves latency and avoids scanning unrelated accounts. It
 does not replace the mandatory retrieval account filter.
 
 ## Rails Data Model
+
+The ownership root and mandatory `account_id` migrations described below have
+been delivered for the principal tenant-owned Rails tables. Keep this section as
+the invariant for new models; do not interpret “add” as an outstanding migration
+without checking `db/schema.rb`.
 
 Use `Account` as the ownership root:
 

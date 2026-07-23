@@ -28,9 +28,18 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
   ~$9.54 expected / ~$13.27 conservative recurring COGS and $5.32 one-time
   manual onboarding.
 
-**Dashboard (tenant admin):** `/dashboard` shows **LLM consumption only** — cost today/month, chat query count, channel breakdown, calendar-month chart, KB documents, chat latency. **No** Aurora ACU, S3 infra, or AWS refresh in the UI. Scope and multi-tenant roadmap: [DASHBOARD.md](DASHBOARD.md).
+**Dashboard (tenant admin):** the implementation shows **LLM consumption only**
+— cost today/month, chat query count, channel breakdown, calendar-month chart,
+KB documents, and chat latency. The routes are disabled for the MVP pilot. See
+[DASHBOARD.md](DASHBOARD.md).
 
-**Home footer (web):** daily rollups are split by **billing channel** via `LlmUsageChannel` (app/services/llm_usage_channel.rb). The classifier maps each `bedrock_queries` row to one of the channels below using `source` + `model_id` suffix (`-direct`, `-batch`, Bedrock profile prefix). Legacy `daily_tokens_haiku` / `daily_tokens_parse_opus` / `daily_tokens_parse_sonnet` columns are still written (set to the same values as before cost_v2) for backward compatibility with any cached dashboard queries until those views are fully migrated.
+**Home footer (web):** hidden by default and rendered only when
+`SHOW_USAGE_METRICS=true`. When enabled, daily rollups are split by **billing
+channel** via `LlmUsageChannel` (`app/services/llm_usage_channel.rb`). The
+classifier maps each `bedrock_queries` row using `source` + `model_id` suffix
+(`-direct`, `-batch`, Bedrock profile prefix). Legacy
+`daily_tokens_haiku` / `daily_tokens_parse_opus` /
+`daily_tokens_parse_sonnet` columns remain for backward compatibility.
 
 #### LlmUsageChannel mapping
 
@@ -53,13 +62,16 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 
 | `source` | Meaning |
 |----------|---------|
-| `query` | End-user RAG / orchestrated LLM usage (**web chat** today; Twilio path would use the same `source` if re-enabled) |
-| `ingestion_parse` | Parser tokens recorded after a document finishes KB ingestion. **Legacy path** writes an estimate (Opus); **`web_v1`** path skips the estimate (real `web_parse: …` rows already persisted by `ClaudeChunkingClient`). **cost_v2 paths:** `field_photo_v1` rows have `-direct` suffix; `manual_batch_v1` rows use batch pricing (no `-direct`; `user_query: "bulk_batch: <filename> p<N>/<M>"` for bulk PDFs, or `web_batch: …` for long PDFs uploaded through web/chat). |
+| `query` | End-user RAG usage and direct live field-photo diagnosis (`route: visual_query`). Twilio would use the same source if re-enabled. |
+| `ingestion_parse` | Parser tokens for content that becomes indexed knowledge. `web_v1` writes real `web_parse: …` rows; `manual_batch_v1` uses batch pricing. Preserved bulk image ingestion may still emit `field_photo_v1`, but live diagnostic photos do not. |
 | `ingestion_embed` | Estimated embedding tokens for chunk text indexed by the KB (Titan Text v2). Written after chat or bulk Bedrock sync completes. |
 
 **Jobs & data:**
 
-- **`TrackBedrockQueryJob`** (`queue: default`) — enqueued from `BedrockRagService` / `BedrockClient` after each real invocation, and from `ClaudeChunkingClient` / `PageRelevanceFilter` for direct Anthropic parse + slide-deck batch classification. Creates a `BedrockQuery` (including cache token columns when present), runs `SimpleMetricsService.update_database_metrics_only` (upserts `CostMetric` for the current day, including per-source tokens and cost), and **broadcasts** a Turbo Stream on the **`metrics`** channel so the **home** chat footer refreshes without reload.
+- **`TrackBedrockQueryJob`** (`queue: default`) — enqueued from
+  `BedrockRagService` / `BedrockClient`, direct field-photo analysis, and
+  ingestion parse/filter clients. It creates a `BedrockQuery`, updates daily
+  rollups, and broadcasts the optional metrics footer channel.
 - **`TrackIngestionUsageJob`** (`default`) — after `BedrockIngestionJob` (chat) or `PollBulkBedrockIngestionJob` (bulk) completes, estimates **Titan Text v2** embed tokens from chunk `.txt` files on S3 (`chunks_s3_prefix`). Legacy FM uploads also get an Opus parse estimate; `web_v1` / bulk custom chunking get **embed only** (parse already in `bedrock_queries`). Idempotency window covers both `[parse]` and `[embed]` user-query labels so retries don't double-write.
 - **`TrackWhatsappCacheHitJob`** (`default`, **dormant**) — when the WhatsApp faceted path runs again, records cache-hit metrics into the same rollups.
 
@@ -67,7 +79,7 @@ Model usage is recorded **asynchronously** so Bedrock calls never wait on DB wri
 
 | Queue | Example jobs | Role |
 |-------|----------------|------|
-| **`default`** | `TrackBedrockQueryJob`, `TrackIngestionUsageJob`, `TrackWhatsappCacheHitJob` (inactive), `KbDocumentEnrichmentJob`, `UploadAndSyncAttachmentsJob`, `DailyMetricsJob`, `SendWhatsappReplyJob` (not enqueued without WA) | Token persistence, footer Turbo updates, async enrichment, scheduled metric refresh |
+| **`default`** | `FieldPhotoAnalysisJob`, `TrackBedrockQueryJob`, `TrackIngestionUsageJob`, `KbDocumentEnrichmentJob`, `UploadAndSyncAttachmentsJob`, `DailyMetricsJob`, dormant WhatsApp jobs | Live photo diagnosis, token persistence, optional footer updates, enrichment, scheduled metrics |
 | **`ingestion`** | `BedrockIngestionJob` | Long poll on Bedrock KB ingestion (≤ 15 min); legacy mode blocks one worker thread, `INGESTION_REENQUEUE=true` re-enqueues every 5s |
 | **`bulk_ingestion`** | `ProcessBulkUploadJob`, `SubmitClaudeBatchJob`, `PollClaudeBatchJob`, `IngestBatchResultsJob`, `SubmitManualBatchJob`, `IngestManualBatchResultsJob`, `PollBulkBedrockIngestionJob` | Bulk ZIP extraction, web long-manual Batch lifecycle, Anthropic batch lifecycle, chunk ingest + Bedrock sync polls (2 threads in template config) |
 
@@ -80,17 +92,27 @@ Verify each before flipping the public DNS:
 1. `QUERY_ROUTING_ENABLED` **absent or `false`** — keeps every web request on the KB lane (no extra `invoke_model` for routing). Code default in `QueryOrchestratorService.query_routing_enabled?`.
 2. `BEDROCK_RERANKER_ENABLED` **absent or `false`** — Cohere Rerank is disabled by default. The [2026-06-09 RAG benchmark](RAG_QUALITY_BENCHMARK_2026-06-09.md) found recall regressions at 15→9 and 15→12; rerun that quality gate before enabling it.
 3. `SHARED_SESSION_ENABLED` set explicitly (`true` for the pilot single-thread, `false` for per-user). The default-when-unset is `false` in `Rails.env.production`.
-4. **`ANTHROPIC_API_KEY`** (or **`credentials.dig(:anthropic, :api_key)`**) — **required** for **`/bulk_uploads`** (Anthropic Message Batches via `ClaudeBatchClient`). Separately, omitting it falls back to `LocalTokenizer` for **`AnthropicTokenCounter`** on chat metrics (chars/3.5, ±5%); counting runs inside **`TrackBedrockQueryJob`**, so a slow Anthropic endpoint never blocks **`POST /rag/ask`**.
+4. **`ANTHROPIC_API_KEY`** (or
+   **`credentials.dig(:anthropic, :api_key)`**) — required for live photo
+   diagnosis and web document parsing. The bulk route is disabled in the MVP.
 5. `INGESTION_REENQUEUE` ⇒ activate **after draining the Solid Queue** (legacy serialized jobs keep blocking until terminal otherwise).
 6. `MissionControl::Jobs` (`/jobs`) credentials live in **`config/credentials.yml.enc`**, **not** in `.env` for the production process.
-7. `/dashboard` — tenant usage view (LLM cost only); confirm Devise admin guard before public launch. See [DASHBOARD.md](DASHBOARD.md). Infra metrics (Aurora/S3) are platform-internal, not shown to tenants.
-8. **`ANTHROPIC_API_KEY`** (required for web uploads) and **`BEDROCK_BULK_DATA_SOURCE_ID`** (no-chunking DS) — confirm both are set in Kamal before going live with uploads. Smoke-test one web upload (photo + PDF + Office) and one bulk ZIP before launch.
+7. Keep `/dashboard` routes disabled for the MVP unless a separate authorization
+   and tenant-scoping review explicitly re-enables them. See
+   [DASHBOARD.md](DASHBOARD.md).
+8. Confirm **`ANTHROPIC_API_KEY`** and **`BEDROCK_BULK_DATA_SOURCE_ID`** in Kamal.
+   Smoke-test one live photo diagnosis and one indexed document upload. Bulk ZIP
+   is not part of this preflight while its routes remain disabled.
 
 ---
 
 ## Image telemetry event schemas (O1′)
 
-`image_compression` is emitted for every uploaded image; `field_photo_gate` only for images that proceed to parse after dedup/routing. Both are structured JSON lines to `Rails.logger.info`; neither creates a DB row. Together on the parse path, they carry the signals needed to cross-reference the KB-indexed parse cost in `bedrock_queries`.
+`image_compression` is emitted for uploaded images; `field_photo_gate` is emitted
+for images that reach visual model routing, including live diagnostic photos.
+Both are structured JSON log lines and do not create DB rows. Live diagnostic
+cost is recorded separately in `bedrock_queries` with `source: query`,
+`route: visual_query`, and a `photo:<uuid>` correlation ID.
 
 ### `image_compression` event
 
@@ -139,7 +161,8 @@ Emitted by `FieldPhotoDensityGate#log_gate_decision` after the Sonnet/Opus routi
 
 The two events plus `bedrock_queries` can be joined per-photo depending on the ingestion path:
 
-**Web path** (`RagController` → `SingleFileChunkingService`):
+**Indexed-image web path (legacy/preserved)** (`RagController` →
+`SingleFileChunkingService`):
 
 ```
 image_compression.output_correlation_id
@@ -191,6 +214,61 @@ WHERE created_at >= NOW() - INTERVAL '1 hour'
 
 Suggested alert threshold: **> 8 000 ms** sustained for 15 min (cron job → Slack/PagerDuty).
 
-**Web metrics:** every async metrics write and Turbo broadcast for the home footer runs on **`default`**. **`DailyMetricsJob`** still collects Aurora/S3 rollups for **platform ops** (rake tasks, scheduled jobs) — not exposed on the tenant dashboard.
+**Web metrics:** async metrics writes and the optional footer broadcast run on
+`default`. The footer is absent unless `SHOW_USAGE_METRICS=true`.
+`DailyMetricsJob` still collects Aurora/S3 rollups for platform operations.
 
 For local development, run **`bin/dev`** (see `Procfile.dev`) so **web**, **CSS**, and **Solid Queue workers** are all up; otherwise enqueued metrics jobs will not run and the footer will look stale.
+
+---
+
+## Pilot interaction export and photo-cache telemetry
+
+`BedrockQuery` remains the source of truth for every real LLM invocation. Live
+photo rows use `source: query`, `route: visual_query` and carry account, user,
+conversation and `photo:<uuid>` correlation attribution. A cache hit cannot be
+stored there because its real tokens and cost are zero, so photo lifecycle
+events use a safe structured line:
+
+```text
+[PILOT_USAGE] {"event":"photo_cache_hit","ts":"...","account_id":1,"user_id":2,...}
+```
+
+Emitted events are `photo_submitted`, `photo_cache_miss`, `photo_cache_hit`,
+`visual_llm_call_avoided`, `photo_completed` and `photo_failed`. They contain no
+raw image, Base64, temporary token, prompt or credentials. The only image join
+field is the first 12 characters of the normalized SHA-256.
+
+Run the daily export with a same-day log extract so zero-cost reuse is included:
+
+```bash
+kamal app logs --lines 20000 | grep -E 'PILOT_USAGE|RAG_QUALITY' > tmp/pilot.log
+PILOT_USAGE_LOG=tmp/pilot.log bin/rails runner script/pilot_metrics_export.rb 2026-07-22
+```
+
+For an exact named pilot cohort, pass comma-separated IDs; account totals are
+then computed only from those users and are not contaminated by internal smoke
+activity on the same day:
+
+```bash
+PILOT_USER_IDS=21,22,23 PILOT_USAGE_LOG=tmp/pilot.log \
+  bin/rails runner script/pilot_metrics_export.rb 2026-07-22
+```
+
+The report separates:
+
+- `technical_and_cost`: real RAG/visual calls, tokens, model cost, latency,
+  cache hit rate and estimated avoided cost by user and account;
+- `adoption_signals`: active users/accounts, sessions and photo/query volume;
+- `evidence_quality`: citations and evidence-present RAG results from
+  timestamped `[RAG_QUALITY]` lines;
+- `knowledge_gap_signals`: `DATA_NOT_AVAILABLE`,
+  `REQUIRE_FIELD_VERIFICATION` and fast reformulations, filtered by each
+  message timestamp;
+- `commercial_outcomes`: explicitly `REQUIRES_MANUAL_SURVEY`, because
+  time-to-resolution, avoided visits/escalations and technician confidence must
+  be observed in the field rather than inferred from LLM usage.
+
+Without a readable `PILOT_USAGE_LOG`, cache counts and avoided cost are `null`,
+not fabricated. Messages with missing or invalid timestamps are excluded from
+the day and reported under `data_quality`.

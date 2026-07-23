@@ -1,8 +1,13 @@
 # Bulk ZIP ingestion (web)
 
+> **MVP status:** implementation preserved, routes disabled for the pilot in
+> `config/routes.rb`. The paths and smoke instructions below apply only after an
+> explicit product decision to re-enable this backoffice capability.
+
 > **Bulk ZIP path:** photos → Sonnet via `FieldPhotoPrompt` + `FieldPhotoDensityGate` (size heuristic only); PDFs → `PageRelevanceFilter.filter_pages` + Sonnet Batch (`BulkCostV2RequestBuilder`); Office entries → `OfficeToPdfConverter` before batch build. See [INGESTION_COST_V2.md](INGESTION_COST_V2.md) for the full cost matrix. **Routing detail:** [INGESTION_ROUTING.md](INGESTION_ROUTING.md).
 
-Signed-in technicians seed many documents at once via **`/bulk_uploads`** (HTML + Turbo Streams, not a JSON API).
+When enabled, signed-in operators can seed many documents at once via
+**`/bulk_uploads`** (HTML + Turbo Streams, not a JSON API).
 
 **Related:** [Web custom chunking](WEB_CUSTOM_CHUNKING.md) · [Production deploy](PRODUCTION.md) · [Ingestion routing](INGESTION_ROUTING.md)
 

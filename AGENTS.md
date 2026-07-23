@@ -142,6 +142,32 @@ Avoid:
 
 ---
 
+### Cost First (Bedrock)
+
+Every query has a billed token cost. Evaluate prompt, retrieval, and model
+changes against cost per query, not only latency/quality.
+
+* **Inference profile:** default to `global.anthropic.claude-haiku-4-5-...`
+  (set via `BEDROCK_MODEL_ID`). Regional/geo profiles (`us.` / `eu.` / `au.`)
+  carry a documented **+10%** premium on input, output, and cache tokens for
+  Claude Haiku/Sonnet/Opus 4.5+. Only use a regional profile for a validated
+  data-residency requirement — never as a default "optimization."
+* **Adaptive retrieval:** size `number_of_results` (`top_k`) to intent/pin
+  signal instead of a fixed high value — fewer irrelevant chunks retrieved
+  means fewer input tokens billed (see `RagRetrievalProfile`).
+* **`stop_sequences`:** cut generation as soon as a structural marker closes
+  (e.g. `</DOC_REFS>`) to avoid trailing filler output tokens per query.
+* **Prompt compaction:** keep instruction blocks (tone/language injection,
+  repeated rules) to a single occurrence — duplicated boilerplate is billed
+  on every request.
+* **Context caps:** hard-cap injected session/entity context so growing
+  session state can't silently inflate input tokens.
+* **Cost authority:** treat exact Bedrock billing reconciliation (S3 Model
+  Invocation Logs → daily rollups) as the source of truth over
+  estimated/token-counted rows when reporting spend.
+
+---
+
 ### Retrieval First
 
 RAG is the source of truth.

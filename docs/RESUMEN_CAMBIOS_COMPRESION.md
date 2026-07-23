@@ -1,5 +1,9 @@
 # Resumen de Cambios - Compresión de Imágenes y Configuración de Modelos
 
+> **Historical implementation summary.** Current setup and IAM guidance live in
+> [BEDROCK_SETUP.md](../BEDROCK_SETUP.md), [IMAGE_COMPRESSION.md](IMAGE_COMPRESSION.md),
+> and `docs/bedrock-iam-policy.json`.
+
 > **Documento histórico.** Las comparaciones de costo aquí registran el
 > experimento original y no son pricing vigente. Fuente financiera actual:
 > [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
@@ -40,12 +44,9 @@ Métodos modificados:
 - Información sobre compresión de imágenes
 - Referencia a arquitectura multi-tenant
 
-#### `docs/AWS_IAM_PERMISSIONS.md` - Actualizado
-- Guía paso a paso con screenshots path
-- Lista de modelos que requieren permisos
-- Política IAM específica (no wildcard)
-- Errores comunes y soluciones
-- Best practices de seguridad
+#### Referencia IAM actual
+- Configuración y errores: `BEDROCK_SETUP.md`
+- Política del repositorio: `docs/bedrock-iam-policy.json`
 
 #### `docs/bedrock-iam-policy.json` - Nuevo
 - Política IAM lista para copiar/pegar en AWS Console
@@ -119,7 +120,7 @@ El rol `BedrockKnowledgeBaseRole-chat-bot` necesita permisos para 10 modelos.
 4. **Nombre**: `BedrockModelInvokePermissions`
 5. **Crear policy**
 
-Ver guía detallada: `docs/AWS_IAM_PERMISSIONS.md`
+Ver guía actual: `BEDROCK_SETUP.md`.
 
 ## Logs Esperados
 
@@ -185,7 +186,7 @@ Documento completo en `docs/MULTI_TENANT_ARCHITECTURE.md` incluye:
 ```
 app/services/image_compression_service.rb
 test/services/image_compression_service_test.rb
-docs/AWS_IAM_PERMISSIONS.md (actualizado)
+BEDROCK_SETUP.md
 docs/IMAGE_COMPRESSION.md
 docs/MULTI_TENANT_ARCHITECTURE.md
 docs/RESUMEN_CAMBIOS_COMPRESION.md (este archivo)

@@ -1,6 +1,12 @@
 # Web chat upload ingestion (custom chunking)
 
-Active path for **file attachments from the home RAG chat**. No feature flags — `CustomChunkingPipeline` is the only path.
+> **Current scope:** this document describes files that become indexed
+> organizational knowledge. A live JPEG/PNG uploaded for technician diagnosis
+> now follows `FieldPhotoAnalysisJob` and does not enter this ingestion pipeline,
+> create a `KbDocument`, or auto-pin. See [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
+
+Active path for **document attachments from the home RAG chat**. No feature
+flags — `CustomChunkingPipeline` is the document-ingestion path.
 
 **Related:** [Bulk ZIP ingestion](BULK_INGESTION.md) · [Ingestion routing (types, filter, LLM matrix)](INGESTION_ROUTING.md) · [Engineering snapshot](../CLAUDE.md)
 
@@ -27,13 +33,10 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 | Piece | Role |
 |-------|------|
 | `UploadAndSyncAttachmentsJob` | Fast ACK from the controller; delegates to the orchestrator and preserves the original question for urgent long-manual triage |
-| `QueryOrchestratorService#upload_and_sync_attachments` | Instantiates `CustomChunkingPipeline`; `urgent: true` is compatibility only and no longer forces long PDFs onto sync |
+| `QueryOrchestratorService#upload_and_sync_attachments` | Splits live photos to direct diagnosis; instantiates `CustomChunkingPipeline` for documents. `urgent: true` is compatibility only and no longer forces long PDFs onto sync |
 | `CustomChunkingPipeline` | Per-file routing, builds ready-now `web_v1_metadata`, enqueues `BedrockIngestionJob` only for chunks that exist now. Long PDFs enqueue `SubmitManualBatchJob`; with a nonblank question they also enqueue urgent page triage |
 | `SingleFileChunkingService` | One file end-to-end: optional Office→PDF, PDF page split, relevance filter, Claude calls, S3 chunk writes |
-| `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per page. `:image` default is Sonnet; Opus only via `FieldPhotoDensityGate force_opus`. Rasterized slides still promote to Opus. |
-| `FieldPhotoDensityGate` | Size-heuristic routing for image uploads → `:sonnet` (< 1.5 MB) or `:opus` (≥ 1.5 MB). Zero LLM calls. Emits a `field_photo_gate` JSON event with `model`, `route`, and (web path) `correlation_id = "ingest:<sha12>"` threaded from `SingleFileChunkingService`. See [METRICS.md — Image telemetry](METRICS.md#image-telemetry-event-schemas-o1). |
-| `FieldPhotoPrompt` | Specialized photo prompt; `ingestion_path: "field_photo_v1"`, 1 compact chunk with literal labels and optional explicit visible functions/connections/values/warnings |
-| `FieldPhotoResultsParser` | `FieldPhotoPrompt` JSON → standard `{document_name, aliases, chunks}` envelope; undocumented label meaning remains `DATA_NOT_AVAILABLE` |
+| `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per indexed document page. Rasterized slides can promote to Opus. |
 | `ContentDedupService` | SHA-256 dedup before any parse — hit skips Claude call entirely |
 | `WebManualBatch` | Durable ledger for web long-manual Batch context (`claude_batch_id`, page map, status, chunk prefix) |
 | `ManualBatchIngestionService` | Splits long PDFs into pages, filters relevance, submits Anthropic Batch |
@@ -43,18 +46,20 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 | `ProcessManualUrgentTriageJob` / `ManualUrgentTriageService` | Parses selected urgent pages direct with the same 8k→16k→32k ladder, writes temporary `manual_batch_v1` chunks, starts a partial KB sync, and marks `processing_scope: urgent_pages` |
 | `ClaudeChunkingClient` | Sync Anthropic Messages API (`-direct` cost rows in `bedrock_queries`); accepts a `max_tokens` arg and exposes `stop_reason` so the caller can retry truncated calls |
 | `PageRelevanceFilter` | Drops boilerplate PDF pages before Sonnet/Opus parse. **`filter_pages`**: ≥2 pages → Haiku **`call_batch`** in bounded windows; 1 page → heuristics + optional Haiku gate. See [INGESTION_ROUTING.md](INGESTION_ROUTING.md) |
-| `BatchResultsParserService` | Same parser as bulk ZIP; web/chat sync writes `ingestion_path: "web_v1"` / `"field_photo_v1"` and renders manual `field_records` as canonical retrieval blocks with deterministic IDs |
+| `BatchResultsParserService` | Same parser as bulk ZIP; web document sync writes `ingestion_path: "web_v1"` and renders manual `field_records` as canonical retrieval blocks with deterministic IDs |
 | `BulkKbSyncService` | Starts ingestion on **`BEDROCK_BULK_DATA_SOURCE_ID`** (chunking disabled, `bulk_chunks/` inclusion prefix) |
 | `LambdaParityAliasFallback` | Deterministic alias fill-in when the model returns empty aliases |
 | `BedrockIngestionJob` | Polls ingestion; with `web_v1_metadata`, enriches `KbDocument` **without** a Bedrock retrieve call |
 
-**Supported chat upload formats:** images (PNG/JPEG/GIF/WebP), text (`.txt`, `.md`, `.html`, `.csv`), PDFs, Office docs (`.doc`/`.docx`, `.xls`/`.xlsx`, `.ppt`/`.pptx`, `.odt`/`.ods`/`.odp`).
+**Supported document-ingestion formats:** text (`.txt`, `.md`, `.html`,
+`.csv`), PDFs, and Office docs (`.doc`/`.docx`, `.xls`/`.xlsx`,
+`.ppt`/`.pptx`, `.odt`/`.ods`/`.odp`). JPEG/PNG uploads use direct diagnosis.
 
 **PDF routing (per-file in `CustomChunkingPipeline`):**
 
 | Condition | Route |
 |-----------|-------|
-| Image or Office file | `SingleFileChunkingService` (sync) |
+| Office file | `SingleFileChunkingService` (sync) |
 | PDF pages ≤ `WEB_SYNC_PDF_PAGE_THRESHOLD` (default 2), with or without query | `SingleFileChunkingService` (sync cost-v2) |
 | PDF pages > `WEB_SYNC_PDF_PAGE_THRESHOLD`, blank query | `SubmitManualBatchJob` → `ManualBatchIngestionService` → `IngestManualBatchResultsJob` (async Batch) |
 | PDF pages > `WEB_SYNC_PDF_PAGE_THRESHOLD`, nonblank query | Same full Batch path plus `ProcessManualUrgentTriageJob` for automatically selected urgent pages |
@@ -88,11 +93,11 @@ While a long manual is processing, the chat remains usable for questions over al
 
 ### Web chat upload vs bulk ZIP
 
-| | **Chat attachment** | **Bulk ZIP** (`/bulk_uploads`) |
+| | **Chat document** | **Bulk ZIP** (`/bulk_uploads`, disabled in MVP) |
 |---|---------------------|----------------------------------|
 | Trigger | Single file from home chat | ZIP upload form |
 | Claude API | Sync **Messages** for short files; **Message Batches** for long PDFs | **Message Batches** (always async) |
 | Queue lane | `default` (`UploadAndSyncAttachmentsJob`) + `bulk_ingestion` for long PDFs | `bulk_ingestion` |
-| Chunk metadata | `ingestion_path: "web_v1"` / `"field_photo_v1"` / `"manual_batch_v1"` | `ingestion_path: "batch_v1"` / `"field_photo_v1"` / `"manual_batch_v1"` |
+| Chunk metadata | `ingestion_path: "web_v1"` / `"manual_batch_v1"` | `ingestion_path: "batch_v1"` / `"field_photo_v1"` / `"manual_batch_v1"` |
 | Identity on ingest | `web_v1_metadata` → `BedrockIngestionJob` | Parser headers + bulk DS |
 | On error | `KbSyncBroadcaster.failed` → technician retry | Per-asset error rows on bulk show page |

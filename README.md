@@ -4,8 +4,11 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 
 ## Product scope
 
-- **Active:** web home (RAG chat, KB list, pins, thumbnails, chat uploads, bulk ZIP at `/bulk_uploads`).
-- **Dormant:** WhatsApp / Twilio (webhook unmounted; code preserved). See [docs/WHATSAPP.md](docs/WHATSAPP.md).
+- **Active MVP:** authenticated web home (RAG chat, KB list, pins,
+  thumbnails, document uploads, and direct field-photo diagnosis).
+- **Disabled for the pilot:** bulk ZIP and dashboard routes; code is preserved.
+- **Dormant:** WhatsApp / Twilio (webhook unmounted; code preserved). See
+  [docs/WHATSAPP.md](docs/WHATSAPP.md).
 - **Tests:** `WHATSAPP_CHANNEL_DISABLED=true` by default skips `Whatsapp`/`Twilio` test classes.
 
 ## Capabilities
@@ -13,12 +16,13 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 | Area | Summary |
 |------|---------|
 | **RAG chat** | Bedrock Knowledge Base, hybrid orchestrator (optional Text-to-SQL) |
+| **Field-photo diagnosis** | Direct visual recognition for technician photos; diagnostic output remains separate from indexed organizational knowledge |
 | **Retrieval fidelity** | Pins are authoritative, explicit source narrowing, adaptive retrieval budgets, literal-label safety for photos, and no global fallback after a pinned miss. Quality/cost baseline: [RAG benchmark 2026-06-09](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
-| **Chat uploads** | Direct Claude chunking via `CustomChunkingPipeline` — images, text, PDF, **Word, Excel, PowerPoint** (via LibreOffice); see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
+| **Chat uploads** | Field photos use direct diagnosis; documents use Claude chunking via `CustomChunkingPipeline` — text, PDF, **Word, Excel, PowerPoint** (via LibreOffice); see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
 | **Cost-optimized parse** | Per-page 8k cap with bounded 16k/32k retry, windowed Haiku filtering, Sonnet-default photo routing, automatic Batch for long manuals, and SHA dedup. Reconciled variable COGS: **~$9.54 expected / ~$13.27 conservative monthly** for 1,000 queries + 200 photos; a 200-page manual is **$5.32 one-time onboarding**. **Canonical model:** [SAAS_COST_MODEL_2026-06-12.md](docs/SAAS_COST_MODEL_2026-06-12.md). **Routing:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md) |
-| **Bulk ZIP** | `/bulk_uploads` — Anthropic Message Batches, Turbo progress UI |
+| **Bulk ZIP** | Anthropic Message Batches implementation preserved; `/bulk_uploads` routes are disabled for the MVP pilot |
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
-| **Metrics** | Async token/cost rollups (Haiku + parse Opus/Sonnet, web_v1 vs legacy split), live chat footer |
+| **Metrics** | Async token/cost/latency attribution; the chat usage footer is shown only with `SHOW_USAGE_METRICS=true` |
 | **Auth** | Devise |
 | **Tenant branding** | Per-host logo, favicon, title, footer (`elevadores-climb` on `ascensoresclimb.danebo.ai`) — [docs/ACCOUNT_BRANDING.md](docs/ACCOUNT_BRANDING.md) |
 
@@ -35,35 +39,24 @@ bin/setup --skip-server
 bin/dev
 ```
 
-Open http://localhost:3000. `bin/dev` runs Rails + Tailwind (Foreman / `Procfile.dev`). Run **`bin/jobs start`** or include jobs in your dev process so Solid Queue handles uploads and metrics.
+Open http://localhost:3000. `bin/dev` runs Rails, Tailwind, and Solid Queue via
+Foreman / `Procfile.dev`.
 
 ## Documentation map
 
 | Topic | Document |
 |-------|----------|
-| **Index (start here for depth)** | [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md) |
-| **Historical RAG quality/cost benchmark** (method, 16-query matrix, gates) | [docs/RAG_QUALITY_BENCHMARK_2026-06-09.md](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
-| **Ingestion routing** (file type, page filter, LLM matrix) | [docs/INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md) |
-| Canonical reconciled SaaS COGS and pricing floors | [docs/SAAS_COST_MODEL_2026-06-12.md](docs/SAAS_COST_MODEL_2026-06-12.md) |
-| Web custom chunking (flags, pipeline) | [docs/WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
-| Ingestion cost v2 ADR | [docs/INGESTION_COST_V2.md](docs/INGESTION_COST_V2.md) |
-| Bulk ZIP ingestion | [docs/BULK_INGESTION.md](docs/BULK_INGESTION.md) |
-| Production / Kamal / AWS | [docs/PRODUCTION.md](docs/PRODUCTION.md) (cold start/stop cheat sheet: [§ Cold start / cold stop](docs/PRODUCTION.md#cold-start--cold-stop--full-sequence-cheat-sheet)) |
-| Bedrock KB & env | [BEDROCK_SETUP.md](BEDROCK_SETUP.md) |
-| Pins & session retrieval | [docs/SESSION_AND_RETRIEVAL.md](docs/SESSION_AND_RETRIEVAL.md) |
-| Home UI (KB card, lightbox) | [docs/WEB_HOME.md](docs/WEB_HOME.md) |
-| Query orchestrator | [docs/QUERY_ORCHESTRATOR.md](docs/QUERY_ORCHESTRATOR.md) |
-| Metrics & queues | [docs/METRICS.md](docs/METRICS.md) |
-| WhatsApp (dormant) | [docs/WHATSAPP.md](docs/WHATSAPP.md) |
-| Cursor / agent engineering rules | [CLAUDE.md](CLAUDE.md) |
-| Multi-tenant roadmap | [docs/MULTI_TENANT_ARCHITECTURE.md](docs/MULTI_TENANT_ARCHITECTURE.md) |
-| **Account branding** (host → logo/favicon/title) | [docs/ACCOUNT_BRANDING.md](docs/ACCOUNT_BRANDING.md) |
+| **Complete documentation index** | [docs/README.md](docs/README.md) |
+| Product stage and roadmap | [docs/PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md) |
+| Active architecture | [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md) |
+| Production / Kamal / AWS | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
+| Engineering rules | [AGENTS.md](AGENTS.md) and scoped `AGENTS.md` files |
 
 ## Stack
 
 | Area | Technology |
 |------|------------|
-| App | Ruby ([`.ruby-version`](.ruby-version)), Rails 8.1.2, PostgreSQL |
+| App | Ruby ([`.ruby-version`](.ruby-version)), Rails 8.1+, PostgreSQL |
 | UI | Hotwire (Turbo, Stimulus), Tailwind, Importmap |
 | Jobs / cache / cable | Solid Queue, Solid Cache, Solid Cable |
 | AI | AWS Bedrock; Anthropic API for bulk ZIP + optional web chunking |
@@ -73,7 +66,7 @@ Open http://localhost:3000. `bin/dev` runs Rails + Tailwind (Foreman / `Procfile
 
 ### Prerequisites
 
-- Ruby, Rails 8.1.2, PostgreSQL, libvips  
+- Ruby, Rails 8.1+, PostgreSQL, libvips
 - **LibreOffice** — only if testing Office uploads (included in production Dockerfile)
 
 ### Secrets
@@ -97,7 +90,8 @@ Restart **web and workers** after changing `.env`.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `SHARED_SESSION_ENABLED` | off | MVP: one shared chat thread for all web users |
+| `SHARED_SESSION_ENABLED` | off | `false` uses per-user sessions; `true` is available for a local/shared demo thread |
+| `SHOW_USAGE_METRICS` | off | Shows the internal token/cost footer; keep hidden in customer demos unless explicitly needed |
 | `BEDROCK_BULK_DATA_SOURCE_ID` | optional | Shared no-chunking data source for bulk ZIP + web uploads; must include only `bulk_chunks/` |
 | `ANTHROPIC_API_KEY` | — | Required for bulk ZIP and web uploads |
 | `APPSIGNAL_PUSH_API_KEY` | — | Required only for AppSignal production error/performance monitoring |
@@ -118,8 +112,8 @@ Per-user sessions: omit `SHARED_SESSION_ENABLED` or set `false`. In **test**, sh
 ## Usage
 
 1. Sign in.
-2. Upload from chat or use **`/bulk_uploads`** for a ZIP.
-3. Ask questions; **pin** documents to scope retrieval; tap image thumbnails for full-size view.
+2. Take a field photo for direct diagnosis, or upload a document for indexing.
+3. Ask questions; **pin** indexed documents to scope retrieval; tap image thumbnails for full-size view.
 
 ## New engineer onboarding
 
@@ -136,6 +130,6 @@ Per-user sessions: omit `SHARED_SESSION_ENABLED` or set `false`. In **test**, sh
 
 ## Other references
 
-- **Bedrock IAM:** `docs/bedrock-iam-policy.json`, `docs/AWS_IAM_PERMISSIONS.md`  
+- **Bedrock IAM:** `docs/bedrock-iam-policy.json`
 - **Image compression:** [docs/IMAGE_COMPRESSION.md](docs/IMAGE_COMPRESSION.md)  
 - **Legacy architecture doc (may be stale):** [ARCHITECTURE.md](ARCHITECTURE.md)

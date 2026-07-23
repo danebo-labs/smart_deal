@@ -1,6 +1,8 @@
 # Session, pins, and KB retrieval (web)
 
-Three layers: global **`kb_documents`** catalog, **`technician_documents`** audit trail, **`active_entities`** pins that scope retrieval.
+Three account-scoped layers: **`kb_documents`** catalog,
+**`technician_documents`** audit trail, and **`active_entities`** pins that scope
+retrieval.
 
 **Related:** [Web home UI](WEB_HOME.md)
 
@@ -11,15 +13,22 @@ Three layers: global **`kb_documents`** catalog, **`technician_documents`** audi
 Three layers describe the **catalog**, an **ingestion audit trail**, and what actually **scopes Bedrock retrieval** on the web home path:
 
 ```
-kb_documents         → "What exists in S3?"              (global catalog; admin + home list)
+kb_documents         → "What exists in S3?"              (account catalog; home list)
 technician_documents → "Ingestion / usage audit rows"  (still written from jobs; not preloaded into pins)
 active_entities      → "Pinned KB docs for this session" (UI + auto-pin after indexed upload)
 ```
 
-**`kb_documents`** — Global S3 catalog. One row per uploaded S3 key. Created on upload; enriched with `display_name`, `aliases`, and `size_bytes` as the pipeline processes the file. Powers the tenant dashboard at `/dashboard` (KB document list) and the **home knowledge base list** (with optional `KbDocumentThumbnail` for images). Haiku-derived names/aliases from answers update **`kb_documents` only** via **`KbDocumentEnrichmentService`** (`RagController#ask`); that path does **not** add session pins.
+**`kb_documents`** — Account-scoped S3 catalog. One row per account and S3
+key. Created on upload; enriched with `display_name`, `aliases`, and `size_bytes`
+as the pipeline processes the file. It powers the home knowledge-base list
+(with optional `KbDocumentThumbnail` for images). Haiku-derived names/aliases
+from answers update **`kb_documents` only** via
+**`KbDocumentEnrichmentService`** (`RagController#ask`); that path does **not**
+add session pins.
 
-> **MVP scope:** The pool is global (`account_id = nil`). Deduplication is by `canonical_name` (or `source_uri`) across all uploaders. `identifier` and `channel` are preserved for audit but do not drive uniqueness.
-> **Stage 1+:** `account_id` will be added; uniqueness becomes `[account_id, canonical_name]`. Stage 2 adds `project_id`.
+> **MVP scope:** `account_id` is mandatory on `KbDocument`,
+> `TechnicianDocument`, and `ConversationSession`. Per-project or per-asset
+> organization is not part of the current product.
 
 **`technician_documents`** — Still populated from ingestion (`BedrockIngestionJob` and related paths) for **audit / future ranking** (`interaction_count`, FIFO cap). It is **not** used to seed `active_entities` when a new `ConversationSession` is created (`preload_recent_entities` was removed).
 
@@ -41,6 +50,13 @@ Follow-up RAG (web)
   └─ retrieve_and_generate with entity filter when pins exist (force_entity_filter)
        └─ KbDocumentEnrichmentService (doc_refs) → kb_documents aliases only
 ```
+
+Live technician-photo diagnosis is intentionally outside this ingestion flow.
+It does not create a `KbDocument`, does not auto-pin, and does not become a
+Knowledge Base source. Its compact `[FOTO]` result may remain in conversation
+history so a technician can make a later, explicit query against indexed
+manuals. Persistent conversations and diagnostic records belong to the next
+product stage; see [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
 
 #### Session-scoped retrieval filter logic
 
@@ -76,8 +92,8 @@ Reranking the 15 candidates to 9 or 12 caused recall regressions in the
 See [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md)
 for the test matrix and measured tradeoffs.
 
-| Layer | Scope (MVP) | Scope (Stage 1+) | Eviction / cap | Written by |
-|---|---|---|---|---|
-| `kb_documents` | Global | Global per account | — | Upload, ingestion, `KbDocumentEnrichmentService` |
-| `technician_documents` | Global pool (`account_id = nil`) | Per `[account_id, project_id]` | FIFO max 20 | Ingestion (audit) |
-| `active_entities` | Per session (or shared session in pilot) | Per session | `MAX_ENTITIES`; row TTL `EXPIRY_DURATION` | Pins + auto-pin on indexed upload |
+| Layer | Current scope | Eviction / cap | Written by |
+|---|---|---|---|
+| `kb_documents` | Per account | — | Upload, ingestion, `KbDocumentEnrichmentService` |
+| `technician_documents` | Per account | FIFO max 20 | Ingestion (audit) |
+| `active_entities` | Per account/session (or explicitly shared demo session) | `MAX_ENTITIES`; row TTL `EXPIRY_DURATION` | Pins + auto-pin on indexed upload |

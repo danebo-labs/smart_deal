@@ -4,7 +4,9 @@
 
 1. **AWS credentials:** `access_key_id` and `secret_access_key`, or a Bedrock API key / bearer token generated in the AWS console.
 2. **Region:** `us-east-1` by default.
-3. **Inference Profile:** `us.anthropic.claude-haiku-4-5-20251001-v1:0`, the US-region profile for Claude Haiku 4.5 (20% cheaper than `global.` with same quality; routes within us-east-1).
+3. **Inference Profile:** `global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+   the current application default and production setting. Use a `us.` profile
+   only when US-only routing is a customer requirement.
 
 ## Credentials
 
@@ -22,7 +24,7 @@
      secret_access_key: YOUR_AWS_SECRET_ACCESS_KEY
      region: us-east-1
      bedrock_bearer_token: YOUR_AWS_BEDROCK_BEARER_TOKEN (optional)
-     bedrock_model_id: us.anthropic.claude-haiku-4-5-20251001-v1:0
+     bedrock_model_id: global.anthropic.claude-haiku-4-5-20251001-v1:0
 
    bedrock:
      knowledge_base_id: YOUR_KNOWLEDGE_BASE_ID
@@ -283,7 +285,7 @@ aws:
   secret_access_key: YOUR_SECRET_KEY
   region: us-east-1
   bedrock_bearer_token: YOUR_BEDROCK_BEARER_TOKEN (if applicable)
-  bedrock_model_id: us.anthropic.claude-haiku-4-5-20251001-v1:0
+  bedrock_model_id: global.anthropic.claude-haiku-4-5-20251001-v1:0
 
 bedrock:
   knowledge_base_id: YOUR_KNOWLEDGE_BASE_ID
@@ -396,7 +398,7 @@ Reranking is disabled by default after the
 [2026-06-09 quality benchmark](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) found
 that reducing 15 candidates to 9 or 12 omitted functional-test evidence.
 
-See `docs/bedrock-app-user-iam-policy.json` for a complete policy ready to attach.
+See `docs/bedrock-iam-policy.json` for the repository policy reference.
 
 ## Troubleshooting
 
@@ -421,8 +423,10 @@ See `docs/bedrock-app-user-iam-policy.json` for a complete policy ready to attac
 
 ### Error: "Bedrock error: ... inference profile"
 
-- Verify that `BEDROCK_MODEL_ID` points to a valid inference profile. The default is `us.anthropic.claude-haiku-4-5-20251001-v1:0` (US-region Haiku 4.5, 20% cheaper than `global.`).
-- The `us.` prefix routes within US regions only. If you work outside us-east-1, use `global.anthropic.claude-haiku-4-5-20251001-v1:0` instead.
+- Verify that `BEDROCK_MODEL_ID` points to a valid inference profile. The current
+  default is `global.anthropic.claude-haiku-4-5-20251001-v1:0`.
+- The `us.` prefix restricts routing to US regions; choose it for a validated
+  residency requirement, not as the repository default.
 
 ### Error: "API key not configured"
 

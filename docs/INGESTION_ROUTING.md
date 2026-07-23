@@ -2,6 +2,12 @@
 
 How the app decides **what to parse**, **which pages to keep**, and **which Claude model** to use when a technician uploads a file from **chat** or **bulk ZIP**.
 
+> **Current MVP boundary:** live JPEG/PNG technician photos use direct diagnosis
+> through `FieldPhotoAnalysisJob`; they are not document ingestion and do not
+> create `KbDocument` rows. The image-routing sections below remain relevant to
+> deliberately indexed image assets and the disabled bulk implementation. Bulk
+> ZIP routes are currently commented out.
+
 **Related:** [Web custom chunking](WEB_CUSTOM_CHUNKING.md) · [Bulk ZIP](BULK_INGESTION.md) · [Cost v2 ADR](INGESTION_COST_V2.md) · [Metrics channels](METRICS.md)
 
 ---
@@ -10,10 +16,13 @@ How the app decides **what to parse**, **which pages to keep**, and **which Clau
 
 | Entry | Route | Job queue | Parse API |
 |-------|-------|-----------|-----------|
-| **Chat attachment** | Home RAG → `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments` | `default` + `bulk_ingestion` for long PDFs | Sync Messages for short files; Anthropic Message Batches for long PDFs |
-| **Bulk ZIP** | `/bulk_uploads` → `ProcessBulkUploadJob` → … → `SubmitClaudeBatchJob` | `bulk_ingestion` | Anthropic Message Batches (always async) |
+| **Live field photo** | Home RAG → `FieldPhotoAnalysisJob` | `default` | Sync Messages, diagnostic only; no KB ingestion |
+| **Chat document** | Home RAG → `UploadAndSyncAttachmentsJob` → `QueryOrchestratorService#upload_and_sync_attachments` | `default` + `bulk_ingestion` for long PDFs | Sync Messages for short files; Anthropic Message Batches for long PDFs |
+| **Bulk ZIP (disabled)** | `/bulk_uploads` → `ProcessBulkUploadJob` → … → `SubmitClaudeBatchJob` | `bulk_ingestion` | Anthropic Message Batches (always async) |
 
-Both paths share the same **classification**, **page filter**, and **model routing** services. No feature flags gate these paths — `CustomChunkingPipeline` and `BulkCostV2RequestBuilder` are the only active code paths.
+Document ingestion and the preserved bulk implementation share classification,
+page filtering, and model-routing services. Live field-photo diagnosis reuses
+the visual gate/prompt/parser but does not run `CustomChunkingPipeline`.
 
 ---
 

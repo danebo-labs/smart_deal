@@ -1,5 +1,11 @@
 # Ingestion Cost V2 — ADR & Cost Architecture
 
+> **ADR scope:** retained design history for document ingestion and indexed image
+> assets. Live technician photos in the current MVP use direct diagnostic
+> analysis and do not enter the Knowledge Base. Current behavior is documented
+> in [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) and
+> [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md).
+
 **Status:** Active production path for web and bulk uploads
 **Architecture benchmark:** 2026-05-21
 **Cost reconciliation:** 2026-06-18

@@ -1,6 +1,9 @@
 # Smart Deal — Architecture Document
 
-> **Note:** This file may be **out of date** (WhatsApp-centric diagram, older stack versions). Prefer **[docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md)** and the focused docs under `docs/` (see [README.md](README.md#documentation-map)).
+> **Legacy snapshot — do not use for current implementation decisions.** This
+> file is WhatsApp-centric and contains older stack versions. Start at
+> [docs/README.md](docs/README.md), then read
+> [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md) if needed.
 
 > Last updated: 2026-02-20
 

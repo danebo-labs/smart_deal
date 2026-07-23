@@ -9,7 +9,10 @@ Mobile-first layout for field technicians.
 ### Layout (mobile-first)
 
 - **Grid:** `home/index.html.erb` uses a responsive grid; **`data-controller="rag-chat"`** wraps the chat column **and** the desktop sidebar so KB rows use the same Stimulus actions as mobile.
-- **Breakpoints:** default = phone; **`sm:`** restores single-row chat input and shows footer metrics; **`lg:`** shows the desktop sidebar KB card (mobile uses the in-chat `mobile-docs-panel` strip, `md:hidden`).
+- **Breakpoints:** default = phone; **`sm:`** restores the single-row chat
+  input; **`lg:`** shows the desktop sidebar KB card (mobile uses the in-chat
+  `mobile-docs-panel` strip, `md:hidden`). The internal usage footer is rendered
+  only with `SHOW_USAGE_METRICS=true`.
 - **Chat input:** column layout on small screens (textarea full width, then attach + send); desktop keeps inline clip + textarea + send.
 
 ### Unified KB card, pagination, refresh
@@ -21,6 +24,24 @@ Mobile-first layout for field technicians.
 | `_kb_docs_card_sentinel.html.erb` | 1px **IntersectionObserver** target; `docs_scroll_controller.js` fetches `/home/documents_page?page=N` as Turbo Stream. |
 | `HomeController` | `PAGE_SIZE` **20**; `#documents` replaces both item containers + sentinels after indexing; `#documents_page` **appends** next page to desktop and mobile. |
 | `rag_chat_controller.js` | Subscribes to `KbSyncChannel`; typing-dots loading bubble, 15s nudge, 90s stall hint (both upload and text-query flows); `refreshDocuments()` after **indexed** / **failed**. |
+
+### Live field-photo diagnosis
+
+- JPEG/PNG attachments are analyzed asynchronously by
+  `FieldPhotoAnalysisJob` and return `photo_analyzed` over `KbSyncChannel`.
+- The photo is diagnostic input, not an indexed document; the KB list is not
+  refreshed and no `KbDocument` is created.
+- MVP-required behavior is one final visual response per upload. The frontend
+  no longer resends the photo question to RAG; manual correlation requires a
+  later, explicit question from the technician.
+- `/rag/ask` returns a `photo:<uuid>` correlation ID. Only the browser that has
+  that exact request pending renders its `photo_analyzed` or photo failure
+  event; other users and tabs on the same account ignore it.
+- The normalized image crosses the web/worker boundary through a short-lived
+  Solid Cache entry, never through Solid Queue arguments. The job deletes the
+  temporary entry on success, expiry, cache hit, or failure.
+- Diagnoses are cached by contract version, account, normalized SHA-256 and
+  locale. Identical bytes in another account are always a miss.
 
 ### Thumbnails & full-size lightbox
 

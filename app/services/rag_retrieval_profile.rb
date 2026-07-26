@@ -16,6 +16,13 @@
 # | documents only      | 3      | 15 -> 12   | rerank full-list candidates       |
 # | mixed photo+doc     | 3      | 15 -> 12   | same document budget              |
 # | no pin (open query) | 8      | 15         | broader catalog search            |
+#
+# Do NOT widen the pinned-document budget for comparative questions. Measured
+# 2026-07-26 against the production KB on `em3000_fotocelula_220v` ("Compara las
+# dos fotocélulas…"): top-k 3 already retrieved both target pages (29 and 30),
+# so recall was never the bottleneck; top-k 6 added four off-topic pages and the
+# answer volunteered an unrelated 24 V obstacle connector, dropping the case
+# from 5/7 to 0/7 on a critical penalized check.
 class RagRetrievalProfile
   PINNED_DOCUMENT_RESULTS = 3
   PHOTO_RESULTS = 10

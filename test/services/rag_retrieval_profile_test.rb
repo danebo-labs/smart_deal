@@ -119,4 +119,20 @@ class RagRetrievalProfileTest < ActiveSupport::TestCase
     )
     assert_equal 3, profile.number_of_results
   end
+
+  # Regression guard: widening the pinned-document budget for comparative
+  # wording was measured on 2026-07-26 and rejected — top-k 6 added off-topic
+  # pages and cost the em3000 comparison case a critical penalized hit.
+  test "a comparative pinned-document query keeps the narrow document budget" do
+    [
+      "Compara las dos fotocélulas de EM3000: ¿qué tensión documenta cada una?",
+      "¿La configuración aplica a ambas versiones?",
+      "Compare both wiring diagrams"
+    ].each do |question|
+      profile = RagRetrievalProfile.new(entity_sources: [ "document" ], question: question)
+      assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS,
+                   profile.number_of_results,
+                   "expected the narrow pinned budget for: #{question}"
+    end
+  end
 end

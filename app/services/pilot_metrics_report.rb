@@ -9,8 +9,16 @@ class PilotMetricsReport
     conversation_session_id created_at user_query correlation_id
   ].freeze
   ABSENCE_PATTERNS = {
-    data_not_available: /DATA_NOT_AVAILABLE/,
-    require_field_verification: /REQUIRE_FIELD_VERIFICATION/
+    data_not_available: /
+      DATA_NOT_AVAILABLE |
+      El\ documento\ no\ incluye\ este\ dato |
+      The\ document\ does\ not\ include\ this\ information
+    /ix,
+    require_field_verification: /
+      REQUIRES?_FIELD_VERIFICATION |
+      Verificar\ en\ campo\ o\ en\ el\ esquema\ completo |
+      Verify\ in\ the\ field\ or\ against\ the\ complete\ schematic
+    /ix
   }.freeze
   REFORMULATION_WINDOW = 10.minutes
 

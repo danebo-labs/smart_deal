@@ -877,7 +877,34 @@ export default class extends Controller {
     if (citations.length) {
       this.addMessageHtml(renderReferences(citations), "assistant")
     }
+    if (Array.isArray(data.quick_replies) && data.quick_replies.length) {
+      this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")
+    }
     this.scrollToMessageTop(firstRow)
+  }
+
+  renderQuickReplies(replies) {
+    const buttons = replies.slice(0, 3).map((reply) => {
+      const label = typeof reply === "string" ? reply : reply.label
+      const query = typeof reply === "string" ? reply : reply.query
+      const safeLabel = this.escapeHtml(label || "")
+      const safeQuery = this.escapeHtml(query || label || "")
+      return `<button type="button"
+                data-action="click->rag-chat#sendQuickReply"
+                data-query="${safeQuery}"
+                class="min-h-11 w-full rounded-xl border border-[hsl(217,91%,50%)] bg-white px-4 py-2.5 text-left text-sm font-medium text-[hsl(217,91%,42%)] active:bg-[hsl(217,91%,95%)]">
+                ${safeLabel}
+              </button>`
+    }).join("")
+    return `<div class="flex w-full flex-col gap-2" aria-label="Opciones de placa">${buttons}</div>`
+  }
+
+  sendQuickReply(event) {
+    const query = event.currentTarget.dataset.query
+    if (!query) return
+
+    this.inputTarget.value = query
+    this.sendMessage({ preventDefault() {} })
   }
 
   // ── Immediate acknowledgment in the loading bubble ────────────────────────

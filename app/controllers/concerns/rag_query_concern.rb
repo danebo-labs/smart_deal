@@ -18,6 +18,7 @@ module RagQueryConcern
                          :parsed_record_ids, :rendered_record_ids,
                          :record_counts_by_type, :record_ledger_sha256,
                          :retrieved_chunk_sha256s, :deterministic_validation,
+                         :quick_replies,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -79,6 +80,10 @@ module RagQueryConcern
       correlation_id:      correlation_id
     ).execute
 
+    # AnswerSafetyProcessor already runs once inside BedrockRagService#query with
+    # the full evidence context (native citations or the fallback_retrieve chunks).
+    # Re-running it here would degrade correct answers a second time, so the
+    # concern only applies presentation sanitization.
     sanitized_answer = sanitize_answer(result[:answer], channel: resolved_output_channel)
 
     RagResult.new(
@@ -99,7 +104,8 @@ module RagQueryConcern
       record_counts_by_type:    result[:record_counts_by_type],
       record_ledger_sha256:     result[:record_ledger_sha256],
       retrieved_chunk_sha256s:  result[:retrieved_chunk_sha256s],
-      deterministic_validation: result[:deterministic_validation]
+      deterministic_validation: result[:deterministic_validation],
+      quick_replies:             result[:quick_replies]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

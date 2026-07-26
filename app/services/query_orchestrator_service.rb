@@ -165,6 +165,19 @@ class QueryOrchestratorService
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
       SqlGenerationService.new(@query).execute.merge(upload_context)
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
+      disambiguation = Rag::AmbiguousModelResponder.build(
+        question:            @query,
+        account:             @account,
+        entity_s3_uris:      @entity_s3_uris,
+        entity_sources:      entity_sources,
+        force_entity_filter: @force_entity_filter,
+        response_locale:     @response_locale
+      )
+      if disambiguation && (disambiguated = disambiguation.execute)
+        Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")
+        return disambiguated.merge(upload_context)
+      end
+
       deterministic = Rag::DeterministicRenderer.build(
         question:            @query,
         entity_s3_uris:      @entity_s3_uris,

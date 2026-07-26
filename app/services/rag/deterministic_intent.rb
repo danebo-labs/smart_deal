@@ -18,6 +18,14 @@ module Rag
       /\bchecks\b.*\bstop\s+work(?:ing)?\b/im
     ].freeze
 
+    GENERIC_HARDWARE_PATTERNS = [
+      /\b(?:leds?|cerrojos?|enclavamientos?|contactos?|seguridades?)\b/i,
+      /\b(?:locks?|interlocks?|safety\s+contacts?)\b/i
+    ].freeze
+
+    EXPLICIT_EQUIPMENT_PATTERN =
+      /\b(?:ALTIUS|ORONA|KONE|OTIS|SCHINDLER|SOPREL|THYSSEN(?:KRUPP)?|CARLOS\s+SILVA)\b|(?:\b[A-Z]{2,}[-.]?\d+[A-Z0-9.-]*\b)/i.freeze
+
     module_function
 
     def exhaustive_functional_test_query?(question)
@@ -26,6 +34,12 @@ module Rag
 
     def stop_work_checklist_query?(question)
       STOP_WORK_PATTERNS.any? { |pattern| question.to_s.match?(pattern) }
+    end
+
+    def ambiguous_hardware_query?(question)
+      text = question.to_s
+      GENERIC_HARDWARE_PATTERNS.any? { |pattern| text.match?(pattern) } &&
+        !text.match?(EXPLICIT_EQUIPMENT_PATTERN)
     end
   end
 end

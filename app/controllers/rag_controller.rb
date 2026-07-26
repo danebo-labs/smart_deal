@@ -79,6 +79,7 @@ class RagController < ApplicationController
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
     json[:correlation_id]     = result.correlation_id     if result.correlation_id.present?
+    json[:quick_replies]      = result.quick_replies      if result.quick_replies.present?
     if Array(result.citations).empty?
       fallback_names = consulted_documents_fallback(result.doc_refs)
       json[:consulted_documents] = fallback_names if fallback_names.present?

@@ -155,8 +155,11 @@ changes against cost per query, not only latency/quality.
 * **Adaptive retrieval:** size `number_of_results` (`top_k`) to intent/pin
   signal instead of a fixed high value — fewer irrelevant chunks retrieved
   means fewer input tokens billed (see `RagRetrievalProfile`).
-* **`stop_sequences`:** cut generation as soon as a structural marker closes
-  (e.g. `</DOC_REFS>`) to avoid trailing filler output tokens per query.
+* **No `stop_sequences` on RAG generation:** `retrieve_and_generate` owns the
+  output contract through `$output_format_instructions$`. A stop sequence that
+  closed a custom block (the retired `</DOC_REFS>`) truncated Bedrock's own
+  citation format and collapsed most answers into its canned "Sorry" refusal.
+  Save output tokens through prompt compaction, not by cutting generation.
 * **Prompt compaction:** keep instruction blocks (tone/language injection,
   repeated rules) to a single occurrence — duplicated boilerplate is billed
   on every request.

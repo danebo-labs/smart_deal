@@ -31,6 +31,36 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
 
 ## Current retrieval contract
 
+- The normal web RAG lane uses Bedrock `RetrieveAndGenerate`. It keeps retrieval,
+  generation, native source attribution, and Bedrock session continuity in one
+  managed call.
+- `citations` is the only contract for claim attribution shown to a technician.
+  `retrieved_citations` is a legacy internal field used by document enrichment;
+  it may contain metadata from a separate `Retrieve` fallback and must never be
+  treated as proof that a generated claim was cited.
+- Document identity is deterministic: `doc_refs` comes from native citation
+  metadata (`canonical_name`, `aliases`, `original_source_uri`) or, when native
+  citations are absent, from a bounded `Retrieve` fallback. On a compendium whose
+  pages name different boards, that identity is the uploaded filename — no single
+  page name may speak for the file (`document_name_consensus`).
+- `RetrieveAndGenerate` declares no `stop_sequences`. `$output_format_instructions$`
+  is the whole output contract; cutting generation on a custom marker broke
+  Bedrock's citation format.
+- That placeholder must be the LAST thing in the rendered prompt. Dynamic
+  directives (language header/footer, delivery channel, safety, completeness,
+  visual) are appended before it and the placeholder is re-emitted last
+  (`BedrockRagService::OUTPUT_FORMAT_PLACEHOLDER`). Text emitted after it makes
+  Bedrock discard the generated answer and return its canned "Sorry" refusal even
+  when retrieval succeeded (verified against production, 2026-07-26).
+- A canned "Sorry" answer returned while evidence WAS retrieved is a generation
+  failure, and the technician reads a retryable message — never an absence that
+  would imply the manual lacks the datum.
+- The safety gate validates identifier, connection, and LED existence against
+  native cited chunks or, when citations are absent, against those fallback
+  chunks. A sensitive answer fails closed only when neither source is available.
+  Fallback chunks do not become technician-visible citations.
+- Direct `Retrieve` is also used as the bounded internal fallback above and by
+  deterministic renderers that build explicit references from rendered chunks.
 - Pins are the technician's explicit evidence scope. A pinned miss returns
   `DATA_NOT_AVAILABLE`; it does not search the global catalog.
 - Multiple pins may be narrowed deterministically when the question explicitly

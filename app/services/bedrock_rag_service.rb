@@ -7,6 +7,7 @@ require 'aws-sdk-core/static_token_provider'
 require 'digest'
 require 'json'
 require_relative 'bedrock/citation_processor'
+require_relative 'rag/answer_safety_processor'
 
 class BedrockRagService
   include AwsClientInitializer
@@ -20,13 +21,21 @@ class BedrockRagService
 
   DOC_REFS_PATTERN = /<DOC_REFS>\s*(.*?)\s*<\/DOC_REFS>/m.freeze
 
+  # retrieve_and_generate owns the output/citation contract through this
+  # placeholder. Verified 2026-07-26 against the production KB: any text emitted
+  # AFTER it makes Bedrock discard the generated answer and return its canned
+  # "Sorry, I am unable to assist you with this request." — the same failure mode
+  # the retired </DOC_REFS> stop sequence caused. Every dynamic directive is
+  # therefore appended before the placeholder, which is always re-emitted last.
+  OUTPUT_FORMAT_PLACEHOLDER = "$output_format_instructions$"
+
   # Deterministic failure-semantics normalization (Gate B).
   # Haiku frequently states absence in prose ("la documentación no contiene…")
   # without emitting the literal protocol marker. When the answer LEADS with an
   # absence statement and carries no marker, we append DATA_NOT_AVAILABLE so the
   # safety-critical absence contract is explicit. Lead-scoped to avoid firing on
   # grounded answers that mention an incidental sub-absence.
-  ABSENCE_MARKER_PATTERN = /DATA_NOT_AVAILABLE|REQUIRE_FIELD_VERIFICATION/.freeze
+  ABSENCE_MARKER_PATTERN = /DATA_NOT_AVAILABLE|REQUIRES?_FIELD_VERIFICATION/.freeze
   ABSENCE_LEAD_CHARS = 280
   ABSENCE_LEAD_PATTERNS = [
     /no\s+(?:se\s+)?proporciona/i,
@@ -73,10 +82,7 @@ class BedrockRagService
         inference_config: {
           text_inference_config: {
             temperature: cfg[:generation_temperature],
-            max_tokens: cfg[:generation_max_tokens],
-            # Stop before </DOC_REFS> is emitted to trim tail noise.
-            # query() re-appends the tag before extract_doc_refs so the regex still matches.
-            stop_sequences: ["</DOC_REFS>"]
+            max_tokens: cfg[:generation_max_tokens]
           }
         },
 
@@ -162,7 +168,7 @@ class BedrockRagService
   #   queries like "Describe Orona ARCA BASICO ..." don't trip the bypass.
   def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
-            account_id: nil, user_id: nil, conversation_session_id: nil)
+            account_id: nil, user_id: nil, conversation_session_id: nil, include_diagnostics: false)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -265,64 +271,79 @@ class BedrockRagService
 
       # Process response
       raw_answer = response.output.text
+      # Distinguish the Bedrock "Sorry…" guardrail from a genuine no-results:
+      # if the trace shows chunks were retrieved (native citations present), the
+      # canned phrase is a GENERATION/parse failure, not an empty knowledge base.
+      canned_no_results = bedrock_no_results?(raw_answer)
+
       # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
       no_results_locale = effective_response_locale(question, response_locale: response_locale)
       answer_text =
-        if bedrock_no_results?(raw_answer) && apply_filter && force_entity_filter
+        if canned_no_results && apply_filter && force_entity_filter
           localized_pinned_no_results(no_results_locale)
-        elsif bedrock_no_results?(raw_answer)
+        elsif canned_no_results
           localized_no_results(no_results_locale)
         else
           raw_answer
         end
-      # stop_sequences ["</DOC_REFS>"] causes the model to stop before emitting the closing tag.
-      # Re-append it so DOC_REFS_PATTERN can match.
-      answer_text = normalize_doc_refs_tag(answer_text)
-      doc_refs_result = extract_doc_refs(answer_text)
-      answer_text = doc_refs_result[:clean_answer]
-      doc_refs = doc_refs_result[:doc_refs]
-      Rails.logger.info("BedrockRagService: doc_refs=#{doc_refs&.size || 'nil'}") if doc_refs
+
       citations = @citation_processor.extract_citations(response.citations)
       session_id = response.session_id
 
-      # GAP: Bedrock only populates response.citations for chunks that Haiku
-      # inline-cites ([n] markers). When Haiku emits <DOC_REFS> but omits inline
-      # citations, response.citations is empty and EntityExtractorService has
-      # no metadata to resolve source_uri.
-      #
-      # With a pin (applied_filter_uris non-empty): the entity is already known;
-      # skip the Retrieve round-trip (+1–2 s) and synthesize metadata from
-      # filtered_uris so KbDocumentEnrichmentService can still backfill
-      # canonical/aliases. Without a pin: call the Retrieve API for authoritative
-      # source_uri resolution.
+      # Defensive cleanup only: the prompt no longer emits <DOC_REFS>, but strip a
+      # residual tail block if the model regresses. Done before span insertion so
+      # markers land in the clean body; the block is always at the tail, so body
+      # offsets used by the spans are unaffected.
+      answer_text = extract_doc_refs(answer_text)[:clean_answer]
+
+      # F2 — Real attribution: insert [n] markers from the spans Bedrock returns
+      # (citation.generated_response_part.text_response_part.span), not a fabricated
+      # every-3-sentences distribution. Only on a genuine generated answer.
+      if !canned_no_results && citations.any? && !answer_text.match?(/\[\d+\]/)
+        answer_text = @citation_processor.add_span_citations(answer_text, raw_citations)
+      end
+
+      # F1 — Deterministic document identity: build doc_refs from the metadata of
+      # native citations (canonical_name, aliases, original_source_uri from the
+      # sidecars). fallback_retrieve backs it up only when there are no citations
+      # and the entity is not already pinned. The result hash keeps the :doc_refs
+      # key so KbDocumentEnrichmentService/EntityExtractorService are unchanged.
       retrieved_for_extraction, observed_chunk_basis, input_token_basis =
         if citations.any?
           [ citations, "bedrock_citations", "prompt_template_plus_observed_chunks" ]
-        elsif doc_refs&.any? && applied_filter_uris.empty?
+        else
           Rails.logger.info("BedrockRagService: post-gen citations empty; Retrieve API fallback for source_uri")
           chunks = fallback_retrieve(question, entity_s3_uris: filtered_uris)
-          [ chunks, "fallback_retrieve_top3", "prompt_template_plus_observed_chunks" ]
-        elsif doc_refs&.any?
-          Rails.logger.info("BedrockRagService: skipping fallback_retrieve — entity known from filter")
-          synth = filtered_uris.map do |uri|
-            { content: nil, location: { uri: uri, type: "s3" },
-              metadata: { "x-amz-bedrock-kb-source-uri" => uri } }
-          end
-          [ synth, "filter_uris_only", "prompt_template_only" ]
-        else
-          [ [], "none", "prompt_template_plus_observed_chunks" ]
+          basis = chunks.any? ? "fallback_retrieve_top3" : "none"
+          [ chunks, basis, "prompt_template_plus_observed_chunks" ]
         end
-
-      # If answer doesn't contain inline citations but Bedrock returned source chunks,
-      # distribute [n] markers across the answer automatically.
-      if citations.any? && !answer_text.match(/\[\d+\]/)
-        answer_text = @citation_processor.add_citations_to_answer(answer_text, citations)
-        Rails.logger.info("Added citations automatically to answer text")
+      doc_refs = build_doc_refs(retrieved_for_extraction)
+      Rails.logger.info("BedrockRagService: doc_refs=#{doc_refs&.size || 'nil'}") if doc_refs
+      canned_with_retrieval = canned_no_results && retrieved_for_extraction.any?
+      if canned_with_retrieval
+        Rails.logger.warn(
+          "BedrockRagService: canned 'Sorry' response despite retrieved evidence — treating as generation failure, not no-results"
+        )
+        # Evidence WAS retrieved, so the absence wording would tell the technician the
+        # manual lacks a datum it may well document. Surface a transient failure they
+        # can retry instead.
+        answer_text = localized_generation_retry(no_results_locale)
       end
 
       # Failure semantics (Gate B): make prose-only absence explicit with the
       # literal protocol marker so downstream contracts/telemetry can rely on it.
       answer_text = normalize_absence_semantics(answer_text)
+      internal_answer_text = answer_text
+      # F3 — Single guardrail pass with the full evidence context: native
+      # citations when present, otherwise the chunks retrieved for identity
+      # (fallback_retrieve). Existence checks validate against this evidence so a
+      # documented identifier (e.g. MR08 CN-112.SC) is not falsely rejected. The
+      # concern-level second pass has been removed.
+      answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale).call(
+        answer_text,
+        evidence: retrieved_for_extraction,
+        require_cited_evidence: !canned_no_results
+      )
 
       latency_ms = ((Time.current - start_time) * 1000).to_i
       tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
@@ -336,7 +357,7 @@ class BedrockRagService
         observed_chunk_basis:           observed_chunk_basis,
         input_token_basis:              input_token_basis,
         bedrock_cited_references_count: total_refs,
-        doc_refs_present:               raw_answer.include?("<DOC_REFS>"),
+        doc_refs_present:               doc_refs.present?,
         doc_refs_valid:                 doc_refs.present?,
         doc_refs_count:                 doc_refs&.size.to_i,
         entity_filter_applied:          apply_filter,
@@ -369,21 +390,19 @@ class BedrockRagService
         entity_filter:    applied_filter_uris,
         evidence_mode:    observed_chunk_basis,
         retrieved_chunks: retrieved_for_extraction,
+        canned_no_results: canned_no_results,
+        canned_with_retrieval: canned_with_retrieval,
         correlation_id:   query_correlation_id,
         attribution:      attribution
       )
 
-      {
+      result = {
         answer:              answer_text,
         citations:           numbered_references,
-        # Chunks that Haiku actually cited anywhere in the answer (superset of
-        # numbered_references, which only includes those with explicit [n] markers).
-        # NOTE: these are NOT "all retrieved chunks" — Bedrock's vector search
-        # retrieves top-N chunks and passes ALL of them to Haiku as $search_results$,
-        # but only the ones Haiku chose to cite appear in response.citations[].
-        # retrieved_references[]. Uncited chunks are not returned by the API.
-        # EntityExtractorService uses this to parse DOCUMENT_ALIASES from S0-section
-        # chunks that were cited but happened to not get an explicit [n] marker.
+        # Internal source metadata for document enrichment. This is usually made
+        # from Bedrock citations, but may come from a separate Retrieve fallback
+        # when citations are absent. It must never be interpreted as user-visible
+        # claim attribution; `citations` is the only citation contract.
         retrieved_citations: retrieved_for_extraction,
         doc_refs:            doc_refs,
         session_id:          session_id,
@@ -397,6 +416,19 @@ class BedrockRagService
           )
         )
       }
+      if include_diagnostics
+        result[:diagnostics] = {
+          raw_answer: raw_answer,
+          internal_answer: internal_answer_text,
+          cited_chunks: citations,
+          safety_evidence_chunks: retrieved_for_extraction,
+          canned_no_results: canned_no_results,
+          canned_with_retrieval: canned_with_retrieval,
+          raw_citation_groups: raw_citations.size,
+          raw_cited_references: total_refs
+        }
+      end
+      result
     rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
       Rails.logger.error("Bedrock RAG error: #{e.message}")
       Rails.logger.error(e.backtrace.join("\n"))
@@ -571,8 +603,8 @@ class BedrockRagService
   end
 
   def log_quality_signal(question:, answer:, citations:, doc_refs:, raw_citations:, latency_ms:,
-                        entity_filter:, evidence_mode:, retrieved_chunks:, correlation_id:,
-                        attribution:)
+                         entity_filter:, evidence_mode:, retrieved_chunks:, canned_no_results:,
+                         canned_with_retrieval:, correlation_id:, attribution:)
     retrieved_source_uris = Array(retrieved_chunks)
       .filter_map { |chunk| observed_chunk_descriptor(chunk)["retrieved_source_uri"] }
       .uniq
@@ -594,7 +626,14 @@ class BedrockRagService
       doc_refs:        doc_refs,
       entity_filter:   Array(entity_filter).first&.to_s&.first(80),
       entity_filter_count: Array(entity_filter).size,
-      evidence_present: citations.any? || Array(doc_refs).any? || raw_citations.any?,
+      # Only references rendered with the answer count as attributed evidence.
+      # DOC_REFS and Retrieve fallbacks are useful internal context/metadata, but
+      # they do not prove that a generated claim was cited.
+      evidence_present: citations.any?,
+      retrieval_context_present: Array(retrieved_chunks).any? || Array(doc_refs).any? ||
+        raw_citations.any?,
+      canned_no_results: canned_no_results,
+      canned_with_retrieval: canned_with_retrieval,
       evidence_mode:    evidence_mode,
       doc_refs_count:   Array(doc_refs).size,
       retrieved_source_uris: retrieved_source_uris,
@@ -823,8 +862,13 @@ class BedrockRagService
   #   1. TOP (before # ROLE) — highest attention slot, first thing Haiku reads.
   #   2. TAIL (after session_context) — last signal before generation, overrides
   #      any English leakage from Recent Conversation or retrieved chunks.
+  #
+  # OUTPUT_FORMAT_PLACEHOLDER is lifted out before the dynamic directives are
+  # appended and re-emitted last, so the citation contract always closes the prompt.
   def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil, output_channel: nil)
     base = self.class.load_generation_prompt_template
+    output_contract = base.include?(OUTPUT_FORMAT_PLACEHOLDER)
+    base = base.sub(OUTPUT_FORMAT_PLACEHOLDER, "").rstrip if output_contract
     locale = if response_locale.present?
       response_locale.to_sym
     elsif question.present?
@@ -847,6 +891,7 @@ class BedrockRagService
     base = "#{base}\n\n#{safety_directive}" if safety_directive.present?
     base = "#{base}\n\n#{completeness_directive}" if completeness_directive.present?
     base = "#{base}\n\n#{visual_directive}" if visual_directive.present?
+    base = "#{base}\n\n#{OUTPUT_FORMAT_PLACEHOLDER}\n" if output_contract
     base
   end
 
@@ -1108,6 +1153,10 @@ class BedrockRagService
     I18n.with_locale(locale) { I18n.t("rag.pinned_no_results") }
   end
 
+  def localized_generation_retry(locale)
+    I18n.with_locale(locale) { I18n.t("rag.generation_retry") }
+  end
+
   # Reads `app/prompts/bedrock/generation.txt` once per process in production
   # (and per call in dev/test so prompt edits are picked up without a restart).
   # Each RAG request renders the prompt twice (build_complete_optimized_config
@@ -1239,13 +1288,36 @@ class BedrockRagService
     false
   end
 
-  # When stop_sequences includes "</DOC_REFS>", the model halts before emitting the
-  # closing tag. Re-append it so DOC_REFS_PATTERN can still match the block.
-  def normalize_doc_refs_tag(text)
-    return text if text.blank?
-    return text if text.include?("</DOC_REFS>")
-    return "#{text}</DOC_REFS>" if text.include?("<DOC_REFS>")
-    text
+  # F1 — Deterministic document identity. Builds the doc_refs contract from the
+  # metadata carried by the native citations (or the fallback_retrieve chunks),
+  # instead of asking Haiku to emit a <DOC_REFS> block. Prefers the batch
+  # sidecar's original_source_uri, then the Bedrock-reserved source URI, then the
+  # chunk location. Keeps the same hash shape KbDocumentEnrichmentService and
+  # EntityExtractorService already consume (source_uri/canonical_name/aliases/doc_type).
+  def build_doc_refs(chunks)
+    refs = Array(chunks).filter_map do |chunk|
+      metadata = (chunk[:metadata] || chunk["metadata"] || {}).to_h.stringify_keys
+      location = (chunk[:location] || chunk["location"] || {})
+      source_uri = metadata["original_source_uri"].presence ||
+        metadata["x-amz-bedrock-kb-source-uri"].presence ||
+        (location[:uri] || location["uri"]).presence
+      next if source_uri.blank?
+
+      aliases = Array(metadata["aliases"])
+        .map { |a| a.to_s.strip }
+        .select { |a| a.length.between?(2, 60) }
+        .first(10)
+
+      {
+        "source_uri"     => source_uri,
+        "canonical_name" => metadata["canonical_name"].to_s.strip.presence ||
+          File.basename(source_uri, ".*"),
+        "aliases"        => aliases,
+        "doc_type"       => metadata["doc_type"].to_s.presence || "unknown"
+      }
+    end
+    refs = refs.uniq { |ref| ref["source_uri"] }
+    refs.presence
   end
 
   # Appends the literal DATA_NOT_AVAILABLE marker when the answer LEADS with an

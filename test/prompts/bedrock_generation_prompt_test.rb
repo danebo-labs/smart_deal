@@ -41,9 +41,51 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
     assert_not_includes prompt, "If the site does not match the documentation, STOP"
   end
 
-  test "keeps machine-readable references and concise output rules" do
-    assert_includes prompt, "<DOC_REFS>"
-    assert_includes prompt, "</DOC_REFS>"
+  test "requires explicit connector pairs and documented LED logic" do
+    assert_includes prompt, 'physical connection claim ("component → connector/terminal")'
+    assert_includes prompt, "same evidence fragment explicitly names both endpoints as a pair"
+    assert_includes prompt, "does not define its on/off logic"
+  end
+
+  test "allows only the fixed safe glossary and forbids inferred device roles" do
+    assert_includes prompt, "NO = normally"
+    assert_includes prompt, "NC = normally"
+    assert_includes prompt, "PTC ="
+    assert_includes prompt, "NTC ="
+    assert_includes prompt, "does not prove its operating role"
+  end
+
+  test "surfaces contradictions and blocks undocumented interventions" do
+    assert_includes prompt, "leave the conflict unresolved"
+    assert_includes prompt, "must not become an intervention procedure"
+  end
+
+  test "treats a heading that disagrees with its own table as a discrepancy" do
+    assert_includes prompt, "when the conflict sits inside a single fragment"
+    assert_includes prompt, "State both readings explicitly"
+  end
+
+  test "forbids transplanting a sibling board's wiring onto the model asked about" do
+    assert_includes prompt, "use only evidence\n  about that model"
+    assert_includes prompt, "is not evidence for the model asked about"
+  end
+
+  test "uses output_format_instructions as the single output contract" do
+    assert_includes prompt, "$output_format_instructions$"
+    # F1: the custom <DOC_REFS> block is retired — its XML parser collided with the
+    # native citation format and returned canned "Sorry" responses.
+    assert_not_includes prompt, "<DOC_REFS>"
+    assert_not_includes prompt, "</DOC_REFS>"
+    assert_not_includes prompt, "Reference rules:"
+  end
+
+  test "places output_format_instructions last as the sole trailing contract" do
+    trimmed = prompt.rstrip
+    assert trimmed.end_with?("$output_format_instructions$"),
+           "output_format_instructions must be the final directive in the prompt"
+  end
+
+  test "keeps concise output rules" do
     assert_includes prompt, "at most three logical sections"
     assert_includes prompt, "No markdown tables"
     assert_includes prompt, "Do not add a generic safety closing"

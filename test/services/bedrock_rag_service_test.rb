@@ -293,11 +293,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query does not alter a real answer that happens to start with sorry' do
     real_answer = "Sorry for the delay in this documentation — the procedure is as follows."
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(real_answer)) do
+    cited_response = FakeBedrockAgentRuntimeClient.new.send(
+      :default_retrieve_and_generate_response
+    )
+    cited_response.output.text = real_answer
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_response) do
       service = BedrockRagService.new(account: @account)
       result = service.query('What is the procedure?')
 
-      assert_equal real_answer, result[:answer]
+      assert_equal "#{real_answer}[1]", result[:answer]
     end
   end
 
@@ -338,6 +343,64 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 0.1, inference[:temperature]
       assert_equal 3000, inference[:max_tokens]
+    end
+  end
+
+  # A stop sequence closing an internal XML block once broke Bedrock's own output
+  # parser and turned 7/12 answers into the canned "Sorry" refusal.
+  test 'generation configuration declares no stop_sequences' do
+    config = BedrockRagService.new(account: @account).build_complete_optimized_config
+
+    generation = config[:generation_configuration]
+    assert_not generation.key?(:stop_sequences)
+    assert_not generation.fetch(:inference_config).fetch(:text_inference_config).key?(:stop_sequences)
+  end
+
+  # Verified against the production KB (2026-07-26): when the rendered template
+  # emitted the DELIVERY CHANNEL / language-reminder blocks AFTER
+  # $output_format_instructions$, retrieve_and_generate discarded the answer and
+  # returned its canned "Sorry" refusal even with valid retrieval.
+  test 'rendered generation prompt keeps output_format_instructions as the last block' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new(account: @account)
+      service.query(
+        'Compara las dos fotocélulas: qué tensión documenta cada una?',
+        response_locale: :es,
+        session_context: "## Recent Conversation\nUser: prior question",
+        output_channel: :web
+      )
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+
+      assert_equal 1, template.scan('$output_format_instructions$').size
+      assert template.rstrip.end_with?('$output_format_instructions$'),
+             'dynamic directives must be appended before the output contract'
+      assert_includes template, '# DELIVERY CHANNEL'
+      assert_includes template, 'MUST be written entirely in Spanish'
+    end
+  end
+
+  test 'rendered generation prompt closes with the output contract on the minimal path' do
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new(account: @account)
+      service.query('What is S3?')
+
+      template = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :generation_configuration,
+        :prompt_template,
+        :text_prompt_template
+      )
+
+      assert_equal 1, template.scan('$output_format_instructions$').size
+      assert template.rstrip.end_with?('$output_format_instructions$')
     end
   end
 
@@ -756,14 +819,33 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         # Account filter is always present; entity URI filter is inside and_all[1]
         entity_filter_present = filter&.dig(:and_all, 1)&.present?
         text = entity_filter_present ? no_results_text : real_answer
-        ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: [], session_id: 'sid')
+        citations =
+          if entity_filter_present
+            []
+          else
+            [
+              ::OpenStruct.new(
+                retrieved_references: [
+                  ::OpenStruct.new(
+                    content: ::OpenStruct.new(text: "Torque documentado: 10 Nm."),
+                    location: ::OpenStruct.new(
+                      s3_location: ::OpenStruct.new(uri: "s3://bucket/manual.pdf")
+                    ),
+                    metadata: {}
+                  )
+                ]
+              )
+            ]
+          end
+        ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: citations, session_id: 'sid')
       end
 
       service = BedrockRagService.new(account: @account)
       result = service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
       assert_equal 2, call_count, "Expected 2 calls: one with filter, one without"
-      assert_equal real_answer, result[:answer]
+      assert_equal "#{real_answer}[1]", result[:answer]
+      assert_equal 1, result[:citations].size
     end
   end
 
@@ -790,8 +872,113 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       )
 
       assert_equal 1, call_count
-      assert_includes result[:answer], "DATA_NOT_AVAILABLE"
+      assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
+      assert_includes result[:answer], "El documento no incluye este dato"
       assert_includes result[:answer], "documentos pineados"
+    end
+  end
+
+  # F2 — a canned "Sorry" response with no native citations but a successful
+  # Retrieve fallback is a generation/parse failure, not an empty knowledge base.
+  test 'flags a canned Sorry response when fallback retrieval found evidence' do
+    canned_response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: "Sorry, I am unable to assist you with this request."),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+    retrieved_result = ::OpenStruct.new(
+      content: ::OpenStruct.new(text: "Documented content that was retrieved."),
+      location: ::OpenStruct.new(
+        s3_location: ::OpenStruct.new(uri: "s3://bucket/manual.pdf")
+      ),
+      metadata: { "canonical_name" => "Manual" }
+    )
+
+    with_captured_quality_log do
+      with_mock_bedrock_client(mock_retrieve_and_generate_response: canned_response) do |client|
+        client.retrieve_response = ::OpenStruct.new(retrieval_results: [ retrieved_result ])
+        result = BedrockRagService.new(account: @account).query('que es EC2', include_diagnostics: true)
+
+        assert result[:diagnostics][:canned_no_results]
+        assert result[:diagnostics][:canned_with_retrieval]
+        assert_equal 0, result[:diagnostics][:raw_cited_references]
+        assert_equal 1, result[:diagnostics][:safety_evidence_chunks].size
+        # Evidence was retrieved, so the technician must read a retryable failure —
+        # never an absence that implies the manual lacks the datum.
+        assert_includes result[:answer], 'Vuelve a enviar la consulta'
+        assert_not_includes result[:answer], 'No se encontró información'
+      end
+    end
+
+    quality = captured_quality_payload
+    assert_equal true, quality["canned_no_results"]
+    assert_equal true, quality["canned_with_retrieval"]
+    assert_equal "fallback_retrieve_top3", quality["evidence_mode"]
+  end
+
+  test 'does not flag genuine no-results when fallback retrieval is empty' do
+    canned_response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: "Sorry, I am unable to assist you with this request."),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_captured_quality_log do
+      with_mock_bedrock_client(mock_retrieve_and_generate_response: canned_response) do
+        result = BedrockRagService.new(account: @account).query('que es EC2', include_diagnostics: true)
+
+        assert result[:diagnostics][:canned_no_results]
+        assert_not result[:diagnostics][:canned_with_retrieval]
+        assert_empty result[:diagnostics][:safety_evidence_chunks]
+        assert_includes result[:answer], 'No se encontró información'
+      end
+    end
+
+    quality = captured_quality_payload
+    assert_equal true, quality["canned_no_results"]
+    assert_equal false, quality["canned_with_retrieval"]
+    assert_equal "none", quality["evidence_mode"]
+  end
+
+  test 'builds deterministic doc_refs from native citation metadata' do
+    citation = ::OpenStruct.new(
+      generated_response_part: ::OpenStruct.new(
+        text_response_part: ::OpenStruct.new(
+          span: ::OpenStruct.new(start: 0, end: "Par documentado: 25 Nm.".length)
+        )
+      ),
+      retrieved_references: [
+        ::OpenStruct.new(
+          content: ::OpenStruct.new(text: "Par documentado: 25 Nm."),
+          location: ::OpenStruct.new(
+            s3_location: ::OpenStruct.new(uri: "s3://bucket/chunks/manual-1.txt")
+          ),
+          metadata: {
+            "canonical_name" => "Manual SEGURIDADES",
+            "aliases" => [ "SEGURIDADES", "Manual 1.1-1" ],
+            "original_source_uri" => "s3://bucket/manual.pdf",
+            "doc_type" => "manual"
+          }
+        )
+      ]
+    )
+    response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: "Par documentado: 25 Nm."),
+      citations: [ citation ],
+      session_id: TEST_SESSION_ID
+    )
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: response) do
+      result = BedrockRagService.new(account: @account).query("¿Cuál es el par?")
+
+      assert_equal [
+        {
+          "source_uri" => "s3://bucket/manual.pdf",
+          "canonical_name" => "Manual SEGURIDADES",
+          "aliases" => [ "SEGURIDADES", "Manual 1.1-1" ],
+          "doc_type" => "manual"
+        }
+      ], result[:doc_refs]
     end
   end
 
@@ -982,7 +1169,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_includes payload["retrieved_source_uris"], "s3://bucket/chunks/manual-1.txt"
   end
 
-  test 'RAG_QUALITY logs evidence_mode filter_uris_only when doc_refs present without inline citations under a pin' do
+  test 'RAG_QUALITY separates fallback retrieval context from native attribution under a pin' do
     KbDocument.create!(s3_key: "manual.pdf", display_name: "Manual", aliases: [], account: @account)
     doc_refs_answer = "Par de apriete: 25 Nm.\n<DOC_REFS>[{\"source_uri\":\"s3://bucket/manual.pdf\",\"canonical_name\":\"Manual\",\"aliases\":[],\"doc_type\":\"manual\"}]</DOC_REFS>"
     no_citation_response = ::OpenStruct.new(
@@ -990,9 +1177,20 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       citations: [],
       session_id: TEST_SESSION_ID
     )
+    retrieved_result = ::OpenStruct.new(
+      content: ::OpenStruct.new(text: "Par de apriete documentado: 25 Nm."),
+      location: ::OpenStruct.new(
+        s3_location: ::OpenStruct.new(uri: "s3://bucket/chunks/manual-1.txt")
+      ),
+      metadata: {
+        "canonical_name" => "Manual",
+        "original_source_uri" => "s3://bucket/manual.pdf"
+      }
+    )
 
     with_captured_quality_log do
-      with_mock_bedrock_client(mock_retrieve_and_generate_response: no_citation_response) do
+      with_mock_bedrock_client(mock_retrieve_and_generate_response: no_citation_response) do |client|
+        client.retrieve_response = ::OpenStruct.new(retrieval_results: [ retrieved_result ])
         BedrockRagService.new(account: @account).query(
           'torque del freno',
           entity_s3_uris:      [ 's3://bucket/manual.pdf' ],
@@ -1002,10 +1200,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
 
     payload = captured_quality_payload
-    assert_equal true, payload["evidence_present"]
-    assert_equal "filter_uris_only", payload["evidence_mode"]
+    assert_equal false, payload["evidence_present"]
+    assert_equal true, payload["retrieval_context_present"]
+    assert_equal "fallback_retrieve_top3", payload["evidence_mode"]
     assert_equal 1, payload["doc_refs_count"]
-    assert_includes payload["retrieved_source_uris"], "s3://bucket/manual.pdf"
+    assert_includes payload["retrieved_source_uris"], "s3://bucket/chunks/manual-1.txt"
   end
 
   test 'RAG_QUALITY logs evidence_present false and evidence_mode none when no citations or doc_refs are returned' do
@@ -1419,7 +1618,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'filtered query with doc_refs but no inline citations synthesizes retrieved_citations without Retrieve API' do
+  test 'filtered technical answer without citations uses fallback chunks for existence validation' do
     KbDocument.create!(
       s3_key: "manual.pdf",
       display_name: "Manual",
@@ -1432,24 +1631,36 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       citations: [],
       session_id: TEST_SESSION_ID
     )
+    retrieved_result = ::OpenStruct.new(
+      content: ::OpenStruct.new(text: "Par de apriete documentado: 25 Nm."),
+      location: ::OpenStruct.new(
+        s3_location: ::OpenStruct.new(uri: "s3://bucket/chunks/manual-1.txt")
+      ),
+      metadata: {
+        "canonical_name" => "Manual",
+        "original_source_uri" => "s3://bucket/manual.pdf"
+      }
+    )
 
     with_mock_bedrock_client(mock_retrieve_and_generate_response: no_citation_response) do |client|
       retrieve_called = false
-      client.define_singleton_method(:retrieve) do |_params|
+      client.define_singleton_method(:retrieve) do |params|
         retrieve_called = true
-        raise "fallback_retrieve must not be called when entity is known from filter"
+        @last_retrieve_params = params
+        ::OpenStruct.new(retrieval_results: [ retrieved_result ])
       end
 
       result = BedrockRagService.new(account: @account).query(
         'torque del freno',
         entity_s3_uris:      [ 's3://bucket/manual.pdf' ],
-        force_entity_filter: true
+        force_entity_filter: true,
+        response_locale: :es
       )
 
-      assert_not retrieve_called, 'Retrieve API must be skipped when entity is known from filter'
-      assert result[:retrieved_citations].any?, 'retrieved_citations must be non-empty from synthesized filter uris'
-      assert_equal 's3://bucket/manual.pdf',
-                   result[:retrieved_citations].first.dig(:metadata, 'x-amz-bedrock-kb-source-uri')
+      assert retrieve_called
+      assert_empty result[:citations]
+      assert_includes result[:answer], "25 Nm"
+      assert_equal [ "Manual" ], result[:doc_refs].pluck("canonical_name")
     end
   end
 
@@ -1547,21 +1758,23 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   # ===== Failure semantics (Gate B) =====
 
-  test 'query appends DATA_NOT_AVAILABLE when answer leads with prose absence and no marker' do
+  test 'query renders the internal absence marker when answer leads with prose absence' do
     prose_absence = 'La documentación recuperada no contiene información sobre el torque de apriete de -PBCM -J26.'
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(prose_absence)) do
       service = BedrockRagService.new(account: @account)
       result = service.query('¿Cuál es el torque de apriete de -PBCM -J26?', response_locale: :es)
-      assert_includes result[:answer], 'DATA_NOT_AVAILABLE'
+      assert_not_includes result[:answer], 'DATA_NOT_AVAILABLE'
+      assert_includes result[:answer], "El documento no incluye este dato"
     end
   end
 
-  test 'query does not append marker when one is already present' do
+  test 'query renders one user-facing absence phrase when a marker is already present' do
     already_marked = 'El par de apriete: DATA_NOT_AVAILABLE en la documentación recuperada.'
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(already_marked)) do
       service = BedrockRagService.new(account: @account)
       result = service.query('¿Cuál es el torque?', response_locale: :es)
-      assert_equal 1, result[:answer].scan('DATA_NOT_AVAILABLE').size
+      assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
+      assert_equal 1, result[:answer].scan("El documento no incluye este dato").size
     end
   end
 

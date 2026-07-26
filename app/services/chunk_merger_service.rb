@@ -12,13 +12,19 @@
 #   - document_name: canonical rule — page 1's name if page 1 is in the result set
 #     and its document_name is non-empty; otherwise the lowest page_number present
 #     with a non-empty document_name. Drift across pages triggers a warn log.
+#   - document_name_consensus: false when no name holds a majority across pages
+#     (a multi-section compendium). Consumers fall back to the uploaded filename.
 #   - aliases:       document-level union, deduped and capped
 #   - chunks:        concat of all pages' chunks in page-number order
 #   - chunk aliases: page/chunk-specific aliases, capped for discriminative retrieval
 #   - chunk["page"]: original 1-indexed page number (gaps allowed — NOT renumbered)
+#   - section_identity: the brand/controller family a divider page declares
+#     (field_records_v7) is carried forward, in page order, into every following
+#     page's chunk aliases until another page declares a new one.
 class ChunkMergerService
   DOCUMENT_ALIAS_LIMIT = 15
   CHUNK_ALIAS_LIMIT    = 8
+  SECTION_IDENTITY_MAX_CHARS = 60
   DOCUMENT_IDENTIFICATION_S0_PATTERN = /\A\s*#*\s*S0\s*[—–-]\s*DOCUMENT IDENTIFICATION\b/i
 
   # S0-style marker surfaced to Haiku when a page could not be fully extracted.
@@ -68,18 +74,26 @@ class ChunkMergerService
 
     anchor_page_number = @page_results.first[:page_number]
 
+    section_identity = nil
+
     all_chunks = parsed_pages.flat_map.with_index do |parsed, idx|
       orig_page = @page_results[idx][:page_number]
       page_aliases = sanitize_aliases(parsed["aliases"], limit: CHUNK_ALIAS_LIMIT)
+      section_identity = declared_section_identity(parsed) || section_identity
 
-      Array(parsed["chunks"]).filter_map do |chunk|
-        next if stray_content_page_s0?(chunk, page_number: orig_page, anchor_page_number: anchor_page_number)
+      page_chunks = Array(parsed["chunks"])
+
+      page_chunks.filter_map do |chunk|
+        next if page_chunks.size > 1 &&
+                stray_content_page_s0?(chunk, page_number: orig_page, anchor_page_number: anchor_page_number)
 
         chunk_aliases = sanitize_aliases(chunk["aliases"], limit: CHUNK_ALIAS_LIMIT)
-        chunk.merge(
+        merged = chunk.merge(
           "page" => (chunk["page"] || orig_page).to_i,
-          "aliases" => chunk_aliases.presence || page_aliases
+          "aliases" => with_section_identity(chunk_aliases.presence || page_aliases, section_identity)
         )
+        merged["section_identity"] = section_identity if section_identity.present?
+        merged
       end
     end
 
@@ -95,6 +109,7 @@ class ChunkMergerService
 
     json = JSON.generate({
       "document_name"   => doc_name,
+      "document_name_consensus" => document_name_consensus?(parsed_pages),
       "aliases"         => document_aliases,
       "summary"         => raw_summary || fallback_summary(doc_name),
       "companion_offer" => raw_offer   || FALLBACK_COMPANION_OFFER,
@@ -123,6 +138,30 @@ class ChunkMergerService
     end.first(limit)
   end
 
+  # The brand/controller family this page declares (field_records_v7), or nil.
+  # A long value is a sign the model wrote prose instead of a section label, so it
+  # is dropped rather than propagated to every following page.
+  def declared_section_identity(parsed)
+    value = parsed["section_identity"].to_s.strip
+    return nil if value.blank? || value.length > SECTION_IDENTITY_MAX_CHARS
+
+    value
+  end
+
+  # Section identity leads the alias list: it is the term the page itself never
+  # prints, so it must survive CHUNK_ALIAS_LIMIT. Pages that already name the
+  # brand are left untouched.
+  def with_section_identity(aliases, section_identity)
+    return aliases if section_identity.blank?
+    return aliases if aliases.any? { |a| a.casecmp?(section_identity) }
+
+    sanitize_aliases([ section_identity, *aliases ], limit: CHUNK_ALIAS_LIMIT)
+  end
+
+  # Only applied when the page has other chunks. A brand/section divider page
+  # legitimately produces a single identification-shaped chunk, and that chunk holds
+  # the only occurrence of the manufacturer name in the whole document — dropping it
+  # would delete the page from the index entirely.
   def stray_content_page_s0?(chunk, page_number:, anchor_page_number:)
     page_number != anchor_page_number &&
       chunk.is_a?(Hash) &&
@@ -160,6 +199,20 @@ class ChunkMergerService
       "page" => page_number,
       "field_records" => []
     }
+  end
+
+  # True when a majority of pages agree on the same document_name.
+  #
+  # A compendium (one manufacturer or board per section) has no such majority: every
+  # page names its own board, so no page name can speak for the file. Callers use this
+  # to fall back to the uploaded filename instead of labelling all 98 pages with the
+  # board that happened to sit on the anchor page. Minor drift on a single-topic manual
+  # still has a clear majority and keeps the page-derived name.
+  def document_name_consensus?(parsed_pages)
+    names = parsed_pages.filter_map { |page| page["document_name"].to_s.strip.presence }
+    return true if names.empty?
+
+    names.tally.values.max * 2 > names.size
   end
 
   # Canonical document_name selection:

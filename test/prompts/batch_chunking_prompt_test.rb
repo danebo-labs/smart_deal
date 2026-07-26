@@ -8,10 +8,32 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
   end
 
   test "declares a contract version and a stable prompt fingerprint" do
-    assert_equal "field_records_v4", BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+    assert_equal "field_records_v7", BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
     assert_match(/\A[0-9a-f]{64}\z/, BatchChunkingPrompt.prompt_fingerprint_sha256)
     assert_equal BatchChunkingPrompt.prompt_fingerprint_sha256,
                  Digest::SHA256.hexdigest(BatchChunkingPrompt::SYSTEM_BLOCKS.pluck(:text).join("\n"))
+  end
+
+  test "diagram rules require a component and its voltage label on the same line" do
+    assert_includes prompt, "FOTOCELULA — 220V"
+    assert_match(/Never leave the component in one\s+bullet and its value in another/, prompt)
+  end
+
+  test "diagram rules forbid a 1:1 component assignment on shared or chained terminals" do
+    assert_includes prompt, "A numbered terminal block is NOT a 1:1 component list"
+    assert_match(/2-pole device lands on two terminals/, prompt)
+    assert_match(/emit the terminal RANGE with the shared chain/, prompt)
+    assert_match(/per-terminal assignment REQUIRES_FIELD_VERIFICATION/, prompt)
+    assert_match(/Never split a shared chain into one component per terminal/, prompt)
+  end
+
+  test "section identity is declared only from a visible section heading" do
+    assert_includes prompt, "SECTION IDENTITY (multi-brand compendia)"
+    assert_includes prompt, "section_identity"
+    assert_match(/ONLY when THIS page visibly opens a new/, prompt)
+    assert_match(/Copy it verbatim from visible text\. NEVER infer it/, prompt)
+    assert_match(/omit the key/, prompt)
+    assert_match(/it never changes\s+`document_name`/, prompt)
   end
 
   test "system prompt declares PAGE ROLE section with ANCHOR/CONTENT rules" do

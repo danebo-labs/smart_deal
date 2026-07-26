@@ -73,8 +73,9 @@ class BatchResultsParserService
     validate!(parsed, asset, ingestion_path: ingestion_path)
     validate_account_scope!(account_id: account_id, document_uid: document_uid)
 
-    chunks_prefix = chunks_prefix_for(asset, account_id: account_id, document_uid: document_uid)
-    aliases       = sanitize_aliases(parsed["aliases"], limit: DOCUMENT_ALIAS_LIMIT)
+    chunks_prefix  = chunks_prefix_for(asset, account_id: account_id, document_uid: document_uid)
+    aliases        = sanitize_aliases(parsed["aliases"], limit: DOCUMENT_ALIAS_LIMIT)
+    canonical_name = document_identity(parsed, asset)
 
     # Alias fallback: never write [SEARCH_ALIASES: ] empty even if LLM returns nothing.
     # Applies to both web and bulk paths.
@@ -89,7 +90,7 @@ class BatchResultsParserService
       prefix:         chunks_prefix,
       chunks:         parsed["chunks"],
       asset:          asset,
-      canonical_name: parsed["document_name"],
+      canonical_name: canonical_name,
       aliases:        aliases,
       ingestion_path: ingestion_path,
       account_id:     account_id,
@@ -99,7 +100,7 @@ class BatchResultsParserService
     if asset.respond_to?(:update!)
       # BulkUploadAsset — ActiveRecord path
       asset.update!(
-        canonical_name:   parsed["document_name"],
+        canonical_name:   canonical_name,
         aliases:          aliases,
         chunks_count:     parsed["chunks"].length,
         chunks_s3_prefix: chunks_prefix,
@@ -108,7 +109,7 @@ class BatchResultsParserService
       asset.broadcast_replace!
     else
       # ChunkAsset — in-memory struct, no AR
-      asset.canonical_name    = parsed["document_name"]
+      asset.canonical_name    = canonical_name
       asset.aliases           = aliases
       asset.summary           = parsed["summary"].to_s.strip.presence
       asset.companion_offer   = parsed["companion_offer"].to_s.strip.presence
@@ -126,6 +127,26 @@ class BatchResultsParserService
   end
 
   private
+
+  # Document identity for the sidecar, the asset and every doc_ref built from it.
+  #
+  # ChunkMergerService reports document_name_consensus: false for a compendium, where
+  # each page names its own board and no page name identifies the file. Labelling the
+  # whole document with the anchor page's board mislabels every citation of the other
+  # sections, so the uploaded filename — which does identify the file — wins instead.
+  def document_identity(parsed, asset)
+    name = parsed["document_name"].to_s.strip
+    return name unless parsed.key?("document_name_consensus") && !parsed["document_name_consensus"]
+
+    stem = File.basename(asset.filename.to_s, ".*").strip
+    return name if stem.blank?
+
+    Rails.logger.info(
+      "BatchResultsParserService: no document_name consensus across pages — " \
+      "using filename identity #{stem.inspect} instead of #{name.inspect}"
+    )
+    stem
+  end
 
   def extract_text(message)
     content = message.respond_to?(:content) ? message.content : Array(message["content"])
@@ -331,15 +352,6 @@ class BatchResultsParserService
 
   def write_chunks_to_s3(prefix:, chunks:, asset:, canonical_name:, aliases:, ingestion_path:, account_id:, document_uid:)
     original_uri = original_source_uri(asset)
-    sidecar_json = sidecar_metadata(
-      asset:          asset,
-      canonical_name: canonical_name,
-      aliases:        aliases,
-      original_uri:   original_uri,
-      ingestion_path: ingestion_path,
-      account_id:     account_id,
-      document_uid:   document_uid
-    )
     delete_existing_chunks(prefix) if ingestion_path == MANUAL_BATCH_INGESTION_PATH
 
     page_ordinals = Hash.new(0)
@@ -349,6 +361,17 @@ class BatchResultsParserService
       chunk_aliases = aliases.first(CHUNK_ALIAS_LIMIT) if chunk_aliases.empty?
       header = identity_header(asset: asset, aliases: chunk_aliases, original_uri: original_uri)
       body = append_field_records(chunk["text"], chunk["field_records"], page: chunk["page"])
+      sidecar_json = sidecar_metadata(
+        asset:          asset,
+        canonical_name: canonical_name,
+        aliases:        aliases,
+        original_uri:   original_uri,
+        ingestion_path: ingestion_path,
+        account_id:     account_id,
+        document_uid:   document_uid,
+        page_number:    chunk["page"],
+        section_identity: chunk["section_identity"]
+      )
 
       @s3.upload_text(txt_key, header + body)
       @s3.upload_text("#{txt_key}.metadata.json", sidecar_json)
@@ -466,23 +489,31 @@ class BatchResultsParserService
   # `original_source_uri` is the seam retrieval filtering ORs alongside
   # `x-amz-bedrock-kb-source-uri` to make pin-based filters work for batch/web chunks.
   # `ingestion_path` distinguishes web_v1 (optimized) from batch_v1 (bulk) in telemetry.
+  # `section_identity` is the brand/controller-family section a divider page declared
+  # and ChunkMergerService carried forward (field_records_v7); absent when unknown.
   # `account_id` / `project_id` are reserved here as multi-tenant seams — absent today (MVP).
-  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:, account_id:, document_uid:)
+  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:, account_id:, document_uid:, page_number:, section_identity: nil)
     contract_version, prompt_fingerprint = contract_metadata(ingestion_path)
 
+    attributes = {
+      "account_id"          => account_id.to_s,
+      "document_id"         => document_uid.to_s,
+      "original_source_uri" => original_uri,
+      "original_filename"   => asset.filename,
+      "canonical_name"      => canonical_name.to_s,
+      "doc_sha256"          => asset.sha256.to_s,
+      "ingestion_path"      => ingestion_path,
+      "ingestion_contract_version" => contract_version,
+      "prompt_fingerprint_sha256"  => prompt_fingerprint,
+      "aliases"             => sanitize_aliases(aliases, limit: DOCUMENT_ALIAS_LIMIT)
+    }
+    normalized_page = Integer(page_number, exception: false)
+    attributes["page_number"] = normalized_page if normalized_page&.positive?
+    normalized_section = section_identity.to_s.strip
+    attributes["section_identity"] = normalized_section if normalized_section.present?
+
     JSON.generate(
-      "metadataAttributes" => {
-        "account_id"          => account_id.to_s,
-        "document_id"         => document_uid.to_s,
-        "original_source_uri" => original_uri,
-        "original_filename"   => asset.filename,
-        "canonical_name"      => canonical_name.to_s,
-        "doc_sha256"          => asset.sha256.to_s,
-        "ingestion_path"      => ingestion_path,
-        "ingestion_contract_version" => contract_version,
-        "prompt_fingerprint_sha256"  => prompt_fingerprint,
-        "aliases"             => sanitize_aliases(aliases, limit: DOCUMENT_ALIAS_LIMIT)
-      }
+      "metadataAttributes" => attributes
     )
   end
 

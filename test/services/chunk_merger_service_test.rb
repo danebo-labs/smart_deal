@@ -154,6 +154,60 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_not_includes texts.join("\n"), "Stray content identity"
   end
 
+  test "keeps a divider page whose only chunk is identification-shaped" do
+    anchor_json = {
+      "document_name" => DOC_NAME,
+      "aliases" => ALIASES1,
+      "chunks" => [ { "text" => "# S4 — SAFETY SYSTEM\nAnchor safety.", "page" => 7 } ]
+    }.to_json
+    divider_json = {
+      "document_name" => DOC_NAME,
+      "aliases" => %w[THYSSEN],
+      "chunks" => [ { "text" => "# S0 — DOCUMENT IDENTIFICATION\nTHYSSEN: SERIE CMC 3, SERIE E.", "page" => 92 } ]
+    }.to_json
+
+    parsed = JSON.parse(
+      ChunkMergerService.merge([
+        { page_number: 7,  text: anchor_json,  usage: nil, model: "claude-sonnet-4-6" },
+        { page_number: 92, text: divider_json, usage: nil, model: "claude-sonnet-4-6" }
+      ])
+    )
+
+    texts = parsed["chunks"].pluck("text").join("\n")
+    assert_equal 2, parsed["chunks"].size
+    assert_includes texts, "THYSSEN", "the only occurrence of the manufacturer must survive the merge"
+  end
+
+  test "document_name_consensus is false when every page names its own board" do
+    pages = (1..4).map do |page|
+      json = {
+        "document_name" => "Board #{page} Manual",
+        "aliases" => %w[a],
+        "chunks" => [ { "text" => "c#{page}", "page" => page } ]
+      }.to_json
+      { page_number: page, text: json, usage: nil, model: "claude-sonnet-4-6" }
+    end
+
+    parsed = JSON.parse(ChunkMergerService.merge(pages))
+    assert_equal false, parsed["document_name_consensus"]
+  end
+
+  test "document_name_consensus stays true under minor drift on a single-topic manual" do
+    names = [ DOC_NAME, DOC_NAME, DOC_NAME, "Hydraulic Pump Manual Rev B" ]
+    pages = names.each_with_index.map do |name, idx|
+      json = {
+        "document_name" => name,
+        "aliases" => %w[a],
+        "chunks" => [ { "text" => "c#{idx}", "page" => idx + 1 } ]
+      }.to_json
+      { page_number: idx + 1, text: json, usage: nil, model: "claude-sonnet-4-6" }
+    end
+
+    parsed = JSON.parse(ChunkMergerService.merge(pages))
+    assert_equal true, parsed["document_name_consensus"]
+    assert_equal DOC_NAME, parsed["document_name"]
+  end
+
   test "preserves original page numbers (no renumbering)" do
     parsed = JSON.parse(ChunkMergerService.merge(page_results))
     assert_equal 1, parsed["chunks"][0]["page"]
@@ -370,6 +424,108 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     parsed = JSON.parse(ChunkMergerService.merge(degraded_results))
     assert parsed["summary"].present?
     assert_equal ChunkMergerService::FALLBACK_COMPANION_OFFER, parsed["companion_offer"]
+  end
+
+  # field_records_v7: in a multi-brand compendium the brand is printed once, on a
+  # divider page. Without carry-forward the pages it introduces carry no brand
+  # token and a brand-named query can never reach them.
+  def compendium_results
+    [
+      { page_number: 10, text: section_page_json(page: 10, identity: "THYSSEN", aliases: %w[THYSSEN SERIE\ E]) },
+      { page_number: 11, text: content_page_json(page: 11, aliases: %w[SERIE\ E BLOQUE\ B]) },
+      { page_number: 12, text: content_page_json(page: 12, aliases: %w[BLOQUE\ C L9]) },
+      { page_number: 13, text: section_page_json(page: 13, identity: "OTIS", aliases: %w[OTIS]) },
+      { page_number: 14, text: content_page_json(page: 14, aliases: %w[GEN2 placa]) }
+    ].map { |r| r.merge(usage: nil, model: "claude-sonnet-4-6") }
+  end
+
+  def section_page_json(page:, identity:, aliases:)
+    {
+      "document_name" => DOC_NAME,
+      "aliases" => aliases,
+      "section_identity" => identity,
+      "chunks" => [ { "text" => "Portada de sección — #{identity}", "page" => page } ]
+    }.to_json
+  end
+
+  def content_page_json(page:, aliases:, identity: nil)
+    payload = {
+      "document_name" => DOC_NAME,
+      "aliases" => aliases,
+      "chunks" => [ { "text" => "## S7 — DIAGRAM\nContenido de la página #{page}.", "page" => page } ]
+    }
+    payload["section_identity"] = identity if identity
+    payload.to_json
+  end
+
+  def chunk_for(parsed, page)
+    parsed["chunks"].find { |chunk| chunk["page"] == page } || flunk("no chunk for page #{page}")
+  end
+
+  test "carries a declared section identity forward into the following pages' chunk aliases" do
+    parsed = JSON.parse(ChunkMergerService.merge(compendium_results))
+
+    assert_equal "THYSSEN", chunk_for(parsed, 10)["section_identity"]
+    [ 11, 12 ].each do |page|
+      chunk = chunk_for(parsed, page)
+      assert_equal "THYSSEN", chunk["section_identity"]
+      assert_equal "THYSSEN", chunk["aliases"].first, "expected the brand to lead page #{page} aliases"
+      assert_includes chunk["aliases"], "BLOQUE B" if page == 11
+    end
+  end
+
+  test "a new declared section identity replaces the previous one" do
+    parsed = JSON.parse(ChunkMergerService.merge(compendium_results))
+
+    assert_equal "OTIS", chunk_for(parsed, 14)["section_identity"]
+    assert_equal "OTIS", chunk_for(parsed, 14)["aliases"].first
+    assert_not_includes chunk_for(parsed, 14)["aliases"], "THYSSEN"
+  end
+
+  test "pages before the first declared section identity are left untouched" do
+    results = [
+      { page_number: 1, text: content_page_json(page: 1, aliases: %w[indice]), usage: nil, model: "m" },
+      { page_number: 2, text: section_page_json(page: 2, identity: "THYSSEN", aliases: %w[THYSSEN]), usage: nil, model: "m" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+
+    assert_nil chunk_for(parsed, 1)["section_identity"]
+    assert_equal %w[indice], chunk_for(parsed, 1)["aliases"]
+  end
+
+  test "does not duplicate a section identity a page already names" do
+    results = [
+      { page_number: 5, text: section_page_json(page: 5, identity: "THYSSEN", aliases: %w[THYSSEN]), usage: nil, model: "m" },
+      { page_number: 6, text: content_page_json(page: 6, aliases: [ "thyssen", "SERIE F" ]), usage: nil, model: "m" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+
+    assert_equal [ "thyssen", "SERIE F" ], chunk_for(parsed, 6)["aliases"]
+  end
+
+  test "section identity keeps the chunk alias cap and displaces the least specific alias" do
+    crowded = (1..8).map { |i| "ALIAS#{i}" }
+    results = [
+      { page_number: 5, text: section_page_json(page: 5, identity: "THYSSEN", aliases: %w[THYSSEN]), usage: nil, model: "m" },
+      { page_number: 6, text: content_page_json(page: 6, aliases: crowded), usage: nil, model: "m" }
+    ]
+    aliases = JSON.parse(ChunkMergerService.merge(results))["chunks"].last["aliases"]
+
+    assert_equal ChunkMergerService::CHUNK_ALIAS_LIMIT, aliases.size
+    assert_equal "THYSSEN", aliases.first
+    assert_not_includes aliases, "ALIAS8"
+  end
+
+  test "ignores a prose-length section identity instead of propagating it" do
+    prose = "Esta página presenta la sección de los controladores del fabricante indicado arriba"
+    results = [
+      { page_number: 5, text: content_page_json(page: 5, aliases: %w[placa], identity: prose), usage: nil, model: "m" },
+      { page_number: 6, text: content_page_json(page: 6, aliases: %w[bornes]), usage: nil, model: "m" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+
+    assert_nil chunk_for(parsed, 5)["section_identity"]
+    assert_equal %w[bornes], chunk_for(parsed, 6)["aliases"]
   end
 
   test "all pages degraded (chosen_idx nil) does not raise and uses deterministic fallbacks" do

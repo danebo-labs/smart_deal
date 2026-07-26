@@ -34,7 +34,17 @@ module BatchChunkingPrompt
   #     acronym expansion are not documentary evidence.
   # v4: anchor/content page roles — ANCHOR_PAGE emits S0/summary/companion_offer;
   #     CONTENT_PAGE omits them to eliminate per-page duplication noise.
-  INGESTION_CONTRACT_VERSION = "field_records_v4"
+  # v5: component-to-value pairing on diagrams — a supply/voltage/rating label must be
+  #     emitted on the same line as its component, never as a separate bullet.
+  # v6: shared/chained terminals — a numbered terminal block is not a 1:1 component
+  #     list; series chains and 2-pole devices must be emitted as a terminal range with
+  #     REQUIRES_FIELD_VERIFICATION instead of a fabricated per-terminal assignment.
+  # v7: section identity — a page that visibly opens a brand/controller-family section
+  #     emits `section_identity`, which ChunkMergerService carries forward to the
+  #     following pages' chunk aliases. In a multi-brand compendium the brand is
+  #     printed once on a divider page, so the pages it introduces were unreachable
+  #     by a brand-named query.
+  INGESTION_CONTRACT_VERSION = "field_records_v7"
 
   # SHA-256 of the exact system prompt text — persisted in chunk sidecars so an
   # index can be audited against the prompt that produced it.
@@ -81,6 +91,7 @@ module BatchChunkingPrompt
         {
           "document_name": "<canonical 3-7 word human name>",
           "aliases": ["<alias 1>", "<alias 2>", ...],
+          "section_identity": "<brand / controller family this page visibly opens — omit the key otherwise>",
           "summary": "<2-3 friendly sentences, no jargon, in the requested language; always emit>",
           "companion_offer": "<1 warm sentence inviting questions in plain language; always emit>",
           "chunks": [
@@ -184,6 +195,19 @@ module BatchChunkingPrompt
           literal lookup, without assigning functions to those labels.
           For procedural chunks, include explicit controller/block names and
           distinguishing directions or states that a technician may search for.
+
+        # SECTION IDENTITY (multi-brand compendia)
+        A compendium prints the manufacturer or controller family ONCE — on a divider
+        page or a section header — and the pages it introduces show only board-level
+        labels. Those pages must stay reachable by the brand name.
+        - Emit top-level `section_identity` ONLY when THIS page visibly opens a new
+          brand / controller-family section: a divider page whose main text is that
+          name, or such a heading printed on the page.
+        - Copy it verbatim from visible text. NEVER infer it from a board code, a
+          symbol, a familiar manufacturer, or a neighbouring page. When no such
+          heading is visible on this page, omit the key.
+        - It is a section label, not the file identity: it never changes
+          `document_name` and never becomes a technical claim.
 
         # CHUNK FORMAT (every chunk is self-contained at retrieval time)
         - Divide content into self-contained semantic chunks, one per logical section
@@ -295,6 +319,20 @@ module BatchChunkingPrompt
           narrative, in tables, and in SCHEMATIC_LABEL records alike.
         - Acronym expansion (BRK→brake, RV→relief valve, ORF→orifice, P→pressure)
           is inference, never evidence.
+        - When a supply, voltage, or rating label is printed against a component, emit
+          the pair on one line ("FOTOCELULA — 220V"). Never leave the component in one
+          bullet and its value in another: a reader cannot tell whether the value belongs
+          to that component or to the terminal block behind it. When the page shows the
+          component but no value, say so for that component
+          ("FOTOCELULA — alimentación DATA_NOT_AVAILABLE en este diagrama") instead of
+          letting a nearby value imply it.
+        - A numbered terminal block is NOT a 1:1 component list. When one wire runs in
+          series through several devices, or a 2-pole device lands on two terminals,
+          emit the terminal RANGE with the shared chain ("B8 terminals 1-2 — series
+          chain: ACUÑAMIENTO, AFLOJA CABLES, BOTO. REVISION, STOP REVISION") and mark
+          the exact order and per-terminal assignment REQUIRES_FIELD_VERIFICATION.
+          Never split a shared chain into one component per terminal, and never commit
+          to a terminal number the page does not print against that component.
 
         # DOCUMENTARY FIDELITY (ABSOLUTE)
         - Preserve the source's exact modality and action verbs. "Check", "avoid",

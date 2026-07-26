@@ -16,6 +16,11 @@
 # Special case — scanned_image (fallback after heuristics):
 #   text_layer_chars < 100 AND image_area_ratio > 0.7 → keep (force Opus 4.7, skip Haiku)
 #
+# Special case — section_identity_guard (overrides a Haiku drop):
+#   A divider/index page is kept unless its readable text layer confirms a page-number
+#   table of contents. In a multi-brand compendium those pages carry the only occurrence
+#   of a manufacturer or controller family name.
+#
 # Batch mode (multi-page docs — PDF native or Office/PPT):
 #   PageRelevanceFilter.filter_pages routes to call_batch for pages.size > 1,
 #   classifying pages in Haiku windows (pages + bytes) to avoid truncation and
@@ -70,7 +75,9 @@ class PageRelevanceFilter
     You are a classifier for elevator technician manuals. Return ONLY valid JSON.
     Schema: {"keep":bool,"reason":"<10 words"}
     keep=true  → page has useful technical content (specs, diagrams, troubleshooting, procedures, wiring)
-    keep=false → page is boilerplate (index, preface, copyright, blank, table of contents)
+    keep=true  → page names a manufacturer, controller family, or model codes, even as a bare
+                 section divider or index: those names may appear nowhere else in the document
+    keep=false → page is boilerplate (preface, copyright, blank, table of contents with page numbers)
   PROMPT
 
   # Shared PDF text extractor — first page only, safe (returns "" on error).
@@ -79,6 +86,24 @@ class PageRelevanceFilter
     reader.pages.first&.text.to_s.strip
   rescue StandardError
     ""
+  end
+
+  # Drop reasons that describe a section divider or an index of parts/models. A
+  # "table of contents", "agenda", "cover" or "copyright" reason is deliberately absent:
+  # those pages carry no equipment identity.
+  DIVIDER_DROP_REASON_PATTERN = /
+    divider | separator | \bindex\b | indice | índice | section\s+(?:page|header|title|break)
+  /xi.freeze
+
+  # A divider or index page in a multi-brand compendium is often the only place a
+  # manufacturer or controller family is written down; dropping it leaves every page
+  # of that section unreachable by brand name. Such a page may only be discarded when
+  # its text layer is readable AND confirms a page-number table of contents. A scanned
+  # page cannot be verified, so it is kept.
+  def self.section_identity_guard?(reason, text)
+    return false unless reason.to_s.match?(DIVIDER_DROP_REASON_PATTERN)
+
+    !toc?(text)
   end
 
   # Returns true when a Haiku-dropped page contains BOTH a safety/action signal and
@@ -336,7 +361,10 @@ class PageRelevanceFilter
 
     track_haiku_usage(response, latency_ms)
 
-    return { keep: true, reason: :safety_action_guard, source: :haiku } if !keep && self.class.safety_action_guard?(@text)
+    if !keep
+      return { keep: true, reason: :safety_action_guard, source: :haiku } if self.class.safety_action_guard?(@text)
+      return { keep: true, reason: :section_identity_guard, source: :haiku } if self.class.section_identity_guard?(reason, @text)
+    end
 
     { keep: keep, reason: reason.to_sym, source: :haiku }
   rescue StandardError => e
@@ -382,9 +410,12 @@ class PageRelevanceFilter
       You classify rasterized pages (PDF manuals or presentation slides) for elevator technicians.
       Return ONLY raw JSON. Do NOT wrap in markdown fences. Do NOT add any prose.
       Schema: {"pages":[{"page":N,"keep":bool,"reason":"<10 words"},...]}
-      keep=false → cover/title page, agenda/index/table of contents, section divider, blank, preface, copyright
+      keep=false → cover/title page, table of contents with page numbers, blank, preface, copyright
       keep=true  → technical diagrams, wiring, photos with components, procedures, specs, data tables
-      Be aggressive dropping covers and indexes.
+      keep=true  → section divider or index that names a manufacturer, controller family, or model
+                   codes: those names may appear nowhere else, and dropping the page makes every
+                   page of that section unreachable by brand
+      Drop covers aggressively; never drop a page that names equipment.
     PROMPT
 
     def initialize(pages:, filename:, haiku_client:, total_pages:, correlation_id: nil)
@@ -510,6 +541,9 @@ class PageRelevanceFilter
           if PageRelevanceFilter.safety_action_guard?(page_text)
             keep   = true
             reason = :safety_action_guard
+          elsif PageRelevanceFilter.section_identity_guard?(reason, page_text)
+            keep   = true
+            reason = :section_identity_guard
           end
         end
 

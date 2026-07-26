@@ -472,11 +472,52 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_equal DOC_NAME,                attrs["canonical_name"]
     assert_equal asset.sha256,            attrs["doc_sha256"]
     assert_equal "batch_v1",              attrs["ingestion_path"]
+    assert_equal 1,                       attrs["page_number"]
     assert_equal ALIASES,                 attrs["aliases"]
     assert_equal BatchChunkingPrompt::INGESTION_CONTRACT_VERSION, attrs["ingestion_contract_version"]
     assert_equal BatchChunkingPrompt.prompt_fingerprint_sha256,   attrs["prompt_fingerprint_sha256"]
   ensure
     ENV.delete("KNOWLEDGE_BASE_S3_BUCKET")
+  end
+
+  # field_records_v7: the identity ChunkMergerService carried forward reaches the
+  # chunk's own alias line (hybrid retrieval) and the sidecar (audit/filter seam).
+  test "propagated section identity reaches the alias line and the sidecar" do
+    asset  = make_asset
+    parser = build_parser
+    payload = golden_parsed.merge(
+      "chunks" => [
+        {
+          "text" => chunk0_text,
+          "page" => 93,
+          "aliases" => [ "THYSSEN", "SERIE E" ],
+          "section_identity" => "THYSSEN",
+          "field_records" => []
+        }
+      ]
+    )
+
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+
+    prefix  = asset.reload.chunks_s3_prefix
+    chunk   = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
+    attrs   = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+
+    assert_includes chunk, "[SEARCH_ALIASES: THYSSEN, SERIE E]"
+    assert_equal "THYSSEN", attrs["section_identity"]
+    assert_equal 93, attrs["page_number"]
+  end
+
+  test "sidecar omits section_identity when no section was declared" do
+    asset  = make_asset
+    parser = build_parser
+
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result)
+
+    prefix = asset.reload.chunks_s3_prefix
+    attrs  = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+
+    assert_not attrs.key?("section_identity")
   end
 
   test "field_photo_v1 sidecar declares the photo contract version and fingerprint" do
@@ -497,6 +538,42 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_equal FieldPhotoPrompt::INGESTION_CONTRACT_VERSION, attrs["ingestion_contract_version"]
     assert_equal FieldPhotoPrompt.prompt_fingerprint_sha256,   attrs["prompt_fingerprint_sha256"]
     assert_not_equal BatchChunkingPrompt.prompt_fingerprint_sha256, attrs["prompt_fingerprint_sha256"]
+  end
+
+  # ---------------------------------------------------------------------------
+  # Document identity (compendium without page-name consensus)
+  # ---------------------------------------------------------------------------
+
+  test "compendium without document_name consensus takes its identity from the filename" do
+    asset  = make_asset
+    parser = build_parser
+    merged = golden_parsed.merge("document_name_consensus" => false)
+
+    parser.call(
+      account_id: 1, document_uid: "doc-uid", asset: asset,
+      result: make_result(json_text: merged.to_json), ingestion_path: "manual_batch_v1"
+    )
+
+    asset.reload
+    attrs = JSON.parse(@fake_s3.uploads["#{asset.chunks_s3_prefix}/chunk_p1_1.txt.metadata.json"])
+                .fetch("metadataAttributes")
+
+    assert_equal "pump_photo",  asset.canonical_name
+    assert_equal "pump_photo",  attrs["canonical_name"]
+    assert_not_equal DOC_NAME,  attrs["canonical_name"]
+  end
+
+  test "document_name consensus keeps the page-derived identity" do
+    asset  = make_asset
+    parser = build_parser
+    merged = golden_parsed.merge("document_name_consensus" => true)
+
+    parser.call(
+      account_id: 1, document_uid: "doc-uid", asset: asset,
+      result: make_result(json_text: merged.to_json)
+    )
+
+    assert_equal DOC_NAME, asset.reload.canonical_name
   end
 
   test "chunks_s3_prefix uses bulk_chunks/<account_id>/<document_uid> pattern" do

@@ -936,6 +936,72 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     assert_equal :haiku,  result[:source]
   end
 
+  # ---------------------------------------------------------------------------
+  # Section identity guard (brand/model divider pages)
+  # ---------------------------------------------------------------------------
+
+  test "section_identity_guard rescues batch drop of a scanned brand divider page" do
+    @page_text = ""  # scanned compendium: no readable text layer
+    pages  = [ FakePage.new(8, "brand_divider_page") ]
+    client = FakeBatchHaikuClient.new([ { "page" => 8, "keep" => false, "reason" => "section divider" } ])
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "seguridades.pdf", haiku_client: client)
+
+    assert_equal true,                    result[8][:keep]
+    assert_equal :section_identity_guard, result[8][:reason]
+    assert_equal :haiku_batch,            result[8][:source]
+  end
+
+  test "section_identity_guard rescues an index-of-models drop that is not a readable ToC" do
+    @page_text = "CARLOS SILVA"
+    pages  = [ FakePage.new(8, "model_index_page") ]
+    client = FakeBatchHaikuClient.new([ { "page" => 8, "keep" => false, "reason" => "index page" } ])
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "seguridades.pdf", haiku_client: client)
+
+    assert_equal true,                    result[8][:keep]
+    assert_equal :section_identity_guard, result[8][:reason]
+  end
+
+  test "section_identity_guard does not rescue an index drop confirmed as a page-number ToC" do
+    @page_text = (1..12).map { |i| "HIDRA TPR#{i}0 ......... #{i}" }.join("\n")
+    pages  = [ FakePage.new(3, "real_toc_page") ]
+    client = FakeBatchHaikuClient.new([ { "page" => 3, "keep" => false, "reason" => "index page" } ])
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "seguridades.pdf", haiku_client: client)
+
+    assert_equal false, result[3][:keep]
+    assert PageRelevanceFilter.toc?(@page_text)
+  end
+
+  test "section_identity_guard does not rescue cover, agenda or copyright drops" do
+    %w[cover agenda copyright blank table\ of\ contents].each do |reason|
+      assert_not PageRelevanceFilter.section_identity_guard?(reason, "Any text at all"),
+                 "#{reason.inspect} must stay dropped"
+    end
+  end
+
+  test "section_identity_guard rescues per-page Haiku drop of a section divider" do
+    @page_text = "THYSSEN"
+    PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+      { has_images: true, text_layer_chars: 120, image_area_ratio: 0.1 }
+    end
+    haiku = FakeHaikuClient.new(keep: false, reason: "section divider")
+
+    result = make_filter(page_number: 92, haiku_client: haiku).call
+
+    assert_equal true,                    result[:keep]
+    assert_equal :section_identity_guard, result[:reason]
+    assert_equal :haiku,                  result[:source]
+  end
+
+  test "batch classifier prompt keeps pages naming manufacturers or model codes" do
+    prompt = PageRelevanceFilter::BatchFilter::HAIKU_BATCH_SYSTEM
+
+    assert_match(/keep=true.*manufacturer, controller family, or model/m, prompt)
+    assert_no_match(/Be aggressive dropping covers and indexes/, prompt)
+  end
+
   test "safety_action_guard non-rescued batch drop does not trigger density analysis" do
     @page_text = "Title cover page."
     pages  = [ FakePage.new(1, "dropped_cover_bytes") ]

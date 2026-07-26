@@ -1,0 +1,229 @@
+{
+  "version": "seguridades-v3.2",
+  "description": "Rúbrica explícita para los 12 casos SEGURIDADES 1.1-1. Cada caso separa contenido obligatorio, aceptable-opcional y penalizado.",
+  "citation_required": true,
+  "cases": [
+    {
+      "id": "altius_d8",
+      "category": "explicacion_tecnica_segura",
+      "severity": "technical_important",
+      "question": "¿Qué dispositivo de seguridad identifica D8 en ALTIUS y qué función documenta?",
+      "source_pages": [7],
+      "required": [
+        {"label": "identifica D8", "pattern": "\\bD8\\b"},
+        {"label": "limita la función a lo documentado", "pattern": "(?:no (?:documenta|define|incluye)|El documento no incluye este dato|limitador)"}
+      ],
+      "optional": [
+        {"label": "distingue nombre de función", "pattern": "(?:nombre|serie|funci[oó]n)"}
+      ],
+      "penalized": [
+        {"label": "caracteriza limitador como sobrecarga", "pattern": "(?:D8|limitador).{0,50}(?:sobrecarga|overload)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "tpr70_epc_b8",
+      "category": "lectura_visual",
+      "severity": "critical",
+      "question": "En TPR70, ¿a qué conector está conectado EPC?",
+      "source_pages": [11],
+      "required": [
+        {"label": "identifica EPC", "pattern": "\\bEPC\\b"},
+        {"label": "identifica la serie correcta", "pattern": "SERIE CERROJOS CABINA"},
+        {"label": "ubica el componente físico de EPC en los terminales correctos", "pattern": "(?=[\\s\\S]*(?:PUERTAS CABINA MANUALES|(?:componente|dispositivo)\\s+f[ií]sico|\\bLED\\b))(?=[\\s\\S]*terminal(?:es)?\\s*3)"}
+      ],
+      "optional": [
+        {"label": "cita página 11", "pattern": "(?:p[aá]gina|p\\.)\\s*11"}
+      ],
+      "penalized": [
+        {"label": "asigna EPC a un terminal desmentido", "pattern": "(?:EPC|PUERTAS CABINA MANUALES).{0,80}terminal(?:es)?\\s*(?:1|2|5|6)\\b", "severity": "critical"},
+        {"label": "conector alucinado", "pattern": "\\bX(?:SSC|SSH2)\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "kdt_evo_presostato",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "question": "En KDT-EVO, ¿qué conexión documenta el esquema para el PRESOSTATO?",
+      "source_pages": [14],
+      "required": [
+        {"label": "identifica presostato", "pattern": "PRESOSTATO"},
+        {"label": "identifica XP31 o se abstiene", "pattern": "(?:\\bXP31\\b|El documento no incluye este dato|Verificar en campo)"}
+      ],
+      "optional": [
+        {"label": "cita página 14", "pattern": "(?:p[aá]gina|p\\.)\\s*14"}
+      ],
+      "penalized": [
+        {"label": "inventa conector alternativo", "pattern": "\\bX(?:SSC|SSH2)\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "mr08_sci",
+      "category": "recuperacion_textual_directa",
+      "severity": "critical",
+      "question": "En MR08, ¿dónde se conectan las fotocélulas SCI?",
+      "source_pages": [22],
+      "required": [
+        {"label": "identifica SCI", "pattern": "\\bSCI\\b"},
+        {"label": "incluye CN-112.SC", "pattern": "\\bCN-?112\\.SC\\b"},
+        {"label": "incluye CN-109.CC", "pattern": "\\bCN-?109\\.CC\\b"}
+      ],
+      "optional": [
+        {"label": "cita página 22", "pattern": "(?:p[aá]gina|p\\.)\\s*22"}
+      ],
+      "penalized": [
+        {"label": "usa conectores inexistentes", "pattern": "\\bX(?:SSC|SSH2)\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "edel_k2_c2",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "question": "En EDEL-K2, ¿qué terminales muestra C2 para 36C/41?",
+      "source_pages": [25],
+      "required": [
+        {"label": "identifica C2", "pattern": "\\bC2\\b"},
+        {"label": "conserva 36C o 41", "pattern": "\\b(?:36C|41)\\b"}
+      ],
+      "optional": [
+        {"label": "cita página 25", "pattern": "(?:p[aá]gina|p\\.)\\s*25"}
+      ],
+      "penalized": [
+        {"label": "resuelve terminal no evidenciado", "pattern": "\\bX(?:SSC|SSH2)\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "em3000_fotocelula_220v",
+      "category": "comparacion_entre_paginas",
+      "severity": "critical",
+      "question": "Compara las dos fotocélulas de EM3000: ¿qué tensión documenta cada una?",
+      "source_pages": [29, 30],
+      "required": [
+        {"label": "incluye 220 V", "pattern": "\\b220\\s*V\\b"},
+        {"label": "aplica a ambas", "pattern": "(?:amb[ao]s|l[ao]s dos|cada un[ao])"}
+      ],
+      "optional": [
+        {"label": "cita páginas 29 y 30", "pattern": "(?=.*(?:29))(?=.*(?:30))"}
+      ],
+      "penalized": [
+        {"label": "afirma ausencia de voltaje", "pattern": "(?:sin|no (?:tiene|incluye|documenta)).{0,30}(?:voltaje|tensi[oó]n)", "severity": "critical"},
+        {"label": "introduce 24 V", "pattern": "\\b24\\s*V\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "em2000_contradiccion",
+      "category": "contradicciones",
+      "severity": "critical",
+      "question": "En EM2000, ¿qué conectores de fotocélula aparecen en el encabezado y en el dibujo?",
+      "source_pages": [31, 32],
+      "required": [
+        {"label": "incluye CN7", "pattern": "\\bCN-?7\\b"},
+        {"label": "incluye CN8", "pattern": "\\bCN-?8\\b"},
+        {"label": "incluye CN9", "pattern": "\\bCN-?9\\b"},
+        {"label": "expone contradicción", "pattern": "(?:contradic|discrepan|difiere|no coincide|encabezado.{0,300}(?:dibujo|diagrama))"}
+      ],
+      "optional": [
+        {"label": "pide verificar esquema completo", "pattern": "(?:Verificar en campo|esquema completo)"}
+      ],
+      "penalized": [
+        {"label": "resuelve arbitrariamente", "pattern": "(?:el correcto es|definitivamente|sin duda)", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "tokibat_dl27",
+      "category": "informacion_ausente",
+      "severity": "technical_important",
+      "question": "¿Qué indica DL27 en TOKIBAT y cuándo se enciende?",
+      "source_pages": [40],
+      "required": [
+        {"label": "identifica DL27", "pattern": "\\bDL27\\b"},
+        {"label": "se abstiene sobre lógica", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato)"}
+      ],
+      "optional": [
+        {"label": "distingue etiqueta de estado", "pattern": "(?:identifica|etiqueta|estado)"}
+      ],
+      "penalized": [
+        {"label": "inventa estado de encendido", "pattern": "(?:^|[.\\n])(?![^.\\n]*\\b(?:no|ni|si|tampoco)\\b)[^.\\n]*\\bse enciende\\s+cuando\\b[^.\\n]{0,80}(?:fallo|aver[ií]a|normal)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "thyssen_e_led",
+      "category": "informacion_ausente",
+      "severity": "technical_important",
+      "question": "En Thyssen-E, ¿qué LED señala una condición normal y cuál un fallo?",
+      "source_pages": [93],
+      "required": [
+        {"label": "expone falta de lógica documentada", "pattern": "(?:no (?:define|documenta|incluye).{0,50}(?:l[oó]gica|encendido)|El documento no incluye este dato)"}
+      ],
+      "optional": [
+        {"label": "identifica LEDs documentados sin asignar estado", "pattern": "\\b(?:DL|LED|L)\\s*-?\\d+\\b"}
+      ],
+      "penalized": [
+        {"label": "asigna normal/fallo sin respaldo", "pattern": "\\b(?:DL|LED|L)\\s*-?\\d+\\b[^.\\n]{0,60}(?:se enciende|indica|se[ñn]ala)[^.\\n]{0,60}(?:normal|fallo|aver[ií]a)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "cerrojos_generica",
+      "category": "ambiguas",
+      "severity": "secondary",
+      "question": "¿Cómo aparecen los cerrojos en las placas?",
+      "source_pages": [11, 14, 22],
+      "required": [
+        {"label": "reconoce varias placas", "pattern": "(?:varias placas|varios modelos|fabricante)"},
+        {"label": "solicita selección de modelo", "pattern": "(?:selecciona|indica).{0,50}(?:fabricante|placa|modelo)"}
+      ],
+      "optional": [
+        {"label": "ofrece ejemplos etiquetados", "pattern": "\\d+\\.\\s+[^\\n]+(?:—|-)[^\\n]+"}
+      ],
+      "penalized": [
+        {"label": "da una respuesta universal", "pattern": "(?:en todas las placas|siempre se conecta|conexi[oó]n universal)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "torque_ausente",
+      "category": "informacion_ausente",
+      "severity": "critical",
+      "question": "¿Cuál es el torque de apriete de XP31?",
+      "source_pages": [14],
+      "required": [
+        {"label": "abstención visible", "pattern": "(?:El documento no incluye este dato|no (?:se )?(?:documenta|especifica|incluye))"}
+      ],
+      "optional": [
+        {"label": "sugiere verificar fuente completa", "pattern": "(?:Verificar en campo|esquema completo|manual completo)"}
+      ],
+      "penalized": [
+        {"label": "inventa torque numérico", "pattern": "\\b\\d+(?:[.,]\\d+)?\\s*N\\s*m\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "indice_carlos_silva",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "¿Qué información de seguridades muestra el índice Carlos Silva de la página 8?",
+      "source_pages": [8],
+      "required": [
+        {"label": "respuesta no vacía", "pattern": "\\S"},
+        {"label": "mantiene referencia solicitada", "pattern": "(?:Carlos Silva|p[aá]gina\\s*8|[ií]ndice)"}
+      ],
+      "optional": [
+        {"label": "expone ausencia si retrieval no responde", "pattern": "(?:El documento no incluye este dato|no (?:se )?(?:encuentra|documenta))"}
+      ],
+      "penalized": [
+        {"label": "respuesta vacía", "pattern": "\\A\\s*\\z", "severity": "technical_important"}
+      ]
+    }
+  ],
+  "visual_text_audit": [
+    {"page": 7, "status": "confirmed_sufficient", "focus": "ALTIUS D8"},
+    {"page": 8, "status": "confirmed_index_only", "focus": "índice Carlos Silva"},
+    {"page": 11, "status": "confirmed_sufficient", "focus": "EPC es LED de serie; su componente físico PUERTAS CABINA MANUALES está en B8 terminales 3–4 (verificado visualmente 2026-07-26)"},
+    {"page": 14, "status": "confirmed_sufficient", "focus": "PRESOSTATO en XP31"},
+    {"page": 22, "status": "confirmed_sufficient", "focus": "MR08-SCI CN-112.SC / CN-109.CC"},
+    {"page": 25, "status": "confirmed_sufficient", "focus": "terminales C2 36C/41 EDEL-K2"},
+    {"page": 29, "status": "confirmed_sufficient", "focus": "EM3000 eléctrico fotocélula 220 V"},
+    {"page": 30, "status": "confirmed_sufficient", "focus": "EM3000 hidráulico fotocélula 220 V"},
+    {"page": 31, "status": "confirmed_contradiction", "focus": "encabezado CN7/CN8; dibujo CN9/CN7"},
+    {"page": 32, "status": "confirmed_contradiction", "focus": "repite encabezado CN7/CN8 y dibujo CN9/CN7"},
+    {"page": 40, "status": "confirmed_sufficient", "focus": "TOKIBAT DL27 SSH; lógica de encendido ausente"},
+    {"page": 93, "status": "confirmed_sufficient", "focus": "SERIE E L9/L8/L7; lógica normal/fallo ausente"}
+  ]
+}

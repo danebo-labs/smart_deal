@@ -62,8 +62,41 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_includes result[:images_uploaded], "scan.jpg"
   end
 
-  test "same normalized image in the same account enqueues a cache-hit job without a temporary payload" do
+  test "cached diagnosis with an existing durable photo enqueues without a temporary payload" do
     image = { data: Base64.strict_encode64("xx"), binary: "xx", media_type: "image/jpeg", filename: "scan.jpg" }
+    sha = Digest::SHA256.hexdigest("xx")
+    FieldPhotoDiagnosisCache.write(
+      account_id: accounts(:legacy).id,
+      sha256: sha,
+      locale: "es",
+      value: diagnosis_cache_value
+    )
+    existing_photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: sha, s3_key_original: "field_photos/#{accounts(:legacy).id}/#{sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 2
+    )
+
+    result = QueryOrchestratorService.new(
+      "What is this?",
+      images: [ image ],
+      account: accounts(:legacy),
+      response_locale: :es,
+      user_id: users(:one).id
+    ).execute
+
+    args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+    assert_nil args["image_token"]
+    assert_equal sha, args["image_sha256"]
+    assert_equal existing_photo.id, args["field_photo_id"]
+    assert_equal result[:correlation_id], args["correlation_id"]
+  end
+
+  test "cached diagnosis without a durable photo still writes the pending store so it can be persisted" do
+    image = {
+      data: Base64.strict_encode64("xx"), binary: "xx", media_type: "image/jpeg", filename: "scan.jpg",
+      thumbnail_binary: "thumb-bytes", thumbnail_content_type: "image/jpeg",
+      thumbnail_width: 88, thumbnail_height: 66
+    }
     sha = Digest::SHA256.hexdigest("xx")
     FieldPhotoDiagnosisCache.write(
       account_id: accounts(:legacy).id,
@@ -81,9 +114,78 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     ).execute
 
     args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
-    assert_nil args["image_token"]
+    assert args["image_token"].present?
+    assert_nil args["field_photo_id"]
     assert_equal sha, args["image_sha256"]
     assert_equal result[:correlation_id], args["correlation_id"]
+
+    pending = FieldPhotoPendingImageStore.take(token: args["image_token"], account_id: accounts(:legacy).id)
+    assert_equal "thumb-bytes", pending[:thumbnail_binary]
+    assert_equal 88, pending[:thumbnail_width]
+  end
+
+  test "field_photo_id from another account is ignored and does not enqueue the job" do
+    other_account_photo = FieldPhoto.create!(
+      account_id: accounts(:climb).id, sha256: "f" * 64,
+      s3_key_original: "field_photos/#{accounts(:climb).id}/#{'f' * 64}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4
+    )
+    rag_called = false
+    orig_rag = BedrockRagService.instance_method(:query)
+    BedrockRagService.define_method(:query) { |*| rag_called = true; { answer: "ok", citations: [], session_id: nil } }
+
+    result = QueryOrchestratorService.new(
+      "What does this mean?",
+      account: accounts(:legacy),
+      field_photo_id: other_account_photo.id
+    ).execute
+
+    assert rag_called, "must fall through to the normal text flow, not leak the resource"
+    assert_equal "ok", result[:answer]
+    assert_empty enqueued_jobs.select { |job| job[:job] == FieldPhotoAnalysisJob }
+  ensure
+    BedrockRagService.define_method(:query, orig_rag)
+  end
+
+  test "a valid field_photo_id enqueues the job with image_token: nil and the correct sha256, touching no binary" do
+    photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: "g" * 64,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{'g' * 64}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4
+    )
+
+    result = QueryOrchestratorService.new(
+      "What does this mean?",
+      account: accounts(:legacy),
+      field_photo_id: photo.id,
+      user_id: users(:one).id
+    ).execute
+
+    assert_equal [ "original.jpg" ], result[:images_uploaded]
+    args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+    assert_nil args["image_token"]
+    assert_equal photo.sha256, args["image_sha256"]
+    assert_equal photo.id, args["field_photo_id"]
+    assert_equal result[:correlation_id], args["correlation_id"]
+  end
+
+  test "field_photo_id is ignored when images are already attached" do
+    photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: "h" * 64,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{'h' * 64}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4
+    )
+    image = { data: Base64.strict_encode64("xx"), media_type: "image/jpeg", filename: "photo.jpg" }
+
+    QueryOrchestratorService.new(
+      "What is this?",
+      images: [ image ],
+      account: accounts(:legacy),
+      field_photo_id: photo.id
+    ).execute
+
+    args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+    assert_not_equal photo.sha256, args["image_sha256"]
   end
 
   test "documents with blank query returns documents_uploaded without RAG" do
@@ -156,6 +258,33 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal "Necesito rescate de emergencia", captured[:query]
   ensure
     BedrockRagService.define_method(:query, orig_rag) if orig_rag
+  end
+
+  test "deterministic_document_overview wins over model disambiguation when both would apply" do
+    account = accounts(:legacy)
+    doc = KbDocument.create!(account: account, s3_key: "uploads/#{SecureRandom.hex(4)}.pdf",
+                              display_name: "SEGURIDADES 1.1-1", aliases: [])
+    Rag::DocumentOverviewCache.write(
+      account_id: account.id, kb_document_id: doc.id,
+      value: { sections: [ { label: "S1", first_page: 1, last_page: 2, chunk_count: 1 } ],
+               chunk_count: 1, source: "manifest" }
+    )
+    session = Struct.new(:active_entities).new({
+      "SEGURIDADES 1.1-1" => { "canonical_name" => "SEGURIDADES 1.1-1", "kb_document_id" => doc.id,
+                                "aliases" => [], "source" => "user_pin", "added_at" => Time.current.iso8601 }
+    })
+    # "SEGURIDADES" alone matches AmbiguousModelResponder's generic-hardware pattern
+    # (and would proceed, since it does not also match an explicit equipment code
+    # separated only by a space) — confirming the overview branch runs first.
+    assert Rag::DeterministicIntent.ambiguous_hardware_query?("SEGURIDADES 1.1-1")
+
+    result = QueryOrchestratorService.new(
+      "SEGURIDADES 1.1-1",
+      account: account,
+      conv_session: session
+    ).execute
+
+    assert_equal "deterministic_document_overview", result[:generation_mode]
   end
 
   test "entity_sources separates media type from user pin provenance" do

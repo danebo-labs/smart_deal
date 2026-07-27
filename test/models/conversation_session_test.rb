@@ -731,6 +731,31 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_includes entity["aliases"], "Updated Alias"
   end
 
+  test 'pin_kb_document! stamps source: user_pin when merging into an auto-extracted entity' do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-auto-extracted", channel: "web")
+    kb_doc = KbDocument.create!(
+      s3_key: "uploads/2026/auto-extracted.pdf",
+      display_name: "Auto Extracted Manual",
+      aliases: []
+    )
+    uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+    session.update!(active_entities: {
+      "Auto Extracted Manual" => {
+        "canonical_name" => "Auto Extracted Manual",
+        "kb_document_id" => kb_doc.id,
+        "source" => "doc_refs_rule8",
+        "source_uri" => uri,
+        "aliases" => [],
+        "added_at" => 1.minute.ago.iso8601
+      }
+    })
+
+    assert session.pin_kb_document!(kb_doc)
+    session.reload
+
+    assert_equal "user_pin", session.active_entities.fetch("Auto Extracted Manual").fetch("source")
+  end
+
   test 'pin_kb_document! updates source_uri when the same kb_document_id is re-pinned' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-uri-refresh", channel: "web")
     kb_doc = KbDocument.create!(

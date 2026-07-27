@@ -198,6 +198,7 @@ class ConversationSession < ApplicationRecord
         "source_uri"     => s3_uri,
         "wa_filename"    => File.basename(kb_doc.s3_key.to_s),
         "entity_type"    => entity_type,
+        "source"         => "user_pin",
         "aliases"        => merged_aliases
       )
       return true if refreshed == existing

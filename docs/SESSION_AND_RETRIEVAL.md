@@ -92,6 +92,26 @@ Reranking the 15 candidates to 9 or 12 caused recall regressions in the
 See [RAG_QUALITY_BENCHMARK_2026-06-09.md](RAG_QUALITY_BENCHMARK_2026-06-09.md)
 for the test matrix and measured tradeoffs.
 
+#### Pin-triggered document overview warm-up
+
+Pinning a document (`PinnedDocumentsController#create`) now also enqueues
+**`DocumentOverviewWarmJob`**, which precomputes and caches the document's
+table-of-contents summary via `Rag::DocumentOverviewBuilder` so the first
+real question does not pay a cold S3/manifest lookup. This is a single
+`perform_later` call — no extra synchronous work on the pin request.
+
+When a session has 1-4 `source: "user_pin"` entities (`MAX_OVERVIEW_DOCUMENTS`,
+most recent kept) and the question is blank, the auto-completed
+model-selection query, or otherwise resolves as a document overview request
+per `Rag::DeterministicIntent.document_overview_query?` (a single name or a
+concatenation of the pinned names/aliases), `QueryOrchestratorService`
+resolves it as a deterministic table-of-contents summary — one
+`Documento: %{name}` block per pinned document with an available overview
+(see [QUERY_ORCHESTRATOR.md](QUERY_ORCHESTRATOR.md)) — instead of falling
+through to `Rag::AmbiguousModelResponder`'s multi-model disambiguation.
+Entities auto-extracted from citations (not checkbox-pinned) are never
+included, even if their name matches the question.
+
 | Layer | Current scope | Eviction / cap | Written by |
 |---|---|---|---|
 | `kb_documents` | Per account | — | Upload, ingestion, `KbDocumentEnrichmentService` |

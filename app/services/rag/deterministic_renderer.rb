@@ -54,6 +54,7 @@ module Rag
       @entity_s3_uris  = entity_s3_uris
       @entity_sources  = entity_sources
       @response_locale = response_locale
+      @account         = account
       @rag_service     = rag_service || BedrockRagService.new(account: account)
     end
 
@@ -63,7 +64,8 @@ module Rag
         entity_s3_uris:      @entity_s3_uris,
         entity_sources:      @entity_sources,
         force_entity_filter: true,
-        number_of_results:   number_of_results
+        number_of_results:   number_of_results,
+        account_id:          @account&.id
       )
       chunks = retrieval[:chunks]
       ledger = FieldRecordParser.parse_chunks(chunks)

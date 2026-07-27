@@ -45,7 +45,8 @@ class RagController < ApplicationController
       entity_s3_uris:  entity_s3_uris,
       account:         current_account,
       user_id:         current_user.id,
-      correlation_id:  correlation_id
+      correlation_id:  correlation_id,
+      field_photo_id:  params[:field_photo_id].presence
     )
 
     unless result.success?
@@ -80,7 +81,10 @@ class RagController < ApplicationController
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
     json[:correlation_id]     = result.correlation_id     if result.correlation_id.present?
     json[:quick_replies]      = result.quick_replies      if result.quick_replies.present?
-    if Array(result.citations).empty?
+    # V8: the document overview path already names each document as a
+    # "Documento: ..." heading inside the answer itself — showing the same
+    # names again in "Documentos consultados" would duplicate attribution.
+    if Array(result.citations).empty? && result.generation_mode != "deterministic_document_overview"
       fallback_names = consulted_documents_fallback(result.doc_refs)
       json[:consulted_documents] = fallback_names if fallback_names.present?
     end

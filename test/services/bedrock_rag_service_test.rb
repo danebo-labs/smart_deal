@@ -1024,6 +1024,27 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'detect_language_from_question: no clear Spanish or English signal defaults to :es' do
+    # Product change (TOC multi + UI plan): a bare manual name with no diacritics
+    # and no function-word evidence either way must default to Spanish, not
+    # silently fall back to English.
+    assert_equal :es, BedrockRagService.detect_language_from_question('Manual Plataforma Tijera')
+    assert_equal :es, BedrockRagService.detect_language_from_question('Orona 3G')
+  end
+
+  test 'strong_spanish_evidence? matches the same cases as detect_language_from_question :es' do
+    assert BedrockRagService.strong_spanish_evidence?('¿Cuánto tarda?')
+    assert BedrockRagService.strong_spanish_evidence?('como instalar esto')
+    assert_not BedrockRagService.strong_spanish_evidence?('Manual Plataforma Tijera')
+  end
+
+  test 'strong_english_evidence? requires at least 2 distinct function-word tokens' do
+    assert BedrockRagService.strong_english_evidence?('How do I install this?')
+    assert BedrockRagService.strong_english_evidence?('Show me the maintenance procedure')
+    assert_not BedrockRagService.strong_english_evidence?('Manual Plataforma Tijera')
+    assert_not BedrockRagService.strong_english_evidence?('tell') # single token, below threshold
+  end
+
   # --- Token tracking: counting deferred to TrackBedrockQueryJob ---
 
   test 'query enqueues TrackBedrockQueryJob with LocalTokenizer-estimated tokens and logs RAG_REGRESSION' do
@@ -1337,6 +1358,49 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_equal Digest::SHA256.hexdigest('Prueba documentada'),
                    result.dig(:chunks, 0, :chunk_sha256)
     end
+  end
+
+  test 'retrieve_chunks logs a kb_retrieve PILOT_USAGE line and never enqueues TrackBedrockQueryJob' do
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(capture_logger)
+
+    with_mock_bedrock_client do |client|
+      client.retrieve_response = ::OpenStruct.new(
+        retrieval_results: [
+          ::OpenStruct.new(
+            content: ::OpenStruct.new(text: 'Prueba documentada'),
+            score: 0.9,
+            metadata: {},
+            location: ::OpenStruct.new(s3_location: ::OpenStruct.new(uri: 's3://bucket/chunks/manual-1.txt'))
+          )
+        ]
+      )
+      jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+      service = BedrockRagService.new(account: @account)
+
+      service.retrieve_chunks(
+        'Enumera todas las pruebas de funcionamiento',
+        entity_s3_uris: [ 's3://bucket/manual.pdf' ],
+        force_entity_filter: true,
+        account_id: @account.id,
+        correlation_id: 'corr-1'
+      )
+
+      track_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs[jobs_before..].select { |j| j[:job] == TrackBedrockQueryJob }
+      assert_empty track_jobs, 'retrieve_chunks must never enqueue TrackBedrockQueryJob'
+
+      line = log_output.string.lines.find { |l| l.include?("[PILOT_USAGE]") && l.include?('"event":"kb_retrieve"') }
+      assert line, "kb_retrieve PILOT_USAGE line must be logged"
+      payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+      assert_equal @account.id, payload["account_id"]
+      assert_equal "corr-1", payload["correlation_id"]
+      assert_equal 1, payload["results_count"]
+      assert_equal "ok", payload["result"]
+      assert_equal true, payload["filter_applied"]
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end
 
   test 'vector configuration always includes account filter without pins' do

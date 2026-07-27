@@ -64,8 +64,9 @@ class Bedrock::CitationProcessor
   # citations array by 1-based index — no S3 lookup required.
   # @param citations [Array<Hash>]
   # @param answer_text [String]
+  # @param question [String, nil] when present, used to derive matched_excerpt
   # @return [Array<Hash>]
-  def build_numbered_references(citations, answer_text)
+  def build_numbered_references(citations, answer_text, question: nil)
     citation_numbers = answer_text.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq.sort
 
     citation_numbers.filter_map do |num|
@@ -76,7 +77,10 @@ class Bedrock::CitationProcessor
       metadata = citation[:metadata] || {}
 
       filename = extract_filename(location)
-      base_title = metadata['title'] || metadata[:title] || filename
+      # .presence is required: the sidecar writes canonical_name.to_s, which can be
+      # "" — and "" is truthy in Ruby, so a bare `||` would never fall through.
+      base_title = metadata['canonical_name'].presence || metadata[:canonical_name].presence ||
+                   metadata['title'].presence || metadata[:title].presence || filename
       page = extract_page_number(metadata, content: citation[:content], location: location)
       title = page ? "#{base_title} — p. #{page}" : base_title
 
@@ -87,12 +91,72 @@ class Bedrock::CitationProcessor
         page: page,
         content: citation[:content],
         location: location,
-        metadata: metadata
+        metadata: metadata,
+        matched_excerpt: matched_excerpt(citation[:content], question)
       }
     end
   end
 
   private
+
+  # Chunks are written as `header + body` (BatchResultsParserService#identity_header):
+  # three bracketed metadata lines followed by a blank line. Never surface that
+  # block as a "matching excerpt" — the technician needs a sentence from the
+  # manual, not internal ingestion metadata.
+  HEADER_PATTERN = /\A\[DOCUMENT:.*?\]\n\[SOURCE_URI:.*?\]\n\[SEARCH_ALIASES:.*?\]\n\n/m.freeze
+
+  # Legacy chunk bodies (OWRPGSX6XK Lambda path) and Opus-authored S0 identification
+  # blocks prepend markdown metadata — bold headers, section headings, table rows,
+  # and alias bullets — before any real content. None of that is a "matching
+  # excerpt" a technician should see; filter it out line-by-line before splitting
+  # into candidate sentences.
+  METADATA_LINE_PATTERN = /\A\s*(?:\*\*[A-Z_]+:|\||#+\s|-\s+[a-z0-9 ]+\z|\[(?:DOCUMENT|SOURCE_URI|SEARCH_ALIASES):)/.freeze
+
+  MIN_EXCERPT_TOKEN_LENGTH = 4
+  EXCERPT_MAX_CHARS = 140
+  EXCERPT_STOPWORDS = %w[
+    para como cual cuales donde cuando desde hasta sobre entre este esta estos estas
+    that this these those with from what which where when about
+  ].to_set.freeze
+
+  # Deterministic, dependency-free selection of the sentence in `content` that
+  # best overlaps with the technician's question. Returns nil rather than ever
+  # fabricating a fragment: the renderer falls back to the current behavior.
+  def matched_excerpt(content, question)
+    return nil if content.blank? || question.blank?
+
+    tokens = excerpt_tokens(question)
+    return nil if tokens.empty?
+
+    threshold = tokens.size == 1 ? 1 : 2
+    best = nil
+    best_score = 0
+    sentences(content).each do |sentence|
+      score = (excerpt_tokens(sentence) & tokens).size
+      next if score <= best_score
+
+      best_score = score
+      best = sentence
+    end
+    return nil if best.nil? || best_score < threshold
+
+    best.squish.truncate(EXCERPT_MAX_CHARS)
+  end
+
+  def excerpt_tokens(text)
+    I18n.transliterate(text.to_s).downcase.scan(/[[:alnum:]]+/)
+      .select { |token| token.length >= MIN_EXCERPT_TOKEN_LENGTH }
+      .reject { |token| EXCERPT_STOPWORDS.include?(token) }
+      .to_set
+  end
+
+  def sentences(content)
+    text = content.to_s.sub(HEADER_PATTERN, "")
+    lines = text.split("\n").reject do |line|
+      line.match?(METADATA_LINE_PATTERN) || line.include?("PIPELINE_INJECTED")
+    end
+    lines.join(" ").split(/(?<=[.!?])\s+/)
+  end
 
   # Extracts the character end offset of a citation's generated span, tolerating
   # both AWS SDK struct accessors and plain hashes (recorded fixtures).

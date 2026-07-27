@@ -49,6 +49,7 @@ export default class extends Controller {
 
   connect() {
     this.pendingFile = null
+    this.pendingFieldPhotoId = null
     this.pendingPhotoCorrelationId = null
     this.pendingUploadType = null
     this.indexingLoadingId = null
@@ -337,6 +338,7 @@ export default class extends Controller {
     this.inputTarget.value = ""
     const fileToSend = this.pendingFile
     this.removeFile()
+    this.pendingFieldPhotoId = null
 
     const loadingId = this.addLoadingMessage()
     const ragTextQuery = !fileToSend
@@ -401,6 +403,7 @@ export default class extends Controller {
         payload.document = { data: file.data, media_type: file.media_type, filename: file.filename }
       }
     }
+    if (this.pendingFieldPhotoId && !file) payload.field_photo_id = this.pendingFieldPhotoId
     const response = await fetch("/rag/ask", {
       method: "POST",
       headers: {
@@ -875,7 +878,11 @@ export default class extends Controller {
     const answerRow = this.addMessageHtml(formatAnswerForWeb(data.answer, citations), "assistant")
     if (!firstRow) firstRow = answerRow
     if (citations.length) {
-      this.addMessageHtml(renderReferences(citations), "assistant")
+      // Only list citations that were NOT already shown with their excerpt
+      // above (renderDocumentsConsulted) — never hide a [n] that appears
+      // nowhere else on screen.
+      const withoutExcerpt = citations.filter((c) => !(c.matched_excerpt || "").trim())
+      this.addMessageHtml(renderReferences(withoutExcerpt), "assistant")
     }
     if (Array.isArray(data.quick_replies) && data.quick_replies.length) {
       this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")
@@ -953,7 +960,6 @@ export default class extends Controller {
         "assistant",
         true  // temporary: removed alongside other temp rows on next removeMessage()
       )
-      if (this.pendingUploadType === "image") this.pendingPhotoCorrelationId = null
     }, this.constructor.INDEXING_STALL_MS)
   }
 
@@ -1081,9 +1087,41 @@ export default class extends Controller {
     }
     html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
 
+    if (data.field_photo_id) {
+      const reuseLabel = lang.startsWith("en") ? "Ask about this photo" : "Preguntar sobre esta foto"
+      const viewAria = lang.startsWith("en") ? "Open full photo in a new tab" : "Abrir foto completa en una pestaña nueva"
+      const photoUrl = `/field_photos/${encodeURIComponent(data.field_photo_id)}`
+      const thumb = data.thumbnail_url
+        ? `<a href="${photoUrl}" target="_blank" rel="noopener" aria-label="${this.escapeHtml(viewAria)}"
+              style="display:flex;height:44px;width:44px;flex-shrink:0;align-items:center;justify-content:center;border-radius:10px;overflow:hidden;background:#e2e8f0;">
+              <img src="${this.escapeHtml(data.thumbnail_url)}" alt="" style="height:100%;width:100%;object-fit:cover;">
+            </a>`
+        : ""
+      html += `<div style="margin-top:12px;display:flex;align-items:center;gap:10px;">` +
+        thumb +
+        `<button type="button"
+                  data-action="click->rag-chat#reuseFieldPhoto"
+                  data-field-photo-id="${this.escapeHtml(String(data.field_photo_id))}"
+                  style="min-height:44px;flex:1;border-radius:10px;border:2px solid #2b6cb0;background:#ffffff;color:#2b6cb0;font-weight:600;font-size:13px;padding:0 14px;">
+                  ${this.escapeHtml(reuseLabel)}
+                </button>` +
+        `</div>`
+    }
+
     bubble.innerHTML = html
     this.messagesTarget.appendChild(row)
     this.scrollToMessageTop(row)
+  }
+
+  // Attaches the last analyzed field photo to the next question so a
+  // technician can re-ask without re-uploading. Zero bytes leave the device;
+  // the backend rehydrates from field_photos/ storage when needed.
+  reuseFieldPhoto(event) {
+    this.pendingFieldPhotoId = event.currentTarget.dataset.fieldPhotoId
+    const lang = (document.documentElement.lang || "es").toLowerCase()
+    const attachedLabel = lang.startsWith("en") ? "Photo attached — ask your question" : "Foto adjunta — escribe tu pregunta"
+    this.inputTarget.placeholder = attachedLabel
+    this.inputTarget.focus()
   }
 
   async refreshDocuments() {

@@ -38,6 +38,14 @@ es:
     multiple_models_found: "La evidencia recuperada corresponde a varias placas o modelos:"
     select_model: "Selecciona una opción o indica el fabricante y la placa exacta."
     model_selection_query: "Fabricante y placa: %{model}"
+    document_overview:
+      document_heading: "Documento: %{name}"
+      section_line: "%{label} — %{pages}"
+      closing_question: "¿Sobre qué sección quieres consultar?"
+      section_query_suffix: "¿qué dice esta sección?"
+      page_single: "p. %{page}"
+      page_range: "p. %{first}-%{last}"
+      page_unknown: "páginas no especificadas"
     deterministic:
       test_label: "Prueba"
       action_label: "Acción"

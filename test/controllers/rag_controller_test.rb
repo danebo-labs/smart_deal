@@ -329,6 +329,36 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test 'omits consulted_documents on the deterministic_document_overview path (V8, no duplicate attribution)' do
+    sign_in @user
+
+    doc_refs = [
+      { "source_uri" => "s3://bucket/manual-a.pdf", "canonical_name" => "Manual A" },
+      { "source_uri" => "s3://bucket/manual-b.pdf", "canonical_name" => "Manual B" }
+    ]
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **_kwargs|
+      obj = Object.new
+      obj.define_singleton_method(:execute) do
+        { answer: "Documento: Manual A\nS1\n\nDocumento: Manual B\nS1", citations: [], doc_refs: doc_refs,
+          session_id: nil, generation_mode: "deterministic_document_overview" }
+      end
+      obj
+    end
+
+    begin
+      post rag_ask_url, params: { question: "Manual A Manual B" }, as: :json
+      assert_response :ok
+
+      json = json_response
+      assert_not json.key?("consulted_documents"),
+                 "the overview answer already names each document as a heading"
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+    end
+  end
+
   test 'does not include consulted_documents when citations are present' do
     sign_in @user
 
@@ -639,6 +669,105 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert_includes captured[:entity_s3_uris], kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
     ensure
       QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+    end
+  end
+
+  test "ask passes field_photo_id through to QueryOrchestratorService" do
+    sign_in @user
+
+    captured = {}
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured.merge!(kwargs)
+      obj = Object.new
+      obj.define_singleton_method(:execute) { { answer: "x", citations: [], session_id: nil } }
+      obj
+    end
+
+    begin
+      post rag_ask_url, params: { question: "what does this show?", field_photo_id: "42" }, as: :json
+      assert_response :ok
+      assert_equal "42", captured[:field_photo_id]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+    end
+  end
+
+  test "ask omits field_photo_id when the param is absent" do
+    sign_in @user
+
+    captured = {}
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured.merge!(kwargs)
+      obj = Object.new
+      obj.define_singleton_method(:execute) { { answer: "x", citations: [], session_id: nil } }
+      obj
+    end
+
+    begin
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+      assert_response :ok
+      assert_nil captured[:field_photo_id]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+    end
+  end
+
+  # ─── resolve_response_locale: history continuity for ambiguous follow-ups ──
+
+  def with_captured_orchestrator_kwargs
+    captured = {}
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured.merge!(kwargs)
+      obj = Object.new
+      obj.define_singleton_method(:execute) { { answer: "x", citations: [], session_id: nil } }
+      obj
+    end
+
+    yield captured
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+  end
+
+  test "resolve_response_locale continues an English thread on an ambiguous short follow-up" do
+    sign_in @user
+
+    session = ConversationSession.find_or_create_for(
+      identifier: @user.id.to_s, channel: "web", account_id: @account.id
+    )
+    session.add_to_history("user", "What is the reset procedure for this panel?")
+
+    with_captured_orchestrator_kwargs do |captured|
+      post rag_ask_url, params: { question: "Instalar" }, as: :json
+      assert_response :ok
+      assert_equal :en, captured[:response_locale]
+    end
+  end
+
+  test "resolve_response_locale continues a Spanish thread on an ambiguous short follow-up" do
+    sign_in @user
+
+    session = ConversationSession.find_or_create_for(
+      identifier: @user.id.to_s, channel: "web", account_id: @account.id
+    )
+    session.add_to_history("user", "¿Cuál es el procedimiento de reinicio de este panel?")
+
+    with_captured_orchestrator_kwargs do |captured|
+      post rag_ask_url, params: { question: "Instalar" }, as: :json
+      assert_response :ok
+      assert_equal :es, captured[:response_locale]
+    end
+  end
+
+  test "resolve_response_locale defaults to :es for an ambiguous question with no history" do
+    sign_in @user
+
+    with_captured_orchestrator_kwargs do |captured|
+      post rag_ask_url, params: { question: "Instalar" }, as: :json
+      assert_response :ok
+      assert_equal :es, captured[:response_locale]
     end
   end
 

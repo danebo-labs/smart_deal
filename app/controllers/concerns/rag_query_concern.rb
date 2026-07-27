@@ -41,7 +41,7 @@ module RagQueryConcern
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil,
                         session_context: nil, conv_session: nil, entity_s3_uris: [],
                         output_channel: nil, force_entity_filter: nil, account: nil, user_id: nil,
-                        correlation_id: nil)
+                        correlation_id: nil, field_photo_id: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -77,7 +77,8 @@ module RagQueryConcern
       force_entity_filter: resolved_force_filter,
       user_id:             user_id,
       conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
-      correlation_id:      correlation_id
+      correlation_id:      correlation_id,
+      field_photo_id:      field_photo_id
     ).execute
 
     # AnswerSafetyProcessor already runs once inside BedrockRagService#query with
@@ -236,7 +237,7 @@ module RagQueryConcern
   end
 
   def current_question_locale_confident?(question, detected)
-    return true if detected == :es
+    return true if detected == :es && BedrockRagService.strong_spanish_evidence?(question)
 
     tokens = question.to_s.downcase.scan(/\b[a-z]+\b/)
     detected == :en && tokens.size >= CURRENT_QUERY_LOCALE_MIN_TOKENS
@@ -250,8 +251,8 @@ module RagQueryConcern
       content = msg["content"].to_s
       next if content.length < HISTORY_MIN_CONTENT_LEN
 
-      locale = BedrockRagService.detect_language_from_question(content)
-      return locale if locale == :es
+      return :es if BedrockRagService.strong_spanish_evidence?(content)
+      return :en if BedrockRagService.strong_english_evidence?(content)
     end
     nil
   end

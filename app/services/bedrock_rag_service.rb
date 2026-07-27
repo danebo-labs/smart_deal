@@ -373,7 +373,7 @@ class BedrockRagService
       )
 
       # Build numbered references from the KB response — no S3 listing required.
-      numbered_references = @citation_processor.build_numbered_references(citations, answer_text)
+      numbered_references = @citation_processor.build_numbered_references(citations, answer_text, question: question)
 
       Rails.logger.info("Found #{citations.length} citation(s)")
       numbered_references.each do |ref|
@@ -437,11 +437,13 @@ class BedrockRagService
   end
 
   def retrieve_chunks(question, entity_s3_uris: [], entity_sources: [],
-                      force_entity_filter: false, number_of_results: nil)
+                      force_entity_filter: false, number_of_results: nil,
+                      account_id: nil, correlation_id: nil)
     unless @knowledge_base_id
       raise MissingKnowledgeBaseError, "Knowledge Base ID not configured"
     end
 
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     resolved_uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
     apply_filter = resolved_uris.any? &&
       (force_entity_filter || !query_names_different_document?(question, resolved_uris))
@@ -476,6 +478,14 @@ class BedrockRagService
         chunk_sha256: Digest::SHA256.hexdigest(content)
       }
     end
+
+    elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+    PilotUsageLog.log(
+      "kb_retrieve",
+      account_id: account_id, correlation_id: correlation_id,
+      route: "retrieve_only", latency_ms: elapsed_ms, result: "ok",
+      results_count: chunks.size, filter_applied: apply_filter
+    )
 
     {
       chunks: chunks,
@@ -1123,22 +1133,46 @@ class BedrockRagService
 
   ES_DIACRITIC_PATTERN = /[áéíóúüñ¿¡]/.freeze
 
+  # Explicit, high-confidence English signal — required before ever returning :en.
+  # Excludes homographs with Spanish (a, me, no, has, he, son, van, sea) on purpose.
+  EN_TOKENS = %w[
+    the is are was were do does did of to in on for with and or not
+    you we it this that these those your its my
+    how what when where which who why
+    can could would should must need want show tell give please
+    from about there here been have had get make
+  ].freeze
+  EN_TOKEN_SET = Set.new(EN_TOKENS).freeze
+
   def detect_language_from_question(question)
     self.class.detect_language_from_question(question)
   end
 
+  # Returns :es for Spanish, :en otherwise. Default (no clear signal either way)
+  # is :es — I18n.default_locale — matching the primary user base.
   def self.detect_language_from_question(question)
     return I18n.locale if question.blank?
 
+    return :es if strong_spanish_evidence?(question)
+    return :en if strong_english_evidence?(question)
+
+    I18n.default_locale
+  end
+
+  # Explicit, high-confidence Spanish signal — unchanged from the pre-existing
+  # heuristic (accent/inverted-punctuation, or >=2 distinct ASCII stopwords).
+  def self.strong_spanish_evidence?(question)
     text = question.to_s.strip.downcase
-    return :es if text.match?(ES_DIACRITIC_PATTERN)
+    return true if text.match?(ES_DIACRITIC_PATTERN)
 
-    # Tokenize on ASCII letters (diacritic case already handled above).
-    tokens  = text.scan(/\b[a-z]+\b/).uniq
-    matches = tokens.count { |t| ES_TOKEN_SET.include?(t) }
-    return :es if matches >= 2
+    tokens = text.scan(/\b[a-z]+\b/).uniq
+    tokens.count { |t| ES_TOKEN_SET.include?(t) } >= 2
+  end
 
-    :en
+  # Explicit, high-confidence English signal — required before ever returning :en.
+  def self.strong_english_evidence?(question)
+    tokens = question.to_s.strip.downcase.scan(/\b[a-z]+\b/).uniq
+    tokens.count { |t| EN_TOKEN_SET.include?(t) } >= 2
   end
 
   def locale_to_language_name(locale)

@@ -4,6 +4,7 @@ require 'test_helper'
 
 class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
+  include ActiveJob::TestHelper
 
   setup do
     @user   = users(:one)
@@ -17,6 +18,13 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
 
     session = ConversationSession.find_by(identifier: @user.id.to_s, channel: "web")
     assert_includes SessionContextBuilder.entity_s3_uris(session), @kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+  end
+
+  test "create enqueues DocumentOverviewWarmJob exactly once" do
+    assert_enqueued_with(job: DocumentOverviewWarmJob, args: [ { account_id: @user.account_id, kb_document_id: @kb_doc.id } ]) do
+      post pinned_documents_path, params: { kb_document_id: @kb_doc.id }
+    end
+    assert_enqueued_jobs 1, only: DocumentOverviewWarmJob
   end
 
   test "create is idempotent" do

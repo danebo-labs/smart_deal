@@ -12,6 +12,7 @@ class PinnedDocumentsController < ApplicationController
     kb_doc  = current_account.kb_documents.find(create_params[:kb_document_id])
     session = current_conv_session
     if session.pin_kb_document!(kb_doc)
+      DocumentOverviewWarmJob.perform_later(account_id: current_account.id, kb_document_id: kb_doc.id)
       head :no_content
     else
       render json: { error: "Could not pin document" }, status: :unprocessable_entity

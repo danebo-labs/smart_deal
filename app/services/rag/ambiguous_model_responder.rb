@@ -33,6 +33,7 @@ module Rag
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale: nil, rag_service: nil)
       @question = question
+      @account = account
       @service = rag_service || BedrockRagService.new(account: account)
       @entity_s3_uris = Array(entity_s3_uris)
       @entity_sources = Array(entity_sources)
@@ -46,7 +47,8 @@ module Rag
         entity_s3_uris: @entity_s3_uris,
         entity_sources: @entity_sources,
         force_entity_filter: @force_entity_filter,
-        number_of_results: RETRIEVAL_RESULTS
+        number_of_results: RETRIEVAL_RESULTS,
+        account_id: @account&.id
       )
       candidates = candidates_from(retrieval[:chunks])
       return if candidates.size < MIN_DISTINCT_MODELS
@@ -153,7 +155,7 @@ module Rag
     def numbered_references(chunks)
       citations = citation_shaped(chunks)
       markers = citations.each_index.map { |index| "[#{index + 1}]" }.join(" ")
-      Bedrock::CitationProcessor.new.build_numbered_references(citations, markers)
+      Bedrock::CitationProcessor.new.build_numbered_references(citations, markers, question: @question)
     end
 
     def doc_refs(chunks)

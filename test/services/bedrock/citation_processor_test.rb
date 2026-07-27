@@ -124,4 +124,180 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
   test "returns the answer untouched when there are no citations" do
     assert_equal "Respuesta.", Bedrock::CitationProcessor.new.add_span_citations("Respuesta.", [])
   end
+
+  # ===== canonical_name priority (gap #6 / V3) =====
+
+  test "build_numbered_references prefers canonical_name over title" do
+    citations = [
+      {
+        content: "Contenido",
+        location: { key: "bulk_chunks/manual/chunk_67.txt" },
+        metadata: { "canonical_name" => "Manual Plataforma Tijera", "title" => "chunk_67.txt" }
+      }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(citations, "[1]").first
+
+    assert_equal "Manual Plataforma Tijera", reference[:title]
+  end
+
+  test "build_numbered_references falls back to title when canonical_name is blank" do
+    citations = [
+      {
+        content: "Contenido",
+        location: { key: "manual.pdf" },
+        metadata: { "canonical_name" => "", "title" => "SEGURIDADES" }
+      }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(citations, "[1]").first
+
+    assert_equal "SEGURIDADES", reference[:title]
+  end
+
+  test "build_numbered_references falls back to filename when neither canonical_name nor title is present" do
+    citations = [
+      {
+        content: "Contenido",
+        location: { key: "bulk_chunks/manual/chunk_67.txt" },
+        metadata: {}
+      }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(citations, "[1]").first
+
+    assert_equal "chunk_67.txt", reference[:title]
+  end
+
+  # ===== matched_excerpt =====
+
+  test "matched_excerpt picks the sentence with the most token overlap" do
+    citations = [
+      {
+        content: "El botón B34 muestra la potencia del circuito X. La tensión nominal es 24V. " \
+                  "El relé K3 controla la puerta principal.",
+        location: { key: "manual.pdf" },
+        metadata: {}
+      }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué muestra el botón B34?"
+    ).first
+
+    assert_equal "El botón B34 muestra la potencia del circuito X.", reference[:matched_excerpt]
+  end
+
+  test "matched_excerpt is nil when no sentence reaches the overlap threshold" do
+    citations = [
+      { content: "El relé K3 controla la puerta principal.", location: {}, metadata: {} }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿cuál es la presión hidráulica máxima?"
+    ).first
+
+    assert_nil reference[:matched_excerpt]
+  end
+
+  test "matched_excerpt is nil when question is not given (backward compatibility)" do
+    citations = [
+      { content: "El botón B34 muestra la potencia del circuito X.", location: {}, metadata: {} }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(citations, "[1]").first
+
+    assert_nil reference[:matched_excerpt]
+  end
+
+  test "matched_excerpt truncates to 140 characters" do
+    long_sentence = "El procedimiento de mantenimiento preventivo del circuito hidráulico requiere " \
+                    "verificar la presión, el nivel de aceite, la temperatura del motor y el estado " \
+                    "general de todas las mangueras y conexiones antes de continuar."
+    citations = [ { content: long_sentence, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿cuál es el procedimiento de mantenimiento preventivo?"
+    ).first
+
+    assert reference[:matched_excerpt].length <= 140
+  end
+
+  test "matched_excerpt ignores accents and capitalization" do
+    citations = [
+      { content: "La PRESIÓN máxima del sistema es de 3000 PSI.", location: {}, metadata: {} }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "presion maxima del sistema"
+    ).first
+
+    assert_equal "La PRESIÓN máxima del sistema es de 3000 PSI.", reference[:matched_excerpt]
+  end
+
+  test "matched_excerpt discards the chunk identity header" do
+    content = "[DOCUMENT: manual.pdf]\n[SOURCE_URI: s3://bucket/manual.pdf]\n[SEARCH_ALIASES: HPM-400]\n\n" \
+              "El botón B34 muestra la potencia del circuito X."
+    citations = [ { content: content, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué muestra el botón B34?"
+    ).first
+
+    assert_equal "El botón B34 muestra la potencia del circuito X.", reference[:matched_excerpt]
+    assert_not_includes reference[:matched_excerpt], "DOCUMENT:"
+  end
+
+  test "matched_excerpt still returns a useful sentence for a chunk that starts with the S0 identification table" do
+    content = "# S0 — DOCUMENT IDENTIFICATION\n" \
+              "| Field | Value |\n" \
+              "|-|-|\n" \
+              "| ORIGINAL_FILE_NAME | PIPELINE_INJECTED |\n" \
+              "| NORMALIZED_FILE_NAME | PIPELINE_INJECTED |\n" \
+              "| TECHNICAL_ID | Orona Arc Arca I |\n" \
+              "| REGIONAL_NORMATIVE | EN 81-20 |\n" \
+              "| IMAGE_QUALITY | CLEAR |\n" \
+              "| CONFIDENCE | HIGH |\n" \
+              "| ERA | TRANSITIONAL |\n\n" \
+              "El contactor K3 controla el motor principal de tracción."
+    citations = [ { content: content, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué controla el contactor K3?"
+    ).first
+
+    assert_equal "El contactor K3 controla el motor principal de tracción.", reference[:matched_excerpt]
+    assert_not_includes reference[:matched_excerpt], "PIPELINE_INJECTED"
+    assert_not_includes reference[:matched_excerpt], "S0"
+  end
+
+  test "matched_excerpt discards a bold DOCUMENT_ALIASES header and its alias bullets" do
+    content = "**DOCUMENT_ALIASES:**\n- 952408286\n- arca\n- basic arca\n\n" \
+              "El relé K3 controla la puerta principal."
+    citations = [ { content: content, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué controla el relé K3?"
+    ).first
+
+    assert_equal "El relé K3 controla la puerta principal.", reference[:matched_excerpt]
+  end
+
+  test "matched_excerpt does not alter filename, title, or page" do
+    citations = [
+      {
+        content: "EPC se conecta en B8.",
+        location: { key: "bulk_chunks/manual/chunk_p11_1.txt", uri: "s3://bucket/chunk.txt" },
+        metadata: { "title" => "SEGURIDADES", "page_number" => 11 }
+      }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "Respuesta [1]", question: "¿dónde se conecta el EPC?"
+    ).first
+
+    assert_equal 11, reference[:page]
+    assert_equal "SEGURIDADES — p. 11", reference[:title]
+    assert_equal "chunk_p11_1.txt", reference[:filename]
+  end
 end

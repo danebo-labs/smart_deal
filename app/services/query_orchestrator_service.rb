@@ -14,8 +14,11 @@ require "digest"
 #   - KNOWLEDGE_BASE_QUERY: documents/policies from the AWS Knowledge Base
 #   - HYBRID_QUERY: both sources queried in parallel, results merged
 #
-# Field photos are analyzed directly by Claude in a background job and are never
-# persisted. Documents continue through the S3 + Knowledge Base ingestion path.
+# Field photos are analyzed directly by Claude in a background job. The original
+# bytes and a thumbnail are retained durably in field_photos/ (see
+# FieldPhotoStore) for a bounded retention window so a technician can re-ask
+# without re-uploading; they are never indexed into the Knowledge Base.
+# Documents continue through the S3 + Knowledge Base ingestion path.
 class QueryOrchestratorService
   TOOLS = {
     DATABASE_QUERY: 'DATABASE_QUERY',
@@ -38,7 +41,7 @@ class QueryOrchestratorService
   # @param locale [String, nil] ISO 639-1 locale for image summary generation ("es", "en")
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, locale: nil,
-                 user_id: nil, conversation_session_id: nil, correlation_id: nil)
+                 user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil)
     @query = query
     @images = images || []
     @documents = documents || []
@@ -55,6 +58,7 @@ class QueryOrchestratorService
     @user_id = user_id
     @conversation_session_id = conversation_session_id || (conv_session.id if conv_session.respond_to?(:id))
     @correlation_id = correlation_id
+    @field_photo_id = field_photo_id
     @ai_provider = AiProvider.new
   end
 
@@ -68,6 +72,39 @@ class QueryOrchestratorService
   # 3. Text-only query: classify intent and delegate to the appropriate service.
   def execute
     upload_context = {}
+
+    if @field_photo_id.present? && @images.empty? && @account
+      photo = @account.field_photos.find_by(id: @field_photo_id) # scoping obligatorio
+      if photo
+        # Reuse the stored sha256 and follow the SAME path as a fresh upload:
+        # FieldPhotoAnalysisJob decides cache-hit vs re-analysis, and rehydrates
+        # bytes from S3 when needed. Zero bytes leave the device.
+        locale = (@response_locale || @locale || I18n.locale).to_s
+        correlation_id = @correlation_id.presence || "photo:#{SecureRandom.uuid}"
+        filename = File.basename(photo.s3_key_original)
+
+        FieldPhotoAnalysisJob.perform_later(
+          image_token: nil,
+          image_sha256: photo.sha256,
+          filename: filename,
+          content_type: photo.content_type,
+          account_id: @account&.id,
+          user_id: @user_id,
+          conversation_session_id: @conversation_session_id,
+          locale: locale,
+          correlation_id: correlation_id,
+          field_photo_id: photo.id
+        )
+
+        return {
+          answer: I18n.t("rag.image_analyzing_message"),
+          citations: [],
+          session_id: nil,
+          images_uploaded: [ filename ],
+          correlation_id: correlation_id
+        }
+      end
+    end
 
     if @images.any?
       image = @images.first
@@ -83,12 +120,18 @@ class QueryOrchestratorService
         sha256: image_sha256,
         locale: locale
       )
-      image_token = unless cached
+      existing_photo_id = @account && FieldPhoto.where(account_id: @account.id, sha256: image_sha256).pick(:id)
+
+      # Bytes are only needed when we still have something to do with them:
+      # analyze (no cached diagnosis) or persist (no durable row yet).
+      image_token = if cached.nil? || existing_photo_id.nil?
         FieldPhotoPendingImageStore.write(
-          binary: binary,
-          content_type: content_type,
-          filename: filename,
-          account_id: @account&.id
+          binary: binary, content_type: content_type, filename: filename,
+          account_id: @account&.id,
+          thumbnail_binary: image[:thumbnail_binary] || image["thumbnail_binary"],
+          thumbnail_content_type: image[:thumbnail_content_type] || image["thumbnail_content_type"],
+          thumbnail_width: image[:thumbnail_width] || image["thumbnail_width"],
+          thumbnail_height: image[:thumbnail_height] || image["thumbnail_height"]
         )
       end
 
@@ -101,7 +144,8 @@ class QueryOrchestratorService
         user_id: @user_id,
         conversation_session_id: @conversation_session_id,
         locale: locale,
-        correlation_id: correlation_id
+        correlation_id: correlation_id,
+        field_photo_id: existing_photo_id
       )
 
       PilotUsageLog.log(
@@ -165,6 +209,17 @@ class QueryOrchestratorService
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
       SqlGenerationService.new(@query).execute.merge(upload_context)
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
+      overview = Rag::DocumentOverviewResponder.build(
+        question:        @query,
+        account:         @account,
+        conv_session:    @conv_session,
+        response_locale: @response_locale
+      )
+      if overview && (rendered_overview = overview.execute)
+        Rails.logger.info("QueryOrchestrator: Routing to deterministic_document_overview for: '#{@query}'")
+        return rendered_overview.merge(upload_context)
+      end
+
       disambiguation = Rag::AmbiguousModelResponder.build(
         question:            @query,
         account:             @account,

@@ -38,6 +38,7 @@ class WarmBedrockKbJob < ApplicationJob
     elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     Rails.cache.write(THROTTLE_KEY, Time.current.to_i, expires_in: THROTTLE_TTL)
     Rails.logger.info("[KB_WARM] ok ms=#{elapsed_ms} kb=#{knowledge_base_id}")
+    PilotUsageLog.log("kb_warm_ping", route: "kb_warm_ping", latency_ms: elapsed_ms, result: "ok")
   end
 
   private

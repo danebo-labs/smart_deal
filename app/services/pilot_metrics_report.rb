@@ -48,6 +48,7 @@ class PilotMetricsReport
         query_latency_by_route: query_latency_by_route(rows),
         model_usage: model_usage(rows),
         interaction_trace: interaction_trace(rows, log_data[:pilot], log_data[:quality]),
+        internal_calls: internal_calls(log_data[:pilot]),
         per_user: users,
         per_account: accounts
       },
@@ -227,6 +228,31 @@ class PilotMetricsReport
         actual_cost: group.sum { |row| row_cost(row) }.round(6)
       }
     end.sort_by { |entry| entry[:route] }
+  end
+
+  # Internal Retrieve calls (Rag::AmbiguousModelResponder / Rag::DeterministicRenderer
+  # / WarmBedrockKbJob) are traced via PilotUsageLog, not bedrock_queries rows — see
+  # AGENTS.md "Cost First (Bedrock)". Derived from the already-parsed pilot events, so
+  # this never touches query_row?/visual_row? or the totals they feed.
+  def internal_calls(pilot_events)
+    {
+      kb_retrieve: internal_call_stats(pilot_events, "kb_retrieve", track_filter: true),
+      kb_warm_ping: internal_call_stats(pilot_events, "kb_warm_ping", track_filter: false)
+    }
+  end
+
+  def internal_call_stats(pilot_events, event_name, track_filter:)
+    group = pilot_events.select { |event| event[:event] == event_name }
+    latencies = group.filter_map { |event| event[:latency_ms] }
+    stats = {
+      count: group.size,
+      avg_latency_ms: latencies.empty? ? nil : (latencies.sum.to_f / latencies.size).round(1)
+    }
+    if track_filter
+      stats[:filtered_share] =
+        group.empty? ? nil : (group.count { |event| event[:filter_applied] == true }.to_f / group.size).round(4)
+    end
+    stats
   end
 
   def interaction_trace(rows, pilot_events, quality_records)

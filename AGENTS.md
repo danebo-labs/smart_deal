@@ -168,6 +168,14 @@ changes against cost per query, not only latency/quality.
 * **Cost authority:** treat exact Bedrock billing reconciliation (S3 Model
   Invocation Logs → daily rollups) as the source of truth over
   estimated/token-counted rows when reporting spend.
+* **Internal `Retrieve` calls stay off `bedrock_queries`:** trace pure
+  `Retrieve` invocations (KB warm pings, internal re-retrieves) via
+  structured log, not a `bedrock_queries` row — that table's `source` enum is
+  closed and every row assumes `input_tokens > 0` plus a `cost_metrics`
+  upsert and a broadcast.
+* **`bulk_chunks/` is ingestion-only:** no derived artifact (manifests, new
+  sidecars, caches) is ever written under `bulk_chunks/` — that prefix is
+  what the Bedrock data source ingests into the KB.
 
 ---
 

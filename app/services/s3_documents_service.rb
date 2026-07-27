@@ -51,6 +51,29 @@ class S3DocumentsService
     end
   end
 
+  # Lists object keys under an explicit prefix, following pagination.
+  # Unlike #list_documents this never scans the whole bucket.
+  # @param prefix [String] e.g. "bulk_chunks/1/<uuid>/"
+  # @return [Array<String>] object keys
+  def list_keys(prefix:)
+    return [] if @bucket_name.blank? || prefix.blank?
+
+    keys = []
+    resp = @s3.list_objects_v2(bucket: @bucket_name, prefix: prefix)
+    loop do
+      Array(resp.contents).each { |obj| keys << obj.key.to_s }
+      break unless resp.is_truncated
+
+      resp = @s3.list_objects_v2(
+        bucket: @bucket_name, prefix: prefix, continuation_token: resp.next_continuation_token
+      )
+    end
+    keys
+  rescue StandardError => e
+    Rails.logger.error("S3DocumentsService#list_keys failed for #{prefix}: #{e.message}")
+    []
+  end
+
   # Uploads a file to the KB S3 bucket for future indexing.
   # Uses uploads/{date}/ so originals are organized by date. The active Bedrock
   # data source indexes only app-generated text under bulk_chunks/.
@@ -101,6 +124,22 @@ class S3DocumentsService
     key
   rescue StandardError => e
     Rails.logger.error("S3 text upload failed: #{e.message}")
+    nil
+  end
+
+  # Writes binary content at an explicit key with an explicit content type.
+  # #upload_file computes its own uploads/ key; #upload_text forces text/plain.
+  # @return [String, nil] the key on success, nil on failure
+  def upload_binary(key, binary_data, content_type)
+    return nil if @bucket_name.blank? || key.blank?
+
+    @s3.put_object(
+      bucket: @bucket_name, key: key, body: binary_data,
+      content_type: content_type.presence || "application/octet-stream"
+    )
+    key
+  rescue StandardError => e
+    Rails.logger.error("S3DocumentsService#upload_binary failed for #{key}: #{e.message}")
     nil
   end
 

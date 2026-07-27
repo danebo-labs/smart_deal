@@ -272,3 +272,42 @@ The report separates:
 Without a readable `PILOT_USAGE_LOG`, cache counts and avoided cost are `null`,
 not fabricated. Messages with missing or invalid timestamps are excluded from
 the day and reported under `data_quality`.
+
+### Internal `Retrieve` telemetry: `kb_retrieve`, `kb_warm_ping`, `photo_reuse`
+
+These three `PilotUsageLog` events cover bare Bedrock `Retrieve` calls (no
+generation) and field-photo re-ask rehydration. They deliberately do **not**
+create `bedrock_queries` rows: that table's `source` enum is closed and its
+`input_tokens` must be `> 0` for a real invocation, and every row drives a
+`CostMetric` upsert plus a dashboard broadcast — none of which apply to a
+bare retrieve or a zero-cost cache/S3 rehydration. **No new value was added to
+`bedrock_queries.source`**, and `technical_and_cost.per_account.total_queries`
+/ `adoption_signals.rag_queries` keep their existing semantics: they are
+computed strictly from `bedrock_queries` (`query_row?` / `visual_row?`) and
+are not contaminated by these structured log lines.
+
+- **`kb_retrieve`** — emitted by `BedrockRagService#retrieve_chunks` after an
+  internal `Retrieve` used only to extract a legible excerpt or evidence
+  context (not a full `RetrieveAndGenerate`). Fields: `account_id`,
+  `correlation_id`, `route: "retrieve_only"`, `latency_ms`, `result: "ok"`,
+  `results_count` (chunk count returned), `filter_applied` (boolean, whether
+  entity-scoped filtering was applied).
+- **`kb_warm_ping`** — emitted by `WarmBedrockKbJob` after a successful
+  scheduled warm-up `Retrieve` against the Knowledge Base. Fields: `route:
+  "kb_warm_ping"`, `latency_ms`, `result: "ok"`.
+- **`photo_reuse`** — emitted by `FieldPhotoAnalysisJob` when a technician
+  re-asks about a photo after the 24h diagnosis-cache TTL expired but the
+  original bytes were still available in `field_photos/` storage (rehydrated
+  via `FieldPhotoStore.fetch_binary` instead of asking for a re-upload).
+  Fields: `account_id`, `user_id`, `conversation_session_id`,
+  `correlation_id`, `route: "visual_query"`, `result: "rehydrated"`,
+  `image_digest_prefix`.
+
+`PilotUsageLog::ALLOWED_FIELDS` gained two entries to support `kb_retrieve`:
+**`results_count`** (Integer) and **`filter_applied`** (Boolean).
+
+`technical_and_cost.internal_calls` (in `PilotMetricsReport`) aggregates
+`kb_retrieve` and `kb_warm_ping` counts and average latency (plus
+`filtered_share` for `kb_retrieve`) from these structured log lines. It is
+purely additive — it does not read from or write to `total_queries`,
+`rag_queries`, or any other existing bucket.

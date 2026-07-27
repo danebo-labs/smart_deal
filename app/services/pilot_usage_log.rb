@@ -8,6 +8,7 @@ class PilotUsageLog
     latency_ms original_latency_ms input_tokens output_tokens cost estimated_cost_avoided
     cache_status result error_class image_digest_prefix canonical_name
     manufacturer model_visible condition visible_codes
+    results_count filter_applied
   ].freeze
 
   class << self

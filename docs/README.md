@@ -21,14 +21,14 @@ evidence and are not descriptions of the active product.
 | Web home and mobile UX | [WEB_HOME.md](WEB_HOME.md) | Active |
 | Sessions, pins, and retrieval scope | [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) | Active |
 | Query orchestration | [QUERY_ORCHESTRATOR.md](QUERY_ORCHESTRATOR.md) | Active |
-| Document ingestion routing | [INGESTION_ROUTING.md](INGESTION_ROUTING.md) | Active; live field-photo diagnosis is a separate non-ingestion path |
+| Document ingestion routing | [INGESTION_ROUTING.md](INGESTION_ROUTING.md) | Active; live field-photo diagnosis is a separate non-ingestion path — still never a `KbDocument`/KB source, now with bounded S3 retention for re-ask reuse |
 | Web document ingestion | [WEB_CUSTOM_CHUNKING.md](WEB_CUSTOM_CHUNKING.md) | Active for documents; not for live diagnostic photos |
 | Metrics and queues | [METRICS.md](METRICS.md) | Active; dashboard routes and home usage footer are disabled by default |
 | SaaS cost model | [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) | Current commercial baseline; dated evidence is retained |
 | Bedrock configuration | [BEDROCK_SETUP.md](../BEDROCK_SETUP.md) | Active |
 | Performance constraints | [PERFORMANCE_CONSTRAINTS.md](PERFORMANCE_CONSTRAINTS.md) | Active |
 | Account branding | [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md) | Active |
-| Image compression | [IMAGE_COMPRESSION.md](IMAGE_COMPRESSION.md) | Active |
+| Image compression | [IMAGE_COMPRESSION.md](IMAGE_COMPRESSION.md) | Active; corrected against code (3.75 MB / 1024px), now also covers field-photo thumbnail persistence |
 
 ## Preserved capabilities that are disabled in the MVP pilot
 

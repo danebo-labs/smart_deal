@@ -69,6 +69,57 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
   end
 
 
+  test "internal_calls bucket counts kb_retrieve/kb_warm_ping without contaminating total_queries" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "rag:a1")
+
+      baseline = PilotMetricsReport.new(date: @date).as_json
+
+      file = Tempfile.new("pilot-usage-internal")
+      events = [
+        { event: "kb_retrieve", ts: @now.iso8601, account_id: accounts(:legacy).id, correlation_id: "corr-1",
+          route: "retrieve_only", latency_ms: 120, result: "ok", results_count: 5, filter_applied: true },
+        { event: "kb_retrieve", ts: @now.iso8601, account_id: accounts(:legacy).id, correlation_id: "corr-2",
+          route: "retrieve_only", latency_ms: 80, result: "ok", results_count: 3, filter_applied: false },
+        { event: "kb_warm_ping", ts: @now.iso8601, route: "kb_warm_ping", latency_ms: 200, result: "ok" }
+      ]
+      events.each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
+      file.flush
+
+      report = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json
+      internal = report.dig(:technical_and_cost, :internal_calls)
+
+      assert_equal 2, internal.dig(:kb_retrieve, :count)
+      assert_equal 100.0, internal.dig(:kb_retrieve, :avg_latency_ms)
+      assert_equal 0.5, internal.dig(:kb_retrieve, :filtered_share)
+      assert_equal 1, internal.dig(:kb_warm_ping, :count)
+      assert_equal 200.0, internal.dig(:kb_warm_ping, :avg_latency_ms)
+      assert_not internal[:kb_warm_ping].key?(:filtered_share)
+
+      assert_equal baseline.dig(:technical_and_cost, :totals, :rag_llm_calls),
+                   report.dig(:technical_and_cost, :totals, :rag_llm_calls)
+      assert_equal baseline.dig(:adoption_signals, :rag_queries), report.dig(:adoption_signals, :rag_queries)
+
+      baseline_account = baseline.dig(:technical_and_cost, :per_account).find { |row| row[:account_id] == accounts(:legacy).id }
+      account = report.dig(:technical_and_cost, :per_account).find { |row| row[:account_id] == accounts(:legacy).id }
+      assert_equal baseline_account[:total_queries], account[:total_queries]
+    ensure
+      file&.close!
+    end
+  end
+
+  test "internal_calls bucket is empty when no kb_retrieve/kb_warm_ping events are logged" do
+    travel_to @now do
+      with_usage_log do |path|
+        report = PilotMetricsReport.new(date: @date, usage_log_path: path).as_json
+        internal = report.dig(:technical_and_cost, :internal_calls)
+
+        assert_equal({ count: 0, avg_latency_ms: nil, filtered_share: nil }, internal[:kb_retrieve])
+        assert_equal({ count: 0, avg_latency_ms: nil }, internal[:kb_warm_ping])
+      end
+    end
+  end
+
   test "optional pilot cohort excludes same-day internal activity" do
     travel_to @now do
       create_call(@a1, route: "rag_global", correlation_id: "rag:a1")

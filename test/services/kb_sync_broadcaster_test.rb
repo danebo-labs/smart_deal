@@ -93,4 +93,40 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     assert_equal "Observed evidence", messages.first["summary"]
     assert_equal "photo:abc", messages.first["correlation_id"]
   end
+
+  test ".photo_analyzed includes field_photo_id and thumbnail_url when passed" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_analyzed(
+        filenames: [ "photo.jpg" ],
+        analysis: "Observed evidence",
+        canonical_name: "Door board",
+        aliases: [ "DB-1" ],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc",
+        field_photo_id: 42,
+        thumbnail_url: "data:image/jpeg;base64,abc"
+      )
+    end
+
+    assert_equal 42, messages.first["field_photo_id"]
+    assert_equal "data:image/jpeg;base64,abc", messages.first["thumbnail_url"]
+  end
+
+  test ".photo_analyzed omits field_photo_id and thumbnail_url when not passed" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_analyzed(
+        filenames: [ "photo.jpg" ],
+        analysis: "Observed evidence",
+        canonical_name: "Door board",
+        aliases: [ "DB-1" ],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc"
+      )
+    end
+
+    assert_nil messages.first["field_photo_id"]
+    assert_nil messages.first["thumbnail_url"]
+  end
 end

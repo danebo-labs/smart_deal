@@ -49,6 +49,25 @@ class WarmBedrockKbJobTest < ActiveJob::TestCase
     end
   end
 
+  test "perform logs a kb_warm_ping PILOT_USAGE line" do
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(capture_logger)
+
+    with_fake_bedrock_client do
+      WarmBedrockKbJob.perform_now
+    end
+
+    line = log_output.string.lines.find { |l| l.include?("[PILOT_USAGE]") && l.include?('"event":"kb_warm_ping"') }
+    assert line, "kb_warm_ping PILOT_USAGE line must be logged"
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+    assert_equal "kb_warm_ping", payload["route"]
+    assert_equal "ok", payload["result"]
+    assert payload["latency_ms"].present?
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
+  end
+
   test "perform skips retrieve when throttle key exists" do
     with_fake_bedrock_client do |calls|
       Rails.cache.write(THROTTLE_KEY, Time.current.to_i, expires_in: 4.minutes)

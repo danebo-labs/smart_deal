@@ -24,6 +24,20 @@ The data source must not scan the complete bucket. Original files remain under
 under `bulk_chunks/` are indexed. See
 [Bedrock data source configuration](../BEDROCK_SETUP.md#required-s3-data-source-configuration).
 
+### S3 key prefixes — what Bedrock indexes
+
+**Operational warning:** `bulk_chunks/` is the **only** prefix the Bedrock
+data source scans. Writing anything else under it — a manifest, a cache
+sidecar, a field-photo original — makes it retrievable evidence by mistake.
+Any new artifact type must land under its own prefix instead.
+
+| Prefix | Contents | Indexed by Bedrock? |
+|--------|----------|----------------------|
+| `bulk_chunks/` | App-generated `.txt` chunks + `.metadata.json` sidecars | **Yes** — the only indexed prefix |
+| `uploads/` | Original document files (PDFs, Office docs, etc.) as uploaded | No |
+| `document_manifests/` | Per-document table-of-contents manifests consumed by `Rag::DocumentOverviewBuilder` for the deterministic overview route | No |
+| `field_photos/` | Original field-photo bytes retained by `FieldPhotoStore` (`field_photos/<account_id>/<sha256>/original.<ext>`) | No |
+
 ---
 
 ### Web chat upload ingestion flow

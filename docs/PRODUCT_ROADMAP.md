@@ -18,13 +18,25 @@ The current offer must demonstrate a short, credible field workflow:
 3. Indexed manuals remain the source of operational knowledge.
 4. Usage, latency, cost, account, user, session, and correlation identifiers
    provide pilot traceability.
+5. A pinned document with a known table of contents resolves as a
+   deterministic summary (chapter/section list) at zero Bedrock cost, instead
+   of falling through to model disambiguation or RAG generation.
 
 ### Field-photo contract
 
 - A technician's live photo is used for visual recognition and diagnosis.
 - It is **not** automatically knowledge, a `KbDocument`, or a Bedrock Knowledge
   Base source.
-- The original photo is not retained as a durable product record in the MVP.
+- **Override (2026-07-27, explicitly authorized):** the original photo bytes
+  are retained in S3 under `field_photos/<account_id>/<sha256>/original.<ext>`,
+  plus an 88px thumbnail stored inline on the `field_photos` row, for
+  `FIELD_PHOTO_RETENTION_DAYS` (default 90) days so a technician can re-ask
+  about the same photo without re-uploading after the 24h diagnosis-cache TTL
+  expires. This does **not** change the rest of the contract: the photo is
+  still never a `KbDocument` or a Bedrock Knowledge Base source, there is no
+  photo gallery, no persistent conversation history, and no "diagnostic
+  record" — `field_photos` is bounded retention for re-ask reuse only, not the
+  diagnostic-record capability described in the next stage below.
 - A compact `[FOTO]` result may remain in the current conversation as temporary
   context for an explicit follow-up question.
 - A diagnosis may be reused while account, normalized image SHA-256, locale and

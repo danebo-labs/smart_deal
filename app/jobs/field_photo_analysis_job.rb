@@ -33,7 +33,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   end
 
   def perform(image_token:, image_sha256:, filename:, content_type:, account_id:, user_id: nil,
-              conversation_session_id: nil, locale: nil, correlation_id: nil)
+              conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     locale = locale.to_s.presence || I18n.default_locale.to_s
     correlation_id ||= "photo:#{SecureRandom.uuid}"
@@ -47,19 +47,43 @@ class FieldPhotoAnalysisJob < ApplicationJob
       sha256: image_sha256,
       locale: locale
     )
-    return deliver_cached(
-      cached,
-      session: session,
-      filename: filename,
-      account_id: account_id,
-      user_id: user_id,
-      conversation_session_id: conversation_session_id,
-      correlation_id: correlation_id,
-      image_sha256: image_sha256,
-      delivery_latency_ms: elapsed_ms(started_at)
-    ) if cached
+    if cached
+      if field_photo_id.blank? && image_token.present?
+        pending = FieldPhotoPendingImageStore.take(token: image_token, account_id: account_id)
+        field_photo_id = persist_field_photo(
+          pending, account_id: account_id, sha256: image_sha256, filename: filename,
+          content_type: content_type, user_id: user_id, conversation_session_id: conversation_session_id
+        )
+      end
+      return deliver_cached(
+        cached,
+        session: session,
+        filename: filename,
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        correlation_id: correlation_id,
+        image_sha256: image_sha256,
+        field_photo_id: field_photo_id,
+        delivery_latency_ms: elapsed_ms(started_at)
+      )
+    end
 
     image = FieldPhotoPendingImageStore.take(token: image_token, account_id: account_id)
+    rehydrated = false
+    if image.nil? && field_photo_id.present? && account_id
+      photo = FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
+      binary = photo && FieldPhotoStore.fetch_binary(photo)
+      if binary.present?
+        image = {
+          binary: binary, content_type: photo.content_type, filename: filename,
+          thumbnail_binary: photo.thumbnail_data, thumbnail_content_type: photo.thumbnail_content_type,
+          thumbnail_width: photo.thumbnail_width, thumbnail_height: photo.thumbnail_height
+        }
+        rehydrated = true
+      end
+    end
+
     unless image
       broadcast_expired(
         filename: filename,
@@ -73,6 +97,19 @@ class FieldPhotoAnalysisJob < ApplicationJob
       return
     end
 
+    if rehydrated
+      PilotUsageLog.log(
+        "photo_reuse",
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        correlation_id: correlation_id,
+        route: "visual_query",
+        result: "rehydrated",
+        image_digest_prefix: image_sha256.to_s.first(12)
+      )
+    end
+
     PilotUsageLog.log(
       "photo_cache_miss",
       account_id: account_id,
@@ -84,6 +121,13 @@ class FieldPhotoAnalysisJob < ApplicationJob
       result: "processing",
       image_digest_prefix: image_sha256.to_s.first(12)
     )
+
+    if field_photo_id.blank?
+      field_photo_id = persist_field_photo(
+        image, account_id: account_id, sha256: image_sha256, filename: filename,
+        content_type: content_type, user_id: user_id, conversation_session_id: conversation_session_id
+      )
+    end
 
     result = FieldPhotoAnalysisService.new(
       binary: image.fetch(:binary),
@@ -110,7 +154,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       filename: filename,
       account_id: account_id,
       user_id: user_id,
-      correlation_id: correlation_id
+      correlation_id: correlation_id,
+      field_photo_id: field_photo_id
     )
     PilotUsageLog.log(
       "photo_completed",
@@ -132,14 +177,15 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   def deliver_cached(cached, session:, filename:, account_id:, user_id:,
                      conversation_session_id:, correlation_id:, image_sha256:,
-                     delivery_latency_ms:)
+                     delivery_latency_ms:, field_photo_id: nil)
     deliver(
       cached,
       session: session,
       filename: filename,
       account_id: account_id,
       user_id: user_id,
-      correlation_id: correlation_id
+      correlation_id: correlation_id,
+      field_photo_id: field_photo_id
     )
     fields = usage_fields(
       cached,
@@ -161,7 +207,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     PilotUsageLog.log("photo_completed", **fields.merge(cost: 0))
   end
 
-  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:)
+  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil)
     session&.add_to_history(
       "assistant",
       value.fetch(:compact_context),
@@ -174,8 +220,16 @@ class FieldPhotoAnalysisJob < ApplicationJob
       canonical_name: value[:canonical_name],
       aliases: value[:aliases],
       account_id: account_id,
-      correlation_id: correlation_id
+      correlation_id: correlation_id,
+      field_photo_id: field_photo_id,
+      thumbnail_url: field_photo_thumbnail_url(field_photo_id)
     )
+  end
+
+  def field_photo_thumbnail_url(field_photo_id)
+    return nil if field_photo_id.blank?
+
+    FieldPhoto.find_by(id: field_photo_id)&.thumbnail_data_url
   end
 
   def diagnosis_cache_value(result)
@@ -259,5 +313,22 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   def elapsed_ms(started_at)
     ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+  end
+
+  # A storage failure must never block diagnosis delivery to the technician.
+  def persist_field_photo(image, account_id:, sha256:, filename:, content_type:, user_id:, conversation_session_id:)
+    return nil if image.blank? || account_id.blank?
+
+    FieldPhotoStore.persist!(
+      account_id: account_id, sha256: sha256, binary: image[:binary],
+      content_type: image[:content_type].presence || content_type,
+      filename: image[:filename].presence || filename,
+      thumbnail_binary: image[:thumbnail_binary], thumbnail_content_type: image[:thumbnail_content_type],
+      thumbnail_width: image[:thumbnail_width], thumbnail_height: image[:thumbnail_height],
+      user_id: user_id, conversation_session_id: conversation_session_id
+    )&.id
+  rescue StandardError => e
+    Rails.logger.warn("FieldPhotoAnalysisJob persist failed account=#{account_id} reason=#{e.class}")
+    nil
   end
 end

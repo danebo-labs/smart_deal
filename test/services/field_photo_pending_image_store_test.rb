@@ -39,6 +39,32 @@ class FieldPhotoPendingImageStoreTest < ActiveSupport::TestCase
     assert_equal "raw", FieldPhotoPendingImageStore.take(token: token, account_id: 1)[:binary]
   end
 
+  test "round-trips thumbnail fields when provided" do
+    token = FieldPhotoPendingImageStore.write(
+      binary: "raw", content_type: "image/jpeg", filename: "panel.jpg", account_id: 1,
+      thumbnail_binary: "thumb-bytes", thumbnail_content_type: "image/jpeg",
+      thumbnail_width: 88, thumbnail_height: 66
+    )
+
+    payload = FieldPhotoPendingImageStore.take(token: token, account_id: 1)
+    assert_equal "thumb-bytes", payload[:thumbnail_binary]
+    assert_equal "image/jpeg", payload[:thumbnail_content_type]
+    assert_equal 88, payload[:thumbnail_width]
+    assert_equal 66, payload[:thumbnail_height]
+  end
+
+  test "thumbnail fields are backward compatible when omitted" do
+    token = FieldPhotoPendingImageStore.write(
+      binary: "raw", content_type: "image/jpeg", filename: "panel.jpg", account_id: 1
+    )
+
+    payload = FieldPhotoPendingImageStore.take(token: token, account_id: 1)
+    assert_nil payload[:thumbnail_binary]
+    assert_nil payload[:thumbnail_content_type]
+    assert_nil payload[:thumbnail_width]
+    assert_nil payload[:thumbnail_height]
+  end
+
   test "expired payload returns nil" do
     ENV["PHOTO_PENDING_IMAGE_TTL_MINUTES"] = "0.00001"
     token = FieldPhotoPendingImageStore.write(

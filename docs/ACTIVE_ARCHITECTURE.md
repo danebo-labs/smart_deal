@@ -67,9 +67,26 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
   names one source or excludes another. Ambiguous questions retain all pins.
 - Retrieval depth is adaptive: focused document queries use a small context;
   safety-critical and exhaustive questions retrieve more evidence.
-- Live technician photos are diagnostic inputs only: they do not create a
-  `KbDocument` or enter the Knowledge Base. Their compact result may provide
-  temporary conversation context for a later explicit manual question.
+- A deterministic document-overview route resolves before
+  `Rag::AmbiguousModelResponder`, when the question matches a pinned document
+  and a table-of-contents manifest is available: `model_invoked: false`, zero
+  Bedrock calls, `citations: []`, and document identity carried entirely by
+  `doc_refs`.
+- Table-of-contents manifests live under `document_manifests/`, **never**
+  under `bulk_chunks/` — that is the only prefix the Bedrock data source
+  indexes, so anything else placed there would leak into retrieval.
+- Live technician photos are diagnostic inputs only: they still do not create
+  a `KbDocument` or enter the Knowledge Base, but the original bytes and a
+  thumbnail are now retained durably (bounded by `FIELD_PHOTO_RETENTION_DAYS`)
+  so a technician can re-ask after the diagnosis cache expires. Their compact
+  result may provide temporary conversation context for a later explicit
+  manual question.
+- Internal `Retrieve` calls (KB retrieval used only for excerpt/context, and
+  Bedrock KB warm pings) are traced through `PilotUsageLog` structured log
+  lines, not `bedrock_queries` rows: `bedrock_queries.source` is a closed
+  enum, its `input_tokens` must be `> 0`, and every row drives a
+  `cost_metrics` upsert plus a broadcast — none of which apply to a bare
+  `Retrieve` with no generation.
 - Photographic sources that deliberately pass through ingestion are indexed
   evidence and preserve only explicit visible knowledge. Labels without a
   legend remain literal identifiers with unknown function.

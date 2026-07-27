@@ -6,7 +6,9 @@ class FieldPhotoPendingImageStore
   class StoreError < StandardError; end
 
   class << self
-    def write(binary:, content_type:, filename:, account_id:)
+    def write(binary:, content_type:, filename:, account_id:,
+              thumbnail_binary: nil, thumbnail_content_type: nil,
+              thumbnail_width: nil, thumbnail_height: nil)
       raise ArgumentError, "binary is required" if binary.blank?
 
       token = SecureRandom.hex(16)
@@ -14,7 +16,11 @@ class FieldPhotoPendingImageStore
         binary: binary,
         content_type: content_type.to_s.presence || "image/jpeg",
         filename: File.basename(filename.to_s.presence || "photo"),
-        account_id: account_id
+        account_id: account_id,
+        thumbnail_binary: thumbnail_binary,
+        thumbnail_content_type: thumbnail_content_type,
+        thumbnail_width: thumbnail_width,
+        thumbnail_height: thumbnail_height
       }
       written = Rails.cache.write(
         key(token: token, account_id: account_id),
@@ -38,7 +44,8 @@ class FieldPhotoPendingImageStore
       return nil unless value[:account_id].to_s == account_id.to_s
       return nil if value[:binary].blank?
 
-      value.slice(:binary, :content_type, :filename, :account_id)
+      value.slice(:binary, :content_type, :filename, :account_id,
+                  :thumbnail_binary, :thumbnail_content_type, :thumbnail_width, :thumbnail_height)
     rescue StandardError => e
       Rails.logger.warn(
         "FieldPhotoPendingImageStore take failed account=#{account_id || 'unattributed'} " \

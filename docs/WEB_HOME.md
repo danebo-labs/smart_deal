@@ -42,6 +42,33 @@ Mobile-first layout for field technicians.
   temporary entry on success, expiry, cache hit, or failure.
 - Diagnoses are cached by contract version, account, normalized SHA-256 and
   locale. Identical bytes in another account are always a miss.
+- The original bytes and an 88px thumbnail are retained in `field_photos/`
+  storage (see `FieldPhotoStore`) for `FIELD_PHOTO_RETENTION_DAYS` (default
+  90) days — a bounded override, not a permanent gallery. See
+  [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#field-photo-contract).
+- Every `photo_analyzed` broadcast carries `field_photo_id` and
+  `thumbnail_url`. `rag_chat_controller.js#addImageSummaryMessage` renders a
+  chip with the thumbnail (linking to `/field_photos/:id`, which redirects to
+  a short-lived presigned S3 URL after an account-scoped ownership check) and
+  a "Preguntar sobre esta foto" / "Ask about this photo" button
+  (`reuseFieldPhoto`). Tapping it attaches `pendingFieldPhotoId` to the next
+  question so the technician can re-ask without re-selecting the photo; the
+  backend re-analyzes or rehydrates from S3 with zero bytes leaving the
+  device (see [QUERY_ORCHESTRATOR.md](QUERY_ORCHESTRATOR.md#field-photo-reuse-field_photo_id)).
+- Fixed: `startIndexingStallTimer` no longer clears
+  `pendingPhotoCorrelationId` after the 3-minute stall notice. That reset made
+  any `photo_analyzed` broadcast arriving after the stall notice fail
+  `matchesPendingPhoto`, so the typing-dots bubble never cleared and animated
+  indefinitely. The stall notice itself is unchanged; only the pending
+  correlation reset was removed.
+
+### "Documentos consultados" — legible excerpts
+
+`documents_consulted_renderer.js` now prefers a short, legible matched excerpt
+per citation (`Bedrock::CitationProcessor#matched_excerpt`, extracted by
+comparing the question's tokens against the cited chunk's sentences) instead
+of always showing the raw document/canonical name. When no excerpt clears the
+matching threshold, it falls back to the canonical name exactly as before.
 
 ### Thumbnails & full-size lightbox
 

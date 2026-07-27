@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_23_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_27_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -142,6 +142,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_120000) do
     t.index [ "date" ], name: "index_cost_metrics_on_date"
   end
 
+  create_table "field_photos", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.integer "byte_size", null: false
+    t.string "content_type", null: false
+    t.bigint "conversation_session_id"
+    t.datetime "created_at", null: false
+    t.string "s3_key_original", null: false
+    t.string "sha256", null: false
+    t.string "thumbnail_content_type"
+    t.binary "thumbnail_data"
+    t.integer "thumbnail_height"
+    t.integer "thumbnail_width"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index [ "account_id", "sha256" ], name: "index_field_photos_on_account_id_and_sha256", unique: true
+    t.index [ "account_id" ], name: "index_field_photos_on_account_id"
+    t.index [ "created_at" ], name: "index_field_photos_on_created_at"
+  end
+
   create_table "kb_document_thumbnails", force: :cascade do |t|
     t.integer "byte_size"
     t.string "content_type", default: "image/jpeg", null: false
@@ -254,5 +273,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_120000) do
     t.index [ "route", "created_at" ], name: "index_whatsapp_cache_hits_on_route_and_created_at"
   end
 
+  add_foreign_key "field_photos", "accounts"
   add_foreign_key "technician_documents", "accounts", name: "fk_td_account"
 end

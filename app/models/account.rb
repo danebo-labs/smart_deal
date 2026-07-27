@@ -6,6 +6,8 @@ class Account < ApplicationRecord
   has_many :conversation_sessions, dependent: :restrict_with_error
   has_many :web_manual_batches, dependent: :restrict_with_error
   has_many :technician_documents, dependent: :restrict_with_error
+  # Operational data with a TTL, not knowledge that should block account deletion.
+  has_many :field_photos, dependent: :destroy
 
   validates :slug, presence: true, uniqueness: true
   validates :display_name, presence: true

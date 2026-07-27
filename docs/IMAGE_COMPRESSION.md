@@ -1,23 +1,24 @@
 # Image Compression Implementation
 
 ## Problem
-Images uploaded via the UI as base64 data were extremely large (often exceeding Amazon Bedrock Knowledge Base limits of 10MB for Custom Data Sources).
+Images uploaded via the UI as base64 data were extremely large (often exceeding Amazon Bedrock Knowledge Base limits for Custom Data Sources).
 
 ## Solution
 Implemented `ImageCompressionService` to automatically compress images before sending them to Bedrock.
 
 ## Features
-- **Automatic compression**: Images are resized to max 1024x1024 and converted to JPEG with 80% quality
-- **Smart skipping**: Images smaller than 500KB are not compressed
-- **Size validation**: Ensures compressed images don't exceed Bedrock's 10MB limit
-- **Detailed logging**: Tracks compression ratios and sizes
-- **Error handling**: Graceful degradation with proper error messages
+- **Automatic compression**: Images are resized to max 1024x1024 and converted to JPEG (quality estimated from the size ratio, with a q=40 fallback if the first pass still exceeds the limit)
+- **Smart skipping**: Images whose *decoded* binary is already ≤ `MAX_BINARY_BYTES` (3.75 MB) are not compressed
+- **Size validation**: Ensures compressed images don't exceed Bedrock's 3.75 MB per-file limit
+- **Thumbnail generation**: `compress_with_thumbnail` also produces an 88px-wide JPEG thumbnail in the same Vips load
+- **Detailed logging**: Tracks compression ratios and sizes (`image_compression` structured event — see [METRICS.md](METRICS.md))
+- **Error handling**: Graceful degradation with proper error messages; thumbnail failures fall back to compress-only (no thumbnail) so the upload still succeeds
 
 ## Limits
-- **Custom Data Source**: Max 10MB (base64 encoded)
-- **Target size**: 1-5MB for optimal performance
-- **Max dimensions**: 1024x1024 pixels
-- **Format**: All images converted to JPEG for consistency
+- **Custom Data Source**: Max 3.75 MB per file, decoded (`ImageCompressionService::MAX_BINARY_BYTES`)
+- **Max dimensions**: 1024x1024 pixels (`MAX_DIMENSION`)
+- **Format**: All compressed images converted to JPEG for consistency
+- **Thumbnail**: 88px wide (2x DPR of the 44px mobile cell), JPEG q=70, typically ≤15 KB (`THUMB_MAX_WIDTH`, `THUMB_QUALITY`)
 
 ## Usage
 The service is automatically invoked when uploading images through the RAG controller:
@@ -33,6 +34,18 @@ POST /rag/ask
   }
 }
 ```
+
+## Field-photo thumbnail persistence
+
+For the live field-photo diagnosis path, the 88px thumbnail produced by
+`compress_with_thumbnail` — previously discarded once the diagnostic response
+was delivered — is now persisted on the `field_photos` row
+(`thumbnail_data`, `thumbnail_content_type`, `thumbnail_width`,
+`thumbnail_height`) via `FieldPhotoStore.persist!`. It is what
+`FieldPhoto#thumbnail_data_url` renders inline in the `photo_analyzed`
+broadcast's `thumbnail_url`, so the chat chip shows a thumbnail without an
+extra S3 round-trip. See [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#field-photo-contract)
+for the retention window.
 
 ## Technical Details
 - Uses `libvips` via the `image_processing` gem for fast, efficient compression

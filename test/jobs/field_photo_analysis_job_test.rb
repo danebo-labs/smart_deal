@@ -6,6 +6,27 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   include ActionCable::TestHelper
   parallelize(workers: 1)
 
+  class FakeS3
+    attr_reader :uploads, :downloads
+
+    def initialize(upload_succeeds: true, download_binary: "jpeg")
+      @upload_succeeds = upload_succeeds
+      @download_binary = download_binary
+      @uploads = []
+      @downloads = []
+    end
+
+    def upload_binary(key, data, content_type)
+      @uploads << { key: key, data: data, content_type: content_type }
+      @upload_succeeds ? key : nil
+    end
+
+    def download(key)
+      @downloads << key
+      @download_binary
+    end
+  end
+
   setup do
     @previous_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
@@ -18,10 +39,16 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     )
     @sha = Digest::SHA256.hexdigest("jpeg")
     @token = pending_token
+    @s3_holder = { fake: FakeS3.new }
+    holder = @s3_holder
+    @orig_s3_new = S3DocumentsService.method(:new)
+    S3DocumentsService.define_singleton_method(:new) { holder[:fake] }
   end
 
   teardown do
     Rails.cache = @previous_cache
+    orig_s3_new = @orig_s3_new
+    S3DocumentsService.define_singleton_method(:new) { |*a, **kw| orig_s3_new.call(*a, **kw) }
   end
 
   test "cache miss analyzes exactly once, caches, broadcasts, and never ingests" do
@@ -130,6 +157,78 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
   end
 
+  test "persists a FieldPhoto on cache-hit when a temporary token is present" do
+    FieldPhotoDiagnosisCache.write(
+      account_id: accounts(:legacy).id, sha256: @sha, locale: "es", value: cache_value
+    )
+
+    with_analysis_service(error: "must not be called") do
+      FieldPhotoAnalysisJob.perform_now(**job_args)
+    end
+
+    photo = FieldPhoto.find_by(account_id: accounts(:legacy).id, sha256: @sha)
+    assert photo
+    assert_equal 1, fake_s3.uploads.size
+  end
+
+  test "persists a FieldPhoto on cache-miss" do
+    with_analysis_service(result: analysis_result) do
+      FieldPhotoAnalysisJob.perform_now(**job_args)
+    end
+
+    photo = FieldPhoto.find_by(account_id: accounts(:legacy).id, sha256: @sha)
+    assert photo
+    assert_equal 1, fake_s3.uploads.size
+  end
+
+  test "does not persist again when field_photo_id is already provided" do
+    existing = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: @sha,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{@sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4
+    )
+
+    with_analysis_service(result: analysis_result) do
+      FieldPhotoAnalysisJob.perform_now(**job_args.merge(field_photo_id: existing.id))
+    end
+
+    assert_empty fake_s3.uploads
+  end
+
+  test "an S3 persistence failure does not block the photo_analyzed broadcast" do
+    self.fake_s3 = FakeS3.new(upload_succeeds: false)
+
+    with_analysis_service(result: analysis_result) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+
+      assert_equal "photo_analyzed", messages.last["status"]
+    end
+
+    assert_nil FieldPhoto.find_by(account_id: accounts(:legacy).id, sha256: @sha)
+  end
+
+  test "rehydrates from S3 and analyzes when the pending store is empty but field_photo_id is present" do
+    photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: @sha,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{@sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4
+    )
+    FieldPhotoPendingImageStore.delete(token: @token, account_id: accounts(:legacy).id)
+
+    calls = 0
+    with_analysis_service(result: analysis_result, on_call: -> { calls += 1 }) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(field_photo_id: photo.id))
+      end
+
+      assert_equal 1, calls
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_equal [ photo.s3_key_original ], fake_s3.downloads
+    end
+  end
+
   test "serialized job arguments contain no image bytes or base64" do
     FieldPhotoAnalysisJob.perform_later(**job_args)
 
@@ -140,6 +239,14 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   end
 
   private
+
+  def fake_s3
+    @s3_holder[:fake]
+  end
+
+  def fake_s3=(value)
+    @s3_holder[:fake] = value
+  end
 
   def pending_token
     FieldPhotoPendingImageStore.write(

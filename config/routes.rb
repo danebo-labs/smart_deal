@@ -34,6 +34,7 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   resources :pinned_documents, only: %i[create destroy]
+  resources :field_photos, only: %i[show]
   # resources :bulk_uploads, only: %i[new create show]  # T-31: disabled for pilot
 
   # RAG endpoint for Knowledge Base queries

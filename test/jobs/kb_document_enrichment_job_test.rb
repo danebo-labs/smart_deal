@@ -52,8 +52,9 @@ class KbDocumentEnrichmentJobTest < ActiveJob::TestCase
     KbDocumentEnrichmentJob.perform_now(doc_refs: refs, retrieved_meta: [], account_id: @account.id)
 
     kb = KbDocument.find_by(s3_key: "uploads/2026/manual.pdf")
-    assert_equal "Manual de Operación", kb.display_name
+    assert_equal "old name", kb.display_name
     assert_equal kb.aliases, kb.aliases.uniq, "aliases must be unique after re-run"
+    assert_includes kb.aliases, "Manual de Operación"
     assert_includes kb.aliases, "manop"
     assert_includes kb.aliases, "MO-3000"
   end

@@ -14,7 +14,7 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
     assert_nothing_raised { @svc.call(doc_refs: []) }
   end
 
-  test "enriches existing kb_document display_name + aliases" do
+  test "keeps existing display_name and merges canonical into aliases" do
     kb = create_doc("uploads/2026/enrich.pdf", "old name", aliases: [ "old alias" ])
     doc_refs = [ {
       "canonical_name" => "New Canonical",
@@ -23,9 +23,37 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
     } ]
     @svc.call(doc_refs: doc_refs)
     kb.reload
-    assert_equal "New Canonical", kb.display_name
+    assert_equal "old name", kb.display_name
+    assert_includes kb.aliases, "New Canonical"
     assert_includes kb.aliases, "fresh alias"
-    assert_includes kb.aliases, "old name"
+    assert_includes kb.aliases, "old alias"
+  end
+
+  test "sets display_name from canonical when the row has none yet (orphan onboarding)" do
+    kb = create_doc("uploads/2026/orphan-onboard.pdf", "")
+    doc_refs = [ {
+      "canonical_name" => "First Canonical Name",
+      "source_uri"     => "s3://#{KbDocument::KB_BUCKET}/uploads/2026/orphan-onboard.pdf",
+      "aliases"        => [ "fresh alias" ]
+    } ]
+    @svc.call(doc_refs: doc_refs)
+    kb.reload
+    assert_equal "First Canonical Name", kb.display_name
+    assert_includes kb.aliases, "fresh alias"
+    assert_not_includes kb.aliases, "First Canonical Name"
+  end
+
+  test "does not rename SEGURIDADES 1.1-1 to a Haiku-discovered canonical name" do
+    kb = create_doc("uploads/2026/seguridades.pdf", "SEGURIDADES 1.1-1", aliases: [ "SEGURIDADES" ])
+    doc_refs = [ {
+      "canonical_name" => "ALJO Control Level 1B Altius",
+      "source_uri"     => "s3://#{KbDocument::KB_BUCKET}/uploads/2026/seguridades.pdf",
+      "aliases"        => []
+    } ]
+    @svc.call(doc_refs: doc_refs)
+    kb.reload
+    assert_equal "SEGURIDADES 1.1-1", kb.display_name
+    assert_includes kb.aliases, "ALJO Control Level 1B Altius"
   end
 
   test "caps aliases at 15 entries" do
@@ -41,6 +69,7 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
     } ]
     @svc.call(doc_refs: doc_refs)
     kb.reload
+    assert_equal "old", kb.display_name
     assert kb.aliases.size <= 15
   end
 
@@ -63,9 +92,10 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
     ]
     @svc.call(doc_refs: doc_refs)
     kb.reload
-    assert_equal "Brake Assembly Unit", kb.display_name
+    assert_equal "old", kb.display_name
     assert_includes kb.aliases, "disc brake"
     assert_includes kb.aliases, "drum brake"
+    assert_includes kb.aliases, "Brake Assembly Unit"
     assert_includes kb.aliases, "Brake Drum Assembly"
   end
 
@@ -79,7 +109,8 @@ class KbDocumentEnrichmentServiceTest < ActiveSupport::TestCase
     }
     @svc.call(doc_refs: doc_refs, all_retrieved: [ citation ])
     kb.reload
-    assert_equal "Schema Doc", kb.display_name
+    assert_equal "old", kb.display_name
+    assert_includes kb.aliases, "Schema Doc"
   end
 
   test "skips doc_ref with blank canonical_name" do

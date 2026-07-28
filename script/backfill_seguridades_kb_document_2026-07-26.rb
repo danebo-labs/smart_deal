@@ -60,6 +60,18 @@ if existing
     abort("KbDocument #{existing.id} has document_uid=#{existing.document_uid}, expected #{DOCUMENT_UID} — resolve manually")
   end
 
+  # KbDocumentEnrichmentService previously overwrote display_name unconditionally
+  # from query-time Haiku output (fixed separately); repair here restores the
+  # canonical name and drops any contaminating aliases the overwrite left behind.
+  if existing.display_name != DISPLAY_NAME
+    cleaned = (Array(existing.aliases) + ALIASES + [ existing.display_name ])
+      .map(&:to_s).map(&:strip).compact_blank
+      .reject { |a| a.casecmp?(DISPLAY_NAME) || a.match?(/\A(ALJO|Control Level)/i) }
+      .uniq
+    existing.update!(display_name: DISPLAY_NAME, aliases: cleaned)
+    puts "Repaired display_name → #{DISPLAY_NAME}"
+  end
+
   puts "Already present: KbDocument #{existing.id} (#{existing.display_name.inspect}, aliases=#{Array(existing.aliases).inspect})"
   record = existing
 else

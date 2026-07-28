@@ -45,10 +45,14 @@ class KbDocumentEnrichmentService
     kb_doc = KbDocument.find_by(s3_key: s3_key, account_id: @account_id)
     return unless kb_doc
 
+    # Query-time Haiku output does not own the catalog title: ingestion, admin
+    # edit, or backfill set display_name deliberately, and a later ask must not
+    # silently rename the document. Once a display_name exists, canonical only
+    # ever enters aliases; a blank display_name (orphan row) may still adopt it.
     prior_display_name = kb_doc.display_name.presence
-    kb_doc.display_name = canonical if canonical.present?
+    kb_doc.display_name = canonical if prior_display_name.blank? && canonical.present?
 
-    kb_doc.aliases = (Array(kb_doc.aliases) + [ prior_display_name ] + Array(metadata["aliases"]))
+    kb_doc.aliases = (Array(kb_doc.aliases) + [ canonical, prior_display_name ] + Array(metadata["aliases"]))
                        .map { |a| a.to_s.strip }
                        .compact_blank
                        .reject { |a| a.casecmp?(kb_doc.display_name.to_s) }

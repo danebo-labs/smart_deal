@@ -882,7 +882,8 @@ export default class extends Controller {
       // above (renderDocumentsConsulted) — never hide a [n] that appears
       // nowhere else on screen.
       const withoutExcerpt = citations.filter((c) => !(c.matched_excerpt || "").trim())
-      this.addMessageHtml(renderReferences(withoutExcerpt), "assistant")
+      const refsHtml = renderReferences(withoutExcerpt)
+      if (refsHtml.trim()) this.addMessageHtml(refsHtml, "assistant")
     }
     if (Array.isArray(data.quick_replies) && data.quick_replies.length) {
       this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")

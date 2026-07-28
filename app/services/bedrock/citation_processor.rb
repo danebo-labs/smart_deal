@@ -109,8 +109,26 @@ class Bedrock::CitationProcessor
   # blocks prepend markdown metadata — bold headers, section headings, table rows,
   # and alias bullets — before any real content. None of that is a "matching
   # excerpt" a technician should see; filter it out line-by-line before splitting
-  # into candidate sentences.
-  METADATA_LINE_PATTERN = /\A\s*(?:\*\*[A-Z_]+:|\||#+\s|-\s+[a-z0-9 ]+\z|\[(?:DOCUMENT|SOURCE_URI|SEARCH_ALIASES):)/.freeze
+  # into candidate sentences. The ALL-CAPS branch stays generic (any bold label);
+  # the second branch is scoped to the known Title-Case labels so it can't eat an
+  # unrelated bold callout like "**Important:** ..." in real prose.
+  METADATA_LABELS = "Document|Section|Page|DOCUMENT_ALIASES|File"
+  METADATA_LINE_PATTERN = /\A\s*(?:\*\*[A-Z_]+:|(?i:\*\*\s*(?:#{METADATA_LABELS})\s*:)|\||#+\s|-\s+[a-z0-9 ]+\z|\[(?:DOCUMENT|SOURCE_URI|SEARCH_ALIASES):)/.freeze
+
+  # PROD chunks flatten Document/Section/Page metadata onto a single line ahead of
+  # the real sentence (see docs/RAG_SEGURIDADES_STATUS.md), so the line filter above
+  # never sees them as separate lines. Strip them one header at a time, anchored to
+  # the start of the string. Each arm bounds its own value so it can never swallow
+  # the real excerpt when no further "**" follows:
+  #   - Page's value is a bounded digit run (its value is always numeric).
+  #   - "**Label: value**" is self-bounded by its own closing "**".
+  #   - "**Label:** value" requires a following known label to bound the value —
+  #     it deliberately does NOT fall back to end-of-string.
+  INLINE_METADATA_HEADER_PATTERNS = [
+    /\A\s*\*\*\s*Page\s*:\s*\*{0,2}\s*\d{1,4}\s*\*{0,2}/i,
+    /\A\s*\*\*\s*(?:#{METADATA_LABELS})\s*:\s*[^*]+\*\*/i,
+    /\A\s*\*\*\s*(?:#{METADATA_LABELS})\s*:\s*\*\*\s*.*?(?=\*\*\s*(?:#{METADATA_LABELS})\s*:)/im
+  ].freeze
 
   MIN_EXCERPT_TOKEN_LENGTH = 4
   EXCERPT_MAX_CHARS = 140
@@ -152,10 +170,21 @@ class Bedrock::CitationProcessor
 
   def sentences(content)
     text = content.to_s.sub(HEADER_PATTERN, "")
+    text = strip_inline_metadata_headers(text)
     lines = text.split("\n").reject do |line|
       line.match?(METADATA_LINE_PATTERN) || line.include?("PIPELINE_INJECTED")
     end
     lines.join(" ").split(/(?<=[.!?])\s+/)
+  end
+
+  def strip_inline_metadata_headers(text)
+    loop do
+      pattern = INLINE_METADATA_HEADER_PATTERNS.find { |candidate| text.match?(candidate) }
+      break unless pattern
+
+      text = text.sub(pattern, "")
+    end
+    text
   end
 
   # Extracts the character end offset of a citation's generated span, tolerating

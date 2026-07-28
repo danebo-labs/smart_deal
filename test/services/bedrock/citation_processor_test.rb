@@ -283,6 +283,54 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     assert_equal "El relé K3 controla la puerta principal.", reference[:matched_excerpt]
   end
 
+  test "matched_excerpt strips a flattened PROD Title-Case metadata prefix" do
+    content = "**Document:** ALJO Control Level 1B Altius **Section:** S7 — DIAGRAM **Page:** 3 " \
+              "Esta página muestra el diagrama de control del nivel B8."
+    citations = [ { content: content, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué muestra esta página del diagrama?"
+    ).first
+
+    assert_equal "Esta página muestra el diagrama de control del nivel B8.", reference[:matched_excerpt]
+    assert_not_includes reference[:matched_excerpt], "**Document:**"
+    assert_not_includes reference[:matched_excerpt], "**Section:**"
+    assert_not_includes reference[:matched_excerpt], "**Page:**"
+  end
+
+  test "matched_excerpt strips a colon-inside-bold Document header" do
+    content = "**Document: Manual Plataforma Tijera**\nEl botón B34 muestra la potencia del circuito X."
+    citations = [ { content: content, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué muestra el botón B34?"
+    ).first
+
+    assert_equal "El botón B34 muestra la potencia del circuito X.", reference[:matched_excerpt]
+  end
+
+  test "matched_excerpt is nil when the chunk is only metadata" do
+    content = "**Document:** ALJO Control Level 1B Altius **Section:** S7 — DIAGRAM **Page:** 3"
+    citations = [ { content: content, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué muestra esta página del diagrama?"
+    ).first
+
+    assert_nil reference[:matched_excerpt]
+  end
+
+  test "matched_excerpt does not strip the word Document in plain prose" do
+    content = "Este Document describe el procedimiento de mantenimiento del circuito hidráulico."
+    citations = [ { content: content, location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(
+      citations, "[1]", question: "¿qué describe el documento de mantenimiento?"
+    ).first
+
+    assert_equal content, reference[:matched_excerpt]
+  end
+
   test "matched_excerpt does not alter filename, title, or page" do
     citations = [
       {

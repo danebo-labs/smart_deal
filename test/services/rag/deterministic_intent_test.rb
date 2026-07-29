@@ -74,5 +74,27 @@ module Rag
 
       assert_not DeterministicIntent.document_overview_query?("Manual A y Manual B", names)
     end
+
+    test "ambiguous_hardware_query? is false for EDEL-K2 (letter directly before the digit)" do
+      assert_not DeterministicIntent.ambiguous_hardware_query?(
+        "En EDEL-K2, ¿qué indica el LED 31 y qué condiciones lo encienden?"
+      )
+    end
+
+    test "ambiguous_hardware_query? is true for genuinely ambiguous corpus questions" do
+      assert DeterministicIntent.ambiguous_hardware_query?(
+        "¿Cómo se conectan los cerrojos en las placas de seguridad?"
+      )
+      assert DeterministicIntent.ambiguous_hardware_query?(
+        "¿Cómo aparecen los cerrojos en las placas?"
+      )
+    end
+
+    test "ambiguous_hardware_query? is false for other alphanumeric corpus model codes" do
+      %w[EM3000 MR08 TPR60 TPR70 CR8PH2 EKM66 DL27].each do |code|
+        assert_not DeterministicIntent.ambiguous_hardware_query?("¿Qué LED indica seguridad en #{code}?"),
+                   "expected #{code} to be recognized as explicit equipment"
+      end
+    end
   end
 end

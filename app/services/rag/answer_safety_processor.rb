@@ -33,14 +33,23 @@ module Rag
 
     CONNECTION_CLAIM_PATTERN =
       /(?:conect|borna|terminal|cablead|wired|→|->)/i.freeze
-    LED_STATE_CLAIM_PATTERN =
-      /(?:se\s+(?:enciende|apaga)|est[aá]\s+(?:encendido|apagado)|indica|señala|lights?|turns?\s+(?:on|off)|is\s+(?:on|off))/i.freeze
+    # "indica"/"señala" alone name a documented series/label attribution (e.g. "D10
+    # indica la SERIE SEGURIDAD CABINA"), not ON/OFF logic — they only count as a
+    # state claim when paired with an actual state term in the same line/fragment.
+    LED_STATE_VERB_PATTERN =
+      /(?:se\s+(?:enciende|apaga)|est[aá]\s+(?:encendido|apagado)|lights?|turns?\s+(?:on|off)|is\s+(?:on|off))/i.freeze
+    LED_ATTRIBUTION_VERB_PATTERN = /(?:indica|señala)/i.freeze
+    LED_STATE_TERM_PATTERN = /(?:encendid|apagad|fallo|aver[ií]a|normal|\bon\b|\boff\b)/i.freeze
     DEVICE_FUNCTION_CLAIM_PATTERN =
       /(?:limitador|limiter).{0,60}(?:sobrecarga|overload)|(?:sobrecarga|overload).{0,60}(?:limitador|limiter)/i.freeze
     COMPONENT_CODE_PATTERN = /\b[A-Z][A-Z0-9_-]{2,}\b/.freeze
     COMPONENT_CODE_STOPWORDS = %w[
       DATA NOT AVAILABLE REQUIRE REQUIRES FIELD VERIFICATION LED
     ].freeze
+    # A "(SERIE ...)" parenthetical names the documented LED/series category a
+    # code belongs to (e.g. "41 (SERIE CERROJOS CABINA)") — it is a label, not a
+    # wired component, so it must not be scanned for connector-claim components.
+    SERIES_LABEL_PATTERN = /\(\s*SERIE\b[^)]*\)/i.freeze
 
     def initialize(locale: nil)
       @locale = normalize_locale(locale)
@@ -110,8 +119,10 @@ module Rag
         connectors = identifiers_in(line).reject { |identifier| led_identifier?(identifier) }
         next if connectors.empty?
 
-        components = line.scan(COMPONENT_CODE_PATTERN).reject do |code|
+        component_source = line.gsub(SERIES_LABEL_PATTERN, " ")
+        components = component_source.scan(COMPONENT_CODE_PATTERN).reject do |code|
           COMPONENT_CODE_STOPWORDS.include?(code) ||
+            board_model_name?(code) ||
             connectors.any? { |connector| canonical(connector) == canonical(code) }
         end
         next if components.empty?
@@ -132,12 +143,12 @@ module Rag
     def reject_unsupported_led_logic(answer, evidence)
       transform_claim_lines(answer) do |line|
         led_ids = identifiers_in(line).select { |identifier| led_identifier?(identifier) }
-        next if led_ids.empty? || !line.match?(LED_STATE_CLAIM_PATTERN)
+        next if led_ids.empty? || !led_state_claim?(line)
 
         supported = led_ids.all? do |identifier|
           evidence_fragments(evidence).any? do |fragment|
             fragment.match?(/\b#{Regexp.escape(identifier)}\b/i) &&
-              fragment.match?(LED_STATE_CLAIM_PATTERN)
+              led_state_claim?(fragment)
           end
         end
         unless supported
@@ -245,6 +256,24 @@ module Rag
 
     def led_identifier?(identifier)
       identifier.to_s.match?(/\A(?:DL|LED|D|L|T)-?\d/i)
+    end
+
+    # A hyphenated model designation (EDEL-K2, ALTIUS-D9) is the board's own
+    # name, not a wired component — it must never need a separate connector
+    # pairing. A bare digit is not enough: pin/terminal labels enumerated
+    # alongside a connector (PC3, C1, C2) also contain a digit but ARE real
+    # components whose support the evidence documents (MR08 mr08_sci).
+    def board_model_name?(code)
+      code.match?(/\A[A-Z]+-[A-Z]?\d/i)
+    end
+
+    # A bare state verb ("se enciende", "está apagado") always counts. A pure
+    # attribution verb ("indica", "señala") only counts when it co-occurs with a
+    # state term — otherwise it is naming a documented series/label, not ON/OFF
+    # logic, and must not be treated as an unsupported claim.
+    def led_state_claim?(text)
+      text.match?(LED_STATE_VERB_PATTERN) ||
+        (text.match?(LED_ATTRIBUTION_VERB_PATTERN) && text.match?(LED_STATE_TERM_PATTERN))
     end
 
     def citation_suffix(line)

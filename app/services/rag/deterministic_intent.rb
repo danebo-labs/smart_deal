@@ -24,7 +24,7 @@ module Rag
     ].freeze
 
     EXPLICIT_EQUIPMENT_PATTERN =
-      /\b(?:ALTIUS|ORONA|KONE|OTIS|SCHINDLER|SOPREL|THYSSEN(?:KRUPP)?|CARLOS\s+SILVA)\b|(?:\b[A-Z]{2,}[-.]?\d+[A-Z0-9.-]*\b)/i.freeze
+      /\b(?:ALTIUS|ORONA|KONE|OTIS|SCHINDLER|SOPREL|THYSSEN(?:KRUPP)?|CARLOS\s+SILVA)\b|(?:\b[A-Z]{2,}[-.]?[A-Z]?\d+[A-Z0-9.-]*\b)/i.freeze
 
     # Trailing punctuation/whitespace the pin autofill or the technician may add.
     OVERVIEW_TRIM_PATTERN = /[[:space:][:punct:]]+\z/.freeze

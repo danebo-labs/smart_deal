@@ -195,6 +195,96 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     assert_includes rendered, "DL27 se enciende durante un fallo."
   end
 
+  # altius_d9_d10: "indica"/"señala" alone name a documented series/label
+  # attribution, not ON/OFF logic, so the guard must not fire on them even
+  # without a state term in the evidence.
+  test "preserves a series/label attribution using indica without a state term" do
+    answer = "D10 indica la SERIE SEGURIDAD CABINA."
+    evidence = [ { content: "D9 | SERIE SEGURIDADES HUECO\nD10 | SERIE SEGURIDAD CABINA" } ]
+
+    assert_equal answer, processor.call(answer, evidence: evidence)
+  end
+
+  test "still degrades an indica claim when it is paired with a state term and unsupported" do
+    rendered = processor.call(
+      "DL27 indica que se enciende en fallo.",
+      evidence: [ { content: "El esquema identifica DL27." } ]
+    )
+
+    assert_includes rendered, t("undocumented_led_logic", identifier: "DL27")
+  end
+
+  # thyssen_e_led negative control: an assertive normal/fault attribution
+  # without documented evidence must still be blocked.
+  test "still degrades an unsupported assertive normal/fault attribution using señala" do
+    rendered = processor.call(
+      "L9 señala fallo cuando ocurre una avería.",
+      evidence: [ { content: "El esquema identifica L9." } ]
+    )
+
+    assert_includes rendered, t("undocumented_led_logic", identifier: "L9")
+  end
+
+  # tokibat_dl27 negative control: a bare state-verb assertion is unaffected
+  # by the indica/señala carve-out and stays blocked.
+  test "still degrades a bare state-verb assertion with no evidence" do
+    rendered = processor.call(
+      "DL27 se enciende cuando ocurre un fallo.",
+      evidence: [ { content: "El esquema identifica DL27." } ]
+    )
+
+    assert_includes rendered, t("undocumented_led_logic", identifier: "DL27")
+  end
+
+  # edel_k2_c2 (12-case rubric): the connection-claim guard treated the board's
+  # own model name and a "(SERIE ...)" category label as unsupported wired
+  # "components" of the connector they were merely mentioned alongside,
+  # intermittently destroying a correct answer depending on phrasing.
+  test "preserves a connector line that only mentions the board's own model name" do
+    answer = "En el diagrama EDEL-K2, el bloque de terminales C2 muestra las siguientes posiciones de terminal: 37, 38, 41."
+    evidence = [ { content: "C2 (red border) — terminal positions labeled: 37, 38, 41." } ]
+
+    assert_equal answer, processor.call(answer, evidence: evidence)
+  end
+
+  test "preserves a connector line naming a documented SERIE category label" do
+    answer = "41 (SERIE CERROJOS CABINA) si aparece como terminal en el bloque C2."
+    evidence = [ { content: "C2 (red border) — terminal positions labeled: 37, 38, 41.\n| 41 | SERIE CERROJOS CABINA |" } ]
+
+    assert_equal answer, processor.call(answer, evidence: evidence)
+  end
+
+  # Mandatory negative control: the SERIE-label and digit-code carve-outs must
+  # not open a hole for a genuinely invented connector/component pairing.
+  test "still rejects an invented connector pairing despite the SERIE/digit carve-outs" do
+    answer = "EPC se conecta a B7 (SERIE PRUEBAS)."
+    evidence = [ { content: "EPC se conecta a B8.\nPRESOSTATO se conecta a B7." } ]
+
+    rendered = processor.call(answer, evidence: evidence)
+
+    assert_not_includes rendered, "EPC se conecta a B7"
+    assert_includes rendered, t("unsupported_connection")
+  end
+
+  # mr08_sci (12-case rubric): the blanket digit exclusion added for the
+  # EDEL-K2 board-name carve-out also threw out pin labels enumerated
+  # alongside a connector (PC3..PC7), leaving no evidenced "component" for
+  # the C1/C2 pins in the same sentence and destroying a fully-evidenced
+  # connector/series line. The carve-out is now scoped to hyphenated model
+  # designations (EDEL-K2), not any digit-bearing code.
+  test "preserves a connector line whose pin enumeration includes digit-bearing pin labels" do
+    answer = "Según el diagrama de conexionado, la serie SCI (SERIE OBSTACULO) está asociada a estos " \
+      "conectores: CN-112.SC y CN-109.CC. El conector CN-112 presenta los pines SC, PCP y NIV, " \
+      "mientras que CN-109 dispone de los pines C1, C2, PC3, PC4, PC5, PC6 y PC7."
+    evidence = [ { content: <<~TEXT } ]
+      | SCI | SERIE OBSTACULO (CN-112.SC y CN-109.CC) |
+      CN-112 — conector placa MR08; pines visibles: SC, PCP, NIV
+      CN-109 — conector placa MR08; pines visibles: C1, C2, PC3, PC4, PC5, PC6, PC7
+    TEXT
+
+    assert_equal answer, processor.call(answer, evidence: evidence)
+  end
+
   private
 
   def processor

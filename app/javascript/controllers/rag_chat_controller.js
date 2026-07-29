@@ -2,8 +2,7 @@
 
 import { Controller } from "@hotwired/stimulus"
 import { createConsumer } from "@rails/actioncable"
-import { renderReferences } from "rag/references_renderer"
-import { renderDocumentsConsulted } from "rag/documents_consulted_renderer"
+import { renderSources } from "rag/sources_renderer"
 import { formatAnswerForWeb } from "rag/answer_presenter"
 
 export default class extends Controller {
@@ -868,27 +867,16 @@ export default class extends Controller {
     const consultedDocuments = !citations.length && Array.isArray(data.consulted_documents)
       ? data.consulted_documents
       : []
-    let firstRow
-    if (citations.length) {
-      firstRow = this.addMessageHtml(renderDocumentsConsulted(citations), "assistant")
-    } else if (consultedDocuments.length) {
-      const asCitations = consultedDocuments.map((name) => ({ filename: name }))
-      firstRow = this.addMessageHtml(renderDocumentsConsulted(asCitations), "assistant")
-    }
+    const sourcesCitations = citations.length
+      ? citations
+      : consultedDocuments.map((name) => ({ filename: name }))
+
     const answerRow = this.addMessageHtml(formatAnswerForWeb(data.answer, citations), "assistant")
-    if (!firstRow) firstRow = answerRow
-    if (citations.length) {
-      // Only list citations that were NOT already shown with their excerpt
-      // above (renderDocumentsConsulted) — never hide a [n] that appears
-      // nowhere else on screen.
-      const withoutExcerpt = citations.filter((c) => !(c.matched_excerpt || "").trim())
-      const refsHtml = renderReferences(withoutExcerpt)
-      if (refsHtml.trim()) this.addMessageHtml(refsHtml, "assistant")
-    }
+    if (sourcesCitations.length) this.addMessageHtml(renderSources(sourcesCitations), "assistant")
     if (Array.isArray(data.quick_replies) && data.quick_replies.length) {
       this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")
     }
-    this.scrollToMessageTop(firstRow)
+    this.scrollToMessageTop(answerRow)
   }
 
   renderQuickReplies(replies) {

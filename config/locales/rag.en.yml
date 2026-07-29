@@ -35,8 +35,7 @@ en:
     unsupported_connection: "The component-to-connector relationship is not explicitly documented in the retrieved evidence; confirm it against the complete schematic."
     undocumented_led_logic: "The document identifies %{identifier}, but does not define its on/off logic."
     unsupported_device_function: "The document identifies the device, but does not document that functional characterization."
-    multiple_models_found: "The retrieved evidence covers several boards or models:"
-    select_model: "Select an option or provide the exact manufacturer and board."
+    ambiguous_model_prompt: "The retrieved evidence covers several boards or models — pick one or provide the exact manufacturer and board:"
     model_selection_query: "Manufacturer and board: %{model}"
     document_overview:
       document_heading: "Document: %{name}"

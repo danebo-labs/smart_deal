@@ -142,19 +142,19 @@
 }
 .chat-message-text .citation:hover { color: hsl(217, 91%, 35%); }
 
-/* ─── References section ─── */
-.chat-references {
+/* ─── Sources block (single "Fuentes:"/"Sources:" block after the answer) ─── */
+.chat-sources {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid hsl(215, 20%, 90%);
 }
-.chat-references-title {
+.chat-sources-title {
   font-size: 0.875rem;
   font-weight: 600;
   color: hsl(222, 47%, 10%);
   margin: 0 0 0.75rem 0;
 }
-.chat-references-list {
+.chat-sources-list {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -162,54 +162,17 @@
   flex-direction: column;
   gap: 0.5rem;
 }
-.chat-references-list li {
+.chat-sources-list li {
   font-size: 0.875rem;
   color: hsl(215, 20%, 35%);
   line-height: 1.5;
 }
-.chat-references-list .citation-number {
+.chat-sources-bullet {
   font-weight: 600;
   color: hsl(217, 91%, 45%);
   margin-right: 0.5rem;
 }
-
-/* ─── Docs consulted block (shown before answer) ─── */
-.docs-consulted {
-  background: hsl(217, 91%, 97%);
-  border: 1px solid hsl(217, 91%, 88%);
-  border-left: 3px solid hsl(217, 91%, 50%);
-  border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.5rem;
-}
-.docs-consulted-title {
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: hsl(217, 91%, 35%);
-  margin: 0 0 0.5rem 0;
-}
-.docs-consulted-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.docs-consulted-list li {
-  font-size: 0.875rem;
-  color: hsl(222, 47%, 15%);
-  line-height: 1.45;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-}
-.docs-consulted-bullet {
-  font-weight: 700;
-  color: hsl(217, 91%, 50%);
-  flex-shrink: 0;
-}
-.docs-consulted-name { font-weight: 600; word-break: break-word; }
+.chat-sources-name { font-weight: 600; }
 
 /* ─── Typing indicator (injected by controller) ─── */
 .chat-typing-indicator {

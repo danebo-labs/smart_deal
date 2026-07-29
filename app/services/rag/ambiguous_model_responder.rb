@@ -136,9 +136,8 @@ module Rag
     def render_answer(candidates)
       options = candidates.each_with_index.map { |candidate, index| "#{index + 1}. #{candidate[:label]}" }
       [
-        I18n.t("rag.multiple_models_found", locale: @locale),
-        options.join("\n"),
-        I18n.t("rag.select_model", locale: @locale)
+        I18n.t("rag.ambiguous_model_prompt", locale: @locale),
+        options.join("\n")
       ].join("\n\n")
     end
 

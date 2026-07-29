@@ -35,8 +35,7 @@ es:
     unsupported_connection: "La relación componente-conector no está documentada explícitamente en la evidencia recuperada; confírmala en el esquema completo."
     undocumented_led_logic: "El documento identifica %{identifier}, pero no define su lógica de encendido."
     unsupported_device_function: "El documento identifica el dispositivo, pero no documenta esa caracterización funcional."
-    multiple_models_found: "La evidencia recuperada corresponde a varias placas o modelos:"
-    select_model: "Selecciona una opción o indica el fabricante y la placa exacta."
+    ambiguous_model_prompt: "La evidencia recuperada corresponde a varias placas o modelos — elige una o indica el fabricante y la placa exacta:"
     model_selection_query: "Fabricante y placa: %{model}"
     document_overview:
       document_heading: "Documento: %{name}"

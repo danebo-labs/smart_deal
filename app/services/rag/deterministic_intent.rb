@@ -39,8 +39,26 @@ module Rag
       STOP_WORK_PATTERNS.any? { |pattern| question.to_s.match?(pattern) }
     end
 
+    # True when the text already carries the quick-reply marker the responder
+    # appends (`rag.model_selection_query`). Checked in every locale because the
+    # reply is echoed back verbatim and I18n.locale here is not guaranteed to
+    # match the one that rendered it. Computed lazily — building this at class
+    # load would freeze the translations at boot.
+    def model_selection_reply?(text)
+      I18n.available_locales.any? do |locale|
+        marker = I18n.t("rag.model_selection_query", locale: locale, model: "", default: "").strip
+        marker.present? && text.include?(marker)
+      end
+    end
+
     def ambiguous_hardware_query?(question)
       text = question.to_s
+      # Already disambiguated once — never ask again, whatever the label looks
+      # like. Labels without a digit glued to letters ("NE 300 – LB II",
+      # "LIMITADOR-CABINA") do not satisfy EXPLICIT_EQUIPMENT_PATTERN and used
+      # to loop forever.
+      return false if model_selection_reply?(text)
+
       GENERIC_HARDWARE_PATTERNS.any? { |pattern| text.match?(pattern) } &&
         !text.match?(EXPLICIT_EQUIPMENT_PATTERN)
     end

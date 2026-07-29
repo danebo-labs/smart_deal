@@ -4,7 +4,10 @@ require "test_helper"
 
 class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
   FakeService = Struct.new(:chunks) do
-    def retrieve_chunks(*)
+    attr_reader :captured_kwargs
+
+    def retrieve_chunks(*, **kwargs)
+      @captured_kwargs = kwargs
       {
         chunks: chunks,
         retrieval_trace: {
@@ -64,9 +67,61 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
                  result[:quick_replies].pluck(:label)
   end
 
+  test "does not fabricate a manufacturer from unrelated text in the chunk body" do
+    responder = build_responder(
+      heading_chunk("## EM 4000 V1\nCadena de seguridades ALTIUS conectada en serie.", 33),
+      heading_chunk("## S4 — SAFETY SYSTEM: ARCA III — Diagrama de Series", 52),
+      heading_chunk("## S7 — DIAGRAM: MAC 5000 — Esquema de Cadena", 55)
+    )
+
+    result = responder.execute
+
+    labels = result[:quick_replies].pluck(:label)
+    assert_not labels.any? { |label| label.start_with?("ALTIUS — ") }
+    assert_includes labels, "EM 4000 V1"
+  end
+
+  test "web omits the numbered list because chips already carry the options" do
+    responder = build_responder(
+      chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
+      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
+      chunk("ORONA", "ORONA MR08 LED status", page: 22),
+      output_channel: :web
+    )
+
+    result = responder.execute
+
+    assert_not_includes result[:answer], "1."
+    assert_equal 3, result[:quick_replies].size
+  end
+
+  test "non-web keeps the numbered list for channels without chips" do
+    responder = build_responder(
+      chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
+      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
+      chunk("ORONA", "ORONA MR08 LED status", page: 22)
+    )
+
+    result = responder.execute
+
+    assert_includes result[:answer], "1. "
+  end
+
+  test "asks the retrieval layer for the contractual top_k" do
+    responder = build_responder(
+      chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
+      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
+      chunk("ORONA", "ORONA MR08 LED status", page: 22)
+    )
+
+    responder.execute
+
+    assert_equal 20, responder.instance_variable_get(:@service).captured_kwargs[:number_of_results]
+  end
+
   private
 
-  def build_responder(*chunks)
+  def build_responder(*chunks, output_channel: nil)
     Rag::AmbiguousModelResponder.new(
       question: "¿Qué LED se enciende cuando falla?",
       account: accounts(:legacy),
@@ -74,6 +129,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
       entity_sources: [],
       force_entity_filter: false,
       response_locale: :es,
+      output_channel: output_channel,
       rag_service: FakeService.new(chunks)
     )
   end

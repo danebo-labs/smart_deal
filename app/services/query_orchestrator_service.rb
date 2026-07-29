@@ -226,7 +226,8 @@ class QueryOrchestratorService
         entity_s3_uris:      @entity_s3_uris,
         entity_sources:      entity_sources,
         force_entity_filter: @force_entity_filter,
-        response_locale:     @response_locale
+        response_locale:     @response_locale,
+        output_channel:      @output_channel
       )
       if disambiguation && (disambiguated = disambiguation.execute)
         Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")

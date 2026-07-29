@@ -96,5 +96,19 @@ module Rag
                    "expected #{code} to be recognized as explicit equipment"
       end
     end
+
+    test "a quick-reply selection never re-enters disambiguation" do
+      [ "NE 300 – LB II", "LIMITADOR-CABINA", "ARCA III" ].each do |label|
+        assert_not DeterministicIntent.ambiguous_hardware_query?(
+          "¿Qué LED indica la serie de obstáculo?\nFabricante y placa: #{label}"
+        ), "expected the #{label} selection to break the disambiguation loop"
+      end
+    end
+
+    test "a quick-reply selection never re-enters disambiguation in English" do
+      assert_not DeterministicIntent.ambiguous_hardware_query?(
+        "What LED indicates the obstacle series?\nManufacturer and board: NE 300 – LB II"
+      )
+    end
   end
 end

@@ -7,17 +7,17 @@ module Rag
   # three concrete choices and lets the technician narrow the next query.
   class AmbiguousModelResponder
     MIN_DISTINCT_MODELS = 3
-    RETRIEVAL_RESULTS = 8
+    # Matches ContractualLimits::QUERY[:max_top_k]. Same single Retrieve, no
+    # extra call and no generation cost — 8 was leaving documented boards
+    # (EM4000, p. 33) out of the candidate pool entirely.
+    RETRIEVAL_RESULTS = 20
     MAX_OPTIONS = 3
 
-    MANUFACTURERS = %w[
-      ALTIUS ORONA KONE OTIS SCHINDLER SOPREL THYSSEN THYSSENKRUPP TOKIBAT
-    ].freeze
     MODEL_PATTERN =
       /\b(?:[A-Z]{2,}\d+[A-Z0-9.-]*|[A-Z]{2,}(?:-[A-Z0-9]+)+)\b/.freeze
 
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
-                   response_locale: nil)
+                   response_locale: nil, output_channel: nil)
       return unless DeterministicIntent.ambiguous_hardware_query?(question)
 
       new(
@@ -26,12 +26,13 @@ module Rag
         entity_s3_uris: entity_s3_uris,
         entity_sources: entity_sources,
         force_entity_filter: force_entity_filter,
-        response_locale: response_locale
+        response_locale: response_locale,
+        output_channel: output_channel
       )
     end
 
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
-                   response_locale: nil, rag_service: nil)
+                   response_locale: nil, output_channel: nil, rag_service: nil)
       @question = question
       @account = account
       @service = rag_service || BedrockRagService.new(account: account)
@@ -39,6 +40,7 @@ module Rag
       @entity_sources = Array(entity_sources)
       @force_entity_filter = force_entity_filter
       @locale = response_locale.presence&.to_sym || I18n.locale
+      @output_channel = output_channel&.to_sym
     end
 
     def execute
@@ -91,16 +93,10 @@ module Rag
           chunk[:content].to_s.first(2_000)
         ].compact.join(" ")
 
-        manufacturer = metadata["manufacturer"].presence || explicit_manufacturer(searchable)
-        model = metadata["controller_model"].presence ||
-          metadata["board_model"].presence ||
-          searchable.scan(MODEL_PATTERN).first
-        label =
-          if manufacturer.present? && model.present?
-            "#{manufacturer} — #{model}"
-          else
-            heading_label(chunk[:content])
-          end
+        # The section heading IS the board ("EM3000 - HIDRAULICO", "NE 300 – LB II").
+        # It comes straight from the page, so it can never name a board that is
+        # not there — unlike the metadata fallback below.
+        label = heading_label(chunk[:content]).presence || metadata_label(metadata, searchable)
         next if label.blank?
 
         key = label.downcase
@@ -111,9 +107,19 @@ module Rag
       end
     end
 
-    def explicit_manufacturer(text)
-      normalized = text.to_s.upcase
-      MANUFACTURERS.find { |manufacturer| normalized.match?(/\b#{Regexp.escape(manufacturer)}\b/) }
+    # Only concatenates when the chunk carries an explicit manufacturer in
+    # metadata. Scanning the chunk body instead made every page of a multi-brand
+    # manual look like ALTIUS, offering boards that are not on that page.
+    def metadata_label(metadata, searchable)
+      manufacturer = metadata["manufacturer"].presence
+      return if manufacturer.blank?
+
+      model = metadata["controller_model"].presence ||
+        metadata["board_model"].presence ||
+        searchable.scan(MODEL_PATTERN).first
+      return if model.blank?
+
+      "#{manufacturer} — #{model}"
     end
 
     def heading_label(content)
@@ -134,11 +140,13 @@ module Rag
     end
 
     def render_answer(candidates)
+      prompt = I18n.t("rag.ambiguous_model_prompt", locale: @locale)
+      # Web renders the same options as tappable chips (quick_replies); printing
+      # them again as a numbered list is pure visual duplication.
+      return prompt if @output_channel == :web
+
       options = candidates.each_with_index.map { |candidate, index| "#{index + 1}. #{candidate[:label]}" }
-      [
-        I18n.t("rag.ambiguous_model_prompt", locale: @locale),
-        options.join("\n")
-      ].join("\n\n")
+      [ prompt, options.join("\n") ].join("\n\n")
     end
 
     def citation_shaped(chunks)

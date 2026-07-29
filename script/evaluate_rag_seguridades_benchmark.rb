@@ -3,7 +3,10 @@
 require "json"
 require "fileutils"
 
-rubric_path = Rails.root.join("script/fixtures/rag_seguridades_rubric.json")
+rubric_path = ENV.fetch(
+  "RAG_SEGURIDADES_RUBRIC",
+  Rails.root.join("script/fixtures/rag_seguridades_rubric.json").to_s
+)
 input_path = ENV.fetch(
   "RAG_SEGURIDADES_INPUT",
   Rails.root.join("tmp/rag_seguridades_benchmark.json").to_s

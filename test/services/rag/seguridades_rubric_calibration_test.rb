@@ -10,6 +10,7 @@ require "json"
 class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
   RUBRIC = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_rubric.json").read).freeze
   PILOT = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q.json").read).freeze
+  PILOT_V2 = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q_v2.json").read).freeze
 
   test "rubric version is the calibrated one" do
     assert_equal "seguridades-v3.2", RUBRIC.fetch("version")
@@ -19,6 +20,58 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
   test "pilot rubric version is the calibrated one" do
     assert_equal "seguridades-pilot-v1.2", PILOT.fetch("version")
     assert_equal 10, PILOT.fetch("cases").size
+  end
+
+  test "pilot v2 rubric version is locked" do
+    assert_equal "seguridades-pilot-v2.0", PILOT_V2.fetch("version")
+    assert_equal 10, PILOT_V2.fetch("cases").size
+    assert_equal 24, PILOT_V2.fetch("passing_score")
+    ids = PILOT_V2.fetch("cases").map { |definition| definition.fetch("id") }
+    assert_not_equal PILOT.fetch("cases").map { |definition| definition.fetch("id") }, ids,
+      "v2 must exercise different case ids than the certified pilot v1.2"
+  end
+
+  # v2 critical: EM4000 obstacle header documents XC4/XC7 — inventing the
+  # EM2000 CN7/CN8/CN9 set is the same connector-hallucination class as mr08_sci.
+  test "pilot v2 em4000 connector check accepts XC4/XC7 and rejects CN7/CN8/CN9 invention" do
+    xc4 = pilot_v2_check("em4000_obstaculo_conectores", "required", "incluye XC4")
+    xc7 = pilot_v2_check("em4000_obstaculo_conectores", "required", "incluye XC7")
+    cn = pilot_v2_check("em4000_obstaculo_conectores", "penalized", "inventa conectores CN7/CN8/CN9")
+
+    assert_match xc4, "El encabezado documenta los conectores XC4 y XC7."
+    assert_match xc7, "OBSTACULO .- CONECTORES XC4 Y XC7 EN PLACA EM4000 V1"
+    assert_match cn, "En EM4000 el obstáculo usa CN7 y CN8."
+    assert_match cn, "Los conectores son CN9 y CN7 en el dibujo de EM4000."
+    assert_no_match cn, "El encabezado documenta XC4 y XC7."
+    assert_no_match cn, "No confundir con los CN7/CN8 del EM2000."
+  end
+
+  # v2 critical: TOKIBAT DL27 names the series but not ON logic — same abstention
+  # contract as tokibat_dl27 / edel_k2_led31.
+  test "pilot v2 tokibat invented-ON-state check fires on assertion not on abstention" do
+    check = pilot_v2_check("tokibat_dl27_v2", "penalized", "inventa condición de encendido")
+
+    [
+      "DL27 se enciende cuando la serie de seguridad presenta un fallo.",
+      "El LED DL27 se enciende cuando existe una avería."
+    ].each { |answer| assert_match check, answer, "unsupported ON-state must be penalized: #{answer}" }
+
+    [
+      "El documento no declara si el LED se enciende cuando la serie está cerrada.",
+      "El documento no incluye este dato — requiere verificación en campo."
+    ].each { |answer| assert_no_match check, answer, "abstention must not be penalized: #{answer}" }
+  end
+
+  # v2: EDEL-K3 table differs from EDEL-K2 — copying K2 series onto 37/39/41 fails.
+  test "pilot v2 edel_k3 accepts K3 series and rejects K2 series copy" do
+    led37 = pilot_v2_check("edel_k3_leds", "required", "LED 37 correcto")
+    led41 = pilot_v2_check("edel_k3_leds", "required", "LED 41 correcto")
+    k2 = pilot_v2_check("edel_k3_leds", "penalized", "copia series de EDEL-K2")
+
+    assert_match led37, "El LED 37 indica PUERTAS HUECO."
+    assert_match led41, "El LED 41 indica CERROJOS CABINA Y EXTERIORES."
+    assert_match k2, "El LED 37 indica SERIE SEGURIDADES HUECO (como en K2)."
+    assert_no_match k2, "37 = PUERTAS HUECO; 39 = PUERTAS CABINA; 41 = CERROJOS CABINA Y EXTERIORES."
   end
 
   # pilot v1.1: the TPR60 LED table prints the series with an en dash
@@ -231,6 +284,17 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
   def pilot_check(id, kind, label)
     definition = pilot_case(id).fetch(kind).find { |check| check["label"] == label } ||
       flunk("#{kind} check #{label.inspect} not found in pilot #{id}")
+    Regexp.new(definition.fetch("pattern"), Regexp::IGNORECASE | Regexp::MULTILINE)
+  end
+
+  def pilot_v2_case(id)
+    PILOT_V2.fetch("cases").find { |definition| definition["id"] == id } ||
+      flunk("pilot v2 rubric case #{id} not found")
+  end
+
+  def pilot_v2_check(id, kind, label)
+    definition = pilot_v2_case(id).fetch(kind).find { |check| check["label"] == label } ||
+      flunk("#{kind} check #{label.inspect} not found in pilot v2 #{id}")
     Regexp.new(definition.fetch("pattern"), Regexp::IGNORECASE | Regexp::MULTILINE)
   end
 

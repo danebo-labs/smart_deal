@@ -1,0 +1,197 @@
+{
+  "version": "seguridades-pilot-v2.0",
+  "description": "Batería de verificación v2 (10 preguntas) sobre SEGURIDADES 1.1-1. Distinta de la piloto certificada v1.2: ejercita las mismas clases de fallo (retrieval, confusión intra-fabricante, mezcla EM, conectores críticos, abstención, ambigüedad) con equipos/LEDs no calibrados en v1.2, para medir generalización.",
+  "citation_required": true,
+  "passing_score": 24,
+  "max_score": 30,
+  "cases": [
+    {
+      "id": "altius_d8_d11",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En ALTIUS, ¿qué serie indica el LED D8 y qué serie indica el LED D11?",
+      "source_pages": [7],
+      "required": [
+        {"label": "identifica D8", "pattern": "\\bD8\\b"},
+        {"label": "serie D8 correcta", "pattern": "SERIE SEGURIDAD LIMITADOR"},
+        {"label": "identifica D11", "pattern": "\\bD11\\b"},
+        {"label": "serie D11 correcta", "pattern": "SERIE CERRADURAS CABINA"}
+      ],
+      "optional": [
+        {"label": "cita página 7", "pattern": "(?:p[aá]gina|p\\.)\\s*7"}
+      ],
+      "penalized": [
+        {"label": "inventa lógica ON/OFF", "pattern": "(?:D8|D11).{0,80}(?:se enciende cuando|indica (?:fallo|aver[ií]a|normal))", "severity": "technical_important"},
+        {"label": "confunde con D9/D10", "pattern": "\\bD8\\b.{0,60}(?:SEGURIDAD(?:ES)? HUECO|SEGURIDAD CABINA)|\\bD11\\b.{0,60}(?:SEGURIDAD(?:ES)? HUECO|SEGURIDAD CABINA)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "tpr50_spm",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En el modelo TPR50 de Carlos Silva, ¿a qué serie corresponde el LED SPM?",
+      "source_pages": [9],
+      "required": [
+        {"label": "identifica SPM", "pattern": "\\bSPM\\b"},
+        {"label": "serie correcta", "pattern": "SERIE PUERTAS CABINA\\s*[-–—]\\s*EXTERIORES"}
+      ],
+      "optional": [
+        {"label": "cita página 9", "pattern": "(?:p[aá]gina|p\\.)\\s*9"}
+      ],
+      "penalized": [
+        {"label": "confunde con TPR60 PP", "pattern": "(?:TPR60|\\bPP\\b).{0,40}\\bSPM\\b|\\bSPM\\b.{0,40}(?:TPR60|\\bPP\\b)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "cta_sr8p_sph",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa SR8P de CTA, ¿qué LED indica que las puertas cabina/exterior están cerradas y en qué placa se encuentra?",
+      "source_pages": [17, 18],
+      "required": [
+        {"label": "identifica LED", "pattern": "\\bSPH\\b"},
+        {"label": "identifica placa", "pattern": "\\bSR8P\\b"},
+        {"label": "serie correcta", "pattern": "SERIE PUERTAS CAB\\. EXT\\. CERRADA"}
+      ],
+      "optional": [
+        {"label": "cita páginas 17-18", "pattern": "(?:p[aá]gina|p\\.)\\s*(?:17|18)"}
+      ],
+      "penalized": [
+        {"label": "confunde con CR8PH2/M8PC/CR10P", "pattern": "\\b(?:CR8PH2|M8PC|CR10P)\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "em2000_leds_seguridad",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa EM2000 eléctrica, ¿qué LEDs identifican las series de seguridades principales, puertas, cerraduras y obstáculo?",
+      "source_pages": [31],
+      "required": [
+        {"label": "identifica SEG", "pattern": "\\bSEG\\b"},
+        {"label": "identifica SCE", "pattern": "\\bSCE\\b"},
+        {"label": "identifica SCC", "pattern": "\\bSCC\\b"},
+        {"label": "identifica AP", "pattern": "\\bAP\\b"},
+        {"label": "series correctas", "pattern": "(?:SEGURIDADES PRINCIPALES|PUERTAS CABINA - EXTERIORES|CERRADURAS CABINA -EXTERIORES|OSBTACULO|OBST[AÁ]CULO)"}
+      ],
+      "optional": [
+        {"label": "distingue de EM3000", "pattern": "(?:EM\\s*2000|no\\s+EM\\s*3000|a diferencia)"}
+      ],
+      "penalized": [
+        {"label": "mezcla con LEDs EM3000", "pattern": "\\bSPE\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "em4000_obstaculo_conectores",
+      "category": "recuperacion_textual_directa",
+      "severity": "critical",
+      "question": "En EM4000 V1, ¿qué conectores documenta el encabezado del obstáculo en la placa?",
+      "source_pages": [33],
+      "required": [
+        {"label": "incluye XC4", "pattern": "\\bXC-?4\\b"},
+        {"label": "incluye XC7", "pattern": "\\bXC-?7\\b"}
+      ],
+      "optional": [
+        {"label": "cita página 33", "pattern": "(?:p[aá]gina|p\\.)\\s*33"}
+      ],
+      "penalized": [
+        {"label": "inventa conectores CN7/CN8/CN9", "pattern": "(?:usa|usan|documenta|aparecen?|conectores?(?:\\s+son|\\s*=|:)).{0,40}\\bCN-?[789]\\b|\\bCN-?[789]\\b.{0,40}(?:EM\\s*4000|obst[aá]culo)", "severity": "critical"},
+        {"label": "usa conectores inexistentes", "pattern": "\\bX(?:SSC|SSH2)\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "edel_k3_leds",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En EDEL-K3, ¿qué indican los LEDs 37, 39 y 41?",
+      "source_pages": [26],
+      "required": [
+        {"label": "LED 37 correcto", "pattern": "\\b37\\b.{0,40}PUERTAS HUECO|PUERTAS HUECO.{0,40}\\b37\\b"},
+        {"label": "LED 39 correcto", "pattern": "\\b39\\b.{0,40}PUERTAS CABINA|PUERTAS CABINA.{0,40}\\b39\\b"},
+        {"label": "LED 41 correcto", "pattern": "\\b41\\b.{0,60}CERROJOS CABINA Y EXTERIORES|CERROJOS CABINA Y EXTERIORES.{0,40}\\b41\\b"}
+      ],
+      "optional": [
+        {"label": "cita página 26", "pattern": "(?:p[aá]gina|p\\.)\\s*26"}
+      ],
+      "penalized": [
+        {"label": "copia series de EDEL-K2", "pattern": "\\b37\\b.{0,40}SEGURIDADES HUECO|\\b39\\b.{0,40}PUERTAS EXTERIORES|\\b41\\b.{0,40}(?:SERIE )?CERROJOS CABINA(?! Y)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "tokibat_dl27_v2",
+      "category": "informacion_ausente",
+      "severity": "critical",
+      "question": "En TOKIBAT 2007, ¿qué indica el LED DL27 y cuándo se enciende?",
+      "source_pages": [40],
+      "required": [
+        {"label": "identifica DL27", "pattern": "\\bDL27\\b"},
+        {"label": "nombre de serie", "pattern": "SEGURIDAD HUECO"},
+        {"label": "se abstiene de condiciones no documentadas", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato)"}
+      ],
+      "optional": [
+        {"label": "cita página 40", "pattern": "(?:p[aá]gina|p\\.)\\s*40"}
+      ],
+      "penalized": [
+        {"label": "inventa condición de encendido", "pattern": "(?:^|[.\\n])(?![^.\\n]*\\b(?:no|ni|si|tampoco)\\b)[^.\\n]*\\bse enciende\\s+cuando\\b[^.\\n]{0,80}(?:fallo|aver[ií]a|normal|cerrad)", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "enier_mxl1_leds",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En ENIER MXL1, ¿qué serie indica el LED 12 y qué serie indica el LED 19?",
+      "source_pages": [36],
+      "required": [
+        {"label": "identifica LED 12", "pattern": "\\b12\\b"},
+        {"label": "serie 12 correcta", "pattern": "STOP Y SEGURIDADES HUECO"},
+        {"label": "identifica LED 19", "pattern": "\\b19\\b"},
+        {"label": "serie 19 correcta", "pattern": "TOPE FOSO"}
+      ],
+      "optional": [
+        {"label": "cita página 36", "pattern": "(?:p[aá]gina|p\\.)\\s*36"}
+      ],
+      "penalized": [
+        {"label": "asigna series de otros LEDs", "pattern": "\\b12\\b.{0,40}(?:PRESOSTATO|TOPE FOSO|TOPE HUIDA)|\\b19\\b.{0,40}(?:PRESOSTATO|STOP Y SEGURIDADES|CERROJOS)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "thyssen_serie_e_leds",
+      "category": "informacion_ausente",
+      "severity": "critical",
+      "question": "En Thyssen Serie E, ¿qué LEDs documenta y qué significan L9, L8 y L7? ¿Cuál indica condición normal?",
+      "source_pages": [93],
+      "required": [
+        {"label": "identifica L9", "pattern": "\\bL9\\b"},
+        {"label": "serie L9", "pattern": "SEGURIDADES PRINCIPALES"},
+        {"label": "identifica L8", "pattern": "\\bL8\\b"},
+        {"label": "serie L8", "pattern": "PUERTAS EXTERIORES"},
+        {"label": "identifica L7", "pattern": "\\bL7\\b"},
+        {"label": "serie L7", "pattern": "CERROJOS EXTERIORES\\s*-\\s*CABINA"},
+        {"label": "se abstiene de normal/fallo", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|normal|fallo|condiciones)|El documento no incluye este dato)"}
+      ],
+      "optional": [
+        {"label": "cita página 93", "pattern": "(?:p[aá]gina|p\\.)\\s*93"}
+      ],
+      "penalized": [
+        {"label": "asigna normal/fallo sin respaldo", "pattern": "\\bL[789]\\b[^.\\n]{0,60}(?:se enciende|indica|se[ñn]ala)[^.\\n]{0,60}(?:normal|fallo|aver[ií]a)", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "elecmegon_obstaculo_ambiguo",
+      "category": "ambiguas",
+      "severity": "technical_important",
+      "question": "¿Qué LED indica la serie de obstáculo o fotocélula en las placas Elecmegon?",
+      "source_pages": [29, 31, 33],
+      "required": [
+        {"label": "reconoce variabilidad", "pattern": "(?:var[ií]a|depende|diferente|varios modelos|seg[uú]n (?:el )?modelo|fabricante)"},
+        {"label": "solicita selección de modelo", "pattern": "(?:selecciona|indica|especifica|precisa).{0,60}(?:fabricante|placa|modelo|versi[oó]n)"}
+      ],
+      "optional": [
+        {"label": "menciona AP en EM2000/4000", "pattern": "\\bAP\\b"},
+        {"label": "ofrece ejemplos concretos", "pattern": "\\d+\\.\\s+[^\\n]+(?:—|-)[^\\n]+"}
+      ],
+      "penalized": [
+        {"label": "da respuesta universal", "pattern": "(?:en todas las placas|siempre (?:es|indica)|LED universal|todos los (?:modelos|EM))", "severity": "technical_important"}
+      ]
+    }
+  ]
+}

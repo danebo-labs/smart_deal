@@ -42,7 +42,19 @@ RAG_SEGURIDADES_EVALUATION_OUTPUT=tmp/rag_seguridades_evaluation.json \
 bin/rails runner script/evaluate_rag_seguridades_benchmark.rb
 ```
 
-The rubric lives in
+Both scripts accept `RAG_SEGURIDADES_RUBRIC` to select a rubric file. Defaults:
+
+- 12-case regression: `script/fixtures/rag_seguridades_rubric.json` (`seguridades-v3.2`)
+- certified pilot 10q: `script/fixtures/rag_seguridades_pilot_10q.json` (`seguridades-pilot-v1.2`)
+- generalization pilot 10q v2: `script/fixtures/rag_seguridades_pilot_10q_v2.json` (`seguridades-pilot-v2.0`)
+
+```bash
+RAG_SEGURIDADES_RUBRIC=script/fixtures/rag_seguridades_pilot_10q_v2.json \
+RAG_SEGURIDADES_OUTPUT=tmp/rag_seguridades_pilot_v2.json \
+bin/rails runner script/rag_seguridades_benchmark.rb
+```
+
+The default rubric for evaluate (when unset) is
 `script/fixtures/rag_seguridades_rubric.json`. Each question declares:
 
 - required claims;

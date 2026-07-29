@@ -7,6 +7,7 @@ import { formatAnswerForWeb } from "rag/answer_presenter"
 
 export default class extends Controller {
   static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack", "archivosTabBtn", "chatTabBtn", "archivosPanel", "chatPanel", "sourcesBadge"]
+  static values = { showSources: Boolean }
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
   static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
@@ -871,8 +872,11 @@ export default class extends Controller {
       ? citations
       : consultedDocuments.map((name) => ({ filename: name }))
 
-    const answerRow = this.addMessageHtml(formatAnswerForWeb(data.answer, citations), "assistant")
-    if (sourcesCitations.length) this.addMessageHtml(renderSources(sourcesCitations), "assistant")
+    const showSources = this.showSourcesValue
+    const answerHtml  = formatAnswerForWeb(data.answer, citations, { showMarkers: showSources })
+    const sourcesHtml = showSources && sourcesCitations.length ? renderSources(sourcesCitations) : ""
+
+    const answerRow = this.addMessageHtml(answerHtml + sourcesHtml, "assistant")
     if (Array.isArray(data.quick_replies) && data.quick_replies.length) {
       this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")
     }

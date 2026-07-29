@@ -16,7 +16,9 @@
 
 
   <%# Dashboard grid: 2/3 chat + 1/3 sidebar — rag-chat scope spans both columns %>
-  <div class="grid grid-cols-1 gap-0 md:gap-6 lg:grid-cols-3" data-controller="rag-chat">
+  <div class="grid grid-cols-1 gap-0 md:gap-6 lg:grid-cols-3"
+       data-controller="rag-chat"
+       data-rag-chat-show-sources-value="<%= ENV["SHOW_RAG_SOURCES"] == "true" %>">
     <%= render partial: "home/chat_box" %>
     <%# Sidebar — desktop only: SOLO Base de Conocimiento (overview cards eliminadas) %>
     <div class="hidden lg:flex flex-col gap-6">

@@ -133,30 +133,39 @@
   margin: 0.75rem 0;
 }
 
-/* Citations */
-.chat-message-text .citation {
+/* Citations — .chat-message is the class the controller emits; .chat-message-text is not. */
+.chat-message .citation {
   color: hsl(217, 91%, 45%);
   font-weight: 500;
-  cursor: pointer;
   text-decoration: underline;
 }
-.chat-message-text .citation:hover { color: hsl(217, 91%, 35%); }
 
-/* ─── Sources block (single "Fuentes:"/"Sources:" block after the answer) ─── */
+/* ─── Sources footer (collapsed <details> inside the assistant bubble) ─── */
 .chat-sources {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid hsl(215, 20%, 90%);
+  margin-top: 0.75rem;
+  border-top: 1px solid hsl(215, 20%, 92%);
 }
-.chat-sources-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: hsl(222, 47%, 10%);
-  margin: 0 0 0.75rem 0;
+.chat-sources-toggle {
+  display: flex;
+  align-items: center;
+  min-height: 44px;            /* touch target for gloved field use */
+  font-size: 0.8125rem;
+  color: hsl(215, 20%, 45%);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
 }
+.chat-sources-toggle::-webkit-details-marker { display: none; }
+.chat-sources-toggle::before {
+  content: "▸";
+  margin-right: 0.4rem;
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+.chat-sources[open] .chat-sources-toggle::before { transform: rotate(90deg); }
 .chat-sources-list {
   list-style: none;
-  padding: 0;
+  padding: 0 0 0.5rem 0;
   margin: 0;
   display: flex;
   flex-direction: column;

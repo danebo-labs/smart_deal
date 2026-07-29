@@ -21,14 +21,15 @@ export function resolveName(citation) {
 }
 
 // JS has no access to Rails i18n; kept in sync by hand with `rag.sources_label`
-// in config/locales/rag.*.yml. Detection matches the previous renderers'.
-function sourcesTitle() {
+// in config/locales/rag.*.yml.
+function sourcesLabel(count) {
   const lang = (document.documentElement.lang || "es").toLowerCase()
-  return lang.startsWith("en") ? "Sources:" : "Fuentes:"
+  return lang.startsWith("en") ? `Sources (${count})` : `Fuentes (${count})`
 }
 
-// @param {Array<{number, filename, title, page, metadata, matched_excerpt}>} citations
-// @returns {string} HTML snippet (empty string when no citations)
+// Returns a <details> fragment meant to live INSIDE the answer bubble, not as
+// its own .chat-message row — a separate row inherits the assistant card style
+// and reads as a tappable button that does nothing.
 export function renderSources(citations = []) {
   const safe = Array.isArray(citations) ? citations : []
   if (!safe.length) return ""
@@ -36,7 +37,12 @@ export function renderSources(citations = []) {
   const rows = safe.map((citation, index) => {
     const bullet = citation.number ? `[${citation.number}]` : (CIRCLED_NUMERALS[index] || `${index + 1}.`)
     const name = resolveName(citation)
-    const pageSuffix = citation.page ? `, p. ${citation.page}` : ""
+    // citation_processor.rb#build_numbered_references already appends " — p. N"
+    // to `title`, so adding it blindly yields "… — p. 82, p. 82" whenever
+    // metadata.canonical_name is absent and resolveName falls back to title.
+    const page = citation.page
+    const alreadyPaged = page && new RegExp(`p\\.?\\s*${page}\\s*$`, "i").test(name)
+    const pageSuffix = page && !alreadyPaged ? `, p. ${page}` : ""
     const excerpt = (citation.matched_excerpt || "").trim()
     const excerptSuffix = excerpt ? ` &mdash; &ldquo;${escape(excerpt)}&rdquo;` : ""
     return (
@@ -46,9 +52,9 @@ export function renderSources(citations = []) {
   }).join("")
 
   return `
-    <div class="chat-sources">
-      <p class="chat-sources-title">${sourcesTitle()}</p>
+    <details class="chat-sources">
+      <summary class="chat-sources-toggle">${sourcesLabel(safe.length)}</summary>
       <ul class="chat-sources-list">${rows}</ul>
-    </div>
+    </details>
   `
 }

@@ -44,15 +44,23 @@ function markdownToHtml(text) {
 }
 
 // Drop-in replacement for formatAnswer used by rag_chat_controller for web answers.
-// Keeps the same citation tooltip behaviour as citation_formatter.js#formatAnswer.
-export function formatAnswerForWeb(answerText, citations = []) {
+export function formatAnswerForWeb(answerText, citations = [], { showMarkers = true } = {}) {
   const safeCitations = Array.isArray(citations) ? citations : []
 
   const citationMap = {}
   safeCitations.forEach(c => { if (c.number) citationMap[c.number] = c })
 
-  const escaped     = escapeHtml(answerText)
+  const escaped      = escapeHtml(answerText)
   const withMarkdown = markdownToHtml(escaped)
+
+  // With the sources footer hidden there is nowhere for a [n] to point, so the
+  // marker is dropped from the rendered text. Only numbers that resolve to an
+  // actual citation are removed — these manuals quote schematics, and a literal
+  // "[24]" (terminal/pin) the model echoed must survive. The payload keeps
+  // `citations` intact.
+  if (!showMarkers) {
+    return withMarkdown.replace(/\s*\[(\d+)\]/g, (match, num) => (citationMap[num] ? "" : match))
+  }
 
   return withMarkdown.replace(/\[(\d+)\]/g, (_, num) => {
     const citation = citationMap[num]

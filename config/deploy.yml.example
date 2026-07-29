@@ -69,6 +69,7 @@ env:
     AWS_HTTP_READ_TIMEOUT: "90"
     QUERY_ROUTING_ENABLED: "false"
     SHARED_SESSION_ENABLED: "false"
+    SHOW_RAG_SOURCES: "false"
   secret:
     - RAILS_MASTER_KEY
     - DB_PASSWORD

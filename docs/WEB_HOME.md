@@ -12,7 +12,9 @@ Mobile-first layout for field technicians.
 - **Breakpoints:** default = phone; **`sm:`** restores the single-row chat
   input; **`lg:`** shows the desktop sidebar KB card (mobile uses the in-chat
   `mobile-docs-panel` strip, `md:hidden`). The internal usage footer is rendered
-  only with `SHOW_USAGE_METRICS=true`.
+  only with `SHOW_USAGE_METRICS=true`. The inline `[n]` citation markers and the
+  collapsible "Fuentes"/"Sources" footer inside the answer bubble render only
+  with `SHOW_RAG_SOURCES=true`.
 - **Chat input:** column layout on small screens (textarea full width, then attach + send); desktop keeps inline clip + textarea + send.
 
 ### Unified KB card, pagination, refresh

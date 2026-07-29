@@ -10,7 +10,8 @@ class RagSeguridadesBenchmark
 
   def initialize(env: ENV)
     @env = env
-    @rubric = JSON.parse(File.read(RUBRIC_PATH))
+    rubric_path = env.fetch("RAG_SEGURIDADES_RUBRIC", RUBRIC_PATH)
+    @rubric = JSON.parse(File.read(rubric_path))
     @output_path = env.fetch(
       "RAG_SEGURIDADES_OUTPUT",
       Rails.root.join("tmp/rag_seguridades_benchmark.json").to_s
@@ -45,7 +46,7 @@ class RagSeguridadesBenchmark
         s3_key: document.s3_key,
         source_uri: source_uri
       },
-      visual_text_audit: rubric.fetch("visual_text_audit"),
+      visual_text_audit: rubric.fetch("visual_text_audit", []),
       results: results
     }
     payload[:evaluation] = Rag::BenchmarkRubricEvaluator.new(

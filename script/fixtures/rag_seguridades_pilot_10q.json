@@ -1,0 +1,189 @@
+{
+  "version": "seguridades-pilot-v1.2",
+  "description": "Batería de 10 preguntas para calificar precisión del RAG sobre SEGURIDADES 1.1-1 antes de liberar a piloto. Cubre recuperación directa, interpretación de esquemas, comparación entre páginas, detección de contradicciones y abstención ante información ausente.",
+  "citation_required": true,
+  "passing_score": 24,
+  "max_score": 30,
+  "cases": [
+    {
+      "id": "altius_d9_d10",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En ALTIUS, ¿qué serie indica el LED D9 y qué serie indica el LED D10?",
+      "source_pages": [7],
+      "required": [
+        {"label": "identifica D9", "pattern": "\\bD9\\b"},
+        {"label": "serie D9 correcta", "pattern": "SERIE SEGURIDAD(?:ES)? HUECO"},
+        {"label": "identifica D10", "pattern": "\\bD10\\b"},
+        {"label": "serie D10 correcta", "pattern": "SERIE SEGURIDAD CABINA"}
+      ],
+      "optional": [
+        {"label": "cita página 7", "pattern": "(?:p[aá]gina|p\\.)\\s*7"}
+      ],
+      "penalized": [
+        {"label": "inventa función no documentada", "pattern": "(?:D9|D10).{0,60}(?:sobrecarga|limitador|freno)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "tpr60_pp",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En el modelo TPR60 de Carlos Silva, ¿a qué serie corresponde el LED PP?",
+      "source_pages": [10],
+      "required": [
+        {"label": "identifica PP", "pattern": "\\bPP\\b"},
+        {"label": "serie correcta", "pattern": "SERIE PUERTAS CABINA\\s*[-–—]\\s*EXTERIORES"}
+      ],
+      "optional": [
+        {"label": "cita página 10", "pattern": "(?:p[aá]gina|p\\.)\\s*10"}
+      ],
+      "penalized": [
+        {"label": "confunde con TPR50/TPR70", "pattern": "(?:TPR50|TPR70).{0,40}\\bPP\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "cta_cr8ph2_sph",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa CR8PH2 de CTA, ¿qué LED indica que las puertas cabina/exterior están cerradas y en qué placa se encuentra?",
+      "source_pages": [19, 20],
+      "required": [
+        {"label": "identifica LED", "pattern": "\\bSPH\\b"},
+        {"label": "identifica placa", "pattern": "\\bCR8PH2\\b"},
+        {"label": "serie correcta", "pattern": "SERIE PUERTAS CAB\\. EXT\\. CERRADA"}
+      ],
+      "optional": [
+        {"label": "cita páginas 19-20", "pattern": "(?:p[aá]gina|p\\.)\\s*(?:19|20)"}
+      ],
+      "penalized": [
+        {"label": "confunde con SR8P/M8PC/CR10P", "pattern": "\\b(?:SR8P|M8PC|CR10P)\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "em3000_leds_seguridad",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa EM3000 eléctrica, ¿qué LEDs identifican las series de seguridades principales, puertas y cerraduras?",
+      "source_pages": [29],
+      "required": [
+        {"label": "identifica SEG", "pattern": "\\bSEG\\b"},
+        {"label": "identifica SPE", "pattern": "\\bSPE\\b"},
+        {"label": "identifica SCC", "pattern": "\\bSCC\\b"},
+        {"label": "series correctas", "pattern": "(?:SEGURIDADES PRINCIPALES|PUERTAS CABINA - EXTERIORES|CERRADURAS CABINA -EXTERIORES)"}
+      ],
+      "optional": [
+        {"label": "distingue eléctrico de hidráulico", "pattern": "(?:el[eé]ctrico|hidr[aá]ulico)"}
+      ],
+      "penalized": [
+        {"label": "mezcla con EM2000/4000", "pattern": "\\b(?:SCE|AP)\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "em3000_fotocelula_tension",
+      "category": "comparacion_entre_paginas",
+      "severity": "critical",
+      "question": "Compara las placas EM3000 eléctrica e hidráulica: ¿qué tensión documenta el esquema para la fotocélula / obstáculo en ambas?",
+      "source_pages": [29, 30],
+      "required": [
+        {"label": "incluye 220 V", "pattern": "\\b220\\s*V\\b"},
+        {"label": "aplica a ambas versiones", "pattern": "(?:amb[ao]s|l[ao]s dos|el[eé]ctrica.{0,60}hidr[aá]ulica)"}
+      ],
+      "optional": [
+        {"label": "cita páginas 29 y 30", "pattern": "(?=.*(?:29))(?=.*(?:30))"}
+      ],
+      "penalized": [
+        {"label": "atribuye 24 V a la fotocélula", "pattern": "fotoc[eé]lula\\b(?:(?!obst[aá]cul|conector|\\bCN\\b)[^.;\\n]){0,40}\\b24\\s*V\\b(?![^.;\\n]*(?:obst[aá]cul|conector|\\bCN\\b))|\\b24\\s*V\\b(?:(?!obst[aá]cul|conector|\\bCN\\b)[^.;\\n]){0,40}fotoc[eé]lula\\b(?![^.;\\n]*(?:obst[aá]cul|conector|\\bCN\\b))", "severity": "critical"},
+        {"label": "diferencia tensión entre versiones", "pattern": "\\b(?:el[eé]ctrica|hidr[aá]ulic[ao])\\b[^.\\n]*\\b220\\s*V\\b[^.\\n]*\\b(?:el[eé]ctrica|hidr[aá]ulic[ao])\\b[^.\\n]*\\b24\\s*V\\b|\\b(?:el[eé]ctrica|hidr[aá]ulic[ao])\\b[^.\\n]*\\b24\\s*V\\b[^.\\n]*\\b(?:el[eé]ctrica|hidr[aá]ulic[ao])\\b[^.\\n]*\\b220\\s*V\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "em2000_contradiccion_conectores",
+      "category": "contradicciones",
+      "severity": "critical",
+      "question": "En EM2000, el encabezado del obstáculo dice 'CONECTORES CN7 Y CN8', pero el dibujo muestra otros conectores. ¿Qué conectores aparecen en el dibujo y qué conclusión se debe sacar?",
+      "source_pages": [31, 32],
+      "required": [
+        {"label": "incluye CN7", "pattern": "\\bCN-?7\\b"},
+        {"label": "incluye CN8", "pattern": "\\bCN-?8\\b"},
+        {"label": "incluye CN9", "pattern": "\\bCN-?9\\b"},
+        {"label": "expone contradicción", "pattern": "(?:contradic|discrepan|difiere|no coincide|encabezado.{0,300}(?:dibujo|diagrama))"}
+      ],
+      "optional": [
+        {"label": "recomienda verificar en campo", "pattern": "(?:Verificar en campo|esquema completo|manual completo)"}
+      ],
+      "penalized": [
+        {"label": "resuelve arbitrariamente", "pattern": "(?:el correcto es|definitivamente|sin duda)", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "edel_k2_led31",
+      "category": "informacion_ausente",
+      "severity": "technical_important",
+      "question": "En EDEL-K2, ¿qué indica el LED 31 y bajo qué condiciones se enciende?",
+      "source_pages": [25],
+      "required": [
+        {"label": "identifica LED 31", "pattern": "\\b31\\b"},
+        {"label": "nombre de serie", "pattern": "REAPERTURA"},
+        {"label": "se abstiene de condiciones no documentadas", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato)"}
+      ],
+      "optional": [
+        {"label": "cita página 25", "pattern": "(?:p[aá]gina|p\\.)\\s*25"}
+      ],
+      "penalized": [
+        {"label": "inventa condición de encendido", "pattern": "(?:^|[.\\n])(?![^.\\n]*\\b(?:no|ni|si|tampoco)\\b)[^.\\n]*\\bse enciende\\s+cuando\\b[^.\\n]{0,80}(?:fallo|aver[ií]a|normal|puerta)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "ekm66_h40_sin_averia",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En el modelo EKM66, ¿qué LED indica que el ascensor está sin avería?",
+      "source_pages": [44, 75],
+      "required": [
+        {"label": "identifica LED", "pattern": "\\bH40\\b"},
+        {"label": "estado correcto", "pattern": "ASCENSOR\\s+SIN\\s+AVER[IÍ]A"}
+      ],
+      "optional": [
+        {"label": "menciona fabricante/modelo", "pattern": "(?:EKM66|FAIN|RECOBA)"}
+      ],
+      "penalized": [
+        {"label": "asigna LED incorrecto", "pattern": "\\b(?:SK0|SK1|SK2|H1|H2)\\b.{0,60}sin aver[ií]a", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "mr08_sci_conectores",
+      "category": "recuperacion_textual_directa",
+      "severity": "critical",
+      "question": "En MR08, ¿dónde se conectan las fotocélulas del obstáculo identificadas como SCI?",
+      "source_pages": [22],
+      "required": [
+        {"label": "identifica SCI", "pattern": "\\bSCI\\b"},
+        {"label": "incluye CN-112.SC", "pattern": "\\bCN-?112\\.SC\\b"},
+        {"label": "incluye CN-109.CC", "pattern": "\\bCN-?109\\.CC\\b"}
+      ],
+      "optional": [
+        {"label": "cita página 22", "pattern": "(?:p[aá]gina|p\\.)\\s*22"}
+      ],
+      "penalized": [
+        {"label": "usa conectores inexistentes", "pattern": "\\bX(?:SSC|SSH2)\\b", "severity": "critical"}
+      ]
+    },
+    {
+      "id": "cerrojos_conexion_generica",
+      "category": "ambiguas",
+      "severity": "technical_important",
+      "question": "¿Cómo se conectan los cerrojos en las placas de seguridad?",
+      "source_pages": [11, 14, 22],
+      "required": [
+        {"label": "reconoce variabilidad", "pattern": "(?:var[ií]a|depende|diferente|varios modelos|fabricante)"},
+        {"label": "solicita selección de modelo", "pattern": "(?:selecciona|indica|especifica).{0,60}(?:fabricante|placa|modelo)"}
+      ],
+      "optional": [
+        {"label": "ofrece ejemplos concretos", "pattern": "\\d+\\.\\s+[^\\n]+(?:—|-)[^\\n]+"}
+      ],
+      "penalized": [
+        {"label": "da respuesta universal", "pattern": "(?:en todas las placas|siempre se conecta|conexi[oó]n universal|todos los modelos)", "severity": "technical_important"}
+      ]
+    }
+  ]
+}

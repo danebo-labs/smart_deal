@@ -1,6 +1,6 @@
 # Plan RAG SEGURIDADES v2 — precisión y usabilidad
 
-**Estado:** ejecución local completada hasta el gate previo a sincronización; ver detalle a continuación.
+**Estado:** Paso G ejecutado; metadata sincronizada, gates externos fallidos y Paso H bloqueado.
 **Fecha:** 2026-07-29.
 **Entorno diagnosticado:** producción, de forma únicamente lectora, mediante Kamal.
 **Regla de ejecución:** no sincronizar el Knowledge Base, cambiar flags en producción ni desplegar esta versión sin autorización explícita y sin cerrar los gates externos.
@@ -15,9 +15,12 @@
 | D — tarjetas y accesibilidad | implementado y validado localmente a 320/375/430 px |
 | E — locales | implementado en español e inglés |
 | F — medición «antes» | ejecutada; fixture v2.1 = **6/10**, por lo que no habilita release |
-| G — backfill/sincronización | sidecars respaldados y actualizados en S3 bajo autorización previa; **sincronización KB no ejecutada** |
-| H — despliegue/flags | **no ejecutado para esta versión**; flags permanecen apagados |
-| I — cierre | documentación y validaciones locales completas; faltan los gates externos de G/H |
+| G — backfill/sincronización | job `D3QMVZNBEH` completado: 97 metadata modificadas; medición «después» v2.1 = **6/10**, selector sobre-ambiguo |
+| H — despliegue/flags | **bloqueado por gates fallidos**; no ejecutado y flags apagados |
+| I — cierre | resultado externo de G documentado; falta corregir selector y repetir gates antes de H |
+
+Resultado completo de G:
+[RAG_SEGURIDADES_PASO_G_DESPUES_2026-07-30.md](RAG_SEGURIDADES_PASO_G_DESPUES_2026-07-30.md).
 
 El despliegue que el usuario ejecutó desde `main` ocurrió antes del fast-forward local
 de `7c5e954` a `2d1e141`; por tanto no contiene ni el selector de Fase 1 ni los cambios

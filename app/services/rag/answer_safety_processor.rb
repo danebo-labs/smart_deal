@@ -55,6 +55,17 @@ module Rag
       @locale = normalize_locale(locale)
     end
 
+    # Split on real sentence boundaries only. A period between alphanumerics is
+    # part of an identifier (CN-112.SC, CN-109.CC) and must not break the fragment,
+    # otherwise a documented connector is split apart and falsely rejected (MR08).
+    # Public so other evidence-fragment consumers (Rag::EvidenceCandidateSelector)
+    # reuse this exact split instead of reimplementing it.
+    FRAGMENT_SPLIT_PATTERN = /[\n!?]+|\.(?=\s|\z)/.freeze
+
+    def self.fragments(text)
+      text.to_s.split(FRAGMENT_SPLIT_PATTERN).map(&:strip).reject(&:empty?)
+    end
+
     def self.requires_evidence?(answer)
       text = answer.to_s
       text.match?(IDENTIFIER_PATTERN) ||
@@ -230,14 +241,10 @@ module Rag
       end.join("\n")
     end
 
-    # Split on real sentence boundaries only. A period between alphanumerics is
-    # part of an identifier (CN-112.SC, CN-109.CC) and must not break the fragment,
-    # otherwise a documented connector is split apart and falsely rejected (MR08).
     def evidence_fragments(evidence)
       @evidence_fragments = nil unless defined?(@last_evidence) && @last_evidence == evidence
       @last_evidence = evidence
-      @evidence_fragments ||=
-        evidence.to_s.split(/[\n!?]+|\.(?=\s|\z)/).map(&:strip).reject(&:empty?)
+      @evidence_fragments ||= self.class.fragments(evidence)
     end
 
     def relationship_fragment?(fragment)

@@ -23,7 +23,7 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
   end
 
   test "pilot v2 rubric version is locked" do
-    assert_equal "seguridades-pilot-v2.0", PILOT_V2.fetch("version")
+    assert_equal "seguridades-pilot-v2.1", PILOT_V2.fetch("version")
     assert_equal 10, PILOT_V2.fetch("cases").size
     assert_equal 24, PILOT_V2.fetch("passing_score")
     ids = PILOT_V2.fetch("cases").map { |definition| definition.fetch("id") }
@@ -44,6 +44,29 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
     assert_match cn, "Los conectores son CN9 y CN7 en el dibujo de EM4000."
     assert_no_match cn, "El encabezado documenta XC4 y XC7."
     assert_no_match cn, "No confundir con los CN7/CN8 del EM2000."
+  end
+
+  # v2.1: the v2.0 pattern's CN-near-EM4000 branch matched across an entire
+  # sentence with no owner check, so a correct contrastive answer that names
+  # EM2000's real CN7/CN8/CN9 in the same sentence as EM4000's XC4/XC7 was
+  # scored as a critical invention (PDF l.1017/1019/1060 document CN7/CN8/CN9
+  # for EM2000, not EM4000 — same lexical-collision class already fixed once
+  # for em3000_fotocelula_tension in v1.1→v1.2). The check now fires only when
+  # the CN7/CN8/CN9 mention is not preceded, within the same clause, by an
+  # EM2000 or EM3000 attribution.
+  test "pilot v2 em4000 connector check does not fire on a correct EM2000/EM4000 contrast" do
+    cn = pilot_v2_check("em4000_obstaculo_conectores", "penalized", "inventa conectores CN7/CN8/CN9")
+
+    [
+      "En EM2000 el obstáculo usa CN7/CN8; en EM4000 V1 son XC4/XC7.",
+      "En EM2000 son CN7/CN8; en EM4000 V1, XC4/XC7.",
+      "En EM2000 el obstáculo usa CN7 y CN8, y en EM4000 V1 son XC4 y XC7."
+    ].each { |answer| assert_no_match cn, answer, "a correct EM2000/EM4000 contrast must not be penalized: #{answer}" }
+
+    [
+      "EM4000 usa los conectores CN7 y CN8.",
+      "En EM4000 V1 el obstáculo usa los conectores CN7 y CN8."
+    ].each { |answer| assert_match cn, answer, "attributing CN7/CN8/CN9 to EM4000 must still be penalized: #{answer}" }
   end
 
   # v2 critical: TOKIBAT DL27 names the series but not ON logic — same abstention

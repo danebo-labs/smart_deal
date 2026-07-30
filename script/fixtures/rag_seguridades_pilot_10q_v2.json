@@ -1,5 +1,5 @@
 {
-  "version": "seguridades-pilot-v2.0",
+  "version": "seguridades-pilot-v2.1",
   "description": "Batería de verificación v2 (10 preguntas) sobre SEGURIDADES 1.1-1. Distinta de la piloto certificada v1.2: ejercita las mismas clases de fallo (retrieval, confusión intra-fabricante, mezcla EM, conectores críticos, abstención, ambigüedad) con equipos/LEDs no calibrados en v1.2, para medir generalización.",
   "citation_required": true,
   "passing_score": 24,
@@ -94,7 +94,7 @@
         {"label": "cita página 33", "pattern": "(?:p[aá]gina|p\\.)\\s*33"}
       ],
       "penalized": [
-        {"label": "inventa conectores CN7/CN8/CN9", "pattern": "(?:usa|usan|documenta|aparecen?|conectores?(?:\\s+son|\\s*=|:)).{0,40}\\bCN-?[789]\\b|\\bCN-?[789]\\b.{0,40}(?:EM\\s*4000|obst[aá]culo)", "severity": "critical"},
+        {"label": "inventa conectores CN7/CN8/CN9", "pattern": "(?:\\A|(?<=[.;\\n]))(?:(?!EM\\s*2000\\b|EM\\s*3000\\b|[.;\\n]).)*?(?:usa|usan|documenta|aparecen?|conectores?(?:\\s+son|\\s*=|:))[^.;\\n]{0,40}\\bCN-?[789]\\b|(?:\\A|(?<=[.;\\n]))(?:(?!EM\\s*2000\\b|EM\\s*3000\\b|[.;\\n]).)*?\\bCN-?[789]\\b[^.;\\n]{0,40}(?:EM\\s*4000|obst[aá]culo)", "severity": "critical"},
         {"label": "usa conectores inexistentes", "pattern": "\\bX(?:SSC|SSH2)\\b", "severity": "critical"}
       ]
     },

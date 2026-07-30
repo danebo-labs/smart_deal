@@ -46,7 +46,7 @@ Both scripts accept `RAG_SEGURIDADES_RUBRIC` to select a rubric file. Defaults:
 
 - 12-case regression: `script/fixtures/rag_seguridades_rubric.json` (`seguridades-v3.2`)
 - certified pilot 10q: `script/fixtures/rag_seguridades_pilot_10q.json` (`seguridades-pilot-v1.2`)
-- generalization pilot 10q v2: `script/fixtures/rag_seguridades_pilot_10q_v2.json` (`seguridades-pilot-v2.0`)
+- generalization pilot 10q v2: `script/fixtures/rag_seguridades_pilot_10q_v2.json` (`seguridades-pilot-v2.1`)
 
 ```bash
 RAG_SEGURIDADES_RUBRIC=script/fixtures/rag_seguridades_pilot_10q_v2.json \

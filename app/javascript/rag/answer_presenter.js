@@ -44,7 +44,13 @@ function markdownToHtml(text) {
 }
 
 // Drop-in replacement for formatAnswer used by rag_chat_controller for web answers.
-export function formatAnswerForWeb(answerText, citations = [], { showMarkers = true } = {}) {
+// The backend already decides whether a [n] marker survives (RagController strips
+// markers that resolve to a real citation when SHOW_RAG_SOURCES is off, preserving
+// non-resolving markers like a literal "[24]" pin/terminal — see
+// docs/RAG_RESOLUTION_MODE_CONTRACT_FASE3_2026-07-29.md §1 C2). So there is a single
+// rule here regardless of flag state: wrap a marker as a citation span only if it
+// resolves against `citations`; otherwise leave it untouched.
+export function formatAnswerForWeb(answerText, citations = []) {
   const safeCitations = Array.isArray(citations) ? citations : []
 
   const citationMap = {}
@@ -53,21 +59,13 @@ export function formatAnswerForWeb(answerText, citations = [], { showMarkers = t
   const escaped      = escapeHtml(answerText)
   const withMarkdown = markdownToHtml(escaped)
 
-  // With the sources footer hidden there is nowhere for a [n] to point, so the
-  // marker is dropped from the rendered text. Only numbers that resolve to an
-  // actual citation are removed — these manuals quote schematics, and a literal
-  // "[24]" (terminal/pin) the model echoed must survive. The payload keeps
-  // `citations` intact.
-  if (!showMarkers) {
-    return withMarkdown.replace(/\s*\[(\d+)\]/g, (match, num) => (citationMap[num] ? "" : match))
-  }
-
-  return withMarkdown.replace(/\[(\d+)\]/g, (_, num) => {
+  return withMarkdown.replace(/\[(\d+)\]/g, (match, num) => {
     const citation = citationMap[num]
-    const title    = citation?.title || citation?.filename || "Document"
-    const content  = citation?.content || ""
-    const snippet  = content.length > 150 ? content.slice(0, 150) + "…" : content
-    const tooltip  = escapeHtml(snippet ? `${title} – ${snippet}` : title)
+    if (!citation) return match
+
+    const title   = citation.title || citation.filename || "Document"
+    const excerpt = citation.tooltip_excerpt || ""
+    const tooltip = escapeHtml(excerpt ? `${title} – ${excerpt}` : title)
 
     return `<span class="citation" title="${tooltip}" data-citation-number="${num}">[${num}]</span>`
   })

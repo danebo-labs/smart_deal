@@ -35,6 +35,26 @@ es:
     unsupported_connection: "La relación componente-conector no está documentada explícitamente en la evidencia recuperada; confírmala en el esquema completo."
     undocumented_led_logic: "El documento identifica %{identifier}, pero no define su lógica de encendido."
     unsupported_device_function: "El documento identifica el dispositivo, pero no documenta esa caracterización funcional."
+    insufficient_reason:
+      model_required: "Encontré documentación para este código en varios modelos. Indicá el fabricante y la placa para que te dé la información exacta."
+      identifier_not_in_evidence: "El código que consultás no aparece en los documentos indexados. Verificá la grafía y probá sin espacios o caracteres especiales."
+      relation_not_documented: "El identificador está documentado, pero el manual no especifica este dato. Podés usar el esquema técnico o consultar la placa directamente."
+      function_without_identifier: "La función está documentada, pero sin el código o la placa que la distingue. Buscá la identificación del componente en el esquema o en la etiqueta."
+      no_candidate_retrieved: "La búsqueda no encontró candidatos en los documentos indexados. Probá reformular la consulta o subí el manual relevante."
+    abstained_relations:
+      attribution: "El identificador está documentado con otra información disponible, pero no está claro a qué serie o modelo corresponde."
+      state: "El componente está documentado, pero el manual no especifica los estados, niveles o condiciones del dato consultado."
+      connection: "Los componentes están documentados por separado, pero la relación o conexión entre ellos no está explícita en la evidencia."
+      location: "El componente o la función están documentados, pero su ubicación física no aparece especificada en el manual."
+    resolution_ui:
+      insufficient: "La evidencia recuperada no permite resolver esta consulta con seguridad."
+      evidence_label: "Ver evidencia"
+      cards_label: "Contextos documentados"
+      breadcrumb_label: "Contexto de la evidencia"
+      use_board: "Usar esta placa"
+      view_document: "Ver en el documento"
+      page: "p."
+      show_more_contexts: "Ver %{count} contextos más"
     ambiguous_model_prompt: "La evidencia recuperada corresponde a varias placas o modelos — elige una o indica el fabricante y la placa exacta:"
     model_selection_query: "Fabricante y placa: %{model}"
     document_overview:

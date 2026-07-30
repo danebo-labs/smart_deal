@@ -9,6 +9,11 @@ class PilotUsageLog
     cache_status result error_class image_digest_prefix canonical_name
     manufacturer model_visible condition visible_codes
     results_count filter_applied
+    generation_mode resolution_mode needs_selection
+    answered_relations abstained_relations insufficient_reason
+    contexts_delivered groups_total document_id source_uri page chunk_sha256
+    excerpt_sha256 excerpt question_sha256 answer_sha256 selector_version
+    expansion_mechanism rejection_reasons sources_visible
   ].freeze
 
   class << self

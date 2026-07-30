@@ -331,6 +331,76 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     assert_equal content, reference[:matched_excerpt]
   end
 
+  # ===== tooltip_excerpt / content removal (Fase 3 §1 C1) =====
+
+  test "build_numbered_references never includes a content key" do
+    citations = [
+      { content: "Contenido de prueba.", location: { key: "manual.pdf" }, metadata: {} }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(citations, "[1]").first
+
+    assert_not reference.key?(:content)
+  end
+
+  test "build_numbered_references exposes tooltip_excerpt truncated to 150 characters" do
+    long_content = "x" * 300
+    citations = [
+      { content: long_content, location: { key: "manual.pdf" }, metadata: {} }
+    ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(citations, "[1]").first
+
+    assert reference[:tooltip_excerpt].length <= 150
+    assert_equal long_content.truncate(150), reference[:tooltip_excerpt]
+  end
+
+  test "build_numbered_references tooltip_excerpt is nil when content is blank" do
+    citations = [ { content: "", location: {}, metadata: {} } ]
+
+    reference = Bedrock::CitationProcessor.new.build_numbered_references(citations, "[1]").first
+
+    assert_nil reference[:tooltip_excerpt]
+  end
+
+  # ===== strip_resolved_markers (Fase 3 §1 C2) =====
+
+  test "strip_resolved_markers removes a marker that resolves to a real citation" do
+    citations = [ { number: 1 } ]
+
+    result = Bedrock::CitationProcessor.new.strip_resolved_markers("EPC en B8.[1]", citations)
+
+    assert_equal "EPC en B8.", result
+  end
+
+  test "strip_resolved_markers preserves a bracketed number that is not a real citation (regression: literal [24] pin)" do
+    citations = [ { number: 1 } ]
+    answer = "El terminal [24] alimenta la bobina.[1]"
+
+    result = Bedrock::CitationProcessor.new.strip_resolved_markers(answer, citations)
+
+    assert_equal "El terminal [24] alimenta la bobina.", result
+  end
+
+  test "strip_resolved_markers preserves every marker when citations is empty" do
+    result = Bedrock::CitationProcessor.new.strip_resolved_markers("Ver borne [24].", [])
+
+    assert_equal "Ver borne [24].", result
+  end
+
+  test "transport_references removes deterministic content and derives a bounded tooltip" do
+    references = [
+      { number: 1, title: "Manual", content: "x" * 300, metadata: { "page_number" => 9 } }
+    ]
+
+    result = Bedrock::CitationProcessor.new.transport_references(references).first
+
+    assert_not result.key?(:content)
+    assert_equal(("x" * 300).truncate(150), result[:tooltip_excerpt])
+    assert_equal({ "page_number" => 9 }, result[:metadata])
+    assert references.first.key?(:content), "transport normalization must not mutate the internal citation"
+  end
+
   test "matched_excerpt does not alter filename, title, or page" do
     citations = [
       {

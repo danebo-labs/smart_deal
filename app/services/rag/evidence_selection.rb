@@ -17,6 +17,7 @@ module Rag
   EvidenceSelection::EvidenceContext = Data.define(
     :section_key, :board_key, :label, :breadcrumb,
     :document_id, :source_uri, :page_number,
+    :evidence_target,
     :evidence_excerpt,   # phrase from the BODY that answers the relation
     :identifiers,        # Array<Rag::QueryAnalysis::Identifier> present in the evidence
     :relations_covered,  # Set<Symbol>

@@ -35,6 +35,26 @@ en:
     unsupported_connection: "The component-to-connector relationship is not explicitly documented in the retrieved evidence; confirm it against the complete schematic."
     undocumented_led_logic: "The document identifies %{identifier}, but does not define its on/off logic."
     unsupported_device_function: "The document identifies the device, but does not document that functional characterization."
+    insufficient_reason:
+      model_required: "I found this code documented in multiple models. Tell me the manufacturer and board so I can give you the right information."
+      identifier_not_in_evidence: "That code doesn't appear in the indexed documents. Double-check the spelling, or try it without spaces or special characters."
+      relation_not_documented: "The identifier is documented, but the manual doesn't specify this relationship. Check the technical schematic or the component label directly."
+      function_without_identifier: "The function is documented, but without the code or board that identifies it. Look for the component ID on the schematic or nameplate."
+      no_candidate_retrieved: "The search didn't find matches in the indexed documents. Try rephrasing the question or upload the relevant manual."
+    abstained_relations:
+      attribution: "The identifier is documented with other information available, but it's unclear which series or model it belongs to."
+      state: "The component is documented, but the manual doesn't specify the states, levels, or conditions for this data."
+      connection: "The components are documented separately, but the relationship or connection between them is not explicit in the evidence."
+      location: "The component or function is documented, but its physical location is not specified in the manual."
+    resolution_ui:
+      insufficient: "The retrieved evidence cannot resolve this query safely."
+      evidence_label: "View evidence"
+      cards_label: "Documented contexts"
+      breadcrumb_label: "Evidence context"
+      use_board: "Use this board"
+      view_document: "View in document"
+      page: "p."
+      show_more_contexts: "View %{count} more contexts"
     ambiguous_model_prompt: "The retrieved evidence covers several boards or models — pick one or provide the exact manufacturer and board:"
     model_selection_query: "Manufacturer and board: %{model}"
     document_overview:

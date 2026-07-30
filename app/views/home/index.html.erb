@@ -15,10 +15,25 @@
 
 
 
+  <% resolution_copy = {
+    ambiguous: I18n.t("rag.ambiguous_model_prompt"),
+    insufficient: I18n.t("rag.resolution_ui.insufficient"),
+    evidence_label: I18n.t("rag.resolution_ui.evidence_label"),
+    cards_label: I18n.t("rag.resolution_ui.cards_label"),
+    breadcrumb_label: I18n.t("rag.resolution_ui.breadcrumb_label"),
+    use_board: I18n.t("rag.resolution_ui.use_board"),
+    view_document: I18n.t("rag.resolution_ui.view_document"),
+    page: I18n.t("rag.resolution_ui.page"),
+    show_more_contexts: I18n.t("rag.resolution_ui.show_more_contexts"),
+    insufficient_reason: I18n.t("rag.insufficient_reason"),
+    abstained_relations: I18n.t("rag.abstained_relations")
+  } %>
   <%# Dashboard grid: 2/3 chat + 1/3 sidebar — rag-chat scope spans both columns %>
   <div class="grid grid-cols-1 gap-0 md:gap-6 lg:grid-cols-3"
        data-controller="rag-chat"
-       data-rag-chat-show-sources-value="<%= ENV["SHOW_RAG_SOURCES"] == "true" %>">
+       data-rag-chat-show-sources-value="<%= Rag::SourcesVisibility.enabled? %>"
+       data-rag-chat-evidence-cards-value="<%= Rag::EvidenceCardsFlag.enabled? %>"
+       data-rag-chat-resolution-copy-value="<%= resolution_copy.to_json %>">
     <%= render partial: "home/chat_box" %>
     <%# Sidebar — desktop only: SOLO Base de Conocimiento (overview cards eliminadas) %>
     <div class="hidden lg:flex flex-col gap-6">

@@ -25,6 +25,14 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end
 
+  def with_mock_bedrock_rag_service(mock_service)
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |*_args, **_kwargs| mock_service }
+    yield
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+  end
+
   def create_mock_orchestrator(answer:, citations: [], session_id: TEST_SESSION_ID,
                                should_raise: false, error_class: StandardError, error_message: nil,
                                documents_uploaded: nil, images_uploaded: nil, doc_refs: nil,
@@ -282,7 +290,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test 'returns successful response with answer and citations' do
+  test 'returns successful response with answer and citations when sources are visible' do
     sign_in @user
 
     citations = [{ filename: 'test.pdf', title: 'Test Document' }]
@@ -293,20 +301,179 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       session_id: TEST_SESSION_ID
     )
 
+    with_show_rag_sources('true') do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+        assert_response :success
+
+        json = json_response
+        assert_equal 'success', json['status']
+        assert_equal TEST_ANSWER, json['answer']
+        assert_equal TEST_SESSION_ID, json['session_id']
+        assert json.key?('citations')
+        assert json['citations'].is_a?(Array)
+        assert_equal 1, json['citations'].length
+        assert_equal 'test.pdf', json['citations'].first['filename']
+        assert_equal 'Test Document', json['citations'].first['title']
+      end
+    end
+  end
+
+  # ─── resolution contract (docs/RAG_RESOLUTION_MODE_CONTRACT_FASE3_2026-07-29.md) ─
+
+  test 'resolution is emitted with mode not_applicable and needs_selection false (no selector yet)' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
     with_mock_orchestrator(mock) do
       post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
       assert_response :success
 
-      json = json_response
-      assert_equal 'success', json['status']
-      assert_equal TEST_ANSWER, json['answer']
-      assert_equal TEST_SESSION_ID, json['session_id']
-      assert json.key?('citations')
-      assert json['citations'].is_a?(Array)
-      assert_equal 1, json['citations'].length
-      assert_equal 'test.pdf', json['citations'].first['filename']
-      assert_equal 'Test Document', json['citations'].first['title']
+      resolution = json_response['resolution']
+      assert_equal 'resolution_v1', resolution['contract_version']
+      assert_equal 'not_applicable', resolution['mode']
+      assert_equal false, resolution['needs_selection']
+      assert_equal [], resolution['answered_relations']
+      assert_equal [], resolution['abstained_relations']
+      assert_nil resolution['insufficient_reason']
+      assert_equal [], resolution['facts']
+      assert_equal [], resolution['evidence_cards']
     end
+  end
+
+  test 'resolution needs_selection is always the equality mode == ambiguous' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(answer: TEST_ANSWER, citations: [])
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+
+      resolution = json_response['resolution']
+      assert_equal(resolution['mode'] == 'ambiguous', resolution['needs_selection'])
+    end
+  end
+
+  test 'selector plus card flags expose the resolution contract while preserving the answer path' do
+    sign_in @user
+
+    question = '¿A qué serie corresponde el LED SPM?'
+    mock = create_mock_orchestrator(answer: 'Respuesta generativa existente.', citations: [])
+    rag_service = Object.new
+    rag_service.define_singleton_method(:retrieve_chunks) do |*_args, **_kwargs|
+      {
+        chunks: [
+          {
+            content: "## HIDRA TPR50\nSPM | SERIE PUERTAS CABINA - EXTERIORES",
+            metadata: {
+              "section_identity" => "CARLOS SILVA",
+              "canonical_name" => "SEGURIDADES 1.1-1",
+              "document_id" => "doc-1",
+              "page_number" => 9
+            },
+            location_uri: "s3://bucket/chunk_9.txt",
+            chunk_sha256: "chunk-9",
+            rank: 1
+          }
+        ]
+      }
+    end
+
+    with_evidence_flags(selector: "true", cards: "true") do
+      with_mock_orchestrator(mock) do
+        with_mock_bedrock_rag_service(rag_service) do
+          post rag_ask_url, params: { question: question }, as: :json
+        end
+      end
+    end
+
+    assert_response :success
+    json = json_response
+    assert_equal 'Respuesta generativa existente.', json['answer']
+    assert_equal 'direct', json.dig('resolution', 'mode')
+    assert_equal false, json.dig('resolution', 'needs_selection')
+    assert_equal 1, json.dig('resolution', 'evidence_cards').size
+    assert_nil json.dig('resolution', 'evidence_cards', 0, 'page')
+    assert_equal 'SPM', json.dig('resolution', 'facts', 0, 'identifier')
+  end
+
+  # ─── SHOW_RAG_SOURCES transport gate (§3.2/§3.3) ────────────────────────────
+
+  test 'with sources hidden, citations are not transported and content never appears' do
+    sign_in @user
+
+    citations = [{ number: 1, filename: 'test.pdf', title: 'Test Document', tooltip_excerpt: 'algo' }]
+    mock = create_mock_orchestrator(answer: "#{TEST_ANSWER}[1]", citations: citations)
+
+    with_show_rag_sources('false') do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+        assert_response :success
+
+        json = json_response
+        assert_equal [], json['citations']
+        assert_not @response.body.include?('"content"'), 'the flag-off payload must never carry chunk content'
+      end
+    end
+  end
+
+  test 'no payload ever contains a content key, flag on or off (§3.3 invariant 3)' do
+    sign_in @user
+
+    citations = [{ number: 1, filename: 'test.pdf', title: 'Test Document', tooltip_excerpt: 'algo' }]
+    mock = create_mock_orchestrator(answer: "#{TEST_ANSWER}[1]", citations: citations)
+
+    [ 'true', 'false' ].each do |flag|
+      with_show_rag_sources(flag) do
+        with_mock_orchestrator(mock) do
+          post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+          assert_not @response.body.include?('"content"'), "flag=#{flag} leaked a content key"
+        end
+      end
+    end
+  end
+
+  test 'a bracketed number that does not resolve to a citation survives with sources hidden (§3.3 invariant 4, C2 regression)' do
+    sign_in @user
+
+    citations = [{ number: 1, filename: 'test.pdf', title: 'Test Document' }]
+    mock = create_mock_orchestrator(
+      answer: 'El terminal [24] alimenta la bobina.[1]',
+      citations: citations
+    )
+
+    with_show_rag_sources('false') do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+
+        json = json_response
+        assert_includes json['answer'], '[24]'
+        assert_not_includes json['answer'], '[1]'
+      end
+    end
+  end
+
+  test 'resolution.mode, relations, and marker-free answer text match across both flag states (§3.3 invariant 1)' do
+    sign_in @user
+
+    citations = [{ number: 1, filename: 'test.pdf', title: 'Test Document' }]
+
+    results = [ 'true', 'false' ].map do |flag|
+      mock = create_mock_orchestrator(answer: "#{TEST_ANSWER}[1]", citations: citations)
+      with_show_rag_sources(flag) do
+        with_mock_orchestrator(mock) do
+          post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+          json_response
+        end
+      end
+    end
+
+    on_json, off_json = results
+    assert_equal on_json['resolution']['mode'], off_json['resolution']['mode']
+    assert_equal on_json['resolution']['answered_relations'], off_json['resolution']['answered_relations']
+    assert_equal on_json['resolution']['abstained_relations'], off_json['resolution']['abstained_relations']
+    assert_equal on_json['answer'].gsub(/\[\d+\]/, ''), off_json['answer'].gsub(/\[\d+\]/, '')
   end
 
   # ─── Fallback "Documentos consultados" (doc_refs without inline citations) ─
@@ -642,6 +809,29 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   ensure
     SharedSession.send(:remove_const, :ENABLED)
     SharedSession.const_set(:ENABLED, orig)
+  end
+
+  def with_show_rag_sources(value)
+    original = ENV.fetch("SHOW_RAG_SOURCES", nil)
+    ENV["SHOW_RAG_SOURCES"] = value
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("SHOW_RAG_SOURCES")
+    else
+      ENV["SHOW_RAG_SOURCES"] = original
+    end
+  end
+
+  def with_evidence_flags(selector:, cards:)
+    original_selector = ENV.fetch("RAG_EVIDENCE_SELECTOR_ENABLED", nil)
+    original_cards = ENV.fetch("RAG_EVIDENCE_CARDS_ENABLED", nil)
+    ENV["RAG_EVIDENCE_SELECTOR_ENABLED"] = selector
+    ENV["RAG_EVIDENCE_CARDS_ENABLED"] = cards
+    yield
+  ensure
+    original_selector.nil? ? ENV.delete("RAG_EVIDENCE_SELECTOR_ENABLED") : ENV["RAG_EVIDENCE_SELECTOR_ENABLED"] = original_selector
+    original_cards.nil? ? ENV.delete("RAG_EVIDENCE_CARDS_ENABLED") : ENV["RAG_EVIDENCE_CARDS_ENABLED"] = original_cards
   end
 
   test 'ask passes force_entity_filter: true when session has pins' do

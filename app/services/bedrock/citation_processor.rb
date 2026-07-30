@@ -89,7 +89,7 @@ class Bedrock::CitationProcessor
         title: title,
         filename: filename,
         page: page,
-        content: citation[:content],
+        tooltip_excerpt: citation[:content].to_s.presence&.truncate(TOOLTIP_EXCERPT_MAX_CHARS),
         location: location,
         metadata: metadata,
         matched_excerpt: matched_excerpt(citation[:content], question)
@@ -97,7 +97,35 @@ class Bedrock::CitationProcessor
     end
   end
 
+  # Strips [n] markers that resolve to a real entry in `citations`, leaving
+  # markers that do not resolve untouched — a manual quoting a schematic can
+  # emit a literal "[24]" (a terminal/pin) that is not an attribution marker.
+  # Must run on the full `citations` list, before the SHOW_RAG_SOURCES gate
+  # empties it for transport (docs/RAG_RESOLUTION_MODE_CONTRACT_FASE3_2026-07-29.md §1 C2).
+  def strip_resolved_markers(text, citations)
+    return text if text.blank?
+
+    numbers = Array(citations).filter_map { |c| c[:number] || c["number"] }.to_set
+    text.gsub(/\s*\[(\d+)\]/) { |match| numbers.include?($1.to_i) ? "" : match }
+  end
+
+  # Normalizes every citation route to the browser contract. Deterministic
+  # renderers historically supplied `content` directly instead of going through
+  # #build_numbered_references, so controller-level normalization is the final
+  # invariant: no response transports a complete chunk.
+  def transport_references(citations)
+    Array(citations).map do |citation|
+      reference = citation.to_h.deep_dup
+      content = reference.delete(:content) || reference.delete("content")
+      tooltip_key = reference.key?("tooltip_excerpt") ? "tooltip_excerpt" : :tooltip_excerpt
+      reference[tooltip_key] ||= content.to_s.presence&.truncate(TOOLTIP_EXCERPT_MAX_CHARS)
+      reference
+    end
+  end
+
   private
+
+  TOOLTIP_EXCERPT_MAX_CHARS = 150
 
   # Chunks are written as `header + body` (BatchResultsParserService#identity_header):
   # three bracketed metadata lines followed by a blank line. Never surface that

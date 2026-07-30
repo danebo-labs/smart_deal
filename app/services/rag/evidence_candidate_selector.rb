@@ -322,6 +322,7 @@ module Rag
         document_id: metadata["document_id"].presence,
         source_uri: metadata["original_source_uri"].presence || chunk[:location_uri],
         page_number: metadata["page_number"].presence&.to_i,
+        evidence_target: metadata["evidence_target"].presence || metadata["evidence_url"].presence,
         evidence_excerpt: fragment.to_s.strip.first(200),
         identifiers: matched_identifiers,
         relations_covered: relations_covered_for(fragment),

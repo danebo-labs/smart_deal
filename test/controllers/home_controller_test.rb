@@ -19,6 +19,23 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test 'index resolves evidence feature flags and localized copy on the server' do
+    original = ENV.fetch("RAG_EVIDENCE_CARDS_ENABLED", nil)
+    ENV["RAG_EVIDENCE_CARDS_ENABLED"] = "true"
+
+    get root_path
+
+    assert_response :success
+    assert_select '[data-rag-chat-evidence-cards-value="true"]', count: 1
+    assert_select '[data-rag-chat-resolution-copy-value]', count: 1 do |elements|
+      copy = JSON.parse(elements.first["data-rag-chat-resolution-copy-value"])
+      assert_equal "Usar esta placa", copy["use_board"]
+      assert_equal "Ver en el documento", copy["view_document"]
+    end
+  ensure
+    original.nil? ? ENV.delete("RAG_EVIDENCE_CARDS_ENABLED") : ENV["RAG_EVIDENCE_CARDS_ENABLED"] = original
+  end
+
   test 'layout includes png favicon asset' do
     get root_path
     assert_response :success

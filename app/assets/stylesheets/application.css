@@ -183,6 +183,140 @@
 }
 .chat-sources-name { font-weight: 600; }
 
+/* ─── Resolution evidence cards (Fase 3) ─────────────────────────────────── */
+.rag-evidence-resolution,
+.rag-direct-evidence,
+.rag-resolution-status {
+  margin-top: 0.75rem;
+  border-top: 1px solid hsl(215, 20%, 90%);
+  padding-top: 0.75rem;
+}
+
+.rag-resolution-prompt,
+.rag-resolution-status p {
+  margin: 0 0 0.75rem;
+  color: hsl(215, 28%, 25%);
+}
+
+.rag-evidence-card-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.rag-evidence-card {
+  border: 1px solid hsl(215, 20%, 82%);
+  border-radius: 0.75rem;
+  background: hsl(210, 40%, 98%);
+  padding: 0.75rem;
+}
+
+.rag-evidence-card-label {
+  margin: 0;
+  color: hsl(222, 47%, 12%);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.rag-evidence-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  color: hsl(215, 20%, 36%);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.rag-evidence-excerpt {
+  margin: 0.65rem 0 0;
+  border-left: 3px solid hsl(217, 91%, 50%);
+  padding-left: 0.65rem;
+  color: hsl(222, 35%, 18%);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.rag-evidence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.rag-evidence-page {
+  color: hsl(215, 20%, 35%);
+  font-size: 0.8125rem;
+}
+
+.rag-evidence-primary-action,
+.rag-evidence-secondary-action,
+.rag-direct-evidence > summary,
+.rag-evidence-more > summary {
+  min-height: 44px;
+}
+
+.rag-evidence-primary-action,
+.rag-evidence-secondary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.rag-evidence-primary-action {
+  border: 1px solid hsl(217, 91%, 42%);
+  background: hsl(217, 91%, 42%);
+  color: #ffffff;
+}
+
+.rag-evidence-secondary-action {
+  border: 1px solid hsl(217, 91%, 42%);
+  background: #ffffff;
+  color: hsl(217, 91%, 35%);
+}
+
+.rag-evidence-primary-action:focus-visible,
+.rag-evidence-secondary-action:focus-visible,
+.rag-direct-evidence > summary:focus-visible,
+.rag-evidence-more > summary:focus-visible {
+  outline: 3px solid hsl(45, 100%, 45%);
+  outline-offset: 2px;
+}
+
+.rag-direct-evidence > summary,
+.rag-evidence-more > summary {
+  display: flex;
+  align-items: center;
+  color: hsl(217, 91%, 35%);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.rag-direct-evidence[open] > summary,
+.rag-evidence-more[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 430px) {
+  .rag-evidence-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rag-evidence-primary-action,
+  .rag-evidence-secondary-action {
+    width: 100%;
+  }
+}
+
 /* ─── Typing indicator (injected by controller) ─── */
 .chat-typing-indicator {
   align-self: flex-start;

@@ -96,7 +96,7 @@ module Rag
         # The section heading IS the board ("EM3000 - HIDRAULICO", "NE 300 – LB II").
         # It comes straight from the page, so it can never name a board that is
         # not there — unlike the metadata fallback below.
-        label = heading_label(chunk[:content]).presence || metadata_label(metadata, searchable)
+        label = Rag::BoardHeading.label(chunk[:content]).presence || metadata_label(metadata, searchable)
         next if label.blank?
 
         key = label.downcase
@@ -120,23 +120,6 @@ module Rag
       return if model.blank?
 
       "#{manufacturer} — #{model}"
-    end
-
-    def heading_label(content)
-      heading = content.to_s.lines.find { |line| line.match?(/\A##\s+/) }
-      return if heading.blank?
-
-      label = heading
-        .sub(/\A##\s+/, "")
-        .sub(/\A(?:S\d+\s+[—–-]\s+)?(?:DIAGRAM|SAFETY SYSTEM):\s*/i, "")
-        .split(/\s+[—–]\s+(?=(?:Diagrama|Esquema|Conex|Seguridad|Cadena)\b)/i, 2)
-        .first
-        .split(/\s+\/\s+/, 2)
-        .first
-        .strip
-      return if label.blank? || label.casecmp?("PIPELINE_INJECTED")
-
-      label.first(80)
     end
 
     def render_answer(candidates)

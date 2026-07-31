@@ -35,7 +35,8 @@ module Rag
                        expansion_mechanisms:, timings:, outcome:, outcome_reason:,
                        verbatim_directive:, generation_input_tokens:,
                        generation_output_tokens:, generation_prompt_chars:,
-                       attribution_dropped: 0)
+                       attribution_dropped: 0, ambiguity_detected: nil,
+                       ambiguity_identifier: nil, ambiguity_families: nil)
       mechanisms = Array(expansion_mechanisms)
       PilotUsageLog.log(
         "evidence_route",
@@ -62,7 +63,10 @@ module Rag
         generation_input_tokens: generation_input_tokens,
         generation_output_tokens: generation_output_tokens,
         generation_prompt_chars: generation_prompt_chars,
-        attribution_dropped: attribution_dropped
+        attribution_dropped: attribution_dropped,
+        ambiguity_detected: ambiguity_detected,
+        ambiguity_identifier: ambiguity_identifier,
+        ambiguity_families: ambiguity_families
       )
     end
 

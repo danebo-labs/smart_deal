@@ -18,6 +18,7 @@ class PilotUsageLog
     retrieval_ms expansion_ms local_ms generation_ms generation_chunks
     outcome outcome_reason verbatim_directive generation_input_tokens
     generation_output_tokens generation_prompt_chars attribution_dropped
+    ambiguity_detected ambiguity_identifier ambiguity_families
   ].freeze
 
   class << self

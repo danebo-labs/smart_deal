@@ -82,6 +82,7 @@ module Rag
       @generator = generator || AiProvider.new
       @expander = expander || Rag::SectionNeighborExpander.new
       @citation_processor = Bedrock::CitationProcessor.new
+      @ambiguity = nil
     end
 
     def execute
@@ -126,9 +127,10 @@ module Rag
       end
 
       local_started = monotonic_now
-      chunks = select_generation_chunks(expanded_chunks)
+      @ambiguity = detect_family_ambiguity(expanded_chunks)
+      chunks = select_generation_chunks(expanded_chunks, ambiguity: @ambiguity)
       citation_evidence = citation_shaped(chunks)
-      prompt = generation_prompt(chunks)
+      prompt = generation_prompt(chunks, ambiguity: @ambiguity)
       local_before_generation_ms = elapsed_ms(local_started)
 
       generation_started = monotonic_now
@@ -329,11 +331,30 @@ module Rag
       )
     end
 
+    # Evidence-level ambiguity is checked before the cover greedy narrows the
+    # window: the retrieval that answered "¿A qué serie corresponde el LED SPM?"
+    # carried both Sistel boards, and the cover reduced them to one chunk. Local
+    # work only — no extra Retrieve, no extra generation.
+    def detect_family_ambiguity(chunks)
+      return nil unless Rag::FamilyAmbiguityGuardFlag.enabled?
+
+      Rag::FamilyAmbiguityDetector.new.call(
+        question_analysis: question_analysis,
+        chunks: chunks
+      )
+    end
+
+    def question_analysis
+      @question_analysis ||= Rag::QueryEntities.analyze(@question)
+    end
+
     # The widened budget is for recall, not for widening the generation window.
     # Greedily cover the strongest identifier signal from the question, choosing
     # the chunk with the most identifier coverage and lexical agreement.
-    def select_generation_chunks(chunks)
-      analysis = Rag::QueryEntities.analyze(@question)
+    def select_generation_chunks(chunks, ambiguity: nil)
+      return board_coverage_chunks(ambiguity) if ambiguity&.ambiguous?
+
+      analysis = question_analysis
       labelled = analysis.identifiers.select { |identifier| identifier.position == :labelled }
       # Labelled identifiers are the strongest coverage signal and keep priority. When
       # the question has none — a paraphrase where the label and the identifier are not
@@ -369,12 +390,30 @@ module Rag
       selected.presence || Array(chunks).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS)
     end
 
-    def identifier_present?(content, canonical)
-      characters = canonical.to_s.scan(/[[:alnum:]]/)
-      return false if characters.empty?
+    # One chunk per board family that documents the ambiguous identifier, ranked
+    # by the same criteria as the cover greedy (identifier coverage, lexical
+    # agreement, retrieval rank). The generator must see every documented meaning
+    # to enumerate them; picking the strongest board would be exactly the
+    # confident single-family answer this guard exists to prevent.
+    def board_coverage_chunks(ambiguity)
+      ambiguity.chunks_by_board.values
+        .filter_map { |board_chunks| board_chunks.max_by { |chunk| selection_score(chunk) } }
+        .sort_by { |chunk| selection_score(chunk) }
+        .reverse
+        .first(MAX_GENERATION_CHUNKS)
+        .sort_by { |chunk| chunk[:rank] || Float::INFINITY }
+    end
 
-      pattern = characters.map { |character| Regexp.escape(character) }.join("[\\s\\-._]*")
-      content.to_s.match?(/(?<![[:alnum:]_])#{pattern}(?![[:alnum:]_])/i)
+    def selection_score(chunk)
+      [
+        question_analysis.identifiers.count { |identifier| identifier_present?(chunk[:content], identifier.canonical) },
+        lexical_overlap(chunk[:content]),
+        -(chunk[:rank] || Float::INFINITY)
+      ]
+    end
+
+    def identifier_present?(content, canonical)
+      Rag::QueryEntities.identifier_present?(content, canonical)
     end
 
     def lexical_overlap(content)
@@ -389,13 +428,17 @@ module Rag
       end.to_set
     end
 
-    def generation_prompt(chunks)
+    def generation_prompt(chunks, ambiguity: nil)
       template = BedrockRagService.load_generation_prompt_template
       rendered = template
         .sub("$query$") { @question }
         .sub("$search_results$") { evidence_context(chunks) }
         .sub(BedrockRagService::OUTPUT_FORMAT_PLACEHOLDER) do
-          [ citation_instructions(chunks.size), verbatim_directive ].join("\n\n")
+          [
+            citation_instructions(chunks.size),
+            verbatim_directive,
+            (multi_family_directive if ambiguity&.ambiguous?)
+          ].compact.join("\n\n")
         end
 
       [ locale_directive, rendered ].compact_blank.join("\n\n")
@@ -442,6 +485,20 @@ module Rag
         replace it with a description of its meaning. A paraphrase of a printed
         string is not an answer to a question about that string; add a plain-language
         gloss after the verbatim value if it helps, never instead of it.
+      DIRECTIVE
+    end
+
+    # Emitted only when Rag::FamilyAmbiguityDetector found one identifier
+    # documented on several boards and no board named in the question. Choosing a
+    # family here is a safety incident, not a helpful default: SPM is a different
+    # series on each Sistel board, so the answer has to enumerate and ask.
+    def multi_family_directive
+      <<~DIRECTIVE.strip
+        The evidence spans multiple distinct board families for the identifier
+        asked about. Enumerate the meaning per board family, citing each with its
+        own marker; state explicitly that the answer depends on which board the
+        technician has, and ask which board it is. Never pick one family on the
+        technician's behalf.
       DIRECTIVE
     end
 
@@ -583,7 +640,10 @@ module Rag
         generation_input_tokens: token_estimate(prompt),
         generation_output_tokens: token_estimate(raw_answer),
         generation_prompt_chars: prompt&.length,
-        attribution_dropped: attribution_dropped
+        attribution_dropped: attribution_dropped,
+        ambiguity_detected: @ambiguity&.ambiguous?,
+        ambiguity_identifier: @ambiguity&.identifier,
+        ambiguity_families: @ambiguity&.board_keys
       )
     end
 

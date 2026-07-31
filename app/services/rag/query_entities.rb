@@ -88,6 +88,19 @@ module Rag
       )
     end
 
+    # Separator-tolerant, boundary-anchored containment of a canonical identifier
+    # in evidence text: "ABC12" matches "ABC-12" and "ABC 12", never "ABC120".
+    # Shared by Rag::StructuredEvidenceRoute's generation cover and
+    # Rag::FamilyAmbiguityDetector so both agree on what "this chunk contains that
+    # identifier" means.
+    def self.identifier_present?(content, canonical)
+      characters = canonical.to_s.scan(/[[:alnum:]]/)
+      return false if characters.empty?
+
+      pattern = characters.map { |character| Regexp.escape(character) }.join("[\\s\\-._]*")
+      content.to_s.match?(/(?<![[:alnum:]_])#{pattern}(?![[:alnum:]_])/i)
+    end
+
     # Public shape query: does the question contain any label term at all? Position-
     # independent, unlike `identifiers`' adjacency streak. Exposed so the retrieval
     # profile can reuse the single trigger vocabulary instead of duplicating it.

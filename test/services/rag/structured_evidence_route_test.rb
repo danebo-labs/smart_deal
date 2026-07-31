@@ -554,6 +554,170 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 2, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
   end
 
+  test "an identifier documented on several boards is answered per board and asks which one" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    raw_answer = "El significado de SPM depende de la placa que tenga delante.\n" \
+      "En \"CARLOS SILVA TPR50\": \"SERIE PUERTAS CABINA - EXTERIORES\" [1].\n" \
+      "En \"TWISTER TW - INAPELSA\": \"SERIE DE PUERTAS\" [2].\n" \
+      "En \"DELTA +\": \"SERIE PUERTAS DE PISO\" [3].\n" \
+      "¿Con qué placa está trabajando?"
+    generator = FakeGenerator.new(raw_answer)
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, rag_service.calls.size
+    assert_equal 3, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
+    assert_equal %w[spm-tpr50 spm-twister spm-delta],
+                 outcome.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+    assert_includes prompt, "The evidence spans multiple distinct board families"
+    assert_includes prompt, "ask which board it is"
+    assert_includes prompt, "SERIE PUERTAS CABINA - EXTERIORES"
+    assert_includes prompt, "SERIE DE PUERTAS"
+    assert_includes prompt, "SERIE PUERTAS DE PISO"
+    assert_equal [ 1, 2, 3 ], outcome.result[:citations].pluck(:number)
+    assert_equal [ 9, 88, 91 ], outcome.result[:citations].pluck(:page)
+    assert_includes outcome.result[:answer], "depende de la placa"
+    assert_includes outcome.result[:answer], "SERIE PUERTAS DE PISO"
+  end
+
+  test "an identifier that passes the lexical equipment gate is still detected from the evidence" do
+    rag_service = FakeRagService.new(dl2_board_chunks)
+    raw_answer = "DL2 significa cosas distintas según la placa.\n" \
+      "En \"LEVEL CONTROL 1B\": \"SERIE CERROJOS CERRADA\" [1].\n" \
+      "En \"KDT 11\": \"SERIE PUERTAS EXTERIORES - CABINA\" [2].\n" \
+      "¿Qué placa tiene delante?"
+    generator = FakeGenerator.new(raw_answer)
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿Qué serie indica el LED DL2?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    assert_equal :answered, outcome.status
+    assert_equal 2, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
+    assert_includes generator.calls.first[:prompt], "The evidence spans multiple distinct board families"
+    assert_equal [ 1, 2 ], outcome.result[:citations].pluck(:number)
+  end
+
+  test "the ambiguity guard reports the identifier and the boards it spans" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: FakeGenerator.new("\"SERIE DE PUERTAS\" [2]. \"SERIE PUERTAS DE PISO\" [3]."),
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    line = output.string.lines.find { |entry| entry.include?('"event":"evidence_route"') }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+
+    assert_equal true, payload["ambiguity_detected"]
+    assert_equal "SPM", payload["ambiguity_identifier"]
+    assert_equal [ "CARLOS SILVA TPR50", "TWISTER TW - INAPELSA", "DELTA +" ],
+                 payload["ambiguity_families"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "the same evidence keeps today's single-family window with the guard off" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    generator = FakeGenerator.new("\"SERIE PUERTAS CABINA - EXTERIORES\" [1]")
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    outcome = with_family_guard("false") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+    prompt = generator.calls.first[:prompt]
+    payload = JSON.parse(
+      output.string.lines.find { |entry| entry.include?('"event":"evidence_route"') }
+        .split("[PILOT_USAGE] ", 2).last
+    )
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
+    assert_equal [ "spm-tpr50" ], outcome.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+    assert_not_includes prompt, "The evidence spans multiple distinct board families"
+    assert_not_includes prompt, "SERIE PUERTAS DE PISO"
+    assert_not payload.key?("ambiguity_detected")
+    assert_not payload.key?("ambiguity_families")
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "a question that names its board keeps the single-board window with the guard on" do
+    question = "En la placa ARCA II, ¿qué serie indica el LED P32?"
+    on_generator = FakeGenerator.new("\"SERIE CERROJOS EXTERIORES - CABINA\" [1]")
+    off_generator = FakeGenerator.new("\"SERIE CERROJOS EXTERIORES - CABINA\" [1]")
+
+    on = with_family_guard("true") do
+      build_route(
+        question: question,
+        rag_service: FakeRagService.new(arca_board_chunks),
+        generator: on_generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+    off = with_family_guard("false") do
+      build_route(
+        question: question,
+        rag_service: FakeRagService.new(arca_board_chunks),
+        generator: off_generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    assert_equal :answered, on.status
+    assert_equal [ "arca2" ], on.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+    assert_equal off_generator.calls.first[:prompt], on_generator.calls.first[:prompt]
+    assert_not_includes on_generator.calls.first[:prompt], "multiple distinct board families"
+  end
+
+  test "the per-board window never exceeds the generation cap" do
+    boards = Array.new(7) do |index|
+      board_chunk(
+        content: "## PLACA B#{index}Z — Diagrama de Series\nSPM | SERIE #{index}",
+        page: index + 1,
+        section_identity: "FABRICANTE #{index}",
+        sha: "board-#{index}"
+      )
+    end
+    route = route_for_selection("¿A qué serie corresponde el LED SPM?")
+    ambiguity = Rag::FamilyAmbiguityDetector.new.call(
+      question_analysis: Rag::QueryEntities.analyze("¿A qué serie corresponde el LED SPM?"),
+      chunks: boards
+    )
+
+    assert ambiguity.ambiguous?
+    assert_equal Rag::StructuredEvidenceRoute::MAX_GENERATION_CHUNKS,
+                 route.send(:select_generation_chunks, boards, ambiguity: ambiguity).size
+  end
+
   test "the structured turn does not create a BedrockQuery row for pure retrieval" do
     rag_service = FakeRagService.new([ neighbor_chunk ])
     generator = FakeGenerator.new("ABC12 corresponde a la serie documentada. [1]")
@@ -569,6 +733,18 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   private
+
+  def with_family_guard(value)
+    previous = ENV.fetch("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED", nil)
+    ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = value
+    yield
+  ensure
+    if previous.nil?
+      ENV.delete("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED")
+    else
+      ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = previous
+    end
+  end
 
   def with_partial_contract(value)
     previous = ENV.fetch("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil)
@@ -624,6 +800,89 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       location_uri: "s3://test-bucket/chunks/chunk_#{rank}.txt",
       chunk_sha256: sha || "sha-#{rank}-#{Digest::SHA256.hexdigest(content).first(8)}",
       rank: rank
+    }
+  end
+
+  # SPM is a different series on each of these three boards; two of them share
+  # section_identity "SISTEL", so only the heading tells them apart.
+  def spm_board_chunks
+    [
+      board_chunk(
+        content: "## S7 — DIAGRAM: CARLOS SILVA TPR50 — Cadena de Seguridades\n" \
+                 "SPM | SERIE PUERTAS CABINA - EXTERIORES",
+        page: 9,
+        section_identity: "CARLOS SILVA",
+        sha: "spm-tpr50"
+      ),
+      board_chunk(
+        content: "## S7 — DIAGRAM: TWISTER TW - INAPELSA — Diagrama de conexiones\n" \
+                 "SPM | SERIE DE PUERTAS",
+        page: 88,
+        section_identity: "SISTEL",
+        sha: "spm-twister"
+      ),
+      board_chunk(
+        content: "## DELTA + — Diagrama de Cadena de Seguridad\nSPM | SERIE PUERTAS DE PISO",
+        page: 91,
+        section_identity: "SISTEL",
+        sha: "spm-delta"
+      )
+    ]
+  end
+
+  def dl2_board_chunks
+    [
+      board_chunk(
+        content: "## LEVEL CONTROL 1B – ELECTRICO - PREMONTADA\nDL2 | SERIE CERROJOS CERRADA",
+        page: 3,
+        section_identity: "ALJO",
+        sha: "dl2-aljo"
+      ),
+      board_chunk(
+        content: "## KDT 11 — Diagrama de Series\nDL2 | SERIE PUERTAS EXTERIORES - CABINA",
+        page: 13,
+        section_identity: "CARLOS SILVA",
+        sha: "dl2-kdt"
+      )
+    ]
+  end
+
+  def arca_board_chunks
+    [
+      board_chunk(
+        content: "## Diagrama de Cadena de Seguridades — Placa ARCA\n" \
+                 "P32 | SERIE CERROJOS CABINA -EXTERIORES",
+        page: 61, section_identity: "ORONA", sha: "arca"
+      ),
+      board_chunk(
+        content: "## ARCA BASICO — Tabla de Series\nP32 | SERIE CERROJOS CABINA - EXTERIORES",
+        page: 62, section_identity: "ORONA", sha: "arca-basico"
+      ),
+      board_chunk(
+        content: "## S7 — DIAGRAM: ARCA II Safety Chain & Connector Layout\n" \
+                 "P32 | SERIE CERROJOS EXTERIORES - CABINA",
+        page: 63, section_identity: "ORONA", sha: "arca2"
+      ),
+      board_chunk(
+        content: "## S4 — SAFETY SYSTEM: Diagrama de cadena de seguridades ARCA III\n" \
+                 "P32 | SERIE SEGURIDADES PRINCIPALES",
+        page: 64, section_identity: "ORONA", sha: "arca3"
+      )
+    ]
+  end
+
+  def board_chunk(content:, page:, section_identity:, sha:)
+    {
+      content: content,
+      metadata: {
+        "canonical_name" => "SEGURIDADES 1.1-1.pdf",
+        "original_source_uri" => @source_uri,
+        "page_number" => page,
+        "section_identity" => section_identity
+      },
+      location_uri: "s3://test-bucket/chunks/chunk_p#{page}.txt",
+      chunk_sha256: sha,
+      rank: page
     }
   end
 

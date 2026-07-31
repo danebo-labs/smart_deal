@@ -124,6 +124,54 @@ class Rag::EvidenceSelectionTelemetryTest < ActiveSupport::TestCase
     assert_equal 240, payload["generation_input_tokens"]
     assert_equal 12, payload["generation_output_tokens"]
     assert_equal 960, payload["generation_prompt_chars"]
+    assert_not payload.key?("ambiguity_detected")
+    assert_not payload.key?("ambiguity_identifier")
+    assert_not payload.key?("ambiguity_families")
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "logs the cross-family ambiguity verdict, identifier and boards" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    assert Rag::EvidenceSelectionTelemetry.log_route(
+      question: "¿A qué serie corresponde el LED SPM?",
+      answer: "El significado depende de la placa. [1][2]",
+      generation_mode: "structured_evidence_route",
+      account_id: 1,
+      user_id: 2,
+      conversation_session_id: 3,
+      correlation_id: "corr-3",
+      retrieval_budget: 12,
+      expansion_mechanisms: [],
+      outcome: :answered,
+      outcome_reason: nil,
+      verbatim_directive: true,
+      generation_input_tokens: 300,
+      generation_output_tokens: 60,
+      generation_prompt_chars: 1_200,
+      ambiguity_detected: true,
+      ambiguity_identifier: "SPM",
+      ambiguity_families: [ "CARLOS SILVA TPR50", "TWISTER TW - INAPELSA", "DELTA +" ],
+      timings: {
+        retrieval_ms: 20,
+        expansion_ms: 0,
+        local_ms: 3,
+        generation_ms: 40,
+        generation_chunks: 3
+      }
+    )
+
+    line = output.string.lines.find { |entry| entry.include?('"event":"evidence_route"') }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+
+    assert_equal true, payload["ambiguity_detected"]
+    assert_equal "SPM", payload["ambiguity_identifier"]
+    assert_equal [ "CARLOS SILVA TPR50", "TWISTER TW - INAPELSA", "DELTA +" ],
+                 payload["ambiguity_families"]
+    assert_equal false, payload["abstention"]
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
   end

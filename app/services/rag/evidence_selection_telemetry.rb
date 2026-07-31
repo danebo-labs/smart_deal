@@ -34,7 +34,8 @@ module Rag
                        conversation_session_id:, correlation_id:, retrieval_budget:,
                        expansion_mechanisms:, timings:, outcome:, outcome_reason:,
                        verbatim_directive:, generation_input_tokens:,
-                       generation_output_tokens:, generation_prompt_chars:)
+                       generation_output_tokens:, generation_prompt_chars:,
+                       attribution_dropped: 0)
       mechanisms = Array(expansion_mechanisms)
       PilotUsageLog.log(
         "evidence_route",
@@ -60,7 +61,8 @@ module Rag
         generation_chunks: timings[:generation_chunks],
         generation_input_tokens: generation_input_tokens,
         generation_output_tokens: generation_output_tokens,
-        generation_prompt_chars: generation_prompt_chars
+        generation_prompt_chars: generation_prompt_chars,
+        attribution_dropped: attribution_dropped
       )
     end
 

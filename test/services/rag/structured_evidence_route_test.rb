@@ -63,8 +63,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     @original_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
     @original_partial_contract_flag =
       ENV.fetch("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil)
+    @original_attribution_contract_flag =
+      ENV.fetch("RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED", nil)
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
     ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = "false"
+    ENV["RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED"] = "true"
     @account = accounts(:legacy)
     @source_uri = "s3://test-bucket/manual.pdf"
   end
@@ -79,6 +82,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       ENV.delete("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED")
     else
       ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = @original_partial_contract_flag
+    end
+    if @original_attribution_contract_flag.nil?
+      ENV.delete("RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED")
+    else
+      ENV["RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED"] = @original_attribution_contract_flag
     end
   end
 
@@ -464,11 +472,16 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal answer, processed
   end
 
-  test "invalid citation markers make the route abstain without citations" do
-    rag_service = FakeRagService.new([ neighbor_chunk ])
-    generator = FakeGenerator.new("Afirmación técnica [2]")
+  test "out-of-range citation markers remain invalid with multiple evidence chunks" do
+    chunks = [
+      synthetic_chunk("LED ABC12 | SERIE PRINCIPAL", rank: 1, sha: "abc12"),
+      synthetic_chunk("LED DEF34 | SERIE SECUNDARIA", rank: 2, sha: "def34")
+    ]
+    rag_service = FakeRagService.new(chunks)
+    generator = FakeGenerator.new("Afirmación técnica [3]")
 
     outcome = build_route(
+      question: "¿Qué indican los LEDs ABC12 y DEF34?",
       rag_service: rag_service,
       generator: generator,
       expander: FakeExpander.new(nil)
@@ -477,6 +490,68 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal :abstained, outcome.status
     assert_empty outcome.result[:citations]
     assert_equal :citation_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+  end
+
+  test "single-context assertion markers normalize to the sole evidence block" do
+    rag_service = FakeRagService.new([ neighbor_chunk ])
+    raw_answer = "ABC12 corresponde a la serie [1]. Otra afirmación [2]. Tercera [3]."
+
+    outcome = build_route(
+      rag_service: rag_service,
+      generator: FakeGenerator.new(raw_answer),
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, outcome.result[:citations].size
+    assert_equal raw_answer, outcome.result.dig(:diagnostics, :raw_answer)
+    assert_equal(
+      "ABC12 corresponde a la serie [1]. Otra afirmación [1]. Tercera [1].",
+      outcome.result.dig(:diagnostics, :normalized_answer)
+    )
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
+  end
+
+  test "literal bracketed number in sole evidence remains a citation failure" do
+    chunk = synthetic_chunk("Conecte el borne [24]", rank: 1, sha: "literal-24")
+    rag_service = FakeRagService.new([ chunk ])
+
+    outcome = build_route(
+      question: "En ABC12, ¿qué borne documenta el esquema?",
+      rag_service: rag_service,
+      generator: FakeGenerator.new("Conecte el borne [24]"),
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal :abstained, outcome.status
+    assert_empty outcome.result[:citations]
+    assert_equal :citation_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+  end
+
+  test "dropping every attributed marker abstains with attribution failure" do
+    chunks = [
+      synthetic_chunk("LED ABC12 | SERIE PRINCIPAL", rank: 1, sha: "thyssen").tap do |chunk|
+        chunk[:metadata]["section_identity"] = "THYSSEN"
+      end,
+      synthetic_chunk("LED DEF34 | SERIE SECUNDARIA", rank: 2, sha: "otis").tap do |chunk|
+        chunk[:metadata]["section_identity"] = "OTIS"
+      end
+    ]
+    rag_service = FakeRagService.new(chunks)
+
+    outcome = build_route(
+      question: "En THYSSEN, ¿qué indican los LEDs ABC12 y DEF34?",
+      rag_service: rag_service,
+      generator: FakeGenerator.new("DEF34 corresponde a la serie secundaria [2]"),
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal :abstained, outcome.status
+    assert_empty outcome.result[:citations]
+    assert_equal :attribution_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal 1, rag_service.calls.size
+    assert_equal 2, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
   end
 
   test "the structured turn does not create a BedrockQuery row for pure retrieval" do

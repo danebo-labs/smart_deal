@@ -156,9 +156,14 @@ module Rag
       end
 
       local_after_generation_started = monotonic_now
+      generated_answer = Rag::CitationMarkerNormalizer.call(
+        raw_answer,
+        evidence_count: chunks.size,
+        evidence_text: chunks.pluck(:content).join("\n")
+      )
       internal_answer = BedrockRagService.allocate.send(
         :normalize_absence_semantics,
-        raw_answer,
+        generated_answer,
         question: @question,
         locale: locale
       )
@@ -167,6 +172,10 @@ module Rag
         evidence: citation_evidence,
         require_cited_evidence: true
       )
+      attribution = Rag::CitationAttributionGuard.new(
+        question: @question, citations: citation_evidence
+      ).call(answer)
+      answer = attribution.answer
       citations = @citation_processor.build_numbered_references(
         citation_evidence,
         answer,
@@ -175,7 +184,7 @@ module Rag
       local_ms = local_before_generation_ms + elapsed_ms(local_after_generation_started)
       unless valid_citations?(answer, citations, chunks.size)
         return abstained_outcome(
-          reason: :citation_failure,
+          reason: attribution.dropped_any? ? :attribution_failure : :citation_failure,
           retrieval: retrieval,
           retrieval_ms: retrieval_ms,
           expansion_ms: expansion_ms,
@@ -206,7 +215,8 @@ module Rag
         answer: answer,
         outcome: :answered,
         prompt: prompt,
-        raw_answer: raw_answer
+        raw_answer: raw_answer,
+        attribution_dropped: attribution.dropped_segments.size
       )
 
       result = {
@@ -222,6 +232,7 @@ module Rag
         correlation_id: @correlation_id,
         diagnostics: {
           raw_answer: raw_answer,
+          normalized_answer: generated_answer,
           internal_answer: internal_answer,
           retrieved_chunks: expanded_chunks,
           generation_chunks: chunks,
@@ -553,7 +564,8 @@ module Rag
       Outcome.new(status: :abstained, result: result)
     end
 
-    def log_route(expansions:, timings:, answer:, outcome:, prompt:, raw_answer:, reason: nil)
+    def log_route(expansions:, timings:, answer:, outcome:, prompt:, raw_answer:, reason: nil,
+                  attribution_dropped: 0)
       Rag::EvidenceSelectionTelemetry.log_route(
         question: @question,
         answer: answer,
@@ -570,7 +582,8 @@ module Rag
         verbatim_directive: prompt.to_s.include?(verbatim_directive),
         generation_input_tokens: token_estimate(prompt),
         generation_output_tokens: token_estimate(raw_answer),
-        generation_prompt_chars: prompt&.length
+        generation_prompt_chars: prompt&.length,
+        attribution_dropped: attribution_dropped
       )
     end
 

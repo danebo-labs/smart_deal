@@ -466,8 +466,10 @@ module Rag
     end
 
     def board_key(chunk)
-      Rag::BoardHeading.label(chunk[:content]).presence ||
-        chunk[:metadata].to_h.stringify_keys["section_identity"].presence
+      heading = Rag::BoardHeading.label(chunk[:content]).presence
+      heading = nil if heading && Rag::BoardHeading.board_tokens(heading).empty?
+
+      heading || chunk[:metadata].to_h.stringify_keys["section_identity"].presence
     end
 
     def matched_board_tokens(chunk)

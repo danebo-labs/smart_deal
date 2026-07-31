@@ -102,4 +102,95 @@ class Rag::BoardHeadingTest < ActiveSupport::TestCase
     assert_not Rag::BoardHeading.mentioned?("ARCA III", "En la placa ARCA II, ¿qué indica el LED P32?")
     assert_not Rag::BoardHeading.mentioned?("ARCA II", "")
   end
+
+  # Truth table measured against the real headings and questions from the 5
+  # pilot gate runs (see the plan's Fase 1.1/1.3). Each row is a defect this
+  # rewrite fixes: D1 (unicode dash breaks the tokenizer), D2 (a brand/prose
+  # suffix must not force an exact-token match), D3 (generic table headings
+  # are not a board), D4 (the same board fragmenting across heading spellings).
+  QUESTIONS = {
+    tpr60_pp: "En el modelo TPR60 de Carlos Silva, ¿a qué serie corresponde el LED PP?",
+    tpr70_epc_b8: "En TPR70, ¿a qué conector está conectado EPC?",
+    cta_cr8ph2_sph: "En la placa CR8PH2 de CTA, ¿qué LED indica que las puertas cabina/exterior " \
+                    "están cerradas y en qué placa se encuentra?",
+    cta_sr8p_sph: "En la placa SR8P de CTA, ¿qué LED indica que las puertas cabina/exterior " \
+                  "están cerradas y en qué placa se encuentra?",
+    em2000_contradiccion: "En EM2000, ¿qué conectores de fotocélula aparecen en el encabezado y en el dibujo?",
+    em4000_obstaculo_conectores: "En EM4000 V1, ¿qué conectores documenta el encabezado del obstáculo en la placa?",
+    em1000_v1_tabla: "En la placa EM 1000 V1, lista los LEDs y la serie que indica cada uno.",
+    tpr50_spm: "En el modelo TPR50 de Carlos Silva, ¿a qué serie corresponde el LED SPM?",
+    twister_embarba_puertas: "Estoy con una Twister TW de Embarba eléctrica y sospecho de la serie de " \
+                              "puertas. ¿Qué LED de la placa me lo confirma?",
+    spm_sin_placa: "¿A qué serie corresponde el LED SPM?",
+    dl2_sin_placa: "¿Qué serie indica el LED DL2?",
+    arca2_p32: "En la placa ARCA II, ¿qué serie indica el LED P32?",
+    arca_vs_arca3_p32: "En la placa ARCA básica, ¿qué serie indica el LED P32? " \
+                        "¿Significa lo mismo en ARCA III?",
+    miconic_lx_tabla: "En la placa MICONIC LX de Schindler, lista los LEDs T1 a T5 y la serie que " \
+                       "indica cada uno.",
+    ksa18_h14: "En la placa KSA 18 hidráulica de Recoba, ¿qué indica el LED H14 y cuál es su estado normal?",
+    cmc4_tabla: "En la placa CMC 4 de Thyssen, lista los LEDs y qué indica cada uno."
+  }.freeze
+
+  test "mentioned? truth table from the 5 pilot gate runs" do
+    [
+      [ "HIDRA–TPR60 Board Connectors and Safety Series Overview", :tpr60_pp, true ],
+      [ "HIDRA–TPR70 Conexionado de Seguridades y Entradas", :tpr60_pp, false ],
+      [ "HIDRA–TPR70 Conexionado de Seguridades y Entradas", :tpr70_epc_b8, true ],
+      [ "HIDRA–TPR60 Board Connectors and Safety Series Overview", :tpr70_epc_b8, false ],
+      [ "CTA – ELECTRICO Y HIDRAULICO PREMONTADA", :cta_cr8ph2_sph, true ],
+      [ "CTA – SR8P (ELÉCTRICO Y HIDRÁULICO) — BORNAS CARRIL", :cta_sr8p_sph, true ],
+      [ "EM 2000 - ELÉCTRICO", :em2000_contradiccion, true ],
+      [ "Placa EM 4000 V1", :em4000_obstaculo_conectores, true ],
+      [ "Placa EM 4000 V1", :em1000_v1_tabla, false ],
+      [ "HIDRA – TPR50 Safety Chain & Terminal Wiring Overview", :tpr50_spm, true ],
+      [ "TWISTER TW - INAPELSA", :tpr50_spm, false ],
+      [ "TWISTER TW - INAPELSA", :twister_embarba_puertas, true ],
+      [ "TWISTER TW - INAPELSA", :spm_sin_placa, false ],
+      [ "DELTA + — LED Series", :spm_sin_placa, false ],
+      [ "LEVEL CONTROL 1B – ELECTRICO - PREMONTADA", :dl2_sin_placa, false ],
+      [ "ARCA II Safety Chain & Connector Layout", :arca2_p32, true ],
+      [ "ARCA II Safety Chain & Connector Layout", :arca_vs_arca3_p32, false ],
+      [ "Diagrama de Cadena de Seguridades — Placa ARCA", :arca_vs_arca3_p32, true ],
+      [ "Diagrama de cadena de seguridades ARCA III (Orona PDCM 5124537)", :arca_vs_arca3_p32, true ],
+      [ "MICONIC BX-6200", :miconic_lx_tabla, false ],
+      [ "Tabla de LEDs de la cadena serie — MICONIC LX", :miconic_lx_tabla, true ],
+      [ "S6 — ELECTRICAL: RECOBA – LIFT CNTROL - EKM64", :ksa18_h14, false ],
+      [ "S7 — DIAGRAM: CMC 4 — Placa UBA-CMC4", :cmc4_tabla, true ]
+    ].each do |heading, question_key, expected|
+      question = QUESTIONS.fetch(question_key)
+      actual = Rag::BoardHeading.mentioned?(heading, question)
+      assert_equal expected, actual,
+                   "expected mentioned?(#{heading.inspect}, #{question_key.inspect}) to be #{expected}"
+    end
+  end
+
+  test "board_tokens is empty for a generic table/diagram heading with no board name" do
+    [
+      "S7",
+      "Tabla de placas y series",
+      "LED Series Indicators (tabla visible en el diagrama)",
+      "Tabla de LEDs de serie (visible en página)",
+      "LED STATUS — Tabla de series de LEDs",
+      "Placa principal — Identificación de conectores visibles",
+      "LEDs de Estado — Tabla de Series"
+    ].each do |heading|
+      assert_empty Rag::BoardHeading.board_tokens(heading),
+                   "expected #{heading.inspect} to be recognized as a generic heading"
+    end
+  end
+
+  test "board_tokens is not empty for a heading that names a real board" do
+    [
+      "TWISTER TW - INAPELSA",
+      "EM 2000 - ELÉCTRICO",
+      "Placa EM 4000 V1",
+      "MICONIC BX-6200",
+      "Diagrama de Cadena de Seguridades — Placa ARCA",
+      "ARCA II Safety Chain & Connector Layout"
+    ].each do |heading|
+      assert_not_empty Rag::BoardHeading.board_tokens(heading),
+                        "expected #{heading.inspect} to still be recognized as a board"
+    end
+  end
 end

@@ -26,6 +26,19 @@ module Rag
     # for tokenizing; `label` itself keeps the parenthetical verbatim.
     PARENTHETICAL = /\([^)]*\)/.freeze
 
+    # Descriptive/structural words a heading or a "**Section:**" line adds
+    # around the actual board name — never part of what identifies a board, so
+    # they must never gate a match nor count toward "is this heading generic".
+    STOP = %w[DE DEL LA EL LOS LAS UN UNA Y O EN CON PARA POR A AND OR OF THE TO IN ON FOR
+              PLACA PLACAS TABLA TABLAS SERIE SERIES LED LEDS DIAGRAMA DIAGRAMAS DIAGRAM
+              PAGINA PAGE VISIBLE VISIBLES ESTADO ESTADOS STATUS INDICATOR INDICATORS
+              OVERVIEW LAYOUT WIRING CONNECTOR CONNECTORS CONEXIONADO IDENTIFICACION
+              PRINCIPAL PRINCIPALES SAFETY CHAIN TERMINAL BOARD ELECTRICAL SEGURIDAD
+              SEGURIDADES ENTRADA ENTRADAS CADENA ESQUEMA BORNA BORNAS CONECTOR CONECTORES
+              SISTEMA SISTEMAS].to_set.freeze
+    SECTION_PREFIX_LINE = /\A\s*S\d+\s*[—–\-]\s*[A-ZÁÉÍÓÚ \/]+:\s*/i.freeze
+    SECTION_TOKEN       = /\AS\d+\z/.freeze
+
     module_function
 
     def label(content)
@@ -66,29 +79,70 @@ module Rag
     # Only the heading's identifier-shaped tokens are required: a real heading
     # mixes the board name with free descriptive prose ("ARCA II Safety Chain &
     # Connector Layout", "Tabla de LEDs de la cadena serie — MICONIC LX"), so
-    # demanding every prose word would report every board as unnamed.
+    # demanding every prose word would report every board as unnamed. Three
+    # rules keep that permissiveness from over-matching: every digit-bearing
+    # token must match (TPR60 vs TPR70), every ≤3-char token must match (ARCA
+    # vs ARCA III), and at least one token must match at all.
     def mentioned?(heading, question)
       tokens = board_tokens(heading)
       return false if tokens.empty?
 
-      asked = words(question)
+      asked = norm(question)
       return false if asked.empty?
 
-      tokens.all? { |token| asked.any? { |word| word_match?(token, word) } }
+      return tokens.all? { |token| token_match?(token, asked) } if fully_qualified?(tokens)
+
+      return false unless tokens.any? { |token| token_match?(token, asked) }
+      return false unless tokens.select { |token| token.match?(/\d/) }.all? { |token| token_match?(token, asked) }
+
+      tokens.select { |token| token.length <= SHORT_WORD_CHARS }.all? { |token| token_match?(token, asked) }
     end
+
+    # A board name with no digit to anchor on has nothing else load-bearing
+    # enough to skip once it is down to a token or two: "ARCA" alone must not
+    # absorb a question that names the sibling "ARCA BASICO" or "ARCA III"
+    # instead, so every token is required. A longer heading (>2 tokens) still
+    # relies on the digit/short rule below — that is what lets a manufacturer
+    # prefix/suffix ("HIDRA", "INAPELSA") ride along unmatched.
+    def fully_qualified?(tokens)
+      tokens.size <= 2 && tokens.none? { |token| token.match?(/\d/) }
+    end
+    private_class_method :fully_qualified?
 
     # Public: Rag::StructuredEvidenceRoute's comparative-selection pass reuses
     # this to compare two named boards' tokens for its specificity rule.
+    #
+    # Empty means the heading is generic prose with no board name in it at all
+    # (a bare table/diagram caption) — callers use that to skip it as a board
+    # identity and fall back to metadata instead.
     def board_tokens(heading)
-      cleaned = heading.to_s.gsub(PARENTHETICAL, " ")
-      identifiers = Rag::QueryEntities.identifiers(cleaned).map { |identifier| fold(identifier.raw) }
-      (identifiers.presence || words(cleaned)).uniq
+      norm(heading).reject { |token| STOP.include?(token) }
     end
 
-    def words(text)
-      fold(text).scan(/[[:alnum:]]+/)
+    # Strips the "**Section:**"-style prefix line, footnote parentheticals and
+    # unicode dashes, then merges a split "NAME 1234" into "NAME1234" (D1: the
+    # tokenizer otherwise treats board name and model number as two words, one
+    # of which — the bare number — collides across unrelated boards) before
+    # splitting into identifier-shaped tokens. Pure section markers ("S7") are
+    # dropped: they are page structure, never part of a board name.
+    def norm(text)
+      folded = fold(text)
+        .sub(SECTION_PREFIX_LINE, " ")
+        .gsub(PARENTHETICAL, " ")
+        .gsub(/[‐-―−]/, " ")
+        .gsub(/\b([A-Z]{2,})\s+(\d{1,4})\b/) { "#{$1}#{$2}" }
+
+      folded.scan(/[[:alnum:]]+(?:-[[:alnum:]]+)*/).reject { |token| token.match?(SECTION_TOKEN) }
     end
-    private_class_method :words
+    private_class_method :norm
+
+    # A compound token ("TWISTER-TW") also matches through any of its parts
+    # (D2), so a heading that adds a brand suffix ("TWISTER TW - INAPELSA")
+    # does not force the question to repeat that suffix verbatim.
+    def token_match?(token, question_words)
+      [ token, *token.split("-") ].uniq.any? { |part| question_words.any? { |word| word_match?(part, word) } }
+    end
+    private_class_method :token_match?
 
     def word_match?(token, word)
       return true if token == word

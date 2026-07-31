@@ -22,7 +22,7 @@ class BedrockClient
     @client = Aws::BedrockRuntime::Client.new(client_options)
   end
 
-  def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7)
+  def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, tracking: nil)
     model_id ||= DEFAULT_MODEL_ID
 
     body = {
@@ -42,7 +42,7 @@ class BedrockClient
     result = JSON.parse(response.body.read)
     text = result.dig('content', 0, 'text') || result.to_s
 
-    track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens)
+    track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
 
     text
   rescue StandardError => e
@@ -59,7 +59,7 @@ class BedrockClient
 
   private
 
-  def track_usage(result, model_id, prompt, start_time, max_tokens: nil)
+  def track_usage(result, model_id, prompt, start_time, max_tokens: nil, tracking: nil)
     usage = result['usage'] || {}
     input_tokens = (usage['input_tokens'] || usage['inputTokens']).to_i
     output_tokens = (usage['output_tokens'] || usage['outputTokens']).to_i
@@ -69,6 +69,9 @@ class BedrockClient
     latency_ms = ((Time.current - start_time) * 1000).to_i
 
     # Enqueue tracking asynchronously — never block the response on DB writes.
+    # tracking (account_id/user_id/conversation_session_id/correlation_id) lets
+    # a caller's BedrockQuery row join back to its own request for cost
+    # attribution; omitted by callers that don't have that context.
     TrackBedrockQueryJob.perform_later(
       model_id: model_id,
       input_tokens: input_tokens,
@@ -79,7 +82,8 @@ class BedrockClient
       attempt: 1,
       max_tokens: max_tokens,
       stop_reason: result['stop_reason'].presence,
-      source: "query"
+      source: "query",
+      **tracking.to_h
     )
     Rails.logger.info("BedrockClient: query tracking enqueued (#{input_tokens} in + #{output_tokens} out tokens)")
   rescue StandardError => e

@@ -36,7 +36,8 @@ module Rag
                        verbatim_directive:, generation_input_tokens:,
                        generation_output_tokens:, generation_prompt_chars:,
                        attribution_dropped: 0, ambiguity_detected: nil,
-                       ambiguity_identifier: nil, ambiguity_families: nil)
+                       ambiguity_identifier: nil, ambiguity_families: nil,
+                       chunks: [], expansions: [], attribution: nil, model: nil)
       mechanisms = Array(expansion_mechanisms)
       PilotUsageLog.log(
         "evidence_route",
@@ -66,7 +67,20 @@ module Rag
         attribution_dropped: attribution_dropped,
         ambiguity_detected: ambiguity_detected,
         ambiguity_identifier: ambiguity_identifier,
-        ambiguity_families: ambiguity_families
+        ambiguity_families: ambiguity_families,
+        model: model,
+        attribution_identities: attribution&.identities,
+        attribution_anchors: attribution&.anchors
+      )
+      log_route_contexts(
+        chunks: chunks,
+        expansions: expansions,
+        question: question,
+        generation_mode: generation_mode,
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        correlation_id: correlation_id
       )
     end
 
@@ -77,6 +91,54 @@ module Rag
       :none
     end
     private_class_method :dominant_mechanism
+
+    # Per-chunk companion to the `evidence_route` summary above: one event per
+    # chunk the structured route actually handed the generator (or considered,
+    # on abstention), carrying the page/source/family a technician would need to
+    # verify the answer against the manual. Emitted from logs alone — the UI
+    # keeps SHOW_RAG_SOURCES=false.
+    def self.log_route_contexts(chunks:, expansions:, question:, generation_mode:, account_id:,
+                                user_id:, conversation_session_id:, correlation_id:)
+      question_sha256 = Digest::SHA256.hexdigest(question.to_s)
+      Array(chunks).each do |chunk|
+        metadata = chunk[:metadata].to_h.stringify_keys
+        PilotUsageLog.log(
+          "evidence_route_context",
+          account_id: account_id,
+          user_id: user_id,
+          conversation_session_id: conversation_session_id,
+          correlation_id: correlation_id,
+          generation_mode: generation_mode,
+          question_sha256: question_sha256,
+          document_id: metadata["document_id"],
+          source_uri: route_source_uri(chunk, metadata),
+          page: metadata["page_number"],
+          section_identity: metadata["section_identity"],
+          chunk_sha256: chunk[:chunk_sha256],
+          excerpt_sha256: Digest::SHA256.hexdigest(chunk[:content].to_s.first(200)),
+          expansion_mechanism: route_expansion_mechanism(chunk, expansions)
+        )
+      end
+    end
+    private_class_method :log_route_contexts
+
+    # Same source_uri precedence as Rag::StructuredEvidenceRoute#doc_refs, kept
+    # local: the two call sites read different chunk shapes (post-selection vs.
+    # post-expansion) and neither is a reasonable place to depend on the other.
+    def self.route_source_uri(chunk, metadata)
+      metadata["original_source_uri"].presence ||
+        chunk[:original_source_uri].presence ||
+        metadata["x-amz-bedrock-kb-source-uri"].presence ||
+        chunk[:bedrock_source_uri].presence ||
+        chunk[:location_uri].presence
+    end
+    private_class_method :route_source_uri
+
+    def self.route_expansion_mechanism(chunk, expansions)
+      expansion = Array(expansions).find { |item| item[:neighbor_chunk_sha256] == chunk[:chunk_sha256] }
+      expansion&.dig(:mechanism) || :none
+    end
+    private_class_method :route_expansion_mechanism
 
     def initialize(selection:, question:, answer:, generation_mode:, account_id:, user_id:,
                    conversation_session_id:, correlation_id:, sources_visible:)

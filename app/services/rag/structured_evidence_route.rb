@@ -97,6 +97,7 @@ module Rag
       chunks = []
       prompt = nil
       raw_answer = nil
+      attribution = nil
 
       retrieval_started = monotonic_now
       retrieval = @rag_service.retrieve_chunks(
@@ -122,7 +123,8 @@ module Rag
           expansion_ms: expansion_ms,
           expanded_chunks: expanded_chunks,
           chunks: chunks,
-          expansions: expansions
+          expansions: expansions,
+          attribution: attribution
         )
       end
 
@@ -137,7 +139,13 @@ module Rag
       raw_answer = @generator.query(
         prompt,
         max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
-        temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature]
+        temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
+        tracking: {
+          account_id: @account_id,
+          user_id: @user_id,
+          conversation_session_id: @conversation_session_id,
+          correlation_id: @correlation_id
+        }
       ).to_s.strip
       generation_ms = elapsed_ms(generation_started)
       if raw_answer.blank?
@@ -153,7 +161,8 @@ module Rag
           expansions: expansions,
           prompt: prompt,
           raw_answer: raw_answer,
-          model_invoked: true
+          model_invoked: true,
+          attribution: attribution
         )
       end
 
@@ -197,7 +206,8 @@ module Rag
           expansions: expansions,
           prompt: prompt,
           raw_answer: raw_answer,
-          model_invoked: true
+          model_invoked: true,
+          attribution: attribution
         )
       end
 
@@ -218,7 +228,9 @@ module Rag
         outcome: :answered,
         prompt: prompt,
         raw_answer: raw_answer,
-        attribution_dropped: attribution.dropped_segments.size
+        attribution_dropped: attribution.dropped_segments.size,
+        chunks: chunks,
+        attribution: attribution
       )
 
       result = {
@@ -259,7 +271,8 @@ module Rag
         expansions: expansions,
         prompt: prompt,
         raw_answer: raw_answer,
-        model_invoked: prompt.present?
+        model_invoked: prompt.present?,
+        attribution: attribution
       )
     rescue StandardError => e
       Rails.logger.warn("Rag::StructuredEvidenceRoute: failed — #{e.class}: #{e.message}")
@@ -277,7 +290,8 @@ module Rag
         expansions: expansions,
         prompt: prompt,
         raw_answer: raw_answer,
-        model_invoked: prompt.present?
+        model_invoked: prompt.present?,
+        attribution: attribution
       )
     end
 
@@ -387,7 +401,86 @@ module Rag
         uncovered.subtract(covered)
       end
 
-      selected.presence || Array(chunks).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS)
+      return Array(chunks).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS) if selected.empty?
+
+      add_named_board_coverage(selected, chunks, covering)
+    end
+
+    # Comparative questions ("ARCA básica vs ARCA III") name two boards that both
+    # document the identifier being asked about; the cover greedy above stops as
+    # soon as one chunk covers every identifier, which can leave the second named
+    # board unrepresented even though the question explicitly asked about it.
+    # Sibling of the ambiguity guard, not a duplicate: 0 named boards is the
+    # ambiguity guard's job (above), ≥2 named boards is this pass's job — a board
+    # the technician already named is never something to ask them about. Gated on
+    # the same rollback switch as that guard: off means selection is byte-identical
+    # to before this pass existed, which the archived D5 replay fidelity depends on.
+    def add_named_board_coverage(selected, chunks, covering)
+      return selected unless Rag::FamilyAmbiguityGuardFlag.enabled?
+
+      boards = named_boards(chunks)
+      return selected if boards.size < 2
+
+      represented = selected.filter_map { |chunk| board_key(chunk) }.to_set
+      canonicals = covering.map(&:canonical)
+
+      boards.each do |board|
+        break if selected.size >= MAX_GENERATION_CHUNKS
+        next if represented.include?(board[:key])
+
+        addition = board[:chunks]
+          .reject { |chunk| selected.include?(chunk) }
+          .select { |chunk| canonicals.any? { |canonical| identifier_present?(chunk[:content], canonical) } }
+          .max_by { |chunk| selection_score(chunk) }
+        next unless addition
+
+        selected << addition
+        represented << board[:key]
+      end
+
+      selected
+    end
+
+    # Groups chunks by board identity (same key as Rag::FamilyAmbiguityDetector:
+    # the "## " heading label, falling back to metadata section_identity), keeping
+    # only the boards the question actually names. A board can be named through
+    # any of its candidate strings — its own heading, the "**Section:**" line a
+    # generic table heading hides it behind, or the document's section_identity —
+    # so a real board is never missed for lack of a distinctive "## " line. The
+    # specificity rule then drops a named board whose matched tokens are a strict
+    # subset of another named board's — "ARCA" alone must not ride along on a
+    # question that already specified "ARCA básica".
+    def named_boards(chunks)
+      boards = Array(chunks).group_by { |chunk| board_key(chunk) }.filter_map do |key, board_chunks|
+        next if key.nil?
+
+        tokens = board_chunks.flat_map { |chunk| matched_board_tokens(chunk) }.to_set
+        next if tokens.empty?
+
+        { key: key, chunks: board_chunks, tokens: tokens }
+      end
+
+      boards.reject do |board|
+        boards.any? { |other| other[:key] != board[:key] && board[:tokens].proper_subset?(other[:tokens]) }
+      end
+    end
+
+    def board_key(chunk)
+      Rag::BoardHeading.label(chunk[:content]).presence ||
+        chunk[:metadata].to_h.stringify_keys["section_identity"].presence
+    end
+
+    def matched_board_tokens(chunk)
+      metadata = chunk[:metadata].to_h.stringify_keys
+      candidates = [
+        Rag::BoardHeading.label(chunk[:content]),
+        Rag::BoardHeading.section_label(chunk[:content]),
+        metadata["section_identity"]
+      ].compact_blank.uniq
+
+      candidates
+        .select { |candidate| Rag::BoardHeading.mentioned?(candidate, @question) }
+        .flat_map { |candidate| Rag::BoardHeading.board_tokens(candidate) }
     end
 
     # One chunk per board family that documents the ambiguous identifier, ranked
@@ -573,7 +666,7 @@ module Rag
 
     def abstained_outcome(reason:, retrieval:, retrieval_ms:, expansion_ms:, expanded_chunks:,
                           chunks:, expansions:, local_ms: 0, generation_ms: 0, prompt: nil,
-                          raw_answer: nil, model_invoked: false)
+                          raw_answer: nil, model_invoked: false, attribution: nil)
       answer = Rag::AnswerSafetyProcessor.new(locale: locale).call(
         "DATA_NOT_AVAILABLE",
         evidence: []
@@ -594,7 +687,9 @@ module Rag
         outcome: :abstained,
         reason: reason,
         prompt: prompt,
-        raw_answer: raw_answer
+        raw_answer: raw_answer,
+        chunks: chunks,
+        attribution: attribution
       )
 
       result = {
@@ -622,7 +717,7 @@ module Rag
     end
 
     def log_route(expansions:, timings:, answer:, outcome:, prompt:, raw_answer:, reason: nil,
-                  attribution_dropped: 0)
+                  attribution_dropped: 0, chunks: [], attribution: nil)
       Rag::EvidenceSelectionTelemetry.log_route(
         question: @question,
         answer: answer,
@@ -633,6 +728,7 @@ module Rag
         correlation_id: @correlation_id,
         retrieval_budget: RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS,
         expansion_mechanisms: expansions.pluck(:mechanism),
+        expansions: expansions,
         timings: timings,
         outcome: outcome,
         outcome_reason: reason,
@@ -643,7 +739,10 @@ module Rag
         attribution_dropped: attribution_dropped,
         ambiguity_detected: @ambiguity&.ambiguous?,
         ambiguity_identifier: @ambiguity&.identifier,
-        ambiguity_families: @ambiguity&.board_keys
+        ambiguity_families: @ambiguity&.board_keys,
+        chunks: chunks,
+        attribution: attribution,
+        model: BedrockClient::DEFAULT_MODEL_ID
       )
     end
 

@@ -698,6 +698,57 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_not_includes on_generator.calls.first[:prompt], "multiple distinct board families"
   end
 
+  test "a comparative question adds the second named board's chunk after the cover greedy" do
+    route = route_for_selection(
+      "En la placa ARCA básica, ¿qué serie indica el LED P32? ¿Significa lo mismo en ARCA III?"
+    )
+
+    selected = with_family_guard("true") { route.send(:select_generation_chunks, arca_board_chunks) }
+
+    assert_equal %w[arca3 arca-basico], selected.pluck(:chunk_sha256)
+  end
+
+  test "the coverage pass is a no-op with the guard off" do
+    route = route_for_selection(
+      "En la placa ARCA básica, ¿qué serie indica el LED P32? ¿Significa lo mismo en ARCA III?"
+    )
+
+    selected = with_family_guard("false") { route.send(:select_generation_chunks, arca_board_chunks) }
+
+    assert_equal %w[arca3], selected.pluck(:chunk_sha256)
+  end
+
+  test "a comparative question naming only one board does not trigger the coverage pass" do
+    route = route_for_selection("En la placa ARCA II, ¿qué serie indica el LED P32?")
+
+    selected = with_family_guard("true") { route.send(:select_generation_chunks, arca_board_chunks) }
+
+    assert_equal %w[arca2], selected.pluck(:chunk_sha256)
+  end
+
+  test "a board named only through its Section line counts toward the coverage pass" do
+    route = route_for_selection(
+      "En la placa ARCA básica, ¿qué serie indica el LED P32? ¿Significa lo mismo en ARCA III?"
+    )
+    arca_basico_generic_heading = board_chunk(
+      content: "**Document:** Manual\n**Page:** 62\n" \
+               "**Section:** S7 — DIAGRAM: ARCA BASICO — Cadena de Seguridades\n\n" \
+               "## LEDs de Estado — Tabla de Series\nP32 | SERIE CERROJOS CABINA - EXTERIORES",
+      page: 62, section_identity: "ORONA", sha: "arca-basico-section-only"
+    )
+    arca3 = board_chunk(
+      content: "## S4 — SAFETY SYSTEM: Diagrama de cadena de seguridades ARCA III\n" \
+               "P32 | SERIE SEGURIDADES PRINCIPALES",
+      page: 64, section_identity: "ORONA", sha: "arca3"
+    )
+
+    selected = with_family_guard("true") do
+      route.send(:select_generation_chunks, [ arca_basico_generic_heading, arca3 ])
+    end
+
+    assert_equal %w[arca3 arca-basico-section-only], selected.pluck(:chunk_sha256)
+  end
+
   test "the per-board window never exceeds the generation cap" do
     boards = Array.new(7) do |index|
       board_chunk(
@@ -716,6 +767,58 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert ambiguity.ambiguous?
     assert_equal Rag::StructuredEvidenceRoute::MAX_GENERATION_CHUNKS,
                  route.send(:select_generation_chunks, boards, ambiguity: ambiguity).size
+  end
+
+  test "passes the account/user/session/correlation tracking hash to the generator for cost attribution" do
+    rag_service = FakeRagService.new([ neighbor_chunk ])
+    generator = FakeGenerator.new("ABC12 corresponde a la serie documentada. [1]")
+
+    route = Rag::StructuredEvidenceRoute.build(
+      question: "¿Qué indica el LED ABC12?",
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      output_channel: :web,
+      account_id: 7,
+      user_id: 9,
+      conversation_session_id: 11,
+      correlation_id: "corr-tracking",
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    outcome = route.execute
+
+    assert_equal :answered, outcome.status
+    assert_equal(
+      { account_id: 7, user_id: 9, conversation_session_id: 11, correlation_id: "corr-tracking" },
+      generator.calls.first[:tracking]
+    )
+  end
+
+  test "emits per-chunk evidence_route_context events with page, section_identity and source_uri" do
+    rag_service = FakeRagService.new([ neighbor_chunk ])
+    generator = FakeGenerator.new("ABC12 corresponde a la serie documentada. [1]")
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    build_route(rag_service: rag_service, generator: generator, expander: FakeExpander.new(nil)).execute
+
+    contexts = output.string.lines
+      .grep(/"event":"evidence_route_context"/)
+      .map { |line| JSON.parse(line.split("[PILOT_USAGE] ", 2).last) }
+
+    assert_equal 1, contexts.size
+    assert_equal "neighbor-sha", contexts.first["chunk_sha256"]
+    assert_equal 36, contexts.first["page"]
+    assert_equal "SECTION-A", contexts.first["section_identity"]
+    assert_equal @source_uri, contexts.first["source_uri"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   test "the structured turn does not create a BedrockQuery row for pure retrieval" do

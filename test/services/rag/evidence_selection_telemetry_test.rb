@@ -175,4 +175,163 @@ class Rag::EvidenceSelectionTelemetryTest < ActiveSupport::TestCase
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
+
+  test "logs the model id and attribution identities/anchors on evidence_route" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    attribution = Struct.new(:identities, :anchors).new([ "CARLOS SILVA", "SISTEL" ], [ "CARLOS SILVA" ])
+
+    assert Rag::EvidenceSelectionTelemetry.log_route(
+      question: "¿A qué serie corresponde el LED SPM?",
+      answer: "El significado depende de la placa. [1][2]",
+      generation_mode: "structured_evidence_route",
+      account_id: 1,
+      user_id: 2,
+      conversation_session_id: 3,
+      correlation_id: "corr-4",
+      retrieval_budget: 12,
+      expansion_mechanisms: [],
+      outcome: :answered,
+      outcome_reason: nil,
+      verbatim_directive: true,
+      generation_input_tokens: 300,
+      generation_output_tokens: 60,
+      generation_prompt_chars: 1_200,
+      model: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      attribution: attribution,
+      timings: {
+        retrieval_ms: 20,
+        expansion_ms: 0,
+        local_ms: 3,
+        generation_ms: 40,
+        generation_chunks: 0
+      }
+    )
+
+    line = output.string.lines.find { |entry| entry.include?('"event":"evidence_route"') }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+
+    assert_equal "global.anthropic.claude-haiku-4-5-20251001-v1:0", payload["model"]
+    assert_equal [ "CARLOS SILVA", "SISTEL" ], payload["attribution_identities"]
+    assert_equal [ "CARLOS SILVA" ], payload["attribution_anchors"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "emits one evidence_route_context event per generation chunk with page, section and source" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    chunks = [
+      {
+        content: "SPM | SERIE PUERTAS CABINA - EXTERIORES",
+        metadata: {
+          "document_id" => "doc-tpr50",
+          "original_source_uri" => "s3://bucket/seguridades.pdf",
+          "page_number" => 9,
+          "section_identity" => "CARLOS SILVA"
+        },
+        chunk_sha256: "spm-tpr50"
+      },
+      {
+        content: "SPM | SERIE DE PUERTAS",
+        metadata: {
+          "document_id" => "doc-twister",
+          "original_source_uri" => "s3://bucket/seguridades.pdf",
+          "page_number" => 88,
+          "section_identity" => "SISTEL"
+        },
+        chunk_sha256: "spm-twister"
+      }
+    ]
+    expansions = [
+      { divider_chunk_sha256: "divider-1", neighbor_chunk_sha256: "spm-twister", mechanism: :section_identity }
+    ]
+
+    assert Rag::EvidenceSelectionTelemetry.log_route(
+      question: "¿A qué serie corresponde el LED SPM?",
+      answer: "El significado depende de la placa. [1][2]",
+      generation_mode: "structured_evidence_route",
+      account_id: 1,
+      user_id: 2,
+      conversation_session_id: 3,
+      correlation_id: "corr-5",
+      retrieval_budget: 12,
+      expansion_mechanisms: [ :section_identity ],
+      outcome: :answered,
+      outcome_reason: nil,
+      verbatim_directive: true,
+      generation_input_tokens: 300,
+      generation_output_tokens: 60,
+      generation_prompt_chars: 1_200,
+      chunks: chunks,
+      expansions: expansions,
+      timings: {
+        retrieval_ms: 20,
+        expansion_ms: 5,
+        local_ms: 3,
+        generation_ms: 40,
+        generation_chunks: 2
+      }
+    )
+
+    contexts = output.string.lines
+      .grep(/"event":"evidence_route_context"/)
+      .map { |line| JSON.parse(line.split("[PILOT_USAGE] ", 2).last) }
+
+    assert_equal 2, contexts.size
+    tpr50 = contexts.find { |payload| payload["chunk_sha256"] == "spm-tpr50" }
+    twister = contexts.find { |payload| payload["chunk_sha256"] == "spm-twister" }
+
+    assert_equal "doc-tpr50", tpr50["document_id"]
+    assert_equal "s3://bucket/seguridades.pdf", tpr50["source_uri"]
+    assert_equal 9, tpr50["page"]
+    assert_equal "CARLOS SILVA", tpr50["section_identity"]
+    assert_equal "none", tpr50["expansion_mechanism"]
+    assert_equal 64, tpr50["excerpt_sha256"].length
+    assert_equal Digest::SHA256.hexdigest(chunks.first[:content].first(200)), tpr50["excerpt_sha256"]
+
+    assert_equal "section_identity", twister["expansion_mechanism"]
+    assert_equal 3, twister["conversation_session_id"]
+    assert_equal "corr-5", twister["correlation_id"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "abstained route with no generation chunks emits no evidence_route_context events" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    assert Rag::EvidenceSelectionTelemetry.log_route(
+      question: "¿Qué indica el LED ABC12?",
+      answer: "El documento no incluye este dato.",
+      generation_mode: "structured_evidence_route",
+      account_id: 1,
+      user_id: 2,
+      conversation_session_id: 3,
+      correlation_id: "corr-6",
+      retrieval_budget: 12,
+      expansion_mechanisms: [],
+      outcome: :abstained,
+      outcome_reason: :empty_evidence,
+      verbatim_directive: false,
+      generation_input_tokens: nil,
+      generation_output_tokens: nil,
+      generation_prompt_chars: nil,
+      chunks: [],
+      timings: {
+        retrieval_ms: 20,
+        expansion_ms: 0,
+        local_ms: 0,
+        generation_ms: 0,
+        generation_chunks: 0
+      }
+    )
+
+    assert_empty output.string.lines.grep(/"event":"evidence_route_context"/)
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
 end

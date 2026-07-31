@@ -43,6 +43,40 @@ class Rag::BoardHeadingTest < ActiveSupport::TestCase
     )
   end
 
+  test "a parenthetical footnote on the heading does not block a match" do
+    assert Rag::BoardHeading.mentioned?(
+      "Diagrama de cadena de seguridades ARCA III (Orona PDCM 5124537)",
+      "En la placa ARCA básica, ¿qué serie indica el LED P32? ¿Significa lo mismo en ARCA III?"
+    )
+  end
+
+  test "the parenthetical is kept verbatim in the label a heading returns" do
+    assert_equal "Diagrama de cadena de seguridades ARCA III (Orona PDCM 5124537)",
+                 Rag::BoardHeading.label(
+                   "## S4 — SAFETY SYSTEM: Diagrama de cadena de seguridades ARCA III " \
+                   "(Orona PDCM 5124537)"
+                 )
+  end
+
+  test "section_label extracts the board name a generic table heading hides behind it" do
+    content = <<~CONTENT
+      **Document:** ALJO Control Level 1B Altius
+      **Page:** 62 of 97
+      **Section:** S7 — DIAGRAM: ARCA BASICO — Cadena de Seguridades y Conectores Principales
+
+      ## LEDs de Estado — Tabla de Series
+
+      | LED | SERIE |
+    CONTENT
+
+    assert_equal "ARCA BASICO", Rag::BoardHeading.section_label(content)
+  end
+
+  test "section_label is nil without a Section line or with a blank one" do
+    assert_nil Rag::BoardHeading.section_label("## LEDs de Estado — Tabla de Series")
+    assert_nil Rag::BoardHeading.section_label(nil)
+  end
+
   test "a question with no board named matches no board" do
     [
       "TWISTER TW - INAPELSA",

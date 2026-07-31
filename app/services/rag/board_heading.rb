@@ -20,6 +20,11 @@ module Rag
     # "BÁSICO" ~ "básica", "ELECTRICO" ~ "eléctrica": gender and plural variants
     # of the same board word still agree on their first four characters.
     MIN_COMMON_PREFIX = 4
+    # A parenthetical on a "## " heading is a footnote ("ARCA III (Orona PDCM
+    # 5124537)"), not part of the board's name — left in, its extra tokens (the
+    # PDCM reference number) block `mentioned?` from ever matching. Stripped only
+    # for tokenizing; `label` itself keeps the parenthetical verbatim.
+    PARENTHETICAL = /\([^)]*\)/.freeze
 
     module_function
 
@@ -40,6 +45,22 @@ module Rag
       label.first(MAX_LABEL_CHARS)
     end
 
+    # The board name a generic "## " table heading hides behind its own
+    # "**Section:**" line (Rag::EvidenceCandidateSelector::SECTION_MARKER), e.g.
+    # a page headed "## LEDs de Estado — Tabla de Series" whose
+    # "**Section:** S7 — DIAGRAM: ARCA BASICO — ..." line carries the actual
+    # board. Reuses `label`'s own transform via a synthetic "## " line so the
+    # two never drift apart.
+    def section_label(content)
+      line = content.to_s.lines.find { |candidate| candidate.strip.start_with?(Rag::EvidenceCandidateSelector::SECTION_MARKER) }
+      return if line.blank?
+
+      text = line.strip.delete_prefix(Rag::EvidenceCandidateSelector::SECTION_MARKER).strip
+      return if text.blank?
+
+      label("## #{text}")
+    end
+
     # True when the question already names the board a heading declares.
     #
     # Only the heading's identifier-shaped tokens are required: a real heading
@@ -56,11 +77,13 @@ module Rag
       tokens.all? { |token| asked.any? { |word| word_match?(token, word) } }
     end
 
+    # Public: Rag::StructuredEvidenceRoute's comparative-selection pass reuses
+    # this to compare two named boards' tokens for its specificity rule.
     def board_tokens(heading)
-      identifiers = Rag::QueryEntities.identifiers(heading.to_s).map { |identifier| fold(identifier.raw) }
-      (identifiers.presence || words(heading)).uniq
+      cleaned = heading.to_s.gsub(PARENTHETICAL, " ")
+      identifiers = Rag::QueryEntities.identifiers(cleaned).map { |identifier| fold(identifier.raw) }
+      (identifiers.presence || words(cleaned)).uniq
     end
-    private_class_method :board_tokens
 
     def words(text)
       fold(text).scan(/[[:alnum:]]+/)

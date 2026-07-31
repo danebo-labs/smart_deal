@@ -12,6 +12,8 @@ module Rag
   class AnswerSafetyProcessor
     INTERNAL_MARKER_PATTERN =
       /\b(?:DATA_NOT_AVAILABLE|REQUIRES?_FIELD_VERIFICATION)\b/.freeze
+    INTERNAL_MARKER_PARAGRAPH_PATTERN =
+      /\A\s*(?:\*\*|__)?(?:DATA_NOT_AVAILABLE|REQUIRES?_FIELD_VERIFICATION)\b/.freeze
 
     IDENTIFIER_PATTERN = /
       (?<![[:alnum:]_])
@@ -205,7 +207,7 @@ module Rag
 
         keep[index] = false if next_index >= lines.length ||
           header_line?(lines[next_index]) ||
-          lines[next_index].match?(INTERNAL_MARKER_PATTERN)
+          lines[next_index].match?(INTERNAL_MARKER_PARAGRAPH_PATTERN)
       end
 
       lines.each_index.select { |index| keep[index] }.map { |index| lines[index] }.join

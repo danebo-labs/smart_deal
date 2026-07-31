@@ -45,6 +45,7 @@ module Rag
     COMPONENT_CODE_PATTERN = /\b[A-Z][A-Z0-9_-]{2,}\b/.freeze
     COMPONENT_CODE_STOPWORDS = %w[
       DATA NOT AVAILABLE REQUIRE REQUIRES FIELD VERIFICATION LED
+      DATA_NOT_AVAILABLE REQUIRE_FIELD_VERIFICATION REQUIRES_FIELD_VERIFICATION
     ].freeze
     # A "(SERIE ...)" parenthetical names the documented LED/series category a
     # code belongs to (e.g. "41 (SERIE CERROJOS CABINA)") — it is a label, not a
@@ -202,7 +203,9 @@ module Rag
         next_index = index + 1
         next_index += 1 while next_index < lines.length && lines[next_index].strip.empty?
 
-        keep[index] = false if next_index >= lines.length || header_line?(lines[next_index])
+        keep[index] = false if next_index >= lines.length ||
+          header_line?(lines[next_index]) ||
+          lines[next_index].match?(INTERNAL_MARKER_PATTERN)
       end
 
       lines.each_index.select { |index| keep[index] }.map { |index| lines[index] }.join

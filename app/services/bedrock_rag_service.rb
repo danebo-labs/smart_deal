@@ -333,7 +333,7 @@ class BedrockRagService
 
       # Failure semantics (Gate B): make prose-only absence explicit with the
       # literal protocol marker so downstream contracts/telemetry can rely on it.
-      answer_text = normalize_absence_semantics(answer_text)
+      answer_text = normalize_absence_semantics(answer_text, locale: no_results_locale)
       internal_answer_text = answer_text
       # F3 — Single guardrail pass with the full evidence context: native
       # citations when present, otherwise the chunks retrieved for identity
@@ -1374,14 +1374,14 @@ class BedrockRagService
   # absence statement but emitted no marker. Lead-scoped (first ABSENCE_LEAD_CHARS,
   # markdown noise stripped) so grounded answers with an incidental sub-absence are
   # not falsely flagged. Idempotent: never adds a second marker.
-  def normalize_absence_semantics(answer)
+  def normalize_absence_semantics(answer, locale: I18n.locale)
     return answer if answer.blank?
     return answer if answer.match?(ABSENCE_MARKER_PATTERN)
 
     lead = answer[0, ABSENCE_LEAD_CHARS].to_s.tr("#*`>_", " ")
     return answer unless ABSENCE_LEAD_PATTERNS.any? { |re| lead.match?(re) }
 
-    "#{answer.rstrip}\n\n**DATA_NOT_AVAILABLE** — el dato solicitado no está documentado; requiere verificación en campo."
+    "#{answer.rstrip}\n\n#{I18n.t('rag.absence_total_contract', locale: locale)}"
   end
 
   def extract_doc_refs(answer_text)

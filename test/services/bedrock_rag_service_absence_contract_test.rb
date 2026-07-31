@@ -39,12 +39,16 @@ class BedrockRagServiceAbsenceContractTest < ActiveSupport::TestCase
     assert_same empty = +"", normalize(empty)
   end
 
-  test "the legacy tail is emitted in Spanish even for the en locale" do
+  test "the legacy tail is fully localized for the en locale" do
     answer = "The document does not specify the requested condition."
 
     normalized = I18n.with_locale(:en) { normalize(answer) }
 
-    assert_equal "#{answer}\n\n#{LEGACY_TAIL}", normalized
+    assert_equal(
+      "#{answer}\n\n**DATA_NOT_AVAILABLE** — " \
+        "the requested information is not documented; field verification is required.",
+      normalized
+    )
   end
 
   private

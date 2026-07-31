@@ -112,6 +112,18 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     assert_equal answer, processor.call(answer, evidence: evidence)
   end
 
+  test "the joined absence sentinels are not treated as connector components" do
+    answer = "El conector documentado es XQ22 — DATA_NOT_AVAILABLE REQUIRES_FIELD_VERIFICATION."
+    evidence = [ { content: "El conector documentado es XQ22." } ]
+
+    rendered = processor.call(answer, evidence: evidence)
+
+    assert_includes rendered, "XQ22"
+    assert_includes rendered, t("data_not_available")
+    assert_includes rendered, t("requires_field_verification")
+    assert_not_includes rendered, t("unsupported_connection")
+  end
+
   test "does not treat search aliases as component connector evidence" do
     rendered = processor.call(
       "CERROJOS CABINA se conectan a B8.",
@@ -193,6 +205,17 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
 
     assert_includes rendered, "Estado documentado:"
     assert_includes rendered, "DL27 se enciende durante un fallo."
+  end
+
+  test "a trailing orphan header is still pruned when an absence paragraph follows" do
+    answer = "La etiqueta ZR7-K1 está documentada.\n\n**Condición restante:**\n\nDATA_NOT_AVAILABLE"
+    evidence = [ { content: "La etiqueta ZR7-K1 está documentada." } ]
+
+    rendered = processor.call(answer, evidence: evidence)
+
+    assert_includes rendered, "ZR7-K1"
+    assert_not_includes rendered, "Condición restante"
+    assert_includes rendered, t("data_not_available")
   end
 
   # altius_d9_d10: "indica"/"señala" alone name a documented series/label

@@ -30,6 +30,8 @@ en:
     generation_retry: "I found related documentation but could not compose the answer on this attempt. Send the query again; if it persists, name the manufacturer and the exact board."
     data_not_available: "The document does not include this information"
     requires_field_verification: "Verify in the field or against the complete schematic"
+    absence_total_contract: "**DATA_NOT_AVAILABLE** — the requested information is not documented; field verification is required."
+    absence_partial_contract: "**DATA_NOT_AVAILABLE** — **REQUIRES_FIELD_VERIFICATION**."
     unsupported_identifier: "The stated connection, terminal, or signal is not documented in the retrieved evidence."
     uncited_technical_answer: "I could not verify this answer with a document citation. Check the complete source before using the information."
     unsupported_connection: "The component-to-connector relationship is not explicitly documented in the retrieved evidence; confirm it against the complete schematic."

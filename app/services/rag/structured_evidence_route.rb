@@ -156,8 +156,14 @@ module Rag
       end
 
       local_after_generation_started = monotonic_now
-      answer = Rag::AnswerSafetyProcessor.new(locale: locale).call(
+      internal_answer = BedrockRagService.allocate.send(
+        :normalize_absence_semantics,
         raw_answer,
+        question: @question,
+        locale: locale
+      )
+      answer = Rag::AnswerSafetyProcessor.new(locale: locale).call(
+        internal_answer,
         evidence: citation_evidence,
         require_cited_evidence: true
       )
@@ -216,7 +222,7 @@ module Rag
         correlation_id: @correlation_id,
         diagnostics: {
           raw_answer: raw_answer,
-          internal_answer: raw_answer,
+          internal_answer: internal_answer,
           retrieved_chunks: expanded_chunks,
           generation_chunks: chunks,
           safety_evidence_chunks: citation_evidence,

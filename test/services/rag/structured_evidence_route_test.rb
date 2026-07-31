@@ -61,7 +61,10 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   setup do
     @original_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    @original_partial_contract_flag =
+      ENV.fetch("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil)
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = "false"
     @account = accounts(:legacy)
     @source_uri = "s3://test-bucket/manual.pdf"
   end
@@ -71,6 +74,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED")
     else
       ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = @original_flag
+    end
+    if @original_partial_contract_flag.nil?
+      ENV.delete("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED")
+    else
+      ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = @original_partial_contract_flag
     end
   end
 
@@ -363,6 +371,66 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 1, outcome.result[:citations].size
   end
 
+  test "a partially-abstaining answer that still cites the documented part passes the citation gate" do
+    chunk = synthetic_chunk(
+      "LED DL91 | SERIE ZETA HUECO",
+      rank: 1,
+      sha: "partial-state"
+    )
+    raw_answer = "DL91 corresponde a \"SERIE ZETA HUECO\" [1].\n\n" \
+      "El documento no especifica la condición normal."
+    rag_service = FakeRagService.new([ chunk ])
+
+    with_partial_contract("true") do
+      outcome = build_route(
+        question: "En ZR7-K1, ¿qué LED DL91 corresponde a la condición normal?",
+        rag_service: rag_service,
+        generator: FakeGenerator.new(raw_answer),
+        expander: FakeExpander.new(nil)
+      ).execute
+
+      assert_equal :answered, outcome.status
+      assert_includes outcome.result[:answer], "SERIE ZETA HUECO"
+      assert_includes outcome.result[:answer], I18n.t("rag.data_not_available", locale: :es)
+      assert_includes outcome.result[:answer], I18n.t("rag.requires_field_verification", locale: :es)
+      assert_equal [ 1 ], outcome.result[:answer].scan(/\[(\d+)\]/).flatten.map(&:to_i)
+      assert_equal [ 1 ], outcome.result[:citations].pluck(:number)
+      assert_equal 1, rag_service.calls.size
+    end
+  end
+
+  test "an appended absence paragraph changes neither markers nor citations" do
+    chunk = synthetic_chunk("LED DL91 | SERIE ZETA HUECO", rank: 1, sha: "citation-invariant")
+    raw_answer = "DL91 corresponde a \"SERIE ZETA HUECO\" [1].\n\n" \
+      "#{"Detalle documentado sin cambio. " * 10}" \
+      "El documento no especifica la condición normal."
+    off_service = FakeRagService.new([ chunk ])
+    on_service = FakeRagService.new([ chunk ])
+
+    off = with_partial_contract("false") do
+      build_route(
+        question: "En ZR7-K1, ¿qué LED DL91 corresponde a la condición normal?",
+        rag_service: off_service,
+        generator: FakeGenerator.new(raw_answer),
+        expander: FakeExpander.new(nil)
+      ).execute.result
+    end
+    on = with_partial_contract("true") do
+      build_route(
+        question: "En ZR7-K1, ¿qué LED DL91 corresponde a la condición normal?",
+        rag_service: on_service,
+        generator: FakeGenerator.new(raw_answer),
+        expander: FakeExpander.new(nil)
+      ).execute.result
+    end
+
+    assert_equal raw_answer, off[:answer]
+    assert_equal off[:answer].scan(/\[(\d+)\]/), on[:answer].scan(/\[(\d+)\]/)
+    assert_equal off[:citations], on[:citations]
+    assert_equal 1, off_service.calls.size
+    assert_equal off_service.calls.size, on_service.calls.size
+  end
+
   test "the generated prompt scopes language and requires verbatim documented values" do
     rag_service = FakeRagService.new([ neighbor_chunk ])
     generator = FakeGenerator.new("\"SERIE CAB. EXT. CERRADA\" [1]")
@@ -426,6 +494,18 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   private
+
+  def with_partial_contract(value)
+    previous = ENV.fetch("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil)
+    ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = value
+    yield
+  ensure
+    if previous.nil?
+      ENV.delete("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED")
+    else
+      ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = previous
+    end
+  end
 
   def build_route(question: "¿Qué indica el LED ABC12?", entity_s3_uris: [ @source_uri ],
                   entity_sources: [ "document" ], output_channel: :web, rag_service: nil,

@@ -1,10 +1,15 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "digest"
 
 class BedrockGenerationPromptTest < ActiveSupport::TestCase
+  PRE_CHANGE_SHA256 = "bed763f75b9adaad91d8bb535e7f33775b23c83b5d88c8fcc676cb689fb6c8da"
+
   def prompt
-    @prompt ||= BedrockRagService.load_generation_prompt_template
+    @prompt ||= with_partial_contract("true") do
+      BedrockRagService.load_generation_prompt_template
+    end
   end
 
   test "treats retrieved chunks as evidence candidates" do
@@ -45,6 +50,19 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
     assert_includes prompt, 'physical connection claim ("component → connector/terminal")'
     assert_includes prompt, "same evidence fragment explicitly names both endpoints as a pair"
     assert_includes prompt, "does not define its on/off logic"
+    assert_match(
+      /LED-label-only case, include DATA_NOT_AVAILABLE after the prose that identifies the missing on\/off logic/,
+      prompt
+    )
+  end
+
+  test "flag off restores the pre-change template sha256" do
+    disabled_prompt = with_partial_contract(nil) do
+      BedrockRagService.load_generation_prompt_template
+    end
+
+    assert_equal PRE_CHANGE_SHA256, Digest::SHA256.hexdigest(disabled_prompt)
+    assert_not_includes disabled_prompt, BedrockRagService::PARTIAL_ABSTENTION_PROMPT_PREFIX
   end
 
   test "allows only the fixed safe glossary and forbids inferred device roles" do
@@ -89,5 +107,23 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "at most three logical sections"
     assert_includes prompt, "No markdown tables"
     assert_includes prompt, "Do not add a generic safety closing"
+  end
+
+  private
+
+  def with_partial_contract(value)
+    original = ENV.fetch("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil)
+    if value.nil?
+      ENV.delete("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED")
+    else
+      ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = value
+    end
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED")
+    else
+      ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = original
+    end
   end
 end

@@ -28,6 +28,7 @@ class BedrockRagService
   # the retired </DOC_REFS> stop sequence caused. Every dynamic directive is
   # therefore appended before the placeholder, which is always re-emitted last.
   OUTPUT_FORMAT_PLACEHOLDER = "$output_format_instructions$"
+  PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
 
   # Deterministic failure-semantics normalization (Gate B).
   # Haiku frequently states absence in prose ("la documentación no contiene…")
@@ -1197,12 +1198,27 @@ class BedrockRagService
   # + the post-response token-count assembly) — without memoization that means
   # 2 File.read syscalls per request multiplied by N concurrent requests.
   def self.load_generation_prompt_template
+    partial_contract = Rag::PartialAbstentionContractFlag.enabled?
+
     if Rails.env.production?
-      @generation_prompt_template ||= Rails.root.join("app/prompts/bedrock/generation.txt").read
+      @generation_prompt_templates ||= {}
+      @generation_prompt_templates[partial_contract] ||= begin
+        template = @generation_prompt_template ||=
+          Rails.root.join("app/prompts/bedrock/generation.txt").read
+        filter_partial_abstention_prompt(template, partial_contract:)
+      end
     else
-      Rails.root.join("app/prompts/bedrock/generation.txt").read
+      template = Rails.root.join("app/prompts/bedrock/generation.txt").read
+      filter_partial_abstention_prompt(template, partial_contract:)
     end
   end
+
+  def self.filter_partial_abstention_prompt(template, partial_contract:)
+    return template if partial_contract
+
+    template.lines.reject { |line| line.start_with?(PARTIAL_ABSTENTION_PROMPT_PREFIX) }.join
+  end
+  private_class_method :filter_partial_abstention_prompt
 
   def estimate_tokens(text)
     return 0 if text.blank?

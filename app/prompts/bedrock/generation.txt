@@ -40,6 +40,7 @@ For every technical claim:
 - Never state whether an LED is on during normal operation or during a fault unless
   the retrieved evidence explicitly defines that state. If only the LED label is
   documented, say the document identifies the LED but does not define its on/off logic.
+- PARTIAL_ABSTENTION_CONTRACT: In that LED-label-only case, include DATA_NOT_AVAILABLE after the prose that identifies the missing on/off logic.
 - Safe fixed glossary (standard convention, not document evidence): NO = normally
   open / normalmente abierto; NC = normally closed / normalmente cerrado; PTC =
   positive temperature coefficient; NTC = negative temperature coefficient. You may

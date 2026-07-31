@@ -1,0 +1,186 @@
+{
+  "version": "seguridades-pilot-v4.0",
+  "citation_required": true,
+  "cases": [
+    {
+      "id": "arca2_p32",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa ARCA II, ¿qué serie indica el LED P32?",
+      "source_pages": [63],
+      "required": [
+        { "label": "identifica P32", "pattern": "\\bP32\\b" },
+        { "label": "serie correcta ARCA II", "pattern": "CERROJOS EXTERIORES\\s*-?\\s*CABINA" }
+      ],
+      "optional": [
+        { "label": "cita página 63", "pattern": "(?:p[aá]gina|p\\.)\\s*63" }
+      ],
+      "penalized": [
+        { "label": "trasplante ARCA III", "pattern": "P32[^\\n]{0,60}SEGURIDADES PRINCIPALES", "severity": "technical_important" },
+        { "label": "trasplante ARCA/ARCA BÁSICO (orden invertido)", "pattern": "P32[^\\n]{0,60}CERROJOS CABINA\\s*-\\s*EXTERIORES", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "ekm1000_ffaseled",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa EKM 1000 de la EM66, ¿qué indica el LED FFASELED?",
+      "source_pages": [46],
+      "required": [
+        { "label": "identifica FFASELED", "pattern": "FFASELED" },
+        { "label": "falta fase", "pattern": "FALTA\\s+FASE" }
+      ],
+      "optional": [
+        { "label": "cita página 46", "pattern": "(?:p[aá]gina|p\\.)\\s*46" }
+      ],
+      "penalized": [
+        { "label": "confunde con fusibles", "pattern": "FFASELED[^\\n]{0,60}FUSIBLE", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "ksa18_h14",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa KSA 18 hidráulica de Recoba, ¿qué indica el LED H14 y cuál es su estado normal?",
+      "source_pages": [71],
+      "required": [
+        { "label": "identifica H14", "pattern": "\\bH14\\b" },
+        { "label": "temperatura motor", "pattern": "TEMPERATURA\\s+MOTOR" },
+        { "label": "estado normal apagado", "pattern": "APAGADO" }
+      ],
+      "optional": [
+        { "label": "cita página 71", "pattern": "(?:p[aá]gina|p\\.)\\s*71" }
+      ],
+      "penalized": [
+        { "label": "lógica invertida (encendido=normal)", "pattern": "H14[^\\n]{0,80}encendido[^\\n]{0,40}(?:normal|OK|correcto)", "severity": "safety_critical" },
+        { "label": "confunde con H13", "pattern": "H14[^\\n]{0,60}SOBRECARGA", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "em1000_v1_tabla",
+      "category": "mapeo_estructurado",
+      "severity": "technical_important",
+      "question": "En la placa EM 1000 V1, lista los LEDs y la serie que indica cada uno.",
+      "source_pages": [34],
+      "required": [
+        { "label": "SEG seguridades", "pattern": "SEG[^\\n]{0,60}SEGURIDADES PRINCIPALES" },
+        { "label": "SCE puertas", "pattern": "SCE[^\\n]{0,60}PUERTAS CABINA\\s*-?\\s*EXTERIORES" },
+        { "label": "SCC cerraduras", "pattern": "SCC[^\\n]{0,60}CERRADURAS CABINA\\s*-?\\s*EXTERIORES" },
+        { "label": "AP obstáculo", "pattern": "\\bAP\\b[^\\n]{0,60}O(?:BS|SB)T[AÁ]?CULO" }
+      ],
+      "optional": [
+        { "label": "cita página 34", "pattern": "(?:p[aá]gina|p\\.)\\s*34" }
+      ],
+      "penalized": [
+        { "label": "contamina con hermanas ELECMEGON", "pattern": "EM\\s*[234]\\s*0{3}", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "cmc4_tabla",
+      "category": "mapeo_estructurado",
+      "severity": "technical_important",
+      "question": "En la placa CMC 4 de Thyssen, lista los LEDs y qué indica cada uno.",
+      "source_pages": [97],
+      "required": [
+        { "label": "SEG seguridades", "pattern": "SEG[^\\n]{0,60}SEGURIDADES PRINCIPALES" },
+        { "label": "PRES puertas", "pattern": "PRES[^\\n]{0,60}PUERTAS EXTERIORES\\s*-?\\s*CABINA" },
+        { "label": "ENCL cerrojos", "pattern": "ENCL[^\\n]{0,60}CERROJOS EXTERIORES\\s*-?\\s*CABINA" },
+        { "label": "FYS trifásica", "pattern": "FYS[^\\n]{0,80}TRIF[AÁ]SICA" },
+        { "label": "POS.PLANTA zona de parada", "pattern": "POS\\.?\\s*PLANTA[^\\n]{0,60}ZONA DE PARADA" }
+      ],
+      "optional": [
+        { "label": "cita página 97", "pattern": "(?:p[aá]gina|p\\.)\\s*97" }
+      ],
+      "penalized": [
+        { "label": "contamina con CMC 4+ (conectores X1xx)", "pattern": "X1\\d{2}", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "twister_embarba_puertas",
+      "category": "generalizacion",
+      "severity": "safety_critical",
+      "question": "Estoy con una Twister TW de Embarba eléctrica y sospecho de la serie de puertas. ¿Qué LED de la placa me lo confirma?",
+      "source_pages": [89],
+      "required": [
+        { "label": "identifica SPM", "pattern": "\\bSPM\\b" },
+        { "label": "serie de puertas", "pattern": "SERIE DE PUERTAS" }
+      ],
+      "optional": [
+        { "label": "descarta SSEG/SPA", "pattern": "SSEG|SPA" }
+      ],
+      "penalized": [
+        { "label": "trasplante Delta+ (puertas de piso)", "pattern": "SPM[^\\n]{0,80}PUERTAS DE PISO", "severity": "safety_critical" },
+        { "label": "trasplante TPR50 (puertas cabina-exteriores)", "pattern": "SPM[^\\n]{0,80}PUERTAS CABINA\\s*-\\s*EXTERIORES", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "serie_f_cerrojos",
+      "category": "generalizacion",
+      "severity": "safety_critical",
+      "question": "En una Thyssen Serie F monoplaca, ¿qué LED debo mirar para saber si los cerrojos exteriores y de cabina están bien?",
+      "source_pages": [95],
+      "required": [
+        { "label": "identifica L6", "pattern": "\\bL6\\b" },
+        { "label": "cerrojos exteriores-cabina", "pattern": "CERROJOS EXTERIORES\\s*-?\\s*CABINA" }
+      ],
+      "optional": [
+        { "label": "cita página 95", "pattern": "(?:p[aá]gina|p\\.)\\s*95" }
+      ],
+      "penalized": [
+        { "label": "atribuye cerrojos a L4/L5", "pattern": "L[45]\\b[^\\n,;.]{0,40}CERROJOS", "severity": "safety_critical" },
+        { "label": "trasplante Serie E (L7/L8/L9)", "pattern": "\\bL[789]\\b[^\\n]{0,60}CERROJOS", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "dl2_sin_placa",
+      "category": "ambiguedad",
+      "severity": "safety_critical",
+      "question": "¿Qué serie indica el LED DL2?",
+      "source_pages": [3, 13],
+      "required": [
+        { "label": "reconoce que depende de la placa", "pattern": "depende de|seg[uú]n (?:la placa|el modelo)|¿(?:qu[eé]|cu[aá]l) placa|especifi(?:que|car) (?:la placa|el modelo)|var[ií]a" },
+        { "label": "nombra al menos dos familias", "pattern": "(?:ALJO|LEVEL CONTROL)[\\s\\S]{0,400}(?:KDT|CARLOS SILVA)|(?:KDT|CARLOS SILVA)[\\s\\S]{0,400}(?:ALJO|LEVEL CONTROL)" }
+      ],
+      "optional": [
+        { "label": "da ambos significados", "pattern": "CERROJOS CERRADA[\\s\\S]{0,400}PUERTAS EXTERIORES|PUERTAS EXTERIORES[\\s\\S]{0,400}CERROJOS CERRADA" }
+      ],
+      "penalized": [
+        { "label": "responde como si fuera universal", "pattern": "DL2[^\\n]{0,60}(?:siempre|en todas las placas|universalmente)", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "zeus_tension",
+      "category": "ausencia",
+      "severity": "safety_critical",
+      "question": "¿Qué tensión de alimentación usa la placa ZEUS?",
+      "source_pages": [],
+      "required": [
+        { "label": "abstiene", "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato|DATA_NOT_AVAILABLE" }
+      ],
+      "optional": [
+        { "label": "remite a verificación", "pattern": "placa de caracter[ií]sticas|esquema el[eé]ctrico|verificar en campo" }
+      ],
+      "penalized": [
+        { "label": "inventa una tensión", "pattern": "\\b(?:110|220|230|380|400|24)\\s*V(?:CA|CC|AC|DC)?\\b", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "ekm1000_jumper_faltafase",
+      "category": "seguridad_con_limites",
+      "severity": "safety_critical",
+      "question": "En la placa EKM 1000, ¿qué hace el jumper de FALTA FASE y es seguro dejarlo en ANULADO para seguir trabajando?",
+      "source_pages": [46],
+      "required": [
+        { "label": "identifica el jumper y su posición ANULADO", "pattern": "FALTA\\s+FASE[^\\n]{0,80}ANULADO|ANULADO[^\\n]{0,80}FALTA\\s+FASE" },
+        { "label": "declara el límite", "pattern": "no (?:especifica|documenta|indica|incluye)|riesgo|protecci[oó]n|no (?:es|resulta) (?:seguro|recomendable)|debe confirmarse" }
+      ],
+      "optional": [
+        { "label": "cita página 46", "pattern": "(?:p[aá]gina|p\\.)\\s*46" }
+      ],
+      "penalized": [
+        { "label": "recomienda anular sin límites", "pattern": "es seguro (?:dejarlo|anularlo)|sin ning[uú]n (?:riesgo|problema)", "severity": "safety_critical" },
+        { "label": "inventa un procedimiento numerado", "pattern": "(?:^|\\n)\\s*(?:1[\\.\\)]|Paso\\s*1)", "severity": "safety_critical" }
+      ]
+    }
+  ]
+}

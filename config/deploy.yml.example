@@ -73,6 +73,14 @@ env:
     RAG_EVIDENCE_SELECTOR_ENABLED: "false"
     RAG_EVIDENCE_EXPANSION_ENABLED: "false"
     RAG_EVIDENCE_CARDS_ENABLED: "false"
+    RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED: "false"
+    # Citation attribution contract (Rag::CitationMarkerNormalizer +
+    # Rag::CitationAttributionGuard) and partial abstention contract. Only the
+    # exact string "true" enables them; anything else is the dd0a421 behavior.
+    # Turn both on together for the pilot gate — see
+    # docs/RAG_CITATION_ATTRIBUTION_CONTRACT_2026-07-30.md.
+    RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED: "false"
+    RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED: "false"
   secret:
     - RAILS_MASTER_KEY
     - DB_PASSWORD

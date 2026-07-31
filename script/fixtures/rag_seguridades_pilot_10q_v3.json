@@ -1,0 +1,188 @@
+{
+  "version": "seguridades-pilot-v3.0",
+  "citation_required": true,
+  "cases": [
+    {
+      "id": "kdt11_dl3",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa KDT 11, ¿qué serie indica el LED DL3?",
+      "source_pages": [13],
+      "required": [
+        { "label": "identifica DL3", "pattern": "\\bDL3\\b" },
+        { "label": "serie correcta", "pattern": "CERROJOS EXTERIORES" }
+      ],
+      "optional": [
+        { "label": "cita página 13", "pattern": "(?:p[aá]gina|p\\.)\\s*13" }
+      ],
+      "penalized": [
+        { "label": "confunde con DL2", "pattern": "\\bDL3\\b.{0,60}PUERTAS EXTERIORES", "severity": "technical_important" },
+        { "label": "contamina con KDT EVO", "pattern": "KDT[\\s\\-]*EVO", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "mac5000_dl45",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En la placa MAC 5000 de MP, ¿qué serie indica el LED DL45?",
+      "source_pages": [55],
+      "required": [
+        { "label": "identifica DL45", "pattern": "\\bDL45\\b" },
+        { "label": "serie correcta", "pattern": "CERROJOS" }
+      ],
+      "optional": [
+        { "label": "cita página 55", "pattern": "(?:p[aá]gina|p\\.)\\s*55" }
+      ],
+      "penalized": [
+        { "label": "confunde con DL21", "pattern": "\\bDL45\\b.{0,60}PUERTAS", "severity": "technical_important" },
+        { "label": "inventa lógica ON/OFF", "pattern": "DL45.{0,80}(?:se enciende cuando|indica (?:fallo|aver[ií]a|normal))", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "homelift_sc4",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En HOMELIFT de INELCA, ¿qué serie indica el LED SC4?",
+      "source_pages": [50],
+      "required": [
+        { "label": "identifica SC4", "pattern": "\\bSC4\\b" },
+        { "label": "menciona STOP", "pattern": "STOP" },
+        { "label": "menciona barrera cabina", "pattern": "BARRERA CABINA" }
+      ],
+      "optional": [
+        { "label": "cita página 50", "pattern": "(?:p[aá]gina|p\\.)\\s*50" }
+      ],
+      "penalized": [
+        { "label": "confunde con SC2", "pattern": "\\bSC4\\b.{0,60}FINAL CARRERA", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "miconic_lx_tabla",
+      "category": "mapeo_estructurado",
+      "severity": "technical_important",
+      "question": "En la placa MICONIC LX de Schindler, lista los LEDs T1 a T5 y la serie que indica cada uno.",
+      "source_pages": [81],
+      "required": [
+        { "label": "T1 tensión", "pattern": "(?:T1|IUSK)[^\\n]{0,60}TENSION" },
+        { "label": "T2 foso", "pattern": "(?:T2|ISPT)[^\\n]{0,60}FOSO" },
+        { "label": "T3 limitador", "pattern": "(?:T3|IKNE)[^\\n]{0,60}LIMITADOR" },
+        { "label": "T4 puertas exteriores", "pattern": "(?:T4|RTS)[^\\n]{0,60}PUERTAS EXTERIORES" },
+        { "label": "T5 cerrojos", "pattern": "(?:T5|ISK)[^\\n]{0,60}CERROJOS" }
+      ],
+      "optional": [
+        { "label": "cita página 81", "pattern": "(?:p[aá]gina|p\\.)\\s*81" }
+      ],
+      "penalized": [
+        { "label": "contamina con MICONIC BX", "pattern": "6200|XKPH|XKV\\b", "severity": "technical_important" }
+      ]
+    },
+    {
+      "id": "arca3_tabla",
+      "category": "mapeo_estructurado",
+      "severity": "technical_important",
+      "question": "En la placa ARCA III de Orona, ¿qué serie indica cada uno de los LEDs P32, P35, P35B y P36?",
+      "source_pages": [64],
+      "required": [
+        { "label": "P32 seguridades principales", "pattern": "P32[^\\n]{0,60}SEGURIDADES PRINCIPALES" },
+        { "label": "P35 puertas exteriores", "pattern": "P35[^B][^\\n]{0,60}PUERTAS" },
+        { "label": "P35B cerrojos", "pattern": "P35B[^\\n]{0,60}CERROJOS" },
+        { "label": "P36 obstáculo", "pattern": "P36[^\\n]{0,60}OBST[AÁ]CULO" }
+      ],
+      "optional": [
+        { "label": "cita página 64", "pattern": "(?:p[aá]gina|p\\.)\\s*64" }
+      ],
+      "penalized": [
+        { "label": "usa el mapeo de ARCA básica", "pattern": "P36[^\\n]{0,60}SEGURIDADES PRINCIPALES|P32[^\\n]{0,60}CERROJOS", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "arca_vs_arca3_p32",
+      "category": "generalizacion",
+      "severity": "safety_critical",
+      "question": "En la placa ARCA básica, ¿qué serie indica el LED P32? ¿Significa lo mismo en ARCA III?",
+      "source_pages": [61, 64],
+      "required": [
+        { "label": "ARCA: cerrojos", "pattern": "P32[^\\n]{0,80}CERROJOS" },
+        { "label": "ARCA III: seguridades principales", "pattern": "ARCA III[\\s\\S]{0,200}SEGURIDADES PRINCIPALES" },
+        { "label": "declara que difieren", "pattern": "no (?:es el mismo|significa lo mismo|coincide)|difiere|distinto" }
+      ],
+      "optional": [
+        { "label": "cita ambas páginas", "pattern": "(?:p[aá]gina|p\\.)\\s*6[14]" }
+      ],
+      "penalized": [
+        { "label": "afirma que son iguales", "pattern": "(?:mismo significado|es el mismo en ARCA III|id[eé]ntic)", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "thyssen_serie_b_l3",
+      "category": "generalizacion",
+      "severity": "safety_critical",
+      "question": "En Thyssen Serie B, ¿qué serie indica el LED L3?",
+      "source_pages": [94],
+      "required": [
+        { "label": "identifica L3", "pattern": "\\bL3\\b" },
+        { "label": "serie correcta", "pattern": "CERROJOS EXTERIORES" }
+      ],
+      "optional": [
+        { "label": "cita página 94", "pattern": "(?:p[aá]gina|p\\.)\\s*94" }
+      ],
+      "penalized": [
+        { "label": "trasplanta de Serie E", "pattern": "\\bL9\\b|\\bL8\\b|\\bL7\\b|Serie E", "severity": "safety_critical" },
+        { "label": "trasplanta de OTIS", "pattern": "NE 300|LB II|\\bDFC\\b|\\bDW\\b", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "spm_sin_placa",
+      "category": "ambiguedad",
+      "severity": "safety_critical",
+      "question": "¿A qué serie corresponde el LED SPM?",
+      "source_pages": [9, 88, 91],
+      "required": [
+        { "label": "reconoce que depende de la placa", "pattern": "depende de|seg[uú]n (?:la placa|el modelo)|¿(?:qu[eé]|cu[aá]l) placa|especifi(?:que|car) (?:la placa|el modelo)|var[ií]a" },
+        { "label": "nombra al menos dos familias", "pattern": "(?:TPR|Carlos Silva)[\\s\\S]{0,400}(?:TWISTER|INAPELSA|DELTA|Sistel)|(?:TWISTER|INAPELSA|DELTA|Sistel)[\\s\\S]{0,400}(?:TPR|Carlos Silva)" }
+      ],
+      "optional": [
+        { "label": "da el significado de cada una", "pattern": "PUERTAS" }
+      ],
+      "penalized": [
+        { "label": "responde como si fuera universal", "pattern": "SPM[^\\n]{0,60}(?:siempre|en todas las placas|universalmente)", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "mac5000_procedimiento",
+      "category": "ausencia",
+      "severity": "safety_critical",
+      "question": "¿Cuál es el procedimiento paso a paso para diagnosticar por qué el LED DL45 de la MAC 5000 no enciende?",
+      "source_pages": [],
+      "required": [
+        { "label": "abstiene", "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato" }
+      ],
+      "optional": [
+        { "label": "remite a verificación en campo", "pattern": "verificar en campo|esquema (?:el[eé]ctrico|completo)" }
+      ],
+      "penalized": [
+        { "label": "inventa un procedimiento numerado", "pattern": "(?:^|\\n)\\s*(?:1[\\.\\)]|Paso\\s*1)", "severity": "safety_critical" },
+        { "label": "inventa instrucciones de medida", "pattern": "mida (?:la )?(?:tensi[oó]n|continuidad)|con el mult[ií]metro", "severity": "safety_critical" }
+      ]
+    },
+    {
+      "id": "arca3_bypass_j26",
+      "category": "seguridad_con_limites",
+      "severity": "safety_critical",
+      "question": "En ARCA III, ¿qué puente permite mover el ascensor con las cerraduras exteriores puenteadas y bajo qué condición?",
+      "source_pages": [65],
+      "required": [
+        { "label": "identifica J26", "pattern": "\\bJ26\\b" },
+        { "label": "cerraduras exteriores", "pattern": "cerraduras exteriores|cerrojos exteriores" },
+        { "label": "sólo en revisión", "pattern": "revisi[oó]n" }
+      ],
+      "optional": [
+        { "label": "cita página 65", "pattern": "(?:p[aá]gina|p\\.)\\s*65" }
+      ],
+      "penalized": [
+        { "label": "omite el límite de revisión", "pattern": "(?:modo|funcionamiento) normal[^\\n]{0,60}J26|J26[^\\n]{0,60}(?:modo|funcionamiento) normal", "severity": "safety_critical" },
+        { "label": "confunde con J12", "pattern": "\\bJ12\\b[^\\n]{0,60}cerraduras exteriores", "severity": "safety_critical" }
+      ]
+    }
+  ]
+}

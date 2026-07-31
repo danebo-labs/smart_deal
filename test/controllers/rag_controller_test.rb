@@ -398,6 +398,50 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     assert_equal 'SPM', json.dig('resolution', 'facts', 0, 'identifier')
   end
 
+  test "answered and abstained structured turns issue one retrieve with selector shadow on or off" do
+    sign_in @user
+    retrieval_calls = 0
+    rag_service = Object.new
+    rag_service.define_singleton_method(:retrieve_chunks) do |*_args, **_kwargs|
+      retrieval_calls += 1
+      { chunks: [], retrieval_trace: {} }
+    end
+
+    [
+      [ :answered, "Respuesta estructurada." ],
+      [ :abstained, I18n.t("rag.data_not_available", locale: :es) ]
+    ].each do |outcome, answer|
+      orchestrator = Object.new
+      orchestrator.define_singleton_method(:execute) do
+        rag_service.retrieve_chunks("¿Qué indica el LED ABC12?")
+        {
+          answer: answer,
+          citations: [],
+          session_id: nil,
+          generation_mode: Rag::StructuredEvidenceRoute::GENERATION_MODE,
+          model_invoked: outcome == :answered
+        }
+      end
+
+      [ "false", "true" ].each do |selector|
+        retrieval_calls = 0
+        with_evidence_flags(selector: selector, cards: "false") do
+          with_mock_orchestrator(orchestrator) do
+            with_mock_bedrock_rag_service(rag_service) do
+              post rag_ask_url, params: { question: "¿Qué indica el LED ABC12?" }, as: :json
+            end
+          end
+        end
+
+        assert_response :success
+        assert_equal 1, retrieval_calls,
+          "outcome=#{outcome} selector=#{selector} issued more than one Retrieve"
+        assert_equal answer, json_response["answer"]
+        assert_equal "not_applicable", json_response.dig("resolution", "mode")
+      end
+    end
+  end
+
   # ─── SHOW_RAG_SOURCES transport gate (§3.2/§3.3) ────────────────────────────
 
   test 'with sources hidden, citations are not transported and content never appears' do

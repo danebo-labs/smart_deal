@@ -1,0 +1,339 @@
+{
+  "version": "seguridades-holdout-v1.0",
+  "description": "Holdout congelado e independiente para la ruta estructurada. Verdad-terreno verificada visualmente contra SEGURIDADES 1.1-1.pdf antes de la primera corrida; cubre las diez categorías de riesgo del plan correctivo 2026-07-30.",
+  "citation_required": true,
+  "max_score": 88,
+  "passing_score": 70,
+  "cases": [
+    {
+      "id": "holdout_nonadjacent_ekm66_codes",
+      "category": "parafrasis_etiqueta_identificador_no_adyacente",
+      "severity": "technical_important",
+      "question": "En EKM66, ¿qué series documenta la tabla y qué significan SK0, SK1 y SK2?",
+      "source_pages": [44, 45],
+      "required": [
+        {
+          "label": "identifica SK0",
+          "pattern": "\\bSK0\\b"
+        },
+        {
+          "label": "reproduce literalmente la serie de SK0",
+          "pattern": "SERIE SEGURIDAD PRINCIPAL"
+        },
+        {
+          "label": "reproduce literalmente la serie de SK1",
+          "pattern": "SERIE PUERTAS CABINA\\s*-\\s*EXTERIORES"
+        },
+        {
+          "label": "reproduce literalmente la serie de SK2",
+          "pattern": "SERIE CERROJOS CABINA\\s*-\\s*EXTERIORES"
+        }
+      ],
+      "optional": [
+        {
+          "label": "identifica ambas variantes",
+          "pattern": "(?:el[eé]ctric|hidr[aá]ulic)"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "cambia seguridad principal por otra serie",
+          "pattern": "\\bSK0\\b.{0,70}(?:PUERTAS|CERROJOS|OBST[AÁ]CULO)",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_sibling_ne300_p36",
+      "category": "placa_hermana_negada",
+      "severity": "critical",
+      "question": "En NE 300 - LB II, ¿qué serie documenta el LED P36?",
+      "source_pages": [64, 67],
+      "required": [
+        {
+          "label": "limita la respuesta al modelo pedido",
+          "pattern": "(?:NE\\s*300|LB\\s*II)"
+        },
+        {
+          "label": "declara que P36 no está documentado para ese modelo",
+          "pattern": "(?:no (?:documenta|incluye|aparece|figura)|DATA_NOT_AVAILABLE|El documento no incluye este dato)"
+        }
+      ],
+      "optional": [
+        {
+          "label": "distingue la placa hermana",
+          "pattern": "ARCA\\s*III"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "trasplanta la serie de ARCA III a NE 300",
+          "pattern": "(?:NE\\s*300|LB\\s*II)(?:(?!\\bno\\b).){0,120}\\bP36\\b.{0,70}(?:SERIE\\s+)?O[BBS]T[AÁ]CULO",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "id": "holdout_page64_table",
+      "category": "numero_distractor_pagina",
+      "severity": "technical_important",
+      "question": "¿Qué modelo y qué códigos de LED aparecen en la tabla de la página 64?",
+      "source_pages": [64],
+      "required": [
+        {
+          "label": "identifica el modelo de la página",
+          "pattern": "ARCA\\s*III"
+        },
+        {
+          "label": "identifica P32",
+          "pattern": "\\bP32\\b"
+        },
+        {
+          "label": "identifica P35 y P35B",
+          "pattern": "\\bP35\\b.{0,120}\\bP35B\\b|\\bP35B\\b.{0,120}\\bP35\\b"
+        },
+        {
+          "label": "identifica P36",
+          "pattern": "\\bP36\\b"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "confunde la página con otra placa",
+          "pattern": "(?:NE\\s*300|LCB\\s*II|GEN\\s*II)",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_sph_two_boards",
+      "category": "mismo_codigo_dos_placas",
+      "severity": "technical_important",
+      "question": "¿Qué cadena literal figura para SPH en las placas SR8P y CR8PH2?",
+      "source_pages": [17, 19],
+      "required": [
+        {
+          "label": "identifica SPH",
+          "pattern": "\\bSPH\\b"
+        },
+        {
+          "label": "identifica ambas placas",
+          "pattern": "\\bSR8P\\b.{0,180}\\bCR8PH2\\b|\\bCR8PH2\\b.{0,180}\\bSR8P\\b"
+        },
+        {
+          "label": "reproduce la cadena literal",
+          "pattern": "SERIE PUERTAS CAB\\. EXT\\. CERRADA"
+        }
+      ],
+      "optional": [
+        {
+          "label": "indica que la cadena coincide",
+          "pattern": "(?:misma|id[eé]ntica|en ambas)"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "sustituye la cadena por cerrojos",
+          "pattern": "\\bSPH\\b.{0,80}SERIE CERROJOS",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_otis_es_ambiguous",
+      "category": "fabricante_sin_modelo",
+      "severity": "technical_important",
+      "question": "En OTIS, ¿qué significa el LED ES?",
+      "source_pages": [66, 67, 68, 69],
+      "required": [
+        {
+          "label": "distingue LB II",
+          "pattern": "(?:NE\\s*300|LB\\s*II)"
+        },
+        {
+          "label": "valor de ES en LB II",
+          "pattern": "SERIE SEGURIDADES"
+        },
+        {
+          "label": "distingue LCB II o GEN II",
+          "pattern": "(?:LCB\\s*II|GEN\\s*II)"
+        },
+        {
+          "label": "valor de ES en LCB II y GEN II",
+          "pattern": "CADENA DE SEGURIDAD CORRECTA"
+        }
+      ],
+      "optional": [
+        {
+          "label": "explicita ambigüedad de modelo",
+          "pattern": "(?:depende|modelo|variante|ambigu)"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "presenta una sola lectura como universal",
+          "pattern": "(?:en|para)\\s+OTIS.{0,90}\\bES\\b.{0,60}(?:siempre|[uú]nicamente)",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_unknown_zz9000",
+      "category": "modelo_inexistente",
+      "severity": "critical",
+      "question": "En la placa ZZ9000, ¿qué LED indica la serie de puertas?",
+      "source_pages": [],
+      "required": [
+        {
+          "label": "declara ausencia documental",
+          "pattern": "(?:no (?:documenta|incluye|aparece|encuentra)|DATA_NOT_AVAILABLE|El documento no incluye este dato)"
+        }
+      ],
+      "optional": [
+        {
+          "label": "nombra el modelo consultado",
+          "pattern": "\\bZZ9000\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "inventa un LED o una serie para el modelo inexistente",
+          "pattern": "\\bZZ9000\\b.{0,100}(?:\\b(?:LED|D|L|SK)\\s*-?\\d+\\b|SERIE\\s+(?:PUERTAS|CERROJOS|SEGURIDAD))",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "id": "holdout_em4000_v2_absent",
+      "category": "sufijo_version_no_fusionado",
+      "severity": "critical",
+      "question": "En EM4000 V2, ¿qué conectores documenta el encabezado del obstáculo?",
+      "source_pages": [33],
+      "required": [
+        {
+          "label": "mantiene la variante V2",
+          "pattern": "\\bV2\\b"
+        },
+        {
+          "label": "declara que V2 no está documentada",
+          "pattern": "(?:no (?:documenta|incluye|aparece|encuentra)|DATA_NOT_AVAILABLE|El documento no incluye este dato)"
+        }
+      ],
+      "optional": [
+        {
+          "label": "distingue la evidencia V1",
+          "pattern": "\\bV1\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye los conectores de V1 a V2",
+          "pattern": "\\bV2\\b(?:(?!\\bno\\b).){0,120}(?:\\bXC4\\b|\\bXC7\\b)",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "id": "holdout_arca_p36_torque",
+      "category": "multiobjetivo_parcial",
+      "severity": "critical",
+      "question": "En ARCA III, ¿qué serie documenta el LED P36 y qué par de apriete especifica para J18?",
+      "source_pages": [64],
+      "required": [
+        {
+          "label": "identifica P36",
+          "pattern": "\\bP36\\b"
+        },
+        {
+          "label": "serie de P36 correcta",
+          "pattern": "SERIE OBST[AÁ]CULO"
+        },
+        {
+          "label": "abstiene del par de apriete ausente",
+          "pattern": "(?:no (?:documenta|incluye|especifica|indica)|DATA_NOT_AVAILABLE|El documento no incluye este dato)"
+        }
+      ],
+      "optional": [
+        {
+          "label": "identifica J18",
+          "pattern": "\\bJ18\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "inventa un par de apriete",
+          "pattern": "\\b\\d+(?:[.,]\\d+)?\\s*N(?:[·.\\s-]?m)\\b",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "id": "holdout_compare_ekm66_pressure",
+      "category": "comparativa",
+      "severity": "technical_important",
+      "question": "Compara EKM66 eléctrico e hidráulico: ¿en cuál aparece el PRESOSTATO?",
+      "source_pages": [44, 45],
+      "required": [
+        {
+          "label": "identifica la variante hidráulica",
+          "pattern": "HIDR[AÁ]ULIC"
+        },
+        {
+          "label": "identifica el presostato",
+          "pattern": "PRESOSTATO"
+        },
+        {
+          "label": "excluye la variante eléctrica",
+          "pattern": "(?:s[oó]lo|[uú]nicamente).{0,60}HIDR[AÁ]ULIC|HIDR[AÁ]ULIC.{0,100}(?:s[ií]|aparece).{0,140}EL[EÉ]CTRIC.{0,80}no"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "atribuye el presostato a la variante eléctrica",
+          "pattern": "EL[EÉ]CTRIC(?:(?!\\bno\\b).){0,100}PRESOSTATO",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_page26_led_count",
+      "category": "etiqueta_sin_identificador",
+      "severity": "technical_important",
+      "question": "En la tabla de la página 26, ¿cuántos LEDs hay en total y cuáles son?",
+      "source_pages": [26],
+      "required": [
+        {
+          "label": "declara tres LEDs",
+          "pattern": "(?:\\b3\\b|tres)\\s+LED"
+        },
+        {
+          "label": "identifica 37",
+          "pattern": "\\b37\\b"
+        },
+        {
+          "label": "identifica 39",
+          "pattern": "\\b39\\b"
+        },
+        {
+          "label": "identifica 41",
+          "pattern": "\\b41\\b"
+        }
+      ],
+      "optional": [
+        {
+          "label": "identifica EDEL-K3",
+          "pattern": "EDEL\\s*-?\\s*K3"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "añade LEDs no presentes en la tabla",
+          "pattern": "\\b(?:31|36|40)\\b",
+          "severity": "technical_important"
+        }
+      ]
+    }
+  ]
+}

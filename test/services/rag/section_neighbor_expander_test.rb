@@ -7,14 +7,17 @@ require "test_helper"
 # rule that expansion never crosses into a neighbor's own, different section.
 class Rag::SectionNeighborExpanderTest < ActiveSupport::TestCase
   class FakeS3
-    attr_reader :bucket_name
+    attr_reader :bucket_name, :list_calls, :download_calls
 
     def initialize(objects)
       @bucket_name = "test-bucket"
       @objects = objects
+      @list_calls = 0
+      @download_calls = Hash.new(0)
     end
 
     def list_keys(prefix:)
+      @list_calls += 1
       @objects.keys.select { |key| key.start_with?(prefix) }
     end
 
@@ -23,6 +26,7 @@ class Rag::SectionNeighborExpanderTest < ActiveSupport::TestCase
     # Returning UTF-8 literals here is what let the ASCII-8BIT crash reach
     # production undetected.
     def download(key)
+      @download_calls[key] += 1
       @objects[key]&.dup&.force_encoding(Encoding::BINARY)
     end
   end
@@ -127,5 +131,66 @@ class Rag::SectionNeighborExpanderTest < ActiveSupport::TestCase
     expander = Rag::SectionNeighborExpander.new(s3_service: s3)
 
     assert_nil expander.neighbor_chunk(divider_chunk: divider(content: "## ENIER MXL1\n"), target_page: 99)
+  end
+
+  test "reuses the page index from Rails cache across expander instances" do
+    previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    s3 = FakeS3.new(
+      "bulk_chunks/1/doc/chunk_1.txt" => "LED ABC12 | SERIE SEGURIDAD",
+      "bulk_chunks/1/doc/chunk_1.txt.metadata.json" => JSON.generate(
+        "metadataAttributes" => {
+          "page_number" => 4,
+          "section_identity" => "SECTION-A"
+        }
+      )
+    )
+    divider_chunk = divider(
+      content: "Página divisoria",
+      metadata: { "section_identity" => "SECTION-A" }
+    )
+
+    first = Rag::SectionNeighborExpander.new(s3_service: s3)
+    second = Rag::SectionNeighborExpander.new(s3_service: s3)
+
+    assert first.neighbor_chunk(divider_chunk: divider_chunk, target_page: 4)
+    list_calls = s3.list_calls
+    download_calls = s3.download_calls.values.sum
+    assert second.neighbor_chunk(divider_chunk: divider_chunk, target_page: 4)
+    assert_equal list_calls, s3.list_calls,
+      "the cached page index must avoid a second list"
+    assert_equal download_calls, s3.download_calls.values.sum,
+      "the cached page index must avoid every second-request download"
+  ensure
+    Rails.cache = previous_cache
+  end
+
+  test "discards a corrupt cached page index and rebuilds it" do
+    previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    s3 = FakeS3.new(
+      "bulk_chunks/1/doc/chunk_1.txt" => "LED ABC12 | SERIE SEGURIDAD",
+      "bulk_chunks/1/doc/chunk_1.txt.metadata.json" => JSON.generate(
+        "metadataAttributes" => {
+          "page_number" => 4,
+          "section_identity" => "SECTION-A"
+        }
+      )
+    )
+    divider_chunk = divider(
+      content: "Página divisoria",
+      metadata: { "section_identity" => "SECTION-A" }
+    )
+    expander = Rag::SectionNeighborExpander.new(s3_service: s3)
+    cache_key = expander.send(:index_cache_key, "bulk_chunks/1/doc")
+    Rails.cache.write(cache_key, { prefix: "wrong", pages: "not-a-hash" })
+
+    result = expander.neighbor_chunk(divider_chunk: divider_chunk, target_page: 4)
+
+    assert result
+    assert_equal :section_identity, result[:mechanism]
+    assert_equal 1, s3.list_calls
+  ensure
+    Rails.cache = previous_cache
   end
 end

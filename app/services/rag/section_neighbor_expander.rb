@@ -15,6 +15,8 @@ module Rag
   # divider to build that index; never writes anything back to S3.
   class SectionNeighborExpander
     MAX_INDEX_CHUNKS = 500
+    INDEX_CACHE_VERSION = "v1"
+    INDEX_CACHE_TTL = 30.days
 
     MECHANISM_SECTION_IDENTITY = :section_identity
     MECHANISM_ADJACENT_PAGE    = :adjacent_page_interim
@@ -33,14 +35,17 @@ module Rag
       prefix = prefix_from(divider_chunk)
       return nil if prefix.blank?
 
-      entry = page_index(prefix)[target_page]
+      index = page_index(prefix)
+      entry = index[target_page]
       return nil unless entry
 
-      body = text_body(@s3.download(entry[:key]))
+      body = entry[:content].presence || text_body(@s3.download(entry[:key]))
       return nil if body.blank?
 
       mechanism = authorize(divider_chunk, entry, body)
       return nil unless mechanism
+
+      cache_neighbor_body(prefix, index, entry, body) if entry[:content].blank?
 
       {
         chunk: {
@@ -78,29 +83,64 @@ module Rag
       path.rpartition("/").first.presence
     end
 
-    # Page -> {key:, metadata:} index over the chunk directory's sidecars, built
-    # once per prefix per expander instance (an expander is scoped to a single
-    # selector run). Bounded like Rag::DocumentOverviewBuilder::MAX_COLD_BUILD_CHUNKS
-    # to cap the worst case of a directory with many small chunks.
+    # Page -> {key:, metadata:} index over the chunk directory's sidecars. The
+    # instance cache avoids repeated reads within one request; Solid Cache keeps
+    # the same document index available across requests. Bounded like
+    # Rag::DocumentOverviewBuilder::MAX_COLD_BUILD_CHUNKS to cap the worst case
+    # of a directory with many small chunks.
     def page_index(prefix)
-      @index_cache[prefix] ||= begin
-        keys = @s3.list_keys(prefix: "#{prefix}/")
-          .select { |key| key.end_with?(".metadata.json") }
-          .first(MAX_INDEX_CHUNKS)
-
-        keys.each_with_object({}) do |key, index|
-          raw = text_body(@s3.download(key))
-          next if raw.blank?
-
-          attributes = JSON.parse(raw)["metadataAttributes"] || {}
-          page = Integer(attributes["page_number"], exception: false)
-          next unless page
-
-          index[page] = { key: key.delete_suffix(".metadata.json"), metadata: attributes }
-        rescue JSON::ParserError
-          next
-        end
+      @index_cache[prefix] ||= cached_page_index(prefix) || build_page_index(prefix).tap do |index|
+        Rails.cache.write(index_cache_key(prefix), cache_payload(prefix, index), expires_in: INDEX_CACHE_TTL)
       end
+    end
+
+    def cached_page_index(prefix)
+      payload = Rails.cache.read(index_cache_key(prefix))
+      return nil if payload.blank?
+
+      unless payload.is_a?(Hash) && payload[:prefix] == prefix && payload[:pages].is_a?(Hash)
+        raise ArgumentError, "schema_drift"
+      end
+
+      payload[:pages]
+    rescue StandardError => e
+      Rails.logger.warn(
+        "[SECTION_NEIGHBOR_INDEX_CACHE] op=corrupt prefix_sha256=#{Digest::SHA256.hexdigest(prefix)} reason=#{e.class}"
+      )
+      Rails.cache.delete(index_cache_key(prefix))
+      nil
+    end
+
+    def build_page_index(prefix)
+      keys = @s3.list_keys(prefix: "#{prefix}/")
+        .select { |key| key.end_with?(".metadata.json") }
+        .first(MAX_INDEX_CHUNKS)
+
+      keys.each_with_object({}) do |key, index|
+        raw = text_body(@s3.download(key))
+        next if raw.blank?
+
+        attributes = JSON.parse(raw)["metadataAttributes"] || {}
+        page = Integer(attributes["page_number"], exception: false)
+        next unless page
+
+        index[page] = { key: key.delete_suffix(".metadata.json"), metadata: attributes }
+      rescue JSON::ParserError
+        next
+      end
+    end
+
+    def cache_payload(prefix, index)
+      { prefix: prefix, pages: index }
+    end
+
+    def cache_neighbor_body(prefix, index, entry, body)
+      entry[:content] = body
+      Rails.cache.write(index_cache_key(prefix), cache_payload(prefix, index), expires_in: INDEX_CACHE_TTL)
+    end
+
+    def index_cache_key(prefix)
+      "section_neighbor_index/#{INDEX_CACHE_VERSION}/#{Digest::SHA256.hexdigest(prefix)}"
     end
 
     # Precedence from §7 etapa 5: mechanism 1 (section_identity equal between

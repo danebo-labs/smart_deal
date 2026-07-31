@@ -31,11 +31,21 @@ class FieldPhotosControllerTest < ActionDispatch::IntegrationTest
 
   test "with session and own photo responds 302 to the S3 host" do
     sign_in @user
+    bucket = S3DocumentsService.new.bucket_name
 
-    with_fake_url_service("https://bucket.s3.amazonaws.com/field_photos/signed") do
+    with_fake_url_service("https://#{bucket}.s3.amazonaws.com/field_photos/signed") do
       get field_photo_path(@photo)
       assert_response :redirect
-      assert_match(%r{\Ahttps://bucket\.s3\.amazonaws\.com/}, @response.headers["Location"])
+      assert_match(%r{\Ahttps://#{Regexp.escape(bucket)}\.s3\.amazonaws\.com/}, @response.headers["Location"])
+    end
+  end
+
+  test "rejects a signed URL whose host is not the configured S3 bucket" do
+    sign_in @user
+
+    with_fake_url_service("https://evil.example/phish") do
+      get field_photo_path(@photo)
+      assert_response :not_found
     end
   end
 

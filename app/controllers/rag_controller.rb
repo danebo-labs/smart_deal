@@ -126,7 +126,10 @@ class RagController < ApplicationController
   # selector=true/cards=false the run remains invisible; enabling both exposes
   # the selector's contract without replacing the technical answer.
   def build_resolution(question:, answer:, result:, conv_session:, entity_s3_uris:, sources_visible:)
-    shadow = run_evidence_selector_shadow(question: question, entity_s3_uris: entity_s3_uris)
+    shadow =
+      unless result.generation_mode == Rag::StructuredEvidenceRoute::GENERATION_MODE
+        run_evidence_selector_shadow(question: question, entity_s3_uris: entity_s3_uris)
+      end
     if shadow
       selection = shadow.fetch(:selection)
       Rag::EvidenceSelectionTelemetry.log(

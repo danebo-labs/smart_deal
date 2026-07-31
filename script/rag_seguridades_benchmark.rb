@@ -8,6 +8,33 @@ class RagSeguridadesBenchmark
   RUBRIC_PATH = Rails.root.join("script/fixtures/rag_seguridades_rubric.json")
   ExternalDocument = Data.define(:id, :account, :display_name, :s3_key, :source_uri)
 
+  class CountingRagService
+    attr_reader :retrieve_invocations
+
+    def initialize(service)
+      @service = service
+      @retrieve_invocations = 0
+    end
+
+    def retrieve_chunks(...)
+      @retrieve_invocations += 1
+      @service.retrieve_chunks(...)
+    end
+
+    def query(...)
+      @retrieve_invocations += 1
+      @service.query(...)
+    end
+
+    def method_missing(name, ...)
+      @service.public_send(name, ...)
+    end
+
+    def respond_to_missing?(name, include_private = false)
+      @service.respond_to?(name, include_private) || super
+    end
+  end
+
   def initialize(env: ENV)
     @env = env
     rubric_path = env.fetch("RAG_SEGURIDADES_RUBRIC", RUBRIC_PATH)
@@ -118,7 +145,34 @@ class RagSeguridadesBenchmark
 
   def run_case(service, account, definition, source_uri)
     question = definition.fetch("question")
-    retrieval = service.retrieve_chunks(
+    counted_service = CountingRagService.new(service)
+    structured = Rag::StructuredEvidenceRoute.build(
+      question: question,
+      account: account,
+      entity_s3_uris: [ source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      output_channel: :web,
+      account_id: account.id,
+      rag_service: counted_service
+    )
+    outcome = structured&.execute
+    if outcome&.status == :answered || outcome&.status == :abstained
+      structured_result = outcome.result
+      return result_payload(
+        definition: definition,
+        question: question,
+        result: structured_result,
+        retrieval: {
+          chunks: structured_result.dig(:diagnostics, :retrieved_chunks) || [],
+          retrieval_trace: structured_result[:retrieval_trace]
+        },
+        retrieve_invocations: counted_service.retrieve_invocations
+      )
+    end
+
+    retrieval = counted_service.retrieve_chunks(
       question,
       entity_s3_uris: [ source_uri ],
       entity_sources: [ "document" ],
@@ -138,10 +192,10 @@ class RagSeguridadesBenchmark
           entity_sources: [ "document" ],
           force_entity_filter: true,
           response_locale: :es,
-          rag_service: service
+          rag_service: counted_service
         ).execute
       end
-    result ||= service.query(
+    result ||= counted_service.query(
       question,
       response_locale: :es,
       entity_s3_uris: [ source_uri ],
@@ -151,6 +205,28 @@ class RagSeguridadesBenchmark
       include_diagnostics: true
     )
 
+    result_payload(
+      definition: definition,
+      question: question,
+      result: result,
+      retrieval: retrieval,
+      retrieve_invocations: counted_service.retrieve_invocations
+    )
+  rescue StandardError => e
+    {
+      id: definition.fetch("id"),
+      category: definition.fetch("category"),
+      severity: definition.fetch("severity"),
+      source_pages: definition.fetch("source_pages"),
+      question: question,
+      answer: "",
+      error_type: e.class.name,
+      error_message: e.message,
+      retrieve_invocations: counted_service&.retrieve_invocations.to_i
+    }
+  end
+
+  def result_payload(definition:, question:, result:, retrieval:, retrieve_invocations:)
     diagnostics = result[:diagnostics].to_h
     {
       id: definition.fetch("id"),
@@ -168,18 +244,8 @@ class RagSeguridadesBenchmark
       chunks: retrieval[:chunks],
       citations: result[:citations],
       generation_mode: result[:generation_mode] || "bedrock_retrieve_and_generate",
-      model_invoked: result.key?(:model_invoked) ? result[:model_invoked] : true
-    }
-  rescue StandardError => e
-    {
-      id: definition.fetch("id"),
-      category: definition.fetch("category"),
-      severity: definition.fetch("severity"),
-      source_pages: definition.fetch("source_pages"),
-      question: question,
-      answer: "",
-      error_type: e.class.name,
-      error_message: e.message
+      model_invoked: result.key?(:model_invoked) ? result[:model_invoked] : true,
+      retrieve_invocations: retrieve_invocations
     }
   end
 

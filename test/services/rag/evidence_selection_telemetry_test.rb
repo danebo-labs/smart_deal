@@ -75,4 +75,56 @@ class Rag::EvidenceSelectionTelemetryTest < ActiveSupport::TestCase
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
+
+  test "logs structured route budget, expansion, timings, and abstention" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    assert Rag::EvidenceSelectionTelemetry.log_route(
+      question: "¿Qué indica el LED ABC12?",
+      answer: "El documento no incluye este dato — requiere verificación en campo.",
+      generation_mode: "structured_evidence_route",
+      account_id: 1,
+      user_id: 2,
+      conversation_session_id: 3,
+      correlation_id: "corr-2",
+      retrieval_budget: 12,
+      expansion_mechanisms: [ :section_identity ],
+      outcome: :abstained,
+      outcome_reason: :generation_failure,
+      verbatim_directive: true,
+      generation_input_tokens: 240,
+      generation_output_tokens: 12,
+      generation_prompt_chars: 960,
+      timings: {
+        retrieval_ms: 20,
+        expansion_ms: 5,
+        local_ms: 2,
+        generation_ms: 30,
+        generation_chunks: 5
+      }
+    )
+
+    line = output.string.lines.find { |entry| entry.include?('"event":"evidence_route"') }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+    assert_equal 12, payload["retrieval_budget"]
+    assert_equal true, payload["expansion_used"]
+    assert_equal "section_identity", payload["expansion_mechanism"]
+    assert_equal "structured_evidence_route", payload["route_taken"]
+    assert_equal true, payload["abstention"]
+    assert_equal "abstained", payload["outcome"]
+    assert_equal "generation_failure", payload["outcome_reason"]
+    assert_equal true, payload["verbatim_directive"]
+    assert_equal 20, payload["retrieval_ms"]
+    assert_equal 5, payload["expansion_ms"]
+    assert_equal 2, payload["local_ms"]
+    assert_equal 30, payload["generation_ms"]
+    assert_equal 5, payload["generation_chunks"]
+    assert_equal 240, payload["generation_input_tokens"]
+    assert_equal 12, payload["generation_output_tokens"]
+    assert_equal 960, payload["generation_prompt_chars"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
 end

@@ -111,4 +111,39 @@ class Rag::QueryEntitiesTest < ActiveSupport::TestCase
     assert_includes analysis.identifiers.map(&:canonical), "SPM"
     assert_equal "¿A qué serie corresponde el LED SPM?", analysis.question
   end
+
+  test "label_terms detects the shared trigger vocabulary in any position" do
+    [
+      "LED ZZ9 al inicio",
+      "los LEDs aparecen después",
+      "¿Qué série documenta QQ7?",
+      "Describe los bornes de A100",
+      "¿Cuáles conectores figuran?",
+      "ZZ9 aparece en la pláca",
+      "Enumera los pines"
+    ].each do |question|
+      assert Rag::QueryEntities.label_terms?(question), "expected a label term in: #{question}"
+    end
+  end
+
+  test "label_terms is false without trigger vocabulary" do
+    assert_not Rag::QueryEntities.label_terms?("¿Qué información técnica documenta el manual?")
+  end
+
+  test "identifier adjacency semantics remain unchanged" do
+    cases = {
+      "LED documenta L9" => [ [ "L9", :alnum, :bare ] ],
+      "LED A10 y B20" => [ [ "A10", :alnum, :labelled ], [ "B20", :alnum, :labelled ] ],
+      "página 31" => [],
+      "LED 31" => [ [ "31", :numeric, :labelled ] ],
+      "LED V" => []
+    }
+
+    cases.each do |question, expected|
+      actual = Rag::QueryEntities.analyze(question).identifiers.map do |identifier|
+        [ identifier.canonical, identifier.shape, identifier.position ]
+      end
+      assert_equal expected, actual, "identifier contract changed for: #{question}"
+    end
+  end
 end

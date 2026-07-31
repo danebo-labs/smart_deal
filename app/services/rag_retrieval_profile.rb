@@ -10,12 +10,13 @@
 # constant regardless of pin type, reducing unnecessary input cost for document
 # sessions while preserving recall for photo sessions.
 #
-# | Pin signal          | normal | exhaustive | rationale                         |
-# |---------------------|--------|------------|-----------------------------------|
-# | photos only         | 10     | 10         | photo chunks are small            |
-# | documents only      | 3      | 15 -> 12   | rerank full-list candidates       |
-# | mixed photo+doc     | 3      | 15 -> 12   | same document budget              |
-# | no pin (open query) | 8      | 15         | broader catalog search            |
+# | Pin signal               | normal | exhaustive | rationale                         |
+# |--------------------------|--------|------------|-----------------------------------|
+# | photos only              | 10     | 10         | photo chunks are small            |
+# | documents only           | 3      | 15 -> 12   | rerank full-list candidates       |
+# | pinned structured mapping| 3      | 15 -> 12   | route requests its own budget 12  |
+# | mixed photo+doc          | 3      | 15 -> 12   | same document budget              |
+# | no pin (open query)      | 8      | 15         | broader catalog search            |
 #
 # Do NOT widen the pinned-document budget for comparative questions. Measured
 # 2026-07-26 against the production KB on `em3000_fotocelula_220v` ("Compara las
@@ -25,6 +26,7 @@
 # from 5/7 to 0/7 on a critical penalized check.
 class RagRetrievalProfile
   PINNED_DOCUMENT_RESULTS = 3
+  STRUCTURED_MAPPING_RESULTS = 12
   PHOTO_RESULTS = 10
   OPEN_RESULTS = 8
   SAFETY_CRITICAL_RESULTS = 5
@@ -55,6 +57,8 @@ class RagRetrievalProfile
     /\b(?:reparar|reparaci[oó]n|qui[eé]n\s+(?:puede|est[aá]\s+autorizado))\b/i
   ].freeze
 
+  COMPARATIVE_PATTERN = /\b(?:compara|comparar|diferencias?|ambas|las\s+dos|versus)\b/i
+
   def initialize(entity_sources: [], question: nil)
     @entity_sources = Array(entity_sources).compact
     @question = question.to_s
@@ -74,11 +78,9 @@ class RagRetrievalProfile
     photo_count = @entity_sources.count { |s| s == "image_upload" }
     doc_count   = @entity_sources.count { |s| s == "document" }
 
-    if photo_count > 0 && doc_count == 0
-      PHOTO_RESULTS
-    else
-      PINNED_DOCUMENT_RESULTS
-    end
+    return PHOTO_RESULTS if photo_count > 0 && doc_count == 0
+
+    PINNED_DOCUMENT_RESULTS
   end
 
   def number_of_reranked_results
@@ -92,6 +94,29 @@ class RagRetrievalProfile
   def safety_critical_query?
     SAFETY_CRITICAL_PATTERNS.any? { |pattern| @question.match?(pattern) }
   end
+
+  # Route-eligibility predicate for pinned, structured mapping questions.
+  # Two disjoint shapes, both comparative-excluded:
+  #   1. adjacency — a label term immediately precedes the identifier ("LED ZZ9")
+  #   2. co-occurrence — label term and identifier live in the question but not
+  #      adjacently, or appear in reverse order
+  # Shape 2 additionally requires a digit-bearing, non-numeric identifier so that
+  # a page/pin/voltage/quantity number can never activate it, and so a bare
+  # all-alphabetic caps token is not enough on its own.
+  def structured_mapping_query?
+    return false if @question.match?(COMPARATIVE_PATTERN)
+
+    identifiers = Rag::QueryEntities.analyze(@question).identifiers
+    return true if identifiers.any? { |identifier| identifier.position == :labelled }
+
+    Rag::QueryEntities.label_terms?(@question) &&
+      identifiers.any? { |identifier| designator?(identifier) }
+  end
+
+  def designator?(identifier)
+    identifier.shape != :numeric && identifier.canonical.match?(/\d/)
+  end
+  private :designator?
 
   # A schematic designator (-PDCM, -PBCM, -PDCC, -J26…) together with a
   # connector/label/diagram keyword. Used to widen open-query recall so the

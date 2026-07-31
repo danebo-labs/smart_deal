@@ -220,6 +220,25 @@ class QueryOrchestratorService
         return rendered_overview.merge(upload_context)
       end
 
+      structured = Rag::StructuredEvidenceRoute.build(
+        question: @query,
+        account: @account,
+        entity_s3_uris: @entity_s3_uris,
+        entity_sources: entity_sources,
+        force_entity_filter: @force_entity_filter,
+        response_locale: @response_locale,
+        output_channel: @output_channel,
+        account_id: @account&.id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
+        correlation_id: @correlation_id
+      )
+      outcome = structured&.execute
+      if outcome&.status == :answered || outcome&.status == :abstained
+        Rails.logger.info("QueryOrchestrator: structured_evidence_route outcome=#{outcome.status}")
+        return outcome.result.merge(upload_context)
+      end
+
       disambiguation = Rag::AmbiguousModelResponder.build(
         question:            @query,
         account:             @account,

@@ -20,6 +20,27 @@
       "confidence": "Medium",
       "cwe_id": [77],
       "note": "Safe: Open3.capture3 with separate args does not invoke a shell, and @extension is validated against ALLOWED_EXTENSIONS allowlist (alphanumeric office/document formats) in #initialize before reaching this call."
+    },
+    {
+      "warning_type": "Redirect",
+      "warning_code": 18,
+      "fingerprint": "2057076e8c5a2c3113a6e0c3dc0b20b0fd8438c5b03b1e3711f322c910052376",
+      "check_name": "Redirect",
+      "message": "Possible unprotected redirect",
+      "file": "app/controllers/field_photos_controller.rb",
+      "line": 14,
+      "link": "https://brakemanscanner.org/docs/warning_types/redirect/",
+      "code": "redirect_to(FieldPhotoUrlService.new(:account => current_account).call(current_account.field_photos.find(params[:id])), :allow_other_host => true)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "FieldPhotosController",
+        "method": "show"
+      },
+      "user_input": "params[:id]",
+      "confidence": "Weak",
+      "cwe_id": [601],
+      "note": "Intentional external redirect to a short-lived S3 presigned URL. Destination is not taken from params: FieldPhotoUrlService signs the account-scoped object key, and FieldPhotosController#show only redirects when service.trusted_redirect_url?(url) confirms HTTPS + this bucket's S3 host (virtual-hosted or path-style). allow_other_host is required because the browser must fetch bytes from S3; rewriting the host would invalidate SigV4."
     }
   ],
   "brakeman_version": "8.0.5"

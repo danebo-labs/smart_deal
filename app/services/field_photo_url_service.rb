@@ -44,6 +44,48 @@ class FieldPhotoUrlService
     nil
   end
 
+  # True only for HTTPS URLs whose host is this bucket's S3 endpoint.
+  # Used before allow_other_host redirects so cached/presigned URLs cannot
+  # open-redirect to an arbitrary host.
+  def trusted_redirect_url?(url)
+    self.class.trusted_redirect_url?(url, bucket: @bucket)
+  end
+
+  def self.trusted_redirect_url?(url, bucket:)
+    return false if url.blank? || bucket.blank?
+
+    uri = URI.parse(url)
+    return false unless uri.is_a?(URI::HTTPS)
+    return false if uri.userinfo.present?
+
+    host = uri.host.to_s.downcase
+    bucket_l = bucket.to_s.downcase
+    return false if host.blank? || bucket_l.blank?
+
+    virtual_hosted_s3_host?(host, bucket_l) || path_style_s3_url?(uri, host, bucket_l)
+  rescue URI::InvalidURIError
+    false
+  end
+
+  def self.virtual_hosted_s3_host?(host, bucket_l)
+    return true if host == "#{bucket_l}.s3.amazonaws.com"
+    return true if host == "#{bucket_l}.s3-accelerate.amazonaws.com"
+    return true if host.match?(/\A#{Regexp.escape(bucket_l)}\.s3[\.-][a-z0-9\-]+\.amazonaws\.com\z/)
+    return true if host.match?(/\A#{Regexp.escape(bucket_l)}\.s3\.dualstack\.[a-z0-9\-]+\.amazonaws\.com\z/)
+    return true if host == "#{bucket_l}.s3-accelerate.dualstack.amazonaws.com"
+
+    false
+  end
+  private_class_method :virtual_hosted_s3_host?
+
+  def self.path_style_s3_url?(uri, host, bucket_l)
+    s3_endpoint = host == "s3.amazonaws.com" || host.match?(/\As3[\.-][a-z0-9\-]+\.amazonaws\.com\z/)
+    return false unless s3_endpoint
+
+    uri.path.start_with?("/#{bucket_l}/")
+  end
+  private_class_method :path_style_s3_url?
+
   private
 
   def presigner

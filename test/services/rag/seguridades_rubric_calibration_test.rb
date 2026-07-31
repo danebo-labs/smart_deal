@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "json"
+require "digest"
 
 # Locks the calibration of `script/fixtures/rag_seguridades_rubric.json`.
 # Every pattern relaxed in this rubric must keep failing the phrasing it guards,
@@ -11,6 +12,8 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
   RUBRIC = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_rubric.json").read).freeze
   PILOT = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q.json").read).freeze
   PILOT_V2 = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q_v2.json").read).freeze
+  HOLDOUT_PATH = Rails.root.join("script/fixtures/rag_seguridades_holdout_v1.json")
+  HOLDOUT_SHA256 = "34682fb13ca5acf0e635d42ad285be039749b4d07f090a728ef43371d4325309"
 
   test "rubric version is the calibrated one" do
     assert_equal "seguridades-v3.2", RUBRIC.fetch("version")
@@ -29,6 +32,14 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
     ids = PILOT_V2.fetch("cases").map { |definition| definition.fetch("id") }
     assert_not_equal PILOT.fetch("cases").map { |definition| definition.fetch("id") }, ids,
       "v2 must exercise different case ids than the certified pilot v1.2"
+  end
+
+  test "the independent holdout remains frozen after its pre-run hash was recorded" do
+    holdout = JSON.parse(HOLDOUT_PATH.read)
+
+    assert_equal "seguridades-holdout-v1.0", holdout.fetch("version")
+    assert_equal 10, holdout.fetch("cases").size
+    assert_equal HOLDOUT_SHA256, Digest::SHA256.file(HOLDOUT_PATH).hexdigest
   end
 
   # v2 critical: EM4000 obstacle header documents XC4/XC7 — inventing the

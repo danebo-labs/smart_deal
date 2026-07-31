@@ -82,6 +82,30 @@ class FieldPhotoUrlServiceTest < ActiveSupport::TestCase
     assert_nil @svc.call(create_photo)
   end
 
+  test "trusted_redirect_url? accepts virtual-hosted S3 hosts for the bucket" do
+    assert @svc.trusted_redirect_url?("https://#{TEST_BUCKET}.s3.amazonaws.com/key?X-Amz-Signature=x")
+    assert @svc.trusted_redirect_url?("https://#{TEST_BUCKET}.s3.us-east-1.amazonaws.com/key")
+    assert @svc.trusted_redirect_url?("https://#{TEST_BUCKET}.s3-us-west-2.amazonaws.com/key")
+    assert @svc.trusted_redirect_url?("https://#{TEST_BUCKET}.s3.dualstack.eu-west-1.amazonaws.com/key")
+    assert @svc.trusted_redirect_url?("https://#{TEST_BUCKET}.s3-accelerate.amazonaws.com/key")
+  end
+
+  test "trusted_redirect_url? accepts path-style S3 URLs for the bucket" do
+    assert @svc.trusted_redirect_url?("https://s3.amazonaws.com/#{TEST_BUCKET}/key")
+    assert @svc.trusted_redirect_url?("https://s3.us-east-1.amazonaws.com/#{TEST_BUCKET}/key")
+  end
+
+  test "trusted_redirect_url? rejects non-HTTPS, foreign hosts, and credentialed URLs" do
+    assert_not @svc.trusted_redirect_url?(nil)
+    assert_not @svc.trusted_redirect_url?("")
+    assert_not @svc.trusted_redirect_url?("http://#{TEST_BUCKET}.s3.amazonaws.com/key")
+    assert_not @svc.trusted_redirect_url?("https://evil.example/#{TEST_BUCKET}/key")
+    assert_not @svc.trusted_redirect_url?("https://other-bucket.s3.amazonaws.com/key")
+    assert_not @svc.trusted_redirect_url?("https://s3.amazonaws.com/other-bucket/key")
+    assert_not @svc.trusted_redirect_url?("https://user:pass@#{TEST_BUCKET}.s3.amazonaws.com/key")
+    assert_not @svc.trusted_redirect_url?("not a url")
+  end
+
   private
 
   def create_photo

@@ -14,6 +14,10 @@ class PilotUsageLog
     contexts_delivered groups_total document_id source_uri page chunk_sha256
     excerpt_sha256 excerpt question_sha256 answer_sha256 selector_version
     expansion_mechanism rejection_reasons sources_visible
+    retrieval_budget expansion_used route_taken abstention
+    retrieval_ms expansion_ms local_ms generation_ms generation_chunks
+    outcome outcome_reason verbatim_directive generation_input_tokens
+    generation_output_tokens generation_prompt_chars
   ].freeze
 
   class << self

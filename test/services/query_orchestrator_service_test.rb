@@ -287,6 +287,169 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal "deterministic_document_overview", result[:generation_mode]
   end
 
+  test "structured evidence route runs after document overview and before other retrieval responders" do
+    route = Object.new
+    route.define_singleton_method(:execute) do
+      result = {
+        answer: "Structured answer [1]",
+        citations: [ { number: 1, title: "Manual" } ],
+        session_id: nil,
+        generation_mode: Rag::StructuredEvidenceRoute::GENERATION_MODE
+      }
+      Rag::StructuredEvidenceRoute::Outcome.new(status: :answered, result: result)
+    end
+    original_structured_build = Rag::StructuredEvidenceRoute.method(:build)
+    original_ambiguous_build = Rag::AmbiguousModelResponder.method(:build)
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**| route }
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) do |**|
+      raise "ambiguous responder must not run after the structured route succeeds"
+    end
+
+    result = QueryOrchestratorService.new(
+      "¿Qué indica el BORNE X1?",
+      account: accounts(:legacy),
+      output_channel: :web
+    ).execute
+
+    assert_equal "Structured answer [1]", result[:answer]
+    assert_equal Rag::StructuredEvidenceRoute::GENERATION_MODE, result[:generation_mode]
+  ensure
+    if original_structured_build
+      Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_structured_build.call(**kwargs) }
+    end
+    if original_ambiguous_build
+      Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| original_ambiguous_build.call(**kwargs) }
+    end
+  end
+
+  test "a structured abstention is terminal before ambiguous and deterministic responders" do
+    route = Object.new
+    route.define_singleton_method(:execute) do
+      result = {
+        answer: I18n.t("rag.data_not_available", locale: :es),
+        citations: [],
+        session_id: nil,
+        generation_mode: Rag::StructuredEvidenceRoute::GENERATION_MODE
+      }
+      Rag::StructuredEvidenceRoute::Outcome.new(status: :abstained, result: result)
+    end
+    original_structured_build = Rag::StructuredEvidenceRoute.method(:build)
+    original_ambiguous_build = Rag::AmbiguousModelResponder.method(:build)
+    original_deterministic_build = Rag::DeterministicRenderer.method(:build)
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**| route }
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) do |**|
+      raise "ambiguous responder must not run after structured abstention"
+    end
+    Rag::DeterministicRenderer.define_singleton_method(:build) do |**|
+      raise "deterministic renderer must not run after structured abstention"
+    end
+
+    result = QueryOrchestratorService.new(
+      "¿Qué indica el BORNE X1?",
+      account: accounts(:legacy),
+      output_channel: :web
+    ).execute
+
+    assert_equal I18n.t("rag.data_not_available", locale: :es), result[:answer]
+    assert_empty result[:citations]
+  ensure
+    if original_structured_build
+      Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_structured_build.call(**kwargs) }
+    end
+    if original_ambiguous_build
+      Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| original_ambiguous_build.call(**kwargs) }
+    end
+    if original_deterministic_build
+      Rag::DeterministicRenderer.define_singleton_method(:build) { |**kwargs| original_deterministic_build.call(**kwargs) }
+    end
+  end
+
+  test "an unavailable structured route falls through to one existing generative call" do
+    route = Object.new
+    route.define_singleton_method(:execute) do
+      Rag::StructuredEvidenceRoute::Outcome.new(status: :unavailable, result: nil)
+    end
+    rag_service = Object.new
+    calls = []
+    rag_service.define_singleton_method(:query) do |question, **kwargs|
+      calls << { question: question, kwargs: kwargs }
+      { answer: "Fallback answer", citations: [], session_id: "fallback-session" }
+    end
+    original_structured_build = Rag::StructuredEvidenceRoute.method(:build)
+    original_new = BedrockRagService.method(:new)
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**| route }
+    BedrockRagService.define_singleton_method(:new) { |**| rag_service }
+
+    result = QueryOrchestratorService.new(
+      "¿Qué indica el BORNE X1?",
+      account: accounts(:legacy),
+      output_channel: :web
+    ).execute
+
+    assert_equal "Fallback answer", result[:answer]
+    assert_equal 1, calls.size
+  ensure
+    if original_structured_build
+      Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_structured_build.call(**kwargs) }
+    end
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+  end
+
+  test "flag off preserves the existing generative path" do
+    original_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    rag_service = Object.new
+    calls = []
+    rag_service.define_singleton_method(:query) do |question, **kwargs|
+      calls << { question: question, kwargs: kwargs }
+      { answer: "Existing answer", citations: [], session_id: "existing-session" }
+    end
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| rag_service }
+    source_uri = "s3://bucket/manual.pdf"
+    session = Struct.new(:active_entities).new({
+      "Manual" => {
+        "source_uri" => source_uri,
+        "entity_type" => "document",
+        "source" => "user_pin"
+      }
+    })
+    profile = RagRetrievalProfile.new(
+      entity_sources: [ "document" ],
+      question: "¿Qué indica el BORNE X1?"
+    )
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, profile.number_of_results
+    assert_nil Rag::StructuredEvidenceRoute.build(
+      question: "¿Qué indica el BORNE X1?",
+      account: accounts(:legacy),
+      entity_s3_uris: [ source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      output_channel: :web
+    )
+
+    result = QueryOrchestratorService.new(
+      "¿Qué indica el BORNE X1?",
+      account: accounts(:legacy),
+      conv_session: session,
+      entity_s3_uris: [ source_uri ],
+      output_channel: :web,
+      force_entity_filter: true
+    ).execute
+
+    assert_equal "Existing answer", result[:answer]
+    assert_equal "existing-session", result[:session_id]
+    assert_equal 1, calls.size
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    if original_flag.nil?
+      ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED")
+    else
+      ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = original_flag
+    end
+  end
+
   test "entity_sources separates media type from user pin provenance" do
     session = Struct.new(:active_entities).new({
       "Photo" => { "source" => "user_pin", "entity_type" => "image_upload" },

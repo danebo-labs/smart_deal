@@ -88,6 +88,16 @@ module Rag
       )
     end
 
+    # Public shape query: does the question contain any label term at all? Position-
+    # independent, unlike `identifiers`' adjacency streak. Exposed so the retrieval
+    # profile can reuse the single trigger vocabulary instead of duplicating it.
+    def self.label_terms?(question)
+      question.to_s.scan(/\S+/).any? do |token|
+        core = token.gsub(/\A[^\p{L}\p{N}]+/, "").gsub(/[^\p{L}\p{N}]+\z/, "")
+        core.present? && label_term?(core)
+      end
+    end
+
     # Identifiers by shape and position (§4). A token is a candidate if it is an
     # uppercase alphanumeric run with optional internal separators; :labelled means it
     # follows a label term (or sits inside an enumeration headed by one). A numeric

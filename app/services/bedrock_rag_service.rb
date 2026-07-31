@@ -32,13 +32,12 @@ class BedrockRagService
 
   # Deterministic failure-semantics normalization (Gate B).
   # Haiku frequently states absence in prose ("la documentación no contiene…")
-  # without emitting the literal protocol marker. When the answer LEADS with an
-  # absence statement and carries no marker, we append DATA_NOT_AVAILABLE so the
-  # safety-critical absence contract is explicit. Lead-scoped to avoid firing on
-  # grounded answers that mention an incidental sub-absence.
+  # without emitting the literal protocol marker. Total absence keeps the legacy
+  # behavior; partial absence is marked only when the missing fragment requests
+  # the same relation as the question.
   ABSENCE_MARKER_PATTERN = /DATA_NOT_AVAILABLE|REQUIRES?_FIELD_VERIFICATION/.freeze
-  ABSENCE_LEAD_CHARS = 280
-  ABSENCE_LEAD_PATTERNS = [
+  LEGACY_ABSENCE_LEAD_CHARS = 280
+  ABSENCE_PHRASE_PATTERNS = [
     /no\s+(?:se\s+)?proporciona/i,
     /no\s+(?:se\s+)?especifica/i,
     /no\s+contiene/i,
@@ -333,7 +332,11 @@ class BedrockRagService
 
       # Failure semantics (Gate B): make prose-only absence explicit with the
       # literal protocol marker so downstream contracts/telemetry can rely on it.
-      answer_text = normalize_absence_semantics(answer_text, locale: no_results_locale)
+      answer_text = normalize_absence_semantics(
+        answer_text,
+        question: question,
+        locale: no_results_locale
+      )
       internal_answer_text = answer_text
       # F3 — Single guardrail pass with the full evidence context: native
       # citations when present, otherwise the chunks retrieved for identity
@@ -1370,18 +1373,57 @@ class BedrockRagService
     refs.presence
   end
 
-  # Appends the literal DATA_NOT_AVAILABLE marker when the answer LEADS with an
-  # absence statement but emitted no marker. Lead-scoped (first ABSENCE_LEAD_CHARS,
-  # markdown noise stripped) so grounded answers with an incidental sub-absence are
-  # not falsely flagged. Idempotent: never adds a second marker.
-  def normalize_absence_semantics(answer, locale: I18n.locale)
+  # Appends an internal absence contract without rewriting the generated answer.
+  # With the partial contract disabled this preserves the former 280-character
+  # behavior byte-for-byte. With it enabled, a leading absence remains total while
+  # a later absence is marked only when its fragment shares a requested relation
+  # with the question.
+  def normalize_absence_semantics(
+    answer,
+    question: nil,
+    locale: I18n.locale,
+    partial_contract: Rag::PartialAbstentionContractFlag.enabled?
+  )
     return answer if answer.blank?
     return answer if answer.match?(ABSENCE_MARKER_PATTERN)
 
-    lead = answer[0, ABSENCE_LEAD_CHARS].to_s.tr("#*`>_", " ")
-    return answer unless ABSENCE_LEAD_PATTERNS.any? { |re| lead.match?(re) }
+    return normalize_legacy_absence(answer, locale:) unless partial_contract
+
+    fragments = Rag::AnswerSafetyProcessor.fragments(answer)
+    absence_fragments = fragments.each_with_index.filter_map do |fragment, index|
+      [ fragment, index ] if absence_phrase?(fragment)
+    end
+    return answer if absence_fragments.empty?
+
+    contract_key =
+      if absence_fragments.any? { |_fragment, index| index.zero? }
+        "rag.absence_total_contract"
+      elsif partial_absence_relevant?(question, absence_fragments)
+        "rag.absence_partial_contract"
+      end
+    return answer unless contract_key
+
+    "#{answer.rstrip}\n\n#{I18n.t(contract_key, locale: locale)}"
+  end
+
+  def normalize_legacy_absence(answer, locale:)
+    lead = answer[0, LEGACY_ABSENCE_LEAD_CHARS].to_s.tr("#*`>_", " ")
+    return answer unless absence_phrase?(lead)
 
     "#{answer.rstrip}\n\n#{I18n.t('rag.absence_total_contract', locale: locale)}"
+  end
+
+  def absence_phrase?(text)
+    ABSENCE_PHRASE_PATTERNS.any? { |pattern| text.match?(pattern) }
+  end
+
+  def partial_absence_relevant?(question, absence_fragments)
+    question_relations = Rag::QueryEntities.requested_relation(question)
+    return false if question_relations.empty?
+
+    absence_fragments.any? do |fragment, _index|
+      (question_relations & Rag::QueryEntities.requested_relation(fragment)).any?
+    end
   end
 
   def extract_doc_refs(answer_text)

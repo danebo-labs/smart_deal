@@ -140,11 +140,12 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       create_call(@b1, route: "rag_filtered", correlation_id: "corr:b1")
 
       file = Tempfile.new("pilot-metrics-1-4")
-      # evidence_route events
+      # evidence_route events (generation_input_tokens/generation_output_tokens are the keys
+      # Rag::EvidenceSelectionTelemetry.log_route actually emits)
       [
-        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:a1", account_id: accounts(:legacy).id, user_id: @a1.id, outcome: "answered", generation_mode: "structured", retrieval_ms: 100, expansion_ms: 50, local_ms: 30, generation_ms: 200, input_tokens: 50, output_tokens: 25, ambiguity_detected: false },
-        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:a1b", account_id: accounts(:legacy).id, user_id: @a1.id, outcome: "abstained", generation_mode: "fallback", retrieval_ms: 80, expansion_ms: 40, local_ms: 20, generation_ms: 150, input_tokens: 40, output_tokens: 10, ambiguity_detected: true },
-        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:b1", account_id: accounts(:climb).id, user_id: @b1.id, outcome: "answered", generation_mode: "structured", retrieval_ms: 120, expansion_ms: 60, local_ms: 35, generation_ms: 180, input_tokens: 55, output_tokens: 30, ambiguity_detected: false, question_sha256: "abc123" }
+        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:a1", account_id: accounts(:legacy).id, user_id: @a1.id, outcome: "answered", generation_mode: "structured", retrieval_ms: 100, expansion_ms: 50, local_ms: 30, generation_ms: 200, generation_input_tokens: 50, generation_output_tokens: 25, ambiguity_detected: false },
+        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:a1b", account_id: accounts(:legacy).id, user_id: @a1.id, outcome: "abstained", generation_mode: "fallback", retrieval_ms: 80, expansion_ms: 40, local_ms: 20, generation_ms: 150, generation_input_tokens: 40, generation_output_tokens: 10, ambiguity_detected: true },
+        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:b1", account_id: accounts(:climb).id, user_id: @b1.id, outcome: "answered", generation_mode: "structured", retrieval_ms: 120, expansion_ms: 60, local_ms: 35, generation_ms: 180, generation_input_tokens: 55, generation_output_tokens: 30, ambiguity_detected: false, question_sha256: "abc123" }
       ].each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
 
       # evidence_route_context events
@@ -188,6 +189,32 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       repeat = report.dig(:repeat_usage)
       assert_equal "available", repeat[:status]
       assert_equal 1, repeat[:repeat_questions_count]
+      assert_equal(
+        [ { user_id: @a1.id, date: @date.iso8601, count: 2 }, { user_id: @b1.id, date: @date.iso8601, count: 1 } ].sort_by { |row| row[:user_id] },
+        repeat[:queries_by_user_day].sort_by { |row| row[:user_id] }
+      )
+      repeated = repeat[:top_repeated_questions].first
+      assert_equal @a1.id, repeated[:user_id]
+      assert_nil repeated[:question_sha256]
+      assert_equal 2, repeated[:count]
+
+      file.close!
+    end
+  end
+
+  test "evidence_route_summary falls back to legacy input_tokens/output_tokens for old log lines" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "corr:legacy")
+
+      file = Tempfile.new("pilot-legacy-tokens")
+      file.puts("[PILOT_USAGE] #{JSON.generate({ event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:legacy", account_id: accounts(:legacy).id, user_id: @a1.id, outcome: "answered", generation_mode: "structured", retrieval_ms: 90, expansion_ms: 45, local_ms: 25, generation_ms: 170, input_tokens: 60, output_tokens: 15, ambiguity_detected: false })}")
+      file.flush
+
+      report = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json
+      summary = report.dig(:technical_and_cost, :evidence_route_summary)
+
+      assert_equal 60, summary[:tokens_in]
+      assert_equal 15, summary[:tokens_out]
 
       file.close!
     end

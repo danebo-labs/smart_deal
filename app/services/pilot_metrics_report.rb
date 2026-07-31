@@ -539,6 +539,8 @@ class PilotMetricsReport
     expansion_ms = routes.filter_map { |route| route[:expansion_ms].to_i }
     local_ms = routes.filter_map { |route| route[:local_ms].to_i }
     generation_ms = routes.filter_map { |route| route[:generation_ms].to_i }
+    tokens_in = routes.sum { |r| route_token_count(r, :generation_input_tokens, :input_tokens) }
+    tokens_out = routes.sum { |r| route_token_count(r, :generation_output_tokens, :output_tokens) }
 
     {
       status: "available",
@@ -552,11 +554,18 @@ class PilotMetricsReport
         local_ms: { p50: percentile(local_ms.sort, 50), p95: percentile(local_ms.sort, 95), max: local_ms.max },
         generation_ms: { p50: percentile(generation_ms.sort, 50), p95: percentile(generation_ms.sort, 95), max: generation_ms.max }
       },
-      tokens_in: routes.sum { |r| r[:input_tokens].to_i },
-      tokens_out: routes.sum { |r| r[:output_tokens].to_i },
-      avg_tokens_in_per_query: (routes.sum { |r| r[:input_tokens].to_i }.to_f / routes.size).round(1),
-      avg_tokens_out_per_query: (routes.sum { |r| r[:output_tokens].to_i }.to_f / routes.size).round(1)
+      tokens_in: tokens_in,
+      tokens_out: tokens_out,
+      avg_tokens_in_per_query: (tokens_in.to_f / routes.size).round(1),
+      avg_tokens_out_per_query: (tokens_out.to_f / routes.size).round(1)
     }
+  end
+
+  # EvidenceSelectionTelemetry.log_route emits generation_input_tokens/generation_output_tokens;
+  # input_tokens/output_tokens is a fallback for evidence_route log lines written before that
+  # emitter existed, never a key the current emitter uses.
+  def route_token_count(route, key, legacy_key)
+    (route[key] || route[legacy_key]).to_i
   end
 
   def traceability(pilot_events)
@@ -618,19 +627,25 @@ class PilotMetricsReport
       [ user_id, day ]
     end
 
-    queries_by_user_day = by_user_day.transform_values(&:size)
+    queries_by_user_day = by_user_day.map do |(user_id, day), group|
+      { user_id: user_id, date: day == "unknown" ? "unknown" : day.iso8601, count: group.size }
+    end.first(50)
     users_by_days = by_user_day.keys.group_by { |k| k[0] }.transform_values { |keys| keys.map { |k| k[1] }.uniq }
 
     repeat_questions = routes.group_by do |route|
       [ integer_or_nil(route[:user_id]), route[:question_sha256].presence ]
     end.transform_values(&:size).select { |_key, count| count > 1 }
 
+    top_repeated_questions = repeat_questions.sort_by { |_key, count| -count }.first(10).map do |(user_id, question_sha256), count|
+      { user_id: user_id, question_sha256: question_sha256, count: count }
+    end
+
     {
       status: "available",
-      queries_by_user_day: queries_by_user_day.first(50).to_h,
+      queries_by_user_day: queries_by_user_day,
       users_with_multiple_days: users_by_days.count { |_user_id, days| days.size >= 2 },
       repeat_questions_count: repeat_questions.size,
-      top_repeated_questions: repeat_questions.sort_by { |_key, count| -count }.first(10).to_h
+      top_repeated_questions: top_repeated_questions
     }
   end
 

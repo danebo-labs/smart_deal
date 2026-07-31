@@ -348,6 +348,23 @@ class BedrockRagService
         evidence: retrieved_for_extraction,
         require_cited_evidence: !canned_no_results
       )
+      citation_attribution = Rag::CitationAttributionGuard.new(
+        question: question, citations: citations
+      ).call(answer_text)
+      answer_text = citation_attribution.answer
+      if citation_attribution.dropped_any?
+        Rails.logger.warn(
+          "BedrockRagService: attribution guard dropped #{citation_attribution.dropped_segments.size} " \
+            "segment(s) correlation_id=#{query_correlation_id} anchors=#{citation_attribution.anchors.inspect}"
+        )
+        # I11 fail-safe: no attributable claim left, but the text still carries
+        # evidence-sensitive content — abstain rather than deliver it uncited.
+        if !citation_attribution.attributed_claims? &&
+           Rag::AnswerSafetyProcessor.requires_evidence?(answer_text)
+          answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale)
+            .call("DATA_NOT_AVAILABLE", evidence: [])
+        end
+      end
 
       latency_ms = ((Time.current - start_time) * 1000).to_i
       tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
@@ -397,7 +414,8 @@ class BedrockRagService
         canned_no_results: canned_no_results,
         canned_with_retrieval: canned_with_retrieval,
         correlation_id:   query_correlation_id,
-        attribution:      attribution
+        attribution:      attribution,
+        citation_attribution: citation_attribution
       )
 
       result = {
@@ -429,7 +447,8 @@ class BedrockRagService
           canned_no_results: canned_no_results,
           canned_with_retrieval: canned_with_retrieval,
           raw_citation_groups: raw_citations.size,
-          raw_cited_references: total_refs
+          raw_cited_references: total_refs,
+          attribution_dropped: citation_attribution.dropped_segments
         }
       end
       result
@@ -618,7 +637,8 @@ class BedrockRagService
 
   def log_quality_signal(question:, answer:, citations:, doc_refs:, raw_citations:, latency_ms:,
                          entity_filter:, evidence_mode:, retrieved_chunks:, canned_no_results:,
-                         canned_with_retrieval:, correlation_id:, attribution:)
+                         canned_with_retrieval:, correlation_id:, attribution:,
+                         citation_attribution:)
     retrieved_source_uris = Array(retrieved_chunks)
       .filter_map { |chunk| observed_chunk_descriptor(chunk)["retrieved_source_uri"] }
       .uniq
@@ -651,6 +671,9 @@ class BedrockRagService
       evidence_mode:    evidence_mode,
       doc_refs_count:   Array(doc_refs).size,
       retrieved_source_uris: retrieved_source_uris,
+      attribution_dropped_segments: citation_attribution.dropped_segments.size,
+      attribution_anchors: citation_attribution.anchors,
+      attribution_identities: citation_attribution.identities,
       model_id:        @model_ref,
       kb_id:           @knowledge_base_id
     }

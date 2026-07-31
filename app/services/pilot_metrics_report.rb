@@ -49,10 +49,14 @@ class PilotMetricsReport
         model_usage: model_usage(rows),
         interaction_trace: interaction_trace(rows, log_data[:pilot], log_data[:quality]),
         internal_calls: internal_calls(log_data[:pilot]),
+        evidence_route_summary: evidence_route_summary(log_data[:pilot]),
+        traceability: traceability(log_data[:pilot]),
+        cost_summary: cost_summary(rows, log_data[:pilot]),
         per_user: users,
         per_account: accounts
       },
       adoption_signals: adoption_signals(rows, log_data[:pilot], messages, sessions),
+      repeat_usage: repeat_usage(log_data[:pilot]),
       evidence_quality: evidence_quality(log_data[:quality]),
       knowledge_gap_signals: gap_signals,
       commercial_outcomes: {
@@ -523,6 +527,111 @@ class PilotMetricsReport
           !useful
         end
       end
+  end
+
+  def evidence_route_summary(pilot_events)
+    routes = pilot_events.select { |event| event[:event] == "evidence_route" }
+    return { status: "logs_not_available" } if routes.empty?
+
+    outcomes = routes.group_by { |route| route[:outcome] }.transform_values(&:size)
+    generation_modes = routes.group_by { |route| route[:generation_mode] }.transform_values(&:size)
+    latencies = routes.filter_map { |route| route[:retrieval_ms].to_i }
+    expansion_ms = routes.filter_map { |route| route[:expansion_ms].to_i }
+    local_ms = routes.filter_map { |route| route[:local_ms].to_i }
+    generation_ms = routes.filter_map { |route| route[:generation_ms].to_i }
+
+    {
+      status: "available",
+      responses_by_outcome: outcomes,
+      responses_by_generation_mode: generation_modes,
+      abstention_rate: routes.count { |r| r[:outcome] == "abstained" }.to_f / [ routes.size, 1 ].max,
+      ambiguity_detected_count: routes.count { |r| r[:ambiguity_detected] == true },
+      latency_stages: {
+        retrieval_ms: { p50: percentile(latencies.sort, 50), p95: percentile(latencies.sort, 95), max: latencies.max },
+        expansion_ms: { p50: percentile(expansion_ms.sort, 50), p95: percentile(expansion_ms.sort, 95), max: expansion_ms.max },
+        local_ms: { p50: percentile(local_ms.sort, 50), p95: percentile(local_ms.sort, 95), max: local_ms.max },
+        generation_ms: { p50: percentile(generation_ms.sort, 50), p95: percentile(generation_ms.sort, 95), max: generation_ms.max }
+      },
+      tokens_in: routes.sum { |r| r[:input_tokens].to_i },
+      tokens_out: routes.sum { |r| r[:output_tokens].to_i },
+      avg_tokens_in_per_query: (routes.sum { |r| r[:input_tokens].to_i }.to_f / routes.size).round(1),
+      avg_tokens_out_per_query: (routes.sum { |r| r[:output_tokens].to_i }.to_f / routes.size).round(1)
+    }
+  end
+
+  def traceability(pilot_events)
+    contexts = pilot_events.select { |event| event[:event] == "evidence_route_context" }
+    return { status: "logs_not_available" } if contexts.empty?
+
+    by_correlation = contexts.group_by { |event| event[:correlation_id].presence }
+    by_correlation.reject { |k, _v| k.nil? }.map do |correlation_id, chunks|
+      pages = chunks.filter_map { |chunk| chunk[:page].presence }.uniq
+      section_identities = chunks.filter_map { |chunk| chunk[:section_identity].presence }.uniq
+      {
+        correlation_id: correlation_id,
+        chunks_cited: chunks.size,
+        pages: pages,
+        section_identities: section_identities,
+        documents: chunks.filter_map { |chunk| chunk[:document_id].presence }.uniq
+      }
+    end.sort_by { |entry| entry[:correlation_id] }
+  end
+
+  def cost_summary(rows, pilot_events)
+    routes = pilot_events.select { |event| event[:event] == "evidence_route" }
+    return { status: "logs_not_available" } if routes.empty? || rows.empty?
+
+    cost_by_query = routes.map do |route|
+      cost_row = rows.find { |r| r[:correlation_id] == route[:correlation_id] }
+      cost = cost_row ? row_cost(cost_row) : 0
+      {
+        correlation_id: route[:correlation_id],
+        user_id: integer_or_nil(route[:user_id]),
+        cost_usd: cost.round(6)
+      }
+    end
+
+    by_user = cost_by_query.group_by { |entry| entry[:user_id] }
+    {
+      status: "available",
+      total_usd: cost_by_query.sum { |entry| entry[:cost_usd] }.round(6),
+      avg_cost_per_query_usd: (cost_by_query.sum { |entry| entry[:cost_usd] }.to_f / cost_by_query.size).round(6),
+      by_user: by_user.map do |user_id, entries|
+        {
+          user_id: user_id,
+          queries: entries.size,
+          total_cost_usd: entries.sum { |e| e[:cost_usd] }.round(6),
+          avg_cost_per_query_usd: (entries.sum { |e| e[:cost_usd] }.to_f / entries.size).round(6)
+        }
+      end.sort_by { |entry| -entry[:total_cost_usd] }
+    }
+  end
+
+  def repeat_usage(pilot_events)
+    routes = pilot_events.select { |event| event[:event] == "evidence_route" }
+    return { status: "logs_not_available" } if routes.empty?
+
+    by_user_day = routes.group_by do |route|
+      user_id = integer_or_nil(route[:user_id])
+      ts = parse_time(route[:ts])
+      day = ts ? ts.to_date : "unknown"
+      [ user_id, day ]
+    end
+
+    queries_by_user_day = by_user_day.transform_values(&:size)
+    users_by_days = by_user_day.keys.group_by { |k| k[0] }.transform_values { |keys| keys.map { |k| k[1] }.uniq }
+
+    repeat_questions = routes.group_by do |route|
+      [ integer_or_nil(route[:user_id]), route[:question_sha256].presence ]
+    end.transform_values(&:size).select { |_key, count| count > 1 }
+
+    {
+      status: "available",
+      queries_by_user_day: queries_by_user_day.first(50).to_h,
+      users_with_multiple_days: users_by_days.count { |_user_id, days| days.size >= 2 },
+      repeat_questions_count: repeat_questions.size,
+      top_repeated_questions: repeat_questions.sort_by { |_key, count| -count }.first(10).to_h
+    }
   end
 
   def cache_metrics(events)

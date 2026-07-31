@@ -133,6 +133,83 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
     end
   end
 
+  test "evidence_route_summary, traceability, cost_summary, and repeat_usage populate correctly" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "corr:a1")
+      create_call(@a1, route: "rag_filtered", correlation_id: "corr:a1b")
+      create_call(@b1, route: "rag_filtered", correlation_id: "corr:b1")
+
+      file = Tempfile.new("pilot-metrics-1-4")
+      # evidence_route events
+      [
+        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:a1", account_id: accounts(:legacy).id, user_id: @a1.id, outcome: "answered", generation_mode: "structured", retrieval_ms: 100, expansion_ms: 50, local_ms: 30, generation_ms: 200, input_tokens: 50, output_tokens: 25, ambiguity_detected: false },
+        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:a1b", account_id: accounts(:legacy).id, user_id: @a1.id, outcome: "abstained", generation_mode: "fallback", retrieval_ms: 80, expansion_ms: 40, local_ms: 20, generation_ms: 150, input_tokens: 40, output_tokens: 10, ambiguity_detected: true },
+        { event: "evidence_route", ts: @now.iso8601, correlation_id: "corr:b1", account_id: accounts(:climb).id, user_id: @b1.id, outcome: "answered", generation_mode: "structured", retrieval_ms: 120, expansion_ms: 60, local_ms: 35, generation_ms: 180, input_tokens: 55, output_tokens: 30, ambiguity_detected: false, question_sha256: "abc123" }
+      ].each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
+
+      # evidence_route_context events
+      [
+        { event: "evidence_route_context", ts: @now.iso8601, correlation_id: "corr:a1", account_id: accounts(:legacy).id, user_id: @a1.id, page: 10, section_identity: "PLACA_A", document_id: "doc_1", chunk_sha256: "chunk1" },
+        { event: "evidence_route_context", ts: @now.iso8601, correlation_id: "corr:b1", account_id: accounts(:climb).id, user_id: @b1.id, page: 20, section_identity: "PLACA_B", document_id: "doc_2", chunk_sha256: "chunk2" },
+        { event: "evidence_route_context", ts: @now.iso8601, correlation_id: "corr:b1", account_id: accounts(:climb).id, user_id: @b1.id, page: 21, section_identity: "PLACA_B", document_id: "doc_2", chunk_sha256: "chunk3" }
+      ].each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
+
+      file.flush
+
+      report = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json
+
+      # Check evidence_route_summary
+      summary = report.dig(:technical_and_cost, :evidence_route_summary)
+      assert_equal "available", summary[:status]
+      assert_equal({ "answered" => 2, "abstained" => 1 }, summary[:responses_by_outcome])
+      assert_equal({ "structured" => 2, "fallback" => 1 }, summary[:responses_by_generation_mode])
+      assert_equal 1, summary[:ambiguity_detected_count]
+      assert_in_delta(1.0 / 3, summary[:abstention_rate], 0.0001)
+      assert_operator summary[:latency_stages][:retrieval_ms][:max], :>, 0
+      assert_equal 145, summary[:tokens_in]
+      assert_equal 65, summary[:tokens_out]
+
+      # Check traceability
+      traceability = report.dig(:technical_and_cost, :traceability)
+      assert_equal 2, traceability.size
+      trace_a1 = traceability.find { |t| t[:correlation_id] == "corr:a1" }
+      assert_equal 1, trace_a1[:chunks_cited]
+      assert_equal [ 10 ], trace_a1[:pages]
+      assert_equal [ "PLACA_A" ], trace_a1[:section_identities]
+
+      # Check cost_summary
+      cost_summary = report.dig(:technical_and_cost, :cost_summary)
+      assert_equal "available", cost_summary[:status]
+      assert_equal 2, cost_summary[:by_user].size
+      a1_cost = cost_summary[:by_user].find { |u| u[:user_id] == @a1.id }
+      assert_equal 2, a1_cost[:queries]
+
+      # Check repeat_usage
+      repeat = report.dig(:repeat_usage)
+      assert_equal "available", repeat[:status]
+      assert_equal 1, repeat[:repeat_questions_count]
+
+      file.close!
+    end
+  end
+
+  test "evidence_route_summary returns logs_not_available when no evidence_route events" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "rag:a1")
+
+      file = Tempfile.new("pilot-empty-evidence")
+      file.puts("[PILOT_USAGE] #{JSON.generate({ event: "photo_submitted", ts: @now.iso8601 })}")
+      file.flush
+
+      report = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json
+
+      assert_equal "logs_not_available", report.dig(:technical_and_cost, :evidence_route_summary, :status)
+      assert_equal "logs_not_available", report.dig(:technical_and_cost, :traceability, :status)
+
+      file.close!
+    end
+  end
+
   private
 
   def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0")

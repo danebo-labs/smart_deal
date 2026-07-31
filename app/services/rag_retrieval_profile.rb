@@ -24,6 +24,19 @@
 # so recall was never the bottleneck; top-k 6 added four off-topic pages and the
 # answer volunteered an unrelated 24 V obstacle connector, dropping the case
 # from 5/7 to 0/7 on a critical penalized check.
+#
+# No GENERALIZATION_RESULTS branch either. Measured 2026-07-31 with a top-k 20
+# recall probe (`tmp/pilot_gate/recall_probe.json`) on the four generalization
+# questions failing in `pilot_10q_v4_1`: `serie_f_cerrojos` (target p.95),
+# `em1000_v1_tabla` (p.34), `cmc4_tabla` (p.97) and `spm_sin_placa` (p.9) never
+# rank in the top 20 — no top-k this profile could reasonably request would
+# recover them, and rule 5 forbids re-ingesting/re-chunking to fix an
+# embedding/alias gap. `twister_embarba_puertas` (p.89) is NOT part of this
+# gap: it already ranks 1st at the current top-k 3, so its failure
+# (`deterministic_model_disambiguation` instead of naming the board) has a
+# different root cause and widening the budget would not touch it. These five
+# are documented as a known retrieval limitation in the Fase 4 gate report,
+# not forced here.
 class RagRetrievalProfile
   PINNED_DOCUMENT_RESULTS = 3
   STRUCTURED_MAPPING_RESULTS = 12

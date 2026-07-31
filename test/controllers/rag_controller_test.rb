@@ -398,7 +398,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     assert_equal 'SPM', json.dig('resolution', 'facts', 0, 'identifier')
   end
 
-  test "answered and abstained structured turns issue one retrieve with selector shadow on or off" do
+  test "answered and abstained structured turns issue one retrieve with selector and partial contract on or off" do
     sign_in @user
     retrieval_calls = 0
     rag_service = Object.new
@@ -423,19 +423,21 @@ class RagControllerTest < ActionDispatch::IntegrationTest
         }
       end
 
-      [ "false", "true" ].each do |selector|
+      [ "false", "true" ].product([ "false", "true" ]).each do |selector, partial_contract|
         retrieval_calls = 0
-        with_evidence_flags(selector: selector, cards: "false") do
-          with_mock_orchestrator(orchestrator) do
-            with_mock_bedrock_rag_service(rag_service) do
-              post rag_ask_url, params: { question: "¿Qué indica el LED ABC12?" }, as: :json
+        with_partial_abstention_contract(partial_contract) do
+          with_evidence_flags(selector: selector, cards: "false") do
+            with_mock_orchestrator(orchestrator) do
+              with_mock_bedrock_rag_service(rag_service) do
+                post rag_ask_url, params: { question: "¿Qué indica el LED ABC12?" }, as: :json
+              end
             end
           end
         end
 
         assert_response :success
         assert_equal 1, retrieval_calls,
-          "outcome=#{outcome} selector=#{selector} issued more than one Retrieve"
+          "outcome=#{outcome} selector=#{selector} partial=#{partial_contract} issued more than one Retrieve"
         assert_equal answer, json_response["answer"]
         assert_equal "not_applicable", json_response.dig("resolution", "mode")
       end
@@ -876,6 +878,18 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   ensure
     original_selector.nil? ? ENV.delete("RAG_EVIDENCE_SELECTOR_ENABLED") : ENV["RAG_EVIDENCE_SELECTOR_ENABLED"] = original_selector
     original_cards.nil? ? ENV.delete("RAG_EVIDENCE_CARDS_ENABLED") : ENV["RAG_EVIDENCE_CARDS_ENABLED"] = original_cards
+  end
+
+  def with_partial_abstention_contract(value)
+    original = ENV.fetch("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil)
+    ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = value
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED")
+    else
+      ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = original
+    end
   end
 
   test 'ask passes force_entity_filter: true when session has pins' do

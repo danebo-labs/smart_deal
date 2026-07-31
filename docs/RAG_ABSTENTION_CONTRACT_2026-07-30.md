@@ -3,6 +3,9 @@
 **Fecha:** 2026-07-30  
 **Rama:** `pilot/abstention-contract`  
 **Estado:** **NO-GO — no desplegar**
+**Continuación:** los dos NO-GO de este informe se cierran en
+[RAG_CITATION_ATTRIBUTION_CONTRACT_2026-07-30.md](RAG_CITATION_ATTRIBUTION_CONTRACT_2026-07-30.md),
+que también cambia la puerta de fidelidad del replay (I15).
 
 ## Resumen ejecutivo
 

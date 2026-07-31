@@ -14,6 +14,36 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
   PILOT_V2 = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q_v2.json").read).freeze
   HOLDOUT_PATH = Rails.root.join("script/fixtures/rag_seguridades_holdout_v1.json")
   HOLDOUT_SHA256 = "34682fb13ca5acf0e635d42ad285be039749b4d07f090a728ef43371d4325309"
+  PARTIAL_ABSTENTION_GOLDEN_CHECKS = [
+    [ "seguridades-pilot-v1.2", "edel_k2_led31", "required",
+      "se abstiene de condiciones no documentadas" ],
+    [ "seguridades-pilot-v1.2", "em2000_contradiccion_conectores", "optional",
+      "recomienda verificar en campo" ],
+    [ "seguridades-pilot-v2.1", "thyssen_serie_e_leds", "required",
+      "se abstiene de normal/fallo" ],
+    [ "seguridades-pilot-v2.1", "tokibat_dl27_v2", "required",
+      "se abstiene de condiciones no documentadas" ],
+    [ "seguridades-v3.2", "altius_d8", "required",
+      "limita la función a lo documentado" ],
+    [ "seguridades-v3.2", "em2000_contradiccion", "optional",
+      "pide verificar esquema completo" ],
+    [ "seguridades-v3.2", "indice_carlos_silva", "optional",
+      "expone ausencia si retrieval no responde" ],
+    [ "seguridades-v3.2", "indice_carlos_silva", "required",
+      "respuesta no vacía" ],
+    [ "seguridades-v3.2", "kdt_evo_presostato", "required",
+      "identifica XP31 o se abstiene" ],
+    [ "seguridades-v3.2", "thyssen_e_led", "required",
+      "expone falta de lógica documentada" ],
+    [ "seguridades-v3.2", "tokibat_dl27", "optional",
+      "distingue etiqueta de estado" ],
+    [ "seguridades-v3.2", "tokibat_dl27", "required",
+      "se abstiene sobre lógica" ],
+    [ "seguridades-v3.2", "torque_ausente", "optional",
+      "sugiere verificar fuente completa" ],
+    [ "seguridades-v3.2", "torque_ausente", "required",
+      "abstención visible" ]
+  ].sort.freeze
 
   test "rubric version is the calibrated one" do
     assert_equal "seguridades-v3.2", RUBRIC.fetch("version")
@@ -297,7 +327,63 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
     assert_no_match twenty_four, "La fotocélula se alimenta con 220 V."
   end
 
+  test "the partial-absence rendering matches no penalized pattern in any rubric" do
+    [ :es, :en ].each do |locale|
+      answer = partial_abstention_rendering(locale)
+
+      all_rubrics.each do |rubric|
+        rubric.fetch("cases").each do |definition|
+          Array(definition["penalized"]).each do |check|
+            pattern = compiled_pattern(check.fetch("pattern"))
+            assert_no_match(
+              pattern,
+              answer,
+              "#{locale} rendering matched #{rubric.fetch('version')}/" \
+                "#{definition.fetch('id')}/#{check.fetch('label')}"
+            )
+          end
+        end
+      end
+    end
+  end
+
+  test "the partial-absence rendering alone satisfies exactly the golden abstention checks" do
+    answer = partial_abstention_rendering(:es)
+    matched = all_rubrics.flat_map do |rubric|
+      rubric.fetch("cases").flat_map do |definition|
+        %w[required optional].flat_map do |kind|
+          Array(definition[kind]).filter_map do |check|
+            next unless compiled_pattern(check.fetch("pattern")).match?(answer)
+
+            [
+              rubric.fetch("version"),
+              definition.fetch("id"),
+              kind,
+              check.fetch("label")
+            ]
+          end
+        end
+      end
+    end.sort
+
+    assert_equal 14, matched.size
+    assert_equal PARTIAL_ABSTENTION_GOLDEN_CHECKS, matched
+  end
+
   private
+
+  def all_rubrics
+    [ RUBRIC, PILOT, PILOT_V2 ]
+  end
+
+  def partial_abstention_rendering(locale)
+    internal = I18n.t("rag.absence_partial_contract", locale:)
+    Rag::AnswerSafetyProcessor.new(locale:).call(internal, evidence: [])
+  end
+
+  def compiled_pattern(pattern)
+    Regexp.new(pattern, Regexp::IGNORECASE | Regexp::MULTILINE)
+  end
 
   def rubric_case(id)
     RUBRIC.fetch("cases").find { |definition| definition["id"] == id } ||

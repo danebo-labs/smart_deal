@@ -31,7 +31,7 @@ es:
     data_not_available: "El documento no incluye este dato"
     requires_field_verification: "Verificar en campo o en el esquema completo"
     absence_total_contract: "**DATA_NOT_AVAILABLE** — el dato solicitado no está documentado; requiere verificación en campo."
-    absence_partial_contract: "**DATA_NOT_AVAILABLE** — **REQUIRES_FIELD_VERIFICATION**."
+    absence_partial_contract: "**DATA_NOT_AVAILABLE** — el estado solicitado no está documentado. **REQUIRES_FIELD_VERIFICATION**."
     unsupported_identifier: "La conexión, borna o señal indicada no está documentada en la evidencia recuperada."
     uncited_technical_answer: "No pude verificar esta respuesta con una cita del documento. Consulta la fuente completa antes de usar el dato."
     unsupported_connection: "La relación componente-conector no está documentada explícitamente en la evidencia recuperada; confírmala en el esquema completo."

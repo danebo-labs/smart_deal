@@ -94,6 +94,21 @@ class Rag::BoardHeadingTest < ActiveSupport::TestCase
     assert_not Rag::BoardHeading.mentioned?("KDT 11", "¿Qué serie indica el LED DL2?")
   end
 
+  # H-03: word_match?'s common-prefix allowance for gender/plural spelling
+  # ("BASICO"/"básica") also let sibling boards that differ only by a
+  # trailing model digit pass as a match, because the shared root
+  # ("EDEL-K") alone already clears MIN_COMMON_PREFIX.
+  test "sibling boards distinguished only by a trailing digit are not confused" do
+    heading = "EDEL-K3 Wiring Overview — Safety & Door Circuit Connections"
+
+    assert_not Rag::BoardHeading.mentioned?(
+      heading, "En la EDEL-K2, ¿qué LED indica que los cerrojos están cerrados?"
+    )
+    assert Rag::BoardHeading.mentioned?(
+      heading, "En la EDEL-K3, ¿qué LED indica que los cerrojos están cerrados?"
+    )
+  end
+
   test "a partially named board is not a named board" do
     assert_not Rag::BoardHeading.mentioned?(
       "MICONIC BX",

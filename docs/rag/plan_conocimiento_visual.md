@@ -218,8 +218,8 @@ La fase siguiente lee el documento actualizado, no el original.
 
 | Fase | Estado | Flag | Commit | Cerrada por |
 |---|---|---|---|---|
-| 0a | cerrada | — | | I-01 |
-| 0b | pendiente | — | | |
+| 0a | cerrada | — | e187323 | I-01 |
+| 0b | cerrada | — | *(pendiente de commit)* | I-02 |
 | 1 | pendiente | `INGESTION_VISUAL_TRIAGE_ENABLED` | | |
 | 2 | pendiente | — (offline) | | |
 | 3 | pendiente | — (offline) | | |
@@ -370,12 +370,12 @@ un token de la etiqueta y uno de la pregunta comparten raíz pero difieren en su
 match exacto de token. `word_match?` no se modifica para que la tabla de 36 casos siga verde.
 
 *Definición de terminado:*
-- [ ] `mentioned?("EDEL-K3 …", "… EDEL-K2 …") == false`, con test
-- [ ] `mentioned?("EDEL-K3 …", "… EDEL-K3 …") == true`, con test
-- [ ] Los 36 casos de `test/services/rag/board_heading_test.rb` intactos, sin editar aserciones
-- [ ] `test/services/rag/ambiguous_model_responder_test.rb`: con una sola hermana recuperada y
+- [x] `mentioned?("EDEL-K3 …", "… EDEL-K2 …") == false`, con test
+- [x] `mentioned?("EDEL-K3 …", "… EDEL-K3 …") == true`, con test
+- [x] Los 36 casos de `test/services/rag/board_heading_test.rb` intactos, sin editar aserciones
+- [x] `test/services/rag/ambiguous_model_responder_test.rb`: con una sola hermana recuperada y
       la pregunta nombrando la otra, se devuelve **menú**, no respuesta
-- [ ] Suite completa + rubocop verdes; H-03 cerrado en el libro de hallazgos
+- [x] Suite completa + rubocop verdes; H-03 cerrado en el libro de hallazgos
 
 **Housekeeping:** `.claude/settings.json` sigue modificado desde la Fase 0 original — commit o
 revert, y anotarlo.
@@ -1237,3 +1237,4 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | ID | Fase | Modelo | Hallazgo | Impacto en fases posteriores |
 |---|---|---|---|---|
 | I-01 | 0a | Cursor Grok 4.5 | H-05 cerrado: `LocaleSwitchable` pasó de `before_action` + `I18n.locale =` a `around_action :with_request_locale` + `I18n.with_locale`. Es el único `I18n.locale =` sin scope del repo; queda eliminado. Test de no-fuga en `locale_switch_test.rb`. Verificado: `bin/rails test` ×9 → 1988 runs / 0 failures cada una; `bin/rubocop` limpio (453 files). | Ninguno. 0b y fases posteriores no dependen de este archivo. |
+| I-02 | 0b | Sonnet | H-03 cerrado sin tocar `word_match?`: `token_match?` gana una capa `sibling_conflict?` — dos designadores que comparten raíz pero cuyo resto (a partir de la raíz común) lleva un dígito en cualquiera de los dos lados sólo cuentan como coincidencia si son idénticos. `BASICO`/`básica` (sin dígito en el resto) sigue matcheando por prefijo; `EDEL-K3`/`EDEL-K2` (dígito en el resto) ya no. Tests nuevos: `board_heading_test.rb` (par positivo/negativo) y `ambiguous_model_responder_test.rb` (una sola hermana recuperada + pregunta nombrando la otra ⇒ menú, 0 llamadas al generador). Los 36 casos de la tabla de verdad y el resto de `board_heading_test.rb` quedan intactos, sin editar ninguna aserción. Verificado: `bin/rails test` 1990 runs / 0 failures; `bin/rubocop` limpio (453 files). | Ninguno. Sólo toca `app/services/rag/board_heading.rb` y sus dos tests; ninguna fase posterior depende de `word_match?`'s comportamiento interno. |

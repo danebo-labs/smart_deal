@@ -81,12 +81,15 @@ Tres reglas:
   respuesta sobre la placa equivocada en lugar del menú. Con las dos hermanas
   recuperadas el filtro da `named.size == 2` y el menú se mantiene, que es el
   caso benigno.
-- **Estado:** abierto, **no corregido a propósito**. Arreglar `word_match?`
-  toca la tabla de verdad 36/36 de `board_heading_test.rb` y las dos rutas que
-  la consumen: está fuera del alcance aprobado de la Fase 2 y necesita decisión
-  del usuario. Mitigación vigente: la respuesta sale por la ruta estructurada,
-  con directiva verbatim y citas, de modo que la placa realmente usada queda
-  impresa y trazable en la respuesta.
+- **Estado:** cerrado en Fase 0b del plan `docs/rag/plan_conocimiento_visual.md`
+  (I-02). Fix sin tocar `word_match?`: `token_match?` gana una capa
+  `sibling_conflict?` que exige igualdad exacta cuando, más allá de la raíz
+  común, alguno de los dos lados lleva un dígito — así deja pasar
+  `BASICO`/`básica` (sin dígito) pero rechaza `EDEL-K3`/`EDEL-K2`. La tabla
+  36/36 de `board_heading_test.rb` queda intacta, sin editar ninguna
+  aserción. Test end-to-end en `ambiguous_model_responder_test.rb`: con una
+  sola hermana recuperada y la pregunta nombrando la otra, se devuelve menú,
+  no respuesta.
 
 ## H-04 — `retrieval_budget` mal reportado cuando el responder entrega el retrieval
 
@@ -126,4 +129,5 @@ Tres reglas:
   H-05), `bin/rubocop` limpio sobre los cinco archivos tocados.
 - **No verificado en producción:** el caso `twister_embarba_puertas` no se ha
   vuelto a correr contra Bedrock. Eso es la Fase 6.
-- **Entradas abiertas que la Fase 6 debe atender:** H-02, H-03.
+- **Entradas abiertas que la Fase 6 debe atender:** H-02. (H-03 cerrado en
+  Fase 0b, ver arriba.)

@@ -232,6 +232,27 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_equal 0, generator.calls
   end
 
+  # H-03: with the bug, BoardHeading.mentioned? treated "EDEL-K3" (retrieved)
+  # as naming "EDEL-K2" (asked) because they share a six-character root before
+  # the digit that actually distinguishes them. That made `named` a single
+  # match, which answered directly — about the wrong board. Fixed, no board
+  # is named and the technician still gets to choose among the three retrieved.
+  test "a single retrieved sibling board does not answer a different sibling's question" do
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    generator = FakeGenerator.new("no debería generarse [1]")
+    responder = build_responder(
+      *twister_chunks,
+      question: "En la EDEL-K2, ¿qué LED indica que los cerrojos están cerrados?",
+      generator: generator
+    )
+
+    result = responder.execute
+
+    assert_equal "deterministic_model_disambiguation", result[:generation_mode]
+    assert_equal 3, result[:quick_replies].size
+    assert_equal 0, generator.calls
+  end
+
   test "with the live route flag off a named board still gets the menu it gets today" do
     responder = build_responder(
       *twister_chunks,

@@ -140,9 +140,26 @@ module Rag
     # (D2), so a heading that adds a brand suffix ("TWISTER TW - INAPELSA")
     # does not force the question to repeat that suffix verbatim.
     def token_match?(token, question_words)
-      [ token, *token.split("-") ].uniq.any? { |part| question_words.any? { |word| word_match?(part, word) } }
+      [ token, *token.split("-") ].uniq.any? do |part|
+        question_words.any? { |word| word_match?(part, word) && !sibling_conflict?(part, word) }
+      end
     end
     private_class_method :token_match?
+
+    # word_match?'s shared-prefix allowance exists for gender/plural spelling
+    # ("BASICO" vs "básica"), but the same rule also accepts sibling board
+    # designators that differ only in their trailing model digit
+    # ("EDEL-K3" vs "EDEL-K2": six characters in common, past
+    # MIN_COMMON_PREFIX, before the digit that is the only thing telling them
+    # apart — H-03). Once a digit sits in the part either string contributes
+    # past their common root, only exact equality may count as a match.
+    def sibling_conflict?(part, word)
+      return false if part == word
+
+      root_length = common_prefix_length(part, word)
+      part[root_length..].match?(/\d/) || word[root_length..].match?(/\d/)
+    end
+    private_class_method :sibling_conflict?
 
     def word_match?(token, word)
       return true if token == word

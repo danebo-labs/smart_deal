@@ -263,7 +263,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | Gate A | **NO SUPERADO** — informe entregado | — | f7aa592 | I-13 … I-18 |
 | 2b | cerrada — cierra I-13 (parcialmente: ver I-28) | — (offline) | f4ab397 | I-19 |
 | 3b | cerrada — cierra I-14 | — (offline) | 1cb789b | I-20, I-21, I-22 |
-| Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | *(este commit)* | I-26 … I-29 |
+| Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | 582ede3 | I-26 … I-29 |
 | 4 | **bloqueada por la decisión humana #4** (el gate ya está aprobado; falta la respuesta escrita del dueño del producto) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |

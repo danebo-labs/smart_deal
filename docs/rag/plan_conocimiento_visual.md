@@ -267,7 +267,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
-| 6b | cerrada | — | *(este commit)* | I-30 |
+| 6b | cerrada | — | 82093a8 | I-30 |
 | 7 | **bloqueada por la decisión humana #4** (opción B: no se ejecuta hasta tener T2 y el Gate B cerrado) | — | | |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
@@ -1002,7 +1002,7 @@ Tres propiedades: la lectura de posición **por el modelo** sigue prohibida; el 
 vetado; y la licencia está anclada a un tipo de registro que **sólo la ingesta escribe**, con la
 procedencia `leader_line` vs `vision` visible en la respuesta.
 
-**Cerrada en *(este commit)* (I-30).** El párrafo de arriba reemplazó
+**Cerrada en `82093a8` (I-30).** El párrafo de arriba reemplazó
 [generation.txt:35-39](app/prompts/bedrock/generation.txt#L35-L39) tal cual, con el añadido de
 I-29 ya incorporado. En `rag/answer_safety_processor.rb`, el guardia de pares trazados
 (`traced_pair?`, extendido de 6a) ahora lee cada bloque `FIELD_RECORD`/`END_FIELD_RECORD` por

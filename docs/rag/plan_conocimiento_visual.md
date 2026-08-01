@@ -219,7 +219,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | Fase | Estado | Flag | Commit | Cerrada por |
 |---|---|---|---|---|
 | 0a | cerrada | — | e187323 | I-01 |
-| 0b | cerrada | — | *(pendiente de commit)* | I-02 |
+| 0b | cerrada | — | 72fc7ee | I-02 |
 | 1 | pendiente | `INGESTION_VISUAL_TRIAGE_ENABLED` | | |
 | 2 | pendiente | — (offline) | | |
 | 3 | pendiente | — (offline) | | |

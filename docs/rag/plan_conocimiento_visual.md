@@ -1697,7 +1697,19 @@ vez hecho el Paso 0.
 > precisión nuevo y el recall del 4,6 % en la mano, y **espera respuesta escrita** en el plan.
 > *(Hecho: respondida el 2026-08-01, opción B.)*
 
-**Fase 4 · Sonnet** — ✅ **desbloqueada: decisión humana #4 respondida (opción B, 2026-08-01)**
+**Fase 4 · Sonnet** — ✅ **ya ejecutada y cerrada (`9f9d611`, I-31, I-32); no hace falta re-lanzarla**
+> ⚠️ **Si re-lees este prompt para otro propósito** (auditoría, referencia, re-ejecutar tras un
+> revert): dos instrucciones de abajo **no son lo que se implementó**, y I-31/I-32 explican por
+> qué. **(1)** donde dice "`section_path` tiene 2 niveles, no 3", lo construido es de **un solo
+> nivel** (`[section_identity]`) — el emparejador título-de-página↔viñeta-de-divisor que daría
+> `MODELO` quedó fuera de alcance; el invariante `section_identity == section_path.first` se
+> sostiene igual. **(2)** las aristas `TOPOLOGY_EDGE` sólo se renderizan hoy en la ruta
+> **síncrona** (`SingleFileChunkingService`/`pdf_mixed`) — la ruta asíncrona
+> (`ManualBatchIngestionService`, la que Fase 7 planea reutilizar vía `manual_batch_v1`) sólo hila
+> el `layout_digest` de contexto, no las aristas. Ver la nota ⚠️ revisado en I-31 dentro de la
+> sección de la Fase 4 y de la Fase 7 para el detalle. El resto del prompt histórico queda abajo
+> tal cual se ejecutó.
+>
 > Ejecuta la Fase 4 de `<PLAN>`. El **Gate A-bis está aprobado** (I-26: 19/19 correctas, 0
 > incorrectas; el Gate A original **no** se superó), pero **antes de escribir una línea comprueba
 > que "Decisiones humanas pendientes" #4 sigue diciendo **opción B**: mergeas con el flag
@@ -1727,6 +1739,18 @@ vez hecho el Paso 0.
 > y con flag apagado, cuerpos y sidecars **byte-idénticos** a v7.
 
 **Fase 5 · Opus**
+> ⚠️ **Antes de escribir una línea, lee "revisado en I-31" dentro de la sección de la Fase 5 y de
+> la Fase 4.** La Fase 4 sólo hiló `topology_edges` hasta `BatchResultsParserService` en la ruta
+> **síncrona** (`SingleFileChunkingService`/`pdf_mixed`); la ruta asíncrona
+> (`ManualBatchIngestionService`, Batch API) hoy sólo lleva el `layout_digest` de contexto, no las
+> aristas — no hay dónde persistirlas entre el envío del batch y `IngestManualBatchResultsJob`,
+> que las parsea mucho después y sin el binario de la página. "Emite los mismos registros v8 con
+> `method: vision`" (abajo) es cierto del *formato*, pero **decide explícitamente por cuál ruta
+> corre T2** antes de diseñar el prompt de relaciones: si reutilizas la ruta síncrona, el hilado ya
+> existe; si necesitas la asíncrona (la que Fase 7 planea usar para el shadow ingest real), tienes
+> que resolver tú el mismo hueco que I-31 dejó sin dueño — probablemente una capa de persistencia
+> keyed por `custom_id`/página. No lo des por resuelto porque el flag ya existe.
+>
 > Ejecuta la Fase 5 de `<PLAN>` (requiere Fases 1 y 4). Construye el tier T2 de visión, que es lo
 > que da la capacidad **general** para documentos sin vectores que trazar. Crea
 > `app/services/pdf_page_rasterizer.rb` con `Vips::Image.pdfload_buffer` — libvips ya es

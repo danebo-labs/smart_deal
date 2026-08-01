@@ -4,7 +4,7 @@ require "test_helper"
 require "digest"
 
 class BedrockGenerationPromptTest < ActiveSupport::TestCase
-  PRE_CHANGE_SHA256 = "bed763f75b9adaad91d8bb535e7f33775b23c83b5d88c8fcc676cb689fb6c8da"
+  PRE_CHANGE_SHA256 = "b4bffbfc60008028e1ffb2ade8d46f5ee4d3178f67f1945b9f667e2c20d272c5"
 
   def prompt
     @prompt ||= with_partial_contract("true") do
@@ -54,6 +54,46 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
       /LED-label-only case, include DATA_NOT_AVAILABLE after the prose that identifies the missing on\/off logic/,
       prompt
     )
+  end
+
+  # Fase 6b: the model's own reading of a line's position stays banned, and the
+  # single carved-out exception is a TOPOLOGY_EDGE record written by ingestion
+  # before the model ever sees the page — never something the model infers.
+  test "still forbids the model's own reading of a line's position" do
+    assert_match(/YOUR OWN\s+reading of a line's position is never evidence/, prompt)
+  end
+
+  test "licenses a connection claim only through a traced TOPOLOGY_EDGE record" do
+    assert_match(/RECORD_TYPE: TOPOLOGY_EDGE record/, prompt)
+    assert_includes prompt, "traced from the drawing before indexing"
+    assert_match(/Reproduce its ACTION\s+pair verbatim/, prompt)
+    assert_includes prompt, "the diagram's traced connection line"
+  end
+
+  test "requires a vision-derived edge to carry its own confirmation qualifier" do
+    assert_match(/record's DERIVATION is vision, add that it was read from the image and must be\s+confirmed against the complete diagram/, prompt)
+  end
+
+  # I-29 (Gate A-bis): 16% of the measured T1 edges are an "open series" where
+  # the traced conductor also runs through an intermediate device the pair
+  # never names — reporting only the two endpoints must not read as "this is
+  # the whole circuit."
+  test "forbids presenting a TOPOLOGY_EDGE pair as the complete circuit" do
+    assert_match(
+      /not a claim that those are the only two components on that\s+run/,
+      prompt
+    )
+    assert_includes prompt, "never present it as the complete circuit or the whole series"
+  end
+
+  test "forbids chaining, inverting, or inventing a TOPOLOGY_EDGE pair" do
+    assert_includes prompt, "Never merge two TOPOLOGY_EDGE records into a"
+    assert_includes prompt, "chain, never invert one, and never create one for a pair no TOPOLOGY_EDGE record"
+    assert_includes prompt, "names — for those, say the diagram shows the wiring and it must be confirmed against"
+  end
+
+  test "the TOPOLOGY_EDGE paragraph appears exactly once" do
+    assert_equal 1, prompt.scan("RECORD_TYPE: TOPOLOGY_EDGE record").size
   end
 
   test "flag off restores the pre-change template sha256" do

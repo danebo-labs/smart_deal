@@ -267,7 +267,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
-| 6b | pendiente | — | | |
+| 6b | cerrada | — | *(este commit)* | I-30 |
 | 7 | **bloqueada por la decisión humana #4** (opción B: no se ejecuta hasta tener T2 y el Gate B cerrado) | — | | |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
@@ -973,6 +973,14 @@ contrapartidas medidas en **I-24** y **I-25**.
 **6b — Relajación con procedencia**, reemplazando
 [generation.txt:35-39](app/prompts/bedrock/generation.txt#L35-L39):
 
+⚠️ **revisado en I-29 e I-30.** El párrafo dado abajo en la versión original de esta fase no
+incluía la frase "A TOPOLOGY_EDGE pair is not a claim that those are the only two components
+on that run" — la añadió I-30 para cerrar I-29 (Gate A-bis): 3 de las 19 aristas medidas (16 %)
+son una "serie con intermedio omitido" (el conductor atraviesa un dispositivo que el par
+`from`/`to` no nombra), y sin esa frase el párrafo "verbatim" original habría autorizado citar
+el par como si fuera el circuito completo. El resto del párrafo **sí** se cerró verbatim como
+estaba escrito aquí.
+
 ```
 - A physical connection claim ("component → connector/terminal") is supported only
   when the same evidence fragment explicitly names both endpoints as a pair. Seeing
@@ -980,7 +988,9 @@ contrapartidas medidas en **I-24** y **I-25**.
   reading of a line's position is never evidence.
   The one exception is a RECORD_TYPE: TOPOLOGY_EDGE record: its endpoint pair was
   traced from the drawing before indexing, so you may report it. Reproduce its ACTION
-  pair verbatim and state it comes from the diagram's traced connection line. When the
+  pair verbatim and state it comes from the diagram's traced connection line. A
+  TOPOLOGY_EDGE pair is not a claim that those are the only two components on that
+  run — never present it as the complete circuit or the whole series. When the
   record's DERIVATION is vision, add that it was read from the image and must be
   confirmed against the complete diagram. Never merge two TOPOLOGY_EDGE records into a
   chain, never invert one, and never create one for a pair no TOPOLOGY_EDGE record
@@ -992,8 +1002,22 @@ Tres propiedades: la lectura de posición **por el modelo** sigue prohibida; el 
 vetado; y la licencia está anclada a un tipo de registro que **sólo la ingesta escribe**, con la
 procedencia `leader_line` vs `vision` visible en la respuesta.
 
+**Cerrada en *(este commit)* (I-30).** El párrafo de arriba reemplazó
+[generation.txt:35-39](app/prompts/bedrock/generation.txt#L35-L39) tal cual, con el añadido de
+I-29 ya incorporado. En `rag/answer_safety_processor.rb`, el guardia de pares trazados
+(`traced_pair?`, extendido de 6a) ahora lee cada bloque `FIELD_RECORD`/`END_FIELD_RECORD` por
+separado (antes leía todas las líneas `ACTION:` sueltas del texto) para poder emparejar cada
+`ACTION` con **su propia** `DERIVATION`. Cuando esa `DERIVATION` es `vision`, el par sólo se
+considera soportado si la propia línea de la respuesta trae un calificador de imagen
+(`imagen|image|foto|photo`) **y** un calificador de confirmación contra el diagrama
+(`confirm…|verific…` cerca de `diagrama|esquema|diagram|schematic`) — ambos en la misma línea. Un
+par `leader_line` no lo necesita: el chequeo de 6a ya lo cubre sin cambios. No se tocó
+`FieldRecordParser` (su contrato `KNOWN_LABELS` es de la Fase 4/contrato v8, todavía bloqueada) ni
+`IDENTIFIER_PATTERN`; el parseo de bloque es una regexp local al mismo estilo agnóstico del corpus
+que ya usa 6a.
+
 *Definición de terminado — controles negativos (Minitest offline, sin Bedrock):*
-- [ ] `test/prompts/bedrock_generation_prompt_test.rb`: la inferencia por posición sigue
+- [x] `test/prompts/bedrock_generation_prompt_test.rb`: la inferencia por posición sigue
       prohibida; `$output_format_instructions$` sigue **último**; el párrafo nuevo aparece
       **exactamente una vez** (compactación de prompt, `AGENTS.md:163-165`)
 - [x] `answer_safety_processor_test.rb`: `"LIMITADOR -> CONECTOR AI"` **sobrevive** cuando la
@@ -1002,12 +1026,13 @@ procedencia `leader_line` vs `vision` visible en la respuesta.
       separadas. *Éste es el control real* — *cubierto por 6a*
 - [x] Mismo archivo: encadenar `A -> B` desde `A -> X` + `B -> X` se rechaza — *cubierto por 6a,
       con arista y con prosa; y la inversión también (⚠️ revisado en I-25)*
-- [ ] Mismo archivo: una arista `DERIVATION: vision` llega a la respuesta **con** su calificador
-      de verificación en campo; sin él, se rechaza
-- [ ] `seguridades_rubric_calibration_test.rb`: los **52 casos pasan sin cambios** (⚠️ revisado
+- [x] Mismo archivo: una arista `DERIVATION: vision` llega a la respuesta **con** su calificador
+      de verificación en campo; sin él, se rechaza — *cubierto por I-30*
+- [x] `seguridades_rubric_calibration_test.rb`: los **52 casos pasan sin cambios** (⚠️ revisado
       en I-24: son 52 desde la rúbrica v4.1, no 42), y el renderizado de topología matchea
-      **cero** patrones `penalized` de las 6 rúbricas
-- [ ] Suite + rubocop verdes
+      **cero** patrones `penalized` de las 6 rúbricas (5 baterías + holdout congelado) — *cubierto
+      por I-30*
+- [x] Suite + rubocop verdes — 2101 runs / 0 failures, 469 files / 0 offenses
 
 ### Fase 7 — Shadow ingest A/B (único paso irreversible, des-riesgado) · Sonnet + Opus (go/no-go)
 
@@ -1778,3 +1803,4 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-27 | Gate A-bis | Opus 5 | **El `bbox` de una etiqueta incluye sus espacios finales, que no tienen tinta — y 1 de las 19 aristas se emite sólo por eso.** `merge_into_words` mete los glifos de espacio en la palabra y `word_entry` los abarca en el `bbox`, así que la etiqueta reclama área donde no hay nada impreso. Medido: **615 de 4 306 entradas de `words` (14,3 %) en 80 de 98 páginas** llevan espacios finales, con tramos fantasma de hasta **889 pt** (`MICONIC BX -6200`, divisor p80). Caso que toca la salida: **pág. 12**, `BM2` tiene tinta hasta x=126,9 pero `bbox` hasta x=281,5, y el extremo de la cadena está en x=186,2 — a **59,3 pt** de la tinta, muy fuera de `TERMINAL_TOLERANCE_PT = 25`; sin el tramo fantasma la arista `PUERTAS MANUALES ↔ BM2` **no se emitiría**. La pág. 11 (`B6`, tinta hasta x=55,4, extremo a 24,4 pt) sobrevive sin el fantasma. Las dos aristas son **correctas contra el dibujo** —verificado con visión— así que el veredicto del gate no cambia; lo que cambia es por qué: aquí el tramo fantasma se extiende sobre la propia regleta que la etiqueta rotula, y nada garantiza que la próxima vez apunte al sitio correcto. Es el mismo mecanismo que hizo fallar el Gate A (creer que hay un nombre impreso donde sólo hay papel), en su tercera variante tras I-13 (rotado) e I-14 (ráster). **No se arregló aquí:** es una decisión de la Fase 2 y tocarlo mueve el agrupamiento de las 98 páginas. | **Cualquiera que toque `PdfLayoutExtractor`:** recortar el `bbox` a la tinta (ignorar glifos de espacio al calcular las esquinas, sin cambiar el `text`) es un arreglo de una línea conceptual pero **cambia el conteo de aristas** y exige re-correr el Gate A — no es cosmético. **Fase 3/3b:** el `bbox` inflado alimenta también `outranked_on_an_image?` y la guarda de unicidad, que comparan distancias caja-a-caja. **Fase 4:** el `evidence` de la arista de la pág. 12 cita un `bbox` que no corresponde a la tinta; si el digest publica coordenadas, publica ésas. |
 | I-28 | Gate A-bis | Opus 5 | **`CARLOS SILVA` sigue saliendo `CARLOSSILVA`: el arreglo de I-19/2b se validó con un fixture que no reproduce el caso real.** I-19 cambió `word_gap_tolerance` a la altura **menor** de los dos glifos adyacentes y lo verificó con `CARLOS`/`SILVA` a **14 pt y 6 pt**. Medido sobre el PDF real (divisor p8): las dos tipografías tienen **prácticamente la misma altura** (53,60 y 52,76 pt), el hueco real entre `CARLOS` y `SILVA` es **16,08 pt** y la tolerancia aplicada **31,66 pt** — tomar la menor no cambia nada. La causa es `WORD_GAP_RATIO = 0.6`, que a cuerpo 53 pt da 32 pt cuando un espacio impreso a ese tamaño mide ~14-16 pt: **el problema nunca fue el cambio de tamaño, es el ratio**. No afecta a ninguna arista (ningún divisor emite) y **no se arregló aquí**: bajar el ratio mueve el agrupamiento de palabras de las 98 páginas y necesita su propia medición. §5.2 y §9 del informe del Gate A **siguen vigentes tal cual**. | **Fase 8:** el verbatim bueno del divisor p8 sigue siendo `CARLOS SILVA` y **sigue habiendo que corregirlo a mano** — I-19 decía que ya salía como dos entradas de `words`; sobre el PDF real, no. **Fase 2 (si alguien la reabre):** el defecto de I-13 marcado "cerrado de paso" no lo está; es un hallazgo abierto con causa medida. **Toda fase:** un fixture sintético que no reproduce las magnitudes del documento real no cierra un hallazgo medido sobre el documento real. |
 | I-29 | Gate A-bis | Opus 5 | **La "serie con intermedio omitido" son 3 de las 19 aristas (16 %), no una: §4.4 del Gate A se quedó corta, y sólo se ve mirando arista por arista.** Además de la pág. 64 (`LIMITADOR CONTRAPESO ↔ J22` atraviesa `LIMITADOR CABINA`, ya registrada), la revisión visual encontró **pág. 14** (`STOP BOTO. CABINA ↔ XP11`: el conductor magenta atraviesa **`BOTONERA REVISION` y `BARANDILLA`**, dos dispositivos) y **pág. 22** (`OBSTACULO ↔ CN-112`: el cable azul atraviesa `FOTOCELULA`). En los tres la guarda "la cadena pasa junto a la etiqueta" no salta porque el conductor entra y sale del **dibujo** del dispositivo, no de su rótulo, que cae a un lado fuera de la holgura de una altura de línea. No son aristas falsas —el conductor es el mismo— pero un técnico que reciba "LIMITADOR CONTRAPESO va a J22" no sabrá que hay otro dispositivo en el mismo lazo, que es justo el dato que importa cuando la serie está abierta. Detectado sólo porque el Gate A-bis dibujó **una arista por imagen** con `zoom.py`; con `overlay.py` (todas las aristas de la página a la vez, en magenta, sobre láminas que trazan cables magenta) no es distinguible. | **Fase 4:** redactar estas aristas sin sugerir que el lazo tiene sólo dos elementos; el contrato ya dice que `from`/`to` **no** son direccionales (I-11), y esto añade que tampoco son **exhaustivos**. Es el 16 % de la salida de T1, no un caso aislado. **Fase 6b:** el párrafo que autoriza citar topología verbatim debería no autorizar a afirmar que la serie es sólo ese par. **Fase 5/Gate B:** ésta es una capacidad donde T2 gana claramente a T1 — leer los tres dispositivos de un lazo es reconocimiento visual, no encadenado de polilíneas. |
+| I-30 | 6b | Sonnet 5 | **Fase 6b cerrada: párrafo de `generation.txt` reemplazado y guardia de vision extendida en `answer_safety_processor.rb`, cerrando I-29 al mismo tiempo.** El párrafo dado "verbatim" en la Fase 6 no incorporaba I-29 (registrado después, en Gate A-bis) — se le añadió la frase "A TOPOLOGY_EDGE pair is not a claim that those are the only two components on that run" antes de la cláusula de `DERIVATION: vision`, el resto se cerró tal cual estaba escrito. En el guardia, `traced_pair?` (de 6a) pasó de leer todas las líneas `ACTION:` sueltas del texto a parsear cada bloque `FIELD_RECORD`/`END_FIELD_RECORD` por separado (`RECORD_BLOCK_PATTERN`), para poder leer la `DERIVATION` **de ese mismo registro** — antes el chequeo no distinguía entre un par `leader_line` y uno `vision`. Cuando la `DERIVATION` es `vision`, el par sólo se considera soportado si la línea de la respuesta trae, ella misma, un calificador de imagen (`imagen\|image\|foto\|photo`) **y** uno de confirmación contra el diagrama (`confirm…\|verific…` a ≤120 caracteres de `diagrama\|esquema\|diagram\|schematic`); sin ambos, se rechaza con el mismo mensaje `unsupported_connection` que ya existía. Deliberadamente no se tocó `Rag::FieldRecordParser` (su `KNOWN_LABELS` es del contrato v8 de la Fase 4, todavía bloqueada, y no incluye `DERIVATION`) ni `IDENTIFIER_PATTERN`. Se añadió también un sweep en `seguridades_rubric_calibration_test.rb`: una respuesta de topología conforme (`leader_line` y `vision`, cada una con su calificador) no matchea ningún patrón `penalized` de las 5 baterías de release-gate **ni del holdout congelado** (6 rúbricas en total), leyendo el holdout inline sin promoverlo a una constante de uso general — igual que ya hace el test que verifica su hash. Verificado: `bin/rails test` 2101 runs / 0 failures (2100 antes de esta fase); `bin/rubocop` 469 files / 0 offenses. | **Fase 4:** cuando redacte el `evidence`/digest de una arista, no hace falta repetir la frase de no-exhaustividad ahí — vive en el prompt de generación, no en el dato indexado. **Fase 5:** cuando el motor T2 emita `DERIVATION: vision`, las respuestas que lo citen **deben** llevar el calificador de imagen + confirmación en la misma línea o el guardia las bloquea; el prompt de extracción de T2 no necesita saberlo, pero el prompt de generación (`generation.txt`) ya lo exige. **Fase 7/8:** si `script/fixtures/rag_seguridades_topology_v1.json` (Fase 8) incluye un caso con una arista `vision`, su respuesta esperada debe incluir el calificador o el guardia la degradará antes de llegar a la rúbrica. |

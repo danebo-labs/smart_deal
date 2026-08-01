@@ -60,6 +60,19 @@ module Rag
     ENDPOINT_LABEL_PATTERN =
       %r{[[:upper:]][[:upper:][:digit:]._+/-]{2,}(?:[ ]+[[:upper:][:digit:]._+/-]+)*}.freeze
     ACTION_LINE_PATTERN = /^[^\S\n]*ACTION:[^\S\n]*(\S[^\n]*)$/.freeze
+    DERIVATION_LINE_PATTERN = /^[^\S\n]*DERIVATION:[^\S\n]*(\S[^\n]*)$/.freeze
+    # Scoped per FIELD_RECORD block (not a bare ACTION_LINE_PATTERN scan) so the
+    # DERIVATION read for a pair is the one from ITS OWN record, never a
+    # neighbouring record's. Fase 6b: a RECORD_TYPE: TOPOLOGY_EDGE traced by
+    # vision is not yet ground truth the way a leader-line trace is, so the
+    # generation contract requires the answer to carry its own read-from-image
+    # confirmation qualifier alongside a vision-derived pair.
+    RECORD_BLOCK_PATTERN = /^[^\S\n]*FIELD_RECORD:[^\S\n]*\n(.*?)^[^\S\n]*END_FIELD_RECORD[^\S\n]*$/m.freeze
+    VISION_SOURCE_PATTERN = /\b(?:imagen|image|foto|photo)\b/i.freeze
+    VISION_CONFIRMATION_PATTERN = /
+      \b(?:confirm\w*|verific\w*)\b .{0,120}? \b(?:diagrama|esquema|diagram|schematic)\b |
+      \b(?:diagrama|esquema|diagram|schematic)\b .{0,120}? \b(?:confirm\w*|verific\w*)\b
+    /xi.freeze
     # "indica"/"señala" alone name a documented series/label attribution (e.g. "D10
     # indica la SERIE SEGURIDAD CABINA"), not ON/OFF logic — they only count as a
     # state claim when paired with an actual state term in the same line/fragment.
@@ -199,22 +212,32 @@ module Rag
       pairs = wired_pairs_in(line)
       return nil if pairs.empty?
 
-      actions = traced_action_lines(evidence)
-      pairs.all? { |left, right, ordered| traced_pair?(actions, left, right, ordered) }
+      records = traced_records(evidence)
+      pairs.all? { |left, right, ordered| traced_pair?(records, left, right, ordered, line) }
     end
 
-    # Both endpoints must be substrings of the SAME action line: two lines each
-    # naming one of them is exactly the chain this guard exists to block. An
-    # arrow claim must also keep the action line's own order, so a traced edge
-    # cannot be reported inverted.
-    def traced_pair?(actions, left, right, ordered)
-      actions.any? do |action|
+    # Both endpoints must be substrings of the SAME record's action line: two
+    # lines each naming one of them is exactly the chain this guard exists to
+    # block. An arrow claim must also keep the action line's own order, so a
+    # traced edge cannot be reported inverted. A record traced by vision is a
+    # weaker source than a leader-line trace, so it additionally requires the
+    # answer line itself to carry the generation contract's confirmation
+    # qualifier — without it the claim is indistinguishable from an unverified
+    # vision read reported as settled fact.
+    def traced_pair?(records, left, right, ordered, line)
+      records.any? do |record|
+        action = record[:action]
         left_at = action.index(left)
         right_at = action.index(right)
         next false if left_at.nil? || right_at.nil?
+        next false if ordered && left_at >= right_at
 
-        !ordered || left_at < right_at
+        record[:derivation] != "vision" || vision_edge_qualified?(line)
       end
+    end
+
+    def vision_edge_qualified?(line)
+      line.match?(VISION_SOURCE_PATTERN) && line.match?(VISION_CONFIRMATION_PATTERN)
     end
 
     # The endpoints of a relation are the label closest to it on each side. A
@@ -251,10 +274,18 @@ module Rag
       label if label.length >= 3
     end
 
-    def traced_action_lines(evidence)
+    def traced_records(evidence)
       cache_evidence(evidence)
-      @traced_action_lines ||= evidence.to_s.scan(ACTION_LINE_PATTERN).flatten
-        .map { |action| action.downcase.gsub(/\s+/, " ").strip }
+      @traced_records ||= evidence.to_s.scan(RECORD_BLOCK_PATTERN).filter_map do |(block)|
+        action = block[ACTION_LINE_PATTERN, 1]
+        next unless action
+
+        derivation = block[DERIVATION_LINE_PATTERN, 1]
+        {
+          action: action.downcase.gsub(/\s+/, " ").strip,
+          derivation: derivation&.strip&.downcase
+        }
+      end
     end
 
     def reject_unsupported_led_logic(answer, evidence)
@@ -359,7 +390,7 @@ module Rag
 
       @last_evidence = evidence
       @evidence_fragments = nil
-      @traced_action_lines = nil
+      @traced_records = nil
     end
 
     def relationship_fragment?(fragment)

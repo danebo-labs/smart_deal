@@ -57,6 +57,29 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
       "abstención visible" ]
   ].sort.freeze
 
+  # FIELD_RECORD grammar Fase 6a's guard reads (Rag::AnswerSafetyProcessor),
+  # one per derivation, used only by the topology-rendering sweep below.
+  TOPOLOGY_LEADER_LINE_EDGE = <<~TEXT.freeze
+    FIELD_RECORD:
+    RECORD_ID: FR-0000000000000010
+    RECORD_TYPE: TOPOLOGY_EDGE
+    ACTION: LIMITADOR -> CONECTOR AI
+    EXPECTED_RESULT: DATA_NOT_AVAILABLE
+    DERIVATION: leader_line
+    EVIDENCE: LIMITADOR | CONECTOR AI
+    END_FIELD_RECORD
+  TEXT
+  TOPOLOGY_VISION_EDGE = <<~TEXT.freeze
+    FIELD_RECORD:
+    RECORD_ID: FR-0000000000000011
+    RECORD_TYPE: TOPOLOGY_EDGE
+    ACTION: FOTOCELULA -> CONECTOR AG
+    EXPECTED_RESULT: DATA_NOT_AVAILABLE
+    DERIVATION: vision
+    EVIDENCE: FOTOCELULA | CONECTOR AG
+    END_FIELD_RECORD
+  TEXT
+
   test "rubric version is the calibrated one" do
     assert_equal "seguridades-v3.2", RUBRIC.fetch("version")
     assert_equal 12, RUBRIC.fetch("cases").size
@@ -393,6 +416,44 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
     end
   end
 
+  # Fase 6b: a compliant TOPOLOGY_EDGE rendering — leader_line and vision
+  # derivations alike — must not trip a single "penalized" pattern across the
+  # 6 rubrics (the 5 release-gate batteries plus the frozen holdout), the same
+  # bar the partial-absence rendering above is held to.
+  test "a compliant topology-edge rendering matches no penalized pattern in any of the 6 rubrics" do
+    leader_line_answer = "El LIMITADOR se conecta al CONECTOR AI, según la línea de conexión trazada del diagrama."
+    vision_answer = "La FOTOCELULA se conecta al CONECTOR AG, según la imagen; " \
+      "debe confirmarse en el diagrama completo."
+
+    rendered_leader_line = Rag::AnswerSafetyProcessor.new(locale: :es).call(
+      leader_line_answer, evidence: [ { content: TOPOLOGY_LEADER_LINE_EDGE } ]
+    )
+    rendered_vision = Rag::AnswerSafetyProcessor.new(locale: :es).call(
+      vision_answer, evidence: [ { content: TOPOLOGY_VISION_EDGE } ]
+    )
+
+    # Both must survive the safety processor untouched: a rendering the guard
+    # itself degrades is not the compliant rendering this test is measuring.
+    assert_equal leader_line_answer, rendered_leader_line
+    assert_equal vision_answer, rendered_vision
+
+    [ rendered_leader_line, rendered_vision ].each do |answer|
+      all_rubrics_with_holdout.each do |rubric|
+        rubric.fetch("cases").each do |definition|
+          Array(definition["penalized"]).each do |check|
+            pattern = compiled_pattern(check.fetch("pattern"))
+            assert_no_match(
+              pattern,
+              answer,
+              "topology rendering matched #{rubric.fetch('version')}/" \
+                "#{definition.fetch('id')}/#{check.fetch('label')}"
+            )
+          end
+        end
+      end
+    end
+  end
+
   test "the partial-absence rendering alone satisfies exactly the golden abstention checks" do
     answer = partial_abstention_rendering(:es)
     matched = all_rubrics.flat_map do |rubric|
@@ -420,6 +481,14 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
 
   def all_rubrics
     [ RUBRIC, PILOT, PILOT_V2, PILOT_V3, PILOT_V4_1 ]
+  end
+
+  # The frozen holdout is deliberately not hoisted into an all_rubrics-visible
+  # constant (it stays unopened/uninspected outside its own frozen-hash test);
+  # this reads it inline, same as the frozen-hash check does, purely to sweep
+  # penalized patterns — it never informs how the topology answer is worded.
+  def all_rubrics_with_holdout
+    all_rubrics + [ JSON.parse(HOLDOUT_PATH.read) ]
   end
 
   def partial_abstention_rendering(locale)

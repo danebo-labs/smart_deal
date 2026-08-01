@@ -366,6 +366,38 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     assert_includes rendered, t("unsupported_connection")
   end
 
+  # Fase 6b: a RECORD_TYPE: TOPOLOGY_EDGE traced by vision is a weaker source
+  # than a leader-line trace, so the generation contract requires the answer
+  # to state it was read from the image and must be confirmed against the
+  # complete diagram. Without that qualifier the claim is indistinguishable
+  # from an unverified vision read reported as settled fact.
+  test "preserves a vision-derived pair when the answer states the image confirmation qualifier" do
+    answer = "La imagen muestra que FOTOCELULA -> CONECTOR AG; debe confirmarse en el diagrama completo."
+
+    assert_equal answer, processor.call(answer, evidence: [ { content: VISION_EDGE } ])
+  end
+
+  test "preserves a vision-derived pair restated in prose with the confirmation qualifier" do
+    answer = "Según la imagen, la FOTOCELULA se conecta al CONECTOR AG; debe verificarse contra el esquema completo."
+
+    assert_equal answer, processor.call(answer, evidence: [ { content: VISION_EDGE } ])
+  end
+
+  test "rejects a vision-derived pair when the answer omits the image confirmation qualifier" do
+    rendered = processor.call("FOTOCELULA -> CONECTOR AG", evidence: [ { content: VISION_EDGE } ])
+
+    assert_includes rendered, t("unsupported_connection")
+  end
+
+  test "rejects a vision-derived pair when the answer names the image but not the diagram confirmation" do
+    rendered = processor.call(
+      "La imagen muestra FOTOCELULA -> CONECTOR AG.",
+      evidence: [ { content: VISION_EDGE } ]
+    )
+
+    assert_includes rendered, t("unsupported_connection")
+  end
+
   test "leaves a connection sentence alone when no endpoint pair can be read from it" do
     answer = "El esquema no indica a que borne se conecta la fotocelula."
 
@@ -399,6 +431,18 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     EXPECTED_RESULT: DATA_NOT_AVAILABLE
     DERIVATION: leader_line
     EVIDENCE: PARACAIDAS | CONECTOR AI
+    END_FIELD_RECORD
+  TEXT
+
+  # Same FIELD_RECORD grammar, but DERIVATION: vision — the Fase 6b case.
+  VISION_EDGE = <<~TEXT
+    FIELD_RECORD:
+    RECORD_ID: FR-0000000000000003
+    RECORD_TYPE: TOPOLOGY_EDGE
+    ACTION: FOTOCELULA -> CONECTOR AG
+    EXPECTED_RESULT: DATA_NOT_AVAILABLE
+    DERIVATION: vision
+    EVIDENCE: FOTOCELULA | CONECTOR AG
     END_FIELD_RECORD
   TEXT
 

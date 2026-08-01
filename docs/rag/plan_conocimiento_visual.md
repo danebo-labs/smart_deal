@@ -220,7 +220,7 @@ La fase siguiente lee el documento actualizado, no el original.
 |---|---|---|---|---|
 | 0a | cerrada | — | e187323 | I-01 |
 | 0b | cerrada | — | 72fc7ee | I-02 |
-| 1 | pendiente | `INGESTION_VISUAL_TRIAGE_ENABLED` | | |
+| 1 | cerrada | `INGESTION_VISUAL_TRIAGE_ENABLED` | *(pendiente de commit)* | I-04, I-05, I-06 |
 | 2 | pendiente | — (offline) | | |
 | 3 | pendiente | — (offline) | | |
 | Gate A | pendiente | — | | |
@@ -271,6 +271,14 @@ al revés.
 **Conflictos de archivo a vigilar** si se paraleliza: la Fase 1 y la Fase 2 tocan las dos
 `page_image_density_analyzer.rb` (la 1 lee su salida, la 2 añade `images:`). Que la Fase 2 la
 modifique y la 1 sólo consuma; si ambas escriben, hay merge manual y hallazgo.
+
+⚠️ **revisado en I-05.** La Fase 1 terminó **sin tocar** `page_image_density_analyzer.rb` (el
+conflicto de archivo no llegó a ocurrir): el segundo disparador geométrico del router necesitaba
+datos (segmentos largos, imágenes pequeñas) que sólo `PdfLayoutExtractor` (Fase 2) formalizará,
+así que se implementó un probe privado y no contractual directamente en
+`file_multimodal_router.rb` (`FileMultimodalRouter#geometry_signal` + `SegmentCollector`
+privado). Ver I-05 para el detalle y la decisión pendiente de si Fase 2 debe deduplicar esto
+una vez exista el contrato de `PdfLayoutExtractor.extract`.
 
 ---
 
@@ -407,14 +415,15 @@ La palanca de generalidad. **No añade ninguna llamada LLM.**
 - Flag: `INGESTION_VISUAL_TRIAGE_ENABLED`, misma forma que los `app/services/rag/*_flag.rb`.
 
 *Definición de terminado:*
-- [ ] Tests offline con respuestas Haiku dobladas: schema ampliado parseado, campos ausentes
+- [x] Tests offline con respuestas Haiku dobladas: schema ampliado parseado, campos ausentes
       degradan a `visual_complexity: :none` sin excepción
-- [ ] Test de que con el flag apagado el routing es **byte-idéntico** al actual
-- [ ] Test de que el tope de fracción se respeta y escala por orden de complejidad descendente
-- [ ] **Entregable numérico**: clasificación de las 98 páginas por tier + **proyección de coste**
+- [x] Test de que con el flag apagado el routing es **byte-idéntico** al actual
+- [x] Test de que el tope de fracción se respeta y escala por orden de complejidad descendente
+- [x] **Entregable numérico**: clasificación de las 98 páginas por tier + **proyección de coste**
       de cada fracción de escalada (0 %, 25 %, 50 %, 100 %), en
       `docs/rag/triaje_visual_medicion.md`. **Sin ese número el flag no se activa.**
-- [ ] Suite + rubocop verdes
+- [x] Suite + rubocop verdes (2033 runs / 0 failures; 462 files, 0 offenses en los archivos de
+      esta fase — ver I-04/I-05/I-06 para las decisiones de diseño no explícitas en el plan)
 
 ### Fase 2 — Extractor de geometría (offline, impacto cero) · Sonnet
 
@@ -1239,3 +1248,6 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-01 | 0a | Cursor Grok 4.5 | H-05 cerrado: `LocaleSwitchable` pasó de `before_action` + `I18n.locale =` a `around_action :with_request_locale` + `I18n.with_locale`. Es el único `I18n.locale =` sin scope del repo; queda eliminado. Test de no-fuga en `locale_switch_test.rb`. Verificado: `bin/rails test` ×9 → 1988 runs / 0 failures cada una; `bin/rubocop` limpio (453 files). | Ninguno. 0b y fases posteriores no dependen de este archivo. |
 | I-02 | 0b | Sonnet | H-03 cerrado sin tocar `word_match?`: `token_match?` gana una capa `sibling_conflict?` — dos designadores que comparten raíz pero cuyo resto (a partir de la raíz común) lleva un dígito en cualquiera de los dos lados sólo cuentan como coincidencia si son idénticos. `BASICO`/`básica` (sin dígito en el resto) sigue matcheando por prefijo; `EDEL-K3`/`EDEL-K2` (dígito en el resto) ya no. Tests nuevos: `board_heading_test.rb` (par positivo/negativo) y `ambiguous_model_responder_test.rb` (una sola hermana recuperada + pregunta nombrando la otra ⇒ menú, 0 llamadas al generador). Los 36 casos de la tabla de verdad y el resto de `board_heading_test.rb` quedan intactos, sin editar ninguna aserción. Verificado: `bin/rails test` 1990 runs / 0 failures; `bin/rubocop` limpio (453 files). | Ninguno. Sólo toca `app/services/rag/board_heading.rb` y sus dos tests; ninguna fase posterior depende de `word_match?`'s comportamiento interno. |
 | I-03 | 0b | Sonnet | La redacción de la Fase 0b ("cuando un token de la etiqueta y uno de la pregunta comparten raíz pero difieren en sufijo, exija match exacto") es más amplia que lo implementado y, tomada literalmente, es autocontradictoria con el propio requisito de no editar ninguna aserción de `board_heading_test.rb`: `BASICO`/`básica` también "comparten raíz y difieren en sufijo" (`BASIC-O` vs `BASIC-A`). Probado en vivo: quitar la condición de dígito de `sibling_conflict?` (dejar sólo `common_prefix_length >= MIN_COMMON_PREFIX`) rompe 3 tests — `board_heading_test.rb` ("gender and plural variants…") y dos en `structured_evidence_route_test.rb:747,788` (`arca-basico`), porque `StructuredEvidenceRoute`'s comparative-selection pass reutiliza `BoardHeading.board_tokens`/`mentioned?`. El daño se revirtió y el archivo quedó byte-idéntico al commit `72fc7ee`. La implementación cerrada acota el rechazo a sufijos con dígito, que es lo único que distingue una placa hermana (`EDEL-K3`/`K2`) de una variante de género/plural (`BASICO`/`BASICA`). | Fase 1+: si alguna fase futura toca `sibling_conflict?` para "completar" la regla al pie de la letra del texto original, debe releer esta entrada antes — reintroduce la regresión medida arriba. |
+| I-04 | 1 | Sonnet 5 | `ContractualLimits::MANUAL[:max_opus_page_fraction]` (citado en el plan como el knob de presupuesto de esta fase) **no es ese knob**: `test/services/contractual_limits_test.rb:75-78` lo fija en `1.0` como el peor-caso de facturación de Gate 9 (`Gate9CostMatrix#max_manual_cost`), y bajarlo rompería esa garantía sin relación con el triaje visual. Se introdujo `DocumentClassProfile::DEFAULT_MAX_OPUS_PAGE_FRACTION = 0.15` como el presupuesto propio y ajeno de esta feature (tomado del "target histórico <15%" que el propio comentario de `ContractualLimits` documenta), consumido únicamente por `FileMultimodalRouter` detrás del flag. `ContractualLimits::MANUAL[:max_opus_page_fraction]` queda intacto en `1.0`. | Ninguno directo. Si un futuro E3a decide unificar ambos knobs, es una decisión explícita a tomar entonces, no algo que esta fase implique. |
+| I-05 | 1 | Sonnet 5 | El segundo disparador del router (`route_page`) necesita saber si una página tiene polilíneas largas y varias imágenes pequeñas — dato que formalmente entrega `PdfLayoutExtractor` (Fase 2), que aún no existía al cerrar esta fase. Esto contradice el mapa de dependencias del plan ("Fase 1: independiente de 2/3"). Se implementó un probe privado, no contractual (`FileMultimodalRouter#geometry_signal` + clase privada `SegmentCollector`, mismo patrón del Apéndice B) directamente en `file_multimodal_router.rb`, sin tocar `page_image_density_analyzer.rb` (evitando así el conflicto de archivo que el plan anticipa con la Fase 2, confirmado en curso: `page_image_density_analyzer.rb` apareció modificado por otra sesión durante esta ejecución). Umbrales fijados del propio censo del Apéndice C, no a ojo: `LONG_SEGMENT_MIN_COUNT = 10`, `SMALL_IMAGE_MIN_COUNT = 3`, `LONG_SEGMENT_MIN_LENGTH_PT = 20` (igual al corte de ruido que Fase 2 documenta para `lines`). El umbral de "imagen pequeña" (`SMALL_IMAGE_MAX_AREA_PX2 = 50_000`) **no** está fijado en ningún lado del plan — es una estimación propia basada en el hueco de tamaño observado en los ejemplos del Apéndice B (componentes ≤~19k px² vs fotos de placa ≥~1.3M px²). | Fase 2: al existir `PdfLayoutExtractor.extract`, decidir si conviene refactorizar `FileMultimodalRouter` para consumirlo en vez de este probe duplicado (deduplicación cosmética, no bloqueante) y, si se hace, fijar `size_class` con criterio autoritativo en vez del umbral estimado aquí. |
+| I-06 | 1 | Sonnet 5 | Entregable numérico corrido contra el PDF real completo (no una muestra): con los umbrales de I-05, **98/98 páginas (100 %) califican para Opus antes de aplicar presupuesto** — 19 `scanned_dense` (portada + las 18 divisoras del Apéndice E, sin excepción) + 79 candidatas geométricas (el resto exacto del documento). Cifra consistente con la del Apéndice C (80/98 vía muestreo) y con la página 3 del Apéndice D (73 segmentos largos medidos, idéntico al valor verificado ahí). Con `DocumentClassProfile::DEFAULT_MAX_OPUS_PAGE_FRACTION = 0.15` el resultado real es **33.7 %** de páginas en Opus, no 15 % — el presupuesto se aplica sólo sobre el disparador geométrico y se suma al 19.4 % ya incondicional de `scanned_dense`. Tabla completa, ranking por complejidad y proyección de coste (Sonnet $3/$15, Opus $5/$25 por MTok; ~2,250 tokens de entrada/página por bloque `document`, 8,000 de salida) en `docs/rag/triaje_visual_medicion.md`. **No se invocó Haiku en vivo** con el schema v2 (costo real, no autorizado sin pedirlo) — no cambia el resultado de tier para este documento porque el disparador geométrico por sí solo ya cubre el 100 % de las páginas de contenido (el OR con `visual_complexity: high` no tiene nada que agregar aquí), pero significa que `DocumentClassProfile.classify` nunca corrió con datos reales de Haiku para SEGURIDADES. | Fase 5/Gate B: no asumir que existe una clasificación de documento (`DocumentClassProfile.classify`) medida para SEGURIDADES — no corrió. Decisión humana pendiente #3 del plan: la fracción de producción, con esta tabla en mano. |

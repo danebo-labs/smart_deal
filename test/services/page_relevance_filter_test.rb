@@ -1018,4 +1018,118 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     assert_equal false, result[1][:keep]
     assert_empty density_calls
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 1 visual triage (docs/rag/plan_conocimiento_visual.md) — behind
+  # IngestionVisualTriageFlag. Flag off must be byte-identical to today.
+  # ---------------------------------------------------------------------------
+
+  test "flag off: batch result has no visual triage keys and uses the V1 prompt" do
+    with_visual_triage_flag(nil) do
+      pages = [ FakePage.new(1, "p1_bytes") ]
+      captured_system = nil
+      client = CapturingBatchHaikuClient.new do |kwargs, _n|
+        captured_system = kwargs[:system]
+        batch_response_for_params(kwargs)
+      end
+
+      result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+      assert_equal PageRelevanceFilter::BatchFilter::HAIKU_BATCH_SYSTEM, captured_system
+      assert_equal [ :keep, :reason, :source, :force_opus ], result[1].keys
+    end
+  end
+
+  test "flag on: uses the V2 prompt and parses visual_complexity, has_visual_relations, component_count" do
+    with_visual_triage_flag("true") do
+      pages  = [ FakePage.new(1, "p1_bytes") ]
+      client = FakeBatchHaikuClient.new([
+        { "page" => 1, "keep" => true, "reason" => "schematic",
+          "visual_complexity" => "high", "has_visual_relations" => true, "component_count" => 5 }
+      ])
+
+      result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+      assert_equal :high, result[1][:visual_complexity]
+      assert_equal true,  result[1][:has_visual_relations]
+      assert_equal 5,     result[1][:component_count]
+    end
+  end
+
+  test "flag on: V2 prompt is actually sent to Haiku" do
+    with_visual_triage_flag("true") do
+      pages = [ FakePage.new(1, "p1_bytes") ]
+      captured_system = nil
+      client = CapturingBatchHaikuClient.new do |kwargs, _n|
+        captured_system = kwargs[:system]
+        batch_response_for_params(kwargs)
+      end
+
+      PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+      assert_equal PageRelevanceFilter::BatchFilter::HAIKU_BATCH_SYSTEM_V2, captured_system
+      assert_match(/visual_complexity/, captured_system)
+    end
+  end
+
+  test "flag on: a response missing the new fields degrades to none/false/0 without raising" do
+    with_visual_triage_flag("true") do
+      pages  = [ FakePage.new(1, "p1_bytes") ]
+      client = FakeBatchHaikuClient.new([ { "page" => 1, "keep" => true, "reason" => "text page" } ])
+
+      result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+      assert_equal :none, result[1][:visual_complexity]
+      assert_equal false, result[1][:has_visual_relations]
+      assert_equal 0,     result[1][:component_count]
+    end
+  end
+
+  test "flag on: an invalid visual_complexity value degrades to none" do
+    with_visual_triage_flag("true") do
+      pages  = [ FakePage.new(1, "p1_bytes") ]
+      client = FakeBatchHaikuClient.new([
+        { "page" => 1, "keep" => true, "reason" => "text page", "visual_complexity" => "extreme" }
+      ])
+
+      result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+      assert_equal :none, result[1][:visual_complexity]
+    end
+  end
+
+  test "flag on: a page missing entirely from the Haiku response degrades to none/false/0" do
+    with_visual_triage_flag("true") do
+      pages  = [ FakePage.new(1, "returned_bytes"), FakePage.new(2, "missing_bytes") ]
+      client = FakeBatchHaikuClient.new([
+        { "page" => 1, "keep" => true, "reason" => "schematic",
+          "visual_complexity" => "high", "has_visual_relations" => true, "component_count" => 3 }
+      ])
+
+      result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+      assert_equal :missing_in_response, result[2][:reason]
+      assert_equal :none,  result[2][:visual_complexity]
+      assert_equal false,  result[2][:has_visual_relations]
+      assert_equal 0,      result[2][:component_count]
+    end
+  end
+
+  private
+
+  def with_visual_triage_flag(value)
+    original = ENV.fetch("INGESTION_VISUAL_TRIAGE_ENABLED", nil)
+    if value.nil?
+      ENV.delete("INGESTION_VISUAL_TRIAGE_ENABLED")
+    else
+      ENV["INGESTION_VISUAL_TRIAGE_ENABLED"] = value
+    end
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_VISUAL_TRIAGE_ENABLED")
+    else
+      ENV["INGESTION_VISUAL_TRIAGE_ENABLED"] = original
+    end
+  end
 end

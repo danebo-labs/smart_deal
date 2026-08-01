@@ -36,6 +36,8 @@ class PageRelevanceFilter
   BATCH_WINDOW_SIZE        = 20
   MAX_WINDOW_BYTES         = 22 * 1024 * 1024
   PER_PAGE_OUTPUT_TOKENS   = 32
+  # Fase 1 visual triage adds ~3 short fields per page entry to the same call.
+  PER_PAGE_OUTPUT_TOKENS_V2 = 56
 
   TOC_LINE_FRACTION = 0.30  # ≥30% of lines ending in a page number → ToC
   TOC_MIN_LINES     = 10
@@ -418,6 +420,33 @@ class PageRelevanceFilter
       Drop covers aggressively; never drop a page that names equipment.
     PROMPT
 
+    # Fase 1 visual triage (docs/rag/plan_conocimiento_visual.md), behind
+    # IngestionVisualTriageFlag. Same call, same keep/drop semantics — three
+    # fields appended to each page entry so a router can decide, before
+    # parsing, whether a typed-title page hides a traced schematic. Classify,
+    # don't describe: the cost is in output tokens.
+    HAIKU_BATCH_SYSTEM_V2 = <<~PROMPT.strip.freeze
+      You classify rasterized pages (PDF manuals or presentation slides) for elevator technicians.
+      Return ONLY raw JSON. Do NOT wrap in markdown fences. Do NOT add any prose.
+      Schema: {"pages":[{"page":N,"keep":bool,"reason":"<10 words",
+        "visual_complexity":"none|moderate|high","has_visual_relations":bool,"component_count":N},...]}
+      keep=false → cover/title page, table of contents with page numbers, blank, preface, copyright
+      keep=true  → technical diagrams, wiring, photos with components, procedures, specs, data tables
+      keep=true  → section divider or index that names a manufacturer, controller family, or model
+                   codes: those names may appear nowhere else, and dropping the page makes every
+                   page of that section unreachable by brand
+      Drop covers aggressively; never drop a page that names equipment.
+      visual_complexity: "high" → dense wiring/schematic with several small labeled parts and lines
+                          connecting them; "moderate" → a diagram or annotated photo, not just running
+                          text or a plain data table; "none" → plain text, prose, or a simple table
+      has_visual_relations: true only if lines, leader lines, or arrows visibly connect two or more
+                          labeled elements on the page
+      component_count: count of small labeled photos/icons/parts on the page (0 if none)
+      Classify these three fields, do not describe them.
+    PROMPT
+
+    VISUAL_COMPLEXITY_VALUES = %w[none moderate high].freeze
+
     def initialize(pages:, filename:, haiku_client:, total_pages:, correlation_id: nil)
       @pages          = pages
       @filename       = filename
@@ -464,7 +493,7 @@ class PageRelevanceFilter
       response = client.messages.create(
         model:      PageRelevanceFilter::HAIKU_MODEL,
         max_tokens: max_tokens,
-        system:     HAIKU_BATCH_SYSTEM,
+        system:     IngestionVisualTriageFlag.enabled? ? HAIKU_BATCH_SYSTEM_V2 : HAIKU_BATCH_SYSTEM,
         messages:   [ { role: "user", content: build_content } ]
       )
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
@@ -511,9 +540,15 @@ class PageRelevanceFilter
     end
 
     def dynamic_max_tokens
+      per_page = if IngestionVisualTriageFlag.enabled?
+        PageRelevanceFilter::PER_PAGE_OUTPUT_TOKENS_V2
+      else
+        PageRelevanceFilter::PER_PAGE_OUTPUT_TOKENS
+      end
+
       [
         PageRelevanceFilter::HAIKU_BATCH_MAX_TOKENS,
-        64 + @pages.size * PageRelevanceFilter::PER_PAGE_OUTPUT_TOKENS
+        64 + @pages.size * per_page
       ].max
     end
 
@@ -547,13 +582,26 @@ class PageRelevanceFilter
           end
         end
 
-        h[page.number] = {
+        result = {
           keep:       keep,
           reason:     reason,
           source:     :haiku_batch,
           force_opus: keep && scanned_dense?(page.binary)
         }
+        result.merge!(visual_triage_fields(entry)) if IngestionVisualTriageFlag.enabled?
+        h[page.number] = result
       end
+    end
+
+    # Degrades a missing/malformed field to its safe default without raising —
+    # Haiku omitting a field must never break the batch.
+    def visual_triage_fields(entry)
+      complexity = entry.is_a?(Hash) ? entry["visual_complexity"].to_s : ""
+      {
+        visual_complexity:    VISUAL_COMPLEXITY_VALUES.include?(complexity) ? complexity.to_sym : :none,
+        has_visual_relations: entry.is_a?(Hash) && entry["has_visual_relations"] == true,
+        component_count:      entry.is_a?(Hash) ? [ entry["component_count"].to_i, 0 ].max : 0
+      }
     end
 
     def scanned_dense?(binary)

@@ -303,4 +303,167 @@ class FileMultimodalRouterTest < ActiveSupport::TestCase
     PdfPageSplitterService.define_method(:page_count, @orig_page_count)
     PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 1 visual triage (docs/rag/plan_conocimiento_visual.md) — behind
+  # IngestionVisualTriageFlag. Flag off must be byte-identical to today.
+  # ---------------------------------------------------------------------------
+
+  def with_visual_triage_flag(value)
+    original = ENV.fetch("INGESTION_VISUAL_TRIAGE_ENABLED", nil)
+    if value.nil?
+      ENV.delete("INGESTION_VISUAL_TRIAGE_ENABLED")
+    else
+      ENV["INGESTION_VISUAL_TRIAGE_ENABLED"] = value
+    end
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_VISUAL_TRIAGE_ENABLED")
+    else
+      ENV["INGESTION_VISUAL_TRIAGE_ENABLED"] = original
+    end
+  end
+
+  def stub_geometry_by_binary(map)
+    orig = FileMultimodalRouter.instance_method(:geometry_signal)
+    FileMultimodalRouter.define_method(:geometry_signal) do |binary|
+      map.fetch(binary) { { long_segments: 0, small_images: 0 } }
+    end
+    yield
+  ensure
+    FileMultimodalRouter.define_method(:geometry_signal, orig)
+  end
+
+  def stub_geometry_forbidden(message)
+    orig = FileMultimodalRouter.instance_method(:geometry_signal)
+    FileMultimodalRouter.define_method(:geometry_signal) { |_| raise message }
+    yield
+  ensure
+    FileMultimodalRouter.define_method(:geometry_signal, orig)
+  end
+
+  def stub_uniform_pages(count)
+    orig = PdfPageSplitterService.instance_method(:each_page)
+    # page_count only gates the "total_pages <= 1 → pdf_text_only" early return in
+    # classify_pdf; it must report >1 even when a test yields a single page via
+    # each_page, or the multi-page :pdf_mixed path (and route_page) never runs.
+    PdfPageSplitterService.define_method(:page_count) { [ count, 2 ].max }
+    PdfPageSplitterService.define_method(:each_page) do |&b|
+      count.times { |i| b.call(i + 1, "geo_p#{i + 1}") }
+    end
+    yield
+  ensure
+    PdfPageSplitterService.define_method(:each_page, orig)
+    PdfPageSplitterService.define_method(:page_count, @orig_page_count)
+  end
+
+  test "flag off: a geometrically complex page never calls geometry_signal and stays MODEL_TEXT" do
+    with_visual_triage_flag(nil) do
+      Thread.current[:pdf_image_pages] = Set.new
+      PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+        { has_images: true, text_layer_chars: 900, image_area_ratio: 0.2 }
+      end
+
+      stub_uniform_pages(1) do
+        stub_geometry_forbidden("must not be called when flag is off") do
+          r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "seguridades.pdf")
+
+          assert_equal BatchChunkingPrompt::MODEL_TEXT, r.pages.first.model
+        end
+      end
+    end
+  ensure
+    PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
+  end
+
+  test "flag on: a page passing both geometric thresholds escalates to MODEL_MULTIMODAL" do
+    with_visual_triage_flag("true") do
+      Thread.current[:pdf_image_pages] = Set.new
+      PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+        { has_images: true, text_layer_chars: 900, image_area_ratio: 0.2 }
+      end
+
+      # 10 pages so the 0.15 default budget floors to exactly 1 escalation slot.
+      stub_uniform_pages(10) do
+        geometry = { "geo_p1" => { long_segments: 15, small_images: 5 } }
+        stub_geometry_by_binary(geometry) do
+          r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "seguridades.pdf")
+
+          assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, r.pages.first.model
+          assert r.pages.drop(1).all? { |p| p.model == BatchChunkingPrompt::MODEL_TEXT }
+        end
+      end
+    end
+  ensure
+    PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
+  end
+
+  test "flag on: a page below the small-image threshold does not escalate" do
+    with_visual_triage_flag("true") do
+      Thread.current[:pdf_image_pages] = Set.new
+      PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+        { has_images: true, text_layer_chars: 900, image_area_ratio: 0.2 }
+      end
+
+      stub_uniform_pages(10) do
+        geometry = { "geo_p1" => { long_segments: 15, small_images: 2 } } # below SMALL_IMAGE_MIN_COUNT (3)
+        stub_geometry_by_binary(geometry) do
+          r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "seguridades.pdf")
+
+          assert_equal BatchChunkingPrompt::MODEL_TEXT, r.pages.first.model
+        end
+      end
+    end
+  ensure
+    PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
+  end
+
+  test "flag on: budget caps escalation to the highest-complexity candidate first" do
+    with_visual_triage_flag("true") do
+      Thread.current[:pdf_image_pages] = Set.new
+      PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+        { has_images: true, text_layer_chars: 900, image_area_ratio: 0.2 }
+      end
+
+      # 10 pages → budget = floor(10 * 0.15) = 1. Three candidates qualify;
+      # only the highest complexity_score (p3, score 35) may escalate.
+      stub_uniform_pages(10) do
+        geometry = {
+          "geo_p1" => { long_segments: 12, small_images: 3 },   # score 15
+          "geo_p2" => { long_segments: 14, small_images: 4 },   # score 18
+          "geo_p3" => { long_segments: 25, small_images: 10 }   # score 35 — highest
+        }
+        stub_geometry_by_binary(geometry) do
+          r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "seguridades.pdf")
+          by_number = r.pages.index_by(&:number)
+
+          assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, by_number[3].model
+          assert_equal BatchChunkingPrompt::MODEL_TEXT,       by_number[1].model
+          assert_equal BatchChunkingPrompt::MODEL_TEXT,       by_number[2].model
+        end
+      end
+    end
+  ensure
+    PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
+  end
+
+  test "flag on: a scanned-dense page never calls geometry_signal and stays MODEL_MULTIMODAL" do
+    with_visual_triage_flag("true") do
+      Thread.current[:pdf_image_pages] = Set.new
+      PageImageDensityAnalyzer.define_singleton_method(:analyze) do |_|
+        { has_images: false, text_layer_chars: 50, image_area_ratio: 0.8 }
+      end
+
+      stub_uniform_pages(1) do
+        stub_geometry_forbidden("must not be called for scanned-dense pages") do
+          r = FileMultimodalRouter.classify(binary: "%PDF", content_type: "application/pdf", filename: "seguridades.pdf")
+
+          assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, r.pages.first.model
+        end
+      end
+    end
+  ensure
+    PageImageDensityAnalyzer.define_singleton_method(:analyze, @orig_analyzer)
+  end
 end

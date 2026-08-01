@@ -745,14 +745,18 @@ omiten dispositivos intermedios de la serie), **§4.6** (1 de 19 se emite gracia
 inflado por espacios sin tinta) y **§4.7** (el arreglo de `CARLOS SILVA` de 2b no aplica al PDF
 real).
 
-### 10.2 Lo que el gate **no** autoriza
+### 10.2 Lo que el gate **no** autorizó por sí solo — y cómo se resolvió
 
-**La Fase 4 sigue bloqueada.** Superar el umbral era condición necesaria, no suficiente: el plan
-exige además la **decisión humana #4** — *¿se ejecuta la Fase 7 (shadow ingest, único paso
-irreversible) con las aristas de T1 solas, o se espera a tener también T2?* — y ésa la responde el
-dueño del producto, por escrito, en el plan.
+Superar el umbral era condición necesaria, no suficiente: el plan exige además la **decisión
+humana #4** — *¿se ejecuta la Fase 7 (shadow ingest, único paso irreversible) con las aristas de
+T1 solas, o se espera a tener también T2?* — y ésa la responde el dueño del producto, por escrito.
 
-Los dos números que hay que tener delante al responderla:
+> ✅ **Respondida el 2026-08-01: OPCIÓN B — se espera a T2.** La Fase 4 se implementa y se mergea
+> **con el flag apagado**; luego la Fase 5, luego el Gate B, y **sólo entonces** la Fase 7. **La
+> Fase 7 no se ejecuta con las aristas de T1 solas.** Redacción canónica en
+> `plan_conocimiento_visual.md` → "Decisiones humanas pendientes" #4.
+
+Los números con los que se hizo la pregunta:
 
 | | |
 |---|---|
@@ -760,14 +764,15 @@ Los dos números que hay que tener delante al responderla:
 | **Recall de T1** | **4,6 %** (7 de 153 relaciones que un técnico lee en 11 páginas) |
 | Cobertura | 19 aristas en **18 de 98** páginas; **~15 pares distintos**; 7 de 18 secciones sin ninguna arista |
 
-La recomendación de este informe **no ha cambiado con el gate superado**: a la vista de §7, 18
-páginas con ~15 pares distintos no justifican gastar el paso irreversible sólo por T1, porque el
-riesgo #1 del plan —que el texto de topología diluya el embedding y **baje** el recall, el
-mecanismo plausible del 62/88 → 57/88 ya medido— se paga entero por 19 aristas. La opción B del
-plan (mergear la Fase 4 con el flag apagado, que es inerte por diseño, y esperar a T2 antes de la
-Fase 7) desacopla las dos cosas sin tirar nada.
+La recomendación de este informe **no cambió con el gate superado** y coincide con lo decidido: a
+la vista de §7, 18 páginas con ~15 pares distintos no justifican gastar el paso irreversible sólo
+por T1, porque el riesgo #1 del plan —que el texto de topología diluya el embedding y **baje** el
+recall, el mecanismo plausible del 62/88 → 57/88 ya medido— se paga entero por 19 aristas. La
+opción B (mergear la Fase 4 con el flag apagado, que es inerte por diseño, y esperar a T2 antes de
+la Fase 7) desacopla las dos cosas sin tirar nada.
 
-**Es una recomendación, no una decisión.** El gate se detiene aquí.
+**La decisión es del dueño del producto, no del gate.** El gate se detuvo, expuso los números y la
+respuesta llegó el mismo día.
 
 ### 10.3 Gate A (histórico, mismo día, código pre-2b/3b): NO SUPERADO
 

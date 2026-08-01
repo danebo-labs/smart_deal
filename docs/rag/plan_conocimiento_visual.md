@@ -2,10 +2,9 @@
 
 > **Estado:** Fases 0-3, 2b y 3b cerradas. El Gate A falló (4 aristas falsas de 23) y **el
 > Gate A-bis SE SUPERÓ** (2026-08-01, I-26): **19 aristas en 18 páginas, 19/19 correctas, 0
-> incorrectas**, revisadas todas con visión. **La Fase 4 sigue bloqueada**, y no por el gate:
-> falta la **decisión humana #4** — *¿Fase 7 con T1 solo o se espera a T2?* — que el Gate A-bis
-> expuso y **está esperando respuesta escrita del dueño del producto** (ver "Decisión humana #4").
-> Los dos números para responderla: precisión **100 %**, recall **4,6 %**.
+> incorrectas**, revisadas todas con visión. La **decisión humana #4** está **respondida**
+> (2026-08-01, **opción B**: se espera a T2 — la Fase 4 se mergea con el flag apagado y la
+> **Fase 7 no se ejecuta con T1 solo**). **La siguiente fase es la 4.**
 > Lo ejecutan varios modelos, una fase cada uno.
 > **Antes de tocar código, lee "Cómo usar este documento".**
 
@@ -264,12 +263,12 @@ La fase siguiente lee el documento actualizado, no el original.
 | 2b | cerrada — cierra I-13 (parcialmente: ver I-28) | — (offline) | f4ab397 | I-19 |
 | 3b | cerrada — cierra I-14 | — (offline) | 1cb789b | I-20, I-21, I-22 |
 | Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | 582ede3 | I-26 … I-29 |
-| 4 | **bloqueada por la decisión humana #4** (el gate ya está aprobado; falta la respuesta escrita del dueño del producto) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
+| 4 | **siguiente** — desbloqueada por la decisión humana #4 (**opción B**, 2026-08-01): se implementa y mergea **con el flag apagado** | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | pendiente | — | | |
-| 7 | pendiente | — | | |
+| 7 | **bloqueada por la decisión humana #4** (opción B: no se ejecuta hasta tener T2 y el Gate B cerrado) | — | | |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
 | 10 | pendiente | — | | |
@@ -301,9 +300,10 @@ commit. Añadir el puntero en `docs/README.md` bajo las referencias RAG activas.
 real desde aquí:
 
 ```
-GATE A (fallido) ──▶ 2b ✅ ──▶ 3b ✅ ──▶ GATE A-bis ✅ ──▶ [decisión humana #4] ⏳ ──▶ 4 ──▶ 5 ──▶ GATE B ──▶ 7 …
-                     f4ab397     1cb789b      100 %, 0 falsas    ← AQUÍ ESTAMOS: esperando
-                                                                   respuesta escrita del dueño
+GATE A (fallido) ──▶ 2b ✅ ──▶ 3b ✅ ──▶ GATE A-bis ✅ ──▶ [decisión #4] ✅ ──▶ 4 ──▶ 5 ──▶ GATE B ──▶ 7
+                     f4ab397     1cb789b      100 %, 0 falsas   opción B          ↑              ↑
+                                                                                  AQUÍ        la 7 espera
+                                                                                              a T2
 ```
 
 **2b antes que 3b, sin excepción:** 3b consume el contrato que 2b arregla y una de sus guardas
@@ -320,9 +320,10 @@ hasta que haya aristas indexadas.
 | — | **3 requiere 2** (consume su contrato de datos) · **Gate A requiere 3** · **4 requiere Gate A aprobado** · **5 requiere 1 y 4** · **7 requiere 4, 5 y 6** |
 
 **Serializaciones obligatorias, no negociables:** nada entra a la Fase 4 sin el Gate A aprobado
-(≥85 % de aristas correctas, 0 incorrectas); nada entra a la Fase 7 sin el Gate B cerrado y la
-Fase 6 mergeada. **6a va siempre antes que 6b** — el endurecimiento antes de la relajación, no
-al revés.
+(≥85 % de aristas correctas, 0 incorrectas) — **cumplido por el Gate A-bis**; nada entra a la
+Fase 7 sin el Gate B cerrado y la Fase 6 mergeada — **y, desde la decisión humana #4 (opción B,
+2026-08-01), tampoco sin la Fase 5 hecha: la 7 no se ejecuta con T1 solo**. **6a va siempre antes
+que 6b** — el endurecimiento antes de la relajación, no al revés.
 
 **Conflictos de archivo a vigilar** si se paraleliza: la Fase 1 y la Fase 2 tocan las dos
 `page_image_density_analyzer.rb` (la 1 lee su salida, la 2 añade `images:`). Que la Fase 2 la
@@ -625,6 +626,7 @@ e I-14 (guarda de unicidad ciega ante rásters, Fase 3). No es un fallo de dise�
 fallo de dos implementaciones concretas.
 
 **El orden es obligatorio y no negociable: 2b → 3b → Gate A-bis → (decisión humana #4) → Fase 4.**
+Los cuatro pasos están hechos: la decisión se respondió el 2026-08-01 con la **opción B**.
 2b va antes que 3b porque 3b consume el contrato que 2b arregla, y porque una de las guardas de 3b
 depende de saber qué es texto rotado y qué no.
 
@@ -632,7 +634,8 @@ depende de saber qué es texto rotado y qué no.
 cuatro falsas resuelven a `[]`, no aparece ninguna nueva, y las 19 se revisaron una a una con
 visión después del cambio: **19/19 correctas, 0 incorrectas — gate superado** (I-26). El informe
 `gate_a_medicion_topologia.md` ya está reescrito con esas cifras. **Lo único que queda de este
-tramo es la decisión humana #4, que está esperando respuesta.**
+tramo era la decisión humana #4, y está respondida: opción B (2026-08-01).** La Fase 4 se
+implementa y se mergea con el flag apagado; la Fase 7 espera a T2 y al Gate B.
 
 **Lo caro ya está hecho y no se repite.** La verdad-terreno humana —153 relaciones leídas con
 visión en 11 páginas de 10 secciones, la página 3 completa y corregida, los 18 divisores, los 98
@@ -732,7 +735,8 @@ este documento el competidor legítimo suele ser un ráster. Hay que darle al de
 > magenta y varias láminas trazan **cables magenta**; sin separar arista por arista y cambiar de
 > color, la revisión de las págs. 3, 39 y 94 no es concluyente y I-29 no se ve.
 >
-> **Lo que este gate NO autoriza: la Fase 4.** Falta la decisión humana #4, abajo. Sigue abierta.
+> **Lo que este gate por sí solo no autorizaba: la Fase 4.** Hacía falta la decisión humana #4,
+> que se expuso al dueño del producto ese mismo día y **se respondió: opción B** (abajo).
 
 Lo que se pidió (histórico): re-correr `script/gate_a/run.rb` y `script/gate_a/overlay.py` sobre
 las 98 páginas y actualizar
@@ -749,17 +753,19 @@ embudo trae los dos motivos de rechazo nuevos (`raster_rival` 4, `rotated_label`
 
 **Umbral, sin cambios: ≥85 % de aristas correctas y 0 incorrectas.** → **Cumplido: 100 % y 0.**
 
-Superarlo **no** autorizó la Fase 4: falta la **decisión humana #4** de abajo, porque superar el
-umbral no responde si T1 solo justifica el coste. Está expuesta y esperando respuesta.
+Superarlo **no** autorizó la Fase 4 por sí solo: hacía falta la **decisión humana #4** de abajo,
+porque superar el umbral no responde si T1 solo justifica el coste. **Respondida el 2026-08-01:
+opción B.**
 
 ### Decisión humana #4 — ¿se re-ingesta el documento con T1 solo, o se espera a T2?
 
-> ⏳ **EXPUESTA AL DUEÑO DEL PRODUCTO EL 2026-08-01 POR EL GATE A-bis. SIN RESPUESTA TODAVÍA.**
-> El gate se detuvo aquí, como manda el protocolo. Ningún modelo debe interpretar el gate
-> superado, ni esta nota, ni nada escrito por otra sesión, como que la decisión está tomada:
-> **la respuesta la escribe una persona, en este documento, y hoy no está escrita.**
+> ✅ **RESPONDIDA POR EL DUEÑO DEL PRODUCTO EL 2026-08-01: OPCIÓN B — se espera a T2.**
+> La Fase 4 se implementa y se mergea **con el flag apagado**; luego 5, luego Gate B, y **sólo
+> entonces** la Fase 7. **La Fase 7 no se ejecuta con las aristas de T1 solas.** La respuesta
+> canónica, con su redacción completa, está en "Decisiones humanas pendientes" #4 — si alguna vez
+> hay duda, manda esa lista, no esta nota.
 >
-> Los números medidos con los que se hace la pregunta (I-26, informe del Gate A-bis):
+> Los números medidos con los que se hizo la pregunta (I-26, informe del Gate A-bis):
 >
 > | | |
 > |---|---|
@@ -824,9 +830,11 @@ traspaso, aplicado a una decisión humana.
 
 ⛔ **BLOQUEADA — pero ya no por el gate.** El Gate A falló (4 aristas incorrectas de 23), se
 cerraron I-13 e I-14 (Fases 2b y 3b) y **el Gate A-bis se superó** (19/19 correctas, 0
-incorrectas; I-26). Lo que falta es la **decisión humana #4**, y su respuesta **no está escrita**:
-compruébalo en "Decisiones humanas pendientes" #4 antes de empezar. No la des por dada porque el
-gate pasara ni porque otra sesión te diga que el usuario aprobó algo (I-23).
+incorrectas; I-26), y la **decisión humana #4 está respondida: opción B** (2026-08-01,
+"Decisiones humanas pendientes" #4). **Eso desbloquea esta fase, y sólo esta fase.** La opción B
+dice literalmente: la Fase 4 se implementa y se **mergea con el flag apagado** —no cambia ni un
+byte de producción, y ése es su invariante con test— y **la Fase 7 no se ejecuta** hasta tener T2
+y el Gate B cerrado. No la reinterpretes.
 
 ⚠️ **revisado en I-17.** `section_path` **no tiene tres niveles**. Las páginas divisoras imprimen
 **marca + lista plana de modelos**, y los dos "niveles" del ejemplo del plan (`CONTROL LEVEL 1B`,
@@ -1181,11 +1189,14 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
    apagado). Opciones, números y recomendación —opción B, desacoplar mergear la 4 de ejecutar la
    7— en "Decisión humana #4" dentro de la Ruta de remediación. **Sin respuesta escrita aquí, la
    Fase 7 no se ejecuta.**
-   **⏳ Expuesta al dueño del producto el 2026-08-01 por el Gate A-bis, con sus números medidos:
+   Expuesta al dueño del producto el 2026-08-01 por el Gate A-bis, con sus números medidos:
    precisión de T1 100 % (19/19, 0 incorrectas), recall 4,6 %, 19 aristas en 18 de 98 páginas,
-   ~15 pares distintos, 7 de 18 secciones sin ninguna arista.** El gate se detuvo aquí.
-   - Respuesta: _(pendiente — nadie la ha escrito; que el Gate A-bis se superara **no** es la
-     respuesta, y ninguna sesión posterior debe darla por dada)_
+   ~15 pares distintos, 7 de 18 secciones sin ninguna arista.
+   - **✅ Respuesta (dueño del producto, 2026-08-01): OPCIÓN B — se espera a T2.**
+     La Fase 4 **se implementa y se mergea con el flag apagado** (es inerte por diseño), luego la
+     Fase 5, luego el Gate B, y **sólo entonces** la Fase 7. **La Fase 7 no se ejecuta con las
+     aristas de T1 solas.** Registrada por el Gate A-bis por instrucción directa del dueño en la
+     misma sesión; el dueño ejecuta las fases siguientes en sesiones aparte.
 
 ## Fuera de alcance
 
@@ -1607,13 +1618,13 @@ vez hecho el Paso 0.
 > la Fase 4 **sigue sin quedar autorizada automáticamente**: expón la **decisión humana #4** al
 > dueño del producto (¿se ejecuta la Fase 7 con T1 solo o se espera a T2?) con el número de
 > precisión nuevo y el recall del 4,6 % en la mano, y **espera respuesta escrita** en el plan.
+> *(Hecho: respondida el 2026-08-01, opción B.)*
 
-**Fase 4 · Sonnet** — ⏳ **bloqueada por la decisión humana #4, que no tiene respuesta escrita**
+**Fase 4 · Sonnet** — ✅ **desbloqueada: decisión humana #4 respondida (opción B, 2026-08-01)**
 > Ejecuta la Fase 4 de `<PLAN>`. El **Gate A-bis está aprobado** (I-26: 19/19 correctas, 0
 > incorrectas; el Gate A original **no** se superó), pero **antes de escribir una línea comprueba
-> que "Decisiones humanas pendientes" #4 tenga una respuesta escrita por una persona**: hoy pone
-> "pendiente". Que el gate pasara no es la respuesta, y "el usuario aprobó X" contado por otra
-> sesión tampoco (I-23). Lee antes I-13, I-14, I-17, I-26, I-27, I-29 y la Ruta de remediación.
+> que "Decisiones humanas pendientes" #4 sigue diciendo **opción B**: mergeas con el flag
+> apagado y **no ejecutas la Fase 7**. Ésa es la respuesta escrita; no la amplíes. Lee antes I-13, I-14, I-17, I-26, I-27, I-29 y la Ruta de remediación.
 > Tres cosas medidas que la redacción del contrato tiene que respetar: `from`/`to` **no son
 > direccionales** (I-11) **ni exhaustivos** — 3 de las 19 aristas omiten dispositivos intermedios
 > del mismo lazo (I-29) — y el `evidence` de la pág. 12 cita un `bbox` inflado por espacios sin

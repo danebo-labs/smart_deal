@@ -157,9 +157,14 @@ conocimiento.
 | Señal disponible | Tier | Motor | Coste | Salida |
 |---|---|---|---|---|
 | Texto plano estructurado, sin relaciones | **T0** | Sonnet 4.6 (como hoy) | bajo | chunks + `field_records` |
-| Capa de texto **+** vectores (80/98 aquí) | **T1 geométrico** | Rails determinista, 0 LLM | ~0 | `TOPOLOGY_EDGE` `method: leader_line` |
+| Capa de texto **+** vectores (80/98 aquí) | **T1 geométrico** | Rails determinista, 0 LLM | ~0 | `TOPOLOGY_EDGE` `method: leader_line` ¹ |
 | Imagen densa sin vectores / sin capa de texto | **T2 visión** | Opus 4.8 + prompt de relaciones sobre ráster + crops | alto, acotado | `TOPOLOGY_EDGE` `method: vision` |
 | Ambas señales | **T1 + T2** | T1 ancla, T2 reconoce; T1 gana en conflicto | medio | ambos, con procedencia distinguible |
+
+¹ ⚠️ **revisado en I-09.** Que 80/98 páginas *tengan* la señal no significa que T1 derive algo en
+ellas: medido con el derivador ya implementado, T1 emite alguna arista en **22 de 98** páginas
+(23 aristas en total). El resto de la relación dibujada de este documento **cae en T2**, y esa es
+la cifra con la que hay que dimensionarlo, no 80.
 
 **Complementariedad, no competencia.** T1 sabe *que* la etiqueta `LIMITADOR` está unida al
 `CONECTOR AI` por una línea trazada, pero no sabe qué es la foto pequeña de 105×183 que está al
@@ -222,7 +227,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 0b | cerrada | — | 72fc7ee | I-02 |
 | 1 | cerrada | `INGESTION_VISUAL_TRIAGE_ENABLED` | 2f0bfd3 | I-04, I-05, I-06 |
 | 2 | cerrada | — (offline) | 09c813b | I-07, I-08 |
-| 3 | pendiente | — (offline) | | |
+| 3 | cerrada | — (offline) | ed8bd56 | I-09, I-10, I-11, I-12 |
 | Gate A | pendiente | — | | |
 | 4 | pendiente | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
@@ -321,14 +326,23 @@ se emiten.
 ```ruby
 [
   { from: "LIMITADOR", to: "CONECTOR AI", method: :leader_line,
-    evidence: "polilínea (332.2,153.3)->(332.2,248.1)->(252.4,154.7) termina en el corchete rotulado CONECTOR AI (x 305-385, y 242-248)",
-    chain: [[332.2,153.3],[332.2,248.1],[252.4,154.7]] }
+    evidence: "polilínea (485.6,154.9)->(405.2,154.1)->(405.8,248.1) une LIMITADOR (x 504-541, y 154-161) con CONECTOR AI (x 316-382, y 231-240)",
+    chain: [[485.6,154.9],[405.2,154.1],[405.8,248.1]] }
 ]
 ```
 
+⚠️ **revisado en I-09 e I-11.** El ejemplo de arriba es ahora la salida **real y verificada** de
+la página 3; el que estaba escrito aquí antes (`(332.2,153.3)->(332.2,248.1)->(252.4,154.7)`) era
+ilustrativo y geométricamente imposible — esos tres puntos no forman una cadena en el PDF. Dos
+cambios de contrato, ambos en I-11: (a) la redacción de `evidence` es `… une X (bbox) con Y
+(bbox)`, no "termina en el corchete rotulado …" — el derivador no detecta corchetes; (b) `from`
+y `to` están ordenados **geométricamente** (el extremo más abajo en la página primero) y **no son
+una afirmación de dirección**: la geometría no dice cuál extremo es el componente y cuál el
+conector, así que la Fase 4 no debe presentar la flecha como direccional.
+
 Reglas: si una etiqueta no resuelve, **no aparece en el array**. Sin entradas parciales, sin
 `nil`, sin `confidence` numérica. El array vacío es una salida válida y frecuente (12 páginas
-divisoras).
+divisoras) — y, medido en I-09, también en **76 de las 98 páginas**.
 
 ### `PageLayoutDigest.render(layout, edges)` → Fase 2/3 producen, Fase 4 consume
 
@@ -472,15 +486,28 @@ seguridad):
 recuperada y citada, y el calificador `method:` es lo primero que se pierde al parafrasear. Sólo
 `leader_line`. El enum queda abierto a `vision`.
 
+⚠️ **revisado en I-09.** Las cuatro guardas de arriba resultaron necesarias pero **no
+suficientes** contra la geometría real: hicieron falta tres rechazos más (unión T, etiqueta que
+la cadena *atraviesa*, y texto que no es un nombre), cada uno con su contraejemplo medido. Además
+las líneas guía de este documento son en su mayoría **bucles** que salen de un terminal del
+conector y vuelven a otro del mismo conector, con el componente en el medio: ambos extremos
+resuelven a la misma etiqueta y no se emite nada. Detalle y cifras en I-09.
+
 *Definición de terminado:*
-- [ ] Fixture página 3: las aristas resueltas se comparan contra el **Apéndice D**
-- [ ] **Caso fixture #1 — `ACUÑAMIENTO`:** o resuelve a un único conector, o resuelve a dos
-      líneas guía distintas, o **no se emite**. Las tres son salidas aceptables; lo inaceptable
-      es elegir por proximidad. Ver Apéndice D
-- [ ] Fixture de **cadena mala conocida** que debe resolver a **cero** aristas
-- [ ] Fixtures de las páginas 17 / 32 / 63 (secciones distintas), aristas revisadas a mano
-- [ ] Test de que una página divisora (sin segmentos) devuelve `[]` sin excepción
-- [ ] Suite + rubocop verdes; nada en producción invoca el derivador
+- [x] Fixture página 3: las aristas resueltas se comparan contra el **Apéndice D** — 2 aristas
+      (`FINALES`↔`CONECTOR AI`, `LIMITADOR`↔`CONECTOR AI`), ambas en la lista humana de AI
+- [x] **Caso fixture #1 — `ACUÑAMIENTO`:** resuelve a la salida **(c) ninguna arista**, y por
+      evidencia, no por descarte: ningún extremo de cadena cae dentro de la tolerancia de esa
+      etiqueta (la única línea cercana la *pasa* a 6.4 pt). La proximidad en x nunca se consulta.
+      Aserción explícita en `topology_edge_deriver_test.rb`
+- [x] Fixture de **cadena mala conocida** que debe resolver a **cero** aristas (`known_bad_layout`:
+      cadena de 5 segmentos, bifurcación, bucle a su propia etiqueta, unión T, cable que corre por
+      debajo de la etiqueta que reclamaría, y fila de números de borne)
+- [x] Fixtures de las páginas 17 / 32 / 63 (secciones distintas), aristas revisadas a mano contra
+      la página renderizada: 63 → 1 arista correcta; 17 y 32 → `[]` correcto (ver I-09)
+- [x] Test de que una página divisora (sin segmentos) devuelve `[]` sin excepción (página 2 real)
+- [x] Suite + rubocop verdes (2056 runs / 0 failures; 464 files, 0 offenses); nada en producción
+      invoca el derivador, cubierto por test
 
 ### ⛔ Gate A — Medición (entregable de las fases 2-3) · Opus
 
@@ -495,6 +522,14 @@ Correr extractor + derivador sobre las 98 páginas y escribir
 - filas de tabla LED con su agrupación;
 - **cuántas páginas quedan sin cobertura T1** (dimensiona T2);
 - resolución del caso `ACUÑAMIENTO`.
+
+⚠️ **revisado en I-09.** La Fase 3 ya corrió extractor + derivador sobre las 98 páginas como
+control propio: **23 aristas en 22 páginas**; las otras 76 devuelven `[]`. De esas 23, las **9 que caen en 8
+páginas (3, 11, 12, 14, 52, 63, 93, 95) se revisaron a mano con visión** contra la página
+renderizada y **0 son incorrectas**; 17 y 32 se revisaron y su `[]` es correcto. Eso **no sustituye al
+Gate A**: falta la tasa contra lectura humana en ≥6 páginas *completas* (cuántas de las aristas
+que un humano ve quedan sin derivar, que aquí es la mayoría), el `section_path`, las filas LED y
+el dimensionado de T2. Punto de partida, no entregable.
 
 **Umbral para continuar: ≥85 % de aristas correctas y 0 incorrectas en la muestra revisada.**
 Si no se alcanza, **parar y registrar el hallazgo**; no seguir a la Fase 4. Este entregable es
@@ -1256,3 +1291,7 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-06 | 1 | Sonnet 5 | Entregable numérico corrido contra el PDF real completo (no una muestra): con los umbrales de I-05, **98/98 páginas (100 %) califican para Opus antes de aplicar presupuesto** — 19 `scanned_dense` (portada + las 18 divisoras del Apéndice E, sin excepción) + 79 candidatas geométricas (el resto exacto del documento). Cifra consistente con la del Apéndice C (80/98 vía muestreo) y con la página 3 del Apéndice D (73 segmentos largos medidos, idéntico al valor verificado ahí). Con `DocumentClassProfile::DEFAULT_MAX_OPUS_PAGE_FRACTION = 0.15` el resultado real es **33.7 %** de páginas en Opus, no 15 % — el presupuesto se aplica sólo sobre el disparador geométrico y se suma al 19.4 % ya incondicional de `scanned_dense`. Tabla completa, ranking por complejidad y proyección de coste (Sonnet $3/$15, Opus $5/$25 por MTok; ~2,250 tokens de entrada/página por bloque `document`, 8,000 de salida) en `docs/rag/triaje_visual_medicion.md`. **No se invocó Haiku en vivo** con el schema v2 (costo real, no autorizado sin pedirlo) — no cambia el resultado de tier para este documento porque el disparador geométrico por sí solo ya cubre el 100 % de las páginas de contenido (el OR con `visual_complexity: high` no tiene nada que agregar aquí), pero significa que `DocumentClassProfile.classify` nunca corrió con datos reales de Haiku para SEGURIDADES. | Fase 5/Gate B: no asumir que existe una clasificación de documento (`DocumentClassProfile.classify`) medida para SEGURIDADES — no corrió. Decisión humana pendiente #3 del plan: la fracción de producción, con esta tabla en mano. |
 | I-07 | 2 | Sonnet 5 | El `bbox` de `images:` no salió de "~6 líneas" dentro del recorrido de `Resources` existente, como estimaba el plan: ese recorrido es puramente sobre el diccionario de recursos (sin content stream) y no tiene forma de saber dónde se pintó cada XObject. Se agregó un segundo pase de content-stream (`PageImageDensityAnalyzer::ImagePlacementCollector`, processor privado que trackea el CTM vigente en cada operador `Do`) que alimenta el mismo bucle de `compute_image_area`; ese método pasa de devolver `[total_area, has_images]` a `[total_area, has_images, images]`. Un XObject declarado en `Resources` pero nunca pintado (`Do`) recibe `bbox: nil` en vez de romper — cubierto por test. `has_images`/`text_layer_chars`/`image_area_ratio` no cambian de valor ni de fuente; `PageRelevanceFilter` y `FileMultimodalRouter` siguen viendo exactamente las mismas claves que antes. | Fase 3/5: al consumir `images[].bbox`, tratar `nil` como "sin posición conocida" — no debería ocurrir en páginas reales bien formadas (todo XObject declarado en un PDF exportado se pinta), pero la guarda existe y el contrato lo permite. |
 | I-08 | 2 | Sonnet 5 | `words` agrupa por adyacencia visual — glifos en la misma línea (baseline `y` dentro de una tolerancia) fusionados si el hueco horizontal entre ellos es pequeño relativo a la altura del glifo — y no por operador `Tj`/`TJ` ni por separación en espacios. Verificado en el fixture: `CONECTOR AI` (una sola etiqueta impresa con espacio interno) queda en una única entrada de `words`, mientras que `CONECTOR AI` y `CONECTOR AG` en la misma fila, con hueco grande entre ellas, quedan separadas — exactamente el ejemplo del contrato de datos. La Fase 3, al resolver el extremo de una arista, debe comparar contra `words[].text` tal como sale de este agrupamiento (puede incluir espacios internos; no asumir tokens de una sola palabra). Por separado: la Fase 1 (I-05) implementó su propio probe geométrico privado (`FileMultimodalRouter#geometry_signal` + `SegmentCollector`) porque `PdfLayoutExtractor` no existía todavía, y dejó registrado como hallazgo propio decidir si conviene refactorizarlo para consumir este contrato ahora que existe. Esta fase no toca `file_multimodal_router.rb` — es archivo de la Fase 1, fuera de alcance ("sólo tu fase") — así que esa deduplicación queda pendiente y sin dueño. | Fase 3: usar `words[].text` verbatim (con espacios) al resolver etiquetas, no tokens partidos. Sin dueño: alguien debe decidir si refactorizar `FileMultimodalRouter#geometry_signal` para usar `PdfLayoutExtractor` en vez de su probe duplicado (I-05), y si lo hace, fijar `size_class` ahí con el criterio autoritativo de `PageImageDensityAnalyzer::SMALL_IMAGE_MAX_AREA_PX2` en vez del umbral estimado por separado en I-05. |
+| I-09 | 3 | Opus 5 | **La geometría real no es la que el plan supone, y por eso las cuatro guardas escritas no bastaban.** Medido con el extractor de la Fase 2 sobre `SEGURIDADES 1.1-1.pdf`: (a) las líneas guía de la página 3 son en su mayoría **bucles** — el cable sale de un terminal de `CONECTOR AI`, baja, pasa por la foto del componente y **vuelve a otro terminal del mismo conector**; los dos extremos resuelven a la misma etiqueta y no se emite nada, que es lo correcto, porque el componente está en el *medio* de la cadena y ningún extremo lo nombra; (b) el extremo del lado del componente **no cae sobre la etiqueta sino sobre la foto**, y la etiqueta está al lado (18.8 pt en `LIMITADOR` p.3, 22.8 pt en `ALUMBRADO CABINA` p.63); (c) el extremo del lado del conector **queda oculto detrás del gráfico de la regleta** (la Fase 2 ve el punto real, no el visible) y a veces fuera del rótulo impreso (23.7 pt en el borne 1 de `CONECTOR AI`). De ahí `TERMINAL_TOLERANCE_PT = 25.0`, medido, no elegido; lo que hace segura esa holgura no es la distancia sino la unicidad: dos etiquetas en rango ⇒ nada. Guardas añadidas sobre las cuatro del plan, cada una con contraejemplo medido: **unión T** (un extremo que toca el interior de otro segmento no es un final — es lo que elimina las reglas de tabla, cuyos extremos tocan la caja exterior a 0.75 pt en la página 3), **etiqueta que la cadena pasa por encima** (página 32: un cable de `CN7` a `OBSTACULO` termina a 14 pt de `FOTOCELULA` pero corre 5.2 pt **por debajo** de ese texto ⇒ el texto rotula el recorrido, no el final), y **texto que no es un nombre** (fila de números de borne `4  5  6  7…` p.93, fila de conectores fusionada `C1 C 2  C3…` p.95, anotación `(NO)` p.14, que la página imprime tres veces junto a tres aparatos distintos). También hubo que **fusionar palabras apiladas** para obtener el verbatim del Apéndice D (`STOP FOSO`, `BOTO. REVISION`): la Fase 2 entrega una entrada de `words` por línea de texto (I-08), y la fusión se bloquea si hay una **regla dibujada** entre las dos (sin eso, las filas de tabla de la página 17, a 3.2 pt, se fusionan en `PS2V… PS2VH ….`). **Rendimiento medido sobre las 98 páginas: 23 aristas en 22 páginas; 76 páginas devuelven `[]`.** Revisión a mano con visión de las 9 aristas que caen en 8 páginas (3, 11, 12, 14, 52, 63, 93, 95) contra la página renderizada: **0 incorrectas**; páginas 17 y 32 revisadas y su `[]` es correcto (en la 17 la regleta es un ráster, así que sus números no son texto impreso y ningún extremo puede resolver). El caso `ACUÑAMIENTO` del Apéndice D resuelve a **(c) ninguna arista** por evidencia: ningún extremo de cadena cae dentro de la tolerancia; la única línea cercana la pasa a 6.4 pt. | **Gate A:** el número de cobertura ya está (22/98 páginas), pero la tasa contra lectura humana sigue pendiente y va a salir baja en *recall* — el objetivo del gate (≥85 % correctas, 0 incorrectas) es de **precisión** y se cumple en la muestra revisada. **Fase 4:** presupuestar ~1 arista por página, no 12; el desborde de chunk por tope de 12 aristas **no se va a activar en este documento**. **Fase 5 / Gate B:** T1 como verdad-terreno gratis para calibrar T2 sólo existe en 22 páginas, no en 80 — y en la página 3 el propio T1 deja 11 de las 13 relaciones humanas sin derivar. El anclaje foto→etiqueta que describe la matriz de capacidades (`images[].bbox` + etiqueta adyacente) **no está implementado** y es la palanca más grande sobre la cobertura de T1: los bucles y los extremos sobre foto se resolverían con él. Queda fuera de la Fase 3 a propósito (el plan pide resolver *la etiqueta del extremo*, y sólo `leader_line`). |
+| I-10 | 3 | Opus 5 | El corte de ruido de la Fase 2 (`LINE_NOISE_MAX_MANHATTAN_PT = 20`, documentado como "ruido de bordes y subrayados finos") **corta cadenas legítimas**: los codos cortos de una polilínea caen por debajo del umbral y desaparecen. Medido en la página 3: el cable magenta que une `FINALES` con `CONECTOR AI` pasa por un codo de 14.2 pt de longitud Manhattan que `build_lines` descarta, y la polilínea llega al derivador partida en dos trozos inconexos (uno de 1 segmento y otro de 5). El de 1 segmento resuelve y produce la arista correcta; el de 5 se rechaza por longitud. Es decir: **una arista de las dos de la página 3 se salvó por casualidad**. No se toca `pdf_layout_extractor.rb` — es archivo de la Fase 2, fuera de alcance. | Gate A: al contar páginas sin cobertura T1, distinguir "sin evidencia" de "cadena partida por el corte de ruido". Si alguien quiere subir la cobertura de T1 sin tocar el diseño, bajar ese umbral (o emitir los segmentos cortos con una marca) es probablemente el cambio más barato — pero es una edición al contrato de la Fase 2 y necesita su propia medición de falsos positivos. |
+| I-11 | 3 | Opus 5 | **El derivador no afirma dirección, y el contrato del plan sí la afirmaba.** No hay nada en la geometría que diga cuál extremo es el componente y cuál el conector. Se probaron y descartaron dos reglas: por *hub* (la etiqueta con ≥2 terminales de cadena) da la dirección **al revés** en la página 63, donde tres cables convergen en la lámpara `ALUMBRADO CABINA` y sólo uno resuelve al conector `J12`; por *corchete* (rótulo encerrado en un recuadro dibujado) no es detectable — el pill de `J12` no deja ni rects ni segmentos en el contrato de la Fase 2. La implementación ordena el par **geométricamente** (extremo más abajo en la página primero, desempate por x), sólo para que la salida y el `RECORD_ID` de la Fase 4 sean estables; en las tres aristas verificadas a mano ese orden coincide con componente→conector, pero es una convención de maquetación de este documento, no una inferencia. En consecuencia `evidence` dice `… une X (bbox) con Y (bbox)` en vez de "termina en el corchete rotulado …": no se detectan corchetes y no se debe escribir que se detectaron. | **Fase 4:** `ACTION: A -> B` sigue siendo la gramática correcta (es lo que matchea `CONNECTION_CLAIM_PATTERN` y nombra ambos extremos en un mismo fragmento), pero el párrafo de reglas **no debe presentar la flecha como dirección** ni la respuesta debe parafrasearla como "A alimenta a B". Si la Fase 5 (visión) sí puede decir cuál extremo es el conector, ahí se gana la dirección — no aquí. |
+| I-12 | 3 | Opus 5 | El test de la Fase 2 "nada en producción invoca el extractor" (`pdf_layout_extractor_test.rb:85-95`) hace grep sobre el **texto crudo** del archivo, comentarios incluidos, así que cualquier fase posterior que **documente** el contrato en un comentario (`# … PdfLayoutExtractor.extract …`) lo rompe. Ocurrió en vivo al escribir esta fase. Se resolvió redactando el comentario propio para no matchear; **no se tocó el test de la Fase 2** (archivo de otra fase). El test equivalente de esta fase sí ignora las líneas de comentario. | Cualquier fase futura que mencione `PdfLayoutExtractor.extract` o `.new` en un comentario dentro de `app/**/*.rb` verá fallar ese test sin haber invocado nada. Arreglo de una línea (saltar líneas que empiezan por `#`), sin dueño asignado. |

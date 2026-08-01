@@ -1,10 +1,11 @@
 # Plan: capacidad de generar conocimiento desde documentos técnicos visuales complejos
 
-> **Estado:** Fases 0-3 cerradas. **El Gate A se ejecutó y NO se superó** (2026-08-01): 4 aristas
-> falsas de 23. La Fase 4 está bloqueada. **Las Fases 2b (I-13) y 3b (I-14) ya cerraron**: medido
-> sobre las 98 páginas, el derivador emite ahora **19 aristas en 18 páginas** y las cuatro falsas
-> del Gate A resuelven a `[]` (I-20). **El siguiente paso es el Gate A-bis** — ver "Ruta de
-> remediación tras el Gate A fallido".
+> **Estado:** Fases 0-3, 2b y 3b cerradas. El Gate A falló (4 aristas falsas de 23) y **el
+> Gate A-bis SE SUPERÓ** (2026-08-01, I-26): **19 aristas en 18 páginas, 19/19 correctas, 0
+> incorrectas**, revisadas todas con visión. **La Fase 4 sigue bloqueada**, y no por el gate:
+> falta la **decisión humana #4** — *¿Fase 7 con T1 solo o se espera a T2?* — que el Gate A-bis
+> expuso y **está esperando respuesta escrita del dueño del producto** (ver "Decisión humana #4").
+> Los dos números para responderla: precisión **100 %**, recall **4,6 %**.
 > Lo ejecutan varios modelos, una fase cada uno.
 > **Antes de tocar código, lee "Cómo usar este documento".**
 
@@ -25,14 +26,15 @@ está todo aquí y en el Apéndice.
 3. `docs/ACTIVE_ARCHITECTURE.md` y `docs/RAG_SEGURIDADES_STATUS.md`.
 4. `docs/rag/hallazgos_gate_piloto.md` (H-01…H-05, hallazgos abiertos de la Fase 2 anterior).
 5. [`docs/rag/gate_a_medicion_topologia.md`](gate_a_medicion_topologia.md) — la medición real de
-   T1 sobre las 98 páginas, con las 23 aristas revisadas una a una con visión, los dos defectos
-   que hicieron fallar el gate y la **verdad-terreno de la Fase 8**. Si tu fase toca ingesta,
-   geometría o evaluación, ese informe manda sobre los apéndices de aquí.
-   ⚠️ **Con dos excepciones, desde I-20/I-21:** su **§2** (tabla de 23 aristas) y su **§3.1**
-   (embudo) describen el código **anterior a 2b y 3b**. La salida de hoy son **19 aristas en 18
-   páginas** y el embudo tiene dos motivos de rechazo nuevos. Todo lo demás del informe —la
-   verdad-terreno humana, los divisores, los títulos, las filas LED y los verbatims— sigue
-   vigente y es lo caro; el Gate A-bis reescribe **sólo** esas dos secciones, en el sitio.
+   T1 sobre las 98 páginas, con **todas** las aristas revisadas una a una con visión (23 en el
+   Gate A, las 19 vigentes en el Gate A-bis), los defectos que hicieron fallar el primer gate y la
+   **verdad-terreno de la Fase 8**. Si tu fase toca ingesta, geometría o evaluación, ese informe
+   manda sobre los apéndices de aquí.
+   ✅ **Actualizado por el Gate A-bis (I-26), y es un único documento** — se reescribió en el
+   sitio, no hay informe nuevo. Sus §1, §2, §3, §4.1-4.5, §7 y §10 traen ya las cifras vigentes
+   (19 aristas / 18 páginas / 100 % de precisión / 4,6 % de recall) y §4.6, §4.7 son límites
+   nuevos. §5, §6, §8 y §9 —la verdad-terreno humana, los divisores, los títulos, las filas LED y
+   los verbatims— no se tocaron: es la parte cara y sólo se hizo una vez.
 
 **Reglas de la ejecución:**
 
@@ -178,11 +180,12 @@ conocimiento.
 | Imagen densa sin vectores / sin capa de texto | **T2 visión** | Opus 4.8 + prompt de relaciones sobre ráster + crops | alto, acotado | `TOPOLOGY_EDGE` `method: vision` |
 | Ambas señales | **T1 + T2** | T1 ancla, T2 reconoce; T1 gana en conflicto | medio | ambos, con procedencia distinguible |
 
-¹ ⚠️ **revisado en I-09, y de nuevo en I-20.** Que 80/98 páginas *tengan* la señal no significa que
-T1 derive algo en ellas: medido con el derivador ya implementado, T1 emitía alguna arista en 22 de
-98 páginas (23 aristas). **Cerradas 2b y 3b, la cifra es 19 aristas en 18 de 98 páginas**, sin
-ninguna conocida como falsa. El resto de la relación dibujada de este documento **cae en T2**, y
-ésa es la cifra con la que hay que dimensionarlo, no 80.
+¹ ⚠️ **revisado en I-09, en I-20 y confirmado con visión en I-26.** Que 80/98 páginas *tengan* la
+señal no significa que T1 derive algo en ellas: medido con el derivador ya implementado, T1 emitía
+alguna arista en 22 de 98 páginas (23 aristas). **Cerradas 2b y 3b y superado el Gate A-bis, la
+cifra es 19 aristas en 18 de 98 páginas, las 19 verificadas correctas una a una.** El resto de la
+relación dibujada de este documento **cae en T2**, y ésa es la cifra con la que hay que
+dimensionarlo, no 80.
 
 **Complementariedad, no competencia.** T1 sabe *que* la etiqueta `LIMITADOR` está unida al
 `CONECTOR AI` por una línea trazada, pero no sabe qué es la foto pequeña de 105×183 que está al
@@ -195,11 +198,13 @@ aristas deterministas de T1 permiten medir y calibrar el prompt de visión de T2
 humano. Eso es lo que hace confiable a T2 en los documentos donde T1 no puede correr — y es la
 clave de la generalidad. Es el Gate B.
 
-⚠️ **revisado en el Gate A — esta premisa no se sostiene en este documento.** Revisadas las 23
-aristas una a una con visión: **4 son falsas** (I-13, I-14) y las 19 correctas caen en 18 páginas
-y se reducen a **~15 pares distintos**. No es una verdad-terreno gratis con la que calibrar nada:
-es demasiado pequeña y no está limpia. La verdad-terreno útil de este documento la escribió el
-Gate A **a mano, con visión**: 153 relaciones en 11 páginas de 10 secciones.
+⚠️ **revisado en el Gate A y confirmado en el Gate A-bis — esta premisa no se sostiene en este
+documento.** Revisadas las 23 aristas una a una con visión: **4 eran falsas** (I-13, I-14) y las
+19 correctas caen en 18 páginas y se reducen a **~15 pares distintos**. Tras 2b/3b, las 19 están
+**limpias** (100 % de precisión, I-26) pero **siguen siendo 19**: el Gate A-bis arregló la mitad
+"no está limpia" del problema y no tocó la mitad "es demasiado pequeña", que es la que decide.
+La verdad-terreno útil de este documento la escribió el Gate A **a mano, con visión**: 153
+relaciones en 11 páginas de 10 secciones.
 
 **El triaje asigna el tier antes de parsear**, dentro de la llamada Haiku que ya existe, con un
 tope de presupuesto que escala a Opus primero las páginas de mayor complejidad.
@@ -256,10 +261,10 @@ La fase siguiente lee el documento actualizado, no el original.
 | 2 | cerrada | — (offline) | 09c813b | I-07, I-08 |
 | 3 | cerrada | — (offline) | ed8bd56 | I-09, I-10, I-11, I-12 |
 | Gate A | **NO SUPERADO** — informe entregado | — | f7aa592 | I-13 … I-18 |
-| 2b | cerrada — cierra I-13 | — (offline) | f4ab397 | I-19 |
+| 2b | cerrada — cierra I-13 (parcialmente: ver I-28) | — (offline) | f4ab397 | I-19 |
 | 3b | cerrada — cierra I-14 | — (offline) | 1cb789b | I-20, I-21, I-22 |
-| Gate A-bis | **siguiente** — 19 aristas / 18 páginas a revisar con visión | — | | |
-| 4 | **bloqueada** (requiere Gate A-bis aprobado + decisión humana #4) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
+| Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | *(este commit)* | I-26 … I-29 |
+| 4 | **bloqueada por la decisión humana #4** (el gate ya está aprobado; falta la respuesta escrita del dueño del producto) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
@@ -292,11 +297,13 @@ commit. Añadir el puntero en `docs/README.md` bajo las referencias RAG activas.
 10 ── (independiente, sólo documento)
 ```
 
-⚠️ **revisado tras el Gate A (no superado).** El tramo real desde aquí:
+⚠️ **revisado tras el Gate A (no superado) y de nuevo tras el Gate A-bis (superado).** El tramo
+real desde aquí:
 
 ```
-GATE A (fallido) ──▶ 2b ──▶ 3b ──▶ GATE A-bis ──▶ [decisión humana #4] ──▶ 4 ──▶ 5 ──▶ GATE B ──▶ 7 …
-                     └── Sonnet   └── Opus       └── Opus
+GATE A (fallido) ──▶ 2b ✅ ──▶ 3b ✅ ──▶ GATE A-bis ✅ ──▶ [decisión humana #4] ⏳ ──▶ 4 ──▶ 5 ──▶ GATE B ──▶ 7 …
+                     f4ab397     1cb789b      100 %, 0 falsas    ← AQUÍ ESTAMOS: esperando
+                                                                   respuesta escrita del dueño
 ```
 
 **2b antes que 3b, sin excepción:** 3b consume el contrato que 2b arregla y una de sus guardas
@@ -603,6 +610,11 @@ también I-15 (los bucles no eran el mecanismo dominante), I-16 (bajar el corte 
 la cobertura, contra lo que suponía I-10), I-17 (`section_path` son 2 niveles, no 3) e I-18
 (`ACUÑAMIENTO` y la corrección del Apéndice D).
 
+✅ **Reintentado y superado como Gate A-bis** tras cerrar I-13 e I-14: 19 aristas en 18 páginas,
+**19/19 correctas, 0 incorrectas**, mismas 11 páginas de muestra, mismo guion (I-26). El informe
+enlazado es **uno solo** y ya trae las cifras vigentes; lo de arriba es el estado del primer
+intento.
+
 ---
 
 ### ⚑ Ruta de remediación tras el Gate A fallido (leer antes de tocar nada)
@@ -616,9 +628,11 @@ fallo de dos implementaciones concretas.
 2b va antes que 3b porque 3b consume el contrato que 2b arregla, y porque una de las guardas de 3b
 depende de saber qué es texto rotado y qué no.
 
-✅ **2b y 3b cerradas.** El derivador emite hoy **19 aristas en 18 páginas**; las cuatro falsas
-resuelven a `[]` y no aparece ninguna nueva (I-20). Ojo al leer el informe del Gate A: **su tabla
-de 23 aristas y su embudo son ya un estado anterior** (I-21). Queda el Gate A-bis.
+✅ **2b, 3b y el Gate A-bis cerrados.** El derivador emite hoy **19 aristas en 18 páginas**, las
+cuatro falsas resuelven a `[]`, no aparece ninguna nueva, y las 19 se revisaron una a una con
+visión después del cambio: **19/19 correctas, 0 incorrectas — gate superado** (I-26). El informe
+`gate_a_medicion_topologia.md` ya está reescrito con esas cifras. **Lo único que queda de este
+tramo es la decisión humana #4, que está esperando respuesta.**
 
 **Lo caro ya está hecho y no se repite.** La verdad-terreno humana —153 relaciones leídas con
 visión en 11 páginas de 10 secciones, la página 3 completa y corregida, los 18 divisores, los 98
@@ -701,29 +715,62 @@ este documento el competidor legítimo suele ser un ráster. Hay que darle al de
 - [x] Suite + rubocop verdes (2081 runs / 0 failures; 469 files, 0 offenses); nada de producción
       invoca el derivador, cubierto por test — ver I-20/I-21/I-22
 
-### ⛔ Gate A-bis — Re-medición · Opus
+### ✅ Gate A-bis — Re-medición · Opus — **SUPERADO (2026-08-01, I-26)**
 
-Re-correr `script/gate_a/run.rb` y `script/gate_a/overlay.py` sobre las 98 páginas y actualizar
+> **Resultado, para no volver a medirlo:** 19 aristas en 18 páginas, **19/19 correctas, 0
+> incorrectas**, las 19 revisadas con visión sobre el render a 150 dpi. En la muestra congelada de
+> 11 páginas: 7 aristas, **7/7 correctas**, y 56/61/67/97 en `[]`. Precisión 63,6 % → **100 %**;
+> **recall sin moverse: 4,6 %**. Suite y linter verdes (2090 runs / 0 failures; 469 files / 0
+> offenses). Informe reescrito en el sitio; §2, §3.1 y las cifras derivadas ya no son las del
+> Gate A. Tres límites conocidos nuevos o ampliados, ninguno una arista falsa: **I-27** (`bbox`
+> inflado por espacios sin tinta: 1 de las 19 se emite por eso), **I-28** (`CARLOS SILVA` sigue
+> roto: el arreglo de 2b no aplica al PDF real) e **I-29** (3 de las 19 omiten dispositivos
+> intermedios de la serie).
+>
+> **Herramienta añadida:** `script/gate_a/zoom.py` — una arista por imagen, render limpio junto al
+> derivado, polilínea amarilla y `bbox` de las etiquetas citadas en cian. `overlay.py` dibuja en
+> magenta y varias láminas trazan **cables magenta**; sin separar arista por arista y cambiar de
+> color, la revisión de las págs. 3, 39 y 94 no es concluyente y I-29 no se ve.
+>
+> **Lo que este gate NO autoriza: la Fase 4.** Falta la decisión humana #4, abajo. Sigue abierta.
+
+Lo que se pidió (histórico): re-correr `script/gate_a/run.rb` y `script/gate_a/overlay.py` sobre
+las 98 páginas y actualizar
 [gate_a_medicion_topologia.md](gate_a_medicion_topologia.md) **en el sitio** (no crear un archivo
 nuevo). **Misma muestra de 11 páginas** — 3, 17, 22, 39, 44, 56, 61, 67, 76, 91, 97 — porque su
 verdad-terreno humana ya está escrita y así el antes/después es comparable. Revisar con visión
 **todas** las aristas que emita el derivador, no una muestra.
 
-⚠️ **revisado en I-20/I-21.** El punto de partida ya no es 23 aristas en 22 páginas: son **19 en
-18** (3, 11, 12, 14, 22, 25, 39, 44, 52, 63, 64, 76, 77, 78, 91, 93, 94, 95 — la 3 con dos). En la
-muestra de 11 páginas T1 emite **7**, y las cuatro páginas de aristas falsas (56, 61, 67, 97)
-devuelven `[]`. Eso son las cifras a verificar, no a asumir: **19/19 correctas es la hipótesis, no
-el resultado**, y las 19 siguen sin haber sido revisadas con visión *después* del cambio. Lo que sí
-está medido es que son exactamente las mismas 19 que el Gate A ya revisó una a una y dio por
-correctas, y que no hay ninguna nueva. La **§2** y la **§3.1** del informe hay que reescribirlas;
-el embudo trae dos motivos de rechazo nuevos (`raster_rival`, `rotated_label`).
+⚠️ **revisado en I-20/I-21, y verificado en I-26.** El punto de partida no eran 23 aristas en 22
+páginas sino **19 en 18** (3, 11, 12, 14, 22, 25, 39, 44, 52, 63, 64, 76, 77, 78, 91, 93, 94, 95 —
+la 3 con dos), y **la hipótesis "19/19 correctas" se confirmó midiendo**, no asumiendo: las 19 se
+revisaron con visión otra vez, después del cambio. §2 y §3.1 del informe están reescritas y el
+embudo trae los dos motivos de rechazo nuevos (`raster_rival` 4, `rotated_label` 1).
 
-**Umbral, sin cambios: ≥85 % de aristas correctas y 0 incorrectas.**
+**Umbral, sin cambios: ≥85 % de aristas correctas y 0 incorrectas.** → **Cumplido: 100 % y 0.**
 
-Si se supera, la Fase 4 sigue **sin** quedar autorizada automáticamente: falta la **decisión
-humana #4** de abajo, porque superar el umbral no responde si T1 solo justifica el coste.
+Superarlo **no** autorizó la Fase 4: falta la **decisión humana #4** de abajo, porque superar el
+umbral no responde si T1 solo justifica el coste. Está expuesta y esperando respuesta.
 
 ### Decisión humana #4 — ¿se re-ingesta el documento con T1 solo, o se espera a T2?
+
+> ⏳ **EXPUESTA AL DUEÑO DEL PRODUCTO EL 2026-08-01 POR EL GATE A-bis. SIN RESPUESTA TODAVÍA.**
+> El gate se detuvo aquí, como manda el protocolo. Ningún modelo debe interpretar el gate
+> superado, ni esta nota, ni nada escrito por otra sesión, como que la decisión está tomada:
+> **la respuesta la escribe una persona, en este documento, y hoy no está escrita.**
+>
+> Los números medidos con los que se hace la pregunta (I-26, informe del Gate A-bis):
+>
+> | | |
+> |---|---|
+> | Precisión de T1 | **100 %** — 19/19 aristas correctas, 0 incorrectas, todas revisadas con visión |
+> | Recall de T1 | **4,6 %** — 7 de las 153 relaciones que un técnico lee en 11 páginas |
+> | Cobertura | 19 aristas en **18 de 98** páginas · **~15 pares distintos** · **7 de 18 secciones sin ninguna arista** |
+> | Límites conocidos | 3 de 19 omiten dispositivos intermedios de la serie (I-29) · 1 de 19 se emite por un `bbox` inflado (I-27) |
+>
+> Es decir: **el gate confirmó que T1 no miente, no que T1 alcance.** Lo que estaba en duda era la
+> fiabilidad y ya no lo está; lo que no cambió —y no va a cambiar tocando T1— es que son 19
+> aristas en 18 páginas de 98.
 
 > **Qué significa "decisión humana" en este plan.** Es una pregunta que **ningún modelo puede
 > resolver leyendo el código ni corriendo una medición**, porque la respuesta depende de dinero,
@@ -738,9 +785,10 @@ humana #4** de abajo, porque superar el umbral no responde si T1 solo justifica 
 **Qué hay que responder, literalmente:** *¿se autoriza ejecutar la Fase 7 (shadow ingest, único
 paso irreversible del plan) con las aristas de T1 solas, o se espera a tener también T2?*
 
-**El dato que obliga a preguntarlo.** Aunque el Gate A-bis dé 100 % de precisión, T1 aporta
-**~19 aristas en ~18 páginas de 98**, con un recall del **4,6 %** frente a lo que un técnico lee
-en la página. Y el riesgo #1 de la tabla de riesgos —que añadir texto de topología **diluya el
+**El dato que obliga a preguntarlo.** El Gate A-bis dio **100 % de precisión** — y aun así T1
+aporta **19 aristas en 18 páginas de 98**, con un recall del **4,6 %** frente a lo que un técnico
+lee en la página. Ese "aunque" del plan ya no es hipotético: se midió, y no cambia la pregunta.
+Y el riesgo #1 de la tabla de riesgos —que añadir texto de topología **diluya el
 embedding y baje** el recall, que es el mecanismo plausible del 62/88 → 57/88 ya medido en el
 re-ingest anterior— se paga **entero** por esas 19 aristas, porque el coste del riesgo no depende
 de cuántas aristas añadas sino de que toques los cuerpos de los chunks.
@@ -749,23 +797,36 @@ de cuántas aristas añadas sino de que toques los cuerpos de los chunks.
 |---|---|---|---|
 | **A · Seguir con T1 solo** | 4 → 6 → 7 (shadow ingest) → 8 → 9, como está escrito | El conocimiento de topología llega antes; la Fase 7 es A/B y su rollback cuesta un `delete` del prefijo nuevo | Se paga el riesgo de dilución del embedding entero por 19 aristas; si el recall baja, se ha gastado el paso irreversible para nada |
 | **B · Esperar a T2 (recomendada)** | 4 se **implementa y mergea con el flag apagado** (es inerte por diseño: no existe ningún `TOPOLOGY_EDGE` en el índice), luego 5, Gate B, y **sólo entonces** 7 | La Fase 7 se ejecuta una vez, con las aristas de los dos tiers; el riesgo de dilución se paga una vez y con contrapartida real | El conocimiento de topología tarda más en llegar a producción |
-| **C · Parar T1 aquí** | No mergear la Fase 4; ir directo a la Fase 5 y rediseñar el contrato para T2 | Evita mantener un motor que cubre el 22 % de las páginas | Tira el trabajo de las Fases 2/3 y deja a T2 sin el ancla determinista y sin política de conflicto |
+| **C · Parar T1 aquí** | No mergear la Fase 4; ir directo a la Fase 5 y rediseñar el contrato para T2 | Evita mantener un motor que cubre el **18 %** de las páginas | Tira el trabajo de las Fases 2/3 y deja a T2 sin el ancla determinista y sin política de conflicto |
 
 **Recomendación de este informe: opción B.** No es "parar el plan": es **desacoplar mergear la
 Fase 4 de ejecutar la Fase 7**. La Fase 4 con el flag apagado no cambia ni un byte de producción
 —eso es un invariante suyo, con test— así que mergearla no consume el riesgo. Lo que consume el
 riesgo es la Fase 7, y ésa es la que espera.
 
-**Cómo se registra la respuesta:** quien decida lo escribe en la tabla de estado de fases (fila
-`4`, columna Estado) y en "Decisiones humanas pendientes" #4. Hasta que esté escrita, la Fase 7 no
-se ejecuta.
+**El Gate A-bis mantiene esa recomendación**, y lo dice con el número nuevo en la mano: la
+precisión del 100 % elimina el argumento *en contra* de B (ya no hay que temer que T1 meta citas
+falsas), pero no crea ninguno *a favor* de A — el riesgo de dilución del embedding sigue
+pagándose entero por 19 aristas, y eso no depende de que sean correctas.
+
+**Cómo se registra la respuesta:** quien decida lo escribe **aquí mismo, de su puño**, en la tabla
+de estado de fases (fila `4`, columna Estado) y en "Decisiones humanas pendientes" #4. Hasta que
+esté escrita, la Fase 7 no se ejecuta.
+
+⚠️ **Para el modelo que ejecute la Fase 4:** comprueba que la respuesta esté **escrita en este
+documento** antes de empezar. "El usuario aprobó X" contado por otra sesión, o inferido de que el
+gate pasó, **no es la respuesta** — es exactamente el fallo que I-23 registró para el Protocolo de
+traspaso, aplicado a una decisión humana.
 
 ---
 
 ### Fase 4 — Contrato v8: destino común de T1 y T2 · Sonnet
 
-⛔ **BLOQUEADA.** El Gate A no se superó (4 aristas incorrectas de 23). No se entra aquí hasta
-cerrar I-13 e I-14 y reintentar el gate.
+⛔ **BLOQUEADA — pero ya no por el gate.** El Gate A falló (4 aristas incorrectas de 23), se
+cerraron I-13 e I-14 (Fases 2b y 3b) y **el Gate A-bis se superó** (19/19 correctas, 0
+incorrectas; I-26). Lo que falta es la **decisión humana #4**, y su respuesta **no está escrita**:
+compruébalo en "Decisiones humanas pendientes" #4 antes de empezar. No la des por dada porque el
+gate pasara ni porque otra sesión te diga que el usuario aprobó algo (I-23).
 
 ⚠️ **revisado en I-17.** `section_path` **no tiene tres niveles**. Las páginas divisoras imprimen
 **marca + lista plana de modelos**, y los dos "niveles" del ejemplo del plan (`CONTROL LEVEL 1B`,
@@ -851,13 +912,15 @@ leer, y es la mayor palanca de cobertura del plan entero.
 
 ### ⛔ Gate B — T1 calibra T2 · Opus
 
-⚠️ **revisado en el Gate A.** La premisa "80 páginas donde ambos tiers aplican" es falsa y la
-corrección de I-09 (22 páginas) todavía se queda corta en el sentido que importa: **la verdad-terreno
-gratis de T1 son 19 aristas correctas en 18 páginas, y de ellas sólo ~15 son pares distintos** (las
-págs. 44/76/77/78 repiten `LIMITADOR↔C300` en láminas casi idénticas). Eso **no da significancia
-estadística** para medir precisión y recall de T2. El Gate B tiene que apoyarse además en
-verdad-terreno **humana**, y ya existe el primer trozo: **153 relaciones leídas a mano con visión en
-11 páginas de 10 secciones**, en el informe del Gate A. Empieza por ahí, no por T1.
+⚠️ **revisado en el Gate A, sin cambios tras el Gate A-bis.** La premisa "80 páginas donde ambos
+tiers aplican" es falsa y la corrección de I-09 (22 páginas) todavía se queda corta en el sentido
+que importa: **la verdad-terreno gratis de T1 son 19 aristas correctas en 18 páginas, y de ellas
+sólo ~15 son pares distintos** (las págs. 44/76/77/78 repiten `LIMITADOR↔C300` en láminas casi
+idénticas). Eso **no da significancia estadística** para medir precisión y recall de T2. Que el
+Gate A-bis diera 100 % de precisión **no agranda este conjunto ni un par** (I-26). El Gate B tiene
+que apoyarse además en verdad-terreno **humana**, y ya existe el primer trozo: **153 relaciones
+leídas a mano con visión en 11 páginas de 10 secciones**, en el informe del Gate A. Empieza por
+ahí, no por T1.
 
 En las páginas donde ambos tiers aplican, comparar aristas T1 (deterministas) contra T2
 (visión) y escribir `docs/rag/gate_b_calibracion_vision.md` con:
@@ -1118,7 +1181,11 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
    apagado). Opciones, números y recomendación —opción B, desacoplar mergear la 4 de ejecutar la
    7— en "Decisión humana #4" dentro de la Ruta de remediación. **Sin respuesta escrita aquí, la
    Fase 7 no se ejecuta.**
-   - Respuesta: _(pendiente)_
+   **⏳ Expuesta al dueño del producto el 2026-08-01 por el Gate A-bis, con sus números medidos:
+   precisión de T1 100 % (19/19, 0 incorrectas), recall 4,6 %, 19 aristas en 18 de 98 páginas,
+   ~15 pares distintos, 7 de 18 secciones sin ninguna arista.** El gate se detuvo aquí.
+   - Respuesta: _(pendiente — nadie la ha escrito; que el Gate A-bis se superara **no** es la
+     respuesta, y ninguna sesión posterior debe darla por dada)_
 
 ## Fuera de alcance
 
@@ -1526,7 +1593,7 @@ vez hecho el Paso 0.
 > `MAX_CHAIN_SEGMENTS` (I-16 midió que ninguno compra cobertura).** Registra el delta: cuántas de
 > las 23 sobreviven y si aparece alguna nueva.
 
-**Gate A-bis · Opus**
+**Gate A-bis · Opus** — ✅ **ya ejecutado y superado (I-26); no hace falta re-lanzarlo**
 > Ejecuta el Gate A-bis de `<PLAN>` (requiere 3b mergeada). Re-corre `script/gate_a/run.rb` y
 > `script/gate_a/overlay.py` sobre las 98 páginas de `SEGURIDADES 1.1-1.pdf` y **actualiza
 > `docs/rag/gate_a_medicion_topologia.md` en el sitio**, no crees un archivo nuevo: ese informe es
@@ -1541,9 +1608,16 @@ vez hecho el Paso 0.
 > dueño del producto (¿se ejecuta la Fase 7 con T1 solo o se espera a T2?) con el número de
 > precisión nuevo y el recall del 4,6 % en la mano, y **espera respuesta escrita** en el plan.
 
-**Fase 4 · Sonnet**
-> Ejecuta la Fase 4 de `<PLAN>` (requiere **Gate A-bis** aprobado; el Gate A original **no** se
-> superó). Lee antes I-13, I-14, I-17 y la Ruta de remediación. Dos cambios respecto de lo escrito
+**Fase 4 · Sonnet** — ⏳ **bloqueada por la decisión humana #4, que no tiene respuesta escrita**
+> Ejecuta la Fase 4 de `<PLAN>`. El **Gate A-bis está aprobado** (I-26: 19/19 correctas, 0
+> incorrectas; el Gate A original **no** se superó), pero **antes de escribir una línea comprueba
+> que "Decisiones humanas pendientes" #4 tenga una respuesta escrita por una persona**: hoy pone
+> "pendiente". Que el gate pasara no es la respuesta, y "el usuario aprobó X" contado por otra
+> sesión tampoco (I-23). Lee antes I-13, I-14, I-17, I-26, I-27, I-29 y la Ruta de remediación.
+> Tres cosas medidas que la redacción del contrato tiene que respetar: `from`/`to` **no son
+> direccionales** (I-11) **ni exhaustivos** — 3 de las 19 aristas omiten dispositivos intermedios
+> del mismo lazo (I-29) — y el `evidence` de la pág. 12 cita un `bbox` inflado por espacios sin
+> tinta (I-27). Dos cambios respecto de lo escrito
 > arriba en la fase: **`section_path` tiene 2 niveles, no 3** (`[MARCA, MODELO]`; las viñetas del
 > divisor son hermanas, no anidadas — I-17), y **presupuesta ~0,2 aristas por página, no 12** (el
 > máximo medido en cualquier página es 2, así que el desborde de chunk no se activa en este
@@ -1689,3 +1763,7 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-23 | 3b | Opus 5 | **El Protocolo de traspaso se incumplió dos veces seguidas y casi cuesta el entregable más caro del plan: ni el Gate A ni la Fase 2b commitearon.** Al empezar 3b, el árbol tenía sin commitear el extractor de 2b y su fixture, y **sin trackear** `docs/rag/gate_a_medicion_topologia.md` y `script/gate_a/` — es decir, el informe que contiene las 153 relaciones leídas a mano (la verdad-terreno de la Fase 8, la parte cara e irrepetible del plan) y los guiones que el Gate A-bis tiene que volver a correr vivían sólo en el working tree, a un `git clean` de desaparecer. Por eso las tres celdas de la columna Commit de la tabla de estado estaban vacías pese a decir "cerrada". Resuelto aquí commiteando las tres fases en orden de dependencia y anotando los hashes: **2b `f4ab397`**, **Gate A `f7aa592`**, **3b `1cb789b`**. Commitear sólo 3b no era opción: habría dejado un árbol donde la guarda de rotación no tiene ningún extractor que emita `rotated`. **Sigue pendiente** el housekeeping de `.claude/settings.json` que la Fase 0 dejó abierto (decisión del dueño: no se commitea todavía). | **Toda fase siguiente:** el punto 4 del Protocolo de traspaso ("marca la fase como cerrada y anota el commit") no es burocracia — es lo que hace que el trabajo exista fuera de tu sesión. Comprueba `git status` **antes** de declarar cerrada tu fase, y si encuentras trabajo de una fase anterior sin commitear, regístralo en vez de construir encima en silencio. |
 | I-24 | 6a | Opus 5 | **6a no es inerte al desplegarse: el ancla `ACTION:` rechaza también pares correctos que la evidencia documenta en prosa o en fila de tabla.** La instrucción se implementó al pie de la letra (el par de extremos tiene que ser un par de substrings de **una misma línea `ACTION:`**), y eso bloquea el defecto buscado, pero la contrapartida está medida con el procesador ya construido: (a) `"El LIMITADOR se conecta al PARACAIDAS."` con dos `ACTION:` que comparten `CONECTOR AI` ⇒ **rechazado**, que es el objetivo de la fase; (b) `"La FOTOCELULA se conecta a la SERIE PUERTAS."` con evidencia que contiene **esa misma frase verbatim** ⇒ **rechazado**, siendo una respuesta correcta y citada; (c) el par en una fila de tabla (`\| CERROJOS CABINA \| CUADRO DE MANIOBRA \|`) ⇒ **rechazado**. Es una asimetría con la ruta de identificadores, que acepta cualquier `relationship_fragment?` (`ACTION`/`DETAILS`/`EXPECTED_RESULT`, fila con `\|`, o línea con `conect…`) y que quedó intacta a propósito. La relajación de una línea que conserva entera la defensa anti-encadenado es exigir que ambos extremos estén en **una misma línea de relación** en vez de específicamente en una `ACTION:`: el encadenado sigue muerto porque sigue haciendo falta que los dos extremos estén en la **misma** línea, y el control de 6b "las dos etiquetas en líneas separadas" sigue fallando. **No se hizo: no es lo que dice la instrucción de 6a.** Es decisión humana. Medición asociada: ninguna verificación `required`/`optional` de las 5 rúbricas contiene `/conect\|cablead\|->\|→/`, así que **ningún caso puntuado depende de una redacción que este guard pueda degradar**; y el test de calibración carga hoy **52 casos** (12 + 10 + 10 + 10 + 10), no 42 — el 42 del plan es anterior a la rúbrica v4.1. Suite completa 2090 runs / 0 failures, rubocop limpio. | **Fase 6 (preámbulo):** "demostrablemente inerte … delta cero" es cierto de 6b y **falso de 6a** — corregido en el sitio. **Fase 6b:** si se prefiere la variante de "línea de relación", el sitio exacto es `traced_action_lines` (un patrón, un test) y hay que añadir el control positivo de prosa; si se deja como está, la respuesta correcta para un par digit-less no derivado se degrada a `unsupported_connection`, que es fail-closed pero no gratis. **Fase 8:** medir la tasa de `unsupported_connection` antes/después sobre las 98 páginas; es el único sitio del plan donde se puede cuantificar el coste de este endurecimiento. |
 | I-25 | 6a | Opus 5 | **Lo que este guard no cubre, para que 6b no lo sobreestime.** (a) **Sólo lee etiquetas en mayúsculas.** Una paráfrasis en minúsculas (`"El limitador se conecta al paracaidas."`) **escapa** — medido. Se probó y descartó hacer el patrón de etiqueta insensible a mayúsculas: cualquier palabra de ≥3 letras pasa a ser candidata a extremo y la prosa normal se degrada en masa. El ancla de mayúsculas es la misma forma léxica que ya usa `COMPONENT_CODE_PATTERN`, y lo que la sostiene es la regla de reproducción **verbatim** del `generation.txt`: **6b no debe debilitarla**, es el único motivo por el que las etiquetas llegan en mayúsculas a la respuesta. (b) **Necesita una etiqueta a cada lado de la relación**; si un lado no tiene ninguna, la línea se deja intacta a propósito (`"No se documenta a qué borne se conecta la fotocelula."` sobrevive, correcto) — no hay cota de distancia, se toma la etiqueta más cercana, porque una cota sería un bypass. (c) **Extra sobre lo pedido:** una afirmación con flecha debe respetar además el orden de la línea `ACTION:`, así que `"CONECTOR AI -> LIMITADOR"` derivado de `ACTION: LIMITADOR -> CONECTOR AI` se rechaza. Eso hace determinista el "never invert one" de 6b en vez de dejarlo sólo en el prompt; **no contradice I-11**: no se afirma que la flecha sea dirección, se exige reproducir el par tal como está escrito. (d) Reafirma I-14: el guard **no salva** una arista falsa que sí está en la evidencia — si la ingesta escribe `ACTION: PUERTAS FRONTALES -> PESTLLOS TECHO CABINA`, la respuesta que la reproduzca queda autorizada. La procedencia `leader_line` sigue siendo tan fuerte como la guarda de la Fase 3b. | **Fase 6b:** el párrafo verbatim se escribe igual, pero el control de inversión ya está cubierto por test en `answer_safety_processor_test.rb` (no hace falta un control negativo nuevo para eso; sí para los otros cuatro). **Fase 8:** un caso de la batería debería cubrir explícitamente la paráfrasis en minúsculas, que es hoy la vía de escape más barata para un encadenado. |
+| I-26 | Gate A-bis | Opus 5 | **Gate A-bis SUPERADO: 19 aristas en 18 páginas, 19/19 correctas, 0 incorrectas — verificadas todas con visión, no una muestra.** Re-corridos `script/gate_a/run.rb`, `walk.rb` y `sensitivity.rb` sobre las 98 páginas con 2b (`f4ab397`) y 3b (`1cb789b`) mergeadas: salida idéntica a la que I-20 predijo (19/18), embudo con `raster_rival` 4, `rotated_label` 1, `same_label_loop` 0, y la mitad de arriba del embudo **byte-idéntica** al Gate A (18 156 extremos, 3 286 libres, 1 326 cadenas) — 2b/3b no tocan la formación de cadenas, sólo el nombrado del extremo. En la muestra congelada de 11 páginas T1 emite 7, **7/7 correctas**, y 56/61/67/97 devuelven `[]`; **recall sin moverse: 7/153 = 4,6 %**. Precisión 63,6 % → **100 %**; el precio es cobertura: 22 → 18 páginas y 5 → **7 secciones de 18 sin ninguna arista** (se suman MP y OTIS, cuyas únicas aristas eran las falsas). Sensibilidad re-medida: mismas dos conclusiones de I-16 con las cifras desplazadas (tope de cadena 4→12 compra +1 arista; bajar el corte de ruido a 2 pt **empeora** 19→17). Suite y linter verdes con el código medido: 2090 runs / 0 failures, 469 files / 0 offenses. `docs/rag/gate_a_medicion_topologia.md` reescrito **en el sitio** (§1, §2, §3.1-3.4, §4.1-4.5, §7, §10); §5, §8 y §9 —la verdad-terreno cara— intactos salvo notas. `led.rb` también se re-corrió: 72/26 páginas y variantes de cabecera idénticas, total de filas 426 → **425** (una fila, por el reagrupamiento de 2b); el corte bien-formada/ruido de §6 (272/154) fue un juicio manual del Gate A y **no se rehizo**. | **Fase 8:** la verdad-terreno de §5, §8 y §9 sigue válida palabra por palabra; de §6 sirve el reparto de páginas, pero **el corte 272/154 hay que rehacerlo con criterio propio** si se generan `required` desde ahí. **Fase 4:** desbloqueada por el gate **pero no autorizada** — falta la decisión humana #4, que este gate expone y **no** resuelve. Los dos números para responderla: precisión **100 %**, recall **4,6 %**, 19 aristas en 18/98 páginas, ~15 pares distintos. **Gate B:** el conjunto de calibración T1 sigue siendo ~15 pares; el gate superado no lo agranda. **Fase 5:** T2 es el único motor posible en **61** páginas de contenido (antes 57). |
+| I-27 | Gate A-bis | Opus 5 | **El `bbox` de una etiqueta incluye sus espacios finales, que no tienen tinta — y 1 de las 19 aristas se emite sólo por eso.** `merge_into_words` mete los glifos de espacio en la palabra y `word_entry` los abarca en el `bbox`, así que la etiqueta reclama área donde no hay nada impreso. Medido: **615 de 4 306 entradas de `words` (14,3 %) en 80 de 98 páginas** llevan espacios finales, con tramos fantasma de hasta **889 pt** (`MICONIC BX -6200`, divisor p80). Caso que toca la salida: **pág. 12**, `BM2` tiene tinta hasta x=126,9 pero `bbox` hasta x=281,5, y el extremo de la cadena está en x=186,2 — a **59,3 pt** de la tinta, muy fuera de `TERMINAL_TOLERANCE_PT = 25`; sin el tramo fantasma la arista `PUERTAS MANUALES ↔ BM2` **no se emitiría**. La pág. 11 (`B6`, tinta hasta x=55,4, extremo a 24,4 pt) sobrevive sin el fantasma. Las dos aristas son **correctas contra el dibujo** —verificado con visión— así que el veredicto del gate no cambia; lo que cambia es por qué: aquí el tramo fantasma se extiende sobre la propia regleta que la etiqueta rotula, y nada garantiza que la próxima vez apunte al sitio correcto. Es el mismo mecanismo que hizo fallar el Gate A (creer que hay un nombre impreso donde sólo hay papel), en su tercera variante tras I-13 (rotado) e I-14 (ráster). **No se arregló aquí:** es una decisión de la Fase 2 y tocarlo mueve el agrupamiento de las 98 páginas. | **Cualquiera que toque `PdfLayoutExtractor`:** recortar el `bbox` a la tinta (ignorar glifos de espacio al calcular las esquinas, sin cambiar el `text`) es un arreglo de una línea conceptual pero **cambia el conteo de aristas** y exige re-correr el Gate A — no es cosmético. **Fase 3/3b:** el `bbox` inflado alimenta también `outranked_on_an_image?` y la guarda de unicidad, que comparan distancias caja-a-caja. **Fase 4:** el `evidence` de la arista de la pág. 12 cita un `bbox` que no corresponde a la tinta; si el digest publica coordenadas, publica ésas. |
+| I-28 | Gate A-bis | Opus 5 | **`CARLOS SILVA` sigue saliendo `CARLOSSILVA`: el arreglo de I-19/2b se validó con un fixture que no reproduce el caso real.** I-19 cambió `word_gap_tolerance` a la altura **menor** de los dos glifos adyacentes y lo verificó con `CARLOS`/`SILVA` a **14 pt y 6 pt**. Medido sobre el PDF real (divisor p8): las dos tipografías tienen **prácticamente la misma altura** (53,60 y 52,76 pt), el hueco real entre `CARLOS` y `SILVA` es **16,08 pt** y la tolerancia aplicada **31,66 pt** — tomar la menor no cambia nada. La causa es `WORD_GAP_RATIO = 0.6`, que a cuerpo 53 pt da 32 pt cuando un espacio impreso a ese tamaño mide ~14-16 pt: **el problema nunca fue el cambio de tamaño, es el ratio**. No afecta a ninguna arista (ningún divisor emite) y **no se arregló aquí**: bajar el ratio mueve el agrupamiento de palabras de las 98 páginas y necesita su propia medición. §5.2 y §9 del informe del Gate A **siguen vigentes tal cual**. | **Fase 8:** el verbatim bueno del divisor p8 sigue siendo `CARLOS SILVA` y **sigue habiendo que corregirlo a mano** — I-19 decía que ya salía como dos entradas de `words`; sobre el PDF real, no. **Fase 2 (si alguien la reabre):** el defecto de I-13 marcado "cerrado de paso" no lo está; es un hallazgo abierto con causa medida. **Toda fase:** un fixture sintético que no reproduce las magnitudes del documento real no cierra un hallazgo medido sobre el documento real. |
+| I-29 | Gate A-bis | Opus 5 | **La "serie con intermedio omitido" son 3 de las 19 aristas (16 %), no una: §4.4 del Gate A se quedó corta, y sólo se ve mirando arista por arista.** Además de la pág. 64 (`LIMITADOR CONTRAPESO ↔ J22` atraviesa `LIMITADOR CABINA`, ya registrada), la revisión visual encontró **pág. 14** (`STOP BOTO. CABINA ↔ XP11`: el conductor magenta atraviesa **`BOTONERA REVISION` y `BARANDILLA`**, dos dispositivos) y **pág. 22** (`OBSTACULO ↔ CN-112`: el cable azul atraviesa `FOTOCELULA`). En los tres la guarda "la cadena pasa junto a la etiqueta" no salta porque el conductor entra y sale del **dibujo** del dispositivo, no de su rótulo, que cae a un lado fuera de la holgura de una altura de línea. No son aristas falsas —el conductor es el mismo— pero un técnico que reciba "LIMITADOR CONTRAPESO va a J22" no sabrá que hay otro dispositivo en el mismo lazo, que es justo el dato que importa cuando la serie está abierta. Detectado sólo porque el Gate A-bis dibujó **una arista por imagen** con `zoom.py`; con `overlay.py` (todas las aristas de la página a la vez, en magenta, sobre láminas que trazan cables magenta) no es distinguible. | **Fase 4:** redactar estas aristas sin sugerir que el lazo tiene sólo dos elementos; el contrato ya dice que `from`/`to` **no** son direccionales (I-11), y esto añade que tampoco son **exhaustivos**. Es el 16 % de la salida de T1, no un caso aislado. **Fase 6b:** el párrafo que autoriza citar topología verbatim debería no autorizar a afirmar que la serie es sólo ese par. **Fase 5/Gate B:** ésta es una capacidad donde T2 gana claramente a T1 — leer los tres dispositivos de un lazo es reconocimiento visual, no encadenado de polilíneas. |

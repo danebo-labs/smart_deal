@@ -44,7 +44,13 @@ module BatchChunkingPrompt
   #     following pages' chunk aliases. In a multi-brand compendium the brand is
   #     printed once on a divider page, so the pages it introduces were unreachable
   #     by a brand-named query.
-  INGESTION_CONTRACT_VERSION = "field_records_v7"
+  # v8: topology edges (docs/rag/plan_conocimiento_visual.md, Fase 4) — a page may
+  #     carry a read-only LAYOUT DIGEST of leader-line edges traced by the ingestion
+  #     pipeline before the model ever saw the page. The model never emits a
+  #     TOPOLOGY_EDGE record itself; BatchResultsParserService renders those
+  #     deterministically from PdfLayoutExtractor/TopologyEdgeDeriver output. Ships
+  #     behind INGESTION_LAYOUT_DIGEST_ENABLED, off by default (human decision #4).
+  INGESTION_CONTRACT_VERSION = "field_records_v8"
 
   # SHA-256 of the exact system prompt text — persisted in chunk sidecars so an
   # index can be audited against the prompt that produced it.
@@ -208,6 +214,19 @@ module BatchChunkingPrompt
           heading is visible on this page, omit the key.
         - It is a section label, not the file identity: it never changes
           `document_name` and never becomes a technical claim.
+
+        # LAYOUT DIGEST (topology context, READ-ONLY — contract v8)
+        Some pages include a `LAYOUT DIGEST` text block ahead of the page content.
+        It lists EDGES already traced from the drawing's leader lines before you
+        saw the page, the bboxes of the labels those edges name, and an inventory
+        of small images. It is reference context, not something to transcribe:
+        - NEVER copy, paraphrase, or restate a LAYOUT DIGEST line as a field_record.
+        - NEVER emit a field_record with "k": "TOPOLOGY_EDGE" — that record type
+          is written by the ingestion pipeline itself from traced geometry, never
+          by you. The pipeline rejects any TOPOLOGY_EDGE record found in your JSON.
+        - The digest only spares you from re-deriving what a wire already proves;
+          it does not license inferring a connection the visible page text does
+          not state on its own, and it never appears in this section's absence.
 
         # CHUNK FORMAT (every chunk is self-contained at retrieval time)
         - Divide content into self-contained semantic chunks, one per logical section
@@ -484,8 +503,11 @@ module BatchChunkingPrompt
   # @param document_name_hint [String, nil] Canonical name derived from anchor page (passed to pages 2+)
   # @param locale             [String, nil] ISO 639-1 — forwarded only for anchor page
   # @param anchor             [Boolean] true for the anchor (lowest kept) page; false for all others
+  # @param layout_digest      [String, nil] PageLayoutDigest text (Fase 4, contract v8) — read-only
+  #   topology context appended as its own user text block. nil/absent when
+  #   IngestionLayoutFlag is off or the page has no resolved edges.
   # @return [Array<Hash>]
-  def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil, locale: nil, anchor: false)
+  def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil, locale: nil, anchor: false, layout_digest: nil)
     role        = anchor ? "ANCHOR_PAGE" : "CONTENT_PAGE"
     instruction = +"Page #{page_number} of #{total_pages}. " \
       "Page role: #{role}. " \
@@ -499,7 +521,7 @@ module BatchChunkingPrompt
     instruction << " #{FILENAME_HINT}#{filename}"
     instruction << " Summary language: #{locale}." if locale.present?
 
-    [
+    blocks = [
       {
         type: "document",
         source: {
@@ -510,5 +532,13 @@ module BatchChunkingPrompt
       },
       { type: "text", text: instruction }
     ]
+    if layout_digest.present?
+      blocks << {
+        type: "text",
+        text: "LAYOUT DIGEST (read-only reference — do not restate, reformulate, " \
+              "or emit it as a field_record):\n#{layout_digest}"
+      }
+    end
+    blocks
   end
 end

@@ -485,16 +485,23 @@ class TopologyEdgeDeriverTest < ActiveSupport::TestCase
     assert_equal [], TopologyEdgeDeriver.derive(known_bad_layout)
   end
 
-  test "nothing in production code invokes the deriver yet" do
+  # ⚠️ Fase 4 (contract v8) is precisely the phase that wires this deriver into
+  # production, behind IngestionLayoutFlag (off by default) — see
+  # docs/rag/plan_conocimiento_visual.md. Pre-Fase-4 this asserted an empty
+  # list; now it pins the exact two legitimate callers so any OTHER new
+  # caller still fails loudly.
+  test "only the Fase 4 ingestion callers invoke the deriver" do
     invocation = /TopologyEdgeDeriver\.(derive|new)\b/
+    allowed_callers = %w[manual_batch_ingestion_service.rb single_file_chunking_service.rb]
 
     callers = Dir.glob(Rails.root.join("app/**/*.rb").to_s).select do |path|
       next false if path.end_with?("topology_edge_deriver.rb")
+      next false if allowed_callers.any? { |name| path.end_with?(name) }
 
       File.readlines(path).any? { |source_line| !source_line.match?(/\A\s*#/) && source_line.match?(invocation) }
     end
 
-    assert_empty callers, "TopologyEdgeDeriver must not be called from production code yet: #{callers}"
+    assert_empty callers, "TopologyEdgeDeriver must not be called outside the Fase 4 ingestion callers: #{callers}"
   end
 
   private

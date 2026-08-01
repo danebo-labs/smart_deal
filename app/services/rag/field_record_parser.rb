@@ -33,6 +33,7 @@ module Rag
     ].freeze
     OPTIONAL_LABELS = %w[
       DETAILS STOP_WORK_TRIGGER STOP_WORK_REQUIRED_ACTION REPAIR_AUTHORITY UNCERTAINTY
+      DERIVATION DERIVATION_EVIDENCE
     ].freeze
     KNOWN_LABELS = (MANDATORY_LABELS + OPTIONAL_LABELS).freeze
 
@@ -47,12 +48,15 @@ module Rag
       "STOP_WORK_REQUIRED_ACTION" => :stop_action,
       "REPAIR_AUTHORITY"          => :repair_authority,
       "UNCERTAINTY"               => :uncertainty,
-      "EVIDENCE"                  => :evidence
+      "EVIDENCE"                  => :evidence,
+      "DERIVATION"                => :derivation,
+      "DERIVATION_EVIDENCE"       => :derivation_evidence
     }.freeze
 
     Record = Struct.new(
       :record_id, :type, :source, :action, :expected_result, :details,
       :stop_trigger, :stop_action, :repair_authority, :uncertainty, :evidence,
+      :derivation, :derivation_evidence,
       :rank, :uri, :chunk_sha256, :provenances,
       keyword_init: true
     ) do
@@ -61,7 +65,8 @@ module Rag
       def content_fingerprint
         Digest::SHA256.hexdigest(
           [ record_id, type, source, action, expected_result, details,
-            stop_trigger, stop_action, repair_authority, uncertainty, evidence ].join("")
+            stop_trigger, stop_action, repair_authority, uncertainty, evidence,
+            derivation, derivation_evidence ].join("")
         )
       end
 

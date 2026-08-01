@@ -982,4 +982,168 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
 
     assert_empty @fake_s3.uploads, "no S3 writes must occur when document_uid is nil"
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 4 (contract v8): TOPOLOGY_EDGE — airlock, Rails rendering, sidecar,
+  # overflow cap, flag-off byte-identity
+  # ---------------------------------------------------------------------------
+
+  def with_layout_digest_flag(enabled)
+    original = ENV.fetch("INGESTION_LAYOUT_DIGEST_ENABLED", nil)
+    ENV["INGESTION_LAYOUT_DIGEST_ENABLED"] = enabled ? "true" : nil
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_LAYOUT_DIGEST_ENABLED")
+    else
+      ENV["INGESTION_LAYOUT_DIGEST_ENABLED"] = original
+    end
+  end
+
+  def topology_edge(from: "LIMITADOR", to: "CONECTOR AI", method: "leader_line", evidence: "polilínea (1,2)->(3,4) une LIMITADOR con CONECTOR AI")
+    { "from" => from, "to" => to, "method" => method, "evidence" => evidence }
+  end
+
+  test "airlock: a model-emitted TOPOLOGY_EDGE field_record raises ParseError" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record(
+        "k" => "TOPOLOGY_EDGE",
+        "h" => "CONTROL LEVEL 1B",
+        "a" => "LIMITADOR -> CONECTOR AI",
+        "r" => "DATA_NOT_AVAILABLE",
+        "ev" => "LIMITADOR | CONECTOR AI"
+      )
+    ]
+    asset  = make_asset
+    parser = build_parser
+
+    with_layout_digest_flag(true) do
+      error = assert_raises(BatchResultsParserService::ParseError) do
+        parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+      end
+      assert_includes error.message, "TOPOLOGY_EDGE"
+    end
+
+    assert_equal "failed", asset.reload.status
+  end
+
+  test "renders a Rails-derived topology edge into the chunk body and sidecar when the flag is on" do
+    payload = golden_parsed.merge(
+      "chunks" => [
+        {
+          "text" => chunk0_text, "page" => 3, "field_records" => [],
+          "section_identity" => "THYSSEN", "section_path" => [ "THYSSEN" ],
+          "topology_edges" => [ topology_edge ]
+        }
+      ]
+    )
+    asset  = make_asset
+    parser = build_parser
+
+    with_layout_digest_flag(true) do
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    prefix  = asset.reload.chunks_s3_prefix
+    chunk   = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
+    sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+
+    assert_includes chunk, "RECORD_TYPE: TOPOLOGY_EDGE"
+    assert_includes chunk, "ACTION: LIMITADOR -> CONECTOR AI"
+    assert_includes chunk, "EXPECTED_RESULT: DATA_NOT_AVAILABLE"
+    assert_includes chunk, "DERIVATION: leader_line"
+    assert_includes chunk, "DERIVATION_EVIDENCE: polilínea"
+    assert_includes chunk, "EVIDENCE: LIMITADOR | CONECTOR AI"
+    assert_equal 1, sidecar["topology_edge_count"]
+    assert_equal [ "THYSSEN" ], sidecar["section_path"]
+  end
+
+  test "flag off: topology_edges/section_path are ignored — body and sidecar are byte-identical to v7" do
+    payload = golden_parsed.merge(
+      "chunks" => [
+        {
+          "text" => chunk0_text, "page" => 3, "field_records" => [],
+          "section_identity" => "THYSSEN", "section_path" => [ "THYSSEN" ],
+          "topology_edges" => [ topology_edge ]
+        }
+      ]
+    )
+
+    with_layout_digest_flag(false) do
+      asset  = make_asset
+      parser = build_parser
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+
+      prefix  = asset.reload.chunks_s3_prefix
+      chunk   = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
+      sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+
+      assert_not_includes chunk, "TOPOLOGY_EDGE"
+      assert_not_includes chunk, "# FIELD-SAFETY EVIDENCE RECORDS"
+      assert_not sidecar.key?("topology_edge_count")
+      assert_not sidecar.key?("section_path")
+      assert_equal "THYSSEN", sidecar["section_identity"], "section_identity (v7) must be unaffected by the flag"
+    end
+  end
+
+  test "DERIVATION outside the enum degrades to DATA_NOT_AVAILABLE" do
+    payload = golden_parsed.merge(
+      "chunks" => [
+        { "text" => chunk0_text, "page" => 3, "field_records" => [], "topology_edges" => [ topology_edge(method: "guess") ] }
+      ]
+    )
+    asset  = make_asset
+    parser = build_parser
+
+    with_layout_digest_flag(true) do
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    chunk = @fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt"]
+    assert_includes chunk, "DERIVATION: DATA_NOT_AVAILABLE"
+  end
+
+  test "RECORD_ID idempotent: re-deriving the same edge geometry reproduces the same RECORD_ID" do
+    parser = build_parser
+    edge = topology_edge.deep_stringify_keys.merge("h" => "CONTROL LEVEL 1B")
+    record = {
+      "k" => "TOPOLOGY_EDGE", "h" => "CONTROL LEVEL 1B",
+      "a" => "#{edge['from']} -> #{edge['to']}", "r" => "DATA_NOT_AVAILABLE",
+      "ev" => "#{edge['from']} | #{edge['to']}",
+      "derivation" => edge["method"], "derivation_evidence" => edge["evidence"]
+    }
+
+    first  = parser.send(:render_field_record, record, page: 3)[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+    second = parser.send(:render_field_record, record, page: 3)[/RECORD_ID: (FR-[0-9A-F]{16})/, 1]
+
+    assert_not_nil first
+    assert_equal first, second
+  end
+
+  test "topology edges beyond the 12/chunk cap overflow into a sibling chunk" do
+    edges = (1..15).map { |i| topology_edge(from: "LABEL_#{i}", to: "CONECTOR #{i}") }
+    payload = golden_parsed.merge(
+      "chunks" => [
+        { "text" => chunk0_text, "page" => 3, "field_records" => [], "topology_edges" => edges }
+      ]
+    )
+    asset  = make_asset
+    parser = build_parser
+
+    with_layout_digest_flag(true) do
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    prefix = asset.reload.chunks_s3_prefix
+    assert_equal 4, @fake_s3.uploads.size, "expected 2 chunks (12 + 3 overflow), each with a body and a sidecar"
+
+    first_sidecar  = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+    second_sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_1.txt.metadata.json"]).fetch("metadataAttributes")
+
+    assert_equal 12, first_sidecar["topology_edge_count"]
+    assert_equal 3,  second_sidecar["topology_edge_count"]
+    assert_equal 2,  asset.chunks_count, "one original chunk must split into 2 (12 + 3 overflow)"
+    assert_includes @fake_s3.uploads["#{prefix}/chunk_1.txt"], "LABEL_13 -> CONECTOR 13"
+  end
 end

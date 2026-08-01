@@ -528,6 +528,45 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_equal %w[bornes], chunk_for(parsed, 6)["aliases"]
   end
 
+  # ---------------------------------------------------------------------------
+  # Fase 4 (contract v8): section_path and topology_edges carry-forward
+  # ---------------------------------------------------------------------------
+
+  test "section_path mirrors section_identity on every chunk that carries one" do
+    parsed = JSON.parse(ChunkMergerService.merge(compendium_results))
+
+    assert_equal [ "THYSSEN" ], chunk_for(parsed, 10)["section_path"]
+    assert_equal [ "THYSSEN" ], chunk_for(parsed, 11)["section_path"]
+    assert_equal [ "OTIS" ],    chunk_for(parsed, 14)["section_path"]
+    assert_equal chunk_for(parsed, 11)["section_identity"], chunk_for(parsed, 11)["section_path"].first
+  end
+
+  test "section_path is absent on pages before any declared section identity" do
+    results = [
+      { page_number: 1, text: content_page_json(page: 1, aliases: %w[indice]), usage: nil, model: "m" }
+    ]
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+
+    assert_nil chunk_for(parsed, 1)["section_path"]
+  end
+
+  test "a page's topology_edges land on its first surviving chunk only" do
+    page = JSON.parse(page1_json)
+    edge = { "from" => "LIMITADOR", "to" => "CONECTOR AI", "method" => "leader_line", "evidence" => "e" }
+    results = [ { page_number: 1, text: page.to_json, usage: nil, model: "m", topology_edges: [ edge ] } ]
+
+    parsed = JSON.parse(ChunkMergerService.merge(results))
+
+    assert_equal [ edge ], parsed["chunks"][0]["topology_edges"]
+    assert_nil parsed["chunks"][1]["topology_edges"], "edges must not duplicate onto the page's other chunks"
+  end
+
+  test "a page with no topology_edges leaves the key absent" do
+    parsed = JSON.parse(ChunkMergerService.merge(page_results))
+
+    assert_nil parsed["chunks"][0]["topology_edges"]
+  end
+
   test "all pages degraded (chosen_idx nil) does not raise and uses deterministic fallbacks" do
     all_degraded = [
       { page_number: 2, text: "broken {{",   usage: nil, model: "claude-sonnet-4-6" },

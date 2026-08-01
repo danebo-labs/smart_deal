@@ -1281,4 +1281,136 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
     Rails.logger.define_singleton_method(:warn, orig_warn) if defined?(orig_warn)
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 4 (contract v8): layout digest + topology edges (pdf_mixed path)
+  # ---------------------------------------------------------------------------
+
+  LayoutFakePdfPage = Struct.new(:number, :binary, :model, :force_opus) unless defined?(LayoutFakePdfPage)
+
+  def with_layout_digest_flag(enabled)
+    original = ENV.fetch("INGESTION_LAYOUT_DIGEST_ENABLED", nil)
+    ENV["INGESTION_LAYOUT_DIGEST_ENABLED"] = enabled ? "true" : nil
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_LAYOUT_DIGEST_ENABLED")
+    else
+      ENV["INGESTION_LAYOUT_DIGEST_ENABLED"] = original
+    end
+  end
+
+  def stub_single_page_topology(edge:)
+    orig_extract = PdfLayoutExtractor.method(:extract)
+    orig_derive  = TopologyEdgeDeriver.method(:derive)
+    extract_calls = 0
+
+    PdfLayoutExtractor.define_singleton_method(:extract) do |_binary, page_number:|
+      extract_calls += 1
+      { page_number: page_number, words: [], lines: [], rects: [], images: [], text_layer_chars: 0, image_area_ratio: 0.0 }
+    end
+    TopologyEdgeDeriver.define_singleton_method(:derive) { |_layout| edge ? [ edge ] : [] }
+
+    yield(-> { extract_calls })
+  ensure
+    PdfLayoutExtractor.define_singleton_method(:extract, orig_extract)
+    TopologyEdgeDeriver.define_singleton_method(:derive, orig_derive)
+  end
+
+  test "pdf_mixed: layout digest reaches the model and Rails renders the topology edge when the flag is on" do
+    page1 = LayoutFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+    edge = { from: "LIMITADOR", to: "CONECTOR AI", method: :leader_line,
+             evidence: "polilínea (1,2)->(3,4) une LIMITADOR con CONECTOR AI" }
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1 ])
+    end
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
+    end
+
+    captured_texts = []
+    response_text  = golden_json
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        blocks = Array(params.dig(:messages)&.first&.dig(:content))
+        captured_texts.concat(blocks.select { |b| b.is_a?(Hash) && b[:type] == "text" }.map { |b| b[:text] })
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 10, output_tokens: 20,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        OpenStruct.new(accumulated_message: OpenStruct.new(
+          content: content, usage: usage, model: "claude-sonnet-4-6", stop_reason: "end_turn"
+        ))
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    asset = nil
+    stub_single_page_topology(edge: edge) do
+      with_layout_digest_flag(true) { asset = build_service(filename: "manual.pdf").call }
+    end
+
+    assert(captured_texts.any? { |t| t.include?("LAYOUT DIGEST") }, "expected the digest to reach the model")
+    assert(captured_texts.any? { |t| t.include?("LIMITADOR -> CONECTOR AI") })
+
+    chunk_key = @fake_s3.uploads.keys.find { |k| k.end_with?("chunk_0.txt") }
+    chunk = @fake_s3.uploads.fetch(chunk_key)
+    assert_includes chunk, "RECORD_TYPE: TOPOLOGY_EDGE"
+    assert_includes chunk, "DERIVATION: leader_line"
+    assert_equal DOC_NAME, asset.canonical_name
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
+
+  test "pdf_mixed: with the flag off, no LAYOUT DIGEST reaches the model and no TOPOLOGY_EDGE renders" do
+    page1 = LayoutFakePdfPage.new(1, "%PDF-fake-p1", BatchChunkingPrompt::MODEL_TEXT, false)
+    edge = { from: "LIMITADOR", to: "CONECTOR AI", method: :leader_line, evidence: "e" }
+
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+
+    FileMultimodalRouter.define_singleton_method(:classify) do |**|
+      OpenStruct.new(mode: :pdf_mixed, pages: [ page1 ])
+    end
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :stub, force_opus: false } }
+    end
+
+    captured_texts = []
+    response_text  = golden_json
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |params|
+        blocks = Array(params.dig(:messages)&.first&.dig(:content))
+        captured_texts.concat(blocks.select { |b| b.is_a?(Hash) && b[:type] == "text" }.map { |b| b[:text] })
+        content = [ OpenStruct.new(type: "text", text: response_text) ]
+        usage   = OpenStruct.new(input_tokens: 10, output_tokens: 20,
+                                 cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        OpenStruct.new(accumulated_message: OpenStruct.new(
+          content: content, usage: usage, model: "claude-sonnet-4-6", stop_reason: "end_turn"
+        ))
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    extract_calls = nil
+    stub_single_page_topology(edge: edge) do |call_counter|
+      with_layout_digest_flag(false) { build_service(filename: "manual.pdf").call }
+      extract_calls = call_counter.call
+    end
+
+    assert_equal 0, extract_calls, "PdfLayoutExtractor must not run at all when the flag is off"
+    assert_not(captured_texts.any? { |t| t.include?("LAYOUT DIGEST") })
+
+    chunk_key = @fake_s3.uploads.keys.find { |k| k.end_with?("chunk_0.txt") }
+    assert_not_includes @fake_s3.uploads.fetch(chunk_key), "TOPOLOGY_EDGE"
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
 end

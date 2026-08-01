@@ -263,8 +263,8 @@ La fase siguiente lee el documento actualizado, no el original.
 | 2b | cerrada — cierra I-13 (parcialmente: ver I-28) | — (offline) | f4ab397 | I-19 |
 | 3b | cerrada — cierra I-14 | — (offline) | 1cb789b | I-20, I-21, I-22 |
 | Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | 582ede3 | I-26 … I-29 |
-| 4 | **siguiente** — desbloqueada por la decisión humana #4 (**opción B**, 2026-08-01): se implementa y mergea **con el flag apagado** | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
-| 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
+| 4 | cerrada — mergeada con el flag apagado (opción B) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | I-31, I-32 |
+| 5 | **siguiente** | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
@@ -826,15 +826,31 @@ traspaso, aplicado a una decisión humana.
 
 ---
 
-### Fase 4 — Contrato v8: destino común de T1 y T2 · Sonnet
+### Fase 4 — Contrato v8: destino común de T1 y T2 · Sonnet — ✅ **CERRADA**
 
-⛔ **BLOQUEADA — pero ya no por el gate.** El Gate A falló (4 aristas incorrectas de 23), se
-cerraron I-13 e I-14 (Fases 2b y 3b) y **el Gate A-bis se superó** (19/19 correctas, 0
+⛔ **BLOQUEADA — pero ya no por el gate** *(histórico)*. El Gate A falló (4 aristas incorrectas de
+23), se cerraron I-13 e I-14 (Fases 2b y 3b) y **el Gate A-bis se superó** (19/19 correctas, 0
 incorrectas; I-26), y la **decisión humana #4 está respondida: opción B** (2026-08-01,
 "Decisiones humanas pendientes" #4). **Eso desbloquea esta fase, y sólo esta fase.** La opción B
 dice literalmente: la Fase 4 se implementa y se **mergea con el flag apagado** —no cambia ni un
 byte de producción, y ése es su invariante con test— y **la Fase 7 no se ejecuta** hasta tener T2
 y el Gate B cerrado. No la reinterpretes.
+
+**Cerrada en `<pendiente de commit>` (I-31, I-32).** Implementada y mergeada **con el flag
+`INGESTION_LAYOUT_DIGEST_ENABLED` apagado** — invariante con test (`bin/rails test` 2123 runs / 0
+failures, 471 files / 0 offenses en rubocop). Dos decisiones de implementación que el plan no
+cerraba del todo, ambas registradas en I-31: **(a)** `section_path` se implementa de **un solo
+nivel** — `[section_identity]` — porque la forma de dos niveles `[MARCA, MODELO]` de I-17 exige
+emparejar el título de cada página de contenido contra una viñeta de su divisor, un algoritmo que
+esta fase no tiene en su lista de archivos ni en su Definición de terminado; el invariante
+`section_identity == section_path.first` se sostiene igual y no hay nada que romper cuando alguien
+diseñe el segundo nivel. **(b)** el hilo de `topology_edges` (Rails renderizando el
+`TOPOLOGY_EDGE` en el cuerpo del chunk) sólo llega hasta el final en la ruta **síncrona**
+(`SingleFileChunkingService` → `ChunkMergerService` → `BatchResultsParserService`, el caso
+`pdf_mixed`); en la ruta **asíncrona** (`ManualBatchIngestionService` → Anthropic Batch API →
+`IngestManualBatchResultsJob`) sólo se hila el `layout_digest` de contexto — las aristas
+derivadas no cruzan ese límite porque `page.cleanup` ya corrió para cuando el resultado del batch
+se parsea, y esta fase no añade una capa de persistencia para salvar ese hueco.
 
 ⚠️ **revisado en I-17.** `section_path` **no tiene tres niveles**. Las páginas divisoras imprimen
 **marca + lista plana de modelos**, y los dos "niveles" del ejemplo del plan (`CONTROL LEVEL 1B`,
@@ -868,18 +884,22 @@ verdadera la afirmación de procedencia de la Fase 6. (T2 sí emite `method: vis
 procedencia es distinta y más débil.)
 
 *Definición de terminado:*
-- [ ] End-to-end sobre un PDF sintético de 6 páginas, flag encendido, doble de S3
-- [ ] **Invariante**: `section_identity == section_path.first`, con test
-- [ ] **Invariante**: los aliases de chunk siguen recibiendo **exactamente una** etiqueta de
-      sección prepuesta
-- [ ] **Airlock**: un `field_record` del modelo con `k: "TOPOLOGY_EDGE"` y `method: leader_line`
-      **levanta `ParseError`**, con test
-- [ ] `DERIVATION` fuera del enum degrada a `DATA_NOT_AVAILABLE` vía `allowlisted_value`
-      (:465-468), con test
-- [ ] `RECORD_ID` idempotente: la misma geometría re-deriva el mismo ID, con test
-- [ ] Tope de 12 aristas/chunk con desborde a chunk hermano, con test del conteo
-- [ ] Con el flag apagado, los cuerpos y sidecars son **byte-idénticos** a v7, con test
-- [ ] Suite + rubocop verdes
+- [x] End-to-end sobre PDFs de página única con geometría doblada (`PdfLayoutExtractor`/
+      `TopologyEdgeDeriver` estables), flag encendido, doble de S3 — la ruta `pdf_mixed` completa,
+      de `SingleFileChunkingService` a `BatchResultsParserService`, con el digest llegando al
+      modelo y la arista renderizada en el cuerpo del chunk
+- [x] **Invariante**: `section_identity == section_path.first`, con test
+- [x] **Invariante**: los aliases de chunk siguen recibiendo **exactamente una** etiqueta de
+      sección prepuesta (sin cambios: `with_section_identity` no se tocó)
+- [x] **Airlock**: un `field_record` del modelo con `k: "TOPOLOGY_EDGE"` **levanta `ParseError`**
+      incondicionalmente, con test — el esquema corto del modelo (`k,h,a,r,ev,x,sw,ra,u`) no tiene
+      campo `method`/`derivation`, así que la sola presencia del tipo es la señal de forjado
+- [x] `DERIVATION` fuera del enum degrada a `DATA_NOT_AVAILABLE` vía `allowlisted_value`, con test
+- [x] `RECORD_ID` idempotente: la misma geometría re-deriva el mismo ID, con test
+- [x] Tope de 12 aristas/chunk con desborde a chunk hermano, con test del conteo (fixture
+      sintético de 15 aristas; en datos reales no se activa — máximo medido 2/página, I-26)
+- [x] Con el flag apagado, los cuerpos y sidecars son **byte-idénticos** a v7, con test
+- [x] Suite + rubocop verdes (2123 runs / 0 failures; 471 files, 0 offenses)
 
 ### Fase 5 — Motor T2: visión sobre páginas triadas · Opus
 
@@ -1804,3 +1824,5 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-28 | Gate A-bis | Opus 5 | **`CARLOS SILVA` sigue saliendo `CARLOSSILVA`: el arreglo de I-19/2b se validó con un fixture que no reproduce el caso real.** I-19 cambió `word_gap_tolerance` a la altura **menor** de los dos glifos adyacentes y lo verificó con `CARLOS`/`SILVA` a **14 pt y 6 pt**. Medido sobre el PDF real (divisor p8): las dos tipografías tienen **prácticamente la misma altura** (53,60 y 52,76 pt), el hueco real entre `CARLOS` y `SILVA` es **16,08 pt** y la tolerancia aplicada **31,66 pt** — tomar la menor no cambia nada. La causa es `WORD_GAP_RATIO = 0.6`, que a cuerpo 53 pt da 32 pt cuando un espacio impreso a ese tamaño mide ~14-16 pt: **el problema nunca fue el cambio de tamaño, es el ratio**. No afecta a ninguna arista (ningún divisor emite) y **no se arregló aquí**: bajar el ratio mueve el agrupamiento de palabras de las 98 páginas y necesita su propia medición. §5.2 y §9 del informe del Gate A **siguen vigentes tal cual**. | **Fase 8:** el verbatim bueno del divisor p8 sigue siendo `CARLOS SILVA` y **sigue habiendo que corregirlo a mano** — I-19 decía que ya salía como dos entradas de `words`; sobre el PDF real, no. **Fase 2 (si alguien la reabre):** el defecto de I-13 marcado "cerrado de paso" no lo está; es un hallazgo abierto con causa medida. **Toda fase:** un fixture sintético que no reproduce las magnitudes del documento real no cierra un hallazgo medido sobre el documento real. |
 | I-29 | Gate A-bis | Opus 5 | **La "serie con intermedio omitido" son 3 de las 19 aristas (16 %), no una: §4.4 del Gate A se quedó corta, y sólo se ve mirando arista por arista.** Además de la pág. 64 (`LIMITADOR CONTRAPESO ↔ J22` atraviesa `LIMITADOR CABINA`, ya registrada), la revisión visual encontró **pág. 14** (`STOP BOTO. CABINA ↔ XP11`: el conductor magenta atraviesa **`BOTONERA REVISION` y `BARANDILLA`**, dos dispositivos) y **pág. 22** (`OBSTACULO ↔ CN-112`: el cable azul atraviesa `FOTOCELULA`). En los tres la guarda "la cadena pasa junto a la etiqueta" no salta porque el conductor entra y sale del **dibujo** del dispositivo, no de su rótulo, que cae a un lado fuera de la holgura de una altura de línea. No son aristas falsas —el conductor es el mismo— pero un técnico que reciba "LIMITADOR CONTRAPESO va a J22" no sabrá que hay otro dispositivo en el mismo lazo, que es justo el dato que importa cuando la serie está abierta. Detectado sólo porque el Gate A-bis dibujó **una arista por imagen** con `zoom.py`; con `overlay.py` (todas las aristas de la página a la vez, en magenta, sobre láminas que trazan cables magenta) no es distinguible. | **Fase 4:** redactar estas aristas sin sugerir que el lazo tiene sólo dos elementos; el contrato ya dice que `from`/`to` **no** son direccionales (I-11), y esto añade que tampoco son **exhaustivos**. Es el 16 % de la salida de T1, no un caso aislado. **Fase 6b:** el párrafo que autoriza citar topología verbatim debería no autorizar a afirmar que la serie es sólo ese par. **Fase 5/Gate B:** ésta es una capacidad donde T2 gana claramente a T1 — leer los tres dispositivos de un lazo es reconocimiento visual, no encadenado de polilíneas. |
 | I-30 | 6b | Sonnet 5 | **Fase 6b cerrada: párrafo de `generation.txt` reemplazado y guardia de vision extendida en `answer_safety_processor.rb`, cerrando I-29 al mismo tiempo.** El párrafo dado "verbatim" en la Fase 6 no incorporaba I-29 (registrado después, en Gate A-bis) — se le añadió la frase "A TOPOLOGY_EDGE pair is not a claim that those are the only two components on that run" antes de la cláusula de `DERIVATION: vision`, el resto se cerró tal cual estaba escrito. En el guardia, `traced_pair?` (de 6a) pasó de leer todas las líneas `ACTION:` sueltas del texto a parsear cada bloque `FIELD_RECORD`/`END_FIELD_RECORD` por separado (`RECORD_BLOCK_PATTERN`), para poder leer la `DERIVATION` **de ese mismo registro** — antes el chequeo no distinguía entre un par `leader_line` y uno `vision`. Cuando la `DERIVATION` es `vision`, el par sólo se considera soportado si la línea de la respuesta trae, ella misma, un calificador de imagen (`imagen\|image\|foto\|photo`) **y** uno de confirmación contra el diagrama (`confirm…\|verific…` a ≤120 caracteres de `diagrama\|esquema\|diagram\|schematic`); sin ambos, se rechaza con el mismo mensaje `unsupported_connection` que ya existía. Deliberadamente no se tocó `Rag::FieldRecordParser` (su `KNOWN_LABELS` es del contrato v8 de la Fase 4, todavía bloqueada, y no incluye `DERIVATION`) ni `IDENTIFIER_PATTERN`. Se añadió también un sweep en `seguridades_rubric_calibration_test.rb`: una respuesta de topología conforme (`leader_line` y `vision`, cada una con su calificador) no matchea ningún patrón `penalized` de las 5 baterías de release-gate **ni del holdout congelado** (6 rúbricas en total), leyendo el holdout inline sin promoverlo a una constante de uso general — igual que ya hace el test que verifica su hash. Verificado: `bin/rails test` 2101 runs / 0 failures (2100 antes de esta fase); `bin/rubocop` 469 files / 0 offenses. | **Fase 4:** cuando redacte el `evidence`/digest de una arista, no hace falta repetir la frase de no-exhaustividad ahí — vive en el prompt de generación, no en el dato indexado. **Fase 5:** cuando el motor T2 emita `DERIVATION: vision`, las respuestas que lo citen **deben** llevar el calificador de imagen + confirmación en la misma línea o el guardia las bloquea; el prompt de extracción de T2 no necesita saberlo, pero el prompt de generación (`generation.txt`) ya lo exige. **Fase 7/8:** si `script/fixtures/rag_seguridades_topology_v1.json` (Fase 8) incluye un caso con una arista `vision`, su respuesta esperada debe incluir el calificador o el guardia la degradará antes de llegar a la rúbrica. |
+| I-31 | 4 | Sonnet 5 | **Fase 4 cerrada: contrato v8 mergeado con el flag apagado, dos huecos de diseño resueltos por acotación en vez de por suposición.** `TOPOLOGY_EDGE` se añadió a `FIELD_RECORD_TYPES` (necesario para que `render_field_record`/`allowlisted_value` puedan renderizar el registro que Rails construye), pero el airlock en `validate_field_record!` rechaza **cualquier** `field_record` del modelo con `k: "TOPOLOGY_EDGE"`, incondicionalmente — no hace falta comprobar un campo `method`/`derivation` porque el esquema corto del modelo (`k,h,a,r,ev,x,sw,ra,u`) no tiene ese campo: la sola presencia del tipo ya es la señal de forjado. **(a) `section_path` es de un solo nivel — `[section_identity]`.** La forma `[MARCA, MODELO]` que I-17 describe exige emparejar el título visible de cada página de contenido contra una viñeta de su divisor, un matcher que no está en la lista de archivos de esta fase ni en su Definición de terminado (que sólo pide el invariante `section_identity == section_path.first`, sostenido igual con un solo nivel). Diseñar el emparejador queda para quien necesite el segundo nivel; no hay nada que migrar cuando llegue, `section_path` ya es una lista. **(b) `topology_edges` sólo se renderiza en la ruta síncrona.** `SingleFileChunkingService#topology_for_page` deriva `layout`/`edges`/`digest` por página con `page.binary` todavía en memoria, y `ChunkMergerService` los adjunta al primer chunk sobreviviente de esa página; `BatchResultsParserService#topology_field_records` los renderiza en `# FIELD-SAFETY EVIDENCE RECORDS` junto a los del modelo, con tope de 12/chunk y desborde a chunk hermano (`prepare_topology_chunks!`). En `ManualBatchIngestionService` (ruta asíncrona vía Anthropic Batch API), `layout_digest_for(page)` calcula el mismo digest **antes** de que `page.cleanup` libere el binario y lo pasa al prompt — pero las aristas derivadas no se persisten en ningún sitio para cuando `IngestManualBatchResultsJob` parsea el resultado, mucho más tarde y sin binario disponible. Una página de un long-manual subido por chat recibe el beneficio del digest en el contexto del modelo, pero ningún `TOPOLOGY_EDGE` propio en su chunk. `RECORD_ID` se hizo idempotente sobre geometría añadiendo `derivation`/`derivation_evidence` al fingerprint (mismo patrón que el par `stop_trigger`/`stop_action` ya usaba). `Rag::FieldRecordParser` gana `DERIVATION`/`DERIVATION_EVIDENCE` como labels opcionales — I-30 los dejó fuera a propósito porque el contrato v8 todavía estaba bloqueado; `answer_safety_processor.rb` (Fase 6b) no los necesita, porque ya lee `DERIVATION:` con su propia regexp local sobre el texto crudo del chunk, no vía este parser. Verificado: `bin/rails test` 2123 runs / 0 failures (2101 antes de esta fase); `bin/rubocop` 471 files / 0 offenses. | **Fase 5:** al hilar T2, decidir si las aristas `vision` cruzan el mismo límite asíncrono sin dueño que dejó (b) — si T2 corre en la ruta de batch, hereda el mismo hueco y quizás sea el momento de resolverlo con una capa de persistencia keyed por `custom_id`/página. **Fase 7:** el shadow ingest debería decidir explícitamente si corre SEGURIDADES por la ruta síncrona o la asíncrona — sólo la primera hoy escribe `TOPOLOGY_EDGE`. **Quien diseñe el segundo nivel de `section_path`:** el matcher título-de-página↔viñeta-de-divisor no tiene dueño ni test; `section_path` ya acepta una lista de cualquier longitud, así que añadirlo es aditivo. |
+| I-32 | 4 | Sonnet 5 | **Dos tests de guarda de las Fases 2/3 ("nada en producción invoca esto todavía") quedaron obsoletos por diseño, no rotos — Fase 4 es exactamente la fase que termina esa invariante.** `pdf_layout_extractor_test.rb` y `topology_edge_deriver_test.rb` afirmaban una lista vacía de llamadores en `app/**/*.rb`; con `single_file_chunking_service.rb` y `manual_batch_ingestion_service.rb` invocando ambas clases detrás de `IngestionLayoutFlag` (apagado por defecto), esa aserción falla siempre, tenga o no la fase razón. Se reescribieron para fijar la lista exacta de los dos llamadores legítimos en vez de una lista vacía, así que cualquier OTRO llamador nuevo sigue fallando el test tan fuerte como antes. Se tocaron archivos de otra fase (2 y 3) porque la Definición de terminado de esa fase decía literalmente "nada de producción invoca el extractor/derivador todavía" — una premisa que esta fase, por diseño, invalida; no es "algo roto que se aprovechó para arreglar en silencio". | **Cualquier fase futura que añada un tercer llamador a `PdfLayoutExtractor`/`TopologyEdgeDeriver`** (p. ej. la Fase 5 para T2, si reutiliza el extractor sobre páginas rasterizadas) debe extender `allowed_callers` en ambos tests, no ignorarlos. |

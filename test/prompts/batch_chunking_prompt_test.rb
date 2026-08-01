@@ -8,7 +8,7 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
   end
 
   test "declares a contract version and a stable prompt fingerprint" do
-    assert_equal "field_records_v7", BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+    assert_equal "field_records_v8", BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
     assert_match(/\A[0-9a-f]{64}\z/, BatchChunkingPrompt.prompt_fingerprint_sha256)
     assert_equal BatchChunkingPrompt.prompt_fingerprint_sha256,
                  Digest::SHA256.hexdigest(BatchChunkingPrompt::SYSTEM_BLOCKS.pluck(:text).join("\n"))
@@ -176,5 +176,44 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "Omit absent optional keys"
     assert_not_includes prompt, '"preconditions":'
     assert_not_includes prompt, '"measurements_or_limits":'
+  end
+
+  # ---------------------------------------------------------------------------
+  # Fase 4 (contract v8): LAYOUT DIGEST — read-only topology context
+  # ---------------------------------------------------------------------------
+
+  test "declares the LAYOUT DIGEST rules and forbids the model from emitting TOPOLOGY_EDGE" do
+    assert_includes prompt, "LAYOUT DIGEST"
+    assert_includes prompt, 'NEVER emit a field_record with "k": "TOPOLOGY_EDGE"'
+    assert_match(/NEVER copy, paraphrase, or restate a LAYOUT DIGEST line/, prompt)
+  end
+
+  test "page_user_content appends a LAYOUT DIGEST block when layout_digest is present" do
+    blocks = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 3, total_pages: 6, filename: "m.pdf",
+      layout_digest: "EDGES:\nLIMITADOR -> CONECTOR AI (leader_line): evidence text"
+    )
+
+    digest_block = blocks.last
+    assert_equal "text", digest_block[:type]
+    assert_includes digest_block[:text], "LAYOUT DIGEST"
+    assert_includes digest_block[:text], "do not restate, reformulate"
+    assert_includes digest_block[:text], "LIMITADOR -> CONECTOR AI"
+  end
+
+  test "page_user_content omits the LAYOUT DIGEST block when layout_digest is nil" do
+    blocks = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 3, total_pages: 6, filename: "m.pdf", layout_digest: nil
+    )
+
+    assert_equal 2, blocks.size, "expected only the document block and the instruction text block"
+    assert_not(blocks.any? { |b| b[:text].to_s.include?("LAYOUT DIGEST") })
+  end
+
+  test "page_user_content without layout_digest kwarg is unaffected (flag-off default)" do
+    blocks = BatchChunkingPrompt.page_user_content(
+      binary: "%PDF-fake", page_number: 1, total_pages: 1, filename: "m.pdf"
+    )
+    assert_equal 2, blocks.size
   end
 end

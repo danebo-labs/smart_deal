@@ -263,6 +263,7 @@ class SingleFileChunkingService
   def call_claude_for_page(page, total, document_name_hint:, locale: nil, anchor: false)
     model    = page.model
     page_num = page.number
+    edges, digest = topology_for_page(page.binary, page_num)
     content  = BatchChunkingPrompt.page_user_content(
       binary:             page.binary,
       page_number:        page_num,
@@ -270,7 +271,8 @@ class SingleFileChunkingService
       filename:           @filename,
       document_name_hint: document_name_hint,
       locale:             locale,
-      anchor:             anchor
+      anchor:             anchor,
+      layout_digest:      digest
     )
     result = call_with_page_cap_retry(
       client:       ClaudeChunkingClient.new(model: model),
@@ -278,7 +280,25 @@ class SingleFileChunkingService
       page_number:  page_num,
       total_pages:  total
     )
-    { page_number: page_num, text: result[:text], usage: result[:usage], model: model, stop_reason: result[:stop_reason] }
+    {
+      page_number: page_num, text: result[:text], usage: result[:usage], model: model,
+      stop_reason: result[:stop_reason], topology_edges: edges
+    }
+  end
+
+  # Fase 4 (contract v8), gated by IngestionLayoutFlag: derives this page's
+  # leader-line edges from its own geometry (PdfLayoutExtractor +
+  # TopologyEdgeDeriver, Fases 2/3) and renders the bounded digest the model
+  # receives as read-only context (PageLayoutDigest). `edges` rides along on
+  # the page_result for ChunkMergerService to attach to this page's chunk;
+  # off, or with no resolved edges, this is `[[], nil]` and nothing downstream
+  # changes.
+  def topology_for_page(page_binary, page_number)
+    return [ [], nil ] unless IngestionLayoutFlag.enabled?
+
+    layout = PdfLayoutExtractor.extract(page_binary, page_number: page_number)
+    edges  = TopologyEdgeDeriver.derive(layout)
+    [ edges, PageLayoutDigest.render(layout, edges) ]
   end
 
   def log_pdf_mixed_metrics(total:, parsed_pages:, fallback:, started_at:)

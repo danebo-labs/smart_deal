@@ -301,4 +301,85 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     Array(captured_pages).each(&:cleanup)
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb) if defined?(orig_cb)
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 4 (contract v8): layout digest reaches the batch prompt, computed
+  # eagerly (before `cleanup`) since `build` fires later off the async batch
+  # round trip. Edges themselves are NOT threaded across that boundary in
+  # this phase (registered as a gap, see I-hallazgo).
+  # ---------------------------------------------------------------------------
+
+  def with_layout_digest_flag(enabled)
+    original = ENV.fetch("INGESTION_LAYOUT_DIGEST_ENABLED", nil)
+    ENV["INGESTION_LAYOUT_DIGEST_ENABLED"] = enabled ? "true" : nil
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_LAYOUT_DIGEST_ENABLED")
+    else
+      ENV["INGESTION_LAYOUT_DIGEST_ENABLED"] = original
+    end
+  end
+
+  test "layout digest reaches the submitted prompt when the flag is on" do
+    orig_cb      = PageRelevanceFilter.method(:call_batch)
+    orig_track   = TrackBedrockQueryJob.method(:perform_later)
+    orig_extract = PdfLayoutExtractor.method(:extract)
+    orig_derive  = TopologyEdgeDeriver.method(:derive)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
+    PdfLayoutExtractor.define_singleton_method(:extract) do |_binary, page_number:|
+      { page_number: page_number, words: [], lines: [], rects: [], images: [], text_layer_chars: 0, image_area_ratio: 0.0 }
+    end
+    TopologyEdgeDeriver.define_singleton_method(:derive) do |_layout|
+      [ { from: "LIMITADOR", to: "CONECTOR AI", method: :leader_line, evidence: "polilínea une LIMITADOR con CONECTOR AI" } ]
+    end
+
+    fake_client = FakeBatchClient.new
+    pdf_binary  = build_fake_pdf_binary(2)
+
+    with_layout_digest_flag(true) do
+      ManualBatchIngestionService.new(batch_client: fake_client).submit!(
+        binary: pdf_binary, filename: "m.pdf", sha256: "3" * 64, s3_key: "key"
+      )
+    end
+
+    instruction = fake_client.submitted_requests.first[:params][:messages].first[:content].last[:text]
+    assert_includes instruction, "LAYOUT DIGEST"
+    assert_includes instruction, "LIMITADOR -> CONECTOR AI"
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+    PdfLayoutExtractor.define_singleton_method(:extract, orig_extract)
+    TopologyEdgeDeriver.define_singleton_method(:derive, orig_derive)
+  end
+
+  test "no LAYOUT DIGEST block is submitted when the flag is off" do
+    orig_cb    = PageRelevanceFilter.method(:call_batch)
+    orig_track = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false } }
+    end
+
+    fake_client = FakeBatchClient.new
+    pdf_binary  = build_fake_pdf_binary(2)
+
+    with_layout_digest_flag(false) do
+      ManualBatchIngestionService.new(batch_client: fake_client).submit!(
+        binary: pdf_binary, filename: "m.pdf", sha256: "4" * 64, s3_key: "key"
+      )
+    end
+
+    content = fake_client.submitted_requests.first[:params][:messages].first[:content]
+    assert_equal 2, content.size, "expected only the document block and the instruction text block"
+    assert_not(content.any? { |b| b[:text].to_s.include?("LAYOUT DIGEST") })
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+  end
 end

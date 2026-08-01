@@ -21,6 +21,15 @@
 #   - section_identity: the brand/controller family a divider page declares
 #     (field_records_v7) is carried forward, in page order, into every following
 #     page's chunk aliases until another page declares a new one.
+#   - section_path: [section_identity] on every chunk that carries a
+#     section_identity (field_records_v8, Fase 4). Single-element today —
+#     section_identity == section_path.first is the retrocompatibility
+#     invariant a deeper path would still have to hold.
+#   - topology_edges: a page's TopologyEdgeDeriver output (threaded in on
+#     each page_result's :topology_edges, empty/absent when
+#     IngestionLayoutFlag is off) lands on that page's FIRST surviving chunk
+#     only — an edge lives in exactly one chunk body, never duplicated
+#     across a page's other chunks.
 class ChunkMergerService
   DOCUMENT_ALIAS_LIMIT = 15
   CHUNK_ALIAS_LIMIT    = 8
@@ -80,6 +89,8 @@ class ChunkMergerService
       orig_page = @page_results[idx][:page_number]
       page_aliases = sanitize_aliases(parsed["aliases"], limit: CHUNK_ALIAS_LIMIT)
       section_identity = declared_section_identity(parsed) || section_identity
+      page_edges = Array(@page_results[idx][:topology_edges])
+      edges_attached = false
 
       page_chunks = Array(parsed["chunks"])
 
@@ -93,6 +104,11 @@ class ChunkMergerService
           "aliases" => with_section_identity(chunk_aliases.presence || page_aliases, section_identity)
         )
         merged["section_identity"] = section_identity if section_identity.present?
+        merged["section_path"] = [ section_identity ] if section_identity.present?
+        if page_edges.present? && !edges_attached
+          merged["topology_edges"] = page_edges
+          edges_attached = true
+        end
         merged
       end
     end

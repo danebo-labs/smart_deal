@@ -117,9 +117,10 @@ class ManualBatchIngestionService
     total = kept_pages.size
 
     kept_pages.each_with_index.map do |page, idx|
-      custom_id  = custom_id_for(sha256, page.number)
-      page_locale = idx.zero? ? locale : nil
-      anchor      = idx.zero?
+      custom_id     = custom_id_for(sha256, page.number)
+      page_locale   = idx.zero? ? locale : nil
+      anchor        = idx.zero?
+      layout_digest = layout_digest_for(page)
 
       ClaudeBatchRequestItem.new(
         custom_id: custom_id,
@@ -127,12 +128,13 @@ class ManualBatchIngestionService
         cleanup:   -> { page.cleanup },
         build:     lambda {
           content = BatchChunkingPrompt.page_user_content(
-            binary:      page.binary,
-            page_number: page.number,
-            total_pages: total,
-            filename:    filename,
-            locale:      page_locale,
-            anchor:      anchor
+            binary:        page.binary,
+            page_number:   page.number,
+            total_pages:   total,
+            filename:      filename,
+            locale:        page_locale,
+            anchor:        anchor,
+            layout_digest: layout_digest
           )
 
           {
@@ -147,6 +149,27 @@ class ManualBatchIngestionService
         }
       )
     end
+  end
+
+  # Fase 4 (contract v8), gated by IngestionLayoutFlag: same digest a
+  # SingleFileChunkingService page gets, computed eagerly here (before
+  # `cleanup` can run) since this item's `build` lambda fires later, off the
+  # Anthropic Batch API's async round trip.
+  #
+  # Unlike the synchronous pdf_mixed path, the derived `edges` themselves are
+  # NOT threaded through this async boundary in this phase — IngestManualBatchResultsJob
+  # parses the batch result long after `page.cleanup` has run, with no page
+  # binary left to re-derive from and no persistence layer added here to
+  # carry the edges across that gap. A manual-batch (long-manual web upload)
+  # page therefore gets the model-context benefit of its digest but no
+  # Rails-rendered TOPOLOGY_EDGE record in its chunk body — registered as a
+  # gap for whoever threads this path end to end.
+  def layout_digest_for(page)
+    return nil unless IngestionLayoutFlag.enabled?
+
+    layout = PdfLayoutExtractor.extract(page.binary, page_number: page.number)
+    edges  = TopologyEdgeDeriver.derive(layout)
+    PageLayoutDigest.render(layout, edges)
   end
 
   def custom_id_for(sha256, page_number)

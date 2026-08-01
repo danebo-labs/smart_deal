@@ -29,15 +29,29 @@ class BatchResultsParserService
   MANUAL_BATCH_INGESTION_PATH = "manual_batch_v1"
   DOCUMENT_ALIAS_LIMIT = 15
   CHUNK_ALIAS_LIMIT    = 8
+  # TOPOLOGY_EDGE (Fase 4, contract v8) is a valid RECORD_TYPE but is never a
+  # legal value inside a model-supplied field_record — see the airlock in
+  # #validate_field_record!. It exists in this list only so #render_field_record
+  # (shared with the Rails-derived topology records built in
+  # #topology_field_records) can pass it through #allowlisted_value.
   FIELD_RECORD_TYPES = %w[
     MAINTENANCE_TASK INSPECTION_CHECK CERTIFICATION_REQUIREMENT FUNCTIONAL_TEST
     TROUBLESHOOTING_STEP FAULT_CONDITION REPAIR_ACTION STOP_WORK_CONDITION
     EMERGENCY_OR_RESCUE INSTALLATION_STEP COMMISSIONING_STEP MODERNIZATION_STEP
-    SCHEMATIC_LABEL SAFETY_WARNING DOCUMENTATION_REQUIREMENT
+    SCHEMATIC_LABEL SAFETY_WARNING DOCUMENTATION_REQUIREMENT TOPOLOGY_EDGE
   ].freeze
   FIELD_RECORD_REQUIRED_KEYS = %w[k h a r ev].freeze
   FIELD_RECORD_OPTIONAL_KEYS = %w[x sw ra u].freeze
   FIELD_RECORD_ALLOWED_KEYS = (FIELD_RECORD_REQUIRED_KEYS + FIELD_RECORD_OPTIONAL_KEYS).freeze
+  # DERIVATION on a TOPOLOGY_EDGE record: T1 (leader_line, Fase 3/4) or T2
+  # (vision, Fase 5). Closed enum enforced by #allowlisted_value — never
+  # supplied by the model, only by Rails' own #topology_field_records.
+  DERIVATION_VALUES = %w[leader_line vision].freeze
+  # Plan budget: ~150-700 words of narrative per chunk: one rendered edge is
+  # ~35 words, so a page's edges overflow into a sibling chunk past this cap
+  # rather than bloat one chunk past ~1000 words. Measured max on SEGURIDADES
+  # is 2 edges/page (I-26), so this only fires against a synthetic fixture.
+  TOPOLOGY_EDGE_CHUNK_LIMIT = 12
   CONDITIONAL_TRANSPORT_STOP_REGEX = /
     si\s+
     (?<trigger>[^.]{1,220}?\b(?:supera|excede|sobrepasa)\b[^.]{1,220}?)
@@ -72,6 +86,7 @@ class BatchResultsParserService
     enrich_field_records!(parsed, ingestion_path: ingestion_path)
     validate!(parsed, asset, ingestion_path: ingestion_path)
     validate_account_scope!(account_id: account_id, document_uid: document_uid)
+    prepare_topology_chunks!(parsed) if IngestionLayoutFlag.enabled?
 
     chunks_prefix  = chunks_prefix_for(asset, account_id: account_id, document_uid: document_uid)
     aliases        = sanitize_aliases(parsed["aliases"], limit: DOCUMENT_ALIAS_LIMIT)
@@ -334,6 +349,15 @@ class BatchResultsParserService
       raise ParseError, "Invalid k in #{location}"
     end
 
+    # Airlock (Fase 4, contract v8): TOPOLOGY_EDGE is derived from traced
+    # geometry and rendered by Rails in #topology_field_records — it is never
+    # a legitimate emission from the model's own field_records. Any record
+    # of this type in the model's JSON is a fabricated or hallucinated
+    # connection and must never reach a chunk body under this record type.
+    if record_type == "TOPOLOGY_EDGE"
+      raise ParseError, "Model-emitted TOPOLOGY_EDGE rejected (ingestion-only record type) in #{location}"
+    end
+
     stop_pair = values["sw"]
     if values.key?("sw")
       valid_pair = stop_pair.is_a?(Array) &&
@@ -360,7 +384,8 @@ class BatchResultsParserService
       chunk_aliases = sanitize_aliases(chunk["aliases"], limit: CHUNK_ALIAS_LIMIT)
       chunk_aliases = aliases.first(CHUNK_ALIAS_LIMIT) if chunk_aliases.empty?
       header = identity_header(asset: asset, aliases: chunk_aliases, original_uri: original_uri)
-      body = append_field_records(chunk["text"], chunk["field_records"], page: chunk["page"])
+      topology_records = IngestionLayoutFlag.enabled? ? topology_field_records(chunk) : []
+      body = append_field_records(chunk["text"], Array(chunk["field_records"]) + topology_records, page: chunk["page"])
       sidecar_json = sidecar_metadata(
         asset:          asset,
         canonical_name: canonical_name,
@@ -370,12 +395,67 @@ class BatchResultsParserService
         account_id:     account_id,
         document_uid:   document_uid,
         page_number:    chunk["page"],
-        section_identity: chunk["section_identity"]
+        section_identity: chunk["section_identity"],
+        section_path:   chunk["section_path"],
+        topology_edge_count: topology_records.size
       )
 
       @s3.upload_text(txt_key, header + body)
       @s3.upload_text("#{txt_key}.metadata.json", sidecar_json)
     end
+  end
+
+  # Fase 4 (contract v8): splits a chunk whose derived edges exceed
+  # TOPOLOGY_EDGE_CHUNK_LIMIT into the original chunk (capped at the limit)
+  # plus one or more sibling chunks carrying only the overflow — same page,
+  # same aliases, no narrative. A page's edges live on its first chunk only
+  # (#topology_field_records reads `topology_edges` off that one chunk), so
+  # this is the only place a chunk count can grow under this flag.
+  def prepare_topology_chunks!(parsed)
+    parsed["chunks"] = Array(parsed["chunks"]).flat_map { |chunk| split_topology_overflow(chunk) }
+  end
+
+  def split_topology_overflow(chunk)
+    edges = Array(chunk["topology_edges"])
+    return [ chunk ] if edges.size <= TOPOLOGY_EDGE_CHUNK_LIMIT
+
+    slices = edges.each_slice(TOPOLOGY_EDGE_CHUNK_LIMIT).to_a
+    first_chunk = chunk.merge("topology_edges" => slices.first)
+    siblings = slices.drop(1).map do |slice|
+      chunk.merge(
+        "text"           => "(continuación: aristas de topología trazadas en la página #{chunk['page']})",
+        "field_records"  => [],
+        "topology_edges" => slice
+      )
+    end
+
+    [ first_chunk ] + siblings
+  end
+
+  # Fase 4 (contract v8): the ONLY source of a TOPOLOGY_EDGE record. Built
+  # from `chunk["topology_edges"]` — TopologyEdgeDeriver output threaded
+  # through by the ingestion caller, never from the model's own
+  # field_records (see the airlock in #validate_field_record!).
+  def topology_field_records(chunk)
+    Array(chunk["topology_edges"]).filter_map do |edge|
+      next unless edge.is_a?(Hash)
+
+      from = field_value(edge_value(edge, "from"))
+      to   = field_value(edge_value(edge, "to"))
+      {
+        "k"                   => "TOPOLOGY_EDGE",
+        "h"                   => semantic_heading(chunk),
+        "a"                   => "#{from} -> #{to}",
+        "r"                   => "DATA_NOT_AVAILABLE",
+        "ev"                  => "#{from} | #{to}",
+        "derivation"          => edge_value(edge, "method"),
+        "derivation_evidence" => edge_value(edge, "evidence")
+      }
+    end
+  end
+
+  def edge_value(edge, key)
+    edge[key] || edge[key.to_sym]
   end
 
   def chunk_filename(chunk, idx, ingestion_path:, page_ordinals:)
@@ -411,6 +491,11 @@ class BatchResultsParserService
     source = field_value(values["h"])
     source = "Page #{page}" if source == "DATA_NOT_AVAILABLE" && page.present?
     stop_pair = Array(values["sw"])
+    # DERIVATION only ever arrives here from #topology_field_records (Fase 4):
+    # the model's own field_records can never carry this key -- it is absent
+    # from FIELD_RECORD_ALLOWED_KEYS, so #validate_field_record! rejects it
+    # before a model-supplied record reaches this method.
+    derivation = values["derivation"].presence && allowlisted_value(values["derivation"], DERIVATION_VALUES)
     record_id = field_record_id(
       page: page,
       source: source,
@@ -419,7 +504,9 @@ class BatchResultsParserService
       expected_result: values["r"],
       evidence: values["ev"],
       stop_trigger: stop_pair[0],
-      stop_action: stop_pair[1]
+      stop_action: stop_pair[1],
+      derivation: derivation,
+      derivation_evidence: values["derivation_evidence"]
     )
 
     lines = [
@@ -430,6 +517,10 @@ class BatchResultsParserService
       "ACTION: #{field_value(values["a"])}",
       "EXPECTED_RESULT: #{field_value(values["r"])}"
     ]
+    if derivation.present?
+      lines << "DERIVATION: #{derivation}"
+      lines << "DERIVATION_EVIDENCE: #{field_value(values['derivation_evidence'])}"
+    end
     lines << "DETAILS: #{field_value(values['x'])}" if values["x"].present?
     if values["sw"].present?
       lines << "STOP_WORK_TRIGGER: #{field_value(values['sw'][0])}"
@@ -442,10 +533,15 @@ class BatchResultsParserService
     lines.join("\n")
   end
 
-  # Append stop-work context only when present. This distinguishes sibling
-  # safety records without changing historical IDs for every other record type.
+  # Append stop-work / derivation context only when present. This distinguishes
+  # sibling records without changing historical IDs for every other record
+  # type. For a TOPOLOGY_EDGE, folding in `derivation`/`derivation_evidence`
+  # is what makes the ID idempotent on geometry: re-deriving the same edge
+  # from the same layout reproduces the same evidence string and therefore
+  # the same RECORD_ID (Fase 4 DoD).
   def field_record_id(page:, source:, record_type:, action:, expected_result:,
-                      evidence:, stop_trigger: nil, stop_action: nil)
+                      evidence:, stop_trigger: nil, stop_action: nil,
+                      derivation: nil, derivation_evidence: nil)
     fingerprint_parts = [
       page,
       source,
@@ -456,6 +552,9 @@ class BatchResultsParserService
     ]
     if stop_trigger.present? || stop_action.present?
       fingerprint_parts.push(field_value(stop_trigger), field_value(stop_action))
+    end
+    if derivation.present? || derivation_evidence.present?
+      fingerprint_parts.push(field_value(derivation), field_value(derivation_evidence))
     end
     fingerprint = fingerprint_parts.join("\u001F")
 
@@ -492,7 +591,10 @@ class BatchResultsParserService
   # `section_identity` is the brand/controller-family section a divider page declared
   # and ChunkMergerService carried forward (field_records_v7); absent when unknown.
   # `account_id` / `project_id` are reserved here as multi-tenant seams — absent today (MVP).
-  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:, account_id:, document_uid:, page_number:, section_identity: nil)
+  # `section_path` and `topology_edge_count` (Fase 4, contract v8) are gated on
+  # IngestionLayoutFlag — absent whenever the flag is off, which is what keeps a
+  # v7 sidecar byte-identical to what this method would have written before Fase 4.
+  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:, account_id:, document_uid:, page_number:, section_identity: nil, section_path: nil, topology_edge_count: nil)
     contract_version, prompt_fingerprint = contract_metadata(ingestion_path)
 
     attributes = {
@@ -511,6 +613,12 @@ class BatchResultsParserService
     attributes["page_number"] = normalized_page if normalized_page&.positive?
     normalized_section = section_identity.to_s.strip
     attributes["section_identity"] = normalized_section if normalized_section.present?
+
+    if IngestionLayoutFlag.enabled?
+      normalized_path = Array(section_path).map { |value| value.to_s.strip }.compact_blank
+      attributes["section_path"] = normalized_path if normalized_path.present?
+      attributes["topology_edge_count"] = topology_edge_count.to_i if topology_edge_count.to_i.positive?
+    end
 
     JSON.generate(
       "metadataAttributes" => attributes

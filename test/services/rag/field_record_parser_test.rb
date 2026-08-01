@@ -256,4 +256,45 @@ class Rag::FieldRecordParserTest < ActiveSupport::TestCase
     assert_empty ledger.records.select { |r| r.stop_trigger == "emergencia desde control de plataforma" },
       "platform-control record must not appear when absent from the extracted chunk"
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 4 (contract v8): DERIVATION / DERIVATION_EVIDENCE on TOPOLOGY_EDGE
+  # ---------------------------------------------------------------------------
+
+  TOPOLOGY_EDGE_BLOCK = <<~RECORD
+    FIELD_RECORD:
+    RECORD_ID: FR-CCCC000011112222
+    SOURCE_SECTION_OR_PAGE: CONTROL LEVEL 1B
+    RECORD_TYPE: TOPOLOGY_EDGE
+    ACTION: LIMITADOR -> CONECTOR AI
+    EXPECTED_RESULT: DATA_NOT_AVAILABLE
+    DERIVATION: leader_line
+    DERIVATION_EVIDENCE: polilínea (332.2,153.3)->(332.2,248.1) une LIMITADOR con CONECTOR AI
+    EVIDENCE: LIMITADOR | CONECTOR AI
+    END_FIELD_RECORD
+  RECORD
+
+  test "parses DERIVATION and DERIVATION_EVIDENCE as optional labels on a TOPOLOGY_EDGE" do
+    record = Rag::FieldRecordParser.parse_text(TOPOLOGY_EDGE_BLOCK)[:records].sole
+
+    assert_equal "TOPOLOGY_EDGE", record.type
+    assert_equal "LIMITADOR -> CONECTOR AI", record.action
+    assert_equal "leader_line", record.derivation
+    assert_includes record.derivation_evidence, "polilínea"
+  end
+
+  test "a record without DERIVATION leaves it nil, not an invalidating unknown label" do
+    record = Rag::FieldRecordParser.parse_text(VALID_BLOCK)[:records].sole
+
+    assert_nil record.derivation
+    assert_nil record.derivation_evidence
+  end
+
+  test "content_fingerprint differs when only DERIVATION differs" do
+    vision_block = TOPOLOGY_EDGE_BLOCK.sub("DERIVATION: leader_line", "DERIVATION: vision")
+    leader_line_record = Rag::FieldRecordParser.parse_text(TOPOLOGY_EDGE_BLOCK)[:records].sole
+    vision_record       = Rag::FieldRecordParser.parse_text(vision_block)[:records].sole
+
+    assert_not_equal leader_line_record.content_fingerprint, vision_record.content_fingerprint
+  end
 end

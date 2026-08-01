@@ -220,7 +220,7 @@ La fase siguiente lee el documento actualizado, no el original.
 |---|---|---|---|---|
 | 0a | cerrada | — | e187323 | I-01 |
 | 0b | cerrada | — | 72fc7ee | I-02 |
-| 1 | cerrada | `INGESTION_VISUAL_TRIAGE_ENABLED` | *(pendiente de commit)* | I-04, I-05, I-06 |
+| 1 | cerrada | `INGESTION_VISUAL_TRIAGE_ENABLED` | 2f0bfd3 | I-04, I-05, I-06 |
 | 2 | pendiente | — (offline) | | |
 | 3 | pendiente | — (offline) | | |
 | Gate A | pendiente | — | | |

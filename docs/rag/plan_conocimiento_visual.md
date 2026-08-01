@@ -147,6 +147,9 @@ jerarquía real está impresa en tres niveles en el divisor (`ALJO` / `CONTROL L
   ([:18-30](app/services/rag/answer_safety_processor.rb#L18-L30)) matchea `X…`, `CN-\d`, `B\d`,
   `C\d`, `[DLT]\d`, `LED-?\d` — **nunca `CONECTOR AI`/`AG`**. El guard ni se dispara. Lo único
   que rechaza este conocimiento es un párrafo del prompt. Verificado leyendo el patrón.
+  ⚠️ **revisado en I-24:** sigue siendo cierto de `IDENTIFIER_PATTERN` (que no se tocó), pero
+  desde la Fase 6a ya no es cierto del guard: un par de extremos digit-less se valida ahora
+  contra las líneas `ACTION:` de la evidencia, sin vocabulario de equipo.
 - **Retrieval.** `RagRetrievalProfile:13-39` documenta dos rechazos **medidos** de los tweaks
   obvios (top_k 6 bajó un caso de 5/7 a 0/7; 5 preguntas no rankean ni en top-20 porque el
   contenido no está). El input del embedding es el cuerpo del chunk escrito por la ingesta.
@@ -259,7 +262,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 4 | **bloqueada** (requiere Gate A-bis aprobado + decisión humana #4) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
-| 6a | pendiente | — | | |
+| 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | pendiente | — | | |
 | 7 | pendiente | — | | |
 | 8 | pendiente | — | | |
@@ -877,12 +880,24 @@ En las páginas donde ambos tiers aplican, comparar aristas T1 (deterministas) c
 Se envía **antes** del re-ingest porque es demostrablemente inerte: no existe ningún
 `TOPOLOGY_EDGE` en el índice todavía. Se observa delta cero y eso valida el despliegue.
 
+> ⚠️ **revisado en I-24.** Eso vale para **6b**, no para 6a. 6a **sí** cambia respuestas hoy: al
+> anclar el soporte de un par a una línea `ACTION:`, degrada también el par correcto que la
+> evidencia documenta sólo en prosa o en una fila de tabla (medido). Es fail-closed y es lo que
+> pide la instrucción, pero el delta esperado de 6a **no es cero**.
+
 **6a — Endurecimiento primero** (`rag/answer_safety_processor.rb`): rechazar cualquier línea con
 `->`/`conect…` cuyo par de extremos no sea un par de substrings de alguna línea `ACTION:` de la
 evidencia. Bloquea el encadenado obvio (`A→X` + `B→X` ⇒ `A→B`), que hoy **pasa** para nombres
 tipo `CONECTOR`. **No se extiende `IDENTIFIER_PATTERN`**: es sitio congelado en
 `test/architecture/no_hardcoded_equipment_test.rb`, y una comprobación agnóstica del corpus es
 lo correcto. Es un **endurecimiento**, así que puede y debe ir antes que 6b.
+
+**Cerrada en `1ecd41c`.** Los extremos se leen de la propia línea: la etiqueta en mayúsculas más
+cercana a cada lado de una flecha o de un verbo `conect…`/`cablead…`/`wired` (`conector`/
+`conectores` son sustantivos y no cuentan como relación). El chequeo es **aditivo**: la ruta de
+identificadores conserva su contrato exacto en toda línea cuyos extremos sabe leer, y la nueva
+sólo corre donde aquélla no emite veredicto. `IDENTIFIER_PATTERN` quedó intacto. Alcance y
+contrapartidas medidas en **I-24** y **I-25**.
 
 **6b — Relajación con procedencia**, reemplazando
 [generation.txt:35-39](app/prompts/bedrock/generation.txt#L35-L39):
@@ -910,15 +925,17 @@ procedencia `leader_line` vs `vision` visible en la respuesta.
 - [ ] `test/prompts/bedrock_generation_prompt_test.rb`: la inferencia por posición sigue
       prohibida; `$output_format_instructions$` sigue **último**; el párrafo nuevo aparece
       **exactamente una vez** (compactación de prompt, `AGENTS.md:163-165`)
-- [ ] `answer_safety_processor_test.rb`: `"LIMITADOR -> CONECTOR AI"` **sobrevive** cuando la
-      evidencia contiene el bloque `TOPOLOGY_EDGE`
-- [ ] Mismo archivo: **se rechaza** cuando la evidencia sólo tiene las dos etiquetas en líneas
-      separadas. *Éste es el control real*
-- [ ] Mismo archivo: encadenar `A -> B` desde `A -> X` + `B -> X` se rechaza
+- [x] `answer_safety_processor_test.rb`: `"LIMITADOR -> CONECTOR AI"` **sobrevive** cuando la
+      evidencia contiene el bloque `TOPOLOGY_EDGE` — *cubierto por 6a (`1ecd41c`)*
+- [x] Mismo archivo: **se rechaza** cuando la evidencia sólo tiene las dos etiquetas en líneas
+      separadas. *Éste es el control real* — *cubierto por 6a*
+- [x] Mismo archivo: encadenar `A -> B` desde `A -> X` + `B -> X` se rechaza — *cubierto por 6a,
+      con arista y con prosa; y la inversión también (⚠️ revisado en I-25)*
 - [ ] Mismo archivo: una arista `DERIVATION: vision` llega a la respuesta **con** su calificador
       de verificación en campo; sin él, se rechaza
-- [ ] `seguridades_rubric_calibration_test.rb`: los **42 casos pasan sin cambios**, y el
-      renderizado de topología matchea **cero** patrones `penalized` de las 6 rúbricas
+- [ ] `seguridades_rubric_calibration_test.rb`: los **52 casos pasan sin cambios** (⚠️ revisado
+      en I-24: son 52 desde la rúbrica v4.1, no 42), y el renderizado de topología matchea
+      **cero** patrones `penalized` de las 6 rúbricas
 - [ ] Suite + rubocop verdes
 
 ### Fase 7 — Shadow ingest A/B (único paso irreversible, des-riesgado) · Sonnet + Opus (go/no-go)
@@ -1670,3 +1687,5 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-21 | 3b | Opus 5 | **"4 aristas falsas" era la cuenta del Gate A; al empezar 3b ya eran 3, y una había cambiado de nombre.** Medido con el extractor de 2b ya mergeado y el derivador sin tocar: **pág. 67 ya devolvía `[]`** —el `PUERTAS EXTE. -> SE` del Gate A desapareció con el bbox corregido de 2b, y no por una guarda de nombre sino porque, con la caja bien puesta, el cable **pasa por encima** de `SE` y salta la guarda de "la cadena pasa junto a la etiqueta"; es una abstención correcta obtenida por un camino incidental— y **pág. 61 mutó**: de `CERRADURAS EXTERIORES -> B` (Gate A) a `TENSORA -> A 8 2 P`, el borne vertical `P28A` leído al revés. Es decir, 2b arregló el bbox pero **no** el defecto de citar texto rotado: sólo cambió qué basura se citaba. Eso confirma la decisión de I-13/2b de descartar y no rescatar, y confirma que la guarda de rotación de 3b era necesaria y no redundante. Efecto colateral registrado: en la pág. 98 la única cadena que el Gate A rechazaba por `same_label_loop` ahora muere una guarda antes, por `raster_rival` — mismo resultado, motivo distinto, y por eso el contador de bucles del embudo pasa de 1 a 0. | **Gate A-bis:** la tabla de 23 aristas de `gate_a_medicion_topologia.md` §2 y el embudo de §3.1 están **obsoletos** y hay que reescribirlos en el sitio, no compararse contra ellos. El antes/después publicable es 23 (Gate A) → 22 (tras 2b) → **19 (tras 3b)**. |
 | I-22 | 3b | Opus 5 | **Tres decisiones de implementación de la guarda de rotación que no estaban en el plan y que hay que conocer antes de tocar este archivo.** (a) **Una palabra rotada no se apila con una recta.** `group_stacked` fusiona palabras verticalmente contiguas para reconstruir rótulos de dos líneas (`STOP` / `FOSO`); sin separar por rotación, un borne vertical pegado bajo un rótulo recto lo contamina con su texto **y con su marca `rotated`**, y la etiqueta correcta se pierde por la guarda nueva. Con la separación, el recuento total de etiquetas del documento sube de 3 229 a 3 233 y ninguna arista cambia. (b) **Una etiqueta rotada no se elimina del conjunto, se rechaza al final.** Igual que las "no-nombre" de I-09: quitarlas antes convertiría un "dos etiquetas en rango ⇒ rechazar" en un acierto limpio. Verificado con test: una etiqueta rotada en rango junto a una buena sigue dando `[]`. (c) **`script/gate_a/run.rb` se actualizó** —el `DiagnosticDeriver` del Gate A duplica a mano la lógica de `sole_label_at` para poder atribuir el motivo de cada rechazo; sin añadirle los dos motivos nuevos, su embudo dejaría de cuadrar con `derive` y el Gate A-bis mediría mal. Es un archivo de otra fase; se tocó **sólo** ese espejo, y es la única edición fuera de la Fase 3b. | **Cualquiera que toque `TopologyEdgeDeriver`:** si cambia el orden de rechazos de `sole_label_at`, tiene que cambiar el mismo orden en `DiagnosticDeriver#label_state`, o el embudo del gate miente. Son dos copias de la misma decisión y no hay test que las ate. |
 | I-23 | 3b | Opus 5 | **El Protocolo de traspaso se incumplió dos veces seguidas y casi cuesta el entregable más caro del plan: ni el Gate A ni la Fase 2b commitearon.** Al empezar 3b, el árbol tenía sin commitear el extractor de 2b y su fixture, y **sin trackear** `docs/rag/gate_a_medicion_topologia.md` y `script/gate_a/` — es decir, el informe que contiene las 153 relaciones leídas a mano (la verdad-terreno de la Fase 8, la parte cara e irrepetible del plan) y los guiones que el Gate A-bis tiene que volver a correr vivían sólo en el working tree, a un `git clean` de desaparecer. Por eso las tres celdas de la columna Commit de la tabla de estado estaban vacías pese a decir "cerrada". Resuelto aquí commiteando las tres fases en orden de dependencia y anotando los hashes: **2b `f4ab397`**, **Gate A `f7aa592`**, **3b `1cb789b`**. Commitear sólo 3b no era opción: habría dejado un árbol donde la guarda de rotación no tiene ningún extractor que emita `rotated`. **Sigue pendiente** el housekeeping de `.claude/settings.json` que la Fase 0 dejó abierto (decisión del dueño: no se commitea todavía). | **Toda fase siguiente:** el punto 4 del Protocolo de traspaso ("marca la fase como cerrada y anota el commit") no es burocracia — es lo que hace que el trabajo exista fuera de tu sesión. Comprueba `git status` **antes** de declarar cerrada tu fase, y si encuentras trabajo de una fase anterior sin commitear, regístralo en vez de construir encima en silencio. |
+| I-24 | 6a | Opus 5 | **6a no es inerte al desplegarse: el ancla `ACTION:` rechaza también pares correctos que la evidencia documenta en prosa o en fila de tabla.** La instrucción se implementó al pie de la letra (el par de extremos tiene que ser un par de substrings de **una misma línea `ACTION:`**), y eso bloquea el defecto buscado, pero la contrapartida está medida con el procesador ya construido: (a) `"El LIMITADOR se conecta al PARACAIDAS."` con dos `ACTION:` que comparten `CONECTOR AI` ⇒ **rechazado**, que es el objetivo de la fase; (b) `"La FOTOCELULA se conecta a la SERIE PUERTAS."` con evidencia que contiene **esa misma frase verbatim** ⇒ **rechazado**, siendo una respuesta correcta y citada; (c) el par en una fila de tabla (`\| CERROJOS CABINA \| CUADRO DE MANIOBRA \|`) ⇒ **rechazado**. Es una asimetría con la ruta de identificadores, que acepta cualquier `relationship_fragment?` (`ACTION`/`DETAILS`/`EXPECTED_RESULT`, fila con `\|`, o línea con `conect…`) y que quedó intacta a propósito. La relajación de una línea que conserva entera la defensa anti-encadenado es exigir que ambos extremos estén en **una misma línea de relación** en vez de específicamente en una `ACTION:`: el encadenado sigue muerto porque sigue haciendo falta que los dos extremos estén en la **misma** línea, y el control de 6b "las dos etiquetas en líneas separadas" sigue fallando. **No se hizo: no es lo que dice la instrucción de 6a.** Es decisión humana. Medición asociada: ninguna verificación `required`/`optional` de las 5 rúbricas contiene `/conect\|cablead\|->\|→/`, así que **ningún caso puntuado depende de una redacción que este guard pueda degradar**; y el test de calibración carga hoy **52 casos** (12 + 10 + 10 + 10 + 10), no 42 — el 42 del plan es anterior a la rúbrica v4.1. Suite completa 2090 runs / 0 failures, rubocop limpio. | **Fase 6 (preámbulo):** "demostrablemente inerte … delta cero" es cierto de 6b y **falso de 6a** — corregido en el sitio. **Fase 6b:** si se prefiere la variante de "línea de relación", el sitio exacto es `traced_action_lines` (un patrón, un test) y hay que añadir el control positivo de prosa; si se deja como está, la respuesta correcta para un par digit-less no derivado se degrada a `unsupported_connection`, que es fail-closed pero no gratis. **Fase 8:** medir la tasa de `unsupported_connection` antes/después sobre las 98 páginas; es el único sitio del plan donde se puede cuantificar el coste de este endurecimiento. |
+| I-25 | 6a | Opus 5 | **Lo que este guard no cubre, para que 6b no lo sobreestime.** (a) **Sólo lee etiquetas en mayúsculas.** Una paráfrasis en minúsculas (`"El limitador se conecta al paracaidas."`) **escapa** — medido. Se probó y descartó hacer el patrón de etiqueta insensible a mayúsculas: cualquier palabra de ≥3 letras pasa a ser candidata a extremo y la prosa normal se degrada en masa. El ancla de mayúsculas es la misma forma léxica que ya usa `COMPONENT_CODE_PATTERN`, y lo que la sostiene es la regla de reproducción **verbatim** del `generation.txt`: **6b no debe debilitarla**, es el único motivo por el que las etiquetas llegan en mayúsculas a la respuesta. (b) **Necesita una etiqueta a cada lado de la relación**; si un lado no tiene ninguna, la línea se deja intacta a propósito (`"No se documenta a qué borne se conecta la fotocelula."` sobrevive, correcto) — no hay cota de distancia, se toma la etiqueta más cercana, porque una cota sería un bypass. (c) **Extra sobre lo pedido:** una afirmación con flecha debe respetar además el orden de la línea `ACTION:`, así que `"CONECTOR AI -> LIMITADOR"` derivado de `ACTION: LIMITADOR -> CONECTOR AI` se rechaza. Eso hace determinista el "never invert one" de 6b en vez de dejarlo sólo en el prompt; **no contradice I-11**: no se afirma que la flecha sea dirección, se exige reproducir el par tal como está escrito. (d) Reafirma I-14: el guard **no salva** una arista falsa que sí está en la evidencia — si la ingesta escribe `ACTION: PUERTAS FRONTALES -> PESTLLOS TECHO CABINA`, la respuesta que la reproduzca queda autorizada. La procedencia `leader_line` sigue siendo tan fuerte como la guarda de la Fase 3b. | **Fase 6b:** el párrafo verbatim se escribe igual, pero el control de inversión ya está cubierto por test en `answer_safety_processor_test.rb` (no hace falta un control negativo nuevo para eso; sí para los otros cuatro). **Fase 8:** un caso de la batería debería cubrir explícitamente la paráfrasis en minúsculas, que es hoy la vía de escape más barata para un encadenado. |

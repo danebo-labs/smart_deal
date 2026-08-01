@@ -35,6 +35,31 @@ module Rag
 
     CONNECTION_CLAIM_PATTERN =
       /(?:conect|borna|terminal|cablead|wired|→|->)/i.freeze
+    # Corpus-agnostic wired-pair guard. IDENTIFIER_PATTERN only recognises
+    # endpoints shaped like X…, CN-<n>, B<n>, C<n>, [DLT]<n> or LED-<n>, so a
+    # claim between two plain printed labels ("LIMITADOR -> CONECTOR AI") never
+    # reaches the identifier check below and a chain fabricated from two real
+    # edges (A -> X plus B -> X, therefore A -> B) goes through untouched. This
+    # guard reads both endpoints off the answer line itself and requires a
+    # single `ACTION:` line of the evidence — the shape a traced edge is
+    # rendered with — to name the pair. Reading the endpoints off the line needs
+    # no equipment vocabulary, which is why IDENTIFIER_PATTERN stays frozen
+    # (test/architecture/no_hardcoded_equipment_test.rb).
+    #
+    # Only verb forms and the arrow state a relation: "conector"/"conectores"
+    # are nouns and naming one is not a claim about what it is wired to.
+    WIRED_PAIR_RELATION_PATTERN = /
+      -> | → |
+      \bconect(?:a|an|ada|adas|ado|ados|ar|arse)\b |
+      \bcablead(?:a|as|o|os)\b |
+      \bconnect(?:s|ed|ing)?\b |
+      \bwired\b
+    /xi.freeze
+    # An endpoint is a printed all-caps label, possibly multi-word: the layout
+    # extractor keeps a label's internal spaces ("CONECTOR AI", plan I-08).
+    ENDPOINT_LABEL_PATTERN =
+      %r{[[:upper:]][[:upper:][:digit:]._+/-]{2,}(?:[ ]+[[:upper:][:digit:]._+/-]+)*}.freeze
+    ACTION_LINE_PATTERN = /^[^\S\n]*ACTION:[^\S\n]*(\S[^\n]*)$/.freeze
     # "indica"/"señala" alone name a documented series/label attribution (e.g. "D10
     # indica la SERIE SEGURIDAD CABINA"), not ON/OFF logic — they only count as a
     # state claim when paired with an actual state term in the same line/fragment.
@@ -126,32 +151,110 @@ module Rag
       end.join
     end
 
+    # Two checks, in order of specificity. The identifier check owns every line
+    # whose endpoints it can read, so its contract (any relationship fragment
+    # naming both) is unchanged. The traced-pair check only runs where the
+    # identifier check returns no verdict — the blind spot where a claim between
+    # two digit-less labels used to pass unexamined.
     def reject_unsupported_connection_claims(answer, evidence)
       transform_claim_lines(answer) do |line|
         next unless line.match?(CONNECTION_CLAIM_PATTERN)
 
-        connectors = identifiers_in(line).reject { |identifier| led_identifier?(identifier) }
-        next if connectors.empty?
+        supported = identifier_pair_supported?(line, evidence)
+        supported = traced_pair_supported?(line, evidence) if supported.nil?
+        next if supported.nil? || supported
 
-        component_source = line.gsub(SERIES_LABEL_PATTERN, " ")
-        components = component_source.scan(COMPONENT_CODE_PATTERN).reject do |code|
-          COMPONENT_CODE_STOPWORDS.include?(code) ||
-            board_model_name?(code) ||
-            connectors.any? { |connector| canonical(connector) == canonical(code) }
-        end
-        next if components.empty?
+        I18n.t("rag.unsupported_connection", locale: @locale)
+      end
+    end
 
-        supported = connectors.all? do |connector|
-          components.any? do |component|
-            evidence_fragments(evidence).any? do |fragment|
-              relationship_fragment?(fragment) &&
-                fragment.match?(/\b#{Regexp.escape(connector)}\b/i) &&
-                fragment.match?(/\b#{Regexp.escape(component)}\b/i)
-            end
+    # nil when the line names no connector/component pair this check can judge.
+    def identifier_pair_supported?(line, evidence)
+      connectors = identifiers_in(line).reject { |identifier| led_identifier?(identifier) }
+      return nil if connectors.empty?
+
+      component_source = line.gsub(SERIES_LABEL_PATTERN, " ")
+      components = component_source.scan(COMPONENT_CODE_PATTERN).reject do |code|
+        COMPONENT_CODE_STOPWORDS.include?(code) ||
+          board_model_name?(code) ||
+          connectors.any? { |connector| canonical(connector) == canonical(code) }
+      end
+      return nil if components.empty?
+
+      connectors.all? do |connector|
+        components.any? do |component|
+          evidence_fragments(evidence).any? do |fragment|
+            relationship_fragment?(fragment) &&
+              fragment.match?(/\b#{Regexp.escape(connector)}\b/i) &&
+              fragment.match?(/\b#{Regexp.escape(component)}\b/i)
           end
         end
-        I18n.t("rag.unsupported_connection", locale: @locale) unless supported
       end
+    end
+
+    # nil when the line states no readable endpoint pair — prose this check
+    # cannot parse is left to the identifier check and the generation contract
+    # instead of being degraded on suspicion.
+    def traced_pair_supported?(line, evidence)
+      pairs = wired_pairs_in(line)
+      return nil if pairs.empty?
+
+      actions = traced_action_lines(evidence)
+      pairs.all? { |left, right, ordered| traced_pair?(actions, left, right, ordered) }
+    end
+
+    # Both endpoints must be substrings of the SAME action line: two lines each
+    # naming one of them is exactly the chain this guard exists to block. An
+    # arrow claim must also keep the action line's own order, so a traced edge
+    # cannot be reported inverted.
+    def traced_pair?(actions, left, right, ordered)
+      actions.any? do |action|
+        left_at = action.index(left)
+        right_at = action.index(right)
+        next false if left_at.nil? || right_at.nil?
+
+        !ordered || left_at < right_at
+      end
+    end
+
+    # The endpoints of a relation are the label closest to it on each side. A
+    # line may state several ("A -> B, C -> D"); each one is checked.
+    def wired_pairs_in(line)
+      text = line.to_s.gsub(SERIES_LABEL_PATTERN, " ").gsub(/\[\d+\]/, " ")
+      pairs = []
+      position = 0
+
+      while (relation = WIRED_PAIR_RELATION_PATTERN.match(text, position))
+        left = endpoint_labels(text[0...relation.begin(0)]).last
+        position = relation.end(0)
+        right = endpoint_labels(text[position..]).first
+        next if left.nil? || right.nil? || left == right
+
+        pairs << [ left, right, relation[0].match?(/->|→/) ]
+      end
+
+      pairs.uniq
+    end
+
+    def endpoint_labels(text)
+      text.to_s.scan(ENDPOINT_LABEL_PATTERN).filter_map { |raw| endpoint_label(raw) }
+    end
+
+    # Folded to lowercase with single spaces so the substring test against an
+    # action line is insensitive to case and to trailing punctuation.
+    def endpoint_label(raw)
+      tokens = raw.split(/\s+/).filter_map do |token|
+        stripped = token.sub(/[[:punct:]]+\z/, "")
+        stripped unless stripped.empty? || COMPONENT_CODE_STOPWORDS.include?(stripped)
+      end
+      label = tokens.join(" ").downcase
+      label if label.length >= 3
+    end
+
+    def traced_action_lines(evidence)
+      cache_evidence(evidence)
+      @traced_action_lines ||= evidence.to_s.scan(ACTION_LINE_PATTERN).flatten
+        .map { |action| action.downcase.gsub(/\s+/, " ").strip }
     end
 
     def reject_unsupported_led_logic(answer, evidence)
@@ -247,9 +350,16 @@ module Rag
     end
 
     def evidence_fragments(evidence)
-      @evidence_fragments = nil unless defined?(@last_evidence) && @last_evidence == evidence
-      @last_evidence = evidence
+      cache_evidence(evidence)
       @evidence_fragments ||= self.class.fragments(evidence)
+    end
+
+    def cache_evidence(evidence)
+      return if defined?(@last_evidence) && @last_evidence == evidence
+
+      @last_evidence = evidence
+      @evidence_fragments = nil
+      @traced_action_lines = nil
     end
 
     def relationship_fragment?(fragment)

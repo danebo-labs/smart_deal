@@ -308,7 +308,99 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     assert_equal answer, processor.call(answer, evidence: evidence)
   end
 
+  # Fase 6a: a claim between two digit-less printed labels is invisible to
+  # IDENTIFIER_PATTERN, so until now the connection guard never even ran on it
+  # and a chain assembled from two real traced edges (A -> X plus B -> X,
+  # therefore A -> B) reached the technician as documented fact.
+  test "rejects a wired pair chained from two traced edges that share an endpoint" do
+    rendered = processor.call(
+      "El LIMITADOR se conecta al PARACAIDAS.",
+      evidence: [ { content: TRACED_EDGES } ]
+    )
+
+    assert_not_includes rendered, "LIMITADOR se conecta al PARACAIDAS"
+    assert_includes rendered, t("unsupported_connection")
+  end
+
+  test "rejects the same chain written with an arrow" do
+    rendered = processor.call("LIMITADOR -> PARACAIDAS", evidence: [ { content: TRACED_EDGES } ])
+
+    assert_includes rendered, t("unsupported_connection")
+  end
+
+  test "preserves a wired pair named by a single traced action line" do
+    answer = "LIMITADOR -> CONECTOR AI"
+
+    assert_equal answer, processor.call(answer, evidence: [ { content: TRACED_EDGES } ])
+  end
+
+  test "preserves a traced pair restated in prose, keeping its citation marker" do
+    answer = "El LIMITADOR se conecta al CONECTOR AI[1]."
+
+    assert_equal answer, processor.call(answer, evidence: [ { content: TRACED_EDGES } ])
+  end
+
+  # The real control: both labels are in the evidence, but never as a pair on
+  # one action line.
+  test "rejects a wired pair whose labels only appear on separate evidence lines" do
+    rendered = processor.call(
+      "El LIMITADOR se conecta al CONECTOR AG.",
+      evidence: [ { content: "LIMITADOR\nCONECTOR AG\nSERIE SEGURIDADES HUECO" } ]
+    )
+
+    assert_includes rendered, t("unsupported_connection")
+  end
+
+  test "rejects a traced pair reported inverted" do
+    rendered = processor.call("CONECTOR AI -> LIMITADOR", evidence: [ { content: TRACED_EDGES } ])
+
+    assert_includes rendered, t("unsupported_connection")
+  end
+
+  test "rejects a line that mixes one traced pair with one invented pair" do
+    rendered = processor.call(
+      "LIMITADOR -> CONECTOR AI, y PARACAIDAS -> CONECTOR AG.",
+      evidence: [ { content: TRACED_EDGES } ]
+    )
+
+    assert_includes rendered, t("unsupported_connection")
+  end
+
+  test "leaves a connection sentence alone when no endpoint pair can be read from it" do
+    answer = "El esquema no indica a que borne se conecta la fotocelula."
+
+    assert_equal answer, processor.call(answer, evidence: [ { content: TRACED_EDGES } ])
+  end
+
+  # "conector" is a noun: naming one is not a claim about what it is wired to.
+  test "does not treat naming a connector as a wired pair claim" do
+    answer = "El CONECTOR AI aparece rotulado en el CONTROL LEVEL 1B."
+
+    assert_equal answer, processor.call(answer, evidence: [ { content: TRACED_EDGES } ])
+  end
+
   private
+
+  # Rendering of two TOPOLOGY_EDGE records sharing the CONECTOR AI endpoint,
+  # in the FIELD_RECORD grammar the ingestion writes.
+  TRACED_EDGES = <<~TEXT
+    FIELD_RECORD:
+    RECORD_ID: FR-0000000000000001
+    RECORD_TYPE: TOPOLOGY_EDGE
+    ACTION: LIMITADOR -> CONECTOR AI
+    EXPECTED_RESULT: DATA_NOT_AVAILABLE
+    DERIVATION: leader_line
+    EVIDENCE: LIMITADOR | CONECTOR AI
+    END_FIELD_RECORD
+    FIELD_RECORD:
+    RECORD_ID: FR-0000000000000002
+    RECORD_TYPE: TOPOLOGY_EDGE
+    ACTION: PARACAIDAS -> CONECTOR AI
+    EXPECTED_RESULT: DATA_NOT_AVAILABLE
+    DERIVATION: leader_line
+    EVIDENCE: PARACAIDAS | CONECTOR AI
+    END_FIELD_RECORD
+  TEXT
 
   def processor
     @processor ||= Rag::AnswerSafetyProcessor.new(locale: :es)

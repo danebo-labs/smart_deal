@@ -221,7 +221,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 0a | cerrada | — | e187323 | I-01 |
 | 0b | cerrada | — | 72fc7ee | I-02 |
 | 1 | cerrada | `INGESTION_VISUAL_TRIAGE_ENABLED` | 2f0bfd3 | I-04, I-05, I-06 |
-| 2 | pendiente | — (offline) | | |
+| 2 | cerrada | — (offline) | 09c813b | I-07, I-08 |
 | 3 | pendiente | — (offline) | | |
 | Gate A | pendiente | — | | |
 | 4 | pendiente | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
@@ -433,8 +433,9 @@ La palanca de generalidad. **No añade ninguna llamada LLM.**
   Código base verificado en el **Apéndice B**.
 - **Nuevo** `app/services/page_layout_digest.rb` — serializador acotado en tokens.
 - **Modificar** `page_image_density_analyzer.rb`: extender `compute_image_area` (:64-88) para
-  devolver también `images: [{name:, width:, height:, bbox:, size_class:}]`. Ya recorre los
-  XObjects: ~6 líneas, no una clase nueva. El `bbox` es lo que después permite a T2 recortar cada
+  devolver también `images: [{name:, width:, height:, bbox:, size_class:}]`. ⚠️ revisado en I-07:
+  no son ~6 líneas — el `bbox` de posición requiere el CTM vigente en cada operador `Do`, que el
+  recorrido de `Resources` no tiene. El `bbox` es lo que después permite a T2 recortar cada
   componente y a T1 anclarlo a su etiqueta. **No cambiar la forma de retorno existente** —
   añadir la clave; `PageRelevanceFilter` y `FileMultimodalRouter` la consumen hoy.
 
@@ -443,14 +444,16 @@ es top-down; mezclarlos es el bug obvio de esta fase. Conversión: `y_hexapdf = 
 (en la página 3, `CONECTOR AI` está en y=298 top-down = **y≈242 bottom-up**). Test explícito.
 
 *Definición de terminado:*
-- [ ] `PdfLayoutExtractor.extract` devuelve exactamente el contrato de datos de arriba
-- [ ] Test sobre un PDF fixture de 3 páginas comprometido en `test/fixtures/files/`
-- [ ] Test explícito de convención: una etiqueta conocida tiene `y` bottom-up, y el test falla si
+- [x] `PdfLayoutExtractor.extract` devuelve exactamente el contrato de datos de arriba
+- [x] Test sobre un PDF fixture de 3 páginas comprometido en `test/fixtures/files/`
+      (`pdf_layout_extractor_sample.pdf`)
+- [x] Test explícito de convención: una etiqueta conocida tiene `y` bottom-up, y el test falla si
       alguien la invierte
-- [ ] Test de que `PageLayoutDigest.render` devuelve `nil` sobre el tope de 400 tokens
-- [ ] Test de que `PageImageDensityAnalyzer` mantiene sus claves previas
-- [ ] Nada del código de producción invoca aún el extractor (grep que lo demuestre)
-- [ ] Suite + rubocop verdes
+- [x] Test de que `PageLayoutDigest.render` devuelve `nil` sobre el tope de 400 tokens
+- [x] Test de que `PageImageDensityAnalyzer` mantiene sus claves previas
+- [x] Nada del código de producción invoca aún el extractor (grep que lo demuestre) — cubierto por
+      test, no sólo manual
+- [x] Suite + rubocop verdes (2033 runs / 0 failures; 462 files, 0 offenses) — ver I-07/I-08
 
 ### Fase 3 — Derivador de aristas T1 (offline) · Opus
 
@@ -1251,3 +1254,5 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-04 | 1 | Sonnet 5 | `ContractualLimits::MANUAL[:max_opus_page_fraction]` (citado en el plan como el knob de presupuesto de esta fase) **no es ese knob**: `test/services/contractual_limits_test.rb:75-78` lo fija en `1.0` como el peor-caso de facturación de Gate 9 (`Gate9CostMatrix#max_manual_cost`), y bajarlo rompería esa garantía sin relación con el triaje visual. Se introdujo `DocumentClassProfile::DEFAULT_MAX_OPUS_PAGE_FRACTION = 0.15` como el presupuesto propio y ajeno de esta feature (tomado del "target histórico <15%" que el propio comentario de `ContractualLimits` documenta), consumido únicamente por `FileMultimodalRouter` detrás del flag. `ContractualLimits::MANUAL[:max_opus_page_fraction]` queda intacto en `1.0`. | Ninguno directo. Si un futuro E3a decide unificar ambos knobs, es una decisión explícita a tomar entonces, no algo que esta fase implique. |
 | I-05 | 1 | Sonnet 5 | El segundo disparador del router (`route_page`) necesita saber si una página tiene polilíneas largas y varias imágenes pequeñas — dato que formalmente entrega `PdfLayoutExtractor` (Fase 2), que aún no existía al cerrar esta fase. Esto contradice el mapa de dependencias del plan ("Fase 1: independiente de 2/3"). Se implementó un probe privado, no contractual (`FileMultimodalRouter#geometry_signal` + clase privada `SegmentCollector`, mismo patrón del Apéndice B) directamente en `file_multimodal_router.rb`, sin tocar `page_image_density_analyzer.rb` (evitando así el conflicto de archivo que el plan anticipa con la Fase 2, confirmado en curso: `page_image_density_analyzer.rb` apareció modificado por otra sesión durante esta ejecución). Umbrales fijados del propio censo del Apéndice C, no a ojo: `LONG_SEGMENT_MIN_COUNT = 10`, `SMALL_IMAGE_MIN_COUNT = 3`, `LONG_SEGMENT_MIN_LENGTH_PT = 20` (igual al corte de ruido que Fase 2 documenta para `lines`). El umbral de "imagen pequeña" (`SMALL_IMAGE_MAX_AREA_PX2 = 50_000`) **no** está fijado en ningún lado del plan — es una estimación propia basada en el hueco de tamaño observado en los ejemplos del Apéndice B (componentes ≤~19k px² vs fotos de placa ≥~1.3M px²). | Fase 2: al existir `PdfLayoutExtractor.extract`, decidir si conviene refactorizar `FileMultimodalRouter` para consumirlo en vez de este probe duplicado (deduplicación cosmética, no bloqueante) y, si se hace, fijar `size_class` con criterio autoritativo en vez del umbral estimado aquí. |
 | I-06 | 1 | Sonnet 5 | Entregable numérico corrido contra el PDF real completo (no una muestra): con los umbrales de I-05, **98/98 páginas (100 %) califican para Opus antes de aplicar presupuesto** — 19 `scanned_dense` (portada + las 18 divisoras del Apéndice E, sin excepción) + 79 candidatas geométricas (el resto exacto del documento). Cifra consistente con la del Apéndice C (80/98 vía muestreo) y con la página 3 del Apéndice D (73 segmentos largos medidos, idéntico al valor verificado ahí). Con `DocumentClassProfile::DEFAULT_MAX_OPUS_PAGE_FRACTION = 0.15` el resultado real es **33.7 %** de páginas en Opus, no 15 % — el presupuesto se aplica sólo sobre el disparador geométrico y se suma al 19.4 % ya incondicional de `scanned_dense`. Tabla completa, ranking por complejidad y proyección de coste (Sonnet $3/$15, Opus $5/$25 por MTok; ~2,250 tokens de entrada/página por bloque `document`, 8,000 de salida) en `docs/rag/triaje_visual_medicion.md`. **No se invocó Haiku en vivo** con el schema v2 (costo real, no autorizado sin pedirlo) — no cambia el resultado de tier para este documento porque el disparador geométrico por sí solo ya cubre el 100 % de las páginas de contenido (el OR con `visual_complexity: high` no tiene nada que agregar aquí), pero significa que `DocumentClassProfile.classify` nunca corrió con datos reales de Haiku para SEGURIDADES. | Fase 5/Gate B: no asumir que existe una clasificación de documento (`DocumentClassProfile.classify`) medida para SEGURIDADES — no corrió. Decisión humana pendiente #3 del plan: la fracción de producción, con esta tabla en mano. |
+| I-07 | 2 | Sonnet 5 | El `bbox` de `images:` no salió de "~6 líneas" dentro del recorrido de `Resources` existente, como estimaba el plan: ese recorrido es puramente sobre el diccionario de recursos (sin content stream) y no tiene forma de saber dónde se pintó cada XObject. Se agregó un segundo pase de content-stream (`PageImageDensityAnalyzer::ImagePlacementCollector`, processor privado que trackea el CTM vigente en cada operador `Do`) que alimenta el mismo bucle de `compute_image_area`; ese método pasa de devolver `[total_area, has_images]` a `[total_area, has_images, images]`. Un XObject declarado en `Resources` pero nunca pintado (`Do`) recibe `bbox: nil` en vez de romper — cubierto por test. `has_images`/`text_layer_chars`/`image_area_ratio` no cambian de valor ni de fuente; `PageRelevanceFilter` y `FileMultimodalRouter` siguen viendo exactamente las mismas claves que antes. | Fase 3/5: al consumir `images[].bbox`, tratar `nil` como "sin posición conocida" — no debería ocurrir en páginas reales bien formadas (todo XObject declarado en un PDF exportado se pinta), pero la guarda existe y el contrato lo permite. |
+| I-08 | 2 | Sonnet 5 | `words` agrupa por adyacencia visual — glifos en la misma línea (baseline `y` dentro de una tolerancia) fusionados si el hueco horizontal entre ellos es pequeño relativo a la altura del glifo — y no por operador `Tj`/`TJ` ni por separación en espacios. Verificado en el fixture: `CONECTOR AI` (una sola etiqueta impresa con espacio interno) queda en una única entrada de `words`, mientras que `CONECTOR AI` y `CONECTOR AG` en la misma fila, con hueco grande entre ellas, quedan separadas — exactamente el ejemplo del contrato de datos. La Fase 3, al resolver el extremo de una arista, debe comparar contra `words[].text` tal como sale de este agrupamiento (puede incluir espacios internos; no asumir tokens de una sola palabra). Por separado: la Fase 1 (I-05) implementó su propio probe geométrico privado (`FileMultimodalRouter#geometry_signal` + `SegmentCollector`) porque `PdfLayoutExtractor` no existía todavía, y dejó registrado como hallazgo propio decidir si conviene refactorizarlo para consumir este contrato ahora que existe. Esta fase no toca `file_multimodal_router.rb` — es archivo de la Fase 1, fuera de alcance ("sólo tu fase") — así que esa deduplicación queda pendiente y sin dueño. | Fase 3: usar `words[].text` verbatim (con espacios) al resolver etiquetas, no tokens partidos. Sin dueño: alguien debe decidir si refactorizar `FileMultimodalRouter#geometry_signal` para usar `PdfLayoutExtractor` en vez de su probe duplicado (I-05), y si lo hace, fijar `size_class` ahí con el criterio autoritativo de `PageImageDensityAnalyzer::SMALL_IMAGE_MAX_AREA_PX2` en vez del umbral estimado por separado en I-05. |

@@ -37,4 +37,18 @@ class LocaleSwitchTest < ActionDispatch::IntegrationTest
       switch_locale_path(:fr)
     end
   end
+
+  # H-05: a request with session[:locale]=:en must not leave I18n.locale=:en
+  # for later tests in the same process (Puma thread reuse / shared suite process).
+  test 'request locale does not leak after the request ends' do
+    process_locale = I18n.locale
+    assert_not_equal :en, process_locale, "precondition: process locale must not already be :en"
+
+    get switch_locale_path(:en), headers: { 'HTTP_REFERER' => new_user_session_url }
+    follow_redirect!
+    assert_response :success
+    assert_select 'span[aria-current=true]', text: 'EN'
+
+    assert_equal process_locale, I18n.locale
+  end
 end

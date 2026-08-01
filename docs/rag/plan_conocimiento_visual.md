@@ -218,7 +218,7 @@ La fase siguiente lee el documento actualizado, no el original.
 
 | Fase | Estado | Flag | Commit | Cerrada por |
 |---|---|---|---|---|
-| 0a | pendiente | — | | |
+| 0a | cerrada | — | | I-01 |
 | 0b | pendiente | — | | |
 | 1 | pendiente | `INGESTION_VISUAL_TRIAGE_ENABLED` | | |
 | 2 | pendiente | — (offline) | | |
@@ -353,11 +353,11 @@ repo; todo lo demás ya usa `I18n.with_locale`. Fix:
 `around_action { |_, blk| I18n.with_locale(resolved, &blk) }`.
 
 *Definición de terminado:*
-- [ ] `locale_switchable.rb` usa `around_action` + `I18n.with_locale`; ninguna asignación global
-- [ ] `bin/rails test` **9 veces seguidas**, 0 failures (el síntoma era 1 de 9 con 7 fallos en
+- [x] `locale_switchable.rb` usa `around_action` + `I18n.with_locale`; ninguna asignación global
+- [x] `bin/rails test` **9 veces seguidas**, 0 failures (el síntoma era 1 de 9 con 7 fallos en
       `document_overview_responder_test.rb` esperando `"Documento:"` y recibiendo `"Document:"`)
-- [ ] `bin/rubocop` limpio
-- [ ] H-05 marcado cerrado en `docs/rag/hallazgos_gate_piloto.md`
+- [x] `bin/rubocop` limpio
+- [x] H-05 marcado cerrado en `docs/rag/hallazgos_gate_piloto.md`
 
 **0b · H-03 (hueco de seguridad).** `BoardHeading.mentioned?("EDEL-K3 …", "… EDEL-K2 …")` es
 `true`: `word_match?` acepta 4 chars de prefijo común y las hermanas con guion comparten seis.
@@ -1236,4 +1236,4 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 
 | ID | Fase | Modelo | Hallazgo | Impacto en fases posteriores |
 |---|---|---|---|---|
-| — | — | — | *(vacío: sin implementación aún)* | — |
+| I-01 | 0a | Cursor Grok 4.5 | H-05 cerrado: `LocaleSwitchable` pasó de `before_action` + `I18n.locale =` a `around_action :with_request_locale` + `I18n.with_locale`. Es el único `I18n.locale =` sin scope del repo; queda eliminado. Test de no-fuga en `locale_switch_test.rb`. Verificado: `bin/rails test` ×9 → 1988 runs / 0 failures cada una; `bin/rubocop` limpio (453 files). | Ninguno. 0b y fases posteriores no dependen de este archivo. |

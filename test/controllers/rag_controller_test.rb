@@ -665,7 +665,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   test 'returns no_results message in Spanish when Accept-Language is es' do
     sign_in @user
 
-    # Mock returns I18n.t which uses the locale set by set_locale before_action
+    # Mock returns I18n.t which uses the locale set by with_request_locale around_action
     mock = Object.new
     mock.define_singleton_method(:execute) do
       { answer: I18n.t("rag.no_results_found"), citations: [], session_id: nil }

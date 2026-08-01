@@ -6,15 +6,16 @@ module LocaleSwitchable
   ALLOWED_LOCALES = %i[es en].freeze
 
   included do
-    before_action :set_locale
+    around_action :with_request_locale
     helper_method :current_locale
   end
 
   private
 
-  def set_locale
+  def with_request_locale(&block)
     stored = session[:locale]&.to_sym
-    I18n.locale = ALLOWED_LOCALES.include?(stored) ? stored : I18n.default_locale
+    locale = ALLOWED_LOCALES.include?(stored) ? stored : I18n.default_locale
+    I18n.with_locale(locale, &block)
   end
 
   def current_locale

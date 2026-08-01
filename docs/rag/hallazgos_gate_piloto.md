@@ -107,16 +107,15 @@ Tres reglas:
   (`document_overview_responder_test.rb:152/161/169`, esperando `"Documento:"`
   y recibiendo `"Document:"`); las otras 8, incluidas las de semillas fijas 1,
   2, 3 y 42417, dieron `1987 runs, 0 failures`.
-  [locale_switchable.rb:17](../../app/controllers/concerns/locale_switchable.rb#L17)
-  asigna `I18n.locale` global en un `before_action` y nunca lo restaura, así
-  que un test de controlador con `session[:locale] = :en` contamina a todos los
-  que corran después en el mismo proceso.
+  [locale_switchable.rb](../../app/controllers/concerns/locale_switchable.rb)
+  asignaba `I18n.locale` global en un `before_action` y nunca lo restauraba, así
+  que un test de controlador con `session[:locale] = :en` contaminaba a todos los
+  que corrieran después en el mismo proceso.
 - **Afecta a:** Fase 7 (*"suite Minitest completa verde"*). No tiene relación
   con la Fase 2: ningún archivo tocado interviene en esos tests.
-- **Estado:** abierto, preexistente. En la Fase 7 hay que decidir si se sella
-  (`I18n.with_locale` o un reset en el teardown de los tests de controlador) o
-  si se declara limitación conocida. Fijar la semilla oculta el problema, no lo
-  cierra.
+- **Estado:** cerrado en Fase 0a. `LocaleSwitchable` usa `around_action` +
+  `I18n.with_locale`; verificado con 9 corridas consecutivas de `bin/rails test`
+  a 0 failures. Test de no-fuga en `test/integration/locale_switch_test.rb`.
 
 ---
 

@@ -86,9 +86,41 @@ module Rag
     end
 
     def execute
-      retrieval_consumed = false
-      retrieval = nil
-      retrieval_ms = 0
+      retrieval_started = monotonic_now
+      retrieval =
+        begin
+          @rag_service.retrieve_chunks(
+            @question,
+            entity_s3_uris: @entity_s3_uris,
+            entity_sources: @entity_sources,
+            force_entity_filter: @force_entity_filter,
+            number_of_results: RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS,
+            account_id: @account_id,
+            correlation_id: @correlation_id
+          )
+        rescue BedrockRagService::BedrockServiceError => e
+          Rails.logger.warn("Rag::StructuredEvidenceRoute: AWS path failed — #{e.message}")
+          return Outcome.new(status: :unavailable, result: nil)
+        rescue StandardError => e
+          Rails.logger.warn("Rag::StructuredEvidenceRoute: failed — #{e.class}: #{e.message}")
+          return Outcome.new(status: :unavailable, result: nil)
+        end
+
+      complete_from_retrieval(retrieval, retrieval_ms: elapsed_ms(retrieval_started))
+    end
+
+    # Everything after the Retrieve, so a caller that already spent the turn's
+    # single Retrieve can finish on that evidence instead of billing a second
+    # one. Rag::AmbiguousModelResponder is that caller: it can only tell that the
+    # question already names one board after looking at the retrieved chunks.
+    # Kept as one method rather than copied into the responder because the eight
+    # steps below — chunk selection, prompt, generation, marker normalization,
+    # absence semantics, answer safety, attribution guard, citation validation —
+    # are the safety stack, and two copies of it would drift.
+    #
+    # Never returns :unavailable: the Retrieve is already consumed by definition,
+    # so every failure below abstains rather than letting a cascade re-retrieve.
+    def complete_from_retrieval(retrieval, retrieval_ms: 0)
       expansion_ms = 0
       local_before_generation_ms = 0
       generation_ms = 0
@@ -98,19 +130,6 @@ module Rag
       prompt = nil
       raw_answer = nil
       attribution = nil
-
-      retrieval_started = monotonic_now
-      retrieval = @rag_service.retrieve_chunks(
-        @question,
-        entity_s3_uris: @entity_s3_uris,
-        entity_sources: @entity_sources,
-        force_entity_filter: @force_entity_filter,
-        number_of_results: RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS,
-        account_id: @account_id,
-        correlation_id: @correlation_id
-      )
-      retrieval_consumed = true
-      retrieval_ms = elapsed_ms(retrieval_started)
 
       expansion_started = monotonic_now
       expanded_chunks, expansions = expand_dividers(retrieval[:chunks])
@@ -257,8 +276,6 @@ module Rag
       Outcome.new(status: :answered, result: result)
     rescue BedrockRagService::BedrockServiceError => e
       Rails.logger.warn("Rag::StructuredEvidenceRoute: AWS path failed — #{e.message}")
-      return Outcome.new(status: :unavailable, result: nil) unless retrieval_consumed
-
       abstained_outcome(
         reason: :generation_failure,
         retrieval: retrieval,
@@ -276,8 +293,6 @@ module Rag
       )
     rescue StandardError => e
       Rails.logger.warn("Rag::StructuredEvidenceRoute: failed — #{e.class}: #{e.message}")
-      return Outcome.new(status: :unavailable, result: nil) unless retrieval_consumed
-
       abstained_outcome(
         reason: :generation_failure,
         retrieval: retrieval,

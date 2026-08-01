@@ -143,6 +143,45 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal "s3://test-bucket/bedrock/divider.txt", generated_chunk[:bedrock_source_uri]
   end
 
+  # Pins the Fase 2 extract method as an equivalence, not a rewrite: a caller
+  # that already spent the turn's Retrieve (Rag::AmbiguousModelResponder) must
+  # get exactly what #execute would have produced for the same evidence.
+  test "execute is retrieve plus complete_from_retrieval over the same evidence" do
+    answer = "ABC12 corresponde a la serie documentada. [1]"
+    whole = build_route(
+      rag_service: FakeRagService.new([ neighbor_chunk ]),
+      generator: FakeGenerator.new(answer)
+    ).execute
+
+    split_service = FakeRagService.new([ neighbor_chunk ])
+    split_route = build_route(rag_service: split_service, generator: FakeGenerator.new(answer))
+    retrieval = split_service.retrieve_chunks(
+      "¿Qué indica el LED ABC12?",
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      number_of_results: RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS,
+      account_id: @account.id
+    )
+    split = split_route.complete_from_retrieval(retrieval, retrieval_ms: 0)
+
+    assert_equal :answered, whole.status
+    assert_equal whole.status, split.status
+    assert_equal comparable_result(whole.result), comparable_result(split.result)
+  end
+
+  test "complete_from_retrieval abstains instead of reporting the retrieve as unspent" do
+    route = build_route(
+      rag_service: FakeRagService.new([]),
+      generator: FakeGenerator.new(nil)
+    )
+
+    outcome = route.complete_from_retrieval({ chunks: [], retrieval_trace: {} }, retrieval_ms: 0)
+
+    assert_equal :abstained, outcome.status
+    assert_equal :empty_evidence, outcome.result.dig(:diagnostics, :outcome_reason)
+  end
+
   test "narrows widened recall to the labelled identifier and lexical sibling match" do
     target = {
       content: "## ABC12 - ELECTRICO\nLED ZX9 | SERIE PRINCIPAL",
@@ -876,6 +915,16 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       generator: generator,
       expander: expander
     )
+  end
+
+  # Everything but the two things that legitimately differ between two runs:
+  # wall-clock timings and the per-instance correlation id.
+  def comparable_result(result)
+    timings = result.dig(:retrieval_trace, :structured_route)
+      .to_h
+      .except(:retrieval_ms, :expansion_ms, :local_ms, :generation_ms)
+
+    result.except(:retrieval_trace, :correlation_id).merge(structured_route: timings)
   end
 
   def route_for_selection(question)

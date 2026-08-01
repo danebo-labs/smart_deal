@@ -34,7 +34,9 @@ evidence and are not descriptions of the active product.
 
 | Document | Status |
 |---|---|
-| [rag/plan_conocimiento_visual.md](rag/plan_conocimiento_visual.md) | Accepted plan (not yet implemented); canonical handoff for phased visual-knowledge ingestion work |
+| [rag/plan_conocimiento_visual.md](rag/plan_conocimiento_visual.md) | Canonical handoff for phased visual-knowledge ingestion work. Phases 0-3 closed; **Gate A run and failed**; remediation phases 2b and 3b closed — next step is Gate A-bis |
+| [rag/gate_a_medicion_topologia.md](rag/gate_a_medicion_topologia.md) | Gate A measurement of the T1 topology deriver over all 98 SEGURIDADES pages, every edge vision-reviewed. Also the Phase 8 ground truth. **§2 and §3.1 predate phases 2b/3b** and are rewritten by Gate A-bis |
+| [rag/triaje_visual_medicion.md](rag/triaje_visual_medicion.md) | Phase 1 deliverable: per-page visual-complexity tiering of the 98 pages and Opus escalation cost projection |
 | [rag/hallazgos_gate_piloto.md](rag/hallazgos_gate_piloto.md) | Open findings ledger for the SEGURIDADES pilot gate |
 | [RAG_SEGURIDADES_STATUS.md](RAG_SEGURIDADES_STATUS.md) | Current SEGURIDADES production identity and gate status |
 

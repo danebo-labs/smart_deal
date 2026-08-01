@@ -1,6 +1,11 @@
 # Plan: capacidad de generar conocimiento desde documentos técnicos visuales complejos
 
-> **Estado:** plan aceptado, sin implementar. Lo ejecutan varios modelos, una fase cada uno.
+> **Estado:** Fases 0-3 cerradas. **El Gate A se ejecutó y NO se superó** (2026-08-01): 4 aristas
+> falsas de 23. La Fase 4 está bloqueada. **Las Fases 2b (I-13) y 3b (I-14) ya cerraron**: medido
+> sobre las 98 páginas, el derivador emite ahora **19 aristas en 18 páginas** y las cuatro falsas
+> del Gate A resuelven a `[]` (I-20). **El siguiente paso es el Gate A-bis** — ver "Ruta de
+> remediación tras el Gate A fallido".
+> Lo ejecutan varios modelos, una fase cada uno.
 > **Antes de tocar código, lee "Cómo usar este documento".**
 
 ---
@@ -19,6 +24,15 @@ está todo aquí y en el Apéndice.
    (`app/services/rag/`, `app/prompts/`, `app/services/bedrock/`, `test/`).
 3. `docs/ACTIVE_ARCHITECTURE.md` y `docs/RAG_SEGURIDADES_STATUS.md`.
 4. `docs/rag/hallazgos_gate_piloto.md` (H-01…H-05, hallazgos abiertos de la Fase 2 anterior).
+5. [`docs/rag/gate_a_medicion_topologia.md`](gate_a_medicion_topologia.md) — la medición real de
+   T1 sobre las 98 páginas, con las 23 aristas revisadas una a una con visión, los dos defectos
+   que hicieron fallar el gate y la **verdad-terreno de la Fase 8**. Si tu fase toca ingesta,
+   geometría o evaluación, ese informe manda sobre los apéndices de aquí.
+   ⚠️ **Con dos excepciones, desde I-20/I-21:** su **§2** (tabla de 23 aristas) y su **§3.1**
+   (embudo) describen el código **anterior a 2b y 3b**. La salida de hoy son **19 aristas en 18
+   páginas** y el embudo tiene dos motivos de rechazo nuevos. Todo lo demás del informe —la
+   verdad-terreno humana, los divisores, los títulos, las filas LED y los verbatims— sigue
+   vigente y es lo caro; el Gate A-bis reescribe **sólo** esas dos secciones, en el sitio.
 
 **Reglas de la ejecución:**
 
@@ -161,10 +175,11 @@ conocimiento.
 | Imagen densa sin vectores / sin capa de texto | **T2 visión** | Opus 4.8 + prompt de relaciones sobre ráster + crops | alto, acotado | `TOPOLOGY_EDGE` `method: vision` |
 | Ambas señales | **T1 + T2** | T1 ancla, T2 reconoce; T1 gana en conflicto | medio | ambos, con procedencia distinguible |
 
-¹ ⚠️ **revisado en I-09.** Que 80/98 páginas *tengan* la señal no significa que T1 derive algo en
-ellas: medido con el derivador ya implementado, T1 emite alguna arista en **22 de 98** páginas
-(23 aristas en total). El resto de la relación dibujada de este documento **cae en T2**, y esa es
-la cifra con la que hay que dimensionarlo, no 80.
+¹ ⚠️ **revisado en I-09, y de nuevo en I-20.** Que 80/98 páginas *tengan* la señal no significa que
+T1 derive algo en ellas: medido con el derivador ya implementado, T1 emitía alguna arista en 22 de
+98 páginas (23 aristas). **Cerradas 2b y 3b, la cifra es 19 aristas en 18 de 98 páginas**, sin
+ninguna conocida como falsa. El resto de la relación dibujada de este documento **cae en T2**, y
+ésa es la cifra con la que hay que dimensionarlo, no 80.
 
 **Complementariedad, no competencia.** T1 sabe *que* la etiqueta `LIMITADOR` está unida al
 `CONECTOR AI` por una línea trazada, pero no sabe qué es la foto pequeña de 105×183 que está al
@@ -176,6 +191,12 @@ componentes pequeños que son parte de un subconjunto".
 aristas deterministas de T1 permiten medir y calibrar el prompt de visión de T2 sin trabajo
 humano. Eso es lo que hace confiable a T2 en los documentos donde T1 no puede correr — y es la
 clave de la generalidad. Es el Gate B.
+
+⚠️ **revisado en el Gate A — esta premisa no se sostiene en este documento.** Revisadas las 23
+aristas una a una con visión: **4 son falsas** (I-13, I-14) y las 19 correctas caen en 18 páginas
+y se reducen a **~15 pares distintos**. No es una verdad-terreno gratis con la que calibrar nada:
+es demasiado pequeña y no está limpia. La verdad-terreno útil de este documento la escribió el
+Gate A **a mano, con visión**: 153 relaciones en 11 páginas de 10 secciones.
 
 **El triaje asigna el tier antes de parsear**, dentro de la llamada Haiku que ya existe, con un
 tope de presupuesto que escala a Opus primero las páginas de mayor complejidad.
@@ -195,6 +216,9 @@ juicio algorítmico, seguridad y visión.
 | 2 | Extractor de geometría | **Sonnet** | API de HexaPDF verificada y snippet dado (Apéndice B); la trampa es la convención de coordenadas, cubierta por test |
 | 3 | Derivador de aristas T1 | **Opus** | Algoritmo geométrico con guardas de correctitud; una arista falsa citada es el peor fallo del sistema |
 | Gate A | Medición + verdad-terreno contra el PDF | **Opus** | Requiere visión para leer las páginas y comparar contra lo derivado |
+| 2b | Texto rotado en el extractor (I-13) | **Sonnet** | Especificación cerrada y decisión ya tomada; se verifica con fixture |
+| 3b | Guarda anti-ráster en el derivador (I-14) | **Opus** | Lógica de seguridad: una arista falsa citada es el peor fallo del sistema |
+| Gate A-bis | Re-medición con la misma muestra | **Opus** | Requiere visión para comparar contra la página renderizada |
 | 4 | Contrato v8 | **Sonnet** | Muchos archivos, hilado mecánico; invariantes cubiertos por test |
 | 5 | Motor T2 visión | **Opus** | Diseño de prompt de extracción de relaciones + razonamiento visual |
 | Gate B | T1 como verdad-terreno para calibrar T2 | **Opus** | Juicio comparativo e iteración de prompt |
@@ -228,8 +252,11 @@ La fase siguiente lee el documento actualizado, no el original.
 | 1 | cerrada | `INGESTION_VISUAL_TRIAGE_ENABLED` | 2f0bfd3 | I-04, I-05, I-06 |
 | 2 | cerrada | — (offline) | 09c813b | I-07, I-08 |
 | 3 | cerrada | — (offline) | ed8bd56 | I-09, I-10, I-11, I-12 |
-| Gate A | pendiente | — | | |
-| 4 | pendiente | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
+| Gate A | **NO SUPERADO** — informe entregado | — | f7aa592 | I-13 … I-18 |
+| 2b | cerrada — cierra I-13 | — (offline) | f4ab397 | I-19 |
+| 3b | cerrada — cierra I-14 | — (offline) | 1cb789b | I-20, I-21, I-22 |
+| Gate A-bis | **siguiente** — 19 aristas / 18 páginas a revisar con visión | — | | |
+| 4 | **bloqueada** (requiere Gate A-bis aprobado + decisión humana #4) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | |
 | 5 | pendiente | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
 | 6a | pendiente | — | | |
@@ -261,6 +288,20 @@ commit. Añadir el puntero en `docs/README.md` bajo las referencias RAG activas.
 
 10 ── (independiente, sólo documento)
 ```
+
+⚠️ **revisado tras el Gate A (no superado).** El tramo real desde aquí:
+
+```
+GATE A (fallido) ──▶ 2b ──▶ 3b ──▶ GATE A-bis ──▶ [decisión humana #4] ──▶ 4 ──▶ 5 ──▶ GATE B ──▶ 7 …
+                     └── Sonnet   └── Opus       └── Opus
+```
+
+**2b antes que 3b, sin excepción:** 3b consume el contrato que 2b arregla y una de sus guardas
+depende de la marca `rotated:`. **6a · 6b · 10 siguen siendo paralelizables** con todo esto: no
+tocan ningún archivo de ingesta. La **Fase 8 ya no está bloqueada por el Gate A** — su verdad-terreno
+se entregó completa en `gate_a_medicion_topologia.md` aunque el gate fallara, así que puede
+escribirse en paralelo a 2b/3b, con la salvedad de que sus `required` de topología no existirán
+hasta que haya aristas indexadas.
 
 | Se puede hacer en paralelo | Motivo |
 |---|---|
@@ -300,7 +341,8 @@ hallazgo y editar la fase consumidora.**
   media_box:   [0, 0, 960, 540],          # ancho/alto en unidades PDF
   words: [                                 # coordenadas HexaPDF, y desde ABAJO
     { text: "CONECTOR AI", bbox: [305.0, 236.0, 385.0, 250.0] },
-    { text: "LIMITADOR",   bbox: [504.0, 155.0, 560.0, 168.0] }
+    { text: "LIMITADOR",   bbox: [504.0, 155.0, 560.0, 168.0] },
+    { text: "B", bbox: [781.3, 322.6, 790.3, 329.2], rotated: true }  # ⚠️ I-13/Fase 2b
   ],
   lines: [                                 # segmentos rectos, sin curvas
     { from: [332.2, 153.3], to: [332.2, 248.1] },
@@ -320,6 +362,15 @@ Reglas: **una sola pasada** del processor. `words` agrupa glifos en cadenas visu
 contiguas, no en orden de lectura del stream. `lines` excluye segmentos de longitud
 `|Δx|+|Δy| ≤ 20` (ruido de bordes y subrayados finos). Curvas (`curve_to`) se cuentan pero no
 se emiten.
+
+⚠️ **revisado en Fase 2b (cierra I-13).** `rotated:` es una clave **aditiva**: presente y `true`
+sólo en las entradas cuyo glifo tiene la matriz de texto rotada (detectado por eje, no por el
+signo del bbox agregado — ver el archivo); **ausente**, no `false`, en el resto. No cambia la
+forma de las entradas no rotadas ni el orden del array. El `text` de una entrada `rotated: true`
+**no está en orden de lectura** (I-13): la Fase 3b debe ignorarla como extremo de arista, nunca
+citarla. De paso se corrigió `merge_into_words` para que un rótulo que cambia de tipografía a
+mitad (p. ej. el divisor de la página 8, `CARLOS` → `SILVA`) ya no pierda el límite de palabra: la
+tolerancia del hueco usa la altura **menor** de los dos glifos adyacentes, no sólo la del anterior.
 
 ### `TopologyEdgeDeriver.derive(layout)` → Fase 3 produce, Fase 4 consume
 
@@ -486,9 +537,11 @@ seguridad):
 recuperada y citada, y el calificador `method:` es lo primero que se pierde al parafrasear. Sólo
 `leader_line`. El enum queda abierto a `vision`.
 
-⚠️ **revisado en I-09.** Las cuatro guardas de arriba resultaron necesarias pero **no
-suficientes** contra la geometría real: hicieron falta tres rechazos más (unión T, etiqueta que
-la cadena *atraviesa*, y texto que no es un nombre), cada uno con su contraejemplo medido. Además
+⚠️ **revisado en I-09 y en I-20.** Las cuatro guardas de arriba resultaron necesarias pero **no
+suficientes** contra la geometría real: hicieron falta tres rechazos más en la Fase 3 (unión T,
+etiqueta que la cadena *atraviesa*, y texto que no es un nombre) y **dos más en la Fase 3b**
+(etiqueta a la que otra etiqueta impresa gana en cercanía a la imagen sobre la que muere el
+extremo, y etiqueta rotada), cada uno con su contraejemplo medido. Además
 las líneas guía de este documento son en su mayoría **bucles** que salen de un terminal del
 conector y vuelven a otro del mismo conector, con el componente en el medio: ambos extremos
 resuelven a la misma etiqueta y no se emite nada. Detalle y cifras en I-09.
@@ -535,7 +588,193 @@ el dimensionado de T2. Punto de partida, no entregable.
 Si no se alcanza, **parar y registrar el hallazgo**; no seguir a la Fase 4. Este entregable es
 además la verdad-terreno de la Fase 8, así que no se desperdicia si se para aquí.
 
+⛔ **EJECUTADO — NO SUPERADO.** Informe en
+[gate_a_medicion_topologia.md](gate_a_medicion_topologia.md). Medido sobre las 98 páginas: 23
+aristas en 22 páginas; **las 23 revisadas una a una con visión sobre la página rasterizada**;
+**4 incorrectas** (págs. 56, 61, 67, 97). Precisión 63,6 % en la muestra de 11 páginas / 10
+secciones y 82,6 % sobre el documento entero; recall 7 de 153 relaciones humanas ≈ **4,6 %**. Las
+tres condiciones del umbral fallan. **La Fase 4 no queda autorizada.** Las 4 aristas falsas se
+reducen a dos defectos acotados, ninguno de la Fase 4: **I-13** (la Fase 2 rompe el texto rotado
+90°) e **I-14** (la guarda de unicidad de la Fase 3 es ciega ante bornes rasterizados). Ver
+también I-15 (los bucles no eran el mecanismo dominante), I-16 (bajar el corte de ruido empeora
+la cobertura, contra lo que suponía I-10), I-17 (`section_path` son 2 niveles, no 3) e I-18
+(`ACUÑAMIENTO` y la corrección del Apéndice D).
+
+---
+
+### ⚑ Ruta de remediación tras el Gate A fallido (leer antes de tocar nada)
+
+El Gate A no se superó por **4 aristas falsas de 23**, y las cuatro se reducen a **dos defectos
+acotados, con contraejemplo medido y página de fixture identificada**: I-13 (texto rotado, Fase 2)
+e I-14 (guarda de unicidad ciega ante rásters, Fase 3). No es un fallo de diseño del plan; es un
+fallo de dos implementaciones concretas.
+
+**El orden es obligatorio y no negociable: 2b → 3b → Gate A-bis → (decisión humana #4) → Fase 4.**
+2b va antes que 3b porque 3b consume el contrato que 2b arregla, y porque una de las guardas de 3b
+depende de saber qué es texto rotado y qué no.
+
+✅ **2b y 3b cerradas.** El derivador emite hoy **19 aristas en 18 páginas**; las cuatro falsas
+resuelven a `[]` y no aparece ninguna nueva (I-20). Ojo al leer el informe del Gate A: **su tabla
+de 23 aristas y su embudo son ya un estado anterior** (I-21). Queda el Gate A-bis.
+
+**Lo caro ya está hecho y no se repite.** La verdad-terreno humana —153 relaciones leídas con
+visión en 11 páginas de 10 secciones, la página 3 completa y corregida, los 18 divisores, los 98
+títulos, 272 filas LED y 14 verbatims— está escrita en
+[gate_a_medicion_topologia.md](gate_a_medicion_topologia.md). El Gate A-bis **reusa esa muestra y
+esos guiones**; sólo vuelve a medir.
+
+| Paso | Qué es | Modelo | Por qué ese modelo |
+|---|---|---|---|
+| 2b | Texto rotado 90° en `PdfLayoutExtractor` (I-13) | **Sonnet** | Especificación cerrada, dos opciones y la decisión ya tomada abajo; se verifica con fixture |
+| 3b | Guarda anti-ráster en `TopologyEdgeDeriver` (I-14) | **Opus** | Lógica de seguridad: una arista falsa citada es el peor fallo del sistema. Es la misma razón por la que la Fase 3 era Opus |
+| Gate A-bis | Re-medición con la misma muestra y los mismos guiones | **Opus** | Requiere visión para comparar contra la página renderizada |
+
+### Fase 2b — Texto rotado en `PdfLayoutExtractor` (cierra I-13) · Sonnet
+
+**Decisión ya tomada, no la reabras: se descarta, no se rescata.** Un rótulo rotado se marca y la
+Fase 3 no lo usa nunca como extremo de arista. Rescatar el orden de lectura correcto es más
+trabajo, más riesgo, y **no compra cobertura** — los bornes que importan están rasterizados
+(I-15), no rotados. Lo que compra descartarlos es eliminar dos citas falsas.
+
+- Detectar en `build_words` el glifo con matriz de texto rotada. Señal barata y ya disponible:
+  `bbox` con `x0 > x1` o altura ~0. Fijar el criterio con los datos de la página 61, no a ojo.
+- Añadir `rotated: true` a esas entradas de `words`. **Es una clave nueva, aditiva**: no cambies
+  la forma de las entradas existentes ni el orden del array — la Fase 3 y la 5 consumen el
+  contrato tal cual.
+- Arreglar de paso el espacio perdido cuando el rótulo **cambia de tipografía a mitad**
+  (`CARLOS SILVA` → `CARLOSSILVA`, divisor de la página 8). Es el mismo `merge_into_words`.
+- Actualizar el bloque de contrato de datos de este documento con la clave nueva.
+
+*Definición de terminado:*
+- [x] Fixture con texto rotado 90° comprometido en `test/fixtures/files/`; test de que sus
+      entradas llevan `rotated: true` y las horizontales no
+- [x] Test de que ninguna entrada de `words` sale con `bbox` invertido (`x0 > x1`) ni de altura 0
+- [x] Test de que un rótulo con cambio de tipografía interno conserva su espacio
+- [x] Test de que las claves y el orden previos de `words` no cambian
+- [x] Suite + rubocop verdes; nada de producción invoca el extractor todavía (2061 runs / 0
+      failures; 469 files, 0 offenses) — ver I-19
+
+### Fase 3b — Guarda anti-ráster en `TopologyEdgeDeriver` (cierra I-14) · Opus
+
+El comentario de `TERMINAL_TOLERANCE_PT` ya dice lo correcto: *lo que hace segura la holgura no es
+la distancia, es la unicidad*. El defecto es que **la unicidad se evalúa sólo sobre texto**, y en
+este documento el competidor legítimo suele ser un ráster. Hay que darle al derivador una señal de
+"aquí hay un rival que no puedo leer".
+
+- **Guarda nueva:** si el extremo de la cadena cae **dentro del `bbox` de una imagen** y la
+  etiqueta candidata cae **fuera de esa imagen**, no emitir. El extremo está sobre un gráfico que
+  probablemente lleva su propio rótulo impreso dentro; la etiqueta de al lado no es su nombre.
+  `images[].bbox` existe en el contrato de la Fase 2 desde I-07 y **hoy no se usa**.
+
+  ⚠️ **revisado en I-20 — esta redacción literal mata dos aristas correctas y hubo que medir la
+  frontera.** Cada página de este documento lleva dos imágenes de fondo a página completa, así que
+  "el extremo cae dentro de una imagen" es cierto en el 100 % de los casos, y en las págs. 3 y 63
+  la etiqueta correcta cae **fuera** del gráfico que rotula. La regla implementada, medida contra
+  las seis páginas: **ninguna otra etiqueta impresa con otro nombre puede estar más cerca de esa
+  imagen que la candidata**. Subsume la redacción original (una etiqueta dentro de la imagen tiene
+  distancia 0 y nadie la supera), vuelve inertes las imágenes de fondo, y separa los cuatro casos
+  con margen medido.
+- **Guarda nueva:** ignorar como extremo cualquier etiqueta con `rotated: true` (Fase 2b).
+- Contraejemplos que deben pasar a `[]`, cada uno con su fixture y su aserción explícita:
+  **pág. 56** (`PISO SUPERIOR -> CC2`), **pág. 97** (`PUERTAS FRONTALES -> PESTLLOS TECHO CABINA`),
+  **pág. 61** (`CERRADURAS EXTERIORES -> B`), **pág. 67** (`PUERTAS EXTE. -> SE`).
+- Y las que **no** pueden romperse: las 19 correctas siguen saliendo. Las más expuestas a la
+  guarda nueva son **pág. 3** (`LIMITADOR ↔ CONECTOR AI`, el extremo cae sobre la foto del
+  limitador) y **pág. 63** (`ALUMBRADO CABINA ↔ J12`, el extremo cae sobre la lámpara). Si la
+  guarda las mata, está mal formulada: la diferencia es que ahí la etiqueta **rotula esa misma
+  imagen**, mientras que en la 56 y la 97 rotula otra cosa. Mídelo, no lo supongas.
+- **No** cambies `TERMINAL_TOLERANCE_PT`. Está medido en I-09 y bajarlo mata aristas correctas.
+- **No** toques el corte de ruido de la Fase 2 ni `MAX_CHAIN_SEGMENTS`: I-16 midió que ninguno de
+  los dos compra cobertura y que bajar el corte de ruido la **empeora**.
+- Registrar el delta: cuántas de las 23 sobreviven y cuántas aristas nuevas aparecen, si alguna.
+
+*Definición de terminado:*
+- [x] Las 4 aristas falsas del Gate A resuelven a `[]`, con fixture y aserción por cada una
+      (págs. 56, 61, 67 y 97 añadidas al fixture de layouts reales; dos aserciones por página —
+      la arista ausente y la geometría impresa que la hacía falsa)
+- [x] Las 19 correctas siguen emitiéndose, con aserción explícita para las págs. 3 y 63
+      (medido: 19 aristas en 18 páginas, **0 aristas nuevas**)
+- [x] `TERMINAL_TOLERANCE_PT`, `LINE_NOISE_MAX_MANHATTAN_PT` y `MAX_CHAIN_SEGMENTS` sin tocar
+- [x] Suite + rubocop verdes (2081 runs / 0 failures; 469 files, 0 offenses); nada de producción
+      invoca el derivador, cubierto por test — ver I-20/I-21/I-22
+
+### ⛔ Gate A-bis — Re-medición · Opus
+
+Re-correr `script/gate_a/run.rb` y `script/gate_a/overlay.py` sobre las 98 páginas y actualizar
+[gate_a_medicion_topologia.md](gate_a_medicion_topologia.md) **en el sitio** (no crear un archivo
+nuevo). **Misma muestra de 11 páginas** — 3, 17, 22, 39, 44, 56, 61, 67, 76, 91, 97 — porque su
+verdad-terreno humana ya está escrita y así el antes/después es comparable. Revisar con visión
+**todas** las aristas que emita el derivador, no una muestra.
+
+⚠️ **revisado en I-20/I-21.** El punto de partida ya no es 23 aristas en 22 páginas: son **19 en
+18** (3, 11, 12, 14, 22, 25, 39, 44, 52, 63, 64, 76, 77, 78, 91, 93, 94, 95 — la 3 con dos). En la
+muestra de 11 páginas T1 emite **7**, y las cuatro páginas de aristas falsas (56, 61, 67, 97)
+devuelven `[]`. Eso son las cifras a verificar, no a asumir: **19/19 correctas es la hipótesis, no
+el resultado**, y las 19 siguen sin haber sido revisadas con visión *después* del cambio. Lo que sí
+está medido es que son exactamente las mismas 19 que el Gate A ya revisó una a una y dio por
+correctas, y que no hay ninguna nueva. La **§2** y la **§3.1** del informe hay que reescribirlas;
+el embudo trae dos motivos de rechazo nuevos (`raster_rival`, `rotated_label`).
+
+**Umbral, sin cambios: ≥85 % de aristas correctas y 0 incorrectas.**
+
+Si se supera, la Fase 4 sigue **sin** quedar autorizada automáticamente: falta la **decisión
+humana #4** de abajo, porque superar el umbral no responde si T1 solo justifica el coste.
+
+### Decisión humana #4 — ¿se re-ingesta el documento con T1 solo, o se espera a T2?
+
+> **Qué significa "decisión humana" en este plan.** Es una pregunta que **ningún modelo puede
+> resolver leyendo el código ni corriendo una medición**, porque la respuesta depende de dinero,
+> de riesgo aceptable y de calendario de piloto — no de un hecho técnico. El modelo que llega
+> aquí **se detiene, expone las opciones con sus números, y espera respuesta del dueño del
+> producto**. No la resuelve por su cuenta ni la interpreta como un trámite. Las otras tres están
+> listadas en "Decisiones humanas pendientes"; ésta es la cuarta y es la única que bloquea el
+> tramo siguiente.
+
+**Quién decide:** el dueño del producto (no el modelo, no el revisor de código).
+**Cuándo:** justo después del Gate A-bis, con su número de precisión en la mano.
+**Qué hay que responder, literalmente:** *¿se autoriza ejecutar la Fase 7 (shadow ingest, único
+paso irreversible del plan) con las aristas de T1 solas, o se espera a tener también T2?*
+
+**El dato que obliga a preguntarlo.** Aunque el Gate A-bis dé 100 % de precisión, T1 aporta
+**~19 aristas en ~18 páginas de 98**, con un recall del **4,6 %** frente a lo que un técnico lee
+en la página. Y el riesgo #1 de la tabla de riesgos —que añadir texto de topología **diluya el
+embedding y baje** el recall, que es el mecanismo plausible del 62/88 → 57/88 ya medido en el
+re-ingest anterior— se paga **entero** por esas 19 aristas, porque el coste del riesgo no depende
+de cuántas aristas añadas sino de que toques los cuerpos de los chunks.
+
+| Opción | Qué implica | A favor | En contra |
+|---|---|---|---|
+| **A · Seguir con T1 solo** | 4 → 6 → 7 (shadow ingest) → 8 → 9, como está escrito | El conocimiento de topología llega antes; la Fase 7 es A/B y su rollback cuesta un `delete` del prefijo nuevo | Se paga el riesgo de dilución del embedding entero por 19 aristas; si el recall baja, se ha gastado el paso irreversible para nada |
+| **B · Esperar a T2 (recomendada)** | 4 se **implementa y mergea con el flag apagado** (es inerte por diseño: no existe ningún `TOPOLOGY_EDGE` en el índice), luego 5, Gate B, y **sólo entonces** 7 | La Fase 7 se ejecuta una vez, con las aristas de los dos tiers; el riesgo de dilución se paga una vez y con contrapartida real | El conocimiento de topología tarda más en llegar a producción |
+| **C · Parar T1 aquí** | No mergear la Fase 4; ir directo a la Fase 5 y rediseñar el contrato para T2 | Evita mantener un motor que cubre el 22 % de las páginas | Tira el trabajo de las Fases 2/3 y deja a T2 sin el ancla determinista y sin política de conflicto |
+
+**Recomendación de este informe: opción B.** No es "parar el plan": es **desacoplar mergear la
+Fase 4 de ejecutar la Fase 7**. La Fase 4 con el flag apagado no cambia ni un byte de producción
+—eso es un invariante suyo, con test— así que mergearla no consume el riesgo. Lo que consume el
+riesgo es la Fase 7, y ésa es la que espera.
+
+**Cómo se registra la respuesta:** quien decida lo escribe en la tabla de estado de fases (fila
+`4`, columna Estado) y en "Decisiones humanas pendientes" #4. Hasta que esté escrita, la Fase 7 no
+se ejecuta.
+
+---
+
 ### Fase 4 — Contrato v8: destino común de T1 y T2 · Sonnet
+
+⛔ **BLOQUEADA.** El Gate A no se superó (4 aristas incorrectas de 23). No se entra aquí hasta
+cerrar I-13 e I-14 y reintentar el gate.
+
+⚠️ **revisado en I-17.** `section_path` **no tiene tres niveles**. Las páginas divisoras imprimen
+**marca + lista plana de modelos**, y los dos "niveles" del ejemplo del plan (`CONTROL LEVEL 1B`,
+`ALTIUS`) son **hermanos**, no padre e hijo. La forma correcta es `section_path = [MARCA, MODELO]`,
+donde `MODELO` sale de emparejar el título de la página con una viñeta de su divisor. El
+invariante `section_identity == section_path.first` se conserva intacto (sigue siendo la marca).
+Las 18 divisoras extraídas y contrastadas contra el Apéndice E están en el informe del Gate A.
+
+⚠️ **revisado en el Gate A.** El presupuesto de aristas por página que hay que asumir es **~0,2**,
+no 12: el máximo medido en cualquier página del documento es **2** (página 3). El tope de 12
+aristas/chunk y su desborde a chunk hermano **no se activan** aquí; escríbelos igual, pero no
+esperes delta de conteo de chunks por ese camino.
 
 - **Nuevo** `app/services/ingestion_layout_flag.rb` — `INGESTION_LAYOUT_DIGEST_ENABLED`.
 - `batch_chunking_prompt.rb`: `INGESTION_CONTRACT_VERSION → "field_records_v8"`;
@@ -574,6 +813,15 @@ procedencia es distinta y más débil.)
 
 Lo que da la capacidad **general**, para documentos donde no hay vectores que trazar.
 
+⚠️ **revisado en el Gate A, y en I-20.** Dimensionado real: **T2 tiene que correr en las 80
+páginas** (79 de contenido relacional + la portada, que no tiene capa de texto). En **61 de ellas
+es el único motor posible** (57 antes de que 3b vaciara las cuatro páginas de aristas falsas); en
+18 T1 aporta un ancla y nada más. El motivo dominante del silencio de T1 —42,5 % de
+los rechazos, dominante en 32 páginas— es que **la numeración de bornes del conector está dentro
+del ráster de la regleta, no en la capa de texto** (contraejemplo canónico: la página 17 tiene ~15
+relaciones con número de borne explícito y T1 emite `[]`). Eso es exactamente lo que T2 sí puede
+leer, y es la mayor palanca de cobertura del plan entero.
+
 - **Nuevo** `app/services/pdf_page_rasterizer.rb` con `Vips::Image.pdfload_buffer` (libvips ya es
   dependencia vía `image_processing`/`ruby-vips`). **Verificar primero** que el libvips de
   `Dockerfile:19` traiga el loader de poppler (`VipsForeignLoadPdfBuffer`); si no, una línea de
@@ -600,7 +848,15 @@ Lo que da la capacidad **general**, para documentos donde no hay vectores que tr
 
 ### ⛔ Gate B — T1 calibra T2 · Opus
 
-En las 80 páginas donde ambos tiers aplican, comparar aristas T1 (deterministas) contra T2
+⚠️ **revisado en el Gate A.** La premisa "80 páginas donde ambos tiers aplican" es falsa y la
+corrección de I-09 (22 páginas) todavía se queda corta en el sentido que importa: **la verdad-terreno
+gratis de T1 son 19 aristas correctas en 18 páginas, y de ellas sólo ~15 son pares distintos** (las
+págs. 44/76/77/78 repiten `LIMITADOR↔C300` en láminas casi idénticas). Eso **no da significancia
+estadística** para medir precisión y recall de T2. El Gate B tiene que apoyarse además en
+verdad-terreno **humana**, y ya existe el primer trozo: **153 relaciones leídas a mano con visión en
+11 páginas de 10 secciones**, en el informe del Gate A. Empieza por ahí, no por T1.
+
+En las páginas donde ambos tiers aplican, comparar aristas T1 (deterministas) contra T2
 (visión) y escribir `docs/rag/gate_b_calibracion_vision.md` con:
 
 - **precisión y recall de T2 contra T1** — verdad-terreno gratis, sin trabajo humano;
@@ -701,6 +957,15 @@ como "no repetir" en `docs/RAG_SEGURIDADES_STATUS.md`.
   etiqueta verbatim emitidas por el digest de la Fase 2**, no regex ajustadas a mano. Una cadena
   impresa citada del PDF no se puede "tunear". Ojo con los verbatim reales: el PDF imprime
   `STOP FOSO` y `BOTO. REVISION`, no "STOP FONDO" ni "BOTÓN REVISIÓN" (ver Apéndice D).
+
+⚠️ **revisado en el Gate A.** El informe del Gate A **es la verdad-terreno de esta fase y ya está
+escrito**, aunque el gate no se superara: trae los 18 divisores extraídos y contrastados, los 98
+títulos de página, **272 filas de tabla LED bien formadas en 72 páginas**, la verdad-terreno visual
+completa de la página 3 (que **corrige el Apéndice D**, ver I-18) y una tabla de 14 verbatims
+impresos con la paráfrasis que **no** matchea. Úsala; no reconstruyas nada de eso. Dos trampas
+adicionales medidas allí: `PdfLayoutExtractor` devuelve `CARLOSSILVA` donde la página imprime
+`CARLOS SILVA` (I-13), y la extracción de tablas LED mete filas espurias en 40 de las 72 páginas,
+así que los `required` de tabla hay que tomarlos de las 32 páginas limpias o filtrarlos por columna.
 - Cubrir las **18 marcas** del Apéndice E, no 10 preguntas: eso es lo que hace que el muestreo
   aleatorio deje de sorprender.
 - Reutilizar `script/rag_seguridades_recall_probe.rb` tal cual para el rank por caso.
@@ -818,6 +1083,12 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
 
 ## Decisiones humanas pendientes (antes de la Fase 7)
 
+> **Qué es una "decisión humana" aquí.** Una pregunta que ningún modelo puede cerrar leyendo el
+> código ni corriendo una medición, porque depende de dinero, de riesgo aceptable o de calendario
+> de piloto. El modelo que llegue a una de éstas **se detiene, expone las opciones con sus
+> números y espera respuesta del dueño del producto**; no la resuelve por su cuenta. La respuesta
+> se escribe **aquí**, en esta lista, y en la Tabla de estado de fases.
+
 1. **Qué cuenta es dueña del documento.** No existe account 1 localmente y el documento es
    invisible en la UI. Es decisión, no código;
    `script/backfill_seguridades_kb_document_2026-07-26.rb` la ejecuta después.
@@ -825,6 +1096,12 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
    deja morir superado por el shadow ingest v8 (opción preferida).
 3. **La fracción de páginas que se autoriza escalar a Opus**, con la proyección de coste de la
    Fase 1 en mano.
+4. **Si se ejecuta la Fase 7 (shadow ingest) con las aristas de T1 solas o se espera a T2.**
+   Añadida tras el Gate A fallido. Bloquea la Fase 7, **no** la Fase 4 (que es inerte con el flag
+   apagado). Opciones, números y recomendación —opción B, desacoplar mergear la 4 de ejecutar la
+   7— en "Decisión humana #4" dentro de la Ruta de remediación. **Sin respuesta escrita aquí, la
+   Fase 7 no se ejecuta.**
+   - Respuesta: _(pendiente)_
 
 ## Fuera de alcance
 
@@ -950,6 +1227,13 @@ Muestra de las primeras 30 (página · segmentos largos · imágenes · imágene
 Las páginas con 0-4 segmentos y 1 imagen pequeña (2, 8, 15, 23, 27…) son los **divisores de
 sección**: coinciden con el Apéndice E. Sirven de fixture del caso "array vacío".
 
+⚠️ **revisado en el Gate A.** "12 páginas con 0 segmentos (divisores)" es correcto pero se lee
+mal: **hay 18 divisores**, los del Apéndice E. Sólo 12 tienen 0 segmentos (2, 15, 23, 35, 41, 49,
+51, 54, 60, 66, 87, 92); los otros 6 (8, 27, 37, 47, 70, 80) llevan un adorno vectorial de esquina
+de 4-6 segmentos. Ninguno de los 18 tiene líneas guía y en los 18 el derivador devuelve `[]`
+correctamente. Cifras exactas del recuento completo (9 078 segmentos, 18 156 extremos) en el
+informe del Gate A §3.
+
 ## Apéndice D — Verdad-terreno de la página 3 (fixture principal de la Fase 3)
 
 Subtítulo impreso: `CONTROL LEVEL 1B – HIDRAULICO - PREMONTADA`
@@ -999,6 +1283,22 @@ Lectura humana de referencia (a validar, no a asumir):
 - AI → LIMITADOR, FINAL CARRERA SUPERIOR, CERROJOS EXTERIORES, ACUÑAMIENTO, PUERTAS EXTERIORES,
   FINALES, POLEA TENSORA, STOP FOSO
 - AG → ACUÑAMIENTO, AFLOJACABLES, BOTO. REVISION, CERROJOS EMBARQUE 1, CERROJOS EMBARQUE 2
+
+⚠️ **revisado en I-18 — la lectura humana de arriba es incorrecta y queda superada.** Validada con
+visión sobre la lámina renderizada en el Gate A: `ACUÑAMIENTO` está **sólo en AG**, no en ambos.
+El cable verde sale del borne 8 de AG, entra en `ACUÑAMIENTO`, sigue a `AFLOJACABLES`, sigue a
+`BOTO. REVISION` y vuelve al borne 7 de AG: una serie de tres dispositivos en un lazo. Verdad-terreno
+corregida, **7 en AI y 5 en AG, 12 relaciones para 12 etiquetas, ninguna repetida**:
+
+- **AI** → `FINAL CARRERA SUPERIOR` (vía el bloque auxiliar 10/9 y el enlace punteado) ·
+  `CERROJOS EXTERIORES` (gris) · `PUERTAS EXTERIORES` (rojo) · `FINALES` · `STOP FOSO` ·
+  `POLEA TENSORA` (los tres en un lazo magenta en serie) · `LIMITADOR` (dos cables, marrón y azul
+  marino)
+- **AG** → `ACUÑAMIENTO` · `AFLOJACABLES` · `BOTO. REVISION` (lazo verde en serie) ·
+  `CERROJOS EMBARQUE 1` · `CERROJOS EMBARQUE 2` (lazo violeta en serie)
+
+Ésta es la verdad-terreno de la página 3 para la Fase 8. Detalle y capturas en
+[gate_a_medicion_topologia.md](gate_a_medicion_topologia.md) §8.
 
 ## Apéndice E — Las 18 secciones y sus páginas divisoras
 
@@ -1165,8 +1465,72 @@ vez hecho el Paso 0.
 > revisada.** Si no se alcanza, **para y registra el hallazgo** — no autorices la Fase 4. Este
 > informe es además la verdad-terreno de la Fase 8, así que no se desperdicia si se para.
 
+**Fase 2b · Sonnet** — *el siguiente paso real del plan*
+> Ejecuta la Fase 2b de `<PLAN>`, que cierra el hallazgo **I-13** y es una de las dos causas por
+> las que el Gate A **no se superó**. Lee primero
+> `docs/rag/gate_a_medicion_topologia.md` §4.2 completo: tiene los contraejemplos medidos.
+> `PdfLayoutExtractor` (Fase 2) rompe el texto rotado 90°: devuelve un `words` **por glifo**, con
+> `bbox` invertido (`x0 > x1`) o de altura cero, y el agrupamiento por `y` descendente **invierte
+> el orden de lectura**. Eso produjo dos citas falsas en producción de la Fase 3: en la página 61
+> el borne impreso `P35B` sale como `"P"`,`"3"`,`"5"`,`"B"` y el derivador emitió
+> `CERRADURAS EXTERIORES -> B`; en la página 67 el borne `ES` se emitió como `SE`, escrito al
+> revés. **La decisión ya está tomada y no la reabras: se descarta, no se rescata** — marca esas
+> entradas con `rotated: true` y deja que la Fase 3b las ignore. Rescatar el orden de lectura es
+> más trabajo y más riesgo, y **no compra cobertura**, porque los bornes que importan están
+> rasterizados (I-15), no rotados. `rotated:` es una clave **aditiva**: no cambies la forma ni el
+> orden de las entradas de `words`, que la Fase 3 y la 5 consumen tal cual. Arregla de paso el
+> espacio que se pierde cuando un rótulo **cambia de tipografía a mitad** (el divisor de la
+> página 8 imprime `CARLOS SILVA` y el extractor devuelve `CARLOSSILVA`); es el mismo
+> `merge_into_words`. Actualiza el bloque de contrato de datos de `<PLAN>` con la clave nueva.
+> **No toques `LINE_NOISE_MAX_MANHATTAN_PT`**: I-16 midió que bajarlo **empeora** la cobertura
+> (23 → 21 aristas) y mata una arista correcta de la página 3.
+
+**Fase 3b · Opus**
+> Ejecuta la Fase 3b de `<PLAN>` (requiere 2b mergeada). Cierra el hallazgo **I-14**, la segunda
+> causa del Gate A fallido, y es la pieza de mayor riesgo que queda: **una arista falsa citada es
+> el peor fallo posible de un sistema de seguridad**. Lee `docs/rag/gate_a_medicion_topologia.md`
+> §4.3 antes de escribir nada. El defecto: el comentario de `TERMINAL_TOLERANCE_PT = 25` dice, con
+> razón, que lo que hace segura la holgura no es la distancia sino la **unicidad** — pero la
+> unicidad se evalúa **sólo sobre texto**, y en este documento la numeración de bornes suele estar
+> **dentro del ráster de la regleta**. Resultado medido: en la página 56 el cable magenta va del
+> borne `+24` de `CC1` a `CC2` (un puente conector→conector), los rótulos de `CC1` no existen en
+> `words`, y el único texto a ≤25 pt es `PISO SUPERIOR` —que pertenece a **otro** cable—, así que
+> se emitió `PISO SUPERIOR -> CC2`, una conexión que no está dibujada; en la página 97 se emitió
+> `PUERTAS FRONTALES -> PESTLLOS TECHO CABINA`, dos dispositivos reales que ningún cable une.
+> Añade dos guardas: **(a)** si el extremo cae **dentro del `bbox` de una imagen** y la etiqueta
+> candidata cae **fuera** de esa imagen, no emitir — `images[].bbox` está en el contrato de la
+> Fase 2 desde I-07 y hoy no se usa; **(b)** ignorar como extremo cualquier etiqueta con
+> `rotated: true`. Fixture y aserción explícita por cada una de las **cuatro** aristas falsas
+> (56, 61, 67, 97) que deben pasar a `[]`. Y aserción explícita de que **no** rompes las dos
+> correctas más expuestas a la guarda (a): **pág. 3 `LIMITADOR ↔ CONECTOR AI`** y **pág. 63
+> `ALUMBRADO CABINA ↔ J12`**, donde el extremo también cae sobre una foto — la diferencia es que
+> ahí la etiqueta rotula **esa misma** imagen. Mídelo, no lo supongas. **No cambies
+> `TERMINAL_TOLERANCE_PT` (medido en I-09), ni el corte de ruido de la Fase 2, ni
+> `MAX_CHAIN_SEGMENTS` (I-16 midió que ninguno compra cobertura).** Registra el delta: cuántas de
+> las 23 sobreviven y si aparece alguna nueva.
+
+**Gate A-bis · Opus**
+> Ejecuta el Gate A-bis de `<PLAN>` (requiere 3b mergeada). Re-corre `script/gate_a/run.rb` y
+> `script/gate_a/overlay.py` sobre las 98 páginas de `SEGURIDADES 1.1-1.pdf` y **actualiza
+> `docs/rag/gate_a_medicion_topologia.md` en el sitio**, no crees un archivo nuevo: ese informe es
+> además la verdad-terreno de la Fase 8 y tiene que seguir siendo uno solo. Usa **la misma muestra
+> de 11 páginas** —3, 17, 22, 39, 44, 56, 61, 67, 76, 91, 97, que cubren 10 secciones— porque su
+> verdad-terreno humana ya está escrita ahí (153 relaciones contadas a mano con visión) y así el
+> antes/después es comparable; no la rehagas. Revisa con visión **todas** las aristas que emita el
+> derivador, no una muestra: dibuja cada polilínea sobre la página rasterizada con
+> `script/gate_a/overlay.py` y compárala con el cable realmente trazado. **Umbral sin cambios: ≥85 %
+> de aristas correctas y 0 incorrectas.** Si vuelve a fallar, para y registra el hallazgo. Si pasa,
+> la Fase 4 **sigue sin quedar autorizada automáticamente**: expón la **decisión humana #4** al
+> dueño del producto (¿se ejecuta la Fase 7 con T1 solo o se espera a T2?) con el número de
+> precisión nuevo y el recall del 4,6 % en la mano, y **espera respuesta escrita** en el plan.
+
 **Fase 4 · Sonnet**
-> Ejecuta la Fase 4 de `<PLAN>` (requiere Gate A aprobado). Sube el contrato de ingesta a
+> Ejecuta la Fase 4 de `<PLAN>` (requiere **Gate A-bis** aprobado; el Gate A original **no** se
+> superó). Lee antes I-13, I-14, I-17 y la Ruta de remediación. Dos cambios respecto de lo escrito
+> arriba en la fase: **`section_path` tiene 2 niveles, no 3** (`[MARCA, MODELO]`; las viñetas del
+> divisor son hermanas, no anidadas — I-17), y **presupuesta ~0,2 aristas por página, no 12** (el
+> máximo medido en cualquier página es 2, así que el desborde de chunk no se activa en este
+> documento). El invariante `section_identity == section_path.first` no cambia. Sube el contrato de ingesta a
 > `field_records_v8` y añade el registro `TOPOLOGY_EDGE` con la forma exacta escrita en
 > "Decisiones de diseño fijadas" — **reutiliza la gramática `FIELD_RECORD` existente, no inventes
 > un bloque nuevo**, y respeta cada elección de esa forma, que es portante (el `->` de `ACTION`
@@ -1295,3 +1659,14 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-10 | 3 | Opus 5 | El corte de ruido de la Fase 2 (`LINE_NOISE_MAX_MANHATTAN_PT = 20`, documentado como "ruido de bordes y subrayados finos") **corta cadenas legítimas**: los codos cortos de una polilínea caen por debajo del umbral y desaparecen. Medido en la página 3: el cable magenta que une `FINALES` con `CONECTOR AI` pasa por un codo de 14.2 pt de longitud Manhattan que `build_lines` descarta, y la polilínea llega al derivador partida en dos trozos inconexos (uno de 1 segmento y otro de 5). El de 1 segmento resuelve y produce la arista correcta; el de 5 se rechaza por longitud. Es decir: **una arista de las dos de la página 3 se salvó por casualidad**. No se toca `pdf_layout_extractor.rb` — es archivo de la Fase 2, fuera de alcance. | Gate A: al contar páginas sin cobertura T1, distinguir "sin evidencia" de "cadena partida por el corte de ruido". Si alguien quiere subir la cobertura de T1 sin tocar el diseño, bajar ese umbral (o emitir los segmentos cortos con una marca) es probablemente el cambio más barato — pero es una edición al contrato de la Fase 2 y necesita su propia medición de falsos positivos. |
 | I-11 | 3 | Opus 5 | **El derivador no afirma dirección, y el contrato del plan sí la afirmaba.** No hay nada en la geometría que diga cuál extremo es el componente y cuál el conector. Se probaron y descartaron dos reglas: por *hub* (la etiqueta con ≥2 terminales de cadena) da la dirección **al revés** en la página 63, donde tres cables convergen en la lámpara `ALUMBRADO CABINA` y sólo uno resuelve al conector `J12`; por *corchete* (rótulo encerrado en un recuadro dibujado) no es detectable — el pill de `J12` no deja ni rects ni segmentos en el contrato de la Fase 2. La implementación ordena el par **geométricamente** (extremo más abajo en la página primero, desempate por x), sólo para que la salida y el `RECORD_ID` de la Fase 4 sean estables; en las tres aristas verificadas a mano ese orden coincide con componente→conector, pero es una convención de maquetación de este documento, no una inferencia. En consecuencia `evidence` dice `… une X (bbox) con Y (bbox)` en vez de "termina en el corchete rotulado …": no se detectan corchetes y no se debe escribir que se detectaron. | **Fase 4:** `ACTION: A -> B` sigue siendo la gramática correcta (es lo que matchea `CONNECTION_CLAIM_PATTERN` y nombra ambos extremos en un mismo fragmento), pero el párrafo de reglas **no debe presentar la flecha como dirección** ni la respuesta debe parafrasearla como "A alimenta a B". Si la Fase 5 (visión) sí puede decir cuál extremo es el conector, ahí se gana la dirección — no aquí. |
 | I-12 | 3 | Opus 5 | El test de la Fase 2 "nada en producción invoca el extractor" (`pdf_layout_extractor_test.rb:85-95`) hace grep sobre el **texto crudo** del archivo, comentarios incluidos, así que cualquier fase posterior que **documente** el contrato en un comentario (`# … PdfLayoutExtractor.extract …`) lo rompe. Ocurrió en vivo al escribir esta fase. Se resolvió redactando el comentario propio para no matchear; **no se tocó el test de la Fase 2** (archivo de otra fase). El test equivalente de esta fase sí ignora las líneas de comentario. | Cualquier fase futura que mencione `PdfLayoutExtractor.extract` o `.new` en un comentario dentro de `app/**/*.rb` verá fallar ese test sin haber invocado nada. Arreglo de una línea (saltar líneas que empiezan por `#`), sin dueño asignado. |
+| I-13 | Gate A | Opus 5 | **`PdfLayoutExtractor` rompe el texto rotado 90°, y eso produce citas falsas.** Los rótulos verticales de borne llegan a `words` **glifo a glifo**, con `bbox` invertido (`x0 > x1`) o de altura cero, y el agrupamiento por `y` descendente **invierte el orden de lectura**. Medido en la página 61, regleta `JC3`: el borne impreso `P35B` sale como cuatro entradas `"P"`,`"3"`,`"5"`,`"B"`, todas con `bbox [790.3, …, 781.3, …]`; el derivador se queda con `"B"` y emite `CERRADURAS EXTERIORES -> B`, un nombre que no está impreso en ninguna parte. Página 67, misma raíz y otro síntoma: el borne 2 de `P3` está rotulado **`ES`** y se emite `PUERTAS EXTE. -> SE`, escrito al revés. Bajo la Fase 4 eso se renderiza como `ACTION:` y bajo la 6b la respuesta queda autorizada a reproducirlo verbatim. Hay un tercer síntoma sin relación con la rotación pero de la misma familia (agrupamiento de glifos): el divisor de la página 8 imprime `CARLOS SILVA` con espacio —verificado con visión— y el extractor devuelve `CARLOSSILVA`, porque `SILVA` cambia de tipografía a mitad del rótulo. **No se tocó `pdf_layout_extractor.rb`: es archivo de la Fase 2 y el Gate A no implementa.** | **Bloquea la Fase 4** junto con I-14. **Fase 2:** hay que decidir la política —emitir el texto rotado como una sola entrada con su orden de lectura correcto, o marcarlo y que la Fase 3 lo descarte—; cualquiera de las dos cierra el defecto, la segunda es más barata y más segura. **Fase 8:** el verbatim bueno del divisor 8 es `CARLOS SILVA`, no lo que devuelve el extractor hoy. |
+| I-14 | Gate A | Opus 5 | **La guarda de unicidad de `TopologyEdgeDeriver` es ciega ante bornes rasterizados, y ahí produce aristas que no están dibujadas.** El comentario de `TERMINAL_TOLERANCE_PT = 25` dice, correctamente, que lo que hace segura esa holgura no es la distancia sino la unicidad. Pero **la unicidad sólo funciona si las etiquetas rivales están en la capa de texto**, y en este documento la numeración de bornes suele estar dentro de la foto de la regleta. Dos falsos positivos medidos. **Página 56 (MP–MICROBASIC):** el cable magenta va del borne `+24` de `CC1` al conector `CC2` —es un puente conector→conector—; los rótulos `109 111 … 120 +24 A B C D` **no existen en `words`**, así que el único texto a ≤25 pt del extremo es `PISO SUPERIOR`, 22,9 pt más abajo y perteneciente a **otro cable** (el rojo del borne 120 al display "10"); se emite `PISO SUPERIOR -> CC2`, una conexión que no está dibujada. **Página 97 (THYSSEN–CMC 4):** el cable va del borne `C1` de `CN32` a `PUERTAS FRONTALES`; `C1`/`C2` son ráster y el texto más cercano es `PESTLLOS TECHO CABINA`, a 14,1 pt y de otro grupo del dibujo arriba a la derecha; se emite `PUERTAS FRONTALES -> PESTLLOS TECHO CABINA`, dos dispositivos reales que ningún cable une. Reserva aparte, no contada como incorrecta: **página 64**, `LIMITADOR CONTRAPESO -> J22` sale de un conductor que **atraviesa `LIMITADOR CABINA`**; el par comparte conductor y la afirmación es cierta, pero se pierde el dispositivo intermedio, que es justo el dato que importa con la serie abierta. | **Bloquea la Fase 4** junto con I-13. **Fase 3:** la guarda necesita una señal de "aquí hay un competidor que no puedo leer" —p. ej. rechazar cuando el extremo cae dentro del `bbox` de una imagen y la etiqueta candidata está fuera de ella; `images[].bbox` ya existe en el contrato de la Fase 2 desde I-07 y no se está usando. **Fase 6a:** el endurecimiento de `AnswerSafetyProcessor` no salva esto — la línea `ACTION:` estará en la evidencia, así que el guard la dará por soportada. La procedencia `leader_line` es tan fuerte como esta guarda. |
+| I-15 | Gate A | Opus 5 | **Los bucles no son el mecanismo dominante del silencio de T1; I-09 se equivocó en el porqué, no en el qué.** I-09 escribió que las líneas guía "son en su mayoría bucles … ambos extremos resuelven a la misma etiqueta y no se emite nada". Medido sobre las 98 páginas, la guarda `same_label_loop` **se dispara exactamente 1 vez** (página 98). Los bucles **no llegan** a esa guarda: mueren antes en `MAX_CHAIN_SEGMENTS` o en la guarda de bifurcación. Embudo completo medido: 18 156 extremos de segmento → **9 706 (53,5 %) en nudos de 3+**, 5 164 en codos, 3 286 libres → 2 652 recorren cadena válida (468 mueren por `>4 segmentos`, 166 por bifurcación) → **1 326 cadenas** → rechazos: **unión T 639 (48,2 %)**, **extremo sin etiqueta impresa a ≤25 pt 563 (42,5 %)**, pasa junto a la etiqueta 46, dos etiquetas en rango 39, no es un nombre 13, **bucle 1** → 25 emitidas → **23 tras deduplicar**. En la página 3, de 28 extremos libres, 12 mueren por `>4 segmentos` y ninguno por bucle. La conclusión práctica de I-09 (los bucles no producen aristas, y eso es correcto) se sostiene. | **Fase 5:** el motivo dominante real —42,5 % de los rechazos, dominante en 32 páginas— es que **la numeración de bornes está dentro del ráster de la regleta**. Contraejemplo canónico: la página 17 (CTA–SR8P) tiene ~15 relaciones con número de borne explícito y T1 emite `[]` porque `32 78 77 76 185 184…` son píxeles. Eso es exactamente lo que T2 sí puede leer, y es la mayor palanca de cobertura del plan. |
+| I-16 | Gate A | Opus 5 | **Bajar el corte de ruido de la Fase 2 empeora la cobertura: el remedio propuesto en I-10 está medido y es contraproducente.** I-10 sugirió bajar `LINE_NOISE_MAX_MANHATTAN_PT` como "probablemente el cambio más barato" para subir el recall de T1. Barrido sobre las 98 páginas: con el corte actual de 20 pt, **23 aristas / 22 páginas**; con corte de 2 pt, **21 aristas / 21 páginas**, y en la página 3 **desaparece `FINALES ↔ CONECTOR AI`**. El mecanismo que I-10 describió es correcto —esa arista se salvó porque el corte partió la polilínea y el trozo de 1 segmento resolvió—; al reunir la polilínea entera la cadena vuelve a chocar con la bifurcación y el tope de longitud. Segundo barrido, sobre `MAX_CHAIN_SEGMENTS`: de 4 a 6 gana **una** arista en todo el documento (23→24) y de 6 a 12 no gana ninguna; en la página 3 ni con tope 40 aparece una tercera arista. **Ninguna de las dos constantes es el cuello de botella.** El techo es estructural: el documento dibuja series y bucles, no líneas guía punto a punto, y el otro extremo suele ser un ráster. | **Fase 2 / Fase 3:** no gastar trabajo en calibrar estas dos constantes; está medido que no compran cobertura. La palanca real es el anclaje `images[].bbox` → etiqueta adyacente que I-09 dejó sin dueño, y para el 42,5 % de rechazos del lado del conector, T2. |
+| I-17 | Gate A | Opus 5 | **`section_path` tiene 2 niveles, no 3.** El plan describe "el `section_path` de 3 niveles derivado de las 12 divisoras" y ejemplifica con `ALJO` / `CONTROL LEVEL 1B` / `ALTIUS`. Extraída la página 2: `ALJO` en y=517,9 (marca, centrada, cuerpo grande) y dos viñetas `- CONTROL LEVEL 1B` (y=389,4) y `- ALTIUS` (y=324,6). **Son hermanos, no padre e hijo**: son dos modelos de ALJO, y las páginas 3-6 son de `CONTROL LEVEL 1B` mientras la 7 es de `ALTIUS`. El divisor entrega **marca + lista plana de modelos**; el segundo nivel de una página de contenido sale de emparejar su título con una viñeta de su divisor. Forma correcta: `section_path = [MARCA, MODELO]`, con `section_identity == section_path.first` intacto. Extracción verificada en las **18** divisoras (no 12: ver la corrección del Apéndice C) y contrastada 18/18 contra el Apéndice E, más los 98 títulos de página. Dos discrepancias de verbatim, ninguna de la tabla: `CARLOSSILVA` es defecto del extractor (I-13, la página imprime `CARLOS SILVA`) y `HATS_-_ASOCIADOS` lleva los guiones bajos **en el PDF** — el Apéndice E los normalizó. | **Fase 4:** implementar 2 niveles, no 3; el invariante de retrocompatibilidad no cambia. **Fase 8:** las páginas 46 y 76-79 caen en secciones (`FAIN`, `RECOBA`) cuyo título nombra **otra marca** (`RECOBA` monta placa FAIN). Es fiel al PDF; no tratarlo como error de ingesta. |
+| I-18 | Gate A | Opus 5 | **`ACUÑAMIENTO` resuelve a (c) ninguna arista por evidencia, y la lectura humana del Apéndice D es incorrecta.** Medido: la etiqueta ocupa `bbox [573.9, 117.5, 633.0, 124.8]` y el extremo de segmento **más cercano está a 28,1 pt** (en `(638.2, 152.9)`), fuera de `TERMINAL_TOLERANCE_PT = 25`. La proximidad en `x` nunca se consulta. Verificado además que la abstención **no depende del tope de cadena**: con `MAX_CHAIN_SEGMENTS` en 4, 8, 16 y 40 la página 3 emite siempre las mismas dos aristas. Verdad-terreno visual leída de la lámina: `ACUÑAMIENTO` está **sólo en AG** — el cable verde sale del borne 8 de AG, entra en `ACUÑAMIENTO`, sigue a `AFLOJACABLES`, sigue a `BOTO. REVISION` y vuelve al borne 7. El Apéndice D lo puso en **ambas** listas (13 menciones para 12 etiquetas) y eso es un error humano, ya corregido en el sitio. Verdad-terreno buena: **7 en AI, 5 en AG, 12 relaciones, 12 etiquetas, ninguna repetida**. Nota honesta: aquí la proximidad en `x` habría acertado por casualidad; eso no la valida — no hay forma de saber cuándo miente, y la abstención sigue siendo la conducta correcta. | **Fase 3:** el caso fixture #1 sigue verde y su aserción es correcta. **Fase 8:** usar la tabla corregida del Apéndice D, no la original. |
+| I-19 | 2b | Sonnet 5 | **I-13 cerrado: la causa raíz es geométrica y direction-agnostic, no "x0 > x1 o altura cero" literal.** Derivado del propio `decode_horizontal_text` de HexaPDF (`ctm.premultiply(tm)` por glifo): una rotación de 90° en cualquier sentido intercambia los dos ejes del glifo exactamente — el borde "ancho" (`lower_left→lower_right`) deja de ser horizontal y el borde "alto" (`lower_left→upper_left`) deja de ser vertical. Medido con fixture propio (no se tuvo acceso al PDF real de producción): en un sentido de rotación el bbox agregado sale con `x0 > x1` (el síntoma citado en el plan); en el sentido contrario sale con `y0 > y1` (altura invertida, no exactamente "cero" pero sí inválida) — los dos son la misma causa vista desde ejes distintos. Implementado: `rotated_glyph?` comprueba los dos bordes del glifo contra `GLYPH_AXIS_TOLERANCE_PT = 1.0`, sin depender de qué eje salió invertido; detecta ambos sentidos con la misma prueba. Efecto de segundo orden, más general de lo pedido: `word_entry` pasó de calcular el bbox con sólo dos esquinas (`lower_left` min / `upper_right` max, válido sólo si el glifo es axis-aligned) a las **cuatro** esquinas de cada glifo, así que ninguna entrada —rotada o no— puede salir con bbox inválido; para glifos no rotados el resultado es matemáticamente idéntico al cálculo anterior (verificado: los 9 tests previos de la Fase 2 pasan sin cambiar una sola aserción). Cerrado de paso, mismo método: el hueco perdido en `CARLOS`→`SILVA` (divisor p.8) no era por la rotación, sino porque `word_gap_tolerance` sólo miraba la altura del glifo **anterior**; si el rótulo cambia a una tipografía/tamaño menor a mitad, la tolerancia calculada con el glifo grande "traga" el hueco real entre palabras (no hay glifo de espacio explícito en ese layout). Fix: la tolerancia usa la altura **menor** de los dos glifos adyacentes. Verificado con fixture (`CARLOS`/`SILVA` a tamaño 14/6pt, hueco de 6.5pt: antes fusionaba en `CARLOSSILVA`, ahora emite dos entradas separadas). **No se tocó `LINE_NOISE_MAX_MANHATTAN_PT`** (I-16). Fixture nuevo: `test/fixtures/files/pdf_layout_extractor_rotated_sample.pdf` (no se modificó el fixture de la Fase 2, que sigue intacto). Suite + rubocop verdes: 2061 runs / 0 failures (2056 + 5 tests nuevos); 469 files, 0 offenses. | **Bloquea la Fase 4 junto con I-14** hasta que 3b cierre — I-13 solo, por diseño, no autoriza nada. **Fase 3b (siguiente):** `rotated:` es una clave que sólo aparece (con valor `true`) en la entrada de `words` que la produjo; su ausencia significa "no rotada" — no comprobar `== false`. El `text` de una entrada rotada **no está en orden de lectura** (síntoma original de I-13, decisión de no rescatarlo se mantiene): la guarda de 3b debe descartarla como candidata a extremo de arista por la clave, no intentar leer o normalizar su texto. **Fase 8:** el verbatim bueno de un rótulo con cambio de tipografía interno (`CARLOS SILVA`) ya no requiere reconstrucción manual — sale como dos entradas de `words` adyacentes en la misma línea; quien lo lea debe unirlas con espacio si reconstruye el título, no concatenarlas directo. |
+| I-20 | 3b | Opus 5 | **I-14 cerrado, pero la guarda que el plan redactó, tomada al pie de la letra, mata dos aristas correctas: la frontera hubo que medirla.** El plan pedía rechazar cuando "el extremo cae dentro del `bbox` de una imagen y la etiqueta candidata cae fuera de esa imagen". Medido sobre las seis páginas en juego, esa regla literal rechaza **todo**: cada página de este documento lleva **dos imágenes de fondo a página completa** (`[0,0,960,540]`), así que todo extremo cae dentro de una imagen, y en las dos aristas correctas más expuestas la etiqueta cae **fuera** del gráfico que rotula (pág. 63, `J12` a 16,03 pt de la regleta que nombra; pág. 3, `LIMITADOR` sí solapa su foto, pero `FINALES` y `CONECTOR AI` sólo están dentro del fondo). Regla implementada, que subsume la del plan y es la que separa los cuatro casos: **el extremo puede ser nombrado sólo por una etiqueta a la que ninguna otra etiqueta impresa con otro nombre esté más cerca de esa misma imagen.** Una etiqueta dentro de la imagen tiene distancia 0 y nadie la supera (caso pág. 3), y las imágenes de fondo quedan inertes porque todas las etiquetas están a 0 de ellas. Distancias medidas, gap Chebyshev caja-a-caja: pág. 3 `LIMITADOR` **0,00** (rival más cercano `POLEA` a 11,37) ✅ · pág. 63 `J12` **16,03** (rival impreso recto más cercano `CERROJOS` a 45,79) ✅ · pág. 56 `PISO SUPERIOR` **18,23** contra `CC1` —el nombre de la propia regleta— a **13,18** ❌ · pág. 97 `PESTLLOS TECHO CABINA` **6,56** contra dos filas de nombres de conector que **solapan** la regleta, a **0,00** ❌. Dos exclusiones del ranking, ambas con contraejemplo medido: (a) **una etiqueta con el mismo texto no es rival** —la pág. 39 imprime `CERROJOS EXTERIORES` dos veces, arriba y abajo de la misma foto, a 1,14 y 4,22 pt; sin esta exclusión la arista correcta `CERROJOS EXTERIORES ↔ HUE_1` muere a manos de su propio nombre, y se comprobó en vivo que muere—; (b) **las etiquetas rotadas no cuentan** como candidatas a rotular la imagen —son la numeración de bornes de la propia regleta, nunca pueden ser extremo, y en la pág. 63 cuatro de ellas están a 1,2-4,0 pt de la regleta que `J12` legítimamente nombra—. **Delta medido sobre las 98 páginas** (`script/gate_a/run.rb`, mismo guion del Gate A): **22 aristas / 21 páginas → 19 aristas / 18 páginas**; sobreviven **las 19 correctas del Gate A, todas**; **0 aristas nuevas**; embudo: `raster_rival` 4 rechazos, `rotated_label` 1, el resto de las etapas idéntico (1 326 cadenas, `t_junction` 639, `no_label_at_terminal` 562). **No se tocaron** `TERMINAL_TOLERANCE_PT`, `LINE_NOISE_MAX_MANHATTAN_PT` ni `MAX_CHAIN_SEGMENTS` (I-09, I-16). | **Gate A-bis:** el punto de partida son **19 aristas en 18 páginas**, no 23 en 22; hay que revisarlas todas con visión. La muestra de 11 páginas sigue valiendo: en ella T1 emite ahora 7 aristas, las 7 correctas del Gate A, con las 4 falsas en `[]`. **Fase 5:** `images[].bbox` ya tiene su primer consumidor y la relación "imagen ↔ etiqueta que la rotula" está implementada como *ranking de cercanía*, no como anclaje; el anclaje foto→etiqueta que I-09 dejó sin dueño puede reutilizar `outranked_on_an_image?` en vez de reinventarlo. **Fase 4:** la salida no cambia de forma; sigue siendo ~0,2 aristas por página. |
+| I-21 | 3b | Opus 5 | **"4 aristas falsas" era la cuenta del Gate A; al empezar 3b ya eran 3, y una había cambiado de nombre.** Medido con el extractor de 2b ya mergeado y el derivador sin tocar: **pág. 67 ya devolvía `[]`** —el `PUERTAS EXTE. -> SE` del Gate A desapareció con el bbox corregido de 2b, y no por una guarda de nombre sino porque, con la caja bien puesta, el cable **pasa por encima** de `SE` y salta la guarda de "la cadena pasa junto a la etiqueta"; es una abstención correcta obtenida por un camino incidental— y **pág. 61 mutó**: de `CERRADURAS EXTERIORES -> B` (Gate A) a `TENSORA -> A 8 2 P`, el borne vertical `P28A` leído al revés. Es decir, 2b arregló el bbox pero **no** el defecto de citar texto rotado: sólo cambió qué basura se citaba. Eso confirma la decisión de I-13/2b de descartar y no rescatar, y confirma que la guarda de rotación de 3b era necesaria y no redundante. Efecto colateral registrado: en la pág. 98 la única cadena que el Gate A rechazaba por `same_label_loop` ahora muere una guarda antes, por `raster_rival` — mismo resultado, motivo distinto, y por eso el contador de bucles del embudo pasa de 1 a 0. | **Gate A-bis:** la tabla de 23 aristas de `gate_a_medicion_topologia.md` §2 y el embudo de §3.1 están **obsoletos** y hay que reescribirlos en el sitio, no compararse contra ellos. El antes/después publicable es 23 (Gate A) → 22 (tras 2b) → **19 (tras 3b)**. |
+| I-22 | 3b | Opus 5 | **Tres decisiones de implementación de la guarda de rotación que no estaban en el plan y que hay que conocer antes de tocar este archivo.** (a) **Una palabra rotada no se apila con una recta.** `group_stacked` fusiona palabras verticalmente contiguas para reconstruir rótulos de dos líneas (`STOP` / `FOSO`); sin separar por rotación, un borne vertical pegado bajo un rótulo recto lo contamina con su texto **y con su marca `rotated`**, y la etiqueta correcta se pierde por la guarda nueva. Con la separación, el recuento total de etiquetas del documento sube de 3 229 a 3 233 y ninguna arista cambia. (b) **Una etiqueta rotada no se elimina del conjunto, se rechaza al final.** Igual que las "no-nombre" de I-09: quitarlas antes convertiría un "dos etiquetas en rango ⇒ rechazar" en un acierto limpio. Verificado con test: una etiqueta rotada en rango junto a una buena sigue dando `[]`. (c) **`script/gate_a/run.rb` se actualizó** —el `DiagnosticDeriver` del Gate A duplica a mano la lógica de `sole_label_at` para poder atribuir el motivo de cada rechazo; sin añadirle los dos motivos nuevos, su embudo dejaría de cuadrar con `derive` y el Gate A-bis mediría mal. Es un archivo de otra fase; se tocó **sólo** ese espejo, y es la única edición fuera de la Fase 3b. | **Cualquiera que toque `TopologyEdgeDeriver`:** si cambia el orden de rechazos de `sole_label_at`, tiene que cambiar el mismo orden en `DiagnosticDeriver#label_state`, o el embudo del gate miente. Son dos copias de la misma decisión y no hay test que las ate. |
+| I-23 | 3b | Opus 5 | **El Protocolo de traspaso se incumplió dos veces seguidas y casi cuesta el entregable más caro del plan: ni el Gate A ni la Fase 2b commitearon.** Al empezar 3b, el árbol tenía sin commitear el extractor de 2b y su fixture, y **sin trackear** `docs/rag/gate_a_medicion_topologia.md` y `script/gate_a/` — es decir, el informe que contiene las 153 relaciones leídas a mano (la verdad-terreno de la Fase 8, la parte cara e irrepetible del plan) y los guiones que el Gate A-bis tiene que volver a correr vivían sólo en el working tree, a un `git clean` de desaparecer. Por eso las tres celdas de la columna Commit de la tabla de estado estaban vacías pese a decir "cerrada". Resuelto aquí commiteando las tres fases en orden de dependencia y anotando los hashes: **2b `f4ab397`**, **Gate A `f7aa592`**, **3b `1cb789b`**. Commitear sólo 3b no era opción: habría dejado un árbol donde la guarda de rotación no tiene ningún extractor que emita `rotated`. **Sigue pendiente** el housekeeping de `.claude/settings.json` que la Fase 0 dejó abierto (decisión del dueño: no se commitea todavía). | **Toda fase siguiente:** el punto 4 del Protocolo de traspaso ("marca la fase como cerrada y anota el commit") no es burocracia — es lo que hace que el trabajo exista fuera de tu sesión. Comprueba `git status` **antes** de declarar cerrada tu fase, y si encuentras trabajo de una fase anterior sin commitear, regístralo en vez de construir encima en silencio. |

@@ -263,7 +263,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 2b | cerrada — cierra I-13 (parcialmente: ver I-28) | — (offline) | f4ab397 | I-19 |
 | 3b | cerrada — cierra I-14 | — (offline) | 1cb789b | I-20, I-21, I-22 |
 | Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | 582ede3 | I-26 … I-29 |
-| 4 | cerrada — mergeada con el flag apagado (opción B) | `INGESTION_LAYOUT_DIGEST_ENABLED` | | I-31, I-32 |
+| 4 | cerrada — mergeada con el flag apagado (opción B) | `INGESTION_LAYOUT_DIGEST_ENABLED` | 9f9d611 | I-31, I-32 |
 | 5 | **siguiente** | `INGESTION_VISION_TIER_ENABLED` | | |
 | Gate B | pendiente | — | | |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
@@ -836,7 +836,7 @@ dice literalmente: la Fase 4 se implementa y se **mergea con el flag apagado** �
 byte de producción, y ése es su invariante con test— y **la Fase 7 no se ejecuta** hasta tener T2
 y el Gate B cerrado. No la reinterpretes.
 
-**Cerrada en `<pendiente de commit>` (I-31, I-32).** Implementada y mergeada **con el flag
+**Cerrada en `9f9d611` (I-31, I-32).** Implementada y mergeada **con el flag
 `INGESTION_LAYOUT_DIGEST_ENABLED` apagado** — invariante con test (`bin/rails test` 2123 runs / 0
 failures, 471 files / 0 offenses en rubocop). Dos decisiones de implementación que el plan no
 cerraba del todo, ambas registradas en I-31: **(a)** `section_path` se implementa de **un solo

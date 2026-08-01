@@ -15,8 +15,13 @@
 # Result hash (docs/rag/plan_conocimiento_visual.md, "Contratos de datos"):
 #   page_number      [Integer, nil] echoed back from the page_number: kwarg
 #   media_box        [Array<Float>] [x0, y0, x1, y1]
-#   words            [Array<Hash>]  { text:, bbox: [x0,y0,x1,y1] } — glyphs
-#                    grouped by visual adjacency, not stream emission order
+#   words            [Array<Hash>]  { text:, bbox: [x0,y0,x1,y1], rotated: true }
+#                    — glyphs grouped by visual adjacency, not stream emission
+#                    order. `rotated` is additive: present (and true) only on
+#                    entries built from a glyph whose text matrix isn't
+#                    axis-aligned (90° rotation); absent otherwise. A rotated
+#                    entry's `text` is not reading-order (see Fase 2b/I-13) —
+#                    consumers must skip it as an edge endpoint, never quote it
 #   lines            [Array<Hash>]  { from: [x,y], to: [x,y] } — straight
 #                    segments only; noise (<=20pt Manhattan length) dropped
 #   rects            [Array<Hash>]  { bbox: [x0,y0,x1,y1] }
@@ -32,6 +37,14 @@ class PdfLayoutExtractor
   WORD_GAP_RATIO      = 0.6
   MIN_WORD_GAP_PT     = 1.0
   LINE_Y_TOLERANCE_PT = 2.0
+
+  # A glyph's text matrix is axis-aligned iff its "width" edge (lower_left ->
+  # lower_right) is horizontal and its "height" edge (lower_left ->
+  # upper_left) is vertical. A 90° rotation (either direction) swaps the two
+  # axes exactly, so both edges land far outside this tolerance — cheap and
+  # direction-agnostic, unlike checking the aggregated bbox for x0 > x1 (only
+  # true for one of the two rotation directions; see Gate A §4.2/I-13).
+  GLYPH_AXIS_TOLERANCE_PT = 1.0
 
   # Same cut as the plan's `lines` contract: |Δx| + |Δy| <= 20 is
   # boundary/underline noise, not a leader line.
@@ -120,7 +133,7 @@ class PdfLayoutExtractor
       prev = runs.last.last
       gap  = glyph.lower_left[0] - prev.lower_right[0]
 
-      if gap <= word_gap_tolerance(prev)
+      if gap <= word_gap_tolerance(prev, glyph)
         runs.last << glyph
       else
         runs << [ glyph ]
@@ -130,21 +143,48 @@ class PdfLayoutExtractor
     runs.map { |glyph_run| word_entry(glyph_run) }
   end
 
-  def word_gap_tolerance(glyph)
-    height = glyph.upper_right[1] - glyph.lower_left[1]
+  # The smaller of the two adjacent glyphs' heights, not just `prev`'s: a
+  # label that changes typeface/size mid-run (e.g. the page 8 divider,
+  # "CARLOS" then a smaller "SILVA") must have its real inter-word gap judged
+  # against the smaller glyph, or the larger glyph's height inflates the
+  # tolerance enough to swallow a genuine word boundary with no space glyph
+  # to fall back on.
+  def word_gap_tolerance(prev, current)
+    height = [ glyph_height(prev), glyph_height(current) ].min
     [ height * WORD_GAP_RATIO, MIN_WORD_GAP_PT ].max
   end
 
+  def glyph_height(glyph)
+    glyph.upper_right[1] - glyph.lower_left[1]
+  end
+
+  def rotated_glyph?(glyph)
+    width_edge_dy  = glyph.lower_right[1] - glyph.lower_left[1]
+    height_edge_dx = glyph.upper_left[0]  - glyph.lower_left[0]
+    width_edge_dy.abs > GLYPH_AXIS_TOLERANCE_PT || height_edge_dx.abs > GLYPH_AXIS_TOLERANCE_PT
+  end
+
+  # Bbox as the true axis-aligned bounding box over all four corners of every
+  # glyph in the run, not just each glyph's lower_left/upper_right. For
+  # axis-aligned (non-rotated) glyphs this is identical to the previous
+  # lower_left-min/upper_right-max computation. For a rotated glyph, using
+  # only those two corners is what produced an inverted or degenerate bbox
+  # (Gate A §4.2/I-13) — the other two corners are needed to get x0 <= x1 and
+  # y0 <= y1 unconditionally.
   def word_entry(glyph_run)
-    {
+    corners = glyph_run.flat_map { |g| [ g.lower_left, g.lower_right, g.upper_left, g.upper_right ] }
+
+    entry = {
       text: glyph_run.map(&:string).join,
       bbox: [
-        glyph_run.map { |g| g.lower_left[0] }.min,
-        glyph_run.map { |g| g.lower_left[1] }.min,
-        glyph_run.map { |g| g.upper_right[0] }.max,
-        glyph_run.map { |g| g.upper_right[1] }.max
+        corners.map { |x, _y| x }.min,
+        corners.map { |_x, y| y }.min,
+        corners.map { |x, _y| x }.max,
+        corners.map { |_x, y| y }.max
       ]
     }
+    entry[:rotated] = true if glyph_run.any? { |g| rotated_glyph?(g) }
+    entry
   end
 
   def build_lines(segments)

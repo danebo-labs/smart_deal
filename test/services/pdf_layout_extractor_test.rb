@@ -1,7 +1,8 @@
 require "test_helper"
 
 class PdfLayoutExtractorTest < ActiveSupport::TestCase
-  FIXTURE_PATH = Rails.root.join("test/fixtures/files/pdf_layout_extractor_sample.pdf")
+  FIXTURE_PATH         = Rails.root.join("test/fixtures/files/pdf_layout_extractor_sample.pdf")
+  ROTATED_FIXTURE_PATH = Rails.root.join("test/fixtures/files/pdf_layout_extractor_rotated_sample.pdf")
 
   setup do
     @pages = split_pages(File.binread(FIXTURE_PATH))
@@ -80,6 +81,49 @@ class PdfLayoutExtractorTest < ActiveSupport::TestCase
     assert_equal [], result[:lines]
     assert_equal [], result[:rects]
     assert_equal [], result[:images]
+  end
+
+  test "words from a text matrix rotated 90° are marked rotated: true; horizontal words are not" do
+    result = PdfLayoutExtractor.extract(File.binread(ROTATED_FIXTURE_PATH), page_number: 1)
+
+    rotated_texts    = result[:words].select { |w| w[:rotated] }.pluck(:text)
+    unrotated_texts  = result[:words].reject { |w| w[:rotated] }.pluck(:text)
+
+    assert_equal [ "P", "3", "5", "B", "E", "S" ].sort, rotated_texts.sort
+    assert_equal [ "NORMAL", "CARLOS", "SILVA" ].sort, unrotated_texts.sort
+  end
+
+  test "rotated: true is additive — absent, not false, on entries that aren't rotated" do
+    result = PdfLayoutExtractor.extract(File.binread(ROTATED_FIXTURE_PATH), page_number: 1)
+
+    normal = result[:words].find { |w| w[:text] == "NORMAL" }
+    assert_not normal.key?(:rotated)
+  end
+
+  test "no word entry, rotated or not, has an inverted bbox (x0 > x1) or a non-positive height" do
+    result = PdfLayoutExtractor.extract(File.binread(ROTATED_FIXTURE_PATH), page_number: 1)
+
+    result[:words].each do |word|
+      x0, y0, x1, y1 = word[:bbox]
+      assert x0 <= x1, "#{word[:text].inspect} has an inverted bbox on x: #{word[:bbox].inspect}"
+      assert y0 < y1, "#{word[:text].inspect} has a non-positive height: #{word[:bbox].inspect}"
+    end
+  end
+
+  test "a label that changes typeface/size mid-run keeps its word boundary instead of losing the space" do
+    result = PdfLayoutExtractor.extract(File.binread(ROTATED_FIXTURE_PATH), page_number: 1)
+    texts  = result[:words].pluck(:text)
+
+    assert_includes texts, "CARLOS"
+    assert_includes texts, "SILVA"
+    assert_not_includes texts, "CARLOSSILVA"
+  end
+
+  test "the pre-2b contract keys and order of a non-rotated fixture are unchanged" do
+    result = PdfLayoutExtractor.extract(@pages[0], page_number: 1)
+
+    assert_equal [ "CONECTOR AI", "CONECTOR AG", "LIMITADOR" ].sort, result[:words].pluck(:text).sort
+    result[:words].each { |word| assert_equal %i[text bbox].sort, word.keys.sort }
   end
 
   test "nothing in production code invokes the extractor yet" do

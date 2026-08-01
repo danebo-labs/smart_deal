@@ -30,6 +30,14 @@ evidence and are not descriptions of the active product.
 | Account branding | [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md) | Active |
 | Image compression | [IMAGE_COMPRESSION.md](IMAGE_COMPRESSION.md) | Active; corrected against code (3.75 MB / 1024px), now also covers field-photo thumbnail persistence |
 
+## Active RAG references
+
+| Document | Status |
+|---|---|
+| [rag/plan_conocimiento_visual.md](rag/plan_conocimiento_visual.md) | Accepted plan (not yet implemented); canonical handoff for phased visual-knowledge ingestion work |
+| [rag/hallazgos_gate_piloto.md](rag/hallazgos_gate_piloto.md) | Open findings ledger for the SEGURIDADES pilot gate |
+| [RAG_SEGURIDADES_STATUS.md](RAG_SEGURIDADES_STATUS.md) | Current SEGURIDADES production identity and gate status |
+
 ## Preserved capabilities that are disabled in the MVP pilot
 
 These documents describe code that remains in the repository. Their routes or

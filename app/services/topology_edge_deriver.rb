@@ -45,7 +45,52 @@
 #     drawn as loops that leave one terminal of a connector, pass through a
 #     component photo and return to another terminal of the SAME connector; both
 #     ends resolve to `CONECTOR AI` and nothing is emitted, which is correct —
-#     the component in the middle of the loop is not named by any endpoint.
+#     the component in the middle of the loop is not named by any endpoint;
+#   * a terminal that lands inside an image may only be named by a label no
+#     other printed label sits closer to (Fase 3b/I-14) — see RASTER RIVALS;
+#   * a rotated label never names a terminal (Fase 3b, on Fase 2b/I-13).
+#
+# RASTER RIVALS
+#
+# The uniqueness rule above is only as good as the text layer: it can only see
+# rivals that are PRINTED. Measured over the whole of `SEGURIDADES 1.1-1.pdf`
+# (Gate A §4.3), the terminal numbering of a connector strip is usually drawn
+# INSIDE the photo of the strip, so the rival that should have made the terminal
+# ambiguous is pixels and the guard passes a label that names something else.
+# Page 56 emitted `PISO SUPERIOR -> CC2` for a wire between two connectors, and
+# page 97 emitted `PUERTAS FRONTALES -> PESTLLOS TECHO CABINA` for two devices
+# no wire joins.
+#
+# So a terminal inside an image is only allowed to be named by the label that
+# names THAT image: no other printed label may sit closer to it. `images[].bbox`
+# comes from Fase 2 (I-07) and this is its first consumer. Measured gaps from
+# each terminal's image to the labels around it:
+#
+#   page 3   `LIMITADOR`               0.00  nearest — the text overlaps the
+#                                            limiter photo the wire ends on ✓
+#   page 63  `J12`                    16.03  nearest — the connector's own name,
+#                                            printed to the left of its strip ✓
+#   page 56  `PISO SUPERIOR`          19.12  third: `CC1` at 13.18 (the strip's
+#                                            own name) and `PISO INFERIOR` at
+#                                            18.23 are closer ✗
+#   page 97  `PESTLLOS TECHO CABINA`   6.56  third, behind two connector-name
+#                                            rows overlapping the strip ✗
+#
+# The two full-page background images every page in this document carries are
+# inert under this rule: every label is inside them, so no label is closer than
+# any other and they raise no objection.
+#
+# ROTATED LABELS
+#
+# Fase 2 marks a word `rotated: true` when its glyphs are turned 90° (I-13,
+# I-19). Its `text` is not in reading order and must never be quoted: page 67's
+# printed `ES` reached Fase 3 as `SE`, and page 61's `P35B` as `B` — both were
+# emitted as edge endpoints. Fase 2b's corrected boxes did not end that: page 61
+# then emitted `A 8 2 P` for the printed terminal `P28A` (I-21). Correcting the
+# geometry only changes which garbage gets quoted; refusing to quote it is this
+# guard. A rotated label is dropped as a terminal name but stays in the label
+# set — it is still a rival for the uniqueness rule, and still a label a chain
+# can run past.
 #
 # The `ACUÑAMIENTO` case of the plan's Apéndice D resolves to (c) "no edge" by
 # these rules: no chain terminal lands within tolerance of that label. The green
@@ -122,7 +167,7 @@ class TopologyEdgeDeriver
   MERGED_ROW_MARKER    = /\s{2,}/
   ANNOTATION_ONLY      = /\A\(.*\)\z/
 
-  Label = Struct.new(:text, :bbox, :line_height, keyword_init: true)
+  Label = Struct.new(:text, :bbox, :line_height, :rotated, keyword_init: true)
   private_constant :Label
 
   # @param layout [Hash] one page's `PdfLayoutExtractor` result
@@ -172,7 +217,9 @@ class TopologyEdgeDeriver
       bbox = Array(word[:bbox]).map(&:to_f)
       next if text.empty? || bbox.size != 4
 
-      { text: text, bbox: bbox }
+      # `rotated` is additive in Fase 2's contract: present and true, or absent.
+      # Never compare it to false (I-19).
+      { text: text, bbox: bbox, rotated: word[:rotated] == true }
     end
 
     group_stacked(words).map do |group|
@@ -183,7 +230,8 @@ class TopologyEdgeDeriver
           ordered.map { |w| w[:bbox][0] }.min, ordered.map { |w| w[:bbox][1] }.min,
           ordered.map { |w| w[:bbox][2] }.max, ordered.map { |w| w[:bbox][3] }.max
         ],
-        line_height: ordered.map { |w| w[:bbox][3] - w[:bbox][1] }.max
+        line_height: ordered.map { |w| w[:bbox][3] - w[:bbox][1] }.max,
+        rotated: ordered.any? { |word| word[:rotated] }
       )
     end
   end
@@ -205,7 +253,13 @@ class TopologyEdgeDeriver
          .values.map { |indexes| indexes.map { |i| words[i] } }
   end
 
+  # A turned glyph and an upright one are never two lines of one printed label,
+  # so they do not stack. Without this, page 61's vertical terminal markings
+  # merge into the labels beside them and carry `rotated` — and the guard
+  # below — into a name that was printed perfectly straight.
   def stacked?(word_a, word_b)
+    return false unless word_a[:rotated] == word_b[:rotated]
+
     ax0, ay0, ax1, ay1 = word_a[:bbox]
     bx0, by0, bx1, by1 = word_b[:bbox]
 
@@ -348,14 +402,60 @@ class TopologyEdgeDeriver
     end
   end
 
-  # Ambiguity is judged over ALL labels, including the unusable ones: dropping a
-  # merged row from the candidate set early would turn "two labels in range" —
-  # which must be rejected — into a clean single hit.
+  # Ambiguity is judged over ALL labels, including the unusable, the rotated and
+  # the ones an image outranks: dropping any of them from the candidate set
+  # early would turn "two labels in range" — which must be rejected — into a
+  # clean single hit. Every rejection below therefore runs on the sole
+  # survivor, never on the set.
   def sole_label_at(point, chain)
     found = labels.select { |label| terminates_at?(point, chain, label) }
     return nil unless found.size == 1
 
-    nameable?(found.first) ? found.first : nil
+    label = found.first
+    return nil if label.rotated
+    return nil unless nameable?(label)
+    return nil if outranked_on_an_image?(point, label)
+
+    label
+  end
+
+  # True when the terminal lands inside an image and a DIFFERENTLY named printed
+  # label sits strictly closer to that image than the candidate does — that
+  # image carries a name of its own, in pixels this class cannot read, and the
+  # label beside it is not it.
+  #
+  # Two exclusions from the comparison, both measured:
+  #
+  #   * a label printed with the same text is not a rival — it cannot make the
+  #     citation wrong. Page 39 prints `CERROJOS EXTERIORES` twice, above and
+  #     below the same photo, 1.14 pt and 4.22 pt from it; without this the
+  #     correct edge dies to its own name;
+  #   * rotated labels are the strip's own terminal markings, they can never
+  #     name an endpoint themselves, and on page 63 four of them sit 1.2–4.0 pt
+  #     from the connector image that `J12` — the correct answer, 16.0 pt away —
+  #     legitimately names.
+  def outranked_on_an_image?(point, label)
+    image_boxes.any? do |image|
+      next false unless point_inside?(point, image)
+
+      nearest_rival_gap(image, label.text) < bbox_gap(label.bbox, image)
+    end
+  end
+
+  # Fase 2 reports `bbox: nil` for an XObject declared but never painted (I-07):
+  # no known position, so no opinion.
+  def image_boxes
+    @image_boxes ||= Array(@layout[:images]).filter_map do |image|
+      bbox = Array(image[:bbox]).map(&:to_f)
+      bbox if bbox.size == 4
+    end
+  end
+
+  def nearest_rival_gap(image, text)
+    @nearest_rival_gap ||= {}
+    @nearest_rival_gap[[ image, text ]] ||=
+      labels.reject { |label| label.rotated || label.text == text }
+            .map { |label| bbox_gap(label.bbox, image) }.min || Float::INFINITY
   end
 
   def nameable?(label)
@@ -447,6 +547,17 @@ class TopologyEdgeDeriver
 
   def distance(point_a, point_b)
     Math.hypot(point_a[0] - point_b[0], point_a[1] - point_b[1])
+  end
+
+  def point_inside?(point, bbox)
+    point[0] >= bbox[0] && point[0] <= bbox[2] && point[1] >= bbox[1] && point[1] <= bbox[3]
+  end
+
+  # Chebyshev gap between two boxes: 0 when they touch or overlap.
+  def bbox_gap(box_a, box_b)
+    dx = [ box_b[0] - box_a[2], box_a[0] - box_b[2], 0.0 ].max
+    dy = [ box_b[1] - box_a[3], box_a[1] - box_b[3], 0.0 ].max
+    [ dx, dy ].max
   end
 
   def chebyshev_gap(point, bbox)

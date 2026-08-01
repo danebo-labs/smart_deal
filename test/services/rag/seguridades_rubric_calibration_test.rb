@@ -12,6 +12,8 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
   RUBRIC = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_rubric.json").read).freeze
   PILOT = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q.json").read).freeze
   PILOT_V2 = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q_v2.json").read).freeze
+  PILOT_V3 = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q_v3.json").read).freeze
+  PILOT_V4_1 = JSON.parse(Rails.root.join("script/fixtures/rag_seguridades_pilot_10q_v4_1.json").read).freeze
   HOLDOUT_PATH = Rails.root.join("script/fixtures/rag_seguridades_holdout_v1.json")
   HOLDOUT_SHA256 = "34682fb13ca5acf0e635d42ad285be039749b4d07f090a728ef43371d4325309"
   PARTIAL_ABSTENTION_GOLDEN_CHECKS = [
@@ -70,6 +72,22 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
     assert_equal "seguridades-holdout-v1.0", holdout.fetch("version")
     assert_equal 10, holdout.fetch("cases").size
     assert_equal HOLDOUT_SHA256, Digest::SHA256.file(HOLDOUT_PATH).hexdigest
+  end
+
+  test "the release gate set is pinned to the authorized rubrics and blocks promotion of unverified batteries" do
+    release_gates = [
+      RUBRIC.fetch("version"),
+      PILOT.fetch("version"),
+      PILOT_V2.fetch("version"),
+      PILOT_V3.fetch("version"),
+      PILOT_V4_1.fetch("version")
+    ]
+    expected = [ "seguridades-v3.2", "seguridades-pilot-v1.2", "seguridades-pilot-v2.1",
+                 "seguridades-pilot-v3.0", "seguridades-pilot-v4.1" ]
+
+    assert_equal expected, release_gates.sort,
+      "release gate set must be exactly #{expected.inspect} to prevent unverified batteries (set2, taxonomia) " \
+      "from being promoted without touching this assertion"
   end
 
   # v2 critical: EM4000 obstacle header documents XC4/XC7 — inventing the

@@ -1,0 +1,189 @@
+{
+  "version": "seguridades-pilot-v2.0",
+  "description": "Segunda batería de 10 preguntas para calificar precisión del RAG sobre SEGURIDADES 1.1-1. Complementa la primera batería cubriendo otros fabricantes/modelos y manteniendo el enfoque en recuperación directa, comparación y abstención ante información ausente.",
+  "citation_required": true,
+  "passing_score": 24,
+  "max_score": 30,
+  "cases": [
+    {
+      "id": "aljo_dl4",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En ALJO Control Level 1B, ¿qué serie indica el LED DL4?",
+      "source_pages": [2, 3, 4, 5],
+      "required": [
+        {"label": "identifica DL4", "pattern": "\\bDL4\\b"},
+        {"label": "serie correcta", "pattern": "SERIE SEGURIDADES CERRADA"}
+      ],
+      "optional": [
+        {"label": "distingue versión hidráulica/eléctrica", "pattern": "(?:hidr[aá]ulico|el[eé]ctrico|premontada|bornas)"}
+      ],
+      "penalized": [
+        {"label": "confunde DL4 con DL2/DL3", "pattern": "\\bDL4\\b.{0,40}(?:cerrojos|puertas)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "hidra_tpr50_scr",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En HIDRA TPR50, ¿qué LED identifica la serie de cerrojos exteriores?",
+      "source_pages": [8, 9],
+      "required": [
+        {"label": "identifica SCR", "pattern": "\\bSCR\\b"},
+        {"label": "serie correcta", "pattern": "SERIE CERROJOS EXTERIORES"}
+      ],
+      "optional": [
+        {"label": "contexto TPR50", "pattern": "TPR50"}
+      ],
+      "penalized": [
+        {"label": "confunde con TPR60/TPR70", "pattern": "(?:TPR60|TPR70).{0,40}\\bSCR\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "inelca_homelift_sc3",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En INELCA HOMELIFT, ¿qué LED indica la serie de seguridad exteriores-cabina?",
+      "source_pages": [48],
+      "required": [
+        {"label": "identifica SC3", "pattern": "\\bSC3\\b"},
+        {"label": "serie correcta", "pattern": "SERIE SEGURIDAD EXTERIORES - CABINA"}
+      ],
+      "optional": [
+        {"label": "cita HOMELIFT", "pattern": "HOMELIFT"}
+      ],
+      "penalized": [
+        {"label": "mezcla con SC2/SC4", "pattern": "\\bSC[24]\\b.{0,40}(?:exteriores-cabina|seguridad exteriores)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "cta_m8pc_leds",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En CTA M8PC, ¿qué LEDs indican que las puertas cabina/exterior están cerradas y que los cerrojos cabina/exterior están cerrados?",
+      "source_pages": [15],
+      "required": [
+        {"label": "identifica P.HOJA", "pattern": "P\\.HOJA"},
+        {"label": "identifica CERRO.", "pattern": "CERRO\\."},
+        {"label": "series correctas", "pattern": "SERIE (?:PUERTAS|CERROJOS) CAB\\. EXT\\. CERRADA"}
+      ],
+      "optional": [
+        {"label": "cita M8PC", "pattern": "M8PC"}
+      ],
+      "penalized": [
+        {"label": "confunde con SR8P/CR8PH2", "pattern": "\\b(?:SR8P|CR8PH2|CR10P)\\b", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "fain_electrico_vs_hidraulico",
+      "category": "comparacion_entre_paginas",
+      "severity": "technical_important",
+      "question": "¿FAIN eléctrico e hidráulico comparten los mismos LEDs de seguridad? ¿Cuáles son?",
+      "source_pages": [41, 42],
+      "required": [
+        {"label": "confirma que son iguales", "pattern": "(?:s[ií]|mismos|comparten|iguales)"},
+        {"label": "incluye CC", "pattern": "\\bCC\\b"},
+        {"label": "incluye ST", "pattern": "\\bST\\b"},
+        {"label": "incluye SF", "pattern": "\\bSF\\b"},
+        {"label": "incluye SS", "pattern": "\\bSS\\b"},
+        {"label": "incluye SP", "pattern": "\\bSP\\b"},
+        {"label": "incluye SC", "pattern": "\\bSC\\b"}
+      ],
+      "optional": [
+        {"label": "lista las series asociadas", "pattern": "(?:CERROJOS CABINA|TERMICO|FINALES|PUERTAS CAINA|PUERTAS EXTERIORES|CERROJOS EXTERIORES)"}
+      ],
+      "penalized": [
+        {"label": "dice que son diferentes", "pattern": "(?:diferente|no son los mismos|var[ií]an)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "orona_arca3_p35b_j25",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En ORONA ARCA III, ¿qué indica el LED P35B y qué función tiene el jumper J25?",
+      "source_pages": [63, 64],
+      "required": [
+        {"label": "identifica P35B", "pattern": "\\bP35B\\b"},
+        {"label": "serie P35B correcta", "pattern": "SERIE CERROJOS CABINA -EXTERIORES"},
+        {"label": "identifica J25", "pattern": "\\bJ25\\b"},
+        {"label": "función J25 correcta", "pattern": "Ascensor en revisi[oó]n con cerraduras de cabina puenteadas"}
+      ],
+      "optional": [
+        {"label": "cita ARCA III", "pattern": "ARCA III"}
+      ],
+      "penalized": [
+        {"label": "confunde J25 con J12/J24/J26", "pattern": "\\bJ25\\b.{0,60}(?:modo normal|seguridades de cabina|cerraduras exteriores)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "otis_gen2_es",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En OTIS GEN II, ¿qué LED indica que la cadena de seguridad es correcta?",
+      "source_pages": [68],
+      "required": [
+        {"label": "identifica ES", "pattern": "\\bES\\b"},
+        {"label": "serie correcta", "pattern": "CADENA DE SEGURIDAD CORRECTA"}
+      ],
+      "optional": [
+        {"label": "distingue de otros LEDs OTIS", "pattern": "(?:DOB|DFC|DW)"}
+      ],
+      "penalized": [
+        {"label": "asigna función incorrecta a ES", "pattern": "\\bES\\b.{0,60}(?:puertas|obst[áa]culo|cerrojos)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "schindler_smart001_isk",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En SCHINDLER SMART 001, ¿qué serie cierra el final de la cadena de seguridad según el LED ISK?",
+      "source_pages": [83],
+      "required": [
+        {"label": "identifica ISK", "pattern": "\\bISK\\b"},
+        {"label": "serie correcta", "pattern": "SERIE SEGURDADES CERRADA XKV\\.2 – XKNE\\.2"}
+      ],
+      "optional": [
+        {"label": "menciona puntos de la serie", "pattern": "(?:XKV\\.2|XKNE\\.2)"}
+      ],
+      "penalized": [
+        {"label": "confunde ISK con ISPT/RTS", "pattern": "\\bISK\\b.{0,60}(?:hueco|puertas hueco|XKPH|XISPT)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "thyssen_cmc_seg_pres_encl",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "question": "En THYSSEN Serie CMC, ¿qué LEDs indican seguridades principales, puertas exteriores-cabina y cerrojos exteriores-cabina?",
+      "source_pages": [95, 96],
+      "required": [
+        {"label": "identifica SEG", "pattern": "\\bSEG\\b"},
+        {"label": "identifica PRES", "pattern": "\\bPRES\\b"},
+        {"label": "identifica ENCL/ENCLAV", "pattern": "\\bENCL(?:AV)?\\b"},
+        {"label": "series correctas", "pattern": "SERIE (?:SEGURIDADES PRINCIPALES|PUERTAS EXTERIORES - CABINA|CERROJOS EXTERIORES - CABINA)"}
+      ],
+      "optional": [
+        {"label": "cita CMC", "pattern": "CMC"}
+      ],
+      "penalized": [
+        {"label": "mezcla con Serie E/B/F", "pattern": "\\b(?:L[1-9]|SERIE E|SERIE B|SERIE F)\\b.{0,60}(?:CMC|SEG|PRES|ENCL)", "severity": "technical_important"}
+      ]
+    },
+    {
+      "id": "aljo_tension_leds_ausente",
+      "category": "informacion_ausente",
+      "severity": "critical",
+      "question": "En ALJO Control Level 1B, ¿qué tensión de alimentación usan los LEDs DL2, DL3 y DL4?",
+      "source_pages": [2, 3, 4, 5],
+      "required": [
+        {"label": "abstención visible", "pattern": "(?:El documento no incluye este dato|no (?:se )?(?:documenta|especifica|incluye|declara).{0,80}(?:tensi[oó]n|alimentaci[oó]n|voltaje))"}
+      ],
+      "optional": [
+        {"label": "sugiere verificar en campo", "pattern": "(?:Verificar en campo|esquema completo|manual completo)"}
+      ],
+      "penalized": [
+        {"label": "inventa tensión", "pattern": "\\b\\d+\\s*V\\b", "severity": "critical"},
+        {"label": "inventa corriente", "pattern": "\\b\\d+\\s*(?:mA|A)\\b", "severity": "critical"}
+      ]
+    }
+  ]
+}

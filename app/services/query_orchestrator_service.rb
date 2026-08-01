@@ -246,7 +246,12 @@ class QueryOrchestratorService
         entity_sources:      entity_sources,
         force_entity_filter: @force_entity_filter,
         response_locale:     @response_locale,
-        output_channel:      @output_channel
+        output_channel:      @output_channel,
+        # Carried so the turns this responder now answers through the structured
+        # route keep the same attribution as the ones the route answers directly.
+        user_id:                 @user_id,
+        conversation_session_id: @conversation_session_id,
+        correlation_id:          @correlation_id
       )
       if disambiguation && (disambiguated = disambiguation.execute)
         Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")

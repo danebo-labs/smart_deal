@@ -17,7 +17,8 @@ module Rag
       /\b(?:[A-Z]{2,}\d+[A-Z0-9.-]*|[A-Z]{2,}(?:-[A-Z0-9]+)+)\b/.freeze
 
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
-                   response_locale: nil, output_channel: nil)
+                   response_locale: nil, output_channel: nil, user_id: nil,
+                   conversation_session_id: nil, correlation_id: nil)
       return unless DeterministicIntent.ambiguous_hardware_query?(question)
 
       new(
@@ -27,12 +28,16 @@ module Rag
         entity_sources: entity_sources,
         force_entity_filter: force_entity_filter,
         response_locale: response_locale,
-        output_channel: output_channel
+        output_channel: output_channel,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        correlation_id: correlation_id
       )
     end
 
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
-                   response_locale: nil, output_channel: nil, rag_service: nil)
+                   response_locale: nil, output_channel: nil, rag_service: nil, user_id: nil,
+                   conversation_session_id: nil, correlation_id: nil, generator: nil)
       @question = question
       @account = account
       @service = rag_service || BedrockRagService.new(account: account)
@@ -41,9 +46,14 @@ module Rag
       @force_entity_filter = force_entity_filter
       @locale = response_locale.presence&.to_sym || I18n.locale
       @output_channel = output_channel&.to_sym
+      @user_id = user_id
+      @conversation_session_id = conversation_session_id
+      @correlation_id = correlation_id
+      @generator = generator
     end
 
     def execute
+      retrieval_started = monotonic_now
       retrieval = @service.retrieve_chunks(
         @question,
         entity_s3_uris: @entity_s3_uris,
@@ -52,10 +62,27 @@ module Rag
         number_of_results: RETRIEVAL_RESULTS,
         account_id: @account&.id
       )
+      retrieval_ms = elapsed_ms(retrieval_started)
       candidates = candidates_from(retrieval[:chunks])
+      # DeterministicIntent#ambiguous_hardware_query? is purely lexical over the
+      # raw question, so a board whose name carries no digit at all ("Twister TW
+      # de Embarba", measured 2026-07-31) lands here even though the technician
+      # named it unambiguously. The retrieved headings are the KB's own answer to
+      # "which boards are on the table", so ask them instead of widening
+      # EXPLICIT_EQUIPMENT_PATTERN's fixed manufacturer list, which only defers
+      # the problem to the next board without a digit.
+      named = candidates.select { |candidate| Rag::BoardHeading.mentioned?(candidate[:label], @question) }
+      # Exactly one named board: there is no ambiguity left to resolve and the
+      # menu would ask the technician to repeat what they already wrote. Answer
+      # from the retrieval in hand — returning nil to fall through would bill a
+      # second Retrieve for the same turn.
+      return answer_from(retrieval, retrieval_ms: retrieval_ms) if answer_directly?(named)
+
       return if candidates.size < MIN_DISTINCT_MODELS
 
-      selected = candidates.first(MAX_OPTIONS)
+      # Two or more named: still ambiguous, but the technician already narrowed
+      # the set, so the menu offers only what they named.
+      selected = (named.many? ? named : candidates).first(MAX_OPTIONS)
       used_chunks = selected.pluck(:chunk)
       {
         answer: render_answer(selected),
@@ -79,6 +106,43 @@ module Rag
     end
 
     private
+
+    # Gated on the live-route switch: with it off, this responder keeps showing
+    # the menu exactly as it does today, so the rollback lever still means one
+    # thing and there is no third combination of states to reason about.
+    def answer_directly?(named)
+      Rag::StructuredEvidenceRouteFlag.enabled? && named.one?
+    end
+
+    # Hands the already-consumed retrieval to the structured route so the answer
+    # goes through the same generation and safety stack as every other evidence
+    # answer. Built with `new`, not `build`: the question is precisely one that
+    # RagRetrievalProfile#structured_mapping_query? rejects (no digit in the
+    # designator), which is why it reached this responder at all.
+    def answer_from(retrieval, retrieval_ms:)
+      Rag::StructuredEvidenceRoute.new(
+        question: @question,
+        account: @account,
+        entity_s3_uris: @entity_s3_uris,
+        entity_sources: @entity_sources,
+        force_entity_filter: @force_entity_filter,
+        response_locale: @locale,
+        account_id: @account&.id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
+        correlation_id: @correlation_id,
+        rag_service: @service,
+        generator: @generator
+      ).complete_from_retrieval(retrieval, retrieval_ms: retrieval_ms).result
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def elapsed_ms(started)
+      ((monotonic_now - started) * 1000).round
+    end
 
     def candidates_from(chunks)
       seen = {}

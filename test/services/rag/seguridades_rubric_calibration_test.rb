@@ -82,8 +82,8 @@ class Rag::SeguridadesRubricCalibrationTest < ActiveSupport::TestCase
       PILOT_V3.fetch("version"),
       PILOT_V4_1.fetch("version")
     ]
-    expected = [ "seguridades-v3.2", "seguridades-pilot-v1.2", "seguridades-pilot-v2.1",
-                 "seguridades-pilot-v3.0", "seguridades-pilot-v4.1" ]
+    expected = [ "seguridades-pilot-v1.2", "seguridades-pilot-v2.1", "seguridades-pilot-v3.0",
+                 "seguridades-pilot-v4.1", "seguridades-v3.2" ].sort
 
     assert_equal expected, release_gates.sort,
       "release gate set must be exactly #{expected.inspect} to prevent unverified batteries (set2, taxonomia) " \

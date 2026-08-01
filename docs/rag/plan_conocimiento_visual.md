@@ -859,6 +859,13 @@ donde `MODELO` sale de emparejar el título de la página con una viñeta de su 
 invariante `section_identity == section_path.first` se conserva intacto (sigue siendo la marca).
 Las 18 divisoras extraídas y contrastadas contra el Apéndice E están en el informe del Gate A.
 
+⚠️ **revisado en I-31.** Lo de arriba describe la forma conceptual correcta, pero **no es lo que
+se implementó**: la Fase 4 emite `section_path` de **un solo nivel** (`[section_identity]`) porque
+el emparejador título-de-página↔viñeta-de-divisor que produciría `MODELO` no estaba en el alcance
+de esta fase. El invariante `section_identity == section_path.first` se sostiene igual con un solo
+nivel. Quien necesite `MODELO` tiene que diseñar e implementar ese emparejador aparte; no hay
+migración que hacer cuando llegue, `section_path` ya es una lista de longitud variable.
+
 ⚠️ **revisado en el Gate A.** El presupuesto de aristas por página que hay que asumir es **~0,2**,
 no 12: el máximo medido en cualquier página del documento es **2** (página 3). El tope de 12
 aristas/chunk y su desborde a chunk hermano **no se activan** aquí; escríbelos igual, pero no
@@ -929,6 +936,13 @@ leer, y es la mayor palanca de cobertura del plan entero.
 - Respeta `docs/RAG_SEGURIDADES_BENCHMARK.md:109-115`: enriquecimiento **en ingesta**, nunca
   visión en runtime.
 - Flag: `INGESTION_VISION_TIER_ENABLED`.
+
+⚠️ **revisado en I-31.** "Los mismos registros v8" sólo llegan al chunk si esta fase corre por la
+misma ruta que ya hila `topology_edges` (la síncrona, `SingleFileChunkingService` →
+`ChunkMergerService` → `BatchResultsParserService`) o si tú misma resuelves el hilado para la ruta
+asíncrona (`ManualBatchIngestionService`), que hoy no lo hace. Decide explícitamente por cuál ruta
+corre T2 antes de escribir el prompt de relaciones — no está resuelto en ninguna de las dos por
+defecto.
 
 *Definición de terminado:*
 - [ ] Rasterizador con test sobre el fixture; DPI justificado, no mágico
@@ -1073,11 +1087,29 @@ como "no repetir" en `docs/RAG_SEGURIDADES_STATUS.md`.
 - Puntuar ambos documentos con las mismas rúbricas vía `RAG_SEGURIDADES_DOCUMENT_KEY`.
 - Los documentos deprecados se purgan del KB en **un paso propio y medido**, no aquí.
 
+⚠️ **revisado en I-31.** La Fase 4, tal como se implementó, **sólo renderiza `TOPOLOGY_EDGE` en la
+ruta síncrona** (`SingleFileChunkingService` → `ChunkMergerService` → `BatchResultsParserService`,
+el caso `pdf_mixed`). `ManualBatchIngestionService` — el servicio existente detrás del
+`ingestion_path: "manual_batch_v1"` que este bullet pide reutilizar — sólo hila el `layout_digest`
+de contexto hacia el modelo; las aristas derivadas **no** cruzan el límite asíncrono del Batch API
+(no hay dónde guardarlas entre el envío y `IngestManualBatchResultsJob`, que parsea mucho después
+y sin el binario de la página). Si `script/shadow_ingest_v8.rb` construye su ingesta llamando a
+`ManualBatchIngestionService` tal cual, **el shadow ingest de SEGURIDADES no va a llevar ninguna
+arista de topología**, con el flag encendido o no — el "delta de conteo de chunks" del punto
+siguiente saldría en cero por esa razón, no porque no haya aristas que indexar. Antes de escribir
+el script, decidir explícitamente una de dos: (a) diseñar `shadow_ingest_v8.rb` para llamar
+`PdfLayoutExtractor`/`TopologyEdgeDeriver` por página y pasar `topology_edges:` directo a
+`BatchResultsParserService`, igual que hace hoy la ruta síncrona (sin pasar por
+`ManualBatchIngestionService`); o (b) construir la capa de persistencia que I-31 dejó sin dueño
+para que las aristas sobrevivan el viaje por el Batch API. Cualquiera de las dos es trabajo nuevo,
+no hilado existente — regístralo como alcance de esta fase, no lo des por hecho.
+
 *Definición de terminado:*
 - [ ] El script no contiene ninguna llamada de borrado sobre el prefijo de producción
 - [ ] Corrida de 6 páginas, diff de cuerpos revisado y adjuntado al informe
 - [ ] Delta de conteo de chunks explicado antes de las 98 (el desborde de topología crea chunks
-      nuevos; hoy son 97 = 1 por página)
+      nuevos; hoy son 97 = 1 por página) **y las aristas de topología llegan de verdad al chunk
+      escrito** — verificarlo leyendo el cuerpo, no asumirlo por el flag encendido (I-31)
 - [ ] Las 42 rúbricas corridas sobre **ambos** documentos, resultados lado a lado
 - [ ] `script/rag_seguridades_recall_probe.rb`: **rank por caso antes/después**, no sólo
       pass/fail
@@ -1751,13 +1783,19 @@ vez hecho el Paso 0.
 > `bulk_chunks/<account>/<uid_nuevo>/` bajo un segundo `KbDocument`, dejando los 97 chunks
 > actuales indexados y consultables, con gate de confirmación por ENV y parametrizado (hoy
 > `ACCOUNT_ID = 1` es literal en los scripts existentes). Ingesta por `manual_batch_v1`, no
-> `web_v1`, para que las claves codifiquen la página. Secuencia: **6 páginas primero**, diff de
-> cuerpos revisado con visión contra el PDF por el modelo de go/no-go, y sólo entonces las 98.
-> Explica el delta de conteo de chunks **antes** de la corrida completa (hoy son 97 = 1 por
-> página; el desborde de topología crea chunks nuevos). Corre las 42 rúbricas sobre **ambos**
-> documentos y `script/rag_seguridades_recall_probe.rb` para el **rank por caso antes/después** —
-> no sólo pass/fail: el riesgo principal del plan es que la topología diluya el embedding y baje
-> el recall. Prueba el rollback.
+> `web_v1`, para que las claves codifiquen la página. **Antes de escribir una línea: lee la nota
+> ⚠️ revisado en I-31 de la Fase 4 en este mismo documento** — `ManualBatchIngestionService`, el
+> servicio que hoy escribe con `ingestion_path: "manual_batch_v1"`, no hila las aristas de
+> topología a través del Batch API (sólo el digest de contexto llega al modelo); si tu script lo
+> reutiliza tal cual, el shadow ingest no indexará ningún `TOPOLOGY_EDGE` aunque el flag esté
+> encendido. Decide y documenta cómo cierras ese hueco antes de correr las 6 páginas. Secuencia:
+> **6 páginas primero**, diff de cuerpos revisado con visión contra el PDF por el modelo de
+> go/no-go, y sólo entonces las 98. Explica el delta de conteo de chunks **antes** de la corrida
+> completa (hoy son 97 = 1 por página; el desborde de topología crea chunks nuevos) y confirma
+> leyendo el cuerpo escrito que la arista realmente aparece, no sólo que el flag está encendido.
+> Corre las 42 rúbricas sobre **ambos** documentos y `script/rag_seguridades_recall_probe.rb` para
+> el **rank por caso antes/después** — no sólo pass/fail: el riesgo principal del plan es que la
+> topología diluya el embedding y baje el recall. Prueba el rollback.
 
 **Fase 8 · Sonnet**
 > Ejecuta la Fase 8 de `<PLAN>`. Congela los 42 casos actuales como gate de no-regresión —son los

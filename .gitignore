@@ -64,3 +64,7 @@ meeting*.txt
 
 # Kamal: real hosts and env-specific IDs stay local (template: deploy.yml.example).
 /config/deploy.yml
+
+# Claude Code: personal per-machine overrides (permissions accepted in a session).
+# The shared hook lives in .claude/settings.json, which stays committed.
+.claude/settings.local.json

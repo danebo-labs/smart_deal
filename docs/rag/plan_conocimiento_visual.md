@@ -19,7 +19,7 @@ una pregunta al dueño, no código.
 
 | | Paso | Con qué modelo | Coste API | Bloquea a |
 |---|---|---|---|---|
-| **1** | **Decisión humana #6:** ¿se ejecuta la Fase 7 con las aristas de T1 solas? | **Ninguno — decides tú** | $0 | Fase 7 |
+| ~~1~~ | ~~**Decisión humana #6:** ¿se ejecuta la Fase 7 con las aristas de T1 solas?~~ | ✅ **RESPONDIDA 2026-08-02: sí, opción (a)** | $0 | — |
 | ~~2~~ | ~~**Fase 5b:** medir si las teselas a 300 dpi arreglan el error que hundió el Gate B~~ | ✅ **HECHO (I-47)** — corrida $3,7559, juicio de 278 relaciones | — | — |
 | ~~3~~ | ~~**Medir `vision_topology_v3`**, el prompt escrito y nunca ejecutado (I-42)~~ | ✅ **HECHO de rebote (I-48)** — la corrida de 5b usó v3 | — | — |
 
@@ -331,7 +331,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 5b | **MEDIDA — HIPÓTESIS REFUTADA.** 278 relaciones juzgadas: 88,49 %, LI **84,14 %** < 85 %. El tipo C no se mueve sobre las mismas páginas (81,5 % → 81,0 %) y los tipos A y B empeoran. Flag **apagado**, y así se queda | `INGESTION_VISION_TIER_ZOOM_TILES` (apagado) | 5554893 (código) + 1d1fdb9 (medición) | I-44, I-45, I-47, I-48 |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
-| 7 | **bloqueada por la decisión humana #6** — el Gate B ya no la bloquea: está ejecutado, pero su veredicto deja el shadow ingest con las aristas de T1 solas, que es justo lo que la decisión #4 prohibió | — | | |
+| 7 | **DESBLOQUEADA — decisión humana #6 resuelta el 2026-08-02: opción (a), la ejecuta el dueño.** Visión encendida, relaciones y teselas apagadas. Delta de precisión esperado ≈ 0, declarado por escrito antes de correr | `INGESTION_VISION_TIER_ENABLED` on · `..._RELATIONS_ENABLED` off · `..._ZOOM_TILES` off | | |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
 | 10 | pendiente | — | | |
@@ -1739,10 +1739,25 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
      hizo falta una muestra de 102. El límite acabó siendo ninguno de los dos previstos — la cuenta
      de Anthropic se quedó sin saldo (I-42).
 
-6. **⛔ Pendiente — ¿se ejecuta la Fase 7 con las aristas de T1 solas?** Planteada por el veredicto
-   del Gate B (I-39), 2026-08-02. La decisión #4 lo prohibía expresamente y su premisa era que T2
-   aportaría relaciones; T2 no llegó al umbral y sus relaciones están apagadas. Las opciones, con lo
-   que cuesta cada una ya medido:
+6. **✅ RESUELTA — opción (a): SÍ se ejecuta la Fase 7 con las aristas de T1 solas.**
+   **Respondida por el dueño del producto el 2026-08-02**, después de leer el veredicto de la Fase
+   5b (I-47) y el desglose de qué compra y qué no compra la fase. Queda **derogada** la prohibición
+   de la decisión #4 en este punto concreto y sólo en éste: la #4 la escribió alguien que suponía
+   que T2 aportaría relaciones, y esa premisa está medida y muerta.
+   - **Lo que se autoriza:** shadow ingest con `INGESTION_VISION_TIER_ENABLED` **encendido** (se
+     paga la visión, ~$5,18 por las 80 páginas) y `INGESTION_VISION_TIER_RELATIONS_ENABLED` /
+     `INGESTION_VISION_TIER_ZOOM_TILES` **apagados**. El A/B mide identidad de componente + las 19
+     aristas de T1.
+   - **Lo que el dueño sabe y acepta al autorizarlo:** el delta esperado en precisión de respuesta
+     es **cercano a cero** (19 aristas sobre 98 páginas). Lo que compra es la capacidad nueva
+     (`documented_components`) en producción y el contrato v8 validado de punta a punta, que es lo
+     que desbloquea las Fases 8 y 9. **Nadie debe reportar "la Fase 7 no mejoró la precisión" como
+     un hallazgo: está previsto aquí, por escrito, antes de correrla.**
+   - **Lo que NO se autoriza:** volver a encender relaciones de visión, tocar el umbral del 85 %,
+     re-ejecutar `script/reingest_seguridades_2026-07-25.rb`, ni borrar nada.
+
+   Planteada por el veredicto del Gate B (I-39), 2026-08-02. Las opciones que había, con lo
+   que costaba cada una ya medido:
    - **(a) Ejecutar igual.** El shadow ingest escribe las 19 aristas de T1 y la identidad de
      componente de T2 (38/38 juzgadas, LI 92,4 %). Se sigue pagando la visión: ~$5,18 por las 80
      páginas. Se gana el campo no-relacional en producción y el A/B que valida el contrato v8 de
@@ -2417,12 +2432,25 @@ quiere atacar el modo de fallo real, la Fase 5b propuesta en I-40.
 > entonces no sabrás cuál de los dos cambios movió el número**. Si hay saldo, córrelas por separado.
 
 **Fase 7 · Sonnet (script) + Opus (go/no-go)**
-> ⚠️ **revisado en I-39, I-41 e I-43 — antes de nada: esta fase está bloqueada por la decisión
-> humana #6, no por trabajo.** El Gate B se ejecutó y **degradó T2 a campos no-relacionales**
-> (informe `docs/rag/gate_b_calibracion_vision.md`): con los flags por defecto, el shadow ingest
-> escribiría **las 19 aristas de T1 solas** más la identidad de componente de T2 — y la decisión
-> humana #4 prohíbe expresamente ejecutar esta fase con las aristas de T1 solas. Pregunta antes de
-> escribir código. Si la respuesta es seguir: (a) el A/B cambia de sujeto, ya no compara "con y sin
+> ✅ **DESBLOQUEADA. La decisión humana #6 está respondida: opción (a), el dueño del producto lo
+> autorizó el 2026-08-02. NO vuelvas a preguntarlo, y NO te detengas.** Lo que se autorizó, textual,
+> está en "Decisiones humanas pendientes" #6. Resumen operativo para ti:
+>
+> - Flags: `INGESTION_VISION_TIER_ENABLED` **encendido**; `INGESTION_VISION_TIER_RELATIONS_ENABLED`
+>   y `INGESTION_VISION_TIER_ZOOM_TILES` **apagados**. No los cambies.
+> - **El delta de precisión esperado es ≈ 0 y está previsto.** Con 19 aristas sobre 98 páginas, las
+>   rúbricas no se van a mover. **Eso no es un fallo tuyo ni un hallazgo:** el objetivo de esta fase
+>   es meter `documented_components` en producción y validar el contrato v8 de punta a punta. Si al
+>   final escribes "no mejoró la precisión" como si fuera un descubrimiento, no leíste esto.
+> - **Lo que sí es un fallo y hay que reportar a gritos:** que el recall **baje**, que el conteo de
+>   chunks no cuadre con lo que predijiste antes de correr, o que el cuerpo escrito no contenga las
+>   aristas que el flag dice que debería.
+> - **Prohibido, sin excepción:** encender relaciones de visión, tocar el umbral del 85 %,
+>   re-ejecutar `script/reingest_seguridades_2026-07-25.rb`, borrar cualquier cosa.
+>
+> ⚠️ **revisado en I-39, I-41 e I-43.** El Gate B se ejecutó y **degradó T2 a campos
+> no-relacionales** (informe `docs/rag/gate_b_calibracion_vision.md`), y la Fase 5b confirmó que
+> esa degradación es permanente (I-47). Consecuencias que arrastras: (a) el A/B cambia de sujeto, ya no compara "con y sin
 > relaciones de visión" sino "con y sin identidad de componente", y la visión se sigue pagando
 > (~$5,18 por las 80 páginas, coste medido); (b) el `RECORD_ID` no idempotente de I-35 deja de
 > morder porque no hay `evidence` de modelo en ninguna huella, y si alguien reactiva las relaciones,

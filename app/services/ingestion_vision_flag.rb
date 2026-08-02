@@ -41,9 +41,13 @@ module IngestionVisionFlag
   # resolved by hand at that resolution and none of them is locatable from the
   # layout — the cell names are pixels inside the picture of the strip.
   #
-  # Off by default, and it must stay off until someone measures it: it raises
-  # the cost per page by roughly half and its effect on precision is a
-  # hypothesis, not a number.
+  # Off by default, and it stays off: the hypothesis was measured and refuted
+  # (I-47, report §2-bis). 278 relations judged one by one — 88.49%, 95%
+  # Clopper-Pearson lower bound 84.14%, still under the 85% bar. The dense-strip
+  # plates it was meant to fix did not move (81.5% -> 81.0% over the same
+  # pages), and the two plate types that were already perfect got worse. It also
+  # costs 2.5x per page ($0.0648 -> $0.1633). Do not turn this on without a new
+  # hypothesis and a fresh measurement.
   def zoom_tiles_enabled?
     ENV["INGESTION_VISION_TIER_ZOOM_TILES"] == "true"
   end

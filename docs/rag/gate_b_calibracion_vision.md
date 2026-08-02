@@ -27,6 +27,14 @@ chunk viene de T1. **Límite conocido del producto**, documentado en §9.
 **Gasto real: $2,2216** de los $15 autorizados. La corrida se interrumpió antes de la iteración
 final: la cuenta de Anthropic se quedó sin saldo (§8.3). El presupuesto **no** fue el límite.
 
+> ⚠️ **Cerrado por la Fase 5b (I-47), 2026-08-02.** La única palanca que atacaba el fallo medido
+> —darle al modelo la página en teselas a 300 dpi— **se midió y no lo arregla**. 278 relaciones
+> juzgadas una a una con la misma regla: **88,49 %, límite inferior 84,14 %**, sigue por debajo del
+> 85 %. Y la predicción falsable se refutó por partida doble: sobre las **mismas** páginas, el tipo
+> C no se movió (81,5 % → 81,0 %), y los tipos A y B, que debían quedarse quietos, **bajaron**.
+> `INGESTION_VISION_TIER_ZOOM_TILES` no se enciende. La degradación del §9.3 es **permanente**.
+> Números completos en el **§2-bis**. Coste $3,7559; acumulado del gate **$5,9775**.
+
 ---
 
 ## 1. Qué se midió y cómo
@@ -138,6 +146,130 @@ que **sólo existen como píxeles** dentro del ráster (I-15), y no falló ningu
 
 La diferencia entre el 100 % del tipo A y el 81,5 % del tipo C no es de dificultad conceptual: es
 de **resolución angular sobre la etiqueta**. Ver §10.
+
+⚠️ **revisado en I-47: la hipótesis de esta frase se midió y quedó refutada.** El §2-bis trae los
+números de la Fase 5b al lado de éstos.
+
+---
+
+## 2-bis. Fase 5b — la misma medición con teselas de zoom a 300 dpi
+
+**Veredicto: el flag `INGESTION_VISION_TIER_ZOOM_TILES` NO se enciende. La predicción escrita
+antes de medir está refutada.**
+
+Corrida: `tmp/gate_b_5b.json`, las **mismas 23 páginas**, `GATE_B_ZOOM_TILES=true`, modelo
+`claude-opus-4-8`. **278 relaciones**, todas juzgadas una a una con la **regla del §1.2 sin
+cambiar**, contra la lámina renderizada a 150 dpi y ampliando a 300 dpi cada fila de bornes
+dudosa. Nunca contra la salida anterior del modelo.
+
+Las teselas llegaron y el modelo las usó: el gasto de entrada sube de 5 764 a **22 813 tokens por
+página** (+17 000, la cifra que I-45 predijo) y varias `evidence` de la pág. 95 citan la tesela
+literalmente — *"…rotulado TEMPERATURA MOTOR **(zoom 4)**"*, *"…del microrruptor CAMBIO VEL.
+BAJADA **(zoom 1)**"*.
+
+### 2-bis.1 Desglose por tipo de lámina, al lado del §2
+
+| Tipo | Páginas | §2 (v1, sin teselas) | **5b (v3 + teselas)** | ¿Se movió? |
+|---|---|---|---|---|
+| **A.** Regleta frontal, bornes grandes | 17 | 20/20 · 100 % · LI **86,1 %** | **19/20 · 95,00 % · LI 75,13 %** | **sí, a peor** |
+| **B.** Conectores pequeños dedicados | 97, 91, 77, 22 | 17/17 · 100 % · LI **83,8 %** | **59/62 · 95,16 % · LI 86,50 %** | **sí, a peor** |
+| **C.** Regleta/conector denso | el resto (18 págs.) | 53/65 · 81,5 % · LI **71,8 %** | **168/196 · 85,71 % · LI 80,02 %** | ver 2-bis.2 |
+| **C, restringido a las 10 páginas del §2** | 63,93,78,76,56,25,61,67,3,39 | 53/65 · 81,5 % · LI 71,8 % | **81/100 · 81,00 % · LI 71,93 %** | **no** |
+| **Total** | 23 páginas | 90/102 · 88,2 % · LI **81,6 %** | **246/278 · 88,49 % · LI 84,14 %** | ❌ **< 85 %** |
+
+La cuarta fila es la que decide. El tipo C "sube" de 81,5 % a 85,7 % **sólo porque el conjunto C
+creció de 10 a 18 páginas** — las 8 nuevas (11, 12, 14, 44, 52, 64, 94, 95) no tenían ninguna
+relación juzgada en el §2 y aportan 96 relaciones fáciles. **Sobre las mismas 10 páginas que el
+§2, el tipo C pasa de 81,5 % a 81,0 %: no se mueve.** Es la comparación que la predicción pedía y
+es la que la refuta.
+
+Y los tipos A y B, que la predicción decía que **no** se moverían porque ya estaban al 100 %,
+**bajaron los dos**. Con las teselas el modelo ve más y emite más (20 → 21 en la pág. 97, 1 → 14
+en la 91, 2 → 17 en la 22), y en ese volumen nuevo aparecen los primeros fallos que estos dos
+tipos no tenían.
+
+### 2-bis.2 Detalle por página
+
+| Pág | Tipo | n | ✔ | ✘ | Errores |
+|---|---|---|---|---|---|
+| 3 | C | 3 | 1 | 2 | `LIMITADOR ↔ 4` y `↔ 5`: el marrón y el azul salen de las celdas **1** y **2** de CONECTOR AI |
+| 11 | C | 4 | 4 | 0 | — |
+| 12 | C | 12 | 11 | 1 | `MG4 5 ↔ PUERTAS EXTER.`: el gris del pin 5 baja a POLEA TENSORA |
+| 14 | C | 18 | 18 | 0 | — |
+| 17 | **A** | 20 | 19 | 1 | `75 ↔ BOTONERA REVISION`: el magenta termina en SOBRECARGA (v1 acertaba) |
+| 22 | **B** | 17 | 16 | 1 | `CL ↔ PULSADOR ABRIR`: el rojo sale de **CC**, como dice la leyenda de la propia lámina |
+| 25 | C | 21 | 18 | 3 | `38 ↔ PUERTAS EXT.` (el amarillo es de 39) · `40 ↔ EMB. 1` y `41 ↔ EMB. 2` (intermedio omitido) |
+| 39 | C | 2 | 2 | 0 | — · v1 fallaba aquí (`PTC MOTOR ↔ NTC 3D-5`); v3 lo arregla |
+| 44 | C | 11 | 7 | 4 | `SFH`, `SFA`, `SNA` son la celda a **dos posiciones** de la real (SE5, SE2, SE1) · `SE3 ↔ EMB. 1` (intermedio omitido) |
+| 52 | C | 16 | 14 | 2 | `XLH5-5 ↔ 270:RB` (el gris de 5 va al interruptor) · `XLH6-1 ↔ LIM. CONTRAPESO` (intermedio omitido) |
+| 56 | C | 12 | 9 | 3 | `105 ↔ 220`: **no hay conductor**, el marrón cierra su propio bucle · `226 ↔ 103` (es 220) · `104 ↔ 220` (intermedio omitido) |
+| 61 | C | 13 | 11 | 2 | `JC3-6` y `JC3-7` **intercambiados** (P35 va a PUERTAS, P35B a CERRADURAS) |
+| 63 | C | 8 | 6 | 2 | `J10-3 ↔ CERRADURAS` (es J10-2) · `J12-4 ↔ ALUMBRADO` (el marrón es J12-2) |
+| 64 | C | 14 | 14 | 0 | — |
+| 67 | C | 5 | 5 | 0 | — · las 5 son de clase (a) |
+| 76 | C | 10 | 8 | 2 | `SFH` y `SNH` son SE5 y SE6 |
+| 77 | **B** | 10 | 8 | 2 | `SE9 ↔ BLOQUEO FINAL SUP.` (el verde sale de **BL0**) · `SE1 ↔ AFLOJA CABLES` (intermedio omitido) |
+| 78 | C | 11 | 6 | 5 | `SE8 ↔ CERROJOS EXTER.` (es SE7) · **cuatro** con intermedio omitido |
+| 91 | **B** | 14 | 14 | 0 | — · v1 emitía 1 relación, ahora 14 |
+| 93 | C | 15 | 15 | 0 | — · v1 fallaba 2 aquí (`71`/`ZN` cruzados); v3 + teselas lo arregla |
+| 94 | C | 2 | 2 | 0 | — |
+| 95 | C | 19 | 17 | 2 | `A2 ↔ FINAL` (el amarillo es A5) · `A5 ↔ AMORTIGUADOR FOSO` (intermedio omitido) |
+| 97 | **B** | 21 | 21 | 0 | — |
+
+### 2-bis.3 Qué arregló el zoom, qué no, y qué rompió
+
+**Arregló** exactamente los casos que I-40 dijo que arreglaría, y sólo esos: la pág. 93 pasa de
+9/11 a 15/15 (`71`/`ZN` ya no se cruzan), la pág. 78 acierta el verde en `SE5` y el rojo en `SE7`,
+la 56 pone el rojo en `111` y no en `109`, y la 39 deja de confundir `PTC MOTOR` con su número de
+pieza (esto último es mérito de v3, no de las teselas).
+
+**No arregló el modo de fallo, lo desplazó.** De los 32 errores, **21 siguen siendo un extremo mal
+leído**, y ya no son "una o dos celdas": son **dos y tres posiciones** (`SFH` por `SE5` en las
+págs. 44 y 76, `SFA` por `SE2`, `4` por `1` en la pág. 3, `JC3-6`↔`JC3-7` intercambiados). Con
+más resolución el modelo lee bien el nombre impreso y sigue asignándolo mal — la hipótesis
+"resolución angular" predecía que esto desaparecería.
+
+**Rompió cobertura correcta que v1 tenía.** La pág. 17 pierde `75 ↔ SOBRECARGA`, que v1 acertaba.
+
+**Los 11 errores restantes son de la segunda mitad de la regla del §1.2** — el par existe, pero el
+conductor atraviesa un dispositivo que la `evidence` no nombra (`SE3 → CERROJOS EMBARQUE 2 →
+CERROJOS EMBARQUE 1`, contado como incorrecto). Son casi todos nuevos: aparecen donde el zoom hizo
+que el modelo emitiera series largas que antes ni intentaba. Si se contaran como correctos, el
+agregado sería **257/278 = 92,45 %, LI 88,68 %** — pero cambiar esa regla ahora, después de ver el
+resultado, es exactamente lo que el §1.2 se escribió para impedir, y además es el error que I-29
+midió como real (16 % de las aristas de T1 son series con intermedio omitido).
+
+### 2-bis.4 El experimento tiene un confundido, y hay que decirlo
+
+La corrida usó **`vision_topology_v3`** (`fp 36f8c3bb…`), no v1. Así que cambiaron **tres** cosas a
+la vez respecto del §2: las teselas, el prompt v3, y la corrección de `MAX_LONG_EDGE_PX` de I-44
+(los recortes de componente pasan de 150 a 200 dpi). El §10 ya avisaba de la tercera. **Ningún
+número de arriba puede atribuirse sólo a las teselas.**
+
+Eso **no** debilita el veredicto, porque el veredicto es negativo: con las tres palancas juntas y
+a favor, el límite inferior agregado sigue por debajo del 85 %. Sí impide la lectura contraria —
+nadie puede decir "las teselas no sirven, pero v3 sí" con estos datos.
+
+De paso, esto **cierra el cabo suelto de I-42**: v3 ya está medido (78 % de las relaciones de esta
+corrida se juzgaron bajo v3 en las mismas páginas del §2). No hace falta la medición separada de
+~$1,50 que el plan listaba como paso 3.
+
+### 2-bis.5 Coste real
+
+| | Previsto (I-45) | **Medido** |
+|---|---|---|
+| Total, 23 páginas | ~$3,30 | **$3,7559** (+14 %) |
+| Por página | ~$0,14 | **$0,1633** (rango $0,1381 pág. 39 – $0,1943 pág. 14) |
+| Tokens de entrada | +~15 800/página | 524 603 total · **22 813/página** (era 5 764) |
+| Tokens de salida | — | 45 312 total · 1 970/página |
+
+Proyección a las 80 páginas T2 del documento: **~$13,06**, frente a los ~$5,18 sin teselas.
+Gasto acumulado del Gate B + 5b: **$5,9775**.
+
+### 2-bis.6 Consecuencia
+
+`INGESTION_VISION_TIER_ZOOM_TILES` **queda apagado**, como estaba. La degradación del §9.3 pasa de
+provisional a **permanente**: el límite no era de resolución. El §9.4 no cambia ni una palabra.
 
 ---
 
@@ -406,6 +538,12 @@ La salida obligatoria que el plan había previsto para este caso, implementada, 
 
 ## 10. La palanca que sí ataca el fallo medido (para quien reanude)
 
+> ⚠️ **revisado en I-47 — esta sección está cerrada y su hipótesis es falsa.** Se midió (Fase 5b,
+> §2-bis): con las teselas a 300 dpi el límite inferior agregado es 84,14 %, sigue por debajo del
+> 85 %, el tipo C no se mueve sobre las mismas páginas y los tipos A y B empeoran. **No queda una
+> "palanca que sí ataca el fallo": ésta era la última candidata y falló.** Lo que sigue se conserva
+> porque documenta por qué el experimento estaba bien planteado, no porque siga vigente.
+
 No es un prompt. Los 9 errores de celda vecina ocurren cuando la fila de bornes ocupa 40-60 px de
 la página renderizada a 150 dpi, y **desaparecen al ampliar**: cada uno de ellos se resolvió sin
 ambigüedad recortando esa zona a 300 dpi durante el juicio.
@@ -457,3 +595,15 @@ lectura cruda del par que T1 ya probó) y para mostrar qué guardaría producci�
 Artefactos: `tmp/gate_b_v1_baseline.json`, `tmp/gate_b_v2_iter1.json`, `tmp/gate_b_smoke.json`,
 `tmp/gate_b_v3_iter2.json` (vacío, sin saldo) y sus `.log` con una línea `vision_topology_page`
 por página —tokens, DPI, recortes, embudo de rechazos y huella del prompt.
+
+**Fase 5b (§2-bis)**, misma receta con las teselas encendidas:
+
+```bash
+GATE_B_PAGES=3,11,12,14,17,22,25,39,44,52,56,61,63,64,67,76,77,78,91,93,94,95,97 \
+GATE_B_ZOOM_TILES=true GATE_B_OUT=tmp/gate_b_5b.json GATE_B_LABEL=fase5b GATE_B_THREADS=4 \
+  bin/rails runner tmp/gate_b_run.rb
+```
+
+Artefacto: `tmp/gate_b_5b.json` (`prompt_contract: vision_topology_v3`, fp `36f8c3bb…`,
+`zoom_tiles: true`). El juicio se hizo con `pdftoppm -r 150` para la lámina completa y recortes
+`-r 300`/`-r 400`/`-r 600` con `-x -y -W -H` sobre cada fila de bornes en disputa.

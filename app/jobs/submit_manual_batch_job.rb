@@ -76,6 +76,10 @@ class SubmitManualBatchJob < ApplicationJob
       page_customs:    result[:page_customs] || {},
       kept_pages:      result[:kept_pages] || [],
       total_pages:     result[:total_pages],
+      # Contract v8 (I-37): the derived edges cross the Batch API round trip on
+      # this row, the same way page_customs does — the page binaries they were
+      # derived from are gone by the time IngestManualBatchResultsJob runs.
+      page_topology_edges: result[:page_topology_edges] || {},
       submitted_at:    Time.current,
       error_message:   nil
     )

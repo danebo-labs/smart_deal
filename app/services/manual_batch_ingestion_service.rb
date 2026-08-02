@@ -30,7 +30,9 @@ class ManualBatchIngestionService
   # @param locale   [String, nil]  ISO 639-1 (forwarded to anchor page)
   # @return [Hash] { batch_id: String, page_customs: Hash, kept_pages: Array<Integer> }
   def submit!(binary:, filename:, sha256:, s3_key:, locale: nil)
-    splitter   = PdfPageSplitterService.new(binary)
+    @page_topology_edges = {}
+    @correlation_id      = "ingest:#{sha256.to_s[0, 12]}"
+    splitter    = PdfPageSplitterService.new(binary)
     total_pages = splitter.page_count
 
     return empty_result if total_pages.zero?
@@ -49,7 +51,7 @@ class ManualBatchIngestionService
       h[page.number] = custom_id_for(sha256, page.number)
     end
 
-    items = build_batch_request_items(kept_pages, filename, sha256, locale)
+    items = build_batch_request_items(kept_pages, filename, sha256, locale, filter_results)
     batch_ids = ClaudeBatchSubmissionService.new(batch_client: @batch_client).submit!(items)
 
     Rails.logger.info(
@@ -65,7 +67,10 @@ class ManualBatchIngestionService
       total_pages: total_pages,
       filename:    filename,
       sha256:      sha256,
-      s3_key:      s3_key
+      s3_key:      s3_key,
+      # Contract v8 (I-37): derived while the page binaries were still on disk.
+      # Empty with both ingestion flags off, which is the default.
+      page_topology_edges: @page_topology_edges
     }
   ensure
     Array(pages).each(&:cleanup)
@@ -113,14 +118,14 @@ class ManualBatchIngestionService
     end
   end
 
-  def build_batch_request_items(kept_pages, filename, sha256, locale)
+  def build_batch_request_items(kept_pages, filename, sha256, locale, filter_results)
     total = kept_pages.size
 
     kept_pages.each_with_index.map do |page, idx|
       custom_id     = custom_id_for(sha256, page.number)
       page_locale   = idx.zero? ? locale : nil
       anchor        = idx.zero?
-      layout_digest = layout_digest_for(page)
+      layout_digest = topology_for_page(page, total, filename, locale, filter_results)
 
       ClaudeBatchRequestItem.new(
         custom_id: custom_id,
@@ -151,25 +156,46 @@ class ManualBatchIngestionService
     end
   end
 
-  # Fase 4 (contract v8), gated by IngestionLayoutFlag: same digest a
-  # SingleFileChunkingService page gets, computed eagerly here (before
-  # `cleanup` can run) since this item's `build` lambda fires later, off the
-  # Anthropic Batch API's async round trip.
+  # Both tiers of the contract v8 topology pipeline, on the ASYNC route — the
+  # only route the pilot web upload actually uses (I-37).
   #
-  # Unlike the synchronous pdf_mixed path, the derived `edges` themselves are
-  # NOT threaded through this async boundary in this phase — IngestManualBatchResultsJob
-  # parses the batch result long after `page.cleanup` has run, with no page
-  # binary left to re-derive from and no persistence layer added here to
-  # carry the edges across that gap. A manual-batch (long-manual web upload)
-  # page therefore gets the model-context benefit of its digest but no
-  # Rails-rendered TOPOLOGY_EDGE record in its chunk body — registered as a
-  # gap for whoever threads this path end to end.
-  def layout_digest_for(page)
-    return nil unless IngestionLayoutFlag.enabled?
+  # Everything here has to happen NOW, while `page.binary` still exists: this
+  # item's `build` lambda fires at submission time and `page.cleanup` runs in
+  # `submit!`'s ensure block, hours before IngestManualBatchResultsJob parses the
+  # result. So the digest goes into the prompt (as before) and the derived edges
+  # are collected into `@page_topology_edges`, which `submit!` returns for
+  # SubmitManualBatchJob to persist on the `web_manual_batches` row — the same
+  # durable transport `page_customs` already uses across this boundary.
+  #
+  # I-31 recorded this gap as "nowhere to persist them"; that was wrong, and
+  # I-37 corrects it.
+  #
+  # @return [String, nil] the layout digest for the prompt
+  def topology_for_page(page, total, filename, locale, filter_results)
+    layout_on = IngestionLayoutFlag.enabled?
+    vision_on = IngestionVisionFlag.enabled?
+    return nil unless layout_on || vision_on
 
     layout = PdfLayoutExtractor.extract(page.binary, page_number: page.number)
-    edges  = TopologyEdgeDeriver.derive(layout)
-    PageLayoutDigest.render(layout, edges)
+    edges  = layout_on ? TopologyEdgeDeriver.derive(layout) : []
+
+    if vision_on
+      vision = VisionTopologyExtractor.derive(
+        page.binary,
+        layout:         layout,
+        page_number:    page.number,
+        total_pages:    total,
+        filename:       filename,
+        triage:         filter_results&.dig(page.number),
+        traced_edges:   edges,
+        locale:         locale,
+        correlation_id: @correlation_id
+      )
+      edges += vision.edges
+    end
+
+    @page_topology_edges[page.number] = edges if edges.present?
+    layout_on ? PageLayoutDigest.render(layout, edges) : nil
   end
 
   def custom_id_for(sha256, page_number)
@@ -179,7 +205,7 @@ class ManualBatchIngestionService
   def empty_result
     {
       batch_id: nil, batch_ids: [], page_customs: {}, kept_pages: [], total_pages: 0,
-      filename: nil, sha256: nil, s3_key: nil
+      filename: nil, sha256: nil, s3_key: nil, page_topology_edges: {}
     }
   end
 end

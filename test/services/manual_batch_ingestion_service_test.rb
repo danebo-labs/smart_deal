@@ -305,8 +305,13 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
   # Fase 4 (contract v8): layout digest reaches the batch prompt, computed
   # eagerly (before `cleanup`) since `build` fires later off the async batch
-  # round trip. Edges themselves are NOT threaded across that boundary in
-  # this phase (registered as a gap, see I-hallazgo).
+  # round trip.
+  #
+  # ⚠️ Fase 5 / I-37: the derived edges DO cross that boundary now. They are
+  # returned as `page_topology_edges` for SubmitManualBatchJob to persist on the
+  # web_manual_batches row — which is the only route the pilot web upload
+  # actually uses, so it is the only route where either tier can reach a chunk in
+  # production.
   # ---------------------------------------------------------------------------
 
   def with_layout_digest_flag(enabled)
@@ -381,5 +386,138 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
   ensure
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Fase 5 / I-37: both tiers cross the async boundary as `page_topology_edges`.
+  # ---------------------------------------------------------------------------
+
+  def with_vision_tier_flag(enabled)
+    original = ENV.fetch("INGESTION_VISION_TIER_ENABLED", nil)
+    ENV["INGESTION_VISION_TIER_ENABLED"] = enabled ? "true" : nil
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_VISION_TIER_ENABLED")
+    else
+      ENV["INGESTION_VISION_TIER_ENABLED"] = original
+    end
+  end
+
+  def stub_topology(t1_edge: nil, t2_edges: [])
+    orig_cb      = PageRelevanceFilter.method(:call_batch)
+    orig_track   = TrackBedrockQueryJob.method(:perform_later)
+    orig_extract = PdfLayoutExtractor.method(:extract)
+    orig_derive  = TopologyEdgeDeriver.method(:derive)
+    orig_vision  = VisionTopologyExtractor.method(:derive)
+    vision_calls = []
+
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+    PageRelevanceFilter.define_singleton_method(:call_batch) do |pages:, **|
+      pages.each_with_object({}) do |p, h|
+        h[p.number] = { keep: true, reason: :test, source: :haiku_batch, force_opus: false,
+                        visual_complexity: :high, has_visual_relations: true, component_count: 4 }
+      end
+    end
+    PdfLayoutExtractor.define_singleton_method(:extract) do |_binary, page_number:|
+      { page_number: page_number, media_box: [ 0, 0, 960, 540 ], words: [], lines: [], rects: [],
+        images: [], text_layer_chars: 0, image_area_ratio: 0.0 }
+    end
+    TopologyEdgeDeriver.define_singleton_method(:derive) { |_layout| t1_edge ? [ t1_edge ] : [] }
+    VisionTopologyExtractor.define_singleton_method(:derive) do |_binary, **kwargs|
+      vision_calls << kwargs
+      VisionTopologyExtractor::Result.new(
+        edges: t2_edges, components: [], crop_count: 0, input_tokens: 5_000, output_tokens: 1_700
+      )
+    end
+
+    yield(vision_calls)
+  ensure
+    PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)
+    PdfLayoutExtractor.define_singleton_method(:extract, orig_extract)
+    TopologyEdgeDeriver.define_singleton_method(:derive, orig_derive)
+    VisionTopologyExtractor.define_singleton_method(:derive, orig_vision)
+  end
+
+  test "submit! returns both tiers' edges keyed by page so they survive the batch round trip" do
+    t1 = { from: "LIMITADOR", to: "CONECTOR AI", method: :leader_line, evidence: "polilínea une LIMITADOR con CONECTOR AI" }
+    t2 = { from: "32", to: "CERROJOS CABINA", method: :vision, evidence: "conductor naranja de la borna 32 a CERROJOS CABINA" }
+    result = nil
+
+    stub_topology(t1_edge: t1, t2_edges: [ t2 ]) do
+      with_layout_digest_flag(true) do
+        with_vision_tier_flag(true) do
+          result = ManualBatchIngestionService.new(batch_client: FakeBatchClient.new).submit!(
+            binary: build_fake_pdf_binary(2), filename: "m.pdf", sha256: "5" * 64, s3_key: "key"
+          )
+        end
+      end
+    end
+
+    assert_equal [ 1, 2 ], result[:page_topology_edges].keys.sort
+    assert_equal [ t1, t2 ], result[:page_topology_edges][1]
+    assert_equal [ :leader_line, :vision ], result[:page_topology_edges][2].pluck(:method)
+  end
+
+  # The vision call has to happen HERE, at submission, because `submit!`'s ensure
+  # block cleans up every page binary before the batch result ever comes back.
+  test "the vision tier is invoked at submission time with the page's triage verdict" do
+    calls = nil
+
+    stub_topology(t2_edges: []) do |recorded|
+      with_layout_digest_flag(false) do
+        with_vision_tier_flag(true) do
+          ManualBatchIngestionService.new(batch_client: FakeBatchClient.new).submit!(
+            binary: build_fake_pdf_binary(2), filename: "m.pdf", sha256: "6" * 64, s3_key: "key", locale: "es"
+          )
+        end
+      end
+      calls = recorded
+    end
+
+    assert_equal 2, calls.size, "one vision call per kept page"
+    assert_equal :high, calls.first[:triage][:visual_complexity]
+    assert_equal "es", calls.first[:locale]
+    assert_equal "ingest:666666666666", calls.first[:correlation_id]
+  end
+
+  test "with both flags off no page_topology_edges are produced and no vision call is billed" do
+    result = nil
+    calls  = nil
+
+    stub_topology(t1_edge: { from: "A", to: "B", method: :leader_line, evidence: "x" }, t2_edges: []) do |recorded|
+      with_layout_digest_flag(false) do
+        with_vision_tier_flag(false) do
+          result = ManualBatchIngestionService.new(batch_client: FakeBatchClient.new).submit!(
+            binary: build_fake_pdf_binary(2), filename: "m.pdf", sha256: "7" * 64, s3_key: "key"
+          )
+        end
+      end
+      calls = recorded
+    end
+
+    assert_empty result[:page_topology_edges]
+    assert_empty calls
+  end
+
+  test "the vision tier alone produces edges without any layout digest in the prompt" do
+    t2 = { from: "185", to: "TEPERATURA CUARTO MAQ.", method: :vision, evidence: "conductor amarillo de la borna 185" }
+    fake_client = FakeBatchClient.new
+    result = nil
+
+    stub_topology(t2_edges: [ t2 ]) do
+      with_layout_digest_flag(false) do
+        with_vision_tier_flag(true) do
+          result = ManualBatchIngestionService.new(batch_client: fake_client).submit!(
+            binary: build_fake_pdf_binary(2), filename: "m.pdf", sha256: "8" * 64, s3_key: "key"
+          )
+        end
+      end
+    end
+
+    assert_equal [ t2 ], result[:page_topology_edges][1]
+    content = fake_client.submitted_requests.first[:params][:messages].first[:content]
+    assert_not(content.any? { |b| b[:text].to_s.include?("LAYOUT DIGEST") })
   end
 end

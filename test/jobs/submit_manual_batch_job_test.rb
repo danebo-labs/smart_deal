@@ -37,7 +37,10 @@ class SubmitManualBatchJobTest < ActiveJob::TestCase
         batch_ids: %w[msgbatch_web_123 msgbatch_web_456],
         page_customs: { 1 => "#{sha[0, 16]}_p1" },
         kept_pages: [ 1 ],
-        total_pages: 3
+        total_pages: 3,
+        page_topology_edges: {
+          1 => [ { from: "32", to: "CERROJOS CABINA", method: :vision, evidence: "conductor naranja" } ]
+        }
       }
     end
     ManualBatchIngestionService.define_singleton_method(:new) { fake_manual }
@@ -63,6 +66,13 @@ class SubmitManualBatchJobTest < ActiveJob::TestCase
     assert_equal [ 1 ], batch.kept_pages
     assert_equal kb_doc.id, batch.kb_document_id
     assert_equal @account.id, batch.account_id
+    # Fase 5 / I-37: the durable transport for the derived edges. Without this the
+    # contract v8 record can never reach a chunk on the async route, which is the
+    # only route the pilot web upload uses.
+    assert_equal(
+      [ { "from" => "32", "to" => "CERROJOS CABINA", "method" => "vision", "evidence" => "conductor naranja" } ],
+      batch.page_topology_edges["1"]
+    )
   end
 
   test "non-pending batch skips without a second paid submit" do

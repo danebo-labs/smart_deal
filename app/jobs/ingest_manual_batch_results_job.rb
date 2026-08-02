@@ -87,6 +87,10 @@ class IngestManualBatchResultsJob < ApplicationJob
     sha256       = ctx[:sha256]
     s3_key       = ctx[:s3_key]
     page_customs = ctx[:page_customs] || {}  # { page_num => custom_id }
+    # Contract v8 (I-37): { page_num => [edge, …] }, derived at submission time
+    # while the page binaries still existed. Empty on the legacy Solid Cache
+    # context path and whenever both ingestion flags were off at submission.
+    page_edges   = (ctx[:page_topology_edges] || {}).to_h { |page, edges| [ page.to_i, Array(edges) ] }
     conv_session_id = ctx[:conv_session_id]
     kb_doc_id       = ctx[:kb_doc_id]
     account_id      = ctx[:account_id]
@@ -114,7 +118,10 @@ class IngestManualBatchResultsJob < ApplicationJob
           stop_reason = message.respond_to?(:stop_reason) ? message.stop_reason.to_s.presence : nil
           track_page_usage(message, filename, page_num, ctx[:kept_pages]&.size || page_customs.size,
                            sha256: sha256, stop_reason: stop_reason)
-          page_results << { page_number: page_num, text: text, model: model, stop_reason: stop_reason }
+          page_results << {
+            page_number: page_num, text: text, model: model, stop_reason: stop_reason,
+            topology_edges: page_edges[page_num] || []
+          }
         else
           Rails.logger.warn("IngestManualBatchResultsJob: #{filename} p#{page_num} #{result.result.type} — skipping")
         end
@@ -218,6 +225,7 @@ class IngestManualBatchResultsJob < ApplicationJob
       sha256:          batch.sha256,
       s3_key:          batch.s3_key,
       page_customs:    batch.page_customs.to_h.transform_keys(&:to_i),
+      page_topology_edges: batch.page_topology_edges.to_h.transform_keys(&:to_i),
       kept_pages:      Array(batch.kept_pages),
       conv_session_id: batch.conv_session_id,
       kb_doc_id:       batch.kb_document_id,

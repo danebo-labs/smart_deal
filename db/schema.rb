@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_27_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_01_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -241,6 +241,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_27_150000) do
     t.jsonb "kept_pages", default: [], null: false
     t.string "locale"
     t.jsonb "page_customs", default: {}, null: false
+    t.jsonb "page_topology_edges", default: {}, null: false
     t.string "s3_key", null: false
     t.string "sha256", null: false
     t.string "status", default: "pending", null: false

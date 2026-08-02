@@ -181,4 +181,142 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
   ensure
     ClaudeBatchClient.define_singleton_method(:new, orig_client_new) if defined?(orig_client_new)
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 5 / I-37: the edges derived at submission time survive the Batch API
+  # round trip on the web_manual_batches row and reach the chunk body. This is
+  # the ONLY route the pilot web upload uses, so without this the contract v8
+  # record could never appear in production for either tier.
+  # ---------------------------------------------------------------------------
+
+  test "persisted page_topology_edges reach the chunk body after the batch round trip" do
+    sha = Digest::SHA256.hexdigest("topology-manual")
+    page_json = JSON.generate(
+      "document_name" => "CTA SR8P Bornas Carril",
+      "aliases"       => [ "CTA SR8P" ],
+      "chunks"        => [ { "text" => "S4 contenido de la página", "page" => 17, "field_records" => [] } ]
+    )
+
+    kb_doc = KbDocument.create!(account_id: accounts(:legacy).id, document_uid: SecureRandom.uuid,
+                                s3_key: "uploads/topology.pdf")
+    batch = WebManualBatch.create!(
+      s3_key: "uploads/topology.pdf",
+      filename: "topology.pdf",
+      sha256: sha,
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+      claude_batch_id: "batch_topo",
+      claude_batch_ids: %w[batch_topo],
+      status: "submitted",
+      account_id: accounts(:legacy).id,
+      kb_document_id: kb_doc.id,
+      page_customs: { 17 => "custom_p17" },
+      kept_pages: [ 17 ],
+      # Written by SubmitManualBatchJob at submission; comes back out of JSONB
+      # with string keys and a string `method`, which is what this pins.
+      page_topology_edges: {
+        "17" => [
+          { "from" => "LIMITADOR", "to" => "CONECTOR AI", "method" => "leader_line",
+            "evidence" => "polilínea (485,154)->(405,248) une LIMITADOR con CONECTOR AI" },
+          { "from" => "32", "to" => "CERROJOS CABINA", "method" => "vision",
+            "evidence" => "conductor naranja que sale de la borna 32 y llega a CERROJOS CABINA" }
+        ]
+      }
+    )
+
+    message = OpenStruct.new(
+      model:       "claude-sonnet-4-6",
+      content:     [ OpenStruct.new(type: "text", text: page_json) ],
+      usage:       FakeUsage.new(input_tokens: 2_000, output_tokens: 900),
+      stop_reason: "end_turn"
+    )
+    fake_batch_client = Object.new
+    fake_batch_client.define_singleton_method(:results_each) do |batch_id:, &block|
+      block.call(OpenStruct.new(custom_id: "custom_p17",
+                                result: OpenStruct.new(type: "succeeded", message: message)))
+    end
+
+    uploads = {}
+    original_upload = S3DocumentsService.instance_method(:upload_text)
+    original_sync   = BulkKbSyncService.instance_method(:sync!)
+    S3DocumentsService.define_method(:upload_text) { |key, body| uploads[key] = body }
+    BulkKbSyncService.define_method(:sync!) { |**| nil }
+
+    ctx = IngestManualBatchResultsJob.new.send(:context_from_record, batch)
+    with_topology_flags do
+      IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client, web_manual_batch: batch)
+    end
+
+    body = uploads.find { |key, _| key.end_with?("chunk_p17_1.txt") }&.last
+    assert body, "expected the page-17 chunk to be written (keys: #{uploads.keys})"
+    assert_equal 2, body.scan("RECORD_TYPE: TOPOLOGY_EDGE").size
+    assert_includes body, "DERIVATION: leader_line"
+    assert_includes body, "DERIVATION: vision"
+    assert_includes body, "ACTION: 32 -> CERROJOS CABINA"
+
+    sidecar = JSON.parse(uploads.fetch(uploads.keys.find { |k| k.end_with?("chunk_p17_1.txt.metadata.json") }))
+    assert_equal 2, sidecar.fetch("metadataAttributes")["topology_edge_count"]
+  ensure
+    S3DocumentsService.define_method(:upload_text, original_upload) if defined?(original_upload)
+    BulkKbSyncService.define_method(:sync!, original_sync) if defined?(original_sync)
+  end
+
+  test "no persisted edges means the chunk body is unchanged, flags on or off" do
+    sha = Digest::SHA256.hexdigest("no-topology-manual")
+    page_json = JSON.generate(
+      "document_name" => "Manual sin topología",
+      "aliases"       => [ "Manual" ],
+      "chunks"        => [ { "text" => "contenido", "page" => 4, "field_records" => [] } ]
+    )
+
+    kb_doc = KbDocument.create!(account_id: accounts(:legacy).id, document_uid: SecureRandom.uuid,
+                                s3_key: "uploads/plain.pdf")
+    batch = WebManualBatch.create!(
+      s3_key: "uploads/plain.pdf", filename: "plain.pdf", sha256: sha,
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+      claude_batch_id: "batch_plain", claude_batch_ids: %w[batch_plain], status: "submitted",
+      account_id: accounts(:legacy).id, kb_document_id: kb_doc.id,
+      page_customs: { 4 => "custom_p4" }, kept_pages: [ 4 ]
+    )
+
+    message = OpenStruct.new(
+      model: "claude-sonnet-4-6", content: [ OpenStruct.new(type: "text", text: page_json) ],
+      usage: FakeUsage.new(input_tokens: 100, output_tokens: 100), stop_reason: "end_turn"
+    )
+    fake_batch_client = Object.new
+    fake_batch_client.define_singleton_method(:results_each) do |batch_id:, &block|
+      block.call(OpenStruct.new(custom_id: "custom_p4",
+                                result: OpenStruct.new(type: "succeeded", message: message)))
+    end
+
+    uploads = {}
+    original_upload = S3DocumentsService.instance_method(:upload_text)
+    original_sync   = BulkKbSyncService.instance_method(:sync!)
+    S3DocumentsService.define_method(:upload_text) { |key, body| uploads[key] = body }
+    BulkKbSyncService.define_method(:sync!) { |**| nil }
+
+    ctx = IngestManualBatchResultsJob.new.send(:context_from_record, batch)
+    assert_empty ctx[:page_topology_edges]
+    with_topology_flags do
+      IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client, web_manual_batch: batch)
+    end
+
+    body = uploads.find { |key, _| key.end_with?("chunk_p4_1.txt") }&.last
+    assert_not_includes body.to_s, "TOPOLOGY_EDGE"
+  ensure
+    S3DocumentsService.define_method(:upload_text, original_upload) if defined?(original_upload)
+    BulkKbSyncService.define_method(:sync!, original_sync) if defined?(original_sync)
+  end
+
+  private
+
+  def with_topology_flags
+    originals = {
+      "INGESTION_LAYOUT_DIGEST_ENABLED" => ENV.fetch("INGESTION_LAYOUT_DIGEST_ENABLED", nil),
+      "INGESTION_VISION_TIER_ENABLED"   => ENV.fetch("INGESTION_VISION_TIER_ENABLED", nil)
+    }
+    originals.each_key { |name| ENV[name] = "true" }
+    yield
+  ensure
+    originals.each { |name, value| value.nil? ? ENV.delete(name) : ENV[name] = value }
+  end
 end

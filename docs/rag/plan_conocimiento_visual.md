@@ -1054,6 +1054,36 @@ falsa — ver **I-37**.
 
 ### ⛔ Gate B — T1 calibra T2 · Opus
 
+⚠️ **Umbral fijado por el dueño del producto (2026-08-01). Antes no existía: el plan decía "itera
+el prompt hasta alcanzar umbral" sin decir cuál, y un gate sin número no es un gate.**
+
+**Umbral: precisión de T2 > 85 %, afirmada con 95 % de confianza** — la misma barra que el Gate A
+puso para T1, pero exigiendo que el tamaño de muestra la sostenga. Traducido a cuántas relaciones
+hay que **juzgar una a una contra la lámina** (límite inferior de Clopper-Pearson al 95 %):
+
+| Errores encontrados | Relaciones juzgadas necesarias | Precisión observada |
+|---|---|---|
+| 0 | **19** | 100 % |
+| 1 | **30** | 96,7 % |
+| 2 | **40** | 95,0 % |
+| 3 | **50** | 94,0 % |
+| 5 | **68** | 92,6 % |
+
+Reglas de muestreo, porque el número solo se puede falsear:
+
+- **Reparte a propósito entre los dos tipos de lámina medidos**, no cojas las 40 más fáciles de
+  conseguir: regleta frontal con cables cortos (tipo pág. 17, T2 se lee casi perfecta) **y** conector
+  doble con cables largos que cruzan la lámina (tipo pág. 63, donde I-36 encontró un mismo borne
+  saliendo a dos dispositivos con dos colores de cable). Una muestra sin láminas tipo 63 da un
+  número optimista y no mide lo que falla.
+- **Publica el desglose por tipo de lámina además del agregado.** La decisión de degradar T2 a
+  campos no-relacionales puede ser correcta para un tipo y equivocada para el otro.
+- Lo que juzgues sobre las páginas **sin** verdad-terreno es **cobertura**, no precisión. No lo
+  mezcles en el mismo porcentaje.
+- Coste: ~$3-4 de llamadas para 40-50 relaciones juzgables. **El límite de este gate es el juicio
+  humano, no el presupuesto** — las relaciones se revisan una a una con visión contra la página
+  renderizada, igual que hizo el Gate A-bis con las 19 aristas de T1.
+
 ⚠️ **revisado en el Gate A, sin cambios tras el Gate A-bis.** La premisa "80 páginas donde ambos
 tiers aplican" es falsa y la corrección de I-09 (22 páginas) todavía se queda corta en el sentido
 que importa: **la verdad-terreno gratis de T1 son 19 aristas correctas en 18 páginas, y de ellas
@@ -1451,8 +1481,16 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
      Fase 5, luego el Gate B, y **sólo entonces** la Fase 7. **La Fase 7 no se ejecuta con las
      aristas de T1 solas.** Registrada por el Gate A-bis por instrucción directa del dueño en la
      misma sesión; el dueño ejecuta las fases siguientes en sesiones aparte.
-   - **Estado de la secuencia:** Fase 4 cerrada (`9f9d611`), **Fase 5 cerrada (`2b3ff19`)**. Lo único
-     que sigue bloqueando la Fase 7 es el **Gate B**.
+   - **Estado de la secuencia:** Fase 4 cerrada (`9f9d611`), **Fase 5 cerrada (`2b3ff19` +
+     `396b334`)**. Lo único que sigue bloqueando la Fase 7 es el **Gate B**.
+
+5. **✅ Umbral y presupuesto del Gate B (dueño del producto, 2026-08-01).** El plan pedía "iterar el
+   prompt hasta alcanzar umbral" sin definir ninguno. Fijados: **precisión de T2 > 85 % con 95 % de
+   confianza** (tabla de tamaños de muestra en la sección del Gate B) y **$15 de presupuesto total**,
+   que no se excede sin preguntar. Con el coste medido de T2 ($0,0796/página, siempre API directa —
+   I-38) el presupuesto da ~7 pasadas sobre el conjunto de medición de ~25 páginas, y el umbral se
+   alcanza juzgando 19-68 relaciones según cuántos errores aparezcan. El límite del gate es el juicio
+   humano, no el dinero.
 
 ## Fuera de alcance
 
@@ -1991,6 +2029,17 @@ Registro, no aquí.
 > $15 pagan las llamadas, no el juicio. Así que **mide precisión y recall sobre las 11+18** y trata el
 > resto como **cobertura**, no como precisión — y dilo así en el informe en vez de dar un porcentaje
 > agregado que mezcle lo verificado con lo no verificable.
+>
+> 🎯 **Umbral, fijado por el dueño del producto y antes inexistente en el plan: precisión de T2
+> > 85 %, afirmada con 95 % de confianza.** La tabla de tamaños de muestra está en la sección del
+> Gate B: **19** relaciones juzgadas si no encuentras ningún error, **30** con 1, **40** con 2, **50**
+> con 3, **68** con 5 (Clopper-Pearson, límite inferior al 95 %). Juzgar significa revisar cada
+> relación **una a una contra la lámina renderizada**, como el Gate A-bis revisó las 19 aristas de T1
+> — no contra otra salida del modelo. **Reparte la muestra a propósito entre los dos tipos de lámina
+> medidos** (regleta frontal tipo pág. 17, donde T2 se lee casi perfecta, y conector doble tipo pág. 63,
+> donde I-36 encontró un borne saliendo a dos dispositivos con dos colores de cable) y **publica el
+> desglose por tipo además del agregado**: una muestra sin láminas tipo 63 da un número optimista y no
+> mide lo que falla.
 >
 > Ejecuta el Gate B de `<PLAN>`. En las 80 páginas donde T1 (geometría determinista) y T2 (visión)
 > aplican a la vez, usa las aristas de T1 como **verdad-terreno gratis** para medir T2 y escribe

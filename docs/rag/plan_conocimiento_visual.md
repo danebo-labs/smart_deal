@@ -283,7 +283,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | 582ede3 | I-26 … I-29 |
 | 4 | cerrada — mergeada con el flag apagado (opción B) | `INGESTION_LAYOUT_DIGEST_ENABLED` | 9f9d611 | I-31, I-32, I-33 |
 | 5 | cerrada — mergeada con el flag apagado; **las dos rutas**, tras corregir I-31 | `INGESTION_VISION_TIER_ENABLED` | 2b3ff19 + 396b334 | I-34 … I-38 |
-| Gate B | **EJECUTADO — NO SUPERADO en relaciones (88,2 %, LI 81,6 % < 85 %), SUPERADO en identidad de componente (38/38, LI 92,4 %). Degradación aplicada** | `INGESTION_VISION_TIER_RELATIONS_ENABLED` (nuevo, apagado) | | I-39 … I-43 |
+| Gate B | **EJECUTADO — NO SUPERADO en relaciones (88,2 %, LI 81,6 % < 85 %), SUPERADO en identidad de componente (38/38, LI 92,4 %). Degradación aplicada** | `INGESTION_VISION_TIER_RELATIONS_ENABLED` (nuevo, apagado) | 4a3f62e | I-39 … I-43 |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
 | 7 | **bloqueada por la decisión humana #6** — el Gate B ya no la bloquea: está ejecutado, pero su veredicto deja el shadow ingest con las aristas de T1 solas, que es justo lo que la decisión #4 prohibió | — | | |

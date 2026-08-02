@@ -40,8 +40,9 @@ está todo aquí y en el Apéndice.
 - **Sólo tu fase.** Si ves algo roto en otra, se registra como hallazgo, no se arregla.
 - **Un flag por fase, apagado por defecto.** Ninguna fase 1-5 cambia el comportamiento de
   producción al mergear.
-- **`bin/rails test` + `bin/rubocop` verdes antes de entregar.** La suite base es de 1987 runs
-  / 0 failures; cualquier fallo nuevo es tuyo.
+- **`bin/rails test` + `bin/rubocop` verdes antes de entregar.** Base **actual**: 2180 runs / 0
+  failures y 479 files / 0 offenses (tras la Fase 5, `d899d45`); cualquier fallo nuevo es tuyo.
+  Actualiza esta cifra al cerrar tu fase: arrastró el 1987 de la Fase 0 hasta la Fase 5.
 - **Sin dependencias nuevas.** HexaPDF, pdf-reader, ruby-vips e image_processing ya están en
   el Gemfile. Si crees necesitar una gema, es un hallazgo, no una decisión.
 - **Nada nuevo bajo `bulk_chunks/`** salvo chunks y sus sidecars. Es el único prefijo que el
@@ -1471,7 +1472,7 @@ pdftotext -bbox-layout -f 3 -l 3 "<pdf>" -
 pdftotext -layout "<pdf>" -
 
 # Suite y linter
-bin/rails test                       # base: 1987 runs / 0 failures
+bin/rails test                       # base: 2180 runs / 0 failures (tras la Fase 5)
 bin/rails test test/services/rag     # subconjunto RAG
 bin/rubocop
 bin/ci                               # gate completo
@@ -1712,8 +1713,9 @@ vez hecho el Paso 0.
 > final: si una sección está marcada `⚠️ revisado en I-NN`, la entrada `I-NN` gana. Lee también
 > `AGENTS.md`, el `AGENTS.md` con scope de cada directorio que toques, y
 > `docs/rag/hallazgos_gate_piloto.md`. Trabaja **sólo** tu fase; lo que veas roto en otra se
-> registra como hallazgo, no se arregla. Sin dependencias nuevas. `bin/rails test` (base 1987
-> runs / 0 failures) y `bin/rubocop` verdes antes de entregar.
+> registra como hallazgo, no se arregla. Sin dependencias nuevas. `bin/rails test` y `bin/rubocop`
+> verdes antes de entregar; base **actual** 2180 runs / 0 failures y 479 files / 0 offenses (tras la
+> Fase 5, `d899d45`), y actualiza esa cifra al cerrar la tuya.
 >
 > **Al cerrar, aplica el "Protocolo de traspaso" completo — los 5 pasos, no sólo el commit:**
 > entrada `I-NN` en el Registro; **edición en el sitio** (no sólo mención) de cada fase posterior

@@ -129,11 +129,12 @@ class PdfLayoutExtractorTest < ActiveSupport::TestCase
   # ⚠️ Fase 4 (contract v8) is precisely the phase that wires this extractor into
   # production, behind IngestionLayoutFlag (off by default) — see
   # docs/rag/plan_conocimiento_visual.md. Pre-Fase-4 this asserted an empty
-  # list; now it pins the exact two legitimate callers so any OTHER new
-  # caller still fails loudly.
-  test "only the Fase 4 ingestion callers invoke the extractor" do
+  # list; now it pins the exact legitimate callers so any OTHER new caller still
+  # fails loudly. Fase 5 adds the third one: VisionTopologyExtractor, behind
+  # IngestionVisionFlag (also off by default).
+  test "only the Fase 4/5 ingestion callers invoke the extractor" do
     invocation = /PdfLayoutExtractor\.(extract|new)\b/
-    allowed_callers = %w[manual_batch_ingestion_service.rb single_file_chunking_service.rb]
+    allowed_callers = %w[manual_batch_ingestion_service.rb single_file_chunking_service.rb vision_topology_extractor.rb]
 
     callers = Dir.glob(Rails.root.join("app/**/*.rb").to_s).select do |path|
       next false if path.end_with?("pdf_layout_extractor.rb", "page_layout_digest.rb")
@@ -142,7 +143,7 @@ class PdfLayoutExtractorTest < ActiveSupport::TestCase
       File.readlines(path).any? { |source_line| !source_line.match?(/\A\s*#/) && source_line.match?(invocation) }
     end
 
-    assert_empty callers, "PdfLayoutExtractor must not be called outside the Fase 4 ingestion callers: #{callers}"
+    assert_empty callers, "PdfLayoutExtractor must not be called outside the Fase 4/5 ingestion callers: #{callers}"
   end
 
   private

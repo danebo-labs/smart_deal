@@ -1146,4 +1146,101 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_equal 2,  asset.chunks_count, "one original chunk must split into 2 (12 + 3 overflow)"
     assert_includes @fake_s3.uploads["#{prefix}/chunk_1.txt"], "LABEL_13 -> CONECTOR 13"
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 5 (T2): the SAME record, with `method: vision`. The two tiers roll back
+  # independently, so a vision-only rollout has to render and count its edges
+  # with the Fase 4 flag off — and neither tier on means v7, byte for byte.
+  # ---------------------------------------------------------------------------
+
+  def with_vision_tier_flag(enabled)
+    original = ENV.fetch("INGESTION_VISION_TIER_ENABLED", nil)
+    ENV["INGESTION_VISION_TIER_ENABLED"] = enabled ? "true" : nil
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_VISION_TIER_ENABLED")
+    else
+      ENV["INGESTION_VISION_TIER_ENABLED"] = original
+    end
+  end
+
+  def vision_payload
+    golden_parsed.merge(
+      "chunks" => [
+        {
+          "text" => chunk0_text, "page" => 17, "field_records" => [],
+          "section_identity" => "THYSSEN", "section_path" => [ "THYSSEN" ],
+          "topology_edges" => [
+            topology_edge(
+              from: "CERROJOS CABINA", to: "32", method: "vision",
+              evidence: "conductor amarillo desde CERROJOS CABINA hasta el borne 32 de la regleta"
+            )
+          ]
+        }
+      ]
+    )
+  end
+
+  test "a vision edge renders with DERIVATION: vision when only the vision tier is on" do
+    asset  = make_asset
+    parser = build_parser
+
+    with_layout_digest_flag(false) do
+      with_vision_tier_flag(true) do
+        parser.call(account_id: 1, document_uid: "doc-uid", asset: asset,
+                    result: make_result(json_text: vision_payload.to_json))
+      end
+    end
+
+    prefix  = asset.reload.chunks_s3_prefix
+    chunk   = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
+    sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+
+    assert_includes chunk, "RECORD_TYPE: TOPOLOGY_EDGE"
+    assert_includes chunk, "ACTION: CERROJOS CABINA -> 32"
+    assert_includes chunk, "DERIVATION: vision"
+    assert_includes chunk, "DERIVATION_EVIDENCE: conductor amarillo"
+    assert_equal 1, sidecar["topology_edge_count"], "the count must be true to what the body carries"
+    assert_not sidecar.key?("section_path"), "section_path is Fase 4's field and stays on Fase 4's flag"
+  end
+
+  test "the airlock still rejects a model-emitted TOPOLOGY_EDGE with the vision tier on" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      { "k" => "TOPOLOGY_EDGE", "h" => "p17", "a" => "CERROJOS CABINA -> 32", "r" => "DATA_NOT_AVAILABLE",
+        "ev" => "CERROJOS CABINA | 32" }
+    ]
+
+    error = with_vision_tier_flag(true) do
+      assert_raises(BatchResultsParserService::ParseError) do
+        build_parser.call(account_id: 1, document_uid: "doc-uid", asset: make_asset,
+                          result: make_result(json_text: payload.to_json))
+      end
+    end
+
+    assert_includes error.message, "TOPOLOGY_EDGE"
+    assert_empty @fake_s3.uploads
+  end
+
+  test "with neither tier on, a vision edge is ignored exactly like a leader-line one" do
+    asset  = make_asset
+    parser = build_parser
+
+    with_layout_digest_flag(false) do
+      with_vision_tier_flag(false) do
+        parser.call(account_id: 1, document_uid: "doc-uid", asset: asset,
+                    result: make_result(json_text: vision_payload.to_json))
+      end
+    end
+
+    prefix  = asset.reload.chunks_s3_prefix
+    chunk   = @fake_s3.uploads["#{prefix}/chunk_0.txt"]
+    sidecar = JSON.parse(@fake_s3.uploads["#{prefix}/chunk_0.txt.metadata.json"]).fetch("metadataAttributes")
+
+    assert_not_includes chunk, "TOPOLOGY_EDGE"
+    assert_not_includes chunk, "# FIELD-SAFETY EVIDENCE RECORDS"
+    assert_not sidecar.key?("topology_edge_count")
+    assert_not sidecar.key?("section_path")
+  end
 end

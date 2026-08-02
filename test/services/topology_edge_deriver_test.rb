@@ -488,11 +488,13 @@ class TopologyEdgeDeriverTest < ActiveSupport::TestCase
   # ⚠️ Fase 4 (contract v8) is precisely the phase that wires this deriver into
   # production, behind IngestionLayoutFlag (off by default) — see
   # docs/rag/plan_conocimiento_visual.md. Pre-Fase-4 this asserted an empty
-  # list; now it pins the exact two legitimate callers so any OTHER new
-  # caller still fails loudly.
-  test "only the Fase 4 ingestion callers invoke the deriver" do
-    invocation = /TopologyEdgeDeriver\.(derive|new)\b/
-    allowed_callers = %w[manual_batch_ingestion_service.rb single_file_chunking_service.rb]
+  # list; now it pins the exact legitimate callers so any OTHER new caller still
+  # fails loudly. Fase 5 adds the third one: VisionTopologyExtractor, which
+  # reuses `.label_for_image` (also matched below, so the new public entry point
+  # is pinned as tightly as `.derive`) behind IngestionVisionFlag.
+  test "only the Fase 4/5 ingestion callers invoke the deriver" do
+    invocation = /TopologyEdgeDeriver\.(derive|new|label_for_image)\b/
+    allowed_callers = %w[manual_batch_ingestion_service.rb single_file_chunking_service.rb vision_topology_extractor.rb]
 
     callers = Dir.glob(Rails.root.join("app/**/*.rb").to_s).select do |path|
       next false if path.end_with?("topology_edge_deriver.rb")
@@ -501,7 +503,97 @@ class TopologyEdgeDeriverTest < ActiveSupport::TestCase
       File.readlines(path).any? { |source_line| !source_line.match?(/\A\s*#/) && source_line.match?(invocation) }
     end
 
-    assert_empty callers, "TopologyEdgeDeriver must not be called outside the Fase 4 ingestion callers: #{callers}"
+    assert_empty callers, "TopologyEdgeDeriver must not be called outside the Fase 4/5 ingestion callers: #{callers}"
+  end
+
+  # --------------------------------------------------------------------------
+  # Fase 5 (I-20): .label_for_image — the raster-rival rule read forward, so T2's
+  # crops carry the label that names the graphic instead of a second, parallel
+  # implementation of the same question.
+  # --------------------------------------------------------------------------
+
+  test "label_for_image returns the nearest printed label and its bbox" do
+    layout = page_layout(
+      words: [ printed_word("LIMITADOR", 504, 155, 560, 168), printed_word("POLEA", 700, 300, 740, 312) ],
+      lines: [],
+      images: [ image(480, 120, 540, 150) ]
+    )
+
+    assert_equal({ text: "LIMITADOR", bbox: [ 504.0, 155.0, 560.0, 168.0 ] },
+                 TopologyEdgeDeriver.label_for_image(layout, [ 480, 120, 540, 150 ]))
+  end
+
+  test "label_for_image refuses a graphic no label is near enough to name" do
+    layout = page_layout(
+      words: [ printed_word("LIMITADOR", 504, 400, 560, 413) ],
+      lines: [],
+      images: [ image(480, 120, 540, 150) ]
+    )
+
+    assert_nil TopologyEdgeDeriver.label_for_image(layout, [ 480, 120, 540, 150 ]),
+               "250 pt away is not adjacency"
+  end
+
+  # Same ambiguity that makes a terminal unnameable: two different names equally
+  # close, so neither can be cited as THE label of that graphic.
+  test "label_for_image refuses a tie between two different names" do
+    layout = page_layout(
+      words: [ printed_word("CC1", 480, 155, 500, 168), printed_word("PISO SUPERIOR", 480, 102, 540, 115) ],
+      lines: [],
+      images: [ image(480, 118, 540, 152) ]
+    )
+
+    assert_nil TopologyEdgeDeriver.label_for_image(layout, [ 480, 118, 540, 152 ])
+  end
+
+  # Every label sits inside the two full-page background images this document
+  # class carries, so none of them is closer than any other: the rule makes them
+  # inert here exactly as it does in the raster-rival guard (I-20).
+  test "label_for_image is inert on a full-page background image" do
+    layout = page_layout(
+      words: [ printed_word("LIMITADOR", 504, 155, 560, 168), printed_word("POLEA", 700, 300, 740, 312) ],
+      lines: [],
+      images: [ image(0, 0, 960, 540) ]
+    )
+
+    assert_nil TopologyEdgeDeriver.label_for_image(layout, [ 0, 0, 960, 540 ])
+  end
+
+  test "label_for_image never returns a rotated or unusable label" do
+    rotated = page_layout(
+      words: [ rotated_word("P28A", 504, 155, 512, 195) ],
+      lines: [],
+      images: [ image(480, 120, 540, 150) ]
+    )
+    numbering = page_layout(
+      words: [ printed_word("4  5  6  7  8  9", 504, 155, 600, 168) ],
+      lines: [],
+      images: [ image(480, 120, 540, 150) ]
+    )
+
+    assert_nil TopologyEdgeDeriver.label_for_image(rotated, [ 480, 120, 540, 150 ])
+    assert_nil TopologyEdgeDeriver.label_for_image(numbering, [ 480, 120, 540, 150 ])
+  end
+
+  test "label_for_image tolerates a missing or malformed bbox" do
+    layout = page_layout(words: [ printed_word("LIMITADOR", 504, 155, 560, 168) ], lines: [])
+
+    assert_nil TopologyEdgeDeriver.label_for_image(layout, nil)
+    assert_nil TopologyEdgeDeriver.label_for_image(layout, [ 480, 120 ])
+  end
+
+  test "label_for_image does not change what derive emits" do
+    layout = page_layout(
+      words: [ printed_word("LIMITADOR", 504, 155, 560, 168) ],
+      lines: [],
+      images: [ image(480, 120, 540, 150) ]
+    )
+
+    before = TopologyEdgeDeriver.derive(layout)
+    TopologyEdgeDeriver.label_for_image(layout, [ 480, 120, 540, 150 ])
+
+    assert_equal before, TopologyEdgeDeriver.derive(layout)
+    assert_equal [], before
   end
 
   private

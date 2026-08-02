@@ -176,8 +176,47 @@ class TopologyEdgeDeriver
     new(layout).derive
   end
 
+  # Fase 5 (I-20): the printed label that names an image, read FORWARD out of
+  # the same rule the raster-rival guard below reads backward — a graphic is
+  # named by the label no other differently-named printed label sits closer to.
+  # T2 crops each small image and must send it with the label that names it, and
+  # reimplementing the label set (stacking, rotation, nameability, ties) beside
+  # this class is exactly the duplication I-20 warned against.
+  #
+  # @param layout     [Hash]  one page's `PdfLayoutExtractor` result
+  # @param image_bbox [Array<Float>] [x0, y0, x1, y1] in HexaPDF page space
+  # @return [Hash, nil] { text:, bbox: } of the naming label, or nil when
+  #   nothing resolves. The bbox is what lets a crop frame the graphic AND its
+  #   label in one image instead of guessing a padding wide enough
+  def self.label_for_image(layout, image_bbox)
+    new(layout).label_for_image(image_bbox)
+  end
+
   def initialize(layout)
     @layout = layout || {}
+  end
+
+  # See .label_for_image. Rejections, in order: no printed label within
+  # TERMINAL_TOLERANCE_PT of the graphic (the measured envelope for "the label
+  # sits beside it", I-09), and a tie between two different names — the same
+  # ambiguity that makes a terminal unnameable makes a crop uncitable. A
+  # full-page background image is inert for free: every label is 0.00 from it,
+  # so the nearest is never strictly nearer than the runner-up.
+  def label_for_image(image_bbox)
+    bbox = Array(image_bbox).map(&:to_f)
+    return nil unless bbox.size == 4
+
+    ranked = labels.reject { |label| label.rotated || !nameable?(label) }
+                   .map { |label| { text: label.text, bbox: label.bbox, gap: bbox_gap(label.bbox, bbox) } }
+                   .select { |candidate| candidate[:gap] <= TERMINAL_TOLERANCE_PT }
+                   .sort_by { |candidate| candidate[:gap] }
+    return nil if ranked.empty?
+
+    nearest = ranked.first
+    rival   = ranked.find { |candidate| candidate[:text] != nearest[:text] }
+    return nil if rival && rival[:gap] <= nearest[:gap]
+
+    { text: nearest[:text], bbox: nearest[:bbox] }
   end
 
   def derive

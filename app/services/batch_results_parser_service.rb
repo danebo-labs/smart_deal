@@ -86,7 +86,7 @@ class BatchResultsParserService
     enrich_field_records!(parsed, ingestion_path: ingestion_path)
     validate!(parsed, asset, ingestion_path: ingestion_path)
     validate_account_scope!(account_id: account_id, document_uid: document_uid)
-    prepare_topology_chunks!(parsed) if IngestionLayoutFlag.enabled?
+    prepare_topology_chunks!(parsed) if topology_records_enabled?
 
     chunks_prefix  = chunks_prefix_for(asset, account_id: account_id, document_uid: document_uid)
     aliases        = sanitize_aliases(parsed["aliases"], limit: DOCUMENT_ALIAS_LIMIT)
@@ -142,6 +142,17 @@ class BatchResultsParserService
   end
 
   private
+
+  # The contract v8 topology record is written by whichever tier produced the
+  # edge: T1 behind IngestionLayoutFlag (Fase 4, `method: leader_line`) or T2
+  # behind IngestionVisionFlag (Fase 5, `method: vision`). They roll back
+  # independently — a vision-only rollout is a legitimate configuration, since T1
+  # covers 18 of 98 pages of the reference document and T2 is the only possible
+  # engine on 61 of them. With both off, bodies and sidecars are byte-identical
+  # to v7.
+  def topology_records_enabled?
+    IngestionLayoutFlag.enabled? || IngestionVisionFlag.enabled?
+  end
 
   # Document identity for the sidecar, the asset and every doc_ref built from it.
   #
@@ -384,7 +395,7 @@ class BatchResultsParserService
       chunk_aliases = sanitize_aliases(chunk["aliases"], limit: CHUNK_ALIAS_LIMIT)
       chunk_aliases = aliases.first(CHUNK_ALIAS_LIMIT) if chunk_aliases.empty?
       header = identity_header(asset: asset, aliases: chunk_aliases, original_uri: original_uri)
-      topology_records = IngestionLayoutFlag.enabled? ? topology_field_records(chunk) : []
+      topology_records = topology_records_enabled? ? topology_field_records(chunk) : []
       body = append_field_records(chunk["text"], Array(chunk["field_records"]) + topology_records, page: chunk["page"])
       sidecar_json = sidecar_metadata(
         asset:          asset,
@@ -617,7 +628,13 @@ class BatchResultsParserService
     if IngestionLayoutFlag.enabled?
       normalized_path = Array(section_path).map { |value| value.to_s.strip }.compact_blank
       attributes["section_path"] = normalized_path if normalized_path.present?
-      attributes["topology_edge_count"] = topology_edge_count.to_i if topology_edge_count.to_i.positive?
+    end
+    # Counts what #topology_field_records actually wrote into this body, so it
+    # follows the same gate — a chunk carrying a `DERIVATION: vision` record with
+    # the layout tier off must still declare it. `section_path` above stays on
+    # Fase 4's own flag: it is a section field, not a topology one.
+    if topology_records_enabled? && topology_edge_count.to_i.positive?
+      attributes["topology_edge_count"] = topology_edge_count.to_i
     end
 
     JSON.generate(

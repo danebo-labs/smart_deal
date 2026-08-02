@@ -142,6 +142,11 @@ class SingleFileChunkingService
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     filter_results = PageRelevanceFilter.filter_pages(pages: pages, filename: @filename, correlation_id: correlation_id)
+    # Kept for the T2 vision tier (Fase 5): the per-page visual-complexity
+    # verdict Fase 1 added to this same Haiku call is what decides whether a page
+    # is worth a vision call. Empty when IngestionVisualTriageFlag is off, which
+    # VisionTopologyExtractor's geometric criterion covers.
+    @filter_results = filter_results
 
     kept_pages = pages.select do |page|
       r = filter_results[page.number] || { keep: true, reason: :missing, source: :fallback }
@@ -263,7 +268,7 @@ class SingleFileChunkingService
   def call_claude_for_page(page, total, document_name_hint:, locale: nil, anchor: false)
     model    = page.model
     page_num = page.number
-    edges, digest = topology_for_page(page.binary, page_num)
+    edges, digest = topology_for_page(page.binary, page_num, total_pages: total)
     content  = BatchChunkingPrompt.page_user_content(
       binary:             page.binary,
       page_number:        page_num,
@@ -286,19 +291,45 @@ class SingleFileChunkingService
     }
   end
 
-  # Fase 4 (contract v8), gated by IngestionLayoutFlag: derives this page's
-  # leader-line edges from its own geometry (PdfLayoutExtractor +
-  # TopologyEdgeDeriver, Fases 2/3) and renders the bounded digest the model
-  # receives as read-only context (PageLayoutDigest). `edges` rides along on
-  # the page_result for ChunkMergerService to attach to this page's chunk;
-  # off, or with no resolved edges, this is `[[], nil]` and nothing downstream
-  # changes.
-  def topology_for_page(page_binary, page_number)
-    return [ [], nil ] unless IngestionLayoutFlag.enabled?
+  # Both tiers of the contract v8 topology pipeline, each behind its own flag.
+  #
+  # T1 (Fase 4, IngestionLayoutFlag): leader-line edges derived from this page's
+  # own geometry (PdfLayoutExtractor + TopologyEdgeDeriver, Fases 2/3), plus the
+  # bounded digest the chunking model receives as read-only context
+  # (PageLayoutDigest).
+  #
+  # T2 (Fase 5, IngestionVisionFlag): one Opus vision call over the rasterized
+  # page and its label-anchored crops, for the pages where there is no vector to
+  # trace. It receives T1's edges only to drop the pairs T1 already proved — T1
+  # wins in conflict — and never as prompt context (Gate B measures T2 against
+  # them).
+  #
+  # `edges` rides along on the page_result for ChunkMergerService to attach to
+  # this page's first chunk; the two tiers' edges are indistinguishable there and
+  # differ only in `method:`, which becomes `DERIVATION:` in the chunk body. With
+  # both flags off this is `[[], nil]` and nothing downstream changes.
+  def topology_for_page(page_binary, page_number, total_pages:)
+    layout_on = IngestionLayoutFlag.enabled?
+    vision_on = IngestionVisionFlag.enabled?
+    return [ [], nil ] unless layout_on || vision_on
 
     layout = PdfLayoutExtractor.extract(page_binary, page_number: page_number)
-    edges  = TopologyEdgeDeriver.derive(layout)
-    [ edges, PageLayoutDigest.render(layout, edges) ]
+    edges  = layout_on ? TopologyEdgeDeriver.derive(layout) : []
+    digest = layout_on ? PageLayoutDigest.render(layout, edges) : nil
+    return [ edges, digest ] unless vision_on
+
+    vision = VisionTopologyExtractor.derive(
+      page_binary,
+      layout:         layout,
+      page_number:    page_number,
+      total_pages:    total_pages,
+      filename:       @filename,
+      triage:         @filter_results&.dig(page_number),
+      traced_edges:   edges,
+      locale:         @locale,
+      correlation_id: correlation_id(page_number)
+    )
+    [ edges + vision.edges, digest ]
   end
 
   def log_pdf_mixed_metrics(total:, parsed_pages:, fallback:, started_at:)

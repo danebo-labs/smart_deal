@@ -1413,4 +1413,154 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
   end
+
+  # ---------------------------------------------------------------------------
+  # Fase 5 (T2, vision tier): the same `topology_edges` channel Fase 4 opened,
+  # carrying `method: :vision` records, on the SAME synchronous route — this is
+  # the route decision of I-34 made executable.
+  # ---------------------------------------------------------------------------
+
+  def with_vision_tier_flag(enabled)
+    original = ENV.fetch("INGESTION_VISION_TIER_ENABLED", nil)
+    ENV["INGESTION_VISION_TIER_ENABLED"] = enabled ? "true" : nil
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("INGESTION_VISION_TIER_ENABLED")
+    else
+      ENV["INGESTION_VISION_TIER_ENABLED"] = original
+    end
+  end
+
+  def stub_vision_tier(edges:)
+    original = VisionTopologyExtractor.method(:derive)
+    calls    = []
+
+    VisionTopologyExtractor.define_singleton_method(:derive) do |_binary, **kwargs|
+      calls << kwargs
+      VisionTopologyExtractor::Result.new(
+        edges: edges, components: [], crop_count: edges.size, input_tokens: 4_200, output_tokens: 310
+      )
+    end
+
+    yield(calls)
+  ensure
+    VisionTopologyExtractor.define_singleton_method(:derive, original)
+  end
+
+  def run_pdf_mixed_page(page:, triage: nil)
+    orig_classify = FileMultimodalRouter.method(:classify)
+    orig_filter   = PageRelevanceFilter.method(:filter_pages)
+    verdict       = { keep: true, reason: :test, source: :stub, force_opus: false }.merge(triage || {})
+
+    FileMultimodalRouter.define_singleton_method(:classify) { |**| OpenStruct.new(mode: :pdf_mixed, pages: [ page ]) }
+    PageRelevanceFilter.define_singleton_method(:filter_pages) do |pages:, **|
+      pages.each_with_object({}) { |p, h| h[p.number] = verdict }
+    end
+
+    response_text = golden_json
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      msgs = Object.new
+      msgs.define_singleton_method(:stream) do |_params|
+        usage = OpenStruct.new(input_tokens: 10, output_tokens: 20,
+                               cache_read_input_tokens: 0, cache_creation_input_tokens: 0)
+        OpenStruct.new(accumulated_message: OpenStruct.new(
+          content: [ OpenStruct.new(type: "text", text: response_text) ],
+          usage: usage, model: "claude-sonnet-4-6", stop_reason: "end_turn"
+        ))
+      end
+      OpenStruct.new(messages: msgs, api_key: "fake")
+    end
+
+    build_service(filename: "manual.pdf").call
+  ensure
+    FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
+    PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
+  end
+
+  test "pdf_mixed: a vision edge reaches the chunk body with the vision flag alone" do
+    page   = LayoutFakePdfPage.new(17, "%PDF-fake-p17", BatchChunkingPrompt::MODEL_TEXT, false)
+    edge   = { from: "CERROJOS CABINA", to: "32", method: :vision,
+               evidence: "conductor amarillo desde CERROJOS CABINA hasta el borne 32" }
+    calls  = nil
+
+    stub_vision_tier(edges: [ edge ]) do |recorded|
+      with_layout_digest_flag(false) do
+        with_vision_tier_flag(true) { run_pdf_mixed_page(page: page) }
+      end
+      calls = recorded
+    end
+
+    chunk_key = @fake_s3.uploads.keys.find { |k| k.end_with?("chunk_0.txt") }
+    chunk     = @fake_s3.uploads.fetch(chunk_key)
+
+    assert_includes chunk, "RECORD_TYPE: TOPOLOGY_EDGE"
+    assert_includes chunk, "DERIVATION: vision"
+    assert_includes chunk, "ACTION: CERROJOS CABINA -> 32"
+    assert_equal 1, calls.size, "one vision call per page"
+    assert_equal 17, calls.first[:page_number]
+    assert_equal "manual.pdf", calls.first[:filename]
+  end
+
+  # The verdict Fase 1 writes into the same Haiku call the filter already makes is
+  # what decides whether a page is worth a vision call, so it has to arrive.
+  test "pdf_mixed: the vision tier receives this page's Fase 1 triage verdict and T1's edges" do
+    page  = LayoutFakePdfPage.new(3, "%PDF-fake-p3", BatchChunkingPrompt::MODEL_TEXT, false)
+    t1    = { from: "LIMITADOR", to: "CONECTOR AI", method: :leader_line, evidence: "polilínea …" }
+    calls = nil
+
+    stub_single_page_topology(edge: t1) do
+      stub_vision_tier(edges: []) do |recorded|
+        with_layout_digest_flag(true) do
+          with_vision_tier_flag(true) do
+            run_pdf_mixed_page(page: page, triage: { visual_complexity: :high, has_visual_relations: true })
+          end
+        end
+        calls = recorded
+      end
+    end
+
+    assert_equal :high, calls.first[:triage][:visual_complexity]
+    assert_equal true, calls.first[:triage][:has_visual_relations]
+    assert_equal [ t1 ], calls.first[:traced_edges], "T1's edges go in only so T2's duplicates can be dropped"
+  end
+
+  test "pdf_mixed: with the vision flag off the tier is never invoked" do
+    page  = LayoutFakePdfPage.new(17, "%PDF-fake-p17", BatchChunkingPrompt::MODEL_TEXT, false)
+    calls = nil
+
+    stub_vision_tier(edges: [ { from: "A", to: "B", method: :vision, evidence: "x" } ]) do |recorded|
+      with_layout_digest_flag(false) do
+        with_vision_tier_flag(false) { run_pdf_mixed_page(page: page) }
+      end
+      calls = recorded
+    end
+
+    chunk_key = @fake_s3.uploads.keys.find { |k| k.end_with?("chunk_0.txt") }
+
+    assert_empty calls, "no vision call may be billed with the flag off"
+    assert_not_includes @fake_s3.uploads.fetch(chunk_key), "TOPOLOGY_EDGE"
+  end
+
+  # Both tiers on: one page, one edge each, both in the same body, told apart only
+  # by DERIVATION — which is exactly what makes their provenance auditable.
+  test "pdf_mixed: T1 and T2 edges land in the same chunk with distinguishable provenance" do
+    page = LayoutFakePdfPage.new(3, "%PDF-fake-p3", BatchChunkingPrompt::MODEL_TEXT, false)
+    t1   = { from: "LIMITADOR", to: "CONECTOR AI", method: :leader_line,
+             evidence: "polilínea (1,2)->(3,4) une LIMITADOR con CONECTOR AI" }
+    t2   = { from: "CERROJOS CABINA", to: "32", method: :vision,
+             evidence: "conductor amarillo desde CERROJOS CABINA hasta el borne 32" }
+
+    stub_single_page_topology(edge: t1) do
+      stub_vision_tier(edges: [ t2 ]) do
+        with_layout_digest_flag(true) { with_vision_tier_flag(true) { run_pdf_mixed_page(page: page) } }
+      end
+    end
+
+    chunk = @fake_s3.uploads.fetch(@fake_s3.uploads.keys.find { |k| k.end_with?("chunk_0.txt") })
+
+    assert_includes chunk, "DERIVATION: leader_line"
+    assert_includes chunk, "DERIVATION: vision"
+    assert_equal 2, chunk.scan("RECORD_TYPE: TOPOLOGY_EDGE").size
+  end
 end

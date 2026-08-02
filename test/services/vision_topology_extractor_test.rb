@@ -43,6 +43,16 @@ class VisionTopologyExtractorTest < ActiveSupport::TestCase
     assert result.input_tokens.positive?, "the page is still read — only the relations are dropped"
   end
 
+  # Fase 5b. Off by default because it raises the cost per page by roughly half
+  # and its effect on precision is a hypothesis, not a number.
+  test "zoom tiles are absent by default and reach the prompt when switched on" do
+    without = capture_user_content { derive(layout: relational_layout, client: fake_client) }
+    with    = with_zoom_tiles { capture_user_content { derive(layout: relational_layout, client: fake_client) } }
+
+    assert_equal 0, count_zoom_blocks(without)
+    assert_equal PdfPageRasterizer::ZOOM_COLUMNS * PdfPageRasterizer::ZOOM_ROWS, count_zoom_blocks(with)
+  end
+
   test "the relations switch re-enables vision edges without touching the tier flag" do
     result = with_vision_flag(true, relations: true) do
       derive(layout: relational_layout, client: fake_client(connections: [ full_connection ]))
@@ -297,6 +307,30 @@ class VisionTopologyExtractorTest < ActiveSupport::TestCase
 
   def restore_env(name, value)
     value.nil? ? ENV.delete(name) : ENV[name] = value
+  end
+
+  def with_zoom_tiles
+    original = ENV.fetch("INGESTION_VISION_TIER_ZOOM_TILES", nil)
+    ENV["INGESTION_VISION_TIER_ZOOM_TILES"] = "true"
+    yield
+  ensure
+    restore_env("INGESTION_VISION_TIER_ZOOM_TILES", original)
+  end
+
+  def capture_user_content
+    captured = nil
+    with_vision_flag(true) do
+      client = fake_client { |user_content, _| captured = user_content }
+      VisionTopologyExtractor.derive(
+        @page_binary, layout: relational_layout, page_number: 17, total_pages: 98,
+        filename: "SEGURIDADES.pdf", client: client
+      )
+    end
+    captured
+  end
+
+  def count_zoom_blocks(user_content)
+    Array(user_content).count { |block| block[:type] == "text" && block[:text].to_s.start_with?("ZOOM ") }
   end
 
   # Mimics ClaudeChunkingClient#call closely enough to exercise the whole parse

@@ -20,6 +20,42 @@ class PdfPageRasterizerTest < ActiveSupport::TestCase
     assert_equal 400, image.height
   end
 
+  # I-44. The long-edge cap belongs to whatever is emitted. Bounding a crop by
+  # the page it was cut from pinned every crop of a 960 pt document to 150 dpi,
+  # so CROP_DPI = 200 never happened once.
+  test "a crop gets its own DPI ceiling, not the page's" do
+    wide_page = [ 0, 0, 4_000, 400 ].freeze
+    raster    = PdfPageRasterizer.new(@pages[0], media_box: wide_page).crop([ 10, 10, 60, 60 ])
+
+    assert_equal PdfPageRasterizer::CROP_DPI, raster.dpi,
+                 "a 50 pt crop fits under the cap however wide the page is"
+    assert_operator raster.width, :<=, PdfPageRasterizer::MAX_LONG_EDGE_PX
+  end
+
+  test "a crop too large for the cap still degrades" do
+    raster = PdfPageRasterizer.new(@pages[0], media_box: MEDIA_BOX).crop([ 0, 0, 600, 400 ], dpi: 600)
+
+    assert_operator raster.dpi, :<, 600
+    assert_operator raster.width, :<=, PdfPageRasterizer::MAX_LONG_EDGE_PX
+  end
+
+  # Fase 5b (docs/rag/gate_b_calibracion_vision.md §10).
+  test "tiles cover the page at ZOOM_DPI, overlapping, in reading order" do
+    tiles = PdfPageRasterizer.new(@pages[0], media_box: MEDIA_BOX).tiles
+
+    assert_equal PdfPageRasterizer::ZOOM_COLUMNS * PdfPageRasterizer::ZOOM_ROWS, tiles.size
+    assert(tiles.all? { |t| t.dpi == PdfPageRasterizer::ZOOM_DPI }, "the point of a tile is the resolution")
+    assert(tiles.all? { |t| t.width <= PdfPageRasterizer::MAX_LONG_EDGE_PX })
+
+    plain = 600.0 / PdfPageRasterizer::ZOOM_COLUMNS
+    assert_operator tiles.first.width, :>, (plain * PdfPageRasterizer::ZOOM_DPI / 72.0),
+                    "each tile must be wider than its bare share of the page — that is the overlap"
+  end
+
+  test "tiles are empty when there is no media box to divide" do
+    assert_equal [], PdfPageRasterizer.new(@pages[0]).tiles
+  end
+
   test "page renders at PAGE_DPI and reports what it rendered" do
     raster = PdfPageRasterizer.new(@pages[0], media_box: MEDIA_BOX).page
 

@@ -415,10 +415,24 @@ ambigüedad recortando esa zona a 300 dpi durante el juicio.
 grande, no un `size_class: :small`. La ampliación que el juez humano necesitó para decidir es la
 que el modelo no tuvo.
 
-**Trabajo propuesto (Fase 5b, no ejecutado aquí):** detectar la fila de bornes como región y
-mandarla como recorte a 300 dpi junto a la página completa, igual que ya se hace con los
-componentes fotografiados. Es una hipótesis con una predicción falsable: debería mover el tipo C
-y dejar el tipo A y el B donde están. Cuesta una pasada de 23 páginas (~$1,50) comprobarla.
+**Trabajo propuesto (Fase 5b): implementado el 2026-08-02, todavía sin medir.** Ver la sección
+`Fase 5b` del plan y las entradas I-44 e I-45. Dos correcciones a lo que este párrafo decía cuando
+se escribió:
+
+- **No hay detector, porque no se puede.** Localizar la fila de bornes por geometría falla: los
+  nombres de celda no están en la capa de texto (la pág. 78 tiene 35 palabras y ninguna es `SE5`)
+  ni en los `rects` (que son marcos de recorte de página). La regleta es una foto — la misma causa
+  que I-15 le encontró a T1. Así que la página se parte en **3×2 teselas con 10 % de solape a 300
+  dpi** y localiza el modelo. Verificado por eye sobre la tesela 4 de la pág. 78: `SFH SNH SE5 SE6
+  SE7 SE8 SE9` legibles, y se ve de qué celda sale cada color.
+- **Cuesta el doble de lo estimado aquí: ~$3,30, no ~$1,50** (+~15 800 tokens de entrada por
+  página; $0,065 → ~$0,14/página).
+
+Y de paso apareció un fallo que contamina cualquier comparación (**I-44**): `MAX_LONG_EDGE_PX` se
+aplicaba al render de la página completa incluso cuando lo emitido era un recorte, así que
+**`CROP_DPI = 200` nunca ocurrió en este documento y todos los recortes de componente de esta
+medición se hicieron a 150 dpi**. Corregido. Quien mida la Fase 5b arrastra ese cambio en la misma
+corrida: si el número se mueve, no se puede atribuir sólo a las teselas.
 
 ---
 

@@ -10,6 +10,37 @@
 
 ---
 
+## 📍 Dónde estamos y qué sigue (actualizado 2026-08-02, tras el Gate B)
+
+**Estado en una frase:** todo lo que había que construir está construido y cerrado (Fases 0-6, Gate
+A-bis, Fase 5, Gate B). El Gate B midió T2 y **apagó sus relaciones**; T2 aporta identidad de
+componente y nada más. Nada está roto ni a medias. Lo que queda son **tres pasos**, y el primero es
+una pregunta al dueño, no código.
+
+| | Paso | Con qué modelo | Coste API | Bloquea a |
+|---|---|---|---|---|
+| **1** | **Decisión humana #6:** ¿se ejecuta la Fase 7 con las aristas de T1 solas? | **Ninguno — decides tú** | $0 | Fase 7 |
+| **2** | **Fase 5b:** medir si darle al modelo la página en teselas a 300 dpi arregla el error que hundió el Gate B | correr: **tú, en la terminal** · juzgar: **Opus** | **~$3,30** | nada; es opcional y reversible |
+| **3** | **Medir `vision_topology_v3`**, el prompt escrito y nunca ejecutado (I-42) | correr: **tú** · juzgar: **Opus** | ~$1,50 | nada |
+
+**Por qué "córrelo tú" y no un agente:** los pasos 2 y 3 son un comando de una línea. Un agente que
+lo lance, espere y lea el log consume más tokens de su propio saldo que la medición entera. Trae al
+modelo caro **sólo para juzgar**, que es lo que ningún comando puede hacer. Detalle en el
+[Apéndice H](#apéndice-h--presupuesto-saldo-y-cómo-no-quedarse-a-medias).
+
+Los pasos 2 y 3 **no dependen entre sí ni bloquean al 1**. Si sólo hay saldo para uno, el 2 es el
+que puede cambiar el veredicto; el 3 sólo cierra un cabo suelto.
+
+**Antes de gastar un dólar, lee esto:** la corrida del Gate B se cortó porque **la cuenta de
+Anthropic se quedó sin saldo**, no por el presupuesto ($2,22 de $15). La misma clave alimenta al
+modelo que escribe el código, que consume mucho más que las mediciones. Ver el
+[Apéndice H — presupuesto y saldo](#apéndice-h--presupuesto-saldo-y-cómo-no-quedarse-a-medias).
+
+**Los prompts listos para copiar y pegar de estos tres pasos están en el Apéndice G**, al final,
+bajo `Fase 5b`, `Medición de v3` y `Fase 7`.
+
+---
+
 ## Cómo usar este documento
 
 Eres el modelo asignado a **una** fase. Nadie te va a dar el contexto que produjo este plan:
@@ -239,6 +270,9 @@ juicio algorítmico, seguridad y visión.
 | 4 | Contrato v8 | **Sonnet** | Muchos archivos, hilado mecánico; invariantes cubiertos por test |
 | 5 | Motor T2 visión | **Opus** | Diseño de prompt de extracción de relaciones + razonamiento visual |
 | Gate B | T1 como verdad-terreno para calibrar T2 | **Opus** | Juicio comparativo e iteración de prompt |
+| **5b-run** | Lanzar la corrida con teselas | **ninguno — hazlo tú en la terminal** | Es un comando. Pasarlo por un agente cuesta más en tokens del agente que la propia medición |
+| **5b-juicio** | Juzgar las relaciones contra la lámina | **Opus** | Visión + criterio; es el trabajo caro y el que decide el veredicto. Sonnet aquí ahorra céntimos y arriesga el gate |
+| **v3-medición** | Puntuar el prompt v3 | **Opus** | Mismo juicio visual; se puede encadenar con 5b-juicio en la misma sesión y compartir la lectura de láminas |
 | 6a | Endurecimiento de `AnswerSafetyProcessor` | **Opus** | Lógica de seguridad; un falso negativo deja pasar una alucinación |
 | 6b | Párrafo de `generation.txt` + controles negativos | **Sonnet** | El párrafo va escrito verbatim abajo; el trabajo son los tests |
 | 7 | Script de shadow ingest | **Sonnet** | Guion operativo con invariantes explícitos |
@@ -284,6 +318,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 4 | cerrada — mergeada con el flag apagado (opción B) | `INGESTION_LAYOUT_DIGEST_ENABLED` | 9f9d611 | I-31, I-32, I-33 |
 | 5 | cerrada — mergeada con el flag apagado; **las dos rutas**, tras corregir I-31 | `INGESTION_VISION_TIER_ENABLED` | 2b3ff19 + 396b334 | I-34 … I-38 |
 | Gate B | **EJECUTADO — NO SUPERADO en relaciones (88,2 %, LI 81,6 % < 85 %), SUPERADO en identidad de componente (38/38, LI 92,4 %). Degradación aplicada** | `INGESTION_VISION_TIER_RELATIONS_ENABLED` (nuevo, apagado) | 4a3f62e | I-39 … I-43 |
+| 5b | **implementada y SIN MEDIR** — experimento del zoom; el flag no se enciende hasta que alguien lo puntúe | `INGESTION_VISION_TIER_ZOOM_TILES` (nuevo, apagado) | | I-44, I-45 |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
 | 7 | **bloqueada por la decisión humana #6** — el Gate B ya no la bloquea: está ejecutado, pero su veredicto deja el shadow ingest con las aristas de T1 solas, que es justo lo que la decisión #4 prohibió | — | | |
@@ -1173,6 +1208,64 @@ tipo de lámina, no en agregado.
 - si T2 no alcanza precisión suficiente, **se limita a campos no-relacionales** (identidad de
   componente, calidad de imagen) y las relaciones quedan sólo en T1. Esa degradación es
   aceptable y se documenta como límite conocido del producto.
+
+### 🔬 Fase 5b — Teselas de zoom: el único ataque al fallo que hundió el Gate B · Opus — **implementada, SIN MEDIR**
+
+Nace del §10 del [informe del Gate B](gate_b_calibracion_vision.md) y de I-40. **No es una fase de
+construcción: es un experimento con una predicción falsable**, y el código ya está escrito.
+
+**La hipótesis, en una línea.** Los 9 errores de "celda vecina" que hundieron el gate ocurren donde
+la fila de bornes ocupa 40-60 px de la página renderizada a 150 dpi, y **todos se resolvieron sin
+ambigüedad al ampliar a 300 dpi durante el juicio humano**. La ampliación que el juez necesitó es la
+que el modelo nunca tuvo.
+
+**Por qué no hay detector, que es un hallazgo en sí (I-44).** Lo primero que se intentó fue localizar
+la regleta por geometría y recortarla. No se puede: los nombres de las celdas (`SE5 SE6 SE7`,
+`109 111 112`, `B1…B6`) **no están en la capa de texto ni en los `rects`** — son píxeles dentro de la
+foto de la regleta. Medido: la página 78 tiene 35 palabras y **ninguna** es un nombre de celda; sus
+`rects` son marcos de recorte de página, no celdas. Es la misma causa que I-15 le encontró a T1,
+vista desde el otro lado. Así que no se detecta nada: **se parte la página en teselas y se mandan
+todas**, y el que localiza es el modelo.
+
+**Qué se implementó** (commit al pie de la tabla de fases):
+
+- `PdfPageRasterizer#tiles` — 3×2 teselas con 10 % de solape a `ZOOM_DPI = 300`. En este documento
+  (960×540 pt) son 6 imágenes de ~1500×1271 px. El solape existe para que una regleta que cae en un
+  corte siga entera en alguna tesela.
+- `VisionTopologyPrompt` las envía tras la página completa, etiquetadas `ZOOM n of 6`, diciendo
+  explícitamente que **no añaden contenido**, sólo resolución para distinguir una celda de su vecina.
+- Flag propio `INGESTION_VISION_TIER_ZOOM_TILES`, **apagado**. No cambia nada hasta que alguien lo
+  encienda.
+- **Corregido de paso, I-44:** el tope `MAX_LONG_EDGE_PX` se aplicaba al render de página completa
+  también cuando lo que se emitía era un recorte, así que en este documento **todos los recortes de
+  componente se venían rasterizando a 150 dpi y `CROP_DPI = 200` no significaba nada** desde la
+  Fase 5. Ahora cada recorte tiene su propio techo. Sube la resolución de los recortes de componente
+  sin que nadie lo pidiera: es parte de lo que hay que volver a medir.
+
+**Verificación hecha sin gastar API:** se volcó a disco la tesela 4 de la página 78 y se leyó con
+visión. `SFH SNH SE5 SE6 SE7 SE8 SE9` salen perfectamente legibles y se ve que el verde sale de
+`SE5`, el amarillo de `SE6` y el rojo de `SE7` — exactamente los dos datos que T2 falló dos veces en
+esa página. El experimento está bien planteado; lo que falta es puntuarlo.
+
+**Predicción falsable, escrita antes de medir.** Si la hipótesis es cierta:
+
+- el tipo C (regleta densa) sube de **81,5 %** hacia el 95 %;
+- el tipo A y el tipo B **no se mueven** (ya están al 100 %);
+- la precisión agregada supera el 85 % con el límite inferior por encima del umbral;
+- el coste por página sube de $0,065 a ~**$0,14**.
+
+Si el tipo C **no** se mueve, la hipótesis está refutada y el veredicto del Gate B es definitivo: el
+límite no es de resolución sino de la capacidad del modelo para seguir un conductor, y la degradación
+a campos no-relacionales pasa de ser provisional a ser permanente. **Ese resultado negativo también
+vale lo que cuesta**, porque cierra la pregunta.
+
+*Definición de terminado:*
+- [ ] Corrida sobre las **mismas 23 páginas** del conjunto de medición, con `GATE_B_ZOOM_TILES=true`
+- [ ] Las mismas 102 relaciones juzgadas con la **misma regla** del §1.2 del informe, contra la
+      lámina renderizada, no contra la salida anterior
+- [ ] Desglose por tipo de lámina publicado, comparado lado a lado con el §2 del informe
+- [ ] Coste real anotado, y el flag encendido **sólo** si el límite inferior supera el 85 %
+- [ ] Entrada `I-NN` en el Registro con el veredicto, sea cual sea
 
 ### Fase 6 — Contrato de generación · Opus (6a) / Sonnet (6b)
 
@@ -2173,6 +2266,59 @@ quiere atacar el modo de fallo real, la Fase 5b propuesta en I-40.
 > demostrablemente inerte al desplegarse: no existe ningún `TOPOLOGY_EDGE` en el índice todavía,
 > así que el delta esperado es cero.
 
+**Fase 5b · Opus — el experimento del zoom (~$3,30, opcional, no bloquea a nadie)**
+> Copia y pega esto tal cual.
+>
+> Ejecuta la **Fase 5b** de `docs/rag/plan_conocimiento_visual.md`. Antes de nada lee esa sección
+> entera, el **§10 y el §2 del informe `docs/rag/gate_b_calibracion_vision.md`**, y las entradas
+> **I-39, I-40 e I-44** del Registro. El código **ya está escrito y testeado**: `PdfPageRasterizer#tiles`,
+> el flag `INGESTION_VISION_TIER_ZOOM_TILES` y el bloque `ZOOM n of 6` del prompt. **No lo reescribas.**
+> Tu trabajo es **medir y juzgar**, que es lo único que falta.
+>
+> Corre exactamente esto:
+> ```bash
+> GATE_B_ZOOM_TILES=true \
+> GATE_B_PAGES=3,11,12,14,17,22,25,39,44,52,56,61,63,64,67,76,77,78,91,93,94,95,97 \
+> GATE_B_OUT=tmp/gate_b_5b.json GATE_B_LABEL=fase5b GATE_B_THREADS=4 \
+>   bin/rails runner script/gate_b/run.rb
+> ```
+> Después **juzga a mano**, con visión, contra la lámina renderizada a 150 dpi
+> (`pdftoppm -f N -l N -r 150 -png "<PDF>" tmp/gate_b_png/pN`), ampliando la fila de bornes a 300 dpi
+> cuando haga falta —`pdftoppm -r 300 -png -x X -y Y -W W -H H`—, con **la regla de juicio del §1.2
+> del informe, sin cambiarla**: correcta = hay conductor entre los dos extremos, directo o por
+> intermedios **que la propia `evidence` nombra**. Nunca juzgues contra la salida anterior del modelo.
+>
+> Publica el desglose **por tipo de lámina** (A: regleta frontal tipo pág. 17 · B: conectores
+> pequeños tipo pág. 97 · C: regleta densa tipo págs. 63/78/93) al lado de los números del §2 del
+> informe, con el límite inferior de Clopper-Pearson al 95 % de cada uno. La predicción escrita antes
+> de medir es que **sólo el tipo C se mueve**; si no se mueve, la hipótesis está refutada y **eso
+> también hay que escribirlo**, con esas palabras.
+>
+> Enciende `INGESTION_VISION_TIER_ZOOM_TILES` **sólo** si el límite inferior agregado supera el 85 %.
+> Anota el coste real. Añade tu entrada `I-NN` al Registro y actualiza el informe del Gate B con una
+> sección nueva, sin borrar la medición de v1 — las dos tienen que poder compararse.
+
+**Medición de `vision_topology_v3` · Opus — cerrar el cabo suelto (~$1,50, opcional)**
+> Copia y pega esto tal cual.
+>
+> Lee **I-42** del Registro y el **§8 del informe** `docs/rag/gate_b_calibracion_vision.md`.
+> `vision_topology_v3` (huella `36f8c3bb3a8d…`) está en el repositorio **como texto activo y sin una
+> sola llamada medida**: se escribió cuando la cuenta se quedó sin saldo. Mídelo antes de que nadie
+> se fíe de él.
+>
+> ```bash
+> GATE_B_PAGES=3,11,12,14,17,22,25,39,44,52,56,61,63,64,67,76,77,78,91,93,94,95,97 \
+> GATE_B_OUT=tmp/gate_b_v3.json GATE_B_LABEL=v3 GATE_B_THREADS=4 \
+>   bin/rails runner script/gate_b/run.rb
+> ```
+> Misma regla de juicio del §1.2, mismo desglose por tipo. Compara contra v1 (§2) y contra v2 (§8.2).
+> **Si v3 no mejora a v1, vuelve el prompt a v1**: una versión sin medir en producción es deuda, y v1
+> es la única con 102 relaciones juzgadas detrás. Sea cual sea el resultado, quita la advertencia de
+> "SIN MEDIR" del comentario de `CONTRACT_VERSION` y sustitúyela por el número.
+>
+> Se puede combinar con la Fase 5b en una sola corrida (v3 + teselas) para ahorrar dinero, **pero
+> entonces no sabrás cuál de los dos cambios movió el número**. Si hay saldo, córrelas por separado.
+
 **Fase 7 · Sonnet (script) + Opus (go/no-go)**
 > ⚠️ **revisado en I-39, I-41 e I-43 — antes de nada: esta fase está bloqueada por la decisión
 > humana #6, no por trabajo.** El Gate B se ejecutó y **degradó T2 a campos no-relacionales**
@@ -2267,6 +2413,55 @@ quiere atacar el modo de fallo real, la Fase 5b propuesta en I-40.
 
 ---
 
+## Apéndice H — Presupuesto, saldo y cómo no quedarse a medias
+
+Escrito porque el Gate B se cortó por esto y no por su presupuesto (I-42): **$2,2216 gastados de los
+$15 autorizados, y aun así la API devolvió `credit balance is too low`.**
+
+### La causa: una sola clave para dos consumos muy distintos
+
+| Consumo | Qué es | Orden de magnitud |
+|---|---|---|
+| **Medición** | las llamadas de visión de T2 que este plan puntúa | **$1,50-3,30 por pasada** de 23 páginas |
+| **El modelo que escribe el código** | la sesión de ingeniería que lee ficheros, edita, corre tests y juzga láminas con visión | **decenas de dólares** por sesión larga |
+
+Los dos salen de la misma `ANTHROPIC_API_KEY` si no se separan, y el segundo se come al primero sin
+avisar. Recargar de $10 en $10 garantiza que la próxima medición se quede a mitad.
+
+### Qué hacer, en orden de preferencia
+
+1. **Separar las claves.** Una clave (o un workspace aparte en la consola de Anthropic) **sólo** para
+   la aplicación y las mediciones, otra para el modelo que escribe el código. Es un cambio de
+   configuración, cuesta $0, y hace imposible que una sesión de ingeniería agote el presupuesto de
+   una medición. **Es la recomendación.**
+2. **Sacar el asistente de código de la API.** Si se le puede pagar por suscripción en vez de por
+   consumo de API, deja de competir por este saldo y la clave de la aplicación se vuelve predecible.
+3. **Si tiene que ser una sola clave:** cargar antes de empezar **el coste de la sesión de ingeniería
+   más el de la medición**, no sólo el de la medición.
+
+### Coste medido de cada paso pendiente
+
+| Paso | Páginas | Coste medido/estimado | Base |
+|---|---|---|---|
+| Fase 5b (con teselas) | 23 | **~$3,30** | $0,065/página medidos + ~15 800 tokens/página de las 6 teselas |
+| Medir `vision_topology_v3` | 23 | **~$1,50** | medido: la línea base v1 costó $1,4894 |
+| Las dos en una corrida | 23 | ~$3,30 | pero no distingue qué cambio movió el número |
+| Fase 7 con visión encendida | 98 | **~$5,20** | 80 páginas T2 × $0,0648, siempre API directa (I-38) |
+| Fase 7 sin visión | 98 | ~$0 | sólo T1, geometría local |
+
+**Comprobar el saldo cuesta $0,08 y evita perder una corrida entera:**
+
+```bash
+GATE_B_PAGES=17 GATE_B_OUT=tmp/saldo.json GATE_B_LABEL=saldo bin/rails runner script/gate_b/run.rb
+```
+
+Si sale `T2=0 comp=0 crops=0 $0.0` en dos segundos, **no es un bug: es el saldo**.
+`VisionTopologyExtractor#derive` rescata la excepción a propósito —un tier que no puede leer una
+página no debe tumbar la página—, así que una corrida sin saldo **termina bien, con cero aristas y
+coste cero**, y sólo se distingue leyendo la línea `VisionTopologyExtractor: pN failed` del log.
+
+---
+
 ## Registro de hallazgos de implementación
 
 Cada fase añade aquí sus hallazgos antes de entregar, y edita las fases posteriores afectadas
@@ -2317,3 +2512,5 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-41 | Gate B | Opus 5 | **La verdad-terreno gratis de T1 no sirve, y la causa no era el tamaño de la muestra: es la granularidad.** El gate se diseñó sobre la idea de puntuar T2 contra las 19 aristas de T1 sin trabajo humano. Medido: T2 reproduce **2** de las 19 cadena a cadena, **4** si se le quita el número de pin a un extremo, y **15 no aparecen de ninguna forma**. La razón no es desacuerdo sino que **T2 lee el pin donde T1 lee el conector** (`X114 1 ↔ PTC MOTOR` frente a `PTC MOTOR ↔ X114`): T2 es más preciso, y a la vez emite otra cadena. Las 15 restantes son páginas donde los dos motores leyeron **zonas distintas de la misma lámina** (pág. 44: T1 encuentra `LIMITADOR ↔ C300`, T2 emite 9 relaciones de otra regleta y ninguna de ésa). **Consecuencia sobre código ya mergeado:** `VisionTopologyExtractor#drop_traced` compara pares normalizados y por tanto **casi nunca se dispara** — sobre las 19 aristas de T1 habría bloqueado 2. La política "T1 gana" es correcta y a la vez prácticamente inerte. | **Fase 7:** si algún día se reactivan las relaciones de visión, hace falta normalizar el extremo (`X114 1` → `X114`) **antes** de comparar en `drop_traced`, o el mismo hecho llegará al cuerpo del chunk dos veces, con dos redacciones y dos `RECORD_ID`. Anotado en el sitio en la sección de la Fase 7. Hoy inerte: sin relaciones de visión no hay nada que deduplicar. |
 | I-42 | Gate B | Opus 5 | **Una iteración de prompt medida no movió la precisión, y la segunda no se pudo medir porque la cuenta se quedó sin saldo.** `vision_topology_v2` (huella `0a8fbd6f98b0…`) añadió cuatro reglas contra los tres modos de fallo de I-40, entre ellas **omitir la relación cuando no se puede resolver una celda de su vecina**. Medido sobre las 10 páginas donde se concentraban los errores, con el mismo juez y la misma regla: **86,5 % → 87,9 % de precisión (dentro del ruido) a cambio de −26 % de relaciones emitidas** (89 → 66). Arregló casos concretos (la pág. 39 dejó de emitir el falso `PTC MOTOR ↔ NTC 3D-5`; la pág. 3 pasó a 2 de 2; la pág. 63 corrigió el intercambio P28/P29) y rompió otros: la pág. 97 cayó de **14 relaciones correctas a 4** y la pág. 76 de 4/5 a 2/4, y aparecieron extremos con dos formatos en la misma página (`J10-2 (P35B)`, o el índice de pin `1` en lugar de la etiqueta impresa `75`), que es justo lo que el contrato v8 no puede tener. **Lectura del resultado: el error dominante es perceptivo, no instruccional** — pedirle al modelo que se abstenga cuando duda no le enseña a distinguir `SE5` de `SE7`, le enseña a callarse también donde acertaba. `vision_topology_v3` (huella `36f8c3bb3a8d…`) conserva de v2 sólo lo que arregló una clase de error sin costar cobertura y **elimina la cláusula de omisión** — pero **no se ejecutó ni una llamada con ese texto**: la API devolvió `400 invalid_request_error: "Your credit balance is too low"` en las 10 páginas. El presupuesto del gate estaba al 15 %. | **Quien reanude:** `vision_topology_v3` está en el repositorio como texto activo y **no está medido**. Con las relaciones apagadas no cambia ningún `TOPOLOGY_EDGE`, pero sí cambia la prosa de `documented_components`, que tampoco está medida bajo v3. Antes de creerle nada: recargar saldo, correr las mismas 23 páginas con la misma regla de juicio del §1.2 del informe y comparar contra el §2. La huella del prompt va en cada línea `vision_topology_page`, así que cualquier medición futura es atribuible al texto exacto que la produjo. |
 | I-43 | Gate B | Opus 5 | **El no determinismo de T2 existe, no toca la precisión, y está acotado a las relaciones en serie (precisa I-35).** Dos corridas de la página 17 con el **mismo** prompt v1, separadas por horas: **20 relaciones las dos veces, 17 idénticas byte a byte, 3 distintas**. Y las 3 son la misma decisión: `33 ↔ BOTONERA REVISION` frente a `33 ↔ ACUÑAMIENTO`, `72 ↔ BOTONERA REVISION` frente a `72 ↔ ACUÑAMIENTO`, `16 ↔ STOP FOSO` frente a `16 ↔ POLEA TENSORA`. **Las seis son correctas**: esos bornes están en serie con todos esos dispositivos, y lo que varía no es el acierto sino **cuál de los dispositivos del recorrido elige nombrar como extremo lejano**. I-35 medía "19 y 20 relaciones" y lo leía como varianza de volumen; medido con más muestra, el volumen fue idéntico y la varianza está en un sitio concreto. | Dos correcciones a lo que I-35 dejó escrito. **(1) No hay que inflar el tamaño de muestra por no determinismo:** las dos corridas puntúan igual, así que la varianza no entra en el intervalo de confianza de la precisión. **(2) La huella del `RECORD_ID` sí se rompe, pero sólo en las relaciones en serie:** las 17 directas fueron reproducibles byte a byte. Si algún día se reactivan las relaciones de visión, la huella idempotente no puede incluir el extremo lejano de una serie. Anotado en el sitio en la Fase 7. |
+| I-44 | 5b | Opus 5 | **`CROP_DPI = 200` nunca ocurrió: todos los recortes de este documento se venían rasterizando a 150 dpi desde la Fase 5.** Encontrado al implementar las teselas de la Fase 5b, porque salían a 150 dpi en vez de a los 300 pedidos. Causa: `PdfPageRasterizer#effective_dpi` degrada el DPI para que el **lado largo de la página** no pase de `MAX_LONG_EDGE_PX = 2000`, y `render` volvía a aplicar ese techo aunque lo que se emitiera fuese un recorte pequeño. Con una página de 960 pt el techo sale 150 dpi, así que el `CROP_DPI = 200` que la Fase 5 documentó con una medición cuidadosa (densidad nativa p50 198,7 dpi de las 1 646 imágenes pequeñas) se degradaba en silencio a 150 en **todas** las llamadas, incluidas las 23 páginas del Gate B. Arreglado: el techo se calcula sobre la región que se emite, no sobre la página de la que se recorta; `render` recibe el DPI ya resuelto y no vuelve a recortarlo; `Raster#dpi` informa el DPI real y no el que se pidió. Dos tests nuevos fijan las dos mitades (un recorte pequeño en una página enorme conserva su DPI; un recorte enorme sigue degradándose). | **Cambia la entrada de T2 sin que nadie lo pidiera:** los recortes de componente pasan de 150 a 200 dpi. La medición de identidad de componente del Gate B (38/38) se hizo a 150 dpi, así que sigue siendo válida como suelo, no como descripción de lo que hará el sistema a partir de ahora. Quien mida la Fase 5b o v3 arrastra este cambio en la misma corrida: si el número se mueve, **no se puede atribuir sólo a las teselas**. Anotado en la sección de la Fase 5b. |
+| I-45 | 5b | Opus 5 | **La fila de bornes no se puede localizar desde la geometría, así que la Fase 5b se implementa sin detector: teselas.** Antes de escribir nada se probaron los dos caminos baratos y los dos fallaron, medido: (a) **agrupar palabras cortas alineadas** — los nombres de celda no están en la capa de texto; la pág. 78 tiene 35 palabras y ninguna es `SFH`/`SNH`/`SE5`…; la pág. 93 tiene 49 y ninguna es un `71`/`ZN`; (b) **agrupar `rects` del mismo tamaño en una fila** — los `rects` que devuelve `PdfLayoutExtractor` son mayoritariamente marcos de recorte de página (67-116 rects idénticos de `[0,0,960,540]` por página), y sólo la pág. 93 expone las celdas reales. Es la misma causa que I-15 diagnosticó para T1, vista desde el otro lado: **la regleta es una foto**. Implementado en su lugar `PdfPageRasterizer#tiles`: 3×2 teselas con 10 % de solape a 300 dpi (~1500×1271 px en este documento), enviadas tras la página completa como `ZOOM n of 6` y descritas en el prompt como resolución añadida, no como contenido nuevo. Flag propio `INGESTION_VISION_TIER_ZOOM_TILES`, apagado. **Verificado sin gastar API**: volcada a disco la tesela 4 de la pág. 78 y leída con visión, `SFH SNH SE5 SE6 SE7 SE8 SE9` son legibles y se distingue que el verde sale de SE5, el amarillo de SE6 y el rojo de SE7 — los dos datos exactos que T2 falló ahí. Coste proyectado: +~15 800 tokens de entrada por página, $0,065 → ~$0,14/página, ~$3,30 la pasada de 23. Verificado: `bin/rails test` 2187 runs / 0 failures; `bin/rubocop` limpio (479 files). | **Nada depende de esto y nada cambia hasta que se mida**: el flag está apagado. La predicción falsable está escrita en la sección de la Fase 5b **antes** de medir —sólo el tipo C debe moverse— para que el resultado no se pueda reinterpretar después. Si el tipo C no sube, el veredicto del Gate B pasa de provisional a definitivo y la degradación a campos no-relacionales deja de ser una espera. El prompt de copiar y pegar está en el Apéndice G bajo `Fase 5b`. |

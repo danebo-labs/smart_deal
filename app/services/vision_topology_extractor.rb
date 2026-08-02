@@ -178,14 +178,15 @@ class VisionTopologyExtractor
     rasterizer = PdfPageRasterizer.new(@page_binary, media_box: @layout[:media_box])
     page       = rasterizer.page
     crops      = build_crops(rasterizer)
+    tiles      = IngestionVisionFlag.zoom_tiles_enabled? ? rasterizer.tiles : []
 
-    response = call_model(page, crops)
+    response = call_model(page, crops, tiles)
     parsed   = parse_response(response)
     edges    = sanitize_connections(parsed["documented_connections"])
     edges    = drop_relations(edges) unless IngestionVisionFlag.relations_enabled?
 
     log_page_metrics(
-      page: page, crops: crops, response: response, parsed: parsed, edges: edges,
+      page: page, crops: crops, tiles: tiles, response: response, parsed: parsed, edges: edges,
       duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
     )
 
@@ -234,11 +235,11 @@ class VisionTopologyExtractor
     end
   end
 
-  def call_model(page, crops)
+  def call_model(page, crops, tiles = [])
     client.call(
       user_content: VisionTopologyPrompt.user_content(
         page: page, crops: crops, page_number: @page_number,
-        total_pages: @total_pages, filename: @filename, locale: @locale
+        total_pages: @total_pages, filename: @filename, locale: @locale, tiles: tiles
       ),
       filename:        @filename,
       page_number:     @page_number,
@@ -379,7 +380,7 @@ class VisionTopologyExtractor
   # The measurement Gate B is required to report ("coste por página medido, no
   # estimado") plus the rejection funnel that says WHY a page produced what it
   # produced — the same shape of evidence Gate A's funnel gave for T1.
-  def log_page_metrics(page:, crops:, response:, parsed:, edges:, duration_ms:)
+  def log_page_metrics(page:, crops:, tiles:, response:, parsed:, edges:, duration_ms:)
     Rails.logger.info(
       JSON.generate(
         event:              "vision_topology_page",
@@ -393,6 +394,8 @@ class VisionTopologyExtractor
         page_bytes:         page.bytes,
         crops:              crops.size,
         crop_bytes:         crops.sum { |crop| crop[:raster].bytes },
+        zoom_tiles:         tiles.size,
+        zoom_tile_bytes:    tiles.sum(&:bytes),
         input_tokens:       token(response[:usage], :input_tokens),
         output_tokens:      token(response[:usage], :output_tokens),
         connections_raw:    Array(parsed["documented_connections"]).size,

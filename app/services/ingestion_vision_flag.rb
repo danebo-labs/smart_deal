@@ -34,4 +34,17 @@ module IngestionVisionFlag
   def relations_enabled?
     ENV["INGESTION_VISION_TIER_RELATIONS_ENABLED"] == "true"
   end
+
+  # Fase 5b, the experiment the Gate B verdict pointed at
+  # (docs/rag/gate_b_calibracion_vision.md §10): send the page also as
+  # overlapping 300 dpi tiles, because the errors that sank the gate all
+  # resolved by hand at that resolution and none of them is locatable from the
+  # layout — the cell names are pixels inside the picture of the strip.
+  #
+  # Off by default, and it must stay off until someone measures it: it raises
+  # the cost per page by roughly half and its effect on precision is a
+  # hypothesis, not a number.
+  def zoom_tiles_enabled?
+    ENV["INGESTION_VISION_TIER_ZOOM_TILES"] == "true"
+  end
 end

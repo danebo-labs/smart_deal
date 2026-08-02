@@ -172,8 +172,19 @@ module VisionTopologyPrompt
   #   convention BatchChunkingPrompt uses for `summary`. Endpoint labels are
   #   never translated — they are transcriptions
   # @return [Array<Hash>]
-  def self.user_content(page:, crops:, page_number:, total_pages:, filename:, locale: nil)
+  def self.user_content(page:, crops:, page_number:, total_pages:, filename:, locale: nil, tiles: [])
     blocks = [ image_block(page), { type: "text", text: "FULL PAGE #{page_number} of #{total_pages}." } ]
+
+    Array(tiles).each_with_index do |tile, index|
+      blocks << image_block(tile)
+      blocks << {
+        type: "text",
+        text: "ZOOM #{index + 1} of #{Array(tiles).size} — the same page 2x larger, one overlapping " \
+              "section of it, reading order left to right and top to bottom. Use these to tell one " \
+              "cell of a row of terminals from its neighbour; they add no content the full page " \
+              "does not already have."
+      }
+    end
 
     Array(crops).each_with_index do |crop, index|
       raster = crop[:raster] || crop["raster"]

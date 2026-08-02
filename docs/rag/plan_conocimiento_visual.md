@@ -176,7 +176,7 @@ conocimiento.
 |---|---|---|---|---|
 | Texto plano estructurado, sin relaciones | **T0** | Sonnet 4.6 (como hoy) | bajo | chunks + `field_records` |
 | Capa de texto **+** vectores (80/98 aquí) | **T1 geométrico** | Rails determinista, 0 LLM | ~0 | `TOPOLOGY_EDGE` `method: leader_line` ¹ |
-| Imagen densa sin vectores / sin capa de texto | **T2 visión** | Opus 4.8 + prompt de relaciones sobre ráster + crops | alto, acotado | `TOPOLOGY_EDGE` `method: vision` |
+| Imagen densa sin vectores / sin capa de texto | **T2 visión** | Opus 4.8 + prompt de relaciones sobre ráster + crops | **$0,0675-0,0796/página, medido** ² | `TOPOLOGY_EDGE` `method: vision` |
 | Ambas señales | **T1 + T2** | T1 ancla, T2 reconoce; T1 gana en conflicto | medio | ambos, con procedencia distinguible |
 
 ¹ ⚠️ **revisado en I-09, en I-20 y confirmado con visión en I-26.** Que 80/98 páginas *tengan* la
@@ -185,6 +185,12 @@ alguna arista en 22 de 98 páginas (23 aristas). **Cerradas 2b y 3b y superado e
 cifra es 19 aristas en 18 de 98 páginas, las 19 verificadas correctas una a una.** El resto de la
 relación dibujada de este documento **cae en T2**, y ésa es la cifra con la que hay que
 dimensionarlo, no 80.
+
+² ⚠️ **medido en I-34.** Ya no es una estimación: 3 páginas corridas en vivo con Opus 4.8 por API
+directa dan $0,0675-0,0796 por página (≈5 400 tokens de entrada — página a 150 DPI más 11-15 crops a
+200 DPI — y ≈1 700 de salida), es decir ~**$5,40** por las 80 páginas T2 de este documento, ~$2,70 si
+alguna vez corriera por el Batch API. La Fase 5 corre por la ruta **síncrona**, así que hoy es el
+precio de API directa.
 
 **Complementariedad, no competencia.** T1 sabe *que* la etiqueta `LIMITADOR` está unida al
 `CONECTOR AI` por una línea trazada, pero no sabe qué es la foto pequeña de 105×183 que está al
@@ -272,11 +278,11 @@ La fase siguiente lee el documento actualizado, no el original.
 | 3b | cerrada — cierra I-14 | — (offline) | 1cb789b | I-20, I-21, I-22 |
 | Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | 582ede3 | I-26 … I-29 |
 | 4 | cerrada — mergeada con el flag apagado (opción B) | `INGESTION_LAYOUT_DIGEST_ENABLED` | 9f9d611 | I-31, I-32, I-33 |
-| 5 | **siguiente** | `INGESTION_VISION_TIER_ENABLED` | | |
-| Gate B | pendiente | — | | |
+| 5 | cerrada — mergeada con el flag apagado, ruta síncrona | `INGESTION_VISION_TIER_ENABLED` | 2b3ff19 | I-34, I-35, I-36 |
+| Gate B | **siguiente** | — | | |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
-| 7 | **bloqueada por la decisión humana #4** (opción B: no se ejecuta hasta tener T2 y el Gate B cerrado) | — | | |
+| 7 | **bloqueada sólo por el Gate B** — la decisión humana #4 pedía T2 primero, y T2 existe desde `2b3ff19` | — | | |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
 | 10 | pendiente | — | | |
@@ -308,10 +314,9 @@ commit. Añadir el puntero en `docs/README.md` bajo las referencias RAG activas.
 real desde aquí:
 
 ```
-GATE A (fallido) ──▶ 2b ✅ ──▶ 3b ✅ ──▶ GATE A-bis ✅ ──▶ [decisión #4] ✅ ──▶ 4 ──▶ 5 ──▶ GATE B ──▶ 7
-                     f4ab397     1cb789b      100 %, 0 falsas   opción B          ↑              ↑
-                                                                                  AQUÍ        la 7 espera
-                                                                                              a T2
+GATE A (fallido) ──▶ 2b ✅ ──▶ 3b ✅ ──▶ GATE A-bis ✅ ──▶ [decisión #4] ✅ ──▶ 4 ✅ ──▶ 5 ✅ ──▶ GATE B ──▶ 7
+                     f4ab397     1cb789b      100 %, 0 falsas   opción B         9f9d611  2b3ff19     ↑
+                                                                                                    AQUÍ
 ```
 
 **2b antes que 3b, sin excepción:** 3b consume el contrato que 2b arregla y una de sus guardas
@@ -413,6 +418,32 @@ conector, así que la Fase 4 no debe presentar la flecha como direccional.
 Reglas: si una etiqueta no resuelve, **no aparece en el array**. Sin entradas parciales, sin
 `nil`, sin `confidence` numérica. El array vacío es una salida válida y frecuente (12 páginas
 divisoras) — y, medido en I-09, también en **76 de las 98 páginas**.
+
+### `VisionTopologyExtractor.derive(page_binary, layout:, …)` → Fase 5 produce, Gate B y Fase 7 consumen
+
+```ruby
+#<struct Result
+  edges: [
+    { from: "32", to: "CERROJOS CABINA", method: :vision,
+      evidence: "conductor naranja que sale de la borna 32 y llega al gráfico rotulado CERROJOS CABINA" }
+  ],
+  components: [
+    { label: "SOBRECARGA", canonical_component: "unidad de control de carga",
+      evidence: "rótulo MICELECT MWR-4 visible en la foto" }
+  ],
+  crop_count: 14, input_tokens: 5570, output_tokens: 2069>
+```
+
+Reglas: `edges` tiene **exactamente** la forma que consume la Fase 4 (`from`/`to`/`method`/
+`evidence`, sin `chain`) y se concatena al array de T1 en el mismo `page_result[:topology_edges]`;
+`method` es siempre `:vision`. Igual que en T1, **`from`/`to` no son una dirección** (I-11) **ni son
+exhaustivos** (I-29), y una etiqueta que no resuelve simplemente no aparece: `[]` es salida válida.
+A diferencia de T1, un extremo **puede no tener ninguna letra** — los números de borne impresos
+dentro del ráster son justo lo que este tier existe para leer (I-15). `components` **no** se
+renderiza en ningún chunk en esta fase: existe para que el Gate B pueda medir la capacidad
+no-relacional a la que puede degradar T2 si su precisión de relaciones no alcanza umbral.
+`crop_count`/`input_tokens`/`output_tokens` son la medición de coste, duplicada en la línea de log
+`vision_topology_page`.
 
 ### `PageLayoutDigest.render(layout, edges)` → Fase 2/3 producen, Fase 4 consume
 
@@ -916,9 +947,20 @@ procedencia es distinta y más débil.)
 - [x] Con el flag apagado, los cuerpos y sidecars son **byte-idénticos** a v7, con test
 - [x] Suite + rubocop verdes (2123 runs / 0 failures; 471 files, 0 offenses)
 
-### Fase 5 — Motor T2: visión sobre páginas triadas · Opus
+### Fase 5 — Motor T2: visión sobre páginas triadas · Opus — ✅ **CERRADA**
 
 Lo que da la capacidad **general**, para documentos donde no hay vectores que trazar.
+
+**Cerrada en `2b3ff19` (I-34, I-35, I-36).** Mergeada con `INGESTION_VISION_TIER_ENABLED`
+**apagado** (`bin/rails test` 2174 runs / 0 failures, 478 files / 0 offenses). **Ruta decidida: la
+síncrona** (`SingleFileChunkingService`/`pdf_mixed`), la que la Fase 4 ya hila de punta a punta;
+`VisionTopologyExtractor.derive` recibe un binario de página y devuelve aristas, así que la
+opción (a) de la Fase 7 sirve para los dos tiers sin construir la capa de persistencia que I-31
+dejó sin dueño. **`libvips` de `Dockerfile:19` sí trae el loader de poppler** — no hay línea de
+apt (I-34). **Verificado en vivo** sobre las páginas 3/17/63 con autorización explícita del dueño
+del producto: la página 17, donde T1 emite `[]`, devuelve **20 relaciones** a **$0,0796**; coste
+medido **$0,0675-0,0796/página**, ~**$5,40** por las 80 páginas T2 del documento en API directa
+(~$2,70 en Batch).
 
 ⚠️ **revisado en el Gate A, y en I-20.** Dimensionado real: **T2 tiene que correr en las 80
 páginas** (79 de contenido relacional + la portada, que no tiene capa de texto). En **61 de ellas
@@ -945,20 +987,31 @@ leer, y es la mayor palanca de cobertura del plan entero.
   visión en runtime.
 - Flag: `INGESTION_VISION_TIER_ENABLED`.
 
-⚠️ **revisado en I-31.** "Los mismos registros v8" sólo llegan al chunk si esta fase corre por la
-misma ruta que ya hila `topology_edges` (la síncrona, `SingleFileChunkingService` →
-`ChunkMergerService` → `BatchResultsParserService`) o si tú misma resuelves el hilado para la ruta
-asíncrona (`ManualBatchIngestionService`), que hoy no lo hace. Decide explícitamente por cuál ruta
-corre T2 antes de escribir el prompt de relaciones — no está resuelto en ninguna de las dos por
-defecto.
+⚠️ **revisado en I-31, resuelto en I-34.** "Los mismos registros v8" sólo llegan al chunk si esta
+fase corre por la misma ruta que ya hila `topology_edges` (la síncrona,
+`SingleFileChunkingService` → `ChunkMergerService` → `BatchResultsParserService`) o si tú misma
+resuelves el hilado para la ruta asíncrona (`ManualBatchIngestionService`), que hoy no lo hace.
+**Decisión tomada: la síncrona**, por dos razones estructurales — T2 necesita el binario de la
+página en el instante en que rasteriza, y en la ruta asíncrona `page.cleanup` ya corrió cuando
+vuelve el resultado del batch. El hueco de I-31 **sigue abierto para la ruta asíncrona** y su dueño
+natural es la Fase 7 (ver el ⚠️ de I-34 allí).
 
 *Definición de terminado:*
-- [ ] Rasterizador con test sobre el fixture; DPI justificado, no mágico
-- [ ] Crops anclados a su etiqueta adyacente, con test
-- [ ] Prompt de relaciones emitiendo v8 `method: vision`, con test de parseo
-- [ ] Test de que sin capa de texto ni vectores el tier igual produce salida
-- [ ] Coste por página **medido**, no estimado, registrado en el informe del Gate B
-- [ ] Suite + rubocop verdes
+- [x] Rasterizador con test sobre el fixture; DPI justificado, no mágico — `PdfPageRasterizer`,
+      `PAGE_DPI = 150` (la resolución a la que se leyó la verdad-terreno humana del Gate A/A-bis)
+      y `CROP_DPI = 200` (p50 198,7 / p90 202,6 de densidad nativa de colocación de las 1 646
+      imágenes pequeñas del documento), con test de la conversión de coordenadas y del degradado
+      de DPI
+- [x] Crops anclados a su etiqueta adyacente, con test — `TopologyEdgeDeriver.label_for_image`,
+      la regla anti-ráster de la Fase 3b leída **hacia adelante** en vez de reimplementada al lado
+      (I-20). Medido: 1 345 de 1 646 imágenes pequeñas resuelven etiqueta (81,7 %), p50 15
+      crops/página
+- [x] Prompt de relaciones emitiendo v8 `method: vision`, con test de parseo — `from`/`to`/
+      `evidence` reusados de `FieldPhotoPrompt`, sin schema nuevo
+- [x] Test de que sin capa de texto ni vectores el tier igual produce salida
+- [x] Coste por página **medido**, no estimado — $0,0675-0,0796/página en vivo sobre 3 páginas
+      (~5 400 tokens de entrada, ~1 700 de salida); el informe del Gate B lo hereda medido
+- [x] Suite + rubocop verdes (2174 runs / 0 failures; 478 files / 0 offenses)
 
 ### ⛔ Gate B — T1 calibra T2 · Opus
 
@@ -980,6 +1033,31 @@ En las páginas donde ambos tiers aplican, comparar aristas T1 (deterministas) c
   pequeños, agrupaciones semánticas). Aquí se responde empíricamente si Opus habría captado
   relaciones que Sonnet aplanó — la pregunta que originó el Defecto 2;
 - coste real por página de T2 y coste total proyectado del documento.
+
+⚠️ **revisado en I-34, I-35 e I-36.** Cuatro cosas que este gate ya no tiene que descubrir, y dos
+que hereda como trabajo nuevo:
+
+**Ya hecho, no lo repitas.** (a) La **política de conflicto ya está implementada** de forma
+provisional en `VisionTopologyExtractor#drop_traced`: T2 descarta el par que T1 ya probó, en
+cualquier orden y sin distinguir mayúsculas. Este gate la **confirma o la cambia**, no la escribe
+desde cero. (b) El **coste por página está medido**: $0,0675-0,0796 en API directa (~5 400 tokens
+de entrada, ~1 700 de salida por página), ~$5,40 por las 80 páginas T2 del documento, ~$2,70 en
+Batch. Lo que falta es el coste **total** de la corrida que hagas aquí. (c) `VisionTopologyExtractor`
+loguea una línea `vision_topology_page` por página con tokens, DPI, bytes, número de crops, embudo
+de rechazos y **huella del prompt** — el embudo del Gate A, para T2. (d) **T2 no ve las aristas de
+T1**, por diseño y con test: `traced_edges` sólo sirve para deduplicar. Si algún día se le pasan al
+prompt, esta medición deja de medir a T2 y empieza a medir a un copista.
+
+**Trabajo nuevo que este gate hereda.** (e) T2 compone extremos que **no están impresos
+literalmente**: en la página 63 emitió `J10-3`, `J12-7`, `J23-1` — el conector y el número de borne
+existen impresos por separado, la cadena unida no. Es más útil para un técnico y a la vez es un
+token que no existe en el documento, así que decide **explícitamente** si se normaliza (extremo =
+número de borne, conector en `evidence`), se acepta como convención documentada, o se prohíbe en el
+prompt. Ver I-36. (f) La misma página 63 emitió `J10-3` conectado a **dos** dispositivos distintos
+con colores de cable distintos en la evidencia (amarillo y rojo): al menos uno es falso, y es el
+primer indicio medido de que la precisión de T2 **no es uniforme** — la página 17 (regleta frontal,
+cables cortos) se lee bien; la 63 (dos conectores, cables largos que cruzan la lámina) no. Mide por
+tipo de lámina, no en agregado.
 
 **Salidas obligatorias:**
 - el prompt de T2 se itera hasta alcanzar umbral contra T1;
@@ -1112,6 +1190,29 @@ el script, decidir explícitamente una de dos: (a) diseñar `shadow_ingest_v8.rb
 para que las aristas sobrevivan el viaje por el Batch API. Cualquiera de las dos es trabajo nuevo,
 no hilado existente — regístralo como alcance de esta fase, no lo des por hecho.
 
+⚠️ **revisado en I-34 e I-35.** Tres consecuencias de que la Fase 5 exista:
+
+**La opción (a) ahora sirve para los dos tiers, y es la recomendada.** `VisionTopologyExtractor.derive`
+recibe un binario de página, un `layout` de la Fase 2 y devuelve aristas `method: :vision` con la
+misma forma que `TopologyEdgeDeriver.derive` — así que un `shadow_ingest_v8.rb` que ya iba a llamar
+`PdfLayoutExtractor`/`TopologyEdgeDeriver` por página y pasar `topology_edges:` directo a
+`BatchResultsParserService` sólo tiene que **sumar** la llamada de T2 al mismo array. La opción (b)
+(capa de persistencia keyed por `custom_id`) sigue sin dueño y sigue siendo la única forma de que la
+ruta asíncrona lleve aristas — pero ya **no** es un prerrequisito de esta fase.
+
+**Precio de esa decisión: T2 corre por API directa, al doble del precio de Batch.** Medido en I-34:
+$0,0675-0,0796 por página, ~**$5,40** por las 80 páginas T2 del documento (~$2,70 si algún día
+corriera por Batch). Presupuéstalo y déjalo escrito en el informe; no es un coste que la Fase 4
+tuviera.
+
+**El `RECORD_ID` de una arista `vision` NO es idempotente (I-35).** La Fase 4 hizo idempotente el
+`RECORD_ID` sobre geometría metiendo `derivation`/`derivation_evidence` en la huella — y eso funciona
+para T1 porque su `evidence` es una cadena determinista. La `evidence` de T2 es prosa de un modelo:
+la misma página re-ingestada produce otra redacción y por tanto **otro `RECORD_ID`**. Consecuencias
+concretas para esta fase: la corrida de 6 páginas y la de 98 **no** comparten IDs de registro de
+topología para las aristas de visión; un re-run del shadow ingest no es un no-op; y el "delta de
+conteo de chunks" hay que leerlo por conteo, no por identidad de registros.
+
 *Definición de terminado:*
 - [ ] El script no contiene ninguna llamada de borrado sobre el prefijo de producción
 - [ ] Corrida de 6 páginas, diff de cuerpos revisado y adjuntado al informe
@@ -1139,6 +1240,17 @@ impresos con la paráfrasis que **no** matchea. Úsala; no reconstruyas nada de 
 adicionales medidas allí: `PdfLayoutExtractor` devuelve `CARLOSSILVA` donde la página imprime
 `CARLOS SILVA` (I-13), y la extracción de tablas LED mete filas espurias en 40 de las 72 páginas,
 así que los `required` de tabla hay que tomarlos de las 32 páginas limpias o filtrarlos por columna.
+⚠️ **revisado en I-35 e I-36.** El bullet de arriba —"los `required` son cadenas de etiqueta
+verbatim emitidas por el digest"— vale para T1 y **no** para T2. Tres cosas que no se pueden
+convertir en `required` sin más: (a) la `evidence` de una arista `vision` es **prosa de un modelo, no
+determinista**, así que un `required` que la cite literalmente falla en la siguiente corrida (I-35);
+usa los **extremos**, que sí son transcripción; (b) desde I-34 esa prosa se pide en el idioma de la
+página (`locale:`), así que tampoco es estable frente a un cambio de locale; (c) los extremos de T2
+**no siempre están impresos verbatim**: puede emitir `J10-3` donde la página imprime `J10` y `3` por
+separado (I-36). Si el Gate B decide normalizarlo, los `required` de topología de visión hay que
+escribirlos **después** de esa decisión, no antes. Sigue en pie lo de I-30: una respuesta que cite
+una arista `vision` necesita el calificador de imagen o el guardia la degrada.
+
 - Cubrir las **18 marcas** del Apéndice E, no 10 preguntas: eso es lo que hace que el muestreo
   aleatorio deje de sorprender.
 - Reutilizar `script/rag_seguridades_recall_probe.rb` tal cual para el rank por caso.
@@ -1282,6 +1394,8 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
      Fase 5, luego el Gate B, y **sólo entonces** la Fase 7. **La Fase 7 no se ejecuta con las
      aristas de T1 solas.** Registrada por el Gate A-bis por instrucción directa del dueño en la
      misma sesión; el dueño ejecuta las fases siguientes en sesiones aparte.
+   - **Estado de la secuencia:** Fase 4 cerrada (`9f9d611`), **Fase 5 cerrada (`2b3ff19`)**. Lo único
+     que sigue bloqueando la Fase 7 es el **Gate B**.
 
 ## Fuera de alcance
 
@@ -1752,7 +1866,9 @@ vez hecho el Paso 0.
 > los aliases; `RECORD_ID` idempotente; tope de 12 aristas por chunk con desborde a chunk hermano;
 > y con flag apagado, cuerpos y sidecars **byte-idénticos** a v7.
 
-**Fase 5 · Opus**
+**Fase 5 · Opus** — ✅ ejecutada y cerrada en `2b3ff19` (I-34, I-35, I-36). El prompt queda como
+registro histórico; lo que se decidió y lo que se midió está en la sección de la Fase 5 y en el
+Registro, no aquí.
 > ⚠️ **Antes de escribir una línea, lee "revisado en I-31" dentro de la sección de la Fase 5 y de
 > la Fase 4.** La Fase 4 sólo hiló `topology_edges` hasta `BatchResultsParserService` en la ruta
 > **síncrona** (`SingleFileChunkingService`/`pdf_mixed`); la ruta asíncrona
@@ -1778,6 +1894,23 @@ vez hecho el Paso 0.
 > `INGESTION_VISION_TIER_ENABLED`. Nunca visión en runtime: sólo en ingesta.
 
 **Gate B · Opus**
+> ⚠️ **revisado en I-34, I-35 e I-36.** Lee esas tres entradas del Registro y el ⚠️ de la sección del
+> Gate B antes de empezar: la Fase 5 está cerrada (`2b3ff19`) y ya te deja hechas cuatro cosas que el
+> párrafo de abajo te pide construir. **(1)** La política de conflicto "T1 gana" **ya está
+> implementada** (`VisionTopologyExtractor#drop_traced`): la confirmas o la cambias, no la escribes.
+> **(2)** El coste por página **ya está medido** en vivo: $0,0675-0,0796 (~5 400 tokens de entrada,
+> ~1 700 de salida), ~$5,40 por las 80 páginas T2 en API directa; lo que falta es el coste de tu
+> propia corrida. **(3)** Hay una línea de log `vision_topology_page` por página con tokens, DPI,
+> crops y **embudo de rechazos** — el embudo del Gate A, para T2 — y la huella del prompt, que es lo
+> que hace atribuible cada medición a la versión exacta del texto que la produjo. **(4)** T2 **no ve**
+> las aristas de T1 y no debe verlas: es lo que hace que esta medición mida a un lector y no a un
+> copista. Además hereda dos problemas medidos que sí son tuyos: extremos **compuestos** que no están
+> impresos (`J10-3`, I-36) y **precisión desigual por tipo de lámina** (la página 17 se lee casi
+> perfecta; la 63 emite un mismo borne hacia dos dispositivos con dos colores de cable). Mide por
+> tipo de lámina, no en agregado. Y ojo con I-35: T2 **no es determinista** — dos corridas de la
+> página 17 dieron 19 y 20 relaciones —, así que correr la misma página dos veces es la forma más
+> barata de estimar su varianza antes de fijar un umbral.
+>
 > Ejecuta el Gate B de `<PLAN>`. En las 80 páginas donde T1 (geometría determinista) y T2 (visión)
 > aplican a la vez, usa las aristas de T1 como **verdad-terreno gratis** para medir T2 y escribe
 > `docs/rag/gate_b_calibracion_vision.md` con: precisión y recall de T2 contra T1; **qué ve T2 que
@@ -1814,6 +1947,17 @@ vez hecho el Paso 0.
 > así que el delta esperado es cero.
 
 **Fase 7 · Sonnet (script) + Opus (go/no-go)**
+> ⚠️ **revisado en I-34 e I-35.** La Fase 5 ya está cerrada (`2b3ff19`) y eso cambia dos cosas del
+> párrafo de abajo. **(1)** El hueco de I-31 se cierra por la **opción (a)** y ahora sirve para los
+> dos tiers: `VisionTopologyExtractor.derive(page_binary, layout:, …)` devuelve aristas con la misma
+> forma que `TopologyEdgeDeriver.derive`, así que tu script llama a los dos por página y pasa el
+> array concatenado a `BatchResultsParserService`, sin `ManualBatchIngestionService` en medio y sin
+> construir la capa de persistencia keyed por `custom_id` (que sigue sin dueño). El precio: T2 corre
+> por API directa, ~$5,40 por las 80 páginas T2 del documento, medido. **(2)** El `RECORD_ID` de una
+> arista `vision` **no es idempotente** (I-35): la evidencia es prosa de un modelo, así que la
+> corrida de 6 páginas y la de 98 no comparten IDs para las aristas de visión y un re-run no es un
+> no-op. Lee el delta por conteo, no por identidad de registros.
+>
 > Ejecuta la Fase 7 de `<PLAN>` (requiere 4, 5 y 6). Escribe `script/shadow_ingest_v8.rb`.
 > **No re-ejecutes `script/reingest_seguridades_2026-07-25.rb` bajo ninguna circunstancia**: hace
 > `delete_prefix` sobre un bucket sin versionado y su corrida previa bajó la precisión 62/88 →
@@ -1836,6 +1980,14 @@ vez hecho el Paso 0.
 > topología diluya el embedding y baje el recall. Prueba el rollback.
 
 **Fase 8 · Sonnet**
+> ⚠️ **revisado en I-35 e I-36.** "Los `required` son cadenas verbatim emitidas por el digest" vale
+> para T1 y **no** para las aristas de visión que la Fase 5 ya sabe emitir: su `evidence` es prosa no
+> determinista y dependiente del `locale` (I-35), y sus extremos **no siempre están impresos** —
+> puede emitir `J10-3` donde la página imprime `J10` y `3` por separado (I-36). Para una arista
+> `vision`, usa los **extremos** y sólo después de que el Gate B decida si se normalizan. Y de I-30:
+> si un caso espera una respuesta que cite una arista `vision`, la respuesta esperada necesita el
+> calificador de imagen o el guardia la degrada antes de la rúbrica.
+>
 > Ejecuta la Fase 8 de `<PLAN>`. Congela los 42 casos actuales como gate de no-regresión —son los
 > controles negativos de alucinación y la única prueba de que la Fase 6 no filtró, así que no se
 > editan aserciones— y añade `script/fixtures/rag_seguridades_topology_v1.json` cubriendo las **18
@@ -1903,3 +2055,6 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-31 | 4 | Sonnet 5 | **Fase 4 cerrada: contrato v8 mergeado con el flag apagado, dos huecos de diseño resueltos por acotación en vez de por suposición.** `TOPOLOGY_EDGE` se añadió a `FIELD_RECORD_TYPES` (necesario para que `render_field_record`/`allowlisted_value` puedan renderizar el registro que Rails construye), pero el airlock en `validate_field_record!` rechaza **cualquier** `field_record` del modelo con `k: "TOPOLOGY_EDGE"`, incondicionalmente — no hace falta comprobar un campo `method`/`derivation` porque el esquema corto del modelo (`k,h,a,r,ev,x,sw,ra,u`) no tiene ese campo: la sola presencia del tipo ya es la señal de forjado. **(a) `section_path` es de un solo nivel — `[section_identity]`.** La forma `[MARCA, MODELO]` que I-17 describe exige emparejar el título visible de cada página de contenido contra una viñeta de su divisor, un matcher que no está en la lista de archivos de esta fase ni en su Definición de terminado (que sólo pide el invariante `section_identity == section_path.first`, sostenido igual con un solo nivel). Diseñar el emparejador queda para quien necesite el segundo nivel; no hay nada que migrar cuando llegue, `section_path` ya es una lista. **(b) `topology_edges` sólo se renderiza en la ruta síncrona.** `SingleFileChunkingService#topology_for_page` deriva `layout`/`edges`/`digest` por página con `page.binary` todavía en memoria, y `ChunkMergerService` los adjunta al primer chunk sobreviviente de esa página; `BatchResultsParserService#topology_field_records` los renderiza en `# FIELD-SAFETY EVIDENCE RECORDS` junto a los del modelo, con tope de 12/chunk y desborde a chunk hermano (`prepare_topology_chunks!`). En `ManualBatchIngestionService` (ruta asíncrona vía Anthropic Batch API), `layout_digest_for(page)` calcula el mismo digest **antes** de que `page.cleanup` libere el binario y lo pasa al prompt — pero las aristas derivadas no se persisten en ningún sitio para cuando `IngestManualBatchResultsJob` parsea el resultado, mucho más tarde y sin binario disponible. Una página de un long-manual subido por chat recibe el beneficio del digest en el contexto del modelo, pero ningún `TOPOLOGY_EDGE` propio en su chunk. `RECORD_ID` se hizo idempotente sobre geometría añadiendo `derivation`/`derivation_evidence` al fingerprint (mismo patrón que el par `stop_trigger`/`stop_action` ya usaba). `Rag::FieldRecordParser` gana `DERIVATION`/`DERIVATION_EVIDENCE` como labels opcionales — I-30 los dejó fuera a propósito porque el contrato v8 todavía estaba bloqueado; `answer_safety_processor.rb` (Fase 6b) no los necesita, porque ya lee `DERIVATION:` con su propia regexp local sobre el texto crudo del chunk, no vía este parser. Verificado: `bin/rails test` 2123 runs / 0 failures (2101 antes de esta fase); `bin/rubocop` 471 files / 0 offenses. | **Fase 5:** al hilar T2, decidir si las aristas `vision` cruzan el mismo límite asíncrono sin dueño que dejó (b) — si T2 corre en la ruta de batch, hereda el mismo hueco y quizás sea el momento de resolverlo con una capa de persistencia keyed por `custom_id`/página. **Fase 7:** el shadow ingest debería decidir explícitamente si corre SEGURIDADES por la ruta síncrona o la asíncrona — sólo la primera hoy escribe `TOPOLOGY_EDGE`. **Quien diseñe el segundo nivel de `section_path`:** el matcher título-de-página↔viñeta-de-divisor no tiene dueño ni test; `section_path` ya acepta una lista de cualquier longitud, así que añadirlo es aditivo. |
 | I-32 | 4 | Sonnet 5 | **Dos tests de guarda de las Fases 2/3 ("nada en producción invoca esto todavía") quedaron obsoletos por diseño, no rotos — Fase 4 es exactamente la fase que termina esa invariante.** `pdf_layout_extractor_test.rb` y `topology_edge_deriver_test.rb` afirmaban una lista vacía de llamadores en `app/**/*.rb`; con `single_file_chunking_service.rb` y `manual_batch_ingestion_service.rb` invocando ambas clases detrás de `IngestionLayoutFlag` (apagado por defecto), esa aserción falla siempre, tenga o no la fase razón. Se reescribieron para fijar la lista exacta de los dos llamadores legítimos en vez de una lista vacía, así que cualquier OTRO llamador nuevo sigue fallando el test tan fuerte como antes. Se tocaron archivos de otra fase (2 y 3) porque la Definición de terminado de esa fase decía literalmente "nada de producción invoca el extractor/derivador todavía" — una premisa que esta fase, por diseño, invalida; no es "algo roto que se aprovechó para arreglar en silencio". | **Cualquier fase futura que añada un tercer llamador a `PdfLayoutExtractor`/`TopologyEdgeDeriver`** (p. ej. la Fase 5 para T2, si reutiliza el extractor sobre páginas rasterizadas) debe extender `allowed_callers` en ambos tests, no ignorarlos. |
 | I-33 | 4 | Sonnet 5 | **El Protocolo de traspaso se cumplió a medias en la primera pasada de esta fase, y el propio preámbulo común de los prompts no bastaba para evitarlo.** Cerré I-31 (el hueco de la ruta asíncrona) escribiendo su "Impacto en fases posteriores" con instrucciones concretas para la Fase 5 y la Fase 7 — y di la fase por entregada sin ir a editar esas dos secciones. El dueño del producto lo notó y preguntó explícitamente si el traspaso se había ejecutado; sólo entonces se hizo la edición en el sitio (Fase 5, Fase 7 y su prompt en el Apéndice G, más el prompt histórico de la propia Fase 4). El "Preámbulo común" del Apéndice G ya decía "edición en el sitio de las fases que invalides", pero una frase de una línea, sin un paso de auto-verificación, es fácil de dar por satisfecha con sólo la columna de impacto del Registro — que documenta la intención, no la ejecuta. Se reforzaron dos sitios: el paso 2 del Protocolo de traspaso (§"Modelo recomendado por fase") ahora dice explícitamente que la columna de impacto **no es** el traspaso, y se añadió un paso 5 de auto-verificación obligatoria antes de entregar; el preámbulo común del Apéndice G se reescribió con la misma exigencia y se extendió a cubrir también los prompts del propio Apéndice G, no sólo las secciones de "Plan por fases" (el prompt de Fase 4 citaba una `section_path` de 2 niveles que ya no era cierta, y nadie lo había tocado). | **Toda fase futura:** el paso 5 nuevo del Protocolo de traspaso es una lista de verificación literal — antes de entregar, releer la propia columna de impacto que acabas de escribir y confirmar con un grep (`revisado en I-NN`) que cada fase nombrada ya quedó editada, no darlo por hecho porque "ya lo anoté". **Quien mantenga este documento:** si el Apéndice G crece o se reorganiza, la disciplina de "edición en el sitio" tiene que cubrir explícitamente los prompts de arranque, que son un documento de facto independiente de las secciones de especificación y se desincronizan igual de fácil. |
+| I-34 | 5 | Opus 5 | **Fase 5 cerrada: T2 corre por la ruta síncrona, `libvips` de producción ya trae poppler, y los dos DPI salen de mediciones, no de una elección.** **(a) Ruta decidida (cierra la mitad síncrona del hueco de I-31): la síncrona**, `SingleFileChunkingService`/`pdf_mixed`. Dos razones estructurales: T2 necesita el binario de la página en el instante en que rasteriza, y en la ruta asíncrona `page.cleanup` ya corrió cuando vuelve el resultado del Batch API; y esa ruta es la única que la Fase 4 hila hasta el cuerpo del chunk. `VisionTopologyExtractor.derive` toma un binario y devuelve aristas, así que **no** queda acoplado a la ruta: la opción (a) de la Fase 7 sirve para los dos tiers. **(b) `VipsForeignLoadPdfBuffer` existe en la imagen de producción — no hay línea de apt.** Verificado por dependencias, no por suposición: `ruby:3.4.7-slim` es `debian:trixie-slim` (anotación `org.opencontainers.image.base.name` del manifest de Docker Hub) y en trixie el paquete `libvips` que instala `Dockerfile:19` resuelve a `libvips42t64`, que depende de `libpoppler-glib8`. No pude ejecutar `vips -l` dentro de la imagen (no hay demonio de Docker en este entorno), así que la evidencia es la cadena de dependencias más un test ejecutable (`pdf_page_rasterizer_test.rb` afirma que el loader existe allí donde corra la suite). **(c) DPI medidos.** Página: **150**, que es exactamente la resolución a la que el Gate A y el Gate A-bis leyeron su verdad-terreno humana (`pdftoppm -r 150`, `script/gate_a/zoom.py`; `tmp/pdfs/holdout-page-*.png` son 2000×1125 para una página de 960×540 pt) — el Gate B mide T2 contra esa verdad-terreno, así que T2 recibe los mismos píxeles que tuvieron los humanos; comprobado con visión sobre la página 17, donde los números de borne se leen desde 110 DPI. Crops: **200**, el techo de la distribución medida de densidad nativa de colocación de las 1 646 imágenes pequeñas del documento (p50 **198,7**, p90 **202,6**, máx 274,7 DPI): por debajo se tiran píxeles que el PDF tiene, por encima sólo se interpola la foto. Un tercer número, `MAX_LONG_EDGE_PX = 2000`, degrada el DPI (nunca lo sube) si el media box es mayor, para acotar el coste por píxeles y no por tamaño de página. **(d) Crops anclados reusando la Fase 3b, no reimplementándola** (lo que I-20 pidió): `TopologyEdgeDeriver.label_for_image` es `outranked_on_an_image?` leído hacia adelante — la etiqueta que nombra un gráfico es la que ninguna otra etiqueta impresa con otro nombre tiene más cerca, con la misma tolerancia medida de 25 pt y las mismas exclusiones (rotadas, no-nombres). Medido sobre las 98 páginas: **1 345 de 1 646** imágenes pequeñas (81,7 %) resuelven etiqueta; por página p50 **15**, p90 24, máx 33; **19 páginas dan 0**, y son exactamente la portada más las 18 divisoras del Apéndice E. Las imágenes de fondo a página completa quedan inertes gratis (todas las etiquetas están a 0,00 de ellas, así que ninguna es estrictamente la más cercana). **(e) Verificado en vivo, con autorización explícita** (precedente I-06: no se gasta sin pedirlo) sobre las páginas 3, 17 y 63. Página **17** —el contraejemplo canónico de I-15, donde T1 emite `[]` y hay ~15 relaciones con número de borne— devuelve **20 relaciones**, todas revisadas contra la lámina renderizada y todas correctas salvo el reparto de extremos en los tramos compartidos; transcribe los erratas del documento tal cual (`TEPERATURA CUARTO MAQ.`, `PUERTAS EXTERORES`, `STOP REVISON`), que es la regla de verbatim funcionando. Página **3**: T1 aporta 2 aristas y T2 **4 distintas**, con las 2 de T1 correctamente descartadas por `drop_traced` — la política "T1 gana" funciona en vivo. Página **63**: 13 aristas, y ahí aparecieron los dos hallazgos siguientes. **Coste medido: $0,0675-0,0796 por página** (≈5 400 tokens de entrada, ≈1 700 de salida; tarifas `claude-opus-4-8-direct` de `BedrockQuery::BEDROCK_PRICING`), **~$5,40** por las 80 páginas T2 del documento en API directa, ~$2,70 en Batch. Gasto total de la verificación: **$0,28**. **(f) Defecto encontrado y corregido en la propia fase:** sin `locale`, el modelo escribía la `evidence` en inglés para una página en español, y esa cadena acaba en el mismo cuerpo de chunk que la `evidence` española de T1 y se cita verbatim al técnico (Fase 6b). Se añadió `locale:` al prompt y al extractor, con la convención que ya usa `BatchChunkingPrompt` para `summary`, y se re-verificó en vivo: la evidencia sale en español y los extremos siguen siendo transcripción literal. **(g) Alcance no tocado:** `components` (identidad de componente pequeño) se devuelve y se loguea pero **no** se renderiza en ningún chunk — existe para que el Gate B pueda medir la capacidad no-relacional a la que el plan permite degradar T2, y añadir un tipo de registro nuevo no está en la Definición de terminado de esta fase. Verificado: `bin/rails test` **2174 runs / 0 failures** (2123 antes); `bin/rubocop` **478 files / 0 offenses**; ambos flags apagados por defecto. | **Gate B:** la política de conflicto ya está implementada (provisional) y el coste por página ya está medido — este gate los confirma, no los escribe; T2 **no ve** las aristas de T1 y no debe verlas nunca; hay una línea de log `vision_topology_page` con el embudo de rechazos por página, que es el embudo del Gate A para T2. **Fase 7:** la opción (a) del ⚠️ de I-31 ahora cubre los dos tiers y es la recomendada; el precio es que T2 corre por API directa (~$5,40 el documento). La opción (b) —capa de persistencia keyed por `custom_id`— **sigue sin dueño** y sigue siendo lo único que haría que la ruta asíncrona lleve aristas. **Cualquier fase que añada un cuarto llamador** a `PdfLayoutExtractor`/`TopologyEdgeDeriver` debe extender `allowed_callers` en ambos tests (I-32); esta fase añadió el tercero y amplió la regexp del guardia del derivador para cubrir también `label_for_image`. |
+| I-35 | 5 | Opus 5 | **El `RECORD_ID` de una arista `vision` no es idempotente, y la Definición de terminado de la Fase 4 no lo prometía para T2 aunque se lea como si lo hiciera.** La Fase 4 hizo idempotente el `RECORD_ID` "sobre geometría" metiendo `derivation`/`derivation_evidence` en la huella (I-31), y eso funciona porque la `evidence` de T1 es una cadena determinista construida por Rails desde coordenadas. La `evidence` de T2 es prosa de un modelo: medido en las dos corridas en vivo de la página 17, la misma arista `32 ↔ CERROJOS CABINA` salió con dos redacciones distintas, y una de las corridas encontró 20 relaciones donde la otra encontró 19 (apareció `78 ↔ CERROJOS CABINA`, que la primera se saltó). Por tanto: re-ingestar la misma página con T2 produce **otros `RECORD_ID`** y puede producir **otro conteo de aristas**. No es un defecto que se pueda arreglar sin cambiar qué es la evidencia de visión (p. ej. huella sólo sobre `from`/`to`, que perdería la distinción entre dos lecturas contradictorias del mismo par — precisamente lo que el Gate B necesita ver). Se deja registrado, no parcheado. | **Fase 7:** un re-run del shadow ingest **no es un no-op** para las aristas de visión; la corrida de 6 páginas y la de 98 no comparten IDs de registro de topología; el "delta de conteo de chunks" hay que leerlo por conteo, no por identidad de registros. **Fase 8:** un `required` que cite la `evidence` de una arista `vision` literalmente falla en la siguiente corrida — usa los extremos, que sí son transcripción. **Gate B:** la no-determinación es también una métrica: correr la misma página dos veces y comparar es la forma más barata de estimar la varianza de T2 antes de fijar un umbral. |
+| I-36 | 5 | Opus 5 | **T2 compone extremos que no están impresos, y su precisión no es uniforme por tipo de lámina.** Dos observaciones de la corrida en vivo de la página 63, ambas del mismo sitio y ninguna arreglada en esta fase porque iterar el prompt contra un umbral **es** el Gate B. **(a) Extremos compuestos:** emitió `J10-3`, `J12-7`, `J23-1`. La página imprime el nombre del conector (`J10`) y el número de borne (`3`) por separado; la cadena unida no existe en el documento. Es más útil para un técnico que un `3` desnudo y a la vez es un token que ninguna búsqueda literal del PDF encuentra, y contradice la regla de transcripción verbatim del propio prompt. Tres salidas posibles, a decidir en el Gate B: normalizar (extremo = número de borne, conector dentro de `evidence`), aceptarlo como convención documentada, o prohibirlo en el prompt. **(b) Precisión desigual:** en la misma página `J10-3` aparece conectado a **dos** dispositivos distintos (`CERRADURAS EXTERIORES` y `LIMITADOR CABINA`) con colores de cable **distintos** en la evidencia (amarillo y rojo); al menos una de las dos es falsa. La página 17 (una regleta frontal, cables cortos y directos) se lee prácticamente perfecta; la 63 (dos conectores, cables largos que cruzan la lámina y pasan por varios dispositivos) no. Los guardas de `VisionTopologyExtractor` no pueden atrapar esto: son de forma (extremo citable, evidencia suficiente, par único), no de coherencia física entre aristas. | **Gate B:** mide precisión **por tipo de lámina**, no en agregado — el número agregado va a esconder que un tipo de página está bien y otro no, y la decisión de degradar T2 a campos no-relacionales debería poder tomarse por tipo de lámina y no para todo el documento. La coherencia entre aristas (un mismo borne no puede salir a dos dispositivos por dos cables de colores distintos) es un guardia candidato que esta fase deliberadamente no escribió sin datos. **Fase 8:** no escribas `required` con extremos compuestos (`J10-3`) hasta que el Gate B decida si se normalizan. |

@@ -331,7 +331,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 5b | **MEDIDA — HIPÓTESIS REFUTADA.** 278 relaciones juzgadas: 88,49 %, LI **84,14 %** < 85 %. El tipo C no se mueve sobre las mismas páginas (81,5 % → 81,0 %) y los tipos A y B empeoran. Flag **apagado**, y así se queda | `INGESTION_VISION_TIER_ZOOM_TILES` (apagado) | 5554893 (código) + 1d1fdb9 (medición) | I-44, I-45, I-47, I-48 |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
-| 7 | **DESBLOQUEADA — decisión humana #6 resuelta el 2026-08-02: opción (a), la ejecuta el dueño.** Visión encendida, relaciones y teselas apagadas. Delta de precisión esperado ≈ 0, declarado por escrito antes de correr | `INGESTION_VISION_TIER_ENABLED` on · `..._RELATIONS_ENABLED` off · `..._ZOOM_TILES` off | | |
+| 7 | **AUTORIZADA, sin ejecutar — decisión #6 resuelta el 2026-08-02: opción (a).** Visión on, relaciones y teselas off. Delta de precisión esperado ≈ 0, declarado por escrito antes de correr. **Runbook de 5 pasos en el Apéndice G**; el bucket ya tiene versionado | `INGESTION_VISION_TIER_ENABLED` on · `..._RELATIONS_ENABLED` off · `..._ZOOM_TILES` off | | |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
 | 10 | pendiente | — | | |
@@ -1423,25 +1423,31 @@ que ya usa 6a.
       por I-30*
 - [x] Suite + rubocop verdes — 2101 runs / 0 failures, 469 files / 0 offenses
 
-### Fase 7 — Shadow ingest A/B (único paso irreversible, des-riesgado) · Sonnet + Opus (go/no-go)
+### Fase 7 — Shadow ingest A/B · ✅ AUTORIZADA — **el runbook paso a paso está en el Apéndice G**
 
-⚠️ **revisado en I-39, I-41 e I-43 — y esta fase vuelve a estar bloqueada por una decisión humana,
-no por trabajo.** El Gate B degradó T2 a campos no-relacionales
-([informe](gate_b_calibracion_vision.md)): con los flags por defecto, **el shadow ingest de hoy
-escribiría exactamente las 19 aristas de T1 y ninguna de visión**. Y la decisión humana #4 dice, con
-estas palabras, que "la Fase 7 **no** se ejecuta con las aristas de T1 solas". Las dos cosas no
-pueden ser ciertas a la vez: **no lo resuelvas tú, pregúntalo** (decisión humana #6, más abajo).
+> ✅ **DESBLOQUEADA el 2026-08-02.** El dueño respondió la decisión humana #6: **opción (a)**, se
+> ejecuta con visión encendida y relaciones apagadas. Queda derogada la prohibición de la decisión
+> #4 en este punto y sólo en éste — su premisa era que T2 aportaría relaciones, y la Fase 5b (I-47)
+> la mató. Presupuesto: **~$5,18** (sin teselas; `INGESTION_VISION_TIER_ZOOM_TILES` se queda
+> apagado, así que los ~$13,06 de esa variante no aplican).
+>
+> **No ejecutes esta fase desde esta sección.** Lo que sigue es el diseño y los porqués; la
+> **secuencia ejecutable —qué prompt va a qué modelo, en qué orden, y qué corres tú en la
+> terminal— está en el Apéndice G bajo "Fase 7 — RUNBOOK"**. Esta sección estaba escrita como un
+> párrafo con el go/no-go mezclado con la escritura del script y era inejecutable.
+>
+> **Ya no es "el único paso irreversible":** el dueño habilitó el versionado del bucket el
+> 2026-08-02 (verificado, `Status: Enabled`). Un borrado accidental es recuperable — restaurando
+> versiones **y** resincronizando el data source, que cuesta trabajo manual y downtime. La regla
+> "este script nunca borra" se mantiene, pero por coste de recuperación, no por pérdida definitiva.
+> Detalle en el bloque "Reversibilidad" del runbook.
 
-> ⚠️ **revisado en I-47 (2026-08-02).** La decisión #6 tenía tres opciones y ahora tiene **dos**:
-> la (c) —"esperar a la palanca del zoom"— se ejecutó como Fase 5b y **la hipótesis quedó
-> refutada** (LI 84,14 % < 85 %; el tipo C no se mueve y los tipos A y B empeoran). No queda
-> ninguna medición pendiente que pueda cambiar el sujeto de esta fase: **T2 no va a aportar
-> relaciones, ni ahora ni con más resolución.** La pregunta al dueño es más simple que antes, pero
-> sigue siendo suya. Presupuesto vigente para el A/B con visión: **~$5,18** (sin teselas; el flag
-> `INGESTION_VISION_TIER_ZOOM_TILES` se queda apagado, así que los ~$13,06 de la variante con
-> teselas no aplican).
+⚠️ **revisado en I-39, I-41 e I-43.** El Gate B degradó T2 a campos no-relacionales
+([informe](gate_b_calibracion_vision.md)): con los flags por defecto, **el shadow ingest escribe
+las 19 aristas de T1 y ninguna de visión**, más la identidad de componente. Eso es exactamente lo
+que se autorizó, sabiéndolo.
 
-Tres consecuencias concretas si la respuesta es seguir:
+Tres consecuencias concretas, ya asumidas en la autorización:
 
 1. **Lo que se mide cambia de sujeto.** El A/B ya no compara "con y sin relaciones de visión", sino
    "con y sin **identidad de componente** de visión" más las 19 aristas de T1. Presupuesta la
@@ -1460,7 +1466,9 @@ Tres consecuencias concretas si la respuesta es seguir:
    hecho dos veces con dos redacciones.
 
 **No se re-ejecuta `script/reingest_seguridades_2026-07-25.rb`.** Hace `delete_prefix` en un
-bucket **sin versionado** y su corrida previa bajó la precisión 62/88 → 57/88; está documentado
+bucket **con versionado ya habilitado (2026-08-02, verificado: `Status: Enabled`)** y su corrida
+previa bajó la precisión 62/88 → 57/88 — daño que el versionado **no** deshace, porque no estuvo en
+el borrado sino en el re-troceo; está documentado
 como "no repetir" en `docs/RAG_SEGURIDADES_STATUS.md`.
 
 - **Nuevo** `script/shadow_ingest_v8.rb`:
@@ -2431,66 +2439,161 @@ quiere atacar el modo de fallo real, la Fase 5b propuesta en I-40.
 > Se puede combinar con la Fase 5b en una sola corrida (v3 + teselas) para ahorrar dinero, **pero
 > entonces no sabrás cuál de los dos cambios movió el número**. Si hay saldo, córrelas por separado.
 
-**Fase 7 · Sonnet (script) + Opus (go/no-go)**
-> ✅ **DESBLOQUEADA. La decisión humana #6 está respondida: opción (a), el dueño del producto lo
-> autorizó el 2026-08-02. NO vuelvas a preguntarlo, y NO te detengas.** Lo que se autorizó, textual,
-> está en "Decisiones humanas pendientes" #6. Resumen operativo para ti:
+**Fase 7 — RUNBOOK. Qué modelo, qué prompt, en qué orden.**
+
+> ✅ **DESBLOQUEADA.** Decisión humana #6 respondida por el dueño el 2026-08-02: **opción (a)**.
+> No preguntes otra vez, no te detengas. Lo autorizado, textual, en "Decisiones humanas
+> pendientes" #6.
 >
-> - Flags: `INGESTION_VISION_TIER_ENABLED` **encendido**; `INGESTION_VISION_TIER_RELATIONS_ENABLED`
->   y `INGESTION_VISION_TIER_ZOOM_TILES` **apagados**. No los cambies.
-> - **El delta de precisión esperado es ≈ 0 y está previsto.** Con 19 aristas sobre 98 páginas, las
->   rúbricas no se van a mover. **Eso no es un fallo tuyo ni un hallazgo:** el objetivo de esta fase
->   es meter `documented_components` en producción y validar el contrato v8 de punta a punta. Si al
->   final escribes "no mejoró la precisión" como si fuera un descubrimiento, no leíste esto.
-> - **Lo que sí es un fallo y hay que reportar a gritos:** que el recall **baje**, que el conteo de
->   chunks no cuadre con lo que predijiste antes de correr, o que el cuerpo escrito no contenga las
->   aristas que el flag dice que debería.
-> - **Prohibido, sin excepción:** encender relaciones de visión, tocar el umbral del 85 %,
->   re-ejecutar `script/reingest_seguridades_2026-07-25.rb`, borrar cualquier cosa.
+> **Esta entrada estaba escrita como un párrafo con todo mezclado y era inejecutable. Ahora son
+> cinco pasos con dueño.** Copia y pega **sólo el bloque del paso que estés haciendo**.
+
+| Paso | Quién | Coste | Reversible |
+|---|---|---|---|
+| 1 · Escribir el script | **Sonnet** (prompt A) | ~$0 | sí, es código |
+| 2 · Revisar el script antes de que toque nada | **Opus**, una vez (prompt B) | bajo | sí |
+| 3 · Correr **6 páginas** | **tú, en la terminal** | ~$0,40 | sí (escribe bajo un uid nuevo) |
+| 4 · Go/no-go del diff con visión | **Opus**, una vez (prompt C) | medio | — es la decisión |
+| 5 · Correr **98 páginas** + rúbricas + rollback | **tú, en la terminal** | ~$5,18 | sí (ver "Reversibilidad") |
+
+**Nunca** le des el prompt A a un modelo con acceso a producción, ni el paso 3 a un modelo: el
+paso 3 y el 5 son comandos que corres tú.
+
+---
+
+**PASO 1 · PROMPT A → Sonnet** *(escribir código, sin tocar nada remoto)*
+
+> Escribe `script/shadow_ingest_v8.rb` siguiendo la Fase 7 de
+> `docs/rag/plan_conocimiento_visual.md`. **No ejecutes nada contra AWS ni contra Bedrock: sólo
+> escribes el script y sus tests.** Si una credencial falta, es correcto que falte.
 >
-> ⚠️ **revisado en I-39, I-41 e I-43.** El Gate B se ejecutó y **degradó T2 a campos
-> no-relacionales** (informe `docs/rag/gate_b_calibracion_vision.md`), y la Fase 5b confirmó que
-> esa degradación es permanente (I-47). Consecuencias que arrastras: (a) el A/B cambia de sujeto, ya no compara "con y sin
-> relaciones de visión" sino "con y sin identidad de componente", y la visión se sigue pagando
-> (~$5,18 por las 80 páginas, coste medido); (b) el `RECORD_ID` no idempotente de I-35 deja de
-> morder porque no hay `evidence` de modelo en ninguna huella, y si alguien reactiva las relaciones,
-> I-43 acotó el problema a las relaciones **en serie** (las directas fueron reproducibles byte a
-> byte); (c) `drop_traced` casi no se dispara (I-41), así que reactivar relaciones sin normalizar el
-> extremo (`X114 1` → `X114`) mete el mismo hecho dos veces en el chunk.
+> Contrato del script, no negociable:
+> - **Nunca borra.** Ni `delete_object`, ni `delete_prefix`, ni `delete_objects`. Si escribes una
+>   llamada de borrado, has fallado la tarea.
+> - Escribe en `bulk_chunks/<account>/<uid_nuevo>/` bajo un **segundo** `KbDocument`, dejando los
+>   97 chunks actuales indexados y consultables.
+> - Gate de confirmación por ENV (`SHADOW_INGEST_CONFIRM=1`) y `ACCOUNT_ID` parametrizado — hoy es
+>   un literal `1` en los scripts existentes; no lo copies como literal.
+> - Ingesta por `manual_batch_v1`, **no** `web_v1`, para que las claves codifiquen la página.
+> - Flags: `INGESTION_VISION_TIER_ENABLED=true`, `INGESTION_VISION_TIER_RELATIONS_ENABLED` y
+>   `INGESTION_VISION_TIER_ZOOM_TILES` sin tocar (apagados).
+> - Acepta `SHADOW_INGEST_PAGES` para correr un subconjunto (lo usaremos con 6 páginas primero).
+> - Imprime, **antes** de escribir nada: cuántos chunks va a crear y por qué difiere de 97.
 >
-> ⚠️ **revisado en I-34, I-35 e I-37.** La Fase 5 está cerrada (`2b3ff19` + `396b334`) y eso cambia
-> dos cosas del párrafo de abajo. **(1) El hueco de I-31 ya está cerrado; no lo cierres tú.** La Fase 5
-> construyó la capa de persistencia (`page_topology_edges` en `web_manual_batches`) porque la ruta
-> síncrona resultó no ser alcanzable desde el piloto, así que **reutiliza `ManualBatchIngestionService`
-> tal cual**, como pedía el bullet original, y las aristas de los dos tiers llegarán al chunk — pero
-> **verifícalo leyendo el cuerpo escrito**, que es lo único que I-31 pedía y sigue valiendo. Coste de
-> la topología de visión por esa ruta: ~**$5,40** por las 80 páginas T2 — **API directa, no Batch**
-> (I-38): la llamada de visión se resuelve antes del envío del batch, así que el descuento del 50 % cubre
-> el chunking y no la visión. Y del orden de 40-50 minutos de llamadas en serie antes del envío (I-37). **(2)** El
-> `RECORD_ID` de una arista `vision` **no es idempotente** (I-35): la evidencia es prosa de un modelo,
-> así que la corrida de 6 páginas y la de 98 no comparten IDs para las aristas de visión y un re-run no
-> es un no-op. Lee el delta por conteo, no por identidad de registros.
+> Antes de escribir una línea, lee en ese mismo documento la nota `⚠️ revisado en I-31` de la Fase
+> 4: `ManualBatchIngestionService` **no hila las aristas de topología a través del Batch API**, así
+> que si lo reutilizas tal cual el shadow ingest no indexará ningún `TOPOLOGY_EDGE` aunque el flag
+> esté encendido. **Decide cómo cierras ese hueco y escríbelo en un comentario de cabecera del
+> script.** Ojo: I-34/I-37 dicen que la capa de persistencia (`page_topology_edges` en
+> `web_manual_batches`) **ya existe** — reutilízala, no la construyas.
 >
-> Ejecuta la Fase 7 de `<PLAN>` (requiere 4, 5 y 6). Escribe `script/shadow_ingest_v8.rb`.
-> **No re-ejecutes `script/reingest_seguridades_2026-07-25.rb` bajo ninguna circunstancia**: hace
-> `delete_prefix` sobre un bucket sin versionado y su corrida previa bajó la precisión 62/88 →
-> 57/88; está documentado como "no repetir". Tu script **nunca borra**: escribe en
-> `bulk_chunks/<account>/<uid_nuevo>/` bajo un segundo `KbDocument`, dejando los 97 chunks
-> actuales indexados y consultables, con gate de confirmación por ENV y parametrizado (hoy
-> `ACCOUNT_ID = 1` es literal en los scripts existentes). Ingesta por `manual_batch_v1`, no
-> `web_v1`, para que las claves codifiquen la página. **Antes de escribir una línea: lee la nota
-> ⚠️ revisado en I-31 de la Fase 4 en este mismo documento** — `ManualBatchIngestionService`, el
-> servicio que hoy escribe con `ingestion_path: "manual_batch_v1"`, no hila las aristas de
-> topología a través del Batch API (sólo el digest de contexto llega al modelo); si tu script lo
-> reutiliza tal cual, el shadow ingest no indexará ningún `TOPOLOGY_EDGE` aunque el flag esté
-> encendido. Decide y documenta cómo cierras ese hueco antes de correr las 6 páginas. Secuencia:
-> **6 páginas primero**, diff de cuerpos revisado con visión contra el PDF por el modelo de
-> go/no-go, y sólo entonces las 98. Explica el delta de conteo de chunks **antes** de la corrida
-> completa (hoy son 97 = 1 por página; el desborde de topología crea chunks nuevos) y confirma
-> leyendo el cuerpo escrito que la arista realmente aparece, no sólo que el flag está encendido.
-> Corre las 42 rúbricas sobre **ambos** documentos y `script/rag_seguridades_recall_probe.rb` para
-> el **rank por caso antes/después** — no sólo pass/fail: el riesgo principal del plan es que la
-> topología diluya el embedding y baje el recall. Prueba el rollback.
+> Entregable: el script, sus tests, `bin/rails test` y `bin/rubocop` verdes. **Cero llamadas
+> remotas.**
+
+---
+
+**PASO 2 · PROMPT B → Opus** *(revisar antes de que el script toque producción)*
+
+> Revisa `script/shadow_ingest_v8.rb` contra la Fase 7 de
+> `docs/rag/plan_conocimiento_visual.md`. **No lo ejecutes.** Cinco preguntas, respóndelas con
+> línea y número:
+> 1. ¿Hay **alguna** ruta de código que borre algo en S3 o en el KB? Incluye llamadas indirectas a
+>    servicios existentes.
+> 2. ¿Escribe bajo un `uid` **nuevo**, sin tocar los 97 chunks actuales?
+> 3. ¿Cómo cerró el hueco de I-31? ¿Llega de verdad un `TOPOLOGY_EDGE` al cuerpo del chunk, o sólo
+>    está el flag encendido?
+> 4. ¿El conteo de chunks que imprime es una predicción real o un `count` a posteriori?
+> 5. ¿`ACCOUNT_ID` sigue siendo un literal en algún sitio?
+>
+> Si alguna respuesta es mala, **di qué línea cambiar**; no lo arregles tú.
+
+---
+
+**PASO 3 · TÚ, en la terminal** *(6 páginas)*
+
+```bash
+SHADOW_INGEST_CONFIRM=1 SHADOW_INGEST_PAGES=3,17,63,78,93,97 \
+INGESTION_VISION_TIER_ENABLED=true \
+  bin/rails runner script/shadow_ingest_v8.rb 2>&1 | tee tmp/shadow_v8_6p.log
+```
+
+Guarda el log. Si el script pide borrar algo, **córtalo**: no cumple el contrato.
+
+---
+
+**PASO 4 · PROMPT C → Opus** *(go/no-go — es la única decisión de la fase)*
+
+> Go/no-go de la Fase 7 de `docs/rag/plan_conocimiento_visual.md`, sobre la corrida de 6 páginas
+> (`tmp/shadow_v8_6p.log`, documento shadow ya escrito). **No corras las 98: eso lo decide esta
+> revisión.**
+>
+> 1. Lee el **cuerpo escrito** de los 6 chunks nuevos, no el log. Confirma que la arista
+>    `TOPOLOGY_EDGE` aparece de verdad en el texto.
+> 2. Compáralos **con visión** contra la lámina renderizada
+>    (`pdftoppm -f N -l N -r 150 -png "<PDF>" tmp/p`). ¿Lo escrito describe la página?
+> 3. ¿El conteo de chunks coincide con lo que el script predijo antes de correr? Si no, explica la
+>    diferencia antes de seguir.
+> 4. Veredicto explícito: **GO** o **NO-GO**, con la razón en una frase.
+>
+> **Contexto que ya sabes y no es un hallazgo:** el delta de precisión de esta fase es ≈ 0, está
+> previsto por escrito en la decisión #6. Lo que sí es un fallo: que el recall **baje**, que el
+> conteo no cuadre, o que el cuerpo no traiga las aristas.
+
+---
+
+**PASO 5 · TÚ, en la terminal** *(98 páginas, sólo si el paso 4 dijo GO)*
+
+```bash
+SHADOW_INGEST_CONFIRM=1 INGESTION_VISION_TIER_ENABLED=true \
+  bin/rails runner script/shadow_ingest_v8.rb 2>&1 | tee tmp/shadow_v8_full.log
+```
+
+Después, sobre **ambos** documentos (el actual y el shadow):
+
+```bash
+bin/rails runner script/rag_seguridades_benchmark.rb      # las 42 rúbricas
+bin/rails runner script/rag_seguridades_recall_probe.rb   # rank por caso, antes/después
+```
+
+**El riesgo principal del plan es que la topología diluya el embedding y baje el recall**, así que
+mira el **rank por caso**, no sólo pass/fail. Y prueba el rollback antes de dar la fase por buena.
+
+---
+
+**Reversibilidad — actualizado el 2026-08-02, el dueño habilitó el versionado**
+
+Verificado en vivo: `aws s3api get-bucket-versioning --bucket multimodal-source-destination` →
+`{"Status": "Enabled"}`. Qué cambia y qué no:
+
+- **Cambia:** un borrado accidental ya **no es una pérdida definitiva**. S3 pone un delete marker y
+  la versión anterior se puede restaurar. El escenario "alguien corre `delete_prefix` y nos
+  quedamos sin los 97 chunks" pasa de catastrófico a recuperable.
+- **No cambia:** restaurar objetos **no restaura el índice de Bedrock**. Habría que restaurar las
+  versiones *y* resincronizar el data source, con la ventana de piloto caída mientras tanto. Y no
+  deshace el otro daño de `script/reingest_seguridades_2026-07-25.rb`, que no fue borrar sino
+  **re-trocear peor**: su corrida bajó la precisión de 62/88 a 57/88. Restaurar el bucket no
+  desharía eso.
+- **Por tanto la regla se queda, con el motivo corregido:** el script de la Fase 7 **nunca borra**,
+  y `reingest_seguridades_2026-07-25.rb` **no se re-ejecuta**. Ya no porque sea irreversible, sino
+  porque recuperarlo cuesta trabajo manual y downtime, y porque el daño medido no estaba en el
+  borrado.
+
+---
+
+**Notas heredadas que siguen valiendo** *(I-35, I-37, I-38, I-41, I-43)*
+
+- El A/B **cambia de sujeto**: ya no compara "con y sin relaciones de visión" sino "con y sin
+  identidad de componente", más las 19 aristas de T1.
+- La visión se paga igual: **~$5,18** por las 80 páginas T2, **API directa, no Batch** (I-38 — la
+  llamada se resuelve antes del envío del batch, así que el descuento del 50 % cubre el chunking y
+  no la visión). Cuenta **40-50 minutos** de llamadas en serie antes del envío (I-37).
+- El `RECORD_ID` de una arista `vision` **no es idempotente** (I-35), así que un re-run no es un
+  no-op: **lee el delta por conteo, no por identidad de registros**. Con las relaciones apagadas
+  esto casi no muerde, porque no hay `evidence` de modelo en ninguna huella.
+- Si algún día se reactivan las relaciones: `drop_traced` casi no se dispara (I-41), así que sin
+  normalizar el extremo (`X114 1` → `X114`) el mismo hecho entra dos veces en el chunk. Y el no
+  determinismo está acotado a las relaciones **en serie**; las directas fueron reproducibles byte a
+  byte (I-43).
 
 **Fase 8 · Sonnet**
 > ⚠️ **revisado en I-39 e I-40 — el aviso de abajo se queda sin sujeto y entra un campo nuevo.** El

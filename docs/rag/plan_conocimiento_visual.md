@@ -1962,7 +1962,7 @@ vez hecho el Paso 0.
 > los aliases; `RECORD_ID` idempotente; tope de 12 aristas por chunk con desborde a chunk hermano;
 > y con flag apagado, cuerpos y sidecars **byte-idénticos** a v7.
 
-**Fase 5 · Opus** — ✅ ejecutada y cerrada en `2b3ff19` (I-34, I-35, I-36). El prompt queda como
+**Fase 5 · Opus** — ✅ ejecutada y cerrada en `2b3ff19` + `396b334` (I-34 … I-38). El prompt queda como
 registro histórico; lo que se decidió y lo que se midió está en la sección de la Fase 5 y en el
 Registro, no aquí.
 > ⚠️ **Antes de escribir una línea, lee "revisado en I-31" dentro de la sección de la Fase 5 y de

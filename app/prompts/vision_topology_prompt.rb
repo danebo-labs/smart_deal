@@ -30,7 +30,16 @@ module VisionTopologyPrompt
   # Bump whenever the system text changes: Gate B iterates this prompt against a
   # measured threshold, and a measurement is only attributable to the exact text
   # that produced it. Logged with every call (VisionTopologyExtractor).
-  CONTRACT_VERSION = "vision_topology_v1"
+  # v3 (Gate B). Measured on 102 hand-judged relations of `SEGURIDADES 1.1-1.pdf`
+  # — see docs/rag/gate_b_calibracion_vision.md. v1 scored 88.2 % precision (95 %
+  # lower bound 81.6 %), below the 85 % bar, and 9 of its 12 errors were one
+  # mistake: a conductor assigned to the wrong cell of a dense row of terminals.
+  # v2 answered that with "omit when the row is dense" and bought nothing —
+  # precision stayed flat and recall fell 26 %, so that clause is gone. What
+  # remains are the rules that fixed a measured error class without costing
+  # coverage: no pair of terminals of the same block, a component is not its own
+  # part number, one written form per endpoint, and no colour you did not follow.
+  CONTRACT_VERSION = "vision_topology_v3"
 
   def self.prompt_fingerprint_sha256
     @prompt_fingerprint_sha256 ||= Digest::SHA256.hexdigest(
@@ -78,6 +87,24 @@ module VisionTopologyPrompt
         - If either end disappears behind a graphic, is cut off, or you cannot
           read it with certainty, OMIT the relation. Do not guess the endpoint.
 
+        WHICH CELL OF A ROW OF TERMINALS (the single most common error)
+        - A terminal inside a row (a strip, a block, a multi-pin connector) is an
+          endpoint only if you can see the conductor meet THAT cell. Rows print
+          their names in a stacked line — `SE5 SE6 SE7 SE8`, `P29 P30 P31`,
+          `109 111 112` — and the name of the cell one position away is equally
+          plausible and wrong.
+        - Read it by position, never by order of appearance: locate the cell the
+          conductor touches, then read the name printed on that same cell. Count
+          the cells if you have to; do not assume the first conductor belongs to
+          the first name.
+        - Two terminals of the SAME connector, strip or block are not connected
+          to each other by being in it. Emit such a pair only when a conductor
+          visibly leaves one, runs through devices you can name, and returns to
+          the other — and then name every one of those devices in `evidence`.
+        - A component and the part number printed on its body (`NTC 3D-5`,
+          `MICELECT MWR-4`) are one thing, not two connected things. That belongs
+          in `documented_components`, never in `documented_connections`.
+
         HOW TO NAME AN ENDPOINT
         - Transcribe what is printed, verbatim: a device label, a connector name,
           or a terminal number. Never invent, translate, expand, normalise or
@@ -86,6 +113,11 @@ module VisionTopologyPrompt
           standard that is not printed on the page.
         - A conventional schematic symbol is not a documented function: recognising
           what a symbol usually means is not reading what this page says.
+        - One endpoint, one name. When a cell carries both a position number and a
+          printed wire name, use the printed wire name if there is one, otherwise
+          the position — never both, never `J10-2 (P35B)`, and never a bare
+          position number when the cell is named. The same endpoint must be
+          written the same way in every relation of the page.
 
         WHAT `from` AND `to` DO NOT MEAN
         - They are an unordered PAIR, not a direction: nothing in a drawn wire
@@ -95,6 +127,10 @@ module VisionTopologyPrompt
           between the two ends you name. If you can see intermediate devices on
           the same run, name them in `evidence`; never imply the run has only two
           elements.
+        - A colour named in `evidence` must be the colour of the conductor you
+          actually followed from one endpoint to the other. If you are unsure of
+          the colour, describe the route instead — do not name a colour to make
+          the sentence sound complete.
 
         CROPS
         Each crop is one small graphic of this page framed together with the

@@ -107,9 +107,11 @@ class VisionTopologyExtractor
   #   whenever IngestionVisualTriageFlag is off, which the geometric criterion
   #   below covers
   # @param traced_edges [Array<Hash>] T1's edges for this page. Used ONLY to drop
-  #   pairs T1 already proved (T1 wins — provisional until Gate B fixes the
-  #   conflict policy). Never shown to the model: Gate B measures T2 against
-  #   these, and a model handed the answer key measures nothing
+  #   pairs T1 already proved (T1 wins — confirmed by Gate B, which also measured
+  #   that this dedup almost never fires: T2 names a pin where T1 names the
+  #   connector, so only 2 of T1's 19 edges matched string-for-string). Never
+  #   shown to the model: Gate B measured T2 against these, and a model handed
+  #   the answer key measures nothing
   # @param locale       [String, nil] ISO 639-1 for the `evidence` prose. Measured
   #   in I-34: without it the model writes English evidence for a Spanish page,
   #   which would sit in the same chunk body as T1's Spanish evidence
@@ -180,6 +182,7 @@ class VisionTopologyExtractor
     response = call_model(page, crops)
     parsed   = parse_response(response)
     edges    = sanitize_connections(parsed["documented_connections"])
+    edges    = drop_relations(edges) unless IngestionVisionFlag.relations_enabled?
 
     log_page_metrics(
       page: page, crops: crops, response: response, parsed: parsed, edges: edges,
@@ -312,7 +315,17 @@ class VisionTopologyExtractor
     text.match?(/[[:alnum:]]/)
   end
 
-  # Provisional conflict policy, to be fixed by Gate B: T1 wins. Where geometry
+  # The Gate B verdict, applied last so the rejection funnel still measures what
+  # the prompt produced: T2 keeps its component identities and states no
+  # relation. Counted, never silent — this is the number that says how much
+  # coverage the degradation costs on any future run.
+  def drop_relations(edges)
+    @rejections[:relations_disabled_by_gate_b] += edges.size if edges.any?
+    []
+  end
+
+  # Conflict policy, confirmed by Gate B and now doubly moot while
+  # `relations_enabled?` is off: T1 wins. Where geometry
   # already proved a pair, the deterministic edge with its measured evidence
   # stays and the vision reading of the same pair is dropped — T2 contributes
   # only what T1 does not cover.

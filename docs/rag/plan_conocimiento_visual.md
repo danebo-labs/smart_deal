@@ -283,10 +283,10 @@ La fase siguiente lee el documento actualizado, no el original.
 | Gate A-bis | **SUPERADO** — 19/19 correctas, 0 incorrectas, todas revisadas con visión | — | 582ede3 | I-26 … I-29 |
 | 4 | cerrada — mergeada con el flag apagado (opción B) | `INGESTION_LAYOUT_DIGEST_ENABLED` | 9f9d611 | I-31, I-32, I-33 |
 | 5 | cerrada — mergeada con el flag apagado; **las dos rutas**, tras corregir I-31 | `INGESTION_VISION_TIER_ENABLED` | 2b3ff19 + 396b334 | I-34 … I-38 |
-| Gate B | **siguiente** | — | | |
+| Gate B | **EJECUTADO — NO SUPERADO en relaciones (88,2 %, LI 81,6 % < 85 %), SUPERADO en identidad de componente (38/38, LI 92,4 %). Degradación aplicada** | `INGESTION_VISION_TIER_RELATIONS_ENABLED` (nuevo, apagado) | | I-39 … I-43 |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
-| 7 | **bloqueada sólo por el Gate B** — la decisión humana #4 pedía T2 primero, y T2 existe desde `2b3ff19` | — | | |
+| 7 | **bloqueada por la decisión humana #6** — el Gate B ya no la bloquea: está ejecutado, pero su veredicto deja el shadow ingest con las aristas de T1 solas, que es justo lo que la decisión #4 prohibió | — | | |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
 | 10 | pendiente | — | | |
@@ -1052,7 +1052,31 @@ falsa — ver **I-37**.
       estaban verdes y el tier no podía dispararse nunca
 - [x] Suite + rubocop verdes (2180 runs / 0 failures; 479 files / 0 offenses)
 
-### ⛔ Gate B — T1 calibra T2 · Opus
+### ⛔ Gate B — T1 calibra T2 · Opus — **EJECUTADO (2026-08-02): NO SUPERADO en relaciones, SUPERADO en identidad de componente**
+
+> ✅ **Informe entregado: [gate_b_calibracion_vision.md](gate_b_calibracion_vision.md). Cerrado por
+> I-39 … I-43, commit al pie de la Tabla de estado de fases.** Lo que sigue de esta sección es el
+> encargo original y se conserva porque define lo que se midió; **los números ganadores son los del
+> informe**, no los de aquí.
+>
+> **Veredicto en una tabla:**
+>
+> | | Medido | Umbral | |
+> |---|---|---|---|
+> | Precisión de relaciones (102 juzgadas una a una) | 88,2 %, LI 95 % = **81,6 %** | > 85 % | ❌ |
+> | — láminas de regleta frontal (tipo pág. 17) | 100 % (20/20), LI 86,1 % | | ✅ |
+> | — láminas de regleta densa con etiquetas apiladas (tipo pág. 63/78) | 81,5 % (53/65), LI 71,8 % | | ❌ |
+> | Identidad de componente | 100 % (38/38), LI **92,4 %** | | ✅ |
+>
+> **Degradación aplicada, no sólo escrita:** nuevo flag
+> `INGESTION_VISION_TIER_RELATIONS_ENABLED`, **apagado por defecto** e independiente del flag del
+> tier. T2 sigue leyendo la página y aportando `documented_components`; **no emite ni una arista**.
+> Todo `TOPOLOGY_EDGE` viene de T1. Es el límite conocido del producto que esta misma sección había
+> previsto como aceptable (§9.4 del informe).
+>
+> **Gasto real $2,2216 de $15.** El gate no se agotó por presupuesto: la cuenta de Anthropic se
+> quedó **sin saldo** durante la última iteración de prompt (I-42), que quedó escrita y **sin
+> medir**.
 
 ⚠️ **Umbral fijado por el dueño del producto (2026-08-01). Antes no existía: el plan decía "itera
 el prompt hasta alcanzar umbral" sin decir cuál, y un gate sin número no es un gate.**
@@ -1083,6 +1107,10 @@ Reglas de muestreo, porque el número solo se puede falsear:
 - Coste: ~$3-4 de llamadas para 40-50 relaciones juzgables. **El límite de este gate es el juicio
   humano, no el presupuesto** — las relaciones se revisan una a una con visión contra la página
   renderizada, igual que hizo el Gate A-bis con las 19 aristas de T1.
+  - ⚠️ **medido (I-39): $2,2216 para 102 relaciones juzgables**, incluida una iteración de prompt.
+    La estimación iba corta en relaciones y larga en dinero: una pasada sobre las 23 páginas del
+    conjunto de medición cuesta $1,49 y produce ~193 relaciones. El límite acabó siendo un tercero
+    que nadie previó: **el saldo de la cuenta de Anthropic** (I-42).
 
 ⚠️ **revisado en el Gate A, sin cambios tras el Gate A-bis.** La premisa "80 páginas donde ambos
 tiers aplican" es falsa y la corrección de I-09 (22 páginas) todavía se queda corta en el sentido
@@ -1236,6 +1264,31 @@ que ya usa 6a.
 
 ### Fase 7 — Shadow ingest A/B (único paso irreversible, des-riesgado) · Sonnet + Opus (go/no-go)
 
+⚠️ **revisado en I-39, I-41 e I-43 — y esta fase vuelve a estar bloqueada por una decisión humana,
+no por trabajo.** El Gate B degradó T2 a campos no-relacionales
+([informe](gate_b_calibracion_vision.md)): con los flags por defecto, **el shadow ingest de hoy
+escribiría exactamente las 19 aristas de T1 y ninguna de visión**. Y la decisión humana #4 dice, con
+estas palabras, que "la Fase 7 **no** se ejecuta con las aristas de T1 solas". Las dos cosas no
+pueden ser ciertas a la vez: **no lo resuelvas tú, pregúntalo** (decisión humana #6, más abajo).
+
+Tres consecuencias concretas si la respuesta es seguir:
+
+1. **Lo que se mide cambia de sujeto.** El A/B ya no compara "con y sin relaciones de visión", sino
+   "con y sin **identidad de componente** de visión" más las 19 aristas de T1. Presupuesta la
+   visión igualmente: T2 se sigue llamando y se sigue pagando (~$5,18 por las 80 páginas, coste
+   medido en el informe §6 — API directa siempre, I-38), sólo que su salida relacional se descarta.
+   Si eso no compensa, la alternativa honesta es correr la Fase 7 con `INGESTION_VISION_TIER_ENABLED`
+   apagado del todo y ahorrarse la llamada.
+2. **El `RECORD_ID` no idempotente de I-35 deja de morder, y se sabe por qué.** Sin aristas de
+   visión no hay `evidence` de modelo en ninguna huella. Si alguien reactiva las relaciones, I-43
+   acotó el problema: las relaciones **directas** de T2 sí fueron reproducibles byte a byte entre
+   dos corridas; las que varían son las **relaciones en serie**, donde el modelo elige qué
+   dispositivo del recorrido nombra como extremo lejano.
+3. **`drop_traced` casi no se dispara (I-41).** Si se reactivan las relaciones, hace falta antes
+   normalizar el extremo (`X114 1` → `X114`): T2 nombra el pin donde T1 nombra el conector, así que
+   de las 19 aristas de T1 la deduplicación sólo habría bloqueado 2, y el chunk recibiría el mismo
+   hecho dos veces con dos redacciones.
+
 **No se re-ejecuta `script/reingest_seguridades_2026-07-25.rb`.** Hace `delete_prefix` en un
 bucket **sin versionado** y su corrida previa bajó la precisión 62/88 → 57/88; está documentado
 como "no repetir" en `docs/RAG_SEGURIDADES_STATUS.md`.
@@ -1337,6 +1390,21 @@ página (`locale:`), así que tampoco es estable frente a un cambio de locale; (
 separado (I-36). Si el Gate B decide normalizarlo, los `required` de topología de visión hay que
 escribirlos **después** de esa decisión, no antes. Sigue en pie lo de I-30: una respuesta que cite
 una arista `vision` necesita el calificador de imagen o el guardia la degrada.
+
+⚠️ **revisado en I-39 e I-40 — el párrafo de arriba queda en suspenso, no resuelto.** El Gate B
+apagó las relaciones de visión, así que **hoy no existe ninguna arista `vision` que citar** y los
+tres problemas (a), (b) y (c) no tienen sujeto. Dos cosas que sí son alcance de esta fase ahora:
+
+- **Hay un campo nuevo que evaluar y no es una arista.** T2 aporta `documented_components`
+  (identidad de componente) con precisión medida 38/38, LI 92,4 % — la única salida de visión que
+  superó el gate. Si el eval no la mira, la Fase 8 mide un sistema al que le falta la mitad que sí
+  funciona. Los `required` de esos casos son la **etiqueta impresa** (`SOBRECARGA`, `TEMPERATURA
+  MAQUINA`), que sí es transcripción verbatim, nunca el `canonical_component`, que es prosa de
+  modelo con el mismo problema (a) de siempre.
+- **Los extremos compuestos se aceptaron como convención (I-39), no se normalizaron.** Si algún día
+  vuelven las relaciones, un `required` puede ser `J10-3` aunque **ese token no exista en el PDF**:
+  la página imprime `J10` y `3` por separado. Un control negativo que lo busque en el texto plano no
+  lo encontrará, y eso es correcto, no un fallo del eval.
 
 - Cubrir las **18 marcas** del Apéndice E, no 10 preguntas: eso es lo que hace que el muestreo
   aleatorio deje de sorprender.
@@ -1482,7 +1550,12 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
      aristas de T1 solas.** Registrada por el Gate A-bis por instrucción directa del dueño en la
      misma sesión; el dueño ejecuta las fases siguientes en sesiones aparte.
    - **Estado de la secuencia:** Fase 4 cerrada (`9f9d611`), **Fase 5 cerrada (`2b3ff19` +
-     `396b334`)**. Lo único que sigue bloqueando la Fase 7 es el **Gate B**.
+     `396b334`)**, **Gate B ejecutado (I-39 … I-43)**.
+   - ⚠️ **revisado en I-39: esta decisión choca de frente con el veredicto del Gate B.** "La Fase 7
+     no se ejecuta con las aristas de T1 solas" se escribió cuando se daba por hecho que T2 aportaría
+     relaciones. T2 no alcanzó el umbral y sus relaciones están apagadas, así que hoy un shadow
+     ingest escribiría **exactamente las aristas de T1 solas**, más la identidad de componente de
+     T2. Es la decisión humana **#6**, abajo. No la resuelva quien ejecute la Fase 7.
 
 5. **✅ Umbral y presupuesto del Gate B (dueño del producto, 2026-08-01).** El plan pedía "iterar el
    prompt hasta alcanzar umbral" sin definir ninguno. Fijados: **precisión de T2 > 85 % con 95 % de
@@ -1491,6 +1564,24 @@ borrar prefijo shadow + `KbDocument` shadow. 9 → re-apuntar el pin.
    I-38) el presupuesto da ~7 pasadas sobre el conjunto de medición de ~25 páginas, y el umbral se
    alcanza juzgando 19-68 relaciones según cuántos errores aparezcan. El límite del gate es el juicio
    humano, no el dinero.
+   - **Cerrada por I-39.** Ejecutado con $2,2216 de los $15 y 102 relaciones juzgadas una a una. La
+     tabla de tamaños de muestra se quedó corta por el lado bueno: hubo 12 errores, no 0-5, así que
+     hizo falta una muestra de 102. El límite acabó siendo ninguno de los dos previstos — la cuenta
+     de Anthropic se quedó sin saldo (I-42).
+
+6. **⛔ Pendiente — ¿se ejecuta la Fase 7 con las aristas de T1 solas?** Planteada por el veredicto
+   del Gate B (I-39), 2026-08-02. La decisión #4 lo prohibía expresamente y su premisa era que T2
+   aportaría relaciones; T2 no llegó al umbral y sus relaciones están apagadas. Las opciones, con lo
+   que cuesta cada una ya medido:
+   - **(a) Ejecutar igual.** El shadow ingest escribe las 19 aristas de T1 y la identidad de
+     componente de T2 (38/38 juzgadas, LI 92,4 %). Se sigue pagando la visión: ~$5,18 por las 80
+     páginas. Se gana el campo no-relacional en producción y el A/B que valida el contrato v8 de
+     punta a punta.
+   - **(b) Ejecutar sin visión.** `INGESTION_VISION_TIER_ENABLED` apagado: sólo T1, coste ~$0. Se
+     mide el 4,6 % de cobertura relacional del Gate A-bis y nada más.
+   - **(c) Esperar.** Intentar antes la palanca del §10 del informe (recortar la fila de bornes a
+     300 dpi y remedir), que es la única hipótesis con una predicción falsable sobre el modo de
+     fallo que hundió el gate. Cuesta ~$1,50 comprobarla, más saldo en la cuenta.
 
 ## Fuera de alcance
 
@@ -1989,7 +2080,13 @@ Registro, no aquí.
 > los mismos registros v8 con `method: vision`. DPI justificado, no mágico. Flag
 > `INGESTION_VISION_TIER_ENABLED`. Nunca visión en runtime: sólo en ingesta.
 
-**Gate B · Opus**
+**Gate B · Opus** — ✅ **ejecutado y cerrado (2026-08-02, I-39 … I-43).** El prompt queda como
+registro de lo que se encargó. Resultado: **NO SUPERADO en relaciones** (88,2 %, LI 81,6 % < 85 %),
+**SUPERADO en identidad de componente** (38/38, LI 92,4 %); degradación aplicada tras el flag
+`INGESTION_VISION_TIER_RELATIONS_ENABLED`. Informe:
+`docs/rag/gate_b_calibracion_vision.md`. **No lo re-ejecutes desde cero**: lo que queda pendiente es
+medir `vision_topology_v3` (escrito, sin medir — se agotó el saldo de la cuenta, I-42) y, si se
+quiere atacar el modo de fallo real, la Fase 5b propuesta en I-40.
 > ⚠️ **revisado en I-34, I-35 e I-36.** Lee esas tres entradas del Registro y el ⚠️ de la sección del
 > Gate B antes de empezar: la Fase 5 está cerrada (`2b3ff19`) y ya te deja hechas cuatro cosas que el
 > párrafo de abajo te pide construir. **(1)** La política de conflicto "T1 gana" **ya está
@@ -2077,6 +2174,19 @@ Registro, no aquí.
 > así que el delta esperado es cero.
 
 **Fase 7 · Sonnet (script) + Opus (go/no-go)**
+> ⚠️ **revisado en I-39, I-41 e I-43 — antes de nada: esta fase está bloqueada por la decisión
+> humana #6, no por trabajo.** El Gate B se ejecutó y **degradó T2 a campos no-relacionales**
+> (informe `docs/rag/gate_b_calibracion_vision.md`): con los flags por defecto, el shadow ingest
+> escribiría **las 19 aristas de T1 solas** más la identidad de componente de T2 — y la decisión
+> humana #4 prohíbe expresamente ejecutar esta fase con las aristas de T1 solas. Pregunta antes de
+> escribir código. Si la respuesta es seguir: (a) el A/B cambia de sujeto, ya no compara "con y sin
+> relaciones de visión" sino "con y sin identidad de componente", y la visión se sigue pagando
+> (~$5,18 por las 80 páginas, coste medido); (b) el `RECORD_ID` no idempotente de I-35 deja de
+> morder porque no hay `evidence` de modelo en ninguna huella, y si alguien reactiva las relaciones,
+> I-43 acotó el problema a las relaciones **en serie** (las directas fueron reproducibles byte a
+> byte); (c) `drop_traced` casi no se dispara (I-41), así que reactivar relaciones sin normalizar el
+> extremo (`X114 1` → `X114`) mete el mismo hecho dos veces en el chunk.
+>
 > ⚠️ **revisado en I-34, I-35 e I-37.** La Fase 5 está cerrada (`2b3ff19` + `396b334`) y eso cambia
 > dos cosas del párrafo de abajo. **(1) El hueco de I-31 ya está cerrado; no lo cierres tú.** La Fase 5
 > construyó la capa de persistencia (`page_topology_edges` en `web_manual_batches`) porque la ruta
@@ -2112,6 +2222,16 @@ Registro, no aquí.
 > topología diluya el embedding y baje el recall. Prueba el rollback.
 
 **Fase 8 · Sonnet**
+> ⚠️ **revisado en I-39 e I-40 — el aviso de abajo se queda sin sujeto y entra un campo nuevo.** El
+> Gate B apagó las relaciones de visión, así que **hoy no hay ninguna arista `vision` que citar** ni
+> que convertir en `required`. Lo que sí hay que evaluar y no estaba en el plan: la **identidad de
+> componente** (`documented_components`), la única salida de visión que superó el gate (38/38, LI
+> 92,4 %). Su `required` es la **etiqueta impresa** (`SOBRECARGA`, `TEMPERATURA MAQUINA`), que es
+> transcripción verbatim; nunca el `canonical_component`, que es prosa de modelo y arrastra el mismo
+> problema de no determinismo. Y los extremos compuestos quedaron **aceptados como convención**, no
+> normalizados (I-39): si vuelven las relaciones, un `required` puede ser `J10-3` aunque ese token
+> no exista en el texto plano del PDF.
+>
 > ⚠️ **revisado en I-35 e I-36.** "Los `required` son cadenas verbatim emitidas por el digest" vale
 > para T1 y **no** para las aristas de visión que la Fase 5 ya sabe emitir: su `evidence` es prosa no
 > determinista y dependiente del `locale` (I-35), y sus extremos **no siempre están impresos** —
@@ -2192,3 +2312,8 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-36 | 5 | Opus 5 | **T2 compone extremos que no están impresos, y su precisión no es uniforme por tipo de lámina.** Dos observaciones de la corrida en vivo de la página 63, ambas del mismo sitio y ninguna arreglada en esta fase porque iterar el prompt contra un umbral **es** el Gate B. **(a) Extremos compuestos:** emitió `J10-3`, `J12-7`, `J23-1`. La página imprime el nombre del conector (`J10`) y el número de borne (`3`) por separado; la cadena unida no existe en el documento. Es más útil para un técnico que un `3` desnudo y a la vez es un token que ninguna búsqueda literal del PDF encuentra, y contradice la regla de transcripción verbatim del propio prompt. Tres salidas posibles, a decidir en el Gate B: normalizar (extremo = número de borne, conector dentro de `evidence`), aceptarlo como convención documentada, o prohibirlo en el prompt. **(b) Precisión desigual:** en la misma página `J10-3` aparece conectado a **dos** dispositivos distintos (`CERRADURAS EXTERIORES` y `LIMITADOR CABINA`) con colores de cable **distintos** en la evidencia (amarillo y rojo); al menos una de las dos es falsa. La página 17 (una regleta frontal, cables cortos y directos) se lee prácticamente perfecta; la 63 (dos conectores, cables largos que cruzan la lámina y pasan por varios dispositivos) no. Los guardas de `VisionTopologyExtractor` no pueden atrapar esto: son de forma (extremo citable, evidencia suficiente, par único), no de coherencia física entre aristas. | **Gate B:** mide precisión **por tipo de lámina**, no en agregado — el número agregado va a esconder que un tipo de página está bien y otro no, y la decisión de degradar T2 a campos no-relacionales debería poder tomarse por tipo de lámina y no para todo el documento. La coherencia entre aristas (un mismo borne no puede salir a dos dispositivos por dos cables de colores distintos) es un guardia candidato que esta fase deliberadamente no escribió sin datos. **Fase 8:** no escribas `required` con extremos compuestos (`J10-3`) hasta que el Gate B decida si se normalizan. |
 | I-37 | 5 | Opus 5 | **La ruta síncrona no existe en producción, y la premisa de I-31 ("no hay dónde persistirlas") es falsa. Las dos cosas se descubrieron porque el dueño del producto preguntó, no porque yo las comprobara.** **(a) `SingleFileChunkingService` no es alcanzable desde el piloto.** `CustomChunkingPipeline#upload_and_chunk_one` (:132-146) tiene exactamente dos salidas: un PDF de más de `SYNC_PAGES = 2` páginas va a `SubmitManualBatchJob` (Batch API), y **cualquier otra cosa levanta `PerimeterError`**. No queda ninguna rama que llame al servicio síncrono; el bulk ZIP va por `BatchIngestionService`, también Batch. `SingleFileChunkingService` sólo lo alcanzan `Gate9V1Validation` y los tests. Subir el umbral `WEB_SYNC_PDF_PAGE_THRESHOLD` **no** abre la ruta síncrona: manda más documentos a la rama del `PerimeterError`. Consecuencia: la decisión de ruta de I-34, tal como se mergeó, dejaba a T2 sin poder dispararse nunca en producción — y a T1 igual desde la Fase 4. El código era correcto y estaba probado; simplemente no había forma de que corriera. **(b) La fila durable ya existía.** `web_manual_batches` es una fila de PostgreSQL cuyo `jsonb page_customs` ya cruza exactamente el límite que I-31 declaró intransitable: `IngestManualBatchResultsJob#context_from_record` reconstruye **todo** el contexto del batch desde ahí, horas después. I-31 no se equivocó en el *qué* (las aristas no cruzaban) sino en el *por qué* ("no hay dónde persistirlas"), y ese porqué falso es lo que dejó el hueco sin dueño durante dos fases. **(c) Cerrado para los dos tiers.** Migración `page_topology_edges` (`jsonb`, default `{}`) en `web_manual_batches`; `ManualBatchIngestionService#topology_for_page` deriva T1 **y** llama a T2 en el mismo sitio donde ya corría `layout_digest_for`, es decir **antes** de que el `ensure` de `submit!` libere los binarios de página; `SubmitManualBatchJob` persiste el mapa; `IngestManualBatchResultsJob` lo lee y adjunta las aristas de cada página a su `page_result` bajo la **misma** clave `topology_edges` que `ChunkMergerService` ya consumía. Cero cambios en el merger y en el parser. **(d) Detalle que había que comprobar y se comprobó con test:** JSONB devuelve las aristas con claves **string** y `method` como string (`"vision"`, no `:vision`); `BatchResultsParserService#edge_value` y `#allowlisted_value` ya aceptan ambas formas, y el test de nivel de job fija que una arista `leader_line` persistida y una `vision` persistida se renderizan las dos en el cuerpo con su `DERIVATION` correcta y con `topology_edge_count = 2` en el sidecar. **(e) Límite operativo conocido, medido por aritmética, no implementado:** las llamadas de visión ocurren **en serie** dentro de `SubmitManualBatchJob`, antes de enviar el batch. A $0,0796 y ~25 s por página (I-34), un documento de 98 páginas tarda del orden de **40-50 minutos** en enviarse. Es un job de fondo y el batch en sí tarda hasta 24 h, así que no bloquea a ningún usuario, pero no es gratis. La mitigación obvia es el patrón que ya existe en `SingleFileChunkingService#chunk_pages_parallel` (`Concurrent::Promises` con `FileMultimodalRouter::MAX_PARALLEL_PAGES = 8`), que lo bajaría a ~6 minutos; no se implementó aquí porque añadir concurrencia no hace falta para la corrección y el Gate B va a producir el número de reloj real. Verificado: `bin/rails test` **2180 runs / 0 failures**; `bin/rubocop` **479 files / 0 offenses**; ambos flags apagados por defecto y con ellos apagados `page_topology_edges` queda vacío y el cuerpo del chunk es byte-idéntico. | **Fase 7:** la opción (b) del ⚠️ de I-31 **ya está hecha**, no es alcance de esa fase. `script/shadow_ingest_v8.rb` puede reutilizar `ManualBatchIngestionService` tal cual y las aristas de los dos tiers llegarán al chunk — que era justo lo que I-31 decía que no pasaría. Además, por Batch la topología de visión cuesta la mitad (~$2,70 en vez de ~$5,40 por el documento), así que la opción (a) ya no es la recomendada. ⚠️ **Cifra corregida en I-38: eso era falso** — la visión paga API directa siempre, ~$5,40 por el documento, porque se resuelve antes del envío del batch. La opción (a) tampoco es más barata. Lo que sí hay que verificar leyendo el cuerpo escrito sigue en pie. **Gate B:** si mide sobre la ruta real de ingesta en vez de con un script propio, T2 corre por `ManualBatchIngestionService` y el coste es de Batch; y el límite de (e) le dice cuánto va a tardar su corrida. **Fase 4:** su nota de I-31 sobre el hueco asíncrono queda cerrada; el invariante de la fase (flag apagado ⇒ byte-idéntico) se mantiene con test en la ruta nueva. **Cualquier fase futura que lea `page_topology_edges`:** las claves son strings de JSONB, no enteros ni símbolos. |
 | I-38 | 5 | Opus 5 | **Corrección de I-37: la llamada de visión de T2 NO se abarata por correr dentro de la ruta de Batch, y yo escribí cinco veces que sí.** El dueño del producto lo cuestionó ("se van a llamar a las APIs en batch, que cuesta 50 % menos") y al comprobarlo el error era mío, no suyo. Lo que ocurre de verdad: `ManualBatchIngestionService` manda las llamadas de **chunking** al Anthropic Batch API (50 % de descuento, correcto), pero `VisionTopologyExtractor` sale por `ClaudeChunkingClient#call` → `messages.stream`, que es la **Messages API directa**, y tiene que hacerlo así por construcción: la visión debe resolverse **antes** de enviar el batch, mientras `page.binary` existe, para que sus aristas se puedan persistir en `page_topology_edges`. Un resultado de batch llega horas después, cuando ya no hay binario ni sitio donde encajarlo en el mismo viaje. Por tanto **T2 cuesta ~$0,0796/página y ~$5,40 por las 80 páginas T2 del documento, siempre**, con ruta asíncrona o sin ella; el ~$2,70 que I-37 escribió en cinco sitios (sección de la Fase 5, sección y prompt del Gate B, sección y prompt de la Fase 7) era el precio de una ruta que **no existe**. Corregidos los cinco. **Qué haría falta para tener el precio de Batch en visión:** un batch propio de T2 —enviar las N páginas rasterizadas como un segundo lote, persistir su `custom_id` igual que ya se hace con el chunking, y leer sus resultados en un job aparte antes de que el chunking se parsee, o bien reordenar el pipeline para que el parseo espere a los dos lotes—. Es trabajo nuevo y no trivial: introduce una dependencia de orden entre dos batches asíncronos que hoy no existe. Ahorro: ~$2,70 por documento de 98 páginas. No se implementó y no se recomienda antes del Gate B, que es quien decide si T2 se queda con las relaciones. | **Gate B:** presupuesta API directa para toda la visión; no existe versión barata. Una pasada sobre las 80 páginas cuesta ~$6,40 (43 % del presupuesto de $15 fijado por el dueño), así que mide sobre el conjunto de ~25 páginas donde está la verdad-terreno. **Fase 7:** el shadow ingest de las 98 páginas paga ~$5,40 de visión, no ~$2,70; escríbelo así en el presupuesto del informe. **Quien quiera el descuento:** el diseño del segundo batch está esbozado arriba, con su coste de complejidad — decidirlo después del Gate B, no antes. |
+| I-39 | Gate B | Opus 5 | **Gate B ejecutado: T2 NO alcanza el umbral en relaciones y SÍ lo alcanza en identidad de componente; la degradación prevista queda aplicada en código.** Medido sobre **102 relaciones juzgadas una a una contra la lámina renderizada** (15 páginas, la regla de juicio está en el §1.2 del informe): **88,2 % de precisión, límite inferior Clopper-Pearson al 95 % = 81,6 %**, contra el 85 % que el dueño fijó. **El agregado esconde la mitad de la historia y por eso el gate pedía el desglose:** en láminas de regleta frontal con bornes numerados grandes (tipo pág. 17) T2 acierta **20 de 20** (LI 86,1 %); en conectores pequeños dedicados (págs. 97, 91, 77, 22) **17 de 17** (LI 83,8 %); en láminas de regleta o conector denso con etiquetas de hilo apiladas (tipo págs. 63, 78, 93) baja a **53 de 65, 81,5 % (LI 71,8 %)**. La identidad de componente —el campo no-relacional— sale **38 de 38, LI 92,4 %**, y es capacidad que T1 no puede producir en absoluto. Aplicado: nuevo flag `INGESTION_VISION_TIER_RELATIONS_ENABLED`, apagado por defecto e independiente de `INGESTION_VISION_TIER_ENABLED`, más `VisionTopologyExtractor#drop_relations`, que descarta las aristas **después** de sanearlas y las cuenta en `rejections.relations_disabled_by_gate_b`, para que el embudo siga midiendo cuánta cobertura cuesta la degradación. Dos tests nuevos fijan el defecto (componentes sí, aristas no) y el interruptor. La política de conflicto **T1 gana siempre** se confirma sin cambios; los extremos compuestos de I-36 (`J10-3`) se **aceptan como convención documentada** porque son más precisos que el conector desnudo de T1, no menos. Informe: `docs/rag/gate_b_calibracion_vision.md`. Coste real **$2,2216** de los $15 autorizados; coste por página medido **$0,0648** (rango $0,0391-0,0965; 5 764 tokens de entrada y 1 437 de salida de media), que confirma la proyección de I-34 de ~$5,18 por las 80 páginas T2. Verificado: `bin/rails test` 2182 runs / 0 failures; `bin/rubocop` limpio (479 files). | **Fase 7: bloqueada otra vez, y por una decisión humana, no por trabajo** — con las relaciones apagadas el shadow ingest escribiría las aristas de T1 solas, que es lo que la decisión humana #4 prohíbe expresamente; abierta la **decisión humana #6** con sus tres opciones y el coste de cada una. **Fase 8:** el bullet de `required` de topología de visión se queda sin sujeto (no hay aristas `vision`) y entra un campo nuevo que evaluar, `documented_components`, cuyo `required` es la etiqueta impresa y nunca el `canonical_component`. Secciones editadas en el sitio con el marcador `⚠️ revisado en I-39`. |
+| I-40 | Gate B | Opus 5 | **9 de los 12 errores son el mismo error, y no es una alucinación: es la celda vecina.** T2 lee bien el nombre impreso y bien el dispositivo, y asigna el conductor a la **celda equivocada de una fila de bornes**: `SE5` donde el verde sale de `SE7` (pág. 78), `109` donde el rojo sale de `111` (pág. 56), `P29` donde el cable va a `P36` (pág. 63), `71` y `ZN` intercambiados (pág. 93). Nunca inventa un nombre que no esté impreso; se desplaza una o dos posiciones a lo largo de la regleta. Los 3 errores restantes son de otra clase: dos pares borne↔borne del mismo bloque que no están unidos por nada (`20 ↔ SL`, `38 ↔ 39`, ambos con un extremo **sin hilo**) y una confusión entre un componente y el número de pieza impreso en su cuerpo (`PTC MOTOR ↔ NTC 3D-5`, que son el mismo objeto). **Por qué importa el matiz:** un `TOPOLOGY_EDGE` con el borne vecino es el error exacto que un técnico cablearía, así que es peor que ningún registro — es lo que hace defendible apagar las relaciones en vez de publicarlas con una advertencia. **La palanca que sí ataca este fallo no es un prompt:** los 9 errores ocurren donde la fila ocupa 40-60 px a 150 dpi y **desaparecen al ampliar** — cada uno se resolvió sin ambigüedad recortando la zona a 300 dpi durante el juicio. `PdfPageRasterizer#crop` ya existe y `build_crops` ya recorta, pero sólo imágenes pequeñas rotuladas: una regleta es un ráster grande, nunca `size_class: :small`, así que el modelo no recibe la ampliación que el juez humano necesitó. | **Fase 5b propuesta y no ejecutada:** mandar la fila de bornes como recorte a 300 dpi junto a la página completa. Es una hipótesis falsable —debería mover el tipo C y dejar el tipo A y el B donde están— y cuesta una pasada de 23 páginas (~$1,50) comprobarla. Registrada como opción (c) de la decisión humana #6 y en el §10 del informe. Ninguna fase depende de ella hoy. |
+| I-41 | Gate B | Opus 5 | **La verdad-terreno gratis de T1 no sirve, y la causa no era el tamaño de la muestra: es la granularidad.** El gate se diseñó sobre la idea de puntuar T2 contra las 19 aristas de T1 sin trabajo humano. Medido: T2 reproduce **2** de las 19 cadena a cadena, **4** si se le quita el número de pin a un extremo, y **15 no aparecen de ninguna forma**. La razón no es desacuerdo sino que **T2 lee el pin donde T1 lee el conector** (`X114 1 ↔ PTC MOTOR` frente a `PTC MOTOR ↔ X114`): T2 es más preciso, y a la vez emite otra cadena. Las 15 restantes son páginas donde los dos motores leyeron **zonas distintas de la misma lámina** (pág. 44: T1 encuentra `LIMITADOR ↔ C300`, T2 emite 9 relaciones de otra regleta y ninguna de ésa). **Consecuencia sobre código ya mergeado:** `VisionTopologyExtractor#drop_traced` compara pares normalizados y por tanto **casi nunca se dispara** — sobre las 19 aristas de T1 habría bloqueado 2. La política "T1 gana" es correcta y a la vez prácticamente inerte. | **Fase 7:** si algún día se reactivan las relaciones de visión, hace falta normalizar el extremo (`X114 1` → `X114`) **antes** de comparar en `drop_traced`, o el mismo hecho llegará al cuerpo del chunk dos veces, con dos redacciones y dos `RECORD_ID`. Anotado en el sitio en la sección de la Fase 7. Hoy inerte: sin relaciones de visión no hay nada que deduplicar. |
+| I-42 | Gate B | Opus 5 | **Una iteración de prompt medida no movió la precisión, y la segunda no se pudo medir porque la cuenta se quedó sin saldo.** `vision_topology_v2` (huella `0a8fbd6f98b0…`) añadió cuatro reglas contra los tres modos de fallo de I-40, entre ellas **omitir la relación cuando no se puede resolver una celda de su vecina**. Medido sobre las 10 páginas donde se concentraban los errores, con el mismo juez y la misma regla: **86,5 % → 87,9 % de precisión (dentro del ruido) a cambio de −26 % de relaciones emitidas** (89 → 66). Arregló casos concretos (la pág. 39 dejó de emitir el falso `PTC MOTOR ↔ NTC 3D-5`; la pág. 3 pasó a 2 de 2; la pág. 63 corrigió el intercambio P28/P29) y rompió otros: la pág. 97 cayó de **14 relaciones correctas a 4** y la pág. 76 de 4/5 a 2/4, y aparecieron extremos con dos formatos en la misma página (`J10-2 (P35B)`, o el índice de pin `1` en lugar de la etiqueta impresa `75`), que es justo lo que el contrato v8 no puede tener. **Lectura del resultado: el error dominante es perceptivo, no instruccional** — pedirle al modelo que se abstenga cuando duda no le enseña a distinguir `SE5` de `SE7`, le enseña a callarse también donde acertaba. `vision_topology_v3` (huella `36f8c3bb3a8d…`) conserva de v2 sólo lo que arregló una clase de error sin costar cobertura y **elimina la cláusula de omisión** — pero **no se ejecutó ni una llamada con ese texto**: la API devolvió `400 invalid_request_error: "Your credit balance is too low"` en las 10 páginas. El presupuesto del gate estaba al 15 %. | **Quien reanude:** `vision_topology_v3` está en el repositorio como texto activo y **no está medido**. Con las relaciones apagadas no cambia ningún `TOPOLOGY_EDGE`, pero sí cambia la prosa de `documented_components`, que tampoco está medida bajo v3. Antes de creerle nada: recargar saldo, correr las mismas 23 páginas con la misma regla de juicio del §1.2 del informe y comparar contra el §2. La huella del prompt va en cada línea `vision_topology_page`, así que cualquier medición futura es atribuible al texto exacto que la produjo. |
+| I-43 | Gate B | Opus 5 | **El no determinismo de T2 existe, no toca la precisión, y está acotado a las relaciones en serie (precisa I-35).** Dos corridas de la página 17 con el **mismo** prompt v1, separadas por horas: **20 relaciones las dos veces, 17 idénticas byte a byte, 3 distintas**. Y las 3 son la misma decisión: `33 ↔ BOTONERA REVISION` frente a `33 ↔ ACUÑAMIENTO`, `72 ↔ BOTONERA REVISION` frente a `72 ↔ ACUÑAMIENTO`, `16 ↔ STOP FOSO` frente a `16 ↔ POLEA TENSORA`. **Las seis son correctas**: esos bornes están en serie con todos esos dispositivos, y lo que varía no es el acierto sino **cuál de los dispositivos del recorrido elige nombrar como extremo lejano**. I-35 medía "19 y 20 relaciones" y lo leía como varianza de volumen; medido con más muestra, el volumen fue idéntico y la varianza está en un sitio concreto. | Dos correcciones a lo que I-35 dejó escrito. **(1) No hay que inflar el tamaño de muestra por no determinismo:** las dos corridas puntúan igual, así que la varianza no entra en el intervalo de confianza de la precisión. **(2) La huella del `RECORD_ID` sí se rompe, pero sólo en las relaciones en serie:** las 17 directas fueron reproducibles byte a byte. Si algún día se reactivan las relaciones de visión, la huella idempotente no puede incluir el extremo lejano de una serie. Anotado en el sitio en la Fase 7. |

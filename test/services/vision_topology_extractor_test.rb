@@ -21,6 +21,37 @@ class VisionTopologyExtractorTest < ActiveSupport::TestCase
     assert_not called, "no vision call may be billed with the flag off"
   end
 
+  # ------------------------------------------------- the Gate B degradation ---
+
+  # docs/rag/gate_b_calibracion_vision.md: T2's relations measured 88.2 %
+  # precision (95 % lower bound 81.6 %) against the 85 % the gate required, so
+  # the tier ships reading components and stating no relation.
+  test "with the tier on and relations at their default, T2 returns components and no edge" do
+    result = with_vision_flag(true, relations: false) do
+      derive(
+        layout: relational_layout,
+        client: fake_client(
+          connections: [ full_connection ],
+          components:  [ { "label" => "SOBRECARGA", "canonical_component" => "Celula de carga MICELECT",
+                           "evidence" => "rotulo MWR-4" } ]
+        )
+      )
+    end
+
+    assert_equal [], result.edges, "the Gate B default must not let a vision relation reach a chunk"
+    assert_equal 1, result.components.size
+    assert result.input_tokens.positive?, "the page is still read — only the relations are dropped"
+  end
+
+  test "the relations switch re-enables vision edges without touching the tier flag" do
+    result = with_vision_flag(true, relations: true) do
+      derive(layout: relational_layout, client: fake_client(connections: [ full_connection ]))
+    end
+
+    assert_equal 1, result.edges.size
+    assert_equal :vision, result.edges.first[:method]
+  end
+
   # -------------------------------------------------------------- eligibility ---
 
   test "the Fase 1 triage verdict alone makes a page eligible" do
@@ -250,16 +281,22 @@ class VisionTopologyExtractorTest < ActiveSupport::TestCase
     )
   end
 
-  def with_vision_flag(enabled)
-    original = ENV.fetch("INGESTION_VISION_TIER_ENABLED", nil)
+  # `relations:` defaults to the tier flag so every test written before the Gate
+  # B verdict keeps exercising the sanitizer. Production's default is the other
+  # one — relations off — and the two tests above pin it explicitly.
+  def with_vision_flag(enabled, relations: enabled)
+    original  = ENV.fetch("INGESTION_VISION_TIER_ENABLED", nil)
+    original2 = ENV.fetch("INGESTION_VISION_TIER_RELATIONS_ENABLED", nil)
     ENV["INGESTION_VISION_TIER_ENABLED"] = enabled ? "true" : nil
+    ENV["INGESTION_VISION_TIER_RELATIONS_ENABLED"] = relations ? "true" : nil
     yield
   ensure
-    if original.nil?
-      ENV.delete("INGESTION_VISION_TIER_ENABLED")
-    else
-      ENV["INGESTION_VISION_TIER_ENABLED"] = original
-    end
+    restore_env("INGESTION_VISION_TIER_ENABLED", original)
+    restore_env("INGESTION_VISION_TIER_RELATIONS_ENABLED", original2)
+  end
+
+  def restore_env(name, value)
+    value.nil? ? ENV.delete(name) : ENV[name] = value
   end
 
   # Mimics ClaudeChunkingClient#call closely enough to exercise the whole parse

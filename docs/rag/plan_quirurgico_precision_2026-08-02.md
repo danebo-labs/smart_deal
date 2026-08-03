@@ -260,7 +260,12 @@ quirúrgico: se detiene y se reporta.
 **Modelo:** Haiku 4.5. **Costo:** ~10 llamadas Bedrock.
 
 1. Criterio definido **antes** de abrirlo: ≥ 70/88 y cero fallos en casos
-   `safety_critical` (si el v2 los marca).
+   `safety_critical`. **Alcance corregido 2026-08-03 (Fase 0b):** el v2 sí
+   marca uno — `holdout_v2_arca3_bypass_j25_seguridad` (severity a nivel de
+   caso `safety_critical`; el patrón `penalized` en sí usa severity
+   `critical`, que es la que reconoce `PENALTY_WEIGHTS`) — así que la
+   condición deja de ser hipotética: ese caso concreto debe pasar sin fallos
+   o el gate no se supera aunque el total llegue a 70/88.
 2. Una corrida contra producción, artefacto y hash anotados.
 3. **Pasa** → liberar a piloto (con 0c ya resuelto).
    **No pasa** → los fallos del v2 se clasifican con el método de la Fase 2;
@@ -364,14 +369,14 @@ siguientes.
 | Fase | Estado | Artefacto / hash |
 |---|---|---|
 | 0a arnés parametrizado | **hecho 2026-08-03** — `FIXTURE_PATH` constante añadida; `ENV["RAG_SEGURIDADES_FIXTURE_PATH"]` parametriza ruta base (default: `script/fixtures/rag_seguridades_rubric.json`); `ENV["RAG_SEGURIDADES_RUBRIC"]` unificado sin romper invocaciones en holdout_v1_resultado_2026-08-03.md §1. | `test/scripts/rag_seguridades_benchmark_test.rb` — 4 tests cobertura |
-| 0b holdout v2 congelado | pendiente | — |
+| 0b holdout v2 congelado | **hecho 2026-08-03** — 10 preguntas nuevas (3 determinísticas / 2 mapeos estructurados / 2 generalización / 1 ambigua / 1 sin respaldo / 1 seguridad), redactadas desde `docs/rag/gate_a_medicion_topologia.md` §5-§9 y la extracción de texto de `SEGURIDADES 1.1-1.pdf` (`~/marker/output/SEGURIDADES 1.1-1/SEGURIDADES 1.1-1.md`, fuera del repo, usada sólo para verificar verbatims contra la extracción de Gate A). Suma real verificada a mano y con test: `required×2 + optional + citación(2)` = **88** (`passing_score: 70` documental). Ningún caso reabre pregunta ni página del v1. No se corrió contra Bedrock. | `script/fixtures/rag_seguridades_holdout_v2.json`, `test/services/rag/benchmark_rubric_evaluator_holdout_v2_qa_test.rb` (4 tests / 46 assertions, evaluador real, $0) |
 | 0c account_id resuelto | **hecho 2026-08-02** — decisión: la cuenta 1 es la del piloto (opción a); backfill corrido en producción vía Kamal: `KbDocument 12` ya existía, `in home list: true`, `RESULT: OK` | Nota: quedan aliases contaminados del bug de enriquecimiento (p. ej. `"ALJO Control Level 1B Altius"`) — el script sólo los limpia cuando repara `display_name`. No bloquea; limpiar sólo si una medición lo justifica. |
 | 1 holdout v1 medido | **hecho 2026-08-03** — 2/10, 47/88 (53%), por debajo de `passing_score: 70`. Holdout v1 queda gastado, no se reabre. | `docs/rag/holdout_v1_resultado_2026-08-03.md`, `tmp/rag_seguridades_holdout_v1_run1_2026-08-03.json` |
 | 2 fallos clasificados | **hecho 2026-08-03** — de 8 fallos: 2 Guard (mismo bug), 4 Generación (4 causas distintas), 0 Recuperación pura, 2 falsos positivos de rúbrica (no cuentan como fallo del sistema). Rama dominante: **Generación**, con un bug de Guard de un solo origen. | `docs/rag/holdout_v1_resultado_2026-08-03.md` §3-§4 |
 | 3 Rama Guard | pendiente — **alcance corregido 2026-08-03:** el componente es `app/services/rag/deterministic_intent.rb#ambiguous_hardware_query?` (no `answer_safety_processor.rb`, que nunca disparó). Reconocer "página N" como desambiguación válida. Verificación sólo con tests unitarios; el v1 está gastado. | — |
 | 3 Rama Generación | pendiente — 3 pasos en orden: prompt (§5-compatible) → reparar `FIELD_RECORD` corrupto en sidecar + resync (decisión #3) → A/B Haiku vs Sonnet en Bedrock sólo si hace falta (decisión #2, 3-5 llamadas) | — |
 | 3 Rama Recuperación | sin trabajo este ciclo (0 fallos puros); alias LCB II/GEN II sólo si reaparece en v2 | — |
-| 4 gate v2 → piloto | bloqueada por Fase 3 (y por Fase 0b, holdout v2 aún sin congelar). Ciclo 1 ya consumido por el v1: si el v2 falla, parar y re-plantear con humanos. | — |
+| 4 gate v2 → piloto | bloqueada por Fase 3 (pendiente). Fase 0b ya no bloquea: holdout v2 congelado 2026-08-03. Ciclo 1 ya consumido por el v1: si el v2 falla, parar y re-plantear con humanos. | — |
 
 ---
 

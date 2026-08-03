@@ -1,0 +1,232 @@
+{
+  "version": "seguridades-holdout-v2.0",
+  "description": "Holdout v2 congelado (Fase 0b del plan quirúrgico 2026-08-02). 10 preguntas nuevas, distribución estratificada (3 determinísticas / 2 mapeos estructurados / 2 generalización / 1 ambigua / 1 sin respaldo / 1 seguridad), redactadas desde verdad-terreno ya pagada: docs/rag/gate_a_medicion_topologia.md §5-§9 y la extracción de texto de SEGURIDADES 1.1-1.pdf. No se abre hasta la Fase 4. Cada patrón penalized fue verificado contra una respuesta correcta conocida vía Rag::BenchmarkRubricEvaluator (test/services/rag/benchmark_rubric_evaluator_holdout_v2_qa_test.rb) antes de congelar este archivo.",
+  "citation_required": true,
+  "max_score": 88,
+  "passing_score": 70,
+  "cases": [
+    {
+      "id": "holdout_v2_aljo_altius_d12_d13",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En ALJO ALTIUS, ¿qué serie documenta el LED D12 y qué serie documenta el LED D13?",
+      "source_pages": [7],
+      "required": [
+        { "label": "identifica D12", "pattern": "\\bD12\\b" },
+        { "label": "serie de D12", "pattern": "SERIE CERRADURAS EXTERIORES" },
+        { "label": "identifica D13", "pattern": "\\bD13\\b" },
+        { "label": "serie de D13", "pattern": "SERIE SEGURIDAD PUERTAS EXTERIORES" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia las series de D12 y D13",
+          "pattern": "\\bD12\\b(?:(?!\\bD13\\b).){0,40}SEGURIDAD PUERTAS EXTERIORES|\\bD13\\b(?:(?!\\bD12\\b).){0,40}CERRADURAS EXTERIORES",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_edel_k2_36c_41",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En EDEL-K2, ¿qué serie corresponde al LED 36C y qué serie corresponde al LED 41?",
+      "source_pages": [25],
+      "required": [
+        { "label": "identifica 36C", "pattern": "\\b36C\\b" },
+        { "label": "serie de 36C", "pattern": "SERIE SEGURIDADES CABINA" },
+        { "label": "identifica 41", "pattern": "\\b41\\b" },
+        { "label": "serie de 41", "pattern": "SERIE CERROJOS CABINA" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "confunde 41 con el valor de 40, o 36C con el valor de 36",
+          "pattern": "\\b41\\b(?:(?!\\b40\\b).){0,30}CERROJOS EXTERIORES|\\b36C\\b(?:(?!\\b37\\b).){0,30}TENSION SERIES",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_aljo_control_level1b_dl3_dl4",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En ALJO CONTROL LEVEL 1B, ¿qué serie corresponde a DL3 y qué serie corresponde a DL4?",
+      "source_pages": [3],
+      "required": [
+        { "label": "identifica DL3", "pattern": "\\bDL3\\b" },
+        { "label": "serie de DL3 (verbatim impreso)", "pattern": "SERIE PUERTAS CERRRADA" },
+        { "label": "identifica DL4", "pattern": "\\bDL4\\b" },
+        { "label": "serie de DL4", "pattern": "SERIE SEGURIDADES CERRADA" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia las series de DL3 y DL4",
+          "pattern": "\\bDL3\\b(?:(?!\\bDL4\\b).){0,40}SEGURIDADES CERRADA|\\bDL4\\b(?:(?!\\bDL3\\b).){0,40}PUERTAS CERRRADA",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_schindler_divisor_modelos",
+      "stratum": "mapeo_estructurado",
+      "category": "divisor_marca_modelo",
+      "severity": "technical_important",
+      "question": "En la página divisoria de SCHINDLER, ¿qué modelos aparecen listados junto a MICONIC LX?",
+      "source_pages": [80],
+      "required": [
+        { "label": "identifica la marca", "pattern": "\\bSCHINDLER\\b" },
+        { "label": "menciona MICONIC LX", "pattern": "MICONIC\\s*LX" },
+        { "label": "menciona MICONIC BX", "pattern": "MICONIC\\s*BX" },
+        { "label": "menciona SMART 001", "pattern": "SMART\\s*001" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "atribuye los modelos a otra marca",
+          "pattern": "\\b(?:ORONA|OTIS|THYSSEN|RECOBA|FAIN|KONE|CTA|EDEL|ALJO|ELECMEGON|ENIER|EXCELSIOR|MP|INELCA|HATS)\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_orona_divisor_arca",
+      "stratum": "mapeo_estructurado",
+      "category": "divisor_marca_modelo",
+      "severity": "technical_important",
+      "question": "¿En qué marca del documento aparece el modelo ARCA III, y qué otros modelos comparte su página divisoria?",
+      "source_pages": [60],
+      "required": [
+        { "label": "identifica la marca", "pattern": "\\bORONA\\b" },
+        { "label": "menciona ARCA (base)", "pattern": "\\bARCA\\b(?!\\s*(?:II|III|B[AÁ]SICO))" },
+        { "label": "menciona ARCA BASICO", "pattern": "ARCA\\s*B[AÁ]SICO" },
+        { "label": "menciona ARCA II", "pattern": "ARCA\\s*II\\b" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "atribuye ARCA III a otra marca",
+          "pattern": "\\b(?:OTIS|THYSSEN|RECOBA|SCHINDLER|KONE|FAIN|CTA|EDEL|ALJO|ELECMEGON|ENIER|EXCELSIOR|MP|INELCA|HATS)\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_carlos_silva_xp11_intermedios",
+      "stratum": "generalizacion",
+      "category": "serie_con_intermedio_omitido",
+      "severity": "technical_important",
+      "question": "En CARLOS SILVA, el conductor que va de STOP BOTO. CABINA a XP11, ¿por qué otros dispositivos pasa antes de llegar?",
+      "source_pages": [14],
+      "required": [
+        { "label": "identifica BOTONERA REVISION como intermedio", "pattern": "BOTONERA\\s+REVISION" },
+        { "label": "identifica BARANDILLA como intermedio", "pattern": "BARANDILLA" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "confunde el intermedio con FOTOCELULA (el de otro caso, en CTA)",
+          "pattern": "\\bFOTOCELULA\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_cta_mr08_sci_fotocelula",
+      "stratum": "generalizacion",
+      "category": "tabla_mas_topologia",
+      "severity": "technical_important",
+      "question": "En CTA MR08, ¿qué serie documenta el LED SCI, a qué conectores hace referencia, y qué dispositivo intermedio atraviesa el cable entre OBSTACULO y CN-112?",
+      "source_pages": [22],
+      "required": [
+        { "label": "identifica SCI", "pattern": "\\bSCI\\b" },
+        { "label": "referencia a CN-112", "pattern": "CN-112" },
+        { "label": "referencia a CN-109", "pattern": "CN-109" },
+        { "label": "identifica FOTOCELULA como intermedio", "pattern": "FOTOCELULA" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "atribuye a SCI el valor de la fila SC (SERIE CERROJOS CABINA)",
+          "pattern": "\\bSCI\\b.{0,50}\\bCERROJOS CABINA\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_schindler_isk_ambiguous",
+      "stratum": "ambigua",
+      "category": "codigo_sin_modelo",
+      "severity": "technical_important",
+      "question": "En SCHINDLER, ¿qué indica el LED ISK?",
+      "source_pages": [80, 81, 82, 83, 84, 85, 86],
+      "required": [
+        { "label": "distingue SMART 001", "pattern": "SMART\\s*001" },
+        { "label": "valor de ISK en SMART 001", "pattern": "SERIE SEGURIDADES CCERRADA|FINAL SERIE DE SEGURIDAD CERRADA" },
+        {
+          "label": "distingue MICONIC BX o BIONIC 5 con su valor propio",
+          "pattern": "(?:MICONIC\\s*BX|BIONIC\\s*5)(?:(?!\\bSMART\\b).){0,80}SERIE SEGURDADES CERRADA"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "presenta una sola lectura de ISK como universal para toda la marca",
+          "pattern": "(?:en|para)\\s+SCHINDLER.{0,90}\\bISK\\b.{0,60}(?:siempre|[uú]nicamente)",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_miconic_lx_t6_absent",
+      "stratum": "sin_respaldo",
+      "category": "codigo_inexistente",
+      "severity": "critical",
+      "question": "En SCHINDLER MICONIC LX, ¿qué indica el LED T6?",
+      "source_pages": [80, 81, 82, 83, 84, 85, 86],
+      "required": [
+        {
+          "label": "declara ausencia documental",
+          "pattern": "(?:no (?:documenta|incluye|aparece|existe)|DATA_NOT_AVAILABLE|El documento no incluye este dato)"
+        }
+      ],
+      "optional": [
+        { "label": "nombra el LED consultado", "pattern": "\\bT6\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "inventa una serie para el LED T6 inexistente",
+          "pattern": "\\bT6\\b.{0,80}SERIE",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "id": "holdout_v2_arca3_bypass_j25_seguridad",
+      "stratum": "seguridad",
+      "category": "bypass_limites_fuentes",
+      "severity": "safety_critical",
+      "question": "En ARCA III, si pongo el puente de BYPASS en posición J25, ¿qué seguridades quedan puenteadas y qué implica para la operación del ascensor?",
+      "source_pages": [65],
+      "required": [
+        { "label": "identifica J25", "pattern": "\\bJ25\\b" },
+        { "label": "declara qué queda puenteado", "pattern": "cerraduras de cabina puenteadas" },
+        { "label": "declara que es un modo de revisión, no operación normal", "pattern": "revisi[oó]n" }
+      ],
+      "optional": [
+        { "label": "distingue J25 de J24/J26 para no confundir el puente", "pattern": "\\bJ2[46]\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye a J25 el efecto de J24 (seguridades de cabina) o de J26 (cerraduras exteriores)",
+          "pattern": "\\bJ25\\b(?:(?!\\bJ2[46]\\b).){0,60}(?:seguridades de cabina puenteadas|cerraduras exteriores puenteadas)",
+          "severity": "critical"
+        }
+      ]
+    }
+  ]
+}

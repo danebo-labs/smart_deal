@@ -321,6 +321,83 @@ repetida sólo si el hecho evaluado es distinto.
 4. `passing_score` documental = ceil(80% de la suma real); anotar ambos aquí al congelar.
 5. **No se corre contra Bedrock**: se abre una sola vez en la Fase 5.
 
+### Resultado de la Fase 3 (ejecutada 2026-08-03, sesión que no tocó la Fase 2)
+
+**Congelado:** `script/fixtures/rag_seguridades_holdout_v3.json` (14 casos, distribución
+exacta 3/2/2/1/1/4/1 verificada por `tally` en
+`test/services/rag/benchmark_rubric_evaluator_holdout_v3_qa_test.rb`). Suma real
+(`required×2 + optional + citación 2`, fórmula del evaluador) = **133**; `passing_score`
+documental = `ceil(80% × 133)` = **107**. Ambos anotados en el fixture y verificados por
+test. QA obligatorio (6 tests, 75 assertions, 0 failures, $0, sin Bedrock) cubre: la
+distribución, la suma real, cobertura de ids, que ningún patrón `penalized` dispare
+sobre una respuesta correcta conocida, que los 4 casos de seguridad lleven
+`severity: safety_critical` a nivel de caso y `severity: critical` en cada patrón
+`penalized` (N4), y que ninguna pregunta v3 reutilice una pregunta literal de v1/v2.
+Ground truth: Gate A §5-§9 + lectura directa de los 97 cuerpos de chunk
+(`tmp/seguridades_chunks_2026-07-28/`, fuera de git) — no sólo la mesa de Gate A, por el
+hallazgo N8 de abajo. Los 4 casos de seguridad verificados offline ($0) con
+`Rag::DeterministicIntent.ambiguous_hardware_query?` antes de congelar: los 14 devuelven
+`false` (ninguno cae en el menú de desambiguación), incluido el caso "ambigua" a
+propósito (mismo patrón que el `ISK` del v2: escapa el guard vía un designador
+alfanumérico explícito — aquí `TW1` — para que sí llegue a generación y se pueda
+puntuar con regex).
+
+**N8 (nuevo) — contaminación de identidad en el CUERPO del chunk, no sólo en metadatos,
+sigue viva tras la Fase 2.** La higiene de 2a (canonical_name/aliases de 91 sidecars)
+sólo tocó campos de metadatos — por diseño, restricción no negociable #2 prohíbe
+re-trocear/re-ingerir el cuerpo. Medido por grep de sólo lectura sobre los 97 cuerpos
+locales: **96 de 97** llevan la línea literal `**Document:** ALJO Control Level 1B
+Altius` incrustada en el texto del chunk (no en el JSON de metadata), **incluidas
+páginas que nunca fueron ALJO** — confirmado en páginas de FAIN (46), SISTEL (88-91) y
+CARLOS SILVA (9, 13) que sí muestran esa línea falsa. La única página que no cuadra con
+la búsqueda literal es la propia ALJO (2-7), donde la línea da la casualidad de ser
+correcta. Esto es un vector de contaminación **distinto** del N2/N6 (que era metadata) y
+**no fue tocado por 2a ni podía serlo bajo la restricción #2** — persiste indefinidamente
+salvo que se apruebe una migración de re-ingesta, fuera del alcance de este ciclo.
+Impacto medido en la Fase 1 sobre el mismo patrón de contaminación (entonces sólo
+metadata): el modelo **no** se dejó engañar por la etiqueta de identidad falsa y usó el
+contenido correcto del chunk (chunk_63, dos preguntas ad-hoc). Dado ese precedente, y
+para no apostar el holdout a que el patrón se sostenga también para el texto del cuerpo,
+el v3 **deliberadamente no exige que la respuesta nombre la marca correcta** como
+`required` en ningún caso construido sobre una página de contenido ajena al rango propio
+de ALJO (2-7) — sólo los dos casos de mapeo estructurado (páginas divisoras 70 y 92,
+limpias, sin esta línea) y el caso de generalización de la página 3 (ALJO real) exigen
+el nombre de marca. Si la Fase 5 ve fallar un caso no-ALJO por una marca equivocada en la
+respuesta, la causa más probable es N8, no el guard de la Fase 2 — clasificarlo aparte
+antes de contarlo contra el criterio de cierre.
+
+**N9 (nuevo) — el guion de gate (`script/rag_seguridades_benchmark.rb`, sin cambios
+desde v1/v2) nunca invoca `Rag::DeterministicRenderer.build`.** Producción
+(`QueryOrchestratorService#execute_query`, línea ~261) sí lo hace, en este orden:
+`DocumentOverviewResponder` → `StructuredEvidenceRoute` → `AmbiguousModelResponder` →
+`DeterministicRenderer` (Fases 7: `FunctionalTestRenderer`/`StopWorkRenderer`) → `query`
+genérico. El guion del benchmark replica los tres primeros pasos pero salta directo de
+`AmbiguousModelResponder` a `query` genérico — nunca llega al paso 4. Consecuencia: los
+casos de seguridad "checklist detener-trabajo" y "prueba funcional con resultado
+esperado" que la Fase 3 debía redactar **no ejercitan `StopWorkRenderer`/
+`FunctionalTestRenderer` bajo el guion real de la Fase 5**, aunque sus preguntas
+coincidieran con `stop_work_checklist_query?`/`exhaustive_functional_test_query?` — caen
+igual en la generación genérica. Agravante medido: `RECORD_TYPE: FUNCTIONAL_TEST` tiene
+**0 apariciones** en los 97 cuerpos (`grep -c` sobre todo el corpus local); si
+`FunctionalTestRenderer` se ejecutara alguna vez sobre este documento, fallaría siempre
+con `no_applicable_records` → `DATA_NOT_AVAILABLE`, pase lo que pase la pregunta. Por
+eso los dos casos v3 correspondientes (`holdout_v3_carlos_silva_stop_foso_seguridad`,
+`holdout_v3_carlos_silva_spm_continuidad_seguridad`) se redactaron **a propósito** para
+NO matchear `STOP_WORK_PATTERNS`/`FUNCTIONAL_TEST_PATTERNS` (verificado offline, ver
+arriba) y en su lugar miden lo mismo que importa —un `STOP_WORK_CONDITION` real (único
+en todo el documento, chunk de la página 9) y una comprobación de continuidad real
+(`INSPECTION_CHECK`, misma página) — a través de la ruta de generación genérica, que sí
+corre en el guion real. Esto es honesto con lo que la Fase 5 va a medir, pero dos
+consecuencias quedan abiertas para quien decida sobre ello, no para esta sesión: (a) el
+guion del benchmark tiene una brecha de fidelidad con producción que ninguna Fase de
+este ciclo tiene mandato de tocar; (b) los intentos deterministas de Fase 7
+(`FunctionalTestRenderer`/`StopWorkRenderer`) siguen **sin ningún holdout que los
+ejercite de verdad** — v3 tampoco lo logra, por la brecha del guion. Ninguna de las dos
+cosas bloquea la Fase 4/5 de este ciclo (el criterio de cierre no depende de esos
+renderers), así que no se escala como decisión humana nueva; se deja documentado para
+que un ciclo futuro decida si vale la pena alinear el guion de benchmark con
+`QueryOrchestratorService`.
+
 ## Fase 4 — Checkpoint de despliegue (Haiku 4.5) — cuándo desplegar
 
 **Momento exacto:** después de que la Fase 2 esté commiteada con tests verdes y el
@@ -385,7 +462,7 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 |---|---|---|
 | 1 Diagnóstico J25 | **hecho 2026-08-03** — H-B (guard `ambiguous_hardware_query?` mal calibrado, N7) confirmada como causa raíz y reproducida offline ($0) con la pregunta literal del v2; H-A refutada en su mecanismo causal (premisa de contaminación confirmada y ampliada a 91/97 sidecars, N6, pero el modelo usa chunk_63 correctamente pese a ello); H-C refutada (chunk_63 rank 1 siempre). 6 `retrieve_invocations` de 3 preguntas ad-hoc nuevas (J24/J26/overview, ninguna literal del v2), dentro del presupuesto de ≤10. | `tmp/rag_seguridades_adhoc_fase1_diagnostico_2026-08-03.json` (rúbrica, SHA256 `ecd04e15594d391de867e5e8a031cab60f743a080b21e3aa592141f5b5ba24de`) + `_run1.json` (artefacto completo, SHA256 `84260203969eb02f72a6cad3bc798621d21a3821225d8090f6385301cf8a4b10`), ambos fuera de git; `tmp/seguridades_sidecars_2026-08-03/` (97 sidecars vigentes, sólo lectura, fuera de git) |
 | 2 Intervención mínima | **hecho 2026-08-03** — 2d (guard), 2a (91 sidecars) y 2c (chunk_94) aplicados y verificados; 2b sigue descartado (no tocado). **⚠️ Presupuesto Bedrock excedido: 12 llamadas, no ≤6** (ver "Resultado de la Fase 2" y decisión humana #7). Pendiente de desplegar (Fase 4). | Código: `app/services/rag/deterministic_intent.rb`, `test/services/rag/deterministic_intent_test.rb` (+4 tests). Script: `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`. KB sync job `ZGCU99ISK5`, `COMPLETE`. Artefactos fuera de git: `tmp/rag_seguridades_adhoc_fase2_verificacion_2026-08-03_run1.json` (SHA256 `2c928bd108edfc54ea92c69f507baf340f26d75f71e17daff4b17121f8aac24a`, antes del resync 2a/2c), `tmp/rag_seguridades_adhoc_fase2_postresync_2026-08-03_run1.json` (SHA256 `bbc9f9ffa0877c2ba57f0ca855d1727a039f1974decbb87187682c89fc1f2162`, después). |
-| 3 Holdout v3 congelado | pendiente (sesión distinta a Fase 2) — **leer la nota ⚠️ del prompt de Fase 3 antes de redactar el caso de bypass** | — |
+| 3 Holdout v3 congelado | **hecho 2026-08-03** (sesión distinta a Fase 2) — 14 casos, suma real 133, `passing_score` 107, QA verde (6 tests/75 assertions, $0). Hallazgos nuevos N8 (contaminación de identidad en el CUERPO del chunk, no sólo metadata, sigue viva tras 2a) y N9 (el guion de benchmark nunca invoca `Rag::DeterministicRenderer` — los casos de checklist/prueba funcional se redactaron para medir generación genérica, no los renderers de Fase 7). Ver "Resultado de la Fase 3". | `script/fixtures/rag_seguridades_holdout_v3.json` (SHA256 `09fc71589538483d8f23fd5359d4e1b5aafb263430505eb8f64bf685fbf4aa6f`), `test/services/rag/benchmark_rubric_evaluator_holdout_v3_qa_test.rb` |
 | 4 Checkpoint despliegue | pendiente (tras Fase 2, antes de Fase 5) — **el commit a desplegar debe incluir el fix del guard (2d) y no hay cambio de prompt que desplegar** | — |
 | 5 Gate v3 → piloto | pendiente — **⚠️ ver decisión humana #7: presupuesto del ciclo ajustado, confirmar antes de abrir** | — |
 
@@ -561,6 +638,22 @@ bloqueante (no asumir A por defecto) y detenerse a preguntar.
 > excedido en Fase 2) está resuelta antes de abrir el holdout — tus 14 llamadas
 > son las que probablemente crucen el techo de 30 del ciclo. Si no está resuelta,
 > detente y pregunta; no abras el holdout asumiendo "ya se gastó de más, da igual".
+>
+> Nota (no cambia tus pasos, sólo cómo diagnosticas un fallo): la Fase 3 dejó dos
+> hallazgos nuevos que conviene tener presentes al leer `results[]`. **N8:** 96 de
+> 97 cuerpos de chunk (no sólo metadatos — eso ya lo arregló 2a) siguen llevando la
+> línea incrustada `**Document:** ALJO Control Level 1B Altius`, incluso en páginas
+> que nunca fueron ALJO (FAIN, SISTEL, CARLOS SILVA); por eso el v3 no exige nombrar
+> la marca correcta salvo en los dos casos de página divisora y el de la página 3
+> (ALJO real) — si un caso no-ALJO falla por marca equivocada, es N8, no el guard de
+> la Fase 2, y se clasifica aparte. **N9:** este guion (`rag_seguridades_benchmark.rb`)
+> nunca invoca `Rag::DeterministicRenderer` (a diferencia de producción), así que los
+> dos casos de "checklist detener-trabajo" y "prueba funcional" miden generación
+> genérica sobre un `STOP_WORK_CONDITION`/`INSPECTION_CHECK` real de la página 9, no
+> los renderers deterministas de la Fase 7 del plan quirúrgico — están redactados a
+> propósito para no disparar esos intents (`RECORD_TYPE: FUNCTIONAL_TEST` tiene 0
+> apariciones en el documento; si el renderer se llegara a invocar, fallaría siempre).
+> Ninguno de los dos hallazgos bloquea el criterio de cierre de este ciclo.
 >
 > Corre el holdout v3 UNA sola vez contra el KB de producción con el patrón Kamal del
 > v1/v2 (`kamal app exec --reuse`, variables de producción, `RAG_SEGURIDADES_RUBRIC`

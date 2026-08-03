@@ -11,8 +11,16 @@ class WarmBedrockKbJob < ApplicationJob
   queue_as :default
 
   THROTTLE_TTL = 4.minutes
+  # AuroraColdStartRetry duerme 15+30+45s más la duración de las cuatro
+  # llamadas. El marcador de "en vuelo" tiene que sobrevivir esa cascada
+  # completa, o un segundo login encolaría otro wakeup compitiendo por el mismo
+  # cluster pausado — que es lo que los logs del 2026-08-03 registraron.
+  IN_FLIGHT_TTL = 2.minutes
   THROTTLE_KEY = "bedrock_kb_warm:last_ping"
 
+  # Última red, no la primera. #warm_with_retry ya absorbe el cold-start que la
+  # KB reporta; un error que sobrevive los tres reintentos no lo arregla un
+  # re-encolado, y re-encolar añadiría otro competidor por el mismo cluster.
   discard_on StandardError do |_job, error|
     Rails.logger.warn("[KB_WARM] discarded: #{error.class}: #{error.message}")
   end
@@ -24,16 +32,17 @@ class WarmBedrockKbJob < ApplicationJob
                         Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
     return unless knowledge_base_id
 
+    # Reclamar el turno ANTES de la llamada, no después. El throttle se escribía
+    # sólo en el camino de éxito, así que un ping fallido dejaba la clave sin
+    # poner y cada login siguiente encolaba otro wakeup contra la misma base
+    # pausada. TTL corto: un ping que falla debe poder reintentarse antes que uno
+    # que funcionó.
+    Rails.cache.write(THROTTLE_KEY, Time.current.to_i, expires_in: IN_FLIGHT_TTL)
+
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     client  = Aws::BedrockAgentRuntime::Client.new(aws_options)
 
-    client.retrieve(
-      knowledge_base_id: knowledge_base_id,
-      retrieval_query:   { text: "warm" },
-      retrieval_configuration: {
-        vector_search_configuration: { number_of_results: 1 }
-      }
-    )
+    warm_with_retry(client, knowledge_base_id)
 
     elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     Rails.cache.write(THROTTLE_KEY, Time.current.to_i, expires_in: THROTTLE_TTL)
@@ -45,6 +54,24 @@ class WarmBedrockKbJob < ApplicationJob
 
   def throttled?
     Rails.cache.exist?(THROTTLE_KEY)
+  end
+
+  # El mismo wrapper que usa la ruta de consulta viva
+  # (bedrock_rag_service.rb:828-834). Un precalentador que se rinde ante el único
+  # error que existe para absorber deja la factura del cold-start a la primera
+  # pregunta real del técnico.
+  def warm_with_retry(client, knowledge_base_id)
+    Bedrock::AuroraColdStartRetry.with_retry(
+      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
+    ) do
+      client.retrieve(
+        knowledge_base_id: knowledge_base_id,
+        retrieval_query:   { text: "warm" },
+        retrieval_configuration: {
+          vector_search_configuration: { number_of_results: 1 }
+        }
+      )
+    end
   end
 
   # Inline copy of the AWS client option resolution. Kept tiny on purpose:

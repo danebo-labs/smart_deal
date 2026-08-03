@@ -110,5 +110,30 @@ module Rag
         "What LED indicates the obstacle series?\nManufacturer and board: NE 300 – LB II"
       )
     end
+
+    test "ambiguous_hardware_query? is false for an explicit page reference (holdout v1 regression)" do
+      assert_not DeterministicIntent.ambiguous_hardware_query?(
+        "¿Qué modelo y qué códigos de LED aparecen en la tabla de la página 64?"
+      ), "holdout_page64_table"
+      assert_not DeterministicIntent.ambiguous_hardware_query?(
+        "En la tabla de la página 26, ¿cuántos LEDs hay en total y cuáles son?"
+      ), "holdout_page26_led_count"
+    end
+
+    test "ambiguous_hardware_query? recognizes page reference variants" do
+      %w[
+        página\ 26 pagina\ 26 pág.\ 26 pag\ 26 page\ 26
+      ].each do |page_ref|
+        assert_not DeterministicIntent.ambiguous_hardware_query?(
+          "¿Cuántos LEDs hay en la #{page_ref}?"
+        ), page_ref
+      end
+    end
+
+    test "ambiguous_hardware_query? is still true for generic hardware questions without a page or equipment reference" do
+      assert DeterministicIntent.ambiguous_hardware_query?(
+        "¿Cuántos LEDs hay en total?"
+      )
+    end
   end
 end

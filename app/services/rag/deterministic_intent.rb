@@ -26,6 +26,11 @@ module Rag
     EXPLICIT_EQUIPMENT_PATTERN =
       /\b(?:ALTIUS|ORONA|KONE|OTIS|SCHINDLER|SOPREL|THYSSEN(?:KRUPP)?|CARLOS\s+SILVA)\b|(?:\b[A-Z]{2,}[-.]?[A-Z]?\d+[A-Z0-9.-]*\b)/i.freeze
 
+    # A technician who already names a page number has disambiguated by
+    # location, whatever the label on that page looks like — no manufacturer
+    # or model code needs to appear in the question at all.
+    PAGE_REFERENCE_PATTERN = /\bp[áa]gina\s+\d+\b|\bp[áa]g\.?\s*\d+\b|\bpage\s+\d+\b/i.freeze
+
     # Trailing punctuation/whitespace the pin autofill or the technician may add.
     OVERVIEW_TRIM_PATTERN = /[[:space:][:punct:]]+\z/.freeze
 
@@ -60,7 +65,8 @@ module Rag
       return false if model_selection_reply?(text)
 
       GENERIC_HARDWARE_PATTERNS.any? { |pattern| text.match?(pattern) } &&
-        !text.match?(EXPLICIT_EQUIPMENT_PATTERN)
+        !text.match?(EXPLICIT_EQUIPMENT_PATTERN) &&
+        !text.match?(PAGE_REFERENCE_PATTERN)
     end
 
     # True when the technician pinned exactly one document and did not write a

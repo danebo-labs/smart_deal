@@ -634,10 +634,11 @@ bloqueante (no asumir A por defecto) y detenerse a preguntar.
 
 ### Fase 5 — Haiku 4.5
 
-> ⚠️ CRÍTICO: verifica que la decisión humana #7 (presupuesto Bedrock del ciclo
-> excedido en Fase 2) está resuelta antes de abrir el holdout — tus 14 llamadas
-> son las que probablemente crucen el techo de 30 del ciclo. Si no está resuelta,
-> detente y pregunta; no abras el holdout asumiendo "ya se gastó de más, da igual".
+> ⚠️ CRÍTICO: decisión humana #7 **RESUELTA en Fase 4 (2026-08-03)**: se eligió
+> **opción B** (reutilizar artefacto post-resync Fase 2 como humo, sin llamada nueva).
+> Costo Fase 4: 0 llamadas. Presupuesto ciclo: 18/30 (Fase 1: 6 + Fase 2: 12 +
+> Fase 4: 0). **Tus 14 llamadas de Fase 5 caben dentro de las <30 totales sin
+> exceder.** Procede sin bloqueo.
 >
 > Nota (no cambia tus pasos, sólo cómo diagnosticas un fallo): la Fase 3 dejó dos
 > hallazgos nuevos que conviene tener presentes al leer `results[]`. **N8:** 96 de

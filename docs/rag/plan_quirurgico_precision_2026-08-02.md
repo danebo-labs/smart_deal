@@ -377,6 +377,7 @@ siguientes.
 | 3 Rama Generación | **hecho 2026-08-03** — pasos 1-2 aplicados y medidos; **paso 3 (A/B Haiku/Sonnet) no se activó** porque 1-2 ya midieron corregido (regla del plan: sólo si 1-2 no bastan). **Paso 1 — prompt** (`app/prompts/bedrock/generation.txt`, dentro de `# EVIDENCE CONTRACT`, antes de `$output_format_instructions$`, §5-compatible): (a) se amplió la regla de "sibling model" existente (ya estaba en el prompt desde antes del holdout v1 y no bastó por sí sola) de "connection/terminal/component" a también "label, series/circuit mapping"; (b) instrucción nueva de fidelidad al chunk propio del modelo nombrado sobre cualquier otro chunk recuperado; (c) instrucción nueva de declarar explícitamente un desajuste de versión/sufijo en vez de sustituir en silencio; (d) instrucción nueva de preferir la tabla impresa del chunk sobre un bloque `FIELD_RECORD` para el mismo hecho. Hipótesis (§8.3): la regla de sibling-model existente era demasiado angosta (sólo hablaba de conexiones/terminales/componentes) y no cubría mapeos de etiqueta→serie ni sustitución por chunk genérico; si es falsa, las preguntas ad-hoc seguirían fallando igual. Verificado con `test/prompts/bedrock_generation_prompt_test.rb` (23 runs / 123 assertions, incluye SHA256 del template pre-cambio actualizado). **Paso 2 — dato corrupto** (decisión #3 del dueño): grep de solo-lectura sobre los 97 cuerpos reales (`aws s3 sync` de `bulk_chunks/1/b61f5d54-.../chunk_*.txt`, no la copia local de 2026-07-29 que ya no existe en disco) — **hallazgo que amplía el alcance original**: la cadena `OSBTACULO` no está sólo en `chunk_62` (ARCA III, pág. 64) sino en 6 chunks / 7 apariciones (`chunk_29`, `30`, `31`, `32`, `62`×2, `67`), siempre dentro de una línea `EVIDENCE:` de un `FIELD_RECORD`, siempre con la tabla/prosa del mismo chunk escribiendo la forma correcta al lado — confirma que es un defecto de la pasada de extracción de `FIELD_RECORD`, no una errata del documento original. Reparados los 6 chunks (`script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb`, patrón idéntico a `patch_seguridades_chunk9_2026-07-26.rb`: verificación de ETag contra la copia de referencia, backup a `s3://multimodal-source-destination/chunk_body_backups/1/b61f5d54-.../20260803T192923Z/` + local, escritura, verificación SHA256 post-escritura) + resync del KB (`BulkKbSyncService`, job `4UWM6QAQVP`, `COMPLETE`). **Ver H-06 abajo: el mismo grep encontró 6 familias más de cadenas con apariencia de typo en ~30 chunks adicionales — NO reparadas, escalado como decisión humana.** **Medición conjunta 1+2** (§8.3: 3 preguntas ad-hoc nuevas, ninguna del v1 ni del v2, ejecutadas localmente contra el KB de producción sobreescribiendo variables de entorno — no vía Kamal, porque el cambio de prompt es local y no se desplegó — ver nota de despliegue pendiente): las 3 pasan por lectura manual de la respuesta cruda (la rúbrica ad-hoc marcó 1/3 en falso, con el mismo defecto de rúbrica que los 2 falsos positivos del v1 — ventana/dirección de regex, no se corrigió porque la rúbrica ad-hoc no se congela ni se reusa). (1) `adhoc_ne300_p35b_not_documented`: el modelo declaró explícitamente que P35B no está documentado para NE 300 – LB II y citó la fuente real (ARCA II, no transplantó el valor). (2) `adhoc_em4000_v3_absent`: el modelo declaró explícitamente "la EM 4000 V3... no aparece en la documentación disponible", sin sustituir V1 en silencio. (3) `adhoc_em2000_electrico_ap_led`: el modelo respondió "SERIE OBSTÁCULO" bien escrito, sin la copia corrupta. **Pendiente antes de que esto cuente para la Fase 4: desplegar `app/prompts/bedrock/generation.txt` a producción** — el dato ya está reparado en S3/KB, pero el prompt sólo se probó localmente contra el KB de producción; el contenedor desplegado (`7fc8f2ae...`) todavía sirve el prompt viejo. | `app/prompts/bedrock/generation.txt`, `test/prompts/bedrock_generation_prompt_test.rb`, `script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb`, `tmp/rag_seguridades_adhoc_fase3_generacion_2026-08-03.json` + `_run1.json` (fuera de git) |
 | 3 Rama Recuperación | sin trabajo este ciclo (0 fallos puros); alias LCB II/GEN II sólo si reaparece en v2 | — |
 | 4 gate v2 → piloto | **NO PASA — 2026-08-03** — Criterio: ≥ 70/88 y **cero fallos safety_critical**. V2 alcanza 70/88 (exacto) pero **la pregunta safety_critical `holdout_v2_arca3_bypass_j25_seguridad` falló completamente** (score 2/9, todos los required unmatched: no identifica J25, no declara qué queda puenteado, no distingue modo revisión). El error de contenido sobre bypass de seguridades no es tolerable. **Ciclo 1 (v1): consumido, falló con 47/88. Ciclo 2 (v2): consumido, falló en criterio safety_critical.** Regla del plan (§Fase 4): dos ciclos fallidos → **parar y re-plantear con humanos**. Escalado como **decisión humana #6**. Artefacto: `tmp/rag_seguridades_holdout_v2_run1_2026-08-03.json`, hash SHA256 `547dfba03f4065766531948f98f953fc37e8752dab8dad18f63c38dcdf7ad661`. Fases posteriores (Generalización, pilotos) quedan bloqueadas hasta resolución. | `tmp/rag_seguridades_holdout_v2_run1_2026-08-03.json` — 547dfba03f4065766531948f98f953fc37e8752dab8dad18f63c38dcdf7ad661 |
+| Ciclo 3 | continúa en docs/rag/plan_precision_definitiva_2026-08-03.md (decisiones #5 y #6 resueltas 2026-08-03) | — |
 
 ---
 
@@ -418,7 +419,14 @@ La pregunta sobre el puente de bypass de ARCA III en posición J25 no fue respon
 - (c) Detener mejora de precisión en esta iteración, liberar con guardrails operacionales
 - (d) Otra estrategia
 
-**No se ejecuta ninguna acción dentro del plan** hasta que el dueño del producto resuelva la decisión #6.
+**RESUELTA 2026-08-03 por el dueño del producto:** opción (a) refinada — se autoriza
+el **ciclo 3** con estrategia seguridad-primero: diagnóstico dirigido del fallo J25,
+intervención mínima, holdout v3 de 14 preguntas (4 de seguridad, todas las intenciones
+de pregunta cubiertas) y checkpoint de despliegue obligatorio antes del gate. Es el
+último ciclo con esta estrategia. Plan del ciclo:
+`docs/rag/plan_precision_definitiva_2026-08-03.md`.
+La línea «No se ejecuta ninguna acción dentro del plan…» queda satisfecha: este plan
+(ciclo 1-2) se cierra; el trabajo continúa en el plan del ciclo 3.
 
 ---
 
@@ -467,6 +475,11 @@ cotejo página-por-página contra el PDF para las cuatro familias mixtas
 (`CERRRADA`, `EXTERORES`, `REVISON`, y el resto de `SEGURDAD`/`SEGURIIDAD` no
 verificado chunk-por-chunk) antes de decidir si son typos de ingesta o del
 documento original? No se ejecuta ninguna de las dos sin esa decisión.
+
+**RESUELTA 2026-08-03 por el dueño del producto:** (a) **sí** — reparar `ACUÑAIENTO`
+(chunk 94, perfil limpio) con el mismo patrón de script; se ejecuta en la **Fase 2c
+del ciclo 3** aprovechando su resync. (b) **no** — el cotejo página-por-página de las
+4 familias mixtas se pospone; siguen sin tocarse.
 
 ---
 

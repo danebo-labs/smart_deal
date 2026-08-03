@@ -5,7 +5,7 @@ require "securerandom"
 require "fileutils"
 
 class RagSeguridadesBenchmark
-  RUBRIC_PATH = Rails.root.join("script/fixtures/rag_seguridades_rubric.json")
+  FIXTURE_PATH = Rails.root.join("script/fixtures/rag_seguridades_rubric.json")
   ExternalDocument = Data.define(:id, :account, :display_name, :s3_key, :source_uri)
 
   class CountingRagService
@@ -37,7 +37,8 @@ class RagSeguridadesBenchmark
 
   def initialize(env: ENV)
     @env = env
-    rubric_path = env.fetch("RAG_SEGURIDADES_RUBRIC", RUBRIC_PATH)
+    fixture_path = env.fetch("RAG_SEGURIDADES_FIXTURE_PATH", FIXTURE_PATH)
+    rubric_path = env.fetch("RAG_SEGURIDADES_RUBRIC", fixture_path)
     @rubric = JSON.parse(File.read(rubric_path))
     @output_path = env.fetch(
       "RAG_SEGURIDADES_OUTPUT",

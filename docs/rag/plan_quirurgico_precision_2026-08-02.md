@@ -363,7 +363,7 @@ siguientes.
 
 | Fase | Estado | Artefacto / hash |
 |---|---|---|
-| 0a arnés parametrizado | pendiente | — |
+| 0a arnés parametrizado | **hecho 2026-08-03** — `FIXTURE_PATH` constante añadida; `ENV["RAG_SEGURIDADES_FIXTURE_PATH"]` parametriza ruta base (default: `script/fixtures/rag_seguridades_rubric.json`); `ENV["RAG_SEGURIDADES_RUBRIC"]` unificado sin romper invocaciones en holdout_v1_resultado_2026-08-03.md §1. | `test/scripts/rag_seguridades_benchmark_test.rb` — 4 tests cobertura |
 | 0b holdout v2 congelado | pendiente | — |
 | 0c account_id resuelto | **hecho 2026-08-02** — decisión: la cuenta 1 es la del piloto (opción a); backfill corrido en producción vía Kamal: `KbDocument 12` ya existía, `in home list: true`, `RESULT: OK` | Nota: quedan aliases contaminados del bug de enriquecimiento (p. ej. `"ALJO Control Level 1B Altius"`) — el script sólo los limpia cuando repara `display_name`. No bloquea; limpiar sólo si una medición lo justifica. |
 | 1 holdout v1 medido | **hecho 2026-08-03** — 2/10, 47/88 (53%), por debajo de `passing_score: 70`. Holdout v1 queda gastado, no se reabre. | `docs/rag/holdout_v1_resultado_2026-08-03.md`, `tmp/rag_seguridades_holdout_v1_run1_2026-08-03.json` |

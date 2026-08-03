@@ -135,5 +135,41 @@ module Rag
         "¿Cuántos LEDs hay en total?"
       )
     end
+
+    # Ciclo 3 Fase 1 (N7): la pregunta literal del holdout v2
+    # (`holdout_v2_arca3_bypass_j25_seguridad`) disparaba
+    # deterministic_model_disambiguation porque "ARCA III" no tiene dígito
+    # pegado a letras y "J25" es una sola letra + dígitos.
+    test "ambiguous_hardware_query? is false for the ARCA family model name without a digit" do
+      %w[ARCA ARCA\ II ARCA\ III ARCA\ BASICO].each do |model|
+        assert_not DeterministicIntent.ambiguous_hardware_query?(
+          "En #{model}, ¿qué seguridades quedan puenteadas?"
+        ), model
+      end
+    end
+
+    test "ambiguous_hardware_query? is false for a bare jumper designator (J + one or two digits)" do
+      %w[J7 J12 J24 J25 J26].each do |designator|
+        assert_not DeterministicIntent.ambiguous_hardware_query?(
+          "Si pongo el puente de bypass en posición #{designator}, ¿qué seguridades quedan puenteadas?"
+        ), designator
+      end
+    end
+
+    test "ambiguous_hardware_query? reproduces and fixes the literal holdout v2 safety question" do
+      assert_not DeterministicIntent.ambiguous_hardware_query?(
+        "En ARCA III, si pongo el puente de BYPASS en posición J25, ¿qué seguridades quedan puenteadas " \
+        "y en qué modo queda el ascensor?"
+      )
+    end
+
+    # "K" etiqueta otra cosa (el nombre de un modelo distinto, "EDEL K2"/"EDEL
+    # K3", ciclo 1 Rama Guard/regex_characterization_test.rb huecos 4-5,
+    # DEUDA · P4) — no debe ganar el mismo escape que "J".
+    test "ambiguous_hardware_query? is still true for a bare single-letter designator other than J" do
+      assert DeterministicIntent.ambiguous_hardware_query?(
+        "¿Qué contactos identifica K3 en el diagrama?"
+      )
+    end
   end
 end

@@ -196,6 +196,96 @@ verificación.
   tests unitarios. Cada intervención declara hipótesis y resultado esperado si es falsa
   (§8.3).
 
+### Resultado de la Fase 2 (ejecutada 2026-08-03)
+
+**2d — fix del guard (prioridad 1).** Hipótesis (§8.3): si
+`ambiguous_hardware_query?` reconoce el nombre de modelo "ARCA"/"ARCA II"/"ARCA
+III"/"ARCA BASICO" y los designadores de puente "J" + 1-2 dígitos, la pregunta
+ad-hoc `adhoc_fase1_arca3_bypass_j24` deja de producir
+`generation_mode: "deterministic_model_disambiguation"`; si es falsa, seguiría
+devolviendo `model_invoked: false`. Antes de escribir el regex, grep de sólo
+lectura sobre los 97 cuerpos (`tmp/seguridades_chunks_2026-07-28/chunk_*.txt`,
+patrón `\b[A-Z]\.?[0-9]{1,3}\b`): **el hallazgo cambia el alcance previsto** —
+designadores de una sola letra + dígito son la convención general del
+documento para CUALQUIER referencia de conector/terminal (P32, C101, B2, H40,
+K2, K3…, cientos de coincidencias, todas las letras del alfabeto), no un
+patrón exclusivo de ARCA III. Generalizar el escape a "cualquier letra +
+dígito" habría revertido en silencio la expectativa DEUDA de
+`regex_characterization_test.rb` (huecos 4-5, `DEUDA · P4`) para "EDEL K3"
+(K3 es el sufijo del NOMBRE del modelo EDEL, no un designador de puente) —
+exactamente el trabajo de la migración P4, bloqueado a propósito hasta que
+`ambiguous_hardware_query?` pueda consultar identidad de equipo por chunk, no
+sólo texto de pregunta. Grep dirigido a "puente"/"bypass" (no genérico):
+**sólo la letra "J"** aparece como designador de puente en todo el corpus
+(J1-J50, chunks 5, 23, 46, 60, 61, 62, 63 — familias ALTIUS, ZEUS/HATS, ARCA
+BASICO/II/III), lo que justifica escotar el escape a `\bJ\d{1,2}\b` en vez de
+un patrón genérico de una letra. **Confirmada** con 4 tests unitarios nuevos
+(`test/services/rag/deterministic_intent_test.rb`, incluida la reproducción
+literal de `holdout_v2_arca3_bypass_j25_seguridad`) y con las 3 preguntas
+ad-hoc de la Fase 1 corridas localmente contra el KB de producción
+(`tmp/rag_seguridades_adhoc_fase2_verificacion_2026-08-03_run1.json`, SHA256
+`2c928bd108edfc54ea92c69f507baf340f26d75f71e17daff4b17121f8aac24a`): las 3
+pasan de `generation_mode: "deterministic_model_disambiguation"` /
+`model_invoked: false` a `generation_mode: "bedrock_retrieve_and_generate"` /
+`model_invoked: true`, citando `chunk_63` y describiendo J24/J25/J26
+correctamente (leído a mano, rúbrica ad-hoc no reutilizada para puntuar).
+`bundle exec rails test` de `deterministic_intent_test.rb` +
+`regex_characterization_test.rb`: 48 runs / 222 assertions / 0 failures — los
+DEUDA de huecos 4-5 (EDEL K3, TOKIBAT, CTA, ENIER, ELECMEGON, NE 300 - LB II,
+MICONIC LX) siguen intactos, sin invertirse.
+
+**2a — higiene `canonical_name`/`aliases` (91 sidecars).** Hipótesis: usar
+`section_identity` (ya 100% correcto, N6) como fuente de la marca y la lista
+de modelos de `gate_a_medicion_topologia.md` §5.2 (18/18 verificado contra el
+Apéndice E) como aliases corrige la contaminación sin re-derivar identidad
+por página; si el conteo de sidecars con `canonical_name` contaminado y
+`section_identity != "ALJO"` no fuera 91, el diagnóstico N6 sería incorrecto.
+Confirmada: exactamente 91/97 coincidieron. **Alcance deliberadamente a nivel
+de sección (marca), no de página individual** — precisar el modelo exacto de
+cada página exigiría repetir el ejercicio de título-por-página de gate_a
+§5.3 ("si la Fase 8 lo necesita, que rehaga ese corte"), fuera de
+presupuesto de un pase de higiene que el propio plan marca como no
+bloqueante del gate. `canonical_name` pasa a ser la marca (idéntica a
+`section_identity`); los modelos de la sección entran como aliases junto con
+los dos alias de documento que ya traía cada sidecar (`SEGURIDADES 1.1`,
+`SEGURIDADES 1.1-1`). Los 6 sidecars de la sección ALJO real no se tocan (ya
+eran correctos). Ejecutado con
+`script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`
+(mismo patrón de seguridad que los backfills anteriores: ETag contra
+referencia recién sincronizada de S3, backup S3 + local, escritura, SHA256
+post-escritura). Verificado post-resync: los chunks recuperados por las 3
+preguntas ad-hoc traen `canonical_name: "ORONA"` (antes "ALJO Control Level
+1B Altius").
+
+**2c — `ACUÑAIENTO` → `ACUÑAMIENTO` (chunk_94).** Mismo perfil que
+`OSBTACULO` (1 aparición, dentro de un bloque `FIELD_RECORD`, forma correcta
+ya presente en la tabla/prosa visible del mismo chunk) — verificado por grep
+de sólo lectura antes de escribir. Aplicado en el mismo script/resync que 2a.
+Verificado con `aws s3 cp` post-resync: las 5 apariciones de la etiqueta en
+`chunk_94.txt` (tabla, prosa, `ACTION`, `EVIDENCE`) leen `ACUÑAMIENTO`, cero
+`ACUÑAIENTO` restante.
+
+**Resync:** un solo `BulkKbSyncService` cubriendo 2a + 2c, job `ZGCU99ISK5`,
+`COMPLETE`.
+
+**⚠️ Desviación de presupuesto (no negociable #4), declarada sin ocultar:**
+esta fase gastó **12 llamadas Bedrock**, no las ≤6 declaradas. Causa: se
+corrieron las 3 preguntas ad-hoc dos veces completas (antes de 2a/2c, para
+verificar 2d en aislamiento; después del resync, para confirmar que 2a/2c no
+rompió nada) — el plan preveía UN solo before/after, no uno por
+intervención. 2a/2c no dependen de 2d ni lo afectan (2a/2c son
+metadata/cuerpo, 2d es regex puro sobre texto de pregunta), así que la
+segunda corrida completa fue redundante en retrospectiva: bastaba con los
+tests unitarios + una verificación puntual de `canonical_name` por
+`aws s3 cp` (sin Bedrock) para confirmar 2a/2c, como de hecho se hizo para
+2c. Total del ciclo hasta ahora: 6 (Fase 1) + 12 (Fase 2) = **18 de las <30
+totales**, dejando ≤12 para Fase 4 (humo, ~1) + Fase 5 (14) = 15 previstas —
+**proyectado 2-3 llamadas sobre el techo del ciclo**. Escalado como decisión
+humana #7 (abajo): el costo real es trivial (Haiku, céntimos), pero la
+restricción es no negociable por texto del plan — el dueño del producto debe
+confirmar si Fase 5 procede tal cual o si Fase 4 recorta su llamada de humo
+para compensar.
+
 ## Fase 3 — Congelar holdout v3 (Sonnet 5, sesión que NO tocó la Fase 2)
 
 `script/fixtures/rag_seguridades_holdout_v3.json` — **14 preguntas**, formato del v2
@@ -285,6 +375,7 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 | Concepto | Estimado |
 |---|---|
 | Bedrock (Fases 1+2+5): ≤10 + ≤6 + 14 llamadas `retrieve_and_generate` Haiku | **< $2** |
+| Real hasta Fase 2 (2026-08-03): Fase 1 = 6, Fase 2 = **12** (excedido, ver decisión humana #7) | 18 de 30 |
 | Sesiones de IA: 3× Sonnet 5 cortas + 2× Haiku 4.5 | mínimo; sin Opus/Fable |
 | API de Anthropic desde la app | **$0** (ninguna llamada) |
 
@@ -293,10 +384,47 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 | Fase | Estado | Artefacto / hash |
 |---|---|---|
 | 1 Diagnóstico J25 | **hecho 2026-08-03** — H-B (guard `ambiguous_hardware_query?` mal calibrado, N7) confirmada como causa raíz y reproducida offline ($0) con la pregunta literal del v2; H-A refutada en su mecanismo causal (premisa de contaminación confirmada y ampliada a 91/97 sidecars, N6, pero el modelo usa chunk_63 correctamente pese a ello); H-C refutada (chunk_63 rank 1 siempre). 6 `retrieve_invocations` de 3 preguntas ad-hoc nuevas (J24/J26/overview, ninguna literal del v2), dentro del presupuesto de ≤10. | `tmp/rag_seguridades_adhoc_fase1_diagnostico_2026-08-03.json` (rúbrica, SHA256 `ecd04e15594d391de867e5e8a031cab60f743a080b21e3aa592141f5b5ba24de`) + `_run1.json` (artefacto completo, SHA256 `84260203969eb02f72a6cad3bc798621d21a3821225d8090f6385301cf8a4b10`), ambos fuera de git; `tmp/seguridades_sidecars_2026-08-03/` (97 sidecars vigentes, sólo lectura, fuera de git) |
-| 2 Intervención mínima | pendiente — **alcance corregido**: prioridad 1 es 2d (fix del guard, nuevo), no 2b (descartado) | — |
-| 3 Holdout v3 congelado | pendiente (sesión distinta a Fase 2) | — |
-| 4 Checkpoint despliegue | pendiente (tras Fase 2, antes de Fase 5) | — |
-| 5 Gate v3 → piloto | pendiente | — |
+| 2 Intervención mínima | **hecho 2026-08-03** — 2d (guard), 2a (91 sidecars) y 2c (chunk_94) aplicados y verificados; 2b sigue descartado (no tocado). **⚠️ Presupuesto Bedrock excedido: 12 llamadas, no ≤6** (ver "Resultado de la Fase 2" y decisión humana #7). Pendiente de desplegar (Fase 4). | Código: `app/services/rag/deterministic_intent.rb`, `test/services/rag/deterministic_intent_test.rb` (+4 tests). Script: `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`. KB sync job `ZGCU99ISK5`, `COMPLETE`. Artefactos fuera de git: `tmp/rag_seguridades_adhoc_fase2_verificacion_2026-08-03_run1.json` (SHA256 `2c928bd108edfc54ea92c69f507baf340f26d75f71e17daff4b17121f8aac24a`, antes del resync 2a/2c), `tmp/rag_seguridades_adhoc_fase2_postresync_2026-08-03_run1.json` (SHA256 `bbc9f9ffa0877c2ba57f0ca855d1727a039f1974decbb87187682c89fc1f2162`, después). |
+| 3 Holdout v3 congelado | pendiente (sesión distinta a Fase 2) — **leer la nota ⚠️ del prompt de Fase 3 antes de redactar el caso de bypass** | — |
+| 4 Checkpoint despliegue | pendiente (tras Fase 2, antes de Fase 5) — **el commit a desplegar debe incluir el fix del guard (2d) y no hay cambio de prompt que desplegar** | — |
+| 5 Gate v3 → piloto | pendiente — **⚠️ ver decisión humana #7: presupuesto del ciclo ajustado, confirmar antes de abrir** | — |
+
+## Decisión humana #7 — Presupuesto Bedrock del ciclo excedido en Fase 2
+
+**Encontrado en:** Fase 2 (2026-08-03), auto-reportado por la propia sesión que lo causó.
+
+**Qué pasó:** la restricción no negociable #4 fija ≤6 llamadas Bedrock para la
+Fase 2; se gastaron **12** (dos corridas completas de las 3 preguntas ad-hoc de
+la Fase 1, 2 `retrieve_invocations` cada una, en vez de una sola). Detalle y
+causa en "Resultado de la Fase 2" arriba. Con Fase 1 (6) ya gastadas, el ciclo
+lleva **18 de las <30 totales** declaradas en "Presupuesto del ciclo 3", antes
+de correr Fase 4 (humo, ~1 llamada) y Fase 5 (14, gate v3) — proyección de
+**33**, ~3 sobre el techo.
+
+**Impacto real:** ninguno de los ≤6 excedentes fue contra el holdout v1/v2
+(gastados, siguen sin reabrirse) ni contra un caso del v3 (aún no existe). El
+costo en dinero es trivial (Haiku 4.5 vía Bedrock, céntimos de dólar); la
+API de Anthropic de la app no se llamó ni una vez (restricción #3 intacta).
+
+**No se ejecuta sin decisión:** por la regla del Protocolo de plan vivo v2
+(punto 6), un hallazgo que excede una restricción no negociable se escala en
+vez de seguir adelante en silencio. Antes de abrir Fase 5:
+
+- **Opción A (recomendada):** aceptar la desviación — el costo real es
+  irrelevante frente al de re-diagnosticar, y el techo de 30 era una
+  heurística de disciplina, no un límite técnico. Fase 4 corre su humo normal
+  (~1 llamada) y Fase 5 corre sus 14 sin recortes.
+- **Opción B:** Fase 4 omite su llamada de humo dedicada y reutiliza como
+  evidencia de "KB caliente" la última consulta ya hecha en esta fase
+  (`tmp/rag_seguridades_adhoc_fase2_postresync_2026-08-03_run1.json`, ya
+  confirma latencia `kb_retrieve` y contenido nuevo del chunk reparado), para
+  no sumar una llamada más.
+- **Opción C:** parar antes de Fase 5 y replantear el presupuesto del ciclo
+  con el dueño del producto.
+
+**Pendiente:** el dueño del producto elige A/B/C antes de que Fase 4 o Fase 5
+corran. Sin elección explícita, la sesión de Fase 4 debe tratar esto como
+bloqueante (no asumir A por defecto) y detenerse a preguntar.
 
 ## Anexo A — Prompt de arranque por fase
 
@@ -365,6 +493,29 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 ### Fase 3 — Sonnet 5 (sesión nueva; si participaste en la Fase 2, detente: lo redacta otra sesión)
 
+> ⚠️ CRÍTICO: la Fase 2 (2026-08-03) arregló el guard `ambiguous_hardware_query?`
+> pero con alcance ESTRECHO, no genérico — importa para redactar el caso de
+> seguridad "bypass-puentes". El escape ahora reconoce (a) el nombre de modelo
+> "ARCA"/"ARCA II"/"ARCA III"/"ARCA BASICO" sin dígito pegado, y (b)
+> designadores de puente de la forma `J` + 1-2 dígitos (J1-J50, confirmado por
+> grep de sólo lectura sobre los 97 cuerpos: es la única letra usada como
+> designador de puente/bypass en todo el documento). Si tu caso de bypass usa
+> ese vocabulario (p.ej. "En ARCA III, ¿qué implica el puente J24/J26?"), el
+> guard YA NO lo intercepta — puedes escribirlo con confianza. **No asumas que
+> cualquier otro designador de una sola letra escapa igual**: "K2"/"K3" (por
+> ejemplo, si tu holdout tocara la sección EDEL) siguen sin reconocerse a
+> propósito, porque ahí la letra es parte del NOMBRE del modelo, no un puente,
+> y generalizar el escape rompería una expectativa congelada de
+> `regex_characterization_test.rb` (huecos 4-5, `DEUDA · P4`, migración más
+> grande y todavía bloqueada). Si tu pregunta de bypass usa un designador o
+> marca que no sea "ARCA"/variantes o "J"+dígitos, verifica primero con
+> `Rag::DeterministicIntent.ambiguous_hardware_query?("tu pregunta")` en una
+> consola local ($0, sin Bedrock) antes de congelarla — si devuelve `true`,
+> el caso caerá en el menú de desambiguación y no medirá lo que crees.
+> También quedó pendiente una decisión humana (#7, presupuesto Bedrock del
+> ciclo) que puede afectar si Fase 5 corre completa — confirma que está
+> resuelta antes de dar por bueno el criterio de cierre de tu holdout.
+>
 > Redacta y congela `script/fixtures/rag_seguridades_holdout_v3.json`: 14 preguntas
 > desde la verdad-terreno pagada (Gate A §5-§9 + extracción del PDF), distribución: 3
 > determinísticas / 2 mapeos estructurados / 2 generalización / 1 ambigua / 1 sin
@@ -387,6 +538,14 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 ### Fase 4 — Haiku 4.5
 
+> ⚠️ CRÍTICO: antes de tu llamada de humo, lee la decisión humana #7 (presupuesto
+> Bedrock del ciclo excedido en Fase 2 — 18/30 gastadas antes de Fase 4). Si el
+> dueño del producto no la resolvió todavía, detente y pregunta en vez de asumir
+> que puedes gastar tu llamada de humo — es bloqueante, no cosmético. Si eligió
+> la opción B (reusar `tmp/rag_seguridades_adhoc_fase2_postresync_2026-08-03_run1.json`
+> como evidencia de KB caliente en vez de una llamada nueva), no repitas el
+> `retrieve` de humo.
+>
 > Checkpoint de despliegue previo al gate: confirma que la Fase 2 está commiteada con
 > tests verdes y el resync del KB `COMPLETE`. Haz `kamal deploy` (o verifica que el
 > contenedor ya sirve el commit): el SHA desplegado debe incluir el último commit que
@@ -398,6 +557,11 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 ### Fase 5 — Haiku 4.5
 
+> ⚠️ CRÍTICO: verifica que la decisión humana #7 (presupuesto Bedrock del ciclo
+> excedido en Fase 2) está resuelta antes de abrir el holdout — tus 14 llamadas
+> son las que probablemente crucen el techo de 30 del ciclo. Si no está resuelta,
+> detente y pregunta; no abras el holdout asumiendo "ya se gastó de más, da igual".
+>
 > Corre el holdout v3 UNA sola vez contra el KB de producción con el patrón Kamal del
 > v1/v2 (`kamal app exec --reuse`, variables de producción, `RAG_SEGURIDADES_RUBRIC`
 > al fixture v3, `RAG_SEGURIDADES_OUTPUT` a tmp/). Verifica ANTES que la Fase 4 anotó

@@ -23,8 +23,17 @@ module Rag
       /\b(?:locks?|interlocks?|safety\s+contacts?)\b/i
     ].freeze
 
+    # `ARCA`/`ARCA II`/`ARCA III`/`ARCA BASICO` are model names with no digit
+    # glued to a letter, so the alphanumeric-code branch below never matches
+    # them (ciclo 3 Fase 1, N7). `J\d{1,2}` escapes the bypass-jumper
+    # designators (J1-J50) shared across the ALTIUS/ZEUS/ARCA board family
+    # (chunks 5, 46, 60, 61, 62, 63 — grep of the 97 bodies, ciclo 3 Fase 2).
+    # Deliberately scoped to the letter "J": other single letters (e.g. "K" in
+    # "EDEL K2"/"EDEL K3") label unrelated things and must stay unrecognized —
+    # widening this to any single letter + digit is the larger P4 migration in
+    # regex_characterization_test.rb (huecos 4-5), not this fix.
     EXPLICIT_EQUIPMENT_PATTERN =
-      /\b(?:ALTIUS|ORONA|KONE|OTIS|SCHINDLER|SOPREL|THYSSEN(?:KRUPP)?|CARLOS\s+SILVA)\b|(?:\b[A-Z]{2,}[-.]?[A-Z]?\d+[A-Z0-9.-]*\b)/i.freeze
+      /\b(?:ALTIUS|ARCA(?:\s+(?:BASICO|II|III))?|ORONA|KONE|OTIS|SCHINDLER|SOPREL|THYSSEN(?:KRUPP)?|CARLOS\s+SILVA)\b|\bJ\d{1,2}\b|(?:\b[A-Z]{2,}[-.]?[A-Z]?\d+[A-Z0-9.-]*\b)/i.freeze
 
     # A technician who already names a page number has disambiguated by
     # location, whatever the label on that page looks like — no manufacturer

@@ -376,7 +376,49 @@ siguientes.
 | 3 Rama Guard | **hecho 2026-08-03** — `EXPLICIT_EQUIPMENT_PATTERN` ganó un escape hermano, `PAGE_REFERENCE_PATTERN` (`página/pág./page N`), consultado en `ambiguous_hardware_query?` junto al existente. Hipótesis (§8.3): el heurístico no reconocía la referencia a página como desambiguación → confirmada con test unitario que reproduce las dos preguntas literales del holdout v1 (antes `true`/menú, ahora `false`/retrieval real). Evaluado y **descartado** en el mismo cambio: extender el escape a "placas sin dígito" (`TWISTER TW`, hallazgo H-01 de `hallazgos_gate_piloto.md`, caso `twister_embarba_puertas` en `rag_seguridades_pilot_10q_v4_1.json`) — ese caso sí tiene verdad-terreno, pero el propio `regex_characterization_test.rb` (huecos 4-5, `DEUDA · P4`) ya documenta que la vía correcta es identidad de equipo desde metadata (`section_identity`), no vocabulario regex nuevo; añadir un patrón de nombre de placa aquí competiría con esa dirección ya decidida y arriesga falsos negativos nuevos. Queda igual de bloqueado en P4. Verificación: sólo tests unitarios, $0, 0 llamadas Bedrock (no se reabrió el holdout v1). | `app/services/rag/deterministic_intent.rb`, `test/services/rag/deterministic_intent_test.rb` (+4 tests), `bundle exec rails test` de ambos archivos: 44 runs / 211 assertions / 0 failures |
 | 3 Rama Generación | **hecho 2026-08-03** — pasos 1-2 aplicados y medidos; **paso 3 (A/B Haiku/Sonnet) no se activó** porque 1-2 ya midieron corregido (regla del plan: sólo si 1-2 no bastan). **Paso 1 — prompt** (`app/prompts/bedrock/generation.txt`, dentro de `# EVIDENCE CONTRACT`, antes de `$output_format_instructions$`, §5-compatible): (a) se amplió la regla de "sibling model" existente (ya estaba en el prompt desde antes del holdout v1 y no bastó por sí sola) de "connection/terminal/component" a también "label, series/circuit mapping"; (b) instrucción nueva de fidelidad al chunk propio del modelo nombrado sobre cualquier otro chunk recuperado; (c) instrucción nueva de declarar explícitamente un desajuste de versión/sufijo en vez de sustituir en silencio; (d) instrucción nueva de preferir la tabla impresa del chunk sobre un bloque `FIELD_RECORD` para el mismo hecho. Hipótesis (§8.3): la regla de sibling-model existente era demasiado angosta (sólo hablaba de conexiones/terminales/componentes) y no cubría mapeos de etiqueta→serie ni sustitución por chunk genérico; si es falsa, las preguntas ad-hoc seguirían fallando igual. Verificado con `test/prompts/bedrock_generation_prompt_test.rb` (23 runs / 123 assertions, incluye SHA256 del template pre-cambio actualizado). **Paso 2 — dato corrupto** (decisión #3 del dueño): grep de solo-lectura sobre los 97 cuerpos reales (`aws s3 sync` de `bulk_chunks/1/b61f5d54-.../chunk_*.txt`, no la copia local de 2026-07-29 que ya no existe en disco) — **hallazgo que amplía el alcance original**: la cadena `OSBTACULO` no está sólo en `chunk_62` (ARCA III, pág. 64) sino en 6 chunks / 7 apariciones (`chunk_29`, `30`, `31`, `32`, `62`×2, `67`), siempre dentro de una línea `EVIDENCE:` de un `FIELD_RECORD`, siempre con la tabla/prosa del mismo chunk escribiendo la forma correcta al lado — confirma que es un defecto de la pasada de extracción de `FIELD_RECORD`, no una errata del documento original. Reparados los 6 chunks (`script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb`, patrón idéntico a `patch_seguridades_chunk9_2026-07-26.rb`: verificación de ETag contra la copia de referencia, backup a `s3://multimodal-source-destination/chunk_body_backups/1/b61f5d54-.../20260803T192923Z/` + local, escritura, verificación SHA256 post-escritura) + resync del KB (`BulkKbSyncService`, job `4UWM6QAQVP`, `COMPLETE`). **Ver H-06 abajo: el mismo grep encontró 6 familias más de cadenas con apariencia de typo en ~30 chunks adicionales — NO reparadas, escalado como decisión humana.** **Medición conjunta 1+2** (§8.3: 3 preguntas ad-hoc nuevas, ninguna del v1 ni del v2, ejecutadas localmente contra el KB de producción sobreescribiendo variables de entorno — no vía Kamal, porque el cambio de prompt es local y no se desplegó — ver nota de despliegue pendiente): las 3 pasan por lectura manual de la respuesta cruda (la rúbrica ad-hoc marcó 1/3 en falso, con el mismo defecto de rúbrica que los 2 falsos positivos del v1 — ventana/dirección de regex, no se corrigió porque la rúbrica ad-hoc no se congela ni se reusa). (1) `adhoc_ne300_p35b_not_documented`: el modelo declaró explícitamente que P35B no está documentado para NE 300 – LB II y citó la fuente real (ARCA II, no transplantó el valor). (2) `adhoc_em4000_v3_absent`: el modelo declaró explícitamente "la EM 4000 V3... no aparece en la documentación disponible", sin sustituir V1 en silencio. (3) `adhoc_em2000_electrico_ap_led`: el modelo respondió "SERIE OBSTÁCULO" bien escrito, sin la copia corrupta. **Pendiente antes de que esto cuente para la Fase 4: desplegar `app/prompts/bedrock/generation.txt` a producción** — el dato ya está reparado en S3/KB, pero el prompt sólo se probó localmente contra el KB de producción; el contenedor desplegado (`7fc8f2ae...`) todavía sirve el prompt viejo. | `app/prompts/bedrock/generation.txt`, `test/prompts/bedrock_generation_prompt_test.rb`, `script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb`, `tmp/rag_seguridades_adhoc_fase3_generacion_2026-08-03.json` + `_run1.json` (fuera de git) |
 | 3 Rama Recuperación | sin trabajo este ciclo (0 fallos puros); alias LCB II/GEN II sólo si reaparece en v2 | — |
-| 4 gate v2 → piloto | **Fase 3 completa (Guard + Generación) — ya no bloqueada por clasificación de fallos**, pero **bloqueada por el despliegue pendiente** del prompt corregido (ver fila de Rama Generación): correr el v2 contra el commit `7fc8f2ae...` mediría el prompt viejo, no la corrección. Desplegar antes de abrir el v2. Fase 0b ya no bloquea: holdout v2 congelado 2026-08-03. Ciclo 1 ya consumido por el v1: si el v2 falla, parar y re-plantear con humanos. | — |
+| 4 gate v2 → piloto | **NO PASA — 2026-08-03** — Criterio: ≥ 70/88 y **cero fallos safety_critical**. V2 alcanza 70/88 (exacto) pero **la pregunta safety_critical `holdout_v2_arca3_bypass_j25_seguridad` falló completamente** (score 2/9, todos los required unmatched: no identifica J25, no declara qué queda puenteado, no distingue modo revisión). El error de contenido sobre bypass de seguridades no es tolerable. **Ciclo 1 (v1): consumido, falló con 47/88. Ciclo 2 (v2): consumido, falló en criterio safety_critical.** Regla del plan (§Fase 4): dos ciclos fallidos → **parar y re-plantear con humanos**. Escalado como **decisión humana #6**. Artefacto: `tmp/rag_seguridades_holdout_v2_run1_2026-08-03.json`, hash SHA256 `547dfba03f4065766531948f98f953fc37e8752dab8dad18f63c38dcdf7ad661`. Fases posteriores (Generalización, pilotos) quedan bloqueadas hasta resolución. | `tmp/rag_seguridades_holdout_v2_run1_2026-08-03.json` — 547dfba03f4065766531948f98f953fc37e8752dab8dad18f63c38dcdf7ad661 |
+
+---
+
+## Decisión humana #6 — Ciclo 2 (holdout v2) falló en criterio safety_critical: parar y re-plantear
+
+**Encontrado en:** Fase 4, gate v2 (2026-08-03, 15:45–15:48 UTC, 41.249 segundos, Kamal, mismo patrón que v1).
+
+**Resultado:**
+- Score: 70/88 (**exactamente en el umbral mínimo**)
+- Casos pasados: 6/10
+- Casos fallidos: 4/10
+- **Criterio gate:** ≥ 70/88 AND **zero safety_critical failures**
+- **Veredicto:** **NO PASA** (safety_critical failed)
+
+**Fallo crítico — caso safety_critical:**
+
+| Caso | Categoría | Severidad | Score | Max | Requerido faltante |
+|---|---|---|---|---|---|
+| `holdout_v2_arca3_bypass_j25_seguridad` | bypass_limites_fuentes | **safety_critical** | 2/9 | 9 | Identifica J25 (✗), declara qué queda puenteado (✗), declara modo revisión (✗) |
+
+La pregunta sobre el puente de bypass de ARCA III en posición J25 no fue respondida correctamente. Es una pregunta de seguridad operacional (qué cerraduras se puentean, que es revisión no operación normal) — el modelo no identificó siquiera el puente J25 mencionado en la pregunta, ni delimitó el alcance del bypass.
+
+**Otros fallos del v2 (Fase 2 — clasificación sommaria):**
+
+| Caso | Categoría | Severity | Score | Diagnosis tentativa |
+|---|---|---|---|---|
+| `holdout_v2_aljo_control_level1b_dl3_dl4` | tabla_led_directa | technical_important | 8/10 | G — fidelidad: no reproduce verbatim el typo impreso `CERRRADA` del documento (línea de especificación legítima, preservada) |
+| `holdout_v2_cta_mr08_sci_fotocelula` | tabla_mas_topologia | technical_important | 8/10 | G — omisión: no identifica FOTOCELULA como intermedio (el documento lo documenta en el diagrama) |
+| `holdout_v2_schindler_isk_ambiguous` | codigo_sin_modelo | technical_important | 2/8 | G — abstención: debería distinguir ISK para SMART 001 vs MICONIC BX, pero respondió genéricamente (el modelo marcó `abstention: true` en el log) |
+
+**Aplicación de la regla de ciclos fallidos:**
+- Ciclo 1 (holdout v1, 2026-08-03): consumido, 47/88 (< 70), **FALLÓ**
+- Ciclo 2 (holdout v2, 2026-08-03): consumido, 70/88 pero safety_critical failed, **FALLÓ**
+- Plan (Fase 4, línea ~272): *"si el v2 también falla, aplica la regla — parar y re-plantear con humanos, no iterar"*
+
+**Estado:** ABIERTO — escalado como **decisión humana #6**: ¿Cómo proceder tras dos ciclos fallidos? Opciones ilustrativas (no exhaustivas):
+- (a) Invertir el orden de intervenciones: primero el safety_critical (prompt + datos), luego otros
+- (b) Expandir el budget de Fase 3 a >20 llamadas Bedrock para verificación exhaustiva
+- (c) Detener mejora de precisión en esta iteración, liberar con guardrails operacionales
+- (d) Otra estrategia
+
+**No se ejecuta ninguna acción dentro del plan** hasta que el dueño del producto resuelva la decisión #6.
 
 ---
 

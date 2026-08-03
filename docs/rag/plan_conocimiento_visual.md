@@ -12,10 +12,20 @@
 
 ## 📍 Dónde estamos y qué sigue (actualizado 2026-08-02, tras el Gate B)
 
+⚠️ **revisado en I-49 (2026-08-02). Esta sección está superada: los tres pasos de abajo están
+cerrados y la Fase 7 ya está en marcha.** El estado vigente es: script escrito (PASO 1) y revisado
+(PASO 2, I-49 — cuatro defectos corregidos, 18 runs / 0 failures). **Lo siguiente es el PASO 3: lo
+corres tú en la terminal**, 6 páginas, ~$0,40, con el comando del
+[RUNBOOK del Apéndice G](#apéndice-g). Dos cosas que I-49 cambia y hay que saber antes de correr:
+el comando **necesita `ACCOUNT_ID`** (se le había olvidado al runbook), y **la visión no aporta
+ningún registro al chunk** — `documented_components` no lo consume la ruta de ingesta, así que las
+98 páginas del PASO 5 costarían ~$5,18 para indexar sólo T1. Decídelo en el go/no-go, no antes.
+**Y sigue pendiente el punto 4 del Protocolo:** el script y su test están sin commitear.
+
 **Estado en una frase:** todo lo que había que construir está construido y cerrado (Fases 0-6, Gate
 A-bis, Fase 5, Gate B). El Gate B midió T2 y **apagó sus relaciones**; T2 aporta identidad de
-componente y nada más. Nada está roto ni a medias. Lo que queda son **tres pasos**, y el primero es
-una pregunta al dueño, no código.
+componente y nada más ⚠️ (**y ni eso llega al chunk — I-49**). Nada está roto ni a medias. Lo que
+queda son **tres pasos**, y el primero es una pregunta al dueño, no código.
 
 | | Paso | Con qué modelo | Coste API | Bloquea a |
 |---|---|---|---|---|
@@ -331,7 +341,7 @@ La fase siguiente lee el documento actualizado, no el original.
 | 5b | **MEDIDA — HIPÓTESIS REFUTADA.** 278 relaciones juzgadas: 88,49 %, LI **84,14 %** < 85 %. El tipo C no se mueve sobre las mismas páginas (81,5 % → 81,0 %) y los tipos A y B empeoran. Flag **apagado**, y así se queda | `INGESTION_VISION_TIER_ZOOM_TILES` (apagado) | 5554893 (código) + 1d1fdb9 (medición) | I-44, I-45, I-47, I-48 |
 | 6a | cerrada | — | 1ecd41c | I-24, I-25 |
 | 6b | cerrada | — | 82093a8 | I-30 |
-| 7 | **AUTORIZADA, sin ejecutar — decisión #6 resuelta el 2026-08-02: opción (a).** Visión on, relaciones y teselas off. Delta de precisión esperado ≈ 0, declarado por escrito antes de correr. **Runbook de 5 pasos en el Apéndice G**; el bucket ya tiene versionado | `INGESTION_VISION_TIER_ENABLED` on · `..._RELATIONS_ENABLED` off · `..._ZOOM_TILES` off | | |
+| 7 | **AUTORIZADA — pasos 1 y 2 hechos, sin ejecutar contra AWS.** Decisión #6 resuelta el 2026-08-02: opción (a). Script escrito y **revisado (I-49: 4 defectos corregidos, 18 runs / 0 failures)**. Siguiente: **PASO 3**, 6 páginas, lo corre el dueño. ⚠️ I-49 avisa de que la visión no aporta ningún registro al chunk — decidir el coste del PASO 5 tras el go/no-go | `INGESTION_VISION_TIER_ENABLED` on · `..._RELATIONS_ENABLED` off · `..._ZOOM_TILES` off | ⚠️ **sin commitear** — `script/shadow_ingest_v8.rb` y su test están sin trackear (punto 4 del Protocolo, mismo fallo que I-23) | I-49 (paso 2) |
 | 8 | pendiente | — | | |
 | 9 | pendiente | — | | |
 | 10 | pendiente | — | | |
@@ -1447,6 +1457,17 @@ que ya usa 6a.
 las 19 aristas de T1 y ninguna de visión**, más la identidad de componente. Eso es exactamente lo
 que se autorizó, sabiéndolo.
 
+⚠️ **revisado en I-49 — "más la identidad de componente" es falso.** La revisión del script (PASO 2)
+siguió el código y `VisionTopologyExtractor::Result#components` **no lo consume nadie en la ruta de
+ingesta**: `ManualBatchIngestionService#topology_for_page` (`:194-198`) usa `vision.edges` y tira
+`vision.components`; el único lector de `.components` en todo el repo es `script/gate_b/run.rb:93`.
+Con las relaciones apagadas `drop_relations` devuelve `[]`
+(`vision_topology_extractor.rb:323-326`), así que **el shadow ingest escribe T1 y nada más**, y la
+llamada de visión se paga entera sin indexar un solo registro. Las tres consecuencias de abajo
+siguen valiendo salvo la primera, que **pierde su sujeto**: el A/B no compara identidad de
+componente, porque la identidad de componente no llega al chunk. Hilarla es código de la Fase 5, no
+de la 7 — registrado como hallazgo, no arreglado aquí.
+
 Tres consecuencias concretas, ya asumidas en la autorización:
 
 1. **Lo que se mide cambia de sujeto.** El A/B ya no compara "con y sin relaciones de visión", sino
@@ -1532,11 +1553,15 @@ topología para las aristas de visión; un re-run del shadow ingest no es un no-
 conteo de chunks" hay que leerlo por conteo, no por identidad de registros.
 
 *Definición de terminado:*
-- [ ] El script no contiene ninguna llamada de borrado sobre el prefijo de producción
+- [x] El script no contiene ninguna llamada de borrado sobre el prefijo de producción — **verificado
+      en el PASO 2 (I-49)**, incluida la ruta indirecta `BatchResultsParserService:390`, que sí se
+      dispara con `manual_batch_v1` y queda neutralizada por la fachada `WriteOnlyS3`
 - [ ] Corrida de 6 páginas, diff de cuerpos revisado y adjuntado al informe
 - [ ] Delta de conteo de chunks explicado antes de las 98 (el desborde de topología crea chunks
       nuevos; hoy son 97 = 1 por página) **y las aristas de topología llegan de verdad al chunk
-      escrito** — verificarlo leyendo el cuerpo, no asumirlo por el flag encendido (I-31)
+      escrito** — verificarlo leyendo el cuerpo, no asumirlo por el flag encendido (I-31).
+      ⚠️ **I-49:** el conteo predicho es un **suelo**, no una igualdad — asume 1 chunk de modelo por
+      página. Superarlo no es un descuadre; quedarse por debajo sí pide explicación
 - [ ] Las 42 rúbricas corridas sobre **ambos** documentos, resultados lado a lado
 - [ ] `script/rag_seguridades_recall_probe.rb`: **rank por caso antes/después**, no sólo
       pass/fail
@@ -2450,11 +2475,11 @@ quiere atacar el modo de fallo real, la Fase 5b propuesta en I-40.
 
 | Paso | Quién | Coste | Reversible |
 |---|---|---|---|
-| 1 · Escribir el script | **Sonnet** (prompt A) | ~$0 | sí, es código |
-| 2 · Revisar el script antes de que toque nada | **Opus**, una vez (prompt B) | bajo | sí |
+| ~~1~~ · Escribir el script | ✅ **HECHO** — Sonnet (prompt A) | ~$0 | sí, es código |
+| ~~2~~ · Revisar el script antes de que toque nada | ✅ **HECHO 2026-08-02** — Opus (prompt B) → **I-49**, 4 defectos corregidos | bajo | sí |
 | 3 · Correr **6 páginas** | **tú, en la terminal** | ~$0,40 | sí (escribe bajo un uid nuevo) |
-| 4 · Go/no-go del diff con visión | **Opus**, una vez (prompt C) | medio | — es la decisión |
-| 5 · Correr **98 páginas** + rúbricas + rollback | **tú, en la terminal** | ~$5,18 | sí (ver "Reversibilidad") |
+| 4 · Go/no-go del diff con visión | **Opus**, una vez (prompt C, reescrito en I-49) | medio | — es la decisión |
+| 5 · Correr **98 páginas** + rúbricas + rollback | **tú, en la terminal** | ~$5,18, o **~$0 sin visión** (I-49) | sí (ver "Reversibilidad") |
 
 **Nunca** le des el prompt A a un modelo con acceso a producción, ni el paso 3 a un modelo: el
 paso 3 y el 5 son comandos que corres tú.
@@ -2462,6 +2487,13 @@ paso 3 y el 5 son comandos que corres tú.
 ---
 
 **PASO 1 · PROMPT A → Sonnet** *(escribir código, sin tocar nada remoto)*
+
+✅ **EJECUTADO.** `script/shadow_ingest_v8.rb` + `test/scripts/shadow_ingest_v8_test.rb` escritos.
+⚠️ **revisado en I-49:** el paso 2 encontró cuatro defectos y el **Protocolo de traspaso no se
+cumplió** (sin entrada en el Registro, sin commit, archivos sin trackear). Si vuelves a usar este
+prompt para otro script, añádele: *"la predicción de conteo tiene que declarar sus supuestos"*,
+*"no cambies el adaptador de ActiveJob del proceso"* y *"al terminar, aplica el Protocolo de
+traspaso completo: entrada `I-NN`, edición en el sitio de lo que invalides, y commit"*.
 
 > Escribe `script/shadow_ingest_v8.rb` siguiendo la Fase 7 de
 > `docs/rag/plan_conocimiento_visual.md`. **No ejecutes nada contra AWS ni contra Bedrock: sólo
@@ -2511,40 +2543,84 @@ paso 3 y el 5 son comandos que corres tú.
 
 **PASO 3 · TÚ, en la terminal** *(6 páginas)*
 
+⚠️ **revisado en I-49.** El comando de aquí **omitía `ACCOUNT_ID`** y el script aborta sin él por
+contrato (no tiene default, y no puede tenerlo: el literal `1` es justo lo que la Fase 7 prohíbe).
+Corregido abajo.
+
 ```bash
-SHADOW_INGEST_CONFIRM=1 SHADOW_INGEST_PAGES=3,17,63,78,93,97 \
+SHADOW_INGEST_CONFIRM=1 ACCOUNT_ID=1 SHADOW_INGEST_PAGES=3,17,63,78,93,97 \
 INGESTION_VISION_TIER_ENABLED=true \
   bin/rails runner script/shadow_ingest_v8.rb 2>&1 | tee tmp/shadow_v8_6p.log
 ```
 
 Guarda el log. Si el script pide borrar algo, **córtalo**: no cumple el contrato.
 
+**Lo que el script imprime antes de escribir nada, y que tienes que mirar:**
+
+- **`writing to:`** — bucket, KB y data source resueltos. Si tu shell tiene un `.env` cargado, el
+  script **respeta tu ENV** y avisa con `⚠️ NOT the Fase 7 target`. Si ves ese aviso, Ctrl-C.
+- **`T1 edges predicted per page`** — de las 6 páginas del comando, sólo **4 llevan arista T1**:
+  p3 (2), p63, p78, p93 (1 cada una). **p17 y p97 emiten 0** (Gate A-bis, `gate_a_medicion_topologia.md:296,305`).
+  Que sus cuerpos salgan sin `TOPOLOGY_EDGE` es lo correcto, no un fallo.
+- **`predicted chunks to create: N (floor …)`** — es un **suelo**, no una igualdad. Ver I-49.
+- **El aviso de visión** — T2 se factura y **no aporta ni un registro**. Ver I-49; si no quieres
+  pagarlo en el ensayo, quita `INGESTION_VISION_TIER_ENABLED=true` y el script te lo dirá al
+  abortar (el flag es obligatorio por la decisión #6; si decides saltártelo, es una decisión tuya
+  que hay que registrar, no un bug).
+
 ---
 
 **PASO 4 · PROMPT C → Opus** *(go/no-go — es la única decisión de la fase)*
 
+⚠️ **revisado en I-49.** Las preguntas 1 y 3 estaban mal calibradas y habrían producido un NO-GO
+falso: pedían `TOPOLOGY_EDGE` en los 6 chunks cuando sólo 4 páginas llevan arista, y trataban la
+predicción de conteo como una igualdad cuando es un suelo. Reescritas abajo, y añadida una quinta
+pregunta sobre el gasto de visión.
+
 > Go/no-go de la Fase 7 de `docs/rag/plan_conocimiento_visual.md`, sobre la corrida de 6 páginas
 > (`tmp/shadow_v8_6p.log`, documento shadow ya escrito). **No corras las 98: eso lo decide esta
-> revisión.**
+> revisión.** Lee antes la entrada **I-49** del Registro de hallazgos: acota qué es fallo y qué no.
 >
-> 1. Lee el **cuerpo escrito** de los 6 chunks nuevos, no el log. Confirma que la arista
->    `TOPOLOGY_EDGE` aparece de verdad en el texto.
+> 1. Lee el **cuerpo escrito** de los chunks nuevos, no el log. `TOPOLOGY_EDGE` debe aparecer en
+>    los de **p3 (2 aristas), p63, p78 y p93 (1 cada una)** — y **en ninguno más**. **p17 y p97
+>    emiten 0 aristas T1** por el Gate A-bis (`gate_a_medicion_topologia.md:296,305`), así que sus
+>    cuerpos salen sin topología y **eso es correcto**. El log imprime la lista esperada bajo
+>    `T1 edges predicted per page`; compárala contra lo escrito en S3, no contra tu expectativa.
+>    Fallo real: que falte una arista en una página que sí la predijo, o que aparezca una en una
+>    página que no.
 > 2. Compáralos **con visión** contra la lámina renderizada
 >    (`pdftoppm -f N -l N -r 150 -png "<PDF>" tmp/p`). ¿Lo escrito describe la página?
-> 3. ¿El conteo de chunks coincide con lo que el script predijo antes de correr? Si no, explica la
->    diferencia antes de seguir.
-> 4. Veredicto explícito: **GO** o **NO-GO**, con la razón en una frase.
+> 3. El conteo predicho es un **suelo, no una igualdad**: asume 1 chunk de modelo por página, y el
+>    pipeline admite varios (`chunk_p<página>_<ordinal>`). Escrito **por encima** del suelo →
+>    normal, di en qué página se partió y sigue. Escrito **por debajo** → eso sí hay que explicarlo
+>    antes de seguir (lo esperable es que `PageRelevanceFilter` descartara una página objetivo;
+>    búscalo en el log, línea `ManualBatchIngestionService filter: pN drop`).
+> 4. **¿Qué aportó la visión?** Abre los cuerpos y busca cualquier registro con
+>    `DERIVATION: vision`. La respuesta esperada es **cero** (I-49): con
+>    `INGESTION_VISION_TIER_RELATIONS_ENABLED` apagado, `drop_relations` devuelve `[]` y
+>    `documented_components` lo descarta `ManualBatchIngestionService`. Si es cero, dilo explícito
+>    en el veredicto y **pronúnciate sobre el PASO 5**: correr las 98 con visión cuesta ~$5,18 y no
+>    indexa nada de T2; sin visión son ~$0 y el documento escrito es idéntico. Si encuentras algún
+>    registro `vision`, entonces I-49 es incorrecto y eso es el hallazgo principal de tu revisión.
+> 5. Veredicto explícito: **GO** o **NO-GO**, con la razón en una frase, y la recomendación de
+>    coste del punto 4.
 >
 > **Contexto que ya sabes y no es un hallazgo:** el delta de precisión de esta fase es ≈ 0, está
-> previsto por escrito en la decisión #6. Lo que sí es un fallo: que el recall **baje**, que el
-> conteo no cuadre, o que el cuerpo no traiga las aristas.
+> previsto por escrito en la decisión #6. Que p17 y p97 no traigan aristas tampoco lo es. Que el
+> conteo supere el suelo tampoco. Lo que sí es un fallo: que el recall **baje**, que falte una
+> arista en una página que la predijo, o que el conteo quede **por debajo** del suelo sin
+> explicación.
 
 ---
 
 **PASO 5 · TÚ, en la terminal** *(98 páginas, sólo si el paso 4 dijo GO)*
 
+⚠️ **revisado en I-49.** También le faltaba `ACCOUNT_ID`. Y antes de gastar los ~$5,18: lee el
+punto 3 de I-49 — con las relaciones apagadas, **T2 no escribe nada** en los chunks. Si el A/B ya
+no tiene sujeto de visión, la corrida honesta es sin `INGESTION_VISION_TIER_ENABLED` y son ~$0.
+
 ```bash
-SHADOW_INGEST_CONFIRM=1 INGESTION_VISION_TIER_ENABLED=true \
+SHADOW_INGEST_CONFIRM=1 ACCOUNT_ID=1 INGESTION_VISION_TIER_ENABLED=true \
   bin/rails runner script/shadow_ingest_v8.rb 2>&1 | tee tmp/shadow_v8_full.log
 ```
 
@@ -2596,6 +2672,15 @@ Verificado en vivo: `aws s3api get-bucket-versioning --bucket multimodal-source-
   byte (I-43).
 
 **Fase 8 · Sonnet**
+> ⚠️ **revisado en I-49 — el campo nuevo que I-39/I-40 mandaban evaluar tampoco es evaluable
+> todavía.** `documented_components` **no llega a ningún chunk**: `topology_for_page`
+> (`manual_batch_ingestion_service.rb:194-198`) descarta `Result#components`, y su único lector en
+> el repo es `script/gate_b/run.rb:93`. Sobre el documento shadow de la Fase 7 no vas a encontrar
+> ni un registro de identidad de componente que puntuar. Así que la Fase 8 evalúa **T1 y sólo T1**
+> —las 18 marcas del Apéndice E— hasta que alguien hile los componentes hasta el cuerpo del chunk,
+> que es trabajo de la Fase 5, no tuyo. Si al empezar la Fase 8 ese hilado ya existe, verifícalo
+> leyendo un cuerpo escrito antes de creerte esta nota.
+>
 > ⚠️ **revisado en I-39 e I-40 — el aviso de abajo se queda sin sujeto y entra un campo nuevo.** El
 > Gate B apagó las relaciones de visión, así que **hoy no hay ninguna arista `vision` que citar** ni
 > que convertir en `required`. Lo que sí hay que evaluar y no estaba en el plan: la **identidad de
@@ -2745,3 +2830,4 @@ marcándolas `⚠️ revisado en I-NN`. Convención de `docs/rag/hallazgos_gate_
 | I-46 | Gate B | Opus 5 | **El 85 % no venía de ningún criterio, y medido el gate la conclusión no es bajarlo sino cambiar de palanca.** El dueño preguntó de dónde salía; la respuesta honesta es que de una intuición razonable, no de una derivación. Lo que sí se puede afirmar con los datos: (a) 85 % es "1 de cada 7 relaciones mal", que para un dato **afirmado** a un técnico ya es permisivo, y el modo de fallo medido —el borne vecino— no es un error que se note, es uno que se cablea; (b) el umbral correcto depende de **qué hace el sistema con la relación**, no de la estadística: citarla como instrucción pide >95 %, citarla con calificador obligatorio de "verifíquelo en la lámina" hace defendible el 85 %, y usarla sólo para recuperar el chunk sin citarla nunca la hace tolerable incluso al 70 %; (c) **existe una palanca mejor que mover el número**: los tipos de lámina A y B juntos dan **37/37, LI 92,2 %**, y el problema está localizado en el tipo C, así que filtrar por tipo publicaría las buenas sin tocar el umbral. Hoy no se puede filtrar porque la regleta es una foto (I-45), y eso es justo lo que la Fase 5b intenta cambiar. | Anotado en el sitio, en la sección del Gate B junto al umbral. **Recomendación registrada: no mover el 85 % sin mover el régimen de uso.** Un umbral más bajo sólo es defendible acompañado del calificador obligatorio (trabajo de la Fase 6, no existe hoy) o del uso sólo-recuperación. Cambiar el número sin cambiar el uso es cambiar la vara para que el resultado pase, y quedaría registrado como tal. |
 | I-47 | 5b | Opus 5 | **Las teselas de zoom se midieron y la hipótesis está refutada: el flag no se enciende.** 278 relaciones de `tmp/gate_b_5b.json` juzgadas una a una con visión contra la lámina renderizada, con la regla del §1.2 sin cambiar, ampliando a 300-600 dpi cada fila de bornes dudosa. **Agregado 246/278 = 88,49 %, LI Clopper-Pearson 84,14 % — por debajo del 85 %.** La predicción escrita antes de medir falla en las dos direcciones: (a) el tipo C, que debía subir de 81,5 % hacia el 95 %, **sobre las mismas 10 páginas del §2 pasa a 81,0 % (81/100, LI 71,93 %): no se mueve** — el 85,7 % que sale del tipo C completo es un artefacto de que el conjunto creció de 10 a 18 páginas con 96 relaciones fáciles; (b) los tipos A y B, que debían quedarse quietos al 100 %, **bajan a 95,00 % (19/20) y 95,16 % (59/62)**: con teselas el modelo emite mucho más (pág. 91: 1→14 relaciones; pág. 22: 2→17) y en ese volumen nuevo aparecen los primeros fallos que esos tipos no tenían, incluida una regresión pura en la pág. 17 (`75 ↔ SOBRECARGA`, que v1 acertaba, pasa a `75 ↔ BOTONERA REVISION`). **El zoom arregló exactamente lo que I-40 predijo y sólo eso** —la pág. 93 pasa de 9/11 a 15/15, la 78 acierta verde=SE5 y rojo=SE7, la 56 pone el rojo en 111— **pero no eliminó el modo de fallo: lo desplazó.** 21 de los 32 errores siguen siendo un extremo mal leído, y ya no a una o dos celdas sino a **dos y tres posiciones** (`SFH` por `SE5` en las págs. 44 y 76, `SFA` por `SE2`, `4` por `1` en la pág. 3, `JC3-6`↔`JC3-7` intercambiados). Los 11 restantes son de la segunda mitad de la regla del §1.2 —serie con intermedio no nombrado en la `evidence`— y son casi todos nuevos, porque el zoom hizo que el modelo intentara series largas que antes ni emitía; sin contarlos el agregado sería 92,45 % (LI 88,68 %), pero relajar la regla después de ver el resultado es justo lo que el §1.2 se escribió para impedir. Coste real **$3,7559** (previsto ~$3,30), **$0,1633/página**, 22 813 tokens de entrada por página frente a 5 764 — proyección a las 80 páginas T2: **~$13,06** en vez de ~$5,18. Las teselas sí llegaron y el modelo las usó: varias `evidence` de la pág. 95 las citan literalmente (*"…TEMPERATURA MOTOR (zoom 4)"*). | **Gate B: su veredicto es definitivo y la degradación del §9.3 pasa de provisional a permanente** — el §0 y el §10 del informe quedan marcados `⚠️ revisado en I-47`. **5b: cerrada, flag `INGESTION_VISION_TIER_ZOOM_TILES` apagado para siempre salvo que aparezca una hipótesis nueva.** **Paso 3 del plan (medir `vision_topology_v3`, ~$1,50): ya no hace falta**, v3 corrió aquí — ver I-48. **Fase 7: la decisión humana #6 pierde su opción (c)**; quedan (a) correr el A/B con identidad de componente y las 19 aristas de T1, o (b) no correrla. |
 | I-48 | 5b | Opus 5 | **El experimento de la Fase 5b está confundido: cambiaron tres variables a la vez, y la corrida que lo demuestra es la misma que cierra I-42.** `tmp/gate_b_5b.json` declara `prompt_contract: vision_topology_v3` (fp `36f8c3bb8a…`), no v1. Así que respecto del §2 del informe cambiaron **las teselas**, **el prompt v3** y **la corrección de `MAX_LONG_EDGE_PX` de I-44** (los recortes de componente pasan de 150 a 200 dpi reales). El §10 del informe avisaba de la tercera; nadie avisó de la segunda porque el script no la fija, la hereda del prompt activo en el repo. **Ningún número del §2-bis puede atribuirse sólo a las teselas.** Esto **no** debilita el veredicto de I-47, que es negativo: con las tres palancas a favor el límite inferior sigue por debajo del 85 %. Sí impide la lectura contraria — con estos datos nadie puede afirmar "las teselas no sirven pero v3 sí", ni al revés. **Lo que sí queda medido es v3**, que era el cabo suelto de I-42: corrió sobre las 23 páginas del conjunto y sobre las mismas páginas del §2 arregla dos clases de error concretas (la confusión componente/número de pieza de la pág. 39 desaparece; la pág. 93 pasa de 9/11 a 15/15) sin la pérdida de cobertura que hundió a v2 (la pág. 97 sube de 14 a 21 relaciones, todas correctas, en vez de caer a 4). **Advertencia para quien mida algo aquí en el futuro:** `tmp/gate_b_run.rb` no fija ni registra en su salida qué contrato de prompt está activo más allá del campo `prompt_contract`; si el repo cambia de versión de prompt entre dos corridas, la comparación deja de ser válida sin que nada falle. | **5b/Gate B: toda comparación futura contra el §2 debe fijar el prompt explícitamente**, o declarar el confundido como aquí. **Paso 3 del plan ("Medir `vision_topology_v3`, el prompt escrito y nunca ejecutado"): se da por cerrado**, marcado en la tabla de los tres pasos y en el Apéndice G. **Fase 7: presupuestar visión con v3**, que es el texto activo del repo, no con v1. |
+| I-49 | 7 (paso 2) | Opus 5 | **El script del PASO 1 pasó las cinco preguntas de fondo pero traía cuatro defectos, y su sesión no aplicó el Protocolo de traspaso.** Las cinco respuestas del prompt B, verificadas leyendo el código y no el comentario de cabecera: **(1) no borra nada.** Cero llamadas directas, fijado por test sobre el fuente. La ruta indirecta peligrosa sí existía y está cerrada: `BatchResultsParserService:390` llama `delete_existing_chunks(prefix)` **precisamente cuando `ingestion_path == manual_batch_v1`**, que es el que usa la Fase 7, y habría barrido el prefijo nuevo; la guarda `@s3.respond_to?(:delete_prefix)` de `:484-485` no se dispara porque la fachada `WriteOnlyS3` sólo delega `upload_text` y `bucket_name`. Los dos únicos borrados reales del recorrido son `Rails.cache.delete('kb_ingestion_info')` (`ingestion_status_service.rb:116`, estado de UI) y ninguno en S3 ni en el índice; el `start_ingestion_job` sobre todo el data source no borra, pero es la única llamada que puede mover el índice de producción, así que conviene comprobar `job_statistics(job_id)[:deleted] == 0` después. **(2) sí escribe bajo uid nuevo**, con guarda explícita contra el uid de producción, y los índices únicos de `kb_documents` y `web_manual_batches` no colisionan porque el `s3_key` lleva el uid. **(3) I-31 quedó cerrado por reutilización, no por trabajo nuevo, y la arista llega de verdad al cuerpo**: cadena verificada `manual_batch_ingestion_service.rb:197` → `submit!:73` → fila → `chunk_merger_service.rb:92,109` (se pega al **primer** chunk de la página) → `batch_results_parser_service.rb:455-470` → `append_field_records`. El flag no basta solo y el script lo sabe: `IngestionLayoutFlag` lee `ENV` directo, no el hash inyectable, y por eso `set_env!` escribe en los dos. **(4) la predicción es real y previa a toda escritura** — corre `PdfLayoutExtractor` + `TopologyEdgeDeriver` de verdad, la misma derivación que producción — pero es un **suelo**: `chunks_for_edge_count` asume 1 chunk de modelo por página y el pipeline admite varios (`chunk_p<página>_<ordinal>`), y eso no estaba declarado. **(5) `ACCOUNT_ID` no es literal en el código** — pero los comandos del propio runbook (PASO 3 y PASO 5) **no lo exportaban**, así que ambos abortaban en la primera línea. Los cuatro defectos, corregidos en el script: **(a)** `point_at_production_kb!` **pisaba** el ENV del operador con los literales de producción — un shell apuntando a staging se redirigía a producción en silencio; ahora el ENV explícito gana, los destinos resueltos se imprimen antes de escribir y se avisa cuando no son los de la Fase 7. **(b)** `ActiveJob::Base.queue_adapter = :inline` global, con un comentario que citaba un job (`TrackBedrockQueryJob`) que no está en la ruta; además, bajo adaptador inline el `set(wait:).perform_later` de `BedrockIngestionJob#perform_reenqueue` se ejecuta **inmediatamente y recursivo** si `INGESTION_REENQUEUE=true`. Sustituido por `perform_now` del único job que hace falta. **(c)** el `web_v1_metadata` no llevaba `web_manual_batch_id`, así que `mark_web_manual_batch_complete` no hacía nada y la fila del shadow se quedaba en `"parsed"` para siempre; ahora replica el metadata de `IngestManualBatchResultsJob:174-184` y el estado pasa por `"syncing"` → `"complete"`. **(d)** el sondeo del ingestion job construía un `Aws::BedrockAgent::Client.new(region:)` a pelo, que sólo autentica si las credenciales están en la cadena por defecto — mala forma de descubrir un problema de auth justo después de pagar el batch; ahora usa `IngestionStatusService`, que pasa por `AwsClientInitializer` como el resto de la app. **Y un hallazgo que NO se arregla aquí porque es código de la Fase 5: la visión no aporta nada al chunk.** `topology_for_page` (`manual_batch_ingestion_service.rb:194-198`) usa `vision.edges` y descarta `vision.components`; con las relaciones apagadas `drop_relations` devuelve `[]` (`vision_topology_extractor.rb:323-326`); el único lector de `.components` en el repo es `script/gate_b/run.rb:93`. O sea que el PASO 5 pagaría ~$5,18 de visión para indexar exactamente cero registros de T2, y el A/B compararía T1 contra T1. El script ahora lo grita en el plan previo. **Protocolo de traspaso del PASO 1: incumplido**, el mismo fallo que I-23 registró. Al empezar esta revisión, `script/shadow_ingest_v8.rb` y su test estaban **sin trackear**, no había entrada `I-NN`, y la fila de la Fase 7 en la tabla de estado seguía sin commit. Verificado tras los cambios: `bin/rails test test/scripts/shadow_ingest_v8_test.rb` **18 runs / 0 failures** (5 tests nuevos: el suelo declarado, las páginas con arista esperada, el ENV honrado, ausencia de flip del adaptador, y `web_manual_batch_id` presente) y `bin/rubocop` **0 offenses**. | **PASO 3:** el comando lleva ahora `ACCOUNT_ID`; mira `writing to:` y el aviso de destino antes de dejarlo correr. **PASO 4:** prompt reescrito — pedía `TOPOLOGY_EDGE` en los 6 chunks cuando sólo 4 páginas llevan arista (p3=2, p63, p78, p93; **p17 y p97 emiten 0**, Gate A-bis `:296,305`) y trataba el conteo como igualdad cuando es un suelo; ambas cosas habrían dado un NO-GO falso. Añadida una pregunta sobre qué aportó la visión y una recomendación de coste para el PASO 5. **PASO 5:** decide si merece la pena la visión antes de gastar los ~$5,18. **Fase 8:** `documented_components` no es evaluable todavía; la fase mide T1 y sólo T1 hasta que alguien hile los componentes al cuerpo del chunk. **Quien cierre la Fase 7:** el script y sus tests siguen sin commitear — punto 4 del Protocolo. |

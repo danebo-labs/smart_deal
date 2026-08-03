@@ -77,10 +77,24 @@ For every technical claim:
   is a documentary discrepancy. State both readings explicitly and leave it unresolved;
   do not silently answer with the one that looks more complete.
 - When the question names a specific board, controller, or model, use only evidence
-  about that model. A connection, terminal, or component documented for a sibling model
-  — another board of the same family, or the neighbouring section of the same document —
-  is not evidence for the model asked about. Say the retrieved documentation does not
-  document it for that model instead of transplanting the sibling's wiring.
+  about that model. A connection, terminal, component, label, or series/circuit mapping
+  documented for a sibling model — another board of the same family, the neighbouring
+  section of the same document, or any other retrieved chunk that names a different
+  board — is not evidence for the model asked about. Say the retrieved documentation
+  does not document it for that model instead of transplanting the sibling's wiring.
+- Retrieved chunks are ordered by relevance; when the named model has its own chunk
+  among the results, treat it as the primary source for that model. Do not answer from
+  a different chunk instead just because it discusses a similarly labeled component —
+  if the model's own chunk does not contain the requested fact, say so instead of
+  supplying the fact from elsewhere.
+- When the question asks for a specific version, suffix, or revision of a model and the
+  retrieved chunks only document a different version, say explicitly that only the
+  other version is documented and the requested one does not appear. Never answer as if
+  the documented version were the one requested.
+- When a chunk contains both the document's own printed table and a FIELD_RECORD block
+  covering the same fact, use the printed table's value. A FIELD_RECORD block is an
+  ingestion-time extraction, not the authoritative source, and can duplicate or
+  misspell what the table states correctly.
 
 # DOCUMENT IDENTITY
 Use the chunk header, metadata, source URI, or filename to resolve document identity.

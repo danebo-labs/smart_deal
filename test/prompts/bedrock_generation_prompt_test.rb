@@ -4,7 +4,7 @@ require "test_helper"
 require "digest"
 
 class BedrockGenerationPromptTest < ActiveSupport::TestCase
-  PRE_CHANGE_SHA256 = "b4bffbfc60008028e1ffb2ade8d46f5ee4d3178f67f1945b9f667e2c20d272c5"
+  PRE_CHANGE_SHA256 = "9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8"
 
   def prompt
     @prompt ||= with_partial_contract("true") do
@@ -126,6 +126,30 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
   test "forbids transplanting a sibling board's wiring onto the model asked about" do
     assert_includes prompt, "use only evidence\n  about that model"
     assert_includes prompt, "is not evidence for the model asked about"
+    assert_includes prompt, "any other retrieved chunk that names a different"
+  end
+
+  # Fase 3 Rama Generación (holdout v1 `holdout_sibling_ne300_p36` /
+  # `holdout_otis_es_ambiguous`): the model ignored the top-scored, model-specific
+  # chunk and answered from a differently-named chunk instead.
+  test "requires fidelity to the named model's own chunk over any other retrieved chunk" do
+    assert_includes prompt, "treat it as the primary source for that model"
+    assert_includes prompt, "say so instead of\n  supplying the fact from elsewhere"
+  end
+
+  # Fase 3 Rama Generación (holdout v1 `holdout_em4000_v2_absent`): the model
+  # silently substituted the only documented version instead of declaring the
+  # requested version absent.
+  test "declares a version mismatch instead of silently substituting a documented version" do
+    assert_includes prompt, "only the\n  other version is documented and the requested one does not appear"
+    assert_includes prompt, "Never answer as if"
+  end
+
+  # Fase 3 Rama Generación (holdout v1 `holdout_arca_p36_torque`): the model cited a
+  # corrupted FIELD_RECORD annotation instead of the chunk's own correct table.
+  test "prefers the document's printed table over a FIELD_RECORD block for the same fact" do
+    assert_includes prompt, "use the printed table's value"
+    assert_includes prompt, "can duplicate or\n  misspell what the table states correctly"
   end
 
   test "uses output_format_instructions as the single output contract" do

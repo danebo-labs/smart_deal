@@ -374,9 +374,57 @@ siguientes.
 | 1 holdout v1 medido | **hecho 2026-08-03** — 2/10, 47/88 (53%), por debajo de `passing_score: 70`. Holdout v1 queda gastado, no se reabre. | `docs/rag/holdout_v1_resultado_2026-08-03.md`, `tmp/rag_seguridades_holdout_v1_run1_2026-08-03.json` |
 | 2 fallos clasificados | **hecho 2026-08-03** — de 8 fallos: 2 Guard (mismo bug), 4 Generación (4 causas distintas), 0 Recuperación pura, 2 falsos positivos de rúbrica (no cuentan como fallo del sistema). Rama dominante: **Generación**, con un bug de Guard de un solo origen. | `docs/rag/holdout_v1_resultado_2026-08-03.md` §3-§4 |
 | 3 Rama Guard | **hecho 2026-08-03** — `EXPLICIT_EQUIPMENT_PATTERN` ganó un escape hermano, `PAGE_REFERENCE_PATTERN` (`página/pág./page N`), consultado en `ambiguous_hardware_query?` junto al existente. Hipótesis (§8.3): el heurístico no reconocía la referencia a página como desambiguación → confirmada con test unitario que reproduce las dos preguntas literales del holdout v1 (antes `true`/menú, ahora `false`/retrieval real). Evaluado y **descartado** en el mismo cambio: extender el escape a "placas sin dígito" (`TWISTER TW`, hallazgo H-01 de `hallazgos_gate_piloto.md`, caso `twister_embarba_puertas` en `rag_seguridades_pilot_10q_v4_1.json`) — ese caso sí tiene verdad-terreno, pero el propio `regex_characterization_test.rb` (huecos 4-5, `DEUDA · P4`) ya documenta que la vía correcta es identidad de equipo desde metadata (`section_identity`), no vocabulario regex nuevo; añadir un patrón de nombre de placa aquí competiría con esa dirección ya decidida y arriesga falsos negativos nuevos. Queda igual de bloqueado en P4. Verificación: sólo tests unitarios, $0, 0 llamadas Bedrock (no se reabrió el holdout v1). | `app/services/rag/deterministic_intent.rb`, `test/services/rag/deterministic_intent_test.rb` (+4 tests), `bundle exec rails test` de ambos archivos: 44 runs / 211 assertions / 0 failures |
-| 3 Rama Generación | pendiente — 3 pasos en orden: prompt (§5-compatible) → reparar `FIELD_RECORD` corrupto en sidecar + resync (decisión #3) → A/B Haiku vs Sonnet en Bedrock sólo si hace falta (decisión #2, 3-5 llamadas) | — |
+| 3 Rama Generación | **hecho 2026-08-03** — pasos 1-2 aplicados y medidos; **paso 3 (A/B Haiku/Sonnet) no se activó** porque 1-2 ya midieron corregido (regla del plan: sólo si 1-2 no bastan). **Paso 1 — prompt** (`app/prompts/bedrock/generation.txt`, dentro de `# EVIDENCE CONTRACT`, antes de `$output_format_instructions$`, §5-compatible): (a) se amplió la regla de "sibling model" existente (ya estaba en el prompt desde antes del holdout v1 y no bastó por sí sola) de "connection/terminal/component" a también "label, series/circuit mapping"; (b) instrucción nueva de fidelidad al chunk propio del modelo nombrado sobre cualquier otro chunk recuperado; (c) instrucción nueva de declarar explícitamente un desajuste de versión/sufijo en vez de sustituir en silencio; (d) instrucción nueva de preferir la tabla impresa del chunk sobre un bloque `FIELD_RECORD` para el mismo hecho. Hipótesis (§8.3): la regla de sibling-model existente era demasiado angosta (sólo hablaba de conexiones/terminales/componentes) y no cubría mapeos de etiqueta→serie ni sustitución por chunk genérico; si es falsa, las preguntas ad-hoc seguirían fallando igual. Verificado con `test/prompts/bedrock_generation_prompt_test.rb` (23 runs / 123 assertions, incluye SHA256 del template pre-cambio actualizado). **Paso 2 — dato corrupto** (decisión #3 del dueño): grep de solo-lectura sobre los 97 cuerpos reales (`aws s3 sync` de `bulk_chunks/1/b61f5d54-.../chunk_*.txt`, no la copia local de 2026-07-29 que ya no existe en disco) — **hallazgo que amplía el alcance original**: la cadena `OSBTACULO` no está sólo en `chunk_62` (ARCA III, pág. 64) sino en 6 chunks / 7 apariciones (`chunk_29`, `30`, `31`, `32`, `62`×2, `67`), siempre dentro de una línea `EVIDENCE:` de un `FIELD_RECORD`, siempre con la tabla/prosa del mismo chunk escribiendo la forma correcta al lado — confirma que es un defecto de la pasada de extracción de `FIELD_RECORD`, no una errata del documento original. Reparados los 6 chunks (`script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb`, patrón idéntico a `patch_seguridades_chunk9_2026-07-26.rb`: verificación de ETag contra la copia de referencia, backup a `s3://multimodal-source-destination/chunk_body_backups/1/b61f5d54-.../20260803T192923Z/` + local, escritura, verificación SHA256 post-escritura) + resync del KB (`BulkKbSyncService`, job `4UWM6QAQVP`, `COMPLETE`). **Ver H-06 abajo: el mismo grep encontró 6 familias más de cadenas con apariencia de typo en ~30 chunks adicionales — NO reparadas, escalado como decisión humana.** **Medición conjunta 1+2** (§8.3: 3 preguntas ad-hoc nuevas, ninguna del v1 ni del v2, ejecutadas localmente contra el KB de producción sobreescribiendo variables de entorno — no vía Kamal, porque el cambio de prompt es local y no se desplegó — ver nota de despliegue pendiente): las 3 pasan por lectura manual de la respuesta cruda (la rúbrica ad-hoc marcó 1/3 en falso, con el mismo defecto de rúbrica que los 2 falsos positivos del v1 — ventana/dirección de regex, no se corrigió porque la rúbrica ad-hoc no se congela ni se reusa). (1) `adhoc_ne300_p35b_not_documented`: el modelo declaró explícitamente que P35B no está documentado para NE 300 – LB II y citó la fuente real (ARCA II, no transplantó el valor). (2) `adhoc_em4000_v3_absent`: el modelo declaró explícitamente "la EM 4000 V3... no aparece en la documentación disponible", sin sustituir V1 en silencio. (3) `adhoc_em2000_electrico_ap_led`: el modelo respondió "SERIE OBSTÁCULO" bien escrito, sin la copia corrupta. **Pendiente antes de que esto cuente para la Fase 4: desplegar `app/prompts/bedrock/generation.txt` a producción** — el dato ya está reparado en S3/KB, pero el prompt sólo se probó localmente contra el KB de producción; el contenedor desplegado (`7fc8f2ae...`) todavía sirve el prompt viejo. | `app/prompts/bedrock/generation.txt`, `test/prompts/bedrock_generation_prompt_test.rb`, `script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb`, `tmp/rag_seguridades_adhoc_fase3_generacion_2026-08-03.json` + `_run1.json` (fuera de git) |
 | 3 Rama Recuperación | sin trabajo este ciclo (0 fallos puros); alias LCB II/GEN II sólo si reaparece en v2 | — |
-| 4 gate v2 → piloto | bloqueada por Fase 3 — **Rama Guard hecha 2026-08-03**, **Rama Generación aún pendiente** (los 4 fallos de generación siguen sin intervenir). Fase 0b ya no bloquea: holdout v2 congelado 2026-08-03. Ciclo 1 ya consumido por el v1: si el v2 falla, parar y re-plantear con humanos. | — |
+| 4 gate v2 → piloto | **Fase 3 completa (Guard + Generación) — ya no bloqueada por clasificación de fallos**, pero **bloqueada por el despliegue pendiente** del prompt corregido (ver fila de Rama Generación): correr el v2 contra el commit `7fc8f2ae...` mediría el prompt viejo, no la corrección. Desplegar antes de abrir el v2. Fase 0b ya no bloquea: holdout v2 congelado 2026-08-03. Ciclo 1 ya consumido por el v1: si el v2 falla, parar y re-plantear con humanos. | — |
+
+---
+
+## H-06 — El grep de la Fase 3 encontró 6 familias más de typos en FIELD_RECORD, sin reparar (decisión pendiente #5)
+
+**Encontrado en:** Fase 3, Rama Generación, paso 2 (2026-08-03), al dimensionar el
+defecto de `OSBTACULO` sobre los 97 cuerpos reales descargados de S3
+(`bulk_chunks/1/b61f5d54-.../chunk_*.txt`, solo lectura).
+
+**Evidencia:** además de `OSBTACULO` (6 chunks, reparado — ver fila "3 Rama
+Generación"), el mismo grep encontró estas cadenas en los `FIELD_RECORD`:
+
+| Cadena | Chunks | ¿Confirmado como corrupción de ingesta? |
+|---|---|---|
+| `CERRRADA` (vs `CERRADA`) | 1, 2, 3, 4, 38 | No verificado — no tiene el patrón limpio "tabla correcta + FIELD_RECORD corrupto" confirmado para OSBTACULO en los 5 chunks |
+| `SEGURIIDAD`/`PRINCPAL` (vs `SEGURIDAD`/`PRINCIPAL`) | 42, 43, 73, 75 | **No** — `chunk_73.txt:23` dice explícitamente: *"La descripción 'SERIE SEGURIIDAD PRINCPAL' se transcribe verbatim tal como aparece en el diagrama (probable errata tipográfica en el original)."* Es fidelidad documentaria, no un bug de ingesta. |
+| `SEGURDAD` (vs `SEGURIDAD`) | 69, 70, 79, 82, 83, 84 | **No, al menos en 79** — `chunk_79.txt:23`: *"el texto original escribe 'SEGURDAD' (sin 'I') para T5 — se conserva tal cual el documento."* Los demás chunks no se cotejaron uno a uno. |
+| `EXTERORES` (vs `EXTERIORES`) | 11, 12, 14, 15, 16, 17, 19, 26, 29, 30, 31, 34, 40, 41, 42, 43, 69, 70, 72, 73, 82 (21 chunks) | No — en `chunk_12.txt` la propia tabla visible también escribe `EXTERORES` (líneas 29-30), no sólo el `FIELD_RECORD`: mismo patrón que `SEGURIIDAD`/`SEGURDAD`, probable errata del original o de la extracción de texto, no de la pasada de `FIELD_RECORD`. |
+| `ACUÑAIENTO` (vs `ACUÑAMIENTO`) | 94 | No verificado, pero SÍ tiene el patrón limpio (tabla y prosa del mismo chunk dicen `ACUÑAMIENTO` correcto; sólo un `FIELD_RECORD` dice `ACUÑAIENTO`) — mismo perfil que `OSBTACULO`, candidato fuerte para una reparación futura |
+| `REVISON` (vs `REVISION`) | 14, 15, 17, 19, 94, 95, 96 | Mixto — aparece tanto en tablas visibles (`chunk_14.txt:36`, `chunk_17.txt:39`) como en `FIELD_RECORD`; no se puede separar sin cotejar el PDF |
+
+**Por qué no se repararon en esta pasada:** el encargo nombraba explícitamente
+"OSBTACULO ... y los demás que aparezcan en el grep", que se interpretó como el
+mismo typo, no como licencia para corregir cualquier cadena con apariencia de
+error. La evidencia de `chunk_73` y `chunk_79` confirma que esa lectura
+conservadora era la correcta: al menos dos de las seis familias son erratas
+**del documento original**, preservadas a propósito — "repararlas" habría sido
+una violación de fidelidad documentaria (Safety First / Retrieval First de
+`AGENTS.md`), no una limpieza de dato. Las demás cuatro familias no tienen
+verificación suficiente para decidir en ningún sentido sin cotejar el PDF
+renderizado página por página, que está fuera del presupuesto de esta fase y
+no estaba autorizado.
+
+**Afecta a:** ninguna fase cerrada del ciclo actual (no hay `FIELD_RECORD` de
+estas familias citado en ningún fallo medido del holdout v1) — no bloquea la
+Fase 4. Sí afecta **Generalización**: si el protocolo por clase de documento
+(§ "Generalización") se extiende a más documentos, un chequeo de "tabla visible
+vs. `FIELD_RECORD` del mismo chunk" como el que reparó `OSBTACULO` sería una
+auditoría de ingesta reutilizable de bajo costo ($0 Claude, sólo grep) — vale
+la pena convertirla en script permanente en vez de ad-hoc.
+
+**Estado:** abierto — escalado como **decisión humana #5**: ¿autoriza el
+dueño del producto (a) reparar `ACUÑAIENTO` (mismo perfil limpio que
+`OSBTACULO`, 1 chunk) ahora, con el mismo patrón de script; y (b) encargar un
+cotejo página-por-página contra el PDF para las cuatro familias mixtas
+(`CERRRADA`, `EXTERORES`, `REVISON`, y el resto de `SEGURDAD`/`SEGURIIDAD` no
+verificado chunk-por-chunk) antes de decidir si son typos de ingesta o del
+documento original? No se ejecuta ninguna de las dos sin esa decisión.
 
 ---
 

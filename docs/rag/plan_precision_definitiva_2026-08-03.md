@@ -50,6 +50,11 @@ reabrirlos, ni con `RAG_SEGURIDADES_CASE_IDS`.
 | N4 | El evaluador NO reconoce `safety_critical` como severity de patrón: `PENALTY_WEIGHTS` = critical 5 / technical_important 3 / secondary 1 / excess 0.5; un patrón `safety_critical` pesa 1 (default). Los patrones `penalized` del v3 deben usar `critical`. | `app/services/rag/benchmark_rubric_evaluator.rb:8-13` |
 | N5 | Límite de uso en la cuenta de tooling de IA observado durante la planificación (un subagente murió con "usage limits … 2026-09-01"). | sesión de planificación |
 
+**N6 y N7 (Fase 1, ejecutada 2026-08-03)** amplían/corrigen N2: la contaminación es de
+91 sidecars, no sólo chunk_63 (N6), y la causa raíz real del fallo v2 es un guard de
+código (`ambiguous_hardware_query?`, N7), no la instrucción de fidelidad al modelo
+nombrado del prompt (H-A refutada como mecanismo). Ver "Resultado de la Fase 1" más abajo.
+
 ## Asignación de modelo por fase (costo mínimo)
 
 | Fase | Modelo de sesión | Racional |
@@ -86,23 +91,103 @@ Nunca Fable. El juez del benchmark sigue siendo regex determinístico
 4. **Salida:** tabla hipótesis × evidencia × veredicto en este documento. Caso ambiguo →
    una consulta acotada a Opus 5, no una re-corrida. **No se arregla nada en esta fase.**
 
+### Resultado de la Fase 1 (ejecutada 2026-08-03)
+
+**Costo real:** 6 `retrieve_invocations` (2 por pregunta × 3 preguntas), 0 llamadas a la
+API de Anthropic desde la app. Método exacto: `bin/rails runner
+script/rag_seguridades_benchmark.rb` local, `BEDROCK_KNOWLEDGE_BASE_ID=Y7RZWMFJSR` +
+`KNOWLEDGE_BASE_S3_BUCKET=multimodal-source-destination` (KB/bucket de producción) +
+`RAG_SEGURIDADES_DOCUMENT_KEY=uploads/1/b61f5d54-ff42-414a-97b7-01682d16f4b5/original.pdf`
++ `RAG_SEGURIDADES_ACCOUNT_ID=1` (evita depender de un `KbDocument` local), flags de
+generación calcadas de `config/deploy.yml` (`RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED=true`,
+`RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED=false`, `RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED=false`).
+Rúbrica ad-hoc `tmp/rag_seguridades_adhoc_fase1_diagnostico_2026-08-03.json` (SHA256
+`ecd04e15594d391de867e5e8a031cab60f743a080b21e3aa592141f5b5ba24de`, 3 preguntas nuevas
+sobre pág. 65 — J24, J26, conteo/estado-normal — ninguna es la pregunta literal de
+`holdout_v2_arca3_bypass_j25_seguridad`), artefacto completo
+`tmp/rag_seguridades_adhoc_fase1_diagnostico_2026-08-03_run1.json` (SHA256
+`84260203969eb02f72a6cad3bc798621d21a3821225d8090f6385301cf8a4b10`, ambos fuera de git).
+
+| Hipótesis | Evidencia | Veredicto |
+|---|---|---|
+| **H-A** — contaminación `canonical_name`/`aliases` × instrucción de fidelidad al modelo nombrado descarta el chunk correcto | Confirmada y **ampliada** en su premisa: no es sólo chunk_63 — **91 de 97 sidecars** (todo el documento fuera de la sección ALJO real, págs. 8-98) llevan `canonical_name: "ALJO Control Level 1B Altius"` con sus 15 aliases 100% ALJO, verificado con `aws s3 sync` de sólo lectura de los 97 `.metadata.json` vigentes contra el mapeo página→marca de `gate_a_medicion_topologia.md` §5.2 (18 divisoras). **Pero el mecanismo causal propuesto está refutado**: en las 2 preguntas ad-hoc que sí llegaron a generación (J26, conteo), chunk_63 fue citado como fuente `[1]` y sus hechos (tabla J12/J24/J25/J26 completa, sin confundir puentes) se usaron correctamente pese al `canonical_name` contaminado — el modelo no lo descartó ni lo trató como "modelo hermano". El campo `section_identity` de los 97 sidecars, en cambio, está **100% correcto** (0 discrepancias) — el backfill que el plan anterior daba por "pendiente de publicar a propósito" ya se publicó como efecto colateral del resync de la Fase 3/Rama Generación del ciclo 2 (job `4UWM6QAQVP`). | **Premisa confirmada y ampliada (N6); mecanismo causal de H-A refutado** — no es la causa del fallo v2. |
+| **H-B** — ruta equivocada (estructurada/guard/ambigüedad) | **Confirmada, con mecanismo preciso identificado (N7).** La pregunta ad-hoc `adhoc_fase1_arca3_bypass_j24` (contiene la palabra "seguridades") disparó `generation_mode: "deterministic_model_disambiguation"`, `model_invoked: false` — un menú "elige una" sin generación real. Causa: `Rag::DeterministicIntent.ambiguous_hardware_query?` (heurístico **anterior** a `StructuredEvidenceRoute`, de la Fase 3/Rama Guard del ciclo 1) hace `GENERIC_HARDWARE_PATTERNS.match?("seguridades") && !EXPLICIT_EQUIPMENT_PATTERN.match?(pregunta) && !PAGE_REFERENCE_PATTERN.match?(pregunta)`. `EXPLICIT_EQUIPMENT_PATTERN` sólo reconoce como marca explícita `ALTIUS\|ORONA\|KONE\|OTIS\|SCHINDLER\|SOPREL\|THYSSEN(KRUPP)?\|CARLOS SILVA` o un código `[A-Z]{2,}[-.]?[A-Z]?\d+…` (≥2 letras + dígito) — **"ARCA" no está en la lista de marcas** (sólo "ORONA" lo está, y ARCA es el modelo, no la marca) y **"J24"/"J25"/"J26" no matchean el patrón de código** (1 sola letra, no ≥2). **Verificado offline ($0, sin Bedrock) que la pregunta LITERAL del v2 reproduce exactamente lo mismo:** `Rag::DeterministicIntent.ambiguous_hardware_query?("En ARCA III, si pongo el puente de BYPASS en posición J25, ¿qué seguridades quedan puenteadas…") == true`, `RagRetrievalProfile#structured_mapping_query? == false`, `RagRetrievalProfile#safety_critical_query? == false` (el heurístico de seguridad del código, basado en "detener/falla/reparar", no reconoce preguntas de bypass de seguridades como safety-critical en absoluto). Con `ambiguous_hardware_query?` en `true`, `Rag::AmbiguousModelResponder` agrupa por encabezado de sección de cada chunk (`Rag::BoardHeading.label`, no por `canonical_name`: los sidecars no tienen campo `manufacturer`, así que el fallback de metadatos nunca aplica) y, al ver 3 encabezados de sección distintos entre chunk_63/62/59 (BYPASS / diagrama de cadena de seguridades / diagrama de cadena — todos del mismo ARCA III), presenta un menú de 3 opciones en vez de responder — exactamente el patrón que explica que los 3 `required` del caso v2 (identifica J25, declara qué se puentea, declara modo revisión) salieran **todos sin matchear (2/9)**. | **Confirmada — causa raíz identificada y reproducida offline.** |
+| **H-C** — recuperación pura (chunk_63 no entra al top-k) | chunk_63 entró en rank 1 en las 3 preguntas ad-hoc (J24, J26, overview), siempre con `section_identity: "ORONA"` correcto. | **Refutada.** |
+
+**Conclusión:** el fallo `safety_critical` del v2 no es un problema de recuperación ni,
+principalmente, de fidelidad de generación — es un **guard pre-generación mal calibrado**
+(`Rag::DeterministicIntent::EXPLICIT_EQUIPMENT_PATTERN`/`GENERIC_HARDWARE_PATTERNS`) que
+intercepta la pregunta ANTES de que el chunk correcto (ya bien recuperado) llegue a
+generación, y la sustituye por un menú de desambiguación espurio. La contaminación de
+`canonical_name`/`aliases` (H-A/N2) es real, más amplia de lo documentado (N6), y debe
+limpiarse por higiene de datos — pero no es la palanca que arregla el gate v2.
+
+**N6 (ampliación de N2):** 91/97 sidecars (todo excepto los 6 de la sección ALJO real,
+págs. 2-7) llevan `canonical_name`/`aliases` de "ALJO Control Level 1B Altius". Lista
+completa de chunks afectados con su página y marca esperada:
+`tmp/seguridades_sidecars_2026-08-03/` (97 `.metadata.json`, sólo lectura, fuera de git) +
+comparación reproducible contra `gate_a_medicion_topologia.md` §5.2. `section_identity`
+no está afectado (100% correcto, ya publicado).
+
+**N7 (nuevo):** `Rag::DeterministicIntent::EXPLICIT_EQUIPMENT_PATTERN` (línea 27) no
+reconoce nombres de modelo sin dígito pegado a letras (`ARCA`, `ARCA II`, `ARCA BASICO`,
+`ARCA III`) ni códigos de una sola letra + dígitos (`J24`, `J25`, `J26`, y previsiblemente
+otros designadores de una letra del documento). Cualquier pregunta de seguridad que
+nombre "ARCA" + una palabra genérica de `GENERIC_HARDWARE_PATTERNS` (`seguridades`,
+`cerrojos`, `enclavamientos`, `contactos`, `leds`) sin decir "página N" cae en
+`AmbiguousModelResponder` sin generar respuesta real, **incluidos los 4 casos de
+seguridad que el holdout v3 (Fase 3) tiene que cubrir** — riesgo directo de que v3 repita
+el mismo fallo si sus preguntas de seguridad usan la misma forma léxica.
+
 ## Fase 2 — Intervención mínima según diagnóstico (Sonnet 5)
 
-**Costo:** $0 en Claude (pases de metadatos) + ≤ 6 llamadas Bedrock de verificación.
+**⚠️ Alcance corregido 2026-08-03 por el resultado de la Fase 1 — leer antes de tocar
+nada.** La causa raíz confirmada del fallo v2 es **N7** (guard `ambiguous_hardware_query?`
+mal calibrado), no H-A. El orden de intervención cambia: **2d es la prioridad real**; 2a
+sigue siendo necesaria (higiene de datos, alcance ampliado a 91 sidecars — N6) pero por sí
+sola **no destraba el gate**; 2b queda descartado como estaba escrito (su premisa — que la
+regla de fidelidad al modelo nombrado descarta chunks — se refutó empíricamente: el
+prompt actual ya usa chunk_63 correctamente pese al `canonical_name` contaminado).
 
-- **2a. Limpiar la contaminación de identidad** (si H-A confirmada o el grep de Fase 1
-  lista chunks provablemente mal etiquetados): corregir `canonical_name` y `aliases` de
-  los sidecars afectados desde la verdad-terreno de §5 — pase de metadatos patrón
-  `section_identity` (permitido por restricción #2) + **UN solo resync** del KB
-  (`BulkKbSyncService`). ⚠️ El resync también publica el backfill `section_identity`
-  que quedó pendiente a propósito (Fase 2 SEGURIDADES v2): verificar antes que ese
-  contenido es correcto para publicar y anotarlo aquí.
-- **2b. Ajuste del prompt SÓLO si** la Fase 1 muestra que la regla de fidelidad al
-  modelo nombrado descarta chunks por cabecera contaminada: precisar la regla en
-  `app/prompts/bedrock/generation.txt` (la identidad de equipo se juzga por
-  aliases/section_identity del chunk, no sólo por la línea `**Document:**`), dentro de
-  lo permitido por §5 (antes de `$output_format_instructions$`), con
-  `test/prompts/bedrock_generation_prompt_test.rb` actualizado (SHA256 del template).
+**Costo:** $0 en Claude (pases de metadatos + cambio de regex) + ≤ 6 llamadas Bedrock de
+verificación.
+
+- **2d. (NUEVO, prioridad 1 — corrige N7/H-B).** Ampliar el escape de
+  `Rag::DeterministicIntent.ambiguous_hardware_query?`
+  (`app/services/rag/deterministic_intent.rb:26-27,59-69`) para que una pregunta que ya
+  nombra un modelo real del documento no caiga en el menú de desambiguación: (a)
+  `EXPLICIT_EQUIPMENT_PATTERN` no reconoce nombres de modelo sin dígito pegado a letras
+  (`ARCA`, `ARCA II`, `ARCA BASICO`, `ARCA III` — sólo la marca `ORONA` escapa hoy); (b)
+  tampoco reconoce designadores de una sola letra + dígitos (`J24`, `J25`, `J26`). Antes
+  de escribir el regex, verificar con el patrón ya usado en la Rama Guard del ciclo 1
+  (`docs/rag/plan_quirurgico_precision_2026-08-02.md`, fila "3 Rama Guard") qué otros
+  designadores de una letra aparecen en el documento (grep de sólo lectura sobre los 97
+  cuerpos) para no fijar un regex que sólo tape J24-26. Declarar hipótesis (§8.3): si el
+  heurístico reconoce "ARCA"/el designador, la pregunta cae en la ruta normal de
+  generación (o en `StructuredEvidenceRoute` si aplica) y deja de mostrar el menú; si es
+  falsa, la pregunta ad-hoc seguiría devolviendo `model_invoked: false`. Verificación:
+  tests unitarios (`test/services/rag/deterministic_intent_test.rb`,
+  `test/services/rag/regex_characterization_test.rb`, $0) **más** las 3 preguntas ad-hoc
+  de la Fase 1 (mismo patrón local contra KB de producción, no se reusa la rúbrica ad-hoc
+  congelada — se lee a mano) para confirmar que `adhoc_fase1_arca3_bypass_j24` deja de
+  producir `generation_mode: "deterministic_model_disambiguation"`.
+- **2a. Limpiar la contaminación de identidad — alcance ampliado a 91 sidecars (N6),
+  no sólo chunk_63.** Corregir `canonical_name` y `aliases` de los 91 sidecars afectados
+  (lista reproducible: comparar `page_number` de cada sidecar contra las 18 divisoras de
+  §5.2) desde la verdad-terreno de §5 — pase de metadatos patrón `section_identity`
+  (permitido por restricción #2) + **UN solo resync** del KB (`BulkKbSyncService`). El
+  backfill `section_identity` que el plan anterior daba por pendiente **ya se publicó**
+  como efecto colateral del resync de la Fase 3/Rama Generación del ciclo 2 (job
+  `4UWM6QAQVP`) y ya se verificó 100% correcto en la Fase 1 — no hay nada pendiente que
+  verificar en ese frente, sólo evitar que este nuevo resync lo pise con datos peores.
+  No bloquea el gate v3 por sí sola (2d sí), pero es higiene de datos correcta y barata
+  con el mismo resync.
+- **2b. Descartado tal como estaba escrito.** Su premisa (la regla de fidelidad al
+  modelo nombrado del prompt descarta chunks por cabecera contaminada) se refutó en la
+  Fase 1: las 2 preguntas ad-hoc que llegaron a generación usaron chunk_63 correctamente
+  pese al `canonical_name` contaminado. No tocar `app/prompts/bedrock/generation.txt`
+  por este motivo. Si una medición futura muestra lo contrario, reabrir con su propia
+  hipótesis — no ejecutar el texto original de 2b.
 - **2c. Reparar `ACUÑAIENTO`** (decisión #5): chunk_94, patrón exacto de
   `script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb` (verificación ETag +
   backup S3/local + SHA256 post-escritura), dentro del mismo resync de 2a.
@@ -207,8 +292,8 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 | Fase | Estado | Artefacto / hash |
 |---|---|---|
-| 1 Diagnóstico J25 | pendiente | — |
-| 2 Intervención mínima | pendiente (depende de Fase 1) | — |
+| 1 Diagnóstico J25 | **hecho 2026-08-03** — H-B (guard `ambiguous_hardware_query?` mal calibrado, N7) confirmada como causa raíz y reproducida offline ($0) con la pregunta literal del v2; H-A refutada en su mecanismo causal (premisa de contaminación confirmada y ampliada a 91/97 sidecars, N6, pero el modelo usa chunk_63 correctamente pese a ello); H-C refutada (chunk_63 rank 1 siempre). 6 `retrieve_invocations` de 3 preguntas ad-hoc nuevas (J24/J26/overview, ninguna literal del v2), dentro del presupuesto de ≤10. | `tmp/rag_seguridades_adhoc_fase1_diagnostico_2026-08-03.json` (rúbrica, SHA256 `ecd04e15594d391de867e5e8a031cab60f743a080b21e3aa592141f5b5ba24de`) + `_run1.json` (artefacto completo, SHA256 `84260203969eb02f72a6cad3bc798621d21a3821225d8090f6385301cf8a4b10`), ambos fuera de git; `tmp/seguridades_sidecars_2026-08-03/` (97 sidecars vigentes, sólo lectura, fuera de git) |
+| 2 Intervención mínima | pendiente — **alcance corregido**: prioridad 1 es 2d (fix del guard, nuevo), no 2b (descartado) | — |
 | 3 Holdout v3 congelado | pendiente (sesión distinta a Fase 2) | — |
 | 4 Checkpoint despliegue | pendiente (tras Fase 2, antes de Fase 5) | — |
 | 5 Gate v3 → piloto | pendiente | — |
@@ -218,7 +303,7 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 **Pie común (añadir al final de cada prompt):**
 
 > Lee primero `docs/rag/plan_precision_definitiva_2026-08-03.md` completo (incluida la
-> tabla de Estado y los hallazgos N1–N5) y la fila de Estado de la fase anterior.
+> tabla de Estado y los hallazgos N1–N7) y la fila de Estado de la fase anterior.
 > Respeta las restricciones no negociables y la advertencia de saldo (nada llama a la
 > API de Anthropic desde la app). Los holdouts v1 y v2 están gastados: no los reabras
 > ni con `RAG_SEGURIDADES_CASE_IDS`. Antes de cerrar aplica el Protocolo de plan vivo
@@ -247,23 +332,36 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 ### Fase 2 — Sonnet 5
 
-> Ejecuta la intervención mínima que el diagnóstico de la Fase 1 justifique (lee su
-> veredicto en el plan vivo): (2a) si H-A está confirmada o hay chunks provablemente
-> mal etiquetados, corrige `canonical_name`/`aliases` de los sidecars afectados desde
-> la verdad-terreno de §5, patrón `section_identity`, y UN solo resync del KB
-> (`BulkKbSyncService`) — ⚠️ ese resync también publica el backfill `section_identity`
-> pendiente a propósito: verifica antes que sea correcto publicarlo y anótalo; (2b)
-> SÓLO si la Fase 1 muestra que la regla de fidelidad al modelo nombrado descarta
-> chunks por cabecera contaminada, precisa esa regla en
-> `app/prompts/bedrock/generation.txt` (identidad por aliases/section_identity, no
-> sólo por la línea `**Document:**`), dentro de §5, actualizando
-> `test/prompts/bedrock_generation_prompt_test.rb` (SHA256); (2c) repara `ACUÑAIENTO`
-> en chunk_94 con el patrón exacto de
+> ⚠️ CRÍTICO: el diagnóstico de la Fase 1 (2026-08-03) cambió qué hay que arreglar.
+> La causa raíz confirmada y reproducida offline ($0) del fallo v2 es **N7**: el guard
+> `Rag::DeterministicIntent.ambiguous_hardware_query?`
+> (`app/services/rag/deterministic_intent.rb:26-27,59-69`) intercepta la pregunta ANTES
+> de generación y la sustituye por un menú de desambiguación (`model_invoked: false`)
+> porque `EXPLICIT_EQUIPMENT_PATTERN` no reconoce "ARCA"/"ARCA II"/"ARCA III"/"ARCA
+> BASICO" (sólo la marca "ORONA" escapa) ni designadores de una sola letra + dígitos
+> ("J24", "J25", "J26"). **H-A (contaminación `canonical_name`/`aliases` vía la
+> instrucción de fidelidad al modelo nombrado) se refutó como mecanismo causal**: el
+> prompt actual ya usa chunk_63 correctamente pese al `canonical_name` contaminado (2 de
+> 3 preguntas ad-hoc de la Fase 1 llegaron a generación y citaron el chunk bien). No
+> ejecutes el punto "2b" tal como estaba redactado — está descartado. Orden real:
+> (2d, PRIORIDAD 1 — nuevo) amplía el escape de `ambiguous_hardware_query?` para
+> reconocer nombres de modelo sin dígito (ARCA y variantes) y designadores de una letra
+> (J24/J25/J26 y los que el grep de sólo lectura sobre los 97 cuerpos confirme); declara
+> hipótesis (§8.3) y verifica con tests unitarios
+> (`test/services/rag/deterministic_intent_test.rb`,
+> `test/services/rag/regex_characterization_test.rb`) MÁS las 3 preguntas ad-hoc de la
+> Fase 1 (mismo patrón local contra KB de producción, rúbrica ad-hoc no se reusa, se lee
+> a mano) confirmando que `adhoc_fase1_arca3_bypass_j24` deja de dar
+> `generation_mode: "deterministic_model_disambiguation"`; (2a, higiene de datos, no
+> bloquea el gate por sí sola) corrige `canonical_name`/`aliases` de los **91** sidecars
+> afectados (no sólo chunk_63 — lista en la Fase 1) desde la verdad-terreno de §5, patrón
+> `section_identity`, y UN solo resync del KB (`BulkKbSyncService`) — el backfill
+> `section_identity` que el plan anterior daba por pendiente **ya se publicó y ya se
+> verificó 100% correcto** en la Fase 1, no hay nada que verificar ahí, sólo no
+> pisarlo con datos peores; (2c) repara `ACUÑAIENTO` en chunk_94 con el patrón exacto de
 > `script/patch_seguridades_field_record_osbtaculo_2026-08-03.rb` (ETag + backup +
-> SHA256 post-escritura), dentro del mismo resync de 2a. Verifica con las MISMAS
-> preguntas ad-hoc de la Fase 1 (before/after, lectura de respuesta cruda) + tests
-> unitarios. Declara hipótesis y resultado esperado si es falsa (§8.3) por cada
-> intervención. ≤ 6 llamadas Bedrock.
+> SHA256 post-escritura), dentro del mismo resync de 2a/2d. Declara hipótesis y
+> resultado esperado si es falsa (§8.3) por cada intervención. ≤ 6 llamadas Bedrock.
 
 ### Fase 3 — Sonnet 5 (sesión nueva; si participaste en la Fase 2, detente: lo redacta otra sesión)
 

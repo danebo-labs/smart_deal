@@ -30,6 +30,12 @@ servers:
 
 proxy:
   ssl: true
+  # El peor caso de una consulta RAG es el cold-start de Aurora Serverless:
+  # AuroraColdStartRetry duerme 15+30+45s (RETRY_DELAYS) más la duración de las
+  # cuatro llamadas a Bedrock. El default de kamal-proxy (30s) mata la conexión
+  # mientras Rails sigue trabajando, y el técnico ve un 502 de una request que
+  # termina 200 OK. 120s cubre la cascada completa con margen.
+  response_timeout: 120
   hosts:
     # Temporary: apex/www serve the app until the marketing landing is ready.
     - danebo.ai

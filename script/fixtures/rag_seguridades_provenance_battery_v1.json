@@ -1,0 +1,244 @@
+{
+  "version": "seguridades-provenance-battery-v1.0",
+  "description": "Batería de procedencia congelada (Fase 4 del ciclo 5, docs/rag/plan_ciclo5_resolucion_decision9_2026-08-04.md). 18 casos dirigidos a los 2 fixes bloqueantes identificados en el ciclo: (a) 10 casos 'neighbor_expansion_divisor_identity' que fuerzan Rag::SectionNeighborExpander a expandir desde una página divisoria (0 chunks propios) hacia la página vecina con contenido real -- el check es determinístico: canonical_name de CADA cita de la respuesta debe igualar expected_section_identity (el section_identity del sidecar de la página vecina realmente citada, verdad-terreno de docs/rag/gate_a_medicion_topologia.md Apéndice E / verbatims medidos), NO una rúbrica regex sobre el texto de la respuesta. (b) 8 casos 'absence_of_n8_contamination' cuyo check es la AUSENCIA de los patrones de contaminación de identidad ALJO (el bloque '**Document:** ALJO Control Level 1B Altius' y variantes fuera de bloque) en el cuerpo crudo recuperado para páginas NO-ALJO -- también determinístico (búsqueda de substring/regex simple sobre el chunk body devuelto por retrieval, no sobre la respuesta generada). Este fixture NO se corre contra Bedrock en esta fase; se abre UNA sola vez en la Fase 6, cuando el runner de esa fase debe: para cada caso tipo (a), emitir la pregunta, tomar las citas de la respuesta y comparar citation['canonical_name'] (o el campo equivalente que exponga Bedrock::CitationProcessor) contra expected_section_identity, marcando el caso failed si CUALQUIER cita no coincide; para cada caso tipo (b), recuperar el chunk body crudo de target_page (vía Rag::Retrieve o el log de citations con el content_source) y verificar que NINGÚN forbidden_pattern matchea. severity: safety_critical en los 18 (ambos fixes son P0 -- una cita con canonical_name equivocado o un cuerpo con contaminación residual rompe la promesa de trazabilidad de la que depende todo el resto de la rúbrica del holdout). Selección de páginas: los 10 divisores cubren 10 de las 16 marcas con página divisoria pura (THYSSEN p92, RECOBA p70, FAIN p41, KONE p51, ORONA p60, SCHINDLER p80, CTA p15, CARLOS SILVA p8, MP p54, EDEL p23) -- diversidad deliberada de familias de layout (ALTIUS/ZEUS/ARCA vs. LED-table vs. bloque-de-bornes) para no sesgar el check de identidad a un solo formato de sidecar. Los 8 casos de ausencia cubren una muestra de las formas de contaminación descritas en H10 del plan (chunk_0/página 2 ALJO-ancla con contaminación en filas de tabla, chunk_36/página 38 EXCELSIOR con línea de prosa suelta, chunk_43/página 45 FAIN con el match exacto original, y 5 páginas adicionales de marcas distintas -MP p55, RECOBA p71, ZEUS/HATS p48, EDEL p24, THYSSEN p97- para confirmar que el parche de Fase 3 alcanzó cuerpos fuera de la muestra de smoke-test de esa fase). Prohibiciones heredadas respetadas: cero re-ingesta, cero llamadas a Bedrock/Anthropic al redactar este fixture, sin reutilizar los holdouts v1-v4 gastados (este fixture es un instrumento nuevo con checks de un tipo distinto -- comparación de campos estructurados, no rúbrica de texto -- por lo que no compite con la restricción de 'reabrir' un holdout).",
+  "citation_required": true,
+  "cases": [
+    {
+      "id": "provenance_v1_thyssen_divisor_p92",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 92, ¿qué controlador se documenta y qué código de LED indica fallo de puertas cerradas?",
+      "divisor_page": 92,
+      "expected_neighbor_pages": [93, 97],
+      "expected_section_identity": "THYSSEN",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "THYSSEN"
+      }
+    },
+    {
+      "id": "provenance_v1_recoba_divisor_p70",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 70, ¿qué modelos RECOBA se documentan en las páginas siguientes?",
+      "divisor_page": 70,
+      "expected_neighbor_pages": [71, 72, 73, 74, 75, 76, 77, 78, 79],
+      "expected_section_identity": "RECOBA",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "RECOBA"
+      }
+    },
+    {
+      "id": "provenance_v1_fain_divisor_p41",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 41, ¿qué modelo FAIN se documenta en las páginas siguientes?",
+      "divisor_page": 41,
+      "expected_neighbor_pages": [42, 43, 44, 45, 46],
+      "expected_section_identity": "FAIN",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "FAIN"
+      }
+    },
+    {
+      "id": "provenance_v1_kone_divisor_p51",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 51, ¿qué modelos KONE se documentan en las páginas siguientes?",
+      "divisor_page": 51,
+      "expected_neighbor_pages": [52, 53],
+      "expected_section_identity": "KONE",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "KONE"
+      }
+    },
+    {
+      "id": "provenance_v1_orona_divisor_p60",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 60, ¿qué modelos ORONA se documentan en las páginas siguientes?",
+      "divisor_page": 60,
+      "expected_neighbor_pages": [61, 62, 63, 64, 65],
+      "expected_section_identity": "ORONA",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "ORONA"
+      }
+    },
+    {
+      "id": "provenance_v1_schindler_divisor_p80",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 80, ¿qué modelos SCHINDLER se documentan en las páginas siguientes?",
+      "divisor_page": 80,
+      "expected_neighbor_pages": [81, 82, 83, 84, 85, 86],
+      "expected_section_identity": "SCHINDLER",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "SCHINDLER"
+      }
+    },
+    {
+      "id": "provenance_v1_cta_divisor_p15",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 15, ¿qué modelos CTA se documentan en las páginas siguientes?",
+      "divisor_page": 15,
+      "expected_neighbor_pages": [16, 17, 18, 19, 20, 21, 22],
+      "expected_section_identity": "CTA",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "CTA"
+      }
+    },
+    {
+      "id": "provenance_v1_carlos_silva_divisor_p8",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 8, ¿qué modelos CARLOS SILVA se documentan en las páginas siguientes?",
+      "divisor_page": 8,
+      "expected_neighbor_pages": [9, 10, 11, 12, 13, 14],
+      "expected_section_identity": "CARLOS SILVA",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "CARLOS SILVA"
+      }
+    },
+    {
+      "id": "provenance_v1_mp_divisor_p54",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 54, ¿qué modelos MP se documentan en las páginas siguientes?",
+      "divisor_page": 54,
+      "expected_neighbor_pages": [55, 56, 57, 58, 59],
+      "expected_section_identity": "MP",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "MP"
+      }
+    },
+    {
+      "id": "provenance_v1_edel_divisor_p23",
+      "check_category": "neighbor_expansion_divisor_identity",
+      "severity": "safety_critical",
+      "question": "En la página 23, ¿qué modelos EDEL se documentan en las páginas siguientes?",
+      "divisor_page": 23,
+      "expected_neighbor_pages": [24, 25, 26],
+      "expected_section_identity": "EDEL",
+      "check": {
+        "type": "citation_canonical_name_equals_section_identity",
+        "field": "canonical_name",
+        "expected_section_identity": "EDEL"
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p2_aljo_anchor",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "¿Qué modelos ALTIUS se listan en la página 2?",
+      "target_page": 2,
+      "expected_section_identity": "ALJO",
+      "note": "página ancla ALJO -- la contaminación H10 aquí era en filas de tabla, no en el bloque de identidad; se conserva como control porque ES una página ALJO (el forbidden_pattern nunca debería matchear su propio contenido legítimo, sirve para detectar over-matching del check).",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["PIPELINE_INJECTED", "\\*\\*Document:\\*\\*\\s*ALJO.*\\*\\*Document:\\*\\*\\s*ALJO"]
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p38_excelsior",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "En la página 38, ¿qué componente EXCELSIOR se documenta?",
+      "target_page": 38,
+      "expected_section_identity": "EXCELSIOR",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["\\*\\*Document:\\*\\*\\s*ALJO", "Sistema general:\\s*ALJO", "PIPELINE_INJECTED"]
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p45_fain",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "En la página 45, ¿qué modelo FAIN se documenta y qué LED se describe?",
+      "target_page": 45,
+      "expected_section_identity": "FAIN",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["\\*\\*Document:\\*\\*\\s*ALJO", "PIPELINE_INJECTED"]
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p55_mp",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "En la página 55, ¿qué modelo MP se documenta?",
+      "target_page": 55,
+      "expected_section_identity": "MP",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["\\*\\*Document:\\*\\*\\s*ALJO", "PIPELINE_INJECTED"]
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p71_recoba",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "En la página 71, ¿qué modelo RECOBA se documenta?",
+      "target_page": 71,
+      "expected_section_identity": "RECOBA",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["\\*\\*Document:\\*\\*\\s*ALJO", "PIPELINE_INJECTED"]
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p48_zeus_hats",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "En la página 48, ¿qué controlador se documenta?",
+      "target_page": 48,
+      "expected_section_identity": "HATS_-_ASOCIADOS",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["\\*\\*Document:\\*\\*\\s*ALJO", "PIPELINE_INJECTED"]
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p24_edel",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "En la página 24, ¿qué placa EDEL se documenta?",
+      "target_page": 24,
+      "expected_section_identity": "EDEL",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["\\*\\*Document:\\*\\*\\s*ALJO", "PIPELINE_INJECTED"]
+      }
+    },
+    {
+      "id": "provenance_v1_absence_p97_thyssen",
+      "check_category": "absence_of_n8_contamination",
+      "severity": "safety_critical",
+      "question": "En la página 97, ¿qué controlador THYSSEN se documenta?",
+      "target_page": 97,
+      "expected_section_identity": "THYSSEN",
+      "check": {
+        "type": "absence_of_forbidden_patterns_in_retrieved_content",
+        "forbidden_patterns": ["\\*\\*Document:\\*\\*\\s*ALJO", "PIPELINE_INJECTED"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,348 @@
+{
+  "version": "seguridades-holdout-v5.0",
+  "description": "Holdout v5 congelado (Fase 4 del ciclo 5, docs/rag/plan_ciclo5_resolucion_decision9_2026-08-04.md). 14 preguntas nuevas, misma distribución estratificada del v4 (3 determinísticas / 2 mapeos estructurados / 2 generalización / 1 ambigua / 1 sin_respaldo / 4 seguridad / 1 comparativa), redactadas desde verdad-terreno pagada: docs/rag/gate_a_medicion_topologia.md §5-§9 (Apéndice E de marcas/modelos, verbatims medidos) y la copia local de los 97 cuerpos de chunk (tmp/seguridades_chunks_2026-07-28/), que Fase 0 de este ciclo verificó byte-idéntica al S3 vivo PRE-parche N8 para una muestra de 5; el parche de la Fase 3 (Decisión humana #10, Alcance A) removió únicamente el bloque de identidad ALJO incrustado y 2 casos especiales de contaminación fuera de bloque -- ningún contenido sustantivo (tablas LED, bloques de bornes, cadenas de seguridad) fue tocado, así que los hechos técnicos citados aquí siguen siendo verdad-terreno vigente contra los 97 cuerpos POST-parche. Ninguna pregunta se reutiliza de v1/v2/v3/v4 (intersección vacía verificada por script). Páginas usadas: RECOBA KSA18 HIDRÁULICO p71 (3 casos), RECOBA EKM64 ELÉCTRICO p73 (2), MP VÍA SERIE HIDRÁULICO p59 (2), ZEUS/HATS p48 (3), KONE divisor p51 (1), EDEL p24+p26 (1), EM3000/ELECMEGON p29 (1) -- ninguna de estas páginas fue el hecho evaluado en v1-v4 (que cubrieron THYSSEN p92/97, ALJO p3/7, CARLOS SILVA p9/11/13/14, FAIN/RECOBA p44-46/76-79, ORONA/ARCA p60-65, SCHINDLER p80-86, SISTEL p88-91, CTA p17/19/22, EDEL p25/26 -para hechos DISTINTOS a los de aquí-, INELCA p50, KONE p52 -modelo distinto al de aquí-, MP p55 -LED distinto-). Reglas heredadas del v4 completas: severity: safety_critical a nivel de caso en los 4 casos de seguridad + penalized con severity: critical en esos mismos casos; source_page_required=true consciente en los 14 (ninguno es un menú de desambiguación); verificación offline Rag::DeterministicIntent.ambiguous_hardware_query? == false en los 14 (las 14 preguntas nombran 'página N', lo que activa PAGE_REFERENCE_PATTERN y desactiva la clasificación ambigua sin importar el vocabulario genérico de hardware); QA test clonado del v4 (tally, suma real con la fórmula del evaluador, passing_score = ceil(80%), cobertura de ids, respuesta correcta conocida contra el evaluador real, ningún penalized dispara sobre esa respuesta, no-reutilización contra v1+v2+v3+v4). Lección obligatoria del falso negativo H5 (gate v4, caso #1): los 2 required de abstención de los casos de seguridad #10 y #13 (orden de cadena no documentado) aceptan forma sustantiva Y imperativa ('requiere verificación en campo' Y 'verificar ... en campo') y alternan el objeto literal ('el orden' / 'la secuencia (textual)?' / 'esa secuencia'), probado contra 2 fraseos distintos en el QA test. N8 ya está parcheado (Fase 3, Alcance A, job CCCDNEDFYL COMPLETE): no se exige marca fuera de las páginas donde el contenido la respalda explícitamente -- pero tampoco se evita exigirla, la regla vieja del v3/v4 queda derogada. Prohibiciones heredadas respetadas: sin ventanas .{0,N} que crucen ítems de una lista enumerada (los usos de .{0,N} aquí son sobre prosa continua, mismo patrón que v3/v4); todo lookahead negativo de exclusión usa el idioma probado '(?<!no\\s)' antes de la afirmación contraria, nunca un lookahead sin el 'no' pospuesto; ninguna errata del documento fue corregida en los required (los términos citados son verbatim del cuerpo del chunk). No se corrió nada contra Bedrock al redactar este fixture.",
+  "citation_required": true,
+  "max_score": 129,
+  "passing_score": 104,
+  "cases": [
+    {
+      "id": "holdout_v5_recoba_ksa18_h15_h6",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En RECOBA KSA 18 HIDRÁULICO, página 71, ¿qué indica el LED H15 y qué indica el LED H6?",
+      "source_pages": [71],
+      "required": [
+        { "label": "identifica H15", "pattern": "\\bH15\\b" },
+        { "label": "serie de H15", "pattern": "SERIE DE CERROJOS CERRADA" },
+        { "label": "identifica H6", "pattern": "\\bH6\\b" },
+        { "label": "serie de H6", "pattern": "SERIE PUERTAS DE PISO CERRADAS" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia los significados de H15 y H6",
+          "pattern": "\\bH15\\b(?:(?!\\bH6\\b).){0,40}PUERTAS DE PISO|\\bH6\\b(?:(?!\\bH15\\b).){0,40}CERROJOS CERRADA",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_recoba_ekm64_h67_h64",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En RECOBA EKM64 ELÉCTRICO, página 73, ¿qué serie corresponde al LED H67 y qué serie corresponde al LED H64?",
+      "source_pages": [73],
+      "required": [
+        { "label": "identifica H67", "pattern": "\\bH67\\b" },
+        { "label": "serie de H67", "pattern": "SERIE SEGURIDADES PRINCIPALES" },
+        { "label": "identifica H64", "pattern": "\\bH64\\b" },
+        { "label": "serie de H64", "pattern": "CERROJOS CABINA\\s*[-–]\\s*EXTERIORES" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia los significados de H67 y H64",
+          "pattern": "\\bH67\\b(?:(?!\\bH64\\b).){0,50}CERROJOS CABINA|\\bH64\\b(?:(?!\\bH67\\b).){0,50}SEGURIDADES PRINCIPALES",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_mp_via_serie_6h_9h",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, ¿qué serie corresponde al LED 6H y qué serie corresponde al LED 9H?",
+      "source_pages": [59],
+      "required": [
+        { "label": "identifica 6H", "pattern": "\\b6H\\b" },
+        { "label": "serie de 6H", "pattern": "BOTONERA REVISION FOSO Y STOP FOSO" },
+        { "label": "identifica 9H", "pattern": "\\b9H\\b" },
+        { "label": "serie de 9H", "pattern": "SERIE CERROJOS EXTERIORES" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia los significados de 6H y 9H",
+          "pattern": "\\b6H\\b(?:(?!\\b9H\\b).){0,40}CERROJOS EXTERIORES|\\b9H\\b(?:(?!\\b6H\\b).){0,40}BOTONERA REVISION FOSO",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_kone_divisor_epb",
+      "stratum": "mapeo_estructurado",
+      "category": "divisor_marca_modelo",
+      "severity": "technical_important",
+      "question": "En la página divisoria de KONE, página 51, ¿qué otro modelo aparece listado junto a MONOESPACE?",
+      "source_pages": [51],
+      "required": [
+        { "label": "identifica la marca", "pattern": "\\bKONE\\b" },
+        { "label": "identifica EPB", "pattern": "\\bEPB\\b" }
+      ],
+      "optional": [
+        { "label": "menciona MONOESPACE", "pattern": "\\bMONOESPACE\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye EPB a otra marca",
+          "pattern": "\\b(?:ORONA|OTIS|SCHINDLER|RECOBA|THYSSEN|FAIN|CTA|EDEL|ALJO|ELECMEGON|ENIER|EXCELSIOR|MP|INELCA|HATS|SISTEL|CARLOS\\s+SILVA)\\b",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_zeus_hats_stopfoso_j10",
+      "stratum": "mapeo_estructurado",
+      "category": "mapeo_conector_bloque_bornes",
+      "severity": "technical_important",
+      "question": "En el controlador ZEUS/HATS, página 48, ¿a qué conector está conectado STOP FOSO: J9 o J10?",
+      "source_pages": [48],
+      "required": [
+        { "label": "identifica STOP FOSO", "pattern": "STOP FOSO" },
+        { "label": "identifica el conector correcto J10", "pattern": "\\bJ10\\b" }
+      ],
+      "optional": [
+        { "label": "excluye explícitamente J9", "pattern": "\\bJ9\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye STOP FOSO al conector J9 (el de la página 48 es J10)",
+          "pattern": "STOP FOSO(?:(?!\\bJ10\\b).){0,40}\\bJ9\\b|\\bJ9\\b(?:(?!\\bJ10\\b).){0,40}STOP FOSO",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_recoba_ksa18_bornes_grupo",
+      "stratum": "generalizacion",
+      "category": "topologia_conector_multicomponente",
+      "severity": "technical_important",
+      "question": "En RECOBA KSA 18 HIDRÁULICO, página 71, ¿qué tres elementos comparten el mismo grupo de bornes (14, 15, 21, 22, 9, 10) en el diagrama?",
+      "source_pages": [71],
+      "required": [
+        { "label": "identifica ACUÑAMI.", "pattern": "ACU[ÑN]AMI" },
+        { "label": "identifica AFLOJACAB.", "pattern": "AFLOJACAB" },
+        { "label": "identifica CERROJOS CABINA", "pattern": "CERROJOS CABINA" },
+        { "label": "identifica BOTONERA REVISIÓN", "pattern": "BOTONERA REVISI[OÓ]N" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "atribuye a este grupo un componente que sólo está en el grupo de bornes 16,17,18,19,12,13",
+          "pattern": "(?:ACU[ÑN]AMI|AFLOJACAB|CERROJOS CABINA|BOTONERA REVISI[OÓ]N).{0,80}(?:STOP FOSO|\\bFINALES\\b)",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_zeus_hats_j9_solo",
+      "stratum": "generalizacion",
+      "category": "topologia_conector_multicomponente",
+      "severity": "technical_important",
+      "question": "En el controlador ZEUS/HATS, página 48, ¿qué componentes están conectados al conector J9 que NO están conectados al conector J10?",
+      "source_pages": [48],
+      "required": [
+        { "label": "identifica CERROJOS EMBARQUE 1", "pattern": "CERROJOS EMBARQUE 1" },
+        { "label": "identifica CERROJOS EMBARQUE 2", "pattern": "CERROJOS EMBARQUE 2" },
+        { "label": "identifica BOTO. REVISION", "pattern": "BOTO\\.?\\s*REVISION" },
+        { "label": "identifica ACUÑAMIENTO", "pattern": "ACU[ÑN]AMIENTO" },
+        { "label": "identifica AFLOJACABLES", "pattern": "AFLOJACABLES" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "atribuye a J9 un componente que sólo está en J10",
+          "pattern": "(?:CERROJOS EMBARQUE|BOTO\\.?\\s*REVISION|ACU[ÑN]AMIENTO|AFLOJACABLES).{0,80}(?:CERROJOS EXTERIORES|STOP FOSO|POLEA TENSORA)",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_edel_codigo_37_ambigua",
+      "stratum": "ambigua",
+      "category": "codigo_compartido_entre_modelos",
+      "severity": "technical_important",
+      "question": "En EDEL, ¿qué representa el terminal 37 en la placa EDEL-542 (página 24) y qué representa el LED 37 en la placa EDEL-K3 (página 26)? ¿Es el mismo significado en ambas placas?",
+      "source_pages": [24, 26],
+      "required": [
+        { "label": "identifica EDEL-542", "pattern": "EDEL[-\\s]?542" },
+        { "label": "significado en EDEL-542", "pattern": "BOTO\\.?\\s*REVISION" },
+        { "label": "identifica EDEL-K3", "pattern": "EDEL[-\\s]?K3" },
+        { "label": "significado en EDEL-K3", "pattern": "PUERTAS HUECO" },
+        { "label": "declara que no es el mismo significado", "pattern": "no\\s+es\\s+el\\s+mismo\\s+significado" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "declara que el terminal/LED 37 significa lo mismo en ambas placas",
+          "pattern": "(?<!no\\s)(?:es\\s+el\\s+mismo\\s+significado|significan?\\s+lo\\s+mismo)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_em3000_pin_pos_sin_respaldo",
+      "stratum": "sin_respaldo",
+      "category": "funcion_no_documentada",
+      "severity": "critical",
+      "question": "En EM3000 (ELECMEGON), página 29, el conector CN del sub-diagrama de OBSTÁCULO tiene un pin etiquetado POS: ¿qué función cumple ese pin?",
+      "source_pages": [29],
+      "required": [
+        {
+          "label": "declara ausencia documental",
+          "pattern": "(?:no (?:documenta|incluye|especifica|indica)|DATA_NOT_AVAILABLE|El documento no incluye este dato)"
+        }
+      ],
+      "optional": [
+        { "label": "nombra el pin POS o el conector CN", "pattern": "\\bPOS\\b|\\bCN\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "inventa una función específica para el pin POS",
+          "pattern": "POS(?:(?!DATA_NOT_AVAILABLE|no est[aá] document|no (?:documenta|indica|especifica)).){0,60}(?:sensor de posici[oó]n|indica la posici[oó]n|controla)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_recoba_ksa18_orden_cadena_seguridad",
+      "stratum": "seguridad",
+      "category": "stop_work_checklist",
+      "severity": "safety_critical",
+      "question": "En RECOBA KSA 18 HIDRÁULICO, página 71, el grupo de bornes 14, 15, 21, 22, 9, 10 conecta en el mismo tramo a ACUÑAMI./AFLOJACAB., CERROJOS CABINA y BOTONERA REVISIÓN: ¿está documentado en el diagrama el orden exacto de esa cadena antes de desconectar un cable?",
+      "source_pages": [71],
+      "required": [
+        { "label": "identifica ACUÑAMI./AFLOJACAB.", "pattern": "ACU[ÑN]AMI" },
+        { "label": "identifica CERROJOS CABINA", "pattern": "CERROJOS CABINA" },
+        { "label": "identifica BOTONERA REVISIÓN", "pattern": "BOTONERA REVISI[OÓ]N" },
+        {
+          "label": "declara que el orden de la cadena no está documentado / requiere verificación",
+          "pattern": "(?:no (?:imprime|documenta|especifica|indica) (?:esa secuencia|la secuencia(?: textual)?|el orden)|requiere verificaci[oó]n (?:en )?(?:el )?campo|verificar (?:esto |esa secuencia |el orden )?en campo|REQUIRES_FIELD_VERIFICATION)"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "afirma que el orden/secuencia exacta de la cadena SÍ está documentado con certeza",
+          "pattern": "(?<!no\\s)(?:orden|secuencia)\\s+(?:exact[oa]\\s+)?(?:est[aá]|queda)\\s+document",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_mp_via_serie_led2h_seguridad",
+      "stratum": "seguridad",
+      "category": "limites_fuentes_anular_proteccion",
+      "severity": "safety_critical",
+      "question": "En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, si el LED 2H está apagado, ¿qué indica esto sobre el segmento SAB hueco y final de carrera, y es la condición normal para la operación del ascensor?",
+      "source_pages": [59],
+      "required": [
+        { "label": "identifica el LED 2H", "pattern": "\\b2H\\b" },
+        { "label": "declara apertura del segmento", "pattern": "apertura del segmento" },
+        { "label": "declara que no es la condición normal/segura", "pattern": "no es la condici[oó]n (?:normal|segura)" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "afirma que el LED 2H apagado es la condición normal/segura de operación",
+          "pattern": "(?<!no\\s)(?:es|ser[ií]a)\\s+la\\s+condici[oó]n\\s+(?:normal|segura)\\s+(?:para|de)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_zeus_hats_j11_etiqueta_seguridad",
+      "stratum": "seguridad",
+      "category": "limites_fuentes_anular_proteccion",
+      "severity": "safety_critical",
+      "question": "En el controlador ZEUS/HATS, página 48, el conector J11 conecta TRAMPILLA MANTENIMIENTO y LIMITADOR: ¿está documentada con certeza la etiqueta completa impresa para J11 en el controlador antes de intervenir sobre ese conector?",
+      "source_pages": [48],
+      "required": [
+        { "label": "identifica TRAMPILLA MANTENIMIENTO", "pattern": "TRAMPILLA" },
+        { "label": "identifica LIMITADOR", "pattern": "LIMITADOR" },
+        {
+          "label": "declara que la etiqueta es parcialmente legible / requiere verificación",
+          "pattern": "(?:parcialmente legible|no (?:es|est[aá]) (?:completamente )?legible|REQUIRES_FIELD_VERIFICATION|requiere verificaci[oó]n (?:en )?(?:el )?campo|verificar (?:la etiqueta )?en campo)"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "afirma con certeza que la etiqueta completa de J11 está documentada",
+          "pattern": "(?<!no\\s)(?:etiqueta|texto)\\s*(?:completa|exacta)?\\s*(?:est[aá]|queda)\\s+(?:claramente\\s+)?document",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_recoba_ekm64_orden_terminales_seguridad",
+      "stratum": "seguridad",
+      "category": "stop_work_checklist",
+      "severity": "safety_critical",
+      "question": "En RECOBA EKM64 ELÉCTRICO, página 73, los terminales DC, LS, LB y LSO del bloque C1 conectan en el mismo tramo a ACUÑAMIENTO: ¿está documentado en el diagrama el orden exacto de esos cuatro terminales dentro de la cadena antes de desconectar un cable?",
+      "source_pages": [73],
+      "required": [
+        { "label": "identifica ACUÑAMIENTO", "pattern": "ACU[ÑN]AMIENTO" },
+        { "label": "identifica el terminal DC", "pattern": "\\bDC\\b" },
+        { "label": "identifica el terminal LSO", "pattern": "\\bLSO\\b" },
+        {
+          "label": "declara que el orden de los terminales no está documentado / requiere verificación",
+          "pattern": "(?:no (?:imprime|documenta|especifica|indica) (?:esa secuencia|la secuencia(?: textual)?|el orden)|requiere verificaci[oó]n (?:en )?(?:el )?campo|verificar (?:esto |esa secuencia |el orden )?en campo|REQUIRES_FIELD_VERIFICATION)"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "afirma que el orden/secuencia exacta de los terminales SÍ está documentado con certeza",
+          "pattern": "(?<!no\\s)(?:orden|secuencia)\\s+(?:exact[oa]\\s+)?(?:est[aá]|queda)\\s+document",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v5_recoba_ksa18_presostato_termistor_comparativa",
+      "stratum": "comparativa",
+      "category": "comparativa_dos_elementos",
+      "severity": "technical_important",
+      "question": "En RECOBA KSA 18 HIDRÁULICO, página 71, compara PRESOSTATO y TERMISTOR MOTOR (NTC 3D-5): ambos comparten el grupo de bornes 32 y 33, pero ¿cuál aparece en la mitad superior y cuál en la inferior del grupo según el diagrama?",
+      "source_pages": [71],
+      "required": [
+        { "label": "identifica PRESOSTATO", "pattern": "PRESOSTATO" },
+        {
+          "label": "PRESOSTATO en la mitad superior",
+          "pattern": "PRESOSTATO(?:(?!TERMISTOR).){0,40}superior"
+        },
+        { "label": "identifica TERMISTOR MOTOR", "pattern": "TERMISTOR" },
+        {
+          "label": "TERMISTOR MOTOR en la mitad inferior",
+          "pattern": "TERMISTOR(?:(?!PRESOSTATO).){0,40}inferior"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia PRESOSTATO y TERMISTOR MOTOR entre las mitades superior/inferior",
+          "pattern": "PRESOSTATO(?:(?!TERMISTOR).){0,40}inferior|TERMISTOR(?:(?!PRESOSTATO).){0,40}superior",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    }
+  ]
+}

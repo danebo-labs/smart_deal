@@ -140,6 +140,17 @@
   text-decoration: underline;
 }
 
+/* ─── Guardrail del piloto (decisión #8, Fase 3): aviso estático de
+   verificación al pie de CADA respuesta del asistente ─── */
+.chat-message-assistant p.answer-verification-notice {
+  margin: 0.75rem 0 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid hsl(215, 20%, 92%);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: hsl(215, 20%, 45%);
+}
+
 /* ─── Sources footer (collapsed <details> inside the assistant bubble) ─── */
 .chat-sources {
   margin-top: 0.75rem;

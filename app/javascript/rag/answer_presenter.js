@@ -14,6 +14,27 @@ const escapeHtml = (text = "") => {
   return div.innerHTML
 }
 
+// Guardrail del piloto (decisión #8, componente A —
+// docs/rag/plan_ciclo4_ajuste_final_2026-08-03.md Fase 3): aviso ESTÁTICO de
+// verificación para toda respuesta del chat web. Deliberadamente sin
+// clasificador por pregunta (restricción 6; `safety_critical_query?` ya
+// demostró no reconocer preguntas de bypass — ciclo 3 Fase 1): se aplica por
+// igual a todas las respuestas. Esta función nunca recibe ni toca
+// `answer` — el llamador la concatena por fuera del HTML derivado del string
+// `answer` del JSON, para que el gate/artefactos de benchmark no se
+// contaminen (E7).
+const VERIFICATION_NOTICE_COPY = {
+  es: "Asistencia de consulta al manual — verifica cualquier acción sobre seguridades contra el manual antes de ejecutarla.",
+  en: "Manual-lookup assistance — verify any action on safety devices against the manual before performing it."
+}
+
+export function renderVerificationNotice(lang = "es") {
+  const copy = String(lang).toLowerCase().startsWith("en")
+    ? VERIFICATION_NOTICE_COPY.en
+    : VERIFICATION_NOTICE_COPY.es
+  return `<p class="answer-verification-notice" role="note">${escapeHtml(copy)}</p>`
+}
+
 function markdownToHtml(text) {
   let out = text
 

@@ -3,7 +3,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { createConsumer } from "@rails/actioncable"
 import { renderSources } from "rag/sources_renderer"
-import { formatAnswerForWeb } from "rag/answer_presenter"
+import { formatAnswerForWeb, renderVerificationNotice } from "rag/answer_presenter"
 import { hasSelectableEvidenceCards, renderEvidenceResolution } from "rag/evidence_cards_renderer"
 
 export default class extends Controller {
@@ -879,8 +879,12 @@ export default class extends Controller {
       ? renderEvidenceResolution(data.resolution, this.resolutionCopyValue)
       : ""
     const sourcesHtml = showSources && sourcesCitations.length ? renderSources(sourcesCitations) : ""
+    // Guardrail del piloto (decisión #8, Fase 3): construida aparte de
+    // `answerHtml` (que es lo único derivado de `data.answer`) — nunca se
+    // concatena al string `answer` del JSON, sólo al host del mensaje.
+    const noticeHtml = renderVerificationNotice(document.documentElement.lang || "es")
 
-    const answerRow = this.addMessageHtml(answerHtml + resolutionHtml + sourcesHtml, "assistant")
+    const answerRow = this.addMessageHtml(answerHtml + resolutionHtml + sourcesHtml + noticeHtml, "assistant")
     const cardsOwnSelection = this.evidenceCardsValue && hasSelectableEvidenceCards(data.resolution)
     if (!cardsOwnSelection && Array.isArray(data.quick_replies) && data.quick_replies.length) {
       this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")

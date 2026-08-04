@@ -174,6 +174,7 @@
       "severity": "technical_important",
       "question": "¿Cómo se conectan los cerrojos en las placas de seguridad?",
       "source_pages": [11, 14, 22],
+      "source_page_required": false,
       "required": [
         {"label": "reconoce variabilidad", "pattern": "(?:var[ií]a|depende|diferente|varios modelos|fabricante)"},
         {"label": "solicita selección de modelo", "pattern": "(?:selecciona|indica|especifica).{0,60}(?:fabricante|placa|modelo)"}

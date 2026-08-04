@@ -77,6 +77,145 @@ class Rag::BenchmarkRubricEvaluatorTest < ActiveSupport::TestCase
     assert_not result.fetch("citation_passed")
   end
 
+  test "source_page_cited passes when a citation's structured page matches source_pages" do
+    rubric = {
+      version: "test-v1",
+      cases: [
+        {
+          id: "tpr70",
+          category: "visual",
+          severity: "critical",
+          source_pages: [ 46 ],
+          required: [],
+          optional: [],
+          penalized: []
+        }
+      ]
+    }
+    payload = {
+      results: [
+        { id: "tpr70", answer: "EPC está en B8.", citations: [ { page: 46, title: "SEGURIDADES — p. 46" } ] }
+      ]
+    }
+
+    result = Rag::BenchmarkRubricEvaluator.new(rubric: rubric, payload: payload)
+      .evaluate.fetch("cases").first
+
+    assert result.fetch("source_page_required"), "source_page_required defaults to true when source_pages is present"
+    assert result.fetch("source_page_cited")
+    assert result.fetch("passed")
+  end
+
+  test "source_page_cited fails when the only citation is the near-duplicate page" do
+    rubric = {
+      version: "test-v1",
+      cases: [
+        {
+          id: "tpr70",
+          category: "visual",
+          severity: "critical",
+          source_pages: [ 46 ],
+          required: [],
+          optional: [],
+          penalized: []
+        }
+      ]
+    }
+    payload = {
+      results: [
+        { id: "tpr70", answer: "EPC está en B8.", citations: [ { page: 79, title: "SEGURIDADES — p. 79" } ] }
+      ]
+    }
+
+    result = Rag::BenchmarkRubricEvaluator.new(rubric: rubric, payload: payload)
+      .evaluate.fetch("cases").first
+
+    assert_not result.fetch("source_page_cited")
+    assert_not result.fetch("passed"), "a citation to the duplicate page must fail the case even if every other check passes"
+  end
+
+  test "source_page_cited falls back to parsing the title when page is nil" do
+    rubric = {
+      version: "test-v1",
+      cases: [
+        {
+          id: "tpr70",
+          category: "visual",
+          severity: "critical",
+          source_pages: [ 46 ],
+          required: [],
+          optional: [],
+          penalized: []
+        }
+      ]
+    }
+    payload = {
+      results: [
+        { id: "tpr70", answer: "EPC está en B8.", citations: [ { page: nil, title: "SEGURIDADES 1.1-1 — p. 46" } ] }
+      ]
+    }
+
+    result = Rag::BenchmarkRubricEvaluator.new(rubric: rubric, payload: payload)
+      .evaluate.fetch("cases").first
+
+    assert result.fetch("source_page_cited")
+    assert result.fetch("passed")
+  end
+
+  test "source_page_cited fails when there are no citations at all" do
+    rubric = {
+      version: "test-v1",
+      cases: [
+        {
+          id: "tpr70",
+          category: "visual",
+          severity: "critical",
+          source_pages: [ 46 ],
+          required: [],
+          optional: [],
+          penalized: []
+        }
+      ]
+    }
+    payload = { results: [ { id: "tpr70", answer: "EPC está en B8.", citations: [] } ] }
+
+    result = Rag::BenchmarkRubricEvaluator.new(rubric: rubric, payload: payload)
+      .evaluate.fetch("cases").first
+
+    assert_not result.fetch("source_page_cited")
+    assert_not result.fetch("passed")
+  end
+
+  test "source_page_required: false skips the page check even with a wrong-page citation" do
+    rubric = {
+      version: "test-v1",
+      cases: [
+        {
+          id: "tpr70",
+          category: "visual",
+          severity: "critical",
+          source_pages: [ 46 ],
+          source_page_required: false,
+          required: [],
+          optional: [],
+          penalized: []
+        }
+      ]
+    }
+    payload = {
+      results: [
+        { id: "tpr70", answer: "EPC está en B8.", citations: [ { page: 79, title: "SEGURIDADES — p. 79" } ] }
+      ]
+    }
+
+    result = Rag::BenchmarkRubricEvaluator.new(rubric: rubric, payload: payload)
+      .evaluate.fetch("cases").first
+
+    assert_not result.fetch("source_page_required")
+    assert result.fetch("source_page_cited"), "opted-out cases report the check as satisfied (not applicable)"
+    assert result.fetch("passed")
+  end
+
   test "fails and applies severity penalty when a forbidden claim appears" do
     rubric = {
       version: "test-v1",

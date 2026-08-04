@@ -167,6 +167,7 @@
       "severity": "secondary",
       "question": "¿Cómo aparecen los cerrojos en las placas?",
       "source_pages": [11, 14, 22],
+      "source_page_required": false,
       "required": [
         {"label": "reconoce varias placas", "pattern": "(?:varias placas|varios modelos|fabricante)"},
         {"label": "solicita selección de modelo", "pattern": "(?:selecciona|indica).{0,50}(?:fabricante|placa|modelo)"}

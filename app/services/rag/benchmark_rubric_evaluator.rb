@@ -12,6 +12,11 @@ module Rag
       "excess_without_impact" => 0.5
     }.freeze
 
+    # Fallback for citations without a structured "page" field (int, set by
+    # Bedrock::CitationProcessor#build_numbered_references) -- parses the
+    # trailing "... — p. N" convention from the citation title instead.
+    PAGE_IN_TITLE_PATTERN = /p\.\s*(\d+)/i
+
     def initialize(rubric:, payload:)
       @rubric = rubric.deep_stringify_keys
       @payload = payload.deep_stringify_keys
@@ -50,8 +55,14 @@ module Rag
         "citation_required",
         @rubric.fetch("citation_required", false)
       )
-      citation_present = Array(result&.fetch("citations", nil)).any?
+      citations = Array(result&.fetch("citations", nil))
+      citation_present = citations.any?
       citation_passed = !citation_required || citation_present
+
+      source_pages = Array(definition["source_pages"])
+      source_page_required = definition.fetch("source_page_required", source_pages.present?)
+      source_page_cited = !source_page_required || source_page_matches?(citations, source_pages)
+
       max_score = required.size * 2 + optional.size + (citation_required ? 2 : 0)
       score = required.count { |check| check["matched"] } * 2 +
         optional.count { |check| check["matched"] } -
@@ -59,6 +70,7 @@ module Rag
       score += 2 if citation_required && citation_present
       passed = !missing_result &&
         citation_passed &&
+        source_page_cited &&
         required.all? { |check| check["matched"] } &&
         penalized.none? { |check| check["matched"] }
 
@@ -74,6 +86,8 @@ module Rag
         "citation_required" => citation_required,
         "citation_present" => citation_present,
         "citation_passed" => citation_passed,
+        "source_page_required" => source_page_required,
+        "source_page_cited" => source_page_cited,
         "required" => required,
         "optional" => optional,
         "penalized" => penalized
@@ -100,6 +114,30 @@ module Rag
 
     def penalty_weight(severity)
       PENALTY_WEIGHTS.fetch(severity.to_s, PENALTY_WEIGHTS["secondary"])
+    end
+
+    # Passes if any citation's page lands in the case's source_pages -- this
+    # is what catches a duplicate near-identical page winning retrieval (N10)
+    # even when a citation is merely present (the v3 evaluator only checked
+    # presence, which is how N10 hid in cases that "scored well").
+    def source_page_matches?(citations, source_pages)
+      return false if citations.empty?
+
+      wanted = source_pages.map(&:to_i)
+      return false if wanted.empty?
+
+      citations.any? { |citation| wanted.include?(citation_page_number(citation)) }
+    end
+
+    def citation_page_number(citation)
+      page = citation["page"]
+      return page.to_i unless page.nil?
+
+      metadata_page = citation.dig("metadata", "page_number")
+      return metadata_page.to_i unless metadata_page.nil?
+
+      match = citation["title"].to_s.match(PAGE_IN_TITLE_PATTERN)
+      match && match[1].to_i
     end
   end
 end

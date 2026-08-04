@@ -295,10 +295,34 @@ desplegar.
 | 1 Fix N10 page-pin | **hecho 2026-08-03** — filtro `equals: page_number` (entero) implementado en `build_vector_search_configuration`, detrás de `Rag::PagePinFlag`/`RAG_PAGE_PIN_ENABLED`; activado en `config/deploy.yml` local (recuerda: ese archivo está gitignored, ver nota ⚠️ en el prompt de la Fase 2). Tests unitarios ($0) verdes. Desplegado a PROD (`kamal deploy`, SHA `0051b5ba13e8500a3127778a335a780ec926dff1` == HEAD, verificado con `kamal app version`). Verificación empírica con 4 preguntas ad-hoc NUEVAS (8 llamadas `Retrieve`, dentro del techo ≤8) — hipótesis CONFIRMADA, ver Anexo E: los 4 casos pasan de fallar/no-entrar-al-top-k a rank 1/12 exacto tras encender el flag. | before: `tmp/rag_page_pin_probe_before_2026-08-03.json` SHA256 `936dec845406b80b7fc9edb375aaafb18215c74e0790b0331768a402dfa339a9`; after: `tmp/rag_page_pin_probe_after_2026-08-03.json` SHA256 `62f3ecf08a07ee9b00cd733adbe33c89a630aaa51a557ffe99487d8f9626f9c2`; commit `0051b5b` |
 | 2 Fix N11 flag multi-placa | **hecho 2026-08-03** — `RAG_FAMILY_AMBIGUITY_GUARD_ENABLED: "true"` añadido a `config/deploy.yml` local, al lado de `RAG_PAGE_PIN_ENABLED` (E1; ambos confirmados presentes en el checkout de esta sesión antes de tocar nada). Comentario D5 de `structured_evidence_route.rb:430-432` confirmado histórico: el replay de fidelidad depende de `ENV` del proceso de test local, no de `config/deploy.yml` de producción — no afectado por este cambio. Suites `family_ambiguity_detector_test.rb` + `family_ambiguity_guard_flag_test.rb` + `structured_evidence_route_test.rb` + `d5_attribution_replay_test.rb` verdes (52/52, 0 skips — el replay D5 corrió real, artefactos locales presentes). Desplegado a PROD dos veces: el primer `kamal deploy` se hizo con el script de verificación sin commitear — Kamal tagea la imagen con el SHA de HEAD, que no había cambiado, así que el contenedor quedó con el flag activo (inyectado en runtime vía `docker run --env`, independiente del build) pero SIN el script nuevo en la imagen (`COPY . .` con un working tree sucio no es lo mismo que el commit que le da nombre a la imagen — lección para toda fase futura: comitear el código/script de verificación ANTES de `kamal deploy`, no después). Corregido: se comiteó el script (`41f9060`) y se re-desplegó; `kamal app version` == HEAD `41f9060` confirmado. Verificación dirigida (1 pregunta ad-hoc NUEVA, 1 llamada Bedrock, dentro del techo ≤4): "¿Qué serie indica el LED DL2 en el manual de seguridades?" — identificador y par de placas (ALJO p.3 vs KDT 11/CARLOS SILVA p.13) verificados primero contra `test/services/rag/family_ambiguity_detector_test.rb` (fixture `dl2_chunks`, caso real ya validado en código), **distinto** al SPM/TW1-DELTA+ del v3. Resultado: `route_eligible: true`, `outcome_status: answered`, `generation_chunks: 4` (≥2 — pasa), boards representados = variantes de heading de ALJO ("LEVEL CONTROL 1B...") + CARLOS SILVA ("KDT 11" vía su heading, `section_identity` de fallback), respuesta que **enumera las dos placas por separado y termina preguntando explícitamente "¿Cuál es su placa de control?"** — hipótesis confirmada, comportamiento esperado de `add_named_board_coverage`/`multi_family_directive`. | `tmp/rag_family_ambiguity_probe_after_2026-08-03.json` SHA256 `a4cb03ae673a65e5b755d97f3de4b6e230ffee57a2eb489a4cf9dc2cea5d23b2`; script `script/rag_family_ambiguity_probe.rb`; commits `41f9060` (script) + redeploy sobre el mismo HEAD |
 | 3 Guardrail piloto | **hecho 2026-08-03** — aviso estático exportado como `renderVerificationNotice(lang)` en `app/javascript/rag/answer_presenter.js` (copy es/en, tono "verifica cualquier acción sobre seguridades contra el manual antes de ejecutarla" / "verify any action on safety devices against the manual before performing it"); llamado desde `renderAssistantAnswer` en `app/javascript/controllers/rag_chat_controller.js` y concatenado al HTML del HOST del mensaje (`answerHtml + resolutionHtml + sourcesHtml + noticeHtml`), nunca al string `answer` — `formatAnswerForWeb(data.answer, citations)` sigue siendo la única función que toca `data.answer` y no conoce el aviso (E7 respetado, verificado por test). Sin clasificador por pregunta: se aplica igual a toda respuesta de `renderAssistantAnswer` (texto y adjuntos con pregunta), tal como manda la Fase 3 — no se tocó `safety_critical_query?` ni ningún regex de forma-de-pregunta (restricción 6 intacta). CSS nuevo `.answer-verification-notice` en `app/assets/stylesheets/application.css` (separador sutil, no interfiere con `.answer-p`/`.answer-hr`/`.citation`). $0 Bedrock (sin llamadas). Tests: 4 casos en `test/system/rag_chat_verification_notice_test.rb` (Minitest + Capybara/Selenium, mismo patrón de import directo de módulo JS que `rag_evidence_cards_test.rb`) — verifican (a) el aviso aparece en la burbuja real producida por `renderAssistantAnswer` en 2 respuestas distintas consecutivas, (b) cambia a inglés con `document.documentElement.lang = "en"`, (c) `formatAnswerForWeb` (la única función que deriva HTML de `data.answer`) NUNCA contiene la clase/copy del aviso, aislado del controlador. 28 assertions, 0 failures. No requiere Bedrock/red — no hubo verificación dirigida en vivo porque no hay lógica de retrieval/generación que ejercitar (es presentación pura). | commit de esta sesión — sin artefacto tmp (no hay corrida contra Bedrock que producir; la evidencia es el test suite, ver salida en el commit) |
-| 4 Evaluador v2 | pendiente | — |
+| 4 Evaluador v2 | **hecho 2026-08-03** — nuevo check `source_page_cited` en `Rag::BenchmarkRubricEvaluator` (`app/services/rag/benchmark_rubric_evaluator.rb`): pasa si alguna cita del resultado tiene página ∈ `source_pages` del caso. Orden de resolución de página por cita: `citation["page"]` (E6, entero ya presente en el artefacto real) → `citation["metadata"]["page_number"]` (fallback añadido, no estaba en el mandato original — ver hallazgo abajo) → parseo de `" p. N"` en `citation["title"]`. Activación: `source_page_required` del fixture, default `true` si `source_pages` no vacío (si no se especifica), apagable por caso. Semántica: nuevo campo `source_page_cited`/`source_page_required` en el resultado por caso, entra a `passed` igual que `citation_passed`; `score`/`max_score`/`PENALTY_WEIGHTS` **sin tocar** (comparabilidad numérica con v3 intacta, N4 no afectado). Tests: 6 casos nuevos en `test/services/rag/benchmark_rubric_evaluator_test.rb` (página correcta, página del duplicado, `page` nil con título parseable, sin citas, `source_page_required: false`, más el default) — 18/18 verdes. $0 Bedrock. | commit de esta sesión — sin artefacto tmp (regex puro sobre payloads sintéticos, sin corrida contra Bedrock) |
 | 5 Holdout v4 congelado | pendiente | — |
 | 6 Checkpoint despliegue | pendiente | — |
 | 7 Gate v4 → piloto | pendiente | — |
+
+**Hallazgo de la Fase 4 (2026-08-03, no estaba en el mandato original — encontrado corriendo
+la suite completa antes de cerrar):** `Rag::BenchmarkRubricEvaluator` es compartido por más
+consumidores que los holdouts v1/v2/v3 — también lo usan `script/evaluate_rag_seguridades_benchmark.rb`
+y el contrato de replay D5 (`script/replay_d5_attribution_contract.rb`,
+`test/services/rag/d5_attribution_replay_test.rb`,
+`test/services/rag/citation_attribution_contract_characterization_test.rb`) sobre fixtures MÁS
+ANTIGUAS que los holdouts (`script/fixtures/rag_seguridades_rubric.json` y
+`rag_seguridades_pilot_10q.json` — no son v1/v2/v3, no están gastados, no se tocó la restricción
+de holdouts). Con el default `source_page_required: true`, 2 casos categoría `"ambiguas"`
+(`cerrojos_generica`, `cerrojos_conexion_generica`) empezaron a fallar `regressions=2` en el gate
+del replay D5: la respuesta CORRECTA archivada para ambos es un **menú de desambiguación** que
+cita 3 páginas de ejemplo de modelos NO relacionados (p.ej. 48/67/97 cuando `source_pages: [11,
+14, 22]`) — comportamiento esperado (pedir que el técnico elija placa), no una colisión N10. Fix:
+se añadió `"source_page_required": false` a esos 2 casos en sus fixtures (mismo mecanismo que ya
+preveía el diseño para `sin_respaldo`; aquí aplica también a menús de desambiguación categoría
+`ambiguas`, no sólo a "sin respaldo"). Un tercer caso `ambiguas` (`elecmegon_obstaculo_ambiguo`,
+`rag_seguridades_pilot_10q_v2.json`) NO se tocó porque su cita archivada ya coincidía con
+`source_pages` — se deja con el default `true` a propósito (más rigor donde no rompe nada real).
+Suite completa verde después del fix (`bin/rails test`, 2251 runs, 0 failures/errors). **Impacto
+en la Fase 5 (ver prompt actualizado abajo, marcado ⚠️ CRÍTICO):** un caso `ambigua` que produce
+un menú de desambiguación (no una respuesta anclada a una página) es candidato natural a
+`source_page_required: false`, igual que `sin_respaldo` — no sólo cuando la respuesta correcta
+declara ausencia de dato.
 
 ## Protocolo de plan vivo v2 (cláusula reforzada, heredada + restricción 7)
 
@@ -583,13 +607,23 @@ como deuda con ruta de retiro (P4 y P2 respectivamente) para el dueño.
 > (b) el flag N11 está encendido — incluye 1 caso multi-placa (hecho distinto a SPM
 > TW1/DELTA+ del v3); (c) el evaluador ahora verifica página citada — pon
 > `source_page_required` conscientemente por caso (true obligatorio en los 4 de
-> seguridad; false donde no aplique, p.ej. sin_respaldo); (d) N8 sigue vivo (96/97
-> cuerpos dicen "ALJO") — no exijas marca correcta fuera de ALJO págs. 2-7 y divisoras
-> limpias; (e) N9 corregido: el guion de benchmark no invoca `DeterministicRenderer` NI
-> `DocumentOverviewResponder` — checklist/prueba funcional van por la ruta genérica;
-> (f) verifica los 14 offline ($0) con
+> seguridad; false donde no aplique, p.ej. sin_respaldo **o tu caso `ambigua` si la
+> respuesta correcta es un menú de desambiguación que cita páginas de ejemplo NO
+> relacionadas con `source_pages` — ver hallazgo Fase 4 en Estado: 2 casos reales de
+> fixtures anteriores a v3 con esa forma de respuesta necesitaron `false` porque el
+> evaluador v2 los marcaba como falsa colisión N10 cuando en realidad es el
+> comportamiento correcto de "pide que el técnico elija placa"; si tu caso `ambigua`
+> SÍ ancla a una placa/página concreta en su respuesta correcta, deja el default
+> `true`**); (d) N8 sigue vivo (96/97 cuerpos dicen "ALJO") — no exijas marca correcta
+> fuera de ALJO págs. 2-7 y divisoras limpias; (e) N9 corregido: el guion de benchmark
+> no invoca `DeterministicRenderer` NI `DocumentOverviewResponder` — checklist/prueba
+> funcional van por la ruta genérica; (f) verifica los 14 offline ($0) con
 > `Rag::DeterministicIntent.ambiguous_hardware_query? == false` antes de congelar;
-> (g) bypass J de pág. 65 sólo J12 o J26 (J24 gastado en v3, J25 en v2).
+> (g) bypass J de pág. 65 sólo J12 o J26 (J24 gastado en v3, J25 en v2). (h) El campo
+> `page` de una cita, cuando está presente, ya es el más confiable (E6); el evaluador
+> también acepta `citation["metadata"]["page_number"]` y el parseo de `" p. N"` del
+> `title` como fallbacks — no necesitas construir citas sintéticas con una forma
+> particular en tu QA test, cualquiera de los tres funciona.
 >
 > Nota informativa de la Fase 0b (Anexo B, no cambia (a)-(g)): un barrido de los 14 casos
 > completos del v3 (no sólo los 4 nombrados como N10) encontró 2 colisiones de página

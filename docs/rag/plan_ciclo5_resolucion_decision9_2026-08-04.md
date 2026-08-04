@@ -275,23 +275,51 @@ el técnico ve HOY en producción y la que paga ~400-500 tokens de input por res
 elimina en la **Fase 3**, que es obligatoria y bloqueante para piloto. Cerrar la Fase 2
 NO resuelve N8 en producción: el hallazgo H4 sigue vigente hasta que la Fase 3 cierre.
 
-## Fase 3 — Parche de datos N8: 96 cuerpos + resync + re-invalidación (Sonnet 5; ≤4 llamadas Bedrock de humo) — **BLOQUEADA 2026-08-04, escalada como Decisión humana #10**
+## Fase 3 — Parche de datos N8: 96 cuerpos + resync + re-invalidación (Sonnet 5; ≤4 llamadas Bedrock de humo) — **✅ CERRADA 2026-08-04, Decisión humana #10 resuelta y ejecutada**
 
-**Resultado: hipótesis de línea única FALSIFICADA (H10). Cero escrituras a S3, cero
-llamadas a Bedrock, cero cambios de embeddings.** Ver Anexo H y
-`tmp/ciclo5_fase3_2026-08-04/fase3_resumen_2026-08-04.md` para la evidencia completa.
-Resumen: el regex del plan sólo coincide EXACTO con 1/96 cuerpos contaminados; la
-contaminación real es un bloque de 1-4 líneas en 11 formas + 2 casos fuera de bloque.
-Existe un diseño de reemplazo (detección de bloque + 2 casos especiales,
-`script/repair_seguridades_n8_body_2026-08-04.rb`) verificado con cero residuo sobre
-los 96 cuerpos, pero su alcance (remueve hasta 4 líneas, no "una única línea") excede
-lo que la restricción 2 autorizó explícitamente — no es una decisión que le
-corresponda a la sesión que lo descubrió. Ver "Decisión humana #10" (sección
-dedicada, tras la tabla de Estado) para las dos opciones de alcance y la
-recomendación. **Esta fase permanece pendiente**: H4 sigue vigente en producción,
-las Fases 4-6 no pueden proceder (dependen del cierre de Fase 3) hasta que el dueño
-resuelva la Decisión humana #10 y una sesión nueva ejecute el parche con el alcance
-elegido.
+**Resultado final: H4 CERRADO.** El dueño resolvió la Decisión humana #10 autorizando
+explícitamente "eliminar toda contaminación de N8" — **Alcance A (bloque completo)**,
+la opción recomendada por este plan. Ejecución real en la misma sesión que cerró el
+diagnóstico:
+
+- **96/97 cuerpos parcheados** (Alcance A: bloque `**Document:**` + continuaciones
+  contiguas + los 2 casos especiales `chunk_0`/`chunk_36`); `chunk_90` intacto (el
+  único ya limpio, sin tocar).
+- **Backup completo de los 97 cuerpos vivos** ANTES de escribir, a S3
+  (`s3://multimodal-source-destination/chunk_body_backups/1/b61f5d54-ff42-414a-97b7-01682d16f4b5/20260804T144351Z_ciclo5_fase3`)
+  y a tmp local (`tmp/ciclo5_fase3_2026-08-04/prod_backup_20260804T144351Z/`), más el
+  versioning nativo de S3 (confirmado habilitado en PROD por el dueño — respaldo
+  adicional).
+- **Fix de robustez sobre el diseño original:** el primer intento de modo real
+  pre-verificaba ETag de los 97 objetos contra la copia de referencia local
+  `tmp/seguridades_chunks_2026-07-28/` (2026-07-28) y abortó en `chunk_23.txt` —
+  drift real entre esa copia y el objeto vivo (la Fase 0 de este ciclo sólo muestreó 5
+  chunks distintos, no ése). Corregido: el modo real ya NO depende del contenido de la
+  referencia local para decidir qué escribir — descarga cada cuerpo EN VIVO desde S3 y
+  corre la misma detección de bloque sobre ese byte fresco; la referencia local sólo
+  sirve al modo diagnóstico (sin red) y como snapshot de los 97 nombres de archivo
+  esperados. Ver Anexo I para el detalle.
+- **Post-escritura verificado:** 96/96 SHA256 coinciden con el resultado esperado.
+- **Resync del KB disparado y completado:** `BulkKbSyncService#sync!` →
+  `job_id: "CCCDNEDFYL"`, `status: "COMPLETE"` — **reemplaza a `ZGCU99ISK5`** como
+  referencia vigente en los prompts de las Fases 5 y 6 (actualizado en el Anexo A).
+- **Invalidación de caché:** automática, disparada por cada `S3DocumentsService#upload_text`
+  (mecanismo de la Fase 1) — no hizo falta ningún paso explícito adicional.
+- **Humo post-resync (2/4 llamadas del presupuesto de la fase):** 2 preguntas ad-hoc
+  NUEVAS contra `BedrockRagService#query` (la ruta de producción real) sobre páginas
+  NO-ALJO recién parcheadas — página 38 (EXCELSIOR, `chunk_36`) y página 45
+  (FAIN/EKM66, `chunk_43`). Ambas citan el fabricante correcto
+  (`canonical_name: "EXCELSIOR"` / `"FAIN"`, no ALJO), CERO apariciones de
+  `ALJO Control Level 1B Altius`/`PIPELINE_INJECTED` en el `content` citado por Bedrock
+  (prueba directa de que el KB ya sirve el índice reindexado, no sólo que el job dijo
+  `COMPLETE`) ni en la respuesta generada, y ambas respuestas son técnicamente sanas
+  (identifican correctamente conectores/bloques de bornes, citan la página, señalan
+  honestamente dónde el diagrama no es legible con precisión). Ver Anexo I.
+
+**Causa raíz:** ya identificada y removida por la Fase 2 (commit `3873294`,
+`app/prompts/batch_chunking_prompt.rb`) — re-verificado en esta sesión que no queda
+ninguna instrucción residual que reproduzca N8 en una ingesta futura. Este parche sólo
+limpió el dato ya escrito con el prompt viejo.
 
 **Hipótesis original (falsificada, se deja registrada para trazabilidad):**
 sustituir la línea contaminante en los 96 cuerpos (dejando el resto del
@@ -462,20 +490,26 @@ Ejecución:
 | 0 Verificación de vigencia | **hecho 2026-08-04** — los 4 hallazgos (a/H1, b/estado-KB, c/H3, d/H4) VIGENTES sin cambios. Fases 1-3 proceden sin cambios; ningún hallazgo contradice restricción/gate, no se escala decisión #10. Ver tabla completa en el Anexo F. Artefacto `tmp/ciclo5_fase0_verificacion_vigencia_2026-08-04.md`, SHA256 `12541d960cdd5234be301ae003bc03314c655697c573397c05202411bc0c46fb`. | Anexo F |
 | 1 Fix bug de caché (invalidación dirigida + estructural) | **hecho 2026-08-04** — Hipótesis CONFIRMADA (Anexo G): el valor leído de `section_neighbor_index/v1/243000f4…086` ANTES de borrar traía `canonical_name: "ALJO Control Level 1B Altius"` en páginas 92 y 93 pese a `section_identity: "THYSSEN"` ya correcto — exactamente el estado predicho. Entrega 1 (invalidación dirigida): `Rails.cache.read` + `Rails.cache.delete` vía `kamal app exec --reuse -r web bin/rails runner` sobre el prefijo real `bulk_chunks/1/b61f5d54-ff42-414a-97b7-01682d16f4b5`; valor viejo completo guardado ANTES de borrar. Entrega 2 (estructural): opción **(i) implementada** — `Rag::SectionNeighborExpander.invalidate!(prefix)` (método de clase; `index_cache_key` de instancia delega en el de clase, una sola fuente de verdad para la derivación); opción **(ii) aplicada en adición** — `INDEX_CACHE_TTL` 30d→7d; opción (iii) descartada (sin fingerprint gratis, tal como preanalizó el plan). El script de reparación de canonical_name (H2) invoca `invalidate!(CHUNK_PREFIX)` tras su resync — patrón de referencia para Fase 3. 5 tests Minitest nuevos + suite completa verde (2265 runs, 8068 assertions, 0 failures/errors, sin regresión sobre los 2260 previos). Commit `c05718a` ANTES de `kamal deploy`; `kamal app version` confirmó SHA desplegado `c05718a2` == HEAD. Verificación en vivo: 2 preguntas ad-hoc NUEVAS sobre la página 92 THYSSEN (LED L8 → SERIE PUERTAS EXTERIORES; borne 72 → AFLOJACABLES; hechos distintos de v3/v4) — **ambas citan "THYSSEN — p. 93" con `canonical_name: "THYSSEN"`**, no ALJO. 2 `retrieve_invocations` usados de ≤4 presupuestados. Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. | `tmp/ciclo5_fase1_2026-08-04/cache_invalidation_seguridades_2026-08-04.json` SHA256 `b500fd9be75d276040dbec057a91b672e0d845bfd5eb8e17cbee5264b9056ded`; `tmp/ciclo5_fase1_2026-08-04/live_probe_1_thyssen_p92_led_l8_2026-08-04.json` SHA256 `a8264113e6b2fabc30bcd9c3238e0a3d63180ff04c6c3a465c1e841168221cf7`; `tmp/ciclo5_fase1_2026-08-04/live_probe_2_thyssen_p92_borne72_2026-08-04.json` SHA256 `1086d46103af51d48eb4ab40ab4c7f948bd608b072697c096497fbf2168af35a`; commit `c05718a26317361069315c4900e2cdf2e24d98cf`; ver Anexo G |
 | 2 Fix prompt N8 | **hecho (código) 2026-08-04 — N8 SIGUE VIGENTE EN PRODUCCIÓN, NO confundir con "N8 resuelto".** En `app/prompts/batch_chunking_prompt.rb`: eliminada la regla "Each section title must appear inside the chunk after the `**Document:**` header" (línea 293 original) y las filas `ORIGINAL_FILE_NAME \| PIPELINE_INJECTED` / `NORMALIZED_FILE_NAME \| PIPELINE_INJECTED` de la tabla `## S0 chunk content` (líneas 309-310 originales) — son los dos campos que el modelo textualizaba junto al hint del `document_name` para producir la línea contaminante. Comentario de cabecera (líneas 13-16) corregido de descriptivo-y-falso ("does NOT need to embed") a imperativo-y-verificable ("MUST NOT instruct the model to embed"), apuntando a la sección que lo cumple. NO se tocó: `document_name`/`document_name_hint` (ONE FILE = ONE IDENTITY intacto), `# IDENTITY INJECTION` (regla defensiva de PIPELINE_INJECTED, ahora inerte pero no dañina — no toca ninguna instrucción activa), `SingleFileChunkingService`, `BatchResultsParserService#identity_header`, `citation_processor.rb` (su filtro defensivo sigue siendo necesario hasta que la Fase 3 cierre). Ningún test preexistente asertaba la línea vieja (verificado por grep dirigido antes de correr la suite) — no hizo falta ajustar tests. Cero llamadas a cualquier API; cero cambios en S3/Bedrock/datos vivos. Suite completa: **2269 runs, 8076 assertions, 0 failures, 0 errors, 189 skips** (2265→2269 runs y 8068→8076 assertions frente al baseline de cierre de la Fase 1 — diferencia atribuible a la carga habitual de la suite completa, no a tests nuevos de esta fase; ningún test se agregó ni se modificó). `prompt_fingerprint_sha256` nuevo: `e5b574784ff78547886919fe388edd51decbc13b0a37cfbd11bc041ff4ac1172`. **Efecto real: sólo previene que una ingesta NUEVA reproduzca N8. Los 96/97 cuerpos ya contaminados en S3/Bedrock no cambiaron una sola línea — el técnico sigue viendo `**Document:** ALJO Control Level 1B Altius \| Page N \| …` en producción HOY. H4 sigue vigente hasta que la Fase 3 (obligatoria, bloqueante para piloto) cierre.** Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. Fase 3 no necesita ajuste de su prompt: no depende de números de línea de este archivo, sólo del patrón regex sobre los cuerpos vivos en S3 (H4), que este cambio no toca. | `tmp/ciclo5_fase2_2026-08-04/prompt_diff_n8_fix_2026-08-04.diff`, `tmp/ciclo5_fase2_2026-08-04/fase2_resumen_2026-08-04.md`, `tmp/ciclo5_fase2_2026-08-04/full_suite_run_2026-08-04.log`, SHA256 en `tmp/ciclo5_fase2_2026-08-04/SHA256SUMS.txt` |
-| 3 Parche de datos N8 + resync + re-invalidación | **BLOQUEADA 2026-08-04 — hipótesis de línea única FALSIFICADA (H10); escalada como Decisión humana #10 (pendiente).** Sólo 1/96 cuerpos contaminados coincide con el regex exacto del plan; la contaminación real es un bloque de 1-4 líneas en 11 formas + 2 casos fuera de bloque (`chunk_0`, `chunk_36`). Diseño de reemplazo verificado con cero residuo (`script/repair_seguridades_n8_body_2026-08-04.rb`, modo diagnóstico) pero su alcance excede lo autorizado por la restricción 2 sin revisión del dueño. Cero escrituras a S3/Bedrock; cero cambios de embeddings; presupuesto de la fase (≤4 llamadas) intacto. Ver Anexo H. | `tmp/ciclo5_fase3_2026-08-04/n8_fase3_diagnostic_2026-08-04.json`, `n8_removal_safety_check_2026-08-04.json`, `n8_block_diagnostic_2026-08-04.json`, `n8_full_catalog_first9lines_2026-08-04.txt`, `fase3_resumen_2026-08-04.md`, SHA256 en `tmp/ciclo5_fase3_2026-08-04/SHA256SUMS.txt` |
-| 4 Holdout v5 + batería congelados | **bloqueada por dependencia** — no puede redactarse "desde los 97 cuerpos POST-parche" (nota de secuencia de la Fase 4) hasta que la Fase 3 cierre; ver Decisión humana #10 | — |
-| 5 Checkpoint despliegue | **bloqueada por dependencia** — requiere Fases 1-3 commiteadas y el resync de la Fase 3 `COMPLETE`; Fase 3 no cerró | — |
-| 6 Gate v5 → piloto | **bloqueada por dependencia** — requiere Fase 3 cerrada (job id nuevo, N8 limpio) | — |
+| 3 Parche de datos N8 + resync + re-invalidación | **hecho 2026-08-04 — H4 CERRADO.** Decisión humana #10 resuelta por el dueño: Alcance A (bloque completo) autorizado explícitamente ("eliminar toda contaminación de N8… identificar la causa raíz y removerla"). 96/97 cuerpos parcheados vía detección de bloque + 2 casos especiales, cero residuo verificado; `chunk_90` intacto. Backup completo de los 97 cuerpos vivos a S3 (`chunk_body_backups/1/b61f5d54-ff42-414a-97b7-01682d16f4b5/20260804T144351Z_ciclo5_fase3`) + tmp local ANTES de escribir (además del versioning nativo de S3, confirmado habilitado en PROD). Fix de robustez sobre el diseño original: el modo real descarga cada cuerpo EN VIVO de S3 en vez de confiar en la copia de referencia local de 2026-07-28 (que había derivado en `chunk_23`, detectado por el propio chequeo de ETag del primer intento — abortó sin escribir nada, como debía). 96/96 verificados post-escritura. Resync disparado y completado: **`job_id: "CCCDNEDFYL"`, `status: "COMPLETE"`** — reemplaza a `ZGCU99ISK5`, prompts de las Fases 5 y 6 actualizados en el Anexo A. Invalidación de caché automática (mecanismo de la Fase 1, sin paso adicional). Humo: 2/4 llamadas presupuestadas — 2 preguntas ad-hoc NUEVAS vía `BedrockRagService#query` (páginas 38 EXCELSIOR y 45 FAIN/EKM66) citan el fabricante correcto, CERO contaminación N8 en el `content` citado por Bedrock (prueba directa de reindexado, no sólo status del job) ni en la respuesta, ambas respuestas técnicamente sanas. Causa raíz (prompt de ingesta) ya removida por la Fase 2; re-verificado sin instrucción residual. Ningún hallazgo contradice una restricción ni el gate. Ver Anexo I. | `tmp/ciclo5_fase3_2026-08-04/n8_fase3_real_run_result_2026-08-04.json`, `n8_fase3_smoke_2026-08-04.json`, `n8_fase3_diagnostic_2026-08-04.json`, `prod_backup_20260804T144351Z/HASHES.json`, SHA256 en `tmp/ciclo5_fase3_2026-08-04/SHA256SUMS_fase3_real_run_2026-08-04.txt` |
+| 4 Holdout v5 + batería congelados | **desbloqueada (Fase 3 cerró 2026-08-04)** — puede redactarse "desde los 97 cuerpos POST-parche". Sigue pendiente por separado el veto del dueño sobre "Protocolo de validación" (fila arriba, decisión #3) — no relacionado con N8. | — |
+| 5 Checkpoint despliegue | **desbloqueada (Fase 3 cerró 2026-08-04, job `CCCDNEDFYL` `COMPLETE`)** — requiere además Fases 1-3 commiteadas con suite verde antes de correr. | — |
+| 6 Gate v5 → piloto | **desbloqueada (Fase 3 cerró 2026-08-04, N8 limpio, job id nuevo anotado)** — requiere Fase 5 corrida primero. | — |
 
-## Decisión humana #10 — alcance del parche N8, pendiente
+## Decisión humana #10 — alcance del parche N8 — **RESUELTA 2026-08-04**
 
-**Contexto:** H10 y el Estado de la Fase 3 (arriba). El regex de línea única que la
-restricción 2 autorizó como el parche N8 ("sustitución de texto... la línea
-contaminante ES exactamente esa única línea") sólo describe 1 de los 96 cuerpos
-reales. Cerrar H4 de verdad requiere remover un bloque de 1-4 líneas por chunk (11
-formas distintas) más 2 casos fuera de bloque — un alcance más amplio, que el dueño
-no revisó en esta forma. **No se ejecuta nada contra producción hasta que esta
-decisión se resuelva.**
+**Resolución del dueño:** "te autorizo a eliminar toda contaminación de N8, y además
+identificar la causa raíz y removerla. No podemos dejar chunks que confundan al
+retrieve y a la generación de la respuesta, porque invalida la medición de precisión."
+— **Alcance A (bloque completo)**, la opción recomendada por este plan. Ejecutado en
+la misma sesión (ver fila 3 de Estado y Anexo I); causa raíz confirmada ya removida
+por la Fase 2 (Fase 2 no necesitó cambios adicionales).
+
+**Contexto original (para trazabilidad):** H10 y el Estado de la Fase 3 (arriba). El
+regex de línea única que la restricción 2 autorizó como el parche N8 ("sustitución de
+texto... la línea contaminante ES exactamente esa única línea") sólo describe 1 de los
+96 cuerpos reales. Cerrar H4 de verdad requería remover un bloque de 1-4 líneas por
+chunk (11 formas distintas) más 2 casos fuera de bloque — un alcance más amplio, que
+el dueño no había revisado en esta forma.
 
 **Opciones (script ya escrito y verificado con cero residuo para ambas; sólo cambia
 qué líneas se remueven):**
@@ -507,13 +541,12 @@ qué líneas se remueven):**
 seguridad, consistente con cómo el runtime ya trata esas líneas (filtro de
 citación) y con la intención profiláctica ya declarada de la Fase 2.
 
-**Pendiente del dueño:** elegir Alcance A o B (o pedir una tercera opción). Una vez
-resuelto, una sesión nueva ejecuta `script/repair_seguridades_n8_body_2026-08-04.rb`
-en modo real (implementar el `if`/flag de alcance elegido, backup completo + SHA256,
-verificación de ETag contra S3 vivo antes de escribir, resync, invalidación de
-caché automática vía `S3DocumentsService#upload_text` — mecanismo de la Fase 1 —,
-humo ≤4 llamadas) siguiendo exactamente el patrón de seguridad de
-`script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`.
+**Elegido y ejecutado: Alcance A.** El dueño confirmó Alcance A (ver "Resolución del
+dueño" arriba) y una sesión ejecutó `script/repair_seguridades_n8_body_2026-08-04.rb`
+en modo real el mismo 2026-08-04 (backup completo + SHA256, verificación de ETag
+reemplazada por descarga en vivo — ver Anexo I —, resync `COMPLETE`, invalidación de
+caché automática, humo verde). Ver fila 3 de la tabla de Estado y Anexo I para el
+detalle completo de ejecución.
 
 ## Protocolo de plan vivo
 
@@ -631,58 +664,46 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 > fix es profiláctico y N8 sigue vigente en producción cuando cierres. Al anotar tu fila
 > de Estado, dilo explícitamente para que nadie lea "Fase 2 hecha" como "N8 resuelto".
 
-### Fase 3 — Sonnet 5
+### Fase 3 — ✅ CERRADA 2026-08-04 (prompt histórico, no re-ejecutar)
 
-> ⚠️ CRÍTICO — reescrito 2026-08-04 tras la sesión que ejecutó esta fase y encontró
-> su hipótesis de línea única FALSIFICADA (H10, Anexo H). **NO uses el regex del
-> borrador original de este prompt** (`\*\*Document:\*\* ALJO Control Level 1B Altius
-> \| Page \d+ \| ORIGINAL_FILE_NAME: PIPELINE_INJECTED.*`) como criterio de
-> contaminación — sólo coincide con 1/96 cuerpos. `script/repair_seguridades_n8_body_2026-08-04.rb`
-> ya existe, en modo SOLO DIAGNÓSTICO: detecta el bloque real de identidad (línea
-> `**Document:**` + continuaciones `**Section:**`/`**Page:**`/`ORIGINAL_FILE_NAME:`/
-> `NORMALIZED_FILE_NAME:`/`SOURCE_URI:`) más 2 casos especiales (`chunk_0`: filas de
-> tabla en `## S0 chunk content`; `chunk_36`: línea suelta en prosa, línea 75) y
-> verifica CERO residuo sobre los 96 cuerpos contaminados
-> (`tmp/ciclo5_fase3_2026-08-04/n8_fase3_diagnostic_2026-08-04.json`).
+> **Esta fase ya se ejecutó y cerró.** El dueño resolvió la Decisión humana #10
+> (Alcance A, bloque completo) y una sesión ejecutó
+> `script/repair_seguridades_n8_body_2026-08-04.rb` en modo real
+> (`RAG_CHUNK_PATCH_CONFIRM=1`): 96/97 cuerpos parcheados, backup completo
+> (S3 + tmp local), resync `job_id: "CCCDNEDFYL"` `COMPLETE`, humo verde (2/4
+> llamadas). Ver fila 3 de la tabla de Estado y Anexo I para el detalle completo. **No
+> hay nada pendiente de esta fase** — si una sesión futura llega aquí buscando qué
+> hacer, es un error de secuencia: la fase siguiente a ejecutar es la 4, 5 o 6 según lo
+> que diga su fila de Estado. El prompt original (línea única, luego bloque completo)
+> queda abajo sólo por trazabilidad histórica, NO como instrucción vigente:
 >
-> **Antes de tocar nada:** confirma en la tabla de Estado que la "Decisión humana
-> #10" (sección dedicada, tras la tabla de Estado) está RESUELTA — el dueño eligió
-> Alcance A (bloque completo, recomendado) o Alcance B (preservar
-> `**Section:**`/`**Page:**` sueltas). Si sigue pendiente: NO ejecutes nada, escala
-> de nuevo y detente — no es una decisión de esta sesión.
->
-> Una vez resuelta: implementa el modo real en el mismo script (gatea con
-> `RAG_CHUNK_PATCH_CONFIRM=1` + una constante `SCOPE = :full_block` o `:preserve_section_page`
-> según lo elegido, mismo patrón de flag explícito que
-> `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`). Antes
-> de escribir: (1) re-verifica ETag de los 97 objetos vivos en S3 contra la copia de
-> referencia local — aborta si algo cambió desde el 2026-08-04; (2) backup completo de
-> los 97 cuerpos vivos a tmp local + SHA256 por archivo + del tarball; (3) para cada uno
-> de los 96 cuerpos contaminados, recomputa el bloque/casos especiales SOBRE EL BYTE
-> vivo descargado (no sólo sobre la referencia local) y aborta si el resultado no
-> queda con cero residuo de `ALJO Control Level 1B Altius`/`PIPELINE_INJECTED`; (4)
-> sube cada `.txt` a su CLAVE ORIGINAL vía `S3DocumentsService#upload_text` (nunca
-> `Aws::S3::Client` crudo — así la invalidación de caché de la Fase 1 dispara sola,
-> H8); (5) verifica post-escritura (hash del objeto recién subido == hash esperado);
-> (6) dispara el resync (`BulkKbSyncService#sync!` / `start-ingestion-job`), espera
-> `COMPLETE`, anota el job id NUEVO — reemplaza a `ZGCU99ISK5` — y actualiza los
-> prompts de las Fases 5 y 6 en este Anexo. Humo: 1-2 preguntas ad-hoc NUEVAS (≤4
-> llamadas): los chunks recuperados ya NO contienen ningún bloque `**Document:**
-> ALJO...` en páginas no-ALJO y la respuesta sigue sana. Artefactos + SHA256. Nota:
-> este parche cambia los embeddings de 96 chunks — por diseño va ANTES del holdout
-> v5; nada de v1-v4 se reabre.
+> ~~⚠️ CRÍTICO — reescrito 2026-08-04 tras la sesión que ejecutó esta fase y encontró
+> su hipótesis de línea única FALSIFICADA (H10, Anexo H). NO uses el regex del
+> borrador original de este prompt
+> (`\*\*Document:\*\* ALJO Control Level 1B Altius \| Page \d+ \| ORIGINAL_FILE_NAME: PIPELINE_INJECTED.*`)
+> como criterio de contaminación — sólo coincide con 1/96 cuerpos. Detecta el bloque
+> real de identidad (línea `**Document:**` + continuaciones
+> `**Section:**`/`**Page:**`/`ORIGINAL_FILE_NAME:`/`NORMALIZED_FILE_NAME:`/`SOURCE_URI:`)
+> más 2 casos especiales (`chunk_0`, `chunk_36`); implementa el modo real gateado por
+> `RAG_CHUNK_PATCH_CONFIRM=1`; backup completo + SHA256 antes de escribir; sube por
+> `S3DocumentsService#upload_text` (nunca `Aws::S3::Client` crudo); resync, espera
+> `COMPLETE`, anota el job id NUEVO; humo ≤4 llamadas.~~
 
 ### Fase 4 — Sonnet 5 (sesión NUEVA; si participaste en las Fases 1-3, detente: lo redacta otra sesión)
 
-> Antes de empezar: confirma en la tabla de Estado que el dueño NO vetó la propuesta B
-> del protocolo de validación (fila "Protocolo de validación"); si eligió A, detente y
-> escala — esta fase se re-planifica. Redacta y congela DOS fixtures sin correrlos:
+> [Nota de la Fase 3, 2026-08-04, sin cambio de implementación aquí: la fila de Estado
+> de la Fase 3 ya confirma "hecho" — 96/97 cuerpos parcheados (Alcance A), resync
+> `job_id: "CCCDNEDFYL"` `COMPLETE`. Los 97 cuerpos POST-parche ya son la fuente de
+> verdad vigente en S3/Bedrock; redacta contra ellos sin condición pendiente.] Antes de
+> empezar: confirma en la tabla de Estado que el dueño NO vetó la propuesta B del
+> protocolo de validación (fila "Protocolo de validación"); si eligió A, detente y
+> escala — esta fase se re-planifica (esta es la única condición aún abierta para esta
+> fase; no depende de N8). Redacta y congela DOS fixtures sin correrlos:
 > (a) `script/fixtures/rag_seguridades_holdout_v5.json` — 14 preguntas nuevas,
 > distribución del v4 (3 determinísticas / 2 mapeos / 2 generalización / 1 ambigua / 1
 > sin respaldo / 4 seguridad / 1 comparativa), desde la verdad-terreno pagada (Gate A
-> §5-§9 + los 97 cuerpos POST-parche — confirma en la fila de Estado de la Fase 3 que el
-> parche cerró), sin reutilizar NINGUNA pregunta de v1-v4 (verificación por script,
-> intersección vacía). Reglas heredadas del v4 completas: `severity: safety_critical` a
+> §5-§9 + los 97 cuerpos POST-parche), sin reutilizar NINGUNA pregunta de v1-v4
+> (verificación por script, intersección vacía). Reglas heredadas del v4 completas: `severity: safety_critical` a
 > nivel de caso + `penalized` con `severity: critical`; `source_page_required` consciente
 > por caso (menú de desambiguación → `false`); verificación offline
 > `Rag::DeterministicIntent.ambiguous_hardware_query? == false` en los 14; QA test
@@ -707,10 +728,14 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 ### Fase 5 — Sonnet 5 (NO Haiku)
 
-> [⚠️ La Fase 3 actualiza este prompt con el ingestion job nuevo.] Checkpoint previo al
-> gate: Fases 1-3 commiteadas con suite verde ANTES de tocar nada. `kamal deploy`;
-> verifica SHA desplegado == HEAD con `kamal app version`. Confirma que el ingestion job
-> vigente es el que anotó la Fase 3 (ya no `ZGCU99ISK5`) y sigue `COMPLETE`. Humo: 1
+> [La Fase 3 (2026-08-04) ya actualizó este prompt con el ingestion job nuevo:
+> `job_id: "CCCDNEDFYL"` — reemplaza a `ZGCU99ISK5`.] Checkpoint previo al gate: Fases
+> 1-3 commiteadas con suite verde ANTES de tocar nada. `kamal deploy`; verifica SHA
+> desplegado == HEAD con `kamal app version`. Confirma con
+> `aws bedrock-agent list-ingestion-jobs --knowledge-base-id Y7RZWMFJSR --data-source-id PJ0N58DMHG`
+> (orden descendente) que el job vigente sigue siendo `CCCDNEDFYL` en `COMPLETE` — si
+> hay uno posterior, anótalo y verifica que no tocó el prefijo SEGURIDADES de forma
+> inesperada. Humo: 1
 > llamada, `-r web` SIEMPRE (sin `--role` corre en web+worker y duplica el gasto),
 > pregunta nueva fuera de todo holdout que fuerce expansión de vecindad — la cita debe
 > traer el fabricante correcto Y el cuerpo recuperado sin línea N8 (ejercita los DOS
@@ -720,8 +745,9 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 ### Fase 6 — Sonnet 5 (NO Haiku)
 
-> [⚠️ La Fase 3 actualiza la referencia del ingestion job; la Fase 5 anota el SHA que
-> debes verificar.] Criterio congelado ANTES de abrir, AND estricto, sin ajustes tras ver
+> [La Fase 3 (2026-08-04) ya fijó la referencia del ingestion job vigente
+> (`job_id: "CCCDNEDFYL"`, `COMPLETE`); la Fase 5 anota el SHA que debes verificar.]
+> Criterio congelado ANTES de abrir, AND estricto, sin ajustes tras ver
 > resultados: (1) holdout v5 ≥80% de la suma real; (2) cero `passed: false` en los 4
 > `safety_critical`; (3) `source_page_cited` verde en esos 4; (4) batería de
 > proveniencia: CERO citas cuyo título/`canonical_name` contradiga la `section_identity`
@@ -803,6 +829,80 @@ per se (la restricción 2 sigue íntegra; lo que cambia es el ALCANCE del parche
 antes se asumía cabía dentro de ella) — se escala igual, dado que ejecutar contra
 datos de producción safety-critical con un alcance no revisado por el dueño no es
 una decisión que le corresponda a la sesión que descubrió la discrepancia.
+
+## Anexo I — Fase 3: ejecución real del parche (Alcance A) y humo (2026-08-04, Sonnet 5)
+
+Decisión humana #10 resuelta por el dueño en el mismo día que se escaló (ver sección
+dedicada): autorización explícita a "eliminar toda contaminación de N8" + identificar
+y remover la causa raíz (ya removida por la Fase 2, re-verificado sin instrucción
+residual). Ejecución en modo real de `script/repair_seguridades_n8_body_2026-08-04.rb`
+(`RAG_CHUNK_PATCH_CONFIRM=1`), Alcance A (bloque completo, ver Anexo H para el diseño
+de detección).
+
+**Fix de robustez descubierto durante la ejecución:** el diseño original de la Fase 3
+(y el primer intento de modo real de esta sesión) pre-verificaba el ETag de los 97
+objetos vivos en S3 contra la copia de referencia local
+`tmp/seguridades_chunks_2026-07-28/` (2026-07-28) ANTES de escribir — abortó
+correctamente en `chunk_23.txt`: el objeto vivo ya no coincidía con esa copia
+(drift real; la Fase 0 de este ciclo, el mismo 2026-08-04, sólo había muestreado 5
+chunks distintos — no ése — así que no lo detectó). El chequeo de ETag hizo
+exactamente lo que debía: abortar sin escribir nada ante un supuesto violado, en vez
+de sobreescribir a ciegas. Corrección aplicada: el modo real ya NO usa el contenido de
+la referencia local como fuente de verdad para decidir qué escribir — descarga cada
+uno de los 97 cuerpos EN VIVO desde S3 y corre la misma detección de bloque + casos
+especiales sobre ese byte fresco; aborta si algún caso especial esperado no aparece
+verbatim o si la remoción propuesta dejaría residuo. La referencia local
+(`tmp/seguridades_chunks_2026-07-28/`) queda limitada a (a) el modo diagnóstico (sin
+red, para iterar rápido) y (b) el snapshot de los 97 nombres de archivo esperados. S3
+tiene versioning habilitado en PROD (confirmado por el dueño) — respaldo adicional más
+allá del backup explícito que el script igual hace antes de escribir.
+
+**Ejecución real (segundo intento, exitoso):**
+
+1. Descarga en vivo de los 97 cuerpos; re-análisis de bloque + casos especiales sobre
+   cada uno — 96 contaminados, cero residuo verificado, `chunk_90` sin tocar (mismo
+   resultado que el diagnóstico sobre la copia local, confirmando que no hubo más
+   drift que el ya detectado en `chunk_23`).
+2. Backup completo de los 97 cuerpos vivos (tal como se descargaron) a
+   `s3://multimodal-source-destination/chunk_body_backups/1/b61f5d54-ff42-414a-97b7-01682d16f4b5/20260804T144351Z_ciclo5_fase3`
+   y a `tmp/ciclo5_fase3_2026-08-04/prod_backup_20260804T144351Z/` (manifest
+   `HASHES.json` con SHA256 antes/después por objeto) — ANTES de escribir nada.
+3. Escritura de los 96 cuerpos parcheados vía `S3DocumentsService#upload_text` (nunca
+   `Aws::S3::Client` crudo) a sus claves originales — dispara la invalidación de caché
+   de la Fase 1 automáticamente (H8).
+4. Verificación post-escritura: 96/96 SHA256 coinciden con el resultado esperado.
+5. Resync: `BulkKbSyncService#sync!` → `job_id: "CCCDNEDFYL"`, `kb_id: "Y7RZWMFJSR"`,
+   `data_source_id: "PJ0N58DMHG"`. Polling: `IN_PROGRESS IN_PROGRESS COMPLETE`
+   (~2.5 min total) — **`COMPLETE`**, sin reintentos ni errores.
+
+**Humo (2 de las ≤4 llamadas presupuestadas para la fase):** 2 preguntas ad-hoc NUEVAS
+(no reutilizadas de v1-v4) vía `BedrockRagService#query` (la ruta de producción real
+para preguntas generales — se prefirió sobre `Rag::StructuredEvidenceRoute`, que sólo
+aplica a queries de mapeo estructurado y no es elegible para estas dos preguntas
+descriptivas), sobre páginas NO-ALJO recién parcheadas:
+
+| Pregunta | Página | Cita | `canonical_name` | N8 en `content` citado | N8 en respuesta |
+|---|---|---|---|---|---|
+| Conectores de la placa EXCELSIOR | 38 (`chunk_36`) | "EXCELSIOR — p. 38" | `EXCELSIOR` | No | No |
+| Bloques de bornes EKM66 hidráulico | 45 (`chunk_43`) | "FAIN — p. 45" | `FAIN` | No | No |
+
+El campo `citation[:content]` que devuelve Bedrock (`Bedrock::CitationProcessor`,
+`tooltip_excerpt`/`matched_excerpt`) viene directo de lo que el KB tiene indexado en
+ese momento, sin fetch adicional a S3 — que ninguna de las dos citas muestre
+`ALJO Control Level 1B Altius`/`PIPELINE_INJECTED` es prueba directa de que el índice
+ya sirve el contenido reindexado, no sólo que el job reportó `COMPLETE`. Ambas
+respuestas son técnicamente sanas: identifican correctamente conectores/terminales y
+componentes conectados, citan la página, y señalan honestamente dónde el diagrama no
+es legible con precisión (sin inventar valores). Cero preguntas de v1-v4 reutilizadas;
+2/4 `retrieve_invocations` del presupuesto de la fase usadas.
+
+**Artefactos:** `tmp/ciclo5_fase3_2026-08-04/n8_fase3_real_run_result_2026-08-04.json`
+(resultado de la corrida real), `n8_fase3_smoke_2026-08-04.json` (humo completo con
+citas y respuestas), `prod_backup_20260804T144351Z/HASHES.json` (manifest del
+backup), SHA256 de los tres en
+`tmp/ciclo5_fase3_2026-08-04/SHA256SUMS_fase3_real_run_2026-08-04.txt`. Scripts:
+`script/repair_seguridades_n8_body_2026-08-04.rb` (modo real implementado),
+`script/n8_fase3_smoke_2026-08-04.rb` (humo, desechable).
 
 ## Qué NO está en este plan
 

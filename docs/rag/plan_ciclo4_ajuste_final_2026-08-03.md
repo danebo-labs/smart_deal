@@ -684,19 +684,38 @@ el código actual — el riesgo real de N8 es sólo el ruido que ve el MODELO DE
 al leer el cuerpo crudo del chunk, no algo que la app parsee o dependa de mantener.
 
 **Decisión del dueño (2026-08-03, en el chat de la sesión de Fase 0):** diferir la
-ejecución de N8. Prioridad recomendada: **media-alta, pero secuenciada DESPUÉS del
-cierre del ciclo 4** (después de la Fase 7 / resultado del gate v4), no en paralelo.
-Motivos: (1) no bloquea el criterio del gate v4 actual; (2) el downstream visible al
-técnico ya está defendido (citation_processor); (3) parchearlo a mitad de ciclo invalida
-los rankings medidos en el Anexo B (cambiar el texto de 96 chunks cambia sus embeddings)
-justo cuando la Fase 1 necesita esos números estables; (4) sí vale la pena hacerlo
-pronto después del cierre — es gratis en saldo de Anthropic y podría ayudar de rebote a
-N10 (el texto repetido "ALJO Control Level 1B Altius" en 96/97 chunks es ruido semántico
-compartido entre secciones distintas, hipótesis no probada pero plausible dado que
-contribuye a que páginas casi-duplicadas compitan por score). **Recomendación de
-secuencia:** ejecutar el parche de texto dirigido como primer ítem post-piloto (si la
-Fase 7 pasa) o junto con la decisión humana #9 (si la Fase 7 no pasa) — nunca antes de
-cerrar este ciclo.
+ejecución de N8. Prioridad recomendada: **media, secuenciada DESPUÉS del cierre del
+ciclo 4** (después de la Fase 7 / resultado del gate v4), no en paralelo. Motivos: (1) no
+bloquea el criterio del gate v4 actual; (2) el downstream visible al técnico ya está
+defendido (citation_processor); (3) parchearlo a mitad de ciclo invalida los rankings
+medidos en el Anexo B (cambiar el texto de 96 chunks cambia sus embeddings) justo cuando
+la Fase 1 necesita esos números estables.
+
+**Hipótesis de rebote a N10 — probada y DESCARTADA (2026-08-03):** se especuló que el
+ruido semántico compartido de "ALJO Control Level 1B Altius" en 96/97 cuerpos pudiera
+contribuir a que páginas casi-duplicadas compitan por score en el retrieval. Se verificó
+contra el único chunk que NO tiene la contaminación: `chunk_90.txt` (página 92, divisor
+THYSSEN) — es precisamente el chunk que falló en `holdout_v3_thyssen_divisor_cmc4` (nunca
+entró al top-k). Su cuerpo real (695 bytes, verbatim en `tmp/seguridades_chunks_2026-07-28/chunk_90.txt`)
+es casi vacío: una lista de series de equipo y la nota "esta página… no contiene
+procedimientos, valores técnicos, esquemas ni resultados de prueba" — la causa de su
+fallo es sparsity de contenido (página divisoria pobre en texto), NO N8. Además, en los
+casos donde la página esperada SÍ entró al top-k pero perdió contra un duplicado (FAIN
+p.76 vs p.78), AMBOS chunks en competencia comparten la MISMA línea "ALJO…" —una señal
+idéntica en ambos candidatos no puede ser lo que hace que uno gane sobre el otro. **N8 no
+tiene efecto medible sobre el retrieval**; su riesgo real sigue siendo únicamente el
+ruido que lee el modelo de generación (razón original de N8, sin cambios). Esto BAJA la
+urgencia de N8 (ya no hay un beneficio esperado de rebote a N10) sin cambiar su
+prioridad de fondo (media, post-ciclo). **Recomendación de secuencia:** ejecutar el
+parche de texto dirigido como primer ítem post-piloto (si la Fase 7 pasa) o junto con la
+decisión humana #9 (si la Fase 7 no pasa) — nunca antes de cerrar este ciclo.
+
+**Hallazgo colateral, no accionado (divisor thinness):** las páginas divisorias con poco
+texto (como la p.92 THYSSEN) pueden perder por embedding débil frente a preguntas
+técnicas específicas, independientemente de N8 y de N10. El page-pin de la Fase 1 ya lo
+resuelve para el caso medido (fuerza la recuperación de la página nombrada sin depender
+de score), así que no requiere trabajo adicional en este ciclo — se anota por si
+reaparece en páginas divisorias no cubiertas por el filtro de página.
 
 ### Síntesis: ¿dónde están los puntos de pérdida de precisión?
 

@@ -1007,6 +1007,47 @@ regex (Anexo C) ya documentaba para `EXPLICIT_EQUIPMENT_PATTERN`/identidad de va
 pero aquí ocurre en generación, no en enrutamiento. No bloquea el criterio congelado (no es
 `safety_critical`); no se propone fix.
 
+### Corrección al caso 2 (2026-08-04, sesión externa post-cierre, sólo lectura — no se tocó
+código ni caché): causa raíz más precisa para el título de cita incorrecto
+
+El diagnóstico original de este Anexo (líneas 970-988) atribuye el fallo a "divisor thinness"
+(página 92 casi vacía → filtro de página da 0 resultados → `SectionNeighborExpander` expande a
+la página vecina 93) y da por hecho que el `canonical_name: "ALJO Control Level 1B Altius"`
+citado es la contaminación N8 del CUERPO (Anexo D). **Es correcto que la expansión trajo la
+página 93 en vez de la 92** (eso no cambia). Pero el `canonical_name` incorrecto en la cita **NO
+es N8** — N8 es contaminación del texto del CUERPO del chunk, no del campo `canonical_name` de
+metadata; una investigación posterior encontró que `chunk_91` (página 93) fue precisamente uno
+de los 91 sidecars corregidos por `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`
+el mismo 3 de agosto — su `canonical_name` correcto en S3 y en el índice vivo de Bedrock ES
+"THYSSEN", verificado directamente contra ambos después del gate.
+
+**Causa raíz real: `Rag::SectionNeighborExpander#page_index` cachea en `Rails.cache` con
+`INDEX_CACHE_TTL = 30.days` (línea 19) sin ningún gancho de invalidación** — ni el script de
+reparación de canonical_name, ni un resync de KB, ni ningún deploy invalidan
+`section_neighbor_index/v1/<sha256(prefix)>`. `Bedrock::CitationProcessor#build_numbered_references`
+(línea 82) lee `metadata['canonical_name']` tal cual se lo pasan; para citas que llegan vía
+expansión de vecindad, ese metadata es `entry[:metadata]` (línea 53 de
+`section_neighbor_expander.rb`), construido en `build_page_index` a partir de los
+`.metadata.json` de S3 **en el momento en que la caché se construyó por última vez** — si esa
+construcción ocurrió antes del parche del 3 de agosto (muy probable: la Fase 1 de este mismo
+ciclo ya ejercitó `structured_evidence_route`/expansión de vecindad el 3 de agosto, antes del
+parche), la entrada cacheada quedó congelada con el `canonical_name` viejo ("ALJO...") durante
+30 días, **sobreviviendo intacta** al parche de S3, al resync de Bedrock y a los dos
+`kamal deploy` de las Fases 1/2/6 — ninguno de los tres toca `Rails.cache`.
+
+**Por qué esto SÍ es crítico y distinto de "divisor thinness":** el mecanismo de expansión (ir a
+la página 93 cuando la 92 está vacía) es un límite de diseño ya conocido y aceptado (Fase 1,
+línea 142). Pero **una vez que expande, el título de la cita atribuye el contenido a un
+fabricante equivocado** ("ALJO" en vez de "THYSSEN") por una razón completamente evitable
+(caché sin invalidar), no por falta de dato en S3/Bedrock — el dato correcto existe y está
+servido en todas las capas excepto en esta caché de aplicación. Esto es lo que motivó la
+reclasificación del dueño (ver Decisión humana #9 actualizada abajo): la proveniencia visible al
+técnico puede estar equivocada aunque el KB subyacente esté correcto.
+
+**No ejecutado en esta sesión** (sólo lectura, ningún commit): no se borró la caché, no se
+recalculó el índice, no se tocó ningún test. Queda como insumo directo para la Fase 1 del
+próximo ciclo (`docs/rag/plan_ciclo5_resolucion_decision9_2026-08-04.md`).
+
 ### Síntesis para la decisión humana #9
 
 Los 3 fallos son de naturaleza distinta y NINGUNO reabre N10 como estaba en el v3 (colisión
@@ -1020,7 +1061,8 @@ clusters duplicados FAIN/RECOBA y THYSSEN con hechos nuevos y el caso multi-plac
 esto, el criterio congelado se aplica tal como se fijó, sin excepciones post-hoc: el gate
 NO pasa.
 
-## Decisión humana #9 (escalada 2026-08-04, ciclo 4 PARADO)
+## Decisión humana #9 (escalada 2026-08-04, ciclo 4 PARADO — **respondida 2026-08-04, ver
+`plan_ciclo5_resolucion_decision9_2026-08-04.md`**)
 
 Por mandato de la Fase 7 y la decisión del dueño #8 ("si el v4 falla, se PARA: no hay ciclo
 5 con esta estrategia"): el gate v4 no pasa (Anexo F). El holdout v4 queda gastado (no se
@@ -1034,18 +1076,31 @@ para que el dueño decida el siguiente camino:
    definir un mecanismo de re-juicio o revisión humana puntual del caso, sin abrir un v5
    completo — requiere decidir si esto cuenta como "ciclo 5 con esta estrategia" (prohibido)
    o como corrección de arnés de medición (posiblemente permitido, a criterio del dueño).
-2. **Fix acotado del expansor de vecindad (#2)**: hacer que
-   `Rag::SectionNeighborExpander` respete el filtro de página cuando el page-pin está activo
-   (en vez de expandir a cualquier vecino), o que la ruta estructurada abstenga con
-   `DATA_NOT_AVAILABLE` en vez de expandir cuando el filtro de página da 0 resultados — esto
-   SÍ sería código nuevo de retrieval, la misma estrategia que ya "falló" según la regla del
-   dueño, o una estrategia distinta (a decidir).
+2. **Fix acotado del expansor de vecindad (#2)** — ⚠️ **diagnóstico corregido 2026-08-04**
+   (ver "Corrección al caso 2" arriba, antes de esta sección): el problema no es sólo que
+   `Rag::SectionNeighborExpander` expanda a la página vecina cuando el filtro de página da 0
+   resultados (eso es un límite de diseño aceptado); es que el `canonical_name` que esa
+   expansión adjunta a la cita viene de un `Rails.cache` de 30 días (`INDEX_CACHE_TTL`) sin
+   invalidación, que sobrevivió intacto al parche de identidad del 3 de agosto — el KB y S3
+   ya tienen el dato correcto, sólo la caché de aplicación está desactualizada. Esto es un
+   bug de caché (invalidación faltante), no una limitación de diseño del expansor ni una
+   repetición de la estrategia de retrieval de N10/N11 — no debería contar como "ciclo 5 con
+   esta estrategia".
 3. **N8** (Anexo D, diferido): ejecutar el parche de texto dirigido ahora que el ciclo 4
    cerró (secuencia ya recomendada en el Anexo D, independiente del resultado del gate).
 4. **Otra estrategia completamente distinta** para N10/N11 residual, o aceptar el estado
    actual (page-pin + flag N11 desplegados, guardrail de piloto activo) sin gate v4 aprobado
    y decidir el piloto por otra vía (p.ej. supervisión humana reforzada en vez de gate
    automatizado).
+
+**Reclasificación del dueño (2026-08-04, en el chat, incorporada al ciclo 5):** el título de
+cita equivocado (opción 2) se declara **bloqueante para piloto** — la proveniencia de la cita
+es una promesa central del producto (traceability/safety), no un defecto cosmético — y N8 deja
+de tratarse como diferible sin fecha (aparece en superficie visible, no sólo en el cuerpo
+interno). El caso #1 (evaluador) se acepta como falso negativo, no bloqueante. El caso #3
+(nomenclatura ARCA) se documenta como deuda P4, no bloqueante. Ver plan de resolución completo
+en `docs/rag/plan_ciclo5_resolucion_decision9_2026-08-04.md` (entrada obligatoria: este
+documento completo, en particular este Anexo F y la corrección de arriba).
 
 No ejecutado nada de lo anterior en esta sesión (restricción 5: un objetivo por sesión — el
 objetivo de esta sesión fue correr y clasificar el gate v4).

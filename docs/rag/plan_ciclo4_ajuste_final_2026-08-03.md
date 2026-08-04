@@ -668,6 +668,36 @@ por sesión). Se anota como tarea para una decisión futura del dueño: parche d
 dirigido (barato, sin saldo Anthropic) vs. re-indexación completa con 2 versiones (más
 caro, corrige también el prompt, requiere saldo).
 
+**Verificación adicional de seguridad del parche (2026-08-03, sólo lectura):** se
+confirmó que ningún código de runtime depende de esa línea para funcionar —
+`app/services/bedrock/citation_processor.rb:130-159` YA filtra defensivamente estas
+líneas (`METADATA_LINE_PATTERN`, `INLINE_METADATA_HEADER_PATTERNS`, literal
+`PIPELINE_INJECTED`) antes de construir el excerpt del tooltip de citación, con un
+comentario explícito que las llama "Legacy chunk bodies (OWRPGSX6XK Lambda path)". El
+usuario confirmó en el chat el origen histórico: la línea era necesaria cuando la
+ingesta corría directo contra el data source nativo de Bedrock (con una Lambda de
+post-chunking, `OWRPGSX6XK`/`VBB72VKABV`) donde no era viable inyectar metadata
+dinámicamente en el prompt; esa estrategia de data source quedó deprecada al migrar a
+ingesta vía API de Anthropic directa + inyección de identidad en Rails
+(`BatchResultsParserService#identity_header`). Es decir: borrar la línea es seguro para
+el código actual — el riesgo real de N8 es sólo el ruido que ve el MODELO DE GENERACIÓN
+al leer el cuerpo crudo del chunk, no algo que la app parsee o dependa de mantener.
+
+**Decisión del dueño (2026-08-03, en el chat de la sesión de Fase 0):** diferir la
+ejecución de N8. Prioridad recomendada: **media-alta, pero secuenciada DESPUÉS del
+cierre del ciclo 4** (después de la Fase 7 / resultado del gate v4), no en paralelo.
+Motivos: (1) no bloquea el criterio del gate v4 actual; (2) el downstream visible al
+técnico ya está defendido (citation_processor); (3) parchearlo a mitad de ciclo invalida
+los rankings medidos en el Anexo B (cambiar el texto de 96 chunks cambia sus embeddings)
+justo cuando la Fase 1 necesita esos números estables; (4) sí vale la pena hacerlo
+pronto después del cierre — es gratis en saldo de Anthropic y podría ayudar de rebote a
+N10 (el texto repetido "ALJO Control Level 1B Altius" en 96/97 chunks es ruido semántico
+compartido entre secciones distintas, hipótesis no probada pero plausible dado que
+contribuye a que páginas casi-duplicadas compitan por score). **Recomendación de
+secuencia:** ejecutar el parche de texto dirigido como primer ítem post-piloto (si la
+Fase 7 pasa) o junto con la decisión humana #9 (si la Fase 7 no pasa) — nunca antes de
+cerrar este ciclo.
+
 ### Síntesis: ¿dónde están los puntos de pérdida de precisión?
 
 | Hallazgo | Etapa del pipeline | Mecanismo | Estado |

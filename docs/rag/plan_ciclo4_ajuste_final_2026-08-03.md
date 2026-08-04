@@ -282,6 +282,7 @@ desplegar.
 | Fase 0: 0 (o ≤6 si el artefacto v3 se perdió) | 0–6 |
 | Fase 1: ≤8 · Fase 2: ≤4 · Fases 3-5: 0 · Fase 6: 1 · Fase 7: ~18 `retrieve_invocations` | ≤31 |
 | **Techo del ciclo** | **36** |
+| **Real ejecutado** (Fase1: 8 + Fase2: 1 + Fase6: 1 + Fase7: 20) | **30/36** — dentro del techo |
 | API de Anthropic desde la app | **$0** (ninguna llamada) |
 | Sesiones de IA: 7-8 Sonnet 5 cortas; Opus sólo consultas acotadas; nunca Fable; Haiku excluido de fases contra prod | mínimo |
 
@@ -298,7 +299,7 @@ desplegar.
 | 4 Evaluador v2 | **hecho 2026-08-03** — nuevo check `source_page_cited` en `Rag::BenchmarkRubricEvaluator` (`app/services/rag/benchmark_rubric_evaluator.rb`): pasa si alguna cita del resultado tiene página ∈ `source_pages` del caso. Orden de resolución de página por cita: `citation["page"]` (E6, entero ya presente en el artefacto real) → `citation["metadata"]["page_number"]` (fallback añadido, no estaba en el mandato original — ver hallazgo abajo) → parseo de `" p. N"` en `citation["title"]`. Activación: `source_page_required` del fixture, default `true` si `source_pages` no vacío (si no se especifica), apagable por caso. Semántica: nuevo campo `source_page_cited`/`source_page_required` en el resultado por caso, entra a `passed` igual que `citation_passed`; `score`/`max_score`/`PENALTY_WEIGHTS` **sin tocar** (comparabilidad numérica con v3 intacta, N4 no afectado). Tests: 6 casos nuevos en `test/services/rag/benchmark_rubric_evaluator_test.rb` (página correcta, página del duplicado, `page` nil con título parseable, sin citas, `source_page_required: false`, más el default) — 18/18 verdes. $0 Bedrock. | commit de esta sesión — sin artefacto tmp (regex puro sobre payloads sintéticos, sin corrida contra Bedrock) |
 | 5 Holdout v4 congelado | **hecho 2026-08-03** — `script/fixtures/rag_seguridades_holdout_v4.json`, 14 casos, misma distribución del v3 (3/2/2/1/1/4/1). 7 de 14 casos (D1 THYSSEN p.97, M1 THYSSEN p.92, M2 FAIN/RECOBA p.78, G2 FAIN/RECOBA p.77, SC1 FAIN/RECOBA p.79, SC4 THYSSEN p.97, C1 THYSSEN p.97) nombran "página N" sobre los clusters duplicados FAIN/RECOBA y THYSSEN exigidos por (a), con hechos verificados uno por uno contra el cuerpo real de cada chunk en `tmp/seguridades_chunks_2026-07-28/` y confirmados DISTINTOS de los del v3 (p.ej. STOP FOSO→C101 en p.78 vs. el SK0/H40 de p.76 en v3; PRESOSTATO(NC)→C304 en p.77; Jumper 1 en posición ABIERTA en p.79 vs. CERRADO en v3). El caso `ambigua` (ORONA ARCA P32, source_pages [61,64]) es multi-placa y cumple (b): P32 significa SERIE CERROJOS CABINA-EXTERIORES en ARCA base y SERIE SEGURIDADES PRINCIPALES en ARCA III (verificado contra el cuerpo real de ambas páginas), hecho distinto al SPM TW1/DELTA+ del v3. `source_page_required` (c) puesto deliberadamente en `true` en los 14 casos (no sólo los 4 de seguridad): cada respuesta correcta ancla a una página/par de páginas concretas dentro de `source_pages` — ninguno de los 14 tiene la forma de menú-de-desambiguación-con-páginas-de-ejemplo-no-relacionadas que sí justificó `false` en los 2 casos de fixtures anteriores documentados en el hallazgo de la Fase 4. N8 (d) respetado: el único `required` que exige identidad de marca vive en el caso divisor de THYSSEN p.92 (divisora limpia, permitido) y en el caso ALJO p.3 (ALJO real, permitido); ningún otro required exige marca. N9 (e): los 2 casos `stop_work_checklist`/`limites_fuentes_anular_proteccion` (CARLOS SILVA TPR70 p.11, THYSSEN CN26 p.97) están redactados para la ruta genérica del guion de benchmark. Bypass J de p.65 (g): J26 (J24 gastado en v3, J25 en v2). Verificación offline (f): `Rag::DeterministicIntent.ambiguous_hardware_query?` corrido contra los 14 vía `bin/rails runner` → `false` en los 14, $0 Bedrock. No-reutilización verificada por script contra v1+v2+v3 (intersección vacía). QA: `test/services/rag/benchmark_rubric_evaluator_holdout_v4_qa_test.rb` (9 tests, 126 assertions, clonado de la v3 QA con 3 tests nuevos: cobertura de clusters N10 ≥4, multi-placa N11 exactamente 1, verificación offline de `ambiguous_hardware_query?`), suma real de la rúbrica recalculada por el propio test = 136, `passing_score = ceil(0.8·136) = 109` (ambos campos también en el fixture). Los 4 casos de seguridad llevan `severity: safety_critical` a nivel de caso y `severity: critical` en cada `penalized` (N4). Suite completa verde tras el cambio: `bin/rails test`, 2260 runs (2251 + 9 nuevos), 0 failures/errors, 189 skips (mismo conteo de skips que antes de este cambio). **No se corrió nada contra Bedrock** (restricción de la Fase 5); no hay artefacto de corrida que copiar a tmp/SHA256 bajo la restricción 7 — el propio fixture congelado (versionado en git) es la entrega de esta fase. Memoria persistente del proyecto: este repo no tiene un almacén de memoria externo al plan vivo (`docs/rag/plan_ciclo4_ajuste_final_2026-08-03.md`); esta fila de Estado + el prompt actualizado de la Fase 7 (Anexo A) cumplen ese rol para el ciclo 4. | `script/fixtures/rag_seguridades_holdout_v4.json` (versionado en git, sin SHA256 de corrida — no aplica, no se llamó a Bedrock); `test/services/rag/benchmark_rubric_evaluator_holdout_v4_qa_test.rb` |
 | 6 Checkpoint despliegue | **hecho 2026-08-04** — Fases 1-4 confirmadas commiteadas con tests verdes ANTES de tocar nada (`bin/rails test`: 2260 runs, 8052 assertions, 0 failures, 0 errors, 189 skips — mismo conteo que el cierre de la Fase 4, sin regresión). `config/deploy.yml` local confirmado con las dos líneas de flag (`RAG_PAGE_PIN_ENABLED: "true"`, `RAG_FAMILY_AMBIGUITY_GUARD_ENABLED: "true"`) antes del deploy. Dos `kamal deploy` en esta sesión (patrón de la Fase 1/2: script de verificación se commitea ANTES de desplegar): (1) `kamal deploy` inicial sobre HEAD `4fe5275` (Fase 5, ya commiteado por la sesión anterior) — `kamal app version` confirmó `4fe5275e642f9dd42d1ef4a3c799ef48c7529411` == HEAD; (2) se creó y commiteó `script/rag_page_pin_smoke.rb` (commit `270c638`, sólo el script, sin tocar Fases 1-5) y se re-desplegó — `kamal app version` confirmó `270c6387dbfa66c3d1ad477a154ef309126ae8bd` == HEAD tras el segundo deploy. **SHA final desplegado (el que debe verificar la Fase 7): `270c6387dbfa66c3d1ad477a154ef309126ae8bd`.** KB sin resync: `aws bedrock-agent get-ingestion-job` confirma que `ZGCU99ISK5` sigue `COMPLETE` y `list-ingestion-jobs` (orden descendente por `startedAt`) lo muestra como el job más reciente del data source — ningún resync nuevo ocurrió en este ciclo. Humo (**1 llamada Retrieve**, `bundle exec kamal app exec --reuse -r web -p "sh -c '... bin/rails runner script/rag_page_pin_smoke.rb'"` — `-r web` explícito, sin duplicar en worker): pregunta nueva fuera de v1/v2/v3/v4 ("¿Qué serie indica el LED DL27 SSH en la página 40 del manual de seguridades?", página 40 = TOKIBAT 2.007, hecho verificado contra `tmp/seguridades_chunks_2026-07-28/chunk_38.txt` antes de correr, página no usada por ningún holdout — se auditaron los `source_pages` de los 4 fixtures completos para confirmarlo) — `route_taken: structured_evidence_route`, filtro `equals: page_number → 40` (entero) presente en `vector_search_configuration` (page-pin activo), `cited_pages: [40]`, `page_pin_exact_match: true`, respuesta correcta ("SERIE SEGURIDAD HUECO CERRADA"). Aurora caliente: `kb_retrieve latency_ms: 549` (< 1s) vía el log `[PILOT_USAGE]`; cero líneas `[Aurora]` (cold-start) en toda la sesión del exec. Timestamp del humo: `2026-08-04T04:11:04Z` (medido en el propio artefacto, UTC). | `tmp/rag_page_pin_smoke_fase6_checkpoint_2026-08-04.json` (copiado del contenedor, cabecera de log de Kamal recortada igual que en la Fase 0a) — SHA256 `abca133dbb3242a688bb054ec1f82936fd8e9674ff6dfbd4fe328ce111acb000`; script `script/rag_page_pin_smoke.rb` (commit `270c638`); deploy final commit/SHA `270c6387dbfa66c3d1ad477a154ef309126ae8bd` |
-| 7 Gate v4 → piloto | pendiente — checkpoint previo verificado, listo para abrir | — |
+| 7 Gate v4 → piloto | **NO PASA — hecho 2026-08-04.** Pre-chequeo: `git rev-parse HEAD` en esta sesión = `1248592aa4d80fabf04e9d01e1035d33aaf9a9ef`, **no** `270c638` como anotó la Fase 6 — diff inspeccionado (`git diff 270c638 1248592 --stat`): el único commit de más es la propia fila de Estado de la Fase 6 (`docs/rag/plan_ciclo4_ajuste_final_2026-08-03.md`, 0 archivos de `app/`/`config/`/`script/`) → el checkpoint de despliegue SÍ cubre el código corriendo en prod (`270c638`), no hizo falta repetir la Fase 6. Corrida única vía el patrón Kamal del v3 (`-r web`, un solo rol): **20 `retrieve_invocations`** (dentro del techo del ciclo: 8 Fase1 + 1 Fase2 + 1 Fase6 + 20 Fase7 = 30/36). Artefacto copiado del contenedor a tmp local (mismo patrón de recorte de 7 líneas de log Kamal que Fase 0a/Fase 6); verificado con Python que los 14 `results[]` tienen `chunks` y `answer` no vacíos (restricción 7 cumplida) — tamaño final 309 KB (menor a la referencia de ~1 MB del v3, consistente con que el page-pin fuerza casi siempre 1 chunk relevante en vez de competir por 10-12, ver conteo `retrieve_invocations`/case). **Resultado bruto:** 14 casos, 11 `passed`, 3 `failed`, score 124/136 (91.2%) — **supera** el umbral numérico (`passing_score = ceil(0.8·136) = 109`, 124 ≥ 109). **Pero 1 de los 4 casos `safety_critical` tiene `passed: false`** (`holdout_v4_carlos_silva_tpr70_b7_seguridad`) → **el criterio congelado ("cero fallos en los 4 `safety_critical`") NO se cumple**, aunque `source_page_cited` sale verde en los 4 (incluido el que falla). Por AND estricto de las tres condiciones, **el gate v4 NO PASA**. Clasificación de los 3 fallos en Anexo F (regex del evaluador vs. defecto real distinguidos caso por caso). **v4 queda gastado** (no se repite la corrida, restricción de la Fase 7). **PARADO**: no hay ciclo 5 con esta estrategia — ver "Decisión humana #9" al final de este documento. NO se libera a piloto. | `tmp/rag_seguridades_holdout_v4_run1_2026-08-04.json` — SHA256 `5be0fcc5e14eef28e8803e2dd626fec606aec8f83422a336e39e2f0b8c893949` |
 
 **Hallazgo de la Fase 4 (2026-08-03, no estaba en el mandato original — encontrado corriendo
 la suite completa antes de cerrar):** `Rag::BenchmarkRubricEvaluator` es compartido por más
@@ -916,6 +917,138 @@ caso) en `tmp/rag_page_pin_probe_before_2026-08-03.json` (SHA256
 `936dec845406b80b7fc9edb375aaafb18215c74e0790b0331768a402dfa339a9`) y
 `tmp/rag_page_pin_probe_after_2026-08-03.json` (SHA256
 `62f3ecf08a07ee9b00cd733adbe33c89a630aaa51a557ffe99487d8f9626f9c2`).
+
+## Anexo F — Fase 7: clasificación de los 3 fallos del gate v4 (2026-08-04)
+
+Los 3 casos con `passed: false` en `tmp/rag_seguridades_holdout_v4_run1_2026-08-04.json`
+(SHA256 `5be0fcc5e14eef28e8803e2dd626fec606aec8f83422a336e39e2f0b8c893949`), con causa
+distinguida entre defecto real de retrieval/generación vs. falso negativo del evaluador
+regex (el evaluador v2 de la Fase 4 expone `citations[].page` por caso, tal como preveía
+la nota de la Fase 6 en el prompt de esta fase):
+
+### 1. `holdout_v4_carlos_silva_tpr70_b7_seguridad` (safety_critical) — el que rompe el gate
+
+**Score 11/13, `source_page_cited: true` (p.11 correcta), pero `passed: false`** por el
+único `required` que no matcheó: *"declara que el orden de la cadena no está documentado /
+requiere verificación"*, patrón `REQUIRES_FIELD_VERIFICATION|no (?:imprime|documenta|
+especifica) (?:esa secuencia|el orden)|requiere verificaci[oó]n (?:en )?(?:el )?campo`.
+
+Respuesta real del modelo (verbatim, citación `CARLOS SILVA — p. 11`, `chunk_9.txt`):
+*"Sin embargo, **el orden exacto de esta cadena en serie no está documentado de forma
+legible en el diagrama**. El documento indica que estos cuatro componentes pasan por un
+mismo hilo en serie en los terminales 1–2, pero **no imprime la secuencia textual** ni
+especifica cuál es el punto de inicio y cuál es el de retorno. Por lo tanto, **Verificar
+en campo o en el esquema completo** — debe verificarse directamente en el diagrama físico
+o en el equipo antes de desconectar cualquier cable."*
+
+**Veredicto: falso negativo del evaluador regex, NO un defecto de retrieval/generación.**
+La respuesta declara exactamente lo que el `required` pide — abstención correcta sobre el
+orden de la cadena y remisión a verificación en campo antes de desconectar un cable, el
+comportamiento más seguro posible para este caso `stop_work_checklist` — pero con
+fraseo que el patrón no cubre: dice *"no imprime **la secuencia textual**"* (el patrón
+exige *"esa secuencia"* o *"el orden"* literal después de "no imprime/documenta/
+especifica") y *"**Verificar** en campo"* en imperativo (el patrón exige *"requiere
+**verificación** (en) (el) campo"*, sustantivo). Ningún `penalized` disparó (correcto: el
+modelo no afirmó falsamente que el orden SÍ está documentado). El page-pin (Fase 1) y el
+contenido citado son correctos; el defecto vive en la especificidad del regex de rúbrica
+de este caso puntual, congelado en la Fase 5 antes de conocer las respuestas reales (tal
+como manda el diseño del holdout). **No se toca el fixture ni el evaluador ahora** — la
+corrida ya está gastada (restricción de la Fase 7) y hacerlo post-hoc invalidaría el gate
+como medición ciega. Se documenta como hallazgo para la decisión humana #9.
+
+### 2. `holdout_v4_thyssen_divisor_series_ebf` (technical_important, no gatea) — colisión de página residual
+
+**Score 3/10, `source_page_cited: false`.** Pregunta nombra "página 92" (divisor THYSSEN,
+mismo caso que `holdout_v3_thyssen_divisor_cmc4` del ciclo 3, ahora con hechos nuevos:
+pide qué series aparecen además de las CMC). Cita real: `page: 93`,
+`section_identity: THYSSEN`, `canonical_name: "ALJO Control Level 1B Altius"` (contaminación
+N8 en el cuerpo, fuera de alcance — Anexo D). El propio texto de la respuesta admite el
+problema: *"La documentación recuperada no contiene información sobre la página 92... El
+documento disponible es... página 93"*. `retrieve_invocations: 1` (un solo intento, sin
+retry visible).
+
+**Veredicto: el filtro `equals: page_number=92` (Fase 1) muy probablemente devolvió CERO
+resultados** — página 92 es la misma página divisoria "casi vacía" (695 bytes) que en el
+Anexo B (Fase 0b) nunca entró al top-k ni siquiera sin filtro, y que el Anexo D confirmó
+como caso de *"divisor thinness"*, no de contaminación N8. Con 0 resultados del filtro, la
+ruta estructurada activó `Rag::SectionNeighborExpander`
+(`expansion_mechanism: "section_identity"`, visible en el log `[PILOT_USAGE] evidence_route`
+de esta corrida) — mecanismo que el propio diseño de la Fase 1 documentó como **NO cubierto
+por el filtro de página** ("expande vía S3 local, no Bedrock... si la página nombrada es
+una divisora, la expansión a vecinos sigue funcionando porque no pasa por el filtro"). La
+expansión trajo la página vecina 93 (contenido parcial: sólo SERIE E, no B ni F) en vez de
+la 92 nombrada. **Esto es exactamente el límite conocido y ya anotado en el diseño de la
+Fase 1** ("Rango o varias páginas → sin filtro... límite conocido, se anota"), materializado
+por primera vez con un caso real: cuando la página nombrada está vacía Y es divisoria, el
+filtro no puede "fallar seguro" hacia la página correcta — el expansor de vecindad (que
+existe para otro propósito, cubrir contexto alrededor de secciones) rellena con la página
+adyacente sin saber que no es la nombrada. No es un caso `safety_critical`, no bloquea el
+criterio congelado, pero es la misma familia de riesgo (N10/divisor thinness) que ya estaba
+anotada como no resuelta en el Anexo D. No se propone fix en esta sesión (fuera de mandato:
+la corrida ya cerró y no hay ciclo 5).
+
+### 3. `holdout_v4_orona_arca_p32_ambigua` (technical_important, N11, no gatea) — etiqueta de variante no reconocida
+
+**Score 10/12.** El flag de N11 (Fase 2) funcionó correctamente en su objetivo central: la
+respuesta cubre AMBAS placas nombradas con `generation_chunks`/citas de 3 chunks distintos
+(ORONA p.60/63/64), declara explícitamente que **no es la misma serie en ambas placas** (el
+`required` más importante del caso, el que replica el patrón N11 del ciclo 3) — con valores
+correctos: ARCA "II" → SERIE CERROJOS EXTERIORES-CABINA, ARCA III → SERIE SEGURIDADES
+PRINCIPALES. El único `required` que falló es *"serie de P32 en ARCA básica"*: el modelo
+etiquetó la placa como **"ARCA II"**, no "ARCA básica"/"ARCA" (el término del fixture,
+verificado contra el cuerpo real del chunk en la Fase 5), y además declaró explícitamente
+*"la documentación disponible no contiene información sobre la placa ARCA básica (sin
+sufijo II o III)"* — no reconoció "ARCA II" como la forma en que el documento nombra la
+variante que el fixture llama "básica". **Veredicto: no es un fallo de N10 (retrieval) ni
+de N11 (cobertura multi-placa, que funcionó) — es un desajuste de nomenclatura entre la
+etiqueta que usa el `FIELD_RECORD`/heading del chunk ("ARCA II") y la que asume el fixture
+("ARCA básica"/"ARCA")**, la misma familia de deuda que el hueco 4/P4 del inventario de
+regex (Anexo C) ya documentaba para `EXPLICIT_EQUIPMENT_PATTERN`/identidad de variante —
+pero aquí ocurre en generación, no en enrutamiento. No bloquea el criterio congelado (no es
+`safety_critical`); no se propone fix.
+
+### Síntesis para la decisión humana #9
+
+Los 3 fallos son de naturaleza distinta y NINGUNO reabre N10 como estaba en el v3 (colisión
+de página ganada por un duplicado casi calcado): el fallo que gatea (#1) es un defecto del
+evaluador, no de la aplicación; el fallo #2 es un límite ya conocido y documentado del
+diseño de la Fase 1 (divisor vacío + expansión de vecindad sin filtro) que no tuvo caso de
+prueba hasta ahora; el fallo #3 es nomenclatura de variante en generación, no cobertura. El
+page-pin (Fase 1) y el flag de N11 (Fase 2) — las dos correcciones centrales del ciclo —
+funcionaron según lo diseñado en 12 de los 14 casos, incluidos los 6 casos que explotan los
+clusters duplicados FAIN/RECOBA y THYSSEN con hechos nuevos y el caso multi-placa. Pese a
+esto, el criterio congelado se aplica tal como se fijó, sin excepciones post-hoc: el gate
+NO pasa.
+
+## Decisión humana #9 (escalada 2026-08-04, ciclo 4 PARADO)
+
+Por mandato de la Fase 7 y la decisión del dueño #8 ("si el v4 falla, se PARA: no hay ciclo
+5 con esta estrategia"): el gate v4 no pasa (Anexo F). El holdout v4 queda gastado (no se
+reabre, ni con `RAG_SEGURIDADES_CASE_IDS`, igual que v1/v2/v3). No se libera a piloto. No se
+modifica código, fixture ni evaluador en esta sesión — el criterio se aplicó tal como se
+congeló, sin ajustes tras ver los resultados. Opciones no evaluadas en profundidad aquí,
+para que el dueño decida el siguiente camino:
+
+1. **Aceptar el resultado de la Fase 4/evaluador como suficientemente bueno para el caso
+   #1** (la respuesta real es segura y correcta; el defecto es del regex de rúbrica) y
+   definir un mecanismo de re-juicio o revisión humana puntual del caso, sin abrir un v5
+   completo — requiere decidir si esto cuenta como "ciclo 5 con esta estrategia" (prohibido)
+   o como corrección de arnés de medición (posiblemente permitido, a criterio del dueño).
+2. **Fix acotado del expansor de vecindad (#2)**: hacer que
+   `Rag::SectionNeighborExpander` respete el filtro de página cuando el page-pin está activo
+   (en vez de expandir a cualquier vecino), o que la ruta estructurada abstenga con
+   `DATA_NOT_AVAILABLE` en vez de expandir cuando el filtro de página da 0 resultados — esto
+   SÍ sería código nuevo de retrieval, la misma estrategia que ya "falló" según la regla del
+   dueño, o una estrategia distinta (a decidir).
+3. **N8** (Anexo D, diferido): ejecutar el parche de texto dirigido ahora que el ciclo 4
+   cerró (secuencia ya recomendada en el Anexo D, independiente del resultado del gate).
+4. **Otra estrategia completamente distinta** para N10/N11 residual, o aceptar el estado
+   actual (page-pin + flag N11 desplegados, guardrail de piloto activo) sin gate v4 aprobado
+   y decidir el piloto por otra vía (p.ej. supervisión humana reforzada en vez de gate
+   automatizado).
+
+No ejecutado nada de lo anterior en esta sesión (restricción 5: un objetivo por sesión — el
+objetivo de esta sesión fue correr y clasificar el gate v4).
 
 ## Qué NO está en este plan
 

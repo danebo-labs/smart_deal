@@ -1421,6 +1421,136 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_filter_key config[:filter], "original_source_uri"
   end
 
+  # ── Fase 1 (ciclo 4, N10): page-pin filter ──
+
+  test 'page-pin filter is absent when the flag is off, even naming a page' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => nil) do
+      service = BedrockRagService.new(account: @account)
+      config = service.build_vector_search_configuration(question: 'Qué dice la página 46?')
+
+      assert_no_filter_key config[:filter], 'page_number'
+    end
+  end
+
+  test 'page-pin filter is absent by default (flag unset) when a page is named' do
+    service = BedrockRagService.new(account: @account)
+    config = service.build_vector_search_configuration(question: 'Qué dice la página 46?')
+
+    assert_no_filter_key config[:filter], 'page_number'
+  end
+
+  test 'page-pin filter applies an integer equals when the flag is on and one page is named' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      service = BedrockRagService.new(account: @account)
+      config = service.build_vector_search_configuration(question: 'Qué dice la página 46?')
+
+      assert_filter_key config[:filter], 'page_number'
+      value = find_filter_value(config[:filter], 'page_number')
+      assert_equal 46, value
+      assert_kind_of Integer, value, "page_number filter value must be numeric (E2), got #{value.class}"
+      assert_account_filter config[:filter]
+    end
+  end
+
+  test 'page-pin filter recognizes pág./page variants and extracts N from the existing match' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      service = BedrockRagService.new(account: @account)
+
+      assert_equal 92, find_filter_value(
+        service.build_vector_search_configuration(question: 'ver pág. 92')[:filter], 'page_number'
+      )
+      assert_equal 7, find_filter_value(
+        service.build_vector_search_configuration(question: 'see page 7 for details')[:filter], 'page_number'
+      )
+    end
+  end
+
+  test 'page-pin filter is absent when the question names more than one page' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      service = BedrockRagService.new(account: @account)
+      config = service.build_vector_search_configuration(
+        question: 'compara la página 46 con la página 79'
+      )
+
+      assert_no_filter_key config[:filter], 'page_number'
+    end
+  end
+
+  test 'page-pin filter combines with the entity-pin filter under the same AND' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      service = BedrockRagService.new(account: @account)
+      config = service.build_vector_search_configuration(
+        question: 'página 46',
+        entity_s3_uris: [ 's3://bucket/manual.pdf' ]
+      )
+
+      assert_account_filter config[:filter]
+      assert_filter_key config[:filter], 'original_source_uri'
+      assert_equal 46, find_filter_value(config[:filter], 'page_number')
+    end
+  end
+
+  test 'apply_page_filter: false suppresses the page-pin filter even with the flag on' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      service = BedrockRagService.new(account: @account)
+      config = service.build_vector_search_configuration(
+        question: 'página 46', apply_page_filter: false
+      )
+
+      assert_no_filter_key config[:filter], 'page_number'
+    end
+  end
+
+  test 'retrieve_chunks and query share the page-pin filter via build_vector_search_configuration' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      with_mock_bedrock_client do |client|
+        client.retrieve_response = ::OpenStruct.new(retrieval_results: [])
+        service = BedrockRagService.new(account: @account)
+        service.retrieve_chunks('página 46')
+
+        assert_equal 46, find_filter_value(
+          client.last_retrieve_params.dig(:retrieval_configuration, :vector_search_configuration, :filter),
+          'page_number'
+        )
+      end
+    end
+  end
+
+  test 'query retries without the page filter when it yields Bedrock no-results, without dropping the entity filter' do
+    with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      bedrock_sorry = "Sorry, I am unable to assist you with this request."
+
+      with_mock_bedrock_client do |client|
+        call_filters = []
+        sorry_response = fake_response(bedrock_sorry)
+        good_response  = fake_response("La página 46 no está disponible en el KB.")
+        client.define_singleton_method(:retrieve_and_generate) do |params|
+          @last_retrieve_and_generate_params = params
+          call_filters << params.dig(
+            :retrieve_and_generate_configuration,
+            :knowledge_base_configuration,
+            :retrieval_configuration,
+            :vector_search_configuration,
+            :filter
+          )
+          call_filters.size == 1 ? sorry_response : good_response
+        end
+
+        BedrockRagService.new(account: @account).query(
+          'Qué dice la página 46?',
+          entity_s3_uris: [ 's3://bucket/manual.pdf' ],
+          force_entity_filter: true
+        )
+
+        assert_equal 2, call_filters.size
+        assert_equal 46, find_filter_value(call_filters.first, 'page_number')
+        assert_filter_key call_filters.first, 'original_source_uri'
+        assert_no_filter_key call_filters.second, 'page_number'
+        assert_filter_key call_filters.second, 'original_source_uri'
+      end
+    end
+  end
+
   test 'filtered retry preserves account filter when document filter is stripped' do
     bedrock_sorry = "Sorry, I am unable to assist you with this request."
 
@@ -1561,6 +1691,31 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       node.any? { |v| filter_key_present?(v, key) }
     else
       false
+    end
+  end
+
+  # Unlike filter_contains?/filter_key_present?, returns the raw (untyped)
+  # value so callers can assert on its class (E2: page_number must stay
+  # Integer, never a String) instead of a stringified comparison.
+  def find_filter_value(node, key)
+    case node
+    when Hash
+      equals = node[:equals] || node["equals"]
+      if equals && (equals[:key] || equals["key"]).to_s == key
+        return equals[:value] || equals["value"]
+      end
+
+      node.each_value do |value|
+        found = find_filter_value(value, key)
+        return found unless found.nil?
+      end
+      nil
+    when Array
+      node.each do |value|
+        found = find_filter_value(value, key)
+        return found unless found.nil?
+      end
+      nil
     end
   end
 

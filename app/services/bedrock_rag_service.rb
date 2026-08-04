@@ -62,13 +62,14 @@ class BedrockRagService
   # @param response_locale [Symbol, nil] When set (:en / :es), overrides question-based detection for the generation prompt
   # @param entity_s3_uris [Array<String>] S3 URIs of active session documents; when non-empty, adds metadata filter
   # @param entity_sources [Array<String>] Source types of pinned entities ("image_upload"|"document"); used by RagRetrievalProfile
-  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [], entity_sources: [], output_channel: nil)
+  def build_complete_optimized_config(region: 'us-east-1', question: nil, response_locale: nil, session_context: nil, entity_s3_uris: [], entity_sources: [], output_channel: nil, apply_page_filter: true)
     cfg = @rag_config
     vector_config = build_vector_search_configuration(
       region: region,
       question: question,
       entity_s3_uris: entity_s3_uris,
-      entity_sources: entity_sources
+      entity_sources: entity_sources,
+      apply_page_filter: apply_page_filter
     )
 
     {
@@ -110,7 +111,7 @@ class BedrockRagService
 
   def build_vector_search_configuration(region: @region, question: nil, entity_s3_uris: [],
                                         entity_sources: [], number_of_results: nil,
-                                        reranking: true)
+                                        reranking: true, apply_page_filter: true)
     profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
     vector_config = {
       number_of_results: number_of_results || profile.number_of_results,
@@ -120,17 +121,18 @@ class BedrockRagService
 
     base_filter = account_filter
     uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
-    if uris.any?
+    uri_filter = if uris.any?
       filters = uris.flat_map do |uri|
         [
           { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } },
           { equals: { key: "original_source_uri", value: uri } }
         ]
       end
-      vector_config[:filter] = and_filter(base_filter, { or_all: filters })
-    else
-      vector_config[:filter] = base_filter
+      { or_all: filters }
     end
+
+    page_filter = apply_page_filter ? page_pin_filter(question) : nil
+    vector_config[:filter] = and_filter(base_filter, uri_filter, page_filter)
 
     vector_config
   end
@@ -228,9 +230,17 @@ class BedrockRagService
       bedrock_start_time = Time.current
       response = retrieve_and_generate_with_retry(params)
 
-      # Fallback: if filter produced no results, retry without filter.
-      if apply_filter && !force_entity_filter && bedrock_no_results?(response.output.text)
-        Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter")
+      # Fallback: if filter produced no results, retry without filter. Covers
+      # both the entity-pin filter and the Fase 1 (ciclo 4, N10) page-pin
+      # filter — a page named exactly once that has no chunk in the KB (e.g.
+      # `holdout_v3_carlos_silva_stop_foso_seguridad`, Anexo B) must not turn
+      # into a false "no results" for the whole document; retrying without
+      # the page filter costs one extra call (documented, same pattern as the
+      # entity-pin retry).
+      page_filter_applied = page_pin_filter(question).present?
+      retry_without_entity_filter = apply_filter && !force_entity_filter
+      if (retry_without_entity_filter || page_filter_applied) && bedrock_no_results?(response.output.text)
+        Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter (entity=#{retry_without_entity_filter} page=#{page_filter_applied})")
         # The filtered attempt is a billable generation in its own right — track it
         # before re-running so the turn leaves one row per invocation (I0).
         track_filtered_no_results_attempt(
@@ -245,7 +255,8 @@ class BedrockRagService
           attribution:     attribution
         )
         generation_attempt = 2
-        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: [], entity_sources: entity_sources, output_channel: output_channel)
+        unfiltered_entity_uris = retry_without_entity_filter ? [] : filtered_uris
+        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: unfiltered_entity_uris, entity_sources: entity_sources, output_channel: output_channel, apply_page_filter: false)
         unfiltered_params = params.merge(
           retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
             knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
@@ -258,7 +269,7 @@ class BedrockRagService
           :retrieve_and_generate_configuration,
           :knowledge_base_configuration
         ).except(:knowledge_base_id, :model_arn)
-        applied_filter_uris = []
+        applied_filter_uris = unfiltered_entity_uris
         response = retrieve_and_generate_with_retry(unfiltered_params)
       end
 
@@ -1282,6 +1293,31 @@ class BedrockRagService
     return compacted.first if compacted.one?
 
     { and_all: compacted }
+  end
+
+  # Fase 1 (ciclo 4, N10): a technician who names a single page has
+  # disambiguated by location — force Bedrock to return that page instead of
+  # letting it lose a score contest against an almost-identical duplicate
+  # (FAIN p.46 vs RECOBA p.79; THYSSEN p.92 vs p.97). Diagnosed in Anexo B:
+  # in 2 of 4 named N10 cases the expected page never entered the retrieved
+  # set at all, so a post-retrieval re-rank cannot recover it — only a
+  # Bedrock-side metadata filter reaches candidates outside the vector top-k.
+  # `page_number` is an integer in the sidecars (E2) — the `equals` value
+  # here must stay numeric, never a string.
+  # Reuses PAGE_REFERENCE_PATTERN (restriction 6: no new question-form regex)
+  # and only activates for exactly one page mention; a range or several named
+  # pages ("página 46 y página 79") skips the filter — documented limit, not
+  # detected further to avoid a new pattern.
+  def page_pin_filter(question)
+    return nil unless Rag::PagePinFlag.enabled?
+
+    matches = question.to_s.scan(Rag::DeterministicIntent::PAGE_REFERENCE_PATTERN)
+    return nil unless matches.one?
+
+    page_number = matches.first[/\d+/]
+    return nil unless page_number
+
+    { equals: { key: "page_number", value: page_number.to_i } }
   end
 
   def enforce_account_filter(config)

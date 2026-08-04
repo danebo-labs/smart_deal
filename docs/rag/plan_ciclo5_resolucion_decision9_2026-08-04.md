@@ -157,7 +157,16 @@ Si los 4 siguen vigentes: anotar "Fases 1-3 proceden sin cambios" y cerrar. Si a
 cambió: corregir la(s) fase(s) afectada(s) y su(s) prompt(s) en el Anexo A ANTES de
 cerrar (protocolo de plan vivo).
 
-## Fase 1 — Fix del bug de caché del expansor (Sonnet 5; ≤4 llamadas Bedrock)
+## Fase 1 — Fix del bug de caché del expansor (Sonnet 5; ≤4 llamadas Bedrock) — **CERRADA 2026-08-04**
+
+**Resultado: hipótesis CONFIRMADA, fase cerrada sin escalar. Ver Anexo G para
+la evidencia completa (hashes, comandos, respuesta citada).** Resumen: la
+entrada cacheada leída antes del borrado traía `canonical_name: "ALJO
+Control Level 1B Altius"` en páginas 92/93 con `section_identity: "THYSSEN"`
+ya correcto; tras la invalidación dirigida + el fix estructural
+(`Rag::SectionNeighborExpander.invalidate!`, opción i, más TTL 7 días como
+opción ii) y el despliegue (`c05718a`), dos preguntas nuevas sobre la
+página 92 THYSSEN citan "THYSSEN — p. 93" con `canonical_name: "THYSSEN"`.
 
 **Fase 0 (2026-08-04) confirmó sin cambios la premisa de esta fase** (Anexo
 F): código de `section_neighbor_expander.rb` intacto (línea 19, 142-144),
@@ -211,6 +220,24 @@ Dos entregas, un objetivo:
    semántica de `page_index`/`authorize` (los fixes del ciclo 4 no se tocan —
    restricción 9).
 
+**Addendum (mismo día, mismo objetivo — endurecimiento pedido por el dueño):**
+el dueño pidió que la invocación de `invalidate!` no dependa de que un script
+de reparación "se acuerde" de llamarla. Mecanismo final implementado:
+`S3DocumentsService#upload_text`/`#upload_binary` llaman a
+`Rag::SectionNeighborExpander.invalidate!` automáticamente para CUALQUIER key
+bajo `bulk_chunks/` (deriva el prefijo con `key.rpartition("/").first`),
+scoped a ese prefix para no afectar otros callers de `#upload_binary`
+(`field_photos/`, `document_manifests/`). El script de reparación de
+canonical_name (H2) ya escribe todo por `s3.upload_text`/`s3.upload_binary`
+— no necesita ninguna llamada explícita; su comentario final documenta por
+qué. Regla codificada como mandatoria en `app/services/rag/AGENTS.md`
+("Chunk Repair Cache Invalidation") y en `docs/ACTIVE_ARCHITECTURE.md`: todo
+script que en el futuro escriba a `bulk_chunks/` sin pasar por
+`S3DocumentsService` (SDK crudo) DEBE llamar `invalidate!(prefix)` él mismo,
+con comentario. Tests: `S3DocumentsServiceTest` cubre invalidación en
+`upload_text`/`upload_binary` bajo `bulk_chunks/`, no-invalidación fuera de
+ese prefijo, y no-invalidación si el `put_object` falla.
+
 **Verificación en vivo** (tras `kamal deploy` de esta fase, commitear ANTES de desplegar
 — lección ciclo 4 Fase 2): 1-2 preguntas ad-hoc NUEVAS que fuercen expansión de vecindad
 sobre la página 92 de THYSSEN, con hechos distintos a v3/v4 (no se reutiliza ningún
@@ -263,10 +290,22 @@ Diseño (calcado del patrón de seguridad de
 - Ejecutar en real, subir, y disparar el resync del KB (`start-ingestion-job`); esperar
   `COMPLETE`; **anotar el ingestion job id nuevo** — reemplaza a `ZGCU99ISK5` como
   referencia vigente: actualizar los prompts de las Fases 5 y 6 en el Anexo A.
-- **Tras el resync: ejecutar la invalidación de caché de la Fase 1** sobre el prefijo
-  (H8: la caché también congela cuerpos de vecinos — sin este paso, la expansión de
-  vecindad seguiría sirviendo texto con la línea N8 aunque S3 y Bedrock ya estén
-  limpios).
+- **Invalidación de caché: automática, sin paso explícito** — mecanismo REAL
+  implementado por la Fase 1 (2026-08-04, endurecido el mismo día): si el patch de los
+  96 cuerpos escribe por `S3DocumentsService#upload_text`/`#upload_binary` (el mismo
+  patrón que `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`),
+  cada escritura bajo `bulk_chunks/` ya invoca
+  `Rag::SectionNeighborExpander.invalidate!` por sí sola — no hace falta ninguna llamada
+  adicional al final del script. **Verificar, no asumir:** el script de la Fase 3 NO debe
+  escribir por `Aws::S3::Client` crudo para los 96 `.txt` — si por alguna razón lo hiciera,
+  DEBE llamar `Rag::SectionNeighborExpander.invalidate!(CHUNK_PREFIX)` explícitamente
+  (regla mandatoria, `app/services/rag/AGENTS.md` §"Chunk Repair Cache Invalidation").
+  `CHUNK_PREFIX = "bulk_chunks/1/b61f5d54-ff42-414a-97b7-01682d16f4b5"`. H8: la caché
+  también congela CUERPOS de vecinos (`cache_neighbor_body`) — sin invalidación (automática
+  o explícita), la expansión de vecindad seguiría sirviendo texto con la línea N8 aunque S3
+  y Bedrock ya estén limpios. Confirmar en el humo de la Fase 3 que una expansión de
+  vecindad post-resync ya no trae la línea N8 (evidencia directa de que la caché se
+  refrescó, más allá de confiar en el mecanismo).
 - Humo: 1-2 preguntas ad-hoc NUEVAS (≤4 llamadas) verificando que (a) los chunks
   recuperados ya NO contienen la línea en páginas no-ALJO, (b) la respuesta sigue sana
   (el parche no rompió nada). Artefacto + SHA256.
@@ -393,7 +432,7 @@ Ejecución:
 |---|---|---|
 | Protocolo de validación (decisión del dueño #3) | **Propuesta B recomendada** (holdout v5 + batería de proveniencia, ~38-45 invocaciones, checks determinísticos dirigidos a los 2 bloqueantes) vs. A (5×14 corridas, ~100 invocaciones, mide varianza pero no apunta a los fixes) — ver tabla comparativa en la Fase 4. **Pendiente de veto del dueño antes de ejecutar la Fase 4**; si elige A, se re-declara el presupuesto y se re-planifica la Fase 4. | — |
 | 0 Verificación de vigencia | **hecho 2026-08-04** — los 4 hallazgos (a/H1, b/estado-KB, c/H3, d/H4) VIGENTES sin cambios. Fases 1-3 proceden sin cambios; ningún hallazgo contradice restricción/gate, no se escala decisión #10. Ver tabla completa en el Anexo F. Artefacto `tmp/ciclo5_fase0_verificacion_vigencia_2026-08-04.md`, SHA256 `12541d960cdd5234be301ae003bc03314c655697c573397c05202411bc0c46fb`. | Anexo F |
-| 1 Fix bug de caché (invalidación dirigida + estructural) | pendiente | — |
+| 1 Fix bug de caché (invalidación dirigida + estructural) | **hecho 2026-08-04** — Hipótesis CONFIRMADA (Anexo G): el valor leído de `section_neighbor_index/v1/243000f4…086` ANTES de borrar traía `canonical_name: "ALJO Control Level 1B Altius"` en páginas 92 y 93 pese a `section_identity: "THYSSEN"` ya correcto — exactamente el estado predicho. Entrega 1 (invalidación dirigida): `Rails.cache.read` + `Rails.cache.delete` vía `kamal app exec --reuse -r web bin/rails runner` sobre el prefijo real `bulk_chunks/1/b61f5d54-ff42-414a-97b7-01682d16f4b5`; valor viejo completo guardado ANTES de borrar. Entrega 2 (estructural): opción **(i) implementada** — `Rag::SectionNeighborExpander.invalidate!(prefix)` (método de clase; `index_cache_key` de instancia delega en el de clase, una sola fuente de verdad para la derivación); opción **(ii) aplicada en adición** — `INDEX_CACHE_TTL` 30d→7d; opción (iii) descartada (sin fingerprint gratis, tal como preanalizó el plan). El script de reparación de canonical_name (H2) invoca `invalidate!(CHUNK_PREFIX)` tras su resync — patrón de referencia para Fase 3. 5 tests Minitest nuevos + suite completa verde (2265 runs, 8068 assertions, 0 failures/errors, sin regresión sobre los 2260 previos). Commit `c05718a` ANTES de `kamal deploy`; `kamal app version` confirmó SHA desplegado `c05718a2` == HEAD. Verificación en vivo: 2 preguntas ad-hoc NUEVAS sobre la página 92 THYSSEN (LED L8 → SERIE PUERTAS EXTERIORES; borne 72 → AFLOJACABLES; hechos distintos de v3/v4) — **ambas citan "THYSSEN — p. 93" con `canonical_name: "THYSSEN"`**, no ALJO. 2 `retrieve_invocations` usados de ≤4 presupuestados. Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. | `tmp/ciclo5_fase1_2026-08-04/cache_invalidation_seguridades_2026-08-04.json` SHA256 `b500fd9be75d276040dbec057a91b672e0d845bfd5eb8e17cbee5264b9056ded`; `tmp/ciclo5_fase1_2026-08-04/live_probe_1_thyssen_p92_led_l8_2026-08-04.json` SHA256 `a8264113e6b2fabc30bcd9c3238e0a3d63180ff04c6c3a465c1e841168221cf7`; `tmp/ciclo5_fase1_2026-08-04/live_probe_2_thyssen_p92_borne72_2026-08-04.json` SHA256 `1086d46103af51d48eb4ab40ab4c7f948bd608b072697c096497fbf2168af35a`; commit `c05718a26317361069315c4900e2cdf2e24d98cf`; ver Anexo G |
 | 2 Fix prompt N8 | pendiente | — |
 | 3 Parche de datos N8 + resync + re-invalidación | pendiente | — |
 | 4 Holdout v5 + batería congelados | pendiente | — |

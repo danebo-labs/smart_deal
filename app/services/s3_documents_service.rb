@@ -7,6 +7,15 @@ require 'aws-sdk-core/static_token_provider'
 class S3DocumentsService
   include AwsClientInitializer
 
+  # Ciclo 5 H1/H2 (2026-08-04): any chunk body or `.metadata.json` sidecar
+  # written directly under this prefix (initial ingestion, or a one-off
+  # repair script like the 2026-08-03 canonical_name fix) must invalidate
+  # Rag::SectionNeighborExpander's page index for that document — otherwise
+  # a corrected sidecar/body can be shadowed by a stale Rails.cache entry
+  # for up to INDEX_CACHE_TTL. Scoped to this prefix so #upload_binary's
+  # other callers (field_photos/, document_manifests/) are unaffected.
+  BULK_CHUNKS_PREFIX = "bulk_chunks/"
+
   attr_reader :bucket_name
 
   def initialize(bucket_name: nil)
@@ -119,6 +128,7 @@ class S3DocumentsService
       body: content,
       content_type: "text/plain; charset=utf-8"
     )
+    invalidate_section_neighbor_cache(key)
 
     Rails.logger.info("S3 text upload: s3://#{@bucket_name}/#{key}")
     key
@@ -137,6 +147,7 @@ class S3DocumentsService
       bucket: @bucket_name, key: key, body: binary_data,
       content_type: content_type.presence || "application/octet-stream"
     )
+    invalidate_section_neighbor_cache(key)
     key
   rescue StandardError => e
     Rails.logger.error("S3DocumentsService#upload_binary failed for #{key}: #{e.message}")
@@ -180,6 +191,22 @@ class S3DocumentsService
   end
 
   private
+
+  # Fires on every #upload_text/#upload_binary write under bulk_chunks/ —
+  # initial ingestion and one-off repair scripts alike — so no future direct
+  # S3 chunk fix can silently leave Rag::SectionNeighborExpander's page
+  # index stale (ciclo 5 H1/H2, 2026-08-04: a corrected canonical_name sat
+  # behind a 30-day cache for a full day because no script invalidated it).
+  # Rails.cache.delete on a key that was never cached (e.g. a document still
+  # mid-ingestion) is a harmless no-op — safe to call unconditionally.
+  def invalidate_section_neighbor_cache(key)
+    return unless key.to_s.start_with?(BULK_CHUNKS_PREFIX)
+
+    prefix = key.rpartition("/").first
+    return if prefix.blank?
+
+    Rag::SectionNeighborExpander.invalidate!(prefix)
+  end
 
   def find_bucket_name
     ENV['KNOWLEDGE_BASE_S3_BUCKET'] ||

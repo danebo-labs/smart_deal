@@ -35,6 +35,11 @@ module Rag
       # prefix (metadata repair script, KB resync) must call this so the next
       # neighbor expansion rebuilds from S3 instead of serving a stale
       # canonical_name/section_identity/body until INDEX_CACHE_TTL (H1/H8).
+      # In practice this already happens automatically:
+      # S3DocumentsService#upload_text/#upload_binary call it for every key
+      # under bulk_chunks/ (see app/services/rag/AGENTS.md, "Chunk Repair
+      # Cache Invalidation"). Call it directly only from code that mutates
+      # bulk_chunks/ objects without going through S3DocumentsService.
       # @param prefix [String] e.g. "bulk_chunks/1/<document_id>"
       # @return [Boolean] whether a cached entry existed and was removed
       def invalidate!(prefix)

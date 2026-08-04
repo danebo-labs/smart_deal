@@ -259,6 +259,75 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
     end
   end
 
+  # ============================================
+  # Ciclo 5 H1/H2 (2026-08-04): every direct write under bulk_chunks/ must
+  # invalidate Rag::SectionNeighborExpander's cached page index for that
+  # document, automatically — no repair script should have to remember it.
+  # Exercised against real Rails.cache (MemoryStore) rather than a stub, so
+  # these tests pin the exact prefix derivation, not just "something fired".
+  # ============================================
+
+  def with_memory_cache
+    previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    yield
+  ensure
+    Rails.cache = previous_cache
+  end
+
+  test 'upload_text under bulk_chunks/ invalidates the section neighbor cache for the derived prefix' do
+    with_fake_s3_client do
+      with_memory_cache do
+        cache_key = Rag::SectionNeighborExpander.index_cache_key('bulk_chunks/1/doc')
+        Rails.cache.write(cache_key, { prefix: 'bulk_chunks/1/doc', pages: {} })
+
+        S3DocumentsService.new.upload_text('bulk_chunks/1/doc/chunk_0.txt.metadata.json', '{}')
+
+        assert_nil Rails.cache.read(cache_key)
+      end
+    end
+  end
+
+  test 'upload_binary under bulk_chunks/ invalidates the section neighbor cache for the derived prefix' do
+    with_fake_s3_client do
+      with_memory_cache do
+        cache_key = Rag::SectionNeighborExpander.index_cache_key('bulk_chunks/1/doc')
+        Rails.cache.write(cache_key, { prefix: 'bulk_chunks/1/doc', pages: {} })
+
+        S3DocumentsService.new.upload_binary('bulk_chunks/1/doc/chunk_0.txt', 'content', 'text/plain')
+
+        assert_nil Rails.cache.read(cache_key)
+      end
+    end
+  end
+
+  test 'upload_binary outside bulk_chunks/ never touches the section neighbor cache' do
+    with_fake_s3_client do
+      with_memory_cache do
+        cache_key = Rag::SectionNeighborExpander.index_cache_key('field_photos/1/sha')
+        Rails.cache.write(cache_key, { prefix: 'field_photos/1/sha', pages: {} })
+
+        S3DocumentsService.new.upload_binary('field_photos/1/sha/original.jpg', 'binary-data', 'image/jpeg')
+
+        assert Rails.cache.read(cache_key), 'a non-bulk_chunks/ write must not invalidate any cached index'
+      end
+    end
+  end
+
+  test 'a failed S3 write never invalidates the section neighbor cache' do
+    with_fake_s3_client do |fake|
+      fake.should_raise_on_put = true
+      with_memory_cache do
+        cache_key = Rag::SectionNeighborExpander.index_cache_key('bulk_chunks/1/doc')
+        Rails.cache.write(cache_key, { prefix: 'bulk_chunks/1/doc', pages: {} })
+
+        S3DocumentsService.new.upload_text('bulk_chunks/1/doc/chunk_0.txt', 'content')
+
+        assert Rails.cache.read(cache_key), 'a failed put_object must not invalidate the cache'
+      end
+    end
+  end
+
   test 'delete_prefix removes every listed object under prefix' do
     with_fake_s3_client do |fake|
       fake.objects = [

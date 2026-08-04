@@ -75,6 +75,18 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
 - Table-of-contents manifests live under `document_manifests/`, **never**
   under `bulk_chunks/` — that is the only prefix the Bedrock data source
   indexes, so anything else placed there would leak into retrieval.
+- Every direct write under `bulk_chunks/` — initial ingestion or a one-off
+  repair script that patches chunk bodies/sidecars already in S3 — must
+  invalidate `Rag::SectionNeighborExpander`'s cached page index for that
+  document, or a correction can sit behind a stale cache entry for up to
+  `INDEX_CACHE_TTL` while S3/Bedrock are already fixed (ciclo 5 H1/H2,
+  2026-08-04). `S3DocumentsService#upload_text`/`#upload_binary` do this
+  automatically for any `bulk_chunks/` key, so scripts that write through
+  them need no extra step. A script that mutates `bulk_chunks/` objects any
+  other way (raw AWS SDK calls) MUST call
+  `Rag::SectionNeighborExpander.invalidate!(prefix)` itself, with a comment
+  explaining why — see
+  `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`.
 - Live technician photos are diagnostic inputs only: they still do not create
   a `KbDocument` or enter the Knowledge Base, but the original bytes and a
   thumbnail are now retained durably (bounded by `FIELD_PHOTO_RETENTION_DAYS`)

@@ -302,11 +302,13 @@ abort("KB ingestion job ended with status #{status}") unless status == "COMPLETE
 # Ciclo 5 Fase 1 (H1/H2, 2026-08-04): this repair originally shipped with no
 # Rag::SectionNeighborExpander cache invalidation hook, so the corrected
 # canonical_name above kept serving stale ("ALJO Control Level 1B Altius")
-# for up to 30 days from Rails.cache after S3/Bedrock were already fixed.
-# Added retroactively as the reference pattern for any future sidecar
-# repair under this prefix — a re-run of this exact script now aborts
-# earlier at the ETag check, so this call only takes effect on a fresh
-# repair script that reaches this point.
-Rag::SectionNeighborExpander.invalidate!(CHUNK_PREFIX)
+# for up to 30 days from Rails.cache after S3/Bedrock were already fixed. No
+# explicit call is needed here anymore: every `s3.upload_text` above (91
+# sidecars + chunk_94.txt) already invalidated
+# Rag::SectionNeighborExpander's cached page index for CHUNK_PREFIX as it
+# ran, via S3DocumentsService#upload_text (see app/services/rag/AGENTS.md,
+# "Chunk Repair Cache Invalidation"). A script that ever bypasses
+# S3DocumentsService for a bulk_chunks/ write must call
+# Rag::SectionNeighborExpander.invalidate!(prefix) itself instead.
 
 puts "\nRESULT: OK — #{sidecar_records.size} sidecars (2a) + 1 chunk body (2c) patched, KB sync COMPLETE"

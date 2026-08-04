@@ -453,6 +453,7 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 |---|---|
 | Bedrock (Fases 1+2+5): ≤10 + ≤6 + 14 llamadas `retrieve_and_generate` Haiku | **< $2** |
 | Real hasta Fase 2 (2026-08-03): Fase 1 = 6, Fase 2 = **12** (excedido, ver decisión humana #7) | 18 de 30 |
+| Real final del ciclo (2026-08-03): 6 + 12 + 2 (Fase 4) + 18 (Fase 5, `retrieve_invocations`) | **38 de 30** (excedido; decisión humana #7 ya aceptó la desviación de costo — el bloqueante real al cerrar el ciclo es el gate NO PASA, decisión #8) |
 | Sesiones de IA: 3× Sonnet 5 cortas + 2× Haiku 4.5 | mínimo; sin Opus/Fable |
 | API de Anthropic desde la app | **$0** (ninguna llamada) |
 
@@ -464,7 +465,7 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 | 2 Intervención mínima | **hecho 2026-08-03** — 2d (guard), 2a (91 sidecars) y 2c (chunk_94) aplicados y verificados; 2b sigue descartado (no tocado). **⚠️ Presupuesto Bedrock excedido: 12 llamadas, no ≤6** (ver "Resultado de la Fase 2" y decisión humana #7). Pendiente de desplegar (Fase 4). | Código: `app/services/rag/deterministic_intent.rb`, `test/services/rag/deterministic_intent_test.rb` (+4 tests). Script: `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`. KB sync job `ZGCU99ISK5`, `COMPLETE`. Artefactos fuera de git: `tmp/rag_seguridades_adhoc_fase2_verificacion_2026-08-03_run1.json` (SHA256 `2c928bd108edfc54ea92c69f507baf340f26d75f71e17daff4b17121f8aac24a`, antes del resync 2a/2c), `tmp/rag_seguridades_adhoc_fase2_postresync_2026-08-03_run1.json` (SHA256 `bbc9f9ffa0877c2ba57f0ca855d1727a039f1974decbb87187682c89fc1f2162`, después). |
 | 3 Holdout v3 congelado | **hecho 2026-08-03** (sesión distinta a Fase 2) — 14 casos, suma real 133, `passing_score` 107, QA verde (6 tests/75 assertions, $0). Hallazgos nuevos N8 (contaminación de identidad en el CUERPO del chunk, no sólo metadata, sigue viva tras 2a) y N9 (el guion de benchmark nunca invoca `Rag::DeterministicRenderer` — los casos de checklist/prueba funcional se redactaron para medir generación genérica, no los renderers de Fase 7). Ver "Resultado de la Fase 3". | `script/fixtures/rag_seguridades_holdout_v3.json` (SHA256 `09fc71589538483d8f23fd5359d4e1b5aafb263430505eb8f64bf685fbf4aa6f`), `test/services/rag/benchmark_rubric_evaluator_holdout_v3_qa_test.rb` |
 | 4 Checkpoint despliegue | **hecho 2026-08-03** — kamal deploy exitoso, SHA `afd886250374aa04a73c5df45a605721eadcc475` deployado (== git rev-parse HEAD local, verificado), tests verdes (48 runs, 222 assertions, 0 failures). KB Bedrock PROD: job `ZGCU99ISK5` COMPLETE. **Decisión #7 resuelta: opción A** (humo con llamada nueva, no reutilización — corrección de un error de esta misma sesión que documentó erróneamente "opción B" en un intento anterior; el dueño del producto pidió repetir la prueba con un smoke real). Humo ejecutado con `kamal app exec --reuse "bin/rails runner '<inline>'"`: pregunta nueva "¿Qué designadores de puente se usan en ARCA para controlar seguridades?" (no es del holdout v3). **⚠️ Costo real 2 llamadas Bedrock, no 1**: `kamal app exec --reuse` sin `--role` corre en ambos roles (web+worker) simultáneamente, cada uno hizo su propio `retrieve_and_generate`. Resultado ambas veces idéntico en sustancia: 2 citas a `chunk_63.txt`, `canonical_name: "ORONA"` (correcto, post-2a), aliases `ORONA, ARCA, ARCA BASICO, ARCA II, ARCA III, SEGURIDADES 1.1, SEGURIDADES 1.1-1` (correcto, post-2a), respuesta nombra J12/J24/J25/J26 con el efecto de bypass correcto de cada uno. Latencias `retrieve_and_generate` 4681ms / 6158ms, sin `AuroraColdStartRetry` en ningún log — KB caliente confirmado. Presupuesto del ciclo actualizado: 6 (Fase 1) + 12 (Fase 2) + 2 (Fase 4) = **20 de 30**; Fase 5 (14) llevaría el total a 34, ~4 sobre el techo original — el dueño del producto ya confirmó presupuesto disponible ("si hay presupuesto, solo fase 4") antes de iniciar esta fase, por lo que no se re-escala como nueva decisión, sólo se deja anotado con transparencia. | SHA: `afd886250374aa04a73c5df45a605721eadcc475`, KB sync job: `ZGCU99ISK5`, Humo timestamps: `2026-08-03T23:44:06Z` (web) / `2026-08-03T23:44:09Z` (worker), evidencia completa: `tmp/rag_seguridades_adhoc_fase4_humo_2026-08-03_prod.txt` (SHA256 `64703cc6db1af8f847a9d69949ca542fbd7b42637261f45dc5a3a8c53b67c715`, fuera de git) |
-| 5 Gate v3 → piloto | pendiente — **⚠️ ver decisión humana #7: presupuesto del ciclo ajustado, confirmar antes de abrir** | — |
+| 5 Gate v3 → piloto | **hecho 2026-08-03 — NO PASA.** Corrida única contra PROD (SHA `afd886250374aa04a73c5df45a605721eadcc475`, verificado con `kamal app version` antes de abrir; sync `ZGCU99ISK5` `COMPLETE`), patrón `bundle exec kamal app exec --reuse -r web -p "sh -c '...'"` (un solo rol, a diferencia del humo de Fase 4 — no duplica gasto). Score 119/133 = 89.5% (≥80% del criterio, pasa esa mitad), pero **1 de los 4 casos `safety_critical` FALLÓ** (`holdout_v3_fain_jumper_falta_fase_seguridad`, 8/10 — no menciona la posición segura normal del jumper abierto) → **criterio congelado NO cumplido** (score Y cero-fallos-safety son ambos obligatorios). 9/14 casos pasaron, 5/14 fallaron. Verificado antes de cerrar: artefacto completo con `results[]` no vacío (chunks + `answer`/`raw_answer` por caso, 1.39 MB — no el patrón de 12 KB del v2), sin señales de caché sirviendo respuestas viejas (los 14 `generation_mode` fueron `structured_evidence_route`/`bedrock_retrieve_and_generate` en vivo, ninguno `document_overview`; sin claves de caché en `retrieval_trace`) y con el código/datos nuevos confirmadamente activos (los 14 casos dieron `model_invoked: true`, ninguno cayó en `deterministic_model_disambiguation` — incluido el caso ARCA III J24 —, y las citas muestran `canonical_name: "ORONA"`/`"RECOBA"` correctos, no la contaminación ALJO pre-2a). **Clasificación de los 5 fallos (hallazgos nuevos, ni N8 ni N9): N10** — 4 de 5 (incluido el safety_critical que rompe el gate) citaron una página distinta a `source_pages`, porque el mismo tablero está documentado con texto casi idéntico en más de una sección (FAIN p.46 “EKM 1000/EM66” ≈ RECOBA p.79 “EKM 1000/EM66”; THYSSEN p.92 ≈ p.97) y el `entity_filter` prioriza el duplicado equivocado: `holdout_v3_fain_em66_sk0_h40` (esperada 76 → citó 78, RECOBA), `holdout_v3_thyssen_divisor_cmc4` (esperada 92 → citó 97), `holdout_v3_fain_ekm1000_potenciometros_comparativa` (esperada 46 → citó 79, RECOBA), **`holdout_v3_fain_jumper_falta_fase_seguridad`** (esperada 46 → citó 79, RECOBA). **N11** — el 5º fallo (`holdout_v3_sistel_spm_ambigua`) citó una página sí válida (91, dentro de 88-91) pero `generation_chunks: 1`: la pregunta exige comparar TW1 vs DELTA+ a través de un rango de 4 páginas y sólo se pasó 1 chunk a generación (el que no cubre TW1). Presupuesto Bedrock real de esta fase: **18 `retrieve_invocations`** (10 casos `structured_evidence_route` × 1 + 4 casos `bedrock_retrieve_and_generate` × 2), no los 14 asumidos — mismo patrón de conteo que Fases 1/2/4. Total real del ciclo: 20 (hasta Fase 4) + 18 = **38 de 30** (excedido; no se re-escala como decisión de presupuesto — la decisión relevante ahora es el fallo del gate, #8 abajo). **Regla del plan: no hay ciclo 4 con esta estrategia → PARA.** v3 queda gastado, no se reabre. Escalado como **decisión humana #8**. | `tmp/rag_seguridades_holdout_v3_run1_2026-08-03.json` (SHA256 `b4e4b8927a0f6d9491f3e4c9ac88f6c6a8ae8f3f24b7002e95f445e5d1b7659e`, fuera de git), run_id `seguridades:047f7948-10d0-4f22-a11f-e72bf162a52d` |
 
 ## Decisión humana #7 — Presupuesto Bedrock del ciclo excedido en Fase 2
 
@@ -502,6 +503,67 @@ vez de seguir adelante en silencio. Antes de abrir Fase 5:
 **Pendiente:** el dueño del producto elige A/B/C antes de que Fase 4 o Fase 5
 corran. Sin elección explícita, la sesión de Fase 4 debe tratar esto como
 bloqueante (no asumir A por defecto) y detenerse a preguntar.
+
+**Resuelto 2026-08-03:** opción A confirmada por el dueño del producto antes de
+Fase 4 (ver fila de Estado de Fase 4/5).
+
+## Decisión humana #8 — Gate v3 NO PASA (safety_critical), tercer holdout consecutivo fallido
+
+**Encontrado en:** Fase 5 (2026-08-03), gate único contra PROD, auto-reportado por
+la propia sesión que lo ejecutó.
+
+**Qué pasó:** el criterio congelado (≥80% de la suma real **Y** cero fallos en los
+4 casos `safety_critical`) exige ambas condiciones. Se cumplió la primera
+(119/133 = 89.5%) pero no la segunda: `holdout_v3_fain_jumper_falta_fase_seguridad`
+(pág. 46, "¿es seguro dejar el Jumper 1 cerrado sin la protección por falta de
+fase?") anotó 8/10 — identificó correctamente que NO es seguro y por qué, pero no
+mencionó la posición segura normal del jumper (abierto), un `required` del caso.
+
+**Causa raíz (N10, nueva — no es N7/guard ni N8/marca-en-cuerpo):** el chunk citado
+no es el de la página 46 (FAIN) esperada, sino el de la página 79 (sección RECOBA),
+que documenta un tablero "EKM 1000 (EM66)" con texto casi idéntico. El
+`entity_filter`/retrieval del documento prioriza el duplicado equivocado cuando dos
+secciones distintas describen el mismo modelo de tablero con prosa casi calcada.
+El mismo patrón (cita de página fuera de `source_pages`, sección duplicada)
+apareció en otros 3 de los 5 casos fallidos — 3/4 no-seguridad
+(`holdout_v3_fain_em66_sk0_h40`, `holdout_v3_thyssen_divisor_cmc4`,
+`holdout_v3_fain_ekm1000_potenciometros_comparativa`) y el propio caso de
+seguridad. El 5º fallo (`holdout_v3_sistel_spm_ambigua`) es un hallazgo distinto
+(N11: expansión de chunks insuficiente en `structured_evidence_route` para
+preguntas que exigen comparar contenido a través de un rango de varias páginas).
+Detalle completo en la fila de Estado de la Fase 5.
+
+**Impacto real:** este es el **tercer holdout consecutivo que no pasa** (v1: 47/88;
+v2: 70/88 pero safety_critical falló 2/9 por N7; v3: 119/133 pero safety_critical
+falló 8/10 por N10) y el **segundo consecutivo que falla específicamente en la
+garantía de seguridad**, aunque por una causa raíz distinta cada vez (guard mal
+calibrado en v2, colisión de retrieval entre secciones duplicadas en v3). Ningún
+caso de seguridad de v1/v2/v3 ha llegado limpio dos veces seguidas por el mismo
+mecanismo — el patrón sugiere una fragilidad estructural del enfoque (parchear
+causa raíz por causa raíz, un ciclo a la vez) más que un bug aislado.
+
+**No se ejecuta sin decisión:** por la regla del Protocolo de plan vivo v2 (punto 6)
+y por la regla explícita de la Fase 5 del plan ("no hay ciclo 4 con esta
+estrategia"), esta sesión **no intenta ningún arreglo** (ni de N10 ni de N11). El
+holdout v3 queda gastado — no se reabre, ni completo ni con
+`RAG_SEGURIDADES_CASE_IDS`. Opciones para el dueño del producto:
+
+- **Opción A — Guardrails operacionales:** no perseguir más precisión automática
+  vía RAG puro para preguntas de seguridad; añadir una capa determinista (p.ej.
+  `DeterministicRenderer`/verificación humana obligatoria) específicamente para
+  respuestas de categoría `safety_critical` antes de mostrarlas al técnico, en vez
+  de confiar en que el retrieval elija siempre la página correcta.
+- **Opción B — Atacar N10 en su raíz:** un ciclo 4 con estrategia DISTINTA
+  (permitido — la regla prohíbe repetir "esta estrategia", no un ciclo nuevo)
+  enfocado en desambiguar retrieval entre secciones con contenido casi idéntico
+  (p.ej. forzar coincidencia de página exacta cuando la pregunta la nombra
+  explícitamente, no sólo nombre de sección/modelo).
+- **Opción C — Pausar pilotaje de seguridades** hasta que el dueño del producto
+  y un ciclo futuro resuelvan N10, dado que el fallo afecta directamente un caso
+  de seguridad real (bypass de protección eléctrica).
+
+**Pendiente:** el dueño del producto elige A/B/C. Esta sesión se detiene aquí — no
+hay Fase 6 en este plan; el siguiente paso depende de la decisión.
 
 ## Anexo A — Prompt de arranque por fase
 
@@ -675,6 +737,13 @@ bloqueante (no asumir A por defecto) y detenerse a preguntar.
 > falta y anota su SHA256. Pasa → preparar piloto. No pasa → clasifica los fallos
 > (ahora sí posible con artefacto completo), el v3 queda gastado, y PARA: no hay ciclo
 > 4 con esta estrategia — escala como decisión humana.
+>
+> **Resultado (ejecutado 2026-08-03): NO PASA.** Score 119/133 (89.5%, cumple el
+> umbral) pero 1/4 `safety_critical` falló (`holdout_v3_fain_jumper_falta_fase_seguridad`,
+> N10 — colisión de retrieval entre secciones con tablero casi idéntico, FAIN p.46 vs
+> RECOBA p.79; ver fila de Estado de la Fase 5 y decisión humana #8). Plan cerrado en
+> este punto: no hay Fase 6 en este documento — el siguiente paso depende de la
+> decisión #8 del dueño del producto.
 
 ## Qué NO está en este plan
 

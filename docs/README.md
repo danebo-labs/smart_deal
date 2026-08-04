@@ -86,4 +86,8 @@ investigating the corresponding dated run:
   instructions.
 - [ARCHITECTURE.md](../ARCHITECTURE.md) is a legacy WhatsApp-centric snapshot;
   do not use it as current architecture.
+- `.cursor/rules/rag-precision-methodology.mdc` is the installed, agent-requestable
+  RAG precision-closure methodology (design/execute a retrieval+generation accuracy
+  plan). [RAG_PRECISION_METHODOLOGY_TEMPLATE_2026-08-04.mdc](RAG_PRECISION_METHODOLOGY_TEMPLATE_2026-08-04.mdc)
+  is the portable copy for other SaaS client repos; no process in this repo loads it.
 

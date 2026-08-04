@@ -4,12 +4,7 @@ globs:
 alwaysApply: false
 ---
 
-# Metodología de cierre de precisión RAG (validada en producción, otro cliente del SaaS)
-
-La regla ya está instalada y activa en este repo en
-`.cursor/rules/rag-precision-methodology.mdc`. Este archivo de docs es la versión
-portable (perspectiva "otro cliente") pensada para copiar a repos de otros clientes
-del SaaS — no lo carga ningún proceso de este repo.
+# Metodología de cierre de precisión RAG (validada en producción en este repo — el caso más complejo del SaaS)
 
 ## Contexto / cómo llegamos a esta metodología
 
@@ -78,10 +73,10 @@ SaaS.
 
 ## Ejemplo real de diagnóstico riguroso (patrón a imitar en toda Fase 0)
 
-Caso real, otro cliente: un texto redundante aparecía incrustado en 96 de 97 chunks
-de un documento, mezclando la identidad de una sección del documento en chunks de
-OTRAS secciones. Así se investigó, en pasos, sin arreglar nada hasta cerrar el
-diagnóstico:
+Caso real de este repo (N8, contaminación de identidad en chunks): un texto
+redundante aparecía incrustado en 96 de 97 chunks de un documento, mezclando la
+identidad de una sección del documento en chunks de OTRAS secciones. Así se
+investigó, en pasos, sin arreglar nada hasta cerrar el diagnóstico:
 
 1. **Síntoma medido, no asumido:** se confirmó con datos reales (metadata correcta
    por chunk vs. texto del cuerpo incorrecto) que el problema era sólo en el CUERPO,

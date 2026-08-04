@@ -1,0 +1,356 @@
+{
+  "version": "seguridades-holdout-v4.0",
+  "description": "Holdout v4 congelado (Fase 5 del ciclo 4, docs/rag/plan_ciclo4_ajuste_final_2026-08-03.md). 14 preguntas nuevas, misma distribución estratificada del v3 (3 determinísticas / 2 mapeos estructurados / 2 generalización / 1 ambigua / 1 sin respaldo / 4 seguridad / 1 comparativa), redactadas desde verdad-terreno ya pagada: docs/rag/gate_a_medicion_topologia.md §5-§9 y la copia local de los 97 cuerpos de chunk (tmp/seguridades_chunks_2026-07-28/). Ninguna pregunta se reutiliza de v1/v2/v3. Diseño dirigido a probar los dos fixes del ciclo 4: (a) N10 (page-pin) — 7 de los 14 casos (D1/M1/M2/G2/SC1/SC4/C1) nombran explícitamente 'página N' sobre los clusters duplicados FAIN/RECOBA (77-79) y THYSSEN (92/97), con hechos DISTINTOS a los usados en v3 (verificado línea por línea contra el cuerpo real de cada chunk); (b) N11 (cobertura multi-placa) — el caso ambigua (ARCA P32) es multi-placa, hecho distinto al SPM TW1/DELTA+ del v3. Nuevo campo por caso 'source_page_required' (evaluador v2, Fase 4 de este ciclo): puesto conscientemente en true en los 14 casos porque cada respuesta correcta ancla a una página/par de páginas concretas de source_pages (ninguno de los 14 es un menú de desambiguación que cite páginas de ejemplo no relacionadas, a diferencia de los 2 casos de fixtures anteriores documentados en el hallazgo de la Fase 4) — obligatorio true en los 4 de seguridad por mandato, y aquí también deliberado en los 10 restantes. N8 respetado: ningún required exige marca correcta fuera de ALJO págs. 2-7 (caso G1, página 3) o de la divisora limpia de THYSSEN (caso M1, página 92) — ver hallazgo del v3. N9 corregido: los 2 casos de categoría stop_work_checklist/limites_fuentes están redactados para la ruta genérica (el guion de benchmark no invoca DeterministicRenderer ni DocumentOverviewResponder). Los 4 casos de seguridad llevan severity=safety_critical a nivel de caso y sus patrones penalized llevan severity=critical (N4, el evaluador no pesa safety_critical como severity de patrón). Cada patrón penalized fue verificado contra una respuesta correcta conocida vía Rag::BenchmarkRubricEvaluator (test/services/rag/benchmark_rubric_evaluator_holdout_v4_qa_test.rb) antes de congelar este archivo, incluyendo el nuevo check source_page_cited. Los 14 verificados offline ($0) con Rag::DeterministicIntent.ambiguous_hardware_query? == false. No se corre contra Bedrock hasta la Fase 7.",
+  "citation_required": true,
+  "max_score": 136,
+  "passing_score": 109,
+  "cases": [
+    {
+      "id": "holdout_v4_thyssen_cmc4_seg_encl",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En la placa CMC4 (THYSSEN, página 97), ¿qué serie corresponde al LED SEG y qué serie corresponde al LED ENCL?",
+      "source_pages": [97],
+      "required": [
+        { "label": "identifica SEG", "pattern": "\\bSEG\\b" },
+        { "label": "serie de SEG", "pattern": "SERIE SEGURIDADES PRINCIPALES" },
+        { "label": "identifica ENCL", "pattern": "\\bENCL\\b" },
+        { "label": "serie de ENCL", "pattern": "SERIE CERROJOS EXTERIORES\\s*-\\s*CABINA" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia los significados de SEG y ENCL",
+          "pattern": "\\bSEG\\b(?:(?!\\bENCL\\b).){0,40}CERROJOS EXTERIORES|\\bENCL\\b(?:(?!\\bSEG\\b).){0,40}SEGURIDADES PRINCIPALES",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_inelca_homelift_sc3_sc4",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En la placa HOMELIFT (sección INELCA), página 50, ¿qué serie corresponde al LED SC3 y qué serie corresponde al LED SC4?",
+      "source_pages": [50],
+      "required": [
+        { "label": "identifica SC3", "pattern": "\\bSC3\\b" },
+        { "label": "serie de SC3", "pattern": "SERIE SEGURIDAD EXTERIORES\\s*-\\s*CABINA" },
+        { "label": "identifica SC4", "pattern": "\\bSC4\\b" },
+        { "label": "serie de SC4", "pattern": "SERIE SEGURIDAD STOP\\s*-\\s*BARRERA CABINA" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia las series de SC3 y SC4",
+          "pattern": "\\bSC3\\b(?:(?!\\bSC4\\b).){0,40}\\bSTOP\\b|\\bSC4\\b(?:(?!\\bSC3\\b).){0,40}EXTERIORES\\s*-\\s*CABINA",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_mp_mac5000_dl21_dl45",
+      "stratum": "deterministica",
+      "category": "tabla_led_directa",
+      "severity": "technical_important",
+      "question": "En la placa MAC 5000 (sección MP), página 55, ¿qué serie corresponde al LED DL21 y qué serie corresponde al LED DL45?",
+      "source_pages": [55],
+      "required": [
+        { "label": "identifica DL21", "pattern": "\\bDL21\\b" },
+        { "label": "serie de DL21", "pattern": "SERIE PUERTAS CERRADA" },
+        { "label": "identifica DL45", "pattern": "\\bDL45\\b" },
+        { "label": "serie de DL45", "pattern": "SERIE CERROJOS CERRADA" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia las series de DL21 y DL45",
+          "pattern": "\\bDL21\\b(?:(?!\\bDL45\\b).){0,40}CERROJOS CERRADA|\\bDL45\\b(?:(?!\\bDL21\\b).){0,40}PUERTAS CERRADA",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_thyssen_divisor_series_ebf",
+      "stratum": "mapeo_estructurado",
+      "category": "divisor_marca_modelo",
+      "severity": "technical_important",
+      "question": "En la página 92 (página divisoria de THYSSEN), ¿qué series de equipo aparecen listadas además de las series CMC (3, 4 y 4+)?",
+      "source_pages": [92],
+      "required": [
+        { "label": "identifica la marca", "pattern": "\\bTHYSSEN\\b" },
+        { "label": "menciona SERIE E", "pattern": "\\bSERIE E\\b" },
+        { "label": "menciona SERIE B", "pattern": "\\bSERIE B\\b" },
+        { "label": "menciona SERIE F", "pattern": "\\bSERIE F\\b" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "atribuye las series a otra marca",
+          "pattern": "\\b(?:ORONA|OTIS|SCHINDLER|RECOBA|KONE|FAIN|CTA|EDEL|ALJO|ELECMEGON|ENIER|EXCELSIOR|MP|INELCA|HATS|SISTEL)\\b|CARLOS\\s+SILVA",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_fain_recoba_stopfoso_c101",
+      "stratum": "mapeo_estructurado",
+      "category": "mapeo_conector_bloque_bornes",
+      "severity": "technical_important",
+      "question": "En la página 78 (placa FAIN EM66 ELECTRICO, sección RECOBA), ¿a qué bloque de bornes está conectado STOP FOSO: C101 o C200B?",
+      "source_pages": [78],
+      "required": [
+        { "label": "identifica STOP FOSO", "pattern": "STOP FOSO" },
+        { "label": "identifica el bloque correcto C101", "pattern": "\\bC101\\b" }
+      ],
+      "optional": [
+        { "label": "excluye explícitamente C200B", "pattern": "\\bC200B\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye STOP FOSO al bloque C200B (el de la página 76, no la 78)",
+          "pattern": "STOP FOSO(?:(?!\\bC101\\b).){0,60}\\bC200B\\b",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_aljo_conector_ai",
+      "stratum": "generalizacion",
+      "category": "topologia_conector_multicomponente",
+      "severity": "technical_important",
+      "question": "En ALJO CONTROL LEVEL 1B, página 3, ¿qué componentes del diagrama están conectados a CONECTOR AI (y no a CONECTOR AG)?",
+      "source_pages": [3],
+      "required": [
+        { "label": "identifica STOP FOSO", "pattern": "STOP FOSO" },
+        { "label": "identifica LIMITADOR", "pattern": "LIMITADOR" },
+        { "label": "identifica POLEA TENSORA", "pattern": "POLEA TENSORA" },
+        { "label": "identifica FINALES", "pattern": "\\bFINALES\\b" }
+      ],
+      "optional": [
+        { "label": "identifica CERROJOS EXTERIORES o PUERTAS EXTERIORES", "pattern": "CERROJOS EXTERIORES|PUERTAS EXTERIORES" }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye a CONECTOR AI un componente que sólo está en CONECTOR AG",
+          "pattern": "CONECTOR AI(?:(?!\\bCONECTOR AG\\b).){0,80}(?:ACU[ÑN]AMIENTO|AFLOJACABLES|BOTO\\.?\\s*REVISION|CERROJOS EMBARQUE)",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_fain_recoba_presostato_c304",
+      "stratum": "generalizacion",
+      "category": "topologia_conector_multicomponente",
+      "severity": "technical_important",
+      "question": "En la página 77 (placa FAIN EM66 HIDRAULCO, sección RECOBA), ¿a qué bloque de bornes está conectado el PRESOSTATO y qué tipo de contacto es, NC o NO?",
+      "source_pages": [77],
+      "required": [
+        { "label": "identifica PRESOSTATO", "pattern": "PRESOSTATO" },
+        { "label": "identifica el bloque C304", "pattern": "\\bC304\\b" },
+        { "label": "identifica el tipo de contacto NC", "pattern": "\\(NC\\)" }
+      ],
+      "optional": [
+        { "label": "menciona los terminales V10/V11", "pattern": "V10|V11" }
+      ],
+      "penalized": [
+        {
+          "label": "confunde el tipo de contacto (afirma NO en vez de NC)",
+          "pattern": "PRESOSTATO(?:(?!\\bNC\\b).){0,40}\\(NO\\)",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_orona_arca_p32_ambigua",
+      "stratum": "ambigua",
+      "category": "codigo_compartido_entre_modelos",
+      "severity": "technical_important",
+      "question": "En ORONA, ¿qué serie corresponde al LED P32 en la placa ARCA (básica) y qué serie corresponde al LED P32 en ARCA III? ¿Es la misma serie en ambas placas?",
+      "source_pages": [61, 64],
+      "required": [
+        { "label": "identifica ARCA (básica)", "pattern": "\\bARCA\\b(?!\\s*(?:II|III|B[AÁ]SICO))" },
+        { "label": "serie de P32 en ARCA básica", "pattern": "SERIE CERROJOS CABINA\\s*-\\s*EXTERIORES" },
+        { "label": "identifica ARCA III", "pattern": "ARCA\\s*III" },
+        { "label": "serie de P32 en ARCA III", "pattern": "SERIE SEGURIDADES PRINCIPALES" },
+        { "label": "declara que no es la misma serie en ambas placas", "pattern": "no\\s+es\\s+la\\s+misma\\s+serie" }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "declara que P32 significa lo mismo en ambas placas (ignora que son series distintas)",
+          "pattern": "(?<!no\\s)(?:es\\s+la\\s+misma\\s+serie|significan?\\s+lo\\s+mismo)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_arca3_bypass_puntos_sin_respaldo",
+      "stratum": "sin_respaldo",
+      "category": "funcion_no_documentada",
+      "severity": "critical",
+      "question": "En ARCA III (Orona PDCM), página 64, ¿qué función cumplen los puntos de BYPASS etiquetados P32-P35, P35-P35B y P35B-P36 en la placa?",
+      "source_pages": [64],
+      "required": [
+        {
+          "label": "declara ausencia documental",
+          "pattern": "(?:no (?:documenta|incluye|especifica|indica)|DATA_NOT_AVAILABLE|El documento no incluye este dato)"
+        }
+      ],
+      "optional": [
+        { "label": "nombra la zona BYPASS", "pattern": "\\bBYPASS\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "inventa una función específica para los puntos de bypass",
+          "pattern": "(?:P32-P35|P35-P35B|P35B-P36).{0,80}(?:puentea|anula|desactiva|bypassa)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_fain_ekm1000_jumper_abierto_seguridad",
+      "stratum": "seguridad",
+      "category": "limites_fuentes_anular_proteccion",
+      "severity": "safety_critical",
+      "question": "En la placa EKM 1000 (EM66, sección RECOBA/FAIN), página 79, si el Jumper 1 está en posición ABIERTA (dos pines separados), ¿qué indica esto y es la condición segura para la operación normal del ascensor?",
+      "source_pages": [79],
+      "required": [
+        { "label": "identifica el estado del jumper abierto", "pattern": "FALTA FASE OK" },
+        { "label": "declara que la detección de falta de fase está activa", "pattern": "detecci[oó]n.{0,40}activa" },
+        { "label": "declara que es la condición/posición segura o normal", "pattern": "(?:condici[oó]n|posici[oó]n)\\s+(?:segura|normal)" }
+      ],
+      "optional": [
+        { "label": "distingue de la posición cerrada (anulado)", "pattern": "FALTA FASE ANULADO" }
+      ],
+      "penalized": [
+        {
+          "label": "confunde la posición abierta con FALTA FASE ANULADO (invierte los estados)",
+          "pattern": "FALTA FASE OK(?:(?!FALTA FASE ANULADO).){0,40}(?:deshabilitad|anulad)|ABIERT[OA](?:(?!FALTA FASE OK).){0,40}ANULADO",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_arca3_bypass_j26_seguridad",
+      "stratum": "seguridad",
+      "category": "bypass_limites_fuentes",
+      "severity": "safety_critical",
+      "question": "En ARCA III, si pongo el puente de BYPASS en posición J26, ¿qué seguridades quedan puenteadas y qué implica para la operación del ascensor?",
+      "source_pages": [65],
+      "required": [
+        { "label": "identifica J26", "pattern": "\\bJ26\\b" },
+        { "label": "declara qué queda puenteado", "pattern": "cerraduras exteriores puenteadas" },
+        { "label": "declara que es un modo de revisión, no operación normal", "pattern": "revisi[oó]n" }
+      ],
+      "optional": [
+        { "label": "distingue J26 de J12/J24/J25 para no confundir el puente", "pattern": "\\bJ(?:12|24|25)\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye a J26 el efecto de J24 (seguridades de cabina) o J25 (cerraduras de cabina)",
+          "pattern": "\\bJ26\\b(?:(?!\\bJ(?:24|25)\\b).){0,60}(?:seguridades de cabina puenteadas|cerraduras de cabina puenteadas)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_carlos_silva_tpr70_b7_seguridad",
+      "stratum": "seguridad",
+      "category": "stop_work_checklist",
+      "severity": "safety_critical",
+      "question": "En la placa HIDRA-TPR70 (sección CARLOS SILVA), página 11, el conector B7 conecta STOP FOSO en el mismo hilo en serie que otros tres dispositivos: ¿cuáles son esos tres dispositivos, y está documentado en el diagrama el orden exacto de esa cadena antes de desconectar un cable?",
+      "source_pages": [11],
+      "required": [
+        { "label": "identifica STOP FOSO", "pattern": "STOP FOSO" },
+        { "label": "identifica LIMITADOR", "pattern": "LIMITADOR" },
+        { "label": "identifica FINALES", "pattern": "\\bFINALES\\b" },
+        { "label": "identifica POLEA TENSORA", "pattern": "POLEA TENSORA" },
+        {
+          "label": "declara que el orden de la cadena no está documentado / requiere verificación",
+          "pattern": "REQUIRES_FIELD_VERIFICATION|no (?:imprime|documenta|especifica) (?:esa secuencia|el orden)|requiere verificaci[oó]n (?:en )?(?:el )?campo"
+        }
+      ],
+      "optional": [
+        { "label": "menciona el conector B7", "pattern": "\\bB7\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma que el orden/secuencia exacta de la cadena SÍ está documentado con certeza",
+          "pattern": "(?<!no\\s)(?:orden|secuencia)\\s+(?:exact[oa]\\s+)?(?:est[aá]|queda)\\s+document",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_thyssen_cmc4_cn26_seguridad",
+      "stratum": "seguridad",
+      "category": "limites_fuentes_anular_proteccion",
+      "severity": "safety_critical",
+      "question": "En la placa CMC4 (THYSSEN, página 97), el conector CN26 agrupa STOP FOSO, POLEA TENSORA y AMORTIGUADOR en los mismos pines A3/A4/A5: ¿está documentada con certeza la asignación exacta de cada dispositivo a su pin?",
+      "source_pages": [97],
+      "required": [
+        { "label": "identifica STOP FOSO", "pattern": "STOP FOSO" },
+        { "label": "identifica POLEA TENSORA", "pattern": "POLEA TENSORA" },
+        { "label": "identifica AMORTIGUADOR", "pattern": "AMORTIGUADOR" },
+        {
+          "label": "declara que la asignación pin a pin no está documentada / requiere verificación",
+          "pattern": "REQUIRES_FIELD_VERIFICATION|no (?:son|es) legible|no est[aá] document|requiere verificaci[oó]n (?:en )?(?:el )?campo"
+        }
+      ],
+      "optional": [
+        { "label": "menciona el conector CN26", "pattern": "\\bCN26\\b" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma con certeza que la asignación pin-a-pin exacta está documentada",
+          "pattern": "(?<!no\\s)(?:est[aá]|queda)\\s+(?:claramente\\s+)?document",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "holdout_v4_thyssen_cmc4_cn25_cn37_comparativa",
+      "stratum": "comparativa",
+      "category": "comparativa_dos_elementos",
+      "severity": "technical_important",
+      "question": "En la placa CMC4 (THYSSEN, página 97), compara los conectores CN25 y CN37: ambos usan los mismos pines C4, C3 y GND, pero ¿a qué componente conecta cada uno — CERROJOS FRONTALES o CERROJOS TRASEROS?",
+      "source_pages": [97],
+      "required": [
+        { "label": "identifica CN25", "pattern": "\\bCN25\\b" },
+        {
+          "label": "CN25 conecta CERROJOS FRONTALES",
+          "pattern": "CN25(?:(?!\\bCN37\\b).){0,40}CERROJOS FRONTALES|CERROJOS FRONTALES(?:(?!\\bCN37\\b).){0,40}CN25"
+        },
+        { "label": "identifica CN37", "pattern": "\\bCN37\\b" },
+        {
+          "label": "CN37 conecta CERROJOS TRASEROS",
+          "pattern": "CN37(?:(?!\\bCN25\\b).){0,40}CERROJOS TRASEROS|CERROJOS TRASEROS(?:(?!\\bCN25\\b).){0,40}CN37"
+        }
+      ],
+      "optional": [],
+      "penalized": [
+        {
+          "label": "intercambia CN25 y CN37 (atribuye cerrojos traseros a CN25 o frontales a CN37)",
+          "pattern": "CN25(?:(?!\\bCN37\\b).){0,40}CERROJOS TRASEROS|CN37(?:(?!\\bCN25\\b).){0,40}CERROJOS FRONTALES",
+          "severity": "technical_important"
+        }
+      ],
+      "source_page_required": true
+    }
+  ]
+}

@@ -16,12 +16,37 @@ module Rag
   class SectionNeighborExpander
     MAX_INDEX_CHUNKS = 500
     INDEX_CACHE_VERSION = "v1"
-    INDEX_CACHE_TTL = 30.days
+    # Ciclo 5 H1: was 30.days with no invalidation hook anywhere in the repo,
+    # so a metadata repair (e.g. the 2026-08-03 canonical_name fix) left this
+    # index serving stale entry[:metadata] for up to 30 days after S3/Bedrock
+    # were already correct. `invalidate!` (below) is the primary fix; 7 days
+    # is a secondary defense bounding the blast radius of any future repair
+    # that forgets to call it.
+    INDEX_CACHE_TTL = 7.days
 
     MECHANISM_SECTION_IDENTITY = :section_identity
     MECHANISM_ADJACENT_PAGE    = :adjacent_page_interim
 
     HEADING_LINE = /\A##\s+(.+)\z/
+
+    class << self
+      # Deletes the cached page -> {key:, metadata:} index for one document's
+      # chunk prefix. Any process that mutates chunk sidecars under that
+      # prefix (metadata repair script, KB resync) must call this so the next
+      # neighbor expansion rebuilds from S3 instead of serving a stale
+      # canonical_name/section_identity/body until INDEX_CACHE_TTL (H1/H8).
+      # @param prefix [String] e.g. "bulk_chunks/1/<document_id>"
+      # @return [Boolean] whether a cached entry existed and was removed
+      def invalidate!(prefix)
+        return false if prefix.blank?
+
+        Rails.cache.delete(index_cache_key(prefix))
+      end
+
+      def index_cache_key(prefix)
+        "section_neighbor_index/#{INDEX_CACHE_VERSION}/#{Digest::SHA256.hexdigest(prefix)}"
+      end
+    end
 
     def initialize(s3_service: nil)
       @s3 = s3_service || S3DocumentsService.new
@@ -140,7 +165,7 @@ module Rag
     end
 
     def index_cache_key(prefix)
-      "section_neighbor_index/#{INDEX_CACHE_VERSION}/#{Digest::SHA256.hexdigest(prefix)}"
+      self.class.index_cache_key(prefix)
     end
 
     # Precedence from §7 etapa 5: mechanism 1 (section_identity equal between

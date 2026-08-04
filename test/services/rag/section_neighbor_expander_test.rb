@@ -165,6 +165,57 @@ class Rag::SectionNeighborExpanderTest < ActiveSupport::TestCase
     Rails.cache = previous_cache
   end
 
+  # Ciclo 5 H1: the page index cached the entry[:metadata] snapshot from
+  # whichever moment it was built. A metadata repair (canonical_name fix)
+  # that never invalidates this key kept citations wrong for up to
+  # INDEX_CACHE_TTL after S3/Bedrock were already correct. `invalidate!` is
+  # the fix; these tests pin its exact key derivation and blast radius.
+  test "invalidate! deletes exactly the cached index for the given prefix" do
+    previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    prefix = "bulk_chunks/1/doc"
+    other_prefix = "bulk_chunks/1/other-doc"
+    Rails.cache.write(Rag::SectionNeighborExpander.index_cache_key(prefix), { prefix: prefix, pages: {} })
+    Rails.cache.write(Rag::SectionNeighborExpander.index_cache_key(other_prefix), { prefix: other_prefix, pages: {} })
+
+    result = Rag::SectionNeighborExpander.invalidate!(prefix)
+
+    assert result
+    assert_nil Rails.cache.read(Rag::SectionNeighborExpander.index_cache_key(prefix))
+    assert Rails.cache.read(Rag::SectionNeighborExpander.index_cache_key(other_prefix)),
+      "invalidate! must not touch a different prefix's cached entry"
+  ensure
+    Rails.cache = previous_cache
+  end
+
+  test "invalidate! is a no-op that returns false for a blank prefix" do
+    assert_equal false, Rag::SectionNeighborExpander.invalidate!(nil)
+    assert_equal false, Rag::SectionNeighborExpander.invalidate!("")
+  end
+
+  test "a repaired index is rebuilt from S3 on the next expansion after invalidate!" do
+    previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    s3 = FakeS3.new(
+      "bulk_chunks/1/doc/chunk_1.txt" => "LED ABC12 | SERIE SEGURIDAD",
+      "bulk_chunks/1/doc/chunk_1.txt.metadata.json" => JSON.generate(
+        "metadataAttributes" => { "page_number" => 4, "section_identity" => "SECTION-A" }
+      )
+    )
+    divider_chunk = divider(content: "Página divisoria", metadata: { "section_identity" => "SECTION-A" })
+    expander = Rag::SectionNeighborExpander.new(s3_service: s3)
+    assert expander.neighbor_chunk(divider_chunk: divider_chunk, target_page: 4)
+    assert_equal 1, s3.list_calls
+
+    assert Rag::SectionNeighborExpander.invalidate!("bulk_chunks/1/doc")
+
+    fresh_expander = Rag::SectionNeighborExpander.new(s3_service: s3)
+    assert fresh_expander.neighbor_chunk(divider_chunk: divider_chunk, target_page: 4)
+    assert_equal 2, s3.list_calls, "invalidate! must force a real S3 rebuild, not serve the stale cache"
+  ensure
+    Rails.cache = previous_cache
+  end
+
   test "discards a corrupt cached page index and rebuilds it" do
     previous_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new

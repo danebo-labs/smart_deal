@@ -298,4 +298,15 @@ end
 puts
 
 abort("KB ingestion job ended with status #{status}") unless status == "COMPLETE"
+
+# Ciclo 5 Fase 1 (H1/H2, 2026-08-04): this repair originally shipped with no
+# Rag::SectionNeighborExpander cache invalidation hook, so the corrected
+# canonical_name above kept serving stale ("ALJO Control Level 1B Altius")
+# for up to 30 days from Rails.cache after S3/Bedrock were already fixed.
+# Added retroactively as the reference pattern for any future sidecar
+# repair under this prefix — a re-run of this exact script now aborts
+# earlier at the ETag check, so this call only takes effect on a fresh
+# repair script that reaches this point.
+Rag::SectionNeighborExpander.invalidate!(CHUNK_PREFIX)
+
 puts "\nRESULT: OK — #{sidecar_records.size} sidecars (2a) + 1 chunk body (2c) patched, KB sync COMPLETE"

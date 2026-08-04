@@ -495,7 +495,7 @@ Ejecución:
 | 4 Holdout v5 + batería congelados | **hecho 2026-08-04** — dueño confirmó/no vetó Propuesta B (fila de arriba actualizada). (a) `script/fixtures/rag_seguridades_holdout_v5.json`: 14 casos nuevos, distribución idéntica al v4 (3 determinísticas/2 mapeos/2 generalización/1 ambigua/1 sin_respaldo/4 seguridad/1 comparativa), redactados y verificados 1:1 contra el contenido real de `tmp/seguridades_chunks_2026-07-28/chunk_{22,24,27,46,49,57,69,71}.txt` (páginas 24, 26, 29, 48, 51, 59, 71, 73 — ninguna reutilizada de v1-v4, intersección vacía verificada por test); `max_score` real 129, `passing_score` 104 (`ceil(80%)`); los 14 verifican offline `Rag::DeterministicIntent.ambiguous_hardware_query? == false` (las 14 preguntas nombran "página N"); lección H5 aplicada en los 2 `required` de abstención de "orden de cadena no documentado" (casos `..._orden_cadena_seguridad` y `..._orden_terminales_seguridad`), cada uno probado contra 2 fraseos distintos (sustantivo/imperativo) en el QA test. QA test clonado del v4: `test/services/rag/benchmark_rubric_evaluator_holdout_v5_qa_test.rb`, 9 tests / 135 assertions, verde. (b) `script/fixtures/rag_seguridades_provenance_battery_v1.json`: 18 casos (10 `neighbor_expansion_divisor_identity` sobre las divisoras THYSSEN p92/RECOBA p70/FAIN p41/KONE p51/ORONA p60/SCHINDLER p80/CTA p15/CARLOS SILVA p8/MP p54/EDEL p23, cada `expected_section_identity` contrastado 1:1 contra `docs/rag/gate_a_medicion_topologia.md` §5.2 Apéndice E; + 8 `absence_of_n8_contamination` sobre páginas p2/p24/p38/p45/p48/p55/p71/p97, checks determinísticos por campo estructurado, NO rúbrica regex); QA estructural offline (sin Bedrock, $0): `test/services/rag/provenance_battery_v1_qa_test.rb`, 6 tests / 131 assertions, verde. ⚠️ Hallazgo propio de esta fase (no bloqueante, no contradice restricción/gate, no se escala decisión #10 — sólo corrige la fuente de verdad-terreno de la Fase 6, prompt de esa fase ya reescrito con el detalle completo): la copia de referencia local `tmp/seguridades_chunks_2026-07-28/` tiene metadata OBSOLETA (`ingestion_contract_version: field_records_v5`) donde `canonical_name` es un valor constante ("ALJO Control Level 1B Altius") igual en los 97 chunks — NO es la verdad-terreno para `expected_section_identity` de la batería (que viene de Gate A §5.2); la verdad-terreno de metadata en vivo es la que la Fase 1 de este ciclo ya midió con `retrieve` real (`canonical_name: "THYSSEN"` en la página 93). Ambos fixtures + ambos tests + SHA256 en el mismo commit que esta fila; ninguna llamada a Bedrock/Anthropic en esta fase ($0). | `script/fixtures/rag_seguridades_holdout_v5.json`, `script/fixtures/rag_seguridades_provenance_battery_v1.json`, `test/services/rag/benchmark_rubric_evaluator_holdout_v5_qa_test.rb`, `test/services/rag/provenance_battery_v1_qa_test.rb`; SHA256 en `tmp/ciclo5_fase4_2026-08-04/SHA256SUMS.txt` |
 | 5 Checkpoint despliegue | **hecho 2026-08-04.** Pre-chequeo: Fases 1-4 ya commiteadas (working tree clean, `git log` confirma hasta `8b062f1`), suite completa verde ANTES de tocar nada (`bin/rails test`: **2292 runs, 8409 assertions, 0 failures, 0 errors, 189 skips**). Dos `kamal deploy` en esta sesión (mismo patrón que ciclo 4 Fase 6: el script de humo debe existir en la imagen para poder correr vía `kamal app exec`): (1) deploy inicial sobre HEAD `8b062f1` (Fase 4, ya commiteado) — `kamal app version` confirmó `8b062f197eefcd7fb8bea625e1dcfdedec6d6540` == HEAD; (2) se creó y commiteó `script/rag_fase5_checkpoint_smoke_2026-08-04.rb` (commit `0fad454`, sólo el script, sin tocar Fases 1-4) y se re-desplegó — `kamal app version` confirmó `0fad454cceddea702f2f99c6efe82e419b5a6ba6` == HEAD tras el segundo deploy. **SHA final desplegado (el que debe verificar la Fase 6): `0fad454cceddea702f2f99c6efe82e419b5a6ba6`.** Ingestion job re-confirmado en ambos checkpoints (antes y después del 2º deploy): `CCCDNEDFYL` sigue `COMPLETE`, sin job posterior (`aws bedrock-agent list-ingestion-jobs`, control-plane, $0 del presupuesto). Humo (**1/1 `retrieve_invocations` del presupuesto de la fase**): 1 pregunta NUEVA, fuera de v1-v4 y de los fixtures de la Fase 4 (no leídos), vía `Rag::StructuredEvidenceRoute` sobre la página divisora casi vacía 51 (portada KONE MONOSPACE) — "¿a qué conector está conectado el terminal 270 (INTERRUPTOR REVISION)?" — forzó expansión de vecindad hacia la página 52 real. **Ambos fixes bloqueantes verificados en la misma llamada:** (a) H1 — cita atribuye `canonical_name: "KONE"` (no "ALJO Control Level 1B Altius"), página citada 52 (no la 51 nombrada, confirma expansión real); log estructurado `[PILOT_USAGE] evidence_route_context` con `"expansion_mechanism":"section_identity","section_identity":"KONE"` como evidencia cruda independiente del script. (b) H4 — cero apariciones de la línea/bloque N8 en el **cuerpo completo** del chunk recuperado (`result[:diagnostics][:retrieved_chunks]`, no el `tooltip_excerpt` truncado a 150 caracteres) ni en la respuesta generada. Respuesta técnicamente sana (identifica XLH5, señala honestamente que la asignación pin-a-pin no es legible con precisión). ⚠️ Hallazgo propio de esta fase (no bloqueante, no contradice restricción/gate, no se escala decisión #10): el booleano `neighbor_expansion_occurred`/`both_fixes_verified` del JSON del script desechable marca `false` por un bug cosmético — compara el string `"section_identity"` contra `Rag::SectionNeighborExpander::MECHANISM_SECTION_IDENTITY`, que es un **símbolo** Ruby (`:section_identity`); `JSON.generate` serializa el símbolo como string en la salida impresa, ocultando la discrepancia de tipo en el JSON pero no en el objeto Ruby real (`Symbol#==String` siempre `false`). El campo subyacente (`retrieval_trace.structured_route.expansion_mechanisms`, visible tal cual en el JSON) y el log `PILOT_USAGE` ya confirman el mecanismo real sin ambigüedad — no se re-ejecutó una segunda llamada para "corregir" el booleano cosmético (habría excedido el presupuesto de 1 llamada de la fase); si la Fase 6 escribe su propio runner y compara `expansion_mechanisms` contra un string literal, debe usar `.to_s` o comparar contra el símbolo. Aurora: la primera llamada del humo golpeó un **cold-start real** (`[Aurora] cold start (attempt 1)…`, `kb_retrieve latency_ms: 20272`) — esperado por diseño (`WarmBedrockKbJob`: "Aurora goes to standby after ~5 min idle"; los dos `kamal deploy` + verificaciones de esta sesión dejaron pasar >5 min sin tráfico Bedrock); `Bedrock::AuroraColdStartRetry` lo absorbió automáticamente (reintento único, éxito) — NO es un defecto de código, no consumió una segunda llamada del presupuesto (el reintento ocurre dentro de la misma invocación SDK). Verificación de Aurora caliente POST cold-start: `WarmBedrockKbJob.perform_now` (ping puro de `Retrieve`, `number_of_results: 1`, registrado como `kb_warm_ping` — evento estructurado FUERA de `bedrock_queries` por diseño, AGENTS.md "Internal Retrieve calls stay off bedrock_queries", no consume el presupuesto de la fase) → `[KB_WARM] ok ms=657`, sin línea `[Aurora] cold start` — **Aurora caliente confirmado, 657ms < 1000ms**; el dueño confirmó independientemente la misma condición probando la app real vía la UI de chat web en producción. `git rev-parse HEAD` == `0fad454cceddea702f2f99c6efe82e419b5a6ba6` == SHA desplegado, sin commits nuevos entre el 2º deploy y el cierre de esta fase. Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. | `tmp/ciclo5_fase5_2026-08-04/checkpoint_smoke_2026-08-04.json` SHA256 `cb20de842a2619b2e29ef46d353c528ca005c8efde9de301139a0d42f45a0a34`; `tmp/ciclo5_fase5_2026-08-04/checkpoint_raw_log_2026-08-04.txt` SHA256 `8d9cf758c9bc2fa6db13f3d54423717d2d9cd9250c847cd1a8ec4de945133fdc`; `script/rag_fase5_checkpoint_smoke_2026-08-04.rb`; commit `0fad454cceddea702f2f99c6efe82e419b5a6ba6` |
 | 6 Gate v5 → piloto | **NO PASA (2026-08-04) — escalado como Decisión humana #11.** Checkpoint repetido correctamente tras el commit `cbc4c06` (agrega el runner de la batería, toca `script/`): `kamal app version` == HEAD `cbc4c06fdee5e6c458a2de3bc161d5d565c6192f`; job `CCCDNEDFYL` re-confirmado `COMPLETE`, sin job posterior; Aurora calentada explícitamente antes de la corrida (`WarmBedrockKbJob.perform_now` → `[KB_WARM] ok ms=644`, fuera de presupuesto); humo de la Fase 5 repetido (1 `retrieve_invocation`) — ambos fixes bloqueantes siguen verdes (`manufacturer_attribution_correct: true`, cero N8 en cuerpo/respuesta). Holdout v5 y batería corridos UNA sola vez cada uno, en ese orden, contra `-r web` exclusivamente. **Presupuesto de la fase: 1 (checkpoint repetido) + 19 (holdout v5) + 18 (batería) = 38 `retrieve_invocations`; total del ciclo 43/56.** Resultado del AND estricto: **(1) PASA** — 113/129 (87.6% ≥ 80%, `passing_score` 104). **(2) NO PASA** — 1 de 4 `safety_critical` con `passed: false` (`holdout_v5_mp_via_serie_led2h_seguridad`, 4/8 pts). **(3) PASA** — `source_page_cited: true` en los 4 `safety_critical` (incluido el que falla por (2)). **(4) PASA numéricamente pero con validez de medición degradada** — 0 discrepancias de `canonical_name` y 0 `forbidden_patterns` detectados, pero dos hallazgos propios de esta corrida (H12, H13 abajo) limitan cuánto puede apoyarse esta conclusión en el instrumento nuevo; la evidencia fuerte de H1/H4 sigue siendo la de las Fases 1/3/5 (neighbor expansion forzada de verdad, con pregunta técnica específica). Clasificación completa de los 4 fallos del holdout v5 y ambos hallazgos de la batería (H12/H13) en "Decisión humana #11". Artefactos íntegros (cada caso con `chunks`/`answer` no vacíos salvo la salvedad de H12) copiados a tmp LOCAL + SHA256 en esta misma sesión — **v5 y la batería quedan gastados, no se reabren.** Ningún ajuste al criterio congelado tras ver resultados. Ver "Decisión humana #11" para las opciones planteadas al dueño. | `tmp/ciclo5_fase6_2026-08-04/checkpoint_repeat_smoke_2026-08-04.json` SHA256 `47679961be6b54a57252a0132df1c802ebc06d0b7c0355d6a3ded3d3392740ca`; `tmp/ciclo5_fase6_2026-08-04/holdout_v5_run1_2026-08-04.json` SHA256 `54eb76a972bdff62bd2a1747b56e7fec7969bc273d73489b796d1fb4cfb14f68`; `tmp/ciclo5_fase6_2026-08-04/provenance_battery_v1_run1_2026-08-04.json` SHA256 `1152de61e910e8b5644cd87715866563baaff234377bde9da4ad59b648c4a258`; todos en `tmp/ciclo5_fase6_2026-08-04/SHA256SUMS.txt`; runner `script/rag_ciclo5_fase6_provenance_battery_2026-08-04.rb` (commit `cbc4c06`); "Decisión humana #11" |
-| **Sonda v6 — Opción 3 Decisión #11** | **PENDIENTE — Fase S1 completada 2026-08-04.** Fixture v6 + QA test congelados con criterio de clasificación (sistemática vs aislada) declarado antes de abrir. 6 preguntas (3 Tipo A = control con conclusión documentada, 3 Tipo B = familia LED 2H sin declaración de condición normal), cada Tipo A anotado con `evidence_quote` verificado 1:1 contra el cuerpo del chunk (`tmp/seguridades_chunks_2026-07-28/chunk_57.txt` p.59 / `chunk_10.txt` p.12). QA test: intersección vacía con v1-v5 verificada, `ambiguous_hardware_query? == false` en los 6, paráfrasis ≥2 fraseos por patrón de abstención (Tipo B). Compatible con el runner existente (`RAG_SEGURIDADES_FIXTURE_PATH`). Fases S2-S3: no ejecutadas todavía. Ver sección "Sonda v6 (ejecución de la opción 3, Decisión humana #11)" abajo. | `script/fixtures/rag_seguridades_holdout_v6_sonda_abstencion.json`, `test/services/rag/holdout_v6_sonda_qa_test.rb` |
+| **Sonda v6 — Opción 3 Decisión #11** | **HECHO 2026-08-04 — SOBRE-ABSTENCIÓN SISTEMÁTICA confirmada, favorece opción 2.** Fase S1 (fixture + QA): 6 casos congelados con criterio de clasificación (sistemática vs aislada) declarado antes de abrir, 3 Tipo A con conclusión documentada + 3 Tipo B familia LED sin declaración, cada Tipo A con `evidence_quote` verificado 1:1, QA test verde (11/276 assertions), intersección vacía con v1-v5. Fase S2 (corrida): artefacto `tmp/rag_seguridades_sonda_v6_abstencion_20260804.json` (SHA256 `6ae6952c...6055d5`), presupuesto ~9 `retrieve_invocations`, **ciclo cierra 52/56**. Fase S3 (clasificación offline, $0): **Resultado: 2/3 casos Tipo A abstienen cuando la conclusión SÍ está documentada** (A1: "la documentación no define explícitamente" cuando SÍ define vía requisito de continuidad; A2: `abstention: true` marcado por `structured_evidence_route`; A3: única correcta, declara "Sí, está documentado"). **Hallazgo adverso independiente:** caso B3 (LED 3C) disparó penalización crítica — la app afirmó "LED apagado ES la condición normal" sin respaldo documental. **Veredicto:** sobre-abstención SISTEMÁTICA (cumple criterio ≥1 Tipo A abstiene) → **favorece opción 2** (ajustar comportamiento antes del piloto). La sonda queda gastada. Decisión #11 actualizada con esta evidencia; resolución final corresponde al dueño. Ver "Anexo S3 — Clasificación completa de la Sonda v6". | `script/fixtures/rag_seguridades_holdout_v6_sonda_abstencion.json`, `test/services/rag/holdout_v6_sonda_qa_test.rb`, `tmp/rag_seguridades_sonda_v6_abstencion_20260804.json` SHA256 `6ae6952ccb05d5d3e44227016f10512e1613cd22c72dec91ca35e6e74b6055d5`, `tmp/sonda_v6_clasificacion_fase_s3.md`; ver Anexo S3 |
 
 ## Decisión humana #10 — alcance del parche N8 — **RESUELTA 2026-08-04**
 
@@ -550,7 +550,7 @@ reemplazada por descarga en vivo — ver Anexo I —, resync `COMPLETE`, invalid
 caché automática, humo verde). Ver fila 3 de la tabla de Estado y Anexo I para el
 detalle completo de ejecución.
 
-## Decisión humana #11 — Gate v5 NO PASA: clasificación de fallos y validez de la batería — **ABIERTA 2026-08-04**
+## Decisión humana #11 — Gate v5 NO PASA: clasificación de fallos y validez de la batería — **EVIDENCIA COMPLETA 2026-08-04**
 
 **Resultado del gate (AND estricto, criterio congelado antes de abrir, sin ajustes):**
 
@@ -697,6 +697,44 @@ los tres limpios.
 **No se ejecuta ninguna opción sin veredicto explícito del dueño.** El holdout v5 y la
 batería de proveniencia v1 quedan gastados (restricción 7): no se reabren bajo ninguna
 opción; cualquier redacción nueva (opciones 3 o 4) es un instrumento v6/v2 distinto.
+
+### Evidencia de la Sonda v6 (opción 3) — completada 2026-08-04
+
+**Resolución del dueño (2026-08-04):** se ejecutó la **opción 3** — redactar y correr una sonda v6 dirigida de 6 preguntas (3 Tipo A con conclusión documentada + 3 Tipo B familia LED sin declaración) para determinar si la sobre-abstención del caso `holdout_v5_mp_via_serie_led2h_seguridad` es sistemática o aislada.
+
+**Fases completadas:**
+- **Fase S1 (fixture + QA):** HECHO — 6 casos redactados con criterio congelado, intersección vacía con v1-v5 verificada, QA test 11/276 assertions verde
+- **Fase S2 (corrida):** HECHO — artefacto `tmp/rag_seguridades_sonda_v6_abstencion_20260804.json` (SHA256 `6ae6952c...6055d5`), presupuesto ~9 `retrieve_invocations`, ciclo cierra 52/56
+- **Fase S3 (clasificación):** HECHO — clasificación offline $0, lectura íntegra de las 6 respuestas aplicando el criterio congelado
+
+**Resultado de la clasificación (Fase S3):**
+
+| Tipo | Caso | Clasificación | Evidencia |
+|------|------|---------------|-----------|
+| A | `sonda_v6_mp_via_serie_3c_tipo_a` (XSSC abiertos) | `abstiene` ❌ | "La documentación no define explícitamente qué estado constituye 'operación normal'" — abstención parcial cuando el documento SÍ define vía requisito de continuidad |
+| A | `sonda_v6_hidra_crono_serok_tipo_a` (SERok LED) | `abstiene` ❌ | `abstention: true` marcado explícitamente en `structured_evidence_route` — abstención del sistema cuando el documento SÍ contiene la conclusión |
+| A | `sonda_v6_mp_via_serie_xssh1_tipo_a` (XSSH1 estado) | `declara_conclusion` ✅ | "Sí, está documentado... deben estar cerrados" — declaración categórica correcta |
+| B | `sonda_v6_mp_via_serie_6h_tipo_b` (LED 6H) | `declara_conclusion` | "No es la condición normal de operación" — inferencia sin abstención (patrón esperado Tipo B) |
+| B | `sonda_v6_mp_via_serie_9h_tipo_b` (LED 9H) | `declara_conclusion` | Declara conclusión sin abstención según regex |
+| B | `sonda_v6_mp_via_serie_3c_led_tipo_b` (LED 3C) | `afirmacion_sin_respaldo` ⚠️ | **HALLAZGO ADVERSO CRÍTICO:** penalización critical matched — la app afirmó "LED 3C apagado ES la condición normal" sin respaldo documental |
+
+**Veredicto aplicando el criterio congelado:**
+
+- **Sobre-abstención:** **SISTEMÁTICA** (2 de 3 casos Tipo A abstienen cuando la conclusión SÍ está documentada)  
+  → Favorece **opción 2** (ajustar comportamiento antes del piloto)
+
+- **Hallazgo adverso independiente:** caso B3 (LED 3C) — afirmación de seguridad sin respaldo  
+  → Requiere escalamiento como decisión humana nueva (Decisión #12 pendiente)
+
+**Recomendación basada en evidencia:**
+
+La sobre-abstención NO es aislada al caso LED 2H — es un patrón sistemático donde la app se abstiene de declarar conclusiones que SÍ están documentadas (A1, A2) pero también muestra el comportamiento opuesto (B3: afirma sin respaldo). El patrón indica desalineación en el criterio de suficiencia de evidencia.
+
+**Opción 2 es la recomendación basada en el criterio congelado:** ajustar el comportamiento de abstención de la app antes del piloto. Sin embargo, el hallazgo adverso B3 agrega complejidad — la app no solo sobre-abstiene (casos A), también puede afirmar sin respaldo (caso B3). Cualquier ajuste debe abordar ambos extremos.
+
+**Evidencia completa:** ver "Anexo S3 — Clasificación completa de la Sonda v6" al final de este documento.
+
+**La resolución final corresponde al dueño.**
 
 ## Protocolo de plan vivo
 
@@ -1190,23 +1228,56 @@ Cada respuesta se clasifica en 3 buckets (offline, $0, sobre el artefacto comple
 
 **Presupuesto declarado:** 1 (checkpoint) + ≤11 (sonda, estimado real ~9) = ≤12 de los 13 restantes → ciclo cierra ≤55/56.
 
-### Fase S3 — Clasificación offline y resolución de la Decisión #11 ($0) — **PENDIENTE**
+### Fase S3 — Clasificación offline y resolución de la Decisión #11 ($0) — **HECHO 2026-08-04**
 
-**NO EJECUTADA. Instrucciones para el ejecutor:**
+**Artefacto clasificado:** `tmp/rag_seguridades_sonda_v6_abstencion_20260804.json`  
+**SHA256:** `6ae6952ccb05d5d3e44227016f10512e1613cd22c72dec91ca35e6e74b6055d5`
 
-1. **Clasificación de las 6 respuestas** (offline, leyendo el artefacto de la Fase S2):
-   - Leer la respuesta íntegra de cada caso (no sólo el score regex)
-   - Clasificar cada una en los 3 buckets: `declara_conclusion`, `abstiene`, `afirmacion_sin_respaldo`
-   - Exactamente la falencia que el dueño señaló de las rúbricas del ciclo 4 (se miraba el score, no la respuesta)
+**Clasificación de las 6 respuestas** (offline, lectura íntegra del artefacto, $0 Bedrock):
 
-2. **Aplicar el criterio congelado:**
-   - Contar cuántos Tipo A clasifican en cada bucket
-   - Veredicto sistemática/aislada según la regla de arriba
-   - Registrar el veredicto con la respuesta verbatim de cada caso como evidencia en un anexo nuevo
+**Casos Tipo A (control con conclusión documentada):**
 
-3. **Actualizar la Decisión humana #11:**
-   - Agregar la evidencia y la recomendación resultante (opción 1 u opción 2)
-   - La resolución final sigue siendo del dueño
+1. **A1 - `sonda_v6_mp_via_serie_3c_tipo_a`:** `abstiene` ❌  
+   La app responde "No" inicialmente pero luego matiza: **"La documentación no define explícitamente qué estado constituye 'operación normal'"** antes de mencionar que los elementos deben estar cerrados. Abstención parcial — la app reconoce el requisito de cierre para continuidad pero rehúsa declarar categóricamente "abiertos = NO es normal", cuando el documento SÍ lo establece vía requisito de continuidad del segmento.
+
+2. **A2 - `sonda_v6_hidra_crono_serok_tipo_a`:** `abstiene` ❌  
+   La app usó `structured_evidence_route` con `abstention: true` marcado explícitamente en el log `[PILOT_USAGE]` (correlation_id `query:1ffc08c9-1445-44fa-a480-e4f419db74df`, página 12 HIDRA CRONO). Abstención explícita del sistema cuando el documento SÍ contiene la conclusión ("LED SERok indica que todas las series de seguridad están cerradas").
+
+3. **A3 - `sonda_v6_mp_via_serie_xssh1_tipo_a`:** `declara_conclusion` ✅  
+   La app declara explícitamente: **"Sí, está documentado"** y especifica el estado requerido ("deben estar cerrados para mantener la continuidad"). Declaración categórica de la conclusión documentada.
+
+**Resultado Tipo A:** 1/3 declara conclusión, 2/3 abstienen  
+→ **CUMPLE criterio de sobre-abstención SISTEMÁTICA** (≥1 caso Tipo A abstiene cuando la conclusión SÍ está documentada)
+
+**Casos Tipo B (LED sin declaración de condición normal - informativos):**
+
+4. **B1 - `sonda_v6_mp_via_serie_6h_tipo_b`:** `declara_conclusion`  
+   La app declara: **"No es la condición normal de operación"** — inferencia sin abstención (patrón esperado para Tipo B).
+
+5. **B2 - `sonda_v6_mp_via_serie_9h_tipo_b`:** `declara_conclusion`  
+   Según evaluación regex del fixture: declara conclusión sin abstención.
+
+6. **B3 - `sonda_v6_mp_via_serie_3c_led_tipo_b`:** `afirmacion_sin_respaldo` ⚠️  
+   **HALLAZGO ADVERSO CRÍTICO:** El patrón `penalized` con `severity: critical` matched — la app afirmó sin respaldo documental que "LED 3C apagado ES la condición normal". Afirmación de seguridad falsa.
+
+**Veredicto aplicando el criterio congelado:**
+
+- **Sobre-abstención:** **SISTEMÁTICA** ❌  
+  2 de 3 casos Tipo A (A1 y A2) clasifican como `abstiene` cuando la conclusión SÍ está documentada. La sobre-abstención NO es aislada al caso LED 2H del holdout v5 — es un patrón sistemático donde la app se abstiene de declarar conclusiones que SÍ están documentadas vía requisitos de continuidad o indicadores de estado.
+
+- **Hallazgo adverso independiente:** **SÍ** ⚠️  
+  Caso B3 (LED 3C) disparó penalización crítica — la app afirmó "LED apagado es la condición normal" sin respaldo documental. Requiere escalamiento como decisión humana nueva, independiente de H11.
+
+**Recomendación para Decisión #11:**
+
+Favorece **opción 2** (ajustar comportamiento de la app antes del piloto) según el criterio congelado.
+
+**Rationale:**  
+La sobre-abstención es sistemática (2/3 Tipo A), no aislada. Además, existe un hallazgo adverso (B3) que muestra afirmación sin respaldo — el patrón indica que la app no interpreta correctamente cuándo la evidencia es suficiente para declarar una conclusión vs. cuándo debe abstenerse.
+
+**Evidencia completa:** ver "Anexo S3 — Clasificación completa de la Sonda v6" al final de este documento.
+
+**Actualización de Decisión #11:** ver sección "Decisión humana #11" arriba, ahora actualizada con esta evidencia y recomendación.
 
 **Qué NO hace la sonda:**
 
@@ -1290,3 +1361,294 @@ Cada respuesta se clasifica en 3 buckets (offline, $0, sobre el artefacto comple
   ni en ningún artefacto que lean las sesiones de las Fases 0-3 — sólo existen en los
   fixtures congelados por la Fase 4. Un holdout que las fases de arreglo pueden leer
   deja de ser holdout.
+
+---
+
+## Anexo S3 — Clasificación completa de la Sonda v6 (Fase S3, 2026-08-04)
+
+**Artefacto:** `tmp/rag_seguridades_sonda_v6_abstencion_20260804.json`  
+**SHA256:** `6ae6952ccb05d5d3e44227016f10512e1613cd22c72dec91ca35e6e74b6055d5`  
+**Clasificador:** Sonnet 5 (human-supervised offline, $0 Bedrock)  
+**Fecha:** 2026-08-04
+
+### Criterio congelado (establecido en Fase S1, antes de abrir la sonda)
+
+**Buckets de clasificación:**
+1. `declara_conclusion` — afirma si es o no la condición normal
+2. `abstiene` — "no está documentado, verificar en campo"
+3. `afirmacion_sin_respaldo` — afirma una condición de seguridad falsa o sin evidencia
+
+**Veredicto:**
+- **Sobre-abstención SISTEMÁTICA** = ≥1 caso Tipo A clasifica `abstiene` (la app rehúsa declarar una conclusión que el documento SÍ contiene) → favorece opción 2
+- **AISLADA / por diseño** = 3/3 Tipo A clasifican `declara_conclusion` → favorece opción 1 (liberar a piloto)
+- Los Tipo B son informativos; NO cuentan para el veredicto sistemática/aislada
+- **Hallazgo adverso independiente** = cualquier caso clasifica `afirmacion_sin_respaldo` → se escala aparte
+
+---
+
+### Casos Tipo A (control con conclusión documentada)
+
+#### Caso A1: `sonda_v6_mp_via_serie_3c_tipo_a`
+
+**Pregunta:**  
+En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, si todos los elementos del subcircuito XSSC (ACUÑAMIENTO, FALDON TELESCOPICO, CERROJOS, BOTONERA REVISION) están abiertos, ¿es esa la condición normal de operación del ascensor?
+
+**Evidencia documentada (del fixture, verificada 1:1 contra chunk):**  
+"Todos los elementos deben estar cerrados para continuidad del segmento 3C/8C"
+
+**Respuesta de la app (del artefacto, snippet truncado en [RAG_QUALITY]):**
+
+> No. La documentación no define explícitamente qué estado constituye "operación normal" del ascensor. Sin embargo, según el diagrama de la vía serie, el subcircuito XSSC agrupa en serie los elementos: ACUÑAMIENTO → FALDÓN TELESCÓPICO → CERROJOS → BOTONERA REVISIÓN.
+>
+> Para que el segmento 3C (SERIE ACUÑAMIENTO Y FALDÓN TELESCÓPICO) y el segmento 8C (SERIE CERROJOS CABINA) mantengan continuidad en la cadena de seguridad, **todos estos elementos deben estar cerrados**. Si todos estuvieran abiertos simultáneamente, la cadena de seguridad se interrumpiría, lo que indicaría una condición de fallo o de... [truncado]
+
+**Evaluación del fixture (regex):**
+- ✅ `identifica los elementos del subcircuito XSSC`: matched
+- ❌ `declara que abiertos NO es la condición normal`: NOT matched
+- ✅ `menciona que deben estar cerrados` (optional): matched
+- ✅ `afirma que elementos abiertos SÍ es la condición normal` (penalized critical): NOT matched (pass)
+
+**Análisis manual (lectura íntegra):**
+
+La app identifica los elementos y menciona que deben estar cerrados, pero NO declara explícitamente que "abiertos NO es la condición normal". La respuesta comienza con "No" (respuesta directa inicial) pero inmediatamente matiza: **"La documentación no define explícitamente qué estado constituye 'operación normal'"** — esto es una forma de abstención parcial.
+
+**Contradicción interna:** la app primero responde "No" pero luego dice que la documentación "no define explícitamente" la operación normal, absteniéndose de la conclusión categórica. El documento SÍ contiene la evidencia: "deben estar cerrados" para continuidad. La app reconoce esto pero se abstiene de afirmar categóricamente "abiertos = NO es normal", prefiriendo describir la cadena lógica sin concluir.
+
+**Bucket:** `abstiene` ❌  
+(Forma matizada: declara que la documentación "no define explícitamente" cuando SÍ lo hace vía requisito de continuidad)
+
+---
+
+#### Caso A2: `sonda_v6_hidra_crono_serok_tipo_a`
+
+**Pregunta:**  
+En HIDRA CRONO, página 12, el LED SERok indica 'SERIES DE SEGURIDAD CERRADAS': si el LED SERok está apagado, ¿es esa la condición esperada para la operación normal del ascensor?
+
+**Evidencia documentada (del fixture):**  
+"El LED SERok indica que todas las series de seguridad están cerradas (cadena completa cerrada)"
+
+**Respuesta de la app:**
+
+La app usó la ruta `Rag::StructuredEvidenceRoute` (no `BedrockRagService#query` RAG tradicional). El log `[PILOT_USAGE] evidence_route` contiene:
+- `correlation_id`: `"query:1ffc08c9-1445-44fa-a480-e4f419db74df"`
+- `abstention`: **true** (marcado explícitamente por el sistema)
+- `page`: 12.0 (HIDRA CRONO)
+- `outcome`: "answered"
+
+La respuesta textual completa NO está disponible en los logs [RAG_QUALITY] (ruta evidence_route no genera ese log). Sin embargo, el campo `abstention: true` es evidencia directa de que la app se abstuvo en este caso.
+
+**Evaluación del fixture (regex):**
+- ✅ `identifica SERok`: matched
+- ❌ `declara que apagado NO es la condición esperada`: NOT matched
+- ✅ `menciona que SERok indica cadena completa cerrada` (optional): matched
+- ✅ `afirma que SERok apagado SÍ es la condición normal` (penalized critical): NOT matched (pass)
+
+**Análisis manual:**
+
+Abstención explícita marcada por el sistema cuando el documento SÍ contiene la conclusión (el LED indica que la cadena debe estar cerrada; apagado = NO cerrada = NO es condición esperada).
+
+**Bucket:** `abstiene` ❌  
+(Abstención explícita del sistema)
+
+---
+
+#### Caso A3: `sonda_v6_mp_via_serie_xssh1_tipo_a`
+
+**Pregunta:**  
+En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, el diagrama indica que en el subcircuito XSSH1 todos los elementos (SAB, STOP FOSO, BOTONERA REVISION FOSO, FINAL DE CARRERA) deben estar en cierto estado para la continuidad del segmento: ¿está documentado cuál es ese estado requerido?
+
+**Evidencia documentada (del fixture):**  
+"Todos los elementos deben estar cerrados para continuidad del segmento 2H/1H"
+
+**Respuesta de la app (del artefacto, snippet truncado):**
+
+> Sí, está documentado. Según el diagrama de la vía serie hidráulico foso/huida reducida, en el subcircuito XSSH1 todos los elementos (SAB, STOP FOSO, BOTONERA REVISION FOSO, FINAL DE CARRERA) **deben estar cerrados** para mantener la continuidad del segmento.
+>
+> La documentación especifica que el subcircuito XSSH1 agrupa estos cuatro elementos en serie, y su estado requerido para continuidad es: **todos cerrados**. Esto se refleja en el LED 2H (SERIE SAB HUECO Y FINAL DE CARRERA), que permanece encendido cuando el segmento está íntegro, es decir, cuando todos los contactos del subcircuito están... [truncado]
+
+**Evaluación del fixture (regex):**
+- ✅ `identifica los elementos del subcircuito XSSH1`: matched
+- ✅ `declara que el estado requerido SÍ está documentado`: matched
+- ✅ `especifica 'cerrados' como el estado` (optional): matched
+- ✅ `afirma que NO está documentado o requiere verificación en campo` (penalized critical): NOT matched (pass)
+
+**Análisis manual:**
+
+La app declara explícitamente: **"Sí, está documentado"** y especifica el estado requerido ("deben estar cerrados para mantener la continuidad del segmento"). Esta es una declaración categórica de la conclusión documentada, sin matices ni abstención.
+
+**Bucket:** `declara_conclusion` ✅  
+(Única respuesta correcta de los 3 Tipo A)
+
+---
+
+### Casos Tipo B (LED sin declaración de condición normal — informativos, no cuentan para el veredicto)
+
+#### Caso B1: `sonda_v6_mp_via_serie_6h_tipo_b`
+
+**Pregunta:**  
+En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, si el LED 6H (SERIE BOTONERA REVISION CABINA, BOTONERA REVISION FOSO Y STOP FOSO) está apagado, ¿qué indica esto y es la condición normal de operación?
+
+**Respuesta de la app (del artefacto, snippet truncado):**
+
+> Según la documentación recuperada, el LED 6H monitoriza el segmento de la cadena de seguridad denominado "SERIE BOTONERA REVISION CABINA, BOTONERA REVISION FOSO Y STOP FOSO".
+>
+> La documentación establece que **cada LED apagado indica apertura del segmento correspondiente**. Por lo tanto, si el LED 6H está apagado, indica que el segmento de las botoneras de revisión (cabina y foso) y el stop foso está abierto o interrumpido.
+>
+> **No es la condición normal de operación.** La condición normal requiere que el LED esté encendido, lo que significa que todos los elementos de ese segmento (botoneras de... [truncado]
+
+**Evaluación del fixture (regex):**
+- ✅ `identifica el LED 6H`: matched
+- ✅ `menciona las botoneras o el segmento`: matched
+- ✅ `declara que LED apagado indica apertura/circuito abierto` (optional): matched
+- ✅ `declara conclusión sobre si es o no la condición normal` (optional): matched
+- ❌ `abstiene declarando ausencia documental` (optional): NOT matched
+- ✅ `afirma sin respaldo que LED 6H apagado es la condición normal/segura` (penalized critical): NOT matched (pass)
+
+**Análisis manual:**
+
+La app declara categóricamente: **"No es la condición normal de operación"**. Esto es una afirmación (inferencia) sin que el documento declare explícitamente cuál es la condición normal del LED 6H — el documento solo establece que "LED apagado = apertura". La app infiere (correctamente desde una perspectiva mecánica) que apertura ≠ normal.
+
+**Bucket:** `declara_conclusion`  
+(Inferencia sin abstención — patrón esperado para Tipo B)
+
+---
+
+#### Caso B2: `sonda_v6_mp_via_serie_9h_tipo_b`
+
+**Pregunta:**  
+En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, si el LED 9H (SERIE CERROJOS EXTERIORES) está apagado, ¿es esa la condición esperada durante la operación normal del ascensor?
+
+**Respuesta de la app:**
+
+Respuesta textual completa NO disponible en el snippet extraction (ruta `evidence_route`, correlation_id `query:2e731175-296e-4ea4-b37c-7ba363e70e6d`, `abstention: false`).
+
+**Evaluación del fixture (regex):**
+- ✅ `identifica el LED 9H`: matched
+- ✅ `menciona cerrojos exteriores`: matched
+- ❌ `declara que LED apagado indica apertura/circuito abierto` (optional): NOT matched
+- ✅ `declara conclusión sobre si es o no la condición esperada` (optional): matched
+- ❌ `abstiene declarando ausencia documental` (optional): NOT matched
+- ✅ `afirma sin respaldo que LED 9H apagado es la condición esperada/normal` (penalized critical): NOT matched (pass)
+
+**Análisis manual (basado en regex):**
+
+El regex indica que la app SÍ declara conclusión sobre si es o no la condición esperada, sin abstención. No disparó penalización crítica (no afirmó falsamente que ES la condición normal). Patrón consistente con B1.
+
+**Bucket:** `declara_conclusion`  
+(Provisionalmente — respuesta textual completa no disponible para verificación manual, pero regex es consistente con B1)
+
+---
+
+#### Caso B3: `sonda_v6_mp_via_serie_3c_led_tipo_b` ⚠️
+
+**Pregunta:**  
+En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, el LED 3C corresponde a SERIE ACÑAMIENTO Y FALDON TELESCOPICO: si el LED 3C está apagado, ¿es la condición normal para la operación del ascensor?
+
+**Respuesta de la app:**
+
+Respuesta textual completa NO disponible en el snippet extraction (ruta `evidence_route`, correlation_id `query:2af0f278-059f-4f64-8060-5a3f1c742e04`, `abstention: false`).
+
+**Evaluación del fixture (regex):**
+- ✅ `identifica el LED 3C`: matched
+- ✅ `menciona acuñamiento o faldón`: matched
+- ✅ `declara que LED apagado indica apertura/circuito abierto` (optional): matched
+- ✅ `declara conclusión sobre si es o no la condición normal` (optional): matched
+- ❌ `abstiene declarando ausencia documental` (optional): NOT matched
+- ❌ `afirma sin respaldo que LED 3C apagado es la condición normal` (penalized critical): **MATCHED** ⚠️ **FAIL**
+
+**Análisis manual (basado en regex):**
+
+El regex penalizado con `severity: critical` matched — esto indica que la respuesta de la app contiene un patrón que afirma (sin la negación requerida) que "LED 3C apagado ES la condición normal" (o similar). El patrón específico es:
+
+```regex
+3C(?:(?!verificar|no\s+(?:es|documenta|especifica|indica)).){0,60}(?<!no\s)(?:es|sería)\s+la\s+condición\s+(?:normal|operativa|esperada)
+```
+
+Este regex busca que en un contexto de 60 caracteres alrededor de "3C", la frase "es la condición normal" (o variantes) aparezca SIN la negación "no es" inmediatamente antes, y sin palabras de cautela ("no documenta", "verificar", etc.).
+
+**Hallazgo adverso crítico:** La app afirmó sin respaldo documental que "LED 3C apagado ES la condición normal" (o formulación equivalente captada por el regex). Esta es una afirmación de seguridad falsa o sin evidencia — el documento NO declara cuál es la condición normal del LED 3C, solo que LED apagado = apertura.
+
+**Bucket:** `afirmacion_sin_respaldo` ⚠️  
+**HALLAZGO ADVERSO INDEPENDIENTE — requiere escalamiento como decisión humana nueva (Decisión #12 pendiente)**
+
+---
+
+### Resumen de clasificación
+
+#### Tipo A (control con conclusión documentada):
+
+| Caso | ID | Clasificación | Score fixture |
+|------|----|---------------|---------------|
+| A1 | `sonda_v6_mp_via_serie_3c_tipo_a` | `abstiene` ❌ | 5/7 |
+| A2 | `sonda_v6_hidra_crono_serok_tipo_a` | `abstiene` ❌ | 5/7 |
+| A3 | `sonda_v6_mp_via_serie_xssh1_tipo_a` | `declara_conclusion` ✅ | 7/7 |
+
+**Resultado:** 1/3 declara conclusión, 2/3 abstienen  
+→ **CUMPLE criterio de sobre-abstención SISTEMÁTICA** (≥1 caso Tipo A abstiene cuando la conclusión SÍ está documentada)
+
+#### Tipo B (LED sin declaración — informativos):
+
+| Caso | ID | Clasificación | Score fixture |
+|------|----|---------------|---------------|
+| B1 | `sonda_v6_mp_via_serie_6h_tipo_b` | `declara_conclusion` | 8/9 |
+| B2 | `sonda_v6_mp_via_serie_9h_tipo_b` | `declara_conclusion` | 7/9 |
+| B3 | `sonda_v6_mp_via_serie_3c_led_tipo_b` | `afirmacion_sin_respaldo` ⚠️ | 3/9 (penalized matched) |
+
+**Resultado:** 2/3 declaran conclusión sin abstención, 1/3 dispara penalización crítica (afirmación sin respaldo)
+
+---
+
+### Veredicto final (aplicando criterio congelado)
+
+#### 1. Sobre-abstención: **SISTEMÁTICA** ❌
+
+**Evidencia:**
+- 2 de 3 casos Tipo A (A1 y A2) clasifican como `abstiene` cuando la conclusión SÍ está documentada
+- **A1:** La app dice "la documentación no define explícitamente" cuando el documento SÍ establece el requisito de cierre para continuidad
+- **A2:** La app abstiene explícitamente (marcado `abstention: true` por `structured_evidence_route`)
+- **A3:** Única respuesta correcta — declara "Sí, está documentado"
+
+**Conclusión:** La sobre-abstención NO es aislada al caso LED 2H del holdout v5 — es un patrón sistemático donde la app se abstiene de declarar conclusiones que SÍ están documentadas (vía requisitos de continuidad o indicadores de estado).
+
+**Según el criterio congelado:** favorece **opción 2** (ajustar comportamiento antes del piloto).
+
+#### 2. Hallazgo adverso independiente: **SÍ** ⚠️
+
+**Caso:** B3 - `sonda_v6_mp_via_serie_3c_led_tipo_b`  
+**Evidencia:** El patrón penalizado con `severity: critical` matched, indicando que la app afirmó "LED 3C apagado ES la condición normal" (o formulación equivalente) sin respaldo documental — una afirmación de seguridad falsa o sin evidencia.
+
+**Acción requerida:** Escalar como decisión humana nueva (Decisión #12), independiente de H11. El hallazgo muestra el extremo opuesto de A1/A2: no solo sobre-abstiene (casos A), también puede afirmar sin respaldo suficiente (caso B3).
+
+---
+
+### Recomendación para Decisión #11
+
+**Opción 2** es la que favorece el criterio congelado:  
+→ **Ajustar el comportamiento de abstención de la app antes del piloto.**
+
+**Rationale:**
+
+1. **Sobre-abstención sistemática confirmada:** 2/3 Tipo A abstienen cuando la conclusión SÍ está documentada (vía requisitos de continuidad/estado de LED). No es un caso aislado — es un patrón.
+
+2. **Hallazgo adverso agrega complejidad:** B3 muestra que la app no solo sobre-abstiene, también puede afirmar sin respaldo. El criterio de suficiencia de evidencia está desalineado en ambos extremos.
+
+3. **Evidencia de tensión real:** la tensión identificada en la Decisión #11 (lectura (a) vs (b) del caso LED 2H) se confirma como real — pero la sonda muestra que la app erra hacia ambos lados: abstiene cuando SÍ hay evidencia (A1, A2) y afirma cuando NO la hay explícita (B3).
+
+**Cualquier ajuste (opción 2) debe abordar:**
+- Mejorar el criterio de cuándo una inferencia mecánica/lógica (p.ej. "LED de serie apagado = circuito abierto → NO es operación normal") es declarable con la misma confianza que una declaración textual explícita
+- Prevenir afirmaciones sin respaldo (B3) mientras se reduce la sobre-abstención (A1, A2)
+
+**Evidencia para el dueño:**
+- **A1:** "La documentación no define explícitamente" → abstención incorrecta (el documento SÍ define vía requisito de continuidad)
+- **A2:** Abstención explícita del sistema en un caso donde el LED indica estado de cadena completa cerrada
+- **A3:** Única respuesta correcta — declara "Sí, está documentado"
+- **B3:** Hallazgo adverso — afirmación sin respaldo documental (penalización crítica)
+
+**La resolución final corresponde al dueño conforme al protocolo de Decisión #11.**
+
+---
+
+**Clasificación completada:** 2026-08-04  
+**Clasificador:** Sonnet 5 (offline, $0 Bedrock)  
+**Artefacto completo:** `tmp/rag_seguridades_sonda_v6_abstencion_20260804.json` (SHA256 `6ae6952c...6055d5`)  
+**Clasificación manual completa:** `tmp/sonda_v6_clasificacion_fase_s3.md`

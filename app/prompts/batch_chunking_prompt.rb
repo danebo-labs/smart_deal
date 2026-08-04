@@ -12,8 +12,11 @@ require "digest"
 #
 #   Identity ([DOCUMENT:] / [SOURCE_URI:] / [SEARCH_ALIASES:]) is 100% Rails-injected
 #   by `BatchResultsParserService#identity_header` after this prompt produces structured
-#   chunks. The prompt does NOT need to embed **Document:** / **DOCUMENT_ALIASES:** markers
-#   inside chunk bodies — those are legacy artifacts from the OWRPGSX6XK Lambda path.
+#   chunks. This prompt MUST NOT instruct the model to embed **Document:** /
+#   **DOCUMENT_ALIASES:** markers inside chunk bodies — those were legacy artifacts of
+#   the OWRPGSX6XK Lambda path, from before dynamic per-chunk metadata injection was
+#   possible. The `# STRUCTURED EXTRACTION` section below emits chunk bodies starting
+#   directly at their section title, with no identity marker of any kind.
 #
 #   Canonical name + aliases travel as structured JSON fields (`document_name`, `aliases`)
 #   → `BatchResultsParserService` → `ChunkAsset` → `CustomChunkingPipeline#web_v1_metadata`
@@ -289,8 +292,10 @@ module BatchChunkingPrompt
           emit S0 as chunks[0], emit `summary` and `companion_offer`.
 
         # STRUCTURED EXTRACTION (one chunk per section when content is present)
-        Emit chunks for as many of these sections as the document supports.
-        Each section title must appear inside the chunk after the **Document:** header:
+        Emit chunks for as many of these sections as the document supports, one
+        chunk per section, its body starting directly at the section title below —
+        no **Document:** header or other identity marker of any kind precedes it;
+        identity is already 100% Rails-injected outside this prompt (see header note):
           S0  — DOCUMENT IDENTIFICATION   (mandatory; chunk[0]; ANCHOR_PAGE only for multi-page parses)
           S4  — SAFETY SYSTEM
           S6  — ELECTRICAL
@@ -303,11 +308,11 @@ module BatchChunkingPrompt
         emit a chunk that only says "DATA_NOT_AVAILABLE" with no other content.
 
         ## S0 chunk content (mandatory fields)
-        Include a small identification table directly in the S0 section:
+        Include a small identification table directly in the S0 section. Filename
+        and URI are NOT part of this table — they are Rails-injected identity, never
+        emitted by you (see # IDENTITY INJECTION above):
             | Field | Value |
             |-|-|
-            | ORIGINAL_FILE_NAME | PIPELINE_INJECTED |
-            | NORMALIZED_FILE_NAME | PIPELINE_INJECTED |
             | TECHNICAL_ID | <Brand + System + Model if explicitly identifiable, else UNKNOWN> |
             | REGIONAL_NORMATIVE | <EN 81-20 / ASME / ISO 8100 / local — only if identifiable> |
             | IMAGE_QUALITY | CLEAR | DEGRADED | POOR | UNUSABLE |

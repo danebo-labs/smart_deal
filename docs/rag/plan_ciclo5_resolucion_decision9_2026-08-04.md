@@ -495,6 +495,7 @@ Ejecución:
 | 4 Holdout v5 + batería congelados | **hecho 2026-08-04** — dueño confirmó/no vetó Propuesta B (fila de arriba actualizada). (a) `script/fixtures/rag_seguridades_holdout_v5.json`: 14 casos nuevos, distribución idéntica al v4 (3 determinísticas/2 mapeos/2 generalización/1 ambigua/1 sin_respaldo/4 seguridad/1 comparativa), redactados y verificados 1:1 contra el contenido real de `tmp/seguridades_chunks_2026-07-28/chunk_{22,24,27,46,49,57,69,71}.txt` (páginas 24, 26, 29, 48, 51, 59, 71, 73 — ninguna reutilizada de v1-v4, intersección vacía verificada por test); `max_score` real 129, `passing_score` 104 (`ceil(80%)`); los 14 verifican offline `Rag::DeterministicIntent.ambiguous_hardware_query? == false` (las 14 preguntas nombran "página N"); lección H5 aplicada en los 2 `required` de abstención de "orden de cadena no documentado" (casos `..._orden_cadena_seguridad` y `..._orden_terminales_seguridad`), cada uno probado contra 2 fraseos distintos (sustantivo/imperativo) en el QA test. QA test clonado del v4: `test/services/rag/benchmark_rubric_evaluator_holdout_v5_qa_test.rb`, 9 tests / 135 assertions, verde. (b) `script/fixtures/rag_seguridades_provenance_battery_v1.json`: 18 casos (10 `neighbor_expansion_divisor_identity` sobre las divisoras THYSSEN p92/RECOBA p70/FAIN p41/KONE p51/ORONA p60/SCHINDLER p80/CTA p15/CARLOS SILVA p8/MP p54/EDEL p23, cada `expected_section_identity` contrastado 1:1 contra `docs/rag/gate_a_medicion_topologia.md` §5.2 Apéndice E; + 8 `absence_of_n8_contamination` sobre páginas p2/p24/p38/p45/p48/p55/p71/p97, checks determinísticos por campo estructurado, NO rúbrica regex); QA estructural offline (sin Bedrock, $0): `test/services/rag/provenance_battery_v1_qa_test.rb`, 6 tests / 131 assertions, verde. ⚠️ Hallazgo propio de esta fase (no bloqueante, no contradice restricción/gate, no se escala decisión #10 — sólo corrige la fuente de verdad-terreno de la Fase 6, prompt de esa fase ya reescrito con el detalle completo): la copia de referencia local `tmp/seguridades_chunks_2026-07-28/` tiene metadata OBSOLETA (`ingestion_contract_version: field_records_v5`) donde `canonical_name` es un valor constante ("ALJO Control Level 1B Altius") igual en los 97 chunks — NO es la verdad-terreno para `expected_section_identity` de la batería (que viene de Gate A §5.2); la verdad-terreno de metadata en vivo es la que la Fase 1 de este ciclo ya midió con `retrieve` real (`canonical_name: "THYSSEN"` en la página 93). Ambos fixtures + ambos tests + SHA256 en el mismo commit que esta fila; ninguna llamada a Bedrock/Anthropic en esta fase ($0). | `script/fixtures/rag_seguridades_holdout_v5.json`, `script/fixtures/rag_seguridades_provenance_battery_v1.json`, `test/services/rag/benchmark_rubric_evaluator_holdout_v5_qa_test.rb`, `test/services/rag/provenance_battery_v1_qa_test.rb`; SHA256 en `tmp/ciclo5_fase4_2026-08-04/SHA256SUMS.txt` |
 | 5 Checkpoint despliegue | **hecho 2026-08-04.** Pre-chequeo: Fases 1-4 ya commiteadas (working tree clean, `git log` confirma hasta `8b062f1`), suite completa verde ANTES de tocar nada (`bin/rails test`: **2292 runs, 8409 assertions, 0 failures, 0 errors, 189 skips**). Dos `kamal deploy` en esta sesión (mismo patrón que ciclo 4 Fase 6: el script de humo debe existir en la imagen para poder correr vía `kamal app exec`): (1) deploy inicial sobre HEAD `8b062f1` (Fase 4, ya commiteado) — `kamal app version` confirmó `8b062f197eefcd7fb8bea625e1dcfdedec6d6540` == HEAD; (2) se creó y commiteó `script/rag_fase5_checkpoint_smoke_2026-08-04.rb` (commit `0fad454`, sólo el script, sin tocar Fases 1-4) y se re-desplegó — `kamal app version` confirmó `0fad454cceddea702f2f99c6efe82e419b5a6ba6` == HEAD tras el segundo deploy. **SHA final desplegado (el que debe verificar la Fase 6): `0fad454cceddea702f2f99c6efe82e419b5a6ba6`.** Ingestion job re-confirmado en ambos checkpoints (antes y después del 2º deploy): `CCCDNEDFYL` sigue `COMPLETE`, sin job posterior (`aws bedrock-agent list-ingestion-jobs`, control-plane, $0 del presupuesto). Humo (**1/1 `retrieve_invocations` del presupuesto de la fase**): 1 pregunta NUEVA, fuera de v1-v4 y de los fixtures de la Fase 4 (no leídos), vía `Rag::StructuredEvidenceRoute` sobre la página divisora casi vacía 51 (portada KONE MONOSPACE) — "¿a qué conector está conectado el terminal 270 (INTERRUPTOR REVISION)?" — forzó expansión de vecindad hacia la página 52 real. **Ambos fixes bloqueantes verificados en la misma llamada:** (a) H1 — cita atribuye `canonical_name: "KONE"` (no "ALJO Control Level 1B Altius"), página citada 52 (no la 51 nombrada, confirma expansión real); log estructurado `[PILOT_USAGE] evidence_route_context` con `"expansion_mechanism":"section_identity","section_identity":"KONE"` como evidencia cruda independiente del script. (b) H4 — cero apariciones de la línea/bloque N8 en el **cuerpo completo** del chunk recuperado (`result[:diagnostics][:retrieved_chunks]`, no el `tooltip_excerpt` truncado a 150 caracteres) ni en la respuesta generada. Respuesta técnicamente sana (identifica XLH5, señala honestamente que la asignación pin-a-pin no es legible con precisión). ⚠️ Hallazgo propio de esta fase (no bloqueante, no contradice restricción/gate, no se escala decisión #10): el booleano `neighbor_expansion_occurred`/`both_fixes_verified` del JSON del script desechable marca `false` por un bug cosmético — compara el string `"section_identity"` contra `Rag::SectionNeighborExpander::MECHANISM_SECTION_IDENTITY`, que es un **símbolo** Ruby (`:section_identity`); `JSON.generate` serializa el símbolo como string en la salida impresa, ocultando la discrepancia de tipo en el JSON pero no en el objeto Ruby real (`Symbol#==String` siempre `false`). El campo subyacente (`retrieval_trace.structured_route.expansion_mechanisms`, visible tal cual en el JSON) y el log `PILOT_USAGE` ya confirman el mecanismo real sin ambigüedad — no se re-ejecutó una segunda llamada para "corregir" el booleano cosmético (habría excedido el presupuesto de 1 llamada de la fase); si la Fase 6 escribe su propio runner y compara `expansion_mechanisms` contra un string literal, debe usar `.to_s` o comparar contra el símbolo. Aurora: la primera llamada del humo golpeó un **cold-start real** (`[Aurora] cold start (attempt 1)…`, `kb_retrieve latency_ms: 20272`) — esperado por diseño (`WarmBedrockKbJob`: "Aurora goes to standby after ~5 min idle"; los dos `kamal deploy` + verificaciones de esta sesión dejaron pasar >5 min sin tráfico Bedrock); `Bedrock::AuroraColdStartRetry` lo absorbió automáticamente (reintento único, éxito) — NO es un defecto de código, no consumió una segunda llamada del presupuesto (el reintento ocurre dentro de la misma invocación SDK). Verificación de Aurora caliente POST cold-start: `WarmBedrockKbJob.perform_now` (ping puro de `Retrieve`, `number_of_results: 1`, registrado como `kb_warm_ping` — evento estructurado FUERA de `bedrock_queries` por diseño, AGENTS.md "Internal Retrieve calls stay off bedrock_queries", no consume el presupuesto de la fase) → `[KB_WARM] ok ms=657`, sin línea `[Aurora] cold start` — **Aurora caliente confirmado, 657ms < 1000ms**; el dueño confirmó independientemente la misma condición probando la app real vía la UI de chat web en producción. `git rev-parse HEAD` == `0fad454cceddea702f2f99c6efe82e419b5a6ba6` == SHA desplegado, sin commits nuevos entre el 2º deploy y el cierre de esta fase. Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. | `tmp/ciclo5_fase5_2026-08-04/checkpoint_smoke_2026-08-04.json` SHA256 `cb20de842a2619b2e29ef46d353c528ca005c8efde9de301139a0d42f45a0a34`; `tmp/ciclo5_fase5_2026-08-04/checkpoint_raw_log_2026-08-04.txt` SHA256 `8d9cf758c9bc2fa6db13f3d54423717d2d9cd9250c847cd1a8ec4de945133fdc`; `script/rag_fase5_checkpoint_smoke_2026-08-04.rb`; commit `0fad454cceddea702f2f99c6efe82e419b5a6ba6` |
 | 6 Gate v5 → piloto | **NO PASA (2026-08-04) — escalado como Decisión humana #11.** Checkpoint repetido correctamente tras el commit `cbc4c06` (agrega el runner de la batería, toca `script/`): `kamal app version` == HEAD `cbc4c06fdee5e6c458a2de3bc161d5d565c6192f`; job `CCCDNEDFYL` re-confirmado `COMPLETE`, sin job posterior; Aurora calentada explícitamente antes de la corrida (`WarmBedrockKbJob.perform_now` → `[KB_WARM] ok ms=644`, fuera de presupuesto); humo de la Fase 5 repetido (1 `retrieve_invocation`) — ambos fixes bloqueantes siguen verdes (`manufacturer_attribution_correct: true`, cero N8 en cuerpo/respuesta). Holdout v5 y batería corridos UNA sola vez cada uno, en ese orden, contra `-r web` exclusivamente. **Presupuesto de la fase: 1 (checkpoint repetido) + 19 (holdout v5) + 18 (batería) = 38 `retrieve_invocations`; total del ciclo 43/56.** Resultado del AND estricto: **(1) PASA** — 113/129 (87.6% ≥ 80%, `passing_score` 104). **(2) NO PASA** — 1 de 4 `safety_critical` con `passed: false` (`holdout_v5_mp_via_serie_led2h_seguridad`, 4/8 pts). **(3) PASA** — `source_page_cited: true` en los 4 `safety_critical` (incluido el que falla por (2)). **(4) PASA numéricamente pero con validez de medición degradada** — 0 discrepancias de `canonical_name` y 0 `forbidden_patterns` detectados, pero dos hallazgos propios de esta corrida (H12, H13 abajo) limitan cuánto puede apoyarse esta conclusión en el instrumento nuevo; la evidencia fuerte de H1/H4 sigue siendo la de las Fases 1/3/5 (neighbor expansion forzada de verdad, con pregunta técnica específica). Clasificación completa de los 4 fallos del holdout v5 y ambos hallazgos de la batería (H12/H13) en "Decisión humana #11". Artefactos íntegros (cada caso con `chunks`/`answer` no vacíos salvo la salvedad de H12) copiados a tmp LOCAL + SHA256 en esta misma sesión — **v5 y la batería quedan gastados, no se reabren.** Ningún ajuste al criterio congelado tras ver resultados. Ver "Decisión humana #11" para las opciones planteadas al dueño. | `tmp/ciclo5_fase6_2026-08-04/checkpoint_repeat_smoke_2026-08-04.json` SHA256 `47679961be6b54a57252a0132df1c802ebc06d0b7c0355d6a3ded3d3392740ca`; `tmp/ciclo5_fase6_2026-08-04/holdout_v5_run1_2026-08-04.json` SHA256 `54eb76a972bdff62bd2a1747b56e7fec7969bc273d73489b796d1fb4cfb14f68`; `tmp/ciclo5_fase6_2026-08-04/provenance_battery_v1_run1_2026-08-04.json` SHA256 `1152de61e910e8b5644cd87715866563baaff234377bde9da4ad59b648c4a258`; todos en `tmp/ciclo5_fase6_2026-08-04/SHA256SUMS.txt`; runner `script/rag_ciclo5_fase6_provenance_battery_2026-08-04.rb` (commit `cbc4c06`); "Decisión humana #11" |
+| **Sonda v6 — Opción 3 Decisión #11** | **PENDIENTE — Fase S1 completada 2026-08-04.** Fixture v6 + QA test congelados con criterio de clasificación (sistemática vs aislada) declarado antes de abrir. 6 preguntas (3 Tipo A = control con conclusión documentada, 3 Tipo B = familia LED 2H sin declaración de condición normal), cada Tipo A anotado con `evidence_quote` verificado 1:1 contra el cuerpo del chunk (`tmp/seguridades_chunks_2026-07-28/chunk_57.txt` p.59 / `chunk_10.txt` p.12). QA test: intersección vacía con v1-v5 verificada, `ambiguous_hardware_query? == false` en los 6, paráfrasis ≥2 fraseos por patrón de abstención (Tipo B). Compatible con el runner existente (`RAG_SEGURIDADES_FIXTURE_PATH`). Fases S2-S3: no ejecutadas todavía. Ver sección "Sonda v6 (ejecución de la opción 3, Decisión humana #11)" abajo. | `script/fixtures/rag_seguridades_holdout_v6_sonda_abstencion.json`, `test/services/rag/holdout_v6_sonda_qa_test.rb` |
 
 ## Decisión humana #10 — alcance del parche N8 — **RESUELTA 2026-08-04**
 
@@ -1100,6 +1101,119 @@ backup), SHA256 de los tres en
 `tmp/ciclo5_fase3_2026-08-04/SHA256SUMS_fase3_real_run_2026-08-04.txt`. Scripts:
 `script/repair_seguridades_n8_body_2026-08-04.rb` (modo real implementado),
 `script/n8_fase3_smoke_2026-08-04.rb` (humo, desechable).
+
+## Sonda v6 (ejecución de la opción 3, Decisión humana #11)
+
+**Resolución del dueño (2026-08-04):** se ejecuta la **opción 3** de la Decisión humana #11 — redactar un holdout v6 dirigido (sonda) que determine si el patrón de sobre-abstención del caso `holdout_v5_mp_via_serie_led2h_seguridad` es sistemático o aislado, antes de decidir entre la opción 1 (liberar a piloto) o la opción 2 (ajustar comportamiento de la app).
+
+### Contexto
+
+El gate v5 NO PASA por el fallo del caso `holdout_v5_mp_via_serie_led2h_seguridad` (safety_critical, 4/8 pts). La respuesta establece correctamente que "LED 2H apagado = circuito abierto" pero luego se abstiene de concluir si es o no la condición normal, declarando que "la documentación no especifica explícitamente si el LED 2H apagado es la condición normal... se requiere verificar en campo." Clasificación ambigua: (a) podría ser sobre-abstención de una inferencia mecánica estándar (los LEDs de serie apagados = pérdida de continuidad nunca es la condición normal); o (b) podría ser abstención correcta ante evidencia genuinamente ausente (el chunk NO contiene la palabra "normal" ni ninguna declaración sobre el estado esperado durante operación).
+
+Presupuesto disponible: **13 `retrieve_invocations`** restantes (43/56 usados en el ciclo 5). Esta sonda declara techo **≤12** (1 checkpoint + ≤11 sonda, estimado real ~9).
+
+### Diseño del instrumento (criterio congelado, Fase S1)
+
+La sonda NO es un holdout-gate: es un instrumento de **clasificación de comportamiento** con criterio congelado antes de abrir. 6 preguntas nuevas (intersección vacía con v1-v5, verificada por test), en dos tipos que separan las dos hipótesis:
+
+- **Tipo A — control con conclusión documentada (3 casos):** preguntas "¿es la condición normal/esperada?" donde el cuerpo del chunk SÍ contiene literalmente la declaración del estado esperado (p.ej. "deben estar cerrados para mantener la continuidad", "LED SERok indica que todas las series de seguridad están cerradas"). Cada caso Tipo A anota en el fixture el campo `evidence_quote` con la cita textual verificada 1:1 contra el cuerpo del chunk (`tmp/seguridades_chunks_2026-07-28/chunk_57.txt` p.59, `chunk_10.txt` p.12) — la copia local sigue siendo válida como fuente de CONTENIDO per H11 del ciclo 5; el parche N8 de la Fase 3 sólo removió líneas de identidad, no contenido sustantivo.
+
+- **Tipo B — sólo inferible, familia LED 2H (3 casos):** el documento establece la semántica (LED = indicador de continuidad) pero NO declara la condición normal. Réplica del patrón exacto del caso que falló en v5, en otros LEDs de la misma página 59 (6H, 9H, 3C).
+
+Cada respuesta se clasifica en 3 buckets (offline, $0, sobre el artefacto completo):
+
+1. `declara_conclusion` — afirma si es o no la condición normal
+2. `abstiene` — "no está documentado, verificar en campo"
+3. `afirmacion_sin_respaldo` — afirma una condición de seguridad falsa o sin evidencia
+
+### Criterio congelado (Fase S1, antes de abrir)
+
+- **Sobre-abstención SISTEMÁTICA** = ≥1 caso Tipo A clasifica `abstiene` (la app rehúsa declarar una conclusión que el documento SÍ contiene) → favorece opción 2 antes del piloto.
+- **AISLADA / por diseño** = 3/3 Tipo A clasifican `declara_conclusion` → el fallo LED 2H se confirma como abstención de contrato ante evidencia genuinamente ausente → favorece opción 1 (liberar a piloto).
+- Los Tipo B son informativos (miden consistencia del patrón); NO cuentan para el veredicto sistemática/aislada.
+- **Hallazgo adverso independiente** = cualquier caso (A o B) clasifica `afirmacion_sin_respaldo` → se escala aparte como decisión humana nueva, sea cual sea el resultado principal.
+
+### Fase S1 — Redacción y congelamiento del fixture ($0 Bedrock, sesión nueva) — **HECHO 2026-08-04**
+
+**Entregables:**
+
+1. **Fixture v6:** `script/fixtures/rag_seguridades_holdout_v6_sonda_abstencion.json` creado con 6 casos (3 Tipo A + 3 Tipo B), compatible con el runner existente `script/rag_seguridades_benchmark.rb` (vía `RAG_SEGURIDADES_FIXTURE_PATH`) — **cero código nuevo de runner**. Los patrones `required`/`penalized` codifican los 3 buckets de clasificación con la lección H5 aplicada (paráfrasis sustantiva E imperativa, sin literales únicos). Cada caso Tipo A anota en el fixture el campo `evidence_quote` con la cita textual del cuerpo que contiene la conclusión documentada (trazabilidad).
+
+2. **QA test offline:** `test/services/rag/holdout_v6_sonda_qa_test.rb` creado, clonado del patrón v5. Verifica:
+   - Intersección vacía con v1-v5 (ninguna pregunta reutilizada)
+   - `Rag::DeterministicIntent.ambiguous_hardware_query? == false` en los 6 casos (todas las preguntas nombran "página N")
+   - Cada patrón de abstención (Tipo B) probado contra ≥2 fraseos correctos (forma sustantiva e imperativa)
+   - Todos los `penalized` probados contra respuestas conocidas correctas sin disparar (QA regex)
+   - 11 tests / 276 assertions, todos verdes
+
+3. **Documentación:** nueva sección "Sonda v6 (ejecución de la opción 3, Decisión #11)" en este documento con el criterio congelado. Fila nueva en la tabla de Estado (arriba).
+
+**Verificaciones:**
+
+- **Fixture:** 6 casos (3 Tipo A identificados con `evidence_quote`, 3 Tipo B). `max_score` real 30, `passing_score` 24 (`ceil(80%)`). Todos los casos llevan `severity: safety_critical` y `source_page_required: true`. Todos los `penalized` llevan `severity: critical`.
+- **QA test:** suite completa verde, 11 tests / 276 assertions, 0 failures / 0 errors. Intersección vacía con v1-v5 verificada. Paráfrasis de abstención ≥2 fraseos por caso Tipo B. Los `penalized` no disparan sobre respuestas conocidas correctas.
+- **Páginas usadas:** p.59 (MP VÍA SERIE HIDRÁULICO, 6 casos) y p.12 (HIDRA CRONO, 1 caso) — ninguna reutilizada de v1-v5 para el hecho específico evaluado aquí.
+- **Ninguna llamada a Bedrock/Anthropic en esta fase ($0).**
+
+**Casos Tipo A (control con conclusión documentada):**
+
+1. `sonda_v6_mp_via_serie_3c_tipo_a` (p.59): subcircuito XSSC abierto → ¿es la condición normal? `evidence_quote`: "Todos los elementos deben estar cerrados para continuidad del segmento 3C/8C"
+2. `sonda_v6_hidra_crono_serok_tipo_a` (p.12): LED SERok apagado → ¿es la condición esperada? `evidence_quote`: "El LED SERok indica que todas las series de seguridad están cerradas (cadena completa cerrada)"
+3. `sonda_v6_mp_via_serie_xssh1_tipo_a` (p.59): subcircuito XSSH1 → ¿está documentado el estado requerido? `evidence_quote`: "Todos los elementos deben estar cerrados para continuidad del segmento 2H/1H"
+
+**Casos Tipo B (familia LED 2H, sólo inferible):**
+
+4. `sonda_v6_mp_via_serie_6h_tipo_b` (p.59): LED 6H apagado → ¿es la condición normal?
+5. `sonda_v6_mp_via_serie_9h_tipo_b` (p.59): LED 9H apagado → ¿es la condición esperada?
+6. `sonda_v6_mp_via_serie_3c_led_tipo_b` (p.59): LED 3C apagado → ¿es la condición normal?
+
+### Fase S2 — Checkpoint mínimo + corrida única (≤12 `retrieve_invocations`) — **PENDIENTE**
+
+**NO EJECUTADA. Instrucciones para el ejecutor:**
+
+1. **Checkpoint mínimo:**
+   - `kamal deploy` (el fixture debe existir en la imagen)
+   - Verificar `kamal app version` == HEAD del commit que contiene el fixture v6
+   - Verificar job `CCCDNEDFYL` sigue `COMPLETE` sin job posterior (control-plane, $0)
+   - Aurora caliente vía `WarmBedrockKbJob.perform_now` (fuera de presupuesto)
+   - Humo de 1 invocación repitiendo el patrón del checkpoint del ciclo 5 (ambos fixes H1/H4 verdes)
+
+2. **Corrida única de la sonda:**
+   - UNA sola vez, `-r web` exclusivamente
+   - `RAG_SEGURIDADES_FIXTURE_PATH=script/fixtures/rag_seguridades_holdout_v6_sonda_abstencion.json script/rag_seguridades_benchmark.rb`
+   - Estimado ~8-9 invocaciones (patrón v5: ~1.36/pregunta)
+
+3. **Artefacto completo:**
+   - Cada caso con `answer` y `chunks` no vacíos
+   - Copiar a tmp local + SHA256 en la misma sesión
+   - La sonda queda gastada: no se reabre
+
+**Presupuesto declarado:** 1 (checkpoint) + ≤11 (sonda, estimado real ~9) = ≤12 de los 13 restantes → ciclo cierra ≤55/56.
+
+### Fase S3 — Clasificación offline y resolución de la Decisión #11 ($0) — **PENDIENTE**
+
+**NO EJECUTADA. Instrucciones para el ejecutor:**
+
+1. **Clasificación de las 6 respuestas** (offline, leyendo el artefacto de la Fase S2):
+   - Leer la respuesta íntegra de cada caso (no sólo el score regex)
+   - Clasificar cada una en los 3 buckets: `declara_conclusion`, `abstiene`, `afirmacion_sin_respaldo`
+   - Exactamente la falencia que el dueño señaló de las rúbricas del ciclo 4 (se miraba el score, no la respuesta)
+
+2. **Aplicar el criterio congelado:**
+   - Contar cuántos Tipo A clasifican en cada bucket
+   - Veredicto sistemática/aislada según la regla de arriba
+   - Registrar el veredicto con la respuesta verbatim de cada caso como evidencia en un anexo nuevo
+
+3. **Actualizar la Decisión humana #11:**
+   - Agregar la evidencia y la recomendación resultante (opción 1 u opción 2)
+   - La resolución final sigue siendo del dueño
+
+**Qué NO hace la sonda:**
+
+- No toca código de la app, prompts, datos en S3/Bedrock ni los fixes desplegados (sólo `0fad454`/`cbc4c06` + fixture nuevo es el único delta visible en el repo)
+- No reabre v1-v5 ni la batería de proveniencia (restricción 7 del ciclo 5)
+- No corrige H12/H13 (batería v2 = opción 4, difiere a durante/post piloto)
+- No decide liberar el piloto: produce la evidencia para que el dueño resuelva la Decisión #11
 
 ## Qué NO está en este plan
 

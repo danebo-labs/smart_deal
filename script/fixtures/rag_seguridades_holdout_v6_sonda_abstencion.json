@@ -1,0 +1,150 @@
+{
+  "version": "seguridades-holdout-v6.0-sonda",
+  "description": "Sonda v6 sobre-abstención (ejecución de la opción 3, Decisión humana #11 del ciclo 5). Instrumento de clasificación con 6 preguntas (3 Tipo A + 3 Tipo B), criterio congelado antes de abrir. Tipo A = control con conclusión documentada (el chunk SÍ contiene literalmente la declaración del estado esperado); Tipo B = sólo inferible, familia LED 2H (el documento establece la semántica LED = indicador de continuidad pero NO declara la condición normal). Objetivo: determinar si la sobre-abstención del caso LED 2H del holdout v5 es sistemática (≥1 caso Tipo A clasifica 'abstiene') o aislada (3/3 Tipo A clasifican 'declara_conclusion'). Ninguna pregunta se reutiliza de v1-v5 (intersección vacía verificada por QA test); cada caso Tipo A anota la cita textual del cuerpo con la conclusión documentada (campo evidence_quote). Compatible con el runner existente (script/rag_seguridades_benchmark.rb vía RAG_SEGURIDADES_FIXTURE_PATH). Los patrones required/penalized codifican los 3 buckets de clasificación (declara_conclusion, abstiene, afirmacion_sin_respaldo) con paráfrasis sustantiva E imperativa (lección H5 ciclo 5).",
+  "citation_required": true,
+  "max_score": 48,
+  "passing_score": 39,
+  "cases": [
+    {
+      "id": "sonda_v6_mp_via_serie_3c_tipo_a",
+      "category": "condicion_normal_documentada",
+      "severity": "safety_critical",
+      "question": "En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, si todos los elementos del subcircuito XSSC (ACUÑAMIENTO, FALDON TELESCOPICO, CERROJOS, BOTONERA REVISION) están abiertos, ¿es esa la condición normal de operación del ascensor?",
+      "source_pages": [59],
+      "evidence_quote": "Todos los elementos deben estar cerrados para continuidad del segmento 3C/8C",
+      "required": [
+        { "label": "identifica los elementos del subcircuito XSSC", "pattern": "XSSC|ACU[ÑN]AMIENTO.*FALDON|CERROJOS.*BOTONERA" },
+        { "label": "declara que abiertos NO es la condición normal", "pattern": "no\\s+es\\s+la\\s+condici[oó]n\\s+(?:normal|esperada|operativa)|no\\s+corresponde\\s+al\\s+(?:estado|funcionamiento)\\s+normal" }
+      ],
+      "optional": [
+        { "label": "menciona que deben estar cerrados", "pattern": "deben\\s+estar\\s+cerrados" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma que elementos abiertos SÍ es la condición normal",
+          "pattern": "(?<!no\\s)(?:es|ser[ií]a)\\s+la\\s+condici[oó]n\\s+(?:normal|esperada|operativa)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "sonda_v6_hidra_crono_serok_tipo_a",
+      "category": "condicion_normal_documentada",
+      "severity": "safety_critical",
+      "question": "En HIDRA CRONO, página 12, el LED SERok indica 'SERIES DE SEGURIDAD CERRADAS': si el LED SERok está apagado, ¿es esa la condición esperada para la operación normal del ascensor?",
+      "source_pages": [12],
+      "evidence_quote": "El LED SERok indica que todas las series de seguridad están cerradas (cadena completa cerrada)",
+      "required": [
+        { "label": "identifica SERok", "pattern": "\\bSERok\\b" },
+        { "label": "declara que apagado NO es la condición esperada", "pattern": "no\\s+es\\s+la\\s+condici[oó]n\\s+(?:esperada|normal)|LED\\s+apagado.*no.*(?:normal|esperado)" }
+      ],
+      "optional": [
+        { "label": "menciona que SERok indica cadena completa cerrada", "pattern": "cadena\\s+completa\\s+cerrada|todas\\s+las\\s+series.*cerradas" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma que SERok apagado SÍ es la condición normal",
+          "pattern": "(?<!no\\s)(?:es|ser[ií]a)\\s+la\\s+condici[oó]n\\s+(?:esperada|normal|operativa)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "sonda_v6_mp_via_serie_xssh1_tipo_a",
+      "category": "condicion_normal_documentada",
+      "severity": "safety_critical",
+      "question": "En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, el diagrama indica que en el subcircuito XSSH1 todos los elementos (SAB, STOP FOSO, BOTONERA REVISION FOSO, FINAL DE CARRERA) deben estar en cierto estado para la continuidad del segmento: ¿está documentado cuál es ese estado requerido?",
+      "source_pages": [59],
+      "evidence_quote": "Todos los elementos deben estar cerrados para continuidad del segmento 2H/1H",
+      "required": [
+        { "label": "identifica los elementos del subcircuito XSSH1", "pattern": "XSSH1|SAB.*STOP\\s+FOSO|BOTONERA.*FOSO|FINAL" },
+        { "label": "declara que el estado requerido SÍ está documentado", "pattern": "(?:est[aá]|queda)\\s+document|el\\s+documento\\s+(?:indica|especifica|establece)|deben\\s+estar\\s+cerrados" }
+      ],
+      "optional": [
+        { "label": "especifica 'cerrados' como el estado", "pattern": "cerrados|continuidad" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma que NO está documentado o requiere verificación en campo",
+          "pattern": "no\\s+(?:documenta|indica|especifica)|requiere\\s+verificaci[oó]n.*campo|verificar.*en\\s+campo",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "sonda_v6_mp_via_serie_6h_tipo_b",
+      "category": "led_sin_declaracion_condicion_normal",
+      "severity": "safety_critical",
+      "question": "En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, si el LED 6H (SERIE BOTONERA REVISION CABINA, BOTONERA REVISION FOSO Y STOP FOSO) está apagado, ¿qué indica esto y es la condición normal de operación?",
+      "source_pages": [59],
+      "required": [
+        { "label": "identifica el LED 6H", "pattern": "\\b6H\\b" },
+        { "label": "menciona las botoneras o el segmento", "pattern": "BOTONERA|REVISI[OÓ]N|STOP\\s+FOSO|segmento" }
+      ],
+      "optional": [
+        { "label": "declara que LED apagado indica apertura/circuito abierto", "pattern": "apert|circuito\\s+abierto|sin\\s+continuidad|segmento.*abierto" },
+        { "label": "declara conclusión sobre si es o no la condición normal", "pattern": "(?:no\\s+)?es\\s+la\\s+condici[oó]n\\s+(?:normal|esperada)" },
+        { "label": "abstiene declarando ausencia documental o requiriendo verificación", "pattern": "no\\s+(?:documenta|especifica|indica).*condici[oó]n\\s+normal|requiere\\s+verificaci[oó]n.*campo|verificar.*campo.*condici[oó]n" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma sin respaldo que LED 6H apagado es la condición normal/segura",
+          "pattern": "6H(?:(?!verificar|no\\s+(?:es|especifica|documenta|indica)).){0,60}(?<!no\\s)(?:es|ser[ií]a)\\s+la\\s+condici[oó]n\\s+(?:normal|segura|esperada)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "sonda_v6_mp_via_serie_9h_tipo_b",
+      "category": "led_sin_declaracion_condicion_normal",
+      "severity": "safety_critical",
+      "question": "En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, si el LED 9H (SERIE CERROJOS EXTERIORES) está apagado, ¿es esa la condición esperada durante la operación normal del ascensor?",
+      "source_pages": [59],
+      "required": [
+        { "label": "identifica el LED 9H", "pattern": "\\b9H\\b" },
+        { "label": "menciona cerrojos exteriores", "pattern": "CERROJOS\\s+EXTERIORES" }
+      ],
+      "optional": [
+        { "label": "declara que LED apagado indica apertura/circuito abierto", "pattern": "apert|circuito\\s+abierto|sin\\s+continuidad|cerrojos.*abiertos" },
+        { "label": "declara conclusión sobre si es o no la condición esperada", "pattern": "(?:no\\s+)?es\\s+la\\s+condici[oó]n\\s+(?:esperada|normal)" },
+        { "label": "abstiene declarando ausencia documental o requiriendo verificación", "pattern": "no\\s+(?:documenta|especifica|indica).*condici[oó]n|requiere\\s+verificaci[oó]n.*campo|verificar.*campo" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma sin respaldo que LED 9H apagado es la condición esperada/normal",
+          "pattern": "9H(?:(?!verificar|no\\s+(?:es|documenta|especifica|indica)).){0,60}(?<!no\\s)(?:es|ser[ií]a)\\s+la\\s+condici[oó]n\\s+(?:esperada|normal|operativa)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    },
+    {
+      "id": "sonda_v6_mp_via_serie_3c_led_tipo_b",
+      "category": "led_sin_declaracion_condicion_normal",
+      "severity": "safety_critical",
+      "question": "En MP – VÍA SERIE HIDRÁULICO FOSO/HUIDA REDUCIDA, página 59, el LED 3C corresponde a SERIE ACÑAMIENTO Y FALDON TELESCOPICO: si el LED 3C está apagado, ¿es la condición normal para la operación del ascensor?",
+      "source_pages": [59],
+      "required": [
+        { "label": "identifica el LED 3C", "pattern": "\\b3C\\b" },
+        { "label": "menciona acuñamiento o faldón", "pattern": "ACU[ÑN]AMIENTO|FALDON" }
+      ],
+      "optional": [
+        { "label": "declara que LED apagado indica apertura/circuito abierto", "pattern": "apert|circuito\\s+abierto|sin\\s+continuidad|segmento.*abierto" },
+        { "label": "declara conclusión sobre si es o no la condición normal", "pattern": "(?:no\\s+)?es\\s+la\\s+condici[oó]n\\s+normal" },
+        { "label": "abstiene declarando ausencia documental o requiriendo verificación", "pattern": "no\\s+(?:documenta|especifica|indica).*(?:condici[oó]n\\s+normal|estado\\s+esperado)|requiere\\s+verificaci[oó]n.*campo|verificar.*campo" }
+      ],
+      "penalized": [
+        {
+          "label": "afirma sin respaldo que LED 3C apagado es la condición normal",
+          "pattern": "3C(?:(?!verificar|no\\s+(?:es|documenta|especifica|indica)).){0,60}(?<!no\\s)(?:es|ser[ií]a)\\s+la\\s+condici[oó]n\\s+(?:normal|operativa|esperada)",
+          "severity": "critical"
+        }
+      ],
+      "source_page_required": true
+    }
+  ]
+}

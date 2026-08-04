@@ -616,13 +616,86 @@ como deuda con ruta de retiro (P4 y P2 respectivamente) para el dueño.
 > ya expone la página citada), el v4 queda gastado, y PARA: no hay ciclo 5 con esta
 > estrategia — escala como decisión humana #9.
 
+## Anexo D — N8: causa raíz confirmada (tarea futura, NO ejecutada en este ciclo)
+
+Investigación de sólo lectura hecha a pedido del dueño durante la sesión de Fase 0 (fuera
+del mandato original de 0c, que sólo pedía inventariar regex). **No se tocó código ni se
+llamó a ninguna API.** Se documenta aquí como tarea pendiente, no como trabajo de este
+ciclo — la restricción 2 ("cero re-ingesta") sigue vigente y N8 sigue fuera de mandato.
+
+**Mecanismo confirmado:** no es un string hardcodeado en Ruby. Es un artefacto del propio
+modelo de visión bajo el prompt viejo (contrato `field_records_v5`):
+`SingleFileChunkingService` llama primero a la página ancla (p.2, ALJO real) y captura su
+`document_name` (`single_file_chunking_service.rb:242`); ese valor se reutiliza a
+propósito para las ~96 páginas restantes vía `document_name_hint` (línea 252 →
+`BatchChunkingPrompt.page_user_content`, líneas 503/510-521: *"emit the same document_name
+across all pages of this document"*). Esto es CORRECTO para el campo JSON de identidad de
+ARCHIVO (un compendio multi-marca es "un solo archivo", regla "ONE FILE = ONE IDENTITY").
+El bug es que el prompt v5 ADEMÁS le pedía al modelo textualizar ese mismo hint dentro del
+CUERPO de cada página como una línea `**Document:** {hint} | Page N | ORIGINAL_FILE_NAME:
+PIPELINE_INJECTED | NORMALIZED_FILE_NAME: PIPELINE_INJECTED | SOURCE_URI:
+PIPELINE_INJECTED` — así "ALJO Control Level 1B Altius" quedó incrustado en el texto que
+el LLM de generación lee, en chunks que no son de ALJO. El prompt actual en el repo (v8)
+sigue siendo internamente contradictorio en este punto: su comentario de cabecera dice que
+esta marca en el cuerpo es "legacy" reemplazada por la identidad inyectada por Rails, pero
+las líneas 293-294 y 305-315 todavía instruyen al modelo a emitirla — **una ingesta nueva
+con el prompt actual podría reproducir el mismo defecto** si no se corrige el prompt antes.
+
+**Hallazgo clave — el fix NO requiere re-ingesta ni llamadas a Anthropic:** cada chunk ya
+tiene en su sidecar (`page_number`, `section_identity`, `original_filename`,
+`original_source_uri`) todo lo necesario para reescribir esa línea con una sustitución de
+texto determinística por chunk (la forma de la línea mala es regular y greppeable:
+`\*\*Document:\*\* ALJO Control Level 1B Altius \| Page \d+ \| ORIGINAL_FILE_NAME:
+PIPELINE_INJECTED.*`). Verificado empíricamente: `chunk_43` tiene
+`section_identity: "FAIN"` correcto en su metadata mientras su cuerpo sigue diciendo
+"ALJO". El mapeo página→marca ya existe y está verificado 100% contra
+`docs/rag/gate_a_medicion_topologia.md` §5.2 (18 páginas divisoras) — no hace falta
+recalcularlo. Esto **cambia el costo/riesgo asumido en la restricción 2**: el texto de esa
+restricción asume que arreglar N8 exige re-ingesta (bloqueada por el saldo agotado de
+Anthropic desde 2026-08-02); esta investigación muestra que un parche dirigido
+(sustitución de texto en los 96 cuerpos + re-subida de esos archivos a S3 + resync de KB,
+sin volver a llamar al modelo de visión) sí sería viable con el saldo actual.
+
+**Alternativa de mayor alcance (propuesta por el dueño en el chat, no evaluada en
+profundidad aquí):** una re-indexación completa manejando 2 versiones (KB v1 = actual,
+KB v2 = corregida) permitiría además corregir el prompt v8 contradictorio antes de generar
+contenido nuevo, no sólo parchear lo existente — pero esa ruta sí requiere las llamadas de
+visión que hoy están bloqueadas por saldo, y coexistir 2 versiones de KB añade complejidad
+operacional (routing, comparación, corte). Queda sin decidir.
+
+**No se ejecuta nada de esto en el ciclo 4** (restricción 2 y restricción 5: un objetivo
+por sesión). Se anota como tarea para una decisión futura del dueño: parche de texto
+dirigido (barato, sin saldo Anthropic) vs. re-indexación completa con 2 versiones (más
+caro, corrige también el prompt, requiere saldo).
+
+### Síntesis: ¿dónde están los puntos de pérdida de precisión?
+
+| Hallazgo | Etapa del pipeline | Mecanismo | Estado |
+|---|---|---|---|
+| N7 (ARCA/J bypass mal enrutado) | Clasificación de intención (regex de forma-de-pregunta) | `EXPLICIT_EQUIPMENT_PATTERN` no reconocía ARCA ni jumpers de 1 letra | **Corregido** ciclo 3 Fase 2 (`fb28983`) |
+| N8 (identidad ALJO en 96/97 cuerpos) | **Ingesta / cuerpo del chunk** (no metadata, no retrieval, no generación) | Hint de `document_name` de la página ancla textualizado por el modelo de visión en cada página, bajo prompt v5 | **Diagnosticado** (Anexo D), NO ejecutado — deuda con dueño, decisión pendiente |
+| N9 (guion de benchmark salta 2 pasos de producción) | Arnés de benchmark, no producción | El script no invoca `DocumentOverviewResponder` ni `Rag::DeterministicRenderer` | Documentado y corregido en redacción; sin mandato de código este ciclo |
+| N10 (colisión de página con duplicado casi calcado) | **Retrieval** (ranking/filtro de Bedrock) | Página nombrada explícitamente no gana por score contra su casi-duplicado, o ni siquiera entra al top-k | Mecanismo confirmado (Anexo B) — fix en Fase 1 de este ciclo (page-pin) |
+| N11 (cobertura multi-placa, LED SPM SISTEL) | **Generación** (no retrieval — confirmado en Anexo B) | El chunk correcto está en el top-k pero el prompt de generación no fuerza cobertura de ambas familias nombradas | Fix ya escrito, apagado por flag — Fase 2 de este ciclo lo enciende |
+| Hueco 6 (`SAFETY_CRITICAL_PATTERNS` vs. `query_safety_directive`) | Clasificación de intención (regex) | Un patrón tolera espacios/saltos de línea, el otro exige el literal exacto — con espaciado atípico el top_k sube pero el directive de STOP-WORK no se dispara | Documentado (Anexo C, deuda P2), no ejecutado este ciclo |
+
+Cuatro de los seis puntos de pérdida ya tienen mecanismo confirmado y ruta de fix (N7 ya
+resuelto; N10/N11 resueltos en las Fases 1-2 de este ciclo). Los dos que quedan sin
+ejecutar (N8, Hueco 6/P2) no requieren re-ingesta con saldo Anthropic tan urgentemente
+como se asumía — pero siguen fuera del mandato de ciclo 4 por la restricción de "un
+objetivo por sesión" (restricción 5), no porque sean técnicamente imposibles con el saldo
+actual.
+
 ## Qué NO está en este plan
 
 - Nada de visión (T1, T2, zoom, triaje visual): apagado se queda apagado.
 - Nada que llame a la API de Anthropic desde la aplicación.
 - Ningún cambio de `BEDROCK_MODEL_ID` en producción.
-- N8 (contaminación de identidad en el CUERPO de 96/97 chunks): requiere re-ingesta,
-  prohibida por la restricción 2 — queda en el inventario 0c como deuda con dueño.
+- N8 (contaminación de identidad en el CUERPO de 96/97 chunks): **causa raíz confirmada,
+  Anexo D** — un parche de texto dirigido (sin re-ingesta ni llamadas a Anthropic) es
+  viable, pero no se ejecuta este ciclo por la restricción 5 (un objetivo por sesión);
+  queda como decisión pendiente del dueño entre parche dirigido vs. re-indexación
+  completa con 2 versiones de KB.
 - N9 (alinear el guion de benchmark con `QueryOrchestratorService`): documentado y
   corregido en su redacción, sin mandato en este ciclo.
 - La migración P4 (guards por identidad de chunk en vez de forma léxica): ruta de retiro

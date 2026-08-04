@@ -292,7 +292,7 @@ desplegar.
 | 0a Rescate artefacto v3 | **hecho 2026-08-03** — el artefacto seguía en el contenedor (no se perdió); primer intento de `sha256sum` remoto dentro de la sesión SSH de `kamal app exec` dio un hash distinto (ruido: el pipe combinado `test -f && sha256sum` mezcló líneas de log de Kamal con stdout y corrompió el cómputo remoto). Se descargó con `cat` a un archivo crudo, se recortaron las 7 líneas de log de Kamal (`INFO […]`, `App Host: …`) que preceden al `{` inicial, y el SHA256 local coincide EXACTO con el esperado. **No hubo degradación**: 0b corrió sobre el artefacto completo, 0 llamadas Bedrock. | `tmp/rag_seguridades_holdout_v3_run1_2026-08-03.json` — SHA256 `b4e4b8927a0f6d9491f3e4c9ac88f6c6a8ae8f3f24b7002e95f445e5d1b7659e` (coincide) |
 | 0b Diagnóstico offline N10/N11 | **hecho 2026-08-03**, $0 Bedrock — ver Anexo B para la tabla completa y el detalle por caso | — (análisis offline sobre el artefacto de 0a, sin generar artefacto nuevo) |
 | 0c Inventario regex | **hecho 2026-08-03**, sólo lectura, nada tocado — ver Anexo C | — |
-| 1 Fix N10 page-pin | pendiente | — |
+| 1 Fix N10 page-pin | **hecho 2026-08-03** — filtro `equals: page_number` (entero) implementado en `build_vector_search_configuration`, detrás de `Rag::PagePinFlag`/`RAG_PAGE_PIN_ENABLED`; activado en `config/deploy.yml` local (recuerda: ese archivo está gitignored, ver nota ⚠️ en el prompt de la Fase 2). Tests unitarios ($0) verdes. Desplegado a PROD (`kamal deploy`, SHA `0051b5ba13e8500a3127778a335a780ec926dff1` == HEAD, verificado con `kamal app version`). Verificación empírica con 4 preguntas ad-hoc NUEVAS (8 llamadas `Retrieve`, dentro del techo ≤8) — hipótesis CONFIRMADA, ver Anexo E: los 4 casos pasan de fallar/no-entrar-al-top-k a rank 1/12 exacto tras encender el flag. | before: `tmp/rag_page_pin_probe_before_2026-08-03.json` SHA256 `936dec845406b80b7fc9edb375aaafb18215c74e0790b0331768a402dfa339a9`; after: `tmp/rag_page_pin_probe_after_2026-08-03.json` SHA256 `62f3ecf08a07ee9b00cd733adbe33c89a630aaa51a557ffe99487d8f9626f9c2`; commit `0051b5b` |
 | 2 Fix N11 flag multi-placa | pendiente | — |
 | 3 Guardrail piloto | pendiente | — |
 | 4 Evaluador v2 | pendiente | — |
@@ -504,6 +504,24 @@ como deuda con ruta de retiro (P4 y P2 respectivamente) para el dueño.
 
 ### Fase 2 — Sonnet 5
 
+> ⚠️ CRÍTICO (hallazgo de la Fase 1, 2026-08-03): `config/deploy.yml` está
+> **gitignored** (commit `8c7e376`, "keep deploy config and DB secrets out of
+> version control") — vive sólo en el checkout local de la máquina, NO viaja
+> con `git commit`/`git clone`. La Fase 1 encendió `RAG_PAGE_PIN_ENABLED:
+> "true"` ahí y ya desplegó a PROD (`kamal deploy`, SHA
+> `0051b5ba13e8500a3127778a335a780ec926dff1`, ver Estado y Anexo E). **Antes
+> de tu propio `kamal deploy`** (lo vas a necesitar para probar tu flag en
+> vivo con las ≤4 llamadas de verificación dirigida): confirma con `grep
+> RAG_PAGE_PIN_ENABLED config/deploy.yml` que la línea sigue presente en TU
+> checkout — si trabajas desde un checkout distinto al de esta sesión (otra
+> máquina, clon nuevo), esa línea NO estará y tu deploy apagaría el page-pin
+> sin que ningún test lo detecte (no hay test que lea el `config/deploy.yml`
+> real, sólo los de `Rag::PagePinFlag` sobre `ENV`). Añade tu propia línea
+> `RAG_FAMILY_AMBIGUITY_GUARD_ENABLED: "true"` AL LADO de la de page-pin, sin
+> tocarla. El patrón de esta Fase 1 (deploy interino de la propia fase para
+> su propia verificación en vivo, sin esperar al checkpoint consolidado de
+> la Fase 6) es el que se espera que repitas.
+>
 > ⚠️ CRÍTICO: el código de N11 ya existe — NO lo reescribas ni lo "mejores".
 > `Rag::FamilyAmbiguityDetector` + `add_named_board_coverage`
 > (`app/services/rag/structured_evidence_route.rb:363-457`) se escribieron para el caso
@@ -734,6 +752,52 @@ ejecutar (N8, Hueco 6/P2) no requieren re-ingesta con saldo Anthropic tan urgent
 como se asumía — pero siguen fuera del mandato de ciclo 4 por la restricción de "un
 objetivo por sesión" (restricción 5), no porque sean técnicamente imposibles con el saldo
 actual.
+
+## Anexo E — Fase 1: verificación empírica del page-pin (2026-08-03)
+
+Hipótesis (§8.3, declarada en la Fase 1): un `equals: page_number` (entero)
+en AND con el filtro de cuenta/documento hace que Bedrock devuelva la página
+nombrada explícitamente en la pregunta en vez de dejarla competir por score
+contra su casi-duplicado. Resultado esperado si es falsa: las sondas ad-hoc
+seguirían citando el duplicado o sin encontrar la página en absoluto.
+
+**Método:** 4 preguntas ad-hoc NUEVAS (no reutilizadas de v1/v2/v3),
+2 por cluster duplicado (FAIN/RECOBA 46/76/79, THYSSEN 92/97), vía
+`script/rag_page_pin_probe.rb` (calcado de `rag_seguridades_recall_probe.rb`,
+sólo `retrieve_chunks` — sin generación, mide ranking, no calidad de
+respuesta). `top_k=12` (mismo top_k que la ruta estructurada del v3).
+"Before" corrió contra el código desplegado ANTES de esta fase (commit
+`afd8862`, ciclo 3 Fase 3 — sin page-pin, mecanismo inexistente); "after"
+corrió después de `kamal deploy` de esta fase (commit `0051b5b`). 8 llamadas
+`Retrieve` en total (4+4), dentro del techo declarado de ≤8. `retrieve` (no
+`retrieve_and_generate`) — no genera tokens de modelo, coste marginal.
+
+| Caso | Página nombrada | Rank antes (top1 antes) | Rank después (top1 después) |
+|---|---|---|---|
+| `fain_pagina_76_terminal` | 76 | 11/12 (top1 = 94) | **1/12** (top1 = 76) |
+| `fain_pagina_46_procedimiento` | 46 | **no entró al top-12** (top1 = 60) | **1/12** (top1 = 46) |
+| `thyssen_pagina_92_indicador` | 92 | 11/12 (top1 = 7) | **1/12** (top1 = 92) |
+| `thyssen_pagina_97_tabla` | 97 | 1/12 (ya ganaba sin fix) | 1/12 (sin cambio, esperado) |
+
+**Veredicto: hipótesis CONFIRMADA, no falsada.** Los 3 casos que fallaban
+antes (76, 46, 92 — exactamente el patrón N10: página nombrada enterrada o
+ausente del top-k) pasan a rank 1/12 exacto con el flag encendido, incluido
+el caso más severo (`página 46`, que ni siquiera entraba al top-12 antes —
+el escenario donde Anexo B ya había descartado el re-rank local como
+mecanismo viable). El cuarto caso (97, el lado "ganador" del duplicado
+92/97) no necesitaba el fix y no cambió — comportamiento esperado, no una
+regresión. Ningún caso degradó a 0 resultados (la rama de retry-sin-filtro
+en `query()` y la abstención `DATA_NOT_AVAILABLE` de la ruta estructurada
+quedan sin ejercitar por esta verificación — no hubo 0-resultados que las
+disparara; se harán ejercitar naturalmente si algún caso del holdout v4
+nombra una página sin contenido, como `holdout_v3_carlos_silva_stop_foso_seguridad`
+del Anexo B).
+
+Artefactos completos (antes/después, con `vector_search_configuration` por
+caso) en `tmp/rag_page_pin_probe_before_2026-08-03.json` (SHA256
+`936dec845406b80b7fc9edb375aaafb18215c74e0790b0331768a402dfa339a9`) y
+`tmp/rag_page_pin_probe_after_2026-08-03.json` (SHA256
+`62f3ecf08a07ee9b00cd733adbe33c89a630aaa51a557ffe99487d8f9626f9c2`).
 
 ## Qué NO está en este plan
 

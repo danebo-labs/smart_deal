@@ -494,7 +494,7 @@ Ejecución:
 | 3 Parche de datos N8 + resync + re-invalidación | **hecho 2026-08-04 — H4 CERRADO.** Decisión humana #10 resuelta por el dueño: Alcance A (bloque completo) autorizado explícitamente ("eliminar toda contaminación de N8… identificar la causa raíz y removerla"). 96/97 cuerpos parcheados vía detección de bloque + 2 casos especiales, cero residuo verificado; `chunk_90` intacto. Backup completo de los 97 cuerpos vivos a S3 (`chunk_body_backups/1/b61f5d54-ff42-414a-97b7-01682d16f4b5/20260804T144351Z_ciclo5_fase3`) + tmp local ANTES de escribir (además del versioning nativo de S3, confirmado habilitado en PROD). Fix de robustez sobre el diseño original: el modo real descarga cada cuerpo EN VIVO de S3 en vez de confiar en la copia de referencia local de 2026-07-28 (que había derivado en `chunk_23`, detectado por el propio chequeo de ETag del primer intento — abortó sin escribir nada, como debía). 96/96 verificados post-escritura. Resync disparado y completado: **`job_id: "CCCDNEDFYL"`, `status: "COMPLETE"`** — reemplaza a `ZGCU99ISK5`, prompts de las Fases 5 y 6 actualizados en el Anexo A. Invalidación de caché automática (mecanismo de la Fase 1, sin paso adicional). Humo: 2/4 llamadas presupuestadas — 2 preguntas ad-hoc NUEVAS vía `BedrockRagService#query` (páginas 38 EXCELSIOR y 45 FAIN/EKM66) citan el fabricante correcto, CERO contaminación N8 en el `content` citado por Bedrock (prueba directa de reindexado, no sólo status del job) ni en la respuesta, ambas respuestas técnicamente sanas. Causa raíz (prompt de ingesta) ya removida por la Fase 2; re-verificado sin instrucción residual. Ningún hallazgo contradice una restricción ni el gate. Ver Anexo I. | `tmp/ciclo5_fase3_2026-08-04/n8_fase3_real_run_result_2026-08-04.json`, `n8_fase3_smoke_2026-08-04.json`, `n8_fase3_diagnostic_2026-08-04.json`, `prod_backup_20260804T144351Z/HASHES.json`, SHA256 en `tmp/ciclo5_fase3_2026-08-04/SHA256SUMS_fase3_real_run_2026-08-04.txt` |
 | 4 Holdout v5 + batería congelados | **hecho 2026-08-04** — dueño confirmó/no vetó Propuesta B (fila de arriba actualizada). (a) `script/fixtures/rag_seguridades_holdout_v5.json`: 14 casos nuevos, distribución idéntica al v4 (3 determinísticas/2 mapeos/2 generalización/1 ambigua/1 sin_respaldo/4 seguridad/1 comparativa), redactados y verificados 1:1 contra el contenido real de `tmp/seguridades_chunks_2026-07-28/chunk_{22,24,27,46,49,57,69,71}.txt` (páginas 24, 26, 29, 48, 51, 59, 71, 73 — ninguna reutilizada de v1-v4, intersección vacía verificada por test); `max_score` real 129, `passing_score` 104 (`ceil(80%)`); los 14 verifican offline `Rag::DeterministicIntent.ambiguous_hardware_query? == false` (las 14 preguntas nombran "página N"); lección H5 aplicada en los 2 `required` de abstención de "orden de cadena no documentado" (casos `..._orden_cadena_seguridad` y `..._orden_terminales_seguridad`), cada uno probado contra 2 fraseos distintos (sustantivo/imperativo) en el QA test. QA test clonado del v4: `test/services/rag/benchmark_rubric_evaluator_holdout_v5_qa_test.rb`, 9 tests / 135 assertions, verde. (b) `script/fixtures/rag_seguridades_provenance_battery_v1.json`: 18 casos (10 `neighbor_expansion_divisor_identity` sobre las divisoras THYSSEN p92/RECOBA p70/FAIN p41/KONE p51/ORONA p60/SCHINDLER p80/CTA p15/CARLOS SILVA p8/MP p54/EDEL p23, cada `expected_section_identity` contrastado 1:1 contra `docs/rag/gate_a_medicion_topologia.md` §5.2 Apéndice E; + 8 `absence_of_n8_contamination` sobre páginas p2/p24/p38/p45/p48/p55/p71/p97, checks determinísticos por campo estructurado, NO rúbrica regex); QA estructural offline (sin Bedrock, $0): `test/services/rag/provenance_battery_v1_qa_test.rb`, 6 tests / 131 assertions, verde. ⚠️ Hallazgo propio de esta fase (no bloqueante, no contradice restricción/gate, no se escala decisión #10 — sólo corrige la fuente de verdad-terreno de la Fase 6, prompt de esa fase ya reescrito con el detalle completo): la copia de referencia local `tmp/seguridades_chunks_2026-07-28/` tiene metadata OBSOLETA (`ingestion_contract_version: field_records_v5`) donde `canonical_name` es un valor constante ("ALJO Control Level 1B Altius") igual en los 97 chunks — NO es la verdad-terreno para `expected_section_identity` de la batería (que viene de Gate A §5.2); la verdad-terreno de metadata en vivo es la que la Fase 1 de este ciclo ya midió con `retrieve` real (`canonical_name: "THYSSEN"` en la página 93). Ambos fixtures + ambos tests + SHA256 en el mismo commit que esta fila; ninguna llamada a Bedrock/Anthropic en esta fase ($0). | `script/fixtures/rag_seguridades_holdout_v5.json`, `script/fixtures/rag_seguridades_provenance_battery_v1.json`, `test/services/rag/benchmark_rubric_evaluator_holdout_v5_qa_test.rb`, `test/services/rag/provenance_battery_v1_qa_test.rb`; SHA256 en `tmp/ciclo5_fase4_2026-08-04/SHA256SUMS.txt` |
 | 5 Checkpoint despliegue | **hecho 2026-08-04.** Pre-chequeo: Fases 1-4 ya commiteadas (working tree clean, `git log` confirma hasta `8b062f1`), suite completa verde ANTES de tocar nada (`bin/rails test`: **2292 runs, 8409 assertions, 0 failures, 0 errors, 189 skips**). Dos `kamal deploy` en esta sesión (mismo patrón que ciclo 4 Fase 6: el script de humo debe existir en la imagen para poder correr vía `kamal app exec`): (1) deploy inicial sobre HEAD `8b062f1` (Fase 4, ya commiteado) — `kamal app version` confirmó `8b062f197eefcd7fb8bea625e1dcfdedec6d6540` == HEAD; (2) se creó y commiteó `script/rag_fase5_checkpoint_smoke_2026-08-04.rb` (commit `0fad454`, sólo el script, sin tocar Fases 1-4) y se re-desplegó — `kamal app version` confirmó `0fad454cceddea702f2f99c6efe82e419b5a6ba6` == HEAD tras el segundo deploy. **SHA final desplegado (el que debe verificar la Fase 6): `0fad454cceddea702f2f99c6efe82e419b5a6ba6`.** Ingestion job re-confirmado en ambos checkpoints (antes y después del 2º deploy): `CCCDNEDFYL` sigue `COMPLETE`, sin job posterior (`aws bedrock-agent list-ingestion-jobs`, control-plane, $0 del presupuesto). Humo (**1/1 `retrieve_invocations` del presupuesto de la fase**): 1 pregunta NUEVA, fuera de v1-v4 y de los fixtures de la Fase 4 (no leídos), vía `Rag::StructuredEvidenceRoute` sobre la página divisora casi vacía 51 (portada KONE MONOSPACE) — "¿a qué conector está conectado el terminal 270 (INTERRUPTOR REVISION)?" — forzó expansión de vecindad hacia la página 52 real. **Ambos fixes bloqueantes verificados en la misma llamada:** (a) H1 — cita atribuye `canonical_name: "KONE"` (no "ALJO Control Level 1B Altius"), página citada 52 (no la 51 nombrada, confirma expansión real); log estructurado `[PILOT_USAGE] evidence_route_context` con `"expansion_mechanism":"section_identity","section_identity":"KONE"` como evidencia cruda independiente del script. (b) H4 — cero apariciones de la línea/bloque N8 en el **cuerpo completo** del chunk recuperado (`result[:diagnostics][:retrieved_chunks]`, no el `tooltip_excerpt` truncado a 150 caracteres) ni en la respuesta generada. Respuesta técnicamente sana (identifica XLH5, señala honestamente que la asignación pin-a-pin no es legible con precisión). ⚠️ Hallazgo propio de esta fase (no bloqueante, no contradice restricción/gate, no se escala decisión #10): el booleano `neighbor_expansion_occurred`/`both_fixes_verified` del JSON del script desechable marca `false` por un bug cosmético — compara el string `"section_identity"` contra `Rag::SectionNeighborExpander::MECHANISM_SECTION_IDENTITY`, que es un **símbolo** Ruby (`:section_identity`); `JSON.generate` serializa el símbolo como string en la salida impresa, ocultando la discrepancia de tipo en el JSON pero no en el objeto Ruby real (`Symbol#==String` siempre `false`). El campo subyacente (`retrieval_trace.structured_route.expansion_mechanisms`, visible tal cual en el JSON) y el log `PILOT_USAGE` ya confirman el mecanismo real sin ambigüedad — no se re-ejecutó una segunda llamada para "corregir" el booleano cosmético (habría excedido el presupuesto de 1 llamada de la fase); si la Fase 6 escribe su propio runner y compara `expansion_mechanisms` contra un string literal, debe usar `.to_s` o comparar contra el símbolo. Aurora: la primera llamada del humo golpeó un **cold-start real** (`[Aurora] cold start (attempt 1)…`, `kb_retrieve latency_ms: 20272`) — esperado por diseño (`WarmBedrockKbJob`: "Aurora goes to standby after ~5 min idle"; los dos `kamal deploy` + verificaciones de esta sesión dejaron pasar >5 min sin tráfico Bedrock); `Bedrock::AuroraColdStartRetry` lo absorbió automáticamente (reintento único, éxito) — NO es un defecto de código, no consumió una segunda llamada del presupuesto (el reintento ocurre dentro de la misma invocación SDK). Verificación de Aurora caliente POST cold-start: `WarmBedrockKbJob.perform_now` (ping puro de `Retrieve`, `number_of_results: 1`, registrado como `kb_warm_ping` — evento estructurado FUERA de `bedrock_queries` por diseño, AGENTS.md "Internal Retrieve calls stay off bedrock_queries", no consume el presupuesto de la fase) → `[KB_WARM] ok ms=657`, sin línea `[Aurora] cold start` — **Aurora caliente confirmado, 657ms < 1000ms**; el dueño confirmó independientemente la misma condición probando la app real vía la UI de chat web en producción. `git rev-parse HEAD` == `0fad454cceddea702f2f99c6efe82e419b5a6ba6` == SHA desplegado, sin commits nuevos entre el 2º deploy y el cierre de esta fase. Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. | `tmp/ciclo5_fase5_2026-08-04/checkpoint_smoke_2026-08-04.json` SHA256 `cb20de842a2619b2e29ef46d353c528ca005c8efde9de301139a0d42f45a0a34`; `tmp/ciclo5_fase5_2026-08-04/checkpoint_raw_log_2026-08-04.txt` SHA256 `8d9cf758c9bc2fa6db13f3d54423717d2d9cd9250c847cd1a8ec4de945133fdc`; `script/rag_fase5_checkpoint_smoke_2026-08-04.rb`; commit `0fad454cceddea702f2f99c6efe82e419b5a6ba6` |
-| 6 Gate v5 → piloto | **desbloqueada (Fase 5 cerró 2026-08-04: SHA `0fad454` desplegado, job `CCCDNEDFYL` `COMPLETE`, humo verde con ambos fixes bloqueantes confirmados, Aurora caliente 657ms)** — ver prompt actualizado en el Anexo A. | — |
+| 6 Gate v5 → piloto | **NO PASA (2026-08-04) — escalado como Decisión humana #11.** Checkpoint repetido correctamente tras el commit `cbc4c06` (agrega el runner de la batería, toca `script/`): `kamal app version` == HEAD `cbc4c06fdee5e6c458a2de3bc161d5d565c6192f`; job `CCCDNEDFYL` re-confirmado `COMPLETE`, sin job posterior; Aurora calentada explícitamente antes de la corrida (`WarmBedrockKbJob.perform_now` → `[KB_WARM] ok ms=644`, fuera de presupuesto); humo de la Fase 5 repetido (1 `retrieve_invocation`) — ambos fixes bloqueantes siguen verdes (`manufacturer_attribution_correct: true`, cero N8 en cuerpo/respuesta). Holdout v5 y batería corridos UNA sola vez cada uno, en ese orden, contra `-r web` exclusivamente. **Presupuesto de la fase: 1 (checkpoint repetido) + 19 (holdout v5) + 18 (batería) = 38 `retrieve_invocations`; total del ciclo 43/56.** Resultado del AND estricto: **(1) PASA** — 113/129 (87.6% ≥ 80%, `passing_score` 104). **(2) NO PASA** — 1 de 4 `safety_critical` con `passed: false` (`holdout_v5_mp_via_serie_led2h_seguridad`, 4/8 pts). **(3) PASA** — `source_page_cited: true` en los 4 `safety_critical` (incluido el que falla por (2)). **(4) PASA numéricamente pero con validez de medición degradada** — 0 discrepancias de `canonical_name` y 0 `forbidden_patterns` detectados, pero dos hallazgos propios de esta corrida (H12, H13 abajo) limitan cuánto puede apoyarse esta conclusión en el instrumento nuevo; la evidencia fuerte de H1/H4 sigue siendo la de las Fases 1/3/5 (neighbor expansion forzada de verdad, con pregunta técnica específica). Clasificación completa de los 4 fallos del holdout v5 y ambos hallazgos de la batería (H12/H13) en "Decisión humana #11". Artefactos íntegros (cada caso con `chunks`/`answer` no vacíos salvo la salvedad de H12) copiados a tmp LOCAL + SHA256 en esta misma sesión — **v5 y la batería quedan gastados, no se reabren.** Ningún ajuste al criterio congelado tras ver resultados. Ver "Decisión humana #11" para las opciones planteadas al dueño. | `tmp/ciclo5_fase6_2026-08-04/checkpoint_repeat_smoke_2026-08-04.json` SHA256 `47679961be6b54a57252a0132df1c802ebc06d0b7c0355d6a3ded3d3392740ca`; `tmp/ciclo5_fase6_2026-08-04/holdout_v5_run1_2026-08-04.json` SHA256 `54eb76a972bdff62bd2a1747b56e7fec7969bc273d73489b796d1fb4cfb14f68`; `tmp/ciclo5_fase6_2026-08-04/provenance_battery_v1_run1_2026-08-04.json` SHA256 `1152de61e910e8b5644cd87715866563baaff234377bde9da4ad59b648c4a258`; todos en `tmp/ciclo5_fase6_2026-08-04/SHA256SUMS.txt`; runner `script/rag_ciclo5_fase6_provenance_battery_2026-08-04.rb` (commit `cbc4c06`); "Decisión humana #11" |
 
 ## Decisión humana #10 — alcance del parche N8 — **RESUELTA 2026-08-04**
 
@@ -548,6 +548,154 @@ en modo real el mismo 2026-08-04 (backup completo + SHA256, verificación de ETa
 reemplazada por descarga en vivo — ver Anexo I —, resync `COMPLETE`, invalidación de
 caché automática, humo verde). Ver fila 3 de la tabla de Estado y Anexo I para el
 detalle completo de ejecución.
+
+## Decisión humana #11 — Gate v5 NO PASA: clasificación de fallos y validez de la batería — **ABIERTA 2026-08-04**
+
+**Resultado del gate (AND estricto, criterio congelado antes de abrir, sin ajustes):**
+
+| # | Condición | Resultado |
+|---|---|---|
+| 1 | Holdout v5 ≥80% de 129 (`passing_score` 104) | **PASA** — 113/129 (87.6%) |
+| 2 | Cero `passed: false` en los 4 `safety_critical` | **NO PASA** — 1/4 falla (`holdout_v5_mp_via_serie_led2h_seguridad`) |
+| 3 | `source_page_cited` verde en esos 4 | PASA (los 4, incluido el que falla por (2)) |
+| 4 | Batería: 0 discrepancias `canonical_name` Y 0 `forbidden_patterns` | Numéricamente PASA (0 y 0), pero ver H12/H13 — validez de medición degradada para las 10 preguntas de identidad y para 17/18 cuerpos de la batería |
+
+**El gate NO PASA por (2).** Por diseño del plan (Fase 6, restricción de "sin ajustes tras
+ver resultados"), esta sesión no decide si liberar a piloto — clasifica cada fallo y
+escala.
+
+### Clasificación de los 4 fallos del holdout v5 (2 y los 3 técnicos no bloqueantes)
+
+**`holdout_v5_mp_via_serie_led2h_seguridad` (safety_critical, BLOQUEANTE para el gate,
+4/8 pts) — clasificación: AMBIGUA, requiere veredicto del dueño, no es un caso limpio
+como H5.** Pregunta: *"...si el LED 2H está apagado, ¿qué indica esto sobre el segmento
+SAB hueco y final de carrera, y es la condición normal para la operación del ascensor?"*
+Respuesta real (íntegra en el artefacto): identifica correctamente el LED 2H y afirma,
+sin cobertura textual explícita en el chunk recuperado, que el LED apagado indica que el
+segmento está **"abierto (sin continuidad en la cadena de seguridad)"** — una inferencia
+razonable mecánicamente (un LED de serie de seguridad apagado = pérdida de continuidad
+es la semántica estándar de esta familia de diagramas, y el propio chunk lista qué
+elementos "deben estar cerrados para mantener la continuidad") — pero luego, en vez de
+concluir que un segmento abierto NO es la condición normal de operación, la respuesta
+declara explícitamente: *"la documentación no especifica explícitamente si el LED 2H
+apagado es la condición normal... se requiere verificar en campo."* Los dos `required`
+que fallan (`"apertura del segmento"` literal, `"no es la condici[oó]n (?:normal|segura)"`
+literal) NO aparecen ni parafraseados — la respuesta se abstiene de la conclusión de
+seguridad en vez de declararla. Cero `penalized` disparado (no afirma falsamente que es
+normal). **Por qué no es un H5 limpio:** H5 era un desacuerdo de FORMA (la respuesta
+correcta existía, sólo con otras palabras); aquí la respuesta real NO contiene la
+conclusión de seguridad bajo ninguna forma — abstiene explícitamente citando falta de
+respaldo documental explícito, exactamente el comportamiento que `AGENTS.md`
+("Ambiguous data must return REQUIRE_FIELD_VERIFICATION", "Never invent... infer missing
+safety information") exige. **Dos lecturas válidas, en tensión real:**
+  - **(a) Arnés:** el fixture asumió que "LED apagado en una serie de seguridad = NO es
+    la condición normal" es inferible con certeza de la semántica estándar de estos
+    diagramas (todas las demás tablas LED del documento son consistentes con "encendido
+    = circuito cerrado = condición operativa normal"), y que la app debería aplicar esa
+    misma inferencia que ya aplicó para "abierto" al siguiente paso lógico ("abierto no
+    es la condición para operar"), en vez de exigir que la página lo diga literalmente
+    con las palabras "condición normal". Bajo esta lectura, la abstención es
+    sobre-conservadora respecto a lo que el propio diseño del sistema de seguridad
+    permite inferir con la misma confianza que ya usó para "abierto".
+  - **(b) Defecto real (o al menos comportamiento a revisar):** el chunk recuperado NO
+    contiene la palabra "normal" ni ninguna declaración sobre el estado esperado durante
+    operación — es genuinamente posible que un segmento "SAB hueco" esté abierto por
+    diseño en ciertos estados legítimos (p.ej. técnico en el foso con la protección
+    activada intencionalmente), no sólo por avería. Sin ese contexto operativo explícito
+    en la página, la abstención de la app es la respuesta más segura y honesta posible,
+    no un defecto — sería peor que la app afirmara con falsa certeza cuál es la
+    "condición normal" sin respaldo documental, exactamente el tipo de invención que
+    `AGENTS.md` prohíbe. Bajo esta lectura, es el fixture v5 el que asumió una inferencia
+    de seguridad que la app correctamente rehúsa hacer sin evidencia.
+
+**Los 3 fallos técnicos no-bloqueantes (severity `technical_important`, no afectan la
+condición 2): los 3 son defectos de arnés confirmados con evidencia directa, no defectos
+de la app:**
+  - `holdout_v5_zeus_hats_j9_solo` (9/12): el `penalized` dispara
+    (`re.search` confirmado) porque su ventana `.{0,80}` cruza del último ítem de la
+    lista de J9 (`AFLOJACABLES`) al encabezado de la lista de J10
+    (`CERROJOS EXTERIORES`) — exactamente la prohibición heredada "sin ventanas `.{0,N}`
+    que crucen ítems de una lista enumerada" que este mismo v5 declaró respetar. La
+    respuesta real separa J9/J10 en dos listas correctas y explícitas; el regex penaliza
+    el formato correcto, no un error real.
+  - `holdout_v5_edel_codigo_37_ambigua` (5/12 — nota: `penalized` `severity: critical` NO
+    disparó, sólo el `required` de forma): la respuesta responde *"No. ... Son funciones
+    completamente diferentes en placas distintas"* — semánticamente idéntico al
+    `required`, pero sin el string literal `"no es el mismo significado"`. Mismo patrón
+    que H5 (falso negativo de forma, respuesta correcta y seguro).
+  - `holdout_v5_recoba_ksa18_presostato_termistor_comparativa` (8/10): el `required`
+    exige `"inferior"` a ≤40 caracteres de `"TERMISTOR"`; la distancia real medida es 53
+    caracteres (`"TERMISTOR MOTOR (NTC 3D-5)**: aparece en la posición inferior"`) — la
+    respuesta ubica ambos componentes correctamente (confirmado 1:1 contra el mapeo
+    esperado del fixture), la ventana del regex es simplemente más angosta que una
+    redacción natural y correcta con el nombre completo del componente en medio.
+
+### H12/H13 — validez de medición de la batería de proveniencia (hallazgos de esta sesión, NO invalidan el resultado del gate en (1)-(3), pero limitan la fuerza probatoria de (4))
+
+**H12 — el runner de la batería no capturó el cuerpo completo del chunk en 17/18 casos.**
+`script/rag_ciclo5_fase6_provenance_battery_2026-08-04.rb` leía
+`result.dig(:diagnostics, :retrieved_chunks)` para el check
+`absence_of_forbidden_patterns_in_retrieved_content` — esa clave sólo existe cuando la
+ruta real fue `Rag::StructuredEvidenceRoute` (1/18 casos,
+`provenance_v1_absence_p24_edel`); `BedrockRagService#query` (la ruta que tomaron los
+otros 17) expone `diagnostics[:cited_chunks]`/`diagnostics[:safety_evidence_chunks]`, no
+`:retrieved_chunks`. El cuerpo completo SÍ existía en el proceso real
+(`result[:retrieved_citations]`, con `content:` sin truncar) pero el runner nunca lo
+persistió bajo esa clave — no es recuperable post-hoc sin una nueva llamada a Bedrock.
+**Efecto:** el check de ausencia de N8 sobre el CUERPO crudo del chunk corrió vacío
+(`bodies = []`, "pasa" trivialmente) en 17 de los 18 casos; el check sobre el TEXTO DE LA
+RESPUESTA generada sí corrió con datos reales en los 18 (0 coincidencias). La evidencia
+fuerte de H4 (ausencia de N8 en el cuerpo crudo) sigue siendo la de la Fase 3 (humo,
+2 preguntas) y la Fase 5/6 (checkpoint, cuerpo completo verificado explícitamente 2
+veces) — ambas SÍ inspeccionaron el cuerpo crudo completo y confirmaron cero
+contaminación. La batería no añade evidencia nueva de cuerpo-crudo más allá de esos 3
+puntos de datos ya existentes, salvo por el caso 24 (EDEL, limpio).
+
+**H13 — las 10 preguntas `neighbor_expansion_divisor_identity` no forzaron la expansión
+de vecindad en ningún caso.** Las 10 citaron la página divisora consultada directamente
+(`cited_pages` == `divisor_page` en los 10, ninguna citó una página de
+`expected_neighbor_pages`), y ninguna pasó por `Rag::StructuredEvidenceRoute` (0/10 con
+`structured_route` en el trace) — el mecanismo `SectionNeighborExpander` (H1) nunca se
+ejecutó para estos 10 casos. Causa raíz: las preguntas piden *"¿qué modelos/controlador
+se documenta[n] en la[s] página[s] siguientes?"* — un resumen de sección que la página
+divisora suele responder con su propio contenido ancla (a menudo un índice/portada con
+los nombres de modelo), sin necesitar el detalle técnico de la página vecina. Esto
+contrasta con las preguntas que SÍ forzaron expansión real y exitosa en este mismo ciclo
+(Fase 1: LED L8/borne 72 en la p.92 THYSSEN; Fase 5 y su repetición: conector del
+terminal 270 en la p.51 KONE) — ambas piden un dato técnico puntual que sólo existe en
+la página vecina. El check `canonical_name == expected_section_identity` sobre estas 10
+citas SÍ es válido (0 discrepancias, dato real), pero valida que "la página divisora se
+autoidentifica correctamente" — un caso ya cubierto por el diseño per-file de
+`canonical_name` (H9) — no que "la expansión de vecindad hereda la identidad correcta de
+la página vecina real" (el escenario exacto del bug H1 que esta batería se diseñó para
+cubrir a escala). Esa cobertura a escala sigue pendiente; la evidencia de que H1 funciona
+bajo expansión real sigue limitada a los 3 puntos de datos de las Fases 1 y 5 (arriba),
+los tres limpios.
+
+### Opciones para el dueño (ninguna ejecutada — el ciclo se detiene aquí)
+
+1. **Liberar a piloto igualmente**, tratando el fallo de `mp_via_serie_led2h_seguridad`
+   como lectura (a) (arnés: sobre-abstención de una inferencia de seguridad estándar) y
+   apoyándose en que H1/H4 tienen evidencia directa limpia (aunque limitada en volumen)
+   de las Fases 1, 3 y 5/6, con el guardrail de presentación del ciclo 4 activo.
+2. **No liberar; ajustar el comportamiento de la app** para que, cuando el propio
+   documento ya establece la semántica LED-apagado=circuito-abierto en una cadena de
+   seguridad, la respuesta pueda declarar con la misma confianza si ese estado es o no
+   la condición operativa esperada — requeriría diseño (¿regla determinística? ¿prompt?)
+   y no está definido en este plan.
+3. **Redactar un holdout v6 dirigido** (una sola pregunta o un lote pequeño) para
+   distinguir si el patrón de sobre-abstención de `mp_via_serie_led2h_seguridad` es
+   sistemático (aparece en otras preguntas de "es la condición normal") o aislado a esa
+   pregunta — antes de decidir 1 o 2.
+4. **Redactar una batería de proveniencia v2** que corrija H12 (capturar
+   `result[:retrieved_citations]`/`citation[:content]` completo desde cualquier ruta) y
+   H13 (preguntas que exijan el detalle técnico de la página vecina, no un resumen que
+   la divisora responde sola) para obtener cobertura real a escala de H1/H4 bajo
+   expansión — con su propio presupuesto Bedrock declarado aparte.
+
+**No se ejecuta ninguna opción sin veredicto explícito del dueño.** El holdout v5 y la
+batería de proveniencia v1 quedan gastados (restricción 7): no se reabren bajo ninguna
+opción; cualquier redacción nueva (opciones 3 o 4) es un instrumento v6/v2 distinto.
 
 ## Protocolo de plan vivo
 
@@ -1010,6 +1158,18 @@ backup), SHA256 de los tres en
   Decisión del dueño. Si T2 mejora significativamente con chunks limpios, el motor de
   visión vuelve a ser viable para complementar a T1 en lugar de quedar apagado.
 - **N9** (alinear el guion de benchmark con `QueryOrchestratorService`): sin mandato.
+- **H12/H13** (Fase 6, 2026-08-04): dos defectos de arnés en
+  `script/fixtures/rag_seguridades_provenance_battery_v1.json` /
+  `script/rag_ciclo5_fase6_provenance_battery_2026-08-04.rb` — ver "Decisión humana #11".
+  El fixture y
+  el runner quedan gastados (restricción 7); si una sesión futura autorizada por el dueño
+  redacta una batería v2, debe: (a) redactar las preguntas de tipo
+  `neighbor_expansion_divisor_identity` pidiendo un dato técnico que sólo exista en la
+  página vecina (no "qué se documenta en las páginas siguientes", que la página divisora
+  suele responder por sí sola sin expandir); (b) que el runner capture el cuerpo completo
+  del chunk citado desde `result[:citations]`/`result[:retrieved_citations]` (contenido
+  completo disponible ahí en cualquier ruta) en vez de depender de
+  `diagnostics[:retrieved_chunks]`, que sólo existe para `Rag::StructuredEvidenceRoute`.
 - **Los fixes del ciclo 4** (page-pin, flag N11, guardrail de presentación, evaluador
   v2): desplegados y funcionando — no se tocan, no se "mejoran".
 - **Las preguntas del holdout v5 y de la batería en este documento:** no se listan aquí

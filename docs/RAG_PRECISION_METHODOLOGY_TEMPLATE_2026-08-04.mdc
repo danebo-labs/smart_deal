@@ -1,0 +1,206 @@
+---
+description: Metodología y PLANTILLA de documento para cerrar precisión RAG — usar cuando se diseñe o ejecute un plan de mejora de precisión de un pipeline RAG (retrieval + generación).
+globs:
+alwaysApply: false
+---
+
+# Metodología de cierre de precisión RAG (validada en producción, otro cliente del SaaS)
+
+Copia de referencia en este repo de la regla pensada para usarse en Cursor
+(`.cursor/rules/rag-precision-methodology.mdc`) en el repo de OTRO cliente. Este
+archivo es documentación/backup — no lo carga ningún proceso de este repo.
+
+## Contexto / cómo llegamos a esta metodología
+
+Esta metodología no es teórica: salió de iterar 4 ciclos completos sobre un caso
+real (RAG de manuales de seguridad de ascensores, multi-marca, extracción por
+visión — el caso más complicado del SaaS; ver `docs/rag/plan_ciclo4_ajuste_final_2026-08-03.md`).
+
+- **Ciclos 1-3:** cada uno atacó una causa de imprecisión distinta (guards de
+  código, generación, prompts de rúbrica) y cada uno midió su resultado contra un
+  holdout fresco. Todos fallaron el gate al menos una vez — no por bajar el
+  promedio, sino porque un caso `safety_critical` específico seguía fallando
+  aunque el promedio general mejorara. Esa experiencia es la razón de que el gate
+  dual (precisión + seguridad independiente) sea un principio no negociable acá:
+  se aprendió por el lado difícil que un promedio alto puede esconder un fallo de
+  seguridad real.
+- **Ciclo 3** cerró con 4 causas raíz sin arreglar (N8-N11), documentadas con
+  evidencia, no ejecutadas todavía — decisión explícita del dueño de separar
+  "diagnosticar" de "arreglar" en sesiones distintas.
+- **Ciclo 4 (en curso ahora mismo):** ataca dos de esas causas (colisión de
+  retrieval entre páginas casi-duplicadas, cobertura insuficiente en preguntas
+  multi-equipo) con una Fase 0 de diagnóstico puro que midió, con datos reales del
+  artefacto de la corrida anterior, exactamente qué mecanismo fallaba en cada
+  caso — antes de decidir qué implementar. Fase 0 cerrada; Fase 1 (el fix de
+  retrieval) en implementación.
+- **La tercera causa raíz (N8, contaminación de identidad en el texto de los
+  chunks)** se investigó en paralelo, fuera del alcance formal del ciclo — y es el
+  origen del "ejemplo de diagnóstico riguroso" de esta regla: la primera hipótesis
+  sobre su origen resultó ser incorrecta y se corrigió con evidencia de `git log`,
+  no se dejó pasar por parecer plausible. Se decidió diferir su corrección hasta
+  después del cierre del ciclo 4, con motivos explícitos (no bloquea el gate
+  vigente, arreglarlo a mitad de camino invalidaría mediciones de la Fase 1 en
+  curso).
+
+Esta trayectoria es la evidencia de que el proceso (documento vivo, un objetivo por
+sesión, verificar antes de asumir, gate dual) funciona bajo presión real — por eso
+se generaliza como plantilla para el resto de los clientes del SaaS, no porque sea
+"buena práctica" en abstracto.
+
+## Principios (no negociables)
+
+1. Documento vivo: un único .md con tabla de Estado que se actualiza al cerrar cada
+   fase, y anexos que acumulan EVIDENCIA, no opinión. Cada fase, antes de cerrar,
+   actualiza el prompt de la fase SIGUIENTE (Anexo A) con lo que aprendió — si es
+   crítico para su implementación, lo marca "⚠️ CRÍTICO:" al inicio.
+2. Fase 0 es SIEMPRE diagnóstico offline puro, sin arreglar nada — medir dónde se
+   pierde precisión y por qué. Retrieval, generación, ingesta y arnés de evaluación
+   son causas distintas con fixes distintos: no las mezcles ni asumas cuál es sin
+   medirla.
+3. Gate dual, no negociable: precisión agregada (umbral numérico) Y seguridad (si el
+   dominio tiene casos safety-critical) como criterio INDEPENDIENTE — cero fallos
+   ahí, sin importar cuánto suba el promedio.
+4. Restricciones a fijar ANTES de empezar: presupuesto de llamadas al modelo por
+   fase (declarado por adelantado); artefactos de cada corrida a almacenamiento
+   LOCAL con hash verificado antes de cerrar la sesión que los generó; ningún
+   holdout se reabre una vez gastado; sesiones cortas, un objetivo por sesión.
+5. Diagnosticá con datos reales antes de proponer un fix. Poné a prueba tus propias
+   hipótesis con lo que ya tenés antes de asumirlas ciertas — y si una no se
+   sostiene, CORREGÍ el documento en vez de dejarla como conclusión. Ver ejemplo
+   abajo: es el patrón más importante de esta metodología.
+6. El holdout de verificación lo redacta una sesión que NO participó en los fixes.
+
+Objetivo: precisión ÓPTIMA + EFICIENTE (costo de tokens en ingesta y en cada
+inferencia — un defecto que se repite en cada consulta sale más caro que uno que
+ocurre una sola vez) + SEGURA. Estos tres ejes son el valor del producto RAG como
+SaaS.
+
+## Ejemplo real de diagnóstico riguroso (patrón a imitar en toda Fase 0)
+
+Caso real, otro cliente: un texto redundante aparecía incrustado en 96 de 97 chunks
+de un documento, mezclando la identidad de una sección del documento en chunks de
+OTRAS secciones. Así se investigó, en pasos, sin arreglar nada hasta cerrar el
+diagnóstico:
+
+1. **Síntoma medido, no asumido:** se confirmó con datos reales (metadata correcta
+   por chunk vs. texto del cuerpo incorrecto) que el problema era sólo en el CUERPO,
+   no en la metadata — dos superficies distintas del mismo chunk pueden estar en
+   desacuerdo.
+2. **Primera hipótesis, apoyada en un comentario del código:** se atribuyó a una
+   estrategia de ingesta vieja y deprecada. Parecía razonable y el comentario del
+   código la sugería literalmente.
+3. **Verificación con `git log`/`git blame` en vez de confiar en el comentario:**
+   se rastreó CUÁNDO se introdujo la instrucción real que causaba el defecto y
+   CUÁNDO se ingestó el documento afectado. Resultado: el documento se ingestó por
+   la ruta MODERNA, meses después de que la ruta vieja quedara deprecada — la
+   primera hipótesis era objetivamente falsa. La causa real era un bug vigente en
+   el prompt ACTUAL, presente desde su creación, nunca limpiado cuando alguien
+   escribió (sin verificarlo) un comentario diciendo que ya no hacía falta.
+4. **Hipótesis secundaria sobre impacto, puesta a prueba con datos ya en mano (no
+   especulación nueva):** se sospechó que ese ruido también confundía al retrieval
+   (ranking de chunks). Se buscó el ÚNICO chunk que NO tenía el defecto — resultó
+   ser precisamente el chunk que fallaba en retrieval, pero por una razón NO
+   relacionada (contenido casi vacío, página divisoria). Conclusión: la hipótesis
+   de impacto en retrieval se descartó explícitamente con evidencia, no se dejó
+   como "posible".
+5. **Costo cuantificado, no cualitativo:** se calculó el tamaño real del texto
+   redundante en tokens y se multiplicó por cuántas veces se recupera por consulta
+   — mostrando que el costo NO es una vez en la ingesta, sino recurrente en CADA
+   respuesta que la app genera.
+6. **Decisión de prioridad con motivos explícitos, no "por las dudas":** se decidió
+   diferir el fix (no bloqueaba el gate vigente; el downstream visible ya estaba
+   defendido en otra capa; arreglarlo a mitad de ciclo invalidaría mediciones de
+   otra fase en curso) — y se dejó una recomendación de secuencia concreta, no un
+   "ver más adelante" vago.
+
+Este es el nivel de rigor esperado en cada Fase 0 y en cada hallazgo que alimenta la
+fase siguiente: medir, no asumir; verificar la causa con evidencia primaria (código/
+git/datos), no con el primer comentario plausible; probar las hipótesis de impacto
+con lo que ya se tiene antes de generar más trabajo; cuantificar costo cuando se
+pueda; decidir prioridad con motivos explícitos y reversibles.
+
+## Criterio para elegir modelo por fase
+
+| Tipo de fase | Qué necesita | Evitar |
+|---|---|---|
+| Diagnóstico offline / lectura de artefactos | Modelo capaz de leer y sintetizar volumen | Un modelo tan débil que alucine sobre los datos |
+| Causa raíz ambigua / diseño de fix | El razonamiento más fuerte disponible, en consultas ACOTADAS | Gastarlo en trabajo mecánico |
+| Implementación de código + tests | Modelo fuerte en code-gen, consistente | Modelos sólo-chat/resumen |
+| Checkpoint de despliegue / Gate final | El modelo MÁS RIGUROSO Y CONFIABLE del set | Un modelo débil contra producción — ya causó un registro erróneo y una corrida real duplicada por un flag mal puesto en el proyecto de referencia |
+| Holdout nuevo | Sesión nueva, sin el contexto de las fases de fix | — |
+
+## PLANTILLA — usar esta estructura exacta al escribir el documento
+
+```markdown
+# Plan [nombre] — Cierre de precisión RAG ([fecha])
+
+**Objetivo:** [una frase]
+**Entrada obligatoria:** [documentos previos a leer]
+**Línea base:** [métrica actual]
+**Decisiones del dueño incorporadas:** [numeradas, con fecha]
+
+## Restricciones no negociables
+[numeradas]
+
+## Hallazgos de arranque
+| # | Hallazgo | Evidencia |
+|---|---|---|
+
+## Asignación de modelo por fase
+| Fase | Modelo | Racional |
+|---|---|---|
+
+## Fase 0 — Diagnóstico offline (sin arreglar nada)
+## Fase 1..N — [un fix por hallazgo, hipótesis + qué la refutaría]
+## Fase N+1 — Holdout nuevo (sesión que no tocó las fases de fix)
+## Fase N+2 — Checkpoint de despliegue
+## Fase N+3 — Gate, UNA corrida
+**Criterio congelado ANTES de abrir:** [umbral numérico Y seguridad independiente]
+
+## Presupuesto del ciclo
+## Estado
+| Fase | Estado | Artefacto / hash |
+|---|---|---|
+
+## Protocolo de plan vivo
+1. Actualiza tu fila de Estado.
+2. Corrige fases posteriores afectadas por tus hallazgos.
+3. Actualiza el prompt de la fase siguiente (⚠️ CRÍTICO si cambia su implementación).
+4. Si un hallazgo contradice una restricción o el gate: no se ejecuta, se escala
+   como decisión humana numerada.
+
+## Anexo A — Prompt de arranque por fase
+**Pie común:** [restricciones + protocolo de plan vivo]
+### Fase 0 — [modelo]
+> [prompt específico]
+### Fase 1 — [modelo]
+> [se completa con hallazgos reales de Fase 0, no de antemano]
+
+## Qué NO está en este plan
+```
+
+## Prompt de arranque (mensaje corto en el chat/Composer de Cursor)
+
+```
+Diseñá un plan de cierre de precisión RAG para [NOMBRE_CLIENTE], parte de un SaaS
+multi-tenant. Ya validamos esta metodología en otro cliente (caso complejo) y
+funcionó — la vas a aplicar aquí, en un caso que debería ser MÁS simple:
+[DESCRIBIR: tipo de documento, si es texto plano/estructurado, tamaño aproximado,
+stack de retrieval actual si ya existe].
+
+Seguí la regla de proyecto de metodología completa (buscala si no la tenés en
+contexto — describe "cierre de precisión RAG"), no la resumas.
+
+Antes de escribir el plan: explorá el pipeline de retrieval y generación real de
+este repo (código de ingesta, de retrieval, de generación, y cualquier evaluador/
+benchmark existente) y las corridas o artefactos de precisión que ya existan. Con
+lo que encuentres, armá una tabla real de "Hallazgos de arranque" (evidencia:
+archivo + línea, no opinión) — es la sección que alimenta el diseño de las Fases
+1+. La Fase 0 del plan que escribas es la ejecución FORMAL y más profunda de ese
+diagnóstico; esta exploración previa es más liviana, sólo para no escribir fases a
+ciegas.
+
+Preguntame lo que falte del dominio que no puedas resolver leyendo el código.
+Después, escribí el documento vivo completo siguiendo la plantilla, con la Fase 0
+lista para ejecutarse. No ejecutes nada todavía — sólo el plan.
+```

@@ -105,7 +105,9 @@ día de ejecución, no lo re-deriva.
 | H6 | **Límite de diseño aceptado, NO bloqueante en sí:** el filtro de página da 0 resultados en la página 92 (divisor casi vacío) y el expansor rellena con la vecina 93 — límite conocido y documentado desde la Fase 1 del ciclo 4. Lo bloqueante era el título mentiroso que esa expansión adjuntaba (H1), no la expansión misma. La batería de proveniencia (Fase 4) lo cubre como caso de prueba: expandir está bien; atribuir mal, no. | Anexo F ciclo 4 §2 + "Corrección al caso 2" |
 | H7 | **Caso #3 del gate v4 = deuda P4 de identidad de variante (NO bloqueante):** el chunk etiqueta la placa "ARCA II", el fixture asumió "ARCA básica"; la cobertura multi-placa (N11) funcionó. Sin fase de fix — ver "Qué NO está en este plan". | Anexo F ciclo 4 §3 |
 | H8 | **La caché del expansor también congela CUERPOS:** `cache_neighbor_body` (`section_neighbor_expander.rb:137-140`) re-escribe la entrada cacheada añadiendo `entry[:content]` (el cuerpo del vecino descargado de S3). Tras el parche de datos de la Fase 3, una caché no invalidada serviría cuerpos VIEJOS (con la línea N8) aunque S3 y Bedrock ya estén limpios — la re-invalidación post-resync de la Fase 3 no es opcional. | código |
+| H10 | **La contaminación N8 NO es una línea única — falsifica la hipótesis de la Fase 3 (verificado 2026-08-04):** el regex `\*\*Document:\*\* ALJO Control Level 1B Altius \| Page \d+ \| ORIGINAL_FILE_NAME: PIPELINE_INJECTED.*` que el plan asumía "regular y greppeable" en 96/97 cuerpos sólo coincide EXACTO con **1 de 96** (`chunk_43`). El modelo de visión nunca siguió un template fijo al obedecer la instrucción retirada en la Fase 2 — produjo un bloque de identidad de 1-4 líneas en 11 formas distintas (`**Document:** ALJO...` + combinaciones de `**Section:**`/`**Page:**`/`ORIGINAL_FILE_NAME:`/`NORMALIZED_FILE_NAME:`/`SOURCE_URI:`), más 2 casos de contaminación FUERA de ese bloque: `chunk_0` (S0/ancla, p.2, ALJO real — 2 filas de tabla `\| ORIGINAL_FILE_NAME \| PIPELINE_INJECTED \|` en la sección `## S0 chunk content`) y `chunk_36` (línea suelta en prosa, p.38 EXCELSIOR, línea 75: *"Sistema general: ALJO Control Level 1B Altius"* — inmediatamente DESPUÉS de la marca correcta, la forma más dañina). Un diseño de detección de bloque + 2 casos especiales sí cubre los 96 cuerpos con **cero residuo verificado** (ni `ALJO Control Level 1B Altius` ni `PIPELINE_INJECTED` sobreviven, cero cambios colaterales línea por línea), pero remover hasta 4 líneas (incluye `**Page:**`/`**Section:**`, que sí llevan info real de página) excede el alcance de "sustituir una única línea" que la restricción 2 autorizó. Cero escrituras a S3/Bedrock en esta sesión. | `script/repair_seguridades_n8_body_2026-08-04.rb` (modo diagnóstico) + `tmp/ciclo5_fase3_2026-08-04/` (JSON completo por chunk, catálogo de 97 cuerpos, SHA256) |
 | H9 | **El diseño per-file de `canonical_name` es VIGENTE, no herencia Lambda (verificado con git, 2026-08-04):** `chunk_merger_service.rb#canonical_name` (líneas 236-242) toma el nombre de la página ancla y `batch_results_parser_service.rb#document_identity` lo copia a los 97 sidecars — regla "ONE FILE = ONE IDENTITY", introducida en `cc453f1` (2026-05-17, el commit del "direct Claude parse path", MISMO commit que crea `chunk_merger_service`); `batch_results_parser_service` nace en `844692f` (2026-05-08, ya ruta Claude Batch). Se descartó con `git log` la hipótesis de que fuera herencia de la era Bedrock-nativo+Lambda (`OWRPGSX6XK`): esa era explica la línea del CUERPO (N8, Anexo D ciclo 4), no la metadata. Correcto para archivos mono-marca; incorrecto sólo para compendios multi-marca como SEGURIDADES (18 marcas en 1 PDF). El script de reparación del 2026-08-03 fue un one-off para este documento: **una ingesta futura de otro compendio multi-marca reproduciría el problema de metadata**. NO bloqueante para este ciclo (SEGURIDADES ya reparado en S3/Bedrock; sin saldo Anthropic no hay ingestas nuevas posibles) — deuda de diseño familia P4, ver "Qué NO está en este plan". **Corroboración de H1:** `chunk_91` estaba DENTRO de los 91 sidecars parcheados (verificado contra el respaldo que generó el propio script, que además aborta si el hash post-escritura no coincide) y aun así la corrida del 2026-08-04 citó "ALJO" — elimina la explicación alternativa "el script se saltó ese chunk": la única capa que puede servir el valor viejo es `Rails.cache`. | git log + código + respaldo del script de reparación |
+| H10 | **El diseño original de T1+T2 era complementario, NO de reemplazo (verificado 2026-08-04):** `docs/rag/plan_conocimiento_visual.md` tabla "Arquitectura objetivo" contempló explícitamente que T1 (geométrico, determinístico, $0) y T2 (visión, Opus 4.8) trabajaran juntos con procedencia distinguible (`method: :leader_line` vs `method: :vision` en cada arista `TOPOLOGY_EDGE`), no que uno reemplazara al otro. Diseño: "T1 ancla, T2 reconoce; T1 gana en conflicto" — ambos se concatenan en el mismo `page_result[:topology_edges]` y T2 aporta además `components: [{ label, canonical_component, evidence }]` para identidad de componente (metadata enriquecida). La "degradación permanente" de T2 en el Gate B (88.49%, LI 84.14% < umbral 85%; tipos A y B empeoraron; relaciones apagadas) fue **decisión técnica forzada por performance insuficiente**, pero esa medición se corrió sobre chunks contaminados con N8 (~400-500 tokens de ruido de input por respuesta con 10-12 chunks recuperados). Hipótesis no medida: la línea `**Document:** ALJO Control Level 1B Altius...` en 96/97 páginas pudo haber confundido la interpretación visual del contexto en T2, especialmente en páginas multi-marca donde contradecía el contenido visual real. El approach complementario T1+T2 sigue siendo el diseño correcto para metadata enriquecida — queda pendiente verificar si N8 fue factor en el fracaso de T2 (ver entrada en "Qué NO está en este plan"). | plan de conocimiento visual + estado del Gate B + timing de commits N8 vs T1/T2 (todos mayo-agosto 2026) |
 
 ## Asignación de modelo por fase
 
@@ -273,14 +275,33 @@ el técnico ve HOY en producción y la que paga ~400-500 tokens de input por res
 elimina en la **Fase 3**, que es obligatoria y bloqueante para piloto. Cerrar la Fase 2
 NO resuelve N8 en producción: el hallazgo H4 sigue vigente hasta que la Fase 3 cierre.
 
-## Fase 3 — Parche de datos N8: 96 cuerpos + resync + re-invalidación (Sonnet 5; ≤4 llamadas Bedrock de humo)
+## Fase 3 — Parche de datos N8: 96 cuerpos + resync + re-invalidación (Sonnet 5; ≤4 llamadas Bedrock de humo) — **BLOQUEADA 2026-08-04, escalada como Decisión humana #10**
 
-**Hipótesis:** sustituir la línea contaminante en los 96 cuerpos (dejando el resto del
+**Resultado: hipótesis de línea única FALSIFICADA (H10). Cero escrituras a S3, cero
+llamadas a Bedrock, cero cambios de embeddings.** Ver Anexo H y
+`tmp/ciclo5_fase3_2026-08-04/fase3_resumen_2026-08-04.md` para la evidencia completa.
+Resumen: el regex del plan sólo coincide EXACTO con 1/96 cuerpos contaminados; la
+contaminación real es un bloque de 1-4 líneas en 11 formas + 2 casos fuera de bloque.
+Existe un diseño de reemplazo (detección de bloque + 2 casos especiales,
+`script/repair_seguridades_n8_body_2026-08-04.rb`) verificado con cero residuo sobre
+los 96 cuerpos, pero su alcance (remueve hasta 4 líneas, no "una única línea") excede
+lo que la restricción 2 autorizó explícitamente — no es una decisión que le
+corresponda a la sesión que lo descubrió. Ver "Decisión humana #10" (sección
+dedicada, tras la tabla de Estado) para las dos opciones de alcance y la
+recomendación. **Esta fase permanece pendiente**: H4 sigue vigente en producción,
+las Fases 4-6 no pueden proceder (dependen del cierre de Fase 3) hasta que el dueño
+resuelva la Decisión humana #10 y una sesión nueva ejecute el parche con el alcance
+elegido.
+
+**Hipótesis original (falsificada, se deja registrada para trazabilidad):**
+sustituir la línea contaminante en los 96 cuerpos (dejando el resto del
 chunk byte a byte idéntico), re-subir a S3 y resincronizar el KB elimina la contaminación
 de identidad que lee el modelo de generación y el impuesto de ~400-500 tokens de input
 por respuesta, sin ninguna llamada a Anthropic. **Resultado si es falsa:** chunks
 recuperados post-resync seguirían mostrando la línea, o el diff por chunk no sería
-exactamente la línea esperada (el script aborta — ver diseño).
+exactamente la línea esperada (el script aborta — ver diseño). **Ocurrió lo segundo:**
+el script (modo diagnóstico) confirma que 95/96 cuerpos no producen un diff de una
+única línea — por diseño, no escribe nada.
 
 Diseño (calcado del patrón de seguridad de
 `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`):
@@ -441,10 +462,58 @@ Ejecución:
 | 0 Verificación de vigencia | **hecho 2026-08-04** — los 4 hallazgos (a/H1, b/estado-KB, c/H3, d/H4) VIGENTES sin cambios. Fases 1-3 proceden sin cambios; ningún hallazgo contradice restricción/gate, no se escala decisión #10. Ver tabla completa en el Anexo F. Artefacto `tmp/ciclo5_fase0_verificacion_vigencia_2026-08-04.md`, SHA256 `12541d960cdd5234be301ae003bc03314c655697c573397c05202411bc0c46fb`. | Anexo F |
 | 1 Fix bug de caché (invalidación dirigida + estructural) | **hecho 2026-08-04** — Hipótesis CONFIRMADA (Anexo G): el valor leído de `section_neighbor_index/v1/243000f4…086` ANTES de borrar traía `canonical_name: "ALJO Control Level 1B Altius"` en páginas 92 y 93 pese a `section_identity: "THYSSEN"` ya correcto — exactamente el estado predicho. Entrega 1 (invalidación dirigida): `Rails.cache.read` + `Rails.cache.delete` vía `kamal app exec --reuse -r web bin/rails runner` sobre el prefijo real `bulk_chunks/1/b61f5d54-ff42-414a-97b7-01682d16f4b5`; valor viejo completo guardado ANTES de borrar. Entrega 2 (estructural): opción **(i) implementada** — `Rag::SectionNeighborExpander.invalidate!(prefix)` (método de clase; `index_cache_key` de instancia delega en el de clase, una sola fuente de verdad para la derivación); opción **(ii) aplicada en adición** — `INDEX_CACHE_TTL` 30d→7d; opción (iii) descartada (sin fingerprint gratis, tal como preanalizó el plan). El script de reparación de canonical_name (H2) invoca `invalidate!(CHUNK_PREFIX)` tras su resync — patrón de referencia para Fase 3. 5 tests Minitest nuevos + suite completa verde (2265 runs, 8068 assertions, 0 failures/errors, sin regresión sobre los 2260 previos). Commit `c05718a` ANTES de `kamal deploy`; `kamal app version` confirmó SHA desplegado `c05718a2` == HEAD. Verificación en vivo: 2 preguntas ad-hoc NUEVAS sobre la página 92 THYSSEN (LED L8 → SERIE PUERTAS EXTERIORES; borne 72 → AFLOJACABLES; hechos distintos de v3/v4) — **ambas citan "THYSSEN — p. 93" con `canonical_name: "THYSSEN"`**, no ALJO. 2 `retrieve_invocations` usados de ≤4 presupuestados. Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. | `tmp/ciclo5_fase1_2026-08-04/cache_invalidation_seguridades_2026-08-04.json` SHA256 `b500fd9be75d276040dbec057a91b672e0d845bfd5eb8e17cbee5264b9056ded`; `tmp/ciclo5_fase1_2026-08-04/live_probe_1_thyssen_p92_led_l8_2026-08-04.json` SHA256 `a8264113e6b2fabc30bcd9c3238e0a3d63180ff04c6c3a465c1e841168221cf7`; `tmp/ciclo5_fase1_2026-08-04/live_probe_2_thyssen_p92_borne72_2026-08-04.json` SHA256 `1086d46103af51d48eb4ab40ab4c7f948bd608b072697c096497fbf2168af35a`; commit `c05718a26317361069315c4900e2cdf2e24d98cf`; ver Anexo G |
 | 2 Fix prompt N8 | **hecho (código) 2026-08-04 — N8 SIGUE VIGENTE EN PRODUCCIÓN, NO confundir con "N8 resuelto".** En `app/prompts/batch_chunking_prompt.rb`: eliminada la regla "Each section title must appear inside the chunk after the `**Document:**` header" (línea 293 original) y las filas `ORIGINAL_FILE_NAME \| PIPELINE_INJECTED` / `NORMALIZED_FILE_NAME \| PIPELINE_INJECTED` de la tabla `## S0 chunk content` (líneas 309-310 originales) — son los dos campos que el modelo textualizaba junto al hint del `document_name` para producir la línea contaminante. Comentario de cabecera (líneas 13-16) corregido de descriptivo-y-falso ("does NOT need to embed") a imperativo-y-verificable ("MUST NOT instruct the model to embed"), apuntando a la sección que lo cumple. NO se tocó: `document_name`/`document_name_hint` (ONE FILE = ONE IDENTITY intacto), `# IDENTITY INJECTION` (regla defensiva de PIPELINE_INJECTED, ahora inerte pero no dañina — no toca ninguna instrucción activa), `SingleFileChunkingService`, `BatchResultsParserService#identity_header`, `citation_processor.rb` (su filtro defensivo sigue siendo necesario hasta que la Fase 3 cierre). Ningún test preexistente asertaba la línea vieja (verificado por grep dirigido antes de correr la suite) — no hizo falta ajustar tests. Cero llamadas a cualquier API; cero cambios en S3/Bedrock/datos vivos. Suite completa: **2269 runs, 8076 assertions, 0 failures, 0 errors, 189 skips** (2265→2269 runs y 8068→8076 assertions frente al baseline de cierre de la Fase 1 — diferencia atribuible a la carga habitual de la suite completa, no a tests nuevos de esta fase; ningún test se agregó ni se modificó). `prompt_fingerprint_sha256` nuevo: `e5b574784ff78547886919fe388edd51decbc13b0a37cfbd11bc041ff4ac1172`. **Efecto real: sólo previene que una ingesta NUEVA reproduzca N8. Los 96/97 cuerpos ya contaminados en S3/Bedrock no cambiaron una sola línea — el técnico sigue viendo `**Document:** ALJO Control Level 1B Altius \| Page N \| …` en producción HOY. H4 sigue vigente hasta que la Fase 3 (obligatoria, bloqueante para piloto) cierre.** Ningún hallazgo contradice una restricción ni el gate: no se escala decisión #10. Fase 3 no necesita ajuste de su prompt: no depende de números de línea de este archivo, sólo del patrón regex sobre los cuerpos vivos en S3 (H4), que este cambio no toca. | `tmp/ciclo5_fase2_2026-08-04/prompt_diff_n8_fix_2026-08-04.diff`, `tmp/ciclo5_fase2_2026-08-04/fase2_resumen_2026-08-04.md`, `tmp/ciclo5_fase2_2026-08-04/full_suite_run_2026-08-04.log`, SHA256 en `tmp/ciclo5_fase2_2026-08-04/SHA256SUMS.txt` |
-| 3 Parche de datos N8 + resync + re-invalidación | pendiente | — |
-| 4 Holdout v5 + batería congelados | pendiente | — |
-| 5 Checkpoint despliegue | pendiente | — |
-| 6 Gate v5 → piloto | pendiente | — |
+| 3 Parche de datos N8 + resync + re-invalidación | **BLOQUEADA 2026-08-04 — hipótesis de línea única FALSIFICADA (H10); escalada como Decisión humana #10 (pendiente).** Sólo 1/96 cuerpos contaminados coincide con el regex exacto del plan; la contaminación real es un bloque de 1-4 líneas en 11 formas + 2 casos fuera de bloque (`chunk_0`, `chunk_36`). Diseño de reemplazo verificado con cero residuo (`script/repair_seguridades_n8_body_2026-08-04.rb`, modo diagnóstico) pero su alcance excede lo autorizado por la restricción 2 sin revisión del dueño. Cero escrituras a S3/Bedrock; cero cambios de embeddings; presupuesto de la fase (≤4 llamadas) intacto. Ver Anexo H. | `tmp/ciclo5_fase3_2026-08-04/n8_fase3_diagnostic_2026-08-04.json`, `n8_removal_safety_check_2026-08-04.json`, `n8_block_diagnostic_2026-08-04.json`, `n8_full_catalog_first9lines_2026-08-04.txt`, `fase3_resumen_2026-08-04.md`, SHA256 en `tmp/ciclo5_fase3_2026-08-04/SHA256SUMS.txt` |
+| 4 Holdout v5 + batería congelados | **bloqueada por dependencia** — no puede redactarse "desde los 97 cuerpos POST-parche" (nota de secuencia de la Fase 4) hasta que la Fase 3 cierre; ver Decisión humana #10 | — |
+| 5 Checkpoint despliegue | **bloqueada por dependencia** — requiere Fases 1-3 commiteadas y el resync de la Fase 3 `COMPLETE`; Fase 3 no cerró | — |
+| 6 Gate v5 → piloto | **bloqueada por dependencia** — requiere Fase 3 cerrada (job id nuevo, N8 limpio) | — |
+
+## Decisión humana #10 — alcance del parche N8, pendiente
+
+**Contexto:** H10 y el Estado de la Fase 3 (arriba). El regex de línea única que la
+restricción 2 autorizó como el parche N8 ("sustitución de texto... la línea
+contaminante ES exactamente esa única línea") sólo describe 1 de los 96 cuerpos
+reales. Cerrar H4 de verdad requiere remover un bloque de 1-4 líneas por chunk (11
+formas distintas) más 2 casos fuera de bloque — un alcance más amplio, que el dueño
+no revisó en esta forma. **No se ejecuta nada contra producción hasta que esta
+decisión se resuelva.**
+
+**Opciones (script ya escrito y verificado con cero residuo para ambas; sólo cambia
+qué líneas se remueven):**
+
+1. **Alcance A — bloque completo (recomendado):** remover el bloque de identidad
+   entero (`**Document:**` + toda continuación contigua de
+   `**Section:**`/`**Page:**`/`ORIGINAL_FILE_NAME:`/`NORMALIZED_FILE_NAME:`/`SOURCE_URI:`)
+   más los 2 casos especiales (`chunk_0`, `chunk_36`). Deja el cuerpo exactamente como
+   lo produciría el prompt YA corregido en la Fase 2 (que no emite ningún header de
+   identidad) — paridad profiláctica completa. Justificación adicional:
+   `Bedrock::CitationProcessor::METADATA_LINE_PATTERN`
+   (`app/services/bedrock/citation_processor.rb:143-144`) YA descarta líneas
+   `**Section:**`/`**Page:**` al construir el excerpt de citación — el runtime ya
+   trata esas líneas como ruido a filtrar, no como señal útil para el usuario final.
+   Un solo invariante de remoción, verificable de forma uniforme en las 11 formas.
+2. **Alcance B — preservar `**Section:**`/`**Page:**` sueltas:** remover sólo la
+   línea/porción `**Document:** ALJO Control Level 1B Altius...` (con su
+   `PIPELINE_INJECTED`/`ORIGINAL_FILE_NAME:`/etc. asociado) y dejar intactas las
+   líneas `**Section:**`/`**Page:**` cuando aparecen como línea propia — conserva el
+   número de página/sección tal como el modelo lo transcribió (redundante con
+   `page_number`/`section_identity` del sidecar, pero potencialmente útil como
+   contexto adicional para el modelo de generación). Riesgo: `chunk_75` combina
+   `**Document:** ALJO Control Level 1B Altius \| **Page:** 77` en una sola línea —
+   preservar selectivamente ahí exige lógica de sub-línea (partir la línea, no sólo
+   removerla), inconsistente con el resto de las 10 formas y con más superficie de
+   error en un patch de datos de producción safety-critical.
+
+**Recomendación de este plan: Alcance A.** Más simple, un solo invariante de
+seguridad, consistente con cómo el runtime ya trata esas líneas (filtro de
+citación) y con la intención profiláctica ya declarada de la Fase 2.
+
+**Pendiente del dueño:** elegir Alcance A o B (o pedir una tercera opción). Una vez
+resuelto, una sesión nueva ejecuta `script/repair_seguridades_n8_body_2026-08-04.rb`
+en modo real (implementar el `if`/flag de alcance elegido, backup completo + SHA256,
+verificación de ETag contra S3 vivo antes de escribir, resync, invalidación de
+caché automática vía `S3DocumentsService#upload_text` — mecanismo de la Fase 1 —,
+humo ≤4 llamadas) siguiendo exactamente el patrón de seguridad de
+`script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`.
 
 ## Protocolo de plan vivo
 
@@ -564,31 +633,44 @@ Toda sesión que ejecuta una fase, ANTES de cerrar y en el MISMO commit:
 
 ### Fase 3 — Sonnet 5
 
-> [Nota de la Fase 2 (2026-08-04, sin cambios de implementación aquí — no
-> `⚠️ CRÍTICO`): el fix del prompt de ingesta (código en
-> `app/prompts/batch_chunking_prompt.rb`) no modifica el patrón regex de la
-> línea contaminante ni ningún dato en S3 — la Fase 3 opera sobre los 96
-> cuerpos YA ESCRITOS con el prompt viejo, cuyo texto no cambia por este fix.
-> Procede exactamente como está escrito abajo, sin ajuste.]
-> [⚠️ Este prompt lo reescribe la Fase 1 con el mecanismo real de invalidación;
-> borrador:] Parche determinístico SIN LLM de los 96 cuerpos contaminados del prefijo
-> SEGURIDADES. Escribe `script/repair_seguridades_n8_body_2026-08-04.rb` calcado del
-> patrón de seguridad de
-> `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`: dry-run
-> POR DEFECTO; greppea `\*\*Document:\*\* ALJO Control Level 1B Altius \| Page \d+ \|
-> ORIGINAL_FILE_NAME: PIPELINE_INJECTED.*`; ABORTA si el diff de un chunk no es
-> exactamente esa única línea; NO toca `chunk_90` (p.92, único limpio) ni ningún
-> `.metadata.json` (ya corregidos el 2026-08-03); reemplaza cada `.txt` EN SU CLAVE
-> ORIGINAL — nada nuevo bajo `bulk_chunks/` (manifest de claves a tmp local). ANTES de
-> subir: backup completo de los 97 cuerpos vivos a tmp local + SHA256. Después: ejecuta
-> en real, dispara el resync (`start-ingestion-job`), espera `COMPLETE`, anota el job id
-> NUEVO y actualiza los prompts de las Fases 5 y 6 (reemplaza a `ZGCU99ISK5` como
-> referencia). Tras el resync: ejecuta la invalidación de caché de la Fase 1 sobre el
-> prefijo (H8 — sin esto, la expansión de vecindad seguiría sirviendo cuerpos viejos con
-> la línea N8). Humo: 1-2 preguntas ad-hoc NUEVAS (≤4 llamadas): los chunks recuperados
-> ya NO contienen la línea en páginas no-ALJO y la respuesta sigue sana. Artefactos +
-> SHA256. Nota: este parche cambia los embeddings de 96 chunks — por diseño va ANTES del
-> holdout v5; nada de v1-v4 se reabre.
+> ⚠️ CRÍTICO — reescrito 2026-08-04 tras la sesión que ejecutó esta fase y encontró
+> su hipótesis de línea única FALSIFICADA (H10, Anexo H). **NO uses el regex del
+> borrador original de este prompt** (`\*\*Document:\*\* ALJO Control Level 1B Altius
+> \| Page \d+ \| ORIGINAL_FILE_NAME: PIPELINE_INJECTED.*`) como criterio de
+> contaminación — sólo coincide con 1/96 cuerpos. `script/repair_seguridades_n8_body_2026-08-04.rb`
+> ya existe, en modo SOLO DIAGNÓSTICO: detecta el bloque real de identidad (línea
+> `**Document:**` + continuaciones `**Section:**`/`**Page:**`/`ORIGINAL_FILE_NAME:`/
+> `NORMALIZED_FILE_NAME:`/`SOURCE_URI:`) más 2 casos especiales (`chunk_0`: filas de
+> tabla en `## S0 chunk content`; `chunk_36`: línea suelta en prosa, línea 75) y
+> verifica CERO residuo sobre los 96 cuerpos contaminados
+> (`tmp/ciclo5_fase3_2026-08-04/n8_fase3_diagnostic_2026-08-04.json`).
+>
+> **Antes de tocar nada:** confirma en la tabla de Estado que la "Decisión humana
+> #10" (sección dedicada, tras la tabla de Estado) está RESUELTA — el dueño eligió
+> Alcance A (bloque completo, recomendado) o Alcance B (preservar
+> `**Section:**`/`**Page:**` sueltas). Si sigue pendiente: NO ejecutes nada, escala
+> de nuevo y detente — no es una decisión de esta sesión.
+>
+> Una vez resuelta: implementa el modo real en el mismo script (gatea con
+> `RAG_CHUNK_PATCH_CONFIRM=1` + una constante `SCOPE = :full_block` o `:preserve_section_page`
+> según lo elegido, mismo patrón de flag explícito que
+> `script/repair_seguridades_canonical_identity_and_acunaiento_2026-08-03.rb`). Antes
+> de escribir: (1) re-verifica ETag de los 97 objetos vivos en S3 contra la copia de
+> referencia local — aborta si algo cambió desde el 2026-08-04; (2) backup completo de
+> los 97 cuerpos vivos a tmp local + SHA256 por archivo + del tarball; (3) para cada uno
+> de los 96 cuerpos contaminados, recomputa el bloque/casos especiales SOBRE EL BYTE
+> vivo descargado (no sólo sobre la referencia local) y aborta si el resultado no
+> queda con cero residuo de `ALJO Control Level 1B Altius`/`PIPELINE_INJECTED`; (4)
+> sube cada `.txt` a su CLAVE ORIGINAL vía `S3DocumentsService#upload_text` (nunca
+> `Aws::S3::Client` crudo — así la invalidación de caché de la Fase 1 dispara sola,
+> H8); (5) verifica post-escritura (hash del objeto recién subido == hash esperado);
+> (6) dispara el resync (`BulkKbSyncService#sync!` / `start-ingestion-job`), espera
+> `COMPLETE`, anota el job id NUEVO — reemplaza a `ZGCU99ISK5` — y actualiza los
+> prompts de las Fases 5 y 6 en este Anexo. Humo: 1-2 preguntas ad-hoc NUEVAS (≤4
+> llamadas): los chunks recuperados ya NO contienen ningún bloque `**Document:**
+> ALJO...` en páginas no-ALJO y la respuesta sigue sana. Artefactos + SHA256. Nota:
+> este parche cambia los embeddings de 96 chunks — por diseño va ANTES del holdout
+> v5; nada de v1-v4 se reabre.
 
 ### Fase 4 — Sonnet 5 (sesión NUEVA; si participaste en las Fases 1-3, detente: lo redacta otra sesión)
 
@@ -675,6 +757,53 @@ sin cambios** — no se reescribe ningún prompt del Anexo A porque ninguna
 premisa cambió. Ningún hallazgo contradice una restricción ni el criterio
 del gate: no se escala decisión humana #10.
 
+## Anexo H — Fase 3: falsificación de la hipótesis de línea única (2026-08-04, Sonnet 5)
+
+Sesión bloqueada, sin escrituras a S3/Bedrock. Resumen completo, catálogo de las 97
+formas por chunk, y verificación de cero residuo en
+`tmp/ciclo5_fase3_2026-08-04/fase3_resumen_2026-08-04.md` (SHA256 en
+`tmp/ciclo5_fase3_2026-08-04/SHA256SUMS.txt`, junto con el JSON detallado por
+chunk).
+
+**Método:** `script/repair_seguridades_n8_body_2026-08-04.rb` (modo diagnóstico,
+sin red) leyó los 97 cuerpos de `tmp/seguridades_chunks_2026-07-28/` — verificados
+byte-idénticos a S3 vivo para una muestra de 5 por la Fase 0 el mismo día — y
+comparó cada uno contra (a) el regex literal del borrador de esta fase y (b) un
+detector de bloque de identidad contiguo.
+
+**Resultado (a):** el regex literal
+(`\*\*Document:\*\* ALJO Control Level 1B Altius \| Page \d+ \| ORIGINAL_FILE_NAME: PIPELINE_INJECTED.*`)
+coincide EXACTO con **1 de 96** cuerpos contaminados (`chunk_43`). Los otros 95
+llevan la misma contaminación de fondo (identidad ALJO incrustada) pero en una
+forma distinta — el modelo de visión, al obedecer la instrucción retirada en la
+Fase 2 ("Each section title must appear inside the chunk after the
+`**Document:**` header"), nunca siguió un template fijo de campos/orden/separadores.
+
+**Resultado (b):** el detector de bloque (línea `**Document:**` + continuaciones
+`**Section:**`/`**Page:**`/`ORIGINAL_FILE_NAME:`/`NORMALIZED_FILE_NAME:`/`SOURCE_URI:`)
+cubre 95/96 correctamente, más 2 casos especiales verificados manualmente y
+codificados en el script: `chunk_0` (S0/ancla p.2, ALJO real — 2 filas de tabla
+`PIPELINE_INJECTED` en `## S0 chunk content`, retiradas del prompt en la Fase 2 pero
+no reparadas en el dato) y `chunk_36` (línea suelta en prosa, p.38 EXCELSIOR, línea
+75: *"Sistema general: ALJO Control Level 1B Altius"* — inmediatamente DESPUÉS de
+*"Fabricante del sistema: EXCELSIOR"*, contradiciendo la marca ya correctamente
+identificada un renglón antes). Con ambos casos especiales, la remoción propuesta
+deja **cero residuo** de `ALJO Control Level 1B Altius` o `PIPELINE_INJECTED` en los
+96 cuerpos, y **cero cambios colaterales** (verificado línea por línea, no sólo por
+hash, que ninguna línea NO removida cambió de contenido u orden).
+
+**Por qué se detiene aquí, sin ejecutar:** el bloque removido mide 1-4 líneas según
+el chunk (32 casos de 1 línea, 27 de 2, 35 de 3, 2 de 4) — más ancho que la "única
+línea" que la restricción 2 autorizó explícitamente, y en el caso de `chunk_75`
+(`**Document:** ALJO Control Level 1B Altius \| **Page:** 77`, ambos campos en la
+misma línea) no existe una forma limpia de preservar sólo `**Page:** 77` sin lógica
+de sub-línea. Ver "Decisión humana #10" para las dos opciones de alcance y la
+recomendación. Ningún hallazgo de esta sesión contradice una restricción del plan
+per se (la restricción 2 sigue íntegra; lo que cambia es el ALCANCE del parche que
+antes se asumía cabía dentro de ella) — se escala igual, dado que ejecutar contra
+datos de producción safety-critical con un alcance no revisado por el dueño no es
+una decisión que le corresponda a la sesión que descubrió la discrepancia.
+
 ## Qué NO está en este plan
 
 - **Caso #1 del gate v4 (evaluador):** falso negativo aceptado por el dueño, NO
@@ -713,6 +842,24 @@ del gate: no se escala decisión humana #10.
   copiar la ancla — manteniendo "ONE FILE = ONE IDENTITY" para archivos mono-marca (el
   caso común, que hoy funciona bien). No se diseña más aquí: eso es trabajo del plan
   futuro.
+- **Re-medición de T2 (motor de topología visual) post-limpieza de N8 (H10):** T2 se
+  degradó permanentemente en el Gate B del plan de conocimiento visual (88.49%, límite
+  inferior 84.14% < umbral 85%; tipos A y B empeoraron; se apagaron sus relaciones
+  topológicas). El Gate B se corrió sobre chunks contaminados con N8 — la línea
+  `**Document:** ALJO Control Level 1B Altius...` en 96/97 páginas inyectaba ~400-500
+  tokens de ruido por respuesta y contradecía el contenido visual real en páginas
+  multi-marca. **Hipótesis no medida:** la contaminación pudo haber afectado la capacidad
+  de T2 de interpretar el contexto visual correctamente, especialmente porque T2 necesita
+  el texto del chunk como contexto para identificar componentes y sus relaciones
+  (`documented_components` + `edges`). El diseño original de T1+T2 era complementario
+  (ambos trabajando juntos con procedencia distinguible: `method: :leader_line` vs
+  `method: :vision`), no de reemplazo — el approach sigue siendo correcto para metadata
+  enriquecida. **Recomendación post-ciclo 5:** una vez que la Fase 3 de este ciclo limpie
+  los 96 cuerpos y resincronice el KB, re-medir T2 con un subset de las mismas páginas
+  del Gate B (6-8 páginas representativas) para determinar si la degradación fue
+  estructural (diseño de T2) o por datos contaminados. Costo estimado: ~$1-2 de API.
+  Decisión del dueño. Si T2 mejora significativamente con chunks limpios, el motor de
+  visión vuelve a ser viable para complementar a T1 en lugar de quedar apagado.
 - **N9** (alinear el guion de benchmark con `QueryOrchestratorService`): sin mandato.
 - **Los fixes del ciclo 4** (page-pin, flag N11, guardrail de presentación, evaluador
   v2): desplegados y funcionando — no se tocan, no se "mejoran".

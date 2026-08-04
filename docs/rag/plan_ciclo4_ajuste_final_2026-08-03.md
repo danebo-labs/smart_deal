@@ -293,7 +293,7 @@ desplegar.
 | 0b Diagnóstico offline N10/N11 | **hecho 2026-08-03**, $0 Bedrock — ver Anexo B para la tabla completa y el detalle por caso | — (análisis offline sobre el artefacto de 0a, sin generar artefacto nuevo) |
 | 0c Inventario regex | **hecho 2026-08-03**, sólo lectura, nada tocado — ver Anexo C | — |
 | 1 Fix N10 page-pin | **hecho 2026-08-03** — filtro `equals: page_number` (entero) implementado en `build_vector_search_configuration`, detrás de `Rag::PagePinFlag`/`RAG_PAGE_PIN_ENABLED`; activado en `config/deploy.yml` local (recuerda: ese archivo está gitignored, ver nota ⚠️ en el prompt de la Fase 2). Tests unitarios ($0) verdes. Desplegado a PROD (`kamal deploy`, SHA `0051b5ba13e8500a3127778a335a780ec926dff1` == HEAD, verificado con `kamal app version`). Verificación empírica con 4 preguntas ad-hoc NUEVAS (8 llamadas `Retrieve`, dentro del techo ≤8) — hipótesis CONFIRMADA, ver Anexo E: los 4 casos pasan de fallar/no-entrar-al-top-k a rank 1/12 exacto tras encender el flag. | before: `tmp/rag_page_pin_probe_before_2026-08-03.json` SHA256 `936dec845406b80b7fc9edb375aaafb18215c74e0790b0331768a402dfa339a9`; after: `tmp/rag_page_pin_probe_after_2026-08-03.json` SHA256 `62f3ecf08a07ee9b00cd733adbe33c89a630aaa51a557ffe99487d8f9626f9c2`; commit `0051b5b` |
-| 2 Fix N11 flag multi-placa | pendiente | — |
+| 2 Fix N11 flag multi-placa | **hecho 2026-08-03** — `RAG_FAMILY_AMBIGUITY_GUARD_ENABLED: "true"` añadido a `config/deploy.yml` local, al lado de `RAG_PAGE_PIN_ENABLED` (E1; ambos confirmados presentes en el checkout de esta sesión antes de tocar nada). Comentario D5 de `structured_evidence_route.rb:430-432` confirmado histórico: el replay de fidelidad depende de `ENV` del proceso de test local, no de `config/deploy.yml` de producción — no afectado por este cambio. Suites `family_ambiguity_detector_test.rb` + `family_ambiguity_guard_flag_test.rb` + `structured_evidence_route_test.rb` + `d5_attribution_replay_test.rb` verdes (52/52, 0 skips — el replay D5 corrió real, artefactos locales presentes). Desplegado a PROD dos veces: el primer `kamal deploy` se hizo con el script de verificación sin commitear — Kamal tagea la imagen con el SHA de HEAD, que no había cambiado, así que el contenedor quedó con el flag activo (inyectado en runtime vía `docker run --env`, independiente del build) pero SIN el script nuevo en la imagen (`COPY . .` con un working tree sucio no es lo mismo que el commit que le da nombre a la imagen — lección para toda fase futura: comitear el código/script de verificación ANTES de `kamal deploy`, no después). Corregido: se comiteó el script (`41f9060`) y se re-desplegó; `kamal app version` == HEAD `41f9060` confirmado. Verificación dirigida (1 pregunta ad-hoc NUEVA, 1 llamada Bedrock, dentro del techo ≤4): "¿Qué serie indica el LED DL2 en el manual de seguridades?" — identificador y par de placas (ALJO p.3 vs KDT 11/CARLOS SILVA p.13) verificados primero contra `test/services/rag/family_ambiguity_detector_test.rb` (fixture `dl2_chunks`, caso real ya validado en código), **distinto** al SPM/TW1-DELTA+ del v3. Resultado: `route_eligible: true`, `outcome_status: answered`, `generation_chunks: 4` (≥2 — pasa), boards representados = variantes de heading de ALJO ("LEVEL CONTROL 1B...") + CARLOS SILVA ("KDT 11" vía su heading, `section_identity` de fallback), respuesta que **enumera las dos placas por separado y termina preguntando explícitamente "¿Cuál es su placa de control?"** — hipótesis confirmada, comportamiento esperado de `add_named_board_coverage`/`multi_family_directive`. | `tmp/rag_family_ambiguity_probe_after_2026-08-03.json` SHA256 `a4cb03ae673a65e5b755d97f3de4b6e230ffee57a2eb489a4cf9dc2cea5d23b2`; script `script/rag_family_ambiguity_probe.rb`; commits `41f9060` (script) + redeploy sobre el mismo HEAD |
 | 3 Guardrail piloto | pendiente | — |
 | 4 Evaluador v2 | pendiente | — |
 | 5 Holdout v4 congelado | pendiente | — |
@@ -734,6 +734,48 @@ técnicas específicas, independientemente de N8 y de N10. El page-pin de la Fas
 resuelve para el caso medido (fuerza la recuperación de la página nombrada sin depender
 de score), así que no requiere trabajo adicional en este ciclo — se anota por si
 reaparece en páginas divisorias no cubiertas por el filtro de página.
+
+**Actualización 2026-08-04 (corroboración independiente, sesión externa a Fase 1/2, sólo
+lectura — no se tocó código ni se ejecutó nada de N8):** un segundo diagnóstico llegó a
+la misma causa raíz por su cuenta y añade dos precisiones que no estaban en este Anexo:
+
+1. **Atribución de commits más precisa.** `844692f` (2026-05-08, creación de
+   `batch_chunking_prompt.rb`) ya incluye desde el primer commit la instrucción de emitir
+   la línea `**Document:**` dentro de cada chunk (línea ~293 hoy). `cc453f1` (2026-05-17)
+   agrega el comentario de cabecera que llama a esto "legacy"/reemplazado por la
+   inyección de Rails — pero nunca borra la instrucción. El comentario quedó
+   desincronizado del código desde el día en que se escribió. SEGURIDADES se ingesta
+   `2026-07-26` (`25ebf66`), más de dos meses después, por la ruta moderna
+   (`ingestion_path: "web_v1"`) — confirma lo que este Anexo ya decía (líneas 656-660):
+   **no es deuda dormida de la Lambda `OWRPGSX6XK`, es un bug activo en el prompt que usa
+   TODA ingesta nueva hoy**, se reproducirá en cualquier documento futuro mientras no se
+   corrija `batch_chunking_prompt.rb`, independientemente de si se toca SEGURIDADES.
+2. **Costo recurrente cuantificado, no sólo de precisión.** La línea (~42 tokens) va al
+   modelo de GENERACIÓN en cada consulta que recupere un chunk contaminado, no es un
+   costo de ingesta única. Con `structured_evidence_route` trayendo típicamente 10-12
+   chunks por pregunta (casi todos contaminados en este documento), son ~400-500 tokens
+   extra de input por respuesta, para siempre, hasta corregirse — un impuesto permanente
+   en vez de un costo hundido.
+
+**Barrido de corroboración (mismo diagnóstico, verificado):** conteo de frecuencia de
+líneas repetidas en los 97 cuerpos reales (backup local coincide byte a byte con el
+contenido vivo del 3 de agosto). Los bloques `FIELD_RECORD:`/`RECORD_TYPE:`/`EVIDENCE:`/
+`EXPECTED_RESULT:`/`END_FIELD_RECORD` que más se repiten NO son ruido — cada bloque tiene
+un `RECORD_ID` único y valores específicos de esa página/componente (contenido
+estructurado legítimo, citable). La única instancia real de "boilerplate universal sin
+valor" en todo el corpus sigue siendo la línea de N8 — **defecto aislado, no una familia
+de bugs**; no se buscan más candidatos de este tipo.
+
+**No cambia la decisión de secuencia ya tomada** (parche de texto dirigido a los 96
+cuerpos vivos espera al cierre del ciclo — no se toca a mitad de la Fase 1/2 para no
+invalidar los rankings del Anexo B). **Sí abre una pregunta nueva, sin decidir, para el
+dueño:** dado que el costo de tokens es recurrente (no sólo precisión) y el fix del
+prompt (`batch_chunking_prompt.rb`, borrar la instrucción de la línea ~293-315) es
+código puro sin riesgo de datos ni re-ingesta, ¿tiene sentido desacoplarlo del parche de
+los 96 chunks vivos y aplicarlo ANTES del cierre del ciclo 4 (previene que se reproduzca
+en cualquier ingesta nueva mientras tanto), aunque el parche de datos siga esperando? No
+ejecutado en esta sesión (restricción 5: un objetivo por sesión — el objetivo de esta
+sesión fue la Fase 2/N11).
 
 ### Síntesis: ¿dónde están los puntos de pérdida de precisión?
 

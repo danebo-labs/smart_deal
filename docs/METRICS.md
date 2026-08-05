@@ -345,6 +345,16 @@ deliberate privacy boundary:
   to approximately 8 KB, and `truncated: true` is explicit whenever content is
   cut. This flag places raw technician text in production logs and must be
   enabled only under the corresponding operational/privacy authorization.
+  Emitted from the single shared `PilotAuditLog` class, called from both
+  generation paths that can answer a text question —
+  `BedrockRagService#log_quality_signal` (classic/filtered RAG) and
+  `Rag::StructuredEvidenceRoute#log_route` (pinned structured-mapping
+  questions, gated by `RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED`). A 2026-08-05
+  production gate run found the first version of this capture wired only into
+  the classic path: half the day's real interactions came from the structured
+  route and rendered as `Pregunta: n/a` in `dossier.html`. Both routes now
+  emit through the same class, including on `abstained` outcomes, so an
+  abstention with no evidence still captures the question that was asked.
 - `--with-questions` controls transport and package exposure. Without it,
   `[PILOT_AUDIT]` lines are not copied into `source_events.jsonl` and the audit
   block is absent from `interactions.by_correlation`. With it, the complete

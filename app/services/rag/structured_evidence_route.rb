@@ -249,6 +249,7 @@ module Rag
         raw_answer: raw_answer,
         attribution_dropped: attribution.dropped_segments.size,
         chunks: chunks,
+        citations: citations,
         attribution: attribution
       )
 
@@ -734,7 +735,7 @@ module Rag
     end
 
     def log_route(expansions:, timings:, answer:, outcome:, prompt:, raw_answer:, reason: nil,
-                  attribution_dropped: 0, chunks: [], attribution: nil)
+                  attribution_dropped: 0, chunks: [], citations: [], attribution: nil)
       Rag::EvidenceSelectionTelemetry.log_route(
         question: @question,
         answer: answer,
@@ -760,6 +761,17 @@ module Rag
         chunks: chunks,
         attribution: attribution,
         model: BedrockClient::DEFAULT_MODEL_ID
+      )
+      # Same [PILOT_AUDIT] contract as the classic RAG path (BedrockRagService#
+      # log_quality_signal) — the pitch/audit dossier must not go blank just
+      # because the answer came from this route instead of that one.
+      PilotAuditLog.log(
+        question: @question,
+        answer: answer,
+        citations: citations,
+        retrieved_chunks: chunks,
+        correlation_id: @correlation_id,
+        attribution: { account_id: @account_id, user_id: @user_id, conversation_session_id: @conversation_session_id }
       )
     end
 

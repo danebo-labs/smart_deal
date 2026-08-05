@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "stringio"
 
 class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   MANUFACTURER_PATTERN = Regexp.union(
@@ -141,6 +142,57 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     generated_chunk = result.dig(:diagnostics, :generation_chunks, 0)
     assert_equal @source_uri, generated_chunk[:original_source_uri]
     assert_equal "s3://test-bucket/bedrock/divider.txt", generated_chunk[:bedrock_source_uri]
+  end
+
+  test "answered outcome emits [PILOT_AUDIT] lines with full question/answer and citation-derived document/page" do
+    rag_service = FakeRagService.new([ neighbor_chunk ])
+    generator = FakeGenerator.new("ABC12 corresponde a la serie documentada. [1]")
+    route = build_route(rag_service: rag_service, generator: generator)
+
+    output = with_audit_capture("true") { route.execute }
+    lines = output.lines.grep(/\[PILOT_AUDIT\]/)
+
+    assert_equal 2, lines.size
+    interaction = parse_audit(lines.first)
+    assert_equal "interaction", interaction["type"]
+    assert_equal "¿Qué indica el LED ABC12?", interaction["question"]
+    assert_equal "ABC12 corresponde a la serie documentada. [1]", interaction["answer"]
+    assert_equal 1, interaction["citations"].size
+    assert_equal 36, interaction["citations"].first["page"]
+
+    chunk = parse_audit(lines.second)
+    assert_equal "chunk", chunk["type"]
+    assert_equal "Manual", chunk["document"]
+    assert_equal 36, chunk["page"]
+    assert_equal "LED ABC12 | SERIE SEGURIDAD", chunk["text"]
+    assert_equal false, chunk["truncated"]
+  end
+
+  test "disabled gate emits no [PILOT_AUDIT] lines for the structured route" do
+    route = build_route(
+      rag_service: FakeRagService.new([ neighbor_chunk ]),
+      generator: FakeGenerator.new("ABC12 corresponde a la serie documentada. [1]")
+    )
+
+    output = with_audit_capture(nil) { route.execute }
+
+    assert_not_includes output, "[PILOT_AUDIT]"
+  end
+
+  # Closes the production gap found while gating the 2026-08-05 export: an
+  # abstained structured-route interaction with no evidence still needs its
+  # question captured, so the value dossier never shows a blank "Pregunta: n/a"
+  # for a question the technician actually asked.
+  test "abstained outcome still audits the question even with no citations or chunks" do
+    route = build_route(rag_service: FakeRagService.new([]), generator: FakeGenerator.new(""))
+
+    output = with_audit_capture("true") { route.execute }
+    lines = output.lines.grep(/\[PILOT_AUDIT\]/)
+
+    assert_equal 1, lines.size
+    interaction = parse_audit(lines.first)
+    assert_equal "¿Qué indica el LED ABC12?", interaction["question"]
+    assert_empty interaction["citations"]
   end
 
   # Pins the Fase 2 extract method as an equivalence, not a rewrite: a caller
@@ -875,6 +927,23 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   private
+
+  def with_audit_capture(value)
+    previous = ENV["PILOT_AUDIT_CAPTURE"]
+    value.nil? ? ENV.delete("PILOT_AUDIT_CAPTURE") : ENV["PILOT_AUDIT_CAPTURE"] = value
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    output.string
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    previous.nil? ? ENV.delete("PILOT_AUDIT_CAPTURE") : ENV["PILOT_AUDIT_CAPTURE"] = previous
+  end
+
+  def parse_audit(line)
+    JSON.parse(line.split("[PILOT_AUDIT] ", 2).last)
+  end
 
   def with_family_guard(value)
     previous = ENV.fetch("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED", nil)

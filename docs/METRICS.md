@@ -276,6 +276,18 @@ against — compare it to `git rev-parse HEAD` to confirm a given fix (e.g. the
 structured-route audit wiring) was actually live for that export, not just
 committed locally.
 
+**A `kamal deploy` between two runs of the same `--from`/`--to` silently drops
+earlier interactions.** `bin/pilot_metrics` collects logs with `docker logs`
+against the *currently running* `web`/`worker` containers; `kamal deploy`
+replaces those containers, and the previous container's log history is not
+carried over. A date range that spans a deploy will only report interactions
+from after the deploy — re-running the export for the same range does not
+recover the pre-deploy portion of that day, because the underlying log lines
+are gone, not misclassified. There is no raw-data workaround today; treat any
+export whose range crosses a deploy as partial for that day, and prefer
+exporting same-day ranges either fully before or fully after a deploy when
+completeness matters (e.g. a pitch dossier).
+
 The package is written to
 `tmp/pilot_exports/<from>_<to>_<slug>/` with:
 

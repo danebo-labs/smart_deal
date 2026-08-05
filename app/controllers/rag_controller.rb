@@ -7,10 +7,16 @@ class RagController < ApplicationController
   include RagQueryConcern
 
   def ask
-    images    = extract_images_from_params
-    documents = extract_documents_from_params
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     question  = params[:question].to_s.strip
-    correlation_id = "photo:#{SecureRandom.uuid}" if images.any?
+    question_sha256 = question.present? ? Digest::SHA256.hexdigest(question) : nil
+    # Coined before extraction so an interaction that fails during image
+    # compression (i.e. before Bedrock is ever reached) still carries an id —
+    # H3/Fase 1. Corrected to the query: scheme once we know images is empty.
+    correlation_id = "photo:#{SecureRandom.uuid}"
+    images    = extract_images_from_params
+    correlation_id = "query:#{SecureRandom.uuid}" if images.empty?
+    documents = extract_documents_from_params
 
     # In shared-session mode, omit user_id to avoid storing "last web user" as owner of the shared row.
     effective_user_id = SharedSession::ENABLED ? nil : current_user.id
@@ -50,6 +56,16 @@ class RagController < ApplicationController
     )
 
     unless result.success?
+      emit_interaction_completed(
+        correlation_id:  correlation_id,
+        conv_session:    conv_session,
+        question_sha256: question_sha256,
+        outcome:         "failed",
+        stage:           result.error_type.to_s,
+        error_class:     result.error_class,
+        route:           interaction_route(correlation_id),
+        latency_ms:      elapsed_ms(started_at)
+      )
       render_rag_json_error(result)
       return
     end
@@ -68,6 +84,17 @@ class RagController < ApplicationController
         result.answer.to_s,
         user_id: current_user.id,
         correlation_id: result.correlation_id
+      )
+      # The photo route's images_uploaded branch terminates asynchronously in
+      # FieldPhotoAnalysisJob (which emits its own interaction_completed) — the
+      # controller never observes that outcome, so it must not double-emit here.
+      emit_interaction_completed(
+        correlation_id:  correlation_id,
+        conv_session:    conv_session,
+        question_sha256: question_sha256,
+        outcome:         abstained_answer?(result.answer) ? "abstained" : "answered",
+        route:           interaction_route(correlation_id),
+        latency_ms:      elapsed_ms(started_at)
       )
     end
 
@@ -111,10 +138,54 @@ class RagController < ApplicationController
     end
     render json: json
   rescue ImageCompressionService::CompressionError
+    emit_interaction_completed(
+      correlation_id:  correlation_id,
+      question_sha256: question_sha256,
+      outcome:         "failed",
+      stage:           "image_compression",
+      error_class:     ImageCompressionService::CompressionError.name,
+      route:           interaction_route(correlation_id),
+      latency_ms:      elapsed_ms(started_at)
+    )
     render json: { status: 'error', message: I18n.t('rag.image_compression_failed') }, status: :bad_request
   end
 
   private
+
+  # Single point of emission for the terminal state of a text/photo-submission
+  # interaction (restriction 1). The async photo route's actual completion is
+  # observed and emitted by FieldPhotoAnalysisJob instead — see the two call
+  # sites above.
+  def emit_interaction_completed(correlation_id:, question_sha256:, outcome:, route:, latency_ms:,
+                                 stage: nil, error_class: nil, conv_session: nil)
+    PilotUsageLog.log(
+      "interaction_completed",
+      correlation_id: correlation_id,
+      user_id: current_user&.id,
+      account_id: current_account&.id,
+      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      question_sha256: question_sha256,
+      outcome: outcome,
+      stage: stage,
+      error_class: error_class,
+      route: route,
+      latency_ms: latency_ms
+    )
+  end
+
+  def interaction_route(correlation_id)
+    correlation_id.to_s.start_with?("photo:") ? "photo" : "text"
+  end
+
+  def elapsed_ms(started_at)
+    ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+  end
+
+  # Reuses the abstention pattern already established for evidence-selection
+  # telemetry (restriction 2) — no new regex.
+  def abstained_answer?(answer)
+    answer.to_s.match?(Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN)
+  end
 
   def citation_processor
     @citation_processor ||= Bedrock::CitationProcessor.new

@@ -98,7 +98,7 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
 
       assert_equal baseline.dig(:technical_and_cost, :totals, :rag_llm_calls),
                    report.dig(:technical_and_cost, :totals, :rag_llm_calls)
-      assert_equal baseline.dig(:adoption_signals, :rag_queries), report.dig(:adoption_signals, :rag_queries)
+      assert_equal baseline.dig(:adoption_signals, :rag_llm_calls), report.dig(:adoption_signals, :rag_llm_calls)
 
       baseline_account = baseline.dig(:technical_and_cost, :per_account).find { |row| row[:account_id] == accounts(:legacy).id }
       account = report.dig(:technical_and_cost, :per_account).find { |row| row[:account_id] == accounts(:legacy).id }
@@ -237,9 +237,124 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
     end
   end
 
+  test "interactions returns logs_not_available when no interaction_completed events exist" do
+    travel_to @now do
+      report = PilotMetricsReport.new(date: @date).as_json
+      assert_equal({ status: "logs_not_available" }, report[:interactions])
+    end
+  end
+
+  test "interactions reconstructs seven human interactions over a synthetic three-day from:/to: range" do
+    day1        = Time.zone.local(2026, 7, 20, 10, 0)
+    day1_repeat = Time.zone.local(2026, 7, 20, 11, 0)
+    day2_a      = Time.zone.local(2026, 7, 21, 10, 0)
+    day2_photo  = Time.zone.local(2026, 7, 21, 11, 0)
+    day2_abst   = Time.zone.local(2026, 7, 21, 12, 0)
+    day2_failed = Time.zone.local(2026, 7, 21, 14, 0)
+    day2_smoke  = Time.zone.local(2026, 7, 21, 15, 0)
+    day3_edge   = Time.zone.local(2026, 7, 22, 23, 59, 50)
+
+    travel_to day3_edge do
+      q_a = Digest::SHA256.hexdigest("torque tuerca eje")
+      q_b = Digest::SHA256.hexdigest("modelo motor visible")
+      q_c = Digest::SHA256.hexdigest("presion sistema hidraulico")
+
+      # Text route, one normal call and one rag_filtered -> rag_global fallback
+      # (H9): two BedrockQuery rows sharing a correlation_id must collapse into
+      # a single interaction, not two.
+      create_call(@a1, route: "rag_filtered", correlation_id: "query:i1", created_at: day1)
+      create_call(@a1, route: "rag_filtered", correlation_id: "query:i2", created_at: day1_repeat)
+      create_call(@a1, route: "rag_global",   correlation_id: "query:i2", created_at: day1_repeat)
+      create_call(@b1, route: "rag_filtered", correlation_id: "query:i3", created_at: day2_a)
+      create_call(@a1, route: "visual_query", correlation_id: "photo:i4", created_at: day2_photo, model_id: "claude-sonnet-4-6-direct")
+      create_call(@a1, route: "visual_query", correlation_id: "photo:i5", created_at: day3_edge, model_id: "claude-sonnet-4-6-direct")
+      create_call(@b1, route: "rag_filtered", correlation_id: "query:i6", created_at: day2_abst)
+      # Failure surfaced after Bedrock already billed the call (e.g. a
+      # post-processing StandardError), so the row still exists.
+      create_call(@b1, route: "rag_filtered", correlation_id: "query:i7", created_at: day2_failed)
+
+      file = Tempfile.new("pilot-interactions")
+      interaction_events = [
+        { event: "interaction_completed", ts: day1.iso8601, correlation_id: "query:i1",
+          user_id: @a1.id, account_id: accounts(:legacy).id, conversation_session_id: 1,
+          question_sha256: q_a, outcome: "answered", route: "text" },
+        { event: "interaction_completed", ts: day1_repeat.iso8601, correlation_id: "query:i2",
+          user_id: @a1.id, account_id: accounts(:legacy).id, conversation_session_id: 1,
+          question_sha256: q_a, outcome: "answered", route: "text" },
+        { event: "interaction_completed", ts: day2_a.iso8601, correlation_id: "query:i3",
+          user_id: @b1.id, account_id: accounts(:climb).id, conversation_session_id: 2,
+          question_sha256: q_b, outcome: "answered", route: "text" },
+        { event: "interaction_completed", ts: day2_photo.iso8601, correlation_id: "photo:i4",
+          user_id: @a1.id, account_id: accounts(:legacy).id, conversation_session_id: 1,
+          outcome: "answered", route: "visual_query" },
+        { event: "interaction_completed", ts: day3_edge.iso8601, correlation_id: "photo:i5",
+          user_id: @a1.id, account_id: accounts(:legacy).id, conversation_session_id: 1,
+          outcome: "answered", route: "visual_query" },
+        { event: "interaction_completed", ts: day2_abst.iso8601, correlation_id: "query:i6",
+          user_id: @b1.id, account_id: accounts(:climb).id, conversation_session_id: 2,
+          question_sha256: q_c, outcome: "abstained", route: "text" },
+        { event: "interaction_completed", ts: day2_failed.iso8601, correlation_id: "query:i7",
+          user_id: @b1.id, account_id: accounts(:climb).id, conversation_session_id: 2,
+          outcome: "failed", stage: "unexpected_error", error_class: "StandardError", route: "text" },
+        # Smoke ping with no pilot user — excluded by the user_ids cohort filter below,
+        # never counted as an 8th human interaction.
+        { event: "interaction_completed", ts: day2_smoke.iso8601, correlation_id: "query:smoke",
+          account_id: accounts(:legacy).id, outcome: "answered", route: "text" }
+      ]
+      interaction_events.each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
+
+      # query:i6 (abstained) deliberately gets no evidence_route_context line —
+      # abstention without chunks must not fabricate a traceability entry.
+      file.puts("[PILOT_USAGE] #{JSON.generate({ event: "evidence_route_context", ts: day1.iso8601, correlation_id: "query:i1", account_id: accounts(:legacy).id, user_id: @a1.id, page: 5, section_identity: "SEC_A", document_id: "doc_1", chunk_sha256: "chunk-i1" })}")
+      file.puts("[RAG_QUALITY] #{JSON.generate({ ts: day1.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, correlation_id: "query:i1", evidence_present: true, citations_count: 1, chunk_count: 2, citation_titles: [ "Manual Motor" ] })}")
+      file.puts("[RAG_QUALITY] #{JSON.generate({ ts: day2_a.iso8601, account_id: accounts(:climb).id, user_id: @b1.id, correlation_id: "query:i3", evidence_present: true, citations_count: 1, chunk_count: 1, citation_titles: [ "Manual Motor" ] })}")
+      file.flush
+
+      report = PilotMetricsReport.new(
+        from: Date.new(2026, 7, 20), to: Date.new(2026, 7, 22),
+        usage_log_path: file.path, user_ids: [ @a1.id, @b1.id ]
+      ).as_json
+
+      interactions = report[:interactions]
+      assert_equal "available", interactions[:status]
+      assert_equal 7, interactions[:total], "the unattributed smoke ping must not count as an 8th interaction"
+      assert_equal 8, interactions[:llm_calls], "the rag_filtered->rag_global fallback bills two calls for one interaction"
+      assert interactions[:invariant_ok]
+      assert_equal({ "answered" => 5, "abstained" => 1, "failed" => 1 }, interactions[:by_outcome])
+      assert_equal 2, interactions[:active_users]
+      assert_equal 0, interactions[:unattributed_count]
+      assert_equal 1, interactions[:returning_users], "only a1 has activity on two distinct days (day1 and day3)"
+      assert_equal interactions[:returning_users], interactions[:users_with_multiple_days]
+      assert_equal 1, interactions[:repeated_questions_count], "nil question_sha256 on the two photo interactions must not be grouped as a repeat"
+      repeated = interactions[:top_repeated_questions].first
+      assert_equal @a1.id, repeated[:user_id]
+      assert_equal q_a, repeated[:question_sha256]
+      assert_equal 2, repeated[:count]
+      failure = interactions[:failures].first
+      assert_equal "query:i7", failure[:correlation_id]
+      assert_equal "unexpected_error", failure[:stage]
+      assert_equal "StandardError", failure[:error_class]
+
+      # RAG_QUALITY and evidence_route_context stay correctly correlated and unduplicated
+      # alongside the new interaction_completed events (existing, untouched sections).
+      assert_equal({ "Manual Motor" => 2 }, report.dig(:evidence_quality, :referenced_documents))
+      traceability = report.dig(:technical_and_cost, :traceability)
+      assert_equal 1, traceability.size, "the abstained interaction (query:i6) has no chunks and must not appear here"
+      assert_equal "query:i1", traceability.first[:correlation_id]
+      assert_equal 1, traceability.first[:chunks_cited]
+
+      # H10: active_days on a multi-day range must reflect distinct calendar days, not 1.
+      users = report.dig(:technical_and_cost, :per_user).index_by { |row| row[:user_id] }
+      assert_equal 3, users[@a1.id][:active_days]
+      assert_equal 1, users[@b1.id][:active_days]
+
+      file.close!
+    end
+  end
+
   private
 
-  def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0")
+  def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0", created_at: @now)
     BedrockQuery.create!(
       source: "query",
       route: route,
@@ -252,7 +367,7 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       user_id: user.id,
       conversation_session_id: user.id + 1000,
       correlation_id: correlation_id,
-      created_at: @now
+      created_at: created_at
     )
   end
 

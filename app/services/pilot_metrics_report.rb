@@ -22,9 +22,11 @@ class PilotMetricsReport
   }.freeze
   REFORMULATION_WINDOW = 10.minutes
 
-  def initialize(date:, usage_log_path: nil, user_ids: nil)
-    @date = date.to_date
-    @range = @date.in_time_zone.all_day
+  def initialize(date: nil, from: nil, to: nil, usage_log_path: nil, user_ids: nil)
+    from_date = from&.to_date
+    to_date   = (to || from)&.to_date || date&.to_date
+    @date     = to_date
+    @range    = from_date ? from_date.in_time_zone.beginning_of_day..to_date.in_time_zone.end_of_day : @date.in_time_zone.all_day
     @usage_log_path = usage_log_path.presence
     @user_ids = Array(user_ids).filter_map { |value| Integer(value, exception: false) }.uniq
   end
@@ -55,6 +57,7 @@ class PilotMetricsReport
         per_user: users,
         per_account: accounts
       },
+      interactions: interactions(rows, log_data[:pilot]),
       adoption_signals: adoption_signals(rows, log_data[:pilot], messages, sessions),
       repeat_usage: repeat_usage(log_data[:pilot]),
       evidence_quality: evidence_quality(log_data[:quality]),
@@ -371,7 +374,7 @@ class PilotMetricsReport
         latency_p95_ms: percentile(latencies, 95),
         photo_delivery_latency_p50_ms: percentile(photo_latencies, 50),
         photo_delivery_latency_p95_ms: percentile(photo_latencies, 95),
-        active_days: (user_rows.any? || events.any? || user_messages.any?) ? 1 : 0,
+        active_days: active_days(user_rows, events, user_messages),
         errors: @usage_log_path ? events.count { |event| event[:event] == "photo_failed" } : nil,
         data_not_available: gaps[:data_not_available_count],
         require_field_verification: gaps[:require_field_verification_count],
@@ -446,9 +449,70 @@ class PilotMetricsReport
       sessions: sessions.size,
       user_messages: messages.count { |message| message[:role] == "user" },
       assistant_messages: messages.count { |message| message[:role] == "assistant" },
-      rag_queries: rows.count { |row| query_row?(row) && !visual_row?(row) },
+      rag_llm_calls: rows.count { |row| query_row?(row) && !visual_row?(row) },
       photo_requests: rows.count { |row| visual_row?(row) } + cache[:hits].to_i
     }
+  end
+
+  # Single source of truth for the tracking contract (docs/rag/plan_tracking_piloto_2026-08-04.md):
+  # one row per distinct correlation_id in `interaction_completed`, never one row
+  # per billable Bedrock call — that count lives in `llm_calls` on the same hash.
+  def interactions(rows, pilot_events)
+    events = pilot_events.select { |event| event[:event] == "interaction_completed" }
+    return { status: "logs_not_available" } if events.empty?
+
+    by_correlation = events.group_by { |event| event[:correlation_id].presence }
+                            .reject { |correlation_id, _group| correlation_id.nil? }
+    representative = by_correlation.transform_values(&:first).values
+
+    total = representative.size
+    llm_calls = rows.count { |row| query_row?(row) }
+    user_ids = representative.filter_map { |event| integer_or_nil(event[:user_id]) }
+    returning_users = interaction_returning_users(representative)
+    repeat_questions = interaction_repeat_questions(representative)
+
+    {
+      status: "available",
+      total: total,
+      by_outcome: representative.group_by { |event| event[:outcome] }.transform_values(&:size),
+      llm_calls: llm_calls,
+      invariant_ok: total <= llm_calls,
+      active_users: user_ids.uniq.size,
+      users_with_multiple_days: returning_users,
+      returning_users: returning_users,
+      repeated_questions_count: repeat_questions.size,
+      top_repeated_questions: repeat_questions.sort_by { |_key, count| -count }.first(10).map do |(user_id, question_sha256), count|
+        { user_id: user_id, question_sha256: question_sha256, count: count }
+      end,
+      failures: representative.select { |event| event[:outcome] == "failed" }.map do |event|
+        {
+          correlation_id: event[:correlation_id],
+          route: event[:route],
+          stage: event[:stage],
+          error_class: event[:error_class]
+        }
+      end,
+      unattributed_count: representative.count { |event| integer_or_nil(event[:user_id]).nil? }
+    }
+  end
+
+  def interaction_returning_users(representative_events)
+    by_user_day = representative_events.filter_map do |event|
+      user_id = integer_or_nil(event[:user_id])
+      ts = parse_time(event[:ts])
+      [ user_id, ts.to_date ] if user_id && ts
+    end.uniq
+    by_user_day.group_by { |(user_id, _day)| user_id }.count { |_user_id, days| days.size >= 2 }
+  end
+
+  # Nil question_sha256 (photo/visual_query interactions carry none — Fase 1
+  # note #3) must never collide with each other under the same key.
+  def interaction_repeat_questions(representative_events)
+    representative_events
+      .select { |event| event[:question_sha256].presence }
+      .group_by { |event| [ integer_or_nil(event[:user_id]), event[:question_sha256] ] }
+      .transform_values(&:size)
+      .select { |_key, count| count > 1 }
   end
 
   def evidence_quality(records)
@@ -728,6 +792,16 @@ class PilotMetricsReport
       cache_read_tokens: row[:cache_read_tokens],
       cache_creation_tokens: row[:cache_creation_tokens]
     ).cost
+  end
+
+  # H10: fixed at 1 in a single-day report; a multi-day @range must count
+  # distinct calendar days with any activity instead.
+  def active_days(user_rows, events, user_messages)
+    (
+      user_rows.filter_map { |row| row[:created_at]&.to_date } +
+      events.filter_map { |event| parse_time(event[:ts])&.to_date } +
+      user_messages.filter_map { |message| message[:ts]&.to_date }
+    ).uniq.size
   end
 
   def percentile(sorted_values, pct)

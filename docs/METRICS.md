@@ -282,7 +282,7 @@ create `bedrock_queries` rows: that table's `source` enum is closed and its
 `CostMetric` upsert plus a dashboard broadcast — none of which apply to a
 bare retrieve or a zero-cost cache/S3 rehydration. **No new value was added to
 `bedrock_queries.source`**, and `technical_and_cost.per_account.total_queries`
-/ `adoption_signals.rag_queries` keep their existing semantics: they are
+/ `adoption_signals.rag_llm_calls` keep their existing semantics: they are
 computed strictly from `bedrock_queries` (`query_row?` / `visual_row?`) and
 are not contaminated by these structured log lines.
 
@@ -310,4 +310,4 @@ are not contaminated by these structured log lines.
 `kb_retrieve` and `kb_warm_ping` counts and average latency (plus
 `filtered_share` for `kb_retrieve`) from these structured log lines. It is
 purely additive — it does not read from or write to `total_queries`,
-`rag_queries`, or any other existing bucket.
+`rag_llm_calls`, or any other existing bucket.

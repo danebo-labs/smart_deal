@@ -1837,6 +1837,40 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  # Fase 1 (plan_tracking_piloto_2026-08-04.md): the correlation_id must be
+  # coined once by the caller (RagController#ask) and honored here, not
+  # re-minted internally — otherwise an interaction that fails before Bedrock
+  # is unreconstructable (H3).
+  test 'query honors an externally supplied correlation_id instead of minting its own' do
+    captured = nil
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
+      with_captured_quality_log do
+        captured = capture_tracking_jobs do
+          BedrockRagService.new(account: @account).query('What is S3?', correlation_id: 'query:external-fixed-id')
+        end
+      end
+    end
+
+    assert_equal 1, captured.size
+    assert_equal 'query:external-fixed-id', captured.first[:correlation_id]
+
+    quality = captured_quality_payload
+    assert_equal 'query:external-fixed-id', quality['correlation_id']
+  end
+
+  test 'query mints its own correlation_id when the caller passes none (unchanged behavior)' do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
+      captured = capture_tracking_jobs do
+        BedrockRagService.new(account: @account).query('What is S3?')
+      end
+
+      assert_equal 1, captured.size
+      assert captured.first[:correlation_id].to_s.start_with?('query:')
+      assert_not_equal 'query:external-fixed-id', captured.first[:correlation_id]
+    end
+  end
+
   test 'filtered technical answer without citations uses fallback chunks for existence validation' do
     KbDocument.create!(
       s3_key: "manual.pdf",

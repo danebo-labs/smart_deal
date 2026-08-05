@@ -23,6 +23,21 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: error.class.name,
       image_digest_prefix: args[:image_sha256].to_s.first(12)
     )
+    # self here is the job CLASS, not an instance (retry_on's exhausted-attempts
+    # branch yields the user block directly, unlike instance_exec elsewhere in
+    # this file) — call PilotUsageLog directly rather than the private
+    # emit_interaction_completed instance helper used below.
+    PilotUsageLog.log(
+      "interaction_completed",
+      account_id: args[:account_id],
+      user_id: args[:user_id],
+      conversation_session_id: args[:conversation_session_id],
+      correlation_id: args[:correlation_id],
+      outcome: "failed",
+      stage: "error",
+      error_class: error.class.name,
+      route: "visual_query"
+    )
     KbSyncBroadcaster.failed(
       filenames: [ args[:filename].presence || "photo" ],
       account_id: args[:account_id],
@@ -169,6 +184,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
         image_sha256: image_sha256
       )
     )
+    emit_interaction_completed(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      outcome: photo_outcome(cache_value[:analysis]),
+      latency_ms: elapsed_ms(started_at)
+    )
   ensure
     FieldPhotoPendingImageStore.delete(token: image_token, account_id: account_id)
   end
@@ -205,6 +228,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       **fields.merge(cost: 0, estimated_cost_avoided: cached[:original_cost])
     )
     PilotUsageLog.log("photo_completed", **fields.merge(cost: 0))
+    emit_interaction_completed(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      outcome: photo_outcome(cached[:analysis]),
+      latency_ms: delivery_latency_ms
+    )
   end
 
   def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil)
@@ -302,6 +333,16 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: "PhotoUploadExpired",
       image_digest_prefix: image_sha256.to_s.first(12)
     )
+    emit_interaction_completed(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      outcome: "failed",
+      stage: "expired",
+      error_class: "PhotoUploadExpired",
+      latency_ms: nil
+    )
     KbSyncBroadcaster.failed(
       filenames: [ filename ],
       account_id: account_id,
@@ -313,6 +354,31 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   def elapsed_ms(started_at)
     ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+  end
+
+  # Single point of emission for the terminal state of a photo interaction —
+  # RagController#ask never observes this route's actual completion (it only
+  # sees the "accepted" acknowledgment), so this job is the correct border.
+  def emit_interaction_completed(account_id:, user_id:, conversation_session_id:, correlation_id:,
+                                 outcome:, latency_ms:, stage: nil, error_class: nil)
+    PilotUsageLog.log(
+      "interaction_completed",
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      outcome: outcome,
+      stage: stage,
+      error_class: error_class,
+      route: "visual_query",
+      latency_ms: latency_ms
+    )
+  end
+
+  # Reuses the abstention pattern already established for evidence-selection
+  # telemetry (restriction 2) — no new regex.
+  def photo_outcome(analysis_text)
+    analysis_text.to_s.match?(Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN) ? "abstained" : "answered"
   end
 
   # A storage failure must never block diagnosis delivery to the technician.

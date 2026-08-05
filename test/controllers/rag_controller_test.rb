@@ -642,6 +642,46 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Fase 1 (plan_tracking_piloto_2026-08-04.md, restriction 4): the
+  # interaction_completed payload may carry the error CLASS but never the AWS
+  # exception message, a backtrace, or any other key outside
+  # PilotUsageLog::ALLOWED_FIELDS.
+  test 'interaction_completed payload on a failed interaction never carries the error message or backtrace' do
+    sign_in @user
+
+    aws_message = 'AccessDeniedException: arn:aws:iam::123456789012:role/secret-role is not authorized'
+    mock = create_mock_orchestrator(
+      answer: '',
+      should_raise: true,
+      error_class: BedrockRagService::BedrockServiceError,
+      error_message: aws_message
+    )
+
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: 'test question' }, as: :json
+    end
+
+    Rails.logger.stop_broadcasting_to(logger)
+
+    line = output.string.lines.find { |entry| entry.include?('[PILOT_USAGE]') && entry.include?('"interaction_completed"') }
+    assert line.present?, 'interaction_completed must be emitted on a failed interaction'
+    payload = JSON.parse(line.split('[PILOT_USAGE] ', 2).last)
+
+    assert_equal 'failed', payload['outcome']
+    assert_equal 'service_error', payload['stage']
+    assert_equal 'BedrockRagService::BedrockServiceError', payload['error_class']
+    assert_equal 'text', payload['route']
+    assert_not_includes line, aws_message
+    assert_not payload.key?('message')
+    assert_not payload.key?('error_message')
+    assert_not payload.key?('backtrace')
+    assert_not payload.key?('prompt')
+  end
+
   test 'handles unexpected StandardError gracefully' do
     sign_in @user
 

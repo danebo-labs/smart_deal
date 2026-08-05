@@ -20,6 +20,7 @@ class PilotUsageLog
     generation_output_tokens generation_prompt_chars attribution_dropped
     ambiguity_detected ambiguity_identifier ambiguity_families
     section_identity attribution_identities attribution_anchors
+    stage
   ].freeze
 
   class << self

@@ -170,7 +170,8 @@ class BedrockRagService
   #   queries like "Describe Orona ARCA BASICO ..." don't trip the bypass.
   def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
-            account_id: nil, user_id: nil, conversation_session_id: nil, include_diagnostics: false)
+            account_id: nil, user_id: nil, conversation_session_id: nil, correlation_id: nil,
+            include_diagnostics: false)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -221,7 +222,10 @@ class BedrockRagService
 
       # Gate 9R I0: groups every billable invocation of this turn (filtered
       # attempt + global fallback) so the cost matrix can count real calls/query.
-      query_correlation_id = "query:#{SecureRandom.uuid}"
+      # Honors the caller's correlation_id (coined once per interaction in
+      # RagController#ask, Fase 1) so a request that fails before reaching this
+      # method still shares the same id its BedrockQuery rows would carry.
+      query_correlation_id = correlation_id.presence || "query:#{SecureRandom.uuid}"
       generation_attempt   = 1
 
       # Use retrieve_and_generate API - combines retrieval and generation in one call

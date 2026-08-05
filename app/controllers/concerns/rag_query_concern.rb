@@ -11,7 +11,7 @@ module RagQueryConcern
   RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs,
                          :retrieval_trace,
                          :session_id, :documents_uploaded, :images_uploaded, :correlation_id,
-                         :error_type, :error_message,
+                         :error_type, :error_message, :error_class,
                          # Deterministic-path observability (benchmark plan Fase 7/8).
                          # nil on the generative path.
                          :generation_mode, :model_invoked,
@@ -110,19 +110,19 @@ module RagQueryConcern
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)
-    RagResult.new(success?: false, error_type: :image_compression, error_message: e.message)
+    RagResult.new(success?: false, error_type: :image_compression, error_message: e.message, error_class: e.class.name)
   rescue BedrockRagService::MissingKnowledgeBaseError => e
     log_rag_error("RAG config error", e)
-    RagResult.new(success?: false, error_type: :config_error, error_message: e.message)
+    RagResult.new(success?: false, error_type: :config_error, error_message: e.message, error_class: e.class.name)
   rescue BedrockRagService::BedrockServiceError => e
     log_rag_error("RAG AWS error", e)
-    RagResult.new(success?: false, error_type: :service_error, error_message: e.message)
+    RagResult.new(success?: false, error_type: :service_error, error_message: e.message, error_class: e.class.name)
   rescue SqlGenerationService::SqlExecutionError => e
     log_rag_error("SQL execution error", e)
-    RagResult.new(success?: false, error_type: :service_error, error_message: e.message)
+    RagResult.new(success?: false, error_type: :service_error, error_message: e.message, error_class: e.class.name)
   rescue StandardError => e
     log_rag_error("Query unexpected error", e, include_backtrace: true)
-    RagResult.new(success?: false, error_type: :unexpected_error, error_message: e.message)
+    RagResult.new(success?: false, error_type: :unexpected_error, error_message: e.message, error_class: e.class.name)
   end
 
   # Defensive sanitizer applied to model answers before delivery.

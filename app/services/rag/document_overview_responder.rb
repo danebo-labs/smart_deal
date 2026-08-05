@@ -7,7 +7,6 @@ module Rag
   # contract: self.build returns nil or an instance, #execute returns the
   # answer Hash or nil.
   class DocumentOverviewResponder
-    MAX_QUICK_REPLIES = 6
     MAX_OVERVIEW_DOCUMENTS = 4
     # Bounds synchronous S3 manifest GETs per response (Rag::DocumentOverviewBuilder
     # falls back to S3 on a cache miss). Cache is expected to be warm for pinned
@@ -51,8 +50,7 @@ module Rag
         retrieval_trace:     retrieval_trace(hits),
         session_id:          nil,
         generation_mode:     "deterministic_document_overview",
-        model_invoked:       false,
-        quick_replies:       quick_replies(hits)
+        model_invoked:       false
       }
     end
 
@@ -121,27 +119,6 @@ module Rag
       return I18n.t("rag.document_overview.page_single", locale: @locale, page: first) if first == last
 
       I18n.t("rag.document_overview.page_range", locale: @locale, first: first, last: last)
-    end
-
-    # V6: distributes MAX_QUICK_REPLIES across all rendered documents instead
-    # of per-document, so pinning several documents can't balloon the reply
-    # list. Stateless — no mutable "remaining" counters.
-    def quick_replies(hits)
-      multi   = hits.size > 1
-      per_doc = (MAX_QUICK_REPLIES.to_f / hits.size).ceil
-      hits.flat_map { |hit|
-        hit[:overview][:sections].first(per_doc).map { |s| quick_reply(hit[:kb_document], s, multi) }
-      }.first(MAX_QUICK_REPLIES)
-    end
-
-    # V5: with several pinned documents the query itself must name the
-    # document — two manuals can both have a "SEGURIDADES" section, and the
-    # follow-up turn runs retrieval with both pins still active.
-    def quick_reply(kb_document, section, multi)
-      suffix = I18n.t("rag.document_overview.section_query_suffix", locale: @locale)
-      label  = multi ? "#{kb_document.display_name} — #{section[:label]}" : section[:label]
-      query  = multi ? "#{kb_document.display_name} — #{section[:label]} — #{suffix}" : "#{section[:label]} — #{suffix}"
-      { label: label, query: query }
     end
   end
 end

@@ -144,7 +144,7 @@ module Rag
       assert_equal [], result[:retrieved_citations]
       assert_equal "deterministic_document_overview", result[:generation_mode]
       assert_equal "Manual A", result[:doc_refs].first["canonical_name"]
-      assert_equal 1, result[:quick_replies].size
+      assert_nil result[:quick_replies]
       assert_includes result[:answer], "SEGURIDADES"
       assert_includes result[:answer], "Documento: Manual A"
     end
@@ -215,7 +215,11 @@ module Rag
       assert_equal 1, calls
     end
 
-    test "quick_replies total stays within MAX_QUICK_REPLIES across multiple documents with abundant sections" do
+    # Quick-reply buttons were confusing when a document's section_identity
+    # metadata is noisy (e.g. names picked up from a signatures page instead
+    # of real headings) — execute never returns them, regardless of how many
+    # documents/sections are rendered.
+    test "execute never returns quick_replies, even with multiple documents and abundant sections" do
       account = make_account
       doc_a = make_kb_document(account, display_name: "Manual A")
       doc_b = make_kb_document(account, display_name: "Manual B")
@@ -225,32 +229,7 @@ module Rag
 
       result = DocumentOverviewResponder.new(account: account, kb_documents: [ doc_a, doc_b ]).execute
 
-      assert result[:quick_replies].size <= DocumentOverviewResponder::MAX_QUICK_REPLIES
-    end
-
-    test "quick_replies prefix the query with the document name when multiple documents are rendered" do
-      account = make_account
-      doc_a = make_kb_document(account, display_name: "Manual A")
-      doc_b = make_kb_document(account, display_name: "Manual B")
-      write_overview_cache(account, doc_a, sections: [ { label: "SEGURIDADES", first_page: 1, last_page: 3, chunk_count: 1 } ])
-      write_overview_cache(account, doc_b, sections: [ { label: "SEGURIDADES", first_page: 1, last_page: 3, chunk_count: 1 } ])
-
-      result = DocumentOverviewResponder.new(account: account, kb_documents: [ doc_a, doc_b ]).execute
-      queries = result[:quick_replies].pluck(:query)
-
-      assert_includes queries, "Manual A — SEGURIDADES — #{I18n.t('rag.document_overview.section_query_suffix')}"
-      assert_includes queries, "Manual B — SEGURIDADES — #{I18n.t('rag.document_overview.section_query_suffix')}"
-      assert_equal 2, queries.uniq.size, "each quick reply query must disambiguate which document it targets"
-    end
-
-    test "quick_replies do not prefix the document name with a single rendered document" do
-      account = make_account
-      doc = make_kb_document(account, display_name: "Manual A")
-      write_overview_cache(account, doc, sections: [ { label: "SEGURIDADES", first_page: 1, last_page: 3, chunk_count: 1 } ])
-
-      result = DocumentOverviewResponder.new(account: account, kb_documents: [ doc ]).execute
-
-      assert_equal "SEGURIDADES — #{I18n.t('rag.document_overview.section_query_suffix')}", result[:quick_replies].first[:query]
+      assert_nil result[:quick_replies]
     end
   end
 end

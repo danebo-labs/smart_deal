@@ -63,7 +63,6 @@ en:
       document_heading: "Document: %{name}"
       section_line: "%{label} — %{pages}"
       closing_question: "Which section would you like to ask about?"
-      section_query_suffix: "what does this section say?"
       page_single: "p. %{page}"
       page_range: "p. %{first}-%{last}"
       page_unknown: "pages not specified"

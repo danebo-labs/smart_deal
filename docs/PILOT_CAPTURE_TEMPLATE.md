@@ -14,6 +14,7 @@
 
 ### Pregunta 1: [texto literal]
 **Contexto:** [qué motivó la pregunta en el campo]
+**`correlation_id`:** [copiar el `query:...` o `photo:...` correspondiente]
 
 - **Utilidad:** ☐ Útil · ☐ Parcialmente útil · ☐ No útil
 - **Corrección técnica:** ☐ Sí (claims centrales correctos) · ☐ No (especificar abajo)
@@ -86,8 +87,9 @@ Para las 2–3 búsquedas típicas en papel / catálogos:
 
 Ejecutar después de la sesión:
 ```bash
-kamal app logs -f 2>&1 | grep -E 'PILOT_USAGE|RAG_QUALITY' > tmp/pilot.log
-PILOT_USAGE_LOG=tmp/pilot.log bin/rails runner script/pilot_metrics_export.rb 2026-07-31
+bin/pilot_metrics \
+  --from 2026-07-31 --to 2026-07-31 \
+  --account [slug-de-la-cuenta] --format both
 ```
 
 **Extraer de `technical_and_cost.evidence_route_summary`:**
@@ -100,4 +102,5 @@ PILOT_USAGE_LOG=tmp/pilot.log bin/rails runner script/pilot_metrics_export.rb 20
 - ¿Hubo repetición de preguntas?: 
 - ¿Reformulación después de abstención?: 
 
-**Archivar el log completo en:** `tmp/pilot_baseline_[YYYYMMDD]_[technician].log`
+**Archivar el paquete completo en:**
+`tmp/pilot_exports/[from]_[to]_[slug]/`

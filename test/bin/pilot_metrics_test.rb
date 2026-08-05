@@ -81,6 +81,23 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     assert_equal 0o700, File.stat(output_dir).mode & 0o777
   end
 
+  test "merges a local manual outcomes CSV into report JSON by correlation id" do
+    outcomes_path = File.join(@tmpdir, "manual-outcomes.csv")
+    File.write(outcomes_path, <<~CSV)
+      correlation_id,correct_answer,resolved,helpfulness
+      query:web,yes,no,helpful
+    CSV
+
+    _stdout, stderr, status = run_command("--manual-outcomes", outcomes_path, "--format", "raw")
+
+    assert status.success?, stderr
+    interaction = JSON.parse(File.read(File.join(output_dir, "report.json")))
+      .dig("interactions", "by_correlation").sole
+    assert_equal "yes", interaction.fetch("correct_answer")
+    assert_equal "no", interaction.fetch("resolved")
+    assert_equal "helpful", interaction.fetch("technician_helpfulness")
+  end
+
   test "strict fails when a declared role has no log events" do
     _stdout, stderr, status = run_command("--strict", env: { "FAKE_EMPTY_ROLE" => "worker" })
 
@@ -239,7 +256,17 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
             per_user: [],
             per_account: []
           },
-          interactions: { status: "logs_not_available" },
+          interactions: {
+            status: "available",
+            by_correlation: [
+              {
+                correlation_id: "query:web",
+                correct_answer: nil,
+                resolved: nil,
+                technician_helpfulness: nil
+              }
+            ]
+          },
           adoption_signals: {
             active_users: 1,
             active_accounts: 1,
@@ -277,10 +304,27 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     path = File.join(@fake_bin, "rails")
     File.write(path, <<~RUBY)
       #!#{RbConfig.ruby}
+      require "csv"
       require "json"
 
-      report = JSON.parse(File.read(ARGV.fetch(-1)))
-      puts "Rendered pilot metrics \#{report.fetch("date")}"
+      if ARGV.any? { |argument| argument.end_with?("pilot_metrics_merge_manual_outcomes.rb") }
+        report = JSON.parse(File.read(ARGV.fetch(-2)))
+        outcomes = CSV.read(ARGV.fetch(-1), headers: true).each_with_object({}) do |outcome, index|
+          index[outcome["correlation_id"]] = outcome
+        end
+        Array(report.dig("interactions", "by_correlation")).each do |interaction|
+          outcome = outcomes[interaction["correlation_id"]]
+          next unless outcome
+
+          interaction["correct_answer"] = outcome["correct_answer"]
+          interaction["resolved"] = outcome["resolved"]
+          interaction["technician_helpfulness"] = outcome["helpfulness"]
+        end
+        puts JSON.generate(report)
+      else
+        report = JSON.parse(File.read(ARGV.fetch(-1)))
+        puts "Rendered pilot metrics \#{report.fetch("date")}"
+      end
     RUBY
     File.chmod(0o755, path)
   end

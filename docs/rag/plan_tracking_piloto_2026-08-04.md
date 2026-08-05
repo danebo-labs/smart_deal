@@ -316,6 +316,100 @@ dado H11; sin eso, un día rotado es indistinguible de un día sin actividad.
 La corrección técnica de las respuestas se registra por revisión humana y no entra al
 reporte automatizado. No es criterio de aprobación del tracking.
 
+### Resultado de la corrida (sesión nueva, 2026-08-04)
+
+**Checkpoint de despliegue (antes de abrir):** el despliegue vigente al momento de abrir la
+corrida (commit `846f732`) NO incluía las Fases 1/2 — verificado empíricamente (`interactions`
+ausente, `adoption_signals.rag_queries` en vez de `rag_llm_calls`). Bloqueante, escalado y
+resuelto con decisión del dueño: se comiteó el working tree de las Fases 1/2 (commit `08202b1`,
+alcance quirúrgico — sin tocar `plan_ciclo5`/`plan_sonda_v6`/`export_rag_trace.rb`, ajenos a este
+plan) y se desplegó (`kamal deploy`, 168.9s, healthy). Re-verificado: `interactions` presente,
+`rag_llm_calls` presente. Cohorte del piloto confirmada con datos reales, no supuesta: el único
+documento ingerido (`SEGURIDADES 1.1-1`) vive en `account_id 1` (users 3 y 5), no en `account_id 2`
+(el que se hubiera asumido por nombre de cuenta) — `PILOT_USER_IDS` se resolvió dinámicamente
+como `User.where(account_id: 1).pluck(:id)` en el momento de correr el export, no hardcodeado.
+Hora inicial: `2026-08-05T02:28:48Z`.
+
+**Preguntas:** se reutilizaron 7 de los 12 casos de `script/fixtures/rag_seguridades_rubric.json`
+(rúbrica ya validada contra el PDF real, no inventada para esta corrida) + 1 pregunta con foto,
+redactadas sin conocer el resultado de antemano.
+
+**Desviación del criterio literal "8":** el usuario mandó 11 mensajes reales, no 8 (confirmado
+explícitamente) — repitió una pregunta, combinó dos preguntas de la lista en un solo mensaje, y
+agregó dos preguntas fuera de lista. El mecanismo de tracking reconstruyó exactamente esa
+realidad: **11 mensajes → 11 `interaction_completed` → 11 `correlation_id` únicos, 1:1 sin
+duplicar ni perder ninguno** (`interactions.total: 11`, `unattributed_count: 0`). Esto es evidencia
+más fuerte que un script limpio de 8, no más débil — pero el número literal del criterio congelado
+no aplica tal cual.
+
+| Resultado | `interactions` | `by_outcome` |
+|---|---|---|
+| Total | 11 | `answered: 6`, `abstained: 5` |
+| `invariant_ok` (reporte, día completo) | `true` (11 ≤ 53 llm_calls del día) | — |
+| `unattributed_count` | 0 | — |
+| `failures` | `[]` (sin fallos reales esta corrida) | — |
+| `active_users` | 1 (user 3) | — |
+| `repeated_questions_count` | 1 (TPR70 repetida) | — |
+
+**Tres hallazgos a escalar (no se parchea nada — código de las Fases 1/2 intacto):**
+
+1. **El invariante `invariant_ok` se calcula a nivel de todo el día del reporte, no por lote de
+   corrida — y se rompe por diseño, no por accidente, cuando interviene el disambiguador.**
+   Aislando por `correlation_id` propio (vía `BedrockQuery`), esta corrida tuvo 11 interacciones
+   pero solo 10 llamadas LLM reales atribuibles (9 `BedrockQuery` + 1 llamada directa de foto).
+   La interacción faltante (`query:6bb64743...`, 499 ms) es el primer intento de la pregunta #8
+   ("¿Qué es esta placa...?" escrita en texto, sin adjuntar foto real): la resolvió
+   `Rag::StructuredEvidenceRoute` → `Rag::AmbiguousModelResponder` (verificado contra
+   `conversation_history` real: "La evidencia recuperada corresponde a varias placas... elige una
+   o indica el fabricante"), un responder determinístico que por diseño contesta sin invocar
+   Bedrock. Aislado a esta corrida, el invariante se rompe (11 > 10); en el reporte del día pasa
+   trivialmente porque se diluye contra 53 llamadas de actividad ajena a esta corrida. Esto no es
+   un caso borde raro: cualquier cuenta con uso normal de la ruta de desambiguación (la app pide
+   "¿cuál placa?" antes de responder) va a producir interacciones `answered` con cero llamadas
+   LLM, así que el invariante tal como está definido en el contrato ("interacciones ≤ llamadas
+   LLM") es falso en general por diseño, no solo diluible por volumen ajeno.
+2. **`bedrock_daily_costs` no tiene fila para `utc_date` de hoy** (reconciliación diaria todavía no
+   corrió) — el criterio "costo conciliado" queda **pendiente**, no aprobado ni rechazado; se
+   verifica cuando la fila exista.
+3. **Una de las 8 preguntas planeadas (EM2000, combinada con EM3000 en un solo mensaje) volvió
+   "no contiene información sobre EM2000"**, pese a que la rúbrica confirma que el documento SÍ
+   tiene esa sección (páginas 31-32, con una contradicción real documentada). Posible pérdida de
+   cobertura de retrieval al combinar dos entidades distintas en un mensaje — hallazgo de precisión
+   RAG, fuera del alcance de este plan (pertenece al ciclo de precisión, no se toca aquí).
+
+**Artefactos locales con SHA256 (restricción 7):** `tmp/fase3_gate_2026-08-04/SHA256SUMS.txt`
+(`pilot_metrics_export_2026-08-04.json`, `pilot_combined.log`, `web_pilot_grep.log`,
+`worker_pilot_grep.log`).
+
+**Veredicto:** gate **PASA** en los criterios que le corresponden a este plan (reconstrucción de
+interacciones, invariante en verde al nivel que el código lo calcula, cero interacciones sin
+usuario, sin fallos que verificar esta vez, sin PII/prompt/backtrace en los payloads). Costo
+queda pendiente de conciliación. Los tres hallazgos arriba se escalan como decisiones humanas
+para quien cierre el ciclo, no se resuelven en esta sesión.
+
+### Resolución posterior de los hallazgos 1 y 2
+
+1. El falso `invariant_ok` fue retirado en `d6c5b48`. `interactions` ahora separa
+   `llm_calls_attributed` de `llm_calls_in_range`, cuenta
+   `zero_llm_call_interactions` y expone `contract_checks` comprobables. Una
+   respuesta determinística del disambiguador ya no se presenta como una
+   violación: se registra honestamente como una interacción con cero llamadas
+   LLM. `answered` tampoco implica corrección ni resolución; esos campos quedan
+   bajo `REQUIRES_HUMAN_REVIEW` y se unen por `correlation_id` desde el CSV
+   manual.
+2. El costo por fila/cohorte pasó a llamarse `attributed_cost_usd`, sin modificar
+   el estimador ni su precisión. Los totales separan `provider_usage_usd` de
+   `estimated_usd` según `token_source`. La autoridad de facturación es
+   `technical_and_cost.cost_authority.reconciled_bedrock_usd`, calculada desde
+   `bedrock_daily_costs` para todos los días UTC solapados, con estado
+   `reconciled`, `partially_reconciled` o `pending_reconciliation`, fechas
+   faltantes y alcance explícito `platform_wide_all_accounts`.
+
+La captura manual de dos pasos fue reemplazada en `9dc5a6a` por
+`bin/pilot_metrics`, que resuelve e imprime la cohorte, descarga los roles web y
+worker mediante SSH directo sin PTY y conserva el paquete local con manifiesto y
+SHA256. No se escribe nada en producción.
+
 ## Presupuesto del ciclo
 
 - Fases 0, 1 y 2: 0 invocaciones Bedrock.
@@ -330,7 +424,7 @@ reporte automatizado. No es criterio de aprobación del tracking.
 | 0 Verificación de vigencia | No iniciada | — |
 | 1 Contrato y evento terminal | **Completada (2026-08-04)** | Suite completa en verde: `2306 runs, 8507 assertions, 0 failures, 0 errors` (0 invocaciones Bedrock; sin artefacto de corrida real, no aplica hash) |
 | 2 Reporte y fixture | **Completada (2026-08-04)** | Suite completa en verde: `2308 runs, 8530 assertions, 0 failures, 0 errors` (0 invocaciones Bedrock; sin artefacto de corrida real, no aplica hash) |
-| 3 Gate | No iniciada | — |
+| 3 Gate | **Ejecutada (2026-08-04), gate PASA con 3 hallazgos a escalar** | `tmp/fase3_gate_2026-08-04/SHA256SUMS.txt` (export JSON + logs web/worker con hash verificado) |
 
 ## Protocolo de plan vivo
 

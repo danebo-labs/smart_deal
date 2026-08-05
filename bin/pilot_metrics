@@ -9,6 +9,7 @@ Usage: bin/pilot_metrics --from YYYY-MM-DD --to YYYY-MM-DD --account SLUG [optio
 Options:
   --format raw|human|both  Output written to stdout (default: both)
   --with-questions        Include raw question/answer fields in report output
+  --manual-outcomes CSV   Merge manual outcomes by correlation_id
   --strict                Fail on incomplete telemetry or stale reconciliation
   --help                  Show this help
 USAGE
@@ -24,6 +25,7 @@ TO=""
 ACCOUNT=""
 FORMAT="both"
 WITH_QUESTIONS=false
+MANUAL_OUTCOMES=""
 STRICT=false
 
 while [[ $# -gt 0 ]]; do
@@ -52,6 +54,11 @@ while [[ $# -gt 0 ]]; do
       WITH_QUESTIONS=true
       shift
       ;;
+    --manual-outcomes)
+      [[ $# -ge 2 ]] || fail "--manual-outcomes requires a value"
+      MANUAL_OUTCOMES="$2"
+      shift 2
+      ;;
     --strict)
       STRICT=true
       shift
@@ -71,6 +78,7 @@ done
 [[ -n "$ACCOUNT" ]] || fail "--account is required"
 [[ "$FORMAT" =~ ^(raw|human|both)$ ]] || fail "--format must be raw, human, or both"
 [[ "$ACCOUNT" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail "invalid account slug"
+[[ -z "$MANUAL_OUTCOMES" || -r "$MANUAL_OUTCOMES" ]] || fail "manual outcomes CSV not readable: $MANUAL_OUTCOMES"
 
 RUBY_BIN="${PILOT_METRICS_RUBY:-ruby}"
 RAILS_BIN="${PILOT_METRICS_RAILS_BIN:-bin/rails}"
@@ -203,6 +211,14 @@ if ! remote "$REMOTE_EXPORT" < "$SOURCE_EVENTS" > "$REPORT_TMP"; then
 fi
 "$RUBY_BIN" -rjson -e 'JSON.parse(File.read(ARGV.fetch(0)))' "$REPORT_TMP" || fail "invalid report JSON"
 mv "$REPORT_TMP" "${OUTPUT_DIR}/report.json"
+
+if [[ -n "$MANUAL_OUTCOMES" ]]; then
+  MERGED_REPORT="${WORK_DIR}/report-with-manual-outcomes.json"
+  "$RAILS_BIN" runner script/pilot_metrics_merge_manual_outcomes.rb \
+    "${OUTPUT_DIR}/report.json" "$MANUAL_OUTCOMES" > "$MERGED_REPORT"
+  "$RUBY_BIN" -rjson -e 'JSON.parse(File.read(ARGV.fetch(0)))' "$MERGED_REPORT" || fail "invalid merged report JSON"
+  mv "$MERGED_REPORT" "${OUTPUT_DIR}/report.json"
+fi
 
 if [[ "$STRICT" == true ]]; then
   "$RUBY_BIN" -rjson -rtime -rdate -e '

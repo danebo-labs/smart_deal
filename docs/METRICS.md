@@ -239,26 +239,53 @@ Emitted events are `photo_submitted`, `photo_cache_miss`, `photo_cache_hit`,
 raw image, Base64, temporary token, prompt or credentials. The only image join
 field is the first 12 characters of the normalized SHA-256.
 
-Run the daily export with a same-day log extract so zero-cost reuse is included:
+Run the export from the laptop with the named account cohort. The command
+resolves and prints the account ID, slug, user IDs and user count before it
+continues; it downloads the web and worker telemetry read-only and sends it to
+the exporter over clean STDIN without a PTY:
 
 ```bash
-kamal app logs --lines 20000 | grep -E 'PILOT_USAGE|RAG_QUALITY' > tmp/pilot.log
-PILOT_USAGE_LOG=tmp/pilot.log bin/rails runner script/pilot_metrics_export.rb 2026-07-22
+bin/pilot_metrics \
+  --from 2026-07-22 --to 2026-07-22 \
+  --account pilot-account --format both
 ```
 
-For an exact named pilot cohort, pass comma-separated IDs; account totals are
-then computed only from those users and are not contaminated by internal smoke
-activity on the same day:
+The package is written to
+`tmp/pilot_exports/<from>_<to>_<slug>/` with `report.json`, `report.txt`,
+`source_events.jsonl`, `manifest.json` and `SHA256SUMS`. `report.json` is always
+kept regardless of the selected stdout format. Use `--strict` to reject an
+empty cohort, missing role telemetry, a partial report, invalid JSON or stale
+pending cost reconciliation.
+
+Manual review can be merged by `correlation_id` without changing the automatic
+classification:
 
 ```bash
-PILOT_USER_IDS=21,22,23 PILOT_USAGE_LOG=tmp/pilot.log \
-  bin/rails runner script/pilot_metrics_export.rb 2026-07-22
+bin/pilot_metrics \
+  --from 2026-07-22 --to 2026-07-22 \
+  --account pilot-account \
+  --manual-outcomes tmp/pilot_outcomes.csv
 ```
+
+The CSV headers are
+`correlation_id,correct_answer,resolved,helpfulness`. The three outcome values
+are copied as provided into the matching `interactions.by_correlation` row;
+unmatched interactions retain `nil`. Without the CSV,
+`commercial_outcomes.status` remains `REQUIRES_MANUAL_SURVEY`.
 
 The report separates:
 
 - `technical_and_cost`: real RAG/visual calls, tokens, model cost, latency,
-  cache hit rate and estimated avoided cost by user and account;
+  cache hit rate and estimated avoided cost by user and account. Per-call and
+  cohort-derived cost uses `attributed_cost_usd`; reconciled billing uses
+  `cost_authority.reconciled_bedrock_usd` and is explicitly
+  `platform_wide_all_accounts`, because `bedrock_daily_costs` has no account
+  dimension;
+- `interactions`: one row per `correlation_id`, with attributed and in-range LLM
+  call counts, zero-LLM interactions, explicit contract checks and
+  `REQUIRES_HUMAN_REVIEW`. The former `invariant_ok` field was removed because
+  deterministic ambiguity responses legitimately complete without an LLM
+  call;
 - `adoption_signals`: active users/accounts, sessions and photo/query volume;
 - `evidence_quality`: citations and evidence-present RAG results from
   timestamped `[RAG_QUALITY]` lines;
@@ -269,9 +296,50 @@ The report separates:
   time-to-resolution, avoided visits/escalations and technician confidence must
   be observed in the field rather than inferred from LLM usage.
 
-Without a readable `PILOT_USAGE_LOG`, cache counts and avoided cost are `null`,
-not fabricated. Messages with missing or invalid timestamps are excluded from
-the day and reported under `data_quality`.
+Missing or incomplete telemetry is reported as `logs_not_provided`,
+`logs_missing`, `logs_unreadable` or `partial`, never fabricated. Messages with
+missing or invalid timestamps are excluded from the range and reported under
+`data_quality`.
+
+**Human-readable output:** select `--format raw`, `human` or `both`. The text is
+rendered locally by `PilotMetricsHumanFormatter` from the exact `report.json`;
+it does not recompute metrics or change the report contract:
+
+```bash
+bin/pilot_metrics \
+  --from 2026-07-22 --to 2026-07-22 \
+  --account pilot-account --format human
+```
+
+**Opt-in raw question text (`evidence_quality.recent_questions`):** off by
+default — the raw JSON/human output is unchanged unless explicitly requested.
+Two logging paths exist with two different privacy postures, by design:
+
+- `interaction_completed` (source of `interactions` / `repeat_usage`) hashes
+  the question **before** it is ever logged — `RagController#ask` computes
+  `question_sha256 = Digest::SHA256.hexdigest(question)` and only the hash
+  reaches `PilotUsageLog`. This flag does **not** change that; `interactions`
+  and `repeat_usage` never carry raw text.
+- `[RAG_QUALITY]` lines (`BedrockRagService#log_quality_signal`) already carry
+  real question text today (`question.to_s.first(300)`), used for dev
+  debugging (see `script/export_rag_trace.rb`).
+
+Pass `--with-questions` to opt into surfacing that already-logged text through
+the pilot export as well, as
+`evidence_quality.recent_questions` (last 50 records, most recent first —
+`PilotMetricsReport::RECENT_QUESTIONS_LIMIT`). This only covers text/RAG
+queries: photo/visual queries never emit a `[RAG_QUALITY]` line, so they never
+appear here.
+
+```bash
+bin/pilot_metrics \
+  --from 2026-07-22 --to 2026-07-22 \
+  --account pilot-account --format both --with-questions
+```
+
+Treat any export generated with this flag as containing real technician
+question text — the command restricts the directory to mode `700`, every
+artifact to `600`, and prints a warning on stderr.
 
 ### Internal `Retrieve` telemetry: `kb_retrieve`, `kb_warm_ping`, `photo_reuse`
 

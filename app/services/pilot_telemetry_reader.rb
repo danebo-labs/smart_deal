@@ -3,7 +3,8 @@
 class PilotTelemetryReader
   MARKERS = {
     "[PILOT_USAGE]" => :pilot,
-    "[RAG_QUALITY]" => :quality
+    "[RAG_QUALITY]" => :quality,
+    "[PILOT_AUDIT]" => :audit
   }.freeze
 
   def initialize(source:, range:, user_ids: nil, roles_declared: nil)
@@ -19,6 +20,7 @@ class PilotTelemetryReader
 
     pilot = []
     quality = []
+    audit = []
     invalid_lines = 0
     timestamps = []
     roles_observed = []
@@ -38,7 +40,7 @@ class PilotTelemetryReader
       roles_observed << payload[:role].to_s if payload[:role].present?
       next unless timestamp && range.cover?(timestamp) && cohort_payload?(payload)
 
-      (bucket == :pilot ? pilot : quality) << payload
+      { pilot: pilot, quality: quality, audit: audit }.fetch(bucket) << payload
     end
 
     first_ts = timestamps.min
@@ -50,6 +52,7 @@ class PilotTelemetryReader
       status: status,
       pilot: pilot,
       quality: quality,
+      audit: audit,
       invalid_lines: invalid_lines,
       first_ts: first_ts&.iso8601,
       last_ts: last_ts&.iso8601,
@@ -64,11 +67,12 @@ class PilotTelemetryReader
 
   attr_reader :source, :range, :user_ids, :roles_declared
 
-  def result(status:, pilot: [], quality: [], invalid_lines: 0, first_ts: nil, last_ts: nil, missing_roles: [])
+  def result(status:, pilot: [], quality: [], audit: [], invalid_lines: 0, first_ts: nil, last_ts: nil, missing_roles: [])
     {
       status: status,
       pilot: pilot,
       quality: quality,
+      audit: audit,
       invalid_lines: invalid_lines,
       first_ts: first_ts,
       last_ts: last_ts,

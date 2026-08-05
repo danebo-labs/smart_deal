@@ -63,7 +63,7 @@ class PilotMetricsReport
         per_user: users,
         per_account: accounts
       },
-      interactions: interactions(rows, log_data[:pilot], log_data[:quality]),
+      interactions: interactions(rows, log_data[:pilot], log_data[:quality], log_data[:audit]),
       adoption_signals: adoption_signals(rows, log_data[:pilot], messages, sessions),
       repeat_usage: repeat_usage(log_data[:pilot]),
       evidence_quality: evidence_quality(log_data[:quality]),
@@ -488,7 +488,7 @@ class PilotMetricsReport
   # Single source of truth for the tracking contract (docs/rag/plan_tracking_piloto_2026-08-04.md):
   # one row per distinct correlation_id in `interaction_completed`, never one row
   # per billable Bedrock call.
-  def interactions(rows, pilot_events, quality_records)
+  def interactions(rows, pilot_events, quality_records, audit_records)
     events = pilot_events.select { |event| event[:event] == "interaction_completed" }
     return { status: "logs_not_available" } if events.empty?
 
@@ -522,7 +522,7 @@ class PilotMetricsReport
         status: "REQUIRES_HUMAN_REVIEW",
         fields: %w[correct_answer resolved technician_helpfulness]
       },
-      by_correlation: interaction_rows(by_correlation, rows, pilot_events, quality_records),
+      by_correlation: interaction_rows(by_correlation, rows, pilot_events, quality_records, audit_records),
       active_users: user_ids.uniq.size,
       users_with_multiple_days: returning_users,
       returning_users: returning_users,
@@ -542,12 +542,13 @@ class PilotMetricsReport
     }
   end
 
-  def interaction_rows(by_correlation, rows, pilot_events, quality_records)
+  def interaction_rows(by_correlation, rows, pilot_events, quality_records, audit_records)
     routes = pilot_events.select { |event| event[:event] == "evidence_route" }
       .group_by { |event| event[:correlation_id].presence }
     contexts = pilot_events.select { |event| event[:event] == "evidence_route_context" }
       .group_by { |event| event[:correlation_id].presence }
     quality = quality_records.group_by { |record| record[:correlation_id].presence }
+    audits = audit_records.group_by { |record| record[:correlation_id].presence }
     calls = rows.select { |row| query_row?(row) }
       .group_by { |row| row[:correlation_id].presence }
 
@@ -556,6 +557,7 @@ class PilotMetricsReport
       route = Array(routes[correlation_id]).first || {}
       context = Array(contexts[correlation_id])
       quality_record = Array(quality[correlation_id]).first || {}
+      audit = Array(audits[correlation_id])
       call_rows = Array(calls[correlation_id])
       result = {
         correlation_id: correlation_id,
@@ -602,6 +604,18 @@ class PilotMetricsReport
       if @include_raw_questions
         result[:question] = quality_record[:question]
         result[:answer_snippet] = quality_record[:answer_snippet]
+        interaction_audit = audit.find { |record| record[:type] == "interaction" }
+        if interaction_audit
+          result[:audit] = {
+            question: interaction_audit[:question],
+            answer: interaction_audit[:answer],
+            answer_length: interaction_audit[:answer_length].to_i,
+            citations: Array(interaction_audit[:citations]),
+            chunks: audit.select { |record| record[:type] == "chunk" }.map do |record|
+              record.slice(:document, :page, :section_identity, :chunk_sha256, :text, :truncated)
+            end
+          }
+        end
       end
       result
     end.sort_by { |row| row[:correlation_id] }

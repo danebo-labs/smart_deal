@@ -1,0 +1,64 @@
+{
+  "date": "2026-08-04",
+  "timezone": "America/Santiago",
+  "generated_at": "2026-08-05T02:35:00Z",
+  "technical_and_cost": {
+    "totals": {
+      "attributed_cost_usd": 0.091201,
+      "estimated_cost_avoided": 0.0,
+      "visual_llm_calls_avoided": 0
+    },
+    "evidence_route_summary": {
+      "status": "available",
+      "attribution_dropped": 0
+    },
+    "interaction_trace": [
+      { "correlation_id": "query:43294669-2697-400a-8595-ad99b9a1dc2b", "latency_ms": 22893 },
+      { "correlation_id": "query:20c886b3-234f-425b-8908-92f1487bd3af", "latency_ms": 4834 },
+      { "correlation_id": "query:aa0fce1b-7849-4a47-b09a-377d6c07419f", "latency_ms": 5815 },
+      { "correlation_id": "query:40806181-88ce-4674-a40f-ff59748098b2", "latency_ms": 3800 },
+      { "correlation_id": "query:22631668-e1a2-45f4-be45-5923b9048789", "latency_ms": 4309 },
+      { "correlation_id": "query:6055e503-b5ac-4a05-acf7-72de82981acb", "latency_ms": 4438 },
+      { "correlation_id": "query:d6035b28-945f-4602-9b8a-13d398df3c34", "latency_ms": 3155 },
+      { "correlation_id": "query:be40ad23-1754-41c7-8e21-3dc1f34b016a", "latency_ms": 6742 },
+      { "correlation_id": "query:bcce8774-8dcb-45d9-bf82-00a719818863", "latency_ms": 6332 },
+      { "correlation_id": "photo:0b5befea-c560-4371-b66c-26c4d37480cb", "latency_ms": 16665 }
+    ]
+  },
+  "interactions": {
+    "status": "available",
+    "total": 11,
+    "active_users": 1,
+    "returning_users": 0,
+    "repeated_questions_count": 1,
+    "failures": [],
+    "by_correlation": [
+      { "correlation_id": "query:43294669-2697-400a-8595-ad99b9a1dc2b", "outcome": "abstained", "evidence_present": true, "citations_count": 1, "citation_titles": ["ALJO Control Level 1B Altius — p. 7"], "attributed_cost_usd": 0.006029 },
+      { "correlation_id": "query:20c886b3-234f-425b-8908-92f1487bd3af", "outcome": "answered", "evidence_present": true, "citations_count": 1, "citation_titles": ["CARLOS SILVA — p. 11"], "attributed_cost_usd": 0.006658 },
+      { "correlation_id": "query:aa0fce1b-7849-4a47-b09a-377d6c07419f", "outcome": "answered", "evidence_present": true, "citations_count": 1, "documents": ["SEGURIDADES 1.1-1"], "pages": [11], "attributed_cost_usd": 0.007099 },
+      { "correlation_id": "query:40806181-88ce-4674-a40f-ff59748098b2", "outcome": "abstained", "evidence_present": true, "citations_count": 1, "citation_titles": ["CARLOS SILVA — p. 14"], "attributed_cost_usd": 0.006349 },
+      { "correlation_id": "query:22631668-e1a2-45f4-be45-5923b9048789", "outcome": "answered", "evidence_present": true, "citations_count": 1, "citation_titles": ["CTA — p. 22"], "attributed_cost_usd": 0.006052 },
+      { "correlation_id": "query:6055e503-b5ac-4a05-acf7-72de82981acb", "outcome": "abstained", "evidence_present": true, "citations_count": 4, "citation_titles": ["ELECMEGON — p. 29", "ELECMEGON — p. 30"], "attributed_cost_usd": 0.012791 },
+      { "correlation_id": "query:d6035b28-945f-4602-9b8a-13d398df3c34", "outcome": "abstained", "evidence_present": true, "citations_count": 1, "citation_titles": ["CARLOS SILVA — p. 14"], "attributed_cost_usd": 0.006356 },
+      { "correlation_id": "query:6bb64743-f593-4d24-9384-4c9e540a9e7e", "outcome": "answered", "evidence_present": false, "citations_count": 0, "attributed_cost_usd": 0.0 },
+      { "correlation_id": "query:be40ad23-1754-41c7-8e21-3dc1f34b016a", "outcome": "answered", "evidence_present": true, "citations_count": 1, "documents": ["SEGURIDADES 1.1-1"], "pages": [67], "attributed_cost_usd": 0.00721 },
+      { "correlation_id": "query:bcce8774-8dcb-45d9-bf82-00a719818863", "outcome": "answered", "evidence_present": true, "citations_count": 2, "documents": ["SEGURIDADES 1.1-1"], "pages": [29, 30], "attributed_cost_usd": 0.010633 },
+      { "correlation_id": "photo:0b5befea-c560-4371-b66c-26c4d37480cb", "outcome": "abstained", "evidence_present": false, "citations_count": 0, "attributed_cost_usd": 0.022014 }
+    ]
+  },
+  "adoption_signals": {
+    "active_users": 1,
+    "sessions": 1
+  },
+  "repeat_usage": {
+    "status": "available",
+    "queries_by_user_day": [
+      { "user_id": 3, "date": "2026-08-04", "count": 11 }
+    ]
+  },
+  "knowledge_gap_signals": {
+    "data_not_available_count": 0,
+    "require_field_verification_count": 0,
+    "absence_questions": []
+  }
+}

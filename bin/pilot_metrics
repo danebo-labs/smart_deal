@@ -179,13 +179,15 @@ fetch_role_logs() {
   fi
 
   ROLES_DOWNLOADED+=("$role")
-  grep -E '\[PILOT_USAGE\]|\[RAG_QUALITY\]' "$raw_file" > "$filtered_file" || true
+  local markers='\[PILOT_USAGE\]|\[RAG_QUALITY\]'
+  [[ "$WITH_QUESTIONS" == false ]] || markers+='|\[PILOT_AUDIT\]'
+  grep -E "$markers" "$raw_file" > "$filtered_file" || true
   if [[ ! -s "$filtered_file" ]]; then
     EMPTY_ROLES+=("$role")
     return
   fi
 
-  sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+  sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
     "$filtered_file" >> "$SOURCE_EVENTS"
 }
 
@@ -213,13 +215,14 @@ fi
 mv "$REPORT_TMP" "${OUTPUT_DIR}/report.json"
 
 if [[ -n "$MANUAL_OUTCOMES" ]]; then
-  MERGED_REPORT="${WORK_DIR}/report-with-manual-outcomes.json"
-  "$RAILS_BIN" runner script/pilot_metrics_merge_manual_outcomes.rb \
-    "${OUTPUT_DIR}/report.json" "$MANUAL_OUTCOMES" > "$MERGED_REPORT"
-  "$RUBY_BIN" -rjson -e 'JSON.parse(File.read(ARGV.fetch(0)))' "$MERGED_REPORT" || fail "invalid merged report JSON"
-  mv "$MERGED_REPORT" "${OUTPUT_DIR}/report.json"
+  "$RAILS_BIN" runner script/pilot_metrics_package.rb \
+    "${OUTPUT_DIR}/report.json" "$OUTPUT_DIR" "$MANUAL_OUTCOMES"
+else
+  "$RAILS_BIN" runner script/pilot_metrics_package.rb \
+    "${OUTPUT_DIR}/report.json" "$OUTPUT_DIR"
 fi
 
+STRICT_VALIDATION="${WORK_DIR}/strict_validation.json"
 if [[ "$STRICT" == true ]]; then
   "$RUBY_BIN" -rjson -rtime -rdate -e '
     report = JSON.parse(File.read(ARGV.fetch(0)))
@@ -236,36 +239,46 @@ if [[ "$STRICT" == true ]]; then
       end
       failures << "stale pending reconciliation: #{stale.join(",")}" if stale.any?
     end
-    abort(failures.join("; ")) if failures.any?
-  ' "${OUTPUT_DIR}/report.json" || fail "strict report validation failed"
+    puts JSON.pretty_generate({
+      requested: true,
+      status: failures.empty? ? "passed" : "failed",
+      failures: failures
+    })
+  ' "${OUTPUT_DIR}/report.json" > "$STRICT_VALIDATION"
+else
+  "$RUBY_BIN" -rjson -e 'puts JSON.pretty_generate({ requested: false, status: "not_requested", failures: [] })' \
+    > "$STRICT_VALIDATION"
 fi
-
-"$RAILS_BIN" runner script/pilot_metrics_render.rb "${OUTPUT_DIR}/report.json" > "${OUTPUT_DIR}/report.txt"
 
 ROLES_CSV=$(IFS=,; echo "${ROLES_DOWNLOADED[*]}")
 GENERATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
 "$RUBY_BIN" -rjson -e '
   cohort = JSON.parse(File.read(ARGV.fetch(2)))
+  validation = JSON.parse(File.read(ARGV.fetch(6)))
   manifest = {
     range: { from: ARGV.fetch(0), to: ARGV.fetch(1) },
     cohort: cohort,
     roles_downloaded: ARGV.fetch(3).split(",").reject(&:empty?),
     image_version: ARGV.fetch(4),
-    generated_at: ARGV.fetch(5)
+    generated_at: ARGV.fetch(5),
+    strict_validation: validation
   }
   puts JSON.pretty_generate(manifest)
-' "$FROM" "$TO" "$WORK_DIR/cohort.json" "$ROLES_CSV" "$IMAGE_VERSION" "$GENERATED_AT" > "${OUTPUT_DIR}/manifest.json"
+' "$FROM" "$TO" "$WORK_DIR/cohort.json" "$ROLES_CSV" "$IMAGE_VERSION" "$GENERATED_AT" \
+  "$STRICT_VALIDATION" > "${OUTPUT_DIR}/manifest.json"
 
 (
   cd "$OUTPUT_DIR"
-  shasum -a 256 report.json report.txt source_events.jsonl manifest.json > SHA256SUMS
+  shasum -a 256 report.json report.txt valor.json dossier.html interactions.csv \
+    source_events.jsonl manifest.json > SHA256SUMS
 )
 
 if [[ "$WITH_QUESTIONS" == true ]]; then
   chmod 700 "$OUTPUT_DIR"
-  chmod 600 "${OUTPUT_DIR}/report.json" "${OUTPUT_DIR}/report.txt" \
-    "${OUTPUT_DIR}/source_events.jsonl" "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/SHA256SUMS"
+  chmod 600 "${OUTPUT_DIR}/report.json" "${OUTPUT_DIR}/report.txt" "${OUTPUT_DIR}/valor.json" \
+    "${OUTPUT_DIR}/dossier.html" "${OUTPUT_DIR}/interactions.csv" "${OUTPUT_DIR}/source_events.jsonl" \
+    "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/SHA256SUMS"
   echo "pilot_metrics: warning: artifacts contain raw technician questions; permissions set to 600" >&2
 fi
 
@@ -282,3 +295,10 @@ case "$FORMAT" in
     cat "${OUTPUT_DIR}/report.json"
     ;;
 esac
+
+STRICT_STATUS=$("$RUBY_BIN" -rjson -e 'puts JSON.parse(File.read(ARGV.fetch(0))).fetch("status")' "$STRICT_VALIDATION")
+if [[ "$STRICT_STATUS" == "failed" ]]; then
+  STRICT_FAILURES=$("$RUBY_BIN" -rjson -e 'puts JSON.parse(File.read(ARGV.fetch(0))).fetch("failures").join("; ")' "$STRICT_VALIDATION")
+  echo "pilot_metrics: strict report validation failed: ${STRICT_FAILURES}" >&2
+  exit 1
+fi

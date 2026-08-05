@@ -499,6 +499,18 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
         evidence_present: true, citations_count: 2, chunk_count: 3,
         citation_titles: [ "Manual" ]
       })}")
+      file.puts("[PILOT_AUDIT] #{JSON.generate({
+        ts: @now.iso8601, correlation_id: "query:joined", account_id: @a1.account_id,
+        user_id: @a1.id, type: "interaction", question: "complete raw question",
+        answer: "complete raw answer", answer_length: 19,
+        citations: [ { number: 1, title: "Manual — p. 12", filename: "manual.pdf", page: 12 } ]
+      })}")
+      file.puts("[PILOT_AUDIT] #{JSON.generate({
+        ts: @now.iso8601, correlation_id: "query:joined", account_id: @a1.account_id,
+        user_id: @a1.id, type: "chunk", document: "Manual", page: 12,
+        section_identity: "SEC-12", chunk_sha256: "chunk-sha", text: "complete chunk",
+        truncated: false
+      })}")
       file.flush
 
       private_row = PilotMetricsReport.new(date: @date, usage_log_path: file.path)
@@ -524,8 +536,13 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       assert_nil private_row[:technician_helpfulness]
       assert_not private_row.key?(:question)
       assert_not private_row.key?(:answer_snippet)
+      assert_not private_row.key?(:audit)
       assert_equal "raw question", raw_row[:question]
       assert_equal "raw answer", raw_row[:answer_snippet]
+      assert_equal "complete raw question", raw_row.dig(:audit, :question)
+      assert_equal "complete raw answer", raw_row.dig(:audit, :answer)
+      assert_equal 12, raw_row.dig(:audit, :citations, 0, :page)
+      assert_equal "complete chunk", raw_row.dig(:audit, :chunks, 0, :text)
 
       file.close!
     end

@@ -13,6 +13,7 @@ class PilotTelemetryReaderTest < ActiveSupport::TestCase
       [PILOT_USAGE] {"event":"interaction_completed","ts":"#{@range.begin.iso8601}","role":"web","user_id":1,"correlation_id":"query:1"}
       [PILOT_USAGE] invalid-json
       [RAG_QUALITY] {"ts":"#{@range.end.iso8601}","role":"web","user_id":1,"correlation_id":"query:1","evidence_present":true}
+      [PILOT_AUDIT] {"ts":"#{@range.end.iso8601}","role":"web","user_id":1,"correlation_id":"query:1","type":"interaction","question":"full question","answer":"full answer"}
     LOG
 
     result = PilotTelemetryReader.new(
@@ -30,6 +31,7 @@ class PilotTelemetryReaderTest < ActiveSupport::TestCase
     assert_equal [ "worker" ], result[:missing_roles]
     assert_equal 1, result[:pilot].size
     assert_equal 1, result[:quality].size
+    assert_equal 1, result[:audit].size
   end
 
   test "returns loaded when the observed window and every declared role are covered" do

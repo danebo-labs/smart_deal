@@ -239,10 +239,11 @@ Emitted events are `photo_submitted`, `photo_cache_miss`, `photo_cache_hit`,
 raw image, Base64, temporary token, prompt or credentials. The only image join
 field is the first 12 characters of the normalized SHA-256.
 
-Run the export from the laptop with the named account cohort. The command
-resolves and prints the account ID, slug, user IDs and user count before it
-continues; it downloads the web and worker telemetry read-only and sends it to
-the exporter over clean STDIN without a PTY:
+Run the unified export from the laptop with the named account cohort. This is
+the only supported command: it resolves and prints the account ID, slug, user
+IDs and user count, downloads web and worker telemetry read-only, runs the
+production report against the production database, and packages the result
+locally without a PTY:
 
 ```bash
 bin/pilot_metrics \
@@ -251,11 +252,30 @@ bin/pilot_metrics \
 ```
 
 The package is written to
-`tmp/pilot_exports/<from>_<to>_<slug>/` with `report.json`, `report.txt`,
-`source_events.jsonl`, `manifest.json` and `SHA256SUMS`. `report.json` is always
-kept regardless of the selected stdout format. Use `--strict` to reject an
-empty cohort, missing role telemetry, a partial report, invalid JSON or stale
-pending cost reconciliation.
+`tmp/pilot_exports/<from>_<to>_<slug>/` with:
+
+- `report.json`: the complete technical report;
+- `report.txt`: its existing human-readable rendering;
+- `valor.json`: auditability, safety, value capture, knowledge gaps and
+  adoption derived from `report.json` without changing cost or precision
+  formulas;
+- `dossier.html`: a self-contained dossier with the value summary and one
+  traceable card per `correlation_id`;
+- `interactions.csv`: one row per `correlation_id` for spreadsheet review;
+- `source_events.jsonl`, `manifest.json` and `SHA256SUMS`: source telemetry,
+  execution metadata and checksums.
+
+`report.json` is always kept regardless of the selected stdout format. There
+are exactly two implementation scripts: `script/pilot_metrics_export.rb` runs
+remotely because it needs the production database, while
+`script/pilot_metrics_package.rb` performs the optional manual merge and writes
+all local human artifacts.
+
+Use `--strict` to reject an empty cohort, missing role telemetry, a partial
+report, invalid JSON or stale pending cost reconciliation. Report-level strict
+validation runs after packaging: `manifest.json.strict_validation` records the
+result, all artifact paths are printed, and a failed validation exits nonzero
+without deleting or omitting the package.
 
 Manual review can be merged by `correlation_id` without changing the automatic
 classification:
@@ -271,7 +291,10 @@ The CSV headers are
 `correlation_id,correct_answer,resolved,helpfulness`. The three outcome values
 are copied as provided into the matching `interactions.by_correlation` row;
 unmatched interactions retain `nil`. Without the CSV,
-`commercial_outcomes.status` remains `REQUIRES_MANUAL_SURVEY`.
+`valor.json.precision_and_safety.verified_correct_rate` is explicitly `n/a`
+with `verification_status: REQUIRES_HUMAN_REVIEW`; it is never presented as an
+invented zero. The source report's `commercial_outcomes.status` remains
+`REQUIRES_MANUAL_SURVEY`.
 
 The report separates:
 
@@ -303,7 +326,8 @@ missing or invalid timestamps are excluded from the range and reported under
 
 **Human-readable output:** select `--format raw`, `human` or `both`. The text is
 rendered locally by `PilotMetricsHumanFormatter` from the exact `report.json`;
-it does not recompute metrics or change the report contract:
+the unified package is produced in every normal run regardless of stdout
+format:
 
 ```bash
 bin/pilot_metrics \
@@ -311,25 +335,38 @@ bin/pilot_metrics \
   --account pilot-account --format human
 ```
 
-**Opt-in raw question text (`evidence_quality.recent_questions`):** off by
-default — the raw JSON/human output is unchanged unless explicitly requested.
-Two logging paths exist with two different privacy postures, by design:
+**Full audit capture and opt-in export:** these are two separate gates with a
+deliberate privacy boundary:
+
+- `PILOT_AUDIT_CAPTURE=true` controls production log capture. When enabled,
+  each text/RAG interaction emits one `[PILOT_AUDIT]` line with the complete
+  question, complete answer and numbered citations, plus one separate line per
+  retrieved chunk. Chunk text is capped at 4,000 characters, lines are bounded
+  to approximately 8 KB, and `truncated: true` is explicit whenever content is
+  cut. This flag places raw technician text in production logs and must be
+  enabled only under the corresponding operational/privacy authorization.
+- `--with-questions` controls transport and package exposure. Without it,
+  `[PILOT_AUDIT]` lines are not copied into `source_events.jsonl` and the audit
+  block is absent from `interactions.by_correlation`. With it, the complete
+  audit block is included and feeds `dossier.html` and `interactions.csv`.
+
+The pre-existing logging paths retain their different privacy postures:
 
 - `interaction_completed` (source of `interactions` / `repeat_usage`) hashes
   the question **before** it is ever logged — `RagController#ask` computes
   `question_sha256 = Digest::SHA256.hexdigest(question)` and only the hash
   reaches `PilotUsageLog`. This flag does **not** change that; `interactions`
   and `repeat_usage` never carry raw text.
-- `[RAG_QUALITY]` lines (`BedrockRagService#log_quality_signal`) already carry
-  real question text today (`question.to_s.first(300)`), used for dev
-  debugging (see `script/export_rag_trace.rb`).
+- `[RAG_QUALITY]` lines (`BedrockRagService#log_quality_signal`) retain their
+  existing truncated question/answer snippets and remain unchanged for
+  `script/export_rag_trace.rb` compatibility.
 
-Pass `--with-questions` to opt into surfacing that already-logged text through
-the pilot export as well, as
-`evidence_quality.recent_questions` (last 50 records, most recent first —
-`PilotMetricsReport::RECENT_QUESTIONS_LIMIT`). This only covers text/RAG
-queries: photo/visual queries never emit a `[RAG_QUALITY]` line, so they never
-appear here.
+Pass `--with-questions` only when the resulting package is authorized to carry
+raw technician text. `evidence_quality.recent_questions` continues to expose
+the last 50 truncated `[RAG_QUALITY]` questions, while
+`interactions.by_correlation.audit` carries the complete `[PILOT_AUDIT]`
+question, answer, citations and chunks for text/RAG interactions. Photo/visual
+queries do not emit `[PILOT_AUDIT]`.
 
 ```bash
 bin/pilot_metrics \
@@ -338,8 +375,8 @@ bin/pilot_metrics \
 ```
 
 Treat any export generated with this flag as containing real technician
-question text — the command restricts the directory to mode `700`, every
-artifact to `600`, and prints a warning on stderr.
+question and answer text — the command restricts the directory to mode `700`,
+every artifact to `600`, and prints a warning on stderr.
 
 ### Internal `Retrieve` telemetry: `kb_retrieve`, `kb_warm_ping`, `photo_reuse`
 

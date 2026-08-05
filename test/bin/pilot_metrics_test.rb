@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "csv"
 require "digest"
 require "fileutils"
 require "json"
@@ -48,10 +49,15 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     assert_equal 7, manifest.dig("cohort", "account_id")
     assert_equal [ "web", "worker" ], manifest.fetch("roles_downloaded")
     assert_equal "registry.example/smart-deal:abc123", manifest.fetch("image_version")
+    assert_equal "not_requested", manifest.dig("strict_validation", "status")
+    assert_equal 1, JSON.parse(File.read(File.join(output_dir, "valor.json"))).dig("adoption", "active_users")
+    assert_includes File.read(File.join(output_dir, "dossier.html")), "Dossier"
+    assert_equal 1, CSV.read(File.join(output_dir, "interactions.csv"), headers: true).size
 
     source = File.read(File.join(output_dir, "source_events.jsonl"))
     assert_includes source, '"role":"web"'
     assert_includes source, '"role":"worker"'
+    assert_not_includes source, "[PILOT_AUDIT]"
     assert_equal source, File.read(@source_capture)
 
     ssh_calls = File.readlines(@ssh_log, chomp: true).map { |line| JSON.parse(line) }
@@ -78,6 +84,8 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     expected_files.each do |name|
       assert_equal 0o600, File.stat(File.join(output_dir, name)).mode & 0o777
     end
+    assert_includes File.read(File.join(output_dir, "source_events.jsonl")),
+      '[PILOT_AUDIT] {"role":"web"'
     assert_equal 0o700, File.stat(output_dir).mode & 0o777
   end
 
@@ -110,6 +118,12 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
 
     assert_not status.success?
     assert_match(/strict report validation failed/, stderr)
+    assert_match(/Artifacts: /, stderr)
+    expected_files.each { |name| assert_path_exists File.join(output_dir, name) }
+    manifest = JSON.parse(File.read(File.join(output_dir, "manifest.json")))
+    assert_equal "failed", manifest.dig("strict_validation", "status")
+    assert_includes manifest.dig("strict_validation", "failures"), "telemetry status is partial"
+    verify_hashes
   end
 
   test "strict fails stale pending reconciliation but permits the current UTC day" do
@@ -157,7 +171,10 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
   end
 
   def expected_files
-    %w[report.json report.txt source_events.jsonl manifest.json SHA256SUMS]
+    %w[
+      report.json report.txt valor.json dossier.html interactions.csv
+      source_events.jsonl manifest.json SHA256SUMS
+    ]
   end
 
   def run_command(*args, env: {}, include_defaults: true)
@@ -217,6 +234,7 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
       when /docker logs.*abc123/
         unless ENV["FAKE_EMPTY_ROLE"] == "web"
           puts %(2026-07-22T00:00:00-04:00 [PILOT_USAGE] {"event":"interaction_completed","ts":"2026-07-22T00:00:00-04:00","correlation_id":"query:web"})
+          puts %(2026-07-22T12:00:00-04:00 [PILOT_AUDIT] {"ts":"2026-07-22T12:00:00-04:00","user_id":11,"correlation_id":"query:web","type":"interaction","question":"question","answer":"answer"})
         end
       when /docker logs.*def456/
         unless ENV["FAKE_EMPTY_ROLE"] == "worker"
@@ -305,11 +323,18 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     File.write(path, <<~RUBY)
       #!#{RbConfig.ruby}
       require "csv"
+      require "fileutils"
       require "json"
 
-      if ARGV.any? { |argument| argument.end_with?("pilot_metrics_merge_manual_outcomes.rb") }
-        report = JSON.parse(File.read(ARGV.fetch(-2)))
-        outcomes = CSV.read(ARGV.fetch(-1), headers: true).each_with_object({}) do |outcome, index|
+      script_index = ARGV.index { |argument| argument.end_with?("pilot_metrics_package.rb") }
+      abort("unexpected fake rails arguments: \#{ARGV.inspect}") unless script_index
+
+      report_path = ARGV.fetch(script_index + 1)
+      output_dir = ARGV.fetch(script_index + 2)
+      outcomes_path = ARGV[script_index + 3]
+      report = JSON.parse(File.read(report_path))
+      if outcomes_path
+        outcomes = CSV.read(outcomes_path, headers: true).each_with_object({}) do |outcome, index|
           index[outcome["correlation_id"]] = outcome
         end
         Array(report.dig("interactions", "by_correlation")).each do |interaction|
@@ -320,10 +345,15 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
           interaction["resolved"] = outcome["resolved"]
           interaction["technician_helpfulness"] = outcome["helpfulness"]
         end
-        puts JSON.generate(report)
-      else
-        report = JSON.parse(File.read(ARGV.fetch(-1)))
-        puts "Rendered pilot metrics \#{report.fetch("date")}"
+      end
+      FileUtils.mkdir_p(output_dir)
+      File.write(report_path, JSON.generate(report))
+      File.write(File.join(output_dir, "report.txt"), "Rendered pilot metrics \#{report.fetch("date")}\n")
+      File.write(File.join(output_dir, "valor.json"), JSON.generate(adoption: { active_users: 1 }))
+      File.write(File.join(output_dir, "dossier.html"), "<!doctype html><title>Dossier</title>")
+      CSV.open(File.join(output_dir, "interactions.csv"), "w") do |csv|
+        csv << [ "correlation_id" ]
+        Array(report.dig("interactions", "by_correlation")).each { |interaction| csv << [ interaction["correlation_id"] ] }
       end
     RUBY
     File.chmod(0o755, path)

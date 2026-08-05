@@ -56,6 +56,9 @@ class BedrockRagService
     generation_max_tokens: 3000
   }.freeze
 
+  PILOT_AUDIT_CHUNK_MAX_CHARS = 4_000
+  PILOT_AUDIT_LINE_MAX_BYTES = 8.kilobytes
+
   # Build complete optimized configuration for retrieve_and_generate API
   # This method constructs the config dynamically to include prompt templates
   # @param question [String] Used to detect response language when response_locale is nil
@@ -693,8 +696,74 @@ class BedrockRagService
       kb_id:           @knowledge_base_id
     }
     Rails.logger.info("[RAG_QUALITY] #{JSON.generate(payload)}")
+    log_pilot_audit(
+      question: question,
+      answer: answer,
+      citations: citations,
+      retrieved_chunks: retrieved_chunks,
+      correlation_id: correlation_id,
+      attribution: attribution
+    ) if ENV["PILOT_AUDIT_CAPTURE"] == "true"
   rescue => e
     Rails.logger.warn("log_quality_signal failed: #{e.message}")
+  end
+
+  def log_pilot_audit(question:, answer:, citations:, retrieved_chunks:, correlation_id:, attribution:)
+    identity = {
+      ts: Time.current.iso8601,
+      correlation_id: correlation_id,
+      account_id: attribution[:account_id],
+      user_id: attribution[:user_id],
+      conversation_session_id: attribution[:conversation_session_id]
+    }
+    interaction = identity.merge(
+      type: "interaction",
+      question: question.to_s,
+      answer: answer.to_s,
+      answer_length: answer.to_s.length,
+      citations: Array(citations).map do |citation|
+        citation.slice(:number, :title, :filename, :page)
+      end
+    )
+    Rails.logger.info("[PILOT_AUDIT] #{JSON.generate(interaction)}")
+
+    Array(retrieved_chunks).each do |chunk|
+      metadata = (chunk[:metadata] || chunk["metadata"] || {}).to_h.stringify_keys
+      content = (chunk[:content] || chunk["content"]).to_s
+      payload = identity.merge(
+        type: "chunk",
+        document: metadata["canonical_name"],
+        page: metadata["page_number"] || metadata["page"] ||
+          metadata["x-amz-bedrock-kb-document-page-number"],
+        section_identity: metadata["section_identity"],
+        chunk_sha256: chunk[:chunk_sha256] || chunk["chunk_sha256"] ||
+          metadata["chunk_sha256"] || Digest::SHA256.hexdigest(content)
+      )
+      Rails.logger.info("[PILOT_AUDIT] #{pilot_audit_chunk_json(payload, content)}")
+    end
+  end
+
+  def pilot_audit_chunk_json(payload, content)
+    maximum = [ content.length, PILOT_AUDIT_CHUNK_MAX_CHARS ].min
+    low = 0
+    high = maximum
+    result = nil
+
+    while low <= high
+      length = (low + high) / 2
+      candidate = JSON.generate(payload.merge(
+        text: content.first(length),
+        truncated: length < content.length
+      ))
+      if candidate.bytesize + "[PILOT_AUDIT] ".bytesize <= PILOT_AUDIT_LINE_MAX_BYTES
+        result = candidate
+        low = length + 1
+      else
+        high = length - 1
+      end
+    end
+
+    result || JSON.generate(payload.merge(text: "", truncated: content.present?))
   end
 
   # Builds prompt, estimates tokens via LocalTokenizer (~0 ms), logs [RAG_REGRESSION],

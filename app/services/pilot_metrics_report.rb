@@ -6,8 +6,9 @@ class PilotMetricsReport
   BEDROCK_COLUMNS = %i[
     source route latency_ms model_id input_tokens output_tokens
     cache_read_tokens cache_creation_tokens account_id user_id
-    conversation_session_id created_at user_query correlation_id
+    conversation_session_id created_at user_query correlation_id token_source
   ].freeze
+  VALID_OUTCOMES = %w[answered abstained failed].freeze
   ABSENCE_PATTERNS = {
     data_not_available: /
       DATA_NOT_AVAILABLE |
@@ -21,20 +22,24 @@ class PilotMetricsReport
     /ix
   }.freeze
   REFORMULATION_WINDOW = 10.minutes
+  RECENT_QUESTIONS_LIMIT = 50
 
-  def initialize(date: nil, from: nil, to: nil, usage_log_path: nil, user_ids: nil)
+  def initialize(date: nil, from: nil, to: nil, usage_log_path: nil, user_ids: nil,
+                 roles: nil, include_raw_questions: false)
     from_date = from&.to_date
     to_date   = (to || from)&.to_date || date&.to_date
     @date     = to_date
     @range    = from_date ? from_date.in_time_zone.beginning_of_day..to_date.in_time_zone.end_of_day : @date.in_time_zone.all_day
     @usage_log_path = usage_log_path.presence
     @user_ids = Array(user_ids).filter_map { |value| Integer(value, exception: false) }.uniq
+    @roles = Array(roles).filter_map { |role| role.to_s.presence }.uniq
+    @include_raw_questions = include_raw_questions
   end
 
   def as_json(*)
     rows = bedrock_rows
     log_data = read_log_data
-    @usage_logs_loaded = log_data[:status] == "loaded"
+    @usage_logs_loaded = %w[loaded partial].include?(log_data[:status])
     messages, sessions = daily_messages_and_sessions
     users = user_reports(rows, log_data[:pilot], log_data[:quality], messages)
     accounts = account_reports(rows, log_data[:pilot], log_data[:quality], messages)
@@ -46,6 +51,7 @@ class PilotMetricsReport
       generated_at: Time.current.iso8601,
       technical_and_cost: {
         totals: totals(rows, log_data[:pilot]),
+        cost_authority: cost_authority(rows),
         volume_by_source: volume_by_source(rows),
         query_latency_by_route: query_latency_by_route(rows),
         model_usage: model_usage(rows),
@@ -57,7 +63,7 @@ class PilotMetricsReport
         per_user: users,
         per_account: accounts
       },
-      interactions: interactions(rows, log_data[:pilot]),
+      interactions: interactions(rows, log_data[:pilot], log_data[:quality]),
       adoption_signals: adoption_signals(rows, log_data[:pilot], messages, sessions),
       repeat_usage: repeat_usage(log_data[:pilot]),
       evidence_quality: evidence_quality(log_data[:quality]),
@@ -72,6 +78,11 @@ class PilotMetricsReport
       },
       data_quality: {
         usage_log: log_data[:status],
+        invalid_log_lines: log_data[:invalid_lines],
+        log_first_ts: log_data[:first_ts],
+        log_last_ts: log_data[:last_ts],
+        roles_declared: log_data[:roles_declared],
+        missing_roles: log_data[:missing_roles],
         legacy_cache_hit_latencies_excluded: log_data[:pilot].count do |event|
           event[:event] == "photo_completed" && event[:cache_status] == "hit" && event[:original_latency_ms].nil?
         end,
@@ -139,40 +150,12 @@ class PilotMetricsReport
   end
 
   def read_log_data
-    return { status: "logs_not_provided", pilot: [], quality: [] } unless @usage_log_path
-    return { status: "logs_missing", pilot: [], quality: [] } unless File.file?(@usage_log_path)
-
-    pilot = []
-    quality = []
-    File.foreach(@usage_log_path) do |line|
-      if (payload = extract_json(line, "[PILOT_USAGE]"))
-        pilot << payload if log_payload_in_range?(payload, line) && cohort_payload?(payload)
-      elsif (payload = extract_json(line, "[RAG_QUALITY]"))
-        quality << payload if log_payload_in_range?(payload, line) && cohort_payload?(payload)
-      end
-    end
-    { status: "loaded", pilot: pilot, quality: quality }
-  rescue StandardError => e
-    Rails.logger.warn("PilotMetricsReport log read failed: #{e.class}")
-    { status: "logs_unreadable", pilot: [], quality: [] }
-  end
-
-  def extract_json(line, marker)
-    marker_index = line.index(marker)
-    return nil unless marker_index
-
-    JSON.parse(line[(marker_index + marker.length)..].strip).deep_symbolize_keys
-  rescue JSON::ParserError
-    nil
-  end
-
-  def log_payload_in_range?(payload, line)
-    ts = parse_time(payload[:ts]) || parse_time(line[/\d{4}-\d{2}-\d{2}T[^\s]+/])
-    ts ? @range.cover?(ts) : false
-  end
-
-  def cohort_payload?(payload)
-    @user_ids.empty? || @user_ids.include?(integer_or_nil(payload[:user_id]))
+    PilotTelemetryReader.new(
+      source: @usage_log_path,
+      range: @range,
+      user_ids: @user_ids,
+      roles_declared: @roles
+    ).read
   end
 
   def totals(rows, pilot_events)
@@ -185,9 +168,57 @@ class PilotMetricsReport
       photo_cache_hit_rate: cache[:hit_rate],
       input_tokens: rows.sum { |row| row[:input_tokens].to_i },
       output_tokens: rows.sum { |row| row[:output_tokens].to_i },
-      actual_cost: rows.sum { |row| row_cost(row) }.round(6),
+      attributed_cost_usd: rows.sum { |row| row_cost(row) }.round(6),
+      provider_usage_usd: rows.select { |row| row[:token_source] == "provider_usage" }
+        .sum { |row| row_cost(row) }.round(6),
+      estimated_usd: rows.select { |row| row[:token_source] == "estimated" }
+        .sum { |row| row_cost(row) }.round(6),
       estimated_cost_avoided: cache[:estimated_cost_avoided]
     }
+  end
+
+  def cost_authority(rows)
+    utc_dates = (@range.begin.utc.to_date..@range.end.utc.to_date).to_a
+    reconciled = BedrockDailyCost.for_utc_day(utc_dates)
+    reconciled_dates = reconciled.distinct.pluck(:utc_date)
+    missing_dates = utc_dates - reconciled_dates
+    direct_by_channel = rows.group_by do |row|
+      LlmUsageChannel.for(
+        model_id: row[:model_id],
+        source: row[:source],
+        user_query: row[:user_query]
+      )
+    end.select { |channel, _group| channel.to_s.match?(/\Aanthropic_.+_direct\z/) }
+    reconciliation_status = if missing_dates.empty?
+      "reconciled"
+    elsif missing_dates.size == utc_dates.size
+      "pending_reconciliation"
+    else
+      "partially_reconciled"
+    end
+
+    {
+      reconciled_bedrock_usd: reconciled.sum(:cost_usd).to_f.round(6),
+      status: reconciliation_status,
+      missing_utc_dates: missing_dates.map(&:iso8601),
+      scope: "platform_wide_all_accounts",
+      utc_day_overlap: utc_day_overlap,
+      anthropic_direct: {
+        scope: "cohort_attributed",
+        attributed_cost_usd: direct_by_channel.values.flatten.sum { |row| row_cost(row) }.round(6),
+        by_channel: direct_by_channel.transform_keys(&:to_s).transform_values do |group|
+          group.sum { |row| row_cost(row) }.round(6)
+        end
+      }
+    }
+  end
+
+  def utc_day_overlap
+    first_day = @range.begin.utc.to_date
+    last_day = @range.end.utc.to_date
+    full_days = Time.utc(first_day.year, first_day.month, first_day.day)..
+      Time.utc(last_day.year, last_day.month, last_day.day).end_of_day
+    @range.begin.utc == full_days.begin && @range.end.utc == full_days.end ? "full" : "partial"
   end
 
   def volume_by_source(rows)
@@ -198,7 +229,7 @@ class PilotMetricsReport
         count: group.size,
         input_tokens: group.sum { |row| row[:input_tokens].to_i },
         output_tokens: group.sum { |row| row[:output_tokens].to_i },
-        actual_cost: group.sum { |row| row_cost(row) }.round(6),
+        attributed_cost_usd: group.sum { |row| row_cost(row) }.round(6),
         average_latency_ms: latencies.empty? ? nil : (latencies.sum.to_f / latencies.size).round(1)
       }
     end.sort_by { |row| row[:source].to_s }
@@ -220,7 +251,7 @@ class PilotMetricsReport
         calls: group.size,
         input_tokens: group.sum { |row| row[:input_tokens].to_i },
         output_tokens: group.sum { |row| row[:output_tokens].to_i },
-        actual_cost: group.sum { |row| row_cost(row) }.round(6)
+        attributed_cost_usd: group.sum { |row| row_cost(row) }.round(6)
       }
     end.sort_by { |entry| entry[:model] }
   end
@@ -232,7 +263,7 @@ class PilotMetricsReport
         calls: group.size,
         input_tokens: group.sum { |row| row[:input_tokens].to_i },
         output_tokens: group.sum { |row| row[:output_tokens].to_i },
-        actual_cost: group.sum { |row| row_cost(row) }.round(6)
+        attributed_cost_usd: group.sum { |row| row_cost(row) }.round(6)
       }
     end.sort_by { |entry| entry[:route] }
   end
@@ -277,7 +308,7 @@ class PilotMetricsReport
         cache_status: visual_row?(row) ? "miss" : nil,
         input_tokens: row[:input_tokens].to_i,
         output_tokens: row[:output_tokens].to_i,
-        actual_cost: row_cost(row).round(6),
+        attributed_cost_usd: row_cost(row).round(6),
         estimated_cost_avoided: 0,
         latency_ms: row[:latency_ms],
         rag_sources: source_references(quality_by_correlation[row[:correlation_id].presence]),
@@ -305,7 +336,7 @@ class PilotMetricsReport
         output_tokens: 0,
         avoided_input_tokens: event[:input_tokens].to_i,
         avoided_output_tokens: event[:output_tokens].to_i,
-        actual_cost: 0,
+        attributed_cost_usd: 0,
         estimated_cost_avoided: avoided&.dig(:estimated_cost_avoided).to_f.round(6),
         latency_ms: event[:original_latency_ms].present? ? integer_or_nil(event[:latency_ms]) : nil,
         original_llm_latency_ms: integer_or_nil(event[:original_latency_ms] || event[:latency_ms]),
@@ -364,7 +395,7 @@ class PilotMetricsReport
         visual_llm_calls_avoided: cache[:avoided],
         input_tokens: user_rows.sum { |row| row[:input_tokens].to_i },
         output_tokens: user_rows.sum { |row| row[:output_tokens].to_i },
-        actual_cost: user_rows.sum { |row| row_cost(row) }.round(6),
+        attributed_cost_usd: user_rows.sum { |row| row_cost(row) }.round(6),
         estimated_cost_avoided: cache[:estimated_cost_avoided],
         models: model_usage(user_rows),
         routes: route_usage(user_rows),
@@ -420,7 +451,7 @@ class PilotMetricsReport
         unique_photo_digests: cache[:unique_digests],
         input_tokens: account_rows.sum { |row| row[:input_tokens].to_i },
         output_tokens: account_rows.sum { |row| row[:output_tokens].to_i },
-        actual_cost: account_rows.sum { |row| row_cost(row) }.round(6),
+        attributed_cost_usd: account_rows.sum { |row| row_cost(row) }.round(6),
         estimated_cost_avoided: cache[:estimated_cost_avoided],
         models: model_usage(account_rows),
         routes: route_usage(account_rows),
@@ -456,8 +487,8 @@ class PilotMetricsReport
 
   # Single source of truth for the tracking contract (docs/rag/plan_tracking_piloto_2026-08-04.md):
   # one row per distinct correlation_id in `interaction_completed`, never one row
-  # per billable Bedrock call — that count lives in `llm_calls` on the same hash.
-  def interactions(rows, pilot_events)
+  # per billable Bedrock call.
+  def interactions(rows, pilot_events, quality_records)
     events = pilot_events.select { |event| event[:event] == "interaction_completed" }
     return { status: "logs_not_available" } if events.empty?
 
@@ -466,17 +497,32 @@ class PilotMetricsReport
     representative = by_correlation.transform_values(&:first).values
 
     total = representative.size
-    llm_calls = rows.count { |row| query_row?(row) }
+    attributed = rows.select { |row| query_row?(row) && by_correlation.key?(row[:correlation_id]) }
     user_ids = representative.filter_map { |event| integer_or_nil(event[:user_id]) }
     returning_users = interaction_returning_users(representative)
     repeat_questions = interaction_repeat_questions(representative)
+    by_outcome = representative.group_by { |event| event[:outcome] }.transform_values(&:size)
+    failures = representative.select { |event| event[:outcome] == "failed" }
 
     {
       status: "available",
       total: total,
-      by_outcome: representative.group_by { |event| event[:outcome] }.transform_values(&:size),
-      llm_calls: llm_calls,
-      invariant_ok: total <= llm_calls,
+      by_outcome: by_outcome,
+      llm_calls_attributed: attributed.size,
+      llm_calls_in_range: rows.count { |row| query_row?(row) },
+      zero_llm_call_interactions: by_correlation.keys.count do |correlation_id|
+        attributed.none? { |row| row[:correlation_id] == correlation_id }
+      end,
+      contract_checks: {
+        single_terminal_event_per_interaction: by_correlation.values.all? { |group| group.size == 1 },
+        outcomes_valid: (by_outcome.keys - VALID_OUTCOMES).empty?,
+        failures_fully_traced: failures.all? { |failure| failure[:stage].present? && failure[:error_class].present? }
+      },
+      verification: {
+        status: "REQUIRES_HUMAN_REVIEW",
+        fields: %w[correct_answer resolved technician_helpfulness]
+      },
+      by_correlation: interaction_rows(by_correlation, rows, pilot_events, quality_records),
       active_users: user_ids.uniq.size,
       users_with_multiple_days: returning_users,
       returning_users: returning_users,
@@ -484,7 +530,7 @@ class PilotMetricsReport
       top_repeated_questions: repeat_questions.sort_by { |_key, count| -count }.first(10).map do |(user_id, question_sha256), count|
         { user_id: user_id, question_sha256: question_sha256, count: count }
       end,
-      failures: representative.select { |event| event[:outcome] == "failed" }.map do |event|
+      failures: failures.map do |event|
         {
           correlation_id: event[:correlation_id],
           route: event[:route],
@@ -494,6 +540,71 @@ class PilotMetricsReport
       end,
       unattributed_count: representative.count { |event| integer_or_nil(event[:user_id]).nil? }
     }
+  end
+
+  def interaction_rows(by_correlation, rows, pilot_events, quality_records)
+    routes = pilot_events.select { |event| event[:event] == "evidence_route" }
+      .group_by { |event| event[:correlation_id].presence }
+    contexts = pilot_events.select { |event| event[:event] == "evidence_route_context" }
+      .group_by { |event| event[:correlation_id].presence }
+    quality = quality_records.group_by { |record| record[:correlation_id].presence }
+    calls = rows.select { |row| query_row?(row) }
+      .group_by { |row| row[:correlation_id].presence }
+
+    by_correlation.map do |correlation_id, terminal_events|
+      terminal = terminal_events.first
+      route = Array(routes[correlation_id]).first || {}
+      context = Array(contexts[correlation_id])
+      quality_record = Array(quality[correlation_id]).first || {}
+      call_rows = Array(calls[correlation_id])
+      result = {
+        correlation_id: correlation_id,
+        occurred_at: terminal[:ts],
+        account_id: integer_or_nil(terminal[:account_id]),
+        user_id: integer_or_nil(terminal[:user_id]),
+        conversation_session_id: integer_or_nil(terminal[:conversation_session_id]),
+        outcome: terminal[:outcome],
+        route: terminal[:route],
+        stage: terminal[:stage],
+        error_class: terminal[:error_class],
+        question_sha256: terminal[:question_sha256],
+        generation_mode: route[:generation_mode],
+        stages: {
+          retrieval_ms: route[:retrieval_ms],
+          expansion_ms: route[:expansion_ms],
+          local_ms: route[:local_ms],
+          generation_ms: route[:generation_ms]
+        },
+        documents: context.filter_map { |event| event[:document_id].presence }.uniq,
+        pages: context.filter_map { |event| event[:page].presence }.uniq,
+        section_identities: context.filter_map { |event| event[:section_identity].presence }.uniq,
+        evidence_present: quality_record[:evidence_present],
+        citations_count: quality_record[:citations_count].to_i,
+        citation_titles: Array(quality_record[:citation_titles]).compact_blank,
+        retrieved_chunks: quality_record[:chunk_count].to_i,
+        models: call_rows.filter_map { |row| row[:model_id].presence }.uniq,
+        input_tokens: call_rows.sum { |row| row[:input_tokens].to_i },
+        output_tokens: call_rows.sum { |row| row[:output_tokens].to_i },
+        attributed_cost_usd: call_rows.sum { |row| row_cost(row) }.round(6),
+        llm_calls: call_rows.map do |row|
+          {
+            model: row[:model_id],
+            input_tokens: row[:input_tokens].to_i,
+            output_tokens: row[:output_tokens].to_i,
+            token_source: row[:token_source],
+            attributed_cost_usd: row_cost(row).round(6)
+          }
+        end,
+        correct_answer: nil,
+        resolved: nil,
+        technician_helpfulness: nil
+      }
+      if @include_raw_questions
+        result[:question] = quality_record[:question]
+        result[:answer_snippet] = quality_record[:answer_snippet]
+      end
+      result
+    end.sort_by { |row| row[:correlation_id] }
   end
 
   def interaction_returning_users(representative_events)
@@ -518,7 +629,7 @@ class PilotMetricsReport
   def evidence_quality(records)
     return { status: "logs_not_available", records: nil } if records.empty?
 
-    {
+    result = {
       status: "available",
       records: records.size,
       evidence_present: records.count { |record| record[:evidence_present] == true },
@@ -544,6 +655,31 @@ class PilotMetricsReport
         }
       end
     }
+    result[:recent_questions] = recent_questions(records) if @include_raw_questions
+    result
+  end
+
+  # Opt-in only (`include_raw_questions:`). [RAG_QUALITY] already carries real
+  # question text (BedrockRagService#log_quality_signal truncates to 300 chars)
+  # unlike interaction_completed, which hashes the question before it is ever
+  # logged (RagController#ask). Text-route queries only — photo/visual queries
+  # never emit a [RAG_QUALITY] line.
+  def recent_questions(records)
+    records
+      .sort_by { |record| parse_time(record[:ts]) || Time.zone.at(0) }
+      .last(RECENT_QUESTIONS_LIMIT)
+      .reverse
+      .map do |record|
+        {
+          correlation_id: record[:correlation_id],
+          account_id: integer_or_nil(record[:account_id]),
+          user_id: integer_or_nil(record[:user_id]),
+          occurred_at: record[:ts],
+          question: record[:question],
+          evidence_present: record[:evidence_present],
+          citations_count: record[:citations_count].to_i
+        }
+      end
   end
 
   def knowledge_gap_signals(messages)

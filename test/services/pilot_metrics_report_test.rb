@@ -8,6 +8,7 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
 
   setup do
     BedrockQuery.delete_all
+    BedrockDailyCost.delete_all
     ConversationSession.delete_all
     @date = Date.new(2026, 7, 22)
     @now = Time.zone.local(2026, 7, 22, 12)
@@ -47,7 +48,7 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
         assert_equal({ "Pilot manual" => 2 }, accounts[accounts(:legacy).id][:rag_sources])
         cache_trace = report.dig(:technical_and_cost, :interaction_trace).find { |row| row[:kind] == "photo_cache_reuse" }
         assert_equal false, cache_trace[:llm_call]
-        assert_equal 0, cache_trace[:actual_cost]
+        assert_equal 0, cache_trace[:attributed_cost_usd]
         assert_equal @a2.id, cache_trace[:user_id]
         assert_equal 1, report.dig(:knowledge_gap_signals, :data_not_available_count)
         assert_equal "REQUIRES_MANUAL_SURVEY", report.dig(:commercial_outcomes, :status)
@@ -68,6 +69,65 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
     end
   end
 
+
+  test "recent_questions is absent by default, even with quality records available" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "rag:a1")
+
+      with_usage_log do |path|
+        report = PilotMetricsReport.new(date: @date, usage_log_path: path).as_json
+
+        assert_equal "available", report.dig(:evidence_quality, :status)
+        assert_not report.dig(:evidence_quality).key?(:recent_questions)
+      end
+    end
+  end
+
+  test "recent_questions surfaces real question text only when include_raw_questions is true" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "rag:a1")
+      create_call(@a2, route: "rag_filtered", correlation_id: "rag:a2")
+      create_call(@b1, route: "rag_filtered", correlation_id: "rag:b1")
+
+      with_usage_log do |path|
+        report = PilotMetricsReport.new(date: @date, usage_log_path: path, include_raw_questions: true).as_json
+        recent = report.dig(:evidence_quality, :recent_questions)
+
+        assert_equal 3, recent.size
+        entry = recent.find { |row| row[:correlation_id] == "rag:a1" }
+        assert_equal "question from #{@a1.email}", entry[:question]
+        assert_equal @a1.id, entry[:user_id]
+        assert_equal true, entry[:evidence_present]
+        assert_equal 1, entry[:citations_count]
+        assert_equal @now.iso8601, entry[:occurred_at]
+      end
+    end
+  end
+
+  test "recent_questions is sorted most-recent-first and capped at RECENT_QUESTIONS_LIMIT" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "rag:bulk")
+
+      file = Tempfile.new("pilot-recent-questions")
+      (PilotMetricsReport::RECENT_QUESTIONS_LIMIT + 5).times do |i|
+        file.puts("[RAG_QUALITY] #{JSON.generate({
+          ts: (@now - (60 - i).seconds).iso8601, account_id: accounts(:legacy).id, user_id: @a1.id,
+          correlation_id: "corr-#{i}", evidence_present: true, citations_count: 0, chunk_count: 0,
+          question: "question #{i}"
+        })}")
+      end
+      file.flush
+
+      report = PilotMetricsReport.new(date: @date, usage_log_path: file.path, include_raw_questions: true).as_json
+      recent = report.dig(:evidence_quality, :recent_questions)
+
+      assert_equal PilotMetricsReport::RECENT_QUESTIONS_LIMIT, recent.size
+      assert_equal "question #{PilotMetricsReport::RECENT_QUESTIONS_LIMIT + 4}", recent.first[:question]
+      assert_equal "question 5", recent.last[:question]
+
+      file.close!
+    end
+  end
 
   test "internal_calls bucket counts kb_retrieve/kb_warm_ping without contaminating total_queries" do
     travel_to @now do
@@ -318,8 +378,14 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       interactions = report[:interactions]
       assert_equal "available", interactions[:status]
       assert_equal 7, interactions[:total], "the unattributed smoke ping must not count as an 8th interaction"
-      assert_equal 8, interactions[:llm_calls], "the rag_filtered->rag_global fallback bills two calls for one interaction"
-      assert interactions[:invariant_ok]
+      assert_equal 8, interactions[:llm_calls_attributed], "the rag_filtered->rag_global fallback bills two calls for one interaction"
+      assert_equal 8, interactions[:llm_calls_in_range]
+      assert_equal 0, interactions[:zero_llm_call_interactions]
+      assert_equal true, interactions.dig(:contract_checks, :single_terminal_event_per_interaction)
+      assert_equal true, interactions.dig(:contract_checks, :outcomes_valid)
+      assert_equal true, interactions.dig(:contract_checks, :failures_fully_traced)
+      assert_equal "REQUIRES_HUMAN_REVIEW", interactions.dig(:verification, :status)
+      assert_equal %w[correct_answer resolved technician_helpfulness], interactions.dig(:verification, :fields)
       assert_equal({ "answered" => 5, "abstained" => 1, "failed" => 1 }, interactions[:by_outcome])
       assert_equal 2, interactions[:active_users]
       assert_equal 0, interactions[:unattributed_count]
@@ -352,9 +418,166 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
     end
   end
 
+  test "interactions separates attributed calls from all range calls and counts deterministic interactions" do
+    travel_to @now do
+      create_call(@a1, route: "rag_filtered", correlation_id: "query:attributed")
+      create_call(@b1, route: "rag_filtered", correlation_id: "query:foreign")
+
+      file = Tempfile.new("pilot-interaction-attribution")
+      [
+        { event: "interaction_completed", ts: @now.iso8601, correlation_id: "query:attributed",
+          account_id: @a1.account_id, user_id: @a1.id, outcome: "answered", route: "text" },
+        { event: "interaction_completed", ts: @now.iso8601, correlation_id: "query:deterministic",
+          account_id: @a1.account_id, user_id: @a1.id, outcome: "answered", route: "text" }
+      ].each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
+      file.flush
+
+      interactions = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json[:interactions]
+
+      assert_equal 1, interactions[:llm_calls_attributed]
+      assert_equal 2, interactions[:llm_calls_in_range]
+      assert_equal 1, interactions[:zero_llm_call_interactions]
+      assert_not interactions.key?(:invariant_ok)
+      assert_not interactions.key?(:llm_calls)
+
+      file.close!
+    end
+  end
+
+  test "contract checks report duplicate terminals, invalid outcomes, and untraced failures" do
+    travel_to @now do
+      file = Tempfile.new("pilot-contract-checks")
+      [
+        { event: "interaction_completed", ts: @now.iso8601, correlation_id: "query:duplicate",
+          account_id: @a1.account_id, user_id: @a1.id, outcome: "answered", route: "text" },
+        { event: "interaction_completed", ts: @now.iso8601, correlation_id: "query:duplicate",
+          account_id: @a1.account_id, user_id: @a1.id, outcome: "answered", route: "text" },
+        { event: "interaction_completed", ts: @now.iso8601, correlation_id: "query:invalid",
+          account_id: @a1.account_id, user_id: @a1.id, outcome: "resolved", route: "text" },
+        { event: "interaction_completed", ts: @now.iso8601, correlation_id: "query:failed",
+          account_id: @a1.account_id, user_id: @a1.id, outcome: "failed", route: "text" }
+      ].each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
+      file.flush
+
+      checks = PilotMetricsReport.new(date: @date, usage_log_path: file.path)
+        .as_json.dig(:interactions, :contract_checks)
+
+      assert_equal false, checks[:single_terminal_event_per_interaction]
+      assert_equal false, checks[:outcomes_valid]
+      assert_equal false, checks[:failures_fully_traced]
+
+      file.close!
+    end
+  end
+
+  test "by_correlation joins terminal route context quality and Bedrock rows without raw text by default" do
+    travel_to @now do
+      create_call(
+        @a1,
+        route: "rag_filtered",
+        correlation_id: "query:joined",
+        token_source: "estimated"
+      )
+      file = Tempfile.new("pilot-by-correlation")
+      file.puts("[PILOT_USAGE] #{JSON.generate({
+        event: "interaction_completed", ts: @now.iso8601, correlation_id: "query:joined",
+        account_id: @a1.account_id, user_id: @a1.id, conversation_session_id: 77,
+        question_sha256: "question-digest", outcome: "answered", route: "text"
+      })}")
+      file.puts("[PILOT_USAGE] #{JSON.generate({
+        event: "evidence_route", ts: @now.iso8601, correlation_id: "query:joined",
+        generation_mode: "structured", retrieval_ms: 100, expansion_ms: 20,
+        local_ms: 10, generation_ms: 200
+      })}")
+      file.puts("[PILOT_USAGE] #{JSON.generate({
+        event: "evidence_route_context", ts: @now.iso8601, correlation_id: "query:joined",
+        document_id: "doc-1", page: 12, section_identity: "SEC-12"
+      })}")
+      file.puts("[RAG_QUALITY] #{JSON.generate({
+        ts: @now.iso8601, correlation_id: "query:joined", account_id: @a1.account_id,
+        user_id: @a1.id, question: "raw question", answer_snippet: "raw answer",
+        evidence_present: true, citations_count: 2, chunk_count: 3,
+        citation_titles: [ "Manual" ]
+      })}")
+      file.flush
+
+      private_row = PilotMetricsReport.new(date: @date, usage_log_path: file.path)
+        .as_json.dig(:interactions, :by_correlation).sole
+      raw_row = PilotMetricsReport.new(
+        date: @date,
+        usage_log_path: file.path,
+        include_raw_questions: true
+      ).as_json.dig(:interactions, :by_correlation).sole
+
+      assert_equal "structured", private_row[:generation_mode]
+      assert_equal({ retrieval_ms: 100, expansion_ms: 20, local_ms: 10, generation_ms: 200 }, private_row[:stages])
+      assert_equal [ "doc-1" ], private_row[:documents]
+      assert_equal [ 12 ], private_row[:pages]
+      assert_equal [ "SEC-12" ], private_row[:section_identities]
+      assert_equal true, private_row[:evidence_present]
+      assert_equal 2, private_row[:citations_count]
+      assert_equal 3, private_row[:retrieved_chunks]
+      assert_equal "estimated", private_row[:llm_calls].sole[:token_source]
+      assert_operator private_row[:attributed_cost_usd], :>, 0
+      assert_nil private_row[:correct_answer]
+      assert_nil private_row[:resolved]
+      assert_nil private_row[:technician_helpfulness]
+      assert_not private_row.key?(:question)
+      assert_not private_row.key?(:answer_snippet)
+      assert_equal "raw question", raw_row[:question]
+      assert_equal "raw answer", raw_row[:answer_snippet]
+
+      file.close!
+    end
+  end
+
+  test "cost authority reports pending partial and reconciled UTC-day states without changing estimates" do
+    travel_to @now do
+      create_call(
+        @a1,
+        route: "rag_filtered",
+        correlation_id: "query:estimated",
+        token_source: "estimated"
+      )
+      create_call(
+        @a1,
+        route: "visual_query",
+        correlation_id: "photo:provider",
+        model_id: "claude-sonnet-4-6-direct",
+        token_source: "provider_usage"
+      )
+
+      pending = PilotMetricsReport.new(date: @date).as_json
+      pending_authority = pending.dig(:technical_and_cost, :cost_authority)
+      totals = pending.dig(:technical_and_cost, :totals)
+
+      assert_equal "pending_reconciliation", pending_authority[:status]
+      assert_equal %w[2026-07-22 2026-07-23], pending_authority[:missing_utc_dates]
+      assert_equal "platform_wide_all_accounts", pending_authority[:scope]
+      assert_equal "partial", pending_authority[:utc_day_overlap]
+      assert_operator pending_authority.dig(:anthropic_direct, :attributed_cost_usd), :>, 0
+      assert_operator totals[:estimated_usd], :>, 0
+      assert_operator totals[:provider_usage_usd], :>, 0
+      assert_equal totals[:attributed_cost_usd], (totals[:estimated_usd] + totals[:provider_usage_usd]).round(6)
+
+      create_daily_cost(Date.new(2026, 7, 22), cost_usd: 1.25)
+      partial = PilotMetricsReport.new(date: @date).as_json.dig(:technical_and_cost, :cost_authority)
+      assert_equal "partially_reconciled", partial[:status]
+      assert_equal [ "2026-07-23" ], partial[:missing_utc_dates]
+      assert_equal 1.25, partial[:reconciled_bedrock_usd]
+
+      create_daily_cost(Date.new(2026, 7, 23), cost_usd: 0.75)
+      reconciled = PilotMetricsReport.new(date: @date).as_json.dig(:technical_and_cost, :cost_authority)
+      assert_equal "reconciled", reconciled[:status]
+      assert_empty reconciled[:missing_utc_dates]
+      assert_equal 2.0, reconciled[:reconciled_bedrock_usd]
+    end
+  end
+
   private
 
-  def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0", created_at: @now)
+  def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+                  created_at: @now, token_source: nil)
     BedrockQuery.create!(
       source: "query",
       route: route,
@@ -367,7 +590,20 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       user_id: user.id,
       conversation_session_id: user.id + 1000,
       correlation_id: correlation_id,
+      token_source: token_source,
       created_at: created_at
+    )
+  end
+
+  def create_daily_cost(date, cost_usd:)
+    BedrockDailyCost.create!(
+      utc_date: date,
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      invocation_count: 1,
+      input_tokens: 100,
+      output_tokens: 20,
+      cost_usd: cost_usd,
+      reconciled_at: @now
     )
   end
 
@@ -415,7 +651,7 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
     ]
     events.each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
     [ [ @a1, "rag:a1" ], [ @a2, "rag:a2" ], [ @b1, "rag:b1" ] ].each do |user, correlation_id|
-      file.puts("[RAG_QUALITY] #{JSON.generate({ ts: @now.iso8601, account_id: user.account_id, user_id: user.id, correlation_id: correlation_id, evidence_present: true, citations_count: 1, chunk_count: 3, citation_titles: [ 'Pilot manual' ] })}")
+      file.puts("[RAG_QUALITY] #{JSON.generate({ ts: @now.iso8601, account_id: user.account_id, user_id: user.id, correlation_id: correlation_id, evidence_present: true, citations_count: 1, chunk_count: 3, citation_titles: [ 'Pilot manual' ], question: "question from #{user.email}" })}")
     end
     file.flush
     yield file.path

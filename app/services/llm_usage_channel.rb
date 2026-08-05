@@ -3,9 +3,9 @@
 # Maps a BedrockQuery row (or equivalent hash) to a billing channel symbol.
 #
 # Channels:
-#   :bedrock_rag              — end-user RAG queries via Bedrock invoke (source=query)
+#   :bedrock_rag              — end-user RAG queries via Bedrock invoke (source=query, non-direct model)
 #   :anthropic_haiku_direct   — ingestion_parse, haiku, -direct
-#   :anthropic_sonnet_direct  — ingestion_parse, sonnet, -direct
+#   :anthropic_sonnet_direct  — direct Anthropic sonnet calls, including live visual queries
 #   :anthropic_opus_direct    — ingestion_parse, opus, -direct
 #   :anthropic_sonnet_batch   — ingestion_parse, cost_v2 bulk/web (bulk_batch:/bulk_parse: + -batch + sonnet)
 #   :anthropic_opus_batch     — ingestion_parse, cost_v2 bulk/web (bulk_* + -batch + opus)
@@ -27,6 +27,9 @@ class LlmUsageChannel
   end
 
   def channel
+    direct = classify_direct_model
+    return direct if direct
+
     case @source
     when "query"
       :bedrock_rag
@@ -41,6 +44,17 @@ class LlmUsageChannel
 
   private
 
+  def classify_direct_model
+    m = @model_id.downcase
+    return unless m.end_with?("-direct")
+
+    if m.include?("haiku") then :anthropic_haiku_direct
+    elsif m.include?("sonnet") then :anthropic_sonnet_direct
+    elsif m.include?("opus") then :anthropic_opus_direct
+    else :unknown
+    end
+  end
+
   def classify_parse
     q = @user_query
     m = @model_id.downcase
@@ -51,13 +65,7 @@ class LlmUsageChannel
     # Legacy bulk ZIP: Anthropic Batch API whole-file Opus (batch_v1), NOT cost_v2, NOT Bedrock FM.
     return :bulk_batch_v1_opus if q.start_with?("batch_parse:")
 
-    if m.end_with?("-direct")
-      if m.include?("haiku")   then :anthropic_haiku_direct
-      elsif m.include?("sonnet") then :anthropic_sonnet_direct
-      elsif m.include?("opus")   then :anthropic_opus_direct
-      else :unknown
-      end
-    elsif m.end_with?("-batch")
+    if m.end_with?("-batch")
       if m.include?("sonnet") then :anthropic_sonnet_batch
       elsif m.include?("opus")  then :anthropic_opus_batch
       else :unknown

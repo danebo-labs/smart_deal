@@ -7,6 +7,7 @@ class LlmUsageChannelTest < ActiveSupport::TestCase
   CASES = [
     [ "us.anthropic.claude-haiku-4-5-20251001-v1:0",     "query",           nil,                     :bedrock_rag ],
     [ "global.anthropic.claude-haiku-4-5-20251001-v1:0", "query",           nil,                     :bedrock_rag ],
+    [ "claude-sonnet-4-6-direct",                        "query",           nil,                     :anthropic_sonnet_direct ],
     [ "claude-sonnet-4-6-direct",                        "ingestion_parse", "web_parse: f.pdf",      :anthropic_sonnet_direct ],
     [ "claude-opus-4-7-batch",                           "ingestion_parse", "bulk_parse: photo.png", :anthropic_opus_batch ],
     [ "claude-opus-4-8-batch",                           "ingestion_parse", "bulk_parse: photo.png", :anthropic_opus_batch ],

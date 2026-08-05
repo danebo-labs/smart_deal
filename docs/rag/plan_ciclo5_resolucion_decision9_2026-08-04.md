@@ -1711,3 +1711,26 @@ El *lookbehind* `(?<!no\s)` exige que los 3 caracteres inmediatamente antes de "
 **Metodología de corrección:** recuperación de texto real desde S3 Model Invocation Logs de Bedrock (`s3://multimodal-logs/bedrock-invocation-logs/AWSLogs/935142957735/BedrockModelInvocationLogs/us-east-1/2026/08/04/21/`), verificación por coincidencia exacta de SHA256 contra `answer_sha256` logueado por la app en `[PILOT_USAGE] evidence_route` (A2, B2, B3) y contra el `requestId`/timestamp más próximo a la ventana de ejecución conocida (A1, ruta `rag_filtered` sin `answer_sha256` propio). `requestId`s citados: A1 `4b2cd2b4-7de6-4c66-8705-7a4c801d882c`; A2 `c90535c6-8b7f-4002-be54-735f14fa44f4`; B2 `8093eeb1-83b7-478f-ad3e-edc46f06a9de`; B3 `16ed1aa7-be16-49e0-8ce9-8b7e4f3bbc8a`.  
 **Artefacto completo:** `tmp/rag_seguridades_sonda_v6_abstencion_20260804.json` (SHA256 `6ae6952c...6055d5`)  
 **Clasificación manual completa:** `tmp/sonda_v6_clasificacion_fase_s3.md` (clasificación original; la corrección post-hoc vive en este documento)
+
+## Anexo B — Verificación de vigencia de H3, H4, H6, H9 (2026-08-04, sesión de auditoría)
+
+Lectura pura: cero escrituras a código, caché, S3 o KB; cero llamadas a
+Bedrock (`retrieve` ni `start-ingestion-job`); cero llamadas nuevas a AWS S3.
+Verificación hecha contra HEAD del repo (`git log`, lectura de archivo) y los
+artefactos de ejecución ya registrados en el repo (`tmp/ciclo5_fase3_2026-08-04/`,
+`script/repair_seguridades_n8_body_2026-08-04.rb`) — no se repite ninguna
+descarga en vivo de S3 que la Fase 3 ya hizo y dejó verificada por hash.
+
+| Hallazgo | Vigente | Evidencia (archivo:línea) |
+|---|---|---|
+| **H3** — N8 vivo en el prompt, RESUELTO por la Fase 2: `batch_chunking_prompt.rb` ya no instruye emitir `**Document:**` en el cuerpo | **Sí** | `app/prompts/batch_chunking_prompt.rb:13-16` (comentario de cabecera imperativo: "MUST NOT instruct the model to embed `**Document:**`… markers"); `app/prompts/batch_chunking_prompt.rb:294-298` ("no `**Document:**` header or other identity marker of any kind precedes it"); tabla `## S0 chunk content` en `app/prompts/batch_chunking_prompt.rb:310-320` ya no tiene las filas `ORIGINAL_FILE_NAME`/`NORMALIZED_FILE_NAME`. Confirma el estado que el propio Anexo F (línea 1013) ya había verificado el mismo día. |
+| **H4** — N8 sigue vivo en los datos (96/97 cuerpos S3 contaminados), BLOQUEANTE | **No** — **superado por la Fase 3, ejecutada y cerrada más tarde el mismo día** | Commit `2dee814` ("Ciclo 5 Fase 3: ejecutar parche N8 en modo real (Alcance A) y cerrar la fase"); `script/repair_seguridades_n8_body_2026-08-04.rb:224-239` (escritura + verificación post-escritura byte a byte contra `new_sha256` antes de continuar); `tmp/ciclo5_fase3_2026-08-04/n8_fase3_real_run_result_2026-08-04.json:1-8` (`status: "COMPLETE"`, `patched_chunks: 96`, `job_id: "CCCDNEDFYL"`, backup en `chunk_body_backups/1/b61f5d54-ff42-414a-97b7-01682d16f4b5/20260804T144351Z_ciclo5_fase3`). El propio documento ya lo refleja más abajo (`docs/rag/plan_ciclo5_resolucion_decision9_2026-08-04.md:281,494`: "H4 CERRADO") — **la fila H4 de la tabla de hallazgos (línea 103, arriba) quedó desactualizada respecto al resto del documento** y debería marcarse RESUELTA para evitar confusión en lecturas futuras. |
+| **H6** — límite de diseño aceptado: el filtro de página da 0 resultados en la página divisora y el expansor rellena con la vecina vía `MECHANISM_ADJACENT_PAGE`, no bloqueante | **Sí** | `app/services/rag/section_neighbor_expander.rb:28` (`MECHANISM_ADJACENT_PAGE`), `app/services/rag/section_neighbor_expander.rb:186-189` (`authorize`: cae a `MECHANISM_ADJACENT_PAGE` cuando la vecina no declara heading propio); `app/services/rag/evidence_candidate_selector.rb:274` sigue invocando `@expander.neighbor_chunk(divider_chunk:, target_page:)` sin cambios de diseño. |
+| **H9** — diseño per-file de `canonical_name` sigue vigente (no rediseño por sección todavía) | **Sí** | `app/services/chunk_merger_service.rb:239-247` (`canonical_name` sigue eligiendo UN nombre para todo `parsed_pages`: página 1 o la de menor número); `app/services/batch_results_parser_service.rb:163-175` (`document_identity` sigue copiando esa única identidad a los sidecars, con fallback sólo al stem del filename, nunca por sección). Confirmado también por la propia decisión del dueño registrada en este documento (`docs/rag/plan_ciclo5_resolucion_decision9_2026-08-04.md:57-63`): el rediseño por sección para compendios multi-marca está "decidido" pero explícitamente diferido POST-ciclo 5 — no implementado en el código actual. |
+
+**Conclusión:** 3 de 4 hallazgos (H3, H6, H9) siguen describiendo con exactitud
+el estado actual del código. H4 ya no está vigente tal como está redactado en
+la tabla de hallazgos (línea 103): el parche real de la Fase 3 lo cerró el
+mismo 2026-08-04, horas después de escrito — el propio documento lo dice más
+abajo, pero la fila original nunca se actualizó a "RESUELTO". No se hizo
+ningún cambio de código, caché ni llamada a Bedrock/S3 para esta verificación.

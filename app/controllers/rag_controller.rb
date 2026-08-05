@@ -92,7 +92,7 @@ class RagController < ApplicationController
         correlation_id:  correlation_id,
         conv_session:    conv_session,
         question_sha256: question_sha256,
-        outcome:         abstained_answer?(result.answer) ? "abstained" : "answered",
+        outcome:         interaction_outcome(result),
         route:           interaction_route(correlation_id),
         latency_ms:      elapsed_ms(started_at)
       )
@@ -179,6 +179,19 @@ class RagController < ApplicationController
 
   def elapsed_ms(started_at)
     ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+  end
+
+  # Prefers the route's own structural outcome (currently only
+  # Rag::StructuredEvidenceRoute sets result.route_outcome) over the text
+  # heuristic below. ABSTENTION_PATTERN matches per-field uncertainty markers
+  # (e.g. "El documento no incluye este dato" about one cited terminal) that a
+  # fully-answered, fully-cited response can legitimately contain — routes
+  # without a structural signal keep the old heuristic rather than block on a
+  # broader rewrite.
+  def interaction_outcome(result)
+    return result.route_outcome.to_s if result.route_outcome.present?
+
+    abstained_answer?(result.answer) ? "abstained" : "answered"
   end
 
   # Reuses the abstention pattern already established for evidence-selection

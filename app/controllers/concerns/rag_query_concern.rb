@@ -19,6 +19,10 @@ module RagQueryConcern
                          :record_counts_by_type, :record_ledger_sha256,
                          :retrieved_chunk_sha256s, :deterministic_validation,
                          :quick_replies,
+                         # :answered / :abstained when the route computed it structurally
+                         # (currently only Rag::StructuredEvidenceRoute); nil elsewhere,
+                         # meaning the caller must fall back to the text-based heuristic.
+                         :route_outcome,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -106,7 +110,8 @@ module RagQueryConcern
       record_ledger_sha256:     result[:record_ledger_sha256],
       retrieved_chunk_sha256s:  result[:retrieved_chunk_sha256s],
       deterministic_validation: result[:deterministic_validation],
-      quick_replies:             result[:quick_replies]
+      quick_replies:             result[:quick_replies],
+      route_outcome:            result[:route_outcome]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

@@ -262,6 +262,12 @@ module Rag
         session_id: nil,
         generation_mode: GENERATION_MODE,
         model_invoked: true,
+        # Structural ground truth (empty evidence / generation failure / bad
+        # citations all short-circuit into abstained_outcome before this point) —
+        # RagController must prefer this over regexing the rendered answer, since
+        # a fully-answered response can legitimately contain an inline "El
+        # documento no incluye este dato" caveat about one sub-detail.
+        route_outcome: :answered,
         retrieved_chunk_sha256s: chunks.pluck(:chunk_sha256),
         correlation_id: @correlation_id,
         diagnostics: {
@@ -719,6 +725,7 @@ module Rag
         session_id: nil,
         generation_mode: GENERATION_MODE,
         model_invoked: model_invoked,
+        route_outcome: :abstained,
         retrieved_chunk_sha256s: chunks.pluck(:chunk_sha256),
         correlation_id: @correlation_id,
         diagnostics: {

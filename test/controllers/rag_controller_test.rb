@@ -444,6 +444,92 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # A fully-answered structured-route response that legitimately cites a
+  # per-field "El documento no incluye este dato" caveat (ABSTENTION_PATTERN)
+  # must not be misclassified as abstained in interaction_completed — the
+  # route's own structural route_outcome must win over the text heuristic.
+  test 'interaction_completed reports answered when route_outcome says answered even if the text matches ABSTENTION_PATTERN' do
+    sign_in @user
+
+    answer = "Componente conectado: PULSADOR [1]\n\n" \
+      "- **APC** — etiqueta visible; función El documento no incluye este dato en este diagrama"
+    orchestrator = Object.new
+    orchestrator.define_singleton_method(:execute) do
+      {
+        answer: answer,
+        citations: [ { number: 1, filename: 'test.pdf', title: 'Test' } ],
+        session_id: nil,
+        generation_mode: Rag::StructuredEvidenceRoute::GENERATION_MODE,
+        route_outcome: :answered
+      }
+    end
+
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_mock_orchestrator(orchestrator) do
+      post rag_ask_url, params: { question: '¿Qué conectores tiene el obstáculo?' }, as: :json
+    end
+
+    Rails.logger.stop_broadcasting_to(logger)
+
+    assert_response :success
+    line = output.string.lines.find { |entry| entry.include?('[PILOT_USAGE]') && entry.include?('"interaction_completed"') }
+    assert line.present?, 'interaction_completed must be emitted'
+    payload = JSON.parse(line.split('[PILOT_USAGE] ', 2).last)
+    assert_equal 'answered', payload['outcome']
+  end
+
+  test 'interaction_completed reports abstained when route_outcome says abstained regardless of answer text' do
+    sign_in @user
+
+    orchestrator = Object.new
+    orchestrator.define_singleton_method(:execute) do
+      {
+        answer: 'Respuesta sin ninguna palabra clave de abstención.',
+        citations: [],
+        session_id: nil,
+        generation_mode: Rag::StructuredEvidenceRoute::GENERATION_MODE,
+        route_outcome: :abstained
+      }
+    end
+
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_mock_orchestrator(orchestrator) do
+      post rag_ask_url, params: { question: 'pregunta sin evidencia' }, as: :json
+    end
+
+    Rails.logger.stop_broadcasting_to(logger)
+
+    line = output.string.lines.find { |entry| entry.include?('[PILOT_USAGE]') && entry.include?('"interaction_completed"') }
+    payload = JSON.parse(line.split('[PILOT_USAGE] ', 2).last)
+    assert_equal 'abstained', payload['outcome']
+  end
+
+  test 'interaction_completed falls back to the text heuristic when the route has no structural route_outcome' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(answer: I18n.t('rag.data_not_available', locale: :es))
+
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+    end
+
+    Rails.logger.stop_broadcasting_to(logger)
+
+    line = output.string.lines.find { |entry| entry.include?('[PILOT_USAGE]') && entry.include?('"interaction_completed"') }
+    payload = JSON.parse(line.split('[PILOT_USAGE] ', 2).last)
+    assert_equal 'abstained', payload['outcome']
+  end
+
   # ─── SHOW_RAG_SOURCES transport gate (§3.2/§3.3) ────────────────────────────
 
   test 'with sources hidden, citations are not transported and content never appears' do

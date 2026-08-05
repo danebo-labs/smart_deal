@@ -251,6 +251,31 @@ bin/pilot_metrics \
   --account pilot-account --format both
 ```
 
+### Flag reference
+
+| Flag | Required | Values | What it does |
+|------|----------|--------|---------------|
+| `--from DATE` | Yes | `YYYY-MM-DD` | Start of the range (inclusive). |
+| `--to DATE` | Yes | `YYYY-MM-DD`, `>= --from` | End of the range (inclusive). |
+| `--account SLUG` | Yes | account slug (e.g. `danebo-legacy`) | Resolves the account and its user cohort in production via `rails runner`; every downstream section is filtered to those `user_id`s. Slug must match `^[A-Za-z0-9][A-Za-z0-9_-]*$`. |
+| `--format raw\|human\|both` | No (default `both`) | `raw`, `human`, `both` | Only controls **stdout**: `report.json` raw, `report.txt` human, or both. Never changes which files are written to disk — the full package (`report.json`, `report.txt`, `valor.json`, `dossier.html`, `interactions.csv`, `source_events.jsonl`, `manifest.json`, `SHA256SUMS`) is always generated. |
+| `--with-questions` | No | flag | Copies `[PILOT_AUDIT]` lines into `source_events.jsonl` and fills `interactions.by_correlation.audit` (full question/answer/citations/chunks), which is what `dossier.html` and `interactions.csv` render. Without it those fields are absent, not redacted-in-place. Also restricts the package to `chmod 700`/`600` and prints a stderr warning, because the package now carries real technician text. |
+| `--manual-outcomes CSV` | No | path to a CSV (`correlation_id,correct_answer,resolved,helpfulness`) | Merges human review into `interactions.by_correlation` and into `valor.json.precision_and_safety` before packaging. Unmatched interactions keep `nil`. |
+| `--strict` | No | flag | Validates a non-empty cohort, both roles' logs present, valid report JSON, and no stale pending cost reconciliation. Never destroys the package: everything is generated first, the result is recorded in `manifest.json.strict_validation`, and only then does the command exit non-zero if a check failed. |
+| `--help` / `-h` | No | — | Prints usage and exits. |
+
+`PILOT_AUDIT_CAPTURE=true` is a separate, deploy-time environment variable
+(set in `config/deploy.yml`, not a CLI flag) that gates whether `[PILOT_AUDIT]`
+lines exist in production logs at all. `--with-questions` only controls
+whether an export that already has them surfaces them — see "Full audit
+capture and opt-in export" below for the full boundary between the two.
+
+`manifest.json.image_version` records the exact deployed image tag
+(`docker.io/lahirisan80/smart-deal:<git sha>`) the report was generated
+against — compare it to `git rev-parse HEAD` to confirm a given fix (e.g. the
+structured-route audit wiring) was actually live for that export, not just
+committed locally.
+
 The package is written to
 `tmp/pilot_exports/<from>_<to>_<slug>/` with:
 

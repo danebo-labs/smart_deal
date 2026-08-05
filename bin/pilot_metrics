@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: bin/pilot_metrics --from YYYY-MM-DD --to YYYY-MM-DD --account SLUG [options]
+
+Options:
+  --format raw|human|both  Output written to stdout (default: both)
+  --with-questions        Include raw question/answer fields in report output
+  --strict                Fail on incomplete telemetry or stale reconciliation
+  --help                  Show this help
+USAGE
+}
+
+fail() {
+  echo "pilot_metrics: $*" >&2
+  exit 1
+}
+
+FROM=""
+TO=""
+ACCOUNT=""
+FORMAT="both"
+WITH_QUESTIONS=false
+STRICT=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from)
+      [[ $# -ge 2 ]] || fail "--from requires a value"
+      FROM="$2"
+      shift 2
+      ;;
+    --to)
+      [[ $# -ge 2 ]] || fail "--to requires a value"
+      TO="$2"
+      shift 2
+      ;;
+    --account)
+      [[ $# -ge 2 ]] || fail "--account requires a value"
+      ACCOUNT="$2"
+      shift 2
+      ;;
+    --format)
+      [[ $# -ge 2 ]] || fail "--format requires a value"
+      FORMAT="$2"
+      shift 2
+      ;;
+    --with-questions)
+      WITH_QUESTIONS=true
+      shift
+      ;;
+    --strict)
+      STRICT=true
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+done
+
+[[ -n "$FROM" ]] || fail "--from is required"
+[[ -n "$TO" ]] || fail "--to is required"
+[[ -n "$ACCOUNT" ]] || fail "--account is required"
+[[ "$FORMAT" =~ ^(raw|human|both)$ ]] || fail "--format must be raw, human, or both"
+[[ "$ACCOUNT" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail "invalid account slug"
+
+RUBY_BIN="${PILOT_METRICS_RUBY:-ruby}"
+RAILS_BIN="${PILOT_METRICS_RAILS_BIN:-bin/rails}"
+DEPLOY_CONFIG="${PILOT_METRICS_DEPLOY_CONFIG:-config/deploy.yml}"
+OUTPUT_ROOT="${PILOT_METRICS_OUTPUT_ROOT:-tmp/pilot_exports}"
+
+[[ -f "$DEPLOY_CONFIG" ]] || fail "deploy config not found: $DEPLOY_CONFIG"
+"$RUBY_BIN" -rdate -e 'ARGV.each { |value| Date.iso8601(value) }' "$FROM" "$TO" || fail "invalid date"
+[[ "$FROM" > "$TO" ]] && fail "--from must be on or before --to"
+
+IFS=$'\t' read -r SERVICE HOST SSH_USER SSH_KEY < <(
+  "$RUBY_BIN" -ryaml -e '
+    config = YAML.safe_load_file(ARGV.fetch(0))
+    values = [
+      config.fetch("service"),
+      config.dig("servers", "web", "hosts")&.first,
+      config.dig("ssh", "user"),
+      config.dig("ssh", "keys")&.first
+    ]
+    abort("incomplete deploy config") if values.any? { |value| value.to_s.empty? }
+    puts values.join("\t")
+  ' "$DEPLOY_CONFIG"
+) || fail "could not read deploy config"
+
+[[ "$SERVICE" =~ ^[A-Za-z0-9_-]+$ ]] || fail "invalid service in deploy config"
+[[ "$HOST" =~ ^[A-Za-z0-9._:-]+$ ]] || fail "invalid host in deploy config"
+[[ "$SSH_USER" =~ ^[A-Za-z0-9._-]+$ ]] || fail "invalid ssh user in deploy config"
+if [[ "$SSH_KEY" == "~/"* ]]; then
+  SSH_KEY="${HOME}/${SSH_KEY#\~/}"
+fi
+
+SSH_TARGET="${SSH_USER}@${HOST}"
+remote() {
+  ssh -i "$SSH_KEY" -o BatchMode=yes "$SSH_TARGET" "$1"
+}
+
+resolve_container() {
+  local role="$1"
+  local output
+  output=$(remote "docker ps --filter 'label=service=${SERVICE}' --filter 'label=role=${role}' --format '{{.ID}}'") || return 1
+  output="${output%%$'\n'*}"
+  printf '%s' "$output"
+}
+
+WEB_CONTAINER=$(resolve_container web) || fail "could not resolve web container"
+[[ -n "$WEB_CONTAINER" ]] || fail "web container not found"
+[[ "$WEB_CONTAINER" =~ ^[a-fA-F0-9]+$ ]] || fail "invalid web container id"
+
+WORKER_CONTAINER=$(resolve_container worker || true)
+if [[ -n "$WORKER_CONTAINER" && ! "$WORKER_CONTAINER" =~ ^[a-fA-F0-9]+$ ]]; then
+  fail "invalid worker container id"
+fi
+
+COHORT_CODE='account = Account.find_by!(slug: ARGV.fetch(0)); user_ids = account.users.order(:id).pluck(:id); puts JSON.generate(account_id: account.id, account_slug: account.slug, user_ids: user_ids, user_count: user_ids.size)'
+COHORT_JSON=$(remote "docker exec -i '${WEB_CONTAINER}' bin/rails runner '${COHORT_CODE}' '${ACCOUNT}'") ||
+  fail "could not resolve cohort for account ${ACCOUNT}"
+
+IFS=$'\t' read -r ACCOUNT_ID ACCOUNT_SLUG USER_IDS USER_COUNT < <(
+  printf '%s' "$COHORT_JSON" | "$RUBY_BIN" -rjson -e '
+    payload = JSON.parse($stdin.read)
+    puts [payload.fetch("account_id"), payload.fetch("account_slug"),
+          payload.fetch("user_ids").join(","), payload.fetch("user_count")].join("\t")
+  '
+) || fail "invalid cohort response"
+
+[[ "$ACCOUNT_SLUG" == "$ACCOUNT" ]] || fail "resolved cohort slug does not match request"
+echo "Cohort: account_id=${ACCOUNT_ID} slug=${ACCOUNT_SLUG} user_ids=${USER_IDS:-none} count=${USER_COUNT}" >&2
+if [[ "$USER_COUNT" -eq 0 ]]; then
+  [[ "$STRICT" == false ]] || fail "strict: cohort is empty"
+  echo "pilot_metrics: warning: cohort is empty" >&2
+fi
+
+OUTPUT_DIR="${OUTPUT_ROOT}/${FROM}_${TO}_${ACCOUNT_SLUG}"
+mkdir -p "$OUTPUT_DIR"
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pilot_metrics.XXXXXX")
+trap 'rm -rf "$WORK_DIR"' EXIT
+SOURCE_EVENTS="${OUTPUT_DIR}/source_events.jsonl"
+: > "$SOURCE_EVENTS"
+
+ROLES_DOWNLOADED=()
+EMPTY_ROLES=()
+fetch_role_logs() {
+  local role="$1"
+  local container="$2"
+  local raw_file="${WORK_DIR}/${role}.log"
+  local filtered_file="${WORK_DIR}/${role}.filtered.log"
+
+  if [[ -z "$container" ]]; then
+    EMPTY_ROLES+=("$role")
+    echo "pilot_metrics: warning: ${role} container not found" >&2
+    return
+  fi
+
+  if ! remote "docker logs --since '${FROM}T00:00:00Z' '${container}'" > "$raw_file" 2>&1; then
+    EMPTY_ROLES+=("$role")
+    echo "pilot_metrics: warning: could not fetch ${role} logs" >&2
+    return
+  fi
+
+  ROLES_DOWNLOADED+=("$role")
+  grep -E '\[PILOT_USAGE\]|\[RAG_QUALITY\]' "$raw_file" > "$filtered_file" || true
+  if [[ ! -s "$filtered_file" ]]; then
+    EMPTY_ROLES+=("$role")
+    return
+  fi
+
+  sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+    "$filtered_file" >> "$SOURCE_EVENTS"
+}
+
+fetch_role_logs web "$WEB_CONTAINER"
+fetch_role_logs worker "$WORKER_CONTAINER"
+
+if [[ "$STRICT" == true && ${#EMPTY_ROLES[@]} -gt 0 ]]; then
+  fail "strict: empty or unavailable logs for role(s): ${EMPTY_ROLES[*]}"
+fi
+
+IMAGE_VERSION=$(remote "docker inspect --format '{{.Config.Image}}' '${WEB_CONTAINER}'" 2>/dev/null || true)
+IMAGE_VERSION="${IMAGE_VERSION%%$'\n'*}"
+[[ -n "$IMAGE_VERSION" ]] || IMAGE_VERSION="unknown"
+
+RUNNER_USER_IDS="$USER_IDS"
+[[ -n "$RUNNER_USER_IDS" ]] || RUNNER_USER_IDS="0"
+QUESTION_FLAG=""
+[[ "$WITH_QUESTIONS" == false ]] || QUESTION_FLAG=" --with-questions"
+REMOTE_EXPORT="docker exec -i '${WEB_CONTAINER}' bin/rails runner script/pilot_metrics_export.rb --from '${FROM}' --to '${TO}' --user-ids '${RUNNER_USER_IDS}' --roles 'web,worker' --stdin-logs --format raw${QUESTION_FLAG}"
+REPORT_TMP="${WORK_DIR}/report.json"
+if ! remote "$REMOTE_EXPORT" < "$SOURCE_EVENTS" > "$REPORT_TMP"; then
+  fail "remote pilot export failed"
+fi
+"$RUBY_BIN" -rjson -e 'JSON.parse(File.read(ARGV.fetch(0)))' "$REPORT_TMP" || fail "invalid report JSON"
+mv "$REPORT_TMP" "${OUTPUT_DIR}/report.json"
+
+if [[ "$STRICT" == true ]]; then
+  "$RUBY_BIN" -rjson -rtime -rdate -e '
+    report = JSON.parse(File.read(ARGV.fetch(0)))
+    failures = []
+    usage_status = report.dig("data_quality", "usage_log")
+    failures << "telemetry status is partial" if usage_status == "partial"
+    authority = report.dig("technical_and_cost", "cost_authority") || {}
+    if authority["status"] == "pending_reconciliation"
+      now = ENV["PILOT_METRICS_NOW"] ? Time.iso8601(ENV.fetch("PILOT_METRICS_NOW")).utc : Time.now.utc
+      stale = Array(authority["missing_utc_dates"]).select do |raw_date|
+        date = Date.iso8601(raw_date)
+        cutoff = Time.utc(date.year, date.month, date.day) + 86_400 + 14_400
+        date != now.to_date && now >= cutoff
+      end
+      failures << "stale pending reconciliation: #{stale.join(",")}" if stale.any?
+    end
+    abort(failures.join("; ")) if failures.any?
+  ' "${OUTPUT_DIR}/report.json" || fail "strict report validation failed"
+fi
+
+"$RAILS_BIN" runner script/pilot_metrics_render.rb "${OUTPUT_DIR}/report.json" > "${OUTPUT_DIR}/report.txt"
+
+ROLES_CSV=$(IFS=,; echo "${ROLES_DOWNLOADED[*]}")
+GENERATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
+"$RUBY_BIN" -rjson -e '
+  cohort = JSON.parse(File.read(ARGV.fetch(2)))
+  manifest = {
+    range: { from: ARGV.fetch(0), to: ARGV.fetch(1) },
+    cohort: cohort,
+    roles_downloaded: ARGV.fetch(3).split(",").reject(&:empty?),
+    image_version: ARGV.fetch(4),
+    generated_at: ARGV.fetch(5)
+  }
+  puts JSON.pretty_generate(manifest)
+' "$FROM" "$TO" "$WORK_DIR/cohort.json" "$ROLES_CSV" "$IMAGE_VERSION" "$GENERATED_AT" > "${OUTPUT_DIR}/manifest.json"
+
+(
+  cd "$OUTPUT_DIR"
+  shasum -a 256 report.json report.txt source_events.jsonl manifest.json > SHA256SUMS
+)
+
+if [[ "$WITH_QUESTIONS" == true ]]; then
+  chmod 700 "$OUTPUT_DIR"
+  chmod 600 "${OUTPUT_DIR}/report.json" "${OUTPUT_DIR}/report.txt" \
+    "${OUTPUT_DIR}/source_events.jsonl" "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/SHA256SUMS"
+  echo "pilot_metrics: warning: artifacts contain raw technician questions; permissions set to 600" >&2
+fi
+
+echo "Artifacts: ${OUTPUT_DIR}" >&2
+case "$FORMAT" in
+  raw)
+    cat "${OUTPUT_DIR}/report.json"
+    ;;
+  human)
+    cat "${OUTPUT_DIR}/report.txt"
+    ;;
+  both)
+    cat "${OUTPUT_DIR}/report.txt"
+    cat "${OUTPUT_DIR}/report.json"
+    ;;
+esac

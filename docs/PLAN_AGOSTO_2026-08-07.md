@@ -1,0 +1,380 @@
+# Danebo — Plan de Agosto (2026-08-07)
+
+**Reemplaza:** [PLAN_AGOSTO_2026-08-06.md](PLAN_AGOSTO_2026-08-06.md).
+**Ventana de este documento:** viernes 7 de agosto → viernes 4 de septiembre de 2026 (regreso del viaje y reentrada).
+**Convención:** solo días hábiles. Los fines de semana no se planifican.
+**Qué cambia respecto del plan del 6 de agosto:**
+
+1. **Se acota la ventana.** El documento anterior estiraba agosto hasta el 31 de diciembre. Septiembre pasa a tener su propio documento ([PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md)) y octubre–diciembre viven en la escalera del [Plan General](PLAN_GENERAL_2026-08-07.md), sección 14. Este documento cubre solo lo que se ejecuta antes de volver del viaje.
+2. **Presupuesto de viaje cerrado con cifras reales y en la moneda correcta**: el control de gastos está en **euros**, no en dólares, y el saldo comprometido de EUR 3.500 ya está descontado del runway. Se agrega cómo se paga y contra qué se calza (sección 5).
+3. **La brecha de caja de CLP 8.000.000 se cierra**: era un error de cálculo por no contar el burn mensual como salida legítima. Queda un chequeo de calce del depósito a 30 días antes del 11 de agosto (sección 4.3).
+4. **El café del 10 de agosto deja de ser el ancla del plan.** No está confirmado, hay hora con el dentista ese día y la disponibilidad de Gonzalo es desconocida. El track pasa a ser asincrónico y el entregable se redefine: no es la reunión, son los manuales. Ver sección 3.
+5. **Entra una pregunta de mercado** —el ratio equipos/técnico— porque es la variable que decide la unidad de cobro y no puede esperar hasta el almuerzo de septiembre.
+6. **Se explicita el plan B**: nada de lo que se ejecuta en esta ventana depende de que Gonzalo avance a socio.
+7. **Actualización del 8 de agosto — cambio de estrategia con los cuatro contactos.** Abel, Daniel y Jesús no son candidatos a piloto (conversión 0%, ver la matriz). Pasan a ser fuentes de calibración de pricing: cada uno recibe el lunes 10 una pregunta indirecta sobre el mercado, no un pedido de piloto ni de demo. Ver sección 3, reescrita completa.
+8. **Segunda actualización del 8 de agosto — cómo se leen las respuestas.** Los cuatro mensajes no cambian; lo que se agrega es la preparación para interpretar lo que vuelva. Tres piezas nuevas: el protocolo privado de lectura de la respuesta de margen de Gonzalo (sección 3.2.1), la prohibición de anclarlo con estimados propios (sección 3.2.2 y gate de la sección 8), y la técnica de rescate con estimado desviado, autorizada solo con Abel, Daniel y Jesús (sección 3.7). Se agrega además el flag de telemetría que condiciona todo el análisis posterior del piloto (sección 2.2).
+
+**Estado de partida:** **una demo ejecutada y con telemetría cargada** —Gonzalo, 6 de agosto, con resultado por encima de lo esperado y apertura a mentoría y sociedad— y cero pilotos activos. El producto funciona y hay ocho entrevistas completadas detrás. Ver [MATRIZ_DEMOS_PILOTOS_2026-08-07.md](MATRIZ_DEMOS_PILOTOS_2026-08-07.md).
+
+---
+
+## 1. Calendario de la ventana
+
+Solo días hábiles. Los fines de semana no se planifican ni se cuentan como capacidad, en este ni en ningún otro documento de planificación de Danebo.
+
+| Fecha | Fase | Carga de trabajo |
+|---|---|---|
+| **Viernes 7 de agosto** | Bloqueante de idioma | Alta, foco único |
+| **Lunes 10 de agosto** | **Mensajes de calibración de pricing a los cuatro contactos** (sección 3). Handoff de pendientes antes del viaje | Media |
+| Martes 11 de agosto – miércoles 2 de septiembre | Viaje. Cero desarrollo. Ingesta de manuales si llegan + seguimiento liviano + laboratorio Venezuela | Mínima, asincrónica |
+| Jueves 3 – viernes 4 de septiembre | Regreso y reentrada. No es arranque | Cero |
+
+**El lunes 10 tiene una tarea concreta y medible:** enviar los cuatro mensajes de calibración de mercado que cierran los supuestos del modelo de pricing. No es un día colchón: es el último día antes del viaje para extraer información que no puede esperar a septiembre.
+
+El mes de construcción arranca el **lunes 7 de septiembre**, no el 4. El regreso es el jueves 3 después de tres semanas de viaje, y los primeros días son de jet lag: la productividad no alcanza para implementación sostenida y planificarla sería planificar una capacidad inexistente. Ver [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md), sección 1.
+
+### 1.1 Qué cambia al no haber café, y por qué cambia poco
+
+El café nunca fue el entregable. **El entregable son los manuales**, y un manual no necesita una reunión: necesita un enlace. Todo lo que el café iba a resolver se resuelve de forma asincrónica:
+
+| Objetivo del café | Cómo se resuelve sin reunión |
+|---|---|
+| Recibir los manuales | Enlace de Drive o archivos por WhatsApp |
+| Crear cuentas para él y 2–3 técnicos | Se crean remotamente y se envían las credenciales |
+| Entregar el guion de prueba | Tres líneas por mensaje |
+| Ofrecer el NDA | Se adjunta al mismo mensaje |
+| Cerrar fecha del almuerzo de septiembre | Se acuerda por mensaje |
+| Pregunta del ratio equipos/técnico | Se responde de memoria; sirve igual por texto |
+
+**Lo único que realmente exige presencia es la conversación de participación**, y esa siempre fue del almuerzo de septiembre, no de un café de 30 minutos antes de un viaje.
+
+**El viaje absorbe el retraso a costo cero.** Del 11 de agosto al 2 de septiembre no hay desarrollo de todas formas, así que si los manuales llegan el 20 de agosto no se pierde nada: se cargan —cargar un manual es ingesta, no desarrollo— y quedan listos para septiembre. Lo único que se pierde si llegan tarde es que sus técnicos alcancen a probar durante el viaje, es decir el primer dato de volumen real. Es un costo acotado y no bloquea el mes de construcción.
+
+### 1.2 Lo que no se hace: perseguir la reunión
+
+No se insiste dos veces por un café antes de un viaje. Pedir una reunión que el otro no confirma invierte la dinámica: convierte al fundador en el que persigue y al contacto en el que concede, justo con la persona con la que más importa no quedar en esa posición.
+
+La conducta correcta es la inversa: **dejar el camino sin reunión más fácil que el camino con reunión.** Un mensaje del tipo "si te acomoda el lunes, buenísimo; si no, mándame los manuales por acá y yo voy avanzando" no pide nada, no presiona, y hace que entregar los manuales sea el camino de menor esfuerzo para él.
+
+---
+
+## 2. Viernes 7 de agosto — el bloqueante y nada más
+
+### 2.1 Bloqueante P0: idioma español por defecto
+
+En la demo del 6 de agosto, la lectura de la consola URM de Otis salió en inglés y Gonzalo lo notó explícitamente. Es el único trabajo de ingeniería que tiene prioridad absoluta hoy.
+
+**Gate:** **no se entrega acceso a los técnicos de Gonzalo mientras la respuesta por defecto no esté en español.** Entregar una herramienta a tres técnicos de terreno que responde en inglés es la forma más rápida de quemar el único canal de acceso a usuarios reales que existe.
+
+Sin café confirmado, este bloqueante deja de tener una fecha límite de lunes, pero **sube de importancia**: los manuales pueden llegar cualquier día del viaje y las cuentas hay que poder entregarlas en ese momento, sin una ventana de corrección por delante. Se cierra hoy justamente para que el acceso remoto no dependa de nada.
+
+Esto es aplicación directa del gate heredado de julio y agosto: no ampliar usuarios con un fallo conocido sin resolver.
+
+### 2.2 Kit de entrega remota, listo antes del viaje
+
+El café no es requisito, pero sí lo es tener todo empaquetado para entregarlo por mensaje desde cualquier lugar:
+
+- NDA de una página, en PDF, listo para adjuntar.
+- Guion de prueba de tres líneas para los técnicos: qué probar y cómo reportar. Audio de WhatsApp basta; cero fricción para alguien con guantes.
+- Cuentas creables en minutos y credenciales enviables por mensaje.
+- Un procedimiento propio de ingesta de manuales que se pueda ejecutar desde un notebook en un hotel, sin ambiente de desarrollo completo.
+- **`PILOT_AUDIT_CAPTURE=true` confirmado en el deploy vigente** antes de entregar la primera credencial.
+
+El penúltimo punto es el que suele olvidarse y el que decide si el track avanza durante el viaje o se congela hasta septiembre.
+
+**Por qué el flag es un gate y no un detalle.** Es lo que hace que cada interacción emita una línea `[PILOT_AUDIT]` con pregunta completa, respuesta completa y citas, más una línea por chunk recuperado. Sin él solo sobreviven los 300 caracteres truncados de `[RAG_QUALITY]`, y el análisis posterior de utilidad —el insumo de la entrevista con los técnicos y de la batería de generalización de septiembre— se queda sin materia prima que no se puede reconstruir después. Está en `true` en `config/deploy.yml`; el riesgo es que ese archivo está en `.gitignore`, así que se agregó al `.example` con su advertencia de privacidad para que no se pierda al reconstruirlo. **Además, los logs rotan y `kamal deploy` reemplaza los contenedores: hay que exportar durante el viaje, no al volver**, con el procedimiento de `bin/pilot_metrics --with-questions` ([METRICS.md](METRICS.md)). La pregunta queda en base de datos para siempre; la respuesta completa vive solo en el log.
+
+### 2.3 Handoff previo al viaje
+
+Cierre de bloqueos críticos conocidos y continuidad mínima. Nada de desarrollo nuevo. La regla heredada es explícita: no convertir el viaje en una etapa de desarrollo intensivo, y para eso hay que dejar el sistema en un estado que no requiera atención.
+
+---
+
+## 3. Lunes 10 de agosto — mensajes de calibración de pricing
+
+**Cambio de estrategia respecto al plan anterior.** Los cuatro contactos de entrevistas (Gonzalo, Abel, Daniel, Jesús) no son candidatos a piloto: la conversión de "sí" a demo ejecutada es 25% y a piloto activo es 0%. Pero **son fuentes de primera línea para calibrar el modelo de pricing**, porque viven el rubro todos los días y vienen de cuatro empresas de tamaños distintos.
+
+Las cinco transcripciones de entrevistas fueron analizadas el 8 de agosto y el hallazgo es claro: **ninguna contiene cifras de precios, sueldos, márgenes ni equipos por técnico**. Toda la aritmética del documento de pricing (§5 tensión del ratio, §9 tabla de resistencia, §10 escalera de rentabilidad) está construida sobre supuestos. Estas cuatro respuestas serían la primera fuente de campo real.
+
+### 3.1 La estrategia: preguntas indirectas, no directas
+
+Las preguntas directas ("¿cuánto ganas?", "¿cuál es tu margen?") generan resistencia y nadie las responde. El enfoque correcto es **preguntar opinión experta sobre el mercado**: la gente responde opiniones con facilidad, y al dar la opinión suelta los datos como contexto.
+
+| Pregunta directa | Pregunta indirecta |
+|---|---|
+| "¿Qué porcentaje de margen queda?" | "¿Qué tan apretados están los márgenes en el rubro?" |
+| "¿Cuánto se cobra por mantención?" | "¿Está estandarizado el rango o hay mucha variabilidad?" |
+| "¿Cuántos equipos y técnicos tienen?" | "¿Cómo se distribuye la carga — cartera fija o rotación?" |
+
+### 3.2 Gonzalo — colaboración operativa y margen, sin condicionar la negociación de sociedad (mensaje completo)
+
+**Corrección del 8 de agosto sobre la primera versión de este mensaje.** La versión original mezclaba tres cosas que no deben ir juntas antes del almuerzo de septiembre: valoraba explícitamente su aporte ("tu input comercial me está siendo muy valioso"), declaraba interés unilateral en la sociedad ("sigo interesado") y nombraba el objeto de la negociación ("colaboración estructurada") — las tres suben el precio de Gonzalo antes de negociar y violan el gate de no comprometer estructura de sociedad antes del almuerzo presencial (Plan General, sección 9.3). Al mismo tiempo, posponer todo a septiembre sin pedir nada ahora desperdicia las tres semanas del viaje, que son la mejor ventana para cargar manuales y que sus técnicos prueben sin desarrollo en curso.
+
+**La solución es separable:** se pide colaboración operativa concreta (manuales, acceso a técnicos) sin tocar la conversación de sociedad. El viaje se usa como razón para actuar ahora, no como excusa para no verse.
+
+> Hola Gonzalo, mañana salgo de viaje y vuelvo a principios de septiembre.
+>
+> Justo por eso te escribo: estas tres semanas no voy a estar desarrollando, así que es la mejor ventana para cargar los manuales y que tus técnicos prueben sin que yo ande cambiando cosas de por medio. Si me mandas los documentos por acá o por Drive los voy cargando desde donde esté, y si me pasas los nombres de los dos o tres técnicos, yo les creo las cuentas y les mando los accesos directo. De su parte no requiere nada más que usarlo cuando les toque una falla.
+>
+> Estos días no te voy a responder de inmediato, pero voy leyendo.
+>
+> Y aprovecho una consulta de mercado, que tú manejas y yo no: ¿qué tan apretados están los márgenes de mantención hoy en el rubro? Lo pregunto porque estoy viendo cuánto espacio real hay para que una herramienta nueva entre como costo adicional. Solo tu lectura general, no necesito números de nadie.
+
+**Por qué funciona cada parte:**
+
+- **"Justo por eso te escribo"** convierte el viaje en el argumento a favor de actuar ahora, no en una disculpa por no poder juntarse.
+- **El pedido está desmenuzado al mínimo esfuerzo suyo:** mandar un link, pasar dos o tres nombres. Tú creas las cuentas y cargas los manuales. La frase "de su parte no requiere nada más que usarlo cuando les toque una falla" desactiva la objeción que mata los pilotos — que sus técnicos tengan que dedicar tiempo extra.
+- **No se menciona sociedad, colaboración estructurada ni el valor de su aporte.** Si el track operativo avanza, la conversación de septiembre se da sola desde una posición donde no regalaste apalancamiento; si no avanza, esa reunión no valía la pena de todas formas.
+- **La pregunta de mercado se pide como opinión, no como dato propio.** Él puede responder "están apretados, queda un 15-20%" o "hay espacio, el problema no es el margen sino X" — cualquiera de las dos da la información que se necesita sin que sienta que revela datos de su empresa.
+
+**Qué resuelve la pregunta de margen:** el supuesto de CLP 40.000 de margen por equipo del documento de pricing (§5, tabla de resistencia) del que depende todo el argumento de "CLP 1.000 es solo 0,45%–1,25%".
+
+**Criterio de lectura de su respuesta — se define antes de enviar el mensaje, para no interpretar con optimismo después:**
+
+| Lo que hace Gonzalo | Qué significa | Qué se hace |
+|---|---|---|
+| Manda manuales y nombres de técnicos | Colaboración real. Es el único escenario que justifica seguirlo como track primario | Se sigue invirtiendo. El almuerzo de septiembre vale |
+| Responde la pregunta de mercado pero no manda nada | Interés intelectual, no compromiso operativo. Sirve como asesor informal, no como canal de piloto | Se baja prioridad. El outbound MINVU se adelanta a septiembre |
+| Manda manuales pero no da acceso a técnicos | Ayuda con lo que no le cuesta nada; los técnicos son de la empresa y ahí hay un límite político que no controla | Track parcial: se gana corpus, no usuarios. Se buscan usuarios por otro lado |
+| Silencio total en las tres semanas | La demo generó entusiasmo, no intención | Se reclasifica. Carlos Schwartz y el registro MINVU pasan a primer plano |
+
+**El punto clave:** los cuatro escenarios son informativos y ninguno deja peor que hoy. Por eso este mensaje funciona como diagnóstico del track Gonzalo y no solo como pedido, y por eso no hace falta prometerle nada de sociedad para enviarlo.
+
+#### 3.2.1 Protocolo privado de lectura de la respuesta de margen
+
+**Riesgo identificado el 8 de agosto:** Gonzalo tiene un incentivo real para sombrear el margen hacia abajo. Si está evaluando un rol comercial, un "los márgenes están apretadísimos, queda un 5%" empuja a fijar un precio mínimo y le deja más espacio de markup, o refuerza la narrativa de "sin mí no vendes esto". No necesita ser deliberado: la gente sombrea números hacia donde le conviene.
+
+**Por qué el mensaje no cambia por eso.** El precio no depende de su respuesta: el piso viene del COGS medido ([SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md)) y el encuadre de venta es un porcentaje sobre la **facturación** del cliente, que es verificable públicamente, no sobre su margen, que no lo es. La pregunta de margen calibra la resistencia esperable en la venta, no fija el precio. Si miente, el error queda en el pitch, no en el modelo de negocio. El riesgo no se resuelve cambiando la pregunta: se resuelve cambiando cómo se lee la respuesta, y eso es interno.
+
+| Paso | Cómo se ejecuta |
+|---|---|
+| 1. Chequeo aritmético | Su cifra tiene que cuadrar contra facturación pública (CLP 80.000–220.000/equipo/mes) menos costo laboral conocido. Servilleta: 100 equipos a CLP 100.000 son CLP 10M/mes de facturación; dos o tres técnicos con cargas cuestan CLP 3–5M. Un 5% (CLP 500.000) es implausible aunque se sumen insumos, vehículo y overhead |
+| 2. Triangulación | Se contrasta contra la respuesta de Daniel sobre variabilidad de precios, que no tiene ningún interés en juego |
+| 3. Señal cualitativa | Respuesta con textura ("depende del edificio, de la región, de contrato público o privado") = asesoría genuina. Número único, bajo y sin matices = negociación anticipada |
+| 4. Si parece estratégico, se anota y no se debate | No se corrige ni se discute la cifra. Es un dato sobre cómo va a negociar en septiembre, y vale más si él no sabe que está registrado |
+
+Una cifra que no cuadra **también es información útil**: no dice cuál es el margen del rubro, dice cómo va a negociar en septiembre.
+
+#### 3.2.2 No se le lanza un estimado propio para que confirme o corrija
+
+La técnica de lanzar un número para que la contraparte lo confirme o lo corrija es legítima, pero exige una condición: **que el otro no tenga incentivo para distorsionar la corrección.** Gonzalo no la cumple, y con él el intercambio es desfavorable en tres frentes:
+
+- **Le entrega el punto de referencia exacto.** Hoy, para sombrear el margen, tiene que adivinar dónde está parado Danebo. Un "yo estimo que queda un 30–35%" le dice qué creencia mover y cuánto. El anclaje ayuda con fuentes neutrales y perjudica con alguien que evalúa un rol comercial en el negocio.
+- **El pago es asimétrico.** La pregunta abierta entrega la distribución completa (rangos, matices, de qué depende). La de confirmar/rechazar entrega un bit, y es justo el bit corruptible: se gana poco si se acierta, y si se falla se mostró el nivel de ignorancia justo antes de negociar.
+- **Son dos interacciones de relación.** No hay base para distinguir una corrección honesta de una estratégica. Con un asesor de años la técnica es eficiente; en fase de evaluación mutua es información unilateral fluyendo en la dirección equivocada.
+
+También hay un problema de encuadre: querer "mostrarle que se está estimando bien" es buscar su validación. La credibilidad ante un comercial no se construye mostrándole estimaciones de *su* mercado — se construye con lo que ya vio en la demo. En su terreno, la posición fuerte es la del que pregunta bien, no la del que demuestra que ya sabe.
+
+**Secuencia correcta con él el lunes:** pregunta abierta tal como está en el mensaje → si responde con textura, el dato está listo → si responde vago, el follow-up pide más textura (*"¿y eso cambia mucho entre un edificio grande y uno chico?"*), nunca revela el número propio → la cifra se valida en privado contra la aritmética y contra Daniel.
+
+**Regla general:** antes de una negociación, los estimados propios son parte de la posición negociadora. No se muestran para obtener validación; se contrastan en silencio contra fuentes que no tienen nada en juego. La excepción es el almuerzo de septiembre y solo después de que el precio esté decidido internamente, y ahí el formato aprobado es presentar la estructura sin la cifra ("he visto tres formas de cobrar esto: por técnico, por equipo, por informe — ¿cuál crees que tu mercado aceptaría?").
+
+### 3.3 Daniel — tarifas y estructura de facturación
+
+Es contratista independiente que trabaja con varias empresas; hablar de tarifas con él es natural porque las ve desde adentro.
+
+> Oye Daniel, una consulta de mercado que tú ves desde adentro porque trabajas con varias empresas: ¿cómo es la estructura típica de facturación al edificio? ¿Van por equipo o es un monto global por contrato? Y si hay mucha variabilidad de precios entre empresas o está más o menos estandarizado el rango.
+>
+> Lo de la demo sigue en pie cuando tengas un rato, sin apuro.
+
+**Por qué funciona:** se pregunta estructura y variabilidad, no "cuánto cobran". Si hay estandarización él va a decir el rango ("todos cobran entre X e Y"); si hay variabilidad va a explicar por qué.
+
+**Qué resuelve:** valida el rango CLP 80.000–220.000 que hoy viene de Habitissimo (§4), y decide si el Modelo C (por equipo) habla el idioma de facturación que el cliente ya usa.
+
+### 3.4 Abel — ratio equipos/técnico desde empresa mediana
+
+Dirige el equipo de Tecnicall; sabe de memoria cuántos técnicos tiene y cuántos equipos cubren.
+
+> Abel, una consulta operativa que seguro manejas: en empresas del tamaño de Tecnicall, ¿cómo se distribuye la carga? Me refiero a si un técnico típicamente lleva una cartera fija de equipos o va rotando según la contingencia.
+>
+> Y lo de la demo sigue pendiente cuando tengas 20 minutos, me avisas tú.
+
+**Por qué funciona:** se pregunta sobre el modelo operativo, no sobre sus números. Pero para responder va a tener que decir algo como "cada técnico lleva sus 40-50 equipos fijos" o "rotamos según zona y tenemos 8 técnicos para 300 equipos". La información sale como contexto de la respuesta, no como dato pedido.
+
+**Qué resuelve:** un punto de la distribución de ratio equipos/técnico. Junto con la respuesta de Jesús, da dos puntos de empresas de tamaños distintos.
+
+### 3.5 Jesús — ratio equipos/técnico desde empresa chica
+
+Técnico activo en Elemont, empresa pequeña que fabrica e importa.
+
+> Jesús, una pregunta de tu día a día: ¿cómo está organizada la carga de trabajo en tu empresa? Me refiero a si cada técnico tiene una ruta fija de equipos o van asignando según las emergencias del día.
+>
+> Lo de la demo sigue en pie cuando vuelvas, me avisas.
+
+**Por qué funciona:** mismo enfoque que Abel. Pregunta sobre organización, no sobre números. Él va a responder con su realidad ("yo llevo como 30 equipos fijos y además atiendo emergencias") y da el dato que se necesita.
+
+**Qué resuelve:** el ratio en una empresa chica, que es el caso más común del mercado (cola larga de microempresas).
+
+### 3.6 Qué cierra cada respuesta
+
+| Contacto | Pregunta indirecta | Supuesto del pricing que resuelve |
+|---|---|---|
+| Gonzalo | Qué tan apretados están los márgenes | §5 tabla de resistencia (CLP 40.000 de margen por equipo) |
+| Daniel | Estructura de facturación y variabilidad de precios | §4 rango de mantención, y si el Modelo C habla el idioma del cliente |
+| Abel | Cómo se distribuye la carga en empresa mediana | §5 tensión del ratio equipos/técnico (22–44 vs. 60–100) |
+| Jesús | Cómo se distribuye la carga en empresa chica | §5 tensión del ratio en la cola larga de microempresas |
+
+Con cuatro respuestas independientes de operadores reales, los supuestos se convierten en un rango citable. Eso es infinitamente más defendible que el promedio derivado de dos supuestos propios con el que hoy trabaja el documento de pricing.
+
+### 3.7 Si no responden o responden vago — rescate con estimado desviado
+
+Segundo toque autorizado **solo con Abel, Daniel y Jesús**, nunca con Gonzalo (sección 3.2.2). La condición que ellos sí cumplen y él no: ninguno está evaluando una participación en el negocio, así que no tienen incentivo para distorsionar la corrección. Y con 0% de conversión a piloto, el costo de "quedar como que no se sabía" con ellos es bajísimo.
+
+**El orden importa y no se invierte:** pregunta abierta primero (el mensaje del lunes tal como está), estimado solo como rescate si la respuesta no llega o llega vaga. Por dos razones:
+
+- La pregunta abierta da textura —rangos, de qué depende—; el estimado da un bit.
+- El estimado arrastra sesgo de aquiescencia: ante un número plausible la gente tiende a validarlo por cortesía o pereza ("sí, por ahí va"), y se termina "confirmando" el propio supuesto en vez de midiendo la realidad.
+
+**La técnica, si se llega al rescate: se lanza el número levemente desviado, no el exacto.** La gente corrige un número equivocado con mucho más ganas de las que confirma uno correcto. *"Me da la impresión de que un técnico lleva unos 20 equipos, ¿voy bien?"* a alguien que lleva 45 provoca corrección inmediata y precisa; el número exacto provoca un "sí" sin información.
+
+| Contacto | Estimado desviado a lanzar si la respuesta abierta no llega |
+|---|---|
+| Daniel | "Me da la impresión de que una mantención ronda las 100 lucas por equipo, ¿voy bien?" |
+| Abel | "Tenía la idea de que un técnico lleva unos 20 equipos, ¿va por ahí?" |
+| Jesús | Mismo formato que Abel, ajustado a empresa chica |
+
+Aplica también, con la misma lógica y cero riesgo, en las llamadas de outbound sobre el registro MINVU: son desconocidos sin relación previa ni interés en juego.
+
+### 3.8 Follow-up durante el viaje
+
+Se simplifica: las preguntas clave van en el mensaje del lunes. Durante el viaje solo queda:
+
+| Semana | Propósito |
+|---|---|
+| 1 (17–21 ago) | Recordatorio suave de manuales a Gonzalo si no los ha mandado |
+| 2 (24–28 ago) | Confirmar fecha del almuerzo de septiembre |
+| 3 (31 ago – 2 sep) | Avisar el regreso |
+
+Con Abel, Daniel y Jesús, el rescate con estimado desviado (sección 3.7) cabe en la semana 2 si no hubo respuesta a la pregunta abierta.
+
+### 3.9 Lo que NO se hace
+
+- No se pronuncia "socio". La secuencia es asesor → asesor recurrente → socio, y hoy estamos en el primer escalón.
+- No se propone ni se insinúa precio propio.
+- No se abre la conversación de estructura de participación. Eso es del almuerzo de septiembre, presencial y con tiempo (ver Plan General, sección 9.3).
+- No se nombran fuentes de entrevistas.
+- No se muestra arquitectura, modelos ni costos. Solo el qué.
+- No se acepta ni se explora el módulo administrador de edificios.
+- **No se insiste dos veces por una reunión.** La demo queda como puerta abierta, una línea, sin pedir fecha.
+- **No se le lanza a Gonzalo un estimado propio de margen para que lo confirme o lo corrija** (sección 3.2.2). Con los otros tres sí, y solo como segundo toque (sección 3.7).
+- **No se corrige ni se debate la cifra de margen que él dé**, aunque no cuadre con la aritmética. Se anota (sección 3.2.1).
+
+---
+
+## 4. 11 de agosto – 2 de septiembre — viaje, cero desarrollo
+
+Regla dura heredada: cualquier hallazgo que exija corrección de código se anota y se prioriza para el lunes 7 de septiembre. No se abre una rama de desarrollo durante el viaje salvo una regresión de seguridad crítica.
+
+Corren en paralelo tres actividades pasivas, ninguna de las cuales requiere ingeniería activa:
+
+### 4.1 Chile — track Gonzalo
+
+Los tres toques de la sección 3.8, uno por semana, con propósito único cada uno. Ni más ni menos.
+
+Cuando lleguen los manuales: se cargan y se entregan credenciales en el momento, con el kit de la sección 2.2. Cargar un manual es ingesta, no desarrollo, y no rompe la regla de la ventana.
+
+Se registra cada pregunta que falló o que devolvió "no hay evidencia suficiente". Es insumo directo de la batería de generalización del benchmark. Revisión asincrónica de `bedrock_daily_costs` para ver si hay uso real y qué volumen genera — que es también el primer dato de volumen por técnico que ha existido.
+
+**Ese registro no se hace a mano:** el reporte de piloto ya entrega por interacción la pregunta, la respuesta y los chunks recuperados, y ya cuenta las preguntas repetidas y las reformulaciones rápidas de forma determinista. Se exporta una vez por semana durante el viaje —los logs rotan y un deploy los borra— y esa lectura reemplaza cualquier desarrollo de feedback (ver [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md), sección 5.4).
+
+### 4.2 Venezuela — laboratorio
+
+Activación del uso sin cobro con la empresa de los hermanos, en cuenta aislada. Durante el viaje es la única fuente disponible de datos de adopción de voz frente a texto y de condiciones acústicas reales de foso y sala de máquinas antes de octubre.
+
+**Vale más de lo que parece**, porque el informe correctivo del mantenedor y el informe del certificador comparten el mismo mecanismo —dictar, transcribir, confirmar, estructurar, borrador editable— y solo difieren en formato de salida y marco regulatorio. Es la prueba funcional del pipeline de septiembre con usuario real y riesgo comercial cero.
+
+Tres cosas quedan explícitas: **no se monetiza** —solo les ahorra costos, y con eso basta—, **no cuenta como señal de mercado chileno** porque el sesgo familiar garantiza que lo usen, y **los hermanos no son mentores ni red de apoyo**: no es mentoría directa ni disponibilidad ilimitada. Ver Plan General, sección 10.
+
+### 4.3 Chequeo de caja y calce del depósito
+
+La brecha de CLP 8.000.000 que esta sección declaraba crítica **era un error de cálculo** —no se estaba contando el burn mensual normal como salida legítima— y ya está cerrada: el residuo sin explicar es de ≈ CLP 1.000.000, que es ruido sobre dos meses de gasto doméstico. Ver Plan General, sección 6.2. **Se levanta la restricción de no tocar el presupuesto.**
+
+Lo que sí queda como tarea, y hay que hacerla **antes del 11 de agosto** porque se resuelve en Chile: cruzar la fecha de facturación de las tarjetas con el vencimiento del depósito a 30 días, y confirmar si el producto admite retiro parcial (Plan General, sección 6.3). Es media hora y evita romper capital fuera de ciclo.
+
+---
+
+## 5. Presupuesto del viaje
+
+Cifras del control de gastos, no estimaciones. **Todo en euros:** el resumen de la planilla dice "USD" pero la columna de detalle está rotulada "Monto EU" y el gasto ocurre en Europa, así que el encabezado se trata como error de rótulo.
+
+| Concepto | Estado | Monto | En CLP a 1.050 |
+|---|---|---:|---:|
+| Presupuesto total del viaje | Definido | EUR 7.000 | CLP 7,35M |
+| Vuelos, alojamiento, seguro y preparación | **Ya pagado** | EUR 3.600 | CLP 3,78M |
+| Saldo disponible para la ventana del viaje | Comprometido | EUR 3.400 | CLP 3,57M |
+
+El runway trabaja con **EUR 3.500 descontados** como saldo comprometido, criterio conservador frente a los EUR 3.400 de la planilla. Esos EUR 100 de holgura equivalen a CLP 105.000 y **absorben la comisión internacional y el spread cambiario** de pagar con tarjeta en moneda extranjera (1,5%–3% en Chile, ≈ CLP 70.000 sobre este monto), así que no se suman aparte. El descuento ya está aplicado en el Plan General, sección 6.1.
+
+**Cómo se paga:** con tarjeta de crédito durante el viaje, y el estado de cuenta se liquida **en un solo pago apenas se libere el depósito a plazo**. Sin cuotas, sin intereses: es una salida única de caja y no un arrastre de tres meses.
+
+**Disciplina de la ventana:** el viaje es una ventana de gasto conocido y acotado, no una fuente de variabilidad. El techo son EUR 3.500, y cualquier gasto que lo exceda sale de la caja de decisión libre — 9,2 meses contados desde el 1 de septiembre, no los 15 del runway total.
+
+**Tope de gasto de Danebo durante el viaje:** USD 40–60 para pruebas, sin cambios respecto del plan original. La calibración extraordinaria (USD 500 de APIs de Anthropic + CLP 200.000 de herramientas) ya está ejecutada y cerrada; no se repite.
+
+---
+
+## 6. Lo que se puede cerrar sin piloto, y por qué importa ahora
+
+El costo **unitario** ya está resuelto en el repositorio y conciliado contra factura: USD 6,14–9,25 por 1.000 consultas RAG de texto, USD 5,32 por onboarding de un manual de 200 páginas, y un piso de precio de USD 27,74 / 34,68 / 46,23 por usuario/mes según margen objetivo de 50% / 60% / 70%. La fuente canónica es [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md), respaldada por la reconciliación exacta de tokens facturados desde los logs de invocación en S3.
+
+Lo que falta es **volumen**, y eso no requiere un piloto chileno. Se cierra por cuatro vías, dos de las cuales arrancan en esta ventana:
+
+1. **Uso real en Venezuela** (sección 4.2) — arranca ahora.
+2. **Volumen por entrevista experta**: los cuatro mensajes del lunes 10 (sección 3) extraen ratio equipos/técnico, márgenes y estructura de facturación de fuentes independientes. El resto queda para el almuerzo de septiembre.
+3. **Carga sintética representativa** de una jornada tipo, corrida contra el pipeline real y leída desde los logs exactos. Costo: centavos. Se ejecuta en septiembre.
+4. **Banda de sensibilidad sobre el volumen**, no sobre el costo unitario, verificando que el piso de precio sigue siendo rentable en el escenario pesimista. Se cierra en septiembre.
+
+El costo de voz —minutos de audio, un driver económico distinto a tokens de una pregunta puntual— no está cubierto por el modelo vigente y tiene medición dedicada en septiembre.
+
+Por qué importa ahora y no en octubre: **la única incógnita que el piloto de octubre debería tener que responder es la disposición real a pagar.** Todo lo demás debe llegar resuelto, y las dos vías que dependen de terceros arrancan en esta ventana.
+
+---
+
+## 7. Plan B de esta ventana
+
+Nada de lo que se ejecuta en esta ventana depende de que Gonzalo avance a socio, ni de que ocurra una reunión:
+
+- Los manuales, si los entrega, son un activo permanente que no se devuelve si la sociedad no ocurre.
+- El acceso de sus técnicos es un piloto de uso, no un compromiso societario.
+- El módulo certificador de septiembre no necesita a Gonzalo: su estructura ya está definida contra fuentes públicas (Plan General, sección 4). **Carlos Schwartz (TAQUIÓN-CERT) es el candidato directo para probar el módulo de certificación con o sin Gonzalo** — es el contacto que reveló la limitante crucial de usabilidad que llevó a la tesis de voz y conversación.
+- Si Gonzalo se baja, el canal de adquisición es outbound sobre el registro MINVU: **220 mantenedoras y 56 certificadoras**, conteo oficial de la nómina al 3 de junio de 2026, pública y verificable.
+
+**Clarificación sobre el rol de Abel, Daniel y Jesús:** no son el plan B de adquisición —la conversión de "sí" a piloto es 0%— pero **sí son fuentes de primera línea para calibrar pricing**. Los mensajes del lunes 10 (sección 3) los usan en ese rol: no se les pide piloto, se les pide opinión experta sobre el mercado. Si además responden a la puerta abierta de demo, es un bonus; pero el valor ya está en la información de mercado que pueden dar.
+
+**Regla:** se sacan los pilotos con Gonzalo sin proyectarse más allá de eso. La conversación de participación es de septiembre y no condiciona ninguna fecha de este documento.
+
+---
+
+## 8. Gates vigentes en esta ventana
+
+| Gate | Origen |
+|---|---|
+| No entregar acceso a técnicos sin idioma español por defecto | Sección 2.1 |
+| No ampliar acceso con fallo crítico conocido | Heredado del plan original |
+| No convertir el viaje en desarrollo intensivo | Heredado del plan original |
+| No pronunciar "socio", no proponer precio, no nombrar fuentes, no mostrar el cómo | Reglas fijas del Plan General, sección 0 |
+| No valorar por escrito el aporte de la contraparte ni declarar interés unilateral en la sociedad antes del almuerzo presencial | Sección 3.2, corrección del 8 de agosto |
+| No abrir el módulo administrador de edificios | Reforzado: Gonzalo lo propuso, se declina |
+| No comprometer estructura de sociedad antes del almuerzo presencial | Plan General, sección 9.3 |
+| El uso de Venezuela no cuenta como señal de mercado chileno | Plan General, sección 10 |
+| No pagar el viaje en cuotas: se liquida en un pago contra la liberación del depósito | Plan General, sección 6.3 |
+| No insistir dos veces por una reunión | Sección 3.9 |
+| No revelar estimados propios de margen a Gonzalo antes de que el precio esté decidido internamente | Sección 3.2.2 |
+| No entregar cuentas a los técnicos con `PILOT_AUDIT_CAPTURE` apagado en producción | Sección 2.2 |
+| La planificación no incluye fines de semana ni los cuenta como capacidad | Heredado del plan original |
+
+---
+
+## 9. Criterio de éxito de la ventana
+
+Al viernes 4 de septiembre, esta ventana fue exitosa si se cumplen los cinco:
+
+1. Los manuales de Gonzalo están cargados y consultables.
+2. Existe fecha confirmada en el calendario para el almuerzo estratégico.
+3. Hay al menos un dato de volumen real —de sus técnicos o de Venezuela— que reemplace un supuesto.
+4. **Al menos dos de los cuatro contactos respondieron las preguntas de mercado** (ratio equipos/técnico, margen, estructura de facturación). Ver sección 3.6.
+5. El pago del viaje está calzado contra un vencimiento del depósito, sin cuotas y sin romper capital fuera de ciclo.
+
+Nótese que **ninguno de los cinco es un entregable de código, y ninguno requiere que ocurra una reunión.** Esta ventana no es de construcción; es de adquisición de insumos para el mes que sí lo es.
+
+**El más importante es el cuarto.** Si al 4 de septiembre hay al menos dos respuestas de mercado, el modelo de pricing deja de estar construido exclusivamente sobre supuestos y pasa a tener datos de campo citables. Si además están los manuales cargados, el mes de construcción tiene tanto corpus real como parámetros de mercado reales. Si no hay respuestas de mercado, las preguntas se reformulan para el almuerzo de septiembre con Gonzalo, que es la única fuente que queda.

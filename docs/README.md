@@ -13,6 +13,24 @@ evidence and are not descriptions of the active product.
 | Local setup and configuration | [README.md](../README.md) |
 | Production deployment and AWS operations | [PRODUCTION.md](PRODUCTION.md) |
 | Current RAG closure checkpoint | [GATE9R_STATUS.md](GATE9R_STATUS.md) |
+| Strategy, priorities, runway, and decision gates | [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) |
+
+## Business planning (living documents)
+
+These are dated and supersede each other. Always read the newest of each series;
+older dated versions are historical evidence, not the current plan.
+
+| Scope | Current document | Status |
+|---|---|---|
+| Strategy: priorities, runway, Gonzalo track and plan B, discards | [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) | **Current.** Supersedes `PLAN_GENERAL_2026-08-06.md` |
+| Operations: 7 Aug – 4 Sep 2026 (trip window) | [PLAN_AGOSTO_2026-08-07.md](PLAN_AGOSTO_2026-08-07.md) | **Current.** Supersedes `PLAN_AGOSTO_2026-08-06.md` |
+| Operations: the September build month | [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) | **Current.** Certifier module, voice capture, descope ladder |
+| Market sizing, billing unit, unit economics | [PRICING_Y_MERCADO_2026-08-07.md](PRICING_Y_MERCADO_2026-08-07.md) | **Current.** Reads against [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) as the cost authority |
+| Demo and pilot tracking | [MATRIZ_DEMOS_PILOTOS_2026-08-07.md](MATRIZ_DEMOS_PILOTOS_2026-08-07.md) | **Current.** Unifies the two identical August XLSX matrices; the July interview matrix is closed |
+
+Conventions that hold across all of them: business planning is written in
+Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
+`bedrock_daily_costs` remain the only cost authorities.
 
 ## Active product and engineering references
 
@@ -75,6 +93,8 @@ investigating the corresponding dated run:
 - [RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md](RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md)
 - [RESUMEN_CAMBIOS_COMPRESION.md](RESUMEN_CAMBIOS_COMPRESION.md)
 - [INGESTION_COST_V2.md](INGESTION_COST_V2.md) — retained ADR; current routing wins when behavior differs
+- [PLAN_GENERAL_2026-08-06.md](PLAN_GENERAL_2026-08-06.md) — superseded by the 08-07 general plan
+- [PLAN_AGOSTO_2026-08-06.md](PLAN_AGOSTO_2026-08-06.md) — superseded by the 08-07 August plan
 
 ## Engineering instructions
 

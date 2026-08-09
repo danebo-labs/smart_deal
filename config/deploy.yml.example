@@ -87,6 +87,13 @@ env:
     # docs/RAG_CITATION_ATTRIBUTION_CONTRACT_2026-07-30.md.
     RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED: "false"
     RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED: "false"
+    # Emits one [PILOT_AUDIT] line per interaction with the full question,
+    # answer and citations, plus one line per retrieved chunk. Required for the
+    # pilot dossier (docs/METRICS.md); without it only the 300-char
+    # [RAG_QUALITY] question survives and `bin/pilot_metrics --with-questions`
+    # has nothing to surface. Places raw technician text in production logs, so
+    # enable it only under the corresponding privacy authorization.
+    PILOT_AUDIT_CAPTURE: "false"
   secret:
     - RAILS_MASTER_KEY
     - DB_PASSWORD

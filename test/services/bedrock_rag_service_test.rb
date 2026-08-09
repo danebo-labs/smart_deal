@@ -1017,8 +1017,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_equal :en, BedrockRagService.detect_language_from_question('tell me about entre nous philosophy')
   end
 
-  test 'detect_language_from_question: blank falls back to I18n.locale' do
+  test 'detect_language_from_question: blank falls back to I18n.default_locale, not ambient session locale' do
     I18n.with_locale(:es) do
+      assert_equal :es, BedrockRagService.detect_language_from_question('')
+      assert_equal :es, BedrockRagService.detect_language_from_question(nil)
+    end
+
+    # Regression: a session locale switched to :en (LocaleSwitchable) must not leak
+    # into the blank-question default — policy is Spanish-by-default regardless of
+    # the auth-time locale switcher.
+    I18n.with_locale(:en) do
       assert_equal :es, BedrockRagService.detect_language_from_question('')
       assert_equal :es, BedrockRagService.detect_language_from_question(nil)
     end

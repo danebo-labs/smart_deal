@@ -41,7 +41,7 @@ class KbSyncBroadcaster
   end
 
   def self.photo_analyzed(filenames:, analysis:, canonical_name:, aliases:, account_id: nil, correlation_id: nil,
-                          field_photo_id: nil, thumbnail_url: nil)
+                          field_photo_id: nil, thumbnail_url: nil, response_locale: nil)
     ActionCable.server.broadcast(channel_for(account_id), {
       status: "photo_analyzed",
       filenames: Array(filenames).compact,
@@ -50,7 +50,8 @@ class KbSyncBroadcaster
       aliases: Array(aliases).compact,
       correlation_id: correlation_id,
       field_photo_id: field_photo_id,
-      thumbnail_url: thumbnail_url
+      thumbnail_url: thumbnail_url,
+      response_locale: response_locale
     })
   end
 end

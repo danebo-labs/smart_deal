@@ -8,7 +8,10 @@ require "digest"
 module FieldPhotoPrompt
   # Cache contract for live-photo diagnoses. Bump whenever the diagnostic
   # prompt or the cached response schema changes.
-  CONTRACT_VERSION = "v1"
+  # v2: added an absolute language directive (LANGUAGE block below) — prose
+  #     fields no longer silently default to English; bump invalidates
+  #     diagnoses cached under the old, weaker "Summary language" hint.
+  CONTRACT_VERSION = "v2"
 
   # Independent contract version for the specialized photo path (no field_records
   # schema — explicit-evidence envelope instead). Versioned separately from
@@ -70,6 +73,21 @@ module FieldPhotoPrompt
           "documented_warnings": ["<visible warning or instruction transcribed faithfully>", ...],
           "anti_hallucination_notes": "<1 sentence: what was inferred vs explicitly visible>"
         }
+
+        LANGUAGE:
+        - Write canonical_component, summary, anti_hallucination_notes, and the
+          "function" text inside documented_functions/documented_warnings in the
+          locale given by the "Summary language: <code>" hint in the user content.
+          Default to Spanish when that hint is absent. This is an absolute requirement,
+          not a style preference — never fall back to English prose when the
+          requested locale is Spanish.
+        - aliases, visible_text, and every "evidence" field (documented_functions,
+          documented_connections, documented_values) are verbatim transcriptions of
+          what is printed/visible — never translate or paraphrase these, regardless
+          of the requested locale.
+        - manufacturer, model, subsystem, and condition are fixed enum values or
+          verbatim visible text as defined in the schema above — locale does not
+          apply to them.
 
         RULES:
         - NEVER assume manufacturer from visual patterns (R0-R13 anti-hallucination).

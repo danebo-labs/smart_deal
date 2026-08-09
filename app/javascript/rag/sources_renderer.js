@@ -22,15 +22,17 @@ export function resolveName(citation) {
 
 // JS has no access to Rails i18n; kept in sync by hand with `rag.sources_label`
 // in config/locales/rag.*.yml.
-function sourcesLabel(count) {
-  const lang = (document.documentElement.lang || "es").toLowerCase()
-  return lang.startsWith("en") ? `Sources (${count})` : `Fuentes (${count})`
+function sourcesLabel(count, lang) {
+  return String(lang || "es").toLowerCase().startsWith("en") ? `Sources (${count})` : `Fuentes (${count})`
 }
 
 // Returns a <details> fragment meant to live INSIDE the answer bubble, not as
 // its own .chat-message row — a separate row inherits the assistant card style
 // and reads as a tappable button that does nothing.
-export function renderSources(citations = []) {
+// @param lang [String] response_locale for this answer — caller-supplied so this
+//   module never reads document.documentElement.lang (auth-time locale switcher
+//   must not leak into chat chrome — P0 idioma). Defaults to "es".
+export function renderSources(citations = [], lang = "es") {
   const safe = Array.isArray(citations) ? citations : []
   if (!safe.length) return ""
 
@@ -53,7 +55,7 @@ export function renderSources(citations = []) {
 
   return `
     <details class="chat-sources">
-      <summary class="chat-sources-toggle">${sourcesLabel(safe.length)}</summary>
+      <summary class="chat-sources-toggle">${sourcesLabel(safe.length, lang)}</summary>
       <ul class="chat-sources-list">${rows}</ul>
     </details>
   `

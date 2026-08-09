@@ -62,6 +62,26 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_includes result[:images_uploaded], "scan.jpg"
   end
 
+  test "image with blank query returns the Spanish analyzing message and response_locale under an English ambient I18n.locale" do
+    image = { data: Base64.strict_encode64("xx"), media_type: "image/jpeg", filename: "scan.jpg" }
+
+    # response_locale: :es simulates what RagQueryConcern#resolve_response_locale resolves to
+    # for a blank question (P0 fix: BedrockRagService.detect_language_from_question no longer
+    # falls back to the ambient/session I18n.locale for a blank question). I18n.locale is set
+    # to :en here to prove the orchestrator's own I18n.with_locale wrap — not the ambient
+    # session locale — decides the "analyzing…" message language (Causa B).
+    result = I18n.with_locale(:en) do
+      QueryOrchestratorService.new(
+        "",
+        images: [ image ],
+        response_locale: :es
+      ).execute
+    end
+
+    assert_equal I18n.t("rag.image_analyzing_message", locale: :es), result[:answer]
+    assert_equal "es", result[:response_locale]
+  end
+
   test "cached diagnosis with an existing durable photo enqueues without a temporary payload" do
     image = { data: Base64.strict_encode64("xx"), binary: "xx", media_type: "image/jpeg", filename: "scan.jpg" }
     sha = Digest::SHA256.hexdigest("xx")
@@ -167,6 +187,26 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal photo.sha256, args["image_sha256"]
     assert_equal photo.id, args["field_photo_id"]
     assert_equal result[:correlation_id], args["correlation_id"]
+  end
+
+  test "reusing a field_photo_id returns the Spanish analyzing message and response_locale under an English ambient I18n.locale" do
+    photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: "i" * 64,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{'i' * 64}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4
+    )
+
+    result = I18n.with_locale(:en) do
+      QueryOrchestratorService.new(
+        "What does this mean?",
+        account: accounts(:legacy),
+        field_photo_id: photo.id,
+        response_locale: :es
+      ).execute
+    end
+
+    assert_equal I18n.t("rag.image_analyzing_message", locale: :es), result[:answer]
+    assert_equal "es", result[:response_locale]
   end
 
   test "field_photo_id is ignored when images are already attached" do

@@ -8,7 +8,13 @@ import { hasSelectableEvidenceCards, renderEvidenceResolution } from "rag/eviden
 
 export default class extends Controller {
   static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack", "archivosTabBtn", "chatTabBtn", "archivosPanel", "chatPanel", "sourcesBadge"]
-  static values = { showSources: Boolean, evidenceCards: Boolean, resolutionCopy: Object }
+  // locale: chat chrome's own language state (notices/invites/nudges/errors).
+  // Deliberately NOT derived from document.documentElement.lang — that reflects
+  // the Devise auth-time locale switcher (session[:locale]), which must never
+  // leak into the response-language policy (P0 idioma). Defaults to Spanish and
+  // only moves to "en" when the server tells us the actual response_locale for
+  // a given answer (JSON from /rag/ask or the photo_analyzed KbSync broadcast).
+  static values = { showSources: Boolean, evidenceCards: Boolean, resolutionCopy: Object, locale: { type: String, default: "es" } }
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
   static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
@@ -91,6 +97,8 @@ export default class extends Controller {
     const consumer = createConsumer()
     this.kbSyncSubscription = consumer.subscriptions.create("KbSyncChannel", {
       received(data) {
+        controller._setLocale(data.response_locale)
+
         if (data.status === "photo_analyzed") {
           if (!controller.matchesPendingPhoto(data)) return
 
@@ -347,6 +355,7 @@ export default class extends Controller {
 
     try {
       const data = await this.ask(question, fileToSend)
+      this._setLocale(data.response_locale)
 
       if (data.status !== "success") {
         this.removeMessage(loadingId)
@@ -381,7 +390,7 @@ export default class extends Controller {
       }
     } catch (error) {
       this.removeMessage(loadingId)
-      const lang = (document.documentElement.lang || "es").toLowerCase()
+      const lang = this.localeValue
       const friendlyError = lang.startsWith("en")
         ? "Something went wrong on my end. Please try again in a moment."
         : "Algo falló de mi parte. Inténtalo de nuevo en un momento."
@@ -410,7 +419,7 @@ export default class extends Controller {
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Accept-Language": document.documentElement.lang || navigator.language || "es",
+        "Accept-Language": this.localeValue,
         "X-CSRF-Token": document.querySelector("meta[name=csrf-token]")?.content
       },
       credentials: "same-origin",
@@ -442,6 +451,14 @@ export default class extends Controller {
   matchesPendingPhoto(data) {
     return Boolean(this.pendingPhotoCorrelationId) &&
       data.correlation_id === this.pendingPhotoCorrelationId
+  }
+
+  // Updates the chat chrome's own locale state from a server-provided
+  // response_locale (ask() JSON or a KbSync broadcast). Ignores anything else
+  // (undefined, unsupported codes) so a single bad payload can't wedge the UI.
+  _setLocale(candidate) {
+    const normalized = String(candidate || "").toLowerCase()
+    if (normalized === "en" || normalized === "es") this.localeValue = normalized
   }
 
   // Segmented mobile tab button states (design/v0-mobile/mobile-home-shell.tsx)
@@ -667,7 +684,7 @@ export default class extends Controller {
   // the animation continues. Scrolls the row into view. Fallback (no indexing bubble yet)
   // injects an equivalent dots+message assistant bubble, cleared on indexed/failed.
   _indexingWarmCopy(kind) {
-    const lang = (document.documentElement.lang || "es").toLowerCase()
+    const lang = this.localeValue
     if (this.pendingUploadType === "image") {
       const photoTable = lang.startsWith("en") ? {
         ack:   "I got your photo and I'm analyzing what is directly visible.",
@@ -700,7 +717,7 @@ export default class extends Controller {
   }
 
   _queryWarmCopy(kind) {
-    const lang = (document.documentElement.lang || "es").toLowerCase()
+    const lang = this.localeValue
     const table = lang.startsWith("en") ? {
       nudge: "Still working on your query — sometimes it takes a moment, especially with the connection in the field. I'll respond shortly.",
       stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
@@ -863,6 +880,11 @@ export default class extends Controller {
   }
 
   renderAssistantAnswer(data) {
+    // Prefer this specific answer's own response_locale (already applied via
+    // _setLocale in sendMessage, but data may arrive from a caller — e.g. the
+    // system test — that doesn't go through sendMessage) over the controller's
+    // last-known chat locale.
+    const lang = (String(data.response_locale || "").toLowerCase() || this.localeValue)
     const citations = Array.isArray(data.citations) ? data.citations : []
     // Fallback for when Haiku emitted <DOC_REFS> but no inline [n] citations —
     // no numbered references exist, so we show consulted document names instead.
@@ -878,11 +900,11 @@ export default class extends Controller {
     const resolutionHtml = this.evidenceCardsValue
       ? renderEvidenceResolution(data.resolution, this.resolutionCopyValue)
       : ""
-    const sourcesHtml = showSources && sourcesCitations.length ? renderSources(sourcesCitations) : ""
+    const sourcesHtml = showSources && sourcesCitations.length ? renderSources(sourcesCitations, lang) : ""
     // Guardrail del piloto (decisión #8, Fase 3): construida aparte de
     // `answerHtml` (que es lo único derivado de `data.answer`) — nunca se
     // concatena al string `answer` del JSON, sólo al host del mensaje.
-    const noticeHtml = renderVerificationNotice(document.documentElement.lang || "es")
+    const noticeHtml = renderVerificationNotice(lang)
 
     const answerRow = this.addMessageHtml(answerHtml + resolutionHtml + sourcesHtml + noticeHtml, "assistant")
     const cardsOwnSelection = this.evidenceCardsValue && hasSelectableEvidenceCards(data.resolution)
@@ -1024,7 +1046,7 @@ export default class extends Controller {
     const partialPages  = Array.isArray(data.partial_pages) ? data.partial_pages.filter(p => p != null) : []
     const selectedPages = Array.isArray(data.selected_pages) ? data.selected_pages.filter(p => p != null) : []
     const isUrgentPages = data.processing_scope === "urgent_pages"
-    const lang          = (document.documentElement.lang || "es").toLowerCase()
+    const lang          = this.localeValue
     const readyLine     = isUrgentPages
       ? (lang.startsWith("en")
         ? "Urgent pages are ready. The full manual is still indexing."
@@ -1066,7 +1088,7 @@ export default class extends Controller {
 
     const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Imagen"
     const aliases   = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
-    const lang      = (document.documentElement.lang || "es").toLowerCase()
+    const lang      = this.localeValue
 
     const inviteFallback = lang.startsWith("en")
       ? "Tell me what you need — you can ask in just a word or two, that\u2019s fine."
@@ -1120,7 +1142,7 @@ export default class extends Controller {
   // the backend rehydrates from field_photos/ storage when needed.
   reuseFieldPhoto(event) {
     this.pendingFieldPhotoId = event.currentTarget.dataset.fieldPhotoId
-    const lang = (document.documentElement.lang || "es").toLowerCase()
+    const lang = this.localeValue
     const attachedLabel = lang.startsWith("en") ? "Photo attached — ask your question" : "Foto adjunta — escribe tu pregunta"
     this.inputTarget.placeholder = attachedLabel
     this.inputTarget.focus()

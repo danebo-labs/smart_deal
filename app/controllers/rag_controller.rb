@@ -112,11 +112,12 @@ class RagController < ApplicationController
     )
 
     json = {
-      answer:     answer_text,
-      citations:  sources_visible ? raw_citations : [],
-      session_id: result.session_id,
-      status:     'success',
-      resolution: resolution
+      answer:         answer_text,
+      citations:      sources_visible ? raw_citations : [],
+      session_id:     result.session_id,
+      status:         'success',
+      resolution:     resolution,
+      response_locale: result.response_locale
     }
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?

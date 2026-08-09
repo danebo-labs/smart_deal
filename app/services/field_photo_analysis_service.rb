@@ -48,7 +48,7 @@ class FieldPhotoAnalysisService
     )
 
     parsed = parse(response.fetch(:text))
-    envelope = FieldPhotoResultsParser.to_envelope(response.fetch(:text))
+    envelope = FieldPhotoResultsParser.to_envelope(response.fetch(:text), locale: @locale)
     latency_ms = elapsed_ms(started_at)
     result = {
       analysis: build_analysis(parsed, envelope),
@@ -91,7 +91,12 @@ class FieldPhotoAnalysisService
 
   def build_analysis(parsed, envelope)
     evidence_body = envelope.dig("chunks", 0, "text").to_s
-    evidence_body = evidence_body.lines.reject { |line| line.start_with?("Notes:") }.join.strip
+    # "Notes:"/"Notas:" duplicates anti_hallucination_notes, which is re-rendered
+    # below under photo_uncertainty_heading — strip it using the SAME localized
+    # label FieldPhotoResultsParser used to build it (@locale-driven, not a
+    # hardcoded English literal), or the line survives untouched under Spanish.
+    notes_prefix = "#{I18n.t('rag.field_photo_parser.notes_label', locale: @locale)}:"
+    evidence_body = evidence_body.lines.reject { |line| line.start_with?(notes_prefix) }.join.strip
     component = value_or_unknown(parsed["canonical_component"])
     visible_code = visible_codes(parsed).first || "UNKNOWN"
 

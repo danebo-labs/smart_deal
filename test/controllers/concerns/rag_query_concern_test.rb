@@ -185,6 +185,38 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
+  test 'a photo without a question resolves response_locale to Spanish even when the ambient (session) locale is English' do
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) do
+      { answer: 'ok', citations: [], session_id: nil, images_uploaded: [ 'foto.jpg' ], response_locale: 'es' }
+    end
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      # I18n.locale simulates session[:locale]=en left behind by the Devise auth-time
+      # switcher (LocaleSwitchable) — must not leak into the photo-without-question
+      # response_locale (P0 gate). See BedrockRagService.detect_language_from_question fix.
+      I18n.with_locale(:en) do
+        result = @controller.send(
+          :execute_rag_query, '',
+          images: [ { data: Base64.strict_encode64('x'), media_type: 'image/jpeg', filename: 'foto.jpg' } ]
+        )
+
+        assert result.success?
+        assert_equal :es, captured[:kwargs][:response_locale]
+        assert_equal 'es', result.response_locale
+      end
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
   test 'execute_rag_query returns error for blank question' do
     result = @controller.send(:execute_rag_query, '')
 

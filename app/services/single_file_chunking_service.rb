@@ -107,7 +107,7 @@ class SingleFileChunkingService
         client:       client_for(model, system: FieldPhotoPrompt::SYSTEM_BLOCKS),
         user_content: content
       )
-      envelope = FieldPhotoResultsParser.to_envelope(result[:text])
+      envelope = FieldPhotoResultsParser.to_envelope(result[:text], locale: @locale)
       parse_and_write(envelope.to_json, ingestion_path: "field_photo_v1")
     else
       model   = BatchChunkingPrompt::MODEL_MULTIMODAL

@@ -8,12 +8,19 @@
 class FieldPhotoResultsParser
   EVIDENCE_ITEM_LIMIT = 30
 
-  def self.to_envelope(raw_json)
-    new(raw_json).to_envelope
+  # @param locale [String, Symbol, nil] Locale for the chunk body's field labels
+  #   ("Component:"/"Componente:", etc). Defaults to :en — NOT the ambient
+  #   I18n.locale — because the bulk/backoffice ingestion path
+  #   (IngestBatchResultsJob) never threads a locale here and its already-indexed
+  #   corpus/tests assume English labels. The live chat path
+  #   (FieldPhotoAnalysisService) passes the resolved response locale explicitly.
+  def self.to_envelope(raw_json, locale: nil)
+    new(raw_json, locale: locale).to_envelope
   end
 
-  def initialize(raw_json)
+  def initialize(raw_json, locale: nil)
     @raw = raw_json
+    @locale = locale
   end
 
   def to_envelope
@@ -30,6 +37,15 @@ class FieldPhotoResultsParser
 
   private
 
+  def body_locale
+    candidate = @locale.to_s.presence&.to_sym
+    I18n.available_locales.include?(candidate) ? candidate : :en
+  end
+
+  def label(key)
+    I18n.t("rag.field_photo_parser.#{key}", locale: body_locale)
+  end
+
   def parse_json(text)
     LlmJsonParser.parse(text)
   rescue JSON::ParserError => e
@@ -39,14 +55,14 @@ class FieldPhotoResultsParser
 
   def build_body(parsed)
     lines = [
-      ("Component: #{parsed['canonical_component']}" if parsed["canonical_component"].present?),
-      ("Manufacturer: #{parsed['manufacturer']}"     if parsed["manufacturer"].present?),
-      ("Model: #{parsed['model']}"                   if parsed["model"].present?),
-      ("Condition: #{parsed['condition']}"           if parsed["condition"].present?),
-      ("Visible labels: #{Array(parsed['aliases']).compact_blank.join(', ')}" if Array(parsed["aliases"]).compact_blank.any?),
-      evidence_lines("Visible text", parsed["visible_text"]),
+      ("#{label('component_label')}: #{parsed['canonical_component']}" if parsed["canonical_component"].present?),
+      ("#{label('manufacturer_label')}: #{parsed['manufacturer']}"     if parsed["manufacturer"].present?),
+      ("#{label('model_label')}: #{parsed['model']}"                   if parsed["model"].present?),
+      ("#{label('condition_label')}: #{parsed['condition']}"           if parsed["condition"].present?),
+      ("#{label('visible_labels_label')}: #{Array(parsed['aliases']).compact_blank.join(', ')}" if Array(parsed["aliases"]).compact_blank.any?),
+      evidence_lines(label("visible_text_label"), parsed["visible_text"]),
       structured_evidence_lines(
-        "Documented functions",
+        label("documented_functions_label"),
         parsed["documented_functions"],
         required_keys: %w[label function]
       ) do |item|
@@ -54,7 +70,7 @@ class FieldPhotoResultsParser
         "#{item['label']}: #{item['function']}#{evidence ? " | Evidence: #{evidence}" : ""}"
       end,
       structured_evidence_lines(
-        "Documented connections",
+        label("documented_connections_label"),
         parsed["documented_connections"],
         required_keys: %w[from to]
       ) do |item|
@@ -62,7 +78,7 @@ class FieldPhotoResultsParser
         "#{item['from']} -> #{item['to']}#{evidence ? " | Evidence: #{evidence}" : ""}"
       end,
       structured_evidence_lines(
-        "Documented values",
+        label("documented_values_label"),
         parsed["documented_values"],
         required_keys: %w[label value]
       ) do |item|
@@ -70,9 +86,9 @@ class FieldPhotoResultsParser
         evidence = item["evidence"].to_s.presence
         "#{item['label']}: #{value}#{evidence ? " | Evidence: #{evidence}" : ""}"
       end,
-      evidence_lines("Documented warnings", parsed["documented_warnings"]),
-      ("Technical evidence: DATA_NOT_AVAILABLE beyond visible identification." unless technical_evidence?(parsed)),
-      ("Notes: #{parsed['anti_hallucination_notes']}" if parsed["anti_hallucination_notes"].present?)
+      evidence_lines(label("documented_warnings_label"), parsed["documented_warnings"]),
+      (label("no_technical_evidence") unless technical_evidence?(parsed)),
+      ("#{label('notes_label')}: #{parsed['anti_hallucination_notes']}" if parsed["anti_hallucination_notes"].present?)
     ].compact
 
     lines.join("\n")

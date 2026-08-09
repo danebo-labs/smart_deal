@@ -114,7 +114,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
   # Helpers
   # ---------------------------------------------------------------------------
 
-  def build_service(filename: "pump.pdf", content_type: "application/pdf", binary: "%PDF-1.4")
+  def build_service(filename: "pump.pdf", content_type: "application/pdf", binary: "%PDF-1.4", locale: nil)
     SingleFileChunkingService.new(
       binary:       binary,
       content_type: content_type,
@@ -123,7 +123,8 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
       sha256:       Digest::SHA256.hexdigest(binary),
       s3_service:   @fake_s3,
       account_id:   accounts(:legacy).id,
-      document_uid: SecureRandom.uuid
+      document_uid: SecureRandom.uuid,
+      locale:       locale
     )
   end
 
@@ -190,6 +191,18 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_equal PHOTO_NAME, asset.canonical_name
     assert_includes chunk, "Visible text:\n- P41 TEST PORT"
     assert_includes chunk, "P41: Pressure test port | Evidence: Legend: P41 TEST PORT"
+  end
+
+  test "image/jpeg: chunk body labels follow the request locale when threaded through" do
+    @response_json = field_photo_json
+    asset = build_service(filename: "photo.jpg", content_type: "image/jpeg", binary: "\xFF\xD8 fake", locale: "es").call
+
+    chunk_key = @fake_s3.uploads.keys.find { |key| key.end_with?("chunk_0.txt") }
+    chunk = @fake_s3.uploads.fetch(chunk_key)
+
+    assert_equal PHOTO_NAME, asset.canonical_name
+    assert_includes chunk, "Componente: #{PHOTO_NAME}"
+    assert_includes chunk, "Fabricante: Schindler"
   end
 
   test "image/jpeg: uses Sonnet model (FieldPhotoDensityGate default)" do

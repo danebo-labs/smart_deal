@@ -1200,8 +1200,15 @@ class BedrockRagService
 
   # Returns :es for Spanish, :en otherwise. Default (no clear signal either way)
   # is :es — I18n.default_locale — matching the primary user base.
+  #
+  # Blank question falls back to I18n.default_locale, NOT the ambient I18n.locale.
+  # Ambient locale is request-scoped session[:locale] (LocaleSwitchable) — using it
+  # here would let an auth-time locale switch leak into the response-language
+  # policy for blank-question uploads (photo/document with no question), which must
+  # default to Spanish regardless of session locale unless conversation history is
+  # confidently English (see RagQueryConcern#resolve_response_locale).
   def self.detect_language_from_question(question)
-    return I18n.locale if question.blank?
+    return I18n.default_locale if question.blank?
 
     return :es if strong_spanish_evidence?(question)
     return :en if strong_english_evidence?(question)

@@ -113,6 +113,23 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     assert_equal "data:image/jpeg;base64,abc", messages.first["thumbnail_url"]
   end
 
+  test ".photo_analyzed includes response_locale so the chat UI never falls back to html lang" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_analyzed(
+        filenames: [ "photo.jpg" ],
+        analysis: "Observed evidence",
+        canonical_name: "Door board",
+        aliases: [ "DB-1" ],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc",
+        response_locale: "es"
+      )
+    end
+
+    assert_equal "es", messages.first["response_locale"]
+  end
+
   test ".photo_analyzed omits field_photo_id and thumbnail_url when not passed" do
     channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
     messages = capture_broadcasts(channel) do

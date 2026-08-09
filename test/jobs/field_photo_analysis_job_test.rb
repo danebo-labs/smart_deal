@@ -63,6 +63,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert_equal 1, calls
       assert_equal "photo_analyzed", messages.last["status"]
       assert_equal "photo:job-test", messages.last["correlation_id"]
+      assert_equal "es", messages.last["response_locale"]
       history = @session.reload.conversation_history.last
       assert_equal analysis_result[:compact_context], history["content"]
       assert_equal users(:one).id, history["user_id"]
@@ -70,6 +71,24 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert FieldPhotoDiagnosisCache.read(account_id: accounts(:legacy).id, sha256: @sha, locale: "es")
       assert_nil FieldPhotoPendingImageStore.take(token: @token, account_id: accounts(:legacy).id)
       assert_no_enqueued_jobs only: [ BedrockIngestionJob, SubmitManualBatchJob ]
+    end
+  end
+
+  test "cache hit broadcasts response_locale from the request locale" do
+    FieldPhotoDiagnosisCache.write(
+      account_id: accounts(:legacy).id,
+      sha256: @sha,
+      locale: "es",
+      value: cache_value
+    )
+
+    with_analysis_service(error: "must not be called") do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_equal "es", messages.last["response_locale"]
     end
   end
 

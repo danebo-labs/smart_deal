@@ -124,6 +124,57 @@ class FieldPhotoResultsParserTest < ActiveSupport::TestCase
     assert_equal "Door Operator Motor", envelope["document_name"]
   end
 
+  test "chunk body labels default to English when no locale is passed, regardless of ambient I18n.locale" do
+    I18n.with_locale(:es) do
+      body = FieldPhotoResultsParser.to_envelope(BENCHMARK_JSON.to_json)["chunks"].first["text"]
+      assert_includes body, "Component: Door Operator Motor"
+      assert_includes body, "Manufacturer: Schindler"
+      assert_not_includes body, "Componente:"
+    end
+  end
+
+  test "chunk body labels localize to Spanish when locale: 'es' is passed explicitly" do
+    envelope = FieldPhotoResultsParser.to_envelope(BENCHMARK_JSON.to_json, locale: "es")
+    body     = envelope["chunks"].first["text"]
+
+    assert_includes body, "Componente: Door Operator Motor"
+    assert_includes body, "Fabricante: Schindler"
+    assert_includes body, "Modelo: 5500"
+    assert_includes body, "Condición: GOOD"
+    assert_includes body, "Etiquetas visibles: HPM-400, orona, hydraulic"
+    assert_includes body, "Evidencia técnica: DATO_NO_DISPONIBLE más allá de la identificación visible."
+    assert_includes body, "Notas: Manufacturer visible on label."
+    assert_not_includes body, "Component:"
+    assert_not_includes body, "Manufacturer:"
+  end
+
+  test "chunk body labels localize to English when locale: 'en' is passed explicitly" do
+    envelope = FieldPhotoResultsParser.to_envelope(BENCHMARK_JSON.to_json, locale: :en)
+    body     = envelope["chunks"].first["text"]
+
+    assert_includes body, "Component: Door Operator Motor"
+    assert_includes body, "Manufacturer: Schindler"
+  end
+
+  test "an unsupported locale value falls back to English labels" do
+    envelope = FieldPhotoResultsParser.to_envelope(BENCHMARK_JSON.to_json, locale: "fr")
+    body     = envelope["chunks"].first["text"]
+
+    assert_includes body, "Component: Door Operator Motor"
+  end
+
+  test "structured/evidence section headers localize too" do
+    payload = BENCHMARK_JSON.merge(
+      "visible_text" => [ "P41 TEST PORT" ],
+      "documented_warnings" => [ "Desconectar la alimentación antes de la intervención" ]
+    )
+
+    body = FieldPhotoResultsParser.to_envelope(payload.to_json, locale: "es")["chunks"].first["text"]
+
+    assert_includes body, "Texto visible:\n- P41 TEST PORT"
+    assert_includes body, "Advertencias documentadas:\n- Desconectar la alimentación antes de la intervención"
+  end
+
   test "repairs unescaped quoted words before transforming benchmark JSON" do
     raw = '{"canonical_component":"Botón "STOP"","manufacturer":"Schindler","model":"5500",' \
       '"aliases":["STOP"],"summary":"Botón de parada.","anti_hallucination_notes":"Visible en foto."}'

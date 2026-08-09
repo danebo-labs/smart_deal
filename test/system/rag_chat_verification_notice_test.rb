@@ -42,11 +42,25 @@ class RagChatVerificationNoticeTest < ApplicationSystemTestCase
     assert_selector ".answer-verification-notice", count: 2, visible: :all
   end
 
-  test "switches to English copy when the document language is en, still never inside answer" do
+  test "switches to English copy when response_locale is en, still never inside answer" do
+    # Chat chrome follows the server's response_locale for THIS answer, never
+    # document.documentElement.lang (that reflects the Devise auth-time locale
+    # switcher, session[:locale] — must never leak into response-language policy,
+    # P0 idioma). Mutating documentElement.lang here must have NO effect.
     execute_script("document.documentElement.lang = 'en'")
 
-    bubble_html = render_assistant_answer(answer: "In TW1 the SPM LED reports a fault [1].", citations: [])
+    bubble_html = render_assistant_answer(
+      answer: "En TW1 el LED SPM indica falla en la serie de puertas [1].",
+      citations: [],
+      response_locale: "es"
+    )
+    assert_match(/verifica cualquier acci[oó]n sobre seguridades/i, bubble_html)
 
+    bubble_html = render_assistant_answer(
+      answer: "In TW1 the SPM LED reports a fault [1].",
+      citations: [],
+      response_locale: "en"
+    )
     assert_match(/verify any action on safety devices/i, bubble_html)
     assert_no_match(/verifica cualquier acci[oó]n/i, bubble_html)
   end
@@ -80,16 +94,16 @@ class RagChatVerificationNoticeTest < ApplicationSystemTestCase
   # (the exact code path `sendMessage` uses) with a fake, network-free
   # payload — same shape as the JSON `RagController#ask` returns — and
   # returns the innerHTML of the resulting assistant bubble.
-  def render_assistant_answer(answer:, citations:)
-    evaluate_script(<<~JAVASCRIPT, answer, citations)
-      (function (answerText, citationsArg) {
+  def render_assistant_answer(answer:, citations:, response_locale: nil)
+    evaluate_script(<<~JAVASCRIPT, answer, citations, response_locale)
+      (function (answerText, citationsArg, responseLocale) {
         const element = document.querySelector('[data-controller~="rag-chat"]')
         const controller = window.Stimulus.getControllerForElementAndIdentifier(element, "rag-chat")
-        controller.renderAssistantAnswer({ answer: answerText, citations: citationsArg })
+        controller.renderAssistantAnswer({ answer: answerText, citations: citationsArg, response_locale: responseLocale })
         const rows = element.querySelectorAll(".chat-row-assistant")
         const lastRow = rows[rows.length - 1]
         return lastRow.querySelector(".chat-message").innerHTML
-      })(arguments[0], arguments[1])
+      })(arguments[0], arguments[1], arguments[2])
     JAVASCRIPT
   end
 end

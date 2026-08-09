@@ -80,7 +80,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
         correlation_id: correlation_id,
         image_sha256: image_sha256,
         field_photo_id: field_photo_id,
-        delivery_latency_ms: elapsed_ms(started_at)
+        delivery_latency_ms: elapsed_ms(started_at),
+        locale: locale
       )
     end
 
@@ -170,7 +171,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       account_id: account_id,
       user_id: user_id,
       correlation_id: correlation_id,
-      field_photo_id: field_photo_id
+      field_photo_id: field_photo_id,
+      locale: locale
     )
     PilotUsageLog.log(
       "photo_completed",
@@ -200,7 +202,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   def deliver_cached(cached, session:, filename:, account_id:, user_id:,
                      conversation_session_id:, correlation_id:, image_sha256:,
-                     delivery_latency_ms:, field_photo_id: nil)
+                     delivery_latency_ms:, field_photo_id: nil, locale: nil)
     deliver(
       cached,
       session: session,
@@ -208,7 +210,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       account_id: account_id,
       user_id: user_id,
       correlation_id: correlation_id,
-      field_photo_id: field_photo_id
+      field_photo_id: field_photo_id,
+      locale: locale
     )
     fields = usage_fields(
       cached,
@@ -238,7 +241,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     )
   end
 
-  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil)
+  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil)
     session&.add_to_history(
       "assistant",
       value.fetch(:compact_context),
@@ -253,7 +256,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       account_id: account_id,
       correlation_id: correlation_id,
       field_photo_id: field_photo_id,
-      thumbnail_url: field_photo_thumbnail_url(field_photo_id)
+      thumbnail_url: field_photo_thumbnail_url(field_photo_id),
+      response_locale: locale
     )
   end
 

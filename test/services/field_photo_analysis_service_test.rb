@@ -44,13 +44,20 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     result = build_service(client: client).call
 
     assert_includes result[:analysis], "Observado en la imagen"
-    assert_includes result[:analysis], "Manufacturer: UNKNOWN"
+    # Regression (P0 idioma): the evidence body must follow the resolved
+    # response locale, not stay hardcoded in English — locale: :es below.
+    assert_includes result[:analysis], "Fabricante: UNKNOWN"
+    assert_not_includes result[:analysis], "Manufacturer:"
     assert_includes result[:analysis], "Orientación"
     assert_includes result[:analysis], "No hay un manual compatible"
     assert_includes result[:compact_context], "Fabricante: UNKNOWN"
     assert_operator result[:compact_context].length, :<=, ConversationSession::MAX_MSG_LENGTH
     assert_equal "visual_query", client.kwargs[:route]
     assert_equal "field_photo_query", client.kwargs[:tracking_prefix]
+    # Regression: the localized "Notas:" line (built from the SAME
+    # anti_hallucination_notes value shown under "Incertidumbre y verificación")
+    # must be stripped from the evidence body — otherwise it renders twice.
+    assert_equal 1, result[:analysis].scan("El fabricante no es visible; requiere verificación en campo.").size
     assert_equal accounts(:legacy).id, client.kwargs.dig(:telemetry, :account_id)
     assert_equal BatchChunkingPrompt::MODEL_TEXT, result[:model]
     assert_equal({ input_tokens: 120, output_tokens: 80 }, result[:usage])

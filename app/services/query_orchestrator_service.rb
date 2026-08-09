@@ -97,11 +97,12 @@ class QueryOrchestratorService
         )
 
         return {
-          answer: I18n.t("rag.image_analyzing_message"),
+          answer: I18n.with_locale(locale) { I18n.t("rag.image_analyzing_message") },
           citations: [],
           session_id: nil,
           images_uploaded: [ filename ],
-          correlation_id: correlation_id
+          correlation_id: correlation_id,
+          response_locale: locale
         }
       end
     end
@@ -161,11 +162,12 @@ class QueryOrchestratorService
       )
 
       return {
-        answer: I18n.t("rag.image_analyzing_message"),
+        answer: I18n.with_locale(locale) { I18n.t("rag.image_analyzing_message") },
         citations: [],
         session_id: nil,
         images_uploaded: [ filename ],
-        correlation_id: correlation_id
+        correlation_id: correlation_id,
+        response_locale: locale
       }
     end
 

@@ -11,6 +11,9 @@ module RagQueryConcern
   RagResult = Struct.new(:success?, :answer, :citations, :retrieved_citations, :doc_refs,
                          :retrieval_trace,
                          :session_id, :documents_uploaded, :images_uploaded, :correlation_id,
+                         # Locale actually used to generate this answer (chat chrome/notices
+                         # must follow this, never session/html lang — see rag-bedrock rule).
+                         :response_locale,
                          :error_type, :error_message, :error_class,
                          # Deterministic-path observability (benchmark plan Fase 7/8).
                          # nil on the generative path.
@@ -102,6 +105,7 @@ module RagQueryConcern
       documents_uploaded:  result[:documents_uploaded],
       images_uploaded:     result[:images_uploaded],
       correlation_id:      result[:correlation_id],
+      response_locale:     resolved_response_locale.to_s,
       generation_mode:     result[:generation_mode],
       model_invoked:       result.key?(:model_invoked) ? result[:model_invoked] : nil,
       parsed_record_ids:   result[:parsed_record_ids],

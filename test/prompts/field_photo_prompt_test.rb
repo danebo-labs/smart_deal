@@ -19,6 +19,21 @@ class FieldPhotoPromptTest < ActiveSupport::TestCase
     assert_includes block[:text], "does NOT prove function"
   end
 
+  test "SYSTEM_BLOCKS carries an absolute language directive for prose fields, defaulting to Spanish" do
+    text = FieldPhotoPrompt::SYSTEM_BLOCKS.first[:text]
+
+    assert_includes text, "LANGUAGE:"
+    assert_includes text, "canonical_component, summary, anti_hallucination_notes"
+    assert_includes text, "Default to Spanish when that hint is absent"
+    assert_includes text, "absolute requirement"
+    # Evidence/verbatim fields are explicitly exempt from translation.
+    assert_includes text, "never translate or paraphrase these"
+  end
+
+  test "CONTRACT_VERSION is bumped to v2 to invalidate diagnoses cached under the weaker language hint" do
+    assert_equal "v2", FieldPhotoPrompt::CONTRACT_VERSION
+  end
+
   test "user_content returns array with image block for jpeg" do
     content = FieldPhotoPrompt.user_content(
       binary:       FAKE_BINARY,

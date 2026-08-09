@@ -160,6 +160,36 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test 'response_locale in JSON defaults to es for a Spanish query, independent of session locale switcher' do
+    sign_in @user
+    get switch_locale_url(locale: 'en') # Devise-page auth-time switcher — must not leak into chat chrome/policy
+
+    mock = create_mock_orchestrator(answer: 'Respuesta en español', citations: [], session_id: nil)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: '¿Cómo instalo esto?' }, as: :json
+      assert_response :success
+
+      json = json_response
+      assert_equal 'es', json['response_locale'],
+                   'session[:locale]=en must not force response_locale for a Spanish question (P0 gate)'
+    end
+  end
+
+  test 'response_locale in JSON is en for an explicit English query' do
+    sign_in @user
+
+    mock = create_mock_orchestrator(answer: 'This is the answer', citations: [], session_id: nil)
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: 'How do I install this component?' }, as: :json
+      assert_response :success
+
+      json = json_response
+      assert_equal 'en', json['response_locale']
+    end
+  end
+
   test 'image upload returns images_uploaded so frontend shows dots-only ack' do
     sign_in @user
 

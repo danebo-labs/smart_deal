@@ -10,9 +10,18 @@
 
 **Actualización del 8 de agosto:** dado que la conversión de "sí" a piloto de Abel, Daniel y Jesús es 0% (sección 2.2), su rol cambia de candidatos a piloto a **fuentes de calibración de pricing**. Las cinco transcripciones de entrevistas fueron releídas en detalle y no contienen ninguna cifra de precios, sueldos, márgenes ni equipos por técnico — de ahí la necesidad de preguntárselo directamente, con un enfoque indirecto que no genere resistencia. Ver sección 2.1 y el Plan de Agosto, sección 3.
 
+**Actualización del 11 de agosto:** respondieron **dos** de los cuatro mensajes del lunes 10.
+
+- **Gonzalo:** compromiso operativo escrito (manuales + un par de ingenieros + almuerzo a la vuelta); archivos aún no enviados; margen sin respuesta. Ver §2.1 y Plan de Agosto, sección 3.2.3.
+- **Daniel:** **tres audios el mismo día.** El primero cerró estructura y variabilidad de precios y agregó un hallazgo no pedido que corrigió el modelo — la utilidad del mantenedor está en correctivos y modernizaciones, no en la tarifa mensual. El segundo llegó **sin pedirlo** y precisó que la mantención sí es rentable pero no lo sería sin las reparaciones, porque su función es retener al cliente. El tercero respondió el segundo toque y **desbloqueó la decisión de precio**: 3–4 mantenciones diarias, de donde se deriva una banda de 60–84 equipos por técnico, y una cartera de 100–150 equipos en una mantenedora mediana. Ver §2.1, §2.2 y Plan de Agosto, secciones 3.3.1 a 3.3.4.
+
+**Cero pilotos activos** se mantiene. Lo que cambió no es el pipeline: es la calidad de la información sobre la que se va a fijar precio.
+
+**Y el límite de esa calidad queda escrito, porque un buen día no es un rango de mercado.** Todo el aporte de pricing del 11 de agosto viene de **una sola persona**, por canal informal, y la cifra que decide la unidad de cobro es una **derivación aritmética de su rutina diaria**, no un ratio reportado. Sirve para decidir el precio internamente en septiembre. No se cita como dato de mercado, y no da por cerradas las preguntas a Abel y Jesús. La afirmación de que esa fuente trabaja con varias mantenedoras es **heredada del registro de entrevistas y no está verificada**.
+
 ---
 
-## 1. Estado al 7 de agosto de 2026
+## 1. Estado al 11 de agosto de 2026
 
 | KPI | Valor |
 |---|---:|
@@ -21,6 +30,9 @@
 | Consultas registradas en la matriz | 27 atribuidas de 33 interacciones — telemetría cargada, ver §1.1 |
 | Consultas útiles (outcome = respondida) | 21 de 33 (63,6%) |
 | Tasa de abstención de la sesión | 36,4% global · 7,7% en la ruta de evidencia estructurada (ver §1.1) |
+| Respuestas a los mensajes de calibración de mercado | 2 de 4 — Gonzalo (operativa, sin margen) y Daniel (**tres audios: tarifas, economía del cliente, rutina y cartera**) |
+| Supuestos de pricing reemplazados por dato de campo | **4** — estructura de facturación por equipo, variabilidad con drivers, tamaño de cartera de una mediana (100–150 equipos) y ratio equipos/técnico (60–84, **derivado**). Más 2 supuestos corregidos: dónde vive la utilidad del cliente, y quién es el usuario primario en términos de conocimiento |
+| Fuentes independientes detrás de esos datos | **1.** Es el límite real de la calibración de agosto: un informante no es un rango de mercado |
 | Fallos críticos | 0 |
 | Fallos de severidad media detectados | 2 — idioma de respuesta en inglés; abstención ante evidencia mezclada de 7 fabricantes en una sola consulta |
 | Costo de la sesión del 6 ago (USD) | 0,336 medido — [`report.txt`](../tmp/pilot_exports/2026-08-06_2026-08-06_danebo-legacy/report.txt) |
@@ -82,12 +94,12 @@ La distinción que hay que mantener: la demo validó que **el producto funciona 
 
 **Cambio de rol respecto al plan anterior.** Los cuatro contactos no son candidatos a piloto: la conversión de "sí" a demo ejecutada es 25% y a piloto activo es 0% (ver §2.2). Pero **son fuentes de primera línea para calibrar el modelo de pricing**.
 
-| ID | Contacto | Empresa / rol | Estado | Próxima acción (lun 10 ago) | Dato que aporta |
+| ID | Contacto | Empresa / rol | Estado | Próxima acción | Dato que aporta |
 |---|---|---|---|---|---|
-| PIL-002 | Gonzalo Salazar | ATLAGICH · Auditor técnico y comercial | **Demo realizada 6 ago** | Mensaje con pregunta de margen + recordatorio de manuales + fecha almuerzo sept | Margen del rubro (§3.2 del Plan de Agosto) |
-| PIL-001 | Abel Guerra | Tecnicall · Jefe técnico | Demo aceptada, no ejecutada | Mensaje con pregunta de distribución de carga en empresa mediana | Ratio equipos/técnico en empresa mediana (§3.4 del Plan de Agosto) |
-| PIL-003 | Daniel Aponte | Contratista senior independiente | Invitado, no ejecutado | Mensaje con pregunta de estructura de facturación y variabilidad de precios | Rango de mantención y estructura por equipo vs. global (§3.3 del Plan de Agosto) |
-| PIL-004 | Jesús Graterol | Elemont · Técnico activo | De viaje | Mensaje con pregunta de distribución de carga en empresa chica | Ratio equipos/técnico en empresa chica (§3.5 del Plan de Agosto) |
+| PIL-002 | Gonzalo Salazar | ATLAGICH · Auditor técnico y comercial | **Demo 6 ago + respuesta operativa 11 ago.** Manuales comprometidos (no enviados); ofreció 2 ingenieros; almuerzo confirmado en principio; **margen sin respuesta** | Esperar/cargar manuales → visto bueno → cuentas a los ingenieros. Día/hora del almuerzo (mar 8 / mié 9 sep). Margen al almuerzo | Margen del rubro (pendiente; §3.2 del Plan de Agosto). Corpus + usuarios de piloto |
+| PIL-001 | Abel Guerra | Tecnicall · Jefe técnico | Demo aceptada, no ejecutada | Mensaje lun 10 (ratio empresa mediana) enviado; esperar respuesta / rescate sem 2 si vago | Ratio equipos/técnico en empresa mediana (§3.4 del Plan de Agosto) |
+| PIL-003 | Daniel Aponte | Contratista senior independiente | **Tres audios el 11 ago, uno de ellos sin pedirlo.** Facturación por equipo confirmada; precio no estandarizado (paradas, zona, acceso, administradores); rango espontáneo CLP 80–150k; **utilidad del cliente en correctivos y modernizaciones**, con la mantención como vehículo de retención; **3–4 mantenciones diarias** → banda derivada de **60–84 equipos/técnico**; **mediana de 100–150 equipos**; y el hallazgo de usuario: el técnico de mantención es el eslabón de menor conocimiento porque se contrata mano de obra barata | **Cerrado. Presupuesto de toques en cero:** agradecimiento del 11 ago (§3.3.2) y segundo toque gastado y respondido el mismo día (§3.8). Corresponde un agradecimiento corto sin pregunta. Rescate con estimado desviado **gastado**; proporción correctivo/mantención va a Gonzalo por anclaje; incidencia de fallas **sin fuente asignada** | Estructura y variabilidad de tarifas, economía del cliente, rutina diaria y tamaño de cartera. Desbloquea la decisión de precio de septiembre (pricing §3.1, §4.1 a §4.4, §9.1). **Peso de la fuente: una sola persona, canal informal, y el ratio es derivación — la afirmación heredada de que ve varias mantenedoras sigue sin verificar** |
+| PIL-004 | Jesús Graterol | Elemont · Técnico activo | De viaje | Mensaje lun 10 (ratio empresa chica) enviado; esperar respuesta / rescate sem 2 si vago | Ratio equipos/técnico en empresa chica (§3.5 del Plan de Agosto) |
 
 **Por qué estos cuatro en este rol:** viven el rubro todos los días, vienen de cuatro empresas de tamaños distintos (multinacional, mediana, independiente, chica), y las cinco transcripciones de entrevistas analizadas el 8 de agosto confirmaron que **ninguna contiene cifras de precios, sueldos, márgenes ni equipos por técnico**. Toda la aritmética del documento de pricing está construida sobre supuestos; estas cuatro respuestas serían la primera fuente de campo real.
 
@@ -113,6 +125,12 @@ Vale la pena notar la asimetría: la demo que sí ocurrió fue con el contacto q
 
 **Corrección de estrategia del 8 de agosto: en vez de un pedido de un minuto de piloto, el mensaje del lunes 10 pide opinión experta de mercado** (Plan de Agosto, sección 3). Es un pedido todavía más liviano que el de la sección 2.2 original — no requiere probar el producto ni agendar nada, solo responder una pregunta que cada uno domina de memoria. Si ni siquiera esto convierte, la explicación 2 queda confirmada con más fuerza: esos contactos no son candidatos a nada más que información puntual.
 
+**Resultado del 11 de agosto: la explicación 2 queda confirmada, y a favor.** Daniel —que aceptó una demo en julio y nunca la ejecutó— respondió una pregunta de mercado en menos de 24 horas, por audio, con más detalle del pedido. El mismo contacto que no convierte con un pedido de tiempo convierte con un pedido de opinión. **La conversión no depende del rapport, depende del tamaño del pedido**, y eso es una regla operativa reutilizable: mientras no exista un motivo propio del otro lado, se piden opiniones y no compromisos.
+
+**Y el mismo día lo confirmó dos veces más, que es lo que convierte la anécdota en patrón.** Amplió por iniciativa propia sin que nadie se lo pidiera, y respondió un segundo bloque de tres preguntas con el mismo nivel de detalle. Tres respuestas largas en un día, del contacto con 0% de conversión a piloto, sin nada prometido a cambio. **La lectura operativa:** un pedido de opinión bien formulado no solo convierte más que un pedido de compromiso, **también se renueva** — la persona que se siente entendida vuelve a responder, y en este caso volvió sin ser llamada. Lo que hay que cuidar es exactamente lo contrario de perseguir: no convertir esa disposición en un pedido más grande.
+
+Un matiz que hay que dejar por escrito para no leer esto como tracción: **una respuesta de mercado no es un lead.** No acerca a Daniel a ser cliente ni a referir clientes, y no se le va a pedir ninguna de las dos cosas. Movió el modelo de negocio, que era el objetivo del mensaje, y ahí termina su rol.
+
 ### 2.3 ¿Perseguir a Abel y Daniel para piloto, o usarlos para calibrar pricing?
 
 La pregunta cambia respecto al planteamiento original. Ya no es "a quién perseguir para piloto" — la conversión de 0% (sección 2.2) resuelve eso: **se concentra la ejecución de piloto en Gonzalo** y se usa a los otros tres para lo que sí pueden dar sin fricción: información de mercado.
@@ -120,9 +138,11 @@ La pregunta cambia respecto al planteamiento original. Ya no es "a quién perseg
 **Por qué Gonzalo es el track primario de piloto:**
 
 - **Su demo se ejecutó y superó lo esperado.** Es el único caso con evidencia, no con intención.
-- Es el único que trae **sus propios técnicos**. En los demás casos el fundador tiene que reclutar al usuario; con Gonzalo, él recluta. Eso cambia por completo el costo de adquisición del piloto.
+- El **11 de agosto confirmó por escrito** manuales en camino y un par de ingenieros para probar — el único contacto que recluta usuarios él mismo.
 - Trae manuales, que atacan el riesgo de corpus.
 - Tiene incentivo propio: está evaluando ser mentor y potencial socio, así que el éxito del piloto le sirve a él también. Abel, Daniel y Jesús no ganan nada.
+
+**Matiz del 11 de agosto:** ofreció **ingenieros**, no necesariamente técnicos de terreno con guantes. Sigue siendo el mejor canal de usuarios reales; no se sobreinterpreta como piloto de adopción en foso hasta que haya uso medido.
 
 **Por qué NO se apuesta todo a Gonzalo:**
 
@@ -133,9 +153,9 @@ La pregunta cambia respecto al planteamiento original. Ya no es "a quién perseg
 
 | Contacto | Rol | Esfuerzo asignado |
 |---|---|---|
-| Gonzalo | Track primario de piloto + fuente de margen | Alto: mensaje lunes 10, almuerzo de septiembre, piloto de octubre |
+| Gonzalo | Track primario de piloto + fuente de margen (margen pendiente → almuerzo) | Alto: ingesta de manuales durante el viaje, almuerzo de septiembre, piloto de octubre |
 | Abel | Fuente de ratio equipos/técnico (empresa mediana). Demo como puerta abierta, no como pedido | Mensaje lunes 10. Nada más |
-| Daniel | Fuente de estructura de facturación y tarifas | Mensaje lunes 10. Nada más |
+| Daniel | **Calibrador neutral de la economía del cliente.** Tres audios el 11 ago: corrigió un supuesto del modelo y entregó las dos cifras que desbloquean el precio | **Agotado, y por buenas razones.** Agradecimiento enviado y segundo toque gastado y respondido el 11 ago. Queda un agradecimiento corto sin pregunta. No hay tercer pedido: si vuelve a abrir el canal, se aprovecha; si no, su rol terminó |
 | Jesús | Fuente de ratio equipos/técnico (empresa chica) | Mensaje lunes 10. Nada más |
 
 **Regla dura, para no gastar el mes persiguiendo:** **un solo mensaje por contacto, asincrónico, sin tiempo de calendario, sin pedir piloto.** Si la respuesta de mercado no llega, el contacto se reclasifica como lead futuro para el registro MINVU y no se insiste más. Perseguir contactos tibios es la forma más eficiente de gastar semanas sin mover ninguna de las tres agujas.
@@ -234,7 +254,7 @@ Las dos que deciden el semestre son **adopción de voz** y **señal comercial**.
 | Media | Respuesta parcial, poco clara o con contexto insuficiente | Registrar y priorizar por frecuencia | Aceptable con fallback claro |
 | Baja | Estilo, redacción o detalle no esencial | No bloquea | Backlog |
 
-**Gate adicional vigente en esta ventana:** idioma español por defecto. En la demo del 6 de agosto la lectura de la consola URM de Otis salió en inglés y Gonzalo lo notó. Sin eso corregido, no se entrega acceso a sus técnicos.
+**Gate adicional vigente en esta ventana:** idioma español por defecto. En la demo del 6 de agosto la lectura de la consola URM de Otis salió en inglés y Gonzalo lo notó. Sin eso corregido, no se entrega acceso a sus ingenieros.
 
 ---
 
@@ -275,10 +295,12 @@ Todas las fechas de esta matriz son días hábiles. Los fines de semana no se pl
 | 6 ago | Gonzalo: demo 15:00 | **Realizada y cargada.** Telemetría en §1.1.a y §3. Pendiente: crear cuenta propia para él antes de la próxima sesión |
 | 7 ago | Bloqueante de idioma español por defecto | Cerrado antes del viaje |
 | **8 ago** | Análisis de las cinco entrevistas | Confirmado que ninguna contiene cifras de pricing; define la estrategia de preguntas indirectas de mercado |
-| **10 ago** | **Cuatro mensajes de calibración de pricing**: Gonzalo (margen), Abel (ratio, empresa mediana), Daniel (tarifas y facturación), Jesús (ratio, empresa chica) | Ver Plan de Agosto, sección 3. Cada uno con la demo como puerta abierta, sin pedirla |
-| 11 ago – 2 sep | Viaje | Tres toques asincrónicos: recordatorio de manuales, confirmación de almuerzo, aviso de regreso |
-| 7 sep | Reactivación | Síntesis de respuestas de mercado recibidas → decisión de precio |
-| Septiembre (fecha a confirmar) | Almuerzo con Gonzalo | Preguntas de mercado restantes + estructura de participación |
+| **10 ago** | **Cuatro mensajes de calibración de pricing**: Gonzalo (margen), Abel (ratio, empresa mediana), Daniel (tarifas y facturación), Jesús (ratio, empresa chica) | **Enviados.** Respondieron Gonzalo y Daniel; Abel y Jesús pendientes |
+| **≈10–11 ago** | Respuesta de Gonzalo | Compromiso escrito; archivos pendientes. Lectura en Plan de Agosto §3.2.3 |
+| **11 ago** | **Respuesta de Daniel — tres audios** | Estructura y variabilidad de tarifas cerradas; utilidad del cliente en correctivos y modernizaciones, con la mantención como retención. Corrige el supuesto de margen por equipo y el encuadre del pitch. **Y en el tercero: rutina de 3–4 mantenciones diarias, cartera de mediana de 100–150 equipos, banda derivada de 60–84 equipos/técnico, más el hallazgo de que el técnico de ruta es el eslabón de menor conocimiento.** Desbloquea el precio de septiembre. Lectura en Plan de Agosto §3.3.1 a §3.3.4; modelo en pricing §3.1, §4.1 a §4.4 y §9.1 |
+| 11 ago – 2 sep | Viaje | Track Gonzalo: recordatorio de manuales si no llegan (sem 1), proponer día/hora almuerzo (sem 2), aviso de regreso (sem 3); ingesta + visto bueno cuando lleguen archivos. Track calibración: **con Daniel no queda nada más que un agradecimiento corto** —los dos toques se gastaron el 11 ago—; **un** toque a Abel y a Jesús en sem 2, rescate con estimado desviado, invitando a responder por audio |
+| 7 sep | Reactivación | Síntesis de respuestas de mercado recibidas → decisión de precio. Ya entra con estructura y variabilidad cerradas |
+| **mar 8 / mié 9 sep** (a confirmar) | Almuerzo con Gonzalo | Margen + preguntas de mercado restantes + estructura de participación |
 | Octubre | Piloto en terreno | Disposición a pagar |
 
 ---

@@ -197,7 +197,7 @@ Revalida el piso de precio de [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_20
 
 El set de regresión actual cubre series de seguridad, que son aproximadamente 20% de las fallas reales. Se agrega una batería sobre variador de frecuencia, sistema de puertas y códigos de error de consola, sin retirar la regresión existente.
 
-Insumo disponible: las preguntas que fallaron o devolvieron "no hay evidencia suficiente" durante las pruebas de los técnicos de Gonzalo en agosto.
+Insumo disponible: las preguntas que fallaron o devolvieron "no hay evidencia suficiente" durante las pruebas de los ingenieros/técnicos de Gonzalo en agosto (si los manuales llegaron a tiempo), más la telemetría de la demo del 6 de agosto.
 
 ### 5.4 Instrumentación de utilidad y conteo de consultas — bloqueante para vender un cupo
 
@@ -224,6 +224,10 @@ Se evaluaron tres mecanismos y se ordenaron por costo de desarrollo, corrigiendo
 
 **Lo que ningún botón reemplaza:** la entrevista posterior con el técnico. Tiempo de resolución del incidente, consultas por evento y tiempo ahorrado contra el método anterior solo salen conversando. El botón mide si una respuesta gustó; la entrevista mide si el producto cambió el trabajo, y es lo segundo lo que se necesita para decidir precio y para el pitch de noviembre.
 
+**Una pregunta que se agrega a esa entrevista, del hallazgo de campo del 11 de agosto:** cuántas vueltas tomó dar con el problema, y si alguna se evitó. La respuesta de un contratista independiente estableció que las visitas por falla van dentro de la tarifa mensual del cliente, así que **la revisita evitada es la unidad de valor que el mantenedor reconoce como plata** — más que los minutos ahorrados en una consulta. Es la única métrica del piloto que puede convertir el argumento comercial de la sección 9.1 del documento de pricing en una cifra defendible, y se mide preguntando, no instrumentando. **Sube de prioridad el 11 de agosto:** la incidencia de fallas y las vueltas por falla quedaron **sin fuente asignada** —el único toque disponible con la fuente neutral se gastó en el ratio, que bloqueaba el precio— así que el piloto pasa a ser el lugar donde ese número se mide en vez de preguntarse.
+
+**Y dos preguntas más para la misma entrevista, que salen del hallazgo de usuario del 11 de agosto:** cuántos años lleva el técnico en el rubro, y a quién le preguntaba antes de tener la herramienta. La fuente de campo sostiene que el técnico de ruta es hoy el eslabón de menor conocimiento porque se contrata mano de obra barata; **si eso es cierto, el piloto debería mostrar más consultas por técnico y de nivel más básico de lo que el modelo de cupos asume**, y esa es una consecuencia de costo, no solo de discurso. Es la forma de verificar en terreno una afirmación que hoy tiene una sola fuente.
+
 ---
 
 ## 6. Jue 1 – vie 2 de octubre — decisiones
@@ -238,7 +242,20 @@ La ruta de sincronización diferida depende del borrador persistente de la secci
 
 ### 6.2 Precio
 
-Decisión **interna**, con tres insumos que a esta altura ya existen: el costo unitario conciliado, el costo de voz medido en la sección 5.1, y las respuestas de mercado de Gonzalo del café de agosto y del almuerzo de septiembre.
+Decisión **interna**, con tres insumos que a esta altura ya existen o están en camino: el costo unitario conciliado, el costo de voz medido en la sección 5.1, y las respuestas de mercado de los cuatro contactos del lunes 10 de agosto más el almuerzo de septiembre con Gonzalo (la pregunta de margen quedó abierta el 11 de agosto y se cierra ahí).
+
+**Lo que ya entró el 11 de agosto y no hay que volver a preguntar:** la facturación al edificio es **por equipo y por mes**, con precio construido sobre número de paradas, zona y acceso, negociado con el administrador del edificio y **sin estandarización** de rango; y la utilidad del mantenedor está en los correctivos, repuestos y modernizaciones, no en la tarifa mensual, que además incluye visitas por falla ilimitadas y guardia 24/7 — con el matiz que puso la propia fuente: la mantención sí es rentable, pero no lo sería sin las reparaciones, y su función principal es retener al cliente. Consecuencia directa para esta decisión: el piso de precio no cambia —sale del COGS medido— pero **el encuadre con el que se presenta sí**, y el supuesto de CLP 40.000 de margen por equipo se usa como cota superior y no como dato. Ver [PRICING_Y_MERCADO_2026-08-07.md](PRICING_Y_MERCADO_2026-08-07.md), secciones 4.1 a 4.3 y 9.1.
+
+**Y las dos cifras que faltaban también entraron el 11 de agosto, así que esta decisión ya no está bloqueada por terceros:**
+
+| Insumo | Valor | Cómo se usa en la decisión |
+|---|---|---|
+| Ratio equipos/técnico | **60–84 equipos por técnico** | Es una **derivación** de una rutina de campo de 3–4 mantenciones diarias, no un ratio reportado. Ubica el Modelo C en la zona donde CLP 1.000 por equipo supera 70% de margen, y desmiente el supuesto propio de 1.000–2.000 técnicos activos |
+| Cartera de una mantenedora mediana | **100–150 equipos** | Dato de campo sin hedge. El primer contrato pasa a facturar CLP 100.000–150.000/mes, el doble de la estimación anterior |
+
+**Cómo se decide con esto sin sobreleerlo, y esta es la parte que importa el 7 de septiembre.** Las dos cifras vienen de **un solo informante** y una es derivada, así que se usan para fijar el número —que es una decisión interna y reversible— y **no** para construir una afirmación de mercado ante un tercero. Si Abel o Jesús responden antes del 7, su dato entra como verificación y, si contradice la banda, **manda el suyo**: administran nómina y saben cuántos técnicos cubren cuántos equipos. Si no responden, se decide igual con la banda y se registra que el precio se fijó sobre una fuente. **Lo que no se hace es esperar:** el criterio del 30 de septiembre exige precio decidido, y la variable ya no está vacía.
+
+**Un tercer insumo que no es numérico y cambia el pitch más que el precio:** la misma fuente estableció que el técnico de mantención es hoy el eslabón de menor conocimiento del rubro, porque el empleador contrata mano de obra barata. El argumento de la cotización de octubre deja de ser ahorro de tiempo para un experto y pasa a ser **hacer rendir a la mano de obra que el cliente ya eligió contratar**. Va con la estrategia de costo que el comprador ya tomó, y de paso explica por qué el cupo de consultas incluido tiene que ser generoso: un usuario con menos base pregunta más, no menos. Ver pricing, sección 4.4.
 
 | Segmento | Unidad |
 |---|---|
@@ -256,10 +273,14 @@ Fecha concreta de octubre en el calendario, no una ventana abierta. Alcance de F
 
 ## 7. Almuerzo con Gonzalo — martes 8 o miércoles 9 de septiembre
 
-Presencial y con tiempo. La fecha se cierra en el café del 10 de agosto, y se cierra en esa franja por dos razones: son días de capacidad degradada por jet lag, y una conversación de criterio los aprovecha mejor que una sesión de implementación; y de aquí salen insumos de la decisión de precio, que no pueden llegar después de Fiestas Patrias. Agenda:
+Presencial y con tiempo. **Estado al 11 de agosto:** Gonzalo ya confirmó el almuerzo a la vuelta por mensaje; falta anclar día/hora (proponer esta franja durante la semana 2 del viaje). Va en esa franja por dos razones: son días de capacidad degradada por jet lag, y una conversación de criterio los aprovecha mejor que una sesión de implementación; y de aquí salen insumos de la decisión de precio, que no pueden llegar después de Fiestas Patrias. Agenda:
 
-1. Resultados de las pruebas que hicieron sus técnicos durante el viaje.
-2. Las preguntas de mercado que no cupieron en el café de 30 minutos: cuántas empresas reales conoce, escaladas por técnico al mes, costo de perder un técnico senior, cuánto factura una mantenedora mediana por equipo, y **quién firma el cheque de software en una mantenedora** — el vacío más grande del descubrimiento, porque las ocho entrevistas cubren usuarios y validadores técnicos y ninguna cubre a quien decide el gasto.
+1. Resultados de las pruebas que hicieron sus ingenieros (o técnicos) durante el viaje — si los manuales llegaron y hubo visto bueno a tiempo; si no, el estado del corpus y el plan de pruebas.
+2. Las preguntas de mercado, **incluida la de margen** que no respondió por mensaje el 11 de agosto, y las que no caben en un texto corto: cuántas empresas reales conoce, escaladas por técnico al mes, costo de perder un técnico senior, cuánto factura una mantenedora mediana por equipo, y **quién firma el cheque de software en una mantenedora** — el vacío más grande del descubrimiento, porque las ocho entrevistas cubren usuarios y validadores técnicos y ninguna cubre a quien decide el gasto.
+   - **Pregunta nueva, y es la mejor de la lista:** qué proporción del ingreso de una mantenedora viene de correctivos y repuestos frente a la tarifa mensual. Viene del hallazgo de campo del 11 de agosto y tiene una ventaja táctica sobre la pregunta de margen — es estructura de negocio, no rentabilidad propia, así que no activa el incentivo de sombrear.
+   - **Cómo se escucha la respuesta de margen, ya que la aritmética dejó de servir de filtro.** Una fuente neutral confirmó que la línea de mantención es delgada, así que "están apretados" ya no es señal de que esté negociando. Lo que sí contradiría el campo es "este negocio no deja utilidad": eso se anota y no se debate. Protocolo completo en [Plan de Agosto](PLAN_AGOSTO_2026-08-07.md), sección 3.2.1.
+   - **Dos verificaciones que ahora se pueden hacer sin preguntar de frente, porque hay cifras contra las que escuchar.** Si menciona cuántos equipos lleva un técnico o cuántos tiene su empresa, se contrasta en silencio contra la banda de 60–84 equipos por técnico y contra los 100–150 equipos de una mediana (sección 6.2). **No se le lanzan esas cifras para que las confirme** — es exactamente la técnica prohibida por el Plan de Agosto, sección 3.2.2, y él es el único de los cuatro con incentivo para sombrear. La pregunta sigue siendo abierta: cómo se organiza la carga de sus técnicos.
+   - **Y una que sí conviene preguntar directo, porque decide el conteo de usuarios y por tanto el precio:** si el técnico que atiende fallas es una persona distinta del que hace la ruta, o el mismo en modo reactivo. La fuente de campo confirmó que el modelo del "técnico universal" existió y **declaró no saber si sigue vigente**, así que queda abierto y no se deduce. Es una pregunta de organización, no de dinero, y él la responde sin resistencia.
 3. Estructura de participación: qué aporta concretamente, con qué dedicación, si aporta capital o solo trabajo, exclusividad, si su empleador está en conocimiento, y qué pasa si se retira en el mes tres. Las preguntas completas están en el Plan General, sección 9.3.
 
 **Este almuerzo es para preguntar, no para decidir.** El punto de decisión sobre su participación es **después del piloto de octubre**, que es la primera vez que va a existir evidencia de aporte comercial real y no solo entusiasmo. La definición sí tiene que estar zanjada antes de noviembre, porque ahí llega el primer contrato y su rol comercial se define antes de la venta, no durante. Calendario completo en el Plan General, sección 9.8.
@@ -275,7 +296,7 @@ Presencial y con tiempo. La fecha se cierra en el café del 10 de agosto, y se c
 | Fecha | Tipo | Qué se evalúa |
 |---|---|---|
 | **mié 16 de septiembre** | Corte serio | ¿El borrador persistente está en pie? Cae justo antes de Fiestas Patrias, al cierre de la ventana de implementación. Si el borrador no funciona, se activa la escalera de recorte de la sección 2.1 en ese momento, con dos semanas por delante y no con dos días |
-| **mié 30 de septiembre** | Corte duro | Se decide sobre **indicadores adelantados, no sobre resultados de piloto**: manuales de Gonzalo en uso voluntario por sus técnicos, piloto de octubre agendado con fecha concreta, costo unitario y de voz medidos, uso real en Venezuela con señales de adopción |
+| **mié 30 de septiembre** | Corte duro | Se decide sobre **indicadores adelantados, no sobre resultados de piloto**: manuales de Gonzalo en uso voluntario por sus ingenieros/técnicos, piloto de octubre agendado con fecha concreta, costo unitario y de voz medidos, uso real en Venezuela con señales de adopción |
 
 El corte serio se movió del 15 al 16 de septiembre a propósito: el 15 cae a mitad de la ventana de implementación y no habría nada concluyente que evaluar. El 16 es el último día hábil antes del feriado y coincide con el fin de esa ventana.
 

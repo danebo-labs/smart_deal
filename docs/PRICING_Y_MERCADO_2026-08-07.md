@@ -6,6 +6,12 @@
 
 **Última actualización de datos:** conteo oficial del Registro Nacional de Ascensores al 3 de junio de 2026 (sección 2), que reemplaza los rangos estimados de universo de empresas, y parámetro de conversión EUR agregado por consistencia con el Plan General.
 
+**Actualización del 11 de agosto de 2026 — primera respuesta de campo a las preguntas de mercado.** Daniel (contratista senior independiente) respondió la pregunta de estructura y variabilidad de precios. Es el primer dato de campo que entra a este documento y **corrige un supuesto propio en la dirección incómoda**: la utilidad del mantenedor no vive en la tarifa mensual de mantención sino en los correctivos y repuestos, y esa tarifa arrastra una obligación de cobertura de fallas y guardia 24/7 que no se factura aparte. Secciones nuevas 4.1 y 4.2; consecuencias en §5 (supuesto de CLP 40.000 marcado como cota superior), §8 (estado de la pregunta y siguiente toque), §9 (cambio de denominador del pitch) y §11 (pendiente nuevo).
+
+**Segunda y tercera respuesta del mismo día, y entre las tres el documento cambia de estado.** El segundo audio llegó sin pedirlo y agregó un tercer tramo de ingreso —las modernizaciones son "lo jugoso"— además de matizar el hallazgo anterior: la mantención sí es rentable, pero no lo sería sin las reparaciones, y su función principal es retener al cliente (§4.3). El tercero respondió la rutina diaria y **desbloquea las dos cifras que faltaban**: 3–4 mantenciones por día, de donde se deriva una banda de **60–84 equipos por técnico**, y una cartera de **100–150 equipos** para una mantenedora mediana (§4.4 y §3.1). Con eso el pendiente 1 pasa de bloqueante a verificable, la tensión interna del Modelo C se resuelve a favor del margen de 70%, y el ticket del primer contrato se duplica respecto de la estimación anterior. Trae además el hallazgo de posicionamiento más fuerte del registro: **el técnico de mantención es hoy el que menos conocimiento tiene, y por decisión de costo del empleador** (§4.4).
+
+**Regla de procedencia que aplica a todo lo anterior, y no es negociable.** Cada afirmación de estas secciones está marcada como dato de campo, derivación, especulación declarada por la fuente, o razonamiento propio del fundador. **La afirmación de que esta fuente trabaja con varias mantenedoras es heredada del registro de entrevistas y no está verificada** (§4.1): nada que exija lectura cruzada del rubro se apoya en ella.
+
 **Regla de proceso que no cambia:** el precio se decide internamente y no se propone a ningún prospecto. A Gonzalo y a cualquier otro actor de mercado se le **preguntan** precios y volúmenes; no se le muestra el nuestro. Este documento existe para que en octubre exista una cifra decidida, no para llevarla a una conversación de septiembre.
 
 ---
@@ -79,6 +85,112 @@ El rubro tiene código propio en Mercado Público (**72101506**), de modo que el
 
 **Corrección a un supuesto propio.** El supuesto interno anterior de 1–2 UF/mes por equipo para mantención (CLP 39.000–78.000) estaba en el piso o por debajo del rango real de mercado. El mercado cobra más de lo que asumíamos. Esto es una buena noticia para el pricing: la base de ingresos del cliente sobre la que se calcula nuestra participación es mayor.
 
+### 4.1 Cómo se fija realmente ese precio — respuesta de campo del 11 de agosto
+
+Primera respuesta a la pregunta de estructura y variabilidad enviada el lunes 10 (sección 8.1). La fuente es Daniel, contratista senior independiente. Respondió por audio, largo, sin repreguntas, y **declaró él mismo el límite de su conocimiento**: "nunca he entrado en ese ramo, lo que yo te diga es muy superficial". Eso ordena cómo se usa la respuesta: lo que dice sobre estructura de costos y operación vale mucho, porque lo vive; el rango de precios vale como corroboración de una fuente secundaria, no como fuente primaria.
+
+**Advertencia de procedencia, y aplica a todo lo que este documento apoye en él.** La afirmación de que "trabaja con **varias** mantenedoras" **es heredada del registro de entrevistas y no está verificada**: no aparece en ninguno de sus audios del 11 de agosto. Sobrevivió una exposición sin corrección —el mensaje del lunes 10 se la dijo de frente y él contestó sin desmentirla— pero eso es corroboración débil, no confirmación. **Consecuencia práctica:** su respuesta vale con seguridad como la rutina de un contratista senior; **no se puede presentar como lectura cruzada de varias empresas** hasta que él lo confirme. La pregunta de tamaño de cartera del segundo toque (sección 11) está redactada de modo que la respuesta confirme o desmienta el supuesto sin tener que preguntarlo.
+
+**Responde exactamente lo que se preguntó: el precio no está estandarizado, y la variabilidad tiene drivers deterministas.** No es "cada empresa cobra lo que quiere" — es una función de atributos conocidos del equipo y del edificio.
+
+| Driver | Cómo opera, en sus palabras | Qué significa para Danebo |
+|---|---|---|
+| **Número de paradas** | "No vas a cobrar lo mismo por un equipo de 5 paradas que por uno de 20" | El cliente ya cobra por atributo del equipo, no una tarifa plana. Una línea por equipo en la factura de Danebo no le resulta un formato ajeno |
+| **Zona** | Lo Barnechea, Las Condes y similares pagan más: poder adquisitivo del edificio y costo de llegar — distancia y bencina | El desplazamiento es dinero real del cliente, no solo tiempo. Una visita evitada vale más que una hora ahorrada |
+| **Acceso** | Se evalúa si el edificio no tiene estacionamiento y hay que pagarlo afuera | Confirma lo anterior con un costo que nadie estima desde un escritorio |
+| **Quién negocia** | "Aquí se mueve mucho lo que son los temas de los administradores" | La tarifa la aprieta el administrador del edificio. No es cliente de Danebo, pero es la razón de que esa línea esté comprimida — y de que no sirva como denominador del pitch |
+| **Tipo de cliente** | "Normalmente la gente busca los clientes corporativos, esos son los que más valen" | Criterio de targeting del outbound MINVU: mantenedoras con cartera corporativa antes que las de cartera de comités de administración |
+
+**Rango que dio sin que se le lanzara ningún número:** mantenciones "entre 80, 100, 150" mil pesos, con la salvedad explícita de que es memoria de hace tiempo. **Cae en la banda baja-media de los CLP 80.000–220.000 de Habitissimo y no la contradice.** Dos consecuencias operativas de que el número haya salido espontáneamente: la banda de esta sección deja de depender de una sola fuente secundaria, y **la técnica de rescate con estimado desviado prevista para él queda gastada** — ya entregó el dato sin anclaje, así que el segundo toque tiene que gastarse en algo nuevo (Plan de Agosto, secciones 3.3.1 y 3.7).
+
+### 4.2 Dónde vive realmente la utilidad del cliente, y por qué cambia el pitch
+
+Esto es lo más valioso de la respuesta y **no se preguntó**: la utilidad del cliente no está principalmente en la tarifa mensual. Lo dijo en dos movimientos. **Él mismo matizó esta lectura en un segundo audio el mismo día (sección 4.3), y ese matiz manda sobre lo que sigue: la mantención sí es rentable, pero no lo sería sin las reparaciones.**
+
+Primero, la recurrencia es un activo envidiable —"casi nada exige mantención mensual si no son los ascensores"; ni un auto, ni las bombas, ni los sistemas de incendio, ni los portones— **pero viene atada a una obligación de cobertura que no se factura aparte:**
+
+- La tarifa mensual fija incluye la atención de fallas: "si es un equipo que te falla, el técnico tiene que ir cinco veces para allá, y eso normalmente entra dentro de la mantención, a menos que haya que hacer algún correctivo".
+- Hay que garantizar guardia. La atención normal llega hasta las 22:00 y después se atienden atrapamientos y emergencias, con técnicos nocturnos.
+
+Segundo, la utilidad aparece en otra línea: **"a esos 100 equipos hay que cambiarle piola, hay que cambiarle motor, hay que cambiarle botón… eso es lo que hace que el negocio sea relativamente rentable."** Y sobre la tarifa sola: "no te da mucho para cubrir una nómina". Su resumen del negocio fue una corrección directa al encuadre del fundador: **"no es tan negocio redondo como tú crees."**
+
+**Tres consecuencias, y las tres mueven documentos:**
+
+1. **El supuesto de CLP 40.000 de margen por equipo sobre la mantención queda marcado como probablemente alto** (sección 5, tabla de resistencia del Modelo B). Si la tarifa mensual cubre nómina, visitas ilimitadas por falla y guardia nocturna, el margen de *esa línea* es delgado. El margen del cliente hay que leerlo sobre **ingreso total por equipo: mantención + correctivos y repuestos.** La tabla no se recalcula todavía porque falta la proporción correctivo/mantención, que es el pendiente nuevo de la sección 11.
+2. **El encuadre de venta cambia de denominador, no de lógica.** Presentar CLP 1.000 como "0,45%–1,25% de la mantención" es correcto aritméticamente y frágil frente a alguien del rubro, porque sabe que esa línea es la comprimida por el administrador. Contra el ingreso total por equipo el porcentaje es menor y el argumento no se apoya en la línea débil. La sección 9 se reescribe con esto.
+3. **Aparece el argumento de valor más fuerte que se ha tenido, y no es ahorro de horas.** Si las vueltas por una falla que no se resuelve entran dentro de la tarifa, cada revisita es margen destruido con bencina y estacionamiento pagados por el cliente. Un asistente que ayude a dar con el problema en menos vueltas no "ahorra tiempo": **defiende el margen de la tarifa mensual, que es justamente lo que las revisitas se comen, y libera al técnico para los correctivos, que es donde el cliente factura.** Y el turno nocturno —técnico solo, sin jefe técnico disponible, con gente atrapada— es el momento de máximo valor de un asistente documental y un escenario concreto para el piloto de octubre.
+
+**Lo que esta respuesta no da, y hay que no inventarlo:** cuántas revisitas tiene una falla típica, qué proporción del ingreso viene de correctivos, y cuánto de eso es reducible con mejor acceso a documentación. Sin esos tres números el argumento es una hipótesis bien fundada, no una cifra defendible.
+
+### 4.3 Segundo audio del 11 de agosto — el matiz que él mismo puso, y la escalera de ingreso completa
+
+Llegó **sin que se le pidiera**, minutos después del agradecimiento de cierre, explicando el motivo de la brevedad anterior: "estaba en un foso". Que un informante amplíe por iniciativa propia es la señal más fuerte de disposición que se ha recibido de cualquiera de los cuatro contactos.
+
+**El matiz, textual, y corrige la sección 4.2 en un punto:** *"Lo que es el mantenimiento preventivo y correctivo, yo creo que se significa más de tener el cliente como tal… porque si es verdad que es rentable, pero si no hubiera reparaciones, no."* Es decir: **la mantención no es una línea que pierde, es una línea que se sostiene solo en conjunto con las reparaciones.** Su función principal es **tener el cliente** — el contrato es el vehículo de retención que da acceso al equipo donde después se factura lo demás. La formulación fuerte de 4.2 ("es donde cubre nómina") queda como lectura del fundador; **la del propio informante es más precisa y es la que se usa.**
+
+**Aparece un tercer tramo de ingreso que no estaba en ningún documento:** *"sobre todo cuando vienen las modernizaciones, hacer reparaciones grandes, cambios de cables, ese tipo de cosas son bastante rentables."* La escalera completa queda así, y **no es un supuesto: los tres tramos y su orden salen de sus palabras.**
+
+| Tramo | Función económica | Evidencia |
+|---|---|---|
+| Mantención mensual | Retener al cliente y dar acceso al equipo. Rentable solo en conjunto | "se significa más de tener el cliente como tal" |
+| Correctivos y repuestos | Rentabilidad recurrente: piola, motor, botón | "eso es lo que hace que el negocio sea relativamente rentable" |
+| Modernizaciones y reparaciones grandes | **Lo más rentable.** No es recurrente, es por evento | "bastante rentables… ahí es donde está lo jugoso del tema" |
+
+**Y la utilidad escala con la cartera, no con la tarifa:** *"entre más equipos tengas, más reparaciones hay al mes… esas reparaciones se van haciendo mayor."* Consecuencia directa para el pricing: **el valor de la herramienta escala con la misma variable que la utilidad del cliente (equipos bajo contrato), lo que refuerza el Modelo C por equipo** — el precio crece exactamente donde crece el beneficio del cliente, sin tener que justificar nada.
+
+**El stack de costo fijo que enumeró, y contra el que compite un precio por equipo:**
+
+- Uno o dos vehículos.
+- Técnico de mantención, y "cuando son rutas largas, uno o dos técnicos de mantención que las cubren".
+- Un técnico saca fallas.
+- Pago de guardias nocturnas y de fin de semana a ese mismo técnico: "aquí es exigente".
+- Herramientas.
+
+**Dato de calidad de llamada nocturna, y es un hallazgo de producto:** antes llamaban "a las 10, 11 de la noche porque se apagó una lámpara, dejaron las luces de cortesía encendidas". **La guardia se consume en llamados banales**, no solo en atrapamientos. Un asistente que resuelva ese tipo de consulta en el canal del conserje o del técnico ataca costo de guardia, que es costo fijo pagado. Añade que "ha bajado un poco por la inseguridad" — la frecuencia nocturna actual no se puede suponer a partir de esa anécdota.
+
+**Tres cosas que este audio deja abiertas, y se registran abiertas:**
+
+1. **El "saca fallas" aparece como línea propia del stack de costo.** La entrevista con Gonzalo indica que es **el mismo técnico de mantención en modo reactivo**, y la lectura del fundador —**razonamiento propio, no dato de campo**— es que el nombre existe sobre todo como distinción administrativa para el pago ("monto por falla" en la boleta), porque dividir el pago entre más personas no le conviene a nadie. Daniel lo enumera aparte pero también dice "a ese mismo técnico tienes que pagarle guardias", lo que es compatible con una sola persona. **Conflicto no resuelto y no se resuelve por deducción**: define si el ratio equipos/técnico se cuenta sobre una o dos personas, así que se cierra con Abel o Jesús, que administran nómina.
+2. **Usó "100 clientes" y "100 equipos" de forma intercambiable** en el primer audio. **Hipótesis, no conclusión:** en su experiencia el cliente típico es un edificio con un ascensor, lo que ubicaría su punto de vista en el segmento residencial pequeño. La pregunta de tamaño de cartera del segundo toque (sección 11) la confirma o la descarta sin preguntarla de frente.
+3. **Cuánta capacidad de ruta se come la atención de fallas.** Es lo que reconcilia el ratio con la rutina diaria, y es la primera pregunta del segundo toque.
+
+### 4.4 Tercera respuesta del 11 de agosto — la rutina diaria, y el primer dato que permite derivar el ratio
+
+Respuesta al segundo toque (Plan de Agosto, sección 3.8). **Es la que desbloquea el pendiente 1 de este documento**, y trae además el hallazgo de posicionamiento más fuerte recibido hasta ahora.
+
+**Lo que dijo, textual y separado por nivel de certeza:**
+
+| Dato | Textual | Cómo se usa |
+|---|---|---|
+| **Mantenciones por día** | "normalmente un técnico hace entre tres y cuatro mantenimientos diarios, dependiendo… a veces es como mucho, pero es lo que se maneja" | **Dato de campo.** Con el detalle de la forma del día: "dos ascensores en la mañana en un edificio y dos otros en la tarde" |
+| **Excepción de edificio alto** | "hay edificios que son muy altos y tienen tres ascensores, y ahí pasa todo el día" | Techo real: la ruta se mide en ascensores, no en direcciones |
+| **Cartera de una mediana** | "las empresas así medianas normalmente tienen 100, ciento y tanto de ascensores" | **Dato de campo**, sin hedge. Va a la sección 3.1 |
+| **Cartera de una multinacional** | "me imagino que esas ya tienen como 1.000 equipos" | **Especulación declarada.** Orden de magnitud, no dato |
+| **Técnico universal** | "antes existía algo como lo que tú dices, que había un técnico universal que tenía una ruta y ahí mismo sacaba las fallas de su ruta. Algunas empresas lo aplicaban; **en la actualidad, no sé**" | Cierra parcialmente el conflicto del saca fallas: el modelo existe y tiene nombre, pero **él declara no saber si sigue vigente.** No se concluye nada sobre el presente |
+| **Falla oportunista** | "tú estás haciendo mantenimiento y falló un ascensor que está cerca, al lado, normalmente llaman a ese técnico" | La atención de fallas se asigna por proximidad y **come capacidad de ruta**, aunque no haya un rol dedicado |
+
+**El ratio equipos/técnico se puede derivar, y hay que decir con claridad que es derivación y no dato reportado.** Él nunca dijo cuántos equipos lleva un técnico; dijo cuántas mantenciones hace en un día. Con la periodicidad mensual que exige la normativa (una visita por equipo por mes) y ~21 días hábiles:
+
+| Paso | Cálculo | Resultado |
+|---|---|---|
+| Mantenciones por mes por técnico | 3–4 por día × ~21 días | **63–84 mantenciones** |
+| Equipos en cartera por técnico | 1 visita mensual por equipo | **≈ 60–84 equipos** |
+| Descuento por atención de fallas oportunista | No cuantificado, y él confirmó que ocurre | El extremo alto es un techo, no la operación real |
+
+**Y hay una verificación cruzada que vale más que la derivación sola.** Sus dos audios anteriores dijeron, sin que se le preguntara, que una operación tiene "uno o dos técnicos de mantención" y que una mediana ronda los 100–150 equipos. 100–150 equipos ÷ 60–84 por técnico da **1,6 a 2,4 técnicos de ruta**, que es exactamente lo que enumeró en el stack de costo. **Tres afirmaciones dadas en momentos distintos y sin conocer el modelo cierran entre sí.** Eso es lo más cerca de validación que se puede obtener de un solo informante.
+
+**Consecuencias directas en este documento:**
+
+1. **La tensión interna del Modelo C se resuelve, y a favor del escenario bueno** (sección 5, tabla de equipos por técnico). El ratio de campo derivado (60–84) cae en la fila donde CLP 1.000 por equipo "supera 70% con holgura", no en la de 30 equipos que solo llegaba a 50%. **Lo que queda desmentido es el supuesto propio de 1.000–2.000 técnicos activos**: con 44.000 equipos y 60–84 equipos por técnico, el parque se cubre con del orden de **520 a 730 técnicos de ruta**. La cifra anterior probablemente contaba a todo técnico del rubro, no a los que hacen ruta de mantención.
+2. **El primer contrato factura del orden del doble de lo modelado** (sección 3.1 y 10).
+3. **El pendiente 1 pasa de bloqueante a confirmable.** La decisión de precio de septiembre ya tiene una banda defendible; Abel y Jesús pasan de fuente necesaria a verificación deseable.
+
+**El hallazgo de posicionamiento, y no se preguntó por él:** *"en la actualidad el técnico de mantenimiento se podría decir que es el que menos conocimiento tiene, que eso no debería ser así, pero es lo que está pasando porque contratan mano de obra barata."*
+
+Es la validación de usuario objetivo más fuerte que existe en el registro, por tres razones. Primero, **describe exactamente al usuario primario del producto**: el técnico que hace la ruta es el que menos sabe. Segundo, **da la causa estructural y económica**: no es un accidente ni una brecha de capacitación transitoria, es una decisión de costo del empleador que no va a revertirse. Tercero, **viene de una fuente neutral que lo dijo como crítica al rubro**, no como halago a la solución. Consecuencia comercial: el argumento no es "le ahorramos tiempo a un experto", es **"hacemos que la mano de obra que ya contrataste rinda como una más experta"** — alineado con la estrategia de costo que la empresa ya eligió, en vez de pedirle que la cambie. Consecuencia de producto, y es una restricción, no un beneficio: un usuario con menos conocimiento base **exige más rigor de evidencia y de resguardo de seguridad**, no menos, porque tiene menos capacidad de detectar una respuesta incorrecta. Eso refuerza las reglas de seguridad y trazabilidad del repositorio en vez de relajarlas.
+
+**Lo que esta respuesta no da:** el tamaño de la empresa más chica, la incidencia de fallas al mes, y si el técnico universal sigue existiendo hoy. Los tres quedan sin fuente asignada y **no se deducen** — el presupuesto de toques con él está en cero (Plan de Agosto, sección 3.8).
+
 ---
 
 ## 5. Las cuatro unidades de cobro posibles, dimensionadas
@@ -121,9 +233,13 @@ USD 10.800 de ARR es el 24% de un mes de burn, no del año. Ningún escenario de
 
 **El precio es el mismo en las tres filas — lo que cambia es la unidad contra la que se compara.** Cobrar por técnico y compararlo contra "el margen de un solo ascensor" es exactamente el marco en el que 1 UF se ve carísimo, y es el marco que un comprador informado va a usar para objetar. Esto no invalida el Modelo B, pero exige presentarlo contra la cartera completa del técnico, nunca contra un equipo aislado — y es un argumento adicional, independiente del TAM, a favor del Modelo C.
 
+**Advertencia del 11 de agosto sobre el supuesto de CLP 40.000.** Es una estimación propia, nunca fue un dato, y la respuesta de campo de la sección 4.2 apunta a que es alto para la línea de mantención: esa tarifa cubre nómina, visitas ilimitadas por falla y guardia nocturna hasta y después de las 22:00. Mientras no exista la proporción correctivo/mantención, **esta tabla se lee como cota superior de resistencia y no como el margen real del cliente**, y ningún argumento de venta se apoya en ella (sección 9).
+
 ### Modelo C — por equipo gestionado: modelo recomendado para mantenedor
 
 **Definición operativa, sin ambigüedad:** se cobra por equipo bajo contrato de mantención vigente en la cartera del cliente, **por mes, no por visita.** Si un técnico visita el mismo ascensor cinco veces en el mes, sigue siendo un cobro — igual que la mantenedora le cobra al edificio una tarifa mensual fija, sin importar cuántas veces vaya. Cobrar por visita sería peor en tres frentes: el ingreso colapsa en meses sin fallas, el cliente no puede presupuestarlo como línea fija, y crea el incentivo perverso de subregistrar visitas para pagar menos.
+
+**Confirmado en campo el 11 de agosto, incluido el ejemplo de las cinco visitas:** así cobra el propio cliente, y las vueltas por falla van dentro de la tarifa (sección 4.2). Cobrar por mes y no por visita no es solo mejor para Danebo — **es la unidad que el cliente ya usa con su propio cliente**, y cobrar por visita le pediría adoptar una unidad que él mismo no consiguió imponer frente al administrador del edificio. También confirma que la facturación al edificio se estructura por equipo, no como monto global opaco: el Modelo C habla el idioma de facturación que el cliente ya tiene instalado, que era la mitad de lo que la pregunta del lunes 10 iba a resolver.
 
 | Precio por equipo/mes | TAM (techo, 100% del universo, 44.000 equipos) | % de la mantención que ya cobra el cliente |
 |---|---:|---|
@@ -135,10 +251,11 @@ USD 10.800 de ARR es el 24% de un mes de burn, no del año. Ningún escenario de
 
 | Tamaño de cartera por cliente | 5 clientes convertidos, a CLP 1.000/equipo | ARR |
 |---|---:|---:|
-| 60 equipos cada uno (mediano, ver sección 3.1 más abajo) | CLP 300.000/mes | ≈ USD 3.800 |
+| 60 equipos cada uno (piso pesimista) | CLP 300.000/mes | ≈ USD 3.800 |
 | 100 equipos cada uno | CLP 500.000/mes | ≈ USD 6.300 |
+| **125 equipos cada uno (mediana según dato de campo, §3.1)** | **CLP 625.000/mes** | **≈ USD 7.900** |
 
-El primer contrato de noviembre, con una sola mantenedora mediana de 40–100 equipos, factura del orden de **CLP 40.000–100.000/mes** — no los CLP 300.000–600.000 que sugiere la escalera de rentabilidad de la sección 10 con un supuesto de 300–600 equipos por cliente. Esa cifra de 300–600 asumía un cliente grande desde el primer contrato, y es optimista: ver sección 3.1.
+El primer contrato de noviembre, con una sola mantenedora mediana, factura del orden de **CLP 100.000–150.000/mes** con el dato de campo del 11 de agosto (100–150 equipos, sección 3.1). Eso corrige dos veces en direcciones opuestas: hacia abajo los CLP 300.000–600.000 que suponía un cliente grande de 300–600 equipos desde el primer contrato, y **hacia arriba los CLP 40.000–100.000 de la estimación razonada anterior**. Sigue siendo un ticket chico en términos absolutos, y sigue siendo la razón por la que la base de equipos —no el conteo de logos— es la métrica a vigilar.
 
 **Por qué este modelo resuelve el problema del piso de costo.** Nuestro COGS escala con consultas, es decir con técnicos, no con equipos. Cada técnico cubre del orden de decenas de equipos, así que un precio pequeño por equipo agrega a un ingreso por técnico saludable:
 
@@ -150,6 +267,8 @@ El primer contrato de noviembre, con una sola mantenedora mediana de 40–100 eq
 
 **Tensión interna que hay que resolver con datos de campo, no con un solo informante contingente.** Este documento estima 1.000–2.000 técnicos activos sobre 44.000 equipos, lo que da un promedio de **22–44 equipos por técnico** — justo en la zona de 30 donde el Modelo C solo alcanza 50% de margen, no 70%. Para que la tabla de arriba llegue holgada a 60–100 equipos por técnico, el ratio real tiene que estar por encima del promedio implícito en el propio supuesto de universo de técnicos. **Las dos cifras de este documento están en tensión entre sí, y la sección 8.1 reparte la pregunta entre Abel (empresa mediana) y Jesús (empresa chica) en vez de depender de un solo dato de Gonzalo — dos puntos de una distribución valen más que uno, y no dependen de que una sola relación comercial sobreviva.**
 
+**Resuelta el 11 de agosto, a favor del escenario bueno, y con una advertencia de método (sección 4.4).** La rutina reportada en campo —3 a 4 mantenciones diarias— implica una cartera de **60 a 84 equipos por técnico** con periodicidad mensual, o sea la fila de 60 de la tabla de arriba: **CLP 1.000 por equipo supera 70% de margen con holgura.** El número que cae es el supuesto propio de 1.000–2.000 técnicos activos, que resulta ser un conteo de todo el rubro y no de técnicos de ruta; el parque se cubre con del orden de 520 a 730. **La advertencia:** el ratio es **derivado de la rutina, no reportado como ratio**, y el extremo alto no descuenta la capacidad que consume la atención de fallas por proximidad, que la misma respuesta confirma que existe. Se usa como banda de trabajo para decidir el precio en septiembre, y la confirmación con Abel o Jesús pasa de bloqueante a deseable.
+
 **Cupo de consultas incluido, con el piso de costo medido y confirmado en campo:**
 
 | Margen objetivo | COGS disponible por equipo/mes | Consultas incluidas (a USD 0,0093 conservador) |
@@ -159,13 +278,22 @@ El primer contrato de noviembre, con una sola mantenedora mediana de 40–100 eq
 
 La sesión de demo del 6 de agosto — [MATRIZ_DEMOS_PILOTOS_2026-08-07.md](MATRIZ_DEMOS_PILOTOS_2026-08-07.md), sección 1.1.a — midió un costo de **USD 0,0073 por interacción respondida**, dentro del rango esperado de USD 0,0061–0,0093 del `SAAS_COST_MODEL`. No cambia el piso de costo; lo confirma con un dato de campo real, no solo con carga sintética.
 
-**El ratio equipos/técnico es la variable de pricing más importante que no tenemos, y Gonzalo puede darla en una frase.** Es la primera pregunta de mercado de la sección 8.
+**El ratio equipos/técnico era la variable de pricing más importante que no teníamos. Al 11 de agosto hay una banda derivada de campo: 60–84 equipos por técnico** (sección 4.4). Abel y Jesús siguen siendo los dos puntos de la distribución que la confirman —empresa mediana y empresa chica, sección 8.1— pero ya no bloquean la decisión de precio: la confirman o la corrigen.
 
 Ventajas adicionales del modelo por equipo: escala con el driver de ingreso del propio cliente (su cartera de contratos), es una línea proporcional y predecible en su presupuesto, se autoescala con el tamaño del cliente en vez de golpear igual a la microempresa que a la mediana (ver la tabla de resistencia del Modelo B más arriba), y desacopla nuestro precio de su rotación de personal — que en este rubro es alta y es precisamente uno de los dolores que el producto ataca.
 
 ### 3.1 Cuántos equipos tiene realmente una mantenedora mediana
 
-El promedio nacional (44.000 equipos ÷ 220 mantenedoras ≈ 200) esconde una distribución muy desigual: el parque está concentrado en las multinacionales (Otis, Schindler, Thyssen, Kone) y en la cola larga de microempresas de un técnico-dueño que este mismo documento describe en la sección 2. Si las multinacionales concentran una porción sustancial del parque —esto es una estimación razonada, no un dato con fuente—, las 200+ empresas restantes se reparten un número bastante menor a 200 en promedio, y la mediana queda más abajo todavía por el sesgo de la cola. **Un primer cliente realista está en el rango de 40 a 100 equipos, no de 300 a 600.** La aritmética de la sección 10 se corrige con este dato.
+El promedio nacional (44.000 equipos ÷ 220 mantenedoras ≈ 200) esconde una distribución muy desigual: el parque está concentrado en las multinacionales (Otis, Schindler, Thyssen, Kone) y en la cola larga de microempresas de un técnico-dueño que este mismo documento describe en la sección 2. Si las multinacionales concentran una porción sustancial del parque —esto es una estimación razonada, no un dato con fuente—, las 200+ empresas restantes se reparten un número bastante menor a 200 en promedio, y la mediana queda más abajo todavía por el sesgo de la cola.
+
+**Dato de campo del 11 de agosto, y reemplaza la estimación razonada por la primera cifra con fuente** (sección 4.4): *"las empresas así medianas normalmente tienen 100, ciento y tanto de ascensores. Las que son grandes así de marca como Schindler, Otis, me imagino que esas ya tienen como 1.000 equipos."*
+
+| Segmento | Cartera | Confianza |
+|---|---|---|
+| Mantenedora mediana | **100–150 equipos** | **Media-alta.** Lo afirmó sin hedge y es el segmento que sí conoce de cerca |
+| Multinacional de marca | ~1.000 equipos | **Baja: él mismo dijo "me imagino".** Es especulación declarada, se registra como orden de magnitud y no como dato |
+
+**El rango del primer cliente sube de 40–100 a 100–150 equipos**, y la banda anterior queda como el piso pesimista. Es la corrección más favorable del mes: **duplica el ticket del primer contrato sin cambiar el precio unitario.** Dos cautelas que no se pueden saltar: el número describe el segmento en general y **no está verificado como lectura cruzada de varias empresas** (advertencia de procedencia, sección 4.1), y él no respondió cuál es la empresa más chica, así que el piso de la distribución sigue siendo la cola larga de microempresas de la sección 2. La aritmética de la sección 10 se recalcula con esto.
 
 ### Modelo D — por informe generado: modelo recomendado para certificador
 
@@ -253,25 +381,33 @@ Todas son preguntas, no propuestas: **preguntar precio y volumen de mercado siem
 
 ### 8.1 Reparto de preguntas por contacto (mensajes del lunes 10 de agosto)
 
-| Contacto | Pregunta (formato indirecto) | Qué resuelve |
-|---|---|---|
-| **Gonzalo** | "¿Qué tan apretados son los márgenes de mantención hoy? ¿Cuánto espacio hay para que una herramienta nueva entre como costo adicional sin que duela?" | El supuesto de CLP 40.000 de margen por equipo (sección 5, tabla de resistencia del Modelo B) |
-| **Daniel** | "¿Cómo es la estructura típica de facturación al edificio — por equipo o monto global por contrato? ¿Hay mucha variabilidad de precios entre empresas o está estandarizado?" | Valida el rango CLP 80.000–220.000 de Habitissimo (sección 4) contra un contratista que factura a varias mantenedoras, y decide si el Modelo C habla el idioma de facturación que el cliente ya usa |
-| **Abel** | "En empresas del tamaño de Tecnicall, ¿un técnico lleva una cartera fija de equipos o va rotando según la contingencia?" | Un punto de la tensión del ratio equipos/técnico en empresa mediana (sección 5, Modelo C) |
-| **Jesús** | "¿Cada técnico en tu empresa tiene una ruta fija de equipos o van asignando según las emergencias del día?" | Un punto del ratio en empresa chica — la cola larga que domina el conteo de la sección 2 |
+| Contacto | Pregunta (formato indirecto) | Qué resuelve | Estado al 11 ago |
+|---|---|---|---|
+| **Gonzalo** | "¿Qué tan apretados son los márgenes de mantención hoy? ¿Cuánto espacio hay para que una herramienta nueva entre como costo adicional sin que duela?" | El supuesto de CLP 40.000 de margen por equipo (sección 5, tabla de resistencia del Modelo B) | Mensaje enviado. Respondió lo operativo (manuales + ingenieros + almuerzo). **Margen sin respuesta** → se cierra en el almuerzo de septiembre; no se insiste por mensaje |
+| **Daniel** | "¿Cómo es la estructura típica de facturación al edificio — por equipo o monto global por contrato? ¿Hay mucha variabilidad de precios entre empresas o está estandarizado?" | Valida el rango CLP 80.000–220.000 de Habitissimo (sección 4) contra un contratista que ve las tarifas desde el terreno, y decide si el Modelo C habla el idioma de facturación que el cliente ya usa | **Respondida el 11 ago, por audio y con textura, y ampliada en un segundo audio no solicitado.** No estandarizado; drivers: paradas, zona, acceso, y negociación con administradores. Rango espontáneo CLP 80.000–150.000, consistente con la sección 4. Facturación por equipo confirmada → el Modelo C habla el idioma del cliente. **Bonus no preguntado:** la utilidad vive en correctivos y, sobre todo, en modernizaciones; la mantención retiene al cliente (secciones 4.1 a 4.3). Rescate con estimado desviado **gastado**; segundo toque **gastado el mismo día en rutina diaria y tamaño de cartera, y respondido**: 3–4 mantenciones por día → 60–84 equipos por técnico derivados, mediana de 100–150 equipos, y el técnico de mantención como el eslabón de menor conocimiento por costo de mano de obra (sección 4.4). **Presupuesto de toques en cero.** **Peso de la fuente: rutina de un contratista senior, no lectura cruzada de varias empresas** (advertencia de procedencia, sección 4.1) |
+| **Abel** | "En empresas del tamaño de Tecnicall, ¿un técnico lleva una cartera fija de equipos o va rotando según la contingencia?" | Un punto de la tensión del ratio equipos/técnico en empresa mediana (sección 5, Modelo C) | Mensaje enviado; respuesta pendiente. **Degradado de bloqueante a verificación** tras la respuesta de rutina del 11 de agosto (sección 4.4) |
+| **Jesús** | "¿Cada técnico en tu empresa tiene una ruta fija de equipos o van asignando según las emergencias del día?" | Un punto del ratio en empresa chica — la cola larga que domina el conteo de la sección 2 | Mensaje enviado; respuesta pendiente. **Sigue siendo la única fuente prevista para el piso de la distribución**, que el dato de campo no cubrió |
 
-Con dos o más respuestas de la tensión del ratio (Abel y Jesús) y una lectura de margen independiente (Gonzalo), la sección 5 deja de resolverse con un solo dato de una sola persona contingente y pasa a tener un rango de campo defendible en una postulación a fondos.
+Con dos o más respuestas de la tensión del ratio (Abel y Jesús) y una lectura de margen independiente (Gonzalo, ahora diferida al almuerzo), la sección 5 deja de resolverse con un solo dato de una sola persona contingente y pasa a tener un rango de campo defendible en una postulación a fondos. **Al 11 de agosto hay un punto de campo (sección 4.4) y sigue siendo uno: la banda de 60–84 equipos por técnico no se cita ante terceros como "dato de mercado" mientras venga de un solo informante y por derivación.**
+
+**Dos lecturas de proceso del 11 de agosto, que valen para los dos mensajes que siguen pendientes.**
+
+Primera: **el cambio de estrategia del 8 de agosto funcionó en la primera oportunidad de comprobarlo.** El contacto con 0% de conversión a demo respondió una pregunta de mercado en menos de 24 horas y con más textura de la pedida. Pedir opinión experta convierte donde pedir piloto no convertía, y eso confirma la regla de la matriz: a estos tres se les pide información, no compromiso.
+
+Segunda: **respondió por audio y largo.** A un técnico de terreno le cuesta escribir y no le cuesta hablar, así que el segundo toque con Abel y Jesús invita explícitamente a contestar por audio ("mándame un audio si es más fácil"). Es la misma asimetría que sostiene la tesis de voz del producto, observada esta vez en el canal de descubrimiento — no es evidencia de adopción, pero sí de cuál es el canal de menor fricción para esta población.
 
 ### 8.2 Preguntas que quedan para el almuerzo de septiembre con Gonzalo
 
-Estas requieren tiempo y contexto presencial, y no caben en un mensaje corto:
+Estas requieren tiempo y contexto presencial, y no caben en un mensaje corto. **La pregunta de margen del mensaje del lunes 10 se suma a esta lista** porque no la respondió por texto:
 
+0. **¿Qué tan apretados están los márgenes de mantención hoy en el rubro?** (pendiente del mensaje del 10 ago; protocolo de lectura en Plan de Agosto §3.2.1 — no anclar con estimado propio)
 1. ¿Cuántos servicios diarios por técnico, y cuántas consultas a manual por servicio?
 2. ¿Cuánto factura una certificación, y cuántas alcanza a hacer un certificador en un día?
-3. ¿Cuántos llamados por falla recibe al mes por cada 100 equipos en cartera? Es el proxy operativo más cercano a un dato público de incidencia que existe para este mercado, y calibra el cupo de consultas del correctivo.
+3. ¿Cuántos llamados por falla recibe al mes por cada 100 equipos en cartera? Es el proxy operativo más cercano a un dato público de incidencia que existe para este mercado, y calibra el cupo de consultas del correctivo. **Actualización del 11 de agosto: esta pregunta tiene una fuente mejor y neutral.** Va primero a Daniel, que atiende las fallas y no tiene nada en juego (sección 11); con Gonzalo se usa para contrastar, no como fuente única.
 4. ¿Quién firma el cheque de software en una mantenedora, y hasta qué monto pasa sin comité?
 5. ¿Cuánto le cuesta a la empresa perder un técnico senior?
 6. ¿Qué tamaño tiene el mercado informal de equipos sin certificar, desde lo que él ve en terreno?
+7. **¿Qué proporción del ingreso de una mantenedora viene de correctivos y repuestos frente a la tarifa mensual de mantención?** Pregunta nueva del 11 de agosto, derivada del hallazgo de la sección 4.2. Es el denominador correcto del pitch de la sección 9 y lo único que permitiría recalcular la tabla de resistencia del Modelo B con un dato en vez de un supuesto. Ventaja táctica: es una pregunta de estructura de negocio, no de su margen, así que no activa el incentivo de sombrear del protocolo de lectura (Plan de Agosto, sección 3.2.1). **Y va a él y no a la fuente neutral por una razón registrada:** el agradecimiento enviado el 11 de agosto le comunicó a Daniel la conclusión sobre el peso de los correctivos, así que quedó anclado y su estimación de proporción ya no sería independiente (Plan de Agosto, sección 3.3.2).
 
 **Cómo extraer su conocimiento sin revelar el precio propio, si insiste en preguntar el nuestro:** presentar la estructura sin la cifra — "he visto tres formas de cobrar esto: por técnico, por equipo en cartera, o por informe generado; ¿cuál crees que tu mercado aceptaría, y en qué rango?" — y, si vuelve a insistir, la respuesta honesta es que el precio todavía no está decidido porque el costo real se está midiendo, por eso se le pregunta a él.
 
@@ -292,9 +428,26 @@ Ambos resultados quedan **por debajo del piso de costo por usuario** (CLP 26.000
 
 De ahí salen tres consecuencias concretas:
 
-1. **El encuadre correcto es participación en ingresos, no ahorro de horas.** CLP 1.000 por equipo es 0,45%–1,25% de lo que el cliente ya factura por ese equipo. Ese argumento se sostiene solo y no depende de estimar horas ahorradas, que además es exactamente la cifra que un comprador escéptico va a discutir.
+1. **El encuadre correcto es participación en ingresos, no ahorro de horas** — y desde el 11 de agosto, participación en el **ingreso total por equipo** (mantención mensual + correctivos y repuestos), no en la tarifa de mantención sola. CLP 1.000 contra el piso del rango de mantención es 1,25%; contra el ingreso total del equipo es bastante menos. El cambio de denominador importa por una razón táctica, no estética: **la tarifa mensual es la línea que el administrador del edificio ya tiene comprimida** (sección 4.1), así que apoyar el pitch ahí invita a la objeción "de ahí no me sobra nada", que es cierta. Ese argumento sigue sin depender de estimar horas ahorradas, que es exactamente la cifra que un comprador escéptico va a discutir.
 2. **El valor no temporal tiene que entrar al pitch con evidencia, no como adorno:** retención de conocimiento cuando se va el especialista, reducción de la dependencia del jefe técnico como cuello de botella, y evidencia trazable para respaldar trabajos y pagos. Los tres salieron de entrevistas independientes y ninguno se mide en horas.
 3. **Bajar el COGS es una palanca comercial, no solo técnica.** Cada dólar que baja el costo variable por usuario amplía el rango de precios defendibles. Esto conecta directamente con las reglas de costo de Bedrock del repositorio: perfil de inferencia global por defecto, retrieval adaptativo y compactación de prompt no son optimizaciones estéticas, son grados de libertad de pricing.
+
+### 9.1 El argumento que sí puede financiar el precio: la revisita no facturada
+
+Del hallazgo de la sección 4.2 sale un cuarto argumento, y es el primero que ataca dinero que el cliente pierde hoy en vez de tiempo que podría ahorrar.
+
+**La mecánica, en el idioma del cliente:** la tarifa mensual incluye las vueltas por falla. Si un equipo queda fallando y el técnico va cinco veces, esas cinco visitas no se facturan — se pagan con bencina, estacionamiento (más caro justamente en las zonas que mejor pagan) y con horas de un técnico que en ese rato no está haciendo el correctivo que sí factura. Cada vuelta evitada devuelve margen dos veces: no gasta el desplazamiento y libera capacidad para la línea rentable.
+
+| Por qué es mejor argumento que el ahorro de horas | Detalle |
+|---|---|
+| **Ataca el centro de utilidad** | Los correctivos y repuestos son donde el cliente gana, según la propia fuente de campo. Liberar capacidad ahí no es eficiencia abstracta, es ingreso |
+| **El costo ya es visible para el cliente** | Bencina, estacionamiento y una visita que se agenda sin cobrar son partidas que él reconoce sin que se las estimen |
+| **No exige creer una tasa horaria** | El argumento del ahorro de tiempo obliga a acordar cuánto vale una hora de técnico. Este no |
+| **Tiene un momento de máxima intensidad identificado** | El turno nocturno posterior a las 22:00: técnico solo, emergencia o atrapamiento, sin jefe técnico disponible. Es el peor escenario operativo del cliente y el mejor caso de uso de un asistente documental |
+
+**El límite honesto, que se respeta:** no hay dato de cuántas vueltas toma una falla típica ni de cuántas evitaría el producto. Sin eso, esto es una hipótesis bien fundada y no una cifra citable, y por eso **no se convierte en promesa de ahorro ante ningún prospecto**. Las dos formas de cerrarlo están fechadas: la pregunta de incidencia a la fuente neutral (sección 11) y la medición en el piloto de octubre, donde consultas por evento y resolución quedan instrumentadas.
+
+**Y una regla que se deriva para toda conversación comercial:** el interlocutor de campo corrigió espontáneamente el encuadre del fundador con un "no es tan negocio redondo como tú crees". Cualquier pitch construido sobre la premisa de que al mantenedor le sobra margen va a recibir esa misma corrección, pero de un comprador y en el peor momento. La premisa correcta es la inversa: **el margen es delgado justo donde el producto puede protegerlo.**
 
 ---
 
@@ -304,11 +457,11 @@ Reemplaza la aritmética por técnico del plan general anterior. Supone CLP 1.00
 
 | Hito | Fecha | Criterio medible |
 |---|---|---|
-| Primer contrato pagado | Noviembre 2026 | Una mantenedora mediana convierte desde el piloto de octubre. A **40–100 equipos** (sección 3.1, corregido desde el supuesto anterior de 300–600): CLP 40.000–100.000/mes (USD 42–105) |
-| Danebo cubre su propio COGS | Diciembre 2026 | **Base combinada superior a ~850 equipos**, que a CLP 1.000/equipo da USD 895/mes contra un COGS de USD 416 para 30 usuarios: margen bruto 53%. Con clientes de 40–100 equipos, eso son **9 a 14 mantenedoras medianas**, no "dos clientes" — el objetivo de alto valor pasa a ser una mantenedora mediana-grande, no cualquier logo |
-| Cubre el costo de vida del fundador | Q1 2027, explícitamente fuera de 2026 | CLP 3.500.000/mes exige del orden de 3.500 equipos a CLP 1.000, o ~2.300 a CLP 1.500: treinta y cinco a ochenta y siete mantenedoras del tamaño de la sección 3.1, o cuatro a seis si se logran clientes grandes de 300+ equipos |
+| Primer contrato pagado | Noviembre 2026 | Una mantenedora mediana convierte desde el piloto de octubre. A **100–150 equipos** (sección 3.1, dato de campo del 11 de agosto que reemplaza la estimación de 40–100): **CLP 100.000–150.000/mes (USD 105–158)** |
+| Danebo cubre su propio COGS | Diciembre 2026 | **Base combinada superior a ~850 equipos**, que a CLP 1.000/equipo da USD 895/mes contra un COGS de USD 416 para 30 usuarios: margen bruto 53%. Con clientes de 100–150 equipos, eso son **6 a 8 mantenedoras medianas** (antes 9 a 14). **Y el supuesto de 30 usuarios queda validado por campo:** a 60–84 equipos por técnico (sección 4.4), 850 equipos son del orden de 10 a 14 técnicos de ruta más supervisores y saca fallas — el modelo de costo no está subdimensionando usuarios |
+| Cubre el costo de vida del fundador | Q1 2027, explícitamente fuera de 2026 | CLP 3.500.000/mes exige del orden de 3.500 equipos a CLP 1.000, o ~2.300 a CLP 1.500: **23 a 35 mantenedoras medianas** de 100–150 equipos, o tres a cuatro si se logran clientes grandes de 1.000 equipos (orden de magnitud especulativo, sección 3.1) |
 
-El criterio de diciembre queda expresado como un número verificable — base combinada de equipos — y no como "dos clientes", porque dos clientes chicos no alcanzan el margen y dos clientes medianos lo superan con holgura. La cifra a vigilar es la base de equipos, no el conteo de logos. **Corregir el supuesto de tamaño de cliente (300–600 → 40–100 equipos) sube el número de logos necesarios en el mismo orden de magnitud, y es la razón de más peso para que la red de Gonzalo, que puede abrir puertas a clientes mediano-grandes en vez de solo microempresas, importe tanto como se plantea en el Plan General, sección 9.**
+El criterio de diciembre queda expresado como un número verificable — base combinada de equipos — y no como "dos clientes", porque dos clientes chicos no alcanzan el margen y dos clientes medianos lo superan con holgura. La cifra a vigilar es la base de equipos, no el conteo de logos. **La serie de correcciones del supuesto de tamaño de cliente —300–600 estimado, luego 40–100 razonado, ahora 100–150 con dato de campo— sigue dejando el número de logos necesarios un orden de magnitud por encima del plan original, y es la razón de más peso para que la red de Gonzalo, que puede abrir puertas a clientes mediano-grandes en vez de solo microempresas, importe tanto como se plantea en el Plan General, sección 9.** Lo que cambió con el dato de campo es que el objetivo de diciembre pasa de 9–14 logos a 6–8, que es la diferencia entre inalcanzable y difícil.
 
 ---
 
@@ -316,10 +469,11 @@ El criterio de diciembre queda expresado como un número verificable — base co
 
 El gate vigente es que no se cotiza sin precio decidido y costo por usuario medido. Lo que falta, en orden:
 
-1. **Ratio equipos/técnico** (pregunta 1 a Gonzalo). Sin esto el modelo por equipo no se puede fijar.
+1. ~~**Ratio equipos/técnico**~~ → **desbloqueado el 11 de agosto con banda derivada de campo: 60–84 equipos por técnico** (sección 4.4), más cartera de mediana de 100–150 equipos (sección 3.1). El modelo por equipo ya se puede fijar. **Lo que queda es verificación, no habilitación:** Abel (mediana) y Jesús (chica) confirman o corrigen la banda, y su silencio ya no detiene la decisión de septiembre. **Dos cautelas que viajan con el número:** es derivado de la rutina diaria y no reportado como ratio, y no descuenta la capacidad que consume la atención de fallas por proximidad. **Y una que es de procedencia:** vale como la rutina de un contratista senior; la afirmación de que ve varias mantenedoras es heredada y no verificada (sección 4.1), y su respuesta describió el segmento en general en vez de sus propias empresas, así que **el test de verificación quedó inconcluso**.
 2. **COGS de voz por dictado** (medición del mes de construcción). Sin esto el modelo por informe no tiene margen conocido.
 3. **Volumen de consultas por técnico/mes**, por carga sintética representativa y por el laboratorio de Venezuela, para verificar que el cupo incluido no sea el que rompe el margen.
-4. **Decisión interna de precio**, en septiembre, sobre las tres anteriores.
+4. **Incidencia de fallas y revisitas por falla, y proporción de ingreso correctivo frente a mantención.** Pendiente nuevo del 11 de agosto (sección 4.2). **Proporción de ingreso**: a Gonzalo en el almuerzo, porque Daniel quedó anclado en ese punto por el agradecimiento del 11 de agosto (Plan de Agosto, sección 3.3.2). **Incidencia y vueltas por falla: sin fuente asignada** — era el uso previsto del toque a Daniel, que se gastó en el ratio porque ese sí bloqueaba el precio, y con él el presupuesto de toques quedó en cero. Se retoma con Abel o Jesús si responden, o con el piloto de octubre, que lo mide en vez de preguntarlo. **No se deduce.** Calibra el cupo de consultas del correctivo y es lo que convierte el argumento de la sección 9.1 de hipótesis en cifra.
+5. **Decisión interna de precio**, en septiembre, sobre las cuatro anteriores. No espera al punto 4 si no llega: el punto 4 mejora el argumento de venta, no el piso de precio.
 
 ---
 
@@ -331,5 +485,6 @@ El gate vigente es que no se cotiza sin precio decidido y costo por usuario medi
 - Mercado Público, rubro 72101506: adjudicaciones de Puerto Montt, Hospital Lonquimay y Hospital de Linares.
 - Habitissimo, rangos de mantención mensual por ascensor en mercado privado.
 - Ocho entrevistas consolidadas, julio–agosto 2026, y reunión con Gonzalo del 6 de agosto de 2026.
+- **Respuesta de campo del 11 de agosto de 2026** de Daniel, contratista senior independiente, en tres audios de WhatsApp (el segundo no solicitado; el tercero en respuesta al segundo toque): rutina de 3–4 mantenciones diarias, cartera de 100–150 equipos en una mantenedora mediana y ~1.000 en multinacional de marca —esto último especulación declarada—, el modelo histórico del "técnico universal" con vigencia actual desconocida para él, y el técnico de mantención como el eslabón de menor conocimiento por contratación de mano de obra barata (sección 4.4). Más: drivers de precio (paradas, zona, acceso, negociación con administradores), rango espontáneo de CLP 80.000–150.000, obligación de cobertura de fallas y guardia 24/7 dentro de la tarifa mensual, escalera de ingreso en tres tramos con las modernizaciones como el más rentable, y stack de costo fijo (vehículos, técnicos de ruta, saca fallas, guardias, herramientas). Es la fuente de las secciones 4.1, 4.2 y 4.3. **Fuente de baja confianza declarada por él mismo en materia de precios y alta en materia de operación**, y no se atribuye ante terceros. **Alcance verificado: su propia rutina y lo que observa desde el terreno. La afirmación de que trabaja con varias mantenedoras es heredada del registro de entrevistas, no aparece en sus audios y está sin verificar** — cualquier conclusión que necesite lectura cruzada de varias empresas no puede apoyarse en él hasta confirmarlo.
 - [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) para COGS y pisos de precio.
 - Referencia de pricing genérica de mayo de 2026, conservada solo como lectura de expectativa de mercado.

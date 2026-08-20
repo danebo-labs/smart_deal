@@ -7,3 +7,8 @@ climb:
   slug: elevadores-climb
   display_name: Ascensores Climb
   branded: true
+
+pilot:
+  slug: danebo-pilot-elevator
+  display_name: Piloto Elevator
+  branded: false

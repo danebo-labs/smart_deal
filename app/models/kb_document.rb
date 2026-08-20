@@ -13,7 +13,11 @@ class KbDocument < ApplicationRecord
   # DB: jsonb, default []. Stored as JSON array of strings; exposed as Array in Ruby.
   validates :s3_key, presence: true
   before_validation { self.document_uid ||= SecureRandom.uuid }
-  before_validation { self.account_id  ||= Account.minimum(:id) } if Rails.env.test?
+  # Test-only convenience so the ~100 specs that predate tenancy don't have to
+  # name an account. Pinned to the default tenant by slug: keying off the lowest
+  # id meant adding any fixture account silently re-homed every implicitly
+  # created document into it.
+  before_validation { self.account_id ||= Account.where(slug: "danebo-legacy").pick(:id) } if Rails.env.test?
 
   # Normalizes stored s3_key (plain object key or s3://bucket/key) for matching S3 list :full_path.
   def self.object_key_for_match(s3_ref)

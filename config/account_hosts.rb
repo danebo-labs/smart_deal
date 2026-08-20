@@ -10,7 +10,8 @@ module AccountHosts
     "danebo.ai"                 => "danebo-legacy",
     "www.danebo.ai"             => "danebo-legacy",
     "elevator.danebo.ai"        => "danebo-legacy",
-    "ascensoresclimb.danebo.ai" => "elevadores-climb"
+    "ascensoresclimb.danebo.ai" => "elevadores-climb",
+    "piloto.danebo.ai"          => "danebo-pilot-elevator"
   }.freeze
 
   # www.example.com / example.com: Rails default integration-test host.
@@ -18,6 +19,7 @@ module AccountHosts
     "localhost"                    => "danebo-legacy",
     "elevator.localhost"           => "danebo-legacy",
     "ascensoresclimb.localhost"    => "elevadores-climb",
+    "piloto.localhost"             => "danebo-pilot-elevator",
     "www.example.com"              => "danebo-legacy",
     "example.com"                  => "danebo-legacy"
   ).freeze

@@ -42,6 +42,7 @@ proxy:
     - www.danebo.ai
     - elevator.danebo.ai
     - ascensoresclimb.danebo.ai
+    - piloto.danebo.ai
   app_port: 80
 
 registry:

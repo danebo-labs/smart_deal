@@ -26,17 +26,22 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
   end
 
   class FakeS3Client
-    def put_object(**); end
+    attr_reader :keys
+
+    def initialize = @keys = []
+    def put_object(key:, **) = @keys << key
     def get_object(bucket:, key:)
       OpenStruct.new(body: StringIO.new("data"))
     end
   end
 
   setup do
+    @user = users(:one)
     @bulk_upload = BulkUpload.create!(
       sha256: Digest::SHA256.hexdigest("test_#{SecureRandom.hex(8)}"),
       original_filename: "test.zip",
-      status: "pending"
+      status: "pending",
+      user: @user
     )
     @fake_s3 = FakeS3Client.new
   end
@@ -52,7 +57,9 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
   test "process! marks asset complete and skips batch when dedup hit" do
     sha256    = Digest::SHA256.hexdigest(PDF_BINARY)
     custom_id = BulkUploadAsset.custom_id_for_sha(
-      sha256, contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+      sha256,
+      contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+      account_id:       @user.account_id
     )
 
     zip_path = build_zip(entries: { "manual.pdf" => PDF_BINARY })
@@ -79,7 +86,8 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
     bulk2 = BulkUpload.create!(
       sha256: Digest::SHA256.hexdigest("bulk2_#{SecureRandom.hex(8)}"),
       original_filename: "test2.zip",
-      status: "pending"
+      status: "pending",
+      user: @user
     )
 
     service.process!(bulk2, zip_path)
@@ -94,6 +102,85 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
     bulk2&.bulk_upload_assets&.destroy_all
     bulk2&.destroy
     prior_asset&.destroy
+  end
+
+  test "process! does not dedup against an asset completed for another account" do
+    sha256    = Digest::SHA256.hexdigest(PDF_BINARY)
+    other     = users(:two)
+    other_id  = BulkUploadAsset.custom_id_for_sha(
+      sha256,
+      contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+      account_id:       other.account_id
+    )
+
+    other_bulk = BulkUpload.create!(
+      sha256: Digest::SHA256.hexdigest("other_#{SecureRandom.hex(8)}"),
+      original_filename: "other.zip",
+      status: "complete",
+      user: other
+    )
+    prior_asset = BulkUploadAsset.create!(
+      bulk_upload:    other_bulk,
+      custom_id:      other_id,
+      sha256:         sha256,
+      s3_key:         "bulk_uploads/#{other.account_id}/prior/manual.pdf",
+      filename:       "manual.pdf",
+      content_type:   "application/pdf",
+      status:         "complete",
+      canonical_name: "Other Tenant Manual",
+      aliases:        [ "OTHER-001" ],
+      ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+    )
+
+    zip_path = build_zip(entries: { "manual.pdf" => PDF_BINARY })
+    service  = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    service.process!(@bulk_upload, zip_path)
+
+    asset = BulkUploadAsset.find_by(bulk_upload: @bulk_upload, sha256: sha256)
+    assert_not_nil asset
+    assert_equal "uploaded_s3", asset.status, "another tenant's chunks must never satisfy this account"
+    assert_not_equal prior_asset.id, asset.id
+  ensure
+    prior_asset&.destroy
+    other_bulk&.destroy
+  end
+
+  test "process! writes originals under the uploader's account prefix" do
+    zip_path = build_zip(entries: { "photo.jpg" => JPEG_BINARY })
+
+    service = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    service.process!(@bulk_upload, zip_path)
+
+    asset = BulkUploadAsset.find_by(bulk_upload: @bulk_upload)
+    assert asset.s3_key.start_with?("bulk_uploads/#{@user.account_id}/"), asset.s3_key
+    assert_equal [ asset.s3_key ], @fake_s3.keys
+  end
+
+  test "process! refuses an unattributed upload before writing to S3" do
+    orphan = BulkUpload.create!(
+      sha256: Digest::SHA256.hexdigest("orphan_#{SecureRandom.hex(8)}"),
+      original_filename: "orphan.zip",
+      status: "pending"
+    )
+    zip_path = build_zip(entries: { "photo.jpg" => JPEG_BINARY })
+
+    service = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    assert_raises(BatchIngestionService::MissingAccountError) do
+      service.process!(orphan, zip_path)
+    end
+    assert_empty @fake_s3.keys
+    assert_empty orphan.bulk_upload_assets
+  ensure
+    orphan&.destroy
   end
 
   test "process! sets status uploaded_s3 when no dedup hit" do

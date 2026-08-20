@@ -25,13 +25,14 @@ class PollBulkBedrockIngestionJobTest < ActiveJob::TestCase
   # Helpers
   # ---------------------------------------------------------------------------
 
-  def make_bulk_upload(bedrock_ingestion_job_id: "bedrock-job-123", status: "processing")
+  def make_bulk_upload(bedrock_ingestion_job_id: "bedrock-job-123", status: "processing", user: users(:one))
     BulkUpload.create!(
       sha256:                    SecureRandom.hex(16),
       original_filename:         "batch.zip",
       status:                    status,
       asset_count:               0,
-      bedrock_ingestion_job_id:  bedrock_ingestion_job_id
+      bedrock_ingestion_job_id:  bedrock_ingestion_job_id,
+      user:                      user
     )
   end
 
@@ -75,11 +76,47 @@ class PollBulkBedrockIngestionJobTest < ActiveJob::TestCase
     asset.reload
     assert_equal "complete", asset.status
 
-    kb_doc = KbDocument.find_by(s3_key: asset.s3_key)
+    kb_doc = KbDocument.find_by(account_id: users(:one).account_id, s3_key: asset.s3_key)
     assert_not_nil kb_doc
     assert_equal "Manual técnico A", kb_doc.display_name
     assert_includes kb_doc.aliases, "manual A"
     assert_equal kb_doc.id, asset.kb_document_id
+  end
+
+  test "COMPLETE: the same s3_key in two accounts yields two KbDocuments" do
+    shared_key = "bulk_uploads/shared/manual.pdf"
+
+    upload_a = make_bulk_upload(user: users(:one))
+    asset_a  = make_asset(upload_a, s3_key: shared_key)
+    upload_b = make_bulk_upload(user: users(:two))
+    asset_b  = make_asset(upload_b, s3_key: shared_key)
+
+    stub_ingestion_service("COMPLETE") do
+      PollBulkBedrockIngestionJob.perform_now(upload_a.id, started_at_iso: 1.minute.ago.iso8601)
+      PollBulkBedrockIngestionJob.perform_now(upload_b.id, started_at_iso: 1.minute.ago.iso8601)
+    end
+
+    kb_a = KbDocument.find_by(account_id: users(:one).account_id, s3_key: shared_key)
+    kb_b = KbDocument.find_by(account_id: users(:two).account_id, s3_key: shared_key)
+
+    assert_not_nil kb_a
+    assert_not_nil kb_b
+    assert_not_equal kb_a.id, kb_b.id
+    assert_equal kb_a.id, asset_a.reload.kb_document_id
+    assert_equal kb_b.id, asset_b.reload.kb_document_id
+  end
+
+  test "COMPLETE: unattributed upload completes assets without creating a KbDocument" do
+    upload = make_bulk_upload(user: nil)
+    asset  = make_asset(upload, s3_key: "bulk_uploads/orphan/manual.pdf")
+
+    stub_ingestion_service("COMPLETE") do
+      PollBulkBedrockIngestionJob.perform_now(upload.id, started_at_iso: 1.minute.ago.iso8601)
+    end
+
+    assert_equal "complete", asset.reload.status
+    assert_nil asset.kb_document_id
+    assert_nil KbDocument.find_by(s3_key: "bulk_uploads/orphan/manual.pdf")
   end
 
   test "COMPLETE: enqueues TrackIngestionUsageJob for embed cost when chunks_s3_prefix present" do
@@ -112,7 +149,7 @@ class PollBulkBedrockIngestionJobTest < ActiveJob::TestCase
       PollBulkBedrockIngestionJob.perform_now(upload.id, started_at_iso: 1.minute.ago.iso8601)
     end
 
-    kb_doc = KbDocument.find_by(s3_key: asset.s3_key)
+    kb_doc = KbDocument.find_by(account_id: users(:one).account_id, s3_key: asset.s3_key)
     assert_not_includes kb_doc.aliases.map(&:downcase), "manual técnico a"
     assert_includes kb_doc.aliases, "otro alias"
   end

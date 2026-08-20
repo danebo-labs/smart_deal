@@ -20,6 +20,15 @@ class IngestBatchResultsJob < ApplicationJob
     bulk_upload  = BulkUpload.find(bulk_upload_id)
     return if bulk_upload.status == "failed"
 
+    # Sidecar account_id and the bulk_chunks/<account_id>/ prefix are what
+    # retrieval filters on. Without an owning account the chunks would be
+    # written where no tenant can ever read them.
+    account_id = bulk_upload.account_id
+    if account_id.blank?
+      fail_unattributed(bulk_upload)
+      return
+    end
+
     parser       = BatchResultsParserService.new
     batch_client = ClaudeBatchClient.new
 
@@ -62,7 +71,7 @@ class IngestBatchResultsJob < ApplicationJob
             ingestion_p = "field_photo_v1"
             begin
               parser.call(asset: asset, raw_json: JSON.generate(raw_json), ingestion_path: ingestion_p,
-                          account_id: "bulk_v1", document_uid: asset.sha256[0, 36])
+                          account_id: account_id, document_uid: asset.sha256[0, 36])
             rescue BatchResultsParserService::ParseError => e
               Rails.logger.warn("IngestBatchResultsJob[#{bulk_upload_id}]: FieldPhotoResultsParser failed #{asset.filename} — #{e.message}")
             end
@@ -99,7 +108,7 @@ class IngestBatchResultsJob < ApplicationJob
       begin
         merged_json = ChunkMergerService.merge(page_results)
         parser.call(asset: asset, raw_json: merged_json, ingestion_path: "manual_batch_v1",
-                    account_id: "bulk_v1", document_uid: asset.sha256[0, 36])
+                    account_id: account_id, document_uid: asset.sha256[0, 36])
       rescue ArgumentError, BatchResultsParserService::ParseError => e
         asset.update_columns(status: "failed", error_message: e.message)
         asset.broadcast_replace!
@@ -160,6 +169,14 @@ class IngestBatchResultsJob < ApplicationJob
   end
 
   private
+
+  def fail_unattributed(bulk_upload)
+    msg = "BulkUpload##{bulk_upload.id} has no owning account (user_id=#{bulk_upload.user_id.inspect}) — refusing to write chunks"
+    bulk_upload.bulk_upload_assets.where.not(status: %w[complete failed])
+               .update_all(status: "failed", error_message: msg)
+    bulk_upload.update_columns(status: "failed", error_message: msg)
+    Rails.logger.error("IngestBatchResultsJob[#{bulk_upload.id}]: #{msg}")
+  end
 
   def page_id?(custom_id)
     PAGE_ID_REGEX.match?(custom_id)

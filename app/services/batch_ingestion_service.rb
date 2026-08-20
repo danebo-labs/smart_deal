@@ -15,6 +15,8 @@ require "aws-sdk-s3"
 class BatchIngestionService
   include AwsClientInitializer
 
+  class MissingAccountError < StandardError; end
+
   Submission = Data.define(:id, :ids)
 
   def initialize(batch_client: nil)
@@ -30,25 +32,28 @@ class BatchIngestionService
   # @param bulk_upload [BulkUpload]
   # @param zip_path    [String] path to the ZIP file on disk
   def process!(bulk_upload, zip_path)
+    account_id  = account_id_for!(bulk_upload)
     date_prefix = Date.current.iso8601
     extractor   = ZipExtractionService.new(zip_path)
 
     extractor.each_entry do |entry|
       binary = compress_if_image(entry[:binary], entry[:content_type],
                                   filename: entry[:filename], sha256: entry[:sha256])
-      key    = "bulk_uploads/#{date_prefix}/#{entry[:filename]}"
+      key    = "bulk_uploads/#{account_id}/#{date_prefix}/#{entry[:filename]}"
       upload_binary(key, binary, entry[:content_type])
 
       asset = BulkUploadAsset.find_or_initialize_by(
         custom_id: BulkUploadAsset.custom_id_for(
           entry[:binary],
-          contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+          contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+          account_id:       account_id
         )
       )
 
       dedup = ContentDedupService.find_completed(
         sha256: entry[:sha256],
-        contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+        contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+        account_id: account_id
       )
 
       if dedup.hit
@@ -67,7 +72,7 @@ class BatchIngestionService
         created = !asset.persisted?
         asset.save!
         asset.broadcast_append! if created
-        backfill_thumbnail_if_image(asset)
+        backfill_thumbnail_if_image(asset, account_id)
         Rails.logger.info("BatchIngestionService: dedup hit #{entry[:filename]} sha=#{entry[:sha256][0, 16]}")
         next
       end
@@ -87,7 +92,7 @@ class BatchIngestionService
       asset.broadcast_append! if created
     end
 
-    extractor.skipped_entries.each { |skip| record_skipped_asset!(bulk_upload, skip) }
+    extractor.skipped_entries.each { |skip| record_skipped_asset!(bulk_upload, skip, account_id) }
 
     bulk_upload.update!(status: "processing")
   end
@@ -127,11 +132,22 @@ class BatchIngestionService
 
   private
 
-  def record_skipped_asset!(bulk_upload, skip)
+  # Every downstream artifact is keyed by account, so an unattributed ZIP must
+  # fail before a single object is written instead of landing in a shared prefix.
+  def account_id_for!(bulk_upload)
+    account_id = bulk_upload.account_id
+    return account_id if account_id.present?
+
+    raise MissingAccountError,
+      "BulkUpload##{bulk_upload.id} has no owning account (user_id=#{bulk_upload.user_id.inspect})"
+  end
+
+  def record_skipped_asset!(bulk_upload, skip, account_id)
     asset = BulkUploadAsset.find_or_initialize_by(
       custom_id: BulkUploadAsset.custom_id_for(
         skip[:binary],
-        contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION
+        contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+        account_id:       account_id
       )
     )
     asset.assign_attributes(
@@ -209,11 +225,11 @@ class BatchIngestionService
     end
   end
 
-  def backfill_thumbnail_if_image(asset)
+  def backfill_thumbnail_if_image(asset, account_id)
     return unless %w[image/jpeg image/jpg image/png image/webp image/gif].include?(asset.content_type.to_s)
 
     kb_doc = asset.kb_document_id ? KbDocument.find_by(id: asset.kb_document_id)
-                                   : KbDocument.find_by(s3_key: asset.s3_key)
+                                   : KbDocument.find_by(account_id: account_id, s3_key: asset.s3_key)
     KbDocumentThumbnailFromS3.call(kb_doc) if kb_doc
   rescue StandardError => e
     Rails.logger.warn("BatchIngestionService: thumbnail backfill failed for asset #{asset.id} — #{e.message}")

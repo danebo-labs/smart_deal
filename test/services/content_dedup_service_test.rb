@@ -11,11 +11,12 @@ class ContentDedupServiceTest < ActiveSupport::TestCase
     @custom_id = BulkUploadAsset.custom_id_for_sha(@sha256, contract_version: CONTRACT)
   end
 
-  def create_complete_asset(custom_id: @custom_id, contract_version: CONTRACT)
+  def create_complete_asset(custom_id: @custom_id, contract_version: CONTRACT, user: nil)
     bulk_upload = BulkUpload.create!(
       sha256:            Digest::SHA256.hexdigest("batch zip #{custom_id}"),
       original_filename: "batch.zip",
-      status:            "complete"
+      status:            "complete",
+      user:              user
     )
     asset = BulkUploadAsset.create!(
       bulk_upload:    bulk_upload,
@@ -106,5 +107,66 @@ class ContentDedupServiceTest < ActiveSupport::TestCase
     assert_equal 32, v1.length
     assert_not_equal v1, v2
     assert_equal v1, BulkUploadAsset.custom_id_for_sha(@sha256, contract_version: "a")
+  end
+
+  # ── Tenancy ─────────────────────────────────────────────────────────────────
+
+  test "custom_id is account-scoped and stable per account" do
+    unscoped = BulkUploadAsset.custom_id_for(@binary, contract_version: CONTRACT)
+    account_a = BulkUploadAsset.custom_id_for(@binary, contract_version: CONTRACT, account_id: 1)
+    account_b = BulkUploadAsset.custom_id_for(@binary, contract_version: CONTRACT, account_id: 2)
+
+    assert_not_equal account_a, account_b
+    assert_not_equal unscoped, account_a
+    assert_equal account_a,
+                 BulkUploadAsset.custom_id_for_sha(@sha256, contract_version: CONTRACT, account_id: 1)
+  end
+
+  test "an asset completed for another account is a miss" do
+    other = users(:two)
+    scoped_custom_id = BulkUploadAsset.custom_id_for_sha(
+      @sha256, contract_version: CONTRACT, account_id: other.account_id
+    )
+    asset, bulk_upload = create_complete_asset(custom_id: scoped_custom_id, user: other)
+
+    result = ContentDedupService.find_completed(
+      sha256: @sha256, contract_version: CONTRACT, account_id: users(:one).account_id
+    )
+
+    assert_not result.hit
+  ensure
+    asset&.destroy
+    bulk_upload&.destroy
+  end
+
+  test "an asset completed for the same account is a hit" do
+    user = users(:one)
+    scoped_custom_id = BulkUploadAsset.custom_id_for_sha(
+      @sha256, contract_version: CONTRACT, account_id: user.account_id
+    )
+    asset, bulk_upload = create_complete_asset(custom_id: scoped_custom_id, user: user)
+
+    result = ContentDedupService.find_completed(
+      sha256: @sha256, contract_version: CONTRACT, account_id: user.account_id
+    )
+
+    assert result.hit
+    assert_equal asset, result.asset
+  ensure
+    asset&.destroy
+    bulk_upload&.destroy
+  end
+
+  test "a legacy unscoped asset never satisfies an account-scoped lookup" do
+    asset, bulk_upload = create_complete_asset
+
+    result = ContentDedupService.find_completed(
+      sha256: @sha256, contract_version: CONTRACT, account_id: users(:one).account_id
+    )
+
+    assert_not result.hit
+  ensure
+    asset&.destroy
+    bulk_upload&.destroy
   end
 end

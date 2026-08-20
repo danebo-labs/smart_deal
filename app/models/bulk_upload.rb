@@ -4,6 +4,11 @@ class BulkUpload < ApplicationRecord
   belongs_to :user, optional: true
   has_many :bulk_upload_assets, dependent: :destroy
 
+  # Owning tenant for every artifact this upload produces: S3 original prefix,
+  # chunk sidecar `account_id`, KbDocument row and dedup namespace. There is no
+  # column — the account is whoever uploaded the ZIP.
+  delegate :account_id, to: :user, allow_nil: true
+
   STATUSES = %w[pending processing complete failed].freeze
 
   validates :sha256, presence: true, uniqueness: true

@@ -108,12 +108,13 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
 
   # ── Helper ─────────────────────────────────────────────────────────────────────
 
-  def create_bulk_with_assets
+  def create_bulk_with_assets(user: users(:one))
     bulk = BulkUpload.create!(
       sha256: Digest::SHA256.hexdigest("bulk_#{SecureRandom.hex(8)}"),
       original_filename: "mixed.zip",
       status: "processing",
-      claude_batch_id: "msgbatch_test_001"
+      claude_batch_id: "msgbatch_test_001",
+      user: user
     )
 
     sha_photo = Digest::SHA256.hexdigest("photo_binary")
@@ -191,6 +192,52 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     # PDF tokens: accumulate page1 (100+10+5=115) + page2 (200+10+5=215) = 330
     assert_equal 115 + 215, pdf_asset.claude_input_tokens
     assert_equal 50  + 80,  pdf_asset.claude_output_tokens
+  ensure
+    bulk&.bulk_upload_assets&.destroy_all
+    bulk&.destroy
+  end
+
+  test "chunks and sidecars are written under the uploader's account, never a shared prefix" do
+    bulk, _photo_asset, _pdf_asset, pdf_sha_prefix = create_bulk_with_assets(user: users(:two))
+    account_id = users(:two).account_id
+
+    written = {}
+    S3DocumentsService.define_method(:upload_text) { |key, body| written[key] = body }
+
+    @fake_client.results = [
+      FakeBatchResult.new(
+        custom_id: "#{pdf_sha_prefix}_p1",
+        result:    FakeResult.new(type: "succeeded", message: make_message(PAGE1_JSON))
+      )
+    ]
+
+    IngestBatchResultsJob.perform_now(bulk.id)
+
+    assert written.keys.any?, "expected chunks to be written"
+    assert written.keys.all? { |key| key.start_with?("bulk_chunks/#{account_id}/") },
+           "expected every key under bulk_chunks/#{account_id}/, got #{written.keys.inspect}"
+
+    sidecar_key = written.keys.find { |key| key.end_with?(".metadata.json") }
+    attributes  = JSON.parse(written.fetch(sidecar_key)).fetch("metadataAttributes")
+    assert_equal account_id.to_s, attributes["account_id"]
+  ensure
+    bulk&.bulk_upload_assets&.destroy_all
+    bulk&.destroy
+  end
+
+  test "unattributed bulk upload fails without writing a single chunk" do
+    bulk, photo_asset, pdf_asset, = create_bulk_with_assets(user: nil)
+
+    written = []
+    S3DocumentsService.define_method(:upload_text) { |key, _body| written << key }
+
+    IngestBatchResultsJob.perform_now(bulk.id)
+
+    assert_empty written
+    assert_equal "failed", bulk.reload.status
+    assert_match(/no owning account/, bulk.error_message)
+    assert_equal "failed", photo_asset.reload.status
+    assert_equal "failed", pdf_asset.reload.status
   ensure
     bulk&.bulk_upload_assets&.destroy_all
     bulk&.destroy

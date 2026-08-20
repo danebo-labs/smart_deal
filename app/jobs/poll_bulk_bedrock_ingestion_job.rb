@@ -64,8 +64,9 @@ class PollBulkBedrockIngestionJob < ApplicationJob
     syncing_assets = bulk_upload.bulk_upload_assets.where(status: "syncing").to_a
 
     if status == "COMPLETE"
+      account_id = bulk_upload.account_id
       syncing_assets.each do |asset|
-        kb_doc = upsert_kb_document(asset)
+        kb_doc = upsert_kb_document(asset, account_id)
         asset.update_columns(status: "complete", kb_document_id: kb_doc&.id)
         asset.broadcast_replace!
       end
@@ -97,10 +98,17 @@ class PollBulkBedrockIngestionJob < ApplicationJob
     TrackIngestionUsageJob.perform_later(embed_chunk_sources: sources)
   end
 
-  def upsert_kb_document(asset)
+  # Scoped by account: kb_documents is unique on (account_id, s3_key), and an
+  # unscoped upsert would hand a second tenant's document to whichever account
+  # first indexed that key.
+  def upsert_kb_document(asset, account_id)
     return nil if asset.s3_key.blank?
+    if account_id.blank?
+      Rails.logger.warn("PollBulkBedrockIngestionJob: no account for asset #{asset.id} — skipping KbDocument upsert")
+      return nil
+    end
 
-    kb_doc = KbDocument.find_or_initialize_by(s3_key: asset.s3_key)
+    kb_doc = KbDocument.find_or_initialize_by(account_id: account_id, s3_key: asset.s3_key)
     kb_doc.display_name = asset.canonical_name.presence || kb_doc.display_name.presence || asset.filename
 
     kb_doc.aliases = (Array(kb_doc.aliases) + Array(asset.aliases))

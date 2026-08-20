@@ -45,11 +45,12 @@ class ProcessBulkUploadJobTest < ActiveJob::TestCase
     end
   end
 
-  def make_bulk(sha_suffix: SecureRandom.hex(8))
+  def make_bulk(sha_suffix: SecureRandom.hex(8), user: users(:one))
     BulkUpload.create!(
       sha256:            Digest::SHA256.hexdigest("process_job_#{sha_suffix}"),
       original_filename: "test.zip",
-      status:            "pending"
+      status:            "pending",
+      user:              user
     )
   end
 
@@ -157,5 +158,22 @@ class ProcessBulkUploadJobTest < ActiveJob::TestCase
     assert_equal "failed", @bulk.status
     assert_match(/boom/, @bulk.error_message)
     assert_includes @fake_archive.deleted_keys, zip
+  end
+
+  test "marks bulk failed when the ZIP has no owning account" do
+    orphan = make_bulk(user: nil)
+    zip    = build_zip(entries: { "photo.jpg" => JPEG_BINARY })
+
+    assert_no_enqueued_jobs(only: SubmitClaudeBatchJob) do
+      ProcessBulkUploadJob.perform_now(orphan.id, zip, "es")
+    end
+
+    orphan.reload
+    assert_equal "failed", orphan.status
+    assert_match(/no owning account/, orphan.error_message)
+    assert_empty orphan.bulk_upload_assets
+  ensure
+    orphan&.bulk_upload_assets&.destroy_all
+    orphan&.destroy
   end
 end

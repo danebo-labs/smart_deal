@@ -27,6 +27,7 @@ older dated versions are historical evidence, not the current plan.
 | Operations: the September build month | [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) | **Current.** Certifier module, voice capture, descope ladder |
 | Market sizing, billing unit, unit economics | [PRICING_Y_MERCADO_2026-08-07.md](PRICING_Y_MERCADO_2026-08-07.md) | **Current.** Reads against [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) as the cost authority |
 | Demo and pilot tracking | [MATRIZ_DEMOS_PILOTOS_2026-08-07.md](MATRIZ_DEMOS_PILOTOS_2026-08-07.md) | **Current.** Unifies the two identical August XLSX matrices; the July interview matrix is closed |
+| Gonzalo pilot ingestion: scope, budget, corpus findings, console runbook | [INGESTA_PILOTO_GONZALO_2026-08-20.md](INGESTA_PILOTO_GONZALO_2026-08-20.md) | **Current, in flight.** Scope closed at six brands: 180 PDFs / 10.442 pages / US$367 against US$1.121 for the full corpus. Pilot tenant deployed; validation ZIP ingesting |
 
 Conventions that hold across all of them: business planning is written in
 Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus

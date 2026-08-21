@@ -1,9 +1,9 @@
 # Ingesta piloto Gonzalo (2026-08-20)
 
-**Estado: validación superada.** Alcance cerrado en seis marcas, tenant piloto
+**Estado: primera tanda en vuelo.** Alcance cerrado en seis marcas, tenant piloto
 desplegado y `00_validacion.zip` ingerido con aislamiento entre tenants
-verificado. Los seis ZIPs de ingesta están armados y pendientes de arrancar, con
-el presupuesto revisado al alza (ver más abajo).
+verificado. `02_ingesta.zip` está procesándose en Anthropic (ver
+[Tandas](#tandas)); quedan cinco ZIPs, con el presupuesto revisado al alza.
 
 ## Presupuesto y alcance
 
@@ -248,10 +248,23 @@ embeddings.
 Repetir pasos 2–3 de a uno, confirmando `complete` antes del siguiente, para no
 perder créditos si algo falla en el camino.
 
+## Tandas
+
+| ZIP | `BulkUpload` | Assets | Páginas al batch | Estado |
+|---|---|---|---|---|
+| `00_validacion.zip` | 2 | 4 | 27 | `complete`, US$1,0877 |
+| `02_ingesta.zip` | 3 | 62 (60 + 2 descartados) | 1.002 | 11 batches en vuelo |
+
+Dos PDFs de BLT (`05.- BLT-ES_PLC input.pdf`, `08.- BLT-ES_PLC output.pdf`, 60
+páginas) fallaron con `bulk_uploads.all_pages_filtered`: el filtro de páginas
+descartó todas sus páginas antes de enviarlas, así que no consumieron créditos.
+Son tablas de E/S de PLC; si se quieren recuperar hay que revisar el filtro, no
+reintentar el ZIP.
+
 ## Pendientes
 
-1. **Validación sin cerrar**: confirmar `complete` en `00_validacion.zip` y los dos
-   controles de aislamiento antes de gastar los ~US$365 restantes.
+1. **Cinco ZIPs por ingerir**: esperar `complete` en `02_ingesta.zip` y medir su
+   coste real antes de seguir; el presupuesto no cubre el corpus entero.
 2. **Usuarios nominales**: falta el nombre y correo de cada ingeniero.
 3. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y
    se ingiere sólo lo nuevo — el dedupe por cuenta evita pagar dos veces.
@@ -275,6 +288,13 @@ dólares. No parar la infra con un batch en vuelo.
 
 La IP pública `54.163.248.39` es elástica y sigue asociada tras un stop/start, así
 que el DNS y los certificados no se rompen al reiniciar.
+
+**Control manual del stack.** [`bin/stack`](../bin/stack) encapsula lo anterior:
+`up` autoriza la IP local en el puerto 22, arranca RDS antes que EC2 y espera un
+200; `down` se **niega** a parar si hay uploads en vuelo; `hold` / `release`
+deshabilitan y reponen los schedules `danebo-stop-{ec2,rds}` de EventBridge, que
+por defecto apagan todo a las 18:00 de Chile. `hold` está aplicado mientras corre
+esta ingesta. `status` resume EC2, RDS, salud HTTP, uploads en vuelo y schedules.
 
 **`ReconcileBedrockCostJob` está fallando.** `AccessDenied` en `s3:ListBucket` para
 el rol `smart-deal-ec2-role`. Es la reconciliación de coste que las reglas del

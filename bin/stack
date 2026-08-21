@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# EC2 and RDS are stopped and started by four EventBridge Scheduler schedules
+# (danebo-{start,stop}-{ec2,rds}) that keep the stack up 10:00-18:00 Chile time.
+# Outside that window the app is down, and the two pieces stop separately: with
+# RDS down the containers come up but kamal-proxy answers 502.
+
+REGION="${STACK_REGION:-us-east-1}"
+EC2_ID="${STACK_EC2_ID:-i-09db5c5fc53e973b0}"
+RDS_ID="${STACK_RDS_ID:-smart-deal-db}"
+SG_ID="${STACK_SG_ID:-sg-06d4cf4fc9a5e3749}"
+HEALTH_URL="${STACK_HEALTH_URL:-https://piloto.danebo.ai/users/sign_in}"
+STOP_SCHEDULES=(danebo-stop-ec2 danebo-stop-rds)
+WAIT_TIMEOUT="${STACK_WAIT_TIMEOUT:-900}"
+
+usage() {
+  cat <<'USAGE'
+Usage: bin/stack <command>
+
+Commands:
+  up        Authorize this machine's IP, start RDS and EC2, wait until the app answers 200
+  down      Stop EC2 and RDS (refuses while a bulk ingestion is in flight)
+  status    Report EC2, RDS, app health, schedules and in-flight ingestions
+  ssh-ip    Authorize this machine's current public IP on port 22
+  hold      Disable the nightly stop schedules (use while a long ingestion runs)
+  release   Re-enable the nightly stop schedules
+
+Options:
+  --force   With `down`, stop even if a bulk ingestion is in flight
+  --help    Show this help
+
+A batch that is in flight keeps processing and billing at Anthropic while the
+stack is down, and PollClaudeBatchJob fails the upload if the worker returns more
+than 24h after its first attempt. Use `hold` before a long ingestion.
+USAGE
+}
+
+fail() {
+  echo "stack: $*" >&2
+  exit 1
+}
+
+ec2_state() {
+  aws ec2 describe-instances --region "$REGION" --instance-ids "$EC2_ID" \
+    --query 'Reservations[].Instances[].State.Name' --output text
+}
+
+rds_state() {
+  aws rds describe-db-instances --region "$REGION" --db-instance-identifier "$RDS_ID" \
+    --query 'DBInstances[0].DBInstanceStatus' --output text
+}
+
+http_code() {
+  curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$HEALTH_URL" || echo 000
+}
+
+# Counts uploads whose Anthropic batch has not been ingested yet. Needs the app
+# up, so it returns "unknown" when the stack is down or kamal cannot reach it.
+in_flight() {
+  local out
+  if ! command -v kamal >/dev/null 2>&1; then
+    echo unknown
+    return
+  fi
+  out=$(kamal app exec --reuse --roles=web \
+    'bin/rails runner "print BulkUpload.processing.count"' 2>/dev/null |
+    grep -Eo '^[0-9]+$' | tail -1) || true
+  echo "${out:-unknown}"
+}
+
+authorize_ip() {
+  local ip
+  ip=$(curl -s --max-time 15 https://checkip.amazonaws.com | tr -d '[:space:]')
+  [[ -n "$ip" ]] || fail "could not determine this machine's public IP"
+
+  if aws ec2 describe-security-groups --region "$REGION" --group-ids "$SG_ID" \
+      --query "SecurityGroups[0].IpPermissions[?FromPort==\`22\`].IpRanges[].CidrIp" \
+      --output text | tr '\t' '\n' | grep -qx "$ip/32"; then
+    echo "stack: SSH already authorized for $ip/32"
+    return
+  fi
+
+  aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG_ID" \
+    --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$ip/32,Description=\"laptop SSH $(date +%F)\"}]" \
+    >/dev/null
+  echo "stack: authorized SSH for $ip/32"
+}
+
+wait_for_healthy() {
+  local deadline=$((SECONDS + WAIT_TIMEOUT)) rds ec2 code
+  while (( SECONDS < deadline )); do
+    rds=$(rds_state); ec2=$(ec2_state); code=$(http_code)
+    printf 'stack: ec2=%s rds=%s http=%s\n' "$ec2" "$rds" "$code"
+    if [[ "$code" == "200" ]]; then
+      echo "stack: up"
+      return 0
+    fi
+    sleep 20
+  done
+  fail "timed out after ${WAIT_TIMEOUT}s waiting for $HEALTH_URL"
+}
+
+cmd_up() {
+  authorize_ip
+
+  # RDS first: the app boots without it but every request 502s until it answers.
+  [[ "$(rds_state)" == "available" ]] ||
+    aws rds start-db-instance --region "$REGION" --db-instance-identifier "$RDS_ID" >/dev/null
+  [[ "$(ec2_state)" == "running" ]] ||
+    aws ec2 start-instances --region "$REGION" --instance-ids "$EC2_ID" >/dev/null
+
+  wait_for_healthy
+}
+
+cmd_down() {
+  local force="${1:-}" pending
+  pending=$(in_flight)
+
+  if [[ "$force" != "--force" ]]; then
+    case "$pending" in
+      unknown) echo "stack: warning — could not check for in-flight ingestions" >&2 ;;
+      0) ;;
+      *) fail "$pending bulk upload(s) in flight; their Anthropic batches would keep billing. Re-run with --force to stop anyway." ;;
+    esac
+  fi
+
+  aws ec2 stop-instances --region "$REGION" --instance-ids "$EC2_ID" >/dev/null
+  aws rds stop-db-instance --region "$REGION" --db-instance-identifier "$RDS_ID" >/dev/null
+  echo "stack: stopping ec2 and rds"
+}
+
+cmd_status() {
+  printf 'ec2       %s\n' "$(ec2_state)"
+  printf 'rds       %s\n' "$(rds_state)"
+  printf 'http      %s  (%s)\n' "$(http_code)" "$HEALTH_URL"
+  printf 'in flight %s bulk upload(s)\n' "$(in_flight)"
+  aws scheduler list-schedules --region "$REGION" \
+    --query 'Schedules[].{Name:Name,State:State}' --output text |
+    while read -r name state; do printf 'schedule  %-20s %s\n' "$name" "$state"; done
+}
+
+# update-schedule replaces the whole definition, so the existing schedule is
+# round-tripped verbatim and only State is flipped. Rebuilding the target by hand
+# risks dropping fields and corrupting the schedule.
+set_schedules() {
+  local state="$1" name payload
+  for name in "${STOP_SCHEDULES[@]}"; do
+    payload=$(aws scheduler get-schedule --region "$REGION" --name "$name" --output json |
+      python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+for read_only in ("Arn", "CreationDate", "LastModificationDate"):
+    s.pop(read_only, None)
+s["State"] = sys.argv[1]
+json.dump(s, sys.stdout)
+' "$state")
+    aws scheduler update-schedule --region "$REGION" --cli-input-json "$payload" >/dev/null
+    echo "stack: $name -> $state"
+  done
+}
+
+case "${1:-}" in
+  up)      cmd_up ;;
+  down)    cmd_down "${2:-}" ;;
+  status)  cmd_status ;;
+  ssh-ip)  authorize_ip ;;
+  hold)    set_schedules DISABLED ;;
+  release) set_schedules ENABLED ;;
+  -h|--help|help|"") usage ;;
+  *) usage; fail "unknown command: $1" ;;
+esac

@@ -121,8 +121,11 @@ class BatchIngestionService
       return nil
     end
 
-    batch_ids = submitter.submit!(items)
-    bulk_upload.update!(claude_batch_id: batch_ids.first, claude_batch_ids: batch_ids)
+    # Persist per accepted group, not once at the end: the ids are already
+    # billed by then, and a crash before the final write orphans them.
+    batch_ids = submitter.submit!(items) do |accepted_ids|
+      bulk_upload.update!(claude_batch_id: accepted_ids.first, claude_batch_ids: accepted_ids)
+    end
     persist_batch_custom_ids!(assets, meta)
     bulk_upload.derive_status!
     Submission.new(batch_ids.first, batch_ids)

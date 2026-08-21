@@ -340,6 +340,61 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
     BulkCostV2RequestBuilder.define_singleton_method(:new, original_builder_new) if defined?(original_builder_new)
   end
 
+  # 03_ingesta.zip lost two already-billed batches this way: the worker cgroup
+  # OOM-killed the job mid-submission and the ids only got written after the
+  # last group, so nothing could poll or reconcile what Anthropic had charged.
+  test "submit! persists an accepted batch id even when a later group dies mid-submission" do
+    assets = 2.times.map do |index|
+      BulkUploadAsset.create!(
+        bulk_upload: @bulk_upload,
+        custom_id: "orphan_#{index}",
+        sha256: Digest::SHA256.hexdigest("orphan_#{index}"),
+        s3_key: "bulk_uploads/orphan_#{index}.pdf",
+        filename: "orphan_#{index}.pdf",
+        content_type: "application/pdf",
+        status: "uploaded_s3"
+      )
+    end
+
+    items = assets.map do |asset|
+      ClaudeBatchRequestItem.new(
+        custom_id: asset.custom_id,
+        byte_size: 10,
+        build: -> { { custom_id: asset.custom_id, params: {} } },
+        cleanup: -> { }
+      )
+    end
+    meta = assets.to_h { |asset| [ asset.id, [ asset.custom_id ] ] }
+
+    fake_builder = Object.new
+    fake_builder.define_singleton_method(:build_items!) { |_assets| [ items, meta ] }
+    original_builder_new = BulkCostV2RequestBuilder.method(:new)
+    BulkCostV2RequestBuilder.define_singleton_method(:new) { fake_builder }
+
+    submitted = 0
+    fake_client = Object.new
+    fake_client.define_singleton_method(:submit_batch) do |requests:|
+      submitted += 1
+      raise "worker killed mid-submission" if submitted > 1
+
+      OpenStruct.new(id: "batch_#{submitted}")
+    end
+
+    old_max_requests = ENV["INGESTION_BATCH_MAX_REQUESTS"]
+    ENV["INGESTION_BATCH_MAX_REQUESTS"] = "1"
+
+    assert_raises(RuntimeError) do
+      BatchIngestionService.new(batch_client: fake_client).submit!(@bulk_upload)
+    end
+
+    @bulk_upload.reload
+    assert_equal "batch_1", @bulk_upload.claude_batch_id
+    assert_equal %w[batch_1], @bulk_upload.claude_batch_ids
+  ensure
+    ENV["INGESTION_BATCH_MAX_REQUESTS"] = old_max_requests
+    BulkCostV2RequestBuilder.define_singleton_method(:new, original_builder_new) if defined?(original_builder_new)
+  end
+
   private
 
   def display_error_in_spanish(error_message)

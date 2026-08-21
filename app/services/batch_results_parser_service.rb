@@ -241,9 +241,10 @@ class BatchResultsParserService
       next unless chunk.is_a?(Hash) && chunk["field_records"].is_a?(Array)
 
       chunk["field_records"] = chunk["field_records"].filter_map.with_index do |record, record_index|
-        if unverifiable_non_stop_field_record?(record)
+        reason = droppable_field_record_reason(record)
+        if reason
           Rails.logger.warn(
-            "BatchResultsParserService: dropping field_record without evidence " \
+            "BatchResultsParserService: dropping field_record (#{reason}) " \
             "in chunk #{chunk_index} field_record #{record_index}"
           )
           next
@@ -252,6 +253,30 @@ class BatchResultsParserService
         record
       end
     end
+  end
+
+  def droppable_field_record_reason(record)
+    return "no evidence" if unverifiable_non_stop_field_record?(record)
+
+    stray = stray_field_record_keys(record)
+    return "unknown keys: #{stray.join(', ')}" if stray.any?
+
+    nil
+  end
+
+  # A hallucinated extra key is one defective record, not a corrupt document.
+  # Raising here cost otis_2000.pdf all 17 of its already-billed pages over a
+  # single stray "value" key in chunk 16, and the pending ZIPs carry 954 more
+  # OTIS pages. STOP_WORK_CONDITION is excluded for the same reason
+  # #unverifiable_non_stop_field_record? excludes it: a safety stop must fail
+  # loudly rather than vanish from the ledger.
+  def stray_field_record_keys(record)
+    return [] unless record.is_a?(Hash)
+
+    values = record.deep_stringify_keys
+    return [] if values["k"].to_s == "STOP_WORK_CONDITION"
+
+    values.keys - FIELD_RECORD_ALLOWED_KEYS
   end
 
   def unverifiable_non_stop_field_record?(record)

@@ -25,6 +25,10 @@ class PilotMetricsDailyTest < ActiveSupport::TestCase
       "PILOT_METRICS_DAILY_BIN" => @metrics_bin,
       "PILOT_METRICS_DAILY_STACK_BIN" => @stack_bin,
       "STUB_STACK_LOG" => @stack_calls,
+      # Every test whose subject is not the window bypasses it: otherwise the
+      # suite only passes between 09:00 and 17:59 in Santiago and fails at night
+      # for reasons that have nothing to do with the code under test.
+      "PILOT_METRICS_DAILY_FORCE" => "true",
       "PILOT_METRICS_DAILY_ACCOUNTS" => "acct-one acct-two",
       "PILOT_METRICS_OUTPUT_ROOT" => @output_root,
       "PILOT_METRICS_RUBY" => RbConfig.ruby,
@@ -74,7 +78,11 @@ class PilotMetricsDailyTest < ActiveSupport::TestCase
     # 30 is unreachable for an hour-of-day, so the skip is asserted without
     # depending on what time the suite happens to run.
     stdout, _stderr, status = run_daily(
-      env: { "PILOT_METRICS_DAILY_WINDOW_START" => "30", "PILOT_METRICS_DAILY_WINDOW_END" => "30" }
+      env: {
+        "PILOT_METRICS_DAILY_WINDOW_START" => "30",
+        "PILOT_METRICS_DAILY_WINDOW_END" => "30",
+        "PILOT_METRICS_DAILY_FORCE" => "false"
+      }
     )
 
     assert status.success?

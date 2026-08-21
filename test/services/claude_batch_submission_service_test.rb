@@ -61,6 +61,59 @@ class ClaudeBatchSubmissionServiceTest < ActiveSupport::TestCase
     assert_equal [ 2, 1 ], client.groups.map(&:size)
   end
 
+  test "yields the ids accepted so far after every group, before the next is sent" do
+    cleanup_log = []
+    client = FakeClient.new
+    items = [
+      item("p1", 6, cleanup_log: cleanup_log),
+      item("p2", 6, cleanup_log: cleanup_log),
+      item("p3", 6, cleanup_log: cleanup_log)
+    ]
+
+    yielded = []
+    ClaudeBatchSubmissionService.new(
+      batch_client: client,
+      target_raw_bytes: 10,
+      max_raw_bytes: 20,
+      max_requests: 10
+    ).submit!(items) { |ids| yielded << ids }
+
+    assert_equal [ %w[batch_1], %w[batch_1 batch_2], %w[batch_1 batch_2 batch_3] ], yielded
+  end
+
+  # The failure mode this guards is money, not correctness: a group Anthropic
+  # already accepted is already billed, so its id has to have escaped the
+  # method before the next group can kill the process.
+  test "ids accepted before a mid-loop failure are already yielded" do
+    cleanup_log = []
+    client = Object.new
+    submitted = 0
+    client.define_singleton_method(:submit_batch) do |requests:|
+      submitted += 1
+      raise "worker killed" if submitted > 1
+
+      OpenStruct.new(id: "batch_#{submitted}")
+    end
+
+    items = [
+      item("p1", 6, cleanup_log: cleanup_log),
+      item("p2", 6, cleanup_log: cleanup_log)
+    ]
+
+    yielded = []
+    assert_raises(RuntimeError) do
+      ClaudeBatchSubmissionService.new(
+        batch_client: client,
+        target_raw_bytes: 10,
+        max_raw_bytes: 20,
+        max_requests: 10
+      ).submit!(items) { |ids| yielded << ids }
+    end
+
+    assert_equal [ %w[batch_1] ], yielded
+    assert_equal %w[p1 p2], cleanup_log.sort
+  end
+
   test "guardrail rejects a single oversized request before submission and cleans every item" do
     cleanup_log = []
     client = FakeClient.new

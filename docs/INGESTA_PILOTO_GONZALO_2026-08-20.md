@@ -1,11 +1,14 @@
 # Ingesta piloto Gonzalo (2026-08-20)
 
-**Estado: bloqueada por memoria, no por presupuesto (21-ago).** Alcance cerrado
-en seis marcas, tenant piloto desplegado, `00_validacion.zip` y `02_ingesta.zip`
-ingeridos. El coste real medido sobre 985 páginas es **US$0,0245/página, por
-debajo** del estimado — los créditos alcanzan para todo el corpus pendiente. El
-bloqueo es otro: `03_ingesta.zip` murió por **OOM del contenedor worker** durante
-la submission, dejando dos batches pagados y huérfanos. Ver
+**Estado: memoria mitigada, pendiente de deploy para reanudar (22-ago).** Alcance
+cerrado en seis marcas, tenant piloto desplegado, `00_validacion.zip` y
+`02_ingesta.zip` ingeridos. El coste real medido sobre 985 páginas es
+**US$0,0245/página, por debajo** del estimado — los créditos alcanzan para todo el
+corpus pendiente. El bloqueo era otro: `03_ingesta.zip` murió por **OOM del
+contenedor worker** durante la submission, dejando dos batches pagados y
+huérfanos. Ya hay **4 GB de swap en el host** (duplica el presupuesto efectivo del
+worker sin redeploy) y la submission **ya persiste cada batch id de forma
+incremental** en local, a falta de desplegarlo. Ver
 [El límite real es la memoria del worker](#el-límite-real-es-la-memoria-del-worker).
 
 ## Presupuesto y alcance
@@ -86,8 +89,36 @@ Memory cgroup out of memory: Killed process 2601 (bundle) anon-rss:558608kB
 
 Por qué `02` pasó y `03` no: `02` son 62 PDFs pequeños (ZIP de 23 MB); `03` son 7
 PDFs grandes (ZIP de 140 MB). Los cuatro ZIPs pendientes (`01`, `04`, `05`, `06`)
-son de 134–137 MB con la misma forma → **mismo riesgo**. No relanzar ninguno
-antes de resolver la memoria.
+son de 134–137 MB con la misma forma → **mismo riesgo**.
+
+#### Mitigación aplicada (22-ago): 4 GB de swap en el host
+
+El contenedor **ya pedía swap** y nadie se lo podía dar:
+
+```
+Memory=1073741824  MemorySwap=2147483648   ← 1 GiB RAM + 1 GiB swap
+memory.max      = 1073741824
+memory.swap.max = 1073741824               ← permiso concedido…
+Swap:  0 total                             ← …sin nada detrás
+```
+
+`memory.swap.max` de 1 GiB estaba concedido, pero el host no tenía swap: el
+cgroup no podía paginar una sola página y moría en seco al tocar 1 GiB. El
+swapfile no cambia la configuración de Docker, **la vuelve real** — el
+presupuesto efectivo del worker pasa de 1 GiB a 2 GiB **sin redeploy ni cambio de
+config**. `vm.swappiness` es 60 (el default) y los 629 MB del worker son casi
+todo `anon`, que es exactamente lo que el swap absorbe.
+
+```bash
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab   # sobrevive reinicios
+```
+
+El dato que dimensiona el problema: el worker está a **609 MiB de 1 GiB en
+reposo** (59%), o sea tenía ~415 MiB de aire. Ahora tiene ~1,4 GiB. Si aun así
+volviera a morir, el siguiente paso es subir `memory` en `config/deploy.yml`, no
+más swap.
 
 #### Dos batches pagados y huérfanos
 
@@ -111,10 +142,18 @@ o sea documentos a medias — peor para retrieval que no tenerlos. La
 recomendación es **asumir los ~US$4,90 y re-ingerir `03` completo** una vez
 arreglada la memoria; el dedupe no ayuda porque ningún asset llegó a `complete`.
 
-**Bug de fiabilidad a corregir aparte:** la submission no es atómica y los
-`claude_batch_ids` se persisten sólo si *todos* los grupos entran. Un fallo a
-mitad deja batches facturados e invisibles. Deberían persistirse de forma
-incremental, grupo a grupo, antes de seguir con el siguiente.
+**Corregido (22-ago): la submission ya persiste grupo a grupo.**
+`ClaudeBatchSubmissionService#submit!` acumulaba los ids con `groups.map` y sólo
+los entregaba al terminar el bucle. Ahora acepta un bloque que se invoca tras
+cada grupo aceptado, y `BatchIngestionService#submit!` escribe
+`claude_batch_ids` **antes de enviar el siguiente**. El coste es un `UPDATE`
+pequeño por grupo en un job de fondo; lo que compra es que ningún batch
+facturado quede invisible.
+
+Esto es lo que evita el daño grande, no el swap: el swap hace el OOM menos
+probable, pero cualquier reinicio, deploy o `SIGKILL` a mitad de submission
+repetía la pérdida. `01_ingesta.zip` son 3.615 páginas en ~37 grupos — una caída
+a mitad podía orfanar decenas de dólares de una vez.
 
 Las cifras por marca no se pueden sumar desde mediciones separadas: el dedupe por
 SHA-256 es global al corpus, así que medir marca por marca cuenta dos veces los
@@ -357,24 +396,42 @@ por página corre después del parseo, de ahí el hueco 1.002 → 985).
 
 El radio de daño escala con el tamaño del documento: una clave alucinada en un
 manual de 245 páginas cuesta ~US$6. Los ZIPs pendientes traen 954 páginas más de
-OTIS. Decisión pendiente: mantener el rechazo estricto o degradar a descartar
-sólo el `field_record` ofensor —como ya hace
-`discard_unverifiable_field_records!`— dejando el resto del documento. Requiere
-deploy, y **no bumpear `INGESTION_CONTRACT_VERSION`** para no invalidar el dedupe.
+OTIS.
+
+**Resuelto (22-ago): se descarta el `field_record`, no el documento.** El chequeo
+de claves sobrantes se movió de `validate_field_record!` a
+`discard_unverifiable_field_records!`, que ya era el airlock que descarta
+registros sin evidencia con `filter_map` + `warn`. Una clave alucinada es un
+registro defectuoso, no un documento corrupto.
+
+La asimetría es deliberada: **`STOP_WORK_CONDITION` sigue fallando en duro**, por
+la misma razón que `unverifiable_non_stop_field_record?` ya lo excluía — una
+condición de parada de seguridad no puede desaparecer del ledger sin traza. Sólo
+los registros no-seguridad se degradan a descarte.
+
+Sigue siendo fallo de documento todo lo que sí indica corrupción (JSON inválido,
+`chunks` vacío, chunk sin `text`, `k` fuera del enum) y el airlock de
+`TOPOLOGY_EDGE` emitido por el modelo. **No se bumpea
+`INGESTION_CONTRACT_VERSION`**: el contrato de salida no cambia, sólo la
+tolerancia del parser, así que el dedupe por `(cuenta, SHA-256, contrato)` sigue
+válido.
 
 ## Pendientes
 
-1. **Memoria del worker**: bloquea los cuatro ZIPs restantes. Ver
-   [El límite real es la memoria del worker](#el-límite-real-es-la-memoria-del-worker).
-2. **Re-ingerir `03_ingesta.zip`** tras el fix (~US$10,36; se pierden los ~US$4,90
-   ya pagados).
-3. **Submission no atómica**: persistir `claude_batch_ids` grupo a grupo.
-4. **Tolerancia del parser** ante claves desconocidas en `field_records`.
-5. **Usuarios nominales**: falta el nombre y correo de cada ingeniero.
-6. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y
+1. **Desplegar** los tres fixes de código (submission durable, tolerancia del
+   parser, `bin/pilot_metrics`). Hasta el deploy, no relanzar ningún ZIP.
+2. **Re-ingerir `03_ingesta.zip`** como canario tras el deploy (~US$10,36; se
+   pierden los ~US$4,90 ya pagados).
+3. **Usuarios nominales**: falta el nombre y correo de cada ingeniero.
+4. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y
    se ingiere sólo lo nuevo — el dedupe por cuenta evita pagar dos veces.
-7. **Los dos PDFs de OTIS sobre 50 MB**: 319 páginas, ~US$7,8, requieren partirse
+5. **Los dos PDFs de OTIS sobre 50 MB**: 319 páginas, ~US$7,8, requieren partirse
    por páginas.
+6. **`ReconcileBedrockCostJob`** sigue fallando con `AccessDenied` en
+   `s3:ListBucket`: sin auditoría autoritativa del gasto de Bedrock.
+
+Resueltos el 22-ago: memoria del worker (swap de 4 GB en el host), submission no
+atómica (`claude_batch_ids` grupo a grupo) y tolerancia del parser.
 
 ## Auditoría de coste por tanda
 
@@ -470,6 +527,11 @@ Decisiones de diseño que conviene no revertir sin leer esto:
 - **Limitación asumida:** un cron en la laptop sólo dispara si la laptop está
   encendida. La solución durable es el frente B, no un cron mejor; la alternativa
   server-side (timer en la EC2 exportando a S3) necesita la misma aprobación.
+- **Los tests fijan `PILOT_METRICS_DAILY_FORCE=true`.** Esa misma ventana 9–17h
+  hacía que diez de los doce tests del wrapper sólo pasaran si la suite corría
+  dentro de ella: verdes de día, rojos de noche, por la hora y no por el código.
+  El bypass va en el env base y sólo los dos tests que cubren la ventana lo
+  desactivan.
 
 **`bin/pilot_metrics` leía sólo contenedores corriendo.** `resolve_container` usaba
 `docker ps`, que omite los `exited`. Tras un deploy los logs de los días

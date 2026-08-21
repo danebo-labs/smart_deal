@@ -308,6 +308,49 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_not_includes chunk, "# FIELD-SAFETY EVIDENCE RECORDS"
   end
 
+  # otis_2000.pdf lost all 17 of its already-billed pages to a single stray
+  # "value" key in chunk 16: the document was rejected whole and no chunk was
+  # written. The stray record goes, the rest of the document stays.
+  test "drops a field_record with a stray key instead of rejecting the document" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record("value" => "hallucinated"),
+      field_record("h" => "Section 3.1", "a" => "Check the brake.", "ev" => "Compruebe el freno.")
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+
+    assert_equal "parsed", asset.reload.status
+    chunk = @fake_s3.uploads["#{asset.chunks_s3_prefix}/chunk_0.txt"]
+    assert_includes chunk, "Check the brake."
+    assert_not_includes chunk, "hallucinated"
+    assert_not_includes chunk, "Press the horn button."
+  end
+
+  # The asymmetry is deliberate and matches #unverifiable_non_stop_field_record?:
+  # a stop-work condition must never disappear from the ledger without a trace.
+  test "a stop-work record with a stray key still fails the document loudly" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record(
+        "k" => "STOP_WORK_CONDITION",
+        "sw" => [ "Oil leak is visible", "Mark the platform out of service" ],
+        "value" => "hallucinated"
+      )
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    error = assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    assert_includes error.message, "Unknown value"
+    assert_equal "failed", asset.reload.status
+  end
+
   test "keeps stop-work records without evidence strict" do
     payload = golden_parsed.deep_dup
     stop_work = field_record(

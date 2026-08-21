@@ -32,19 +32,30 @@ class ClaudeBatchSubmissionService
     @max_requests     = max_requests || positive_integer_env("INGESTION_BATCH_MAX_REQUESTS", DEFAULT_MAX_REQUESTS)
   end
 
+  # Anthropic bills a group the instant it accepts it, so an accepted id must be
+  # made durable before the next group is sent. Accumulating every id in memory
+  # and handing them over only after the last group means any death mid-loop
+  # (the worker cgroup OOM that killed 03_ingesta.zip, a deploy, a SIGKILL)
+  # leaves paid batches that nothing can poll or reconcile.
+  #
+  # @yield [Array<String>] every batch id accepted so far, after each group
   # @return [Array<String>] every submitted Anthropic batch id, in group order
   def submit!(items)
     groups = slice(items)
-    batch_ids = groups.map.with_index do |group, index|
+    batch_ids = []
+
+    groups.each_with_index do |group, index|
       requests = group.map(&:build)
       batch = @batch_client.submit_batch(requests: requests)
       raise "Anthropic batch group #{index + 1} returned no id" if batch.id.blank?
+
+      batch_ids << batch.id
+      yield batch_ids.dup if block_given?
 
       Rails.logger.info(
         "ClaudeBatchSubmissionService: submitted group=#{index + 1}/#{groups.size} " \
         "requests=#{group.size} raw_bytes=#{group.sum(&:byte_size)} batch_id=#{batch.id}"
       )
-      batch.id
     ensure
       requests = nil
     end

@@ -120,6 +120,13 @@ reposo** (59%), o sea tenía ~415 MiB de aire. Ahora tiene ~1,4 GiB. Si aun así
 volviera a morir, el siguiente paso es subir `memory` en `config/deploy.yml`, no
 más swap.
 
+**Medido en la re-submission de `03` (22-ago): pico de 928 MiB de 1.024, y swap
+usado 0.** Es decir, cupo por 96 MiB sin tocar el swap. Lo que marcó la
+diferencia no fue el swap sino arrancar el worker limpio: post-deploy partía de
+375 MiB, mientras que en el intento fallido venía de 609 MiB con el heap
+acumulado de las 62 PDFs de `02`. El swap queda como seguro para cuando eso
+vuelva a pasar — y `01_ingesta.zip` son 62 PDFs otra vez, así que va a pasar.
+
 #### Dos batches pagados y huérfanos
 
 El OOM no ocurrió armando las requests sino **a mitad de la submission**, después
@@ -154,6 +161,11 @@ Esto es lo que evita el daño grande, no el swap: el swap hace el OOM menos
 probable, pero cualquier reinicio, deploy o `SIGKILL` a mitad de submission
 repetía la pérdida. `01_ingesta.zip` son 3.615 páginas en ~37 grupos — una caída
 a mitad podía orfanar decenas de dólares de una vez.
+
+**Verificado en vivo:** durante la re-submission de `03` se observó
+`claude_batch_ids` con **3 ids mientras aún quedaban grupos por enviar**, y 5 al
+terminar. Con el código anterior el campo habría pasado de 0 a 5 de golpe, o se
+habría quedado en 0 para siempre si el proceso moría en el grupo 4.
 
 Las cifras por marca no se pueden sumar desde mediciones separadas: el dedupe por
 SHA-256 es global al corpus, así que medir marca por marca cuenta dos veces los
@@ -367,7 +379,12 @@ perder créditos si algo falla en el camino.
 |---|---|---|---|---|
 | `00_validacion.zip` | 2 | 4 | 27 | `complete`, US$1,0877 |
 | `02_ingesta.zip` | 3 | 62 (59 ok, 3 fallidos) | 985 | `complete`, US$24,1381 |
-| `03_ingesta.zip` | 4 | 7 (todos `uploaded_s3`) | 200 pagadas, 0 ingeridas | **OOM del worker**, ver arriba |
+| `03_ingesta.zip` | 4 | 7 (todos `in_batch`) | 200 perdidas + 416 en vuelo | **re-submitida 22-ago** sobre `b8144d2`, 5 batches registrados |
+
+`03` se reanudó sin re-extraer: los 7 assets seguían en `uploaded_s3` con sus
+objetos intactos en S3, así que bastó `SubmitClaudeBatchJob.perform_later(4)` en
+vez de re-subir el ZIP. Salieron 416 requests en 5 grupos (no 423: el
+`PageRelevanceFilter` descarta algunas páginas antes de facturar).
 
 Reparto por marca de lo pendiente, para decidir el orden:
 

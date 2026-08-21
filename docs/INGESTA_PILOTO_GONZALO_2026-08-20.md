@@ -1,8 +1,9 @@
 # Ingesta piloto Gonzalo (2026-08-20)
 
-**Estado: en curso.** Alcance cerrado en seis marcas, tenant piloto desplegado y
-ZIP de validación ingiriéndose. El resto de los ZIPs está armado y esperando el
-visto bueno de la validación.
+**Estado: validación superada.** Alcance cerrado en seis marcas, tenant piloto
+desplegado y `00_validacion.zip` ingerido con aislamiento entre tenants
+verificado. Los seis ZIPs de ingesta están armados y pendientes de arrancar, con
+el presupuesto revisado al alza (ver más abajo).
 
 ## Presupuesto y alcance
 
@@ -20,9 +21,29 @@ sobre el corpus en disco a US$0,027/página en modo batch más 30% de buffer:
 | Mitsubishi | 4 | 38 | US$1 |
 | **Total** | **180** | **10.442** | **US$366,53** |
 
-Créditos cargados: **US$371,99**. El margen sobre el estimado con buffer es de
-US$5,46; sobre el coste base (US$282) hay holgura real. Los ZIPs están troceados
-en checkpoints de US$15–127 para poder parar sin perder la corrida entera.
+Créditos cargados: **US$371,99**.
+
+### El coste medido no cuadra con el estimado
+
+La validación (27 páginas reales, batch `msgbatch_01Bw3jABL34nKXhf3AmccDUF`) dio
+**US$1,0877, o US$0,0403/página — un 49% por encima de los US$0,027 asumidos**:
+
+| Modelo | Págs | Input | Output | Cache lect. | Cache escr. | USD | USD/pág |
+|---|---|---|---|---|---|---|---|
+| `claude-opus-4-8` | 10 | 17.811 | 28.162 | 33.536 | 50.304 | 0,5621 | 0,0562 |
+| `claude-sonnet-4-6` | 17 | 40.426 | 49.614 | 51.066 | 45.392 | 0,5255 | 0,0309 |
+| **Total** | **27** | | | | | **1,0877** | **0,0403** |
+
+El coste por página depende de a qué modelo enruta `FileMultimodalRouter`: Opus
+(multimodal) cuesta el doble por página que Sonnet (texto).
+
+Extrapolado, el alcance completo son **~US$421**, y los créditos cargados cubren
+unas **9.234 páginas (88% del corpus)**. Además la cifra es un piso, no un techo:
+`00_validacion.zip` se armó con los PDFs **más livianos** de cada marca, y el peso
+de KONE son planos y esquemas — justo lo que va a Opus.
+
+Los ZIPs están troceados en checkpoints de US$15–127 para poder parar al agotar
+créditos sin perder lo ya procesado.
 
 Las cifras por marca no se pueden sumar desde mediciones separadas: el dedupe por
 SHA-256 es global al corpus, así que medir marca por marca cuenta dos veces los
@@ -203,10 +224,20 @@ bu.bulk_upload_assets.pluck(:chunks_s3_prefix)     # => todos bajo bulk_chunks/<
 KbDocument.where(account_id: account.id).count
 ```
 
-Y los dos controles que justifican el fix de tenancy:
+Y el control que justifica el fix de tenancy, con `retrieve_chunks` (Retrieve puro,
+sin coste de generación) sobre la misma pregunta en las dos cuentas:
 
-- Una consulta en la cuenta nueva responde con citas a estos manuales.
-- La misma consulta desde `danebo-legacy` **no** ve estos documentos.
+```ruby
+q = "listado de fallas MPK 708A codigos de error"
+[ 3, 1 ].each do |aid|
+  res = BedrockRagService.new(account: Account.find(aid)).retrieve_chunks(q, number_of_results: 5)
+  # cuenta 3 → Listado Fallas MPK 708A.pdf, codigos error BL6.pdf (account_id=3)
+  # cuenta 1 → original.pdf                                       (account_id=1)
+end
+```
+
+Resultado de la validación: cero solapamiento, y el metadato `account_id` de cada
+chunk coincide con la cuenta consultada.
 
 Monitoreo durante la corrida: Mission Control en `/jobs`, estados de
 `BulkUpload`/`BulkUploadAsset`, y `bedrock_daily_costs` para el gasto de
@@ -232,6 +263,23 @@ perder créditos si algo falla en el camino.
 **Acceso SSH.** El security group `sg-06d4cf4fc9a5e3749` (`smart-deal-sg-web`)
 autoriza el puerto 22 por IP `/32`. Una IP nueva no entra hasta añadir la regla.
 Hay reglas antiguas sin descripción que conviene depurar.
+
+**Apagar la infra a mitad de una ingesta cuesta dinero.** El stack son dos piezas
+que se paran por separado: la instancia `i-09db5c5fc53e973b0` y la instancia RDS
+`smart-deal-db`. Con RDS parada la app devuelve 502 aunque los contenedores estén
+arriba. Lo caro es el worker: los batches siguen procesándose y facturándose en
+Anthropic, pero `PollClaudeBatchJob` tiene un `HARD_TIMEOUT` de 24h contado desde
+su primer intento, así que si el worker vuelve pasado ese plazo marca el upload
+como `failed` sobre resultados ya pagados. Con los ZIPs grandes eso son cientos de
+dólares. No parar la infra con un batch en vuelo.
+
+La IP pública `54.163.248.39` es elástica y sigue asociada tras un stop/start, así
+que el DNS y los certificados no se rompen al reiniciar.
+
+**`ReconcileBedrockCostJob` está fallando.** `AccessDenied` en `s3:ListBucket` para
+el rol `smart-deal-ec2-role`. Es la reconciliación de coste que las reglas del
+proyecto tratan como autoridad sobre las estimaciones por tokens, así que ahora
+mismo no hay auditoría del gasto real de Bedrock.
 
 **Deriva entre el host map y kamal.** `config/deploy.yml` está en `.gitignore`, así
 que la lista real de `proxy.hosts` no viaja en el repo. El test de

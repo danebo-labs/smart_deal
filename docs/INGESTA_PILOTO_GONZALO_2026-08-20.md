@@ -457,6 +457,36 @@ ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@54.163.248.39 \
 
 ## Notas operativas
 
+**La cola `solid_queue_recurring` no la consumía nadie (corregido 22-ago).**
+`clear_solid_queue_finished_jobs` está declarado en `config/recurring.yml` con
+`command:` en vez de `class:`, así que SolidQueue lo envuelve en
+`SolidQueue::RecurringJob` y lo encola en `solid_queue_recurring`. Los tres
+workers de `config/queue.yml` cubrían `default`, `ingestion` y `bulk_ingestion`:
+ninguno esa. Consecuencia doble — **el job que limpia los jobs terminados nunca
+corrió ni una vez**, y sus propios encolados se apilaron: 553 filas en `ready`
+entre el 5-may y el 21-ago, con 6.188 jobs `finished` sin purgar.
+
+Arreglado añadiendo la cola al lane `default`. Orden importante: **primero se
+descartó el backlog, después se habilitó el consumo**; al revés, los 553
+`RecurringJob` se habrían ejecutado todos de golpe al arrancar el worker.
+
+Se descartaron también las 16 `FailedExecution` acumuladas, ninguna reintentable
+con sentido: 12 de `ReconcileBedrockCostJob` (el `AccessDenied` sigue sin
+resolver, así que volverán a aparecer), un `ProcessBulkUploadJob` del 5-jun por
+un ZIP ya borrado, un `UploadAndSyncAttachmentsJob`, y las dos muertes por OOM.
+Estado final: `ready`, `claimed`, `failed`, `blocked` y `scheduled` a cero, y los
+6.188 jobs restantes todos `finished`.
+
+**El OOM del worker era crónico, no de `03`.** Entre esas fallidas estaba
+`SubmitManualBatchJob` del **23-jul** sobre `SEGURIDADES 1.1-1.pdf`, muerta con
+la misma firma que `03`: `ProcessExitError — Received unhandled signal 9`. El
+límite de 1 GiB llevaba un mes matando jobs sin que nadie lo diagnosticara.
+
+`SubmitClaudeBatchJob` (job 6718, `args=[4]`) se descartó **a propósito**: seguía
+siendo reintentable, y reintentarla habría re-enviado los cinco grupos desde cero
+—re-facturando las 423 páginas— dejando además los dos huérfanos igual de
+huérfanos.
+
 **Acceso SSH.** El security group `sg-06d4cf4fc9a5e3749` (`smart-deal-sg-web`)
 autoriza el puerto 22 por IP `/32`. Una IP nueva no entra hasta añadir la regla.
 Hay reglas antiguas sin descripción que conviene depurar.

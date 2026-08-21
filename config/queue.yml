@@ -8,7 +8,12 @@ default: &default
     # 1s polling = ~4 SELECTs/s on RDS in idle. Footer updates ~1s after a query
     # response, which is acceptable for a non-critical cost metric (the model
     # answer arrives several seconds before the footer either way).
-    - queues: default
+    # solid_queue_recurring belongs here: a recurring task declared with
+    # `command:` instead of `class:` (clear_solid_queue_finished_jobs) is wrapped
+    # in SolidQueue::RecurringJob and enqueued on that queue. With no worker
+    # consuming it the hourly cleanup never ran once, so finished jobs were never
+    # cleared and 553 of its own enqueues piled up between May and August.
+    - queues: [ default, solid_queue_recurring ]
       threads: 4
       processes: 1
       polling_interval: 1

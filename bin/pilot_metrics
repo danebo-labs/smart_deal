@@ -111,25 +111,65 @@ if [[ "$SSH_KEY" == "~/"* ]]; then
 fi
 
 SSH_TARGET="${SSH_USER}@${HOST}"
+# The security group authorizes port 22 per source IP, so an unauthorized laptop
+# does not get refused — it hangs until the TCP timeout. ConnectTimeout turns
+# that into a prompt, visible failure instead of a cron job stuck for minutes.
+SSH_CONNECT_TIMEOUT="${PILOT_METRICS_SSH_CONNECT_TIMEOUT:-15}"
 remote() {
-  ssh -i "$SSH_KEY" -o BatchMode=yes "$SSH_TARGET" "$1"
+  ssh -i "$SSH_KEY" -o BatchMode=yes -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$SSH_TARGET" "$1"
 }
 
-resolve_container() {
+# Docker keeps one log per container, so a deploy leaves the previous days'
+# events reachable only through the old container, which is `exited`. Resolving
+# logs with running-only `docker ps` silently truncates the window to whatever
+# the current container has seen (hallazgo H1's failure mode, one deploy later).
+# `docker exec` still needs a running container, so the two are resolved apart.
+CONTAINER_HISTORY_LIMIT="${PILOT_METRICS_CONTAINER_HISTORY:-6}"
+
+resolve_running_container() {
   local role="$1"
   local output
-  output=$(remote "docker ps --filter 'label=service=${SERVICE}' --filter 'label=role=${role}' --format '{{.ID}}'") || return 1
+  output=$(remote "docker ps --filter 'label=service=${SERVICE}' --filter 'label=role=${role}' --filter status=running --format '{{.ID}}'") || return 1
   output="${output%%$'\n'*}"
   printf '%s' "$output"
 }
 
-WEB_CONTAINER=$(resolve_container web) || fail "could not resolve web container"
+# Container ids for one role into LOG_CONTAINERS, oldest first: `docker ps --all`
+# lists newest first, and chronological order keeps source_events.jsonl
+# append-ordered. Logs never overlap between containers, so concatenating them
+# cannot duplicate an event.
+LOG_CONTAINERS=()
+collect_log_containers() {
+  local role="$1"
+  local output
+  output=$(remote "docker ps --all --filter 'label=service=${SERVICE}' --filter 'label=role=${role}' --format '{{.ID}}'") || return 1
+
+  local -a ids=()
+  local id
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    [[ "$id" =~ ^[a-fA-F0-9]+$ ]] || fail "invalid ${role} container id: ${id}"
+    ids+=("$id")
+    [[ ${#ids[@]} -lt "$CONTAINER_HISTORY_LIMIT" ]] || break
+  done <<< "$output"
+
+  LOG_CONTAINERS=()
+  local index
+  for ((index = ${#ids[@]} - 1; index >= 0; index--)); do
+    LOG_CONTAINERS+=("${ids[index]}")
+  done
+}
+
+WEB_CONTAINER=$(resolve_running_container web) || fail "could not resolve web container"
 [[ -n "$WEB_CONTAINER" ]] || fail "web container not found"
 [[ "$WEB_CONTAINER" =~ ^[a-fA-F0-9]+$ ]] || fail "invalid web container id"
 
-WORKER_CONTAINER=$(resolve_container worker || true)
-if [[ -n "$WORKER_CONTAINER" && ! "$WORKER_CONTAINER" =~ ^[a-fA-F0-9]+$ ]]; then
-  fail "invalid worker container id"
+collect_log_containers web || fail "could not resolve web log containers"
+WEB_LOG_CONTAINERS=(${LOG_CONTAINERS[@]+"${LOG_CONTAINERS[@]}"})
+
+WORKER_LOG_CONTAINERS=()
+if collect_log_containers worker; then
+  WORKER_LOG_CONTAINERS=(${LOG_CONTAINERS[@]+"${LOG_CONTAINERS[@]}"})
 fi
 
 COHORT_CODE='account = Account.find_by!(slug: ARGV.fetch(0)); user_ids = account.users.order(:id).pluck(:id); puts JSON.generate(account_id: account.id, account_slug: account.slug, user_ids: user_ids, user_count: user_ids.size)'
@@ -160,42 +200,60 @@ SOURCE_EVENTS="${OUTPUT_DIR}/source_events.jsonl"
 
 ROLES_DOWNLOADED=()
 EMPTY_ROLES=()
+CONTAINERS_READ=()
+UNREADABLE_CONTAINERS=()
 fetch_role_logs() {
   local role="$1"
-  local container="$2"
-  local raw_file="${WORK_DIR}/${role}.log"
-  local filtered_file="${WORK_DIR}/${role}.filtered.log"
+  shift
+  local -a containers=("$@")
 
-  if [[ -z "$container" ]]; then
+  if [[ ${#containers[@]} -eq 0 ]]; then
     EMPTY_ROLES+=("$role")
     echo "pilot_metrics: warning: ${role} container not found" >&2
     return
   fi
 
-  if ! remote "docker logs --since '${FROM}T00:00:00Z' '${container}'" > "$raw_file" 2>&1; then
-    EMPTY_ROLES+=("$role")
-    echo "pilot_metrics: warning: could not fetch ${role} logs" >&2
-    return
-  fi
-
-  ROLES_DOWNLOADED+=("$role")
   local markers='\[PILOT_USAGE\]|\[RAG_QUALITY\]'
   [[ "$WITH_QUESTIONS" == false ]] || markers+='|\[PILOT_AUDIT\]'
-  grep -E "$markers" "$raw_file" > "$filtered_file" || true
-  if [[ ! -s "$filtered_file" ]]; then
-    EMPTY_ROLES+=("$role")
-    return
-  fi
 
-  sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
-    "$filtered_file" >> "$SOURCE_EVENTS"
+  local downloaded=false
+  local matched=false
+  local container
+  for container in "${containers[@]}"; do
+    local raw_file="${WORK_DIR}/${role}.${container}.log"
+    local filtered_file="${WORK_DIR}/${role}.${container}.filtered.log"
+
+    if ! remote "docker logs --since '${FROM}T00:00:00Z' '${container}'" > "$raw_file" 2>&1; then
+      UNREADABLE_CONTAINERS+=("${role}:${container}")
+      echo "pilot_metrics: warning: could not fetch ${role} logs from ${container}" >&2
+      continue
+    fi
+
+    downloaded=true
+    CONTAINERS_READ+=("${role}:${container}")
+    grep -E "$markers" "$raw_file" > "$filtered_file" || true
+    [[ -s "$filtered_file" ]] || continue
+
+    matched=true
+    sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+      "$filtered_file" >> "$SOURCE_EVENTS"
+  done
+
+  [[ "$downloaded" == false ]] || ROLES_DOWNLOADED+=("$role")
+  [[ "$matched" == true ]] || EMPTY_ROLES+=("$role")
 }
 
-fetch_role_logs web "$WEB_CONTAINER"
-fetch_role_logs worker "$WORKER_CONTAINER"
+fetch_role_logs web ${WEB_LOG_CONTAINERS[@]+"${WEB_LOG_CONTAINERS[@]}"}
+fetch_role_logs worker ${WORKER_LOG_CONTAINERS[@]+"${WORKER_LOG_CONTAINERS[@]}"}
 
 if [[ "$STRICT" == true && ${#EMPTY_ROLES[@]} -gt 0 ]]; then
-  fail "strict: empty or unavailable logs for role(s): ${EMPTY_ROLES[*]}"
+  fail "strict: empty or unavailable logs for role(s): ${EMPTY_ROLES[*]:-}"
+fi
+
+# A container that answered `docker ps` but not `docker logs` is a hole in the
+# window, not an empty day: the events may exist and simply be unreachable.
+if [[ "$STRICT" == true && ${#UNREADABLE_CONTAINERS[@]} -gt 0 ]]; then
+  fail "strict: unreadable logs for container(s): ${UNREADABLE_CONTAINERS[*]:-}"
 fi
 
 IMAGE_VERSION=$(remote "docker inspect --format '{{.Config.Image}}' '${WEB_CONTAINER}'" 2>/dev/null || true)
@@ -250,7 +308,10 @@ else
     > "$STRICT_VALIDATION"
 fi
 
-ROLES_CSV=$(IFS=,; echo "${ROLES_DOWNLOADED[*]}")
+# bash 3.2 treats `${arr[*]}` on an empty array as unbound under `set -u`.
+ROLES_CSV=$(IFS=,; echo "${ROLES_DOWNLOADED[*]:-}")
+CONTAINERS_CSV=$(IFS=,; echo "${CONTAINERS_READ[*]:-}")
+UNREADABLE_CSV=$(IFS=,; echo "${UNREADABLE_CONTAINERS[*]:-}")
 GENERATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
 "$RUBY_BIN" -rjson -e '
@@ -262,11 +323,15 @@ printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
     roles_downloaded: ARGV.fetch(3).split(",").reject(&:empty?),
     image_version: ARGV.fetch(4),
     generated_at: ARGV.fetch(5),
+    # Which containers the window was actually reassembled from. Without this a
+    # post-deploy export looks identical to one that read the whole history.
+    containers_read: ARGV.fetch(7).split(",").reject(&:empty?),
+    containers_unreadable: ARGV.fetch(8).split(",").reject(&:empty?),
     strict_validation: validation
   }
   puts JSON.pretty_generate(manifest)
 ' "$FROM" "$TO" "$WORK_DIR/cohort.json" "$ROLES_CSV" "$IMAGE_VERSION" "$GENERATED_AT" \
-  "$STRICT_VALIDATION" > "${OUTPUT_DIR}/manifest.json"
+  "$STRICT_VALIDATION" "$CONTAINERS_CSV" "$UNREADABLE_CSV" > "${OUTPUT_DIR}/manifest.json"
 
 (
   cd "$OUTPUT_DIR"

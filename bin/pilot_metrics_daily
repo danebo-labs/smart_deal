@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Daily durable copy of the pilot telemetry, meant to run from cron.
+#
+# PilotAuditLog / PilotUsageLog / [RAG_QUALITY] only ever reach Rails.logger →
+# stdout → the Docker json-file driver, and LogConfig sets max-size=10m with no
+# max-file: Docker keeps a single file and drops the previous one on rotation.
+# That already destroyed a day of the pilot on 2026-08-10 (hallazgo H1 of
+# docs/rag/plan_telemetria_durable_piloto_2026-08-19.md). Until frente B (the
+# RDS table) is approved, a daily export off the box is the whole mitigation.
+#
+# Idempotent: bin/pilot_metrics writes into a directory keyed by date range and
+# account slug, so re-running the same day overwrites its own artifacts. Cron can
+# therefore fire this every hour and the last run of the day simply wins — no
+# lock, no marker, and a laptop that was asleep at 17:00 still exports at 15:00.
+#
+# The EventBridge schedules danebo-stop-{ec2,rds} take the stack down at 18:00
+# Chile, and the export needs the containers up, so runs outside the window are
+# skipped rather than attempted. The window is evaluated in America/Santiago so
+# that DST in either the laptop's zone or Chile's cannot shift it.
+#
+# Known limitation, accepted for the MVP: cron on a laptop only fires while the
+# laptop is awake. A day where the laptop stayed closed is a day of telemetry
+# that Docker may rotate away. The durable fix is frente B (write the events to
+# RDS), not a better cron; the server-side alternative is a systemd timer on the
+# EC2 box exporting to S3, which needs the same approval as frente B.
+
+ACCOUNTS_DEFAULT="danebo-legacy danebo-pilot-elevator"
+ACCOUNTS="${PILOT_METRICS_DAILY_ACCOUNTS:-$ACCOUNTS_DEFAULT}"
+EXPORT_TZ="${PILOT_METRICS_DAILY_TZ:-America/Santiago}"
+WINDOW_START="${PILOT_METRICS_DAILY_WINDOW_START:-9}"
+# 17 keeps the last run at 17:00-17:59 Chile, ahead of the 18:00 stop schedules.
+WINDOW_END="${PILOT_METRICS_DAILY_WINDOW_END:-17}"
+METRICS_BIN="${PILOT_METRICS_DAILY_BIN:-bin/pilot_metrics}"
+RUBY_BIN="${PILOT_METRICS_RUBY:-ruby}"
+OUTPUT_ROOT="${PILOT_METRICS_OUTPUT_ROOT:-tmp/pilot_exports}"
+
+log() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] pilot_metrics_daily: $*"
+}
+
+fail() {
+  log "ERROR: $*" >&2
+  exit 1
+}
+
+TODAY=$(TZ="$EXPORT_TZ" date +%Y-%m-%d)
+HOUR=$(TZ="$EXPORT_TZ" date +%-H)
+
+if [[ "${PILOT_METRICS_DAILY_FORCE:-false}" != "true" ]]; then
+  if [[ "$HOUR" -lt "$WINDOW_START" || "$HOUR" -gt "$WINDOW_END" ]]; then
+    log "skipped: ${HOUR}h ${EXPORT_TZ} is outside the ${WINDOW_START}-${WINDOW_END}h export window"
+    exit 0
+  fi
+fi
+
+log "exporting ${TODAY} (${HOUR}h ${EXPORT_TZ}) for: ${ACCOUNTS}"
+
+# Port 22 is authorized per source IP, and a home connection's public IP rotates.
+# Without this the export dies on an SSH timeout the first time the ISP renews the
+# lease — a silent gap of exactly the kind this job exists to prevent. A no-op
+# when the IP is already authorized; failure here is not fatal, because the run
+# still succeeds whenever the address has not changed.
+if [[ "${PILOT_METRICS_DAILY_AUTHORIZE_IP:-true}" == "true" ]]; then
+  if ! "${PILOT_METRICS_DAILY_STACK_BIN:-bin/stack}" ssh-ip; then
+    log "warning: could not authorize this machine's IP on port 22; trying the export anyway"
+  fi
+fi
+
+FAILED_ACCOUNTS=()
+for account in $ACCOUNTS; do
+  # --with-questions carries raw technician questions, so bin/pilot_metrics
+  # locks the directory to 700 and the artifacts to 600.
+  #
+  # Deliberately not --strict: strict fails when a role produced no events, and
+  # a pilot day with no technician activity is a real, expected outcome — a job
+  # that cries wolf every quiet day gets ignored, which is the same blind spot
+  # it was meant to close. The structural check below distinguishes "nobody used
+  # it today" from "we failed to read the logs", which is the actual 13-ago bug.
+  if ! "$METRICS_BIN" --from "$TODAY" --to "$TODAY" --account "$account" \
+       --with-questions --format raw > /dev/null; then
+    log "ERROR: export failed for ${account}"
+    FAILED_ACCOUNTS+=("$account")
+    continue
+  fi
+
+  manifest="${OUTPUT_ROOT}/${TODAY}_${TODAY}_${account}/manifest.json"
+  if ! verdict=$("$RUBY_BIN" -rjson -e '
+        manifest = JSON.parse(File.read(ARGV.fetch(0)))
+        problems = []
+        # An export that read no container did not observe an empty day; it
+        # observed nothing at all. This is the 2026-08-13 empty source_events.
+        problems << "no containers read" if Array(manifest["containers_read"]).empty?
+        unreadable = Array(manifest["containers_unreadable"])
+        problems << "unreadable containers: #{unreadable.join(",")}" if unreadable.any?
+        missing = %w[web worker] - Array(manifest["roles_downloaded"])
+        problems << "roles not downloaded: #{missing.join(",")}" if missing.any?
+        puts(problems.empty? ? "ok" : problems.join("; "))
+      ' "$manifest" 2>/dev/null); then
+    log "ERROR: could not read manifest for ${account}: ${manifest}"
+    FAILED_ACCOUNTS+=("$account")
+    continue
+  fi
+
+  if [[ "$verdict" != "ok" ]]; then
+    log "ERROR: incomplete export for ${account}: ${verdict}"
+    FAILED_ACCOUNTS+=("$account")
+    continue
+  fi
+
+  log "ok: ${account} → ${OUTPUT_ROOT}/${TODAY}_${TODAY}_${account}"
+done
+
+if [[ ${#FAILED_ACCOUNTS[@]} -gt 0 ]]; then
+  fail "export incomplete for: ${FAILED_ACCOUNTS[*]:-}"
+fi
+
+log "done"

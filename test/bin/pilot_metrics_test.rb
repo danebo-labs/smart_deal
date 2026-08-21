@@ -106,6 +106,60 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     assert_equal "helpful", interaction.fetch("technician_helpfulness")
   end
 
+  test "reads exited containers so a deploy does not truncate the window" do
+    _stdout, stderr, status = run_command("--format", "raw")
+
+    assert status.success?, stderr
+    source = File.read(File.join(output_dir, "source_events.jsonl"))
+    assert_includes source, "query:web-exited"
+    assert_includes source, '"correlation_id":"query:web"'
+
+    # Oldest container first, so the concatenated stream stays chronological.
+    assert_operator source.index("query:web-exited"), :<, source.index('"correlation_id":"query:web"')
+
+    manifest = JSON.parse(File.read(File.join(output_dir, "manifest.json")))
+    assert_equal [ "web:bbb222", "web:abc123", "worker:def456" ], manifest.fetch("containers_read")
+    assert_empty manifest.fetch("containers_unreadable")
+    assert_equal [ "web", "worker" ], manifest.fetch("roles_downloaded")
+
+    # `docker exec` targets must stay on the running container.
+    ssh_calls = File.readlines(@ssh_log, chomp: true).map { |line| JSON.parse(line) }
+    exec_calls = ssh_calls.select { |args| args.last.include?("docker exec") }
+    assert exec_calls.any?
+    assert exec_calls.all? { |args| args.last.include?("'abc123'") }
+    assert ssh_calls.any? { |args| args.last.match?(/docker ps --all .*label=role=web/) }
+  end
+
+  test "caps how far back the container history is walked" do
+    _stdout, stderr, status = run_command(
+      "--format", "raw",
+      env: { "FAKE_WEB_ALL" => "abc123\nbbb222\nccc333", "PILOT_METRICS_CONTAINER_HISTORY" => "2" }
+    )
+
+    assert status.success?, stderr
+    containers = JSON.parse(File.read(File.join(output_dir, "manifest.json"))).fetch("containers_read")
+    assert_equal [ "web:bbb222", "web:abc123", "worker:def456" ], containers
+    assert_not_includes containers, "web:ccc333"
+  end
+
+  test "strict fails when a resolved container's logs cannot be read" do
+    _stdout, stderr, status = run_command("--strict", env: { "FAKE_UNREADABLE_CONTAINER" => "bbb222" })
+
+    assert_not status.success?
+    assert_match(/strict: unreadable logs for container\(s\): web:bbb222/, stderr)
+  end
+
+  test "an unreadable container is recorded rather than silently dropped" do
+    _stdout, stderr, status = run_command("--format", "raw", env: { "FAKE_UNREADABLE_CONTAINER" => "bbb222" })
+
+    assert status.success?, stderr
+    assert_match(/could not fetch web logs from bbb222/, stderr)
+    manifest = JSON.parse(File.read(File.join(output_dir, "manifest.json")))
+    assert_equal [ "web:bbb222" ], manifest.fetch("containers_unreadable")
+    assert_equal [ "web:abc123", "worker:def456" ], manifest.fetch("containers_read")
+    assert_equal [ "web", "worker" ], manifest.fetch("roles_downloaded")
+  end
+
   test "strict fails when a declared role has no log events" do
     _stdout, stderr, status = run_command("--strict", env: { "FAKE_EMPTY_ROLE" => "worker" })
 
@@ -220,9 +274,11 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
       command = ARGV.last
       case command
       when /docker ps.*label=role=web/
-        puts "abc123"
+        # `docker ps --all` lists newest first: the current container, then the
+        # one the previous deploy left `exited` still holding earlier days.
+        puts(command.include?("--all") ? ENV.fetch("FAKE_WEB_ALL", "abc123\\nbbb222") : "abc123")
       when /docker ps.*label=role=worker/
-        puts "def456"
+        puts(command.include?("--all") ? ENV.fetch("FAKE_WORKER_ALL", "def456") : "def456")
       when /Account\.find_by!/
         empty = ENV["FAKE_COHORT_EMPTY"] == "true"
         puts JSON.generate(
@@ -231,14 +287,23 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
           user_ids: empty ? [] : [ 11, 12 ],
           user_count: empty ? 0 : 2
         )
-      when /docker logs.*abc123/
-        unless ENV["FAKE_EMPTY_ROLE"] == "web"
-          puts %(2026-07-22T00:00:00-04:00 [PILOT_USAGE] {"event":"interaction_completed","ts":"2026-07-22T00:00:00-04:00","correlation_id":"query:web"})
-          puts %(2026-07-22T12:00:00-04:00 [PILOT_AUDIT] {"ts":"2026-07-22T12:00:00-04:00","user_id":11,"correlation_id":"query:web","type":"interaction","question":"question","answer":"answer"})
-        end
-      when /docker logs.*def456/
-        unless ENV["FAKE_EMPTY_ROLE"] == "worker"
-          puts %(2026-07-22T23:59:59-04:00 [RAG_QUALITY] {"ts":"2026-07-22T23:59:59-04:00","correlation_id":"query:worker","evidence_present":true})
+      when /docker logs/
+        container = command[/'([0-9a-f]+)'\\s*\\z/, 1].to_s
+        exit 1 if ENV["FAKE_UNREADABLE_CONTAINER"] == container
+        case container
+        when "abc123"
+          unless ENV["FAKE_EMPTY_ROLE"] == "web"
+            puts %(2026-07-22T00:00:00-04:00 [PILOT_USAGE] {"event":"interaction_completed","ts":"2026-07-22T00:00:00-04:00","correlation_id":"query:web"})
+            puts %(2026-07-22T12:00:00-04:00 [PILOT_AUDIT] {"ts":"2026-07-22T12:00:00-04:00","user_id":11,"correlation_id":"query:web","type":"interaction","question":"question","answer":"answer"})
+          end
+        when "bbb222"
+          unless ENV["FAKE_EMPTY_ROLE"] == "web"
+            puts %(2026-07-21T09:00:00-04:00 [PILOT_USAGE] {"event":"interaction_completed","ts":"2026-07-21T09:00:00-04:00","correlation_id":"query:web-exited"})
+          end
+        when "def456"
+          unless ENV["FAKE_EMPTY_ROLE"] == "worker"
+            puts %(2026-07-22T23:59:59-04:00 [RAG_QUALITY] {"ts":"2026-07-22T23:59:59-04:00","correlation_id":"query:worker","evidence_present":true})
+          end
         end
       when /docker inspect/
         puts "registry.example/smart-deal:abc123"

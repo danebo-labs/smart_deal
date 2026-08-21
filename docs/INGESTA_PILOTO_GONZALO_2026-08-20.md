@@ -1,9 +1,12 @@
 # Ingesta piloto Gonzalo (2026-08-20)
 
-**Estado: primera tanda en vuelo.** Alcance cerrado en seis marcas, tenant piloto
-desplegado y `00_validacion.zip` ingerido con aislamiento entre tenants
-verificado. `02_ingesta.zip` está procesándose en Anthropic (ver
-[Tandas](#tandas)); quedan cinco ZIPs, con el presupuesto revisado al alza.
+**Estado: bloqueada por memoria, no por presupuesto (21-ago).** Alcance cerrado
+en seis marcas, tenant piloto desplegado, `00_validacion.zip` y `02_ingesta.zip`
+ingeridos. El coste real medido sobre 985 páginas es **US$0,0245/página, por
+debajo** del estimado — los créditos alcanzan para todo el corpus pendiente. El
+bloqueo es otro: `03_ingesta.zip` murió por **OOM del contenedor worker** durante
+la submission, dejando dos batches pagados y huérfanos. Ver
+[El límite real es la memoria del worker](#el-límite-real-es-la-memoria-del-worker).
 
 ## Presupuesto y alcance
 
@@ -23,27 +26,95 @@ sobre el corpus en disco a US$0,027/página en modo batch más 30% de buffer:
 
 Créditos cargados: **US$371,99**.
 
-### El coste medido no cuadra con el estimado
+### Coste real medido: US$0,0245/página
 
-La validación (27 páginas reales, batch `msgbatch_01Bw3jABL34nKXhf3AmccDUF`) dio
-**US$1,0877, o US$0,0403/página — un 49% por encima de los US$0,027 asumidos**:
+La validación (27 páginas) sugirió US$0,0403/página, un 49% por encima de lo
+estimado. **Esa cifra era un artefacto del tamaño de muestra.** Medido sobre las
+985 páginas de `02_ingesta.zip` con
+[`script/bulk_upload_cost_audit.rb`](../script/bulk_upload_cost_audit.rb):
 
-| Modelo | Págs | Input | Output | Cache lect. | Cache escr. | USD | USD/pág |
-|---|---|---|---|---|---|---|---|
-| `claude-opus-4-8` | 10 | 17.811 | 28.162 | 33.536 | 50.304 | 0,5621 | 0,0562 |
-| `claude-sonnet-4-6` | 17 | 40.426 | 49.614 | 51.066 | 45.392 | 0,5255 | 0,0309 |
-| **Total** | **27** | | | | | **1,0877** | **0,0403** |
+| Tanda | Págs | Opus | USD | USD/pág |
+|---|---|---|---|---|
+| `00_validacion.zip` | 27 | 10 (37%) | 1,0877 | 0,0403 |
+| `02_ingesta.zip` | 985 | 11 (1,1%) | 24,1381 | **0,0245** |
 
-El coste por página depende de a qué modelo enruta `FileMultimodalRouter`: Opus
-(multimodal) cuesta el doble por página que Sonnet (texto).
+Lo que mueve el coste es **qué fracción de páginas va a Opus**, que cuesta ~2x
+Sonnet por página (US$0,0533 vs US$0,0242 medidos). La validación tenía 37% de
+Opus porque se armó a mano con 4 PDFs; el corpus real tiene 1,1%.
 
-Extrapolado, el alcance completo son **~US$421**, y los créditos cargados cubren
-unas **9.234 páginas (88% del corpus)**. Además la cifra es un piso, no un techo:
-`00_validacion.zip` se armó con los PDFs **más livianos** de cada marca, y el peso
-de KONE son planos y esquemas — justo lo que va a Opus.
+El único camino a Opus en el deploy vigente es el gate de página escaneada de
+`FileMultimodalRouter` (`text_layer_chars < 100 && image_area_ratio > 0.7`).
+**`IngestionVisualTriageFlag` está `false` en producción**, así que la escalada
+geométrica —la que sí subiría los planos vectoriales a Opus— no se aplica. En
+`02_ingesta.zip` sólo escalaron `PLANO 4 mitsubishi.pdf` (8 págs) y
+`variador de puerta thyssen mcp7.pdf` (3 págs): planos **escaneados**. Los planos
+con capa de texto (`Planos BLT QS.pdf`, `QS PLANOS.pdf`) se fueron a Sonnet. El
+temor de que "el peso de KONE son planos y por eso irá a Opus" no se materializa
+mientras ese flag siga apagado.
 
-Los ZIPs están troceados en checkpoints de US$15–127 para poder parar al agotar
-créditos sin perder lo ya procesado.
+Presupuesto vigente:
+
+| Concepto | USD |
+|---|---|
+| Créditos cargados | 371,99 |
+| Gastado (`00` + `02`) | −25,23 |
+| **Disponible** | **346,76** |
+| 9.353 páginas pendientes a US$0,0245 | −229,15 |
+| **Holgura** | **117,61 (34%)** |
+
+**Los cinco ZIPs pendientes entran completos**, incluidos los dos PDFs de OTIS
+sobre 50 MB. Sólo un corpus con >65% de páginas escaneadas agotaría los créditos,
+y el medido es 1,1%. Aun así se ingiere de a un ZIP y se audita cada uno: la
+proyección vale mientras la mezcla Opus/Sonnet se mantenga.
+
+### El límite real es la memoria del worker
+
+`03_ingesta.zip` (`BulkUpload` 4) **falló por OOM del cgroup del contenedor
+worker**, no por presupuesto ni por la instancia:
+
+```
+oom-kill:constraint=CONSTRAINT_MEMCG … task=bundle
+Memory cgroup out of memory: Killed process 2601 (bundle) anon-rss:558608kB
+```
+
+- El worker está limitado a **1 GiB** (`HostConfig.Memory=1073741824`); el web a
+  1,5 GiB. La instancia es `t3.medium` (3,8 GB, **sin swap**) y tenía 2,3 GB
+  libres: **el host no se quedó sin memoria, el contenedor sí**.
+- `SolidQueue` no puede rescatar un SIGKILL, así que el `rescue` de
+  `SubmitClaudeBatchJob#mark_failed` **nunca corrió**: el upload quedó en
+  `processing` con los 7 assets en `uploaded_s3`.
+
+Por qué `02` pasó y `03` no: `02` son 62 PDFs pequeños (ZIP de 23 MB); `03` son 7
+PDFs grandes (ZIP de 140 MB). Los cuatro ZIPs pendientes (`01`, `04`, `05`, `06`)
+son de 134–137 MB con la misma forma → **mismo riesgo**. No relanzar ninguno
+antes de resolver la memoria.
+
+#### Dos batches pagados y huérfanos
+
+El OOM no ocurrió armando las requests sino **a mitad de la submission**, después
+de que `ClaudeBatchSubmissionService` ya hubiera creado 2 de 5 grupos.
+`bulk_upload.update!(claude_batch_id:)` corre **después** de que `submit!`
+devuelva todos los ids, así que los dos batches quedaron sin registro en la BD:
+
+| Batch | Requests | Estado | Coste aprox. |
+|---|---|---|---|
+| `msgbatch_015ULaoex4qt2AEWtK3HxxHX` | 100 | `ended`, 100/100 succeeded | ~US$2,45 |
+| `msgbatch_01Evr6UMUGmz3PnCkmCaJ33S` | 100 | `ended`, 100/100 succeeded | ~US$2,45 |
+
+Están **pagados y completos**, con `results_url` disponible, y nada los va a
+pollear: `claude_batch_ids` de `BulkUpload` 4 es `[]`. Los ids de la tabla salieron
+del log del worker (`ClaudeBatchSubmissionService: submitted group=…`) y se
+transcriben aquí porque ese log es efímero — es la única copia durable.
+
+Recuperarlos exige coserlos a mano y sólo cubren 200 de las 423 páginas del ZIP,
+o sea documentos a medias — peor para retrieval que no tenerlos. La
+recomendación es **asumir los ~US$4,90 y re-ingerir `03` completo** una vez
+arreglada la memoria; el dedupe no ayuda porque ningún asset llegó a `complete`.
+
+**Bug de fiabilidad a corregir aparte:** la submission no es atómica y los
+`claude_batch_ids` se persisten sólo si *todos* los grupos entran. Un fallo a
+mitad deja batches facturados e invisibles. Deberían persistirse de forma
+incremental, grupo a grupo, antes de seguir con el siguiente.
 
 Las cifras por marca no se pueden sumar desde mediciones separadas: el dedupe por
 SHA-256 es global al corpus, así que medir marca por marca cuenta dos veces los
@@ -80,7 +151,10 @@ lanza `ZipExtractionService::Error` y aborta el ZIP completo**. Quedan excluidos
 
 El de KONE es un catálogo de repuestos, de bajo valor para diagnóstico en campo.
 Los dos de OTIS sí son material técnico y merecen recuperarse: hay que partirlos
-por páginas antes de meterlos en un ZIP. Son 927 páginas, ~US$33.
+por páginas antes de meterlos en un ZIP. **Los dos de OTIS son 319 páginas
+(245 + 74), ~US$7,8** al coste medido. Las 927 páginas que decía antes esta
+sección incluían el catálogo `KONE_Parts_2002.pdf` (608 págs), que está excluido
+a propósito.
 
 **Los basenames se aplastan.** `sanitize_filename` reduce la ruta a
 `File.basename` y la clave S3 del original es
@@ -250,26 +324,79 @@ perder créditos si algo falla en el camino.
 
 ## Tandas
 
-| ZIP | `BulkUpload` | Assets | Páginas al batch | Estado |
+| ZIP | `BulkUpload` | Assets | Págs facturadas | Estado |
 |---|---|---|---|---|
 | `00_validacion.zip` | 2 | 4 | 27 | `complete`, US$1,0877 |
-| `02_ingesta.zip` | 3 | 62 (60 + 2 descartados) | 1.002 | 11 batches en vuelo |
+| `02_ingesta.zip` | 3 | 62 (59 ok, 3 fallidos) | 985 | `complete`, US$24,1381 |
+| `03_ingesta.zip` | 4 | 7 (todos `uploaded_s3`) | 200 pagadas, 0 ingeridas | **OOM del worker**, ver arriba |
 
-Dos PDFs de BLT (`05.- BLT-ES_PLC input.pdf`, `08.- BLT-ES_PLC output.pdf`, 60
-páginas) fallaron con `bulk_uploads.all_pages_filtered`: el filtro de páginas
-descartó todas sus páginas antes de enviarlas, así que no consumieron créditos.
-Son tablas de E/S de PLC; si se quieren recuperar hay que revisar el filtro, no
-reintentar el ZIP.
+Reparto por marca de lo pendiente, para decidir el orden:
+
+| ZIP | PDFs | Págs | Marcas dominantes | USD a 0,0245 |
+|---|---|---|---|---|
+| `01_ingesta.zip` | 62 | 3.615 | KONE 1.241, BLT 723, FUJI 660, TKE 554, OTIS 417 | 88,57 |
+| `03_ingesta.zip` | 7 | 423 | OTIS 138, BLT 258, KONE 27 | 10,36 |
+| `04_ingesta.zip` | 11 | 1.218 | KONE 1.030, BLT 108 | 29,84 |
+| `05_ingesta.zip` | 22 | 1.966 | KONE 1.644, FUJI 216 | 48,17 |
+| `06_ingesta.zip` | 12 | 2.131 | KONE 1.320, TKE 411, OTIS 399 | 52,21 |
+
+### Fallos de `02_ingesta.zip`
+
+**Dos PDFs de BLT** (`05.- BLT-ES_PLC input.pdf`, `08.- BLT-ES_PLC output.pdf`, 60
+páginas) fallaron con `bulk_uploads.all_pages_filtered`: el filtro descartó todas
+sus páginas antes de enviarlas, así que no consumieron créditos. Son tablas de E/S
+de PLC; recuperarlos exige revisar `PageRelevanceFilter`, no reintentar el ZIP.
+
+**`otis_2000.pdf`** falló con `Unknown value in chunk 16 field_record 1`. Origen
+exacto: `BatchResultsParserService#validate_field_record!` compara las claves del
+`field_record` contra `FIELD_RECORD_ALLOWED_KEYS` (`k h a r ev x sw ra u`) y
+**lanza `ParseError` si sobra alguna**. El modelo emitió una clave `value` de más
+en un registro, y eso descartó el documento entero: 17 páginas ya pagadas, 0
+chunks escritos, y ni siquiera quedaron filas en `bedrock_queries` (el tracking
+por página corre después del parseo, de ahí el hueco 1.002 → 985).
+
+El radio de daño escala con el tamaño del documento: una clave alucinada en un
+manual de 245 páginas cuesta ~US$6. Los ZIPs pendientes traen 954 páginas más de
+OTIS. Decisión pendiente: mantener el rechazo estricto o degradar a descartar
+sólo el `field_record` ofensor —como ya hace
+`discard_unverifiable_field_records!`— dejando el resto del documento. Requiere
+deploy, y **no bumpear `INGESTION_CONTRACT_VERSION`** para no invalidar el dedupe.
 
 ## Pendientes
 
-1. **Cinco ZIPs por ingerir**: esperar `complete` en `02_ingesta.zip` y medir su
-   coste real antes de seguir; el presupuesto no cubre el corpus entero.
-2. **Usuarios nominales**: falta el nombre y correo de cada ingeniero.
-3. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y
+1. **Memoria del worker**: bloquea los cuatro ZIPs restantes. Ver
+   [El límite real es la memoria del worker](#el-límite-real-es-la-memoria-del-worker).
+2. **Re-ingerir `03_ingesta.zip`** tras el fix (~US$10,36; se pierden los ~US$4,90
+   ya pagados).
+3. **Submission no atómica**: persistir `claude_batch_ids` grupo a grupo.
+4. **Tolerancia del parser** ante claves desconocidas en `field_records`.
+5. **Usuarios nominales**: falta el nombre y correo de cada ingeniero.
+6. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y
    se ingiere sólo lo nuevo — el dedupe por cuenta evita pagar dos veces.
-4. **Los dos PDFs de OTIS sobre 50 MB**: 927 páginas de material técnico que
-   quedaron fuera y requieren partirse por páginas.
+7. **Los dos PDFs de OTIS sobre 50 MB**: 319 páginas, ~US$7,8, requieren partirse
+   por páginas.
+
+## Auditoría de coste por tanda
+
+[`script/bulk_upload_cost_audit.rb`](../script/bulk_upload_cost_audit.rb)
+reconstruye el coste real de una tanda desde las filas de `bedrock_queries` que
+`IngestBatchResultsJob` escribe por página. Es de sólo lectura y no llama a
+ninguna API: incluye `cache_read`/`cache_creation`, que es lo que
+`bulk_upload_assets` **no** permite tarifar porque los suma dentro de
+`claude_input_tokens`. Reproduce exactamente el US$1,0877 de la validación.
+
+El script no está en la imagen desplegada, así que `kamal app exec … 'bin/rails
+runner script/…'` falla con *file could not be found*. Se pasa por stdin sin
+redeployar:
+
+```bash
+CID=$(ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@54.163.248.39 \
+  "docker ps --filter label=service=smart-deal --filter label=role=web \
+   --filter status=running --format '{{.Names}}' | head -1")
+ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@54.163.248.39 \
+  "docker exec -i -e BULK_UPLOAD_ID=3 $CID bin/rails runner -" \
+  < script/bulk_upload_cost_audit.rb
+```
 
 ## Notas operativas
 
@@ -299,7 +426,64 @@ esta ingesta. `status` resume EC2, RDS, salud HTTP, uploads en vuelo y schedules
 **`ReconcileBedrockCostJob` está fallando.** `AccessDenied` en `s3:ListBucket` para
 el rol `smart-deal-ec2-role`. Es la reconciliación de coste que las reglas del
 proyecto tratan como autoridad sobre las estimaciones por tokens, así que ahora
-mismo no hay auditoría del gasto real de Bedrock.
+mismo no hay auditoría del gasto real de Bedrock. Falla a diario desde el 6-ago.
+
+**La IP local rota y tumba el SSH.** El `docker exec` de este runbook y
+`bin/pilot_metrics` entran por el puerto 22, autorizado por IP `/32`. Cuando el
+ISP renueva la IP el SSH **no se rechaza: se queda colgado** hasta el timeout de
+TCP. `bin/stack ssh-ip` reautoriza; `bin/pilot_metrics` ahora usa
+`ConnectTimeout` para fallar rápido en vez de colgarse.
+
+**Export diario de telemetría.** [`bin/pilot_metrics_daily`](../bin/pilot_metrics_daily)
+saca una copia durable de la telemetría del piloto para las dos cuentas
+(`danebo-legacy` y `danebo-pilot-elevator`) antes de que los schedules apaguen el
+stack. Motivo: `PilotAuditLog`/`PilotUsageLog`/`[RAG_QUALITY]` sólo escriben a
+`Rails.logger` → stdout → Docker `json-file` con `max-size=10m` y **sin
+`max-file`**, así que al rotar se pierde lo anterior; eso ya destruyó un día del
+piloto el 10-ago (hallazgo H1 de
+[plan_telemetria_durable_piloto](rag/plan_telemetria_durable_piloto_2026-08-19.md)).
+El frente B (tabla en RDS) sigue pendiente de aprobación humana.
+
+Instalación en cron local:
+
+```cron
+20 * * * * cd /Users/lahirisan/smart_deal && ./bin/pilot_metrics_daily >> tmp/pilot_metrics_daily.log 2>&1
+```
+
+Decisiones de diseño que conviene no revertir sin leer esto:
+
+- **Cron cada hora, no una vez al día.** El export es idempotente: escribe en un
+  directorio por `(rango, cuenta)`, así que re-ejecutarlo el mismo día sobrescribe
+  sus propios artefactos y gana la última corrida. Con una sola ejecución diaria,
+  una laptop dormida a esa hora pierde el día entero.
+- **La ventana se evalúa en `America/Santiago`** (9–17h), no en la hora local, para
+  que el DST de cualquiera de las dos zonas no la desplace contra el apagado de
+  las 18:00. Fuera de la ventana el script sale 0 sin intentar nada.
+- **Reautoriza la IP** con `bin/stack ssh-ip` antes de exportar, por lo de arriba.
+- **No usa `--strict`.** `--strict` falla cuando un rol no produjo eventos, y un
+  día de piloto sin actividad es un resultado real y esperado: un job que avisa
+  todos los días se acaba ignorando, que es justo el punto ciego que venía a
+  cerrar. En su lugar valida invariantes **estructurales** del `manifest.json`
+  (`containers_read` no vacío, `containers_unreadable` vacío, los dos roles
+  descargados), que distinguen "hoy nadie lo usó" de "no pudimos leer los logs" —
+  el fallo real del 13-ago.
+- **Limitación asumida:** un cron en la laptop sólo dispara si la laptop está
+  encendida. La solución durable es el frente B, no un cron mejor; la alternativa
+  server-side (timer en la EC2 exportando a S3) necesita la misma aprobación.
+
+**`bin/pilot_metrics` leía sólo contenedores corriendo.** `resolve_container` usaba
+`docker ps`, que omite los `exited`. Tras un deploy los logs de los días
+anteriores quedan en el contenedor viejo —hoy mismo `cc0cadb` (exited) tenía del
+11 al 20-ago— y el export los ignoraba **en silencio**. Ahora resuelve por
+separado el contenedor corriendo (para `docker exec`, que lo necesita vivo) y la
+lista de contenedores del rol (`docker ps --all`, más antiguo primero, tope de 6),
+concatena los logs de todos y registra en el manifest `containers_read` y
+`containers_unreadable`.
+
+**Devise `trackable` no está habilitado.** `users` no tiene `last_sign_in_at` ni
+`sign_in_count`, así que hoy un login sólo se puede verificar en el log web
+efímero — la misma fuente que rota. Decisión pendiente: añadir `trackable` o
+aceptar el hueco.
 
 **Deriva entre el host map y kamal.** `config/deploy.yml` está en `.gitignore`, así
 que la lista real de `proxy.hosts` no viaja en el repo. El test de

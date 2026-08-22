@@ -379,7 +379,26 @@ perder créditos si algo falla en el camino.
 |---|---|---|---|---|
 | `00_validacion.zip` | 2 | 4 | 27 | `complete`, US$1,0877 |
 | `02_ingesta.zip` | 3 | 62 (59 ok, 3 fallidos) | 985 | `complete`, US$24,1381 |
-| `03_ingesta.zip` | 4 | 7 (**7/7 complete**) | 416 | `complete`, **US$14,2056** (0,0341/pág) |
+| `03_ingesta.zip` | 4 | 7 (**7/7 complete**) | 416 | `complete`, **US$16,2100** all-in (0,0390/pág) |
+| `05_ingesta.zip` | 5 | 22 (todos `in_batch`) | 1.827 de 1.966 | **en vuelo 22-ago**, 55 batches registrados |
+
+### `05` es la prueba de que la memoria dejó de ser el techo
+
+`03` murió en el grupo **2 de 5**. `05` submitió **55 de 55** sin caerse, con 22
+PDFs y 1.827 páginas —4,4× las páginas de `03`— y estos números:
+
+| Fase | Memoria del worker | Swap del host |
+|---|---|---|
+| Arranque limpio post-deploy | 375 MiB | 0 |
+| Tras descomprimir el ZIP de 128 MB | 694 MiB | 0 |
+| Filtrado de páginas (191 llamadas) | oscilando 640–818 MiB | 25–40 MB |
+| Submission de los 55 grupos | pico ~818 MiB | 40 MB |
+| Reposo posterior | 705 MiB | 40 MB |
+
+Nunca tocó el techo de 1 GiB. El swap se usó de forma testimonial (40 MB de
+4.096), así que lo que evitó el OOM fue el reciclaje del GC, no el swap — el swap
+sigue siendo el seguro, no el mecanismo. El grupo más grande fueron 73 requests y
+**52 MB de bytes crudos**, que es el pico real de presión.
 
 `03` se reanudó sin re-extraer: los 7 assets seguían en `uploaded_s3` con sus
 objetos intactos en S3, así que bastó `SubmitClaudeBatchJob.perform_later(4)` en

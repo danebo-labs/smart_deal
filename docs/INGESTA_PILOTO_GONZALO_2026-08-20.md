@@ -401,16 +401,41 @@ El share de Opus vuelve a ser el único driver, y `03` es material OTIS/BLT
 queda en 0,0276. O sea que el 0,0245 de `02` no es una constante del corpus sino
 una propiedad de qué tan escaneado viene cada ZIP.
 
-Presupuesto con el ritmo medido en los dos extremos:
+### El batch no era toda la factura: +13% por rutas directas
+
+El audit medía sólo `route: "batch"`. Hay **dos rutas más** facturadas contra las
+mismas páginas, y ninguna aparecía en ninguna cifra de este documento:
+
+| Ruta | Qué es | Modelo |
+|---|---|---|
+| `page_filter` | `PageRelevanceFilter`, una llamada por tramo de 20 páginas — **se paga incluso por las páginas que luego descarta** | Haiku directo |
+| `bulk_retry` | `BatchPageRetryService` sobre páginas truncadas, a precio **directo**, no batch | Sonnet/Opus directo |
+
+Coste all-in real, ya integrado en `script/bulk_upload_cost_audit.rb`:
+
+| Tanda | Págs | Opus | batch | no-batch | **all-in** | **USD/pág** |
+|---|---|---|---|---|---|---|
+| `00_validacion.zip` | 27 | 37% | 1,0877 | 0,0576 (+5%) | **1,1453** | **0,0424** |
+| `02_ingesta.zip` | 985 | 1,1% | 24,1381 | 3,1536 (+13%) | **27,2918** | **0,0277** |
+| `03_ingesta.zip` | 416 | 38,5% | 14,2056 | 2,0044 (+14%) | **16,2100** | **0,0390** |
+
+Lo tranquilizador: el filtro sólo desperdició **US$0,03** en los 3 assets de BLT que
+descartó por completo. El coste del filtro no es basura, es peaje.
+
+### El corpus cabe sólo por debajo de US$0,0361/página
 
 | Concepto | USD |
 |---|---|
 | Créditos | 371,99 |
-| Gastado real (`00` 1,0877 + `02` 24,1381 + huérfanos ~4,90 + `03` 14,2056) | −44,33 |
-| **Disponible** | **327,66** |
-| 8.930 págs pendientes a 0,0245 | −218,79 → holgura 109 |
-| 8.930 págs pendientes a 0,0341 | −304,51 → holgura **23 (7%)** |
-| 8.930 págs pendientes a 0,0403 | −359,88 → **no cabe** |
+| Gastado all-in (`00` 1,1453 + `02` 27,2918 + `03` 16,2100 + huérfanos ~4,90) | −49,55 |
+| **Disponible** | **322,44** |
+| 8.930 págs a 0,0277 (ritmo de `02`, con capa de texto) | −247,36 → holgura 75 (23%) |
+| 8.930 págs a 0,0361 | −322,37 → **break-even exacto** |
+| 8.930 págs a 0,0390 (ritmo de `03`, escaneado) | −348,27 → **no cabe, faltan 26** |
+
+O sea que ya no es "cabe con holgura": **cabe si la media se queda bajo
+US$0,0361/página**, y eso lo decide cuánto material escaneado traiga cada ZIP.
+`05` (1.966 págs, 22% del pendiente) es el primer voto real.
 
 #### El audit medía de menos: `bulk_uploads.updated_at` miente
 

@@ -35,11 +35,30 @@ rows   = BedrockQuery
   .where("user_query LIKE 'bulk_batch: %' OR user_query LIKE 'bulk_parse: %'")
   .pluck(:user_query, :model_id, :input_tokens, :output_tokens, :cache_read_tokens, :cache_creation_tokens)
 
+# Labels seen for ingestion rows: "bulk_batch: <f> pN/M", "bulk_parse: <f>",
+# "page_filter_batch: <f> N..M/T", "bulk_retry: <f> pN/M".
 def filename_of(label)
-  label.sub(/\Abulk_(batch|parse): /, "").sub(%r{ p\d+/\d+\z}, "")
+  label
+    .sub(/\A[a-z_]+: /, "")
+    .sub(%r{ p\d+/\d+\z}, "")
+    .sub(%r{ \d+\.\.\d+/\d+\z}, "")
 end
 
 mine, foreign = rows.partition { |r| filenames.include?(filename_of(r[0])) }
+
+# The batch rows are not the whole bill. Two other routes are charged against the
+# same pages and used to be invisible here, which under-reported every ZIP by
+# ~10%:
+#
+#   page_filter  PageRelevanceFilter's direct Haiku calls, one per 20-page slice,
+#                billed even for pages it then discards.
+#   bulk_retry   BatchPageRetryService's direct calls for truncated pages, at
+#                direct (not batch) pricing.
+extra = BedrockQuery
+  .where(source: "ingestion_parse", created_at: window)
+  .where.not(route: "batch")
+  .pluck(:route, :user_query, :model_id, :input_tokens, :output_tokens, :cache_read_tokens, :cache_creation_tokens)
+  .select { |r| filenames.include?(filename_of(r[1])) }
 
 def price(model, toks)
   BedrockQuery.new(
@@ -104,9 +123,32 @@ per_file.map { |f, models|
   puts format("%-52s %6d %10.4f %9.4f", f.truncate(50), pages, c, c / pages)
 end
 
+extra_per_route = Hash.new { |h, k| h[k] = { calls: 0, cost: 0.0 } }
+extra.each do |route, _label, model, inp, out, cr, cc|
+  bucket = extra_per_route[route.presence || "(unset)"]
+  bucket[:calls] += 1
+  bucket[:cost]  += price(model, { input: inp.to_i, output: out.to_i,
+                                   cache_read: cr.to_i, cache_creation: cc.to_i })
+end
+extra_cost = extra_per_route.sum { |_, t| t[:cost] }
+
+if extra_per_route.any?
+  puts "\nNON-BATCH INGESTION ROUTES (direct pricing, same pages)"
+  puts format("%-26s %7s %10s", "route", "calls", "USD")
+  extra_per_route.sort_by { |_, t| -t[:cost] }.each do |route, t|
+    puts format("%-26s %7d %10.4f", route, t[:calls], t[:cost])
+  end
+  puts format("%-26s %7d %10.4f  (%.1f%% on top of batch)",
+              "SUBTOTAL", extra_per_route.sum { |_, t| t[:calls] }, extra_cost,
+              100.0 * extra_cost / total_cost)
+end
+
 puts "\nCross-check vs bulk_upload_assets counters (these exclude cache pricing):"
 puts "  assets claude_input_tokens  #{assets.sum { |a| a[2].to_i }}"
 puts "  assets claude_output_tokens #{assets.sum { |a| a[3].to_i }}"
 puts "  bedrock_queries rows        #{mine.size} matched, #{foreign.size} in window from other uploads"
-puts format("\nRESULT: %s cost US$%.4f over %d pages billed = US$%.4f/page",
-            bu.original_filename, total_cost, total_pages, total_cost / total_pages)
+
+all_in = total_cost + extra_cost
+puts format("\nRESULT: %s cost US$%.4f all-in over %d pages billed = US$%.4f/page",
+            bu.original_filename, all_in, total_pages, all_in / total_pages)
+puts format("        (batch US$%.4f + non-batch US$%.4f)", total_cost, extra_cost)

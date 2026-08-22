@@ -379,12 +379,42 @@ perder créditos si algo falla en el camino.
 |---|---|---|---|---|
 | `00_validacion.zip` | 2 | 4 | 27 | `complete`, US$1,0877 |
 | `02_ingesta.zip` | 3 | 62 (59 ok, 3 fallidos) | 985 | `complete`, US$24,1381 |
-| `03_ingesta.zip` | 4 | 7 (todos `in_batch`) | 200 perdidas + 416 en vuelo | **re-submitida 22-ago** sobre `b8144d2`, 5 batches registrados |
+| `03_ingesta.zip` | 4 | 7 (6 ok, 1 fallido) | 367 + 49 perdidas | `complete`, **US$12,1748** (0,0332/pág) |
 
 `03` se reanudó sin re-extraer: los 7 assets seguían en `uploaded_s3` con sus
 objetos intactos en S3, así que bastó `SubmitClaudeBatchJob.perform_later(4)` en
 vez de re-subir el ZIP. Salieron 416 requests en 5 grupos (no 423: el
-`PageRelevanceFilter` descarta algunas páginas antes de facturar).
+`PageRelevanceFilter` descarta algunas páginas antes de facturar), 416/416
+correctas y 0 errores de batch.
+
+### El ritmo de `03` no es el de `02`: 0,0332/página
+
+| Tanda | Págs | Opus | USD | USD/pág |
+|---|---|---|---|---|
+| `00_validacion.zip` | 27 | 10 (37%) | 1,0877 | 0,0403 |
+| `02_ingesta.zip` | 985 | 11 (1,1%) | 24,1381 | 0,0245 |
+| `03_ingesta.zip` | 367 | 111 (**30,2%**) | 12,1748 | **0,0332** |
+
+El share de Opus vuelve a ser el único driver, y `03` es material OTIS/BLT
+**escaneado**: `LG-OTIS DI 60-105 IV.pdf` sale a 0,0521/pág y `manual placa LCB II
+(parte2).pdf` a 0,0436, mientras `MPDK176manual-1.pdf` (con capa de texto) se
+queda en 0,0276. O sea que el 0,0245 de `02` no es una constante del corpus sino
+una propiedad de qué tan escaneado viene cada ZIP.
+
+Presupuesto con el ritmo medido en los dos extremos:
+
+| Concepto | USD |
+|---|---|
+| Créditos | 371,99 |
+| Gastado real (`00` + `02` + huérfanos + `03`, incl. páginas perdidas) | −44,85 |
+| **Disponible** | **327,14** |
+| 8.930 págs pendientes a 0,0245 | −218,79 → holgura 108 |
+| 8.930 págs pendientes a 0,0332 | −296,48 → holgura **31 (9%)** |
+| 8.930 págs pendientes a 0,0403 | −359,89 → **no cabe** |
+
+Sigue cabiendo, pero la holgura ya no es cómoda. De ahí el orden: **KONE primero
+(`05`, `06`)**, cuyos planos tienen capa de texto y van a Sonnet, para medir el
+ritmo barato antes de comprometer las 3.615 páginas de `01`.
 
 Reparto por marca de lo pendiente, para decidir el orden:
 
@@ -432,6 +462,34 @@ Sigue siendo fallo de documento todo lo que sí indica corrupción (JSON inváli
 `INGESTION_CONTRACT_VERSION`**: el contrato de salida no cambia, sólo la
 tolerancia del parser, así que el dedupe por `(cuenta, SHA-256, contrato)` sigue
 válido.
+
+#### El mismo problema por otra rama: `sw` mal tipado
+
+La tolerancia de claves desconocidas salvó tres documentos en la re-ingesta de
+`03` (log del worker: `unknown keys: value`, `unknown keys: connection` ×2), pero
+un cuarto documento cayó por **otra** validación:
+
+```
+manual placa LCB II (parte 1).pdf  failed
+  Unexpected sw outside STOP_WORK_CONDITION in chunk 26 field_record 2
+```
+
+El modelo puso un par de evidencia `sw` en un registro tipado como otra cosa.
+Coste: 49 páginas ya facturadas, ~US$2,14, 0 chunks. Misma clase de defecto que
+la clave sobrante, distinta rama de `validate_field_record!`.
+
+**Resuelto (22-ago) con la misma regla y una traza durable.** Un registro que
+lleva `sw` sin ser `STOP_WORK_CONDITION` no es fiable como ninguna de las dos
+cosas —ni parada de seguridad, ni instancia limpia del tipo que declara— así que
+se descarta. La asimetría se mantiene y ahora es un solo guard al principio de
+`droppable_field_record_reason`: **un registro que el modelo declara
+`STOP_WORK_CONDITION` nunca se descarta**, falla en duro.
+
+Como descartar contenido de seguridad no puede vivir sólo en `Rails.logger` —que
+rota con el `json-file` de 10m sin `max-file`, el mismo agujero que la telemetría—
+se añadió `bulk_upload_assets.dropped_field_records` (jsonb). Guarda chunk,
+`record`, página, `k` y motivo de cada descarte, y se escribe **dentro del
+`update!` que ya existía**, sin queries extra.
 
 ## Pendientes
 

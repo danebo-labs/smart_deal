@@ -329,6 +329,58 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_not_includes chunk, "Press the horn button."
   end
 
+  # The real failure on `manual placa LCB II (parte 1).pdf`: the model emitted an
+  # `sw` evidence pair on a record typed as something else, and that rejected the
+  # document, losing 49 already-billed pages.
+  test "drops a mistyped sw record instead of rejecting the document" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record("sw" => [ "Oil leak is visible", "Mark the platform out of service" ]),
+      field_record("h" => "Section 3.1", "a" => "Check the brake.", "ev" => "Compruebe el freno.")
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+
+    assert_equal "parsed", asset.reload.status
+    chunk = @fake_s3.uploads["#{asset.chunks_s3_prefix}/chunk_0.txt"]
+    assert_includes chunk, "Check the brake."
+    assert_not_includes chunk, "Press the horn button."
+  end
+
+  # Rails.logger is not a record: pilot logs rotate out of a 10m json-file with no
+  # max-file, so discarded safety content needs a copy that survives.
+  test "records every dropped field_record durably on the asset" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record("value" => "hallucinated"),
+      field_record("sw" => [ "Oil leak is visible", "Mark it out of service" ])
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+
+    dropped = asset.reload.dropped_field_records
+    assert_equal 2, dropped.size
+    assert_equal [ 0, 0 ], dropped.pluck("chunk")
+    assert_equal [ 0, 1 ], dropped.pluck("record")
+    assert_equal [ 1, 1 ], dropped.pluck("page")
+    assert_equal [ "FUNCTIONAL_TEST", "FUNCTIONAL_TEST" ], dropped.pluck("k")
+    assert_match(/unknown keys: value/, dropped[0]["reason"])
+    assert_match(/sw outside STOP_WORK_CONDITION/, dropped[1]["reason"])
+  end
+
+  test "leaves dropped_field_records empty when nothing was discarded" do
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result)
+
+    assert_equal [], asset.reload.dropped_field_records
+  end
+
   # The asymmetry is deliberate and matches #unverifiable_non_stop_field_record?:
   # a stop-work condition must never disappear from the ledger without a trace.
   test "a stop-work record with a stray key still fails the document loudly" do

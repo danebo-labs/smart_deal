@@ -82,7 +82,7 @@ class BatchResultsParserService
     end
 
     parsed  = parse_json(text)
-    discard_unverifiable_field_records!(parsed, ingestion_path: ingestion_path)
+    dropped_records = discard_unverifiable_field_records!(parsed, ingestion_path: ingestion_path)
     enrich_field_records!(parsed, ingestion_path: ingestion_path)
     validate!(parsed, asset, ingestion_path: ingestion_path)
     validate_account_scope!(account_id: account_id, document_uid: document_uid)
@@ -115,11 +115,12 @@ class BatchResultsParserService
     if asset.respond_to?(:update!)
       # BulkUploadAsset — ActiveRecord path
       asset.update!(
-        canonical_name:   canonical_name,
-        aliases:          aliases,
-        chunks_count:     parsed["chunks"].length,
-        chunks_s3_prefix: chunks_prefix,
-        status:           "parsed"
+        canonical_name:        canonical_name,
+        aliases:               aliases,
+        chunks_count:          parsed["chunks"].length,
+        chunks_s3_prefix:      chunks_prefix,
+        dropped_field_records: dropped_records,
+        status:                "parsed"
       )
       asset.broadcast_replace!
     else
@@ -234,8 +235,11 @@ class BatchResultsParserService
     end
   end
 
+  # @return [Array<Hash>] one entry per dropped record, for the durable trace
   def discard_unverifiable_field_records!(parsed, ingestion_path:)
-    return if ingestion_path == "field_photo_v1"
+    return [] if ingestion_path == "field_photo_v1"
+
+    dropped = []
 
     Array(parsed["chunks"]).each_with_index do |chunk, chunk_index|
       next unless chunk.is_a?(Hash) && chunk["field_records"].is_a?(Array)
@@ -247,36 +251,48 @@ class BatchResultsParserService
             "BatchResultsParserService: dropping field_record (#{reason}) " \
             "in chunk #{chunk_index} field_record #{record_index}"
           )
+          dropped << {
+            "chunk"  => chunk_index,
+            "record" => record_index,
+            "page"   => chunk["page"],
+            "k"      => record.is_a?(Hash) ? record.deep_stringify_keys["k"] : nil,
+            "reason" => reason
+          }
           next
         end
 
         record
       end
     end
+
+    dropped
   end
 
+  # Every reason here describes one defective record, not a corrupt document.
+  # Raising instead cost otis_2000.pdf all 17 of its already-billed pages over a
+  # single stray "value" key, and `manual placa LCB II (parte 1).pdf` 49 more.
+  #
+  # A record the model declares as STOP_WORK_CONDITION is never dropped: a
+  # safety stop has to fail loudly rather than vanish from the ledger. That
+  # asymmetry is the whole point of the guard, so it comes first.
   def droppable_field_record_reason(record)
-    return "no evidence" if unverifiable_non_stop_field_record?(record)
-
-    stray = stray_field_record_keys(record)
-    return "unknown keys: #{stray.join(', ')}" if stray.any?
-
-    nil
-  end
-
-  # A hallucinated extra key is one defective record, not a corrupt document.
-  # Raising here cost otis_2000.pdf all 17 of its already-billed pages over a
-  # single stray "value" key in chunk 16, and the pending ZIPs carry 954 more
-  # OTIS pages. STOP_WORK_CONDITION is excluded for the same reason
-  # #unverifiable_non_stop_field_record? excludes it: a safety stop must fail
-  # loudly rather than vanish from the ledger.
-  def stray_field_record_keys(record)
-    return [] unless record.is_a?(Hash)
+    return nil unless record.is_a?(Hash)
 
     values = record.deep_stringify_keys
-    return [] if values["k"].to_s == "STOP_WORK_CONDITION"
+    return nil if values["k"].to_s == "STOP_WORK_CONDITION"
 
-    values.keys - FIELD_RECORD_ALLOWED_KEYS
+    return "no evidence" if unverifiable_non_stop_field_record?(record)
+
+    stray = values.keys - FIELD_RECORD_ALLOWED_KEYS
+    return "unknown keys: #{stray.join(', ')}" if stray.any?
+
+    # `sw` is the stop-work evidence pair. Carried under any other record type it
+    # means the model mislabelled the record, which makes it trustworthy as
+    # neither: not a stop-work condition, and not a clean instance of the type it
+    # claims to be.
+    return "sw outside STOP_WORK_CONDITION (k=#{values['k']})" if values.key?("sw")
+
+    nil
   end
 
   def unverifiable_non_stop_field_record?(record)

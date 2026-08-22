@@ -185,6 +185,36 @@ re-parseo — y el recobro — de todo lo anterior.
 
 ## Hallazgos del corpus que sobreviven al recambio de alcance
 
+**Sincronización del Drive verificada (22-ago).** Duda razonable a mitad de la
+ingesta: si el Drive local no estaba completo cuando se armó el inventario, el
+corpus ingerido sería incompleto sin que nada avisara — un fichero que no ha
+bajado **no aparece como ilegible, no aparece en absoluto**, así que el informe no
+puede distinguir "no existe" de "no se sincronizó". Se re-corrió
+`script/gonzalo_corpus_prep.rb` sobre el mismo directorio y da cifras **idénticas**
+a las del 20-ago:
+
+| | 20-ago | 22-ago |
+|---|---|---|
+| PDFs únicos en alcance | 180 | 180 |
+| Páginas | 10.442 | 10.442 |
+| PDFs en las 6 carpetas | 208 | 208 |
+| Duplicados exactos | 25 | 25 |
+| Excluidos por tamaño | 3 | 3 |
+| Ilegibles / colisiones | 0 / 0 | 0 / 0 |
+
+La aritmética cierra sin huecos (208 − 25 − 3 = 180) y no hay ni un placeholder
+`.icloud` ni un fichero de 0 bytes en todo el árbol. **El alcance está completo.**
+
+**El Drive tiene mucho más que el alcance, y es deliberado.** En disco hay 622
+PDFs repartidos en 23 carpetas de marca/categoría; el alcance cubre 6 de ellas
+(208 PDFs). Las otras 17 suman 365 PDFs únicos y **15.904 páginas** —un 52% más
+que todo el alcance vigente— e incluyen `03 ESCALERAS` (207 PDFs, 3.791 págs),
+`FERMATOR` (49, 3.158), `SCHINDLER` (20, 2.311), `variadores` (15, 1.920) y
+`Hyundai` (14, 1.761). **Gonzalo autorizó indexar sólo las seis marcas del plan
+inicial, no la carpeta entera**, así que eso queda fuera por decisión de producto,
+no por un límite técnico. Se anota para que la cifra no vuelva a sorprender: el
+corpus completo serían 26.346 páginas, muy por encima de los créditos.
+
 **Carpetas espejo.** El corpus trae pares `kone` / `kone (1)`, `polaris2` /
 `polaris2 (1)`, `planos stella` / `planos stella (1)` y `manuales KONE español` /
 `manuales KONE español (1)`. Sólo en KONE+TKE eran 11 PDFs byte a byte idénticos.

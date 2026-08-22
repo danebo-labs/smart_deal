@@ -382,23 +382,33 @@ perder créditos si algo falla en el camino.
 | `03_ingesta.zip` | 4 | 7 (**7/7 complete**) | 416 | `complete`, **US$16,2100** all-in (0,0390/pág) |
 | `05_ingesta.zip` | 5 | 22 (todos `in_batch`) | 1.827 de 1.966 | **en vuelo 22-ago**, 55 batches registrados |
 
-### `05` es la prueba de que la memoria dejó de ser el techo
+### `05` pasó, pero por 29 MiB: hay que subir `memory` antes de `01`
 
-`03` murió en el grupo **2 de 5**. `05` submitió **55 de 55** sin caerse, con 22
-PDFs y 1.827 páginas —4,4× las páginas de `03`— y estos números:
+`03` murió en el grupo **2 de 5**. `05` submitió **55 de 55** con 22 PDFs y 1.827
+páginas —4,4× las páginas de `03`—, así que la persistencia incremental y el
+arranque limpio funcionaron. Pero el margen fue mínimo (104 muestras cada 20 s):
 
 | Fase | Memoria del worker | Swap del host |
 |---|---|---|
 | Arranque limpio post-deploy | 375 MiB | 0 |
 | Tras descomprimir el ZIP de 128 MB | 694 MiB | 0 |
-| Filtrado de páginas (191 llamadas) | oscilando 640–818 MiB | 25–40 MB |
-| Submission de los 55 grupos | pico ~818 MiB | 40 MB |
-| Reposo posterior | 705 MiB | 40 MB |
+| Filtrado de páginas (191 llamadas) | 640–818 MiB | 25–40 MB |
+| **Cola de la submission (10:02:34)** | **995 MiB de 1.024 (97%)** | 41 MB |
+| Reposo posterior | 705 MiB | 41 MB |
 
-Nunca tocó el techo de 1 GiB. El swap se usó de forma testimonial (40 MB de
-4.096), así que lo que evitó el OOM fue el reciclaje del GC, no el swap — el swap
-sigue siendo el seguro, no el mecanismo. El grupo más grande fueron 73 requests y
-**52 MB de bytes crudos**, que es el pico real de presión.
+**Sobrevivió por 29 MiB.** Y el detalle que desarma la hipótesis del swap: el
+high-water del swap del host fueron **41 MB de 4.096**. Es decir, el contenedor
+nunca superó su límite de 1 GiB, así que **nunca llegó a usar swap** — el swap
+sigue sin estar probado como red, y a 1.024 MiB el cgroup mata antes de swapear
+lo suficiente. Lo que evitó el OOM fue el reciclaje del GC. El grupo más grande
+fueron 73 requests y **52 MB de bytes crudos**, que es el pico real de presión.
+
+Conclusión operativa para `01_ingesta.zip` (**3.615 páginas, 62 PDFs**: el doble
+de páginas de `05` y casi el triple de ficheros): **hay que subir `memory` del
+worker en `config/deploy.yml` antes de dispararlo**, como ya anticipaba la nota de
+la re-submission de `03`. El host tiene 3.831 MB con ~2.095 disponibles y el web
+reservado a 1.465 GiB, así que subir el worker de `1g` a `2g` entra. Ese redeploy
+hay que hacerlo **con la cola vacía**, no con un ZIP en vuelo.
 
 `03` se reanudó sin re-extraer: los 7 assets seguían en `uploaded_s3` con sus
 objetos intactos en S3, así que bastó `SubmitClaudeBatchJob.perform_later(4)` en

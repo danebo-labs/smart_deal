@@ -21,7 +21,15 @@ by_status  = assets.group_by { |a| a[1] }.transform_values(&:size)
 
 # IngestBatchResultsJob labels: "bulk_batch: <filename> pN/M" (PDF pages),
 # "bulk_parse: <filename>" (images).
-window = (bu.created_at - 5.minutes)..(bu.updated_at + 6.hours)
+#
+# The end anchor takes the assets into account because `bulk_uploads.updated_at`
+# lies: the pipeline advances status with `update_columns`/`update_all`, neither
+# of which bumps timestamps, so a re-parse hours later leaves it frozen at the
+# original run and its pages fall outside the window. The parser writes the asset
+# with `update!`, so the assets do move. Filenames are the correctness guard here;
+# the window only keeps a concurrent upload from leaking in.
+last_touch = [ bu.updated_at, bu.bulk_upload_assets.maximum(:updated_at) ].compact.max
+window     = (bu.created_at - 5.minutes)..(last_touch + 6.hours)
 rows   = BedrockQuery
   .where(route: "batch", created_at: window)
   .where("user_query LIKE 'bulk_batch: %' OR user_query LIKE 'bulk_parse: %'")

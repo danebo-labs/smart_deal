@@ -379,7 +379,7 @@ perder créditos si algo falla en el camino.
 |---|---|---|---|---|
 | `00_validacion.zip` | 2 | 4 | 27 | `complete`, US$1,0877 |
 | `02_ingesta.zip` | 3 | 62 (59 ok, 3 fallidos) | 985 | `complete`, US$24,1381 |
-| `03_ingesta.zip` | 4 | 7 (6 ok, 1 fallido) | 367 + 49 perdidas | `complete`, **US$12,1748** (0,0332/pág) |
+| `03_ingesta.zip` | 4 | 7 (**7/7 complete**) | 416 | `complete`, **US$14,2056** (0,0341/pág) |
 
 `03` se reanudó sin re-extraer: los 7 assets seguían en `uploaded_s3` con sus
 objetos intactos en S3, así que bastó `SubmitClaudeBatchJob.perform_later(4)` en
@@ -387,13 +387,13 @@ vez de re-subir el ZIP. Salieron 416 requests en 5 grupos (no 423: el
 `PageRelevanceFilter` descarta algunas páginas antes de facturar), 416/416
 correctas y 0 errores de batch.
 
-### El ritmo de `03` no es el de `02`: 0,0332/página
+### El ritmo de `03` no es el de `02`: 0,0341/página
 
 | Tanda | Págs | Opus | USD | USD/pág |
 |---|---|---|---|---|
 | `00_validacion.zip` | 27 | 10 (37%) | 1,0877 | 0,0403 |
 | `02_ingesta.zip` | 985 | 11 (1,1%) | 24,1381 | 0,0245 |
-| `03_ingesta.zip` | 367 | 111 (**30,2%**) | 12,1748 | **0,0332** |
+| `03_ingesta.zip` | 416 | 160 (**38,5%**) | 14,2056 | **0,0341** |
 
 El share de Opus vuelve a ser el único driver, y `03` es material OTIS/BLT
 **escaneado**: `LG-OTIS DI 60-105 IV.pdf` sale a 0,0521/pág y `manual placa LCB II
@@ -406,11 +406,26 @@ Presupuesto con el ritmo medido en los dos extremos:
 | Concepto | USD |
 |---|---|
 | Créditos | 371,99 |
-| Gastado real (`00` + `02` + huérfanos + `03`, incl. páginas perdidas) | −44,85 |
-| **Disponible** | **327,14** |
-| 8.930 págs pendientes a 0,0245 | −218,79 → holgura 108 |
-| 8.930 págs pendientes a 0,0332 | −296,48 → holgura **31 (9%)** |
-| 8.930 págs pendientes a 0,0403 | −359,89 → **no cabe** |
+| Gastado real (`00` 1,0877 + `02` 24,1381 + huérfanos ~4,90 + `03` 14,2056) | −44,33 |
+| **Disponible** | **327,66** |
+| 8.930 págs pendientes a 0,0245 | −218,79 → holgura 109 |
+| 8.930 págs pendientes a 0,0341 | −304,51 → holgura **23 (7%)** |
+| 8.930 págs pendientes a 0,0403 | −359,88 → **no cabe** |
+
+#### El audit medía de menos: `bulk_uploads.updated_at` miente
+
+La primera lectura de `03` dio 367 páginas y US$12,17, sin el fichero recuperado.
+No faltaban filas en `bedrock_queries` —las 49 estaban— sino que caían fuera de la
+ventana del audit, que terminaba en `bu.updated_at + 6h`. El pipeline avanza
+estados con `update_columns` y `update_all`, y **ninguno de los dos toca los
+timestamps**, así que `updated_at` seguía congelado en la corrida original: la
+ventana cerró a las 01:55 de Chile y el re-parseo fue a las 05:30.
+
+Corregido anclando el final también en `bulk_upload_assets.maximum(:updated_at)`,
+que sí se mueve porque el parser escribe el asset con `update!`. Los nombres de
+fichero son el guard de corrección; la ventana sólo evita que se cuele un upload
+concurrente. `00` y `02` re-auditados dan exactamente lo mismo que antes
+(1,0877 y 24,1381), así que el cambio no reescribe historia.
 
 Sigue cabiendo, pero la holgura ya no es cómoda. De ahí el orden: **KONE primero
 (`05`, `06`)**, cuyos planos tienen capa de texto y van a Sonnet, para medir el

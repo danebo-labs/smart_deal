@@ -292,6 +292,21 @@ class BatchResultsParserService
     # claims to be.
     return "sw outside STOP_WORK_CONDITION (k=#{values['k']})" if values.key?("sw")
 
+    # A `k` outside the enum cannot be a mislabelled safety stop: without the
+    # `sw` pair even a well-formed STOP_WORK_CONDITION fails hard, and one that
+    # carries `sw` was already dropped above. What is left is a record of no
+    # recognisable type — one defective record, not a corrupt document. Raising
+    # here cost `CMC3 SCM Synergy.pdf` all of its already-billed pages, safety
+    # records included, over a single hallucinated type.
+    #
+    # A label that still mentions a stop keeps failing loudly, so a malformed
+    # safety record is never treated more leniently than a well-formed one.
+    record_type = values["k"]
+    if record_type.is_a?(String) && record_type.present? &&
+       FIELD_RECORD_TYPES.exclude?(record_type) && !record_type.match?(/stop/i)
+      return "unknown k: #{record_type}"
+    end
+
     nil
   end
 

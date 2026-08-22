@@ -403,6 +403,46 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_equal "failed", asset.reload.status
   end
 
+  # MODIFICATION_RECORD is the real value that cost CMC3 SCM Synergy.pdf its 59
+  # already-billed pages: a plausible type name the model invented near
+  # MODERNIZATION_STEP, with the five required keys correct and no `sw`.
+  test "drops a record whose type is outside the enum instead of failing the document" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [
+      field_record("k" => "MODIFICATION_RECORD"),
+      field_record("a" => "Check the brake.")
+    ]
+    asset = make_asset
+    parser = build_parser
+
+    parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+
+    assert_equal "parsed", asset.reload.status
+    dropped = asset.dropped_field_records
+    assert_equal 1, dropped.size
+    assert_match(/unknown k: MODIFICATION_RECORD/, dropped[0]["reason"])
+
+    chunk = @fake_s3.uploads["#{asset.chunks_s3_prefix}/chunk_0.txt"]
+    assert_includes chunk, "Check the brake."
+  end
+
+  # Same asymmetry as the stray-key and `sw` guards: anything that still reads as
+  # a safety stop must fail loudly rather than be dropped more leniently than a
+  # well-formed STOP_WORK_CONDITION would be.
+  test "a stop-work lookalike type still fails the document loudly" do
+    payload = golden_parsed.deep_dup
+    payload["chunks"][0]["field_records"] = [ field_record("k" => "STOP_WORK") ]
+    asset = make_asset
+    parser = build_parser
+
+    error = assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(account_id: 1, document_uid: "doc-uid", asset: asset, result: make_result(json_text: payload.to_json))
+    end
+
+    assert_includes error.message, "Invalid k"
+    assert_equal "failed", asset.reload.status
+  end
+
   test "keeps stop-work records without evidence strict" do
     payload = golden_parsed.deep_dup
     stop_work = field_record(

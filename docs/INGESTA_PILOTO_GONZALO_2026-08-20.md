@@ -380,7 +380,7 @@ perder créditos si algo falla en el camino.
 | `00_validacion.zip` | 2 | 4 | 27 | `complete`, US$1,0877 |
 | `02_ingesta.zip` | 3 | 62 (59 ok, 3 fallidos) | 985 | `complete`, US$24,1381 |
 | `03_ingesta.zip` | 4 | 7 (**7/7 complete**) | 416 | `complete`, **US$16,2100** all-in (0,0390/pág) |
-| `05_ingesta.zip` | 5 | 22 (todos `in_batch`) | 1.827 de 1.966 | **en vuelo 22-ago**, 55 batches registrados |
+| `05_ingesta.zip` | 5 | 22 (**22/22 complete**) | 1.711 facturadas de 1.827 enviadas | `complete`, **US$31,5610** all-in (**0,0184/pág**) |
 
 ### `05` pasó, pero por 29 MiB: hay que subir `memory` antes de `01`
 

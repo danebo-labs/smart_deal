@@ -1,15 +1,16 @@
 # Ingesta piloto Gonzalo (2026-08-20)
 
-**Estado: memoria mitigada, pendiente de deploy para reanudar (22-ago).** Alcance
-cerrado en seis marcas, tenant piloto desplegado, `00_validacion.zip` y
-`02_ingesta.zip` ingeridos. El coste real medido sobre 985 páginas es
-**US$0,0245/página, por debajo** del estimado — los créditos alcanzan para todo el
-corpus pendiente. El bloqueo era otro: `03_ingesta.zip` murió por **OOM del
-contenedor worker** durante la submission, dejando dos batches pagados y
-huérfanos. Ya hay **4 GB de swap en el host** (duplica el presupuesto efectivo del
-worker sin redeploy) y la submission **ya persiste cada batch id de forma
-incremental** en local, a falta de desplegarlo. Ver
-[El límite real es la memoria del worker](#el-límite-real-es-la-memoria-del-worker).
+**Estado: siete tandas cerradas, dos ZIPs sin subir (24-ago).** Alcance cerrado
+en seis marcas, tenant piloto desplegado, y `00`, `02`, `03`, `04a`, `04b`, `05`
+y `06` en `complete` sobre el deploy `bc3bf7d`. Los tres incidentes que
+bloquearon la ingesta —OOM del worker en la submission, explosión de disco por
+página, OOM al reintentar páginas— están **cerrados con código desplegado y
+tests**. Gastado **US$154,84 all-in** de los US$371,99 de créditos; quedan
+**US$217,15** para las **3.934 páginas estimadas** de `07` y `01`, que entran
+incluso al ritmo más caro medido hasta ahora (`04b`, 0,0470/pág). El único
+frente abierto es la memoria de la **submission** de `01_ingesta.zip` (3.615
+páginas, 62 PDFs): ese camino no lo toca ninguno de los tres fixes. Ver
+[Pendientes](#pendientes).
 
 ## Presupuesto y alcance
 
@@ -433,7 +434,9 @@ perder créditos si algo falla en el camino.
 | `05_ingesta.zip` | 5 | 22 (**22/22 complete**) | 1.711 facturadas de 1.827 enviadas | `complete`, **US$31,5610** all-in (**0,0184/pág**) |
 | `06_ingesta.zip` | 6 | 12 (**12/12 complete**) | 2.064 | `complete`, **US$52,6563** all-in (**0,0255/pág**) |
 | `04a_ingesta.zip` | 8 | 1 (el KONE de 515 págs, **complete**) | 512 | `complete`, **US$10,8422** all-in (**0,0212/pág**) — ver cierre abajo |
-| `07_ingesta.zip` | — | 4 partes de los 2 PDFs de OTIS | 319 | armado y verificado, sin ingerir |
+| `04b_ingesta.zip` | 9 | 10 (**9/9 no filtrados complete**, 1 filtrado por completo) | 187 | `complete`, **US$8,7897** all-in (**0,0470/pág**) — ver [nota de coste](#04b-el-ritmo-más-caro-medido-hasta-ahora-00470pág-24-ago) |
+| `07_ingesta.zip` | — | 4 partes de los 2 PDFs de OTIS | 319 est. | armado y verificado, **sin subir** |
+| `01_ingesta.zip` | — | 62 | 3.615 est. | armado, **sin subir** — el mayor pendiente |
 
 `06` cerró 12/12 sólo tras recuperar `CMC3 SCM Synergy.pdf`, que había fallado con
 `Invalid k in chunk 47 field_record 11`: el modelo emitió el tipo
@@ -511,9 +514,21 @@ Medir exacto, no muestrear: en ese manual tres muestras predijeron 4,45 GB y
 6,64 GB contra 5,61 GB reales, porque la inflación se concentraba en las páginas
 enhebradas.
 
-Medidas de los ZIPs restantes, **todas pre-fix**: `01` 1,06 GB, `07` 0,14 GB,
-`04a` 5,61 GB, `04b` 0,11 GB. Sólo `04` tenía problema; con el prune ninguno lo
-tiene.
+**Re-medido sobre el código nuevo (24-ago)** con
+[`script/pdf_split_peak_audit.rb`](../script/pdf_split_peak_audit.rb) y
+`DISK_FREE_GB=9.9` (presupuesto resultante: 6,93 GB):
+
+| ZIP | Pico pre-fix | Pico post-fix |
+|---|---|---|
+| `04b_ingesta.zip` | 0,11 GB | **0,11 GB** |
+| `07_ingesta.zip` | 0,14 GB | **0,14 GB** |
+| `01_ingesta.zip` | 1,06 GB | **0,29 GB** |
+
+`04b` y `07` no se mueven porque no traen documentos enhebrados; `01` cae 3,6×
+porque sí. Los tres pasan con margen amplio: **el disco ya no es la compuerta de
+esta ingesta**. La regla sigue siendo la misma — se presupuesta por
+`páginas × tamaño por página`, nunca por bytes de origen — y el audit hay que
+pasarlo igual antes de subir cualquier ZIP nuevo.
 
 Hallazgo lateral que ahorró 514 páginas: los dos escaneos KONE de 515 páginas de
 `04` eran **el mismo manual** con SHA-256 distinto, así que el dedupe por
@@ -614,6 +629,43 @@ descartó por completo. El coste del filtro no es basura, es peaje.
 O sea que ya no es "cabe con holgura": **cabe si la media se queda bajo
 US$0,0361/página**, y eso lo decide cuánto material escaneado traiga cada ZIP.
 `05` (1.966 págs, 22% del pendiente) es el primer voto real.
+
+#### Cerrado (24-ago): la media real es 0,0244 y el presupuesto deja de apretar
+
+Los votos ya están contados. Con `05`, `06` y `04a` cerrados, el gasto
+**productivo** es US$139,71 por 5.715 páginas facturadas = **US$0,0244/página**,
+casi exactamente el ritmo de `02` y muy por debajo del break-even de 0,0361:
+
+| Concepto | USD |
+|---|---|
+| Créditos | 371,99 |
+| `00` 1,1453 + `02` 27,2918 + `03` 16,2100 + `05` 31,5610 + `06` 52,6563 + `04a` 10,8422 | −139,71 |
+| Huérfanos de `03` (~4,90) + filtro del `04` fallido (1,44) | −6,34 |
+| **Gastado all-in** | **−146,05** |
+| **Disponible** | **225,94** |
+| 4.123 págs pendientes a 0,0244 (media real) | −100,60 → holgura **125 (55%)** |
+| 4.123 págs a 0,0390 (ritmo de `03`, el peor medido) | −160,80 → holgura **65 (29%)** |
+
+**Entra incluso en el peor escenario medido.** El coste dejó de ser el riesgo de
+esta ingesta; el riesgo que queda es operativo (memoria en la submission de `01`).
+
+**Actualizado tras `04b` (24-ago):** `04b` cerró a **US$8,7897 / 187 págs =
+0,0470/pág**, el ritmo más caro medido hasta ahora — ver
+[nota de coste](#04b-el-ritmo-más-caro-medido-hasta-ahora-00470pág-24-ago) para
+la explicación (fracción de páginas escaneadas del ZIP, no un defecto):
+
+| Concepto | USD |
+|---|---|
+| Gastado all-in previo | 146,05 |
+| `04b` | +8,79 |
+| **Gastado all-in** | **154,84** |
+| **Disponible** | **217,15** |
+| 3.934 págs pendientes (`07`+`01`) a 0,0244 (media real) | −95,99 → holgura **121 (56%)** |
+| 3.934 págs a 0,0390 (ritmo de `03`) | −153,43 → holgura **64 (29%)** |
+| 3.934 págs a 0,0470 (ritmo de `04b`, el nuevo peor medido) | −184,90 → holgura **32 (15%)** |
+
+Sigue entrando incluso al ritmo de `04b`, pero la holgura ya es más ajustada:
+**vale la pena auditar `07` igual de cerca antes de comprometer `01`.**
 
 #### El audit medía de menos: `bulk_uploads.updated_at` miente
 
@@ -745,22 +797,100 @@ resometió el ZIP). El asset 116 pasó `in_batch → parsed → syncing → comp
 El worker sigue en `memory: 2g` (subido antes de `05`/`06`), no se tocó ese límite
 como parte de este cierre — el fix fue acotar el pico, no subir el techo.
 
+### `04b`: el ritmo más caro medido hasta ahora, 0,0470/pág (24-ago)
+
+Primer ZIP **multi-documento** sobre `bc3bf7d` (`04a` sólo había probado el
+camino de un documento). `BulkUpload` 9, 10 assets (9 docs + la página LCE
+rescatada de KONE): 9 `complete`, 1 `failed` — `Conectores QS.pdf` con
+`bulk_uploads.all_pages_filtered` (mismo motivo ya visto en dos PDFs de BLT en
+`02`: el filtro descarta todas sus páginas antes de enviarlas, **sin coste**).
+`dropped_field_records`: 2, ambos en `Weg_Lazo_Abierto.pdf`, `k=SCHEMATIC_LABEL`,
+`reason="unknown keys: connection"` — la misma tolerancia de claves cerrada el
+22-ago, no un `STOP_WORK_CONDITION`. Pico de memoria del worker **~906 MiB de
+2 GiB (44%)**, sin alertas de disco ni de memoria en ningún momento.
+
+| Métrica | Valor |
+|---|---|
+| Páginas facturadas | 187 |
+| Coste all-in | **US$8,7897** (batch US$7,7884 + no-batch US$1,0013: `page_filter` 13 llamadas US$0,3384, `bulk_retry` 3 llamadas US$0,6630 — 12,9% sobre el batch) |
+| **USD/página** | **0,0470** — nuevo peor ritmo medido, por encima de `03` (0,0390) |
+| Opus | **73,8%** (138/187 págs) — nuevo máximo, por encima del 38,5% de `03` |
+
+El share de Opus tan alto **no es una firma de código nueva**: sigue siendo el
+mismo (y único) gate de `FileMultimodalRouter` (`text_layer_chars < 100 &&
+image_area_ratio > 0.7`) que ya gobierna todas las tandas anteriores. Lo que
+cambia es la composición del ZIP. Desglose por fichero (vía `bedrock_queries`,
+sólo lectura):
+
+| Fichero | Págs | Opus |
+|---|---|---|
+| `r.pdf` | 40 | 100% |
+| `BLTpdf.pdf` | 34 | 100% |
+| `Planos BLT.pdf` | 34 | 100% |
+| `manual placa LCB II (parte3).pdf` | 19 | 100% |
+| `Weg_Lazo_Abierto.pdf` | 21 | 52% |
+| `mpk708a配线图 diargramas blt.pdf`, `Informe KidZania…`, `Conectores NS(1).pdf`, `KONE…LCE p515.pdf` | 39 | 0% |
+
+Cuatro de los nueve documentos son escaneos completos (planos y esquemas sin
+capa de texto) y concentran el 100% de sus páginas en Opus; sólo cuatro
+documentos con capa de texto se quedan enteramente en Sonnet. `04b` es un ZIP
+pequeño (189 páginas) armado con "el resto" de BLT/OTIS/TKE tras separar el
+KONE de 515 páginas en `04a`, así que la fracción escaneada pesa mucho más que
+en los ZIPs grandes de KONE (`05`, `06`), donde los planos con capa de texto
+dominan. Confirma la regla ya anotada en `03`: **el driver siempre es qué
+fracción del ZIP viene escaneada, no el corpus en su conjunto** — y en un ZIP
+chico esa fracción puede dispararse sin que sea un defecto.
+
 ## Pendientes
 
-1. **Desplegar** los tres fixes de código (submission durable, tolerancia del
-   parser, `bin/pilot_metrics`). Hasta el deploy, no relanzar ningún ZIP.
-2. **Re-ingerir `03_ingesta.zip`** como canario tras el deploy (~US$10,36; se
-   pierden los ~US$4,90 ya pagados).
-3. **Usuarios nominales**: falta el nombre y correo de cada ingeniero.
-4. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y
-   se ingiere sólo lo nuevo — el dedupe por cuenta evita pagar dos veces.
-5. **Los dos PDFs de OTIS sobre 50 MB**: 319 páginas, ~US$7,8, requieren partirse
-   por páginas.
-6. **`ReconcileBedrockCostJob`** sigue fallando con `AccessDenied` en
-   `s3:ListBucket`: sin auditoría autoritativa del gasto de Bedrock.
+Estado a 24-ago, deploy vigente `bc3bf7d`, cola vacía, sin nada en vuelo.
 
-Resueltos el 22-ago: memoria del worker (swap de 4 GB en el host), submission no
-atómica (`claude_batch_ids` grupo a grupo) y tolerancia del parser.
+### Ingesta — dos ZIPs, en este orden
+
+Todos están armados y verificados en `tmp/gonzalo_zips/`, y los dos que quedan
+pasaron el audit de disco sobre el código nuevo. El orden va de menor a mayor
+riesgo, y **se sube de a uno confirmando `complete` antes del siguiente**:
+
+| # | ZIP | Docs | Págs est. | Coste est. | Estado |
+|---|---|---|---|---|---|
+| ~~1~~ | `04b_ingesta.zip` | 10 | 189 (187 facturadas) | ~US$5 | **hecho** — `BulkUpload` 9 `complete`, US$8,7897 (0,0470/pág, ver [nota de coste](#04b-el-ritmo-más-caro-medido-hasta-ahora-00470pág-24-ago)) |
+| 1 | `07_ingesta.zip` | 4 | 319 | ~US$8 | Las 4 partes de los dos PDFs de OTIS sobre 50 MB; prueba el camino de PDF troceado end-to-end |
+| 2 | `01_ingesta.zip` | 62 | 3.615 | ~US$88–141 | El grande. **No lanzar antes de cerrar el anterior** |
+
+`01` es el único con un riesgo técnico sin cerrar: el histórico no es el disco
+(0,29 GB post-fix) ni el retry, sino la **memoria durante la submission**. `05`
+sobrevivió por 29 MiB con 1.827 páginas y el worker en 1 GiB; hoy está en 2 GiB
+y `01` trae el doble de páginas y el triple de ficheros. Ese camino
+(`BulkCostV2RequestBuilder#collect_pages` → `ClaudeBatchSubmissionService`) **no
+lo toca ninguno de los tres fixes desplegados**. Vigilar con `bin/worker_watch`
+desde antes de disparar y parar si se acerca al techo.
+
+### Fuera de la ingesta
+
+1. **Usuarios nominales**: falta el nombre y correo de cada ingeniero. El plan de
+   agosto exige usuarios atribuibles; no entregar credenciales compartidas.
+2. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y
+   se ingiere sólo lo nuevo — el dedupe por cuenta evita pagar dos veces.
+3. **`ReconcileBedrockCostJob`** sigue fallando con `AccessDenied` en
+   `s3:ListBucket`: sin auditoría autoritativa del gasto de Bedrock.
+4. **Devise `trackable`**: decidir si se añade o se acepta el hueco de login.
+5. **`BulkUploadsController#create` busca por `sha256` global** — hay que
+   resolverlo antes de reactivar la UI de `/bulk_uploads` (T-31).
+
+### Resueltos
+
+- **22-ago:** OOM del worker en submission (swap de 4 GB + `memory: 2g`),
+  submission no atómica (`claude_batch_ids` grupo a grupo), tolerancia del parser
+  a claves y tipos alucinados, cola `solid_queue_recurring` sin consumidor.
+- **24-ago** (`bc3bf7d`, ver [Cierre de `BulkUpload` 8](#cierre-de-bulkupload-8-tras-el-fix-de-memoria-24-ago)):
+  OOM al reintentar páginas — `each_page(only:)` acota el retry y la poda de `/B`
+  baja la extracción por página 355×. Con eso, `03` re-ingerido y `04a`, `05` y
+  `06` cerrados `complete`.
+- **24-ago:** `04b_ingesta.zip` (`BulkUpload` 9) cerrado `complete`, primer ZIP
+  multi-documento sobre `bc3bf7d`. Sin hallazgos de código; el ritmo de
+  0,0470/pág y el 73,8% de Opus son los más altos medidos, explicados por la
+  fracción de páginas escaneadas del ZIP, no por un defecto — ver
+  [nota de coste](#04b-el-ritmo-más-caro-medido-hasta-ahora-00470pág-24-ago).
 
 ## Auditoría de coste por tanda
 

@@ -432,6 +432,7 @@ perder créditos si algo falla en el camino.
 | `03_ingesta.zip` | 4 | 7 (**7/7 complete**) | 416 | `complete`, **US$16,2100** all-in (0,0390/pág) |
 | `05_ingesta.zip` | 5 | 22 (**22/22 complete**) | 1.711 facturadas de 1.827 enviadas | `complete`, **US$31,5610** all-in (**0,0184/pág**) |
 | `06_ingesta.zip` | 6 | 12 (**12/12 complete**) | 2.064 | `complete`, **US$52,6563** all-in (**0,0255/pág**) |
+| `04a_ingesta.zip` | 8 | 1 (el KONE de 515 págs, **complete**) | 512 | `complete`, **US$10,8422** all-in (**0,0212/pág**) — ver cierre abajo |
 | `07_ingesta.zip` | — | 4 partes de los 2 PDFs de OTIS | 319 | armado y verificado, sin ingerir |
 
 `06` cerró 12/12 sólo tras recuperar `CMC3 SCM Synergy.pdf`, que había fallado con
@@ -707,6 +708,42 @@ rota con el `json-file` de 10m sin `max-file`, el mismo agujero que la telemetr�
 se añadió `bulk_upload_assets.dropped_field_records` (jsonb). Guarda chunk,
 `record`, página, `k` y motivo de cada descarte, y se escribe **dentro del
 `update!` que ya existía**, sin queries extra.
+
+### Cierre de `BulkUpload` 8 tras el fix de memoria (24-ago)
+
+`IngestBatchResultsJob(8)` murió por `SIGKILL` el 22-ago a las 13:00:46 UTC
+reintentando páginas del KONE de 515 págs sin acotar (`each_page` materializaba
+las 515 en memoria, y cada página pesaba 12,296 MiB por el `/B` de article-thread
+sin podar — ver la corrección de más arriba). Los 108 batches ya estaban
+`ended`/pagados; el job nunca llegó a escribir nada a S3.
+
+**Desplegado:** SHA `bc3bf7d` (antes `223c936`), con el fix de
+`PdfPageSplitterService#each_page(only:)` + poda de `/B` en `#import_page`,
+`BatchPageRetryService` acotado a las páginas fallidas, `PdfSplitPeakEstimator`,
+y el toolkit de operación (`bulk_upload_status.rb`, `bulk_upload_cost_audit.rb`
+ya existente, `bulk_upload_recover_failed.rb`, `pdf_split_peak_audit.rb`,
+`bin/worker_watch`). Cola confirmada vacía antes del deploy: sólo el
+`BulkUpload` 8 en `processing`, `ready`/`scheduled`/`claimed`/`blocked` en
+SolidQueue en cero.
+
+**Reanudación sin re-pagar:** `IngestBatchResultsJob.perform_later(8)` releyó los
+108 batches ya `ended` desde Anthropic (no se llamó a `SubmitClaudeBatchJob` ni se
+resometió el ZIP). El asset 116 pasó `in_batch → parsed → syncing → complete` en
+~5 minutos.
+
+| Métrica | Valor |
+|---|---|
+| Estado final | `BulkUpload` 8 `complete`, asset 116 `complete` |
+| `chunks_s3_prefix` | `bulk_chunks/3/38a1b716d1f432d3cb088c83c5c14efa8490` (1000+ objetos en S3) |
+| `kb_document_id` | 119 |
+| `dropped_field_records` | 0 — el documento parseó limpio, sin descartes |
+| Páginas que necesitaron retry directo | **1** (`bulk_retry`: 1 llamada, US$0,1004) — confirma que el pico del retry quedó acotado a una página, no a las 515 |
+| Pico de memoria del worker | **~630 MiB de 2 GiB (31%)**, arranque limpio en 369 MiB — sin alerta, lejos del ceiling que mató el job el 22-ago |
+| Coste all-in | **US$10,8422** sobre 512 páginas = **US$0,0212/página** (batch US$9,4876 + no-batch US$1,3547: `page_filter` 439 llamadas US$1,2543, `bulk_retry` 1 llamada US$0,1004) |
+| Opus | 0% — 100% Sonnet |
+
+El worker sigue en `memory: 2g` (subido antes de `05`/`06`), no se tocó ese límite
+como parte de este cierre — el fix fue acotar el pico, no subir el techo.
 
 ## Pendientes
 

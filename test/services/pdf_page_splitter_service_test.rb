@@ -10,7 +10,14 @@ class PdfPageSplitterServiceTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
 
   class FakePage
-    def initialize(num) = (@num = num)
+    attr_reader :deleted_keys
+
+    def initialize(num)
+      @num          = num
+      @deleted_keys = []
+    end
+
+    def delete(key) = @deleted_keys << key
   end
 
   class FakePages
@@ -18,6 +25,7 @@ class PdfPageSplitterServiceTest < ActiveSupport::TestCase
 
     delegate :count, to: :@pages
     delegate :[], to: :@pages
+    delegate :to_a, to: :@pages
   end
 
   class FakeTargetDocument
@@ -37,18 +45,27 @@ class PdfPageSplitterServiceTest < ActiveSupport::TestCase
   end
 
   class FakeSourceDocument
+    # Memoized so a test can inspect the very page objects the service touched;
+    # a fresh FakePages per call would discard the recorded deletions.
     def initialize(count) = (@count = count)
-    def pages = FakePages.new(@count)
+    def pages = (@pages ||= FakePages.new(@count))
   end
+
+  attr_reader :sources
+
+  def bump_call_count = (@call_count += 1)
 
   setup do
     @orig_hexapdf_new = HexaPDF::Document.method(:new)
     @call_count       = 0
+    @sources          = []
     self_ref          = self
 
     HexaPDF::Document.define_singleton_method(:new) do |**kwargs|
-      self_ref.instance_variable_set(:@call_count, self_ref.instance_variable_get(:@call_count) + 1)
-      kwargs.key?(:io) ? FakeSourceDocument.new(3) : FakeTargetDocument.new
+      self_ref.bump_call_count
+      next FakeTargetDocument.new unless kwargs.key?(:io)
+
+      FakeSourceDocument.new(3).tap { |doc| self_ref.sources << doc }
     end
   end
 
@@ -85,6 +102,77 @@ class PdfPageSplitterServiceTest < ActiveSupport::TestCase
     PdfPageSplitterService.new("fake_binary").each_page { }
     # 1 source + 3 targets = 4 HexaPDF::Document.new calls
     assert_equal 4, @call_count
+  end
+
+  # HexaPDF copies the shared resource tree into every extracted page, so a caller
+  # that needs two pages out of 515 must pay for two, not 515. Serializing a page
+  # it did not ask for is the whole cost.
+  test "only: serializes just the requested pages, in ascending order" do
+    yielded = []
+    PdfPageSplitterService.new("fake_binary").each_page(only: [ 3, 1 ]) do |page_num, binary|
+      yielded << page_num
+      assert binary.start_with?("%PDF")
+    end
+
+    assert_equal [ 1, 3 ], yielded
+    # 1 source + 2 targets: page 2 is never serialized.
+    assert_equal 3, @call_count
+  end
+
+  test "only: deduplicates repeated page numbers" do
+    yielded = []
+    PdfPageSplitterService.new("fake_binary").each_page(only: [ 2, 2, 2 ]) { |n, _| yielded << n }
+
+    assert_equal [ 2 ], yielded
+    assert_equal 2, @call_count, "one source + one target"
+  end
+
+  test "only: skips page numbers outside the document instead of raising" do
+    yielded = []
+    assert_nothing_raised do
+      PdfPageSplitterService.new("fake_binary").each_page(only: [ 0, 2, 99, nil ]) { |n, _| yielded << n }
+    end
+
+    assert_equal [ 2 ], yielded
+  end
+
+  test "only: an empty selection serializes nothing" do
+    yielded = []
+    PdfPageSplitterService.new("fake_binary").each_page(only: []) { |n, _| yielded << n }
+
+    assert_empty yielded
+    assert_equal 1, @call_count, "the source is opened, no target is built"
+  end
+
+  test "only: nil is the unrestricted legacy behavior" do
+    yielded = []
+    PdfPageSplitterService.new("fake_binary").each_page(only: nil) { |n, _| yielded << n }
+
+    assert_equal [ 1, 2, 3 ], yielded
+  end
+
+  test "every import drops the whole-document-only keys, on all three iterators" do
+    PdfPageSplitterService.new("fake_binary").each_page { }
+    PdfPageSplitterService.new("fake_binary").each_split_page(&:cleanup)
+    PdfPageSplitterService.new("fake_binary").each_part(max_bytes: 5.megabytes) { }
+
+    assert_equal 3, sources.size, "each iterator opens its own source document"
+    sources.each_with_index do |source, idx|
+      touched = source.pages.to_a.select { |page| page.deleted_keys.any? }
+      assert_equal 3, touched.size, "source #{idx}: every imported page must be pruned"
+      touched.each do |page|
+        assert_equal PdfPageSplitterService::WHOLE_DOCUMENT_ONLY_KEYS, page.deleted_keys
+      end
+    end
+  end
+
+  test "only: prunes the requested pages and leaves the others untouched" do
+    PdfPageSplitterService.new("fake_binary").each_page(only: [ 2 ]) { }
+
+    pages = sources.first.pages.to_a
+    assert_equal PdfPageSplitterService::WHOLE_DOCUMENT_ONLY_KEYS, pages[1].deleted_keys
+    assert_empty pages[0].deleted_keys, "page 1 was never imported"
+    assert_empty pages[2].deleted_keys, "page 3 was never imported"
   end
 
   test "each_split_page yields disk-backed proxies with lazy binary and explicit cleanup" do
@@ -205,5 +293,115 @@ class PdfPageSplitterServicePartsTest < ActiveSupport::TestCase
       parts_for("definitely not a pdf", max_bytes: 1_000)
     end
     assert_match(/cannot open PDF/, error.message)
+  end
+end
+
+# Real HexaPDF, because the defect is about what `import` reaches through an
+# article thread — the one thing the stubs above cannot reproduce. BulkUpload 8:
+# one unparseable page pulled 435 pages into a "single page" PDF and the worker
+# took a SIGKILL at its 2 GiB cgroup limit.
+class PdfPageSplitterServiceBeadPruneTest < ActiveSupport::TestCase
+  parallelize(workers: 1)
+
+  HEAVY_PAYLOAD_BYTES = 200_000
+  PAGE_TEXT           = "ANCHOR PAGE TEXT"
+
+  # Page 1 is light and carries readable text; page 2 carries an incompressible
+  # payload. An article thread links them, which is how importing page 1 reaches
+  # page 2 even though page 1 references none of its content.
+  def pdf_with_article_thread
+    rng = Random.new(4242)
+    doc = HexaPDF::Document.new
+
+    light = doc.pages.add
+    light.canvas.font("Helvetica", size: 12).text(PAGE_TEXT, at: [ 72, 700 ])
+
+    heavy = doc.pages.add
+    heavy.contents = rng.bytes(HEAVY_PAYLOAD_BYTES)
+
+    thread      = doc.add({})
+    first_bead  = doc.add({ P: light, T: thread })
+    second_bead = doc.add({ P: heavy, T: thread })
+    first_bead[:N]  = second_bead
+    first_bead[:V]  = second_bead
+    second_bead[:N] = first_bead
+    second_bead[:V] = first_bead
+    thread[:F] = first_bead
+    light[:B]  = [ first_bead ]
+    heavy[:B]  = [ second_bead ]
+    doc.catalog[:Threads] = [ thread ]
+
+    io = StringIO.new("".b)
+    doc.write(io, validate: false)
+    io.string
+  end
+
+  def first_page_of(binary)
+    pages = {}
+    PdfPageSplitterService.new(binary).each_page { |number, bytes| pages[number] = bytes }
+    pages[1]
+  end
+
+  def page_objects_in(binary)
+    doc = HexaPDF::Document.new(io: StringIO.new(binary))
+    count = 0
+    doc.each(only_current: true) { |obj| count += 1 if obj.is_a?(HexaPDF::Type::Page) }
+    count
+  end
+
+  def without_prune
+    original = PdfPageSplitterService::WHOLE_DOCUMENT_ONLY_KEYS
+    PdfPageSplitterService.send(:remove_const, :WHOLE_DOCUMENT_ONLY_KEYS)
+    PdfPageSplitterService.const_set(:WHOLE_DOCUMENT_ONLY_KEYS, [].freeze)
+    yield
+  ensure
+    PdfPageSplitterService.send(:remove_const, :WHOLE_DOCUMENT_ONLY_KEYS)
+    PdfPageSplitterService.const_set(:WHOLE_DOCUMENT_ONLY_KEYS, original)
+  end
+
+  # Guards against a vacuous suite: if the fixture did not reproduce the defect,
+  # the assertions below would pass with the prune removed.
+  test "the fixture reproduces the defect when the prune is disabled" do
+    unpruned = without_prune { first_page_of(pdf_with_article_thread) }
+
+    assert_operator unpruned.bytesize, :>, HEAVY_PAYLOAD_BYTES,
+                    "expected the thread to drag page 2's payload into page 1"
+    assert_operator page_objects_in(unpruned), :>, 1,
+                    "expected orphan Page objects to travel with page 1"
+  end
+
+  test "an article thread does not drag other pages into an extracted page" do
+    pruned = first_page_of(pdf_with_article_thread)
+
+    assert_equal 1, page_objects_in(pruned), "exactly one Page object may survive"
+    assert_operator pruned.bytesize, :<, HEAVY_PAYLOAD_BYTES / 4,
+                    "page 2's payload must not travel with page 1"
+  end
+
+  test "pruning removes no readable content" do
+    binary = pdf_with_article_thread
+    pruned   = first_page_of(binary)
+    unpruned = without_prune { first_page_of(binary) }
+
+    assert_equal text_of(unpruned), text_of(pruned),
+                 "the prune must not change a single character of the page"
+    assert_includes text_of(pruned), PAGE_TEXT
+  end
+
+  test "the page tree still holds exactly one page after pruning" do
+    pruned = first_page_of(pdf_with_article_thread)
+
+    assert_equal 1, HexaPDF::Document.new(io: StringIO.new(pruned)).pages.count
+  end
+
+  private
+
+  def text_of(binary)
+    Tempfile.create([ "bead-prune-", ".pdf" ]) do |file|
+      file.binmode
+      file.write(binary)
+      file.flush
+      PDF::Reader.new(file.path).pages.first.text.to_s.strip
+    end
   end
 end

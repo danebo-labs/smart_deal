@@ -68,19 +68,18 @@ class BatchPageRetryService
       "retrying direct #{RETRY_TOKEN_LADDER.first / 1000}k"
     )
 
-    page_binaries = download_page_binaries(s3_key, filename)
-    return page_results if page_binaries.nil?
+    pdf_binary = download_source_pdf(s3_key, filename)
+    return page_results if pdf_binary.nil?
 
     # The anchor (lowest-numbered kept page) must keep its ANCHOR_PAGE role on
     # retry so it still emits S0/summary/companion_offer; all others stay CONTENT_PAGE.
     anchor_page_number = page_results.filter_map { |pr| pr[:page_number] }.min
 
-    failed.each do |pr|
-      retry_one_page!(pr, page_binaries, page_results.size,
-                      filename: filename, sha256: sha256,
-                      tracking_prefix: tracking_prefix, on_usage: on_usage,
-                      anchor_page_number: anchor_page_number)
-    end
+    retry_extracted_pages!(pdf_binary, failed.index_by { |pr| pr[:page_number] },
+                           total_kept: page_results.size,
+                           filename: filename, sha256: sha256,
+                           tracking_prefix: tracking_prefix, on_usage: on_usage,
+                           anchor_page_number: anchor_page_number)
 
     page_results
   end
@@ -91,13 +90,35 @@ class BatchPageRetryService
     page_result[:stop_reason] == "max_tokens" ? "max_tokens" : "invalid_json"
   end
 
-  def retry_one_page!(page_result, page_binaries, total_kept,
+  # Extracts and retries one page at a time, so the peak is one page rather than
+  # the document. BulkUpload 8 died here on a SIGKILL: one unparseable page out of
+  # 512 materialized all 515 pages of a 15 MiB KONE scan into a Hash at 12.3 MiB
+  # each (~6.2 GiB) against a 2 GiB worker cgroup. Those 12.3 MiB were themselves
+  # a defect, now fixed in PdfPageSplitterService::WHOLE_DOCUMENT_ONLY_KEYS, but
+  # `only:` is the invariant that matters here: a caller retrying a handful of
+  # pages must never pay for the whole document, whatever a page costs.
+  #
+  # A splitter failure degrades the affected pages instead of raising: the caller
+  # holds a fully paid document, and losing it costs far more than a degraded page.
+  def retry_extracted_pages!(pdf_binary, pending, total_kept:, **retry_options)
+    PdfPageSplitterService.new(pdf_binary).each_page(only: pending.keys) do |page_number, page_binary|
+      page_result = pending.delete(page_number)
+      next if page_result.nil?
+
+      retry_one_page!(page_result, page_binary, total_kept, **retry_options)
+    end
+  rescue StandardError => e
+    Rails.logger.error(
+      "BatchPageRetryService: page extraction failed for retry #{retry_options[:filename]} — #{e.message}"
+    )
+  ensure
+    pending.each_key { |page_number| Rails.logger.warn("BatchPageRetryService: no binary for p#{page_number} retry") }
+  end
+
+  def retry_one_page!(page_result, page_bin, total_kept,
                       filename:, sha256:, tracking_prefix:, on_usage:, anchor_page_number: nil)
     page_num = page_result[:page_number]
-    page_bin = page_binaries[page_num]
-    return Rails.logger.warn("BatchPageRetryService: no binary for p#{page_num} retry") unless page_bin
-
-    model  = page_result[:model].to_s.delete_suffix("-batch").presence || BatchChunkingPrompt::MODEL_TEXT
+    model    = page_result[:model].to_s.delete_suffix("-batch").presence || BatchChunkingPrompt::MODEL_TEXT
     client = ClaudeChunkingClient.new(model: model)
     user_content = BatchChunkingPrompt.page_user_content(
       binary:      page_bin,
@@ -137,13 +158,9 @@ class BatchPageRetryService
     end
   end
 
-  def download_page_binaries(s3_key, filename)
-    s3      = Aws::S3::Client.new(build_aws_client_options)
-    pdf_bin = s3.get_object(bucket: bucket_name, key: s3_key).body.read
-
-    page_binaries = {}
-    PdfPageSplitterService.new(pdf_bin).each_page { |num, bin| page_binaries[num] = bin }
-    page_binaries
+  def download_source_pdf(s3_key, filename)
+    s3 = Aws::S3::Client.new(build_aws_client_options)
+    s3.get_object(bucket: bucket_name, key: s3_key).body.read
   rescue StandardError => e
     Rails.logger.error("BatchPageRetryService: S3 download failed for retry #{filename} — #{e.message}")
     nil

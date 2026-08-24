@@ -47,13 +47,22 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
 
   # ── retry_failed_pages! ──────────────────────────────────────────────────────
 
+  # page_binaries stands in for the pages the source document actually holds; the
+  # fake honours `only:` exactly as the real splitter does, and `serialized`
+  # records every page it was made to re-serialize. That count is the memory bill.
   def with_retry_harness(client_results:, page_binaries: { 6 => "page-6-pdf" })
     fake_s3 = Object.new
     fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
 
+    serialized = []
     fake_splitter = Object.new
-    fake_splitter.define_singleton_method(:each_page) do |&block|
-      page_binaries.each { |num, bin| block.call(num, bin) }
+    fake_splitter.define_singleton_method(:each_page) do |only: nil, &block|
+      page_binaries.each do |num, bin|
+        next unless only.nil? || only.include?(num)
+
+        serialized << num
+        block.call(num, bin)
+      end
     end
 
     calls = []
@@ -73,7 +82,7 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     PdfPageSplitterService.define_singleton_method(:new) { |_| fake_splitter }
     ClaudeChunkingClient.define_singleton_method(:new) { |**_| fake_client }
 
-    yield calls
+    yield calls, serialized
   ensure
     Aws::S3::Client.define_singleton_method(:new, original_s3)
     PdfPageSplitterService.define_singleton_method(:new, original_splitter)
@@ -250,7 +259,9 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     fake_s3 = Object.new
     fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
     fake_splitter = Object.new
-    fake_splitter.define_singleton_method(:each_page) { |&block| block.call(6, "bin") }
+    fake_splitter.define_singleton_method(:each_page) do |only: nil, &block|
+      block.call(only.first, "bin")
+    end
     fake_client = Object.new
     fake_client.define_singleton_method(:call) { |**| { text: VALID_JSON, usage: nil, stop_reason: nil } }
 

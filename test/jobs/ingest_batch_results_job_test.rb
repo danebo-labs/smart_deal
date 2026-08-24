@@ -351,7 +351,9 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     fake_s3 = Object.new
     fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
     fake_splitter = Object.new
-    fake_splitter.define_singleton_method(:each_page) { |&block| block.call(1, "page-pdf") }
+    fake_splitter.define_singleton_method(:each_page) do |only: nil, &block|
+      block.call(1, "page-pdf") if only.nil? || only.include?(1)
+    end
 
     calls = []
     usages = [ retry_usage_1, retry_usage_2 ]
@@ -407,7 +409,9 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     fake_s3 = Object.new
     fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
     fake_splitter = Object.new
-    fake_splitter.define_singleton_method(:each_page) { |&block| block.call(1, "page-pdf") }
+    fake_splitter.define_singleton_method(:each_page) do |only: nil, &block|
+      block.call(1, "page-pdf") if only.nil? || only.include?(1)
+    end
 
     calls = []
     usage_for_retry = make_usage(input: 120, output: 5_000, cache_read: 0, cache_creation: 0)
@@ -450,7 +454,9 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     fake_s3 = Object.new
     fake_s3.define_singleton_method(:get_object) { |**| OpenStruct.new(body: StringIO.new("pdf")) }
     fake_splitter = Object.new
-    fake_splitter.define_singleton_method(:each_page) { |&block| block.call(1, "page-pdf") }
+    fake_splitter.define_singleton_method(:each_page) do |only: nil, &block|
+      block.call(1, "page-pdf") if only.nil? || only.include?(1)
+    end
 
     calls = []
     retry_usage = make_usage(input: 120, output: 2_000, cache_read: 0, cache_creation: 0)
@@ -500,8 +506,8 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     end
 
     fake_splitter = Object.new
-    fake_splitter.define_singleton_method(:each_page) do |&block|
-      block.call(1, "page-pdf")
+    fake_splitter.define_singleton_method(:each_page) do |only: nil, &block|
+      block.call(1, "page-pdf") if only.nil? || only.include?(1)
     end
 
     call_args = nil

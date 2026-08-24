@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Samples the production worker container every few seconds: memory against its
+# cgroup limit, CPU, container state, host swap and free disk. Prints
+# WORKER_ALERT when the container is not "Up" and DISK_ALERT when free space
+# falls under DISK_MIN_GB.
+#
+# Why sample at all: the two failure modes of bulk ingestion are both invisible
+# from the app.
+#   - cgroup OOM during submission: SolidQueue cannot rescue a SIGKILL, so the
+#     rescue in SubmitClaudeBatchJob#mark_failed never runs and the upload
+#     silently stays in `processing` with its assets in `uploaded_s3`.
+#   - disk exhaustion during page splitting: per-page PDF extraction copies the
+#     document's shared resources into every page, so a 16 MB scanned manual of
+#     515 pages writes 5.6 GB of tempfiles (10.4 MB/page measured). This killed
+#     04_ingesta at page 383 with "No space left on device". Source bytes do not
+#     predict it — pages × per-page size does.
+#
+# It resolves the container by label on every round, so a deploy that swaps
+# containers mid-run is followed without restarting the watcher.
+#
+# If ssh hangs instead of failing, the local IP rotated: run `bin/stack ssh-ip`.
+#
+# Usage: bin/worker_watch [rounds] [sleep_seconds]
+#   DANEBO_HOST     ssh target    (default ubuntu@54.163.248.39)
+#   DANEBO_SSH_KEY  identity file (default ~/.ssh/smart-deal-deploy.pem)
+#   DISK_MIN_GB     free-space floor before DISK_ALERT (default 3)
+
+set -euo pipefail
+
+HOST="${DANEBO_HOST:-ubuntu@54.163.248.39}"
+KEY="${DANEBO_SSH_KEY:-$HOME/.ssh/smart-deal-deploy.pem}"
+ROUNDS="${1:-720}"
+SLEEP_S="${2:-25}"
+DISK_MIN_GB="${DISK_MIN_GB:-3}"
+
+ssh -o ConnectTimeout=10 -o ServerAliveInterval=30 -i "$KEY" "$HOST" \
+  "ROUNDS=$ROUNDS SLEEP_S=$SLEEP_S DISK_MIN_GB=$DISK_MIN_GB bash -s" <<'REMOTE'
+set -u
+
+for _ in $(seq 1 "$ROUNDS"); do
+  ts=$(date -u +%H:%M:%SZ)
+  st=$(docker ps --all --filter label=service=smart-deal --filter label=role=worker \
+         --format '{{.Names}}|{{.Status}}' | head -1)
+  cid=$(docker ps -q --filter label=service=smart-deal --filter label=role=worker | head -1)
+
+  if [ -n "$cid" ]; then
+    stats=$(docker stats --no-stream --format '{{.MemUsage}} cpu={{.CPUPerc}}' "$cid" 2>/dev/null)
+  else
+    stats="no-running-container"
+  fi
+
+  swap=$(free -m | awk '/Swap:/ {print $3"MB"}')
+  avail_gb=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+  echo "$ts worker $stats swap=$swap disk_libre=${avail_gb}G | ${st:-MISSING}"
+
+  case "$st" in
+    *"|Up"*) ;;
+    *) echo "WORKER_ALERT status=${st:-MISSING}" ;;
+  esac
+
+  if [ -n "$avail_gb" ] && [ "$avail_gb" -lt "$DISK_MIN_GB" ]; then
+    echo "DISK_ALERT solo ${avail_gb}G libres (minimo ${DISK_MIN_GB}G)"
+  fi
+
+  sleep "$SLEEP_S"
+done
+REMOTE

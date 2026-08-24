@@ -246,6 +246,26 @@ ninguna colisión tras deduplicar, pero el script aborta si aparece alguna.
 **Sólo PDFs.** El corpus trae además 139 JPG, 35 PPT, 19 RTF, 8 DOC, DWG, XLS, MOV
 y varios `.rar`/`.zip` anidados. Fuera del perímetro de este piloto.
 
+## Herramientas de operación
+
+El inventario completo, con qué escribe cada una y las dos trampas de ejecutarlas
+contra producción, está en [`script/AGENTS.md`](../script/AGENTS.md). Resumen:
+
+| Herramienta | Para qué |
+|---|---|
+| [`script/bulk_upload_status.rb`](../script/bulk_upload_status.rb) | Estado de una tanda: assets por estado, el error de cada fallo y los `field_records` descartados. `FOLLOW=true` sondea hasta `complete`/`failed`. |
+| [`script/bulk_upload_cost_audit.rb`](../script/bulk_upload_cost_audit.rb) | Coste all-in de una tanda, incluidas las rutas directas y los tokens de caché. |
+| [`script/bulk_upload_recover_failed.rb`](../script/bulk_upload_recover_failed.rb) | Recupera assets que fallaron **después** de volver los resultados, sin pagarlos otra vez. |
+| [`script/pdf_split_peak_audit.rb`](../script/pdf_split_peak_audit.rb) | Disco que escribirá un ZIP al trocear páginas, contra el espacio libre del host. Pasarlo antes de subir. |
+| [`script/split_oversized_pdfs.rb`](../script/split_oversized_pdfs.rb) | Parte los PDFs sobre 50 MB por rangos de página y arma un ZIP verificado. |
+| [`script/gonzalo_corpus_prep.rb`](../script/gonzalo_corpus_prep.rb) | Inventario, presupuesto y armado de los ZIPs del corpus. |
+| [`bin/worker_watch`](../bin/worker_watch) | Muestrea la memoria del worker contra su límite de cgroup y avisa si el contenedor deja de estar `Up`. |
+
+La lógica reusable vive en servicios con tests (`BulkUploadStatusReport`,
+`BulkUploadAssetRecovery`, `PdfSplitPeakEstimator`,
+`PdfPageSplitterService#each_part`); los scripts son envoltorios. Los dos motivos: el parseo de un fallo nuevo suele necesitar
+iteración, y un descarte de seguridad no puede depender de un script sin cobertura.
+
 ## Herramienta de preparación
 
 [`script/gonzalo_corpus_prep.rb`](../script/gonzalo_corpus_prep.rb) hace
@@ -411,6 +431,104 @@ perder créditos si algo falla en el camino.
 | `02_ingesta.zip` | 3 | 62 (59 ok, 3 fallidos) | 985 | `complete`, US$24,1381 |
 | `03_ingesta.zip` | 4 | 7 (**7/7 complete**) | 416 | `complete`, **US$16,2100** all-in (0,0390/pág) |
 | `05_ingesta.zip` | 5 | 22 (**22/22 complete**) | 1.711 facturadas de 1.827 enviadas | `complete`, **US$31,5610** all-in (**0,0184/pág**) |
+| `06_ingesta.zip` | 6 | 12 (**12/12 complete**) | 2.064 | `complete`, **US$52,6563** all-in (**0,0255/pág**) |
+| `07_ingesta.zip` | — | 4 partes de los 2 PDFs de OTIS | 319 | armado y verificado, sin ingerir |
+
+`06` cerró 12/12 sólo tras recuperar `CMC3 SCM Synergy.pdf`, que había fallado con
+`Invalid k in chunk 47 field_record 11`: el modelo emitió el tipo
+`"MODIFICATION_RECORD"` en la página 42, con las cinco claves obligatorias
+correctas y sin `sw`. Es la **tercera rama** del mismo defecto —una alucinación en
+un registro tiraba el documento entero ya pagado— y se cerró con la misma regla:
+un `k` fuera del enum no puede ser una parada de seguridad mal etiquetada, porque
+sin el par `sw` incluso un `STOP_WORK_CONDITION` bien formado falla en duro y uno
+que lo lleva ya se descartaba antes. Una etiqueta que aún mencione un stop sigue
+fallando en duro. Las 59 páginas se recuperaron **sin re-pagar** con
+[`script/bulk_upload_recover_failed.rb`](../script/bulk_upload_recover_failed.rb).
+
+Dato de coste que conviene no olvidar: en `06` el `page_filter` hizo 235 llamadas
+para 2.131 páginas, no ~107, porque `PageRelevanceFilter::MAX_WINDOW_BYTES`
+(22 MB) parte las ventanas antes de las 20 páginas cuando el material viene
+escaneado. El recargo de las rutas directas fue 9,2%.
+
+### El disco es un presupuesto, y los bytes de origen no lo miden (22-ago, `04`)
+
+`04_ingesta.zip` (BulkUpload 7) murió con `No space left on device` en
+`/tmp/danebo-page-383-*.pdf`: 11 assets a `failed`, 0 batches, **US$1,44**
+gastados en filtro de páginas sin ingerir nada. No fue memoria — el worker nunca
+pasó de 921 MiB de 2 GiB.
+
+`BulkCostV2RequestBuilder#collect_pages` materializa **todas** las páginas de un
+documento en disco antes de filtrar. Medido sobre el escaneo KONE que lo reventó:
+16 MB de origen, 515 páginas, **10,4 MB por página, 5,61 GB en disco**, inflación
+de ~350×. El host tiene 28 GB con ~9,9 GB libres, así que dos manuales así en el
+mismo ZIP pedían 8,9 GB.
+
+La causa raíz inmediata está en el reparto: `gonzalo_corpus_prep.rb` bina por
+bytes de origen, y como predictor del disco se equivoca por dos órdenes de
+magnitud. La prevención es
+[`script/pdf_split_peak_audit.rb`](../script/pdf_split_peak_audit.rb), que mide
+`páginas × tamaño por página` y falla con código 1 si un ZIP pasa del presupuesto.
+**Pásalo antes de subir cualquier ZIP.**
+
+> ⚠️ **Corregido el 22-ago (noche), tras el OOM de `IngestBatchResultsJob(8)`.**
+> Esta sección atribuía la inflación a que "la extracción por página copia el
+> árbol de recursos compartidos del PDF en cada página". **Es falso**, y sobre esa
+> frase se construyó todo el presupuesto de disco. La causa real es una sola clave
+> del diccionario de página: **`/B`**, el array de *article thread beads* (el
+> catálogo tiene `/Threads`). Cada bead apunta al siguiente y cada bead apunta a
+> su página, así que importar una página enhebrada recorre el hilo entero y
+> arrastra las demás páginas con sus imágenes. La página 1 de este manual tiene
+> **0 XObjects propios** y `/Resources` propio: no heredaba nada.
+>
+> Medido con HexaPDF 1.8.0, idéntico en local y en producción:
+>
+> | | Antes | Con `/B` podado |
+> |---|---|---|
+> | Página 1 extraída | 12,296 MiB | **0,097 MiB** |
+> | Página 250 | 12,296 MiB | **0,034 MiB** |
+> | Objetos en el PDF de 1 página | 1.864 (435 `Page` huérfanas) | 20–29 |
+> | Documento completo, 515 págs | 6,18 GiB | **17,9 MiB** |
+>
+> **355× de reducción.** 435 de las 515 páginas llevaban `/B`; las del apéndice no,
+> y por eso la inflación parecía una propiedad de las páginas con imagen. Es
+> seguro: el texto extraído es idéntico y la página rasterizada por poppler a 150
+> dpi da un PNG **byte a byte idéntico** (mismo SHA-256 en las páginas 1, 250 y
+> 509). El fix vive en `PdfPageSplitterService::WHOLE_DOCUMENT_ONLY_KEYS`,
+> aplicado en `#import_page`, el único punto por donde una página cruza al
+> documento destino — cubre `each_page`, `each_split_page` y `each_part` a la vez,
+> y `PdfSplitPeakEstimator` poda igual para seguir midiendo lo que de verdad se
+> escribe.
+>
+> **Consecuencia operativa:** el presupuesto de disco deja de ser una compuerta
+> para esta clase de documento, y **todas las cifras de pico de más abajo son
+> pre-fix**. No las reutilices: vuelve a medir con
+> `pdf_split_peak_audit.rb` sobre el código nuevo. Lo que sigue vigente es la
+> regla, no el número — el disco se presupuesta por `páginas × tamaño por página`,
+> nunca por bytes de origen.
+
+Medir exacto, no muestrear: en ese manual tres muestras predijeron 4,45 GB y
+6,64 GB contra 5,61 GB reales, porque la inflación se concentraba en las páginas
+enhebradas.
+
+Medidas de los ZIPs restantes, **todas pre-fix**: `01` 1,06 GB, `07` 0,14 GB,
+`04a` 5,61 GB, `04b` 0,11 GB. Sólo `04` tenía problema; con el prune ninguno lo
+tiene.
+
+Hallazgo lateral que ahorró 514 páginas: los dos escaneos KONE de 515 páginas de
+`04` eran **el mismo manual** con SHA-256 distinto, así que el dedupe por
+`(cuenta, SHA-256, contrato)` no los veía. 514 de 515 páginas con texto idéntico
+carácter a carácter; sólo la última difiere y ninguna contiene a la otra (tabla
+`PARÁMETROS DE LCE 813131`). Se ingiere uno y esa página se rescata sola.
+
+`04` se relanzó repartido por pico de disco, no por bytes (picos **pre-fix**; con
+`/B` podado `04a` cae a ~0,02 GB y el reparto habría sido innecesario):
+
+| ZIP | BulkUpload | Contenido | Págs | Pico (pre-fix) |
+|---|---|---|---|---|
+| `04a_ingesta.zip` | 8 | el manual KONE de 515 págs, solo | 515 | 5,61 GB |
+| `04b_ingesta.zip` | — | los otros 9 documentos + la página rescatada | 189 | 0,11 GB |
+
+Total 704 págs en vez de 1.218: ~US$18 en vez de ~US$31.
 
 ### `05` pasó, pero por 29 MiB: hay que subir `memory` antes de `01`
 

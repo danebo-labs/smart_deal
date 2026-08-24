@@ -3,9 +3,12 @@
 require "tempfile"
 
 # Splits a multi-page PDF with HexaPDF.
-# Legacy #each_page yields in-memory single-page binaries for short synchronous paths.
+# #each_page yields in-memory single-page binaries; pass `only:` to bound how many.
 # Batch ingestion uses #each_split_page so page binaries remain disk-backed.
 # #each_part cuts by page range instead, for callers bounded by a byte ceiling.
+#
+# A caller that needs a few known pages passes #each_page(only:), so the number
+# of pages serialized is bounded by what the caller actually asked for.
 class PdfPageSplitterService
   class Error < StandardError; end
 
@@ -14,9 +17,31 @@ class PdfPageSplitterService
     def page_count = last_page - first_page + 1
   end
 
-  # HexaPDF copies shared resources into every part, so a part re-serialized from
-  # an even page split lands above what its page count suggests. Aiming at 80% of
-  # the ceiling absorbs that without paying for a second split pass.
+  # Keys that only mean something inside the *whole* document and that a target
+  # holding a subset of its pages can never honour. They are dropped before
+  # import because HexaPDF copies the transitive closure of whatever the page
+  # references, and these reference the rest of the document.
+  #
+  # /B is the page's article-thread bead array (catalog /Threads). Each bead
+  # points at the next bead and each bead points at its own page, so importing
+  # one threaded page walks the entire thread and drags every page on it — plus
+  # their images — into a "single page" PDF. Measured on the 515-page KONE scan
+  # of BulkUpload 8 (15 MiB source, hexapdf 1.8.0, identical locally and in
+  # production): page 1 extracted to 12.296 MiB carrying 435 orphan Page objects
+  # and 1,864 objects total; with /B dropped it is 0.097 MiB and 29 objects. Over
+  # the whole document, 6.18 GiB → 17.9 MiB, a 355x reduction. 435 of the 515
+  # pages carry /B; the unthreaded appendix pages were always small, which is why
+  # the inflation looked like a property of image-heavy pages.
+  #
+  # This removes nothing renderable: extracted text is unchanged and the page
+  # rasterized through poppler at 150 dpi is a byte-identical PNG. /Annots is
+  # deliberately NOT dropped — annotations can carry AcroForm widgets that do
+  # paint content, and this document has an /AcroForm.
+  WHOLE_DOCUMENT_ONLY_KEYS = [ :B ].freeze
+
+  # A part re-serialized from an even page split can still land above what its
+  # page count suggests. Aiming at 80% of the ceiling absorbs that without paying
+  # for a second split pass.
   FILL_RATIO = 0.8
 
   def initialize(binary)
@@ -30,20 +55,23 @@ class PdfPageSplitterService
     0
   end
 
+  # @param only [Array<Integer>, nil] 1-indexed page numbers to serialize; nil
+  #   yields every page. Numbers outside 1..page_count are skipped, so a caller
+  #   holding stale page numbers gets fewer yields rather than an exception.
   # @yield [page_number, binary]
   # @yieldparam page_number [Integer] 1-indexed position in the original document
   # @yieldparam binary      [String]  raw PDF bytes for this single page
-  def each_page
+  def each_page(only: nil)
     source = HexaPDF::Document.new(io: StringIO.new(@binary))
     total  = source.pages.count
 
-    total.times do |idx|
+    page_numbers(only, total).each do |number|
       target = HexaPDF::Document.new
-      target.pages << target.import(source.pages[idx])
+      import_page(target, source, number)
 
       io = StringIO.new("".b)
       target.write(io, validate: false)
-      yield(idx + 1, io.string)
+      yield(number, io.string)
     end
   end
 
@@ -55,7 +83,7 @@ class PdfPageSplitterService
 
     total.times do |idx|
       target = HexaPDF::Document.new
-      target.pages << target.import(source.pages[idx])
+      import_page(target, source, idx + 1)
       path = write_temp_page(target, idx + 1)
 
       page = SplitPage.new(
@@ -101,6 +129,12 @@ class PdfPageSplitterService
 
   private
 
+  def page_numbers(only, total)
+    return 1..total if only.nil?
+
+    Array(only).map(&:to_i).uniq.sort.select { |number| number.between?(1, total) }
+  end
+
   def load_source
     HexaPDF::Document.new(io: StringIO.new(@binary))
   rescue StandardError => e
@@ -137,11 +171,21 @@ class PdfPageSplitterService
 
   def write_range(source, range)
     target = HexaPDF::Document.new
-    range.each { |number| target.pages << target.import(source.pages[number - 1]) }
+    range.each { |number| import_page(target, source, number) }
 
     io = StringIO.new("".b)
     target.write(io, validate: false)
     io.string
+  end
+
+  # The one place a page crosses from the source document into a target, so the
+  # prune cannot be forgotten by a new caller. Deleting on the source page is safe
+  # because the source document is built from @binary inside this service and is
+  # never written back.
+  def import_page(target, source, number)
+    page = source.pages[number - 1]
+    WHOLE_DOCUMENT_ONLY_KEYS.each { |key| page.delete(key) }
+    target.pages << target.import(page)
   end
 
   def write_temp_page(target, page_number)

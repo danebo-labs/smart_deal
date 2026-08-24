@@ -98,6 +98,9 @@ This project mirrors the previous Cursor rule setup as follows:
 * `app/prompts/AGENTS.md`: prompt and answer-safety rules.
 * `app/views/AGENTS.md`: Hotwire/Tailwind view rules.
 * `app/javascript/AGENTS.md`: Stimulus/Importmap frontend rules.
+* `script/AGENTS.md`: operational scripts — the bulk ingestion toolkit (status,
+  cost audit, free recovery of failed assets, oversized-PDF splitting) and how to
+  run them against production.
 * `test/AGENTS.md`: Minitest rules.
 
 When touching files under a scoped directory, follow both the root instructions and the nearest scoped `AGENTS.md`.

@@ -6,10 +6,11 @@ y `06` en `complete` sobre el deploy `bc3bf7d`. Los tres incidentes que
 bloquearon la ingesta —OOM del worker en la submission, explosión de disco por
 página, OOM al reintentar páginas— están **cerrados con código desplegado y
 tests**. Gastado **US$154,84 all-in** de los US$371,99 de créditos; quedan
-**US$217,15** para las **3.934 páginas estimadas** de `07` y `01`, que entran
+**US$217,15** para las **3.934 páginas estimadas** de `01` y `07`, que entran
 incluso al ritmo más caro medido hasta ahora (`04b`, 0,0470/pág). El único
 frente abierto es la memoria de la **submission** de `01_ingesta.zip` (3.615
-páginas, 62 PDFs): ese camino no lo toca ninguno de los tres fixes. Ver
+páginas, 62 PDFs): ese camino no lo toca ninguno de los tres fixes, y `01` es
+ahora **la siguiente tanda** — el orden se invirtió el 24-ago. Ver
 [Pendientes](#pendientes).
 
 ## Presupuesto y alcance
@@ -843,7 +844,7 @@ chico esa fracción puede dispararse sin que sea un defecto.
 
 ## Pendientes
 
-### Estado verificado antes de `07` (24-ago, 14:40 CEST)
+### Estado verificado antes de la siguiente tanda (24-ago, 14:40 CEST)
 
 Comprobado en vivo para no re-investigarlo al abrir la siguiente tanda:
 
@@ -859,6 +860,7 @@ Comprobado en vivo para no re-investigarlo al abrir la siguiente tanda:
 | Worker en reposo | **777 MiB de 2 GiB (38%)**, web 204 MiB de 1,465 GiB |
 | Disco del host | 9,7 GB libres de 28 GB; swap 4 GB con 198 MB en uso |
 | Audit de disco de `07` | **0,14 GB** contra presupuesto de 6,93 GB, salida 0 |
+| Audit de disco de `01` | **0,29 GB** contra presupuesto de 6,93 GB, salida 0 |
 
 Las **5 `FailedExecution`** que hay no son un hallazgo nuevo: tres son
 `ReconcileBedrockCostJob` con el `AccessDenied` ya documentado (22, 23 y 24-ago,
@@ -866,38 +868,61 @@ una por día), y las otras dos son los incidentes ya cerrados —el `Errno::ENOS
 de `04` y el `SIGKILL` de `IngestBatchResultsJob(8)`, ambos del 22-ago—. El
 contador volverá a subir una vez al día mientras el `AccessDenied` siga abierto.
 
-### Ingesta — dos ZIPs, en este orden
+### Ingesta — dos ZIPs, `01` primero (orden cambiado el 24-ago)
 
-Todos están armados y verificados en `tmp/gonzalo_zips/`, y los dos que quedan
-pasaron el audit de disco sobre el código nuevo. El orden va de menor a mayor
-riesgo, y **se sube de a uno confirmando `complete` antes del siguiente**:
+Ambos están armados y verificados en `tmp/gonzalo_zips/` y pasaron el audit de
+disco sobre el código nuevo. **Se sube de a uno confirmando `complete` antes del
+siguiente**:
 
 | # | ZIP | Docs | Págs est. | Coste est. | Estado |
 |---|---|---|---|---|---|
 | ~~1~~ | `04b_ingesta.zip` | 10 | 189 (187 facturadas) | ~US$5 | **hecho** — `BulkUpload` 9 `complete`, US$8,7897 (0,0470/pág, ver [nota de coste](#04b-el-ritmo-más-caro-medido-hasta-ahora-00470pág-24-ago)) |
-| 1 | `07_ingesta.zip` | 4 | 319 | **US$8–17** | Las 4 partes de los dos PDFs de OTIS sobre 50 MB (127 MB de ZIP); prueba el camino de PDF troceado end-to-end |
-| 2 | `01_ingesta.zip` | 62 | 3.615 | ~US$88–170 | El grande. **No lanzar antes de cerrar el anterior** |
+| 1 | `01_ingesta.zip` | 62 | 3.615 | **US$88–170** | El grande, y **ahora el primero** por decisión de producto |
+| 2 | `07_ingesta.zip` | 4 | 319 | **US$8–17** | Las 4 partes de los dos PDFs de OTIS sobre 50 MB (127 MB de ZIP); prueba el camino de PDF troceado end-to-end |
 
-El rango de `07` es ancho a propósito: el ~US$8 de las primeras estimaciones sale
-de la media de 0,0245/pág, y **este ZIP tiene toda la pinta de ir a Opus**. El
-audit de disco mide 1.022 KB/página de media en `MMR` y 285–293 KB/página en
-`MANUAL DE AYUDA TÉCNICA`; el `MMR` original ya estaba clasificado como material
-escaneado. Si repite el 73,8% de Opus de `04b` el ritmo se acerca a 0,0470/pág y
-la tanda cuesta ~US$15. **No es un defecto** —es el mismo gate de
-`FileMultimodalRouter` de siempre— pero conviene esperarlo para no confundirlo
-con una firma nueva. Por encima de US$17 sí hay que parar y mirar.
+**Por qué se invirtió el orden.** El criterio anterior era de menor a mayor
+riesgo: `07` primero por barato. La decisión del 24-ago es ir a `01` primero, y
+conviene tener claro qué se gana y qué se paga.
 
-Con `07` en su peor caso (~US$17) quedarían ~US$200 para las 3.615 páginas de
-`01`, que entran incluso al ritmo de `04b` (US$170). La holgura ya es del orden
-del 15%, así que `01` hay que auditarlo con el ZIP cerrado, no a mitad.
+Se gana lo que de verdad falta: `01` son el **92% de las páginas pendientes**
+(3.615 de 3.934) y el único riesgo técnico abierto de toda la ingesta. Mientras
+no corra, el piloto sigue sin el grueso del corpus y el frente de memoria de la
+submission sigue sin respuesta. `07`, en cambio, no enseña nada sobre `01`: son 4
+documentos y ~18 páginas por grupo, así que ni ejercita la submission larga ni
+mueve la aguja del presupuesto.
 
-`01` es el único con un riesgo técnico sin cerrar: el histórico no es el disco
-(0,29 GB post-fix) ni el retry, sino la **memoria durante la submission**. `05`
-sobrevivió por 29 MiB con 1.827 páginas y el worker en 1 GiB; hoy está en 2 GiB
-y `01` trae el doble de páginas y el triple de ficheros. Ese camino
+Se paga que **el presupuesto deja de tener red**. `01` al ritmo de `04b`
+(0,0470/pág, el peor medido) son US$170 de los US$217,15 disponibles, y entonces
+`07` entra con ~US$30 de margen. Si `01` se pasa de **US$185 all-in**, `07` ya no
+cabe y hay que decidir si se sacrifica. Y no hay punto de retorno a mitad: una
+vez que `ClaudeBatchSubmissionService` envía los grupos, el coste está
+comprometido aunque el job muera después. **La única decisión real es la de
+antes de disparar.**
+
+El riesgo técnico es la **memoria durante la submission**, no el disco (0,29 GB
+post-fix, re-medido el 24-ago) ni el retry. Ese camino
 (`BulkCostV2RequestBuilder#collect_pages` → `ClaudeBatchSubmissionService`) **no
-lo toca ninguno de los tres fixes desplegados**. Vigilar con `bin/worker_watch`
-desde antes de disparar y parar si se acerca al techo.
+lo toca ninguno de los tres fixes desplegados**. Lo que sí sabemos:
+
+- `05` hizo pico en **995 MiB de 1.024 (97%)** con 1.827 páginas, partiendo de un
+  worker recién arrancado en 375 MiB — un delta de ~620 MiB.
+- Lo que salvó a `05` no fue el swap (high-water de 41 MB de 4.096, nunca lo
+  necesitó) sino **arrancar limpio**: el intento fallido de `03` partía de 609 MiB
+  con el heap acumulado de las 62 PDFs de `02`.
+- Hoy el techo es 2 GiB, pero el worker lleva **777 MiB en reposo**. Con el mismo
+  delta de `05` eso deja el pico en ~1,4 GiB; si el delta escala con las páginas
+  (2× las de `05`), roza el techo.
+
+De ahí la mitigación obligatoria antes de disparar `01`: **reiniciar el
+contenedor worker con la cola vacía** para volver a la línea base de ~370 MiB y
+recuperar los ~400 MiB de heap acumulado. No es un cambio de límites ni un
+deploy, y con la cola vacía no hay nada que perder. El pico se vigila con
+`bin/worker_watch` desde antes de disparar.
+
+Lo que **no** hay que hacer es subir `memory` por encima de `2g`: el host tiene
+3.831 MB con el web reservado a 1,465 GiB, así que no hay sitio, y la nota de la
+re-submission de `03` que pedía subirlo se escribió cuando el worker estaba en
+1 GiB — ya está aplicada.
 
 ### Fuera de la ingesta
 

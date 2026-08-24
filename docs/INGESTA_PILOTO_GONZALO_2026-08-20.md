@@ -843,7 +843,28 @@ chico esa fracción puede dispararse sin que sea un defecto.
 
 ## Pendientes
 
-Estado a 24-ago, deploy vigente `bc3bf7d`, cola vacía, sin nada en vuelo.
+### Estado verificado antes de `07` (24-ago, 14:40 CEST)
+
+Comprobado en vivo para no re-investigarlo al abrir la siguiente tanda:
+
+| Comprobación | Valor |
+|---|---|
+| Deploy en producción | `bc3bf7d` (`/rails/REVISION` del contenedor web) |
+| `HEAD` local | `d6f0d35` — `55f1cab` y `d6f0d35` son **solo documentación** encima de `bc3bf7d` (`git diff --stat bc3bf7d..HEAD` toca un único `.md`), así que **no hace falta desplegar** |
+| Árbol de trabajo | limpio, `04b` ya commiteado |
+| `bin/stack status` | EC2 `running`, RDS `available`, HTTP 200, 0 uploads en vuelo |
+| `bin/stack hold` | aplicado — `danebo-stop-ec2` y `danebo-stop-rds` `DISABLED` |
+| Cola SolidQueue | `ready` / `scheduled` / `claimed` / `blocked` en **0** |
+| `BulkUpload` en `pending`/`processing` | ninguno; el último es el 9 (`04b`) `complete` |
+| Worker en reposo | **777 MiB de 2 GiB (38%)**, web 204 MiB de 1,465 GiB |
+| Disco del host | 9,7 GB libres de 28 GB; swap 4 GB con 198 MB en uso |
+| Audit de disco de `07` | **0,14 GB** contra presupuesto de 6,93 GB, salida 0 |
+
+Las **5 `FailedExecution`** que hay no son un hallazgo nuevo: tres son
+`ReconcileBedrockCostJob` con el `AccessDenied` ya documentado (22, 23 y 24-ago,
+una por día), y las otras dos son los incidentes ya cerrados —el `Errno::ENOSPC`
+de `04` y el `SIGKILL` de `IngestBatchResultsJob(8)`, ambos del 22-ago—. El
+contador volverá a subir una vez al día mientras el `AccessDenied` siga abierto.
 
 ### Ingesta — dos ZIPs, en este orden
 
@@ -854,8 +875,21 @@ riesgo, y **se sube de a uno confirmando `complete` antes del siguiente**:
 | # | ZIP | Docs | Págs est. | Coste est. | Estado |
 |---|---|---|---|---|---|
 | ~~1~~ | `04b_ingesta.zip` | 10 | 189 (187 facturadas) | ~US$5 | **hecho** — `BulkUpload` 9 `complete`, US$8,7897 (0,0470/pág, ver [nota de coste](#04b-el-ritmo-más-caro-medido-hasta-ahora-00470pág-24-ago)) |
-| 1 | `07_ingesta.zip` | 4 | 319 | ~US$8 | Las 4 partes de los dos PDFs de OTIS sobre 50 MB; prueba el camino de PDF troceado end-to-end |
-| 2 | `01_ingesta.zip` | 62 | 3.615 | ~US$88–141 | El grande. **No lanzar antes de cerrar el anterior** |
+| 1 | `07_ingesta.zip` | 4 | 319 | **US$8–17** | Las 4 partes de los dos PDFs de OTIS sobre 50 MB (127 MB de ZIP); prueba el camino de PDF troceado end-to-end |
+| 2 | `01_ingesta.zip` | 62 | 3.615 | ~US$88–170 | El grande. **No lanzar antes de cerrar el anterior** |
+
+El rango de `07` es ancho a propósito: el ~US$8 de las primeras estimaciones sale
+de la media de 0,0245/pág, y **este ZIP tiene toda la pinta de ir a Opus**. El
+audit de disco mide 1.022 KB/página de media en `MMR` y 285–293 KB/página en
+`MANUAL DE AYUDA TÉCNICA`; el `MMR` original ya estaba clasificado como material
+escaneado. Si repite el 73,8% de Opus de `04b` el ritmo se acerca a 0,0470/pág y
+la tanda cuesta ~US$15. **No es un defecto** —es el mismo gate de
+`FileMultimodalRouter` de siempre— pero conviene esperarlo para no confundirlo
+con una firma nueva. Por encima de US$17 sí hay que parar y mirar.
+
+Con `07` en su peor caso (~US$17) quedarían ~US$200 para las 3.615 páginas de
+`01`, que entran incluso al ritmo de `04b` (US$170). La holgura ya es del orden
+del 15%, así que `01` hay que auditarlo con el ZIP cerrado, no a mitad.
 
 `01` es el único con un riesgo técnico sin cerrar: el histórico no es el disco
 (0,29 GB post-fix) ni el retry, sino la **memoria durante la submission**. `05`

@@ -1,19 +1,24 @@
 # Ingesta piloto Gonzalo (2026-08-20)
 
-**Estado: ocho tandas cerradas, un ZIP sin subir (24-ago).** Alcance cerrado en
-seis marcas, tenant piloto desplegado, y `00`, `02`, `03`, `04a`, `04b`, `05`,
-`06` y `01` en `complete` sobre el deploy `bc3bf7d`. Los tres incidentes que
-bloquearon la ingesta —OOM del worker en la submission, explosión de disco por
-página, OOM al reintentar páginas— están **cerrados con código desplegado y
-tests**, y `01_ingesta.zip` (3.615 páginas, 62 PDFs, el mayor pendiente y el
-único riesgo técnico abierto) los confirmó en la tanda más exigente medida
-hasta ahora: pico de memoria del worker **836,8 MiB de 2 GiB (41%)** durante la
-submission, partiendo de una línea base de 365,9 MiB tras el reinicio — muy por
-debajo del 97% que rozó `05`, y el **frente de memoria de la submission queda
-cerrado** (ver [nota de cierre](#01-cierra-el-frente-de-memoria-de-la-submission-24-ago)).
-Gastado **US$239,74 all-in** de los US$371,99 de créditos; quedan **US$132,25**
-para las **319 páginas estimadas** de `07`, la única tanda pendiente. Ver
-[Pendientes](#pendientes).
+**Estado: NUEVE tandas cerradas, CERO ZIPs pendientes — la ingesta del piloto
+queda completa (24-ago).** Alcance cerrado en seis marcas, tenant piloto
+desplegado, y `00`, `02`, `03`, `04a`, `04b`, `05`, `06`, `01` y `07` en
+`complete` sobre el deploy `bc3bf7d`. Los tres incidentes que bloquearon la
+ingesta —OOM del worker en la submission, explosión de disco por página, OOM al
+reintentar páginas— están **cerrados con código desplegado y tests**, y
+`01_ingesta.zip` (3.615 páginas, 62 PDFs, el mayor riesgo técnico abierto) los
+confirmó en la tanda más exigente medida hasta ahora: pico de memoria del
+worker **836,8 MiB de 2 GiB (41%)** durante la submission, partiendo de una
+línea base de 365,9 MiB tras el reinicio — muy por debajo del 97% que rozó
+`05`, y el **frente de memoria de la submission queda cerrado** (ver
+[nota de cierre](#01-cierra-el-frente-de-memoria-de-la-submission-24-ago)).
+`07_ingesta.zip` (319 páginas est., los dos PDFs de OTIS troceados por rango de
+página) cerró la ingesta a **US$0,0514/página** — nuevo techo de coste, por
+encima del 0,0470 de `04b`, explicado por el 100% de páginas escaneadas a
+Opus, no por un defecto de código (ver
+[nota de cierre](#07-cierra-el-piloto-nuevo-techo-de-coste-00514pág-24-ago)).
+Gastado **US$255,21 all-in** de los US$371,99 de créditos; quedan
+**US$116,78** sin ninguna tanda pendiente. Ver [Pendientes](#pendientes).
 
 ## Presupuesto y alcance
 
@@ -59,7 +64,8 @@ con capa de texto (`Planos BLT QS.pdf`, `QS PLANOS.pdf`) se fueron a Sonnet. El
 temor de que "el peso de KONE son planos y por eso irá a Opus" no se materializa
 mientras ese flag siga apagado.
 
-Presupuesto vigente:
+Presupuesto tras las dos primeras tandas (**histórico**; el vigente está en
+[Cerrado tras `07`](#cerrado-tras-07-24-ago-el-piloto-completa-la-ingesta-con-nuevo-techo-de-coste)):
 
 | Concepto | USD |
 |---|---|
@@ -439,7 +445,7 @@ perder créditos si algo falla en el camino.
 | `04a_ingesta.zip` | 8 | 1 (el KONE de 515 págs, **complete**) | 512 | `complete`, **US$10,8422** all-in (**0,0212/pág**) — ver cierre abajo |
 | `04b_ingesta.zip` | 9 | 10 (**9/9 no filtrados complete**, 1 filtrado por completo) | 187 | `complete`, **US$8,7897** all-in (**0,0470/pág**) — ver [nota de coste](#04b-el-ritmo-más-caro-medido-hasta-ahora-00470pág-24-ago) |
 | `01_ingesta.zip` | 10 | 62 (**62/62 complete**) | 3.447 facturadas de 3.615 est. | `complete`, **US$84,9042** all-in (**0,0246/pág**) — ver [nota de cierre](#01-cierra-el-frente-de-memoria-de-la-submission-24-ago) |
-| `07_ingesta.zip` | — | 4 partes de los 2 PDFs de OTIS | 319 est. | armado y verificado, **sin subir** — la única tanda pendiente |
+| `07_ingesta.zip` | 11 | 4 (**4/4 complete**) | 301 facturadas de 319 est. | `complete`, **US$15,4685** all-in (**0,0514/pág**) — ver [nota de cierre](#07-cierra-el-piloto-nuevo-techo-de-coste-00514pág-24-ago) |
 
 `06` cerró 12/12 sólo tras recuperar `CMC3 SCM Synergy.pdf`, que había fallado con
 `Invalid k in chunk 47 field_record 11`: el modelo emitió el tipo
@@ -692,6 +698,25 @@ disponibles, así que incluso al ritmo más caro jamás medido en esta ingesta e
 sobrante es de US$117. El presupuesto dejó de ser una variable a vigilar de
 cerca en esta ingesta.
 
+#### Cerrado tras `07` (24-ago): el piloto completa la ingesta con nuevo techo de coste
+
+`07` no votó por el escenario medio ni por el peor ya medido: votó **por
+encima** de los dos. Cerró a **0,0514/pág**, por encima del 0,0470 de `04b` que
+se usaba como cota superior de esta ingesta. Con las nueve tandas cerradas, el
+gasto productivo es US$239,7442 + US$15,4685 = **US$255,2127 all-in**:
+
+| Concepto | USD |
+|---|---|
+| Gastado all-in previo | 239,74 |
+| `07` | +15,47 |
+| **Gastado all-in** | **255,21** |
+| **Disponible** | **116,78** |
+
+Sin tandas pendientes, la holgura de US$116,78 no se contrasta contra ninguna
+página futura — el corpus del piloto (seis marcas, alcance acordado) queda
+**completo**. El detalle de por qué `07` rompe el techo, y por qué no es un
+defecto de código, está en la [nota de cierre](#07-cierra-el-piloto-nuevo-techo-de-coste-00514pág-24-ago).
+
 #### El audit medía de menos: `bulk_uploads.updated_at` miente
 
 La primera lectura de `03` dio 367 páginas y US$12,17, sin el fichero recuperado.
@@ -942,6 +967,83 @@ MANUAL.pdf` (278 pág, US$4,8394), `BLT MPDK136 puesta en marcha ingles.pdf`
 US$4,4118), `xizi FO VF.pdf` (92 pág, US$4,1847, 100% Opus) y `manual en
 castellano yida.pdf` (162 pág, US$3,5521).
 
+### `07` cierra el piloto: nuevo techo de coste, 0,0514/pág (24-ago)
+
+`BulkUpload` 11, la última tanda del piloto y la primera armada íntegramente
+con PDFs troceados por rango de página (los dos manuales de OTIS que superaban
+`ZipExtractionService::MAX_FILE_BYTES`). Se disparó siguiendo el runbook al pie
+de la letra: gate de disco re-confirmado en 0,14 GB, `bin/worker_watch`
+corriendo desde antes de crear el `BulkUpload`, y los 4 assets pasaron
+`uploaded_s3 → in_batch → parsed → syncing → complete` en ~23 minutos (16:28 a
+16:51), sin ninguna `FailedExecution` nueva.
+
+| Métrica | Valor |
+|---|---|
+| Páginas facturadas | 301 de 319 estimadas (`page_filter` descarta el resto antes de facturar) |
+| Coste all-in | **US$15,4685** (batch US$14,3736: 100% Opus/301 pág; no-batch US$1,0950: `bulk_retry` 3 llamadas US$0,5478, `page_filter` 18 llamadas US$0,5471 — 7,6% sobre el batch) |
+| **USD/página** | **0,0514** — **nuevo peor ritmo medido**, por encima del 0,0470 de `04b` |
+| Opus | **100%** (301/301 pág) — nuevo máximo, por encima del 73,8% de `04b` |
+| Pico de memoria del worker | sin presión: 808 MiB en reposo antes de crear el `BulkUpload`, 825 MiB en reposo después — nunca se acercó al techo de 2 GiB, como anticipaba el runbook para 319 páginas en 4 ficheros |
+| `dropped_field_records` | 5 (ver abajo), ninguno `STOP_WORK_CONDITION` |
+
+**El ritmo rompe el techo que se venía usando como cota superior de esta
+ingesta, y la explicación es la misma que ya cerró `03` y `04b`: qué fracción
+del ZIP viene escaneada.** Los dos manuales de OTIS de esta tanda —`MMR.pdf` y
+`MANUAL DE AYUDA TÉCNICA ( Act. Marzo 2010 ).pdf`, ambos manuales antiguos sin
+capa de texto— cayeron el 100% de sus páginas en el único gate de Opus que
+gobierna todas las tandas anteriores (`FileMultimodalRouter`:
+`text_layer_chars < 100 && image_area_ratio > 0.7`). No hay firma de código
+nueva: es el mismo mecanismo que llevó a `04b` a 73,8% y a `03` a 38,5%, sólo
+que aquí los dos únicos documentos del ZIP son escaneos completos, así que la
+fracción se va a 100%. Ningún indicio de defecto — pero por instrucción
+explícita de la sesión (coste medido por encima de 0,0470/pág es motivo de
+escalado), se reporta como hallazgo y no se normaliza en silencio.
+
+**`dropped_field_records`: 5, las mismas dos tolerancias cerradas el 22-ago,
+ninguna nueva.**
+
+| Asset | Página | `k` | Motivo |
+|---|---|---|---|
+| `MANUAL … (p1-123).pdf` | 48 | `FAULT_CONDITION` | `sw` fuera de `STOP_WORK_CONDITION` (×2 registros) |
+| `MANUAL … (p1-123).pdf` | 77 | `TROUBLESHOOTING_STEP` | `sw` fuera de `STOP_WORK_CONDITION` |
+| `MANUAL … (p1-123).pdf` | 102 | `REPAIR_ACTION` | `unknown keys: tools` |
+| `MANUAL … (p124-245).pdf` | 99 | `REPAIR_ACTION` | `sw` fuera de `STOP_WORK_CONDITION` |
+
+Los dos ficheros `MMR (p1-37).pdf` y `MMR (p38-74).pdf` parsearon limpios, sin
+descartes.
+
+**Hallazgo propio de esta tanda: el troceo por rango de página no deja rastro
+estructurado hacia el documento original.** Es la primera vez que el pipeline
+recibe un PDF partido por páginas (no por documento), y el camino funciona de
+principio a fin, pero con una consecuencia a tener en cuenta para retrieval:
+
+- Cada mitad se ingiere como **documento independiente**: `canonical_name`,
+  `doc_sha256` y `kb_document_id` propios. `MANUAL DE AYUDA TÉCNICA ( Act.
+  Marzo 2010 ) (p1-123)` y `(p124-245)` son dos `KbDocument` distintos (192 y
+  193), sin ningún campo que los declare "parte 1/2 del mismo manual" — la
+  única señal es el rango de páginas embebido en el nombre de fichero, que
+  viaja tal cual a `canonical_name` y a `metadataAttributes.original_filename`.
+- `page_number` en el sidecar de cada chunk (`BatchResultsParserService
+  #sidecar_metadata`) es **local a la parte partida**, no al documento
+  original: la página 99 registrada en `(p124-245).pdf` es la página real 222
+  del manual de 245 páginas (124 + 99 − 1), pero ese offset no se guarda en
+  ningún campo — sólo se puede reconstruir parseando a mano el rango del
+  nombre de fichero.
+- No es un defecto que haya que arreglar para este piloto (los chunks son
+  recuperables y citables, sólo que la cita apunta a "página 99 de la parte
+  p124-245" en vez de "página 222 del manual completo"), pero si en el futuro
+  se trocean más manuales por rango de página, vale la pena decidir si se
+  quiere una identidad de documento compartida y un offset de página
+  explícito, o si citar por parte es aceptable para el producto.
+
+**Comprobación de retrieval (única consulta, sólo lectura, sin coste de
+generación):** `BedrockRagService.new(account: Account.find(3)).retrieve_chunks`
+con una pregunta de mantenimiento OTIS devuelve, entre los 5 resultados con más
+score, 3 chunks de los ficheros de esta tanda (ambas partes de `MANUAL DE AYUDA
+TÉCNICA`) junto a 2 de `Manual de URM (OTIS) 1.1.pdf`, ya ingerido en una tanda
+anterior — todos con `metadataAttributes.account_id = 3`. El material de OTIS
+de `07` es recuperable en la cuenta del piloto.
+
 ## Pendientes
 
 ### Estado verificado antes de la siguiente tanda (24-ago, tras cerrar `01`)
@@ -951,15 +1053,16 @@ Comprobado en vivo para no re-investigarlo al abrir `07`:
 | Comprobación | Valor |
 |---|---|
 | Deploy en producción | `bc3bf7d` (`/rails/REVISION` del contenedor web) |
-| `HEAD` local | `c82b619` — todos los commits por encima de `bc3bf7d` son **solo documentación**, así que **no hace falta desplegar** |
+| `HEAD` local | `c82d810` — todos los commits por encima de `bc3bf7d` son **solo documentación**, así que **no hace falta desplegar** |
 | Árbol de trabajo | limpio, `01` ya commiteado |
 | `bin/stack status` | EC2 `running`, RDS `available`, HTTP 200, 0 uploads en vuelo |
 | `bin/stack hold` | aplicado — `danebo-stop-ec2` y `danebo-stop-rds` `DISABLED` |
 | Cola SolidQueue | `ready` / `scheduled` / `claimed` / `blocked` en **0** |
-| `BulkUpload` en `pending`/`processing` | ninguno; el último es el 10 (`01`) `complete` |
-| Worker | **~730-770 MiB de 2 GiB** en reposo tras la tanda de `01` (nunca pasó de 836,8 MiB, 41% del techo, durante toda la corrida) |
-| Disco del host | 10 GB libres estables durante toda la corrida de `01`; swap 4 GB, sin uso registrado por `bin/worker_watch` |
-| Audit de disco de `07` | **0,14 GB** contra presupuesto de 6,93 GB, salida 0 (sin re-medir tras `01`; no hay cambios de código que lo afecten) |
+| `BulkUpload` en `pending`/`processing` | ninguno; el último es el 10 (`01`) `complete`, 62/62 assets |
+| Worker | **808 MiB de 2 GiB (39%)** en reposo tras la tanda de `01` (nunca pasó de 836,8 MiB, 41% del techo, durante toda la corrida) |
+| Disco del host | **9,7 GB libres**; swap 4 GB con 197 MB en uso, sin alerta de `bin/worker_watch` |
+| Audit de disco de `07` | **0,14 GB** re-medido contra presupuesto de 6,79 GB, salida 0 — los 4 documentos dan pico exacto de 0,03–0,04 GB cada uno |
+| `INGESTION_CONTRACT_VERSION` | `field_records_v8` — sin cambios; el dedupe de las ocho tandas sigue válido |
 
 Las **5 `FailedExecution`** que hay no son un hallazgo nuevo: tres son
 `ReconcileBedrockCostJob` con el `AccessDenied` ya documentado (una por día,
@@ -968,20 +1071,21 @@ cerrados —el `Errno::ENOSPC` de `04` y el `SIGKILL` de
 `IngestBatchResultsJob(8)`, ambos del 22-ago—. Ninguna `FailedExecution` nueva
 apareció durante la corrida de `01`.
 
-### Ingesta — sólo queda `07`
+### Ingesta — completa (24-ago)
 
-`01_ingesta.zip` cerró `complete` el 24-ago (`BulkUpload` 10, ver
-[nota de cierre](#01-cierra-el-frente-de-memoria-de-la-submission-24-ago)).
-Queda un único ZIP pendiente, ya armado y verificado en `tmp/gonzalo_zips/`:
+`07_ingesta.zip` cerró `complete` el 24-ago (`BulkUpload` 11, ver
+[nota de cierre](#07-cierra-el-piloto-nuevo-techo-de-coste-00514pág-24-ago)).
+Con las nueve tandas cerradas y `07` ya subido, **no queda ningún ZIP
+pendiente** — el alcance acordado (seis marcas, 180 PDFs, 10.442 páginas) está
+íntegramente ingerido:
 
-| ZIP | Docs | Págs est. | Coste est. | Estado |
-|---|---|---|---|---|
-| `01_ingesta.zip` | 62 | 3.615 (3.447 facturadas) | US$84,90 | **hecho** — `BulkUpload` 10 `complete`, 0,0246/pág |
-| `07_ingesta.zip` | 4 | 319 | **US$8–15** | Las 4 partes de los dos PDFs de OTIS sobre 50 MB (127 MB de ZIP); prueba el camino de PDF troceado end-to-end. Sin tensión de presupuesto (US$132,25 disponibles) ni riesgo técnico abierto: el frente de memoria de la submission se cerró con `01`. |
+| ZIP | Docs | Págs facturadas | Estado |
+|---|---|---|---|
+| `01_ingesta.zip` | 62 | 3.447 de 3.615 est. | **hecho** — `BulkUpload` 10 `complete`, 0,0246/pág |
+| `07_ingesta.zip` | 4 | 301 de 319 est. | **hecho** — `BulkUpload` 11 `complete`, **0,0514/pág** (nuevo techo, ver nota de cierre) |
 
-`07` es la última tanda del piloto. No hay decisión de producto pendiente ni
-riesgo técnico sin cerrar — es una sesión de ejecución directa, sin las
-cuestiones de orden y presupuesto que motivaron invertir `01`/`07` el 24-ago.
+Lo que queda abierto ya no es ingesta — es la lista de [Fuera de la
+ingesta](#fuera-de-la-ingesta) de abajo.
 
 ### Fuera de la ingesta
 
@@ -1017,6 +1121,19 @@ cuestiones de orden y presupuesto que motivaron invertir `01`/`07` el 24-ago.
   hallazgos de código: los 20 `dropped_field_records` caen en tolerancias ya
   cerradas el 22-ago, ninguno `STOP_WORK_CONDITION` — ver
   [nota de cierre](#01-cierra-el-frente-de-memoria-de-la-submission-24-ago).
+- **24-ago:** `07_ingesta.zip` (`BulkUpload` 11) cerrado `complete`, la última
+  tanda del piloto y la primera con PDFs troceados por rango de página (los
+  dos manuales de OTIS sobre 50 MB). Sin presión de memoria ni disco. Coste
+  0,0514/pág y 100% Opus — nuevo techo por encima de `04b`, explicado por que
+  los dos únicos documentos del ZIP son escaneos completos, mismo gate de
+  código que gobierna todas las tandas anteriores. Los 5 `dropped_field_records`
+  caen en tolerancias ya cerradas, ninguno `STOP_WORK_CONDITION`. Hallazgo de
+  producto (no de código): cada mitad partida se indexa como documento
+  independiente y `page_number` es local a la parte, sin offset hacia la
+  página real del manual completo — ver
+  [nota de cierre](#07-cierra-el-piloto-nuevo-techo-de-coste-00514pág-24-ago).
+  **Con esto, la ingesta del piloto queda completa: nueve tandas, cero ZIPs
+  pendientes.**
 
 ## Auditoría de coste por tanda
 

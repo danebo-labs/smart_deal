@@ -77,6 +77,10 @@ class BatchIngestionService
         next
       end
 
+      # find_or_initialize_by reuses the row of a previous failed run for the same
+      # (account, SHA-256, contract), so the stale failure has to go with the stale
+      # status: an asset re-submitted for a new run has no current error, and a row
+      # left showing both `complete` and an old error reads as a fix that did not work.
       asset.assign_attributes(
         bulk_upload:   bulk_upload,
         sha256:        entry[:sha256],
@@ -85,6 +89,7 @@ class BatchIngestionService
         content_type:  entry[:content_type],
         office_origin: entry[:office_origin] || false,
         ingestion_contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+        error_message: nil,
         status:        "uploaded_s3"
       )
       created = !asset.persisted?

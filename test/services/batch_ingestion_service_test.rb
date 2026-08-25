@@ -198,6 +198,40 @@ class BatchIngestionServiceTest < ActiveSupport::TestCase
     assert_equal "uploaded_s3", asset.status
   end
 
+  # Re-ingesting a PDF that failed with all_pages_filtered reuses its row, because
+  # the custom_id is the same (account, SHA-256, contract). The row must come back
+  # clean, or it reports `complete` next to the failure the re-ingest just fixed.
+  test "process! clears the stale failure when it reuses a failed asset row" do
+    sha256   = Digest::SHA256.hexdigest(JPEG_BINARY)
+    zip_path = build_zip(entries: { "photo.jpg" => JPEG_BINARY })
+
+    failed = BulkUploadAsset.create!(
+      bulk_upload:   @bulk_upload,
+      custom_id:     BulkUploadAsset.custom_id_for(
+        JPEG_BINARY,
+        contract_version: BatchChunkingPrompt::INGESTION_CONTRACT_VERSION,
+        account_id:       @bulk_upload.account_id
+      ),
+      sha256:        sha256,
+      filename:      "photo.jpg",
+      content_type:  "image/jpeg",
+      error_message: BulkUploadAssetErrorMessage.encode("bulk_uploads.all_pages_filtered", filename: "photo.jpg"),
+      status:        "failed"
+    )
+
+    service = BatchIngestionService.new
+    service.instance_variable_set(:@s3, @fake_s3)
+    service.instance_variable_set(:@bucket, "test-bucket")
+
+    service.process!(@bulk_upload, zip_path)
+
+    failed.reload
+    assert_equal "uploaded_s3", failed.status
+    assert_nil failed.error_message
+    assert_equal 1, BulkUploadAsset.where(bulk_upload: @bulk_upload).count,
+                 "the row must be reused, not duplicated"
+  end
+
   # ── Per-file skip via ZipExtractionService#skipped_entries ───────────────────
 
   test "process! creates failed asset for skipped MIME entry, valid entry stays uploaded_s3" do

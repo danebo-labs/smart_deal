@@ -777,6 +777,133 @@ class PageRelevanceFilterTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
   end
 
+  # ---------------------------------------------------------------------------
+  # Document guard: all_pages_filtered_guard
+  #
+  # Measured 2026-08-25: three single-page BLT PLC I/O tables were dropped by the
+  # `toc?` heuristic (30-36% of lines end in a signal number, threshold 30%), so
+  # BatchIngestionService failed the assets with bulk_uploads.all_pages_filtered
+  # and the documents produced no chunks at all.
+  # ---------------------------------------------------------------------------
+
+  # Verbatim first lines of "Conectores QS.pdf" p1: a connector pin table whose
+  # rows end in terminal numbers. 33 of 103 lines (0.320) trip `toc?`.
+  PLC_IO_TABLE_TEXT = <<~TEXT
+    C O N E C T O R E S QS CATEDRAL DHT-070187T
+    QS P10 (800) 2S 105 26/26/26
+    CONECTOR A   CABLE   CABLE   DOOR   CABLE   CABLE
+    CABINA   VIAJANTE   VIAJANTE   MACHINE   ESCOTILLA UP   ESCOTILLA
+    XP14 / XP40   XP1 / XP9   XP5 / XP19   XP18/ XP18-1   XP7   XP20
+    1     202        1     114       1    24V     1    114-a       1     103
+    2     203        2     115       2     0V     2    115-a       2      N1
+    3     209        3     103       3            3     431        3     N2
+    4     210        4     104       4    501     4     432        4     503
+    5     211        5     105       5    502     5     433        5     504
+    6     212        6     106       6    503     6     434        6     505
+    7     213        7     107       7    504     7     435        7     506
+  TEXT
+
+  test "single-page document dropped by toc? is rescued by the document guard" do
+    @page_text = PLC_IO_TABLE_TEXT
+    pages      = [ FakePage.new(1, "plc_io_table_bytes") ]
+
+    result = PageRelevanceFilter.filter_pages(pages: pages, filename: "Conectores QS.pdf")
+
+    assert PageRelevanceFilter.toc?(PLC_IO_TABLE_TEXT),
+           "fixture must still trip toc?, otherwise this regression no longer reproduces"
+    assert_equal true,                      result[1][:keep]
+    assert_equal :all_pages_filtered_guard, result[1][:reason]
+    assert_equal false,                     result[1][:force_opus]
+  end
+
+  test "document guard keeps every page when a multi-page document is fully dropped" do
+    pages  = (1..3).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = FakeBatchHaikuClient.new([
+      { "page" => 1, "keep" => false, "reason" => "cover" },
+      { "page" => 2, "keep" => false, "reason" => "data table" },
+      { "page" => 3, "keep" => false, "reason" => "blank" }
+    ])
+
+    result = PageRelevanceFilter.filter_pages(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal [ 1, 2, 3 ], result.keys.sort
+    result.each_value do |page_result|
+      assert_equal true,                      page_result[:keep]
+      assert_equal :all_pages_filtered_guard, page_result[:reason]
+    end
+  end
+
+  test "document guard does not fire when at least one page survives" do
+    pages  = (1..3).map { |n| FakePage.new(n, "fake_p#{n}_bytes") }
+    client = FakeBatchHaikuClient.new([
+      { "page" => 1, "keep" => false, "reason" => "cover" },
+      { "page" => 2, "keep" => true,  "reason" => "schematic" },
+      { "page" => 3, "keep" => false, "reason" => "blank" }
+    ])
+
+    result = PageRelevanceFilter.filter_pages(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal false,      result[1][:keep]
+    assert_equal :cover,     result[1][:reason]
+    assert_equal true,       result[2][:keep]
+    assert_equal :schematic, result[2][:reason]
+    assert_equal false,      result[3][:keep]
+    assert_equal :blank,     result[3][:reason]
+  end
+
+  test "document guard restores force_opus for scanned dense pages it rescues" do
+    pages  = [ FakePage.new(1, "dense_bytes"), FakePage.new(2, "normal_bytes") ]
+    client = FakeBatchHaikuClient.new([
+      { "page" => 1, "keep" => false, "reason" => "cover" },
+      { "page" => 2, "keep" => false, "reason" => "blank" }
+    ])
+    stub_density_by_binary({
+      "dense_bytes"  => { has_images: true,  text_layer_chars: 20,  image_area_ratio: 0.9 },
+      "normal_bytes" => { has_images: false, text_layer_chars: 800, image_area_ratio: 0.0 }
+    })
+
+    result = PageRelevanceFilter.filter_pages(pages: pages, filename: "planos.pdf", haiku_client: client)
+
+    assert_equal true,  result[1][:keep]
+    assert_equal true,  result[1][:force_opus]
+    assert_equal true,  result[2][:keep]
+    assert_equal false, result[2][:force_opus]
+  end
+
+  test "document guard logs a structured warning naming the drop reasons" do
+    pages  = [ FakePage.new(1, "p1_bytes"), FakePage.new(2, "p2_bytes") ]
+    client = FakeBatchHaikuClient.new([
+      { "page" => 1, "keep" => false, "reason" => "table_of_contents" },
+      { "page" => 2, "keep" => false, "reason" => "table_of_contents" }
+    ])
+
+    logged = []
+    Rails.logger.define_singleton_method(:warn) { |msg = nil, &_| logged << msg }
+    begin
+      PageRelevanceFilter.filter_pages(pages: pages, filename: "PLC input.pdf", haiku_client: client)
+    ensure
+      Rails.logger.singleton_class.remove_method(:warn)
+    end
+
+    entry = logged.filter_map { |msg| JSON.parse(msg.to_s) rescue nil }
+                  .find { |json| json["event"] == "page_relevance_filter_all_pages_filtered_guard" }
+
+    assert_not_nil entry, "expected a structured guard log line"
+    assert_equal "PLC input.pdf", entry["filename"]
+    assert_equal 2,               entry["pages"]
+    assert_equal({ "table_of_contents" => 2 }, entry["dropped_reasons"])
+  end
+
+  test "call_batch alone does not apply the document guard" do
+    pages  = [ FakePage.new(1, "p1_bytes") ]
+    client = FakeBatchHaikuClient.new([ { "page" => 1, "keep" => false, "reason" => "cover" } ])
+
+    result = PageRelevanceFilter.call_batch(pages: pages, filename: "manual.pdf", haiku_client: client)
+
+    assert_equal false,  result[1][:keep]
+    assert_equal :cover, result[1][:reason]
+  end
+
   test "call_batch enqueues TrackBedrockQueryJob with page_filter_batch user_query" do
     pages = [ FakePage.new(1, "fake_p1_bytes"), FakePage.new(2, "fake_p2_bytes") ]
 

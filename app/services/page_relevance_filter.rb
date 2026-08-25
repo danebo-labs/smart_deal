@@ -26,6 +26,10 @@
 #   classifying pages in Haiku windows (pages + bytes) to avoid truncation and
 #   oversized Anthropic payloads.
 #
+# Document guard — all_pages_filtered_guard (filter_pages, any page count):
+#   A document whose every page is dropped is a filter failure, not a verdict.
+#   Every page is kept instead, because the alternative is losing the document.
+#
 # @param repeated_texts [Set<String>] texts that appear on >= 3 pages in this document
 #   (running headers/footers). Built by the caller from all page texts before filtering.
 class PageRelevanceFilter
@@ -135,16 +139,72 @@ class PageRelevanceFilter
   def self.filter_pages(pages:, filename:, haiku_client: nil, correlation_id: nil)
     return {} if pages.empty?
 
-    if pages.size > 1
-      call_batch(pages: pages, filename: filename, haiku_client: haiku_client, correlation_id: correlation_id)
-    else
-      page   = pages.first
-      result = new(page.binary, page_number: page.number, total_pages: 1,
-                   page_text: (page.text if page.respond_to?(:text)),
-                   filename: filename, haiku_client: haiku_client, correlation_id: correlation_id).call
-      { page.number => result }
+    results =
+      if pages.size > 1
+        call_batch(pages: pages, filename: filename, haiku_client: haiku_client, correlation_id: correlation_id)
+      else
+        page   = pages.first
+        result = new(page.binary, page_number: page.number, total_pages: 1,
+                     page_text: (page.text if page.respond_to?(:text)),
+                     filename: filename, haiku_client: haiku_client, correlation_id: correlation_id).call
+        { page.number => result }
+      end
+
+    apply_all_pages_filtered_guard(results, pages: pages, filename: filename)
+  end
+
+  # The filter decides which pages of a document are worth paying for; it is not
+  # a verdict on the document. A 100% drop leaves callers with nothing to ingest:
+  # the bulk path marks the asset `failed` with `bulk_uploads.all_pages_filtered`
+  # and the upload produces no chunks at all, so the content is simply lost.
+  #
+  # Measured case (2026-08-25): three single-page BLT PLC I/O tables where every
+  # row ends in a signal or terminal number, which `toc?` reads as a page-number
+  # table of contents (30-36% of lines vs the 30% threshold).
+  #
+  # Fires only when the alternative is zero content, so it cannot widen the
+  # filter's normal cost envelope. Page count is irrelevant: a one-page document
+  # is exactly the case where a single drop loses everything.
+  def self.apply_all_pages_filtered_guard(results, pages:, filename:)
+    return results if results.empty?
+    return results if results.any? { |_, result| result[:keep] }
+
+    log_all_pages_filtered_guard(results, filename: filename)
+
+    by_number = pages.index_by(&:number)
+
+    results.each_with_object({}) do |(number, result), guarded|
+      page = by_number[number]
+      guarded[number] = result.merge(
+        keep:       true,
+        reason:     :all_pages_filtered_guard,
+        force_opus: page.present? && scanned_dense?(page.binary)
+      )
     end
   end
+
+  # Same cut as the scanned_image branch of #call and FileMultimodalRouter#route_page:
+  # no usable text layer under a near-full-page image, which only Opus reads well.
+  def self.scanned_dense?(binary)
+    return false if binary.blank?
+
+    density = PageImageDensityAnalyzer.analyze(binary)
+    density[:text_layer_chars].to_i < 100 && density[:image_area_ratio].to_f > 0.7
+  end
+
+  def self.log_all_pages_filtered_guard(results, filename:)
+    Rails.logger.warn(
+      JSON.generate(
+        event:          "page_relevance_filter_all_pages_filtered_guard",
+        filename:       filename,
+        pages:          results.size,
+        dropped_reasons: results.values.map { |result| result[:reason].to_s }.tally
+      )
+    )
+  rescue StandardError => e
+    Rails.logger.warn("PageRelevanceFilter: failed to log all_pages_filtered guard — #{e.message}")
+  end
+  private_class_method :log_all_pages_filtered_guard
 
   # Batch classifier for all pages, split into bounded Haiku windows.
   #
@@ -586,7 +646,7 @@ class PageRelevanceFilter
           keep:       keep,
           reason:     reason,
           source:     :haiku_batch,
-          force_opus: keep && scanned_dense?(page.binary)
+          force_opus: keep && PageRelevanceFilter.scanned_dense?(page.binary)
         }
         result.merge!(visual_triage_fields(entry)) if IngestionVisualTriageFlag.enabled?
         h[page.number] = result
@@ -602,13 +662,6 @@ class PageRelevanceFilter
         has_visual_relations: entry.is_a?(Hash) && entry["has_visual_relations"] == true,
         component_count:      entry.is_a?(Hash) ? [ entry["component_count"].to_i, 0 ].max : 0
       }
-    end
-
-    def scanned_dense?(binary)
-      return false if binary.blank?
-
-      density = PageImageDensityAnalyzer.analyze(binary)
-      density[:text_layer_chars].to_i < 100 && density[:image_area_ratio].to_f > 0.7
     end
 
     def strip_markdown_fences(text)

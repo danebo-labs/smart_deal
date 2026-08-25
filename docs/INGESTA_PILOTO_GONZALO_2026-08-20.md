@@ -748,10 +748,30 @@ Reparto por marca de lo pendiente, para decidir el orden:
 
 ### Fallos de `02_ingesta.zip`
 
-**Dos PDFs de BLT** (`05.- BLT-ES_PLC input.pdf`, `08.- BLT-ES_PLC output.pdf`, 60
-páginas) fallaron con `bulk_uploads.all_pages_filtered`: el filtro descartó todas
+**Dos PDFs de BLT** (`05.- BLT-ES_PLC input.pdf`, `08.- BLT-ES_PLC output.pdf`)
+fallaron con `bulk_uploads.all_pages_filtered`: el filtro descartó todas
 sus páginas antes de enviarlas, así que no consumieron créditos. Son tablas de E/S
 de PLC; recuperarlos exige revisar `PageRelevanceFilter`, no reintentar el ZIP.
+
+> ⚠️ **Corregido 2026-08-25.** Esta sección decía que los dos PDFs sumaban **60
+> páginas**. Son **1 página cada uno**. La cifra no tenía respaldo en ninguna
+> fuente y se propagó al plan de liberación, inflando el presupuesto de la
+> re-ingesta de ~US$0,15 a ~US$3. Verificado por tres vías con los mismos SHA-256
+> que se ingirieron: `HexaPDF` y `PDF::Reader` sobre el binario extraído de
+> `02_ingesta.zip`, el inventario `tmp/gonzalo_zips/scope.json`, y el
+> `manifest.json` que viaja dentro del propio ZIP subido. Lo mismo aplica a
+> `Conectores QS.pdf` de `04b` (1 página). **El hueco de contenido del piloto son 3
+> páginas en total.**
+>
+> Causa raíz del descarte, medida el 25-ago: la heurística `toc?` de
+> `PageRelevanceFilter`, **no** el prompt de Haiku (cero llamadas a Haiku, que es
+> lo que explica el "sin coste"). Una tabla de E/S tiene ≥10 líneas y la mayoría
+> acaban en un número de señal o de borne — 32/89, 31/88 y 33/103 líneas, o sea
+> fracciones 0,360 / 0,352 / 0,320 contra el umbral `TOC_LINE_FRACTION = 0.30`.
+> Arreglado con un guard fail-open a nivel documento
+> (`:all_pages_filtered_guard`); detalle y riesgo residual en
+> [`docs/PLAN_LIBERACION_PILOTO_2026-08-25.md`](PLAN_LIBERACION_PILOTO_2026-08-25.md),
+> Paso 1.
 
 **`otis_2000.pdf`** falló con `Unknown value in chunk 16 field_record 1`. Origen
 exacto: `BatchResultsParserService#validate_field_record!` compara las claves del
@@ -851,9 +871,11 @@ como parte de este cierre — el fix fue acotar el pico, no subir el techo.
 
 Primer ZIP **multi-documento** sobre `bc3bf7d` (`04a` sólo había probado el
 camino de un documento). `BulkUpload` 9, 10 assets (9 docs + la página LCE
-rescatada de KONE): 9 `complete`, 1 `failed` — `Conectores QS.pdf` con
+rescatada de KONE): 9 `complete`, 1 `failed` — `Conectores QS.pdf` (1 página) con
 `bulk_uploads.all_pages_filtered` (mismo motivo ya visto en dos PDFs de BLT en
-`02`: el filtro descarta todas sus páginas antes de enviarlas, **sin coste**).
+`02`: el filtro descarta todas sus páginas antes de enviarlas, **sin coste** —
+causa raíz identificada el 25-ago, ver la corrección en
+[Fallos de `02_ingesta.zip`](#fallos-de-02_ingestazip)).
 `dropped_field_records`: 2, ambos en `Weg_Lazo_Abierto.pdf`, `k=SCHEMATIC_LABEL`,
 `reason="unknown keys: connection"` — la misma tolerancia de claves cerrada el
 22-ago, no un `STOP_WORK_CONDITION`. Pico de memoria del worker **~906 MiB de

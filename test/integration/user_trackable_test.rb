@@ -21,6 +21,12 @@ class UserTrackableTest < ActionDispatch::IntegrationTest
     assert_equal login_at, @user.last_sign_in_at
     assert_equal "127.0.0.1", @user.current_sign_in_ip
     assert_equal "127.0.0.1", @user.last_sign_in_ip
+
+    login_event = PilotEvent.find_by(event: "user_signed_in", user_id: @user.id)
+    assert login_event, "a successful host-matched login must emit a durable series event"
+    assert_equal @user.account_id, login_event.account_id
+    assert_equal login_at, login_event.occurred_at
+    assert_equal "web", login_event.payload.deep_symbolize_keys[:route]
   end
 
   test "a second login increments the counter and rotates current into last" do
@@ -47,6 +53,7 @@ class UserTrackableTest < ActionDispatch::IntegrationTest
     assert_nil @user.current_sign_in_at
     assert_nil @user.last_sign_in_at
     assert_nil @user.current_sign_in_ip
+    assert_not PilotEvent.exists?(event: "user_signed_in", user_id: @user.id)
   end
 
   # Documents a limitation of the counter, not a desired behaviour: Warden has
@@ -61,6 +68,8 @@ class UserTrackableTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to new_user_session_path
     assert_equal 1, other_account_user.reload.sign_in_count
+    assert_not PilotEvent.exists?(event: "user_signed_in", user_id: other_account_user.id),
+               "host mismatch is a credentials-accepted Devise count, not a session on this host"
   end
 
   private

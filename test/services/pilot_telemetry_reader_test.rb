@@ -66,5 +66,58 @@ class PilotTelemetryReaderTest < ActiveSupport::TestCase
 
     assert_equal "logs_not_provided", not_provided[:status]
     assert_equal "logs_missing", missing[:status]
+    assert_nil not_provided[:source]
+  end
+
+  test "reads pilot_events when the log is absent and does not fabricate events from an empty table" do
+    occurred_at = @range.begin
+    PilotEvent.delete_all
+
+    empty = PilotTelemetryReader.new(source: nil, range: @range).read
+    assert_equal "logs_not_provided", empty[:status]
+    assert_empty empty[:pilot]
+
+    PilotEventRecorder.record("interaction_completed", {
+      event: "interaction_completed",
+      ts: occurred_at.iso8601,
+      user_id: 1,
+      correlation_id: "query:db",
+      outcome: "answered"
+    })
+    PilotEventRecorder.record("rag_quality", {
+      ts: occurred_at.iso8601,
+      user_id: 1,
+      correlation_id: "query:db",
+      evidence_present: true,
+      citations_count: 2
+    })
+
+    result = PilotTelemetryReader.new(source: nil, range: @range, user_ids: [ 1 ]).read
+
+    assert_equal "loaded", result[:status]
+    assert_equal "db", result[:source]
+    assert_equal 1, result[:pilot].size
+    assert_equal "interaction_completed", result[:pilot].first[:event]
+    assert_equal 1, result[:quality].size
+    assert_equal true, result[:quality].first[:evidence_present]
+    assert_empty result[:audit]
+  end
+
+  test "merging log and table does not duplicate the same event" do
+    ts = @range.begin.iso8601
+    PilotEvent.delete_all
+    PilotEventRecorder.record("interaction_completed", {
+      event: "interaction_completed", ts: ts, user_id: 1, correlation_id: "query:1", outcome: "answered"
+    })
+
+    io = StringIO.new(<<~LOG)
+      [PILOT_USAGE] {"event":"interaction_completed","ts":"#{ts}","role":"web","user_id":1,"correlation_id":"query:1","outcome":"answered"}
+      [PILOT_USAGE] {"event":"interaction_completed","ts":"#{ts}","role":"web","user_id":1,"correlation_id":"query:2","outcome":"answered"}
+    LOG
+
+    result = PilotTelemetryReader.new(source: io, range: @range, user_ids: [ 1 ]).read
+
+    assert_equal "db+log", result[:source]
+    assert_equal %w[query:1 query:2], result[:pilot].filter_map { |item| item[:correlation_id] }.sort
   end
 end

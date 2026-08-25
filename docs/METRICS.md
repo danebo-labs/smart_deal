@@ -276,17 +276,20 @@ against — compare it to `git rev-parse HEAD` to confirm a given fix (e.g. the
 structured-route audit wiring) was actually live for that export, not just
 committed locally.
 
-**A `kamal deploy` between two runs of the same `--from`/`--to` silently drops
-earlier interactions.** `bin/pilot_metrics` collects logs with `docker logs`
-against the *currently running* `web`/`worker` containers; `kamal deploy`
-replaces those containers, and the previous container's log history is not
-carried over. A date range that spans a deploy will only report interactions
-from after the deploy — re-running the export for the same range does not
-recover the pre-deploy portion of that day, because the underlying log lines
-are gone, not misclassified. There is no raw-data workaround today; treat any
-export whose range crosses a deploy as partial for that day, and prefer
-exporting same-day ranges either fully before or fully after a deploy when
-completeness matters (e.g. a pitch dossier).
+**A `kamal deploy` still drops the Docker log history; it no longer drops the
+pilot event series.** `bin/pilot_metrics` still collects `[PILOT_USAGE]` /
+`[RAG_QUALITY]` / `[PILOT_AUDIT]` with `docker logs` against the *currently
+running* `web`/`worker` containers, and `kamal deploy` still replaces those
+containers. That log extract is now a backup. After Frente B
+(`docs/rag/plan_telemetria_durable_piloto_2026-08-19.md`, shipped 2026-08-25)
+every `PilotUsageLog` event and every `[RAG_QUALITY]` signal (without raw
+question/answer/citation titles) is also inserted into `pilot_events` in the
+same request/worker cycle. `PilotTelemetryReader` uses the table when the log
+is missing or partial, declares the source as `data_quality.usage_log_source`
+(`db` / `log` / `db+log`), and never fabricates events. Keep
+`bin/pilot_metrics_daily` running until the table has a week of production
+rows; raw question/answer text still lives only under `PILOT_AUDIT_CAPTURE`
+in the log and in S3 Model Invocation Logs (Frente A).
 
 The package is written to
 `tmp/pilot_exports/<from>_<to>_<slug>/` with:
@@ -463,3 +466,31 @@ are not contaminated by these structured log lines.
 `filtered_share` for `kb_retrieve`) from these structured log lines. It is
 purely additive — it does not read from or write to `total_queries`,
 `rag_llm_calls`, or any other existing bucket.
+
+### `pilot_events` (durable telemetry)
+
+`pilot_events` is the RDS copy of the structured pilot stream. One INSERT in
+the same cycle as the log line — no job, no broadcast, no model callbacks.
+
+| Column | Role |
+|---|---|
+| `event` | `PilotUsageLog` event name, or `rag_quality` |
+| `correlation_id`, `account_id`, `user_id`, `conversation_session_id` | Attribution, no FKs (same pattern as `bedrock_queries`) |
+| `occurred_at` | The event's own `ts`, not the INSERT time |
+| `payload` | jsonb. For usage events, the already-whitelisted log payload. For `rag_quality`, the `[RAG_QUALITY]` payload minus `question`, `answer_snippet`, `citation_titles`, plus `question_sha256` / `answer_sha256`. |
+
+`[PILOT_AUDIT]` is **not** copied here. Raw question/answer/chunk text stays
+under `PILOT_AUDIT_CAPTURE` in Docker logs and is reconstructed from S3
+Model Invocation Logs (Frente A) when the log has rotated.
+
+`PILOT_EVENTS_PERSIST` (default `true`; set `false` to disable without a
+deploy) is an operational kill-switch, not a privacy gate. The whitelist and
+the `rag_quality` exclusions are the privacy gate. Duplicate rows are
+tolerated — `(event, correlation_id, occurred_at)` is not unique because
+same-second siblings share a `correlation_id`. The reader dedups when it
+merges log and table.
+
+Successful host-matched logins also emit `user_signed_in`. Devise
+`:trackable` still only stores the last access and a total; this event is
+the daily series. A login rejected by host mismatch increments
+`sign_in_count` but does **not** write `user_signed_in`.

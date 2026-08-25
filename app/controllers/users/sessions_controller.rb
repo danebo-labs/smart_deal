@@ -16,6 +16,12 @@ module Users
 
       set_flash_message!(:notice, :signed_in) if is_flashing_format?
       sign_in(resource_name, resource)
+      PilotUsageLog.log(
+        "user_signed_in",
+        account_id: resource.account_id,
+        user_id: resource.id,
+        route: "web"
+      )
       respond_with resource, location: after_sign_in_path_for(resource)
     end
 

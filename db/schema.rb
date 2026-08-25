@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_25_183000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_25_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -188,6 +188,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_183000) do
     t.index [ "account_id", "document_uid" ], name: "idx_kb_documents_account_document_uid", unique: true
     t.index [ "account_id", "s3_key" ], name: "idx_kb_documents_account_s3_key", unique: true
     t.index [ "account_id" ], name: "index_kb_documents_on_account_id"
+  end
+
+  create_table "pilot_events", force: :cascade do |t|
+    t.bigint "account_id"
+    t.bigint "conversation_session_id"
+    t.string "correlation_id"
+    t.datetime "created_at", null: false
+    t.string "event", null: false
+    t.datetime "occurred_at", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index [ "correlation_id" ], name: "index_pilot_events_on_correlation_id"
+    t.index [ "event", "occurred_at" ], name: "index_pilot_events_on_event_and_occurred_at"
+    t.index [ "occurred_at" ], name: "index_pilot_events_on_occurred_at"
   end
 
   create_table "technician_documents", force: :cascade do |t|

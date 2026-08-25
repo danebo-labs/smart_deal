@@ -4,12 +4,12 @@ set -euo pipefail
 
 # Daily durable copy of the pilot telemetry, meant to run from cron.
 #
-# PilotAuditLog / PilotUsageLog / [RAG_QUALITY] only ever reach Rails.logger →
-# stdout → the Docker json-file driver, and LogConfig sets max-size=10m with no
-# max-file: Docker keeps a single file and drops the previous one on rotation.
-# That already destroyed a day of the pilot on 2026-08-10 (hallazgo H1 of
-# docs/rag/plan_telemetria_durable_piloto_2026-08-19.md). Until frente B (the
-# RDS table) is approved, a daily export off the box is the whole mitigation.
+# Frente B (`pilot_events`) now persists [PILOT_USAGE] and [RAG_QUALITY] in
+# RDS. This script stays as the backup until that table has a week of
+# production rows, and it remains the only way to archive [PILOT_AUDIT] raw
+# text before Docker rotates. LogConfig still sets max-size=10m with no
+# max-file: a deploy or a rotation still drops the container log. Keep
+# exporting. See docs/rag/plan_telemetria_durable_piloto_2026-08-19.md.
 #
 # Idempotent: bin/pilot_metrics writes into a directory keyed by date range and
 # account slug, so re-running the same day overwrites its own artifacts. Cron can
@@ -22,10 +22,9 @@ set -euo pipefail
 # that DST in either the laptop's zone or Chile's cannot shift it.
 #
 # Known limitation, accepted for the MVP: cron on a laptop only fires while the
-# laptop is awake. A day where the laptop stayed closed is a day of telemetry
-# that Docker may rotate away. The durable fix is frente B (write the events to
-# RDS), not a better cron; the server-side alternative is a systemd timer on the
-# EC2 box exporting to S3, which needs the same approval as frente B.
+# laptop is awake. A day where the laptop stayed closed is a day of [PILOT_AUDIT]
+# text that Docker may rotate away. The event series itself now lives in
+# `pilot_events`; this job remains the backup and the raw-text archive.
 
 ACCOUNTS_DEFAULT="danebo-legacy danebo-pilot-elevator"
 ACCOUNTS="${PILOT_METRICS_DAILY_ACCOUNTS:-$ACCOUNTS_DEFAULT}"

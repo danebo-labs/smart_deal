@@ -6,6 +6,7 @@ class PilotTelemetryReader
     "[RAG_QUALITY]" => :quality,
     "[PILOT_AUDIT]" => :audit
   }.freeze
+  EMPTY_STATUSES = %w[logs_not_provided logs_missing logs_unreadable].freeze
 
   def initialize(source:, range:, user_ids: nil, roles_declared: nil)
     @source = source
@@ -15,6 +16,16 @@ class PilotTelemetryReader
   end
 
   def read
+    log_data = read_from_log
+    db_data = read_from_db
+    merge_sources(log_data, db_data)
+  end
+
+  private
+
+  attr_reader :source, :range, :user_ids, :roles_declared
+
+  def read_from_log
     return result(status: "logs_not_provided") if source.blank?
     return result(status: "logs_missing") if path_source? && !File.file?(source)
 
@@ -63,13 +74,96 @@ class PilotTelemetryReader
     result(status: "logs_unreadable")
   end
 
-  private
+  def read_from_db
+    rows = PilotEvent.hot_path_rows(range: range, user_ids: user_ids)
+    return result(status: "db_empty") if rows.empty?
 
-  attr_reader :source, :range, :user_ids, :roles_declared
+    pilot = []
+    quality = []
+    timestamps = []
 
-  def result(status:, pilot: [], quality: [], audit: [], invalid_lines: 0, first_ts: nil, last_ts: nil, missing_roles: [])
+    rows.each do |event, correlation_id, account_id, user_id, conversation_session_id, occurred_at, payload|
+      data = reconstruct_payload(
+        event: event,
+        correlation_id: correlation_id,
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        occurred_at: occurred_at,
+        payload: payload
+      )
+      timestamps << occurred_at
+      if event == PilotEvent::RAG_QUALITY_EVENT
+        quality << data
+      else
+        pilot << data
+      end
+    end
+
+    result(
+      status: "loaded",
+      source: "db",
+      pilot: pilot,
+      quality: quality,
+      first_ts: timestamps.min&.iso8601,
+      last_ts: timestamps.max&.iso8601
+    )
+  rescue StandardError => e
+    Rails.logger.warn("PilotTelemetryReader db read failed: #{e.class}")
+    result(status: "db_unreadable")
+  end
+
+  def merge_sources(log_data, db_data)
+    log_usable = EMPTY_STATUSES.exclude?(log_data[:status])
+    db_usable = db_data[:status] == "loaded"
+
+    return log_data.merge(source: log_usable ? "log" : nil) unless db_usable
+    return db_data unless log_usable
+
+    merged_pilot = merge_bucket(log_data[:pilot], db_data[:pilot]) { |item| usage_key(item) }
+    merged_quality = merge_bucket(log_data[:quality], db_data[:quality]) { |item| quality_key(item) }
+    timestamps = [ log_data[:first_ts], log_data[:last_ts], db_data[:first_ts], db_data[:last_ts] ]
+      .filter_map { |value| parse_time(value) }
+
+    log_data.merge(
+      source: "db+log",
+      pilot: merged_pilot,
+      quality: merged_quality,
+      first_ts: timestamps.min&.iso8601 || log_data[:first_ts],
+      last_ts: timestamps.max&.iso8601 || log_data[:last_ts]
+    )
+  end
+
+  def merge_bucket(preferred, extra)
+    seen = preferred.to_h { |item| [ yield(item), true ] }
+    preferred + extra.reject { |item| seen[yield(item)] }
+  end
+
+  def usage_key(item)
+    [ item[:event], item[:correlation_id], item[:ts] ]
+  end
+
+  def quality_key(item)
+    [ item[:correlation_id], item[:ts] ]
+  end
+
+  def reconstruct_payload(event:, correlation_id:, account_id:, user_id:,
+                          conversation_session_id:, occurred_at:, payload:)
+    data = payload.to_h.deep_symbolize_keys
+    data[:event] = event unless event == PilotEvent::RAG_QUALITY_EVENT
+    data[:ts] ||= occurred_at&.iso8601
+    data[:correlation_id] ||= correlation_id
+    data[:account_id] ||= account_id
+    data[:user_id] ||= user_id
+    data[:conversation_session_id] ||= conversation_session_id
+    data
+  end
+
+  def result(status:, source: nil, pilot: [], quality: [], audit: [], invalid_lines: 0,
+             first_ts: nil, last_ts: nil, missing_roles: [])
     {
       status: status,
+      source: source,
       pilot: pilot,
       quality: quality,
       audit: audit,

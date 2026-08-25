@@ -95,6 +95,10 @@ env:
     # has nothing to surface. Places raw technician text in production logs, so
     # enable it only under the corresponding privacy authorization.
     PILOT_AUDIT_CAPTURE: "false"
+    # Kill-switch for the durable pilot_events INSERT. Default is persist
+    # (unset or any value other than "false"). Not a privacy gate — that is
+    # the PilotUsageLog whitelist plus the rag_quality raw-text exclusions.
+    PILOT_EVENTS_PERSIST: "true"
   secret:
     - RAILS_MASTER_KEY
     - DB_PASSWORD

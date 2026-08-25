@@ -47,7 +47,7 @@ ingirieron) registra `pages: 1` para los tres ficheros. El hueco de contenido so
 | 1 | Fix de `PageRelevanceFilter` | claude-opus-5-thinking-high | **hecho** (2026-08-25, desplegado en el Paso 2) |
 | 2 | Re-ingesta de los 3 PDFs | claude-sonnet-5-thinking | **hecho** (2026-08-25) — desplegado `56a68fb`, 3/3 assets `complete`, US$0,3162 all-in |
 | 3 | Devise trackable | claude-sonnet-5-thinking | **hecho** (2026-08-25) — `9085408`, migración `20260825183000` **sin desplegar** (va con el Paso 4) |
-| 4 | Telemetría durable (frente B) | claude-sonnet-5-thinking-xhigh | pendiente |
+| 4 | Telemetría durable (frente B) | claude-sonnet-5-thinking-xhigh | **implementado** (2026-08-25) — código y tests en el árbol; **deploy pendiente de confirmación humana** (lleva también el Paso 3) |
 | 5 | Actualizar costes medidos en docs | composer-2.5-fast | pendiente |
 | 6 | Batería de precisión (gate) | claude-sonnet-5-thinking-xhigh | pendiente |
 | 7 | Liberación | claude-sonnet-5-thinking (+ humano) | pendiente |
@@ -892,15 +892,103 @@ pendiente de decisión humana; `git status -sb` da la cuenta exacta.
 
 **Modelo asignado:** claude-sonnet-5-thinking-xhigh
 
-**Estado:** pendiente
+**Estado:** implementación **hecho** (2026-08-25). Código, migraciones y tests en el árbol, **sin desplegar y sin push** — el deploy de este paso (que también aplica el Paso 3) espera confirmación humana. Coste Anthropic/Bedrock: **US$0,00**.
 
 **Comandos ejecutados:**
 
-_(vacío)_
+```bash
+env -u BUNDLE_PATH -u GEM_SPEC_CACHE bin/rails db:migrate
+env -u BUNDLE_PATH -u GEM_SPEC_CACHE bin/rails db:rollback:primary STEP=1
+env -u BUNDLE_PATH -u GEM_SPEC_CACHE bin/rails db:migrate
+env -u BUNDLE_PATH -u GEM_SPEC_CACHE bundle exec rubocop -A --cache false db/schema.rb
+env -u BUNDLE_PATH -u GEM_SPEC_CACHE bin/rails db:test:prepare
+env -u BUNDLE_PATH -u GEM_SPEC_CACHE bin/rails test   # 2.459 runs, 9.415 assertions, 0 failures, 0 errors, 189 skips
+env -u BUNDLE_PATH -u GEM_SPEC_CACHE bundle exec rubocop --cache false \
+  app/models/pilot_event.rb app/services/pilot_event_recorder.rb \
+  app/services/pilot_usage_log.rb app/services/pilot_telemetry_reader.rb \
+  app/services/pilot_metrics_report.rb app/controllers/users/sessions_controller.rb \
+  db/migrate/20260825190000_create_pilot_events.rb db/schema.rb
+```
 
 **Hallazgos:**
 
-_(vacío)_
+**1. INSERT síncrono, no job.** El plan de telemetría (19-ago) pedía `perform_later` +
+`PersistPilotEventJob`. Este documento mandó "un INSERT, sin job extra". Se siguió
+este documento: `PilotEventRecorder` hace `insert!` en el mismo ciclo que el log
+(sin callbacks, sin validaciones, sin broadcast). A decenas de eventos/día un
+INSERT jsonb no justifica cola, y la regla del repo es no usar jobs para trabajo
+que no es largo. Kill-switch `PILOT_EVENTS_PERSIST` (default on; `false` apaga
+sin deploy).
+
+**2. `[PILOT_AUDIT]` no se persiste.** Este documento listaba `PilotAuditLog` junto
+a los emisores actuales. La restricción 3 del plan de telemetría es innegociable:
+ningún payload nuevo lleva pregunta, respuesta cruda ni títulos de cita. La
+tabla guarda `PilotUsageLog` (whitelist de siempre) y un evento `rag_quality`
+sin `question` / `answer_snippet` / `citation_titles`, con `question_sha256` /
+`answer_sha256`. El texto crudo sigue bajo `PILOT_AUDIT_CAPTURE` en el log y
+bajo el frente A (S3). Frente A no se tocó.
+
+**3. Serie temporal de logins: evento `user_signed_in`.** Responde la nota (c)
+heredada del Paso 3. Se emite después del chequeo de host, así que un mismatch
+sigue incrementando `sign_in_count` (limitación ya documentada) pero **no**
+escribe fila durable. El contador de Devise sigue siendo "última vez + total";
+los logins por día salen de esta serie.
+
+**4. `occurred_at` es el `ts` del evento, no el del INSERT.** Lección del
+reconciliador de coste, verificada por test. La tabla también tiene
+`created_at`/`updated_at` porque `rubocop-rails` (`Rails/CreateTableWithTimestamps`)
+lo exige en tablas nuevas; no se usan para el reporte. Duplicados tolerados: no
+hay unique en `(event, correlation_id, occurred_at)` porque hermanos del mismo
+segundo comparten `correlation_id`. El reader deduplica al mezclar log y tabla.
+
+**5. El reporte lee la tabla sin cambiar las claves del contrato.**
+`PilotTelemetryReader` usa `pilot_events` cuando el log falta o está parcial.
+`data_quality.usage_log` conserva sus status (`loaded` / `partial` /
+`logs_not_provided` / …). La fuente se declara en una clave **aditiva**,
+`data_quality.usage_log_source` (`db` / `log` / `db+log`). Tabla vacía + log
+ausente no fabrica un día vacío: sigue siendo `logs_not_provided`. Con ambas
+fuentes no se duplican eventos. `citation_titles` queda vacío si la única
+fuente es la tabla (restricción 3); el resto de `interactions` (totales,
+outcome, hashes, evidence_present, conteos) se reproduce.
+
+**6. El SQL del INSERT se silencia.** Sin eso, el payload jsonb aparece dentro
+de la línea SQL y los tests/export que hacen grep de `"event":"…"` parseaban
+el SQL como JSON. La telemetría sigue siendo la línea `[PILOT_USAGE]` /
+`[RAG_QUALITY]`.
+
+**7. `bin/pilot_metrics_daily` se mantiene** como respaldo y como archivo de
+texto crudo (`--with-questions`), hasta una semana de filas en producción.
+No se tocó `config/deploy.yml` real (restricción 2 del plan de telemetría);
+sí se documentó `PILOT_EVENTS_PERSIST` en `.example`.
+
+**8. Lo que NO se hizo, dicho explícitamente:**
+
+- **Deploy.** Espera confirmación humana. `bin/docker-entrypoint` aplicará las
+  dos migraciones (`20260825183000` trackable + `20260825190000` pilot_events)
+  al arrancar el contenedor web. Preflight de infra: el del Paso 2.
+- **`git push`.** `main` sigue por delante de `origin/main`.
+- **Frente A** (recuperador S3 / `--recover-from-invocation-logs`). Fuera de
+  este paso.
+- **Backfill** de `pilot_events`. La tabla arranca vacía.
+- **`bin/stack release`.** Sigue pendiente de decisión humana (Hallazgo 2 del
+  Paso 2).
+
+**Ficheros tocados** (sin commitear; el deploy es el que los lleva a producción):
+
+| Fichero | Cambio |
+|---|---|
+| `db/migrate/20260825190000_create_pilot_events.rb` | nuevo: tabla + índices |
+| `db/schema.rb` | versión + `pilot_events` |
+| `app/models/pilot_event.rb` | nuevo: `hot_path_rows` (pluck) |
+| `app/services/pilot_event_recorder.rb` | nuevo: INSERT silenciado, kill-switch |
+| `app/services/pilot_usage_log.rb` | persiste el payload ya whitelisteado |
+| `app/services/bedrock_rag_service.rb` | `rag_quality` durable sin texto crudo |
+| `app/controllers/users/sessions_controller.rb` | `user_signed_in` tras host match |
+| `app/services/pilot_telemetry_reader.rb` | fuente BD + merge sin duplicar |
+| `app/services/pilot_metrics_report.rb` | `usage_log_source` |
+| tests nuevos/ampliados | recorder, model, usage log, reader, report, audit, trackable |
+| `docs/METRICS.md`, `docs/PILOT_CAPTURE_TEMPLATE.md`, `docs/rag/plan_tracking_piloto_2026-08-04.md`, `docs/rag/plan_telemetria_durable_piloto_2026-08-19.md` | decisión y fuente documentadas |
+| `bin/pilot_metrics_daily`, `config/deploy.yml.example` | respaldo + kill-switch |
 
 ---
 
@@ -974,6 +1062,14 @@ _(vacío)_
 ## Paso 7 — Liberación
 
 **Objetivo:** Re-verificar gates (español por defecto, `PILOT_AUDIT_CAPTURE=true`) en el deploy vigente. Crear Users nominales con nombres/correos de Gonzalo (sin credenciales compartidas; si no llegan, `bloqueado`). Registrar decisión de producto: PDFs troceados se citan como "página N de la parte pX-Y" (revisable post-piloto). Dejar texto de comunicación con URL `piloto.danebo.ai` y cerrar este documento con el estado final. Requiere Pasos 2, 3, 4 y 6 `hecho` y batería por umbrales.
+
+### Nota heredada del Paso 4 (2026-08-25)
+
+El código de los Pasos 3 y 4 está en el árbol y **no está desplegado**. Este paso
+no puede cerrarse hasta que un humano confirme y se haga el `kamal deploy` del
+Paso 4 (las dos migraciones las aplica `bin/docker-entrypoint`). Verificar en
+producción que `users` tiene las columnas trackable y que `pilot_events` existe,
+y que un login + una pregunta dejan fila durable sin texto crudo.
 
 **Modelo asignado:** claude-sonnet-5-thinking (+ acción humana: credenciales, comunicación)
 

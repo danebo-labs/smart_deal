@@ -33,6 +33,7 @@ class PilotUsageLog
         payload[key] = safe_value(value) unless value.nil?
       end
       Rails.logger.info("[PILOT_USAGE] #{JSON.generate(payload)}")
+      PilotEventRecorder.record(event, payload)
       true
     rescue StandardError => e
       Rails.logger.warn("PilotUsageLog failed event=#{event} reason=#{e.class}")

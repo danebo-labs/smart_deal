@@ -290,10 +290,10 @@ restricción 2 — este plan no lo autoriza.**
 
 | Fase | Estado | Artefacto / hash |
 |---|---|---|
-| 0 Verificación de vigencia | No iniciada (bloqueada por aprobación del plan) | — |
-| A1 Recuperador S3 → export | No iniciada | — |
-| B1 Tabla durable + emisión async | No iniciada | — |
-| B2 Reporte + docs | No iniciada | — |
+| 0 Verificación de vigencia | Cerrada de paso por el Paso 4 (2026-08-25): H4 sigue vigente antes del cambio; no se tocó Frente A | — |
+| A1 Recuperador S3 → export | No iniciada (fuera del Paso 4) | — |
+| B1 Tabla durable + emisión async | **hecho 2026-08-25 (Paso 4), desviado:** INSERT síncrono en el mismo ciclo que el log, sin `PersistPilotEventJob`. El plan de liberación mandó "sin job extra"; a decenas de eventos/día un INSERT jsonb no justifica cola. | `pilot_events` + `PilotEventRecorder` |
+| B2 Reporte + docs | **hecho 2026-08-25 (Paso 4).** Reader lee la tabla cuando el log falta; `data_quality.usage_log_source` declara `db`/`log`/`db+log` sin sustituir el status existente. | — |
 | Gate corrida real | No iniciada (requiere además aprobación de deploy) | — |
 
 Antecedente ejecutado (fuera de este plan, sesión 2026-08-19): recuperación

@@ -26,6 +26,15 @@ class PilotUsageLogTest < ActiveSupport::TestCase
     assert_not_includes line, "raw-image"
     assert_nil payload["binary"]
     assert_nil payload["data"]
+
+    row = PilotEvent.find_by(event: "photo_cache_hit", correlation_id: "photo:abc")
+    assert row, "the same whitelisted payload must be persisted"
+    persisted = row.payload.deep_symbolize_keys
+    assert_equal 1, persisted[:account_id]
+    assert_equal 2, persisted[:user_id]
+    assert_equal 0, persisted[:cost]
+    assert_nil persisted[:binary]
+    assert_nil persisted[:data]
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
@@ -40,5 +49,14 @@ class PilotUsageLogTest < ActiveSupport::TestCase
     assert_equal false, PilotUsageLog.log("photo_failed", account_id: 1)
   ensure
     Rails.logger = original
+  end
+
+  test "a persist failure still returns true after the log line is written" do
+    original = PilotEvent.method(:insert!)
+    PilotEvent.define_singleton_method(:insert!) { |*_args, **_kwargs| raise "db down" }
+
+    assert_equal true, PilotUsageLog.log("photo_cache_hit", account_id: 1, user_id: 2)
+  ensure
+    PilotEvent.define_singleton_method(:insert!) { |*args, **kwargs| original.call(*args, **kwargs) }
   end
 end

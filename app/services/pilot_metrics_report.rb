@@ -78,6 +78,7 @@ class PilotMetricsReport
       },
       data_quality: {
         usage_log: log_data[:status],
+        usage_log_source: log_data[:source],
         invalid_log_lines: log_data[:invalid_lines],
         log_first_ts: log_data[:first_ts],
         log_last_ts: log_data[:last_ts],

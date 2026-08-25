@@ -15,9 +15,8 @@ class BedrockRagServiceAuditTest < ActiveSupport::TestCase
       without_audit = with_audit_capture(nil) { capture_quality_signal }
       explicitly_disabled = with_audit_capture("false") { capture_quality_signal }
 
-      assert_equal without_audit, explicitly_disabled
-      assert_equal 1, without_audit.lines.size
-      assert_includes without_audit, "[RAG_QUALITY]"
+      assert_equal quality_line(without_audit), quality_line(explicitly_disabled)
+      assert quality_line(without_audit)
       assert_not_includes without_audit, "[PILOT_AUDIT]"
     end
   end
@@ -58,6 +57,21 @@ class BedrockRagServiceAuditTest < ActiveSupport::TestCase
     assert_equal 4_000, chunk["text"].length
     assert_equal true, chunk["truncated"]
     assert_empty pilot_usage_calls
+
+    quality_line = output.lines.find { |line| line.include?("[RAG_QUALITY]") }
+    quality_payload = JSON.parse(quality_line.split("[RAG_QUALITY] ", 2).last)
+    assert_equal question.first(300), quality_payload["question"], "the log line still carries the truncated question"
+
+    row = PilotEvent.find_by(event: PilotEvent::RAG_QUALITY_EVENT, correlation_id: "query:audit")
+    assert row
+    persisted = row.payload
+    %w[question answer_snippet citation_titles].each do |key|
+      assert_not persisted.key?(key), "durable rag_quality must not persist #{key}"
+    end
+    assert_equal Digest::SHA256.hexdigest(question), persisted["question_sha256"]
+    assert_equal Digest::SHA256.hexdigest(answer), persisted["answer_sha256"]
+    assert_equal true, persisted["evidence_present"]
+    assert_equal 1, persisted["citations_count"]
   ensure
     PilotUsageLog.define_singleton_method(:log) do |event, **fields|
       original_log.call(event, **fields)
@@ -116,6 +130,10 @@ class BedrockRagServiceAuditTest < ActiveSupport::TestCase
 
   def parse_audit(line)
     JSON.parse(line.split("[PILOT_AUDIT] ", 2).last)
+  end
+
+  def quality_line(output)
+    output.lines.find { |line| line.include?("[RAG_QUALITY]") }
   end
 
   def with_audit_capture(value)

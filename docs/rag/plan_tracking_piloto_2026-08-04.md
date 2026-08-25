@@ -505,6 +505,12 @@ de la fase siguiente.
 - **Tabla de interacciones en base de datos.** El estado terminal viaja por log, igual que
   el resto de la telemetría del piloto. Persistirlo sería una migración y un camino de
   escritura nuevo en la request del usuario, a cambio de nada que el log no dé.
+  **REVISADA 2026-08-25.** El incidente del 2026-08-10/13 (log de Docker rotado, día del
+  piloto irrecuperable por pipeline) refutó "a cambio de nada que el log no dé". Frente B
+  de [`plan_telemetria_durable_piloto_2026-08-19.md`](plan_telemetria_durable_piloto_2026-08-19.md)
+  y el Paso 4 de `docs/PLAN_LIBERACION_PILOTO_2026-08-25.md` añaden `pilot_events`. El
+  texto original se conserva: la decisión de 2026-08-04 era coherente con lo que se
+  sabía entonces.
 - **Corrección técnica automatizada.** Se sigue verificando por revisión humana contra el
   documento; no se infiere de la presencia de una cita.
 - **Métricas comerciales.** `commercial_outcomes` sigue en `REQUIRES_MANUAL_SURVEY` y no se

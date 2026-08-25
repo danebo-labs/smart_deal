@@ -66,6 +66,59 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
 
       assert_nil report.dig(:technical_and_cost, :totals, :photo_cache_hits)
       assert_equal "logs_not_provided", report.dig(:data_quality, :usage_log)
+      assert_nil report.dig(:data_quality, :usage_log_source)
+    end
+  end
+
+  test "empty log plus populated table reproduces interactions and both sources do not duplicate" do
+    travel_to @now do
+      PilotEvent.delete_all
+      payload = {
+        event: "interaction_completed",
+        ts: @now.iso8601,
+        correlation_id: "query:db1",
+        account_id: @a1.account_id,
+        user_id: @a1.id,
+        question_sha256: "digest-db1",
+        outcome: "answered",
+        route: "text"
+      }
+      PilotEventRecorder.record("interaction_completed", payload)
+      PilotEventRecorder.record("rag_quality", {
+        ts: @now.iso8601,
+        correlation_id: "query:db1",
+        account_id: @a1.account_id,
+        user_id: @a1.id,
+        evidence_present: true,
+        citations_count: 1,
+        chunk_count: 2,
+        question_sha256: "digest-db1"
+      })
+
+      db_only = PilotMetricsReport.new(date: @date).as_json
+      assert_equal "loaded", db_only.dig(:data_quality, :usage_log)
+      assert_equal "db", db_only.dig(:data_quality, :usage_log_source)
+      assert_equal "available", db_only.dig(:interactions, :status)
+      assert_equal 1, db_only.dig(:interactions, :total)
+      row = db_only.dig(:interactions, :by_correlation).first
+      assert_equal "query:db1", row[:correlation_id]
+      assert_equal "digest-db1", row[:question_sha256]
+      assert_equal true, row[:evidence_present]
+      assert_equal 1, row[:citations_count]
+      assert_equal 2, row[:retrieved_chunks]
+      assert_not row.key?(:question)
+      assert_not row.key?(:audit)
+
+      file = Tempfile.new("pilot-db-plus-log")
+      file.puts("[PILOT_USAGE] #{JSON.generate(payload)}")
+      file.flush
+
+      both = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json
+      assert_equal "db+log", both.dig(:data_quality, :usage_log_source)
+      assert_equal 1, both.dig(:interactions, :total)
+      assert_equal 1, both.dig(:interactions, :by_correlation).size
+
+      file.close!
     end
   end
 

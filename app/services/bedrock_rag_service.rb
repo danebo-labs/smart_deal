@@ -29,6 +29,7 @@ class BedrockRagService
   # therefore appended before the placeholder, which is always re-emitted last.
   OUTPUT_FORMAT_PLACEHOLDER = "$output_format_instructions$"
   PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
+  RAG_QUALITY_EXCLUDED_KEYS = %i[question answer_snippet citation_titles].freeze
 
   # Deterministic failure-semantics normalization (Gate B).
   # Haiku frequently states absence in prose ("la documentación no contiene…")
@@ -693,6 +694,7 @@ class BedrockRagService
       kb_id:           @knowledge_base_id
     }
     Rails.logger.info("[RAG_QUALITY] #{JSON.generate(payload)}")
+    persist_quality_event(payload, question: question, answer: answer)
     PilotAuditLog.log(
       question: question,
       answer: answer,
@@ -703,6 +705,17 @@ class BedrockRagService
     )
   rescue => e
     Rails.logger.warn("log_quality_signal failed: #{e.message}")
+  end
+
+  # Durable [RAG_QUALITY] copy without raw text. Hashes stay so the report can
+  # still join repeats; the full question/answer remain on the log line and
+  # under PILOT_AUDIT_CAPTURE / Frente A.
+  def persist_quality_event(payload, question:, answer:)
+    durable = payload.except(*RAG_QUALITY_EXCLUDED_KEYS).merge(
+      question_sha256: Digest::SHA256.hexdigest(question.to_s),
+      answer_sha256: Digest::SHA256.hexdigest(answer.to_s)
+    )
+    PilotEventRecorder.record(PilotEvent::RAG_QUALITY_EVENT, durable)
   end
 
   # Builds prompt, estimates tokens via LocalTokenizer (~0 ms), logs [RAG_REGRESSION],

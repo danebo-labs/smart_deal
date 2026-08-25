@@ -85,6 +85,13 @@ Para las 2–3 búsquedas típicas en papel / catálogos:
 
 ## Anexo: Métricas automáticas
 
+`bin/pilot_metrics` ya no depende del contenedor vivo para la serie de
+eventos: `pilot_events` es la fuente durable y el extracto de Docker es
+respaldo (`data_quality.usage_log_source` declara `db` / `log` / `db+log`).
+La pregunta/respuesta cruda sigue saliendo solo del log (`PILOT_AUDIT_CAPTURE`)
+o de S3 (Frente A). Seguir exportando con `bin/pilot_metrics_daily` hasta
+tener una semana de filas en la tabla.
+
 Ejecutar después de la sesión:
 ```bash
 bin/pilot_metrics \

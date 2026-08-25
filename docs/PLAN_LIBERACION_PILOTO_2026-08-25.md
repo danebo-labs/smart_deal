@@ -885,9 +885,10 @@ Paso 3).
 `current_sign_in_at` dicen "cuántas veces y la última"; si la telemetría del piloto
 necesita "logins por día", eso es un evento en la tabla durable de este paso.
 
-**d) `main` va 3 commits por delante de `origin/main`** (`56a68fb` del Paso 1/2,
-`9085408` del Paso 3 y el commit de este documento): `56a68fb` está desplegado sin
-estar en el remoto. El push sigue pendiente de decisión humana.
+**d) `main` va por delante de `origin/main` y nada de esto está empujado**
+(`56a68fb` del Paso 1/2, `9085408` del Paso 3, más los commits de este documento).
+`56a68fb` está **desplegado en producción sin estar en el remoto**. El push sigue
+pendiente de decisión humana; `git status -sb` da la cuenta exacta.
 
 **Modelo asignado:** claude-sonnet-5-thinking-xhigh
 

@@ -46,7 +46,7 @@ ingirieron) registra `pages: 1` para los tres ficheros. El hueco de contenido so
 |---|---|---|---|
 | 1 | Fix de `PageRelevanceFilter` | claude-opus-5-thinking-high | **hecho** (2026-08-25, desplegado en el Paso 2) |
 | 2 | Re-ingesta de los 3 PDFs | claude-sonnet-5-thinking | **hecho** (2026-08-25) — desplegado `56a68fb`, 3/3 assets `complete`, US$0,3162 all-in |
-| 3 | Devise trackable | claude-sonnet-5-thinking | **hecho** (2026-08-25) — migración `20260825183000` en el árbol, **sin desplegar** (va con el Paso 4) |
+| 3 | Devise trackable | claude-sonnet-5-thinking | **hecho** (2026-08-25) — `9085408`, migración `20260825183000` **sin desplegar** (va con el Paso 4) |
 | 4 | Telemetría durable (frente B) | claude-sonnet-5-thinking-xhigh | pendiente |
 | 5 | Actualizar costes medidos en docs | composer-2.5-fast | pendiente |
 | 6 | Batería de precisión (gate) | claude-sonnet-5-thinking-xhigh | pendiente |
@@ -769,9 +769,9 @@ implica top-1.
 aplicada en local (reversible, verificada con `db:rollback:primary`), `:trackable`
 activo en `app/models/user.rb`, 4 tests de integración nuevos. Suite completa
 verde: **2.448 runs, 9.343 assertions, 0 failures, 0 errors, 189 skips** (los
-mismos 189 skips de antes; +4 runs son los de este paso). **Sin desplegar y sin
-commit**, según el plan: el deploy va con el Paso 4. Coste Anthropic/Bedrock del
-paso: **US$0,00** (ninguna llamada externa).
+mismos 189 skips de antes; +4 runs son los de este paso). Commiteado en
+**`9085408`**, **sin desplegar y sin push**, según el plan: el deploy va con el
+Paso 4. Coste Anthropic/Bedrock del paso: **US$0,00** (ninguna llamada externa).
 
 **Comandos ejecutados:**
 
@@ -851,8 +851,8 @@ acceso y el total).
 de Ruby muere con `Bundler::GemNotFound` listando el Gemfile entero. No es que
 falten gems: basta prefijar con `env -u BUNDLE_PATH -u GEM_SPEC_CACHE`.
 
-**Ficheros tocados** (sin commit; el árbol queda listo para que el Paso 4 haga un
-solo commit y un solo deploy):
+**Ficheros tocados** (commit `9085408`, sin desplegar: el Paso 4 hace el único
+deploy):
 
 | Fichero | Cambio |
 |---|---|
@@ -869,7 +869,7 @@ solo commit y un solo deploy):
 
 ### Notas heredadas del Paso 3 (2026-08-25) — leer antes de ejecutar
 
-**a) El árbol ya trae el Paso 3 sin commitear ni desplegar.** Migración
+**a) El Paso 3 ya está commiteado (`9085408`) pero no desplegado.** Migración
 `20260825183000_add_trackable_to_users.rb`, `:trackable` en `User`,
 `test/integration/user_trackable_test.rb` y las 6 líneas de `db/schema.rb`. El
 deploy de este paso es el que lleva las dos cosas a producción; correr
@@ -885,8 +885,9 @@ Paso 3).
 `current_sign_in_at` dicen "cuántas veces y la última"; si la telemetría del piloto
 necesita "logins por día", eso es un evento en la tabla durable de este paso.
 
-**d) Recordar el pendiente de `git push`** heredado del Paso 2: `56a68fb` está
-desplegado pero no está en `origin/main`.
+**d) `main` va 3 commits por delante de `origin/main`** (`56a68fb` del Paso 1/2,
+`9085408` del Paso 3 y el commit de este documento): `56a68fb` está desplegado sin
+estar en el remoto. El push sigue pendiente de decisión humana.
 
 **Modelo asignado:** claude-sonnet-5-thinking-xhigh
 

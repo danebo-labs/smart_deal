@@ -1,0 +1,605 @@
+{
+  "version": "pilot-release-precision-battery-v1",
+  "description": "Rúbrica de generación completa para el subconjunto de 20 preguntas del Paso 6 (batería de precisión, gate de liberación del piloto Gonzalo). source_page_required es false en todos los casos porque, a nivel de cuenta completa (6 marcas, ~180 documentos), el chequeo de página del evaluador no verifica identidad de documento y podría dar falsos positivos entre documentos distintos que comparten número de página.",
+  "citation_required": true,
+  "cases": [
+    {
+      "id": "blt_01",
+      "question": "¿Cuáles son las entradas del PLC del escalador BLT y qué señales Omron documenta?",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica la marca Omron",
+          "pattern": "omron"
+        },
+        {
+          "label": "nombra al menos una señal de entrada real documentada",
+          "pattern": "handrail|comb|skirt|radar|backspin|heat\\s*rela|chain"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita el número de control DSCS9002",
+          "pattern": "DSCS9002"
+        }
+      ],
+      "penalized": []
+    },
+    {
+      "id": "blt_02",
+      "question": "¿Qué salidas documenta el PLC BLT-ES output para bobinas y contactores?",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica las salidas Y0 e Y17",
+          "pattern": "(?=[\\s\\S]*\\bY0\\b)(?=[\\s\\S]*\\bY17\\b)"
+        },
+        {
+          "label": "identifica los contactores 6KM1 y 6KM8",
+          "pattern": "(?=[\\s\\S]*6KM1)(?=[\\s\\S]*6KM8)"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona los canales 10CH/11CH",
+          "pattern": "10CH|11CH"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con el diagrama de entradas (X0 / Omron)",
+          "pattern": "\\bX0\\b|\\bomron\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "blt_03",
+      "question": "¿Cómo se identifican los bornes y pines de los conectores QS?",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica un código de conector con formato XP + dígitos",
+          "pattern": "\\bXP\\d+\\b"
+        },
+        {
+          "label": "hace referencia a la asignación por pin",
+          "pattern": "\\bpin(?:es)?\\b"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita la referencia de placa DHT-070187T",
+          "pattern": "DHT-070187T"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "afirma que los conectores QS no documentan pines/señales",
+          "pattern": "(?:sin|no (?:tiene|incluye|documenta)).{0,30}(?:pines?|señal(?:es)?)",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "blt_04",
+      "question": "En el test de funcionamiento BLT (PLC Omron), en la fila del contacto de la cadena de tracción del motor, página 1, ¿qué holgura del rodillo especifica la observación del mensaje de error 10?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "indica 2 mm de holgura",
+          "pattern": "2\\s*mm"
+        },
+        {
+          "label": "identifica la cadena de tracción del motor",
+          "pattern": "cadena\\s+de\\s+tracci[oó]n"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita el mensaje/código 10",
+          "pattern": "(?:mensaje|c[oó]digo)\\s*(?:de\\s*error\\s*)?10\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "inventa una holgura distinta a 2 mm",
+          "pattern": "\\b(?:1|3|4|5)\\s*mm\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "blt_06",
+      "question": "En el listado de fallas MPK708A, ¿qué indica el código E12 y qué método de reanudación documenta?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica Error de Inverter",
+          "pattern": "Inverter"
+        },
+        {
+          "label": "indica conectar monitor",
+          "pattern": "monitor"
+        }
+      ],
+      "optional": [
+        {
+          "label": "indica que el computador registra la falla",
+          "pattern": "registra\\s+la\\s+falla"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con el método de E13 (cierre de contacto de puerta)",
+          "pattern": "cierre\\s+de\\s+contacto",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "fuji_yida_02",
+      "question": "En la tabla de códigos de error del controlador BL6 de Fuji Yida, ¿qué indica el código Er19 y qué parámetro se recomienda disminuir en el menú de usuario como primera solución?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica Er19",
+          "pattern": "\\bEr\\s?19\\b"
+        },
+        {
+          "label": "menciona el parámetro Least Speed",
+          "pattern": "Least\\s*Speed"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita página 2",
+          "pattern": "(?:p[aá]gina|p\\.)\\s*2\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "atribuye a Er19 la solución de ganancia PI que en realidad pertenece a Er20",
+          "pattern": "ganancia\\s+PI",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "fuji_yida_04",
+      "question": "En el tablero de transferencia de llamadas de pasillo y despliegue BL2000-HXK-V9 de Fuji Yida, según la tabla de definición de conectores de la página 1, ¿qué señal está asignada al pin J1-3 y cuál al pin J1-4?",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica CAN Bus H",
+          "pattern": "CAN\\s*Bus\\s*H"
+        },
+        {
+          "label": "identifica CAN Bus L",
+          "pattern": "CAN\\s*Bus\\s*L"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita página 1",
+          "pattern": "(?:p[aá]gina|p\\.)\\s*1\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "asigna CAN Bus L al pin J1-3, invirtiendo H y L",
+          "pattern": "J1-?3\\s*(?:es|=|:|corresponde\\s+a|asigna(?:da)?\\s+a)?\\s*CAN\\s*Bus\\s*L\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "kone_01",
+      "question": "Según la tabla de códigos de falla del variador V3F16L (página 1 del documento 'V3F16L Drive FAULT CODES'), ¿qué código de falla agrupa la protección del motor (Motor Protection) y qué causa se registra para su subcódigo 2003?",
+      "category": "codigo_falla",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica código 104",
+          "pattern": "\\b104\\b"
+        },
+        {
+          "label": "identifica subcódigo 2003",
+          "pattern": "\\b2003\\b"
+        }
+      ],
+      "optional": [
+        {
+          "label": "explica causa de termistor de motor o cable desconectado",
+          "pattern": "(?:termistor|thermistor).{0,80}(?:desconect|cable|sobrecalent|overheat)"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde la causa con el código 103 (resistencia de frenado)",
+          "pattern": "\\b103\\b[^\\n]{0,80}(?:termistor|thermistor)",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "kone_03",
+      "question": "Según la instrucción de instalación de KONE 'Suspension ropes - Lubrication of suspension ropes' (AM-09.01.006, página 2), ¿qué tipo de cuerda de un ascensor NO debe lubricarse nunca?",
+      "category": "procedimiento_seguro_mantenimiento",
+      "severity": "critical",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica cuerdas del regulador/limitador de velocidad",
+          "pattern": "(?:regulador|limitador|gobernador)\\s+de\\s+velocidad|overspeed governor"
+        },
+        {
+          "label": "indica la prohibición de lubricar",
+          "pattern": "no\\s+(?:se\\s+)?(?:debe|deben|puede|pueden)\\s+lubricar|nunca\\s+(?:se\\s+)?lubri|proh[ií]be"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita página 2",
+          "pattern": "(?:p[aá]gina|p\\.)\\s*2\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "afirma que las cuerdas del regulador de velocidad sí deben lubricarse",
+          "pattern": "(?:regulador|limitador|gobernador)\\s+de\\s+velocidad[^.\\n]{0,80}s[ií]\\s+(?:debe|deben)\\s+lubricar",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "id": "kone_08",
+      "question": "Según la tabla de códigos de falla del Apéndice C.2 (página 38) del manual de puesta en marcha KONE ALTA AM-11.65.021, ¿qué código de falla de 4 dígitos corresponde a que el relé conectado en XSR1 quede abierto, y qué acción de revisión se recomienda?",
+      "category": "codigo_falla",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica código 0126",
+          "pattern": "\\b0126\\b"
+        },
+        {
+          "label": "identifica el conector XSR1",
+          "pattern": "\\bXSR1\\b"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona revisar el tablero/panel de control",
+          "pattern": "(?:tablero|armario|panel)\\s+de\\s+control"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con el código 0127 (contactor principal)",
+          "pattern": "\\b0127\\b[^\\n]{0,60}\\bXSR1\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "kone_10",
+      "question": "Según la tabla de valores del factor KTC (parámetro 6) en la página 19 del manual de puesta en marcha KONE ALTA AM-11.65.021, ¿cuál es el factor de par en Nm/A para las variantes de máquina 710185G01, G02, G09 y G18?",
+      "category": "parametro_tecnico",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "indica 121.1 Nm/A",
+          "pattern": "121[.,]1"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona la unidad Nm/A",
+          "pattern": "Nm\\s*/\\s*A"
+        },
+        {
+          "label": "referencia el parámetro KTC (6)",
+          "pattern": "\\bKTC\\b|par[aá]metro\\s*6\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con el valor de G03/G04/G60/G61 (100.6 Nm/A)",
+          "pattern": "100[.,]6",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "mitsubishi_03",
+      "question": "Según la nota de campo (FIELD NOTE) del diagrama ER.01 (página 3 de PLANO 1 mitsubishi.pdf), ¿qué dos conectores deben desconectarse antes de realizar la medición de resistencia de aislamiento?",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica RPJ",
+          "pattern": "\\bRPJ\\b"
+        },
+        {
+          "label": "identifica RPW",
+          "pattern": "\\bRPW\\b"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita página 3",
+          "pattern": "(?:p[aá]gina|p\\.)\\s*3\\b"
+        },
+        {
+          "label": "menciona la prueba de aislamiento",
+          "pattern": "(?:prueba|medici[oó]n).{0,20}aislamiento|insulation test"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "invierte la instrucción (dice que no hace falta desconectar)",
+          "pattern": "no (?:es necesario|hace falta|se requiere) desconectar",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "mitsubishi_10",
+      "question": "Según la nota de campo (FIELD NOTE) de la página 8 de PLANO 4 mitsubishi.pdf (dispositivo de parada final de terminal), cuando se proveen amortiguadores de resorte (spring buffers), ¿qué debe ajustarse para que actúe antes de que los amortiguadores entren en contacto?",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica los interruptores UOT y DOT",
+          "pattern": "(?=[\\s\\S]*\\bUOT\\b)(?=[\\s\\S]*\\bDOT\\b)"
+        },
+        {
+          "label": "indica que deben operar antes de que actúen los amortiguadores",
+          "pattern": "antes\\s+(?:de\\s+)?(?:que\\s+)?(?:los\\s+)?amortiguadores|before[\\s\\S]{0,25}buffer"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita página 8",
+          "pattern": "(?:p[aá]gina|p\\.)\\s*8\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "invierte la secuencia (después de que actúen los amortiguadores)",
+          "pattern": "despu[ée]s\\s+(?:de\\s+)?(?:que\\s+)?(?:los\\s+)?amortiguadores",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "otis_04",
+      "question": "Según la página 8 del procedimiento Otis de sustitución de la placa LCB I por la LCB II, ¿qué kit de materiales se debe usar y qué diámetro de broca de taladro se especifica para hacer los nuevos orificios?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica el kit VSP028",
+          "pattern": "VSP[\\s-]?0?28"
+        },
+        {
+          "label": "menciona la broca de 9/32",
+          "pattern": "9\\s*/\\s*32"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita la página 8",
+          "pattern": "p[aá]gina\\s*8"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde el kit con el código de control del documento (e-QUAL-002)",
+          "pattern": "e[- ]?QUAL[- ]?002",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "otis_08",
+      "question": "Según la tabla de verificación de la resistencia de frenado WBR en la página 27 del documento Otis Variodyn VF30BR/VF50BR/VF85BR (K603493 E), ¿cuál es el valor nominal de esa resistencia para el modelo VF30BR y en qué rango de ohms debe estar la lectura del multímetro para considerarla correcta?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica el valor nominal de 20 ohms",
+          "pattern": "20\\s*(?:Ω|ohm|ohmios)"
+        },
+        {
+          "label": "indica el rango 18 a 22 ohms",
+          "pattern": "18\\s*(?:a|y|-|–|\\.\\.\\.|…|hasta)\\s*22"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona la tolerancia ±10%",
+          "pattern": "10\\s*%"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con el valor del VF50BR (12,5 Ω / 11,25 Ω)",
+          "pattern": "12[,.]5\\s*(?:Ω|ohm)|11[,.]25",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "otis_10",
+      "question": "Según la lista de errores PIOVEC/PVEC (Tab. 4) de la página 17 del documento Otis VARIODYN 120/170/280 (K603 425 E), ¿qué número de error corresponde a la condición 'Overtemp HS Trigger (HW)', y con qué texto abreviado se muestra ese error en la pantalla SMLCD?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica el error número 16",
+          "pattern": "\\b16\\b"
+        },
+        {
+          "label": "menciona la abreviatura OVERT HSTrig",
+          "pattern": "OVERT\\s*HS\\s*Trig"
+        }
+      ],
+      "optional": [
+        {
+          "label": "cita la página 17",
+          "pattern": "p[aá]gina\\s*17"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con el error 17 (OVERT HS Lim, límite por software)",
+          "pattern": "OVERT\\s*HS\\s*Lim",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "tke_03",
+      "question": "Según la página 3 de \"errores mcp7.pdf\" (CTI-073), si el elevador FDG/FDN está subiendo por debajo del parámetro P42 y se cumple la condición DIRU=1 y DUD=0, ¿qué código de error genera la MCP7, y qué hace el sistema con el motor durante los 10 segundos siguientes, antes de pasar al estado 'Ini'?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica E140",
+          "pattern": "\\bE140\\b"
+        },
+        {
+          "label": "apaga el motor y permanece 10s en Blq",
+          "pattern": "10\\s*(?:s|seg)[^.\\n]{0,20}\\bBlq\\b|\\bBlq\\b[^.\\n]{0,20}10\\s*(?:s|seg)"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona que luego entra en estado Ini",
+          "pattern": "\\bIni\\b"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con A141 (caso por encima de P42, no apaga el motor)",
+          "pattern": "\\bA141\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "tke_05",
+      "question": "Según la página 1 de \"Errores Invi4,5,6 - copia.pdf\" (3Z.0006.PS), el error EE se describe como falla de seguridad del QC asociada al termostato de una unidad y al relé térmico de unos resistores. ¿De qué unidad es ese termostato, de qué resistores es ese relé térmico, y en qué punto de medición verifica el MCINV los 24V para este error?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica unidad IGBT",
+          "pattern": "\\bIGBT\\b"
+        },
+        {
+          "label": "identifica el punto 101",
+          "pattern": "\\b101\\b"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona resistores de frenagem/frenado",
+          "pattern": "resistor(?:es)?\\s+de\\s+fren"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde el punto de medición con T24+ (ese es el del error EC)",
+          "pattern": "T24\\+",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "tke_07",
+      "question": "Según la página 2 de \"Errores Invi4,5,6 - copia.pdf\" (3Z.0006.PS), ¿qué código de error indica que el dispositivo de memoria Flash del módulo MCINV no funciona correctamente, qué modelo de chip identifica el manual, y qué tipo de información contiene ese dispositivo?",
+      "category": "recuperacion_textual_directa",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica hB",
+          "pattern": "\\bhB\\b"
+        },
+        {
+          "label": "identifica el chip M25P40",
+          "pattern": "M25P40"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona validación del módulo por el proveedor/fabricante",
+          "pattern": "valida"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con hA (módulo no testeado por el proveedor)",
+          "pattern": "\\bhA\\b",
+          "severity": "technical_important"
+        }
+      ]
+    },
+    {
+      "id": "tke_09",
+      "question": "Según la página 1 de \"IRC 34_31.pdf\" (IRC-34/31, maniobra CMC-3 de Thyssen), al pasar de la maniobra CMC a CMC2, ¿qué conector queda como el único utilizado para Teleservicio, y qué conector de la generación anterior desaparece?",
+      "category": "lectura_visual",
+      "severity": "technical_important",
+      "source_page_required": false,
+      "required": [
+        {
+          "label": "identifica X13 como el que queda para Teleservicio",
+          "pattern": "\\bX13\\b"
+        },
+        {
+          "label": "identifica X12 como el que desaparece",
+          "pattern": "\\bX12\\b"
+        }
+      ],
+      "optional": [
+        {
+          "label": "menciona Teleservicio",
+          "pattern": "Teleservicio"
+        }
+      ],
+      "penalized": [
+        {
+          "label": "confunde con X22 (previsión de bus CAN, normalmente no montado, no es de Teleservicio)",
+          "pattern": "\\bX22\\b",
+          "severity": "technical_important"
+        }
+      ]
+    }
+  ]
+}

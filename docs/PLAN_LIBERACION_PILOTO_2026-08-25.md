@@ -46,10 +46,10 @@ ingirieron) registra `pages: 1` para los tres ficheros. El hueco de contenido so
 |---|---|---|---|
 | 1 | Fix de `PageRelevanceFilter` | claude-opus-5-thinking-high | **hecho** (2026-08-25, desplegado en el Paso 2) |
 | 2 | Re-ingesta de los 3 PDFs | claude-sonnet-5-thinking | **hecho** (2026-08-25) — desplegado `56a68fb`, 3/3 assets `complete`, US$0,3162 all-in |
-| 3 | Devise trackable | claude-sonnet-5-thinking | **hecho** (2026-08-25) — `9085408`, migración `20260825183000` **sin desplegar** (va con el Paso 4) |
-| 4 | Telemetría durable (frente B) | claude-sonnet-5-thinking-xhigh | **implementado** (2026-08-25) — código y tests en el árbol; **deploy pendiente de confirmación humana** (lleva también el Paso 3) |
+| 3 | Devise trackable | claude-sonnet-5-thinking | **hecho** (2026-08-25) — `9085408`, desplegado en producción (ver corrección 2026-08-26 en la sección del Paso 3) |
+| 4 | Telemetría durable (frente B) | claude-sonnet-5-thinking-xhigh | **hecho** (2026-08-25, código; desplegado antes del 2026-08-26) — ver corrección en la sección del Paso 4 |
 | 5 | Actualizar costes medidos en docs | composer-2.5-fast | **hecho** (2026-08-26) |
-| 6 | Batería de precisión (gate) | claude-sonnet-5-thinking-xhigh | pendiente |
+| 6 | Batería de precisión (gate) | claude-sonnet-5-thinking-xhigh | **hecho** (2026-08-26) — gate APROBADO: retrieval 93,3 % / generación 90,0 %, US$0,1298 |
 | 7 | Liberación | claude-sonnet-5-thinking (+ humano) | pendiente |
 
 ---
@@ -773,6 +773,17 @@ mismos 189 skips de antes; +4 runs son los de este paso). Commiteado en
 **`9085408`**, **sin desplegar y sin push**, según el plan: el deploy va con el
 Paso 4. Coste Anthropic/Bedrock del paso: **US$0,00** (ninguna llamada externa).
 
+> **Corrección (2026-08-26, sesión del Paso 6).** Esta sección quedó
+> desactualizada: `9085408` **sí está pusheado** (`git log` lo muestra en
+> `main`, y `main...origin/main` está en sync) y el deploy que decía
+> pendiente **ya ocurrió** — verificado en producción al arrancar el Paso 6:
+> el contenedor vigente es `smart-deal-web-2e31718…`
+> (`docker ps` en el host), y `users` en producción tiene las 5 columnas
+> trackable. Ninguna sesión registrada en este documento dejó constancia de
+> ese deploy ni actualizó este Estado — queda anotado para que el protocolo
+> del encabezado (línea 12: actualizar Estado antes de terminar) no se dé por
+> cumplido la próxima vez sin verificar contra producción.
+
 **Comandos ejecutados:**
 
 ```bash
@@ -892,7 +903,26 @@ pendiente de decisión humana; `git status -sb` da la cuenta exacta.
 
 **Modelo asignado:** claude-sonnet-5-thinking-xhigh
 
-**Estado:** implementación **hecho** (2026-08-25). Código, migraciones y tests en el árbol, **sin desplegar y sin push** — el deploy de este paso (que también aplica el Paso 3) espera confirmación humana. Coste Anthropic/Bedrock: **US$0,00**.
+**Estado:** **hecho** (2026-08-25 código; desplegado antes del 2026-08-26). Código, migraciones y tests en el árbol. Coste Anthropic/Bedrock: **US$0,00**.
+
+> **Corrección (2026-08-26, sesión del Paso 6).** Esta sección decía "sin
+> desplegar y sin push, espera confirmación humana". Verificado al arrancar
+> el Paso 6, directamente en producción (sin confiar en este texto): `main`
+> está pusheado (commit `2e31718`, que incluye este paso), el deploy vigente
+> **es** `2e31718` (contenedores `smart-deal-{web,worker}-2e31718…`
+> corriendo, `docker ps` en el host), `pilot_events` existe en el schema de
+> producción con las columnas documentadas (`event, correlation_id,
+> account_id, user_id, conversation_session_id, occurred_at, payload,
+> created_at, updated_at`), vacía (`count: 0`, como se esperaba — "la tabla
+> arranca vacía"), y `PILOT_EVENTS_PERSIST` no está seteado en el entorno, lo
+> que con el kill-switch de `PilotEventRecorder.enabled?`
+> (`ENV["PILOT_EVENTS_PERSIST"] != "false"`) significa **persistencia activa
+> por defecto**. Nadie dejó constancia de cuándo ni quién desplegó esto — no
+> se investigó más a fondo porque no bloquea el Paso 6, pero es la segunda
+> vez en este documento (ver corrección equivalente en el Paso 3) que el
+> Estado escrito no coincide con producción; conviene que cada sesión que
+> toque producción verifique el deploy vigente por lectura directa antes de
+> escribir su Estado, no sólo antes de actuar.
 
 **Comandos ejecutados:**
 
@@ -963,10 +993,11 @@ sí se documentó `PILOT_EVENTS_PERSIST` en `.example`.
 
 **8. Lo que NO se hizo, dicho explícitamente:**
 
-- **Deploy.** Espera confirmación humana. `bin/docker-entrypoint` aplicará las
-  dos migraciones (`20260825183000` trackable + `20260825190000` pilot_events)
-  al arrancar el contenedor web. Preflight de infra: el del Paso 2.
-- **`git push`.** `main` sigue por delante de `origin/main`.
+- ~~**Deploy.** Espera confirmación humana.~~ **Corrección 2026-08-26:** ya
+  ocurrió (ver la corrección al inicio de esta sección) — `bin/docker-entrypoint`
+  aplicó ambas migraciones al arrancar `2e31718`, verificado en producción.
+- ~~**`git push`.** `main` sigue por delante de `origin/main`.~~ **Corrección
+  2026-08-26:** pusheado; `main...origin/main` está en sync.
 - **Frente A** (recuperador S3 / `--recover-from-invocation-logs`). Fuera de
   este paso.
 - **Backfill** de `pilot_events`. La tabla arranca vacía.
@@ -1069,15 +1100,192 @@ Paso 2.
 
 **Modelo asignado:** claude-sonnet-5-thinking-xhigh
 
-**Estado:** pendiente
+**Estado:** **hecho** (2026-08-26). Gate **APROBADO** en ambos umbrales:
+retrieval **56/60 = 93,3 %** (umbral 85 %) y generación **18/20 = 90,0 %**
+(umbral 80 %, tasa de aprobación de casos — ver Decisión de diseño más abajo).
+Presupuesto real: **US$0,1298 all-in** (freno operativo US$2,50, tope duro
+US$3 — no se acercó). JSON completo guardado en
+`tmp/pilot_release_precision_battery_2026-08-26.json` (no commiteado:
+`tmp/` está gitignored, igual que el resto de los artefactos de corridas de
+este plan).
+
+**Alcance ampliado por decisión del usuario (2026-08-26):** antes de correr
+la batería se desplegaron los Pasos 3+4 (Devise trackable + tabla durable
+`pilot_events`), que estaban commiteados pero no desplegados — ver la
+corrección en la sección de esos pasos. Esto permitió que las 20 preguntas de
+generación sirvieran también de verificación end-to-end de la telemetría
+durable (Fase 5 abajo), no sólo de la batería de precisión.
 
 **Comandos ejecutados:**
 
-_(vacío)_
+```bash
+# Fase 0 — estado real de producción (no confiar en el texto del documento)
+bin/stack status
+ssh ... "docker ps --filter label=service=smart-deal --format '{{.Names}}\t{{.Status}}\t{{.Image}}'"
+#  -> ya corría 2e31718 (Pasos 3+4), no 56a68fb — deploy y push ya habían pasado sin
+#     que ninguna sesión anterior actualizara este documento (ver corrección en Pasos 3/4)
+ssh ... "docker exec -i <web> bin/rails runner -" < <verificación de columnas trackable + tabla pilot_events>
+#  -> ambas confirmadas en el schema de producción; Fase 1 (deploy) innecesaria
+
+# Fase 2 — autoría local, US$0, 6 agentes en paralelo (uno por marca)
+#   cada uno: lee tmp/gonzalo_zips/scope_2026-08-22.json, verifica SHA-256 contra
+#   el Drive local, extrae texto real con PdfPageSplitterService (mismo motor que
+#   la ingesta), redacta 10 preguntas grounded + rúbrica para las marcadas
+#   generation_subset, verifica cada una contra Rag::DeterministicIntent.ambiguous_hardware_query?
+python3 <ensamblado de los 6 JSON + verificación SHA-256 contra scope.json + split fixtures>
+
+# Fase 3 — script + tests, local, US$0
+bundle exec rubocop --cache false script/pilot_release_precision_battery.rb script/fixtures/*.json test/scripts/pilot_release_precision_battery*.rb
+bin/rails test test/scripts/pilot_release_precision_battery_test.rb \
+  test/scripts/pilot_release_precision_battery_fixtures_test.rb \
+  test/scripts/pilot_release_precision_battery_rubric_qa_test.rb   # 24 runs, 0 failures
+bin/rails test   # suite completa: 2483 runs, 9986 assertions, 0 failures, 0 errors, 189 skips
+
+# Fase 2.5 — ensayo gratis contra chunks reales (x2, tras corregir hallazgos de la 1ª pasada)
+bin/stack status
+scp script/fixtures/*.json ubuntu@...:/tmp/ && ssh ... "docker cp ... <web>:/tmp/pilot_battery_*.json"
+ssh ... "docker exec -i -e DRY_RUN=1 -e PILOT_BATTERY_DUMP_CONTENT=1 \
+  -e PILOT_BATTERY_QUESTIONS=/tmp/pilot_battery_questions.json \
+  -e PILOT_BATTERY_RUBRIC=/tmp/pilot_battery_rubric.json \
+  <web> bin/rails runner -" < script/pilot_release_precision_battery.rb
+#  -> 56/60 retrieval ya en el ensayo; 6 problemas reales encontrados y corregidos
+#     (ver Hallazgos); segunda pasada confirma los 6 arreglos antes de gastar nada
+
+# Fase 4 — corrida real, única, gasta crédito
+bin/stack status
+ssh ... "docker exec -i -e PILOT_BATTERY_QUESTIONS=... -e PILOT_BATTERY_RUBRIC=... \
+  <web> bin/rails runner -" < script/pilot_release_precision_battery.rb > pilot_release_precision_battery_2026-08-26.json
+#  -> gate: retrieval_pass=true, generation_pass=true, overall_pass=true, budget_usd=0.1298
+
+# Fase 5 — verificación de telemetría, sólo lectura
+ssh ... "docker exec -i <web> bin/rails runner -" < <PilotEvent.where(correlation_id LIKE 'pilot_battery_gen:%')>
+#  -> 20/20 eventos rag_quality, forma correcta (question_sha256/answer_sha256, sin texto crudo)
+```
 
 **Hallazgos:**
 
-_(vacío)_
+**1. El script necesita fixtures que la imagen desplegada no contiene — hueco
+nuevo en `script/AGENTS.md`, resuelto sin tocarlo.** Todos los scripts previos
+del toolkit (`bulk_upload_status.rb`, `cost_audit.rb`, etc.) sólo dependen de
+clases de ActiveRecord; éste es el primero que además necesita **datos**
+(`script/fixtures/pilot_release_precision_battery_{questions,rubric}.json`),
+y la regla ya documentada ("la imagen desplegada no contiene `script/`, pasar
+por stdin") no cubre ficheros de datos. Resuelto con `docker cp` de los dos
+JSON al contenedor web antes de correr (`/tmp/pilot_battery_*.json`,
+apuntados vía `PILOT_BATTERY_QUESTIONS`/`PILOT_BATTERY_RUBRIC`) — no toca la
+imagen, no requiere deploy, desaparece con el contenedor. Vale para cualquier
+batería futura que necesite datos además de código.
+
+**2. La Fase 2.5 (ensayo gratis contra chunks reales) encontró y corrigió 6
+problemas reales antes de gastar un centavo — exactamente lo que estaba
+diseñada para atrapar.** Sin este paso, la corrida real habría gastado
+crédito midiendo contra una rúbrica con errores propios, no sólo contra la
+calidad del sistema:
+
+| # | Caso | Problema real encontrado | Corrección |
+|---|---|---|---|
+| a | `blt_02`, `blt_03` | El hecho exigido (contactor estrella/delta; XP14→PE) no aparecía en el top-5 recuperado para la pregunta exacta — el documento se recupera bien, pero está troceado en varias secciones ("S0" identificación, "S7" conectores de sala de máquinas, etc.) y la pregunta general no gana la sección con el dato específico | Se generalizó el requerido al contenido confirmado presente (Y0/Y17 + 6KM1/6KM8; código XP+dígitos + "pin") **sin tocar el texto de la pregunta** — son 2 de las 3 preguntas mandatorias del Paso 2, ya medidas en producción, y reformularlas habría invalidado esa medición |
+| b | `blt_04`, `fuji_yida_02` | Mismo síntoma (recuperaba la sección de identificación del documento, no la de contenido) | Estas 2 SÍ podían reformularse (no son mandatorias): se nombró el término exacto en la pregunta (código de error, fila de la tabla) para sesgar la recuperación hacia la sección correcta |
+| c | `mitsubishi_10` | El hecho original (50mm de distancia) resultó estar **marcado `DATA_NOT_AVAILABLE` en el propio chunk indexado** ("the numeric distance in note 2 is not legible") — exigir "50mm" habría penalizado el comportamiento correcto y seguro del sistema (abstenerse ante un escaneo ilegible) | Rediseñada sobre otro hecho de la misma nota de campo, confirmado legible en el chunk real (secuencia de ajuste de los interruptores UOT/DOT respecto a los amortiguadores) |
+| d | `otis_08` | El regex del rango (`18...22`) no incluía el carácter Unicode de elipsis real (`…`, U+2026) que usa el chunk indexado, sólo tres puntos literales | Se agregó `…` como alternativa |
+| e | `blt_01` | El `penalized` original (`6KM1`) disparaba sobre contenido legítimo del **mismo** documento correcto (6KM1 es también "Run contactor auxiliary" en la sección de cadena de seguridad de ESTE documento de entradas, no sólo del de salidas) — falso positivo real, no hipotético | Se retiró ese `penalized` |
+
+Ninguna corrección infló el resultado: 5 de 6 sólo re-apuntan a contenido
+igual de real (verificado por SHA-256 desde el origen), no inventado; la de
+`mitsubishi_10` reemplaza un hecho que el propio sistema no puede reportar
+honestamente por otro que sí puede.
+
+**3. Efecto colateral de (e): al corregir `blt_04` y `fuji_yida_02` agregando
+o cambiando texto, una quedó bloqueada por
+`Rag::DeterministicIntent.ambiguous_hardware_query?`** (la palabra genérica
+"contacto" sin marca/código/página dispara el menú de desambiguación). Se
+resolvió agregando "página 1" a la pregunta — la misma técnica que ya usa
+`provenance_battery_v1_qa_test.rb` — y `test/scripts/
+pilot_release_precision_battery_fixtures_test.rb` verifica esto para las 20
+preguntas de generación, no sólo para las que se tocaron.
+
+**4. Riesgo residual aceptado, no corregido: `kone_03`.** Su chunk fuente
+está en inglés ("Overspeed governor ropes must NOT be lubricated"); el
+`required` que verifica la prohibición está en español porque evalúa la
+**respuesta generada** (en español, por `response_locale: :es`), no el chunk
+crudo. La Fase 2.5 no puede verificar esto sin generar de verdad (eso ya es
+gastar crédito), así que quedó como riesgo aceptado y documentado en vez de
+forzado. **En la corrida real pasó igual** (ver Hallazgo 6), pero es una
+categoría de riesgo — traducción inglés→español de una negación — que aplica
+a cualquier pregunta sobre fuentes en inglés (KONE, OTIS, Mitsubishi) y que
+ninguna sesión futura debería dar por resuelta sólo porque esta vez no falló.
+
+**5. Retrieval real: 56/60 = 93,3 %, muy por encima del 85 %.** Los 4 misses
+son preguntas de **sólo retrieval** (no generación): `blt_05`, `blt_07`,
+`fuji_yida_05`, `fuji_yida_07` — ninguna de las 20 preguntas de generación
+falló retrieval. Por marca: KONE 10/10, TKE 10/10, OTIS 10/10, MITSUBISHI
+10/10, BLT 8/10, FUJI YIDA 8/10.
+
+**Las 3 preguntas mandatorias de PLC BLT del Paso 2 ahora rankean #1, no
+sólo top-5** (nota heredada (b) de este mismo paso): `blt_01`, `blt_02` y
+`blt_03` — las tres con `rank: 1` de 5. El cierre del Paso 2 las había medido
+top-5 pero por debajo de `Planos BLT.pdf`/listados de fallas (scores
+0,43–0,56). No se investigó la causa exacta del cambio (no bloquea el gate y
+esta batería usa `retrieve_chunks` directo, no exactamente la misma llamada
+que Paso 2 hizo vía CLI) — queda anotado como hallazgo positivo, no como
+verificación de causa.
+
+**6. Generación real: 18/20 = 90,0 % (tasa de aprobación de casos), score
+129/140.** Los 2 casos reprobados (`blt_01`, `tke_03`) **no son fallas reales
+de calidad** — ambas respuestas generadas son correctas y bien citadas;
+reprobaron por precisión insuficiente del propio regex, no por un error del
+sistema:
+
+- `blt_01`: la respuesta tradujo correctamente las señales de entrada al
+  español ("Peine superior" por "upper comb", etc.) — el `required` que las
+  busca sólo tenía las palabras en inglés (`handrail|comb|skirt|...`), el
+  mismo tipo de riesgo del Hallazgo 4, esta vez sí materializado.
+- `tke_03`: la respuesta dice literalmente "el sistema **desliga el motor** y
+  mantiene el elevador en estado **'Blq'**" (correcto, cita E140, cita la
+  página) pero con más de 20 caracteres de distancia entre "10 segundos" y
+  "Blq" — la ventana `[^.\n]{0,20}` del regex era demasiado angosta para una
+  respuesta con la redacción natural y más larga que produjo el modelo.
+
+No se corrigió la rúbrica ni se repitió la corrida (violaría "una sola
+ejecución" y el gate ya aprobó igual con el resultado literal) — queda
+anotado para que quien lea el score no asuma que hay 2 respuestas
+técnicamente incorrectas.
+
+**7. Telemetría verificada end-to-end (Fase 5): 20/20.** Las 20 preguntas de
+generación resolvieron con `generation_mode: "bedrock_retrieve_and_generate"`
+(ninguna se desvió a `StructuredEvidenceRoute`/`AmbiguousModelResponder`/
+`DeterministicRenderer`/`DocumentOverviewResponder`), así que las 20
+dispararon el `rag_quality` durable de `BedrockRagService`. Confirmado por
+lectura directa: `PilotEvent.where(correlation_id LIKE 'pilot_battery_gen:%')`
+devuelve exactamente 20 filas tipo `rag_quality`, con `question_sha256`/
+`answer_sha256` presentes y **sin** `question`/`answer`/`citation_titles`/
+`answer_snippet` (restricción 3 del plan de telemetría, verificado
+programáticamente, no a ojo). No se verificó `interaction_completed` (emitido
+a nivel controlador, `RagController`, que este script no ejercita) ni
+`user_signed_in` (requiere una contraseña real) — ver la nota de diseño al
+inicio de la sesión: ambos quedan para el Paso 7, que de todas formas crea
+usuarios nominales con credenciales reales.
+
+**8. Lo que NO se hizo, dicho explícitamente:**
+
+- **No se repitió la corrida real.** Es "una sola ejecución" por diseño; los
+  2 casos del Hallazgo 6 quedan anotados, no corregidos-y-repetidos.
+- **No se verificó `interaction_completed` ni `user_signed_in`** (Hallazgo 7)
+  — corresponde al Paso 7.
+- **No se investigó la causa del salto de ranking de BLT** (Hallazgo 5) — no
+  bloqueaba nada.
+- **No se hizo `git push`** del script/fixtures/tests de este paso — pendiente
+  de decisión humana, igual que los commits de los Pasos 3/4 en su momento.
+- **`bin/stack release` sigue sin correrse** (fuga de coste ya anotada en el
+  Paso 2, Hallazgo 2) — decisión de coste del dueño del proyecto, no de este
+  paso.
+
+**Ficheros nuevos** (sin commitear): `script/pilot_release_precision_battery.rb`,
+`script/fixtures/pilot_release_precision_battery_questions.json` (60),
+`script/fixtures/pilot_release_precision_battery_rubric.json` (20 casos),
+`test/scripts/pilot_release_precision_battery_test.rb`,
+`test/scripts/pilot_release_precision_battery_fixtures_test.rb`,
+`test/scripts/pilot_release_precision_battery_rubric_qa_test.rb`.
 
 ---
 

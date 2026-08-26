@@ -1,0 +1,782 @@
+[
+  {
+    "id": "blt_01",
+    "brand": "BLT",
+    "question": "¿Cuáles son las entradas del PLC del escalador BLT y qué señales Omron documenta?",
+    "expected_sha256": "50e921385b8b3064b2fff0fc394ecd74522ad39a649e6e7933cf35670dc11b2d",
+    "expected_rel": "BLT/BLT/05.- BLT-ES_PLC input.pdf",
+    "expected_basename": "05.- BLT-ES_PLC input.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Página 1 (hoja 5 de 7, control DSCS9002) es el diagrama de entradas del PLC Omron ('omron plc (telco sensor)') de un escalador BLT. Documenta entradas como monitor de pasamanos izquierdo y derecho ('left/right handrail monitor'), parada de emergencia de subida/bajada, peines superior e inferior ('upper comb', 'down comb'), guardapiés ('skirt'), interruptores de pasamanos arriba/abajo, cadena de tracción ('drive chain'), cadena de peldaños ('step chain'), pandeo de peldaño ('step sag'), relé térmico ('heat relay'), radar/fotocélula superior e inferior ('Up Radar', 'Down Radar') y protección de reversa ('Backspin Protect').",
+    "generation_subset": true
+  },
+  {
+    "id": "blt_02",
+    "brand": "BLT",
+    "question": "¿Qué salidas documenta el PLC BLT-ES output para bobinas y contactores?",
+    "expected_sha256": "ddae9a0f9af53a91b922c2ec3d73ad317aaa35c4a9599eff245a155fd8e14c85",
+    "expected_rel": "BLT/BLT/08.- BLT-ES_PLC output.pdf",
+    "expected_basename": "08.- BLT-ES_PLC output.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Chunk real indexado (S0, verificado 2026-08-26 en el ensayo DRY_RUN de Fase 2.5, recuperado en rank 1 para esta pregunta exacta): 'covers PLC digital output channels 10CH and 11CH, outputs Y0-Y17, driving relay coils RC1-RC8 and contactors 6KM1-6KM8, 6KA1-6KA2'. La pregunta NO se reformula (es una de las 3 mandatorias del Paso 2, ya medidas en producción); se corrige el REQUERIDO de la rúbrica, que apuntaba a 'contactor estrella/delta' — un dato que el propio evidence_note original ya marcaba como no inequívoco en el CAD y que el chunk realmente recuperado no contiene — por 'Y0/Y17' y '6KM1/6KM8', confirmados presentes.",
+    "generation_subset": true
+  },
+  {
+    "id": "blt_03",
+    "brand": "BLT",
+    "question": "¿Cómo se identifican los bornes y pines de los conectores QS?",
+    "expected_sha256": "6bcb89e82e7ff7022327546685bf75ea6f7984fcf770012babc3539d8b24c5da",
+    "expected_rel": "BLT/Conectores QS.pdf",
+    "expected_basename": "Conectores QS.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Chunk real indexado (S7, verificado 2026-08-26 en el ensayo DRY_RUN de Fase 2.5, recuperado en rank 2 para esta pregunta exacta): tabla de pinout con conectores con formato 'XP' + dígitos (XP98, XP55, XP2, XP3, XP107, XP4, XP8) y columnas 'Pin | Signal'. La pregunta NO se reformula (mandatoria del Paso 2). Se corrige el REQUERIDO: el hecho original (XP14, pin 8 = PE) es real (viene del PDF crudo, verificado con SHA-256) pero no aparece en el top-5 recuperado para esta pregunta general — la sección de cabina (XP14) no es la que gana la recuperación; la de sala de máquinas (XP2/XP3/XP4/XP8/XP98/XP107) sí. Se generaliza el chequeo a la familia de códigos XP + tabla de pines, robusto a cuál sección exacta recupere el sistema.",
+    "generation_subset": true
+  },
+  {
+    "id": "blt_04",
+    "brand": "BLT",
+    "question": "En el test de funcionamiento BLT (PLC Omron), en la fila del contacto de la cadena de tracción del motor, página 1, ¿qué holgura del rodillo especifica la observación del mensaje de error 10?",
+    "expected_sha256": "da477611c686b1fcf816444e8c66930956e1ea97dda6ad1c47b6ef49850ad5d2",
+    "expected_rel": "BLT/BLT/codigo Errores_Escalas_BLT.pdf",
+    "expected_basename": "codigo Errores_Escalas_BLT.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Página 1 ('Test de Funcionamiento BLT (PLC OMRON) Bansander'), fila 'Contacto de la cadena de tracción del motor', mensaje de error 10: 'El rodillo del contacto de cadena debe tener un hogura [holgura] de 2 mm.' Pregunta renombrada (Fase 2.5): la formulación general original recuperaba en el top-5 sólo la sección de identificación del documento.",
+    "generation_subset": true
+  },
+  {
+    "id": "blt_05",
+    "brand": "BLT",
+    "question": "En el test de funcionamiento BLT (PLC Omron), ¿qué acción recomienda el documento cuando se interrumpe el Relé de Fase?",
+    "expected_sha256": "da477611c686b1fcf816444e8c66930956e1ea97dda6ad1c47b6ef49850ad5d2",
+    "expected_rel": "BLT/BLT/codigo Errores_Escalas_BLT.pdf",
+    "expected_basename": "codigo Errores_Escalas_BLT.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Página 1, fila 'Relé de Fase' / 'Interrupción del Relé de Fase', mensaje de error 5: observación 'Revisar o medir fases.'",
+    "generation_subset": false
+  },
+  {
+    "id": "blt_06",
+    "brand": "BLT",
+    "question": "En el listado de fallas MPK708A, ¿qué indica el código E12 y qué método de reanudación documenta?",
+    "expected_sha256": "c24bf04a7c7d4d2a8e10c9fd5e0cf3e4af82b6737bb066960b9c8bbd9702e594",
+    "expected_rel": "BLT/Listado Fallas MPK 708A.pdf",
+    "expected_basename": "Listado Fallas MPK 708A.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Página 1, fila E12 = 'Error de Inverter'. Columna 'Display de Piso muestra la falla': 'SI, computador registra la falla.' Columna 'Método de Reanudar': 'Conectar monitor y revisar o resetear falla.'",
+    "generation_subset": true
+  },
+  {
+    "id": "blt_07",
+    "brand": "BLT",
+    "question": "En la tabla de información de display MPK708A, ¿qué indica el punto de entrada 0.7 y cuándo se activa?",
+    "expected_sha256": "c24bf04a7c7d4d2a8e10c9fd5e0cf3e4af82b6737bb066960b9c8bbd9702e594",
+    "expected_rel": "BLT/Listado Fallas MPK 708A.pdf",
+    "expected_basename": "Listado Fallas MPK 708A.pdf",
+    "source_pages": [
+      3
+    ],
+    "evidence_note": "Página 3 ('DETALLE DE INFORMACION DE DISPLAY MPK'), tabla Input Point Content, fila '0.7 Earthquake — ON cuando Sismo ocurre.'",
+    "generation_subset": false
+  },
+  {
+    "id": "blt_08",
+    "brand": "BLT",
+    "question": "En el plano de Conectores NS del BLT, ¿qué referencia de interruptor 5SQ corresponde a cada uno de los conectores XS52, XS53 y XS54?",
+    "expected_sha256": "1a87f06624ba7d65dd31e6979f22091720bb281bc014f65091d02f7159887509",
+    "expected_rel": "BLT/Conectores NS(1).pdf",
+    "expected_basename": "Conectores NS(1).pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Página 1 ('CONECTORES NS JHONSON'S VALDIVIA YDGM-112T (NS#16)'), fila 'CONECTOR CABLE PIT / CAR BUFFER 5SQ6 / CWT BUFFER 5SQ7 / ROPE BROKEN SW 5SQ5' con códigos XPD/XPD1, XS52, XS53, XS54 respectivamente: XS52=CAR BUFFER=5SQ6; XS53=CWT BUFFER=5SQ7; XS54=ROPE BROKEN SW=5SQ5.",
+    "generation_subset": false
+  },
+  {
+    "id": "blt_09",
+    "brand": "BLT",
+    "question": "En el plano de Conectores NS del BLT, ¿qué señales entrega el conector XP101/XP103 hacia el inversor?",
+    "expected_sha256": "1a87f06624ba7d65dd31e6979f22091720bb281bc014f65091d02f7159887509",
+    "expected_rel": "BLT/Conectores NS(1).pdf",
+    "expected_basename": "Conectores NS(1).pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "Página 2, columna con encabezado 'CONTROL A INVERSOR', conector XP101/XP103: pin 1=ENA, pin 2=FWD, pin 3=REV, pin 4=V0, pin 5=V1, pin 6=V2, pin 7=V3, pin 8=VN (además 9=314, 10=24V, 11=0V, 12=311, y 17-21=401/402/404/321/320).",
+    "generation_subset": false
+  },
+  {
+    "id": "blt_10",
+    "brand": "BLT",
+    "question": "En el esquema Power del BLT (control DSCS9002, hoja 1 de 7), ¿qué indica la nota sobre los fusibles 1FU1, 1FU2 y 1FU3?",
+    "expected_sha256": "935c4752f6612cee2947da857636782f16311e69642f0850c853540f8a97f687",
+    "expected_rel": "BLT/BLT/01.- BLT-ES_Power.pdf",
+    "expected_basename": "01.- BLT-ES_Power.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Página 1, nota al pie: '1FU1、1FU2、1FU3 en el transformador; el DC24V del transformador no se usa' (1FU1, 1FU2 y 1FU3 están montados sobre el transformador, y la salida DC24V de ese transformador no se utiliza).",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_01",
+    "brand": "FUJI YIDA",
+    "question": "Según la tabla de códigos de error del controlador BL6 de Fuji Yida (página 1), ¿qué código de error corresponde a un circuito abierto en la serie de las puertas durante el funcionamiento del elevador, y qué dos cosas debe verificar el técnico como solución?",
+    "expected_sha256": "be0cc72ca2a36b5b71b92193d3b85467e4c96dc960b5c415da075d0f4149e641",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/codigos error BL6.pdf",
+    "expected_basename": "codigos error BL6.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1, tabla CODIGOS DE ERROR BL6: 'Er2 — Fallas de serie de las puertas: circuito abierto en el funcionamiento del elevador — SOLUCION: Verifique las condiciones de trabajo de la paleta de la puerta y el circuito de enclavamiento de la puerta.'",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_02",
+    "brand": "FUJI YIDA",
+    "question": "En la tabla de códigos de error del controlador BL6 de Fuji Yida, ¿qué indica el código Er19 y qué parámetro se recomienda disminuir en el menú de usuario como primera solución?",
+    "expected_sha256": "be0cc72ca2a36b5b71b92193d3b85467e4c96dc960b5c415da075d0f4149e641",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/codigos error BL6.pdf",
+    "expected_basename": "codigos error BL6.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "p2: 'Er19 - La distancia de desaceleración para el piso objetivo no es suficiente ... SOLUCION: 1. Disminuya \"Least Speed\" en el menú de usuario.' Pregunta renombrada (Fase 2.5, nombrando Er19 explícitamente): la formulación original recuperaba en el top-5 sólo la sección de la tabla con los códigos Er2-Er11, no la de Er19.",
+    "generation_subset": true
+  },
+  {
+    "id": "fuji_yida_03",
+    "brand": "FUJI YIDA",
+    "question": "¿Qué código de error del controlador BL6 de Fuji Yida se produce por una falla de hundimiento en la fuente de alimentación de conmutación externa de 24V, y por debajo de qué voltaje se emite el aviso de falla según el manual?",
+    "expected_sha256": "be0cc72ca2a36b5b71b92193d3b85467e4c96dc960b5c415da075d0f4149e641",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/codigos error BL6.pdf",
+    "expected_basename": "codigos error BL6.pdf",
+    "source_pages": [
+      4
+    ],
+    "evidence_note": "p4: 'Er34 — fuente de alimentación de conmutación externa 24v falla de hundimiento — SOLUCION: 1. Verifique la fuente de alimentación de conmutación externa de 24v. 2. aviso de falla dado si detecta que el voltaje externo es menor que 16v.'",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_04",
+    "brand": "FUJI YIDA",
+    "question": "En el tablero de transferencia de llamadas de pasillo y despliegue BL2000-HXK-V9 de Fuji Yida, según la tabla de definición de conectores de la página 1, ¿qué señal está asignada al pin J1-3 y cuál al pin J1-4?",
+    "expected_sha256": "d421a92d307cbcdf97305a84eced74ee0c831b5109d9ddbf098ccd36b27dd58c",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/BL2000-HXK-V9 Manual.pdf",
+    "expected_basename": "BL2000-HXK-V9 Manual.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1, tabla 'Definition', conector J1 (Power and Communication): 'J1-1 24V Power input', 'J1-2 24V ground', 'J1-3 CAN Bus H', 'J1-4 CAN Bus L'.",
+    "generation_subset": true
+  },
+  {
+    "id": "fuji_yida_05",
+    "brand": "FUJI YIDA",
+    "question": "En el tablero BL2000-HXK-V9 de Fuji Yida, ¿qué conector agrupa la entrada del botón de llamada de subida (up hall call) con su señal de respuesta, y qué conector agrupa la llamada de bajada (down hall call) con la suya?",
+    "expected_sha256": "d421a92d307cbcdf97305a84eced74ee0c831b5109d9ddbf098ccd36b27dd58c",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/BL2000-HXK-V9 Manual.pdf",
+    "expected_basename": "BL2000-HXK-V9 Manual.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1: 'J2 ... Up hall call button input and reply output' (J2-1 Up call reply, J2-4 Up call input) vs 'J3 ... Down hall call button input and reply output' (J3-1 Down call reply, J3-4 Down call input).",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_06",
+    "brand": "FUJI YIDA",
+    "question": "En la tabla 3.1 de códigos de señal de salida de terminal del tablero BL2000-HXK-V9 de Fuji Yida (página 3), ¿qué número de código corresponde a la señal 'Park' y cuál corresponde a la señal 'Error'?",
+    "expected_sha256": "d421a92d307cbcdf97305a84eced74ee0c831b5109d9ddbf098ccd36b27dd58c",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/BL2000-HXK-V9 Manual.pdf",
+    "expected_basename": "BL2000-HXK-V9 Manual.pdf",
+    "source_pages": [
+      3
+    ],
+    "evidence_note": "p3, Tabla 3.1 'Terminal output signals encode list': fila '00 Park' y fila '06 Error'.",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_07",
+    "brand": "FUJI YIDA",
+    "question": "Según el plano eléctrico BL6 de Fuji Yida (hoja 2, página 3), ¿qué dispositivo corresponde a la sigla SNQ y qué dispositivo corresponde a la sigla SKS?",
+    "expected_sha256": "29b389c59dbb148a8a337684483b0dfb7a81fcfba48f83caf6f923c8bf47353f",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/BL6-PLANO ELECTRICO.pdf",
+    "expected_basename": "BL6-PLANO ELECTRICO.pdf",
+    "source_pages": [
+      3
+    ],
+    "evidence_note": "p3 (Sheet 2, Draw No. TRA112, título 'Safety, Door Interlock, Brake Circuit'), leyenda de interruptores: 'SNQ Safety gear switch' (terminal 108) y 'SKS Rope break-off switch' (terminal 111).",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_08",
+    "brand": "FUJI YIDA",
+    "question": "En el plano eléctrico BL6 de Fuji Yida (hoja de circuito principal, página 1), ¿a través de qué dos terminales del variador BL6-U se conecta la resistencia de frenado RZD?",
+    "expected_sha256": "29b389c59dbb148a8a337684483b0dfb7a81fcfba48f83caf6f923c8bf47353f",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/BL6-PLANO ELECTRICO.pdf",
+    "expected_basename": "BL6-PLANO ELECTRICO.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1: bloque 'BL6-U' con terminales 'B1' y 'B2' conectados a 'Braking resistor' / 'RZD'.",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_09",
+    "brand": "FUJI YIDA",
+    "question": "Según el procedimiento de rescate de pasajeros 'con sala de máquinas y reductor' de Yida Elevator (página 1, paso 4), después de cortar el suministro eléctrico en el tablero de control del ascensor, ¿hacia qué posición debe girarse el llavín?",
+    "expected_sha256": "beb03a578da3e370cabd8c031384cb6b34291f649c6a0faf06718d33512e1d96",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/procedimientos de rescate/Procedimiento Rescate Con Sala de Maquinas y Reductor Rev.1.pdf",
+    "expected_basename": "Procedimiento Rescate Con Sala de Maquinas y Reductor Rev.1.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1, paso 4: 'DIRÍJASE A SALA DE MÁQUINAS, CORTAR EL SUMINISTRO ELECTRICO DEL EQUIPO DEL TABLERO DE CONTROL DEL ASCENSOR (FOTO 1). LUEGO GIRAR EL LLAVÍN DESDE LA POSICIÓN NORMAL HACIA LA POSICIÓN DE INSPECCIÓN (FOTO 2).'",
+    "generation_subset": false
+  },
+  {
+    "id": "fuji_yida_10",
+    "brand": "FUJI YIDA",
+    "question": "Según el procedimiento de rescate de pasajeros 'con sala de máquinas y reductor' de Yida Elevator (página 3), ¿cuál es el número de teléfono de emergencia de Andes Lifts para el horario de 18:00 en adelante y los fines de semana?",
+    "expected_sha256": "beb03a578da3e370cabd8c031384cb6b34291f649c6a0faf06718d33512e1d96",
+    "expected_rel": "FUJI YIDA/yida/enviar a servicio fabrimetal/procedimientos de rescate/Procedimiento Rescate Con Sala de Maquinas y Reductor Rev.1.pdf",
+    "expected_basename": "Procedimiento Rescate Con Sala de Maquinas y Reductor Rev.1.pdf",
+    "source_pages": [
+      3
+    ],
+    "evidence_note": "p3: 'TELÉFONO DE EMERGENCIA ANDES LIFTS — 8:00–18:00 HRS: 2-2555 4508 — 18:00 HRS EN ADELANTE Y FIN DE SEMANA: 9-62973624.'",
+    "generation_subset": false
+  },
+  {
+    "id": "kone_01",
+    "brand": "KONE",
+    "question": "Según la tabla de códigos de falla del variador V3F16L (página 1 del documento 'V3F16L Drive FAULT CODES'), ¿qué código de falla agrupa la protección del motor (Motor Protection) y qué causa se registra para su subcódigo 2003?",
+    "expected_sha256": "5538e641f8eb36b85b1d84d3dc09fac1c45bb93c3d72c1e1a29b4af177d8f5f3",
+    "expected_rel": "KONE/MINISPACE/codigos de falla v3f.pdf",
+    "expected_basename": "codigos de falla v3f.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1, fila '104 Motor Protection' / '104  2003  Motor termistor ... Motor overheat or motor termistor cable disconnected ... Drive will not start'.",
+    "generation_subset": true
+  },
+  {
+    "id": "kone_02",
+    "brand": "KONE",
+    "question": "Según la tabla de códigos de falla del variador V3F16L (página 2 del documento 'V3F16L Drive FAULT CODES'), dentro del código de falla 120 (Start sequence), ¿qué describe el subcódigo 2026 y qué causa se le atribuye?",
+    "expected_sha256": "5538e641f8eb36b85b1d84d3dc09fac1c45bb93c3d72c1e1a29b4af177d8f5f3",
+    "expected_rel": "KONE/MINISPACE/codigos de falla v3f.pdf",
+    "expected_basename": "codigos de falla v3f.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "p2, fila '120 Start sequence' / '2026 Tacho signal active at wrong time ... Tachometer has very high noise level or lift moves too early at start ... speed is over 2cm/sec while brake control is still in inactive'.",
+    "generation_subset": false
+  },
+  {
+    "id": "kone_03",
+    "brand": "KONE",
+    "question": "Según la instrucción de instalación de KONE 'Suspension ropes - Lubrication of suspension ropes' (AM-09.01.006, página 2), ¿qué tipo de cuerda de un ascensor NO debe lubricarse nunca?",
+    "expected_sha256": "01327080b6b378d72570b99da7392829f3c3ee788c8369bbb9772494a7a1f55d",
+    "expected_rel": "KONE/manuales KONE español/lubricacion cables.pdf",
+    "expected_basename": "lubricacion cables.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "p2, recuadro WARNING: 'Overspeed governor ropes must NOT be lubricated.'",
+    "generation_subset": true
+  },
+  {
+    "id": "kone_04",
+    "brand": "KONE",
+    "question": "Según la tabla del paso 2 de la sección 5 (página 9) del documento AM-09.01.006 sobre lubricación de cuerdas de suspensión, ¿cuántos litros de lubricante por cada 100 metros de cuerda corresponden a un diámetro de cuerda de 13 mm?",
+    "expected_sha256": "01327080b6b378d72570b99da7392829f3c3ee788c8369bbb9772494a7a1f55d",
+    "expected_rel": "KONE/manuales KONE español/lubricacion cables.pdf",
+    "expected_basename": "lubricacion cables.pdf",
+    "source_pages": [
+      9
+    ],
+    "evidence_note": "p9, tabla 'Rope diameter (mm) / Amount of lubricant (l) / 100m of rope': fila '13 | 0,3'.",
+    "generation_subset": false
+  },
+  {
+    "id": "kone_05",
+    "brand": "KONE",
+    "question": "Según el paso 1 de la sección 4.1 'Fixing the lubricator' (página 7) del documento AM-09.01.006, ¿para qué dos modelos de máquina KONE se muestra el montaje del lubricador de cuerdas sobre la bancada?",
+    "expected_sha256": "01327080b6b378d72570b99da7392829f3c3ee788c8369bbb9772494a7a1f55d",
+    "expected_rel": "KONE/manuales KONE español/lubricacion cables.pdf",
+    "expected_basename": "lubricacion cables.pdf",
+    "source_pages": [
+      7
+    ],
+    "evidence_note": "p7, Step 1 'Fit the lubricator to the machine bedplate and fasten with the fixing clips provided' con dos ilustraciones rotuladas 'MX18' y 'MX32/40'.",
+    "generation_subset": false
+  },
+  {
+    "id": "kone_06",
+    "brand": "KONE",
+    "question": "Según el paso 2 de la sección 4.1.4 (página 15) del manual de puesta en marcha KONE ALTA AM-11.65.021, ¿en qué cuatro conectores de la placa CPCB se instalan los puentes de instalación (installation plugs) antes de enhebrar los cables (roping)?",
+    "expected_sha256": "24b7f721776e7a290a28fc2b0540910cdb355d6b9332c8bd255163c336aa2753",
+    "expected_rel": "KONE/polaris2/AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "expected_basename": "AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "source_pages": [
+      15
+    ],
+    "evidence_note": "p15, step 2: 'Connect the Installation plugs to the XP1, X19, XC5 and XC3 connectors on the CPCB Board.'",
+    "generation_subset": false
+  },
+  {
+    "id": "kone_07",
+    "brand": "KONE",
+    "question": "Según el Apéndice C.1 'Connections' (página 35) del manual de puesta en marcha KONE ALTA AM-11.65.021, si el motor no gira, ¿qué dos conectores de la placa HCB indica revisar primero el procedimiento de diagnóstico?",
+    "expected_sha256": "24b7f721776e7a290a28fc2b0540910cdb355d6b9332c8bd255163c336aa2753",
+    "expected_rel": "KONE/polaris2/AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "expected_basename": "AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "source_pages": [
+      35
+    ],
+    "evidence_note": "p35: 'Check the connection of connectors XSR1 (safety relay input) and XM1 (MLB Interface) on HCB board.'",
+    "generation_subset": false
+  },
+  {
+    "id": "kone_08",
+    "brand": "KONE",
+    "question": "Según la tabla de códigos de falla del Apéndice C.2 (página 38) del manual de puesta en marcha KONE ALTA AM-11.65.021, ¿qué código de falla de 4 dígitos corresponde a que el relé conectado en XSR1 quede abierto, y qué acción de revisión se recomienda?",
+    "expected_sha256": "24b7f721776e7a290a28fc2b0540910cdb355d6b9332c8bd255163c336aa2753",
+    "expected_rel": "KONE/polaris2/AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "expected_basename": "AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "source_pages": [
+      38
+    ],
+    "evidence_note": "p38: '0126 Safety relay open | Emergency stop. | Check the connections of XSR1 and control panel.'",
+    "generation_subset": true
+  },
+  {
+    "id": "kone_09",
+    "brand": "KONE",
+    "question": "Según el paso 3 del ajuste básico del LWD en la sección 5.1.2 (página 24) del manual de puesta en marcha KONE ALTA AM-11.65.021, ¿en qué rango de voltios debe estar la lectura LWD-AGND medida en la placa HCB con el coche vacío?",
+    "expected_sha256": "24b7f721776e7a290a28fc2b0540910cdb355d6b9332c8bd255163c336aa2753",
+    "expected_rel": "KONE/polaris2/AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "expected_basename": "AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "source_pages": [
+      24
+    ],
+    "evidence_note": "p24, step 3: 'Check that LWD - AGND voltage is 0.5 V - 1.5 V (on the HCB board). If not, check the air gap. Should be 3 - 5 mm.'",
+    "generation_subset": false
+  },
+  {
+    "id": "kone_10",
+    "brand": "KONE",
+    "question": "Según la tabla de valores del factor KTC (parámetro 6) en la página 19 del manual de puesta en marcha KONE ALTA AM-11.65.021, ¿cuál es el factor de par en Nm/A para las variantes de máquina 710185G01, G02, G09 y G18?",
+    "expected_sha256": "24b7f721776e7a290a28fc2b0540910cdb355d6b9332c8bd255163c336aa2753",
+    "expected_rel": "KONE/polaris2/AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "expected_basename": "AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf",
+    "source_pages": [
+      19
+    ],
+    "evidence_note": "p19, tabla 'Values of KTC factor (parameter 6) for MX18/Q1 motor alternatives': fila 'G01, G02, G09, G18 | 121.1 Nm/A'.",
+    "generation_subset": true
+  },
+  {
+    "id": "mitsubishi_01",
+    "brand": "MITSUBISHI",
+    "question": "Según la nota 4 del diagrama MC.01 (página 1 de PLANO 1 mitsubishi.pdf), ¿cuántas veces debe pasarse el cable indicado a través del núcleo de ferrita?",
+    "expected_sha256": "3ec4bf6d4e88d688dffd46d6e6c03a10fdbee39612cec2705b82c85588c6195f",
+    "expected_rel": "MITSUBISHI/PLANO 1 mitsubishi.pdf",
+    "expected_basename": "PLANO 1 mitsubishi.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Recuadro de notas junto al título 'MC.01' (DWG YE309C054): nota 4 dice 'PASS THE WIRE THROUGH THE FERRITE CORE TWICE IN LENGTH.' — el cable debe pasarse dos veces por el núcleo de ferrita.",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_02",
+    "brand": "MITSUBISHI",
+    "question": "En el diagrama PS.02 (página 2 de PLANO 1 mitsubishi.pdf), ¿de cuántos conductores es el cable plano con conector que llega al conector PP11?",
+    "expected_sha256": "3ec4bf6d4e88d688dffd46d6e6c03a10fdbee39612cec2705b82c85588c6195f",
+    "expected_rel": "MITSUBISHI/PLANO 1 mitsubishi.pdf",
+    "expected_basename": "PLANO 1 mitsubishi.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "Hoja 'PS.02' (DWG YE309C061): junto al tramo que llega al conector 'PP11' se lee 'FLAT CABLE 60-CONDUCTOR (FLAT CABLE WITH CONNECTOR)'.",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_03",
+    "brand": "MITSUBISHI",
+    "question": "Según la nota de campo (FIELD NOTE) del diagrama ER.01 (página 3 de PLANO 1 mitsubishi.pdf), ¿qué dos conectores deben desconectarse antes de realizar la medición de resistencia de aislamiento?",
+    "expected_sha256": "3ec4bf6d4e88d688dffd46d6e6c03a10fdbee39612cec2705b82c85588c6195f",
+    "expected_rel": "MITSUBISHI/PLANO 1 mitsubishi.pdf",
+    "expected_basename": "PLANO 1 mitsubishi.pdf",
+    "source_pages": [
+      3
+    ],
+    "evidence_note": "Hoja 'ER.01' (DWG YE309C062), recuadro 'FIELD NOTE' en el borde derecho: \"DISCONNECT THE CONNECTORS 'RPJ', 'RPW' AT INSULATION TEST.\" Los conectores RPJ-P01/P03 y RPW-P01/P03 están dibujados en la parte superior de la misma página.",
+    "generation_subset": true
+  },
+  {
+    "id": "mitsubishi_04",
+    "brand": "MITSUBISHI",
+    "question": "Según el diagrama OR.04-3 (página 1 de PLANO 2 mitsubishi.pdf), ¿a qué terminal del interfono de emergencia en el pasillo (HALL INTERCOM AT EMERGENCY) se dirige el conector CN1-02?",
+    "expected_sha256": "88ffeb39774e98f904d565d5d7aaab95d04f1415b1b7e2fa391a6a0dbbb1cb83",
+    "expected_rel": "MITSUBISHI/PLANO 2 mitsubishi.pdf",
+    "expected_basename": "PLANO 2 mitsubishi.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Hoja 'OR.04-3' (DWG YE309C075), recuadro 'INTERPHONE': CN1-01→XT, CN1-02→XR, CN1-03→XS, flechas hacia el recuadro 'HALL INTERCOM AT EMERGENCY'.",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_05",
+    "brand": "MITSUBISHI",
+    "question": "Según la tabla de selección de derivaciones del transformador 'TR-G' en la página 5 de PLANO 2 mitsubishi.pdf (panel auxiliar MC.01), ¿qué número de grupo (Group No.) corresponde a una fuente de 380V-410V?",
+    "expected_sha256": "88ffeb39774e98f904d565d5d7aaab95d04f1415b1b7e2fa391a6a0dbbb1cb83",
+    "expected_rel": "MITSUBISHI/PLANO 2 mitsubishi.pdf",
+    "expected_basename": "PLANO 2 mitsubishi.pdf",
+    "source_pages": [
+      5
+    ],
+    "evidence_note": "Hoja 'MC.01' del panel auxiliar (DWG YE309C176), tabla 'TABLE FOR TR-G TAP SELECTION': GROUP NO. G025 = POWER SOURCE 380V-410V; G026 = 411V-440V; G027 = 221V-240V.",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_06",
+    "brand": "MITSUBISHI",
+    "question": "Según el diagrama OC.51 (página 6 de PLANO 3 mitsubishi.pdf), ¿qué sensor detecta la onda P de un sismo junto al 'S.WAVE SENSOR RESET COIL'?",
+    "expected_sha256": "65cd12de7a4167847ffb8487a6ded8857aea9bf93bbaafca781425696d786f20",
+    "expected_rel": "MITSUBISHI/PLANO 3 mitsubishi.pdf",
+    "expected_basename": "PLANO 3 mitsubishi.pdf",
+    "source_pages": [
+      6
+    ],
+    "evidence_note": "Hoja 'OC.51' (DWG YE309C122): circuito de sensor sísmico con etiquetas 'P.WAVE SENSOR' (con salida hacia 'REV.COIL'/'RESET COIL') y, a la izquierda, 'S.WAVE SENSOR RESET COIL' junto a 'S.WAVE(HI)'/'S.WAVE(LO)'.",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_07",
+    "brand": "MITSUBISHI",
+    "question": "Según la tabla de cableado de la página 9 de PLANO 3 mitsubishi.pdf, ¿de cuántos conductores es el cable 'C01' que va del panel de control a la estación de techo de cabina (CAR TOP STATION)?",
+    "expected_sha256": "65cd12de7a4167847ffb8487a6ded8857aea9bf93bbaafca781425696d786f20",
+    "expected_rel": "MITSUBISHI/PLANO 3 mitsubishi.pdf",
+    "expected_basename": "PLANO 3 mitsubishi.pdf",
+    "source_pages": [
+      9
+    ],
+    "evidence_note": "Página de tablas de cable (DWG YE317B613): recuadro 'CABLE No. C01' con valor '24C' y columnas 'CONTROL PANEL' / 'CAR TOP STATION' mapeando terminales TL1-TL5/EB1/F02.",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_08",
+    "brand": "MITSUBISHI",
+    "question": "Según la nota de campo (FIELD NOTE) de la página 1 de PLANO 4 mitsubishi.pdf, ¿con qué elemento debe unirse el cable C20 con el cableado de cada equipo dentro del ducto de techo (duct on ceiling)?",
+    "expected_sha256": "9c8edfe6089189507aee9e8bd8c7132412bfa0705fdfa0c4ca0e92f91eb45193",
+    "expected_rel": "MITSUBISHI/PLANO 4 mitsubishi.pdf",
+    "expected_basename": "PLANO 4 mitsubishi.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "DWG YE317B617, recuadro 'FIELD NOTE' sobre el cable 'C20' (15C): \"CONNECT CABLE NO. C20 AND EACH EQUIPMENT WIRE WITH A CONNECTING CAP IN THE DUCT ON CEILING.\"",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_09",
+    "brand": "MITSUBISHI",
+    "question": "Según la nota de instalación de la página 4 de PLANO 4 mitsubishi.pdf, ¿qué dos designaciones de cableado deben conectarse entre sí a través del conector RDF?",
+    "expected_sha256": "9c8edfe6089189507aee9e8bd8c7132412bfa0705fdfa0c4ca0e92f91eb45193",
+    "expected_rel": "MITSUBISHI/PLANO 4 mitsubishi.pdf",
+    "expected_basename": "PLANO 4 mitsubishi.pdf",
+    "source_pages": [
+      4
+    ],
+    "evidence_note": "Recuadro 'NOTE' junto a 'CABLE No. R11' (03C) y al esquema del 'CONNECTOR RDF': \"CONNECT WIRING NO. '1US' AND '1USDA' AS FOLLOWS.\"",
+    "generation_subset": false
+  },
+  {
+    "id": "mitsubishi_10",
+    "brand": "MITSUBISHI",
+    "question": "Según la nota de campo (FIELD NOTE) de la página 8 de PLANO 4 mitsubishi.pdf (dispositivo de parada final de terminal), cuando se proveen amortiguadores de resorte (spring buffers), ¿qué debe ajustarse para que actúe antes de que los amortiguadores entren en contacto?",
+    "expected_sha256": "9c8edfe6089189507aee9e8bd8c7132412bfa0705fdfa0c4ca0e92f91eb45193",
+    "expected_rel": "MITSUBISHI/PLANO 4 mitsubishi.pdf",
+    "expected_basename": "PLANO 4 mitsubishi.pdf",
+    "source_pages": [
+      8
+    ],
+    "evidence_note": "Chunk real indexado (S16, verificado 2026-08-26 en el ensayo DRY_RUN de Fase 2.5): '4. WHEN SPRING BUFFERS ARE PROVIDED, FINAL TERMINAL STOPPING SWITCHES (UOT AND DOT) SHOULD BE ADJUSTED TO OPERATE BEFORE THE BUFFERS ARE ENGAGED.' Reemplaza la pregunta original (distancia de 50mm entre soporte y riel), que el propio chunk indexado marca explícitamente como DATA_NOT_AVAILABLE: 'the numeric distance in note 2 is not legible' — la exigencia de que la respuesta reporte '50mm' habría penalizado el comportamiento correcto y seguro del sistema (abstenerse ante un dato no legible en vez de inventarlo), no una falla real.",
+    "generation_subset": true
+  },
+  {
+    "id": "otis_01",
+    "brand": "OTIS",
+    "question": "En el Artículo Técnico de Campo ATC – C.00.35 de Otis sobre la sustitución de la placa LCB I por la LCB II (página 1), ¿a qué números de parte de placa LCB I se aplica el procedimiento y cuál es el motivo técnico del cambio?",
+    "expected_sha256": "694207b6140468f59c077665258b8f958415b9ec385fcd30dbb2d14b40b1eaaf",
+    "expected_rel": "OTIS/otis/Cambio LCB-I por LCB-II.pdf",
+    "expected_basename": "Cambio LCB-I por LCB-II.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "Página 1: '3. APLICAÇÃO: Aplica-se à substituição das placas LCB I: A9693A2 / C9693A2 / C9693A21 / C9693A3' y '4. PROBLEMA: Término de produção da LCB I.'",
+    "generation_subset": false
+  },
+  {
+    "id": "otis_02",
+    "brand": "OTIS",
+    "question": "Según los pasos de instalación física de la página 2 del procedimiento Otis de cambio de la placa LCB I por la LCB II, luego de colocar la LCB II alineando los orificios, ¿qué se debe usar como plantilla (gabarito) para marcar los nuevos orificios en la base?",
+    "expected_sha256": "694207b6140468f59c077665258b8f958415b9ec385fcd30dbb2d14b40b1eaaf",
+    "expected_rel": "OTIS/otis/Cambio LCB-I por LCB-II.pdf",
+    "expected_basename": "Cambio LCB-I por LCB-II.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "Página 2, pasos 5-6: 'Coloque a LCB II de modo que os furos fiquem alinhados.' / 'Com uma caneta marque na base os furos (use a LCBII como gabarito com cuidado)'.",
+    "generation_subset": false
+  },
+  {
+    "id": "otis_03",
+    "brand": "OTIS",
+    "question": "Si el ascensor tiene más de 10 paradas, según la página 4 del procedimiento Otis de sustitución de la LCB I por la LCB II, ¿con qué señal del transformador TRF3 se debe alimentar el punto 4 del borne P8 de la LCB II?",
+    "expected_sha256": "694207b6140468f59c077665258b8f958415b9ec385fcd30dbb2d14b40b1eaaf",
+    "expected_rel": "OTIS/otis/Cambio LCB-I por LCB-II.pdf",
+    "expected_basename": "Cambio LCB-I por LCB-II.pdf",
+    "source_pages": [
+      4
+    ],
+    "evidence_note": "Página 4, borne P1(LCB1)/P8(LCB2): 'Se tiver mais de 10 paradas, ... alimente o ponto 4 do borne P8 (LCB2) com OSI do transformador TRF3.'",
+    "generation_subset": false
+  },
+  {
+    "id": "otis_04",
+    "brand": "OTIS",
+    "question": "Según la página 8 del procedimiento Otis de sustitución de la placa LCB I por la LCB II, ¿qué kit de materiales se debe usar y qué diámetro de broca de taladro se especifica para hacer los nuevos orificios?",
+    "expected_sha256": "694207b6140468f59c077665258b8f958415b9ec385fcd30dbb2d14b40b1eaaf",
+    "expected_rel": "OTIS/otis/Cambio LCB-I por LCB-II.pdf",
+    "expected_basename": "Cambio LCB-I por LCB-II.pdf",
+    "source_pages": [
+      8
+    ],
+    "evidence_note": "Página 8, sección 6. MATERIAL: 'KIT - VSP028' y 'Furadeira c/ broca 9/32”'.",
+    "generation_subset": true
+  },
+  {
+    "id": "otis_05",
+    "brand": "OTIS",
+    "question": "Según la tabla de componentes de la placa ASILOG en la página 5 del documento de diagnóstico Otis Variodyn VF30BR/VF50BR/VF85BR (K603493 E), ¿cuáles son los nombres de los fusibles que protegen, respectivamente, la placa gateway y el suministro de emergencia?",
+    "expected_sha256": "98f55c7b882de86e6d4ef92ccf79093283abcfd3e68e7c229e02a29f71d1e9dd",
+    "expected_rel": "OTIS/otis/Vf30diag.pdf",
+    "expected_basename": "Vf30diag.pdf",
+    "source_pages": [
+      5
+    ],
+    "evidence_note": "Página 5, componentes ASILOG, 'five fuses': 'GW2 fuse for the gateway pcb' ... 'NSG fuse for emergency supply'.",
+    "generation_subset": false
+  },
+  {
+    "id": "otis_06",
+    "brand": "OTIS",
+    "question": "En la lista de errores del ASILOG (Tab. 3) de la página 8 del documento de diagnóstico Otis Variodyn VF30BR/VF50BR/VF85BR (K603493 E), ¿qué nombre de error corresponde al número 94?",
+    "expected_sha256": "98f55c7b882de86e6d4ef92ccf79093283abcfd3e68e7c229e02a29f71d1e9dd",
+    "expected_rel": "OTIS/otis/Vf30diag.pdf",
+    "expected_basename": "Vf30diag.pdf",
+    "source_pages": [
+      8
+    ],
+    "evidence_note": "Página 8, Tab. 3 Error List ASILOG, fila: '94   DoorContact'.",
+    "generation_subset": false
+  },
+  {
+    "id": "otis_07",
+    "brand": "OTIS",
+    "question": "En la tabla del conector de la placa MBB (Motor Brake Board) de la página 15 del documento Otis Variodyn VF30BR/VF50BR/VF85BR (K603493 E), ¿qué rango de tensión maneja la señal MGB-A1 del borne X1-1-4?",
+    "expected_sha256": "98f55c7b882de86e6d4ef92ccf79093283abcfd3e68e7c229e02a29f71d1e9dd",
+    "expected_rel": "OTIS/otis/Vf30diag.pdf",
+    "expected_basename": "Vf30diag.pdf",
+    "source_pages": [
+      15
+    ],
+    "evidence_note": "Página 15, Tab. 9 Connector MBB, X1-1-4 Brake Connector: '1 MGB-A1 DC + 0 . . . 110 V / 2 MGB-A2 DC – 0 . . . 110 V'.",
+    "generation_subset": false
+  },
+  {
+    "id": "otis_08",
+    "brand": "OTIS",
+    "question": "Según la tabla de verificación de la resistencia de frenado WBR en la página 27 del documento Otis Variodyn VF30BR/VF50BR/VF85BR (K603493 E), ¿cuál es el valor nominal de esa resistencia para el modelo VF30BR y en qué rango de ohms debe estar la lectura del multímetro para considerarla correcta?",
+    "expected_sha256": "98f55c7b882de86e6d4ef92ccf79093283abcfd3e68e7c229e02a29f71d1e9dd",
+    "expected_rel": "OTIS/otis/Vf30diag.pdf",
+    "expected_basename": "Vf30diag.pdf",
+    "source_pages": [
+      27
+    ],
+    "evidence_note": "Página 27, 7.5 Checking the WBR Braking Resistor: 'VF30BR (20 Ω ±10%)'; tabla VARIODYN/VALUE: 'VF30BR 18...22 Ω'; 'If the reading is out of the given range, the WBR braking resistor is faulty.'",
+    "generation_subset": true
+  },
+  {
+    "id": "otis_09",
+    "brand": "OTIS",
+    "question": "En la tabla de señales del conector X14 (X1-1-10) de la página 14 del documento Otis VARIODYN 120/170/280 (K603 425 E), ¿qué señal corresponde al pin 6?",
+    "expected_sha256": "efd4b703f5e45865e66a38f55bd171ab9e2827cd66263077a22268564f8a3283",
+    "expected_rel": "OTIS/otis/DIAGVF~1.PDF",
+    "expected_basename": "DIAGVF~1.PDF",
+    "source_pages": [
+      14
+    ],
+    "evidence_note": "Página 14, Tab. 3 (Part 2), fila '(X14) Contact inputs / X1-1-10': pin1 POL, pin2 JRH, pin3 JHM, pin4 DRH-U, pin5 DRH-D, pin6 IMOF.",
+    "generation_subset": false
+  },
+  {
+    "id": "otis_10",
+    "brand": "OTIS",
+    "question": "Según la lista de errores PIOVEC/PVEC (Tab. 4) de la página 17 del documento Otis VARIODYN 120/170/280 (K603 425 E), ¿qué número de error corresponde a la condición 'Overtemp HS Trigger (HW)', y con qué texto abreviado se muestra ese error en la pantalla SMLCD?",
+    "expected_sha256": "efd4b703f5e45865e66a38f55bd171ab9e2827cd66263077a22268564f8a3283",
+    "expected_rel": "OTIS/otis/DIAGVF~1.PDF",
+    "expected_basename": "DIAGVF~1.PDF",
+    "source_pages": [
+      17
+    ],
+    "evidence_note": "Página 17, Tab. 4 Error List PIOVEC/PVEC: fila '16   OVERT HSTrig   Overtemp HS Trigger (HW)'; fila siguiente '17   OVERT HS Lim   Overtemp HS Limit (SW)'.",
+    "generation_subset": true
+  },
+  {
+    "id": "tke_01",
+    "brand": "TKE",
+    "question": "Según la página 1 de \"errores mcp7.pdf\" (circular CTI-073, MCP7 – Lista de erros e advertências), ¿qué código de error de la placa MCP7 corresponde a la falla del circuito de seguridad de la casa de máquinas, en ascensores tipo AC2?",
+    "expected_sha256": "069c53ccb8ff2b52e10ba97b9aac6b9f29b8177c46fccf777d18719bfb3adc9e",
+    "expected_rel": "TKE/M C P   7/errores mcp7.pdf",
+    "expected_basename": "errores mcp7.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1, tabla de errores: 'E043  Falha no circuito de segurança da casa de máquinas  AC2' (fila entre E042 'poço' y E044 'quadro de comando').",
+    "generation_subset": false
+  },
+  {
+    "id": "tke_02",
+    "brand": "TKE",
+    "question": "Según la página 1 de \"errores mcp7.pdf\" (CTI-073, Lista de erros e advertências de la MCP7), ¿qué código de error se genera cuando la MCP7 detecta que el software instalado es incompatible con el hardware de la placa?",
+    "expected_sha256": "069c53ccb8ff2b52e10ba97b9aac6b9f29b8177c46fccf777d18719bfb3adc9e",
+    "expected_rel": "TKE/M C P   7/errores mcp7.pdf",
+    "expected_basename": "errores mcp7.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1: 'E015  Software incompatível com o Hardware detectado  Placa (MCP7)'.",
+    "generation_subset": false
+  },
+  {
+    "id": "tke_03",
+    "brand": "TKE",
+    "question": "Según la página 3 de \"errores mcp7.pdf\" (CTI-073), si el elevador FDG/FDN está subiendo por debajo del parámetro P42 y se cumple la condición DIRU=1 y DUD=0, ¿qué código de error genera la MCP7, y qué hace el sistema con el motor durante los 10 segundos siguientes, antes de pasar al estado 'Ini'?",
+    "expected_sha256": "069c53ccb8ff2b52e10ba97b9aac6b9f29b8177c46fccf777d18719bfb3adc9e",
+    "expected_rel": "TKE/M C P   7/errores mcp7.pdf",
+    "expected_basename": "errores mcp7.pdf",
+    "source_pages": [
+      3
+    ],
+    "evidence_note": "p3: 'E140  DUD=0: Falha de movimento ... FDG/FDN. Erro de sentido do movimento (DIRU=1 e DUD=0). Detectado com o elevador subindo estando abaixo do P42. Desliga o motor e fica por 10s em Blq. Depois, entra em Ini.' Contrasta con A141 (misma condición pero ARRIBA de P42: no apaga motor, sube en baja hasta la próxima placa de nivelación).",
+    "generation_subset": true
+  },
+  {
+    "id": "tke_04",
+    "brand": "TKE",
+    "question": "Según la página 1 de \"Errores Invi4,5,6 - copia.pdf\" (3Z.0006.PS, Códigos de Falha da MCINV4, MCINV5SL e MCINV6S), el error EC se produce cuando falta tensión de 24V en un punto de medición de la línea de seguridad del cuadro de comando (QC). ¿Cuál es ese punto de medición?",
+    "expected_sha256": "8d9468f67a570954df0ce875d4120004fb81dadfc08f45223b52fafa37c44012",
+    "expected_rel": "TKE/M C P    8/Errores Invi4,5,6 - copia.pdf",
+    "expected_basename": "Errores Invi4,5,6 - copia.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1: 'EC Falha na segurança de poço — Falha na linha de segurança do QC. MCINV verifica se há tensão de 24V no ponto T24+. Se T24+=0V, este erro é apresentado.' (confirmado con pdftotext -layout para no confundir con la fila EE).",
+    "generation_subset": false
+  },
+  {
+    "id": "tke_05",
+    "brand": "TKE",
+    "question": "Según la página 1 de \"Errores Invi4,5,6 - copia.pdf\" (3Z.0006.PS), el error EE se describe como falla de seguridad del QC asociada al termostato de una unidad y al relé térmico de unos resistores. ¿De qué unidad es ese termostato, de qué resistores es ese relé térmico, y en qué punto de medición verifica el MCINV los 24V para este error?",
+    "expected_sha256": "8d9468f67a570954df0ce875d4120004fb81dadfc08f45223b52fafa37c44012",
+    "expected_rel": "TKE/M C P    8/Errores Invi4,5,6 - copia.pdf",
+    "expected_basename": "Errores Invi4,5,6 - copia.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1: 'EE Falha na segurança do QC — Falha na segurança do termostato da unidade IGBT ou no relé térmico (caso exista) dos resistores de frenagem. MCINV verifica se há tensão de 24V no ponto 101. Se 101=0V, este erro é apresentado.' (confirmado con pdftotext -layout).",
+    "generation_subset": true
+  },
+  {
+    "id": "tke_06",
+    "brand": "TKE",
+    "question": "Según la página 2 de \"Errores Invi4,5,6 - copia.pdf\" (3Z.0006.PS), ¿qué código de error se genera por una falla en el sensor PTC del motor, y cuáles son las dos causas que el manual asocia a ese código?",
+    "expected_sha256": "8d9468f67a570954df0ce875d4120004fb81dadfc08f45223b52fafa37c44012",
+    "expected_rel": "TKE/M C P    8/Errores Invi4,5,6 - copia.pdf",
+    "expected_basename": "Errores Invi4,5,6 - copia.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "p2: 'F7 Falha no PTC — Falha na ligação do PTC do motor até a MCINV ou então o PTC do motor abriu por temperatura elevada.'",
+    "generation_subset": false
+  },
+  {
+    "id": "tke_07",
+    "brand": "TKE",
+    "question": "Según la página 2 de \"Errores Invi4,5,6 - copia.pdf\" (3Z.0006.PS), ¿qué código de error indica que el dispositivo de memoria Flash del módulo MCINV no funciona correctamente, qué modelo de chip identifica el manual, y qué tipo de información contiene ese dispositivo?",
+    "expected_sha256": "8d9468f67a570954df0ce875d4120004fb81dadfc08f45223b52fafa37c44012",
+    "expected_rel": "TKE/M C P    8/Errores Invi4,5,6 - copia.pdf",
+    "expected_basename": "Errores Invi4,5,6 - copia.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "p2: 'hB Falha da Flash M25P40 — Dispositivo Flash M25P40 não está funcionando corretamente. Este dispositivo contém a informação de validação do módulo pelo fornecedor.'",
+    "generation_subset": true
+  },
+  {
+    "id": "tke_08",
+    "brand": "TKE",
+    "question": "Según la página 1 de \"IRC 34_31.pdf\" (IRC-34/31, Descripción General de la maniobra CMC-3 de Thyssen), en el rediseño del conexionado del transformador de la placa, ¿qué conector nuevo aparece, inexistente en las series anteriores, que aporta una salida de 24V protegida por fusible?",
+    "expected_sha256": "018ba06dea454fa4cf88e4d6b9abed4fb557abe1802b48cc48e2435dec33c04e",
+    "expected_rel": "TKE/cmc/IRC 34_31.pdf",
+    "expected_basename": "IRC 34_31.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1: 'El conexionado del transformador se desplaza hacia la derecha de la placa (X14 y W4). Existe un nuevo conector W5 no existente en las series anteriores, salida de 24V protegida por fusible.'",
+    "generation_subset": false
+  },
+  {
+    "id": "tke_09",
+    "brand": "TKE",
+    "question": "Según la página 1 de \"IRC 34_31.pdf\" (IRC-34/31, maniobra CMC-3 de Thyssen), al pasar de la maniobra CMC a CMC2, ¿qué conector queda como el único utilizado para Teleservicio, y qué conector de la generación anterior desaparece?",
+    "expected_sha256": "018ba06dea454fa4cf88e4d6b9abed4fb557abe1802b48cc48e2435dec33c04e",
+    "expected_rel": "TKE/cmc/IRC 34_31.pdf",
+    "expected_basename": "IRC 34_31.pdf",
+    "source_pages": [
+      1
+    ],
+    "evidence_note": "p1: 'El conector X13 pasa ser el único utilizado para Teleservicio y desaparece el conector X12. Existe previsión para bus CAN X22 (normalmente no está montado).'",
+    "generation_subset": true
+  },
+  {
+    "id": "tke_10",
+    "brand": "TKE",
+    "question": "Según la página 2 de \"IRC 34_35.pdf\" (IRC-34/35, Instrucciones de puesta en marcha de la maniobra CMC-3 de Thyssen), en la verificación de tensiones de entrada de la placa base, ¿qué tensión de corriente alterna debe medirse entre las bornas X14:1 y X14:2, y cuál entre X14:3 y X14:4?",
+    "expected_sha256": "75e5e65a651be5104b1e09a680d8e715b8a2c55df26249c3b07905e4d2711d5d",
+    "expected_rel": "TKE/cmc/IRC 34_35.pdf",
+    "expected_basename": "IRC 34_35.pdf",
+    "source_pages": [
+      2
+    ],
+    "evidence_note": "p2: 'Tensiones de entrada: 7,5V AC bornas X14:1(0V) X14:2(7,5); 20V AC bornas X14:3(0V) X14:4(20); 220/380V AC bornas X22:1(T) X22:3(S) X22:5(R).'",
+    "generation_subset": false
+  }
+]

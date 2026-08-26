@@ -1266,6 +1266,74 @@ a nivel controlador, `RagController`, que este script no ejercita) ni
 inicio de la sesión: ambos quedan para el Paso 7, que de todas formas crea
 usuarios nominales con credenciales reales.
 
+**7bis. Precisión adicional (2026-08-26, a pedido del usuario): `bin/pilot_metrics`
+—el reporte operativo real, no una lectura directa— tampoco ve estas 20 filas,
+y la causa está identificada en el código, no es un supuesto.**
+`bin/pilot_metrics --from 2026-08-26 --to 2026-08-26 --account
+danebo-pilot-elevator` corrió limpio (cohorte resuelta: `account_id=3,
+user_ids=[7]`) pero devolvió `interactions: {"status":"logs_not_available"}`
+y `rag_llm_calls: 0` — como si la batería no hubiera dejado rastro. Causa
+verificada en `app/models/pilot_event.rb:13-15`
+(`PilotEvent.hot_path_rows`): `scope = scope.where(user_id: user_ids) if
+user_ids.any?` — el reporte filtra por los `user_id` de la cuenta (aquí,
+`[7]`), y las 20 filas de esta batería tienen `user_id: nil` porque
+`QueryOrchestratorService` se llamó directo, sin sesión ni login real. La
+fila existe, tiene la forma correcta (Hallazgo 7) y `PilotEvent.count` la
+contabiliza, pero el filtro de cohorte del reportador operativo la excluye
+por diseño — no es un bug de `PilotTelemetryReader` ni de `PilotEventRecorder`,
+es una consecuencia exacta de correr la batería a nivel de servicio en vez de
+a través de un login real. Refuerza el Hallazgo 7: verificar `bin/pilot_metrics`
+con datos reales de un técnico autenticado también queda para el Paso 7, no
+sólo `interaction_completed`/`user_signed_in`.
+
+**7ter. El export diario (`bin/pilot_metrics_daily`) nunca tuvo cron
+configurado — confirmado, no es una regresión, y se configuró en esta misma
+sesión.** `crontab -l` no tenía ninguna entrada, y el historial real en
+`tmp/pilot_exports/` (7 carpetas, con un hueco de 12 días entre el
+2026-08-14 y el 2026-08-26) son corridas manuales sueltas, no un cron activo.
+**Esto es el estado esperado**, no una falla: el cron recién se implementó
+ahora. Se instaló:
+
+```
+PATH=<ruby 3.4.7 de mise>:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+0 * * * * cd <repo> && PILOT_METRICS_DAILY_WINDOW_END=19 bin/pilot_metrics_daily >> tmp/pilot_metrics_daily_cron.log 2>&1
+```
+
+Dos detalles que habrían hecho fallar el cron en silencio si no se corrigen,
+verificados empíricamente (no supuestos): (1) con el `PATH` mínimo que usa
+`cron`, `ruby` resuelve a la versión del sistema (2.6.10, sin los gems de la
+app) en vez de la 3.4.7 gestionada por `mise` — el `PATH` de la entrada de
+cron apunta explícitamente al `bin` de `mise` para evitarlo; (2) el script
+resuelve `config/deploy.yml`, `bin/pilot_metrics` y `tmp/pilot_exports` de
+forma relativa al directorio de trabajo, que `cron` no fija a la raíz del
+repo por defecto — de ahí el `cd` explícito. Se corrió una simulación con el
+`PATH` mínimo exacto de cron (`env -i PATH=...`) y exportó ambas cuentas
+(`danebo-legacy`, `danebo-pilot-elevator`) sin error, incluyendo el paso de
+`bin/stack ssh-ip`. **No se observó todavía un disparo real de `cron`** (la
+verificación fue una simulación del mismo comando, no una espera al
+disparador) — queda pendiente confirmar en `tmp/pilot_metrics_daily_cron.log`
+después de la próxima hora en punto.
+
+Ventana ampliada a 9-19h Chile (dos horas más que el default de 17h) a
+pedido del usuario — depende de que la infra siga arriba hasta esa hora:
+hoy es seguro porque `danebo-stop-{ec2,rds}` están `DISABLED` (Hallazgo 2 del
+Paso 2), pero si se re-habilita esa parada a las 18:00, los intentos de
+`PILOT_METRICS_DAILY_WINDOW_END=19` después de esa hora fallarán (sin daño,
+sólo un intento inútil) hasta que se ajuste la ventana de vuelta.
+
+**Aclaración de idempotencia, para que nadie asuma que es un append:** cada
+corrida relee el día completo desde medianoche (`docker logs --since
+'<fecha>T00:00:00Z'`) y **sobrescribe** el mismo archivo de salida de ese
+día — no concatena. El efecto práctico buscado (nada se pierde entre
+corridas del mismo día, cada corrida ve más que la anterior) se cumple por
+recálculo completo, no por acumulación incremental. Límite heredado del
+diseño original, no introducido aquí: sólo mira hasta 6 contenedores por rol
+(`CONTAINER_HISTORY_LIMIT`), así que más de 6 deploys en un mismo día podrían
+dejar fuera del alcance los logs de los contenedores más viejos de ese día.
+`pilot_events` no tiene esta limitación (se consulta en vivo por rango de
+fecha); el mecanismo de logs existe sólo para el texto crudo `[PILOT_AUDIT]`
+que `pilot_events` excluye a propósito.
+
 **8. Lo que NO se hizo, dicho explícitamente:**
 
 - **No se repitió la corrida real.** Es "una sola ejecución" por diseño; los

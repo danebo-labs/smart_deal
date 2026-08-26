@@ -192,9 +192,34 @@ if [[ "$USER_COUNT" -eq 0 ]]; then
 fi
 
 OUTPUT_DIR="${OUTPUT_ROOT}/${FROM}_${TO}_${ACCOUNT_SLUG}"
+
+# Same (from, to, account) writes the same report.json et al. every time by
+# design (see the idempotent-overwrite note above this script's usage), which
+# is safe as long as two runs never write it at once. Nothing enforced that
+# until now: a manual run overlapping the hourly cron for the same day and
+# account could interleave writes into the same files. mkdir is atomic on
+# every filesystem this runs on, so it doubles as a zero-dependency lock —
+# there is no `flock` command on macOS (only the syscall other tools bind to),
+# and installing one is more moving parts than this needs.
+LOCK_DIR="${OUTPUT_DIR}.lock"
+LOCK_WAIT_SECONDS="${PILOT_METRICS_LOCK_WAIT_SECONDS:-300}"
+LOCK_ACQUIRED=false
+for ((_lock_attempt = 0; _lock_attempt < LOCK_WAIT_SECONDS; _lock_attempt++)); do
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    LOCK_ACQUIRED=true
+    break
+  fi
+  sleep 1
+done
+[[ "$LOCK_ACQUIRED" == true ]] ||
+  fail "another export for ${FROM}_${TO}_${ACCOUNT_SLUG} is still running (lock: ${LOCK_DIR}) after ${LOCK_WAIT_SECONDS}s"
+
 mkdir -p "$OUTPUT_DIR"
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pilot_metrics.XXXXXX")
-trap 'rm -rf "$WORK_DIR"' EXIT
+# Cleanup runs on every exit path (success, `fail`, or an unhandled error
+# under `set -e`), so the lock never outlives this process except on SIGKILL —
+# the same residual risk any lock has, not something rmdir can fix.
+trap 'rm -rf "$WORK_DIR"; rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 SOURCE_EVENTS="${OUTPUT_DIR}/source_events.jsonl"
 : > "$SOURCE_EVENTS"
 

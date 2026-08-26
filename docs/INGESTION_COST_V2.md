@@ -225,6 +225,41 @@ invocation-log override is operational for native Bedrock spend:
 covers Bedrock only — `-direct`/`-batch` Anthropic API rows reconcile against the
 Anthropic invoice, not the Bedrock logs.
 
+### Medido en piloto ago-2026
+
+Auditoría all-in de **9 tandas** / **9.650 páginas facturadas** en la ingesta
+piloto Gonzalo (cuenta 3), vía `script/bulk_upload_cost_audit.rb`. Registro
+operativo primario sin modificar:
+[`INGESTA_PILOTO_GONZALO_2026-08-20.md`](INGESTA_PILOTO_GONZALO_2026-08-20.md).
+
+| Métrica | Valor medido |
+|---|---:|
+| Gasto all-in total | US$255,21 |
+| Media all-in (corpus completo, 9.650 pág) | **US$0,0265/pág** |
+| Media all-in (corpus con capa de texto; excl. `04b`/`07`) | **US$0,0245/pág** |
+| Media de planificación (tandas `00`–`04a`, 5.715 pág) | **US$0,0244/pág** |
+| Peaje Haiku + retry directo sobre batch | **8–14%** por tanda |
+| Rango all-in por tanda | **US$0,0184–0,0514/pág** |
+
+**Rutas facturadas en bulk cost-v2:**
+
+1. **Batch Sonnet/Opus** — parseo de cada página conservada por
+   `PageRelevanceFilter` (`BatchChunkingPrompt`, `field_records_v8`).
+2. **`page_filter`** — Haiku directo por ventana (incluye páginas descartadas).
+3. **`bulk_retry`** — Sonnet/Opus directo cuando el batch trunca (`max_tokens`).
+
+El share Opus lo fija el gate de escaneado denso (`text_layer_chars < 100 &&
+image_area_ratio > 0.7`), no el tipo de documento en abstracto: `02` (1,1% Opus)
+costó US$0,0277/pág; `04b` (73,8% Opus) US$0,0470/pág; `07` (100% Opus, dos
+manuales OTIS troceados) US$0,0514/pág — nuevo techo medido, mismo código que
+el resto de tandas.
+
+**Nota de presupuesto.** `script/gonzalo_corpus_prep.rb` conserva
+`PRICE_PER_PAGE = 0.027` (batch reconciliado Gate 9R + buffer 1,3×). La media
+real all-in del piloto sobre corpus con capa de texto (**US$0,0244/pág**) queda
+**por debajo** de ese presupuesto; el buffer sigue cubriendo el peaje Haiku y los
+`bulk_retry` sin inflar el número base.
+
 ---
 
 ## 5. Package cost boundary

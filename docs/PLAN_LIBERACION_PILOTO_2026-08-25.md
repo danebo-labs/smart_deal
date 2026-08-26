@@ -48,7 +48,7 @@ ingirieron) registra `pages: 1` para los tres ficheros. El hueco de contenido so
 | 2 | Re-ingesta de los 3 PDFs | claude-sonnet-5-thinking | **hecho** (2026-08-25) — desplegado `56a68fb`, 3/3 assets `complete`, US$0,3162 all-in |
 | 3 | Devise trackable | claude-sonnet-5-thinking | **hecho** (2026-08-25) — `9085408`, migración `20260825183000` **sin desplegar** (va con el Paso 4) |
 | 4 | Telemetría durable (frente B) | claude-sonnet-5-thinking-xhigh | **implementado** (2026-08-25) — código y tests en el árbol; **deploy pendiente de confirmación humana** (lleva también el Paso 3) |
-| 5 | Actualizar costes medidos en docs | composer-2.5-fast | pendiente |
+| 5 | Actualizar costes medidos en docs | composer-2.5-fast | **hecho** (2026-08-26) |
 | 6 | Batería de precisión (gate) | claude-sonnet-5-thinking-xhigh | pendiente |
 | 7 | Liberación | claude-sonnet-5-thinking (+ humano) | pendiente |
 
@@ -1006,15 +1006,37 @@ facturaron.
 
 **Modelo asignado:** composer-2.5-fast
 
-**Estado:** pendiente
+**Estado:** **hecho** (2026-08-26). Secciones "Medido en piloto ago-2026" añadidas
+en `docs/SAAS_COST_MODEL_2026-06-12.md` y `docs/INGESTION_COST_V2.md`; comentario
+actualizado en `script/gonzalo_corpus_prep.rb` (`PRICE_PER_PAGE = 0.027` sin
+cambio). `INGESTA_PILOTO_GONZALO_2026-08-20.md` no tocado (registro primario).
 
 **Comandos ejecutados:**
 
-_(vacío)_
+```bash
+# Verificación aritmética de las cifras fuente (INGESTA_PILOTO, no producción)
+# Suma páginas facturadas 9 tandas: 27+985+416+1711+2064+512+187+3447+301 = 9650
+# Gasto all-in total: US$255,21 → US$255,21/9650 = US$0,0265/pág
+# Media mid-run (tandas 00–04a): US$139,71/5715 = US$0,0244/pág
+```
 
 **Hallazgos:**
 
-_(vacío)_
+**1. Dos medias, dos usos.** El plan citaba US$0,0244/pág como media all-in
+"fuente": es la media **validada a mitad de ingesta** (5.715 págs, tandas
+`00`–`04a`), confirmada después por `01` (0,0246/pág). El **corpus completo**
+(9.650 págs, US$255,21) sube a **US$0,0265/pág** porque `04b` (73,8% Opus,
+0,0470/pág) y `07` (100% Opus, 0,0514/pág) concentran escaneados. Para
+planificación sobre corpus con capa de texto, **0,0244–0,027** sigue siendo el
+piso; reservar hasta **0,05/pág** en ZIPs de planos escaneados.
+
+**2. Peaje Haiku 8–14% confirmado.** `page_filter` + `bulk_retry` sobre el
+batch: rango medido 7,6% (`07`) – 14% (`03`); las tandas de ingesta principal
+caen en 8–14% como preveía el plan.
+
+**3. `PRICE_PER_PAGE = 0.027` se mantiene.** La media medida (0,0244–0,0265)
+queda por debajo del presupuesto con buffer 1,3× (≈0,035/pág efectivo). Bajar
+la constante habría estrechado holgura sin beneficio operativo.
 
 ---
 

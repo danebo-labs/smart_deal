@@ -36,8 +36,11 @@
 require "digest"
 require "zip"
 
-# US$0.027/página en modo batch, conciliado contra factura (US$5.32 por un manual
-# de 200 páginas). El buffer cubre el filtro Haiku y los reintentos por página.
+# US$0.027/página en modo batch, conciliado contra factura Gate 9R (US$5.32 por un
+# manual de 200 páginas). El buffer (×1.3) cubre el filtro Haiku (8–14% all-in)
+# y los bulk_retry directos. Media all-in medida en piloto ago-2026: US$0.0244/pág
+# sobre corpus con capa de texto (9.650 pág / 9 tandas → US$0.0265/pág incluyendo
+# ZIPs >70% Opus); ver docs/INGESTION_COST_V2.md § "Medido en piloto ago-2026".
 PRICE_PER_PAGE = 0.027
 BUFFER = 1.3
 

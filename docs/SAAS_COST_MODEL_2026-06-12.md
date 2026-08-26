@@ -125,6 +125,62 @@ Run facts: 200 source pages, 168 kept/succeeded, 0 failed, 0 degraded, 0 Opus
 pages and 2 bounded retries. The harness calculated $5.4434, 2.3% above the
 invoice; retain that value only as a conservative diagnostic, not as billed cost.
 
+## Medido en piloto ago-2026
+
+**Fuente:** nueve tandas bulk en cuenta piloto (Account 3, `piloto.danebo.ai`),
+auditoría con `script/bulk_upload_cost_audit.rb`. Registro operativo primario:
+[`INGESTA_PILOTO_GONZALO_2026-08-20.md`](INGESTA_PILOTO_GONZALO_2026-08-20.md)
+— **no se alteran sus cifras históricas aquí**.
+
+| Concepto | Valor |
+|---|---:|
+| Tandas cerradas | 9 (`00` validación + `02`–`07` ingesta) |
+| Páginas facturadas | **9.650** |
+| Gasto all-in (batch + rutas directas + caché) | **US$255,21** |
+| **Media all-in corpus completo** | **US$0,0265/pág** |
+| Media all-in corpus con capa de texto (excl. `04b` y `07`, ambos >70% Opus) | **US$0,0245/pág** |
+| Media validada a mitad de ingesta (tandas `00`–`04a`, 5.715 pág) | **US$0,0244/pág** |
+
+**Desglose de rutas (bulk cost-v2).** Sonnet/Opus van por Anthropic Batch API
+(`claude-sonnet-4-6-batch` / `claude-opus-4-6-batch`). El coste all-in suma dos
+rutas directas además del batch:
+
+| Ruta | Qué es | Modelo |
+|---|---|---|
+| `batch` | parseo por página de páginas conservadas | Sonnet/Opus batch (~50% off) |
+| `page_filter` | `PageRelevanceFilter` por ventana de hasta 20 págs — **se paga aunque la página se descarte** | Haiku directo |
+| `bulk_retry` | `BatchPageRetryService` sobre páginas truncadas en batch | Sonnet/Opus **directo** (~2× batch) |
+
+**Peaje Haiku (`page_filter` + `bulk_retry` sobre batch):** **8–14%** por tanda
+medido (`02` 13%, `03` 14%, `06` 9,2%, `04b` 12,9%, `01` 10,8%; mínimo `07` 7,6%,
+validación `00` 5%). El driver de coste por página sigue siendo la **fracción
+Opus** (escaneados densos vía `force_opus`), no el volumen bruto del corpus:
+1,1% Opus en `02` → US$0,0277/pág; 73,8% en `04b` → US$0,0470/pág; 100% en `07`
+→ US$0,0514/pág.
+
+**Rango por tanda (all-in, US$/pág facturada):**
+
+| Tanda | Págs | Opus | US$/pág |
+|---|---:|---:|---:|
+| `05_ingesta.zip` | 1.711 | bajo | **0,0184** |
+| `04a_ingesta.zip` | 512 | 0% | **0,0212** |
+| `02_ingesta.zip` | 985 | 1,1% | **0,0277** |
+| `01_ingesta.zip` | 3.447 | mixto | **0,0246** |
+| `06_ingesta.zip` | 2.064 | mixto | **0,0255** |
+| `00_validacion.zip` | 27 | 37% | **0,0424** |
+| `03_ingesta.zip` | 416 | 38,5% | **0,0390** |
+| `04b_ingesta.zip` | 187 | 73,8% | **0,0470** |
+| `07_ingesta.zip` | 301 | 100% | **0,0514** |
+
+**Implicación para el presupuesto de onboarding.** El manual reconciliado de Gate
+9R (US$5,32 / 168 págs kept = **US$0,0317/pág**) sigue siendo la referencia para
+un onboarding único con retry acotado. Para bulk a escala sobre corpus con capa de
+texto, usar **US$0,0244–0,027/pág all-in** como piso esperado y reservar hasta
+**US$0,05/pág** cuando el ZIP concentre escaneados sin capa de texto. El buffer
+de `script/gonzalo_corpus_prep.rb` (`PRICE_PER_PAGE = 0.027`, ×1,3) sigue siendo
+conservador para planificación; la media medida del piloto completo (US$0,0265/pág)
+cae por debajo.
+
 ## Production tracking accuracy
 
 - **Authoritative spend is now log-exact.** `bedrock_daily_costs` /

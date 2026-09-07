@@ -1,5 +1,6 @@
-# Danebo — Plan General (2026-08-07)
+# Danebo — Plan General (2026-09-03 18:35:00)
 
+**Estado: SUPERSEDIDO.** Reemplazado por [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) el 3 de septiembre de 2026. Conservar solo como evidencia histórica.
 **Reemplaza:** [PLAN_GENERAL_2026-08-06.md](PLAN_GENERAL_2026-08-06.md), que a su vez reemplazó la planificación general de julio.
 **Motivo de esta actualización:**
 

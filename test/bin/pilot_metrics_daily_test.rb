@@ -26,7 +26,7 @@ class PilotMetricsDailyTest < ActiveSupport::TestCase
       "PILOT_METRICS_DAILY_STACK_BIN" => @stack_bin,
       "STUB_STACK_LOG" => @stack_calls,
       # Every test whose subject is not the window bypasses it: otherwise the
-      # suite only passes between 09:00 and 17:59 in Santiago and fails at night
+      # suite only passes between 09:00 and 21:59 in Santiago and fails at night
       # for reasons that have nothing to do with the code under test.
       "PILOT_METRICS_DAILY_FORCE" => "true",
       "PILOT_METRICS_DAILY_ACCOUNTS" => "acct-one acct-two",

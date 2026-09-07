@@ -4,7 +4,7 @@
 
 **Sucede a:** `Matriz_Entrevistas_final.xlsx`, que queda **cerrada**. La meta de ocho entrevistas se cumplió el 4 de agosto de 2026, fuera del plazo original de julio, y la decisión registrada es no perseguir más entrevistas generales antes del piloto.
 
-**Documentos relacionados:** [Plan General](PLAN_GENERAL_2026-08-07.md) · [Plan de Agosto](PLAN_AGOSTO_2026-08-07.md) · [Plan de Septiembre](PLAN_SEPTIEMBRE_2026.md) · [Mercado y pricing](PRICING_Y_MERCADO_2026-08-07.md)
+**Documentos relacionados:** [Plan General](PLAN_GENERAL_2026-09-03.md) · [Plan de Agosto](PLAN_AGOSTO_2026-08-07.md) · [Plan de Septiembre](PLAN_SEPTIEMBRE_2026.md) · [Mercado y pricing](PRICING_Y_MERCADO_2026-08-07.md)
 
 **Foco de esta matriz:** convertir señales de entrevistas en uso real.
 
@@ -43,7 +43,7 @@
 
 Es el hito más importante del trimestre hasta ahora y hay que registrarlo como tal, no como una reunión más.
 
-**Qué ocurrió:** la demo se ejecutó, el resultado superó lo esperado, y Gonzalo probó el sistema espontáneamente con sus propias preguntas técnicas difíciles en vez de limitarse a mirar. De ahí salió, sin que se le preguntara, la objeción competitiva más valiosa del descubrimiento —"le cargo el manual a ChatGPT y es gratis"— que hoy tiene respuesta estructurada en cuatro pilares en el [Plan General](PLAN_GENERAL_2026-08-07.md), sección 13.
+**Qué ocurrió:** la demo se ejecutó, el resultado superó lo esperado, y Gonzalo probó el sistema espontáneamente con sus propias preguntas técnicas difíciles en vez de limitarse a mirar. De ahí salió, sin que se le preguntara, la objeción competitiva más valiosa del descubrimiento —"le cargo el manual a ChatGPT y es gratis"— que hoy tiene respuesta estructurada en cuatro pilares en el [Plan General](PLAN_GENERAL_2026-09-03.md), sección 13.
 
 **Por qué cambió la planificación, en positivo:**
 
@@ -164,7 +164,7 @@ La pregunta cambia respecto al planteamiento original. Ya no es "a quién perseg
 
 Cuatro contactos cálidos, provenientes de entrevistas donde hubo rapport real y dolor declarado, produjeron cero pilotos. Eso obliga a corregir un supuesto del plan: **la red de contactos de entrevistas no es un canal de adquisición.** Sirvió para descubrimiento, que era su propósito, y ya lo cumplió.
 
-El canal real por probar es outbound sobre el registro MINVU: **220 mantenedoras y 56 certificadoras**, conteo oficial de la nómina al 3 de junio de 2026, con dirección y teléfono por empresa. Eso no es un "plan B" para si Gonzalo se baja; es el canal que hay que testear de todas formas antes de noviembre, porque un contrato conseguido por un solo contacto personal no es un negocio replicable. Ver [Plan General](PLAN_GENERAL_2026-08-07.md), sección 9.5.
+El canal real por probar es outbound sobre el registro MINVU: **220 mantenedoras y 56 certificadoras**, conteo oficial de la nómina al 3 de junio de 2026, con dirección y teléfono por empresa. Eso no es un "plan B" para si Gonzalo se baja; es el canal que hay que testear de todas formas antes de noviembre, porque un contrato conseguido por un solo contacto personal no es un negocio replicable. Ver [Plan General](PLAN_GENERAL_2026-09-03.md), sección 9.5.
 
 ### 2.5 Track certificador — construcción en septiembre, contacto después
 

@@ -13,7 +13,7 @@ evidence and are not descriptions of the active product.
 | Local setup and configuration | [README.md](../README.md) |
 | Production deployment and AWS operations | [PRODUCTION.md](PRODUCTION.md) |
 | Current RAG closure checkpoint | [GATE9R_STATUS.md](GATE9R_STATUS.md) |
-| Strategy, priorities, runway, and decision gates | [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) |
+| Strategy, priorities, runway, and decision gates | [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) |
 
 ## Business planning (living documents)
 
@@ -22,12 +22,13 @@ older dated versions are historical evidence, not the current plan.
 
 | Scope | Current document | Status |
 |---|---|---|
-| Strategy: priorities, runway, Gonzalo track and plan B, discards | [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) | **Current.** Supersedes `PLAN_GENERAL_2026-08-06.md` |
-| Operations: 7 Aug – 4 Sep 2026 (trip window) | [PLAN_AGOSTO_2026-08-07.md](PLAN_AGOSTO_2026-08-07.md) | **Current.** Supersedes `PLAN_AGOSTO_2026-08-06.md` |
-| Operations: the September build month | [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) | **Current.** Certifier module, voice capture, descope ladder |
+| Strategy: priorities, runway, Gonzalo track and plan B, discards | [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) | **Current.** Title/date 2026-09-03 18:32; supersedes `PLAN_GENERAL_2026-08-07.md` |
+| Operations: 7 Aug – 4 Sep 2026 (trip window) | [PLAN_AGOSTO_2026-08-07.md](PLAN_AGOSTO_2026-08-07.md) | **Closed (3-sep).** Corpus Gonzalo+Jesús ingested; handoff to September |
+| Operations: the September build month | [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) | **Current / active.** Certifier module, voice capture, descope ladder; absorbs August open items |
 | Market sizing, billing unit, unit economics | [PRICING_Y_MERCADO_2026-08-07.md](PRICING_Y_MERCADO_2026-08-07.md) | **Current.** Reads against [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) as the cost authority |
 | Demo and pilot tracking | [MATRIZ_DEMOS_PILOTOS_2026-08-07.md](MATRIZ_DEMOS_PILOTOS_2026-08-07.md) | **Current.** Unifies the two identical August XLSX matrices; the July interview matrix is closed |
-| Gonzalo pilot ingestion: scope, budget, corpus findings, console runbook | [INGESTA_PILOTO_GONZALO_2026-08-20.md](INGESTA_PILOTO_GONZALO_2026-08-20.md) | **Current, in flight.** Scope closed at six brands: 180 PDFs / 10.442 pages / US$367 against US$1.121 for the full corpus. Pilot tenant deployed; validation ZIP ingesting |
+| Gonzalo pilot ingestion: scope, budget, corpus findings, console runbook | [INGESTA_PILOTO_GONZALO_2026-08-20.md](INGESTA_PILOTO_GONZALO_2026-08-20.md) | **Closed (24-ago).** Nine batches complete on `danebo-pilot-elevator` (account 3). See also Jesús corpus on legacy below. |
+| Jesús manuals ingestion → `danebo-legacy` | [INGESTA_PILOTO_JESUS_2026-08-31.md](INGESTA_PILOTO_JESUS_2026-08-31.md) | **Closed (31-ago).** 16 PDFs / 613 pages (Monarch near-dupe excluded) on account 1; BU 13+14 complete; US$14,11 all-in |
 
 Conventions that hold across all of them: business planning is written in
 Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
@@ -94,6 +95,7 @@ investigating the corresponding dated run:
 - [RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md](RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md)
 - [RESUMEN_CAMBIOS_COMPRESION.md](RESUMEN_CAMBIOS_COMPRESION.md)
 - [INGESTION_COST_V2.md](INGESTION_COST_V2.md) — retained ADR; current routing wins when behavior differs
+- [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) — superseded by the 09-03 general plan
 - [PLAN_GENERAL_2026-08-06.md](PLAN_GENERAL_2026-08-06.md) — superseded by the 08-07 general plan
 - [PLAN_AGOSTO_2026-08-06.md](PLAN_AGOSTO_2026-08-06.md) — superseded by the 08-07 August plan
 

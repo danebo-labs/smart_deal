@@ -1,11 +1,31 @@
 # Danebo — Plan de Agosto (2026-08-07)
 
+**Estado: CERRADO (3 de septiembre de 2026).** Ventana ejecutada. La operación viva pasa a [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md). Este documento queda como evidencia de la ventana del viaje; no se reabre ni se planifica trabajo nuevo aquí.
 **Reemplaza:** [PLAN_AGOSTO_2026-08-06.md](PLAN_AGOSTO_2026-08-06.md).
 **Ventana de este documento:** viernes 7 de agosto → viernes 4 de septiembre de 2026 (regreso del viaje y reentrada).
 **Convención:** solo días hábiles. Los fines de semana no se planifican.
+
+### Cierre — veredicto al 3 de septiembre
+
+| Criterio de éxito (§9) | Resultado |
+|---|---|
+| 1. Manuales de Gonzalo cargados y consultables | **Cumplido.** Ingesta cerrada 24-ago en `danebo-pilot-elevator` (account 3); ver [INGESTA_PILOTO_GONZALO_2026-08-20.md](INGESTA_PILOTO_GONZALO_2026-08-20.md) |
+| 2. Fecha de almuerzo en calendario | **Pendiente → septiembre.** Él confirmó el almuerzo; falta anclar día/hora (mar 8 / mié 9) |
+| 3. Dato de volumen real (ingenieros Gonzalo o Venezuela) | **Parcial / no cerrado.** Corpus listo; nombres de ingenieros de Gonzalo no llegaron. Jesús sí usó la app (ver abajo) |
+| 4. ≥2 de 4 contactos respondieron mercado | **1 de 4 (Daniel).** Abel y Jesús no calibraron pricing por mensaje. La decisión de precio de septiembre no espera: usa la banda de Daniel y cierra el margen en el almuerzo |
+| 5. Pago del viaje calzado contra depósito | **Fuera de alcance de este cierre documental** — verificar en caja si quedó hecho |
+
+**Lo que llegó después del estado del 11 de agosto y cambia el handoff:**
+
+1. **Gonzalo entregó los manuales.** Corpus de seis marcas ingerido; el tripwire "¿llegan los archivos?" se cierra a favor. Lo que **no** llegó: nombres de ingenieros/técnicos para cuentas atribuibles.
+2. **Jesús accedió a la aplicación, hizo un par de consultas y no encontró respuestas útiles.** Después entregó sus propios manuales —ingesta cerrada 31-ago en `danebo-legacy` (account 1); ver [INGESTA_PILOTO_JESUS_2026-08-31.md](INGESTA_PILOTO_JESUS_2026-08-31.md). Eso es señal de producto (precisión / cobertura del corpus), no de pricing: entra al triage de la primera semana de septiembre y a la batería de generalización ([PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) §5.3).
+3. **Pregunta de margen de Gonzalo** y **acceso de sus ingenieros** siguen abiertos → almuerzo de septiembre.
+
+**Veredicto de la ventana:** exitosa en el entregable que más importaba para el track operativo (corpus Gonzalo). Pricing quedó habilitado por Daniel, no por el conteo de cuatro fuentes. Lo que la ventana no cerró —almuerzo, margen, usuarios de Gonzalo, verificación Abel/Jesús, Venezuela— es trabajo de septiembre, no deuda de reabrir agosto.
+
 **Qué cambia respecto del plan del 6 de agosto:**
 
-1. **Se acota la ventana.** El documento anterior estiraba agosto hasta el 31 de diciembre. Septiembre pasa a tener su propio documento ([PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md)) y octubre–diciembre viven en la escalera del [Plan General](PLAN_GENERAL_2026-08-07.md), sección 14. Este documento cubre solo lo que se ejecuta antes de volver del viaje.
+1. **Se acota la ventana.** El documento anterior estiraba agosto hasta el 31 de diciembre. Septiembre pasa a tener su propio documento ([PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md)) y octubre–diciembre viven en la escalera del [Plan General](PLAN_GENERAL_2026-09-03.md), sección 14. Este documento cubre solo lo que se ejecuta antes de volver del viaje.
 2. **Presupuesto de viaje cerrado con cifras reales y en la moneda correcta**: el control de gastos está en **euros**, no en dólares, y el saldo comprometido de EUR 3.500 ya está descontado del runway. Se agrega cómo se paga y contra qué se calza (sección 5).
 3. **La brecha de caja de CLP 8.000.000 se cierra**: era un error de cálculo por no contar el burn mensual como salida legítima. Queda un chequeo de calce del depósito a 30 días antes del 11 de agosto (sección 4.3).
 4. **El café del 10 de agosto deja de ser el ancla del plan.** No está confirmado, hay hora con el dentista ese día y la disponibilidad de Gonzalo es desconocida. El track pasa a ser asincrónico y el entregable se redefine: no es la reunión, son los manuales. Ver sección 3.
@@ -29,8 +49,8 @@ Solo días hábiles. Los fines de semana no se planifican ni se cuentan como cap
 |---|---|---|
 | **Viernes 7 de agosto** | Bloqueante de idioma | Alta, foco único |
 | **Lunes 10 de agosto** | **Mensajes de calibración de pricing a los cuatro contactos** (sección 3). Handoff de pendientes antes del viaje | Media — **ejecutado**; respondieron Gonzalo (sección 3.2.3) y Daniel (sección 3.3.1) |
-| Martes 11 de agosto – miércoles 2 de septiembre | Viaje. Cero desarrollo. **Esperar/cargar manuales de Gonzalo** + dar OK a pruebas con ingenieros + seguimiento liviano + laboratorio Venezuela | Mínima, asincrónica |
-| Jueves 3 – viernes 4 de septiembre | Regreso y reentrada. No es arranque | Cero |
+| Martes 11 de agosto – miércoles 2 de septiembre | Viaje. Cero desarrollo. **Manuales Gonzalo ingeridos (24-ago)**; **manuales Jesús ingeridos (31-ago)**; Jesús usó la app sin respuestas útiles; ingenieros Gonzalo y Venezuela sin cierre | Mínima, asincrónica — **ejecutado en corpus** |
+| Jueves 3 – viernes 4 de septiembre | Regreso y reentrada. **Ventana cerrada.** Operación → Plan de Septiembre | Cero |
 
 **El lunes 10 tiene una tarea concreta y medible:** enviar los cuatro mensajes de calibración de mercado que cierran los supuestos del modelo de pricing. No es un día colchón: es el último día antes del viaje para extraer información que no puede esperar a septiembre.
 
@@ -545,18 +565,14 @@ Nada de lo que se ejecuta en esta ventana depende de que Gonzalo avance a socio,
 
 ## 9. Criterio de éxito de la ventana
 
-Al viernes 4 de septiembre, esta ventana fue exitosa si se cumplen los cinco:
+**Cerrado el 3 de septiembre.** Tabla de veredicto en el encabezado de este documento. Resumen:
 
-1. Los manuales de Gonzalo están cargados y consultables. *(Compromiso ya escrito; falta el archivo y la ingesta.)*
-2. Existe fecha confirmada en el calendario para el almuerzo estratégico. *(Él ya dijo sí al almuerzo; falta día/hora.)*
-3. Hay al menos un dato de volumen real —de sus ingenieros/técnicos o de Venezuela— que reemplace un supuesto.
-4. **Al menos dos de los cuatro contactos respondieron las preguntas de mercado** (ratio equipos/técnico, margen, estructura de facturación). Ver sección 3.6. *(Al 11 de agosto: **1 de 4 cumplido, y ese uno cubrió tres de las cuatro preguntas del plan** — estructura y variabilidad, la economía del cliente, y por derivación el ratio equipos/técnico más el tamaño de cartera. Gonzalo aún no aportó margen. Basta una respuesta de Abel o Jesús para cumplir el criterio, o el almuerzo. **Que un solo informante cubra tres preguntas no reemplaza el conteo: el criterio pide fuentes independientes, y sigue habiendo una.**)*
-5. El pago del viaje está calzado contra un vencimiento del depósito, sin cuotas y sin romper capital fuera de ciclo.
+1. Manuales Gonzalo cargados → **sí.**
+2. Fecha de almuerzo en calendario → **no** (sí verbal; anclar en septiembre).
+3. Volumen real de ingenieros Gonzalo o Venezuela → **no cerrado** (Jesús usó la app; sin señal de adopción atribuible al track primario).
+4. ≥2 de 4 contactos de mercado → **1 de 4** (Daniel). Criterio formal no cumplido; pricing igualmente habilitado para decidir en septiembre.
+5. Calce depósito → **verificar en caja**, fuera de este cierre.
 
-Nótese que **ninguno de los cinco es un entregable de código, y ninguno requiere que ocurra una reunión.** Esta ventana no es de construcción; es de adquisición de insumos para el mes que sí lo es.
+Nótese que **ninguno de los cinco era un entregable de código.** La ventana cumplió su trabajo principal: corpus real para el mes de construcción. Lo incompleto viaja a [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) sin reabrir agosto.
 
-**El más importante sigue siendo el cuarto para pricing, y el primero para el track operativo.** Las respuestas del 11 de agosto mueven el track Gonzalo de "¿hay intención?" a "¿cumple el envío?", y mueven el pricing de "todo son supuestos propios" a "hay un dato de campo que ya corrigió uno". Si al 4 de septiembre los manuales están cargados, el mes de construcción arranca con corpus real aunque el margen llegue en el almuerzo. Si no llegan los archivos tras el recordatorio de la semana 1, se reclasifica según la fila correspondiente de la sección 3.2 y el outbound MINVU se adelanta.
-
-**Y una nota sobre el valor relativo de lo que llegó.** La respuesta operativa de Gonzalo mueve el track del piloto; las de Daniel mueven el modelo de negocio y desbloquean la decisión de precio de septiembre. Las segundas vinieron de un contacto con 0% de conversión, sin costo, sin reunión y sin nada prometido a cambio — que es exactamente el argumento para mantener la disciplina de la sección 3.9: los pedidos livianos a fuentes neutrales rinden más que perseguir compromisos de gente que todavía no tiene motivo propio para dárselos.
-
-**Y el contrapeso, que es lo que impide sobreleer un buen día.** Todo lo que se ganó el 11 de agosto en materia de pricing viene de **una** persona, en un canal informal, y la pieza que decide la unidad de cobro es una **derivación aritmética de su rutina**, no un ratio que alguien haya reportado. Sirve para decidir internamente en septiembre, que es exactamente para lo que se pidió. No sirve para citarse como dato de mercado en una postulación a fondos ni para darle por cerrada la pregunta a Abel y a Jesús.
+**Nota de método que sigue vigente.** El pricing de septiembre se apoya en **una** fuente (Daniel) y una derivación de rutina (60–84 equipos/técnico). Sirve para decidir internamente. No se cita como dato de mercado ni da por cerrada la verificación con Abel o con Jesús.

@@ -1111,6 +1111,10 @@ ingesta](#fuera-de-la-ingesta) de abajo.
 
 ### Fuera de la ingesta
 
+Corpus paralelo en legacy (no es este piloto): los manuales de Jesús Graterol se
+ingerieron el 31-ago en `danebo-legacy` (account 1) — ver
+[`INGESTA_PILOTO_JESUS_2026-08-31.md`](INGESTA_PILOTO_JESUS_2026-08-31.md).
+
 1. **Usuarios nominales**: falta el nombre y correo de cada ingeniero. El plan de
    agosto exige usuarios atribuibles; no entregar credenciales compartidas.
 2. **Manuales que Gonzalo dijo que faltaban**: si llegan, se re-corre el script y

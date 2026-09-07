@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Hourly pilot telemetry export meant to run ON the EC2 host (not the laptop).
+#
+# Why this exists: laptop cron misses days when the lid is closed. Event series
+# already lives in RDS (`pilot_events`); this job archives report.json + filtered
+# container logs to the host disk before Docker rotates them.
+#
+# Install (once) from a laptop that can SSH — see bottom of this file, or run:
+#   bin/pilot_metrics_host_daily --self-check   # only when already on the host
+#
+# Cron (America/Santiago window enforced inside the script):
+#   0 * * * * LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
+#     /home/ubuntu/pilot_metrics_ops/pilot_metrics_host_daily \
+#     >> /home/ubuntu/pilot_exports/cron.log 2>&1
+#
+# Idempotent: same day+account overwrites its directory. Last run of the day wins.
+
+SERVICE="${PILOT_METRICS_SERVICE:-smart-deal}"
+ACCOUNTS="${PILOT_METRICS_DAILY_ACCOUNTS:-danebo-legacy danebo-pilot-elevator}"
+EXPORT_TZ="${PILOT_METRICS_DAILY_TZ:-America/Santiago}"
+WINDOW_START="${PILOT_METRICS_DAILY_WINDOW_START:-9}"
+WINDOW_END="${PILOT_METRICS_DAILY_WINDOW_END:-21}"
+OUTPUT_ROOT="${PILOT_METRICS_OUTPUT_ROOT:-$HOME/pilot_exports}"
+OPS_DIR="$(cd "$(dirname "$0")" && pwd)"
+EXPORT_SCRIPT="${PILOT_METRICS_EXPORT_SCRIPT:-$OPS_DIR/pilot_metrics_export.rb}"
+
+log() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] pilot_metrics_host_daily: $*"
+}
+
+fail() {
+  log "ERROR: $*" >&2
+  exit 1
+}
+
+TODAY=$(TZ="$EXPORT_TZ" date +%Y-%m-%d)
+HOUR=$(TZ="$EXPORT_TZ" date +%-H)
+
+if [[ "${PILOT_METRICS_DAILY_FORCE:-false}" != "true" ]]; then
+  if [[ "$HOUR" -lt "$WINDOW_START" || "$HOUR" -gt "$WINDOW_END" ]]; then
+    log "skipped: ${HOUR}h ${EXPORT_TZ} is outside the ${WINDOW_START}-${WINDOW_END}h export window"
+    exit 0
+  fi
+fi
+
+[[ -f "$EXPORT_SCRIPT" ]] || fail "export script not found: ${EXPORT_SCRIPT}"
+mkdir -p "$OUTPUT_ROOT"
+
+WEB_CONTAINER=$(docker ps --filter "label=service=${SERVICE}" --filter "label=role=web" \
+  --filter status=running --format '{{.Names}}' | head -1)
+[[ -n "$WEB_CONTAINER" ]] || fail "no running web container for service=${SERVICE}"
+
+append_role_logs() {
+  local role="$1"
+  local out="$2"
+  shift 2
+  local markers='\[PILOT_USAGE\]|\[RAG_QUALITY\]|\[PILOT_AUDIT\]'
+  local container raw
+  for container in "$@"; do
+    [[ -n "$container" ]] || continue
+    raw=$(mktemp)
+    if ! docker logs --since "${TODAY}T00:00:00Z" "$container" >"$raw" 2>&1; then
+      log "warning: could not read logs for ${role}:${container}"
+      rm -f "$raw"
+      continue
+    fi
+    grep -E "$markers" "$raw" |
+      sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+      >>"$out" || true
+    rm -f "$raw"
+  done
+}
+
+export_account() {
+  local account="$1"
+  local dir="${OUTPUT_ROOT}/${TODAY}_${TODAY}_${account}"
+  local work cohort_json user_ids source
+  work=$(mktemp -d)
+  mkdir -p "$dir"
+
+  cohort_json=$(docker exec -i -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 \
+    "$WEB_CONTAINER" bin/rails runner \
+    'account = Account.find_by!(slug: ARGV.fetch(0)); puts JSON.generate(account_id: account.id, account_slug: account.slug, user_ids: account.users.order(:id).pluck(:id))' \
+    "$account") || {
+    rm -rf "$work"
+    fail "cohort resolve failed for ${account}"
+  }
+
+  user_ids=$(printf '%s' "$cohort_json" | python3 -c \
+    'import json,sys; ids=json.load(sys.stdin)["user_ids"]; print(",".join(str(i) for i in ids) if ids else "0")')
+
+  source="${dir}/source_events.jsonl"
+  : >"$source"
+  mapfile -t WEB_ALL < <(docker ps --all --filter "label=service=${SERVICE}" \
+    --filter "label=role=web" --format '{{.Names}}')
+  mapfile -t WORKER_ALL < <(docker ps --all --filter "label=service=${SERVICE}" \
+    --filter "label=role=worker" --format '{{.Names}}')
+  append_role_logs web "$source" "${WEB_ALL[@]:-}"
+  append_role_logs worker "$source" "${WORKER_ALL[@]:-}"
+
+  # Image has no script/; copy the export entrypoint in, feed filtered logs on stdin.
+  docker cp "$EXPORT_SCRIPT" "${WEB_CONTAINER}:/tmp/pilot_metrics_export.rb" >/dev/null
+  if ! docker exec -i -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 \
+    "$WEB_CONTAINER" bin/rails runner /tmp/pilot_metrics_export.rb \
+    --from "$TODAY" --to "$TODAY" \
+    --user-ids "$user_ids" \
+    --roles "web,worker" \
+    --stdin-logs \
+    --format raw \
+    --with-questions \
+    <"$source" >"${work}/report.json" 2>"${work}/export.err"; then
+    cat "${work}/export.err" >&2 || true
+    rm -rf "$work"
+    fail "export failed for ${account}"
+  fi
+
+  python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' \
+    "${work}/report.json" || fail "invalid report JSON for ${account}"
+
+  mv "${work}/report.json" "${dir}/report.json"
+  printf '%s\n' "$cohort_json" >"${dir}/cohort.json"
+
+  docker cp "${dir}/report.json" "${WEB_CONTAINER}:/tmp/pilot_report.json" >/dev/null
+  docker exec -i -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 "$WEB_CONTAINER" \
+    bin/rails runner \
+    'report = JSON.parse(File.read("/tmp/pilot_report.json")); puts PilotMetricsHumanFormatter.new(report.deep_symbolize_keys)' \
+    >"${dir}/report.txt"
+
+  chmod 700 "$dir" 2>/dev/null || true
+  chmod 600 "${dir}/report.json" "${dir}/report.txt" "${dir}/source_events.jsonl" \
+    "${dir}/cohort.json" 2>/dev/null || true
+
+  rm -rf "$work"
+  log "ok: ${account} → ${dir}"
+}
+
+log "exporting ${TODAY} (${HOUR}h ${EXPORT_TZ}) for: ${ACCOUNTS}"
+
+FAILED=()
+for account in $ACCOUNTS; do
+  if ! export_account "$account"; then
+    FAILED+=("$account")
+  fi
+done
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  fail "export incomplete for: ${FAILED[*]:-}"
+fi
+
+log "done"

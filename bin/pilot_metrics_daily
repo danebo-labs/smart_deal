@@ -16,10 +16,13 @@ set -euo pipefail
 # therefore fire this every hour and the last run of the day simply wins — no
 # lock, no marker, and a laptop that was asleep at 17:00 still exports at 15:00.
 #
-# The EventBridge schedules danebo-stop-{ec2,rds} take the stack down at 18:00
-# Chile, and the export needs the containers up, so runs outside the window are
-# skipped rather than attempted. The window is evaluated in America/Santiago so
-# that DST in either the laptop's zone or Chile's cannot shift it.
+# The EventBridge schedules danebo-stop-{ec2,rds} default to 18:00 Chile, but
+# while they are DISABLED (`bin/stack hold`) the stack stays up overnight and
+# the export window can reach 21:00. The export needs the containers up, so
+# runs outside the window are skipped rather than attempted. The window is
+# evaluated in America/Santiago so that DST in either the laptop's zone or
+# Chile's cannot shift it. If the nightly stop is re-enabled at 18:00, drop
+# WINDOW_END back to 17.
 #
 # Known limitation, accepted for the MVP: cron on a laptop only fires while the
 # laptop is awake. A day where the laptop stayed closed is a day of [PILOT_AUDIT]
@@ -30,8 +33,9 @@ ACCOUNTS_DEFAULT="danebo-legacy danebo-pilot-elevator"
 ACCOUNTS="${PILOT_METRICS_DAILY_ACCOUNTS:-$ACCOUNTS_DEFAULT}"
 EXPORT_TZ="${PILOT_METRICS_DAILY_TZ:-America/Santiago}"
 WINDOW_START="${PILOT_METRICS_DAILY_WINDOW_START:-9}"
-# 17 keeps the last run at 17:00-17:59 Chile, ahead of the 18:00 stop schedules.
-WINDOW_END="${PILOT_METRICS_DAILY_WINDOW_END:-17}"
+# 21 keeps the last run at 21:00-21:59 Chile while stop schedules are held.
+# Revert to 17 if danebo-stop-{ec2,rds} are re-enabled at 18:00.
+WINDOW_END="${PILOT_METRICS_DAILY_WINDOW_END:-21}"
 METRICS_BIN="${PILOT_METRICS_DAILY_BIN:-bin/pilot_metrics}"
 RUBY_BIN="${PILOT_METRICS_RUBY:-ruby}"
 OUTPUT_ROOT="${PILOT_METRICS_OUTPUT_ROOT:-tmp/pilot_exports}"

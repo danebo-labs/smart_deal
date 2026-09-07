@@ -1,6 +1,6 @@
 # Danebo — Plan de Implementación: Módulo Certificador (2026-08-09)
 
-**Documento padre:** [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) (sección 4) · [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) (sección 3).
+**Documento padre:** [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) (sección 4) · [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) (sección 3).
 **Naturaleza:** documento vivo de ejecución. Las fases se ejecutan en sesiones de agente independientes ("ejecutores"), potencialmente con modelos distintos. Ver protocolo en sección 1.
 **Motivo del adelanto:** el plan de septiembre ordenaba modelo de datos → voz → estructura → exportable porque septiembre tiene solo 15 días hábiles efectivos. Al adelantar la construcción a agosto con ejecución por agentes, se recupera el orden que pide el fundador: primero lo determinista y verificable (modelo de datos + exportable según formato real), después la voz. El corte del 16 de septiembre y la escalera de recorte del plan de septiembre siguen vigentes como red de seguridad.
 

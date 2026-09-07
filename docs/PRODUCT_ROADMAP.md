@@ -11,7 +11,7 @@ an implementation commitment or a license to introduce speculative
 architecture.
 
 Planning documents that this roadmap serves:
-[PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) (strategy),
+[PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) (strategy),
 [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) (the build month),
 [PRICING_Y_MERCADO_2026-08-07.md](PRICING_Y_MERCADO_2026-08-07.md) (billing
 unit per segment).

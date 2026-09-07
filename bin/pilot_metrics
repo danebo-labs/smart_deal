@@ -201,12 +201,23 @@ OUTPUT_DIR="${OUTPUT_ROOT}/${FROM}_${TO}_${ACCOUNT_SLUG}"
 # every filesystem this runs on, so it doubles as a zero-dependency lock —
 # there is no `flock` command on macOS (only the syscall other tools bind to),
 # and installing one is more moving parts than this needs.
+#
+# Create OUTPUT_ROOT first. `mkdir lock` without -p fails if the parent is
+# missing, and the wait loop used to treat that as "another export is running"
+# for LOCK_WAIT_SECONDS (300s by default) — which is what CI hit when tests
+# pointed PILOT_METRICS_OUTPUT_ROOT at a fresh tmpdir.
+mkdir -p "$OUTPUT_ROOT" || fail "could not create output root: ${OUTPUT_ROOT}"
 LOCK_DIR="${OUTPUT_DIR}.lock"
 LOCK_WAIT_SECONDS="${PILOT_METRICS_LOCK_WAIT_SECONDS:-300}"
+[[ "$LOCK_WAIT_SECONDS" =~ ^[0-9]+$ ]] || fail "invalid PILOT_METRICS_LOCK_WAIT_SECONDS"
 LOCK_ACQUIRED=false
-for ((_lock_attempt = 0; _lock_attempt < LOCK_WAIT_SECONDS; _lock_attempt++)); do
+_lock_deadline=$((SECONDS + LOCK_WAIT_SECONDS))
+while true; do
   if mkdir "$LOCK_DIR" 2>/dev/null; then
     LOCK_ACQUIRED=true
+    break
+  fi
+  if (( SECONDS >= _lock_deadline )); then
     break
   fi
   sleep 1

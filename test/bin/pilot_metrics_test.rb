@@ -24,6 +24,9 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
       "PATH" => "#{@fake_bin}:#{ENV.fetch('PATH')}",
       "PILOT_METRICS_DEPLOY_CONFIG" => File.join(@tmpdir, "deploy.yml"),
       "PILOT_METRICS_OUTPUT_ROOT" => @output_root,
+      # Cap lock wait so a missing parent dir or a stuck lock cannot stall CI
+      # for the production default of 300s per test.
+      "PILOT_METRICS_LOCK_WAIT_SECONDS" => "2",
       "PILOT_METRICS_RAILS_BIN" => File.join(@fake_bin, "rails"),
       "PILOT_METRICS_RUBY" => RbConfig.ruby,
       "FAKE_SSH_LOG" => @ssh_log,
@@ -208,6 +211,29 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
 
     assert_not status.success?
     assert_match(/strict: cohort is empty/, stderr)
+  end
+
+  test "creates a missing output root instead of waiting on a false lock" do
+    assert_not File.exist?(@output_root)
+
+    _stdout, stderr, status = run_command("--format", "raw")
+
+    assert status.success?, stderr
+    assert_path_exists File.join(output_dir, "report.json")
+    assert_not File.exist?("#{output_dir}.lock")
+  end
+
+  test "refuses to start when another export holds the lock" do
+    FileUtils.mkdir_p("#{output_dir}.lock")
+
+    _stdout, stderr, status = run_command(
+      "--format", "raw",
+      env: { "PILOT_METRICS_LOCK_WAIT_SECONDS" => "0" }
+    )
+
+    assert_not status.success?
+    assert_match(/another export for 2026-07-22_2026-07-22_pilot-account is still running/, stderr)
+    assert_not File.exist?(File.join(output_dir, "report.json"))
   end
 
   test "rejects an inverted range before opening SSH" do

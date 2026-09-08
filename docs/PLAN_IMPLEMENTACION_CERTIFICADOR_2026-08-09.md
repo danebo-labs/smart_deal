@@ -69,6 +69,13 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 
 **Feature flag.** Gating mínimo Rails-native, sin gem: `ENV["CERTIFIER_MODULE_ENABLED"]` que (a) oculta la entrada de navegación y (b) protege los controladores del módulo con un `before_action` que devuelve 404. Permite mergear y deployar fases incompletas mientras usuarios reales (ingenieros/técnicos de Gonzalo) usan producción. La Fase 0 puede mergear sin flag: son migraciones aditivas sin superficie visible. El flag se retira cuando el módulo se libere a un certificador real.
 
+**Plan de rollback.** El flag es el mecanismo principal — **no** `git reset`/reescribir `main`:
+
+- **Kill switch instantáneo:** apagar `ENV["CERTIFIER_MODULE_ENABLED"]` en producción oculta la navegación y devuelve 404 en los controladores del módulo, sin deploy de código ni operación de git. Es la respuesta a "no funciona, hay que pararlo ahora".
+- **Por qué no resetear `main`:** cada fase se mergea individualmente y se deploya (este mismo apartado); entre el cierre de una fase y una eventual decisión de abandonar el módulo, `main` sigue recibiendo commits no relacionados (otras correcciones del repo). Resetear `main` a un punto anterior los borraría también y exigiría force-push — fuera de las reglas de git de este workspace.
+- **Retirar el código de una fase puntual:** `git revert` del merge commit de esa fase (no `reset`) — no reescribe historia, es seguro sobre una rama ya deployada. Las migraciones de cada fase se exigen reversibles como criterio de aceptación (Fase 0 ya lo probó con `db:rollback:primary STEP=2`), así que `rails db:rollback` deshace el esquema si además se quiere botar las tablas.
+- **Estado de reposo aceptable:** el módulo es aditivo (tablas y rutas nuevas; nunca toca `ConversationSession` ni rutas existentes — regla fija 6). Si el piloto no valida el módulo, dejarlo mergeado y apagado por el flag indefinidamente es un desenlace válido — no hay obligación de deshacer git.
+
 **Rutas.** Path nuevo, recurso REST plano siguiendo el patrón existente (`resources :field_photos`): `resources :certification_reports` (Fase 2) con member `get :export` (Fase 1, condicionada), y `resources :voice_dictations, only: %i[create show]` (Fases 4–5). Nada anidado bajo el chat ni bajo `/rag`.
 
 **UI: sección propia, no el chat.** El módulo es un editor de documento (lista + borrador), no una conversación: reutiliza el layout/shell de la app (navegación, Tailwind, i18n) pero con vistas y controladores Stimulus propios. No se monta sobre `rag_chat_controller` ni sobre `ConversationSession` (regla fija 6). El chat queda intacto para el flujo mantenedor.

@@ -1,0 +1,28 @@
+<% content_for :title, t("certifier.new_report.title") %>
+
+<main class="mx-auto max-w-2xl px-4 pt-20 pb-16 md:pt-28">
+  <h1 class="mb-6 text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= t("certifier.new_report.title") %></h1>
+
+  <%= render "certification_reports/errors", record: @report %>
+
+  <%# Minimal typing on creation: only the building name is required (fixed
+      rule 4) — everything else is optional and collapsed behind <details>. %>
+  <%= form_with model: @report, url: certification_reports_path, class: "mt-4 space-y-5" do |f| %>
+    <div class="space-y-1.5">
+      <%= f.label :building_name, t("certifier.fields.building_name"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_field :building_name, autofocus: true,
+          placeholder: t("certifier.fields.building_name_placeholder"),
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+
+    <details class="rounded-lg border border-[hsl(215,20%,88%)] bg-white p-4">
+      <summary class="cursor-pointer text-sm font-medium text-[hsl(215,20%,42%)]"><%= t("certifier.new_report.more_details") %></summary>
+      <div class="mt-4">
+        <%= render "certification_reports/building_fields", f: f %>
+      </div>
+    </details>
+
+    <%= f.submit t("certifier.new_report.submit"),
+        class: "flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+  <% end %>
+</main>

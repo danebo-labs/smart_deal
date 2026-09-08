@@ -1,0 +1,70 @@
+# Certifier module (Fase 2) — mis informes + minimal editor.
+en:
+  certifier:
+    nav:
+      my_reports: "My reports"
+    my_reports:
+      title: "My reports"
+      new_report: "New report"
+      empty: "You have no reports yet. Create the first one."
+      findings_count:
+        one: "1 finding"
+        other: "%{count} findings"
+    new_report:
+      title: "New report"
+      more_details: "More building details (optional)"
+      submit: "Create report"
+    edit_report:
+      title: "Building details"
+      submit: "Save details"
+      back: "Back to report"
+    statuses:
+      en_progreso: "In progress"
+      listo_revision: "Ready for review"
+      enviado: "Submitted"
+    status_form:
+      label: "Report status"
+      submit: "Save status"
+    fields:
+      building_name: "Building name"
+      building_name_placeholder: "E.g. Torre Amuñátegui"
+      commune: "District"
+      street: "Street"
+      street_number: "Number"
+      property_use: "Property use"
+      property_use_placeholder: "E.g. residential, commercial"
+      municipal_reception_date: "Municipal reception date"
+      internal_number: "Internal report number"
+      inspection_date: "Inspection date"
+      maintenance_company: "Maintenance company"
+      maintenance_technician: "Maintenance technician"
+    show:
+      edit_building_info: "Edit building details"
+      back_to_list: "My reports"
+      findings_heading: "Findings"
+      no_findings: "No findings yet. Add the first one below."
+      delete_report: "Delete report"
+      delete_report_confirm: "Delete this report? Its findings are deleted too and any attached photo is released for the usual evidence purge."
+    finding:
+      body: "Finding"
+      body_placeholder: "Describe what you observed…"
+      location: "Location (optional)"
+      location_placeholder: "E.g. Cabin, entrance 3"
+      photo: "Attach photo (optional)"
+      add: "Add finding"
+      edit_title: "Edit finding"
+      edit: "Edit"
+      save: "Save finding"
+      cancel: "Cancel"
+      delete: "Delete"
+      delete_confirm: "Delete this finding?"
+      has_photo: "Has photo"
+      replace_photo: "Replace photo (optional)"
+      view_photo: "View photo"
+    notices:
+      report_created: "Report created."
+      report_updated: "Building details updated."
+      report_destroyed: "Report deleted."
+      finding_created: "Finding added."
+      finding_updated: "Finding updated."
+      finding_destroyed: "Finding deleted."

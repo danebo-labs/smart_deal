@@ -42,6 +42,28 @@ class AccountHostResolverTest < ActiveSupport::TestCase
     assert_not_includes AccountHostResolver.allowed_hosts, "chat.danebo.ai"
   end
 
+  test "unknown host falls back to DEV_TUNNEL_FALLBACK_ACCOUNT_SLUG in development" do
+    with_rails_env("development") do
+      with_env("DEV_TUNNEL_FALLBACK_ACCOUNT_SLUG" => accounts(:legacy).slug) do
+        assert_equal accounts(:legacy), AccountHostResolver.account_for("random-tunnel-id.lhr.life")
+      end
+    end
+  end
+
+  test "unknown host stays nil in development when the fallback env var is unset" do
+    with_rails_env("development") do
+      with_env("DEV_TUNNEL_FALLBACK_ACCOUNT_SLUG" => nil) do
+        assert_nil AccountHostResolver.account_for("random-tunnel-id.lhr.life")
+      end
+    end
+  end
+
+  test "the dev tunnel fallback never applies outside development, even if the env var is set" do
+    with_env("DEV_TUNNEL_FALLBACK_ACCOUNT_SLUG" => accounts(:legacy).slug) do
+      assert_nil AccountHostResolver.account_for("random-tunnel-id.lhr.life")
+    end
+  end
+
   test "host_map uses PRODUCTION keys only when stubbed as production map" do
     original = AccountHostResolver.method(:host_map)
     AccountHostResolver.define_singleton_method(:host_map) { AccountHosts::PRODUCTION }
@@ -51,5 +73,26 @@ class AccountHostResolverTest < ActiveSupport::TestCase
     ensure
       AccountHostResolver.define_singleton_method(:host_map, original)
     end
+  end
+
+  private
+
+  def with_rails_env(env_name)
+    original = Rails.method(:env)
+    Rails.define_singleton_method(:env) { ActiveSupport::StringInquirer.new(env_name) }
+    yield
+  ensure
+    Rails.define_singleton_method(:env, original)
+  end
+
+  def with_env(vars)
+    original = {}
+    vars.each do |key, value|
+      original[key] = ENV.fetch(key, nil)
+      value.nil? ? ENV.delete(key) : ENV[key] = value
+    end
+    yield
+  ensure
+    original.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
   end
 end

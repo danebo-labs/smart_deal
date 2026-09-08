@@ -412,6 +412,54 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 
 > Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` completo, con foco en las secciones 0 (reglas 7, 10, 12 y 13), 2.2, 4 y 5, más el cierre de la Fase 0. Crea `certificador/fase-4-transcripcion` desde `main`. Diseña primero y por escrito (en el PR) el contrato `SpeechToText::Client` y la máquina de estados de `VoiceDictation`; después implementa. No negociable: claim atómico antes de llamar al proveedor (dos performs concurrentes → una sola llamada facturada, con test); resultado tardío nunca sobrescribe `transcript_edited`; confirmación idempotente con índice único dictado→hallazgo; dedup por `[account_id, certification_report_id, sha256]`; broadcast por canal privado del usuario con test de que otro usuario de la cuenta no recibe el evento; purga solo de estados terminales; telemetría propia sin tocar `bedrock_queries`. Prueba end-to-end real en dev con Transcribe y OpenAI, y documenta el costo en el cierre. Actualiza los "Insumos" de las Fases 5 y 6.
 
+### Diseño (escrito antes de implementar, 2026-09-08)
+
+Este bloque es el contrato que consumen las Fases 5, 6 y 7. Se escribió y revisó **antes** de escribir código, como exige el prompt de la fase.
+
+#### A. Contrato `SpeechToText::Client`
+
+```ruby
+SpeechToText::Client.for(provider = nil, client: nil)   # → adapter
+adapter.transcribe(s3_key:, language: "es-CL", duration_hint_seconds: nil)
+# → SpeechToText::Result(text:, duration_seconds:, provider:, model:, raw:)
+```
+
+- **Resolución de proveedor:** argumento explícito → `ENV["STT_PROVIDER"]` → default `amazon_transcribe`. El override por llamada existe porque la Fase 6 corre el mismo audio por todos los adapters en un solo proceso.
+- **Errores:** `SpeechToText::Error` (base) con tres hijos que significan cosas distintas para el job — `ConfigurationError` (falta credencial o bucket: **no hubo llamada al proveedor**, no se facturó nada), `ProviderError` (el proveedor respondió error o se agotó el timeout: pudo haberse facturado), `UnknownProviderError` (nombre de proveedor no registrado).
+- **Los adapters no tocan la base de datos ni escriben telemetría.** Reciben una key de S3 y devuelven texto. Estado, costo, broadcast y persistencia viven en el job. Eso es lo que hace que cambiar de proveedor sea configuración y no arquitectura (sección 4).
+- `language` es BCP-47 canónico (`es-CL`); cada adapter lo traduce a su propio dialecto (Transcribe lo usa tal cual; OpenAI y Groq solo aceptan el subtag primario, `es`).
+- **Inyección:** `client:` para el doble del SDK/HTTP, patrón ya usado en el repo. Los tests de job reemplazan `SpeechToText::Client.for` por una fake (el repo no usa WebMock).
+
+**Por qué el contrato es bloqueante aunque Transcribe batch sea asíncrono.** Amazon Transcribe batch es `start_transcription_job` + poll. La alternativa sería un segundo job de polling más una tabla de trabajos en vuelo; en su lugar el adapter hace el poll **dentro** de `TranscriptionJob`, que corre en Solid Queue y no en la ruta de request. Se paga un hilo de worker retenido durante la transcripción y se ahorra una máquina de estados paralela, un fan-out y un loop de polling — el balance que pide la sección 0 (ruta de ejecución directa, sin orquestación innecesaria). El poll está acotado por `STT_POLL_TIMEOUT_SECONDS`; agotarlo levanta `ProviderError` y el dictado queda `failed`, nunca colgado.
+
+#### B. Máquina de estados de `VoiceDictation`
+
+Estados: `pending` → `transcribing` → `transcribed` | `failed`; `transcribed` → `confirmed`. **Terminales:** `confirmed`, `failed`. **No terminales (la purga nunca los toca):** `pending`, `transcribing`, `transcribed`.
+
+Toda transición es **un solo `UPDATE` condicional** (`update_all` sobre un `where` que incluye el estado de origen) y se decide por las filas afectadas. Nunca hay asignación directa de `status`.
+
+| # | Transición | Disparador | Guarda (en el propio `UPDATE`) | Escribe |
+|---|---|---|---|---|
+| T0 | — → `pending` | `VoiceDictationIntake` | único `[account_id, certification_report_id, sha256]` | fila + audio en S3 |
+| T1 | `pending` → `transcribing` | claim de `TranscriptionJob` | `status = pending` **o** (`status = transcribing` y `transcribing_since` < corte de obsolescencia) | `provider`, `transcribing_since`, `transcription_claim_id` nuevo |
+| T2 | `transcribing` → `transcribed` | resultado del proveedor | `status = transcribing` **y** `transcription_claim_id` = el claim propio | `transcript_raw`, `duration_seconds`, `cost_estimate_usd` |
+| T3 | `transcribing` → `failed` | error del proveedor | misma guarda de claim | `failure_reason` |
+| T4 | `transcribed` → `confirmed` | confirmación humana | `status = transcribed` (el lock de fila serializa el doble tap) | `confirmed_at`, congela `transcript_edited`, y crea el `InspectionFinding` en la misma transacción |
+| T5 | `failed` → `pending` | reintento humano explícito | `status = failed` **y** `audio_purged_at IS NULL` | limpia `failure_reason` y el claim |
+| T6 | purga de audio | job de retención | `status IN (confirmed, failed)` **y** `audio_purged_at IS NULL` | `s3_key_audio` → NULL, `audio_purged_at`; después borra S3 |
+
+**Propiedades que la forma de la máquina garantiza, y por qué están ahí:**
+
+1. **Una sola llamada facturada por intento (regla fija 13).** T1 es un `UPDATE` que devuelve filas afectadas: solo el `perform` que obtiene 1 llama al proveedor. Un `perform` concurrente obtiene 0 y **retorna sin tocar el proveedor** — no espera, no reencola, no factura.
+2. **Un resultado tardío nunca gana (regla fija 13).** El claim escribe un `transcription_claim_id` (UUID) nuevo; T2 y T3 filtran por él, así que cualquier resultado cuyo claim ya no esté vigente (porque el dictado se confirmó, o porque un reclaim por obsolescencia lo sustituyó) actualiza 0 filas, se loguea y se descarta. Y `transcript_edited` **no lo escribe el job en ninguna transición**: sus únicos escritores son el autosave humano (Fase 5) y el congelado de T4.
+3. **Por qué existe el reclaim por obsolescencia (T1, segunda rama).** Un worker muerto en duro (deploy, SIGKILL) en medio de la llamada al proveedor dejaría el dictado en `transcribing` para siempre, y "cerrar y reabrir sin perder audio" es la regla fija 11. Cuesta una segunda llamada facturada después de `STT_STALE_CLAIM_MINUTES` (30 por defecto): es deliberado y nunca es concurrente con la primera.
+4. **La confirmación es idempotente por dos caminos independientes (regla fija 13).** El `UPDATE` de T4 toma el lock de la fila, así que un segundo confirm concurrente **se bloquea**, luego ve 0 filas y lee el hallazgo que el ganador ya comiteó — misma respuesta, un solo hallazgo. Y `inspection_findings.voice_dictation_id` lleva **índice único**, así que ni un camino que se saltara el CAS podría crear un segundo hallazgo.
+5. **La deduplicación es por informe, no global (gap 5).** Único `[account_id, certification_report_id, sha256]` con `NULLS NOT DISTINCT` (PostgreSQL 16 en dev y prod): doble tap sobre el mismo informe devuelve la misma fila; el mismo audio en otro informe es una fila nueva legítima; y un dictado sin informe todavía deduplica, en vez de que el NULL haga única cada fila.
+6. **La purga tiene dos capas independientes, como la Fase 0.** La consulta del lote excluye los estados no terminales, y el `UPDATE` de T6 **vuelve a verificar** la terminalidad fila por fila. El job devuelve `{ purged:, kept:, aborted: }`; una corrida sana tiene `aborted == 0`, que es lo que prueba que el audio lo protegió la consulta y no la guarda de respaldo (hallazgo 1 del cierre de la Fase 0). Se valida por mutación, no por color verde.
+7. **La purga borra los bytes del audio, no la fila.** Es una desviación de la letra de "fila antes que S3": destruir la fila rompería la FK de trazabilidad `inspection_findings.voice_dictation_id` y borraría la telemetría de costo que la Fase 6 necesita. El *orden seguro* sí se preserva: la escritura reversible en la base (limpiar el puntero) va antes del borrado irreversible en S3, así que un fallo deja los bytes en el bucket, nunca huérfanos sin registro.
+8. **Telemetría propia, `bedrock_queries` intacto (regla fija 7).** `voice_dictations` es la tabla propia de la fase (`provider`, `duration_seconds`, `cost_estimate_usd`) más una línea de log estructurado `[STT_USAGE]`. El costo es duración × tarifa de una constante versionada, no un token count.
+9. **El broadcast va por `user:<user_id>:voice_dictations`** — canal privado del usuario, no el patrón `KbSyncChannel`, que transmite a toda la cuenta (regla fija 12, gap 4).
+
 ### Cierre de fase (lo llena el ejecutor)
 - Estado: pendiente
 - Hallazgos:

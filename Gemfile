@@ -4,12 +4,13 @@ ruby '~> 3.4.0'
 source 'https://rubygems.org'
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem 'rails', '~> 8.1.1'
+# Bundler-audit: CVE-2026-66066 (Active Storage variant processing) — need >= 8.1.3.1
+gem 'rails', '~> 8.1.1', '>= 8.1.3.1'
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem 'propshaft'
 # Use sqlite3 as the database for Active Record
-# Bundler-audit: CVE-2026-54619/54620 (UAF in function redef / aggregates) — need >= 2.9.5
-gem 'sqlite3', '>= 2.9.5'
+# Bundler-audit: GHSA-mwm8-39rw-8826 (UAF in aggregate arguments) — need >= 2.9.6
+gem 'sqlite3', '>= 2.9.6'
 # PostgreSQL adapter for client business databases (Text-to-SQL)
 gem 'pg', '~> 1.5.0'
 # Use the Puma web server [https://github.com/puma/puma]
@@ -47,8 +48,11 @@ gem 'concurrent-ruby', '>= 1.3.7'
 # Bundler-audit: GHSA-6jxj/6wmf/8vfg/wwpr (crass CSS DoS) — need >= 1.0.7
 gem 'crass', '>= 1.0.7'
 
-# Bundler-audit: CVE-2026-54696 (json generator heap overflow) — need >= 2.19.9
-gem 'json', '>= 2.19.9'
+# Bundler-audit: CVE-2026-71847 (ResumableParser UAF on truncated streams) — need >= 2.21.2
+gem 'json', '>= 2.21.2', '< 3'
+
+# Bundler-audit: CVE-2026-63435 (mail RFC 2047 address spoofing) — need >= 2.9.1
+gem 'mail', '>= 2.9.1'
 
 # Bundler-audit: CVE-2026-54522 (msgpack UAF in Buffer#clear) — need >= 1.8.2
 gem 'msgpack', '>= 1.8.2'
@@ -102,7 +106,8 @@ gem 'httparty'
 gem 'anthropic'
 
 # ZIP file extraction for bulk uploads
-gem 'rubyzip'
+# Bundler-audit: CVE-2026-85396 (path traversal in pre-3.4.0) — need >= 3.4.0
+gem 'rubyzip', '>= 3.4.0'
 
 
 

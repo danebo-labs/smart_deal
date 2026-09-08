@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_25_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_08_180100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -112,6 +112,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_190000) do
     t.index [ "user_id" ], name: "index_bulk_uploads_on_user_id"
   end
 
+  create_table "certification_reports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "building_name", null: false
+    t.string "commune"
+    t.datetime "created_at", null: false
+    t.date "inspection_date"
+    t.string "internal_number"
+    t.string "maintenance_company"
+    t.string "maintenance_technician"
+    t.date "municipal_reception_date"
+    t.string "property_use"
+    t.string "status", default: "en_progreso", null: false
+    t.string "street"
+    t.string "street_number"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index [ "account_id", "user_id", "created_at" ], name: "idx_certification_reports_account_user_recent"
+    t.index [ "account_id" ], name: "index_certification_reports_on_account_id"
+  end
+
   create_table "conversation_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.jsonb "active_entities", default: {}, null: false
@@ -160,6 +180,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_190000) do
     t.index [ "account_id", "sha256" ], name: "index_field_photos_on_account_id_and_sha256", unique: true
     t.index [ "account_id" ], name: "index_field_photos_on_account_id"
     t.index [ "created_at" ], name: "index_field_photos_on_created_at"
+  end
+
+  create_table "inspection_findings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "body", null: false
+    t.bigint "certification_report_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "field_photo_id"
+    t.integer "inspection_item"
+    t.string "location"
+    t.string "nch2840_box"
+    t.string "norm_point"
+    t.integer "position", default: 0, null: false
+    t.string "severity"
+    t.datetime "updated_at", null: false
+    t.index [ "account_id" ], name: "index_inspection_findings_on_account_id"
+    t.index [ "certification_report_id", "position" ], name: "idx_inspection_findings_report_position"
+    t.index [ "field_photo_id" ], name: "index_inspection_findings_on_field_photo_id"
   end
 
   create_table "kb_document_thumbnails", force: :cascade do |t|
@@ -295,6 +333,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_25_190000) do
     t.index [ "route", "created_at" ], name: "index_whatsapp_cache_hits_on_route_and_created_at"
   end
 
+  add_foreign_key "certification_reports", "accounts"
   add_foreign_key "field_photos", "accounts"
+  add_foreign_key "inspection_findings", "accounts"
+  add_foreign_key "inspection_findings", "certification_reports"
+  add_foreign_key "inspection_findings", "field_photos"
   add_foreign_key "technician_documents", "accounts", name: "fk_td_account"
 end

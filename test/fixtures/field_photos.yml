@@ -1,0 +1,11 @@
+# Evidence photo referenced by inspection_findings(:cabina_puerta). Its
+# created_at defaults to load time, so it sits inside every retention window and
+# only the finding reference keeps it alive (fixed rule 10).
+# FieldPhoto has no belongs_to :user, so user_id is set by identifier.
+cabina_evidence:
+  account: legacy
+  user_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
+  sha256: <%= "f" * 64 %>
+  s3_key_original: field_photos/<%= ActiveRecord::FixtureSet.identify(:legacy) %>/<%= "f" * 64 %>/original.jpg
+  content_type: image/jpeg
+  byte_size: 20480

@@ -1,0 +1,24 @@
+# Three findings of certification_reports(:torre_amunategui). severity,
+# nch2840_box, norm_point and inspection_item stay empty on purpose: only the
+# certifier fills them (fixed rule 1), so no fixture may imply Danebo did.
+cabina_puerta:
+  certification_report: torre_amunategui
+  account: legacy
+  body: Puerta de cabina roza en el marco al cerrar.
+  location: Cabina, embarque 3
+  field_photo: cabina_evidence
+  position: 0
+
+pozo_iluminacion:
+  certification_report: torre_amunategui
+  account: legacy
+  body: Iluminación del pozo no enciende desde el interruptor de foso.
+  location: Pozo
+  position: 1
+
+maquinas_carpeta:
+  certification_report: torre_amunategui
+  account: legacy
+  body: Carpeta de Ascensores sin registro de la última mantención.
+  location: Espacio de máquinas
+  position: 2

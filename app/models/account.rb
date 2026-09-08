@@ -6,6 +6,10 @@ class Account < ApplicationRecord
   has_many :conversation_sessions, dependent: :restrict_with_error
   has_many :web_manual_batches, dependent: :restrict_with_error
   has_many :technician_documents, dependent: :restrict_with_error
+  # Declared before field_photos on purpose: a report's evidence photos are
+  # protected by a restrictive FK from inspection_findings, so this guard must
+  # abort the destroy before the photo cascade below hits that FK.
+  has_many :certification_reports, dependent: :restrict_with_error
   # Operational data with a TTL, not knowledge that should block account deletion.
   has_many :field_photos, dependent: :destroy
 

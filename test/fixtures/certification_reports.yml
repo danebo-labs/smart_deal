@@ -1,0 +1,21 @@
+# Minimal draft so Fases 2, 4 and 5 can test without any UI: one report owned by
+# users(:one) of accounts(:legacy), with three findings (one carrying photo
+# evidence) in inspection_findings.yml.
+#
+# Shaped after the real report of section 3.1 of
+# docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md — no verdict field, since
+# Danebo never decides approved/rejected (fixed rule 1).
+torre_amunategui:
+  account: legacy
+  user: one
+  status: en_progreso
+  building_name: Torre Amuñátegui
+  commune: Santiago
+  street: Catedral
+  street_number: "1401"
+  property_use: vivienda
+  municipal_reception_date: 2019-03-14
+  internal_number: 328/2026
+  inspection_date: 2026-09-08
+  maintenance_company: Ascensores Climb
+  maintenance_technician: J. Pérez

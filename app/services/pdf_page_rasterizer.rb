@@ -170,6 +170,16 @@ class PdfPageRasterizer
     [ [ a[0], b[0] ].min, [ a[1], b[1] ].min, [ a[2], b[2] ].max, [ a[3], b[3] ].max ]
   end
 
+  # Active Storage 8.1.3.1 (CVE-2026-66066) calls `Vips.block_untrusted(true)` at
+  # boot, which blocks poppler's pdfload. T2 rasterizes manuals on the ingestion
+  # path, not Active Storage variants — re-enable only the PDF loader and leave
+  # the rest of the untrusted set blocked.
+  def self.allow_pdf_loader!
+    return unless defined?(Vips) && Vips.respond_to?(:block)
+
+    Vips.block("VipsForeignLoadPdf", false)
+  end
+
   private
 
   def normalize_media_box(media_box)
@@ -188,6 +198,7 @@ class PdfPageRasterizer
   # this document to 150 dpi.
   def render(dpi)
     @renders[dpi] ||= begin
+      self.class.allow_pdf_loader!
       image = Vips::Image.pdfload_buffer(@page_binary, page: 0, dpi: dpi)
       image.bands > 3 ? image.flatten(background: 255) : image
     rescue Vips::Error, NoMethodError => e

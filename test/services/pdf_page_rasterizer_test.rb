@@ -14,6 +14,7 @@ class PdfPageRasterizerTest < ActiveSupport::TestCase
   # (libvips -> libvips42t64 -> libpoppler-glib8) in I-34; this test is the same
   # assertion made executable wherever the suite runs.
   test "libvips exposes the poppler pdfload_buffer loader" do
+    PdfPageRasterizer.allow_pdf_loader!
     image = Vips::Image.pdfload_buffer(@pages[0], page: 0, dpi: 72)
 
     assert_equal 600, image.width
@@ -54,6 +55,16 @@ class PdfPageRasterizerTest < ActiveSupport::TestCase
 
   test "tiles are empty when there is no media box to divide" do
     assert_equal [], PdfPageRasterizer.new(@pages[0]).tiles
+  end
+
+  test "page renders after Active Storage has blocked untrusted vips loaders" do
+    skip "libvips too old to block untrusted ops" unless Vips.respond_to?(:block_untrusted)
+    Vips.block_untrusted(true)
+
+    raster = PdfPageRasterizer.new(@pages[0], media_box: MEDIA_BOX).page
+
+    assert_equal PdfPageRasterizer::PAGE_DPI, raster.dpi
+    assert raster.data.present?
   end
 
   test "page renders at PAGE_DPI and reports what it rendered" do

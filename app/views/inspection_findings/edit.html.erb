@@ -1,0 +1,40 @@
+<% content_for :title, t("certifier.finding.edit_title") %>
+
+<main class="mx-auto max-w-2xl px-4 pt-20 pb-16 md:pt-28">
+  <h1 class="mb-6 text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= t("certifier.finding.edit_title") %></h1>
+
+  <%= render "certification_reports/errors", record: @finding %>
+
+  <%= form_with model: @finding, url: inspection_finding_path(@finding), multipart: true, class: "space-y-4" do |f| %>
+    <div class="space-y-1.5">
+      <%= f.label :body, t("certifier.finding.body"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_area :body, rows: 3,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+
+    <div class="space-y-1.5">
+      <%= f.label :location, t("certifier.finding.location"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_field :location,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+
+    <% if @finding.field_photo %>
+      <p class="text-sm text-[hsl(215,20%,42%)]">
+        <%= t("certifier.finding.has_photo") %> —
+        <%= link_to t("certifier.finding.view_photo"), field_photo_path(@finding.field_photo), target: "_blank", rel: "noopener", class: "underline" %>
+      </p>
+    <% end %>
+
+    <div class="space-y-1.5">
+      <%= f.label :photo, t("certifier.finding.replace_photo"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.file_field :photo, accept: "image/*", capture: "environment",
+          class: "block min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-base text-[hsl(222,47%,10%)] file:mr-3 file:rounded-md file:border-0 file:bg-[hsl(217,91%,50%)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-white" %>
+    </div>
+
+    <%= f.submit t("certifier.finding.save"),
+        class: "flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+  <% end %>
+
+  <%= link_to t("certifier.finding.cancel"), certification_report_path(@report),
+      class: "mt-4 flex min-h-[60px] w-full items-center justify-center rounded-lg border border-[hsl(215,20%,88%)] text-base font-medium text-[hsl(215,20%,42%)] transition-colors hover:bg-[hsl(215,20%,93%)]" %>
+</main>

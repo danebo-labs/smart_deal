@@ -1,0 +1,58 @@
+<%# locals: f (form builder) — every field here is optional (fixed rule 4). %>
+<div class="space-y-4">
+  <div class="grid grid-cols-2 gap-4">
+    <div class="space-y-1.5">
+      <%= f.label :commune, t("certifier.fields.commune"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_field :commune,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+    <div class="space-y-1.5">
+      <%= f.label :street_number, t("certifier.fields.street_number"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_field :street_number,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+  </div>
+
+  <div class="space-y-1.5">
+    <%= f.label :street, t("certifier.fields.street"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.text_field :street,
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+  </div>
+
+  <div class="space-y-1.5">
+    <%= f.label :property_use, t("certifier.fields.property_use"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.text_field :property_use, placeholder: t("certifier.fields.property_use_placeholder"),
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+  </div>
+
+  <div class="grid grid-cols-2 gap-4">
+    <div class="space-y-1.5">
+      <%= f.label :municipal_reception_date, t("certifier.fields.municipal_reception_date"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.date_field :municipal_reception_date,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+    <div class="space-y-1.5">
+      <%= f.label :inspection_date, t("certifier.fields.inspection_date"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.date_field :inspection_date,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+  </div>
+
+  <div class="space-y-1.5">
+    <%= f.label :internal_number, t("certifier.fields.internal_number"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.text_field :internal_number,
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+  </div>
+
+  <div class="space-y-1.5">
+    <%= f.label :maintenance_company, t("certifier.fields.maintenance_company"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.text_field :maintenance_company,
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+  </div>
+
+  <div class="space-y-1.5">
+    <%= f.label :maintenance_technician, t("certifier.fields.maintenance_technician"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.text_field :maintenance_technician,
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+  </div>
+</div>

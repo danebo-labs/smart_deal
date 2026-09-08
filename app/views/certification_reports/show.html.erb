@@ -1,0 +1,79 @@
+<% content_for :title, @report.building_name %>
+
+<main class="mx-auto max-w-2xl px-4 pt-20 pb-16 md:pt-28">
+  <%= link_to certification_reports_path,
+      class: "mb-4 flex min-h-[44px] w-fit items-center gap-1.5 text-sm font-medium text-[hsl(215,20%,42%)] transition-colors hover:text-[hsl(222,47%,10%)]" do %>
+    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+    </svg>
+    <%= t("certifier.show.back_to_list") %>
+  <% end %>
+
+  <h1 class="mb-1 text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= @report.building_name %></h1>
+  <% address_line = [ @report.street, @report.street_number, @report.commune ].compact_blank.join(" ") %>
+  <% if address_line.present? %>
+    <p class="mb-4 text-sm text-[hsl(215,20%,42%)]"><%= address_line %></p>
+  <% end %>
+
+  <%# Explicit save (no auto-submitting onchange): predictable with gloves. %>
+  <%= form_with model: @report, url: certification_report_path(@report), method: :patch,
+      class: "mb-6 flex flex-col gap-3 rounded-xl border border-[hsl(215,20%,88%)] bg-white p-4 sm:flex-row sm:items-end" do |f| %>
+    <div class="flex-1 space-y-1.5">
+      <%= f.label :status, t("certifier.status_form.label"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.select :status, CertificationReport.statuses.keys.map { |s| [ t("certifier.statuses.#{s}"), s ] }, {},
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+    <%= f.submit t("certifier.status_form.submit"),
+        class: "flex min-h-[60px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-[hsl(217,91%,50%)] px-6 text-sm font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+  <% end %>
+
+  <div class="mb-6 flex flex-wrap gap-4">
+    <%= link_to t("certifier.show.edit_building_info"), edit_certification_report_path(@report),
+        class: "flex min-h-[60px] flex-1 items-center justify-center rounded-lg border border-[hsl(215,20%,88%)] px-4 text-sm font-medium text-[hsl(222,47%,10%)] transition-colors hover:bg-[hsl(215,20%,93%)]" %>
+    <%= button_to t("certifier.show.delete_report"), certification_report_path(@report), method: :delete,
+        form_class: "flex-1",
+        data: { turbo_confirm: t("certifier.show.delete_report_confirm") },
+        class: "flex min-h-[60px] w-full items-center justify-center rounded-lg border border-red-200 px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-50" %>
+  </div>
+
+  <h2 class="mb-3 text-lg font-semibold text-[hsl(222,47%,10%)]"><%= t("certifier.show.findings_heading") %></h2>
+
+  <% if @findings.empty? %>
+    <p class="mb-6 text-base text-[hsl(215,20%,42%)]"><%= t("certifier.show.no_findings") %></p>
+  <% else %>
+    <ul class="mb-6 space-y-4">
+      <% @findings.each do |finding| %>
+        <%= render "certification_reports/finding", finding: finding %>
+      <% end %>
+    </ul>
+  <% end %>
+
+  <%# Add finding + attach its photo in one form, one submit — no intermediate
+      screen (SafetyCulture pattern, plan section 2.3). %>
+  <div class="rounded-xl border border-[hsl(215,20%,88%)] bg-white p-4">
+    <%= render "certification_reports/errors", record: @finding %>
+    <%= form_with model: @finding, url: certification_report_inspection_findings_path(@report), multipart: true, class: "mt-2 space-y-4" do |f| %>
+      <div class="space-y-1.5">
+        <%= f.label :body, t("certifier.finding.body"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <%= f.text_area :body, rows: 3, placeholder: t("certifier.finding.body_placeholder"),
+            class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+      </div>
+
+      <div class="space-y-1.5">
+        <%= f.label :location, t("certifier.finding.location"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <%= f.text_field :location, placeholder: t("certifier.finding.location_placeholder"),
+            class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+      </div>
+
+      <div class="space-y-1.5">
+        <%= f.label :photo, t("certifier.finding.photo"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <%= f.file_field :photo, accept: "image/*", capture: "environment",
+            class: "block min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-base text-[hsl(222,47%,10%)] file:mr-3 file:rounded-md file:border-0 file:bg-[hsl(217,91%,50%)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-white" %>
+      </div>
+
+      <%# Primary action of this page — 72px min tap target (section 2.3). %>
+      <%= f.submit t("certifier.finding.add"),
+          class: "flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+    <% end %>
+  </div>
+</main>

@@ -37,6 +37,13 @@ Rails.application.routes.draw do
   resources :field_photos, only: %i[show]
   # resources :bulk_uploads, only: %i[new create show]  # T-31: disabled for pilot
 
+  # Certifier module (Fase 2) — guarded by ENV["CERTIFIER_MODULE_ENABLED"]
+  # (CertifierModuleGuard on both controllers, nav entry gated in the layout).
+  resources :certification_reports do
+    resources :inspection_findings, only: %i[create]
+  end
+  resources :inspection_findings, only: %i[edit update destroy]
+
   # RAG endpoint for Knowledge Base queries
   post '/rag/ask', to: 'rag#ask'
 

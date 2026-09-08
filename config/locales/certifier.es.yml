@@ -1,0 +1,70 @@
+# Certifier module (Fase 2) — mis informes + editor mínimo.
+es:
+  certifier:
+    nav:
+      my_reports: "Mis informes"
+    my_reports:
+      title: "Mis informes"
+      new_report: "Nuevo informe"
+      empty: "Todavía no tienes informes. Crea el primero."
+      findings_count:
+        one: "1 hallazgo"
+        other: "%{count} hallazgos"
+    new_report:
+      title: "Nuevo informe"
+      more_details: "Más datos del edificio (opcional)"
+      submit: "Crear informe"
+    edit_report:
+      title: "Datos del edificio"
+      submit: "Guardar datos"
+      back: "Volver al informe"
+    statuses:
+      en_progreso: "En progreso"
+      listo_revision: "Listo para revisión"
+      enviado: "Enviado"
+    status_form:
+      label: "Estado del informe"
+      submit: "Guardar estado"
+    fields:
+      building_name: "Nombre del edificio"
+      building_name_placeholder: "Ej: Torre Amuñátegui"
+      commune: "Comuna"
+      street: "Calle"
+      street_number: "Número"
+      property_use: "Destino del inmueble"
+      property_use_placeholder: "Ej: vivienda, equipamiento"
+      municipal_reception_date: "Fecha de recepción municipal"
+      internal_number: "N° interno de informe"
+      inspection_date: "Fecha de inspección"
+      maintenance_company: "Empresa mantenedora"
+      maintenance_technician: "Técnico mantenedor"
+    show:
+      edit_building_info: "Editar datos del edificio"
+      back_to_list: "Mis informes"
+      findings_heading: "Hallazgos"
+      no_findings: "Todavía no hay hallazgos. Agrega el primero abajo."
+      delete_report: "Eliminar informe"
+      delete_report_confirm: "¿Eliminar este informe? También se eliminan sus hallazgos y se libera cualquier foto adjunta para la purga habitual de evidencia."
+    finding:
+      body: "Hallazgo"
+      body_placeholder: "Describe lo observado…"
+      location: "Ubicación (opcional)"
+      location_placeholder: "Ej: Cabina, embarque 3"
+      photo: "Adjuntar foto (opcional)"
+      add: "Agregar hallazgo"
+      edit_title: "Editar hallazgo"
+      edit: "Editar"
+      save: "Guardar hallazgo"
+      cancel: "Cancelar"
+      delete: "Eliminar"
+      delete_confirm: "¿Eliminar este hallazgo?"
+      has_photo: "Con foto"
+      replace_photo: "Reemplazar foto (opcional)"
+      view_photo: "Ver foto"
+    notices:
+      report_created: "Informe creado."
+      report_updated: "Datos del edificio actualizados."
+      report_destroyed: "Informe eliminado."
+      finding_created: "Hallazgo agregado."
+      finding_updated: "Hallazgo actualizado."
+      finding_destroyed: "Hallazgo eliminado."

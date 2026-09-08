@@ -36,6 +36,10 @@ class KbDocumentThumbnailFromS3Test < ActiveSupport::TestCase
     assert_equal "jpeg-thumb", @kb_doc.thumbnail.data
   ensure
     S3DocumentsService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
-    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) { |*args| original_compress.call(*args) }
+    # Must forward **kwargs too: the real signature takes filename:/correlation_id:
+    # keywords. Dropping them here left this singleton method permanently broken
+    # for any later caller that passes filename: (as InspectionFindingPhotoAttacher
+    # does), independent of test order/parallelization.
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) { |*args, **kwargs| original_compress.call(*args, **kwargs) }
   end
 end

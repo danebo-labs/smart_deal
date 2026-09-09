@@ -504,7 +504,7 @@ Transcripción obtenida:
 **Hallazgos:**
 
 1. **Amazon Transcribe no soporta `es-CL`** — el alcance de esta fase lo daba por soportado y la API rechaza el job. Sus variantes de español son `es-ES`, `es-US` y `es-MX`. Default elegido: **`es-US`**, por ser la única con *custom language models* (la palanca real contra la jerga) y por transcribir números en batch, que `es-MX` no hace. Razonamiento completo y tabla de soporte en el bloque de diseño de esta fase; override por `STT_AMAZON_LANGUAGE_CODE`; la decisión por medición queda en la Fase 6.
-2. **`bedrock-integration-user` no tenía permisos de Transcribe — resuelto durante la fase.** El primer smoke test devolvió `AccessDeniedException: not authorized to perform: transcribe:StartTranscriptionJob`. Se agregó una política de usuario con `transcribe:StartTranscriptionJob` y `transcribe:GetTranscriptionJob`; **no** hicieron falta permisos de S3 nuevos, porque Transcribe batch lee el media y escribe el output con las credenciales del llamador, que ya tenía el bucket. **Dos ganancias colaterales:** el camino de fallo quedó validado con un error real del proveedor y no con un fake (el `AccessDeniedException` se mapeó a `ProviderError`, el dictado quedó en `failed` con la razón guardada y sin transcript, todo en 0,7 s), y el reintento T5 quedó ejercitado de verdad al reabrir ese mismo dictado para la corrida facturada. **Nota para producción:** el rol de prod necesita la misma política, o la Fase 5 va a fallar en el primer dictado real.
+2. **`bedrock-integration-user` no tenía permisos de Transcribe — resuelto durante la fase.** El primer smoke test devolvió `AccessDeniedException: not authorized to perform: transcribe:StartTranscriptionJob`. Se agregó una política de usuario con `transcribe:StartTranscriptionJob` y `transcribe:GetTranscriptionJob`; **no** hicieron falta permisos de S3 nuevos, porque Transcribe batch lee el media y escribe el output con las credenciales del llamador, que ya tenía el bucket. **Dos ganancias colaterales:** el camino de fallo quedó validado con un error real del proveedor y no con un fake (el `AccessDeniedException` se mapeó a `ProviderError`, el dictado quedó en `failed` con la razón guardada y sin transcript, todo en 0,7 s), y el reintento T5 quedó ejercitado de verdad al reabrir ese mismo dictado para la corrida facturada. **Nota para producción:** prod **no** usa un usuario IAM sino el rol de instancia `smart-deal-ec2-role`, así que allá el comando es `put-role-policy`; quedó escrito como prerrequisito bloqueante de deploy en los insumos de la Fase 5, que es la primera fase que dispara transcripciones reales.
 3. **Validación por mutación, no por color verde** (lección del cierre de la Fase 0). Se rompieron cuatro guardas a propósito y cada una fue detectada por el test correcto: (a) quitar el `return` del claim fallido → caen los 3 tests de una-sola-llamada-facturada; (b) sacar `transcription_claim_id` de la guarda de escritura → caen los 3 de resultado tardío; (c) sacar `.terminal` de la consulta de purga → cae el test de retención **con el mensaje `aborted > 0`**, es decir demostrando que el audio lo salvó la segunda capa y no la consulta, que es exactamente el falso verde que la Fase 0 advirtió; (d) volver el stream del broadcast a `account:<id>` → caen los 6 tests de aislamiento por usuario.
 4. **La idempotencia de la confirmación es genuinamente de dos capas, y por eso una sola mutación no la rompe.** Quitar el atajo de "ya confirmado" deja pasar el segundo tap al CAS, que devuelve 0 filas y lee el hallazgo del ganador: misma respuesta, un solo hallazgo. Y quitar el CAS deja el índice único. Es la propiedad buscada, pero implica que **ningún test individual prueba la idempotencia por sí solo** — hay que leer los tres juntos (CAS, atajo, índice único).
 5. **`say` + `afconvert` es una fuente de audio de prueba reproducible y gratis**, insumo directo de las Fases 5 y 6: `say -v Paulina -o a.aiff "<jerga>"` y `afconvert -f WAVE -d LEI16@16000 -c 1 a.aiff a.wav` da 16 kHz mono WAV, el formato que Transcribe prefiere. No sustituye a los cinco dictados con ruido de fondo real del protocolo de la Fase 6 (una voz sintética limpia no mide lo que hay que medir), pero sirve para validar cañería sin gastar en audio grabado a mano.
@@ -546,6 +546,36 @@ Transcripción obtenida:
 - **Tap targets ya verificados por assertion, no por revisión visual:** los tests de la Fase 2 comprueban las clases Tailwind literales (`min-h-[72px]`, `min-h-[60px]`, `gap-4`/`space-y-4`) contra el HTML renderizado. Mismo patrón recomendado para el botón único grabar/parar (72px) y los controles del indicador de estado (60px) de esta fase.
 
 *Actualizado con el cierre de la Fase 4 (2026-09-08):*
+
+- **PREREQUISITO BLOQUEANTE DE DEPLOY — el rol de instancia de producción necesita permisos de Transcribe.** Esta fase es la primera que dispara transcripciones desde producción, y la política solo está aplicada en la identidad de dev (hallazgo 2 del cierre de la Fase 4). Sin esto, el primer dictado real termina en `failed` con `AccessDeniedException` y el certificador ve un error que no puede resolver. **No se mergea esta fase sin verificarlo.**
+
+  **Producción no usa un usuario IAM: usa el rol de instancia EC2 `smart-deal-ec2-role`** (verificado el 2026-09-08). Ni `config/deploy.yml` ni las credenciales encriptadas tienen `AWS_ACCESS_KEY_ID` — solo `AWS_REGION` —, así que `AwsClientInitializer` no fija credenciales explícitas y el SDK cae en la cadena por defecto, es decir el perfil de instancia. Por eso el comando es `put-role-policy` y **no** `put-user-policy`, que es lo que se usó en dev:
+
+  ```bash
+  aws iam put-role-policy \
+    --role-name smart-deal-ec2-role \
+    --policy-name DaneboSpeechToText \
+    --policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "DaneboSpeechToText",
+          "Effect": "Allow",
+          "Action": [
+            "transcribe:StartTranscriptionJob",
+            "transcribe:GetTranscriptionJob"
+          ],
+          "Resource": "*"
+        }
+      ]
+    }'
+  ```
+
+  Cuatro cosas ya verificadas, para no re-descubrirlas: **(a)** `SmartDealAppPolicy` v2 (la política gestionada del rol) **no** tiene ninguna acción de Transcribe, así que el permiso falta de verdad; **(b)** **no** hacen falta permisos de S3 nuevos — Transcribe batch lee el media y escribe el JSON de salida con las credenciales del llamador, y el statement `S3KbBuckets` ya cubre `arn:aws:s3:::multimodal-source-destination/*` completo, que incluye `voice_dictations/` y `voice_dictations/transcripts/`; **(c)** el comando corre con credenciales de administrador, no con la identidad de la aplicación, que no puede modificar IAM (verificar antes con `aws sts get-caller-identity`); **(d)** se eligió una política *inline* sobre el rol en vez de una versión nueva de `SmartDealAppPolicy` porque es un solo comando, no consume el límite de 5 versiones de la política gestionada, y se revierte con `aws iam delete-role-policy --role-name smart-deal-ec2-role --policy-name DaneboSpeechToText`.
+
+  Si después se quiere acotar el `Resource`: los jobs de la aplicación se llaman siempre `danebo-<hash>-<hex>`, así que el ARN candidato es `arn:aws:transcribe:us-east-1:935142957735:transcription-job/danebo-*`. Acotarlo **después** de ver una transcripción real funcionar en prod, para no confundir un permiso mal escrito con otro problema.
+
+  Verificación antes de mergear: `aws iam get-role-policy --role-name smart-deal-ec2-role --policy-name DaneboSpeechToText`.
 
 - **Los tres contratos que esta fase consume, y ninguno más:**
   - `VoiceDictationIntake.call(account_id:, user_id:, binary:, content_type:, certification_report_id:, duration_seconds:, filename:)` → `VoiceDictation`. **Encola el `TranscriptionJob` por sí mismo**: esta fase nunca debe encolarlo, sería la segunda llamada facturada que todo el diseño existe para evitar. Devuelve `nil` solo si el upload a S3 falló o los argumentos eran inusables — trata `nil` como "no se grabó nada", nunca como éxito.

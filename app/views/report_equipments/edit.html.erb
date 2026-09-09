@@ -1,0 +1,104 @@
+<% content_for :title, t("certifier.equipment.edit_title") %>
+
+<main class="mx-auto max-w-2xl px-4 pt-20 pb-16 md:pt-28">
+  <h1 class="mb-1 text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= t("certifier.equipment.edit_title") %></h1>
+  <p class="mb-6 text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.equipment.edit_subtitle") %></p>
+
+  <%= render "certification_reports/errors", record: @equipment %>
+
+  <%= form_with model: @equipment, url: report_equipment_path(@equipment), scope: :report_equipment, class: "space-y-5" do |f| %>
+    <div class="space-y-1.5">
+      <%= f.label :label, t("certifier.equipment.fields.label"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_field :label,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+
+    <%# Every characteristic below is optional and stays blank unless the
+        certifier types it. Nothing here is derived from anything else. %>
+    <details class="rounded-lg border border-[hsl(215,20%,88%)] p-4" open>
+      <summary class="min-h-[44px] cursor-pointer text-base font-medium text-[hsl(222,47%,10%)]"><%= t("certifier.equipment.specs_heading") %></summary>
+
+      <div class="mt-4 space-y-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="space-y-1.5">
+            <%= f.label :machine_room, t("certifier.equipment.fields.machine_room"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.select :machine_room,
+                ReportEquipment::MACHINE_ROOMS.map { |v| [ t("certifier.equipment.machine_rooms.#{v}"), v ] },
+                { include_blank: t("certifier.equipment.not_recorded") },
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+          <div class="space-y-1.5">
+            <%= f.label :drive_type, t("certifier.equipment.fields.drive_type"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.select :drive_type,
+                ReportEquipment::DRIVE_TYPES.map { |v| [ t("certifier.equipment.drive_types.#{v}"), v ] },
+                { include_blank: t("certifier.equipment.not_recorded") },
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <%= f.label :door_type, t("certifier.equipment.fields.door_type"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+          <%= f.text_field :door_type,
+              class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <%= f.label :landings_count, t("certifier.equipment.fields.landings_count"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.number_field :landings_count, min: 0,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+          <div class="space-y-1.5">
+            <%= f.label :boardings_count, t("certifier.equipment.fields.boardings_count"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.number_field :boardings_count, min: 0,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <%= f.label :speed_mps, t("certifier.equipment.fields.speed_mps"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.number_field :speed_mps, step: "0.001", min: 0,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+          <div class="space-y-1.5">
+            <%= f.label :rated_load_kg, t("certifier.equipment.fields.rated_load_kg"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.number_field :rated_load_kg, min: 0,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <%= f.label :capacity_persons, t("certifier.equipment.fields.capacity_persons"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.number_field :capacity_persons, min: 0,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+          <div class="space-y-1.5">
+            <%= f.label :last_maintenance_date, t("certifier.equipment.fields.last_maintenance_date"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.date_field :last_maintenance_date,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <%= f.label :traction_cables, t("certifier.equipment.fields.traction_cables"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+          <%= f.text_field :traction_cables,
+              class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+        </div>
+
+        <div class="space-y-1.5">
+          <%= f.label :position, t("certifier.equipment.fields.position"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+          <%= f.number_field :position, min: 0,
+              class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+        </div>
+      </div>
+    </details>
+
+    <%= f.submit t("certifier.equipment.save"),
+        class: "flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+  <% end %>
+
+  <%= link_to t("certifier.finding.cancel"), certification_report_path(@report),
+      class: "mt-4 flex min-h-[60px] w-full items-center justify-center rounded-lg border border-[hsl(215,20%,88%)] text-base font-medium text-[hsl(215,20%,42%)] transition-colors hover:bg-[hsl(215,20%,93%)]" %>
+</main>

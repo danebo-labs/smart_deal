@@ -5,6 +5,11 @@
 # Shaped after the real report of section 3.1 of
 # docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md — no verdict field, since
 # Danebo never decides approved/rejected (fixed rule 1).
+#
+# Fase 1A adds edificio_portales below: the configured company's report, with
+# equipment and the review fields filled in. torre_amunategui stays exactly as
+# it was — no equipment, no inspector, no result — so every test that it keeps
+# working is a real regression test against old data.
 torre_amunategui:
   account: legacy
   user: one
@@ -19,3 +24,19 @@ torre_amunategui:
   inspection_date: 2026-09-08
   maintenance_company: Ascensores Climb
   maintenance_technician: J. Pérez
+
+# The configured company's report: equipment in report_equipments.yml, and the
+# review fields a certifier typed. `result` stays empty on purpose even though
+# everything else is filled — a complete draft with no verdict is the normal
+# state, and no fixture may imply Danebo decided one (fixed rule 1).
+edificio_portales:
+  account: climb
+  user: two
+  status: listo_revision
+  building_name: Edificio Portales
+  commune: Providencia
+  internal_number: 412/2026
+  inspection_date: 2026-09-05
+  inspector_name: C. Schwartz
+  report_date: 2026-09-06
+  normative_reference: NCh 2840:2018

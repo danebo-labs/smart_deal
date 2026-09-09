@@ -29,6 +29,11 @@
 
 en:
   hello: "Hello world"
+  date:
+    formats:
+      # Paired with the es entry: an explicit named format, so adding it changes
+      # no existing view.
+      certifier_short: "%Y-%m-%d"
   auth:
     brand:
       headline: "Turn your company's information and data into operational value."

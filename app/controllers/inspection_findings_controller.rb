@@ -14,6 +14,7 @@ class InspectionFindingsController < ApplicationController
   def edit
     @finding = owned_finding
     @report = @finding.certification_report
+    @equipments = @report.report_equipments.ordered
   end
 
   def create
@@ -35,9 +36,13 @@ class InspectionFindingsController < ApplicationController
     if @finding.update(finding_params)
       redirect_to certification_report_path(@finding.certification_report), notice: t("certifier.notices.finding_updated")
     else
-      @report = @finding.certification_report
-      render :edit, status: :unprocessable_entity
+      render_edit_with_errors
     end
+  rescue ArgumentError
+    # `severity` is an enum: an out-of-range value raises on assignment, before
+    # any validation runs. 422, not a 500.
+    @finding.errors.add(:severity, :inclusion)
+    render_edit_with_errors
   end
 
   def destroy
@@ -60,8 +65,23 @@ class InspectionFindingsController < ApplicationController
     InspectionFinding.where(certification_report_id: owned_reports.select(:id)).find(params[:id])
   end
 
+  # Fase 1A adds the certifier's own classification fields. Every one of them is
+  # optional and only a human ever submits them (fixed rule 1): Danebo writes
+  # none of these on its own, and a blank one stays blank.
+  FINDING_ATTRIBUTES = %i[
+    body location report_equipment_id inspection_item nch2840_box norm_point
+    severity position
+  ].freeze
+
   def finding_params
-    params.expect(inspection_finding: [ :body, :location ])
+    params.expect(inspection_finding: [ *FINDING_ATTRIBUTES ]).tap do |attrs|
+      # An empty select means "not classified" — nil, never the string "".
+      %i[report_equipment_id inspection_item severity].each do |key|
+        attrs[key] = nil if attrs.key?(key) && attrs[key].blank?
+      end
+      # position is NOT NULL: a blank order field means "leave it as it is".
+      attrs.delete(:position) if attrs.key?(:position) && attrs[:position].blank?
+    end
   end
 
   # The photo is looked up/created scoped to current_account — the model
@@ -75,9 +95,17 @@ class InspectionFindingsController < ApplicationController
     finding.field_photo = photo if photo
   end
 
+  def render_edit_with_errors
+    @report = @finding.certification_report
+    @equipments = @report.report_equipments.ordered
+    render :edit, status: :unprocessable_entity
+  end
+
   def render_report_with_errors(report)
     @report = report
-    @findings = report.inspection_findings.includes(:field_photo)
+    @findings = report.inspection_findings.includes(:field_photo, :report_equipment)
+    @equipments = report.report_equipments.ordered
+    @equipment = report.report_equipments.new
     @dictations = report.voice_dictations.awaiting_certifier
     render "certification_reports/show", status: :unprocessable_entity
   end

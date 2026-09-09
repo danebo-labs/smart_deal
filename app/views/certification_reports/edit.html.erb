@@ -14,6 +14,16 @@
 
     <%= render "certification_reports/building_fields", f: f %>
 
+    <%# Fase 1A: the review data — inspector, dates, normative reference typed
+        by the certifier, and the manual result. Collapsed so capture stays as
+        short as it was: none of this is needed to dictate. %>
+    <details class="rounded-lg border border-[hsl(215,20%,88%)] p-4">
+      <summary class="min-h-[44px] cursor-pointer text-base font-medium text-[hsl(222,47%,10%)]"><%= t("certifier.edit_report.review_details") %></summary>
+      <div class="mt-4">
+        <%= render "certification_reports/review_fields", f: f %>
+      </div>
+    </details>
+
     <%= f.submit t("certifier.edit_report.submit"),
         class: "flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
   <% end %>

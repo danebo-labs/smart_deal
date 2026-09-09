@@ -1,0 +1,88 @@
+<% content_for :title, t("certifier.settings.title") %>
+
+<main class="mx-auto max-w-2xl px-4 pt-20 pb-16 md:pt-28">
+  <%= link_to certification_reports_path,
+      class: "mb-4 flex min-h-[44px] w-fit items-center gap-1.5 text-sm font-medium text-[hsl(215,20%,42%)] transition-colors hover:text-[hsl(222,47%,10%)]" do %>
+    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+    </svg>
+    <%= t("certifier.show.back_to_list") %>
+  <% end %>
+
+  <h1 class="mb-1 text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= t("certifier.settings.title") %></h1>
+  <p class="mb-6 text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.settings.subtitle") %></p>
+
+  <%# The header exactly as every report of this company will carry it. No logo
+      falls back to the name and MINVU role as a typographic block — never to
+      the Danebo brand, which is the tool and not the issuer of the report
+      (shared contract point 6). %>
+  <section class="mb-6 rounded-xl border border-[hsl(215,20%,88%)] bg-white p-4">
+    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-[hsl(215,20%,42%)]"><%= t("certifier.settings.preview") %></h2>
+    <div class="flex items-center gap-4 border-b border-[hsl(215,20%,88%)] pb-4">
+      <% if @logo_url %>
+        <%= image_tag @logo_url, alt: @account.certifier_name.to_s, class: "h-16 w-auto max-w-[160px] object-contain" %>
+      <% end %>
+      <div class="min-w-0">
+        <% if @account.certifier_name.present? %>
+          <p class="truncate text-base font-semibold text-[hsl(222,47%,10%)]"><%= @account.certifier_name %></p>
+        <% else %>
+          <p class="text-base text-[hsl(215,20%,55%)]"><%= t("certifier.settings.name_missing") %></p>
+        <% end %>
+        <% if @account.certifier_minvu_role.present? %>
+          <p class="text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.settings.minvu_role_line", role: @account.certifier_minvu_role) %></p>
+        <% else %>
+          <p class="text-sm text-[hsl(215,20%,55%)]"><%= t("certifier.settings.minvu_role_missing") %></p>
+        <% end %>
+      </div>
+    </div>
+    <% unless @account.certifier_identified? %>
+      <p class="mt-3 text-sm text-amber-700"><%= t("certifier.settings.incomplete_notice") %></p>
+    <% end %>
+  </section>
+
+  <% if @editable %>
+    <%= render "certification_reports/errors", record: @account %>
+
+    <%= form_with model: @account, url: certifier_settings_path, method: :patch, scope: :account,
+        multipart: true, class: "space-y-5" do |f| %>
+      <div class="space-y-1.5">
+        <%= f.label :certifier_name, t("certifier.settings.fields.name"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <%= f.text_field :certifier_name, placeholder: t("certifier.settings.fields.name_placeholder"),
+            class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+      </div>
+
+      <div class="space-y-1.5">
+        <%= f.label :certifier_minvu_role, t("certifier.settings.fields.minvu_role"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <%= f.text_field :certifier_minvu_role, placeholder: t("certifier.settings.fields.minvu_role_placeholder"),
+            class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+      </div>
+
+      <div class="space-y-1.5">
+        <%= f.label :certifier_logo, t("certifier.settings.fields.logo"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <p class="text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.settings.fields.logo_hint", max_mb: 2, max_mp: 4) %></p>
+        <%= f.file_field :certifier_logo, accept: "image/png,image/jpeg",
+            class: "block min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-base text-[hsl(222,47%,10%)] file:mr-3 file:rounded-md file:border-0 file:bg-[hsl(217,91%,50%)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-white" %>
+      </div>
+
+      <%= f.submit t("certifier.settings.submit"),
+          class: "flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+    <% end %>
+
+    <% if @account.certifier_logo? %>
+      <%= button_to t("certifier.settings.remove_logo"), logo_certifier_settings_path, method: :delete,
+          data: { turbo_confirm: t("certifier.settings.remove_logo_confirm") },
+          class: "mt-4 flex min-h-[60px] w-full items-center justify-center rounded-lg border border-red-200 text-base font-medium text-red-600 transition-colors hover:bg-red-50" %>
+    <% end %>
+  <% else %>
+    <div class="rounded-xl border border-[hsl(215,20%,88%)] bg-[hsl(215,20%,97%)] p-4">
+      <p class="text-base text-[hsl(222,47%,10%)]"><%= t("certifier.settings.read_only") %></p>
+      <p class="mt-2 text-sm text-[hsl(215,20%,42%)]">
+        <% if @account.certifier_settings_user %>
+          <%= t("certifier.settings.manager_is", email: @account.certifier_settings_user.email) %>
+        <% else %>
+          <%= t("certifier.settings.no_manager") %>
+        <% end %>
+      </p>
+    </div>
+  <% end %>
+</main>

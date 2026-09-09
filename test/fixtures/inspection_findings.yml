@@ -22,3 +22,24 @@ maquinas_carpeta:
   body: Carpeta de Ascensores sin registro de la última mantención.
   location: Espacio de máquinas
   position: 2
+
+# Fase 1A — the configured company's findings, classified by its certifier.
+# portales_sin_clasificar is the state that must never read as "sin defectos":
+# text confirmed, but no equipment, no item and no severity assigned yet.
+portales_cabina_a:
+  certification_report: edificio_portales
+  account: climb
+  report_equipment: climb_ascensor_a
+  body: Botonera de cabina con dos pulsadores sin iluminación.
+  location: Cabina
+  inspection_item: 2
+  severity: leve
+  nch2840_box: "4.2"
+  norm_point: 5.3.1
+  position: 0
+
+portales_sin_clasificar:
+  certification_report: edificio_portales
+  account: climb
+  body: Ruido metálico intermitente al pasar el piso 5.
+  position: 1

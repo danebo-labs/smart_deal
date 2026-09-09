@@ -18,6 +18,62 @@
           class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
     </div>
 
+    <%# Fase 1A: the certifier's own classification. Revealed here, never during
+        dictation (fixed rule 4), and every field is optional — leaving them
+        blank is a valid state, not an omission Danebo should fill. %>
+    <details class="rounded-lg border border-[hsl(215,20%,88%)] p-4">
+      <summary class="min-h-[44px] cursor-pointer text-base font-medium text-[hsl(222,47%,10%)]"><%= t("certifier.finding.classification_heading") %></summary>
+
+      <div class="mt-4 space-y-4">
+        <div class="space-y-1.5">
+          <%= f.label :report_equipment_id, t("certifier.finding.equipment"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+          <%= f.select :report_equipment_id,
+              @equipments.map { |e| [ e.label, e.id ] },
+              { include_blank: t("certifier.equipment.unassigned") },
+              class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          <% if @equipments.empty? %>
+            <p class="text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.finding.no_equipments_hint") %></p>
+          <% end %>
+        </div>
+
+        <div class="space-y-1.5">
+          <%= f.label :inspection_item, t("certifier.finding.inspection_item"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+          <%= f.select :inspection_item,
+              InspectionFinding::CENTRAVE_ITEMS.map { |number, key| [ t("certifier.centrave.#{key}"), number ] },
+              { include_blank: t("certifier.finding.unclassified") },
+              class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+        </div>
+
+        <div class="space-y-1.5">
+          <%= f.label :severity, t("certifier.finding.severity"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+          <%= f.select :severity,
+              InspectionFinding::SEVERITIES.keys.map { |s| [ t("certifier.severities.#{s}"), s ] },
+              { include_blank: t("certifier.finding.unclassified") },
+              class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          <p class="text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.finding.severity_hint") %></p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <%= f.label :nch2840_box, t("certifier.finding.nch2840_box"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.text_field :nch2840_box,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+          <div class="space-y-1.5">
+            <%= f.label :norm_point, t("certifier.finding.norm_point"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+            <%= f.text_field :norm_point,
+                class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <%= f.label :position, t("certifier.finding.position"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+          <%= f.number_field :position, min: 0,
+              class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+        </div>
+      </div>
+    </details>
+
     <% if @finding.field_photo %>
       <p class="text-sm text-[hsl(215,20%,42%)]">
         <%= t("certifier.finding.has_photo") %> —

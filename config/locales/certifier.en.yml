@@ -3,6 +3,105 @@ en:
   certifier:
     nav:
       my_reports: "My reports"
+    # Fase 1A — issuer identity: one per account (company), configured once.
+    settings:
+      title: "Certification company details"
+      subtitle: "Used in the header of every report of this company."
+      link: "Company"
+      preview: "Your report header"
+      submit: "Save details"
+      remove_logo: "Remove logo"
+      remove_logo_confirm: "Remove the logo from the header? Reports already generated do not change."
+      minvu_role_line: "MINVU registry, role %{role}"
+      name_missing: "No company name"
+      minvu_role_missing: "No MINVU role"
+      incomplete_notice: "The company name or MINVU role is missing. You can keep dictating and saving findings; both are required to generate the PDF."
+      incomplete_short: "Certification company details incomplete"
+      read_only: "Only the account's designated owner edits these details."
+      manager_is: "Owner: %{email}"
+      no_manager: "This account has no designated owner yet. Contact the account owner to assign one."
+      fields:
+        name: "Company name"
+        name_placeholder: "E.g. Pizarro y Cía. Ltda."
+        minvu_role: "MINVU role"
+        minvu_role_placeholder: "E.g. 063"
+        logo: "Logo (optional)"
+        logo_hint: "PNG or JPEG, up to %{max_mb} MB and %{max_mp} megapixels. Without a logo the header uses the name and role."
+      logo_errors:
+        missing: "No image received. The previous logo is still in use."
+        too_large: "The logo is over 2 MB. The previous logo is still in use."
+        too_many_pixels: "The logo is over 4 megapixels. The previous logo is still in use."
+        unsupported_format: "PNG or JPEG only. The previous logo is still in use."
+        unreadable: "The image could not be read. The previous logo is still in use."
+        upload_failed: "The logo could not be stored. The previous logo is still in use."
+      alerts:
+        not_manager: "Only the account's designated owner edits the company details."
+      notices:
+        updated: "Company details saved."
+        logo_removed: "Logo removed from the header."
+    # Fase 1A — report equipment.
+    equipment:
+      heading: "Equipment"
+      empty: "No equipment yet. Add it now or later; it is not needed to dictate."
+      add: "Add equipment"
+      # Named after the object: on the report screen these sit next to the
+      # finding's own Edit/Delete, and two identical labels are a guaranteed
+      # mis-tap with gloves in low light.
+      edit: "Edit equipment"
+      delete: "Delete equipment"
+      delete_confirm: "Delete this equipment?"
+      save: "Save equipment"
+      edit_title: "Equipment details"
+      edit_subtitle: "Every technical field is optional. Whatever you leave blank stays blank in the report."
+      specs_heading: "Technical characteristics (optional)"
+      not_recorded: "Not recorded"
+      unassigned: "No equipment assigned"
+      machine_rooms:
+        con_sala: "With machine room"
+        sin_sala: "Without machine room"
+      drive_types:
+        hidraulico: "Hydraulic"
+        electromecanico: "Electromechanical"
+      specs:
+        landings: "%{count} landings"
+        boardings: "%{count} entrances"
+        speed: "%{value} m/s"
+        load: "%{value} kg"
+        capacity: "%{count} people"
+        last_maintenance: "Last maintenance %{date}"
+      fields:
+        label: "Equipment identifier"
+        label_placeholder: "E.g. Elevator A"
+        machine_room: "Machine room"
+        drive_type: "Drive type"
+        door_type: "Door type"
+        landings_count: "Number of landings"
+        boardings_count: "Number of entrances"
+        speed_mps: "Speed (m/s)"
+        rated_load_kg: "Rated load (kg)"
+        capacity_persons: "Capacity (people)"
+        traction_cables: "Traction cables"
+        last_maintenance_date: "Last maintenance date"
+        position: "Order in the report"
+      alerts:
+        has_findings: "This equipment has findings assigned. Reassign them or leave them unassigned before deleting it."
+    # The 8 CENTRAVE items (section 3.3). Grouping is optional.
+    centrave:
+      carpeta_ascensores: "Elevator file"
+      cabina: "Cabin"
+      espacio_maquinas: "Machine space"
+      contrapeso: "Counterweight"
+      caja_elevadores: "Elevator shaft"
+      pozo: "Pit"
+      puertas_cerraduras: "Doors and locks"
+      suspension_cables: "Suspension, cables and fastenings"
+    severities:
+      leve: "Minor"
+      grave: "Major"
+    results:
+      unrecorded: "Result not recorded"
+      aprobado: "Approved"
+      rechazado: "Rejected"
     my_reports:
       title: "My reports"
       new_report: "New report"
@@ -18,6 +117,7 @@ en:
       title: "Building details"
       submit: "Save details"
       back: "Back to report"
+      review_details: "Review details and result (optional)"
     statuses:
       en_progreso: "In progress"
       listo_revision: "Ready for review"
@@ -38,9 +138,19 @@ en:
       inspection_date: "Inspection date"
       maintenance_company: "Maintenance company"
       maintenance_technician: "Maintenance technician"
+      inspector_name: "Inspector (name)"
+      inspector_name_placeholder: "E.g. C. Schwartz"
+      report_date: "Report date"
+      normative_reference: "Applicable standard"
+      normative_reference_placeholder: "E.g. NCh 2840:2018"
+      normative_reference_hint: "Typed by the certifier. Danebo does not derive the applicable standard."
+      result: "Result"
+      result_hint: "Chosen by the certifier. Danebo does not compute it from the registered findings."
+      result_note: "Result note"
     show:
       edit_building_info: "Edit building details"
       back_to_list: "My reports"
+      danebo_reference: "Danebo reference %{reference} (no internal number)"
       findings_heading: "Findings"
       no_findings: "No findings yet. Add the first one below."
       delete_report: "Delete report"
@@ -61,6 +171,17 @@ en:
       has_photo: "Has photo"
       replace_photo: "Replace photo (optional)"
       view_photo: "View photo"
+      classification_heading: "Certifier classification (optional)"
+      equipment: "Equipment"
+      no_equipments_hint: "This report has no equipment yet. Add it from the report to assign findings to it."
+      inspection_item: "CENTRAVE item"
+      severity: "Severity"
+      severity_hint: "Minor or major is assigned by the certifier. Danebo never fills it in."
+      nch2840_box: "NCh 2840 box"
+      norm_point: "Standard clause"
+      position: "Order in the report"
+      unclassified: "Unclassified"
+      unclassified_severity: "Severity unclassified"
     # Fase 5 — dictation: one control, one indicator, editable panel, explicit confirmation.
     dictation:
       heading: "Dictate finding"
@@ -113,6 +234,9 @@ en:
       finding_created: "Finding added."
       finding_updated: "Finding updated."
       finding_destroyed: "Finding deleted."
+      equipment_created: "Equipment added."
+      equipment_updated: "Equipment updated."
+      equipment_destroyed: "Equipment deleted."
       dictation_confirmed: "Finding added from the dictation."
       dictation_undone: "Undone. The text is back in the panel to correct."
       dictation_retried: "Retrying the transcription."

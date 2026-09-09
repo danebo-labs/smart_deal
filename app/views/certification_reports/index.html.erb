@@ -1,7 +1,16 @@
 <% content_for :title, t("certifier.my_reports.title") %>
 
 <main class="mx-auto max-w-2xl px-4 pt-20 pb-16 md:pt-28">
-  <h1 class="mb-6 text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= t("certifier.my_reports.title") %></h1>
+  <%# The company's issuer identity is configured once, so it lives here rather
+      than in the global header — the mobile header stays uncluttered and the
+      link sits where a certifier sets it up. %>
+  <div class="mb-6 flex items-center justify-between gap-3">
+    <h1 class="text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= t("certifier.my_reports.title") %></h1>
+    <%= link_to certifier_settings_path,
+        class: "flex min-h-[60px] shrink-0 items-center justify-center rounded-lg border px-3 text-sm font-medium transition-colors #{current_account.certifier_identified? ? "border-[hsl(215,20%,88%)] text-[hsl(222,47%,10%)] hover:bg-[hsl(215,20%,93%)]" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}" do %>
+      <%= t("certifier.settings.link") %>
+    <% end %>
+  </div>
 
   <%# Primary action — 72px min tap target (section 2.3). %>
   <%= link_to new_certification_report_path,

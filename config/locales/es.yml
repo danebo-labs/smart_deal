@@ -57,6 +57,10 @@ es:
   date:
     month_names: [~, enero, febrero, marzo, abril, mayo, junio, julio, agosto, septiembre, octubre, noviembre, diciembre]
     abbr_month_names: [~, ene, feb, mar, abr, may, jun, jul, ago, sep, oct, nov, dic]
+    formats:
+      # es had no date.formats at all, so `l(date)` raised. Added as an explicit
+      # named format instead of :default so no existing view changes shape.
+      certifier_short: "%d-%m-%Y"
   dashboard:
     metrics_refreshing: "Métricas actualizándose…"
   bulk_uploads:

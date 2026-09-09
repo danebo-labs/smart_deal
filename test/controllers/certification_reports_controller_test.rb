@@ -210,4 +210,96 @@ class CertificationReportsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert CertificationReport.exists?(colleague_report.id)
   end
+
+  test "destroy removes the report's equipment along with its findings" do
+    sign_in @user
+    equipment = @report.report_equipments.create!(label: "Ascensor A")
+    inspection_findings(:pozo_iluminacion).update!(report_equipment: equipment)
+
+    delete certification_report_path(@report)
+
+    assert_redirected_to certification_reports_path
+    assert_not ReportEquipment.exists?(equipment.id)
+  end
+
+  # ── Fase 1A: manual review fields ──────────────────────────────────────────
+
+  test "update saves the review fields the certifier typed" do
+    sign_in @user
+
+    patch certification_report_path(@report), params: {
+      certification_report: {
+        inspector_name: "C. Schwartz", report_date: "2026-09-09",
+        normative_reference: "NCh 2840:2018", result_note: "Se corrigieron dos observaciones en terreno."
+      }
+    }
+
+    assert_redirected_to certification_report_path(@report)
+    @report.reload
+    assert_equal "C. Schwartz", @report.inspector_name
+    assert_equal Date.new(2026, 9, 9), @report.report_date
+    assert_equal "NCh 2840:2018", @report.normative_reference
+    assert_match(/dos observaciones/, @report.result_note)
+  end
+
+  # Fixed rule 1: the verdict is only ever what a human chose.
+  test "the result starts empty and is never derived from the findings" do
+    assert_nil @report.result
+    assert_equal 3, @report.inspection_findings.count
+
+    sign_in @user
+    patch certification_report_path(@report), params: { certification_report: { commune: "Ñuñoa" } }
+
+    assert_nil @report.reload.result, "saving other fields must not produce a verdict"
+  end
+
+  test "update records the result the certifier chose" do
+    sign_in @user
+
+    patch certification_report_path(@report), params: { certification_report: { result: "rechazado" } }
+
+    assert_redirected_to certification_report_path(@report)
+    assert @report.reload.result_rechazado?
+  end
+
+  test "the result can be cleared back to unrecorded" do
+    sign_in @user
+    @report.update!(result: "aprobado")
+
+    patch certification_report_path(@report), params: { certification_report: { result: "" } }
+
+    assert_nil @report.reload.result
+  end
+
+  test "update with an invalid result responds 422 and blames the result" do
+    sign_in @user
+
+    patch certification_report_path(@report), params: { certification_report: { result: "quizas" } }
+
+    assert_response :unprocessable_entity
+    assert_nil @report.reload.result
+  end
+
+  # The status is the draft's lifecycle; the result is the verdict. Neither may
+  # be written by touching the other.
+  test "status and result stay independent" do
+    sign_in @user
+
+    patch certification_report_path(@report), params: { certification_report: { status: "enviado" } }
+    assert_nil @report.reload.result
+
+    patch certification_report_path(@report), params: { certification_report: { result: "aprobado" } }
+    assert_equal "enviado", @report.reload.status
+  end
+
+  # Old data: a report created before Fase 1A has none of these columns filled.
+  test "a report with no review fields still opens" do
+    sign_in @user
+
+    get certification_report_path(@report)
+
+    assert_response :success
+    assert_nil @report.inspector_name
+    assert_nil @report.result
+  end
 end

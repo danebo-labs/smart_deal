@@ -38,13 +38,24 @@ Rails.application.routes.draw do
   # resources :bulk_uploads, only: %i[new create show]  # T-31: disabled for pilot
 
   # Certifier module (Fase 2) — guarded by ENV["CERTIFIER_MODULE_ENABLED"]
-  # (CertifierModuleGuard on both controllers, nav entry gated in the layout).
+  # (CertifierModuleGuard on every controller, nav entry gated in the layout).
   resources :certification_reports do
     resources :inspection_findings, only: %i[create]
     # Fase 5: audio is uploaded against the report the moment recording stops.
     resources :voice_dictations, only: %i[create]
+    # Fase 1A: the elevators of this draft. Created with just their visible
+    # label; the optional technical characteristics are revealed on edit.
+    resources :report_equipments, only: %i[create]
   end
   resources :inspection_findings, only: %i[edit update destroy]
+  resources :report_equipments, only: %i[edit update destroy]
+
+  # Fase 1A: the company's issuer identity — one per account, configured once
+  # (fixed rule 14). Singular resource: there is nothing to list.
+  resource :certifier_settings, only: %i[show update] do
+    get    :logo,  action: :logo,          as: :logo
+    delete :logo,  action: :destroy_logo
+  end
   # Fase 5: the dictation's own lifecycle — refresh (show), autosave (update),
   # the explicit yes (confirm), its inline reversal (undo), the human retry of
   # a failed one (retry) and discarding it (destroy). Flat, not under the chat.

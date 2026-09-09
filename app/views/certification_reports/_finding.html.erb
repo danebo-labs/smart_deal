@@ -22,6 +22,35 @@
     <% if finding.location.present? %>
       <p class="mt-1 text-sm text-[hsl(215,20%,42%)]"><%= finding.location %></p>
     <% end %>
+
+    <%# What the certifier classified, and what is still pending. An unassigned
+        equipment or a missing severity is shown as such: the absence of a
+        classification never reads as "sin defectos" (fixed rule 1). %>
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <span class="rounded-md bg-[hsl(215,20%,93%)] px-2 py-1 text-xs font-medium text-[hsl(215,20%,32%)]">
+        <%= certifier_finding_equipment_label(finding) %>
+      </span>
+      <% if finding.centrave_item_key %>
+        <span class="rounded-md bg-[hsl(215,20%,93%)] px-2 py-1 text-xs font-medium text-[hsl(215,20%,32%)]">
+          <%= t("certifier.centrave.#{finding.centrave_item_key}") %>
+        </span>
+      <% end %>
+      <% if finding.severity.present? %>
+        <span class="rounded-md px-2 py-1 text-xs font-semibold <%= finding.severity == "grave" ? "bg-red-100 text-red-700" : "bg-[hsl(48,96%,89%)] text-[hsl(32,81%,29%)]" %>">
+          <%= t("certifier.severities.#{finding.severity}") %>
+        </span>
+      <% else %>
+        <span class="rounded-md border border-dashed border-[hsl(215,20%,80%)] px-2 py-1 text-xs text-[hsl(215,20%,45%)]">
+          <%= t("certifier.finding.unclassified_severity") %>
+        </span>
+      <% end %>
+      <% if finding.nch2840_box.present? %>
+        <span class="text-xs text-[hsl(215,20%,45%)]"><%= t("certifier.finding.nch2840_box") %> <%= finding.nch2840_box %></span>
+      <% end %>
+      <% if finding.norm_point.present? %>
+        <span class="text-xs text-[hsl(215,20%,45%)]"><%= t("certifier.finding.norm_point") %> <%= finding.norm_point %></span>
+      <% end %>
+    </div>
   </div>
 
   <%# 16px minimum spacing between adjacent controls (section 2.3). %>

@@ -1,0 +1,47 @@
+<%# locals: report, equipments, equipment %>
+<%# The elevators of this draft. A report with zero equipments is legitimate
+    while it is being captured, and a finding is never attached to one
+    automatically. Creating an elevator asks for its visible label only; the
+    optional technical characteristics of section 3.1 are revealed on edit. %>
+<section class="mb-6 rounded-xl border border-[hsl(215,20%,88%)] bg-white p-4">
+  <h2 class="mb-3 text-lg font-semibold text-[hsl(222,47%,10%)]"><%= t("certifier.equipment.heading") %></h2>
+
+  <% if equipments.empty? %>
+    <p class="mb-4 text-base text-[hsl(215,20%,42%)]"><%= t("certifier.equipment.empty") %></p>
+  <% else %>
+    <ul class="mb-4 space-y-4">
+      <% equipments.each do |item| %>
+        <li class="flex min-h-[60px] flex-col gap-3 rounded-lg border border-[hsl(215,20%,88%)] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <p class="text-base font-medium text-[hsl(222,47%,10%)]"><%= item.label %></p>
+            <% specs = certifier_equipment_specs(item) %>
+            <% if specs.any? %>
+              <p class="mt-1 text-sm text-[hsl(215,20%,42%)]"><%= specs.join(" · ") %></p>
+            <% end %>
+          </div>
+          <div class="flex shrink-0 gap-4">
+            <%= link_to t("certifier.equipment.edit"), edit_report_equipment_path(item),
+                class: "flex min-h-[60px] min-w-[60px] items-center justify-center rounded-lg border border-[hsl(215,20%,88%)] px-3 text-sm font-medium text-[hsl(222,47%,10%)] transition-colors hover:bg-[hsl(215,20%,93%)]" %>
+            <%= button_to t("certifier.equipment.delete"), report_equipment_path(item), method: :delete,
+                form_class: "inline-block",
+                data: { turbo_confirm: t("certifier.equipment.delete_confirm") },
+                class: "flex min-h-[60px] min-w-[60px] items-center justify-center rounded-lg border border-red-200 px-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50" %>
+          </div>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+
+  <%= render "certification_reports/errors", record: equipment %>
+
+  <%= form_with model: equipment, url: certification_report_report_equipments_path(report),
+      scope: :report_equipment, class: "mt-2 flex flex-col gap-4 sm:flex-row sm:items-end" do |f| %>
+    <div class="flex-1 space-y-1.5">
+      <%= f.label :label, t("certifier.equipment.fields.label"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_field :label, placeholder: t("certifier.equipment.fields.label_placeholder"),
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+    <%= f.submit t("certifier.equipment.add"),
+        class: "flex min-h-[60px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-[hsl(217,91%,50%)] px-6 text-sm font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+  <% end %>
+</section>

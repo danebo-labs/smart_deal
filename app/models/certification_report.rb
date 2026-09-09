@@ -25,6 +25,13 @@ class CertificationReport < ApplicationRecord
            dependent: :destroy,
            inverse_of: :certification_report
 
+  # Declared after inspection_findings, and the order is load-bearing: a
+  # dictation refuses to be destroyed while a finding still points at it, so
+  # the findings must be destroyed first. Destroying a dictation also deletes
+  # its audio from S3, which is why deleting a draft does not leave paid-for
+  # bytes behind.
+  has_many :voice_dictations, dependent: :destroy, inverse_of: :certification_report
+
   enum :status, STATUSES, default: :en_progreso
 
   validates :building_name, presence: true

@@ -19,6 +19,19 @@ Rails:
 
 # Bulk ingestion / failure paths use update_columns and update_all on purpose
 # (avoid callback storms, keep job latency low).
+#
+# app/models/voice_dictation.rb is a different reason for the same exemption:
+# its state machine is compare-and-set by design. Every transition has to be a
+# single conditional UPDATE whose affected-row count is the decision, because
+# that is what makes "one dictation = one billed call = one finding" a database
+# guarantee instead of an intention (fixed rule 13 of
+# docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md). Loading the record and
+# saving it would reintroduce the race the whole phase exists to close.
+#
+# Its two test files are exempt for a third reason: they have to *forge* the
+# states a race produces — a claim abandoned by a dead worker, a row confirmed
+# while a provider call is in flight — and going through validations would run
+# the callbacks whose absence is the point of the setup.
 Rails/SkipsModelValidations:
   Exclude:
     - "app/jobs/**/*.rb"
@@ -26,4 +39,7 @@ Rails/SkipsModelValidations:
     - "app/services/batch_results_parser_service.rb"
     - "app/services/bulk_upload_asset_recovery.rb"
     - "app/models/bulk_upload.rb"
+    - "app/models/voice_dictation.rb"
     - "test/integration/bulk_upload_flow_test.rb"
+    - "test/models/voice_dictation_test.rb"
+    - "test/jobs/transcription_job_test.rb"

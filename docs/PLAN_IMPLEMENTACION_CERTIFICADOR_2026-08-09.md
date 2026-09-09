@@ -42,7 +42,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 |---|---|---|---|---|---|
 | 1º | 0 | Modelo de datos del borrador (alcance núcleo) | **cerrada** (2026-09-08, branch `certificador/fase-0-modelo-datos`, suite local verde) | Opus última versión | high |
 | 2º | 2 | Lista "mis informes" + editor mínimo | **cerrada** (2026-09-08, branch `certificador/fase-2-mis-informes`, suite local verde) | Sonnet última versión | medium |
-| 3º | 4 | Capa de transcripción agnóstica al proveedor | pendiente | Opus última versión | high |
+| 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, transcripción real end-to-end USD 0,0124; **PR por abrir/mergear**) | Opus última versión | high |
 | 4º | 5 | UI de captura de audio (dictado) | pendiente | Fable última versión | high |
 | 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | pendiente | Grok (variante rápida) | low/fast |
 | — | 1 | Exportable HTML con hoja de impresión (formato NCh 2840) | **condicionada** (gate 2-oct) | Sonnet última versión | medium |
@@ -395,7 +395,7 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 **Alcance:**
 
 - Contrato único: `SpeechToText::Client.for(provider)` → `#transcribe(s3_key:, language:)` → `Result` (texto, duración en segundos, proveedor, metadata cruda). Proveedor por `ENV["STT_PROVIDER"]`, con override por llamada (lo necesita el benchmark de la Fase 6).
-- Adapters iniciales: **`AmazonTranscribeAdapter`** (gem `aws-sdk-transcribeservice`, batch, `es-CL`, reutilizando `AwsClientInitializer`) y **`OpenAiAdapter`** (`gpt-4o-mini-transcribe`, HTTP directo sin gem nueva, siguiendo el estilo de `ClaudeChunkingClient`). `GroqAdapter` es opcional en esta fase — la API es Whisper-compatible y puede caer en Fase 6 si el contrato quedó bien hecho; si el ejecutor lo agrega aquí, son ~30 líneas.
+- Adapters iniciales: **`AmazonTranscribeAdapter`** (gem `aws-sdk-transcribeservice`, batch, `es-US` — ver corrección de idioma en el diseño más abajo, reutilizando `AwsClientInitializer`) y **`OpenAiAdapter`** (`gpt-4o-mini-transcribe`, HTTP directo sin gem nueva, siguiendo el estilo de `ClaudeChunkingClient`). `GroqAdapter` es opcional en esta fase — la API es Whisper-compatible y puede caer en Fase 6 si el contrato quedó bien hecho; si el ejecutor lo agrega aquí, son ~30 líneas.
 - Modelo `VoiceDictation`: `account_id`, `user_id`, `certification_report_id` (nullable), `s3_key_audio` (prefijo `voice_dictations/<account_id>/...`, **fuera de `bulk_chunks/`**), `sha256`, `duration_seconds`, `provider`, `status`, `transcript_raw`, `transcript_edited`, `confirmed_at`, `cost_estimate_usd`. **Telemetría propia — no toca `bedrock_queries`** (regla fija 7). Costo estimado = duración × tarifa del proveedor (tabla de tarifas en constante versionada).
 - **Máquina de estados (regla fija 13, gap 5):** `pending` → `transcribing` → `transcribed` | `failed`; `transcribed` → `confirmed`. Las transiciones se hacen con updates condicionales, nunca con asignación directa.
 - **Deduplicación por informe, no global (gap 5):** índice único compuesto `[account_id, certification_report_id, sha256]` — un doble upload del mismo audio al mismo informe deduplica (doble tap); el mismo audio en otro informe es una fila nueva legítima. Para `certification_report_id` nulo: `NULLS NOT DISTINCT` (PostgreSQL 15+) o índice parcial equivalente.
@@ -412,11 +412,119 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 
 > Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` completo, con foco en las secciones 0 (reglas 7, 10, 12 y 13), 2.2, 4 y 5, más el cierre de la Fase 0. Crea `certificador/fase-4-transcripcion` desde `main`. Diseña primero y por escrito (en el PR) el contrato `SpeechToText::Client` y la máquina de estados de `VoiceDictation`; después implementa. No negociable: claim atómico antes de llamar al proveedor (dos performs concurrentes → una sola llamada facturada, con test); resultado tardío nunca sobrescribe `transcript_edited`; confirmación idempotente con índice único dictado→hallazgo; dedup por `[account_id, certification_report_id, sha256]`; broadcast por canal privado del usuario con test de que otro usuario de la cuenta no recibe el evento; purga solo de estados terminales; telemetría propia sin tocar `bedrock_queries`. Prueba end-to-end real en dev con Transcribe y OpenAI, y documenta el costo en el cierre. Actualiza los "Insumos" de las Fases 5 y 6.
 
-### Cierre de fase (lo llena el ejecutor)
-- Estado: pendiente
-- Hallazgos:
-- Desviaciones del plan:
-- Actualizaciones aplicadas a fases siguientes:
+### Diseño (escrito antes de implementar, 2026-09-08)
+
+Este bloque es el contrato que consumen las Fases 5, 6 y 7. Se escribió y revisó **antes** de escribir código, como exige el prompt de la fase.
+
+#### A. Contrato `SpeechToText::Client`
+
+```ruby
+SpeechToText::Client.for(provider = nil, client: nil)   # → adapter
+adapter.transcribe(s3_key:, language: "es-CL", duration_hint_seconds: nil)
+# → SpeechToText::Result(text:, duration_seconds:, provider:, model:, raw:)
+```
+
+- **Resolución de proveedor:** argumento explícito → `ENV["STT_PROVIDER"]` → default `amazon_transcribe`. El override por llamada existe porque la Fase 6 corre el mismo audio por todos los adapters en un solo proceso.
+- **Errores:** `SpeechToText::Error` (base) con tres hijos que significan cosas distintas para el job — `ConfigurationError` (falta credencial o bucket: **no hubo llamada al proveedor**, no se facturó nada), `ProviderError` (el proveedor respondió error o se agotó el timeout: pudo haberse facturado), `UnknownProviderError` (nombre de proveedor no registrado).
+- **Los adapters no tocan la base de datos ni escriben telemetría.** Reciben una key de S3 y devuelven texto. Estado, costo, broadcast y persistencia viven en el job. Eso es lo que hace que cambiar de proveedor sea configuración y no arquitectura (sección 4).
+- `language` es BCP-47 canónico (`es-CL`); **ningún proveedor lo acepta tal cual**, y cada adapter lo estrecha a su propio vocabulario (ver la corrección de idioma abajo). OpenAI y Groq solo aceptan el subtag primario, `es`.
+- **Inyección:** `client:` para el doble del SDK/HTTP, patrón ya usado en el repo. Los tests de job reemplazan `SpeechToText::Client.for` por una fake (el repo no usa WebMock).
+
+**Corrección al plan: Amazon Transcribe no tiene `es-CL`.** El alcance de esta fase daba `es-CL` por soportado; la tabla oficial de idiomas de Transcribe no lo lista. Sus únicas variantes de español son `es-ES`, `es-US` y `es-MX`, y pasar `es-CL` hace que la API rechace el job. El adapter mapea el tag canónico a **`es-US`**, con override por `STT_AMAZON_LANGUAGE_CODE`. El criterio fue cobertura de jerga de ascensores en la ruta **batch**, que es la que usamos:
+
+| Código | Variante | Números en batch | Siglas en batch | Custom language models |
+|---|---|---|---|---|
+| `es-US` | Español, EE.UU. (latinoamericano) | sí | sí | **sí (batch y streaming)** |
+| `es-ES` | Español peninsular | sí | sí | no |
+| `es-MX` | Español, México | **no** (solo streaming) | sí | no |
+
+- `es-US` es la **única** variante de español que acepta *custom language models*, que es la palanca real contra la jerga del dominio (términos NCh 2840, marcas, códigos de falla) una vez que la Fase 6 tenga corpus; y es léxicamente más cercana al español chileno que la peninsular.
+- `es-MX` es la más débil de las tres para este caso a pesar de ser latinoamericana: no transcribe números en batch, y un dictado de inspección está lleno de ellos ("embarque 3", "450 kilos", "código A32.4", "1,6 metros por segundo").
+- Los *custom vocabularies* (distintos de los custom language models) sí funcionan en cualquier variante: son la palanca inmediata y barata para las 20 frases técnicas que mide la Fase 6, sin depender de esta elección.
+- Precedencia en `#provider_language`: variante soportada pedida explícitamente (la usa el benchmark de la Fase 6) → `STT_AMAZON_LANGUAGE_CODE` → `es-US`. Cualquier otro tag de español colapsa al default; un tag no-español pasa intacto.
+
+**Por qué el contrato es bloqueante aunque Transcribe batch sea asíncrono.** Amazon Transcribe batch es `start_transcription_job` + poll. La alternativa sería un segundo job de polling más una tabla de trabajos en vuelo; en su lugar el adapter hace el poll **dentro** de `TranscriptionJob`, que corre en Solid Queue y no en la ruta de request. Se paga un hilo de worker retenido durante la transcripción y se ahorra una máquina de estados paralela, un fan-out y un loop de polling — el balance que pide la sección 0 (ruta de ejecución directa, sin orquestación innecesaria). El poll está acotado por `STT_POLL_TIMEOUT_SECONDS`; agotarlo levanta `ProviderError` y el dictado queda `failed`, nunca colgado.
+
+#### B. Máquina de estados de `VoiceDictation`
+
+Estados: `pending` → `transcribing` → `transcribed` | `failed`; `transcribed` → `confirmed`. **Terminales:** `confirmed`, `failed`. **No terminales (la purga nunca los toca):** `pending`, `transcribing`, `transcribed`.
+
+Toda transición es **un solo `UPDATE` condicional** (`update_all` sobre un `where` que incluye el estado de origen) y se decide por las filas afectadas. Nunca hay asignación directa de `status`.
+
+| # | Transición | Disparador | Guarda (en el propio `UPDATE`) | Escribe |
+|---|---|---|---|---|
+| T0 | — → `pending` | `VoiceDictationIntake` | único `[account_id, certification_report_id, sha256]` | fila + audio en S3 |
+| T1 | `pending` → `transcribing` | claim de `TranscriptionJob` | `status = pending` **o** (`status = transcribing` y `transcribing_since` < corte de obsolescencia) | `provider`, `transcribing_since`, `transcription_claim_id` nuevo |
+| T2 | `transcribing` → `transcribed` | resultado del proveedor | `status = transcribing` **y** `transcription_claim_id` = el claim propio | `transcript_raw`, `duration_seconds`, `cost_estimate_usd` |
+| T3 | `transcribing` → `failed` | error del proveedor | misma guarda de claim | `failure_reason` |
+| T4 | `transcribed` → `confirmed` | confirmación humana | `status = transcribed` (el lock de fila serializa el doble tap) | `confirmed_at`, congela `transcript_edited`, y crea el `InspectionFinding` en la misma transacción |
+| T5 | `failed` → `pending` | reintento humano explícito | `status = failed` **y** `audio_purged_at IS NULL` | limpia `failure_reason` y el claim |
+| T6 | purga de audio | job de retención | `status IN (confirmed, failed)` **y** `audio_purged_at IS NULL` | `s3_key_audio` → NULL, `audio_purged_at`; después borra S3 |
+
+**Propiedades que la forma de la máquina garantiza, y por qué están ahí:**
+
+1. **Una sola llamada facturada por intento (regla fija 13).** T1 es un `UPDATE` que devuelve filas afectadas: solo el `perform` que obtiene 1 llama al proveedor. Un `perform` concurrente obtiene 0 y **retorna sin tocar el proveedor** — no espera, no reencola, no factura.
+2. **Un resultado tardío nunca gana (regla fija 13).** El claim escribe un `transcription_claim_id` (UUID) nuevo; T2 y T3 filtran por él, así que cualquier resultado cuyo claim ya no esté vigente (porque el dictado se confirmó, o porque un reclaim por obsolescencia lo sustituyó) actualiza 0 filas, se loguea y se descarta. Y `transcript_edited` **no lo escribe el job en ninguna transición**: sus únicos escritores son el autosave humano (Fase 5) y el congelado de T4.
+3. **Por qué existe el reclaim por obsolescencia (T1, segunda rama).** Un worker muerto en duro (deploy, SIGKILL) en medio de la llamada al proveedor dejaría el dictado en `transcribing` para siempre, y "cerrar y reabrir sin perder audio" es la regla fija 11. Cuesta una segunda llamada facturada después de `STT_STALE_CLAIM_MINUTES` (30 por defecto): es deliberado y nunca es concurrente con la primera.
+4. **La confirmación es idempotente por dos caminos independientes (regla fija 13).** El `UPDATE` de T4 toma el lock de la fila, así que un segundo confirm concurrente **se bloquea**, luego ve 0 filas y lee el hallazgo que el ganador ya comiteó — misma respuesta, un solo hallazgo. Y `inspection_findings.voice_dictation_id` lleva **índice único**, así que ni un camino que se saltara el CAS podría crear un segundo hallazgo.
+5. **La deduplicación es por informe, no global (gap 5).** Único `[account_id, certification_report_id, sha256]` con `NULLS NOT DISTINCT` (PostgreSQL 16 en dev y prod): doble tap sobre el mismo informe devuelve la misma fila; el mismo audio en otro informe es una fila nueva legítima; y un dictado sin informe todavía deduplica, en vez de que el NULL haga única cada fila.
+6. **La purga tiene dos capas independientes, como la Fase 0.** La consulta del lote excluye los estados no terminales, y el `UPDATE` de T6 **vuelve a verificar** la terminalidad fila por fila. El job devuelve `{ purged:, kept:, aborted: }`; una corrida sana tiene `aborted == 0`, que es lo que prueba que el audio lo protegió la consulta y no la guarda de respaldo (hallazgo 1 del cierre de la Fase 0). Se valida por mutación, no por color verde.
+7. **La purga borra los bytes del audio, no la fila.** Es una desviación de la letra de "fila antes que S3": destruir la fila rompería la FK de trazabilidad `inspection_findings.voice_dictation_id` y borraría la telemetría de costo que la Fase 6 necesita. El *orden seguro* sí se preserva: la escritura reversible en la base (limpiar el puntero) va antes del borrado irreversible en S3, así que un fallo deja los bytes en el bucket, nunca huérfanos sin registro.
+8. **Telemetría propia, `bedrock_queries` intacto (regla fija 7).** `voice_dictations` es la tabla propia de la fase (`provider`, `duration_seconds`, `cost_estimate_usd`) más una línea de log estructurado `[STT_USAGE]`. El costo es duración × tarifa de una constante versionada, no un token count.
+9. **El broadcast va por `user:<user_id>:voice_dictations`** — canal privado del usuario, no el patrón `KbSyncChannel`, que transmite a toda la cuenta (regla fija 12, gap 4).
+
+### Cierre de fase (2026-09-08)
+
+- **Estado: CERRADA.** Todos los criterios de aceptación cumplidos. Suite verde (2699 tests, 0 fallos, `PARALLEL_WORKERS=1 DB_USERNAME=lahirisan bin/rails test`), Rubocop limpio en los 24 archivos de la fase, y **transcripción real end-to-end con Amazon Transcribe**. OpenAI queda verificado con fakes y su prueba real cae en la Fase 6, según lo acordado.
+
+**Prueba end-to-end real (Amazon Transcribe, `es-US`):**
+
+| | |
+|---|---|
+| Audio | 31 s, WAV 16 kHz mono, 987 KB (voz sintética, jerga de ascensores) |
+| Job | `danebo-90abaca5ef3af51d-8b901e30`, `LanguageCode=es-US` confirmado en la API |
+| Latencia | **11,0 s de reloj** de punta a punta (9,2 s del lado de AWS: 21:20:47.989 → 21:20:57.194) |
+| **Costo real** | **USD 0,0124** (31 s × 0,024/min) |
+| Costo total de toda la validación de la fase | **USD 0,0124** — el primer intento fue rechazado por IAM antes de crear el job, así que no facturó nada |
+
+Transcripción obtenida:
+
+> Embarque tres, la puerta de cabina **rosa** en el marco al cerrar y el operador de puertas queda desalineado, ascensor de 12 paradas, carga útil 450 kilos, velocidad 1,6 metros por segundo, se registra. Código de falla **a 32.4** en el variador, el limitador de velocidad y el paracaídas fueron probados sin observaciones. Falta señalización de sobrecarga en la cabina, punto de la norma NCH 2840.
+
+**Lo que la ruta completa quedó validada con datos reales**, no solo con fakes: intake → S3 → claim → Transcribe → `transcribed` → confirmación (idempotente: dos llamadas, un solo hallazgo, `id` igual) → `InspectionFinding` con `body`/`location`/`position` poblados y `severity`/`nch2840_box`/`norm_point`/`inspection_item` en `nil` (regla fija 1). Rollup de costo: `{"amazon_transcribe" => {dictations: 1, seconds: 31, cost_usd: 0.0124}}`. **Cero filas nuevas en `bedrock_queries`** (regla fija 7). Y el reintento T5 se ejercitó de verdad: el dictado venía de un fallo previo y `reopen_failed!` lo devolvió a `pending`.
+
+**Calidad sobre jerga — línea base para la Fase 6.** El resultado es mejor de lo esperado en lo que decidió la elección de `es-US` y falla exactamente donde se anticipaba:
+
+- **Correcto, y es la validación de la decisión de idioma:** todos los números en batch — "12 paradas", "carga útil 450 kilos", "velocidad 1,6 metros por segundo" — más "NCH 2840", "limitador de velocidad", "paracaídas", "operador de puertas", "señalización de sobrecarga", "variador", "carga útil". `es-MX` no habría transcrito los números en batch.
+- **Dos errores, ambos de la clase que arreglan los *custom vocabularies*:** "**rosa**" por "roza" (homófono; en un informe de certificación cambia el sentido técnico) y "**a 32.4**" por "A32.4" (el código de falla se partió y perdió la mayúscula). Más un corte de oración espurio en "se registra. Código de falla".
+- **Conclusión operativa:** la palanca inmediata no es cambiar de proveedor, es cargar un *custom vocabulary* con los términos del dominio. Esa es la primera cosa que debería medir la Fase 6, antes de comparar proveedores.
+
+**Extrapolación de costo para la hipótesis de precio:** a 0,024/min, un dictado de 15–20 min cuesta **USD 0,36–0,48**. Pero el caso base de la fase es un dictado corto por hallazgo, donde domina el mínimo facturable de 15 s (hallazgo 7): ahí el costo por informe se parece a *número de hallazgos × 0,006*, no a *minutos × tarifa*.
+
+**Hallazgos:**
+
+1. **Amazon Transcribe no soporta `es-CL`** — el alcance de esta fase lo daba por soportado y la API rechaza el job. Sus variantes de español son `es-ES`, `es-US` y `es-MX`. Default elegido: **`es-US`**, por ser la única con *custom language models* (la palanca real contra la jerga) y por transcribir números en batch, que `es-MX` no hace. Razonamiento completo y tabla de soporte en el bloque de diseño de esta fase; override por `STT_AMAZON_LANGUAGE_CODE`; la decisión por medición queda en la Fase 6.
+2. **`bedrock-integration-user` no tenía permisos de Transcribe — resuelto durante la fase.** El primer smoke test devolvió `AccessDeniedException: not authorized to perform: transcribe:StartTranscriptionJob`. Se agregó una política de usuario con `transcribe:StartTranscriptionJob` y `transcribe:GetTranscriptionJob`; **no** hicieron falta permisos de S3 nuevos, porque Transcribe batch lee el media y escribe el output con las credenciales del llamador, que ya tenía el bucket. **Dos ganancias colaterales:** el camino de fallo quedó validado con un error real del proveedor y no con un fake (el `AccessDeniedException` se mapeó a `ProviderError`, el dictado quedó en `failed` con la razón guardada y sin transcript, todo en 0,7 s), y el reintento T5 quedó ejercitado de verdad al reabrir ese mismo dictado para la corrida facturada. **Nota para producción:** prod **no** usa un usuario IAM sino el rol de instancia `smart-deal-ec2-role`, así que allá el comando es `put-role-policy`; quedó escrito como prerrequisito bloqueante de deploy en los insumos de la Fase 5, que es la primera fase que dispara transcripciones reales.
+3. **Validación por mutación, no por color verde** (lección del cierre de la Fase 0). Se rompieron cuatro guardas a propósito y cada una fue detectada por el test correcto: (a) quitar el `return` del claim fallido → caen los 3 tests de una-sola-llamada-facturada; (b) sacar `transcription_claim_id` de la guarda de escritura → caen los 3 de resultado tardío; (c) sacar `.terminal` de la consulta de purga → cae el test de retención **con el mensaje `aborted > 0`**, es decir demostrando que el audio lo salvó la segunda capa y no la consulta, que es exactamente el falso verde que la Fase 0 advirtió; (d) volver el stream del broadcast a `account:<id>` → caen los 6 tests de aislamiento por usuario.
+4. **La idempotencia de la confirmación es genuinamente de dos capas, y por eso una sola mutación no la rompe.** Quitar el atajo de "ya confirmado" deja pasar el segundo tap al CAS, que devuelve 0 filas y lee el hallazgo del ganador: misma respuesta, un solo hallazgo. Y quitar el CAS deja el índice único. Es la propiedad buscada, pero implica que **ningún test individual prueba la idempotencia por sí solo** — hay que leer los tres juntos (CAS, atajo, índice único).
+5. **`say` + `afconvert` es una fuente de audio de prueba reproducible y gratis**, insumo directo de las Fases 5 y 6: `say -v Paulina -o a.aiff "<jerga>"` y `afconvert -f WAVE -d LEI16@16000 -c 1 a.aiff a.wav` da 16 kHz mono WAV, el formato que Transcribe prefiere. No sustituye a los cinco dictados con ruido de fondo real del protocolo de la Fase 6 (una voz sintética limpia no mide lo que hay que medir), pero sirve para validar cañería sin gastar en audio grabado a mano.
+6. **`cost_by_provider` ganó un parámetro `account_id`.** Salió de un test que pasaba por la razón equivocada: el rollup recogía la fixture `cabina_dictado` y los totales cuadraban por casualidad. El parámetro es además el seam de tenancy que pide la sección 0 — el gasto de voz es por cuenta en cuanto haya más de un piloto.
+7. **El mínimo facturable de 15 s de Amazon domina el costo del caso de uso real.** Un "la puerta roza" de 5 s cuesta lo mismo que uno de 15 s (USD 0,006). Como el caso base de la fase es un dictado corto por hallazgo, el costo por informe se parece más a *número de hallazgos × 0,006* que a *minutos totales × tarifa*. Insumo directo de la hipótesis de precio.
+8. **Operativa local, para no volver a perder tiempo:** la suite necesita `PARALLEL_WORKERS=1` cuando corre en un entorno sin sockets Unix disponibles (la paralelización de Minitest usa DRb y muere con `Errno::EPERM`), y `bin/rubocop` necesita `--cache false` cuando `HOME` no es escribible. `DB_USERNAME=lahirisan` sigue siendo obligatorio, como en la Fase 0.
+9. **Quedó en dev un dictado real completo, y conviene dejarlo:** el dictado id 1 `confirmed` con su hallazgo id 1 y su WAV en `voice_dictations/4/6b18…/audio.wav`. Es el único dato de dictado end-to-end que existe, y la Fase 5 lo necesita para probar el panel editable y la reapertura contra algo que no sea una fixture. La purga lo tomará a los 90 días por sí sola, que es el comportamiento correcto.
+
+**Desviaciones del plan:**
+
+- **Idioma:** `es-US` en lugar del `es-CL` que decía el alcance, por el hallazgo 1.
+- **La purga borra los bytes del audio, no la fila.** Desviación de la letra de "fila antes que S3" del orden seguro de la Fase 0, argumentada en el punto 7 del bloque de diseño: destruir la fila rompería la FK de trazabilidad y borraría la telemetría de costo de la Fase 6. El *orden* seguro sí se preserva (escritura reversible en la base antes del borrado irreversible en S3).
+- **`GroqAdapter` se incluyó aquí**, aunque el plan lo daba como opcional para esta fase. Costó cuatro constantes sobre `OpenAiAdapter`, que es la evidencia de que el contrato quedó bien hecho, y deja a la Fase 6 con tres proveedores desde el día uno.
+- **`TranscriptionJob` no lleva `retry_on`.** Un reintento no podría producir una segunda llamada facturada (fallaría el claim), así que lo único que compraría es demora antes de que el certificador sepa que falló. Un fallo del proveedor va a `failed` y se ve; reintentar es una decisión humana explícita (T5).
+- **OpenAI end-to-end no se probó**, según lo acordado: queda verificado con fakes y su prueba real cae en la Fase 6 junto al benchmark.
+
+**Actualizaciones aplicadas a fases siguientes:**
+
+- **Fase 5:** bloque de insumos nuevo (contratos que consumir, estados a mostrar al reabrir, quién puede escribir `transcript_edited`).
+- **Fase 6:** bloque de insumos nuevo — el benchmark gana una dimensión (las tres variantes de español de Transcribe), más la distinción entre *custom vocabularies* (cualquier variante) y *custom language models* (solo `es-US`) como palancas de jerga, la fuente de audio reproducible del hallazgo 5, y la línea base de calidad medida arriba: `es-US` acierta números y siglas de norma, y falla en homófonos técnicos y códigos de falla alfanuméricos. **Eso reordena la Fase 6:** medir primero el efecto de un *custom vocabulary* sobre esos dos errores, y solo después comparar proveedores.
 
 ---
 
@@ -436,6 +544,53 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 - **Guardado explícito, no autosubmit en controles sensibles con guantes.** La Fase 2 evaluó y descartó un `<select>` de estado con `onchange` autosubmit por el riesgo de un cambio accidental sin confirmación visual — se prefirió un botón "Guardar" separado. La Fase 5 tiene un caso más delicado (autosave de `transcript_edited` mientras el usuario edita, regla fija 11): el autosave en sí no necesita confirmación (es corrección en un paso, no una acción cara de deshacer — sección 2.3), pero cualquier control que además *cambie de estado* del dictado (confirmar, descartar) debe seguir el patrón de tap explícito, no un side-effect de un evento de input/change.
 - **Adjuntar foto ya tiene un patrón de referencia reusable:** `InspectionFindingPhotoAttacher` (`app/services/`) adapta un upload directo (`ActionDispatch::Http::UploadedFile`) al contrato existente de `ImageCompressionService.compress_with_thumbnail` + `FieldPhotoStore.persist!`, sin tocar ninguno de los dos servicios. El adapter equivalente para audio (upload directo → `TranscriptionJob`/S3) puede seguir la misma forma: una clase pequeña que solo traduce el input del formulario al contrato de los servicios ya existentes, nunca reimplementa compresión/almacenamiento.
 - **Tap targets ya verificados por assertion, no por revisión visual:** los tests de la Fase 2 comprueban las clases Tailwind literales (`min-h-[72px]`, `min-h-[60px]`, `gap-4`/`space-y-4`) contra el HTML renderizado. Mismo patrón recomendado para el botón único grabar/parar (72px) y los controles del indicador de estado (60px) de esta fase.
+
+*Actualizado con el cierre de la Fase 4 (2026-09-08):*
+
+- **PREREQUISITO BLOQUEANTE DE DEPLOY — el rol de instancia de producción necesita permisos de Transcribe.** Esta fase es la primera que dispara transcripciones desde producción, y la política solo está aplicada en la identidad de dev (hallazgo 2 del cierre de la Fase 4). Sin esto, el primer dictado real termina en `failed` con `AccessDeniedException` y el certificador ve un error que no puede resolver. **No se mergea esta fase sin verificarlo.**
+
+  **Producción no usa un usuario IAM: usa el rol de instancia EC2 `smart-deal-ec2-role`** (verificado el 2026-09-08). Ni `config/deploy.yml` ni las credenciales encriptadas tienen `AWS_ACCESS_KEY_ID` — solo `AWS_REGION` —, así que `AwsClientInitializer` no fija credenciales explícitas y el SDK cae en la cadena por defecto, es decir el perfil de instancia. Por eso el comando es `put-role-policy` y **no** `put-user-policy`, que es lo que se usó en dev:
+
+  ```bash
+  aws iam put-role-policy \
+    --role-name smart-deal-ec2-role \
+    --policy-name DaneboSpeechToText \
+    --policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "DaneboSpeechToText",
+          "Effect": "Allow",
+          "Action": [
+            "transcribe:StartTranscriptionJob",
+            "transcribe:GetTranscriptionJob"
+          ],
+          "Resource": "*"
+        }
+      ]
+    }'
+  ```
+
+  Cuatro cosas ya verificadas, para no re-descubrirlas: **(a)** `SmartDealAppPolicy` v2 (la política gestionada del rol) **no** tiene ninguna acción de Transcribe, así que el permiso falta de verdad; **(b)** **no** hacen falta permisos de S3 nuevos — Transcribe batch lee el media y escribe el JSON de salida con las credenciales del llamador, y el statement `S3KbBuckets` ya cubre `arn:aws:s3:::multimodal-source-destination/*` completo, que incluye `voice_dictations/` y `voice_dictations/transcripts/`; **(c)** el comando corre con credenciales de administrador, no con la identidad de la aplicación, que no puede modificar IAM (verificar antes con `aws sts get-caller-identity`); **(d)** se eligió una política *inline* sobre el rol en vez de una versión nueva de `SmartDealAppPolicy` porque es un solo comando, no consume el límite de 5 versiones de la política gestionada, y se revierte con `aws iam delete-role-policy --role-name smart-deal-ec2-role --policy-name DaneboSpeechToText`.
+
+  Si después se quiere acotar el `Resource`: los jobs de la aplicación se llaman siempre `danebo-<hash>-<hex>`, así que el ARN candidato es `arn:aws:transcribe:us-east-1:935142957735:transcription-job/danebo-*`. Acotarlo **después** de ver una transcripción real funcionar en prod, para no confundir un permiso mal escrito con otro problema.
+
+  Verificación antes de mergear: `aws iam get-role-policy --role-name smart-deal-ec2-role --policy-name DaneboSpeechToText`.
+
+- **Los tres contratos que esta fase consume, y ninguno más:**
+  - `VoiceDictationIntake.call(account_id:, user_id:, binary:, content_type:, certification_report_id:, duration_seconds:, filename:)` → `VoiceDictation`. **Encola el `TranscriptionJob` por sí mismo**: esta fase nunca debe encolarlo, sería la segunda llamada facturada que todo el diseño existe para evitar. Devuelve `nil` solo si el upload a S3 falló o los argumentos eran inusables — trata `nil` como "no se grabó nada", nunca como éxito.
+  - `VoiceDictationConfirmation.call(dictation, location: nil)` → `InspectionFinding`. Es el **único** camino de dictado a hallazgo. Ya es idempotente por CAS + índice único, así que el doble tap con guantes está resuelto en el servidor: deshabilitar el botón es cuestión de feedback visual, no de corrección. Devuelve `nil` si el dictado no está `transcribed`, no tiene informe, o el texto está vacío.
+  - `VoiceDictation.reopen_failed!(id:)` → reintento humano de un dictado `failed`. **Cuesta una llamada facturada nueva**, así que va detrás de un tap explícito, nunca de un retry automático. Se rechaza si el audio ya fue purgado (`audio_available?` es falso), caso en que la UI debe ofrecer regrabar y no reintentar.
+- **No existe ningún controlador ni ruta de dictado: los crea esta fase.** Para el scoping usa `VoiceDictation.owned_by(account_id:, user_id:)` — aísla por cuenta **y** por usuario, no solo por cuenta — más el patrón `owned_reports` de la Fase 2.
+- **La deduplicación es por contenido y la calcula el servidor** (SHA-256 de los bytes, por informe). Eso es lo que hace barato el reintento de upload en conexión inestable: reenviar el mismo blob devuelve el mismo dictado, sin segunda subida ni segunda transcripción. La UI puede reintentar el POST sin lógica de idempotencia propia.
+- **Manda la duración medida en el navegador.** OpenAI y Groq no reportan largo de audio, así que sin ese número su `cost_estimate_usd` queda en `nil` y la Fase 6 se queda sin la mitad de la tabla de COGS. Amazon sí lo reporta y sobrescribe el medido.
+- **Manda también el nombre del archivo:** de él sale la extensión de la key en S3. Formatos que acepta Transcribe: `webm`, `m4a`, `mp3`, `wav`, `ogg`, `flac`. **No mandes el idioma desde el cliente** — es configuración del servidor (`STT_LANGUAGE`, y su estrechamiento por proveedor).
+- **Payload del broadcast** (`VoiceDictationChannel`, stream `user:<user_id>:voice_dictations`): `voice_dictation_id`, `certification_report_id`, `status` (`"transcribed"` o `"failed"`), más `transcript` o `reason` según el caso. **El `transcript` del broadcast es un preview de 2.000 caracteres**, no la fuente de verdad: el panel editable tiene que leer el texto completo de la base. Un resultado tardío no emite broadcast, así que la UI no puede recibir un transcript obsoleto.
+- **Quién puede escribir `transcript_edited`:** solo dos escritores, y ambos son de esta fase — el autosave humano y el congelado de la confirmación. El PATCH del autosave **no debe tocar `transcript_raw` ni `status`**; el `status` solo cambia por las transiciones del modelo. Eso es lo que garantiza que un resultado tardío del proveedor no pise una corrección.
+- **Qué mostrar al reabrir un informe:** `report.voice_dictations.in_progress` da exactamente los no terminales (`pending`, `transcribing`, `transcribed`). Para el texto del panel usa `record.confirmed_text` (la corrección si existe, la transcripción cruda si no). `audio_available?` decide si el reintento es posible.
+- **Un dictado en `transcribing` puede quedar hasta 30 minutos ahí** si murió el worker (`STT_STALE_CLAIM_MINUTES`), antes de que otro job lo reclame. El indicador de estado debería tolerar esa espera sin parecer colgado, y no reintentar solo.
+- **Fixture ya disponible para los tests de esta fase:** `voice_dictations(:cabina_dictado)`, un dictado `transcribed` sin confirmar del informe `torre_amunategui` — justo el estado que necesita el panel editable. Ojo con el hallazgo 6 del cierre de la Fase 4: esa fixture contamina cualquier rollup de costo que no filtre por cuenta.
+- **Fuente de audio de prueba, gratis y reproducible** (hallazgo 5 del cierre de la Fase 4): `say -v Paulina -o a.aiff "<texto>"` y `afconvert -f WAVE -d LEI16@16000 -c 1 a.aiff a.wav`. Sirve para los tests de cañería sin grabar a mano ni gastar en transcripción.
 
 **Alcance:**
 
@@ -468,6 +623,14 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 **Depende de:** Fase 4. Puede correr en paralelo con la 5. Ejecuta el mandato de medición del plan de septiembre (secciones 3.6 y 5: COGS de voz por audio y por recorrido).
 
 **Insumos:** protocolo definido en este documento: cinco dictados simulados con ruido de fondo real + veinte frases técnicas representativas (códigos KM, marcas, códigos de falla tipo A32.4), en español chileno. *(Actualizar con hallazgos de Fase 4.)*
+
+*Actualizado con el diseño de la Fase 4 (2026-09-08):*
+
+- **El benchmark tiene una dimensión más que la prevista: la variante de español de Transcribe.** `es-CL` no existe en Transcribe; el default quedó en `es-US` por análisis de la tabla de soporte, no por medición. Corre el mismo set de audios por `es-US`, `es-ES` y `es-MX` (el adapter acepta la variante como argumento explícito, que gana sobre el ENV, precisamente para esto) y deja que la tasa de error sobre las 20 frases decida. `es-MX` probablemente salga última por no transcribir números en batch — confírmalo con los audios que llevan medidas y códigos.
+- **Empieza por el custom vocabulary, no por comparar proveedores.** La corrida real de la Fase 4 con `es-US` acertó todos los números, "NCh 2840" y el vocabulario mecánico ("limitador de velocidad", "paracaídas", "operador de puertas", "variador", "carga útil"), y falló solo en dos cosas: un homófono técnico ("**rosa**" por "roza") y un código de falla alfanumérico partido ("**a 32.4**" por "A32.4"). Los dos son exactamente lo que arregla una lista de términos, que funciona en cualquier variante y no cuesta cambiar de proveedor. Medir eso primero puede hacer irrelevante media tabla comparativa.
+- **Palanca de jerga separada de la elección de proveedor:** los *custom vocabularies* funcionan en cualquier variante. Los *custom language models* (corpus propio) solo existen en `es-US`: si el benchmark lo elige, esa puerta queda abierta; si elige otro, se cierra. Vale registrarlo explícitamente en la decisión.
+- **Línea base ya medida contra la que comparar:** 31 s de audio → 11,0 s de reloj de punta a punta (9,2 s del lado de AWS), USD 0,0124. Y ojo con el mínimo facturable de 15 s de Amazon al costear dictados cortos: distorsiona cualquier extrapolación hecha solo con minutos totales.
+- **Cuidado al interpretar jobs viejos en la cuenta de AWS:** hay trabajos de Transcribe anteriores (`gonzalo-demo-danebo`, `victor_entrevista`) creados a mano con `es-ES`, que no pasaron por Danebo. Los jobs de la aplicación se llaman siempre `danebo-<hash>-<hex>`.
 
 **Alcance:**
 

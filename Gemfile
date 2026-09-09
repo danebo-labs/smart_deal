@@ -97,6 +97,9 @@ gem 'aws-sdk-cloudwatch'
 gem 'aws-sdk-rds'
 gem 'aws-sdk-s3', '>= 1.208.0'
 
+# Speech-to-text baseline for the certifier module (SpeechToText::AmazonTranscribeAdapter)
+gem 'aws-sdk-transcribeservice'
+
 gem 'twilio-ruby'
 
 gem "appsignal"

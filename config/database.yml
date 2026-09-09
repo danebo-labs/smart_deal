@@ -32,6 +32,10 @@ test:
   primary: &test_primary
     <<: *default
     database: smart_deal_test
+    # Fixtures with real FKs need DISABLE TRIGGER ALL (superuser). Homebrew's
+    # OS user is that role locally; CI sets DB_USERNAME=postgres. app_user
+    # stays the development/production role and cannot maintain the test schema.
+    username: <%= ENV["DB_USERNAME"].presence || ENV["USER"].presence || "app_user" %>
   cache:
     <<: *test_primary
     database: smart_deal_test_cache

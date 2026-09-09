@@ -30,6 +30,13 @@ module SpeechToText
     # @param client [Object, nil] Net::HTTP-shaped transport responding to
     #   #request; injected by tests
     # @param s3 [S3DocumentsService, nil] injected by tests
+    # Each OpenAI-compatible vendor reads its own credential. GroqAdapter
+    # inherits this and checks GROQ_API_KEY — an OpenAI key is not a Groq key.
+    def self.configured?
+      ENV[self::API_KEY_ENV].present? ||
+        Rails.application.credentials.dig(*self::CREDENTIALS_PATH).present?
+    end
+
     def initialize(provider: nil, client: nil, model: nil, s3: nil)
       @provider = (provider.presence || self.class::PROVIDER_NAME).to_s
       @client   = client

@@ -52,6 +52,12 @@ module SpeechToText
     # @param s3 [S3DocumentsService, nil] injected in tests
     # @param sleeper [Proc, nil] injected in tests so the poll loop costs no
     #   wall-clock time
+    # Same AWS account as the rest of the app. A missing Transcribe IAM action
+    # is a ProviderError on the first job, not an "unconfigured" skip.
+    def self.configured?
+      true
+    end
+
     def initialize(provider: PROVIDER_NAME, client: nil, s3: nil, sleeper: nil)
       @provider = provider.to_s
       @client   = client

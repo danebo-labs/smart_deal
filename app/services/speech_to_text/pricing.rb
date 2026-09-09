@@ -41,10 +41,19 @@ module SpeechToText
     #   feeds the COGS hypothesis of the pricing model.
     def estimate_usd(provider:, duration_seconds:, model: nil)
       rate = MODEL_RATES_USD_PER_MINUTE[model.to_s] || RATES_USD_PER_MINUTE[provider.to_s]
-      return nil if rate.nil? || duration_seconds.to_i <= 0
+      seconds = billed_seconds(provider: provider, duration_seconds: duration_seconds)
+      return nil if rate.nil? || seconds.nil?
 
-      billed_seconds = [ duration_seconds.to_i, MINIMUM_BILLED_SECONDS.fetch(provider.to_s, 0) ].max
-      ((billed_seconds / 60.0) * rate).round(6)
+      ((seconds / 60.0) * rate).round(6)
+    end
+
+    # Seconds the invoice will charge, after the per-request minimum. Distinct
+    # from wall-clock audio length: a 5 s Amazon clip is billed as 15 s, and
+    # that is the number the Fase 6 "cost per minute" column has to use.
+    def billed_seconds(provider:, duration_seconds:)
+      return nil if duration_seconds.to_i <= 0
+
+      [ duration_seconds.to_i, MINIMUM_BILLED_SECONDS.fetch(provider.to_s, 0) ].max
     end
   end
 end

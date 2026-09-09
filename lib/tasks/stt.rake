@@ -6,8 +6,12 @@
 #
 #   STT_PROVIDER=amazon_transcribe bin/rails "stt:smoke[tmp/dictado.webm]"
 #
-# Fase 6 extends this into the multi-provider benchmark; the shape is already
-# what it needs (same audio, one adapter per run, cost printed).
+# Fase 6: same audio set through every configured adapter. Calls adapters
+# directly — do not route this through TranscriptionJob (2-thread queue).
+#
+#   DB_USERNAME=lahirisan bin/rails stt:benchmark
+#   DB_USERNAME=lahirisan bin/rails stt:benchmark:prepare
+#
 namespace :stt do
   desc "Transcribe a local audio file end to end through the real provider (dev smoke test)"
   task :smoke, [ :path, :duration ] => :environment do |_task, args|
@@ -68,6 +72,24 @@ namespace :stt do
     when ".ogg"  then "audio/ogg"
     when ".flac" then "audio/flac"
     else "application/octet-stream"
+    end
+  end
+
+  desc "Fase 6 STT benchmark: same audios through every configured adapter"
+  task benchmark: :environment do
+    report = SpeechToText::Benchmark.run!
+    puts File.read(report.fetch("output_md"))
+    puts "json=#{report['output_json']}"
+  end
+
+  namespace :benchmark do
+    desc "Generate the local WAV/M4A set without calling any provider"
+    task prepare: :environment do
+      clips = SpeechToText::Benchmark.new.prepare_audio!
+      puts "prepared #{clips.size} clips"
+      clips.each do |clip|
+        puts "#{clip['id']} #{clip['duration_seconds']}s #{clip['path']}"
+      end
     end
   end
 end

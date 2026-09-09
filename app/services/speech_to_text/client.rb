@@ -47,5 +47,23 @@ module SpeechToText
     def self.providers
       ADAPTERS.keys
     end
+
+    # Whether this process can authenticate that provider. Wire-compatible
+    # APIs (OpenAI and Groq) still need their own key: an OPENAI_API_KEY
+    # does not authenticate api.groq.com.
+    def self.configured?(provider = nil)
+      name = resolve_provider(provider)
+      adapter = ADAPTERS[name]
+      if adapter.nil?
+        raise UnknownProviderError,
+              "unknown STT provider #{name.inspect}; known providers: #{providers.join(', ')}"
+      end
+
+      adapter.configured?
+    end
+
+    def self.available_providers
+      providers.select { |name| ADAPTERS[name].configured? }
+    end
   end
 end

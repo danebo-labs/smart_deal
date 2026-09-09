@@ -48,6 +48,29 @@ class SpeechToTextTest < ActiveSupport::TestCase
                                      .instance_variable_get(:@provider)
   end
 
+  test "an OpenAI key does not configure Groq" do
+    previous_openai = ENV["OPENAI_API_KEY"]
+    previous_groq   = ENV["GROQ_API_KEY"]
+    ENV["OPENAI_API_KEY"] = "sk-test"
+    ENV.delete("GROQ_API_KEY")
+
+    assert SpeechToText::Client.configured?("openai")
+    assert_not SpeechToText::Client.configured?("groq")
+    assert SpeechToText::Client.configured?("amazon_transcribe")
+    assert_equal %w[amazon_transcribe openai], SpeechToText::Client.available_providers
+  ensure
+    restore_env "OPENAI_API_KEY", previous_openai
+    restore_env "GROQ_API_KEY", previous_groq
+  end
+
+  def restore_env(key, value)
+    if value.nil?
+      ENV.delete(key)
+    else
+      ENV[key] = value
+    end
+  end
+
   # --- contract vocabulary ---
 
   test "every error the layer raises is catchable as a single class" do
@@ -85,6 +108,9 @@ class SpeechToTextTest < ActiveSupport::TestCase
 
     assert_equal fifteen, five
     assert_equal 0.006, five
+    assert_equal 15, SpeechToText::Pricing.billed_seconds(provider: "amazon_transcribe",
+                                                          duration_seconds: 5)
+    assert_equal 5, SpeechToText::Pricing.billed_seconds(provider: "openai", duration_seconds: 5)
   end
 
   test "no minimum is invented for providers that do not charge one" do

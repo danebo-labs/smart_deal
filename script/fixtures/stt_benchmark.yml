@@ -1,0 +1,140 @@
+# Fase 6 STT benchmark corpus.
+# The 20 technical phrases are the scoring sheet for the founder — the runner
+# does not count errors. Five inspection-style dictations put those phrases in
+# context. Silence / noise / low-voice are quality probes from the Fase 5
+# closure (Whisper hallucination on empty audio).
+version: "2026-09-08"
+voice: Paulina
+sample_rate: 16000
+
+phrases:
+  - id: p01
+    text: la puerta de cabina roza en el marco
+  - id: p02
+    text: código de falla A32.4
+  - id: p03
+    text: doce paradas
+  - id: p04
+    text: norma NCh 2840
+  - id: p05
+    text: carga útil 450 kilos
+  - id: p06
+    text: velocidad 1,6 metros por segundo
+  - id: p07
+    text: embarque tres
+  - id: p08
+    text: limitador de velocidad
+  - id: p09
+    text: paracaídas
+  - id: p10
+    text: operador de puertas
+  - id: p11
+    text: señalización de sobrecarga
+  - id: p12
+    text: variador
+  - id: p13
+    text: foso
+  - id: p14
+    text: contrapeso
+  - id: p15
+    text: holgura
+  - id: p16
+    text: código KM 887
+  - id: p17
+    text: Schindler 3300
+  - id: p18
+    text: Kone MonoSpace
+  - id: p19
+    text: Otis Gen2
+  - id: p20
+    text: amortiguador hidráulico
+
+clips:
+  - id: phrases_pack
+    kind: speech
+    label: 20 frases técnicas (paquete)
+    text: >
+      Frase uno. La puerta de cabina roza en el marco al cerrar.
+      Frase dos. Código de falla A32.4 en el variador.
+      Frase tres. Ascensor de doce paradas.
+      Frase cuatro. Punto de la norma NCh 2840.
+      Frase cinco. Carga útil cuatrocientos cincuenta kilos.
+      Frase seis. Velocidad uno coma seis metros por segundo.
+      Frase siete. Embarque tres.
+      Frase ocho. El limitador de velocidad fue probado.
+      Frase nueve. El paracaídas fue probado sin observaciones.
+      Frase diez. El operador de puertas queda desalineado.
+      Frase once. Falta señalización de sobrecarga en la cabina.
+      Frase doce. Variador de frecuencia.
+      Frase trece. El foso tiene filtración.
+      Frase catorce. Contrapeso desalineado.
+      Frase quince. Holgura de puertas fuera de tolerancia.
+      Frase dieciséis. Código KM ochocientos ochenta y siete.
+      Frase diecisiete. Equipo Schindler 3300.
+      Frase dieciocho. Equipo Kone MonoSpace.
+      Frase diecinueve. Equipo Otis Gen2.
+      Frase veinte. Amortiguador hidráulico del pozo.
+
+  - id: d01_cabina
+    kind: speech
+    label: Dictado 1 — cabina
+    noise: true
+    text: >
+      Embarque tres. La puerta de cabina roza en el marco al cerrar
+      y el operador de puertas queda desalineado. Falta señalización
+      de sobrecarga en la cabina, punto de la norma NCh 2840.
+
+  - id: d02_maquina
+    kind: speech
+    label: Dictado 2 — máquina
+    noise: true
+    text: >
+      Ascensor de doce paradas, carga útil 450 kilos, velocidad 1,6
+      metros por segundo. Código de falla A32.4 en el variador de frecuencia.
+
+  - id: d03_seguridad
+    kind: speech
+    label: Dictado 3 — seguridad
+    noise: true
+    text: >
+      El limitador de velocidad y el paracaídas fueron probados sin
+      observaciones. El amortiguador hidráulico del pozo está correcto.
+
+  - id: d04_foso
+    kind: speech
+    label: Dictado 4 — foso
+    noise: true
+    text: >
+      El foso tiene filtración. Contrapeso desalineado. Holgura de
+      puertas fuera de tolerancia.
+
+  - id: d05_marcas
+    kind: speech
+    label: Dictado 5 — marcas y códigos
+    noise: true
+    text: >
+      Equipo Schindler 3300. También se inspeccionó un Otis Gen2 y un
+      Kone MonoSpace. Código KM 887 en el cuadro.
+
+  - id: silence_13s
+    kind: silence
+    label: Silencio 13 s
+    duration_seconds: 13
+
+  - id: noise_only_13s
+    kind: noise
+    label: Ruido de sala sin voz 13 s
+    duration_seconds: 13
+
+  - id: d01_cabina_low
+    kind: speech
+    label: Dictado 1 — voz baja
+    source: d01_cabina
+    amplitude: 0.12
+    noise: true
+
+  - id: d01_cabina_m4a
+    kind: transcode
+    label: Dictado 1 — m4a (Safari)
+    source: d01_cabina
+    format: m4a

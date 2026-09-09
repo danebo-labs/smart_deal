@@ -44,7 +44,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 | 2º | 2 | Lista "mis informes" + editor mínimo | **cerrada** (2026-09-08, branch `certificador/fase-2-mis-informes`, suite local verde) | Sonnet última versión | medium |
 | 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, mergeada a `main` vía PR #22; transcripción real end-to-end con **Transcribe (USD 0,0124) y OpenAI (USD 0,0016)**, total USD 0,0140) | Opus última versión | high |
 | 4º | 5 | UI de captura de audio (dictado) | **cerrada en local** (2026-09-08, branch `certificador/fase-5-captura-audio`, suite local verde 2743/0/0, end-to-end real en dev con OpenAI + cable privado, USD 0,0013; **reserva:** la prueba en móvil real queda para el fundador — necesita HTTPS, receta en el cierre) | Fable última versión | high |
-| 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | pendiente | Grok (variante rápida) | low/fast |
+| 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | **cerrada en local** (2026-09-09, branch `certificador/fase-6-benchmark-stt`, 3 proveedores + 3 variantes Transcribe, USD 0,263; conteo de errores sobre las 20 frases y default de `STT_PROVIDER` quedan al fundador) | Grok (variante rápida) | low/fast |
 | — | 1 | Exportable HTML con hoja de impresión (formato NCh 2840) | **condicionada** (gate 2-oct) | Sonnet última versión | medium |
 | — | 3 | PDF server-side | **condicionada** | Grok (variante rápida) | low/fast |
 | — | 7 | Estructuración del dictado en hallazgos | **condicionada** (gate 2-oct) | Opus última versión | high |
@@ -746,11 +746,63 @@ Ninguno domina: OpenAI es 2× más rápido y ~8× más barato, acierta el códig
 
 > Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` (secciones 0, 4 y Fase 6, más el cierre de la Fase 4). Crea `certificador/fase-6-benchmark-stt` desde `main`. Escribe un script/rake reproducible que corra el mismo set de audios contra todos los adapters disponibles y produzca la tabla comparativa (costo real por minuto, latencia de batch, transcripciones lado a lado). Si `GroqAdapter` no existe, agrégalo aquí (~30 líneas, API Whisper-compatible). No tomes la decisión de proveedor default: registra la tabla en el cierre de esta fase y deja el conteo de errores sobre las 20 frases técnicas al fundador. Documenta el costo total del benchmark (< USD 2).
 
-### Cierre de fase (lo llena el ejecutor)
-- Estado: pendiente
-- Hallazgos / tabla de resultados:
-- Decisión de proveedor default:
-- Actualizaciones aplicadas a fases siguientes:
+### Cierre de fase (2026-09-09)
+
+- **Estado: CERRADA EN LOCAL.** Branch `certificador/fase-6-benchmark-stt` desde `main`. `GroqAdapter` ya existía (Fase 4). Runner: `SpeechToText::Benchmark` + `bin/rails stt:benchmark` (adapters directo, sin `TranscriptionJob`, sin filas `VoiceDictation`). 22 tests nuevos/actualizados verdes. **`STT_PROVIDER` default no se cambió** (`amazon_transcribe`). El conteo de errores sobre las 20 frases técnicas queda al fundador (scorecard vacío en `tmp/stt_benchmark/20260909Tfase6/table.md`).
+
+**Corrida oficial** (`STT_BENCHMARK_RUN_ID=20260909Tfase6`, 10 clips, Paulina TTS 16 kHz + ruido sintético mezclado; silencio / ruido / voz baja / m4a). List-price × billed seconds, tabla `Pricing` 2026-08-09. Ningún proveedor devolvió línea de factura en la respuesta.
+
+| Lane | OK | Errors | Billed s | Cost USD | USD / billed min | p50 latency s | p95 latency s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| amazon_es-US | 10 | 0 | 210 | 0.084000 | 0.024000 | 14.13 | 26.46 |
+| amazon_es-ES | 10 | 0 | 210 | 0.084000 | 0.024000 | 10.54 | 32.76 |
+| amazon_es-MX | 10 | 0 | 210 | 0.084000 | 0.024000 | 13.83 | 911.67 |
+| openai (`gpt-4o-mini-transcribe`) | 10 | 0 | 179 | 0.008950 | 0.003000 | 2.59 | 4.85 |
+| groq (`whisper-large-v3-turbo`) | 10 | 0 | 179 | 0.002088 | 0.000700 | 0.87 | 3.49 |
+
+**Costo total de esta corrida: USD 0,263** (bajo USD 2). Una segunda corrida solapada con el mismo `RUN_ID` sumó ~USD 0,23 más y un 404 de S3 (hallazgo 3); all-in de medición **< USD 0,50**.
+
+**COGS proyectado (list price, no el audio de esta corrida):**
+
+| Lane | Hallazgo 13 s | Informe 8 hallazgos cortos | Dictado 15 min | Dictado 20 min |
+|---|---:|---:|---:|---:|
+| amazon_* | 0.006 | 0.048 | 0.360 | 0.480 |
+| openai | 0.00065 | 0.0052 | 0.045 | 0.060 |
+| groq | 0.00015 | 0.0012 | 0.0105 | 0.014 |
+
+Transcripciones lado a lado (paquete de 20 frases — para el scorecard del fundador):
+
+| Esperado (extracto) | amazon es-US / es-ES / es-MX (idénticos) | OpenAI | Groq |
+|---|---|---|---|
+| roza en el marco | **rosa** | **roza** | **rosa** |
+| A32.4 | a 32, cuatro | A324 | A32. 4 |
+| doce paradas | 12 **separadas** | **dos separadas** | **12 paradas** |
+| NCh 2840 | Nch 2840 | NCH2840 | NCH 2840 |
+| 450 kilos / 1,6 m/s | correcto | correcto | correcto |
+| holgura | **Hura** | Holgura | Holgura |
+| KM 887 | Km 887 | KM887 | KM887 |
+| Kone MonoSpace | **Kne mono espace** | Kone MonoSpace | Kone Monoespace |
+
+Silencio 13 s: Amazon → vacío; OpenAI → coreano; Groq → "Gracias.". Ruido sin voz: Amazon y OpenAI → vacío; Groq → "y". Voz baja: OpenAI vacío, Groq "y", Amazon alucina ("flecha de cadena"). m4a: los tres transcriben, con más errores que el WAV.
+
+- **Decisión de proveedor default:** **no tomada.** Sigue `amazon_transcribe`. El fundador marca el scorecard de 20 frases; eso decide, no el costo (sección 4).
+
+**Hallazgos:**
+
+1. **`OPENAI_API_KEY` no autentica Groq.** Hace falta `GROQ_API_KEY` (`gsk_`). Quedó en `.env.sample`.
+2. **Las tres variantes de Transcribe devolvieron el mismo texto** en TTS limpio. `es-MX` no perdió los números en este set (la predicción de la Fase 4 no se reprodujo aquí). La latencia p95 de `es-MX` llegó a 911 s — el poll de batch, no un fallo.
+3. **Cleanup de S3 al terminar no puede ser el default.** Dos `stt:benchmark` con el mismo `RUN_ID` en paralelo: el primero borró el prefijo y el segundo recibió `Failed to download audio from S3` (404) en `es-MX`. `STT_BENCHMARK_CLEANUP_S3` queda opt-in.
+4. **Custom vocabulary / `prompt` de OpenAI no se midieron** — el prompt de lanzamiento pedía la tabla cruda y dejar el conteo al fundador. Siguen siendo la palanca de jerga de la Fase 4.
+5. **Sin ffmpeg no hay webm/opus.** El set incluye WAV + un m4a (`afconvert`). Chrome real (`webm/opus`) queda fuera.
+6. **El ruido es sintético**, no sala de máquinas. El umbral RMS de la Fase 5 sigue sin calibrar con grabación de campo.
+7. **Reproducir:** `DB_USERNAME=lahirisan bin/rails stt:benchmark:prepare` y `bin/rails stt:benchmark`. Audio y tabla en `tmp/stt_benchmark/` (gitignored).
+
+**Desviaciones del plan:** default no escrito (el prompt de lanzamiento lo veta); custom vocabulary no corrido; webm no generado; ruido no es de campo.
+
+**Actualizaciones aplicadas a fases siguientes:**
+
+- **Fase 7 (condicionada):** el default STT no cambió. Un dictado confirmado puede llegar con "rosa"/códigos partidos/marcas rotas — la estructuración no debe "corregir" jerga. Silencio/ruido pueden producir texto plausible en otro idioma (OpenAI/Groq): no auto-confirmar nunca (regla fija 3, ya en pie).
+
 
 ---
 
@@ -759,7 +811,13 @@ Ninguno domina: OpenAI es 2× más rápido y ~8× más barato, acierta el códig
 **Estado: CONDICIONADA** (sección 2.2, gap 1): el circuito base funciona con un dictado = un hallazgo, sin LLM. **Condición de activación:** gate del 2 de octubre superado con uso real (plan de septiembre, sección 8), y dictados largos multi-hallazgo observados en uso que la justifiquen. **Modelo asignado:** Opus última versión (alternativa: GPT Ultra). Toca prompts con red lines de seguridad y el costo por informe.
 **Depende de:** Fases 4 y 5 (y de la evidencia de la 6).
 
-**Insumos:** `app/prompts/AGENTS.md` (prompts compactos, determinista antes que LLM); reglas fijas 1 y 4. *(Actualizar con hallazgos de Fases 4–6.)*
+**Insumos:** `app/prompts/AGENTS.md` (prompts compactos, determinista antes que LLM); reglas fijas 1 y 4.
+
+*Actualizado con el cierre de la Fase 6 (2026-09-09):*
+
+- **`STT_PROVIDER` sigue en `amazon_transcribe`.** El fundador aún no contó errores sobre las 20 frases; no asumas Groq u OpenAI como default.
+- **La jerga llega sucia al texto confirmado** (homófono "rosa", "A32.4" partido, marcas). La estructuración no "arregla" eso: segmenta lo que el certificador confirmó.
+- **Silencio y ruido pueden devolver texto convincente** (OpenAI en coreano, Groq "Gracias."). Nunca auto-confirmar un dictado (regla fija 3).
 
 **Alcance:**
 

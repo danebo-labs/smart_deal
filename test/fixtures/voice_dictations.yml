@@ -1,0 +1,23 @@
+# One dictation already transcribed but not yet confirmed — the state Fase 5
+# has to render when a report is reopened, and the state the retention job must
+# never touch (fixed rule 11).
+#
+# created_at defaults to load time, so it sits inside every retention window
+# and cannot interfere with the retention tests, which all work on rows aged
+# past the cutoff on purpose.
+#
+# transcript_edited is deliberately empty: the certifier has not corrected
+# anything yet, and no job is ever allowed to write that column.
+cabina_dictado:
+  account: legacy
+  user: one
+  certification_report: torre_amunategui
+  sha256: <%= "a" * 64 %>
+  s3_key_audio: voice_dictations/<%= ActiveRecord::FixtureSet.identify(:legacy) %>/<%= "a" * 64 %>/audio.webm
+  content_type: audio/webm
+  byte_size: 40960
+  duration_seconds: 42
+  status: transcribed
+  provider: amazon_transcribe
+  transcript_raw: La puerta de cabina del embarque tres roza en el marco al cerrar.
+  cost_estimate_usd: 0.0168

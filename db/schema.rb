@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_08_180100) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_08_210100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -195,9 +195,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_180100) do
     t.integer "position", default: 0, null: false
     t.string "severity"
     t.datetime "updated_at", null: false
+    t.bigint "voice_dictation_id"
     t.index [ "account_id" ], name: "index_inspection_findings_on_account_id"
     t.index [ "certification_report_id", "position" ], name: "idx_inspection_findings_report_position"
     t.index [ "field_photo_id" ], name: "index_inspection_findings_on_field_photo_id"
+    t.index [ "voice_dictation_id" ], name: "idx_inspection_findings_voice_dictation", unique: true
   end
 
   create_table "kb_document_thumbnails", force: :cascade do |t|
@@ -281,6 +283,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_180100) do
     t.index [ "reset_password_token" ], name: "index_users_on_reset_password_token", unique: true
   end
 
+  create_table "voice_dictations", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "audio_purged_at"
+    t.integer "byte_size"
+    t.bigint "certification_report_id"
+    t.datetime "confirmed_at"
+    t.string "content_type", null: false
+    t.decimal "cost_estimate_usd", precision: 10, scale: 6
+    t.datetime "created_at", null: false
+    t.integer "duration_seconds"
+    t.string "failure_reason"
+    t.string "provider"
+    t.string "s3_key_audio"
+    t.string "sha256", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "transcribing_since"
+    t.text "transcript_edited"
+    t.text "transcript_raw"
+    t.string "transcription_claim_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index [ "account_id", "certification_report_id", "sha256" ], name: "idx_voice_dictations_account_report_sha", unique: true, nulls_not_distinct: true
+    t.index [ "account_id" ], name: "index_voice_dictations_on_account_id"
+    t.index [ "certification_report_id", "status" ], name: "idx_voice_dictations_report_status"
+    t.index [ "status", "created_at" ], name: "idx_voice_dictations_status_created"
+    t.index [ "user_id" ], name: "index_voice_dictations_on_user_id"
+  end
+
   create_table "web_manual_batches", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.jsonb "aliases", default: [], null: false
@@ -338,5 +368,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_180100) do
   add_foreign_key "inspection_findings", "accounts"
   add_foreign_key "inspection_findings", "certification_reports"
   add_foreign_key "inspection_findings", "field_photos"
+  add_foreign_key "inspection_findings", "voice_dictations"
   add_foreign_key "technician_documents", "accounts", name: "fk_td_account"
+  add_foreign_key "voice_dictations", "accounts"
+  add_foreign_key "voice_dictations", "certification_reports"
 end

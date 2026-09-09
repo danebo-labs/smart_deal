@@ -16,6 +16,10 @@ class InspectionFinding < ApplicationRecord
   belongs_to :account
   belongs_to :certification_report
   belongs_to :field_photo, optional: true
+  # Traceability back to the dictation this text came from (Fase 4). Optional:
+  # a typed finding has no dictation. The unique index on the column is the
+  # second guarantee that confirming a dictation twice yields one finding.
+  belongs_to :voice_dictation, optional: true
 
   enum :severity, SEVERITIES, prefix: true
 

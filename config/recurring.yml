@@ -25,3 +25,7 @@ production:
     class: FieldPhotoRetentionJob
     queue: default
     schedule: every day at 3am
+  purge_expired_voice_dictation_audio:
+    class: VoiceDictationRetentionJob
+    queue: default
+    schedule: every day at 3:20am

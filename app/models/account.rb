@@ -10,6 +10,10 @@ class Account < ApplicationRecord
   # protected by a restrictive FK from inspection_findings, so this guard must
   # abort the destroy before the photo cascade below hits that FK.
   has_many :certification_reports, dependent: :restrict_with_error
+  # A dictation can outlive its report or have never had one, so the report
+  # guard above does not cover every row. Same reason it sits before
+  # field_photos.
+  has_many :voice_dictations, dependent: :restrict_with_error
   # Operational data with a TTL, not knowledge that should block account deletion.
   has_many :field_photos, dependent: :destroy
 

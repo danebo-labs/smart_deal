@@ -35,6 +35,16 @@ default: &default
       processes: 1
       polling_interval: 2
 
+    # Transcription lane (Fase 5): TranscriptionJob polls the STT provider
+    # inside the job (10–60 s per dictation with Transcribe, ~5 s with OpenAI).
+    # Isolated from `default` so certifiers dictating never delay the chat's
+    # cost footer or photo analysis; 2 threads = at most 2 billed calls in
+    # flight, enough for one short dictation per finding.
+    - queues: transcription
+      threads: 2
+      processes: 1
+      polling_interval: 2
+
 development:
   <<: *default
 

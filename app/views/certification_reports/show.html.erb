@@ -43,10 +43,67 @@
   <% else %>
     <ul class="mb-6 space-y-4">
       <% @findings.each do |finding| %>
-        <%= render "certification_reports/finding", finding: finding %>
+        <%= render "certification_reports/finding", finding: finding,
+            highlighted: @highlight_finding_id.present? && finding.id.to_s == @highlight_finding_id.to_s %>
       <% end %>
     </ul>
   <% end %>
+
+  <%# Fase 5 — dictation. One control (record/stop) and one status element
+      (Salesforce Voice-to-Form + Wispr Flow, plan section 2.3). Audio uploads
+      the moment recording stops (upload-first, fixed rule 11); each dictation
+      then lives in its own card below until the certifier confirms or discards
+      it — and is still there, with its state, when the report is reopened. %>
+  <section id="voice_capture" class="mb-6 rounded-xl border border-[hsl(215,20%,88%)] bg-white p-4"
+           data-controller="voice-dictation"
+           data-voice-dictation-upload-url-value="<%= certification_report_voice_dictations_path(@report) %>"
+           data-voice-dictation-show-url-template-value="<%= voice_dictation_path(":id") %>"
+           data-voice-dictation-report-id-value="<%= @report.id %>"
+           data-voice-dictation-labels-value="<%= {
+             record: t("certifier.dictation.record"),
+             stop: t("certifier.dictation.stop"),
+             retry_upload: t("certifier.dictation.retry_upload"),
+             idle: t("certifier.dictation.status.idle"),
+             recording: t("certifier.dictation.status.recording", time: "%{time}"),
+             too_short: t("certifier.dictation.status.too_short"),
+             uploading: t("certifier.dictation.status.uploading"),
+             uploaded: t("certifier.dictation.status.uploaded"),
+             upload_failed: t("certifier.dictation.status.upload_failed"),
+             unsupported: t("certifier.dictation.status.unsupported"),
+             mic_denied: t("certifier.dictation.status.mic_denied"),
+             mic_error: t("certifier.dictation.status.mic_error")
+           }.to_json %>">
+    <h3 class="mb-3 text-sm font-semibold text-[hsl(222,47%,10%)]"><%= t("certifier.dictation.heading") %></h3>
+
+    <div class="flex items-center gap-4">
+      <%# The single control. 72px: primary action with gloves (section 2.3). %>
+      <button type="button"
+              data-voice-dictation-target="button"
+              data-action="voice-dictation#toggle"
+              aria-label="<%= t("certifier.dictation.record") %>"
+              class="flex min-h-[72px] min-w-[72px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-[hsl(217,91%,50%)] text-white shadow-md transition-colors hover:bg-[hsl(217,91%,45%)] focus:outline-none focus:ring-4 focus:ring-[hsl(217,91%,50%)]/40 disabled:cursor-not-allowed disabled:opacity-50 data-[state=recording]:bg-red-600 data-[state=recording]:hover:bg-red-700 data-[state=recording]:ring-4 data-[state=recording]:ring-red-600/30 data-[state=failed]:bg-amber-600 data-[state=failed]:hover:bg-amber-700">
+        <svg data-voice-dictation-target="micIcon" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3zm0 0v3m-4 3h8M5 11a7 7 0 0014 0"/>
+        </svg>
+        <svg data-voice-dictation-target="stopIcon" class="hidden h-7 w-7" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+        <svg data-voice-dictation-target="retryIcon" class="hidden h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M5.6 9A8 8 0 0119 6.7M18.4 15A8 8 0 015 17.3"/>
+        </svg>
+      </button>
+
+      <%# The single status element: idle → recording · m:ss → uploading → idle. %>
+      <p data-voice-dictation-target="status" role="status" aria-live="polite"
+         class="flex min-h-[60px] flex-1 items-center text-base font-medium text-[hsl(222,47%,10%)]"><%= t("certifier.dictation.status.idle") %></p>
+    </div>
+
+    <ul id="voice_dictations" class="mt-4 space-y-4">
+      <% @dictations.each do |dictation| %>
+        <%= render "voice_dictations/voice_dictation", voice_dictation: dictation %>
+      <% end %>
+    </ul>
+  </section>
 
   <%# Add finding + attach its photo in one form, one submit — no intermediate
       screen (SafetyCulture pattern, plan section 2.3). %>

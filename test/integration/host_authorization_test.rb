@@ -30,4 +30,11 @@ class HostAuthorizationTest < ActionDispatch::IntegrationTest
 
     assert_response :success
   end
+
+  test "allows IPv4 loopback used by Capybara" do
+    host! "127.0.0.1"
+    get new_user_session_path
+
+    assert_response :success
+  end
 end

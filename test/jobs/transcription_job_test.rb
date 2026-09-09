@@ -62,6 +62,17 @@ class TranscriptionJobTest < ActiveJob::TestCase
     @report  = certification_reports(:torre_amunategui)
   end
 
+  # Fase 5: the provider poll runs inside the job, so it gets its own Solid
+  # Queue lane rather than sharing `default` with the chat's latency-sensitive
+  # jobs. The lane must exist in config/queue.yml or nothing would consume it.
+  test "runs on its own transcription lane, which has a worker configured" do
+    assert_equal "transcription", TranscriptionJob.new(voice_dictation_id: 1).queue_name
+
+    workers = YAML.load_file(Rails.root.join("config/queue.yml"), aliases: true).fetch("production").fetch("workers")
+    assert workers.any? { |w| Array(w["queues"]).include?("transcription") },
+           "config/queue.yml has no worker for the transcription queue"
+  end
+
   def dictation(**attrs)
     sha = SecureRandom.hex(32)
     VoiceDictation.create!(

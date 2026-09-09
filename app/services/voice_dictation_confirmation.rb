@@ -56,6 +56,25 @@ class VoiceDictationConfirmation
     InspectionFinding.find_by(voice_dictation_id: record&.id)
   end
 
+  # The inline undo offered right after a confirmation (Fase 5). Reverses
+  # exactly what .call committed — the finding goes, the dictation returns to
+  # `transcribed` with its text intact (T7) — inside one transaction, so a
+  # crash between the two halves can't leave a finding without a dictation
+  # state to match. Idempotent: a second undo finds nothing to reopen and
+  # returns false without touching anything.
+  #
+  # @return [Boolean] true when this call performed the undo.
+  def self.undo(dictation, now: Time.current)
+    record = resolve(dictation)
+    return false if record.nil?
+
+    ActiveRecord::Base.transaction do
+      InspectionFinding.where(voice_dictation_id: record.id).find_each(&:destroy!)
+      VoiceDictation.reopen_confirmed!(id: record.id, now: now) or raise ActiveRecord::Rollback
+      true
+    end || false
+  end
+
   # Goes through the model rather than insert_all on purpose: account_id is
   # NOT NULL and inherited from the report in a before_validation, so a raw
   # insert would have to duplicate that rule (Fase 4 insumos).

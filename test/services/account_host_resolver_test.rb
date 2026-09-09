@@ -24,6 +24,24 @@ class AccountHostResolverTest < ActiveSupport::TestCase
     assert_equal accounts(:legacy), AccountHostResolver.account_for("localhost")
   end
 
+  test "resolves loopback IPs as localhost in non-production" do
+    assert_equal accounts(:legacy), AccountHostResolver.account_for("127.0.0.1")
+    assert_equal accounts(:legacy), AccountHostResolver.account_for("::1")
+    assert_equal accounts(:legacy), AccountHostResolver.account_for("[::1]")
+  end
+
+  test "loopback aliases stay unmapped in production" do
+    original = AccountHostResolver.method(:host_map)
+    AccountHostResolver.define_singleton_method(:host_map) { AccountHosts::PRODUCTION }
+    begin
+      assert_nil AccountHostResolver.account_for("127.0.0.1")
+      assert_nil AccountHostResolver.account_for("::1")
+      assert_nil AccountHostResolver.account_for("[::1]")
+    ensure
+      AccountHostResolver.define_singleton_method(:host_map, original)
+    end
+  end
+
   test "resolves Rails default test host to danebo-legacy" do
     assert_equal accounts(:legacy), AccountHostResolver.account_for("www.example.com")
   end

@@ -180,7 +180,10 @@ class SpeechToText::BenchmarkTest < ActiveSupport::TestCase
     assert_includes markdown, "p01: roza en el marco"
     assert_includes markdown, "p02: código de falla A32.4"
     assert_includes markdown, "Error counts on the 20 technical phrases are for the founder"
-    assert_includes markdown, "Default `STT_PROVIDER` was **not** changed"
+    # Which default and whether the jargon hint was on both change what the
+    # numbers mean, so a saved table has to carry them or it is unreadable later.
+    assert_includes markdown, "Default `STT_PROVIDER` is `groq`"
+    assert_includes markdown, "Jargon hint: on"
     assert_includes markdown, "Silencio"
     assert report.fetch("total_cost_under_2_usd")
     assert report.fetch("error_count_deferred_to_founder")

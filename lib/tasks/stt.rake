@@ -4,7 +4,12 @@
 # Entry point only — every line of logic lives in the services this calls, per
 # script/AGENTS.md.
 #
-#   STT_PROVIDER=amazon_transcribe bin/rails "stt:smoke[tmp/dictado.webm]"
+# Uses the configured default (groq) unless STT_PROVIDER says otherwise. Pass
+# the duration as the second argument: without it the OpenAI-compatible
+# providers report none and the cost estimate comes back nil.
+#
+#   bin/rails "stt:smoke[tmp/dictado.webm,32]"
+#   STT_PROVIDER=amazon_transcribe bin/rails "stt:smoke[tmp/dictado.webm,32]"
 #
 # Fase 6: same audio set through every configured adapter. Calls adapters
 # directly — do not route this through TranscriptionJob (2-thread queue).

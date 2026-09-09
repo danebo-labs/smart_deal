@@ -19,19 +19,27 @@ class SpeechToTextTest < ActiveSupport::TestCase
     assert_instance_of SpeechToText::GroqAdapter, SpeechToText::Client.for("groq")
   end
 
-  test "resolution runs explicit argument, then ENV, then the default" do
-    assert_equal "amazon_transcribe", SpeechToText::Client.resolve_provider
+  # The default the Fase 6 benchmark settled on. Pinned because it is the one
+  # line that decides what every dictation costs and how long the certifier
+  # waits, and because moving it back to Amazon silently would restore a 912 s
+  # p95 without anything failing.
+  test "the default provider is groq" do
+    assert_equal "groq", SpeechToText::Client::DEFAULT_PROVIDER
+  end
 
-    ENV["STT_PROVIDER"] = "groq"
+  test "resolution runs explicit argument, then ENV, then the default" do
     assert_equal "groq", SpeechToText::Client.resolve_provider
+
+    ENV["STT_PROVIDER"] = "amazon_transcribe"
+    assert_equal "amazon_transcribe", SpeechToText::Client.resolve_provider
     # The per-call override is not decoration: Fase 6 runs one set of audios
     # through every adapter inside a single process.
     assert_equal "openai", SpeechToText::Client.resolve_provider("openai")
   end
 
   test "a blank provider name falls through instead of resolving to an empty adapter" do
-    assert_equal "amazon_transcribe", SpeechToText::Client.resolve_provider("")
-    assert_equal "amazon_transcribe", SpeechToText::Client.resolve_provider(nil)
+    assert_equal "groq", SpeechToText::Client.resolve_provider("")
+    assert_equal "groq", SpeechToText::Client.resolve_provider(nil)
   end
 
   test "an unregistered provider fails loudly and names the ones that exist" do

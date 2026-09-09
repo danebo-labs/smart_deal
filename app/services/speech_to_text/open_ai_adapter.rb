@@ -37,11 +37,15 @@ module SpeechToText
         Rails.application.credentials.dig(*self::CREDENTIALS_PATH).present?
     end
 
-    def initialize(provider: nil, client: nil, model: nil, s3: nil)
+    # @param prompt [String, nil] jargon hint sent to the endpoint. nil means
+    #   "whatever JargonPrompt is configured to"; an empty string means "send
+    #   none", which is how the benchmark measures the lever against itself.
+    def initialize(provider: nil, client: nil, model: nil, s3: nil, prompt: nil)
       @provider = (provider.presence || self.class::PROVIDER_NAME).to_s
       @client   = client
       @model    = model.presence || ENV.fetch(self.class::MODEL_ENV, self.class::DEFAULT_MODEL)
       @s3       = s3
+      @prompt   = (prompt.nil? ? JargonPrompt.text : prompt).to_s
     end
 
     # @return [SpeechToText::Result]
@@ -87,7 +91,7 @@ module SpeechToText
       request = Net::HTTP::Post.new(uri)
       request["Authorization"] = "Bearer #{api_key}"
       request["Content-Type"]  = "multipart/form-data; boundary=#{boundary}"
-      request.body = multipart_body(boundary, audio, filename, language)
+      request.body = multipart_body(boundary, audio, filename, language, @prompt)
 
       response = transport(uri).request(request)
       unless response.code.to_i == 200
@@ -102,11 +106,12 @@ module SpeechToText
       raise ProviderError, "#{@provider} returned unparseable JSON: #{e.message}"
     end
 
-    def multipart_body(boundary, audio, filename, language)
+    def multipart_body(boundary, audio, filename, language, prompt)
       body = +""
       body << text_part(boundary, "model", @model)
       body << text_part(boundary, "response_format", "json")
       body << text_part(boundary, "language", language) if language.present?
+      body << text_part(boundary, "prompt", prompt) if prompt.present?
       body << "--#{boundary}\r\n" \
               "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n" \
               "Content-Type: application/octet-stream\r\n\r\n"

@@ -44,7 +44,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 | 2º | 2 | Lista "mis informes" + editor mínimo | **cerrada** (2026-09-08, branch `certificador/fase-2-mis-informes`, suite local verde) | Sonnet última versión | medium |
 | 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, mergeada a `main` vía PR #22; transcripción real end-to-end con **Transcribe (USD 0,0124) y OpenAI (USD 0,0016)**, total USD 0,0140) | Opus última versión | high |
 | 4º | 5 | UI de captura de audio (dictado) | **cerrada en local** (2026-09-08, branch `certificador/fase-5-captura-audio`, suite local verde 2743/0/0, end-to-end real en dev con OpenAI + cable privado, USD 0,0013; **reserva:** la prueba en móvil real queda para el fundador — necesita HTTPS, receta en el cierre) | Fable última versión | high |
-| 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | **cerrada en local** (2026-09-09, branch `certificador/fase-6-benchmark-stt`, 3 proveedores + 3 variantes Transcribe, USD 0,263; conteo de errores sobre las 20 frases y default de `STT_PROVIDER` quedan al fundador) | Grok (variante rápida) | low/fast |
+| 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | **cerrada** (2026-09-09, benchmark en `certificador/fase-6-benchmark-stt` / PR #24; default `STT_PROVIDER=groq` + `JargonPrompt` en `certificador/fase-6-default-groq`) | Grok (variante rápida) | low/fast |
 | — | 1 | Exportable HTML con hoja de impresión (formato NCh 2840) | **condicionada** (gate 2-oct) | Sonnet última versión | medium |
 | — | 3 | PDF server-side | **condicionada** | Grok (variante rápida) | low/fast |
 | — | 7 | Estructuración del dictado en hallazgos | **condicionada** (gate 2-oct) | Opus última versión | high |
@@ -153,6 +153,40 @@ Precios públicos por minuto de audio, batch salvo indicación. Un dictado de ce
 **Consecuencia de arquitectura:** "flexibilidad de proveedor" son **dos capas separadas e intercambiables por separado**: (a) **transcripción** audio→texto (Transcribe, OpenAI, Groq, Deepgram — Fase 4); (b) **estructuración** texto→hallazgos (Bedrock Haiku por defecto; Kimi u otro LLM económico como alternativa — Fase 7). Cambiar de proveedor en cualquiera de las dos es configuración, no arquitectura.
 
 **Punto de partida:** Amazon Transcribe como baseline (cero fricción de onboarding: misma cuenta AWS, es-CL soportado), y el benchmark de la Fase 6 decide el default definitivo contra los económicos. Con estos precios, el costo de voz por informe (~$0.01–0.48) es marginal frente al precio por informe: el driver de la decisión será la **tasa de error sobre jerga técnica**, no el costo — pero eso se confirma midiendo, no asumiendo.
+
+**DEFAULT DEFINITIVO (decidido 2026-09-09, con la evidencia de la Fase 6): `groq` / `whisper-large-v3-turbo`.** Escrito en `SpeechToText::Client::DEFAULT_PROVIDER`. La medición contradijo la expectativa de arriba: el costo no fue el criterio irrelevante que se anticipaba, porque el proveedor más barato ganó también en latencia y en el tipo de error. Groq es 34× más barato que Transcribe, 12× más rápido en p50 (0,87 s contra 10–14 s, con un p95 de 912 s en el poll de batch de Amazon), y es el único lane cuyo único error de contenido es un homófono que el certificador lee de corrido ("rosa" por "roza") en vez de una palabra destruida ("Hura" por "holgura", Amazon) o un número cambiado ("dos separadas" por "doce paradas", OpenAI). El detalle está en el cierre de la Fase 6.
+
+- **Orden operativo:** `groq` default → `openai` si Groq se degrada → `amazon_transcribe` solo si un certificador exige que el audio no salga de AWS. Es un cambio de `STT_PROVIDER`, sin deploy.
+- **Nada hace failover automático.** Una segunda llamada a otro proveedor es una segunda factura; el reintento sigue siendo decisión humana explícita (regla fija 13, `TranscriptionJob`).
+- **`GROQ_API_KEY` es ahora un requisito de arranque del módulo de voz.** Sin ella, cada dictado termina en `failed` nombrando la variable que falta. Amazon nunca tuvo este requisito (misma cuenta AWS), así que es la única deuda operativa nueva que introduce el cambio de default.
+- **Palanca de jerga activada junto con el default, y medida contra la API real:** `SpeechToText::JargonPrompt` envía el campo `prompt` del endpoint de OpenAI/Groq (`STT_JARGON_PROMPT` lo reemplaza; vacío lo desactiva). Corridas pareadas contra Groq, mismos clips, 2026-09-09, < USD 0,01 en total:
+
+| Caso | sin prompt | con prompt |
+|---|---|---|
+| Marca, clip A | Kone Monoespace | **Kone MonoSpace** (correcto) |
+| Marca, clip B | Kony Mono Espacio | Kone MonoEspacio (parcial) |
+| Marca, clip B | Jingles 3300 | Shingles 3300 (sin ganancia; era "Schindler") |
+| Homófono | rosa | rosa (sin ganancia) |
+| Código de falla | A32. 4 | A32. 4 (sin ganancia) |
+| Silencio 13 s | "Gracias." | "Gracias por ver el video." |
+| Ruido sin voz 13 s | "y" | "Más información www.mono.org." |
+
+  Tres conclusiones que corrigen lo que el hallazgo 4 daba por supuesto: **(i)** la forma importa — una lista de términos separada por comas no movió nada, solo la forma de transcripción previa; **(ii)** el `prompt` **no arregla el homófono** ni el código partido, ni siquiera con "La puerta de cabina roza en el marco" literal dentro del prompt, así que la palanca no es el sustituto del custom vocabulary que se esperaba; **(iii)** empeora el audio sin voz y puede sembrarlo — "mono.org" parece fuga de "MonoSpace".
+
+- **Se deja activada de todos modos, y el criterio es cuál error es peligroso:** lo que el prompt empeora es basura evidente sobre audio sin voz, que el certificador borra en un gesto y que nunca se auto-confirma (regla fija 3); lo que mejora es ortografía de marca, que es *plausible y falsa* — "Jingles 3300" en el encabezado de identificación de un informe firmado se lee como algo que un técnico pudo haber dicho. El arreglo correcto de las dos últimas filas es la guarda de nivel RMS que la Fase 5 dejó pendiente: si el silencio no llega al proveedor, el costo de la palanca desaparece.
+- **El prompt no lleva ningún número, por diseño:** sesga la transcripción hacia lo que nombra, así que un código de falla o una cantidad ahí podría poner en un informe un valor que nadie dictó. El número de la norma se probó y no arregló nada, lo que dejó sin razón los únicos dígitos del string.
+- **El *custom vocabulary* de Amazon sigue sin correrse** y ya no está en la ruta crítica: Amazon dejó de ser el default. Nota para una eventual vuelta a Amazon por residencia de datos — es la palanca que reemplaza a este prompt, y la evidencia de arriba sugiere que un vocabulario explícito podría lograr lo que el prompt no logró (el homófono).
+- **Lo que queda sin medir y puede revertir esta decisión:** el ruido de sala de máquinas real, el códec `webm/opus` de Chrome, y el scorecard completo de las 20 frases (solo 8 publicadas).
+
+### 4.1 ¿Y el mismo modelo desde Bedrock? (grounding 2026-09-09)
+
+Pregunta legítima: si el default es `whisper-large-v3-turbo`, y ya estamos en AWS, ¿conviene llamarlo por Bedrock en vez de por la API de Groq? **Existe, y no conviene.** Es el mismo modelo con precio de infraestructura en vez de precio de uso.
+
+- **Disponible, pero solo por Bedrock Marketplace, no serverless.** *Whisper Large V3 Turbo* está en el Model Catalog de Bedrock ([AWS ML blog](https://aws.amazon.com/blogs/machine-learning/build-a-serverless-audio-summarization-solution-with-amazon-bedrock-and-whisper/)), y los modelos de Marketplace se **despliegan a un endpoint dedicado de SageMaker AI** que se invoca por ARN ([docs](https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-marketplace-deploy-a-model.html)). No soporta `Converse`; se llama con `InvokeModel` pasando el audio como hex en `audio_input`. No hay tarifa por minuto de audio: **se paga la instancia por hora, encendida o no**, y el despliegue toma 10–15 min.
+- **La cuenta, con la instancia GPU más chica razonable (`ml.g5.xlarge`, 1× A10G):** USD 1,408/hora en us-east-1 → **~USD 1.028/mes** con el endpoint arriba 24/7. Ojo con la cifra de USD 730/mes que circula: esa es la tarifa EC2 de `g5.xlarge`; la de SageMaker Hosting es ~40% más alta.
+- **Punto de equilibrio contra Groq directo** (USD 0,0007 por minuto de audio, sin costo en reposo): habría que transcribir **~1,47 millones de minutos de audio al mes** — unas 24.500 horas, es decir ~33 flujos de audio simultáneos día y noche — para que el endpoint dedicado empate. En unidades del producto: **~73.000 dictados de 20 minutos al mes**, o ~857.000 informes del caso base de 8 hallazgos cortos. No es una diferencia de margen, son cuatro órdenes de magnitud.
+- **Sí cambia una cosa, y vale registrarla:** este camino satisface la restricción de residencia de datos *sin* degradar la calidad, porque es el mismo modelo que ya elegimos. Es un tercer plan de escape, mejor que Transcribe en precisión. **Pero Transcribe sigue siendo más barato que un endpoint dedicado por debajo de ~714 horas de audio al mes** (USD 1.028 ÷ USD 0,024/min), así que para un solo cliente con exigencia de residencia el orden correcto sigue siendo `amazon_transcribe`, y Bedrock Marketplace recién entra si ese cliente trae volumen industrial.
+- **Conclusión operativa: no se implementa nada.** Groq directo se queda. Si algún día entra por residencia + volumen, es un cuarto adapter en el registro de la Fase 4 (`InvokeModel` con `audio_input` en hex), no un cambio de arquitectura.
 
 ---
 
@@ -785,14 +819,14 @@ Transcripciones lado a lado (paquete de 20 frases — para el scorecard del fund
 
 Silencio 13 s: Amazon → vacío; OpenAI → coreano; Groq → "Gracias.". Ruido sin voz: Amazon y OpenAI → vacío; Groq → "y". Voz baja: OpenAI vacío, Groq "y", Amazon alucina ("flecha de cadena"). m4a: los tres transcriben, con más errores que el WAV.
 
-- **Decisión de proveedor default:** **no tomada.** Sigue `amazon_transcribe`. El fundador marca el scorecard de 20 frases; eso decide, no el costo (sección 4).
+- **Decisión de proveedor default:** **tomada el 2026-09-09 por el fundador, sobre esta tabla: `groq` / `whisper-large-v3-turbo`.** El razonamiento y el orden operativo (`groq` → `openai` → `amazon_transcribe` solo por residencia de datos) quedan escritos en la sección 4; el cambio es `SpeechToText::Client::DEFAULT_PROVIDER`. La premisa de la sección 4 —"el driver será la tasa de error, no el costo"— no se sostuvo: el más barato ganó también en latencia y en tipo de error, así que las tres columnas apuntaron al mismo lane y el scorecard de 20 frases dejó de ser el desempate. Se activó al mismo tiempo la palanca de jerga (`SpeechToText::JargonPrompt` → campo `prompt` de OpenAI/Groq), que es lo que el hallazgo 4 dejó sin medir; el custom vocabulary de Amazon sigue sin correrse porque Amazon dejó de ser el default.
 
 **Hallazgos:**
 
 1. **`OPENAI_API_KEY` no autentica Groq.** Hace falta `GROQ_API_KEY` (`gsk_`). Quedó en `.env.sample`.
 2. **Las tres variantes de Transcribe devolvieron el mismo texto** en TTS limpio. `es-MX` no perdió los números en este set (la predicción de la Fase 4 no se reprodujo aquí). La latencia p95 de `es-MX` llegó a 911 s — el poll de batch, no un fallo.
 3. **Cleanup de S3 al terminar no puede ser el default.** Dos `stt:benchmark` con el mismo `RUN_ID` en paralelo: el primero borró el prefijo y el segundo recibió `Failed to download audio from S3` (404) en `es-MX`. `STT_BENCHMARK_CLEANUP_S3` queda opt-in.
-4. **Custom vocabulary / `prompt` de OpenAI no se midieron** — el prompt de lanzamiento pedía la tabla cruda y dejar el conteo al fundador. Siguen siendo la palanca de jerga de la Fase 4.
+4. **Custom vocabulary / `prompt` de OpenAI no se midieron** — el prompt de lanzamiento pedía la tabla cruda y dejar el conteo al fundador. Siguen siendo la palanca de jerga de la Fase 4. *(Cerrado el 2026-09-09 para el `prompt`: medido contra Groq al escribir el default, tabla pareada en la sección 4. Corrige ortografía de marca, no corrige el homófono ni el código partido, y empeora el audio sin voz. El custom vocabulary de Amazon sigue sin correrse.)*
 5. **Sin ffmpeg no hay webm/opus.** El set incluye WAV + un m4a (`afconvert`). Chrome real (`webm/opus`) queda fuera.
 6. **El ruido es sintético**, no sala de máquinas. El umbral RMS de la Fase 5 sigue sin calibrar con grabación de campo.
 7. **Reproducir:** `DB_USERNAME=lahirisan bin/rails stt:benchmark:prepare` y `bin/rails stt:benchmark`. Audio y tabla en `tmp/stt_benchmark/` (gitignored).
@@ -801,7 +835,7 @@ Silencio 13 s: Amazon → vacío; OpenAI → coreano; Groq → "Gracias.". Ruido
 
 **Actualizaciones aplicadas a fases siguientes:**
 
-- **Fase 7 (condicionada):** el default STT no cambió. Un dictado confirmado puede llegar con "rosa"/códigos partidos/marcas rotas — la estructuración no debe "corregir" jerga. Silencio/ruido pueden producir texto plausible en otro idioma (OpenAI/Groq): no auto-confirmar nunca (regla fija 3, ya en pie).
+- **Fase 7 (condicionada):** el default STT pasó a `groq` el 2026-09-09 (sección 4). Un dictado confirmado puede llegar con "rosa"/códigos partidos/marcas rotas — la estructuración no debe "corregir" jerga. Silencio/ruido pueden producir texto plausible en otro idioma (OpenAI/Groq): no auto-confirmar nunca (regla fija 3, ya en pie).
 
 
 ---
@@ -815,9 +849,10 @@ Silencio 13 s: Amazon → vacío; OpenAI → coreano; Groq → "Gracias.". Ruido
 
 *Actualizado con el cierre de la Fase 6 (2026-09-09):*
 
-- **`STT_PROVIDER` sigue en `amazon_transcribe`.** El fundador aún no contó errores sobre las 20 frases; no asumas Groq u OpenAI como default.
-- **La jerga llega sucia al texto confirmado** (homófono "rosa", "A32.4" partido, marcas). La estructuración no "arregla" eso: segmenta lo que el certificador confirmó.
-- **Silencio y ruido pueden devolver texto convincente** (OpenAI en coreano, Groq "Gracias."). Nunca auto-confirmar un dictado (regla fija 3).
+- **`STT_PROVIDER` default es `groq` / `whisper-large-v3-turbo`** desde el 2026-09-09 (sección 4). Es también el proveedor de menor latencia, así que la estructuración no puede apoyarse en "el certificador ya lleva rato esperando de todos modos" para justificar una llamada LLM lenta.
+- **La jerga llega sucia al texto confirmado** (homófono "rosa", "A32.4" partido, marcas). La estructuración no "arregla" eso: segmenta lo que el certificador confirmó. El `prompt` de jerga de la sección 4 es la única capa que toca la ortografía, y actúa antes de la confirmación, no después.
+- **Silencio y ruido pueden devolver texto convincente** (OpenAI en coreano, Groq "Gracias." y "y"). Nunca auto-confirmar un dictado (regla fija 3).
+- **La alternativa económica de LLM ya no tiene que salir de Bedrock** (grounding 2026-09-09): xAI entró como proveedor de Bedrock — Grok 4.3 en junio por el motor Mantle (endpoint aparte, API compatible con OpenAI, el SDK `bedrock-runtime` no sirve) y **Grok 4.6 en agosto sí sobre `bedrock-runtime` con `Converse` y perfiles cross-region `us.xai.grok-4.6` / `global.xai.grok-4.6`** ([anuncio](https://aws.amazon.com/about-aws/whats-new/2026/08/amazon-bedrock-grok-4-6/), [model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-xai-grok-4-6.html)). Consecuencia concreta para el alcance de esta fase: evaluar un modelo económico distinto de Haiku **ya no obliga** a la rama de "proveedor externo → log estructurado", porque por `Converse` la telemetría cae en `bedrock_queries` como cualquier otra invocación. Preferir esa vía sobre un proveedor externo; y si se usa Grok, el perfil `global.` sobre el `us.` por la prima documentada del 10% en perfiles regionales (`AGENTS.md` raíz). Nada de esto se implementa hasta que la condición de activación esté registrada.
 
 **Alcance:**
 

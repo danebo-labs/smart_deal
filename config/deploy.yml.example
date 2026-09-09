@@ -6,8 +6,8 @@
 # or production-only identifiers if the repo is public.
 #
 # Secrets Kamal injects (RAILS_MASTER_KEY, DB_PASSWORD, ANTHROPIC_API_KEY,
-# APPSIGNAL_PUSH_API_KEY, KAMAL_REGISTRY_PASSWORD) live in .kamal/secrets
-# (also gitignored). See README “Secrets and Kamal”.
+# GROQ_API_KEY, OPENAI_API_KEY, APPSIGNAL_PUSH_API_KEY, KAMAL_REGISTRY_PASSWORD)
+# live in .kamal/secrets (also gitignored). See README “Secrets and Kamal”.
 
 service: smart-deal
 image: YOUR_DOCKERHUB_USER/smart-deal
@@ -99,10 +99,22 @@ env:
     # (unset or any value other than "false"). Not a privacy gate — that is
     # the PilotUsageLog whitelist plus the rag_quality raw-text exclusions.
     PILOT_EVENTS_PERSIST: "true"
+    # Transcription provider for the certifier module. Set explicitly even
+    # though it matches the code default, for the same reason BEDROCK_MODEL_ID
+    # is: this is the line an operator changes to move provider without
+    # shipping code. groq → openai if Groq degrades; amazon_transcribe if a
+    # certifier requires the audio to stay inside AWS. Decided by the Fase 6
+    # benchmark — docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md, section 4.
+    STT_PROVIDER: groq
   secret:
     - RAILS_MASTER_KEY
     - DB_PASSWORD
     - ANTHROPIC_API_KEY
+    # Required by STT_PROVIDER=groq: the transcription layer has no automatic
+    # failover by design, so without this key every dictation lands in `failed`.
+    # OPENAI_API_KEY ships alongside it so switching provider is one env change.
+    - GROQ_API_KEY
+    - OPENAI_API_KEY
     - APPSIGNAL_PUSH_API_KEY
 
 aliases:

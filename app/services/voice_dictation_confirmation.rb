@@ -22,10 +22,13 @@
 class VoiceDictationConfirmation
   # @param dictation [VoiceDictation, Integer] the dictation or its id
   # @param location [String, nil] optional free-text location, as dictated
+  # @param photo [ActionDispatch::Http::UploadedFile, nil] evidence captured in
+  #   the same tap as the confirm (section 2.3 gap: a dictated finding used to
+  #   have no way to carry a photo without a second trip through Edit).
   # @return [InspectionFinding, nil] the single finding for this dictation, or
   #   nil when it cannot be confirmed: no report to file it against, nothing
   #   transcribed yet, or an empty transcript.
-  def self.call(dictation, location: nil, now: Time.current)
+  def self.call(dictation, location: nil, photo: nil, now: Time.current)
     record = resolve(dictation)
     return nil if record.nil?
 
@@ -47,7 +50,7 @@ class VoiceDictationConfirmation
       # outside it — by now it is committed.
       next unless claimed
 
-      created = create_finding(record, text: text, location: location)
+      created = create_finding(record, text: text, location: location, photo: photo)
     end
 
     created || InspectionFinding.find_by(voice_dictation_id: record.id)
@@ -78,16 +81,28 @@ class VoiceDictationConfirmation
   # Goes through the model rather than insert_all on purpose: account_id is
   # NOT NULL and inherited from the report in a before_validation, so a raw
   # insert would have to duplicate that rule (Fase 4 insumos).
-  def self.create_finding(record, text:, location:)
+  def self.create_finding(record, text:, location:, photo: nil)
     InspectionFinding.create!(
       certification_report_id: record.certification_report_id,
       voice_dictation_id: record.id,
       body: text,
       location: location.presence,
+      field_photo: attach_photo(photo, record),
       position: next_position(record.certification_report_id)
     )
   end
   private_class_method :create_finding
+
+  # Same attacher the typed finding form uses (InspectionFindingsController):
+  # compress + thumbnail, durable bytes, one FieldPhoto. A photo that fails to
+  # attach must not block the confirmation itself — the transcript is the
+  # thing fixed rule 3 is protecting, not the picture.
+  def self.attach_photo(photo, record)
+    return nil if photo.blank?
+
+    InspectionFindingPhotoAttacher.call(photo, account_id: record.account_id, user_id: record.user_id)
+  end
+  private_class_method :attach_photo
 
   # Appends after whatever the certifier already has. Fase 2 leaves position at
   # its default of 0 for typed findings, so the first dictated finding of a

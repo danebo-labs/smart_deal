@@ -88,6 +88,7 @@ es:
         discard: "Descartar"
         discard_confirm: "¿Descartar este dictado? El audio y su transcripción se eliminan."
         failed: "No se pudo transcribir"
+        failed_hint: "Puede ser un problema temporal del servicio de transcripción. Reintenta o graba de nuevo."
         retry: "Reintentar"
         audio_gone: "El audio ya no está disponible: graba de nuevo."
         duration: "%{time} de audio"

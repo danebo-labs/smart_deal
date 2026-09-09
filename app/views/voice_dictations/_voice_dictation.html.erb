@@ -30,7 +30,7 @@
     <%# The gate of fixed rule 3. The textarea travels with the confirm form so a
         tap inside the autosave debounce still commits what is on screen. %>
     <%= form_with url: confirm_voice_dictation_path(voice_dictation), method: :post, scope: :voice_dictation,
-        class: "space-y-4",
+        multipart: true, class: "space-y-4",
         data: { controller: "transcript-autosave",
                 transcript_autosave_url_value: voice_dictation_path(voice_dictation),
                 transcript_autosave_labels_value: {
@@ -58,6 +58,16 @@
             class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
       </div>
 
+      <%# Fase 5 gap closed: a dictated finding used to have no way to carry
+          evidence except a second trip through Edit after confirming. Same
+          field/attacher the typed finding form uses (section 2.3, SafetyCulture
+          pattern: photo in the same tap, no separate screen). %>
+      <div class="space-y-1.5">
+        <%= f.label :photo, t("certifier.finding.photo"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <%= f.file_field :photo, accept: "image/*", capture: "environment",
+            class: "block min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-base text-[hsl(222,47%,10%)] file:mr-3 file:rounded-md file:border-0 file:bg-[hsl(217,91%,50%)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-white" %>
+      </div>
+
       <%# 16px between adjacent controls; confirm is the primary action (72px). %>
       <div class="flex gap-4">
         <%= f.button t("certifier.dictation.card.confirm"), type: :submit,
@@ -81,9 +91,13 @@
     <div class="space-y-4">
       <div>
         <p class="text-base font-semibold text-red-700"><%= t("certifier.dictation.card.failed") %></p>
-        <% if voice_dictation.failure_reason.present? %>
-          <p class="mt-1 break-words text-sm text-[hsl(215,20%,42%)]"><%= voice_dictation.failure_reason %></p>
-        <% end %>
+        <%# The raw provider error (a Groq/OpenAI/Amazon response body, sometimes
+            literally containing "500") is logged for us, never shown here: a
+            technician with gloves in the field cannot act on it, and reading
+            "500" reads as "the app is broken" (fixed rule: concise UI, no
+            technicalities for field users). failure_reason still exists as the
+            support/debugging trail — see [STT_USAGE] logs and this column. %>
+        <p class="mt-1 text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.dictation.card.failed_hint") %></p>
       </div>
       <div class="flex gap-4">
         <% if voice_dictation.audio_available? %>

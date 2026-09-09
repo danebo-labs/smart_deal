@@ -80,6 +80,10 @@ class VoiceDictationsControllerTest < ActionDispatch::IntegrationTest
     dictation(status: status, report: report, user: colleague)
   end
 
+  def photo_upload
+    fixture_file_upload("tiny.png", "image/png")
+  end
+
   def edit_json(text)
     { params: { voice_dictation: { transcript_edited: text } }.to_json,
       headers: { "Content-Type" => "application/json", "Accept" => "application/json" } }
@@ -196,7 +200,8 @@ class VoiceDictationsControllerTest < ActionDispatch::IntegrationTest
     assert_match(/id="voice_dictation_#{editable.id}"[^>]*data-status="transcribed"/m, response.body)
     assert_match editable.transcript_raw, response.body
     assert_match(/id="voice_dictation_#{failed.id}"[^>]*data-status="failed"/m, response.body)
-    assert_match "429 insufficient_quota", response.body
+    assert_no_match "429 insufficient_quota", response.body, "the raw provider error is not field-technician copy"
+    assert_match I18n.t("certifier.dictation.card.failed_hint"), response.body
     assert_match retry_voice_dictation_path(failed), response.body
     assert_no_match(/id="voice_dictation_#{done.id}"/, response.body)
   end
@@ -310,6 +315,21 @@ class VoiceDictationsControllerTest < ActionDispatch::IntegrationTest
     get certification_report_path(@report)
     assert_no_match(/data-highlighted-finding/, response.body)
     assert_no_match undo_voice_dictation_path(record), response.body
+  end
+
+  # A dictated finding used to have no way to carry evidence except a second
+  # trip through Edit after confirming (section 2.3 gap). Same tap, same
+  # attacher the typed finding form uses.
+  test "confirming with a photo attaches it to the finding in the same request" do
+    sign_in @user
+    record = voice_dictations(:cabina_dictado)
+
+    post confirm_voice_dictation_path(record),
+         params: { voice_dictation: { transcript_edited: "Puerta de cabina roza.", photo: photo_upload } }
+
+    finding = @report.inspection_findings.find_by!(voice_dictation_id: record.id)
+    assert finding.field_photo_id.present?
+    assert_equal @account.id, finding.field_photo.account_id
   end
 
   # ── recovery route (c): double confirmation ─────────────────────────────

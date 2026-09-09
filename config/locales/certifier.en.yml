@@ -88,6 +88,7 @@ en:
         discard: "Discard"
         discard_confirm: "Discard this dictation? Its audio and transcript are deleted."
         failed: "Could not transcribe"
+        failed_hint: "This may be a temporary transcription service issue. Retry or record again."
         retry: "Retry"
         audio_gone: "The audio is no longer available: record again."
         duration: "%{time} of audio"

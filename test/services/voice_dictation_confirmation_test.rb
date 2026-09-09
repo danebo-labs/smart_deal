@@ -7,6 +7,34 @@ require "test_helper"
 # that yes — double tap, retried request, late client response — yields one
 # finding and the same answer.
 class VoiceDictationConfirmationTest < ActiveSupport::TestCase
+  class FakeS3
+    attr_reader :uploads
+
+    def initialize
+      @uploads = []
+    end
+
+    def upload_binary(key, data, content_type)
+      @uploads << { key: key, data: data, content_type: content_type }
+      key
+    end
+  end
+
+  def with_fake_s3(fake)
+    orig = S3DocumentsService.method(:new)
+    S3DocumentsService.define_singleton_method(:new) { fake }
+    yield
+  ensure
+    S3DocumentsService.define_singleton_method(:new) { |*a, **kw| orig.call(*a, **kw) }
+  end
+
+  def photo_upload
+    ActionDispatch::Http::UploadedFile.new(
+      tempfile: Rails.root.join("test/fixtures/files/tiny.png").open("rb"),
+      filename: "photo.png", type: "image/png"
+    )
+  end
+
   def setup
     @account = accounts(:legacy)
     @user    = users(:one)
@@ -189,6 +217,26 @@ class VoiceDictationConfirmationTest < ActiveSupport::TestCase
 
     assert_equal "Texto corregido tras deshacer.", again.body
     assert_equal 1, InspectionFinding.where(voice_dictation_id: record.id).count
+  end
+
+  # A dictated finding used to have no way to carry evidence except a second
+  # trip through Edit after confirming (section 2.3 gap).
+  test "an optional photo captured at confirm time is attached to the finding" do
+    fake = FakeS3.new
+
+    finding = nil
+    with_fake_s3(fake) do
+      finding = VoiceDictationConfirmation.call(dictation, photo: photo_upload)
+    end
+
+    assert finding.field_photo_id.present?
+    assert_equal @account.id, finding.field_photo.account_id
+  end
+
+  test "confirming without a photo leaves the finding without one" do
+    finding = VoiceDictationConfirmation.call(dictation)
+
+    assert_nil finding.field_photo_id
   end
 
   # Fixed rule 1: classifying a defect against the norm is the certifier's

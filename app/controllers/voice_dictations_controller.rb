@@ -89,7 +89,7 @@ class VoiceDictationsController < ApplicationController
       return redirect_to report_path_for(dictation), alert: t("certifier.dictation.alerts.empty")
     end
 
-    finding = VoiceDictationConfirmation.call(dictation.reload, location: edit_params[:location])
+    finding = VoiceDictationConfirmation.call(dictation.reload, location: edit_params[:location], photo: edit_params[:photo])
     if finding
       flash[:highlight_finding_id] = finding.id
       redirect_to certification_report_path(finding.certification_report_id, anchor: helpers.dom_id(finding)),
@@ -143,7 +143,7 @@ class VoiceDictationsController < ApplicationController
   end
 
   def edit_params
-    params.fetch(:voice_dictation, {}).permit(:transcript_edited, :location)
+    params.fetch(:voice_dictation, {}).permit(:transcript_edited, :location, :photo)
   end
 
   def report_path_for(dictation)

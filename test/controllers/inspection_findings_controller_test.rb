@@ -188,4 +188,125 @@ class InspectionFindingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert InspectionFinding.exists?(colleague_finding.id)
   end
+
+  # ── Fase 1A: the certifier's manual classification ─────────────────────────
+
+  # Fixed rule 4: dictation asks for nothing. The classification fields live in
+  # the editor, so creating a finding must still take only its text.
+  test "creating a finding asks for nothing but its text" do
+    sign_in @user
+    @report.report_equipments.create!(label: "Ascensor A")
+
+    post certification_report_inspection_findings_path(@report), params: { inspection_finding: { body: "Dictado sin clasificar" } }
+
+    finding = @report.inspection_findings.find_by!(body: "Dictado sin clasificar")
+    assert_nil finding.report_equipment_id
+    assert_nil finding.severity
+    assert_nil finding.inspection_item
+  end
+
+  test "the editor assigns an equipment, an item and a severity" do
+    sign_in @user
+    equipment = @report.report_equipments.create!(label: "Ascensor A")
+
+    patch inspection_finding_path(@finding), params: {
+      inspection_finding: {
+        body: @finding.body, report_equipment_id: equipment.id,
+        inspection_item: "6", severity: "grave", nch2840_box: "6.3", norm_point: "5.4.2"
+      }
+    }
+
+    assert_redirected_to certification_report_path(@report)
+    @finding.reload
+    assert_equal equipment.id, @finding.report_equipment_id
+    assert_equal 6, @finding.inspection_item
+    assert @finding.severity_grave?
+    assert_equal "6.3", @finding.nch2840_box
+  end
+
+  test "an empty selection clears the classification instead of storing a blank" do
+    sign_in @user
+    equipment = @report.report_equipments.create!(label: "Ascensor A")
+    @finding.update!(report_equipment: equipment, severity: "leve", inspection_item: 2)
+
+    patch inspection_finding_path(@finding), params: {
+      inspection_finding: { body: @finding.body, report_equipment_id: "", severity: "", inspection_item: "" }
+    }
+
+    @finding.reload
+    assert_nil @finding.report_equipment_id
+    assert_nil @finding.severity
+    assert_nil @finding.inspection_item
+  end
+
+  test "a blank order field leaves the position untouched" do
+    sign_in @user
+    @finding.update!(position: 7)
+
+    patch inspection_finding_path(@finding), params: { inspection_finding: { body: @finding.body, position: "" } }
+
+    assert_equal 7, @finding.reload.position
+  end
+
+  # An equipment id from another report must not be attachable even though both
+  # reports belong to the same user and the same company.
+  test "rejects an equipment of another report" do
+    sign_in @user
+    other_report = CertificationReport.create!(account: @account, user: @user, building_name: "Otro edificio")
+    foreign = other_report.report_equipments.create!(label: "Ascensor X")
+
+    patch inspection_finding_path(@finding), params: { inspection_finding: { body: @finding.body, report_equipment_id: foreign.id } }
+
+    assert_response :unprocessable_entity
+    assert_nil @finding.reload.report_equipment_id
+  end
+
+  test "rejects an equipment of another company" do
+    sign_in @user
+
+    patch inspection_finding_path(@finding), params: {
+      inspection_finding: { body: @finding.body, report_equipment_id: report_equipments(:climb_ascensor_a).id }
+    }
+
+    assert_response :unprocessable_entity
+    assert_nil @finding.reload.report_equipment_id
+  end
+
+  test "an invalid severity responds 422 instead of raising" do
+    sign_in @user
+
+    patch inspection_finding_path(@finding), params: { inspection_finding: { body: @finding.body, severity: "gravisimo" } }
+
+    assert_response :unprocessable_entity
+    assert_nil @finding.reload.severity
+  end
+
+  test "an invalid CENTRAVE item responds 422" do
+    sign_in @user
+
+    patch inspection_finding_path(@finding), params: { inspection_finding: { body: @finding.body, inspection_item: "99" } }
+
+    assert_response :unprocessable_entity
+    assert_nil @finding.reload.inspection_item
+  end
+
+  # An unclassified finding must read as pending, never as "sin defectos".
+  test "the report shows an unclassified finding as pending, not as compliant" do
+    sign_in @user
+
+    get certification_report_path(@report)
+
+    assert_response :success
+    assert_match I18n.t("certifier.finding.unclassified_severity"), response.body
+    assert_match I18n.t("certifier.equipment.unassigned"), response.body
+  end
+
+  test "the editor opens for a legacy finding with no classification at all" do
+    sign_in @user
+
+    get edit_inspection_finding_path(@finding)
+
+    assert_response :success
+    assert_match I18n.t("certifier.finding.no_equipments_hint"), response.body
+  end
 end

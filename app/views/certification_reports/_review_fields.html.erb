@@ -1,0 +1,40 @@
+<%# locals: f (form builder) — every field here is optional and typed by the
+    certifier. `result` starts empty and stays empty until a human picks one:
+    Danebo never derives it from the registered defects (fixed rule 1), and the
+    absence of a classification is not "sin defectos". %>
+<div class="space-y-4">
+  <div class="space-y-1.5">
+    <%= f.label :inspector_name, t("certifier.fields.inspector_name"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.text_field :inspector_name, placeholder: t("certifier.fields.inspector_name_placeholder"),
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+  </div>
+
+  <div class="grid grid-cols-2 gap-4">
+    <div class="space-y-1.5">
+      <%= f.label :report_date, t("certifier.fields.report_date"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.date_field :report_date,
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+    <div class="space-y-1.5">
+      <%= f.label :normative_reference, t("certifier.fields.normative_reference"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+      <%= f.text_field :normative_reference, placeholder: t("certifier.fields.normative_reference_placeholder"),
+          class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    </div>
+  </div>
+  <p class="text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.fields.normative_reference_hint") %></p>
+
+  <div class="space-y-1.5">
+    <%= f.label :result, t("certifier.fields.result"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.select :result,
+        CertificationReport::RESULTS.keys.map { |r| [ t("certifier.results.#{r}"), r ] },
+        { include_blank: t("certifier.results.unrecorded") },
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+    <p class="text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.fields.result_hint") %></p>
+  </div>
+
+  <div class="space-y-1.5">
+    <%= f.label :result_note, t("certifier.fields.result_note"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+    <%= f.text_area :result_note, rows: 3,
+        class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-base text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+  </div>
+</div>

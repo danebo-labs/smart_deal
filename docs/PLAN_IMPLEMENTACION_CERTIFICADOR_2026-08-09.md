@@ -4,6 +4,8 @@
 **Naturaleza:** documento vivo de ejecución. Las fases se ejecutan en sesiones de agente independientes ("ejecutores"), potencialmente con modelos distintos. Ver protocolo en sección 1.
 **Realineación 2026-09-08:** la premisa original ("adelantar la construcción a agosto: primero lo determinista, después la voz") caducó — agosto cerró sin ejecutar fases y el [plan de septiembre](PLAN_SEPTIEMBRE_2026.md) vigente (secciones 2.1, 2.2 y 8) manda el orden contrario: primero dictar → corregir → confirmar → guardar → recuperar; exportable, estructura de 8 ítems, normativa y PDF quedan condicionados a uso real. Este documento se reordenó en consecuencia y cerró cinco gaps críticos de una auditoría externa (sección 2.2). Los cortes del 16 de septiembre y del 2 de octubre (plan de septiembre, sección 8) gobiernan qué se ejecuta y qué se congela.
 
+**Decisión del fundador, 2026-09-09 — generación de informe ACTIVADA:** tras probar el circuito en producción y reportar que funciona salvo detalles de UI, el fundador pidió avanzar con revisión y PDF, con encabezado/pie comunes por cuenta y una experiencia mínima. Esta instrucción adelanta **solo las Fases 1 y 3 y los datos necesarios para ellas**, ahora divididas en **1A → 1B → 3A → 3B**. Es una excepción explícita al calendario anterior; no acredita el gate comercial ni activa la Fase 7, el catálogo normativo completo o la derivación automática de normativa. Los planes padre no se editan en esta actualización: sus condiciones de validación comercial siguen vigentes; para ejecutar este alcance adelantado rige esta decisión registrada. **No se autorizó quitar BORRADOR ni emitir/fimar una certificación.** Próximo prompt: **Fase 1A**. Ninguna de estas cuatro subfases está implementada por la sola actualización del plan.
+
 ---
 
 ## 0. Reglas fijas (ningún ejecutor las contradice)
@@ -23,6 +25,9 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 11. **Persistencia ante interrupción:** cerrar, recargar o reabrir no pierde audio ya subido, transcripción ni texto confirmado (plan de septiembre, sección 2.1, punto 5). Un blob local en memoria es mitigación de upload, no mecanismo de persistencia.
 12. **Aislamiento doble:** scoping por cuenta (host) **y** propiedad por usuario en "mis informes". Los broadcasts de dictado van por stream privado del usuario — no por el patrón `KbSyncChannel`, que transmite a toda la cuenta.
 13. **Un dictado = una llamada facturada = un hallazgo:** claim atómico del estado antes de llamar al proveedor STT; confirmación idempotente; un resultado tardío del proveedor nunca sobrescribe ediciones ni entra al borrador sin confirmación.
+14. **Un solo diseño de informe para el SaaS.** Encabezado y pie comunes a todos los informes de una cuenta: nombre de certificadora, rol MINVU y logo opcional, configurados una vez. Sin variantes por informe, editor de plantillas, temas ni imágenes de encabezado/pie completo. Número, fecha y paginación son datos variables, no personalización del diseño.
+15. **Lo visto es lo descargado.** La vista previa PDF y su descarga usan el mismo archivo conservado. Cambiar texto, equipo, foto, encabezado o plantilla invalida su vigencia para el borrador actual, pero no modifica una versión ya generada. Descargar no evalúa cumplimiento, no firma y no cambia automáticamente el estado a `enviado`.
+16. **Generación determinista y asíncrona.** Sin LLM/RAG adicional para redactar, completar o diagramar el informe. HTML y PDF comparten plantilla de contenido; Chromium y las lecturas/escrituras de archivos del PDF se ejecutan en un job, nunca en el request de generación.
 
 ---
 
@@ -30,9 +35,11 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 
 - **Antes de ejecutar una fase**, el ejecutor lee: este documento completo, los bloques *Cierre de fase* de todas las fases anteriores, y el bloque *Insumos* de su propia fase.
 - **Al cerrar una fase**, el ejecutor: (a) llena su bloque *Cierre de fase* con hallazgos y desviaciones; (b) **edita los bloques *Insumos* de las fases siguientes afectadas** — no basta con anotar el hallazgo en la fase propia; (c) actualiza la tabla de estado de la sección 2.
+- **Cierre transferible obligatorio para 1A/1B/3A/3B:** registrar fecha, modelo/effort realmente usados, branch/commit/PR, archivos y contratos creados, migraciones y configuración, comandos ejecutados con resultados, revisión visual y límites, hallazgos, decisiones/desviaciones y el siguiente paso exacto. Distinguir `pendiente`, `en curso`, `cerrada en local`, `integrada` y `verificada en producción`; nunca confundir pruebas locales con deploy. Si falta una verificación, nombrarla y dejar el estado parcial.
+- **Autonomía:** las decisiones de alcance de esta revisión ya están tomadas. Resolver detalles rutinarios con patrones del repositorio y documentarlos; no reabrir la elección HTML/PDF, el encabezado común ni el gate temporal de estas cuatro subfases. Un bloqueo externo no impide completar y probar las partes independientes. No inventar datos de certificadora, credenciales, resultados técnicos ni verificaciones realizadas.
 - **Prompt de lanzamiento:** cada fase tiene su bloque *Prompt de lanzamiento* con el modelo asignado (tabla de la sección 2). Todos extienden esta base común, que no se repite en cada bloque pero es parte del prompt:
 
-> Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` completo. Crea el branch `certificador/fase-N-<nombre>` desde `main` actualizado y trabaja ahí (sección 2.1). Ejecuta la Fase N respetando la sección 0 (reglas fijas), las resoluciones de la sección 2.2 y los `AGENTS.md` del repositorio. Todo cambio de comportamiento lleva tests Minitest; prueba en local antes de dar por cerrada la fase. Al terminar: llena el bloque "Cierre de fase" de la Fase N y actualiza los bloques "Insumos" de las fases siguientes que tus hallazgos afecten.
+> Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` completo. Verifica el estado del repositorio y los cierres de las dependencias. Crea el branch indicado por la fase desde una base que contenga esas dependencias (sección 2.1), sin descartar cambios ajenos. Ejecuta el alcance autorizado respetando sección 0, sección 2.2 y los `AGENTS.md` aplicables. Todo cambio de comportamiento lleva tests Minitest; prueba en local. Al terminar, completa el cierre transferible, actualiza la tabla de estado y los Insumos de todas las fases afectadas. No marques merge/deploy como hechos sin evidencia.
 
 ---
 
@@ -45,25 +52,25 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 | 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, mergeada a `main` vía PR #22; transcripción real end-to-end con **Transcribe (USD 0,0124) y OpenAI (USD 0,0016)**, total USD 0,0140) | Opus última versión | high |
 | 4º | 5 | UI de captura de audio (dictado) | **cerrada en local** (2026-09-08, branch `certificador/fase-5-captura-audio`, suite local verde 2743/0/0, end-to-end real en dev con OpenAI + cable privado, USD 0,0013; **reserva:** la prueba en móvil real queda para el fundador — necesita HTTPS, receta en el cierre) | Fable última versión | high |
 | 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | **cerrada** (2026-09-09, benchmark en `certificador/fase-6-benchmark-stt` / PR #24; default `STT_PROVIDER=groq` + `JargonPrompt` en `certificador/fase-6-default-groq`) | Grok (variante rápida) | low/fast |
-| — | 1 | Exportable HTML con hoja de impresión (formato NCh 2840) | **condicionada** (gate 2-oct) | Sonnet última versión | medium |
-| — | 3 | PDF server-side | **condicionada** | Grok (variante rápida) | low/fast |
+| 6º | 1A | Datos mínimos del informe y encabezado común por cuenta | **cerrada en local** (2026-09-09, branch `codex/certificador-1a-datos`, ejecutada con Opus 4.5 / thinking alto, no con el modelo recomendado; suite local verde 2861/0/0, rubocop y `zeitwerk:check` limpios, 4 migraciones reversibles; **pendiente:** revisión visual del fundador, commit/PR, merge y deploy) | GPT-6 Astra | high |
+| 7º | 1B | Revisión HTML y plantilla de impresión compartida | **activada; pendiente de que 1A entre a `main`** | GPT-6 Astra | medium |
+| 8º | 3A | PDF asíncrono, archivo conservado y aislamiento | **activada; pendiente de 1B** | GPT-6 Astra | high |
+| 9º | 3B | Vista previa real, descarga y verificación de extremo a extremo | **activada; pendiente de 3A** | GPT-6 Astra | high |
 | — | 7 | Estructuración del dictado en hallazgos | **condicionada** (gate 2-oct) | Opus última versión | high |
 
-**Criterio de asignación de modelo (parque disponible: GPT Ultra, Fable última versión, Opus última versión, Sonnet última versión, Grok):**
+**Asignación revisada el 2026-09-09 — recomendación de ingeniería, no benchmark entre proveedores:**
 
-- **Razonamiento alto** — **Opus última versión** (alternativa: **GPT Ultra**, útil como segunda opinión de diseño): fases cuyo error es caro de deshacer — esquema de datos, contrato del adapter y máquina de estados, prompts con red lines de seguridad. Fases 0, 4 y 7.
-- **Estándar** — **Sonnet última versión** o **Fable última versión**: implementación sobre diseño ya decidido — vistas, CRUD, Stimulus. Fases 1 y 2 (Sonnet); Fase 5 (Fable: es el tramo estándar más delicado, UI de captura con contratos de persistencia y recuperación finos).
-- **Rápido/económico** — **Grok (variante rápida)** (alternativa: Sonnet): trabajo mecánico y determinista con criterios de aceptación cerrados — scripts, una gem, una vista más. Fases 3 y 6.
-**Criterio de nivel de esfuerzo (effort/thinking):** el effort se paga solo donde el error es caro de deshacer, no donde hay más código que escribir — en fases mecánicas, effort alto es más lento, más caro y tiende a sobre-ingeniería.
-
-- **high:** Fases 0, 4 y 7 (esquema, concurrencia y máquina de estados, red lines) y Fase 5 (los contratos de recuperación — upload-first, autosave, reapertura — son diseño fino, no solo UI).
-- **medium/estándar:** Fases 1 y 2 (implementación sobre diseño ya decidido).
-- **low/fast, sin thinking extendido:** Fases 3 y 6 (trabajo mecánico con criterios de aceptación cerrados).
-- Regla práctica de escalamiento, en dos ejes: si una fase se traba dos veces en lo mismo, primero se relanza subiendo el effort (medium → high); si persiste, se relanza con Opus o GPT Ultra. Reintentos fallidos cuestan más que el upgrade.
+- **Un solo modelo puede ejecutar todo el tramo.** Recomendación operativa: `gpt-6-astra`, en cuatro entregas secuenciales, variando effort como indica la tabla. No se requieren cuatro modelos ni agentes en paralelo; el esquema, la plantilla y el contrato de archivo dependen entre sí. Si se usa una sola sesión, actualizar el documento y verificar cada subfase antes de continuar.
+- **1A / high:** esquema, permisos para datos compartidos y relaciones equipo/hallazgo. **1B / medium:** ERB/CSS y revisión sobre contratos fijados; subir a high si aparecen problemas de paginación o accesibilidad. **3A / high:** concurrencia, snapshot consistente, retención, S3, aislamiento y operación de Chromium. **3B / high:** recuperación de errores, ediciones concurrentes y fidelidad entre vista previa y descarga.
+- La antigua asignación **Grok rápido / low para toda la Fase 3 deja de ser apropiada para este alcance**: ya no es solamente agregar una gem y un botón. Un ejecutor estándar como Sonnet puede implementar 1B; para 1A/3A/3B usar un modelo fuerte de ingeniería y razonamiento alto (Opus si se ejecuta fuera de Codex y está disponible). Son equivalencias de complejidad, no una afirmación de superioridad medida.
+- Los nombres de las fases cerradas se conservan como historial. No reutilizar aliases ambiguos como “GPT Ultra” o “Fable última versión” para un lanzamiento nuevo sin identificar el modelo concreto disponible. La Fase 7 sigue condicionada: al activarse, registrar su modelo exacto y usar razonamiento alto.
+- **Fuente y límites:** la [guía oficial de GPT-6 Astra](https://developers.openai.com/api/docs/guides/latest-model) consultada el 9-sep describe su uso para ingeniería y flujos de varios pasos. El entorno Codex de esta sesión ofrece `gpt-6-astra` con `medium`/`high`, entre otros niveles; eso no garantiza disponibilidad en otra herramienta o cuenta. La asignación por subfase es criterio propio sobre este repositorio, sin estimar precios ni tiempos no medidos. Estos son modelos **ejecutores del desarrollo**; no cambian STT ni los modelos de producción de Danebo.
 
 ### 2.1 Flujo de trabajo de ejecución (decidido 2026-08-09)
 
 **Branches.** Un branch por fase (`certificador/fase-0-modelo-datos`, `certificador/fase-1-exportable`, …), un PR chico y revisable por fase. El cierre de fase (bloque de este documento) se edita dentro del mismo PR. **Prerrequisito antes de la Fase 0:** cumplido — verificado el 2026-09-08: el working tree de `main` está limpio y los branches de fase parten de `main` actualizado.
+
+**Para 1A → 1B → 3A → 3B:** usar los nombres `codex/certificador-1a-datos`, `codex/certificador-1b-revision`, `codex/certificador-3a-pdf` y `codex/certificador-3b-preview`. La base preferida es `main` con la dependencia integrada. Si el fundador pide ejecutar todo seguido sin merges intermedios, continuar sobre la rama anterior mediante ramas/commits secuenciales y documentar la base exacta; no simular que está en `main`. El mandato actual actualiza el plan; los prompts siguientes autorizan implementación local al ser lanzados. Merge/deploy siguen la autorización de la sesión de ejecución, no se presumen por leer un prompt en este archivo.
 
 **Prueba y deploy.** Local primero: tests Minitest de la fase + prueba manual en dev (la Fase 4 exige además una transcripción real end-to-end en dev). Fase verde → merge a `main` → deploy a producción con Kamal, el flujo existente. No se acumulan fases sin mergear: cada fase entra a `main` al cerrarse.
 
@@ -76,7 +83,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 - **Retirar el código de una fase puntual:** `git revert` del merge commit de esa fase (no `reset`) — no reescribe historia, es seguro sobre una rama ya deployada. Las migraciones de cada fase se exigen reversibles como criterio de aceptación (Fase 0 ya lo probó con `db:rollback:primary STEP=2`), así que `rails db:rollback` deshace el esquema si además se quiere botar las tablas.
 - **Estado de reposo aceptable:** el módulo es aditivo (tablas y rutas nuevas; nunca toca `ConversationSession` ni rutas existentes — regla fija 6). Si el piloto no valida el módulo, dejarlo mergeado y apagado por el flag indefinidamente es un desenlace válido — no hay obligación de deshacer git.
 
-**Rutas.** Path nuevo, recurso REST plano siguiendo el patrón existente (`resources :field_photos`): `resources :certification_reports` (Fase 2) con member `get :export` (Fase 1, condicionada), y `resources :voice_dictations, only: %i[create show]` (Fases 4–5). Nada anidado bajo el chat ni bajo `/rag`.
+**Rutas.** Reutilizar `resources :certification_reports` y las rutas de dictado ya existentes; nada bajo el chat ni `/rag`. 1A agrega un recurso singular de configuración de certificadora y las rutas mínimas de equipos; 1B, `GET /certification_reports/:id/export` para revisión HTML. 3A agrega `POST /certification_reports/:id/exports` para solicitar generación y rutas autenticadas de estado/vista/descarga por ID de exportación. Un `GET` nunca genera ni cambia estados. Los nombres definitivos se registran en cada cierre para el siguiente ejecutor.
 
 **UI: sección propia, no el chat.** El módulo es un editor de documento (lista + borrador), no una conversación: reutiliza el layout/shell de la app (navegación, Tailwind, i18n) pero con vistas y controladores Stimulus propios. No se monta sobre `rag_chat_controller` ni sobre `ConversationSession` (regla fija 6). El chat queda intacto para el flujo mantenedor.
 
@@ -86,7 +93,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 
 Cinco gaps críticos señalados por una revisión externa, verificados contra el código y los planes vigentes. Los ejecutores no repiten el análisis: aplican estas resoluciones, que ya están integradas en las reglas fijas y en las fases.
 
-1. **Orden contradictorio con el alcance vigente — confirmado.** El plan de septiembre (sección 2.2) excluye exportable, estructura completa de 8 ítems, normativa exhaustiva y PDF hasta observar uso real, y su corte del 16-sep congela estructura y exportación si el circuito de voz no está en pie. Resolución: nuevo orden 0 → 2 → 4 → 5 → 6; las Fases 1, 3 y 7 y el tramo extendido de la Fase 0 quedan **condicionados** al gate del 2 de octubre (plan de septiembre, sección 8). Las referencias internas al plan de septiembre apuntaban a una versión anterior del documento (secciones 3.2, 5.1, 6.1, 6.2 ya no existen) y fueron corregidas fase por fase.
+1. **Orden contradictorio con el alcance vigente — confirmado el 8-sep.** Se ejecutó primero 0 → 2 → 4 → 5 → 6 y se condicionó el resto. **Actualización 9-sep:** la decisión del fundador registrada al inicio activa 1A → 1B → 3A → 3B antes del gate; no repetir el bloqueo por fecha en sus prompts. La Fase 7 y la automatización normativa mantienen su condición. Los gates comerciales de septiembre no se dan por cumplidos.
 2. **Purga de fotos vinculadas a informes — confirmado.** `FieldPhotoRetentionJob` borra el prefijo S3 y destruye la fila de toda foto que supere `FIELD_PHOTO_RETENTION_DAYS` (90 por defecto), sin distinguir fotos referenciadas por un informe, y borra S3 **antes** de destruir la fila — una FK restrictiva no protegería el archivo. Resolución: regla fija 10 + política de retención en la Fase 0 (exclusión en el job, FK como respaldo, fila antes que S3, test de supervivencia).
 3. **Recuperación del trabajo interrumpido sin garantía — confirmado.** Un blob local en memoria no sobrevive recarga ni cierre; el requisito vigente es cerrar y reabrir sin perder audio, transcripción ni texto (plan de septiembre, sección 2.1, punto 5). Resolución: regla fija 11 + upload-first, autosave de ediciones no confirmadas y pruebas de recuperación explícitas en la Fase 5; estados de dictado recuperables en la Fase 4.
 4. **Aislamiento especificado a medias — confirmado.** `KbSyncChannel`/`KbSyncBroadcaster` transmiten a `account:<id>:kb_sync` — toda la cuenta — y no sirven de patrón para el dictado; y "mis informes" exige propiedad por usuario, no solo por cuenta. Resolución: regla fija 12 + canal privado del usuario en la Fase 4 + criterios de aislamiento en dos ejes (cuenta ajena y otro usuario de la misma cuenta) en las Fases 0, 1 y 2.
@@ -115,9 +122,9 @@ No se pide copiar el diseño visual de ninguna de estas apps — la UI de Danebo
 
 ### 3.1 El informe real
 
-**Archivo:** [referencias/2023_informe_certificacion_ascensores_NCh2840_torre_amunategui.pdf](referencias/2023_informe_certificacion_ascensores_NCh2840_torre_amunategui.pdf) — Informe N°328/2023, Pizarro y Cía. Ltda. "INAE", Registro MINVU Rol 063, Torre Amuñátegui (Catedral 1401, Santiago), 6 equipos, resultado RECHAZADO. Documento público de 7 páginas.
+**Archivo:** [referencias/2023_informe_certificacion_ascensores_NCh2840_torre_amunategui.pdf](referencias/2023_informe_certificacion_ascensores_NCh2840_torre_amunategui.pdf) — Informe N°328/2023, Pizarro y Cía. Ltda. "INAE", Registro MINVU Rol 063, Torre Amuñátegui (Catedral 1401, Santiago), 6 equipos. Documento público de 7 páginas. **Corrección por inspección visual del 9-sep:** las casillas marcadas en página 1 son **APROBADO / CON NUEVOS DEFECTOS**; la descripción anterior “RECHAZADO” confundía el texto impreso del formulario con la opción seleccionada. El ejemplo es referencia visual; jamás copiar sus personas, empresa, rol, declaración o resultado a informes reales de otra cuenta.
 
-**Estructura observada, que es la que replica el exportable:**
+**Estructura observada del ejemplo (el subconjunto del primer exportable se fija en Fase 1B):**
 
 1. **Encabezado de identificación:** empresa certificadora + rol MINVU, N° interno de informe, fecha de informe y de inspección, normativa aplicable (checkbox: NCh 440/1/2 2000, NCh 3395, NCh 440/1/2 2014/5, otras), comuna/calle/N°, nombre del edificio, destino del inmueble (vivienda/equipamiento/…), características básicas por equipo: con/sin sala de máquinas, hidráulico/electromecánico, tipo de puertas, N° embarques, cantidad de equipos, cables de tracción, N° paradas, velocidad, carga útil, capacidad, fecha última mantención, **empresa mantenedora y técnico mantenedor**, técnico de apoyo en inspección.
 2. **Tabla de defectos GRAVES** (o leves anteriores no resueltos): casilla + punto de norma + aclaración.
@@ -131,7 +138,9 @@ El **Certificado de Conformidad** se confecciona "usando el protocolo y formular
 
 ### 3.3 Decisión de estructura (tomada 2026-08-09)
 
-**Híbrido:** el dictado libre se organiza en los **8 ítems CENTRAVE** (esqueleto del borrador: Carpeta de Ascensores, Cabina, Espacio de máquinas, Contrapeso, Caja de elevadores, Pozo, Puertas y cerraduras, Suspensión/cables/amarras), y cada hallazgo lleva **campos opcionales** — casilla NCh 2840, punto de norma, gravedad L/G — que el certificador asigna al revisar. El exportable replica el formato de la sección 3.1. No se precarga el catálogo completo de ~370 casillas en esta etapa (queda como hallazgo posible de la validación con un certificador real).
+**Híbrido:** captura libre y revisión posterior con agrupación opcional en los **8 ítems CENTRAVE** (Carpeta de Ascensores, Cabina, Espacio de máquinas, Contrapeso, Caja de elevadores, Pozo, Puertas y cerraduras, Suspensión/cables/amarras). Cada hallazgo admite campos opcionales — casilla NCh 2840, punto de norma, gravedad L/G — asignados por el certificador. Se conservan los no clasificados en un grupo explícito; no se fuerza a completar ocho secciones. El primer exportable adapta identificación, tablas y resultado de la sección 3.1 y agrega evidencia fotográfica, **sin reproducir la guía completa de ~370 casillas ni afirmar cobertura completa de inspección**.
+
+**Normativa pendiente de resolver, sin bloquear el PDF:** el ejemplo rotula la norma según “fecha de permiso de edificación”; el plan general usa “fecha de recepción municipal definitiva”. No resolver esa diferencia por intuición ni copiando el ejemplo. En 1A/1B se admite referencia normativa ingresada por el certificador, sin recomendación automática. `NormativeGroupResolver` sigue diferido hasta verificar fuente oficial, criterio de fechas y bordes, y registrar su activación. La regla fija 5 define cómo construirlo cuando corresponda; no obliga a activarlo en este tramo.
 
 ---
 
@@ -208,13 +217,18 @@ TranscriptionJob (Solid Queue, idempotente)
 Transcripción VISIBLE Y EDITABLE (gate, regla fija 3)
   │ certificador confirma / corrige
   ▼
-Estructuración → hallazgo en ítem CENTRAVE (Fase 7, condicionada; Bedrock Haiku default, LLM configurable)
+Un dictado confirmado → un hallazgo (operativo, sin LLM)
   ▼
 CertificationReport (borrador persistente, Fase 0) ──► pausar / retomar / revisar
-  │ certificador asigna casilla / punto / gravedad (opcional, Fase 2)
+  │ datos/encabezado por cuenta + equipo/clasificación manual opcional (Fase 1A)
   ▼
-Exportable HTML print (Fase 1, condicionada) ──► PDF server-side (Fase 3, condicionada)
-                    [marca de agua BORRADOR]
+Revisión HTML / plantilla de impresión compartida (Fase 1B)
+  │ Ver PDF: POST → snapshot consistente → job Solid Queue (Fase 3A)
+  ▼
+PDF conservado en S3 privado → vista previa → descargar el mismo archivo (Fase 3B)
+                    [BORRADOR en todas las páginas]
+
+Fase 7: segmentación multi-hallazgo sigue condicionada; no es dependencia del PDF.
 ```
 
 Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): tenancy por host (`AccountHostResolver` + `current_account`), fotos vía `FieldPhoto` + S3 con `sha256` único por cuenta (no Active Storage, nunca bajo `bulk_chunks/`), jobs idempotentes con `rescue RecordNotUnique → find`, servicios PORO con inyección `client:` para tests (sin WebMock), broadcast por canal privado del usuario (el patrón `KbSyncChannel` transmite a toda la cuenta y no sirve aquí — regla fija 12), locales pareados `certifier.es.yml`/`certifier.en.yml` siguiendo el patrón `rag.*`.
@@ -235,7 +249,7 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 - **Política de retención de evidencia (regla fija 10, gap 2):** modificar `FieldPhotoRetentionJob` para excluir de la purga toda foto referenciada por un hallazgo (`where.not(id: InspectionFinding.where.not(field_photo_id: nil).select(:field_photo_id))`); agregar la FK como respaldo; invertir el orden del job — destruir la fila **antes** de borrar el prefijo S3, para que una violación de FK aborte sin haber perdido los bytes.
 - Fixtures mínimos (un informe con 3 hallazgos, uno con foto) para que las Fases 2, 4 y 5 testeen sin UI.
 
-**Alcance extendido (condicionado — se ejecuta junto con la Fase 1, tras el gate del 2-oct):** `ReportEquipment` (un informe cubre 1..n equipos; todos los campos técnicos opcionales — regla fija 4), `report_equipment_id` nullable en `InspectionFinding`, `NormativeGroupResolver` (PORO determinista: fecha de recepción → grupo 1/2/3 → normas aplicables, tabla del Plan General sección 4, con tests de bordes de fecha exactos), constantes de los 8 ítems CENTRAVE con i18n (`certifier.es.yml` / `certifier.en.yml`), seeds del informe de ejemplo realista (sección 3.1).
+**Alcance extendido revisado el 9-sep:** la **Fase 1A** ejecuta `ReportEquipment`, vínculo opcional del hallazgo, constantes de los 8 ítems e i18n, datos del emisor y fixtures/seeds de demostración sintéticos. No se reabre el núcleo ya cerrado de Fase 0. **Permanece condicionado:** `NormativeGroupResolver`, incluyendo verificación oficial de criterio/fechas y tests de bordes (sección 3.3). No derivar datos técnicos faltantes ni obligar a ingresarlos durante el dictado.
 
 **No incluye:** UI, voz, export, catálogo de casillas NCh 2840, y — hasta su condición de activación — el alcance extendido.
 
@@ -281,31 +295,180 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 
 ---
 
-## Fase 1 — Exportable HTML con hoja de impresión
+## Fase 1 — Datos del emisor y revisión HTML (activada; subfases 1A y 1B)
 
-**Estado: CONDICIONADA** (sección 2.2, gap 1). **Condición de activación:** gate del 2 de octubre superado con uso real (plan de septiembre, sección 8), o un validador real (Carlos u otro certificador) pide el exportable para avanzar. **Modelo asignado:** Sonnet última versión (alternativa: Fable última versión). Render determinista sobre datos conocidos.
-**Depende de:** Fase 0 — incluido su alcance extendido, que se ejecuta junto con esta fase. **Bloquea a:** Fase 3.
+**Activación:** decisión del fundador del 9-sep al inicio del documento. Reemplaza el antiguo bloqueo del 2-oct para este alcance. La Fase 1 se cierra cuando 1A y 1B cumplen sus criterios; la Fase 3 completa el PDF. No tratar HTML y PDF como documentos independientes ni crear un editor visual nuevo.
 
-**Insumos:** PDF de evidencia (sección 3.1) como plantilla visual; seeds de la Fase 0; `app/views/AGENTS.md` (Tailwind, mobile-first); ruta y flag según sección 2.1 (member `get :export`, guard `CERTIFIER_MODULE_ENABLED` desde esta fase, que es la primera con superficie visible). *(Actualizar con hallazgos de Fase 0.)*
+### Contrato de producto compartido por 1A → 1B → 3A → 3B
+
+1. **Editar:** el borrador persistente actual conserva dictados y hallazgos. Configurar el emisor no bloquea crear un informe, dictar ni confirmar texto.
+2. **Revisar informe:** página HTML legible en móvil, con contenido ordenado como el informe y enlaces Editar a la sección/hallazgo correspondiente. Guardar y volver conserva el contexto. No hay formulario A4 rígido en el teléfono.
+3. **Ver PDF:** guarda explícitamente los cambios pendientes del formulario o pide guardarlos antes de continuar; jamás usa cambios solo presentes en el navegador. Muestra “Preparando PDF…” mientras el job trabaja. Los dictados sin confirmar se avisan y no se incluyen ni confirman automáticamente.
+4. **Descargar PDF:** sirve el archivo exacto que se previsualizó. Si el borrador cambió, mostrar “Hay cambios posteriores a esta vista previa” y “Actualizar PDF”; no sustituir el archivo bajo el visor. Se puede descargar la versión anterior, rotulada como tal.
+5. **Sin paso de aprobación adicional en este alcance:** descargar conserva BORRADOR y no implica aprobación técnica, firma, envío ni retiro de marca de agua. Una futura emisión sin BORRADOR requiere decisión explícita y sincronizar la regla fija 2 con el Plan General; no bloquea estas subfases.
+6. **Un encabezado/pie por cuenta:** mismo diseño SaaS, empresa + rol + logo opcional. Sin selector por informe, contacto adicional ni personalización de fuentes/colores en el primer alcance. Pie automático con número de informe y página X de Y. El logo no es obligatorio; no usar la marca Danebo como identidad de la certificadora.
+
+### Fase 1A — Datos mínimos y configuración de certificadora
+
+**Estado:** ACTIVADA, pendiente de ejecución. **Modelo recomendado:** GPT-6 Astra, `high`. **Depende de:** núcleo de Fase 0 y Fase 2 presentes en la base. **Entrega para:** 1B y 3A. **Branch:** `codex/certificador-1a-datos`.
+
+**Insumos verificados el 9-sep (revalidar si cambió el código):**
+
+- `README.md`, `docs/ACTIVE_ARCHITECTURE.md`, `docs/MULTI_TENANT_ARCHITECTURE.md`, `docs/ACCOUNT_BRANDING.md`. Los nombres `docs/ARCHITECTURE.md` y `docs/TENANCY.md` citados por reglas antiguas no existen al corte; usar estas referencias vigentes.
+- `Account` tiene `display_name`/`branded`; `AccountBranding` resuelve logos estáticos por slug para la app. No es un perfil de certificadora ni un upload de logo. No alterar el branding del chat/login ni reutilizar automáticamente su identidad para certificar.
+- `User` no tiene nombre profesional, rol admin ni sistema de permisos. No asumir `admin?` o `current_user.name`. La autenticación y host-account check ya están en `ApplicationController`/`AuthenticationConcern`.
+- `CertificationReport.owned_by(account_id:, user_id:)`; `InspectionFinding` ya tiene `inspection_item`, `nch2840_box`, `norm_point`, `severity` y `position`, pero el controller admite solo `body`/`location`. No recrear esas columnas. No existe aún `ReportEquipment`.
+- `FieldPhotoStore`, `FieldPhotoUrlService`, `S3DocumentsService` e `ImageCompressionService` fijan el patrón de archivos privados. `config/storage.yml` no tiene S3 de Active Storage operativo: no introducirlo para este feature.
+
+**Alcance y decisiones mínimas:**
+
+- Datos del emisor en columnas explícitas de `Account`: nombre de certificadora, rol MINVU, metadatos del logo opcional (clave S3, tipo, tamaño y digest). No crear motor de configuración/plantillas. Formulario único “Datos de la certificadora”, sin edición por informe, con muestra compacta del encabezado. Nombre y rol pueden faltar mientras se captura; exigir ambos al solicitar PDF como regla de completitud de producto, sin validar habilitación profesional por inferencia.
+- **Permisos de configuración compartida:** agregar un responsable de configuración por cuenta mediante FK nullable a `User` de esa misma cuenta (`certifier_settings_user_id`, nombre propuesto). Solo ese usuario modifica emisor/logo; los demás usuarios de la cuenta pueden ver los datos y usarlos en sus propios informes. Asignación inicial por operación explícita de onboarding, documentada con comando Rails parametrizable; sin elegir al primer visitante ni al primer usuario arbitrariamente, sin dashboard de roles. Si no hay responsable, configuración de solo lectura e instrucción breve de contactar al responsable de la cuenta. Tests con responsable y segundo usuario. Si el código ya incorporó un permiso equivalente, reutilizarlo en lugar de duplicarlo.
+- Logo: PNG/JPEG, validar bytes reales y límites (propuesta inicial: 2 MB y 4 megapíxeles), normalizar con la librería existente; no SVG, URL arbitraria ni imagen de encabezado entero. Clave propia `certifier_assets/<account_id>/<digest>/logo.<ext>`; no `FieldPhoto`, para evitar purgas/diagnóstico de una marca. Reemplazar/quitar cambia la referencia de cuenta, no sobreescribe bytes ni borra assets usados por una exportación. Documentar límites definitivos y política de limpieza; no agregar purga automática en esta fase.
+- `ReportEquipment`: `account_id`, informe, identificador visible (ej. “Ascensor A”), posición; especificaciones técnicas opcionales y acotadas a las de la sección 3.1. Agregar `report_equipment_id` nullable al hallazgo, con validación de **mismo informe y cuenta**, no solo mismo tenant. Informe admite cero equipos durante captura; no asociar hallazgos automáticamente al primero. Los no asignados se muestran explícitamente. Borrar equipo referenciado requiere desasignar previamente sus hallazgos; nunca borrar hallazgos en cascada por esa acción.
+- Datos opcionales del informe: nombre del inspector en texto, fecha del informe, referencia normativa ingresada por el certificador, resultado manual nullable y observación del resultado. `status` sigue siendo ciclo del borrador, nunca veredicto. No copiar email como nombre/firma. Conservar número interno existente y, si falta, usar un identificador técnico estable rotulado como referencia Danebo, sin fingir correlativo oficial.
+- En revisión, permitir equipo, ítem CENTRAVE, casilla, punto normativo, leve/grave y orden manual con controles simples; revelar detalles opcionales al editar. Resultado `aprobado`/`rechazado` exclusivamente seleccionado por el certificador, inicialmente vacío y sin cálculo basado en defectos. No inventar el subtipo de resultado del ejemplo ni importar automáticamente una declaración jurada.
+- La ausencia de clasificación no equivale a “sin defectos”; agrupar pendientes visiblemente. Catálogo completo, firma, numeración oficial, norma automática y segmentación LLM quedan fuera. Fixtures de dos cuentas, dos usuarios en una cuenta, informes sintéticos con/sin equipo y con/sin logo; nunca cargar datos de demostración en producción.
+
+**Aceptación:** migraciones aditivas y reversibles; compatibilidad con borradores existentes; identidad común al abrir dos informes de una cuenta; otra cuenta no puede leer/modificar emisor ni adjuntar su logo/equipo; usuario no responsable no puede cambiar configuración; otro usuario de la misma cuenta no accede a informes ajenos; campos técnicos vacíos permanecen vacíos; resultado/gravedad nunca se completan solos; logo inválido falla sin perder el anterior; captura sigue funcionando con configuración incompleta. Ejecutar tests Minitest afectados y suite conforme a CI; registrar comandos/resultados y verificar formulario en navegador.
+
+**Prompt de lanzamiento — GPT-6 Astra / high:**
+
+> Implementa únicamente la Fase 1A de `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md`. Lee el documento completo, especialmente decisión del 9-sep, reglas fijas, contrato compartido y cierres de Fases 0/2/4/5/6, más los AGENTS.md aplicables. La fase está autorizada por la decisión registrada: no esperes al 2 de octubre. Trabaja en `codex/certificador-1a-datos` siguiendo sección 2.1. Revalida los insumos y reutiliza el esquema existente. Implementa configuración única por cuenta (nombre/rol/logo opcional y responsable explícito), datos de equipos e inspector y campos de revisión manual sin interrumpir el dictado. Mantén aislamiento de cuenta/usuario, cero inferencias técnicas, sin normativa automática y sin motor de plantillas. Prueba éxito, permisos, datos antiguos y fallos de logo; verifica UI en navegador. No construyas aún el PDF. Completa el cierre transferible de 1A, la tabla de estado y los Insumos de 1B/3A con nombres reales, rutas, migraciones, comandos y límites. Resuelve detalles rutinarios autónomamente; no declares deploy sin haberlo realizado y verificado.
+
+### Cierre 1A
+
+**Estado: cerrada en local, con una verificación pendiente nombrada.** Implementada y probada en local sobre `codex/certificador-1a-datos`. **No** mergeada, **no** deployada, **no** verificada en producción. La revisión visual en navegador la debe confirmar el fundador (ver *Pendiente explícito* abajo); hasta entonces esta fase no se declara `integrada`.
+
+**Fecha:** 2026-09-09. **Modelo/effort:** Claude Opus 4.5, thinking alto (no GPT-6 Astra: la sesión de ejecución corrió en Cursor con ese parque de modelos; se registra el modelo real, no el recomendado). **Branch:** `codex/certificador-1a-datos`, base `main` en `2b4c78d` ("Allow attaching a photo when confirming a voice dictation"), verificado como ancestro de HEAD. **Commit/PR:** sin commit ni PR al momento de escribir este cierre — el árbol de trabajo contiene los cambios; commitear y abrir PR es el siguiente paso. **Ruby 3.4.7 / Rails 8.1.3.1.**
+
+**Migraciones (cuatro, aditivas, reversibilidad probada con `db:rollback:primary STEP=4` y vuelta a migrar):**
+
+| Migración | Efecto |
+| --- | --- |
+| `20260909210000_add_certifier_profile_to_accounts.rb` | `accounts`: `certifier_name`, `certifier_minvu_role`, `certifier_logo_s3_key`, `certifier_logo_content_type`, `certifier_logo_byte_size`, `certifier_logo_sha256`, y FK `certifier_settings_user_id → users` con `on_delete: :nullify`, índice `idx_accounts_certifier_settings_user`. Todo nullable. |
+| `20260909210100_create_report_equipments.rb` | `report_equipments`: `certification_report_id`, `account_id`, `label` (NOT NULL), `position` (NOT NULL default 0), y opcionales `machine_room`, `drive_type`, `door_type`, `boardings_count`, `landings_count`, `traction_cables`, `speed_mps` (decimal 6,3), `rated_load_kg`, `capacity_persons`, `last_maintenance_date`. Índice `idx_report_equipments_report_position`. |
+| `20260909210200_add_report_equipment_to_inspection_findings.rb` | `inspection_findings.report_equipment_id` nullable con FK **restrictiva** (sin cascada ni nullify) e índice `idx_inspection_findings_report_equipment`. |
+| `20260909210300_add_review_fields_to_certification_reports.rb` | `certification_reports`: `inspector_name`, `report_date`, `normative_reference`, `result`, `result_note`. Todo nullable. |
+
+**Archivos y contratos creados:**
+
+- `app/models/report_equipment.rb` — `MACHINE_ROOMS = %w[con_sala sin_sala]`, `DRIVE_TYPES = %w[hidraulico electromecanico]`, `scope :ordered`, `account_id` denormalizado con validación `account_matches_report` (patrón de `InspectionFinding`), `has_many :inspection_findings, dependent: :restrict_with_error`.
+- `app/services/certifier_logo_store.rb` — `CertifierLogoStore.call(uploaded_file, account_id:) → Result(s3_key, content_type, byte_size, sha256, error)`. Claves de error para i18n: `:missing`, `:too_large`, `:too_many_pixels`, `:unsupported_format`, `:unreadable`, `:upload_failed`.
+- `app/services/certifier_logo_url_service.rb` — `CertifierLogoUrlService.new(account:).call → URL prefirmada`; `#trusted_redirect_url?` delega en `FieldPhotoUrlService.trusted_redirect_url?` para no duplicar la definición de "esta URL apunta a nuestro bucket".
+- `app/controllers/certifier_settings_controller.rb` (recurso singular) y `app/controllers/report_equipments_controller.rb`.
+- Vistas: `app/views/certifier_settings/show.html.erb`, `app/views/report_equipments/edit.html.erb`, y las parciales `certification_reports/_equipments`, `_issuer_strip`, `_review_fields`.
+- `lib/tasks/certifier.rake` — onboarding del responsable.
+- Helpers nuevos en `app/helpers/certification_reports_helper.rb`: `certifier_equipment_specs(equipment)` (omite toda especificación en blanco; nunca la muestra como guion, cero ni default) y `certifier_finding_equipment_label(finding)`.
+- Constantes: `InspectionFinding::CENTRAVE_ITEMS` (Hash `1..8 → símbolo`, sobre la columna `inspection_item` ya existente) y `CertificationReport::RESULTS = { aprobado:, rechazado: }` como `enum ... prefix: true`. `CertificationReport#danebo_reference` devuelve `"DAN-<id>"`, rotulado en la UI como referencia Danebo y nunca como correlativo oficial.
+
+**Rutas reales (nombres para 1B/3A):**
+
+```
+GET/PATCH  /certifier_settings          certifier_settings_path
+GET        /certifier_settings/logo     logo_certifier_settings_path   (redirect 302 a URL prefirmada)
+DELETE     /certifier_settings/logo     logo_certifier_settings_path   (destroy_logo)
+POST       /certification_reports/:certification_report_id/report_equipments
+                                        certification_report_report_equipments_path
+GET        /report_equipments/:id/edit  edit_report_equipment_path
+PATCH/DELETE /report_equipments/:id     report_equipment_path
+```
+
+**Permisos de configuración compartida.** `Account#certifier_settings_manager?(user)` es la única puerta: exige `certifier_settings_user_id` presente **e** igual al usuario. Sin responsable asignado, la configuración es de solo lectura para todos — el primer visitante no se apropia de la identidad de la empresa. Un colega de la misma cuenta **lee** los datos (no es 404: ver el encabezado que va a salir en su propio informe es legítimo) pero no los edita. `Account` valida que el responsable pertenezca a la misma cuenta, y el FK `on_delete: :nullify` degrada la cuenta a solo lectura si ese usuario se elimina, en lugar de bloquear el borrado o dejar un puntero colgante. No se creó rol admin ni dashboard de roles.
+
+**Onboarding (comandos reales, agregar `DB_USERNAME=lahirisan` en local):**
+
+```
+bin/rails "certifier:settings_owner[danebo-legacy,alguien@empresa.cl]"
+bin/rails "certifier:settings_owner:show[danebo-legacy]"
+bin/rails "certifier:settings_owner:clear[danebo-legacy]"
+```
+
+Aborta con mensaje si la cuenta o el usuario no existen, si faltan argumentos, o si el usuario pertenece a otra cuenta (imprime ambos `account_id`). No promueve a nadie automáticamente.
+
+**Almacenamiento del logo y límites definitivos.** Prefijo propio `certifier_assets/<account_id>/<sha256>/logo.{png,jpg}` vía `S3DocumentsService#upload_binary`; **nunca** bajo `field_photos/` (una marca no se purga con la retención de evidencia ni entra al pipeline de diagnóstico) ni bajo `bulk_chunks/`. Límites: **2 MB** (`MAX_BYTES`) y **4 megapíxeles** (`MAX_PIXELS`), comprobados por separado porque una bomba de descompresión es pequeña en disco y enorme en memoria. **El formato lo deciden los bytes reales**, no el `content_type` declarado ni la extensión: se husmean las firmas PNG (`\x89PNG\r\n\x1A\n`) y JPEG (`\xFF\xD8\xFF`); un SVG, un PDF o texto renombrado a `.png` se rechaza antes de tocar S3. Normaliza con `ImageCompressionService`, que bajo el límite es pass-through, así que un PNG conserva su transparencia y no se re-codifica a JPEG sobre fondo blanco. Clave por digest: reemplazar escribe un objeto nuevo en vez de sobreescribir bytes que una exportación ya generada podría estar referenciando. **Política de limpieza: no hay purga automática en esta fase, por decisión explícita.** Quitar el logo limpia la referencia de la cuenta y deja el objeto en S3. Consecuencia a resolver cuando exista historial de exportaciones (3A/3B): los objetos de `certifier_assets/` se acumulan a razón de uno por logo distinto subido; el borrado seguro exige saber que ninguna exportación conservada lo referencia.
+
+**Comandos ejecutados y resultados:**
+
+| Comando | Resultado |
+| --- | --- |
+| `DB_USERNAME=lahirisan bin/rails db:migrate` | 4 migraciones aplicadas |
+| `DB_USERNAME=lahirisan bin/rails db:rollback:primary STEP=4` + `db:migrate` | reversibilidad confirmada en ambos sentidos |
+| `DB_USERNAME=lahirisan bin/rails test` | **2861 runs, 11329 assertions, 0 failures, 0 errors, 189 skips** |
+| `TEST_WORKERS=1 DB_USERNAME=lahirisan bin/rails test` (9 archivos de 1A) | **141 runs, 424 assertions, 0 failures** |
+| `bin/rubocop --cache false --no-parallel app/ test/ lib/tasks/certifier.rake db/migrate/2026090921*.rb config/routes.rb` | 475 archivos, sin ofensas |
+| `bin/rails zeitwerk:check` | "All is good!" |
+| `bin/rails routes` | las 6 rutas nuevas resuelven con los nombres de arriba |
+
+**Pruebas nuevas (todas Minitest, sin system tests):** `test/models/report_equipment_test.rb`, `test/models/account_certifier_settings_test.rb`, `test/services/certifier_logo_store_test.rb`, `test/controllers/certifier_settings_controller_test.rb`, `test/controllers/report_equipments_controller_test.rb`, `test/tasks/certifier_settings_owner_test.rb`, más ampliaciones de `test/models/inspection_finding_test.rb` y de los dos controller tests existentes. Cubren: éxito; permisos (responsable, colega de la misma cuenta, cuenta sin responsable); datos antiguos (cuenta sin configurar, informe sin equipos, hallazgo sin clasificar); fallos de logo (SVG/PDF/texto disfrazados, PNG truncado, sobre 2 MB, sobre 4 MP, S3 que no confirma, archivo vacío); y aislamiento en los dos ejes para equipos y configuración.
+
+**Fixtures.** `accounts.yml`: `legacy` queda **sin configurar y sin responsable** (es el caso de datos antiguos, y su informe/hallazgos existentes son la prueba de regresión real); `climb` queda completamente configurada con logo y `users(:two)` como responsable. `certification_reports.yml` agrega `edificio_portales` (cuenta `climb`) con los campos de revisión llenos y **`result` deliberadamente vacío**: un borrador completo sin veredicto es el estado normal. `report_equipments.yml` agrega `climb_ascensor_a` (con características) y `climb_ascensor_b` (solo etiqueta). `inspection_findings.yml` agrega uno clasificado y `portales_sin_clasificar`, que es el estado que nunca debe leerse como "sin defectos". Nada de esto se carga en producción.
+
+**Hallazgos para quien siga:**
+
+1. **El host es la frontera de tenant en los tests, no solo `sign_in`.** `ensure_user_belongs_to_host_account!` rechaza a un usuario autenticado contra el host de otra empresa, y el host por defecto de los tests de integración (`www.example.com`) mapea a `danebo-legacy`. Para probar la cuenta `climb` hay que `host! "ascensoresclimb.localhost"` (ver `config/account_hosts.rb`). Sin eso todo redirige a login y el fallo parece de permisos. 1B/3A: cualquier test multi-cuenta necesita esto.
+2. **`es` no tenía ningún `date.formats`,** así que `l(date)` en español levantaba `Translation missing: es.date.formats.default` en cuanto una vista formateaba una fecha. Se agregó `date.formats.certifier_short` en `es.yml` y `en.yml` como formato **nombrado** (no `:default`) para no cambiar la forma de ninguna vista existente. 1B va a formatear fechas: usar `l(date, format: :certifier_short)` o agregar otro formato nombrado, nunca `l(date)` a secas.
+3. **El `ArgumentError` de los enums (hallazgo 6 del cierre de Fase 2) se propaga a cada enum nuevo.** Ya se sabía que un valor fuera de rango explota en la asignación, antes de validar, así que nunca llega a `save` y el 422 normal no lo ve. Lo nuevo: `certification_reports#update` ahora tiene **dos** enums en el mismo formulario (`status` y `result`), y el rescate existente culpaba siempre a `status`; se cambió para identificar cuál fue el inválido. Y `inspection_findings#update` no tenía rescate: `severity` es enum y un valor forjado devolvía 500. Cualquier enum nuevo en 1B/3A necesita su propio rescate.
+4. **`position` tiene default 0 en la base, así que el atributo nunca está en blanco.** El primer intento de "asignar orden solo si el certificador no lo eligió" miraba `equipment.position.blank?` y nunca disparaba: todos los equipos quedaban en posición 0. Hay que mirar los **params enviados**, no el atributo. Mismo cuidado con el campo de orden del hallazgo, donde un `""` enviado se borra del hash para no violar el NOT NULL.
+5. **El orden de declaración de los `has_many` con `dependent:` es carga funcional.** `report_equipments` se declara **después** de `inspection_findings` en `CertificationReport` a propósito: un equipo se niega a ser destruido mientras un hallazgo lo apunte (FK restrictiva + `restrict_with_error`), así que los hallazgos tienen que destruirse primero o borrar el informe falla. Hay un test que lo fija.
+6. **`restrict_with_error` agrega el error en `:base`, no en el nombre de la asociación** (Rails 8.1). Un test que espere `errors[:inspection_findings]` falla.
+7. **Dos botones "Editar" en la misma pantalla es un error de toque garantizado con guantes.** Al agregar la sección de equipos al informe, sus acciones quedaron con las mismas etiquetas que las del hallazgo. Se renombraron a "Editar equipo"/"Eliminar equipo". 1B: al agregar enlaces "Editar" que vuelven a secciones, nombrar el objeto en la etiqueta.
+8. **`db/schema.rb` se reformatea completo si se deja el dump crudo.** El repositorio tiene `[ "x" ]` y el dumper escribe `["x"]` (hallazgo 6 del cierre de Fase 0, confirmado otra vez): el dump produjo 98 inserciones y 58 borrados de puro formato. Se aplicaron las adiciones a mano y se verificó equivalencia con el dump real normalizando el espaciado de corchetes; el diff final es de **41 inserciones y 1 borrado** (la línea de versión). Los `db/{cable,cache,queue}_schema.rb` también se reescriben y se revirtieron.
+
+**Decisiones y desviaciones justificadas:**
+
+- **Sin logo, el encabezado degrada a bloque tipográfico** (nombre + "Registro MINVU Rol X"), **nunca a la marca Danebo.** El fundador pidió inicialmente usar el logo de Danebo por defecto; se le planteó el conflicto con el punto 6 del contrato compartido y eligió el bloque tipográfico. Danebo es la herramienta, no el emisor del informe.
+- **`result` es una columna aparte de `status`**, nullable y vacía hasta que un humano elige. Hay un test que confirma que guardar otros campos en un informe con tres defectos registrados **no** produce veredicto.
+- **El acceso a "Datos de la certificadora" quedó en la lista de informes, no en el header global.** El header móvil ya está apretado; la identidad se configura una vez. Se pinta en ámbar cuando faltan nombre o rol.
+- **La completitud de nombre y rol MINVU no se validó en el modelo**, a propósito: se expone `Account#certifier_identified?` para que 1B/3A la exijan al pedir PDF. Capturar y dictar tiene que funcionar antes de que nadie configure nada (punto 1 del contrato).
+- **No se implementó `NormativeGroupResolver`:** sigue condicionado. `normative_reference` es texto libre que escribe el certificador, con ayuda en pantalla que dice explícitamente que Danebo no deduce la norma.
+- **No se agregó purga automática de `certifier_assets/`** (ver *Almacenamiento* arriba).
+- **Se descartó un system test de las pantallas.** Se escribió uno temporal con Selenium para recorrer los 13 pasos en Chrome headless a 390 px; recorrió correctamente los primeros siete (login, configuración de solo lectura, formulario del responsable, guardar identidad sin logo, logo rechazado con su mensaje, informe sin equipos, agregar equipo) y falló en el octavo por la ambigüedad de las etiquetas "Editar" — el hallazgo 7. Corregidas las etiquetas, el archivo se borró: `test/AGENTS.md` pide evitar system tests cuando un test de integración cubre lo mismo, y las 141 pruebas rápidas lo cubren.
+
+**Pendiente explícito, no dar por hecho:** (a) **revisión visual en navegador por el fundador** — datos sembrados en dev en la cuenta `danebo-legacy`, informe 2 con dos equipos y hallazgos sin clasificar, servidor en `http://localhost:3000` con `CERTIFIER_MODULE_ENABLED=true`; pantallas a mirar: `/certifier_settings`, `/certification_reports`, `/certification_reports/2` y sus editores; (b) commit, PR y merge a `main`; (c) deploy con Kamal y verificación en producción. Nada de esto está hecho.
+
+**Insumos actualizados:** los de **1B** y los de **3A/3B** (dentro de la sección de la Fase 3), abajo. **Próximo paso exacto:** confirmar la revisión visual, commitear en `codex/certificador-1a-datos`, abrir PR chico, mergear y recién entonces lanzar el prompt de 1B.
+
+### Fase 1B — Revisión HTML y plantilla compartida
+
+**Estado:** ACTIVADA, pendiente de que 1A entre a `main`. **Modelo recomendado:** GPT-6 Astra, `medium` (Sonnet es alternativa fuera de Codex). **Branch:** `codex/certificador-1b-revision`. **Entrega para:** 3A y 3B.
+
+**Insumos actualizados por el cierre 1A (2026-09-09) — verificados contra el código, revalidar si cambió:**
+
+- **Base.** 1A está en `codex/certificador-1a-datos`, **no** en `main` al momento de escribir esto. Verificar el merge antes de partir; si el fundador pide seguir sin merge, ramificar desde ese branch y documentar la base exacta (sección 2.1). Leer el cierre 1A completo: sus 8 hallazgos son trampas que 1B va a pisar.
+- **Datos disponibles para el documento.** Emisor en `Account`: `certifier_name`, `certifier_minvu_role`, `certifier_logo_s3_key` + `certifier_logo_content_type`/`byte_size`/`sha256`; predicados `Account#certifier_identified?` y `#certifier_logo?`. Informe: los campos de edificio de Fase 2 más `inspector_name`, `report_date`, `normative_reference`, `result` (enum `RESULTS`, nullable) y `result_note`. Equipos: `report_equipments` con `label` y las 10 especificaciones opcionales, ordenables con `ReportEquipment.ordered`. Hallazgos: `report_equipment_id` nullable más `inspection_item`/`nch2840_box`/`norm_point`/`severity`/`position`, con `InspectionFinding::CENTRAVE_ITEMS` (1..8) y `#centrave_item_key`. Identificador de respaldo: `CertificationReport#danebo_reference` → `"DAN-<id>"`, que **debe** rotularse como referencia Danebo y jamás como correlativo oficial.
+- **Reutilizar, no reescribir.** `certifier_equipment_specs(equipment)` ya arma la línea de especificaciones omitiendo las vacías, y `certifier_finding_equipment_label(finding)` ya devuelve la etiqueta o el marcador de no asignado — ambos en `app/helpers/certification_reports_helper.rb`. La parcial `certification_reports/_issuer_strip` es la franja **del editor web** y depende de `current_account`: **no** la reutilices como encabezado del documento; el punto de la plantilla de 1B es recibir un conjunto explícito de datos, sin `current_user` ni `request`. `InspectionFinding.unassigned_equipment` trae los pendientes de asignar.
+- **Encabezado sin logo.** Degrada a bloque tipográfico con nombre y `t("certifier.settings.minvu_role_line", role:)`. **Nunca** la marca Danebo (decisión del fundador registrada en el cierre 1A). Con logo, servirlo por `logo_certifier_settings_path`, que redirige 302 a una URL prefirmada; para el job de 3A eso no sirve — ver Insumos de 3A.
+- **Precarga obligatoria.** El informe ya carga `inspection_findings.includes(:field_photo, :report_equipment)`; mantenerlo y agregar `report_equipments` al armar el documento. La aceptación de 1B exige que no haya consultas por fila.
+- **Fechas.** `l(date)` en español **rompe** salvo con formato nombrado: existe `date.formats.certifier_short` en `es.yml`/`en.yml` (hallazgo 2 del cierre 1A). Para el documento impreso probablemente quieras un formato más formal: agregarlo como formato **nombrado** nuevo en los dos locales, nunca cambiando `:default`.
+- **i18n.** Todo lo del módulo está en `config/locales/certifier.{es,en}.yml`, ya con `certifier.centrave.*` (los 8 ítems), `certifier.severities.*`, `certifier.results.*` (incluido `unrecorded`: "Resultado no registrado"), `certifier.equipment.*` (incluidos `machine_rooms.*`, `drive_types.*`, `specs.*`, `unassigned`) y `certifier.settings.*`. Reutilizar esas claves; los archivos van pareados.
+- **Datos de prueba.** Usar los fixtures de 1A: `certification_reports(:edificio_portales)` es el informe con equipos, campos de revisión llenos y `result` vacío; `certification_reports(:torre_amunategui)` es el informe antiguo sin equipos ni clasificación. Ojo con el host: para tocar la cuenta `climb` hace falta `host! "ascensoresclimb.localhost"` (hallazgo 1 del cierre 1A).
+- **Sin cambios.** `CERTIFIER_MODULE_ENABLED` y `CertifierModuleGuard` ya existen: no introducir otro gating. `config/storage.yml` sigue sin S3 de Active Storage y no se debe introducir. Referencia visual: PDF de la sección 3.1, con la corrección del 9-sep sobre las casillas de resultado.
+- **Otros AGENTS.md aplicables:** `app/views/AGENTS.md`, `app/javascript/AGENTS.md`, `test/AGENTS.md`.
 
 **Alcance:**
 
-- Vista `certification_reports/:id/export` (HTML + CSS de impresión `@media print`), replicando la estructura del informe real: encabezado de identificación, tabla de defectos graves, resultado **(sección que Danebo deja en blanco o con lo que el certificador haya marcado — Danebo no aprueba ni rechaza)**, tabla de defectos leves, hallazgos agrupados por ítem CENTRAVE con foto miniatura, norma aplicable derivada (rotulada "norma aplicable según fecha de recepción — ayuda documental").
-- **Marca de agua BORRADOR** en toda página, no removible por CSS de impresión.
-- Sin gem nueva, sin costo de servidor: el certificador imprime/guarda como PDF desde el dispositivo.
-- Tailwind print utilities (`print:`) donde alcance; hoja dedicada si no.
+- `GET /certification_reports/:id/export` muestra “Revisar informe”, autenticado y aislado por propietario. Enlaces “Editar” vuelven al formulario/sección correspondientes, conservando retorno local seguro (ruta/anchor permitidos, no URL libre). HTML de lectura responsive, sin controles dentro del documento impreso.
+- Una plantilla ERB/partials de contenido recibe un conjunto explícito de datos, sin depender de `current_user`/`request` para el documento; el wrapper web añade navegación y controles. Prepararla para que el job de 3A renderice exactamente esa plantilla desde el snapshot. CSS de impresión y fuentes locales; A4 como referencia, sin CDN.
+- Orden: **encabezado del emisor e identificación → equipos/datos técnicos presentes → defectos graves registrados → resultado ingresado por el certificador → defectos leves registrados → hallazgos pendientes de clasificación → evidencia fotográfica por hallazgo**. Referencias de hallazgo estables dentro de la versión conectan tablas y fotos; ubicación/equipo siempre visibles cuando fueron ingresados. Agrupación CENTRAVE opcional, sin ocho secciones vacías forzadas. Tablas usan casilla/punto/aclaración cuando existen; conservar texto íntegro.
+- Resultado vacío: “Resultado no registrado”. Tabla sin registros: “Sin hallazgos registrados en esta categoría”, **nunca** “sin defectos” o “cumple”. Avisar datos pendientes en revisión, sin inventarlos y sin ocultar hallazgos no clasificados. No mostrar checklist como inspeccionado por omisión.
+- Encabezado y pie automáticos y BORRADOR en cada página impresa. Fotos proporcionadas sin deformación y con identificación; no reducirlas siempre a miniaturas ilegibles. `break-inside`/repetición de cabeceras con tratamiento de texto o imagen que excede una página: permitir continuidad sin cortar ni perder contenido. La copia de BORRADOR no debe tapar evidencia.
+- Puede ofrecer impresión del navegador como salida provisional marcada BORRADOR, pero **no afirmar que el HTML responsive reproduce exactamente la paginación final**; esa garantía corresponde al visor del PDF real de 3B. No añadir botón de PDF inoperante antes de 3A/3B.
 
-**Criterios de aceptación:** el informe de ejemplo de seeds rinde las secciones en el orden del informe real; marca BORRADOR presente en todas las páginas al imprimir; fotos con presigned URL (`FieldPhotoUrlService`); test de controlador con aislamiento en dos ejes (cuenta ajena: 404; otro usuario de la misma cuenta: 404 — regla fija 12) + test de vista mínimo.
+**Aceptación:** lectura/edición/retorno en móvil y escritorio; mismo emisor en dos informes de cuenta; datos vacíos y no clasificados visibles; texto largo, acentos y fotos vertical/horizontal preservados; referencias coherentes entre tabla/foto; sin consultas por fila evitables; tests de autenticación, flag y aislamiento en ambos ejes; HTML escapado contra inyección. Revisión visual de todas las páginas de una impresión multipágina de prueba, incluyendo marca BORRADOR, encabezado, pie y cortes. Documentar cualquier diferencia de impresión del navegador que deba resolver 3A.
 
-**Prompt de lanzamiento (Sonnet última versión · effort medium) — solo con la condición de activación registrada:**
+**Prompt de lanzamiento — GPT-6 Astra / medium:**
 
-> Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` completo; verifica en el cierre de esta fase que la condición de activación esté registrada como cumplida — si no lo está, detente. Crea `certificador/fase-1-exportable` desde `main`. Ejecuta primero el alcance extendido de la Fase 0 (ReportEquipment, NormativeGroupResolver, ítems CENTRAVE, seeds) si ninguna fase anterior lo hizo, y después el exportable. No negociable: marca BORRADOR en toda página; la sección de resultado queda en blanco o con lo que el certificador marcó (regla fija 1); guard `CERTIFIER_MODULE_ENABLED`; tests de aislamiento cross-account y cross-user. Lee `app/views/AGENTS.md` antes de tocar vistas. Cierra con la suite verde y el bloque de cierre actualizado.
+> Implementa únicamente la Fase 1B de `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md`. Lee el documento y el cierre de 1A; verifica que su implementación está en tu base y usa sus nombres/rutas reales. Trabaja en `codex/certificador-1b-revision` según sección 2.1. Construye Revisar informe en HTML responsive con edición y retorno directo, y una sola plantilla ERB de contenido reutilizable por el futuro job PDF. Usa el encabezado/pie común de cuenta y el orden exacto definido en 1B; inspecciona visualmente el PDF de referencia, pero usa datos sintéticos propios. Conserva BORRADOR, no clasificados y resultado manual; no copies declaraciones ni construyas la guía normativa completa. Verifica permisos, XSS, fotos/textos largos y todas las páginas de una impresión de prueba. No prometas paginación idéntica al HTML ni implementes otra plantilla para PDF. Actualiza cierre 1B, estado e Insumos de 3A/3B con contrato de datos, CSS/assets, hallazgos y comandos de verificación.
 
-### Cierre de fase (lo llena el ejecutor)
-- Estado: condicionada — no ejecutar sin la condición de activación
-- Hallazgos:
-- Desviaciones del plan:
-- Actualizaciones aplicadas a fases siguientes:
+**Cierre 1B — lo llena el ejecutor:**
+
+- Estado: pendiente de 1A.
+- Fecha / modelo / effort / branch / commit / PR:
+- Plantilla / contrato de datos / rutas / assets / retorno de edición:
+- Pruebas y páginas inspeccionadas / límites:
+- Hallazgos / desviaciones justificadas:
+- Insumos de 3A y 3B actualizados / próximo paso:
 
 ---
 
@@ -384,12 +547,25 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 
 ---
 
-## Fase 3 — PDF server-side (condicionada)
+## Fase 3 — PDF server-side (activada; subfases 3A y 3B)
 
-**Modelo asignado:** Grok (variante rápida; alternativa: Sonnet última versión). Trabajo de una tarde con criterios cerrados.
-**Depende de:** Fase 1 (a su vez condicionada). **Condición de activación:** un certificador real (o la demo con TAQUIÓN-CERT) pide un archivo adjuntable a la Carpeta Cero, **o** la validación de formato de la Fase 1 quedó aprobada y sobra capacidad. No se activa antes.
+**Activación:** decisión del fundador del 9-sep al inicio del documento, que divide esta fase en **3A** (PDF asíncrono, archivo conservado y aislamiento) y **3B** (vista previa real, descarga y verificación de extremo a extremo), ambas con GPT-6 Astra / `high` y branches `codex/certificador-3a-pdf` y `codex/certificador-3b-preview`. **Depende de:** 1B. **Rige el contrato de producto compartido de la Fase 1** (puntos 3, 4, 5 y 6) más las reglas fijas 15 y 16.
 
-**Insumos:** vista de la Fase 1. *(Actualizar con hallazgos de Fases 1–2.)*
+> **Deuda de documento, detectada al cerrar 1A:** la actualización del 9-sep reescribió la tabla de estado, el diagrama de flujo y la sección de la Fase 1, pero **no** reescribió el alcance ni los criterios de aceptación de esta sección, que abajo siguen redactados como la Fase 3 monolítica y condicionada (una gem, un botón, "trabajo de una tarde"). Esa descripción **ya no corresponde** al alcance decidido — snapshot consistente, job, archivo conservado, retención, aislamiento y fidelidad vista previa/descarga. Quien ejecute 1B debe dividir esta sección en 3A y 3B con alcance y aceptación propios antes de lanzar 3A; el ejecutor de 1A no lo hizo porque implicaba inventar alcance fuera de su mandato. El texto viejo se conserva abajo como historial, no como contrato.
+
+**Insumos de 3A/3B actualizados por el cierre 1A (2026-09-09):**
+
+- **Servir el logo dentro del job no puede pasar por HTTP.** `logo_certifier_settings_path` es un redirect 302 autenticado a una URL prefirmada, y depende de `current_account`: sirve para el navegador, no para Chromium renderizando desde un job sin sesión. Para el PDF, leer los bytes desde S3 con la clave (`Account#certifier_logo_s3_key`) e incrustarlos, o resolver una URL prefirmada de vida corta y asumir que Chromium tiene salida a S3. Decidirlo explícitamente y dejarlo en el cierre 3A.
+- **`certifier_assets/` no tiene purga automática, por decisión de 1A.** Quitar o reemplazar un logo limpia la referencia de la cuenta y deja el objeto en S3, precisamente para que una exportación ya generada no pierda sus bytes (regla fija 15). Cuando 3A introduzca el historial de exportaciones, ahí recién se puede definir un borrado seguro: exige saber que ninguna exportación conservada referencia ese digest. No agregar purga sin esa información.
+- **El snapshot tiene que incluir la identidad del emisor,** no solo el contenido del informe: nombre, rol MINVU y digest del logo vigentes al generar. Si no, cambiar el encabezado altera retroactivamente cómo se re-renderizaría un PDF ya entregado. El digest (`certifier_logo_sha256`) es el dato que hace verificable esa consistencia.
+- **Aislamiento.** El patrón ya probado en 1A y en las fases anteriores: alcance por `CertificationReport.owned_by(account_id:, user_id:)` y ownership heredada del informe padre, nunca chequeada sobre el recurso hijo. Ambos ejes dan 404 (cuenta ajena y otro usuario de la misma cuenta). Para las rutas de estado/vista/descarga por ID de exportación, aplicar lo mismo. Para servir el archivo, el patrón de `FieldPhotosController` + `FieldPhotoUrlService.trusted_redirect_url?`, que `CertifierLogoUrlService` ya reutiliza: **una sola** definición de "esta URL apunta a nuestro bucket", para no abrir un redirect.
+- **Almacenamiento.** `S3DocumentsService` (`upload_binary`, `download`, `delete_prefix`) es el camino; `config/storage.yml` no tiene S3 de Active Storage operativo y no se debe introducir. Prefijo propio para las exportaciones, jamás bajo `bulk_chunks/` (lo ingiere el KB) ni bajo `field_photos/` (lo purga la retención de evidencia).
+- **Completitud antes de generar.** `Account#certifier_identified?` es el predicado que 1A dejó para exigir nombre y rol MINVU al pedir el PDF. 1A deliberadamente **no** lo validó en el modelo para no romper la captura (punto 1 del contrato compartido). El resultado (`CertificationReport#result`) puede estar vacío y el PDF debe generarse igual, mostrando "Resultado no registrado".
+- **Tests.** Ojo con el host en cualquier prueba multi-cuenta (`host! "ascensoresclimb.localhost"`, hallazgo 1 del cierre 1A) y con el rescate de `ArgumentError` si se agrega algún enum de estado de exportación (hallazgo 3). `db/schema.rb` se edita a mano para mantener el diff aditivo (hallazgo 8).
+
+### Historial: alcance original de la Fase 3 monolítica (sustituido, ver deuda de documento arriba)
+
+**Modelo asignado (histórico):** Grok (variante rápida; alternativa: Sonnet última versión). **Condición de activación (histórica, ya superada por la decisión del 9-sep):** un certificador real (o la demo con TAQUIÓN-CERT) pide un archivo adjuntable a la Carpeta Cero, **o** la validación de formato de la Fase 1 quedó aprobada y sobra capacidad.
 
 **Alcance:** gem `grover` o `ferrum` (headless Chrome) rendereando la misma vista HTML de la Fase 1 → botón "Descargar PDF". Nota de deploy: Chrome/Chromium en la imagen de producción — documentar el costo operativo antes de mergear. La marca BORRADOR persiste.
 
@@ -399,11 +575,23 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 
 > Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` (secciones 0 y 2.2, cierres de Fases 1–2, Fase 3); verifica que la condición de activación esté registrada — si no lo está, detente. Crea `certificador/fase-3-pdf` desde `main`. Renderiza la misma vista HTML de la Fase 1 con `grover` o `ferrum` hacia un botón "Descargar PDF"; documenta el costo operativo de Chrome/Chromium en la imagen de producción antes de mergear. La marca BORRADOR persiste. Test de header `%PDF` y páginas > 0; sin regresión en la vista HTML. Cierra el bloque de fase.
 
-### Cierre de fase (lo llena el ejecutor)
-- Estado: condicionada — no ejecutar sin la condición de activación
-- Hallazgos:
-- Desviaciones del plan:
-- Actualizaciones aplicadas a fases siguientes:
+**Cierre 3A — lo llena el ejecutor:**
+
+- Estado: pendiente de 1B. Alcance y aceptación propios **aún no redactados** (ver deuda de documento al inicio de la Fase 3).
+- Fecha / modelo / effort / branch / commit / PR:
+- Snapshot / job / archivo conservado / retención / rutas / decisión sobre el logo en el job:
+- Pruebas y verificación (comandos, resultados, límites):
+- Hallazgos / desviaciones justificadas:
+- Insumos de 3B actualizados / próximo paso:
+
+**Cierre 3B — lo llena el ejecutor:**
+
+- Estado: pendiente de 3A. Alcance y aceptación propios **aún no redactados**.
+- Fecha / modelo / effort / branch / commit / PR:
+- Vista previa / descarga / fidelidad con lo previsualizado / manejo de cambios posteriores:
+- Pruebas y verificación de extremo a extremo (comandos, resultados, límites):
+- Hallazgos / desviaciones justificadas:
+- Próximo paso:
 
 ---
 

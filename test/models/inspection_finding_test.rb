@@ -78,6 +78,61 @@ class InspectionFindingTest < ActiveSupport::TestCase
     assert_equal 0, InspectionFinding.new(finding_attrs).position
   end
 
+  # ── Fase 1A: the equipment link and the CENTRAVE item ──────────────────────
+
+  test "the equipment link starts empty and is never assigned automatically" do
+    report.report_equipments.create!(label: "Ascensor A")
+
+    finding = InspectionFinding.create!(finding_attrs)
+
+    assert_nil finding.report_equipment_id, "a lone equipment must not be adopted by default"
+  end
+
+  test "accepts an equipment of its own report" do
+    equipment = report.report_equipments.create!(label: "Ascensor A")
+
+    finding = InspectionFinding.create!(finding_attrs(report_equipment: equipment))
+
+    assert_equal equipment.id, finding.report_equipment_id
+  end
+
+  # Same report, not merely the same tenant.
+  test "rejects an equipment belonging to another report of the same account" do
+    other_report = CertificationReport.create!(account: report.account, user: users(:one), building_name: "Otro edificio")
+    foreign = other_report.report_equipments.create!(label: "Ascensor X")
+
+    finding = InspectionFinding.new(finding_attrs(report_equipment: foreign))
+
+    assert_not finding.valid?
+    assert finding.errors[:report_equipment].any?
+  end
+
+  test "rejects an equipment belonging to another account" do
+    finding = InspectionFinding.new(finding_attrs(report_equipment: report_equipments(:climb_ascensor_a)))
+
+    assert_not finding.valid?
+    assert finding.errors[:report_equipment].any?
+  end
+
+  test "rejects a CENTRAVE item outside the 8 defined ones" do
+    finding = InspectionFinding.new(finding_attrs(inspection_item: 9))
+
+    assert_not finding.valid?
+    assert finding.errors[:inspection_item].any?
+  end
+
+  test "centrave_item_key names the assigned item and nothing when unassigned" do
+    assert_equal :pozo, InspectionFinding.new(finding_attrs(inspection_item: 6)).centrave_item_key
+    assert_nil InspectionFinding.new(finding_attrs).centrave_item_key
+    assert_equal 8, InspectionFinding::CENTRAVE_ITEMS.size
+  end
+
+  test "unassigned_equipment finds the findings still pending an elevator" do
+    pending = certification_reports(:edificio_portales).inspection_findings.unassigned_equipment
+
+    assert_equal [ inspection_findings(:portales_sin_clasificar) ], pending.to_a
+  end
+
   test "with_photo returns only findings carrying evidence" do
     assert_equal [ inspection_findings(:cabina_puerta) ], report.inspection_findings.with_photo.to_a
   end

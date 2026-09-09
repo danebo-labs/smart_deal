@@ -3,6 +3,105 @@ es:
   certifier:
     nav:
       my_reports: "Mis informes"
+    # Fase 1A — identidad del emisor: una por cuenta (empresa), configurada una vez.
+    settings:
+      title: "Datos de la certificadora"
+      subtitle: "Se usan en el encabezado de todos los informes de esta empresa."
+      link: "Certificadora"
+      preview: "Encabezado de tus informes"
+      submit: "Guardar datos"
+      remove_logo: "Quitar logo"
+      remove_logo_confirm: "¿Quitar el logo del encabezado? Los informes ya generados no cambian."
+      minvu_role_line: "Registro MINVU Rol %{role}"
+      name_missing: "Sin nombre de certificadora"
+      minvu_role_missing: "Sin rol MINVU"
+      incomplete_notice: "Falta el nombre o el rol MINVU. Puedes seguir dictando y guardando hallazgos; se piden al generar el PDF."
+      incomplete_short: "Datos de la certificadora incompletos"
+      read_only: "Solo el responsable de la cuenta modifica estos datos."
+      manager_is: "Responsable: %{email}"
+      no_manager: "Esta cuenta todavía no tiene un responsable asignado. Contacta al responsable de la cuenta para designarlo."
+      fields:
+        name: "Nombre de la certificadora"
+        name_placeholder: "Ej: Pizarro y Cía. Ltda."
+        minvu_role: "Rol MINVU"
+        minvu_role_placeholder: "Ej: 063"
+        logo: "Logo (opcional)"
+        logo_hint: "PNG o JPEG, hasta %{max_mb} MB y %{max_mp} megapíxeles. Sin logo, el encabezado usa el nombre y el rol."
+      logo_errors:
+        missing: "No se recibió ninguna imagen. El logo anterior sigue en uso."
+        too_large: "El logo supera los 2 MB. El logo anterior sigue en uso."
+        too_many_pixels: "El logo supera los 4 megapíxeles. El logo anterior sigue en uso."
+        unsupported_format: "Solo PNG o JPEG. El logo anterior sigue en uso."
+        unreadable: "No se pudo leer la imagen. El logo anterior sigue en uso."
+        upload_failed: "No se pudo guardar el logo. El logo anterior sigue en uso."
+      alerts:
+        not_manager: "Solo el responsable de la cuenta modifica los datos de la certificadora."
+      notices:
+        updated: "Datos de la certificadora guardados."
+        logo_removed: "Logo quitado del encabezado."
+    # Fase 1A — equipos del informe.
+    equipment:
+      heading: "Equipos"
+      empty: "Todavía no hay equipos. Puedes agregarlos ahora o después; no hacen falta para dictar."
+      add: "Agregar equipo"
+      # Nombradas con el objeto: en la pantalla del informe estos botones
+      # conviven con "Editar"/"Eliminar" del hallazgo, y dos etiquetas idénticas
+      # con guantes y poca luz son un error de toque garantizado.
+      edit: "Editar equipo"
+      delete: "Eliminar equipo"
+      delete_confirm: "¿Eliminar este equipo?"
+      save: "Guardar equipo"
+      edit_title: "Datos del equipo"
+      edit_subtitle: "Todo lo técnico es opcional. Lo que no completes queda vacío en el informe."
+      specs_heading: "Características técnicas (opcional)"
+      not_recorded: "Sin registrar"
+      unassigned: "Sin equipo asignado"
+      machine_rooms:
+        con_sala: "Con sala de máquinas"
+        sin_sala: "Sin sala de máquinas"
+      drive_types:
+        hidraulico: "Hidráulico"
+        electromecanico: "Electromecánico"
+      specs:
+        landings: "%{count} paradas"
+        boardings: "%{count} embarques"
+        speed: "%{value} m/s"
+        load: "%{value} kg"
+        capacity: "%{count} personas"
+        last_maintenance: "Última mantención %{date}"
+      fields:
+        label: "Identificador del equipo"
+        label_placeholder: "Ej: Ascensor A"
+        machine_room: "Sala de máquinas"
+        drive_type: "Tipo de tracción"
+        door_type: "Tipo de puertas"
+        landings_count: "N° de paradas"
+        boardings_count: "N° de embarques"
+        speed_mps: "Velocidad (m/s)"
+        rated_load_kg: "Carga útil (kg)"
+        capacity_persons: "Capacidad (personas)"
+        traction_cables: "Cables de tracción"
+        last_maintenance_date: "Fecha última mantención"
+        position: "Orden en el informe"
+      alerts:
+        has_findings: "Este equipo tiene hallazgos asignados. Reasígnalos a otro equipo o déjalos sin asignar antes de eliminarlo."
+    # Los 8 ítems CENTRAVE (sección 3.3). Agrupar es opcional.
+    centrave:
+      carpeta_ascensores: "Carpeta de Ascensores"
+      cabina: "Cabina"
+      espacio_maquinas: "Espacio de máquinas"
+      contrapeso: "Contrapeso"
+      caja_elevadores: "Caja de elevadores"
+      pozo: "Pozo"
+      puertas_cerraduras: "Puertas y cerraduras"
+      suspension_cables: "Suspensión, cables y amarras"
+    severities:
+      leve: "Leve"
+      grave: "Grave"
+    results:
+      unrecorded: "Resultado no registrado"
+      aprobado: "Aprobado"
+      rechazado: "Rechazado"
     my_reports:
       title: "Mis informes"
       new_report: "Nuevo informe"
@@ -18,6 +117,7 @@ es:
       title: "Datos del edificio"
       submit: "Guardar datos"
       back: "Volver al informe"
+      review_details: "Datos de revisión y resultado (opcional)"
     statuses:
       en_progreso: "En progreso"
       listo_revision: "Listo para revisión"
@@ -38,9 +138,19 @@ es:
       inspection_date: "Fecha de inspección"
       maintenance_company: "Empresa mantenedora"
       maintenance_technician: "Técnico mantenedor"
+      inspector_name: "Inspector (nombre)"
+      inspector_name_placeholder: "Ej: C. Schwartz"
+      report_date: "Fecha del informe"
+      normative_reference: "Norma aplicable"
+      normative_reference_placeholder: "Ej: NCh 2840:2018"
+      normative_reference_hint: "La escribe el certificador. Danebo no deduce la norma aplicable."
+      result: "Resultado"
+      result_hint: "Lo elige el certificador. Danebo no lo calcula a partir de los hallazgos registrados."
+      result_note: "Observación del resultado"
     show:
       edit_building_info: "Editar datos del edificio"
       back_to_list: "Mis informes"
+      danebo_reference: "Referencia Danebo %{reference} (sin N° interno)"
       findings_heading: "Hallazgos"
       no_findings: "Todavía no hay hallazgos. Agrega el primero abajo."
       delete_report: "Eliminar informe"
@@ -61,6 +171,17 @@ es:
       has_photo: "Con foto"
       replace_photo: "Reemplazar foto (opcional)"
       view_photo: "Ver foto"
+      classification_heading: "Clasificación del certificador (opcional)"
+      equipment: "Equipo"
+      no_equipments_hint: "Este informe todavía no tiene equipos. Agrégalos desde el informe para poder asignarlos."
+      inspection_item: "Ítem CENTRAVE"
+      severity: "Gravedad"
+      severity_hint: "Leve o grave la asigna el certificador. Danebo nunca la completa."
+      nch2840_box: "Casilla NCh 2840"
+      norm_point: "Punto de norma"
+      position: "Orden en el informe"
+      unclassified: "Sin clasificar"
+      unclassified_severity: "Gravedad sin clasificar"
     # Fase 5 — dictado: un control, un indicador, panel editable, confirmación explícita.
     dictation:
       heading: "Dictar hallazgo"
@@ -113,6 +234,9 @@ es:
       finding_created: "Hallazgo agregado."
       finding_updated: "Hallazgo actualizado."
       finding_destroyed: "Hallazgo eliminado."
+      equipment_created: "Equipo agregado."
+      equipment_updated: "Equipo actualizado."
+      equipment_destroyed: "Equipo eliminado."
       dictation_confirmed: "Hallazgo agregado desde el dictado."
       dictation_undone: "Deshecho. El texto volvió al panel para corregir."
       dictation_retried: "Reintentando la transcripción."

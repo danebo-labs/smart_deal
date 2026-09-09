@@ -10,17 +10,25 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_08_210100) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_09_210300) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
 
   create_table "accounts", force: :cascade do |t|
     t.boolean "branded", default: false, null: false
+    t.integer "certifier_logo_byte_size"
+    t.string "certifier_logo_content_type"
+    t.string "certifier_logo_s3_key"
+    t.string "certifier_logo_sha256"
+    t.string "certifier_minvu_role"
+    t.string "certifier_name"
+    t.bigint "certifier_settings_user_id"
     t.datetime "created_at", null: false
     t.string "display_name", null: false
     t.string "slug", null: false
     t.datetime "updated_at", null: false
+    t.index [ "certifier_settings_user_id" ], name: "idx_accounts_certifier_settings_user"
     t.index [ "slug" ], name: "index_accounts_on_slug", unique: true
   end
 
@@ -118,11 +126,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_210100) do
     t.string "commune"
     t.datetime "created_at", null: false
     t.date "inspection_date"
+    t.string "inspector_name"
     t.string "internal_number"
     t.string "maintenance_company"
     t.string "maintenance_technician"
     t.date "municipal_reception_date"
+    t.string "normative_reference"
     t.string "property_use"
+    t.date "report_date"
+    t.string "result"
+    t.text "result_note"
     t.string "status", default: "en_progreso", null: false
     t.string "street"
     t.string "street_number"
@@ -193,12 +206,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_210100) do
     t.string "nch2840_box"
     t.string "norm_point"
     t.integer "position", default: 0, null: false
+    t.bigint "report_equipment_id"
     t.string "severity"
     t.datetime "updated_at", null: false
     t.bigint "voice_dictation_id"
     t.index [ "account_id" ], name: "index_inspection_findings_on_account_id"
     t.index [ "certification_report_id", "position" ], name: "idx_inspection_findings_report_position"
     t.index [ "field_photo_id" ], name: "index_inspection_findings_on_field_photo_id"
+    t.index [ "report_equipment_id" ], name: "idx_inspection_findings_report_equipment"
     t.index [ "voice_dictation_id" ], name: "idx_inspection_findings_voice_dictation", unique: true
   end
 
@@ -243,6 +258,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_210100) do
     t.index [ "correlation_id" ], name: "index_pilot_events_on_correlation_id"
     t.index [ "event", "occurred_at" ], name: "index_pilot_events_on_event_and_occurred_at"
     t.index [ "occurred_at" ], name: "index_pilot_events_on_occurred_at"
+  end
+
+  create_table "report_equipments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.integer "boardings_count"
+    t.integer "capacity_persons"
+    t.bigint "certification_report_id", null: false
+    t.datetime "created_at", null: false
+    t.string "door_type"
+    t.string "drive_type"
+    t.string "label", null: false
+    t.integer "landings_count"
+    t.date "last_maintenance_date"
+    t.string "machine_room"
+    t.integer "position", default: 0, null: false
+    t.integer "rated_load_kg"
+    t.decimal "speed_mps", precision: 6, scale: 3
+    t.string "traction_cables"
+    t.datetime "updated_at", null: false
+    t.index [ "account_id" ], name: "index_report_equipments_on_account_id"
+    t.index [ "certification_report_id", "position" ], name: "idx_report_equipments_report_position"
   end
 
   create_table "technician_documents", force: :cascade do |t|
@@ -363,12 +399,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_210100) do
     t.index [ "route", "created_at" ], name: "index_whatsapp_cache_hits_on_route_and_created_at"
   end
 
+  add_foreign_key "accounts", "users", column: "certifier_settings_user_id", on_delete: :nullify
   add_foreign_key "certification_reports", "accounts"
   add_foreign_key "field_photos", "accounts"
   add_foreign_key "inspection_findings", "accounts"
   add_foreign_key "inspection_findings", "certification_reports"
   add_foreign_key "inspection_findings", "field_photos"
+  add_foreign_key "inspection_findings", "report_equipments"
   add_foreign_key "inspection_findings", "voice_dictations"
+  add_foreign_key "report_equipments", "accounts"
+  add_foreign_key "report_equipments", "certification_reports"
   add_foreign_key "technician_documents", "accounts", name: "fk_td_account"
   add_foreign_key "voice_dictations", "accounts"
   add_foreign_key "voice_dictations", "certification_reports"

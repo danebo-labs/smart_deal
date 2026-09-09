@@ -9,6 +9,8 @@
     <%= t("certifier.show.back_to_list") %>
   <% end %>
 
+  <%= render "certification_reports/issuer_strip", account: current_account, report: @report %>
+
   <h1 class="mb-1 text-xl font-semibold text-[hsl(222,47%,10%)] sm:text-2xl"><%= @report.building_name %></h1>
   <% address_line = [ @report.street, @report.street_number, @report.commune ].compact_blank.join(" ") %>
   <% if address_line.present? %>
@@ -35,6 +37,8 @@
         data: { turbo_confirm: t("certifier.show.delete_report_confirm") },
         class: "flex min-h-[60px] w-full items-center justify-center rounded-lg border border-red-200 px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-50" %>
   </div>
+
+  <%= render "certification_reports/equipments", report: @report, equipments: @equipments, equipment: @equipment %>
 
   <h2 class="mb-3 text-lg font-semibold text-[hsl(222,47%,10%)]"><%= t("certifier.show.findings_heading") %></h2>
 

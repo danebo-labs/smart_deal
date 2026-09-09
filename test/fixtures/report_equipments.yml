@@ -1,0 +1,28 @@
+# Equipment of certification_reports(:edificio_portales), the configured
+# company's report. certification_reports(:torre_amunategui) deliberately has
+# none: a report with zero equipments is a legitimate state (its findings were
+# dictated before any equipment existed) and Fase 1A must keep it working.
+#
+# climb_ascensor_b carries no technical characteristic at all — the certifier
+# named it and nothing else. Danebo must render it without inventing a spec.
+climb_ascensor_a:
+  certification_report: edificio_portales
+  account: climb
+  label: Ascensor A
+  position: 0
+  machine_room: con_sala
+  drive_type: electromecanico
+  door_type: Automática telescópica
+  landings_count: 8
+  boardings_count: 8
+  speed_mps: 1.0
+  rated_load_kg: 450
+  capacity_persons: 6
+  traction_cables: 4 x 10 mm
+  last_maintenance_date: 2026-08-20
+
+climb_ascensor_b:
+  certification_report: edificio_portales
+  account: climb
+  label: Ascensor B
+  position: 1

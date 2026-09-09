@@ -1,3 +1,12 @@
+# Two shapes of company (a company is an account) for the certifier module:
+#
+# - legacy: no certifier configuration and no designated owner. This is the
+#   "old data" case Fase 1A must keep working — its report, findings and
+#   dictations predate the issuer identity, so nothing may 500 or start
+#   demanding a name, a role or a logo.
+# - climb: fully configured, logo included, with users(:two) as the single user
+#   allowed to edit it. The certifier_logo_* columns are set together on
+#   purpose: a key without its digest is not a state the app produces.
 legacy:
   slug: danebo-legacy
   display_name: Danebo
@@ -7,6 +16,13 @@ climb:
   slug: elevadores-climb
   display_name: Ascensores Climb
   branded: true
+  certifier_name: Ascensores Climb Ltda.
+  certifier_minvu_role: "063"
+  certifier_settings_user: two
+  certifier_logo_s3_key: certifier_assets/<%= ActiveRecord::FixtureSet.identify(:climb) %>/abc123/logo.png
+  certifier_logo_content_type: image/png
+  certifier_logo_byte_size: 69
+  certifier_logo_sha256: abc123
 
 pilot:
   slug: danebo-pilot-elevator

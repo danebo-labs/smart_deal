@@ -42,7 +42,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 |---|---|---|---|---|---|
 | 1º | 0 | Modelo de datos del borrador (alcance núcleo) | **cerrada** (2026-09-08, branch `certificador/fase-0-modelo-datos`, suite local verde) | Opus última versión | high |
 | 2º | 2 | Lista "mis informes" + editor mínimo | **cerrada** (2026-09-08, branch `certificador/fase-2-mis-informes`, suite local verde) | Sonnet última versión | medium |
-| 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, transcripción real end-to-end USD 0,0124; **PR por abrir/mergear**) | Opus última versión | high |
+| 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, mergeada a `main` vía PR #22; transcripción real end-to-end con **Transcribe (USD 0,0124) y OpenAI (USD 0,0016)**, total USD 0,0140) | Opus última versión | high |
 | 4º | 5 | UI de captura de audio (dictado) | pendiente | Fable última versión | high |
 | 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | pendiente | Grok (variante rápida) | low/fast |
 | — | 1 | Exportable HTML con hoja de impresión (formato NCh 2840) | **condicionada** (gate 2-oct) | Sonnet última versión | medium |
@@ -475,7 +475,7 @@ Toda transición es **un solo `UPDATE` condicional** (`update_all` sobre un `whe
 
 ### Cierre de fase (2026-09-08)
 
-- **Estado: CERRADA.** Todos los criterios de aceptación cumplidos. Suite verde (2699 tests, 0 fallos, `PARALLEL_WORKERS=1 DB_USERNAME=lahirisan bin/rails test`), Rubocop limpio en los 24 archivos de la fase, y **transcripción real end-to-end con Amazon Transcribe**. OpenAI queda verificado con fakes y su prueba real cae en la Fase 6, según lo acordado.
+- **Estado: CERRADA.** Todos los criterios de aceptación cumplidos. Suite verde (2699 tests, 0 fallos, `PARALLEL_WORKERS=1 DB_USERNAME=lahirisan bin/rails test`), Rubocop limpio en los 24 archivos de la fase, y **transcripción real end-to-end con los dos proveedores exigidos: Amazon Transcribe y OpenAI**. La de OpenAI se completó después del merge (mismo día, sección "Prueba end-to-end real (OpenAI)" más abajo), una vez que se generó la clave y se cargó saldo en la cuenta. **Costo total de la validación de la fase: USD 0,0140.**
 
 **Prueba end-to-end real (Amazon Transcribe, `es-US`):**
 
@@ -501,6 +501,33 @@ Transcripción obtenida:
 
 **Extrapolación de costo para la hipótesis de precio:** a 0,024/min, un dictado de 15–20 min cuesta **USD 0,36–0,48**. Pero el caso base de la fase es un dictado corto por hallazgo, donde domina el mínimo facturable de 15 s (hallazgo 7): ahí el costo por informe se parece a *número de hallazgos × 0,006*, no a *minutos × tarifa*.
 
+**Prueba end-to-end real (OpenAI, `gpt-4o-mini-transcribe`, `language=es`) — 2026-09-08, post-merge:**
+
+| | |
+|---|---|
+| Audio | 32 s, WAV 16 kHz mono, 1.003 KB (misma voz sintética y misma jerga que la prueba de Transcribe, más una frase final para que el `sha256` difiera y no deduplique contra el dictado 1) |
+| Dictado | id 2, informe 2, key `voice_dictations/4/a3224…/audio.wav` |
+| Latencia | **5,2 s de reloj** de punta a punta (vs 11,0 s de Transcribe: es un POST síncrono, sin poll) |
+| **Costo real** | **USD 0,0016** (32 s × 0,003/min; sin mínimo facturable) |
+| Primer intento | `429 insufficient_quota` — la cuenta recién creada no tenía saldo. **No facturó**, y validó el camino de fallo con un error real de OpenAI: `ProviderError` → `failed` con razón guardada en 2,8 s; el segundo intento reabrió ese mismo dictado por T5 sin volver a subir el audio |
+| Rollup | `cost_by_provider(account_id: 4)` → `{"amazon_transcribe" => {dictations: 1, seconds: 31, cost_usd: 0.0124}, "openai" => {dictations: 1, seconds: 32, cost_usd: 0.0016}}`; **cero filas nuevas en `bedrock_queries`** |
+
+Transcripción obtenida:
+
+> Embarque 3: la puerta de cabina **rosa** en el marco al cerrar y el operador de puertas queda desalineado. Ascensor de **dos separadas**, carga útil 450 kilos, velocidad 1,6 m/s, código de falla **A32.4** en el variador. El limitador de velocidad y el paracaídas fueron probados sin observaciones. Falta señalización de sobrecarga en la cabina, punto de la norma **NCH28040**. Prueba con proveedor Ropenai.
+
+**Comparación lado a lado sobre las mismas frases (línea base para la Fase 6):**
+
+| Frase dictada | Transcribe `es-US` | OpenAI mini | Lectura |
+|---|---|---|---|
+| "roza en el marco" | rosa | rosa | Homófono técnico: **falla en ambos** — solo lo arregla vocabulario de dominio (Transcribe: custom vocabulary; OpenAI: parámetro `prompt`) |
+| "código de falla A32.4" | a 32.4 | **A32.4** | OpenAI acierta el alfanumérico que Transcribe partió |
+| "doce paradas" | **12 paradas** | dos separadas | OpenAI falla una cifra hablada; Transcribe la normaliza bien |
+| "norma NCh 2840" | **NCH 2840** | NCH28040 | OpenAI pega un dígito extra a la sigla de norma |
+| "450 kilos", "1,6 metros por segundo", "embarque tres" | correcto | correcto (`1,6 m/s`, `Embarque 3`) | Ambos normalizan cifras; OpenAI abrevia unidades |
+
+Ninguno domina: OpenAI es 2× más rápido y ~8× más barato, acierta el código de falla y falla en el número de paradas y en la sigla de norma; Transcribe al revés. Los dos fallan el homófono. **La conclusión operativa de arriba se refuerza:** la palanca es el vocabulario de dominio (que ambos proveedores soportan por caminos distintos), no el proveedor; y con un solo audio sintético limpio ninguna de estas diferencias es estadísticamente sólida — el protocolo de cinco dictados con ruido de la Fase 6 sigue siendo necesario.
+
 **Hallazgos:**
 
 1. **Amazon Transcribe no soporta `es-CL`** — el alcance de esta fase lo daba por soportado y la API rechaza el job. Sus variantes de español son `es-ES`, `es-US` y `es-MX`. Default elegido: **`es-US`**, por ser la única con *custom language models* (la palanca real contra la jerga) y por transcribir números en batch, que `es-MX` no hace. Razonamiento completo y tabla de soporte en el bloque de diseño de esta fase; override por `STT_AMAZON_LANGUAGE_CODE`; la decisión por medición queda en la Fase 6.
@@ -511,7 +538,8 @@ Transcripción obtenida:
 6. **`cost_by_provider` ganó un parámetro `account_id`.** Salió de un test que pasaba por la razón equivocada: el rollup recogía la fixture `cabina_dictado` y los totales cuadraban por casualidad. El parámetro es además el seam de tenancy que pide la sección 0 — el gasto de voz es por cuenta en cuanto haya más de un piloto.
 7. **El mínimo facturable de 15 s de Amazon domina el costo del caso de uso real.** Un "la puerta roza" de 5 s cuesta lo mismo que uno de 15 s (USD 0,006). Como el caso base de la fase es un dictado corto por hallazgo, el costo por informe se parece más a *número de hallazgos × 0,006* que a *minutos totales × tarifa*. Insumo directo de la hipótesis de precio.
 8. **Operativa local, para no volver a perder tiempo:** la suite necesita `PARALLEL_WORKERS=1` cuando corre en un entorno sin sockets Unix disponibles (la paralelización de Minitest usa DRb y muere con `Errno::EPERM`), y `bin/rubocop` necesita `--cache false` cuando `HOME` no es escribible. `DB_USERNAME=lahirisan` sigue siendo obligatorio, como en la Fase 0.
-9. **Quedó en dev un dictado real completo, y conviene dejarlo:** el dictado id 1 `confirmed` con su hallazgo id 1 y su WAV en `voice_dictations/4/6b18…/audio.wav`. Es el único dato de dictado end-to-end que existe, y la Fase 5 lo necesita para probar el panel editable y la reapertura contra algo que no sea una fixture. La purga lo tomará a los 90 días por sí sola, que es el comportamiento correcto.
+9. **Quedaron en dev dos dictados reales, y conviene dejarlos:** el dictado id 1 (`confirmed`, Transcribe, con su hallazgo id 1, WAV en `voice_dictations/4/6b18…/audio.wav`) y el dictado id 2 (`transcribed` **sin confirmar**, OpenAI, informe 2, WAV en `voice_dictations/4/a322…/audio.wav`). Son los únicos datos de dictado end-to-end que existen, y se complementan para la Fase 5: el 1 prueba la vista de un hallazgo con origen trazable; el 2 es exactamente el estado que necesita el panel editable y la reapertura (`in_progress`) contra algo que no sea una fixture. La purga tomará al 1 a los 90 días por sí sola; al 2 **nunca lo tocará** mientras siga sin confirmar (regla fija 10), que es el comportamiento correcto.
+10. **Un `429 insufficient_quota` de OpenAI no factura y llega al dictado como `ProviderError` legible.** La primera corrida real contra OpenAI falló porque la cuenta recién creada no tenía saldo; el mensaje del proveedor quedó en `failure_reason` truncado a 250 caracteres, suficiente para leer "You have no credits remaining". Con la clave puesta pero sin saldo, el camino es idéntico al de una clave inválida (`401`): `failed` + reintento humano por T5. Para la Fase 5 significa que "reintentar" tiene sentido mostrarlo aun con error del proveedor, porque el arreglo puede ser externo (cargar saldo) y no requiere regrabar.
 
 **Desviaciones del plan:**
 
@@ -519,12 +547,13 @@ Transcripción obtenida:
 - **La purga borra los bytes del audio, no la fila.** Desviación de la letra de "fila antes que S3" del orden seguro de la Fase 0, argumentada en el punto 7 del bloque de diseño: destruir la fila rompería la FK de trazabilidad y borraría la telemetría de costo de la Fase 6. El *orden* seguro sí se preserva (escritura reversible en la base antes del borrado irreversible en S3).
 - **`GroqAdapter` se incluyó aquí**, aunque el plan lo daba como opcional para esta fase. Costó cuatro constantes sobre `OpenAiAdapter`, que es la evidencia de que el contrato quedó bien hecho, y deja a la Fase 6 con tres proveedores desde el día uno.
 - **`TranscriptionJob` no lleva `retry_on`.** Un reintento no podría producir una segunda llamada facturada (fallaría el claim), así que lo único que compraría es demora antes de que el certificador sepa que falló. Un fallo del proveedor va a `failed` y se ve; reintentar es una decisión humana explícita (T5).
-- **OpenAI end-to-end no se probó**, según lo acordado: queda verificado con fakes y su prueba real cae en la Fase 6 junto al benchmark.
+- **OpenAI end-to-end se probó después del merge, no dentro del PR.** Al cerrar el PR no existía ninguna credencial de OpenAI en dev (ni en `.env` ni en `credentials.yml.enc`, cuyas claves son solo `aws`, `bedrock`, `appsignal`, `secret_key_base`), así que la prueba real quedó registrada como pendiente. El mismo día se generó la clave en el panel de OpenAI, se agregó `OPENAI_API_KEY` a `.env` (dotenv; nunca a credentials ni a git) y se corrió el smoke: resultado en la sección "Prueba end-to-end real (OpenAI)" de este cierre. **Groq sigue sin credencial** y sin prueba real: cae en la Fase 6.
 
 **Actualizaciones aplicadas a fases siguientes:**
 
 - **Fase 5:** bloque de insumos nuevo (contratos que consumir, estados a mostrar al reabrir, quién puede escribir `transcript_edited`).
 - **Fase 6:** bloque de insumos nuevo — el benchmark gana una dimensión (las tres variantes de español de Transcribe), más la distinción entre *custom vocabularies* (cualquier variante) y *custom language models* (solo `es-US`) como palancas de jerga, la fuente de audio reproducible del hallazgo 5, y la línea base de calidad medida arriba: `es-US` acierta números y siglas de norma, y falla en homófonos técnicos y códigos de falla alfanuméricos. **Eso reordena la Fase 6:** medir primero el efecto de un *custom vocabulary* sobre esos dos errores, y solo después comparar proveedores.
+- **Fase 5 y 6, post-merge (prueba real de OpenAI):** la Fase 5 recibe el dictado real id 2 (`transcribed` sin confirmar) como dato de prueba manual; la Fase 6 recibe el estado de credenciales (OpenAI operativo, Groq pendiente), la advertencia de dedup por `sha256` al reusar un audio entre proveedores, la línea base lado a lado Transcribe/OpenAI, y el parámetro `prompt` de OpenAI como palanca de jerga equivalente al custom vocabulary.
 
 ---
 
@@ -590,6 +619,7 @@ Transcripción obtenida:
 - **Qué mostrar al reabrir un informe:** `report.voice_dictations.in_progress` da exactamente los no terminales (`pending`, `transcribing`, `transcribed`). Para el texto del panel usa `record.confirmed_text` (la corrección si existe, la transcripción cruda si no). `audio_available?` decide si el reintento es posible.
 - **Un dictado en `transcribing` puede quedar hasta 30 minutos ahí** si murió el worker (`STT_STALE_CLAIM_MINUTES`), antes de que otro job lo reclame. El indicador de estado debería tolerar esa espera sin parecer colgado, y no reintentar solo.
 - **Fixture ya disponible para los tests de esta fase:** `voice_dictations(:cabina_dictado)`, un dictado `transcribed` sin confirmar del informe `torre_amunategui` — justo el estado que necesita el panel editable. Ojo con el hallazgo 6 del cierre de la Fase 4: esa fixture contamina cualquier rollup de costo que no filtre por cuenta.
+- **Y en la base de dev hay dos dictados reales para la prueba manual** (hallazgo 9 del cierre de la Fase 4): el id 1 `confirmed` (Transcribe, con hallazgo id 1) y el id 2 `transcribed` **sin confirmar** (OpenAI, informe 2, `transcript_raw` con los errores reales "rosa"/"dos separadas"/"NCH28040"). El 2 es el caso ideal para probar en móvil el panel editable, el autosave de `transcript_edited` y la confirmación explícita contra un texto que de verdad necesita corrección — no lo confirmes desde consola.
 - **Fuente de audio de prueba, gratis y reproducible** (hallazgo 5 del cierre de la Fase 4): `say -v Paulina -o a.aiff "<texto>"` y `afconvert -f WAVE -d LEI16@16000 -c 1 a.aiff a.wav`. Sirve para los tests de cañería sin grabar a mano ni gastar en transcripción.
 
 **Alcance:**
@@ -631,6 +661,9 @@ Transcripción obtenida:
 - **Palanca de jerga separada de la elección de proveedor:** los *custom vocabularies* funcionan en cualquier variante. Los *custom language models* (corpus propio) solo existen en `es-US`: si el benchmark lo elige, esa puerta queda abierta; si elige otro, se cierra. Vale registrarlo explícitamente en la decisión.
 - **Línea base ya medida contra la que comparar:** 31 s de audio → 11,0 s de reloj de punta a punta (9,2 s del lado de AWS), USD 0,0124. Y ojo con el mínimo facturable de 15 s de Amazon al costear dictados cortos: distorsiona cualquier extrapolación hecha solo con minutos totales.
 - **Cuidado al interpretar jobs viejos en la cuenta de AWS:** hay trabajos de Transcribe anteriores (`gonzalo-demo-danebo`, `victor_entrevista`) creados a mano con `es-ES`, que no pasaron por Danebo. Los jobs de la aplicación se llaman siempre `danebo-<hash>-<hex>`.
+- **Credenciales: OpenAI ya está operativo en dev; Groq no.** `OPENAI_API_KEY` está en `.env` (dotenv) con saldo cargado, y la prueba real de la Fase 4 lo ejercitó de punta a punta (USD 0,0016, 5,2 s). **Groq nunca ha sido llamado de verdad** — sin `GROQ_API_KEY` en dev; su adapter está verificado solo con fakes. Antes del benchmark: crear la clave en `console.groq.com/keys`, ponerla en `.env`, y hacer un smoke de un solo audio con `STT_PROVIDER=groq DB_USERNAME=lahirisan bin/rails "stt:smoke[tmp/stt/groq.wav,32]"`. **Pasa siempre la duración como segundo argumento** para OpenAI y Groq — sin ella dejan `cost_estimate_usd` en `nil` y la tabla de COGS queda a medias.
+- **El mismo archivo no sirve para dos proveedores:** el intake deduplica por `sha256` dentro del informe, así que el segundo smoke con el mismo WAV aborta con "already transcribed; use a different audio file". Genera un audio por proveedor (basta con cambiar una palabra del texto de `say`), o usa informes distintos. El script de benchmark tiene que tenerlo en cuenta desde el diseño.
+- **Línea base OpenAI ya medida, lado a lado con Transcribe, sobre el mismo texto** (tabla en el cierre de la Fase 4): OpenAI acierta `A32.4` (Transcribe no), pero falla "doce paradas" → "dos separadas" y "NCh 2840" → "NCH28040" (Transcribe acierta ambos); los dos fallan "roza" → "rosa". OpenAI: 2× más rápido, ~8× más barato, sin mínimo facturable. Es un solo audio sintético limpio: **no decide nada por sí solo**, pero fija qué frases hay que incluir en las 20 técnicas (homófonos, cifras habladas, siglas de norma con número, códigos alfanuméricos). Para OpenAI, la palanca de jerga equivalente al custom vocabulary de Transcribe es el parámetro `prompt` del endpoint de transcripción (el adapter no lo envía todavía; agregarlo es un `text_part` más en `multipart_body`).
 
 **Alcance:**
 

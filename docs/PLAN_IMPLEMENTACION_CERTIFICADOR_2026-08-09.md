@@ -473,22 +473,45 @@ Toda transición es **un solo `UPDATE` condicional** (`update_all` sobre un `whe
 8. **Telemetría propia, `bedrock_queries` intacto (regla fija 7).** `voice_dictations` es la tabla propia de la fase (`provider`, `duration_seconds`, `cost_estimate_usd`) más una línea de log estructurado `[STT_USAGE]`. El costo es duración × tarifa de una constante versionada, no un token count.
 9. **El broadcast va por `user:<user_id>:voice_dictations`** — canal privado del usuario, no el patrón `KbSyncChannel`, que transmite a toda la cuenta (regla fija 12, gap 4).
 
-### Cierre de fase (en curso, 2026-09-08)
+### Cierre de fase (2026-09-08)
 
-- **Estado: ABIERTA.** Implementación completa y suite verde (2699 tests, 0 fallos, `PARALLEL_WORKERS=1 DB_USERNAME=lahirisan bin/rails test`; Rubocop limpio en los 24 archivos de la fase), pero **falta un criterio de aceptación**: el audio de prueba transcrito end-to-end con `cost_estimate_usd` poblado y el costo documentado aquí. La cadena completa sí corrió contra AWS de verdad; lo que falta es solo la llamada facturada, bloqueada por el permiso IAM del hallazgo 2.
-- **Para cerrarla falta exactamente:** (a) aplicar la política IAM del hallazgo 2, (b) re-correr `STT_PROVIDER=amazon_transcribe bin/rails "stt:smoke[tmp/stt/dictado.wav,31]"`, (c) escribir aquí la transcripción obtenida, la latencia de batch y el costo real. Nada de eso cambia código: el resto de la fase no depende del resultado.
+- **Estado: CERRADA.** Todos los criterios de aceptación cumplidos. Suite verde (2699 tests, 0 fallos, `PARALLEL_WORKERS=1 DB_USERNAME=lahirisan bin/rails test`), Rubocop limpio en los 24 archivos de la fase, y **transcripción real end-to-end con Amazon Transcribe**. OpenAI queda verificado con fakes y su prueba real cae en la Fase 6, según lo acordado.
+
+**Prueba end-to-end real (Amazon Transcribe, `es-US`):**
+
+| | |
+|---|---|
+| Audio | 31 s, WAV 16 kHz mono, 987 KB (voz sintética, jerga de ascensores) |
+| Job | `danebo-90abaca5ef3af51d-8b901e30`, `LanguageCode=es-US` confirmado en la API |
+| Latencia | **11,0 s de reloj** de punta a punta (9,2 s del lado de AWS: 21:20:47.989 → 21:20:57.194) |
+| **Costo real** | **USD 0,0124** (31 s × 0,024/min) |
+| Costo total de toda la validación de la fase | **USD 0,0124** — el primer intento fue rechazado por IAM antes de crear el job, así que no facturó nada |
+
+Transcripción obtenida:
+
+> Embarque tres, la puerta de cabina **rosa** en el marco al cerrar y el operador de puertas queda desalineado, ascensor de 12 paradas, carga útil 450 kilos, velocidad 1,6 metros por segundo, se registra. Código de falla **a 32.4** en el variador, el limitador de velocidad y el paracaídas fueron probados sin observaciones. Falta señalización de sobrecarga en la cabina, punto de la norma NCH 2840.
+
+**Lo que la ruta completa quedó validada con datos reales**, no solo con fakes: intake → S3 → claim → Transcribe → `transcribed` → confirmación (idempotente: dos llamadas, un solo hallazgo, `id` igual) → `InspectionFinding` con `body`/`location`/`position` poblados y `severity`/`nch2840_box`/`norm_point`/`inspection_item` en `nil` (regla fija 1). Rollup de costo: `{"amazon_transcribe" => {dictations: 1, seconds: 31, cost_usd: 0.0124}}`. **Cero filas nuevas en `bedrock_queries`** (regla fija 7). Y el reintento T5 se ejercitó de verdad: el dictado venía de un fallo previo y `reopen_failed!` lo devolvió a `pending`.
+
+**Calidad sobre jerga — línea base para la Fase 6.** El resultado es mejor de lo esperado en lo que decidió la elección de `es-US` y falla exactamente donde se anticipaba:
+
+- **Correcto, y es la validación de la decisión de idioma:** todos los números en batch — "12 paradas", "carga útil 450 kilos", "velocidad 1,6 metros por segundo" — más "NCH 2840", "limitador de velocidad", "paracaídas", "operador de puertas", "señalización de sobrecarga", "variador", "carga útil". `es-MX` no habría transcrito los números en batch.
+- **Dos errores, ambos de la clase que arreglan los *custom vocabularies*:** "**rosa**" por "roza" (homófono; en un informe de certificación cambia el sentido técnico) y "**a 32.4**" por "A32.4" (el código de falla se partió y perdió la mayúscula). Más un corte de oración espurio en "se registra. Código de falla".
+- **Conclusión operativa:** la palanca inmediata no es cambiar de proveedor, es cargar un *custom vocabulary* con los términos del dominio. Esa es la primera cosa que debería medir la Fase 6, antes de comparar proveedores.
+
+**Extrapolación de costo para la hipótesis de precio:** a 0,024/min, un dictado de 15–20 min cuesta **USD 0,36–0,48**. Pero el caso base de la fase es un dictado corto por hallazgo, donde domina el mínimo facturable de 15 s (hallazgo 7): ahí el costo por informe se parece a *número de hallazgos × 0,006*, no a *minutos × tarifa*.
 
 **Hallazgos:**
 
 1. **Amazon Transcribe no soporta `es-CL`** — el alcance de esta fase lo daba por soportado y la API rechaza el job. Sus variantes de español son `es-ES`, `es-US` y `es-MX`. Default elegido: **`es-US`**, por ser la única con *custom language models* (la palanca real contra la jerga) y por transcribir números en batch, que `es-MX` no hace. Razonamiento completo y tabla de soporte en el bloque de diseño de esta fase; override por `STT_AMAZON_LANGUAGE_CODE`; la decisión por medición queda en la Fase 6.
-2. **`bedrock-integration-user` no tiene permisos de Transcribe.** El smoke test real devolvió `AccessDeniedException: not authorized to perform: transcribe:StartTranscriptionJob`. Hace falta agregar a la política del usuario `transcribe:StartTranscriptionJob` y `transcribe:GetTranscriptionJob`; **no** hacen falta permisos de S3 nuevos, porque Transcribe batch accede al media y escribe el output con las credenciales del llamador, que ya tiene el bucket. **Lado bueno:** el camino de fallo quedó validado con un error real del proveedor y no con un fake — intake subió el audio a S3, el job reclamó el dictado, el adapter llamó a Transcribe, el `AccessDeniedException` se mapeó a `ProviderError` y el dictado quedó en `failed` con la razón guardada, todo en 0,7 s.
+2. **`bedrock-integration-user` no tenía permisos de Transcribe — resuelto durante la fase.** El primer smoke test devolvió `AccessDeniedException: not authorized to perform: transcribe:StartTranscriptionJob`. Se agregó una política de usuario con `transcribe:StartTranscriptionJob` y `transcribe:GetTranscriptionJob`; **no** hicieron falta permisos de S3 nuevos, porque Transcribe batch lee el media y escribe el output con las credenciales del llamador, que ya tenía el bucket. **Dos ganancias colaterales:** el camino de fallo quedó validado con un error real del proveedor y no con un fake (el `AccessDeniedException` se mapeó a `ProviderError`, el dictado quedó en `failed` con la razón guardada y sin transcript, todo en 0,7 s), y el reintento T5 quedó ejercitado de verdad al reabrir ese mismo dictado para la corrida facturada. **Nota para producción:** el rol de prod necesita la misma política, o la Fase 5 va a fallar en el primer dictado real.
 3. **Validación por mutación, no por color verde** (lección del cierre de la Fase 0). Se rompieron cuatro guardas a propósito y cada una fue detectada por el test correcto: (a) quitar el `return` del claim fallido → caen los 3 tests de una-sola-llamada-facturada; (b) sacar `transcription_claim_id` de la guarda de escritura → caen los 3 de resultado tardío; (c) sacar `.terminal` de la consulta de purga → cae el test de retención **con el mensaje `aborted > 0`**, es decir demostrando que el audio lo salvó la segunda capa y no la consulta, que es exactamente el falso verde que la Fase 0 advirtió; (d) volver el stream del broadcast a `account:<id>` → caen los 6 tests de aislamiento por usuario.
 4. **La idempotencia de la confirmación es genuinamente de dos capas, y por eso una sola mutación no la rompe.** Quitar el atajo de "ya confirmado" deja pasar el segundo tap al CAS, que devuelve 0 filas y lee el hallazgo del ganador: misma respuesta, un solo hallazgo. Y quitar el CAS deja el índice único. Es la propiedad buscada, pero implica que **ningún test individual prueba la idempotencia por sí solo** — hay que leer los tres juntos (CAS, atajo, índice único).
 5. **`say` + `afconvert` es una fuente de audio de prueba reproducible y gratis**, insumo directo de las Fases 5 y 6: `say -v Paulina -o a.aiff "<jerga>"` y `afconvert -f WAVE -d LEI16@16000 -c 1 a.aiff a.wav` da 16 kHz mono WAV, el formato que Transcribe prefiere. No sustituye a los cinco dictados con ruido de fondo real del protocolo de la Fase 6 (una voz sintética limpia no mide lo que hay que medir), pero sirve para validar cañería sin gastar en audio grabado a mano.
 6. **`cost_by_provider` ganó un parámetro `account_id`.** Salió de un test que pasaba por la razón equivocada: el rollup recogía la fixture `cabina_dictado` y los totales cuadraban por casualidad. El parámetro es además el seam de tenancy que pide la sección 0 — el gasto de voz es por cuenta en cuanto haya más de un piloto.
 7. **El mínimo facturable de 15 s de Amazon domina el costo del caso de uso real.** Un "la puerta roza" de 5 s cuesta lo mismo que uno de 15 s (USD 0,006). Como el caso base de la fase es un dictado corto por hallazgo, el costo por informe se parece más a *número de hallazgos × 0,006* que a *minutos totales × tarifa*. Insumo directo de la hipótesis de precio.
 8. **Operativa local, para no volver a perder tiempo:** la suite necesita `PARALLEL_WORKERS=1` cuando corre en un entorno sin sockets Unix disponibles (la paralelización de Minitest usa DRb y muere con `Errno::EPERM`), y `bin/rubocop` necesita `--cache false` cuando `HOME` no es escribible. `DB_USERNAME=lahirisan` sigue siendo obligatorio, como en la Fase 0.
-9. **Quedó basura menor en dev:** el dictado id 1 en `failed` y su WAV real en `voice_dictations/4/6b18…/audio.wav`. No la purga nadie hasta los 90 días (es terminal, así que la purga sí lo tomará entonces).
+9. **Quedó en dev un dictado real completo, y conviene dejarlo:** el dictado id 1 `confirmed` con su hallazgo id 1 y su WAV en `voice_dictations/4/6b18…/audio.wav`. Es el único dato de dictado end-to-end que existe, y la Fase 5 lo necesita para probar el panel editable y la reapertura contra algo que no sea una fixture. La purga lo tomará a los 90 días por sí sola, que es el comportamiento correcto.
 
 **Desviaciones del plan:**
 
@@ -501,7 +524,7 @@ Toda transición es **un solo `UPDATE` condicional** (`update_all` sobre un `whe
 **Actualizaciones aplicadas a fases siguientes:**
 
 - **Fase 5:** bloque de insumos nuevo (contratos que consumir, estados a mostrar al reabrir, quién puede escribir `transcript_edited`).
-- **Fase 6:** bloque de insumos nuevo — el benchmark gana una dimensión (las tres variantes de español de Transcribe), más la distinción entre *custom vocabularies* (cualquier variante) y *custom language models* (solo `es-US`) como palancas de jerga, y la fuente de audio reproducible del hallazgo 5.
+- **Fase 6:** bloque de insumos nuevo — el benchmark gana una dimensión (las tres variantes de español de Transcribe), más la distinción entre *custom vocabularies* (cualquier variante) y *custom language models* (solo `es-US`) como palancas de jerga, la fuente de audio reproducible del hallazgo 5, y la línea base de calidad medida arriba: `es-US` acierta números y siglas de norma, y falla en homófonos técnicos y códigos de falla alfanuméricos. **Eso reordena la Fase 6:** medir primero el efecto de un *custom vocabulary* sobre esos dos errores, y solo después comparar proveedores.
 
 ---
 
@@ -574,7 +597,10 @@ Toda transición es **un solo `UPDATE` condicional** (`update_all` sobre un `whe
 *Actualizado con el diseño de la Fase 4 (2026-09-08):*
 
 - **El benchmark tiene una dimensión más que la prevista: la variante de español de Transcribe.** `es-CL` no existe en Transcribe; el default quedó en `es-US` por análisis de la tabla de soporte, no por medición. Corre el mismo set de audios por `es-US`, `es-ES` y `es-MX` (el adapter acepta la variante como argumento explícito, que gana sobre el ENV, precisamente para esto) y deja que la tasa de error sobre las 20 frases decida. `es-MX` probablemente salga última por no transcribir números en batch — confírmalo con los audios que llevan medidas y códigos.
-- **Palanca de jerga separada de la elección de proveedor:** los *custom vocabularies* de Transcribe funcionan en cualquier variante y son el siguiente paso natural si la tasa de error sobre jerga es la que decide. Los *custom language models* (corpus propio) solo existen en `es-US`: si el benchmark lo elige, esa puerta queda abierta; si elige otro, se cierra. Vale registrarlo explícitamente en la decisión.
+- **Empieza por el custom vocabulary, no por comparar proveedores.** La corrida real de la Fase 4 con `es-US` acertó todos los números, "NCh 2840" y el vocabulario mecánico ("limitador de velocidad", "paracaídas", "operador de puertas", "variador", "carga útil"), y falló solo en dos cosas: un homófono técnico ("**rosa**" por "roza") y un código de falla alfanumérico partido ("**a 32.4**" por "A32.4"). Los dos son exactamente lo que arregla una lista de términos, que funciona en cualquier variante y no cuesta cambiar de proveedor. Medir eso primero puede hacer irrelevante media tabla comparativa.
+- **Palanca de jerga separada de la elección de proveedor:** los *custom vocabularies* funcionan en cualquier variante. Los *custom language models* (corpus propio) solo existen en `es-US`: si el benchmark lo elige, esa puerta queda abierta; si elige otro, se cierra. Vale registrarlo explícitamente en la decisión.
+- **Línea base ya medida contra la que comparar:** 31 s de audio → 11,0 s de reloj de punta a punta (9,2 s del lado de AWS), USD 0,0124. Y ojo con el mínimo facturable de 15 s de Amazon al costear dictados cortos: distorsiona cualquier extrapolación hecha solo con minutos totales.
+- **Cuidado al interpretar jobs viejos en la cuenta de AWS:** hay trabajos de Transcribe anteriores (`gonzalo-demo-danebo`, `victor_entrevista`) creados a mano con `es-ES`, que no pasaron por Danebo. Los jobs de la aplicación se llaman siempre `danebo-<hash>-<hex>`.
 
 **Alcance:**
 

@@ -33,6 +33,18 @@ namespace :stt do
 
     puts "dictation=#{dictation.id} status=#{dictation.status} key=#{dictation.s3_key_audio}"
 
+    # Re-running the smoke test on the same file deduplicates by content, so a
+    # previous attempt is what comes back. Reopening a failed one is the T5
+    # retry path and costs one new billed call, which is the point of asking
+    # for the smoke test again. A dictation already transcribed is left alone.
+    if dictation.failed?
+      VoiceDictation.reopen_failed!(id: dictation.id) or
+        abort "dictation #{dictation.id} failed earlier and its audio is gone — use a new file"
+      puts "reopened the previous failed attempt (T5)"
+    elsif !dictation.pending?
+      abort "dictation #{dictation.id} is already #{dictation.status}; use a different audio file"
+    end
+
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     TranscriptionJob.perform_now(voice_dictation_id: dictation.id)
     elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(1)

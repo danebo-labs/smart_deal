@@ -13,10 +13,18 @@ class VoiceDictationCaptureTest < ApplicationSystemTestCase
   include Warden::Test::Helpers
   include ActiveJob::TestHelper
 
-  driven_by :selenium, using: :headless_chrome, screen_size: [ 390, 844 ] do |options|
+  # A distinct Capybara driver name is required: reset_sessions! reuses the
+  # live Chrome, so a shared `:selenium` session keeps the first class's
+  # launch flags (no fake mic) and any leftover CDP network_conditions.
+  driven_by :selenium, using: :headless_chrome, screen_size: [ 390, 844 ],
+            options: { name: :selenium_fake_mic } do |options|
     options.add_argument("--use-fake-ui-for-media-stream")
     options.add_argument("--use-fake-device-for-media-stream")
+    options.add_argument("--autoplay-policy=no-user-gesture-required")
   end
+
+  RECORD_BUTTON = "[data-action='voice-dictation#toggle']"
+  STATUS = "[data-voice-dictation-target='status']"
 
   class FakeS3
     attr_reader :uploads
@@ -47,6 +55,8 @@ class VoiceDictationCaptureTest < ApplicationSystemTestCase
 
     login_as users(:one), scope: :user
     visit certification_report_path(@report)
+    assert_selector "#{RECORD_BUTTON}[data-state='idle']"
+    grant_microphone
   end
 
   teardown do
@@ -55,9 +65,6 @@ class VoiceDictationCaptureTest < ApplicationSystemTestCase
     S3DocumentsService.define_singleton_method(:new) { |*a, **kw| orig.call(*a, **kw) }
     Warden.test_reset!
   end
-
-  RECORD_BUTTON = "[data-action='voice-dictation#toggle']"
-  STATUS = "[data-voice-dictation-target='status']"
 
   test "dictate → upload on stop → transcript arrives → correct → confirm → highlighted finding with undo" do
     assert_selector STATUS, text: I18n.t("certifier.dictation.status.idle")
@@ -182,6 +189,16 @@ class VoiceDictationCaptureTest < ApplicationSystemTestCase
   end
 
   def go_online
-    page.driver.browser.network_conditions = { offline: false, latency: 0, download_throughput: -1, upload_throughput: -1 }
+    # Setting offline: false with throughput -1 does not clear emulation on
+    # current Chrome; the dedicated reset does.
+    page.driver.browser.delete_network_conditions
+  end
+
+  def grant_microphone
+    page.driver.browser.execute_cdp(
+      "Browser.grantPermissions",
+      origin: evaluate_script("window.location.origin"),
+      permissions: [ "audioCapture" ]
+    )
   end
 end

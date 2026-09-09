@@ -2,6 +2,10 @@
 
 # Resolves the Account for a request Host header via AccountHosts maps.
 class AccountHostResolver
+  # Capybara/Puma bind loopback; Chrome may send 127.0.0.1 or ::1 instead of
+  # "localhost" after DNS re-resolve (offline → online, IPv6-first stacks).
+  LOOPBACK_HOSTS = %w[127.0.0.1 ::1 [::1]].freeze
+
   def self.host_map
     Rails.env.production? ? AccountHosts::PRODUCTION : AccountHosts::DEVELOPMENT
   end
@@ -11,6 +15,7 @@ class AccountHostResolver
   end
 
   def self.account_for(host)
+    host = "localhost" if LOOPBACK_HOSTS.include?(host.to_s)
     slug = host_map[host.to_s] || dev_tunnel_fallback_slug
     return nil if slug.blank?
 

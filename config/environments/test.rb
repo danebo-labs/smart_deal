@@ -57,7 +57,11 @@ Rails.application.configure do
   config.active_record.verify_foreign_keys_for_fixtures = false
 
   # Mirror production host allowlist (dev map includes localhost + www.example.com for integration tests).
+  # Loopback IPs are IPAddr, not strings: Rails rejects "[::1]" as a hostname
+  # (colons), and Capybara's Puma listens on both 127.0.0.1 and ::1.
   require Rails.root.join("config/account_hosts")
   config.hosts = AccountHosts::DEVELOPMENT.keys
+  config.hosts << IPAddr.new("127.0.0.1")
+  config.hosts << IPAddr.new("::1")
   config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 end

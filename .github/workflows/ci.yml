@@ -33,7 +33,15 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install libvips
-        run: sudo apt-get update && sudo apt-get install -y libvips
+        run: |
+          # GitHub-hosted runners ship Google Chrome's apt source. When Google
+          # publishes an InRelease whose Packages.gz hash does not match the
+          # CDN object, apt-get update fails with Hash Sum mismatch and never
+          # reaches libvips. Chrome is already on the image — drop the source.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                     /etc/apt/sources.list.d/google-chrome.sources
+          sudo apt-get update
+          sudo apt-get install -y libvips
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -92,7 +100,15 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install libvips
-        run: sudo apt-get update && sudo apt-get install -y libvips
+        run: |
+          # GitHub-hosted runners ship Google Chrome's apt source. When Google
+          # publishes an InRelease whose Packages.gz hash does not match the
+          # CDN object, apt-get update fails with Hash Sum mismatch and never
+          # reaches libvips. Chrome is already on the image — drop the source.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                     /etc/apt/sources.list.d/google-chrome.sources
+          sudo apt-get update
+          sudo apt-get install -y libvips
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -133,7 +149,15 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install libvips
-        run: sudo apt-get update && sudo apt-get install -y libvips
+        run: |
+          # GitHub-hosted runners ship Google Chrome's apt source. When Google
+          # publishes an InRelease whose Packages.gz hash does not match the
+          # CDN object, apt-get update fails with Hash Sum mismatch and never
+          # reaches libvips. Chrome is already on the image — drop the source.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                     /etc/apt/sources.list.d/google-chrome.sources
+          sudo apt-get update
+          sudo apt-get install -y libvips
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1

@@ -10,13 +10,14 @@
 # into something the database enforces rather than something the code intends:
 #
 #   pending ──claim──▶ transcribing ──result──▶ transcribed ──confirm──▶ confirmed
-#                            │                      ▲
-#                            └──error──▶ failed ────┘ (explicit human retry)
+#                            │                      ▲    ▲                 │
+#                            └──error──▶ failed ────┘    └────── undo ─────┘ (T7, Fase 5)
+#                                              (explicit human retry)
 #
 # `transcript_edited` is written by exactly two places, and neither is a job:
-# the certifier's autosave (Fase 5) and the freeze performed on confirmation.
-# A transcript arriving late from a provider can therefore never overwrite an
-# edit — see #claim_for_transcription! and .record_transcript.
+# the certifier's autosave (Fase 5, .record_edit) and the freeze performed on
+# confirmation. A transcript arriving late from a provider can therefore never
+# overwrite an edit — see #claim_for_transcription! and .record_transcript.
 #
 # Audio retention (fixed rule 10): the purge clears `s3_key_audio` and stamps
 # `audio_purged_at`, keeping the row. Destroying it would take the finding's
@@ -65,6 +66,10 @@ class VoiceDictation < ApplicationRecord
   # What Fase 5 shows when a report is reopened: everything not yet resolved.
   scope :in_progress, -> { where(status: IN_PROGRESS_STATUSES) }
   scope :terminal, -> { where(status: TERMINAL_STATUSES) }
+  # Everything the certifier still has a decision to make on when a report is
+  # reopened: the in-progress states plus `failed`, which is terminal for the
+  # purge but not for the human — retrying (T5) or discarding it is theirs.
+  scope :awaiting_certifier, -> { where.not(status: STATUSES[:confirmed]).order(:created_at, :id) }
   scope :with_audio, -> { where(audio_purged_at: nil).where.not(s3_key_audio: nil) }
 
   class << self
@@ -142,6 +147,21 @@ class VoiceDictation < ApplicationRecord
       ) == 1
     end
 
+    # The certifier's autosave (Fase 5). Only a `transcribed` dictation accepts
+    # an edit: before that there is no text to correct, and after confirmation
+    # the text is frozen as what went into the finding. Touches nothing but
+    # transcript_edited — never transcript_raw, never status — so a late
+    # provider result and a human correction can never race on the same
+    # column (fixed rule 13).
+    #
+    # @return [Boolean] false when the dictation is not editable right now.
+    def record_edit(id:, text:, now: Time.current)
+      where(id: id, status: STATUSES[:transcribed]).update_all(
+        transcript_edited: text,
+        updated_at: now
+      ) == 1
+    end
+
     # T5 — an explicit human retry of a failed dictation, which costs one new
     # billed call. Refused once the audio is gone: there would be nothing to
     # send.
@@ -151,6 +171,23 @@ class VoiceDictation < ApplicationRecord
         failure_reason: nil,
         transcription_claim_id: nil,
         transcribing_since: nil,
+        updated_at: now
+      ) == 1
+    end
+
+    # T7 — the inline undo of a confirmation (Fase 5, Salesforce Voice-to-Form
+    # pattern). Puts the dictation back in front of the certifier, text intact:
+    # transcript_edited is deliberately *not* cleared, so undoing a premature
+    # tap never costs a correction, and never a re-recording. The finding the
+    # confirmation created is destroyed by VoiceDictationConfirmation.undo in
+    # the same transaction; this is only the state half. No provider call is
+    # involved, so it costs nothing.
+    #
+    # @return [Boolean] true for the single caller that reopened it.
+    def reopen_confirmed!(id:, now: Time.current)
+      where(id: id, status: STATUSES[:confirmed]).update_all(
+        status: STATUSES[:transcribed],
+        confirmed_at: nil,
         updated_at: now
       ) == 1
     end

@@ -10,4 +10,11 @@ module CertificationReportsHelper
   def certifier_status_badge_class(status)
     STATUS_BADGE_CLASSES.fetch(status.to_s, "bg-[hsl(215,20%,93%)] text-[hsl(215,20%,42%)]")
   end
+
+  # "1:07" — the same m:ss the recording indicator counts in, so the card a
+  # certifier sees after reopening matches what they saw while recording.
+  def certifier_audio_duration(seconds)
+    total = seconds.to_i
+    format("%d:%02d", total / 60, total % 60)
+  end
 end

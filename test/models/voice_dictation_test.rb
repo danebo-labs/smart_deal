@@ -280,6 +280,71 @@ class VoiceDictationTest < ActiveSupport::TestCase
     assert_not VoiceDictation.claim_audio_purge!(id: record.id)
   end
 
+  # --- Fase 5: autosave (record_edit) and undo (T7) ---
+
+  test "an edit is accepted only while the dictation is transcribed" do
+    %i[pending transcribing failed confirmed].each do |status|
+      record = dictation(status: status, transcript_raw: "cruda")
+      assert_not VoiceDictation.record_edit(id: record.id, text: "corregida"),
+                 "editing from #{status} must be refused"
+      assert_nil record.reload.transcript_edited
+    end
+
+    record = dictation(status: :transcribed, transcript_raw: "cruda")
+    assert VoiceDictation.record_edit(id: record.id, text: "corregida")
+    record.reload
+    assert_equal "corregida", record.transcript_edited
+    assert_equal "cruda", record.transcript_raw, "the autosave must never touch the raw transcript"
+    assert_equal "transcribed", record.status, "the autosave must never move the state"
+  end
+
+  test "an edit cannot overwrite the text a confirmation froze" do
+    record = dictation(status: :transcribed, transcript_raw: "cruda")
+    assert VoiceDictation.claim_confirmation!(id: record.id, text: "confirmada")
+
+    assert_not VoiceDictation.record_edit(id: record.id, text: "tardía")
+    assert_equal "confirmada", record.reload.transcript_edited
+  end
+
+  test "undoing a confirmation returns the dictation to transcribed with its text intact" do
+    record = dictation(status: :transcribed, transcript_raw: "cruda")
+    VoiceDictation.claim_confirmation!(id: record.id, text: "corregida")
+
+    assert VoiceDictation.reopen_confirmed!(id: record.id)
+    record.reload
+    assert_equal "transcribed", record.status
+    assert_nil record.confirmed_at
+    assert_equal "corregida", record.transcript_edited, "undo must never cost the certifier a correction"
+    assert record.audio_available?
+  end
+
+  test "undo fires only from confirmed, and only once" do
+    %i[pending transcribing transcribed failed].each do |status|
+      record = dictation(status: status)
+      assert_not VoiceDictation.reopen_confirmed!(id: record.id), "undo from #{status} must be refused"
+      assert_equal status.to_s, record.reload.status
+    end
+
+    record = dictation(status: :confirmed)
+    assert VoiceDictation.reopen_confirmed!(id: record.id)
+    assert_not VoiceDictation.reopen_confirmed!(id: record.id)
+  end
+
+  test "awaiting_certifier lists every dictation the certifier still has to resolve, oldest first" do
+    older  = dictation(status: :failed, created_at: 2.hours.ago)
+    newer  = dictation(status: :transcribed, created_at: 1.hour.ago)
+    queued = dictation(status: :pending)
+    done   = dictation(status: :confirmed)
+
+    ids = @report.voice_dictations.awaiting_certifier.pluck(:id)
+
+    assert_includes ids, older.id, "a failed dictation still needs a human decision: retry or discard"
+    assert_includes ids, newer.id
+    assert_includes ids, queued.id
+    assert_not_includes ids, done.id
+    assert ids.index(older.id) < ids.index(newer.id)
+  end
+
   # --- tenancy and integrity ---
 
   test "account_id is inherited from the report and cannot diverge from it" do

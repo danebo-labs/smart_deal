@@ -1,0 +1,104 @@
+<%# locals: voice_dictation %>
+<%# One dictation, one card, one line of state (Wispr Flow pattern, plan
+    section 2.3). The card IS the indicator for its own dictation: it renders
+    "transcribing" as a single line and becomes the editable panel when the
+    transcript lands — never a panel of sub-states. Replaced whole by
+    voice_dictations/show.turbo_stream.erb when the broadcast says it changed. %>
+<li id="<%= dom_id(voice_dictation) %>"
+    data-voice-dictation-target="card"
+    data-dictation-id="<%= voice_dictation.id %>"
+    data-status="<%= voice_dictation.status %>"
+    class="scroll-mt-24 rounded-xl border-2 bg-white p-4 <%= voice_dictation.failed? ? "border-red-300" : "border-[hsl(217,91%,50%)]" %>">
+
+  <% if voice_dictation.pending? || voice_dictation.transcribing? %>
+    <%# Can sit here up to STT_STALE_CLAIM_MINUTES if a worker died — the copy
+        must not read as "stuck", and nothing here retries on its own. %>
+    <div class="flex min-h-[60px] items-center gap-4">
+      <span class="h-4 w-4 shrink-0 animate-pulse rounded-full bg-[hsl(217,91%,50%)]" aria-hidden="true"></span>
+      <div class="min-w-0 flex-1">
+        <p class="text-base font-semibold text-[hsl(222,47%,10%)]" role="status" aria-live="polite">
+          <%= t("certifier.dictation.card.transcribing") %>
+          <% if voice_dictation.duration_seconds %>
+            <span class="font-normal text-[hsl(215,20%,42%)]">· <%= t("certifier.dictation.card.duration", time: certifier_audio_duration(voice_dictation.duration_seconds)) %></span>
+          <% end %>
+        </p>
+        <p class="text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.dictation.card.transcribing_hint") %></p>
+      </div>
+    </div>
+
+  <% elsif voice_dictation.transcribed? %>
+    <%# The gate of fixed rule 3. The textarea travels with the confirm form so a
+        tap inside the autosave debounce still commits what is on screen. %>
+    <%= form_with url: confirm_voice_dictation_path(voice_dictation), method: :post, scope: :voice_dictation,
+        class: "space-y-4",
+        data: { controller: "transcript-autosave",
+                transcript_autosave_url_value: voice_dictation_path(voice_dictation),
+                transcript_autosave_labels_value: {
+                  saving: t("certifier.dictation.autosave.saving"),
+                  saved:  t("certifier.dictation.autosave.saved"),
+                  failed: t("certifier.dictation.autosave.failed"),
+                  frozen: t("certifier.dictation.autosave.frozen")
+                }.to_json } do |f| %>
+      <div class="flex items-center justify-between gap-4">
+        <p class="text-sm font-semibold text-[hsl(217,91%,35%)]"><%= t("certifier.dictation.card.review") %></p>
+        <span data-transcript-autosave-target="status" role="status" aria-live="polite"
+              class="shrink-0 text-sm text-[hsl(215,20%,42%)]"></span>
+      </div>
+
+      <div class="space-y-1.5">
+        <%= f.label :transcript_edited, t("certifier.dictation.card.transcript"), class: "sr-only" %>
+        <%= f.text_area :transcript_edited, value: voice_dictation.confirmed_text, rows: 5,
+            data: { transcript_autosave_target: "field", action: "input->transcript-autosave#changed" },
+            class: "min-h-[120px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 py-3 text-lg leading-relaxed text-[hsl(222,47%,10%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+      </div>
+
+      <div class="space-y-1.5">
+        <%= f.label :location, t("certifier.dictation.card.location"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
+        <%= f.text_field :location, placeholder: t("certifier.finding.location_placeholder"),
+            class: "min-h-[60px] w-full rounded-lg border border-[hsl(215,20%,88%)] bg-white px-4 text-base text-[hsl(222,47%,10%)] placeholder-[hsl(215,20%,65%)] focus:border-[hsl(217,91%,50%)] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,50%)]/30" %>
+      </div>
+
+      <%# 16px between adjacent controls; confirm is the primary action (72px). %>
+      <div class="flex gap-4">
+        <%= f.button t("certifier.dictation.card.confirm"), type: :submit,
+            data: { turbo_submits_with: t("certifier.dictation.card.confirming") },
+            class: "flex min-h-[72px] flex-1 cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] px-4 text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+        <button type="submit" form="discard_<%= dom_id(voice_dictation) %>"
+                class="flex min-h-[72px] min-w-[60px] cursor-pointer items-center justify-center rounded-xl border border-red-200 px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-50">
+          <%= t("certifier.dictation.card.discard") %>
+        </button>
+      </div>
+    <% end %>
+    <%# Discard lives in its own form (no nested forms); the button above
+        submits it via the form= attribute. Explicit confirmation: deleting audio
+        is the expensive-to-undo action here (Google guideline, section 2.3). %>
+    <%= form_with url: voice_dictation_path(voice_dictation), method: :delete,
+        id: "discard_#{dom_id(voice_dictation)}", class: "hidden",
+        data: { turbo_confirm: t("certifier.dictation.card.discard_confirm") } do %>
+    <% end %>
+
+  <% elsif voice_dictation.failed? %>
+    <div class="space-y-4">
+      <div>
+        <p class="text-base font-semibold text-red-700"><%= t("certifier.dictation.card.failed") %></p>
+        <% if voice_dictation.failure_reason.present? %>
+          <p class="mt-1 break-words text-sm text-[hsl(215,20%,42%)]"><%= voice_dictation.failure_reason %></p>
+        <% end %>
+      </div>
+      <div class="flex gap-4">
+        <% if voice_dictation.audio_available? %>
+          <%# Retry costs one billed call: a tap, never a timer (fixed rule 13). %>
+          <%= button_to t("certifier.dictation.card.retry"), retry_voice_dictation_path(voice_dictation), method: :post,
+              form_class: "flex-1",
+              class: "flex min-h-[60px] w-full cursor-pointer items-center justify-center rounded-lg bg-[hsl(217,91%,50%)] px-4 text-sm font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
+        <% else %>
+          <p class="flex flex-1 items-center text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.dictation.card.audio_gone") %></p>
+        <% end %>
+        <%= button_to t("certifier.dictation.card.discard"), voice_dictation_path(voice_dictation), method: :delete,
+            form_class: "shrink-0",
+            data: { turbo_confirm: t("certifier.dictation.card.discard_confirm") },
+            class: "flex min-h-[60px] min-w-[60px] cursor-pointer items-center justify-center rounded-lg border border-red-200 px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-50" %>
+      </div>
+    </div>
+  <% end %>
+</li>

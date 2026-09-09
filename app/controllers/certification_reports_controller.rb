@@ -27,6 +27,11 @@ class CertificationReportsController < ApplicationController
     @report = owned_reports.find(params[:id])
     @findings = @report.inspection_findings.includes(:field_photo)
     @finding = @report.inspection_findings.new
+    # Fase 5: reopening a report shows every dictation still awaiting the
+    # certifier, with its state (fixed rule 11). The finding a confirmation
+    # just created is highlighted with its inline undo for this one render.
+    @dictations = @report.voice_dictations.awaiting_certifier
+    @highlight_finding_id = flash[:highlight_finding_id]
   end
 
   def new

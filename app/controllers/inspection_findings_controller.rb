@@ -78,6 +78,7 @@ class InspectionFindingsController < ApplicationController
   def render_report_with_errors(report)
     @report = report
     @findings = report.inspection_findings.includes(:field_photo)
+    @dictations = report.voice_dictations.awaiting_certifier
     render "certification_reports/show", status: :unprocessable_entity
   end
 

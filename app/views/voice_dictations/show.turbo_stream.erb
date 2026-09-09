@@ -1,0 +1,8 @@
+<%# Fetched by the Stimulus controller when the private broadcast (or a
+    reconnect / return to foreground) says this dictation may have changed.
+    A confirmed dictation has left the certifier's queue: its card goes. %>
+<% if @dictation.confirmed? %>
+  <%= turbo_stream.remove @dictation %>
+<% else %>
+  <%= turbo_stream.replace @dictation, partial: "voice_dictations/voice_dictation", locals: { voice_dictation: @dictation } %>
+<% end %>

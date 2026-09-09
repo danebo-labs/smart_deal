@@ -18,7 +18,11 @@
 # decision (T5), which is the only place where paying for a second call is a
 # choice someone made.
 class TranscriptionJob < ApplicationJob
-  queue_as :default
+  # Own lane (config/queue.yml): the provider poll happens inside this job, so
+  # each dictation holds a worker thread for 10–60 s. On the shared `default`
+  # lane a few simultaneous dictations would delay the chat's cost footer and
+  # photo analysis; two threads here also cap the provider calls in flight.
+  queue_as :transcription
 
   def perform(voice_dictation_id:)
     dictation = VoiceDictation.find_by(id: voice_dictation_id)

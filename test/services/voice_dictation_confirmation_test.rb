@@ -149,6 +149,48 @@ class VoiceDictationConfirmationTest < ActiveSupport::TestCase
     assert_nil VoiceDictationConfirmation.call(-1)
   end
 
+  # --- undo (Fase 5, T7) ---
+
+  test "undo destroys the finding and puts the dictation back in front of the certifier" do
+    record  = dictation
+    VoiceDictation.record_edit(id: record.id, text: "La puerta roza al cerrar.")
+    finding = VoiceDictationConfirmation.call(record.reload)
+
+    assert_difference -> { InspectionFinding.count }, -1 do
+      assert VoiceDictationConfirmation.undo(record)
+    end
+
+    assert_not InspectionFinding.exists?(finding.id)
+    record.reload
+    assert_equal "transcribed", record.status
+    assert_equal "La puerta roza al cerrar.", record.transcript_edited
+  end
+
+  test "undo is idempotent and refuses a dictation that was never confirmed" do
+    record = dictation
+    VoiceDictationConfirmation.call(record)
+
+    assert VoiceDictationConfirmation.undo(record)
+    assert_not VoiceDictationConfirmation.undo(record), "a second undo has nothing left to reverse"
+    assert_equal "transcribed", record.reload.status
+
+    untouched = dictation
+    assert_not VoiceDictationConfirmation.undo(untouched)
+    assert_not VoiceDictationConfirmation.undo(-1)
+  end
+
+  test "after an undo the certifier can correct and confirm again, still yielding one finding" do
+    record = dictation
+    VoiceDictationConfirmation.call(record)
+    VoiceDictationConfirmation.undo(record)
+
+    assert VoiceDictation.record_edit(id: record.id, text: "Texto corregido tras deshacer.")
+    again = VoiceDictationConfirmation.call(record.reload)
+
+    assert_equal "Texto corregido tras deshacer.", again.body
+    assert_equal 1, InspectionFinding.where(voice_dictation_id: record.id).count
+  end
+
   # Fixed rule 1: classifying a defect against the norm is the certifier's
   # judgement, and Danebo guessing it would be worse than leaving it blank.
   test "Danebo fills only body, location and position" do

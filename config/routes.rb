@@ -41,8 +41,20 @@ Rails.application.routes.draw do
   # (CertifierModuleGuard on both controllers, nav entry gated in the layout).
   resources :certification_reports do
     resources :inspection_findings, only: %i[create]
+    # Fase 5: audio is uploaded against the report the moment recording stops.
+    resources :voice_dictations, only: %i[create]
   end
   resources :inspection_findings, only: %i[edit update destroy]
+  # Fase 5: the dictation's own lifecycle — refresh (show), autosave (update),
+  # the explicit yes (confirm), its inline reversal (undo), the human retry of
+  # a failed one (retry) and discarding it (destroy). Flat, not under the chat.
+  resources :voice_dictations, only: %i[show update destroy] do
+    member do
+      post :confirm
+      post :undo
+      post :retry
+    end
+  end
 
   # RAG endpoint for Knowledge Base queries
   post '/rag/ask', to: 'rag#ask'

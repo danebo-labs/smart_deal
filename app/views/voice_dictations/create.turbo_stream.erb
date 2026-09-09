@@ -1,0 +1,4 @@
+<%# Remove-then-append: intake deduplicates by content, so a retried upload of
+    the same blob returns a dictation whose card may already be on the page. %>
+<%= turbo_stream.remove @dictation %>
+<%= turbo_stream.append "voice_dictations", partial: "voice_dictations/voice_dictation", locals: { voice_dictation: @dictation } %>

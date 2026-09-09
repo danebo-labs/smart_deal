@@ -129,6 +129,7 @@ Per-user sessions: omit `SHARED_SESSION_ENABLED` or set `false`. In **test**, sh
 - `bin/setup` installs deps and Git hooks (RuboCop on commit).  
 - Useful tasks: `bin/rails kb:config`, `bin/rails kb:sync`, `bin/rails -T metrics:*`, `bin/rails solid_queue:purge_all` (see `lib/tasks/`).  
 - Run full stack locally: `bin/dev` + workers so metrics and uploads work.
+- Tests: `bin/rails test`. The test DB user defaults to your OS user (Homebrew Postgres superuser) so fixtures with FKs can load. Do not set `DB_USERNAME=app_user` in `.env`.
 
 ## Other references
 

@@ -200,7 +200,10 @@ module SpeechToText
         "version" => corpus["version"],
         "run_id" => @run_id,
         "pricing_version" => Pricing::VERSION,
-        "default_provider_unchanged" => Client::DEFAULT_PROVIDER,
+        "default_provider" => Client::DEFAULT_PROVIDER,
+        # A run with the jargon hint on is not comparable with one without it,
+        # and the hint lives in an env var — so the run has to say which it was.
+        "jargon_prompt" => JargonPrompt.text.presence,
         "error_count_deferred_to_founder" => true,
         "phrases" => corpus.fetch("phrases"),
         "lanes" => lanes_table,
@@ -246,8 +249,9 @@ module SpeechToText
                "List-price × billed seconds (Amazon 15 s minimum). " \
                "No provider returned an invoice line on the transcription response."
       lines << ""
-      lines << "Default `STT_PROVIDER` was **not** changed " \
-               "(still `#{report['default_provider_unchanged']}`). " \
+      lines << "Default `STT_PROVIDER` is `#{report['default_provider']}`. " \
+               "Jargon hint: #{report['jargon_prompt'].present? ? 'on' : 'off'} " \
+               "(`#{JargonPrompt::ENV_KEY}`). " \
                "Error counts on the 20 technical phrases are for the founder."
       lines << ""
       lines << "## Lanes"

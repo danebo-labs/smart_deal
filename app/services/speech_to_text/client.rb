@@ -10,11 +10,21 @@ module SpeechToText
   # set of audios through every adapter inside a single process, which a
   # process-wide environment variable cannot express.
   class Client
-    # Amazon Transcribe is the baseline because it adds no vendor: same AWS
-    # account, same IAM, same bucket. Fase 6 decides the permanent default by
-    # measuring error rate on technical jargon, which is the real driver — at
-    # these prices the cost difference per report is noise (plan section 4).
-    DEFAULT_PROVIDER = "amazon_transcribe"
+    # Set by the Fase 6 benchmark (2026-09-09), which expected cost to be noise
+    # and the jargon error rate to decide. It did decide — for the cheapest
+    # provider, which is not the outcome section 4 anticipated. Groq won all
+    # three axes at once: 34× cheaper than Transcribe, 12× lower p50 latency
+    # (0.87 s vs 10–14 s, with a 912 s p95 on Amazon's batch poll), and the only
+    # lane whose single content error was a homophone a certifier reads past
+    # ("rosa" for "roza") instead of a destroyed word ("Hura" for "holgura") or
+    # a changed number ("dos separadas" for "doce paradas", OpenAI).
+    #
+    # Amazon Transcribe stays registered as the escape hatch, not as a fallback:
+    # it is the lane to switch to if a certifier ever requires the audio to
+    # never leave AWS. Switching is STT_PROVIDER, no deploy — which is also how
+    # OpenAI is reached if Groq degrades. Nothing fails over automatically,
+    # because a second provider call is a second invoice (fixed rule 13).
+    DEFAULT_PROVIDER = "groq"
 
     ADAPTERS = {
       "amazon_transcribe" => AmazonTranscribeAdapter,

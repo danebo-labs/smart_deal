@@ -113,6 +113,53 @@ class SpeechToText::OpenAiAdapterTest < ActiveSupport::TestCase
     assert_not_includes http.requests.sole.body, "name=\"language\""
   end
 
+  # --- jargon hint ---
+
+  test "the jargon hint travels as the prompt part, for Groq as much as OpenAI" do
+    [ SpeechToText::OpenAiAdapter, SpeechToText::GroqAdapter ].each do |klass|
+      http = FakeHttp.new
+      transcribe(http, klass: klass)
+
+      body = http.requests.sole.body
+      assert_includes body, "name=\"prompt\"", "#{klass} sent no jargon hint"
+      assert_includes body, "roza", "#{klass} dropped the measured homophone"
+    end
+  end
+
+  test "an empty prompt sends no part, which is what makes the hint measurable" do
+    http = FakeHttp.new
+    SpeechToText::GroqAdapter.new(client: http, s3: FakeS3.new, prompt: "")
+                             .transcribe(s3_key: "voice_dictations/1/abc/audio.webm")
+
+    assert_not_includes http.requests.sole.body, "name=\"prompt\""
+  end
+
+  test "the hint is overridable by environment without touching the adapter" do
+    previous = ENV["STT_JARGON_PROMPT"]
+    ENV["STT_JARGON_PROMPT"] = "cabina, contrapeso"
+    http = FakeHttp.new
+    transcribe(http)
+
+    assert_includes http.requests.sole.body, "cabina, contrapeso"
+    assert_not_includes http.requests.sole.body, "MonoSpace"
+  ensure
+    previous.nil? ? ENV.delete("STT_JARGON_PROMPT") : ENV["STT_JARGON_PROMPT"] = previous
+  end
+
+  # The hint biases the transcript toward whatever it names, so a fault code or
+  # a count in it would let the model invent one. Spacing errors ("KM887") are
+  # fixable after the fact; a number the certifier never said is not.
+  test "the default hint names no number at all" do
+    assert_no_match(/\d/, SpeechToText::JargonPrompt::DEFAULT)
+  end
+
+  # Sentence form is what measured a fix against Groq; a comma-separated list
+  # changed nothing. Guards a future edit from quietly reverting it to a list.
+  test "the default hint reads as prior transcript rather than as a term list" do
+    assert_includes SpeechToText::JargonPrompt::DEFAULT, "Kone MonoSpace"
+    assert_operator SpeechToText::JargonPrompt::DEFAULT.count("."), :>, 3
+  end
+
   # --- failure modes ---
 
   test "a non-200 response becomes a ProviderError quoting the status" do

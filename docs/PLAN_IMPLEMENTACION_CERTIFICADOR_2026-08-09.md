@@ -42,7 +42,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 |---|---|---|---|---|---|
 | 1º | 0 | Modelo de datos del borrador (alcance núcleo) | **cerrada** (2026-09-08, branch `certificador/fase-0-modelo-datos`, suite local verde) | Opus última versión | high |
 | 2º | 2 | Lista "mis informes" + editor mínimo | **cerrada** (2026-09-08, branch `certificador/fase-2-mis-informes`, suite local verde) | Sonnet última versión | medium |
-| 3º | 4 | Capa de transcripción agnóstica al proveedor | pendiente | Opus última versión | high |
+| 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, transcripción real end-to-end USD 0,0124; **PR por abrir/mergear**) | Opus última versión | high |
 | 4º | 5 | UI de captura de audio (dictado) | pendiente | Fable última versión | high |
 | 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | pendiente | Grok (variante rápida) | low/fast |
 | — | 1 | Exportable HTML con hoja de impresión (formato NCh 2840) | **condicionada** (gate 2-oct) | Sonnet última versión | medium |

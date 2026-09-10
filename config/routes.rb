@@ -40,6 +40,11 @@ Rails.application.routes.draw do
   # Certifier module (Fase 2) — guarded by ENV["CERTIFIER_MODULE_ENABLED"]
   # (CertifierModuleGuard on every controller, nav entry gated in the layout).
   resources :certification_reports do
+    # Fase 1B: read-only review of the whole draft, in the exact order fixed by
+    # the plan. A GET, never generates or changes state.
+    member do
+      get :export
+    end
     resources :inspection_findings, only: %i[create]
     # Fase 5: audio is uploaded against the report the moment recording stops.
     resources :voice_dictations, only: %i[create]

@@ -43,3 +43,19 @@ portales_sin_clasificar:
   account: climb
   body: Ruido metálico intermitente al pasar el piso 5.
   position: 1
+
+# Fase 1B — the one "grave" fixture: no defects table in the review document
+# is exercised end-to-end without it, and it carries its own photo so the
+# evidence section has something real to render too.
+portales_motor_grave:
+  certification_report: edificio_portales
+  account: climb
+  report_equipment: climb_ascensor_a
+  body: Cable de tracción con hilos rotos visibles en el tramo superior de la sala de máquinas.
+  location: Sala de máquinas
+  inspection_item: 8
+  severity: grave
+  nch2840_box: "8.1"
+  norm_point: 5.8.2
+  field_photo: portales_motor_evidence
+  position: 2

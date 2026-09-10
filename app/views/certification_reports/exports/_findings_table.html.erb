@@ -1,0 +1,41 @@
+<%# locals: rows (Array of { finding:, reference:, edit_url: }), empty_message
+    Shared by the grave/leve/unclassified sections of _document.html.erb — same
+    columns everywhere (casilla/punto/aclaración, plan Fase 1B), never a
+    per-severity variant. Full finding text is always shown, never truncated. %>
+<% if rows.empty? %>
+  <p class="certifier-doc__empty"><%= empty_message %></p>
+<% else %>
+  <table class="certifier-doc__table">
+    <thead>
+      <tr>
+        <th><%= t("certifier.export.table.reference") %></th>
+        <th><%= t("certifier.export.table.box") %></th>
+        <th><%= t("certifier.export.table.norm_point") %></th>
+        <th><%= t("certifier.export.table.clarification") %></th>
+        <th><%= t("certifier.export.table.equipment_location") %></th>
+        <th class="no-print"><%= t("certifier.export.edit") %></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% rows.each do |row| %>
+        <% finding = row[:finding] %>
+        <tr id="<%= dom_id(finding) %>">
+          <td data-label="<%= t('certifier.export.table.reference') %>"><%= row[:reference] %></td>
+          <td data-label="<%= t('certifier.export.table.box') %>"><%= finding.nch2840_box %></td>
+          <td data-label="<%= t('certifier.export.table.norm_point') %>"><%= finding.norm_point %></td>
+          <td data-label="<%= t('certifier.export.table.clarification') %>"><%= finding.body %></td>
+          <td data-label="<%= t('certifier.export.table.equipment_location') %>">
+            <%= certifier_finding_equipment_label(finding) %>
+            <% if finding.location.present? %><br><%= finding.location %><% end %>
+            <% if finding.centrave_item_key %><br><%= t("certifier.centrave.#{finding.centrave_item_key}") %><% end %>
+          </td>
+          <td class="no-print">
+            <% if row[:edit_url] %>
+              <%= link_to t("certifier.export.edit"), row[:edit_url], class: "certifier-doc__edit-link" %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>

@@ -1,0 +1,423 @@
+/*
+ * Fase 1B — styling for the certification report review document
+ * (app/views/certification_reports/exports/_document.html.erb).
+ *
+ * Hand-written, local CSS — not a Tailwind build, not a CDN font. This file is
+ * loaded on the review page today and is meant to be the same stylesheet the
+ * Fase 3A PDF job points Chromium at when it renders this partial from a
+ * snapshot: the design must not depend on the app's Tailwind pipeline running,
+ * only on this file existing on disk (rule 16 in the plan).
+ *
+ * On screen: a single continuous read, mobile-first (no page concept).
+ * Under @media print: A4 reference, a repeating letterhead + footer + BORRADOR
+ * watermark via `position: fixed` (Chrome repeats fixed elements on every
+ * printed page), and `.no-print` hides every editor control. Browser print
+ * pagination is a provisional approximation, not the real PDF (see the plan's
+ * Fase 1B acceptance note) — Fase 3A's own Chromium print-to-PDF call is the
+ * source of true page numbers via its native header/footer templates.
+ *
+ * The header/footer `top: 0` / `bottom: 0` (not a negative offset into the
+ * page margin) is deliberate — see the comment on
+ * .certifier-doc__page-header below for the real multi-page-preview bug this
+ * avoids. Fase 3A must use Chromium's own `--print-to-pdf` header/footer
+ * templates, never this DOM `position: fixed` trick, for the reasons in that
+ * same comment.
+ */
+
+.certifier-doc {
+  --certifier-ink: #1a2233;
+  --certifier-muted: #5b6472;
+  --certifier-border: #d7dbe3;
+  --certifier-grave-bg: #fdecec;
+  --certifier-grave-ink: #9a2020;
+  --certifier-leve-bg: #fdf6e3;
+  --certifier-leve-ink: #8a5a10;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--certifier-ink);
+  max-width: 860px;
+  margin: 0 auto;
+  line-height: 1.45;
+}
+
+.certifier-doc__page-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 2px solid var(--certifier-ink);
+}
+
+.certifier-doc__page-header-logo {
+  height: 2.5rem;
+  width: auto;
+  max-width: 6rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.certifier-doc__page-header-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.certifier-doc__page-header-name {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.certifier-doc__page-header-role {
+  font-size: 0.8rem;
+  color: var(--certifier-muted);
+  margin: 0;
+}
+
+.certifier-doc__page-header-flag {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--certifier-grave-ink);
+  border: 1px solid var(--certifier-grave-ink);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.5rem;
+}
+
+.certifier-doc__watermark {
+  display: none;
+}
+
+.certifier-doc__body {
+  padding-bottom: 2rem;
+}
+
+.certifier-doc__section {
+  margin-bottom: 1.75rem;
+}
+
+.certifier-doc__section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--certifier-border);
+}
+
+.certifier-doc__identification-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 1.5rem;
+}
+
+.certifier-doc__field {
+  min-width: 0;
+}
+
+.certifier-doc__field-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--certifier-muted);
+}
+
+.certifier-doc__field-value {
+  display: block;
+  font-size: 0.95rem;
+  word-wrap: break-word;
+}
+
+.certifier-doc__field-value--muted {
+  color: var(--certifier-muted);
+  font-style: italic;
+}
+
+.certifier-doc__equipment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.certifier-doc__equipment-item {
+  border: 1px solid var(--certifier-border);
+  border-radius: 0.375rem;
+  padding: 0.6rem 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.certifier-doc__equipment-label {
+  font-weight: 600;
+}
+
+.certifier-doc__equipment-specs {
+  color: var(--certifier-muted);
+  font-size: 0.85rem;
+}
+
+.certifier-doc__empty {
+  color: var(--certifier-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.certifier-doc__result {
+  border: 1px solid var(--certifier-border);
+  border-radius: 0.375rem;
+  padding: 0.85rem 1rem;
+}
+
+.certifier-doc__result-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.certifier-doc__result-note {
+  margin-top: 0.4rem;
+  color: var(--certifier-muted);
+}
+
+.certifier-doc__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.certifier-doc__table th,
+.certifier-doc__table td {
+  border: 1px solid var(--certifier-border);
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.certifier-doc__table th {
+  background: #f3f4f7;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--certifier-muted);
+}
+
+.certifier-doc__table tbody tr {
+  break-inside: avoid;
+}
+
+.certifier-doc__table td[data-label] {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.certifier-doc__badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.certifier-doc__badge--grave {
+  background: var(--certifier-grave-bg);
+  color: var(--certifier-grave-ink);
+}
+
+.certifier-doc__badge--leve {
+  background: var(--certifier-leve-bg);
+  color: var(--certifier-leve-ink);
+}
+
+.certifier-doc__evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.certifier-doc__evidence-item {
+  border: 1px solid var(--certifier-border);
+  border-radius: 0.375rem;
+  padding: 0.6rem;
+  break-inside: avoid;
+}
+
+.certifier-doc__evidence-photo {
+  display: block;
+  width: 100%;
+  max-height: 14cm;
+  object-fit: contain;
+  background: #f3f4f7;
+  border-radius: 0.25rem;
+}
+
+.certifier-doc__evidence-caption {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--certifier-muted);
+}
+
+.certifier-doc__evidence-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 8rem;
+  background: #f3f4f7;
+  border-radius: 0.25rem;
+  color: var(--certifier-muted);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.certifier-doc__edit-link {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1d5fd6;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.certifier-doc__edit-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Responsive table → stacked cards below 640px (mobile-first review) ── */
+@media (max-width: 640px) {
+  .certifier-doc__identification-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .certifier-doc__table thead {
+    display: none;
+  }
+
+  .certifier-doc__table,
+  .certifier-doc__table tbody,
+  .certifier-doc__table tr,
+  .certifier-doc__table td {
+    display: block;
+    width: 100%;
+  }
+
+  .certifier-doc__table tr {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--certifier-border);
+    border-radius: 0.375rem;
+  }
+
+  .certifier-doc__table td {
+    border: none;
+    border-bottom: 1px solid var(--certifier-border);
+  }
+
+  .certifier-doc__table td:last-child {
+    border-bottom: none;
+  }
+
+  .certifier-doc__table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--certifier-muted);
+    margin-bottom: 0.15rem;
+  }
+}
+
+/* ── Print: A4 reference, repeating letterhead/footer/BORRADOR, no controls ── */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  .certifier-doc {
+    max-width: none;
+    font-size: 10.5pt;
+  }
+
+  .certifier-doc__page-header {
+    position: fixed;
+    /* A *negative* top/bottom offset on a print-fixed element hits a real
+       Chromium bug: the element renders at the wrong page edge (confirmed by
+       rendering an actual multi-page preview — see docs/
+       PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md, Fase 1B hallazgos).
+       `top: 0` (no negative excursion into the page margin) does not trigger
+       it; the reserved space instead comes from .certifier-doc__body's
+       padding-top below. */
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #fff;
+    margin-bottom: 0;
+  }
+
+  .certifier-doc__page-footer {
+    position: fixed;
+    /* Same reasoning as the header — see the comment above. */
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8pt;
+    color: var(--certifier-muted);
+    border-top: 1px solid var(--certifier-border);
+    padding-top: 0.3rem;
+    background: #fff;
+  }
+
+  .certifier-doc__watermark {
+    display: block;
+    position: fixed;
+    top: 45%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-32deg);
+    font-size: 92pt;
+    font-weight: 800;
+    color: rgba(154, 32, 32, 0.14);
+    letter-spacing: 0.1em;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .certifier-doc__body {
+    padding-top: 25mm;
+    padding-bottom: 18mm;
+  }
+
+  .certifier-doc__section {
+    break-inside: avoid;
+  }
+
+  /* A section taller than one page must still flow — Chromium already
+     overrides break-inside: avoid when honouring it would drop content. */
+  .certifier-doc__table {
+    break-inside: auto;
+  }
+
+  .certifier-doc__table thead {
+    display: table-header-group;
+  }
+
+  .certifier-doc__evidence-item {
+    break-inside: avoid;
+  }
+
+  .certifier-doc__table td[data-label]::before {
+    content: none;
+  }
+}

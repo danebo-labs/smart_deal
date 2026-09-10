@@ -302,4 +302,32 @@ class CertificationReportsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @report.inspector_name
     assert_nil @report.result
   end
+
+  # ── Fase 1B: "return_to=export" — direct return to the review page ─────────
+
+  test "editing building info from the review page returns to it on save" do
+    sign_in @user
+
+    patch certification_report_path(@report, return_to: "export"), params: { certification_report: { commune: "Ñuñoa" } }
+
+    assert_redirected_to export_certification_report_path(@report)
+  end
+
+  test "an arbitrary return_to value is ignored, never treated as a redirect target" do
+    sign_in @user
+
+    patch certification_report_path(@report, return_to: "//evil.example.com"), params: { certification_report: { commune: "Ñuñoa" } }
+
+    assert_redirected_to certification_report_path(@report)
+  end
+
+  test "the edit form carries return_to=export through to its save url and back link" do
+    sign_in @user
+
+    get edit_certification_report_path(@report, return_to: "export")
+
+    assert_response :success
+    assert_match(/action="#{Regexp.escape(certification_report_path(@report))}\?return_to=export"/, response.body)
+    assert_match export_certification_report_path(@report), response.body
+  end
 end

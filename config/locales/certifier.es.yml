@@ -227,6 +227,42 @@ es:
         nothing_to_undo: "No hay nada que deshacer."
         cannot_retry: "No se puede reintentar: el audio ya no está disponible. Graba de nuevo."
         cannot_discard: "Un dictado confirmado no se descarta; elimina el hallazgo si corresponde."
+    # Fase 1B — "Revisar informe": documento de lectura, orden fijo, sin
+    # controles impresos. Comparte plantilla con el futuro job PDF (Fase 3A).
+    export:
+      title: "Revisar informe"
+      back_to_report: "Volver al informe"
+      print: "Imprimir o guardar como PDF (provisional)"
+      print_disclaimer: "Salida provisional desde el navegador. La paginación puede diferir de la vista previa del PDF final, que llega en una fase posterior."
+      draft_watermark: "BORRADOR"
+      edit: "Editar"
+      finding_reference: "H-%{number}"
+      sections:
+        identification: "Identificación"
+        equipment: "Equipos"
+        grave: "Defectos graves"
+        result: "Resultado"
+        leve: "Defectos leves"
+        unclassified: "Hallazgos pendientes de clasificación"
+        evidence: "Evidencia fotográfica"
+      empty:
+        equipment: "Sin equipos registrados en este informe."
+        findings: "Sin hallazgos registrados en esta categoría."
+        evidence: "Sin evidencia fotográfica registrada en este informe."
+      table:
+        reference: "Ref."
+        box: "Casilla NCh 2840"
+        norm_point: "Punto de norma"
+        clarification: "Aclaración"
+        equipment_location: "Equipo / Ubicación"
+      identification:
+        issuer_incomplete: "Datos de la certificadora incompletos"
+        address: "Dirección"
+        no_address: "Sin dirección registrada"
+        danebo_reference: "Referencia Danebo (sin N° interno)"
+      photo_unavailable: "Foto no disponible"
+      footer:
+        report_label: "Informe"
     notices:
       report_created: "Informe creado."
       report_updated: "Datos del edificio actualizados."

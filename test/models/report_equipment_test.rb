@@ -70,8 +70,10 @@ class ReportEquipmentTest < ActiveSupport::TestCase
   test "a report with equipment and findings is destroyed cleanly" do
     report = certification_reports(:edificio_portales)
 
-    assert_difference [ "ReportEquipment.count", "InspectionFinding.count" ], -2 do
-      assert report.destroy
+    assert_difference "ReportEquipment.count", -2 do
+      assert_difference "InspectionFinding.count", -3 do
+        assert report.destroy
+      end
     end
   end
 end

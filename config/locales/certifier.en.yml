@@ -227,6 +227,42 @@ en:
         nothing_to_undo: "Nothing to undo."
         cannot_retry: "Cannot retry: the audio is no longer available. Record again."
         cannot_discard: "A confirmed dictation is not discarded; delete the finding instead."
+    # Fase 1B — "Review report": read-only document, fixed order, no printed
+    # controls. Shares its template with the future PDF job (Fase 3A).
+    export:
+      title: "Review report"
+      back_to_report: "Back to report"
+      print: "Print or save as PDF (provisional)"
+      print_disclaimer: "Provisional browser output. Pagination may differ from the final PDF preview, which arrives in a later phase."
+      draft_watermark: "DRAFT"
+      edit: "Edit"
+      finding_reference: "H-%{number}"
+      sections:
+        identification: "Identification"
+        equipment: "Equipment"
+        grave: "Major defects"
+        result: "Result"
+        leve: "Minor defects"
+        unclassified: "Findings pending classification"
+        evidence: "Photographic evidence"
+      empty:
+        equipment: "No equipment registered in this report."
+        findings: "No findings registered in this category."
+        evidence: "No photographic evidence registered in this report."
+      table:
+        reference: "Ref."
+        box: "NCh 2840 box"
+        norm_point: "Standard clause"
+        clarification: "Clarification"
+        equipment_location: "Equipment / Location"
+      identification:
+        issuer_incomplete: "Certification company details incomplete"
+        address: "Address"
+        no_address: "No address registered"
+        danebo_reference: "Danebo reference (no internal number)"
+      photo_unavailable: "Photo unavailable"
+      footer:
+        report_label: "Report"
     notices:
       report_created: "Report created."
       report_updated: "Building details updated."

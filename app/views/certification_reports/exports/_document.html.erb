@@ -1,0 +1,163 @@
+<%#
+  Fase 1B — the ONE content template for the certification report review.
+  Reused as-is by the future PDF job (Fase 3A) rendering from a snapshot: this
+  partial never calls current_account/current_user/request. Every value it
+  needs arrives as an explicit local — locals contract:
+
+    report:          CertificationReport (with inspection_findings/report_equipments
+                      preloaded by the caller — no query is issued from here)
+    issuer:           Hash { name:, minvu_role:, identified:, logo_url: }
+    report_edit_url:  String (or nil to hide the "Editar" link — a rendered PDF
+                      snapshot has no editor to link back to)
+    equipment_rows:   Array of { equipment:, edit_url: }
+    finding_rows:     Array of { finding:, reference: "H-<n>", photo_url:, edit_url: }
+                      already in the report's stable order (position, id) —
+                      "reference" numbers are stable within this one render/snapshot.
+
+  Fixed section order (Fase 1B, non-negotiable): identification → equipment →
+  major defects → result → minor defects → unclassified findings → evidence.
+  Every "Editar"/no-print control lives inside this same template, marked
+  `.no-print`: on screen it is a normal link; under @media print (including the
+  Fase 3A Chromium print-to-PDF call) `.no-print` disappears with zero Ruby
+  branching — see app/assets/stylesheets/certifier_export_print.css.
+%>
+<% grave_rows        = finding_rows.select { |row| row[:finding].severity == "grave" } %>
+<% leve_rows         = finding_rows.select { |row| row[:finding].severity == "leve" } %>
+<% unclassified_rows = finding_rows.select { |row| row[:finding].severity.blank? } %>
+<% evidence_rows     = finding_rows.select { |row| row[:finding].field_photo } %>
+
+<div class="certifier-doc" id="certifier_document">
+  <div class="certifier-doc__watermark" aria-hidden="true"><%= t("certifier.export.draft_watermark") %></div>
+
+  <header class="certifier-doc__page-header">
+    <% if issuer[:logo_url] %>
+      <%= image_tag issuer[:logo_url], class: "certifier-doc__page-header-logo", alt: "" %>
+    <% end %>
+    <div class="certifier-doc__page-header-identity">
+      <% if issuer[:identified] %>
+        <p class="certifier-doc__page-header-name"><%= issuer[:name] %></p>
+        <p class="certifier-doc__page-header-role"><%= t("certifier.settings.minvu_role_line", role: issuer[:minvu_role]) %></p>
+      <% else %>
+        <p class="certifier-doc__page-header-name"><%= t("certifier.export.identification.issuer_incomplete") %></p>
+      <% end %>
+    </div>
+    <span class="certifier-doc__page-header-flag"><%= t("certifier.export.draft_watermark") %></span>
+  </header>
+
+  <div class="certifier-doc__body">
+    <section class="certifier-doc__section" id="certifier_doc_identification">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="certifier-doc__section-title"><%= t("certifier.export.sections.identification") %></h2>
+        <% if report_edit_url %>
+          <%= link_to t("certifier.export.edit"), report_edit_url, class: "certifier-doc__edit-link no-print" %>
+        <% end %>
+      </div>
+      <%
+        identification_fields = [
+          [ t("certifier.fields.building_name"), report.building_name ],
+          [ t("certifier.export.identification.address"), [ report.street, report.street_number, report.commune ].compact_blank.join(" ") ],
+          [ t("certifier.fields.property_use"), report.property_use ],
+          [ report.internal_number.present? ? t("certifier.fields.internal_number") : t("certifier.export.identification.danebo_reference"),
+            report.internal_number.presence || report.danebo_reference ],
+          [ t("certifier.fields.inspection_date"), report.inspection_date && l(report.inspection_date, format: :certifier_long) ],
+          [ t("certifier.fields.report_date"), report.report_date && l(report.report_date, format: :certifier_long) ],
+          [ t("certifier.fields.municipal_reception_date"), report.municipal_reception_date && l(report.municipal_reception_date, format: :certifier_long) ],
+          [ t("certifier.fields.normative_reference"), report.normative_reference ],
+          [ t("certifier.fields.maintenance_company"), report.maintenance_company ],
+          [ t("certifier.fields.maintenance_technician"), report.maintenance_technician ],
+          [ t("certifier.fields.inspector_name"), report.inspector_name ]
+        ].select { |_label, value| value.present? }
+      %>
+      <div class="certifier-doc__identification-grid">
+        <% identification_fields.each do |label, value| %>
+          <div class="certifier-doc__field">
+            <span class="certifier-doc__field-label"><%= label %></span>
+            <span class="certifier-doc__field-value"><%= value %></span>
+          </div>
+        <% end %>
+      </div>
+    </section>
+
+    <section class="certifier-doc__section" id="certifier_doc_equipment">
+      <h2 class="certifier-doc__section-title"><%= t("certifier.export.sections.equipment") %></h2>
+      <% if equipment_rows.empty? %>
+        <p class="certifier-doc__empty"><%= t("certifier.export.empty.equipment") %></p>
+      <% else %>
+        <ul class="certifier-doc__equipment-list">
+          <% equipment_rows.each do |row| %>
+            <% equipment = row[:equipment] %>
+            <li class="certifier-doc__equipment-item" id="<%= dom_id(equipment) %>">
+              <div>
+                <p class="certifier-doc__equipment-label"><%= equipment.label %></p>
+                <% specs = certifier_equipment_specs(equipment) %>
+                <% if specs.any? %>
+                  <p class="certifier-doc__equipment-specs"><%= specs.join(" · ") %></p>
+                <% end %>
+              </div>
+              <% if row[:edit_url] %>
+                <%= link_to t("certifier.export.edit"), row[:edit_url], class: "certifier-doc__edit-link no-print" %>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
+
+    <section class="certifier-doc__section" id="certifier_doc_grave">
+      <h2 class="certifier-doc__section-title"><%= t("certifier.export.sections.grave") %></h2>
+      <%= render "certification_reports/exports/findings_table", rows: grave_rows, empty_message: t("certifier.export.empty.findings") %>
+    </section>
+
+    <section class="certifier-doc__section certifier-doc__result" id="certifier_doc_result">
+      <h2 class="certifier-doc__section-title"><%= t("certifier.export.sections.result") %></h2>
+      <p class="certifier-doc__result-value">
+        <%= report.result.present? ? t("certifier.results.#{report.result}") : t("certifier.results.unrecorded") %>
+      </p>
+      <% if report.result_note.present? %>
+        <p class="certifier-doc__result-note"><%= report.result_note %></p>
+      <% end %>
+    </section>
+
+    <section class="certifier-doc__section" id="certifier_doc_leve">
+      <h2 class="certifier-doc__section-title"><%= t("certifier.export.sections.leve") %></h2>
+      <%= render "certification_reports/exports/findings_table", rows: leve_rows, empty_message: t("certifier.export.empty.findings") %>
+    </section>
+
+    <section class="certifier-doc__section" id="certifier_doc_unclassified">
+      <h2 class="certifier-doc__section-title"><%= t("certifier.export.sections.unclassified") %></h2>
+      <%= render "certification_reports/exports/findings_table", rows: unclassified_rows, empty_message: t("certifier.export.empty.findings") %>
+    </section>
+
+    <section class="certifier-doc__section" id="certifier_doc_evidence">
+      <h2 class="certifier-doc__section-title"><%= t("certifier.export.sections.evidence") %></h2>
+      <% if evidence_rows.empty? %>
+        <p class="certifier-doc__empty"><%= t("certifier.export.empty.evidence") %></p>
+      <% else %>
+        <div class="certifier-doc__evidence-grid">
+          <% evidence_rows.each do |row| %>
+            <% finding = row[:finding] %>
+            <figure class="certifier-doc__evidence-item" id="evidence_<%= dom_id(finding) %>">
+              <% if row[:photo_url] %>
+                <%= image_tag row[:photo_url], class: "certifier-doc__evidence-photo", alt: "" %>
+              <% else %>
+                <div class="certifier-doc__evidence-unavailable"><%= t("certifier.export.photo_unavailable") %></div>
+              <% end %>
+              <figcaption class="certifier-doc__evidence-caption">
+                <%= row[:reference] %> — <%= certifier_finding_equipment_label(finding) %>
+                <% if finding.location.present? %> · <%= finding.location %><% end %>
+                <% if row[:edit_url] %>
+                  <br><%= link_to t("certifier.export.edit"), row[:edit_url], class: "certifier-doc__edit-link no-print" %>
+                <% end %>
+              </figcaption>
+            </figure>
+          <% end %>
+        </div>
+      <% end %>
+    </section>
+  </div>
+
+  <footer class="certifier-doc__page-footer">
+    <span><%= t("certifier.export.footer.report_label") %> <%= report.internal_number.presence || report.danebo_reference %></span>
+    <span><%= t("certifier.export.draft_watermark") %></span>
+  </footer>
+</div>

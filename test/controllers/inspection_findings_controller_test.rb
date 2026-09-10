@@ -309,4 +309,31 @@ class InspectionFindingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_match I18n.t("certifier.finding.no_equipments_hint"), response.body
   end
+
+  # ── Fase 1B: "return_to=export" — direct return to the review page ─────────
+
+  test "editing from the review page returns to it, anchored to the finding, on save" do
+    sign_in @user
+
+    patch inspection_finding_path(@finding, return_to: "export"), params: { inspection_finding: { body: @finding.body } }
+
+    assert_redirected_to export_certification_report_path(@report, anchor: ActionView::RecordIdentifier.dom_id(@finding))
+  end
+
+  test "an arbitrary return_to value is ignored, never treated as a redirect target" do
+    sign_in @user
+
+    patch inspection_finding_path(@finding, return_to: "http://evil.example.com"), params: { inspection_finding: { body: @finding.body } }
+
+    assert_redirected_to certification_report_path(@report)
+  end
+
+  test "the edit form carries return_to=export through to its save url" do
+    sign_in @user
+
+    get edit_inspection_finding_path(@finding, return_to: "export")
+
+    assert_response :success
+    assert_match(/action="#{Regexp.escape(inspection_finding_path(@finding))}\?return_to=export"/, response.body)
+  end
 end

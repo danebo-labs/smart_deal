@@ -231,4 +231,34 @@ class ReportEquipmentsControllerTest < ActionDispatch::IntegrationTest
     assert_match "Ascensor A", response.body
     assert_match "Ascensor B", response.body
   end
+
+  # ── Fase 1B: "return_to=export" — direct return to the review page ─────────
+
+  test "editing from the review page returns to it, anchored to the equipment, on save" do
+    sign_in @user
+    equipment = @report.report_equipments.create!(label: "Ascensor A")
+
+    patch report_equipment_path(equipment, return_to: "export"), params: { report_equipment: { label: "Ascensor A" } }
+
+    assert_redirected_to export_certification_report_path(@report, anchor: ActionView::RecordIdentifier.dom_id(equipment))
+  end
+
+  test "an arbitrary return_to value is ignored, never treated as a redirect target" do
+    sign_in @user
+    equipment = @report.report_equipments.create!(label: "Ascensor A")
+
+    patch report_equipment_path(equipment, return_to: "https://evil.example.com"), params: { report_equipment: { label: "Ascensor A" } }
+
+    assert_redirected_to certification_report_path(@report)
+  end
+
+  test "the edit form carries return_to=export through to its save url" do
+    sign_in @user
+    equipment = @report.report_equipments.create!(label: "Ascensor A")
+
+    get edit_report_equipment_path(equipment, return_to: "export")
+
+    assert_response :success
+    assert_match(/action="#{Regexp.escape(report_equipment_path(equipment))}\?return_to=export"/, response.body)
+  end
 end

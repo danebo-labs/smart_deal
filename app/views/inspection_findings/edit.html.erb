@@ -5,7 +5,9 @@
 
   <%= render "certification_reports/errors", record: @finding %>
 
-  <%= form_with model: @finding, url: inspection_finding_path(@finding), multipart: true, class: "space-y-4" do |f| %>
+  <%# Preserves "return_to=export" (Fase 1B) so saving comes straight back to
+      the review page, scrolled to this finding, instead of the report's show page. %>
+  <%= form_with model: @finding, url: inspection_finding_path(@finding, return_to: params[:return_to]), multipart: true, class: "space-y-4" do |f| %>
     <div class="space-y-1.5">
       <%= f.label :body, t("certifier.finding.body"), class: "block text-sm font-medium text-[hsl(222,47%,10%)]" %>
       <%= f.text_area :body, rows: 3,
@@ -91,6 +93,7 @@
         class: "flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-xl bg-[hsl(217,91%,50%)] text-base font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
   <% end %>
 
-  <%= link_to t("certifier.finding.cancel"), certification_report_path(@report),
+  <%= link_to t("certifier.finding.cancel"),
+      params[:return_to] == "export" ? export_certification_report_path(@report, anchor: dom_id(@finding)) : certification_report_path(@report),
       class: "mt-4 flex min-h-[60px] w-full items-center justify-center rounded-lg border border-[hsl(215,20%,88%)] text-base font-medium text-[hsl(215,20%,42%)] transition-colors hover:bg-[hsl(215,20%,93%)]" %>
 </main>

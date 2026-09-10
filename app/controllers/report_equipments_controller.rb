@@ -10,6 +10,7 @@
 class ReportEquipmentsController < ApplicationController
   include AuthenticationConcern
   include CertifierModuleGuard
+  include CertifierExportRedirect
 
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
@@ -43,7 +44,8 @@ class ReportEquipmentsController < ApplicationController
     @equipment = owned_equipment
 
     if @equipment.update(equipment_params)
-      redirect_to certification_report_path(@equipment.certification_report),
+      report = @equipment.certification_report
+      redirect_to export_return_path(report, anchor: dom_id(@equipment)) || certification_report_path(report),
                   notice: t("certifier.notices.equipment_updated")
     else
       @report = @equipment.certification_report

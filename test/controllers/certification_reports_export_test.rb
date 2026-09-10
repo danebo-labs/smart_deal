@@ -24,6 +24,17 @@ class CertificationReportsExportTest < ActionDispatch::IntegrationTest
     ENV.delete("CERTIFIER_MODULE_ENABLED")
   end
 
+  # CI has no AWS credentials; FieldPhotoUrlService#call would return nil after
+  # a failed Instance Profile lookup. Stub the signed URL the same way
+  # FieldPhotosControllerTest does — keep trusted_redirect_url? real.
+  def with_fake_photo_url(url)
+    original = FieldPhotoUrlService.instance_method(:call)
+    FieldPhotoUrlService.define_method(:call) { |*_args| url }
+    yield
+  ensure
+    FieldPhotoUrlService.define_method(:call, original)
+  end
+
   # ── Guards ─────────────────────────────────────────────────────────────────
 
   test "responds 404 when the module flag is disabled" do
@@ -176,12 +187,17 @@ class CertificationReportsExportTest < ActionDispatch::IntegrationTest
     host! CLIMB_HOST
     sign_in users(:two)
     report = certification_reports(:edificio_portales)
+    bucket = S3DocumentsService.new.bucket_name
+    signed_url = "https://#{bucket}.s3.amazonaws.com/field_photos/signed"
 
-    get export_certification_report_path(report)
+    with_fake_photo_url(signed_url) do
+      get export_certification_report_path(report)
 
-    evidence_section = response.body[/id="certifier_doc_evidence".*?<\/section>/m]
-    assert_match "<img", evidence_section
-    assert_no_match I18n.t("certifier.export.photo_unavailable"), evidence_section
+      evidence_section = response.body[/id="certifier_doc_evidence".*?<\/section>/m]
+      assert_match "<img", evidence_section
+      assert_match signed_url, evidence_section
+      assert_no_match I18n.t("certifier.export.photo_unavailable"), evidence_section
+    end
   end
 
   test "a report with no photo evidence at all shows the empty-evidence message" do
@@ -198,19 +214,13 @@ class CertificationReportsExportTest < ActionDispatch::IntegrationTest
 
   test "a finding that has a photo but no resolvable url shows the 'photo unavailable' placeholder" do
     sign_in @user
-    fake_service = Object.new
-    def fake_service.call(_photo) = nil
-    def fake_service.trusted_redirect_url?(_url) = false
 
-    original_new = FieldPhotoUrlService.method(:new)
-    FieldPhotoUrlService.define_singleton_method(:new) { |**_kwargs| fake_service }
+    with_fake_photo_url(nil) do
+      get export_certification_report_path(@report)
 
-    get export_certification_report_path(@report)
-
-    assert_response :success
-    assert_match I18n.t("certifier.export.photo_unavailable"), response.body
-  ensure
-    FieldPhotoUrlService.define_singleton_method(:new) { |*a, **kw| original_new.call(*a, **kw) }
+      assert_response :success
+      assert_match I18n.t("certifier.export.photo_unavailable"), response.body
+    end
   end
 
   # ── XSS: certifier-typed free text must always be escaped ──────────────────

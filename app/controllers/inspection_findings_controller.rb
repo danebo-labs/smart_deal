@@ -8,6 +8,7 @@
 class InspectionFindingsController < ApplicationController
   include AuthenticationConcern
   include CertifierModuleGuard
+  include CertifierExportRedirect
 
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
@@ -34,7 +35,9 @@ class InspectionFindingsController < ApplicationController
     attach_photo(@finding)
 
     if @finding.update(finding_params)
-      redirect_to certification_report_path(@finding.certification_report), notice: t("certifier.notices.finding_updated")
+      report = @finding.certification_report
+      redirect_to export_return_path(report, anchor: dom_id(@finding)) || certification_report_path(report),
+                  notice: t("certifier.notices.finding_updated")
     else
       render_edit_with_errors
     end

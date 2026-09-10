@@ -61,6 +61,8 @@ es:
       # es had no date.formats at all, so `l(date)` raised. Added as an explicit
       # named format instead of :default so no existing view changes shape.
       certifier_short: "%d-%m-%Y"
+      # Fase 1B: a more formal date for the printed/reviewed document.
+      certifier_long: "%d de %B de %Y"
   dashboard:
     metrics_refreshing: "Métricas actualizándose…"
   bulk_uploads:

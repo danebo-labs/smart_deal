@@ -1,0 +1,29 @@
+<% content_for :title, "#{t('certifier.export.title')} — #{@report.building_name}" %>
+<% content_for :head do %>
+  <%= stylesheet_link_tag "certifier_export_print", "data-turbo-track": "reload" %>
+<% end %>
+
+<main class="mx-auto max-w-3xl px-4 pt-20 pb-16 md:pt-28" data-controller="print">
+  <%# Every control here is app chrome, not part of the document: hidden under
+      @media print (rule: "sin controles dentro del documento impreso"). %>
+  <div class="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
+    <%= link_to certification_report_path(@report),
+        class: "flex min-h-[60px] items-center gap-1.5 rounded-lg border border-[hsl(215,20%,88%)] px-4 text-sm font-medium text-[hsl(222,47%,10%)] transition-colors hover:bg-[hsl(215,20%,93%)]" do %>
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+      </svg>
+      <%= t("certifier.export.back_to_report") %>
+    <% end %>
+
+    <button type="button" data-action="print#print"
+        class="flex min-h-[60px] items-center gap-1.5 rounded-lg bg-[hsl(217,91%,50%)] px-4 text-sm font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]">
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z"/>
+      </svg>
+      <%= t("certifier.export.print") %>
+    </button>
+  </div>
+  <p class="no-print mb-6 text-sm text-[hsl(215,20%,42%)]"><%= t("certifier.export.print_disclaimer") %></p>
+
+  <%= render "certification_reports/exports/document", **@export_document %>
+</main>

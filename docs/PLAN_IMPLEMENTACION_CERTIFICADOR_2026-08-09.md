@@ -6,6 +6,8 @@
 
 **Decisión del fundador, 2026-09-09 — generación de informe ACTIVADA:** tras probar el circuito en producción y reportar que funciona salvo detalles de UI, el fundador pidió avanzar con revisión y PDF, con encabezado/pie comunes por cuenta y una experiencia mínima. Esta instrucción adelanta **solo las Fases 1 y 3 y los datos necesarios para ellas**, ahora divididas en **1A → 1B → 3A → 3B**. Es una excepción explícita al calendario anterior; no acredita el gate comercial ni activa la Fase 7, el catálogo normativo completo o la derivación automática de normativa. Los planes padre no se editan en esta actualización: sus condiciones de validación comercial siguen vigentes; para ejecutar este alcance adelantado rige esta decisión registrada. **No se autorizó quitar BORRADOR ni emitir/fimar una certificación.** Próximo prompt: **Fase 1A**. Ninguna de estas cuatro subfases está implementada por la sola actualización del plan.
 
+**Decisión del fundador, 2026-09-09 (noche) — tramo de funcionalidades CERRADO; piloto con lo construido:** tras revisar en local la plantilla de impresión y la visualización del informe (Fase 1B), el fundador declara el look de revisión/impresión suficiente y **cierra la incorporación de funcionalidades** de este plan. El circuito a pilotar es el ya implementado: dictar → corregir → confirmar → editar datos/equipos/hallazgos → Revisar informe HTML → imprimir desde el navegador (marcado BORRADOR). **No se autoriza una fase de features nueva.** **3A y 3B quedan diferidas:** el PDF asíncrono, el archivo conservado y la vista previa/descarga del mismo archivo no son requisito del piloto; la impresión del navegador es la salida provisional. La Fase 7, el catálogo normativo y quitar BORRADOR siguen fuera. El siguiente trabajo no es construir: es recorrer el flow, anotar fricción real y aplicar **solo mejoras de UX** sobre superficies existentes. Un ejecutor no reabre 3A/3B/7 ni inventa un alcance de PDF por leer el contrato compartido de más abajo — esa autorización del 9-sep (mañana) queda sustituida por esta. 1A ya está en `main` (PR #28). Merge/deploy de 1B siguen pendientes de commit/PR; no se dan por hechos.
+
 ---
 
 ## 0. Reglas fijas (ningún ejecutor las contradice)
@@ -36,7 +38,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 - **Antes de ejecutar una fase**, el ejecutor lee: este documento completo, los bloques *Cierre de fase* de todas las fases anteriores, y el bloque *Insumos* de su propia fase.
 - **Al cerrar una fase**, el ejecutor: (a) llena su bloque *Cierre de fase* con hallazgos y desviaciones; (b) **edita los bloques *Insumos* de las fases siguientes afectadas** — no basta con anotar el hallazgo en la fase propia; (c) actualiza la tabla de estado de la sección 2.
 - **Cierre transferible obligatorio para 1A/1B/3A/3B:** registrar fecha, modelo/effort realmente usados, branch/commit/PR, archivos y contratos creados, migraciones y configuración, comandos ejecutados con resultados, revisión visual y límites, hallazgos, decisiones/desviaciones y el siguiente paso exacto. Distinguir `pendiente`, `en curso`, `cerrada en local`, `integrada` y `verificada en producción`; nunca confundir pruebas locales con deploy. Si falta una verificación, nombrarla y dejar el estado parcial.
-- **Autonomía:** las decisiones de alcance de esta revisión ya están tomadas. Resolver detalles rutinarios con patrones del repositorio y documentarlos; no reabrir la elección HTML/PDF, el encabezado común ni el gate temporal de estas cuatro subfases. Un bloqueo externo no impide completar y probar las partes independientes. No inventar datos de certificadora, credenciales, resultados técnicos ni verificaciones realizadas.
+- **Autonomía:** las decisiones de alcance ya están tomadas. Resolver detalles rutinarios con patrones del repositorio y documentarlos. **No reabrir 3A/3B, no quitar BORRADOR, no inventar features.** Un bloqueo externo no autoriza “completar el PDF” por inercia. No inventar datos de certificadora, credenciales, resultados técnicos ni verificaciones realizadas.
 - **Prompt de lanzamiento:** cada fase tiene su bloque *Prompt de lanzamiento* con el modelo asignado (tabla de la sección 2). Todos extienden esta base común, que no se repite en cada bloque pero es parte del prompt:
 
 > Lee `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md` completo. Verifica el estado del repositorio y los cierres de las dependencias. Crea el branch indicado por la fase desde una base que contenga esas dependencias (sección 2.1), sin descartar cambios ajenos. Ejecuta el alcance autorizado respetando sección 0, sección 2.2 y los `AGENTS.md` aplicables. Todo cambio de comportamiento lleva tests Minitest; prueba en local. Al terminar, completa el cierre transferible, actualiza la tabla de estado y los Insumos de todas las fases afectadas. No marques merge/deploy como hechos sin evidencia.
@@ -52,16 +54,16 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 | 3º | 4 | Capa de transcripción agnóstica al proveedor | **cerrada** (2026-09-08, branch `certificador/fase-4-transcripcion`, suite local verde, mergeada a `main` vía PR #22; transcripción real end-to-end con **Transcribe (USD 0,0124) y OpenAI (USD 0,0016)**, total USD 0,0140) | Opus última versión | high |
 | 4º | 5 | UI de captura de audio (dictado) | **cerrada en local** (2026-09-08, branch `certificador/fase-5-captura-audio`, suite local verde 2743/0/0, end-to-end real en dev con OpenAI + cable privado, USD 0,0013; **reserva:** la prueba en móvil real queda para el fundador — necesita HTTPS, receta en el cierre) | Fable última versión | high |
 | 5º | 6 | Benchmark de costo/calidad STT + COGS de voz | **cerrada** (2026-09-09, benchmark en `certificador/fase-6-benchmark-stt` / PR #24; default `STT_PROVIDER=groq` + `JargonPrompt` en `certificador/fase-6-default-groq`) | Grok (variante rápida) | low/fast |
-| 6º | 1A | Datos mínimos del informe y encabezado común por cuenta | **cerrada en local** (2026-09-09, branch `codex/certificador-1a-datos`, ejecutada con Opus 4.5 / thinking alto, no con el modelo recomendado; suite local verde 2861/0/0, rubocop y `zeitwerk:check` limpios, 4 migraciones reversibles; **pendiente:** revisión visual del fundador, commit/PR, merge y deploy) | GPT-6 Astra | high |
-| 7º | 1B | Revisión HTML y plantilla de impresión compartida | **activada; pendiente de que 1A entre a `main`** | GPT-6 Astra | medium |
-| 8º | 3A | PDF asíncrono, archivo conservado y aislamiento | **activada; pendiente de 1B** | GPT-6 Astra | high |
-| 9º | 3B | Vista previa real, descarga y verificación de extremo a extremo | **activada; pendiente de 3A** | GPT-6 Astra | high |
+| 6º | 1A | Datos mínimos del informe y encabezado común por cuenta | **integrada** (2026-09-09, `codex/certificador-1a-datos` mergeada a `main` vía PR #28; Opus 4.5 / thinking alto; **pendiente nombrado en su cierre:** revisión visual del fundador de settings/equipos — distinta de la revisión de impresión de 1B) | GPT-6 Astra | high |
+| 7º | 1B | Revisión HTML y plantilla de impresión compartida | **cerrada en local; revisión visual del fundador hecha** (2026-09-09, branch `codex/certificador-1b-revision` sobre `main` con 1A ya mergeada vía PR #28; look de revisión/impresión aprobado en local — “quedó buenísimo”; suite local verde 2890/0/0; **pendiente:** commit/PR, merge y deploy) | GPT-6 Astra | medium |
+| 8º | 3A | PDF asíncrono, archivo conservado y aislamiento | **diferida** (2026-09-09 noche: no es requisito del piloto; la salida es imprimir desde el navegador. No ejecutar sin reactivación explícita.) | GPT-6 Astra | high |
+| 9º | 3B | Vista previa real, descarga y verificación de extremo a extremo | **diferida** (pende de 3A; misma decisión: no construir ahora) | GPT-6 Astra | high |
 | — | 7 | Estructuración del dictado en hallazgos | **condicionada** (gate 2-oct) | Opus última versión | high |
 
 **Asignación revisada el 2026-09-09 — recomendación de ingeniería, no benchmark entre proveedores:**
 
-- **Un solo modelo puede ejecutar todo el tramo.** Recomendación operativa: `gpt-6-astra`, en cuatro entregas secuenciales, variando effort como indica la tabla. No se requieren cuatro modelos ni agentes en paralelo; el esquema, la plantilla y el contrato de archivo dependen entre sí. Si se usa una sola sesión, actualizar el documento y verificar cada subfase antes de continuar.
-- **1A / high:** esquema, permisos para datos compartidos y relaciones equipo/hallazgo. **1B / medium:** ERB/CSS y revisión sobre contratos fijados; subir a high si aparecen problemas de paginación o accesibilidad. **3A / high:** concurrencia, snapshot consistente, retención, S3, aislamiento y operación de Chromium. **3B / high:** recuperación de errores, ediciones concurrentes y fidelidad entre vista previa y descarga.
+- **Histórico del tramo 1A→3B.** La recomendación operativa de esa noche era `gpt-6-astra` en cuatro entregas secuenciales. **Quedó sin efecto para 3A/3B** con la decisión de la misma noche que cierra funcionalidades: no lanzar esas subfases. 1A y 1B ya se ejecutaron (modelos reales en cada cierre).
+- **1A / high:** esquema, permisos para datos compartidos y relaciones equipo/hallazgo. **1B / medium:** ERB/CSS y revisión sobre contratos fijados. **3A / high** y **3B / high** describen el trabajo *si se reactivan*; no son la cola actual.
 - La antigua asignación **Grok rápido / low para toda la Fase 3 deja de ser apropiada para este alcance**: ya no es solamente agregar una gem y un botón. Un ejecutor estándar como Sonnet puede implementar 1B; para 1A/3A/3B usar un modelo fuerte de ingeniería y razonamiento alto (Opus si se ejecuta fuera de Codex y está disponible). Son equivalencias de complejidad, no una afirmación de superioridad medida.
 - Los nombres de las fases cerradas se conservan como historial. No reutilizar aliases ambiguos como “GPT Ultra” o “Fable última versión” para un lanzamiento nuevo sin identificar el modelo concreto disponible. La Fase 7 sigue condicionada: al activarse, registrar su modelo exacto y usar razonamiento alto.
 - **Fuente y límites:** la [guía oficial de GPT-6 Astra](https://developers.openai.com/api/docs/guides/latest-model) consultada el 9-sep describe su uso para ingeniería y flujos de varios pasos. El entorno Codex de esta sesión ofrece `gpt-6-astra` con `medium`/`high`, entre otros niveles; eso no garantiza disponibilidad en otra herramienta o cuenta. La asignación por subfase es criterio propio sobre este repositorio, sin estimar precios ni tiempos no medidos. Estos son modelos **ejecutores del desarrollo**; no cambian STT ni los modelos de producción de Danebo.
@@ -70,7 +72,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 
 **Branches.** Un branch por fase (`certificador/fase-0-modelo-datos`, `certificador/fase-1-exportable`, …), un PR chico y revisable por fase. El cierre de fase (bloque de este documento) se edita dentro del mismo PR. **Prerrequisito antes de la Fase 0:** cumplido — verificado el 2026-09-08: el working tree de `main` está limpio y los branches de fase parten de `main` actualizado.
 
-**Para 1A → 1B → 3A → 3B:** usar los nombres `codex/certificador-1a-datos`, `codex/certificador-1b-revision`, `codex/certificador-3a-pdf` y `codex/certificador-3b-preview`. La base preferida es `main` con la dependencia integrada. Si el fundador pide ejecutar todo seguido sin merges intermedios, continuar sobre la rama anterior mediante ramas/commits secuenciales y documentar la base exacta; no simular que está en `main`. El mandato actual actualiza el plan; los prompts siguientes autorizan implementación local al ser lanzados. Merge/deploy siguen la autorización de la sesión de ejecución, no se presumen por leer un prompt en este archivo.
+**Para 1A → 1B (ejecutado) y 3A → 3B (diferido):** los nombres de branch siguen siendo `codex/certificador-1a-datos`, `codex/certificador-1b-revision`, `codex/certificador-3a-pdf` y `codex/certificador-3b-preview`. 1A ya está en `main` (PR #28). 1B vive en `codex/certificador-1b-revision` hasta commit/PR. **No crear `codex/certificador-3a-pdf` ni `codex/certificador-3b-preview`** hasta que el fundador reactive esas fases por escrito en este documento. Merge/deploy de 1B siguen la autorización de la sesión, no se presumen por leer este archivo.
 
 **Prueba y deploy.** Local primero: tests Minitest de la fase + prueba manual en dev (la Fase 4 exige además una transcripción real end-to-end en dev). Fase verde → merge a `main` → deploy a producción con Kamal, el flujo existente. No se acumulan fases sin mergear: cada fase entra a `main` al cerrarse.
 
@@ -83,7 +85,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 - **Retirar el código de una fase puntual:** `git revert` del merge commit de esa fase (no `reset`) — no reescribe historia, es seguro sobre una rama ya deployada. Las migraciones de cada fase se exigen reversibles como criterio de aceptación (Fase 0 ya lo probó con `db:rollback:primary STEP=2`), así que `rails db:rollback` deshace el esquema si además se quiere botar las tablas.
 - **Estado de reposo aceptable:** el módulo es aditivo (tablas y rutas nuevas; nunca toca `ConversationSession` ni rutas existentes — regla fija 6). Si el piloto no valida el módulo, dejarlo mergeado y apagado por el flag indefinidamente es un desenlace válido — no hay obligación de deshacer git.
 
-**Rutas.** Reutilizar `resources :certification_reports` y las rutas de dictado ya existentes; nada bajo el chat ni `/rag`. 1A agrega un recurso singular de configuración de certificadora y las rutas mínimas de equipos; 1B, `GET /certification_reports/:id/export` para revisión HTML. 3A agrega `POST /certification_reports/:id/exports` para solicitar generación y rutas autenticadas de estado/vista/descarga por ID de exportación. Un `GET` nunca genera ni cambia estados. Los nombres definitivos se registran en cada cierre para el siguiente ejecutor.
+**Rutas.** Reutilizar `resources :certification_reports` y las rutas de dictado ya existentes; nada bajo el chat ni `/rag`. 1A agrega un recurso singular de configuración de certificadora y las rutas mínimas de equipos; 1B, `GET /certification_reports/:id/export` para revisión HTML (esta es la superficie de salida del piloto). 3A, si se reactiva, agregaría `POST /certification_reports/:id/exports` y rutas autenticadas de estado/vista/descarga por ID de exportación. Un `GET` nunca genera ni cambia estados. Los nombres definitivos se registran en cada cierre.
 
 **UI: sección propia, no el chat.** El módulo es un editor de documento (lista + borrador), no una conversación: reutiliza el layout/shell de la app (navegación, Tailwind, i18n) pero con vistas y controladores Stimulus propios. No se monta sobre `rag_chat_controller` ni sobre `ConversationSession` (regla fija 6). El chat queda intacto para el flujo mantenedor.
 
@@ -93,7 +95,7 @@ Heredadas del Plan General sección 4.2 y de los `AGENTS.md` del repositorio:
 
 Cinco gaps críticos señalados por una revisión externa, verificados contra el código y los planes vigentes. Los ejecutores no repiten el análisis: aplican estas resoluciones, que ya están integradas en las reglas fijas y en las fases.
 
-1. **Orden contradictorio con el alcance vigente — confirmado el 8-sep.** Se ejecutó primero 0 → 2 → 4 → 5 → 6 y se condicionó el resto. **Actualización 9-sep:** la decisión del fundador registrada al inicio activa 1A → 1B → 3A → 3B antes del gate; no repetir el bloqueo por fecha en sus prompts. La Fase 7 y la automatización normativa mantienen su condición. Los gates comerciales de septiembre no se dan por cumplidos.
+1. **Orden contradictorio con el alcance vigente — confirmado el 8-sep.** Se ejecutó primero 0 → 2 → 4 → 5 → 6 y se condicionó el resto. **Actualización 9-sep:** se adelantaron 1A y 1B (cerradas en local). **Misma noche:** 3A/3B se diferieron; no repetir su activación por leer el texto de la mañana. La Fase 7 y la automatización normativa mantienen su condición. Los gates comerciales de septiembre no se dan por cumplidos.
 2. **Purga de fotos vinculadas a informes — confirmado.** `FieldPhotoRetentionJob` borra el prefijo S3 y destruye la fila de toda foto que supere `FIELD_PHOTO_RETENTION_DAYS` (90 por defecto), sin distinguir fotos referenciadas por un informe, y borra S3 **antes** de destruir la fila — una FK restrictiva no protegería el archivo. Resolución: regla fija 10 + política de retención en la Fase 0 (exclusión en el job, FK como respaldo, fila antes que S3, test de supervivencia).
 3. **Recuperación del trabajo interrumpido sin garantía — confirmado.** Un blob local en memoria no sobrevive recarga ni cierre; el requisito vigente es cerrar y reabrir sin perder audio, transcripción ni texto (plan de septiembre, sección 2.1, punto 5). Resolución: regla fija 11 + upload-first, autosave de ediciones no confirmadas y pruebas de recuperación explícitas en la Fase 5; estados de dictado recuperables en la Fase 4.
 4. **Aislamiento especificado a medias — confirmado.** `KbSyncChannel`/`KbSyncBroadcaster` transmiten a `account:<id>:kb_sync` — toda la cuenta — y no sirven de patrón para el dictado; y "mis informes" exige propiedad por usuario, no solo por cuenta. Resolución: regla fija 12 + canal privado del usuario en la Fase 4 + criterios de aislamiento en dos ejes (cuenta ajena y otro usuario de la misma cuenta) en las Fases 0, 1 y 2.
@@ -115,6 +117,27 @@ No se pide copiar el diseño visual de ninguna de estas apps — la UI de Danebo
 **Guideline de confirmación de voz — Google Conversation Design ([fuente](https://developers.google.com/assistant/conversation-design/confirmations)):** confirmación **explícita** solo para lo caro de deshacer; confirmación **implícita** (mostrar y seguir) para todo lo demás; **corrección en un paso** — el usuario corrige directamente en vez de reiniciar el flujo. Aplicado aquí: incorporar un dictado a un hallazgo del borrador es la acción cara de deshacer → confirmación explícita (ya es regla fija 3, no cambia); mostrar nivel de audio o duración durante la grabación no necesita confirmación; editar la transcripción es corrección en un paso, no "grabar de nuevo".
 
 **Tap targets con guantes — cifra concreta que reemplaza el "tap targets grandes" genérico:** consumidor sin guantes, 9–11mm ≈ 44px a 160dpi (Apple HIG, W3C [M002](https://w3c.github.io/Mobile-A11y-TF-Note/Techniques/M002)); con guantes de trabajo, **mínimo 60px (≈15mm)** para cualquier control interactivo y **mínimo 72px (≈20mm) para la acción primaria** (grabar/parar, confirmar), con **al menos 16px de espaciado** entre controles adyacentes — fuentes: [CDTech/ISO 9241-9](https://www.cdtech-display.com/knowledges/how-to-optimize-ui-button-size-for-gloved-users-in-industrial-hmis/), [guía de apps para construcción](https://weareaffective.com/learning-centre/how-should-i-design-apps-for-construction-workers). Estas cifras son el criterio de aceptación de tap targets en las Fases 2 y 5, no una revisión subjetiva.
+
+### 2.4 Alcance de piloto y cola de trabajo (2026-09-09 noche)
+
+**Qué se tiene para pilotar** (funcionalidades ya construidas; 1B aún no mergeada):
+
+1. Borrador persistente, lista “mis informes”, aislamiento por cuenta y por usuario.
+2. Dictado → transcripción visible/editable → confirmación → un hallazgo (STT default Groq).
+3. Datos de edificio, emisor por cuenta (nombre, rol MINVU, logo), equipos, clasificación manual opcional, resultado manual.
+4. **Revisar informe** HTML + plantilla de impresión compartida + imprimir desde el navegador con BORRADOR, encabezado y pie.
+
+**Qué no se construye ahora** (queda escrito, no en cola):
+
+- 3A/3B: job PDF, snapshot, archivo conservado en S3, vista previa/descarga del mismo archivo.
+- Fase 7, catálogo de ~370 casillas, derivación automática de norma, quitar BORRADOR, firmar/emitir.
+
+**Cola actual — no es una fase de features:**
+
+1. El fundador recorre el flow en local (y anota fricción: taps, retorno, vacíos, luz/guantes, textos, cortes de impresión).
+2. Commit/PR/merge/deploy de 1B cuando lo autorice — sin eso el piloto en producción no tiene “Revisar informe”.
+3. Mejoras de UX **solo** sobre pantallas y rutas ya existentes, cada una con hallazgo concreto (no “pulir en general”).
+4. Reactivar 3A/3B o 7 exige una decisión nueva en este documento, no un prompt aislado.
 
 ---
 
@@ -223,12 +246,12 @@ CertificationReport (borrador persistente, Fase 0) ──► pausar / retomar / 
   │ datos/encabezado por cuenta + equipo/clasificación manual opcional (Fase 1A)
   ▼
 Revisión HTML / plantilla de impresión compartida (Fase 1B)
-  │ Ver PDF: POST → snapshot consistente → job Solid Queue (Fase 3A)
-  ▼
-PDF conservado en S3 privado → vista previa → descargar el mismo archivo (Fase 3B)
-                    [BORRADOR en todas las páginas]
+  │ Imprimir (navegador) — salida del piloto, marcada BORRADOR
+  │
+  ╎  [diferido] Ver PDF: POST → snapshot → job (Fase 3A)
+  ╎  [diferido] PDF en S3 → vista previa → descargar el mismo archivo (Fase 3B)
 
-Fase 7: segmentación multi-hallazgo sigue condicionada; no es dependencia del PDF.
+Fase 7: segmentación multi-hallazgo sigue condicionada; no es dependencia del piloto.
 ```
 
 Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): tenancy por host (`AccountHostResolver` + `current_account`), fotos vía `FieldPhoto` + S3 con `sha256` único por cuenta (no Active Storage, nunca bajo `bulk_chunks/`), jobs idempotentes con `rescue RecordNotUnique → find`, servicios PORO con inyección `client:` para tests (sin WebMock), broadcast por canal privado del usuario (el patrón `KbSyncChannel` transmite a toda la cuenta y no sirve aquí — regla fija 12), locales pareados `certifier.es.yml`/`certifier.en.yml` siguiendo el patrón `rag.*`.
@@ -295,9 +318,9 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 
 ---
 
-## Fase 1 — Datos del emisor y revisión HTML (activada; subfases 1A y 1B)
+## Fase 1 — Datos del emisor y revisión HTML (1A y 1B cerradas en local)
 
-**Activación:** decisión del fundador del 9-sep al inicio del documento. Reemplaza el antiguo bloqueo del 2-oct para este alcance. La Fase 1 se cierra cuando 1A y 1B cumplen sus criterios; la Fase 3 completa el PDF. No tratar HTML y PDF como documentos independientes ni crear un editor visual nuevo.
+**Activación:** decisión del fundador del 9-sep al inicio del documento. **Cierre de funcionalidades:** decisión de la misma noche — 1A+1B son el techo de features del piloto; 3A/3B no completan el PDF ahora. No tratar HTML y PDF como documentos independientes ni crear un editor visual nuevo. El contrato de los puntos 3–4 más abajo describe el PDF *si se reactiva 3A/3B*; el piloto usa el punto 2 (Revisar informe) más impresión del navegador.
 
 ### Contrato de producto compartido por 1A → 1B → 3A → 3B
 
@@ -310,7 +333,7 @@ Patrones existentes que se reutilizan (informe de arquitectura, 2026-08-09): ten
 
 ### Fase 1A — Datos mínimos y configuración de certificadora
 
-**Estado:** ACTIVADA, pendiente de ejecución. **Modelo recomendado:** GPT-6 Astra, `high`. **Depende de:** núcleo de Fase 0 y Fase 2 presentes en la base. **Entrega para:** 1B y 3A. **Branch:** `codex/certificador-1a-datos`.
+**Estado:** CERRADA EN LOCAL e integrada a `main` vía PR #28 (2026-09-09). **Modelo real:** Claude Opus 4.5, thinking alto. **Branch:** `codex/certificador-1a-datos`. **Entrega usada por:** 1B. **Pendiente del cierre 1A que sigue nombrado:** revisión visual del fundador de la UI de settings/equipos (distinta de la revisión de impresión de 1B, ya hecha).
 
 **Insumos verificados el 9-sep (revalidar si cambió el código):**
 
@@ -431,7 +454,7 @@ Aborta con mensaje si la cuenta o el usuario no existen, si faltan argumentos, o
 
 ### Fase 1B — Revisión HTML y plantilla compartida
 
-**Estado:** ACTIVADA, pendiente de que 1A entre a `main`. **Modelo recomendado:** GPT-6 Astra, `medium` (Sonnet es alternativa fuera de Codex). **Branch:** `codex/certificador-1b-revision`. **Entrega para:** 3A y 3B.
+**Estado:** CERRADA EN LOCAL (2026-09-09) — revisión visual del fundador hecha en local (plantilla de impresión y visualización del informe, aprobadas). Pendiente: commit/PR, merge y deploy. **Modelo real:** Claude Sonnet 5 (thinking). **Branch:** `codex/certificador-1b-revision`, sobre `main` con 1A ya integrada (PR #28). **Entrega para el piloto:** Revisar informe + imprimir. 3A/3B quedan diferidas (sección 2.4); los Insumos de esas fases se conservan por si se reactivan.
 
 **Insumos actualizados por el cierre 1A (2026-09-09) — verificados contra el código, revalidar si cambió:**
 
@@ -461,14 +484,30 @@ Aborta con mensaje si la cuenta o el usuario no existen, si faltan argumentos, o
 
 > Implementa únicamente la Fase 1B de `docs/PLAN_IMPLEMENTACION_CERTIFICADOR_2026-08-09.md`. Lee el documento y el cierre de 1A; verifica que su implementación está en tu base y usa sus nombres/rutas reales. Trabaja en `codex/certificador-1b-revision` según sección 2.1. Construye Revisar informe en HTML responsive con edición y retorno directo, y una sola plantilla ERB de contenido reutilizable por el futuro job PDF. Usa el encabezado/pie común de cuenta y el orden exacto definido en 1B; inspecciona visualmente el PDF de referencia, pero usa datos sintéticos propios. Conserva BORRADOR, no clasificados y resultado manual; no copies declaraciones ni construyas la guía normativa completa. Verifica permisos, XSS, fotos/textos largos y todas las páginas de una impresión de prueba. No prometas paginación idéntica al HTML ni implementes otra plantilla para PDF. Actualiza cierre 1B, estado e Insumos de 3A/3B con contrato de datos, CSS/assets, hallazgos y comandos de verificación.
 
-**Cierre 1B — lo llena el ejecutor:**
+**Cierre 1B:**
 
-- Estado: pendiente de 1A.
-- Fecha / modelo / effort / branch / commit / PR:
-- Plantilla / contrato de datos / rutas / assets / retorno de edición:
-- Pruebas y páginas inspeccionadas / límites:
-- Hallazgos / desviaciones justificadas:
-- Insumos de 3A y 3B actualizados / próximo paso:
+- **Estado:** cerrada en local. Suite completa verde (2890 corridas, 0 fallas, 0 errores, 189 skips), `bin/rubocop` limpio (614 archivos) y `bin/rails zeitwerk:check` limpio. Revisión visual del fundador hecha en local (2026-09-09 noche): plantilla de impresión y visualización del informe aprobadas. Pendiente: commit/PR, merge a `main` y deploy.
+- **Fecha / modelo / effort / branch / commit / PR:** 2026-09-09 · Claude Sonnet 5 (thinking), no el modelo recomendado · alto · `codex/certificador-1b-revision` (parte de `main` en `7863aeb`, con 1A ya integrada vía PR #28) · sin commit todavía (working tree) · PR pendiente de abrir.
+- **Plantilla / contrato de datos / rutas / assets / retorno de edición:**
+  - Ruta: `GET /certification_reports/:id/export` (miembro de `resources :certification_reports`) → `CertificationReportsController#export`.
+  - Contrato de datos explícito (sin `current_user`/`request` dentro de la plantilla): hash `@export_document` con `report:` (el `CertificationReport`), `issuer: { name:, minvu_role:, identified:, logo_url: }`, `report_edit_url:`, `equipment_rows: [{ equipment:, edit_url: }]` y `finding_rows: [{ finding:, reference:, photo_url:, edit_url: }]`. Todas las URLs de edición y de foto se resuelven en el controlador (`export_issuer_data`, `export_equipment_rows`, `export_finding_rows`, `export_trusted_photo_url`) antes de pasarlas como locals — la plantilla nunca llama a un helper de rutas de sesión ni a `current_account`.
+  - Plantilla de contenido única: `app/views/certification_reports/exports/_document.html.erb` (+ `_findings_table.html.erb` para graves/leves/no clasificados). Recibe solo los locals anteriores; es la misma parcial que 3A debe renderizar desde el snapshot con `ApplicationController.render(partial:, locals:)` fuera de un request autenticado (ya lo hice así en la verificación manual, ver abajo).
+  - Wrapper web: `app/views/certification_reports/export.html.erb` — enlace "Volver al informe", botón "Imprimir" (Stimulus `print_controller.js` → `window.print()`, sin `onclick` inline), disclaimer BORRADOR/impresión provisional, renderiza `_document`.
+  - CSS: `app/assets/stylesheets/certifier_export_print.css`, cargado directo con `stylesheet_link_tag "certifier_export_print"` (no vía el manifest `:app` de Propshaft). Hoja plana, sin Tailwind ni CDN — el mismo archivo en disco que 3A debe apuntar Chromium a leer.
+  - Retorno de edición: `app/controllers/concerns/certifier_export_redirect.rb`, incluido en `CertificationReportsController`, `InspectionFindingsController` y `ReportEquipmentsController`. Si `params[:return_to] == "export"`, el `update` de cada uno redirige a `export_certification_report_path(report, anchor: dom_id(recurso))` en vez de a su ruta normal. Los enlaces "Editar" de la revisión agregan `return_to=export`; los tres formularios de edición propagan el parámetro (y el anchor del recurso) en su `form_with` y en "Cancelar"/"Volver".
+  - i18n: `certifier.export.*` nuevo en `certifier.es.yml`/`certifier.en.yml` (título, secciones, tabla, estados vacíos, encabezado/pie, disclaimer); `date.formats.certifier_long` agregado como formato **nombrado** en ambos locales (no se tocó `:default`) para la fecha larga del documento.
+- **Pruebas y páginas inspeccionadas / límites:**
+  - `test/controllers/certification_reports_export_test.rb`: flag `CERTIFIER_MODULE_ENABLED` + autenticación, aislamiento por cuenta y por usuario (404 en ambos ejes), orden exacto de las 7 secciones, contenido con datos antiguos sin clasificar (`torre_amunategui`) y completos (`edificio_portales`), resultado vacío → "Resultado no registrado", tabla vacía → "Sin hallazgos registrados en esta categoría" (nunca "sin defectos"/"cumple"), XSS (nombre de edificio y cuerpo de hallazgo con `<script>`), texto largo sin truncar, sin consultas por fila (`assert_queries_count`/límite fijo), enlaces `return_to=export` desde equipos/hallazgos/datos del informe.
+  - Comandos: `bin/rails test test/controllers/certification_reports_export_test.rb`; `bin/rails test` (suite completa); `bin/rubocop`; `bin/rails zeitwerk:check`.
+  - Revisión visual manual (no test de sistema, ver hallazgo): sembré un `Account`/`User`/`CertificationReport` sintéticos con 3 equipos y 15 hallazgos (severidades graves/leves/no clasificadas intercaladas, uno con foto) mediante un script desechable ejecutado con `bin/rails runner`, renderizando `_document` fuera de un request con `ApplicationController.render`, CSS inyectado inline (sin depender del asset pipeline) e impreso a PDF con Chrome headless (`--headless=new --print-to-pdf`), produciendo un PDF A4 real de **7 páginas**. Conté las páginas con la gema `pdf-reader` y las inspeccioné una por una convirtiéndolas a PNG con `pdftoppm` (poppler). El script destruye el dato sintético al final (`report.destroy!`/`user.destroy!`/`account.destroy!`) y los artefactos quedaron en `tmp/` (borrados, no en el repo) — **ojo:** una corrida fallida a mitad de camino (antes de corregir el valor inválido de `inspection_item`, ver hallazgos) sí dejó una cuenta/usuario/informe huérfanos en la base de dev porque el script no tenía un `ensure`; se detectó y se limpió a mano después de cerrar esta fase. Si se reejecuta el script, envolver la siembra en `begin/ensure` o una transacción con rollback para no depender de que el script llegue completo al final.
+  - Límite conocido y aceptado: la paginación del navegador sigue siendo una aproximación (el propio CSS ya lo documentaba); no se intentó ni se prometió que coincida con la paginación final de 3B.
+- **Hallazgos / desviaciones justificadas:**
+  - **Bug real de Chromium encontrado y corregido durante la revisión visual.** El CSS de impresión original repetía encabezado/pie con `position: fixed` y un offset **negativo** (`top: -14mm` / `bottom: -12mm`) para empujarlos hacia el margen de página. Al imprimir el PDF sintético de 7 páginas, Chromium invirtió el eje: el encabezado aparecía al **pie** de cada página y el pie al **encabezado** de la siguiente, superponiéndose con la fila repetida de la tabla (`thead` con `display: table-header-group`) y volviéndola ilegible; además el encabezado faltaba por completo en la página 1 y el pie en la última página. Es la misma familia de bugs de Chromium documentados públicamente para `position: fixed` + offset negativo en paginación de impresión (issues de Puppeteer/Chromium abiertos desde 2018 sobre encabezados/pies que desaparecen en la primera/última página). **Corrección aplicada:** los elementos fijos ahora usan `top: 0` / `bottom: 0` (sin excursión negativa hacia el margen) y el espacio se reserva con `padding-top`/`padding-bottom` en `.certifier-doc__body`; reimprimí el mismo documento sintético y confirmé encabezado + pie correctos en las 7 páginas, incluida la primera y la última, sin superposición con el contenido.
+  - **Implicación directa para 3A (ya incorporada en Insumos abajo):** no reutilizar el truco de `position: fixed` para repetir encabezado/pie en el PDF final. Chromium `--print-to-pdf` tiene un mecanismo nativo para esto (`headerTemplate`/`footerTemplate` + márgenes explícitos vía la API/CLI de impresión) que no está sujeto a este bug — es la vía que ya preveía el comentario original del archivo CSS ("Fase 3A's own Chromium print-to-PDF call is the source of true page numbers via its native header/footer templates").
+  - Por instrucción explícita del fundador durante esta sesión ("no nada de test de sistema, a menos que los test funcionales no lo cubran y sea crítico"), no se agregó ningún test de sistema (Capybara/Selenium) a la suite. La verificación multipágina se hizo íntegramente fuera de la suite de tests (script desechable + Chrome headless + `pdftoppm`), justificada porque (a) Minitest no puede ejercitar el motor de paginación de impresión de Chromium y (b) el hallazgo resultó crítico (contenido ilegible/encabezado ausente). Ningún archivo de test de sistema quedó en el repo.
+  - No se copiaron declaraciones del PDF de referencia ni se construyó la guía normativa CENTRAVE completa; se reutilizaron únicamente los 8 ítems ya existentes de 1A vía `InspectionFinding#centrave_item_key`.
+  - No se prometió paginación idéntica al HTML ni se implementó una plantilla adicional para PDF, conforme al mandato.
+- **Insumos de 3A y 3B actualizados / próximo paso:** contrato de datos, rutas, CSS/assets, mecanismo de retorno y el hallazgo del bug de Chromium quedaron documentados en la sección "Insumos de 3A/3B" de la Fase 3, más abajo. **No activar 3A:** decisión del fundador de la misma noche (sección 2.4). Próximo paso: recorrer el flow y anotar UX; commit/PR de 1B cuando se autorice.
 
 ---
 
@@ -547,9 +586,9 @@ Aborta con mensaje si la cuenta o el usuario no existen, si faltan argumentos, o
 
 ---
 
-## Fase 3 — PDF server-side (activada; subfases 3A y 3B)
+## Fase 3 — PDF server-side (diferida; subfases 3A y 3B)
 
-**Activación:** decisión del fundador del 9-sep al inicio del documento, que divide esta fase en **3A** (PDF asíncrono, archivo conservado y aislamiento) y **3B** (vista previa real, descarga y verificación de extremo a extremo), ambas con GPT-6 Astra / `high` y branches `codex/certificador-3a-pdf` y `codex/certificador-3b-preview`. **Depende de:** 1B. **Rige el contrato de producto compartido de la Fase 1** (puntos 3, 4, 5 y 6) más las reglas fijas 15 y 16.
+**Activación original:** decisión del fundador del 9-sep al inicio del documento, que divide esta fase en **3A** (PDF asíncrono, archivo conservado y aislamiento) y **3B** (vista previa real, descarga y verificación de extremo a extremo). **Estado vigente (misma noche):** **diferida.** El piloto no exige archivo PDF conservado; la salida es `GET …/export` + imprimir. No lanzar `codex/certificador-3a-pdf` ni `codex/certificador-3b-preview` sin reactivación explícita en la sección 2. **Si se reactiva:** depende de 1B integrada; rige el contrato de producto compartido de la Fase 1 (puntos 3, 4, 5 y 6) más las reglas fijas 15 y 16. Los Insumos de 1A/1B más abajo siguen siendo el contrato técnico — no se tiran.
 
 > **Deuda de documento, detectada al cerrar 1A:** la actualización del 9-sep reescribió la tabla de estado, el diagrama de flujo y la sección de la Fase 1, pero **no** reescribió el alcance ni los criterios de aceptación de esta sección, que abajo siguen redactados como la Fase 3 monolítica y condicionada (una gem, un botón, "trabajo de una tarde"). Esa descripción **ya no corresponde** al alcance decidido — snapshot consistente, job, archivo conservado, retención, aislamiento y fidelidad vista previa/descarga. Quien ejecute 1B debe dividir esta sección en 3A y 3B con alcance y aceptación propios antes de lanzar 3A; el ejecutor de 1A no lo hizo porque implicaba inventar alcance fuera de su mandato. El texto viejo se conserva abajo como historial, no como contrato.
 
@@ -562,6 +601,14 @@ Aborta con mensaje si la cuenta o el usuario no existen, si faltan argumentos, o
 - **Almacenamiento.** `S3DocumentsService` (`upload_binary`, `download`, `delete_prefix`) es el camino; `config/storage.yml` no tiene S3 de Active Storage operativo y no se debe introducir. Prefijo propio para las exportaciones, jamás bajo `bulk_chunks/` (lo ingiere el KB) ni bajo `field_photos/` (lo purga la retención de evidencia).
 - **Completitud antes de generar.** `Account#certifier_identified?` es el predicado que 1A dejó para exigir nombre y rol MINVU al pedir el PDF. 1A deliberadamente **no** lo validó en el modelo para no romper la captura (punto 1 del contrato compartido). El resultado (`CertificationReport#result`) puede estar vacío y el PDF debe generarse igual, mostrando "Resultado no registrado".
 - **Tests.** Ojo con el host en cualquier prueba multi-cuenta (`host! "ascensoresclimb.localhost"`, hallazgo 1 del cierre 1A) y con el rescate de `ArgumentError` si se agrega algún enum de estado de exportación (hallazgo 3). `db/schema.rb` se edita a mano para mantener el diff aditivo (hallazgo 8).
+
+**Insumos de 3A/3B actualizados por el cierre 1B (2026-09-09):**
+
+- **La plantilla de contenido ya existe y es la que hay que renderizar, sin tocarla.** `app/views/certification_reports/exports/_document.html.erb` (+ `_findings_table.html.erb`) no depende de `current_user`/`request`/`current_account`: recibe únicamente el hash de locals descrito en el cierre 1B (`report:`, `issuer:`, `report_edit_url:`, `equipment_rows:`, `finding_rows:`), con toda URL ya resuelta de antemano. 3A debe construir ese mismo hash a partir del snapshot (no del informe en vivo) y renderizarlo con `ApplicationController.render(partial: "certification_reports/exports/document", locals: ..., layout: false)` — así lo verifiqué manualmente para la revisión visual de 1B, funciona fuera de un request autenticado. Los enlaces de edición (`report_edit_url`, `edit_url` por fila) deben venir en `nil` o ausentes en el snapshot: son de la revisión web, no tienen sentido en un PDF ya generado.
+- **CSS: un solo archivo en disco, sin pipeline.** `app/assets/stylesheets/certifier_export_print.css` es hoja plana (sin Tailwind, sin CDN, sin fuentes remotas) — leerla con `File.read` e inyectarla en un `<style>` inline (o apuntar Chromium al archivo servido) es válido; no hace falta que el asset pipeline esté corriendo. Es el mismo archivo que ya estiliza la vista de revisión HTML: cualquier cambio visual al documento se hace ahí, una sola vez, para HTML y PDF.
+- **Bug de Chromium confirmado — no reintroducirlo.** El CSS de impresión usa `position: fixed` con `top: 0`/`bottom: 0` (sin offset negativo) para el encabezado/pie repetido, y reserva el espacio con `padding-top`/`padding-bottom` en `.certifier-doc__body`, precisamente porque un offset negativo (`top: -14mm` tipo) dispara un bug real de Chromium: invierte qué borde de página ocupa el elemento y lo omite en la primera/última página (confirmado imprimiendo un PDF sintético de 7 páginas, ver cierre 1B). **3A no debe usar este mismo truco de `position: fixed` para repetir encabezado/pie en el PDF final** — usar en su lugar el mecanismo nativo de Chromium `--print-to-pdf` (`displayHeaderFooter` + `headerTemplate`/`footerTemplate` + márgenes explícitos vía la API/CLI de impresión, no CSS del documento), que no está sujeto a este bug y es el camino que ya preveía el comentario original del archivo CSS. Si 3A igual necesita el BORRADOR/marca de agua dentro del propio HTML (no como header/footer nativo), el patrón de `.certifier-doc__watermark` (posicionado con `top`/`left` + `transform`, sin offset negativo de borde) sí se comportó bien en las 7 páginas de la prueba y puede reutilizarse tal cual.
+- **Verificación reproducible sin depender de un test de sistema.** Para revalidar el PDF de un snapshot real: renderizar el HTML final (con la plantilla + CSS embebido) a un archivo, e imprimir con Chrome headless: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --no-pdf-header-footer --print-to-pdf=out.pdf file:///ruta/al.html`. Contar páginas con la gema `pdf-reader` (`PDF::Reader.new("out.pdf").page_count`) y convertir cada página a imagen para inspección visual con `pdftoppm -png -r 100 out.pdf pagina` (Homebrew `poppler`). Esto es lo que usé para encontrar y confirmar la corrección del bug anterior; no requiere Capybara/Selenium ni agregar nada a la suite Minitest.
+- **Retorno de edición no aplica al PDF.** El mecanismo `return_to=export` (concern `CertifierExportRedirect`) es exclusivo de la revisión HTML editable; el snapshot/PDF de 3A no tiene edición in-place, así que no hay nada que reutilizar ahí más allá de no romper esas rutas.
 
 ### Historial: alcance original de la Fase 3 monolítica (sustituido, ver deuda de documento arriba)
 
@@ -577,7 +624,7 @@ Aborta con mensaje si la cuenta o el usuario no existen, si faltan argumentos, o
 
 **Cierre 3A — lo llena el ejecutor:**
 
-- Estado: pendiente de 1B. Alcance y aceptación propios **aún no redactados** (ver deuda de documento al inicio de la Fase 3).
+- Estado: **diferida** (2026-09-09 noche). No pendiente de 1B como siguiente entrega. Alcance y aceptación propios **aún no redactados** (ver deuda de documento al inicio de la Fase 3) — solo se redactan si se reactiva.
 - Fecha / modelo / effort / branch / commit / PR:
 - Snapshot / job / archivo conservado / retención / rutas / decisión sobre el logo en el job:
 - Pruebas y verificación (comandos, resultados, límites):
@@ -586,7 +633,7 @@ Aborta con mensaje si la cuenta o el usuario no existen, si faltan argumentos, o
 
 **Cierre 3B — lo llena el ejecutor:**
 
-- Estado: pendiente de 3A. Alcance y aceptación propios **aún no redactados**.
+- Estado: **diferida** (pende de reactivar 3A). Alcance y aceptación propios **aún no redactados**.
 - Fecha / modelo / effort / branch / commit / PR:
 - Vista previa / descarga / fidelidad con lo previsualizado / manejo de cambios posteriores:
 - Pruebas y verificación de extremo a extremo (comandos, resultados, límites):
@@ -1072,7 +1119,11 @@ Silencio 13 s: Amazon → vacío; OpenAI → coreano; Groq → "Gracias.". Ruido
 - Streaming de voz en tiempo real y conversación hands-free del mantenedor (se apoya en la capa de la Fase 4 cuando toque; fuera de alcance según plan de septiembre, sección 2.2).
 - Arquitectura offline completa (plan de septiembre, sección 3.4; Plan General, sección 12, P1.7) — la Fase 5 entrega solo recuperación simple: upload-first + autosave.
 - Historial genérico de conversaciones y registro diagnóstico por equipo (backlog).
+- **PDF server-side (3A/3B) mientras sigan diferidas** — job, snapshot, archivo conservado, vista previa/descarga del mismo binario. El piloto imprime desde el navegador. No implementar “otra plantilla PDF” ni un botón de PDF inoperante.
+- **Features nuevas del módulo certificador** hasta que el fundador liste mejoras de UX concretas (sección 2.4). Un pulido no inventa captura, clasificación automática ni un segundo diseño de informe.
 
 ## 7. Relación con los cortes de septiembre
 
-Este plan ejecuta directamente el calendario del plan de septiembre (sección 3): Fases 0 (núcleo) y 2 en la semana del 7 al 11 de septiembre — borrador persistente demostrable con texto manual; Fases 4 y 5 entre el 14 y el 16 — circuito de audio extremo a extremo para el corte del 16-sep; Fase 6 en la semana del 17 al 21 — instrumentación de costo y correcciones. Si el corte del 16-sep no encuentra el borrador y el circuito confirmable en pie, se congela todo lo condicionado y el resto del ciclo se dedica al circuito reutilizable (plan de septiembre, sección 8). Las Fases 1, 3 y 7 y el tramo extendido de la Fase 0 se activan solo tras el gate del 2 de octubre con uso real, registrando la activación en el cierre de la fase correspondiente. Lo que **nunca** se recorta no cambia: borrador persistente y transcripción visible/editable.
+Este plan ejecuta directamente el calendario del plan de septiembre (sección 3): Fases 0 (núcleo) y 2 en la semana del 7 al 11 de septiembre — borrador persistente demostrable con texto manual; Fases 4 y 5 entre el 14 y el 16 — circuito de audio extremo a extremo para el corte del 16-sep; Fase 6 en la semana del 17 al 21 — instrumentación de costo y correcciones. Si el corte del 16-sep no encuentra el borrador y el circuito confirmable en pie, se congela todo lo condicionado y el resto del ciclo se dedica al circuito reutilizable (plan de septiembre, sección 8).
+
+**Actualización 2026-09-09:** 1A y 1B se adelantaron por decisión del fundador y están cerradas en local (1A en `main`; 1B pendiente de PR). **La misma noche se cerró la incorporación de funcionalidades:** 3A/3B quedan diferidas; la Fase 7 sigue condicionada al gate del 2-oct. El piloto usa Revisar informe + impresión del navegador. Lo que **nunca** se recorta no cambia: borrador persistente y transcripción visible/editable.

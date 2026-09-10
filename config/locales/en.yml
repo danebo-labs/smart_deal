@@ -30,10 +30,15 @@
 en:
   hello: "Hello world"
   date:
+    # en had no month_names either; needed here because certifier_long uses %B
+    # and I18n.l raises on a missing translation, not just a wrong-looking date.
+    month_names: [~, January, February, March, April, May, June, July, August, September, October, November, December]
     formats:
       # Paired with the es entry: an explicit named format, so adding it changes
       # no existing view.
       certifier_short: "%Y-%m-%d"
+      # Fase 1B: a more formal date for the printed/reviewed document.
+      certifier_long: "%B %d, %Y"
   auth:
     brand:
       headline: "Turn your company's information and data into operational value."

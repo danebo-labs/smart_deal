@@ -30,6 +30,9 @@
   <% end %>
 
   <div class="mb-6 flex flex-wrap gap-4">
+    <%# Fase 1B: the read-only, ordered review of the whole draft. %>
+    <%= link_to t("certifier.export.title"), export_certification_report_path(@report),
+        class: "flex min-h-[60px] flex-1 items-center justify-center rounded-lg bg-[hsl(217,91%,50%)] px-4 text-sm font-semibold text-white transition-colors hover:bg-[hsl(217,91%,45%)]" %>
     <%= link_to t("certifier.show.edit_building_info"), edit_certification_report_path(@report),
         class: "flex min-h-[60px] flex-1 items-center justify-center rounded-lg border border-[hsl(215,20%,88%)] px-4 text-sm font-medium text-[hsl(222,47%,10%)] transition-colors hover:bg-[hsl(215,20%,93%)]" %>
     <%= button_to t("certifier.show.delete_report"), certification_report_path(@report), method: :delete,

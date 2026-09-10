@@ -7,6 +7,7 @@
 class CertificationReportsController < ApplicationController
   include AuthenticationConcern
   include CertifierModuleGuard
+  include CertifierExportRedirect
 
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
@@ -43,6 +44,24 @@ class CertificationReportsController < ApplicationController
     @highlight_finding_id = flash[:highlight_finding_id]
   end
 
+  # Fase 1B: "Revisar informe" — read-only document view, fixed section order,
+  # built from the same partial the future PDF job (Fase 3A) will render from
+  # a snapshot. The controller assembles an explicit data set (@export_document)
+  # so the partial itself never calls current_account/current_user/request.
+  def export
+    @report = owned_reports.find(params[:id])
+    findings = @report.inspection_findings.includes(:field_photo, :report_equipment)
+    equipments = @report.report_equipments.ordered
+
+    @export_document = {
+      report: @report,
+      issuer: export_issuer_data,
+      report_edit_url: edit_certification_report_path(@report, return_to: "export"),
+      equipment_rows: export_equipment_rows(equipments),
+      finding_rows: export_finding_rows(findings)
+    }
+  end
+
   def new
     @report = CertificationReport.new
   end
@@ -67,7 +86,8 @@ class CertificationReportsController < ApplicationController
     @report = owned_reports.find(params[:id])
 
     if @report.update(report_params)
-      redirect_to certification_report_path(@report), notice: t("certifier.notices.report_updated")
+      redirect_to export_return_path(@report) || certification_report_path(@report),
+                  notice: t("certifier.notices.report_updated")
     else
       render :edit, status: :unprocessable_entity
     end
@@ -111,5 +131,47 @@ class CertificationReportsController < ApplicationController
 
   def not_found
     head :not_found
+  end
+
+  # Explicit data contract for the review document (Fase 1B). Everything here
+  # is a plain value the future PDF job can reconstruct from a snapshot
+  # instead of current_account — see the Fase 3A insumos in the plan for the
+  # logo/photo resolution strategy a session-less job needs instead.
+  def export_issuer_data
+    {
+      name: current_account.certifier_name,
+      minvu_role: current_account.certifier_minvu_role,
+      identified: current_account.certifier_identified?,
+      logo_url: current_account.certifier_logo? ? logo_certifier_settings_path : nil
+    }
+  end
+
+  def export_equipment_rows(equipments)
+    equipments.map do |equipment|
+      { equipment: equipment, edit_url: edit_report_equipment_path(equipment, return_to: "export") }
+    end
+  end
+
+  # Stable "H-<n>" references (position order) connect the defect tables to the
+  # evidence section within this render — not a persisted identifier. Photo
+  # URLs are resolved once here, never inside the shared partial, and only kept
+  # if they pass the same single "is this our bucket" check every other photo
+  # redirect in the app uses.
+  def export_finding_rows(findings)
+    photo_url_service = FieldPhotoUrlService.new(account: current_account)
+
+    findings.each_with_index.map do |finding, index|
+      {
+        finding: finding,
+        reference: t("certifier.export.finding_reference", number: index + 1),
+        photo_url: finding.field_photo && export_trusted_photo_url(photo_url_service, finding.field_photo),
+        edit_url: edit_inspection_finding_path(finding, return_to: "export")
+      }
+    end
+  end
+
+  def export_trusted_photo_url(service, photo)
+    url = service.call(photo)
+    url if service.trusted_redirect_url?(url)
   end
 end

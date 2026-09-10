@@ -12,6 +12,7 @@ class CertificationReportsExportTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
 
   CLIMB_HOST = "ascensoresclimb.localhost"
+  SIGNED_PHOTO_URL = "https://test-export-bucket.s3.amazonaws.com/field_photos/signed"
 
   setup do
     ENV["CERTIFIER_MODULE_ENABLED"] = "true"
@@ -22,6 +23,22 @@ class CertificationReportsExportTest < ActionDispatch::IntegrationTest
 
   teardown do
     ENV.delete("CERTIFIER_MODULE_ENABLED")
+  end
+
+  # CI has no AWS credentials. Instantiating the real FieldPhotoUrlService
+  # builds an S3 client (Instance Profile lookup → nil URL → "Foto no
+  # disponible"). Replace `.new` so neither #call nor the trusted-host check
+  # touches AWS. Minitest 6 no longer has Object#stub.
+  def with_fake_photo_url(url)
+    fake = Object.new
+    fake.define_singleton_method(:call) { |*_args| url }
+    fake.define_singleton_method(:trusted_redirect_url?) { |given| given.present? && given == url }
+
+    original_new = FieldPhotoUrlService.singleton_class.instance_method(:new)
+    FieldPhotoUrlService.define_singleton_method(:new) { |**_kwargs| fake }
+    yield
+  ensure
+    FieldPhotoUrlService.singleton_class.define_method(:new, original_new)
   end
 
   # ── Guards ─────────────────────────────────────────────────────────────────
@@ -177,11 +194,14 @@ class CertificationReportsExportTest < ActionDispatch::IntegrationTest
     sign_in users(:two)
     report = certification_reports(:edificio_portales)
 
-    get export_certification_report_path(report)
+    with_fake_photo_url(SIGNED_PHOTO_URL) do
+      get export_certification_report_path(report)
 
-    evidence_section = response.body[/id="certifier_doc_evidence".*?<\/section>/m]
-    assert_match "<img", evidence_section
-    assert_no_match I18n.t("certifier.export.photo_unavailable"), evidence_section
+      evidence_section = response.body[/id="certifier_doc_evidence".*?<\/section>/m]
+      assert_match "<img", evidence_section
+      assert_match SIGNED_PHOTO_URL, evidence_section
+      assert_no_match I18n.t("certifier.export.photo_unavailable"), evidence_section
+    end
   end
 
   test "a report with no photo evidence at all shows the empty-evidence message" do
@@ -198,19 +218,13 @@ class CertificationReportsExportTest < ActionDispatch::IntegrationTest
 
   test "a finding that has a photo but no resolvable url shows the 'photo unavailable' placeholder" do
     sign_in @user
-    fake_service = Object.new
-    def fake_service.call(_photo) = nil
-    def fake_service.trusted_redirect_url?(_url) = false
 
-    original_new = FieldPhotoUrlService.method(:new)
-    FieldPhotoUrlService.define_singleton_method(:new) { |**_kwargs| fake_service }
+    with_fake_photo_url(nil) do
+      get export_certification_report_path(@report)
 
-    get export_certification_report_path(@report)
-
-    assert_response :success
-    assert_match I18n.t("certifier.export.photo_unavailable"), response.body
-  ensure
-    FieldPhotoUrlService.define_singleton_method(:new) { |*a, **kw| original_new.call(*a, **kw) }
+      assert_response :success
+      assert_match I18n.t("certifier.export.photo_unavailable"), response.body
+    end
   end
 
   # ── XSS: certifier-typed free text must always be escaped ──────────────────

@@ -65,17 +65,28 @@ module RagQueryConcern
     pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
     merged_session_context = merge_resolver_context(session_context, resolver_matches)
 
-    # Auto-scope: when there is no pinned document and the resolver's match is
-    # specific (see KbDocumentResolver.specific_token?), use its URIs as a soft
-    # retrieval filter instead of searching the whole catalog. force_entity_filter
-    # stays false for this path (computed below from pinned_uris only), which
-    # keeps BedrockRagService's no-results retry alive — worst case is one
-    # extra Bedrock call, never a worse answer than today's unscoped search.
-    auto_scope_uris = pinned_uris.any? ? [] : auto_scope_uris_from(resolver_matches)
-    retrieval_uris  = pinned_uris.presence || auto_scope_uris
+    # Auto-scope: when the resolver's match is specific (see
+    # KbDocumentResolver.specific_token?), use its URIs as a soft retrieval
+    # filter instead of searching the whole catalog. A specific match that is
+    # disjoint from an active pin overrides the pin for this turn only — the
+    # pin itself is untouched in the session, so a later question without a
+    # specific match falls back to it. force_entity_filter stays false for
+    # this path, which keeps BedrockRagService's no-results retry alive —
+    # worst case is one extra Bedrock call, never a worse answer than today.
+    candidate_uris  = auto_scope_uris_from(resolver_matches)
+    question_wins   = pinned_uris.any? && candidate_uris.any? && (candidate_uris & pinned_uris).empty?
+    auto_scope_uris = (pinned_uris.empty? || question_wins) ? candidate_uris : []
+    retrieval_uris  = question_wins ? auto_scope_uris : (pinned_uris.presence || auto_scope_uris)
+
+    if question_wins
+      Rails.logger.info(
+        "RagQueryConcern: auto-scope overrides pin (pinned=#{pinned_uris.join(', ')}, " \
+        "resolved=#{auto_scope_uris.join(', ')})"
+      )
+    end
 
     resolved_output_channel = output_channel&.to_sym || :web
-    resolved_force_filter   = force_entity_filter.nil? ? pinned_uris.any? : force_entity_filter
+    resolved_force_filter   = force_entity_filter.nil? ? (pinned_uris.any? && !question_wins) : force_entity_filter
     document_uids           = documents.map { SecureRandom.uuid }
 
     result = QueryOrchestratorService.new(

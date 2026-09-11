@@ -421,6 +421,163 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
+  # ============================================
+  # Tests for pin vs. question auto-scope override (Cambio 1)
+  # ============================================
+
+  test 'execute_rag_query overrides a disjoint pin when the question has a specific match' do
+    KbDocument.delete_all
+    pinned_doc = KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/xizi FO VF.pdf",
+      display_name: "xizi FO VF",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+    matched_doc = KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/Fallas MPK 708.pdf",
+      display_name: "Fallas MPK 708",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(
+        :execute_rag_query,
+        "que revisar en MPK 708?",
+        entity_s3_uris: [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ]
+      )
+
+      assert_equal [ matched_doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query keeps the pin when the question match overlaps it' do
+    KbDocument.delete_all
+    pinned_doc = KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/Fallas MPK 708.pdf",
+      display_name: "Fallas MPK 708",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(
+        :execute_rag_query,
+        "que revisar en MPK 708?",
+        entity_s3_uris: [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ]
+      )
+
+      assert_equal [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query keeps the pin when the question match is not specific' do
+    KbDocument.delete_all
+    pinned_doc = KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/xizi FO VF.pdf",
+      display_name: "xizi FO VF",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+    KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/manual_kone.pdf",
+      display_name: "Manual Kone",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      # "Kone" is a bare brand mention — not specific, so it can't dislodge
+      # an active pin even though it matches a different document.
+      @controller.send(
+        :execute_rag_query,
+        "Tengo un Kone, que reviso primero?",
+        entity_s3_uris: [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ]
+      )
+
+      assert_equal [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query honors an explicit force_entity_filter even when the question would override the pin' do
+    KbDocument.delete_all
+    pinned_doc = KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/xizi FO VF.pdf",
+      display_name: "xizi FO VF",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+    KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/Fallas MPK 708.pdf",
+      display_name: "Fallas MPK 708",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      @controller.send(
+        :execute_rag_query,
+        "que revisar en MPK 708?",
+        entity_s3_uris: [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ],
+        force_entity_filter: true
+      )
+
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
   test 'execute_rag_query narrows multiple pins when the question names one pinned document' do
     manual_uri = "s3://bucket/manual.pdf"
     image_uri = "s3://bucket/photo.jpg"

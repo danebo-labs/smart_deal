@@ -119,29 +119,69 @@ Ajustes a fases siguientes:
 
 ## Fase 3 — Contrato anti-enumeración en el prompt
 
-**Estado:** pendiente
+**Estado:** desplegada en `b2d1844`, **medida como inefectiva y dañina en la Fase 4** — pendiente de revertir
 
-Inicio / fin:
+> Bloque completado con la medición de la Fase 4, no por el ejecutor de la Fase 3.
 
-Resultado:
+Lo que se desplegó, dos líneas en el bloque `NO MATCH` de `app/prompts/bedrock/generation.txt`:
 
-Hallazgos fuera de plan:
+```
+- Do not describe, list, or infer what the documentation set or catalog contains
+  or which manufacturers are indexed; the retrieved chunks are not an inventory.
+```
 
-Ajustes a fases siguientes:
+Medición en producción (A/B del mismo prompt con y sin esas dos líneas, inyectado por `custom_config`, sin deploy): **no cumple su objetivo en la pregunta que la motivó y rompe la 12**. Detalle en la Fase 4.
 
 ---
 
 ## Fase 4 — Gate de deploy
 
-**Estado:** pendiente
+**Estado:** cerrada — **(a) pasa, (b) NO pasa.** Fase 2 se queda; Fase 3 debe revertirse.
 
-Inicio / fin:
+Inicio / fin: 00:13 → 00:24 (11-sep). Imagen verificada por el nombre del contenedor: `smart-deal-web-b2d1844274ae…` = commit `b2d1844`. Sondas: `script/span_offset_gate_2026-09-11.rb` (gate), `script/q12_prompt_ab_2026-09-11.rb` y `script/q6_q12_fase3_ab_2026-09-11.rb` (atribución). 8 `retrieve_and_generate`, todas read-only, ≈US$0,08.
 
 Resultado:
 
+**(a) Ningún marcador dentro de palabra — PASA.** El fix de la Fase 2 está en producción y se ve:
+
+| Pregunta | Corrida de marcadores | Contexto | `dentro_de_palabra` | `delante_de_punto` |
+|---|---|---|---|---|
+| 6 | `[1][2][3][4]` @681 | `" esta tarjeta.[1][2][3][4]\n\n**El"` | `[]` | `[]` |
+| 12 | — (0 citas) | — | `[]` | `[]` |
+
+El marcador va **después** del punto, que es exactamente el desfase medido en la Fase 1 (`utilizando[1].` → `tarjeta.[1]`). Cuatro referencias en un solo grupo confirman también el hallazgo 3 de la Fase 1: la atribución sigue concentrada en un punto, por contrato de Bedrock.
+
+**(b) La 12 rechaza sin enumerar marcas — NO PASA.** No enumera (`marcas=[]`, `frases_catalogo=[]`), pero **tampoco responde**: devuelve el mensaje transitorio de reintento porque Bedrock emite su «Sorry» con evidencia recuperada (`canned_with_retrieval=true`, `citas=0`, 3 chunks por `fallback_retrieve`).
+
+> VISIBLE: «Encontré documentación relacionada, pero no pude redactar la respuesta en este intento. Vuelve a enviar la consulta; si insiste, precisa el fabricante y la placa.»
+
+No hay baseline pre-deploy de la 12, así que la atribución se cerró con un A/B del mismo prompt con y sin las dos líneas de la Fase 3, inyectado por `custom_config`:
+
+| Corrida | Pregunta | `canned_with_retrieval` | Respuesta |
+|---|---|---|---|
+| con Fase 3, muestra 1 | 12 | **true** | mensaje de reintento |
+| con Fase 3, muestra 2 | 12 | **true** | mensaje de reintento |
+| sin Fase 3, muestra 1 | 12 | false | «No se ha especificado el código a consultar. Indique el código exacto…» |
+| sin Fase 3, muestra 2 | 12 | false | «…Los documentos disponibles son de sistemas Thyssen/ThyssenKrupp, no Schindler…» |
+| con Fase 3 | 6 | false | enumera el catálogo (MCTC-JT-IC, tarjetas de tiempo/propietario/gestión) |
+| sin Fase 3 | 6 | false | **la misma respuesta**, salvo la cola «en la documentación técnica» |
+
+Veredicto: **2/2 con las líneas ⇒ «Sorry»; 2/2 sin ellas ⇒ respuesta real.** Determinista, no es varianza de muestreo.
+
 Hallazgos fuera de plan:
 
+1. **La Fase 3 no tiene efecto sobre el defecto que la motivó.** En la pregunta 6 la respuesta con y sin las dos líneas es prácticamente idéntica y **sigue enumerando el catálogo** («Los documentos disponibles describen tarjetas de acceso… También documentan tarjetas de tiempo, tarjetas de propietario y tarjetas de gestión»). El contrato no se cumple.
+2. **La Fase 3 es un neto negativo.** Su único efecto medible es convertir «responde pero revela el inventario» en «no responde». En la 12 sin las líneas Haiku sí revela el inventario («Los documentos disponibles son de sistemas Thyssen/ThyssenKrupp, no Schindler»), que es lo que la Fase 3 quería impedir; con las líneas Bedrock deja de generar.
+3. **Instancia nueva del modo de fallo ya documentado en `AGENTS.md`** («Cost First (Bedrock)»: texto añadido al prompt que colapsa la respuesta en el «Sorry» canónico). Esta vez el texto está **dentro** del bloque `NO MATCH`, no después de `$output_format_instructions$` — el modo de fallo es más amplio de lo que dice la nota: **una prohibición añadida al bloque de ausencia también lo dispara**. Vale la pena trasladarlo a `AGENTS.md` cuando pase la demo.
+4. **El «Sorry» de la 12 no es visible como fallo para el técnico:** el mensaje invita a reenviar la consulta, y al reenviarla vuelve a fallar (2/2). Delante de Gonzalo sería un bucle.
+5. **Aurora auto-pause de nuevo:** 24.094 ms en la primera consulta del gate (contra 4-5 s en las siguientes). Se repite el hallazgo 4 de la Fase 1: hace falta la consulta de calentamiento.
+
 Ajustes a fases siguientes:
+
+- **Revertir solo las dos líneas de `app/prompts/bedrock/generation.txt`** y volver a desplegar. El cambio de la Fase 2 (`citation_processor.rb` + sus tests) **se queda**: su gate pasó en producción. Es un revert de prompt, sin migración ni variable nueva.
+- **Fase 5:** ejecutar la batería **después** del redeploy del revert. La 12 debe volver a «pide el código exacto» en vez del mensaje de reintento. Verificar además que el marcador siga cayendo tras el punto (única señal visible del fix de la Fase 2).
+- **Fase 6:** la 12 (Schindler) **no** sirve como demostración de «declara ausencia» mientras no se revierta, y ni revertida lo hace limpiamente: revela el inventario del corpus. Para mostrar ausencia de evidencia, elegir otra pregunta o asumir esa frase. La 6 sigue descartada (Fase 1) y la Fase 3 no la ha arreglado.
+- **Fuera de alcance esta noche:** el contrato anti-enumeración real. Necesita otra formulación (probablemente determinista en Rails, no una prohibición más en el prompt) y una medición propia; no se improvisa a 9 horas de la reunión.
 
 ---
 

@@ -14,6 +14,9 @@ Rails.application.routes.draw do
   get  'home/documents_page', to: 'home#documents_page'
   get  'dashboard',          to: 'dashboard#index'
   get  'dashboard/metrics',  to: 'dashboard#metrics'
+  # Query-volume view for the demo — guarded by ENV["ACTIVITY_DASHBOARD_ENABLED"]
+  # (see ActivityController). No `$`/tokens: pure counts from BedrockQuery.
+  get  'actividad',          to: 'activity#index', as: :activity
 
   devise_for :users,
              controllers: {

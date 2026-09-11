@@ -66,6 +66,15 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/30000ms/, response.body)
   end
 
+  test 'redirects to the activity dashboard when the flag is enabled' do
+    ENV['ACTIVITY_DASHBOARD_ENABLED'] = 'true'
+
+    get dashboard_url
+    assert_redirected_to activity_path
+  ensure
+    ENV.delete('ACTIVITY_DASHBOARD_ENABLED')
+  end
+
   test 'requires an authenticated user' do
     sign_out :user
 

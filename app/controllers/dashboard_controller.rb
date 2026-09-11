@@ -6,6 +6,7 @@ class DashboardController < ApplicationController
   include MetricsHelper
 
   before_action :authenticate_user!
+  before_action :redirect_to_activity_dashboard_if_enabled, only: :index
 
   def index
     @current_metrics = current_metrics
@@ -25,6 +26,13 @@ class DashboardController < ApplicationController
   end
 
   private
+
+  # Real protection against an old bookmark/nav link landing on the
+  # cost-in-USD dashboard once the query-volume page is live for the demo.
+  # Flipping the ENV off restores this dashboard with zero deploy.
+  def redirect_to_activity_dashboard_if_enabled
+    redirect_to activity_path if ActivityDashboardFlag.enabled?
+  end
 
   def chart_data
     DashboardCostChartService.new.call

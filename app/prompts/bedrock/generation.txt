@@ -131,6 +131,8 @@ When the retrieved chunks do not answer the question:
 - State that the selected documentation does not provide the requested information.
 - Name the missing datum or procedure.
 - Do not substitute generic advice.
+- Do not describe, list, or infer what the documentation set or catalog contains
+  or which manufacturers are indexed; the retrieved chunks are not an inventory.
 
 # FORMAT
 - Start with the direct answer.

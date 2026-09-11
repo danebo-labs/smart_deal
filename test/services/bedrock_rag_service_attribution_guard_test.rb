@@ -50,7 +50,7 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
     end
     quality = captured_quality_payload
 
-    assert_equal "Dato Thyssen[1].", on[:answer]
+    assert_equal "Dato Thyssen.[1]", on[:answer]
     assert_equal 1, on[:citations].size
     assert_equal off[:retrieved_citations], on[:retrieved_citations]
     assert_equal off[:doc_refs], on[:doc_refs]
@@ -104,8 +104,8 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
       account_id: 202
     )
 
-    assert_equal "Dato Thyssen[1].", first[:answer]
-    assert_equal "Dato Edel[1].", second[:answer]
+    assert_equal "Dato Thyssen.[1]", first[:answer]
+    assert_equal "Dato Edel.[1]", second[:answer]
     assert_not_includes second[:answer], "Thyssen"
   end
 
@@ -123,7 +123,7 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
       query(response, question: "En Thyssen-E, ¿qué indica?", account_id: 101)
     end
 
-    assert_equal "Dato Thyssen[1]. Dato Otis[2].", result[:answer]
+    assert_equal "Dato Thyssen.[1] Dato Otis.[2]", result[:answer]
     assert_equal 2, result[:citations].size
     assert_empty result.dig(:diagnostics, :attribution_dropped)
   end
@@ -167,6 +167,8 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
     )
   end
 
+  # span.end is inclusive: it indexes the last character of the cited passage
+  # (the sentence-closing "." here), so the marker lands after it.
   def citation(identity, content, span_end:)
     OpenStruct.new(
       generated_response_part: OpenStruct.new(

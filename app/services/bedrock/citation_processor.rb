@@ -33,6 +33,12 @@ class Bedrock::CitationProcessor
   # This is the genuine attribution contract — markers land at the exact end of the
   # cited passage instead of being sprinkled every ~3 sentences.
   #
+  # `span.end` is INCLUSIVE: it indexes the last character of the cited passage,
+  # measured against production responses in
+  # docs/EJECUCION_PRE_DEMO_2026-09-10.md (Fase 1). The insertion point is
+  # therefore `end + 1`, so a passage closing on "." yields "…utilizando.[1]"
+  # and not "…utilizando[1].".
+  #
   # @param answer_text [String]
   # @param raw_citations [Array] the raw Bedrock response.citations objects
   # @return [String]
@@ -47,8 +53,10 @@ class Bedrock::CitationProcessor
       numbers = references.map { reference_number += 1 }
       next if numbers.empty?
 
-      offset = span_end(citation) || answer_text.length
-      insertions << [ offset.clamp(0, answer_text.length), numbers.map { |n| "[#{n}]" }.join ]
+      span = span_end(citation)
+      offset = span ? span + 1 : answer_text.length
+      offset = word_boundary_offset(answer_text, offset.clamp(0, answer_text.length))
+      insertions << [ offset, numbers.map { |n| "[#{n}]" }.join ]
     end
     return answer_text if insertions.empty?
 
@@ -225,6 +233,21 @@ class Bedrock::CitationProcessor
     return value if value.is_a?(Integer) && value >= 0
 
     nil
+  end
+
+  WORD_CHARACTER = /[\p{L}\p{M}\d]/.freeze
+
+  # Defense against an offset that lands inside a word (a span contract change,
+  # or a passage that ends mid-token): a marker there would split it —
+  # "destin[1]o". Advances only when BOTH sides of the offset are word
+  # characters, so an offset already sitting on a space, on punctuation, or at
+  # the start of a word is left exactly where it is.
+  def word_boundary_offset(text, offset)
+    return offset unless offset.positive? && offset < text.length
+    return offset unless WORD_CHARACTER.match?(text[offset]) && WORD_CHARACTER.match?(text[offset - 1])
+
+    offset += 1 while offset < text.length && WORD_CHARACTER.match?(text[offset])
+    offset
   end
 
   def dig_span(object, *keys)

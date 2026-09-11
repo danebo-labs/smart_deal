@@ -78,9 +78,13 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     )
   end
 
-  test "inserts a marker at the real end offset of the cited span" do
+  # span.end is INCLUSIVE (measured in production, docs/EJECUCION_PRE_DEMO_2026-09-10.md
+  # Fase 1): it indexes the LAST character of the cited passage, so every fixture
+  # below points at that character and the marker must land after it.
+
+  test "inserts a marker after the inclusive end offset of the cited span" do
     answer = "EPC es un LED. B8 es un conector."
-    span_end = answer.index("LED.") + "LED.".length # end of the first sentence
+    span_end = answer.index("LED.") + "LED.".length - 1 # the "." closing the first sentence
 
     annotated = Bedrock::CitationProcessor.new.add_span_citations(
       answer, [ raw_citation(span_end: span_end) ]
@@ -91,8 +95,8 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
 
   test "numbers markers sequentially across citation groups and inserts in place" do
     answer = "Primera frase. Segunda frase."
-    first_end = answer.index("frase.") + "frase.".length
-    second_end = answer.length
+    first_end = answer.index("frase.") + "frase.".length - 1
+    second_end = answer.length - 1
 
     annotated = Bedrock::CitationProcessor.new.add_span_citations(
       answer,
@@ -102,8 +106,32 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     assert_equal "Primera frase.[1] Segunda frase.[2]", annotated
   end
 
+  test "an inclusive span ending on the last letter of a word keeps the word intact" do
+    answer = "El carro llega al destino y abre puertas."
+    span_end = answer.index("destino") + "destino".length - 1 # the final "o" of "destino"
+
+    annotated = Bedrock::CitationProcessor.new.add_span_citations(
+      answer, [ raw_citation(span_end: span_end) ]
+    )
+
+    assert_equal "El carro llega al destino[1] y abre puertas.", annotated
+    assert_not_includes annotated, "destin[1]o"
+  end
+
+  test "advances to the next word boundary when the offset falls inside a word" do
+    answer = "El contactor principal cierra."
+    span_end = answer.index("principal") + 2 # mid-word: insertion would fall on the "n"
+
+    annotated = Bedrock::CitationProcessor.new.add_span_citations(
+      answer, [ raw_citation(span_end: span_end) ]
+    )
+
+    assert_equal "El contactor principal[1] cierra.", annotated
+  end
+
   test "assigns one marker per retrieved reference in the group" do
     answer = "Dato compuesto."
+    # span_end at answer.length is already out of range; +1 must stay clamped.
     annotated = Bedrock::CitationProcessor.new.add_span_citations(
       answer, [ raw_citation(span_end: answer.length, references: 2) ]
     )

@@ -16,7 +16,8 @@ export default class extends Controller {
   // a given answer (JSON from /rag/ask or the photo_analyzed KbSync broadcast).
   static values = { showSources: Boolean, evidenceCards: Boolean, resolutionCopy: Object, locale: { type: String, default: "es" } }
 
-  static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB limit for images)
+  static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB ingest limit, after compression)
+  static MAX_IMAGE_INPUT_SIZE = 25 * 1024 * 1024  // 25 MB (raw camera file before Canvas)
   static MAX_DOC_SIZE = 50 * 1024 * 1024     // 50 MB (Bedrock KB limit for documents)
   static SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
   static SUPPORTED_DOC_TYPES = ["text/plain", "text/markdown", "text/html", "text/csv", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]
@@ -204,11 +205,10 @@ export default class extends Controller {
       return
     }
 
-    const maxSize = isImage ? this.constructor.MAX_IMAGE_SIZE : this.constructor.MAX_DOC_SIZE
-    const maxLabel = isImage ? "3.75 MB" : "50 MB"
+    const maxSize = isImage ? this.constructor.MAX_IMAGE_INPUT_SIZE : this.constructor.MAX_DOC_SIZE
     if (file.size > maxSize) {
       const msg = isImage
-        ? "La imagen excede el límite de 3.75 MB (Knowledge Base). Comprímela o reduce su tamaño."
+        ? "La imagen excede el límite de 25 MB. Comprímela o reduce su tamaño."
         : "El documento excede el límite de 50 MB."
       this.addMessage(msg, "error")
       this.removeFile()
@@ -218,11 +218,21 @@ export default class extends Controller {
     if (isImage) {
       const reader = new FileReader()
       reader.onload = (e) => {
-        this.compressImageOnClient(e.target.result).then(({ base64, dataUrl }) => {
+        this.compressImageOnClient(e.target.result).then(({ base64, dataUrl, bytes }) => {
+          if (bytes > this.constructor.MAX_IMAGE_SIZE) {
+            this.addMessage("La imagen excede el límite de 3.75 MB (Knowledge Base). Comprímela o reduce su tamaño.", "error")
+            this.removeFile()
+            return
+          }
           this.pendingFile = { data: base64, media_type: "image/jpeg", filename: file.name, type: "image" }
           this.showPreview(dataUrl, file.name, "image")
         }).catch(() => {
           // Fallback: send as-is if Canvas fails (e.g. cross-origin taint)
+          if (file.size > this.constructor.MAX_IMAGE_SIZE) {
+            this.addMessage("La imagen excede el límite de 3.75 MB (Knowledge Base). Comprímela o reduce su tamaño.", "error")
+            this.removeFile()
+            return
+          }
           const base64Data = e.target.result.split(",")[1]
           this.pendingFile = { data: base64Data, media_type: file.type, filename: file.name, type: "image" }
           this.showPreview(e.target.result, file.name, "image")
@@ -278,7 +288,8 @@ export default class extends Controller {
 
   // Compresses an image client-side via Canvas before uploading.
   // Resizes to MAX_DIMENSION and encodes as JPEG at the given quality.
-  // Returns { base64: string, dataUrl: string }.
+  // Returns { base64: string, dataUrl: string, bytes: number } — bytes is blob.size,
+  // the same magnitude the server compares against MAX_BINARY_BYTES.
   compressImageOnClient(dataUrl, maxDim = 1024, quality = 0.82) {
     return new Promise((resolve, reject) => {
       const img = new Image()
@@ -300,7 +311,7 @@ export default class extends Controller {
           reader.onerror = reject
           reader.onload = (e) => {
             const resultDataUrl = e.target.result
-            resolve({ base64: resultDataUrl.split(",")[1], dataUrl: resultDataUrl })
+            resolve({ base64: resultDataUrl.split(",")[1], dataUrl: resultDataUrl, bytes: blob.size })
           }
           reader.readAsDataURL(blob)
         }, "image/jpeg", quality)

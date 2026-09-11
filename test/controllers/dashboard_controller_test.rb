@@ -3,8 +3,12 @@
 require 'test_helper'
 
 class DashboardControllerTest < ActionDispatch::IntegrationTest
-  def setup
-    skip "Dashboard route disabled for Climb pilot (T-31)"
+  include Devise::Test::IntegrationHelpers
+
+  setup do
+    CostMetric.destroy_all
+    BedrockQuery.destroy_all
+    sign_in users(:one), scope: :user
   end
 
   test 'should get index' do
@@ -60,5 +64,26 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_match(/Rendimiento consultas chat/, response.body)
     assert_match(/500ms/, response.body)
     assert_no_match(/30000ms/, response.body)
+  end
+
+  test 'requires an authenticated user' do
+    sign_out :user
+
+    get dashboard_url
+    assert_redirected_to new_user_session_path
+  end
+
+  test 'document table only lists documents of the host account' do
+    own = kb_documents(:manual_uno)
+    other = KbDocument.create!(
+      s3_key: 'uploads/2026/otra_cuenta.pdf',
+      display_name: 'Manual de otra cuenta',
+      account: accounts(:climb)
+    )
+
+    get dashboard_url
+    assert_response :success
+    assert_match(own.display_name, response.body)
+    assert_no_match(/#{Regexp.escape(other.display_name)}/, response.body)
   end
 end

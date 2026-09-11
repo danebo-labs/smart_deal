@@ -65,6 +65,8 @@ es:
       certifier_long: "%d de %B de %Y"
   dashboard:
     metrics_refreshing: "Métricas actualizándose…"
+  nav:
+    usage: "Uso"
   bulk_uploads:
     select_zip: "Selecciona un archivo ZIP."
     retry_enqueued: "Carga anterior fallida — se volvió a encolar el procesamiento del ZIP."

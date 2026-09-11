@@ -1,8 +1,9 @@
 # Dashboard — tenant usage view
 
 **Audience:** tenant administrators (B2B customers).  
-**MVP status:** implementation preserved; `/dashboard` and
-`/dashboard/metrics` routes are disabled for the pilot in `config/routes.rb`.
+**MVP status:** active. `/dashboard` and `/dashboard/metrics` require an
+authenticated session and are reachable from the header ("Uso"). The document
+table is scoped to the host account.
 **Related:** [METRICS.md](METRICS.md) · [MULTI_TENANT_ARCHITECTURE.md](MULTI_TENANT_ARCHITECTURE.md)
 
 ---

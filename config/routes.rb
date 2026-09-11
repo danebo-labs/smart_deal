@@ -12,8 +12,8 @@ Rails.application.routes.draw do
   get  'home/metrics',        to: 'home#metrics'
   get  'home/documents',      to: 'home#documents'
   get  'home/documents_page', to: 'home#documents_page'
-  # get  'dashboard',          to: 'dashboard#index'    # T-31: disabled for pilot
-  # get  'dashboard/metrics',  to: 'dashboard#metrics'  # T-31: disabled for pilot
+  get  'dashboard',          to: 'dashboard#index'
+  get  'dashboard/metrics',  to: 'dashboard#metrics'
 
   devise_for :users,
              controllers: {

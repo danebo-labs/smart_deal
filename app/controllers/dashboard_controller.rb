@@ -5,11 +5,13 @@
 class DashboardController < ApplicationController
   include MetricsHelper
 
+  before_action :authenticate_user!
+
   def index
     @current_metrics = current_metrics
     @monthly_totals = monthly_totals
     @chart_data = chart_data
-    @kb_documents = KbDocument.order(created_at: :desc)
+    @kb_documents = KbDocument.where(account_id: current_account.id).order(created_at: :desc)
     @performance_metrics = performance_metrics
   end
 

@@ -119,7 +119,7 @@ Ajustes a fases siguientes:
 
 ## Fase 3 — Contrato anti-enumeración en el prompt
 
-**Estado:** desplegada en `b2d1844`, **medida como inefectiva y dañina en la Fase 4** — pendiente de revertir
+**Estado:** desplegada en `b2d1844`, medida como inefectiva y dañina en la Fase 4, **revertida y redesplegada en `e1207b9`**
 
 > Bloque completado con la medición de la Fase 4, no por el ejecutor de la Fase 3.
 
@@ -136,7 +136,7 @@ Medición en producción (A/B del mismo prompt con y sin esas dos líneas, inyec
 
 ## Fase 4 — Gate de deploy
 
-**Estado:** cerrada — **(a) pasa, (b) NO pasa.** Fase 2 se queda; Fase 3 debe revertirse.
+**Estado:** cerrada — **(a) pasa; (b) no pasaba con `b2d1844`, pasa parcialmente tras el revert `e1207b9`.** Fase 2 se queda, Fase 3 revertida y redesplegada.
 
 Inicio / fin: 00:13 → 00:24 (11-sep). Imagen verificada por el nombre del contenedor: `smart-deal-web-b2d1844274ae…` = commit `b2d1844`. Sondas: `script/span_offset_gate_2026-09-11.rb` (gate), `script/q12_prompt_ab_2026-09-11.rb` y `script/q6_q12_fase3_ab_2026-09-11.rb` (atribución). 8 `retrieve_and_generate`, todas read-only, ≈US$0,08.
 
@@ -176,12 +176,27 @@ Hallazgos fuera de plan:
 4. **El «Sorry» de la 12 no es visible como fallo para el técnico:** el mensaje invita a reenviar la consulta, y al reenviarla vuelve a fallar (2/2). Delante de Gonzalo sería un bucle.
 5. **Aurora auto-pause de nuevo:** 24.094 ms en la primera consulta del gate (contra 4-5 s en las siguientes). Se repite el hallazgo 4 de la Fase 1: hace falta la consulta de calentamiento.
 
+### Revert y verificación post-revert (00:24 → 00:33)
+
+Revert ejecutado sobre `app/prompts/bedrock/generation.txt` y `test/prompts/bedrock_generation_prompt_test.rb` con `git checkout 861eba1 -- …` (exacto, no manual: el test lleva un guard `PRE_CHANGE_SHA256` del template filtrado que había que restaurar junto con el prompt). `grep "not an inventory"` sin residuos. Tests de prompt + citas + guardia de atribución + servicio: **152 runs, 544 aserciones, 0 failures**. RuboCop limpio.
+
+Antes de desplegar se comprobó el riesgo de `script/AGENTS.md` (un deploy reinicia el worker y `PollClaudeBatchJob` tiene `HARD_TIMEOUT` de 24 h): **nada en vuelo** — `bulk_uploads={complete: 13, failed: 1}`, `assets={complete: 200, failed: 1}`, 0 jobs ready/scheduled/claimed. Deploy `e1207b9` en 102 s, web y worker sanos.
+
+Gate repetido contra `smart-deal-web-e1207b98…`:
+
+| Pregunta | (a) marcador | (b) |
+|---|---|---|
+| 6 | `"ca disponible.[1]"` — tras el punto; `dentro_de_palabra=[]`, `delante_de_punto=[]` | sigue enumerando el catálogo (defecto conocido, sin arreglar) |
+| 12 | sin marcadores (0 citas) | **ya no falla**: «No se ha especificado el código a consultar. Además, los documentos disponibles corresponden a sistemas Thyssen/ThyssenKrupp, no a Schindler. Indique el código exacto…» |
+
+**(a) pasa.** **(b) pasa a medias:** la 12 rechaza correctamente y no enumera una lista de marcas, pero menciona una (`marcas=["Thyssen"]`, `frases_catalogo=["documentos disponibles"]`), o sea revela la composición del corpus. `declara_ausencia=false` en la sonda es un artefacto del regex: la respuesta pide el código en vez de decir «no contiene», que para esta pregunta es la conducta correcta. Aurora ya estaba caliente (4,4 s).
+
 Ajustes a fases siguientes:
 
-- **Revertir solo las dos líneas de `app/prompts/bedrock/generation.txt`** y volver a desplegar. El cambio de la Fase 2 (`citation_processor.rb` + sus tests) **se queda**: su gate pasó en producción. Es un revert de prompt, sin migración ni variable nueva.
-- **Fase 5:** ejecutar la batería **después** del redeploy del revert. La 12 debe volver a «pide el código exacto» en vez del mensaje de reintento. Verificar además que el marcador siga cayendo tras el punto (única señal visible del fix de la Fase 2).
-- **Fase 6:** la 12 (Schindler) **no** sirve como demostración de «declara ausencia» mientras no se revierta, y ni revertida lo hace limpiamente: revela el inventario del corpus. Para mostrar ausencia de evidencia, elegir otra pregunta o asumir esa frase. La 6 sigue descartada (Fase 1) y la Fase 3 no la ha arreglado.
+- **Fase 5:** ejecutar la batería contra `e1207b9`. Verificar en cada respuesta con cita que el marcador cae tras el punto (única señal visible del fix de la Fase 2).
+- **Fase 6:** la 12 (Schindler) **sí** sirve ya como demostración de que el sistema no inventa —pide el código y dice que el corpus es Thyssen, no Schindler—, pero hay que contar de antemano que revela la composición del corpus; no presentarla como «declaración de ausencia» limpia. La 6 sigue descartada (Fase 1) y la Fase 3 no la arregló. Añadir la consulta de calentamiento contra Aurora antes de la reunión.
 - **Fuera de alcance esta noche:** el contrato anti-enumeración real. Necesita otra formulación (probablemente determinista en Rails, no una prohibición más en el prompt) y una medición propia; no se improvisa a 9 horas de la reunión.
+- **Para después de la demo:** trasladar a `AGENTS.md` el hallazgo 3 — el «Sorry» canónico también se dispara por una prohibición añadida **dentro** del bloque `NO MATCH`, no solo por texto posterior a `$output_format_instructions$`.
 
 ---
 

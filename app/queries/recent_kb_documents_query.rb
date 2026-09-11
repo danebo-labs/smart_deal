@@ -8,20 +8,34 @@
 # trip on every render; this object uses the standard `limit(per_page + 1)`
 # trick so a single SELECT answers BOTH "what to show" AND "is there more?".
 class RecentKbDocumentsQuery
+  MIN_QUERY_LENGTH = 2
+  MAX_QUERY_LENGTH = 60
+
   # @param page [Integer] 0-indexed page (0 = first page)
   # @param per_page [Integer] page size; the query fetches per_page + 1 to
   #   detect a next page without a separate COUNT.
+  # @param q [String, nil] optional search term matched against display_name
+  #   and aliases (ILIKE, same pg_trgm GIN indexes as KbDocumentResolver).
+  #   Ignored below MIN_QUERY_LENGTH so a stray keystroke doesn't narrow the
+  #   list to nothing.
   # @return [Array(Array<KbDocument>, Boolean)] [docs_for_page, has_more]
-  def self.page(page, per_page:, account:)
+  def self.page(page, per_page:, account:, q: nil)
     raise ArgumentError, "account is required" unless account
 
     page_index = [ page.to_i, 0 ].max
-    docs = KbDocument.where(account_id: account.id)
-                     .includes(:thumbnail)
-                     .order(created_at: :desc)
-                     .offset(page_index * per_page)
-                     .limit(per_page + 1)
-                     .to_a
+    scope = KbDocument.where(account_id: account.id)
+
+    term = q.to_s.strip.first(MAX_QUERY_LENGTH)
+    if term.length >= MIN_QUERY_LENGTH
+      pattern = "%#{KbDocument.sanitize_sql_like(term.downcase)}%"
+      scope = scope.where("LOWER(display_name) ILIKE :p OR LOWER(aliases::text) ILIKE :p", p: pattern)
+    end
+
+    docs = scope.includes(:thumbnail)
+                .order(created_at: :desc)
+                .offset(page_index * per_page)
+                .limit(per_page + 1)
+                .to_a
     has_more = docs.size > per_page
     [ docs.first(per_page), has_more ]
   end

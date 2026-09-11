@@ -62,6 +62,46 @@ class RecentKbDocumentsQueryTest < ActiveSupport::TestCase
     assert_equal 0, queries.count { |q| q =~ /\bCOUNT\(/i }, "must NOT issue a COUNT(*) — limit(per_page+1) handles has_more"
   end
 
+  test "q filters by display_name (case-insensitive)" do
+    mpk = create_doc("uploads/q/mpk.pdf", "Fallas MPK 708")
+    create_doc("uploads/q/other.pdf", "Manual Kone")
+
+    docs, = RecentKbDocumentsQuery.page(0, per_page: 10, account: @account, q: "mpk")
+    assert_equal [ mpk ], docs
+  end
+
+  test "q filters by alias" do
+    xizi = create_doc("uploads/q/xizi.pdf", "xizi FO VF", aliases: [ "Xizi Elevator" ])
+    create_doc("uploads/q/other.pdf", "Manual Kone", aliases: [])
+
+    docs, = RecentKbDocumentsQuery.page(0, per_page: 10, account: @account, q: "Elevator")
+    assert_equal [ xizi ], docs
+  end
+
+  test "q below the minimum length is ignored and returns the full list" do
+    create_doc("uploads/q/a.pdf", "Alpha")
+    create_doc("uploads/q/b.pdf", "Beta")
+
+    docs, = RecentKbDocumentsQuery.page(0, per_page: 10, account: @account, q: "a")
+    assert_equal 2, docs.size
+  end
+
+  test "q escapes ILIKE wildcards (%, _) so they match literally, not as patterns" do
+    create_doc("uploads/q/lit.pdf", "100%_special")
+    create_doc("uploads/q/other.pdf", "Nothing related")
+
+    docs, = RecentKbDocumentsQuery.page(0, per_page: 10, account: @account, q: "100%_spe")
+    assert_equal 1, docs.size
+  end
+
+  test "q with no matches returns an empty list, not the full catalog" do
+    create_doc("uploads/q/a.pdf", "Alpha")
+
+    docs, has_more = RecentKbDocumentsQuery.page(0, per_page: 10, account: @account, q: "zzz-no-match")
+    assert_equal [], docs
+    assert_not has_more
+  end
+
   test "returns only documents for the requested account" do
     legacy = create_doc("uploads/legacy/manual.pdf", "Legacy")
     climb = create_doc("uploads/climb/manual.pdf", "Climb", account: @other_account)

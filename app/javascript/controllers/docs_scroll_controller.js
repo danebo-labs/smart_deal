@@ -6,7 +6,7 @@ import { Controller } from "@hotwired/stimulus"
 // them to the items container. The sentinel is replaced (or removed) by the
 // stream, which auto-disconnects this controller and reconnects on the new one.
 export default class extends Controller {
-  static values = { url: String, page: Number }
+  static values = { url: String, page: Number, q: String }
 
   connect() {
     this.loading = false
@@ -27,7 +27,10 @@ export default class extends Controller {
     if (this.loading) return
     this.loading = true
     try {
-      const resp = await fetch(`${this.urlValue}?page=${this.pageValue}`, {
+      const params = new URLSearchParams({ page: this.pageValue })
+      if (this.qValue) params.set("q", this.qValue)
+
+      const resp = await fetch(`${this.urlValue}?${params}`, {
         headers: {
           "Accept":       "text/vnd.turbo-stream.html",
           "X-CSRF-Token": document.querySelector("meta[name=csrf-token]")?.content

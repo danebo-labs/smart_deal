@@ -135,6 +135,34 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_match(/data-docs-scroll-page-value="2"/, response.body)
   end
 
+  test 'documents action with q filters both lists' do
+    KbDocument.create!(s3_key: 'uploads/2026/mpk.pdf', display_name: 'Fallas MPK 708', aliases: [])
+    KbDocument.create!(s3_key: 'uploads/2026/kone.pdf', display_name: 'Manual Kone', aliases: [])
+
+    get '/home/documents', params: { q: 'MPK' }
+    assert_response :success
+    assert_match(/Fallas MPK 708/, response.body)
+    assert_no_match(/Manual Kone/, response.body)
+  end
+
+  test 'documents action sentinel carries q for infinite scroll continuity' do
+    25.times { |i| KbDocument.create!(s3_key: "uploads/2026/mpk#{i}.pdf", display_name: "MPK #{i}", aliases: []) }
+
+    get '/home/documents', params: { q: 'MPK' }
+    assert_response :success
+    assert_match(/data-docs-scroll-q-value="MPK"/, response.body)
+  end
+
+  test 'documents_page honors q on subsequent pages' do
+    25.times { |i| KbDocument.create!(s3_key: "uploads/2026/mpk#{i}.pdf", display_name: "MPK #{i}", aliases: []) }
+    25.times { |i| KbDocument.create!(s3_key: "uploads/2026/other#{i}.pdf", display_name: "Other #{i}", aliases: []) }
+
+    get '/home/documents_page', params: { page: 1, q: 'MPK' }
+    assert_response :success
+    assert_match(/MPK/, response.body)
+    assert_no_match(/Other \d/, response.body)
+  end
+
   test 'kb_docs_card renders thumbnail img only for image extensions with thumbnail row' do
     _pdf = KbDocument.create!(s3_key: 'uploads/2026/foo.pdf', display_name: 'PDF', aliases: [])
     jpg  = KbDocument.create!(s3_key: 'uploads/2026/foo.jpg', display_name: 'JPG', aliases: [])

@@ -23,10 +23,12 @@ class HomeController < ApplicationController
     )
   end
 
-  # Refreshes BOTH the desktop and mobile KB doc lists after an indexing event.
+  # Refreshes BOTH the desktop and mobile KB doc lists after an indexing event,
+  # or after the manual search box changes `q` (docs_search_controller.js).
   # Called by rag_chat_controller#refreshDocuments after KbSyncChannel "indexed".
   def documents
-    kb_docs, has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE, account: current_account)
+    q = params[:q]
+    kb_docs, has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE, account: current_account, q: q)
     pinned_uris       = pinned_uris_for_current_session
     image_url_service = KbDocumentImageUrlService.new(account: current_account)
 
@@ -37,15 +39,16 @@ class HomeController < ApplicationController
       turbo_stream.update("kb-docs-mobile-items",
         partial: "home/kb_docs_card_rows",
         locals: { kb_documents: kb_docs, pinned_uris: pinned_uris, image_url_service: image_url_service }),
-      sentinel_stream(:desktop, has_more: has_more, page: 1),
-      sentinel_stream(:mobile,  has_more: has_more, page: 1)
+      sentinel_stream(:desktop, has_more: has_more, page: 1, q: q),
+      sentinel_stream(:mobile,  has_more: has_more, page: 1, q: q)
     ]
   end
 
   # Infinite-scroll page fetch (page param is 0-indexed; first scroll fetches page=1).
   def documents_page
     page              = [ params[:page].to_i, 1 ].max
-    kb_docs, has_more = RecentKbDocumentsQuery.page(page, per_page: PAGE_SIZE, account: current_account)
+    q                 = params[:q]
+    kb_docs, has_more = RecentKbDocumentsQuery.page(page, per_page: PAGE_SIZE, account: current_account, q: q)
     pinned_uris       = pinned_uris_for_current_session
     image_url_service = KbDocumentImageUrlService.new(account: current_account)
 
@@ -56,8 +59,8 @@ class HomeController < ApplicationController
       turbo_stream.append("kb-docs-mobile-items",
         partial: "home/kb_docs_card_rows",
         locals: { kb_documents: kb_docs, pinned_uris: pinned_uris, image_url_service: image_url_service }),
-      sentinel_stream(:desktop, has_more: has_more, page: page + 1),
-      sentinel_stream(:mobile,  has_more: has_more, page: page + 1)
+      sentinel_stream(:desktop, has_more: has_more, page: page + 1, q: q),
+      sentinel_stream(:mobile,  has_more: has_more, page: page + 1, q: q)
     ]
     render turbo_stream: streams
   end
@@ -77,13 +80,14 @@ class HomeController < ApplicationController
   end
 
   # Replaces the old sentinel with a fresh one bumped to the next page,
-  # OR removes it when no more pages exist.
-  def sentinel_stream(variant, has_more:, page:)
+  # OR removes it when no more pages exist. `q` is carried along so the
+  # infinite-scroll fetch stays filtered by the active search term.
+  def sentinel_stream(variant, has_more:, page:, q: nil)
     sentinel_id = "kb-docs-#{variant}-sentinel"
     if has_more
       turbo_stream.replace(sentinel_id,
         partial: "home/kb_docs_card_sentinel",
-        locals: { sentinel_id: sentinel_id, page: page })
+        locals: { sentinel_id: sentinel_id, page: page, q: q })
     else
       turbo_stream.remove(sentinel_id)
     end

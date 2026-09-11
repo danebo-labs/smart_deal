@@ -17,6 +17,7 @@ es:
     photo_query_verify: "¿Qué datos debo verificar en campo antes de intervenir?"
     photo_manual_heading: "Manual de referencia"
     photo_manual_absent: "No hay un manual compatible pineado en esta sesión. El análisis se limita a lo visible en la foto; sube o pinea el manual antes de pedir parámetros o procedimientos."
+    photo_question_unavailable: "No pude responder tu pregunta sobre la foto en este momento. Vuelve a preguntarla en un mensaje aparte."
     image_summary_invite: "Cuéntame qué necesitas — estoy aquí para lo que sea, cualquier pregunta está bien."
     document_indexed_message: "El archivo %{filename} terminó de sincronizarse en la Base de Conocimiento y está listo para consultas."
     documents_indexed_message: "%{count} archivos fueron sincronizados en la Base de Conocimiento y están listos para consultas."

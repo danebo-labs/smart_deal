@@ -100,7 +100,8 @@ class QueryOrchestratorService
           conversation_session_id: @conversation_session_id,
           locale: locale,
           correlation_id: correlation_id,
-          field_photo_id: photo.id
+          field_photo_id: photo.id,
+          question: @query.to_s
         )
 
         return {
@@ -153,7 +154,8 @@ class QueryOrchestratorService
         conversation_session_id: @conversation_session_id,
         locale: locale,
         correlation_id: correlation_id,
-        field_photo_id: existing_photo_id
+        field_photo_id: existing_photo_id,
+        question: @query.to_s
       )
 
       PilotUsageLog.log(

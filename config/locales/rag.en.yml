@@ -17,6 +17,7 @@ en:
     photo_query_verify: "What details should I verify in the field before intervening?"
     photo_manual_heading: "Reference manual"
     photo_manual_absent: "No compatible manual is pinned in this session. This analysis is limited to what is visible in the photo; upload or pin the manual before asking for parameters or procedures."
+    photo_question_unavailable: "I couldn't answer your question about the photo right now. Please ask it again in a separate message."
     image_summary_invite: "Tell me what you need — I'm here for anything, no question is too simple."
     document_indexed_message: "The file %{filename} has been synchronized to the Knowledge Base and is ready for queries."
     documents_indexed_message: "%{count} files have been synchronized to the Knowledge Base and are ready for queries."

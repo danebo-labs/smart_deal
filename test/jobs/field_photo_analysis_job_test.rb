@@ -257,7 +257,153 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_not_includes serialized, '"binary"'
   end
 
+  # ============================================
+  # PHOTO_QUESTION_RAG_ENABLED (photo + question, plan foto_mas_pregunta_rag)
+  # ============================================
+
+  test "flag on with a question answers via RAG and both turns land in history" do
+    set_photo_question_flag("true")
+    orig_query = BedrockRagService.instance_method(:query)
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      { answer: "Es un panel de control", citations: [], session_id: nil }
+    end
+
+    with_analysis_service(result: analysis_result) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
+      end
+
+      assert_equal "Es un panel de control", messages.last["answer"]
+      history = @session.reload.conversation_history
+      assert_equal analysis_result[:compact_context], history[-2]["content"]
+      assert_equal "Es un panel de control", history[-1]["content"]
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    set_photo_question_flag(nil)
+  end
+
+  test "cache hit with a question skips vision and still answers via RAG" do
+    FieldPhotoDiagnosisCache.write(
+      account_id: accounts(:legacy).id, sha256: @sha, locale: "es", value: cache_value
+    )
+    set_photo_question_flag("true")
+    orig_query = BedrockRagService.instance_method(:query)
+    calls = 0
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      calls += 1
+      { answer: "Respuesta barata", citations: [], session_id: nil }
+    end
+
+    with_analysis_service(error: "must not be called") do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
+      end
+
+      assert_equal 1, calls
+      assert_equal "Respuesta barata", messages.last["answer"]
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    set_photo_question_flag(nil)
+  end
+
+  test "blank question never calls Bedrock and the payload has no answer key" do
+    set_photo_question_flag("true")
+    orig_query = BedrockRagService.instance_method(:query)
+    calls = 0
+    BedrockRagService.define_method(:query) { |*| calls += 1; { answer: "x", citations: [], session_id: nil } }
+
+    with_analysis_service(result: analysis_result) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+
+      assert_equal 0, calls
+      assert_not messages.last.key?("answer")
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    set_photo_question_flag(nil)
+  end
+
+  test "flag off preserves current behavior even with a question present" do
+    set_photo_question_flag(nil)
+    orig_query = BedrockRagService.instance_method(:query)
+    calls = 0
+    BedrockRagService.define_method(:query) { |*| calls += 1; { answer: "x", citations: [], session_id: nil } }
+
+    with_analysis_service(result: analysis_result) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
+      end
+
+      assert_equal 0, calls
+      assert_not messages.last.key?("answer")
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+  end
+
+  test "an exception in the photo-question RAG never breaks the vision delivery" do
+    set_photo_question_flag("true")
+    orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)
+    Rag::PhotoQuestionAnswerService.define_method(:call) { raise RuntimeError, "boom" }
+
+    with_analysis_service(result: analysis_result) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
+      end
+
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), messages.last["answer"]
+    end
+  ensure
+    Rag::PhotoQuestionAnswerService.define_method(:call, orig_call) if orig_call
+    set_photo_question_flag(nil)
+  end
+
+  # Acceptance test for the reported defect: image + "qué está mostrando la
+  # pantalla" used to silently discard the question. With the flag on, the
+  # query Bedrock receives must be anchored to the detected component (GECB)
+  # and the bubble must carry the cited answer, not just the vision summary.
+  test "image + question about the screen reaches Bedrock anchored to the detected component" do
+    set_photo_question_flag("true")
+    orig_query = BedrockRagService.instance_method(:query)
+    captured_question = nil
+    BedrockRagService.define_method(:query) do |question, **_kwargs|
+      captured_question = question
+      { answer: "Muestra el estado del sistema GECB.", citations: [], session_id: nil }
+    end
+
+    gecb_result = analysis_result.merge(
+      canonical_name: "GECB",
+      parsed: analysis_result[:parsed].merge("visible_text" => [ "System=1", "Tools=2" ])
+    )
+
+    with_analysis_service(result: gecb_result) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "¿Qué está mostrando la pantalla?"))
+      end
+
+      assert_includes captured_question, "¿Qué está mostrando la pantalla?"
+      assert_includes captured_question, "GECB"
+      assert_equal "Muestra el estado del sistema GECB.", messages.last["answer"]
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    set_photo_question_flag(nil)
+  end
+
   private
+
+  def set_photo_question_flag(value)
+    if value.nil?
+      ENV.delete("PHOTO_QUESTION_RAG_ENABLED")
+    else
+      ENV["PHOTO_QUESTION_RAG_ENABLED"] = value
+    end
+  end
 
   def fake_s3
     @s3_holder[:fake]

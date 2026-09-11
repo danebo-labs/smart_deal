@@ -146,4 +146,40 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     assert_nil messages.first["field_photo_id"]
     assert_nil messages.first["thumbnail_url"]
   end
+
+  test ".photo_analyzed omits answer and citations keys entirely when not passed" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_analyzed(
+        filenames: [ "photo.jpg" ],
+        analysis: "Observed evidence",
+        canonical_name: "Door board",
+        aliases: [ "DB-1" ],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc"
+      )
+    end
+
+    assert_not messages.first.key?("answer")
+    assert_not messages.first.key?("citations")
+  end
+
+  test ".photo_analyzed includes answer and citations when the photo-question RAG turn answered" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_analyzed(
+        filenames: [ "photo.jpg" ],
+        analysis: "Observed evidence",
+        canonical_name: "Door board",
+        aliases: [ "DB-1" ],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc",
+        answer: "Es un tablero de puerta [1]",
+        citations: [ { "number" => 1, "title" => "Manual" } ]
+      )
+    end
+
+    assert_equal "Es un tablero de puerta [1]", messages.first["answer"]
+    assert_equal 1, messages.first["citations"].size
+  end
 end

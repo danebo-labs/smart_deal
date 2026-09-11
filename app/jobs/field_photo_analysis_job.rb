@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 class FieldPhotoAnalysisJob < ApplicationJob
   queue_as :default
   self.log_arguments = false
@@ -48,7 +50,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   end
 
   def perform(image_token:, image_sha256:, filename:, content_type:, account_id:, user_id: nil,
-              conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil)
+              conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil, question: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     locale = locale.to_s.presence || I18n.default_locale.to_s
     correlation_id ||= "photo:#{SecureRandom.uuid}"
@@ -81,7 +83,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
         image_sha256: image_sha256,
         field_photo_id: field_photo_id,
         delivery_latency_ms: elapsed_ms(started_at),
-        locale: locale
+        locale: locale,
+        question: question
       )
     end
 
@@ -172,7 +175,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       correlation_id: correlation_id,
       field_photo_id: field_photo_id,
-      locale: locale
+      locale: locale,
+      question: question
     )
     PilotUsageLog.log(
       "photo_completed",
@@ -202,7 +206,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   def deliver_cached(cached, session:, filename:, account_id:, user_id:,
                      conversation_session_id:, correlation_id:, image_sha256:,
-                     delivery_latency_ms:, field_photo_id: nil, locale: nil)
+                     delivery_latency_ms:, field_photo_id: nil, locale: nil, question: nil)
     deliver(
       cached,
       session: session,
@@ -211,7 +215,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       correlation_id: correlation_id,
       field_photo_id: field_photo_id,
-      locale: locale
+      locale: locale,
+      question: question
     )
     fields = usage_fields(
       cached,
@@ -241,13 +246,35 @@ class FieldPhotoAnalysisJob < ApplicationJob
     )
   end
 
-  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil)
+  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil)
     session&.add_to_history(
       "assistant",
       value.fetch(:compact_context),
       user_id: user_id,
       correlation_id: correlation_id
     )
+
+    rag_answer = nil
+    if Rag::PhotoQuestionFlag.enabled? && question.present?
+      rag_answer = answer_photo_question(
+        question: question,
+        photo_value: value,
+        session: session,
+        account_id: account_id,
+        user_id: user_id,
+        correlation_id: correlation_id,
+        locale: locale
+      )
+      if rag_answer
+        session&.add_to_history(
+          "assistant",
+          rag_answer.fetch(:answer),
+          user_id: user_id,
+          correlation_id: correlation_id
+        )
+      end
+    end
+
     KbSyncBroadcaster.photo_analyzed(
       filenames: [ filename ],
       analysis: value.fetch(:analysis),
@@ -257,8 +284,62 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: correlation_id,
       field_photo_id: field_photo_id,
       thumbnail_url: field_photo_thumbnail_url(field_photo_id),
-      response_locale: locale
+      response_locale: locale,
+      answer: rag_answer&.fetch(:answer, nil),
+      citations: rag_answer&.fetch(:citations, nil)
     )
+  end
+
+  # Runs the text-RAG turn anchored to the just-analyzed photo. Isolated in
+  # its own rescue: a failure here must never cost the technician the vision
+  # analysis that was already paid for and delivered above — see plan
+  # foto_mas_pregunta_rag "Aislamiento de fallo obligatorio".
+  def answer_photo_question(question:, photo_value:, session:, account_id:, user_id:, correlation_id:, locale:)
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    account = session&.account || (account_id && Account.find_by(id: account_id))
+
+    result = Rag::PhotoQuestionAnswerService.new(
+      question: question,
+      photo_value: photo_value,
+      session: session,
+      account: account,
+      user_id: user_id,
+      correlation_id: correlation_id,
+      locale: locale
+    ).call
+    return nil unless result
+
+    PilotUsageLog.log(
+      "photo_question_answered",
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: session&.id,
+      correlation_id: correlation_id,
+      route: "visual_query",
+      route_taken: "photo_question_rag",
+      question_sha256: Digest::SHA256.hexdigest(question),
+      generation_mode: result[:generation_mode],
+      outcome: photo_outcome(result[:answer]),
+      latency_ms: elapsed_ms(started_at)
+    )
+    result
+  rescue StandardError => e
+    Rails.logger.warn("FieldPhotoAnalysisJob photo-question RAG failed: #{e.class}: #{e.message}")
+    PilotUsageLog.log(
+      "photo_question_failed",
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: session&.id,
+      correlation_id: correlation_id,
+      route: "visual_query",
+      stage: "rag",
+      error_class: e.class.name,
+      latency_ms: elapsed_ms(started_at)
+    )
+    # The vision bubble above already delivered — an exception here must
+    # degrade to a localized note, never to the job's retry_on handler,
+    # which would replace that already-paid-for analysis with a bare error.
+    { answer: I18n.with_locale(locale) { I18n.t("rag.photo_question_unavailable") }, citations: [], generation_mode: nil }
   end
 
   def field_photo_thumbnail_url(field_photo_id)

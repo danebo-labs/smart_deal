@@ -1100,6 +1100,9 @@ export default class extends Controller {
     const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Imagen"
     const aliases   = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
     const lang      = this.localeValue
+    // Present when FieldPhotoAnalysisJob ran the photo-question RAG turn
+    // (PHOTO_QUESTION_RAG_ENABLED) and it answered successfully.
+    const hasAnswer = typeof data.answer === "string" && data.answer.trim().length > 0
 
     const inviteFallback = lang.startsWith("en")
       ? "Tell me what you need — you can ask in just a word or two, that\u2019s fine."
@@ -1120,7 +1123,19 @@ export default class extends Controller {
     if (data.summary) {
       html += `<div style="margin-top:10px;line-height:1.55;">${formatAnswerForWeb(data.summary)}</div>`
     }
-    html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
+
+    if (hasAnswer) {
+      const citations = Array.isArray(data.citations) ? data.citations : []
+      html += `<div style="margin-top:10px;line-height:1.55;">${formatAnswerForWeb(data.answer, citations)}</div>`
+      if (this.showSourcesValue && citations.length) {
+        html += renderSources(citations, lang)
+      }
+      html += renderVerificationNotice(lang)
+    } else {
+      // A generic "tell me what you need" reads wrong right after a real,
+      // citation-backed answer — only shown when there is no answer yet.
+      html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
+    }
 
     if (data.field_photo_id) {
       const reuseLabel = lang.startsWith("en") ? "Ask about this photo" : "Preguntar sobre esta foto"

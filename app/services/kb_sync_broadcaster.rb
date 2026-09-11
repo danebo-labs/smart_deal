@@ -40,9 +40,13 @@ class KbSyncBroadcaster
     })
   end
 
+  # @param answer [String, nil] photo-question RAG turn (see PhotoQuestionAnswerService).
+  #   Omitted from the payload entirely when absent, so the photo-only route
+  #   (the common case) does not carry two extra empty keys over Cable.
+  # @param citations [Array, nil] transported citations for `answer`, same omission rule.
   def self.photo_analyzed(filenames:, analysis:, canonical_name:, aliases:, account_id: nil, correlation_id: nil,
-                          field_photo_id: nil, thumbnail_url: nil, response_locale: nil)
-    ActionCable.server.broadcast(channel_for(account_id), {
+                          field_photo_id: nil, thumbnail_url: nil, response_locale: nil, answer: nil, citations: nil)
+    payload = {
       status: "photo_analyzed",
       filenames: Array(filenames).compact,
       summary: analysis,
@@ -52,6 +56,9 @@ class KbSyncBroadcaster
       field_photo_id: field_photo_id,
       thumbnail_url: thumbnail_url,
       response_locale: response_locale
-    })
+    }
+    payload[:answer] = answer if answer.present?
+    payload[:citations] = citations if citations.present?
+    ActionCable.server.broadcast(channel_for(account_id), payload)
   end
 end

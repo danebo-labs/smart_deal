@@ -209,6 +209,36 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal "es", result[:response_locale]
   end
 
+  test "fresh image upload enqueues the job with the literal question" do
+    image = { data: Base64.strict_encode64("xx"), media_type: "image/jpeg", filename: "photo.jpg" }
+
+    QueryOrchestratorService.new(
+      "Que está mostrando la pantalla?",
+      images: [ image ],
+      account: accounts(:legacy)
+    ).execute
+
+    args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+    assert_equal "Que está mostrando la pantalla?", args["question"]
+  end
+
+  test "field_photo_id reuse enqueues the job with the literal question" do
+    photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: "j" * 64,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{'j' * 64}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4
+    )
+
+    QueryOrchestratorService.new(
+      "Que está mostrando la pantalla?",
+      account: accounts(:legacy),
+      field_photo_id: photo.id
+    ).execute
+
+    args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+    assert_equal "Que está mostrando la pantalla?", args["question"]
+  end
+
   test "field_photo_id is ignored when images are already attached" do
     photo = FieldPhoto.create!(
       account_id: accounts(:legacy).id, sha256: "h" * 64,

@@ -88,6 +88,11 @@ env:
     # docs/RAG_CITATION_ATTRIBUTION_CONTRACT_2026-07-30.md.
     RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED: "false"
     RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED: "false"
+    # Answers the technician's literal question (not just a photo summary) when
+    # an image upload also carries text, anchored to the detected component via
+    # Rag::PhotoQuestionAnswerService. Only the exact string "true" enables it;
+    # default is off (foto_mas_pregunta_rag plan).
+    PHOTO_QUESTION_RAG_ENABLED: "false"
     # Emits one [PILOT_AUDIT] line per interaction with the full question,
     # answer and citations, plus one line per retrieved chunk. Required for the
     # pilot dossier (docs/METRICS.md); without it only the 300-char

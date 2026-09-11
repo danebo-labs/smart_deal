@@ -13,7 +13,7 @@ class AccountActivityChartServiceTest < ActiveSupport::TestCase
   def create_query!(user:, created_at:, source: :query, account: @account)
     BedrockQuery.create!(
       account_id: account.id,
-      user_id: user.id,
+      user_id: user&.id,
       model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
       input_tokens: 100,
       output_tokens: 50,
@@ -82,5 +82,17 @@ class AccountActivityChartServiceTest < ActiveSupport::TestCase
     assert_equal 2, row[:window_queries]
     assert_equal 1, row[:today_queries]
     assert_equal @today, row[:last_activity].to_date
+  end
+
+  test "nil user_id rows do not crash sort and get a fallback label" do
+    create_query!(user: @user, created_at: @today.in_time_zone.noon)
+    create_query!(user: nil, created_at: @today.in_time_zone.noon)
+
+    result = AccountActivityChartService.new(account_id: @account.id, today: @today).call
+
+    labels = result[:datasets].pluck(:label)
+    assert_includes labels, @user.email
+    assert_includes labels, "Sin usuario"
+    assert_equal 2, result[:total]
   end
 end

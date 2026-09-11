@@ -38,20 +38,22 @@ class AccountActivityChartService
       last_activity[user_id] = created_at if last_activity[user_id].nil? || created_at > last_activity[user_id]
     end
 
-    active_user_ids = per_user_counts.keys.sort
+    # Legacy BedrockQuery rows can have user_id nil; Array#sort raises
+    # ArgumentError on Integer vs nil, which 500'd /actividad in production.
+    active_user_ids = per_user_counts.keys.sort_by { |id| [ id.nil? ? 1 : 0, id.to_i ] }
 
     {
       labels: @days.map { |d| I18n.l(d, format: "%d/%m") },
       datasets: active_user_ids.each_with_index.map do |user_id, idx|
         {
-          label: users[user_id] || "Usuario ##{user_id}",
+          label: label_for(user_id, users),
           data: @days.map { |d| by_user_day[[ user_id, d ]] },
           backgroundColor: CHART_COLORS[idx % CHART_COLORS.length]
         }
       end,
       per_user: active_user_ids.map do |user_id|
         {
-          email: users[user_id] || "Usuario ##{user_id}",
+          email: label_for(user_id, users),
           window_queries: per_user_counts[user_id],
           today_queries: per_user_today[user_id],
           last_activity: last_activity[user_id]
@@ -60,5 +62,11 @@ class AccountActivityChartService
       total: rows.size,
       today: per_user_today.values.sum
     }
+  end
+
+  private
+
+  def label_for(user_id, users)
+    users[user_id].presence || (user_id.nil? ? "Sin usuario" : "Usuario ##{user_id}")
   end
 end

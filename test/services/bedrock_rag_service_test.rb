@@ -757,6 +757,63 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'query applies entity filter when auto_scope_filter is true even if query names a different document' do
+    # auto_scope_filter comes from KbDocumentResolver's specific match on THIS
+    # question (not a session pin), so query_names_different_document? — which
+    # protects pins from an off-topic follow-up — must not apply here either.
+    with_mock_bedrock_client do |client|
+      service = BedrockRagService.new(account: @account)
+      service.query(
+        'Que significa el codigo de error de la tarjeta MPK 708A?',
+        entity_s3_uris:    [ 's3://bucket/mpk_708a.pdf' ],
+        auto_scope_filter: true
+      )
+
+      filter = client.last_retrieve_and_generate_params.dig(
+        :retrieve_and_generate_configuration,
+        :knowledge_base_configuration,
+        :retrieval_configuration,
+        :vector_search_configuration,
+        :filter
+      )
+      or_all = filter.dig(:and_all, 1, :or_all)
+      assert_not_nil or_all, "auto_scope_filter must scope retrieval to the resolved source URI"
+      values = or_all.map { |c| c[:equals][:value] }.uniq
+      assert_equal [ 's3://bucket/mpk_708a.pdf' ], values
+    end
+  end
+
+  test 'auto-scoped query retries without filter when filtered result returns no results' do
+    call_count = 0
+    no_results_text = "I'm sorry, I couldn't find relevant information."
+    real_answer     = "Revisa primero la alimentación."
+
+    with_mock_bedrock_client do |client|
+      client.define_singleton_method(:retrieve_and_generate) do |params|
+        call_count += 1
+        vector = params.dig(
+          :retrieve_and_generate_configuration,
+          :knowledge_base_configuration,
+          :retrieval_configuration,
+          :vector_search_configuration
+        )
+        entity_filter_present = vector&.dig(:filter)&.dig(:and_all, 1)&.present?
+        text = entity_filter_present ? no_results_text : real_answer
+        ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: [], session_id: 'sid')
+      end
+
+      service = BedrockRagService.new(account: @account)
+      result = service.query(
+        'Que significa el codigo de error de la tarjeta MPK 708A?',
+        entity_s3_uris:    [ 's3://bucket/mpk_708a.pdf' ],
+        auto_scope_filter: true
+      )
+
+      assert_equal 2, call_count, "auto_scope_filter must still retry without filter on no-results, unlike force_entity_filter"
+      assert_equal real_answer, result[:answer]
+    end
+  end
+
   test 'query appends photo label safety override for photo-only pins' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)

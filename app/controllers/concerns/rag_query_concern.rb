@@ -60,10 +60,19 @@ module RagQueryConcern
     resolved_response_locale = resolve_response_locale(question, conv_session, override: response_locale)
 
     resolved_account        = account || current_account
-    resolver_matches       = KbDocumentResolver.resolve(question, account: resolved_account)
+    resolver_matches       = KbDocumentResolver.resolve_scoped(question, account: resolved_account)
     pinned_uris            = Array(entity_s3_uris).compact
     pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
     merged_session_context = merge_resolver_context(session_context, resolver_matches)
+
+    # Auto-scope: when there is no pinned document and the resolver's match is
+    # specific (see KbDocumentResolver.specific_token?), use its URIs as a soft
+    # retrieval filter instead of searching the whole catalog. force_entity_filter
+    # stays false for this path (computed below from pinned_uris only), which
+    # keeps BedrockRagService's no-results retry alive — worst case is one
+    # extra Bedrock call, never a worse answer than today's unscoped search.
+    auto_scope_uris = pinned_uris.any? ? [] : auto_scope_uris_from(resolver_matches)
+    retrieval_uris  = pinned_uris.presence || auto_scope_uris
 
     resolved_output_channel = output_channel&.to_sym || :web
     resolved_force_filter   = force_entity_filter.nil? ? pinned_uris.any? : force_entity_filter
@@ -79,7 +88,8 @@ module RagQueryConcern
       response_locale:     resolved_response_locale,
       session_context:     merged_session_context,
       conv_session:        conv_session,
-      entity_s3_uris:      pinned_uris,
+      entity_s3_uris:      retrieval_uris,
+      auto_scope_filter:   auto_scope_uris.any?,
       output_channel:      resolved_output_channel,
       force_entity_filter: resolved_force_filter,
       user_id:             user_id,
@@ -269,7 +279,8 @@ module RagQueryConcern
   def merge_resolver_context(session_context, resolver_matches)
     return session_context if resolver_matches.blank?
 
-    lines = resolver_matches.map do |doc|
+    lines = resolver_matches.map do |match|
+      doc        = match.document
       aliases    = Array(doc.aliases).map(&:to_s).compact_blank.first(5)
       alias_note = aliases.any? ? " (aka: #{aliases.join(', ')})" : ""
       "- \"#{doc.display_name}\" → #{doc.s3_key}#{alias_note}"
@@ -282,6 +293,24 @@ module RagQueryConcern
     BLOCK
 
     [ session_context.presence, block ].compact.join("\n\n")
+  end
+
+  # Auto-scope gate (Cambio 1/2, auto-scope-retrieval plan): only narrow
+  # retrieval when the resolver's match is specific — a matched token with a
+  # digit (708a, mpdk136, bl6) or fully uppercase in the question and not a
+  # brand name (otis, kone, ...). A bare brand mention ("Kone") must never
+  # scope retrieval on its own, or a generic question would get filtered to
+  # 3 arbitrary same-brand documents instead of searching the full catalog.
+  def auto_scope_uris_from(resolver_matches)
+    return [] unless Rag::AutoScopeFlag.enabled?
+    return [] if resolver_matches.blank?
+
+    specific = resolver_matches.any? do |match|
+      match.matched_tokens.any? { |token| KbDocumentResolver.specific_token?(token) }
+    end
+    return [] unless specific
+
+    resolver_matches.filter_map { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }.uniq
   end
 
   def resolve_pinned_scope(question, conv_session, pinned_uris)

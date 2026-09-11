@@ -38,9 +38,15 @@ class QueryOrchestratorService
   #   "query names a different document" heuristic and always scopes retrieval to
   #   entity_s3_uris. Use when the caller has explicitly bound the query to a
   #   specific document (e.g. WhatsApp post-reset picker selection).
+  # @param auto_scope_filter [Boolean] When true, entity_s3_uris came from the
+  #   resolver's specific match (not a pin) — passed only to BedrockRagService#query
+  #   so it bypasses query_names_different_document? there. Deliberately NOT
+  #   passed to the deterministic route builders below (StructuredEvidenceRoute,
+  #   AmbiguousModelResponder, DeterministicRenderer), which assume force_entity_filter
+  #   means an explicit pinned scope.
   # @param locale [String, nil] ISO 639-1 locale for image summary generation ("es", "en")
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
-                 conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, locale: nil,
+                 conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, auto_scope_filter: false, locale: nil,
                  user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil)
     @query = query
     @images = images || []
@@ -54,6 +60,7 @@ class QueryOrchestratorService
     @entity_s3_uris = Array(entity_s3_uris)
     @output_channel = output_channel
     @force_entity_filter = force_entity_filter
+    @auto_scope_filter = auto_scope_filter
     @locale = locale
     @user_id = user_id
     @conversation_session_id = conversation_session_id || (conv_session.id if conv_session.respond_to?(:id))
@@ -283,6 +290,7 @@ class QueryOrchestratorService
         entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter,
+        auto_scope_filter: @auto_scope_filter,
         **rag_telemetry
       ).merge(upload_context)
     when TOOLS[:HYBRID_QUERY]
@@ -302,6 +310,7 @@ class QueryOrchestratorService
         entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter,
+        auto_scope_filter: @auto_scope_filter,
         **rag_telemetry
       ).merge(upload_context)
     end
@@ -360,6 +369,7 @@ class QueryOrchestratorService
         entity_sources: entity_sources,
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter,
+        auto_scope_filter: @auto_scope_filter,
         **rag_telemetry
       )
     rescue StandardError => e

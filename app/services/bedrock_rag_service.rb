@@ -169,10 +169,20 @@ class BedrockRagService
   #   heuristic. Use this when the caller has explicitly bound the query to a
   #   document (e.g. a WhatsApp picker selection) so heavy-capitalized seed
   #   queries like "Describe Orona ARCA BASICO ..." don't trip the bypass.
+  # @param auto_scope_filter [Boolean] When true, entity_s3_uris came from
+  #   KbDocumentResolver's specific match (auto-scope), not a session pin.
+  #   Also bypasses query_names_different_document? — that heuristic protects
+  #   session PINS from an off-topic follow-up; auto-scope URIs are derived
+  #   from THIS question, so the heuristic does not apply and would only
+  #   false-bypass on heavy-capitalized questions ("...en un OTIS?"). Unlike
+  #   force_entity_filter, does NOT skip the no-results retry (line ~247) or
+  #   switch the "pinned no results" message (line ~299) — those stay gated
+  #   on force_entity_filter alone, so auto-scope's worst case is one extra
+  #   Bedrock call, never a worse answer than an unscoped search.
   def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
-            account_id: nil, user_id: nil, conversation_session_id: nil, correlation_id: nil,
-            include_diagnostics: false)
+            auto_scope_filter: false, account_id: nil, user_id: nil, conversation_session_id: nil,
+            correlation_id: nil, include_diagnostics: false)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -190,9 +200,11 @@ class BedrockRagService
 
     begin
       # Apply entity filter when explicitly forced (caller bound the query to a
-      # specific doc) OR when the query is short/ambiguous and doesn't name a
-      # different document.
-      apply_filter = entity_s3_uris.any? && (force_entity_filter || !query_names_different_document?(question, entity_s3_uris))
+      # specific doc), when auto-scoped (resolver's specific match on this
+      # question — see auto_scope_filter doc above), OR when the query is
+      # short/ambiguous and doesn't name a different document.
+      apply_filter = entity_s3_uris.any? &&
+        (force_entity_filter || auto_scope_filter || !query_names_different_document?(question, entity_s3_uris))
       filtered_uris = apply_filter ? entity_s3_uris : []
       effective_session_context = session_context_with_entity_safety(
         session_context,

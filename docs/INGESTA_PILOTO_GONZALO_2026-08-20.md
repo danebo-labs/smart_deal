@@ -791,6 +791,26 @@ de claves sobrantes se movió de `validate_field_record!` a
 registros sin evidencia con `filter_map` + `warn`. Una clave alucinada es un
 registro defectuoso, no un documento corrupto.
 
+> ⚠️ **Cerrado el 10-sep.** El fix de código llevaba desde el 22-ago desplegado
+> (verificado: `discard_unverifiable_field_records!` sigue en el árbol, deploy
+> vigente `cd60f45`), pero el documento nunca se había vuelto a subir — quedó
+> como el único asset `failed` de esta clase en toda la base durante más de
+> dos semanas. Recuperado igual que `08_recuperacion.zip`: el binario se extrajo
+> de `02_ingesta.zip` (SHA-256 `da39541956e4…577e53e`, idéntico al que falló),
+> se armó `09_recuperacion_otis.zip` y se re-subió a la cuenta 3. `BulkUpload`
+> 15 `complete`, asset 55 reasignado con `error_message` nulo, 27 chunks,
+> `kb_document_id` 214, `canonical_name` "OTIS Electrical Diagram TBA21235A".
+> Coste **US$1,2039 all-in / US$0,0708/página** (100% Opus — es un plano
+> eléctrico escaneado), **nuevo techo de coste del piloto**, por encima del
+> 0,0514 de `07`, explicado igual que las tandas anteriores por la fracción
+> escaneada del documento, no por un defecto. Retrieval verificado:
+> `otis_2000.pdf` entra en las posiciones 1, 2 y 3 de 5 para "diagrama
+> electrico OTIS 2000 TBA21235A" sobre la cuenta 3. **El hueco de contenido
+> del piloto queda en cero páginas** (antes: 20, entre este documento y los 3
+> de `PLAN_LIBERACION_PILOTO_2026-08-25.md`, ya cerrados el 25-ago). Único
+> excluido restante: `KONE_Parts_2002.pdf` (608 págs), fuera por decisión de
+> producto, no por defecto técnico.
+
 La asimetría es deliberada: **`STOP_WORK_CONDITION` sigue fallando en duro**, por
 la misma razón que `unverifiable_non_stop_field_record?` ya lo excluía — una
 condición de parada de seguridad no puede desaparecer del ledger sin traza. Sólo
@@ -1124,6 +1144,12 @@ ingerieron el 31-ago en `danebo-legacy` (account 1) — ver
 4. **Devise `trackable`**: decidir si se añade o se acepta el hueco de login.
 5. **`BulkUploadsController#create` busca por `sha256` global** — hay que
    resolverlo antes de reactivar la UI de `/bulk_uploads` (T-31).
+6. **`V3F18 MX05 MX06 MX10.pdf` (`BulkUploadAsset` 115, `BulkUpload` 7) sigue
+   `failed`** con el `Errno::ENOSPC` del 22-ago, y es el único `failed` que
+   queda en toda la base. No es un hueco de contenido: es el escaneo KONE
+   duplicado (mismo manual, SHA-256 distinto) que ya se ingirió como asset 116
+   (`kb_document_id` 119, `bulk_upload_id` 8) — ver el hallazgo lateral en
+   "El disco es un presupuesto…" más arriba. No re-ingerir sin motivo nuevo.
 
 ### Resueltos
 

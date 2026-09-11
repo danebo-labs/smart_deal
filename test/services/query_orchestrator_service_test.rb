@@ -530,6 +530,100 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal [ "document" ], service.send(:entity_sources)
   end
 
+  # ============================================
+  # Tests for auto_scope_filter wiring (auto-scope-retrieval plan)
+  # ============================================
+
+  test "auto_scope_filter is passed to BedrockRagService#query" do
+    original_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    rag_service = Object.new
+    calls = []
+    rag_service.define_singleton_method(:query) do |question, **kwargs|
+      calls << { question: question, kwargs: kwargs }
+      { answer: "ok", citations: [], session_id: "s" }
+    end
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| rag_service }
+
+    QueryOrchestratorService.new(
+      "que es el Esquema SOPREL?",
+      account: accounts(:legacy),
+      entity_s3_uris: [ "s3://bucket/soprel.pdf" ],
+      auto_scope_filter: true
+    ).execute
+
+    assert_equal 1, calls.size
+    assert_equal true, calls.first[:kwargs][:auto_scope_filter]
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    original_flag.nil? ? ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED") : ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = original_flag
+  end
+
+  test "auto_scope_filter defaults to false when the caller omits it" do
+    original_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    rag_service = Object.new
+    calls = []
+    rag_service.define_singleton_method(:query) do |question, **kwargs|
+      calls << { question: question, kwargs: kwargs }
+      { answer: "ok", citations: [], session_id: "s" }
+    end
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| rag_service }
+
+    QueryOrchestratorService.new("hello", account: accounts(:legacy)).execute
+
+    assert_equal false, calls.first[:kwargs][:auto_scope_filter]
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    original_flag.nil? ? ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED") : ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = original_flag
+  end
+
+  test "auto_scope_filter is not forwarded to the deterministic route builders" do
+    captured_kwargs = []
+    original_structured_build = Rag::StructuredEvidenceRoute.method(:build)
+    original_ambiguous_build = Rag::AmbiguousModelResponder.method(:build)
+    original_deterministic_build = Rag::DeterministicRenderer.method(:build)
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) do |**kwargs|
+      captured_kwargs << kwargs
+      original_structured_build.call(**kwargs)
+    end
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) do |**kwargs|
+      captured_kwargs << kwargs
+      original_ambiguous_build.call(**kwargs)
+    end
+    Rag::DeterministicRenderer.define_singleton_method(:build) do |**kwargs|
+      captured_kwargs << kwargs
+      original_deterministic_build.call(**kwargs)
+    end
+
+    # None of the 3 builders match this question/scope, so execution falls
+    # through to BedrockRagService#query — stub it so this test never reaches
+    # the real network (it previously did, timing out against AWS Bedrock).
+    rag_service = Object.new
+    rag_service.define_singleton_method(:query) { |*| { answer: "ok", citations: [], session_id: "s" } }
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| rag_service }
+
+    QueryOrchestratorService.new(
+      "que es el Esquema SOPREL?",
+      account: accounts(:legacy),
+      entity_s3_uris: [ "s3://bucket/soprel.pdf" ],
+      auto_scope_filter: true
+    ).execute
+
+    assert captured_kwargs.any?, "expected at least one route builder to be called"
+    captured_kwargs.each do |kwargs|
+      assert_not kwargs.key?(:auto_scope_filter),
+                 "route builders must only see force_entity_filter, never auto_scope_filter"
+    end
+  ensure
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_structured_build.call(**kwargs) } if original_structured_build
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| original_ambiguous_build.call(**kwargs) } if original_ambiguous_build
+    Rag::DeterministicRenderer.define_singleton_method(:build) { |**kwargs| original_deterministic_build.call(**kwargs) } if original_deterministic_build
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+  end
 
   def diagnosis_cache_value
     {

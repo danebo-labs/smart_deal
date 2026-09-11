@@ -294,9 +294,9 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   # Catalog-level pre-resolution (KbDocumentResolver integration)
   # ============================================
 
-  test 'execute_rag_query injects resolver context (not URIs) into the orchestrator' do
+  test 'execute_rag_query injects resolver context into the prompt and auto-scopes retrieval for a specific match' do
     KbDocument.delete_all
-    KbDocument.create!(
+    doc = KbDocument.create!(
       s3_key:       "uploads/2026-04-10/Esquema SOPREL.pdf",
       display_name: "Esquema SOPREL",
       aliases:      [ "Foremcaro 6118/81" ],
@@ -314,15 +314,86 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
 
     begin
+      # "SOPREL" is fully uppercase in the question and not a brand — the
+      # auto-scope gate (Cambio 1) treats it as specific.
       @controller.send(:execute_rag_query, "que es el Esquema SOPREL?", session_context: "prior ctx")
 
-      # Resolver only contributes ## Query Resolution to session_context; NOT to entity_s3_uris.
       assert_includes captured[:kwargs][:session_context], "Query Resolution"
       assert_includes captured[:kwargs][:session_context], "Esquema SOPREL"
       assert_includes captured[:kwargs][:session_context], "prior ctx"
-      # entity_s3_uris comes only from pins — empty here since no session
-      assert_equal [], captured[:kwargs][:entity_s3_uris]
+      # No session pin — entity_s3_uris now come from the resolver's specific
+      # match (auto-scope), not just from pins.
+      assert_equal [ doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      # force_entity_filter stays false for auto-scope — keeps BedrockRagService's
+      # no-results retry alive (Cambio 1c).
+      assert_equal false, captured[:kwargs][:force_entity_filter]
     ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query does not auto-scope when the resolver match is not specific' do
+    KbDocument.delete_all
+    KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/manual_kone.pdf",
+      display_name: "Manual Kone",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    begin
+      # "Kone" is a brand, Title-cased (not ALL-CAPS) — not specific, so the
+      # match stays prompt-only and retrieval is not narrowed to 3 arbitrary
+      # same-brand documents.
+      @controller.send(:execute_rag_query, "Tengo un Kone, que reviso primero?")
+
+      assert_equal [], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+  end
+
+  test 'execute_rag_query auto-scope is disabled by RAG_AUTO_SCOPE_ENABLED=false' do
+    KbDocument.delete_all
+    KbDocument.create!(
+      s3_key:       "uploads/2026-04-10/Esquema SOPREL.pdf",
+      display_name: "Esquema SOPREL",
+      aliases:      [],
+      account:      @controller.current_account
+    )
+
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+
+    original_flag = ENV.fetch("RAG_AUTO_SCOPE_ENABLED", nil)
+    ENV["RAG_AUTO_SCOPE_ENABLED"] = "false"
+
+    begin
+      @controller.send(:execute_rag_query, "que es el Esquema SOPREL?")
+
+      assert_equal [], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+    ensure
+      original_flag.nil? ? ENV.delete("RAG_AUTO_SCOPE_ENABLED") : ENV["RAG_AUTO_SCOPE_ENABLED"] = original_flag
       QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
     end
   end

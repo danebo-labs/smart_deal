@@ -8,14 +8,16 @@ module Rag
   # (that route is fully async, see QueryOrchestratorService#execute).
   #
   # Two independent, deliberately narrow mechanisms (plan:
-  # foto_mas_pregunta_correccion):
-  #   - The anchor suffix steers RETRIEVAL, but only with tokens the KbDocument
-  #     catalog actually recognizes (a display_name/alias hit via
-  #     KbDocumentResolver.resolve_scoped). Raw OCR labels and invented part
-  #     numbers never resolve to a document and used to scatter retrieval
-  #     across the whole catalog instead of narrowing it — see "Diagnostico"
-  #     in the plan. When nothing resolves, the literal question travels
-  #     alone, same as any text-only turn.
+  # foto_mas_pregunta_correccion, gates v2: ancla_foto_v2_quirurgico):
+  #   - The anchor suffix steers RETRIEVAL, but only with tokens that clear
+  #     TWO deterministic gates: (1) catalog — a display_name/alias hit via
+  #     KbDocumentResolver.resolve_scoped; invented part numbers
+  #     ("000A60961010") never resolve; (2) form —
+  #     KbDocumentResolver.specific_token? (digits, or fully uppercase and
+  #     not a bare brand). Gate 1 alone let generic words that merely live
+  #     inside some alias ("portátil", "Motor", "System") mis-scope
+  #     retrieval — regresion 2026-09-15. When nothing clears both gates, the
+  #     literal question travels alone, same as any text-only turn.
   #   - The "Photo Evidence" session_context block is supporting CONTEXT for
   #     GENERATION, not a restriction: it tells the model what was read off
   #     the image so it can interpret the question, but procedures/values/
@@ -84,13 +86,23 @@ module Rag
       suffix.present? ? "#{@question} (#{suffix})" : @question
     end
 
-    # Only tokens the catalog knows (a display_name/alias hit) may steer
-    # retrieval. Raw OCR labels and part numbers that resolve to nothing
-    # ("000A60961010") scatter retrieval across the whole catalog instead.
+    # Retrieval anchor. Two deterministic gates, both required:
+    #   1. catalog: the token must match a display_name/alias (resolve_scoped) —
+    #      invented part numbers ("000A60961010") never resolve;
+    #   2. form: KbDocumentResolver.specific_token? (digits or fully uppercase
+    #      non-brand). Generic words living in some alias ("portátil" from
+    #      "Terminal portátil OTIS", "Motor", "System") passed gate 1 alone and
+    #      mis-scoped retrieval — regresion 2026-09-15.
+    # visible_codes is verbatim screen/label text: it only contributes
+    # digit-bearing designators (708A, MX10). Uppercase UI words (MODULE,
+    # FUNCTION, SET) pass specific_token? but name no document.
     def anchor_suffix
       return "" unless @account
 
-      candidate = [ known(@photo_value[:canonical_name]), known(@photo_value[:model_visible]), *visible_code_parts ].compact.join(" ")
+      identity = [ known(@photo_value[:canonical_name]), known(@photo_value[:model_visible]) ].compact.join(" ")
+      identity_tokens = raw_tokens(identity).select { |raw| KbDocumentResolver.specific_token?(raw) }
+      code_tokens     = raw_tokens(visible_code_parts.join(" ")).select { |raw| raw.match?(/\d/) }
+      candidate = (identity_tokens + code_tokens).uniq { |raw| raw.downcase }.join(" ")
       return "" if candidate.blank?
 
       question_down = @question.downcase
@@ -99,6 +111,10 @@ module Rag
                                  .uniq { |token| token.downcase }
                                  .reject { |token| question_down.include?(token.downcase) }
       tokens.join(" ").truncate(ANCHOR_SUFFIX_MAX_CHARS, omission: "")
+    end
+
+    def raw_tokens(text)
+      text.to_s.scan(KbDocumentResolver::TOKEN_RE).uniq
     end
 
     def visible_code_parts

@@ -28,7 +28,7 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     @orig_rag_query = BedrockRagService.instance_method(:query)
     KbDocument.create!(
       account: @account, s3_key: "uploads/urm.pdf", display_name: "Manual de URM",
-      aliases: [ "GECB" ], document_uid: SecureRandom.uuid
+      aliases: [ "GECB", "Terminal portátil OTIS", "System Menu" ], document_uid: SecureRandom.uuid
     )
   end
 
@@ -62,6 +62,10 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       captured = { question: question, kwargs: kwargs }
       { answer: I18n.t("rag.data_not_available", locale: :es), citations: [], session_id: nil }
     end
+    KbDocument.create!(
+      account: @account, s3_key: "uploads/motor.pdf", display_name: "Manual de motores",
+      aliases: [ "ajuste motor" ], document_uid: SecureRandom.uuid
+    )
 
     photo_value = {
       canonical_name: "Fijacion de Cables Motor",
@@ -75,6 +79,75 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     build_service(question: question, photo_value: photo_value).call
 
     assert_equal question, captured[:question]
+  end
+
+  test "generic words living in an alias never anchor" do
+    captured = nil
+    BedrockRagService.define_method(:query) do |question, **kwargs|
+      captured = { question: question, kwargs: kwargs }
+      { answer: "ok", citations: [], session_id: nil }
+    end
+    KbDocument.create!(
+      account: @account, s3_key: "uploads/module.pdf", display_name: "Manual de modulos",
+      aliases: [ "MODULE", "FUNCTION" ], document_uid: SecureRandom.uuid
+    )
+
+    photo_value = {
+      canonical_name: "Herramienta portátil programadora",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "UNKNOWN",
+      visible_codes: [ "GECB - Menu", "System=1 Tools=2", "MODULE", "FUNCTION", "SET" ]
+    }
+    question = "Que es este dispositivo y que se ve en la pantalla ?"
+
+    build_service(question: question, photo_value: photo_value).call
+
+    assert_equal question, captured[:question]
+  end
+
+  test "digit-bearing visible code that the catalog knows anchors" do
+    captured = nil
+    BedrockRagService.define_method(:query) do |question, **kwargs|
+      captured = { question: question, kwargs: kwargs }
+      { answer: "ok", citations: [], session_id: nil }
+    end
+    KbDocument.create!(
+      account: @account, s3_key: "uploads/mpk.pdf", display_name: "Manual de placa",
+      aliases: [ "MPK 708A" ], document_uid: SecureRandom.uuid
+    )
+
+    photo_value = {
+      canonical_name: "Placa de control",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "UNKNOWN",
+      visible_codes: [ "708A" ]
+    }
+
+    build_service(question: "Que indica esta placa?", photo_value: photo_value).call
+
+    assert captured[:question].end_with?("(708A)")
+  end
+
+  test "model_visible designator anchors even when canonical_name is generic" do
+    captured = nil
+    BedrockRagService.define_method(:query) do |question, **kwargs|
+      captured = { question: question, kwargs: kwargs }
+      { answer: "ok", citations: [], session_id: nil }
+    end
+
+    photo_value = {
+      canonical_name: "Herramienta portátil",
+      manufacturer: "UNKNOWN",
+      model_visible: "GECB",
+      condition: "UNKNOWN",
+      visible_codes: [ "UNKNOWN" ]
+    }
+
+    build_service(question: "Que muestra la pantalla?", photo_value: photo_value).call
+
+    assert_includes captured[:question], "(GECB)"
   end
 
   test "a resolved token already present in the question is omitted from the suffix" do

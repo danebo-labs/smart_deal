@@ -7,19 +7,28 @@ module Rag
   # FieldPhotoAnalysisJob, strictly after vision — never in the request cycle
   # (that route is fully async, see QueryOrchestratorService#execute).
   #
-  # Two independent fixes are required (plan: foto_mas_pregunta_rag):
-  #   - Anchored query text fixes RETRIEVAL. BedrockRagService#query only
-  #     retrieves on the literal input.text, so a generic "qué es esto"
-  #     would search the wrong equipment unless the visible component/codes
-  #     ride along in the query string itself.
-  #   - The "Photo Evidence" session_context block fixes GENERATION. Without
-  #     it the model can still substitute a similar-looking component from a
-  #     different manual instead of grounding on what was actually observed.
+  # Two independent, deliberately narrow mechanisms (plan:
+  # foto_mas_pregunta_correccion):
+  #   - The anchor suffix steers RETRIEVAL, but only with tokens the KbDocument
+  #     catalog actually recognizes (a display_name/alias hit via
+  #     KbDocumentResolver.resolve_scoped). Raw OCR labels and invented part
+  #     numbers never resolve to a document and used to scatter retrieval
+  #     across the whole catalog instead of narrowing it — see "Diagnostico"
+  #     in the plan. When nothing resolves, the literal question travels
+  #     alone, same as any text-only turn.
+  #   - The "Photo Evidence" session_context block is supporting CONTEXT for
+  #     GENERATION, not a restriction: it tells the model what was read off
+  #     the image so it can interpret the question, but procedures/values/
+  #     part identity still come only from the retrieved manuals. The actual
+  #     anti-substitution guardrail is the "# NO MATCH" instruction already in
+  #     app/prompts/bedrock/generation.txt, which applies to every turn.
   #
   # entity_sources is deliberately left empty (conv_session is NOT passed to
   # execute_rag_query) so RagRetrievalProfile falls back to OPEN_RESULTS — the
   # photo itself is never pinned as an active_entity, so this is an open
-  # catalog search, not a narrow pinned-document lookup.
+  # catalog search, not a narrow pinned-document lookup. conversation_session_id
+  # IS passed (see #call), purely for trace attribution — it does not affect
+  # retrieval scoping.
   class PhotoQuestionAnswerService
     include RagQueryConcern
 
@@ -50,7 +59,8 @@ module Rag
         account:         @account,
         user_id:         @user_id,
         response_locale: @locale,
-        correlation_id:  @correlation_id
+        correlation_id:  @correlation_id,
+        conversation_session_id: @session&.id
       )
       return nil unless result.success?
 
@@ -74,11 +84,21 @@ module Rag
       suffix.present? ? "#{@question} (#{suffix})" : @question
     end
 
+    # Only tokens the catalog knows (a display_name/alias hit) may steer
+    # retrieval. Raw OCR labels and part numbers that resolve to nothing
+    # ("000A60961010") scatter retrieval across the whole catalog instead.
     def anchor_suffix
-      parts = [ known(@photo_value[:canonical_name]), *visible_code_parts ].compact
-      return "" if parts.empty?
+      return "" unless @account
 
-      parts.join(" ").truncate(ANCHOR_SUFFIX_MAX_CHARS, omission: "")
+      candidate = [ known(@photo_value[:canonical_name]), known(@photo_value[:model_visible]), *visible_code_parts ].compact.join(" ")
+      return "" if candidate.blank?
+
+      question_down = @question.downcase
+      tokens = KbDocumentResolver.resolve_scoped(candidate, account: @account)
+                                 .flat_map(&:matched_tokens)
+                                 .uniq { |token| token.downcase }
+                                 .reject { |token| question_down.include?(token.downcase) }
+      tokens.join(" ").truncate(ANCHOR_SUFFIX_MAX_CHARS, omission: "")
     end
 
     def visible_code_parts
@@ -101,7 +121,7 @@ module Rag
       visible_codes = Array(@photo_value[:visible_codes]).presence&.join(", ") || UNKNOWN
       block = <<~BLOCK.strip
         ## Photo Evidence (this turn)
-        The technician attached a photo in this same turn and the question refers to it. The fields below are the ONLY visual evidence and were read from the image, not from the knowledge base. Never infer a value that is not listed here or retrieved from the manuals. If the manuals contain no evidence for this question, state that explicitly instead of substituting a similar component from another manual.
+        The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; use them to interpret the question. Procedures, values and part identity come only from the retrieved manuals.
         - Component: #{@photo_value[:canonical_name] || UNKNOWN}
         - Manufacturer: #{@photo_value[:manufacturer] || UNKNOWN}
         - Model: #{@photo_value[:model_visible] || UNKNOWN}

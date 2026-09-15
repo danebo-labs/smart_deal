@@ -46,6 +46,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal result[:correlation_id], args["correlation_id"]
     assert_not_includes args.to_json, Base64.strict_encode64("xx")
     assert_nil args["image_payload"]
+    assert_enqueued_with(job: WarmBedrockKbJob)
   ensure
     BedrockRagService.define_method(:query, orig_rag)
   end
@@ -60,6 +61,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
 
     assert result.key?(:images_uploaded)
     assert_includes result[:images_uploaded], "scan.jpg"
+    assert_no_enqueued_jobs only: WarmBedrockKbJob
   end
 
   test "image with blank query returns the Spanish analyzing message and response_locale under an English ambient I18n.locale" do
@@ -109,6 +111,9 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal sha, args["image_sha256"]
     assert_equal existing_photo.id, args["field_photo_id"]
     assert_equal result[:correlation_id], args["correlation_id"]
+    # Cache hit: RAG starts immediately, a parallel ping would compete with it
+    # for the same paused cluster (WarmBedrockKbJob IN_FLIGHT_TTL).
+    assert_no_enqueued_jobs only: WarmBedrockKbJob
   end
 
   test "cached diagnosis without a durable photo still writes the pending store so it can be persisted" do

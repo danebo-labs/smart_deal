@@ -40,12 +40,13 @@ class KbSyncBroadcaster
     })
   end
 
-  # @param answer [String, nil] photo-question RAG turn (see PhotoQuestionAnswerService).
-  #   Omitted from the payload entirely when absent, so the photo-only route
-  #   (the common case) does not carry two extra empty keys over Cable.
-  # @param citations [Array, nil] transported citations for `answer`, same omission rule.
+  # @param pending_question [Boolean] true when a photo-question RAG turn will
+  #   follow on the same correlation_id (see .photo_question_answered) — the
+  #   client keeps its pending state instead of clearing it on this broadcast.
+  #   Omitted from the payload when false, so the photo-only route (the common
+  #   case) does not carry an extra key over Cable.
   def self.photo_analyzed(filenames:, analysis:, canonical_name:, aliases:, account_id: nil, correlation_id: nil,
-                          field_photo_id: nil, thumbnail_url: nil, response_locale: nil, answer: nil, citations: nil)
+                          field_photo_id: nil, thumbnail_url: nil, response_locale: nil, pending_question: false)
     payload = {
       status: "photo_analyzed",
       filenames: Array(filenames).compact,
@@ -57,8 +58,19 @@ class KbSyncBroadcaster
       thumbnail_url: thumbnail_url,
       response_locale: response_locale
     }
-    payload[:answer] = answer if answer.present?
-    payload[:citations] = citations if citations.present?
+    payload[:pending_question] = true if pending_question
     ActionCable.server.broadcast(channel_for(account_id), payload)
+  end
+
+  # Second half of a photo + question turn: the vision bubble already went out
+  # with pending_question: true, this fills the placeholder the client kept.
+  def self.photo_question_answered(answer:, citations:, account_id: nil, correlation_id: nil, response_locale: nil)
+    ActionCable.server.broadcast(channel_for(account_id), {
+      status: "photo_question_answered",
+      correlation_id: correlation_id,
+      answer: answer,
+      citations: Array(citations),
+      response_locale: response_locale
+    })
   end
 end

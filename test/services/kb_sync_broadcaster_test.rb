@@ -147,7 +147,7 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     assert_nil messages.first["thumbnail_url"]
   end
 
-  test ".photo_analyzed omits answer and citations keys entirely when not passed" do
+  test ".photo_analyzed omits pending_question when false" do
     channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
     messages = capture_broadcasts(channel) do
       KbSyncBroadcaster.photo_analyzed(
@@ -160,11 +160,10 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
       )
     end
 
-    assert_not messages.first.key?("answer")
-    assert_not messages.first.key?("citations")
+    assert_not messages.first.key?("pending_question")
   end
 
-  test ".photo_analyzed includes answer and citations when the photo-question RAG turn answered" do
+  test ".photo_analyzed includes pending_question: true when a photo-question RAG turn will follow" do
     channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
     messages = capture_broadcasts(channel) do
       KbSyncBroadcaster.photo_analyzed(
@@ -174,12 +173,43 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
         aliases: [ "DB-1" ],
         account_id: accounts(:legacy).id,
         correlation_id: "photo:abc",
-        answer: "Es un tablero de puerta [1]",
-        citations: [ { "number" => 1, "title" => "Manual" } ]
+        pending_question: true
       )
     end
 
+    assert_equal true, messages.first["pending_question"]
+  end
+
+  test ".photo_question_answered broadcasts status, correlation_id, answer, citations and response_locale" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_question_answered(
+        answer: "Es un tablero de puerta [1]",
+        citations: [ { "number" => 1, "title" => "Manual" } ],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc",
+        response_locale: "es"
+      )
+    end
+
+    assert_equal "photo_question_answered", messages.first["status"]
+    assert_equal "photo:abc", messages.first["correlation_id"]
     assert_equal "Es un tablero de puerta [1]", messages.first["answer"]
     assert_equal 1, messages.first["citations"].size
+    assert_equal "es", messages.first["response_locale"]
+  end
+
+  test ".photo_question_answered defaults citations to an array even when nil" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_question_answered(
+        answer: "Respuesta",
+        citations: nil,
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc"
+      )
+    end
+
+    assert_equal [], messages.first["citations"]
   end
 end

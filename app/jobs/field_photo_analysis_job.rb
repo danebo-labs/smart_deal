@@ -167,7 +167,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       value: cache_value
     )
 
-    deliver(
+    outcome = deliver(
       cache_value,
       session: session,
       filename: filename,
@@ -195,7 +195,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       conversation_session_id: conversation_session_id,
       correlation_id: correlation_id,
-      outcome: photo_outcome(cache_value[:analysis]),
+      outcome: outcome,
       latency_ms: elapsed_ms(started_at)
     )
   ensure
@@ -207,7 +207,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   def deliver_cached(cached, session:, filename:, account_id:, user_id:,
                      conversation_session_id:, correlation_id:, image_sha256:,
                      delivery_latency_ms:, field_photo_id: nil, locale: nil, question: nil)
-    deliver(
+    outcome = deliver(
       cached,
       session: session,
       filename: filename,
@@ -241,53 +241,42 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       conversation_session_id: conversation_session_id,
       correlation_id: correlation_id,
-      outcome: photo_outcome(cached[:analysis]),
+      outcome: outcome,
       latency_ms: delivery_latency_ms
     )
   end
 
+  # Delivers the vision bubble first, then (when a question rides along) the
+  # photo-question RAG answer as a second broadcast on the same
+  # correlation_id — see plan foto_mas_pregunta_correccion "Cambio B". Returns
+  # the outcome String for the turn, consumed by emit_interaction_completed.
   def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil)
-    session&.add_to_history(
-      "assistant",
-      value.fetch(:compact_context),
-      user_id: user_id,
-      correlation_id: correlation_id
-    )
+    session&.add_to_history("assistant", value.fetch(:compact_context), user_id: user_id, correlation_id: correlation_id)
 
-    rag_answer = nil
-    if Rag::PhotoQuestionFlag.enabled? && question.present?
-      rag_answer = answer_photo_question(
-        question: question,
-        photo_value: value,
-        session: session,
-        account_id: account_id,
-        user_id: user_id,
-        correlation_id: correlation_id,
-        locale: locale
-      )
-      if rag_answer
-        session&.add_to_history(
-          "assistant",
-          rag_answer.fetch(:answer),
-          user_id: user_id,
-          correlation_id: correlation_id
-        )
-      end
-    end
-
+    run_rag = Rag::PhotoQuestionFlag.enabled? && question.present?
     KbSyncBroadcaster.photo_analyzed(
-      filenames: [ filename ],
-      analysis: value.fetch(:analysis),
-      canonical_name: value[:canonical_name],
-      aliases: value[:aliases],
-      account_id: account_id,
-      correlation_id: correlation_id,
-      field_photo_id: field_photo_id,
-      thumbnail_url: field_photo_thumbnail_url(field_photo_id),
-      response_locale: locale,
-      answer: rag_answer&.fetch(:answer, nil),
-      citations: rag_answer&.fetch(:citations, nil)
+      filenames: [ filename ], analysis: value.fetch(:analysis),
+      canonical_name: value[:canonical_name], aliases: value[:aliases],
+      account_id: account_id, correlation_id: correlation_id,
+      field_photo_id: field_photo_id, thumbnail_url: field_photo_thumbnail_url(field_photo_id),
+      response_locale: locale, pending_question: run_rag
     )
+    return photo_outcome(value[:analysis]) unless run_rag
+
+    rag_answer = answer_photo_question(question: question, photo_value: value, session: session,
+                                       account_id: account_id, user_id: user_id,
+                                       correlation_id: correlation_id, locale: locale)
+    # nil only when the flag flipped off or the question blanked between the check above and the call
+    return photo_outcome(value[:analysis]) unless rag_answer
+
+    unless rag_answer[:failed]
+      session&.add_to_history("assistant", rag_answer.fetch(:answer), user_id: user_id, correlation_id: correlation_id)
+    end
+    KbSyncBroadcaster.photo_question_answered(
+      answer: rag_answer.fetch(:answer), citations: rag_answer[:citations],
+      account_id: account_id, correlation_id: correlation_id, response_locale: locale
+    )
+    rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer])
   end
 
   # Runs the text-RAG turn anchored to the just-analyzed photo. Isolated in
@@ -336,10 +325,10 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: e.class.name,
       latency_ms: elapsed_ms(started_at)
     )
-    # The vision bubble above already delivered — an exception here must
-    # degrade to a localized note, never to the job's retry_on handler,
-    # which would replace that already-paid-for analysis with a bare error.
-    { answer: I18n.with_locale(locale) { I18n.t("rag.photo_question_unavailable") }, citations: [], generation_mode: nil }
+    # The vision bubble already went out with pending_question: true — this
+    # text is what fills that placeholder, never the job's retry_on handler,
+    # which would replace the already-paid-for analysis with a bare error.
+    { answer: I18n.with_locale(locale) { I18n.t("rag.photo_question_unavailable") }, citations: [], generation_mode: nil, failed: true }
   end
 
   def field_photo_thumbnail_url(field_photo_id)

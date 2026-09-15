@@ -112,6 +112,17 @@ export default class extends Controller {
             controller.indexingLoadingId = null
           }
           controller.addImageSummaryMessage(data)
+          if (!data.pending_question) {
+            controller.pendingPhotoCorrelationId = null
+            controller.pendingUploadType = null
+          }
+          return
+        }
+
+        if (data.status === "photo_question_answered") {
+          if (!controller.matchesPendingPhoto(data)) return
+
+          controller.addPhotoQuestionAnswer(data)
           controller.pendingPhotoCorrelationId = null
           controller.pendingUploadType = null
           return
@@ -1100,9 +1111,6 @@ export default class extends Controller {
     const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Imagen"
     const aliases   = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
     const lang      = this.localeValue
-    // Present when FieldPhotoAnalysisJob ran the photo-question RAG turn
-    // (PHOTO_QUESTION_RAG_ENABLED) and it answered successfully.
-    const hasAnswer = typeof data.answer === "string" && data.answer.trim().length > 0
 
     const inviteFallback = lang.startsWith("en")
       ? "Tell me what you need — you can ask in just a word or two, that\u2019s fine."
@@ -1124,16 +1132,10 @@ export default class extends Controller {
       html += `<div style="margin-top:10px;line-height:1.55;">${formatAnswerForWeb(data.summary)}</div>`
     }
 
-    if (hasAnswer) {
-      const citations = Array.isArray(data.citations) ? data.citations : []
-      html += `<div style="margin-top:10px;line-height:1.55;">${formatAnswerForWeb(data.answer, citations)}</div>`
-      if (this.showSourcesValue && citations.length) {
-        html += renderSources(citations, lang)
-      }
-      html += renderVerificationNotice(lang)
+    if (data.pending_question) {
+      const searching = lang.startsWith("en") ? "Searching the manuals for your question…" : "Buscando tu pregunta en los manuales…"
+      html += `<div data-photo-answer="${this.escapeHtml(String(data.correlation_id))}" style="margin-top:10px;color:#4a5568;">${this.escapeHtml(searching)}</div>`
     } else {
-      // A generic "tell me what you need" reads wrong right after a real,
-      // citation-backed answer — only shown when there is no answer yet.
       html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
     }
 
@@ -1161,6 +1163,25 @@ export default class extends Controller {
     bubble.innerHTML = html
     this.messagesTarget.appendChild(row)
     this.scrollToMessageTop(row)
+  }
+
+  // Fills the placeholder addImageSummaryMessage left when pending_question
+  // was true. Falls back to a new message when the placeholder is gone
+  // (e.g. the page reloaded between the two broadcasts).
+  addPhotoQuestionAnswer(data) {
+    const slot = this.messagesTarget.querySelector(`[data-photo-answer="${CSS.escape(String(data.correlation_id))}"]`)
+    const lang = this.localeValue
+    const citations = Array.isArray(data.citations) ? data.citations : []
+    let html = `<div style="line-height:1.55;">${formatAnswerForWeb(data.answer, citations)}</div>`
+    if (this.showSourcesValue && citations.length) html += renderSources(citations, lang)
+    html += renderVerificationNotice(lang)
+    if (slot) {
+      slot.style.color = ""
+      slot.innerHTML = html
+      this.scrollToMessageTop(slot.closest(".chat-message") || slot)
+    } else {
+      this.addMessage(html, "assistant")
+    }
   }
 
   // Attaches the last analyzed field photo to the next question so a

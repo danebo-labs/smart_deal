@@ -48,7 +48,7 @@ module RagQueryConcern
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil,
                         session_context: nil, conv_session: nil, entity_s3_uris: [],
                         output_channel: nil, force_entity_filter: nil, account: nil, user_id: nil,
-                        correlation_id: nil, field_photo_id: nil)
+                        correlation_id: nil, field_photo_id: nil, conversation_session_id: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -104,7 +104,7 @@ module RagQueryConcern
       output_channel:      resolved_output_channel,
       force_entity_filter: resolved_force_filter,
       user_id:             user_id,
-      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      conversation_session_id: conversation_session_id || (conv_session.id if conv_session.respond_to?(:id)),
       correlation_id:      correlation_id,
       field_photo_id:      field_photo_id
     ).execute

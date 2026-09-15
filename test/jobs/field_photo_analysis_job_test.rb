@@ -261,7 +261,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   # PHOTO_QUESTION_RAG_ENABLED (photo + question, plan foto_mas_pregunta_rag)
   # ============================================
 
-  test "flag on with a question answers via RAG and both turns land in history" do
+  test "flag on with a question delivers two broadcasts in order and both turns land in history" do
     set_photo_question_flag("true")
     orig_query = BedrockRagService.instance_method(:query)
     BedrockRagService.define_method(:query) do |_question, **_kwargs|
@@ -273,7 +273,14 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
       end
 
-      assert_equal "Es un panel de control", messages.last["answer"]
+      vision_message, answer_message = messages.last(2)
+      assert_equal "photo_analyzed", vision_message["status"]
+      assert_equal true, vision_message["pending_question"]
+      assert_not vision_message.key?("answer")
+      assert_equal "photo_question_answered", answer_message["status"]
+      assert_equal "Es un panel de control", answer_message["answer"]
+      assert_equal vision_message["correlation_id"], answer_message["correlation_id"]
+
       history = @session.reload.conversation_history
       assert_equal analysis_result[:compact_context], history[-2]["content"]
       assert_equal "Es un panel de control", history[-1]["content"]
@@ -283,7 +290,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     set_photo_question_flag(nil)
   end
 
-  test "cache hit with a question skips vision and still answers via RAG" do
+  test "cache hit with a question skips vision and still delivers two broadcasts in order" do
     FieldPhotoDiagnosisCache.write(
       account_id: accounts(:legacy).id, sha256: @sha, locale: "es", value: cache_value
     )
@@ -301,14 +308,19 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       end
 
       assert_equal 1, calls
-      assert_equal "Respuesta barata", messages.last["answer"]
+      vision_message, answer_message = messages.last(2)
+      assert_equal "photo_analyzed", vision_message["status"]
+      assert_equal true, vision_message["pending_question"]
+      assert_equal "photo_question_answered", answer_message["status"]
+      assert_equal "Respuesta barata", answer_message["answer"]
+      assert_equal vision_message["correlation_id"], answer_message["correlation_id"]
     end
   ensure
     BedrockRagService.define_method(:query, orig_query) if orig_query
     set_photo_question_flag(nil)
   end
 
-  test "blank question never calls Bedrock and the payload has no answer key" do
+  test "blank question broadcasts once without pending_question or answer" do
     set_photo_question_flag("true")
     orig_query = BedrockRagService.instance_method(:query)
     calls = 0
@@ -320,6 +332,9 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       end
 
       assert_equal 0, calls
+      assert_equal 1, messages.size
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_not messages.last.key?("pending_question")
       assert_not messages.last.key?("answer")
     end
   ensure
@@ -339,13 +354,15 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       end
 
       assert_equal 0, calls
+      assert_equal 1, messages.size
+      assert_not messages.last.key?("pending_question")
       assert_not messages.last.key?("answer")
     end
   ensure
     BedrockRagService.define_method(:query, orig_query) if orig_query
   end
 
-  test "an exception in the photo-question RAG never breaks the vision delivery" do
+  test "an exception in the photo-question RAG delivers the vision bubble first, then a failed placeholder answer" do
     set_photo_question_flag("true")
     orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)
     Rag::PhotoQuestionAnswerService.define_method(:call) { raise RuntimeError, "boom" }
@@ -355,19 +372,84 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
       end
 
-      assert_equal "photo_analyzed", messages.last["status"]
-      assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), messages.last["answer"]
+      vision_message, answer_message = messages.last(2)
+      assert_equal "photo_analyzed", vision_message["status"]
+      assert_equal true, vision_message["pending_question"]
+      assert_equal "photo_question_answered", answer_message["status"]
+      assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), answer_message["answer"]
+
+      history = @session.reload.conversation_history
+      assert_not_includes history.pluck("content"), I18n.t("rag.photo_question_unavailable", locale: :es)
     end
   ensure
     Rag::PhotoQuestionAnswerService.define_method(:call, orig_call) if orig_call
     set_photo_question_flag(nil)
   end
 
+  test "interaction_completed outcome reflects the RAG answer, not the vision text" do
+    set_photo_question_flag("true")
+    orig_query = BedrockRagService.instance_method(:query)
+
+    # RAG abstains, vision answered normally -> outcome must be abstained.
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      { answer: "DATA_NOT_AVAILABLE", citations: [], session_id: nil }
+    end
+    with_analysis_service(result: analysis_result) do
+      events = capture_pilot_usage_events do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?", correlation_id: "photo:outcome-1"))
+      end
+      completed = events.find { |e| e["event"] == "interaction_completed" }
+      assert_equal "abstained", completed["outcome"]
+    end
+
+    # RAG answers normally, vision text happens to contain the abstention
+    # marker -> outcome must still be answered (computed on the RAG answer).
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      { answer: "Es un panel de control", citations: [], session_id: nil }
+    end
+    vision_with_marker = analysis_result.merge(analysis: "DATA_NOT_AVAILABLE")
+    with_analysis_service(result: vision_with_marker) do
+      events = capture_pilot_usage_events do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          image_token: pending_token, image_sha256: "sha-outcome-2",
+          question: "Que es esto?", correlation_id: "photo:outcome-2"
+        ))
+      end
+      completed = events.find { |e| e["event"] == "interaction_completed" }
+      assert_equal "answered", completed["outcome"]
+    end
+    BedrockRagService.define_method(:query, orig_query)
+
+    # The photo-question RAG call raises past its own isolation (see the
+    # dedicated exception test above) -> outcome must be failed, not derived
+    # from the vision text.
+    orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)
+    Rag::PhotoQuestionAnswerService.define_method(:call) { raise RuntimeError, "boom" }
+    with_analysis_service(result: analysis_result) do
+      events = capture_pilot_usage_events do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          image_token: pending_token, image_sha256: "sha-outcome-3",
+          question: "Que es esto?", correlation_id: "photo:outcome-3"
+        ))
+      end
+      completed = events.find { |e| e["event"] == "interaction_completed" }
+      assert_equal "failed", completed["outcome"]
+    end
+    Rag::PhotoQuestionAnswerService.define_method(:call, orig_call)
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    set_photo_question_flag(nil)
+  end
+
   # Acceptance test for the reported defect: image + "qué está mostrando la
   # pantalla" used to silently discard the question. With the flag on, the
-  # query Bedrock receives must be anchored to the detected component (GECB)
-  # and the bubble must carry the cited answer, not just the vision summary.
-  test "image + question about the screen reaches Bedrock anchored to the detected component" do
+  # query Bedrock receives must be anchored to the catalog-resolved component
+  # (GECB) and the second broadcast must carry the cited answer.
+  test "image + question about the screen reaches Bedrock anchored to the catalog-resolved component" do
+    KbDocument.create!(
+      account: accounts(:legacy), s3_key: "uploads/urm.pdf", display_name: "Manual de URM",
+      aliases: [ "GECB" ], document_uid: SecureRandom.uuid
+    )
     set_photo_question_flag("true")
     orig_query = BedrockRagService.instance_method(:query)
     captured_question = nil
@@ -469,6 +551,18 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       created_at: Time.current.iso8601,
       contract_version: FieldPhotoPrompt::CONTRACT_VERSION
     )
+  end
+
+  def capture_pilot_usage_events
+    log_output = StringIO.new
+    logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    log_output.string.lines.filter_map do |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?("[PILOT_USAGE]")
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   def with_analysis_service(result: nil, error: nil, on_call: nil)

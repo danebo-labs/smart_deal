@@ -144,6 +144,11 @@ class QueryOrchestratorService
         )
       end
 
+      # Aurora resumes while vision runs (9-18 s, no KB access). Only on a cache
+      # miss: on a hit the RAG starts at once and a parallel ping would compete
+      # with it for the same paused cluster (see WarmBedrockKbJob IN_FLIGHT_TTL).
+      WarmBedrockKbJob.perform_later if @query.present? && cached.nil?
+
       FieldPhotoAnalysisJob.perform_later(
         image_token: image_token,
         image_sha256: image_sha256,

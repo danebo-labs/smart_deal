@@ -25,6 +25,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     @previous_sources_flag = ENV.fetch("SHOW_RAG_SOURCES", nil)
     ENV["PHOTO_QUESTION_RAG_ENABLED"] = "true"
     ENV["SHOW_RAG_SOURCES"] = "true"
+    @original_gs_flag = ENV.fetch("RAG_GROUNDED_SYNTHESIS_ENABLED", nil)
+    ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
     @orig_rag_query = BedrockRagService.instance_method(:query)
     KbDocument.create!(
       account: @account, s3_key: "uploads/urm.pdf", display_name: "Manual de URM",
@@ -36,6 +38,11 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     BedrockRagService.define_method(:query, @orig_rag_query)
     @previous_flag.nil? ? ENV.delete("PHOTO_QUESTION_RAG_ENABLED") : ENV["PHOTO_QUESTION_RAG_ENABLED"] = @previous_flag
     @previous_sources_flag.nil? ? ENV.delete("SHOW_RAG_SOURCES") : ENV["SHOW_RAG_SOURCES"] = @previous_sources_flag
+    if @original_gs_flag.nil?
+      ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
+    else
+      ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = @original_gs_flag
+    end
   end
 
   test "anchors the question only with catalog-resolved tokens, omitting unresolved OCR text" do
@@ -273,6 +280,60 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     result = build_service(question: "Que es esto?").call
 
     assert_nil result
+  end
+
+  test "H9 names a screen document when grounded synthesis is on and sheet titles are visible" do
+    ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = "true"
+    photo_value = {
+      canonical_name: "Fijacion de Cables Motor",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "UNKNOWN",
+      visible_codes: [ "Características Motor", "Fijación de Cables" ]
+    }
+
+    block = build_service(question: "Como se ajustan", photo_value: photo_value).send(:photo_evidence_block)
+
+    assert_includes block, "document on a screen"
+    assert_includes block, "not the manufacturer"
+    assert_not_includes block, "BOLIVAR"
+  end
+
+  test "H9 stays off when the flag is off even if sheet titles are visible" do
+    photo_value = {
+      canonical_name: "Fijacion de Cables Motor",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "UNKNOWN",
+      visible_codes: [ "Caracteristicas Motor", "Fijacion de Cables" ]
+    }
+
+    block = build_service(question: "Como se ajustan", photo_value: photo_value).send(:photo_evidence_block)
+
+    assert_not_includes block, "document on a screen"
+  end
+
+  test "H9 detects a sheet title plus a plant-style identifier without naming a site" do
+    ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = "true"
+    photo_value = {
+      canonical_name: "UNKNOWN",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "UNKNOWN",
+      visible_codes: [ "Hoja de Datos", "SITIO 12" ]
+    }
+
+    block = build_service(question: "Que muestra", photo_value: photo_value).send(:photo_evidence_block)
+
+    assert_includes block, "document on a screen"
+  end
+
+  test "H9 does not fire on a controller screen" do
+    ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = "true"
+
+    block = build_service(question: "Que muestra").send(:photo_evidence_block)
+
+    assert_not_includes block, "document on a screen"
   end
 
   private

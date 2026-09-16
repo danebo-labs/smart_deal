@@ -29,6 +29,11 @@ class BedrockRagService
   # therefore appended before the placeholder, which is always re-emitted last.
   OUTPUT_FORMAT_PLACEHOLDER = "$output_format_instructions$"
   PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
+  GROUNDED_SYNTHESIS_PROMPT_PREFIX = "- GROUNDED_SYNTHESIS:"
+  STRICT_ONLY_PROMPT_PREFIX = "- STRICT_ONLY:"
+  GROUNDED_SYNTHESIS_CONTRACT_VERSION = "gs-v1"
+  STRICT_CONTRACT_VERSION = "strict-v1"
+  CITATION_MARKER_PATTERN = /\[[1-9]\d*\]/.freeze
   RAG_QUALITY_EXCLUDED_KEYS = %i[question answer_snippet citation_titles].freeze
 
   # Deterministic failure-semantics normalization (Gate B).
@@ -156,6 +161,7 @@ class BedrockRagService
 
     # @model_ref holds either a Bedrock inference profile ID or a full foundation-model ARN.
     @model_ref = BedrockClient::QUERY_MODEL_ID
+    @grounded_synthesis = Rag::GroundedSynthesisFlag.enabled_for?(@account)
 
     Rails.logger.info("BedrockRagService initialized - Knowledge Base ID: #{@knowledge_base_id.presence || 'NOT SET'}")
     Rails.logger.info("BedrockRagService initialized - Model ID: #{@model_ref}")
@@ -363,7 +369,8 @@ class BedrockRagService
       answer_text = normalize_absence_semantics(
         answer_text,
         question: question,
-        locale: no_results_locale
+        locale: no_results_locale,
+        grounded_synthesis: @grounded_synthesis
       )
       internal_answer_text = answer_text
       # F3 — Single guardrail pass with the full evidence context: native
@@ -702,6 +709,8 @@ class BedrockRagService
       attribution_dropped_segments: citation_attribution.dropped_segments.size,
       attribution_anchors: citation_attribution.anchors,
       attribution_identities: citation_attribution.identities,
+      contract_version: grounded_synthesis_contract_version,
+      grounded_synthesis: grounded_synthesis?,
       model_id:        @model_ref,
       kb_id:           @knowledge_base_id
     }
@@ -806,7 +815,9 @@ class BedrockRagService
       "visible_output_tokens"  => visible_tokens,
       "hidden_output_tokens"   => [ output_tokens.to_i - visible_tokens.to_i, 0 ].max,
       "raw_output_chars"       => raw_answer.to_s.length,
-      "visible_output_chars"   => visible_answer.to_s.length
+      "visible_output_chars"   => visible_answer.to_s.length,
+      "contract_version"      => grounded_synthesis_contract_version,
+      "grounded_synthesis"    => grounded_synthesis?
     )
 
     max_tokens = payload["configured_max_tokens"].to_i
@@ -951,7 +962,7 @@ class BedrockRagService
   # OUTPUT_FORMAT_PLACEHOLDER is lifted out before the dynamic directives are
   # appended and re-emitted last, so the citation contract always closes the prompt.
   def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil, output_channel: nil)
-    base = self.class.load_generation_prompt_template
+    base = self.class.load_generation_prompt_template(grounded_synthesis: grounded_synthesis?)
     output_contract = base.include?(OUTPUT_FORMAT_PLACEHOLDER)
     base = base.sub(OUTPUT_FORMAT_PLACEHOLDER, "").rstrip if output_contract
     locale = if response_locale.present?
@@ -1278,28 +1289,56 @@ class BedrockRagService
   # Each RAG request renders the prompt twice (build_complete_optimized_config
   # + the post-response token-count assembly) — without memoization that means
   # 2 File.read syscalls per request multiplied by N concurrent requests.
-  def self.load_generation_prompt_template
+  def self.load_generation_prompt_template(grounded_synthesis: false)
     partial_contract = Rag::PartialAbstentionContractFlag.enabled?
+    grounded_synthesis = grounded_synthesis == true
 
     if Rails.env.production?
       @generation_prompt_templates ||= {}
-      @generation_prompt_templates[partial_contract] ||= begin
+      @generation_prompt_templates[[partial_contract, grounded_synthesis]] ||= begin
         template = @generation_prompt_template ||=
           Rails.root.join("app/prompts/bedrock/generation.txt").read
-        filter_partial_abstention_prompt(template, partial_contract:)
+        filter_generation_prompt(template, partial_contract:, grounded_synthesis:)
       end
     else
       template = Rails.root.join("app/prompts/bedrock/generation.txt").read
-      filter_partial_abstention_prompt(template, partial_contract:)
+      filter_generation_prompt(template, partial_contract:, grounded_synthesis:)
     end
   end
 
-  def self.filter_partial_abstention_prompt(template, partial_contract:)
-    return template if partial_contract
+  def self.filter_generation_prompt(template, partial_contract:, grounded_synthesis:)
+    template.lines.filter_map do |line|
+      next if !partial_contract && line.start_with?(PARTIAL_ABSTENTION_PROMPT_PREFIX)
+      next if grounded_synthesis && strict_only_prompt_line?(line)
+      next if !grounded_synthesis && grounded_synthesis_prompt_line?(line)
 
-    template.lines.reject { |line| line.start_with?(PARTIAL_ABSTENTION_PROMPT_PREFIX) }.join
+      strip_variant_prompt_prefix(line)
+    end.join
   end
-  private_class_method :filter_partial_abstention_prompt
+  private_class_method :filter_generation_prompt
+
+  def self.grounded_synthesis_prompt_line?(line)
+    line.match?(/\A\s*-?\s*GROUNDED_SYNTHESIS:/)
+  end
+  private_class_method :grounded_synthesis_prompt_line?
+
+  def self.strict_only_prompt_line?(line)
+    line.match?(/\A\s*-?\s*STRICT_ONLY:/)
+  end
+  private_class_method :strict_only_prompt_line?
+
+  def self.strip_variant_prompt_prefix(line)
+    if line.match?(/\A\s*-?\s*(?:GROUNDED_SYNTHESIS|STRICT_ONLY):/)
+      rest = line.sub(/\A\s*-?\s*(?:GROUNDED_SYNTHESIS|STRICT_ONLY):\s?/, "")
+      return rest if rest.start_with?("#")
+      return line.sub(/\A(\s+)(?:GROUNDED_SYNTHESIS|STRICT_ONLY):\s?/, "\\1") if line.match?(/\A\s+(?:GROUNDED_SYNTHESIS|STRICT_ONLY):/)
+
+      line.sub(/\A(\s*)-\s*(?:GROUNDED_SYNTHESIS|STRICT_ONLY):\s?/, "\\1- ")
+    else
+      line
+    end
+  end
+  private_class_method :strip_variant_prompt_prefix
 
   def estimate_tokens(text)
     return 0 if text.blank?
@@ -1476,19 +1515,32 @@ class BedrockRagService
     refs.presence
   end
 
+  def grounded_synthesis?
+    @grounded_synthesis == true
+  end
+
+  def grounded_synthesis_contract_version
+    grounded_synthesis? ? GROUNDED_SYNTHESIS_CONTRACT_VERSION : STRICT_CONTRACT_VERSION
+  end
+
   # Appends an internal absence contract without rewriting the generated answer.
   # With the partial contract disabled this preserves the former 280-character
   # behavior byte-for-byte. With it enabled, a leading absence remains total while
   # a later absence is marked only when its fragment shares a requested relation
   # with the question.
+  # D5: with grounded synthesis, a body that already carries a citation marker
+  # [n] must not receive an absence footer — the model named the missing datum
+  # inline. Variant off stays byte-identical to the current behaviour.
   def normalize_absence_semantics(
     answer,
     question: nil,
     locale: I18n.locale,
-    partial_contract: Rag::PartialAbstentionContractFlag.enabled?
+    partial_contract: Rag::PartialAbstentionContractFlag.enabled?,
+    grounded_synthesis: false
   )
     return answer if answer.blank?
     return answer if answer.match?(ABSENCE_MARKER_PATTERN)
+    return answer if grounded_synthesis && answer.match?(CITATION_MARKER_PATTERN)
 
     return normalize_legacy_absence(answer, locale:) unless partial_contract
 

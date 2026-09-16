@@ -35,8 +35,15 @@ module Rag
     include RagQueryConcern
 
     ANCHOR_SUFFIX_MAX_CHARS = 120
-    EVIDENCE_BLOCK_MAX_CHARS = 600
+    EVIDENCE_BLOCK_MAX_CHARS = 720
     UNKNOWN = "UNKNOWN"
+    # H9: laptop-screen capture of a sheet. Accent-folded titles; plant pattern
+    # is 4+ uppercase letters + digits. No site name is hardcoded (D10).
+    DOCUMENT_ON_SCREEN_TITLES = [
+      "caracteristicas motor",
+      "fijacion de cables"
+    ].freeze
+    PLANT_IDENTIFIER_PATTERN = /\b[A-Z]{4,}\s+\d{2,}\b/
 
     def initialize(question:, photo_value:, session:, account:, user_id:, correlation_id:, locale:)
       @question = question.to_s.strip
@@ -135,16 +142,38 @@ module Rag
 
     def photo_evidence_block
       visible_codes = Array(@photo_value[:visible_codes]).presence&.join(", ") || UNKNOWN
-      block = <<~BLOCK.strip
-        ## Photo Evidence (this turn)
-        The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; use them to interpret the question. Procedures, values and part identity come only from the retrieved manuals.
-        - Component: #{@photo_value[:canonical_name] || UNKNOWN}
-        - Manufacturer: #{@photo_value[:manufacturer] || UNKNOWN}
-        - Model: #{@photo_value[:model_visible] || UNKNOWN}
-        - Visible text/codes: #{visible_codes}
-        - Condition: #{@photo_value[:condition] || UNKNOWN}
-      BLOCK
-      block.truncate(EVIDENCE_BLOCK_MAX_CHARS, omission: "")
+      lines = [
+        "## Photo Evidence (this turn)",
+        "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; use them to interpret the question. Procedures, values and part identity come only from the retrieved manuals."
+      ]
+      if Rag::GroundedSynthesisFlag.enabled_for?(@account) && document_on_screen_photo?
+        lines << "- This photo is a document on a screen, not the equipment. Printed titles are not the manufacturer."
+      end
+      lines.concat(
+        [
+          "- Component: #{@photo_value[:canonical_name] || UNKNOWN}",
+          "- Manufacturer: #{@photo_value[:manufacturer] || UNKNOWN}",
+          "- Model: #{@photo_value[:model_visible] || UNKNOWN}",
+          "- Visible text/codes: #{visible_codes}",
+          "- Condition: #{@photo_value[:condition] || UNKNOWN}"
+        ]
+      )
+      lines.join("\n").truncate(EVIDENCE_BLOCK_MAX_CHARS, omission: "")
+    end
+
+    def document_on_screen_photo?
+      codes = visible_code_parts
+      return false if codes.empty?
+
+      folded = codes.map { |code| I18n.transliterate(code).downcase }
+      return true if DOCUMENT_ON_SCREEN_TITLES.any? { |title| folded.any? { |code| code.include?(title) } }
+
+      has_sheet_title = codes.any? do |code|
+        words = I18n.transliterate(code).scan(/[A-Za-z]{2,}/)
+        words.size >= 2 && words.any? { |word| word.length >= 4 }
+      end
+      has_plant_id = codes.any? { |code| code.match?(PLANT_IDENTIFIER_PATTERN) }
+      has_sheet_title && has_plant_id
     end
   end
 end

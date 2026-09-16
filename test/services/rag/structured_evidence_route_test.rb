@@ -69,6 +69,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
     ENV["RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED"] = "false"
     ENV["RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED"] = "true"
+    @original_gs_flag = ENV.fetch("RAG_GROUNDED_SYNTHESIS_ENABLED", nil)
+    ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
     @account = accounts(:legacy)
     @source_uri = "s3://test-bucket/manual.pdf"
   end
@@ -88,6 +90,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       ENV.delete("RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED")
     else
       ENV["RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED"] = @original_attribution_contract_flag
+    end
+    if @original_gs_flag.nil?
+      ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
+    else
+      ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = @original_gs_flag
     end
   end
 
@@ -549,6 +556,25 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_no_match MANUFACTURER_PATTERN, prompt
     assert_no_match(/reproduce that\s+string exactly as printed/,
       BedrockRagService.load_generation_prompt_template)
+  end
+
+  test "generation prompt uses grounded synthesis when the flag is on for all accounts" do
+    ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = "true"
+    rag_service = FakeRagService.new([ neighbor_chunk ])
+    generator = FakeGenerator.new("\"SERIE CAB. EXT. CERRADA\" [1]")
+
+    outcome = build_route(
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    ).execute
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal :answered, outcome.status
+    assert_includes prompt, "# DISCRIMINATING QUESTION"
+    assert_includes prompt, "Interpretación técnica:"
+    assert_not_includes prompt, "STRICT_ONLY"
+    assert_not_includes prompt, "GROUNDED_SYNTHESIS"
   end
 
   test "answer safety preserves a quoted uppercase label with internal punctuation" do

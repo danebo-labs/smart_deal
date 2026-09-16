@@ -22,7 +22,7 @@ older dated versions are historical evidence, not the current plan.
 
 | Scope | Current document | Status |
 |---|---|---|
-| Strategy: priorities, runway, Gonzalo track and plan B, discards | [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) | **Current.** Title/date 2026-09-03 18:32; supersedes `PLAN_GENERAL_2026-08-07.md` |
+| Strategy: priorities, runway, Gonzalo track and plan B, discards | [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) | **Current.** Title/date 2026-09-03; last body update 2026-09-05 |
 | Operations: 7 Aug – 4 Sep 2026 (trip window) | [PLAN_AGOSTO_2026-08-07.md](PLAN_AGOSTO_2026-08-07.md) | **Closed (3-sep).** Corpus Gonzalo+Jesús ingested; handoff to September |
 | Operations: the September build month | [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) | **Current / active.** Certifier module, voice capture, descope ladder; absorbs August open items |
 | Market sizing, billing unit, unit economics | [PRICING_Y_MERCADO_2026-08-07.md](PRICING_Y_MERCADO_2026-08-07.md) | **Current.** Reads against [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) as the cost authority |
@@ -60,6 +60,7 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 | [rag/triaje_visual_medicion.md](rag/triaje_visual_medicion.md) | Phase 1 deliverable: per-page visual-complexity tiering of the 98 pages and Opus escalation cost projection |
 | [rag/hallazgos_gate_piloto.md](rag/hallazgos_gate_piloto.md) | Open findings ledger for the SEGURIDADES pilot gate |
 | [RAG_SEGURIDADES_STATUS.md](RAG_SEGURIDADES_STATUS.md) | Current SEGURIDADES production identity and gate status |
+| [PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md](PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md) | **Active (Fase B PR).** Grounded-synthesis generation contract (gs-v1); D13 on for all accounts with the PR. Fase A closed 16-sep. |
 
 ## Preserved capabilities that are disabled in the MVP pilot
 
@@ -95,8 +96,6 @@ investigating the corresponding dated run:
 - [RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md](RAG_QUALITY_BENCHMARK_EVIDENCE_2026-06-10.md)
 - [RESUMEN_CAMBIOS_COMPRESION.md](RESUMEN_CAMBIOS_COMPRESION.md)
 - [INGESTION_COST_V2.md](INGESTION_COST_V2.md) — retained ADR; current routing wins when behavior differs
-- [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md) — superseded by the 09-03 general plan
-- [PLAN_GENERAL_2026-08-06.md](PLAN_GENERAL_2026-08-06.md) — superseded by the 08-07 general plan
 - [PLAN_AGOSTO_2026-08-06.md](PLAN_AGOSTO_2026-08-06.md) — superseded by the 08-07 August plan
 
 ## Engineering instructions

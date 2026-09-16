@@ -546,7 +546,9 @@ module Rag
     end
 
     def generation_prompt(chunks, ambiguity: nil)
-      template = BedrockRagService.load_generation_prompt_template
+      template = BedrockRagService.load_generation_prompt_template(
+        grounded_synthesis: Rag::GroundedSynthesisFlag.enabled_for?(@account)
+      )
       rendered = template
         .sub("$query$") { @question }
         .sub("$search_results$") { evidence_context(chunks) }

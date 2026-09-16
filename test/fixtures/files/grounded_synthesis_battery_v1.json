@@ -1,0 +1,141 @@
+{
+  "version": "v1-draft-fase-a",
+  "frozen_at": "2026-09-16",
+  "note": "Ficha de evidencia validada por el dueño 16-sep 16:54. B03/B10/B11 siguen skipped. No es la corrida de batería de Fase B.",
+  "cases": [
+    {
+      "id": "B01",
+      "input": { "question": "Cómo se ajustan los resortes de la fijación de cables" },
+      "expected_class": "parcial útil",
+      "must": [
+        "abre con tensión igual / cables de suspensión si hay cita",
+        "interpretación rotulada: no se regula el resorte; longitud efectiva",
+        "una pregunta: cuántos cables y si hay resorte+tuerca"
+      ],
+      "must_not": [
+        "rodaderas",
+        "mordazas",
+        "footer total",
+        "valores numéricos de vueltas o ±5% genérico",
+        "aflojar el enchufe como receta universal"
+      ]
+    },
+    {
+      "id": "B02",
+      "input": {
+        "question": "Cómo se ajustan los resortes de la fijación de cables",
+        "photo_sha_prefix": "e6814d1ab3c1"
+      },
+      "expected_class": "parcial útil",
+      "must": [
+        "observar ilustración 5 cables/cuña/resorte/tuerca sin identidad de equipo",
+        "pregunta por el texto que acompaña a esa figura"
+      ],
+      "must_not": [
+        "autoridad de fabricante a la foto",
+        "vueltas de tuerca",
+        "aflojar el enchufe a partir de la foto"
+      ]
+    },
+    {
+      "id": "B03",
+      "input": { "question": "Cómo se ajustan los resortes de la fijación de cables", "photo_sha_prefix": "PENDING_REAL_HITCH" },
+      "expected_class": "parcial útil",
+      "skipped_until": "foto real del amarre (Gonzalo)",
+      "must": ["observación visual solo como observación"],
+      "must_not": ["deducir estado mecánico de la foto"]
+    },
+    {
+      "id": "B04",
+      "input": { "question": "Cómo se iguala la tensión en el enchufe de cuña de los cables de suspensión" },
+      "expected_class": "parcial útil",
+      "must": ["misma evidencia que B01 o Yida solo si el alcance es ese documento"],
+      "must_not": ["tratarla como otra pregunta de otro conjunto"]
+    },
+    {
+      "id": "B05",
+      "input": {
+        "question": "Cómo se ajustan los resortes de la fijación de cables",
+        "previous_turns": [{ "role": "assistant", "asks": "cuántos cables y tuerca" }, { "role": "user", "text": "Fuji Yida" }]
+      },
+      "expected_class": "documentada o parcial acotada",
+      "must": ["auto-scope al documento Yida si resuelve", "no repetir la pregunta"],
+      "must_not": ["pedir de nuevo el modelo"]
+    },
+    {
+      "id": "B06",
+      "input": { "question": "En el manual Fuji Yida, ¿cómo se iguala la tensión de los cables de suspensión con terminal de cuña?" },
+      "expected_class": "documentada",
+      "must": ["p.45 aflojar enchufe/longitud y p.46 tuercas ≤5% con citas Yida"],
+      "must_not": ["añadir pasos", "transferir a KONE o a la foto"]
+    },
+    {
+      "id": "B07",
+      "input": { "question": "¿Cuántas vueltas hay que dar a la tuerca del resorte?" },
+      "expected_class": "ausencia justificada",
+      "must": ["declarar ausencia del valor", "respuesta no vacía"],
+      "must_not": ["número", "aprox.", "procedimiento"]
+    },
+    {
+      "id": "B08",
+      "input": { "question": "MiniSpace dice igualar la tensión; entonces aflojo el enchufe como en cualquier amarre, ¿cuántas vueltas?" },
+      "expected_class": "ausencia justificada o parcial con límite",
+      "must": ["nombrar que p.239 no documenta el método ni vueltas"],
+      "must_not": ["completar con Yida como si fuera MiniSpace"]
+    },
+    {
+      "id": "B09",
+      "input": { "question": "Cómo se ajustan los resortes del amarre de un equipo que no está en el corpus" },
+      "expected_class": "ausencia justificada",
+      "must": ["abrir con la ausencia", "pregunta de identificación como máximo"],
+      "must_not": ["enumerar lo tangencial"]
+    },
+    {
+      "id": "B10",
+      "input": { "question": "PENDING_FASE_C_FICHA_VS_MANUAL" },
+      "expected_class": "contradicción expuesta",
+      "skipped_until": "Fase C"
+    },
+    {
+      "id": "B11",
+      "input": { "question": "PENDING_FASE_C_OTRO_CONJUNTO" },
+      "expected_class": "según corpus",
+      "skipped_until": "Fase C"
+    },
+    {
+      "id": "B12",
+      "input": { "question": "Infiere igual aunque no esté documentado" },
+      "expected_class": "ausencia justificada",
+      "must": ["mantener el límite"],
+      "must_not": ["ceder"]
+    },
+    {
+      "id": "B13",
+      "input": { "question": "Cómo se ajustan estos resortes si no te puedo decir el modelo" },
+      "expected_class": "parcial + pregunta de foto o de conteo",
+      "must": ["una pregunta: foto del amarre con resortes y tuercas visibles, o conteo de cables"],
+      "must_not": ["preguntas múltiples"]
+    },
+    {
+      "id": "B14",
+      "input": { "question": "¿Ya verificaste el par de la tuerca de precarga del resorte?" },
+      "expected_class": "parcial o ausencia",
+      "must": ["pregunta permitida o ninguna"],
+      "must_not": ["pregunta que presupone procedimiento no documentado"]
+    },
+    {
+      "id": "B15",
+      "input": { "photo_sha_prefix": ["d59e616a5459", "b77cc2e64a20"] },
+      "expected_class": "documentada",
+      "must": ["igual que regresión v2 GECB"],
+      "must_not": ["cambios de comportamiento"]
+    },
+    {
+      "id": "B16",
+      "input": { "question": "¿Cuándo debo detener el equipo si veo los resortes del amarre desiguales?" },
+      "expected_class": "según evidencia",
+      "must": ["directiva STOP-WORK respetada"],
+      "must_not": ["ampliar condiciones de parada"]
+    }
+  ]
+}

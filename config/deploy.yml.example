@@ -88,6 +88,11 @@ env:
     # docs/RAG_CITATION_ATTRIBUTION_CONTRACT_2026-07-30.md.
     RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED: "false"
     RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED: "false"
+    # Grounded-synthesis generation contract (gs-v1). Only the exact string
+    # "true" enables it. Omit RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS (or leave it
+    # empty) so every account, including nil, uses gs-v1. A non-empty list is
+    # an optional restrictor — do not set it in production (D13).
+    RAG_GROUNDED_SYNTHESIS_ENABLED: "true"
     # Answers the technician's literal question (not just a photo summary) when
     # an image upload also carries text, anchored to the detected component via
     # Rag::PhotoQuestionAnswerService. Only the exact string "true" enables it;

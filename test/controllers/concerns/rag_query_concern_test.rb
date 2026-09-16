@@ -1362,7 +1362,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
                    "jesus turn 2 inherits the episode scope; today returns pin-only"
       assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
   end
@@ -1387,7 +1387,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
                    "jesus turn 3 keeps the episode scope; today returns pin-only"
       assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
       ctx = captured[:kwargs][:session_context].to_s
       assert_includes ctx, "## Selection Turn"
       assert_includes ctx, previous
@@ -1421,7 +1421,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
                    "jesus turn 3 inherits CEA15 with the full account catalog; concatenating the episode expels it (pin-only)"
       assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
       assert_not_includes Array(captured[:kwargs][:entity_s3_uris]), uris[:f]
     end
   end
@@ -1454,6 +1454,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_includes query_resolution_main_block(ctx), "manual-cea15p"
       assert_operator ctx.length, :>, built.length
       assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
     end
   end
 
@@ -1477,6 +1478,47 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_includes ctx, alias_question
       assert_includes ctx, JESUS_TURNS[2][:content]
       assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "jesus turn 3 inherited scope cannot opt out of force_entity_filter" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[4][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ],
+          force_entity_filter: false
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "jesus turn 1 caller force_entity_filter false keeps pin_extended precedence" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 1)
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[0][:ts]) do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[0][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ],
+          force_entity_filter: false
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
     end
   end
 

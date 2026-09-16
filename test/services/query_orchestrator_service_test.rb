@@ -679,4 +679,111 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       contract_version: FieldPhotoPrompt::CONTRACT_VERSION
     }
   end
+
+  JESUS_T3 = "Elemont Montacargas Hidraulico Modelo MH"
+  JESUS_E_KEY = "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
+  JESUS_C_KEY = "bulk_uploads/1/2026-08-31/manual-cea15p.pdf"
+
+  def jesus_t3_docs
+    account = accounts(:legacy)
+    elemont = KbDocument.create!(
+      account: account,
+      s3_key: JESUS_E_KEY,
+      display_name: "Elemont Montacargas Hidraulico Modelo MH",
+      aliases: [ "Modelo MH", "Elemont" ]
+    )
+    cea15 = KbDocument.create!(
+      account: account,
+      s3_key: JESUS_C_KEY,
+      display_name: "manual-cea15p",
+      aliases: [ "CEA15P", "CEA15+" ]
+    )
+    [ account, elemont, cea15 ]
+  end
+
+  def jesus_t3_session(elemont)
+    uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
+    Struct.new(:active_entities, :id).new(
+      {
+        elemont.display_name => {
+          "source" => "user_pin",
+          "kb_document_id" => elemont.id,
+          "source_uri" => uri,
+          "canonical_name" => elemont.display_name,
+          "aliases" => elemont.aliases,
+          "entity_type" => "document",
+          "added_at" => Time.current.iso8601
+        }
+      },
+      99
+    )
+  end
+
+  test "jesus T3 qualifies as a document overview query" do
+    _account, elemont, _cea15 = jesus_t3_docs
+    names = [ elemont.display_name, *elemont.aliases ]
+    assert Rag::DeterministicIntent.document_overview_query?(JESUS_T3, names)
+  end
+
+  test "jesus T3 builders stay nil even with force_entity_filter true" do
+    account, elemont, cea15 = jesus_t3_docs
+    uris = [
+      elemont.display_s3_uri(KbDocument::KB_BUCKET),
+      cea15.display_s3_uri(KbDocument::KB_BUCKET)
+    ]
+    sources = [ "document" ]
+
+    assert_nil Rag::StructuredEvidenceRoute.build(
+      question: JESUS_T3, account: account, entity_s3_uris: uris,
+      entity_sources: sources, force_entity_filter: true,
+      response_locale: :es, output_channel: :web
+    )
+    assert_nil Rag::AmbiguousModelResponder.build(
+      question: JESUS_T3, account: account, entity_s3_uris: uris,
+      entity_sources: sources, force_entity_filter: true,
+      response_locale: :es, output_channel: :web
+    )
+    assert_nil Rag::DeterministicRenderer.build(
+      question: JESUS_T3, entity_s3_uris: uris, entity_sources: sources,
+      force_entity_filter: true, response_locale: :es, account: account
+    )
+  end
+
+  test "jesus T3 with missing toc_v1 reaches Bedrock with forced episode URIs" do
+    account, elemont, cea15 = jesus_t3_docs
+    uris = [
+      elemont.display_s3_uri(KbDocument::KB_BUCKET),
+      cea15.display_s3_uri(KbDocument::KB_BUCKET)
+    ]
+    session = jesus_t3_session(elemont)
+    captured = {}
+    orig_download = S3DocumentsService.instance_method(:download)
+    S3DocumentsService.define_method(:download) { |_key| nil }
+    orig_query = BedrockRagService.instance_method(:query)
+    BedrockRagService.define_method(:query) do |question, **kwargs|
+      captured[:question] = question
+      captured[:kwargs] = kwargs
+      { answer: "kb", citations: [], session_id: nil }
+    end
+
+    result = QueryOrchestratorService.new(
+      JESUS_T3,
+      account: account,
+      conv_session: session,
+      entity_s3_uris: uris,
+      force_entity_filter: true,
+      auto_scope_filter: true,
+      output_channel: :web,
+      session_context: "## Selection Turn\nActive problem from the previous user turn: \"La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento.\""
+    ).execute
+
+    assert_equal JESUS_T3, captured[:question]
+    assert_equal true, captured[:kwargs][:force_entity_filter]
+    assert_equal uris, captured[:kwargs][:entity_s3_uris]
+    assert_equal "kb", result[:answer]
+    assert_not_equal "document_overview", result[:retrieval_trace].to_h["mode"]
+  ensure
+    S3DocumentsService.define_method(:download, orig_download) if orig_download
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+  end
 end

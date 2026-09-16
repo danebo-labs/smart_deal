@@ -90,6 +90,9 @@ module RagQueryConcern
       mentioned_uris: mentioned_uris
     )
     scope.reason = "episode_inherited" if inherited
+    if inherited && scope.uris.any?
+      scope.force_entity_filter = true
+    end
     merged_session_context = merge_resolver_context(
       session_context, Array(resolver_matches) + episode_matches, in_scope_uris: scope.uris
     )
@@ -105,7 +108,12 @@ module RagQueryConcern
     end
 
     resolved_output_channel = output_channel&.to_sym || :web
-    resolved_force_filter   = force_entity_filter.nil? ? scope.force_entity_filter : force_entity_filter
+    episode_scope_required  = inherited && scope.uris.any?
+    resolved_force_filter   = if episode_scope_required
+      true
+    else
+      force_entity_filter.nil? ? scope.force_entity_filter : force_entity_filter
+    end
     document_uids           = documents.map { SecureRandom.uuid }
 
     result = QueryOrchestratorService.new(

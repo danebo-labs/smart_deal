@@ -935,6 +935,115 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test 'episode inherited T3 canned keeps both entity URIs and never opens rag_global' do
+    elemont = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
+    cea15   = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/manual-cea15p.pdf"
+    call_count = 0
+    retrieve_count = 0
+    rag_filters = []
+    retrieve_filters = []
+    no_results_text = "I'm sorry, I couldn't find relevant information."
+
+    with_mock_bedrock_client do |client|
+      client.define_singleton_method(:retrieve_and_generate) do |params|
+        call_count += 1
+        rag_filters << params.dig(
+          :retrieve_and_generate_configuration,
+          :knowledge_base_configuration,
+          :retrieval_configuration,
+          :vector_search_configuration,
+          :filter
+        )
+        ::OpenStruct.new(
+          output: ::OpenStruct.new(text: no_results_text),
+          citations: [],
+          session_id: "sid"
+        )
+      end
+      client.define_singleton_method(:retrieve) do |params|
+        retrieve_count += 1
+        retrieve_filters << params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+        ::OpenStruct.new(retrieval_results: [])
+      end
+
+      result = BedrockRagService.new(account: @account).query(
+        "Elemont Montacargas Hidraulico Modelo MH",
+        entity_s3_uris: [ elemont, cea15 ],
+        force_entity_filter: true,
+        auto_scope_filter: true,
+        response_locale: :es,
+        include_diagnostics: true
+      )
+
+      assert_equal 1, call_count, "force_entity_filter must not open a second retrieve_and_generate"
+      assert_equal 1, rag_filters.size
+      assert_account_filter rag_filters.first
+      assert filter_contains?(rag_filters.first, "original_source_uri", elemont)
+      assert filter_contains?(rag_filters.first, "original_source_uri", cea15)
+      retrieve_filters.each do |filter|
+        assert_account_filter filter
+        assert filter_contains?(filter, "original_source_uri", elemont)
+        assert filter_contains?(filter, "original_source_uri", cea15)
+      end
+      assert_equal true, result.dig(:diagnostics, :canned_no_results)
+      assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
+    end
+  end
+
+  test 'aurora cold retry on a forced episode scope keeps both entity URIs' do
+    elemont = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
+    cea15   = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/manual-cea15p.pdf"
+    attempts = 0
+    rag_filters = []
+    orig_sleep = Bedrock::AuroraColdStartRetry.method(:sleep_for)
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for) { |_seconds| }
+
+    with_mock_bedrock_client do |client|
+      client.define_singleton_method(:retrieve_and_generate) do |params|
+        attempts += 1
+        rag_filters << params.dig(
+          :retrieve_and_generate_configuration,
+          :knowledge_base_configuration,
+          :retrieval_configuration,
+          :vector_search_configuration,
+          :filter
+        )
+        if attempts == 1
+          raise Aws::BedrockAgentRuntime::Errors::ServiceError.new(
+            nil,
+            "The Aurora DB instance db-X is resuming after being auto-paused."
+          )
+        end
+
+        ::OpenStruct.new(
+          output: ::OpenStruct.new(text: "I'm sorry, I couldn't find relevant information."),
+          citations: [],
+          session_id: "sid"
+        )
+      end
+      client.define_singleton_method(:retrieve) do |_params|
+        ::OpenStruct.new(retrieval_results: [])
+      end
+
+      BedrockRagService.new(account: @account).query(
+        "Elemont Montacargas Hidraulico Modelo MH",
+        entity_s3_uris: [ elemont, cea15 ],
+        force_entity_filter: true,
+        auto_scope_filter: true,
+        response_locale: :es
+      )
+
+      assert_equal 2, attempts
+      rag_filters.each do |filter|
+        assert_account_filter filter
+        assert filter_contains?(filter, "original_source_uri", elemont)
+        assert filter_contains?(filter, "original_source_uri", cea15)
+      end
+    end
+  ensure
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for, orig_sleep)
+  end
+
   # F2 — a canned "Sorry" response with no native citations but a successful
   # Retrieve fallback is a generation/parse failure, not an empty knowledge base.
   test 'flags a canned Sorry response when fallback retrieval found evidence' do

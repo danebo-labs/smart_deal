@@ -1320,6 +1320,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
                    "jesus turn 1 extends the pin with the CEA15 manual; today returns pin-only"
       assert_equal true, captured[:kwargs][:auto_scope_filter]
       assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
   end
 
@@ -1362,6 +1363,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
                    "jesus turn 2 inherits the episode scope; today returns pin-only"
       assert_equal true, captured[:kwargs][:auto_scope_filter]
       assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
   end
 
@@ -1386,6 +1388,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
                    "jesus turn 3 keeps the episode scope; today returns pin-only"
       assert_equal true, captured[:kwargs][:auto_scope_filter]
       assert_equal false, captured[:kwargs][:force_entity_filter]
+      ctx = captured[:kwargs][:session_context].to_s
+      assert_includes ctx, "## Selection Turn"
+      assert_includes ctx, previous
+      assert_includes ctx, "Do not write a general document summary"
     end
 
     replies = Array(result.quick_replies)
@@ -1418,6 +1424,125 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal false, captured[:kwargs][:force_entity_filter]
       assert_not_includes Array(captured[:kwargs][:entity_s3_uris]), uris[:f]
     end
+  end
+
+  test "jesus turn 3 selection context names the pin and the active problem" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+    question = JESUS_TURNS[4][:content]
+    previous = JESUS_TURNS[2][:content]
+    built = nil
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        built = SessionContextBuilder.build(session)
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          session_context: built,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      ctx = captured[:kwargs][:session_context].to_s
+      assert_includes ctx, "## Selection Turn"
+      assert_includes ctx, question
+      assert_includes ctx, previous
+      assert_includes ctx, "Do not write a general document summary"
+      assert_includes ctx, "even if Session Discipline would treat them as unpinned"
+      assert_includes query_resolution_main_block(ctx), "manual-cea15p"
+      assert_operator ctx.length, :>, built.length
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+    end
+  end
+
+  test "jesus turn 3 selection context also matches a real pin alias" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 2)
+    alias_question = "Modelo MH"
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        @controller.send(
+          :execute_rag_query, alias_question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      ctx = captured[:kwargs][:session_context].to_s
+      assert_includes ctx, "## Selection Turn"
+      assert_includes ctx, alias_question
+      assert_includes ctx, JESUS_TURNS[2][:content]
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+    end
+  end
+
+  test "jesus explicit summary request does not inject selection intent" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+    question = "Resumen del documento #{JESUS_TURNS[4][:content]}"
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
+    end
+  end
+
+  test "jesus selection intent is skipped when the episode has expired" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+    expired_at = Time.zone.parse(JESUS_TURNS[2][:ts]) + 4.hours + 1.second
+
+    with_captured_orchestrator do |captured|
+      travel_to expired_at do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[4][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+    end
+  end
+
+  test "jesus selection intent keeps preexisting quick replies" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+    existing = [ { label: "Otra", query: "otra" } ]
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s", quick_replies: existing } }
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) { |*_args, **_kwargs| mock }
+
+    result = nil
+    begin
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        result = @controller.send(
+          :execute_rag_query, JESUS_TURNS[4][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+    ensure
+      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+    end
+
+    assert_equal existing, result.quick_replies
   end
 
   test "resolve_retrieval_scope covers the pin/question contract" do
@@ -1592,6 +1717,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal [ mpk_uri ], captured[:kwargs][:entity_s3_uris]
       assert_equal true, captured[:kwargs][:auto_scope_filter]
       assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
   end
 
@@ -1663,6 +1789,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       end
 
       assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
     assert_nil result.quick_replies
   ensure

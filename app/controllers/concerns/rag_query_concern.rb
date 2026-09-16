@@ -93,6 +93,9 @@ module RagQueryConcern
     merged_session_context = merge_resolver_context(
       session_context, Array(resolver_matches) + episode_matches, in_scope_uris: scope.uris
     )
+    merged_session_context = merge_selection_intent(
+      merged_session_context, question, conv_session
+    )
 
     if pinned_uris.any? || candidate_uris.any?
       Rails.logger.info(
@@ -438,6 +441,29 @@ module RagQueryConcern
         reason: "pin_overridden"
       )
     end
+  end
+
+  # Bounded instruction for a pin-name selection turn with a live episode.
+  # Jesús T3 (Fase 5 replay) treated the pin name as a request for a general
+  # Elemont summary. Keep the user question literal; do not add procedures.
+  def merge_selection_intent(session_context, question, conv_session)
+    return session_context unless Rag::EpisodeScopeFlag.enabled?
+    return session_context unless selection_turn?(question, conv_session)
+    return session_context unless conv_session.respond_to?(:episode_user_messages)
+
+    previous = conv_session.episode_user_messages(exclude: question).last
+    return session_context if previous.blank?
+
+    selected = question.to_s.strip
+    block = <<~BLOCK.strip
+      ## Selection Turn
+      The technician named "#{selected}" to select that pinned document, not to request a general summary.
+      Active problem from the previous user turn: "#{previous}"
+      Retrieval for this turn is the Query Resolution list above. Inherited manuals in that list stay in scope for this turn, even if Session Discipline would treat them as unpinned.
+      Continue the active problem from those sources. Do not write a general document summary unless the user explicitly asked for one. Do not invent procedures or values.
+    BLOCK
+
+    [ session_context.presence, block ].compact.join("\n\n")
   end
 
   def selection_quick_replies(question, conv_session, existing)

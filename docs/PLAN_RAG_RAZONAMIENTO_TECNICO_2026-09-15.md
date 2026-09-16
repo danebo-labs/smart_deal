@@ -1,6 +1,6 @@
 # Plan: razonamiento técnico sustentado y conocimiento experto
 
-Estado: propuesta; **Fase A cerrada**. Fecha: 15 de septiembre de 2026. Revisión v10 (16-sep, 17:14): D13 — gs-v1 on en prod para **todas las cuentas**. Siguiente: Fase B humo (Anexo A.3), sesión aparte.
+Estado: propuesta; **Fase A cerrada**. Fecha: 15 de septiembre de 2026. Revisión v12 (16-sep, 20:00): sacado `# DISCRIMINATING QUESTION` de `# NO MATCH`. `generation.txt` `e4a5cdb918796fc1e9b2c3479c7bf161711f6db4692376fa1a34557dcde82896`. Siguiente: deploy + re-humo.
 
 Revisión v3 (15-sep, noche). v2 verificó el plan contra código y registro (§2.1). v3 añade §0 (guía de ejecución autónoma: decisiones fijadas, glosario, acceso a producción), §3.1 (preguntas discriminantes), especificaciones de implementación cerradas en §5, plantilla de ficha en §6, batería con casos numerados en §8 y Anexo A con los prompts de arranque por fase. v4 incorporó el proxy H1 v1. v5 lo sustituye por el proxy v2 (verificado contra el JPEG y H1): H1 se **confirma** en el núcleo y se **matiza** (ajuste fino vs grueso), no se refuta. Está escrito para que un agente lo ejecute fase por fase sin reabrir decisiones; cuando algo requiera criterio humano, el documento lo dice y nombra a quién.
 
@@ -384,11 +384,11 @@ Total del ciclo < US$1,50.
 | Fase | Estado | Artefacto / hash |
 | --- | --- | --- |
 | A | **cerrada** 16-sep 17:05 | Prod `474352cd`. D12 + ficha dueño 16:54 `88db1686735fa87aeb96e719115c0681af2635b75077810b5b7a9c24379e7d04`. `entrevista_h1.md` `207631139d070c8403c794ff5bd036fdeadb399832fde0ecc01897bcc18e730a`; `caso_congelado.md` `7ed61fb587ee286626fb0af3b05bb0f7f9f898c680bfe979727297ef5edf0d32`; `lectura_corpus.md` `e55fac22933b8b5be00dd5a8e5097f624488a6c31ba1ef8f3ca0b7d01b698a39`; `diagnostico.md` `88f7c627ba0e9972b22ea4888d7c25984ac0ce1641642db061080ba3c6768325`; `diagnostico_run.txt` `de52d80a6f0e9794515140e6898a24267872f061cf51617e62771b531bc7418d`; batería borrador `7094d0fcda3d09665c16f277682053ad00464fbb00eadd78311562d4cffd6bfa`. 10 R&G + 1 Retrieve, US$0,1058. Defecto: generación/contrato (H2 + receta sin alcance); recall OK. H9: línea `photo_evidence_block`. |
-| B (PR) | **cerrada** 16-sep | `generation.txt` `3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196`. `tmp/razonamiento_tecnico/fase_b/pr.md` `1c8c60e6531bbf78d643c9b18c2f8a48740062f55826963dc1cfbb5d4ecef847`. D13: `RAG_GROUNDED_SYNTHESIS_ENABLED: "true"` en `config/deploy.yml` y example; sin `ACCOUNT_IDS`. Sin kamal deploy. Suite: 3031 runs; 3 fallas preexistentes `DashboardControllerTest` (302 `/actividad`); architecture + tests §5.1 verdes. Variante off = sha estricto `9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8`. Prompt on/off 2688/2563 tokens (1.0488). |
-| B (humo) | pendiente | — |
-| B (batería) | pendiente | — |
+| B (PR) | **cerrada** 16-sep | Commit `d01d441`. `generation.txt` `3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196`. D13 on. Desplegado. |
+| B (humo) | **FALLA** 16-sep 18:33 | Prod `d01d441`. 16 R&G, US$0,1615. H3 URM texto y H4 Schindler: 4/4 `canned_with_retrieval`. `humo_2026-09-16.txt` `421be8196533e55aa38d7b42c576de38e1686ccf18474990d485f9bfd1b08e5c`; `humo.md` `14d5ee36be9d23487d1287995e16b942a66f0abce161064001990d00d05c012c`. Sospecha: `GROUNDED_SYNTHESIS` `# DISCRIMINATING QUESTION` **dentro de `# NO MATCH`** (`generation.txt` l. 133–139). Batería no corrida. |
+| B (batería) | bloqueada (humo) | — |
 | C | pendiente | — |
-| Activación | **D13** (todas las cuentas, con el PR) | `RAG_GROUNDED_SYNTHESIS_ENABLED: "true"` en `config/deploy.yml` y example. Sin `ACCOUNT_IDS`. Efecto: próximo `kamal deploy`. |
+| Activación | **D13 live** (`d01d441`, todas las cuentas) | Schindler del guion ahora Sorry. Rollback: `ENABLED: "false"` + `kamal app boot`. |
 
 Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fases posteriores afectadas, completar el prompt de la fase siguiente en el Anexo A y, si un hallazgo contradice una restricción o el gate, escalarlo como decisión humana numerada (D12, D13, …) en §0.2 en lugar de ejecutarlo.
 
@@ -404,13 +404,11 @@ Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fa
 
 ### A.2 Fase B — PR de contrato (D13: flag on, todas las cuentas)
 
-> **Hecha.** No reabrir. Código §5.1–§5.2, D13 env, tests. `generation.txt` sha256 `3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196`. Artefacto `tmp/razonamiento_tecnico/fase_b/pr.md`. Sin kamal deploy.
+> **Prompt corregido en esta sesión (16-sep 20:00).** `# DISCRIMINATING QUESTION` ya no está en `# NO MATCH` (queda después de `# FORMAT`). Variante off sigue sha `9182ccf3…`. File sha `e4a5cdb9…`. Tests grounded-synthesis + architecture verdes. Deploy y re-humo: A.3.
 
 ### A.3 Fase B — Humo y batería
 
-> Con el PR desplegado y D13 ya en `deploy.yml` (`ENABLED=true`, sin `ACCOUNT_IDS` → todas las cuentas = `gs-v1` en web y worker), ejecuta §5.3 por stdin (flag ya on; no hace falta `-e` para síntesis). Para el brazo estricto de la batería: `docker exec -e RAG_GROUNDED_SYNTHESIS_ENABLED=false`. Si hay un colapso «Sorry», detente, registra la línea del prompt sospechosa y vuelve a A.2. Superado el humo, escribe `script/grounded_synthesis_battery_2026-09.rb` (D8; entrada por stdin; lógica mínima, solo lectura del JSON, ejecución, observables y salida) y corre §8.1–§8.2 en ambas variantes. No clasifiques: entrega `bateria_<fecha>.txt` ordenada por caso y variante y una plantilla `clasificacion_<fecha>.md` con una fila por respuesta para que el dueño asigne la clase. Cuando recibas la clasificación, evalúa §8.3, aplica D9 si el Gate H8 falla (y repite solo B01, B02, B04, B06 en modo síntesis) y actualiza §11.
->
-> **PR no desplegado en la sesión del 16-sep** (sin `kamal deploy`). `generation.txt` sha256 `3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196`. Preguntas de humo (§5.3): #5 LCB II, #8 Fuji Yida, #9 foto URM, #12 Schindler, #1 BLT con código dictado, caso 3 texto-only, equipo inexistente en el corpus, pregunta de seguridad con «detener». 8 × 2 = 16 llamadas. Criterio: `canned_with_retrieval = 0`, cero `generation_retry`, cero respuestas vacías. Calentar Aurora antes. Entrada por stdin al contenedor web (`script/AGENTS.md`). Tras el deploy, `[RAG_QUALITY]` debe mostrar `contract_version=gs-v1` y `grounded_synthesis=true`.
+> **Humo ejecutado 16-sep 18:33, FALLA.** No reabrir esta corrida. Artefacto `tmp/razonamiento_tecnico/fase_b/humo.md`. Tras el fix de A.2 y redeploy: repetir §5.3 (mismas 8×2; H3 **con foto**). Si verde, entonces script batería y §8. Si Sorry otra vez, registrar la línea y volver a A.2. No clasifiques la batería.
 
 ### A.4 Fase C — Ficha senior
 

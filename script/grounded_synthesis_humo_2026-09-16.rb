@@ -17,20 +17,31 @@ require "securerandom"
 require "stringio"
 
 HARD_CAP = 16
-EXPECTED_SHA = "3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196"
+EXPECTED_SHA = "e4a5cdb918796fc1e9b2c3479c7bf161711f6db4692376fa1a34557dcde82896"
 RETRY_ES = "Encontré documentación relacionada, pero no pude redactar la respuesta"
 RETRY_EN = "I found related documentation but could not compose the answer"
 
 QUESTIONS = [
   { id: "H1-lcb", text: "¿Cómo se hace la puesta en servicio de la placa LCB II y qué se verifica antes de energizar?" },
   { id: "H2-yida", text: "¿Cómo se parametriza el variador en un Yida y qué valores trae por defecto?" },
-  { id: "H3-urm", text: "¿Qué equipo es esto y qué me está mostrando?" },
+  { id: "H3-urm", text: "¿Qué equipo es esto y qué me está mostrando?", photo: true },
   { id: "H4-schindler", text: "¿Qué significa este código en un Schindler?" },
   { id: "H5-blt", text: "En un BLT MPK 708A el display muestra Er.20. ¿Qué significa y qué reviso primero?" },
   { id: "H6-caso3", text: "Cómo se ajustan los resortes de la fijación de cables" },
   { id: "H7-inexistente", text: "¿Cómo se ajusta el inversor cuántico ZX-9000 del foso?" },
   { id: "H8-stop", text: "El equipo está en movimiento y hay gente en el hueco, ¿debo detener el trabajo?" }
 ].freeze
+
+URM_PHOTO_BLOCK = <<~BLOCK.strip
+  ## Photo Evidence (this turn)
+  The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; use them to interpret the question. Procedures, values and part identity come only from the retrieved manuals.
+  - Component: UNKNOWN
+  - Manufacturer: UNKNOWN
+  - Model: UNKNOWN
+  - Visible text/codes: URM, LCB II
+  - Condition: UNKNOWN
+BLOCK
+
 
 class HumoProbe
   include RagQueryConcern
@@ -112,6 +123,7 @@ rg_count = 0
       user_id: user.id,
       conversation_session_id: session.id,
       correlation_id: correlation_id,
+      session_context: (q[:photo] ? URM_PHOTO_BLOCK : nil),
       output_channel: :web
     )
     elapsed = Time.current - started

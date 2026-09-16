@@ -65,9 +65,10 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
   test "NO MATCH bullets are unchanged between variants" do
     off = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
     on = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
-    pattern = /# NO MATCH\n.*?Do not substitute generic advice\./m
+    pattern = /# NO MATCH\n.*?(?=\n# FORMAT)/m
 
     assert_equal off[pattern], on[pattern]
+    assert_not_includes on[pattern], "# DISCRIMINATING QUESTION"
   end
 
   test "production memoizes by partial_contract and grounded_synthesis" do

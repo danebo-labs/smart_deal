@@ -135,8 +135,6 @@ When the retrieved chunks do not answer the question:
 - State that the selected documentation does not provide the requested information.
 - Name the missing datum or procedure.
 - Do not substitute generic advice.
-- GROUNDED_SYNTHESIS: # DISCRIMINATING QUESTION
-- GROUNDED_SYNTHESIS: Ask at most one question per turn, only if that answer would change the response; never a list. Place it last, in one sentence, answerable in a few words or a photo. Prefer identification (nameplate, document, assembly), then a field observation the retrieved evidence or an internal note's diagnostic-questions section documents, then a photo that names what must be visible. If the photo is a document on a screen, ask for the printed text that accompanies that figure on the same sheet. Do not ask a question that presupposes an undocumented procedure, tool, value, or condition; whose answer would not change the response; or that repeats a question already answered in recent conversation. If no technician datum would change the answer, declare the absence and do not ask.
 
 # FORMAT
 - STRICT_ONLY: Start with the direct answer.
@@ -146,5 +144,7 @@ When the retrieved chunks do not answer the question:
 - No markdown tables and no horizontal separators.
 - Do not add a generic safety closing. Include a safety note only when supported
   by evidence relevant to the current question.
+- GROUNDED_SYNTHESIS: # DISCRIMINATING QUESTION
+- GROUNDED_SYNTHESIS: Ask at most one question per turn, only if that answer would change the response; never a list. Place it last, in one sentence, answerable in a few words or a photo. Prefer identification (nameplate, document, assembly), then a field observation the retrieved evidence or an internal note's diagnostic-questions section documents, then a photo that names what must be visible. If the photo is a document on a screen, ask for the printed text that accompanies that figure on the same sheet. Do not ask a question that presupposes an undocumented procedure, tool, value, or condition; whose answer would not change the response; or that repeats a question already answered in recent conversation. If no technician datum would change the answer, declare the absence and do not ask.
 
 $output_format_instructions$

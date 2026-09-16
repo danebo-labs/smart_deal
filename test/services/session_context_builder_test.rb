@@ -357,4 +357,93 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     out = SessionContextBuilder.build(session)
     assert_no_match(/## Session Discipline/, out)
   end
+
+  test 'episode history includes three user questions and the last assistant truncated to 200' do
+    now = Time.zone.parse("2026-09-16T10:51:54-03:00")
+    long_assistant = "A" * 250
+    session = ConversationSession.create!(
+      identifier: "web:scb_episode_#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      conversation_history: [
+        { "role" => "user", "content" => "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15", "ts" => "2026-09-16T10:49:41-03:00" },
+        { "role" => "assistant", "content" => "primera respuesta", "ts" => "2026-09-16T10:49:47-03:00" },
+        { "role" => "user", "content" => "La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento.", "ts" => "2026-09-16T10:50:55-03:00" },
+        { "role" => "assistant", "content" => long_assistant, "ts" => "2026-09-16T10:51:02-03:00" },
+        { "role" => "user", "content" => "Elemont Montacargas Hidraulico Modelo MH", "ts" => "2026-09-16T10:51:54-03:00" }
+      ]
+    )
+
+    travel_to now do
+      context = SessionContextBuilder.build(session)
+      truncated = long_assistant.truncate(200)
+      assert_includes context, "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15"
+      assert_includes context, "La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento."
+      assert_includes context, "Elemont Montacargas Hidraulico Modelo MH"
+      assert_includes context, "Assistant: #{truncated}"
+      assert_equal 200, truncated.length
+      assert_not_includes context, "primera respuesta"
+    end
+  end
+
+  test 'episode history plus a 15-alias pin stays within the context cap with intact Session Discipline' do
+    now = Time.zone.parse("2026-09-16T10:51:54-03:00")
+    aliases = 15.times.map { |i| "Alias #{i} del montacargas Elemont MH" }
+    session = ConversationSession.create!(
+      identifier: "web:scb_cap_#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      active_entities: {
+        "Elemont Montacargas Hidraulico Modelo MH" => {
+          "source" => "user_pin",
+          "entity_type" => "document",
+          "canonical_name" => "Elemont Montacargas Hidraulico Modelo MH",
+          "aliases" => aliases,
+          "added_at" => "2026-09-16T10:51:51-03:00"
+        }
+      },
+      conversation_history: [
+        { "role" => "user", "content" => "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15", "ts" => "2026-09-16T10:49:41-03:00" },
+        { "role" => "assistant", "content" => "La documentación disponible del Elemont Montacargas Hidráulico Modelo MH no contiene información específica sobre la tarjeta CEA15.", "ts" => "2026-09-16T10:49:47-03:00" },
+        { "role" => "user", "content" => "La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento.", "ts" => "2026-09-16T10:50:55-03:00" },
+        { "role" => "assistant", "content" => "La documentación del Montacargas Hidráulico Modelo MH identifica componentes de la puerta nivel 1 pero no el imán.", "ts" => "2026-09-16T10:51:02-03:00" },
+        { "role" => "user", "content" => "Elemont Montacargas Hidraulico Modelo MH", "ts" => "2026-09-16T10:51:54-03:00" }
+      ]
+    )
+
+    travel_to now do
+      context = SessionContextBuilder.build(session)
+      assert_operator context.length, :<=, SessionContextBuilder::MAX_CONTEXT_CHARS
+      assert_includes context, "offer to re-pin it."
+      assert_includes context, "## Session Discipline"
+    end
+  end
+
+  test 'episode history is skipped when RAG_EPISODE_SCOPE_ENABLED is false' do
+    original = ENV.fetch("RAG_EPISODE_SCOPE_ENABLED", nil)
+    ENV["RAG_EPISODE_SCOPE_ENABLED"] = "false"
+    now = Time.zone.parse("2026-09-16T10:51:54-03:00")
+    session = ConversationSession.create!(
+      identifier: "web:scb_flag_#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      conversation_history: [
+        { "role" => "user", "content" => "primera pregunta del episodio", "ts" => "2026-09-16T10:49:41-03:00" },
+        { "role" => "assistant", "content" => "respuesta uno", "ts" => "2026-09-16T10:49:47-03:00" },
+        { "role" => "user", "content" => "segunda pregunta", "ts" => "2026-09-16T10:50:55-03:00" },
+        { "role" => "assistant", "content" => "respuesta dos", "ts" => "2026-09-16T10:51:02-03:00" },
+        { "role" => "user", "content" => "nombre del documento", "ts" => "2026-09-16T10:51:54-03:00" }
+      ]
+    )
+
+    travel_to now do
+      context = SessionContextBuilder.build(session)
+      assert_not_includes context, "primera pregunta del episodio"
+      assert_includes context, "segunda pregunta"
+      assert_includes context, "respuesta dos"
+      assert_includes context, "nombre del documento"
+    end
+  ensure
+    original.nil? ? ENV.delete("RAG_EPISODE_SCOPE_ENABLED") : ENV["RAG_EPISODE_SCOPE_ENABLED"] = original
+  end
 end

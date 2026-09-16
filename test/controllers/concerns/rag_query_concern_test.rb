@@ -1169,4 +1169,503 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
     end
   end
+
+  # ============================================
+  # Caso Jesús 2026-09-16
+  # ============================================
+
+  JESUS_TURNS = [
+    { ts: "2026-09-16T10:49:41-03:00", role: "user",
+      content: "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15" },
+    { ts: "2026-09-16T10:49:47-03:00", role: "assistant",
+      content: "La documentación disponible del Elemont Montacargas Hidráulico Modelo MH no contiene información específica sobre la tarjeta CEA15." },
+    { ts: "2026-09-16T10:50:55-03:00", role: "user",
+      content: "La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento." },
+    { ts: "2026-09-16T10:51:02-03:00", role: "assistant",
+      content: "La documentación del Montacargas Hidráulico Modelo MH identifica componentes de la puerta nivel 1 pero no el imán." },
+    { ts: "2026-09-16T10:51:54-03:00", role: "user",
+      content: "Elemont Montacargas Hidraulico Modelo MH" }
+  ].freeze
+
+  AUGUST_TURNS = [
+    { ts: "2026-08-31T17:30:11-04:00", role: "user",    content: "Elemont Montacargas Hidraulico Modelo MH" },
+    { ts: "2026-08-31T17:30:21-04:00", role: "assistant", content: "El Elemont Montacargas Hidráulico Modelo MH es un equipo de elevación fabricado por Elemont Limitada." }
+  ].freeze
+
+  def build_jesus_catalog
+    KbDocument.delete_all
+    account = @controller.current_account
+    elemont = KbDocument.create!(
+      account: account,
+      s3_key: "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf",
+      display_name: "Elemont Montacargas Hidraulico Modelo MH",
+      aliases: [ "Montacargas Hidraulico", "Modelo MH", "ELEMONT-N/A", "Tablero de Control",
+                 "Instalaciones Electricas", "Elemont", "Santa Adela 9540 Maipu",
+                 "Montacargas 2N Temporizado", "TDC", "MELSEC FX 3S", "Mitsubishi Electric",
+                 "Distribucion TDC", "ROL 2740", "Diagrama Unilineal Tablero Control",
+                 "Instalaciones Electricas MH" ]
+    )
+    cea15 = KbDocument.create!(
+      account: account,
+      s3_key: "bulk_uploads/1/2026-08-31/manual-cea15p.pdf",
+      display_name: "manual-cea15p",
+      aliases: [ "DD549-R05", "manual controlador ascensor", "controlador ascensor", "CEA15P",
+                 "CEA15+", "controlador ascensor CEA15", "Controles S.A.",
+                 "Serie Seguridad Manual SM", "AEXT", "ATACM" ]
+    )
+    forklift = KbDocument.create!(
+      account: account,
+      s3_key: "uploads/1/a2f1d186-48ce-46e4-a870-3962c7fd5967/original.pdf",
+      display_name: "685970470-A-Series-1-0t-3-5t-Electric-four-wheel-Forklift-Truck-Service-Manual-5bNot-CE-5d-1",
+      aliases: [ "Carretilla eléctrica" ]
+    )
+    [ elemont, cea15, forklift ]
+  end
+
+  JESUS_ACCOUNT1_CATALOG_PATH = Rails.root.join(
+    "test/fixtures/files/jesus_account1_catalog_2026-09-16.json"
+  )
+
+  # Production account-1 catalog (19 docs) with snapshot created_at. Concatenating
+  # T1+T2 into one resolver call expels CEA15 from MAX_MATCHES=3; the 3-doc
+  # catalog in build_jesus_catalog cannot reproduce that cut.
+  def build_jesus_full_account_catalog
+    KbDocument.delete_all
+    account = @controller.current_account
+    docs = JSON.parse(File.read(JESUS_ACCOUNT1_CATALOG_PATH)).fetch("documents").map do |row|
+      KbDocument.create!(
+        account: account,
+        s3_key: row.fetch("s3_key"),
+        display_name: row.fetch("display_name"),
+        aliases: row.fetch("aliases"),
+        created_at: Time.zone.parse(row.fetch("created_at"))
+      )
+    end
+    elemont  = docs.find { |doc| doc.s3_key.include?("Montacargas 2N Temporizado-1 (1).pdf") }
+    cea15    = docs.find { |doc| doc.s3_key.end_with?("manual-cea15p.pdf") }
+    forklift = docs.find { |doc| doc.s3_key.include?("a2f1d186-48ce-46e4-a870-3962c7fd5967") }
+    [ elemont, cea15, forklift ]
+  end
+
+  # @param turn [Integer] 1, 2 o 3: cuántos turnos de usuario del 16-sep ya están en el historial
+  def build_jesus_session(elemont, turn:)
+    history_size = { 1 => 1, 2 => 3, 3 => 5 }.fetch(turn)
+    ConversationSession.create!(
+      identifier: "web:jesus_#{SecureRandom.hex(4)}",
+      channel: "web",
+      account: @controller.current_account,
+      expires_at: 30.days.from_now,
+      active_entities: {
+        elemont.display_name => {
+          "source" => "user_pin",
+          "kb_document_id" => elemont.id,
+          "source_uri" => elemont.display_s3_uri(KbDocument::KB_BUCKET),
+          "entity_type" => "document",
+          "canonical_name" => elemont.display_name,
+          "aliases" => elemont.aliases,
+          "added_at" => "2026-09-16T10:51:51-03:00"
+        }
+      },
+      conversation_history: (AUGUST_TURNS + JESUS_TURNS.first(history_size)).map(&:stringify_keys)
+    )
+  end
+
+  def with_captured_orchestrator
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*_args, **kwargs|
+      captured[:kwargs] = kwargs
+      mock
+    end
+    yield captured
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
+  end
+
+  def query_resolution_main_block(session_context)
+    text = session_context.to_s
+    return "" unless text.include?("## Query Resolution")
+
+    block = text.split("## Query Resolution", 2).last
+    block = block.split(/\n## /).first
+    block.split("Also in catalog but NOT consulted this turn", 2).first.to_s
+  end
+
+  def jesus_uris(elemont, cea15, forklift = nil)
+    {
+      e: elemont.display_s3_uri(KbDocument::KB_BUCKET),
+      c: cea15.display_s3_uri(KbDocument::KB_BUCKET),
+      f: forklift&.display_s3_uri(KbDocument::KB_BUCKET)
+    }
+  end
+
+  test "jesus turn 1 extends the pin with the CEA15 manual" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 1)
+    question = JESUS_TURNS[0][:content]
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[0][:ts]) do
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
+                   "jesus turn 1 extends the pin with the CEA15 manual; today returns pin-only"
+      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "jesus turn 1 never scopes the forklift manual" do
+    elemont, cea15, forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15, forklift)
+    session = build_jesus_session(elemont, turn: 1)
+    question = JESUS_TURNS[0][:content]
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[0][:ts]) do
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_not_includes Array(captured[:kwargs][:entity_s3_uris]), uris[:f],
+                      "jesus turn 1 never scopes the forklift manual matched by eléctrica"
+    end
+  end
+
+  test "jesus turn 2 inherits the episode scope" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 2)
+    question = JESUS_TURNS[2][:content]
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[2][:ts]) do
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
+                   "jesus turn 2 inherits the episode scope; today returns pin-only"
+      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "jesus turn 3 keeps the episode scope and offers to continue" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+    question = JESUS_TURNS[4][:content]
+    previous = JESUS_TURNS[2][:content]
+
+    result = nil
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        result = @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
+                   "jesus turn 3 keeps the episode scope; today returns pin-only"
+      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
+    end
+
+    replies = Array(result.quick_replies)
+    assert_equal 2, replies.size,
+                 "jesus turn 3 offers to continue; today quick_replies is nil"
+    assert_equal "Continuar: #{previous.truncate(60)}", replies[0][:label] || replies[0]["label"]
+    assert_equal previous, replies[0][:query] || replies[0]["query"]
+    assert_equal "Resumen del documento", replies[1][:label] || replies[1]["label"]
+    assert_equal "Resumen del documento #{question}", replies[1][:query] || replies[1]["query"]
+  end
+
+  test "jesus turn 3 inherits CEA15 with the full account catalog" do
+    elemont, cea15, forklift = build_jesus_full_account_catalog
+    uris = jesus_uris(elemont, cea15, forklift)
+    session = build_jesus_session(elemont, turn: 3)
+    question = JESUS_TURNS[4][:content]
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
+                   "jesus turn 3 inherits CEA15 with the full account catalog; concatenating the episode expels it (pin-only)"
+      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_not_includes Array(captured[:kwargs][:entity_s3_uris]), uris[:f]
+    end
+  end
+
+  test "resolve_retrieval_scope covers the pin/question contract" do
+    x = "s3://b/x.pdf"
+    y = "s3://b/y.pdf"
+    e = "s3://b/elemont.pdf"
+    c = "s3://b/cea15.pdf"
+
+    cases = [
+      { pinned: [], candidates: [ y ], mentioned: [ y ],
+        uris: [ y ], auto: true, force: false, reason: "auto_scope" },
+      { pinned: [], candidates: [], mentioned: [],
+        uris: [], auto: false, force: false, reason: "open" },
+      { pinned: [ x ], candidates: [], mentioned: [],
+        uris: [ x ], auto: false, force: true, reason: "pin_only" },
+      { pinned: [ x ], candidates: [ x ], mentioned: [ x ],
+        uris: [ x ], auto: false, force: true, reason: "pin_kept" },
+      { pinned: [ e ], candidates: [ c ], mentioned: [ e, c ],
+        uris: [ e, c ], auto: true, force: false, reason: "pin_extended" },
+      { pinned: [ x ], candidates: [ y ], mentioned: [ y ],
+        uris: [ y ], auto: true, force: false, reason: "pin_overridden" }
+    ]
+
+    cases.each do |row|
+      scope = @controller.send(
+        :resolve_retrieval_scope,
+        pinned_uris: row[:pinned],
+        candidate_uris: row[:candidates],
+        mentioned_uris: row[:mentioned]
+      )
+      assert_equal row[:uris], scope.uris, "uris for #{row[:reason]}"
+      assert_equal row[:auto], scope.auto_scope_filter, "auto_scope_filter for #{row[:reason]}"
+      assert_equal row[:force], scope.force_entity_filter, "force_entity_filter for #{row[:reason]}"
+      assert_equal row[:reason], scope.reason
+    end
+  end
+
+  test "query resolution lists all matches when retrieval is open" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    matches = [
+      KbDocumentResolver::MatchResult.new(document: elemont, score: 1, matched_tokens: [ "Elemont" ]),
+      KbDocumentResolver::MatchResult.new(document: cea15, score: 1, matched_tokens: [ "Cea15" ])
+    ]
+
+    ctx = @controller.send(:merge_resolver_context, "prior", matches, in_scope_uris: [])
+    main = query_resolution_main_block(ctx)
+    assert_includes main, elemont.display_name
+    assert_includes main, cea15.display_name
+    assert_not_includes ctx, "Also in catalog but NOT consulted this turn"
+  end
+
+  test "query resolution main list only includes in-scope matches" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    matches = [
+      KbDocumentResolver::MatchResult.new(document: elemont, score: 1, matched_tokens: [ "Elemont" ]),
+      KbDocumentResolver::MatchResult.new(document: cea15, score: 1, matched_tokens: [ "Cea15" ])
+    ]
+    in_scope = [ elemont.display_s3_uri(KbDocument::KB_BUCKET) ]
+
+    ctx = @controller.send(:merge_resolver_context, nil, matches, in_scope_uris: in_scope)
+    main = query_resolution_main_block(ctx)
+    assert_includes main, elemont.display_name
+    assert_not_includes main, cea15.display_name
+  end
+
+  test "query resolution lists out-of-scope matches after the not-consulted line" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    matches = [
+      KbDocumentResolver::MatchResult.new(document: elemont, score: 1, matched_tokens: [ "Elemont" ]),
+      KbDocumentResolver::MatchResult.new(document: cea15, score: 1, matched_tokens: [ "Cea15" ])
+    ]
+    in_scope = [ elemont.display_s3_uri(KbDocument::KB_BUCKET) ]
+
+    ctx = @controller.send(:merge_resolver_context, nil, matches, in_scope_uris: in_scope)
+    marker = "Also in catalog but NOT consulted this turn (do not cite, do not describe their content):"
+    assert_includes ctx, marker
+    after = ctx.split(marker, 2).last
+    assert_includes after, cea15.display_name
+    assert_not_includes query_resolution_main_block(ctx), cea15.display_name
+  end
+
+  test "query resolution omits the block when no matches remain" do
+    ctx = @controller.send(:merge_resolver_context, "prior", [], in_scope_uris: [ "s3://b/x.pdf" ])
+    assert_equal "prior", ctx
+    assert_not_includes ctx.to_s, "Query Resolution"
+  end
+
+  test "query resolution keeps the existing line format" do
+    elemont, _cea15, _forklift = build_jesus_catalog
+    matches = [
+      KbDocumentResolver::MatchResult.new(document: elemont, score: 1, matched_tokens: [ "Elemont" ])
+    ]
+
+    ctx = @controller.send(
+      :merge_resolver_context, nil, matches,
+      in_scope_uris: [ elemont.display_s3_uri(KbDocument::KB_BUCKET) ]
+    )
+    aliases = Array(elemont.aliases).map(&:to_s).compact_blank.first(5).join(", ")
+    expected = "- \"#{elemont.display_name}\" → #{elemont.s3_key} (aka: #{aliases})"
+    assert_includes ctx, expected
+  end
+
+  test "query resolution block only names documents inside the retrieval scope" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 1)
+    question = JESUS_TURNS[0][:content]
+    original_flag = ENV.fetch("RAG_AUTO_SCOPE_ENABLED", nil)
+    ENV["RAG_AUTO_SCOPE_ENABLED"] = "false"
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[0][:ts]) do
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      main = query_resolution_main_block(captured[:kwargs][:session_context])
+      assert_not_includes main, cea15.display_name,
+                          "query resolution main block must not name manual-cea15p when retrieval is pin-only"
+    end
+  ensure
+    original_flag.nil? ? ENV.delete("RAG_AUTO_SCOPE_ENABLED") : ENV["RAG_AUTO_SCOPE_ENABLED"] = original_flag
+  end
+
+  test "jesus episode expires after four hours and keeps the pin only" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 2)
+    question = JESUS_TURNS[2][:content]
+    expired_at = Time.zone.parse(JESUS_TURNS[0][:ts]) + 4.hours + 1.second
+
+    with_captured_orchestrator do |captured|
+      travel_to expired_at do
+        @controller.send(
+          :execute_rag_query, question,
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "jesus episode is replaced when the question names a disjoint designator" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    mpk = KbDocument.create!(
+      account: @controller.current_account,
+      s3_key: "uploads/2026-04-10/Fallas MPK 708.pdf",
+      display_name: "Fallas MPK 708",
+      aliases: []
+    )
+    uris = jesus_uris(elemont, cea15)
+    mpk_uri = mpk.display_s3_uri(KbDocument::KB_BUCKET)
+    session = build_jesus_session(elemont, turn: 2)
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[2][:ts]) do
+        @controller.send(
+          :execute_rag_query, "Código de falla en MPK 708",
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ mpk_uri ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "jesus pin stays exclusive when auto-scope is disabled" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 1)
+    original_flag = ENV.fetch("RAG_AUTO_SCOPE_ENABLED", nil)
+    ENV["RAG_AUTO_SCOPE_ENABLED"] = "false"
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[0][:ts]) do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[0][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
+  ensure
+    original_flag.nil? ? ENV.delete("RAG_AUTO_SCOPE_ENABLED") : ENV["RAG_AUTO_SCOPE_ENABLED"] = original_flag
+  end
+
+  test "jesus episode inheritance and selection replies are skipped when the episode flag is off" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    original_flag = ENV.fetch("RAG_EPISODE_SCOPE_ENABLED", nil)
+    ENV["RAG_EPISODE_SCOPE_ENABLED"] = "false"
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[0][:ts]) do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[0][:content],
+          conv_session: build_jesus_session(elemont, turn: 1),
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
+                   "P0 pin_extended must stay intact with the episode flag off"
+    end
+
+    result = nil
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[2][:ts]) do
+        result = @controller.send(
+          :execute_rag_query, JESUS_TURNS[2][:content],
+          conv_session: build_jesus_session(elemont, turn: 2),
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        result = @controller.send(
+          :execute_rag_query, JESUS_TURNS[4][:content],
+          conv_session: build_jesus_session(elemont, turn: 3),
+          entity_s3_uris: [ uris[:e] ]
+        )
+      end
+
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+    end
+    assert_nil result.quick_replies
+  ensure
+    original_flag.nil? ? ENV.delete("RAG_EPISODE_SCOPE_ENABLED") : ENV["RAG_EPISODE_SCOPE_ENABLED"] = original_flag
+  end
 end

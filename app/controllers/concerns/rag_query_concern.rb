@@ -31,6 +31,8 @@ module RagQueryConcern
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
   CIRCLED_NUMERALS = %w[① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩].freeze
 
+  RetrievalScope = Struct.new(:uris, :auto_scope_filter, :force_entity_filter, :reason, keyword_init: true)
+
   private
 
   # Executes a query through the orchestrator, which classifies intent
@@ -63,30 +65,44 @@ module RagQueryConcern
     resolver_matches       = KbDocumentResolver.resolve_scoped(question, account: resolved_account)
     pinned_uris            = Array(entity_s3_uris).compact
     pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
-    merged_session_context = merge_resolver_context(session_context, resolver_matches)
 
-    # Auto-scope: when the resolver's match is specific (see
-    # KbDocumentResolver.specific_token?), use its URIs as a soft retrieval
-    # filter instead of searching the whole catalog. A specific match that is
-    # disjoint from an active pin overrides the pin for this turn only — the
-    # pin itself is untouched in the session, so a later question without a
-    # specific match falls back to it. force_entity_filter stays false for
-    # this path, which keeps BedrockRagService's no-results retry alive —
-    # worst case is one extra Bedrock call, never a worse answer than today.
+    # Auto-scope: specificity is per document, not inherited across matches.
+    # A specific match disjoint from the pin extends it when the question also
+    # mentions the pinned document, or replaces it when it does not.
     candidate_uris  = auto_scope_uris_from(resolver_matches)
-    question_wins   = pinned_uris.any? && candidate_uris.any? && (candidate_uris & pinned_uris).empty?
-    auto_scope_uris = (pinned_uris.empty? || question_wins) ? candidate_uris : []
-    retrieval_uris  = question_wins ? auto_scope_uris : (pinned_uris.presence || auto_scope_uris)
+    episode_matches = []
+    inherited       = false
+    if candidate_uris.empty? && Rag::EpisodeScopeFlag.enabled? &&
+       conv_session.respond_to?(:episode_user_messages)
+      episode_matches, episode_candidates = inherit_episode_scope(
+        question, conv_session, resolved_account
+      )
+      if episode_candidates.any?
+        candidate_uris = episode_candidates
+        inherited      = true
+      end
+    end
 
-    if question_wins
+    mentioned_uris  = mentioned_uris_from(Array(resolver_matches) + episode_matches)
+    scope           = resolve_retrieval_scope(
+      pinned_uris: pinned_uris,
+      candidate_uris: candidate_uris,
+      mentioned_uris: mentioned_uris
+    )
+    scope.reason = "episode_inherited" if inherited
+    merged_session_context = merge_resolver_context(
+      session_context, Array(resolver_matches) + episode_matches, in_scope_uris: scope.uris
+    )
+
+    if pinned_uris.any? || candidate_uris.any?
       Rails.logger.info(
-        "RagQueryConcern: auto-scope overrides pin (pinned=#{pinned_uris.join(', ')}, " \
-        "resolved=#{auto_scope_uris.join(', ')})"
+        "RagQueryConcern: scope reason=#{scope.reason} pinned=#{pinned_uris.size} " \
+        "candidates=#{candidate_uris.size} retrieval=#{scope.uris.size}"
       )
     end
 
     resolved_output_channel = output_channel&.to_sym || :web
-    resolved_force_filter   = force_entity_filter.nil? ? (pinned_uris.any? && !question_wins) : force_entity_filter
+    resolved_force_filter   = force_entity_filter.nil? ? scope.force_entity_filter : force_entity_filter
     document_uids           = documents.map { SecureRandom.uuid }
 
     result = QueryOrchestratorService.new(
@@ -99,8 +115,8 @@ module RagQueryConcern
       response_locale:     resolved_response_locale,
       session_context:     merged_session_context,
       conv_session:        conv_session,
-      entity_s3_uris:      retrieval_uris,
-      auto_scope_filter:   auto_scope_uris.any?,
+      entity_s3_uris:      scope.uris,
+      auto_scope_filter:   scope.auto_scope_filter,
       output_channel:      resolved_output_channel,
       force_entity_filter: resolved_force_filter,
       user_id:             user_id,
@@ -114,6 +130,7 @@ module RagQueryConcern
     # Re-running it here would degrade correct answers a second time, so the
     # concern only applies presentation sanitization.
     sanitized_answer = sanitize_answer(result[:answer], channel: resolved_output_channel)
+    quick_replies    = selection_quick_replies(question, conv_session, result[:quick_replies])
 
     RagResult.new(
       success?:            true,
@@ -135,7 +152,7 @@ module RagQueryConcern
       record_ledger_sha256:     result[:record_ledger_sha256],
       retrieved_chunk_sha256s:  result[:retrieved_chunk_sha256s],
       deterministic_validation: result[:deterministic_validation],
-      quick_replies:             result[:quick_replies],
+      quick_replies:             quick_replies,
       route_outcome:            result[:route_outcome]
     )
   rescue ImageCompressionService::CompressionError => e
@@ -287,41 +304,178 @@ module RagQueryConcern
     nil
   end
 
-  def merge_resolver_context(session_context, resolver_matches)
-    return session_context if resolver_matches.blank?
+  def merge_resolver_context(session_context, resolver_matches, in_scope_uris: nil)
+    matches = Array(resolver_matches).compact
+    return session_context if matches.empty?
 
-    lines = resolver_matches.map do |match|
-      doc        = match.document
-      aliases    = Array(doc.aliases).map(&:to_s).compact_blank.first(5)
-      alias_note = aliases.any? ? " (aka: #{aliases.join(', ')})" : ""
-      "- \"#{doc.display_name}\" → #{doc.s3_key}#{alias_note}"
+    matches = matches.uniq { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }
+    scoped_uris = Array(in_scope_uris).compact
+
+    if scoped_uris.empty?
+      in_scope     = matches
+      out_of_scope = []
+    else
+      in_scope     = matches.select { |match| scoped_uris.include?(match.document.display_s3_uri(KbDocument::KB_BUCKET)) }
+      out_of_scope = matches - in_scope
     end
 
+    return session_context if in_scope.empty? && out_of_scope.empty?
+
+    lines = in_scope.map { |match| format_resolver_match_line(match) }
     block = <<~BLOCK.strip
       ## Query Resolution
       The user's query mentions documents that exist in the catalog. Treat the names below and any of their aliases as references to the SAME physical document. Do NOT claim the document is not found.
       #{lines.join("\n")}
     BLOCK
 
+    if out_of_scope.any?
+      out_lines = out_of_scope.map { |match| format_resolver_match_line(match) }
+      block = [
+        block,
+        "Also in catalog but NOT consulted this turn (do not cite, do not describe their content):",
+        out_lines.join("\n")
+      ].join("\n")
+    end
+
     [ session_context.presence, block ].compact.join("\n\n")
   end
 
-  # Auto-scope gate (Cambio 1/2, auto-scope-retrieval plan): only narrow
-  # retrieval when the resolver's match is specific — a matched token with a
-  # digit (708a, mpdk136, bl6) or fully uppercase in the question and not a
-  # brand name (otis, kone, ...). A bare brand mention ("Kone") must never
-  # scope retrieval on its own, or a generic question would get filtered to
-  # 3 arbitrary same-brand documents instead of searching the full catalog.
+  def format_resolver_match_line(match)
+    doc        = match.document
+    aliases    = Array(doc.aliases).map(&:to_s).compact_blank.first(5)
+    alias_note = aliases.any? ? " (aka: #{aliases.join(', ')})" : ""
+    "- \"#{doc.display_name}\" → #{doc.s3_key}#{alias_note}"
+  end
+
+  # Resolve each prior user turn on its own (newest first) so
+  # KbDocumentResolver::MAX_MATCHES cannot drop a specific designator when
+  # later turns add generic tokens. Concatenating the episode is one SQL
+  # round-trip cheaper and expels CEA15 on the account-1 catalog (H14).
+  # Cost: ≤ EPISODE_MAX_USER_MESSAGES resolves, and only when the current
+  # question already produced no specific candidates.
+  def inherit_episode_scope(question, conv_session, account)
+    return [ [], [] ] unless conv_session.respond_to?(:episode_user_messages)
+
+    messages = conv_session.episode_user_messages(exclude: question)
+    return [ [], [] ] if messages.empty?
+
+    matches = []
+    candidates = []
+    messages.reverse_each do |message|
+      message_matches = KbDocumentResolver.resolve_scoped(message, account: account)
+      matches.concat(Array(message_matches))
+      candidates.concat(auto_scope_uris_from(message_matches))
+    end
+
+    matches = matches.uniq { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }
+    [ matches, candidates.uniq ]
+  end
+
+  # Auto-scope gate: only the documents whose own matched tokens are specific
+  # (digit or fully uppercase, not a brand) narrow retrieval. Specificity is
+  # not inherited by other resolver hits in the same question.
   def auto_scope_uris_from(resolver_matches)
     return [] unless Rag::AutoScopeFlag.enabled?
-    return [] if resolver_matches.blank?
 
-    specific = resolver_matches.any? do |match|
+    specific_matches(resolver_matches)
+      .filter_map { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }
+      .uniq
+  end
+
+  def specific_matches(resolver_matches)
+    Array(resolver_matches).select do |match|
       match.matched_tokens.any? { |token| KbDocumentResolver.specific_token?(token) }
     end
-    return [] unless specific
+  end
 
-    resolver_matches.filter_map { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }.uniq
+  def mentioned_uris_from(resolver_matches)
+    Array(resolver_matches).filter_map { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }.uniq
+  end
+
+  def resolve_retrieval_scope(pinned_uris:, candidate_uris:, mentioned_uris:)
+    if pinned_uris.empty?
+      reason = candidate_uris.any? ? "auto_scope" : "open"
+      return RetrievalScope.new(
+        uris: candidate_uris,
+        auto_scope_filter: candidate_uris.any?,
+        force_entity_filter: false,
+        reason: reason
+      )
+    end
+
+    if candidate_uris.empty?
+      return RetrievalScope.new(
+        uris: pinned_uris,
+        auto_scope_filter: false,
+        force_entity_filter: true,
+        reason: "pin_only"
+      )
+    end
+
+    outside = candidate_uris - pinned_uris
+    if outside.empty?
+      return RetrievalScope.new(
+        uris: pinned_uris,
+        auto_scope_filter: false,
+        force_entity_filter: true,
+        reason: "pin_kept"
+      )
+    end
+
+    pin_mentioned = (mentioned_uris & pinned_uris).any?
+    if pin_mentioned
+      RetrievalScope.new(
+        uris: (pinned_uris + outside).uniq,
+        auto_scope_filter: true,
+        force_entity_filter: false,
+        reason: "pin_extended"
+      )
+    else
+      RetrievalScope.new(
+        uris: candidate_uris,
+        auto_scope_filter: true,
+        force_entity_filter: false,
+        reason: "pin_overridden"
+      )
+    end
+  end
+
+  def selection_quick_replies(question, conv_session, existing)
+    return existing unless Rag::EpisodeScopeFlag.enabled?
+    return existing if existing.present?
+    return existing unless selection_turn?(question, conv_session)
+    return existing unless conv_session.respond_to?(:episode_user_messages)
+
+    previous = conv_session.episode_user_messages(exclude: question).last
+    return existing if previous.blank?
+
+    [
+      { label: "Continuar: #{previous.truncate(60)}", query: previous },
+      { label: "Resumen del documento", query: "Resumen del documento #{question}" }
+    ]
+  end
+
+  def selection_turn?(question, conv_session)
+    return false unless conv_session.respond_to?(:active_entities)
+
+    normalized = normalize_entity_label(question)
+    return false if normalized.blank?
+
+    conv_session.active_entities.any? do |key, meta|
+      [ key, meta["canonical_name"], *Array(meta["aliases"]) ]
+        .compact
+        .any? { |label| normalize_entity_label(label) == normalized }
+    end
+  end
+
+  # Misma normalización que Rag::PinnedEntityScopeResolver#normalize.
+  def normalize_entity_label(value)
+    value.to_s
+         .unicode_normalize(:nfkd)
+         .gsub(/\p{Mn}/, "")
+         .downcase
+         .gsub(/[^\p{L}\d]+/, " ")
+         .squish
   end
 
   def resolve_pinned_scope(question, conv_session, pinned_uris)

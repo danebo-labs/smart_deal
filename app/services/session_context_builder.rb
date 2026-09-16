@@ -42,7 +42,14 @@ class SessionContextBuilder
       BLOCK
     end
 
-    history = session.recent_history_for_prompt(turns: 3)
+    history =
+      if Rag::EpisodeScopeFlag.enabled? && session.respond_to?(:episode_user_messages)
+        users = session.episode_user_messages.map { |content| { role: "user", content: content } }
+        last  = session.last_assistant_message
+        users + (last ? [ { role: "assistant", content: last.truncate(200) } ] : [])
+      else
+        session.recent_history_for_prompt(turns: 3)
+      end
     if history.any?
       history_lines = history.map { |h| "#{h[:role].capitalize}: #{h[:content]}" }.join("\n")
       parts << <<~BLOCK.strip

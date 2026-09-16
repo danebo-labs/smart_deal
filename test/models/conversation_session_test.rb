@@ -888,4 +888,88 @@ class ConversationSessionTest < ActiveSupport::TestCase
     kb_doc  = KbDocument.create!(s3_key: "uploads/2026/never_pinned.pdf", display_name: "X", aliases: [])
     assert_not session.unpin_kb_document!(kb_doc)
   end
+
+  # ─── Episode window ─────────────────────────────────────────────────────────
+
+  def episode_session(history)
+    ConversationSession.create!(
+      identifier: "web:episode_#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      conversation_history: history
+    )
+  end
+
+  test 'episode_user_messages keeps user turns inside a 4 hour window' do
+    now = Time.zone.parse("2026-09-16T14:00:00-03:00")
+    session = episode_session([
+      { "role" => "user", "content" => "old", "ts" => (now - 4.hours - 1.second).iso8601 },
+      { "role" => "user", "content" => "inside", "ts" => (now - 4.hours + 1.second).iso8601 },
+      { "role" => "assistant", "content" => "reply", "ts" => (now - 1.hour).iso8601 },
+      { "role" => "user", "content" => "latest", "ts" => now.iso8601 }
+    ])
+
+    assert_equal [ "inside", "latest" ], session.episode_user_messages(now: now)
+  end
+
+  test 'episode_user_messages excludes the current question' do
+    now = Time.zone.parse("2026-09-16T14:00:00-03:00")
+    session = episode_session([
+      { "role" => "user", "content" => "first", "ts" => (now - 2.minutes).iso8601 },
+      { "role" => "user", "content" => "current", "ts" => now.iso8601 }
+    ])
+
+    assert_equal [ "first" ], session.episode_user_messages(now: now, exclude: "current")
+  end
+
+  test 'episode_user_messages caps at three user messages' do
+    now = Time.zone.parse("2026-09-16T14:00:00-03:00")
+    history = 4.times.map do |i|
+      { "role" => "user", "content" => "q#{i}", "ts" => (now - (4 - i).minutes).iso8601 }
+    end
+    session = episode_session(history)
+
+    assert_equal [ "q1", "q2", "q3" ], session.episode_user_messages(now: now)
+  end
+
+  test 'episode_user_messages ignores missing or invalid timestamps' do
+    now = Time.zone.parse("2026-09-16T14:00:00-03:00")
+    session = episode_session([
+      { "role" => "user", "content" => "no-ts" },
+      { "role" => "user", "content" => "bad-ts", "ts" => "not-a-time" },
+      { "role" => "user", "content" => "ok", "ts" => now.iso8601 }
+    ])
+
+    assert_equal [ "ok" ], session.episode_user_messages(now: now)
+  end
+
+  test 'episode_user_messages drops August turns outside the window' do
+    now = Time.zone.parse("2026-09-16T10:50:55-03:00")
+    session = episode_session([
+      { "role" => "user", "content" => "Elemont Montacargas Hidraulico Modelo MH", "ts" => "2026-08-31T17:30:11-04:00" },
+      { "role" => "user", "content" => "Hola, tengo una falla eléctrica", "ts" => "2026-09-16T10:49:41-03:00" }
+    ])
+
+    assert_equal [ "Hola, tengo una falla eléctrica" ], session.episode_user_messages(now: now)
+  end
+
+  test 'last_assistant_message is nil when the last assistant is outside the window' do
+    now = Time.zone.parse("2026-09-16T14:00:00-03:00")
+    session = episode_session([
+      { "role" => "assistant", "content" => "stale reply", "ts" => (now - 4.hours - 1.second).iso8601 },
+      { "role" => "user", "content" => "follow-up", "ts" => now.iso8601 }
+    ])
+
+    assert_nil session.last_assistant_message(now: now)
+  end
+
+  test 'last_assistant_message returns the most recent in-window assistant turn' do
+    now = Time.zone.parse("2026-09-16T14:00:00-03:00")
+    session = episode_session([
+      { "role" => "assistant", "content" => "older", "ts" => (now - 2.hours).iso8601 },
+      { "role" => "assistant", "content" => "newer", "ts" => (now - 1.minute).iso8601 }
+    ])
+
+    assert_equal "newer", session.last_assistant_message(now: now)
+  end
 end

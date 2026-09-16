@@ -5,6 +5,8 @@ class ConversationSession < ApplicationRecord
   MAX_HISTORY    = 20
   MAX_ENTITIES   = ENV.fetch('SESSION_MAX_ENTITIES', 10).to_i
   MAX_MSG_LENGTH = 300
+  EPISODE_WINDOW = 4.hours
+  EPISODE_MAX_USER_MESSAGES = 3
   PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
 
   # WA channel disabled for MVP. "whatsapp" kept in CHANNELS so legacy rows (if any) remain valid.
@@ -83,6 +85,39 @@ class ConversationSession < ApplicationRecord
 
   def recent_history_for_prompt(turns: 3)
     conversation_history.last(turns).map { |m| { role: m["role"], content: m["content"] } }
+  end
+
+  # Mensajes del usuario dentro de la ventana del episodio, en orden cronológico.
+  # Un mensaje sin `ts` parseable queda fuera. `exclude` descarta la pregunta actual.
+  def episode_user_messages(now: Time.current, exclude: nil)
+    cutoff   = now - EPISODE_WINDOW
+    excluded = exclude.to_s.strip
+
+    conversation_history
+      .select { |message| message["role"] == "user" }
+      .filter_map do |message|
+        ts = parse_history_ts(message["ts"])
+        next if ts.nil? || ts < cutoff || ts > now
+
+        content = message["content"].to_s
+        next if excluded.present? && content.strip == excluded
+
+        content
+      end
+      .last(EPISODE_MAX_USER_MESSAGES)
+  end
+
+  def last_assistant_message(now: Time.current)
+    cutoff = now - EPISODE_WINDOW
+    conversation_history.reverse_each do |message|
+      next unless message["role"] == "assistant"
+
+      ts = parse_history_ts(message["ts"])
+      next if ts.nil? || ts < cutoff || ts > now
+
+      return message["content"].to_s.presence
+    end
+    nil
   end
 
   # ─── Entities ───────────────────────────────────────────────────────────────
@@ -250,6 +285,14 @@ class ConversationSession < ApplicationRecord
   end
 
   private
+
+  def parse_history_ts(value)
+    return nil if value.blank?
+
+    Time.zone.parse(value.to_s)
+  rescue StandardError
+    nil
+  end
 
   def history_message(role, content, user_id:, correlation_id:)
     message = {

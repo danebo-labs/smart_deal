@@ -1364,6 +1364,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal true, captured[:kwargs][:auto_scope_filter]
       assert_equal true, captured[:kwargs][:force_entity_filter]
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
+      assert_includes query_resolution_main_block(captured[:kwargs][:session_context].to_s), "manual-cea15p"
     end
   end
 
@@ -1384,14 +1385,14 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
-                   "jesus turn 3 keeps the episode scope; today returns pin-only"
-      assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal true, captured[:kwargs][:force_entity_filter]
-      ctx = captured[:kwargs][:session_context].to_s
-      assert_includes ctx, "## Selection Turn"
-      assert_includes ctx, previous
-      assert_includes ctx, "Do not write a general document summary"
+      assert_nil captured[:kwargs], "la puerta no debe instanciar el orquestador"
+      assert_equal "deterministic_selection_gate", result.generation_mode
+      assert_equal false, result.model_invoked
+      assert_nil result.session_id
+      assert_equal 2, Array(result.quick_replies).size
+      assert_includes result.answer, "?"
+      assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
+      assert_not_includes result.answer, elemont.display_name
     end
 
     replies = Array(result.quick_replies)
@@ -1409,52 +1410,50 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     session = build_jesus_session(elemont, turn: 3)
     question = JESUS_TURNS[4][:content]
 
+    travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+      _matches, candidates = @controller.send(
+        :inherit_episode_scope, question, session, @controller.current_account
+      )
+      assert_equal [ uris[:c] ], candidates
+      assert_not_includes candidates, uris[:f]
+    end
+
+    result = nil
     with_captured_orchestrator do |captured|
       travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
-        @controller.send(
+        result = @controller.send(
           :execute_rag_query, question,
           conv_session: session,
           entity_s3_uris: [ uris[:e] ]
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
-                   "jesus turn 3 inherits CEA15 with the full account catalog; concatenating the episode expels it (pin-only)"
-      assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal true, captured[:kwargs][:force_entity_filter]
-      assert_not_includes Array(captured[:kwargs][:entity_s3_uris]), uris[:f]
+      assert_nil captured[:kwargs], "la puerta no debe instanciar el orquestador"
+      assert_equal "deterministic_selection_gate", result.generation_mode
+      assert_equal false, result.model_invoked
+      assert_nil result.session_id
+      assert_equal 2, Array(result.quick_replies).size
+      assert_includes result.answer, "?"
+      assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
+      assert_not_includes result.answer, elemont.display_name
     end
   end
 
   test "jesus turn 3 selection context names the pin and the active problem" do
     elemont, cea15, _forklift = build_jesus_catalog
-    uris = jesus_uris(elemont, cea15)
     session = build_jesus_session(elemont, turn: 3)
     question = JESUS_TURNS[4][:content]
     previous = JESUS_TURNS[2][:content]
-    built = nil
 
-    with_captured_orchestrator do |captured|
-      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
-        built = SessionContextBuilder.build(session)
-        @controller.send(
-          :execute_rag_query, question,
-          conv_session: session,
-          session_context: built,
-          entity_s3_uris: [ uris[:e] ]
-        )
-      end
-
-      ctx = captured[:kwargs][:session_context].to_s
+    travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+      ctx = @controller.send(
+        :merge_selection_intent, SessionContextBuilder.build(session), question, session
+      )
       assert_includes ctx, "## Selection Turn"
       assert_includes ctx, question
       assert_includes ctx, previous
       assert_includes ctx, "Do not write a general document summary"
       assert_includes ctx, "even if Session Discipline would treat them as unpinned"
-      assert_includes query_resolution_main_block(ctx), "manual-cea15p"
-      assert_operator ctx.length, :>, built.length
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
-      assert_equal true, captured[:kwargs][:force_entity_filter]
     end
   end
 
@@ -1464,21 +1463,26 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     session = build_jesus_session(elemont, turn: 2)
     alias_question = "Modelo MH"
 
+    result = nil
     with_captured_orchestrator do |captured|
       travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
-        @controller.send(
+        result = @controller.send(
           :execute_rag_query, alias_question,
           conv_session: session,
           entity_s3_uris: [ uris[:e] ]
         )
       end
 
-      ctx = captured[:kwargs][:session_context].to_s
-      assert_includes ctx, "## Selection Turn"
-      assert_includes ctx, alias_question
-      assert_includes ctx, JESUS_TURNS[2][:content]
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
-      assert_equal true, captured[:kwargs][:force_entity_filter]
+      assert_nil captured[:kwargs], "la puerta no debe instanciar el orquestador"
+      assert_equal "deterministic_selection_gate", result.generation_mode
+      assert_equal false, result.model_invoked
+      assert_nil result.session_id
+      replies = Array(result.quick_replies)
+      assert_equal 2, replies.size
+      assert_includes result.answer, "?"
+      assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
+      assert_not_includes result.answer, elemont.display_name
+      assert_equal "Resumen del documento Modelo MH", replies[1][:query] || replies[1]["query"]
     end
   end
 
@@ -1487,9 +1491,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     uris = jesus_uris(elemont, cea15)
     session = build_jesus_session(elemont, turn: 3)
 
+    result = nil
     with_captured_orchestrator do |captured|
       travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
-        @controller.send(
+        result = @controller.send(
           :execute_rag_query, JESUS_TURNS[4][:content],
           conv_session: session,
           entity_s3_uris: [ uris[:e] ],
@@ -1497,8 +1502,14 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
-      assert_equal true, captured[:kwargs][:force_entity_filter]
+      assert_nil captured[:kwargs], "la puerta no debe instanciar el orquestador"
+      assert_equal "deterministic_selection_gate", result.generation_mode
+      assert_equal false, result.model_invoked
+      assert_nil result.session_id
+      assert_equal 2, Array(result.quick_replies).size
+      assert_includes result.answer, "?"
+      assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
+      assert_not_includes result.answer, elemont.display_name
     end
   end
 
@@ -1537,6 +1548,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
+      assert_not_nil captured[:kwargs], "el quick reply de resumen no debe reentrar en la puerta"
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
   end
@@ -1556,35 +1568,103 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
+      assert_not_nil captured[:kwargs]
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
       assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
     end
   end
 
   test "jesus selection intent keeps preexisting quick replies" do
+    elemont, _cea15, _forklift = build_jesus_catalog
+    session = build_jesus_session(elemont, turn: 3)
+    existing = [ { label: "Otra", query: "otra" } ]
+
+    travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+      assert_equal existing, @controller.send(
+        :selection_quick_replies, JESUS_TURNS[4][:content], session, existing
+      )
+    end
+  end
+
+  test "jesus turn 3 selection gate answers in the session locale" do
     elemont, cea15, _forklift = build_jesus_catalog
     uris = jesus_uris(elemont, cea15)
     session = build_jesus_session(elemont, turn: 3)
-    existing = [ { label: "Otra", query: "otra" } ]
-    mock = Object.new
-    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s", quick_replies: existing } }
-    original_new = QueryOrchestratorService.method(:new)
-    QueryOrchestratorService.define_singleton_method(:new) { |*_args, **_kwargs| mock }
 
     result = nil
-    begin
+    with_captured_orchestrator do |captured|
       travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
         result = @controller.send(
           :execute_rag_query, JESUS_TURNS[4][:content],
           conv_session: session,
-          entity_s3_uris: [ uris[:e] ]
+          entity_s3_uris: [ uris[:e] ],
+          response_locale: :en
         )
       end
-    ensure
-      QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
-    end
 
-    assert_equal existing, result.quick_replies
+      assert_nil captured[:kwargs], "la puerta no debe instanciar el orquestador"
+      assert_equal "deterministic_selection_gate", result.generation_mode
+      assert_equal I18n.t("rag.selection_turn_prompt", locale: :en), result.answer
+    end
+  end
+
+  test "jesus turn 3 selection gate does not fire outside web" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[4][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ],
+          output_channel: :whatsapp
+        )
+      end
+
+      assert_not_nil captured[:kwargs]
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+    end
+  end
+
+  test "jesus turn 3 selection gate does not fire with an attachment" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 3)
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[4][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ],
+          images: [ { data: "x", media_type: "image/png" } ]
+        )
+      end
+
+      assert_not_nil captured[:kwargs]
+    end
+  end
+
+  test "jesus turn 2 inherited scope cannot opt out of force_entity_filter" do
+    elemont, cea15, _forklift = build_jesus_catalog
+    uris = jesus_uris(elemont, cea15)
+    session = build_jesus_session(elemont, turn: 2)
+
+    with_captured_orchestrator do |captured|
+      travel_to Time.zone.parse(JESUS_TURNS[2][:ts]) do
+        @controller.send(
+          :execute_rag_query, JESUS_TURNS[2][:content],
+          conv_session: session,
+          entity_s3_uris: [ uris[:e] ],
+          force_entity_filter: false
+        )
+      end
+
+      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
   end
 
   test "resolve_retrieval_scope covers the pin/question contract" do

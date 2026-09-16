@@ -109,6 +109,37 @@ module RagQueryConcern
 
     resolved_output_channel = output_channel&.to_sym || :web
     episode_scope_required  = inherited && scope.uris.any?
+
+    # Turno de selección puro: el texto es el nombre del pin que el toggle de
+    # documentos autocompleta (rag_chat_controller#_updateTextareaWithDocName),
+    # así que no lleva intención escrita. Con top_k 3 sobre documentos pinneados
+    # la ventana de generación sería la identidad del documento y Bedrock
+    # devolvería el resumen que nadie pidió (corrida 20260916T170508Z). Se
+    # pregunta en vez de adivinar, sin llamar al modelo.
+    # selection_quick_replies ya encapsula flag de episodio, selection_turn? y
+    # mensaje previo presente: si devuelve replies, la forma es exactamente ésta.
+    gate_replies = if episode_scope_required && resolved_output_channel == :web &&
+                      images.empty? && documents.empty?
+      selection_quick_replies(question, conv_session, nil)
+    end
+
+    if gate_replies.present?
+      Rails.logger.info(
+        "RagQueryConcern: selection_gate uris=#{scope.uris.size} bedrock=0"
+      )
+      return RagResult.new(
+        success?:        true,
+        answer:          I18n.t("rag.selection_turn_prompt", locale: resolved_response_locale),
+        citations:       [],
+        session_id:      nil,
+        response_locale: resolved_response_locale.to_s,
+        generation_mode: "deterministic_selection_gate",
+        model_invoked:   false,
+        quick_replies:   gate_replies,
+        correlation_id:  correlation_id
+      )
+    end
+
     resolved_force_filter   = if episode_scope_required
       true
     else

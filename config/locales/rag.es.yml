@@ -59,6 +59,7 @@ es:
       page: "p."
       show_more_contexts: "Ver %{count} contextos más"
     ambiguous_model_prompt: "La evidencia recuperada corresponde a varias placas o modelos — elige una o indica el fabricante y la placa exacta:"
+    selection_turn_prompt: "Seleccionaste ese documento. ¿Seguimos con tu consulta anterior o querés un resumen del documento?"
     model_selection_query: "Fabricante y placa: %{model}"
     document_overview:
       document_heading: "Documento: %{name}"

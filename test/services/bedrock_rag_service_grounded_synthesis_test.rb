@@ -60,6 +60,8 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_includes prompt, "Interpretación técnica:"
     assert_includes prompt, "pertinent to the same component and function"
     assert_includes prompt, "compatible fragments of the same document"
+    assert_includes prompt, "A chunk about a different named maker, family, or model"
+    assert_includes prompt, "unspecified code or identifier"
   end
 
   test "NO MATCH bullets are unchanged between variants" do

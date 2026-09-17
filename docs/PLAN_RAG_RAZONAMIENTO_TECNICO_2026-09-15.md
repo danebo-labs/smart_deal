@@ -1,6 +1,6 @@
 # Plan: razonamiento técnico sustentado y conocimiento experto
 
-Estado: propuesta; **Fase A cerrada**. Fecha: 15 de septiembre de 2026. Revisión v12 (16-sep, 20:00): sacado `# DISCRIMINATING QUESTION` de `# NO MATCH`. `generation.txt` `e4a5cdb918796fc1e9b2c3479c7bf161711f6db4692376fa1a34557dcde82896`. Siguiente: deploy + re-humo.
+Estado: propuesta; **Fase A cerrada**. Fecha: 15 de septiembre de 2026. Revisión v13 (17-sep): H4 Schindler — chunk de otro fabricante no es pertinente; pedir código no dado. `generation.txt` `4b4081841006d69a24d20979a5e1ebca1f6944819246a9cbd3dbdf448410b6c8`. `# NO MATCH` intacto.
 
 Revisión v3 (15-sep, noche). v2 verificó el plan contra código y registro (§2.1). v3 añade §0 (guía de ejecución autónoma: decisiones fijadas, glosario, acceso a producción), §3.1 (preguntas discriminantes), especificaciones de implementación cerradas en §5, plantilla de ficha en §6, batería con casos numerados en §8 y Anexo A con los prompts de arranque por fase. v4 incorporó el proxy H1 v1. v5 lo sustituye por el proxy v2 (verificado contra el JPEG y H1): H1 se **confirma** en el núcleo y se **matiza** (ajuste fino vs grueso), no se refuta. Está escrito para que un agente lo ejecute fase por fase sin reabrir decisiones; cuando algo requiera criterio humano, el documento lo dice y nombra a quién.
 
@@ -385,7 +385,7 @@ Total del ciclo < US$1,50.
 | --- | --- | --- |
 | A | **cerrada** 16-sep 17:05 | Prod `474352cd`. D12 + ficha dueño 16:54 `88db1686735fa87aeb96e719115c0681af2635b75077810b5b7a9c24379e7d04`. `entrevista_h1.md` `207631139d070c8403c794ff5bd036fdeadb399832fde0ecc01897bcc18e730a`; `caso_congelado.md` `7ed61fb587ee286626fb0af3b05bb0f7f9f898c680bfe979727297ef5edf0d32`; `lectura_corpus.md` `e55fac22933b8b5be00dd5a8e5097f624488a6c31ba1ef8f3ca0b7d01b698a39`; `diagnostico.md` `88f7c627ba0e9972b22ea4888d7c25984ac0ce1641642db061080ba3c6768325`; `diagnostico_run.txt` `de52d80a6f0e9794515140e6898a24267872f061cf51617e62771b531bc7418d`; batería borrador `7094d0fcda3d09665c16f277682053ad00464fbb00eadd78311562d4cffd6bfa`. 10 R&G + 1 Retrieve, US$0,1058. Defecto: generación/contrato (H2 + receta sin alcance); recall OK. H9: línea `photo_evidence_block`. |
 | B (PR) | **cerrada** 16-sep | Commit `d01d441`. `generation.txt` `3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196`. D13 on. Desplegado. |
-| B (humo) | **FALLA** 16-sep 18:33 | Prod `d01d441`. 16 R&G, US$0,1615. H3 URM texto y H4 Schindler: 4/4 `canned_with_retrieval`. `humo_2026-09-16.txt` `421be8196533e55aa38d7b42c576de38e1686ccf18474990d485f9bfd1b08e5c`; `humo.md` `14d5ee36be9d23487d1287995e16b942a66f0abce161064001990d00d05c012c`. Sospecha: `GROUNDED_SYNTHESIS` `# DISCRIMINATING QUESTION` **dentro de `# NO MATCH`** (`generation.txt` l. 133–139). Batería no corrida. |
+| B (humo) | **FALLA** r2; r3 en curso 17-sep | r1 `d01d441` H3+H4 Sorry. r2 `67fef52` H3 pasa, H4 2/2 Sorry (`humo_2026-09-16_r2.txt` `32faefc65fc889c499d7f4a07074ed76926b82847b98934f4848bd02b9afa1b4`). Causa H4: FORMAT «open with pertinent» + chunks de otro fabricante (mismo modo que Fase 3 Q12). Fix v13: chunk de otro maker/family/model no es pertinente; si el código no está, nombrarlo y pedirlo. Fuera de `# NO MATCH`. |
 | B (batería) | bloqueada (humo) | — |
 | C | pendiente | — |
 | Activación | **D13 live** (`d01d441`, todas las cuentas) | Schindler del guion ahora Sorry. Rollback: `ENABLED: "false"` + `kamal app boot`. |
@@ -404,11 +404,11 @@ Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fa
 
 ### A.2 Fase B — PR de contrato (D13: flag on, todas las cuentas)
 
-> **Prompt corregido en esta sesión (16-sep 20:00).** `# DISCRIMINATING QUESTION` ya no está en `# NO MATCH` (queda después de `# FORMAT`). Variante off sigue sha `9182ccf3…`. File sha `e4a5cdb9…`. Tests grounded-synthesis + architecture verdes. Deploy y re-humo: A.3.
+> **Prompt v13 (17-sep).** Tras r2, H4 Schindler seguía Sorry (`canned_with_retrieval`). Causa: FORMAT GS trataba chunks recuperados de otro fabricante como «pertinent» y chocaba con no transplantar. Añadido en `# FORMAT` GS (no en `# NO MATCH`): chunk de otro named maker/family/model no es pertinente — decir el desajuste; si el código/identificador no está, nombrarlo y pedirlo. Compactación GS para techo 5 %. File sha `4b408184…`. Off sha `9182ccf3…`. Tests verdes. Deploy + re-humo A.3.
 
 ### A.3 Fase B — Humo y batería
 
-> **Humo ejecutado 16-sep 18:33, FALLA.** No reabrir esta corrida. Artefacto `tmp/razonamiento_tecnico/fase_b/humo.md`. Tras el fix de A.2 y redeploy: repetir §5.3 (mismas 8×2; H3 **con foto**). Si verde, entonces script batería y §8. Si Sorry otra vez, registrar la línea y volver a A.2. No clasifiques la batería.
+> **Humo r1/r2 FALLA.** r2: H3 OK, H4 Schindler Sorry. Tras v13 y deploy: repetir §5.3 (8×2; H3 con foto). Si verde → batería §8. Si Sorry → registrar la línea y volver a A.2. No clasifiques la batería.
 
 ### A.4 Fase C — Ficha senior
 

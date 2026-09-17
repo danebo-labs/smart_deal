@@ -17,7 +17,7 @@ require "securerandom"
 require "stringio"
 
 HARD_CAP = 16
-EXPECTED_SHA = "4b4081841006d69a24d20979a5e1ebca1f6944819246a9cbd3dbdf448410b6c8"
+EXPECTED_SHA = "6a8abaed1e56bc880c7844f75288a7406973b9595c09e7fecafa928a473a789f"
 RETRY_ES = "Encontré documentación relacionada, pero no pude redactar la respuesta"
 RETRY_EN = "I found related documentation but could not compose the answer"
 

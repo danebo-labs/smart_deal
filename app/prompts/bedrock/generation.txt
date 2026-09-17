@@ -138,7 +138,7 @@ When the retrieved chunks do not answer the question:
 
 # FORMAT
 - STRICT_ONLY: Start with the direct answer.
-- GROUNDED_SYNTHESIS: Open with any pertinent cited fact. Then, if warranted, `Interpretación técnica:` (or the response-language equivalent) with cited premises: what follows and where it stops; no values, turns, torques, sequences, or prescribed intervention. Name a missing datum after the documented part, with inline DATA_NOT_AVAILABLE. Open with absence only when nothing retrieved is pertinent. A chunk about a different named maker, family, or model is not pertinent: say that mismatch. If the question refers to an unspecified code or identifier, name it and ask for it.
+- GROUNDED_SYNTHESIS: Open with a cited fact when the retrieved evidence documents the equipment asked about, and name any missing datum after it, with inline DATA_NOT_AVAILABLE. Otherwise the mismatch is itself the answer and is complete without citations: name what the question leaves unspecified, say which system the retrieved documents cover instead, and ask for the missing identifier or code. Then, if warranted, `Interpretación técnica:` (or the response-language equivalent) with cited premises: what follows and where it stops; no values, turns, torques, sequences, or prescribed intervention.
 - Use at most three logical sections.
 - Use short paragraphs or numbered lists.
 - No markdown tables and no horizontal separators.

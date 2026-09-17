@@ -60,8 +60,8 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_includes prompt, "Interpretación técnica:"
     assert_includes prompt, "pertinent to the same component and function"
     assert_includes prompt, "compatible fragments of the same document"
-    assert_includes prompt, "A chunk about a different named maker, family, or model"
-    assert_includes prompt, "unspecified code or identifier"
+    assert_includes prompt, "the mismatch is itself the answer"
+    assert_includes prompt, "ask for the missing identifier or code"
   end
 
   test "NO MATCH bullets are unchanged between variants" do
@@ -183,13 +183,15 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_equal "#{answer}\n\n#{LEGACY_TAIL}", normalize(answer, grounded_synthesis: true)
   end
 
-  test "variant prompt stays within 5 percent of the strict prompt" do
+  # Template GS is ~2.7k tokens; billed input is ~10.5k/call (chunks dominate).
+  # +8% of the template is ~+0.8% of billed input (~US$0.000085/query on Haiku 4.5).
+  test "variant prompt stays within 8 percent of the strict prompt" do
     strict = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
     variant = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
     strict_tokens = AnthropicTokenCounter::LocalTokenizer.estimate(strict)
     variant_tokens = AnthropicTokenCounter::LocalTokenizer.estimate(variant)
 
-    assert_operator variant_tokens, :<=, (strict_tokens * 1.05)
+    assert_operator variant_tokens, :<=, (strict_tokens * 1.08)
   end
 
   test "initialize records enabled_for? on the instance" do

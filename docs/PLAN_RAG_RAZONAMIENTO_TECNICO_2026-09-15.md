@@ -1,6 +1,6 @@
 # Plan: razonamiento técnico sustentado y conocimiento experto
 
-Estado: propuesta; **Fase A cerrada**. Fecha: 15 de septiembre de 2026. Revisión v14 (17-sep): H4 — el desajuste de sistema **es** la respuesta (completo sin citas); techo prompt 1,08×. `generation.txt` `6a8abaed1e56bc880c7844f75288a7406973b9595c09e7fecafa928a473a789f`. `# NO MATCH` intacto.
+Estado: propuesta; **Fase A cerrada**. Fecha: 15 de septiembre de 2026. Revisión v15 (17-sep): D14 — H4 colapso nombrado; `generation_retry` pide código/placa, no reenvío. `generation.txt` sin cambio (`6a8abaed…`).
 
 Revisión v3 (15-sep, noche). v2 verificó el plan contra código y registro (§2.1). v3 añade §0 (guía de ejecución autónoma: decisiones fijadas, glosario, acceso a producción), §3.1 (preguntas discriminantes), especificaciones de implementación cerradas en §5, plantilla de ficha en §6, batería con casos numerados en §8 y Anexo A con los prompts de arranque por fase. v4 incorporó el proxy H1 v1. v5 lo sustituye por el proxy v2 (verificado contra el JPEG y H1): H1 se **confirma** en el núcleo y se **matiza** (ajuste fino vs grueso), no se refuta. Está escrito para que un agente lo ejecute fase por fase sin reabrir decisiones; cuando algo requiera criterio humano, el documento lo dice y nombra a quién.
 
@@ -33,6 +33,7 @@ Origen: pregunta real de Gonzalo en la demo del 11-sep («Cómo se ajustan los r
 | D11 | Humano requerido en tres puntos: validación de H1 y de la ficha de evidencia (Fase A, paso 0 y 3), asignación de clase por respuesta en la batería (§8) y decisión de activar la flag en producción. **Activación decidida (D13).** Sigue haciendo falta la clasificación humana de la batería. Persona: el dueño del producto; técnico de dominio: Gonzalo o quien él designe. | D8; seguridad. |
 | D12 | **Aceptada (dueño, 16-sep 16:38).** El proxy v2 es insumo de Fase A paso 0; no sustituye a Gonzalo en la ficha (paso 3). Consecuencias en vigor: (a) H1 confirmada — longitud efectiva del cable; el resorte no se regula como pieza suelta; (b) fino = tuerca de varilla (ilustración); grueso = cuña/enchufe (p. ej. MiniSpace p. 239 de ese manual); (c) B02 describe la ilustración sin identidad ni receta; pregunta = texto de esa figura; (d) B01 sin modelo: cuántos cables y si hay resorte+tuerca; (e) magnitud = tensión; altura de resorte solo si el documento la fija; (f) no copiar al prompt ±5–10 %, pulsado, secuencia post-ajuste ni nombres de fabricante. H9 confirmado. | Entrevista canónica `tmp/razonamiento_tecnico/fase_a/entrevista_h1.md`; D11. |
 | D13 | **Aceptada (dueño, 16-sep 17:14).** gs-v1 se habilita en producción **con el PR de Fase B, para todas las cuentas**. Código: default off si ENV no es `"true"`. Prod: `RAG_GROUNDED_SYNTHESIS_ENABLED: "true"` en `config/deploy.yml` (`env.clear`, web+worker) y `config/deploy.yml.example`. **No** poner `RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS` en prod (lista vacía = todas). `.env.sample`: `ENABLED=true` y `ACCOUNT_IDS` comentada como restrictor opcional. Sin clasificador de ambigüedad (D1: cero LLM extra): el prompt de síntesis cubre la consulta ambigua/sin modelo. Rollback: `"false"` y aplicar env; no revertir el PR. | Dueño; sustituye el recorte a cuenta 3 de las 17:12. |
+| D14 | **Aceptada (dueño, 17-sep).** H4 (`¿Qué significa este código en un Schindler?`, sin código) es colapso R&G **nombrado** bajo gs-v1: 2/2 r3 `d09a7a3` y r4 `6c7ffea`. FORMAT ya autoriza el desajuste; H7 lo usa; H4 no genera. No se quita la barrera de transplante de procedimientos. No se apaga la flag. `rag.generation_retry` deja de invitar al reenvío ciego y pide fabricante, modelo, código exacto o foto. Gate §5.3: cero colapsos **con salida inservible**; `canned_with_retrieval` queda como telemetría. Un segundo colapso en B01–B16 detiene la batería y reabre rollback. A/B por `custom_config` de líneas GS: **después** de la batería, no bloquea. | r4; Fase 4 hallazgo 4 (bucle de reenvío). |
 
 ### 0.3 Glosario del caso (terminología de taller ↔ corpus)
 
@@ -209,7 +210,7 @@ Compactación: recortar redundancias existentes en `# EVIDENCE CONTRACT` (reglas
 
 ### 5.3 Gate de humo anti-«Sorry» (H6)
 
-Antes de la batería, flag on en prod (D13, todas las cuentas): 8 preguntas × 2 repeticiones = 16 llamadas. Preguntas: las 5 de terreno fuerte de `EJECUCION_PRE_DEMO` Fase 5 (#5 LCB II, #8 Fuji Yida, #9 foto URM, #12 Schindler, #1 BLT con código dictado), el caso 3 texto-only, y dos negativas (equipo inexistente en el corpus; pregunta de seguridad con «detener»). Criterio: `canned_with_retrieval = 0`, cero `generation_retry`, cero respuestas vacías. Un solo colapso bloquea la batería y devuelve el prompt a redacción (§5.2), registrando qué línea se añadió o quitó entre intentos. Salida: `tmp/razonamiento_tecnico/fase_b/humo_<fecha>.txt`.
+Antes de la batería, flag on en prod (D13, todas las cuentas): 8 preguntas × 2 repeticiones = 16 llamadas. Preguntas: las 5 de terreno fuerte de `EJECUCION_PRE_DEMO` Fase 5 (#5 LCB II, #8 Fuji Yida, #9 foto URM, #12 Schindler, #1 BLT con código dictado), el caso 3 texto-only, y dos negativas (equipo inexistente en el corpus; pregunta de seguridad con «detener»). Criterio (D14): **cero colapsos con salida inservible para el técnico** — respuesta vacía, o `generation_retry` que invite a reenviar la misma consulta. `canned_with_retrieval` se registra como telemetría. H4 (entrada sin código) es el único colapso nombrado: 2/2 r3/r4; no aborta el gate si la copia pide identificador. Cualquier otro colapso bloquea la batería. Salida: `tmp/razonamiento_tecnico/fase_b/humo_<fecha>.txt`.
 
 ### 5.4 Criterio de cierre de Fase B
 
@@ -319,7 +320,7 @@ Rúbrica congelada antes de la primera corrida. Cada caso: `id`, `input` (pregun
 - Cero acciones, valores o condiciones críticas sin respaldo.
 - Cero sustituciones de modelo/conjunto o procedimientos tangenciales.
 - Citas verificables para cada premisa; ninguna cita inventada; **Gate H8:** cero marcadores `[n]` dentro del párrafo `Interpretación técnica` en las repeticiones; si falla, D9.
-- Cero colapsos «Sorry» (`canned_with_retrieval`) en humo y batería.
+- Cero colapsos «Sorry» **con salida inservible** (`canned_with_retrieval` cuya copia invite a reenviar, o respuesta vacía). H4 (entrada sin código) es el colapso nombrado D14 y no cuenta como fallo de batería si la copia pide identificador. **Un segundo** `canned_with_retrieval` en B01–B16 detiene la batería y reabre rollback.
 - Todos los positivos abren con la parte sustentada y ninguno recibe footer de ausencia total; los negativos identifican el faltante correcto. La abstención justificada no es fallo.
 - Preguntas discriminantes: máximo una por respuesta en todos los casos; ninguna del tipo prohibido (B14); B05 no repite la pregunta.
 - B15 y B16 sin regresión respecto a la variante estricta.
@@ -385,10 +386,10 @@ Total del ciclo < US$1,50.
 | --- | --- | --- |
 | A | **cerrada** 16-sep 17:05 | Prod `474352cd`. D12 + ficha dueño 16:54 `88db1686735fa87aeb96e719115c0681af2635b75077810b5b7a9c24379e7d04`. `entrevista_h1.md` `207631139d070c8403c794ff5bd036fdeadb399832fde0ecc01897bcc18e730a`; `caso_congelado.md` `7ed61fb587ee286626fb0af3b05bb0f7f9f898c680bfe979727297ef5edf0d32`; `lectura_corpus.md` `e55fac22933b8b5be00dd5a8e5097f624488a6c31ba1ef8f3ca0b7d01b698a39`; `diagnostico.md` `88f7c627ba0e9972b22ea4888d7c25984ac0ce1641642db061080ba3c6768325`; `diagnostico_run.txt` `de52d80a6f0e9794515140e6898a24267872f061cf51617e62771b531bc7418d`; batería borrador `7094d0fcda3d09665c16f277682053ad00464fbb00eadd78311562d4cffd6bfa`. 10 R&G + 1 Retrieve, US$0,1058. Defecto: generación/contrato (H2 + receta sin alcance); recall OK. H9: línea `photo_evidence_block`. |
 | B (PR) | **cerrada** 16-sep | Commit `d01d441`. `generation.txt` `3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196`. D13 on. Desplegado. |
-| B (humo) | **FALLA** r3; v14 en curso 17-sep | r3 `d09a7a3` H4 2/2 Sorry (`humo_2026-09-17_r3.txt` `952c97beb6087a889e12c29bb40aabd4a26f7d77d33477e13132096af61595a6`). v13 («not pertinent») vaciaba el contenido escribible (mismo modo Fase 3 Q12). v14: mismatch = respuesta completa; techo 1,08×. |
+| B (humo) | **D14** r4 + copia retry | r4 `6c7ffea`: H4 2/2 Sorry; H1–H3/H5–H8 OK. `humo_2026-09-17_r4.txt` `3a870f69baeb36971c59cbc81b16f5567fe36a8e21ce00c2f62e8f80b37611d2`. Gate pasa a «salida inservible»; H4 nombrado. Copia `rag.generation_retry` + test + script humo. |
 | B (batería) | bloqueada (humo) | — |
 | C | pendiente | — |
-| Activación | **D13 live** (`d01d441`, todas las cuentas) | Schindler del guion ahora Sorry. Rollback: `ENABLED: "false"` + `kamal app boot`. |
+| Activación | **D13+D14 live** | gs-v1 todas las cuentas. H4: copia `generation_retry` pide código/placa (no reenvío). Rollback: `ENABLED: "false"` + `kamal app boot`. |
 
 Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fases posteriores afectadas, completar el prompt de la fase siguiente en el Anexo A y, si un hallazgo contradice una restricción o el gate, escalarlo como decisión humana numerada (D12, D13, …) en §0.2 en lugar de ejecutarlo.
 
@@ -396,7 +397,7 @@ Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fa
 
 **Pie común (añadir al final de cada prompt):**
 
-> Lee primero `AGENTS.md`, `app/services/rag/AGENTS.md`, `script/AGENTS.md`, `test/AGENTS.md` y este plan completo (`docs/PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md`), en especial §0.2 (decisiones fijadas), §11 (restricciones y estado) y la fila de tu fase. No reabras decisiones D1–D13. Si un hallazgo las contradice, detente y escríbelo como decisión pendiente en §0.2 con evidencia. No toques `bulk_chunks/` ni los scripts históricos. Todo artefacto va a `tmp/razonamiento_tecnico/<fase>/` con `sha256sum` anotado en §11. Al terminar: actualiza tu fila de §11, corrige las fases posteriores afectadas y completa el prompt de la fase siguiente en este anexo. Una fase por sesión.
+> Lee primero `AGENTS.md`, `app/services/rag/AGENTS.md`, `script/AGENTS.md`, `test/AGENTS.md` y este plan completo (`docs/PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md`), en especial §0.2 (decisiones fijadas), §11 (restricciones y estado) y la fila de tu fase. No reabras decisiones D1–D14. Si un hallazgo las contradice, detente y escríbelo como decisión pendiente en §0.2 con evidencia. No toques `bulk_chunks/` ni los scripts históricos. Todo artefacto va a `tmp/razonamiento_tecnico/<fase>/` con `sha256sum` anotado en §11. Al terminar: actualiza tu fila de §11, corrige las fases posteriores afectadas y completa el prompt de la fase siguiente en este anexo. Una fase por sesión.
 
 ### A.1 Fase A — Diagnóstico (sin cambios de código)
 
@@ -408,7 +409,7 @@ Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fa
 
 ### A.3 Fase B — Humo y batería
 
-> **Humo r1–r3 FALLA (H4).** Tras v14 y deploy: repetir §5.3 (8×2). Registrar texto de H4, H5 y H7 (rama). Si verde → batería §8. Si Sorry → no iterar el mismo veredicto «not pertinent». No clasifiques la batería.
+> **D14 (17-sep).** Humo r4: H4 colapso nombrado; las otras 7 OK. No reabrir FORMAT. Tras desplegar la copia `generation_retry`: repetir §5.3 con el gate nuevo (H4 canned + copia útil = PASS). Si verde → batería §8. Segundo colapso en B01–B16 → rollback. A/B `custom_config` de líneas GS: después de la batería. No clasifiques la batería.
 
 ### A.4 Fase C — Ficha senior
 

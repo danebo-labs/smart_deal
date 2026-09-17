@@ -1069,10 +1069,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         assert result[:diagnostics][:canned_with_retrieval]
         assert_equal 0, result[:diagnostics][:raw_cited_references]
         assert_equal 1, result[:diagnostics][:safety_evidence_chunks].size
-        # Evidence was retrieved, so the technician must read a retryable failure —
-        # never an absence that implies the manual lacks the datum.
-        assert_includes result[:answer], 'Vuelve a enviar la consulta'
-        assert_not_includes result[:answer], 'No se encontró información'
+        # Evidence was retrieved, so this is not "the manual lacks the datum".
+        # Blind resend loops (Fase 4 hallazgo 4); ask for the missing identifier.
+        assert_includes result[:answer], "No pude redactar la respuesta a esta consulta"
+        assert_includes result[:answer], "código exacto"
+        assert_not_includes result[:answer], "Vuelve a enviar la consulta"
+        assert_not_includes result[:answer], "No se encontró información"
       end
     end
 
@@ -1080,6 +1082,36 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_equal true, quality["canned_no_results"]
     assert_equal true, quality["canned_with_retrieval"]
     assert_equal "fallback_retrieve_top3", quality["evidence_mode"]
+  end
+
+  test "canned-with-retrieval English copy asks for identifiers instead of a blind retry" do
+    canned_response = ::OpenStruct.new(
+      output: ::OpenStruct.new(text: "Sorry, I am unable to assist you with this request."),
+      citations: [],
+      session_id: TEST_SESSION_ID
+    )
+    retrieved_result = ::OpenStruct.new(
+      content: ::OpenStruct.new(text: "Documented content that was retrieved."),
+      location: ::OpenStruct.new(
+        s3_location: ::OpenStruct.new(uri: "s3://bucket/manual.pdf")
+      ),
+      metadata: { "canonical_name" => "Manual" }
+    )
+
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: canned_response) do |client|
+      client.retrieve_response = ::OpenStruct.new(retrieval_results: [ retrieved_result ])
+      result = BedrockRagService.new(account: @account).query(
+        "what is EC2",
+        include_diagnostics: true,
+        response_locale: :en
+      )
+
+      assert result[:diagnostics][:canned_with_retrieval]
+      assert_includes result[:answer], "I could not compose an answer to this query"
+      assert_includes result[:answer], "exact display or nameplate code"
+      assert_not_includes result[:answer], "Send the query again"
+      assert_not_includes result[:answer], "No information was found"
+    end
   end
 
   test 'does not flag genuine no-results when fallback retrieval is empty' do

@@ -28,7 +28,7 @@ en:
     image_indexing_stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     no_results_found: "No information was found in the Knowledge Base to answer your query. You can ask questions about the indexed documents, or upload a new document to expand the knowledge base."
     pinned_no_results: "DATA_NOT_AVAILABLE: the pinned documents do not contain enough evidence to answer this query."
-    generation_retry: "I found related documentation but could not compose the answer on this attempt. Send the query again; if it persists, name the manufacturer and the exact board."
+    generation_retry: "I could not compose an answer to this query. Sending the same wording again usually fails: name the manufacturer, model, and the exact display or nameplate code, or attach a photo of the nameplate."
     data_not_available: "The document does not include this information"
     requires_field_verification: "Verify in the field or against the complete schematic"
     absence_total_contract: "**DATA_NOT_AVAILABLE** — the requested information is not documented; field verification is required."

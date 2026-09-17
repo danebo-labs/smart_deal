@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
-# Fase B §5.3 — gate de humo anti-«Sorry» (H6). 8 preguntas × 2 = 16 R&G.
-# Flag ya on en prod (D13). Stdin al contenedor web (script/AGENTS.md).
-# Un canned_with_retrieval, generation_retry o respuesta vacía aborta.
+# Fase B §5.3 / D14 — gate de humo: cero colapsos con salida inservible.
+# Flag on (D13). Stdin al contenedor web (script/AGENTS.md).
+# canned_with_retrieval en H4-schindler es el colapso nombrado: se registra, no
+# aborta, si la copia pide identificador y no invita a reenviar. Cualquier otro
+# canned_with_retrieval, retry ciego, o respuesta vacía aborta.
 #
 #   CID=$(ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@54.163.248.39 \
 #     "docker ps --filter label=service=smart-deal --filter label=role=web \
@@ -18,8 +20,11 @@ require "stringio"
 
 HARD_CAP = 16
 EXPECTED_SHA = "6a8abaed1e56bc880c7844f75288a7406973b9595c09e7fecafa928a473a789f"
-RETRY_ES = "Encontré documentación relacionada, pero no pude redactar la respuesta"
-RETRY_EN = "I found related documentation but could not compose the answer"
+RETRY_ES = "No pude redactar la respuesta a esta consulta"
+RETRY_EN = "I could not compose an answer to this query"
+BLIND_RETRY_ES = "Vuelve a enviar la consulta"
+BLIND_RETRY_EN = "Send the query again"
+KNOWN_COLLAPSE_IDS = %w[H4-schindler].freeze
 
 QUESTIONS = [
   { id: "H1-lcb", text: "¿Cómo se hace la puesta en servicio de la placa LCB II y qué se verifica antes de energizar?" },
@@ -137,18 +142,22 @@ rg_count = 0
     gs = rag_quality && rag_quality["grounded_synthesis"]
     retry_hit = answer.include?(RETRY_ES) || answer.include?(RETRY_EN)
     empty = answer.strip.empty?
+    known = KNOWN_COLLAPSE_IDS.include?(q[:id])
+    blind = answer.include?(BLIND_RETRY_ES) || answer.include?(BLIND_RETRY_EN)
 
     puts "=== #{q[:id]} r#{rep} billed=#{billed} rg=#{rg_count} lat=#{elapsed.round(1)}s mode=#{result.generation_mode}"
     puts "  contract_version=#{contract} grounded_synthesis=#{gs} canned_with_retrieval=#{canned}"
-    puts "  empty=#{empty} generation_retry=#{retry_hit} answer_len=#{answer.length}"
+    puts "  empty=#{empty} generation_retry=#{retry_hit} known_collapse=#{known && canned} answer_len=#{answer.length}"
     puts "  VISIBLE<<#{answer}>>"
     puts ""
 
     failures << "#{q[:id]} r#{rep}: contract #{contract}" if contract && contract != "gs-v1"
     failures << "#{q[:id]} r#{rep}: grounded_synthesis=#{gs}" if gs == false
-    failures << "#{q[:id]} r#{rep}: canned_with_retrieval" if canned
-    failures << "#{q[:id]} r#{rep}: generation_retry" if retry_hit
+    failures << "#{q[:id]} r#{rep}: canned_with_retrieval" if canned && !known
+    failures << "#{q[:id]} r#{rep}: generation_retry" if retry_hit && !known
     failures << "#{q[:id]} r#{rep}: empty" if empty
+    failures << "#{q[:id]} r#{rep}: known collapse still invites blind retry" if known && canned && blind
+    failures << "#{q[:id]} r#{rep}: known collapse missing identifier ask" if known && canned && !retry_hit
     abort_with("HARD_CAP superado") if rg_count > HARD_CAP
   end
 end

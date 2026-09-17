@@ -359,8 +359,9 @@ class BedrockRagService
           "BedrockRagService: canned 'Sorry' response despite retrieved evidence — treating as generation failure, not no-results"
         )
         # Evidence WAS retrieved, so the absence wording would tell the technician the
-        # manual lacks a datum it may well document. Surface a transient failure they
-        # can retry instead.
+        # manual lacks a datum it may well document. Do not invite a blind resend:
+        # Bedrock's canned Sorry repeats on the same wording (H4, D14). Ask for the
+        # identifier that would change the retrieve window.
         answer_text = localized_generation_retry(no_results_locale)
       end
 

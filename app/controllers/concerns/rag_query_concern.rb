@@ -61,8 +61,27 @@ module RagQueryConcern
 
     resolved_response_locale = resolve_response_locale(question, conv_session, override: response_locale)
 
-    resolved_account        = account || current_account
-    resolver_matches       = KbDocumentResolver.resolve_scoped(question, account: resolved_account)
+    resolved_account = account || current_account
+    # `question` stays the raw turn for locale, pin labels, and episode exclude.
+    # Only retrieval/generation sees `effective_question`.
+    followup = nil
+    effective_question = question
+    if images.empty? && documents.empty? && conv_session
+      followup = Rag::FollowupQueryRewriter.call(
+        question: question,
+        conversation_session: conv_session,
+        account: resolved_account,
+        correlation_id: correlation_id
+      )
+      effective_question = followup.applied ? followup.question : question
+      log_rag_followup(followup, question, correlation_id)
+    end
+
+    resolver_matches = if followup&.applied
+      followup.catalog_matches
+    else
+      KbDocumentResolver.resolve_scoped(question, account: resolved_account)
+    end
     pinned_uris            = Array(entity_s3_uris).compact
     pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
 
@@ -148,7 +167,7 @@ module RagQueryConcern
     document_uids           = documents.map { SecureRandom.uuid }
 
     result = QueryOrchestratorService.new(
-      question,
+      effective_question,
       images:              images,
       documents:           documents,
       document_uids:       document_uids,
@@ -212,6 +231,20 @@ module RagQueryConcern
   rescue StandardError => e
     log_rag_error("Query unexpected error", e, include_backtrace: true)
     RagResult.new(success?: false, error_type: :unexpected_error, error_message: e.message, error_class: e.class.name)
+  end
+
+  def log_rag_followup(followup, original, correlation_id)
+    effective = followup.applied ? followup.question : original
+    catalog_ids = Array(followup.catalog_matches).filter_map { |match| match.document&.id }
+    Rails.logger.info(
+      "[RAG_FOLLOWUP] applied=#{followup.applied} reason=#{followup.reason} " \
+      "correlation_id=#{correlation_id} " \
+      "previous_correlation_id=#{followup.previous_correlation_id} " \
+      "original_sha256=#{Digest::SHA256.hexdigest(original.to_s)} " \
+      "effective_sha256=#{Digest::SHA256.hexdigest(effective.to_s)} " \
+      "original_chars=#{original.to_s.length} effective_chars=#{effective.to_s.length} " \
+      "catalog_ids=#{catalog_ids.join(',')}"
+    )
   end
 
   # Defensive sanitizer applied to model answers before delivery.

@@ -1917,4 +1917,342 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   ensure
     original_flag.nil? ? ENV.delete("RAG_EPISODE_SCOPE_ENABLED") : ENV["RAG_EPISODE_SCOPE_ENABLED"] = original_flag
   end
+
+  # Rama A — continuidad determinista. La variable local `question` no se reasigna.
+  SPRING_QUESTION = "Cómo se ajustan los resortes de la fijación de cables ?"
+  FOLLOW_UP = "es Fuji Yida"
+  FOLLOW_CLOCK = Time.zone.parse("2026-09-18T13:56:28-03:00")
+  PLAIN_ASSISTANT = "La documentación recuperada no trae ese procedimiento."
+
+  test "follow-up sends the compound question and still excludes the original turn" do
+    create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+    session = build_followup_session(follow_up: FOLLOW_UP)
+    excludes = []
+    episode_users = []
+    wrap_episode_exclude(session, excludes, episode_users)
+    calls = []
+
+    result = nil
+    with_resolver_calls(calls) do
+      with_followup_orchestrator do |captured|
+        travel_to FOLLOW_CLOCK do
+          result = @controller.send(
+            :execute_rag_query, FOLLOW_UP,
+            conv_session: session, correlation_id: "query:follow", account: accounts(:legacy)
+          )
+        end
+
+        assert_equal "#{SPRING_QUESTION}\n#{FOLLOW_UP}", captured[:question]
+        assert_equal "query:follow", captured.dig(:kwargs, :correlation_id)
+      end
+    end
+
+    assert result.success?
+    assert_equal [ FOLLOW_UP ], excludes.uniq
+    assert episode_users.all? { |users| users == [ SPRING_QUESTION ] }
+    assert_equal [ "Fuji Yida", SPRING_QUESTION ], calls
+  end
+
+  test "a pin label keeps selection replies on the original text when the rewrite applies" do
+    create_followup_guide(display_name: "Panel Alfa manual", aliases: [ "Panel Alfa" ])
+    session = build_followup_session(follow_up: "Panel Alfa")
+    session.update!(active_entities: {
+      "Panel Alfa" => {
+        "canonical_name" => "Panel Alfa",
+        "aliases" => [ "Panel Alfa" ],
+        "source_uri" => "s3://bucket/panel-alfa.pdf"
+      }
+    })
+    excludes = []
+    wrap_episode_exclude(session, excludes, [])
+
+    result = nil
+    with_followup_orchestrator do |captured|
+      travel_to FOLLOW_CLOCK do
+        result = @controller.send(
+          :execute_rag_query, "Panel Alfa",
+          conv_session: session, correlation_id: "query:follow", account: accounts(:legacy)
+        )
+      end
+
+      assert_equal "#{SPRING_QUESTION}\nPanel Alfa", captured[:question]
+      context = captured.dig(:kwargs, :session_context).to_s
+      assert_includes context, 'named "Panel Alfa"'
+      assert_not_includes context, "#{SPRING_QUESTION}\n"
+    end
+
+    assert_equal [ "Panel Alfa" ], excludes.uniq
+    assert_equal SPRING_QUESTION, result.quick_replies.first[:query]
+  end
+
+  test "a non-web session does not rewrite and keeps the orchestrator input" do
+    create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+    session = build_followup_session(follow_up: FOLLOW_UP, channel: "whatsapp")
+    io = StringIO.new
+
+    with_followup_log(io) do
+      with_followup_orchestrator do |captured|
+        travel_to FOLLOW_CLOCK do
+          @controller.send(
+            :execute_rag_query, FOLLOW_UP,
+            conv_session: session, correlation_id: "query:follow", account: accounts(:legacy)
+          )
+        end
+
+        assert_equal FOLLOW_UP, captured[:question]
+      end
+    end
+
+    assert_match(/reason=non_web_channel/, io.string)
+    assert_match(/applied=false/, io.string)
+  end
+
+  test "reused catalog matches keep the short-input scope and query resolution" do
+    create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+    session = build_followup_session(follow_up: FOLLOW_UP)
+    account = accounts(:legacy)
+
+    with_followup_orchestrator do |captured|
+      travel_to FOLLOW_CLOCK do
+        expected = expected_short_scope(FOLLOW_UP, session, account)
+        @controller.send(
+          :execute_rag_query, FOLLOW_UP,
+          conv_session: session, correlation_id: "query:follow", account: account
+        )
+
+        assert_equal expected[:uris], captured.dig(:kwargs, :entity_s3_uris)
+        assert_equal expected[:auto_scope_filter], captured.dig(:kwargs, :auto_scope_filter)
+        assert_equal query_resolution_main_block(expected[:context]),
+                     query_resolution_main_block(captured.dig(:kwargs, :session_context))
+        assert_equal false, captured.dig(:kwargs, :auto_scope_filter)
+        assert_empty captured.dig(:kwargs, :entity_s3_uris)
+      end
+    end
+  end
+
+  test "a specific model designator auto-scopes and a bare brand does not" do
+    model_doc = create_followup_guide(display_name: "Control board MPK418", aliases: [ "board manual" ])
+    model_session = build_followup_session(follow_up: "MPK418")
+
+    with_followup_orchestrator do |captured|
+      travel_to FOLLOW_CLOCK do
+        @controller.send(
+          :execute_rag_query, "MPK418",
+          conv_session: model_session, correlation_id: "query:follow", account: accounts(:legacy)
+        )
+      end
+
+      assert_equal [ model_doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured.dig(:kwargs, :entity_s3_uris)
+      assert_equal true, captured.dig(:kwargs, :auto_scope_filter)
+    end
+
+    create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+    brand_session = build_followup_session(follow_up: "Fuji")
+    with_followup_orchestrator do |captured|
+      travel_to FOLLOW_CLOCK do
+        @controller.send(
+          :execute_rag_query, "Fuji",
+          conv_session: brand_session, correlation_id: "query:follow", account: accounts(:legacy)
+        )
+      end
+
+      assert_equal "Fuji", captured[:question]
+      assert_equal false, captured.dig(:kwargs, :auto_scope_filter)
+    end
+  end
+
+  test "another tenant, a new question, thanks, and an expired episode stay literal" do
+    create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+    foreign = build_followup_session(follow_up: FOLLOW_UP, account: accounts(:climb))
+    io = StringIO.new
+
+    with_followup_log(io) do
+      with_followup_orchestrator do |captured|
+        travel_to FOLLOW_CLOCK do
+          @controller.send(
+            :execute_rag_query, FOLLOW_UP,
+            conv_session: foreign, correlation_id: "query:follow", account: accounts(:legacy)
+          )
+        end
+        assert_equal FOLLOW_UP, captured[:question]
+      end
+    end
+    assert_match(/reason=account_mismatch/, io.string)
+
+    fresh = build_followup_session(follow_up: "y el torque?")
+    with_followup_orchestrator do |captured|
+      travel_to FOLLOW_CLOCK do
+        @controller.send(
+          :execute_rag_query, "y el torque?",
+          conv_session: fresh, correlation_id: "query:follow", account: accounts(:legacy)
+        )
+      end
+      assert_equal "y el torque?", captured[:question]
+    end
+
+    thanks = build_followup_session(follow_up: "gracias")
+    with_followup_orchestrator do |captured|
+      travel_to FOLLOW_CLOCK do
+        @controller.send(
+          :execute_rag_query, "gracias",
+          conv_session: thanks, correlation_id: "query:follow", account: accounts(:legacy)
+        )
+      end
+      assert_equal "gracias", captured[:question]
+    end
+
+    expired = build_followup_session(follow_up: FOLLOW_UP, question_ts: (FOLLOW_CLOCK - 5.hours).iso8601)
+    with_followup_log(io) do
+      with_followup_orchestrator do |captured|
+        travel_to FOLLOW_CLOCK do
+          @controller.send(
+            :execute_rag_query, FOLLOW_UP,
+            conv_session: expired, correlation_id: "query:follow", account: accounts(:legacy)
+          )
+        end
+        assert_equal FOLLOW_UP, captured[:question]
+      end
+    end
+    assert_match(/reason=no_episode/, io.string)
+  end
+
+  test "ambiguous correlation ids do not rewrite" do
+    create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+    session = build_followup_session(follow_up: FOLLOW_UP)
+    history = session.conversation_history
+    history << history.last.merge("ts" => "2026-09-18T13:56:20-03:00")
+    session.update!(conversation_history: history)
+    io = StringIO.new
+
+    with_followup_log(io) do
+      with_followup_orchestrator do |captured|
+        travel_to FOLLOW_CLOCK do
+          @controller.send(
+            :execute_rag_query, FOLLOW_UP,
+            conv_session: session, correlation_id: "query:follow", account: accounts(:legacy)
+          )
+        end
+        assert_equal FOLLOW_UP, captured[:question]
+      end
+    end
+
+    assert_match(/reason=ambiguous_history/, io.string)
+  end
+
+  test "a photo turn does not rewrite the question" do
+    create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+    session = build_followup_session(follow_up: FOLLOW_UP)
+    calls = []
+
+    with_resolver_calls(calls) do
+      with_followup_orchestrator do |captured|
+        travel_to FOLLOW_CLOCK do
+          @controller.send(
+            :execute_rag_query, FOLLOW_UP,
+            images: [ { data: "abc", media_type: "image/jpeg" } ],
+            conv_session: session, correlation_id: "query:follow", account: accounts(:legacy)
+          )
+        end
+        assert_equal FOLLOW_UP, captured[:question]
+      end
+    end
+
+    assert_not_includes calls, "Fuji Yida"
+    assert_includes calls, FOLLOW_UP
+  end
+
+  private
+
+  def build_followup_session(follow_up:, channel: "web", account: accounts(:legacy), question_ts: "2026-09-18T13:49:25-03:00")
+    ConversationSession.create!(
+      identifier: "followup-concern-#{SecureRandom.hex(6)}",
+      channel: channel,
+      account: account,
+      expires_at: 30.days.from_now,
+      conversation_history: [
+        { "role" => "user", "content" => SPRING_QUESTION, "ts" => question_ts, "correlation_id" => "photo:spring" },
+        { "role" => "assistant", "content" => "[FOTO] Componente observado", "ts" => question_ts,
+          "correlation_id" => "photo:spring" },
+        { "role" => "assistant", "content" => PLAIN_ASSISTANT, "ts" => "2026-09-18T13:49:44-03:00",
+          "correlation_id" => "photo:spring" },
+        { "role" => "user", "content" => follow_up, "ts" => "2026-09-18T13:56:28-03:00",
+          "correlation_id" => "query:follow" }
+      ]
+    )
+  end
+
+  def create_followup_guide(display_name:, aliases:)
+    KbDocument.create!(
+      account: accounts(:legacy),
+      s3_key: "uploads/followup-concern/#{SecureRandom.hex(8)}.pdf",
+      display_name: display_name,
+      aliases: aliases
+    )
+  end
+
+  def wrap_episode_exclude(session, excludes, episode_users)
+    original = session.method(:episode_user_messages)
+    session.define_singleton_method(:episode_user_messages) do |exclude: nil, now: Time.current|
+      excludes << exclude
+      returned = original.call(exclude: exclude, now: now)
+      episode_users << returned
+      returned
+    end
+  end
+
+  def with_followup_orchestrator
+    captured = {}
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |*args, **kwargs|
+      captured[:question] = args[0]
+      captured[:kwargs] = kwargs
+      mock
+    end
+    yield captured
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+  end
+
+  def with_resolver_calls(calls)
+    original = KbDocumentResolver.method(:resolve_scoped)
+    KbDocumentResolver.define_singleton_method(:resolve_scoped) do |query, account:|
+      calls << query
+      original.call(query, account: account)
+    end
+    yield
+  ensure
+    KbDocumentResolver.define_singleton_method(:resolve_scoped) do |*args, **kwargs|
+      original.call(*args, **kwargs)
+    end
+  end
+
+  def with_followup_log(io)
+    previous = Rails.logger
+    Rails.logger = ActiveSupport::Logger.new(io)
+    yield
+  ensure
+    Rails.logger = previous
+  end
+
+  def expected_short_scope(question, session, account)
+    matches = KbDocumentResolver.resolve_scoped(question, account: account)
+    episode_matches, episode_candidates = @controller.send(:inherit_episode_scope, question, session, account)
+    candidates = @controller.send(:auto_scope_uris_from, matches)
+    inherited = false
+    if candidates.empty? && episode_candidates.any?
+      candidates = episode_candidates
+      inherited = true
+    end
+    mentioned = @controller.send(:mentioned_uris_from, Array(matches) + episode_matches)
+    scope = @controller.send(
+      :resolve_retrieval_scope,
+      pinned_uris: [], candidate_uris: candidates, mentioned_uris: mentioned
+    )
+    scope.reason = "episode_inherited" if inherited && scope.uris.any?
+    context = @controller.send(:merge_resolver_context, nil, Array(matches) + episode_matches, in_scope_uris: scope.uris)
+    context = @controller.send(:merge_selection_intent, context, question, session)
+    { uris: scope.uris, auto_scope_filter: scope.auto_scope_filter, context: context }
+  end
 end

@@ -15,6 +15,7 @@ class PilotMetricsPackageTest < ActiveSupport::TestCase
     interaction = report.dig("interactions", "by_correlation")[1]
     interaction["input_tokens"] = 100
     interaction["output_tokens"] = 20
+    interaction["attributed_cost_usd"] = 0.011201
     interaction["audit"] = {
       "question" => "¿Pregunta completa?",
       "answer" => "Respuesta completa y auditable.",
@@ -36,6 +37,8 @@ class PilotMetricsPackageTest < ActiveSupport::TestCase
       query:aa0fce1b-7849-4a47-b09a-377d6c07419f,no,no,not_helpful
     CSV
     previous_argv = ARGV.dup
+    previous_show_cost = ENV["PILOT_DOSSIER_SHOW_COST"]
+    ENV.delete("PILOT_DOSSIER_SHOW_COST")
     ARGV.replace([ report_path, tmpdir, outcomes_path ])
 
     capture_io { load Rails.root.join("script/pilot_metrics_package.rb") }
@@ -56,10 +59,15 @@ class PilotMetricsPackageTest < ActiveSupport::TestCase
     assert_includes dossier, "Texto completo del chunk."
     assert_includes dossier, "query:20c886b3-234f-425b-8908-92f1487bd3af"
     assert_no_match(%r{https?://}, dossier)
+    assert_not_includes dossier, "Costo por respuesta"
+    assert_no_match(/tokens:/, dossier)
+    assert_no_match(/costo:/, dossier)
 
     rows = CSV.read(File.join(tmpdir, "interactions.csv"), headers: true)
     assert_equal 11, rows.size
-    assert_equal "¿Pregunta completa?", rows.find { |row| row["correlation_id"] == interaction["correlation_id"] }["question"]
+    matched = rows.find { |row| row["correlation_id"] == interaction["correlation_id"] }
+    assert_equal "¿Pregunta completa?", matched["question"]
+    assert_equal "0.011201", matched["attributed_cost_usd"]
 
     bad_outcomes = File.join(tmpdir, "bad-outcomes.csv")
     File.write(bad_outcomes, "correlation_id,correct_answer,resolved\n")
@@ -74,7 +82,40 @@ class PilotMetricsPackageTest < ActiveSupport::TestCase
     end
     assert_equal 1, error.status
   ensure
+    restore_dossier_show_cost(previous_show_cost)
     ARGV.replace(previous_argv) if previous_argv
     FileUtils.remove_entry(tmpdir) if tmpdir && File.exist?(tmpdir)
+  end
+
+  test "HTML dossier restores cost and tokens when PILOT_DOSSIER_SHOW_COST is true" do
+    tmpdir = Dir.mktmpdir("pilot-metrics-package-cost")
+    report_path = File.join(tmpdir, "report.json")
+    File.write(
+      report_path,
+      Rails.root.join("test/fixtures/files/pilot_metrics_11_interactions.json").read
+    )
+    previous_argv = ARGV.dup
+    previous_show_cost = ENV["PILOT_DOSSIER_SHOW_COST"]
+    ENV["PILOT_DOSSIER_SHOW_COST"] = "true"
+    ARGV.replace([ report_path, tmpdir ])
+
+    capture_io { load Rails.root.join("script/pilot_metrics_package.rb") }
+
+    dossier = File.read(File.join(tmpdir, "dossier.html"))
+    assert_includes dossier, "Costo por respuesta"
+    assert_match(/tokens:/, dossier)
+    assert_match(/costo:/, dossier)
+  ensure
+    restore_dossier_show_cost(previous_show_cost)
+    ARGV.replace(previous_argv) if previous_argv
+    FileUtils.remove_entry(tmpdir) if tmpdir && File.exist?(tmpdir)
+  end
+
+  def restore_dossier_show_cost(previous)
+    if previous
+      ENV["PILOT_DOSSIER_SHOW_COST"] = previous
+    else
+      ENV.delete("PILOT_DOSSIER_SHOW_COST")
+    end
   end
 end

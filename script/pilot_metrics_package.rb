@@ -15,6 +15,10 @@ class PilotMetricsPackage
     chunks input_tokens output_tokens attributed_cost_usd correct_answer resolved
     technician_helpfulness
   ].freeze
+  # HTML dossier is the demo-facing artifact. Prep Gonzalo §8 pilar 6 / §11:
+  # show usage and trace, never COGS or tokens. JSON/CSV/report.txt keep cost.
+  # Flip to true after the meeting. Override with PILOT_DOSSIER_SHOW_COST=true.
+  DOSSIER_SHOW_COST = ENV["PILOT_DOSSIER_SHOW_COST"] == "true"
 
   def initialize(report_path:, output_dir:, outcomes_path: nil)
     @report_path = report_path
@@ -115,12 +119,16 @@ class PilotMetricsPackage
   def value_metrics_html(value)
     metrics = [
       [ "Respuestas auditables", metric(value.dig(:auditability, :audited_answer_rate), percent: true) ],
-      [ "Tasa de abstención", metric(value.dig(:precision_and_safety, :abstention_rate), percent: true) ],
-      [ "Costo por respuesta", metric(value.dig(:value_capture, :cost_per_answered_interaction_usd), money: true) ],
+      [ "Tasa de abstención", metric(value.dig(:precision_and_safety, :abstention_rate), percent: true) ]
+    ]
+    if DOSSIER_SHOW_COST
+      metrics << [ "Costo por respuesta", metric(value.dig(:value_capture, :cost_per_answered_interaction_usd), money: true) ]
+    end
+    metrics.concat([
       [ "Tiempo de respuesta p50", metric(value.dig(:value_capture, :answer_time_p50_s), seconds: true) ],
       [ "Tiempo de respuesta p95", metric(value.dig(:value_capture, :answer_time_p95_s), seconds: true) ],
       [ "Usuarios activos", metric(value.dig(:adoption, :active_users)) ]
-    ]
+    ])
     %(<div class="metrics">#{metrics.map { |label, raw| %(<div class="metric">#{escape(label)}<strong>#{escape(raw)}</strong></div>) }.join}</div>)
   end
 
@@ -159,11 +167,17 @@ class PilotMetricsPackage
         #{chunks_html(chunks)}
         <div class="trace">
           <span>correlation_id: #{escape(interaction["correlation_id"] || "n/a")}</span>
-          <span>tokens: #{escape(interaction["input_tokens"] || 0)} in / #{escape(interaction["output_tokens"] || 0)} out</span>
-          <span>costo: #{escape(metric(interaction["attributed_cost_usd"], money: true))}</span>
+          #{dossier_cost_trace_html(interaction)}
         </div>
       </article>
     HTML
+  end
+
+  def dossier_cost_trace_html(interaction)
+    return "" unless DOSSIER_SHOW_COST
+
+    "<span>tokens: #{escape(interaction["input_tokens"] || 0)} in / #{escape(interaction["output_tokens"] || 0)} out</span>" \
+      "<span>costo: #{escape(metric(interaction["attributed_cost_usd"], money: true))}</span>"
   end
 
   def chunks_html(chunks)

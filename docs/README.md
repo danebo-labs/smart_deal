@@ -63,6 +63,7 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 | [PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md](PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md) | **Closed (D18).** gs-v1 live. Case-3 hitch recipe is a declared product limit, not a named person. Generation-contract items 1–6 moved to the backlog below. |
 | [BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md](BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md) | Backlog for gs-v1 generation-contract items 1–6, plus web_v1 ingest identity (same source sha mints a second uid). Not a Fase D of the plan above. |
 | [PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md](PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md) | F0 y F1 cerradas. F1: rama A determinista, sin generation.txt. F2 no corrida. CS-D02: respuesta de copiloto e hipótesis desde chunks existentes; lever de generación en otra sesión distinta de F1, con actualización de PRODUCT_ROADMAP/AGENTS al implementarlo. Sin lever de ingesta. D18 cerrado. |
+| [PLAN_HILO_CONSULTA_2026-09-21.md](PLAN_HILO_CONSULTA_2026-09-21.md) | **F0 cerrada y F1 implementada 21-sep noche, sin desplegar.** Unión determinista cuando queda un tramo; el menú (máx. 4 chips) es el fallback. Episodio real: se une, 114 caracteres. Flag `RAG_THREAD_MENU_ENABLED`. Holdout, Fase G y Fase S no corridas. |
 
 ## Preserved capabilities that are disabled in the MVP pilot
 

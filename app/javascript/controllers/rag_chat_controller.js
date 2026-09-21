@@ -936,12 +936,12 @@ export default class extends Controller {
     this.scrollToMessageTop(answerRow)
   }
 
-  renderQuickReplies(replies) {
-    const buttons = replies.slice(0, 3).map((reply) => {
+  renderQuickReplies(replies, ariaLabel = "Opciones de placa") {
+    const buttons = replies.slice(0, 4).map((reply) => {
       const label = typeof reply === "string" ? reply : reply.label
       const query = typeof reply === "string" ? reply : reply.query
       const safeLabel = this.escapeHtml(label || "")
-      const safeQuery = this.escapeHtml(query || label || "")
+      const safeQuery = this.escapeAttribute(query || label || "")
       return `<button type="button"
                 data-action="click->rag-chat#sendQuickReply"
                 data-query="${safeQuery}"
@@ -949,7 +949,14 @@ export default class extends Controller {
                 ${safeLabel}
               </button>`
     }).join("")
-    return `<div class="flex w-full flex-col gap-2" aria-label="Opciones de placa">${buttons}</div>`
+    return `<div class="flex w-full flex-col gap-2" aria-label="${this.escapeAttribute(ariaLabel)}">${buttons}</div>`
+  }
+
+  escapeAttribute(text) {
+    return this.escapeHtml(text)
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+      .replace(/\n/g, "&#10;")
   }
 
   sendQuickReply(event) {

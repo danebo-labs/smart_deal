@@ -177,6 +177,18 @@ class Rag::FollowupQueryRewriterTest < ActiveSupport::TestCase
     assert_equal "ambiguous_history", result.reason
   end
 
+  test "the thread menu copy does not block a catalog follow-up" do
+    create_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
+
+    %i[es en].each do |locale|
+      prompt = I18n.t("rag.thread_menu_prompt", locale: locale)
+      result = rewrite(build_session(pair_history(assistant: prompt)), FOLLOW)
+
+      assert result.applied, locale
+      assert_equal "rewritten", result.reason
+    end
+  end
+
   test "an intervening user turn invalidates the pair" do
     create_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
     later = [ user_row("y el otro equipo?", "2026-09-18T13:55:00-03:00", "query:middle") ]

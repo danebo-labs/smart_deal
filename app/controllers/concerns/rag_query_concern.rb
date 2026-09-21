@@ -60,6 +60,7 @@ module RagQueryConcern
     end
 
     resolved_response_locale = resolve_response_locale(question, conv_session, override: response_locale)
+    resolved_output_channel = output_channel&.to_sym || :web
 
     resolved_account = account || current_account
     # `question` stays the raw turn for locale, pin labels, and episode exclude.
@@ -75,12 +76,29 @@ module RagQueryConcern
       )
       effective_question = followup.applied ? followup.question : question
       log_rag_followup(followup, question, correlation_id)
+
+      if thread_menu_applicable?(followup, conv_session, resolved_output_channel) &&
+         !selection_turn?(question, conv_session)
+        thread = Rag::EpisodeThreadResolver.call(
+          question: question,
+          conversation_session: conv_session,
+          correlation_id: correlation_id,
+          locale: resolved_response_locale,
+          now: Time.current
+        )
+        case thread.outcome
+        when :join
+          effective_question = thread.composed
+        when :menu
+          return thread_menu_result(thread, resolved_response_locale, correlation_id)
+        end
+      end
     end
 
     resolver_matches = if followup&.applied
       followup.catalog_matches
     else
-      KbDocumentResolver.resolve_scoped(question, account: resolved_account)
+      KbDocumentResolver.resolve_scoped(effective_question, account: resolved_account)
     end
     pinned_uris            = Array(entity_s3_uris).compact
     pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
@@ -126,7 +144,6 @@ module RagQueryConcern
       )
     end
 
-    resolved_output_channel = output_channel&.to_sym || :web
     episode_scope_required  = inherited && scope.uris.any?
 
     # Turno de selección puro: el texto es el nombre del pin que el toggle de
@@ -231,6 +248,31 @@ module RagQueryConcern
   rescue StandardError => e
     log_rag_error("Query unexpected error", e, include_backtrace: true)
     RagResult.new(success?: false, error_type: :unexpected_error, error_message: e.message, error_class: e.class.name)
+  end
+
+  def thread_menu_applicable?(followup, conv_session, output_channel)
+    return false unless Rag::ThreadMenuFlag.enabled?
+    return false if followup.nil? || followup.applied
+    return false if %w[no_session non_web_channel account_mismatch].include?(followup.reason)
+    return false if output_channel == :whatsapp
+    return false unless conv_session.respond_to?(:channel)
+
+    (output_channel == :web && conv_session.channel == "web") ||
+      (SharedSession::ENABLED && conv_session.channel == SharedSession::CHANNEL && output_channel != :whatsapp)
+  end
+
+  def thread_menu_result(thread, locale, correlation_id)
+    RagResult.new(
+      success?:        true,
+      answer:          I18n.t("rag.thread_menu_prompt", locale: locale),
+      citations:       [],
+      session_id:      nil,
+      response_locale: locale.to_s,
+      generation_mode: "deterministic_thread_menu",
+      model_invoked:   false,
+      quick_replies:   thread.options,
+      correlation_id:  correlation_id
+    )
   end
 
   def log_rag_followup(followup, original, correlation_id)

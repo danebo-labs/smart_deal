@@ -37,6 +37,45 @@ module Rag
       ).call
     end
 
+    def self.new_question?(text)
+      return false if text.blank?
+      return true if text.include?("?") || text.include?("¿")
+
+      normalize_label(text).match?(LEADING_INTERROGATIVE)
+    end
+
+    def self.closed_followup_shape?(text)
+      return false if text.blank? || text.include?("\n")
+      return false if text.length > MAX_FOLLOWUP_CHARS
+
+      text.split(/\s+/).size <= MAX_FOLLOWUP_TOKENS
+    end
+
+    def self.explicit_question?(text)
+      stripped = text.to_s.strip
+      return false if stripped.blank? || stripped.start_with?("[FOTO]")
+      return true if stripped.include?("?") || stripped.include?("¿")
+
+      normalize_label(stripped).match?(TECHNICAL_LEXEME)
+    end
+
+    def self.stored_whole?(text)
+      value = text.to_s
+      return false if value.length > ConversationSession::MAX_MSG_LENGTH
+      return false if value.length == ConversationSession::MAX_MSG_LENGTH && value.end_with?("...")
+
+      true
+    end
+
+    def self.normalize_label(value)
+      value.to_s
+           .unicode_normalize(:nfkd)
+           .gsub(/\p{Mn}/, "")
+           .downcase
+           .gsub(/[^\p{L}\d]+/, " ")
+           .squish
+    end
+
     def initialize(question:, conversation_session:, account:, correlation_id:, now:)
       @question = question
       @conversation_session = conversation_session
@@ -115,17 +154,11 @@ module Rag
     end
 
     def new_question?(text)
-      return false if text.blank?
-      return true if text.include?("?") || text.include?("¿")
-
-      normalize_label(text).match?(LEADING_INTERROGATIVE)
+      self.class.new_question?(text)
     end
 
     def closed_followup_shape?(text)
-      return false if text.blank? || text.include?("\n")
-      return false if text.length > MAX_FOLLOWUP_CHARS
-
-      text.split(/\s+/).size <= MAX_FOLLOWUP_TOKENS
+      self.class.closed_followup_shape?(text)
     end
 
     def discriminant_pair
@@ -206,19 +239,11 @@ module Rag
     end
 
     def explicit_question?(text)
-      stripped = text.to_s.strip
-      return false if stripped.blank? || stripped.start_with?("[FOTO]")
-      return true if stripped.include?("?") || stripped.include?("¿")
-
-      normalize_label(stripped).match?(TECHNICAL_LEXEME)
+      self.class.explicit_question?(text)
     end
 
     def stored_whole?(text)
-      value = text.to_s
-      return false if value.length > ConversationSession::MAX_MSG_LENGTH
-      return false if value.length == ConversationSession::MAX_MSG_LENGTH && value.end_with?("...")
-
-      true
+      self.class.stored_whole?(text)
     end
 
     def blocked_assistant?(text)
@@ -278,12 +303,7 @@ module Rag
     end
 
     def normalize_label(value)
-      value.to_s
-           .unicode_normalize(:nfkd)
-           .gsub(/\p{Mn}/, "")
-           .downcase
-           .gsub(/[^\p{L}\d]+/, " ")
-           .squish
+      self.class.normalize_label(value)
     end
 
     def parse_ts(value)

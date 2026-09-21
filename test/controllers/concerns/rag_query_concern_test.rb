@@ -2056,12 +2056,12 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal "Fuji", captured[:question]
+      assert_equal "#{SPRING_QUESTION}\nFuji", captured[:question]
       assert_equal false, captured.dig(:kwargs, :auto_scope_filter)
     end
   end
 
-  test "another tenant, a new question, thanks, and an expired episode stay literal" do
+  test "another tenant, a new question, and an expired episode stay literal; a short thanks joins the only thread" do
     create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
     foreign = build_followup_session(follow_up: FOLLOW_UP, account: accounts(:climb))
     io = StringIO.new
@@ -2098,7 +2098,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
           conv_session: thanks, correlation_id: "query:follow", account: accounts(:legacy)
         )
       end
-      assert_equal "gracias", captured[:question]
+      assert_equal "#{SPRING_QUESTION}\ngracias", captured[:question]
     end
 
     expired = build_followup_session(follow_up: FOLLOW_UP, question_ts: (FOLLOW_CLOCK - 5.hours).iso8601)
@@ -2161,7 +2161,214 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_includes calls, FOLLOW_UP
   end
 
+  THREAD_CLARIFY = "si, me refiero a resoretes de tension"
+  THREAD_SYNERGY = "ThyssenKrupp Synergy"
+  THREAD_U7 = "#{SPRING_QUESTION}\n#{THREAD_SYNERGY}"
+  THREAD_COMPOSED = "#{THREAD_U7}\n#{THREAD_CLARIFY}"
+  THREAD_NOW = Time.zone.parse("2026-09-21T16:17:47-03:00")
+  THREAD_CID = "query:ac78bcbf-735e-41f3-8782-f44e73695d9c"
+
+  test "the measured episode joins the clarification onto the spring thread" do
+    session = build_measured_episode_session
+    calls = []
+
+    result = nil
+    with_resolver_calls(calls) do
+      with_followup_orchestrator do |captured|
+        travel_to THREAD_NOW do
+          result = @controller.send(
+            :execute_rag_query, THREAD_CLARIFY,
+            conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy)
+          )
+        end
+
+        assert_equal THREAD_COMPOSED, captured[:question]
+        assert_equal 114, captured[:question].length
+      end
+    end
+
+    assert result.success?
+    assert_nil result.quick_replies
+    assert_includes calls, THREAD_COMPOSED
+  end
+
+  test "two distinct threads ask and do not call the orchestrator" do
+    session = build_two_thread_session
+    result = nil
+
+    with_followup_orchestrator do |captured|
+      travel_to THREAD_NOW do
+        result = @controller.send(
+          :execute_rag_query, THREAD_CLARIFY,
+          conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy)
+        )
+      end
+
+      assert_nil captured[:kwargs]
+    end
+
+    assert_equal "deterministic_thread_menu", result.generation_mode
+    assert_equal false, result.model_invoked
+    assert_equal I18n.t("rag.thread_menu_prompt", locale: :es), result.answer
+    assert_equal 3, result.quick_replies.size
+    assert_equal I18n.t("rag.thread_menu_new_query", locale: :es), result.quick_replies.last[:label]
+    assert_equal THREAD_CLARIFY, result.quick_replies.last[:query]
+    assert result.quick_replies.first[:query].include?("\n")
+    assert result.quick_replies.all? { |reply| reply[:label].exclude?("\n") && reply[:label].length <= 48 }
+  end
+
+  test "the thread menu flag off searches the clarification alone" do
+    previous = ENV["RAG_THREAD_MENU_ENABLED"]
+    ENV["RAG_THREAD_MENU_ENABLED"] = "false"
+    session = build_measured_episode_session
+
+    with_followup_orchestrator do |captured|
+      travel_to THREAD_NOW do
+        @controller.send(
+          :execute_rag_query, THREAD_CLARIFY,
+          conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy)
+        )
+      end
+
+      assert_equal THREAD_CLARIFY, captured[:question]
+    end
+  ensure
+    previous.nil? ? ENV.delete("RAG_THREAD_MENU_ENABLED") : ENV["RAG_THREAD_MENU_ENABLED"] = previous
+  end
+
+  test "a photo turn does not join the thread" do
+    session = build_measured_episode_session
+
+    with_followup_orchestrator do |captured|
+      travel_to THREAD_NOW do
+        @controller.send(
+          :execute_rag_query, THREAD_CLARIFY,
+          images: [ { data: "abc", media_type: "image/jpeg" } ],
+          conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy)
+        )
+      end
+
+      assert_equal THREAD_CLARIFY, captured[:question]
+    end
+  end
+
+  test "a pin label keeps the selection path ahead of the thread menu" do
+    session = build_two_thread_session(follow: "Panel Alfa", correlation_id: "query:pin")
+    session.update!(active_entities: {
+      "Panel Alfa" => {
+        "canonical_name" => "Panel Alfa",
+        "aliases" => [ "Panel Alfa" ],
+        "source_uri" => "s3://bucket/panel-alfa.pdf"
+      }
+    })
+
+    result = nil
+    with_followup_orchestrator do |captured|
+      travel_to THREAD_NOW do
+        result = @controller.send(
+          :execute_rag_query, "Panel Alfa",
+          conv_session: session, correlation_id: "query:pin", account: accounts(:legacy)
+        )
+      end
+
+      assert_equal "Panel Alfa", captured[:question]
+    end
+
+    assert_not_equal "deterministic_thread_menu", result.generation_mode
+  end
+
+  test "the same clarification after the menu is searched alone" do
+    session = build_two_thread_session
+    history = session.conversation_history
+    history.last["correlation_id"] = "query:first"
+    history << {
+      "role" => "assistant",
+      "content" => I18n.t("rag.thread_menu_prompt", locale: :es),
+      "ts" => "2026-09-21T16:17:41-03:00"
+    }
+    history << {
+      "role" => "user",
+      "content" => THREAD_CLARIFY,
+      "ts" => "2026-09-21T16:17:45-03:00",
+      "correlation_id" => THREAD_CID
+    }
+    session.update!(conversation_history: history)
+
+    with_followup_orchestrator do |captured|
+      travel_to THREAD_NOW do
+        @controller.send(
+          :execute_rag_query, THREAD_CLARIFY,
+          conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy)
+        )
+      end
+
+      assert_equal THREAD_CLARIFY, captured[:question]
+    end
+  end
+
+  test "the thread menu answer follows the response locale" do
+    session = build_two_thread_session
+    result = nil
+
+    with_followup_orchestrator do |_captured|
+      travel_to THREAD_NOW do
+        result = @controller.send(
+          :execute_rag_query, THREAD_CLARIFY,
+          conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy),
+          response_locale: :en
+        )
+      end
+    end
+
+    assert_equal I18n.t("rag.thread_menu_prompt", locale: :en), result.answer
+    assert_equal "This is a new question", result.quick_replies.last[:label]
+  end
+
   private
+
+  def build_measured_episode_session
+    build_thread_session([
+      [ "user", "EN la imgen, como se ajustan los resortes ?", "2026-09-21T16:01:19-03:00", "photo:u1" ],
+      [ "assistant", "foto", "2026-09-21T16:01:36-03:00", nil ],
+      [ "user", "si dame mas detalle del amarred de cables de suspension", "2026-09-21T16:02:23-03:00", "query:u2" ],
+      [ "assistant", "amarre", "2026-09-21T16:02:31-03:00", nil ],
+      [ "user", "ok, como seria para el caso Fuji Yida", "2026-09-21T16:03:13-03:00", "query:u3" ],
+      [ "assistant", "fuji", "2026-09-21T16:03:27-03:00", nil ],
+      [ "user", SPRING_QUESTION, "2026-09-21T16:10:15-03:00", "query:u4" ],
+      [ "assistant", "resortes", "2026-09-21T16:10:23-03:00", nil ],
+      [ "user", SPRING_QUESTION, "2026-09-21T16:10:37-03:00", "photo:u5" ],
+      [ "assistant", "foto", "2026-09-21T16:10:44-03:00", nil ],
+      [ "user", THREAD_SYNERGY, "2026-09-21T16:11:28-03:00", "query:u6" ],
+      [ "assistant", "synergy", "2026-09-21T16:11:35-03:00", nil ],
+      [ "user", THREAD_U7, "2026-09-21T16:16:57-03:00", "query:u7" ],
+      [ "assistant", "respuesta", "2026-09-21T16:17:02-03:00", nil ],
+      [ "user", THREAD_CLARIFY, "2026-09-21T16:17:40-03:00", THREAD_CID ]
+    ])
+  end
+
+  def build_two_thread_session(follow: THREAD_CLARIFY, correlation_id: THREAD_CID)
+    build_thread_session([
+      [ "user", "Cómo se ajusta el freno del motor ?", "2026-09-21T16:10:00-03:00", "query:brake" ],
+      [ "assistant", "freno", "2026-09-21T16:10:05-03:00", nil ],
+      [ "user", "Cómo se regula la puerta de cabina ?", "2026-09-21T16:14:00-03:00", "query:door" ],
+      [ "assistant", "puerta", "2026-09-21T16:14:05-03:00", nil ],
+      [ "user", follow, "2026-09-21T16:17:40-03:00", correlation_id ]
+    ])
+  end
+
+  def build_thread_session(rows)
+    ConversationSession.create!(
+      identifier: "thread-concern-#{SecureRandom.hex(6)}",
+      channel: "web",
+      account: accounts(:legacy),
+      expires_at: 30.days.from_now,
+      conversation_history: rows.map do |role, content, ts, correlation_id|
+        row = { "role" => role, "content" => content, "ts" => ts }
+        row["correlation_id"] = correlation_id if correlation_id
+        row
+      end
+    )
+  end
 
   def build_followup_session(follow_up:, channel: "web", account: accounts(:legacy), question_ts: "2026-09-18T13:49:25-03:00")
     ConversationSession.create!(

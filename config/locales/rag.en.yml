@@ -60,6 +60,8 @@ en:
       show_more_contexts: "View %{count} more contexts"
     ambiguous_model_prompt: "The retrieved evidence covers several boards or models — pick one or provide the exact manufacturer and board:"
     selection_turn_prompt: "You selected that document. Should we continue with your previous question, or do you want a summary of the document?"
+    thread_menu_prompt: "There is more than one question in this session. Choose which one this message continues."
+    thread_menu_new_query: "This is a new question"
     model_selection_query: "Manufacturer and board: %{model}"
     document_overview:
       document_heading: "Document: %{name}"

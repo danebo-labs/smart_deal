@@ -60,7 +60,8 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 | [rag/triaje_visual_medicion.md](rag/triaje_visual_medicion.md) | Phase 1 deliverable: per-page visual-complexity tiering of the 98 pages and Opus escalation cost projection |
 | [rag/hallazgos_gate_piloto.md](rag/hallazgos_gate_piloto.md) | Open findings ledger for the SEGURIDADES pilot gate |
 | [RAG_SEGURIDADES_STATUS.md](RAG_SEGURIDADES_STATUS.md) | Current SEGURIDADES production identity and gate status |
-| [PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md](PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md) | **Active (Fase B PR).** Grounded-synthesis generation contract (gs-v1); D13 on for all accounts with the PR. Fase A closed 16-sep. |
+| [PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md](PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md) | **Closed (D18).** gs-v1 live. Case-3 hitch recipe is a declared product limit, not a named person. Generation-contract items 1–6 moved to the backlog below. |
+| [BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md](BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md) | Backlog for gs-v1 generation-contract items 1–6, plus web_v1 ingest identity (same source sha mints a second uid). Not a Fase D of the plan above. |
 
 ## Preserved capabilities that are disabled in the MVP pilot
 

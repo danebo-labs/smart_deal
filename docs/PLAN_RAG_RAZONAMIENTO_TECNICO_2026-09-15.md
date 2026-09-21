@@ -1,6 +1,6 @@
 # Plan: razonamiento técnico sustentado y conocimiento experto
 
-Estado: propuesta; **Fase A cerrada**. Fecha: 15 de septiembre de 2026. Revisión v15 (17-sep): D14 — H4 colapso nombrado; `generation_retry` pide código/placa, no reenvío. `generation.txt` sin cambio (`6a8abaed…`).
+Estado: **ciclo cerrado (D18).** Fase A cerrada. Fase B cerrada parcial (D16). Fase C cerrada parcial (D17). Duplicado de nota retirado. Fecha: 15 de septiembre de 2026. Revisión v23 (18-sep): dependencia de persona retirada; rúbrica de 52 retirada; ítems 1–6 al backlog de contrato. `generation.txt` sin cambio (`6a8abaed…`). Flag on.
 
 Revisión v3 (15-sep, noche). v2 verificó el plan contra código y registro (§2.1). v3 añade §0 (guía de ejecución autónoma: decisiones fijadas, glosario, acceso a producción), §3.1 (preguntas discriminantes), especificaciones de implementación cerradas en §5, plantilla de ficha en §6, batería con casos numerados en §8 y Anexo A con los prompts de arranque por fase. v4 incorporó el proxy H1 v1. v5 lo sustituye por el proxy v2 (verificado contra el JPEG y H1): H1 se **confirma** en el núcleo y se **matiza** (ajuste fino vs grueso), no se refuta. Está escrito para que un agente lo ejecute fase por fase sin reabrir decisiones; cuando algo requiera criterio humano, el documento lo dice y nombra a quién.
 
@@ -30,10 +30,14 @@ Origen: pregunta real de Gonzalo en la demo del 11-sep («Cómo se ajustan los r
 | D8 | Batería: casos en `test/fixtures/files/grounded_synthesis_battery_v1.json` (versionado); ejecutor `script/grounded_synthesis_battery_2026-09.rb` (entrada por stdin en producción, `script/AGENTS.md`); salidas en `tmp/razonamiento_tecnico/<fase>/` con `sha256sum` anotado en §11. La clase por respuesta la asigna una persona con la rúbrica de §8; el script solo recoge y ordena. | Metodología `rag-precision-methodology.mdc`, principios 4 y 5. |
 | D9 | Si el Gate H8 (marcador `[n]` sobre frase interpretativa) falla, la variante se libera en modo «solo síntesis»: se retiran las líneas `GROUNDED_SYNTHESIS` del bloque de interpretación y se repite el gate. No se desactivan los guards de citas. | §5 v1. |
 | D10 | Ningún nombre de fabricante, modelo, componente o relación técnica concreta entra en código productivo ni en el prompt. Las reglas se expresan por clase (identificación, observación, foto, procedimiento, valor). | `test/architecture/no_hardcoded_equipment_test.rb`. |
-| D11 | Humano requerido en tres puntos: validación de H1 y de la ficha de evidencia (Fase A, paso 0 y 3), asignación de clase por respuesta en la batería (§8) y decisión de activar la flag en producción. **Activación decidida (D13).** Sigue haciendo falta la clasificación humana de la batería. Persona: el dueño del producto; técnico de dominio: Gonzalo o quien él designe. | D8; seguridad. |
+| D11 | Humano requerido en tres puntos **durante la ejecución**: validación de H1 y de la ficha de evidencia (Fase A, paso 0 y 3), asignación de clase por respuesta en la batería (§8) y decisión de activar la flag en producción. **Activación D13. Cierre B D16. C recortada D17. Cierre de ciclo D18:** la rúbrica de las 52 queda retirada; la receta de campo no depende de una persona nombrada. | D8; D16; D17; D18. |
 | D12 | **Aceptada (dueño, 16-sep 16:38).** El proxy v2 es insumo de Fase A paso 0; no sustituye a Gonzalo en la ficha (paso 3). Consecuencias en vigor: (a) H1 confirmada — longitud efectiva del cable; el resorte no se regula como pieza suelta; (b) fino = tuerca de varilla (ilustración); grueso = cuña/enchufe (p. ej. MiniSpace p. 239 de ese manual); (c) B02 describe la ilustración sin identidad ni receta; pregunta = texto de esa figura; (d) B01 sin modelo: cuántos cables y si hay resorte+tuerca; (e) magnitud = tensión; altura de resorte solo si el documento la fija; (f) no copiar al prompt ±5–10 %, pulsado, secuencia post-ajuste ni nombres de fabricante. H9 confirmado. | Entrevista canónica `tmp/razonamiento_tecnico/fase_a/entrevista_h1.md`; D11. |
 | D13 | **Aceptada (dueño, 16-sep 17:14).** gs-v1 se habilita en producción **con el PR de Fase B, para todas las cuentas**. Código: default off si ENV no es `"true"`. Prod: `RAG_GROUNDED_SYNTHESIS_ENABLED: "true"` en `config/deploy.yml` (`env.clear`, web+worker) y `config/deploy.yml.example`. **No** poner `RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS` en prod (lista vacía = todas). `.env.sample`: `ENABLED=true` y `ACCOUNT_IDS` comentada como restrictor opcional. Sin clasificador de ambigüedad (D1: cero LLM extra): el prompt de síntesis cubre la consulta ambigua/sin modelo. Rollback: `"false"` y aplicar env; no revertir el PR. | Dueño; sustituye el recorte a cuenta 3 de las 17:12. |
-| D14 | **Aceptada (dueño, 17-sep).** H4 (`¿Qué significa este código en un Schindler?`, sin código) es colapso R&G **nombrado** bajo gs-v1: 2/2 r3 `d09a7a3` y r4 `6c7ffea`. FORMAT ya autoriza el desajuste; H7 lo usa; H4 no genera. No se quita la barrera de transplante de procedimientos. No se apaga la flag. `rag.generation_retry` deja de invitar al reenvío ciego y pide fabricante, modelo, código exacto o foto. Gate §5.3: cero colapsos **con salida inservible**; `canned_with_retrieval` queda como telemetría. Un segundo colapso en B01–B16 detiene la batería y reabre rollback. A/B por `custom_config` de líneas GS: **después** de la batería, no bloquea. | r4; Fase 4 hallazgo 4 (bucle de reenvío). |
+| D14 | **Aceptada (dueño, 17-sep).** H4 (`¿Qué significa este código en un Schindler?`, sin código) es colapso R&G **nombrado** bajo gs-v1: 6/6 entre r3, r4, r5 y el control A del A/B 17-sep. FORMAT ya autoriza el desajuste; H7 lo usa; H4 no genera. No se quita la barrera de transplante de procedimientos. No se apaga la flag. `rag.generation_retry` deja de invitar al reenvío ciego y pide fabricante, modelo, código exacto o foto. Gate §5.3: cero colapsos **con salida inservible**; `canned_with_retrieval` queda como telemetría. A/B por `custom_config` de líneas GS individuales: **después** de la batería, no bloquea. La parada de la batería la escribe D15 (D14 ya no usa «un segundo colapso»). | r4; r5; A/B 17-sep; Fase 4 hallazgo 4 (bucle de reenvío). |
+| D15 | **Aceptada (dueño, 17-sep, brief A/B).** La regla «un colapso extra detiene la batería» se escribió asumiendo colapso determinista. r5 + A/B demuestran componente estocástica. Parada **estructural**: una pregunta que colapse en ≥2 de sus 3 repeticiones bajo gs-v1 detiene la batería y reabre rollback (es lo que hace H4). Un colapso aislado que produzca la copia D14 se registra como tasa y se compara contra el brazo estricto que la propia batería ya corre. Disparador cuantitativo de rollback: la tasa gs-v1 supera de forma clara a la estricta sobre las llamadas por variante de §8.2 (28 si se corren B03/B10/B11; 25 si se omiten los skipped). Arnés del A/B: inválido solo si las plantillas no discriminan (H3 A/C vs B con el mismo tipo de apertura) o si el control A (H4 gs) colapsa en menos de 2/3. Un colapso aislado de H4 bajo estricta no anula el experimento: el «B=0/3» del 11-sep era de otro `generation.txt`. | A/B `ab_colapso_h3_2026-09-17.txt`; sustituye la parada de D14. |
+| D16 | **Aceptada (dueño, 17-sep).** Fase B cierra **parcial**. Flag on. Sin rollback, sin palanca nueva, sin tocar `generation.txt`, `# NO MATCH`, flag ni temperatura. El hallazgo «no interpreta porque elige ausencia» queda **retirado**. `0/52` = emisión del rótulo, no de la conducta. **D18:** la rúbrica humana de las 52 se retira. Se creó para decidir entre cerrar, iterar o rollback; esa decisión ya se tomó con la lectura acotada de seis respuestas (`6a0d8a7b…`). Una rúbrica sin decisión colgando no se arrastra. | Lectura `6a0d8a7b…`; B14 r2 gs-v1. |
+| D17 | **Aceptada (dueño, 18-sep).** Fase C recortada, sin firma de campo. A1–A6 ya están en el corpus. Receta del amarre real de cinco cables con varilla: **DESCONOCIDO**. Se ingiere solo alcance + A1–A6 + dato faltante, rev. 0. **Prohibido** ingerir «Respuestas esperadas». B03 skipped (foto real). B10 skipped. B11 se corre. C cierra **parcial**. `bateria_2026-09-17.txt` es línea base previa; no se re-corre. | Nota `fd4303e9…`. |
+| D18 | **Aceptada (dueño, 18-sep).** Cierre de ciclo. Se retira la dependencia de persona: el hueco de receta aplicable al caso 3 no es una tarea nombrada a alguien que ya no está; es un límite del producto. La nota rev. 0 lo declara; B01 lo respeta y no inventa el amarre de cinco cables. Puede quedar abierto indefinidamente sin daño. La rúbrica de 52 se retira (véase D16). El único arreglo operativo de este cierre es el duplicado `ce1e04be…` vs `7cd6d699…`. Causa identificada sin reabrir: dos mint de `document_uid` sobre el mismo sha; la reparación de chunks no acuñó uid. Ítems 1–6 y esa idempotencia de ingesta van a [BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md](BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md). Riesgo de piloto (canal de validación de campo) en [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md), no aquí. | Dedup `script/fase_c_dedup_nota_2026-09-18.rb`. |
 
 ### 0.3 Glosario del caso (terminología de taller ↔ corpus)
 
@@ -93,7 +97,7 @@ Límite de esta revisión: no se inspeccionó el manual original ni se ejecutaro
 | H6 | Añadir texto al prompt puede **colapsar la generación** en el «Sorry» canónico. `EJECUCION_PRE_DEMO` Fase 3 lo midió 2/2 determinista con dos líneas de prohibición dentro de `NO MATCH` (`canned_with_retrieval=true`, cero citas). | `docs/EJECUCION_PRE_DEMO_2026-09-10.md` l. 126–199; `bedrock_rag_service.rb` l. 24–30, 302–316, 350–359. | Gate de humo (§5.3) antes de la batería; redacción en permisos positivos. |
 | H7 | `CitationAttributionGuard` fue **inerte** en el caso 3: la pregunta no nombra ninguna `section_identity` citada (`anchors` vacío). Su fail-safe I11 solo reemplaza la respuesta por `DATA_NOT_AVAILABLE` cuando `requires_evidence?` detecta identificadores, valores con unidad o estados LED/on/off sin cita. | `citation_attribution_guard.rb` l. 69–98; `bedrock_rag_service.rb` l. 379–395; `answer_safety_processor.rb` l. 110–122. | Un párrafo de «Interpretación técnica» con un valor numérico con unidad y sin marcador puede activar I11 y borrar toda la respuesta. Caso B07 de la batería. |
 | H8 | Bedrock decide los spans de cita (`generated_response_part.text_response_part.span`) y `add_span_citations` inserta `[n]` al final del pasaje. Un marcador puede caer sobre la frase de interpretación, presentando «C» como frase del fabricante. | `bedrock_rag_service.rb` l. 327–332; `app/services/bedrock/citation_processor.rb`. | Gate H8 en §8 y decisión D9. |
-| H9 | La foto del caso 3 devolvió `canonical_name="Fijación de Cables Motor"` y textos visibles «Características Motor», «Fijación de Cables», «BOLIVAR 242…». **Confirmado 16-sep:** JPEG de **pantalla de laptop**. La ilustración en esa hoja muestra, con razonable seguridad, un amarre elástico de **cinco** cables (enchufe de cuña, resorte de compresión, varilla roscada con tuerca, ramal muerto grapado). No es el conjunto físico en el hueco. Sin cotas ni instrucciones legibles. | Registro l. 141; JPEG `e6814d1ab3c145c8d0d3de117017232a642aba9655e72ad9321270d0e397deca`; entrevista H1 v2. | B02 puede nombrar lo observable de la ilustración; no tratarla como identidad ni como procedimiento. Pregunta útil: el texto que acompaña a esa figura en la misma hoja. B03 (foto real del amarre) sigue siendo hueco si Gonzalo no la entrega. |
+| H9 | La foto del caso 3 devolvió `canonical_name="Fijación de Cables Motor"` y textos visibles «Características Motor», «Fijación de Cables», «BOLIVAR 242…». **Confirmado 16-sep:** JPEG de **pantalla de laptop**. La ilustración en esa hoja muestra, con razonable seguridad, un amarre elástico de **cinco** cables (enchufe de cuña, resorte de compresión, varilla roscada con tuerca, ramal muerto grapado). No es el conjunto físico en el hueco. Sin cotas ni instrucciones legibles. | Registro l. 141; JPEG `e6814d1ab3c145c8d0d3de117017232a642aba9655e72ad9321270d0e397deca`; entrevista H1 v2. | B02 puede nombrar lo observable de la ilustración; no tratarla como identidad ni como procedimiento. B03 queda skipped: falta foto del conjunto real (D18, límite declarado). |
 | H10 | Retrieval no muestra defecto de recall para este caso: la pregunta no es `safety_critical` ni `exhaustive` → `OPEN_RESULTS = 8`, sin pin; el control texto-only recuperó 6 referencias de 4 documentos y la ruta foto 3 de 3. La p. 239 pertinente entró en ambas. | `rag_retrieval_profile.rb` l. 41–97; registro l. 135, 195. | Decisión D1. Si Fase A encuentra otra página pertinente que no entró, es hallazgo separado (aliases de ingestión), no `top_k`. |
 
 ### 2.2 Checkpoint 16-sep ~17:00 — commits de la mañana vs plan de ayer
@@ -160,7 +164,7 @@ Antes de tocar generación:
 0. **Validar H1** — hecho como proxy v2; D12 aceptada 16-sep 16:38.
 1. **Congelar el caso** — hecho: `caso_congelado.md`. HEAD `474352cd`; `generation.txt` sha256 `3999514bb5e2ef6dde167c1c35586f27a24124d7feed87292d68537faa2f4dfa`. Foto id=28. Pins actuales de sesión 6 no son los de la demo.
 2. **Leer corpus** — hecho: `lectura_corpus.md`. MiniSpace 239 ≠ receta del enchufe; esa receta es Yida 45–46.
-3. **Ficha de evidencia** — `ficha_evidencia.md` **firmada por el dueño (16-sep 16:54)**. Gonzalo queda para Fase C, no bloquea 4–5.
+3. **Ficha de evidencia** — `ficha_evidencia.md` **firmada por el dueño (16-sep 16:54)**. La receta de campo no formó parte de C (D17/D18).
 4. Diagnóstico R&G (≤ 20 llamadas) — hecho: 10 R&G + 1 Retrieve, US$0,1058. `diagnostico.md`.
 5. Clasificación por consulta — hecho. Defecto: **generación/contrato** (abstención con evidencia en ventana **o** receta Yida/KONE sin alcance). Recall de 239 y Yida 45 OK. H9: añadir línea a `photo_evidence_block`.
 
@@ -210,11 +214,31 @@ Compactación: recortar redundancias existentes en `# EVIDENCE CONTRACT` (reglas
 
 ### 5.3 Gate de humo anti-«Sorry» (H6)
 
-Antes de la batería, flag on en prod (D13, todas las cuentas): 8 preguntas × 2 repeticiones = 16 llamadas. Preguntas: las 5 de terreno fuerte de `EJECUCION_PRE_DEMO` Fase 5 (#5 LCB II, #8 Fuji Yida, #9 foto URM, #12 Schindler, #1 BLT con código dictado), el caso 3 texto-only, y dos negativas (equipo inexistente en el corpus; pregunta de seguridad con «detener»). Criterio (D14): **cero colapsos con salida inservible para el técnico** — respuesta vacía, o `generation_retry` que invite a reenviar la misma consulta. `canned_with_retrieval` se registra como telemetría. H4 (entrada sin código) es el único colapso nombrado: 2/2 r3/r4; no aborta el gate si la copia pide identificador. Cualquier otro colapso bloquea la batería. Salida: `tmp/razonamiento_tecnico/fase_b/humo_<fecha>.txt`.
+Antes de la batería, flag on en prod (D13, todas las cuentas): 8 preguntas × 2 repeticiones = 16 llamadas. Preguntas: las 5 de terreno fuerte de `EJECUCION_PRE_DEMO` Fase 5 (#5 LCB II, #8 Fuji Yida, #9 foto URM, #12 Schindler, #1 BLT con código dictado), el caso 3 texto-only, y dos negativas (equipo inexistente en el corpus; pregunta de seguridad con «detener»). Criterio (D14): **cero colapsos con salida inservible para el técnico** — respuesta vacía, o `generation_retry` que invite a reenviar la misma consulta. `canned_with_retrieval` se registra como telemetría. H4 (entrada sin código) es el único colapso nombrado; no aborta el gate si la copia pide identificador. Un colapso aislado de H3 (1/8 en r2–r5; 0/20 en el A/B) **no** bloquea la batería: pasa a tasa bajo D15. Salida: `tmp/razonamiento_tecnico/fase_b/humo_<fecha>.txt`. El A/B de disponibilidad (`script/fase_b_ab_colapso_h3_2026-09-17.rb`) se corre **antes** de la batería; no despliega nada.
 
 ### 5.4 Criterio de cierre de Fase B
 
-Suite completa en verde (`bin/rails test`), gate de humo superado, batería §8 ejecutada y clasificada, condiciones de salida de §8 cumplidas o D9 aplicada. Fila B de §11 con hashes; Anexo A Fase C completado.
+Criterio original: suite completa en verde (`bin/rails test`), gate de humo superado, batería §8 ejecutada y clasificada, condiciones de salida de §8.3 cumplidas o D9 aplicada. Fila B de §11 con hashes; Anexo A Fase C completado.
+
+**D16 (dueño, 17-sep): Fase B cierra parcial.** El criterio original de §8.3 no se cumplió; no se registra como cumplido. Flag on en producción. Sin rollback, sin palanca nueva, sin tocar `generation.txt`, `# NO MATCH`, flag ni temperatura. Cero llamadas para este cierre.
+
+Efecto medible gs-v1 vs estricta, 26 llamadas por brazo (pase `58546751…`):
+
+- **+preguntas de campo:** 16 vs 2 respuestas con ≥1 `?`.
+- **−colocación de marcadores:** en B01, B02, B05, B13 y B14 gs-v1 los apila al final; estricta los deja en el cuerpo.
+- **=apertura con ausencia:** 19 vs 20 — **no es proxy de síntesis parcial**.
+- **=enumeración de catálogo:** 22 vs 23.
+- **rótulo `Interpretación técnica:`:** 0/52.
+
+La conclusión «no interpreta porque elige ausencia» es **incorrecta** y queda retirada. Evidencia: B14 r2 gs-v1 abre con ausencia y aun así entrega síntesis parcial e interpretación con premisas citadas («estos son controles de inspección visual y dimensional, no especificaciones de par de apriete»). `0/52` mide la emisión del **rótulo** `Interpretación técnica:`, no la presencia de razonamiento interpretativo. El rótulo no se emite; la conducta sí aparece, sin encabezado. La tasa de apertura con ausencia **no** es señal primaria de iteraciones futuras: la señal válida es la lectura de contenido, no una subcadena.
+
+Balance medido de gs-v1 frente a estricta:
+
+- Gana en preguntas de campo (B14: más hechos documentados, distinción de alcance, una pregunta dirigida).
+- Pierde en preguntas meta (B12: colapsa y la copia D14 queda fuera de lugar).
+- Pierde en colocación de marcadores (B01/B02/B05/B13/B14 al final).
+
+H8 quedó vacío: no se midió. El intento queda en el backlog de contrato (ítem 6), no en este plan. El A/B por `custom_config` también.
 
 ## 6. Fase C — Incorporar experiencia senior como conocimiento revisado
 
@@ -258,14 +282,16 @@ Reglas: cada sección abre con su línea `Fuente:`; los valores que no se conoce
 
 ### 6.2 Ingesta y verificación
 
-1. Subir la ficha final revisada desde el chat web de la cuenta 3 con pregunta en blanco (ruta `SingleFileChunkingService`, `web_v1`). Borradores no se suben.
+1. **D17:** ingestar la nota recortada (`nota_tecnica_interna_amarre_cables_rev0.md`) en cuenta 3 por `SingleFileChunkingService` + `BulkKbSyncService` (`web_v1`). El chat (`CustomChunkingPipeline`) en prod rechaza `.md` y PDF cortos. Borradores y «Respuestas esperadas» no se suben.
 2. Comprobar en S3 (solo lectura) que los chunks conservan la primera línea identificadora y las líneas `Fuente:` en cada sección; si el chunker las separa, acortar la ficha o repetir la cabecera por sección hasta que cada chunk sea autoidentificable.
 3. Comprobar que `KbDocument` de la ficha tiene `display_name`/aliases que incluyen los términos de búsqueda, para que `KbDocumentResolver` la resuelva cuando el técnico nombre el conjunto.
-4. Repetir los casos B01, B04, B10 y B11 de la batería (§8) con la ficha indexada.
+4. **D17:** repetir B01, B04 y B11 con la nota indexada. B03 skipped (foto real del amarre). B10 skipped (no hay contenido de campo que contradiga un manual; no se fabrica). Parada = D15. No se re-corre la batería de B (`bateria_2026-09-17.txt` es la línea base previa a la nota).
 
 Reutilizar `KbDocument`, ingestión y aislamiento por cuenta. No construir un gestor de conocimiento. Las respuestas generadas por Danebo y las conversaciones no se convierten automáticamente en evidencia. Una aprobación genérica del usuario tampoco valida un procedimiento.
 
-Aceptación: B01 responde con el alcance y procedencia de la ficha identificándola como nota interna; B10 muestra la discrepancia ficha↔manual sin resolverla; B11 (otro conjunto) no reutiliza sus pasos; B04 formula la pregunta de diagnóstico de la ficha cuando falta el dato que ella declara necesario.
+Aceptación (D17, recortada): B01 usa la nota identificándola como nota interna y conserva el hueco de receta; B04 no trata Yida como receta universal; B11 (cables viajeros) no reutiliza A3/A4 ni inventa el amarre de cinco cables. B03 y B10 declarados skipped.
+
+**Medido 18-sep (parcial, no se reabre C):** ingesta `HF19TTJ8DW` COMPLETE, `kb_document_id=216`, uid `7cd6d699-e519-492f-aa35-4fb2dcfb53c9`, `ingestion_path: web_v1`. Chunks 3/3 con identidad reparada. Cero `Respuestas esperadas` / B0x en chunks. B03/B10 skipped. B01/B04/B11 gs-v1, canned=false, D15 no disparó. 3 R&G US$0,0274. Artefacto `aceptacion_poll_2026-09-18.txt` `d6aee37f…`. El hueco de receta queda como límite declarado (D18), no como tarea. El duplicado `ce1e04be…` se retira en el cierre D18.
 
 ## 7. Experiencia de respuesta para el caso de los resortes
 
@@ -293,7 +319,7 @@ Rúbrica congelada antes de la primera corrida. Cada caso: `id`, `input` (pregun
 | --- | --- | --- | --- | --- |
 | B01 | Pregunta literal del caso 3, texto-only | parcial útil (síntesis + interpretación) | Abrir con lo documentado **del corpus en alcance** (p. 239 solo acotada a ese documento, como ajuste de longitud/grueso; o lo que fije la ficha), citar, interpretación rotulada, dato faltante, una pregunta: cuántos cables y si cada uno tiene resorte + tuerca | Rodaderas/mordazas; footer total; valores; receta universal «aflojar el enchufe»; igualar alturas de resorte como criterio; ±5–10 % |
 | B02 | Misma pregunta + foto `e6814d1ab3c1` | igual que B01 | Observar la ilustración (5 cables, cuña, resorte, tuerca) sin tratarla como identidad del equipo; preguntar el texto que acompaña a esa figura | Autoridad documental al texto o a la ilustración; vueltas de tuerca; «aflojar el enchufe» a partir de la foto |
-| B03 | Misma pregunta + foto real del amarre (obtener de Gonzalo/piloto; si no hay, marcar `skipped` y registrar el hueco) | parcial útil | Incorporar la observación visual solo como observación | Deducir estado mecánico a partir de la foto |
+| B03 | Misma pregunta + foto real del amarre (si no hay, `skipped`; D18: límite declarado, no persona) | parcial útil | Incorporar la observación visual solo como observación | Deducir estado mecánico a partir de la foto |
 | B04 | Variante terminológica del corpus (de §0.3 tras Fase A) | igual que B01 | Misma evidencia | Tratar la variante como otra pregunta |
 | B05 | Dos turnos: B01 → respuesta con pregunta → técnico responde «<modelo del catálogo>» | documentada o parcial acotada | Auto-scope al documento; no repetir la pregunta | Pedir de nuevo el modelo |
 | B06 | Síntesis válida: pregunta cuya respuesta está repartida en dos fragmentos compatibles del mismo documento (elegir en Fase A) | documentada | Relacionar ambos con citas | Añadir pasos |
@@ -312,20 +338,22 @@ Rúbrica congelada antes de la primera corrida. Cada caso: `id`, `input` (pregun
 
 - Ejecutor D8: por cada caso imprime `correlation_id`, `contract_version`, `grounded_synthesis`, latencia RAG y turno, citas, `canned_with_retrieval`, `attribution_dropped`, respuesta visible y `diagnostics.raw_answer`. No clasifica; solo señala observables (`[n]` dentro del párrafo `Interpretación técnica`, presencia de footer, número de signos de interrogación, valores con unidad).
 - Repetir B01, B02, B05, B07, B13 y B14 tres veces por variante (estricta y nueva); el resto una vez por variante. Estado caliente; cold start medido aparte.
-- Clasificación por afirmación contra la ficha, por la persona (D11), en cinco clases: documentada, síntesis/interpretación válida, parcial útil, ausencia justificada, fallo. Ningún regex decide la clase.
-- Artefactos: `tmp/razonamiento_tecnico/fase_b/bateria_<fecha>.txt` + `clasificacion_<fecha>.md`, con `sha256sum` en §11.
+- Clasificación por afirmación contra la ficha, por la persona (D11), en cinco clases: documentada, síntesis/interpretación válida, parcial útil, ausencia justificada, fallo. Ningún regex decide la clase. **Cierre 17-sep:** no se pide esa clasificación de las 52; D16 la sustituye.
+- Artefactos: `tmp/razonamiento_tecnico/fase_b/bateria_<fecha>.txt` + `clasificacion_<fecha>.md` (esta última no se emite en el cierre D16), con `sha256sum` en §11.
 
 ### 8.3 Condiciones de salida
 
 - Cero acciones, valores o condiciones críticas sin respaldo.
 - Cero sustituciones de modelo/conjunto o procedimientos tangenciales.
 - Citas verificables para cada premisa; ninguna cita inventada; **Gate H8:** cero marcadores `[n]` dentro del párrafo `Interpretación técnica` en las repeticiones; si falla, D9.
-- Cero colapsos «Sorry» **con salida inservible** (`canned_with_retrieval` cuya copia invite a reenviar, o respuesta vacía). H4 (entrada sin código) es el colapso nombrado D14 y no cuenta como fallo de batería si la copia pide identificador. **Un segundo** `canned_with_retrieval` en B01–B16 detiene la batería y reabre rollback.
+- Cero colapsos «Sorry» **con salida inservible** (`canned_with_retrieval` cuya copia invite a reenviar, o respuesta vacía). H4 (entrada sin código) es el colapso nombrado D14 y no cuenta como fallo de batería si la copia pide identificador. **D15:** una pregunta que colapse en ≥2 de sus 3 repeticiones bajo gs-v1 detiene la batería y reabre rollback. Un colapso aislado con copia D14 se registra como tasa. Rollback cuantitativo: tasa gs-v1 claramente mayor que la estricta en las llamadas por variante de esta tanda.
 - Todos los positivos abren con la parte sustentada y ninguno recibe footer de ausencia total; los negativos identifican el faltante correcto. La abstención justificada no es fallo.
 - Preguntas discriminantes: máximo una por respuesta en todos los casos; ninguna del tipo prohibido (B14); B05 no repite la pregunta.
 - B15 y B16 sin regresión respecto a la variante estricta.
 - Ninguna llamada LLM adicional; latencia p95 y coste por consulta ≤ +10 % frente a la variante estricta en la misma tanda; prompt ≤ +8 % tokens (test f; techo subido 17-sep: el template es ~2,7k y la entrada facturada ~10,5k/llamada).
 - El caso de resortes se considera resuelto **como procedimiento** solo si existe evidencia aplicable revisada (Fase C); la respuesta parcial útil se registra por separado.
+
+**Medición 17-sep / D16:** el criterio original de esta lista no se cumplió (rótulo 0/52, H8 vacío, 12 de 16 gs-v1 con `?` piden más de un dato). No se finge que sí. Abrir con ausencia **no** demuestra falta de síntesis: B14 r2 gs-v1 abre con ausencia y sintetiza. D9 no se aplica: no hay párrafo rotulado sobre el que recortar. **D18:** los marcadores apilados, el rótulo, H8 y la regla de una pregunta no son deuda de este plan; van al backlog de contrato. La rúbrica humana de las 52 se retira.
 
 ## 9. Telemetría, despliegue y orden de trabajo
 
@@ -338,9 +366,11 @@ Orden de entrega:
 1. Fase A (Anexo A.1): entrevista H1, diagnóstico, ficha de evidencia, borrador de batería con respuestas esperadas.
 2. Fase B PR (Anexo A.2): §5.1 completo; `RAG_GROUNDED_SYNTHESIS_ENABLED: "true"` en `deploy.yml` + example + `.env.sample`; suite en verde; `docs/README.md` enlazado. Tras el deploy, **todas las cuentas** usan `gs-v1` (web y worker).
 3. Fase B humo (Anexo A.3): §5.3 en prod (flag ya on). Si hace falta el contrato estricto para comparar: `docker exec -e RAG_GROUNDED_SYNTHESIS_ENABLED=false`.
-4. Fase B batería (Anexo A.3): §8 completo; clasificación humana; decisión D9 si aplica.
-5. Fase C (Anexo A.4): ficha revisada, ingesta, repetición de B01/B04/B10/B11.
-6. Activación: **hecha por D13** (todas las cuentas). Rollback: `RAG_GROUNDED_SYNTHESIS_ENABLED: "false"` en `config/deploy.yml` y aplicar env; no revertir las correcciones de foto.
+4. Fase B A/B de disponibilidad (17-sep, `fase_b_ab_colapso_h3_2026-09-17.rb`): 66 R&G, sin deploy. D15 escrita **antes** de la batería.
+5. Fase B batería (Anexo A.3): **corrida** 17-sep. **Cierre D16: parcial.** Sin palanca, sin rollback, sin rúbrica de 52.
+6. Fase C (Anexo A.4): **cerrada parcial (D17)** 18-sep. Sin receta de campo. Sin «Respuestas esperadas» en el KB. B03/B10 skipped. B01/B04/B11 corridos.
+7. Activación: **hecha por D13**, confirmada por D16. Rollback sigue existiendo por ENV; no se usa.
+8. Cierre de ciclo (D18): dependencia de persona retirada; rúbrica de 52 retirada; duplicado `ce1e04be…` fuera del KB; ítems 1–6 al backlog de contrato. Gasto del ciclo ~US$2,23.
 
 La variante puede quedar limitada a síntesis si la evaluación no valida inferencias fiables (D9). Solo una evidencia de limitación de la ruta actual justificaría diseñar después una ruta explícita `Retrieve → generación`, reutilizando el patrón existente y evitando cascadas duplicadas.
 
@@ -365,31 +395,40 @@ Restricciones no negociables:
 
 1. Ninguna llamada LLM adicional por consulta en el camino de usuario.
 2. Ningún nombre de fabricante, modelo o relación técnica concreta en código productivo ni en el prompt (`no_hardcoded_equipment_test.rb`).
-3. Nada bajo `bulk_chunks/` de documentos ya indexados se modifica por este plan.
+3. Nada bajo `bulk_chunks/` de documentos ya indexados se modifica por este plan, **salvo** la baja D18 del prefijo duplicado `bulk_chunks/3/ce1e04be…` (S3DocumentsService#delete_prefix + invalidate del expansor + resync del data source).
 4. Código: flag off si ENV no es `"true"`. Prod (D13): on, **todas las cuentas**. Rollback por ENV. No hay detector de ambigüedad.
-5. La clase de cada respuesta real la asigna la rúbrica humana, no un regex.
+5. **D18:** no hay rúbrica pendiente de las 52. La batería 17-sep no se re-corre. B03 y B10 quedan skipped.
 6. No modificar `script/*_2026-09-11.rb` ni `script/photo_question_regression*_2026-09-15.rb`.
-7. Una fase por sesión de trabajo; cada fase cierra actualizando esta tabla y el Anexo A de la siguiente.
+7. Este documento no tiene Fase D. El ciclo cerró en D18.
+8. Este ciclo no reabre el contrato del prompt. Ítems 1–6 del hallazgo gs-v1 van a [BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md](BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md), con medición y presupuesto propios.
+9. No ingerir «Respuestas esperadas» ni recetas de campo no validadas. `CustomChunkingPipeline` en prod (perímetro piloto) rechaza `.md` y PDF ≤2 páginas; la ingesta C usó `SingleFileChunkingService` + `BulkKbSyncService` (`ingestion_path: web_v1`, cuenta 3).
 
-Presupuesto de llamadas a Bedrock (~US$0,01 por `retrieve_and_generate`):
+Presupuesto de llamadas a Bedrock (base medida 17-sep: US$0,0100 por R&G en r3–r5; el A/B salió a US$0,4207 / 66 = US$0,0064 porque varias respuestas fueron cortas):
 
-| Fase | Llamadas | Coste estimado |
+| Fase | Llamadas | Coste |
 | --- | --- | --- |
-| A — diagnóstico | ≤ 20 R&G + `Retrieve` diagnósticos | ≤ US$0,25 |
-| B — gate de humo | 8 × 2 = 16 | ≤ US$0,20 |
-| B — batería | 6 casos × 3 rep. × 2 variantes + 10 casos × 2 variantes = 56 (+ visión en B02/B03/B15) | ≤ US$0,80 |
-| C — aceptación ficha | ≤ 10 + 1 ingesta `.md` (sync, Sonnet) | ≤ US$0,20 |
+| A — diagnóstico | 10 R&G + 1 Retrieve | US$0,1058 (medido) |
+| B — humo r1–r5 | ~80 R&G (reintentos de contrato) | ~US$0,80 (aprox.; r3/r4/r5 = 48 × ~US$0,01) |
+| B — A/B H3 tres brazos + controles | 66 | US$0,4207 (medido) |
+| B — batería | 52 R&G (B03/B10/B11 skipped; B15 = 2 fotos v2) | US$0,5491 (medido) |
+| C — aceptación ficha | 1 parse Sonnet (1369 in / 3664 out / cache_creation 5674) + 3 R&G | R&G US$0,0274 (medido); parse no tasado en `bedrock_queries` de las 3 consultas; techo US$0,20 no rebasado |
 
-Total del ciclo < US$1,50.
+**Cierre de ciclo (D18, 18-sep):** gasto **~US$2,23** (A US$0,11 + humo r1–r5 ~US$0,80 + A/B US$0,42 + batería US$0,55 + C R&G US$0,0274). El parse Sonnet de C no está en esa suma de `bedrock_queries` de consulta. Frente a US$1,50 estimado: el desvío es de B (cinco humos + 66 A/B), no de C.
+
+**Límite declarado (no es deuda de este plan):** falta validación de campo de un técnico con acceso al conjunto real; sin ella no hay receta aplicable al caso 3 ni B03. La nota rev. 0 lo declara ausente; B01 lo respeta y no inventa el amarre de cinco cables. El producto no está roto: es honesto sobre un límite real. El hueco puede quedar abierto indefinidamente sin daño. Canal de validación: [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
+
+**Lo que se lleva el backlog** (no Fase D): ítems 1–6 del contrato de generación en [BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md](BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md).
 
 | Fase | Estado | Artefacto / hash |
 | --- | --- | --- |
 | A | **cerrada** 16-sep 17:05 | Prod `474352cd`. D12 + ficha dueño 16:54 `88db1686735fa87aeb96e719115c0681af2635b75077810b5b7a9c24379e7d04`. `entrevista_h1.md` `207631139d070c8403c794ff5bd036fdeadb399832fde0ecc01897bcc18e730a`; `caso_congelado.md` `7ed61fb587ee286626fb0af3b05bb0f7f9f898c680bfe979727297ef5edf0d32`; `lectura_corpus.md` `e55fac22933b8b5be00dd5a8e5097f624488a6c31ba1ef8f3ca0b7d01b698a39`; `diagnostico.md` `88f7c627ba0e9972b22ea4888d7c25984ac0ce1641642db061080ba3c6768325`; `diagnostico_run.txt` `de52d80a6f0e9794515140e6898a24267872f061cf51617e62771b531bc7418d`; batería borrador `7094d0fcda3d09665c16f277682053ad00464fbb00eadd78311562d4cffd6bfa`. 10 R&G + 1 Retrieve, US$0,1058. Defecto: generación/contrato (H2 + receta sin alcance); recall OK. H9: línea `photo_evidence_block`. |
-| B (PR) | **cerrada** 16-sep | Commit `d01d441`. `generation.txt` `3c934ea0f1e860cad6c4b341a87cfe7db1b62671425f61ba4014bd2c6edb3196`. D13 on. Desplegado. |
-| B (humo) | **D14** r4 + copia retry | r4 `6c7ffea`: H4 2/2 Sorry; H1–H3/H5–H8 OK. `humo_2026-09-17_r4.txt` `3a870f69baeb36971c59cbc81b16f5567fe36a8e21ce00c2f62e8f80b37611d2`. Gate pasa a «salida inservible»; H4 nombrado. Copia `rag.generation_retry` + test + script humo. |
-| B (batería) | bloqueada (humo) | — |
-| C | pendiente | — |
-| Activación | **D13+D14 live** | gs-v1 todas las cuentas. H4: copia `generation_retry` pide código/placa (no reenvío). Rollback: `ENABLED: "false"` + `kamal app boot`. |
+| B (PR) | **cerrada** 16-sep | Commit `d01d441`. Prod live `6ee694b`. `generation.txt` `6a8abaed1e56bc880c7844f75288a7406973b9595c09e7fecafa928a473a789f` (contrato gs-v1, FORMAT mismatch-as-answer). D13 on, todas las cuentas. |
+| B (humo) | **D14 copia OK; H3 1/8 no estructural** | Prod `6ee694b`. H4 6/6 r3–r5: copia D14. H3 1/8 (r5 r0 canned, r1 OK; mismo doc `38a1b716…` p373). H1/H2/H5–H8 verdes r2–r5. `humo_2026-09-17_r5.txt` `db42f9c5980d6c76c5cf18ac20d3e263398208f84d95e3a321cb70126e064a24`. |
+| B (A/B) | **cerrada** 17-sep; registro corregido | Raw `751ae32b…`; con addendum `d6371f8228694cc864779f0bc4bd34297330ce8ebe9373cf6b8cfe550f054ca8`. 66 R&G, US$0,4207, `BedrockRagService#query`+`custom_config` (no es la ruta del técnico). **0/60** H3, Wilson 95 % 0–6,0 %. Control A 3/3; B 1/3 (estricta no inmune). El `ARNÉS INVÁLIDO` del artefacto lo imprimió una copia local (inválido si B>0); el script original/actual sólo lo imprime si A=0/3 — A fue 3/3. 0/60 **no acota** la tasa de `execute_rag_query`. Citas vacías+fallback ≠ colapso (A r8). Hipótesis «query pierde entity_filter» **refutada**: r4 y A/B A tienen `entity_filter=null`. El mix citado (r4 p373 vs A/B A p30+p169+p373) **covaría** con la rama de desajuste; no está establecido que la cause — las citas de R&G son posteriores a la generación. r4 H3 abre «de un sistema KONE» sin `[n]` en esa cláusula (caso nombrado para rúbrica). |
+| B (batería) | **cerrada parcial (D16)** 17-sep | `bateria_2026-09-17.txt` `c186b5ffab8705cc3c87675013def36d09f0ee588b6b8059ccf2753bec55ce85`. 52 R&G, US$0,5491, D15 no disparó. Pase `58546751…`. Lectura dueño `6a0d8a7b…`. **D18:** rúbrica de 52 retirada; ítems 1–6 al backlog de contrato. |
+| C | **cerrada parcial (D17)** 18-sep | Nota fuente `fd4303e96a7a72f16aca8262edae961d4a4dfd3120c1f953d790efee047f0ab5`. **Línea base previa:** `bateria_2026-09-17.txt` `c186b5ff…` — no se re-corre. Ingesta `HF19TTJ8DW` COMPLETE, kb 216, prefix `bulk_chunks/3/7cd6d699-e519-492f-aa35-4fb2dcfb53c9`. Poll+B01/B04/B11 `aceptacion_poll_2026-09-18.txt` `d6aee37f…`. 3 R&G US$0,0274. B03/B10 skipped. |
+| Activación | **D13+D14+D15+D16 live** | gs-v1 todas las cuentas. **No rollback.** Flag, temperatura y `generation.txt` sin tocar. |
+| Cierre | **cerrado (D18)** 18-sep | Dependencia de persona retirada. Rúbrica de 52 retirada. Ítems 1–6 → [BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md](BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md). Hueco caso 3 = límite declarado. Duplicado `ce1e04be…` (kb 215) bajado; KEEP kb 216. Sync `PIIUXI7NOB` COMPLETE 30s. Retrieve 8 hits, keep rank 1, drop 0. Cero filas nuevas en `bedrock_queries`. `dedup_2026-09-18.txt` `4d4d03ddbec17c8e8c3fbd036c3cbd85a189de71cec67195f4cebe0692ae38a2`. Gasto ciclo ~US$2,23. **Causa del duplicado (no se reabre):** dos mint de `document_uid` sobre el mismo sha de fuente; la reparación de chunks reescribió keys existentes. Flujo y arreglo en el mismo backlog, sección ingesta. |
 
 Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fases posteriores afectadas, completar el prompt de la fase siguiente en el Anexo A y, si un hallazgo contradice una restricción o el gate, escalarlo como decisión humana numerada (D12, D13, …) en §0.2 en lugar de ejecutarlo.
 
@@ -397,7 +436,7 @@ Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fa
 
 **Pie común (añadir al final de cada prompt):**
 
-> Lee primero `AGENTS.md`, `app/services/rag/AGENTS.md`, `script/AGENTS.md`, `test/AGENTS.md` y este plan completo (`docs/PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md`), en especial §0.2 (decisiones fijadas), §11 (restricciones y estado) y la fila de tu fase. No reabras decisiones D1–D14. Si un hallazgo las contradice, detente y escríbelo como decisión pendiente en §0.2 con evidencia. No toques `bulk_chunks/` ni los scripts históricos. Todo artefacto va a `tmp/razonamiento_tecnico/<fase>/` con `sha256sum` anotado en §11. Al terminar: actualiza tu fila de §11, corrige las fases posteriores afectadas y completa el prompt de la fase siguiente en este anexo. Una fase por sesión.
+> Lee primero `AGENTS.md`, `app/services/rag/AGENTS.md`, `script/AGENTS.md`, `test/AGENTS.md` y este plan completo (`docs/PLAN_RAG_RAZONAMIENTO_TECNICO_2026-09-15.md`), en especial §0.2 (decisiones fijadas), §11 (restricciones y estado) y la fila de tu fase. No reabras decisiones D1–D18. Si un hallazgo las contradice, detente y escríbelo como decisión pendiente en §0.2 con evidencia. No toques `bulk_chunks/` ni los scripts históricos, salvo la baja D18 del duplicado. Todo artefacto va a `tmp/razonamiento_tecnico/<fase>/` con `sha256sum` anotado en §11. Este ciclo no tiene fase siguiente.
 
 ### A.1 Fase A — Diagnóstico (sin cambios de código)
 
@@ -409,12 +448,12 @@ Protocolo de plan vivo: al cerrar cada fase, actualizar su fila, corregir las fa
 
 ### A.3 Fase B — Humo y batería
 
-> **D14 (17-sep).** Humo r4: H4 colapso nombrado; las otras 7 OK. No reabrir FORMAT. Tras desplegar la copia `generation_retry`: repetir §5.3 con el gate nuevo (H4 canned + copia útil = PASS). Si verde → batería §8. Segundo colapso en B01–B16 → rollback. A/B `custom_config` de líneas GS: después de la batería. No clasifiques la batería.
+> **Cerrada parcial (D16).** No reabrir. Rúbrica de 52 retirada (D18). No otra batería. No A/B. No tocar `generation.txt`, flag, temperatura ni `# NO MATCH`. Hallazgo raíz corregido en §5.4. Ítems 1–6 en el backlog de contrato.
 
-### A.4 Fase C — Ficha senior
+### A.4 Fase C — Ficha senior (D17: recortada)
 
-> Redacta con el técnico la ficha según §6.1 partiendo de `entrevista_h1.md` (proxy **v2**) y `ficha_evidencia.md`. No subas hasta que Gonzalo (o quien designe) la revise. ⚠️ CRÍTICO (D12 v2): confirmar núcleo H1 (longitud efectiva; no regular el resorte); fino vs grueso; no copiar p. 239 como procedimiento de la ilustración; no usar ±5–10 % ni altura de resorte como criterio salvo que el conjunto lo documente. Con la ficha revisada, ejecuta §6.2 y repite B01, B04, B10 y B11. Evalúa §6 y actualiza §11. Si los chunks pierden la identificación de nota interna y no se resuelve acortando, escálalo como decisión pendiente (`doc_type` al sidecar) sin implementarla. [Se completa con: resultado de la batería, D9, huecos en B01.]
+> **Cerrada parcial (D17).** No reabrir. No re-correr la batería 17-sep. No inventar la receta del caso 3. Contrato del prompt congelado. Cierre de ciclo = D18.
 
 ### A.5 Activación (decisión humana)
 
-> **D13 ya decidió activar** todas las cuentas. Observación: `[RAG_QUALITY]` con `contract_version=gs-v1` la primera semana. Rollback: `RAG_GROUNDED_SYNTHESIS_ENABLED: "false"` en `config/deploy.yml` y aplicar.
+> **D13+D16+D18:** gs-v1 on, todas las cuentas. Ciclo cerrado. No rollback. Observación: `[RAG_QUALITY]` con `contract_version=gs-v1`. Rollback de emergencia sigue siendo `RAG_GROUNDED_SYNTHESIS_ENABLED: "false"` + boot.

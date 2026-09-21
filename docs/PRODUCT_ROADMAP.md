@@ -3,7 +3,7 @@
 **Current stage:** MVP / MVO demos and pilot discovery.  
 **Primary channel:** authenticated web application.  
 **Primary field interface (from 2026-09):** voice.  
-**Updated:** 2026-08-07.
+**Updated:** 2026-09-18.
 
 This roadmap separates what Danebo demonstrates today from capabilities that
 must first be validated through sales conversations and pilot usage. It is not
@@ -73,6 +73,16 @@ The current offer must demonstrate a short, credible field workflow:
   silently resend the same question to RAG after analysis.
 - A later, explicit question may correlate a visible component or code with an
   indexed manual.
+
+### Pilot field-validation channel (2026-09-18)
+
+The elevator pilot no longer has a designated field technician as the source of
+validated internal notes. Case 3's applicable hitch recipe (five ropes with a
+rod) remains unknown until a technician with access to the real assembly can
+validate it. That is a **pilot operating risk**, not an engineering defect: the
+knowledge base already declares the gap, and generation must not invent the
+procedure. Any future internal note that claims field practice needs another
+technical source before it is indexed as applicable.
 
 ### What the MVP should measure
 

@@ -51,7 +51,7 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 | `CustomChunkingPipeline` | Per-file routing, builds ready-now `web_v1_metadata`, enqueues `BedrockIngestionJob` only for chunks that exist now. Long PDFs enqueue `SubmitManualBatchJob`; with a nonblank question they also enqueue urgent page triage |
 | `SingleFileChunkingService` | One file end-to-end: optional Office→PDF, PDF page split, relevance filter, Claude calls, S3 chunk writes |
 | `FileMultimodalRouter` | Picks **Sonnet 4.6** vs **Opus 4.7** per indexed document page. Rasterized slides can promote to Opus. |
-| `ContentDedupService` | SHA-256 dedup before any parse — hit skips Claude call entirely |
+| `ContentDedupService` | SHA-256 dedup before any parse — hit skips Claude call entirely. Used on the bulk ZIP path (`BulkUploadAsset`), not on this web pipeline. |
 | `WebManualBatch` | Durable ledger for web long-manual Batch context (`claude_batch_ids`, first id in `claude_batch_id`, page map, status, chunk prefix) |
 | `ManualBatchIngestionService` | Splits long PDFs to disk-backed pages, filters relevance, and submits bounded Anthropic Batch groups |
 | `SubmitManualBatchJob` | Enqueued automatically for long web/chat PDFs on `bulk_ingestion`; idempotent on existing `claude_batch_id` |
@@ -68,6 +68,8 @@ A file attached in the home RAG chat follows `CustomChunkingPipeline`. Short fil
 **Supported document-ingestion formats:** text (`.txt`, `.md`, `.html`,
 `.csv`), PDFs, and Office docs (`.doc`/`.docx`, `.xls`/`.xlsx`,
 `.ppt`/`.pptx`, `.odt`/`.ods`/`.odp`). JPEG/PNG uploads use direct diagnosis.
+
+**Document identity.** `document_uid` is minted per request (`RagQueryConcern` → `SecureRandom.uuid`) and is the only lookup key in `CustomChunkingPipeline#ensure_kb_document_for`. `kb_documents` has no source-sha column; uniqueness is `(account_id, document_uid)` and `(account_id, s3_key)`, and `s3_key` is `uploads/<account_id>/<document_uid>/original.*`. Chunks land at `bulk_chunks/<account_id>/<document_uid>/`. Re-uploading the same bytes therefore creates a second KB document. Parse-cost dedup (`ContentDedupService`) does not apply here. Open follow-up: [BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md](BACKLOG_CONTRATO_GENERACION_GS_V1_2026-09-18.md) (ingesta web_v1).
 
 **PDF routing (per-file in `CustomChunkingPipeline`):**
 

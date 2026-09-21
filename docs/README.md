@@ -98,6 +98,7 @@ investigating the corresponding dated run:
 - [RESUMEN_CAMBIOS_COMPRESION.md](RESUMEN_CAMBIOS_COMPRESION.md)
 - [INGESTION_COST_V2.md](INGESTION_COST_V2.md) — retained ADR; current routing wins when behavior differs
 - [PLAN_AGOSTO_2026-08-06.md](PLAN_AGOSTO_2026-08-06.md) — superseded by the 08-07 August plan
+- [PLAN_QUIRURGICO_JESUS_GRATEROL_2026-09-16.md](PLAN_QUIRURGICO_JESUS_GRATEROL_2026-09-16.md) — 16-sep incident (Elemont pin vs CEA15); P0/P1 shipped, do not reopen
 
 ## Engineering instructions
 

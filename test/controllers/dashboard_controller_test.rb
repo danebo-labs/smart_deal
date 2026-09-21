@@ -6,9 +6,18 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
 
   setup do
+    # Cost dashboard is the subject of this file. Pin the kill-switch off:
+    # a local `.env` with ACTIVITY_DASHBOARD_ENABLED=true (demo) would
+    # otherwise 302 every GET /dashboard to /actividad.
+    @previous_activity_dashboard = ENV["ACTIVITY_DASHBOARD_ENABLED"]
+    ENV.delete("ACTIVITY_DASHBOARD_ENABLED")
     CostMetric.destroy_all
     BedrockQuery.destroy_all
     sign_in users(:one), scope: :user
+  end
+
+  teardown do
+    assign_env("ACTIVITY_DASHBOARD_ENABLED", @previous_activity_dashboard)
   end
 
   test 'should get index' do
@@ -67,12 +76,10 @@ class DashboardControllerTest < ActionDispatch::IntegrationTest
   end
 
   test 'redirects to the activity dashboard when the flag is enabled' do
-    ENV['ACTIVITY_DASHBOARD_ENABLED'] = 'true'
-
-    get dashboard_url
-    assert_redirected_to activity_path
-  ensure
-    ENV.delete('ACTIVITY_DASHBOARD_ENABLED')
+    isolate_env("ACTIVITY_DASHBOARD_ENABLED", "true") do
+      get dashboard_url
+      assert_redirected_to activity_path
+    end
   end
 
   test 'requires an authenticated user' do

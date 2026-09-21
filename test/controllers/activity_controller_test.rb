@@ -6,20 +6,21 @@ class ActivityControllerTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
 
   setup do
+    @previous_activity_dashboard = ENV["ACTIVITY_DASHBOARD_ENABLED"]
     ENV["ACTIVITY_DASHBOARD_ENABLED"] = "true"
     BedrockQuery.destroy_all
     sign_in users(:one), scope: :user
   end
 
   teardown do
-    ENV.delete("ACTIVITY_DASHBOARD_ENABLED")
+    assign_env("ACTIVITY_DASHBOARD_ENABLED", @previous_activity_dashboard)
   end
 
   test "responds 404 when the flag is disabled" do
-    ENV.delete("ACTIVITY_DASHBOARD_ENABLED")
-
-    get activity_path
-    assert_response :not_found
+    isolate_env("ACTIVITY_DASHBOARD_ENABLED", nil) do
+      get activity_path
+      assert_response :not_found
+    end
   end
 
   test "requires an authenticated user" do

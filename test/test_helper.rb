@@ -48,3 +48,28 @@ end
 ActiveSupport.on_load(:active_support_test_case) do
   include WhatsappDisabledSkip
 end
+
+# Kill-switches such as ACTIVITY_DASHBOARD_ENABLED live in ENV. dotenv loads a
+# local `.env` into the test process, and Minitest cases in the same worker
+# share that process. Tests that care about a flag must pin it and restore.
+module EnvIsolation
+  def isolate_env(key, value)
+    previous = ENV[key]
+    assign_env(key, value)
+    yield
+  ensure
+    assign_env(key, previous)
+  end
+
+  def assign_env(key, value)
+    if value.nil?
+      ENV.delete(key)
+    else
+      ENV[key] = value
+    end
+  end
+end
+
+ActiveSupport.on_load(:active_support_test_case) do
+  include EnvIsolation
+end

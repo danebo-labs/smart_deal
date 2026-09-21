@@ -4,21 +4,20 @@ require "test_helper"
 
 class ActivityDashboardFlagTest < ActiveSupport::TestCase
   test "disabled by default" do
-    ENV.delete("ACTIVITY_DASHBOARD_ENABLED")
-    assert_not ActivityDashboardFlag.enabled?
+    isolate_env("ACTIVITY_DASHBOARD_ENABLED", nil) do
+      assert_not ActivityDashboardFlag.enabled?
+    end
   end
 
   test "enabled only when the ENV var is exactly the string true" do
-    ENV["ACTIVITY_DASHBOARD_ENABLED"] = "true"
-    assert ActivityDashboardFlag.enabled?
-  ensure
-    ENV.delete("ACTIVITY_DASHBOARD_ENABLED")
+    isolate_env("ACTIVITY_DASHBOARD_ENABLED", "true") do
+      assert ActivityDashboardFlag.enabled?
+    end
   end
 
   test "any other value stays disabled" do
-    ENV["ACTIVITY_DASHBOARD_ENABLED"] = "1"
-    assert_not ActivityDashboardFlag.enabled?
-  ensure
-    ENV.delete("ACTIVITY_DASHBOARD_ENABLED")
+    isolate_env("ACTIVITY_DASHBOARD_ENABLED", "1") do
+      assert_not ActivityDashboardFlag.enabled?
+    end
   end
 end

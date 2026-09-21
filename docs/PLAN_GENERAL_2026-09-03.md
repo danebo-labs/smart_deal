@@ -1,7 +1,7 @@
 # Danebo — Plan General (actualizado 2026-09-05)
 
 **Estado: ACTIVO — estrategia padre.** Actualizado sábado 5 de septiembre de 2026. Operación del mes: [Plan de Septiembre](PLAN_SEPTIEMBRE_2026.md). Agosto: [cerrado 3-sep](PLAN_AGOSTO_2026-08-07.md).
-**Reemplaza:** [PLAN_GENERAL_2026-08-07.md](PLAN_GENERAL_2026-08-07.md), que a su vez reemplazó [PLAN_GENERAL_2026-08-06.md](PLAN_GENERAL_2026-08-06.md).
+**Reemplaza** las versiones del 6 y 7 de agosto de 2026.
 **Motivo de esta actualización:**
 
 1. La demo con Gonzalo del 6 de agosto produjo interés explícito y luego un corpus concreto; las señales posteriores de uso y disponibilidad quedaron pendientes. Se conserva el aporte sin tratar una posible sociedad como estrategia.

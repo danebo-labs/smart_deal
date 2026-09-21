@@ -1,7 +1,7 @@
 # Preparación — Reunión con Gonzalo Salazar · viernes 11 de septiembre de 2026
 
 **Estado:** documento operativo de preparación. Se cierra el 11-sep con el resultado real.
-**Hora y lugar:** 09:30, cerca del metro Manuel Montt, Providencia.
+**Hora y lugar:** 04:00PM, cerca del metro Manuel Montt, Providencia.
 **Pendiente logístico crítico:** el 10-sep se envió por error "mañana 4pm cerca metro Providencia". Hay que corregirlo hoy y confirmar 09:30 en Manuel Montt. Si no responde antes de las 08:00, ir igual a las 09:30.
 
 ---
@@ -64,7 +64,7 @@ Esto es lo más importante de tener claro antes de sentarse, porque determina qu
 ## 3. Preparación de hoy, jueves
 
 1. **Corregir el "4pm"** y confirmar viernes 09:30 en Manuel Montt.
-2. **Ejecutar las 12 preguntas de prueba de la sección 4** contra la cuenta piloto (`piloto.danebo.ai`, corpus de Gonzalo). Anotar cuáles fallan.
+2. ~~**Ejecutar las 12 preguntas de prueba de la sección 4** contra la cuenta piloto (`piloto.danebo.ai`, corpus de Gonzalo). Anotar cuáles fallan.~~ **Hecho, 11-sep 00:32.** Veredictos (detalle en [`EJECUCION_PRE_DEMO_2026-09-10.md`](EJECUCION_PRE_DEMO_2026-09-10.md) §Fase 5): **fuerte** #5 (LCB II — es OTIS, no KONE), #8 (Fuji Yida), #9 (foto consola OTIS), #12 (Schindler rechaza, con fuga de inventario); **correcta pero vacía** #1, #2, #11; **débil** #3, #4, #10; **defecto** #7 (mezcla con MediaCoder); #6 descartada desde Fase 1 (sin evidencia en el corpus).
 3. **Decidir si el circuito de voz se muestra**: solo si aguanta cinco recorridos completos seguidos en el teléfono, sin fallo. Si no, se describe hablado.
 4. **Dejar la app abierta y logueada en el teléfono**, con la biblioteca de sus 180 documentos a la vista.
 5. **Cargar dos o tres fotos propias de terreno** en la galería, por si él no trae ninguna.
@@ -154,12 +154,17 @@ Hace tres cosas: reconoce su aporte intelectual, encuadra la demo en el terreno 
 |---|---|
 | Biblioteca | Abres la lista: 180 documentos, seis marcas, los suyos. No dices nada más |
 | Consulta | "Elige una marca y hazle la pregunta que le harías a un técnico nuevo." Tres iteraciones. **Él** pregunta |
-| Foto | Una foto suya de consola, tarjeta o plano. **Nunca de componente quemado** (ver §6) |
+| Foto | Sugiere **consola o tarjeta tipo URM** (verificado fuerte, Fase 5 #9). **Plano solo si él insiste**, y antes de mostrarlo dile la frase de límite: *"esto no reemplaza el tester; el código puede decir puertas y ser el variador."* **Nunca de componente quemado** (ver §6) |
 | Vacío declarado | Pregunta de Schindler o Fermator. El sistema declara que no tiene evidencia |
 | Traza | Le muestras la sesión: cada pregunta, documento y página que respondió, latencia, y las consultas sin evidencia |
 | Cupo | Consumo de consultas por usuario. **Sin pesos, nunca** |
 
 Cuando el sistema responda un código, **dices su frase antes que él**: *"y esto no reemplaza el tester; el código puede decir puertas y ser el variador."* Que escuche que tú sabes eso vale más que cualquier respuesta del sistema.
+
+> **Nota terreno fuerte / flaco por marca** (leer solo si él pide sugerencia de marca, no de memoria — verificado en Fase 5, [`EJECUCION_PRE_DEMO_2026-09-10.md`](EJECUCION_PRE_DEMO_2026-09-10.md)):
+>
+> - **Fuerte:** **Fuji Yida** (parametrización completa y citada, #8); **LCB II** (aclarando que es placa **OTIS**, no KONE, si sale el tema, #5); rechazo de **Schindler** (no inventa, aunque nombra "Thyssen" al descartar, #12).
+> - **Con cautela / flaco:** **BLT** (footer falso "el documento no incluye este dato" en códigos de error #1/#2; mezcla con MediaCoder en puesta en marcha MPDK136, #7); **KONE** (sin terreno propio verificado — LCE sin evidencia desde Fase 1, LCB II es de OTIS); **Thyssen hidráulico** (declara ausencia en falla de llamada, #4); **planos Mitsubishi** (sin plano pinneado enumera Otis/CMC-3, #10); **WEG** (identifica el modelo, no entrega el paso a paso, #11).
 
 ### 18–21 · El circuito de voz del certificador
 
@@ -435,7 +440,8 @@ APERTURA (su idea, con atribución)
 
 DEMO 15 min, teléfono
  Biblioteca (180 docs, 6 marcas) -> él elige marca y pregunta x3
- -> foto de consola/tarjeta/plano (NO componente quemado)
+ FOTO: consola/tarjeta, no plano (si insiste: frase de límite
+   antes; NO componente quemado)
  -> Schindler/Fermator: declara sin evidencia
  -> traza de sesión -> cupo por usuario (NUNCA en pesos)
  Decir yo primero: "esto no reemplaza el tester; el código puede

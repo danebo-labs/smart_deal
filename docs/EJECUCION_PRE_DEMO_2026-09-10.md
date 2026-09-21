@@ -202,7 +202,9 @@ Ajustes a fases siguientes:
 
 ## Fase 5 — Batería de las 12 preguntas
 
-**Estado:** pendiente
+**Estado:** cerrada — **Q5 no es el hueco temido; KONE sigue sin terreno propio; Q7 y el footer «no incluye este dato» son defectos visibles.**
+
+Inicio / fin: 00:30 → 00:32 (11-sep). Sonda: `script/fase5_battery_12_preguntas_2026-09-11.rb` por stdin en `smart-deal-web-e1207b98…`, `PILOT_BATTERY_ACCOUNT_ID=3`. 11 `retrieve_and_generate` (1 warmup + 10 texto; #6 descartada, #9 foto ya OK). Costo: **US$0,1126**. Aurora ya caliente (warmup 7,9 s).
 
 Las 12 preguntas de §4 del prep (ninguna delante de Gonzalo):
 
@@ -221,13 +223,40 @@ Las 12 preguntas de §4 del prep (ninguna delante de Gonzalo):
 | 11 | Variador | ¿Cómo se configura un WEG en lazo abierto para un ascensor? |
 | 12 | Schindler/Fermator | ¿Qué significa este código en un Schindler? *(respuesta correcta: no hay evidencia)* |
 
-Inicio / fin:
+### Veredictos
 
-Resultado:
+Criterio: **fuerte** = accionable y citada; **correcta pero vacía** = no inventa pero no entrega el procedimiento/código; **débil** = evidencia parcial o de otra familia; **defecto** = visible y dañino delante de Gonzalo. `[n]` dentro de palabra: ninguno, en ninguna.
+
+| # | Veredicto | Por qué (1 línea) | `[n]` en palabra |
+|---:|---|---|---|
+| 1 | **correcta pero vacía** | Pide el código (E1–E28) y da E1/E2/E26, pero cierra con el footer falso «El documento no incluye este dato». | no (`pantalla.[1][2][3]`, `revisión.[4][5]`) |
+| 2 | **correcta pero vacía** | Reconoce BL6 Er2–Er99 y pide el código; no lista ni un Er pese a 6 chunks. | no (`verificar[1]…[6]` al final) |
+| 3 | **débil** | Encuentra `Enviando OTIS+(Codigos+LG-SIGMA)` pero solo vuelca TCD 158–163 y 218–222; el footer niega lo que acaba de citar. | no |
+| 4 | **débil** | Declara que no hay procedimiento de «no responde a la llamada» y rellena con bornes de tiradas de llamada. | no |
+| 5 | **fuerte** (con nota de marca) | **No es el hallazgo crítico temido.** Calibración VF (`NOW CALIBRATE DRIVE PACKAGE!`), DCS (`AZUL+ENTER`) y SELFT `M 1 2 5` (PR/EE/RA/RS). El regex de la sonda marcó `declara_ausencia=true` por «no especifica … antes de energizar»: **falso positivo**. El prep la etiquetó KONE; los chunks son **OTIS** LCB II (`manual placa LCB II` p. 16 y 44). No corrige la marca. Encadenada a la foto #9 (menú LCB II / URM) sirve; como pregunta KONE, no. | no (`manual.[1]`, `servicio.[2]`) |
+| 6 | — | Descartada Fase 1. | — |
+| 7 | **defecto** | Pasos 1–3 de MPDK136 son útiles (24 VDC, circuito 110 VAC, F1.xx); los pasos 4–5 meten **MediaCoder 0.6.2** y emisión de tarjetas de acceso. MPDK176: ausencia declarada. | no |
+| 8 | **fuerte** | P01/P02/P03/P12, L01/L02, curvas S=0, PID, compensación de carga; mismos manuales que Fase 1. | no |
+| 9 | **fuerte** | Manual: ya probada OK. | — |
+| 10 | **débil** | Sin plano pinneado enumera Otis NE-300, CMC-3 y Serie F, no Mitsubishi/BLT. `[10]`/`[11]` son **bornes** (`W9 [10] y W10 [11]`), no citas; `citas=0`. | no (el `[11].` es borne, no marcador de atribución) |
+| 11 | **correcta pero vacía** | Identifica CFW-09 BAA21290BW y bornes P1; declara que no hay procedimiento paso a paso. Cita KONE DL16R para decir que **no** es ese. | no |
+| 12 | **fuerte** (con fuga de inventario) | No inventa Schindler. Igual que el gate post-revert: pide el código y dice que el corpus es Thyssen. | n/a (0 citas) |
+
+### Prioridad plan — Q5 / LCB II
+
+**No anotar como hueco de contenido.** Si Gonzalo encadena la foto #9 (menú LCB II) con «cómo se pone en servicio», la respuesta es utilizable: teclas, mensajes de URM y selftest. **Sí anotar:** (1) LCB II en este corpus es OTIS, no KONE; (2) KONE sigue sin pregunta fuerte (LCE muerta en Fase 1; esta no la reemplaza como KONE); (3) no decir «KONE LCB II» en el teléfono — decir «esta placa» o «LCB II».
 
 Hallazgos fuera de plan:
 
+1. **Footer sistemático «El documento no incluye este dato»** en Q1, Q3, Q4 y Q11, incluso cuando la respuesta acaba de citar tablas. Es el defecto más visible de la batería después de MediaCoder. No se toca el prompt esta noche (Fase 3 ya demostró que una prohibición en `NO MATCH` dispara el Sorry).
+2. **Q7 mezcla commissioning con software de tarjetas.** El mismo manual MPDK136 tiene el procedimiento real y, más atrás, MediaCoder / «card for reading the use's data». No usar MPDK delante de Gonzalo.
+3. **Fix de Fase 2 se mantiene:** `dentro_de_palabra=[]` en las 10. Marcadores tras el punto. El `delante_de_punto=["[11]"]` de Q10 es un borne de esquema, no una cita insertada.
+4. **Costo US$0,1126** (ligeramente sobre los ~US$0,10 del plan) por el warmup duplicando la Q1.
+
 Ajustes a fases siguientes:
+
+- **Fase 6:** terreno fuerte verificable = **Fuji Yida (#8)** + **LCB II / foto URM (#5+#9)** + **Schindler (#12)** avisando que revela Thyssen. **No** KONE LCE, **no** KONE como marca, **no** MPDK136, **no** plano suelto, **no** WEG, **no** CMC-3 «no responde». Códigos BLT (#1/#2) solo si **él** dicta el Er/E. Calentamiento Aurora antes de sentarse.
+- **Plan B:** LCB II entra a terreno fuerte como OTIS, no como KONE. KONE no entra al guion.
 
 ---
 
@@ -258,4 +287,6 @@ Ajustes a fases siguientes:
 
 Si Fase 1 no confirma la hipótesis en 20 min, o Fase 4 no pasa el gate: saltar Fases 2–4, ejecutar solo Fases 5 y 6. El guion absorbe los defectos visibles eligiendo terreno fuerte (BLT, Fuji Yida; foto consola/tarjeta, no plano).
 
-> **Corregido en Fase 1 (10-sep 23:56):** «KONE LCE» **no** es terreno fuerte — el corpus no documenta esa placa y la respuesta cita un manual BLT sin relación. Queda fuera de la lista. La cobertura KONE del guion depende de validar la pregunta 5 (LCB II) en la Fase 5.
+> **Corregido en Fase 1 (10-sep 23:56):** «KONE LCE» **no** es terreno fuerte — el corpus no documenta esa placa y la respuesta cita un manual BLT sin relación. Queda fuera de la lista.
+>
+> **Corregido en Fase 5 (11-sep 00:32):** la pregunta 5 (LCB II) **sí** resuelve, pero contra manuales **OTIS**, no KONE. Terreno fuerte: Fuji Yida, LCB II/URM (OTIS), foto consola/tarjeta. KONE no entra al guion.

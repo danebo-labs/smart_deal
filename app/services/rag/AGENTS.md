@@ -38,6 +38,10 @@ behind exactly this gap for a full day).
 * `S3DocumentsService#upload_text` / `#upload_binary` already call
   `invalidate!` automatically for every key under `bulk_chunks/` — a repair
   script that writes through them needs no extra step.
+* `S3DocumentsService#delete_prefix` does the same for a directory prefix
+  under `bulk_chunks/` after a successful list/delete loop. Deleting the
+  objects without that hook leaves the expander index pointing at a prefix
+  that no longer exists.
 * A script that mutates `bulk_chunks/` objects any other way (raw
   `Aws::S3::Client` calls, bypassing `S3DocumentsService`) MUST call
   `invalidate!(prefix)` explicitly, with a comment stating which hallazgo/

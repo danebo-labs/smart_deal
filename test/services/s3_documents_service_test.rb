@@ -41,7 +41,7 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
   end
 
   class FakeS3Client
-    attr_accessor :objects, :should_raise_on_list, :should_raise_on_put, :uploaded, :deleted
+    attr_accessor :objects, :should_raise_on_list, :should_raise_on_put, :should_raise_on_delete, :uploaded, :deleted
     # Array<Array<object>> — when set, #list_objects_v2 paginates through it via
     # continuation_token instead of returning `objects` as a single page.
     attr_accessor :list_pages
@@ -51,6 +51,7 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
       @list_pages = nil
       @should_raise_on_list = false
       @should_raise_on_put = false
+      @should_raise_on_delete = false
       @uploaded = []
       @deleted = []
     end
@@ -80,6 +81,8 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
     end
 
     def delete_objects(params)
+      raise StandardError, 'S3 delete error' if @should_raise_on_delete
+
       @deleted.concat(params.dig(:delete, :objects).to_a)
       OpenStruct.new(deleted: @deleted)
     end
@@ -341,6 +344,54 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
         { key: 'bulk_chunks/sha/contract/chunk_p1_1.txt' },
         { key: 'bulk_chunks/sha/contract/chunk_p1_1.txt.metadata.json' }
       ], fake.deleted
+    end
+  end
+
+  test 'delete_prefix under bulk_chunks/ invalidates the section neighbor cache for that prefix' do
+    with_fake_s3_client do |fake|
+      fake.objects = [
+        make_s3_object(key: 'bulk_chunks/3/uid/chunk_0.txt', size: 100)
+      ]
+      with_memory_cache do
+        cache_key = Rag::SectionNeighborExpander.index_cache_key('bulk_chunks/3/uid')
+        Rails.cache.write(cache_key, { prefix: 'bulk_chunks/3/uid', pages: {} })
+
+        S3DocumentsService.new.delete_prefix('bulk_chunks/3/uid/')
+
+        assert_nil Rails.cache.read(cache_key)
+      end
+    end
+  end
+
+  test 'delete_prefix outside bulk_chunks/ never touches the section neighbor cache' do
+    with_fake_s3_client do |fake|
+      fake.objects = [
+        make_s3_object(key: 'uploads/3/uid/original.md', size: 100)
+      ]
+      with_memory_cache do
+        cache_key = Rag::SectionNeighborExpander.index_cache_key('bulk_chunks/3/uid')
+        Rails.cache.write(cache_key, { prefix: 'bulk_chunks/3/uid', pages: {} })
+
+        S3DocumentsService.new.delete_prefix('uploads/3/uid/')
+
+        assert Rails.cache.read(cache_key)
+      end
+    end
+  end
+
+  test 'a failed S3 prefix delete never invalidates the section neighbor cache' do
+    with_fake_s3_client do |fake|
+      fake.objects = [
+        make_s3_object(key: 'bulk_chunks/3/uid/chunk_0.txt', size: 100)
+      ]
+      fake.should_raise_on_delete = true
+      with_memory_cache do
+        cache_key = Rag::SectionNeighborExpander.index_cache_key('bulk_chunks/3/uid')
+        Rails.cache.write(cache_key, { prefix: 'bulk_chunks/3/uid', pages: {} })
+
+        assert_equal 0, S3DocumentsService.new.delete_prefix('bulk_chunks/3/uid')
+        assert Rails.cache.read(cache_key)
+      end
     end
   end
 

@@ -156,6 +156,9 @@ class S3DocumentsService
 
   # Removes all objects under a prefix before a deterministic chunk rewrite.
   # Used by manual Batch ingestion so retries cannot leave stale chunks behind.
+  # A successful call under bulk_chunks/ also drops the neighbor-expander
+  # page index: deleting S3 objects without that hook leaves Bedrock and
+  # Rails.cache pointing at a prefix that no longer exists (D18).
   # @param prefix [String] S3 prefix, e.g. "bulk_chunks/<sha>/<contract>"
   # @return [Integer] number of deleted objects
   def delete_prefix(prefix)
@@ -172,6 +175,7 @@ class S3DocumentsService
       )
       deleted += objects.size
     end
+    invalidate_section_neighbor_cache_for_deleted_prefix(prefix)
     deleted
   rescue StandardError => e
     Rails.logger.error("S3 prefix delete failed for #{prefix}: #{e.message}")
@@ -206,6 +210,16 @@ class S3DocumentsService
     return if prefix.blank?
 
     Rag::SectionNeighborExpander.invalidate!(prefix)
+  end
+
+  # #delete_prefix is given a directory prefix (`bulk_chunks/<account>/<uid>`),
+  # not a chunk key. Deriving via rpartition would climb to `bulk_chunks/<account>`
+  # and miss the document index. Called only after a successful list/delete loop.
+  def invalidate_section_neighbor_cache_for_deleted_prefix(prefix)
+    doc_prefix = prefix.to_s.sub(%r{/\z}, "")
+    return unless doc_prefix.start_with?(BULK_CHUNKS_PREFIX)
+
+    Rag::SectionNeighborExpander.invalidate!(doc_prefix)
   end
 
   def find_bucket_name

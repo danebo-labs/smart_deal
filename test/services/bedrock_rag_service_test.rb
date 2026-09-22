@@ -1472,6 +1472,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_match(/under 300 words/, out)
     assert_match(/Do not repeat the conclusion/, out)
     assert_match(/preserve every retrieved fact/, out)
+    assert_not_includes out, "numbered lists"
+    assert_includes out, "short paragraphs"
   end
 
   test 'exhaustive queries override the web answer length target' do

@@ -80,9 +80,15 @@ The elevator pilot no longer has a designated field technician as the source of
 validated internal notes. Case 3's applicable hitch recipe (five ropes with a
 rod) remains unknown until a technician with access to the real assembly can
 validate it. That is a **pilot operating risk**, not an engineering defect: the
-knowledge base already declares the gap, and generation must not invent the
-procedure. Any future internal note that claims field practice needs another
-technical source before it is indexed as applicable.
+knowledge base already declares the gap. A documented procedure for this job is
+not the same thing as a field reference. Generation reasons from the retrieved
+chunks. The best inference is a documented analogous procedure, offered as a
+reference with the source manual, the page, and a disclaimer that it is not
+this job's instruction. What is obvious for that kind of component follows
+those chunks. One fixed sequence is not applied to every question. It is never
+a validated recipe. Generation must not invent a brand, model, part name,
+terminal, or printed value. Any future internal note that claims field practice
+needs another technical source before it is indexed as applicable.
 
 ### What the MVP should measure
 

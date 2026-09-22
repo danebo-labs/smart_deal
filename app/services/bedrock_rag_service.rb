@@ -1033,7 +1033,7 @@ class BedrockRagService
       - Start with one direct sentence. Do not restate the question.
       - Keep focused answers under 300 words. Exhaustive checklists may be longer only
         to preserve every retrieved fact and expected result.
-      - Use short paragraphs or numbered lists; no tables or horizontal rules.
+      - Use short paragraphs; no tables or horizontal rules.
       - Use bold sparingly for critical values or warnings.
       - Do not repeat the conclusion or recommend extra documents unless the selected
         evidence is insufficient.

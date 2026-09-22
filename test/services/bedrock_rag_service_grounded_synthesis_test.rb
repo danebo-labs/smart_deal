@@ -57,11 +57,33 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_not_includes prompt, BedrockRagService::GROUNDED_SYNTHESIS_PROMPT_PREFIX
     assert_not_includes prompt, BedrockRagService::STRICT_ONLY_PROMPT_PREFIX
     assert_includes prompt, "# DISCRIMINATING QUESTION"
-    assert_includes prompt, "Interpretación técnica:"
+    assert_not_includes prompt, "Interpretación técnica:"
     assert_includes prompt, "pertinent to the same component and function"
     assert_includes prompt, "compatible fragments of the same document"
     assert_includes prompt, "the mismatch is itself the answer"
-    assert_includes prompt, "ask for the missing identifier or code"
+    assert_includes prompt, "documented analogous procedure"
+    assert_includes prompt, "use it as a reference"
+    assert_includes prompt, "disclaimer that it is not this equipment's instruction"
+    assert_includes prompt, "Do not apply one fixed sequence to every question"
+    assert_includes prompt, "Cite a procedure as this equipment's fact only when its manual documents it"
+    assert_includes prompt, "for this component and this function"
+    assert_includes prompt, "not this job's step even after the brand is named"
+    assert_includes prompt, "A brand word shared by the question and `[SEARCH_ALIASES:]` is not the model"
+    assert_includes prompt, "that exact string is in the body below the header"
+    assert_includes prompt, "the name the body prints, the document, and the page"
+    assert_includes prompt, "Do not group boards under the question's model for that shared word"
+    assert_includes prompt, "not as a step to execute on this job"
+    assert_includes prompt, "it stays binding after the brand is named"
+    assert_includes prompt, "what that page and the note print"
+    assert_includes prompt, "this job's step only when that same page documents this component and this function"
+    assert_includes prompt, "Naming the brand does not move the sentence"
+    assert_includes prompt, "a page that does not print it"
+    assert_includes prompt, "A limit that same note prints is binding"
+    assert_includes prompt, "Say a cited table's rows in sentences, not bullets, and still show the answer"
+    assert_not_includes prompt, "numbered lists"
+    assert_not_includes prompt, "never a menu or a list"
+    assert_not_includes prompt, "is not evidence for the model asked about"
+    assert_not_includes prompt, "ask for the missing identifier or code"
   end
 
   test "NO MATCH bullets are unchanged between variants" do
@@ -280,10 +302,11 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     raw = Rails.root.join("app/prompts/bedrock/generation.txt").read
     on = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
 
-    %w[Yida MiniSpace enchufe BOLIVAR].each do |term|
+    %w[Yida MiniSpace enchufe BOLIVAR bombillo bombilla Thyssen Fuji].each do |term|
       assert_not_includes raw, term
       assert_not_includes on, term
     end
+    assert_not_includes raw, "light bulb"
     assert_not_includes on, "3 mm"
     assert_not_includes on, "5%"
   end

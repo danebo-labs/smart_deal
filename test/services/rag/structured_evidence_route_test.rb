@@ -572,7 +572,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
     assert_equal :answered, outcome.status
     assert_includes prompt, "# DISCRIMINATING QUESTION"
-    assert_includes prompt, "Interpretación técnica:"
+    assert_not_includes prompt, "Interpretación técnica:"
     assert_not_includes prompt, "STRICT_ONLY"
     assert_not_includes prompt, "GROUNDED_SYNTHESIS"
   end

@@ -76,10 +76,10 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
   end
 
   test "copy lengths stay inside the history truncation" do
-    assert_equal 72, I18n.t("rag.thread_menu_prompt", locale: :es).length
-    assert_equal 89, I18n.t("rag.thread_menu_prompt", locale: :en).length
-    assert_equal 21, I18n.t("rag.thread_menu_new_query", locale: :es).length
-    assert_equal 22, I18n.t("rag.thread_menu_new_query", locale: :en).length
+    assert_equal 75, I18n.t("rag.thread_menu_prompt", locale: :es).length
+    assert_equal 91, I18n.t("rag.thread_menu_prompt", locale: :en).length
+    assert_equal 23, I18n.t("rag.thread_menu_new_query", locale: :es).length
+    assert_equal 23, I18n.t("rag.thread_menu_new_query", locale: :en).length
     assert I18n.t("rag.thread_menu_prompt", locale: :es).length < ConversationSession::MAX_MSG_LENGTH
     assert I18n.t("rag.thread_menu_prompt", locale: :en).length < ConversationSession::MAX_MSG_LENGTH
   end

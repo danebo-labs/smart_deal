@@ -193,7 +193,12 @@ module Rag
     end
 
     def menu_label(segment)
-      segment.lines.map(&:strip).reject(&:empty?).join(" — ").truncate(MAX_LABEL_CHARS)
+      flat = segment.lines.map(&:strip).reject(&:empty?).join(" — ")
+      prefix, suffix = I18n.t("rag.thread_menu_continue", locale: @locale).split("%{segment}", 2)
+      suffix = suffix.to_s
+      budget = MAX_LABEL_CHARS - prefix.length - suffix.length
+      body = flat.truncate(budget.positive? ? budget : MAX_LABEL_CHARS)
+      "#{prefix}#{body}#{suffix}"
     end
 
     def parse_ts(value)

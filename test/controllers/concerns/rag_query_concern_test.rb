@@ -2321,7 +2321,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
 
     assert_equal I18n.t("rag.thread_menu_prompt", locale: :en), result.answer
-    assert_equal "This is a new question", result.quick_replies.last[:label]
+    assert_equal "Is this a new question?", result.quick_replies.last[:label]
   end
 
   private

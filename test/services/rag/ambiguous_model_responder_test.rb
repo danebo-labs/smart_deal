@@ -86,7 +86,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
     assert_equal false, result[:model_invoked]
     assert_equal 3, result[:quick_replies].size
-    assert_equal "TOKIBAT — DL27", result.dig(:quick_replies, 0, :label)
+    assert_equal "¿Es la placa TOKIBAT — DL27?", result.dig(:quick_replies, 0, :label)
     assert_includes result.dig(:quick_replies, 0, :query), "¿Qué LED se enciende cuando falla?"
     assert_includes result[:answer], "varias placas o modelos"
     assert_equal [ 39, 93, 22 ], result[:citations].pluck(:page)
@@ -111,8 +111,11 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal [ "CTA – M8PC (ELÉCTRICO Y HIDRÁULICO)", "ARCA III", "MAC 5000" ],
-                 result[:quick_replies].pluck(:label)
+    assert_equal [
+      "¿Es la placa CTA – M8PC (ELÉCTRICO Y HIDRÁULICO)?",
+      "¿Es la placa ARCA III?",
+      "¿Es la placa MAC 5000?"
+    ], result[:quick_replies].pluck(:label)
   end
 
   test "does not fabricate a manufacturer from unrelated text in the chunk body" do
@@ -125,8 +128,8 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     labels = result[:quick_replies].pluck(:label)
-    assert_not labels.any? { |label| label.start_with?("ALTIUS — ") }
-    assert_includes labels, "EM 4000 V1"
+    assert_not labels.any? { |label| label.include?("ALTIUS — ") }
+    assert_includes labels, "¿Es la placa EM 4000 V1?"
   end
 
   test "web omits the numbered list because chips already carry the options" do
@@ -214,8 +217,10 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal [ "TWISTER TW – ELECTRICO - EMBARBA", "LEVEL CONTROL 1B – ELECTRICO - PREMONTADA" ],
-                 result[:quick_replies].pluck(:label)
+    assert_equal [
+      "¿Es la placa TWISTER TW – ELECTRICO - EMBARBA?",
+      "¿Es la placa LEVEL CONTROL 1B – ELECTRICO - PREMONTADA?"
+    ], result[:quick_replies].pluck(:label)
   end
 
   # The regression that stops the filter from disabling disambiguation whole:
@@ -263,7 +268,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal "TWISTER TW – ELECTRICO - EMBARBA", result.dig(:quick_replies, 0, :label)
+    assert_equal "¿Es la placa TWISTER TW – ELECTRICO - EMBARBA?", result.dig(:quick_replies, 0, :label)
   end
 
   private

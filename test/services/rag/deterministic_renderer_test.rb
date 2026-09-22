@@ -181,12 +181,12 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     assert_no_match(/FR-TEST/, result[:answer])
   end
 
-  test "fails safe with DATA_NOT_AVAILABLE when the ledger is invalid" do
+  test "fails safe without the raw marker when the ledger is invalid" do
     truncated = FT_CHUNK.sub("END_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-TEST000000000004", "FIELD_RECORD:\nRECORD_ID: FR-TEST000000000004")
     renderer, = build(Q_FT, [ truncated ])
     result = renderer.execute
 
-    assert_match(/\ADATA_NOT_AVAILABLE/, result[:answer])
+    assert_visible_absence result[:answer]
     assert_not_equal "ok", result[:deterministic_validation]
     assert_empty result[:rendered_record_ids]
   end
@@ -195,7 +195,7 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     renderer, = build(Q_FT, [ "[DOCUMENT: manual.pdf]\nSolo narrativa." ])
     result = renderer.execute
 
-    assert_match(/\ADATA_NOT_AVAILABLE/, result[:answer])
+    assert_visible_absence result[:answer]
     assert_equal "empty_ledger", result[:deterministic_validation]
   end
 
@@ -226,7 +226,7 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     renderer, = build(Q_SW, [ "FIELD_RECORD:\nRECORD_ID: FR-TEST00000000000B#{only_precautions}" ])
     result = renderer.execute
 
-    assert_match(/\ADATA_NOT_AVAILABLE/, result[:answer])
+    assert_visible_absence result[:answer]
     assert_equal "no_applicable_records", result[:deterministic_validation]
   end
 
@@ -256,5 +256,12 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     assert_equal 1, result[:citations].size
     assert_equal URIS.first, result[:doc_refs].first["source_uri"]
     assert_equal 2, result[:retrieved_chunk_sha256s].size
+  end
+
+  private
+
+  def assert_visible_absence(answer)
+    assert_not_includes answer, "DATA_NOT_AVAILABLE"
+    assert_includes answer, I18n.t("rag.data_not_available")
   end
 end

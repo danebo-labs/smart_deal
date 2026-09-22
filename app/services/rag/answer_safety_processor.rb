@@ -361,6 +361,8 @@ module Rag
       line.to_s.match?(HEADER_LINE_PATTERN)
     end
 
+    public
+
     def render_internal_markers(answer)
       answer
         .gsub(/\bDATA_NOT_AVAILABLE\b/, I18n.t("rag.data_not_available", locale: @locale))
@@ -369,6 +371,8 @@ module Rag
           I18n.t("rag.requires_field_verification", locale: @locale)
         )
     end
+
+    private
 
     def evidence_text(evidence)
       Array(evidence).filter_map do |item|

@@ -95,7 +95,7 @@ module Rag
         model_invoked: false,
         quick_replies: selected.map do |candidate|
           {
-            label: candidate[:label],
+            label: I18n.t("rag.ambiguous_model_option", locale: @locale, model: candidate[:label]),
             query: "#{@question}\n#{I18n.t('rag.model_selection_query', locale: @locale, model: candidate[:label])}"
           }
         end

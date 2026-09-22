@@ -119,7 +119,7 @@ module Rag
     def failure_result(retrieval, ledger, validation)
       Rails.logger.warn("#{self.class.name}: failing safe (#{validation})")
       {
-        answer:              I18n.t("rag.pinned_no_results", locale: locale),
+        answer:              visible_pinned_no_results,
         citations:           [],
         retrieved_citations: [],
         doc_refs:            nil,
@@ -139,6 +139,16 @@ module Rag
     def ledger_sha256(ledger)
       Digest::SHA256.hexdigest(
         ledger.records.map { |r| "#{r.record_id}:#{r.content_fingerprint}" }.sort.join("\n")
+      )
+    end
+
+    # The locale string keeps the raw marker so the Bedrock path can still
+    # detect it. This deterministic failure never reaches that path, so the
+    # technician sees the same translation AnswerSafetyProcessor already
+    # applies on the main route.
+    def visible_pinned_no_results
+      Rag::AnswerSafetyProcessor.new(locale: locale).render_internal_markers(
+        I18n.t("rag.pinned_no_results", locale: locale)
       )
     end
 

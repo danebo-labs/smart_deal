@@ -288,6 +288,10 @@ class QueryOrchestratorService
       end
 
       Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
+      if (context_result = context_evidence_result)
+        return context_result.merge(upload_context)
+      end
+
       BedrockRagService.new(account: @account).query(
         @query,
         session_id: @session_id,
@@ -308,6 +312,10 @@ class QueryOrchestratorService
         "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
         "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
       )
+      if (context_result = context_evidence_result)
+        return context_result.merge(upload_context)
+      end
+
       BedrockRagService.new(account: @account).query(
         @query,
         session_id: @session_id,
@@ -324,6 +332,26 @@ class QueryOrchestratorService
   end
 
   private
+
+  def context_evidence_result
+    route = Rag::ContextEvidenceRoute.build(
+      question: @query,
+      account: @account,
+      entity_s3_uris: @entity_s3_uris,
+      entity_sources: entity_sources,
+      response_locale: @response_locale,
+      output_channel: @output_channel,
+      account_id: @account&.id,
+      user_id: @user_id,
+      conversation_session_id: @conversation_session_id,
+      correlation_id: @correlation_id
+    )
+    outcome = route&.execute
+    return nil unless outcome&.status == :answered || outcome&.status == :abstained
+
+    Rails.logger.info("QueryOrchestrator: context_evidence_route outcome=#{outcome.status}")
+    outcome.result
+  end
 
   def rag_telemetry
     {

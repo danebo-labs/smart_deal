@@ -81,7 +81,7 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       condition: "UNKNOWN",
       visible_codes: [ "Caracteristicas Motor", "Fijacion de Cables", "000A60961010" ]
     }
-    question = "Como se ajustan los resortes de la fijacion de cables"
+    question = "Como se inspecciona la fijacion de cables"
 
     build_service(question: question, photo_value: photo_value).call
 

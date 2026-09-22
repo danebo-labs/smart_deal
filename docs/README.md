@@ -66,6 +66,7 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 | [PLAN_HILO_CONSULTA_2026-09-21.md](PLAN_HILO_CONSULTA_2026-09-21.md) | **F0 cerrada y F1 implementada 21-sep noche, sin desplegar.** Unión determinista cuando queda un tramo; el menú (máx. 4 chips) es el fallback. Episodio real: se une, 114 caracteres. Flag `RAG_THREAD_MENU_ENABLED`. Holdout, Fase G y Fase S no corridas. |
 | [PLAN_ASISTENTE_TECNICO_MVP_2026-09-21.md](PLAN_ASISTENTE_TECNICO_MVP_2026-09-21.md) | **Decisión de producto CS-P01, CS-P02 y CS-P03, sin validar.** El MVP se potencia como asistente de técnico: el conocimiento de arranque sale de los manuales ya ingeridos. Si el manual de este trabajo no trae el procedimiento, se infiere por analogía técnica como hipótesis, con descargo. CS-P03 nombra, y no construye, el diagnóstico revisado que pasa a conocimiento de la organización. Ordena el holdout del hilo y el lever de §9.2 / Fase G. No autoriza código ni Bedrock. |
 | [PLAN_COPILOTO_GENERACION_2026-09-22.md](PLAN_COPILOTO_GENERACION_2026-09-22.md) | **A, G, mediciones 2–8 y D cerradas 22-sep.** Medición 8: proyección corta, 4 envíos, US$0,0226. Útil y safety pasan. El camino local no está desplegado. CG-D16 pendiente. |
+| [PLAN_VALIDACION_CG_D16_2026-09-22.md](PLAN_VALIDACION_CG_D16_2026-09-22.md) | Validación independiente de CG-D16, solo lectura. La gramática de parada y de lista exhaustiva sigue pendiente de Lahiri. |
 
 ## Preserved capabilities that are disabled in the MVP pilot
 

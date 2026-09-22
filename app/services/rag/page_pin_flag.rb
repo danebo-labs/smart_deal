@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 module Rag
-  # Independent live-route flag, same pattern as StructuredEvidenceRouteFlag.
+  # Retired for retrieval. A question that names a page does not narrow the
+  # search: a field technician does not remember a page among the manuals.
+  # The ENV remains so an old setting does not change retrieve.
   module PagePinFlag
     module_function
 

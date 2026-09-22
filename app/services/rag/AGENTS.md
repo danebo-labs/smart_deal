@@ -17,6 +17,26 @@
 * Avoid repeated retrieval calls within the same user turn.
 * Reuse existing session context when available.
 
+## Manual corpus scope
+
+Danebo (`danebo-legacy`) and the elevator pilot (`danebo-pilot-elevator`) are general knowledge for every account's retrieve. Their `account_id` is already on the indexed chunks, so this does not need a reindex. Photos of those accounts stay out of other accounts' retrieval.
+
+A new document chooses scope at parse time, on `BatchResultsParserService#call`:
+
+* `corpus_scope: "general"` writes `manual_corpus=general`. Every account retrieves it.
+* `corpus_scope: "account"` omits the attribute. Only that `account_id` matches.
+* omitted: manuals of the two slugs above default to general; any other account defaults to account-only.
+
+Photos never receive `manual_corpus`, even when `corpus_scope` is `"general"`.
+
+A question does not pin a manual or a page, and a previous turn does not either. A field technician does not remember a page number among the manuals, so a mentioned page never narrows retrieval. Auto-scope and episode document inheritance were the WhatsApp stand-in for a pin control. A catalog token stays in Query Resolution.
+
+Without a pin, retrieval is the shared document base: the session account, Danebo, the pilot, and `manual_corpus=general`. Danebo and the pilot share that base. Photos of the other account stay out.
+
+A document the technician pinned is the whole scope of that retrieve. The filter is those URIs alone. It does not stay open over the rest of the shared base.
+
+A retrieve filter must stay inside Bedrock's one embedded logical operator and five clauses per group. Do not wrap `account_filter` (its shared-account arm is already an `andAll`) in another `andAll`.
+
 ## Safety
 
 * Never invent procedures, measurements, tolerances, or safety instructions.

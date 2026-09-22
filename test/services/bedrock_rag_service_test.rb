@@ -622,19 +622,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
     assert_not_nil filter
 
-    # Account filter is always present; entity filter nested inside and_all
-    # Structure: { and_all: [ account_filter, { or_all: [ ...uri filters... ] } ] }
-    or_all = filter.dig(:and_all, 1, :or_all)
-    assert_not_nil or_all, "entity filter must be wrapped in and_all alongside account filter"
-
-    # Each URI is OR-ed against BOTH x-amz-bedrock-kb-source-uri (legacy) and
-    # original_source_uri (batch sidecar) → 2 URIs × 2 keys = 4 clauses.
-    assert_equal 4, or_all.size
-
-    keys_for_doc1 = or_all
-                      .select { |c| c[:equals][:value] == 's3://bucket/doc1.pdf' }
-                      .map { |c| c[:equals][:key] }
-    assert_equal %w[x-amz-bedrock-kb-source-uri original_source_uri].sort, keys_for_doc1.sort
+    # The pin is those URIs alone, on both metadata keys.
+    clauses = uri_key_clauses(filter)
+    assert_equal 2, clauses.size
+    assert_equal BedrockRagService::URI_METADATA_KEYS.sort, clauses.pluck(:key).sort
+    clauses.each do |clause|
+      assert_equal uris.sort, clause[:value].sort
+    end
+    assert_not filter_contains?(filter, "account_id", @account.id.to_s)
+    assert_not filter_contains?(filter, "manual_corpus", "general")
+    assert_bedrock_filter filter
   end
 
   test 'build_complete_optimized_config uses or_all even for a single entity_s3_uri so batch chunks are matched' do
@@ -644,16 +641,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
     assert_not_nil filter
 
-    # Account filter is always present; entity filter is nested inside and_all
-    # Structure: { and_all: [ account_filter, { or_all: [ ...uri filters... ] } ] }
-    or_all = filter.dig(:and_all, 1, :or_all)
-    assert_not_nil or_all, "entity filter must be wrapped in and_all alongside account filter"
-
-    # Single URI must still OR across both keys (legacy + batch); orAll requires >= 2 members.
-    assert_equal 2, or_all.size
-    assert or_all.all? { |c| c[:equals][:value] == 's3://bucket/only.pdf' }
+    clauses = uri_key_clauses(filter)
+    assert_equal 2, clauses.size
+    assert clauses.all? { |clause| clause[:value] == 's3://bucket/only.pdf' }
     assert_equal %w[x-amz-bedrock-kb-source-uri original_source_uri].sort,
-                 or_all.map { |c| c[:equals][:key] }.sort
+                 clauses.pluck(:key).sort
+    assert_not filter_contains?(filter, "account_id", accounts(:pilot).id.to_s)
+    assert_not filter_contains?(filter, "manual_corpus", "general")
   end
 
   test 'build_complete_optimized_config uses only account filter when entity_s3_uris empty' do
@@ -664,6 +658,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     # Account filter is always present; no entity/or_all filter when no URIs
     assert_not_nil filter
     assert_account_filter filter
+    assert filter_contains?(filter, "account_id", accounts(:legacy).id.to_s)
+    assert filter_contains?(filter, "account_id", accounts(:pilot).id.to_s)
+    assert filter_contains?(filter, "manual_corpus", "general")
     assert_nil filter[:and_all], "no and_all wrapping needed without entity filter"
   end
 
@@ -746,25 +743,17 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :filter
       )
       assert_not_nil filter, "force_entity_filter must scope retrieval to the picked doc"
-      # Filter structure: { and_all: [ account_filter, { or_all: [ uri filters ] } ] }
-      or_all = filter.dig(:and_all, 1, :or_all)
-      assert_not_nil or_all, "entity filter must be in or_all nested inside and_all"
-      values = or_all.map { |c| c[:equals][:value] }.uniq
-      assert_equal [ 's3://bucket/orona_arca_basico.pdf' ], values,
-                   "filter must target the explicitly bound source URI on every clause"
-      keys = or_all.map { |c| c[:equals][:key] }.sort
-      assert_equal %w[original_source_uri x-amz-bedrock-kb-source-uri], keys
+      clauses = uri_key_clauses(filter)
+      assert_equal [ 's3://bucket/orona_arca_basico.pdf' ], clauses.pluck(:value).uniq
+      assert_equal %w[original_source_uri x-amz-bedrock-kb-source-uri], clauses.pluck(:key).sort
     end
   end
 
-  test 'query applies entity filter when auto_scope_filter is true even if query names a different document' do
-    # auto_scope_filter comes from KbDocumentResolver's specific match on THIS
-    # question (not a session pin), so query_names_different_document? — which
-    # protects pins from an off-topic follow-up — must not apply here either.
+  test 'auto_scope_filter does not pin a document' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
       service.query(
-        'Que significa el codigo de error de la tarjeta MPK 708A?',
+        'Show me information about the MotorController installation manual please',
         entity_s3_uris:    [ 's3://bucket/mpk_708a.pdf' ],
         auto_scope_filter: true
       )
@@ -776,10 +765,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :vector_search_configuration,
         :filter
       )
-      or_all = filter.dig(:and_all, 1, :or_all)
-      assert_not_nil or_all, "auto_scope_filter must scope retrieval to the resolved source URI"
-      values = or_all.map { |c| c[:equals][:value] }.uniq
-      assert_equal [ 's3://bucket/mpk_708a.pdf' ], values
+      assert_not_includes filter.to_s, 'mpk_708a.pdf'
+      assert filter_contains?(filter, 'account_id', accounts(:legacy).id.to_s)
+      assert filter_contains?(filter, 'account_id', accounts(:pilot).id.to_s)
     end
   end
 
@@ -797,7 +785,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           :retrieval_configuration,
           :vector_search_configuration
         )
-        entity_filter_present = vector&.dig(:filter)&.dig(:and_all, 1)&.present?
+        entity_filter_present = vector&.dig(:filter).to_s.include?("s3://bucket/mpk_708a.pdf")
         text = entity_filter_present ? no_results_text : real_answer
         ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: [], session_id: 'sid')
       end
@@ -873,8 +861,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           :vector_search_configuration
         )
         filter = vector&.dig(:filter)
-        # Account filter is always present; entity URI filter is inside and_all[1]
-        entity_filter_present = filter&.dig(:and_all, 1)&.present?
+        entity_filter_present = filter.to_s.include?("s3://bucket/junction_box.pdf")
         text = entity_filter_present ? no_results_text : real_answer
         citations =
           if entity_filter_present
@@ -977,13 +964,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 1, call_count, "force_entity_filter must not open a second retrieve_and_generate"
       assert_equal 1, rag_filters.size
-      assert_account_filter rag_filters.first
       assert filter_contains?(rag_filters.first, "original_source_uri", elemont)
       assert filter_contains?(rag_filters.first, "original_source_uri", cea15)
+      assert_not filter_contains?(rag_filters.first, "account_id", @account.id.to_s)
       retrieve_filters.each do |filter|
-        assert_account_filter filter
         assert filter_contains?(filter, "original_source_uri", elemont)
         assert filter_contains?(filter, "original_source_uri", cea15)
+        assert_not filter_contains?(filter, "account_id", @account.id.to_s)
       end
       assert_equal true, result.dig(:diagnostics, :canned_no_results)
       assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
@@ -1035,9 +1022,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 2, attempts
       rag_filters.each do |filter|
-        assert_account_filter filter
         assert filter_contains?(filter, "original_source_uri", elemont)
         assert filter_contains?(filter, "original_source_uri", cea15)
+        assert_not filter_contains?(filter, "account_id", @account.id.to_s)
       end
     end
   ensure
@@ -1618,15 +1605,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_account_filter config[:filter]
   end
 
-  test 'vector configuration keeps account filter with pinned documents' do
+  test 'vector configuration scopes a pinned document to that document alone' do
     service = BedrockRagService.new(account: @account)
     config = service.build_vector_search_configuration(
       question: "What is this manual?",
       entity_s3_uris: [ "s3://bucket/manual.pdf" ]
     )
 
-    assert_account_filter config[:filter]
     assert_filter_key config[:filter], "original_source_uri"
+    assert_not filter_contains?(config[:filter], "account_id", @account.id.to_s)
+    assert_no_filter_key config[:filter], "page_number"
   end
 
   # ── Fase 1 (ciclo 4, N10): page-pin filter ──
@@ -1647,29 +1635,22 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_no_filter_key config[:filter], 'page_number'
   end
 
-  test 'page-pin filter applies an integer equals when the flag is on and one page is named' do
+  test 'a named page does not pin retrieval even when the page flag is on' do
     with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
       service = BedrockRagService.new(account: @account)
       config = service.build_vector_search_configuration(question: 'Qué dice la página 46?')
 
-      assert_filter_key config[:filter], 'page_number'
-      value = find_filter_value(config[:filter], 'page_number')
-      assert_equal 46, value
-      assert_kind_of Integer, value, "page_number filter value must be numeric (E2), got #{value.class}"
+      assert_no_filter_key config[:filter], 'page_number'
       assert_account_filter config[:filter]
     end
   end
 
-  test 'page-pin filter recognizes pág./page variants and extracts N from the existing match' do
+  test 'pág. and page mentions do not pin retrieval' do
     with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
       service = BedrockRagService.new(account: @account)
 
-      assert_equal 92, find_filter_value(
-        service.build_vector_search_configuration(question: 'ver pág. 92')[:filter], 'page_number'
-      )
-      assert_equal 7, find_filter_value(
-        service.build_vector_search_configuration(question: 'see page 7 for details')[:filter], 'page_number'
-      )
+      assert_no_filter_key service.build_vector_search_configuration(question: 'ver pág. 92')[:filter], 'page_number'
+      assert_no_filter_key service.build_vector_search_configuration(question: 'see page 7 for details')[:filter], 'page_number'
     end
   end
 
@@ -1684,7 +1665,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'page-pin filter combines with the entity-pin filter under the same AND' do
+  test 'a pinned document stays that document when the question also names a page' do
     with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
       service = BedrockRagService.new(account: @account)
       config = service.build_vector_search_configuration(
@@ -1692,9 +1673,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         entity_s3_uris: [ 's3://bucket/manual.pdf' ]
       )
 
-      assert_account_filter config[:filter]
       assert_filter_key config[:filter], 'original_source_uri'
-      assert_equal 46, find_filter_value(config[:filter], 'page_number')
+      assert_no_filter_key config[:filter], 'page_number'
+      assert_not filter_contains?(config[:filter], 'account_id', @account.id.to_s)
     end
   end
 
@@ -1716,7 +1697,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         service = BedrockRagService.new(account: @account)
         service.retrieve_chunks('página 46')
 
-        assert_equal 46, find_filter_value(
+        assert_no_filter_key(
           client.last_retrieve_params.dig(:retrieval_configuration, :vector_search_configuration, :filter),
           'page_number'
         )
@@ -1724,14 +1705,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'query retries without the page filter when it yields Bedrock no-results, without dropping the entity filter' do
+  test 'a named page does not open a second call when the document pin is forced' do
     with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
       bedrock_sorry = "Sorry, I am unable to assist you with this request."
 
       with_mock_bedrock_client do |client|
         call_filters = []
         sorry_response = fake_response(bedrock_sorry)
-        good_response  = fake_response("La página 46 no está disponible en el KB.")
         client.define_singleton_method(:retrieve_and_generate) do |params|
           @last_retrieve_and_generate_params = params
           call_filters << params.dig(
@@ -1741,7 +1721,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
             :vector_search_configuration,
             :filter
           )
-          call_filters.size == 1 ? sorry_response : good_response
+          sorry_response
         end
 
         BedrockRagService.new(account: @account).query(
@@ -1750,11 +1730,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           force_entity_filter: true
         )
 
-        assert_equal 2, call_filters.size
-        assert_equal 46, find_filter_value(call_filters.first, 'page_number')
+        assert_equal 1, call_filters.size
+        assert_no_filter_key call_filters.first, 'page_number'
         assert_filter_key call_filters.first, 'original_source_uri'
-        assert_no_filter_key call_filters.second, 'page_number'
-        assert_filter_key call_filters.second, 'original_source_uri'
       end
     end
   end
@@ -1784,8 +1762,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       )
 
       assert_equal 2, call_filters.size
-      assert_account_filter call_filters.first
       assert_filter_key call_filters.first, "original_source_uri"
+      assert_not filter_contains?(call_filters.first, "account_id", @account.id.to_s)
       assert_account_filter call_filters.second
       assert_no_filter_key call_filters.second, "original_source_uri"
       assert_no_filter_key call_filters.second, "x-amz-bedrock-kb-source-uri"
@@ -1860,6 +1838,31 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   # ── Gate 9R I0: one row per billable invocation, filtered + global correlated ──
 
+  def uri_key_clauses(filter)
+    found = []
+    walk = lambda do |node|
+      case node
+      when Hash
+        clause = node[:equals] || node[:in]
+        found << clause if clause && BedrockRagService::URI_METADATA_KEYS.include?(clause[:key])
+        node.each_value { |value| walk.call(value) }
+      when Array
+        node.each { |value| walk.call(value) }
+      end
+    end
+    walk.call(filter)
+    found
+  end
+
+  def assert_bedrock_filter(node, depth: 1)
+    list = node[:or_all] || node[:and_all] if node.is_a?(Hash)
+    return unless list
+
+    assert_operator depth, :<=, 2, node.inspect
+    assert_includes 2..5, list.size, node.inspect
+    list.each { |child| assert_bedrock_filter(child, depth: depth + 1) }
+  end
+
   def assert_account_filter(filter)
     assert filter_contains?(filter, "account_id", @account.id.to_s),
            "expected account_id=#{@account.id} filter in #{filter.inspect}"
@@ -1880,6 +1883,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       return true if equals && (equals[:key] || equals["key"]).to_s == key &&
                      (equals[:value] || equals["value"]).to_s == value
 
+      included = node[:in] || node["in"]
+      if included && (included[:key] || included["key"]).to_s == key
+        values = Array(included[:value] || included["value"]).map(&:to_s)
+        return true if values.include?(value.to_s)
+      end
+
       node.any? { |_k, v| filter_contains?(v, key, value) }
     when Array
       node.any? { |v| filter_contains?(v, key, value) }
@@ -1893,6 +1902,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     when Hash
       equals = node[:equals] || node["equals"]
       return true if equals && (equals[:key] || equals["key"]).to_s == key
+
+      included = node[:in] || node["in"]
+      return true if included && (included[:key] || included["key"]).to_s == key
 
       node.any? { |_k, v| filter_key_present?(v, key) }
     when Array

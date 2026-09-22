@@ -1092,8 +1092,58 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
 
     assert_equal legacy_account.id.to_s, attrs["account_id"],  "account_id must match legacy account"
     assert_equal legacy_uid,             attrs["document_id"],  "document_id must match legacy uid"
+    assert_equal "general",              attrs["manual_corpus"]
     assert attrs["account_id"].present?,  "account_id must not be blank"
     assert attrs["document_id"].present?, "document_id must not be blank"
+  end
+
+  test "manual_corpus is general for the pilot manuals and absent for photos and other accounts" do
+    pilot = accounts(:pilot)
+    asset = make_asset
+    parser = build_parser
+    parser.call(account_id: pilot.id, document_uid: SecureRandom.uuid, asset: asset, result: make_result)
+    attrs = JSON.parse(@fake_s3.uploads["#{asset.reload.chunks_s3_prefix}/chunk_0.txt.metadata.json"])
+                 .fetch("metadataAttributes")
+    assert_equal "general", attrs["manual_corpus"]
+
+    photo = make_asset
+    envelope = {
+      "document_name" => DOC_NAME,
+      "aliases" => ALIASES,
+      "chunks" => [ { "text" => "photo identity chunk", "page" => nil } ]
+    }
+    parser.call(
+      account_id: pilot.id, document_uid: SecureRandom.uuid, asset: photo,
+      raw_json: envelope.to_json, ingestion_path: "field_photo_v1"
+    )
+    photo_attrs = JSON.parse(@fake_s3.uploads["#{photo.reload.chunks_s3_prefix}/chunk_0.txt.metadata.json"])
+                      .fetch("metadataAttributes")
+    assert_not photo_attrs.key?("manual_corpus")
+
+    climb = accounts(:climb)
+    other = make_asset
+    parser.call(account_id: climb.id, document_uid: SecureRandom.uuid, asset: other, result: make_result)
+    climb_attrs = JSON.parse(@fake_s3.uploads["#{other.reload.chunks_s3_prefix}/chunk_0.txt.metadata.json"])
+                      .fetch("metadataAttributes")
+    assert_not climb_attrs.key?("manual_corpus")
+
+    scoped = make_asset
+    parser.call(
+      account_id: climb.id, document_uid: SecureRandom.uuid, asset: scoped,
+      result: make_result, corpus_scope: "general"
+    )
+    scoped_attrs = JSON.parse(@fake_s3.uploads["#{scoped.reload.chunks_s3_prefix}/chunk_0.txt.metadata.json"])
+                       .fetch("metadataAttributes")
+    assert_equal "general", scoped_attrs["manual_corpus"]
+
+    private_manual = make_asset
+    parser.call(
+      account_id: pilot.id, document_uid: SecureRandom.uuid, asset: private_manual,
+      result: make_result, corpus_scope: "account"
+    )
+    private_attrs = JSON.parse(@fake_s3.uploads["#{private_manual.reload.chunks_s3_prefix}/chunk_0.txt.metadata.json"])
+                        .fetch("metadataAttributes")
+    assert_not private_attrs.key?("manual_corpus")
   end
 
   test "P-01/P-02: raises ParseError before any S3 write when account_id is nil" do

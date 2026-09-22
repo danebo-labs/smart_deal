@@ -69,9 +69,13 @@ class BatchResultsParserService
   # @param result        [Object, nil]  Anthropic batch result (.result.type, .result.message)
   # @param raw_json      [String, nil]  pre-parsed JSON string (web path — skips result unwrap)
   # @param ingestion_path [String]      "batch_v1" | "web_v1"
+  # @param corpus_scope [String, nil] "general" (every account retrieves it),
+  #   "account" (only this account_id), or nil (Danebo and the pilot default
+  #   to general; any other account defaults to account-only). Photos ignore it.
   # @return asset with parsed fields set
   # @raise [ParseError]
-  def call(asset:, result: nil, raw_json: nil, ingestion_path: "batch_v1", account_id: nil, document_uid: nil)
+  def call(asset:, result: nil, raw_json: nil, ingestion_path: "batch_v1", account_id: nil, document_uid: nil, corpus_scope: nil)
+    Rag::SharedManualCorpus.validate_scope!(corpus_scope)
     text = if raw_json
       raw_json
     else
@@ -109,7 +113,8 @@ class BatchResultsParserService
       aliases:        aliases,
       ingestion_path: ingestion_path,
       account_id:     account_id,
-      document_uid:   document_uid
+      document_uid:   document_uid,
+      corpus_scope:   corpus_scope
     )
 
     if asset.respond_to?(:update!)
@@ -441,7 +446,7 @@ class BatchResultsParserService
     end
   end
 
-  def write_chunks_to_s3(prefix:, chunks:, asset:, canonical_name:, aliases:, ingestion_path:, account_id:, document_uid:)
+  def write_chunks_to_s3(prefix:, chunks:, asset:, canonical_name:, aliases:, ingestion_path:, account_id:, document_uid:, corpus_scope: nil)
     original_uri = original_source_uri(asset)
     delete_existing_chunks(prefix) if ingestion_path == MANUAL_BATCH_INGESTION_PATH
 
@@ -464,7 +469,8 @@ class BatchResultsParserService
         page_number:    chunk["page"],
         section_identity: chunk["section_identity"],
         section_path:   chunk["section_path"],
-        topology_edge_count: topology_records.size
+        topology_edge_count: topology_records.size,
+        corpus_scope:   corpus_scope
       )
 
       @s3.upload_text(txt_key, header + body)
@@ -657,11 +663,14 @@ class BatchResultsParserService
   # `ingestion_path` distinguishes web_v1 (optimized) from batch_v1 (bulk) in telemetry.
   # `section_identity` is the brand/controller-family section a divider page declared
   # and ChunkMergerService carried forward (field_records_v7); absent when unknown.
-  # `account_id` / `project_id` are reserved here as multi-tenant seams — absent today (MVP).
+  # `account_id` scopes the chunk. `manual_corpus=general` marks a manual as
+  # general RAG knowledge (see `Rag::SharedManualCorpus`). `corpus_scope`
+  # `"general"` or `"account"` overrides the default for this document.
+  # Photos never get the attribute. `project_id` stays unused.
   # `section_path` and `topology_edge_count` (Fase 4, contract v8) are gated on
   # IngestionLayoutFlag — absent whenever the flag is off, which is what keeps a
   # v7 sidecar byte-identical to what this method would have written before Fase 4.
-  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:, account_id:, document_uid:, page_number:, section_identity: nil, section_path: nil, topology_edge_count: nil)
+  def sidecar_metadata(asset:, canonical_name:, aliases:, original_uri:, ingestion_path:, account_id:, document_uid:, page_number:, section_identity: nil, section_path: nil, topology_edge_count: nil, corpus_scope: nil)
     contract_version, prompt_fingerprint = contract_metadata(ingestion_path)
 
     attributes = {
@@ -676,6 +685,10 @@ class BatchResultsParserService
       "prompt_fingerprint_sha256"  => prompt_fingerprint,
       "aliases"             => sanitize_aliases(aliases, limit: DOCUMENT_ALIAS_LIMIT)
     }
+    if Rag::SharedManualCorpus.tag?(account_id: account_id, ingestion_path: ingestion_path, corpus_scope: corpus_scope)
+      attributes[Rag::SharedManualCorpus::ATTRIBUTE] = Rag::SharedManualCorpus::GENERAL
+    end
+
     normalized_page = Integer(page_number, exception: false)
     attributes["page_number"] = normalized_page if normalized_page&.positive?
     normalized_section = section_identity.to_s.strip

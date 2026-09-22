@@ -113,19 +113,38 @@ filter, including global-catalog searches with no pinned document:
 ```ruby
 {
   and_all: [
-    { equals: { key: "account_id", value: account.id.to_s } },
+    {
+      or_all: [
+        { equals: { key: "account_id", value: account.id.to_s } },
+        # Danebo and the elevator pilot, already indexed. Photos excluded.
+        { and_all: [
+          { equals: { key: "account_id", value: shared_account_id } },
+          { not_equals: { key: "ingestion_path", value: "field_photo_v1" } }
+        ] },
+        # Later ingests that opted into general scope.
+        { equals: { key: "manual_corpus", value: "general" } }
+      ]
+    },
     optional_document_filter
   ].compact
 }
 ```
 
+`BedrockRagService#account_filter` builds that `or_all`. A new document picks
+scope with `corpus_scope: "general"` or `"account"` on
+`BatchResultsParserService#call`. Omitted, Danebo and the pilot default to
+general and every other account stays account-only. See
+`Rag::SharedManualCorpus`.
+
 Rules:
 
 1. Missing account context raises an error before calling Bedrock.
 2. The account filter is mandatory and cannot be overridden by `custom_config`.
-3. A no-results retry may remove a document/pin filter, but never `account_id`.
-4. Citation processing must reject results whose metadata account differs from
-   the authenticated account.
+3. A no-results retry may remove a document/pin filter, but never the account
+   `or_all` above.
+4. Citations from the session account, from Danebo, from the elevator pilot,
+   or from a chunk marked `manual_corpus=general` are in scope. Do not drop
+   them for belonging to another account id.
 5. Background jobs receive `account_id` explicitly; they do not rely on
    request-local `Current`.
 

@@ -35,6 +35,10 @@ class BedrockRagService
   STRICT_CONTRACT_VERSION = "strict-v1"
   CITATION_MARKER_PATTERN = /\[[1-9]\d*\]/.freeze
   RAG_QUALITY_EXCLUDED_KEYS = %i[question answer_snippet citation_titles].freeze
+  # Query configurations: one embedded logical operator, five clauses per list.
+  # https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-config.html
+  BEDROCK_FILTER_MAX_LIST = 5
+  URI_METADATA_KEYS = %w[x-amz-bedrock-kb-source-uri original_source_uri].freeze
 
   # Deterministic failure-semantics normalization (Gate B).
   # Haiku frequently states absence in prose ("la documentación no contiene…")
@@ -125,20 +129,12 @@ class BedrockRagService
       **(reranking ? reranking_config(region, profile: profile) : {})
     }
 
-    base_filter = account_filter
-    uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
-    uri_filter = if uris.any?
-      filters = uris.flat_map do |uri|
-        [
-          { equals: { key: "x-amz-bedrock-kb-source-uri", value: uri } },
-          { equals: { key: "original_source_uri", value: uri } }
-        ]
-      end
-      { or_all: filters }
-    end
-
-    page_filter = apply_page_filter ? page_pin_filter(question) : nil
-    vector_config[:filter] = and_filter(base_filter, uri_filter, page_filter)
+    vector_config[:filter] = retrieval_filter(
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_sources,
+      question: question,
+      apply_page_filter: apply_page_filter
+    )
 
     vector_config
   end
@@ -175,16 +171,9 @@ class BedrockRagService
   #   heuristic. Use this when the caller has explicitly bound the query to a
   #   document (e.g. a WhatsApp picker selection) so heavy-capitalized seed
   #   queries like "Describe Orona ARCA BASICO ..." don't trip the bypass.
-  # @param auto_scope_filter [Boolean] When true, entity_s3_uris came from
-  #   KbDocumentResolver's specific match (auto-scope), not a session pin.
-  #   Also bypasses query_names_different_document? — that heuristic protects
-  #   session PINS from an off-topic follow-up; auto-scope URIs are derived
-  #   from THIS question, so the heuristic does not apply and would only
-  #   false-bypass on heavy-capitalized questions ("...en un OTIS?"). Unlike
-  #   force_entity_filter, does NOT skip the no-results retry (line ~247) or
-  #   switch the "pinned no results" message (line ~299) — those stay gated
-  #   on force_entity_filter alone, so auto-scope's worst case is one extra
-  #   Bedrock call, never a worse answer than an unscoped search.
+  # @param auto_scope_filter [Boolean] Ignored. WhatsApp used it to turn a
+  #   catalog token into a URI filter because that channel had no pin control.
+  #   The web pin is entity_s3_uris. A question does not choose a document.
   def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
             auto_scope_filter: false, account_id: nil, user_id: nil, conversation_session_id: nil,
@@ -205,12 +194,11 @@ class BedrockRagService
     }
 
     begin
-      # Apply entity filter when explicitly forced (caller bound the query to a
-      # specific doc), when auto-scoped (resolver's specific match on this
-      # question — see auto_scope_filter doc above), OR when the query is
-      # short/ambiguous and doesn't name a different document.
+      # Apply the technician pin when the caller forced it, or when the query
+      # does not name a different document. auto_scope_filter is ignored: a
+      # question does not choose a manual.
       apply_filter = entity_s3_uris.any? &&
-        (force_entity_filter || auto_scope_filter || !query_names_different_document?(question, entity_s3_uris))
+        (force_entity_filter || !query_names_different_document?(question, entity_s3_uris))
       filtered_uris = apply_filter ? entity_s3_uris : []
       effective_session_context = session_context_with_entity_safety(
         session_context,
@@ -253,17 +241,13 @@ class BedrockRagService
       bedrock_start_time = Time.current
       response = retrieve_and_generate_with_retry(params)
 
-      # Fallback: if filter produced no results, retry without filter. Covers
-      # both the entity-pin filter and the Fase 1 (ciclo 4, N10) page-pin
-      # filter — a page named exactly once that has no chunk in the KB (e.g.
-      # `holdout_v3_carlos_silva_stop_foso_seguridad`, Anexo B) must not turn
-      # into a false "no results" for the whole document; retrying without
-      # the page filter costs one extra call (documented, same pattern as the
-      # entity-pin retry).
-      page_filter_applied = page_pin_filter(question).present?
+      # A question does not select a page. A field technician does not remember
+      # a page number across the manuals, so a mentioned page never narrows
+      # retrieval and never opens a second call. An explicit document pin that
+      # was not forced may still retry once over the shared corpus.
       retry_without_entity_filter = apply_filter && !force_entity_filter
-      if (retry_without_entity_filter || page_filter_applied) && bedrock_no_results?(response.output.text)
-        Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without filter (entity=#{retry_without_entity_filter} page=#{page_filter_applied})")
+      if retry_without_entity_filter && bedrock_no_results?(response.output.text)
+        Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without document pin")
         # The filtered attempt is a billable generation in its own right — track it
         # before re-running so the turn leaves one row per invocation (I0).
         track_filtered_no_results_attempt(
@@ -1362,46 +1346,120 @@ class BedrockRagService
     end
   end
 
+  # Bedrock RetrievalFilter: one embedded logical operator, and at most five
+  # clauses in each andAll/orAll.
+  # https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-config.html
+  # A question does not choose a manual or a page. Without a pin the filter is
+  # the shared document base. With a pin the filter is only those URIs.
+  def retrieval_filter(entity_s3_uris:, entity_sources:, question:, apply_page_filter:)
+    uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
+    return account_filter if uris.empty?
+
+    checked_bedrock_filter(document_pin_filter(uris))
+  end
+
+  # The technician pinned these files. Retrieval is those files alone.
+  def document_pin_filter(uris)
+    leaves = URI_METADATA_KEYS.map do |key|
+      if uris.one?
+        { equals: { key: key, value: uris.first } }
+      else
+        { in: { key: key, value: uris } }
+      end
+    end
+    or_all_clause(leaves)
+  end
+
   def account_filter
-    {
+    clauses = [ account_id_equals(@account.id) ]
+    Rag::SharedManualCorpus.account_ids.each do |id|
+      next if id == @account.id.to_s
+
+      clauses << shared_manual_clause(id)
+    end
+    clauses << {
       equals: {
-        key: "account_id",
-        value: @account.id.to_s
+        key: Rag::SharedManualCorpus::ATTRIBUTE,
+        value: Rag::SharedManualCorpus::GENERAL
+      }
+    }
+    checked_bedrock_filter(or_all_clause(clauses))
+  end
+
+  # Flat shared base used only when a caller-supplied filter has neither the
+  # session account nor a pinned document URI. A technician pin does not
+  # come through here: that filter is the URIs alone.
+  def account_scope_clause
+    ids = [ @account.id.to_s ]
+    Rag::SharedManualCorpus.account_ids.each { |id| ids << id unless ids.include?(id) }
+    equals = ids.map { |id| account_id_equals(id) }
+    equals << {
+      equals: {
+        key: Rag::SharedManualCorpus::ATTRIBUTE,
+        value: Rag::SharedManualCorpus::GENERAL
+      }
+    }
+    or_all_clause(equals)
+  end
+
+  def photo_exclusion_clause
+    {
+      not_equals: {
+        key: "ingestion_path",
+        value: Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
       }
     }
   end
 
-  def and_filter(*filters)
-    compacted = filters.compact
-    return nil if compacted.empty?
-    return compacted.first if compacted.one?
-
-    { and_all: compacted }
+  def or_all_clause(clauses)
+    { or_all: clauses }
   end
 
-  # Fase 1 (ciclo 4, N10): a technician who names a single page has
-  # disambiguated by location — force Bedrock to return that page instead of
-  # letting it lose a score contest against an almost-identical duplicate
-  # (FAIN p.46 vs RECOBA p.79; THYSSEN p.92 vs p.97). Diagnosed in Anexo B:
-  # in 2 of 4 named N10 cases the expected page never entered the retrieved
-  # set at all, so a post-retrieval re-rank cannot recover it — only a
-  # Bedrock-side metadata filter reaches candidates outside the vector top-k.
-  # `page_number` is an integer in the sidecars (E2) — the `equals` value
-  # here must stay numeric, never a string.
-  # Reuses PAGE_REFERENCE_PATTERN (restriction 6: no new question-form regex)
-  # and only activates for exactly one page mention; a range or several named
-  # pages ("página 46 y página 79") skips the filter — documented limit, not
-  # detected further to avoid a new pattern.
-  def page_pin_filter(question)
-    return nil unless Rag::PagePinFlag.enabled?
+  def and_all_clause(clauses)
+    { and_all: clauses }
+  end
 
-    matches = question.to_s.scan(Rag::DeterministicIntent::PAGE_REFERENCE_PATTERN)
-    return nil unless matches.one?
+  def checked_bedrock_filter(filter)
+    validate_bedrock_filter!(filter)
+    filter
+  end
 
-    page_number = matches.first[/\d+/]
-    return nil unless page_number
+  def validate_bedrock_filter!(node, depth: 1)
+    list = bedrock_filter_list(node)
+    return unless list
 
-    { equals: { key: "page_number", value: page_number.to_i } }
+    raise ArgumentError, "Bedrock filter nests more than 2 levels" if depth > 2
+    raise ArgumentError, "Bedrock filter list has #{list.size} clauses (max #{BEDROCK_FILTER_MAX_LIST})" if list.size > BEDROCK_FILTER_MAX_LIST
+    raise ArgumentError, "Bedrock andAll/orAll needs at least 2 clauses" if list.size < 2
+
+    list.each { |child| validate_bedrock_filter!(child, depth: depth + 1) if child.is_a?(Hash) }
+  end
+
+  def bedrock_filter_list(node)
+    return nil unless node.is_a?(Hash)
+
+    node[:or_all] || node["or_all"] || node[:and_all] || node["and_all"]
+  end
+
+  # Indexed manuals of Danebo and the pilot are general knowledge. Their
+  # account_id is already on the chunk. Photos of those accounts stay out:
+  # a chunk whose ingestion_path is the photo path does not match.
+  def shared_manual_clause(id)
+    {
+      and_all: [
+        account_id_equals(id),
+        {
+          not_equals: {
+            key: "ingestion_path",
+            value: Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
+          }
+        }
+      ]
+    }
+  end
+
+  def account_id_equals(id)
+    { equals: { key: "account_id", value: id.to_s } }
   end
 
   def enforce_account_filter(config)
@@ -1416,9 +1474,27 @@ class BedrockRagService
   def merge_account_filter(filter)
     filter = filter.deep_dup if filter.respond_to?(:deep_dup)
     return account_filter if filter.blank?
-    return filter if account_filter_present?(filter)
+    return filter if account_filter_present?(filter) || document_uri_constrained?(filter)
 
-    and_filter(account_filter, filter)
+    # Same two-level shape as retrieval_filter. and_filter(account_filter, …)
+    # would embed an orAll-of-andAll and Bedrock would reject the query.
+    checked_bedrock_filter(and_all_clause([ account_scope_clause, filter, photo_exclusion_clause ]))
+  end
+
+  def document_uri_constrained?(filter)
+    case filter
+    when Hash
+      equals = filter[:equals] || filter["equals"]
+      included = filter[:in] || filter["in"]
+      key = (equals || included || {}).then { |clause| clause[:key] || clause["key"] }
+      return true if URI_METADATA_KEYS.include?(key.to_s)
+
+      filter.any? { |_k, value| document_uri_constrained?(value) }
+    when Array
+      filter.any? { |value| document_uri_constrained?(value) }
+    else
+      false
+    end
   end
 
   def account_filter_present?(filter)

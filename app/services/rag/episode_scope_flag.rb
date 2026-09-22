@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
 module Rag
-  # Kill switch for inheriting retrieval scope from recent user turns in the
-  # same episode (see RagQueryConcern#execute_rag_query). Same pattern as
-  # AutoScopeFlag — default enabled, one ENV flip to disable without a deploy.
+  # Retrieval no longer inherits a document from prior turns. The flag still
+  # gates the pin-name selection prompt and the episode history window.
   module EpisodeScopeFlag
     module_function
 

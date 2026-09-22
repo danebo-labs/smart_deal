@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
 module Rag
-  # Kill switch for auto-scoping retrieval to the resolver's specific matches
-  # (see RagQueryConcern#auto_scope_uris_from). Same pattern as PagePinFlag —
-  # default enabled, one ENV flip to disable without a code change/deploy.
+  # Retired. Retrieval no longer turns a catalog token into a URI filter.
+  # The ENV remains so an old setting is a no-op for retrieve.
   module AutoScopeFlag
     module_function
 

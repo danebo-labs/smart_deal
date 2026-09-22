@@ -103,48 +103,25 @@ module RagQueryConcern
     pinned_uris            = Array(entity_s3_uris).compact
     pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
 
-    # Auto-scope: specificity is per document, not inherited across matches.
-    # A specific match disjoint from the pin extends it when the question also
-    # mentions the pinned document, or replaces it when it does not.
-    candidate_uris  = auto_scope_uris_from(resolver_matches)
-    episode_matches = []
-    inherited       = false
-    if candidate_uris.empty? && Rag::EpisodeScopeFlag.enabled? &&
-       conv_session.respond_to?(:episode_user_messages)
-      episode_matches, episode_candidates = inherit_episode_scope(
-        question, conv_session, resolved_account
-      )
-      if episode_candidates.any?
-        candidate_uris = episode_candidates
-        inherited      = true
-      end
-    end
-
-    mentioned_uris  = mentioned_uris_from(Array(resolver_matches) + episode_matches)
-    scope           = resolve_retrieval_scope(
-      pinned_uris: pinned_uris,
-      candidate_uris: candidate_uris,
-      mentioned_uris: mentioned_uris
-    )
-    scope.reason = "episode_inherited" if inherited
-    if inherited && scope.uris.any?
-      scope.force_entity_filter = true
-    end
+    # A question does not pin a document, and neither does a previous turn.
+    # Auto-scope and episode inheritance were the WhatsApp stand-in for a pin
+    # control and for carrying that pin across the chat. Catalog matches of
+    # this question stay in Query Resolution. Only a technician pin narrows
+    # retrieval.
+    scope = resolve_retrieval_scope(pinned_uris: pinned_uris)
     merged_session_context = merge_resolver_context(
-      session_context, Array(resolver_matches) + episode_matches, in_scope_uris: scope.uris
+      session_context, Array(resolver_matches), in_scope_uris: scope.uris
     )
     merged_session_context = merge_selection_intent(
       merged_session_context, question, conv_session
     )
 
-    if pinned_uris.any? || candidate_uris.any?
+    if pinned_uris.any?
       Rails.logger.info(
         "RagQueryConcern: scope reason=#{scope.reason} pinned=#{pinned_uris.size} " \
-        "candidates=#{candidate_uris.size} retrieval=#{scope.uris.size}"
+        "retrieval=#{scope.uris.size}"
       )
     end
-
-    episode_scope_required  = inherited && scope.uris.any?
 
     # Turno de selección puro: el texto es el nombre del pin que el toggle de
     # documentos autocompleta (rag_chat_controller#_updateTextareaWithDocName),
@@ -154,8 +131,7 @@ module RagQueryConcern
     # pregunta en vez de adivinar, sin llamar al modelo.
     # selection_quick_replies ya encapsula flag de episodio, selection_turn? y
     # mensaje previo presente: si devuelve replies, la forma es exactamente ésta.
-    gate_replies = if episode_scope_required && resolved_output_channel == :web &&
-                      images.empty? && documents.empty?
+    gate_replies = if resolved_output_channel == :web && images.empty? && documents.empty?
       selection_quick_replies(question, conv_session, nil)
     end
 
@@ -176,11 +152,7 @@ module RagQueryConcern
       )
     end
 
-    resolved_force_filter   = if episode_scope_required
-      true
-    else
-      force_entity_filter.nil? ? scope.force_entity_filter : force_entity_filter
-    end
+    resolved_force_filter   = force_entity_filter.nil? ? scope.force_entity_filter : force_entity_filter
     document_uids           = documents.map { SecureRandom.uuid }
 
     result = QueryOrchestratorService.new(
@@ -464,95 +436,36 @@ module RagQueryConcern
     "- \"#{doc.display_name}\" → #{doc.s3_key}#{alias_note}"
   end
 
-  # Resolve each prior user turn on its own (newest first) so
-  # KbDocumentResolver::MAX_MATCHES cannot drop a specific designator when
-  # later turns add generic tokens. Concatenating the episode is one SQL
-  # round-trip cheaper and expels CEA15 on the account-1 catalog (H14).
-  # Cost: ≤ EPISODE_MAX_USER_MESSAGES resolves, and only when the current
-  # question already produced no specific candidates.
-  def inherit_episode_scope(question, conv_session, account)
-    return [ [], [] ] unless conv_session.respond_to?(:episode_user_messages)
-
-    messages = conv_session.episode_user_messages(exclude: question)
-    return [ [], [] ] if messages.empty?
-
-    matches = []
-    candidates = []
-    messages.reverse_each do |message|
-      message_matches = KbDocumentResolver.resolve_scoped(message, account: account)
-      matches.concat(Array(message_matches))
-      candidates.concat(auto_scope_uris_from(message_matches))
-    end
-
-    matches = matches.uniq { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }
-    [ matches, candidates.uniq ]
+  # Retired with auto-scope. Prior WhatsApp turns no longer choose a manual
+  # or carry one into this retrieve.
+  def inherit_episode_scope(_question, _conv_session, _account)
+    [ [], [] ]
   end
 
-  # Auto-scope gate: only the documents whose own matched tokens are specific
-  # (digit or fully uppercase, not a brand) narrow retrieval. Specificity is
-  # not inherited by other resolver hits in the same question.
-  def auto_scope_uris_from(resolver_matches)
-    return [] unless Rag::AutoScopeFlag.enabled?
-
-    specific_matches(resolver_matches)
-      .filter_map { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }
-      .uniq
-  end
-
-  def specific_matches(resolver_matches)
-    Array(resolver_matches).select do |match|
-      match.matched_tokens.any? { |token| KbDocumentResolver.specific_token?(token) }
-    end
+  def auto_scope_uris_from(_resolver_matches)
+    []
   end
 
   def mentioned_uris_from(resolver_matches)
     Array(resolver_matches).filter_map { |match| match.document.display_s3_uri(KbDocument::KB_BUCKET) }.uniq
   end
 
-  def resolve_retrieval_scope(pinned_uris:, candidate_uris:, mentioned_uris:)
+  # Catalog matches are not a pin. Only the technician's document pin
+  # narrows retrieval; an unpinned question searches the shared corpus.
+  def resolve_retrieval_scope(pinned_uris:, **)
     if pinned_uris.empty?
-      reason = candidate_uris.any? ? "auto_scope" : "open"
-      return RetrievalScope.new(
-        uris: candidate_uris,
-        auto_scope_filter: candidate_uris.any?,
+      RetrievalScope.new(
+        uris: [],
+        auto_scope_filter: false,
         force_entity_filter: false,
-        reason: reason
+        reason: "open"
       )
-    end
-
-    if candidate_uris.empty?
-      return RetrievalScope.new(
+    else
+      RetrievalScope.new(
         uris: pinned_uris,
         auto_scope_filter: false,
         force_entity_filter: true,
         reason: "pin_only"
-      )
-    end
-
-    outside = candidate_uris - pinned_uris
-    if outside.empty?
-      return RetrievalScope.new(
-        uris: pinned_uris,
-        auto_scope_filter: false,
-        force_entity_filter: true,
-        reason: "pin_kept"
-      )
-    end
-
-    pin_mentioned = (mentioned_uris & pinned_uris).any?
-    if pin_mentioned
-      RetrievalScope.new(
-        uris: (pinned_uris + outside).uniq,
-        auto_scope_filter: true,
-        force_entity_filter: false,
-        reason: "pin_extended"
-      )
-    else
-      RetrievalScope.new(
-        uris: candidate_uris,
-        auto_scope_filter: true,
-        force_entity_filter: false,
-        reason: "pin_overridden"
       )
     end
   end
@@ -573,8 +486,7 @@ module RagQueryConcern
       ## Selection Turn
       The technician named "#{selected}" to select that pinned document, not to request a general summary.
       Active problem from the previous user turn: "#{previous}"
-      Retrieval for this turn is the Query Resolution list above. Inherited manuals in that list stay in scope for this turn, even if Session Discipline would treat them as unpinned.
-      Continue the active problem from those sources. Do not write a general document summary unless the user explicitly asked for one. Do not invent procedures or values.
+      Continue that problem. Do not write a general document summary unless the user explicitly asked for one. Do not invent procedures or values.
     BLOCK
 
     [ session_context.presence, block ].compact.join("\n\n")

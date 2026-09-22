@@ -314,19 +314,15 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
 
     begin
-      # "SOPREL" is fully uppercase in the question and not a brand — the
-      # auto-scope gate (Cambio 1) treats it as specific.
+      # "SOPREL" stays in Query Resolution. It does not pin the manual.
       @controller.send(:execute_rag_query, "que es el Esquema SOPREL?", session_context: "prior ctx")
 
       assert_includes captured[:kwargs][:session_context], "Query Resolution"
       assert_includes captured[:kwargs][:session_context], "Esquema SOPREL"
       assert_includes captured[:kwargs][:session_context], "prior ctx"
-      # No session pin — entity_s3_uris now come from the resolver's specific
-      # match (auto-scope), not just from pins.
-      assert_equal [ doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured[:kwargs][:entity_s3_uris]
-      assert_equal true, captured[:kwargs][:auto_scope_filter]
-      # force_entity_filter stays false for auto-scope — keeps BedrockRagService's
-      # no-results retry alive (Cambio 1c).
+      assert_equal [], captured[:kwargs][:entity_s3_uris]
+      assert_not_includes Array(captured[:kwargs][:entity_s3_uris]), doc.display_s3_uri(KbDocument::KB_BUCKET)
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
       assert_equal false, captured[:kwargs][:force_entity_filter]
     ensure
       QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
@@ -457,9 +453,9 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         entity_s3_uris: [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ]
       )
 
-      assert_equal [ matched_doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured[:kwargs][:entity_s3_uris]
-      assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal [ pinned_doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
     ensure
       QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
     end
@@ -1316,10 +1312,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
-                   "jesus turn 1 extends the pin with the CEA15 manual; today returns pin-only"
-      assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+      assert_not_includes captured[:kwargs][:entity_s3_uris], uris[:c]
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
   end
@@ -1359,12 +1355,11 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
-                   "jesus turn 2 inherits the episode scope; today returns pin-only"
-      assert_equal true, captured[:kwargs][:auto_scope_filter]
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
       assert_equal true, captured[:kwargs][:force_entity_filter]
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
-      assert_includes query_resolution_main_block(captured[:kwargs][:session_context].to_s), "manual-cea15p"
+      assert_not_includes captured[:kwargs][:entity_s3_uris], uris[:c]
     end
   end
 
@@ -1414,8 +1409,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       _matches, candidates = @controller.send(
         :inherit_episode_scope, question, session, @controller.current_account
       )
-      assert_equal [ uris[:c] ], candidates
-      assert_not_includes candidates, uris[:f]
+      assert_equal [], candidates
     end
 
     result = nil
@@ -1453,7 +1447,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_includes ctx, question
       assert_includes ctx, previous
       assert_includes ctx, "Do not write a general document summary"
-      assert_includes ctx, "even if Session Discipline would treat them as unpinned"
+      assert_not_includes ctx, "Inherited manuals"
     end
   end
 
@@ -1528,7 +1522,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
       assert_equal false, captured[:kwargs][:force_entity_filter]
     end
   end
@@ -1624,7 +1618,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       end
 
       assert_not_nil captured[:kwargs]
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
     end
   end
 
@@ -1662,8 +1656,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris]
-      assert_equal true, captured[:kwargs][:force_entity_filter]
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:force_entity_filter]
     end
   end
 
@@ -1675,17 +1669,17 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
     cases = [
       { pinned: [], candidates: [ y ], mentioned: [ y ],
-        uris: [ y ], auto: true, force: false, reason: "auto_scope" },
+        uris: [], auto: false, force: false, reason: "open" },
       { pinned: [], candidates: [], mentioned: [],
         uris: [], auto: false, force: false, reason: "open" },
       { pinned: [ x ], candidates: [], mentioned: [],
         uris: [ x ], auto: false, force: true, reason: "pin_only" },
       { pinned: [ x ], candidates: [ x ], mentioned: [ x ],
-        uris: [ x ], auto: false, force: true, reason: "pin_kept" },
+        uris: [ x ], auto: false, force: true, reason: "pin_only" },
       { pinned: [ e ], candidates: [ c ], mentioned: [ e, c ],
-        uris: [ e, c ], auto: true, force: false, reason: "pin_extended" },
+        uris: [ e ], auto: false, force: true, reason: "pin_only" },
       { pinned: [ x ], candidates: [ y ], mentioned: [ y ],
-        uris: [ y ], auto: true, force: false, reason: "pin_overridden" }
+        uris: [ x ], auto: false, force: true, reason: "pin_only" }
     ]
 
     cases.each do |row|
@@ -1836,9 +1830,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ mpk_uri ], captured[:kwargs][:entity_s3_uris]
-      assert_equal true, captured[:kwargs][:auto_scope_filter]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal false, captured[:kwargs][:auto_scope_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+      assert_not_includes captured[:kwargs][:entity_s3_uris], mpk_uri
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
     end
   end
@@ -1882,8 +1877,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ uris[:e], uris[:c] ], captured[:kwargs][:entity_s3_uris],
-                   "P0 pin_extended must stay intact with the episode flag off"
+      assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
     end
 
     result = nil
@@ -1948,9 +1942,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
 
     assert result.success?
-    assert_equal [ FOLLOW_UP ], excludes.uniq
-    assert episode_users.all? { |users| users == [ SPRING_QUESTION ] }
-    assert_equal [ "Fuji Yida", SPRING_QUESTION ], calls
+    assert_empty excludes
+    assert_equal [ "Fuji Yida" ], calls
   end
 
   test "a pin label keeps selection replies on the original text when the rewrite applies" do
@@ -1975,12 +1968,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal "#{SPRING_QUESTION}\nPanel Alfa", captured[:question]
-      context = captured.dig(:kwargs, :session_context).to_s
-      assert_includes context, 'named "Panel Alfa"'
-      assert_not_includes context, "#{SPRING_QUESTION}\n"
+      assert_nil captured[:kwargs]
     end
 
+    assert_equal "deterministic_selection_gate", result.generation_mode
     assert_equal [ "Panel Alfa" ], excludes.uniq
     assert_equal SPRING_QUESTION, result.quick_replies.first[:query]
   end
@@ -2042,8 +2033,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal [ model_doc.display_s3_uri(KbDocument::KB_BUCKET) ], captured.dig(:kwargs, :entity_s3_uris)
-      assert_equal true, captured.dig(:kwargs, :auto_scope_filter)
+      assert_equal [], captured.dig(:kwargs, :entity_s3_uris)
+      assert_equal false, captured.dig(:kwargs, :auto_scope_filter)
     end
 
     create_followup_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
@@ -2271,9 +2262,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal "Panel Alfa", captured[:question]
+      assert_nil captured[:kwargs]
     end
 
+    assert_equal "deterministic_selection_gate", result.generation_mode
     assert_not_equal "deterministic_thread_menu", result.generation_mode
   end
 

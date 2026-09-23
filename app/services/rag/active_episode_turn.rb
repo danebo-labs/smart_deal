@@ -1,0 +1,510 @@
+# frozen_string_literal: true
+
+module Rag
+  # One classification of a technician turn against the active episode.
+  # Rules run in Anexo B order. The first match wins. Nothing here is persisted.
+  class ActiveEpisodeTurn
+    Result = Data.define(:decision, :reason, :state, :composed, :fields_changed)
+
+    MANUFACTURERS = [
+      "fuji yida", "thyssenkrupp", "thyssen", "tke", "otis", "kone", "schindler",
+      "mitsubishi", "orona", "hyundai", "fermator", "blt", "elemont"
+    ].freeze
+
+    DESIGNATOR_RE = /(?<![\p{L}\d])[\p{L}\d][\p{L}\d\-]{1,29}(?![\p{L}\d])/
+    RESET_RE = /\b(nueva falla|otra falla|otro equipo|otro ascensor|otra maquina|cambio de equipo|new fault|another (unit|elevator|lift))\b/
+    CORRECTION_RE = /\b(no es|no era|me equivoque|en realidad|corrijo|perdon es|not a|actually)\b/
+    SUBJECT_RE = /\b(revisando|estoy en|estoy con|tengo|equipo|ascensor|elevador|es un|es una|checking)\b/
+    FOLLOWUP_RE = /\b(la misma|el mismo|lo mismo|esa|ese|eso|esta|este|esto|ahi|same|that|this|it)\b/
+    FOLLOWUP_START_RE = /\A(y|and|pero|sigue|ahora|tambien|still)\b/
+    UNKNOWN_RE = /\bno (lo )?(se|sabemos|tengo)\b/
+    BRAND_WORD_RE = /\b(marca|fabricante|brand|manufacturer)\b/
+    MODEL_WORD_RE = /\b(modelo|model)\b/
+    MODEL_VALUE_RE = /\b(?:modelo|model)\s*(?:es\s*)?:?\s*([A-Za-z0-9][A-Za-z0-9\-]{1,20})\b/
+    ABSENT_CODE_RE = /\bno (muestra|marca|aparece|hay|tiene)\b.*\bcodigo\b|\bsin codigo\b|\bningun codigo\b|\bno code\b/
+    KNOWN_CODE_RE = /\b(codigo|error|code)\s+(n\s+)?([a-z]?\d{1,4}[a-z]?)\b/
+    MEASUREMENT_RE = /\b(lo medi|yo medi|medimos|medicion|medi)\b/
+    DEICTIC_RE = /\b(esa|ese|eso|esta|este|esto|that|this)\s+(placa|foto|imagen|plate|photo)\b/
+    NO_PLATE_RE = /\bno se ve\b|\bno tiene placa\b/
+    CODE_WORD_RE = /\b(codigo|code|error)\b/
+    FILLER = %w[es un una no si].freeze
+    RESOLVED = %w[known unknown_confirmed absent_confirmed].freeze
+    FROM_STATE = Object.new
+
+    def self.call(state:, text:, role: "user", now: Time.current, selection_turn: false, pending_fact: FROM_STATE,
+                  correlation_id: nil, channel: "web", enabled: nil, shared: nil)
+      new(
+        state: state,
+        text: text.to_s,
+        role: role.to_s,
+        now: now,
+        selection_turn: selection_turn,
+        pending_fact: pending_fact,
+        correlation_id: correlation_id,
+        channel: channel.to_s,
+        enabled: enabled.nil? ? FieldCompanionEpisodeFlag.enabled? : enabled,
+        shared: shared.nil? ? SharedSession::ENABLED : shared
+      ).call
+    end
+
+    # pending_fact from the assistant reply, using the full text before truncation.
+    def self.apply_assistant(state:, text:, now: Time.current, correlation_id: nil)
+      episode = coerce_episode(state, now)
+      return skipped_result(episode) if episode.blank?
+
+      before = episode.fork
+      reason = write_pending!(episode, text.to_s, correlation_id: correlation_id)
+      episode.touch!(now)
+      Result.new(
+        decision: :assistant,
+        reason: reason,
+        state: episode.to_h,
+        composed: nil,
+        fields_changed: changed_fields(before, episode)
+      )
+    end
+
+    def self.coerce_episode(state, now)
+      case state
+      when ActiveEpisode then state
+      else ActiveEpisode.parse(state, now: now)
+      end
+    end
+
+    def self.skipped_result(episode)
+      Result.new(decision: :skipped, reason: episode.reason, state: episode.to_h, composed: nil, fields_changed: [])
+    end
+
+    def self.write_pending!(episode, text, correlation_id:)
+      subjects = text.scan(/[^?]+\?/).filter_map { |sentence| pending_subject(FollowupQueryRewriter.normalize_label(sentence)) }
+      episode.clear_pending!
+      return nil unless subjects.size == 1
+
+      subject = subjects.first
+      if RESOLVED.include?(episode.fact(subject)&.dig("status"))
+        return "assistant_repeated_question"
+      end
+
+      episode.pending_fact = { "subject" => subject, "correlation_id" => correlation_id.to_s }
+      nil
+    end
+
+    def self.pending_subject(normalized)
+      return "manufacturer" if BRAND_WORD_RE.match?(normalized)
+      return "model" if MODEL_WORD_RE.match?(normalized)
+      return "fault_code" if CODE_WORD_RE.match?(normalized)
+
+      nil
+    end
+
+    def self.changed_fields(before, after)
+      left = before.to_h
+      right = after.to_h
+      changed = []
+      changed << "episode_id" if left["episode_id"] != right["episode_id"]
+      changed << "goal" if left["goal"] != right["goal"]
+      ActiveEpisode::FACT_KEYS.each do |key|
+        changed << key if left.dig("facts", key) != right.dig("facts", key)
+      end
+      changed << "identifiers" if left["identifiers"] != right["identifiers"]
+      changed << "pending_fact" if left["pending_fact"] != right["pending_fact"]
+      changed << "active_photo" if left["active_photo"] != right["active_photo"]
+      changed << "conflicts" if left["conflicts"] != right["conflicts"]
+      changed
+    end
+
+    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:)
+      @raw_state = state
+      @text = text
+      @role = role
+      @now = now
+      @selection_turn = selection_turn
+      @pending_override = pending_fact
+      @correlation_id = correlation_id
+      @channel = channel
+      @enabled = enabled
+      @shared = shared
+      @normalized = FollowupQueryRewriter.normalize_label(text)
+      @words = @normalized.split
+      @measurement = false
+      @unbound = false
+      @budget = false
+      @deictic = false
+    end
+
+    def call
+      episode = self.class.coerce_episode(@raw_state, @now)
+      apply_pending_override(episode)
+      reason = skip_reason
+      return result(:skipped, reason, episode, episode) if reason
+
+      invalid = episode.reason == "invalid_state"
+      current = episode.presence || ActiveEpisode.new
+      return open_episode(:new_episode, current, goal: :when_substantive) if reset_explicit?
+
+      if current.blank?
+        if substantive? || (names_equipment? && @words.size >= 6)
+          return open_episode(:opened, current, goal: :always)
+        end
+
+        return result(:no_episode, (invalid ? "invalid_state" : nil), ActiveEpisode.new, ActiveEpisode.new)
+      end
+
+      known = known_manufacturer(current)
+      brands = find_brands
+      other = other_brand(brands, known, current)
+
+      if known && other && (correction? || brand_only?(other, known))
+        return correct!(current, other)
+      end
+      if other && subject_brand?(other) && @words.size >= 6
+        return open_episode(:new_episode, current, goal: :always)
+      end
+      if known && brands.any? { |brand| brand != known }
+        return continue(current, :continued_mention, :no_brand, compose: elliptical?)
+      end
+      if elliptical?
+        return continue(current, :continued_elliptical, :facts, compose: true)
+      end
+
+      continue(current, :continued_self_contained, :full, compose: false, replace_goal: true)
+    end
+
+    private
+
+    def apply_pending_override(episode)
+      return if @pending_override.equal?(FROM_STATE)
+      return if episode.blank?
+
+      episode.pending_fact = @pending_override
+    end
+
+    def skip_reason
+      return "flag_off" unless @enabled
+      return "non_web" unless @channel == "web"
+      return "shared_session" if @shared
+      return "selection_turn" if @selection_turn
+      return "blank" if @text.strip.empty?
+      return "not_user" unless @role == "user"
+
+      nil
+    end
+
+    def reset_explicit?
+      RESET_RE.match?(@normalized)
+    end
+
+    def correction?
+      CORRECTION_RE.match?(@normalized)
+    end
+
+    def followup_marker?
+      FOLLOWUP_RE.match?(@normalized) || FOLLOWUP_START_RE.match?(@normalized)
+    end
+
+    def find_brands
+      MANUFACTURERS.select { |brand| @normalized.match?(/\b#{Regexp.escape(brand)}\b/) }
+    end
+
+    def other_brand(brands, known, episode)
+      candidates = if known
+        brands.reject { |brand| brand == known }
+      elsif episode.pending_fact&.dig("subject") != "manufacturer"
+        brands
+      else
+        []
+      end
+      candidates.size == 1 ? candidates.first : nil
+    end
+
+    def subject_brand?(brand)
+      brand_re = /\b#{Regexp.escape(brand)}\b/
+      offset = 0
+      while (match = SUBJECT_RE.match(@normalized, offset))
+        tail = @normalized[match.end(0)..]
+        found = tail.match(brand_re)
+        return true if found && tail[0...found.begin(0)].split.size <= 3
+
+        offset = match.end(0)
+      end
+      false
+    end
+
+    def brand_only?(other, known)
+      stripped = @normalized.dup
+      [ known, other ].compact.each { |brand| stripped = stripped.gsub(/\b#{Regexp.escape(brand)}\b/, " ") }
+      leftover = stripped.split.reject { |word| FILLER.include?(word) }
+      leftover.empty? || correction?
+    end
+
+    def designators
+      @designators ||= @text.scan(DESIGNATOR_RE).uniq.select { |token| KbDocumentResolver.specific_token?(token) }
+    end
+
+    def names_equipment?
+      find_brands.any? || designators.any?
+    end
+
+    def self_contained?
+      return @self_contained if defined?(@self_contained)
+
+      @self_contained = FollowupQueryRewriter.explicit_question?(@text) &&
+                        !followup_marker? &&
+                        (names_equipment? || @words.size >= 6)
+    end
+
+    def elliptical?
+      !self_contained? && (FollowupQueryRewriter.closed_followup_shape?(@text) || followup_marker?)
+    end
+
+    def substantive?
+      self_contained? || (!elliptical? && @words.size >= 6)
+    end
+
+    def known_manufacturer(episode)
+      fact = episode.fact("manufacturer")
+      return nil unless fact&.dig("status") == "known"
+
+      FollowupQueryRewriter.normalize_label(fact["value"])
+    end
+
+    def open_episode(decision, before, goal:)
+      episode = ActiveEpisode.open(correlation_id: @correlation_id, now: @now)
+      assign = goal == :always || substantive? || @words.size >= 6
+      episode.assign_goal!(@text, correlation_id: @correlation_id) if assign
+      extract!(episode, :full)
+      finish(decision, before, episode, compose: false)
+    end
+
+    def correct!(current, other)
+      episode = current.fork
+      episode.touch!(@now)
+      episode.write_fact!(
+        "manufacturer",
+        status: "known",
+        value: literal_phrase(other),
+        source: "user",
+        correlation_id: @correlation_id,
+        at: @now.iso8601
+      )
+      episode.clear_fact!("model")
+      episode.clear_identifiers!
+      episode.clear_conflicts_for!("manufacturer")
+      extract!(episode, :no_brand)
+      finish(:corrected, current, episode, compose: true)
+    end
+
+    def continue(current, decision, mode, compose:, replace_goal: false)
+      episode = current.fork
+      episode.touch!(@now)
+      episode.assign_goal!(@text, correlation_id: @correlation_id) if replace_goal
+      extract!(episode, mode)
+      finish(decision, current, episode, compose: compose)
+    end
+
+    def finish(decision, before, episode, compose:)
+      episode.clear_pending!
+      composed = compose ? compose_text(episode) : nil
+      result(decision, outcome_reason(decision), before, episode, composed: composed)
+    end
+
+    def outcome_reason(decision)
+      return "budget_exceeded" if @budget
+      return "measurement_unbound" if @measurement
+      return "unbound_unknown" if @unbound
+      return "brand_mention_ignored" if decision == :continued_mention
+      return "deictic_referent" if @deictic
+
+      nil
+    end
+
+    def result(decision, reason, before, episode, composed: nil)
+      Result.new(
+        decision: decision,
+        reason: reason,
+        state: episode.to_h,
+        composed: composed,
+        fields_changed: decision == :skipped || decision == :no_episode ? [] : self.class.changed_fields(before, episode)
+      )
+    end
+
+    def extract!(episode, mode)
+      pending = episode.pending_fact&.dig("subject")
+      wrote = {}
+      wrote["manufacturer"] = write_unknown_manufacturer(episode, pending) if mode != :no_brand
+      wrote["model"] = write_unknown_model(episode, pending)
+      wrote["fault_code"] = write_absent_code(episode)
+      wrote["manufacturer"] ||= write_known_manufacturer(episode, pending) if mode != :no_brand
+      wrote["model"] ||= write_known_model(episode, pending)
+      wrote["fault_code"] ||= write_known_code(episode)
+      append_identifiers(episode, wrote) if mode == :full
+      @measurement = true if MEASUREMENT_RE.match?(@normalized)
+      @deictic = true if DEICTIC_RE.match?(@normalized)
+      @unbound = true if unbound_unknown?(pending, wrote)
+    end
+
+    def write_unknown_manufacturer(episode, pending)
+      return nil unless UNKNOWN_RE.match?(@normalized)
+      return nil unless BRAND_WORD_RE.match?(@normalized) || pending == "manufacturer"
+
+      write_unresolved(episode, "manufacturer", "unknown_confirmed")
+    end
+
+    def write_unknown_model(episode, pending)
+      return nil unless UNKNOWN_RE.match?(@normalized) || NO_PLATE_RE.match?(@normalized)
+      return nil unless MODEL_WORD_RE.match?(@normalized) || pending == "model"
+
+      write_unresolved(episode, "model", "unknown_confirmed")
+    end
+
+    def write_absent_code(episode)
+      return nil unless ABSENT_CODE_RE.match?(@normalized)
+
+      write_unresolved(episode, "fault_code", "absent_confirmed")
+    end
+
+    def write_unresolved(episode, key, status)
+      episode.write_fact!(key, status: status, source: "user", correlation_id: @correlation_id, at: @now.iso8601)
+      true
+    end
+
+    def write_known_manufacturer(episode, pending)
+      literal = if find_brands.size == 1
+        literal_phrase(find_brands.first)
+      elsif pending == "manufacturer" && @words.size <= 3 && @text.exclude?("?") && @text.exclude?("¿")
+        @text.squish
+      end
+      return nil if literal.blank?
+
+      episode.write_fact!("manufacturer", status: "known", value: literal, source: "user", correlation_id: @correlation_id, at: @now.iso8601)
+      literal
+    end
+
+    def write_known_model(episode, pending)
+      token = @text.match(MODEL_VALUE_RE)&.[](1)
+      token = nil unless token && KbDocumentResolver.specific_token?(token)
+      if token.nil? && pending == "model"
+        single = @text.strip
+        token = single if !single.match?(/\s/) && KbDocumentResolver.specific_token?(single)
+      end
+      return nil if token.blank?
+
+      episode.write_fact!("model", status: "known", value: token, source: "user", correlation_id: @correlation_id, at: @now.iso8601)
+      token
+    end
+
+    def write_known_code(episode)
+      code = @normalized.match(KNOWN_CODE_RE)&.[](3)
+      return nil if code.blank?
+
+      episode.write_fact!("fault_code", status: "known", value: code, source: "user", correlation_id: @correlation_id, at: @now.iso8601)
+      code
+    end
+
+    def append_identifiers(episode, wrote)
+      excluded = []
+      excluded << FollowupQueryRewriter.normalize_label(wrote["manufacturer"]) if wrote["manufacturer"].is_a?(String)
+      excluded << FollowupQueryRewriter.normalize_label(wrote["model"]) if wrote["model"].is_a?(String)
+      excluded << FollowupQueryRewriter.normalize_label(wrote["fault_code"]) if wrote["fault_code"].is_a?(String)
+      designators.each do |token|
+        next if excluded.include?(FollowupQueryRewriter.normalize_label(token))
+
+        episode.append_identifier!(token, correlation_id: @correlation_id)
+      end
+    end
+
+    def unbound_unknown?(pending, wrote)
+      return false unless UNKNOWN_RE.match?(@normalized)
+      return false if pending.present?
+      return false if BRAND_WORD_RE.match?(@normalized) || MODEL_WORD_RE.match?(@normalized) || CODE_WORD_RE.match?(@normalized)
+      return false if wrote.values.any?
+
+      true
+    end
+
+    def literal_phrase(phrase)
+      words = phrase.split
+      tokens = @text.scan(/[\p{L}\d]+/)
+      norms = tokens.map { |token| FollowupQueryRewriter.normalize_label(token) }
+      (0..(norms.length - words.length)).each do |index|
+        next unless norms[index, words.length] == words
+
+        return tokens[index, words.length].join(" ")
+      end
+      phrase
+    end
+
+    def compose_text(episode)
+      goal_text = episode.goal&.dig("text")
+      goal_text = nil if goal_text.blank? || episode.goal_truncated? || contains?(@text, goal_text)
+      items = identity_items(episode, goal_text)
+      loop do
+        lines = []
+        lines << goal_text if goal_text
+        lines << items.map(&:text).join(" ") if items.any?
+        lines << @text.strip
+        composed = lines.join("\n")
+        return composed if composed.length <= FollowupQueryRewriter::MAX_COMPOSED_CHARS
+
+        identifier = items.rindex { |item| item.kind == :identifier }
+        if identifier
+          items.delete_at(identifier)
+          next
+        end
+        model = items.index { |item| item.kind == :model }
+        if model
+          items.delete_at(model)
+          next
+        end
+        if goal_text
+          goal_text = nil
+          next
+        end
+
+        @budget = true
+        return nil
+      end
+    end
+
+    def identity_items(episode, goal_text)
+      items = []
+      manufacturer = user_known(episode, "manufacturer")
+      items << Item.new(:manufacturer, manufacturer) if manufacturer && !already_present?(goal_text, manufacturer)
+      model = user_known(episode, "model")
+      items << Item.new(:model, model) if model && !already_present?(goal_text, model)
+      episode.identifiers.each do |identifier|
+        next unless identifier["source"] == "user"
+        next if already_present?(goal_text, identifier["value"])
+
+        items << Item.new(:identifier, identifier["value"])
+      end
+      code = user_known(episode, "fault_code")
+      label = "código #{code}" if code
+      items << Item.new(:code, label) if label && !already_present?(goal_text, code) && !already_present?(goal_text, label)
+      items
+    end
+
+    def user_known(episode, key)
+      fact = episode.fact(key)
+      return nil unless fact&.dig("status") == "known" && fact["source"] == "user"
+
+      fact["value"]
+    end
+
+    def already_present?(goal_text, needle)
+      contains?(goal_text, needle) || contains?(@text, needle)
+    end
+
+    def contains?(haystack, needle)
+      return false if haystack.blank? || needle.blank?
+
+      normalized = FollowupQueryRewriter.normalize_label(haystack)
+      label = FollowupQueryRewriter.normalize_label(needle)
+      return false if label.blank?
+
+      normalized.match?(/\b#{Regexp.escape(label)}\b/)
+    end
+
+    Item = Struct.new(:kind, :text)
+  end
+end

@@ -260,7 +260,7 @@ Todos aplicados en este archivo.
 | FC-D05 | Holdout con Bedrock tras Fase 2: máximo 40 turnos y US$0,50, fuera del contenedor de producción. | Propuesta de esta auditoría | **Pendiente.** Bloquea el gate de Fase 2. |
 | FC-D06 | `evidence_refs` y soft anchors no se implementan. Si el holdout de Fase 2 falla por identidad documental, se abre una decisión nueva. | Restricción 9 del plan de hilo y `app/services/rag/AGENTS.md` | **Vigente** |
 | FC-D07 | La validación de este trabajo usa tests funcionales/unitarios; no se agregan ni ejecutan tests de integración. | Instrucción del dueño, 23-sep-2026 | **Vigente** |
-| FC-D08 | El gate numérico de shadow no habilita por sí solo Fase 2a: primero se despliegan y revalidan funcionalmente los fixes de selección sintética y atribución de usuario encontrados en la revisión. | Revisión shadow, E15–E16 | **Vigente.** Mantiene Fase 2a en espera. |
+| FC-D08 | El gate numérico de shadow no habilita por sí solo Fase 2a: primero se despliegan y revalidan funcionalmente los fixes de selección sintética y atribución de usuario encontrados en la revisión. | Revisión shadow, E15–E16 | **Cumplida** en `2d456f8`. El botón de menú queda `skipped`, no cambia `episode_id` y guarda `user_id`. |
 
 ---
 
@@ -290,9 +290,9 @@ Todos aplicados en este archivo.
 |---|---|---|---|
 | Auditoría | **CERRADA 2026-09-23** | — | Este archivo |
 | Fase 0 — Baseline y fixtures (C0) | **CERRADA** | Abierta en `c5cb21e`. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537` | `tmp/field_companion_2026-09-23/fase_0/` |
-| Fase 1 — ActiveEpisode shadow (C1–C4) | **CERRADA Y DESPLEGADA** | `1fcc445`; `FIELD_COMPANION_EPISODE_ENABLED=true`; `FIELD_COMPANION_TURN_ENABLED` apagada. Fixes locales `d72d1d7`, `807d496`, `e181502`, `685f560` pendientes de deploy. E12–E19. `generation.txt` sin cambios | `tmp/field_companion_2026-09-23/fase_1/` |
-| Revisión shadow | **GATE NUMÉRICO APROBADO; CIERRE OPERATIVO PENDIENTE** | 32 turnos humanos; 1 reinicio falso; 1 corrección mal clasificada. Desplegar y revalidar fixes locales (FC-D08) | `tmp/field_companion_2026-09-23/shadow/revision.md` |
-| Fase 2a — Bloque de contexto (C5) | **ESPERA REVALIDACIÓN FUNCIONAL DE FASE 1** | FC-D08; no activar `FIELD_COMPANION_TURN_ENABLED` | — |
+| Fase 1 — ActiveEpisode shadow (C1–C4) | **CERRADA Y DESPLEGADA** | `2d456f8`. `FIELD_COMPANION_EPISODE_ENABLED=true`. `FIELD_COMPANION_TURN_ENABLED` apagada. E12–E19. `generation.txt` sin cambios | `tmp/field_companion_2026-09-23/fase_1/` |
+| Revisión shadow | **CERRADA** | 32 turnos humanos. Smoke del botón: `episode_decision=skipped`, mismo `episode_id`, `user_id=7`. Sesión 6 no se tocó | `tmp/field_companion_2026-09-23/shadow/revision.md` |
+| Fase 2a — Bloque de contexto (C5) | **LISTA** | No activar `FIELD_COMPANION_TURN_ENABLED`. FC-D02 bloquea la activación, no el código | — |
 | Fase 2b — Composición (C6, C6b) | Espera 2a | Activación: FC-D02, FC-D03 | — |
 | Gate Fase 2 — Holdout | Espera 2b | FC-D05 | — |
 | Fase 3a/3b — Foto unificada (C7, C8) | Espera gate Fase 2 | FC-D04 | — |

@@ -259,6 +259,8 @@ Todos aplicados en este archivo.
 | FC-D04 | La Fase 3 implementa la parte «foto con pregunta = una respuesta» de CG-D19. La prosa de la ficha sola, el menú y los rótulos siguen en el plan copiloto. | Propuesta de esta auditoría | **Pendiente.** Bloquea la Fase 3. |
 | FC-D05 | Holdout con Bedrock tras Fase 2: máximo 40 turnos y US$0,50, fuera del contenedor de producción. | Propuesta de esta auditoría | **Pendiente.** Bloquea el gate de Fase 2. |
 | FC-D06 | `evidence_refs` y soft anchors no se implementan. Si el holdout de Fase 2 falla por identidad documental, se abre una decisión nueva. | Restricción 9 del plan de hilo y `app/services/rag/AGENTS.md` | **Vigente** |
+| FC-D07 | La validación de este trabajo usa tests funcionales/unitarios; no se agregan ni ejecutan tests de integración. | Instrucción del dueño, 23-sep-2026 | **Vigente** |
+| FC-D08 | El gate numérico de shadow no habilita por sí solo Fase 2a: primero se despliegan y revalidan funcionalmente los fixes de selección sintética y atribución de usuario encontrados en la revisión. | Revisión shadow, E15–E16 | **Vigente.** Mantiene Fase 2a en espera. |
 
 ---
 
@@ -288,9 +290,9 @@ Todos aplicados en este archivo.
 |---|---|---|---|
 | Auditoría | **CERRADA 2026-09-23** | — | Este archivo |
 | Fase 0 — Baseline y fixtures (C0) | **CERRADA** | Abierta en `c5cb21e`. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537` | `tmp/field_companion_2026-09-23/fase_0/` |
-| Fase 1 — ActiveEpisode shadow (C1–C4) | **CERRADA (sin desplegar)** | Rama `fc/pr1`, continúa desde `d869faf` (Fase 0 no está en `main`). C1 `3fa6f63`, C2 `2968349`, C3 `6fc4cd5`, C4 es el hijo directo de `6fc4cd5`. E12. `generation.txt` sin cambios | `tmp/field_companion_2026-09-23/fase_1/` |
-| Revisión shadow | **ESPERA DEPLOY DEL DUEÑO** | `FIELD_COMPANION_EPISODE_ENABLED=true` en pilotos | — |
-| Fase 2a — Bloque de contexto (C5) | Espera revisión shadow | Fase 1 cerrada, sin deploy | — |
+| Fase 1 — ActiveEpisode shadow (C1–C4) | **CERRADA Y DESPLEGADA** | `1fcc445`; `FIELD_COMPANION_EPISODE_ENABLED=true`; `FIELD_COMPANION_TURN_ENABLED` apagada. Fixes locales `d72d1d7`, `807d496`, `e181502`, `685f560` pendientes de deploy. E12–E19. `generation.txt` sin cambios | `tmp/field_companion_2026-09-23/fase_1/` |
+| Revisión shadow | **GATE NUMÉRICO APROBADO; CIERRE OPERATIVO PENDIENTE** | 32 turnos humanos; 1 reinicio falso; 1 corrección mal clasificada. Desplegar y revalidar fixes locales (FC-D08) | `tmp/field_companion_2026-09-23/shadow/revision.md` |
+| Fase 2a — Bloque de contexto (C5) | **ESPERA REVALIDACIÓN FUNCIONAL DE FASE 1** | FC-D08; no activar `FIELD_COMPANION_TURN_ENABLED` | — |
 | Fase 2b — Composición (C6, C6b) | Espera 2a | Activación: FC-D02, FC-D03 | — |
 | Gate Fase 2 — Holdout | Espera 2b | FC-D05 | — |
 | Fase 3a/3b — Foto unificada (C7, C8) | Espera gate Fase 2 | FC-D04 | — |
@@ -1012,6 +1014,13 @@ Ramas: `fc/pr1` = Fase 0 + Fase 1. `fc/pr2` = Fase 2a + 2b. `fc/pr3` = Fase 3a +
 | E10 | Auditoría | Árbol con cambios sin commit en el servicio de foto. | `git status` del 23-sep | R11 |
 | E11 | 1 | El Anexo C dice que T-C compone `goal + U3`. El formato de la Fase 2b también inserta la identidad conocida que no está en el goal ni en el turno, así que «código 8» queda en su propia línea. | Anexo C T-C; Fase 2b formato | C3 sigue el formato de 2b. El test exige las partes en orden, no la igualdad estricta. |
 | E12 | 1 | `NoHardcodedEquipmentTest` rechaza la lista `MANUFACTURERS` que el Anexo B obliga a poner en `ActiveEpisodeTurn`. | `test/architecture/no_hardcoded_equipment_test.rb` | Se agrega esa constante a `ALLOWED_MANUFACTURER_LITERAL`. No se toca `KbDocumentResolver::BRANDS`. Declarado en el Anexo F. |
+| E13 | Shadow | Producción ejecuta la imagen `1fcc445a...`, con la migración `20260923140000` aplicada, episode flag encendida, turn flag apagada y el hash del prompt sin cambios. | Contenedores web/worker y ENV verificados el 23-sep-2026 | El deploy corresponde exactamente al alcance shadow de Fase 1. |
+| E14 | Shadow | La muestra contiene 32 turnos humanos y 7 selecciones sintéticas separadas. En los eventos revisados, `original_sha256 == effective_sha256`. | `tmp/field_companion_2026-09-23/shadow/revision.md` | Cumple el mínimo de 30 sin atribuir botones automáticos al técnico y confirma ausencia de cambio visible. |
+| E15 | Shadow | El menú de hilo envía una consulta sintética que el build desplegado procesa otra vez como turno técnico; produjo 1 reinicio falso y 1 corrección duplicada. | `RagQueryConcern#selection_turn?`; commits locales `807d496`, `685f560` | El gate pasa en el límite. El fix local detecta la selección en un servicio funcional y debe desplegarse/revalidarse antes de Fase 2a. |
+| E16 | Shadow | Los eventos `field_companion_turn` desplegados no incluyen `user_id`, aunque sí sesión/correlación/hashes. | `PilotUsageLog.log`; commit local `e181502` | La atribución del export requiere desplegar el fix antes de la siguiente revisión. |
+| E17 | Shadow | La cuenta piloto pertenece a `piloto.danebo.ai` y la legacy a `elevator.danebo.ai`; el login piloto en el host legacy se rechaza por aislamiento de tenant. | Prueba funcional en ambos hosts | Usar el dominio de cada cuenta; no tratar el rechazo cruzado como credencial inválida. |
+| E18 | Shadow | Las respuestas visibles conservaron el comportamiento legacy, incluidos menús frecuentes y algún contenido cross-equipment. | Secuencias funcionales piloto y legacy | No es regresión de Fase 1: shadow no altera la query. Se evalúa en fases posteriores sin encender la turn flag ahora. |
+| E19 | Shadow | No existía una operación segura para limpiar `active_episode` por cuenta y usuario. | Commit local `d72d1d7`, `lib/tasks/field_companion.rake` | Se agrega task dry-run por defecto, web-only e idempotente; preserva transcript, pines y resto de la sesión. |
 
 ---
 
@@ -1023,3 +1032,6 @@ Cada test que una fase edita porque congela copia o comportamiento que la fase c
 |---|---|---|---|---|
 | 1 | `test/architecture/no_hardcoded_equipment_test.rb` | La lista cerrada de marcas del episodio no existe. | `MANUFACTURERS` está en `ALLOWED_MANUFACTURER_LITERAL`. | El Anexo B exige esa lista en `ActiveEpisodeTurn`. No abre retrieval ni agrega «elemont» a `KbDocumentResolver::BRANDS`. |
 | 1 | Caracterización T-A…T-H | Comportamiento actual del rewriter y del resolver de hilo. | Igual, con la flag apagada. | Shadow no cambia el texto que recibe el orquestador. |
+| Shadow | `test/services/rag/thread_menu_selection_test.rb` | Las selecciones del menú de hilo no se distinguían de texto escrito por el técnico. | Caracteriza frases exactas, historial requerido y negativos. | Evita que un botón sintético actualice ActiveEpisode sin cambiar routing ni respuesta visible. |
+| Shadow | `test/models/conversation_session_test.rb` | El evento shadow no verificaba atribución de usuario. | Comprueba que `user_id` se entrega a `PilotUsageLog`. | Permite construir exports auditables por cuenta/usuario. |
+| Shadow | `test/tasks/field_companion_reset_test.rb` | No había reset operativo acotado. | Cubre dry-run, scope exacto, preservación e idempotencia. | Hace repetible la validación sin tocar otras sesiones ni otros datos. |

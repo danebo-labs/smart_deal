@@ -1,0 +1,405 @@
+# Canonical Field Companion cases. Literals are Anexo C of
+# docs/Plan maestro de implementación — Danebo .md.
+# `expect` is the later-phase contract. It is not today's behavior.
+- id: T-A
+  group: text
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+      expect:
+        decision: opened
+    - role: assistant
+      content: "… ¿Qué marca y modelo es el equipo?"
+    - role: user
+      content: "Fuji Yida"
+      expect:
+        decision: continued_elliptical
+        manufacturer: "Fuji Yida"
+    - role: assistant
+      content: "… ¿Sabes el modelo?"
+    - role: user
+      content: "el modelo no lo sé"
+      expect:
+        decision: continued_elliptical
+        model: unknown_confirmed
+        composed_parts: [goal, "Fuji Yida", turn]
+        menu: false
+- id: T-B
+  group: text
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+      expect:
+        decision: opened
+        manufacturer: Elemont
+        identifiers: [MH, CEA15]
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+      expect:
+        decision: continued_elliptical
+        fault_code: "8"
+        composed_contains: [Elemont, MH, CEA15, "puerta 1", "código 8"]
+- id: T-C
+  group: text
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+      expect:
+        decision: opened
+        manufacturer: Elemont
+        identifiers: [MH, CEA15]
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+      expect:
+        decision: continued_elliptical
+        fault_code: "8"
+    - role: user
+      content: "¿y el LED 7?"
+      expect:
+        decision: continued_elliptical
+        composed_parts: [goal, turn]
+- id: T-D
+  group: text
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+      expect:
+        decision: opened
+        manufacturer: Elemont
+        identifiers: [MH, CEA15]
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+      expect:
+        decision: continued_elliptical
+        fault_code: "8"
+    - role: user
+      content: "sigue sin magnetizar"
+      expect:
+        decision: continued_elliptical
+        same_episode_id: true
+- id: T-E
+  group: text
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+      expect:
+        decision: opened
+    - role: assistant
+      content: "… ¿Qué marca y modelo es el equipo?"
+    - role: user
+      content: "Fuji Yida"
+      expect:
+        decision: continued_elliptical
+        manufacturer: "Fuji Yida"
+    - role: assistant
+      content: "… ¿Sabes el modelo?"
+    - role: user
+      content: "el modelo no lo sé"
+      expect:
+        decision: continued_elliptical
+        model: unknown_confirmed
+    - role: assistant
+      content: "…"
+    - role: user
+      content: "¿qué reviso primero?"
+      expect:
+        decision: continued_elliptical
+        model: unknown_confirmed
+        block_contains: "do not ask for it again"
+- id: T-F
+  group: text
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+      expect:
+        decision: opened
+    - role: assistant
+      content: "… ¿Qué marca y modelo es el equipo?"
+    - role: user
+      content: "Fuji Yida"
+      expect:
+        decision: continued_elliptical
+        manufacturer: "Fuji Yida"
+    - role: assistant
+      content: "… ¿Sabes el modelo?"
+    - role: user
+      content: "el modelo no lo sé"
+      expect:
+        decision: continued_elliptical
+        model: unknown_confirmed
+    - role: user
+      content: "No, no es Fuji Yida. Es KONE"
+      expect:
+        decision: corrected
+        manufacturer: KONE
+        model: empty
+        goal_unchanged: true
+        same_episode_id: true
+- id: T-G
+  group: text
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+      expect:
+        decision: opened
+        manufacturer: Elemont
+        identifiers: [MH, CEA15]
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+      expect:
+        decision: continued_elliptical
+        fault_code: "8"
+    - role: user
+      content: "Ahora estoy revisando un KONE que no nivela en planta 3"
+      expect:
+        decision: new_episode
+        new_episode_id: true
+        goal: "Ahora estoy revisando un KONE que no nivela en planta 3"
+        absent: [Elemont, CEA15, "código 8"]
+- id: T-H
+  group: text
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+      expect:
+        decision: opened
+        manufacturer: Elemont
+        identifiers: [MH, CEA15]
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "no muestra ningún código"
+      expect:
+        fault_code: absent_confirmed
+- id: X-1
+  group: edge
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+    - role: user
+      content: "ahora da 18"
+      expect:
+        decision: continued_elliptical
+        restarts: false
+- id: X-2
+  group: edge
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+    - role: user
+      content: "¿es igual que en el KONE?"
+      expect:
+        decision: continued_mention
+        manufacturer: Elemont
+- id: X-3
+  group: edge
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+    - role: assistant
+      content: "… ¿Qué marca y modelo es el equipo?"
+    - role: user
+      content: "Fuyi Yida"
+      expect:
+        restarts: false
+        manufacturer: "Fuyi Yida"
+        never_manufacturer: "Fuji Yida"
+- id: X-4
+  group: edge
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+    - role: user
+      content: "lo medí y da 18"
+      expect:
+        decision: continued_elliptical
+        new_fields: false
+        outcome_reason: measurement_unbound
+- id: X-5
+  group: edge
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+    - role: assistant
+      content: "En el manual KONE, página 12, …"
+    - role: user
+      content: "ok"
+      expect:
+        manufacturer: Elemont
+- id: X-6
+  group: edge
+  pin: "Manual KONE MonoSpace"
+  turns:
+    - role: user
+      content: "Manual KONE MonoSpace"
+      expect:
+        decision: skipped
+        state_unchanged: true
+- id: X-7
+  group: edge
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+    - role: user
+      content: "código 8"
+      inactive_hours_before: 5
+      expect:
+        state: {}
+        decision: no_episode
+        chain: current
+- id: X-8
+  group: edge
+  sequence: "Job de foto cargado + turno de texto escrito + job escribe"
+  expect:
+    history_keeps_text_turn: true
+    episode_keeps_fields: true
+- id: X-9
+  group: edge
+  shared_session: true
+  expect:
+    decision: skipped
+- id: X-10
+  group: edge
+  turns:
+    - role: user
+      content: "El ascensor quedó fuera de servicio, ¿qué reviso en la placa CEA15?"
+    - role: user
+      content: "código 8"
+      expect:
+        parity: "La directiva de parada con la flag encendida en U2 se registra y se justifica, o es STOP."
+- id: X-11
+  group: edge
+  active_episode_payloads:
+    - '{"v": 9}'
+    - "a string"
+  expect:
+    treated_as: {}
+    outcome_reason: invalid_state
+    raises: false
+- id: X-12
+  group: edge
+  pin: "manual KONE"
+  turns:
+    - role: user
+      content: "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+    - role: assistant
+      content: "… ¿Muestra algún código?"
+    - role: user
+      content: "código 8"
+  expect:
+    retrieve_limited_to_pin: true
+    composition_changes_scope: false
+- id: X-13
+  group: edge
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+    - role: assistant
+      content: "… ¿Sabes el modelo del equipo?"
+    - role: user
+      content: "no lo sé"
+      expect:
+        model: unknown_confirmed
+        via: pending_fact
+- id: X-14
+  group: edge
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+    - role: assistant
+      content: "… ¿De qué marca es?"
+    - role: user
+      content: "Sigma"
+      expect:
+        manufacturer: Sigma
+        via: pending_fact
+- id: X-15
+  group: edge
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+    - role: assistant
+      content: "… ¿Qué marca y modelo es el equipo?"
+    - role: user
+      content: "Fuji Yida"
+    - role: assistant
+      content: "… ¿Sabes el modelo?"
+    - role: user
+      content: "el modelo no lo sé"
+    - role: assistant
+      content: "… ¿Qué modelo es?"
+  expect:
+    pending_fact: null
+    outcome_reason: assistant_repeated_question
+- id: P1
+  group: photo
+  sequence: "Foto nueva sin pregunta"
+  expect:
+    card: current_visible
+    cacheable: true
+    active_photo: written
+- id: P2
+  group: photo
+  sequence: "Foto nueva con pregunta"
+  expect:
+    bubble: "una burbuja con miniatura, botón y respuesta"
+    compact_context_in_history: true
+- id: P3
+  group: photo
+  sequence: "Botón «Preguntar sobre esta foto» + pregunta nueva"
+  expect:
+    cache_hit: true
+    vision_called: false
+    bubble: one
+- id: P4
+  group: photo
+  sequence: "Misma foto tras T-G"
+  expect:
+    analysis_reused: true
+    inherits_previous_goal_or_facts: false
+- id: P5
+  group: photo
+  sequence: "T-A + foto cuya lectura dice manufacturer=KONE"
+  photo_manufacturer: KONE
+  turns:
+    - role: user
+      content: "Cómo se ajustan los resortes de la fijación de cables ?"
+    - role: assistant
+      content: "… ¿Qué marca y modelo es el equipo?"
+    - role: user
+      content: "Fuji Yida"
+    - role: assistant
+      content: "… ¿Sabes el modelo?"
+    - role: user
+      content: "el modelo no lo sé"
+  expect:
+    manufacturer: "Fuji Yida"
+    conflicts: [manufacturer]

@@ -9,7 +9,8 @@ module Rag
 
     Entry = Data.define(
       :account_id, :document_id, :s3_key, :display_name,
-      :brands, :designators, :generic, :confirmed
+      :brands, :designators, :generic, :confirmed,
+      :evidence_page, :evidence_text, :role
     )
 
     def self.load(path = PATH)
@@ -21,7 +22,7 @@ module Rag
       @current ||= load
     rescue StandardError => e
       Rails.logger.error("[DOCUMENT_IDENTITY] catalog_unreadable #{e.class}")
-      @current = new("documents" => [])
+      @current = new({ "documents" => [] }, loaded: false)
     end
 
     def self.with_catalog(catalog)
@@ -32,7 +33,8 @@ module Rag
       @current = previous
     end
 
-    def initialize(raw)
+    def initialize(raw, loaded: true)
+      @loaded = loaded
       @entries = {}
       Array(raw["documents"]).each do |row|
         row = row.to_h.stringify_keys
@@ -44,7 +46,10 @@ module Rag
           brands: Array(row["brands"]).map(&:to_s),
           designators: Array(row["designators"]).map(&:to_s),
           generic: row["generic"] == true,
-          confirmed: row["confirmed"] == true
+          confirmed: row["confirmed"] == true,
+          evidence_page: evidence_page_of(row["evidence_page"]),
+          evidence_text: row["evidence_text"].to_s.presence,
+          role: row["role"].to_s.presence
         )
         @entries[[ entry.account_id, entry.document_id ]] = entry
       end
@@ -58,12 +63,31 @@ module Rag
       @entries.values
     end
 
+    def loaded?
+      @loaded
+    end
+
+    def self.effectively_confirmed?(entry)
+      return false unless entry&.confirmed
+      return false unless entry.evidence_page.is_a?(Integer) && entry.evidence_page.positive?
+
+      entry.evidence_text.present?
+    end
+
     def activatable?
-      entries.any? && entries.all?(&:confirmed)
+      loaded? && entries.any? { |entry| self.class.effectively_confirmed?(entry) }
     end
 
     def unconfirmed_count
       entries.count { |entry| !entry.confirmed }
+    end
+
+    private
+
+    def evidence_page_of(value)
+      return if value.nil? || value.to_s.strip.empty?
+
+      Integer(value)
     end
   end
 end

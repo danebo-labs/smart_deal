@@ -28,6 +28,12 @@ class BedrockRagService
   # the retired </DOC_REFS> stop sequence caused. Every dynamic directive is
   # therefore appended before the placeholder, which is always re-emitted last.
   OUTPUT_FORMAT_PLACEHOLDER = "$output_format_instructions$"
+  # Bedrock fills $output_format_instructions$ inside retrieve_and_generate and
+  # parses the model's citation XML. A direct generation cannot receive that
+  # opaque text. This line only numbers the same chunks so [n] can be resolved.
+  DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS = <<~TEXT.strip
+    Cite a claim taken from a search result with [n], where n is that result's source number. Do not cite a result you did not use.
+  TEXT
   PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
   GROUNDED_SYNTHESIS_PROMPT_PREFIX = "- GROUNDED_SYNTHESIS:"
   STRICT_ONLY_PROMPT_PREFIX = "- STRICT_ONLY:"
@@ -194,10 +200,16 @@ class BedrockRagService
     }
 
     begin
+      effective_session_context = session_context_with_entity_safety(
+        session_context,
+        entity_sources: entity_sources
+      )
       if (scoped = document_identity_scope_result(
         question,
         episode: episode,
         response_locale: response_locale,
+        session_context: effective_session_context,
+        output_channel: output_channel,
         entity_s3_uris: entity_s3_uris,
         entity_sources: entity_sources,
         force_entity_filter: force_entity_filter,
@@ -215,10 +227,6 @@ class BedrockRagService
       apply_filter = entity_s3_uris.any? &&
         (force_entity_filter || !query_names_different_document?(question, entity_s3_uris))
       filtered_uris = apply_filter ? entity_s3_uris : []
-      effective_session_context = session_context_with_entity_safety(
-        session_context,
-        entity_sources: entity_sources
-      )
 
       if entity_s3_uris.any?
         Rails.logger.info("BedrockRagService: entity_filter=#{apply_filter} uris=#{filtered_uris.size} forced=#{force_entity_filter}")
@@ -562,43 +570,183 @@ class BedrockRagService
 
   def document_identity_scope_result(question, episode:, response_locale:, entity_s3_uris:, entity_sources:,
                                      force_entity_filter:, account_id:, user_id:, conversation_session_id:,
-                                     correlation_id:)
+                                     correlation_id:, session_context: nil, output_channel: nil)
+    Thread.current[:document_identity_scope] = nil
     return nil unless Rag::DocumentIdentityScope.applicable?(episode)
 
-    started = Time.current
     profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
+    number_of_results = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
     retrieval = retrieve_chunks(
       question,
       entity_s3_uris: entity_s3_uris,
       entity_sources: entity_sources,
       force_entity_filter: force_entity_filter,
-      number_of_results: profile.number_of_results,
+      number_of_results: number_of_results,
       account_id: account_id,
       correlation_id: correlation_id
     )
-    applied = Rag::DocumentIdentityScope.apply(retrieval[:chunks], episode)
-    if applied.blocked
-      Rails.logger.warn("[DOCUMENT_IDENTITY] catalog_incomplete; retrieve_and_generate unchanged")
+    original = Array(retrieval[:chunks])
+    applied = Rag::DocumentIdentityScope.apply(original, episode)
+    if applied.chunks.size != original.size
+      Rails.logger.warn("[DOCUMENT_IDENTITY] chunk_count_changed; retrieve_and_generate unchanged")
       return nil
     end
 
-    route = Rag::StructuredEvidenceRoute.new(
-      question: question,
-      account: @account,
-      entity_s3_uris: entity_s3_uris,
-      entity_sources: entity_sources,
-      force_entity_filter: force_entity_filter,
+    record_document_identity_scope(
+      original, applied,
+      path: applied.redacted.positive? ? "document_identity" : "retrieve_and_generate"
+    )
+    return nil unless applied.redacted.positive?
+
+    prompt = document_identity_generation_prompt(
+      question, applied.chunks,
       response_locale: response_locale,
-      rag_service: self,
-      user_id: user_id,
-      conversation_session_id: conversation_session_id,
-      correlation_id: correlation_id
+      session_context: session_context,
+      output_channel: output_channel
     )
-    outcome = route.complete_from_retrieval(
-      { chunks: applied.chunks },
-      retrieval_ms: ((Time.current - started) * 1000).round
+    raw_answer = begin
+      document_identity_generator.query(
+        prompt,
+        max_tokens: @rag_config[:generation_max_tokens],
+        temperature: @rag_config[:generation_temperature],
+        tracking: {
+          account_id: account_id,
+          user_id: user_id,
+          conversation_session_id: conversation_session_id,
+          correlation_id: correlation_id
+        }
+      )
+    rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
+      return document_identity_technical_failure(e)
+    rescue StandardError => e
+      raise unless e.class.name.start_with?("Aws::", "Seahorse::")
+
+      return document_identity_technical_failure(e)
+    end
+    if raw_answer.blank?
+      Rails.logger.warn("[DOCUMENT_IDENTITY] generation_blank; retrieve_and_generate unchanged")
+      record_document_identity_scope(original, applied, path: "retrieve_and_generate", fallback: true)
+      return nil
+    end
+
+    finish_document_identity_generation(
+      question: question,
+      raw_answer: raw_answer,
+      chunks: applied.chunks,
+      response_locale: response_locale,
+      retrieval: retrieval
     )
-    outcome.result
+  rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
+    document_identity_technical_failure(e)
+  rescue StandardError => e
+    raise unless e.class.name.start_with?("Aws::", "Seahorse::")
+
+    document_identity_technical_failure(e)
+  end
+
+  def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:)
+    template = load_generation_prompt_with_locale(
+      question,
+      response_locale: response_locale,
+      session_context: session_context,
+      output_channel: output_channel
+    )
+    template
+      .sub("$query$") { question.to_s }
+      .sub("$search_results$") { Rag::DocumentIdentityScope.generation_context(chunks) }
+      .sub(OUTPUT_FORMAT_PLACEHOLDER) { DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS }
+  end
+
+  def document_identity_generator
+    @document_identity_generator ||= AiProvider.new
+  end
+
+  def record_document_identity_scope(original, applied, path:, fallback: false)
+    stats = {
+      "retrieved" => original.size,
+      "sent" => applied.chunks.size,
+      "with_body" => applied.chunks.size - applied.redacted,
+      "redacted" => applied.redacted,
+      "unconfirmed_general" => applied.unconfirmed_general,
+      "undeclared_private" => applied.undeclared_private,
+      "path" => path,
+      "fallback" => fallback
+    }
+    Thread.current[:document_identity_scope] = stats
+    Rails.logger.info("[DOCUMENT_IDENTITY] #{stats.to_json}")
+  end
+
+  def document_identity_technical_failure(error)
+    Rails.logger.warn(
+      "[DOCUMENT_IDENTITY] technical_failure #{error.class}; retrieve_and_generate unchanged"
+    )
+    stats = Thread.current[:document_identity_scope]
+    if stats
+      stats["path"] = "retrieve_and_generate"
+      stats["fallback"] = true
+    end
+    nil
+  end
+
+  def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:)
+    no_results_locale = effective_response_locale(question, response_locale: response_locale)
+    answer_text = extract_doc_refs(raw_answer.to_s)[:clean_answer]
+    canned_no_results = bedrock_no_results?(answer_text)
+    answer_text = localized_no_results(no_results_locale) if canned_no_results
+
+    citations = document_identity_citation_records(chunks)
+    answer_text = normalize_absence_semantics(
+      answer_text,
+      question: question,
+      locale: no_results_locale,
+      grounded_synthesis: @grounded_synthesis
+    )
+    answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale).call(
+      answer_text,
+      evidence: citations,
+      require_cited_evidence: !canned_no_results
+    )
+    attribution = Rag::CitationAttributionGuard.new(question: question, citations: citations).call(answer_text)
+    answer_text = attribution.answer
+    if attribution.dropped_any? && !attribution.attributed_claims? &&
+       Rag::AnswerSafetyProcessor.requires_evidence?(answer_text)
+      answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale)
+        .call("DATA_NOT_AVAILABLE", evidence: [])
+    end
+
+    uncited = I18n.t("rag.uncited_technical_answer", locale: no_results_locale)
+    missing = I18n.t("rag.data_not_available", locale: no_results_locale)
+    route_outcome = if canned_no_results || answer_text == uncited || answer_text.strip == missing
+      :abstained
+    else
+      :answered
+    end
+
+    {
+      answer: answer_text,
+      citations: @citation_processor.build_numbered_references(citations, answer_text, question: question),
+      retrieved_citations: citations,
+      doc_refs: build_doc_refs(chunks),
+      session_id: nil,
+      retrieval_trace: retrieval[:retrieval_trace],
+      generation_mode: "document_identity_scope",
+      model_invoked: true,
+      route_outcome: route_outcome,
+      document_identity: Thread.current[:document_identity_scope]
+    }
+  end
+
+  def document_identity_citation_records(chunks)
+    chunks.map do |chunk|
+      metadata = chunk[:metadata].to_h.stringify_keys
+      uri = chunk[:location_uri].to_s
+      location = nil
+      if uri.present?
+        bucket, key = uri.delete_prefix("s3://").split("/", 2)
+        location = { bucket: bucket, key: key, uri: uri, type: "s3" }
+      end
+      { content: chunk[:content], location: location, metadata: metadata }
+    end
   end
 
   private

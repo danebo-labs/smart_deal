@@ -1,4 +1,9 @@
-# FC-D12 draft. Only confirmed: true counts. Unconfirmed blocks activation.
+# FC-D12. Activatable when this file loads and at least one entry is confirmed
+# with evidence_page and evidence_text. confirmed: true only when the document
+# prints the brand. An unconfirmed entry keeps its body (unconfirmed_general).
+# A private manual keeps its body (undeclared_private). Neither blocks the turn.
+# role: equipment or component. No role is not trimmed.
+# A component is trimmed only when the episode has an identifier and none match.
 # Lookup key: account_id + document_id (sidecar document_id). s3_key is not the chunk URI.
 # Index ids: "1" danebo-legacy, "3" danebo-pilot-elevator. Not local account ids.
 documents:

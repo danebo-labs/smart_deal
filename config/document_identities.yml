@@ -1,0 +1,1636 @@
+# FC-D12 draft. Only confirmed: true counts. Unconfirmed blocks activation.
+# Lookup key: account_id + document_id (sidecar document_id). s3_key is not the chunk URI.
+# Index ids: "1" danebo-legacy, "3" danebo-pilot-elevator. Not local account ids.
+documents:
+  - account_id: "1"
+    document_id: "b61f5d54-ff42-414a-97b7-01682d16f4b5"
+    s3_key: "uploads/1/b61f5d54-ff42-414a-97b7-01682d16f4b5/original.pdf"
+    display_name: "SEGURIDADES 1.1-1"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "a2f1d186-48ce-46e4-a870-3962c7fd5967"
+    s3_key: "uploads/1/a2f1d186-48ce-46e4-a870-3962c7fd5967/original.pdf"
+    display_name: "685970470-A-Series-1-0t-3-5t-Electric-four-wheel-Forklift-Truck-Service-Manual-5bNot-CE-5d-1"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "848a4be2-5961-4faa-baf6-ed9a3f5f079d"
+    s3_key: "uploads/1/848a4be2-5961-4faa-baf6-ed9a3f5f079d/original.pdf"
+    display_name: "705500290-CROWN-FC-4000-4500"
+    brands: ["Crown"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "48ca3f32-6966-4d4f-b1e1-284059d96176"
+    s3_key: "bulk_uploads/1/2026-08-31/DOC. S1000A MONTAJE.pdf"
+    display_name: "Placa S1000_A Descripción de Pantallas"
+    brands: []
+    designators: ["S1000A"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "1cfd74b7-8500-420b-b001-367607c5cd33"
+    s3_key: "bulk_uploads/1/2026-08-31/4-00016_20_20EXCELSIOR_20S1000_B_V400_S110_FRENIC-AUTO-RESC_SIN_20CUARTO_TRIFASICO_V4.pdf"
+    display_name: "4-00016_20_20EXCELSIOR_20S1000_B_V400_S110_FRENIC-AUTO-RESC_SIN_20CUARTO_TRIFASICO_V4"
+    brands: ["Excelsior"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "0f8c0373-746e-4015-ad0b-f8176611967b"
+    s3_key: "bulk_uploads/1/2026-08-31/II 15 Rev 01 - GFR2 - Mecgnica.pdf"
+    display_name: "II 15 Rev 01 - GFR2 - Mecgnica"
+    brands: []
+    designators: ["GFR2"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "3c990e54-6399-4914-812e-76c89760deab"
+    s3_key: "bulk_uploads/1/2026-08-31/CONTROL_20INSPECCION_20FOSO_20REDUCIDO_20ELECTRICO.pdf"
+    display_name: "Control Inspeccion Foso Reducido Electrico"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "aee3e9da-07cc-4e40-8ef2-638003209734"
+    s3_key: "bulk_uploads/1/2026-08-31/Citifono.pdf"
+    display_name: "Citófono Instalación y Conexión"
+    brands: []
+    designators: []
+    generic: true
+    confirmed: false
+  - account_id: "1"
+    document_id: "d6c1681c-350b-4577-aeb4-079c49508584"
+    s3_key: "bulk_uploads/1/2026-08-31/IME01 Rev 03 - Sistema SK1000 [2020].pdf"
+    display_name: "IME01 Rev 03 Sistema SK1000"
+    brands: []
+    designators: ["IME01", "SK1000"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "cc503e31-6275-4a46-8616-64cfab1bf4c7"
+    s3_key: "bulk_uploads/1/2026-08-31/Manual Puerta Cabina FER-EXC.pdf"
+    display_name: "Excelsior 40/10 PM Car Door Installation Manual"
+    brands: ["Excelsior"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "13dec665-4afb-4f31-a624-e0d880d6c16e"
+    s3_key: "bulk_uploads/1/2026-08-31/manual-cea51fb-das.pdf"
+    display_name: "manual-cea51fb-das"
+    brands: []
+    designators: ["CEA51FB"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "520234ff-cb28-422d-abe1-4436073ddaab"
+    s3_key: "bulk_uploads/1/2026-08-31/sg_lm2a_es_1_0_0.pdf"
+    display_name: "sg_lm2a_es_1_0_0"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "9a4fa817-b9e8-4a9e-ae83-526c0731e603"
+    s3_key: "bulk_uploads/1/2026-08-31/manual-cea15p.pdf"
+    display_name: "manual-cea15p"
+    brands: ["Controles S.A."]
+    designators: ["CEA15", "CEA15+", "CEA15P"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "6e578b57-0f5e-42f0-91d6-4dd908e0eba2"
+    s3_key: "bulk_uploads/1/2026-08-31/Manual_monarch_Español_3000+.pdf"
+    display_name: "Manual_monarch_Español_3000+"
+    brands: ["Monarch"]
+    designators: ["NICE3000"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "787ba006-7640-4f3b-a29f-c0ec19107ab5"
+    s3_key: "bulk_uploads/1/2026-08-31/MM.LF18CD.00S-MANUAL-GENERAL-DE-MONTAJE.pdf"
+    display_name: "MM.LF18CD.00S-MANUAL-GENERAL-DE-MONTAJE"
+    brands: []
+    designators: ["LF18CD"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "54182050-3045-4f59-b7d2-802992375cdb"
+    s3_key: "bulk_uploads/1/2026-08-31/GEARLESS_20STANDAR_20PLANO_20GENERAL.pdf"
+    display_name: "GEARLESS_20STANDAR_20PLANO_20GENERAL"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "85590ab2-d2b2-49b2-a36d-0c8c50f9bd76"
+    s3_key: "bulk_uploads/1/2026-08-31/Monarch nice 3000 fallas-1.pdf"
+    display_name: "Monarch nice 3000 fallas-1"
+    brands: ["Monarch"]
+    designators: ["NICE3000"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "126cda62-64ad-4469-8674-a29f12e38d48"
+    s3_key: "bulk_uploads/1/2026-08-31/VF5.pdf"
+    display_name: "VF5"
+    brands: []
+    designators: ["VF5"]
+    generic: false
+    confirmed: false
+  - account_id: "1"
+    document_id: "dcc8e046-037d-48a6-8913-1992aed28507"
+    s3_key: "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
+    display_name: "Elemont Montacargas Hidraulico Modelo MH"
+    brands: ["Elemont"]
+    designators: ["MH"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "f30a74e8-f9d2-4f4c-b3f0-3a4f95c15504"
+    s3_key: "bulk_uploads/3/2026-08-20/PLANO 3 mitsubishi.pdf"
+    display_name: "PLANO 3 mitsubishi"
+    brands: ["Mitsubishi"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "19ec1ed5-e2e3-4dbd-8b97-b435adeda145"
+    s3_key: "bulk_uploads/3/2026-08-20/Tms_50e_monospace_Copy-1.pdf"
+    display_name: "Tms_50e_monospace_Copy-1"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "15e19bcd-0226-44da-a5eb-f0a631f8ace1"
+    s3_key: "bulk_uploads/3/2026-08-20/Listado Fallas MPK 708A.pdf"
+    display_name: "Listado Fallas MPK 708A"
+    brands: []
+    designators: ["MPK708A"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "01f154a7-bbde-4ce4-9ddf-c5883863fe75"
+    s3_key: "bulk_uploads/3/2026-08-20/codigos error BL6.pdf"
+    display_name: "Codigos de Error BL6"
+    brands: []
+    designators: ["BL6"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "bd3bcc47-313f-47c2-b6dd-02ad13a278a6"
+    s3_key: "bulk_uploads/3/2026-08-20/SJT-YBA.V9_guia de usuario sintetizador de voz.pdf"
+    display_name: "SJT-YBA Voice Announcement Device Manual"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6aacb01d-4bfd-4d1f-bd6f-7dca581a7d37"
+    s3_key: "bulk_uploads/3/2026-08-20/02.- BLT-ES__Light.pdf"
+    display_name: "BLT Escalator Lamp Wiring Diagram"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "2554da12-7872-4dc7-85d5-59e7d029e5f4"
+    s3_key: "bulk_uploads/3/2026-08-20/04.- BLT-ES_Safety circuit.pdf"
+    display_name: "BLT Escalator Safety Circuit Diagram"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "eb272210-b2d4-40aa-8469-8160eb35807c"
+    s3_key: "bulk_uploads/3/2026-08-20/Fallas MPK 708.pdf"
+    display_name: "Fallas MPK 708"
+    brands: []
+    designators: ["MPK708"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "78600a13-fae5-4232-87ce-28b48302771e"
+    s3_key: "bulk_uploads/3/2026-08-20/AM-13.20.010_main_en.D.1[1].pdf"
+    display_name: "AM-13.20.010_main_en.D.1[1]"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6db9aecd-6685-4806-88f0-be264c82ebee"
+    s3_key: "bulk_uploads/3/2026-08-20/OTIS (Descripccion de los Led de la Placa LB_II).pdf"
+    display_name: "Otis Tarjeta LB II Descripción Componentes"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "25c2f8e0-eb6e-4164-a713-f7b3e772d794"
+    s3_key: "bulk_uploads/3/2026-08-20/OTIS (Descripccion de los Led de la Placa NE300).pdf"
+    display_name: "NE300 Board LED Description Diagram"
+    brands: ["OTIS"]
+    designators: ["NE300"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "ea8d75a7-379a-477b-9275-995c11ffc846"
+    s3_key: "bulk_uploads/3/2026-08-20/Procedimiento Rescate Con Sala de Maquinas - Sin Reductor Rev.2.pdf"
+    display_name: "Procedimiento Rescate Con Sala de Maquinas Sin Reductor"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "d8149643-f002-4a1c-a24c-108011fe2173"
+    s3_key: "bulk_uploads/3/2026-08-20/Parametros de Ascensores.pdf"
+    display_name: "Parametros de Ascensores"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "a94e6786-1ec0-4d76-8021-44b843c504da"
+    s3_key: "bulk_uploads/3/2026-08-20/Código de Avería_BLT_ascensor.pdf"
+    display_name: "Código de Avería BLT Ascensor"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "59d38d00-91b1-4947-94fd-68561b20dfab"
+    s3_key: "bulk_uploads/3/2026-08-20/841397156-Planos-BLT-QS-30-40.pdf"
+    display_name: "841397156-Planos-BLT-QS-30-40"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "ca9cfad1-098c-4eed-ac54-b20555bb23d3"
+    s3_key: "bulk_uploads/3/2026-08-20/Errores Invi4,5,6 - copia.pdf"
+    display_name: "Códigos de Falha MCINV4 MCINV5SL MCINV6S"
+    brands: []
+    designators: ["MCINV4", "MCINV5SL", "MCINV6S", "INVI4"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "672a4f9d-57ae-42fa-a374-0dec9f7775c0"
+    s3_key: "bulk_uploads/3/2026-08-20/teclera variadorDocumento de Cristian.pdf"
+    display_name: "YS-K01 Door Controller User Manual"
+    brands: []
+    designators: ["K01"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "e8fb470a-c0c4-4161-9536-94858da31beb"
+    s3_key: "bulk_uploads/3/2026-08-20/IRC 34_32.pdf"
+    display_name: "IRC 34_32"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "e7bcb68d-d4ed-406b-9e5f-dec141f9a142"
+    s3_key: "bulk_uploads/3/2026-08-20/IRC 34_37.pdf"
+    display_name: "CMC-3 Maniobra Programación Prestaciones IRC-34/37"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "a86ec536-7e84-43ba-87e7-513e7746595e"
+    s3_key: "bulk_uploads/3/2026-08-20/Procedimiento Rescate Con Sala de Maquinas y Reductor Rev.1.pdf"
+    display_name: "Procedimiento Rescate Con Sala de Maquinas y Reductor Rev.1"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "35860e82-cd86-4ebc-8a8a-e4231b046ef8"
+    s3_key: "bulk_uploads/3/2026-08-20/codigo Errores_Escalas_BLT.pdf"
+    display_name: "Test Funcionamiento BLT PLC OMRON Bansander"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "efb7f647-7666-4ff2-aff5-754d4f035029"
+    s3_key: "bulk_uploads/3/2026-08-20/IRC 34_31.pdf"
+    display_name: "IRC Maniobra Serie CMC-3 ThyssenKrupp"
+    brands: ["ThyssenKrupp"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "d3333128-7191-4cad-986a-6261159c549b"
+    s3_key: "bulk_uploads/3/2026-08-20/DL1-05.99.106_main_en.A.1 Polaris PRO DCS concept.pdf"
+    display_name: "DL1-05.99.106_main_en.A.1 Polaris PRO DCS concept"
+    brands: []
+    designators: ["DL1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c7a31e32-8d44-48ed-8b8c-d04a56849f46"
+    s3_key: "bulk_uploads/3/2026-08-20/KONE_Polaris_KSS570.pdf"
+    display_name: "KONE_Polaris_KSS570"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "ea0e06b3-d04f-4ae4-8ec5-08f827603625"
+    s3_key: "bulk_uploads/3/2026-08-20/KONE_Polaris_KSS900.pdf"
+    display_name: "KONE_Polaris_KSS900"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "fb599002-4537-419e-9df4-2ced71c165d4"
+    s3_key: "bulk_uploads/3/2026-08-20/Fallas Estela.pdf"
+    display_name: "Fallas Estela"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "698e5d26-0036-49d2-bb6e-7af1d34af0b1"
+    s3_key: "bulk_uploads/3/2026-08-20/7022.pdf"
+    display_name: "Codigos de Error BL6 Controlador"
+    brands: []
+    designators: ["BL6"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "bedce9d4-8d61-4160-85bb-5e3263c3f750"
+    s3_key: "bulk_uploads/3/2026-08-20/DOC-20161014-WA0003.pdf"
+    display_name: "DOC-20161014-WA0003"
+    brands: []
+    designators: ["WA0003"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "96d780c4-740f-42de-a2cf-0df94e800ce6"
+    s3_key: "bulk_uploads/3/2026-08-20/CONEXION BOBINAS REGULADOR DE VELOCIDAD.pdf"
+    display_name: "Bi-directional Over Speed Governor Operation"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "491cad13-a992-4577-ac93-ee7e5b8e0bc5"
+    s3_key: "bulk_uploads/3/2026-08-20/OTIS (Descripccion de los Led de la Placa LCB_II).pdf"
+    display_name: "Descripción LEDs Placa LCB II Otis"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "bf6802af-0216-48be-b9d4-0d12363b8436"
+    s3_key: "bulk_uploads/3/2026-08-20/manual teach in 2.pdf"
+    display_name: "manual teach in 2"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "da07a169-c839-4705-a1db-2c8fb294283c"
+    s3_key: "bulk_uploads/3/2026-08-20/errores mcp7.pdf"
+    display_name: "MCP7 Lista de Erros e Advertências"
+    brands: []
+    designators: ["MCP7"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c0d5068a-83ee-43ad-b8cc-4cdb863b7dd9"
+    s3_key: "bulk_uploads/3/2026-08-20/variador de puerta thyssen mcp7.pdf"
+    display_name: "variador de puerta thyssen mcp7"
+    brands: ["Thyssen"]
+    designators: ["MCP7"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8c541e8e-0aca-44c6-8752-171cf07b2cf4"
+    s3_key: "bulk_uploads/3/2026-08-20/BLT -listado de falla  y soluciones.pdf"
+    display_name: "BLT Control Principal Averías y Soluciones"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "135bbf5b-fc9b-4cd0-86e6-ab66ce968052"
+    s3_key: "bulk_uploads/3/2026-08-20/IRC 34_36.pdf"
+    display_name: "ThyssenKrupp CMC-3 IRC-34/36 Fault Location"
+    brands: ["ThyssenKrupp"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "039bf243-300f-4ec8-8852-9d3a564beed2"
+    s3_key: "bulk_uploads/3/2026-08-20/PLANO 4 mitsubishi.pdf"
+    display_name: "PLANO 4 mitsubishi"
+    brands: ["Mitsubishi"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "e1b88cb1-41aa-497e-9fbe-c89fbe1f4947"
+    s3_key: "bulk_uploads/3/2026-08-20/Planos BLT QS.pdf"
+    display_name: "Planos BLT QS Travelling Cable"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "69873cd8-d97e-4951-88c3-ece3cace328a"
+    s3_key: "bulk_uploads/3/2026-08-20/Cetec813ind1-ManualMCP7.PDF"
+    display_name: "CETEC 813 Manual MCP7"
+    brands: ["CETEC"]
+    designators: ["MCP7", "CETEC813IND1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "02ae6128-077b-4c00-8029-f0cf80e0f6c4"
+    s3_key: "bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf"
+    display_name: "THYSSEN (Manual de Maniobra Universal con MCINV4)"
+    brands: ["Thyssen"]
+    designators: ["MCINV4"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "817c9cca-293f-4cdc-8568-3fc83ed9dbde"
+    s3_key: "bulk_uploads/3/2026-08-20/IRC 34_35.pdf"
+    display_name: "CMC-3 IRC-34/35 Puesta en Marcha"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "3ae34975-2dcc-4326-9cfb-bbbaf2514040"
+    s3_key: "bulk_uploads/3/2026-08-20/manual gestion instalacion .pdf"
+    display_name: "manual gestion instalacion"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "9010cae6-7102-4aba-9e66-3360ed5c6174"
+    s3_key: "bulk_uploads/3/2026-08-20/seguridad electrica al trabajar con asc.pdf"
+    display_name: "KONE Take 5 Seguridad Eléctrica Ascensores"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "17b2cf43-9447-42e2-8664-5211b6dbc65a"
+    s3_key: "bulk_uploads/3/2026-08-20/Manual_CMC4_Ed5.pdf"
+    display_name: "CMC4 Manual de Funcionamiento"
+    brands: []
+    designators: ["CMC4"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8c604134-dc41-4346-93c1-9eeb58b7a554"
+    s3_key: "bulk_uploads/3/2026-08-20/MANUAL MONITOREO A DISTANCIA.pdf"
+    display_name: "SJT-YCY Elevator Remote Monitor System Manual"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "1840b928-19c1-4914-be7b-e2c3359e42bc"
+    s3_key: "bulk_uploads/3/2026-08-20/Electric Drawing (FR2000+EPS).pdf"
+    display_name: "Electric Drawing (FR2000+EPS)"
+    brands: []
+    designators: ["FR2000"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "a6c35af9-40cc-467d-8b89-90c9e3c7fe57"
+    s3_key: "bulk_uploads/3/2026-08-20/lubricacion cables.pdf"
+    display_name: "KONE Suspension Ropes Installation Instruction"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6579dbf7-5dbd-4c91-97cb-bd2f948bb364"
+    s3_key: "bulk_uploads/3/2026-08-20/E-Shine YS-K01 door operator.pdf"
+    display_name: "YS-K01 Door Controller User Manual"
+    brands: []
+    designators: ["K01"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "4a6404ad-01a6-4d21-aa9e-b9f33c3bea89"
+    s3_key: "bulk_uploads/3/2026-08-20/BLT_-2112650850.pdf"
+    display_name: "BLT_-2112650850"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6dca39b6-0e09-42cf-976a-48526a83baf0"
+    s3_key: "bulk_uploads/3/2026-08-20/841397157-Planos-BLT-QS-40-50.pdf"
+    display_name: "841397157-Planos-BLT-QS-40-50"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c90c0e8f-fd38-4bcf-9a56-bed5b5f3ac69"
+    s3_key: "bulk_uploads/3/2026-08-20/AM-13.20.009_main_en.E.1[1].pdf"
+    display_name: "KONE E-Link Installation Instruction AM-13.20.009"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "1d551ba1-5812-4061-9afd-f1c70802a073"
+    s3_key: "bulk_uploads/3/2026-08-20/BL2000-HXK-V9 Manual.pdf"
+    display_name: "BL2000-HXK-V9 Hall Call Display Transfer Board Manual"
+    brands: []
+    designators: ["BL2000", "V9"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "36f23784-5ec7-4dac-afac-bcd518f3e78f"
+    s3_key: "bulk_uploads/3/2026-08-20/MANUAL frenic_lift_español.pdf"
+    display_name: "MANUAL frenic_lift_español"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "b221b803-a71d-4491-b9bc-d5cd98bd9ebf"
+    s3_key: "bulk_uploads/3/2026-08-20/AMD Advanced Workbook Answers.pdf"
+    display_name: "KONE AMD Door Advanced Workbook Answers"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "e08a4a06-286d-4ff1-a98f-a5389e62ce4b"
+    s3_key: "bulk_uploads/3/2026-08-20/KONE MONOSPACE® 2.5 TECHNOLOGY WORKBOOKTC04817W11-ENI_A.pdf"
+    display_name: "KONE MonoSpace 2.5 Technology Workbook Answers"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "7462ccf5-369b-4f7b-9a8b-9939a190b0ae"
+    s3_key: "bulk_uploads/3/2026-08-20/aplome laser.pdf"
+    display_name: "KONE Ascensores Tracción Aplomado Láser"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "776ff19e-5a29-40e5-944b-a738582f0c64"
+    s3_key: "bulk_uploads/3/2026-08-20/Enviando Astra_v11.pdf"
+    display_name: "Enviando Astra_v11"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "e5ca63dc-e103-45cb-a201-e6194b30bc15"
+    s3_key: "bulk_uploads/3/2026-08-20/01.- BLT-ES_Power.pdf"
+    display_name: "BLT Elevator Power Distribution Schematic"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "b4089e84-e6f5-4850-8b87-b3b8adfc7046"
+    s3_key: "bulk_uploads/3/2026-08-20/Vf30diag.pdf"
+    display_name: "Variodyn VF30BR VF50BR VF85BR Diagnosis Troubleshooting"
+    brands: []
+    designators: ["VF30BR", "VF50BR", "VF85BR", "VF30DIAG"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "ad699667-31b0-4f8e-ad0e-3198af69bbba"
+    s3_key: "bulk_uploads/3/2026-08-20/DL1-03.99.611_main_en.A.2 Polaris PRO DCS Signalisation devices description.pdf"
+    display_name: "DL1-03.99.611_main_en.A.2 Polaris PRO DCS Signalisation devices description"
+    brands: []
+    designators: ["DL1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "312e5e21-4c9b-447b-a9ad-544d55aaba97"
+    s3_key: "bulk_uploads/3/2026-08-20/Vf30ptcm.pdf"
+    display_name: "VF30/50/85BR PTCM Installation Commissioning Manual"
+    brands: []
+    designators: ["VF30", "VF30PTCM"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "10fc4a8e-3af5-4a6b-819e-f5d598201075"
+    s3_key: "bulk_uploads/3/2026-08-20/cussor b1.pdf"
+    display_name: "cussor b1"
+    brands: []
+    designators: ["B1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "66ffa70d-ab9b-4660-af5c-c5e676e766e1"
+    s3_key: "bulk_uploads/3/2026-08-20/AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction.pdf"
+    display_name: "AM-11 65 021_en_C_Alta_V3F25_Commissioning_Instruction"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6b0339e0-1d37-47db-b673-bb0477af255a"
+    s3_key: "bulk_uploads/3/2026-08-20/QS PLANOS.pdf"
+    display_name: "QS PLANOS"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "7fdec837-866f-4906-8388-aca4d312122e"
+    s3_key: "bulk_uploads/3/2026-08-21/03.- BLT-ES_Main circuit.pdf"
+    display_name: "BLT DSCS9002 Main Circuit Diagram"
+    brands: ["BLT"]
+    designators: ["DSCS9002"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "dc3d472a-1ebf-441b-b80f-f20ab645c05c"
+    s3_key: "bulk_uploads/3/2026-08-21/MPDK176manual-1.pdf"
+    display_name: "MPDK176 Elevator Commissioning Manual"
+    brands: []
+    designators: ["MPDK176", "MPDK176MANUAL"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "a2a8ae5b-6e05-4cc7-bc07-465e47c9ba4a"
+    s3_key: "bulk_uploads/3/2026-08-21/LG-OTIS DI 60-105 IV.pdf"
+    display_name: "LG-OTIS DI 60-105 IV"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "921e7b18-e0f8-46b9-962e-20075db7ca22"
+    s3_key: "bulk_uploads/3/2026-08-21/KDL 16 ESPAÑOL.pdf"
+    display_name: "KDL 16 Drive Connector Diagram Spanish"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c721a4fb-80aa-4e82-92d4-97ee05a9ef43"
+    s3_key: "bulk_uploads/3/2026-08-21/manual placa LCB II (parte2).pdf"
+    display_name: "OTIS Placa LCB II Manual"
+    brands: ["OTIS"]
+    designators: ["PARTE2"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "aa838778-2f8c-43be-a980-9b87ea57038e"
+    s3_key: "bulk_uploads/3/2026-08-21/CCE17052012_0000.pdf"
+    display_name: "CCE17052012_0000"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "de59c82e-4593-4c91-a137-0a69593257d1"
+    s3_key: "bulk_uploads/3/2026-08-21/manual placa LCB II (parte 1).pdf"
+    display_name: "Manual Placa LCB II Otis"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "315972f3-e6ed-49ee-a4b1-d4418ae3d6b2"
+    s3_key: "bulk_uploads/3/2026-08-22/1.6 with KDH drive.pdf"
+    display_name: "1.6 with KDH drive"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "dd00a4d2-4045-4db1-8cde-b90b97b07b89"
+    s3_key: "bulk_uploads/3/2026-08-22/KONE_Polaris_Pro_TC0480922-EN.pdf"
+    display_name: "KONE Polaris Pro TC0480922-EN"
+    brands: ["KONE"]
+    designators: ["TC0480922"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "9f599ffb-2f54-4eed-a01f-bd5e56416965"
+    s3_key: "bulk_uploads/3/2026-08-22/BL6-MANUAL.pdf"
+    display_name: "BL6-MANUAL"
+    brands: []
+    designators: ["BL6"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "980a7cfd-46f5-4196-8794-c9a11b6f2c97"
+    s3_key: "bulk_uploads/3/2026-08-22/planos.pdf"
+    display_name: "planos"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "1f3d4112-0f2c-4a87-bc5b-77651fba10cc"
+    s3_key: "bulk_uploads/3/2026-08-22/THYSSEN (Can Bus de TCM).pdf"
+    display_name: "TCM CAN Bus Troubleshooting Guide"
+    brands: ["Thyssen"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "95f3dce1-9cdc-4b39-a7ea-3950cdd91246"
+    s3_key: "bulk_uploads/3/2026-08-22/Diagramas Geared.pdf"
+    display_name: "Diagramas Geared Elevator Wiring Schemes"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "85f9d46e-f830-4055-a844-48ffb0c4311f"
+    s3_key: "bulk_uploads/3/2026-08-22/TABALA DE CODIGOS MODULO MCINV 4 Y MCP7.pdf"
+    display_name: "TABALA DE CODIGOS MODULO MCINV 4 Y MCP7"
+    brands: []
+    designators: ["MCP7"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "49014ed1-a0c7-4391-b289-a7a1ad3c5982"
+    s3_key: "bulk_uploads/3/2026-08-22/miconic.pdf"
+    display_name: "miconic"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8a17a5e2-c524-41ca-acc6-3a2fecddff17"
+    s3_key: "bulk_uploads/3/2026-08-22/BL6-PLANO ELECTRICO.pdf"
+    display_name: "BL6-PLANO ELECTRICO"
+    brands: []
+    designators: ["BL6"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8ab489da-556a-43a9-a246-e9ef8fa1b151"
+    s3_key: "bulk_uploads/3/2026-08-22/SENSOR SISMICO.pdf"
+    display_name: "SENSOR SISMICO"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "2032cd94-3c16-4f3d-b125-bc4f22adf0ef"
+    s3_key: "bulk_uploads/3/2026-08-22/InstallationTC04817W50-EN.pdf"
+    display_name: "KONE MonoSpace 2.5 Installation Guide"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "90c946af-66a5-4df7-b5a3-227ae94efbb8"
+    s3_key: "bulk_uploads/3/2026-08-22/UM-13.20.004_es_D.1_main  E-Link.pdf"
+    display_name: "UM-13.20.004_es_D.1_main  E-Link"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "1543f1b6-a472-4cf6-bfcc-4cafd24f964d"
+    s3_key: "bulk_uploads/3/2026-08-22/Mini 1.6.pdf"
+    display_name: "KONE MiniSpace 1.6 Installation Kit"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "caa65586-ddc2-468a-9949-cebab6674493"
+    s3_key: "bulk_uploads/3/2026-08-22/SPT AM-01 01 255 en A CHINO.pdf"
+    display_name: "KONE N MonoSpace Instalación Sin Andamiaje"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "4c38d0ff-dd4b-480c-9934-1ff2e96fb8b1"
+    s3_key: "bulk_uploads/3/2026-08-22/plano kone epb 2 4 f 2 velocidades 1992.pdf"
+    display_name: "plano kone epb 2 4 f 2 velocidades 1992"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "4b76046e-224d-4e14-ae21-5d4e2f1c09b6"
+    s3_key: "bulk_uploads/3/2026-08-22/escala kone travel master 110.pdf"
+    display_name: "KONE TravelMaster 110 Escalator EJV Installation Instructions"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "beeedcf9-5852-4f73-9474-3a48a8f83dfb"
+    s3_key: "bulk_uploads/3/2026-08-22/Mini 1.5.pdf"
+    display_name: "Mini 1.5"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "d1a83447-d5c7-47f2-9e1c-282fd1ee55a8"
+    s3_key: "bulk_uploads/3/2026-08-22/Otis NE-300 (Esquema 3907-ST).pdf"
+    display_name: "Otis NE-300 Esquema 3907-ST"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c24c8e92-32a2-4aa8-94b5-b304351af4b4"
+    s3_key: "bulk_uploads/3/2026-08-22/MonoSpace®.pdf"
+    display_name: "MonoSpace®"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c80e2037-9482-40bb-b6eb-e187f553c00f"
+    s3_key: "bulk_uploads/3/2026-08-22/Plano Otis Spec 90 MVF 48 paginas.pdf"
+    display_name: "Plano Otis Spec 90 MVF 48 paginas"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "2e1912f8-667d-4c8e-85da-95cb79cd97b3"
+    s3_key: "bulk_uploads/3/2026-08-22/Maintenance learning guideTC06817W14-EN_B.pdf"
+    display_name: "Maintenance learning guideTC06817W14-EN_B"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "d9a5d589-e081-4f58-8505-ae6cf162d0df"
+    s3_key: "bulk_uploads/3/2026-08-22/THYSSEN_serie_F_2V.pdf"
+    display_name: "THYSSEN_serie_F_2V"
+    brands: ["Thyssen"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "9a9fd1dc-c41e-4ef1-b64a-27cb30078d51"
+    s3_key: "bulk_uploads/3/2026-08-22/Instructivo rescate Yida Elevators gearles COMIENZO Y PUBLICO, Rev.3.pdf"
+    display_name: "Yida Elevator Procedimiento Rescate Pasajeros"
+    brands: ["Yida"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6539caf2-e31b-4502-ad2c-9bf5d59222e0"
+    s3_key: "bulk_uploads/3/2026-08-22/IRC 34_38_1.pdf"
+    display_name: "ThyssenKrupp CMC-3 Esquemas Eléctricos IRC-34/38-1"
+    brands: ["ThyssenKrupp"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "24e4f7df-1bc4-4e8b-96a4-4b122012058c"
+    s3_key: "bulk_uploads/3/2026-08-22/KONE MINISPACE™ 1.6 WITH KDH DRIVEtc04818w21-en.pdf"
+    display_name: "KONE MINISPACE™ 1.6 WITH KDH DRIVEtc04818w21-en"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "e887c2d0-8426-4a49-b988-18b8a9aeb5d1"
+    s3_key: "bulk_uploads/3/2026-08-22/KONE MonoSpace® 2.5TC04817W11-EN_A.pdf"
+    display_name: "KONE MonoSpace® 2.5TC04817W11-EN_A"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "3602fa3c-6655-4e5f-b8a2-883ce4351ee1"
+    s3_key: "bulk_uploads/3/2026-08-22/elicom2.pdf"
+    display_name: "elicom2"
+    brands: []
+    designators: ["ELICOM2"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c15db168-7529-4152-9f1e-1a46d30787fc"
+    s3_key: "bulk_uploads/3/2026-08-22/AM-01.01.026.estella.pdf"
+    display_name: "KONE MonoSpace 2.1 Installation Instruction"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "bb56c519-e5ef-4eaf-be59-0f0c987ee9f2"
+    s3_key: "bulk_uploads/3/2026-08-22/Otis 2000 Guia del util de pruebas.pdf"
+    display_name: "Otis 2000 Guia del util de pruebas"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "a726a1ca-207c-44c7-be68-8f71ae0d45e3"
+    s3_key: "bulk_uploads/3/2026-08-22/kone minispace.pdf"
+    display_name: "KONE MiniSpace PT Instrucciones Instalación"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "31be711b-1b5e-4db3-a6ff-727fe665fe75"
+    s3_key: "bulk_uploads/3/2026-08-22/Capacitacion MCP7.pdf"
+    display_name: "Capacitacion Quadro Comando FDN FDG"
+    brands: []
+    designators: ["MCP7"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "fe08a644-38eb-4e49-a6e1-1612c4754be0"
+    s3_key: "bulk_uploads/3/2026-08-22/MANUAL MCP8.pdf"
+    display_name: "MANUAL MCP8"
+    brands: []
+    designators: ["MCP8"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "471a34a5-0519-4a30-9a12-9127c5d94485"
+    s3_key: "bulk_uploads/3/2026-08-22/Manual Inst. GeN2 Comfort.pdf"
+    display_name: "Manual Instalación GeN2 Comfort"
+    brands: []
+    designators: ["GEN2"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "dbc3d1d6-30bd-4fb7-924e-2334f94a83cd"
+    s3_key: "bulk_uploads/3/2026-08-22/CMC3 SCM Synergy.pdf"
+    display_name: "CMC3 SCM Synergy"
+    brands: []
+    designators: ["CMC3"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "fe441504-71d0-474f-9002-fb53f5d4b496"
+    s3_key: "bulk_uploads/3/2026-08-22/kone instalacion maquinas mx05, mx06 y mx10 con v3f18.pdf"
+    display_name: "KONE MonoSpace Special Instalación MX05 MX06 MX10 V3F18"
+    brands: ["KONE"]
+    designators: ["MX05", "MX06", "MX10", "V3F18"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8b06d466-8a93-431b-8d44-b0236cf8c33c"
+    s3_key: "bulk_uploads/3/2026-08-24/r.pdf"
+    display_name: "r"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "91e71955-f7e0-4433-aa9f-0dd3f1a89e59"
+    s3_key: "bulk_uploads/3/2026-08-24/BLTpdf.pdf"
+    display_name: "BLTpdf"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "477d3104-a1b2-4620-a41c-cbad8f15ae25"
+    s3_key: "bulk_uploads/3/2026-08-24/Conectores NS(1).pdf"
+    display_name: "Conectores NS(1)"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "45ee98a5-bea3-45fd-90d3-2e91f2bfce8a"
+    s3_key: "bulk_uploads/3/2026-08-24/Planos BLT.pdf"
+    display_name: "Planos BLT"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "2caf0992-17de-4b71-9963-3c90a13e719f"
+    s3_key: "bulk_uploads/3/2026-08-24/KONE V3F18 MX05 MX06 MX10 - parametros LCE p515.pdf"
+    display_name: "KONE LCE 813131 Parámetros Panel Usuario"
+    brands: ["KONE"]
+    designators: ["MX05", "MX06", "MX10", "V3F18", "P515"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "33b13b8f-f453-4e77-af1f-7eb8fac02bf9"
+    s3_key: "bulk_uploads/3/2026-08-24/mpk708a配线图 diargramas blt.pdf"
+    display_name: "mpk708a配线图 diargramas blt"
+    brands: ["BLT"]
+    designators: ["MPK708A"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c48a8c77-454d-4393-8382-de378ef16c1f"
+    s3_key: "bulk_uploads/3/2026-08-24/Informe KidZania 082025.pdf"
+    display_name: "Informe Técnico Ascensor Migraciones KidZania"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "68e8d920-f98a-4e8f-9de3-840a69d40810"
+    s3_key: "bulk_uploads/3/2026-08-24/manual placa LCB II (parte3).pdf"
+    display_name: "manual placa LCB II (parte3)"
+    brands: []
+    designators: ["PARTE3"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "249c4e22-3eda-45c2-8ad8-bd96d788f988"
+    s3_key: "bulk_uploads/3/2026-08-24/Weg_Lazo_Abierto.pdf"
+    display_name: "Weg_Lazo_Abierto"
+    brands: ["Weg"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "47c13b68-35b7-40e2-a8db-f4e160b866cb"
+    s3_key: "bulk_uploads/3/2026-08-24/Enviando OTIS+(Codigos+LG-SIGMA)-2.pdf"
+    display_name: "Enviando OTIS+(Codigos+LG-SIGMA)-2"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "425a9965-f53d-4c59-9b1f-c4466c4e23b5"
+    s3_key: "bulk_uploads/3/2026-08-24/521265481-Manual-BLT.pdf"
+    display_name: "521265481-Manual-BLT"
+    brands: ["BLT"]
+    designators: ["MPK708C"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "b232680e-0d26-4662-96d6-fbb88165806a"
+    s3_key: "bulk_uploads/3/2026-08-24/informacion complementaria kone monospace.pdf"
+    display_name: "KONE MonoSpace Special Instrucciones Instalación"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "39cd0c7d-1f0b-4037-a3d0-a36f75fd102a"
+    s3_key: "bulk_uploads/3/2026-08-24/IRC 34_05_3.pdf"
+    display_name: "IRC 34_05_3"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "0c0387cf-3996-437b-ba90-803a6378284b"
+    s3_key: "bulk_uploads/3/2026-08-24/IRC 34_34.pdf"
+    display_name: "ThyssenKrupp CMC-3 Conexionado Conectores IRC-34/34"
+    brands: ["ThyssenKrupp"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "fb62a085-124c-4e5c-9a30-606021b2da5a"
+    s3_key: "bulk_uploads/3/2026-08-24/speed 90.pdf"
+    display_name: "speed 90"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "09717518-98df-4774-89be-f9659b5ccc10"
+    s3_key: "bulk_uploads/3/2026-08-24/Wiring - 906 (2).pdf"
+    display_name: "Wiring - 906 (2)"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "419726e2-b1ac-48b2-bbfd-d854c99709d8"
+    s3_key: "bulk_uploads/3/2026-08-24/kone ecospace.pdf"
+    display_name: "KONE EcoSpace Instrucciones de Instalación"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "2ae3752f-2f85-4955-ad26-406803c684d0"
+    s3_key: "bulk_uploads/3/2026-08-24/AM-12 20 006 _en_B_KONE_Polaris_Pro_DCS.pdf"
+    display_name: "KONE Polaris Pro DCS Installation Instruction"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "04d5b60c-eb29-4f61-b90d-7b0c097b7f63"
+    s3_key: "bulk_uploads/3/2026-08-24/CMC3.pdf"
+    display_name: "CMC3"
+    brands: []
+    designators: ["CMC3"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8df99160-f72b-47a0-a36c-c0d2f5ba2678"
+    s3_key: "bulk_uploads/3/2026-08-24/THYSSEN (SERIE CMC-3 HIDRAULICO).pdf"
+    display_name: "THYSSEN (SERIE CMC-3 HIDRAULICO)"
+    brands: ["Thyssen"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "57a91a5f-075b-41ad-89c1-cf6d8bfe967d"
+    s3_key: "bulk_uploads/3/2026-08-24/BLT MPDK136 puesta en marcha ingles.pdf"
+    display_name: "BLT MPDK136 Commissioning Manual"
+    brands: ["BLT"]
+    designators: ["MPDK136"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "98c45474-b789-4628-b3e4-6dbdb949b342"
+    s3_key: "bulk_uploads/3/2026-08-24/Manual de URM (OTIS) 1.1.pdf"
+    display_name: "Manual de URM (OTIS) 1.1"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c113c63d-e650-4055-b832-4b64235c642d"
+    s3_key: "bulk_uploads/3/2026-08-24/3W.0503.pdf"
+    display_name: "3W.0503"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "017e432d-aa80-4af6-bb9a-1b108626e28d"
+    s3_key: "bulk_uploads/3/2026-08-24/diagramas inv 6.pdf"
+    display_name: "diagramas inv 6"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "2ec0c87a-eea3-4cf7-a0e2-497e87b2d65a"
+    s3_key: "bulk_uploads/3/2026-08-24/Manual(new)-FUJI YIDA.pdf"
+    display_name: "Fuji Yida Elevator User Guide"
+    brands: ["Fuji Yida"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "df0f01d8-fa9b-4964-be69-a69a4c26d80a"
+    s3_key: "bulk_uploads/3/2026-08-24/puerta d episo kes 180.pdf"
+    display_name: "puerta d episo kes 180"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "adb70186-eb64-4293-bc3b-8957a4ec936b"
+    s3_key: "bulk_uploads/3/2026-08-24/kone monospace con velocidad 2.0 o 3.0 ms.pdf"
+    display_name: "KONE MonoSpace Special Instrucciones de Instalación"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "ed7f76a9-5734-4ae9-8c45-92a542128a81"
+    s3_key: "bulk_uploads/3/2026-08-24/instalacion, mantencion y modrnizacion.pdf"
+    display_name: "instalacion, mantencion y modrnizacion"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "9ca9249c-64b5-44bf-b2e6-f9f6cae8eba1"
+    s3_key: "bulk_uploads/3/2026-08-24/e-link manual de usuario.pdf"
+    display_name: "KONE E-Link Manual de Usuario"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8c4a2a24-9a0e-41b6-bacf-339012ab116c"
+    s3_key: "bulk_uploads/3/2026-08-24/Fallas BLT.pdf"
+    display_name: "Fallas BLT"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c90d3aa8-a3d5-4cd7-9662-a3b15d88abb7"
+    s3_key: "bulk_uploads/3/2026-08-24/codigos de falla v3f.pdf"
+    display_name: "codigos de falla v3f"
+    brands: []
+    designators: ["V3F"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "45c1bad2-1f23-43bb-b82c-dd7032d396bb"
+    s3_key: "bulk_uploads/3/2026-08-24/THYSSEN (Maniobra TCM Ajuste de Isostop 60 con CPI).pdf"
+    display_name: "THYSSEN (Maniobra TCM Ajuste de Isostop 60 con CPI)"
+    brands: ["Thyssen"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "2d0ed54f-13b2-4a1a-a23c-e214d30e85f8"
+    s3_key: "bulk_uploads/3/2026-08-24/THYSSEN SERIE F HIDRAULICO.pdf"
+    display_name: "THYSSEN SERIE F HIDRAULICO"
+    brands: ["Thyssen"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8cb691be-c48e-4f66-a9d3-8f5769e2d37b"
+    s3_key: "bulk_uploads/3/2026-08-24/Pages from KONE_Polaris_Pro_TC0480922-EN1-2.pdf"
+    display_name: "Pages from KONE_Polaris_Pro_TC0480922-EN1-2"
+    brands: ["KONE"]
+    designators: ["EN1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "287249e8-e8b9-4fa2-9a15-ce9d691e341e"
+    s3_key: "bulk_uploads/3/2026-08-24/PLANO 2 mitsubishi.pdf"
+    display_name: "PLANO 2 mitsubishi"
+    brands: ["Mitsubishi"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "44c3b399-7fd3-4695-8fef-d03b9017bc06"
+    s3_key: "bulk_uploads/3/2026-08-24/PLANO 1 mitsubishi.pdf"
+    display_name: "PLANO 1 mitsubishi"
+    brands: ["Mitsubishi"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "3319b402-d9f5-4500-9889-8848634ec08c"
+    s3_key: "bulk_uploads/3/2026-08-24/OTIS ESCALERA 506 nce.pdf"
+    display_name: "Otis Escalator 506 NCE Reglage Chantiers"
+    brands: ["OTIS"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "57ca0c9f-18a9-4f07-ba03-24fb75bd497d"
+    s3_key: "bulk_uploads/3/2026-08-24/mcinv4.pdf"
+    display_name: "mcinv4"
+    brands: []
+    designators: ["MCINV4"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "5ec5f392-10c9-4f60-80ee-d1f297283f30"
+    s3_key: "bulk_uploads/3/2026-08-24/MPDK136 - COMMISSIONING MANUAL.pdf"
+    display_name: "MPDK136 Commissioning Manual"
+    brands: []
+    designators: ["MPDK136"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "29b29948-d8b3-4a68-815c-6df0d16e6203"
+    s3_key: "bulk_uploads/3/2026-08-24/DIAGVF~1.PDF"
+    display_name: "DIAGVF~1"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "454efc6f-acdf-4b7c-95dc-f17972e1c6ce"
+    s3_key: "bulk_uploads/3/2026-08-24/xizi FO VF.pdf"
+    display_name: "xizi FO VF"
+    brands: ["Xizi"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "5c92e05f-657a-445b-a84c-38ca9cd9dd5a"
+    s3_key: "bulk_uploads/3/2026-08-24/Manual-FUJI YIDA.pdf"
+    display_name: "Fuji Yida Elevator User Guide"
+    brands: ["Fuji Yida"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "76e7b76d-8f70-49b0-8063-06f194d35eb6"
+    s3_key: "bulk_uploads/3/2026-08-24/Cambio LCB-I por LCB-II.pdf"
+    display_name: "Cambio LCB-I por LCB-II"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6fa0eb3d-99e8-41cb-96ec-fa0d234d08c1"
+    s3_key: "bulk_uploads/3/2026-08-24/MPDK136电气基图7048(Z14-0111)-卓越2 Model.pdf"
+    display_name: "MPDK136电气基图7048(Z14-0111)-卓越2 Model"
+    brands: []
+    designators: ["Z14"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "83776517-8434-4338-ba32-f9d4d1974b20"
+    s3_key: "bulk_uploads/3/2026-08-24/AMD Advanced Workbook.pdf"
+    display_name: "KONE AMD Door Advanced Workbook"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "1fe53b87-eb61-4be4-af51-88891c3e95ad"
+    s3_key: "bulk_uploads/3/2026-08-24/puerta de piso kes 201.pdf"
+    display_name: "Puerta de Piso KES201 Instrucciones Instalación"
+    brands: []
+    designators: ["KES201"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "e45d1f32-51c2-4fdc-a442-b9d6c53acff1"
+    s3_key: "bulk_uploads/3/2026-08-24/Mini 1.5 Answersi.pdf"
+    display_name: "Mini 1.5 Answersi"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6a294774-39d9-4913-8942-f4e925efc5d3"
+    s3_key: "bulk_uploads/3/2026-08-24/THYSSEN Manual de formacion TCM.pdf"
+    display_name: "Thyssen Formation TCM Manual"
+    brands: ["Thyssen"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "5afe933d-cfb4-4f2c-85ed-cfc3cdd9df27"
+    s3_key: "bulk_uploads/3/2026-08-24/Polaris_P1_TC0480922-EN1.pdf"
+    display_name: "Polaris_P1_TC0480922-EN1"
+    brands: []
+    designators: ["EN1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "34589130-0874-4426-847c-62ebf70d3d54"
+    s3_key: "bulk_uploads/3/2026-08-24/AJUSTE MCINV5.PDF"
+    display_name: "AJUSTE MCINV5"
+    brands: []
+    designators: ["MCINV5"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "72ba5208-6279-40c6-b229-c966cef13449"
+    s3_key: "bulk_uploads/3/2026-08-24/Manual TK-50.pdf"
+    display_name: "ThyssenKrupp TK50G Maintenance Manual"
+    brands: ["ThyssenKrupp"]
+    designators: ["TK50G"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "f4003ab2-481b-4053-9567-2f8ae6fec39d"
+    s3_key: "bulk_uploads/3/2026-08-24/IRC 35_09.pdf"
+    display_name: "ThyssenKrupp TCM MC2 Single Board Maneuver IRC-35/09"
+    brands: ["ThyssenKrupp"]
+    designators: ["MC2"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "0b79a4ff-1d45-4738-af9f-e609a1baea70"
+    s3_key: "bulk_uploads/3/2026-08-24/MiniSpace™ 1.5.pdf"
+    display_name: "MiniSpace™ 1.5"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "6b37e94e-1d4c-4d59-a33a-66e894116c9a"
+    s3_key: "bulk_uploads/3/2026-08-24/puesta en marcha de ascensores sin sala de maquina.pdf"
+    display_name: "puesta en marcha de ascensores sin sala de maquina"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "ac266d16-2890-4860-a332-8fa1014b18da"
+    s3_key: "bulk_uploads/3/2026-08-24/LCB1 MANUAL.pdf"
+    display_name: "LCB1 MANUAL"
+    brands: []
+    designators: ["LCB1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "a86b54a3-954b-4ed7-8f52-d78a6680c6b9"
+    s3_key: "bulk_uploads/3/2026-08-24/KONE MINISPACE™ 1.6 WITH KDH DRIVEtc04818w31-en.pdf"
+    display_name: "KONE MINISPACE™ 1.6 WITH KDH DRIVEtc04818w31-en"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "22125580-0984-40df-99ba-c35f01d59fc0"
+    s3_key: "bulk_uploads/3/2026-08-24/KONE MINISPACE™ 1.6 WITH KDH DRIVEtc04818w31-eni.pdf"
+    display_name: "KONE MINISPACE™ 1.6 WITH KDH DRIVEtc04818w31-eni"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "219465ae-bfc3-4d50-a115-ac9f27d052d5"
+    s3_key: "bulk_uploads/3/2026-08-24/plano mini.pdf"
+    display_name: "plano mini"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "34b8d7c6-9791-4580-a1de-d34ea42d0dd0"
+    s3_key: "bulk_uploads/3/2026-08-24/Manual Montagem Synergy - Esp.pdf"
+    display_name: "Manual de Montaje Synergy Brasil"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "d4400b72-8730-42e7-a3b8-4887d6d1f9e3"
+    s3_key: "bulk_uploads/3/2026-08-24/Maintenance learning guide ANSWERS.pdf"
+    display_name: "KONE MiniSpace 1.6 KDH Maintenance Guide Answers"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "14a853a8-44cf-4e69-97cb-2ab3196e28dc"
+    s3_key: "bulk_uploads/3/2026-08-24/Mini wiring_en_Issue 2 1_02 06 01.pdf"
+    display_name: "Mini wiring_en_Issue 2 1_02 06 01"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "9d870331-bc15-449c-9eb0-f496ab76ed82"
+    s3_key: "bulk_uploads/3/2026-08-24/Wiring - 905.pdf"
+    display_name: "Wiring - 905"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "b38c25e9-22d9-4ccb-b05e-757f8afdcc1e"
+    s3_key: "bulk_uploads/3/2026-08-24/IRC 25_12.pdf"
+    display_name: "IRC 25_12"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "fe63ef7f-a0da-461d-83dd-54fc51b09c41"
+    s3_key: "bulk_uploads/3/2026-08-24/FDN SF2 ESPECIAL-38096-STD-2.pdf"
+    display_name: "FDN SF2 ESPECIAL-38096-STD-2"
+    brands: []
+    designators: ["SF2"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "fd3105b7-456d-4b2b-a160-c9f3a9aefc96"
+    s3_key: "bulk_uploads/3/2026-08-24/Flexible manning in KONE MonoSpace® installationTC04817W20-EN.pdf"
+    display_name: "Flexible manning in KONE MonoSpace® installationTC04817W20-EN"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "81610843-c305-460a-b466-2b6f838ee565"
+    s3_key: "bulk_uploads/3/2026-08-24/Maintenance LearningTC06817W14-ENI_B.pdf"
+    display_name: "KONE MonoSpace 2.5 Maintenance Learning Guide Answers"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "02f8355d-892f-448d-bca5-35c2f5ad44e2"
+    s3_key: "bulk_uploads/3/2026-08-24/KONE_Polaris.pdf"
+    display_name: "KONE Polaris Destination Control System"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "4977ae55-9572-4c2f-91c5-a4acf9fc03ba"
+    s3_key: "bulk_uploads/3/2026-08-24/Mono wiring_en_Issue1 6_02 06 018.pdf"
+    display_name: "KONE LCE Wiring Position Number Table"
+    brands: ["KONE"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "f3bc0b90-291c-497b-bfd8-defc85a9cda3"
+    s3_key: "bulk_uploads/3/2026-08-24/manual en castellano yida.pdf"
+    display_name: "Fuji Yida Guía del Usuario Ascensor"
+    brands: ["Fuji Yida"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "530e683e-215a-438f-b650-f9d634a89763"
+    s3_key: "bulk_uploads/3/2026-08-24/DOC-20170509-WA0031.pdf"
+    display_name: "DOC-20170509-WA0031"
+    brands: []
+    designators: ["WA0031"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "15f74a46-d9cc-44e3-ac3d-846bf1fb73c8"
+    s3_key: "bulk_uploads/3/2026-08-24/KOYO MANUAL TARJETA BL2000 - STB.pdf"
+    display_name: "KOYO MANUAL TARJETA BL2000 - STB"
+    brands: []
+    designators: ["BL2000"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "cffa93ac-a864-4022-babc-caf7a5f3c04d"
+    s3_key: "bulk_uploads/3/2026-08-24/MMR (p1-37).pdf"
+    display_name: "MMR (p1-37)"
+    brands: []
+    designators: ["P1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "9437fc07-4430-4c61-80cb-3dd7b6bc69ae"
+    s3_key: "bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf"
+    display_name: "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)"
+    brands: []
+    designators: ["P1"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "8ef7b20c-b73a-4da9-a920-bdc34fb60747"
+    s3_key: "bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf"
+    display_name: "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)"
+    brands: []
+    designators: ["P124"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "c72f88e4-09bb-499f-a18b-8a0fd49b3a2f"
+    s3_key: "bulk_uploads/3/2026-08-24/MMR (p38-74).pdf"
+    display_name: "MMR (p38-74)"
+    brands: []
+    designators: ["P38"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "da45e2ee-e060-4e78-b6fe-b3a1e5e1e5d5"
+    s3_key: "bulk_uploads/3/2026-08-25/Conectores QS.pdf"
+    display_name: "Conectores QS Catedral DHT-070187T"
+    brands: []
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "3c27ca2a-222d-4865-9650-d07c280b393a"
+    s3_key: "bulk_uploads/3/2026-08-25/05.- BLT-ES_PLC input.pdf"
+    display_name: "BLT Escalator PLC Input Diagram"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "3574965b-56e9-4d79-90bb-58278f32b6d0"
+    s3_key: "bulk_uploads/3/2026-08-25/08.- BLT-ES_PLC output.pdf"
+    display_name: "BLT PLC Output Wiring Diagram"
+    brands: ["BLT"]
+    designators: []
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "56ba8c8f-8dfc-45c0-896a-bcc4fc5c63c9"
+    s3_key: "bulk_uploads/3/2026-09-10/otis_2000.pdf"
+    display_name: "OTIS Electrical Diagram TBA21235A"
+    brands: ["OTIS"]
+    designators: ["TBA21235A"]
+    generic: false
+    confirmed: false
+  - account_id: "3"
+    document_id: "7cd6d699-e519-492f-aa35-4fb2dcfb53c9"
+    s3_key: "uploads/3/7cd6d699-e519-492f-aa35-4fb2dcfb53c9/original.md"
+    display_name: "Nota Técnica Amarre Cables Suspensión Rev0"
+    brands: []
+    designators: []
+    generic: true
+    confirmed: false

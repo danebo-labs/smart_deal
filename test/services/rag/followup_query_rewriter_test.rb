@@ -7,7 +7,7 @@ class Rag::FollowupQueryRewriterTest < ActiveSupport::TestCase
   FOLLOW = "es Fuji Yida"
   NOW = Time.zone.parse("2026-09-18T13:56:28-03:00")
   ASSISTANT = "La documentación recuperada no trae ese procedimiento."
-  PROMPT_SHA = "2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537"
+  PROMPT_SHA = "6211d9f971b0eae50860ebfb863841e14f45a1097a56eee3e5d287acb709fa37"
 
   test "generation prompt bytes stay on the continuity baseline" do
     path = Rails.root.join("app/prompts/bedrock/generation.txt")

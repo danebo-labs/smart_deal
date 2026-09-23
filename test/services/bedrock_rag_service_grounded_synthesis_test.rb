@@ -60,14 +60,13 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_not_includes prompt, "Interpretación técnica:"
     assert_includes prompt, "pertinent to the same component and function"
     assert_includes prompt, "compatible fragments of the same document"
-    assert_includes prompt, "the mismatch is itself the answer"
+    assert_includes prompt, "a shared word like magnet is not that"
     assert_includes prompt, "documented analogous procedure"
-    assert_includes prompt, "use it as a reference"
-    assert_includes prompt, "disclaimer that it is not this equipment's instruction"
+    assert_includes prompt, "it is not this job's instruction and must be confirmed in the field"
+    assert_includes prompt, "generic advice is advice not derived from the component and function asked"
     assert_includes prompt, "Do not apply one fixed sequence to every question"
     assert_includes prompt, "Cite a procedure as this equipment's fact only when its manual documents it"
     assert_includes prompt, "for this component and this function"
-    assert_includes prompt, "not this job's step even after the brand is named"
     assert_includes prompt, "A brand word shared by the question and `[SEARCH_ALIASES:]` is not the model"
     assert_includes prompt, "that exact string is in the body below the header"
     assert_includes prompt, "the name the body prints, the document, and the page"
@@ -84,6 +83,23 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_not_includes prompt, "never a menu or a list"
     assert_not_includes prompt, "is not evidence for the model asked about"
     assert_not_includes prompt, "ask for the missing identifier or code"
+  end
+
+  # FC-D10 regressions: R-B on/off #2, T-H on #2, T-B on #2, and T-C on #1.
+  test "FC-D10 keeps cross-equipment procedures terminals and values out of this job" do
+    prompt = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
+
+    assert_includes prompt, "Fix the job equipment from user context"
+    assert_includes prompt, "Cite a procedure as this equipment's fact only when its manual documents it for this component and this function"
+    assert_includes prompt, "a shared word like magnet is not that"
+    assert_includes prompt, "never its part names, terminals, codes, or values"
+    assert_includes prompt, "`Similar` or `compatible` is no disclaimer"
+    assert_includes prompt, "with no brand, model, terminal, or value"
+    assert_includes prompt, "do not invent or borrow it"
+    assert_includes prompt, "checks that only look, read, or listen (never bridge, short, disconnect, adjust, or give a value)"
+    assert_includes prompt, "Procedures guide; they never dictate this job's setting"
+    assert_includes prompt, "Do not invent a torque, distance, time, crew size, tool size, brand, model, part code, terminal, or setting"
+    assert_not_includes prompt, "procedure, or safety rule"
   end
 
   test "NO MATCH bullets are unchanged between variants" do

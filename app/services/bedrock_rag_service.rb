@@ -177,7 +177,7 @@ class BedrockRagService
   def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
             auto_scope_filter: false, account_id: nil, user_id: nil, conversation_session_id: nil,
-            correlation_id: nil, include_diagnostics: false)
+            correlation_id: nil, include_diagnostics: false, episode: nil)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -194,6 +194,21 @@ class BedrockRagService
     }
 
     begin
+      if (scoped = document_identity_scope_result(
+        question,
+        episode: episode,
+        response_locale: response_locale,
+        entity_s3_uris: entity_s3_uris,
+        entity_sources: entity_sources,
+        force_entity_filter: force_entity_filter,
+        account_id: attribution[:account_id],
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        correlation_id: correlation_id
+      ))
+        return scoped
+      end
+
       # Apply the technician pin when the caller forced it, or when the query
       # does not name a different document. auto_scope_filter is ignored: a
       # question does not choose a manual.
@@ -541,6 +556,49 @@ class BedrockRagService
     }
   rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
     raise BedrockServiceError, "Failed to retrieve Knowledge Base chunks: #{e.message}"
+  end
+
+  private
+
+  def document_identity_scope_result(question, episode:, response_locale:, entity_s3_uris:, entity_sources:,
+                                     force_entity_filter:, account_id:, user_id:, conversation_session_id:,
+                                     correlation_id:)
+    return nil unless Rag::DocumentIdentityScope.applicable?(episode)
+
+    started = Time.current
+    profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
+    retrieval = retrieve_chunks(
+      question,
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_sources,
+      force_entity_filter: force_entity_filter,
+      number_of_results: profile.number_of_results,
+      account_id: account_id,
+      correlation_id: correlation_id
+    )
+    applied = Rag::DocumentIdentityScope.apply(retrieval[:chunks], episode)
+    if applied.blocked
+      Rails.logger.warn("[DOCUMENT_IDENTITY] catalog_incomplete; retrieve_and_generate unchanged")
+      return nil
+    end
+
+    route = Rag::StructuredEvidenceRoute.new(
+      question: question,
+      account: @account,
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_sources,
+      force_entity_filter: force_entity_filter,
+      response_locale: response_locale,
+      rag_service: self,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id
+    )
+    outcome = route.complete_from_retrieval(
+      { chunks: applied.chunks },
+      retrieval_ms: ((Time.current - started) * 1000).round
+    )
+    outcome.result
   end
 
   private

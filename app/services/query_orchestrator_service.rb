@@ -302,6 +302,7 @@ class QueryOrchestratorService
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter,
         auto_scope_filter: @auto_scope_filter,
+        episode: episode_for_scope,
         **rag_telemetry
       ).merge(upload_context)
     when TOOLS[:HYBRID_QUERY]
@@ -326,12 +327,19 @@ class QueryOrchestratorService
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter,
         auto_scope_filter: @auto_scope_filter,
+        episode: episode_for_scope,
         **rag_telemetry
       ).merge(upload_context)
     end
   end
 
   private
+
+  def episode_for_scope
+    return unless @conv_session.respond_to?(:active_episode)
+
+    @conv_session.active_episode
+  end
 
   def context_evidence_result
     route = Rag::ContextEvidenceRoute.build(

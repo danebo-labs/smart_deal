@@ -288,9 +288,9 @@ Todos aplicados en este archivo.
 |---|---|---|---|
 | Auditoría | **CERRADA 2026-09-23** | — | Este archivo |
 | Fase 0 — Baseline y fixtures (C0) | **CERRADA** | Abierta en `c5cb21e`. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537` | `tmp/field_companion_2026-09-23/fase_0/` |
-| Fase 1 — ActiveEpisode shadow (C1–C4) | **LISTA** | — | — |
-| Revisión shadow | Espera Fase 1 desplegada por el dueño | Deploy | — |
-| Fase 2a — Bloque de contexto (C5) | Espera Fase 1 | — | — |
+| Fase 1 — ActiveEpisode shadow (C1–C4) | **CERRADA (sin desplegar)** | Rama `fc/pr1`, continúa desde `d869faf` (Fase 0 no está en `main`). C1 `3fa6f63`, C2 `2968349`, C3 `6fc4cd5`, C4 es el hijo directo de `6fc4cd5`. E12. `generation.txt` sin cambios | `tmp/field_companion_2026-09-23/fase_1/` |
+| Revisión shadow | **ESPERA DEPLOY DEL DUEÑO** | `FIELD_COMPANION_EPISODE_ENABLED=true` en pilotos | — |
+| Fase 2a — Bloque de contexto (C5) | Espera revisión shadow | Fase 1 cerrada, sin deploy | — |
 | Fase 2b — Composición (C6, C6b) | Espera 2a | Activación: FC-D02, FC-D03 | — |
 | Gate Fase 2 — Holdout | Espera 2b | FC-D05 | — |
 | Fase 3a/3b — Foto unificada (C7, C8) | Espera gate Fase 2 | FC-D04 | — |
@@ -1010,6 +1010,8 @@ Ramas: `fc/pr1` = Fase 0 + Fase 1. `fc/pr2` = Fase 2a + 2b. `fc/pr3` = Fase 3a +
 | E8 | Auditoría | La ficha lleva el botón de reuso y la miniatura. | `rag_chat_controller.js` l.1147–1165 | R10 |
 | E9 | Auditoría | `StructuredEvidenceRoute` y `ContextEvidenceRoute` no reciben `session_context`. | `query_orchestrator_service.rb` l.239–251, l.336–348 | El bloque no llega a esas rutas |
 | E10 | Auditoría | Árbol con cambios sin commit en el servicio de foto. | `git status` del 23-sep | R11 |
+| E11 | 1 | El Anexo C dice que T-C compone `goal + U3`. El formato de la Fase 2b también inserta la identidad conocida que no está en el goal ni en el turno, así que «código 8» queda en su propia línea. | Anexo C T-C; Fase 2b formato | C3 sigue el formato de 2b. El test exige las partes en orden, no la igualdad estricta. |
+| E12 | 1 | `NoHardcodedEquipmentTest` rechaza la lista `MANUFACTURERS` que el Anexo B obliga a poner en `ActiveEpisodeTurn`. | `test/architecture/no_hardcoded_equipment_test.rb` | Se agrega esa constante a `ALLOWED_MANUFACTURER_LITERAL`. No se toca `KbDocumentResolver::BRANDS`. Declarado en el Anexo F. |
 
 ---
 
@@ -1019,4 +1021,5 @@ Cada test que una fase edita porque congela copia o comportamiento que la fase c
 
 | Fase | Test | Antes | Después | Motivo |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 1 | `test/architecture/no_hardcoded_equipment_test.rb` | La lista cerrada de marcas del episodio no existe. | `MANUFACTURERS` está en `ALLOWED_MANUFACTURER_LITERAL`. | El Anexo B exige esa lista en `ActiveEpisodeTurn`. No abre retrieval ni agrega «elemont» a `KbDocumentResolver::BRANDS`. |
+| 1 | Caracterización T-A…T-H | Comportamiento actual del rewriter y del resolver de hilo. | Igual, con la flag apagada. | Shadow no cambia el texto que recibe el orquestador. |

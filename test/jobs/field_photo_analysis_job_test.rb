@@ -477,7 +477,55 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     set_photo_question_flag(nil)
   end
 
+  test "P1 a photo without a question writes active_photo and keeps the card" do
+    with_episode_flag("true") do
+      with_analysis_service(result: analysis_result) do
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args)
+        end
+        assert_equal "photo_analyzed", messages.last["status"]
+      end
+    end
+
+    episode = @session.reload.active_episode
+    assert_equal @sha, episode.dig("active_photo", "sha256")
+    assert episode.dig("active_photo", "field_photo_id").present?
+    assert_nil episode.dig("facts", "fault_code")
+    assert_equal analysis_result[:compact_context], @session.conversation_history.last["content"]
+  end
+
+  test "P5 a photo brand that disagrees with the technician is stored as a conflict" do
+    opening = "Cómo se ajustan los resortes de la fijación de cables ?"
+    with_episode_flag("true") do
+      @session.record_user_turn!(opening, user_id: users(:one).id, correlation_id: "query:1")
+      @session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+      @session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
+      @session.record_assistant_turn!("… ¿Sabes el modelo?", user_id: users(:one).id, correlation_id: "query:4")
+      @session.record_user_turn!("el modelo no lo sé", user_id: users(:one).id, correlation_id: "query:5")
+
+      kone = analysis_result
+      kone[:parsed] = kone[:parsed].merge("manufacturer" => "KONE", "model" => "UNKNOWN")
+      with_analysis_service(result: kone) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+    end
+
+    episode = @session.reload.active_episode
+    assert_equal "Fuji Yida", episode.dig("facts", "manufacturer", "value")
+    assert_equal "unknown_confirmed", episode.dig("facts", "model", "status")
+    assert_equal "KONE", episode["conflicts"].first["photo"]
+    assert_equal @sha, episode.dig("active_photo", "sha256")
+  end
+
   private
+
+  def with_episode_flag(value)
+    previous = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value
+    yield
+  ensure
+    previous.nil? ? ENV.delete("FIELD_COMPANION_EPISODE_ENABLED") : ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous
+  end
 
   def set_photo_question_flag(value)
     if value.nil?

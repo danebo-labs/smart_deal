@@ -990,4 +990,168 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
     assert_equal "newer", session.last_assistant_message(now: now)
   end
+
+  # ─── active episode shadow writes ───────────────────────────────────────────
+
+  test "record_user_turn! with the flag off matches add_to_history_and_refresh and returns nil" do
+    session = web_episode_session
+    original_exp = session.expires_at
+
+    result = nil
+    queries = []
+    count_updates(queries) { result = session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:1") }
+
+    session.reload
+    assert_nil result
+    assert_equal({}, session.active_episode)
+    assert_equal "Fuji Yida", session.conversation_history.last["content"]
+    assert session.expires_at > original_exp + 1.day
+    assert_equal 1, queries.size
+  end
+
+  test "record_user_turn! with the flag on writes the episode and keeps the orchestrator text out of the log" do
+    session = web_episode_session
+    question = "Cómo se ajustan los resortes de la fijación de cables ?"
+    result = nil
+    events = []
+
+    with_episode_flag("true") do
+      events = capture_pilot_events do
+        result = session.record_user_turn!(question, user_id: users(:one).id, correlation_id: "query:1")
+      end
+    end
+
+    session.reload
+    assert_equal :opened, result.decision
+    assert_equal question, session.active_episode.dig("goal", "text")
+    assert_equal question, session.conversation_history.last["content"]
+    event = events.find { |row| row["event"] == "field_companion_turn" }
+    assert event
+    assert_equal "opened", event["episode_decision"]
+    assert_equal Digest::SHA256.hexdigest(question), event["original_sha256"]
+    assert_equal event["original_sha256"], event["effective_sha256"]
+    assert_not_includes JSON.generate(event), question
+  end
+
+  test "record_assistant_turn! reads pending_fact from the full reply and stores the truncated history" do
+    session = web_episode_session
+    question = "Cómo se ajustan los resortes de la fijación de cables ?"
+    reply = ("contexto " * 40) + "¿Sabes el modelo del equipo?"
+    assert reply.length > ConversationSession::MAX_MSG_LENGTH
+
+    with_episode_flag("true") do
+      session.record_user_turn!(question, user_id: users(:one).id, correlation_id: "query:1")
+      session.record_assistant_turn!(reply, user_id: users(:one).id, correlation_id: "query:2")
+    end
+
+    session.reload
+    assert_equal ConversationSession::MAX_MSG_LENGTH, session.conversation_history.last["content"].length
+    assert_equal "model", session.active_episode.dig("pending_fact", "subject")
+    assert_not_includes session.conversation_history.last["content"], "modelo del equipo"
+  end
+
+  test "record_photo_observation! keeps a technician brand and records the photo conflict" do
+    session = web_episode_session
+    with_episode_flag("true") do
+      session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
+      session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+      session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
+      session.record_photo_observation!(
+        photo_value: { manufacturer: "KONE", model_visible: "UNKNOWN" },
+        field_photo_id: 42,
+        sha256: "abc123",
+        correlation_id: "photo:1"
+      )
+    end
+
+    session.reload
+    episode = session.active_episode
+    assert_equal "Fuji Yida", episode.dig("facts", "manufacturer", "value")
+    assert_equal "user", episode.dig("facts", "manufacturer", "source")
+    assert_equal "abc123", episode.dig("active_photo", "sha256")
+    assert_equal 42, episode.dig("active_photo", "field_photo_id")
+    assert_equal "KONE", episode["conflicts"].first["photo"]
+    assert_nil episode.dig("facts", "fault_code")
+  end
+
+  test "reset_active_episode! clears the column" do
+    session = web_episode_session
+    with_episode_flag("true") do
+      session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
+      session.reset_active_episode!
+    end
+
+    assert_equal({}, session.reload.active_episode)
+  end
+
+  test "a shared session and a non-web channel do not write the episode" do
+    web = web_episode_session
+    other = web_episode_session(channel: "whatsapp", identifier: "whatsapp:+15550001111")
+    question = "Cómo se ajustan los resortes de la fijación de cables ?"
+
+    with_episode_flag("true") do
+      stub_shared_enabled(true) do
+        assert_nil web.record_user_turn!(question, user_id: users(:one).id, correlation_id: "query:1")
+      end
+      assert_nil other.record_user_turn!(question, user_id: users(:one).id, correlation_id: "query:2")
+    end
+
+    assert_equal({}, web.reload.active_episode)
+    assert_equal({}, other.reload.active_episode)
+    assert_equal question, web.conversation_history.last["content"]
+  end
+
+  test "X-8 a stale photo-job copy keeps the text turn and the episode fields" do
+    session = web_episode_session
+    opening = "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?"
+
+    with_episode_flag("true") do
+      session.record_user_turn!(opening, user_id: users(:one).id, correlation_id: "query:1")
+      stale = ConversationSession.find(session.id)
+      fresh = ConversationSession.find(session.id)
+      fresh.record_user_turn!("código 8", user_id: users(:one).id, correlation_id: "query:2")
+      stale.record_assistant_turn!("En el manual KONE, página 12, …", user_id: users(:one).id, correlation_id: "query:3")
+    end
+
+    session.reload
+    assert_equal [ opening, "código 8", "En el manual KONE, página 12, …" ], session.conversation_history.pluck("content")
+    assert_equal "Elemont", session.active_episode.dig("facts", "manufacturer", "value")
+    assert_equal "8", session.active_episode.dig("facts", "fault_code", "value")
+    assert_includes session.active_episode["identifiers"].pluck("value"), "CEA15"
+  end
+
+  def web_episode_session(channel: "web", identifier: nil)
+    ConversationSession.create!(
+      identifier: identifier || "web:#{SecureRandom.hex(4)}",
+      channel: channel,
+      expires_at: 1.hour.from_now,
+      user: users(:one),
+      account: accounts(:legacy)
+    )
+  end
+
+  def with_episode_flag(value)
+    previous = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
+    value.nil? ? ENV.delete("FIELD_COMPANION_EPISODE_ENABLED") : ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value
+    yield
+  ensure
+    previous.nil? ? ENV.delete("FIELD_COMPANION_EPISODE_ENABLED") : ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous
+  end
+
+  def count_updates(queries)
+    callback = ->(*, payload) { queries << payload[:sql] if payload[:sql].match?(/UPDATE.*conversation_sessions/i) }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+  end
+
+  def capture_pilot_events
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    output.string.lines.filter_map do |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?("[PILOT_USAGE]")
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
 end

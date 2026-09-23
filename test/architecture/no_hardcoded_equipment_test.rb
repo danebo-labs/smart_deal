@@ -46,11 +46,13 @@ class NoHardcodedEquipmentTest < ActiveSupport::TestCase
     KNOWN_MANUFACTURERS.map { |name| /\b#{name}\b/i } + [ /CARLOS\s+SILVA/i ]
   ).freeze
 
-  # docs/RAG_REGEX_AUDIT_FASE05_2026-07-29.md §3.1 — the only site that
-  # currently fails check A. Growing this array requires bumping
-  # MAX_ALLOWLIST_SIZE below in the same PR.
+  # docs/RAG_REGEX_AUDIT_FASE05_2026-07-29.md §3.1 — sites allowed to name a
+  # manufacturer in a string literal. R1 is the audit's original row.
+  # MANUFACTURERS is the field-companion episode list (Anexo B), not retrieval.
   ALLOWED_MANUFACTURER_LITERAL = [
-    { file: "app/services/rag/deterministic_intent.rb", constant: "EXPLICIT_EQUIPMENT_PATTERN" } # R1
+    { file: "app/services/rag/deterministic_intent.rb", constant: "EXPLICIT_EQUIPMENT_PATTERN" }, # R1
+    # Closed episode list. It does not scope retrieval and it is not KbDocumentResolver::BRANDS.
+    { file: "app/services/rag/active_episode_turn.rb", constant: "MANUFACTURERS" }
   ].freeze
 
   # §3.1 in full — R2-R5 do not hardcode a manufacturer *name* (they hardcode

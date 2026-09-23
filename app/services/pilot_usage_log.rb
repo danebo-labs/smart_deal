@@ -21,6 +21,8 @@ class PilotUsageLog
     ambiguity_detected ambiguity_identifier ambiguity_families
     section_identity attribution_identities attribution_anchors
     stage
+    episode_id episode_decision episode_fields_changed composed_chars
+    original_sha256 effective_sha256
   ].freeze
 
   class << self

@@ -28,11 +28,11 @@ class RagController < ApplicationController
     )
     if question.present?
       # Single UPDATE instead of refresh! + add_to_history (2 UPDATEs).
-      conv_session.add_to_history_and_refresh(
-        "user",
+      conv_session.record_user_turn!(
         question,
         user_id: current_user.id,
-        correlation_id: correlation_id
+        correlation_id: correlation_id,
+        selection_turn: selection_turn?(question, conv_session)
       )
     else
       conv_session.refresh!
@@ -79,8 +79,7 @@ class RagController < ApplicationController
     end
 
     if result.images_uploaded.blank?
-      conv_session.add_to_history(
-        "assistant",
+      conv_session.record_assistant_turn!(
         result.answer.to_s,
         user_id: current_user.id,
         correlation_id: result.correlation_id

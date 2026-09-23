@@ -65,18 +65,24 @@ class ConversationSession < ApplicationRecord
   # ─── History ────────────────────────────────────────────────────────────────
 
   def add_to_history(role, content, user_id: nil, correlation_id: nil)
-    history = conversation_history.last(MAX_HISTORY - 1)
-    history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
-    update!(conversation_history: history)
+    with_lock do
+      history = conversation_history.last(MAX_HISTORY - 1)
+      history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
+      update!(conversation_history: history)
+    end
   end
 
   # Combines `refresh!` (TTL bump) + `add_to_history` into a single UPDATE.
   # Used by the request-bound RAG path (RagController#ask) so we save one
   # round-trip to PostgreSQL on every user turn (3 writes → 2).
+  # The new history is built inside the lock, after the row is reloaded, so a
+  # photo job that loaded the session before vision cannot drop a text turn.
   def add_to_history_and_refresh(role, content, user_id: nil, correlation_id: nil)
-    history = conversation_history.last(MAX_HISTORY - 1)
-    history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
-    update!(conversation_history: history, expires_at: EXPIRY_DURATION.from_now)
+    with_lock do
+      history = conversation_history.last(MAX_HISTORY - 1)
+      history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
+      update!(conversation_history: history, expires_at: EXPIRY_DURATION.from_now)
+    end
   end
 
   def history_for_prompt

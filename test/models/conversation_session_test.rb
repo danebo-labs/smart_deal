@@ -160,6 +160,24 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal "Message #{ConversationSession::MAX_HISTORY - 1 + 5}", s.conversation_history.last['content']
   end
 
+  # X-8: the photo job loads the session, vision runs, then a text turn is
+  # written on another instance. The job's later write must keep both turns.
+  test 'X-8 a stale session copy cannot drop a text turn written while it was loaded' do
+    session = ConversationSession.create!(
+      identifier: 'web:x8',
+      channel:    'web',
+      expires_at: 1.day.from_now
+    )
+    stale = ConversationSession.find(session.id)
+    fresh = ConversationSession.find(session.id)
+
+    fresh.add_to_history('user', 'código 8', correlation_id: 'query:text')
+    stale.add_to_history('assistant', '[FOTO] Componente: Panel', correlation_id: 'photo:1')
+
+    session.reload
+    assert_equal [ 'código 8', '[FOTO] Componente: Panel' ], session.conversation_history.pluck('content')
+  end
+
   test 'history_for_prompt returns role/content pairs without ts' do
     s = ConversationSession.create!(
       identifier: 'whatsapp:+77777777777',

@@ -292,8 +292,8 @@ Todos aplicados en este archivo.
 | Fase 0 — Baseline y fixtures (C0) | **CERRADA** | Abierta en `c5cb21e`. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537` | `tmp/field_companion_2026-09-23/fase_0/` |
 | Fase 1 — ActiveEpisode shadow (C1–C4) | **CERRADA Y DESPLEGADA** | `2d456f8`. `FIELD_COMPANION_EPISODE_ENABLED=true`. `FIELD_COMPANION_TURN_ENABLED` apagada. E12–E19. `generation.txt` sin cambios | `tmp/field_companion_2026-09-23/fase_1/` |
 | Revisión shadow | **CERRADA** | 32 turnos humanos. Smoke del botón: `episode_decision=skipped`, mismo `episode_id`, `user_id=7`. Sesión 6 no se tocó | `tmp/field_companion_2026-09-23/shadow/revision.md` |
-| Fase 2a — Bloque de contexto (C5) | **LISTA** | No activar `FIELD_COMPANION_TURN_ENABLED`. FC-D02 bloquea la activación, no el código | — |
-| Fase 2b — Composición (C6, C6b) | Espera 2a | Activación: FC-D02, FC-D03 | — |
+| Fase 2a — Bloque de contexto (C5) | **CERRADA** | `2e43a60` en `fc/pr2` desde `main` `2d937df`. `FIELD_COMPANION_TURN_ENABLED` apagada. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537`. Tokens máx. 115 | `tmp/field_companion_2026-09-23/fase_2a/` |
+| Fase 2b — Composición (C6, C6b) | **LISTA** | No encender `FIELD_COMPANION_TURN_ENABLED`. Activación: FC-D02, FC-D03 | — |
 | Gate Fase 2 — Holdout | Espera 2b | FC-D05 | — |
 | Fase 3a/3b — Foto unificada (C7, C8) | Espera gate Fase 2 | FC-D04 | — |
 | Fase 4 — Hueco preciso (C9) | Condicional | Holdout lo pide | — |
@@ -493,6 +493,7 @@ These facts identify the job. Procedures, values, terminals and code meanings st
 - **Superficie de prompt:** este bloque es texto de generación aunque no esté en `generation.txt`. Se mide su largo en tokens con `AnthropicTokenCounter::LocalTokenizer` para T-A…T-H y se archiva. STOP si supera 150 tokens.
 - **Alcance real:** solo llega a `BedrockRagService#query`. `StructuredEvidenceRoute` y `ContextEvidenceRoute` no reciben `session_context`. Se registra, no se corrige en esta fase.
 - **Tests:** `test/services/session_context_builder_test.rb`. Bloque primero, tope respetado con pines y historial al máximo, bloque ausente con flags apagadas o episodio vencido, ningún texto de documento dentro del bloque.
+- ⚠️ E20: el ejemplo de arriba no cabe entero en 400 caracteres (encabezado 79, pie 188). Si no entra, se acorta el `goal` y después se omiten identificadores, lectura de foto, conflictos y hechos conocidos. El pie y las confirmaciones quedan. La composición de 2b no lee este bloque.
 
 ### Propuesta 2b — Composición (C6)
 
@@ -1021,6 +1022,9 @@ Ramas: `fc/pr1` = Fase 0 + Fase 1. `fc/pr2` = Fase 2a + 2b. `fc/pr3` = Fase 3a +
 | E17 | Shadow | La cuenta piloto pertenece a `piloto.danebo.ai` y la legacy a `elevator.danebo.ai`; el login piloto en el host legacy se rechaza por aislamiento de tenant. | Prueba funcional en ambos hosts | Usar el dominio de cada cuenta; no tratar el rechazo cruzado como credencial inválida. |
 | E18 | Shadow | Las respuestas visibles conservaron el comportamiento legacy, incluidos menús frecuentes y algún contenido cross-equipment. | Secuencias funcionales piloto y legacy | No es regresión de Fase 1: shadow no altera la query. Se evalúa en fases posteriores sin encender la turn flag ahora. |
 | E19 | Shadow | No existía una operación segura para limpiar `active_episode` por cuenta y usuario. | Commit local `d72d1d7`, `lib/tasks/field_companion.rake` | Se agrega task dry-run por defecto, web-only e idempotente; preserva transcript, pines y resto de la sesión. |
+| E20 | 2a | El ejemplo de la Propuesta 2a no cabe entero en 400 caracteres. El renderer acorta el `goal` y después omite identificadores, foto, conflictos y hechos conocidos. Pie y confirmaciones quedan. T-A…T-H: máximo 115 tokens. | `session_context_builder.rb` | No cambia 2b. La composición lee el episodio, no este bloque. |
+| E21 | 2a | Los comentarios de las flags siguen diciendo que nadie lee la columna. 2a la lee solo con las dos flags, canal web y sin sesión compartida. | `field_companion_episode_flag.rb` l.7; `field_companion_turn_flag.rb` l.4 | Fuera de la allowlist. Sin cambio de comportamiento. |
+| E22 | 2a | El `.env` local tiene `SHARED_SESSION_ENABLED=true`, así que un runner local no arma el bloque. `config/deploy.yml` lo deja en `false`. | `.env` l.37; `config/deploy.yml` l.79 | La medición de tokens usó el valor de piloto. No se tocó el `.env`. |
 
 ---
 
@@ -1035,3 +1039,4 @@ Cada test que una fase edita porque congela copia o comportamiento que la fase c
 | Shadow | `test/services/rag/thread_menu_selection_test.rb` | Las selecciones del menú de hilo no se distinguían de texto escrito por el técnico. | Caracteriza frases exactas, historial requerido y negativos. | Evita que un botón sintético actualice ActiveEpisode sin cambiar routing ni respuesta visible. |
 | Shadow | `test/models/conversation_session_test.rb` | El evento shadow no verificaba atribución de usuario. | Comprueba que `user_id` se entrega a `PilotUsageLog`. | Permite construir exports auditables por cuenta/usuario. |
 | Shadow | `test/tasks/field_companion_reset_test.rb` | No había reset operativo acotado. | Cubre dry-run, scope exacto, preservación e idempotencia. | Hace repetible la validación sin tocar otras sesiones ni otros datos. |
+| 2a | `test/services/session_context_builder_test.rb` (tests previos) | El contexto no incluye el problema activo. | Igual con las dos flags apagadas. | 2a no cambia ese camino. Los tests nuevos cubren el bloque. |

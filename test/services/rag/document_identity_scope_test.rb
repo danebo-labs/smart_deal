@@ -7,24 +7,24 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   CEA15_BODY = "En la placa CEA15 el código 8 es alta temperatura en el motor.".freeze
 
   test "MH matches MH and does not match MHX" do
-    catalog = catalog_for(
-      entry("mh-doc", designators: [ "MH" ])
-    )
+    catalog = catalog_for(entry("mh-doc", designators: [ "MH" ]))
 
     Rag::DocumentIdentityCatalog.with_catalog(catalog) do
       kept = Rag::DocumentIdentityScope.apply(
         [ chunk("mh-doc", "cuerpo del plano MH") ],
         episode(identifiers: %w[MH])
       )
+      source = chunk("mh-doc", "cuerpo del plano MH")
       rejected = Rag::DocumentIdentityScope.apply(
-        [ chunk("mh-doc", "cuerpo del plano MH") ],
+        [ source ],
         episode(identifiers: %w[MHX])
       )
 
       assert_equal "cuerpo del plano MH", kept.chunks.first[:content]
-      assert_equal "cuerpo del plano MH", rejected.chunks.first[:content]
-      assert_includes kept.labels.first, "THIS JOB'S EQUIPMENT:"
-      assert_nil rejected.labels.first
+      assert_equal 0, kept.redacted
+      assert_equal reference("mh-doc"), rejected.chunks.first[:content]
+      assert_equal "cuerpo del plano MH", source[:content]
+      assert_equal 1, rejected.redacted
     end
   end
 
@@ -35,10 +35,11 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       entry("note", generic: true),
       entry("cea51", brands: [ "Controles S.A." ], designators: [ "CEA51FB" ])
     )
+    monarch = chunk("mono", "Cortocircuitar BM/B1 y BM/B2.", canonical_name: "Monarch", page: 84,
+                    heading: "## Door machine", section_identity: "Door machine")
     chunks = [
       chunk("cea", CEA15_BODY, canonical_name: "Manual CEA15"),
-      chunk("mono", "Cortocircuitar BM/B1 y BM/B2.", canonical_name: "Monarch", page: 84,
-            heading: "## Door machine"),
+      monarch,
       chunk("note", "Nota interna de citofono.", canonical_name: "Citofono"),
       chunk("own", "Procedimiento del manual de la cuenta.", account_id: "9", canonical_name: "Cliente")
     ]
@@ -48,17 +49,14 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
       assert_not result.blocked
       assert_equal 1, result.undeclared_private
+      assert_equal 1, result.redacted
       assert_equal CEA15_BODY, result.chunks[0][:content]
+      assert_equal "Reference only, other equipment. Document: Monarch. Page: 84. Section: Door machine.",
+                   result.chunks[1][:content]
       assert_equal "Nota interna de citofono.", result.chunks[2][:content]
       assert_equal "Procedimiento del manual de la cuenta.", result.chunks[3][:content]
-      assert_includes result.labels[0], "THIS JOB'S EQUIPMENT: Controles S.A. CEA15 CEA15+ CEA15P."
-      assert_includes result.labels[1], "OTHER EQUIPMENT: Monarch NICE3000."
-      assert_includes result.labels[1], "This job: Elemont MH CEA15."
-      assert_includes result.labels[1], Rag::DocumentIdentityScope::OTHER_EQUIPMENT_RULE
-      assert_nil result.labels[2]
-      assert_nil result.labels[3]
-      assert_includes result.chunks[1][:content], "BM/B1"
-      assert_equal "Cortocircuitar BM/B1 y BM/B2.", chunks[1][:content].lines.last.strip
+      assert_equal "## Door machine\nCortocircuitar BM/B1 y BM/B2.", monarch[:content]
+      assert_not result.chunks[1][:metadata].key?("section_identity")
     end
   end
 
@@ -83,12 +81,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       assert_not result.blocked
       assert_equal 0, result.undeclared_private
       assert_equal 1, result.unconfirmed_general
+      assert_equal 1, result.redacted
       assert_equal CEA15_BODY, result.chunks[0][:content]
-      assert_includes result.labels[0], "THIS JOB'S EQUIPMENT: CEA15."
-      assert_includes result.chunks[1][:content], "BM/B1"
-      assert_includes result.labels[1], "OTHER EQUIPMENT: Monarch."
+      assert_equal reference("mono"), result.chunks[1][:content]
       assert_equal "Procedimiento Otis sin confirmar.", result.chunks[2][:content]
-      assert_nil result.labels[2]
     end
 
     assert_includes io.string, "[DOCUMENT_IDENTITY] unconfirmed_general account_id=1 document_id=draft"
@@ -173,9 +169,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       result = Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[MH CEA15]))
 
       assert_equal "Procedimiento Elemont MH.", result.chunks[0][:content]
-      assert_includes result.labels[0], "THIS JOB'S EQUIPMENT: Elemont MH."
-      assert_includes result.chunks[1][:content], "XB21"
-      assert_includes result.labels[1], "OTHER EQUIPMENT: KONE MX05."
+      assert_equal reference("kone"), result.chunks[1][:content]
+      assert_not_includes result.chunks[1][:content], "XB21"
     end
   end
 
@@ -191,12 +186,11 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       named = Rag::DocumentIdentityScope.apply([ foreign, own ], episode(identifiers: %w[CEA15]))
       unnamed = Rag::DocumentIdentityScope.apply([ foreign ], episode(identifiers: []))
 
-      assert_includes named.chunks[0][:content], "270 mm"
-      assert_includes named.labels[0], "OTHER EQUIPMENT: Fermator VF5."
+      assert_equal reference("vf5"), named.chunks[0][:content]
+      assert_not_includes named.chunks[0][:content], "270 mm"
       assert_equal CEA15_BODY, named.chunks[1][:content]
-      assert_includes named.labels[1], "THIS JOB'S EQUIPMENT:"
       assert_equal "Ajuste VF5 270 mm.", unnamed.chunks[0][:content]
-      assert_nil unnamed.labels[0]
+      assert_equal 0, unnamed.redacted
     end
   end
 
@@ -210,7 +204,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       )
 
       assert_equal "Cortocircuitar BM/B1.", result.chunks[0][:content]
-      assert_nil result.labels[0]
+      assert_equal 0, result.redacted
     end
   end
 
@@ -230,11 +224,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
         episode(identifiers: %w[CEA15P])
       )
 
-      assert_includes plus.chunks[0][:content], "CEA15P"
-      assert_includes plus.labels[0], "OTHER EQUIPMENT:"
-      assert_not_includes plus.labels[0], "THIS JOB'S EQUIPMENT:"
-      assert_includes plain.labels[0], "OTHER EQUIPMENT:"
-      assert_not_includes plain.labels[0], "THIS JOB'S EQUIPMENT:"
+      assert_equal reference("plus"), plus.chunks[0][:content]
+      assert_not_includes plus.chunks[0][:content], "texto CEA15P"
+      assert_equal reference("plain"), plain.chunks[0][:content]
+      assert_not_includes plain.chunks[0][:content], "texto CEA15"
     end
   end
 
@@ -253,6 +246,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
       assert_equal "Cortocircuitar BM/B1.", result.chunks[0][:content]
       assert_equal 1, result.unconfirmed_general
+      assert_equal 0, result.redacted
     end
   end
 
@@ -270,14 +264,13 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
       assert_not result.blocked
       assert_equal "Cuerpo sin identidad.", result.chunks[0][:content]
-      assert_nil result.labels[0]
-      assert_includes result.chunks[1][:content], "XB24"
-      assert_includes result.labels[1], "OTHER EQUIPMENT: KONE."
+      assert_equal reference("kone"), result.chunks[1][:content]
+      assert_not_includes result.chunks[1][:content], "XB24"
       assert_equal 1, result.unconfirmed_general
     end
   end
 
-  test "generation context matches byte for byte except the label lines" do
+  test "generation context matches byte for byte except replaced bodies" do
     catalog = catalog_for(
       entry("cea", designators: [ "CEA15" ], role: "equipment"),
       entry("mono", brands: [ "Monarch" ], role: "equipment")
@@ -292,26 +285,25 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     Rag::DocumentIdentityCatalog.with_catalog(catalog) do
       applied = Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[CEA15]))
       off = service.send(
-        :document_identity_generation_prompt, question, chunks, labels: [],
+        :document_identity_generation_prompt, question, chunks,
         response_locale: :es, session_context: nil, output_channel: :web
       )
       on = service.send(
-        :document_identity_generation_prompt, question, chunks, labels: applied.labels,
+        :document_identity_generation_prompt, question, applied.chunks,
         response_locale: :es, session_context: nil, output_channel: :web
       )
-      restored = applied.labels.compact.reduce(on) { |text, label| text.sub("#{label}\n", "") }
+      restored = on.sub(applied.chunks[0][:content], chunks[0][:content])
 
       assert_equal off, restored
       assert_not_equal off, on
-      assert_includes on, "BM/B1"
+      assert_not_includes on, "BM/B1"
       assert_includes on, CEA15_BODY
-      assert_includes on, "OTHER EQUIPMENT: Monarch."
-      assert_includes on, "THIS JOB'S EQUIPMENT: CEA15."
+      assert_includes on, "Reference only, other equipment. Document: Monarch. Page: 1."
       assert_not_includes on, "reproduce that string exactly as printed"
     end
   end
 
-  test "eight retrieved chunks stay eight, with bodies, in the same order" do
+  test "eight retrieved chunks stay eight, with three headers and five bodies" do
     catalog = catalog_for(
       entry("mono", brands: [ "Monarch" ], role: "equipment"),
       entry("kone", brands: [ "KONE" ], role: "equipment"),
@@ -340,24 +332,28 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     Rag::DocumentIdentityCatalog.with_catalog(catalog) do
       applied = Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[MH CEA15]))
       off = service.send(
-        :document_identity_generation_prompt, question, chunks, labels: [],
+        :document_identity_generation_prompt, question, chunks,
         response_locale: :es, session_context: nil, output_channel: :web
       )
       prompt = service.send(
-        :document_identity_generation_prompt, question, applied.chunks, labels: applied.labels,
+        :document_identity_generation_prompt, question, applied.chunks,
         response_locale: :es, session_context: nil, output_channel: :web
       )
-      restored = applied.labels.compact.reduce(prompt) { |text, label| text.sub("#{label}\n", "") }
+      restored = applied.chunks.zip(chunks).reduce(prompt) do |text, (scoped, source)|
+        scoped[:content] == source[:content] ? text : text.sub(scoped[:content], source[:content])
+      end
 
       assert_equal 8, applied.chunks.size
-      assert_equal bodies, applied.chunks.map { |item| item[:content] }
+      assert_equal 3, applied.redacted
       assert_equal 8, prompt.scan("<source>").size
-      assert_equal 3, applied.labels.count { |label| label.to_s.start_with?("OTHER EQUIPMENT:") }
+      assert_equal 3, prompt.scan("Reference only, other equipment.").size
       assert_equal off, restored
-      positions = bodies.map { |body| prompt.index(body) }
-      assert_equal positions, positions.sort
-      bodies.each { |body| assert_includes prompt, body }
+      bodies.last(5).each { |body| assert_includes prompt, body }
+      POISON.each { |token| assert_not_includes prompt, token }
+      assert_not_includes prompt, "270 mm"
       assert_equal "<source>\n1\n</source>", prompt[prompt.index("<source>"), "<source>\n1\n</source>".length]
+      positions = applied.chunks.map { |item| prompt.index(item[:content]) }
+      assert_equal positions, positions.compact.sort
     end
   end
 
@@ -393,6 +389,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal RagRetrievalProfile.new(entity_sources: [], question: question).number_of_results, seen[:number_of_results]
     assert_equal 8, seen[:number_of_results]
     assert_equal true, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal "retrieve_and_generate", Thread.current[:document_identity_scope]["path"]
   end
 
   test "a blank generation falls back to retrieve_and_generate" do
@@ -459,7 +456,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
 
     with_flag("true") do
-      Rag::DocumentIdentityCatalog.with_catalog(catalog_for(entry("cea", designators: [ "CEA15" ], confirmed: false))) do
+      Rag::DocumentIdentityCatalog.with_catalog(catalog_for(entry("cea", designators: [ "CEA15" ], role: "component"))) do
         service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: chunks, retrieval_trace: {} } }
         service.define_singleton_method(:document_identity_generator) { flunk "generator" }
         assert_nil service.send(
@@ -477,9 +474,16 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
         )
       end
     end
+
+    assert_equal 0, Thread.current[:document_identity_scope]["redacted"]
+    assert_equal "retrieve_and_generate", Thread.current[:document_identity_scope]["path"]
   end
 
   private
+
+  def reference(name, page: 1)
+    "Reference only, other equipment. Document: #{name}. Page: #{page}."
+  end
 
   def episode(identifiers: %w[MH CEA15], manufacturer_status: "known")
     {

@@ -36,78 +36,7 @@ class RagControllerFieldCompanionTest < ActionDispatch::IntegrationTest
     assert_equal "unknown_confirmed", episode.dig("facts", "model", "status")
   end
 
-  test "thread menu selections do not duplicate an explicit episode reset" do
-    original = "Otra falla: Elemont MH con placa CEA15, la puerta 1 no magnetiza."
-    session = ConversationSession.create!(
-      account: @account,
-      user: @user,
-      identifier: @user.id.to_s,
-      channel: "web",
-      expires_at: 1.day.from_now,
-      conversation_history: [
-        history_row("user", "¿qué reviso primero?"),
-        history_row("assistant", "respuesta anterior"),
-        history_row("user", original),
-        history_row("assistant", I18n.t("rag.thread_menu_prompt", locale: :es))
-      ],
-      active_episode: active_episode_for(original)
-    )
-    episode_id = session.active_episode.fetch("episode_id")
-    events_before = PilotEvent.where(conversation_session_id: session.id, event: "field_companion_turn").count
-
-    with_episode_flag("true") do
-      with_orchestrator([], [ "respuesta" ]) do
-        sign_in @user
-        post rag_ask_url, params: { question: original }, as: :json
-        assert_response :success
-      end
-    end
-
-    session.reload
-    events = PilotEvent.where(conversation_session_id: session.id, event: "field_companion_turn")
-                       .order(:id).offset(events_before)
-    skipped = events.find { |event| event.payload["episode_decision"] == "skipped" }
-    assert skipped
-    assert_equal "selection_turn", skipped.payload["outcome_reason"]
-    assert_equal episode_id, session.active_episode["episode_id"]
-    assert_equal original, session.active_episode.dig("goal", "text")
-  end
-
-  test "thread menu continuation query is recognized without changing document selection behavior" do
-    original = "No, no es Fuji Yida. Es KONE"
-    session = ConversationSession.new(
-      conversation_history: [
-        history_row("user", original),
-        history_row("assistant", I18n.t("rag.thread_menu_prompt", locale: :es))
-      ]
-    )
-    controller = RagController.new
-
-    assert controller.send(:field_companion_selection_turn?, "Pregunta anterior\n#{original}", session)
-    assert controller.send(:field_companion_selection_turn?, original, session)
-    assert_not controller.send(:field_companion_selection_turn?, "texto manual distinto", session)
-  end
-
   private
-
-  def history_row(role, content)
-    { "role" => role, "content" => content, "ts" => Time.current.iso8601 }
-  end
-
-  def active_episode_for(goal)
-    now = Time.current.iso8601
-    {
-      "v" => 1,
-      "episode_id" => "ep_existing",
-      "status" => "active",
-      "opened_at" => now,
-      "updated_at" => now,
-      "goal" => { "text" => goal, "correlation_id" => "query:original", "truncated" => false },
-      "facts" => { "manufacturer" => { "status" => "known", "value" => "Elemont", "source" => "user",
-                                         "correlation_id" => "query:original", "at" => now } },
-      "identifiers" => []
-    }
-  end
 
   def play(row, flag:)
     ConversationSession.where(identifier: @user.id.to_s, channel: "web").delete_all

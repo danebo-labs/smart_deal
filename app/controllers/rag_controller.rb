@@ -32,7 +32,8 @@ class RagController < ApplicationController
         question,
         user_id: current_user.id,
         correlation_id: correlation_id,
-        selection_turn: field_companion_selection_turn?(question, conv_session)
+        selection_turn: selection_turn?(question, conv_session) ||
+          Rag::ThreadMenuSelection.call(question: question, conversation_history: conv_session.conversation_history)
       )
     else
       conv_session.refresh!
@@ -179,33 +180,6 @@ class RagController < ApplicationController
 
   def elapsed_ms(started_at)
     ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
-  end
-
-  # The document-selection detector in RagQueryConcern predates the thread
-  # menu. Thread-menu chips submit either the original clarification or a
-  # stored segment joined to it, so recording that synthetic query as another
-  # technician turn can duplicate corrections and explicit episode resets.
-  # This predicate affects only ActiveEpisode shadow writes; routing keeps its
-  # existing behavior and still receives the chip's query unchanged.
-  def field_companion_selection_turn?(question, conv_session)
-    selection_turn?(question, conv_session) || thread_menu_selection_turn?(question, conv_session)
-  end
-
-  def thread_menu_selection_turn?(question, conv_session)
-    rows = Array(conv_session&.conversation_history)
-    menu = rows.last
-    return false unless menu&.fetch("role", nil) == "assistant"
-
-    prompts = %i[es en].map do |locale|
-      I18n.t("rag.thread_menu_prompt", locale: locale).truncate(ConversationSession::MAX_MSG_LENGTH)
-    end
-    return false unless prompts.include?(menu["content"])
-
-    original = rows.reverse_each.drop(1).find { |row| row["role"] == "user" }&.dig("content").to_s.strip
-    selected = question.to_s.strip
-    return false if original.blank? || selected.blank?
-
-    selected == original || selected.end_with?("\n#{original}")
   end
 
   # Prefers the route's own structural outcome (currently only

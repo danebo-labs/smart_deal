@@ -1496,6 +1496,92 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
   end
 
+  test 'exhaustive query without stop-work keeps the triple grammar' do
+    question = 'Enumera todas las pruebas de funcionamiento antes de operar'
+    svc = BedrockRagService.allocate
+    assert_nil svc.send(:query_safety_directive, question)
+    assert svc.send(:query_completeness_directive, question).present?
+
+    out = generation_prompt(question)
+
+    assert_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
+    assert_includes out, '`Prueba: ...`'
+    assert_includes out, '`Acción: ...`'
+    assert_includes out, '`Resultado esperado: ...`'
+    assert_includes out, 'The entire visible response must consist only of those entries'
+    assert_not_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
+    assert_not_includes out, '# EXHAUSTIVE STOP-WORK COVERAGE'
+  end
+
+  test 'stop-work query without exhaustive intent keeps the stop-work grammar' do
+    question = '¿Cuándo debo detener el trabajo?'
+    svc = BedrockRagService.allocate
+    assert svc.send(:query_safety_directive, question).present?
+    assert_nil svc.send(:query_completeness_directive, question)
+
+    out = generation_prompt(question)
+
+    assert_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
+    assert_includes out, 'Use the exact text label `Precauciones e inspecciones`'
+    assert_includes out, 'Use the exact text label `Detención obligatoria con evidencia explícita`'
+    assert_includes out, '`Disparador: ...`'
+    assert_includes out, '`Acción obligatoria: ...`'
+    assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
+    assert_not_includes out, '# EXHAUSTIVE STOP-WORK COVERAGE'
+    assert_not_includes out, 'The entire visible response must consist only of those entries'
+  end
+
+  test 'exhaustive stop-work query without a pin uses stop grammar for structure and completeness for coverage' do
+    question = 'Dame la lista completa de comprobaciones que obligan a detener el trabajo.'
+    svc = BedrockRagService.allocate
+    raw_completeness = svc.send(:query_completeness_directive, question)
+
+    assert svc.send(:query_safety_directive, question).present?
+    assert raw_completeness.present?
+    assert RagRetrievalProfile.new(question: question).exhaustive_query?
+    assert_includes raw_completeness, 'The entire visible response must consist only of those entries'
+
+    out = generation_prompt(question)
+    requires_stop_sections = out.include?('Use the exact text label `Precauciones e inspecciones`') &&
+      out.include?('Use the exact text label `Detención obligatoria con evidencia explícita`')
+    requires_exclusive_triples = out.include?('The entire visible response must consist only of those entries') &&
+      out.include?('Do not use a title, introduction, section header')
+
+    assert requires_stop_sections
+    assert_not(requires_stop_sections && requires_exclusive_triples)
+    assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
+    assert_not_includes out, 'Every entry must use exactly three non-empty lines'
+    assert_includes out, '# EXHAUSTIVE STOP-WORK COVERAGE'
+    assert_match(/include every documented\s+stop-relevant condition/, out)
+    assert_match(/Never invent `Resultado esperado`/, out)
+    assert_match(/Never copy a result from a\s+neighboring action/, out)
+    assert_match(/must\s+come from the same retrieved evidence fragment/, out)
+    assert_match(/never promotes a precaution/, out)
+    assert_not_includes out, '# DELIVERY CHANNEL'
+  end
+
+  test 'literal label rules stay in force on an ordinary schematic question' do
+    out = generation_prompt('En el esquema, ¿qué función identifica cada etiqueta?')
+
+    assert_literal_label_rules out
+    assert_not_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
+    assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
+  end
+
+  test 'literal label rules stay in force when the completeness grammar also applies' do
+    out = generation_prompt('Dame la lista completa de las funciones de las etiquetas del esquema')
+
+    assert_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
+    assert_literal_label_rules out
+  end
+
+  test 'literal label rules stay in force when the stop-work grammar also applies' do
+    out = generation_prompt('¿Cuándo debo detener el trabajo si una etiqueta del esquema no identifica su función?')
+
+    assert_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
+    assert_literal_label_rules out
+  end
+
   test 'query returns the resolved scope and filter actually applied' do
     with_mock_bedrock_client do
       result = BedrockRagService.new(account: @account).query(
@@ -1837,6 +1923,21 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   # ── Gate 9R I0: one row per billable invocation, filtered + global correlated ──
+
+  def generation_prompt(question)
+    BedrockRagService.allocate.send(
+      :load_generation_prompt_with_locale,
+      question,
+      response_locale: :es,
+      output_channel: :web
+    )
+  end
+
+  def assert_literal_label_rules(prompt)
+    assert_includes prompt, '# LITERAL LABEL RULES'
+    assert_includes prompt, '`<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`'
+    assert_includes prompt, 'Completeness and stop-work grammars do not remove or invalidate this safe form.'
+  end
 
   def uri_key_clauses(filter)
     found = []

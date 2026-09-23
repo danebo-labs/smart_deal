@@ -107,12 +107,17 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
 
   Q_FT = "¿Qué pruebas funcionales previas al uso indica el manual y qué resultado esperado tiene cada una?"
   Q_SW = "Antes de operar este equipo, ¿qué comprobaciones debo realizar y en qué condiciones debo detener el trabajo?"
+  EXHAUSTIVE_STOP = "Dame la lista completa de comprobaciones que obligan a detener el trabajo."
+  DETERMINISTIC_LABEL_KEYS = %w[
+    test_label action_label expected_result_label
+    precautions_heading mandatory_heading trigger_label mandatory_action_label
+  ].freeze
 
-  def build(question, chunks)
+  def build(question, chunks, response_locale: "es")
     service = FakeRagService.new(chunks)
     renderer = Rag::DeterministicRenderer.build(
       question: question, entity_s3_uris: URIS, entity_sources: [ "document" ],
-      force_entity_filter: true, response_locale: "es", rag_service: service
+      force_entity_filter: true, response_locale: response_locale, rag_service: service
     )
     [ renderer, service ]
   end
@@ -179,6 +184,7 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     assert_includes result[:answer], "Prueba de bocina (2)"
     assert_includes result[:answer], "Resultado esperado: DATA_NOT_AVAILABLE"
     assert_no_match(/FR-TEST/, result[:answer])
+    assert_not_includes result[:answer], "Translation missing"
   end
 
   test "fails safe without the raw marker when the ledger is invalid" do
@@ -219,6 +225,7 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     precautions_section = answer[/Precauciones e inspecciones(.*)Detención obligatoria/m, 1]
     assert_includes precautions_section, "mareos"
     assert_includes precautions_section, "personal no autorizado"
+    assert_not_includes answer, "Translation missing"
   end
 
   test "stop-work fails safe when there are no stop-work records" do
@@ -246,6 +253,51 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
       rag_service: fake
     )
     assert_nil generative
+  end
+
+  test "pinned exhaustive stop-work query stays on StopWorkRenderer without a model" do
+    assert Rag::DeterministicIntent.stop_work_checklist_query?(EXHAUSTIVE_STOP)
+    assert_not Rag::DeterministicIntent.exhaustive_functional_test_query?(EXHAUSTIVE_STOP)
+
+    renderer, service = build(EXHAUSTIVE_STOP, [ SW_CHUNK ])
+    assert_instance_of Rag::StopWorkRenderer, renderer
+
+    result = renderer.execute
+
+    assert_equal 1, service.calls.size
+    assert_equal "deterministic_stop_work", result[:generation_mode]
+    assert_equal false, result[:model_invoked]
+    assert_includes result[:answer], "Precauciones e inspecciones"
+    assert_includes result[:answer], "Detención obligatoria con evidencia explícita"
+    assert_includes result[:answer], "Disparador: Velocidad supera 20 cm/s con plataforma elevada"
+    assert_not_includes result[:answer], "Prueba:"
+    assert_not_includes result[:answer], "Translation missing"
+  end
+
+  test "deterministic labels resolve in Spanish and English" do
+    %i[es en].each do |locale|
+      DETERMINISTIC_LABEL_KEYS.each do |key|
+        value = I18n.t("rag.deterministic.#{key}", locale: locale)
+        assert_not_includes value, "Translation missing", "#{locale}.#{key}"
+      end
+    end
+
+    renderer, = build(Q_FT, [ FT_CHUNK ], response_locale: "en")
+    result = renderer.execute
+    assert_includes result[:answer], "Test: Prueba de bocina"
+    assert_includes result[:answer], "Action: Pulse el botón de la bocina"
+    assert_includes result[:answer], "Expected result: DATA_NOT_AVAILABLE"
+    assert_not_includes result[:answer], "Translation missing"
+    assert_equal false, result[:model_invoked]
+
+    stop_renderer, = build(Q_SW, [ SW_CHUNK ], response_locale: "en")
+    stop_result = stop_renderer.execute
+    assert_includes stop_result[:answer], "Precautions and inspections"
+    assert_includes stop_result[:answer], "Mandatory stop with explicit evidence"
+    assert_includes stop_result[:answer], "Trigger: Velocidad supera 20 cm/s con plataforma elevada"
+    assert_includes stop_result[:answer], "Mandatory action: Marque la máquina inmediatamente y deje de funcionar"
+    assert_not_includes stop_result[:answer], "Translation missing"
+    assert_equal false, stop_result[:model_invoked]
   end
 
   test "deterministic result carries citations only from contributing chunks" do

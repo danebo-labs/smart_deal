@@ -960,6 +960,9 @@ class BedrockRagService
     lang_name = locale_to_language_name(locale)
     safety_directive = query_safety_directive(question)
     completeness_directive = query_completeness_directive(question)
+    # Detection stays on the two methods above. This substitute is the only
+    # place that decides which completeness text is allowed into the prompt.
+    prompt_completeness = completeness_directive_for(safety_directive, completeness_directive)
     visual_directive = visual_label_directive(question)
 
     base = "#{language_directive_header(lang_name)}\n\n#{base}" if lang_name.present?
@@ -970,7 +973,7 @@ class BedrockRagService
     base = "#{base}\n\n#{session_context}" if session_context.present?
     base = "#{base}\n\n#{language_directive_footer(lang_name)}" if lang_name.present?
     base = "#{base}\n\n#{safety_directive}" if safety_directive.present?
-    base = "#{base}\n\n#{completeness_directive}" if completeness_directive.present?
+    base = "#{base}\n\n#{prompt_completeness}" if prompt_completeness.present?
     base = "#{base}\n\n#{visual_directive}" if visual_directive.present?
     base = "#{base}\n\n#{OUTPUT_FORMAT_PLACEHOLDER}\n" if output_contract
     base
@@ -997,6 +1000,7 @@ class BedrockRagService
         `<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`.
         No multi-line entries, no location prose, no neighboring-symbol
         descriptions — one line per identifier, nothing else about it.
+        Completeness and stop-work grammars do not remove or invalidate this safe form.
       - Acronym expansion (BRK→freno, P→presión, T→tanque, RV→alivio, ORF→orificio)
         is forbidden. Never use the words puerto, válvula, solenoide, alivio,
         retención, orificio, freno, presión, diodo for these identifiers — not as
@@ -1145,6 +1149,33 @@ class BedrockRagService
         those symmetric pairs, against the entries you will emit.
       - Do not omit retrieved units for brevity; the 300-word target does not apply.
       - Do not name or invent a counterpart that is absent from the retrieved chunks.
+    DIRECTIVE
+  end
+
+  # Stop-work owns the visible structure when both intents match. Completeness
+  # remains only as coverage inside that structure. The exclusive triple grammar
+  # is not injected beside the stop-work sections.
+  def completeness_directive_for(safety_directive, completeness_directive)
+    return nil if completeness_directive.blank?
+    return stop_work_exhaustive_coverage_directive if safety_directive.present?
+
+    completeness_directive
+  end
+
+  def stop_work_exhaustive_coverage_directive
+    <<~DIRECTIVE.strip
+      # EXHAUSTIVE STOP-WORK COVERAGE
+      The stop-work evidence override above governs the visible structure.
+      Completeness applies only as coverage: include every documented
+      stop-relevant condition from the chunks retrieved for this turn, inside
+      those stop-work sections. Do not omit a retrieved stop-relevant condition
+      for brevity.
+      - Do not recast a stop condition as `Prueba:`, `Acción:`, and
+        `Resultado esperado:`. Express every stop-relevant condition with the
+        stop-work contract, including when the fragment has no separate
+        expected result.
+      - Never invent `Resultado esperado`. Never copy a result from a
+        neighboring action.
     DIRECTIVE
   end
 

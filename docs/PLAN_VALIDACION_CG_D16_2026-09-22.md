@@ -18,6 +18,9 @@ completitud y parada tiene hoy un conflicto de contrato con impacto de safety.
 
 ## 2. Estado del repo al abrir esta validación
 
+> Desactualizado al ejecutarse la validación: HEAD = `origin/main` = `29dd6f2`,
+> working tree limpio. Ver §11.7 C2.
+
 - Rama: `main`.
 - HEAD y `origin/main`: `d81220b`.
 - Los cambios del copiloto están en el working tree; todavía no están
@@ -218,3 +221,271 @@ Responder, en este orden:
 > especial atención a la consulta que activa simultáneamente completitud y
 > parada, a `literal_label_rules` y a la presencia real de
 > `rag.deterministic.*` en `rag.en.yml`.
+
+## 11. Resultado de la validación (22-sep-2026, segundo modelo)
+
+Lectura estática sobre HEAD `29dd6f2`, working tree limpio. Cero Bedrock, cero
+`Retrieve`, cero test nuevo. La única ejecución fue un `rails runner -e test`
+local que evaluó regex, `I18n.t` y el armado del prompt en memoria, sin red.
+Esta sección es la única edición a este archivo, autorizada por Lahiri para
+registrar gaps e inconsistencias.
+
+### 11.1 Recomendación única
+
+**(a) con frase explícita para `literal_label_rules`**, más dos ítems que el
+plan no ofrecía como opción y que no son cambio de gramática:
+
+1. una regla de precedencia en Rails para la intersección exhaustiva + parada de
+   la ruta generativa (§11.3), con su test;
+2. el bloque `rag.deterministic.*` en `rag.en.yml` como defecto de
+   localización, no de safety (§11.4).
+
+No se recomienda (b). La razón central de CG-D16 para temer un cambio —«rompe
+el evaluador para la ruta LLM»— no se sostiene en el código: el evaluador de
+certificación solo acepta respuestas deterministas en los casos exhaustivos y
+de parada (§11.7, C1). Aun así, (b) sigue siendo la opción más cara: toca dos
+renderers, evaluador, directivas, dos locales, `code_fingerprint` del benchmark
+y unas 25 aserciones, para una gramática que H6 ya excluye del juicio de tono
+y que solo aparece en intents estrechos. La frase para `literal_label_rules`
+alcanza porque su salida visible ya llega traducida al técnico (§11.5).
+
+### 11.2 Mapa de rutas
+
+Orden del orquestador (`app/services/query_orchestrator_service.rb`):
+`DocumentOverviewResponder` (l.228) → `StructuredEvidenceRoute` (l.239–256) →
+`AmbiguousModelResponder` (l.258–275) → `DeterministicRenderer` (l.277–288) →
+`ContextEvidenceRoute` (l.291–293) → `BedrockRagService#query` (l.295–306).
+
+**Ruta determinista** (`app/services/rag/deterministic_renderer.rb`):
+
+- Existe solo con `force_entity_filter` y al menos un URI (l.31). Elige
+  `FunctionalTestRenderer` si `exhaustive_functional_test_query?` y, si no,
+  `StopWorkRenderer` si `stop_work_checklist_query?` (l.33–38). Primer match
+  gana; no hay renderer combinado.
+- Patrones (`app/services/rag/deterministic_intent.rb` l.11–19):
+  `pruebas funcionales|de funcionamiento … resultados?` y
+  `comprobaciones|verificaciones … detener el trabajo` (más sus formas en
+  inglés).
+- Un renderer que construye **no vuelve a la generativa**: `failure_result`
+  (l.119–137) se entrega tal cual (`query_orchestrator_service.rb` l.285–288).
+- Etiquetas desde `I18n.t("rag.deterministic.*")` (l.161–163);
+  `functional_test_renderer.rb` l.53–57; `stop_work_renderer.rb` l.51–64.
+- Ejemplos: `¿Qué pruebas funcionales previas al uso indica el manual y qué
+  resultado esperado tiene cada una?` → `FunctionalTestRenderer`;
+  `Antes de operar este equipo, ¿qué comprobaciones debo realizar y en qué
+  condiciones debo detener el trabajo?` → `StopWorkRenderer`
+  (`test/services/rag/deterministic_renderer_test.rb` l.108–109).
+
+**Ruta generativa** (`app/services/bedrock_rag_service.rb`
+`load_generation_prompt_with_locale`, l.949–977):
+
+- `query_safety_directive` (l.1061–1091): regex
+  `detener|detenga|parar|pare|stop|prohibir|fuera de servicio` (l.1062). El
+  plan omite `detenga` y `pare`. Exige `Precauciones e inspecciones` (l.1067),
+  `Detención obligatoria con evidencia explícita` (l.1071) y pares
+  `Disparador:` / `Acción obligatoria:` (l.1077–1078).
+- `query_completeness_directive` (l.1093–1148): gate `exhaustive_query?`
+  (l.1095) sobre `EXHAUSTIVE_PATTERNS` (`rag_retrieval_profile.rb` l.56–65).
+  Exige entradas `Prueba:` / `Acción:` / `Resultado esperado:` (l.1125–1127) y
+  que «the entire visible response must consist only of those entries. Do not
+  use a title, introduction, section header, bullets, separators, notes,
+  warnings…» (l.1133–1136).
+- Orden de inyección: idioma → `# DELIVERY CHANNEL` (solo web y **solo si no
+  hay completitud**, l.967) → contexto de sesión → recordatorio de idioma →
+  parada (l.972) → completitud (l.973) → `literal_label_rules` (l.974) →
+  contrato de salida (l.975).
+- `SAFETY_CRITICAL_PATTERNS` (l.67–71) comparte el vocabulario de parada y
+  agrega fallo/reparación; solo mueve `top_k` a 5 con pin (l.89) y excluye la
+  `StructuredEvidenceRoute` (`structured_evidence_route.rb` l.60–61). No
+  activa gramática.
+- Ejemplos: `¿Cuándo debo detener el trabajo?` → solo parada;
+  `Enumera todas las pruebas de funcionamiento antes de operar` → solo
+  completitud (`bedrock_rag_service_test.rb` l.830–847, l.1466–1485);
+  `¿Cómo pruebo el freno?` → ninguna (l.1487–1497).
+
+**Respuesta ordinaria** (§5.1): confirmado. Ninguna directiva se inyecta y la
+única mención de la gramática en `generation.txt` es la línea GS l.142 («Do
+not restate stop-work or exhaustive grammar»). El bloque base l.126–132, sin
+prefijo, ya exige disparador y acción en el mismo fragmento y separa
+precaución de parada en prosa: la invariante «precaución ≠ parada» no depende
+de la gramática.
+
+### 11.3 Intersección exhaustiva + parada
+
+Consulta: `Dame la lista completa de comprobaciones que obligan a detener el
+trabajo.` Evaluada en memoria, sin Bedrock:
+
+| Predicado | Resultado | Evidencia |
+|---|---|---|
+| `query_safety_directive` | activa | l.1062, `detener` |
+| `exhaustive_query?` | activa | `rag_retrieval_profile.rb` l.58 (`lista completa`) y l.62 (`completa`) |
+| `stop_work_checklist_query?` | **activa** | `deterministic_intent.rb` l.17: `comprobaciones … detener el trabajo` |
+| `exhaustive_functional_test_query?` | no | l.12 pide `pruebas funcionales … resultados` |
+| `ContextProjection.applicable?` | no | `context_projection.rb` l.32–34 |
+| `top_k` | 15, rerank 12 | l.81 gana sobre l.89 |
+| `# DELIVERY CHANNEL` | omitido | l.967 |
+
+Hay dos comportamientos según el pin:
+
+1. **Con pin y `force_entity_filter`:** la consulta va al `StopWorkRenderer`
+   (l.36–37) y nunca llega al modelo. No hay conflicto: la gramática la emite
+   Rails. La completitud queda implícita en `FULL_SCOPE_CANDIDATES` (l.25).
+2. **Sin pin:** `BedrockRagService#query` agrega **las dos** directivas al
+   mismo prompt (l.972–973). Verificado: `# STOP-WORK EVIDENCE OVERRIDE` en el
+   offset 9.495 y `# EXHAUSTIVE COMPLETENESS OVERRIDE` en 11.022, este último
+   más cerca del final. Parada exige dos secciones con encabezado y pares de
+   dos líneas; completitud exige que **toda** la respuesta sean ternas
+   `Prueba/Acción/Resultado esperado` sin encabezados ni advertencias
+   (l.1133–1136). Son incompatibles por construcción.
+
+No existe regla de precedencia ni test de la intersección: ninguna aserción
+en `bedrock_rag_service_test.rb`, `regex_characterization_test.rb` ni
+`rag_quality_benchmark_evaluator_test.rb` arma un prompt con ambas directivas.
+`regex_characterization_test.rb` l.404–425 prueba cada polaridad por separado.
+
+**Clasificación: conflicto estático, no medido.** Riesgo de safety si el
+modelo obedece la directiva más reciente (completitud): un disparador de
+parada sin `Resultado esperado` documentado queda fuera («never invent a
+result… otherwise omit it», l.1116–1122) o se le fabrica uno; la `Acción
+obligatoria` no tiene casilla en la terna y es «warning» prohibido por
+l.1134; la sección `Precauciones e inspecciones` desaparece. Si obedece
+parada, la respuesta viola la gramática de completitud pero no degrada
+safety. Mitigación parcial: el bloque base l.126–132 sigue exigiendo
+disparador y acción del mismo fragmento. El caso 1 (con pin) es el que hoy
+está medido y protegido por el evaluador; el caso 2 no está en ningún
+benchmark. La ruta medida en la medición 8 no está desplegada, así que en
+producción hoy corre el mismo prompt con las dos directivas.
+
+Hueco análogo en la ruta determinista: una pregunta que empareje los dos
+patrones de `DeterministicIntent` cae en `FunctionalTestRenderer` y descarta
+los `STOP_WORK_CONDITION` sin aviso (l.33–38). No hay test de esa
+intersección.
+
+### 11.4 Locale inglés
+
+`config/locales/rag.en.yml` **no define** `rag.deterministic.*` (las claves
+vecinas están en l.30–40; el bloque español está en `rag.es.yml` l.75–82).
+Nunca existió: `git show d81220b:config/locales/rag.en.yml` tampoco lo tiene.
+No hay test de paridad de locales ni test del renderer con
+`response_locale: "en"`.
+
+Efecto verificado con `I18n.t("rag.deterministic.test_label", locale: :en)`:
+
+- **Producción** (`config/environments/production.rb` l.79,
+  `config.i18n.fallbacks = true`; `application.rb` l.15 `default_locale = :es`):
+  cae al español. Una pregunta en inglés con pin (`Which functional tests apply
+  and what are the expected results?`, `regex_characterization_test.rb`
+  l.433–435) recibe `Prueba:` / `Acción:` / `Resultado esperado:` con acciones
+  y resultados en el idioma del manual. Defecto de localización; el evaluador
+  (regex en español, l.277, l.360–361, l.380–381) lo parsea igual.
+- **Development y test** (sin fallbacks): las etiquetas visibles son
+  `Translation missing: en.rag.deterministic.test_label`. Ningún test lo
+  cubre porque todos pasan `response_locale: "es"`.
+
+**No es defecto de safety:** el contenido (acción, resultado, disparador,
+acción obligatoria) sale verbatim del `FIELD_RECORD`; solo el rótulo cambia.
+Agregar las siete claves en inglés es un cambio de copia; si algún día el
+benchmark corre en inglés, el evaluador tendría que aceptar ambos rótulos.
+
+### 11.5 `literal_label_rules` y seguridad preservada
+
+- `literal_label_rules` (l.991–1008) se inyecta vía `visual_label_directive`
+  (l.983–989) cuando la pregunta trae `esquema|diagrama|plano|etiqueta|…` y
+  `función|identifica|componentes|qué es`. Es independiente de las otras dos
+  y puede coexistir con ellas (l.974). Su forma segura es
+  `<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`
+  (l.997).
+- **En la ruta principal el técnico ya no ve ese token.**
+  `AnswerSafetyProcessor#call` (`answer_safety_processor.rb` l.124–138) termina
+  en `render_internal_markers` (l.366–373), que reemplaza todo
+  `DATA_NOT_AVAILABLE` por `rag.data_not_available`. La línea visible es
+  `FRRV1: identificador visible; función: El documento no incluye este dato`.
+  CG-D08 ya se cumple para este contrato sin editar la directiva; la frase
+  explícita de (a) solo tiene que declarar que el token es contrato del prompt
+  y la traducción es la salida.
+- **El evaluador quedó desalineado con esa traducción.**
+  `validate_primary_visual_case` (l.426–441) exige `data_not_available` en la
+  línea visible de cada código primario sobre `result["answer"]`, que en
+  `script/rag_quality_benchmark.rb` l.279–299 es la respuesta ya procesada.
+  La traducción entró en `f0be176` (2026-07-26); el evaluador no se toca
+  desde `9ee05f7` (2026-06-11). Una certificación hoy fallaría
+  `visual_primary` para los cinco códigos. Esto es independiente de CG-D16 y
+  no lo arregla ninguna de las tres opciones.
+
+Invariantes de §7, estado actual:
+
+| Invariante | Determinista | Generativa |
+|---|---|---|
+| Precaución no se promueve a parada | `StopWorkRenderer` l.31–37: solo `stop_work?` va a la sección obligatoria; el parser exige el par | directiva l.1081–1088; base `generation.txt` l.126–132 |
+| Disparador y acción del mismo fragmento | contrato del `FIELD_RECORD` | l.1081–1083 |
+| Resultado no se inventa ni se toma del vecino | verbatim del record; `DATA_NOT_AVAILABLE` se conserva (`deterministic_renderer_test.rb` l.180) | l.1111–1122 |
+| Renderer sin modelo | `model_invoked: false` (l.94) | n/a |
+
+Huecos restantes, todos fuera del alcance de (a):
+
+1. Intersección sin pin (§11.3): conflicto estático, sin precedencia ni test.
+2. Intersección determinista: primer match gana (l.33–38), sin test.
+3. `Resultado esperado: DATA_NOT_AVAILABLE` sale crudo al técnico en el render
+   exitoso (`functional_test_renderer.rb` l.56; test l.180). La Fase A tradujo
+   solo `failure_result`. Contradice CG-D08 y se conserva a propósito.
+4. `ContextEvidenceRoute` (`context_evidence_route.rb` l.11–13) genera por
+   `StructuredEvidenceRoute#generation_prompt` (l.548–564), que **no** inyecta
+   ninguna de las tres directivas y salta la exclusión de `eligible?`
+   (l.59–73 instancia directo). Una pregunta web sin pin con modelo con guion
+   de marca conocida o con «resortes … ajust» que además pida parada o lista
+   completa se genera sin gramática ni override de parada. Estrecho; no
+   desplegado.
+5. `rag.en.yml` sin `rag.deterministic.*` (§11.4).
+6. Evaluador `visual_primary` desalineado con `render_internal_markers`.
+
+### 11.6 Archivos y tests si se eligiera (b)
+
+Solo para dimensionar; no es la recomendación.
+
+- `app/services/bedrock_rag_service.rb` l.1061–1148 (las dos directivas) y
+  l.991–1008; `app/services/rag/functional_test_renderer.rb`;
+  `app/services/rag/stop_work_renderer.rb`;
+  `script/evaluate_rag_quality_benchmark.rb` l.267–301, l.347–410, l.426–441;
+  `config/locales/rag.es.yml` l.75–82 y el bloque nuevo en `rag.en.yml`;
+  `script/rag_quality_benchmark.rb` l.36–54 (`code_fingerprint` cambia con
+  cualquiera de esos archivos: la certificación v3 deja de ser comparable).
+- Tests: `bedrock_rag_service_test.rb` l.830–847 y l.1466–1485;
+  `deterministic_renderer_test.rb` l.170–181, l.204–222;
+  `rag_quality_benchmark_evaluator_test.rb` l.60–145, l.345–374, l.380–400;
+  `regex_characterization_test.rb` l.293–304, l.429–442; más los nuevos de
+  intersección (dos rutas), locale inglés y precedencia.
+
+### 11.7 Contradicciones entre plan y código
+
+| # | Plan | Código | Archivo:línea |
+|---|---|---|---|
+| C1 | CG-D16 (`PLAN_COPILOTO` decisión 16, V3): las etiquetas de las directivas son «la gramática que el evaluador parsea» y sacarlas «rompe el evaluador para la ruta LLM». | El evaluador solo parsea la gramática en `isolated/conversation:3` y `:5`, y para esos casos exige `generation_mode` determinista y `model_invoked == false`. Una respuesta LLM en esos casos ya falla antes de llegar a la gramática. Cambiar el texto de las directivas no puede romper el evaluador; rompe `bedrock_rag_service_test.rb` y la alineación visual entre rutas. | `script/evaluate_rag_quality_benchmark.rb` l.10–12, l.27–28, l.199, l.229–238, l.356; `test/scripts/rag_quality_benchmark_evaluator_test.rb` l.312–326 |
+| C2 | §2: «HEAD y `origin/main`: `d81220b`», «cambios … todavía no están commiteados». | HEAD = `origin/main` = `29dd6f2`; working tree limpio. Los cambios del copiloto ya están en `4863045…a7bb177`; este plan es `29dd6f2`. | `git status`, `git log d81220b..HEAD` |
+| C3 | `PLAN_COPILOTO` (entrada obligatoria, restricción 6, C6, V9) cita `literal_label_rules` l.1007, parada l.1077, exhaustivo l.1109. | En HEAD están en l.991, l.1061 y l.1093. Las cifras del plan son de `d81220b`. | `app/services/bedrock_rag_service.rb` |
+| C4 | §5.3: parada se activa con `detener`, `parar`, `stop`, `prohibir`, `fuera de servicio`. | El regex también incluye `detenga` y `pare`. | l.1062 |
+| C5 | §5.3 / §5.5: la ruta generativa sin pin recibe las directivas. | Cierto para `BedrockRagService#query`, falso para `ContextEvidenceRoute`, que genera sin ninguna de las tres directivas. | `context_evidence_route.rb` l.11–13, l.59–73; `structured_evidence_route.rb` l.548–564 |
+| C6 | §5.4: `literal_label_rules` «hoy exige la forma segura … `función: DATA_NOT_AVAILABLE`» como salida. | Es la forma que exige el prompt; la salida visible ya lleva el token traducido. El evaluador todavía busca el token crudo en la respuesta visible. | `answer_safety_processor.rb` l.137, l.366–373; `evaluate_rag_quality_benchmark.rb` l.431–440 |
+| C7 | §5.5 pide evaluar la consulta como intersección de las dos directivas generativas. | Con pin, la consulta ni siquiera llega al modelo: también empareja `STOP_WORK_PATTERNS`. El conflicto de directivas existe solo sin pin. | `deterministic_intent.rb` l.17; `deterministic_renderer.rb` l.36–37 |
+| C8 | `PLAN_COPILOTO` V3: «1 [aserción] en `bedrock_rag_service_test.rb`». | Hay dos tests que fijan la gramática de las directivas, con ocho aserciones sobre etiquetas. | `bedrock_rag_service_test.rb` l.842–845, l.1475–1482 |
+| C9 | `PLAN_COPILOTO` «Pruebas que siguen verdes»: `bedrock_rag_service_test.rb` l.853–857 congela la gramática de parada. | Esas líneas son el test de reintento sin filtro. La gramática está en l.842–845. | `bedrock_rag_service_test.rb` |
+
+### 11.8 Matriz del §6 completada
+
+| Pregunta | (a) | (a) + literal explícito | (b) |
+|---|---|---|---|
+| Conserva el benchmark actual | Sí | Sí | No: cambia `code_fingerprint`, renderers y evaluador |
+| Alinea ruta LLM y determinista | Sí, como hoy | Sí | Sí, si se reescriben las dos a la vez |
+| Protege precaución ≠ parada | Sí (renderer, directiva, base l.126–132) | Sí | Sí, si el evaluador nuevo lo verifica; riesgo de regresión durante el cambio |
+| Evita inventar resultados | Sí en determinista; sí en directiva; **no probado** en la intersección sin pin | Igual | Igual: (b) tampoco resuelve la intersección sin regla de precedencia |
+| Cubre identificadores de esquema | No lo nombra | Sí: token es contrato del prompt, traducción es la salida | Sí |
+| Resuelve la intersección exhaustiva + parada | No | No | No por sí sola; solo con la regla de precedencia |
+| Resuelve locale inglés | No | No | Sí, como parte del alcance |
+| Requiere código nuevo | No | No | Sí: ~9 archivos, ~25 aserciones |
+
+Ni (a) ni (b) resuelven la intersección: la resuelve una regla de precedencia
+en `load_generation_prompt_with_locale` con su test, y eso es una decisión
+separada que este plan no ofrecía. Propuesta para esa decisión: cuando ambas
+directivas se activan, manda la de parada y la completitud se limita a «no
+omitir ningún fragmento recuperado dentro de esas dos secciones», sin cambiar
+etiquetas. Es un cambio Rails de pocas líneas, sin Bedrock, sin tocar la
+gramática, sin mover el evaluador.

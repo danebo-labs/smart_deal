@@ -115,7 +115,7 @@ class ConversationSession < ApplicationRecord
         expires_at: EXPIRY_DURATION.from_now
       )
     end
-    log_field_companion_turn(result, content, correlation_id: correlation_id)
+    log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id)
     result
   end
 
@@ -140,7 +140,7 @@ class ConversationSession < ApplicationRecord
       attrs[:active_episode] = result.state if result.decision == :assistant
       update!(attrs)
     end
-    log_field_companion_turn(result, content, correlation_id: correlation_id) if result.decision == :assistant
+    log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result.decision == :assistant
     result
   end
 
@@ -423,11 +423,12 @@ class ConversationSession < ApplicationRecord
 
   # Shadow does not change the text sent to the orchestrator, so both digests
   # are of that original turn. composed_chars records the unused composition.
-  def log_field_companion_turn(result, content, correlation_id:)
+  def log_field_companion_turn(result, content, correlation_id:, user_id:)
     digest = Digest::SHA256.hexdigest(content.to_s)
     PilotUsageLog.log(
       "field_companion_turn",
       account_id: account_id,
+      user_id: user_id,
       conversation_session_id: id,
       correlation_id: correlation_id,
       route: "field_companion",

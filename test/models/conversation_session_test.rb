@@ -1028,6 +1028,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
     event = events.find { |row| row["event"] == "field_companion_turn" }
     assert event
     assert_equal "opened", event["episode_decision"]
+    assert_equal users(:one).id, event["user_id"]
     assert_equal Digest::SHA256.hexdigest(question), event["original_sha256"]
     assert_equal event["original_sha256"], event["effective_sha256"]
     assert_not_includes JSON.generate(event), question

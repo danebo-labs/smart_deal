@@ -293,8 +293,8 @@ Todos aplicados en este archivo.
 | Fase 1 — ActiveEpisode shadow (C1–C4) | **CERRADA Y DESPLEGADA** | `2d456f8`. `FIELD_COMPANION_EPISODE_ENABLED=true`. `FIELD_COMPANION_TURN_ENABLED` apagada. E12–E19. `generation.txt` sin cambios | `tmp/field_companion_2026-09-23/fase_1/` |
 | Revisión shadow | **CERRADA** | 32 turnos humanos. Smoke del botón: `episode_decision=skipped`, mismo `episode_id`, `user_id=7`. Sesión 6 no se tocó | `tmp/field_companion_2026-09-23/shadow/revision.md` |
 | Fase 2a — Bloque de contexto (C5) | **CERRADA** | `2e43a60` en `fc/pr2` desde `main` `2d937df`. `FIELD_COMPANION_TURN_ENABLED` apagada. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537`. Tokens máx. 115 | `tmp/field_companion_2026-09-23/fase_2a/` |
-| Fase 2b — Composición (C6, C6b) | **LISTA** | No encender `FIELD_COMPANION_TURN_ENABLED`. Activación: FC-D02, FC-D03 | — |
-| Gate Fase 2 — Holdout | Espera 2b | FC-D05 | — |
+| Fase 2b — Composición (C6, C6b) | **CERRADA (flag apagada)** | C6 en `fc/pr2`. C6b no aplica. `FIELD_COMPANION_TURN_ENABLED` apagada. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537`. E23, E24 | `tmp/field_companion_2026-09-23/fase_2b/` |
+| Gate Fase 2 — Holdout | **ESPERA FC-D02, FC-D03, FC-D05** | ⚠️ CRÍTICO (E24) | — |
 | Fase 3a/3b — Foto unificada (C7, C8) | Espera gate Fase 2 | FC-D04 | — |
 | Fase 4 — Hueco preciso (C9) | Condicional | Holdout lo pide | — |
 | Fase 5 — Handoff prompt | Fuera de este plan | Plan copiloto | — |
@@ -557,6 +557,7 @@ These facts identify the job. Procedures, values, terminals and code meanings st
 - Sesión distinta de la que implementó 2b.
 - Máximo 40 turnos `retrieve_and_generate` y US$0,50, fuera del contenedor de producción.
 - Pasa si: cero fallos safety-critical; pregunta repetida sobre un campo `unknown_confirmed` o `absent_confirmed` en 0 de los turnos T-A/T-E/T-H; ninguna respuesta de un episodio Elemont cita instrucciones de KONE u OTIS sin etiqueta de analogía; atribución de citas igual o mejor que la baseline con flag apagada.
+- ⚠️ CRÍTICO (E24): T-E U4 con la flag de turno encendida pasa de `BedrockRagService` a `ContextEvidenceRoute`. Esa ruta no recibe `session_context` (E9), así que el bloque de 2a no cubre la pregunta repetida del modelo en ese turno. T-A U1–U3 ya responden por `ContextEvidenceRoute` con la flag apagada; el bloque tampoco llega ahí. El holdout juzga la respuesta de la ruta que contestó, no el bloque. Si T-A o T-E repregunta el modelo, la flag no se enciende y la Fase 3 sigue en espera. C6b no aplica: `AmbiguousModelResponder` no corre cuando `model` es `unknown_confirmed`.
 
 ---
 
@@ -1025,6 +1026,8 @@ Ramas: `fc/pr1` = Fase 0 + Fase 1. `fc/pr2` = Fase 2a + 2b. `fc/pr3` = Fase 3a +
 | E20 | 2a | El ejemplo de la Propuesta 2a no cabe entero en 400 caracteres. El renderer acorta el `goal` y después omite identificadores, foto, conflictos y hechos conocidos. Pie y confirmaciones quedan. T-A…T-H: máximo 115 tokens. | `session_context_builder.rb` | No cambia 2b. La composición lee el episodio, no este bloque. |
 | E21 | 2a | Los comentarios de las flags siguen diciendo que nadie lee la columna. 2a la lee solo con las dos flags, canal web y sin sesión compartida. | `field_companion_episode_flag.rb` l.7; `field_companion_turn_flag.rb` l.4 | Fuera de la allowlist. Sin cambio de comportamiento. |
 | E22 | 2a | El `.env` local tiene `SHARED_SESSION_ENABLED=true`, así que un runner local no arma el bloque. `config/deploy.yml` lo deja en `false`. | `.env` l.37; `config/deploy.yml` l.79 | La medición de tokens usó el valor de piloto. No se tocó el `.env`. |
+| E23 | 2b | `log_field_companion_turn` sigue guardando `effective_sha256` del texto original. Con la flag de turno encendida el orquestador recibe el compuesto y el hash no lo refleja. `composed_chars` sí. | `conversation_session.rb` `log_field_companion_turn` | Fuera de la allowlist. No cambia respuestas mientras la flag está apagada. Antes de activarla, el hash efectivo tiene que ser el texto que ve el orquestador. |
+| E24 | 2b | T-E U4 con la flag encendida pasa de `BedrockRagService` a `ContextEvidenceRoute`. Esa ruta no recibe el bloque de 2a. T-A U1–U3 ya estaban en esa ruta. Ningún turno con `model=unknown_confirmed` abre `AmbiguousModelResponder`. | Paridad T-E U4; E9 | El gate de Fase 2 no puede contar el bloque como cobertura de T-A ni de T-E. C6b no se implementa. ⚠️ CRÍTICO en el gate. |
 
 ---
 
@@ -1040,3 +1043,4 @@ Cada test que una fase edita porque congela copia o comportamiento que la fase c
 | Shadow | `test/models/conversation_session_test.rb` | El evento shadow no verificaba atribución de usuario. | Comprueba que `user_id` se entrega a `PilotUsageLog`. | Permite construir exports auditables por cuenta/usuario. |
 | Shadow | `test/tasks/field_companion_reset_test.rb` | No había reset operativo acotado. | Cubre dry-run, scope exacto, preservación e idempotencia. | Hace repetible la validación sin tocar otras sesiones ni otros datos. |
 | 2a | `test/services/session_context_builder_test.rb` (tests previos) | El contexto no incluye el problema activo. | Igual con las dos flags apagadas. | 2a no cambia ese camino. Los tests nuevos cubren el bloque. |
+| 2b | `test/services/rag/field_companion_characterization_test.rb` | Texto legacy del rewriter y del resolver de hilo para T-A…T-H. | Igual. El archivo no se editó. | 2b no cambia esa cadena con la flag apagada. Los tests nuevos cubren la composición. |

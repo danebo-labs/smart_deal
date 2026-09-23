@@ -26,9 +26,10 @@ class RagController < ApplicationController
       user_id:     effective_user_id,
       account_id:  current_account.id
     )
+    episode_turn = nil
     if question.present?
       # Single UPDATE instead of refresh! + add_to_history (2 UPDATEs).
-      conv_session.record_user_turn!(
+      episode_turn = conv_session.record_user_turn!(
         question,
         user_id: current_user.id,
         correlation_id: correlation_id,
@@ -53,7 +54,8 @@ class RagController < ApplicationController
       account:         current_account,
       user_id:         current_user.id,
       correlation_id:  correlation_id,
-      field_photo_id:  params[:field_photo_id].presence
+      field_photo_id:  params[:field_photo_id].presence,
+      episode_turn:    episode_turn
     )
 
     unless result.success?

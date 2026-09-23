@@ -50,7 +50,8 @@ module RagQueryConcern
   def execute_rag_query(question, images: [], documents: [], session_id: nil, response_locale: nil,
                         session_context: nil, conv_session: nil, entity_s3_uris: [],
                         output_channel: nil, force_entity_filter: nil, account: nil, user_id: nil,
-                        correlation_id: nil, field_photo_id: nil, conversation_session_id: nil)
+                        correlation_id: nil, field_photo_id: nil, conversation_session_id: nil,
+                        episode_turn: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -68,29 +69,34 @@ module RagQueryConcern
     followup = nil
     effective_question = question
     if images.empty? && documents.empty? && conv_session
-      followup = Rag::FollowupQueryRewriter.call(
-        question: question,
-        conversation_session: conv_session,
-        account: resolved_account,
-        correlation_id: correlation_id
-      )
-      effective_question = followup.applied ? followup.question : question
-      log_rag_followup(followup, question, correlation_id)
-
-      if thread_menu_applicable?(followup, conv_session, resolved_output_channel) &&
-         !selection_turn?(question, conv_session)
-        thread = Rag::EpisodeThreadResolver.call(
+      if episode_turn_owns_thread?(episode_turn)
+        # `question` stays the raw turn. Composition never reassigns it.
+        effective_question = episode_turn.composed.presence || question
+      else
+        followup = Rag::FollowupQueryRewriter.call(
           question: question,
           conversation_session: conv_session,
-          correlation_id: correlation_id,
-          locale: resolved_response_locale,
-          now: Time.current
+          account: resolved_account,
+          correlation_id: correlation_id
         )
-        case thread.outcome
-        when :join
-          effective_question = thread.composed
-        when :menu
-          return thread_menu_result(thread, resolved_response_locale, correlation_id)
+        effective_question = followup.applied ? followup.question : question
+        log_rag_followup(followup, question, correlation_id)
+
+        if thread_menu_applicable?(followup, conv_session, resolved_output_channel) &&
+           !selection_turn?(question, conv_session)
+          thread = Rag::EpisodeThreadResolver.call(
+            question: question,
+            conversation_session: conv_session,
+            correlation_id: correlation_id,
+            locale: resolved_response_locale,
+            now: Time.current
+          )
+          case thread.outcome
+          when :join
+            effective_question = thread.composed
+          when :menu
+            return thread_menu_result(thread, resolved_response_locale, correlation_id)
+          end
         end
       end
     end
@@ -220,6 +226,16 @@ module RagQueryConcern
   rescue StandardError => e
     log_rag_error("Query unexpected error", e, include_backtrace: true)
     RagResult.new(success?: false, error_type: :unexpected_error, error_message: e.message, error_class: e.class.name)
+  end
+
+  # An episode decision is the only thread reading while the turn flag is on.
+  # The rewriter and the thread menu stay for :no_episode, :skipped, and no result.
+  def episode_turn_owns_thread?(episode_turn)
+    return false unless Rag::FieldCompanionTurnFlag.enabled?
+    return false if episode_turn.nil?
+
+    decision = episode_turn.decision&.to_sym
+    decision.present? && decision != :no_episode && decision != :skipped
   end
 
   def thread_menu_applicable?(followup, conv_session, output_channel)

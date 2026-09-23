@@ -2316,6 +2316,232 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_equal "Is this a new question?", result.quick_replies.last[:label]
   end
 
+  # Phase 2b. The turn flag stays off outside these tests.
+  FIELD_CASES = YAML.load_file(
+    Rails.root.join("test/fixtures/files/field_companion/cases.yml")
+  ).index_by { |row| row["id"] }
+  FIELD_NOW = Time.zone.parse("2026-09-23T14:00:00-03:00")
+  COMPOSED_CASE_IDS = %w[T-A T-B T-C T-D T-E T-F T-G T-H X-1 X-10].freeze
+
+  test "an active episode composes the orchestrator text and skips the legacy thread chain" do
+    COMPOSED_CASE_IDS.each do |case_id|
+      assert_episode_queries(FIELD_CASES.fetch(case_id), case_id)
+    end
+  end
+
+  test "no_episode keeps the legacy thread menu even when a composed string is present" do
+    session = build_two_thread_session
+    episode_turn = episode_result(decision: :no_episode, composed: "should-not-be-used")
+    calls = { rewriter: 0, resolver: 0 }
+    result = nil
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_thread_chain_calls(calls) do
+        with_followup_orchestrator do |captured|
+          travel_to THREAD_NOW do
+            result = @controller.send(
+              :execute_rag_query, THREAD_CLARIFY,
+              conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy),
+              episode_turn: episode_turn
+            )
+          end
+          assert_nil captured[:kwargs]
+        end
+      end
+    end
+
+    assert_equal "deterministic_thread_menu", result.generation_mode
+    assert_operator calls[:rewriter], :>, 0
+    assert_operator calls[:resolver], :>, 0
+  end
+
+  test "a skipped episode turn keeps the legacy join" do
+    session = build_measured_episode_session
+    episode_turn = episode_result(decision: :skipped, composed: "should-not-be-used")
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_followup_orchestrator do |captured|
+        travel_to THREAD_NOW do
+          @controller.send(
+            :execute_rag_query, THREAD_CLARIFY,
+            conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy),
+            episode_turn: episode_turn
+          )
+        end
+        assert_equal THREAD_COMPOSED, captured[:question]
+      end
+    end
+  end
+
+  test "an opened episode does not ask which thread to follow" do
+    session = build_two_thread_session
+    episode_turn = episode_result(decision: :opened, composed: nil)
+    calls = { rewriter: 0, resolver: 0 }
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_thread_chain_calls(calls) do
+        with_followup_orchestrator do |captured|
+          travel_to THREAD_NOW do
+            result = @controller.send(
+              :execute_rag_query, THREAD_CLARIFY,
+              conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy),
+              episode_turn: episode_turn
+            )
+            assert_equal THREAD_CLARIFY, captured[:question]
+            assert_not_equal "deterministic_thread_menu", result.generation_mode
+          end
+        end
+      end
+    end
+
+    assert_equal 0, calls[:rewriter]
+    assert_equal 0, calls[:resolver]
+  end
+
+  test "a nil composition keeps the raw question and still skips the thread menu" do
+    session = build_two_thread_session
+    episode_turn = episode_result(decision: :continued_elliptical, composed: nil, reason: "budget_exceeded")
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_followup_orchestrator do |captured|
+        travel_to THREAD_NOW do
+          @controller.send(
+            :execute_rag_query, THREAD_CLARIFY,
+            conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy),
+            episode_turn: episode_turn
+          )
+        end
+        assert_equal THREAD_CLARIFY, captured[:question]
+      end
+    end
+  end
+
+  test "the turn flag off ignores a composed episode turn" do
+    session, question, result = field_session_at("T-C")
+    legacy = legacy_orchestrator_text(session, question)
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "false") do
+      with_followup_orchestrator do |captured|
+        travel_to FIELD_NOW do
+          @controller.send(
+            :execute_rag_query, question,
+            conv_session: session, correlation_id: "query:legacy", account: accounts(:legacy),
+            episode_turn: result
+          )
+        end
+        assert_equal legacy, captured[:question]
+        assert_not_equal result.composed, captured[:question]
+      end
+    end
+  end
+
+  test "pins locale and the selection gate keep the raw question" do
+    door_uri = "s3://bucket/puerta-1.pdf"
+    kone_uri = "s3://bucket/manual-kone.pdf"
+    session, question, result = field_session_at("T-B", entities: {
+      "puerta 1" => { "canonical_name" => "puerta 1", "source_uri" => door_uri, "aliases" => [] },
+      "Manual KONE" => { "canonical_name" => "Manual KONE", "source_uri" => kone_uri, "aliases" => [] }
+    })
+    seen_questions = []
+    original_new = Rag::PinnedEntityScopeResolver.method(:new)
+    Rag::PinnedEntityScopeResolver.define_singleton_method(:new) do |question:, **kwargs|
+      seen_questions << question
+      original_new.call(question: question, **kwargs)
+    end
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_followup_orchestrator do |captured|
+        travel_to FIELD_NOW do
+          @controller.send(
+            :execute_rag_query, question,
+            conv_session: session, correlation_id: "query:pins", account: accounts(:legacy),
+            entity_s3_uris: [ door_uri, kone_uri ],
+            episode_turn: result
+          )
+        end
+        assert_includes captured[:question], "Elemont"
+        assert_equal [ door_uri, kone_uri ], captured[:kwargs][:entity_s3_uris]
+        assert_equal :es, captured[:kwargs][:response_locale]
+      end
+    end
+
+    assert_equal [ question ], seen_questions
+  ensure
+    Rag::PinnedEntityScopeResolver.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
+  end
+
+  test "a selection label still gates before the composed question is searched" do
+    session = build_two_thread_session(follow: "Manual KONE", correlation_id: "query:pin")
+    session.update!(active_entities: {
+      "Manual KONE" => {
+        "canonical_name" => "Manual KONE",
+        "aliases" => [ "Manual KONE" ],
+        "source_uri" => "s3://bucket/manual-kone.pdf"
+      }
+    })
+    episode_turn = episode_result(
+      decision: :continued_elliptical,
+      composed: "#{SPRING_QUESTION}\nManual KONE"
+    )
+    result = nil
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_followup_orchestrator do |captured|
+        travel_to THREAD_NOW do
+          result = @controller.send(
+            :execute_rag_query, "Manual KONE",
+            conv_session: session, correlation_id: "query:pin", account: accounts(:legacy),
+            episode_turn: episode_turn
+          )
+        end
+        assert_nil captured[:kwargs]
+      end
+    end
+
+    assert_equal "deterministic_selection_gate", result.generation_mode
+  end
+
+  test "a KONE pin stays the retrieval scope of an Elemont continuation" do
+    kone_uri = "s3://bucket/manual-kone.pdf"
+    session, question, result = field_session_at("X-12", entities: {
+      "Manual KONE" => { "canonical_name" => "Manual KONE", "source_uri" => kone_uri, "aliases" => [] }
+    })
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_followup_orchestrator do |captured|
+        travel_to FIELD_NOW do
+          @controller.send(
+            :execute_rag_query, question,
+            conv_session: session, correlation_id: "query:x12", account: accounts(:legacy),
+            entity_s3_uris: [ kone_uri ],
+            episode_turn: result
+          )
+        end
+        assert_includes captured[:question], "Elemont"
+        assert_equal question, "código 8"
+        assert_equal [ kone_uri ], captured[:kwargs][:entity_s3_uris]
+        assert_equal true, captured[:kwargs][:force_entity_filter]
+      end
+    end
+  end
+
+  test "a photo turn does not use the episode composition" do
+    episode_turn = episode_result(decision: :continued_elliptical, composed: "#{SPRING_QUESTION}\ncódigo 8")
+    session = build_two_thread_session
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      with_followup_orchestrator do |captured|
+        @controller.send(
+          :execute_rag_query, "código 8",
+          images: [ { data: "abc", media_type: "image/jpeg" } ],
+          conv_session: session, account: accounts(:legacy),
+          episode_turn: episode_turn
+        )
+        assert_equal "código 8", captured[:question]
+      end
+    end
+  end
+
   private
 
   def build_measured_episode_session
@@ -2433,6 +2659,168 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     yield
   ensure
     Rails.logger = previous
+  end
+
+  def episode_result(decision:, composed:, reason: nil)
+    Rag::ActiveEpisodeTurn::Result.new(
+      decision: decision,
+      reason: reason,
+      state: {},
+      composed: composed,
+      fields_changed: []
+    )
+  end
+
+  def assert_episode_queries(row, case_id)
+    state = {}
+    history = []
+    Array(row["turns"]).each_with_index do |turn, index|
+      if turn["role"] == "assistant"
+        state = Rag::ActiveEpisodeTurn.apply_assistant(
+          state: state, text: turn["content"], now: FIELD_NOW, correlation_id: "query:a#{index}"
+        ).state
+        history << field_history_row("assistant", turn["content"], index)
+        next
+      end
+
+      result = Rag::ActiveEpisodeTurn.call(
+        state: state,
+        text: turn["content"],
+        now: FIELD_NOW,
+        enabled: true,
+        shared: false,
+        channel: "web",
+        correlation_id: "query:u#{index}"
+      )
+      history << field_history_row("user", turn["content"], index)
+      session = field_history_session(history)
+      calls = { rewriter: 0, resolver: 0 }
+      answer = nil
+
+      isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+        with_thread_chain_calls(calls) do
+          with_followup_orchestrator do |captured|
+            travel_to FIELD_NOW do
+              answer = @controller.send(
+                :execute_rag_query, turn["content"],
+                conv_session: session, correlation_id: "query:u#{index}", account: accounts(:legacy),
+                episode_turn: result
+              )
+            end
+            expected = result.composed.presence || turn["content"]
+            assert_operator expected.length, :<=, Rag::FollowupQueryRewriter::MAX_COMPOSED_CHARS, case_id
+            assert_not_includes expected, "unknown_confirmed", case_id
+            assert_not_includes expected, "absent_confirmed", case_id
+            assert_equal expected, captured[:question], "#{case_id} turn #{index}"
+            assert expected.end_with?(turn["content"]), "#{case_id} turn #{index} trimmed the turn"
+            assert_equal [], captured[:kwargs][:entity_s3_uris]
+            assert_equal false, captured[:kwargs][:force_entity_filter]
+            assert_elemont_code_turn(captured[:question]) if case_id == "T-B" && turn["content"] == "código 8"
+            if case_id == "T-G" && turn["content"].start_with?("Ahora estoy revisando")
+              assert_equal turn["content"], captured[:question]
+              assert_not_includes captured[:question], "Elemont"
+            end
+          end
+        end
+      end
+
+      assert_equal 0, calls[:rewriter], "#{case_id} called the rewriter"
+      assert_equal 0, calls[:resolver], "#{case_id} called the thread resolver"
+      assert_not_equal "deterministic_thread_menu", answer.generation_mode, case_id
+      state = result.state
+    end
+  end
+
+  def assert_elemont_code_turn(text)
+    %w[Elemont MH CEA15].each { |part| assert_includes text, part }
+    assert_includes text, "puerta 1"
+    assert_includes text, "código 8"
+  end
+
+  def field_session_at(case_id, entities: {})
+    row = FIELD_CASES.fetch(case_id)
+    state = {}
+    history = []
+    last = nil
+    question = nil
+    Array(row["turns"]).each_with_index do |turn, index|
+      if turn["role"] == "assistant"
+        state = Rag::ActiveEpisodeTurn.apply_assistant(
+          state: state, text: turn["content"], now: FIELD_NOW, correlation_id: "query:a#{index}"
+        ).state
+      else
+        last = Rag::ActiveEpisodeTurn.call(
+          state: state, text: turn["content"], now: FIELD_NOW, enabled: true,
+          shared: false, channel: "web", correlation_id: "query:u#{index}"
+        )
+        question = turn["content"]
+        state = last.state
+      end
+      history << field_history_row(turn["role"], turn["content"], index)
+    end
+    [ field_history_session(history, entities: entities), question, last ]
+  end
+
+  def field_history_session(history, entities: {})
+    ConversationSession.create!(
+      identifier: "field-concern-#{SecureRandom.hex(6)}",
+      channel: "web",
+      account: accounts(:legacy),
+      expires_at: 30.days.from_now,
+      conversation_history: history,
+      active_entities: entities
+    )
+  end
+
+  def field_history_row(role, content, index)
+    {
+      "role" => role,
+      "content" => content,
+      "ts" => (FIELD_NOW + index.minutes).iso8601,
+      "correlation_id" => "query:h#{index}"
+    }
+  end
+
+  def legacy_orchestrator_text(session, question)
+    followup = Rag::FollowupQueryRewriter.call(
+      question: question,
+      conversation_session: session,
+      account: accounts(:legacy),
+      correlation_id: "query:legacy",
+      now: FIELD_NOW
+    )
+    text = followup.applied ? followup.question : question
+    return text unless Rag::ThreadMenuFlag.enabled? && !followup.applied
+
+    thread = Rag::EpisodeThreadResolver.call(
+      question: question,
+      conversation_session: session,
+      correlation_id: "query:legacy",
+      locale: :es,
+      now: FIELD_NOW
+    )
+    case thread.outcome
+    when :join then thread.composed
+    when :menu then nil
+    else text
+    end
+  end
+
+  def with_thread_chain_calls(calls)
+    rewriter = Rag::FollowupQueryRewriter.method(:call)
+    resolver = Rag::EpisodeThreadResolver.method(:call)
+    Rag::FollowupQueryRewriter.define_singleton_method(:call) do |**kwargs|
+      calls[:rewriter] += 1
+      rewriter.call(**kwargs)
+    end
+    Rag::EpisodeThreadResolver.define_singleton_method(:call) do |**kwargs|
+      calls[:resolver] += 1
+      resolver.call(**kwargs)
+    end
+    yield
+  ensure
+    Rag::FollowupQueryRewriter.define_singleton_method(:call) { |*args, **kwargs| rewriter.call(*args, **kwargs) }
+    Rag::EpisodeThreadResolver.define_singleton_method(:call) { |*args, **kwargs| resolver.call(*args, **kwargs) }
   end
 
   def expected_short_scope(question, session, account)

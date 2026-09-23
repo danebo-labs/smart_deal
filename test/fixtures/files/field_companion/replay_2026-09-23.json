@@ -1,0 +1,195 @@
+{
+  "source": "tmp/pilot_exports/2026-09-23_2026-09-23_danebo-pilot-elevator/report.json and tmp/pilot_exports/2026-09-23_2026-09-23_danebo-legacy/report.json",
+  "generated_at": "2026-09-23T16:35:44-03:00",
+  "sanitized": "Sin user_id, account_id, costos, tokens, URIs ni cuerpos de chunk. Los documentos que eran solo un UUID se omiten.",
+  "utterance_rule": "question es el texto de PILOT_AUDIT. utterance es la última línea solo cuando question es el question anterior más un salto de línea más esa línea, y episode_decision es continued_elliptical, continued_mention o corrected. Si es continued_self_contained, utterance es question entero.",
+  "excluded": "Turnos con question vacío, el hilo de las 14:26 con typos, y el catálogo de la mañana en legacy (Excelsior, pines Crown, typos). No están en este archivo.",
+  "cases": [
+    {
+      "id": "R-A",
+      "account_slug": "danebo-pilot-elevator",
+      "turns": [
+        {
+          "occurred_at": "2026-09-23T15:11:35-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "opened",
+          "question": "Cómo se ajustan los resortes de la fijación de cables?",
+          "utterance": "Cómo se ajustan los resortes de la fijación de cables?",
+          "documents": [],
+          "answer_excerpt": "La documentación recuperada no contiene procedimientos específicos para ajustar los resortes de la fijación de cables de suspensión."
+        },
+        {
+          "occurred_at": "2026-09-23T15:12:05-03:00",
+          "outcome": "abstained",
+          "route": "text",
+          "episode_decision": "continued_self_contained",
+          "question": "Cómo se ajustan los resortes de la fijación de cables?\nFuji Yida",
+          "utterance": "Cómo se ajustan los resortes de la fijación de cables?\nFuji Yida",
+          "documents": [],
+          "answer_excerpt": "El documento no incluye este dato"
+        },
+        {
+          "occurred_at": "2026-09-23T15:12:28-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "continued_elliptical",
+          "question": "Cómo se ajustan los resortes de la fijación de cables?\nFuji Yida\nel modelo no lo sé",
+          "utterance": "el modelo no lo sé",
+          "documents": [],
+          "answer_excerpt": "La documentación recuperada no proporciona un procedimiento específico para ajustar los resortes de la fijación de cables en el equipo que usted menciona."
+        },
+        {
+          "occurred_at": "2026-09-23T15:12:44-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "continued_elliptical",
+          "question": "¿qué reviso primero?",
+          "utterance": "¿qué reviso primero?",
+          "documents": [
+            "AJUSTE MCINV5 — p. 8",
+            "II 15 Rev 01 - GFR2 - Mecgnica — p. 6"
+          ],
+          "answer_excerpt": "Según la documentación de ajuste previo para ascensores ThyssenKrupp, lo primero que debe revisar es el ajuste del freno y contacto BK."
+        },
+        {
+          "occurred_at": "2026-09-23T15:13:16-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "corrected",
+          "question": "Cómo se ajustan los resortes de la fijación de cables?\nFuji Yida\nel modelo no lo sé\nNo, no es Fuji Yida. Es KONE",
+          "utterance": "Cómo se ajustan los resortes de la fijación de cables?\nFuji Yida\nel modelo no lo sé\nNo, no es Fuji Yida. Es KONE",
+          "documents": [],
+          "answer_excerpt": "La documentación recuperada no proporciona un procedimiento específico para ajustar los resortes de la fijación de cables en un equipo KONE."
+        },
+        {
+          "occurred_at": "2026-09-23T15:13:43-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "continued_elliptical",
+          "question": "Ahora estoy revisando un KONE que no nivela en planta 3",
+          "utterance": "Ahora estoy revisando un KONE que no nivela en planta 3",
+          "documents": [
+            "KONE MiniSpace PT Instrucciones Instalación — p. 251",
+            "KONE MiniSpace PT Instrucciones Instalación — p. 284"
+          ],
+          "answer_excerpt": "La documentación de KONE especifica que la desviación máxima de nivelación en cada dirección debe ser de ± 5 mm."
+        },
+        {
+          "occurred_at": "2026-09-23T15:14:11-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "continued_elliptical",
+          "question": "Ahora estoy revisando un KONE que no nivela en planta 3\nno muestra ningún código",
+          "utterance": "no muestra ningún código",
+          "documents": [
+            "Codigos de Error BL6 — p. 2",
+            "Codigos de Error BL6 Controlador — p. 2",
+            "Codigos de Error BL6 Controlador — p. 1"
+          ],
+          "answer_excerpt": "Cuando un KONE no nivela en una planta sin mostrar código de error, la documentación disponible señala que el problema está relacionado con el sistema de posicionamiento o los interruptores de nivelación."
+        },
+        {
+          "occurred_at": "2026-09-23T15:14:32-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "continued_elliptical",
+          "question": "¿qué reviso primero?",
+          "utterance": "¿qué reviso primero?",
+          "documents": [
+            "AJUSTE MCINV5 — p. 8",
+            "ORONA — p. 65",
+            "II 15 Rev 01 - GFR2 - Mecgnica — p. 6"
+          ],
+          "answer_excerpt": "Según la documentación de ajuste previo para ascensores, el primer paso de la revisión mecánica es el ajuste del freno y contacto BK."
+        },
+        {
+          "occurred_at": "2026-09-23T15:15:00-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "new_episode",
+          "question": "Otra falla: Elemont MH con placa CEA15, la puerta 1 no magnetiza.",
+          "utterance": "Otra falla: Elemont MH con placa CEA15, la puerta 1 no magnetiza.",
+          "documents": [
+            "manual-cea15p — p. 84"
+          ],
+          "answer_excerpt": "El código 5 significa No pudo abrir la puerta y el código 4 significa No pudo cerrar la puerta."
+        },
+        {
+          "occurred_at": "2026-09-23T15:15:19-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "continued_elliptical",
+          "question": "¿qué reviso primero?\nOtra falla: Elemont MH con placa CEA15, la puerta 1 no magnetiza.\nOtra falla: Elemont MH con placa CEA15, la puerta 1 no magnetiza.\ncódigo 8",
+          "utterance": "¿qué reviso primero?\nOtra falla: Elemont MH con placa CEA15, la puerta 1 no magnetiza.\nOtra falla: Elemont MH con placa CEA15, la puerta 1 no magnetiza.\ncódigo 8",
+          "documents": [
+            "manual-cea51fb-das — p. 82",
+            "manual-cea15p — p. 84"
+          ],
+          "answer_excerpt": "El código 8 en el indicador de 7 segmentos del CEA15+ significa Alta temperatura en el motor."
+        }
+      ]
+    },
+    {
+      "id": "R-B",
+      "account_slug": "danebo-legacy",
+      "turns": [
+        {
+          "occurred_at": "2026-09-23T15:20:23-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "opened",
+          "question": "Elemont MH con placa CEA15, la puerta 1 no magnetiza. ¿Qué reviso?",
+          "utterance": "Elemont MH con placa CEA15, la puerta 1 no magnetiza. ¿Qué reviso?",
+          "documents": [
+            "manual-cea15p — p. 88",
+            "manual-cea15p — p. 89"
+          ],
+          "answer_excerpt": "La documentación disponible sobre la placa CEA15+ describe sus características eléctricas, pero no contiene procedimientos específicos de diagnóstico."
+        },
+        {
+          "occurred_at": "2026-09-23T15:20:41-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "continued_elliptical",
+          "question": "Elemont MH con placa CEA15, la puerta 1 no magnetiza. ¿Qué reviso?\nno muestra ningún código",
+          "utterance": "no muestra ningún código",
+          "documents": [
+            "manual-cea15p — p. 65",
+            "manual-cea15p — p. 84"
+          ],
+          "answer_excerpt": "La documentación disponible sobre la placa CEA15+ no contiene procedimientos específicos para diagnosticar fallas de magnetización."
+        },
+        {
+          "occurred_at": "2026-09-23T15:21:00-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "corrected",
+          "question": "Elemont MH con placa CEA15, la puerta 1 no magnetiza. ¿Qué reviso?\nno muestra ningún código\nNo, no es Elemont. Es KONE",
+          "utterance": "No, no es Elemont. Es KONE",
+          "documents": [
+            "manual-cea15p — p. 89",
+            "manual-cea15p — p. 85",
+            "KONE MonoSpace Special Instalación MX05 MX06 MX10 V3F18 — p. 374"
+          ],
+          "answer_excerpt": "La documentación disponible sobre la placa CEA15+ describe sus características físicas y sus mecanismos de diagnóstico."
+        },
+        {
+          "occurred_at": "2026-09-23T15:21:10-03:00",
+          "outcome": "answered",
+          "route": "text",
+          "episode_decision": "new_episode",
+          "question": "Nueva falla: Fuji Yida, el modelo no lo sé. ¿Qué reviso?",
+          "utterance": "Nueva falla: Fuji Yida, el modelo no lo sé. ¿Qué reviso?",
+          "documents": [
+            "Fuji Yida Elevator User Guide — p. 128",
+            "Fuji Yida Elevator User Guide — p. 114",
+            "Fuji Yida Elevator User Guide — p. 115",
+            "Fuji Yida Elevator User Guide — p. 129"
+          ],
+          "answer_excerpt": "Para un Fuji Yida con falla nueva, comienza por la inspección previa al encendido documentada en la sección de puesta en marcha."
+        }
+      ]
+    }
+  ]
+}

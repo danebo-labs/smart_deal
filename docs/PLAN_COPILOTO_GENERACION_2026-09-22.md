@@ -344,6 +344,22 @@ Muestra de voz. No se copia a `generation.txt`. No nombra marca ni cota:
 
 CG-D03 sigue prohibiendo inventar el paso, el número y el bloqueo. CG-D19 permite el principio de ese tipo de conjunto, dicho como orientación y no como instrucción del fabricante.
 
+### Entrada FC-D10 — identidad documental (23-sep-2026)
+
+Prioridad de producción. El defecto está vivo con `FIELD_COMPANION_TURN_ENABLED` apagada. El plan de Field Companion para en la Fase 2b y entrega aquí la clase A: no transplantar cableado ni valores, y analogía con manual, página y descargo. No se construye un filtro determinista de texto libre en ese plan.
+
+Casos en `tmp/field_companion_2026-09-23/gate_2/run.json`:
+
+| Turno | Qué no puede repetirse |
+|---|---|
+| R-B on #2 | Episodio Elemont. Ordena cortocircuito manual de BM/B1 y BM/B2. Cita Monarch 3000+ p. 84. US$0,334, dentro del tope. |
+| R-B off #2 | El mismo episodio, flag apagada. Pide revisar el cableado de esos terminales como controlador compatible. Ya está en producción. |
+| T-H on #2 | Procedimiento KONE: desconectar XB21 o XB24 y mover el ascensor. MonoSpace p. 444. «Aunque tu placa es CEA15» no es el descargo. |
+| T-B on #2 | El mismo procedimiento en imperativo. Fuera del tope de US$0,50. |
+| T-C on #1 | «debe ser de 6 ± 1 mm», cita KONE N MonoSpace p. 227, sin descargo. Fuera del tope. |
+
+La flag de turno empeora T-H #2, R-B #2 y T-B #2. No es la causa: R-B off #2 ya transplanta el otro controlador.
+
 Lahiri, 22-sep noche: foto con pregunta es una sola respuesta. El chat pintó primero el diagnóstico cacheado del transformador y después lo redibujó con la respuesta de los resortes. Eso está mal. La lectura de la foto entra en la prosa. No hay ficha, rótulos de visión ni un segundo mensaje.
 
 Verificado en la traza del 22-sep, cuenta 3, sesión 6. No es el menú.
@@ -357,7 +373,7 @@ Verificado en la traza del 22-sep, cuenta 3, sesión 6. No es el menú.
 |---|---|---|
 | Decisiones CG-D01–D15 | **Registradas 22-sep-2026.** | Este archivo. |
 | CG-D16 | **Reabierta 22-sep-2026, noche.** La opción (a) de la tarde queda sin efecto para lo que ve el técnico. Lista exhaustiva y parada también van en prosa. El código de la tarde sigue en el árbol. Sin implementar. | CG-D19. V38 queda como registro de la tarde. |
-| CG-D19 | **Abierta 22-sep-2026.** La prosa de compañero vale en todos los caminos ordinarios. Una aclaración no publica otra consulta de hilo. Sin menú. La ficha de la foto no muestra metadata de visión. Sin medición. Sin implementar. | Sección «CG-D19 — Prosa en todos los caminos». |
+| CG-D19 | **Abierta 22-sep-2026.** La prosa de compañero vale en todos los caminos ordinarios. Una aclaración no publica otra consulta de hilo. Sin menú. La ficha de la foto no muestra metadata de visión. Sin medición. Sin implementar. Prioridad añadida el 23-sep: FC-D10, identidad documental, casos R-B on #2, R-B off #2, T-H on #2, T-B on #2, T-C on #1. | Sección «CG-D19 — Prosa en todos los caminos». |
 | CG-D17 | **Cerrada en código 22-sep-2026.** Danebo y el piloto son conocimiento general de todo el RAG. `corpus_scope` elige general o solo-cuenta en la ingesta nueva. Sin sync. | `Rag::SharedManualCorpus`, `BedrockRagService#account_filter`. |
 | Validación del plan | **Cerrada 22-sep-2026**, HEAD `d81220b`, cero Bedrock. Baseline de tests verde (115/0). Medición de tamaño en V1. | Sección «Validación contra el repo». |
 | 0 | **Cerrada** por C2 y C4. Sin medición nueva. | H6 en el plan de continuidad; lectura de código del 22-sep. |

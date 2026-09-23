@@ -328,6 +328,49 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_includes block, "document on a screen"
   end
 
+  test "a named brand on a different photographed component is stated before any procedure" do
+    photo_value = {
+      canonical_name: "Transformador trifásico con fusibles",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "DEGRADED",
+      visible_codes: [ "FEDEOSTRI 6N6", "000AC006T0T0" ]
+    }
+
+    block = build_service(
+      question: "Cómo se ajustan los resortes de la fijación de cables ? es Fuji Yida",
+      photo_value: photo_value
+    ).send(:photo_evidence_block)
+
+    assert_includes block, "Say that mismatch first"
+    assert_includes block, "another manufacturer"
+    assert_includes block, "Component: Transformador trifásico con fusibles"
+    assert_operator block.length, :<=, Rag::PhotoQuestionAnswerService::EVIDENCE_BLOCK_MAX_CHARS
+  end
+
+  test "an illegible label on the named component does not claim a brand mismatch" do
+    photo_value = {
+      canonical_name: "Fijación de cables",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "UNKNOWN",
+      visible_codes: [ "UNKNOWN" ]
+    }
+
+    block = build_service(
+      question: "Cómo se ajustan los resortes de la fijación de cables ? es Fuji Yida",
+      photo_value: photo_value
+    ).send(:photo_evidence_block)
+
+    assert_not_includes block, "Say that mismatch first"
+  end
+
+  test "a screen question without a brand does not claim a component mismatch" do
+    block = build_service(question: "Que está mostrando la pantalla?").send(:photo_evidence_block)
+
+    assert_not_includes block, "Say that mismatch first"
+  end
+
   test "H9 does not fire on a controller screen" do
     ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = "true"
 

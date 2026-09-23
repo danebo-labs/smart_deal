@@ -18,12 +18,12 @@ module Rag
   #     inside some alias ("portátil", "Motor", "System") mis-scope
   #     retrieval — regresion 2026-09-15. When nothing clears both gates, the
   #     literal question travels alone, same as any text-only turn.
-  #   - The "Photo Evidence" session_context block is supporting CONTEXT for
-  #     GENERATION, not a restriction: it tells the model what was read off
-  #     the image so it can interpret the question, but procedures/values/
-  #     part identity still come only from the retrieved manuals. The actual
-  #     anti-substitution guardrail is the "# NO MATCH" instruction already in
-  #     app/prompts/bedrock/generation.txt, which applies to every turn.
+  #   - The "Photo Evidence" session_context block tells generation what was
+  #     read off the image. Procedures and values still come only from the
+  #     retrieved manuals. When the question names a brand and the photo
+  #     shows a different component, the block tells generation to say that
+  #     mismatch first and not apply that brand, or another manufacturer, to
+  #     the photographed part. "# NO MATCH" in generation.txt still applies.
   #
   # entity_sources is deliberately left empty (conv_session is NOT passed to
   # execute_rag_query) so RagRetrievalProfile falls back to OPEN_RESULTS — the
@@ -144,8 +144,9 @@ module Rag
       visible_codes = Array(@photo_value[:visible_codes]).presence&.join(", ") || UNKNOWN
       lines = [
         "## Photo Evidence (this turn)",
-        "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; use them to interpret the question. Procedures, values and part identity come only from the retrieved manuals."
+        "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base. Procedures and values come only from the retrieved manuals."
       ]
+      lines << brand_component_mismatch_line if brand_component_mismatch?
       if Rag::GroundedSynthesisFlag.enabled_for?(@account) && document_on_screen_photo?
         lines << "- This photo is a document on a screen, not the equipment. Printed titles are not the manufacturer."
       end
@@ -159,6 +160,29 @@ module Rag
         ]
       )
       lines.join("\n").truncate(EVIDENCE_BLOCK_MAX_CHARS, omission: "")
+    end
+
+    def brand_component_mismatch?
+      asked = brands_in(@question)
+      return false if asked.empty?
+      return false if (asked & brands_in(known(@photo_value[:manufacturer]).to_s)).any?
+
+      component = known(@photo_value[:canonical_name])
+      return false if component.blank?
+
+      (content_tokens(component) & (content_tokens(@question) - asked)).empty?
+    end
+
+    def brand_component_mismatch_line
+      "The brand named in the question was not read on this photo, and the photographed component is not the component asked about. Say that mismatch first. Do not apply that brand's procedure, or a fragment from another manufacturer, to the photographed component."
+    end
+
+    def brands_in(text)
+      content_tokens(text).select { |token| KbDocumentResolver::BRANDS.include?(token) }
+    end
+
+    def content_tokens(text)
+      I18n.transliterate(text.to_s).downcase.scan(/[a-z0-9]{4,}/)
     end
 
     def document_on_screen_photo?

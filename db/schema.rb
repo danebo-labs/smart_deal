@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_09_210300) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -148,6 +148,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_09_210300) do
   create_table "conversation_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.jsonb "active_entities", default: {}, null: false
+    t.jsonb "active_episode", default: {}, null: false
     t.string "channel", default: "web", null: false
     t.jsonb "conversation_history", default: [], null: false
     t.datetime "created_at", null: false

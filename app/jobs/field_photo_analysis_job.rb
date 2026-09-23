@@ -175,6 +175,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       correlation_id: correlation_id,
       field_photo_id: field_photo_id,
+      image_sha256: image_sha256,
       locale: locale,
       question: question
     )
@@ -215,6 +216,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       correlation_id: correlation_id,
       field_photo_id: field_photo_id,
+      image_sha256: image_sha256,
       locale: locale,
       question: question
     )
@@ -250,8 +252,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # photo-question RAG answer as a second broadcast on the same
   # correlation_id — see plan foto_mas_pregunta_correccion "Cambio B". Returns
   # the outcome String for the turn, consumed by emit_interaction_completed.
-  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil)
-    session&.add_to_history("assistant", value.fetch(:compact_context), user_id: user_id, correlation_id: correlation_id)
+  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil)
+    session&.record_photo_observation!(
+      photo_value: value,
+      field_photo_id: field_photo_id,
+      sha256: image_sha256,
+      correlation_id: correlation_id
+    )
+    session&.record_assistant_turn!(value.fetch(:compact_context), user_id: user_id, correlation_id: correlation_id)
 
     run_rag = Rag::PhotoQuestionFlag.enabled? && question.present?
     KbSyncBroadcaster.photo_analyzed(
@@ -270,7 +278,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     return photo_outcome(value[:analysis]) unless rag_answer
 
     unless rag_answer[:failed]
-      session&.add_to_history("assistant", rag_answer.fetch(:answer), user_id: user_id, correlation_id: correlation_id)
+      session&.record_assistant_turn!(rag_answer.fetch(:answer), user_id: user_id, correlation_id: correlation_id)
     end
     KbSyncBroadcaster.photo_question_answered(
       answer: rag_answer.fetch(:answer), citations: rag_answer[:citations],

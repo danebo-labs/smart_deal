@@ -65,18 +65,99 @@ class ConversationSession < ApplicationRecord
   # ─── History ────────────────────────────────────────────────────────────────
 
   def add_to_history(role, content, user_id: nil, correlation_id: nil)
-    history = conversation_history.last(MAX_HISTORY - 1)
-    history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
-    update!(conversation_history: history)
+    with_lock do
+      history = conversation_history.last(MAX_HISTORY - 1)
+      history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
+      update!(conversation_history: history)
+    end
   end
 
   # Combines `refresh!` (TTL bump) + `add_to_history` into a single UPDATE.
   # Used by the request-bound RAG path (RagController#ask) so we save one
   # round-trip to PostgreSQL on every user turn (3 writes → 2).
+  # The new history is built inside the lock, after the row is reloaded, so a
+  # photo job that loaded the session before vision cannot drop a text turn.
   def add_to_history_and_refresh(role, content, user_id: nil, correlation_id: nil)
-    history = conversation_history.last(MAX_HISTORY - 1)
-    history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
-    update!(conversation_history: history, expires_at: EXPIRY_DURATION.from_now)
+    with_lock do
+      history = conversation_history.last(MAX_HISTORY - 1)
+      history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
+      update!(conversation_history: history, expires_at: EXPIRY_DURATION.from_now)
+    end
+  end
+
+  # Flag off: the same single UPDATE as add_to_history_and_refresh, and nil.
+  # Flag on: history and active_episode in one UPDATE. The caller does not
+  # read the Result while the episode flag is the only one enabled.
+  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current)
+    unless episode_recording?
+      add_to_history_and_refresh("user", content, user_id: user_id, correlation_id: correlation_id)
+      return nil
+    end
+
+    result = nil
+    with_lock do
+      result = Rag::ActiveEpisodeTurn.call(
+        state: active_episode,
+        text: content.to_s,
+        role: "user",
+        now: now,
+        selection_turn: selection_turn,
+        correlation_id: correlation_id,
+        channel: channel,
+        enabled: true,
+        shared: false
+      )
+      history = conversation_history.last(MAX_HISTORY - 1)
+      history << history_message("user", content, user_id: user_id, correlation_id: correlation_id)
+      update!(
+        conversation_history: history,
+        active_episode: result.state,
+        expires_at: EXPIRY_DURATION.from_now
+      )
+    end
+    log_field_companion_turn(result, content, correlation_id: correlation_id)
+    result
+  end
+
+  # History stays truncated. pending_fact is calculated from the full reply.
+  def record_assistant_turn!(content, user_id:, correlation_id:)
+    unless episode_recording?
+      add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
+      return nil
+    end
+
+    result = nil
+    with_lock do
+      result = Rag::ActiveEpisodeTurn.apply_assistant(
+        state: active_episode,
+        text: content.to_s,
+        now: Time.current,
+        correlation_id: correlation_id
+      )
+      history = conversation_history.last(MAX_HISTORY - 1)
+      history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id)
+      attrs = { conversation_history: history }
+      attrs[:active_episode] = result.state if result.decision == :assistant
+      update!(attrs)
+    end
+    log_field_companion_turn(result, content, correlation_id: correlation_id) if result.decision == :assistant
+    result
+  end
+
+  def record_photo_observation!(photo_value:, field_photo_id:, sha256:, correlation_id:)
+    return nil unless episode_recording?
+
+    with_lock do
+      episode = Rag::ActiveEpisode.parse(active_episode, now: Time.current)
+      episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: Time.current) if episode.blank?
+      apply_photo_observation!(episode, photo_value, field_photo_id, sha256, correlation_id)
+      episode.touch!(Time.current)
+      update!(active_episode: episode.to_h)
+    end
+  end
+
+  def reset_active_episode!
+    with_lock { update!(active_episode: {}) }
   end
 
   def history_for_prompt
@@ -303,6 +384,62 @@ class ConversationSession < ApplicationRecord
     message["user_id"] = user_id if user_id.present?
     message["correlation_id"] = correlation_id if correlation_id.present?
     message
+  end
+
+  def episode_recording?
+    Rag::FieldCompanionEpisodeFlag.enabled? && channel == "web" && !SharedSession::ENABLED
+  end
+
+  def apply_photo_observation!(episode, photo_value, field_photo_id, sha256, correlation_id)
+    photo = { "correlation_id" => correlation_id.to_s }
+    photo["field_photo_id"] = field_photo_id if field_photo_id.present?
+    photo["sha256"] = sha256 if sha256.present?
+    episode.active_photo = photo
+
+    readings = photo_value.to_h.stringify_keys
+    apply_photo_fact!(episode, "manufacturer", readings["manufacturer"], correlation_id)
+    apply_photo_fact!(episode, "model", readings["model_visible"] || readings["model"], correlation_id)
+  end
+
+  def apply_photo_fact!(episode, key, raw, correlation_id)
+    text = raw.to_s.squish
+    return if text.blank? || text.casecmp?("unknown")
+
+    existing = episode.fact(key)
+    same = existing && Rag::FollowupQueryRewriter.normalize_label(existing["value"]) == Rag::FollowupQueryRewriter.normalize_label(text)
+    if existing.nil? || existing["status"] == "unknown_confirmed" || (existing["source"] == "photo" && !same)
+      episode.write_fact!(
+        key,
+        status: "known",
+        value: text,
+        source: "photo",
+        correlation_id: correlation_id,
+        at: Time.current.iso8601
+      )
+    elsif existing["status"] == "known" && existing["source"] == "user" && !same
+      episode.add_conflict!(fact: key, user: existing["value"], photo: text, correlation_id: correlation_id)
+    end
+  end
+
+  # Shadow does not change the text sent to the orchestrator, so both digests
+  # are of that original turn. composed_chars records the unused composition.
+  def log_field_companion_turn(result, content, correlation_id:)
+    digest = Digest::SHA256.hexdigest(content.to_s)
+    PilotUsageLog.log(
+      "field_companion_turn",
+      account_id: account_id,
+      conversation_session_id: id,
+      correlation_id: correlation_id,
+      route: "field_companion",
+      result: result.decision.to_s,
+      outcome_reason: result.reason,
+      episode_id: result.state["episode_id"],
+      episode_decision: result.decision.to_s,
+      episode_fields_changed: result.fields_changed,
+      composed_chars: result.composed&.length,
+      original_sha256: digest,
+      effective_sha256: digest
+    )
   end
 
   def pinned_entity_type(kb_doc)

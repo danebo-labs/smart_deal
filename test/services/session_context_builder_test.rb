@@ -446,4 +446,318 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   ensure
     original.nil? ? ENV.delete("RAG_EPISODE_SCOPE_ENABLED") : ENV["RAG_EPISODE_SCOPE_ENABLED"] = original
   end
+
+  # Active Field Problem — Phase 2a. Both flags off keeps the context unchanged.
+  FIELD_PROBLEM_NOW = Time.zone.parse("2026-09-23T15:00:00-03:00")
+
+  test "active field problem is prepended for a current episode when both flags are on" do
+    session = episode_session(
+      goal: "Resortes",
+      facts: {
+        "manufacturer" => known_fact("Fuji Yida"),
+        "model" => confirmed_fact("unknown_confirmed")
+      }
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      session.add_to_history("user", "el modelo no lo sé")
+      with_companion_flags do
+        context = SessionContextBuilder.build(session)
+        block, rest = context.split("\n\n", 2)
+
+        assert context.start_with?(SessionContextBuilder::PROBLEM_HEADER)
+        assert_equal SessionContextBuilder.field_problem_block(session), block
+        assert_operator block.length, :<=, SessionContextBuilder::MAX_PROBLEM_CHARS
+        assert_includes block, "Goal: Resortes"
+        assert_includes block, "Manufacturer: Fuji Yida (technician)"
+        assert_includes block, "Model: technician confirmed it is unknown; do not ask for it again."
+        assert_includes block, SessionContextBuilder::PROBLEM_FOOTER
+        assert_not_includes block, "unknown_confirmed"
+        assert_includes rest, "Recent Conversation"
+        assert context.index("Active Field Problem") < context.index("Recent Conversation")
+      end
+    end
+  end
+
+  test "active field problem uses the closed fact lines and omits empty ones" do
+    session = episode_session(
+      goal: "Puerta 1",
+      facts: {
+        "manufacturer" => known_fact("Elemont"),
+        "fault_code" => confirmed_fact("absent_confirmed")
+      }
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+
+        assert_equal <<~BLOCK.strip, block
+          ## Active Field Problem (technician-stated job state, not documentary evidence)
+          Goal: Puerta 1
+          Manufacturer: Elemont (technician)
+          Fault code: technician confirmed no code is shown; do not ask for it again.
+          These facts identify the job. Procedures, values, terminals and code meanings still come only from retrieved evidence. If the current question names different equipment, ignore this block.
+        BLOCK
+        assert_not_includes block, "absent_confirmed"
+        assert_not_includes block, "\n\n"
+      end
+    end
+  end
+
+  test "identifiers use the technician line when the block has room" do
+    session = episode_session(
+      goal: "Puerta 1",
+      facts: { "manufacturer" => known_fact("Elemont") },
+      identifiers: [
+        { "value" => "MH", "source" => "user", "correlation_id" => "q" },
+        { "value" => "CEA15", "source" => "user", "correlation_id" => "q" }
+      ]
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+        assert_includes block, "Identifiers typed by the technician: MH, CEA15"
+        assert_operator block.length, :<=, SessionContextBuilder::MAX_PROBLEM_CHARS
+      end
+    end
+  end
+
+  test "photo reads and conflicts stay literal and do not replace the technician" do
+    photo = episode_session(
+      goal: "Placa",
+      facts: {
+        "manufacturer" => known_fact("Fuji Yida"),
+        "model" => known_fact("X1", source: "photo")
+      }
+    )
+    conflict = episode_session(
+      goal: "",
+      facts: { "manufacturer" => known_fact("Fuji Yida") },
+      conflicts: [
+        { "fact" => "manufacturer", "user" => "Fuji Yida", "photo" => "KONE", "correlation_id" => "photo:1" }
+      ]
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        photo_block = SessionContextBuilder.field_problem_block(photo)
+        conflict_block = SessionContextBuilder.field_problem_block(conflict)
+
+        assert_includes photo_block, "Manufacturer: Fuji Yida (technician)"
+        assert_includes photo_block, "Read from the photo, not stated by the technician: model X1"
+        assert_not_includes photo_block, "Model: X1 (technician)"
+        assert_includes conflict_block, "Conflict: technician said Fuji Yida; the photo shows KONE. Mention it; do not resolve it."
+        assert_not_includes conflict_block, "Manufacturer: KONE"
+      end
+    end
+  end
+
+  test "a confirmed-unknown model stays in the block when the goal is long" do
+    session = episode_session(
+      goal: "Cómo se ajustan los resortes de la fijación de cables ?",
+      facts: {
+        "manufacturer" => known_fact("Fuji Yida"),
+        "model" => confirmed_fact("unknown_confirmed")
+      }
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+
+        assert_operator block.length, :<=, SessionContextBuilder::MAX_PROBLEM_CHARS
+        assert_includes block, "do not ask for it again"
+        assert_includes block, "Manufacturer: Fuji Yida (technician)"
+        assert_includes block, SessionContextBuilder::PROBLEM_FOOTER
+      end
+    end
+  end
+
+  test "active field problem is absent unless both flags are on" do
+    session = episode_session(facts: { "manufacturer" => known_fact("Fuji Yida") })
+
+    travel_to FIELD_PROBLEM_NOW do
+      session.add_to_history("user", "Fuji Yida")
+      off = SessionContextBuilder.build(session)
+      assert_not_includes off, "Active Field Problem"
+
+      [ [ true, false ], [ false, true ], [ false, false ] ].each do |episode_flag, turn_flag|
+        with_companion_flags(episode: episode_flag, turn: turn_flag) do
+          assert_equal off, SessionContextBuilder.build(session)
+        end
+      end
+    end
+  end
+
+  test "active field problem is absent when the episode is expired or invalid" do
+    expired = episode_session(
+      facts: { "manufacturer" => known_fact("Fuji Yida") },
+      updated_at: FIELD_PROBLEM_NOW - 5.hours
+    )
+    invalid = episode_session(facts: { "manufacturer" => known_fact("Fuji Yida") })
+    invalid.update!(active_episode: { "v" => 9 })
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        assert_not_includes SessionContextBuilder.build(expired), "Active Field Problem"
+        assert_equal "", SessionContextBuilder.field_problem_block(invalid)
+        assert_nothing_raised { SessionContextBuilder.build(invalid) }
+      end
+    end
+  end
+
+  test "active field problem does not copy pinned document text" do
+    session = episode_session(
+      goal: "Resortes",
+      facts: { "manufacturer" => known_fact("Fuji Yida") }
+    )
+    session.add_entity("DOC_ONLY_SENTINEL_MANUAL", {
+      "source" => "user_pin",
+      "entity_type" => "document",
+      "source_uri" => "s3://manuals/sentinel.pdf",
+      "first_answer_summary" => "DOCUMENTARY_TERMINAL_VALUE_99"
+    })
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+        context = SessionContextBuilder.build(session)
+        footer_at = context.index(SessionContextBuilder::PROBLEM_FOOTER)
+        rendered = context[0, footer_at + SessionContextBuilder::PROBLEM_FOOTER.length]
+
+        assert_not_includes block, "DOC_ONLY_SENTINEL_MANUAL"
+        assert_not_includes block, "DOCUMENTARY_TERMINAL_VALUE_99"
+        assert_not_includes block, "s3://manuals/sentinel.pdf"
+        assert_equal block, rendered
+        assert_includes context, "DOC_ONLY_SENTINEL_MANUAL"
+        assert_includes context, "DOCUMENTARY_TERMINAL_VALUE_99"
+      end
+    end
+  end
+
+  test "active field problem keeps its own budget when pins and history fill the context" do
+    aliases = 5.times.map { |index| "Alias #{index} " + ("A" * 40) }
+    entities = 6.times.to_h do |index|
+      [
+        "Pinned manual #{index} " + ("N" * 60),
+        {
+          "source" => "user_pin",
+          "entity_type" => "document",
+          "aliases" => aliases,
+          "first_answer_summary" => "S" * 240,
+          "added_at" => FIELD_PROBLEM_NOW.iso8601
+        }
+      ]
+    end
+    session = episode_session(
+      goal: "G" * 300,
+      facts: {
+        "manufacturer" => known_fact("Fuji Yida"),
+        "model" => confirmed_fact("unknown_confirmed")
+      }
+    )
+    session.update!(
+      active_entities: entities,
+      conversation_history: 3.times.map { |index|
+        { "role" => "user", "content" => "H" * 280, "ts" => (FIELD_PROBLEM_NOW - index.minutes).iso8601 }
+      }
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+        context = SessionContextBuilder.build(session)
+
+        assert context.start_with?(block)
+        assert_operator block.length, :<=, SessionContextBuilder::MAX_PROBLEM_CHARS
+        assert_includes block, "do not ask for it again"
+        assert_includes block, SessionContextBuilder::PROBLEM_FOOTER
+        assert_equal SessionContextBuilder::MAX_CONTEXT_CHARS, context.length
+        assert_not_includes block, "Pinned manual"
+      end
+    end
+  end
+
+  test "active field problem is not read outside a private web session" do
+    web = episode_session(facts: { "manufacturer" => known_fact("Fuji Yida") })
+    whatsapp = episode_session(
+      channel: "whatsapp",
+      facts: { "manufacturer" => known_fact("Fuji Yida") }
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        assert_includes SessionContextBuilder.field_problem_block(web), "Fuji Yida"
+        assert_equal "", SessionContextBuilder.field_problem_block(whatsapp)
+
+        with_shared_session do
+          assert_equal "", SessionContextBuilder.field_problem_block(web)
+        end
+      end
+    end
+  end
+
+  private
+
+  def episode_session(goal: "Resortes", facts: {}, identifiers: [], conflicts: [], updated_at: nil, channel: "web")
+    ConversationSession.create!(
+      identifier: "#{channel}:field_problem_#{SecureRandom.hex(4)}",
+      channel: channel,
+      expires_at: 30.days.from_now,
+      active_episode: {
+        "v" => 1,
+        "episode_id" => "ep_field_problem",
+        "status" => "active",
+        "opened_at" => (FIELD_PROBLEM_NOW - 1.hour).iso8601,
+        "updated_at" => (updated_at || (FIELD_PROBLEM_NOW - 5.minutes)).iso8601,
+        "goal" => { "text" => goal, "correlation_id" => "query:1", "truncated" => false },
+        "facts" => facts,
+        "identifiers" => identifiers,
+        "conflicts" => conflicts
+      }
+    )
+  end
+
+  def known_fact(value, source: "user")
+    {
+      "status" => "known",
+      "value" => value,
+      "source" => source,
+      "correlation_id" => "query:1",
+      "at" => FIELD_PROBLEM_NOW.iso8601
+    }
+  end
+
+  def confirmed_fact(status)
+    {
+      "status" => status,
+      "source" => "user",
+      "correlation_id" => "query:1",
+      "at" => FIELD_PROBLEM_NOW.iso8601
+    }
+  end
+
+  def with_companion_flags(episode: true, turn: true)
+    keys = %w[FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED]
+    previous = keys.index_with { |key| ENV[key] }
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = episode ? "true" : "false"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = turn ? "true" : "false"
+    yield
+  ensure
+    previous.each do |key, old|
+      old.nil? ? ENV.delete(key) : ENV[key] = old
+    end
+  end
+
+  def with_shared_session
+    original = SharedSession::ENABLED
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, true)
+    yield
+  ensure
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, original)
+  end
 end

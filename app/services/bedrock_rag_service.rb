@@ -587,22 +587,19 @@ class BedrockRagService
     )
     original = Array(retrieval[:chunks])
     applied = Rag::DocumentIdentityScope.apply(original, episode)
-    bodies_changed = applied.chunks.zip(original).any? { |scoped, source| scoped[:content] != source[:content] }
-    if applied.chunks.size != original.size || bodies_changed
-      Rails.logger.warn("[DOCUMENT_IDENTITY] chunk_set_changed; retrieve_and_generate unchanged")
+    if applied.chunks.size != original.size
+      Rails.logger.warn("[DOCUMENT_IDENTITY] chunk_count_changed; retrieve_and_generate unchanged")
       return nil
     end
 
-    labeled = applied.labels.any?(&:present?)
     record_document_identity_scope(
       original, applied,
-      path: labeled ? "document_identity" : "retrieve_and_generate"
+      path: applied.redacted.positive? ? "document_identity" : "retrieve_and_generate"
     )
-    return nil unless labeled
+    return nil unless applied.redacted.positive?
 
     prompt = document_identity_generation_prompt(
       question, applied.chunks,
-      labels: applied.labels,
       response_locale: response_locale,
       session_context: session_context,
       output_channel: output_channel
@@ -619,7 +616,11 @@ class BedrockRagService
           correlation_id: correlation_id
         }
       )
+    rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
+      return document_identity_technical_failure(e)
     rescue StandardError => e
+      raise unless e.class.name.start_with?("Aws::", "Seahorse::")
+
       return document_identity_technical_failure(e)
     end
     if raw_answer.blank?
@@ -643,8 +644,7 @@ class BedrockRagService
     document_identity_technical_failure(e)
   end
 
-  def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:,
-                                          labels: [])
+  def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:)
     template = load_generation_prompt_with_locale(
       question,
       response_locale: response_locale,
@@ -653,7 +653,7 @@ class BedrockRagService
     )
     template
       .sub("$query$") { question.to_s }
-      .sub("$search_results$") { Rag::DocumentIdentityScope.generation_context(chunks, labels) }
+      .sub("$search_results$") { Rag::DocumentIdentityScope.generation_context(chunks) }
       .sub(OUTPUT_FORMAT_PLACEHOLDER) { DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS }
   end
 
@@ -662,18 +662,15 @@ class BedrockRagService
   end
 
   def record_document_identity_scope(original, applied, path:, fallback: false)
-    labels = applied.labels
     stats = {
       "retrieved" => original.size,
       "sent" => applied.chunks.size,
-      "labels" => labels.count(&:present?),
-      "other_equipment" => labels.count { |line| line.to_s.start_with?("OTHER EQUIPMENT:") },
-      "this_job" => labels.count { |line| line.to_s.start_with?("THIS JOB'S EQUIPMENT:") },
+      "with_body" => applied.chunks.size - applied.redacted,
+      "redacted" => applied.redacted,
       "unconfirmed_general" => applied.unconfirmed_general,
       "undeclared_private" => applied.undeclared_private,
       "path" => path,
-      "fallback" => fallback,
-      "label_lines" => labels.compact
+      "fallback" => fallback
     }
     Thread.current[:document_identity_scope] = stats
     Rails.logger.info("[DOCUMENT_IDENTITY] #{stats.to_json}")

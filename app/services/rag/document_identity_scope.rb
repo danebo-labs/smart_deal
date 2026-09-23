@@ -1,104 +1,166 @@
 # frozen_string_literal: true
 
 module Rag
-  # FC-D12. The label is computed from the retrieved chunk. The catalog is not
-  # consulted. A matching chunk keeps its body and gains one line. Every other
-  # chunk stays unlabeled. The fixed rule is one line at the start of the
-  # context, and only when at least one chunk matches.
+  # A confirmed document of another team loses only its body, in the same
+  # place. Unconfirmed chunks, missing entries, and private manuals keep the
+  # body retrieve_and_generate would send.
   class DocumentIdentityScope
-    Result = Data.define(:chunks, :labels, :blocked, :undeclared_private, :unconfirmed_general)
-    PREAMBLE = "Only evidence marked THIS JOB'S EQUIPMENT can support a step, terminal, code, or value for this job. " \
-               "Any other evidence is a reference: quote what that manual documents for its own equipment, " \
-               "with manual and page, and say it must be confirmed in the field. " \
-               "Do not reproduce a short-circuit, bridge, or disconnection of another equipment's terminals: " \
-               "say what that test checks. Compatibility with this job is not established unless a document states it."
-    IDENTITY_FIELDS = %w[canonical_name original_filename section_identity].freeze
+    Result = Data.define(:chunks, :blocked, :undeclared_private, :unconfirmed_general, :redacted)
+    REFERENCE = "Reference only, other equipment."
+    HEADING_LINE = Rag::EvidenceCandidateSelector::HEADING_LINE
 
     def self.applicable?(episode)
       return false unless DocumentIdentityScopeFlag.enabled?
+      return false unless DocumentIdentityCatalog.current.activatable?
 
-      fact = parsed_episode(episode).fact("manufacturer")
+      parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+      fact = parsed.fact("manufacturer")
       fact&.dig("status") == "known" && fact["value"].present?
     end
 
     def self.apply(chunks, episode)
-      needles = match_needles(episode)
-      labels = Array(chunks).map { |chunk| label_for(chunk, needles) }
+      episode_labels = episode_labels(episode)
+      identifiers = identifier_labels(episode)
+      catalog = DocumentIdentityCatalog.current
+      undeclared_private = 0
+      unconfirmed_general = 0
+      redacted = 0
+      scoped = []
+
+      Array(chunks).each do |chunk|
+        metadata = metadata_of(chunk)
+        account_id = metadata["account_id"].to_s
+        document_id = metadata["document_id"].to_s
+
+        if account_id.blank? || document_id.blank?
+          unconfirmed_general += 1
+          log_unconfirmed(account_id, document_id)
+          scoped << chunk
+        elsif DocumentIdentityCatalog::GENERAL_ACCOUNT_IDS.exclude?(account_id)
+          undeclared_private += 1
+          Rails.logger.info(
+            "[DOCUMENT_IDENTITY] undeclared_private account_id=#{account_id} document_id=#{document_id}"
+          )
+          scoped << chunk
+        else
+          entry = catalog.find(account_id, document_id)
+          if DocumentIdentityCatalog.effectively_confirmed?(entry) &&
+             !keep_body?(entry, episode_labels, identifiers)
+            scoped << redact(chunk, metadata)
+            redacted += 1
+          else
+            unless DocumentIdentityCatalog.effectively_confirmed?(entry)
+              unconfirmed_general += 1
+              log_unconfirmed(account_id, document_id)
+            end
+            scoped << chunk
+          end
+        end
+      end
+
       Result.new(
-        chunks: Array(chunks),
-        labels: labels,
-        blocked: false,
-        undeclared_private: 0,
-        unconfirmed_general: 0
+        chunks: scoped, blocked: false,
+        undeclared_private: undeclared_private,
+        unconfirmed_general: unconfirmed_general,
+        redacted: redacted
       )
     end
 
-    # Same chunks, same order. The preamble is one line before the results.
-    # A label is one line before that chunk's body.
-    def self.generation_context(chunks, labels = [])
-      body = Array(chunks).each_with_index.map { |chunk, index|
-        content = chunk[:content].to_s
-        label = labels[index]
-        content = "#{label}\n#{content}" if label.present?
+    # Same chunks, same order, as the search results of this turn.
+    def self.generation_context(chunks)
+      Array(chunks).each_with_index.map do |chunk, index|
         [
           "<search_result>",
           "<content>",
-          content,
+          chunk[:content].to_s,
           "</content>",
           "<source>",
           (index + 1).to_s,
           "</source>",
           "</search_result>"
         ].join("\n")
-      }.join("\n")
-      return body unless Array(labels).any?(&:present?)
-
-      "#{PREAMBLE}\n#{body}"
+      end.join("\n")
     end
 
-    def self.this_job_line(canonical_name)
-      "THIS JOB'S EQUIPMENT: #{canonical_name}"
+    def self.episode_labels(episode)
+      parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+      values = []
+      %w[manufacturer model].each do |key|
+        fact = parsed.fact(key)
+        values << fact["value"] if fact&.dig("status") == "known"
+      end
+      parsed.identifiers.each { |item| values << item["value"] }
+      normalize_labels(values)
     end
 
-    def self.label_for(chunk, needles)
-      return if needles.empty?
-      return unless identity_matches?(chunk, needles)
-
-      this_job_line(metadata_of(chunk)["canonical_name"].to_s.strip)
+    def self.identifier_labels(episode)
+      parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+      normalize_labels(parsed.identifiers.pluck("value"))
     end
-    private_class_method :label_for
 
-    def self.identity_matches?(chunk, needles)
-      metadata = metadata_of(chunk)
-      IDENTITY_FIELDS.any? do |field|
-        needles.any? { |needle| contains_word?(metadata[field], needle) }
+    def self.normalize_labels(values)
+      values.filter_map { |value| FollowupQueryRewriter.normalize_label(value).presence }.uniq
+    end
+    private_class_method :normalize_labels
+
+    def self.keep_body?(entry, episode_labels, identifiers)
+      return true if entry.generic || entry.role.blank?
+
+      case entry.role
+      when "equipment"
+        matches?(entry, episode_labels)
+      when "component"
+        identifiers.empty? || matches?(entry, identifiers)
+      else
+        true
       end
     end
-    private_class_method :identity_matches?
+    private_class_method :keep_body?
 
-    def self.contains_word?(haystack, needle)
-      normalized = FollowupQueryRewriter.normalize_label(haystack)
-      label = FollowupQueryRewriter.normalize_label(needle)
-      return false if normalized.blank? || label.blank?
-
-      normalized.match?(/\b#{Regexp.escape(label)}\b/)
+    def self.matches?(entry, labels)
+      document_labels = (entry.brands + entry.designators).filter_map do |value|
+        FollowupQueryRewriter.normalize_label(value).presence
+      end
+      document_labels.intersect?(labels)
     end
-    private_class_method :contains_word?
+    private_class_method :matches?
 
-    def self.match_needles(episode)
-      parsed = parsed_episode(episode)
-      values = []
-      fact = parsed.fact("manufacturer")
-      values << fact["value"] if fact&.dig("status") == "known"
-      parsed.identifiers.each { |item| values << item["value"] }
-      values.map { |value| value.to_s.strip }.compact_blank.uniq
-    end
-    private_class_method :match_needles
+    def self.redact(chunk, metadata)
+      title = section_title(chunk, metadata)
+      page = metadata["page_number"].presence || "unknown"
+      name = metadata["canonical_name"].to_s.presence || "unknown"
+      body = "#{REFERENCE} Document: #{name}. Page: #{page}."
+      body = "#{body} Section: #{title}." if title
 
-    def self.parsed_episode(episode)
-      episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+      chunk.merge(
+        content: body,
+        metadata: metadata.except("section_identity"),
+        chunk_sha256: Digest::SHA256.hexdigest(body)
+      )
     end
-    private_class_method :parsed_episode
+    private_class_method :redact
+
+    def self.section_title(chunk, metadata)
+      title = metadata["section_identity"].to_s.strip
+      title = heading_title(chunk[:content]) if title.blank?
+      return if title.blank? || title.match?(/\d|\//)
+
+      title
+    end
+    private_class_method :section_title
+
+    def self.heading_title(content)
+      line = content.to_s.lines.map(&:strip).find { |candidate| candidate.match?(HEADING_LINE) }
+      line&.sub(HEADING_LINE, '\1')&.strip
+    end
+    private_class_method :heading_title
+
+    def self.log_unconfirmed(account_id, document_id)
+      Rails.logger.info(
+        "[DOCUMENT_IDENTITY] unconfirmed_general account_id=#{account_id} document_id=#{document_id}"
+      )
+    end
+    private_class_method :log_unconfirmed
 
     def self.metadata_of(chunk)
       chunk[:metadata].to_h.stringify_keys

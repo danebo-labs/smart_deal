@@ -301,6 +301,60 @@ class RagRetrievalProfileTest < ActiveSupport::TestCase
     end
   end
 
+  test "pinned exact designator lookup stays on the narrow document budget" do
+    profile = RagRetrievalProfile.new(entity_sources: [ "document" ], question: "¿Qué es K1?")
+
+    assert profile.pinned_exact_designator_lookup?(document_pins: 1)
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, profile.number_of_results
+  end
+
+  test "an unpinned exact designator keeps the open budget and stays off the branch" do
+    profile = RagRetrievalProfile.new(entity_sources: [], question: "¿Qué es K1?")
+
+    assert_not profile.pinned_exact_designator_lookup?(document_pins: 0)
+    assert_equal RagRetrievalProfile::OPEN_RESULTS, profile.number_of_results
+  end
+
+  test "pinned exact designator lookup accepts one designator on one pin" do
+    [
+      "¿Qué es K1?",
+      "¿Qué es Q1?",
+      "¿Qué indica T2?",
+      "¿Qué función tiene K7?",
+      "¿Qué hay en el borne 12?",
+      "¿Qué función tiene el terminal 12?"
+    ].each do |question|
+      profile = RagRetrievalProfile.new(entity_sources: [ "document" ], question: question)
+      assert profile.pinned_exact_designator_lookup?(document_pins: 1), question
+    end
+  end
+
+  test "pinned exact designator lookup rejects procedures, other intents, and LED questions" do
+    rejected = [
+      [ "¿Qué es K1?", 0 ],
+      [ "¿Qué es K1?", 2 ],
+      [ "¿Cómo ajusto K1?", 1 ],
+      [ "¿Cómo pruebo K1?", 1 ],
+      [ "¿Qué pasos sigo para cambiar K1?", 1 ],
+      [ "¿Qué reviso primero?", 1 ],
+      [ "Si falla K1, ¿debo detener el trabajo?", 1 ],
+      [ "Lista completa de las pruebas de K1", 1 ],
+      [ "Compara K1 y K7", 1 ],
+      [ "¿Qué indica el LED ABC12?", 1 ],
+      [ "¿Qué indica el LED 31?", 1 ],
+      [ "¿Qué indica esta señal?", 1 ],
+      [ "Problema en borne 12", 1 ],
+      [ "Problema borne 12", 1 ],
+      [ "Tengo una falla en el borne 12", 1 ],
+      [ "Tengo falla en terminal 12", 1 ]
+    ]
+
+    rejected.each do |question, pins|
+      profile = RagRetrievalProfile.new(entity_sources: [ "document" ], question: question)
+      assert_not profile.pinned_exact_designator_lookup?(document_pins: pins), "#{pins} #{question}"
+    end
+  end
+
   private
 
   def route_eligible?(profile, entity_sources:)

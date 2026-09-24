@@ -112,6 +112,10 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_nil build_route
   end
 
+  test "build admits a pinned exact designator lookup" do
+    assert build_route(question: "¿Qué es K1?")
+  end
+
   test "executes exactly one retrieve, replaces a divider through section_identity, and builds real citations" do
     divider = divider_chunk
     neighbor = neighbor_chunk
@@ -351,6 +355,162 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_empty outcome.result[:citations]
     assert_empty generator.calls
     assert_equal 1, rag_service.calls.size
+  end
+
+  test "exact designator lookup compacts K1 conflicts without using alias lines" do
+    chunks = [
+      designator_chunk(1, "[SEARCH_ALIASES: K1, 24VAC SUBE]\nH14 aparece en el listado junto con H13\n- K1: Contactor/relé — bobina A1-A2. Contactos: 21, 24 (principal). Involucrado en circuito SUBE/BAJA."),
+      designator_chunk(2, "ACTION: K1 Contactor 24VAC SUBE\n| K1 | Contactor 24VAC SUBE |"),
+      designator_chunk(3, "| K1 | Contactor/relé | 24VDC (impreso en plano) |"),
+      designator_chunk(4, "- K1: Contactor principal (asociado a Q2)")
+    ]
+    selected = route_for_selection("¿Qué es K1?").send(:compact_designator_chunks, chunks)
+
+    assert_equal [ 1, 2, 3, 4 ], selected.map { |chunk| chunk[:metadata]["page_number"] }
+    joined = selected.pluck(:content).join("\n")
+    assert_includes joined, "24VAC SUBE"
+    assert_includes joined, "24VDC"
+    assert_includes joined, "SUBE/BAJA"
+    assert_includes joined, "asociado a Q2"
+    assert_not_includes joined, "SEARCH_ALIASES"
+    assert_not_includes joined, "H14 aparece"
+    selected.each do |chunk|
+      assert_equal @source_uri, chunk[:metadata]["original_source_uri"]
+      assert chunk[:chunk_sha256].present?
+    end
+  end
+
+  test "exact designator lookup only treats the first table cell as the designator" do
+    chunks = [
+      designator_chunk(1, "| K1 | Contactor 24VAC SUBE |"),
+      designator_chunk(2, "| Contacto auxiliar | K1 | otro dato |")
+    ]
+    selected = route_for_selection("¿Qué es K1?").send(:compact_designator_chunks, chunks)
+
+    assert_equal [ "| K1 | Contactor 24VAC SUBE |" ], selected.pluck(:content)
+  end
+
+  test "unparsed exact lookup evidence falls back to the existing chunk selector" do
+    prose = "El plano nombra K1 junto con otros relés del tablero, sin una fila de asignación."
+    chunk = designator_chunk(2, prose)
+    answer = "#{prose} [1]"
+    generator = FakeGenerator.new(answer)
+    rag_service = FakeRagService.new([ chunk ])
+
+    outcome = build_route(
+      question: "¿Qué es K1?",
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, generator.calls.size
+    assert_includes generator.calls.first[:prompt], prose
+    assert_not_includes generator.calls.first[:prompt], "turn the answer into a procedure"
+  end
+
+  test "exact designator lookup accepts a borne assignment and ignores a mention" do
+    chunks = [
+      designator_chunk(1, "borne 12: SEGURIDAD IN"),
+      designator_chunk(2, "terminal 12 - SEGURIDAD IN"),
+      designator_chunk(3, "ver borne 12 en el esquema"),
+      designator_chunk(4, "la señal pasa por borne 12"),
+      designator_chunk(5, "continuar desde terminal 12")
+    ]
+    selected = route_for_selection("¿Qué hay en el borne 12?").send(:compact_designator_chunks, chunks)
+
+    assert_equal [ "borne 12: SEGURIDAD IN", "terminal 12 - SEGURIDAD IN" ], selected.pluck(:content)
+  end
+
+  test "exact designator lookup keeps both borne 12 assignments" do
+    chunks = [
+      designator_chunk(1, "| 12 | SEGURIDAD IN |"),
+      designator_chunk(2, "| 12 | L Electrovalvula Bajando |")
+    ]
+    selected = route_for_selection("¿Qué hay en el borne 12?").send(:compact_designator_chunks, chunks)
+
+    assert_equal [ "SEGURIDAD IN", "Electrovalvula Bajando" ], selected.map { |chunk| chunk[:content][/SEGURIDAD IN|Electrovalvula Bajando/] }
+  end
+
+  test "exact designator lookup keeps the K7 table row" do
+    chunks = [
+      designator_chunk(1, "- K7: Relé — bobina A2-A1. Vinculado a H4."),
+      designator_chunk(2, "| K7 | Contactor 220vac Seguridad |")
+    ]
+    selected = route_for_selection("¿Qué función tiene K7?").send(:compact_designator_chunks, chunks)
+    table = selected.find { |chunk| chunk[:content].include?("220vac") }
+
+    assert table
+    assert_includes table[:content], "Seguridad"
+    assert_equal 2, table[:metadata]["page_number"]
+  end
+
+  test "exact designator lookup collapses equivalent Q1 values and keeps conflicts" do
+    chunks = [
+      designator_chunk(1, "- Q1: Interruptor automático 3 polos 25 A — alimentación trifásica. Designación de la hoja 2."),
+      designator_chunk(2, "| Q1 | Interruptor automático 3 polos 25A |"),
+      designator_chunk(3, "| Q1 | Elemento de maniobra/protección | DATA_NOT_AVAILABLE en este diagrama |"),
+      designator_chunk(4, "- Q1: Interruptor/contactor — circuito Bomba hidráulica")
+    ]
+    selected = route_for_selection("¿Qué es Q1?").send(:compact_designator_chunks, chunks)
+    joined = selected.pluck(:content).join("\n")
+
+    assert_equal 3, selected.size
+    assert_includes joined, "25A"
+    assert_includes joined, "DATA_NOT_AVAILABLE"
+    assert_includes joined, "Bomba hidráulica"
+  end
+
+  test "exact designator lookup collapses equivalent timer values" do
+    chunks = [
+      designator_chunk(1, "- T1: Relé temporizador (Modo E, t < 3 minutos) — ver tabla de designaciones, hoja 2."),
+      designator_chunk(2, "| T1 | Relé Temporizador (Modo E y t<3 Minutos) |")
+    ]
+    selected = route_for_selection("¿Qué indica T1?").send(:compact_designator_chunks, chunks)
+
+    assert_equal 1, selected.size
+    assert_includes selected.first[:content], "t<3 Minutos"
+  end
+
+  test "exact designator lookup does not merge a timer fact with an unparsed wording" do
+    chunks = [
+      designator_chunk(1, "- T2: Relé temporizador tiempo breve."),
+      designator_chunk(2, "| T2 | Relé Temporizador (Modo Wu y t<1 Seg) |")
+    ]
+    selected = route_for_selection("¿Qué indica T2?").send(:compact_designator_chunks, chunks)
+
+    assert_equal 2, selected.size
+  end
+
+  test "exact designator lookup feeds compact evidence to one generation" do
+    chunks = [
+      designator_chunk(1, "- K1: Contactor/relé — bobina A1-A2. Involucrado en circuito SUBE/BAJA."),
+      designator_chunk(2, "| K1 | Contactor 24VAC SUBE |"),
+      designator_chunk(3, "| K1 | Contactor/relé | 24VDC |"),
+      designator_chunk(4, "- K1: Contactor principal (asociado a Q2)")
+    ]
+    answer = chunks.each_with_index.map { |chunk, index| "#{chunk[:content]} [#{index + 1}]" }.join(" ")
+    generator = FakeGenerator.new(answer)
+    rag_service = FakeRagService.new(chunks)
+
+    outcome = build_route(
+      question: "¿Qué es K1?",
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal :answered, outcome.status
+    assert_equal 12, rag_service.calls.first[:number_of_results]
+    prompt = generator.calls.first[:prompt]
+    assert_includes prompt, "24VAC SUBE"
+    assert_includes prompt, "24VDC"
+    assert_includes prompt, "Page: 1"
+    assert_includes prompt, "Page: 4"
+    assert_includes prompt, "turn the answer into a procedure"
+    assert_equal [ 1, 2, 3, 4 ], outcome.result[:citations].pluck(:page)
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, RagRetrievalProfile.new(entity_sources: [ "document" ], question: "¿Qué es K1?").number_of_results
   end
 
   test "bare identifiers select a rank-seven target instead of the first three chunks" do
@@ -1065,6 +1225,16 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       rag_service: FakeRagService.new([]),
       generator: FakeGenerator.new(nil),
       expander: FakeExpander.new(nil)
+    )
+  end
+
+  def designator_chunk(page, content)
+    synthetic_chunk(content, rank: page, sha: "page-#{page}").merge(
+      metadata: {
+        "canonical_name" => "Montacargas Hidráulico Modelo MH",
+        "original_source_uri" => @source_uri,
+        "page_number" => page
+      }
     )
   end
 

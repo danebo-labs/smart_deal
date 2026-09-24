@@ -56,13 +56,21 @@ module Rag
         output_channel.to_sym == :web &&
         Array(entity_s3_uris).any? &&
         Array(entity_sources).include?("document") &&
-        profile.structured_mapping_query? &&
+        (profile.structured_mapping_query? || exact_designator_lookup?(profile, entity_s3_uris, output_channel)) &&
         !profile.safety_critical_query? &&
         !profile.exhaustive_query?
     rescue NoMethodError
       false
     end
     private_class_method :eligible?
+
+    def self.exact_designator_lookup?(profile, entity_s3_uris, output_channel)
+      profile.pinned_exact_designator_lookup?(
+        document_pins: Array(entity_s3_uris).map(&:to_s).uniq.size,
+        output_channel: output_channel
+      )
+    end
+    private_class_method :exact_designator_lookup?
 
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale:, account_id: nil, user_id: nil,
@@ -83,6 +91,7 @@ module Rag
       @expander = expander || Rag::SectionNeighborExpander.new
       @citation_processor = Bedrock::CitationProcessor.new
       @ambiguity = nil
+      @exact_lookup = false
     end
 
     def execute
@@ -149,7 +158,15 @@ module Rag
 
       local_started = monotonic_now
       @ambiguity = detect_family_ambiguity(expanded_chunks)
-      chunks = select_generation_chunks(expanded_chunks, ambiguity: @ambiguity)
+      @exact_lookup = exact_designator_lookup?
+      chunks = if @exact_lookup
+        compact_designator_chunks(expanded_chunks).presence || begin
+          @exact_lookup = false
+          select_generation_chunks(expanded_chunks, ambiguity: @ambiguity)
+        end
+      else
+        select_generation_chunks(expanded_chunks, ambiguity: @ambiguity)
+      end
       citation_evidence = citation_shaped(chunks)
       prompt = generation_prompt(chunks, ambiguity: @ambiguity)
       local_before_generation_ms = elapsed_ms(local_started)
@@ -559,6 +576,7 @@ module Rag
           [
             citation_instructions(chunks.size),
             verbatim_directive,
+            (exact_lookup_directive if @exact_lookup),
             (multi_family_directive if ambiguity&.ambiguous?)
           ].compact.join("\n\n")
         end
@@ -582,6 +600,103 @@ module Rag
           #{chunk[:content]}
         EVIDENCE
       end.join("\n")
+    end
+
+    def exact_designator_lookup?
+      self.class.send(
+        :exact_designator_lookup?,
+        RagRetrievalProfile.new(entity_sources: @entity_sources, question: @question),
+        @entity_s3_uris,
+        :web
+      )
+    end
+
+    # Assignment lines only. [SEARCH_ALIASES:] and ACTION/EVIDENCE repeats are
+    # not evidence. Equivalent technical facts collapse; distinct assignments
+    # all stay, including conflicts.
+    def compact_designator_chunks(chunks)
+      token = designator_token
+      return [] if token.blank?
+
+      rows = []
+      Array(chunks).each do |chunk|
+        technical_lines(chunk[:content]).each do |line|
+          next unless assignment_line?(line, token)
+
+          rows << {
+            chunk: chunk,
+            line: line,
+            page: chunk[:metadata].to_h.stringify_keys["page_number"],
+            rank: chunk[:rank] || 0,
+            key: material_key(line, token)
+          }
+        end
+      end
+
+      groups = []
+      rows.sort_by { |row| [ row[:page].to_i, row[:rank].to_i ] }.each do |row|
+        group = groups.find { |existing| existing.first[:key] == row[:key] && row[:key][0].present? }
+        group ? group << row : groups << [ row ]
+      end
+
+      groups.map { |group| evidence_chunk(group) }
+    end
+
+    def designator_token
+      Rag::QueryEntities.analyze(@question).identifiers.first&.raw
+    end
+
+    def technical_lines(content)
+      content.to_s.lines.map(&:strip).reject do |line|
+        line.empty? ||
+          line.start_with?("[DOCUMENT:", "[SOURCE_URI:", "[SEARCH_ALIASES:") ||
+          line.match?(/\A(ACTION|EVIDENCE|EXPECTED_RESULT|SOURCE_SECTION)\b/)
+      end
+    end
+
+    def assignment_line?(line, token)
+      quoted = Regexp.escape(token)
+      line.match?(/\A\s*\|\s*#{quoted}\s*\|/i) ||
+        line.match?(/\A\s*[-*]?\s*#{quoted}\s*[:\-=\u2013\u2014(]/i) ||
+        line.match?(/\b(?:terminal|borne)\s+#{quoted}\s*[:\-=\u2013\u2014(]/i)
+    end
+
+    def material_key(line, token)
+      text = I18n.transliterate(line).downcase
+      text = text.gsub(/\b#{Regexp.escape(token.downcase)}\b/, " ")
+      text = text.gsub(/designacion de la hoja \d+|ver tabla de designaciones[^|.]*/, "")
+      values = text.scan(/(\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)\s*(vac|vdc|vca|ma|mv|minutos?|min|segundos?|seg|s|a|v)\b/i)
+        .map { |number, unit| "#{number.gsub(/\s/, '')}#{normalize_unit(unit)}" }
+        .sort
+      modes = text.scan(/modo\s+[a-z0-9]+/).sort
+      component = %w[electrovalvula diferencial temporizador partidor interruptor contactor rele bobina]
+        .find { |word| text.include?(word) }
+      function = text.scan(/\b(?:sube|baja|seguridad|principal|bomba)\b/).uniq.sort
+      absence = text.match?(/data_not_available|sin designacion/)
+      [ component, values, modes, function, absence ]
+    end
+
+    def normalize_unit(unit)
+      case unit.downcase
+      when "min", "minuto", "minutos" then "min"
+      when "seg", "segundo", "segundos", "s" then "s"
+      else unit.downcase
+      end
+    end
+
+    def evidence_chunk(group)
+      chosen = group.min_by { |row| [ row[:line].start_with?("|") ? 0 : 1, row[:line].length ] }
+      chosen[:chunk].merge(content: chosen[:line])
+    end
+
+    def exact_lookup_directive
+      <<~DIRECTIVE.strip
+        This question asks what the pinned document assigns to one designator.
+        State each assignment and the page it comes from. When assignments
+        differ, leave the conflict unresolved and do not choose one. Do not
+        turn the answer into a procedure, adjustment steps, or an offer to
+        verify connections or operating state.
+      DIRECTIVE
     end
 
     def citation_instructions(chunk_count)

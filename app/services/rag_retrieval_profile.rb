@@ -71,6 +71,9 @@ class RagRetrievalProfile
   ].freeze
 
   COMPARATIVE_PATTERN = /\b(?:compara|comparar|diferencias?|ambas|las\s+dos|versus)\b/i
+  EXACT_LOOKUP_PATTERN = /\bqu[eé]\s+(?:es|indica|funci[oó]n|hay)\b/i
+  EXACT_PROCEDURE_PATTERN = /\b(?:c[oó]mo|ajust\w*|prueb\w*|pasos|cambi\w*|revis\w*)\b/i
+  BORNE_TERMINAL_PATTERN = /\b(?:bornes?|terminal(?:es)?)\b/i
 
   def initialize(entity_sources: [], question: nil)
     @entity_sources = Array(entity_sources).compact
@@ -130,6 +133,37 @@ class RagRetrievalProfile
     identifier.shape != :numeric && identifier.canonical.match?(/\d/)
   end
   private :designator?
+
+  # One pinned document, one exact designator, a lookup question. Bare
+  # alphanumerics (K1, Q1, T2, H14) and a labelled number only when the
+  # question names a borne or terminal. LED, connector and board questions
+  # stay on structured_mapping_query?.
+  def pinned_exact_designator_lookup?(document_pins:, output_channel: :web)
+    return false unless output_channel.to_sym == :web
+    return false unless document_pins == 1
+    return false if safety_critical_query? || exhaustive_query?
+    return false if @question.match?(COMPARATIVE_PATTERN)
+    return false if @question.match?(EXACT_PROCEDURE_PATTERN)
+
+    identifiers = Rag::QueryEntities.analyze(@question).identifiers
+    return false unless identifiers.one?
+
+    identifier = identifiers.first
+    return false unless @question.match?(EXACT_LOOKUP_PATTERN)
+
+    bare_designator?(identifier) || borne_terminal_number?(identifier)
+  end
+
+  def bare_designator?(identifier)
+    identifier.position == :bare && identifier.shape == :alnum && identifier.canonical.match?(/\d/)
+  end
+  private :bare_designator?
+
+  def borne_terminal_number?(identifier)
+    identifier.position == :labelled && identifier.shape == :numeric &&
+      @question.match?(BORNE_TERMINAL_PATTERN)
+  end
+  private :borne_terminal_number?
 
   # A schematic designator (-PDCM, -PBCM, -PDCC, -J26…) together with a
   # connector/label/diagram keyword. Used to widen open-query recall so the

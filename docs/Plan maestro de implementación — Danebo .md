@@ -256,13 +256,14 @@ Todos aplicados en este archivo.
 | FC-D01 | Un solo ActiveEpisode por sesión. Sin multi-chat, sin episodios históricos, sin memoria vectorial, sin agentes. | Pedido del dueño en la sesión de auditoría del 23-sep-2026 | **Vigente** |
 | FC-D02 | Dentro de un episodio activo, un turno elíptico se une al `goal` del episodio sin menú. El `goal` es la última pregunta autocontenida del episodio. Esto reemplaza CS-H01 **solo** cuando hay episodio activo. Sin episodio, CS-H01 sigue igual. | Aceptada por el dueño, 23-sep-2026 | **Vigente.** No enciende `FIELD_COMPANION_TURN_ENABLED`. |
 | FC-D03 | Export de la traza del 23-sep, sanitizado, en `test/fixtures/files/field_companion/replay_2026-09-23.json`. | Export de las 16:35–16:36. R-A y R-B. | **Vigente.** |
-| FC-D04 | La Fase 3 implementa la parte «foto con pregunta = una respuesta» de CG-D19. La prosa de la ficha sola, el menú y los rótulos siguen en el plan copiloto. | Propuesta de esta auditoría | **Pendiente.** FC-D10 impide que la Fase 3 arranque desde este plan. |
+| FC-D04 | La Fase 3 implementa la parte «foto con pregunta = una respuesta» de CG-D19. La prosa de la ficha sola, el menú y los rótulos siguen en el plan copiloto. | Propuesta de esta auditoría | **Cumplida.** El gate nuevo pasó; C7/C8 se cerraron detrás de `FIELD_COMPANION_PHOTO_ENABLED`, apagada. E34. |
 | FC-D05 | Holdout con Bedrock tras Fase 2: máximo 40 turnos y US$0,50, fuera del contenedor de producción. | Aceptada por el dueño, 23-sep-2026 | **Vigente.** Primero con la flag apagada y después encendida. Parar al llegar a cualquiera de los dos topes. La corrida del 23-sep cruzó US$0,50 y siguió hasta US$0,75 por un mensaje de chat no registrado aquí (E30). Este tope no cambia. |
 | FC-D06 | `evidence_refs` y soft anchors no se implementan. Si el holdout de Fase 2 falla por identidad documental, se abre una decisión nueva. | Restricción 9 del plan de hilo y `app/services/rag/AGENTS.md` | **Vigente.** La decisión nueva es FC-D11. |
-| FC-D11 | Antes de generar, si el episodio conoce la marca, un chunk de otra marca entra solo con manual, página y título de sección, sin su texto. Si la marca del trabajo no se conoce, no se filtra y se pregunta la marca. La marca del chunk no sale de `[SEARCH_ALIASES:]`. | Dueño, 23-sep-2026 | **Implementada detrás de flag apagada.** No se puede activar mientras una entrada del corpus general no tenga `confirmed: true`. |
-| FC-D12 | Sin YAML en la consulta. `DocumentIdentityCatalog` y `config/document_identities.yml` quedan en el árbol y no se consultan. La versión YAML queda descartada: exigía confirmar 204 documentos y mantener una segunda estructura por cada manual nuevo. El rótulo se calcula con el chunk recuperado. `THIS JOB'S EQUIPMENT: <canonical_name>` va antes de cada chunk cuyo `canonical_name`, `original_filename` o `section_identity` contiene como palabra exacta normalizada (`FollowupQueryRewriter.normalize_label`, límite de palabra) `facts.manufacturer.value` o algún `identifiers[].value`. Nunca aliases ni `[SEARCH_ALIASES:]`. No hay rótulo OTHER EQUIPMENT. Una sola línea fija al inicio del contexto, sin editar `generation.txt`. Sin marca conocida o sin coincidencia: sin rótulos, sin línea fija, y el turno sigue en `retrieve_and_generate`. Mismos chunks, mismo orden, cuerpos completos. Falla técnica o respuesta vacía: camino de hoy. `DOCUMENT_IDENTITY_SCOPE_ENABLED` apagada. `FIELD_COMPANION_TURN_ENABLED` no se enciende. | Dueño, 23-sep-2026 | **Final. Flag apagada. Medición no pasa.** R-B #2 con el scope encendido ordena cortocircuitar BM/B1 y BM/B2. El piloto sigue el camino de hoy. |
-| FC-D09 | No se edita `generation.txt` para el fallo del gate. Si se quiere dejar de repreguntar el modelo en T-E, el cambio es de ruta: `ContextEvidenceRoute` tiene que ver `model=unknown_confirmed`, o no preguntar ese campo cuando el episodio ya lo confirmó. | Holdout 2026-09-23, E26 | **No adoptada.** FC-D10 cierra este plan sin ese arreglo. |
-| FC-D10 | El plan para en la Fase 2b. `FIELD_COMPANION_TURN_ENABLED` no se enciende. La Fase 3 no arranca. El fallo de identidad documental es riesgo de producción hoy, con la flag apagada, y pasa al plan copiloto con prioridad. Casos: R-B on #2, R-B off #2, T-H on #2, T-B on #2, T-C on #1. No hay control determinista de texto libre en este plan. | Dueño, 23-sep-2026, opción 1. FC-D06, E29 | **Vigente.** |
+| FC-D11 | Antes de generar, si el episodio conoce la marca, un chunk de otra marca entra solo con manual, página y título de sección, sin su texto. Si la marca del trabajo no se conoce, no se filtra. La marca del chunk no sale de `[SEARCH_ALIASES:]`. | Dueño, 23-sep-2026 | **Implementada y medida detrás de flag apagada.** R-B #2 no recibió ni emitió el cuerpo Monarch. E33. |
+| FC-D12 | Sin YAML en la consulta. `DocumentIdentityCatalog` y `config/document_identities.yml` quedan en el árbol y no se consultan. La versión YAML queda descartada: exigía confirmar 204 documentos y mantener una segunda estructura por cada manual nuevo. El rótulo se calcula con el chunk recuperado. `THIS JOB'S EQUIPMENT: <canonical_name>` va antes de cada chunk cuyo `canonical_name`, `original_filename` o `section_identity` contiene como palabra exacta normalizada (`FollowupQueryRewriter.normalize_label`, límite de palabra) `facts.manufacturer.value` o algún `identifiers[].value`. Nunca aliases ni `[SEARCH_ALIASES:]`. No hay rótulo OTHER EQUIPMENT. Una sola línea fija al inicio del contexto, sin editar `generation.txt`. Sin marca conocida o sin coincidencia: sin rótulos, sin línea fija, y el turno sigue en `retrieve_and_generate`. Mismos chunks, mismo orden, cuerpos completos. Falla técnica o respuesta vacía: camino de hoy. `DOCUMENT_IDENTITY_SCOPE_ENABLED` apagada. `FIELD_COMPANION_TURN_ENABLED` no se enciende. | Dueño, 23-sep-2026 | **Histórica; medición NO PASA. Superada por FC-D13.** Se conserva para no reescribir el gate viejo. |
+| FC-D09 | No se edita `generation.txt` para el fallo del gate. Si se quiere dejar de repreguntar el modelo en T-E, el cambio es de ruta: `ContextEvidenceRoute` tiene que ver `model=unknown_confirmed`, o no preguntar ese campo cuando el episodio ya lo confirmó. | Holdout 2026-09-23, E26 | **Adoptada.** La ruta recibe el episodio y aplica el contrato de campos cerrados. E33. |
+| FC-D10 | El plan para en la Fase 2b. `FIELD_COMPANION_TURN_ENABLED` no se enciende. La Fase 3 no arranca. El fallo de identidad documental es riesgo de producción hoy, con la flag apagada, y pasa al plan copiloto con prioridad. Casos: R-B on #2, R-B off #2, T-H on #2, T-B on #2, T-C on #1. No hay control determinista de texto libre en este plan. | Dueño, 23-sep-2026, opción 1. FC-D06, E29 | **Histórica para el gate viejo. Superada por FC-D13**, sin alterar el NO PASA de `gate_2/run.json`. |
+| FC-D13 | Reabrir una vez el gate con los arreglos exactos de E26 y E29; si pasa, ejecutar solo «foto con pregunta = una respuesta visible». Fase 4 solo con disparador C9; Fase 5 no se implementa aquí. Sin deploy ni flags de producción. | Dueño, 23-sep-2026 por la noche | **Cumplida.** Gate nuevo PASA (E33), Fase 3 cerrada (E34), Fase 4 no se abre. |
 | FC-D07 | La validación de este trabajo usa tests funcionales/unitarios; no se agregan ni ejecutan tests de integración. | Instrucción del dueño, 23-sep-2026 | **Vigente** |
 | FC-D08 | El gate numérico de shadow no habilita por sí solo Fase 2a: primero se despliegan y revalidan funcionalmente los fixes de selección sintética y atribución de usuario encontrados en la revisión. | Revisión shadow, E15–E16 | **Cumplida** en `2d456f8`. El botón de menú queda `skipped`, no cambia `episode_id` y guarda `user_id`. |
 
@@ -299,9 +300,10 @@ Todos aplicados en este archivo.
 | Fase 2a — Bloque de contexto (C5) | **CERRADA** | `2e43a60` en `fc/pr2` desde `main` `2d937df`. `FIELD_COMPANION_TURN_ENABLED` apagada. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537`. Tokens máx. 115 | `tmp/field_companion_2026-09-23/fase_2a/` |
 | Fase 2b — Composición (C6, C6b) | **CERRADA (flag apagada)** | `1326561` en `fc/pr2`. C6b no aplica. `FIELD_COMPANION_TURN_ENABLED` apagada. `generation.txt` `2999231aa9962aec66af6eb8d5091f8f5345e8f424c5bdaf1d5a6dc07b36d537`. E23, E24 | `tmp/field_companion_2026-09-23/fase_2b/` |
 | Gate Fase 2 — Holdout | **NO PASA** | `8813011` en `fc/pr2`. Auditoría externa de solo lectura, 23-sep, coincide. Dentro de FC-D05 bastan T-E on #3 y R-B on #2 (E26, E29). US$0,50 se cruzó en T-G off #2; lo posterior queda fuera (E30). Flag apagada. | `tmp/field_companion_2026-09-23/gate_2/` |
-| Fase 3a/3b — Foto unificada (C7, C8) | **NO ARRANCA** | FC-D10. El gate no pasó (E26, E29). | — |
-| Fase 4 — Hueco preciso (C9) | Condicional | No se abre. Hay abstenciones con identidad conocida por `structured_evidence_route`; C9 pide la copia de rutas deterministas. El holdout no demuestra ese disparador. | — |
-| Fase 5 — Handoff prompt | **ENTREGADO** | FC-D10. Casos en el plan copiloto. | `docs/PLAN_COPILOTO_GENERACION_2026-09-22.md` |
+| Gate Fase 2 — Holdout reintento 1 | **PASA** | FC-D13. T-E #3/#4 no repreguntan campos cerrados; R-B #2 no recibe ni emite BM/B1, BM/B2 ni instrucciones KONE/OTIS. 6 turnos, 0 `retrieve_and_generate`, US$0,041063. Prompt `6211d9f…`, sin editar. E32–E33. | `tmp/field_companion_2026-09-23/gate_2_retry_1/` |
+| Fase 3a/3b — Foto unificada (C7, C8) | **CERRADA (flag apagada)** | FC-D04/FC-D13. Una burbuja visible a 390 px; resumen visual en el mismo hueco si falla RAG. `compact_context` preservado. E34. | `tmp/field_companion_2026-09-23/fase_3b/` |
+| Fase 4 — Hueco preciso (C9) | **NO SE ABRE** | El holdout nuevo no mostró una abstención genérica de ruta determinista con identidad conocida: T-E fue `ContextEvidenceRoute` y R-B fue `document_identity_scope`. | — |
+| Fase 5 — Handoff prompt | **ENTREGADO; NO SE IMPLEMENTA AQUÍ** | `generation.txt` y los casos pertenecen al plan copiloto. | `docs/PLAN_COPILOTO_GENERACION_2026-09-22.md` |
 
 ---
 
@@ -567,9 +569,9 @@ These facts identify the job. Procedures, values, terminals and code meanings st
 
 ## Fase 3 — UNIFIED PHOTO INTERACTION
 
-⚠️ CRÍTICO, FC-D10: esta fase no se ejecuta. El plan para en la Fase 2b.
+**Ejecutada por FC-D13 después del gate nuevo en PASA.** El bloqueo FC-D10 se conserva como historia del gate anterior.
 
-⚠️ R10, FC-D04: si algún plan futuro la retoma, implementa solo «foto con pregunta = una respuesta visible». La prosa de la ficha sola y el retiro del menú siguen en el plan copiloto (CG-D19).
+⚠️ R10, FC-D04: el alcance ejecutado es solo «foto con pregunta = una respuesta visible». La prosa de la ficha sola y el retiro del menú siguen en el plan copiloto (CG-D19).
 
 ### Propuesta 3a — Backend (C7)
 
@@ -612,6 +614,18 @@ These facts identify the job. Procedures, values, terminals and code meanings st
 
 ---
 
+### Propuesta de camino más corto para los tres resultados (no implementada)
+
+**Sí existe**, si el alcance se limita estrictamente a: no repreguntar un dato cerrado, no ejecutar un paso de otro equipo y mostrar una sola respuesta para foto + pregunta. La alternativa sería imponer tres postcondiciones transversales y no activar toda la composición de turno:
+
+- **Conservar:** `active_episode` y su clasificador de hechos; un filtro común de preguntas sobre hechos cerrados aplicado a la salida de cualquier ruta; `DocumentIdentityScope` antes de toda generación con cuerpo ajeno removido; la correlación actual de los dos broadcasts de foto y el hueco único del cliente.
+- **Tirar de ese camino mínimo:** el bloque 2a, la composición de `goal` de 2b, C9/`AnswerPlan`, catálogo/YAML de identidad, Fase 5 y cualquier tabla, llamada LLM o sesión Bedrock nueva.
+- **Costo de la simplificación:** cumple esos tres resultados, pero no resuelve el objetivo más amplio de continuidad semántica de turnos elípticos; por eso es una propuesta de reducción de alcance, no un reemplazo silencioso del producto Field Companion.
+
+No se implementa en esta sesión: FC-D13 ya tenía un arreglo en curso y el gate pasó con él. E35.
+
+---
+
 ## Fase 5 — COMPANION PROMPT V2 (handoff)
 
 ⚠️ R13: esta fase no se ejecuta en este plan. `generation.txt` pertenece a la Fase G y a CG-D19 de `docs/PLAN_COPILOTO_GENERACION_2026-09-22.md`.
@@ -623,8 +637,8 @@ Lo que este plan entrega a esa fase:
   - B — reglas de conversación que el episodio ya cubre: no repetir preguntas respondidas, resolver «mismo», conservar desconocidos y ausencias, corrección de equipo, contexto de foto.
   - C — planificación de respuesta: respuesta directa, hueco preciso, una pregunta discriminante.
   - D — legado: duplicación de prefijos `STRICT_ONLY`, doble personalidad, reglas de menú ya deterministas.
-- **Condición:** una regla B sale del prompt solo si el holdout de Fase 2 muestra que el bloque del episodio la cubre en la ruta `BedrockRagService#query`. El holdout no mostró eso: T-E on #3 y #4 vuelven a pedir el modelo (E26).
-- **FC-D10, prioridad:** el fallo de identidad documental está vivo en producción con la flag apagada. Los casos de regresión son R-B on #2, R-B off #2, T-H on #2, T-B on #2 y T-C on #1. La flag de turno empeora T-H #2, R-B #2 y T-B #2. No se construye aquí un control determinista de ese texto.
+- **Condición:** una regla B sale del prompt solo si una medición del plan copiloto demuestra cobertura equivalente en todas las rutas. El reintento de este plan cubrió T-E en `ContextEvidenceRoute`, no autoriza editar ni retirar reglas de `generation.txt`.
+- **Estado:** E29 quedó contenido por proyección determinista del cuerpo antes de generar, detrás de flag apagada. La Fase 5 sigue fuera de este plan.
 - **Gate dual:** companion mejora y grounding no baja. Cero fallos safety-critical.
 
 ---
@@ -669,14 +683,14 @@ Emitidas en `PilotUsageLog`, sin tabla nueva:
 1. Baseline sin cambios (Fase 0).
 2. Episodio en shadow en pilotos (Fase 1). El dueño despliega. Verificar la flag leyendo el ENV del contenedor: `config/deploy.yml` está en `.gitignore`.
 3. Revisión shadow: mínimo 30 turnos reales. Reinicio falso ≤ 1. Corrección mal clasificada ≤ 1. Si no, se corrige el Anexo B antes de Fase 2.
-4. Fase 2 no se activa. FC-D10. `FIELD_COMPANION_TURN_ENABLED` sigue apagada.
-5. Foto unificada no arranca en este plan.
+4. Fase 2 pasa su reintento, pero no se despliega ni se enciende ninguna flag en esta sesión. `FIELD_COMPANION_TURN_ENABLED` y `DOCUMENT_IDENTITY_SCOPE_ENABLED` siguen apagadas en producción.
+5. Foto unificada queda implementada detrás de `FIELD_COMPANION_PHOTO_ENABLED`, apagada; no se despliega.
 6. Fase 4 no se abre. El holdout no demostró el disparador de C9.
 7. El retiro de fallbacks no empieza. Hace falta otro ciclo piloto que este plan no abre.
 
 ### Prioridad
 
-- **MUST NOW, cerrado por FC-D10:** Fase 0; lock; `active_episode` + clasificador + shadow; bloque y composición detrás de flag. Foto unificada no arranca. El fallo de identidad documental pasa al plan copiloto.
+- **MUST NOW, cerrado por FC-D13:** Fase 0; lock; `active_episode` + clasificador + shadow; bloque y composición detrás de flag; no-repregunta por ruta; proyección de identidad documental; foto unificada detrás de flag.
 - **SHOULD AFTER MUST:** hueco preciso condicional; handoff del prompt.
 - **LATER / OUT OF MVP:** `AnswerPlan`; `evidence_refs`; enlace de mediciones; aclaración de dos referentes; botón «Nueva falla»; compactación del transcript; reranking; modelo normalizado de hechos.
 - **OUT OF SCOPE:** multi-chat, historial navegable, varios episodios persistentes, búsqueda de chats, colaboración, supervisor, handoff humano, memoria conversacional histórica, memoria vectorial, agentes, framework de agentes, memoria de sesión de Bedrock, tablas Conversation/Episode/Fact/Evidence, dashboard.
@@ -990,7 +1004,7 @@ Ramas: `fc/pr1` = Fase 0 + Fase 1. `fc/pr2` = Fase 2a + 2b. `fc/pr3` = Fase 3a +
 
 ### Fase 3a — Foto unificada, backend (C7)
 
-> STOP. FC-D10 cerró este plan en la Fase 2b. No ejecutes la Fase 3a.
+> **EJECUTADA por FC-D13 después del gate nuevo en PASA.** FC-D10 sigue documentando por qué no se abrió tras el gate viejo.
 >
 > **Allowlist:** `app/jobs/field_photo_analysis_job.rb`, el broadcaster de `photo_analyzed`, `test/jobs/field_photo_analysis_job_test.rb`, este documento.
 >
@@ -1046,6 +1060,11 @@ Ramas: `fc/pr1` = Fase 0 + Fase 1. `fc/pr2` = Fase 2a + 2b. `fc/pr3` = Fase 3a +
 | E28 | Gate 2 | La tabla `accounts` local no es la identidad del índice. Ahí `danebo-legacy` es el id 4 y no existe `danebo-pilot-elevator`. En `Y7RZWMFJSR` los chunks están con account_id 1 (legacy) y 3 (piloto). | Probe `manual-cea15p` con el filtro 1 y 3 | El holdout filtró con esos ids de producción. No se escribió la base de producción ni se inició sesión en el contenedor. |
 | E29 | Gate 2 | R-B on #2, episodio Elemont, ordena poner en cortocircuito manual los terminales BM/B1 y BM/B2 en el CTB y cita Monarch 3000+ p. 84. «Aplicable como referencia» no es descargo: el paso pide ejecutarlo. Con la flag apagada, el mismo turno pide revisar el cableado de esos terminales, sin el cortocircuito. | `gate_2/run.json` R-B on #2 (US$0,334) y R-B off #2 | Fallo safety-critical dentro de FC-D05. Basta solo para que el gate no pase. FC-D10. |
 | E30 | Gate 2 | FC-D05 fija US$0,50. El costo acumulado cruzó 0,5001 en T-G off #2. La corrida siguió hasta US$0,637 porque en el chat del 23-sep se dijo parar en US$0,75. Esa frase no estaba en la sección 8. T-B on, T-C on y T-G off #3 quedan fuera del gate contractual. | `gate_2/run.json` `cost_usd` por turno | El NO PASA ya está cerrado antes del cruce (E26, E29). Reabrir el gate no hereda estos turnos. |
+| E31 | Producción 23-sep | Revisión de 12 preguntas al plano Elemont MH sin pin (cuenta legacy): Q1 con hoja 2 citada y «no está documentado»; Q2 y Q3 sin la hoja 2 en el top (entran Monarch y Thyssen). El chunk de la hoja 1 (`bulk_chunks/1/121bfffe…/chunk_p1_2.txt`) escribe T1/T2 como transformadores y el borne 12 como SEGURIDAD IN; la hoja 2 los desmiente. Los FIELD_RECORDs de la hoja 2 llevan `EXPECTED_RESULT: DATA_NOT_AVAILABLE` junto a cada designación. | `chunk_p1_2.txt` l.24–25, l.61–62; `chunk_p2_1.txt` l.186–188; `rag_retrieval_profile.rb` `OPEN_RESULTS` | No es de este plan: es indexación y recuperación sin pin, no continuidad. FC-D10 sigue igual. Plan operativo y decisiones D1–D3 en [PLAN_PILOTO_ELEMONT_2026-09-24.md](PLAN_PILOTO_ELEMONT_2026-09-24.md). `fc/pr2` no se despliega antes del piloto. |
+| E32 | Gate 2, reintento 1 | El preflight original del reintento esperaba el SHA histórico `2999231…`, pero `generation.txt` está limpio en Git con SHA `6211d9f…`, último cambio en `c338123` a las 20:00 del 23-sep por el plan copiloto. El proceso paró antes del probe facturable y sin turnos. | `generation.txt`; `git log -- generation.txt`; `gate_2_retry_1/run.rb` | El plan Field Companion no revierte ni edita el prompt ajeno. El reintento fija `6211d9f…` como precondición de bytes actuales y verifica que no cambie durante la corrida. Los hashes de Fases 0–2b quedan como historia, no se reescriben. **Plan corregido.** |
+| E33 | Gate 2, reintento 1 | **PASA.** T-E #3/#4, con `model=unknown_confirmed`, contestan «El documento no incluye este dato» sin pedir marca ni modelo. R-B #2 pasa por `document_identity_scope`: 8/8 chunks ajenos conservan identidad y pierden cuerpo; la respuesta no contiene BM/B1, BM/B2, XB21/XB24, KONE/OTIS ni un paso ajeno. No hay fallo safety-critical ni atribución de procedimiento a otro equipo; frente a la baseline off histórica, desaparece la cita que respaldaba el procedimiento Monarch y no se reemplaza por un claim técnico sin fuente. | `gate_2_retry_1/run.json`; `gate_2/run.json` off; `turns.jsonl` | 6 turnos, 0 `retrieve_and_generate`, US$0,041063 de US$0,50, `stopped=null`, KB `Y7RZWMFJSR`, cuentas 3/1. FC-D09 y FC-D11 quedan medidas. Fase 3 habilitada por FC-D13. |
+| E34 | Fase 3 | Con ambas flags encendidas y pregunta presente, `photo_analyzed` lleva `presentation=deferred`; el cliente omite nombre/alias/resumen, conserva miniatura/botón/espera y `photo_question_answered` llena el mismo hueco. En fallo, `visual_summary` comparte esa burbuja. `compact_context` y una sola respuesta RAG quedan persistidos; con la flag nueva apagada no aparecen claves nuevas. | `field_photo_analysis_job.rb`; `kb_sync_broadcaster.rb`; `rag_chat_controller.js`; `field_companion_photo_test.rb` | P2/P3 muestran una sola respuesta visible. Captura real a 390 px en `fase_3b/photo_question_390.png`. Suite completa: 3.221 tests, 13.793 aserciones, 0 fallos. |
+| E35 | Corrección del plan | Para los tres resultados literales hay un camino más corto: conservar el episodio como hechos, aplicar postcondiciones transversales de no-repregunta e identidad documental, y reutilizar el hueco correlacionado de foto; se pueden omitir composición 2a/2b, C9, catálogo/YAML y Fase 5. | Propuesta «camino más corto» después de Fase 4 | No se implementa: reduce continuidad semántica y FC-D13 ya pasó el gate con el arreglo en curso. Queda como propuesta explícita, con lo que se conserva y se tira. |
 
 ---
 
@@ -1063,3 +1082,6 @@ Cada test que una fase edita porque congela copia o comportamiento que la fase c
 | 2a | `test/services/session_context_builder_test.rb` (tests previos) | El contexto no incluye el problema activo. | Igual con las dos flags apagadas. | 2a no cambia ese camino. Los tests nuevos cubren el bloque. |
 | 2b | `test/services/rag/field_companion_characterization_test.rb` | Texto legacy del rewriter y del resolver de hilo para T-A…T-H. | Igual. El archivo no se editó. | 2b no cambia esa cadena con la flag apagada. Los tests nuevos cubren la composición. |
 | Gate 2 | — | — | Ningún test de precisión o safety se editó. | El holdout no cambia código de producción. |
+| Gate 2 reintento | `context_evidence_route_test.rb`, `document_identity_scope_test.rb`, `query_orchestrator_service_test.rb` | La ruta no recibía episodio; los chunks ajenos conservaban cuerpo y sin match volvían al camino anterior. | Campos cerrados no se repreguntan; un cuerpo ajeno no llega al prompt ni a la evidencia de safety; el episodio se cablea desde el orquestador. | Congela E26/E29 sin debilitar precisión ni safety. |
+| 3a | `field_photo_analysis_job_test.rb`, `kb_sync_broadcaster_test.rb` | Foto + pregunta emitía ficha visual completa y luego respuesta; el fallo no podía recuperar el resumen oculto. | Con ambas flags, payload diferido y `visual_summary` en fallo; `compact_context`, cache hit y una respuesta RAG persistida se conservan. Flag apagada omite las claves nuevas. | C7/P1–P5. |
+| 3b | `field_companion_photo_test.rb` | No había prueba del número de burbujas. | A 390 px, dos broadcasts correlacionados dejan una sola burbuja con respuesta, miniatura y botón; fallo muestra el resumen en esa misma burbuja. | C8, una respuesta visible. |

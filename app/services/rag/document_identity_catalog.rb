@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 module Rag
-  # Versioned identity of the general corpus. Index account ids, not local
+  # Versioned identity of the general corpus. Not consulted on the query
+  # path: FC-D12 labels from the retrieved chunk. Index account ids, not local
   # accounts.id: "1" is danebo-legacy and "3" is danebo-pilot-elevator.
   class DocumentIdentityCatalog
     PATH = Rails.root.join("config/document_identities.yml")

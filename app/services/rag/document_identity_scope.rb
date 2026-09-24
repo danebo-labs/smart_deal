@@ -1,17 +1,15 @@
 # frozen_string_literal: true
 
 module Rag
-  # FC-D12. The label is computed from the retrieved chunk. The catalog is not
-  # consulted. A matching chunk keeps its body and gains one line. Every other
-  # chunk stays unlabeled. The fixed rule is one line at the start of the
-  # context, and only when at least one chunk matches.
+  # The label is computed from the retrieved chunk; the catalog is not
+  # consulted. Matching chunks keep their body. Other-equipment chunks keep
+  # only their source identity so their procedures cannot be transplanted.
   class DocumentIdentityScope
     Result = Data.define(:chunks, :labels, :blocked, :undeclared_private, :unconfirmed_general)
     PREAMBLE = "Only evidence marked THIS JOB'S EQUIPMENT can support a step, terminal, code, or value for this job. " \
-               "Any other evidence is a reference: quote what that manual documents for its own equipment, " \
-               "with manual and page, and say it must be confirmed in the field. " \
-               "Do not reproduce a short-circuit, bridge, or disconnection of another equipment's terminals: " \
-               "say what that test checks. Compatibility with this job is not established unless a document states it."
+               "Evidence marked REFERENCE ONLY — OTHER EQUIPMENT contains source identity only; its procedural body " \
+               "was removed and cannot support an instruction for this job."
+    OTHER_EQUIPMENT_PREFIX = "REFERENCE ONLY — OTHER EQUIPMENT:"
     IDENTITY_FIELDS = %w[canonical_name original_filename section_identity].freeze
 
     def self.applicable?(episode)
@@ -23,9 +21,20 @@ module Rag
 
     def self.apply(chunks, episode)
       needles = match_needles(episode)
-      labels = Array(chunks).map { |chunk| label_for(chunk, needles) }
+      return unchanged(chunks) if needles.empty?
+
+      labels = []
+      scoped_chunks = Array(chunks).map do |chunk|
+        if identity_matches?(chunk, needles)
+          labels << this_job_line(document_name(chunk))
+          chunk
+        else
+          labels << other_equipment_line(document_name(chunk))
+          chunk.merge(content: reference_identity(chunk))
+        end
+      end
       Result.new(
-        chunks: Array(chunks),
+        chunks: scoped_chunks,
         labels: labels,
         blocked: false,
         undeclared_private: 0,
@@ -60,13 +69,35 @@ module Rag
       "THIS JOB'S EQUIPMENT: #{canonical_name}"
     end
 
-    def self.label_for(chunk, needles)
-      return if needles.empty?
-      return unless identity_matches?(chunk, needles)
-
-      this_job_line(metadata_of(chunk)["canonical_name"].to_s.strip)
+    def self.other_equipment_line(name)
+      "#{OTHER_EQUIPMENT_PREFIX} #{name}"
     end
-    private_class_method :label_for
+
+    def self.reference_identity(chunk)
+      metadata = metadata_of(chunk)
+      [
+        "Manual: #{document_name(chunk)}",
+        "Page: #{metadata["page_number"].presence || "DATA_NOT_AVAILABLE"}",
+        "Section: #{metadata["section_identity"].presence || "DATA_NOT_AVAILABLE"}"
+      ].join("\n")
+    end
+    private_class_method :reference_identity
+
+    def self.document_name(chunk)
+      metadata = metadata_of(chunk)
+      metadata["canonical_name"].presence ||
+        metadata["original_filename"].presence ||
+        "DATA_NOT_AVAILABLE"
+    end
+    private_class_method :document_name
+
+    def self.unchanged(chunks)
+      Result.new(
+        chunks: Array(chunks), labels: Array.new(Array(chunks).size),
+        blocked: false, undeclared_private: 0, unconfirmed_general: 0
+      )
+    end
+    private_class_method :unchanged
 
     def self.identity_matches?(chunk, needles)
       metadata = metadata_of(chunk)

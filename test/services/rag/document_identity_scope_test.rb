@@ -36,7 +36,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal "cuerpo", result.chunks[0][:content]
   end
 
-  test "does not label by alias or search aliases" do
+  test "does not match by alias or search aliases and removes the foreign body" do
     aliased = chunk(
       "foreign",
       "Cortocircuitar BM/B1. [SEARCH_ALIASES: Elemont MH CEA15]",
@@ -48,8 +48,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
     result = Rag::DocumentIdentityScope.apply([ aliased ], episode(identifiers: %w[MH CEA15]))
 
-    assert_nil result.labels[0]
-    assert_equal "Cortocircuitar BM/B1. [SEARCH_ALIASES: Elemont MH CEA15]", result.chunks[0][:content]
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Monarch 3000", result.labels[0]
+    assert_equal "Manual: Monarch 3000\nPage: 1\nSection: Door machine", result.chunks[0][:content]
+    assert_not_includes result.chunks[0][:content], "BM/B1"
+    assert_not_includes result.chunks[0][:content], "SEARCH_ALIASES"
   end
 
   test "MH matches MH and does not match MHX" do
@@ -61,9 +63,9 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     )
 
     assert_equal "THIS JOB'S EQUIPMENT: Plano MH", kept.labels.first
-    assert_nil rejected.labels.first
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Plano MHX", rejected.labels.first
     assert_equal "cuerpo del plano MH", source[:content]
-    assert_equal "cuerpo MHX", rejected.chunks.first[:content]
+    assert_equal "Manual: Plano MHX\nPage: 1\nSection: DATA_NOT_AVAILABLE", rejected.chunks.first[:content]
   end
 
   test "CEA15 does not match CEA15P" do
@@ -72,19 +74,31 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       episode(identifiers: %w[CEA15])
     )
 
-    assert_nil plus.labels[0]
-    assert_equal "texto CEA15P", plus.chunks[0][:content]
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Manual CEA15P", plus.labels[0]
+    assert_not_includes plus.chunks[0][:content], "texto CEA15P"
   end
 
-  test "no match stays on today's path" do
+  test "no match still uses the scoped path with identity only" do
     question = "pregunta"
-    chunks = [ chunk("mono", "Cortocircuitar BM/B1.", canonical_name: "Monarch") ]
+    chunks = [
+      chunk(
+        "mono", "Cortocircuitar BM/B1.",
+        canonical_name: "Monarch", page: 84, section_identity: "Door commissioning"
+      )
+    ]
     service = BedrockRagService.new(account: accounts(:legacy))
     service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: chunks, retrieval_trace: {} } }
-    service.define_singleton_method(:document_identity_generator) { flunk "generator" }
+    generator = Object.new
+    calls = []
+    generator.define_singleton_method(:query) do |prompt, **|
+      calls << prompt
+      "El resultado recuperado pertenece al manual Monarch. [1]"
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
 
+    result = nil
     with_flag("true") do
-      assert_nil service.send(
+      result = service.send(
         :document_identity_scope_result,
         question,
         episode: episode(identifiers: %w[CEA15]),
@@ -99,9 +113,14 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       )
     end
 
-    assert_equal 0, Thread.current[:document_identity_scope]["labels"]
-    assert_equal "retrieve_and_generate", Thread.current[:document_identity_scope]["path"]
-    assert_nil Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[CEA15])).labels[0]
+    assert_equal "document_identity_scope", result[:generation_mode]
+    assert_equal 1, Thread.current[:document_identity_scope]["labels"]
+    assert_equal 1, Thread.current[:document_identity_scope]["other_equipment"]
+    assert_equal "document_identity", Thread.current[:document_identity_scope]["path"]
+    assert_includes calls.first, "Manual: Monarch"
+    assert_includes calls.first, "Page: 84"
+    assert_includes calls.first, "Section: Door commissioning"
+    assert_not_includes calls.first, "Cortocircuitar BM/B1"
   end
 
   test "unknown manufacturer does not retrieve" do
@@ -165,7 +184,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
   end
 
-  test "generation context matches byte for byte except labels and the fixed line" do
+  test "generation context removes a foreign body and keeps a matching body" do
     chunks = [
       chunk("mono", "Cortocircuitar BM/B1.", canonical_name: "Monarch"),
       chunk("cea", CEA15_BODY, canonical_name: "Manual CEA15")
@@ -173,26 +192,21 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     question = "¿Qué reviso?"
     service = BedrockRagService.new(account: accounts(:legacy))
     applied = Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[CEA15]))
-    off = service.send(
-      :document_identity_generation_prompt, question, chunks,
-      response_locale: :es, session_context: nil, output_channel: :web
-    )
     on = service.send(
       :document_identity_generation_prompt, question, applied.chunks, labels: applied.labels,
       response_locale: :es, session_context: nil, output_channel: :web
     )
 
-    assert_equal off, strip_scope(on, applied.labels)
-    assert_not_equal off, on
     assert_includes on, PREAMBLE
-    assert_includes on, "Cortocircuitar BM/B1."
+    assert_not_includes on, "Cortocircuitar BM/B1."
     assert_includes on, CEA15_BODY
-    assert_nil applied.labels[0]
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Monarch", applied.labels[0]
     assert_equal "THIS JOB'S EQUIPMENT: Manual CEA15", applied.labels[1]
-    assert_not_includes on, "OTHER EQUIPMENT"
+    assert_includes on, "Manual: Monarch"
+    assert_includes on, "Page: 1"
   end
 
-  test "eight retrieved chunks stay eight, bodies and order unchanged" do
+  test "eight retrieved chunks stay ordered while foreign procedures lose their bodies" do
     bodies = [
       "Cortocircuitar BM/B1 y BM/B2.",
       "Contacto 61:U/N. Desconecte XB21 y XB24. Falta 00 71 y 00 73.",
@@ -211,25 +225,20 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     question = "Elemont MH con placa CEA15, falla en puerta 1."
     service = BedrockRagService.new(account: accounts(:legacy))
     applied = Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[MH CEA15]))
-    off = service.send(
-      :document_identity_generation_prompt, question, chunks,
-      response_locale: :es, session_context: nil, output_channel: :web
-    )
     prompt = service.send(
       :document_identity_generation_prompt, question, applied.chunks, labels: applied.labels,
       response_locale: :es, session_context: nil, output_channel: :web
     )
 
     assert_equal 8, applied.chunks.size
-    assert_equal bodies, applied.chunks.pluck(:content)
+    assert_equal bodies.last(5), applied.chunks.pluck(:content).last(5)
     assert_equal 5, applied.labels.count { |line| line.to_s.start_with?("THIS JOB'S EQUIPMENT:") }
-    assert_equal 0, applied.labels.count { |line| line.to_s.start_with?("OTHER EQUIPMENT:") }
+    assert_equal 3, applied.labels.count { |line| line.to_s.start_with?("REFERENCE ONLY — OTHER EQUIPMENT:") }
     assert_equal 8, prompt.scan("<source>").size
-    assert_equal off, strip_scope(prompt, applied.labels)
-    bodies.each { |body| assert_includes prompt, body }
-    POISON.each { |token| assert_includes prompt, token }
-    positions = bodies.map { |body| prompt.index(body) }
-    assert_equal positions, positions.compact.sort
+    bodies.first(3).each { |body| assert_not_includes prompt, body }
+    bodies.last(5).each { |body| assert_includes prompt, body }
+    POISON.each { |token| assert_not_includes prompt, token }
+    assert_equal %w[Monarch KONE BLT], applied.chunks.first(3).map { |chunk| chunk[:content][/Manual: (.+)/, 1] }
   end
 
   test "scope on retrieves the same result count and a technical failure uses retrieve_and_generate" do

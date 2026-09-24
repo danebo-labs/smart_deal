@@ -109,6 +109,74 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
     assert_not_includes prompt, "DISPLAY LCD"
   end
 
+  test "closed episode facts are not requested again on this route" do
+    rag = FakeRagService.new([ note_chunk ])
+    generator = FakeGenerator.new(
+      "La nota no documenta el ajuste solicitado. [1]\n\n¿Cuál es la marca y el modelo del equipo?"
+    )
+    outcome = build_route(
+      question: FUJI,
+      rag_service: rag,
+      generator: generator,
+      episode: closed_model_episode
+    ).execute
+
+    assert_equal :answered, outcome.status
+    assert_includes outcome.result[:answer], "no documenta el ajuste"
+    assert_no_match(/\bmarca\b/i, outcome.result[:answer])
+    assert_no_match(/\bmodelo\b/i, outcome.result[:answer])
+    assert_includes generator.calls.first[:prompt], "already closed these fields: manufacturer, model"
+  end
+
+  # CG-D19: a photo with a question is one answer, and the reading of the photo
+  # opens its prose. This route builds its own prompt, so the Photo Evidence
+  # block of the turn is the only session context it carries — never the rest.
+  test "the photo evidence block of the turn reaches the generator and the rest of the context does not" do
+    rag = FakeRagService.new([ note_chunk ])
+    generator = FakeGenerator.new("Por la foto, esto parece un amarre de cables. La nota no documenta el ajuste. [1]")
+    session_context = [
+      "## Recent Conversation\nuser: hola\nassistant: hola",
+      "## Photo Evidence (this turn)\nThe technician attached a photo in this same turn.\n- Component: Amarre de cables\n- Manufacturer: UNKNOWN",
+      "## Selection Turn\nThe technician named a document."
+    ].join("\n\n")
+
+    outcome = build_route(question: SPRINGS, rag_service: rag, generator: generator, session_context: session_context).execute
+
+    assert_equal :answered, outcome.status
+    prompt = generator.calls.first[:prompt]
+    assert prompt.start_with?("## Photo Evidence (this turn)")
+    assert_includes prompt, "- Component: Amarre de cables"
+    assert_not_includes prompt, "Recent Conversation"
+    assert_not_includes prompt, "Selection Turn"
+    assert_not_includes prompt, "already closed these fields"
+  end
+
+  test "without a photo block the generator prompt is unchanged" do
+    rag = FakeRagService.new([ note_chunk ])
+    generator = FakeGenerator.new("La nota no documenta el ajuste. [1]")
+
+    build_route(question: SPRINGS, rag_service: rag, generator: generator, session_context: "## Recent Conversation\nuser: hola").execute
+
+    assert_not_includes generator.calls.first[:prompt], "Recent Conversation"
+    assert_not_includes generator.calls.first[:prompt], "Photo Evidence"
+    assert_nil Rag::ContextEvidenceRoute.photo_evidence_block(nil)
+    assert_nil Rag::ContextEvidenceRoute.photo_evidence_block("## Recent Conversation\nuser: hola")
+  end
+
+  test "the photo block and the closed facts travel together" do
+    rag = FakeRagService.new([ note_chunk ])
+    generator = FakeGenerator.new("Por la foto, esto parece un amarre. La nota no documenta el ajuste. [1]")
+
+    build_route(
+      question: FUJI, rag_service: rag, generator: generator, episode: closed_model_episode,
+      session_context: "## Photo Evidence (this turn)\n- Component: Amarre"
+    ).execute
+
+    prompt = generator.calls.first[:prompt]
+    assert prompt.start_with?("## Photo Evidence (this turn)")
+    assert_includes prompt, "already closed these fields: manufacturer, model"
+  end
+
   test "abstains without a generation when the body filter keeps nothing" do
     rag = FakeRagService.new([ variador_chunk ])
     generator = FakeGenerator.new("no debe llamarse")
@@ -129,7 +197,8 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
 
   private
 
-  def build_route(question: THYSSEN, output_channel: :web, entity_s3_uris: [], rag_service: nil, generator: nil)
+  def build_route(question: THYSSEN, output_channel: :web, entity_s3_uris: [], episode: nil,
+                  rag_service: nil, generator: nil, session_context: nil)
     Rag::ContextEvidenceRoute.build(
       question: question,
       account: @account,
@@ -137,10 +206,24 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
       entity_sources: [],
       response_locale: :es,
       output_channel: output_channel,
+      episode: episode,
+      session_context: session_context,
       rag_service: rag_service || FakeRagService.new([]),
       generator: generator || FakeGenerator.new("sin usar"),
       expander: FakeExpander.new
     )
+  end
+
+  def closed_model_episode
+    {
+      "v" => 1,
+      "episode_id" => "ep-context",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => { "status" => "known", "value" => "Fuji Yida", "source" => "user" },
+        "model" => { "status" => "unknown_confirmed", "source" => "user" }
+      }
+    }
   end
 
   def chunk(content, section:, page:, sha:)

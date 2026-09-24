@@ -262,7 +262,6 @@ class QueryOrchestratorService
         entity_sources:      entity_sources,
         force_entity_filter: @force_entity_filter,
         response_locale:     @response_locale,
-        output_channel:      @output_channel,
         # Carried so the turns this responder now answers through the structured
         # route keep the same attribution as the ones the route answers directly.
         user_id:                 @user_id,
@@ -352,7 +351,9 @@ class QueryOrchestratorService
       account_id: @account&.id,
       user_id: @user_id,
       conversation_session_id: @conversation_session_id,
-      correlation_id: @correlation_id
+      correlation_id: @correlation_id,
+      episode: episode_for_scope,
+      session_context: @session_context
     )
     outcome = route&.execute
     return nil unless outcome&.status == :answered || outcome&.status == :abstained

@@ -660,6 +660,36 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
   end
 
+  test "context evidence route receives the active episode" do
+    episode = {
+      "v" => 1,
+      "episode_id" => "ep-context",
+      "updated_at" => Time.current.iso8601,
+      "facts" => { "model" => { "status" => "unknown_confirmed", "source" => "user" } }
+    }
+    session = Struct.new(:active_episode, :active_entities, :id).new(episode, {}, 42)
+    service = QueryOrchestratorService.new(
+      "Cómo se ajustan los resortes de la fijación de cables ?",
+      account: accounts(:legacy), conv_session: session, output_channel: :web,
+      session_context: "## Photo Evidence (this turn)\n- Component: Amarre"
+    )
+    captured = nil
+    original_build = Rag::ContextEvidenceRoute.method(:build)
+    Rag::ContextEvidenceRoute.define_singleton_method(:build) do |**kwargs|
+      captured = kwargs
+      nil
+    end
+
+    service.send(:context_evidence_result)
+
+    assert_equal episode, captured[:episode]
+    assert_equal "## Photo Evidence (this turn)\n- Component: Amarre", captured[:session_context]
+  ensure
+    if original_build
+      Rag::ContextEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_build.call(**kwargs) }
+    end
+  end
+
   def diagnosis_cache_value
     {
       analysis: "analysis",
@@ -741,7 +771,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_nil Rag::AmbiguousModelResponder.build(
       question: JESUS_T3, account: account, entity_s3_uris: uris,
       entity_sources: sources, force_entity_filter: true,
-      response_locale: :es, output_channel: :web
+      response_locale: :es
     )
     assert_nil Rag::DeterministicRenderer.build(
       question: JESUS_T3, entity_s3_uris: uris, entity_sources: sources,

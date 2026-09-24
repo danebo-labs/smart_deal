@@ -22,25 +22,21 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
     assert_equal 1, result.recoverable_count
     assert_equal COMPOSED, result.composed
     assert_equal 114, result.composed.length
-    assert_nil result.options
   end
 
-  test "two distinct threads open a menu and the new query is last" do
+  # CG-D19: the chat never publishes a menu. A clarification after several
+  # open threads follows the answer already on screen, the most recent one.
+  test "two distinct threads join the latest one without a menu" do
     result = resolve(menu_history, CLARIFY)
 
-    assert_equal :menu, result.outcome
+    assert_equal :join, result.outcome
+    assert_equal "joined_latest", result.reason
     assert_equal 2, result.recoverable_count
-    assert_equal 3, result.options.size
-    assert_equal [ BRAKE, DOOR ], result.options.first(2).map { |option| option[:query].split("\n").first }
-    assert result.options.first(2).all? { |option| option[:query].end_with?("\n#{CLARIFY}") }
-    assert result.options.first(2).all? { |option|
-      option[:label].exclude?("\n") && option[:label].length <= Rag::EpisodeThreadResolver::MAX_LABEL_CHARS
-    }
-    assert_equal I18n.t("rag.thread_menu_new_query", locale: :es), result.options.last[:label]
-    assert_equal CLARIFY, result.options.last[:query]
+    assert_equal "#{DOOR}\n#{CLARIFY}", result.composed
+    assert_not result.respond_to?(:options)
   end
 
-  test "three distinct threads produce four chips" do
+  test "three distinct threads still join only the latest" do
     history = [
       user_row(BRAKE, "2026-09-21T16:10:00-03:00", "query:brake"),
       assistant_row("freno", "2026-09-21T16:10:05-03:00"),
@@ -53,33 +49,28 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
 
     result = resolve(history, CLARIFY)
 
-    assert_equal 4, result.options.size
-    assert_equal Rag::EpisodeThreadResolver::MAX_MENU_OPTIONS, result.options.size
-    assert_equal CLARIFY, result.options.last[:query]
+    assert_equal :join, result.outcome
+    assert_equal 3, result.recoverable_count
+    assert_equal "#{CHAIN}\n#{CLARIFY}", result.composed
   end
 
-  test "a multiline segment label stays on one truncated line" do
+  test "a multiline latest segment is joined whole" do
     history = [
+      user_row(DOOR, "2026-09-21T16:09:00-03:00", "query:door"),
       user_row("Cómo se ajusta el freno ?", "2026-09-21T16:10:00-03:00", "query:spring"),
       user_row(SYNERGY, "2026-09-21T16:11:00-03:00", "query:synergy"),
-      user_row(DOOR, "2026-09-21T16:14:00-03:00", "query:door"),
       user_row(CLARIFY, "2026-09-21T16:17:40-03:00", CID)
     ]
 
     result = resolve(history, CLARIFY)
-    spring = result.options.find { |option| option[:query].include?(SYNERGY) }
 
-    assert_equal :menu, result.outcome
-    assert_includes spring[:label], " — "
-    assert_not_includes spring[:label], "\n"
-    assert_operator spring[:label].length, :<=, 48
+    assert_equal :join, result.outcome
+    assert_equal "Cómo se ajusta el freno ?\n#{SYNERGY}\n#{CLARIFY}", result.composed
   end
 
-  test "copy lengths stay inside the history truncation" do
+  test "the legacy menu prompt stays inside the history truncation" do
     assert_equal 75, I18n.t("rag.thread_menu_prompt", locale: :es).length
     assert_equal 91, I18n.t("rag.thread_menu_prompt", locale: :en).length
-    assert_equal 23, I18n.t("rag.thread_menu_new_query", locale: :es).length
-    assert_equal 23, I18n.t("rag.thread_menu_new_query", locale: :en).length
     assert I18n.t("rag.thread_menu_prompt", locale: :es).length < ConversationSession::MAX_MSG_LENGTH
     assert I18n.t("rag.thread_menu_prompt", locale: :en).length < ConversationSession::MAX_MSG_LENGTH
   end
@@ -118,11 +109,10 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
 
     assert_equal :pass, result.outcome
     assert_equal "budget_exceeded", result.reason
-    assert_nil result.options
     assert_nil result.composed
   end
 
-  test "the new-query chip does not reopen the menu" do
+  test "a legacy menu prompt in the history does not change the join" do
     history = menu_history
     history.last["correlation_id"] = "query:first"
     history << assistant_row(I18n.t("rag.thread_menu_prompt", locale: :es), "2026-09-21T16:17:41-03:00")
@@ -130,20 +120,8 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
 
     result = resolve(history, CLARIFY)
 
-    assert_equal :pass, result.outcome
-    assert_equal "already_asked", result.reason
-  end
-
-  test "a different short clarification after the menu asks again" do
-    history = menu_history
-    history.last["content"] = "otra aclaracion corta"
-    history.last["correlation_id"] = "query:first"
-    history << assistant_row(I18n.t("rag.thread_menu_prompt", locale: :en), "2026-09-21T16:17:41-03:00")
-    history << user_row(CLARIFY, "2026-09-21T16:17:45-03:00", CID)
-
-    result = resolve(history, CLARIFY)
-
-    assert_equal :menu, result.outcome
+    assert_equal :join, result.outcome
+    assert_equal "#{DOOR}\n#{CLARIFY}", result.composed
   end
 
   test "no recoverable thread leaves the turn unchanged" do
@@ -167,10 +145,10 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
     ]
 
     result = resolve(history, CLARIFY)
-    spring = result.options.find { |option| option[:query].start_with?(SPRING) }
 
-    assert_equal :menu, result.outcome
-    assert_equal "#{SPRING}\n#{CLARIFY}", spring[:query]
+    assert_equal :join, result.outcome
+    assert_equal "#{DOOR}\n#{CLARIFY}", result.composed
+    assert_equal 2, result.recoverable_count
   end
 
   test "duplicate correlation ids do not guess a thread" do

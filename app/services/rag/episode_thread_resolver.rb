@@ -2,13 +2,12 @@
 
 module Rag
   # Resolves which stored user question a short turn continues.
-  # One recoverable thread is joined verbatim. Two or three ask with the
-  # existing quick-reply chips. No HTTP, no model, no persistence.
+  # One recoverable thread is joined verbatim. With several, the clarification
+  # follows the answer that is already on screen: the most recent thread
+  # (CG-D19). The chat never publishes a menu, chips, or a composed turn.
+  # No HTTP, no model, no persistence.
   class EpisodeThreadResolver
-    Result = Data.define(:outcome, :composed, :options, :reason, :recoverable_count)
-
-    MAX_MENU_OPTIONS = 4
-    MAX_LABEL_CHARS = 48
+    Result = Data.define(:outcome, :composed, :reason, :recoverable_count)
 
     def self.call(question:, conversation_session:, correlation_id:, locale:, now: Time.current)
       new(
@@ -47,35 +46,20 @@ module Rag
         return pass("budget_exceeded", kept.size)
       end
 
-      case kept.size
-      when 0
-        pass("no_recoverable", 0)
-      when 1
-        Result.new(
-          outcome: :join,
-          composed: compose(kept.first),
-          options: nil,
-          reason: "joined",
-          recoverable_count: 1
-        )
-      else
-        return pass("already_asked", kept.size) if already_asked?(rows)
+      return pass("no_recoverable", 0) if kept.empty?
 
-        visible = kept.last(MAX_MENU_OPTIONS - 1)
-        Result.new(
-          outcome: :menu,
-          composed: nil,
-          options: menu_options(visible),
-          reason: "menu",
-          recoverable_count: kept.size
-        )
-      end
+      Result.new(
+        outcome: :join,
+        composed: compose(kept.last),
+        reason: kept.one? ? "joined" : "joined_latest",
+        recoverable_count: kept.size
+      )
     end
 
     private
 
     def pass(reason, count = 0)
-      Result.new(outcome: :pass, composed: nil, options: nil, reason: reason, recoverable_count: count)
+      Result.new(outcome: :pass, composed: nil, reason: reason, recoverable_count: count)
     end
 
     def allowed_channel?
@@ -159,46 +143,6 @@ module Rag
       return segment if segment.include?(@question)
 
       "#{segment}\n#{@question}"
-    end
-
-    def already_asked?(rows)
-      last_assistant = rows.reverse_each.find { |row| row["role"] == "assistant" }
-      return false unless last_assistant
-      return false unless menu_prompts.include?(last_assistant["content"])
-
-      previous_user = rows.reverse_each.find do |row|
-        row["role"] == "user" && row["index"] < last_assistant["index"]
-      end
-      return false unless previous_user
-
-      Rag::FollowupQueryRewriter.normalize_label(previous_user["content"]) ==
-        Rag::FollowupQueryRewriter.normalize_label(@question)
-    end
-
-    def menu_prompts
-      %i[es en].map do |locale|
-        I18n.t("rag.thread_menu_prompt", locale: locale).truncate(ConversationSession::MAX_MSG_LENGTH)
-      end
-    end
-
-    def menu_options(segments)
-      options = segments.map do |segment|
-        { label: menu_label(segment), query: compose(segment) }
-      end
-      options << {
-        label: I18n.t("rag.thread_menu_new_query", locale: @locale),
-        query: @question
-      }
-      options
-    end
-
-    def menu_label(segment)
-      flat = segment.lines.map(&:strip).reject(&:empty?).join(" — ")
-      prefix, suffix = I18n.t("rag.thread_menu_continue", locale: @locale).split("%{segment}", 2)
-      suffix = suffix.to_s
-      budget = MAX_LABEL_CHARS - prefix.length - suffix.length
-      body = flat.truncate(budget.positive? ? budget : MAX_LABEL_CHARS)
-      "#{prefix}#{body}#{suffix}"
     end
 
     def parse_ts(value)

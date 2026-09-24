@@ -82,6 +82,25 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     assert_not_includes JSON.generate(result.state), "Elemont"
   end
 
+  # CG-D19 #D: measured 23-sep (medición 9, paso 5). After «No, no es Fuji
+  # Yida. Es KONE», the KONE fault opened nothing and rode on the springs goal.
+  test "a new subject on the already known brand opens a new episode" do
+    text = "Ahora estoy revisando un KONE que no nivela en planta 3"
+    prior = episode_state(goal: SPRINGS, manufacturer: "KONE", model_status: "unknown_confirmed")
+    result = classify(text, prior: prior)
+    assert_equal :new_episode, result.decision
+    assert_equal text, result.state.dig("goal", "text")
+    assert_not_equal prior["episode_id"], result.state["episode_id"]
+    assert_equal "KONE", fact_value(result, "manufacturer")
+  end
+
+  test "a short KONE mention on the known brand still continues the episode" do
+    prior = episode_state(goal: SPRINGS, manufacturer: "KONE", model_status: "unknown_confirmed")
+    result = classify("y en el KONE el LED 7?", prior: prior)
+    assert_not_equal :new_episode, result.decision
+    assert_equal prior["episode_id"], result.state["episode_id"]
+  end
+
   test "annex B ahora da 18 does not restart" do
     prior = episode_state(goal: ELEMONT_GOAL, manufacturer: "Elemont")
     result = classify("ahora da 18", prior: prior)

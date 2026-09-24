@@ -160,6 +160,13 @@ module Rag
       if other && subject_brand?(other) && @words.size >= 6
         return open_episode(:new_episode, current, goal: :always)
       end
+      # CG-D19 #D (medición 9, paso 5): «Ahora estoy revisando un KONE que no
+      # nivela» after the brand was corrected to KONE is new work on the same
+      # brand, not a clarification of the springs. The subject form decides,
+      # exactly as it does for another brand.
+      if known && brands == [ known ] && subject_brand?(known) && @words.size >= 6 && !correction?
+        return open_episode(:new_episode, current, goal: :always)
+      end
       if known && brands.any? { |brand| brand != known }
         return continue(current, :continued_mention, :no_brand, compose: elliptical?)
       end

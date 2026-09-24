@@ -11,7 +11,7 @@
       "source_pages": [7],
       "required": [
         {"label": "identifica D8", "pattern": "\\bD8\\b"},
-        {"label": "limita la función a lo documentado", "pattern": "(?:no (?:documenta|define|incluye)|El documento no incluye este dato|limitador)"}
+        {"label": "limita la función a lo documentado", "pattern": "(?:no (?:documenta|define|incluye)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo|limitador)"}
       ],
       "optional": [
         {"label": "distingue nombre de función", "pattern": "(?:nombre|serie|funci[oó]n)"}
@@ -47,7 +47,7 @@
       "source_pages": [14],
       "required": [
         {"label": "identifica presostato", "pattern": "PRESOSTATO"},
-        {"label": "identifica XP31 o se abstiene", "pattern": "(?:\\bXP31\\b|El documento no incluye este dato|Verificar en campo)"}
+        {"label": "identifica XP31 o se abstiene", "pattern": "(?:\\bXP31\\b|El documento no incluye este dato|No encontré ese dato en la documentación que tengo|Verificar en campo)"}
       ],
       "optional": [
         {"label": "cita página 14", "pattern": "(?:p[aá]gina|p\\.)\\s*14"}
@@ -136,7 +136,7 @@
       "source_pages": [40],
       "required": [
         {"label": "identifica DL27", "pattern": "\\bDL27\\b"},
-        {"label": "se abstiene sobre lógica", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato)"}
+        {"label": "se abstiene sobre lógica", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo)"}
       ],
       "optional": [
         {"label": "distingue etiqueta de estado", "pattern": "(?:identifica|etiqueta|estado)"}
@@ -152,7 +152,7 @@
       "question": "En Thyssen-E, ¿qué LED señala una condición normal y cuál un fallo?",
       "source_pages": [93],
       "required": [
-        {"label": "expone falta de lógica documentada", "pattern": "(?:no (?:define|documenta|incluye).{0,50}(?:l[oó]gica|encendido)|El documento no incluye este dato)"}
+        {"label": "expone falta de lógica documentada", "pattern": "(?:no (?:define|documenta|incluye).{0,50}(?:l[oó]gica|encendido)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo)"}
       ],
       "optional": [
         {"label": "identifica LEDs documentados sin asignar estado", "pattern": "\\b(?:DL|LED|L)\\s*-?\\d+\\b"}
@@ -186,7 +186,7 @@
       "question": "¿Cuál es el torque de apriete de XP31?",
       "source_pages": [14],
       "required": [
-        {"label": "abstención visible", "pattern": "(?:El documento no incluye este dato|no (?:se )?(?:documenta|especifica|incluye))"}
+        {"label": "abstención visible", "pattern": "(?:El documento no incluye este dato|No encontré ese dato en la documentación que tengo|no (?:se )?(?:documenta|especifica|incluye))"}
       ],
       "optional": [
         {"label": "sugiere verificar fuente completa", "pattern": "(?:Verificar en campo|esquema completo|manual completo)"}
@@ -206,7 +206,7 @@
         {"label": "mantiene referencia solicitada", "pattern": "(?:Carlos Silva|p[aá]gina\\s*8|[ií]ndice)"}
       ],
       "optional": [
-        {"label": "expone ausencia si retrieval no responde", "pattern": "(?:El documento no incluye este dato|no (?:se )?(?:encuentra|documenta))"}
+        {"label": "expone ausencia si retrieval no responde", "pattern": "(?:El documento no incluye este dato|No encontré ese dato en la documentación que tengo|no (?:se )?(?:encuentra|documenta))"}
       ],
       "penalized": [
         {"label": "respuesta vacía", "pattern": "\\A\\s*\\z", "severity": "technical_important"}

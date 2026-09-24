@@ -336,7 +336,6 @@ class Rag::RegexCharacterizationTest < ActiveSupport::TestCase
       entity_sources: [],
       force_entity_filter: false,
       response_locale: :es,
-      output_channel: nil,
       rag_service: FakeRetrievalService.new(
         [
           heading_chunk("## EM4000 V1 DATA_NOT_AVAILABLE", 33),

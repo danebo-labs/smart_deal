@@ -158,8 +158,20 @@ module Rag
       :es
     end
 
-    def label(key)
-      I18n.t("rag.deterministic.#{key}", locale: locale)
+    # Raw marker as the ingestion contract writes it into a record. It is
+    # compared, never rendered: the prose says the absence in words.
+    DATA_NOT_AVAILABLE = "DATA_NOT_AVAILABLE"
+
+    def copy(key, **args)
+      I18n.t("rag.deterministic.#{key}", locale: locale, **args)
+    end
+
+    # Verbatim record text does not always close its sentence; the prose does,
+    # so a paragraph reads as one. The benchmark evaluator drops that final
+    # period before comparing against the manifest.
+    def sentence(text)
+      value = text.to_s.strip
+      value.match?(/[.!?…]\z/) ? value : "#{value}."
     end
 
     # Chunk → the citation hash shape produced by Bedrock::CitationProcessor.

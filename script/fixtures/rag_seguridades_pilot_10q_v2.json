@@ -125,7 +125,7 @@
       "required": [
         {"label": "identifica DL27", "pattern": "\\bDL27\\b"},
         {"label": "nombre de serie", "pattern": "SEGURIDAD HUECO"},
-        {"label": "se abstiene de condiciones no documentadas", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato)"}
+        {"label": "se abstiene de condiciones no documentadas", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo)"}
       ],
       "optional": [
         {"label": "cita página 40", "pattern": "(?:p[aá]gina|p\\.)\\s*40"}
@@ -166,7 +166,7 @@
         {"label": "serie L8", "pattern": "PUERTAS EXTERIORES"},
         {"label": "identifica L7", "pattern": "\\bL7\\b"},
         {"label": "serie L7", "pattern": "CERROJOS EXTERIORES\\s*-\\s*CABINA"},
-        {"label": "se abstiene de normal/fallo", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|normal|fallo|condiciones)|El documento no incluye este dato)"}
+        {"label": "se abstiene de normal/fallo", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|normal|fallo|condiciones)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo)"}
       ],
       "optional": [
         {"label": "cita página 93", "pattern": "(?:p[aá]gina|p\\.)\\s*93"}

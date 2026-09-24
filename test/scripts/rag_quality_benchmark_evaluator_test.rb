@@ -55,42 +55,54 @@ class RagQualityBenchmarkEvaluatorTest < ActiveSupport::TestCase
     assert_failure(excluded, "source_isolation", "unexpected source URIs")
   end
 
-  test "rejects malformed exhaustive grammar" do
-    missing_action = valid_payload
-    result_for(missing_action, "isolated", 5)["answer"] =
-      exhaustive_answer.sub("Acción: Mover el control a la izquierda.\n", "")
-    assert_failure(missing_action, "exhaustive_grammar")
+  # CG-D19: a paragraph is valid only when it follows the renderer's prose
+  # template. The old three-line grammar is rejected as a whole.
+  test "rejects malformed exhaustive prose" do
+    old_grammar = valid_payload
+    result_for(old_grammar, "isolated", 5)["answer"] = <<~ANSWER
+      Prueba: Bocina del control de plataforma
+      Acción: Pulsar el botón de bocina.
+      Resultado esperado: Suena la bocina.
+    ANSWER
+    assert_failure(old_grammar, "exhaustive_grammar")
 
-    missing_result = valid_payload
-    result_for(missing_result, "isolated", 5)["answer"] =
-      exhaustive_answer.sub("Resultado esperado: La máquina gira en la dirección indicada.\n", "")
-    assert_failure(missing_result, "exhaustive_grammar")
+    missing_result_sentence = valid_payload
+    result_for(missing_result_sentence, "isolated", 5)["answer"] =
+      exhaustive_answer.sub(" El manual documenta como resultado: La máquina gira en la dirección indicada.", "")
+    assert_failure(missing_result_sentence, "exhaustive_grammar")
 
-    duplicate_label = valid_payload
-    result_for(duplicate_label, "isolated", 5)["answer"] =
-      exhaustive_answer.sub(
-        "Resultado esperado: Suena la bocina.",
-        "Acción: Pulsar otra vez.\nResultado esperado: Suena la bocina."
-      )
-    assert_failure(duplicate_label, "exhaustive_grammar")
-
-    prose = valid_payload
-    result_for(prose, "isolated", 5)["answer"] =
+    title_line = valid_payload
+    result_for(title_line, "isolated", 5)["answer"] =
       "Lista completa:\n\n#{exhaustive_answer}"
-    assert_failure(prose, "exhaustive_grammar")
+    assert_failure(title_line, "exhaustive_grammar")
   end
 
   test "rejects result borrowed from a neighboring exhaustive entry" do
     payload = valid_payload
     payload_answer = exhaustive_answer.sub(
-      "Resultado esperado: La máquina gira en la dirección indicada.\n\n" \
-      "Prueba: Dirección derecha",
-      "Resultado esperado: Sin resultado documentado.\n\n" \
-      "Prueba: Dirección derecha"
+      "Dirección izquierda: Mover el control a la izquierda. El manual documenta como resultado: La máquina gira en la dirección indicada.",
+      "Dirección izquierda: Mover el control a la izquierda. El manual documenta como resultado: Sin resultado documentado."
     )
     result_for(payload, "isolated", 5)["answer"] = payload_answer
 
     assert_failure(payload, "exhaustive", "not rendered verbatim")
+  end
+
+  test "a record without a documented result is accepted when the prose says so" do
+    payload = valid_payload
+    manifest = records_manifest
+    manifest["functional_test_cases"]["records"][1]["expected_result"] = "DATA_NOT_AVAILABLE"
+    payload_answer = exhaustive_answer.sub(
+      "Bocina del control de plataforma: Pulsar el botón de bocina. El manual documenta como resultado: Suena la bocina.",
+      "Bocina del control de plataforma: Pulsar el botón de bocina. El manual no documenta el resultado esperado de esta prueba."
+    )
+    result_for(payload, "isolated", 5)["answer"] = payload_answer
+    result_for(payload, "conversation", 5)["answer"] = payload_answer
+
+    report = RagQualityBenchmarkEvaluator.new(payload, source: "test.json", records_manifest: manifest).evaluate
+
+    assert report[:passed], report[:failures].inspect
+    assert_not_includes payload_answer, "DATA_NOT_AVAILABLE"
   end
 
   test "rejects rendered ids that differ from the manifest" do
@@ -118,7 +130,7 @@ class RagQualityBenchmarkEvaluatorTest < ActiveSupport::TestCase
     payload = valid_payload
     result = result_for(payload, "conversation", 5)
     result["rendered_record_ids"] = (FT_IDS - [ FT_IDS[1] ]).sort
-    result["answer"] = exhaustive_answer.gsub(/Prueba: Bocina.*?Resultado esperado: Suena la bocina\.\n\n/m, "")
+    result["answer"] = exhaustive_answer.sub(/Bocina del control de plataforma: .*?Suena la bocina\.\n\n/m, "")
 
     assert_failure(payload, "exhaustive", "missing functional unit platform-horn")
   end
@@ -126,22 +138,32 @@ class RagQualityBenchmarkEvaluatorTest < ActiveSupport::TestCase
   test "rejects mandatory item without action and promoted precaution" do
     missing_action = valid_payload
     result_for(missing_action, "isolated", 3)["answer"] = <<~ANSWER
-      Precauciones e inspecciones
+      #{PRECAUTIONS_INTRO}
       Revisar el área.
 
-      Detención obligatoria con evidencia explícita
-      Disparador: Mal funcionamiento.
+      #{MANDATORY_INTRO}
+      Ante «Mal funcionamiento», el manual dice algo más.
     ANSWER
     assert_failure(missing_action, "stop_work_grammar")
 
-    promoted = valid_payload
-    result_for(promoted, "conversation", 3)["answer"] = <<~ANSWER
+    old_grammar = valid_payload
+    result_for(old_grammar, "isolated", 3)["answer"] = <<~ANSWER
       Precauciones e inspecciones
       Revisar el área.
 
       Detención obligatoria con evidencia explícita
-      Disparador: Personal no autorizado.
+      Disparador: Mal funcionamiento documentado.
       Acción obligatoria: Marcar y detener la máquina.
+    ANSWER
+    assert_failure(old_grammar, "stop_work", "opening sentence")
+
+    promoted = valid_payload
+    result_for(promoted, "conversation", 3)["answer"] = <<~ANSWER
+      #{PRECAUTIONS_INTRO}
+      Revisar el área.
+
+      #{MANDATORY_INTRO}
+      Ante «Personal no autorizado», el manual obliga a lo siguiente: Marcar y detener la máquina.
     ANSWER
     assert_failure(promoted, "stop_work", "inspection precaution")
   end
@@ -269,6 +291,8 @@ class RagQualityBenchmarkEvaluatorTest < ActiveSupport::TestCase
   end
 
   FT_IDS = %w[FR-AAAAAAAAAAAAAAA1 FR-AAAAAAAAAAAAAAA2 FR-AAAAAAAAAAAAAAA3 FR-AAAAAAAAAAAAAAA4].freeze
+  PRECAUTIONS_INTRO = I18n.t("rag.deterministic.precautions_intro", locale: :es)
+  MANDATORY_INTRO = I18n.t("rag.deterministic.mandatory_intro", locale: :es)
   SW_MANDATORY_IDS = %w[FR-BBBBBBBBBBBBBBB1].freeze
   SW_ALL_IDS = (SW_MANDATORY_IDS + %w[FR-BBBBBBBBBBBBBBB2]).freeze
 
@@ -342,34 +366,26 @@ class RagQualityBenchmarkEvaluatorTest < ActiveSupport::TestCase
     "s3://benchmark/photo.jpg"
   end
 
+  # Same prose the deterministic renderers emit (rag.deterministic.*, CG-D19).
   def exhaustive_answer
     <<~ANSWER
-      Prueba: Parada de emergencia del control de tierra
-      Acción: Empujar el botón de parada de emergencia.
-      Resultado esperado: No se ejecuta ninguna función.
+      Parada de emergencia del control de tierra: Empujar el botón de parada de emergencia. El manual documenta como resultado: No se ejecuta ninguna función.
 
-      Prueba: Bocina del control de plataforma
-      Acción: Pulsar el botón de bocina.
-      Resultado esperado: Suena la bocina.
+      Bocina del control de plataforma: Pulsar el botón de bocina. El manual documenta como resultado: Suena la bocina.
 
-      Prueba: Dirección izquierda
-      Acción: Mover el control a la izquierda.
-      Resultado esperado: La máquina gira en la dirección indicada.
+      Dirección izquierda: Mover el control a la izquierda. El manual documenta como resultado: La máquina gira en la dirección indicada.
 
-      Prueba: Dirección derecha
-      Acción: Mover el control a la derecha.
-      Resultado esperado: La máquina gira en la dirección indicada.
+      Dirección derecha: Mover el control a la derecha. El manual documenta como resultado: La máquina gira en la dirección indicada.
     ANSWER
   end
 
   def stop_work_answer
     <<~ANSWER
-      Precauciones e inspecciones
+      #{PRECAUTIONS_INTRO}
       Verifica mareos, personal no autorizado e interferencias antes de operar.
 
-      Detención obligatoria con evidencia explícita
-      Disparador: Mal funcionamiento documentado.
-      Acción obligatoria: Marcar y detener la máquina.
+      #{MANDATORY_INTRO}
+      Ante «Mal funcionamiento documentado.», el manual obliga a lo siguiente: Marcar y detener la máquina.
     ANSWER
   end
 

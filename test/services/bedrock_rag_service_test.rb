@@ -840,9 +840,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         :text_prompt_template
       )
       assert_includes template, "STOP-WORK EVIDENCE OVERRIDE"
-      assert_includes template, "Precauciones e inspecciones"
-      assert_includes template, "Detención obligatoria con evidencia explícita"
+      assert_match(/Answer in running prose.*with no headings, field labels, bullets, or numbering/m, template)
+      assert_match(/Both must come from the same retrieved evidence fragment/, template)
       assert_match(/Prior conversation context never promotes a precaution/, template)
+      assert_not_includes template, "Precauciones e inspecciones"
+      assert_not_includes template, "Disparador:"
     end
   end
 
@@ -917,7 +919,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert_equal 1, call_count
       assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
-      assert_includes result[:answer], "El documento no incluye este dato"
+      assert_includes result[:answer], I18n.t("rag.data_not_available", locale: :es)
       assert_includes result[:answer], "documentos pineados"
     end
   end
@@ -1474,11 +1476,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
     assert_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
     assert_match(/the 300-word target\s+does not apply/, out)
-    assert_match(/final entry count must equal the ledger count/, out)
+    assert_match(/paragraph count must equal the ledger count/, out)
     assert_match(/Associate each result only with the numbered action/, out)
     assert_match(/keep left\/right, forward\/reverse/, out)
-    assert_match(/ground\/platform controls as\s+separate entries/, out)
-    assert_match(/Begin immediately with the first\s+`Prueba:` line/, out)
+    assert_match(/ground\/platform controls as\s+separate paragraphs/, out)
+    assert_match(/Begin immediately with the first paragraph/, out)
+    assert_match(/say so in one clause; do not print\s+DATA_NOT_AVAILABLE/, out)
     assert_includes out, 'Do not name or invent a counterpart'
     assert_not_includes out, '# DELIVERY CHANNEL'
     assert out.index('# FINAL LANGUAGE REMINDER') < out.index('# EXHAUSTIVE COMPLETENESS OVERRIDE')
@@ -1496,7 +1499,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
   end
 
-  test 'exhaustive query without stop-work keeps the triple grammar' do
+  # CG-D19: the technician reads prose on every path. The directives keep
+  # their evidence rules (ledger, no borrowed result, same-fragment pairing)
+  # and drop the field labels.
+  STOP_WORK_LABELS = [ 'Precauciones e inspecciones', 'Detención obligatoria', 'Disparador:', 'Acción obligatoria:' ].freeze
+  EXHAUSTIVE_LABELS = [ '`Prueba:', '`Acción:', '`Resultado esperado:' ].freeze
+
+  test 'exhaustive query without stop-work asks for one prose paragraph per test' do
     question = 'Enumera todas las pruebas de funcionamiento antes de operar'
     svc = BedrockRagService.allocate
     assert_nil svc.send(:query_safety_directive, question)
@@ -1505,15 +1514,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     out = generation_prompt(question)
 
     assert_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
-    assert_includes out, '`Prueba: ...`'
-    assert_includes out, '`Acción: ...`'
-    assert_includes out, '`Resultado esperado: ...`'
-    assert_includes out, 'The entire visible response must consist only of those entries'
+    assert_match(/one short paragraph per documented test, with no\s+headings, field labels, bullets, or numbering/, out)
+    assert_match(/the paragraph count must equal the ledger count/, out)
+    assert_match(/Never borrow a result from a\s+preceding or following action/, out)
+    assert_includes out, 'The entire visible response must consist only of those paragraphs'
+    EXHAUSTIVE_LABELS.each { |label| assert_not_includes out, label }
     assert_not_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
     assert_not_includes out, '# EXHAUSTIVE STOP-WORK COVERAGE'
   end
 
-  test 'stop-work query without exhaustive intent keeps the stop-work grammar' do
+  test 'stop-work query without exhaustive intent asks for prose that keeps precautions apart' do
     question = '¿Cuándo debo detener el trabajo?'
     svc = BedrockRagService.allocate
     assert svc.send(:query_safety_directive, question).present?
@@ -1522,16 +1532,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     out = generation_prompt(question)
 
     assert_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
-    assert_includes out, 'Use the exact text label `Precauciones e inspecciones`'
-    assert_includes out, 'Use the exact text label `Detención obligatoria con evidencia explícita`'
-    assert_includes out, '`Disparador: ...`'
-    assert_includes out, '`Acción obligatoria: ...`'
+    assert_match(/Answer in running prose.*with no headings, field labels, bullets, or numbering/m, out)
+    assert_match(/say the finding\s+as a precaution, never as a stop condition/, out)
+    assert_match(/Both must come from the same retrieved evidence fragment/, out)
+    STOP_WORK_LABELS.each { |label| assert_not_includes out, label }
     assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
     assert_not_includes out, '# EXHAUSTIVE STOP-WORK COVERAGE'
-    assert_not_includes out, 'The entire visible response must consist only of those entries'
+    assert_not_includes out, 'The entire visible response must consist only of those paragraphs'
   end
 
-  test 'exhaustive stop-work query without a pin uses stop grammar for structure and completeness for coverage' do
+  test 'exhaustive stop-work query without a pin uses the stop-work prose and completeness only as coverage' do
     question = 'Dame la lista completa de comprobaciones que obligan a detener el trabajo.'
     svc = BedrockRagService.allocate
     raw_completeness = svc.send(:query_completeness_directive, question)
@@ -1539,24 +1549,21 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert svc.send(:query_safety_directive, question).present?
     assert raw_completeness.present?
     assert RagRetrievalProfile.new(question: question).exhaustive_query?
-    assert_includes raw_completeness, 'The entire visible response must consist only of those entries'
+    assert_includes raw_completeness, 'The entire visible response must consist only of those paragraphs'
 
     out = generation_prompt(question)
-    requires_stop_sections = out.include?('Use the exact text label `Precauciones e inspecciones`') &&
-      out.include?('Use the exact text label `Detención obligatoria con evidencia explícita`')
-    requires_exclusive_triples = out.include?('The entire visible response must consist only of those entries') &&
-      out.include?('Do not use a title, introduction, section header')
 
-    assert requires_stop_sections
-    assert_not(requires_stop_sections && requires_exclusive_triples)
+    assert_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
     assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
-    assert_not_includes out, 'Every entry must use exactly three non-empty lines'
+    assert_not_includes out, 'The entire visible response must consist only of those paragraphs'
+    assert_not_includes out, 'one short paragraph per documented test'
     assert_includes out, '# EXHAUSTIVE STOP-WORK COVERAGE'
-    assert_match(/include every documented\s+stop-relevant condition/, out)
-    assert_match(/Never invent `Resultado esperado`/, out)
+    assert_match(/include every documented\s+stop-relevant\s+condition/, out)
+    assert_match(/Never invent an expected result/, out)
     assert_match(/Never copy a result from a\s+neighboring action/, out)
-    assert_match(/must\s+come from the same retrieved evidence fragment/, out)
+    assert_match(/Both must come from the same retrieved evidence fragment/, out)
     assert_match(/never promotes a precaution/, out)
+    (STOP_WORK_LABELS + EXHAUSTIVE_LABELS).each { |label| assert_not_includes out, label }
     assert_not_includes out, '# DELIVERY CHANNEL'
   end
 
@@ -1568,14 +1575,14 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_not_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
   end
 
-  test 'literal label rules stay in force when the completeness grammar also applies' do
+  test 'literal label rules stay in force when the completeness override also applies' do
     out = generation_prompt('Dame la lista completa de las funciones de las etiquetas del esquema')
 
     assert_includes out, '# EXHAUSTIVE COMPLETENESS OVERRIDE'
     assert_literal_label_rules out
   end
 
-  test 'literal label rules stay in force when the stop-work grammar also applies' do
+  test 'literal label rules stay in force when the stop-work override also applies' do
     out = generation_prompt('¿Cuándo debo detener el trabajo si una etiqueta del esquema no identifica su función?')
 
     assert_includes out, '# STOP-WORK EVIDENCE OVERRIDE'
@@ -1936,7 +1943,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   def assert_literal_label_rules(prompt)
     assert_includes prompt, '# LITERAL LABEL RULES'
     assert_includes prompt, '`<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`'
-    assert_includes prompt, 'Completeness and stop-work grammars do not remove or invalidate this safe form.'
+    assert_includes prompt, 'The completeness and stop-work overrides do not remove or invalidate this safe form.'
   end
 
   def uri_key_clauses(filter)
@@ -2338,7 +2345,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       service = BedrockRagService.new(account: @account)
       result = service.query('¿Cuál es el torque de apriete de -PBCM -J26?', response_locale: :es)
       assert_not_includes result[:answer], 'DATA_NOT_AVAILABLE'
-      assert_includes result[:answer], "El documento no incluye este dato"
+      assert_includes result[:answer], I18n.t("rag.data_not_available", locale: :es)
     end
   end
 
@@ -2348,7 +2355,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       service = BedrockRagService.new(account: @account)
       result = service.query('¿Cuál es el torque?', response_locale: :es)
       assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
-      assert_equal 1, result[:answer].scan("El documento no incluye este dato").size
+      assert_equal 1, result[:answer].scan(I18n.t("rag.data_not_available", locale: :es)).size
     end
   end
 

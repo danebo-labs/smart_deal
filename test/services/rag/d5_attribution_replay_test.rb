@@ -36,6 +36,7 @@ class Rag::D5AttributionReplayTest < ActiveSupport::TestCase
     end
     %w[L9 L8 L7].each { |required| assert_includes result.fetch("answer"), required }
     assert_includes result.fetch("answer"), "no especifica"
+    # The guard replays the archived visible text; the 2026-07 copy stays as archived.
     assert_includes result.fetch("answer"), "El documento no incluye este dato"
     assert_includes result.fetch("answer"), "[1]"
     assert_not_includes result.fetch("answer"), "[2]"

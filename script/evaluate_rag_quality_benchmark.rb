@@ -27,6 +27,8 @@ class RagQualityBenchmarkEvaluator
   EXHAUSTIVE_KEYS = [ [ "isolated", 5 ], [ "conversation", 5 ] ].freeze
   STOP_WORK_KEYS = [ [ "isolated", 3 ], [ "conversation", 3 ] ].freeze
   REPAIR_KEYS = [ [ "isolated", 6 ], [ "conversation", 6 ] ].freeze
+  # The benchmark corpus and its deterministic answers are Spanish.
+  DETERMINISTIC_LOCALE = :es
   VISUAL_CODES = %w[SV1 SV2 SV3 SV4 RV1 RV2 RV3 CV1 CV2 ORF1 ORF3 ORF4 FRRV1 BRK P41 P42].freeze
   PRIMARY_VISUAL_CODES = %w[FRRV1 P41 P42 ORF1 BRK].freeze
   COHORT_FIELDS = %w[
@@ -216,9 +218,9 @@ class RagQualityBenchmarkEvaluator
 
       # Every manifest record must appear verbatim (action + expected result) —
       # an entry that borrows a neighbor's result or paraphrases fails here.
-      entry_pairs = entries.map { |e| [ normalize(e["accion"]), normalize(e["resultado"]) ] }
+      entry_pairs = entries.map { |e| [ normalize_sentence(e["accion"]), normalize_sentence(e["resultado"]) ] }
       Array(@records_manifest.dig("functional_test_cases", "records")).each do |record|
-        pair = [ normalize(record["action"]), normalize(record["expected_result"]) ]
+        pair = [ normalize_sentence(record["action"]), normalize_sentence(record["expected_result"]) ]
         unless entry_pairs.include?(pair)
           fail_case("exhaustive", key, "record #{record['record_id']} is not rendered verbatim")
         end
@@ -264,40 +266,49 @@ class RagQualityBenchmarkEvaluator
     end
   end
 
+  # CG-D19: the deterministic renderer writes one prose paragraph per record
+  # with the localized templates in rag.deterministic.*. The evaluator parses
+  # each paragraph with those same templates, so the visible text and the
+  # manifest are compared through one source of copy.
   def parse_exhaustive_entries(raw, key)
     blocks = raw.to_s.strip.split(/\n[ \t]*\n+/)
     entries = []
 
     blocks.each_with_index do |block, index|
-      lines = block.lines.map(&:strip).reject(&:empty?)
-      fields = {}
-      valid = lines.size == 3
-
-      lines.each do |line|
-        match = line.match(/\A(Prueba|Acción|Resultado esperado):\s*(.+)\z/i)
-        valid = false unless match
-        next unless match
-
-        label = normalize(match[1])
-        valid = false if fields.key?(label)
-        fields[label] = match[2].strip
-      end
-
-      expected = [ "prueba", "accion", "resultado esperado" ]
-      valid &&= fields.keys.sort == expected.sort && fields.values.none?(&:blank?)
-      unless valid
-        fail_case("exhaustive_grammar", key, "invalid entry #{index + 1}; expected exactly Prueba/Acción/Resultado esperado")
+      text = block.lines.map(&:strip).reject(&:empty?).join(" ")
+      with_result = text.match(template_regex(:test_entry, title: ".+?", action: ".+?", result: ".+"))
+      without_result = text.match(template_regex(:test_entry_without_result, title: ".+?", action: ".+"))
+      match = with_result || without_result
+      fields = match && {
+        "prueba" => match[:title].strip,
+        "accion" => match[:action].strip,
+        "resultado" => (with_result ? match[:result].strip : "DATA_NOT_AVAILABLE")
+      }
+      unless fields && fields.values.none?(&:blank?)
+        fail_case("exhaustive_grammar", key, "invalid entry #{index + 1}; expected one prose paragraph per test")
         next
       end
 
-      entries << {
-        "prueba" => fields["prueba"],
-        "accion" => fields["accion"],
-        "resultado" => fields["resultado esperado"]
-      }
+      entries << fields
     end
 
     entries
+  end
+
+  # Builds a regex from a rag.deterministic template, escaping the fixed copy
+  # and replacing each %{placeholder} with the given named capture body.
+  def template_regex(template_key, **captures)
+    template = Regexp.escape(I18n.t("rag.deterministic.#{template_key}", locale: DETERMINISTIC_LOCALE))
+    captures.each do |name, body|
+      template = template.sub(Regexp.escape("%{#{name}}"), "(?<#{name}>#{body})")
+    end
+    /\A#{template}\z/m
+  end
+
+  # The renderer closes every verbatim sentence with a period; the manifest
+  # keeps the record as ingested. Compare without that final period.
+  def normalize_sentence(text)
+    normalize(text).sub(/\.\z/, "")
   end
 
   def entry_matches_unit?(entry, unit)
@@ -357,16 +368,16 @@ class RagQualityBenchmarkEvaluator
 
       lines = raw.lines.map(&:rstrip)
       normalized_lines = lines.map { |line| normalize(line) }
-      precautions_index = normalized_lines.index("precauciones e inspecciones")
-      mandatory_index = normalized_lines.index("detencion obligatoria con evidencia explicita")
-      fail_case("stop_work", key, "missing `Precauciones e inspecciones` label") unless precautions_index
-      fail_case("stop_work", key, "missing `Detención obligatoria con evidencia explícita` label") unless mandatory_index
+      precautions_index = normalized_lines.index(normalize(I18n.t("rag.deterministic.precautions_intro", locale: DETERMINISTIC_LOCALE)))
+      mandatory_index = normalized_lines.index(normalize(I18n.t("rag.deterministic.mandatory_intro", locale: DETERMINISTIC_LOCALE)))
+      fail_case("stop_work", key, "missing precautions opening sentence") unless precautions_index
+      fail_case("stop_work", key, "missing mandatory stop opening sentence") unless mandatory_index
       next unless mandatory_index
 
       section_end = [ precautions_index ].compact.select { |index| index > mandatory_index }.min || lines.size
       section = lines[(mandatory_index + 1)...section_end].join("\n").strip
       items = section.split(/\n[ \t]*\n+/)
-      fail_case("stop_work", key, "mandatory section has no delimited items") if items.empty?
+      fail_case("stop_work", key, "mandatory paragraph has no delimited items") if items.empty?
       if expected_mandatory.any? && items.size != expected_mandatory.size
         fail_case("stop_work", key, "mandatory items (#{items.size}) != manifest stop-work records (#{expected_mandatory.size})")
       end
@@ -375,12 +386,14 @@ class RagQualityBenchmarkEvaluator
       end
 
       item_pairs = []
+      stop_entry = template_regex(:stop_entry, trigger: ".+?", action: ".+")
       items.each_with_index do |item, index|
-        item_lines = item.lines.map(&:strip).reject(&:empty?)
-        trigger = item_lines.first&.match(/\ADisparador:\s*(.+)\z/i)&.captures&.first
-        action = item_lines.second&.match(/\AAcción obligatoria:\s*(.+)\z/i)&.captures&.first
-        item_pairs << [ normalize(trigger), normalize(action) ] if trigger && action
-        unless item_lines.size == 2 && trigger.present? && action.present?
+        text = item.lines.map(&:strip).reject(&:empty?).join(" ")
+        match = text.match(stop_entry)
+        trigger = match && match[:trigger].strip
+        action = match && match[:action].strip
+        item_pairs << [ normalize_sentence(trigger), normalize_sentence(action) ] if trigger && action
+        unless trigger.present? && action.present?
           fail_case("stop_work_grammar", key, "invalid mandatory item #{index + 1}")
           next
         end
@@ -396,13 +409,13 @@ class RagQualityBenchmarkEvaluator
           fail_case("stop_work", key, "mandatory item #{index + 1} lacks explicit action")
         end
         if normalized_trigger.match?(/\bmareo|\bpersonal no autorizado|\bpersonas no autorizadas|\binterfier/)
-          fail_case("stop_work", key, "inspection precaution appears in mandatory stop-work section")
+          fail_case("stop_work", key, "inspection precaution appears in mandatory stop-work paragraph")
         end
       end
 
       # Every manifest stop-work record must appear verbatim as a mandatory item.
       Array(@records_manifest.dig("stop_work_cases", "mandatory_records")).each do |record|
-        pair = [ normalize(record["stop_trigger"]), normalize(record["stop_action"]) ]
+        pair = [ normalize_sentence(record["stop_trigger"]), normalize_sentence(record["stop_action"]) ]
         unless item_pairs.include?(pair)
           fail_case("stop_work", key, "stop-work record #{record['record_id']} is not rendered verbatim")
         end

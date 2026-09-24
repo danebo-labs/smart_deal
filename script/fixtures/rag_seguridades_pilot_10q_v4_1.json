@@ -312,7 +312,7 @@
       "required": [
         {
           "label": "abstiene",
-          "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato|DATA_NOT_AVAILABLE"
+          "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo|DATA_NOT_AVAILABLE"
         }
       ],
       "optional": [

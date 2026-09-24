@@ -39,24 +39,29 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test "analyzes once, preserves UNKNOWN and builds compact context within history limit" do
+  test "analyzes once, keeps UNKNOWN in the payload and out of the prose, and builds compact context within history limit" do
     client = FakeClient.new(VALID_JSON)
     result = build_service(client: client).call
 
-    assert_includes result[:analysis], "Observado en la imagen"
-    # Regression (P0 idioma): the evidence body must follow the resolved
-    # response locale, not stay hardcoded in English — locale: :es below.
-    assert_includes result[:analysis], "Fabricante: UNKNOWN"
+    # CG-D19: the photo-only reading is prose in the response locale. UNKNOWN,
+    # DEGRADED and REQUIRES_FIELD_VERIFICATION stay in parsed/compact_context.
+    assert_includes result[:analysis], "Veo un controlador con una etiqueta legible y suciedad superficial."
+    assert_includes result[:analysis], "Se leen estos códigos o etiquetas: DO-17, ERR 42."
+    assert_includes result[:analysis], "Se aprecia desgaste o deterioro."
+    assert_not_includes result[:analysis], "UNKNOWN"
+    assert_not_includes result[:analysis], "DEGRADED"
+    assert_not_includes result[:analysis], "REQUIRES_FIELD_VERIFICATION"
+    assert_not_includes result[:analysis], "Fabricante:"
     assert_not_includes result[:analysis], "Manufacturer:"
-    assert_includes result[:analysis], "Orientación"
+    assert_not_includes result[:analysis], "**"
+    assert_not_includes result[:analysis], "- ¿"
+    assert_includes result[:analysis], I18n.t("rag.photo_guidance", locale: :es)
     assert_includes result[:analysis], "No hay un manual compatible"
     assert_includes result[:compact_context], "Fabricante: UNKNOWN"
     assert_operator result[:compact_context].length, :<=, ConversationSession::MAX_MSG_LENGTH
     assert_equal "visual_query", client.kwargs[:route]
     assert_equal "field_photo_query", client.kwargs[:tracking_prefix]
-    # Regression: the localized "Notas:" line (built from the SAME
-    # anti_hallucination_notes value shown under "Incertidumbre y verificación")
-    # must be stripped from the evidence body — otherwise it renders twice.
+    # The anti_hallucination_notes value is shown once, as a sentence.
     assert_equal 1, result[:analysis].scan("El fabricante no es visible; requiere verificación en campo.").size
     assert_equal accounts(:legacy).id, client.kwargs.dig(:telemetry, :account_id)
     assert_equal BatchChunkingPrompt::MODEL_TEXT, result[:model]

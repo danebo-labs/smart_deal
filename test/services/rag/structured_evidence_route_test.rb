@@ -589,6 +589,38 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal answer, processed
   end
 
+  # CG-D19 #A: the layer-3 orientation cites nothing. It is published without
+  # sources instead of being replaced by the absence marker.
+  test "prose without any citation marker is published with empty citations" do
+    rag_service = FakeRagService.new([ neighbor_chunk ])
+    prose = "Por la foto, esto parece el conjunto de fijación de los cables. No tengo en el manual recuperado una cota para estos resortes, así que no te recomendaría mover las tuercas."
+
+    outcome = build_route(
+      rag_service: rag_service,
+      generator: FakeGenerator.new(prose),
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal :answered, outcome.status
+    assert_equal :answered, outcome.result[:route_outcome]
+    assert_includes outcome.result[:answer], "no te recomendaría mover las tuercas"
+    assert_not_includes outcome.result[:answer], "DATA_NOT_AVAILABLE"
+    assert_empty outcome.result[:citations]
+    assert_equal :uncited_prose, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal 1, rag_service.calls.size
+  end
+
+  test "a single uncited sentence still abstains" do
+    outcome = build_route(
+      rag_service: FakeRagService.new([ neighbor_chunk ]),
+      generator: FakeGenerator.new("El LED ABC12 corresponde a la serie principal."),
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal :abstained, outcome.status
+    assert_equal :citation_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+  end
+
   test "out-of-range citation markers remain invalid with multiple evidence chunks" do
     chunks = [
       synthetic_chunk("LED ABC12 | SERIE PRINCIPAL", rank: 1, sha: "abc12"),

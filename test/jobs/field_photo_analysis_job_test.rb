@@ -261,7 +261,9 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   # PHOTO_QUESTION_RAG_ENABLED (photo + question, plan foto_mas_pregunta_rag)
   # ============================================
 
-  test "flag on with a question delivers two broadcasts in order and both turns land in history" do
+  # CG-D19: a photo with a question is one answer. No vision card, no
+  # placeholder, one broadcast; both turns still land in the history.
+  test "flag on with a question delivers one answer broadcast and both turns land in history" do
     set_photo_question_flag("true")
     orig_query = BedrockRagService.instance_method(:query)
     BedrockRagService.define_method(:query) do |_question, **_kwargs|
@@ -273,24 +275,26 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
       end
 
-      vision_message, answer_message = messages.last(2)
-      assert_equal "photo_analyzed", vision_message["status"]
-      assert_equal true, vision_message["pending_question"]
-      assert_not vision_message.key?("answer")
-      assert_equal "photo_question_answered", answer_message["status"]
+      assert_equal [ "photo_question_answered" ], messages.pluck("status")
+      answer_message = messages.last
       assert_equal "Es un panel de control", answer_message["answer"]
-      assert_equal vision_message["correlation_id"], answer_message["correlation_id"]
+      assert_equal "photo:job-test", answer_message["correlation_id"]
+      assert answer_message.key?("field_photo_id")
+      assert_not answer_message.key?("visual_summary")
+      assert_not answer_message.key?("pending_question")
+      assert_not answer_message.key?("presentation")
 
       history = @session.reload.conversation_history
       assert_equal analysis_result[:compact_context], history[-2]["content"]
       assert_equal "Es un panel de control", history[-1]["content"]
+      assert_equal 1, history.count { |turn| turn["content"] == "Es un panel de control" }
     end
   ensure
     BedrockRagService.define_method(:query, orig_query) if orig_query
     set_photo_question_flag(nil)
   end
 
-  test "cache hit with a question skips vision and still delivers two broadcasts in order" do
+  test "cache hit with a question skips vision and still delivers one answer" do
     FieldPhotoDiagnosisCache.write(
       account_id: accounts(:legacy).id, sha256: @sha, locale: "es", value: cache_value
     )
@@ -308,12 +312,9 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       end
 
       assert_equal 1, calls
-      vision_message, answer_message = messages.last(2)
-      assert_equal "photo_analyzed", vision_message["status"]
-      assert_equal true, vision_message["pending_question"]
-      assert_equal "photo_question_answered", answer_message["status"]
-      assert_equal "Respuesta barata", answer_message["answer"]
-      assert_equal vision_message["correlation_id"], answer_message["correlation_id"]
+      assert_equal [ "photo_question_answered" ], messages.pluck("status")
+      assert_equal "Respuesta barata", messages.last["answer"]
+      assert_equal "photo:job-test", messages.last["correlation_id"]
     end
   ensure
     BedrockRagService.define_method(:query, orig_query) if orig_query
@@ -362,7 +363,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     BedrockRagService.define_method(:query, orig_query) if orig_query
   end
 
-  test "an exception in the photo-question RAG delivers the vision bubble first, then a failed placeholder answer" do
+  test "an exception in the photo-question RAG delivers one failed answer that carries the paid visual reading" do
     set_photo_question_flag("true")
     orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)
     Rag::PhotoQuestionAnswerService.define_method(:call) { raise RuntimeError, "boom" }
@@ -372,11 +373,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
       end
 
-      vision_message, answer_message = messages.last(2)
-      assert_equal "photo_analyzed", vision_message["status"]
-      assert_equal true, vision_message["pending_question"]
-      assert_equal "photo_question_answered", answer_message["status"]
+      assert_equal [ "photo_question_answered" ], messages.pluck("status")
+      answer_message = messages.last
       assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), answer_message["answer"]
+      assert_equal analysis_result[:analysis], answer_message["visual_summary"]
 
       history = @session.reload.conversation_history
       assert_not_includes history.pluck("content"), I18n.t("rag.photo_question_unavailable", locale: :es)

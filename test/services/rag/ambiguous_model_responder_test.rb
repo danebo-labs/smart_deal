@@ -73,7 +73,8 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert Rag::DeterministicIntent.ambiguous_hardware_query?(TWISTER_QUESTION)
   end
 
-  test "returns three evidence-backed choices when several boards are retrieved" do
+  # CG-D19: one question in prose that names the boards. No chips.
+  test "asks one prose question naming three evidence-backed boards when several are retrieved" do
     responder = build_responder(
       chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
       chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
@@ -85,10 +86,13 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
     assert_equal false, result[:model_invoked]
-    assert_equal 3, result[:quick_replies].size
-    assert_equal "¿Es la placa TOKIBAT — DL27?", result.dig(:quick_replies, 0, :label)
-    assert_includes result.dig(:quick_replies, 0, :query), "¿Qué LED se enciende cuando falla?"
-    assert_includes result[:answer], "varias placas o modelos"
+    assert_not result.key?(:quick_replies)
+    assert_equal I18n.t(
+      "rag.ambiguous_model_question", locale: :es,
+      models: "TOKIBAT — DL27, THYSSEN — THYSSEN-E o ORONA — MR08"
+    ), result[:answer]
+    assert_not_includes result[:answer], "ALTIUS"
+    assert_not_includes result[:answer], "\n"
     assert_equal [ 39, 93, 22 ], result[:citations].pluck(:page)
   end
 
@@ -111,11 +115,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal [
-      "¿Es la placa CTA – M8PC (ELÉCTRICO Y HIDRÁULICO)?",
-      "¿Es la placa ARCA III?",
-      "¿Es la placa MAC 5000?"
-    ], result[:quick_replies].pluck(:label)
+    assert_includes result[:answer], "CTA – M8PC (ELÉCTRICO Y HIDRÁULICO), ARCA III o MAC 5000"
   end
 
   test "does not fabricate a manufacturer from unrelated text in the chunk body" do
@@ -127,35 +127,23 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
 
     result = responder.execute
 
-    labels = result[:quick_replies].pluck(:label)
-    assert_not labels.any? { |label| label.include?("ALTIUS — ") }
-    assert_includes labels, "¿Es la placa EM 4000 V1?"
+    assert_not_includes result[:answer], "ALTIUS — "
+    assert_includes result[:answer], "EM 4000 V1"
   end
 
-  test "web omits the numbered list because chips already carry the options" do
+  test "the question is the same prose in English and never a numbered list" do
     responder = build_responder(
       chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
       chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
       chunk("ORONA", "ORONA MR08 LED status", page: 22),
-      output_channel: :web
+      response_locale: :en
     )
 
     result = responder.execute
 
     assert_not_includes result[:answer], "1."
-    assert_equal 3, result[:quick_replies].size
-  end
-
-  test "non-web keeps the numbered list for channels without chips" do
-    responder = build_responder(
-      chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
-      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
-      chunk("ORONA", "ORONA MR08 LED status", page: 22)
-    )
-
-    result = responder.execute
-
-    assert_includes result[:answer], "1. "
+    assert_includes result[:answer], "TOKIBAT — DL27, THYSSEN — THYSSEN-E or ORONA — MR08"
+    assert_not result.key?(:quick_replies)
   end
 
   test "asks the retrieval layer for the contractual top_k" do
@@ -182,7 +170,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "structured_evidence_route", result[:generation_mode]
-    assert_nil result[:quick_replies]
+    assert_not result.key?(:quick_replies)
     assert_includes result[:answer], "SSEG"
     assert_equal 1, generator.calls
     assert_includes generator.prompt, "TWISTER TW"
@@ -206,7 +194,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
   end
 
-  test "the menu keeps only the boards the question named when it names more than one" do
+  test "the question names only the boards the technician named when there are more than one" do
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
     responder = build_responder(
       *twister_chunks,
@@ -217,15 +205,13 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal [
-      "¿Es la placa TWISTER TW – ELECTRICO - EMBARBA?",
-      "¿Es la placa LEVEL CONTROL 1B – ELECTRICO - PREMONTADA?"
-    ], result[:quick_replies].pluck(:label)
+    assert_includes result[:answer], "TWISTER TW – ELECTRICO - EMBARBA o LEVEL CONTROL 1B – ELECTRICO - PREMONTADA"
+    assert_not_includes result[:answer], "EDEL-K3"
   end
 
   # The regression that stops the filter from disabling disambiguation whole:
-  # a question that names no board must still get the three-way menu.
-  test "a question that names no board still gets the menu" do
+  # a question that names no board must still get the three-way question.
+  test "a question that names no board still gets the three-way question" do
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
     generator = FakeGenerator.new("no debería generarse [1]")
     responder = build_responder(*twister_chunks, generator: generator)
@@ -233,7 +219,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal 3, result[:quick_replies].size
+    assert_includes result[:answer], "TWISTER TW – ELECTRICO - EMBARBA, LEVEL CONTROL 1B – ELECTRICO - PREMONTADA o EDEL-K3"
     assert_equal 0, generator.calls
   end
 
@@ -254,11 +240,12 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal 3, result[:quick_replies].size
+    assert_includes result[:answer], "EDEL-K3"
+    assert_includes result[:answer], "TWISTER TW"
     assert_equal 0, generator.calls
   end
 
-  test "with the live route flag off a named board still gets the menu it gets today" do
+  test "with the live route flag off a named board still gets the question it gets today" do
     responder = build_responder(
       *twister_chunks,
       question: TWISTER_QUESTION,
@@ -268,20 +255,19 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_equal "¿Es la placa TWISTER TW – ELECTRICO - EMBARBA?", result.dig(:quick_replies, 0, :label)
+    assert result[:answer].start_with?("La evidencia recuperada corresponde a varias placas: TWISTER TW – ELECTRICO - EMBARBA")
   end
 
   private
 
-  def build_responder(*chunks, output_channel: nil, question: GENERIC_QUESTION, generator: nil)
+  def build_responder(*chunks, response_locale: :es, question: GENERIC_QUESTION, generator: nil)
     Rag::AmbiguousModelResponder.new(
       question: question,
       account: accounts(:legacy),
       entity_s3_uris: [],
       entity_sources: [],
       force_entity_filter: false,
-      response_locale: :es,
-      output_channel: output_channel,
+      response_locale: response_locale,
       rag_service: FakeService.new(chunks),
       generator: generator
     )

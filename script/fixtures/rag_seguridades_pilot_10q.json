@@ -124,7 +124,7 @@
       "required": [
         {"label": "identifica LED 31", "pattern": "\\b31\\b"},
         {"label": "nombre de serie", "pattern": "REAPERTURA"},
-        {"label": "se abstiene de condiciones no documentadas", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato)"}
+        {"label": "se abstiene de condiciones no documentadas", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo)"}
       ],
       "optional": [
         {"label": "cita página 25", "pattern": "(?:p[aá]gina|p\\.)\\s*25"}

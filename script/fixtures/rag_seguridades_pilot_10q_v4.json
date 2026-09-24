@@ -155,7 +155,7 @@
       "question": "¿Qué tensión de alimentación usa la placa ZEUS?",
       "source_pages": [],
       "required": [
-        { "label": "abstiene", "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato|DATA_NOT_AVAILABLE" }
+        { "label": "abstiene", "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo|DATA_NOT_AVAILABLE" }
       ],
       "optional": [
         { "label": "remite a verificación", "pattern": "placa de caracter[ií]sticas|esquema el[eé]ctrico|verificar en campo" }

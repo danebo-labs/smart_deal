@@ -91,12 +91,7 @@ module RagQueryConcern
             locale: resolved_response_locale,
             now: Time.current
           )
-          case thread.outcome
-          when :join
-            effective_question = thread.composed
-          when :menu
-            return thread_menu_result(thread, resolved_response_locale, correlation_id)
-          end
+          effective_question = thread.composed if thread.outcome == :join
         end
       end
     end
@@ -135,13 +130,12 @@ module RagQueryConcern
     # la ventana de generación sería la identidad del documento y Bedrock
     # devolvería el resumen que nadie pidió (corrida 20260916T170508Z). Se
     # pregunta en vez de adivinar, sin llamar al modelo.
-    # selection_quick_replies ya encapsula flag de episodio, selection_turn? y
-    # mensaje previo presente: si devuelve replies, la forma es exactamente ésta.
-    gate_replies = if resolved_output_channel == :web && images.empty? && documents.empty?
-      selection_quick_replies(question, conv_session, nil)
-    end
+    # selection_gate? encapsula flag de episodio, selection_turn? y mensaje
+    # previo presente. CG-D19 #G: la pregunta va en prosa, sin chips.
+    gate = resolved_output_channel == :web && images.empty? && documents.empty? &&
+      selection_gate?(question, conv_session)
 
-    if gate_replies.present?
+    if gate
       Rails.logger.info(
         "RagQueryConcern: selection_gate uris=#{scope.uris.size} bedrock=0"
       )
@@ -153,7 +147,6 @@ module RagQueryConcern
         response_locale: resolved_response_locale.to_s,
         generation_mode: "deterministic_selection_gate",
         model_invoked:   false,
-        quick_replies:   gate_replies,
         correlation_id:  correlation_id
       )
     end
@@ -186,7 +179,7 @@ module RagQueryConcern
     # Re-running it here would degrade correct answers a second time, so the
     # concern only applies presentation sanitization.
     sanitized_answer = sanitize_answer(result[:answer], channel: resolved_output_channel)
-    quick_replies    = selection_quick_replies(question, conv_session, result[:quick_replies])
+    quick_replies    = result[:quick_replies]
 
     RagResult.new(
       success?:            true,
@@ -249,20 +242,6 @@ module RagQueryConcern
       (SharedSession::ENABLED && conv_session.channel == SharedSession::CHANNEL && output_channel != :whatsapp)
   end
 
-  def thread_menu_result(thread, locale, correlation_id)
-    RagResult.new(
-      success?:        true,
-      answer:          I18n.t("rag.thread_menu_prompt", locale: locale),
-      citations:       [],
-      session_id:      nil,
-      response_locale: locale.to_s,
-      generation_mode: "deterministic_thread_menu",
-      model_invoked:   false,
-      quick_replies:   thread.options,
-      correlation_id:  correlation_id
-    )
-  end
-
   def log_rag_followup(followup, original, correlation_id)
     effective = followup.applied ? followup.question : original
     catalog_ids = Array(followup.catalog_matches).filter_map { |match| match.document&.id }
@@ -285,13 +264,25 @@ module RagQueryConcern
 
     out = text.dup
     out = strip_markdown_headers(out)
+    out = strip_markdown_labels(out)
     out = convert_markdown_tables(out)
     out = collapse_blank_lines(out)
     out.strip
   end
 
+  # CG-D19: a markdown heading the model writes ("# Respuesta", "## Dato
+  # faltante") is a label, not prose. The whole line goes, not just the hashes.
   def strip_markdown_headers(text)
-    text.gsub(/^[ \t]*\#{1,6}\s+/, '')
+    text.gsub(/^[ \t]*\#{1,6}\s+[^\n]*\n?/, '')
+  end
+
+  # CG-D19 (medición 10): a line that is only a bold label («**Datos
+  # faltantes:**», «**Recomendación:**»), a horizontal rule, or an empty bold
+  # left behind is form, not prose. The sentences under it stay.
+  def strip_markdown_labels(text)
+    text
+      .gsub(/^[ \t]*\*\*[^*\n]{1,80}\*\*:?[ \t]*\n?/, '')
+      .gsub(/^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*\n?/, '')
   end
 
   TABLE_ROW_PATTERN     = /\A\s*\|.*\|\s*\z/.freeze
@@ -508,19 +499,12 @@ module RagQueryConcern
     [ session_context.presence, block ].compact.join("\n\n")
   end
 
-  def selection_quick_replies(question, conv_session, existing)
-    return existing unless Rag::EpisodeScopeFlag.enabled?
-    return existing if existing.present?
-    return existing unless selection_turn?(question, conv_session)
-    return existing unless conv_session.respond_to?(:episode_user_messages)
+  def selection_gate?(question, conv_session)
+    return false unless Rag::EpisodeScopeFlag.enabled?
+    return false unless selection_turn?(question, conv_session)
+    return false unless conv_session.respond_to?(:episode_user_messages)
 
-    previous = conv_session.episode_user_messages(exclude: question).last
-    return existing if previous.blank?
-
-    [
-      { label: "Continuar: #{previous.truncate(60)}", query: previous },
-      { label: "Resumen del documento", query: "Resumen del documento #{question}" }
-    ]
+    conv_session.episode_user_messages(exclude: question).last.present?
   end
 
   def selection_turn?(question, conv_session)

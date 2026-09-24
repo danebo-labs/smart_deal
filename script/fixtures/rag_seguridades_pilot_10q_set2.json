@@ -175,7 +175,7 @@
       "question": "En ALJO Control Level 1B, ¿qué tensión de alimentación usan los LEDs DL2, DL3 y DL4?",
       "source_pages": [2, 3, 4, 5],
       "required": [
-        {"label": "abstención visible", "pattern": "(?:El documento no incluye este dato|no (?:se )?(?:documenta|especifica|incluye|declara).{0,80}(?:tensi[oó]n|alimentaci[oó]n|voltaje))"}
+        {"label": "abstención visible", "pattern": "(?:El documento no incluye este dato|No encontré ese dato en la documentación que tengo|no (?:se )?(?:documenta|especifica|incluye|declara).{0,80}(?:tensi[oó]n|alimentaci[oó]n|voltaje))"}
       ],
       "optional": [
         {"label": "sugiere verificar en campo", "pattern": "(?:Verificar en campo|esquema completo|manual completo)"}

@@ -59,6 +59,7 @@ class BedrockRagService
     /no\s+contiene/i,
     /no\s+(?:se\s+)?documenta/i,
     /no\s+se\s+(?:encontr[oó]|encuentra)/i,
+    /\bno\s+encontr[eé]\b/i,
     /(?:does\s+not|doesn'?t|do\s+not)\s+(?:contain|specify|document|provide)/i,
     /\bnot\s+(?:available|documented|specified|found)\b/i
   ].freeze
@@ -587,12 +588,6 @@ class BedrockRagService
     )
     original = Array(retrieval[:chunks])
     applied = Rag::DocumentIdentityScope.apply(original, episode)
-    bodies_changed = applied.chunks.zip(original).any? { |scoped, source| scoped[:content] != source[:content] }
-    if applied.chunks.size != original.size || bodies_changed
-      Rails.logger.warn("[DOCUMENT_IDENTITY] chunk_set_changed; retrieve_and_generate unchanged")
-      return nil
-    end
-
     labeled = applied.labels.any?(&:present?)
     record_document_identity_scope(
       original, applied,
@@ -671,7 +666,7 @@ class BedrockRagService
       "retrieved" => original.size,
       "sent" => applied.chunks.size,
       "labels" => labels.count(&:present?),
-      "other_equipment" => labels.count { |line| line.to_s.start_with?("OTHER EQUIPMENT:") },
+      "other_equipment" => labels.count { |line| line.to_s.start_with?(Rag::DocumentIdentityScope::OTHER_EQUIPMENT_PREFIX) },
       "this_job" => labels.count { |line| line.to_s.start_with?("THIS JOB'S EQUIPMENT:") },
       "unconfirmed_general" => applied.unconfirmed_general,
       "undeclared_private" => applied.undeclared_private,
@@ -1213,7 +1208,7 @@ class BedrockRagService
         `<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`.
         No multi-line entries, no location prose, no neighboring-symbol
         descriptions — one line per identifier, nothing else about it.
-        Completeness and stop-work grammars do not remove or invalidate this safe form.
+        The completeness and stop-work overrides do not remove or invalidate this safe form.
       - Acronym expansion (BRK→freno, P→presión, T→tanque, RV→alivio, ORF→orificio)
         is forbidden. Never use the words puerto, válvula, solenoide, alivio,
         retención, orificio, freno, presión, diodo for these identifiers — not as
@@ -1232,6 +1227,7 @@ class BedrockRagService
       # DELIVERY CHANNEL
       Render concise Markdown for a technician using web chat.
       - Start with one direct sentence. Do not restate the question.
+      - No headings or section titles: running prose only.
       - Keep focused answers under 300 words. Exhaustive checklists may be longer only
         to preserve every retrieved fact and expected result.
       - Use short paragraphs; no tables or horizontal rules.
@@ -1280,29 +1276,22 @@ class BedrockRagService
 
     <<~DIRECTIVE.strip
       # STOP-WORK EVIDENCE OVERRIDE
-      Separate inspection precautions from mandatory stop-work actions.
-      - Use the exact text label `Precauciones e inspecciones` for findings,
-        operator conditions, and preventive checks that the retrieved evidence
-        does not explicitly pair with stopping, prohibiting operation, marking
-        the machine, or taking it out of service.
-      - Use the exact text label `Detención obligatoria con evidencia explícita`
-        only for triggers that the retrieved evidence explicitly pairs with one
-        of those mandatory actions.
-      - When both evidence classes exist, include both labeled sections.
-      - Inside `Detención obligatoria con evidencia explícita`, emit each item
-        using exactly two non-empty lines, followed by one blank line:
-        `Disparador: ...`
-        `Acción obligatoria: ...`
-      - Do not use bullets, sub-bullets, duplicated labels, multiline fields, or
-        mandatory trigger prose outside those two-line items.
-      - The trigger and its explicit mark/stop/prohibit/out-of-service action must
-        come from the same retrieved evidence fragment. Never transfer an action
-        from a neighboring sentence, another trigger, or prior conversation.
-      - If the same fragment does not contain the mandatory action, place the
-        finding under `Precauciones e inspecciones`.
+      The question asks when work must stop. Answer in running prose, in the
+      question's language, with no headings, field labels, bullets, or numbering.
+      - Keep two things apart in that prose: the precautions, operator conditions,
+        and preventive checks that the retrieved evidence does not explicitly pair
+        with stopping, prohibiting operation, marking the machine, or taking it out
+        of service; and the conditions that the evidence explicitly pairs with one
+        of those mandatory actions. Say which is which in words.
+      - Say each mandatory condition as one sentence that carries the documented
+        trigger and the documented stop, prohibit, mark, or out-of-service action.
+        Both must come from the same retrieved evidence fragment. Never transfer an
+        action from a neighboring sentence, another trigger, or prior conversation.
+      - If the same fragment does not contain the mandatory action, say the finding
+        as a precaution, never as a stop condition.
       - Prior conversation context never promotes a precaution, including
         dizziness, unauthorized-person interference, leaks, missing labels, or
-        electrical/hydraulic findings into mandatory stop-work.
+        electrical/hydraulic findings, into mandatory stop-work.
       Do not invent stop-work rules or broaden the retrieved evidence.
     DIRECTIVE
   end
@@ -1313,14 +1302,16 @@ class BedrockRagService
 
     <<~DIRECTIVE.strip
       # EXHAUSTIVE COMPLETENESS OVERRIDE
-      The user requested a complete list.
+      The user requested a complete list. Write it as running prose in the
+      question's language: one short paragraph per documented test, with no
+      headings, field labels, bullets, or numbering.
       - Use prior conversation only to resolve the referent. Never treat a partial
         earlier list as coverage; rebuild the answer from the chunks retrieved for
         this turn.
       - Silently build a ledger of every explicit `Resultado` or `Resultado esperado`
         statement in the retrieved functional-test blocks, keyed by its controller
-        or section heading. Drive entries from that result ledger, not from the list
-        of actions: the final entry count must equal the ledger count.
+        or section heading. Drive paragraphs from that result ledger, not from the
+        list of actions: the paragraph count must equal the ledger count.
       - Treat every separate source occurrence labeled `Resultado`, `Resultados`,
         `Resultado esperado`, or `Resultados esperados` as an independent ledger
         item. Do not deduplicate, merge, or suppress occurrences because their
@@ -1328,46 +1319,41 @@ class BedrockRagService
       - Associate each result only with the numbered action that immediately governs
         it under the same heading: a result line belongs to the nearest preceding
         numbered action before the next numbered action. Preserve every result
-        clause in that entry. Preserve a following REQUIRES_FIELD_VERIFICATION note
-        in the same result instead of replacing it with a concrete observation.
-      - Keep preparation steps without an independent result inside the `Acción`
-        that enables the next verifiable result; never invent a result for
-        preparation. A reset, reactivation, setup, or cleanup step with no explicit
-        result is not an entry. Merge it into the next supported action when
-        relevant, otherwise omit it. Never borrow a result from a preceding or
-        following action, and never infer that a system is ready, normal, or
-        restored.
-      - Every entry must use exactly three non-empty lines, followed by one blank
-        line, with these exact labels:
-        `Prueba: ...`
-        `Acción: ...`
-        `Resultado esperado: ...`
-        The three lines must be consecutive, with no blank line between fields.
-        Put exactly one blank line only after `Resultado esperado`.
+        clause in that paragraph. Preserve a following REQUIRES_FIELD_VERIFICATION
+        note in the same paragraph, said in words, instead of replacing it with a
+        concrete observation.
+      - Keep preparation steps without an independent result inside the paragraph
+        of the action that enables the next verifiable result; never invent a
+        result for preparation. A reset, reactivation, setup, or cleanup step with
+        no explicit result is not a paragraph. Merge it into the next supported
+        action when relevant, otherwise omit it. Never borrow a result from a
+        preceding or following action, and never infer that a system is ready,
+        normal, or restored.
+      - Each paragraph names the source controller or section and the
+        distinguishing action, then says the documented result as a sentence, so
+        every paragraph remains independently traceable. When the document gives
+        no result for that action, say so in one clause; do not print
+        DATA_NOT_AVAILABLE.
       - For this exhaustive response, override the general instruction to start
-        with a direct sentence or numbered list. Begin immediately with the first
-        `Prueba:` line.
-      - The entire visible response must consist only of those entries. Do not use
-        a title, introduction, section header, bullets, separators, notes, warnings,
-        duplicated labels, multiline fields, conclusions, or test prose outside
-        entries.
-      - One entry may satisfy only one action-result unit. Do not combine multiple
-        documented results into a summary entry.
-      - Each `Prueba:` value must identify the source controller or section and the
-        distinguishing action so every entry remains independently traceable.
+        with a direct sentence. Begin immediately with the first paragraph.
+      - The entire visible response must consist only of those paragraphs. Do not
+        add a title, introduction, section header, separators, notes, warnings,
+        conclusions, or test prose outside them.
+      - One paragraph covers exactly one action-result unit. Do not combine
+        multiple documented results into a summary paragraph.
       - Preserve documentary grouping and order. Never merge symmetric or opposite
         units: keep left/right, forward/reverse, and ground/platform controls as
-        separate entries whenever the retrieved evidence documents both.
+        separate paragraphs whenever the retrieved evidence documents both.
       - Before answering, silently audit every retrieved heading and test, including
-        those symmetric pairs, against the entries you will emit.
+        those symmetric pairs, against the paragraphs you will emit.
       - Do not omit retrieved units for brevity; the 300-word target does not apply.
       - Do not name or invent a counterpart that is absent from the retrieved chunks.
     DIRECTIVE
   end
 
-  # Stop-work owns the visible structure when both intents match. Completeness
-  # remains only as coverage inside that structure. The exclusive triple grammar
-  # is not injected beside the stop-work sections.
+  # Stop-work owns the answer when both intents match. Completeness remains
+  # only as coverage inside that prose. The one-paragraph-per-test instruction
+  # is not injected beside the stop-work override.
   def completeness_directive_for(safety_directive, completeness_directive)
     return nil if completeness_directive.blank?
     return stop_work_exhaustive_coverage_directive if safety_directive.present?
@@ -1378,16 +1364,15 @@ class BedrockRagService
   def stop_work_exhaustive_coverage_directive
     <<~DIRECTIVE.strip
       # EXHAUSTIVE STOP-WORK COVERAGE
-      The stop-work evidence override above governs the visible structure.
-      Completeness applies only as coverage: include every documented
-      stop-relevant condition from the chunks retrieved for this turn, inside
-      those stop-work sections. Do not omit a retrieved stop-relevant condition
-      for brevity.
-      - Do not recast a stop condition as `Prueba:`, `Acción:`, and
-        `Resultado esperado:`. Express every stop-relevant condition with the
-        stop-work contract, including when the fragment has no separate
-        expected result.
-      - Never invent `Resultado esperado`. Never copy a result from a
+      The stop-work evidence override above governs the answer. Completeness
+      applies only as coverage: include every documented stop-relevant
+      condition from the chunks retrieved for this turn, in that same prose.
+      Do not omit a retrieved stop-relevant condition for brevity.
+      - Do not recast a stop condition as a test with an action and an expected
+        result. Say every stop-relevant condition with its documented trigger
+        and its documented mandatory action, including when the fragment has no
+        separate expected result.
+      - Never invent an expected result. Never copy a result from a
         neighboring action.
     DIRECTIVE
   end

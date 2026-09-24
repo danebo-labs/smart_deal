@@ -112,16 +112,22 @@ export default class extends Controller {
             controller.indexingLoadingId = null
           }
           controller.addImageSummaryMessage(data)
-          if (!data.pending_question) {
-            controller.pendingPhotoCorrelationId = null
-            controller.pendingUploadType = null
-          }
+          controller.pendingPhotoCorrelationId = null
+          controller.pendingUploadType = null
           return
         }
 
         if (data.status === "photo_question_answered") {
           if (!controller.matchesPendingPhoto(data)) return
 
+          controller.kbSyncInProgress = false
+          controller.clearIndexingNudgeTimer()
+          controller.clearRetryFallbackNotice()
+          controller.clearIndexingStallTimer()
+          if (controller.indexingLoadingId) {
+            controller.removeMessage(controller.indexingLoadingId)
+            controller.indexingLoadingId = null
+          }
           controller.addPhotoQuestionAnswer(data)
           controller.pendingPhotoCorrelationId = null
           controller.pendingUploadType = null
@@ -1111,14 +1117,14 @@ export default class extends Controller {
     this.scrollToMessageTop(row)
   }
 
+  // Photo without a question: the vision reading in prose, the invitation to
+  // ask, and the photo button. Metadata (UNKNOWN, aliases) is not shown.
   addImageSummaryMessage(data) {
     const row = this._buildMessageRow("assistant")
     const bubble = row.querySelector(".chat-message")
+    const lang = this.localeValue
 
-    const canonical = data.canonical_name || (data.filenames && data.filenames[0]) || "Imagen"
-    const aliases   = Array.isArray(data.aliases) && data.aliases.length ? data.aliases : null
-    const lang      = this.localeValue
-
+    const canonical = String(data.canonical_name || "").trim()
     const inviteFallback = lang.startsWith("en")
       ? "Tell me what you need — you can ask in just a word or two, that\u2019s fine."
       : "Cu\u00e9ntame qu\u00e9 necesitas, puedo ayudarte aunque me preguntes con pocas palabras."
@@ -1126,69 +1132,62 @@ export default class extends Controller {
       ? data.companion_offer.trim()
       : inviteFallback
 
-    let html = `<div style="font-weight:600;">${this.escapeHtml(canonical)}</div>`
-
-    if (aliases) {
-      const pills = aliases.map(a =>
-        `<span style="display:inline-block;background:#e2e8f0;border-radius:9999px;padding:1px 8px;font-size:11px;margin:2px 2px 0 0;color:#4a5568;">${this.escapeHtml(a)}</span>`
-      ).join("")
-      html += `<div style="margin-top:5px;">${pills}</div>`
+    let html = ""
+    if (canonical && canonical.toUpperCase() !== "UNKNOWN") {
+      html += `<div style="font-weight:600;">${this.escapeHtml(canonical)}</div>`
     }
-
     if (data.summary) {
       html += `<div style="margin-top:10px;line-height:1.55;">${formatAnswerForWeb(data.summary)}</div>`
     }
-
-    if (data.pending_question) {
-      const searching = lang.startsWith("en") ? "Searching the manuals for your question…" : "Buscando tu pregunta en los manuales…"
-      html += `<div data-photo-answer="${this.escapeHtml(String(data.correlation_id))}" style="margin-top:10px;color:#4a5568;">${this.escapeHtml(searching)}</div>`
-    } else {
-      html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
-    }
-
-    if (data.field_photo_id) {
-      const reuseLabel = lang.startsWith("en") ? "Ask about this photo" : "Preguntar sobre esta foto"
-      const viewAria = lang.startsWith("en") ? "Open full photo in a new tab" : "Abrir foto completa en una pestaña nueva"
-      const photoUrl = `/field_photos/${encodeURIComponent(data.field_photo_id)}`
-      const thumb = data.thumbnail_url
-        ? `<a href="${photoUrl}" target="_blank" rel="noopener" aria-label="${this.escapeHtml(viewAria)}"
-              style="display:flex;height:44px;width:44px;flex-shrink:0;align-items:center;justify-content:center;border-radius:10px;overflow:hidden;background:#e2e8f0;">
-              <img src="${this.escapeHtml(data.thumbnail_url)}" alt="" style="height:100%;width:100%;object-fit:cover;">
-            </a>`
-        : ""
-      html += `<div style="margin-top:12px;display:flex;align-items:center;gap:10px;">` +
-        thumb +
-        `<button type="button"
-                  data-action="click->rag-chat#reuseFieldPhoto"
-                  data-field-photo-id="${this.escapeHtml(String(data.field_photo_id))}"
-                  style="min-height:44px;flex:1;border-radius:10px;border:2px solid #2b6cb0;background:#ffffff;color:#2b6cb0;font-weight:600;font-size:13px;padding:0 14px;">
-                  ${this.escapeHtml(reuseLabel)}
-                </button>` +
-        `</div>`
-    }
+    html += `<div style="margin-top:10px;color:#4a5568;">${this.escapeHtml(invite)}</div>`
+    html += this._photoReuseRowHtml(data)
 
     bubble.innerHTML = html
     this.messagesTarget.appendChild(row)
     this.scrollToMessageTop(row)
   }
 
-  // Fills the placeholder addImageSummaryMessage left when pending_question
-  // was true. Falls back to a new message when the placeholder is gone
-  // (e.g. the page reloaded between the two broadcasts).
+  // Photo with a question: the single answer of the turn (CG-D19). The photo
+  // reading opens the prose the backend generated; there is no separate card.
+  // `visual_summary` arrives only when the manuals could not be consulted.
   addPhotoQuestionAnswer(data) {
-    const slot = this.messagesTarget.querySelector(`[data-photo-answer="${CSS.escape(String(data.correlation_id))}"]`)
     const lang = this.localeValue
     const citations = Array.isArray(data.citations) ? data.citations : []
-    let html = `<div style="line-height:1.55;">${formatAnswerForWeb(data.answer, citations)}</div>`
+    let html = ""
+    if (data.visual_summary) {
+      html += `<div data-photo-visual-summary style="line-height:1.55;margin-bottom:10px;">${formatAnswerForWeb(data.visual_summary)}</div>`
+    }
+    html += `<div style="line-height:1.55;">${formatAnswerForWeb(data.answer, citations)}</div>`
     if (this.showSourcesValue && citations.length) html += renderSources(citations, lang)
     html += renderVerificationNotice(lang)
-    if (slot) {
-      slot.style.color = ""
-      slot.innerHTML = html
-      this.scrollToMessageTop(slot.closest(".chat-message") || slot)
-    } else {
-      this.addMessage(html, "assistant")
-    }
+    html += this._photoReuseRowHtml(data)
+    this.addMessageHtml(html, "assistant")
+  }
+
+  // Thumbnail plus the "ask about this photo" button, shared by both photo
+  // bubbles. Empty when the photo was not persisted.
+  _photoReuseRowHtml(data) {
+    if (!data.field_photo_id) return ""
+
+    const lang = this.localeValue
+    const reuseLabel = lang.startsWith("en") ? "Ask about this photo" : "Preguntar sobre esta foto"
+    const viewAria = lang.startsWith("en") ? "Open full photo in a new tab" : "Abrir foto completa en una pestaña nueva"
+    const photoUrl = `/field_photos/${encodeURIComponent(data.field_photo_id)}`
+    const thumb = data.thumbnail_url
+      ? `<a href="${photoUrl}" target="_blank" rel="noopener" aria-label="${this.escapeHtml(viewAria)}"
+            style="display:flex;height:44px;width:44px;flex-shrink:0;align-items:center;justify-content:center;border-radius:10px;overflow:hidden;background:#e2e8f0;">
+            <img src="${this.escapeHtml(data.thumbnail_url)}" alt="" style="height:100%;width:100%;object-fit:cover;">
+          </a>`
+      : ""
+    return `<div style="margin-top:12px;display:flex;align-items:center;gap:10px;">` +
+      thumb +
+      `<button type="button"
+                data-action="click->rag-chat#reuseFieldPhoto"
+                data-field-photo-id="${this.escapeHtml(String(data.field_photo_id))}"
+                style="min-height:44px;flex:1;border-radius:10px;border:2px solid #2b6cb0;background:#ffffff;color:#2b6cb0;font-weight:600;font-size:13px;padding:0 14px;">
+                ${this.escapeHtml(reuseLabel)}
+              </button>` +
+      `</div>`
   }
 
   // Attaches the last analyzed field photo to the next question so a

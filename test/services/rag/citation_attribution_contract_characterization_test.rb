@@ -15,10 +15,10 @@ class Rag::CitationAttributionContractCharacterizationTest < ActiveSupport::Test
 
     Para determinar qué estado (encendido o apagado) corresponde a operación normal y cuál a fallo, se requiere verificación en campo contra el esquema eléctrico detallado o la placa de control específica del sistema[1]. **Nota:** La documentación menciona que en otras placas de control (como la NE 300 – LB II), los LEDs de serie (ES, DFC, DW) están descritos como "rojo" y se entiende que un LED encendido indica interrupción en la serie correspondiente. Si el sistema Thyssen-E utiliza la misma lógica, un LED encendido señalaría fallo. Pero esto debe confirmarse en el equipo específico[2].
 
-    **El documento no incluye este dato** — el estado solicitado no está documentado. **Verificar en campo o en el esquema completo**.
+    **No encontré ese dato en la documentación que tengo** — el estado solicitado no está documentado. **Verificar en campo o en el esquema completo**.
   ANSWER
   THYSSEN_INTERNAL_ANSWER = THYSSEN_VISIBLE_ANSWER
-    .sub("**El documento no incluye este dato**", "**DATA_NOT_AVAILABLE**")
+    .sub("**No encontré ese dato en la documentación que tengo**", "**DATA_NOT_AVAILABLE**")
     .sub("**Verificar en campo o en el esquema completo**", "**REQUIRES_FIELD_VERIFICATION**")
     .freeze
   THYSSEN_CITATIONS = [

@@ -155,7 +155,7 @@
       "question": "¿Cuál es el procedimiento paso a paso para diagnosticar por qué el LED DL45 de la MAC 5000 no enciende?",
       "source_pages": [],
       "required": [
-        { "label": "abstiene", "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato" }
+        { "label": "abstiene", "pattern": "no (?:incluye|documenta|especifica|contiene)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo" }
       ],
       "optional": [
         { "label": "remite a verificación en campo", "pattern": "verificar en campo|esquema (?:el[eé]ctrico|completo)" }

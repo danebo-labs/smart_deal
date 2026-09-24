@@ -3,8 +3,9 @@
 module Rag
   # Resolves generic LED/lock/safety-contact questions without asking a blind
   # clarification. A single Retrieve call inspects the available evidence. When
-  # it spans several documented manufacturer/model pairs, the responder shows
-  # three concrete choices and lets the technician narrow the next query.
+  # it spans several documented manufacturer/model pairs, the responder asks
+  # one question in prose that names up to three boards (CG-D19: no chips), so
+  # the technician can narrow the next query in their own words.
   class AmbiguousModelResponder
     MIN_DISTINCT_MODELS = 3
     # Matches ContractualLimits::QUERY[:max_top_k]. Same single Retrieve, no
@@ -17,7 +18,7 @@ module Rag
       /\b(?:[A-Z]{2,}\d+[A-Z0-9.-]*|[A-Z]{2,}(?:-[A-Z0-9]+)+)\b/.freeze
 
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
-                   response_locale: nil, output_channel: nil, user_id: nil,
+                   response_locale: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil)
       return unless DeterministicIntent.ambiguous_hardware_query?(question)
 
@@ -28,7 +29,6 @@ module Rag
         entity_sources: entity_sources,
         force_entity_filter: force_entity_filter,
         response_locale: response_locale,
-        output_channel: output_channel,
         user_id: user_id,
         conversation_session_id: conversation_session_id,
         correlation_id: correlation_id
@@ -36,7 +36,7 @@ module Rag
     end
 
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
-                   response_locale: nil, output_channel: nil, rag_service: nil, user_id: nil,
+                   response_locale: nil, rag_service: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, generator: nil)
       @question = question
       @account = account
@@ -45,7 +45,6 @@ module Rag
       @entity_sources = Array(entity_sources)
       @force_entity_filter = force_entity_filter
       @locale = response_locale.presence&.to_sym || I18n.locale
-      @output_channel = output_channel&.to_sym
       @user_id = user_id
       @conversation_session_id = conversation_session_id
       @correlation_id = correlation_id
@@ -81,7 +80,7 @@ module Rag
       return if candidates.size < MIN_DISTINCT_MODELS
 
       # Two or more named: still ambiguous, but the technician already narrowed
-      # the set, so the menu offers only what they named.
+      # the set, so the question names only what they named.
       selected = (named.many? ? named : candidates).first(MAX_OPTIONS)
       used_chunks = selected.pluck(:chunk)
       {
@@ -92,13 +91,7 @@ module Rag
         retrieval_trace: retrieval[:retrieval_trace],
         session_id: nil,
         generation_mode: "deterministic_model_disambiguation",
-        model_invoked: false,
-        quick_replies: selected.map do |candidate|
-          {
-            label: I18n.t("rag.ambiguous_model_option", locale: @locale, model: candidate[:label]),
-            query: "#{@question}\n#{I18n.t('rag.model_selection_query', locale: @locale, model: candidate[:label])}"
-          }
-        end
+        model_invoked: false
       }
     rescue BedrockRagService::BedrockServiceError => e
       Rails.logger.warn("Rag::AmbiguousModelResponder: retrieval failed — #{e.message}")
@@ -186,14 +179,14 @@ module Rag
       "#{manufacturer} — #{model}"
     end
 
+    # One question in prose. The board names come from the retrieved headings
+    # or metadata, so the sentence never names a board that is not on the table.
     def render_answer(candidates)
-      prompt = I18n.t("rag.ambiguous_model_prompt", locale: @locale)
-      # Web renders the same options as tappable chips (quick_replies); printing
-      # them again as a numbered list is pure visual duplication.
-      return prompt if @output_channel == :web
-
-      options = candidates.each_with_index.map { |candidate, index| "#{index + 1}. #{candidate[:label]}" }
-      [ prompt, options.join("\n") ].join("\n\n")
+      connector = I18n.t("rag.ambiguous_model_connector", locale: @locale)
+      models = candidates.pluck(:label).to_sentence(
+        words_connector: ", ", two_words_connector: connector, last_word_connector: connector
+      )
+      I18n.t("rag.ambiguous_model_question", locale: @locale, models: models)
     end
 
     def citation_shaped(chunks)

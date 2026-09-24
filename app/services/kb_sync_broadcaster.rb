@@ -40,14 +40,10 @@ class KbSyncBroadcaster
     })
   end
 
-  # @param pending_question [Boolean] true when a photo-question RAG turn will
-  #   follow on the same correlation_id (see .photo_question_answered) — the
-  #   client keeps its pending state instead of clearing it on this broadcast.
-  #   Omitted from the payload when false, so the photo-only route (the common
-  #   case) does not carry an extra key over Cable.
+  # Photo without a question: the vision reading is the answer.
   def self.photo_analyzed(filenames:, analysis:, canonical_name:, aliases:, account_id: nil, correlation_id: nil,
-                          field_photo_id: nil, thumbnail_url: nil, response_locale: nil, pending_question: false)
-    payload = {
+                          field_photo_id: nil, thumbnail_url: nil, response_locale: nil)
+    ActionCable.server.broadcast(channel_for(account_id), {
       status: "photo_analyzed",
       filenames: Array(filenames).compact,
       summary: analysis,
@@ -57,20 +53,24 @@ class KbSyncBroadcaster
       field_photo_id: field_photo_id,
       thumbnail_url: thumbnail_url,
       response_locale: response_locale
-    }
-    payload[:pending_question] = true if pending_question
-    ActionCable.server.broadcast(channel_for(account_id), payload)
+    })
   end
 
-  # Second half of a photo + question turn: the vision bubble already went out
-  # with pending_question: true, this fills the placeholder the client kept.
-  def self.photo_question_answered(answer:, citations:, account_id: nil, correlation_id: nil, response_locale: nil)
-    ActionCable.server.broadcast(channel_for(account_id), {
+  # Photo with a question: the only broadcast of the turn (CG-D19). The photo
+  # reading is already inside `answer`; `visual_summary` travels only when the
+  # manuals could not be consulted, so the paid reading is still shown.
+  def self.photo_question_answered(answer:, citations:, account_id: nil, correlation_id: nil, response_locale: nil,
+                                   field_photo_id: nil, thumbnail_url: nil, visual_summary: nil)
+    payload = {
       status: "photo_question_answered",
       correlation_id: correlation_id,
       answer: answer,
       citations: Array(citations),
+      field_photo_id: field_photo_id,
+      thumbnail_url: thumbnail_url,
       response_locale: response_locale
-    })
+    }
+    payload[:visual_summary] = visual_summary if visual_summary.present?
+    ActionCable.server.broadcast(channel_for(account_id), payload)
   end
 end

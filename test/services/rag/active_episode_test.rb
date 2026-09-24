@@ -167,7 +167,6 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     with_flags(nil) do
       assert_not Rag::FieldCompanionEpisodeFlag.enabled?
       assert_not Rag::FieldCompanionTurnFlag.enabled?
-      assert_not Rag::FieldCompanionPhotoFlag.enabled?
     end
 
     with_flags("false") do
@@ -177,7 +176,6 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     with_flags("true") do
       assert Rag::FieldCompanionEpisodeFlag.enabled?
       assert Rag::FieldCompanionTurnFlag.enabled?
-      assert Rag::FieldCompanionPhotoFlag.enabled?
     end
   end
 
@@ -211,7 +209,7 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
   end
 
   def with_flags(value)
-    keys = %w[FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED FIELD_COMPANION_PHOTO_ENABLED]
+    keys = %w[FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED]
     previous = keys.index_with { |key| ENV[key] }
     keys.each do |key|
       value.nil? ? ENV.delete(key) : ENV[key] = value

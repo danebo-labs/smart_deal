@@ -185,9 +185,9 @@ class D5AttributionContractReplay
       "id" => result.fetch("id"),
       "generation_mode" => result["generation_mode"],
       "fidelity_strategy" => fidelity_strategy,
-      "fidelity_matched" => rendered_baseline == archived_answer,
-      "flag_off_matched" => off_answer == archived_answer,
-      "changed" => result.fetch("answer") != archived_answer,
+      "fidelity_matched" => comparable(rendered_baseline) == comparable(archived_answer),
+      "flag_off_matched" => comparable(off_answer) == comparable(archived_answer),
+      "changed" => comparable(result.fetch("answer")) != comparable(archived_answer),
       "answer_sha256" => {
         "before" => Digest::SHA256.hexdigest(archived_answer),
         "fidelity" => Digest::SHA256.hexdigest(rendered_baseline),
@@ -205,6 +205,24 @@ class D5AttributionContractReplay
       "expansion_count" =>
         replay&.dig(:result, :retrieval_trace, :structured_route, :expansion_count)
     }
+  end
+
+  # The paid artifacts were rendered with the visible copy of 2026-07 (CG-D19
+  # replaced it on 2026-09-23 by Lahiri's decision). Fidelity is about the
+  # attribution contract, not about that copy: both sides are compared with
+  # the visible phrases folded back to their internal sentinels.
+  ARCHIVE_VISIBLE_COPY = {
+    "El documento no incluye este dato" => "DATA_NOT_AVAILABLE",
+    "The document does not include this information" => "DATA_NOT_AVAILABLE"
+  }.freeze
+
+  def comparable(text)
+    folded = text.to_s.dup
+    ARCHIVE_VISIBLE_COPY.each { |visible, sentinel| folded = folded.gsub(visible, sentinel) }
+    %i[es en].each do |locale|
+      folded = folded.gsub(I18n.t("rag.data_not_available", locale:), "DATA_NOT_AVAILABLE")
+    end
+    folded
   end
 
   def render_internal_answer(result)

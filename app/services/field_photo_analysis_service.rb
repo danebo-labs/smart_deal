@@ -48,10 +48,9 @@ class FieldPhotoAnalysisService
     )
 
     parsed = parse(response.fetch(:text))
-    envelope = FieldPhotoResultsParser.to_envelope(response.fetch(:text), locale: @locale)
     latency_ms = elapsed_ms(started_at)
     result = {
-      analysis: build_analysis(parsed, envelope),
+      analysis: build_analysis(parsed),
       compact_context: build_compact_context(parsed),
       canonical_name: value_or_unknown(parsed["canonical_component"]),
       aliases: Array(parsed["aliases"]).map(&:to_s).compact_blank.first(10),
@@ -89,41 +88,54 @@ class FieldPhotoAnalysisService
     raise ParseError, "Invalid field-photo JSON: #{e.message}"
   end
 
-  def build_analysis(parsed, envelope)
-    evidence_body = envelope.dig("chunks", 0, "text").to_s
-    # "Notes:"/"Notas:" duplicates anti_hallucination_notes, which is re-rendered
-    # below under photo_uncertainty_heading — strip it using the SAME localized
-    # label FieldPhotoResultsParser used to build it (@locale-driven, not a
-    # hardcoded English literal), or the line survives untouched under Spanish.
-    notes_prefix = "#{I18n.t('rag.field_photo_parser.notes_label', locale: @locale)}:"
-    evidence_body = evidence_body.lines.reject { |line| line.start_with?(notes_prefix) }.join.strip
-    component = value_or_unknown(parsed["canonical_component"])
-    visible_code = visible_codes(parsed).first || "UNKNOWN"
-
+  # What the technician reads for a photo alone (CG-D19): prose, no headings,
+  # no suggested queries. UNKNOWN, DEGRADED, and the other enum values stay in
+  # `parsed`; the text says only what the photo shows, in words.
+  def build_analysis(parsed)
     I18n.with_locale(@locale) do
-      sections = [
-        [ I18n.t("rag.photo_observed_heading"), [ parsed["summary"].to_s.presence, evidence_body ].compact.join("\n\n") ],
-        [ I18n.t("rag.photo_uncertainty_heading"), uncertainty_text(parsed) ],
-        [ I18n.t("rag.photo_guidance_heading"), I18n.t("rag.photo_guidance") ],
-        [ I18n.t("rag.photo_next_queries_heading"), suggested_queries(component, visible_code) ]
+      paragraphs = [
+        parsed["summary"].to_s.presence,
+        identity_sentences(parsed),
+        uncertainty_text(parsed),
+        I18n.t("rag.photo_guidance")
       ]
-      sections << [ I18n.t("rag.photo_manual_heading"), I18n.t("rag.photo_manual_absent") ] unless pinned_manual_available?
-
-      sections.map { |heading, body| "**#{heading}**\n#{body}" }.join("\n\n")
+      paragraphs << I18n.t("rag.photo_manual_absent") unless pinned_manual_available?
+      paragraphs.compact_blank.join("\n\n")
     end
   end
 
-  def uncertainty_text(parsed)
-    parsed["anti_hallucination_notes"].to_s.presence ||
-      "REQUIRES_FIELD_VERIFICATION: #{I18n.t('rag.photo_uncertainty_default')}"
+  def identity_sentences(parsed)
+    sentences = []
+    if (component = known(parsed["canonical_component"]))
+      sentences << I18n.t("rag.photo_identity.component", component: component)
+    end
+    if (manufacturer = known(parsed["manufacturer"]))
+      sentences << I18n.t("rag.photo_identity.manufacturer", manufacturer: manufacturer)
+    end
+    if (model = known(parsed["model"]))
+      sentences << I18n.t("rag.photo_identity.model", model: model)
+    end
+    codes = visible_codes(parsed)
+    sentences << I18n.t("rag.photo_identity.codes", codes: codes.join(", ")) if codes.any?
+    condition = parsed["condition"].to_s.strip.downcase
+    sentences << I18n.t("rag.photo_identity.condition.#{condition}") if %w[good degraded damaged].include?(condition)
+    sentences.join(" ").presence
   end
 
-  def suggested_queries(component, visible_code)
-    [
-      I18n.t("rag.photo_query_code", code: visible_code),
-      I18n.t("rag.photo_query_inspections", component: component),
-      I18n.t("rag.photo_query_verify")
-    ].map { |query| "- #{query}" }.join("\n")
+  # The vision contract prefixes its notes with REQUIRES_FIELD_VERIFICATION.
+  # That marker is metadata: the note is shown as a sentence.
+  def uncertainty_text(parsed)
+    notes = parsed["anti_hallucination_notes"].to_s
+      .gsub(/\bREQUIRES?_FIELD_VERIFICATION\b\s*:?\s*/, "")
+      .strip
+    notes.present? ? notes.upcase_first : I18n.t("rag.photo_uncertainty_default")
+  end
+
+  def known(value)
+    text = value.to_s.strip
+    return nil if text.blank? || text.casecmp("UNKNOWN").zero?
+
+    text
   end
 
   def build_compact_context(parsed)

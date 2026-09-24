@@ -35,7 +35,10 @@ module Rag
     include RagQueryConcern
 
     ANCHOR_SUFFIX_MAX_CHARS = 120
-    EVIDENCE_BLOCK_MAX_CHARS = 720
+    # Fixed-size block: header, optional mismatch and screen lines, five fields.
+    # 900 fits the header that asks for the photo opening (CG-D19) plus the
+    # mismatch line without truncating the Condition field.
+    EVIDENCE_BLOCK_MAX_CHARS = 900
     UNKNOWN = "UNKNOWN"
     # H9: laptop-screen capture of a sheet. Accent-folded titles; plant pattern
     # is 4+ uppercase letters + digits. No site name is hardcoded (D10).
@@ -144,7 +147,7 @@ module Rag
       visible_codes = Array(@photo_value[:visible_codes]).presence&.join(", ") || UNKNOWN
       lines = [
         "## Photo Evidence (this turn)",
-        "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base. Procedures and values come only from the retrieved manuals."
+        "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; UNKNOWN means the photo does not show it and is never printed. Open the answer with one or two sentences on what the photo shows, then answer the question. Procedures and values come only from the retrieved manuals."
       ]
       lines << brand_component_mismatch_line if brand_component_mismatch?
       if Rag::GroundedSynthesisFlag.enabled_for?(@account) && document_on_screen_photo?

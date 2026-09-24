@@ -8,8 +8,7 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
   parallelize(workers: 1)
 
   STRICT_OFF_SHA256 = "9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8"
-  LEGACY_TAIL =
-    "**DATA_NOT_AVAILABLE** — el dato solicitado no está documentado; requiere verificación en campo."
+  LEGACY_TAIL = I18n.t("rag.absence_total_contract", locale: :es)
 
   SECTION7_FIXTURE = <<~TEXT.strip
     La documentación establece que la tensión de los cables de suspensión debe ser igual [1].
@@ -63,6 +62,7 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_includes prompt, "a shared word like magnet is not that"
     assert_includes prompt, "documented analogous procedure"
     assert_includes prompt, "it is not this job's instruction and must be confirmed in the field"
+    assert_includes prompt, "Name that other equipment and its manual and page"
     assert_includes prompt, "generic advice is advice not derived from the component and function asked"
     assert_includes prompt, "Do not apply one fixed sequence to every question"
     assert_includes prompt, "Cite a procedure as this equipment's fact only when its manual documents it"

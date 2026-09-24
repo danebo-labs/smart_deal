@@ -248,10 +248,11 @@ class FieldPhotoAnalysisJob < ApplicationJob
     )
   end
 
-  # Delivers the vision bubble first, then (when a question rides along) the
-  # photo-question RAG answer as a second broadcast on the same
-  # correlation_id — see plan foto_mas_pregunta_correccion "Cambio B". Returns
-  # the outcome String for the turn, consumed by emit_interaction_completed.
+  # A photo alone publishes the vision reading. A photo with a question
+  # publishes one answer (CG-D19): the reading enters the prose of that single
+  # RAG answer through the Photo Evidence block, and the chat never shows a
+  # separate vision card, a placeholder, or a redraw. Returns the outcome
+  # String for the turn, consumed by emit_interaction_completed.
   def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil)
     session&.record_photo_observation!(
       photo_value: value,
@@ -261,28 +262,33 @@ class FieldPhotoAnalysisJob < ApplicationJob
     )
     session&.record_assistant_turn!(value.fetch(:compact_context), user_id: user_id, correlation_id: correlation_id)
 
-    run_rag = Rag::PhotoQuestionFlag.enabled? && question.present?
-    KbSyncBroadcaster.photo_analyzed(
-      filenames: [ filename ], analysis: value.fetch(:analysis),
-      canonical_name: value[:canonical_name], aliases: value[:aliases],
-      account_id: account_id, correlation_id: correlation_id,
-      field_photo_id: field_photo_id, thumbnail_url: field_photo_thumbnail_url(field_photo_id),
-      response_locale: locale, pending_question: run_rag
-    )
-    return photo_outcome(value[:analysis]) unless run_rag
-
-    rag_answer = answer_photo_question(question: question, photo_value: value, session: session,
-                                       account_id: account_id, user_id: user_id,
-                                       correlation_id: correlation_id, locale: locale)
-    # nil only when the flag flipped off or the question blanked between the check above and the call
-    return photo_outcome(value[:analysis]) unless rag_answer
+    thumbnail_url = field_photo_thumbnail_url(field_photo_id)
+    rag_answer = if Rag::PhotoQuestionFlag.enabled? && question.present?
+      answer_photo_question(question: question, photo_value: value, session: session,
+                            account_id: account_id, user_id: user_id,
+                            correlation_id: correlation_id, locale: locale)
+    end
+    # nil when there is no question, or the flag flipped off between the check and the call
+    if rag_answer.nil?
+      KbSyncBroadcaster.photo_analyzed(
+        filenames: [ filename ], analysis: value.fetch(:analysis),
+        canonical_name: value[:canonical_name], aliases: value[:aliases],
+        account_id: account_id, correlation_id: correlation_id,
+        field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
+        response_locale: locale
+      )
+      return photo_outcome(value[:analysis])
+    end
 
     unless rag_answer[:failed]
       session&.record_assistant_turn!(rag_answer.fetch(:answer), user_id: user_id, correlation_id: correlation_id)
     end
     KbSyncBroadcaster.photo_question_answered(
       answer: rag_answer.fetch(:answer), citations: rag_answer[:citations],
-      account_id: account_id, correlation_id: correlation_id, response_locale: locale
+      account_id: account_id, correlation_id: correlation_id, response_locale: locale,
+      field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
+      # The paid vision reading is not lost when the manuals could not be consulted.
+      visual_summary: (value[:analysis] if rag_answer[:failed])
     )
     rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer])
   end
@@ -333,9 +339,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: e.class.name,
       latency_ms: elapsed_ms(started_at)
     )
-    # The vision bubble already went out with pending_question: true — this
-    # text is what fills that placeholder, never the job's retry_on handler,
-    # which would replace the already-paid-for analysis with a bare error.
+    # This text is the single answer the technician sees, next to the paid
+    # vision reading — never the job's retry_on handler, which would replace
+    # that reading with a bare error.
     { answer: I18n.with_locale(locale) { I18n.t("rag.photo_question_unavailable") }, citations: [], generation_mode: nil, failed: true }
   end
 

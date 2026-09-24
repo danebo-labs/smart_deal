@@ -108,9 +108,9 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
   Q_FT = "¿Qué pruebas funcionales previas al uso indica el manual y qué resultado esperado tiene cada una?"
   Q_SW = "Antes de operar este equipo, ¿qué comprobaciones debo realizar y en qué condiciones debo detener el trabajo?"
   EXHAUSTIVE_STOP = "Dame la lista completa de comprobaciones que obligan a detener el trabajo."
-  DETERMINISTIC_LABEL_KEYS = %w[
-    test_label action_label expected_result_label
-    precautions_heading mandatory_heading trigger_label mandatory_action_label
+  DETERMINISTIC_COPY_KEYS = %w[
+    test_entry test_entry_without_result precautions_intro
+    precaution_entry mandatory_intro stop_entry
   ].freeze
 
   def build(question, chunks, response_locale: "es")
@@ -172,17 +172,19 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
                  result[:rendered_record_ids]
     assert_includes result[:parsed_record_ids], "FR-TEST000000000003"
 
+    # CG-D19: one prose paragraph per record, no field labels, no raw marker.
     blocks = result[:answer].split(/\n\n/)
     assert_equal 3, blocks.size
     blocks.each do |block|
-      lines = block.lines.map(&:strip)
-      assert_equal 3, lines.size
-      assert_match(/\APrueba: /, lines[0])
-      assert_match(/\AAcción: /, lines[1])
-      assert_match(/\AResultado esperado: /, lines[2])
+      assert_equal 1, block.lines.size
+      assert_match(/\A.+: .+\. El manual (?:documenta como resultado: .+|no documenta el resultado esperado de esta prueba)\.\z/, block)
     end
-    assert_includes result[:answer], "Prueba de bocina (2)"
-    assert_includes result[:answer], "Resultado esperado: DATA_NOT_AVAILABLE"
+    assert_includes result[:answer], "Prueba de bocina (2): "
+    assert_includes result[:answer], "El manual no documenta el resultado esperado de esta prueba."
+    assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
+    assert_not_includes result[:answer], "Prueba: "
+    assert_not_includes result[:answer], "Acción: "
+    assert_not_includes result[:answer], "Resultado esperado: "
     assert_no_match(/FR-TEST/, result[:answer])
     assert_not_includes result[:answer], "Translation missing"
   end
@@ -215,16 +217,26 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     assert_equal "deterministic_stop_work", result[:generation_mode]
     assert_equal false, result[:model_invoked]
 
+    # CG-D19: two prose paragraphs opened by fixed sentences, no headings or labels.
     answer = result[:answer]
-    mandatory_section = answer.split("Detención obligatoria con evidencia explícita").last
-    assert_includes mandatory_section, "Disparador: Velocidad supera 20 cm/s con plataforma elevada"
-    assert_includes mandatory_section, "Acción obligatoria: Marque la máquina inmediatamente y deje de funcionar"
+    mandatory_intro = I18n.t("rag.deterministic.mandatory_intro", locale: :es)
+    precautions_intro = I18n.t("rag.deterministic.precautions_intro", locale: :es)
+    mandatory_section = answer.split(mandatory_intro).last
+    assert_includes mandatory_section,
+                    "Ante «Velocidad supera 20 cm/s con plataforma elevada», el manual obliga a lo siguiente: " \
+                    "Marque la máquina inmediatamente y deje de funcionar."
     assert_not_includes mandatory_section, "mareos"
     assert_not_includes mandatory_section, "personal no autorizado"
 
-    precautions_section = answer[/Precauciones e inspecciones(.*)Detención obligatoria/m, 1]
+    precautions_section = answer[/#{Regexp.escape(precautions_intro)}(.*)#{Regexp.escape(mandatory_intro)}/m, 1]
     assert_includes precautions_section, "mareos"
     assert_includes precautions_section, "personal no autorizado"
+    assert_not_includes precautions_section, "- "
+    assert_not_includes answer, "DATA_NOT_AVAILABLE"
+    assert_not_includes answer, "Disparador:"
+    assert_not_includes answer, "Acción obligatoria:"
+    assert_not_includes answer, "Precauciones e inspecciones"
+    assert_not_includes answer, "Detención obligatoria"
     assert_not_includes answer, "Translation missing"
   end
 
@@ -267,35 +279,36 @@ class Rag::DeterministicRendererTest < ActiveSupport::TestCase
     assert_equal 1, service.calls.size
     assert_equal "deterministic_stop_work", result[:generation_mode]
     assert_equal false, result[:model_invoked]
-    assert_includes result[:answer], "Precauciones e inspecciones"
-    assert_includes result[:answer], "Detención obligatoria con evidencia explícita"
-    assert_includes result[:answer], "Disparador: Velocidad supera 20 cm/s con plataforma elevada"
-    assert_not_includes result[:answer], "Prueba:"
+    assert_includes result[:answer], I18n.t("rag.deterministic.precautions_intro", locale: :es)
+    assert_includes result[:answer], I18n.t("rag.deterministic.mandatory_intro", locale: :es)
+    assert_includes result[:answer], "Ante «Velocidad supera 20 cm/s con plataforma elevada», el manual obliga a lo siguiente:"
+    assert_not_includes result[:answer], "El manual documenta como resultado"
     assert_not_includes result[:answer], "Translation missing"
   end
 
-  test "deterministic labels resolve in Spanish and English" do
+  test "deterministic prose copy resolves in Spanish and English" do
     %i[es en].each do |locale|
-      DETERMINISTIC_LABEL_KEYS.each do |key|
-        value = I18n.t("rag.deterministic.#{key}", locale: locale)
+      DETERMINISTIC_COPY_KEYS.each do |key|
+        value = I18n.t("rag.deterministic.#{key}", locale: locale, title: "t", action: "a", result: "r", trigger: "g")
         assert_not_includes value, "Translation missing", "#{locale}.#{key}"
       end
     end
 
     renderer, = build(Q_FT, [ FT_CHUNK ], response_locale: "en")
     result = renderer.execute
-    assert_includes result[:answer], "Test: Prueba de bocina"
-    assert_includes result[:answer], "Action: Pulse el botón de la bocina"
-    assert_includes result[:answer], "Expected result: DATA_NOT_AVAILABLE"
+    assert_includes result[:answer], "Prueba de bocina: Pulse el botón de la bocina"
+    assert_includes result[:answer], "The manual does not document the expected result of this test."
+    assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
     assert_not_includes result[:answer], "Translation missing"
     assert_equal false, result[:model_invoked]
 
     stop_renderer, = build(Q_SW, [ SW_CHUNK ], response_locale: "en")
     stop_result = stop_renderer.execute
-    assert_includes stop_result[:answer], "Precautions and inspections"
-    assert_includes stop_result[:answer], "Mandatory stop with explicit evidence"
-    assert_includes stop_result[:answer], "Trigger: Velocidad supera 20 cm/s con plataforma elevada"
-    assert_includes stop_result[:answer], "Mandatory action: Marque la máquina inmediatamente y deje de funcionar"
+    assert_includes stop_result[:answer], I18n.t("rag.deterministic.precautions_intro", locale: :en)
+    assert_includes stop_result[:answer], I18n.t("rag.deterministic.mandatory_intro", locale: :en)
+    assert_includes stop_result[:answer],
+                    "When «Velocidad supera 20 cm/s con plataforma elevada» occurs, the manual requires the following: " \
+                    "Marque la máquina inmediatamente y deje de funcionar."
     assert_not_includes stop_result[:answer], "Translation missing"
     assert_equal false, stop_result[:model_invoked]
   end

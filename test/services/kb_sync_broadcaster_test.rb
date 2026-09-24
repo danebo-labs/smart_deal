@@ -163,23 +163,6 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     assert_not messages.first.key?("pending_question")
   end
 
-  test ".photo_analyzed includes pending_question: true when a photo-question RAG turn will follow" do
-    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
-    messages = capture_broadcasts(channel) do
-      KbSyncBroadcaster.photo_analyzed(
-        filenames: [ "photo.jpg" ],
-        analysis: "Observed evidence",
-        canonical_name: "Door board",
-        aliases: [ "DB-1" ],
-        account_id: accounts(:legacy).id,
-        correlation_id: "photo:abc",
-        pending_question: true
-      )
-    end
-
-    assert_equal true, messages.first["pending_question"]
-  end
-
   test ".photo_question_answered broadcasts status, correlation_id, answer, citations and response_locale" do
     channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
     messages = capture_broadcasts(channel) do
@@ -211,5 +194,33 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     end
 
     assert_equal [], messages.first["citations"]
+  end
+
+  test ".photo_question_answered includes visual summary only when supplied" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_question_answered(
+        answer: "No pude completar la consulta", citations: [],
+        account_id: accounts(:legacy).id, correlation_id: "photo:abc",
+        visual_summary: "Se ve un tablero con un LED rojo."
+      )
+    end
+
+    assert_equal "Se ve un tablero con un LED rojo.", messages.first["visual_summary"]
+  end
+
+  test ".photo_question_answered carries the photo button fields" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_question_answered(
+        answer: "Por la foto, esto parece un amarre de cables.", citations: [],
+        account_id: accounts(:legacy).id, correlation_id: "photo:abc",
+        field_photo_id: 42, thumbnail_url: "data:image/gif;base64,R0lGOD"
+      )
+    end
+
+    assert_equal 42, messages.first["field_photo_id"]
+    assert_equal "data:image/gif;base64,R0lGOD", messages.first["thumbnail_url"]
+    assert_not messages.first.key?("visual_summary")
   end
 end

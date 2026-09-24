@@ -895,15 +895,28 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   # Tests for sanitize_answer (Phase 1a)
   # ============================================
 
-  test 'sanitize_answer strips markdown headers but keeps heading text' do
-    text = "# Title\n## Subtitle\n### Sub-sub\nbody line"
+  # CG-D19: a heading is a label the technician does not read. The line goes.
+  test 'sanitize_answer drops markdown heading lines and keeps the prose' do
+    text = "# Respuesta\nLa nota documenta el ajuste fino.\n## Dato faltante\nFalta la cota."
     out  = @controller.send(:sanitize_answer, text)
 
-    assert_includes out, 'Title'
-    assert_includes out, 'Subtitle'
-    assert_includes out, 'Sub-sub'
-    assert_includes out, 'body line'
+    assert_equal "La nota documenta el ajuste fino.\nFalta la cota.", out
+    assert_not_includes out, 'Respuesta'
+    assert_not_includes out, 'Dato faltante'
     assert_not_includes out, '#'
+  end
+
+  test 'sanitize_answer drops bold label lines, horizontal rules and empty bold' do
+    text = "La nota documenta el ajuste fino.\n\n**Datos faltantes:**\n- La cota del resorte.\n\n---\n\n****\n\n**Recomendación:** Consulta el manual.\nUn valor **crítico** sigue en negrita."
+    out  = @controller.send(:sanitize_answer, text)
+
+    assert_not_includes out, "Datos faltantes"
+    assert_not_includes out, "---"
+    assert_not_includes out, "****"
+    assert_includes out, "- La cota del resorte."
+    assert_includes out, "Consulta el manual."
+    assert_not_includes out, "Recomendación"
+    assert_includes out, "Un valor **crítico** sigue en negrita."
   end
 
   test 'sanitize_answer does not strip a hash that appears mid-sentence' do
@@ -958,7 +971,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
     with_mock_orchestrator(mock) do
       result = @controller.send(:execute_rag_query, 'q')
-      assert_equal "Title\n\nbody", result.answer
+      assert_equal "body", result.answer
     end
   end
 
@@ -1384,19 +1397,15 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal "deterministic_selection_gate", result.generation_mode
       assert_equal false, result.model_invoked
       assert_nil result.session_id
-      assert_equal 2, Array(result.quick_replies).size
+      assert_nil result.quick_replies
       assert_includes result.answer, "?"
       assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
       assert_not_includes result.answer, elemont.display_name
     end
 
-    replies = Array(result.quick_replies)
-    assert_equal 2, replies.size,
-                 "jesus turn 3 offers to continue; today quick_replies is nil"
-    assert_equal "Continuar: #{previous.truncate(60)}", replies[0][:label] || replies[0]["label"]
-    assert_equal previous, replies[0][:query] || replies[0]["query"]
-    assert_equal "Resumen del documento", replies[1][:label] || replies[1]["label"]
-    assert_equal "Resumen del documento #{question}", replies[1][:query] || replies[1]["query"]
+    # CG-D19 #G: the gate asks in prose; no chips.
+    assert_nil result.quick_replies
+    assert_equal I18n.t("rag.selection_turn_prompt", locale: :es), result.answer
   end
 
   test "jesus turn 3 inherits CEA15 with the full account catalog" do
@@ -1426,7 +1435,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal "deterministic_selection_gate", result.generation_mode
       assert_equal false, result.model_invoked
       assert_nil result.session_id
-      assert_equal 2, Array(result.quick_replies).size
+      assert_nil result.quick_replies
       assert_includes result.answer, "?"
       assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
       assert_not_includes result.answer, elemont.display_name
@@ -1471,12 +1480,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal "deterministic_selection_gate", result.generation_mode
       assert_equal false, result.model_invoked
       assert_nil result.session_id
-      replies = Array(result.quick_replies)
-      assert_equal 2, replies.size
+      assert_nil result.quick_replies
       assert_includes result.answer, "?"
       assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
       assert_not_includes result.answer, elemont.display_name
-      assert_equal "Resumen del documento Modelo MH", replies[1][:query] || replies[1]["query"]
     end
   end
 
@@ -1500,7 +1507,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_equal "deterministic_selection_gate", result.generation_mode
       assert_equal false, result.model_invoked
       assert_nil result.session_id
-      assert_equal 2, Array(result.quick_replies).size
+      assert_nil result.quick_replies
       assert_includes result.answer, "?"
       assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result.answer
       assert_not_includes result.answer, elemont.display_name
@@ -1565,18 +1572,6 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       assert_not_nil captured[:kwargs]
       assert_not_includes captured[:kwargs][:session_context].to_s, "## Selection Turn"
       assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
-    end
-  end
-
-  test "jesus selection intent keeps preexisting quick replies" do
-    elemont, _cea15, _forklift = build_jesus_catalog
-    session = build_jesus_session(elemont, turn: 3)
-    existing = [ { label: "Otra", query: "otra" } ]
-
-    travel_to Time.zone.parse(JESUS_TURNS[4][:ts]) do
-      assert_equal existing, @controller.send(
-        :selection_quick_replies, JESUS_TURNS[4][:content], session, existing
-      )
     end
   end
 
@@ -1946,7 +1941,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_equal [ "Fuji Yida" ], calls
   end
 
-  test "a pin label keeps selection replies on the original text when the rewrite applies" do
+  test "a pin label keeps the selection gate on the original text when the rewrite applies" do
     create_followup_guide(display_name: "Panel Alfa manual", aliases: [ "Panel Alfa" ])
     session = build_followup_session(follow_up: "Panel Alfa")
     session.update!(active_entities: {
@@ -1973,7 +1968,9 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
     assert_equal "deterministic_selection_gate", result.generation_mode
     assert_equal [ "Panel Alfa" ], excludes.uniq
-    assert_equal SPRING_QUESTION, result.quick_replies.first[:query]
+    # CG-D19 #G: the gate asks in prose and publishes no chips.
+    assert_nil result.quick_replies
+    assert_equal I18n.t("rag.selection_turn_prompt", locale: :es), result.answer
   end
 
   test "a non-web session does not rewrite and keeps the orchestrator input" do
@@ -2183,7 +2180,9 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_includes calls, THREAD_COMPOSED
   end
 
-  test "two distinct threads ask and do not call the orchestrator" do
+  # CG-D19: the chat never publishes a menu or chips. With two open threads
+  # the clarification follows the latest answer and goes to the orchestrator.
+  test "two distinct threads join the latest one and call the orchestrator without a menu" do
     session = build_two_thread_session
     result = nil
 
@@ -2195,17 +2194,13 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_nil captured[:kwargs]
+      assert_equal "Cómo se regula la puerta de cabina ?\n#{THREAD_CLARIFY}", captured[:question]
     end
 
-    assert_equal "deterministic_thread_menu", result.generation_mode
-    assert_equal false, result.model_invoked
-    assert_equal I18n.t("rag.thread_menu_prompt", locale: :es), result.answer
-    assert_equal 3, result.quick_replies.size
-    assert_equal I18n.t("rag.thread_menu_new_query", locale: :es), result.quick_replies.last[:label]
-    assert_equal THREAD_CLARIFY, result.quick_replies.last[:query]
-    assert result.quick_replies.first[:query].include?("\n")
-    assert result.quick_replies.all? { |reply| reply[:label].exclude?("\n") && reply[:label].length <= 48 }
+    assert result.success?
+    assert_not_equal "deterministic_thread_menu", result.generation_mode
+    assert_nil result.quick_replies
+    assert_not_equal I18n.t("rag.thread_menu_prompt", locale: :es), result.answer
   end
 
   test "the thread menu flag off searches the clarification alone" do
@@ -2269,7 +2264,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_not_equal "deterministic_thread_menu", result.generation_mode
   end
 
-  test "the same clarification after the menu is searched alone" do
+  test "a legacy menu prompt in the history does not stop the join" do
     session = build_two_thread_session
     history = session.conversation_history
     history.last["correlation_id"] = "query:first"
@@ -2294,26 +2289,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         )
       end
 
-      assert_equal THREAD_CLARIFY, captured[:question]
+      assert_equal "Cómo se regula la puerta de cabina ?\n#{THREAD_CLARIFY}", captured[:question]
     end
-  end
-
-  test "the thread menu answer follows the response locale" do
-    session = build_two_thread_session
-    result = nil
-
-    with_followup_orchestrator do |_captured|
-      travel_to THREAD_NOW do
-        result = @controller.send(
-          :execute_rag_query, THREAD_CLARIFY,
-          conv_session: session, correlation_id: THREAD_CID, account: accounts(:legacy),
-          response_locale: :en
-        )
-      end
-    end
-
-    assert_equal I18n.t("rag.thread_menu_prompt", locale: :en), result.answer
-    assert_equal "Is this a new question?", result.quick_replies.last[:label]
   end
 
   # Phase 2b. The turn flag stays off outside these tests.
@@ -2329,7 +2306,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
-  test "no_episode keeps the legacy thread menu even when a composed string is present" do
+  test "no_episode keeps the legacy thread join even when a composed string is present" do
     session = build_two_thread_session
     episode_turn = episode_result(decision: :no_episode, composed: "should-not-be-used")
     calls = { rewriter: 0, resolver: 0 }
@@ -2345,12 +2322,13 @@ class RagQueryConcernTest < ActiveSupport::TestCase
               episode_turn: episode_turn
             )
           end
-          assert_nil captured[:kwargs]
+          assert_equal "Cómo se regula la puerta de cabina ?\n#{THREAD_CLARIFY}", captured[:question]
         end
       end
     end
 
-    assert_equal "deterministic_thread_menu", result.generation_mode
+    assert result.success?
+    assert_not_equal "deterministic_thread_menu", result.generation_mode
     assert_operator calls[:rewriter], :>, 0
     assert_operator calls[:resolver], :>, 0
   end

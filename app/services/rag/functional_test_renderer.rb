@@ -3,14 +3,15 @@
 module Rag
   # Deterministic exhaustive functional-test answer (benchmark plan Fase 7).
   #
-  # Renders every retrieved FUNCTIONAL_TEST record as a three-line block:
+  # Renders every retrieved FUNCTIONAL_TEST record as one prose paragraph
+  # (CG-D19): the heading plus discriminator, the documentary action verbatim,
+  # and the documentary result verbatim said as a sentence. A record whose
+  # result is DATA_NOT_AVAILABLE says in words that the manual documents no
+  # result; the marker itself never reaches the technician.
   #
-  #   Prueba: <heading + discriminator>
-  #   Acción: <documentary action, verbatim>
-  #   Resultado esperado: <documentary result, verbatim — DATA_NOT_AVAILABLE kept>
-  #
-  # Blocks are separated by one blank line. The answer contains ONLY blocks —
-  # the benchmark evaluator parses every paragraph as an entry.
+  # Paragraphs are separated by one blank line. The answer contains ONLY
+  # paragraphs: the benchmark evaluator parses every paragraph as an entry
+  # with the same localized sentence templates (rag.deterministic.*).
   class FunctionalTestRenderer < DeterministicRenderer
     def generation_mode
       "deterministic_functional_tests"
@@ -50,11 +51,11 @@ module Rag
         occurrence = heading_seen[record.source]
         title = occurrence > 1 ? "#{record.source} (#{occurrence})" : record.source
 
-        [
-          "#{label(:test_label)}: #{title}",
-          "#{label(:action_label)}: #{record.action}",
-          "#{label(:expected_result_label)}: #{record.expected_result}"
-        ].join("\n")
+        if record.expected_result == DATA_NOT_AVAILABLE
+          copy(:test_entry_without_result, title: title, action: sentence(record.action))
+        else
+          copy(:test_entry, title: title, action: sentence(record.action), result: sentence(record.expected_result))
+        end
       end.join("\n\n")
     end
   end

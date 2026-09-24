@@ -3,8 +3,7 @@
 require "test_helper"
 
 class BedrockRagServiceAbsenceContractTest < ActiveSupport::TestCase
-  LEGACY_TAIL =
-    "**DATA_NOT_AVAILABLE** — el dato solicitado no está documentado; requiere verificación en campo."
+  LEGACY_TAIL = I18n.t("rag.absence_total_contract", locale: :es)
 
   test "lead-scoped absence appends the legacy tail today" do
     answer = "La documentación no especifica la condición solicitada."
@@ -44,11 +43,8 @@ class BedrockRagServiceAbsenceContractTest < ActiveSupport::TestCase
 
     normalized = I18n.with_locale(:en) { normalize(answer) }
 
-    assert_equal(
-      "#{answer}\n\n**DATA_NOT_AVAILABLE** — " \
-        "the requested information is not documented; field verification is required.",
-      normalized
-    )
+    assert_equal("#{answer}\n\n#{I18n.t('rag.absence_total_contract', locale: :en)}", normalized)
+    assert_includes normalized, "so I will not invent a value"
   end
 
   test "partial absence sharing a requested relation appends the partial rendering" do

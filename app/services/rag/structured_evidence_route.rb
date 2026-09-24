@@ -212,7 +212,9 @@ module Rag
         question: @question
       )
       local_ms = local_before_generation_ms + elapsed_ms(local_after_generation_started)
-      unless valid_citations?(answer, citations, chunks.size)
+      uncited_prose = uncited_prose?(answer, internal_answer, attribution)
+      citations = [] if uncited_prose
+      unless uncited_prose || valid_citations?(answer, citations, chunks.size)
         return abstained_outcome(
           reason: attribution.dropped_any? ? :attribution_failure : :citation_failure,
           retrieval: retrieval,
@@ -277,8 +279,9 @@ module Rag
           retrieved_chunks: expanded_chunks,
           generation_chunks: chunks,
           safety_evidence_chunks: citation_evidence,
-          expansions: expansions
-        }
+          expansions: expansions,
+          outcome_reason: (:uncited_prose if uncited_prose)
+        }.compact
       }
       Outcome.new(status: :answered, result: result)
     rescue BedrockRagService::BedrockServiceError => e
@@ -680,6 +683,23 @@ module Rag
           expansion_mechanisms: expansions.pluck(:mechanism).uniq
         }
       )
+    end
+
+    # CG-D19 #A (Lahiri, 23-sep-2026): prose that cites nothing is the layer-3
+    # orientation (no cota, no brand, no step). It has already passed
+    # AnswerSafetyProcessor and the attribution guard dropped nothing, so it is
+    # published with no sources instead of being replaced by the absence marker.
+    # Boundaries: any [n] present still has to be valid (a wrong marker is a
+    # misattribution); an answer that abstains (sentinel, absence phrase) or a
+    # single sentence stays on the abstention path. Orientation runs several
+    # sentences: what is seen, the principle, what is missing.
+    def uncited_prose?(answer, internal_answer, attribution)
+      return false if answer.blank? || attribution.dropped_any?
+      return false if answer.match?(/\[\d+\]/)
+      return false if internal_answer.to_s.match?(BedrockRagService::ABSENCE_MARKER_PATTERN)
+      return false if answer.match?(Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN)
+
+      answer.scan(/[.!?…](?:\s|\z)/).size >= 2
     end
 
     def valid_citations?(answer, citations, chunk_count)

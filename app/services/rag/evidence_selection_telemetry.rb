@@ -11,6 +11,8 @@ module Rag
       REQUIRES?_FIELD_VERIFICATION |
       El\ documento\ no\ incluye\ este\ dato |
       The\ document\ does\ not\ include\ this\ information |
+      no\ encontr[eé]\ ese\ dato\ en\ la\ documentaci[oó]n |
+      did\ not\ find\ that\ in\ the\ documentation |
       requiere\ verificaci[oó]n\ en\ campo |
       requires\ field\ verification
     /ix.freeze

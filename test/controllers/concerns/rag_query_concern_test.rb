@@ -2690,7 +2690,11 @@ class RagQueryConcernTest < ActiveSupport::TestCase
             assert_not_includes expected, "unknown_confirmed", case_id
             assert_not_includes expected, "absent_confirmed", case_id
             assert_equal expected, captured[:question], "#{case_id} turn #{index}"
-            assert expected.end_with?(turn["content"]), "#{case_id} turn #{index} trimmed the turn"
+            if result.decision == :corrected
+              assert_not_includes expected, turn["content"], "#{case_id} turn #{index} sent the negation"
+            else
+              assert expected.end_with?(turn["content"]), "#{case_id} turn #{index} trimmed the turn"
+            end
             assert_equal [], captured[:kwargs][:entity_s3_uris]
             assert_equal false, captured[:kwargs][:force_entity_filter]
             assert_elemont_code_turn(captured[:question]) if case_id == "T-B" && turn["content"] == "código 8"

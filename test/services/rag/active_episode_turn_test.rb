@@ -71,6 +71,74 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     assert_equal prior["episode_id"], result.state["episode_id"]
   end
 
+  test "flow A correction and follow-up retrieve KONE without Fuji Yida" do
+    springs = "¿Cómo se ajustan los resortes de la fijación de cables?"
+    opened = classify(springs)
+    named = classify("es Fuji Yida", prior: opened.state)
+    corrected = classify("No, no es Fuji Yida. Es KONE", prior: named.state)
+    follow = classify("¿Qué reviso primero?", prior: corrected.state)
+
+    assert_equal springs, corrected.state.dig("goal", "text")
+    assert_equal "KONE", fact_value(corrected, "manufacturer")
+    assert_includes corrected.composed, "resortes"
+    assert_includes corrected.composed, "fijación de cables"
+    assert_includes corrected.composed, "KONE"
+    assert_not_includes corrected.composed, "Fuji"
+    assert_not_includes corrected.composed, "No, no es"
+
+    assert_equal springs, follow.state.dig("goal", "text")
+    assert_equal "KONE", fact_value(follow, "manufacturer")
+    assert_includes follow.composed, "resortes"
+    assert_includes follow.composed, "fijación de cables"
+    assert_includes follow.composed, "KONE"
+    assert_includes follow.composed, "¿Qué reviso primero?"
+    assert_not_includes follow.composed, "Fuji"
+  end
+
+  test "flow B correction keeps the symptom and CEA15 text without Elemont" do
+    goal = "Elemont MH con placa CEA15, la puerta 1 no magnetiza. ¿Qué reviso?"
+    opened = classify(goal)
+    absent = classify("no muestra ningún código", prior: opened.state)
+    corrected = classify("No, no es Elemont. Es KONE", prior: absent.state)
+    follow = classify("¿Qué reviso primero?", prior: corrected.state)
+
+    assert_equal goal, corrected.state.dig("goal", "text")
+    assert_equal "KONE", fact_value(corrected, "manufacturer")
+    assert_equal [], Array(corrected.state["identifiers"])
+    assert_equal "absent_confirmed", fact_status(corrected, "fault_code")
+    assert_includes corrected.composed, "puerta 1"
+    assert_includes corrected.composed, "no magnetiza"
+    assert_includes corrected.composed, "CEA15"
+    assert_includes corrected.composed, "MH"
+    assert_includes corrected.composed, "KONE"
+    assert_not_includes corrected.composed, "Elemont"
+    assert_not_includes corrected.composed, "No, no es"
+
+    assert_equal goal, follow.state.dig("goal", "text")
+    assert_equal "KONE", fact_value(follow, "manufacturer")
+    assert_equal [], Array(follow.state["identifiers"])
+    assert_includes follow.composed, "puerta 1"
+    assert_includes follow.composed, "no magnetiza"
+    assert_includes follow.composed, "CEA15"
+    assert_includes follow.composed, "KONE"
+    assert_includes follow.composed, "¿Qué reviso primero?"
+    assert_not_includes follow.composed, "Elemont"
+  end
+
+  test "flow B correction that also names code 8 keeps the new code without Elemont" do
+    goal = "Elemont MH con placa CEA15, la puerta 1 no magnetiza"
+    opened = classify(goal)
+    corrected = classify("No, no es Elemont. Es KONE y muestra código 8", prior: opened.state)
+
+    assert_equal :corrected, corrected.decision
+    assert_equal goal, corrected.state.dig("goal", "text")
+    assert_equal "KONE", fact_value(corrected, "manufacturer")
+    assert_includes corrected.composed, "KONE"
+    assert_includes corrected.composed, "código 8"
+    assert_not_includes corrected.composed, "Elemont"
+    assert_not_includes corrected.composed, "No, no es"
+  end
+
   test "annex B Ahora estoy revisando un KONE opens a new episode" do
     text = "Ahora estoy revisando un KONE que no nivela en planta 3"
     prior = episode_state(goal: ELEMONT_GOAL, manufacturer: "Elemont", identifiers: %w[MH CEA15], fault_code: "8")

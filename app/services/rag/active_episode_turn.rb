@@ -443,13 +443,16 @@ module Rag
 
     def compose_text(episode)
       goal_text = episode.goal&.dig("text")
-      goal_text = nil if goal_text.blank? || episode.goal_truncated? || contains?(@text, goal_text)
-      items = identity_items(episode, goal_text)
+      goal_text = nil if goal_text.blank? || episode.goal_truncated?
+      goal_text = composed_problem(goal_text, episode) if goal_text
+      visible_turn = retrieval_turn(episode)
+      goal_text = nil if goal_text.present? && contains?(visible_turn, goal_text)
+      items = identity_items(episode, goal_text, visible_turn)
       loop do
         lines = []
         lines << goal_text if goal_text
         lines << items.map(&:text).join(" ") if items.any?
-        lines << @text.strip
+        lines << visible_turn if visible_turn.present?
         composed = lines.join("\n")
         return composed if composed.length <= FollowupQueryRewriter::MAX_COMPOSED_CHARS
 
@@ -473,21 +476,57 @@ module Rag
       end
     end
 
-    def identity_items(episode, goal_text)
+    # Historical goal stays as stored. The retrieval copy drops a catalog
+    # manufacturer that is no longer the active one, which is the brand an
+    # explicit correction replaced.
+    def composed_problem(goal_text, episode)
+      stale = stale_manufacturers(goal_text, user_known(episode, "manufacturer"))
+      return goal_text if stale.empty?
+
+      stripped = goal_text.dup
+      stale.sort_by { |brand| -brand.length }.each do |brand|
+        stripped = stripped.gsub(manufacturer_pattern(brand), " ")
+      end
+      stripped.squish
+    end
+
+    # A corrected turn already wrote Y. The negation sentence still contains X
+    # and must not go to retrieval as a keyword.
+    def retrieval_turn(episode)
+      turn = @text.to_s.strip
+      return turn unless correction?
+      return turn if stale_manufacturers(turn, user_known(episode, "manufacturer")).empty?
+
+      ""
+    end
+
+    def stale_manufacturers(text, active)
+      return [] if active.blank?
+
+      active_label = FollowupQueryRewriter.normalize_label(active)
+      MANUFACTURERS.select { |brand| brand != active_label && contains?(text, brand) }
+    end
+
+    def manufacturer_pattern(brand)
+      parts = brand.split.map { |part| Regexp.escape(part) }
+      /\b#{parts.join('\s+')}\b/i
+    end
+
+    def identity_items(episode, goal_text, visible_turn)
       items = []
       manufacturer = user_known(episode, "manufacturer")
-      items << Item.new(:manufacturer, manufacturer) if manufacturer && !already_present?(goal_text, manufacturer)
+      items << Item.new(:manufacturer, manufacturer) if manufacturer && !present_in?(goal_text, visible_turn, manufacturer)
       model = user_known(episode, "model")
-      items << Item.new(:model, model) if model && !already_present?(goal_text, model)
+      items << Item.new(:model, model) if model && !present_in?(goal_text, visible_turn, model)
       episode.identifiers.each do |identifier|
         next unless identifier["source"] == "user"
-        next if already_present?(goal_text, identifier["value"])
+        next if present_in?(goal_text, visible_turn, identifier["value"])
 
         items << Item.new(:identifier, identifier["value"])
       end
       code = user_known(episode, "fault_code")
       label = "código #{code}" if code
-      items << Item.new(:code, label) if label && !already_present?(goal_text, code) && !already_present?(goal_text, label)
+      items << Item.new(:code, label) if label && !present_in?(goal_text, visible_turn, code) && !present_in?(goal_text, visible_turn, label)
       items
     end
 
@@ -498,8 +537,8 @@ module Rag
       fact["value"]
     end
 
-    def already_present?(goal_text, needle)
-      contains?(goal_text, needle) || contains?(@text, needle)
+    def present_in?(goal_text, visible_turn, needle)
+      contains?(goal_text, needle) || contains?(visible_turn, needle)
     end
 
     def contains?(haystack, needle)

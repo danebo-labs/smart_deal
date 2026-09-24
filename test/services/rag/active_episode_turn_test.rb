@@ -320,7 +320,7 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     )
   end
 
-  def classify(text, prior: {}, selection_turn: false, shared: false)
+  def classify(text, prior: {}, selection_turn: false, shared: false, prior_turns: [])
     Rag::ActiveEpisodeTurn.call(
       state: prior,
       text: text,
@@ -328,7 +328,8 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       enabled: true,
       selection_turn: selection_turn,
       shared: shared,
-      correlation_id: "query:turn"
+      correlation_id: "query:turn",
+      prior_user_turns: prior_turns
     )
   end
 
@@ -470,5 +471,707 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     identifiers.each { |value| episode.append_identifier!(value, correlation_id: "query:prior") }
     episode.pending_fact = { "subject" => pending, "correlation_id" => "query:prior" } if pending
     episode.to_h
+  end
+
+  GOAL = "Cómo se ajustan los resortes de la fijación de cables?"
+  EXPANDED = "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?"
+
+  test "hybrid model turn expands only the cable-fixing referent" do
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      chain
+    )
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal GOAL, result.state.dig("goal", "text")
+    assert_equal "MonoSpace", fact_value(result, "model")
+    assert_nil fact_value(result, "manufacturer")
+    assert_equal EXPANDED, result.composed
+    assert_not_includes result.composed, "Fuji"
+    assert_not_includes result.composed, "MiniSpace"
+    assert_not_includes result.composed, "CEA15"
+  end
+
+  test "two direct turns expand the same referent" do
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_equal EXPANDED, result.composed
+  end
+
+  test "demonstrative plural expands the same referent" do
+    result = resolve("esos resortes, ¿cómo se ajustan?", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal "esos resortes de la fijación de cables, ¿cómo se ajustan?", result.composed
+  end
+
+  test "omitted object expands only when the verb agrees with the unique referent" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajustan?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los resortes de la fijación de cables?", result.composed
+  end
+
+  test "a singular verb does not copy a plural object" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajusta?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación de cables"
+  end
+
+  test "internal y follow-up expands the unique referent" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿y cómo se ajustan?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_includes result.composed, "resortes de la fijación de cables"
+    assert_includes result.composed, "MonoSpace"
+  end
+
+  test "a rejected ajust ellipsis does not fall through to whole-goal compose" do
+    result = resolve("¿y cómo se ajusta?", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "¿y cómo se ajusta?"
+  end
+
+  test "a new explicit component does not inherit the cable-fixing referent" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajusta el resorte del paracaídas?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_includes result.state.dig("goal", "text"), "paracaídas"
+    assert_not_includes result.state.dig("goal", "text"), "fijación de cables"
+  end
+
+  test "a new session does not invent a component" do
+    result = classify("¿cómo se ajustan los resortes?", prior: episode_state(goal: nil))
+
+    assert_not_includes result.composed.to_s, "fijación"
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación"
+  end
+
+  test "a short new component is not composed onto the spring goal" do
+    result = resolve("el sensor de puerta no activa", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_equal "el sensor de puerta no activa", result.state.dig("goal", "text")
+  end
+
+  test "a new procedural task does not inherit the cable-fixing referent" do
+    result = resolve(
+      "la puerta no cierra, ¿cómo la reviso?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text"), "fijación"
+  end
+
+  test "an expired antecedent is not composed" do
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      [ turn(GOAL, "query:prior", NOW - 5.hours) ]
+    )
+
+    assert_nil result.composed
+  end
+
+  test "an antecedent outside the last three user turns is not composed" do
+    turns = [
+      turn(GOAL, "query:prior", NOW - 40.minutes),
+      turn("KONE", "query:a", NOW - 30.minutes),
+      turn("sin código", "query:b", NOW - 20.minutes),
+      turn("lo medí", "query:c", NOW - 10.minutes)
+    ]
+    result = resolve("el modelo es MonoSpace, como se ajustan los resortes?", turns)
+
+    assert_nil result.composed
+  end
+
+  test "a missing duplicate or nil goal correlation does not compose" do
+    text = "el modelo es MonoSpace, como se ajustan los resortes?"
+    fresh = turn(GOAL, "query:prior", NOW - 5.minutes)
+
+    assert_nil resolve(text, [ fresh ], goal_correlation: nil).composed
+    assert_nil resolve(text, [ turn(GOAL, "query:other", NOW - 5.minutes) ]).composed
+    assert_nil resolve(text, [ fresh, fresh.merge("ts" => (NOW - 4.minutes).iso8601) ]).composed
+  end
+
+  test "a truncated goal does not compose" do
+    state = episode_state(goal: GOAL)
+    state["goal"]["truncated"] = true
+    result = classify(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      prior: state,
+      prior_turns: [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_nil result.composed
+  end
+
+  test "an intermediate technical task blocks the older referent" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajustan los resortes?",
+      [
+        turn(GOAL, "query:prior", NOW - 20.minutes),
+        turn("la puerta no cierra", "query:door", NOW - 10.minutes)
+      ]
+    )
+
+    assert_nil result.composed
+  end
+
+  test "the Fuji correction keeps precedence over referent expansion" do
+    state = episode_state(manufacturer: "Fuji Yida")
+    result = classify(
+      "No, no es Fuji Yida. Es KONE",
+      prior: state,
+      prior_turns: [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_equal :corrected, result.decision
+    assert_equal "KONE", fact_value(result, "manufacturer")
+    assert_not_includes result.composed.to_s, "Fuji"
+  end
+
+  test "the Elemont correction keeps KONE and code 8" do
+    state = episode_state(manufacturer: "Elemont")
+    result = classify(
+      "No, no es Elemont. Es KONE y muestra código 8",
+      prior: state,
+      prior_turns: [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_equal :corrected, result.decision
+    assert_equal "KONE", fact_value(result, "manufacturer")
+    assert_equal "8", fact_value(result, "fault_code")
+    assert_not_includes result.composed.to_s, "Elemont"
+  end
+
+  test "a stale identifier is absent from the expanded turn" do
+    state = episode_state(goal: GOAL, identifiers: [ "CEA15" ])
+    result = classify(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      prior: state,
+      prior_turns: chain
+    )
+
+    assert_equal EXPANDED, result.composed
+    assert_not_includes result.composed, "CEA15"
+  end
+
+  test "an identifier restated in the current turn is kept" do
+    result = resolve(
+      "el modelo es MonoSpace, placa CEA15, como se ajustan los resortes?",
+      chain
+    )
+
+    assert_includes result.composed, "CEA15"
+    assert_includes result.composed, "fijación de cables"
+  end
+
+  test "a 442 character expansion is kept" do
+    current, = length_case(442)
+    result = resolve(current, [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal 442, result.composed.length
+    assert_includes result.composed, "fijación de cables"
+    assert_equal GOAL, result.state.dig("goal", "text")
+  end
+
+  test "a 443 character expansion fails closed without truncating the turn" do
+    current, = length_case(443)
+    result = resolve(current, [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_nil result.composed
+    assert_operator current.length, :>, result.state.dig("goal", "text").to_s.length
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación de cables"
+  end
+
+  def length_case(limit)
+    suffix = " como se ajustan los resortes?"
+    extra = " de la fijación de cables"
+    pad = limit - suffix.length - extra.length
+    current = "#{'m' * pad}#{suffix}"
+    [ current, "#{current.sub(suffix, '')} como se ajustan los resortes#{extra}?" ]
+  end
+
+  test "a mixed-case model in the antecedent is not copied onto a new model" do
+    goal = "Cómo se ajustan los resortes de la fijación de cables en MiniSpace?"
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      [ turn(goal, "query:prior", NOW - 5.minutes) ],
+      goal: goal
+    )
+
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "MiniSpace"
+  end
+
+  test "an explicit component before the verb is not overwritten" do
+    result = resolve(
+      "el resorte del paracaídas, ¿cómo se ajusta?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_nil result.composed
+    assert_includes result.state.dig("goal", "text"), "paracaídas"
+    assert_not_includes result.state.dig("goal", "text"), "fijación de cables"
+  end
+
+  test "an explicit component after the verb is not overwritten" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajusta el resorte del paracaídas?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text"), "fijación de cables"
+  end
+
+  test "two objects in the antecedent do not expand an omitted verb" do
+    goal = "Cómo se ajustan los resortes y las poleas?"
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajustan?",
+      [ turn(goal, "query:prior", NOW - 5.minutes) ],
+      goal: goal
+    )
+
+    assert_nil result.composed
+  end
+
+  test "a matching correlation with different text is not the antecedent" do
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      [ turn("KONE no nivela", "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_nil result.composed
+  end
+
+  test "KONE no nivela blocks the older spring goal" do
+    result = blocking_bridge("KONE no nivela")
+
+    assert_nil result.composed
+  end
+
+  test "código 8 y no nivela blocks the older spring goal" do
+    result = blocking_bridge("código 8 y no nivela")
+
+    assert_nil result.composed
+  end
+
+  test "lo medí y no nivela blocks the older spring goal" do
+    result = blocking_bridge("lo medí y no nivela")
+
+    assert_nil result.composed
+  end
+
+  test "placa CEA15 stays an identity follow-up" do
+    result = resolve("placa CEA15", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal GOAL, result.state.dig("goal", "text")
+    assert_includes result.composed.to_s, "CEA15"
+  end
+
+  test "el relé no activa is a new task" do
+    result = resolve("el relé no activa", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_equal "el relé no activa", result.state.dig("goal", "text")
+  end
+
+  test "la cerradura no enclava is a new task" do
+    result = resolve("la cerradura no enclava", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text"), "fijación"
+  end
+
+  test "esas bobinas expands from the brake coil referent" do
+    goal = "Cómo se ajustan esas bobinas del freno?"
+    result = resolve(
+      "esas bobinas, ¿cómo se ajustan?",
+      [ turn(goal, "query:prior", NOW - 5.minutes) ],
+      goal: goal
+    )
+
+    assert_equal "esas bobinas del freno, ¿cómo se ajustan?", result.composed
+  end
+
+  test "los contactos expands from the relay contact referent" do
+    goal = "Cómo se ajustan los contactos del relé?"
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los contactos?",
+      [ turn(goal, "query:prior", NOW - 5.minutes) ],
+      goal: goal
+    )
+
+    assert_equal "el modelo es MonoSpace, como se ajustan los contactos del relé?", result.composed
+    assert_not_includes result.composed, "fijación"
+  end
+
+  test "a lowercase equipment qualifier in the antecedent is not copied" do
+    [ "minispace", "MINISPACE", "MiniSpace" ].each do |model|
+      goal = "Cómo se ajustan los resortes de la fijación de cables en #{model}?"
+      result = resolve(
+        "el modelo es MonoSpace, como se ajustan los resortes?",
+        [ turn(goal, "query:prior", NOW - 5.minutes) ],
+        goal: goal
+      )
+
+      assert_nil result.composed, model
+      assert_not_includes result.state.dig("goal", "text").to_s, model
+    end
+  end
+
+  test "coordination without a second article is not one referent" do
+    [ "resortes y poleas", "resorte y polea", "resortes tensores y poleas", "bobinas y contactos" ].each do |objects|
+      goal = "Cómo se ajustan #{objects}?"
+      result = resolve(
+        "el modelo es MonoSpace, ¿cómo se ajusta?",
+        [ turn(goal, "query:prior", NOW - 5.minutes) ],
+        goal: goal
+      )
+
+      assert_nil result.composed, objects
+    end
+  end
+
+  test "an adjectival noun phrase is not completed from the antecedent" do
+    result = resolve("el resorte tensor, ¿cómo se ajusta?", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_nil result.composed
+    assert_includes result.state.dig("goal", "text"), "tensor"
+    assert_not_includes result.state.dig("goal", "text"), "fijación de cables"
+  end
+
+  test "a shared prefix is not the same goal" do
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      [ turn("#{GOAL} la puerta no cierra", "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_nil result.composed
+  end
+
+  test "a designator followed by a fault is not an identity bridge" do
+    [ "CEA15 no activa", "K1 no responde", "borne 12 sin tensión", "CEA15 activa" ].each do |text|
+      result = blocking_bridge(text)
+
+      assert_nil result.composed, text
+    end
+  end
+
+  test "resolved uses only the localized expansion" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajustan los resortes?",
+      [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
+    )
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los resortes de la fijación de cables?", result.composed
+    assert_equal GOAL, result.state.dig("goal", "text")
+  end
+
+  test "rejected coordination does not paste the whole goal" do
+    goal = "Cómo se ajustan los resortes y poleas?"
+    [ "¿cómo se ajustan?", "el modelo es MonoSpace, ¿cómo se ajustan?" ].each do |current|
+      result = resolve(current, [ turn(goal, "query:prior", NOW - 5.minutes) ], goal: goal)
+
+      assert_no_inherited_referent(result, "resortes y poleas")
+    end
+  end
+
+  test "rejected coordination with an article does not paste the whole goal" do
+    goal = "Cómo se ajustan los resortes y las poleas de tracción?"
+    result = resolve("¿cómo se ajustan?", [ turn(goal, "query:prior", NOW - 5.minutes) ], goal: goal)
+
+    assert_no_inherited_referent(result, "poleas de tracción")
+  end
+
+  test "a bare de complement is not copied onto a new model" do
+    goal = "Cómo se ajustan los resortes de minispace?"
+    result = resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      [ turn(goal, "query:prior", NOW - 5.minutes) ],
+      goal: goal
+    )
+
+    assert_no_inherited_referent(result, "minispace")
+  end
+
+  test "a bare de complement is not copied without a new model either" do
+    goal = "Cómo se ajustan los resortes de minispace?"
+    result = resolve("¿cómo se ajustan los resortes?", [ turn(goal, "query:prior", NOW - 5.minutes) ], goal: goal)
+
+    assert_no_inherited_referent(result, "minispace")
+  end
+
+  test "determined complements still expand" do
+    brake = "Cómo se ajustan las bobinas del freno?"
+    contacts = "Cómo se ajustan los contactos del relé?"
+
+    brake_result = resolve("¿cómo se ajustan las bobinas?", [ turn(brake, "query:prior", NOW - 5.minutes) ], goal: brake)
+    contact_result = resolve(
+      "el modelo es MonoSpace, como se ajustan los contactos?",
+      [ turn(contacts, "query:prior", NOW - 5.minutes) ],
+      goal: contacts
+    )
+    spring_result = resolve("¿cómo se ajustan los resortes?", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal "¿cómo se ajustan las bobinas del freno?", brake_result.composed
+    assert_equal "el modelo es MonoSpace, como se ajustan los contactos del relé?", contact_result.composed
+    assert_equal "¿cómo se ajustan los resortes de la fijación de cables?", spring_result.composed
+  end
+
+  test "an ambiguous single word does not bridge back to the spring goal" do
+    [ "paracaídas", "puerta", "freno", "polea", "nivela", "activa", "MiniSpace?" ].each do |bridge|
+      result = blocking_bridge(bridge)
+
+      assert_no_inherited_referent(result, "fijación de cables", bridge)
+    end
+  end
+
+  test "structured identity facts still bridge an ajust ellipsis" do
+    [ "Fuji Yida", "placa CEA15", "código 8", "sin código", "lo medí y da 18", "el modelo es MiniSpace" ].each do |bridge|
+      result = blocking_bridge(bridge)
+
+      assert_includes result.composed.to_s, "fijación de cables", bridge
+    end
+  end
+
+  test "not applicable follow-ups still use the legacy compose" do
+    result = classify("¿Qué reviso primero?", prior: episode_state(goal: GOAL))
+
+    assert_equal :continued_elliptical, result.decision
+    assert_includes result.composed, "fijación de cables"
+  end
+
+  test "an explicit noun with este or un does not inherit the old complement" do
+    goal = "Cómo se ajusta el resorte de la fijación de cables?"
+    [
+      "este resorte tensor, ¿cómo se ajusta?",
+      "esta polea tractora, ¿cómo se ajusta?",
+      "un resorte del paracaídas, ¿cómo se ajusta?",
+      "una polea de tracción, ¿cómo se ajusta?",
+      "el resorte tensor, ¿cómo se ajusta?"
+    ].each do |current|
+      result = resolve(current, [ turn(goal, "query:prior", NOW - 5.minutes) ], goal: goal)
+
+      assert_no_inherited_referent(result, "fijación de cables", current)
+    end
+  end
+
+  test "a semantic break keeps the old goal out of a later follow-up" do
+    singular = "¿Cómo se ajusta el resorte de la fijación de cables?"
+    second = "este resorte tensor, ¿cómo se ajusta?"
+    first = episode_state(goal: singular)
+    broken = classify(second, prior: first, prior_turns: [ turn(singular, "query:prior", NOW - 10.minutes) ])
+    later = classify(
+      "¿Qué reviso primero?",
+      prior: broken.state,
+      prior_turns: [
+        turn(singular, "query:prior", NOW - 10.minutes),
+        turn(second, "query:mid", NOW - 5.minutes)
+      ]
+    )
+
+    assert_no_inherited_referent(broken, "fijación de cables")
+    assert_no_inherited_referent(later, "fijación de cables")
+  end
+
+  test "a rejected coordination cannot be revived by the next follow-up" do
+    goal = "¿Cómo se ajustan los resortes y poleas?"
+    second = "¿cómo se ajustan?"
+    opened = episode_state(goal: goal)
+    broken = classify(second, prior: opened, prior_turns: [ turn(goal, "query:prior", NOW - 10.minutes) ])
+    later = classify("¿Qué reviso primero?", prior: broken.state, prior_turns: [
+      turn(goal, "query:prior", NOW - 10.minutes),
+      turn(second, "query:mid", NOW - 5.minutes)
+    ])
+
+    assert_no_inherited_referent(broken, "poleas")
+    assert_no_inherited_referent(later, "poleas")
+  end
+
+  test "a new explicit component stays closed for the following follow-up" do
+    goal = "¿Cómo se ajustan los resortes de la fijación de cables?"
+    second = "el resorte del paracaídas, ¿cómo se ajusta?"
+    broken = classify(second, prior: episode_state(goal: goal), prior_turns: [ turn(goal, "query:prior", NOW - 10.minutes) ])
+    later = classify("¿y ahora qué reviso?", prior: broken.state, prior_turns: [
+      turn(goal, "query:prior", NOW - 10.minutes),
+      turn(second, "query:mid", NOW - 5.minutes)
+    ])
+
+    assert_no_inherited_referent(broken, "fijación de cables")
+    assert_no_inherited_referent(later, "fijación de cables")
+  end
+
+  test "an identity bridge keeps the antecedent available" do
+    goal = "¿Cómo se ajustan los resortes de la fijación de cables?"
+    bridged = classify("el modelo es MonoSpace", prior: episode_state(goal: goal), prior_turns: [ turn(goal, "query:prior", NOW - 10.minutes) ])
+    resolved = classify("¿cómo se ajustan los resortes?", prior: bridged.state, prior_turns: [
+      turn(goal, "query:prior", NOW - 10.minutes),
+      turn("el modelo es MonoSpace", "query:mid", NOW - 5.minutes)
+    ])
+
+    assert_equal goal, bridged.state.dig("goal", "text")
+    assert_includes resolved.composed, "fijación de cables"
+    assert_includes resolved.composed, "resortes"
+  end
+
+  test "a missing antecedent does not break a later follow-up" do
+    goal = "¿Cómo se ajustan los resortes de la fijación de cables?"
+    missed = classify(
+      "¿cómo se ajustan los resortes?",
+      prior: episode_state(goal: goal),
+      prior_turns: [ turn("otra tarea distinta", "query:prior", NOW - 5.minutes) ]
+    )
+    later = classify("¿Qué reviso primero?", prior: missed.state, prior_turns: [
+      turn(goal, "query:other", NOW - 10.minutes)
+    ])
+
+    assert_nil missed.composed
+    assert_equal goal, missed.state.dig("goal", "text")
+    assert_includes later.composed, "fijación de cables"
+  end
+
+  test "determined equipment names are not copied onto a new model" do
+    current = "el modelo es MonoSpace, ¿cómo se ajustan los resortes?"
+    [ "de minispace", "del minispace", "de la minispace" ].each do |tail|
+      [ "minispace", "MiniSpace", "MINISPACE" ].each do |token|
+        goal = "¿Cómo se ajustan los resortes #{tail.sub("minispace", token)}?"
+        result = resolve(current, [ turn(goal, "query:prior", NOW - 5.minutes) ], goal: goal)
+
+        assert_no_inherited_referent(result, token)
+      end
+    end
+  end
+
+  test "a short unknown equipment name is not copied onto a new model" do
+    current = "el modelo es MonoSpace, ¿cómo se ajustan los resortes?"
+    {
+      "del maxpro" => "maxpro",
+      "de maxpro" => "maxpro",
+      "de la maxpro" => "maxpro",
+      "del evo" => "evo",
+      "de x1" => "x1"
+    }.each do |tail, token|
+      goal = "¿Cómo se ajustan los resortes #{tail}?"
+      result = resolve(current, [ turn(goal, "query:prior", NOW - 5.minutes) ], goal: goal)
+
+      assert_no_inherited_referent(result, token, tail)
+    end
+  end
+
+  test "unknown equipment names stay closed in every casing" do
+    current = "el modelo es MonoSpace, ¿cómo se ajustan los resortes?"
+    [ "maxpro", "MaxPro", "MAXPRO" ].each do |token|
+      goal = "¿Cómo se ajustan los resortes del #{token}?"
+      result = resolve(current, [ turn(goal, "query:prior", NOW - 5.minutes) ], goal: goal)
+
+      assert_no_inherited_referent(result, token)
+    end
+  end
+
+  test "a proven part complement still expands beside a new model" do
+    current_for = ->(noun) { "el modelo es MonoSpace, ¿cómo se ajustan #{noun}?" }
+    brake = resolve(
+      current_for.call("las bobinas"),
+      [ turn("¿Cómo se ajustan las bobinas del freno?", "query:prior", NOW - 5.minutes) ],
+      goal: "¿Cómo se ajustan las bobinas del freno?"
+    )
+    contacts = resolve(
+      current_for.call("los contactos"),
+      [ turn("¿Cómo se ajustan los contactos del relé?", "query:prior", NOW - 5.minutes) ],
+      goal: "¿Cómo se ajustan los contactos del relé?"
+    )
+    springs = resolve(current_for.call("los resortes"), [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
+
+    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan las bobinas del freno?", brake.composed
+    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los contactos del relé?", contacts.composed
+    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los resortes de la fijación de cables?", springs.composed
+  end
+
+  test "an explicit component breaks continuity even without a valid antecedent" do
+    singular = "¿Cómo se ajusta el resorte de la fijación de cables?"
+    second = "este resorte tensor, ¿cómo se ajusta?"
+    broken = classify(second, prior: episode_state(goal: singular), prior_turns: [])
+    later = classify("¿Qué reviso primero?", prior: broken.state, prior_turns: [
+      turn(second, "query:mid", NOW - 5.minutes)
+    ])
+
+    assert_no_inherited_referent(broken, "fijación de cables")
+    assert_no_inherited_referent(later, "fijación de cables")
+    assert_not_equal singular, broken.state.dig("goal", "text")
+  end
+
+  test "a parachute component breaks continuity even without a valid antecedent" do
+    goal = "¿Cómo se ajustan los resortes de la fijación de cables?"
+    second = "el resorte del paracaídas, ¿cómo se ajusta?"
+    broken = classify(second, prior: episode_state(goal: goal), prior_turns: [ turn("otra tarea", "query:other", NOW - 5.minutes) ])
+    later = classify("¿y ahora qué reviso?", prior: broken.state, prior_turns: [
+      turn(second, "query:mid", NOW - 5.minutes)
+    ])
+
+    assert_no_inherited_referent(broken, "fijación de cables")
+    assert_no_inherited_referent(later, "fijación de cables")
+  end
+
+  test "a missing antecedent without a new component keeps the goal" do
+    goal = "¿Cómo se ajusta el resorte de la fijación de cables?"
+    missed = classify("¿cómo se ajustan los resortes?", prior: episode_state(goal: goal), prior_turns: [])
+
+    assert_nil missed.composed
+    assert_equal goal, missed.state.dig("goal", "text")
+  end
+
+  def assert_no_inherited_referent(result, fragment, label = nil)
+    assert_not_includes result.composed.to_s.downcase, fragment.downcase, label
+  end
+
+  def blocking_bridge(text)
+    resolve(
+      "el modelo es MonoSpace, como se ajustan los resortes?",
+      [
+        turn(GOAL, "query:prior", NOW - 20.minutes),
+        turn(text, "query:mid", NOW - 10.minutes)
+      ]
+    )
+  end
+
+  def resolve(text, turns, goal: GOAL, goal_correlation: "query:prior", **state_args)
+    state = episode_state(goal: goal, **state_args)
+    state["goal"]["correlation_id"] = goal_correlation if state["goal"]
+    classify(text, prior: state, prior_turns: turns)
+  end
+
+  def chain
+    [
+      turn(GOAL, "query:prior", NOW - 30.minutes),
+      turn("Fuji Yida", "query:fuji", NOW - 10.minutes)
+    ]
+  end
+
+  def turn(content, correlation_id, ts)
+    { "content" => content, "correlation_id" => correlation_id, "ts" => ts.iso8601 }
   end
 end

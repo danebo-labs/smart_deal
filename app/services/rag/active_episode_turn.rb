@@ -40,7 +40,7 @@ module Rag
     FROM_STATE = Object.new
 
     def self.call(state:, text:, role: "user", now: Time.current, selection_turn: false, pending_fact: FROM_STATE,
-                  correlation_id: nil, channel: "web", enabled: nil, shared: nil)
+                  correlation_id: nil, channel: "web", enabled: nil, shared: nil, prior_user_turns: [])
       new(
         state: state,
         text: text.to_s,
@@ -51,7 +51,8 @@ module Rag
         correlation_id: correlation_id,
         channel: channel.to_s,
         enabled: enabled.nil? ? FieldCompanionEpisodeFlag.enabled? : enabled,
-        shared: shared.nil? ? SharedSession::ENABLED : shared
+        shared: shared.nil? ? SharedSession::ENABLED : shared,
+        prior_user_turns: prior_user_turns
       ).call
     end
 
@@ -121,7 +122,7 @@ module Rag
       changed
     end
 
-    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:)
+    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:, prior_user_turns: [])
       @raw_state = state
       @text = text
       @role = role
@@ -132,6 +133,7 @@ module Rag
       @channel = channel
       @enabled = enabled
       @shared = shared
+      @prior_user_turns = Array(prior_user_turns)
       @normalized = FollowupQueryRewriter.normalize_label(text)
       @words = @normalized.split
       @measurement = false
@@ -177,6 +179,12 @@ module Rag
       end
       if known && brands.any? { |brand| brand != known }
         return continue(current, :continued_mention, :no_brand, compose: elliptical?)
+      end
+      referent = technical_referent(current)
+      return continue_with_referent(current, referent.text) if referent.resolved?
+      return break_continuity(current) if referent.context_break?
+      if referent.rejected?
+        return continue(current, :continued_self_contained, :facts, compose: false, replace_goal: self_contained?)
       end
       if elliptical?
         return continue(current, :continued_elliptical, :facts, compose: true)
@@ -269,7 +277,18 @@ module Rag
     end
 
     def elliptical?
-      !self_contained? && (FollowupQueryRewriter.closed_followup_shape?(@text) || followup_marker?)
+      return false if self_contained?
+      return true if followup_marker?
+      return false unless FollowupQueryRewriter.closed_followup_shape?(@text)
+      return false if new_task_statement?
+
+      true
+    end
+
+    # A short turn that names another component is a new task. A brand, a
+    # code, or "¿qué reviso primero?" stays a follow-up.
+    def new_task_statement?
+      TechnicalReferentResolver.independent_proposition?(@text)
     end
 
     def substantive?
@@ -317,10 +336,41 @@ module Rag
       finish(decision, current, episode, compose: compose)
     end
 
-    def finish(decision, before, episode, compose:)
+    def finish(decision, before, episode, compose:, composed: nil)
       episode.clear_pending!
-      composed = compose ? compose_text(episode) : nil
+      composed = compose_text(episode) if composed.nil? && compose
       result(decision, outcome_reason(decision), before, episode, composed: composed)
+    end
+
+    def technical_referent(episode)
+      goal = episode.goal
+      TechnicalReferentResolver.call(
+        text: @text,
+        goal_text: goal&.dig("text"),
+        goal_correlation_id: goal&.dig("correlation_id"),
+        goal_truncated: episode.goal_truncated?,
+        prior_turns: @prior_user_turns,
+        now: @now
+      )
+    end
+
+    def break_continuity(current)
+      episode = current.fork
+      episode.touch!(@now)
+      if self_contained? || TechnicalReferentResolver.specified_component?(@text)
+        episode.assign_goal!(@text, correlation_id: @correlation_id)
+      else
+        episode.clear_goal!
+      end
+      extract!(episode, :facts)
+      finish(:continued_self_contained, current, episode, compose: false)
+    end
+
+    def continue_with_referent(current, expanded)
+      episode = current.fork
+      episode.touch!(@now)
+      extract!(episode, :facts)
+      finish(:continued_elliptical, current, episode, compose: false, composed: expanded)
     end
 
     def outcome_reason(decision)

@@ -105,7 +105,8 @@ class ConversationSession < ApplicationRecord
         correlation_id: correlation_id,
         channel: channel,
         enabled: true,
-        shared: false
+        shared: false,
+        prior_user_turns: recent_user_turns(now)
       )
       history = conversation_history.last(MAX_HISTORY - 1)
       history << history_message("user", content, user_id: user_id, correlation_id: correlation_id)
@@ -170,6 +171,20 @@ class ConversationSession < ApplicationRecord
 
   # Mensajes del usuario dentro de la ventana del episodio, en orden cronológico.
   # Un mensaje sin `ts` parseable queda fuera. `exclude` descarta la pregunta actual.
+  def recent_user_turns(now)
+    cutoff = now - EPISODE_WINDOW
+    conversation_history.select { |message| message["role"] == "user" }.filter_map { |message|
+      ts = parse_history_ts(message["ts"])
+      next if ts.nil? || ts < cutoff || ts > now
+
+      {
+        "content" => message["content"].to_s,
+        "correlation_id" => message["correlation_id"].to_s,
+        "ts" => message["ts"].to_s
+      }
+    }.last(EPISODE_MAX_USER_MESSAGES)
+  end
+
   def episode_user_messages(now: Time.current, exclude: nil)
     cutoff   = now - EPISODE_WINDOW
     excluded = exclude.to_s.strip

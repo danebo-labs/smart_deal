@@ -112,6 +112,10 @@ module Rag
       goal&.fetch("truncated", false) == true
     end
 
+    def clear_goal!
+      self.goal = nil
+    end
+
     def write_fact!(key, status:, value: nil, source: "user", correlation_id:, at:)
       fact = {
         "status" => status,

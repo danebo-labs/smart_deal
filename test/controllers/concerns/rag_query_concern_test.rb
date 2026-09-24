@@ -2448,6 +2448,42 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     Rag::PinnedEntityScopeResolver.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end
 
+  test "the orchestrator receives the expanded spring referent and not the stored goal" do
+    session = ConversationSession.create!(
+      identifier: "ellipsis-#{SecureRandom.hex(4)}",
+      channel: "web",
+      account: accounts(:legacy),
+      user: users(:one),
+      expires_at: 1.hour.from_now
+    )
+    goal = "Cómo se ajustan los resortes de la fijación de cables?"
+    current = "el modelo es MonoSpace, como se ajustan los resortes?"
+    expected = "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?"
+    result = nil
+
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+      isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
+        travel_to Time.zone.parse("2026-09-23 14:00:00 -03:00") do
+          session.record_user_turn!(goal, user_id: users(:one).id, correlation_id: "query:goal")
+          session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:fuji")
+          turn = session.record_user_turn!(current, user_id: users(:one).id, correlation_id: "query:now")
+          with_followup_orchestrator do |captured|
+            result = @controller.send(
+              :execute_rag_query, current,
+              conv_session: session, correlation_id: "query:now", account: accounts(:legacy),
+              episode_turn: turn
+            )
+            assert_equal expected, captured[:question]
+            assert_not_includes captured[:question], goal
+            assert_not_includes captured[:question], "Fuji"
+          end
+        end
+      end
+    end
+
+    assert result.success?
+  end
+
   test "a selection label still gates before the composed question is searched" do
     session = build_two_thread_session(follow: "Manual KONE", correlation_id: "query:pin")
     session.update!(active_entities: {

@@ -1121,6 +1121,27 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_includes session.active_episode["identifiers"].pluck("value"), "CEA15"
   end
 
+  test "a hybrid spring follow-up expands only the stored referent" do
+    session = web_episode_session
+    goal = "Cómo se ajustan los resortes de la fijación de cables?"
+    current = "el modelo es MonoSpace, como se ajustan los resortes?"
+    result = nil
+
+    travel_to Time.zone.parse("2026-09-23 14:00:00 -03:00") do
+      with_episode_flag("true") do
+        session.record_user_turn!(goal, user_id: users(:one).id, correlation_id: "query:goal")
+        session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:fuji")
+        result = session.record_user_turn!(current, user_id: users(:one).id, correlation_id: "query:now")
+      end
+    end
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal goal, result.state.dig("goal", "text")
+    assert_equal "MonoSpace", result.state.dig("facts", "model", "value")
+    assert_nil result.state.dig("facts", "manufacturer")
+    assert_equal "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?", result.composed
+  end
+
   def web_episode_session(channel: "web", identifier: nil)
     ConversationSession.create!(
       identifier: identifier || "web:#{SecureRandom.hex(4)}",

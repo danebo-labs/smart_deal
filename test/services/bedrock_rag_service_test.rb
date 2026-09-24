@@ -1686,6 +1686,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_equal 1, payload["results_count"]
       assert_equal "ok", payload["result"]
       assert_equal true, payload["filter_applied"]
+      assert_equal "Enumera todas las pruebas de funcionamiento", payload["retrieval_query_text"]
+      assert_equal Digest::SHA256.hexdigest("Enumera todas las pruebas de funcionamiento"), payload["retrieval_query_sha"]
+      assert_equal 1, payload["effective_k"]
+      assert payload["requested_k"].is_a?(Integer)
+      assert payload["search_type"].present?
+      assert_equal 16, payload["filter_fingerprint"].length
+      assert_equal "retrieve_only", payload["route_taken"]
     end
   ensure
     Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger

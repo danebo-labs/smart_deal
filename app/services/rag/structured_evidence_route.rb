@@ -76,7 +76,7 @@ module Rag
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
-                   generator: nil, expander: nil, episode: nil)
+                   generator: nil, expander: nil, episode: nil, route_taken: nil)
       @question = question.to_s
       @account = account
       @entity_s3_uris = Array(entity_s3_uris)
@@ -91,6 +91,7 @@ module Rag
       @generator = generator || AiProvider.new
       @expander = expander || Rag::SectionNeighborExpander.new
       @episode = episode
+      @route_taken = route_taken
       @citation_processor = Bedrock::CitationProcessor.new
       @ambiguity = nil
       @exact_lookup = false
@@ -934,7 +935,8 @@ module Rag
         ambiguity_families: @ambiguity&.board_keys,
         chunks: chunks,
         attribution: attribution,
-        model: BedrockClient::DEFAULT_MODEL_ID
+        model: BedrockClient::DEFAULT_MODEL_ID,
+        route_taken: @route_taken
       )
       # Same [PILOT_AUDIT] contract as the classic RAG path (BedrockRagService#
       # log_quality_signal) — the pitch/audit dossier must not go blank just

@@ -90,7 +90,8 @@ module Rag
         rag_service: @rag_service,
         generator: episode_aware_generator,
         expander: @expander,
-        episode: @episode
+        episode: @episode,
+        route_taken: "context_evidence_route"
       )
     end
 
@@ -115,7 +116,8 @@ module Rag
         force_entity_filter: false,
         number_of_results: RagRetrievalProfile::OPEN_RESULTS,
         account_id: @account_id,
-        correlation_id: @correlation_id
+        correlation_id: @correlation_id,
+        route_taken: "context_evidence_route"
       )
     rescue BedrockRagService::BedrockServiceError, StandardError => e
       Rails.logger.warn("Rag::ContextEvidenceRoute: retrieve failed — #{e.class}: #{e.message}")

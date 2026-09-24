@@ -62,10 +62,16 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
     end
   end
 
-  test "search text is the short projection and the LCB question stays off this route" do
+  MONOSPACE = "el modelo es MonoSpace, como se ajustan los resortes?"
+  PARACHUTE = "cómo se ajusta el resorte del paracaídas en MonoSpace?"
+  COMPOSED = "los resortes de la fijación de cables\n#{MONOSPACE}"
+  LEVELING = "KONE muestra código 8 y no nivela"
+  DESIGNATORS = [ "qué es K1?", "K7", "borne 12", "H14" ].freeze
+
+  test "search text keeps the short projection for a status lookup and the full text for a procedure" do
     assert_equal "THYSSEN-E SERIE E LED", Rag::ContextProjection.search_text(THYSSEN)
-    assert_equal "resortes fijación ajustar", Rag::ContextProjection.search_text(SPRINGS)
-    assert_equal "Fuji Yida resortes fijación ajustar", Rag::ContextProjection.search_text(FUJI)
+    assert_equal SPRINGS, Rag::ContextProjection.search_text(SPRINGS)
+    assert_equal FUJI, Rag::ContextProjection.search_text(FUJI)
     assert_not Rag::ContextProjection.applicable?(LCB)
     assert_nil build_route(question: LCB)
     assert_nil build_route(output_channel: :whatsapp)
@@ -184,6 +190,73 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
 
     assert_equal :abstained, outcome.status
     assert_empty generator.calls
+  end
+
+  test "a procedural MonoSpace question is retrieved in full and does not ask for resortes ajustar" do
+    rag = FakeRagService.new([ cable_spring_chunk ])
+    generator = FakeGenerator.new("Igualar la tensión de los resortes de fijación. [1]")
+    route = build_route(question: MONOSPACE, rag_service: rag, generator: generator)
+
+    outcome = route.execute
+
+    assert_equal :answered, outcome.status
+    assert_equal MONOSPACE, rag.calls.first[:question]
+    assert_includes rag.calls.first[:question], "MonoSpace"
+    assert_not_equal "resortes ajustar", rag.calls.first[:question]
+    assert_equal "context_evidence_route", rag.calls.first[:route_taken]
+    assert_not_includes generator.calls.first[:prompt], "2.5 mm"
+    assert_not_includes generator.calls.first[:prompt], "Paso 11"
+  end
+
+  test "page 78 of the MonoSpace manual stays this job's equipment when the model is MonoSpace" do
+    episode = {
+      "v" => 1,
+      "episode_id" => "ep-mono",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "model" => { "status" => "known", "value" => "MonoSpace", "source" => "user", "correlation_id" => "query:turn" }
+      },
+      "identifiers" => []
+    }
+    with_env("DOCUMENT_IDENTITY_SCOPE_ENABLED" => "true") do
+      applied = Rag::DocumentIdentityScope.apply([ parachute_chunk ], episode)
+      assert_includes applied.chunks.first[:content], "Paso 11"
+      assert_includes applied.chunks.first[:content], "2.5 mm"
+      assert_includes applied.labels.first, "THIS JOB'S EQUIPMENT"
+    end
+  end
+
+  test "an explicit parachute adjustment keeps parachute and MonoSpace in the retrieve text" do
+    text = Rag::ContextProjection.search_text(PARACHUTE)
+    assert_equal PARACHUTE, text
+    assert_includes text, "paracaídas"
+    assert_includes text, "MonoSpace"
+  end
+
+  test "cable-fixing spring adjustment is not reduced to resortes fijación ajustar" do
+    assert_equal SPRINGS, Rag::ContextProjection.search_text(SPRINGS)
+    assert_includes Rag::ContextProjection.search_text(SPRINGS), "fijación de cables"
+    assert_not_equal "resortes fijación ajustar", Rag::ContextProjection.search_text(SPRINGS)
+  end
+
+  test "a composed procedural question reaches retrieve intact" do
+    rag = FakeRagService.new([ cable_spring_chunk ])
+    route = build_route(question: COMPOSED, rag_service: rag, generator: FakeGenerator.new("Tensión de fijación. [1]"))
+
+    route.execute
+
+    assert_equal COMPOSED, rag.calls.first[:question]
+    assert_includes rag.calls.first[:question], "fijación de cables"
+    assert_includes rag.calls.first[:question], "MonoSpace"
+  end
+
+  test "designator lookups and a leveling fault stay off this route" do
+    DESIGNATORS.each do |question|
+      assert_not Rag::ContextProjection.applicable?(question), question
+      assert_nil build_route(question: question), question
+    end
+    assert_not RagRetrievalProfile.new(question: LEVELING).procedural_query?
+    assert_nil build_route(question: LEVELING)
   end
 
   test "a failed retrieve stays unavailable and does not generate" do
@@ -327,6 +400,38 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
       page: 60,
       sha: "p60"
     )
+  end
+
+  def cable_spring_chunk
+    chunk(
+      "## Fijación\nIgualar el resorte de la fijación de cables.\n",
+      section: nil,
+      page: 12,
+      sha: "cable-spring"
+    )
+  end
+
+  def parachute_chunk
+    {
+      content: "Paso 11. Ajuste del paracaídas. Suplemento de 2.5 mm. Resorte A.\n",
+      metadata: {
+        "canonical_name" => "KONE N MonoSpace Instalación Sin Andamiaje",
+        "original_filename" => "SPT AM-01 01 255 en A CHINO.pdf",
+        "page_number" => 78
+      },
+      chunk_sha256: "p78",
+      rank: 1
+    }
+  end
+
+  def with_env(values)
+    previous = values.keys.index_with { |key| ENV[key] }
+    values.each { |key, value| ENV[key] = value }
+    yield
+  ensure
+    previous.each do |key, value|
+      value.nil? ? ENV.delete(key) : ENV[key] = value
+    end
   end
 
   def spring_without_both_brands_chunk

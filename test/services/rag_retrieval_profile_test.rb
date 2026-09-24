@@ -3,6 +3,12 @@
 require "test_helper"
 
 class RagRetrievalProfileTest < ActiveSupport::TestCase
+  test "procedural_query matches an adjustment and not a fault report" do
+    assert RagRetrievalProfile.new(question: "el modelo es MonoSpace, como se ajustan los resortes?").procedural_query?
+    assert_not RagRetrievalProfile.new(question: "KONE muestra código 8 y no nivela").procedural_query?
+    assert_not RagRetrievalProfile.new(question: "En Thyssen-E, ¿qué LED señala una condición normal y cuál un fallo?").procedural_query?
+  end
+
   test "returns 8 when no entities pinned" do
     profile = RagRetrievalProfile.new(entity_sources: [])
     assert_equal 8, profile.number_of_results

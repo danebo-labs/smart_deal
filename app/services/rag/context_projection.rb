@@ -34,6 +34,8 @@ module Rag
     end
 
     def search_text
+      return @question.strip if procedural_query?
+
       parts = []
       if (model = hyphenated_model)
         parts << model.upcase
@@ -58,6 +60,10 @@ module Rag
 
     def spring_adjustment?
       @question.match?(/resortes?/i) && @question.match?(/ajust/i)
+    end
+
+    def procedural_query?
+      RagRetrievalProfile.new(question: @question).procedural_query?
     end
 
     def fuji_yida?

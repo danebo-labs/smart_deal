@@ -111,6 +111,12 @@ class RagRetrievalProfile
     SAFETY_CRITICAL_PATTERNS.any? { |pattern| @question.match?(pattern) }
   end
 
+  # How/adjust/test/change/review. Distinct from safety_critical_query?, which
+  # also matches a fault report and must not decide retrieval text.
+  def procedural_query?
+    @question.match?(EXACT_PROCEDURE_PATTERN)
+  end
+
   # Route-eligibility predicate for pinned, structured mapping questions.
   # Two disjoint shapes, both comparative-excluded:
   #   1. adjacency — a label term immediately precedes the identifier ("LED ZZ9")

@@ -505,7 +505,7 @@ class BedrockRagService
 
   def retrieve_chunks(question, entity_s3_uris: [], entity_sources: [],
                       force_entity_filter: false, number_of_results: nil,
-                      account_id: nil, correlation_id: nil)
+                      account_id: nil, correlation_id: nil, route_taken: nil)
     unless @knowledge_base_id
       raise MissingKnowledgeBaseError, "Knowledge Base ID not configured"
     end
@@ -550,8 +550,15 @@ class BedrockRagService
     PilotUsageLog.log(
       "kb_retrieve",
       account_id: account_id, correlation_id: correlation_id,
-      route: "retrieve_only", latency_ms: elapsed_ms, result: "ok",
-      results_count: chunks.size, filter_applied: apply_filter
+      route: "retrieve_only", route_taken: route_taken || "retrieve_only",
+      latency_ms: elapsed_ms, result: "ok",
+      results_count: chunks.size, filter_applied: apply_filter,
+      retrieval_query_text: question.to_s,
+      retrieval_query_sha: Digest::SHA256.hexdigest(question.to_s),
+      requested_k: vector_config[:number_of_results],
+      effective_k: chunks.size,
+      search_type: vector_config[:override_search_type],
+      filter_fingerprint: Digest::SHA256.hexdigest(vector_config[:filter].to_json)[0, 16]
     )
 
     {

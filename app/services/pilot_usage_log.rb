@@ -9,6 +9,8 @@ class PilotUsageLog
     cache_status result error_class image_digest_prefix canonical_name
     manufacturer model_visible condition visible_codes
     results_count filter_applied
+    retrieval_query_text retrieval_query_sha requested_k effective_k search_type
+    filter_fingerprint retrieval_rank
     generation_mode resolution_mode needs_selection
     answered_relations abstained_relations insufficient_reason
     contexts_delivered groups_total document_id source_uri page chunk_sha256

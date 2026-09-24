@@ -15,8 +15,12 @@ module Rag
     def self.applicable?(episode)
       return false unless DocumentIdentityScopeFlag.enabled?
 
-      fact = parsed_episode(episode).fact("manufacturer")
-      fact&.dig("status") == "known" && fact["value"].present?
+      parsed = parsed_episode(episode)
+      known_value(parsed, "manufacturer").present? || known_value(parsed, "model").present?
+    end
+
+    def self.needles(episode)
+      match_needles(episode)
     end
 
     def self.apply(chunks, episode)
@@ -119,12 +123,46 @@ module Rag
     def self.match_needles(episode)
       parsed = parsed_episode(episode)
       values = []
-      fact = parsed.fact("manufacturer")
-      values << fact["value"] if fact&.dig("status") == "known"
-      parsed.identifiers.each { |item| values << item["value"] }
+      manufacturer = known_fact(parsed, "manufacturer")
+      model = known_fact(parsed, "model")
+      if model
+        values << model["value"]
+        # A model declared on a later turn supersedes an inherited
+        # manufacturer. Same-turn facts share correlation_id and both match.
+        values << manufacturer["value"] if manufacturer && same_correlation?(manufacturer, model)
+      elsif manufacturer
+        values << manufacturer["value"]
+      end
+      parsed.identifiers.each do |item|
+        # Same rule as an inherited manufacturer: once this turn has a model,
+        # an identifier from an earlier turn is not current equipment unless
+        # that turn restated it and stamped the same correlation_id.
+        next if model && !same_correlation?(item, model)
+
+        values << item["value"]
+      end
       values.map { |value| value.to_s.strip }.compact_blank.uniq
     end
     private_class_method :match_needles
+
+    def self.known_fact(parsed, key)
+      fact = parsed.fact(key)
+      return nil unless fact&.dig("status") == "known" && fact["value"].present?
+
+      fact
+    end
+    private_class_method :known_fact
+
+    def self.known_value(parsed, key)
+      known_fact(parsed, key)&.dig("value")
+    end
+    private_class_method :known_value
+
+    def self.same_correlation?(earlier, current)
+      turn = current["correlation_id"].to_s
+      turn.present? && turn == earlier["correlation_id"].to_s
+    end
+    private_class_method :same_correlation?
 
     def self.parsed_episode(episode)
       episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)

@@ -40,6 +40,90 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     assert_equal "KONE", fact_value(result, "manufacturer")
   end
 
+  test "explicit MonoSpace persists and drops inherited Fuji Yida" do
+    prior = episode_state(goal: SPRINGS, manufacturer: "Fuji Yida")
+    result = classify("el modelo es MonoSpace, como se ajustan los resortes?", prior: prior)
+
+    assert_equal prior["episode_id"], result.state["episode_id"]
+    assert_equal "known", fact_status(result, "model")
+    assert_equal "MonoSpace", fact_value(result, "model")
+    assert_equal "user", result.state.dig("facts", "model", "source")
+    assert_nil result.state.dig("facts", "manufacturer")
+    assert_equal [ "MonoSpace" ], Rag::DocumentIdentityScope.needles(fresh_episode(result.state))
+  end
+
+  test "an inherited identifier does not stay a needle after an explicit model" do
+    prior = episode_state(goal: SPRINGS, manufacturer: "Fuji Yida", identifiers: %w[CEA15])
+    result = classify("el modelo es MonoSpace, como se ajustan los resortes?", prior: prior)
+
+    assert_equal "MonoSpace", fact_value(result, "model")
+    assert_nil result.state.dig("facts", "manufacturer")
+    assert_equal [ "CEA15" ], result.state["identifiers"].pluck("value")
+    assert_equal "query:prior", result.state["identifiers"].first["correlation_id"]
+    assert_equal [ "MonoSpace" ], Rag::DocumentIdentityScope.needles(fresh_episode(result.state))
+  end
+
+  test "an identifier restated in the model turn stays a needle" do
+    prior = episode_state(goal: SPRINGS, manufacturer: "Fuji Yida", identifiers: %w[CEA15])
+    result = classify("el modelo es MonoSpace, placa CEA15, como se ajustan los resortes?", prior: prior)
+
+    assert_equal "query:turn", result.state["identifiers"].first["correlation_id"]
+    needles = Rag::DocumentIdentityScope.needles(fresh_episode(result.state))
+    assert_includes needles, "MonoSpace"
+    assert_includes needles, "CEA15"
+    assert_not_includes needles, "Fuji Yida"
+  end
+
+  test "explicit mixed-case model names are accepted and are not hardcoded" do
+    %w[MiniSpace Synergy].each do |model|
+      result = classify(
+        "el modelo es #{model}",
+        prior: episode_state(goal: SPRINGS, manufacturer: "Fuji Yida")
+      )
+
+      assert_equal model, fact_value(result, "model"), model
+      assert_equal "user", result.state.dig("facts", "model", "source")
+      assert_nil result.state.dig("facts", "manufacturer")
+    end
+  end
+
+  test "a digit designator still persists inside an explicit model declaration" do
+    result = classify("el modelo es BL6", prior: episode_state(goal: SPRINGS, manufacturer: "Fuji Yida"))
+
+    assert_equal "BL6", fact_value(result, "model")
+  end
+
+  test "loose or invalid captures do not become the model" do
+    springs = classify(
+      "como se ajustan los resortes del amarre",
+      prior: episode_state(goal: SPRINGS, manufacturer: "Fuji Yida")
+    )
+    assert_nil springs.state.dig("facts", "model")
+    assert_equal "Fuji Yida", fact_value(springs, "manufacturer")
+
+    lowercase = classify("el modelo es resorte", prior: episode_state(goal: SPRINGS, manufacturer: "Fuji Yida"))
+    assert_nil lowercase.state.dig("facts", "model")
+    assert_equal "Fuji Yida", fact_value(lowercase, "manufacturer")
+
+    stopword = classify("el modelo es como", prior: episode_state(goal: SPRINGS, manufacturer: "Fuji Yida"))
+    assert_nil stopword.state.dig("facts", "model")
+
+    pending = classify("MonoSpace", prior: episode_state(goal: SPRINGS, manufacturer: "Fuji Yida", pending: "model"))
+    assert_nil pending.state.dig("facts", "model")
+    assert_equal "Fuji Yida", fact_value(pending, "manufacturer")
+  end
+
+  test "a manufacturer named in the same turn stays beside the new model" do
+    prior = episode_state(goal: SPRINGS, manufacturer: "Fuji Yida")
+    result = classify("Fuji Yida, el modelo es MonoSpace, como se ajustan los resortes?", prior: prior)
+
+    assert_equal "MonoSpace", fact_value(result, "model")
+    assert_equal "Fuji Yida", fact_value(result, "manufacturer")
+    needles = Rag::DocumentIdentityScope.needles(fresh_episode(result.state))
+    assert_includes needles, "Fuji Yida"
+    assert_includes needles, "MonoSpace"
+  end
+
   test "annex B el modelo no lo se confirms the model is unknown" do
     result = classify("el modelo no lo sé", prior: episode_state(goal: SPRINGS, manufacturer: "Fuji Yida"))
     assert_equal :continued_elliptical, result.decision
@@ -357,6 +441,10 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       assert_same ctx[:previous_state].dig("facts", key), result.state.dig("facts", key), key
     end
     assert_same ctx[:previous_state]["identifiers"], result.state["identifiers"]
+  end
+
+  def fresh_episode(state)
+    state.merge("updated_at" => Time.current.iso8601)
   end
 
   def fact_value(result, key)

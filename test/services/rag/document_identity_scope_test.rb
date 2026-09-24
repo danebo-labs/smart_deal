@@ -123,6 +123,81 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes calls.first, "Cortocircuitar BM/B1"
   end
 
+  test "a known model matches that manual and strips other equipment" do
+    mono = chunk("mono", "Igualar la tensión de los resortes MonoSpace.", canonical_name: "KONE MonoSpace")
+    yida = chunk("yida", "Paso 11. Suplemento de 2,5 mm.", canonical_name: "Fuji Yida", page: 53)
+    spt = chunk(
+      "spt", "Ajuste del resorte según el manual SPT.",
+      canonical_name: "Manual chino", original_filename: "spt-zh.pdf", section_identity: "SPT"
+    )
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ mono, yida, spt ],
+      model_episode("MonoSpace")
+    )
+
+    assert_equal "THIS JOB'S EQUIPMENT: KONE MonoSpace", result.labels[0]
+    assert_equal "Igualar la tensión de los resortes MonoSpace.", result.chunks[0][:content]
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Fuji Yida", result.labels[1]
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Manual chino", result.labels[2]
+    assert_not_includes result.chunks[1][:content], "2,5 mm"
+    assert_not_includes result.chunks[1][:content], "Paso 11"
+    assert_not_includes result.chunks[2][:content], "manual SPT"
+    assert_includes result.chunks[1][:content], "Manual: Fuji Yida"
+  end
+
+  test "an inherited manufacturer is not a needle after a later model declaration" do
+    episode = model_episode(
+      "MonoSpace",
+      manufacturer: "Fuji Yida",
+      model_correlation_id: "query:turn",
+      manufacturer_correlation_id: "query:prior"
+    )
+    yida = chunk("yida", "Paso 11. Suplemento de 2,5 mm.", canonical_name: "Fuji Yida", page: 58)
+
+    assert_equal [ "MonoSpace" ], Rag::DocumentIdentityScope.needles(episode)
+    result = Rag::DocumentIdentityScope.apply([ yida ], episode)
+
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Fuji Yida", result.labels[0]
+    assert_not_includes result.chunks[0][:content], "2,5 mm"
+    assert_not_includes result.chunks[0][:content], "Paso 11"
+  end
+
+  test "an inherited identifier cannot keep a foreign chunk as this job" do
+    episode = model_episode(
+      "MonoSpace",
+      manufacturer: "Fuji Yida",
+      model_correlation_id: "query:turn",
+      manufacturer_correlation_id: "query:prior",
+      identifiers: [ { "value" => "CEA15", "source" => "user", "correlation_id" => "query:prior" } ]
+    )
+    foreign = chunk("cea", "Paso 11. Suplemento de 2,5 mm en CEA15.", canonical_name: "Manual CEA15")
+    mono = chunk("mono", "Igualar la tensión MonoSpace.", canonical_name: "KONE MonoSpace")
+
+    assert_equal [ "MonoSpace" ], Rag::DocumentIdentityScope.needles(episode)
+    result = Rag::DocumentIdentityScope.apply([ foreign, mono ], episode)
+
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Manual CEA15", result.labels[0]
+    assert_not_includes result.chunks[0][:content], "2,5 mm"
+    assert_equal "THIS JOB'S EQUIPMENT: KONE MonoSpace", result.labels[1]
+    assert_includes result.chunks[1][:content], "Igualar la tensión MonoSpace."
+  end
+
+  test "an identifier from the model turn still matches" do
+    episode = model_episode(
+      "MonoSpace",
+      model_correlation_id: "query:turn",
+      identifiers: [ { "value" => "CEA15", "source" => "user", "correlation_id" => "query:turn" } ]
+    )
+    kept = chunk("cea", "Código 8 en CEA15.", canonical_name: "Manual CEA15")
+
+    assert_includes Rag::DocumentIdentityScope.needles(episode), "CEA15"
+    result = Rag::DocumentIdentityScope.apply([ kept ], episode)
+
+    assert_equal "THIS JOB'S EQUIPMENT: Manual CEA15", result.labels[0]
+    assert_equal "Código 8 en CEA15.", result.chunks[0][:content]
+  end
+
   test "unknown manufacturer does not retrieve" do
     with_flag("true") do
       assert_not Rag::DocumentIdentityScope.applicable?(episode(manufacturer_status: "unknown_confirmed"))
@@ -309,6 +384,32 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   def strip_scope(prompt, labels)
     text = prompt.sub("#{PREAMBLE}\n", "")
     labels.reduce(text) { |body, label| label.present? ? body.sub("#{label}\n", "") : body }
+  end
+
+  def model_episode(model, manufacturer: nil, model_correlation_id: "query:turn", manufacturer_correlation_id: "query:prior", identifiers: [])
+    facts = {
+      "model" => {
+        "value" => model,
+        "status" => "known",
+        "source" => "user",
+        "correlation_id" => model_correlation_id
+      }
+    }
+    if manufacturer
+      facts["manufacturer"] = {
+        "value" => manufacturer,
+        "status" => "known",
+        "source" => "user",
+        "correlation_id" => manufacturer_correlation_id
+      }
+    end
+    {
+      "v" => 1,
+      "episode_id" => "ep-model",
+      "updated_at" => Time.current.iso8601,
+      "facts" => facts,
+      "identifiers" => identifiers
+    }
   end
 
   def episode(identifiers: %w[MH CEA15], manufacturer_status: "known")

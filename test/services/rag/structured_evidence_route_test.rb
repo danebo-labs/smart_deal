@@ -1144,6 +1144,151 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     end
   end
 
+  test "identity scope strips other equipment before generation without a second retrieve" do
+    question = "el modelo es MonoSpace, como se ajustan los resortes?"
+    mono_body = "En MonoSpace igualar la tensión de los resortes de fijación de cables."
+    yida_body = "Aflojar las tuercas del resorte y medir la tensión."
+    paso_body = "Paso 11 del resorte del paracaídas. Colocar un suplemento de 2,5 mm."
+    spt_body = "Procedimiento del manual SPT: comprimir el resorte del paracaídas."
+    chunks = [
+      identity_chunk("KONE MonoSpace", mono_body, page: 12),
+      identity_chunk("Fuji Yida", yida_body, page: 53),
+      identity_chunk("Fuji Yida", paso_body, page: 58),
+      identity_chunk("Manual chino", spt_body, page: 78, section_identity: "SPT")
+    ]
+    rag_service = FakeRagService.new(chunks)
+    generator = FakeGenerator.new("El manual MonoSpace no detalla el ajuste en este fragmento. [1]")
+    route = Rag::StructuredEvidenceRoute.new(
+      question: question,
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      episode: mono_episode
+    )
+
+    outcome = nil
+    with_identity_scope("true") { outcome = route.execute }
+
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, generator.calls.size
+    scoped = outcome.result.dig(:diagnostics, :retrieved_chunks)
+    assert_equal 4, scoped.size
+    assert_includes scoped[0][:content], mono_body
+    assert_includes scoped[0][:content], "THIS JOB'S EQUIPMENT: KONE MonoSpace"
+    [ yida_body, paso_body, spt_body ].each_with_index do |body, index|
+      assert_includes scoped[index + 1][:content], "REFERENCE ONLY — OTHER EQUIPMENT:"
+      assert_not_includes scoped[index + 1][:content], body
+    end
+    prompt = generator.calls.first[:prompt]
+    assert_includes prompt, mono_body
+    [ yida_body, paso_body, spt_body, "2,5 mm", "Paso 11" ].each do |foreign|
+      assert_not_includes prompt, foreign
+    end
+  end
+
+  test "an inherited CEA15 identifier cannot put a foreign body in the prompt" do
+    question = "el modelo es MonoSpace, como se ajustan los resortes?"
+    prior = {
+      "v" => 1,
+      "episode_id" => "ep-cea",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => {
+          "status" => "known", "value" => "Fuji Yida", "source" => "user", "correlation_id" => "query:prior"
+        }
+      },
+      "identifiers" => [ { "value" => "CEA15", "source" => "user", "correlation_id" => "query:prior" } ]
+    }
+    turn = Rag::ActiveEpisodeTurn.call(
+      state: prior, text: question, now: Time.current, enabled: true, shared: false, correlation_id: "query:turn"
+    )
+    foreign = "Paso 11 del resorte del paracaídas en CEA15. Suplemento de 2,5 mm."
+    chunks = [
+      identity_chunk("KONE MonoSpace", "MonoSpace: tensión de resortes de fijación.", page: 4),
+      identity_chunk("Manual CEA15", foreign, page: 12)
+    ]
+    rag_service = FakeRagService.new(chunks)
+    generator = FakeGenerator.new("No hay procedimiento MonoSpace en el fragmento. [1]")
+    route = Rag::StructuredEvidenceRoute.new(
+      question: question,
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      episode: turn.state
+    )
+
+    with_identity_scope("true") { route.execute }
+
+    assert_equal [ "MonoSpace" ], Rag::DocumentIdentityScope.needles(turn.state)
+    prompt = generator.calls.first[:prompt]
+    assert_not_includes prompt, "2,5 mm"
+    assert_not_includes prompt, "Paso 11"
+    assert_includes prompt, "MonoSpace: tensión de resortes de fijación."
+  end
+
+  test "the MonoSpace regression does not send Fuji Yida or SPT procedures to generation" do
+    question = "el modelo es MonoSpace, como se ajustan los resortes?"
+    prior = {
+      "v" => 1,
+      "episode_id" => "ep_bb4b5f1650c50611",
+      "updated_at" => Time.current.iso8601,
+      "goal" => { "text" => "KONE no nivela" },
+      "facts" => {
+        "manufacturer" => {
+          "status" => "known", "value" => "Fuji Yida", "source" => "user", "correlation_id" => "query:prior"
+        }
+      },
+      "identifiers" => []
+    }
+    turn = Rag::ActiveEpisodeTurn.call(
+      state: prior, text: question, now: Time.current, enabled: true, correlation_id: "query:turn"
+    )
+    paso_body = "Paso 11 del resorte del paracaídas. Colocar un suplemento de 2,5 mm."
+    chunks = [
+      identity_chunk("KONE MonoSpace", "MonoSpace: tensión de resortes de fijación.", page: 4),
+      identity_chunk("Fuji Yida", "Aflojar el resorte del paracaídas.", page: 53),
+      identity_chunk("Fuji Yida", paso_body, page: 58),
+      identity_chunk("Manual chino", "Procedimiento SPT del resorte.", page: 78, section_identity: "SPT")
+    ]
+    rag_service = FakeRagService.new(chunks)
+    generator = FakeGenerator.new("No hay un procedimiento MonoSpace en el fragmento citado. [1]")
+    route = Rag::StructuredEvidenceRoute.new(
+      question: question,
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      episode: turn.state
+    )
+
+    with_identity_scope("true") { route.execute }
+
+    assert_equal "MonoSpace", turn.state.dig("facts", "model", "value")
+    assert_nil turn.state.dig("facts", "manufacturer")
+    assert_equal [ "MonoSpace" ], Rag::DocumentIdentityScope.needles(turn.state)
+    assert_equal 1, rag_service.calls.size
+    prompt = generator.calls.first[:prompt]
+    assert_not_includes prompt, "2,5 mm"
+    assert_not_includes prompt, "Paso 11"
+    assert_not_includes prompt, "Aflojar el resorte"
+    assert_not_includes prompt, "Procedimiento SPT"
+    assert_includes prompt, "MonoSpace: tensión de resortes de fijación."
+  end
+
   private
 
   def with_audit_capture(value)
@@ -1173,6 +1318,42 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     else
       ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = previous
     end
+  end
+
+  def with_identity_scope(value)
+    previous = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = value
+    yield
+  ensure
+    if previous.nil?
+      ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    else
+      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = previous
+    end
+  end
+
+  def mono_episode
+    {
+      "v" => 1,
+      "episode_id" => "ep-mono",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "model" => {
+          "status" => "known", "value" => "MonoSpace", "source" => "user", "correlation_id" => "query:turn"
+        }
+      },
+      "identifiers" => []
+    }
+  end
+
+  def identity_chunk(name, content, page:, section_identity: nil)
+    metadata = {
+      "canonical_name" => name,
+      "original_source_uri" => @source_uri,
+      "page_number" => page
+    }
+    metadata["section_identity"] = section_identity if section_identity
+    synthetic_chunk(content, rank: page, sha: "id-#{page}-#{name.parameterize}").merge(metadata: metadata)
   end
 
   def with_partial_contract(value)

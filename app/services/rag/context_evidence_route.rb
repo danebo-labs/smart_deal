@@ -89,7 +89,8 @@ module Rag
         correlation_id: @correlation_id,
         rag_service: @rag_service,
         generator: episode_aware_generator,
-        expander: @expander
+        expander: @expander,
+        episode: @episode
       )
     end
 

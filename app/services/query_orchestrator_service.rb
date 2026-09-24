@@ -247,7 +247,8 @@ class QueryOrchestratorService
         account_id: @account&.id,
         user_id: @user_id,
         conversation_session_id: @conversation_session_id,
-        correlation_id: @correlation_id
+        correlation_id: @correlation_id,
+        episode: episode_for_scope
       )
       outcome = structured&.execute
       if outcome&.status == :answered || outcome&.status == :abstained

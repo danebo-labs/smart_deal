@@ -21,6 +21,14 @@ module Rag
     BRAND_WORD_RE = /\b(marca|fabricante|brand|manufacturer)\b/
     MODEL_WORD_RE = /\b(modelo|model)\b/
     MODEL_VALUE_RE = /\b(?:modelo|model)\s*(?:es\s*)?:?\s*([A-Za-z0-9][A-Za-z0-9\-]{1,20})\b/
+    # Explicit "modelo es X" is already a strong signal. Mixed-case names such
+    # as MonoSpace fail KbDocumentResolver.specific_token? (no digit, not
+    # all-caps). That gate stays for loose designators; this list only rejects
+    # function words the model regex can still capture.
+    MODEL_DECLARATION_STOPWORDS = %w[
+      no si un una el la los las es de del que como para por con
+      este esta eso esa the and not for with this that what how
+    ].freeze
     ABSENT_CODE_RE = /\bno (muestra|marca|aparece|hay|tiene)\b.*\bcodigo\b|\bsin codigo\b|\bningun codigo\b|\bno code\b/
     KNOWN_CODE_RE = /\b(codigo|error|code)\s+(n\s+)?([a-z]?\d{1,4}[a-z]?)\b/
     MEASUREMENT_RE = /\b(lo medi|yo medi|medimos|medicion|medi)\b/
@@ -388,8 +396,8 @@ module Rag
     end
 
     def write_known_model(episode, pending)
-      token = @text.match(MODEL_VALUE_RE)&.[](1)
-      token = nil unless token && KbDocumentResolver.specific_token?(token)
+      explicit = explicit_model_token
+      token = explicit
       if token.nil? && pending == "model"
         single = @text.strip
         token = single if !single.match?(/\s/) && KbDocumentResolver.specific_token?(single)
@@ -397,7 +405,63 @@ module Rag
       return nil if token.blank?
 
       episode.write_fact!("model", status: "known", value: token, source: "user", correlation_id: @correlation_id, at: @now.iso8601)
+      if explicit
+        supersede_inherited_manufacturer!(episode)
+        reaffirm_mentioned_identifiers!(episode)
+      end
       token
+    end
+
+    # MODEL_VALUE_RE already requires the modelo/model frame. specific_token?
+    # still accepts digit and all-caps designators. A mixed-case name is
+    # accepted only inside that frame, and still has to clear length, shape,
+    # stopword, and brand guards.
+    def explicit_model_token
+      token = @text.match(MODEL_VALUE_RE)&.[](1)
+      return nil unless declared_model_token?(token)
+
+      token
+    end
+
+    def declared_model_token?(token)
+      return false if token.blank?
+      return false if MODEL_DECLARATION_STOPWORDS.include?(token.downcase)
+      return false if brand_token?(token)
+      return true if KbDocumentResolver.specific_token?(token)
+
+      token.length >= 4 && token.match?(/\A[A-Za-z][A-Za-z0-9\-]*\z/) &&
+        token.match?(/[A-Z]/) && token.match?(/[a-z]/)
+    end
+
+    def brand_token?(token)
+      label = FollowupQueryRewriter.normalize_label(token)
+      MANUFACTURERS.include?(label) || KbDocumentResolver::BRANDS.include?(label)
+    end
+
+    # An explicit model is the identity of this turn. A manufacturer written
+    # on an earlier turn was not restated, so it cannot keep classifying
+    # other equipment as this job. A manufacturer written in this same turn
+    # shares the correlation id and stays.
+    def supersede_inherited_manufacturer!(episode)
+      fact = episode.fact("manufacturer")
+      return unless fact&.dig("status") == "known"
+      return if fact["correlation_id"].to_s == @correlation_id.to_s
+
+      episode.clear_fact!("manufacturer")
+      episode.clear_conflicts_for!("manufacturer")
+    end
+
+    # Identifiers already carry correlation_id. A designator repeated in the
+    # model declaration joins that turn. Ones left unsaid stay stored, but
+    # their old correlation no longer counts as this job.
+    def reaffirm_mentioned_identifiers!(episode)
+      mentioned = designators.map { |token| FollowupQueryRewriter.normalize_label(token) }
+      episode.identifiers.each do |item|
+        label = FollowupQueryRewriter.normalize_label(item["value"])
+        next unless mentioned.include?(label)
+
+        item["correlation_id"] = @correlation_id.to_s
+      end
     end
 
     def write_known_code(episode)

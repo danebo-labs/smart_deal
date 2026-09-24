@@ -25,7 +25,7 @@ module Rag
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale:, output_channel:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
-                   generator: nil, expander: nil)
+                   generator: nil, expander: nil, episode: nil)
       profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
       return nil unless eligible?(
         profile: profile,
@@ -47,7 +47,8 @@ module Rag
         correlation_id: correlation_id,
         rag_service: rag_service,
         generator: generator,
-        expander: expander
+        expander: expander,
+        episode: episode
       )
     end
 
@@ -75,7 +76,7 @@ module Rag
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
-                   generator: nil, expander: nil)
+                   generator: nil, expander: nil, episode: nil)
       @question = question.to_s
       @account = account
       @entity_s3_uris = Array(entity_s3_uris)
@@ -89,6 +90,7 @@ module Rag
       @rag_service = rag_service || BedrockRagService.new(account: account)
       @generator = generator || AiProvider.new
       @expander = expander || Rag::SectionNeighborExpander.new
+      @episode = episode
       @citation_processor = Bedrock::CitationProcessor.new
       @ambiguity = nil
       @exact_lookup = false
@@ -142,6 +144,7 @@ module Rag
 
       expansion_started = monotonic_now
       expanded_chunks, expansions = expand_dividers(retrieval[:chunks])
+      expanded_chunks = scope_identity(expanded_chunks)
       expansion_ms = elapsed_ms(expansion_started)
       if expanded_chunks.empty?
         return abstained_outcome(
@@ -338,6 +341,31 @@ module Rag
     end
 
     private
+
+    # Same identity contract as BedrockRagService, applied to the chunks this
+    # route already retrieved. No second Retrieve.
+    def scope_identity(chunks)
+      @identity_scoped = false
+      return Array(chunks) unless DocumentIdentityScope.applicable?(@episode)
+
+      applied = DocumentIdentityScope.apply(chunks, @episode)
+      @identity_scoped = applied.labels.any?(&:present?)
+      other = applied.labels.count { |line| line.to_s.start_with?(DocumentIdentityScope::OTHER_EQUIPMENT_PREFIX) }
+      Rails.logger.info(
+        "[DOCUMENT_IDENTITY] #{ {
+          identity_scope_applied: true,
+          identity_needles: DocumentIdentityScope.needles(@episode),
+          other_equipment_chunks: other,
+          path: "structured_evidence_route"
+        }.to_json }"
+      )
+      applied.chunks.each_with_index.map do |chunk, index|
+        label = applied.labels[index]
+        next chunk if label.blank?
+
+        chunk.merge(content: "#{label}\n#{chunk[:content]}")
+      end
+    end
 
     def expand_dividers(retrieved_chunks)
       expansions = []
@@ -581,7 +609,9 @@ module Rag
           ].compact.join("\n\n")
         end
 
-      [ locale_directive, rendered ].compact_blank.join("\n\n")
+      parts = [ locale_directive, rendered ]
+      parts.unshift(DocumentIdentityScope::PREAMBLE) if @identity_scoped
+      parts.compact_blank.join("\n\n")
     end
 
     def evidence_context(chunks)

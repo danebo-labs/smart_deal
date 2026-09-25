@@ -537,6 +537,40 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     assert_nil payload['generation_ms']
   end
 
+  test "a conditional haiku call reports its duration outside state_ms" do
+    sign_in @user
+    session = ConversationSession.find_or_create_for(
+      identifier: @user.id.to_s, channel: "web", user_id: @user.id, account_id: @account.id
+    )
+    session.update!(active_episode: { "v" => 1, "episode_id" => "ep_clock", "status" => "active", "facts" => {} })
+    original = Rag::SemanticQueryAnalyzer.method(:observe_ownership)
+    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe_ownership) do |**|
+      Thread.current[:haiku_semantic_analysis_ms] = 321
+      nil
+    end
+    orchestrator = Object.new
+    orchestrator.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: nil, rag_ms: 10 } }
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "conditional") do
+      isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
+        isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+          with_mock_orchestrator(orchestrator) do
+            post rag_ask_url, params: { question: "¿y en el otro?" }, as: :json
+          end
+        end
+      end
+    end
+    line = output.string.lines.find { |entry| entry.include?('"interaction_completed"') }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+    assert_equal 321, payload["semantic_analysis_ms"]
+    assert_operator payload["state_ms"], :<, 321
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe_ownership) { |*args, **kwargs| original.call(*args, **kwargs) } if original
+  end
+
   test 'interaction_completed reports abstained when route_outcome says abstained regardless of answer text' do
     sign_in @user
 

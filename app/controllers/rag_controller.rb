@@ -27,6 +27,7 @@ class RagController < ApplicationController
       account_id:  current_account.id
     )
     episode_turn = nil
+    Thread.current[:haiku_semantic_analysis_ms] = nil
     semantic_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     shadow_analysis = observe_semantic_shadow(question, images, documents, conv_session, correlation_id)
     semantic_analysis_ms = elapsed_ms(semantic_started)
@@ -44,6 +45,11 @@ class RagController < ApplicationController
       state_ms = elapsed_ms(state_started)
     else
       conv_session.refresh!
+    end
+    haiku_ms = Thread.current[:haiku_semantic_analysis_ms]
+    unless haiku_ms.nil?
+      semantic_analysis_ms = haiku_ms
+      state_ms = [ state_ms - haiku_ms, 0 ].max if Rag::HaikuQueryAnalysisFlag.conditional?
     end
 
     session_context  = SessionContextBuilder.build(conv_session)

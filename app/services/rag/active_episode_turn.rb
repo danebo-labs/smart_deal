@@ -352,12 +352,21 @@ module Rag
     end
 
     def log_ownership(perception, applied)
-      relation = perception.is_a?(Rag::ConversationalTurnAnalysis) ? perception.relation : nil
+      analysis = perception.is_a?(Rag::ConversationalTurnAnalysis) ? perception : nil
+      relation = analysis&.relation
+      ambiguous = analysis&.ambiguous
+      eligible = analysis && ambiguous != true && relation != "unclear" && %w[switch correct].include?(relation)
+      owned = eligible && applied&.decision == (relation == "switch" ? :new_episode : :corrected)
       Rails.logger.info({
         event: "haiku_ownership_slice",
         ownership_slice: "switch_correct",
-        perception: applied ? "applied" : "ignored",
-        relation: relation
+        analysis_called: true,
+        analysis_valid: !analysis.nil?,
+        analysis_error: analysis.nil? ? (perception == :failed ? "failed" : "invalid") : nil,
+        relation: relation,
+        ambiguous: ambiguous,
+        ownership_eligible: eligible,
+        ownership_applied: owned
       }.to_json)
     end
 

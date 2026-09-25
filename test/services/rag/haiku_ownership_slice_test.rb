@@ -145,6 +145,31 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     end
   end
 
+  test "unclear and new are not reported as semantic ownership" do
+    with_mode("conditional") do
+      unclear = ownership_log { turn("¿y en el otro?", analysis: perception("unclear", ambiguous: true)) }
+      fresh = ownership_log { turn("El modelo es MonoSpace", analysis: perception("new")) }
+
+      assert_equal true, unclear["analysis_called"]
+      assert_equal true, unclear["analysis_valid"]
+      assert_equal "unclear", unclear["relation"]
+      assert_equal false, unclear["ownership_eligible"]
+      assert_equal false, unclear["ownership_applied"]
+      assert_equal "new", fresh["relation"]
+      assert_equal false, fresh["ownership_applied"]
+    end
+  end
+
+  test "a validated switch is reported as ownership applied" do
+    with_mode("conditional") do
+      payload = ownership_log { turn("¿y en el Nova?", analysis: perception("switch", [ [ "Nova", "equipment" ] ])) }
+
+      assert_equal true, payload["ownership_eligible"]
+      assert_equal true, payload["ownership_applied"]
+      assert_equal "switch", payload["relation"]
+    end
+  end
+
   private
 
   def perception(relation, mentions = [], ambiguous: false)
@@ -183,6 +208,17 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     yield
   ensure
     singleton.alias_method(:resolve, :resolve_without_p3)
+  end
+
+  def ownership_log
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    line = output.string.lines.reverse.find { |entry| entry.include?("haiku_ownership_slice") }
+    JSON.parse(line[line.index("{")..])
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   def with_mode(value)

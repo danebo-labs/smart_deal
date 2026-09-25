@@ -82,6 +82,7 @@ module Rag
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       response = converse_client.converse(converse_params)
       elapsed_ms = elapsed_since(started)
+      Thread.current[:haiku_semantic_analysis_ms] = elapsed_ms
       usage = response.usage
       input_tokens = usage&.input_tokens.to_i
       output_tokens = usage&.output_tokens.to_i
@@ -97,10 +98,12 @@ module Rag
       )
       analysis
     rescue StandardError => error
+      elapsed_ms = elapsed_since(started)
+      Thread.current[:haiku_semantic_analysis_ms] = elapsed_ms
       log_shadow(
         status: transport_status(error),
         analysis: nil,
-        elapsed_ms: elapsed_since(started),
+        elapsed_ms: elapsed_ms,
         input_tokens: 0,
         output_tokens: 0
       )

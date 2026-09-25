@@ -1400,8 +1400,26 @@ None that change the contract. The choice answer is not a fact slot; the parser 
 ### Decision
 PENDING_HUMAN
 
+```text
+P2_HUMAN_DECISION:
+AUTHORIZE_P3_NARROW_SEMANTIC_OWNERSHIP
+
+AUTHORIZED_SCOPE:
+explicit switch/correct ownership only
+
+NOT_AUTHORIZED:
+general continue ownership
+answer_pending ownership
+heuristic retirement
+always mode
+pilot rollout
+retrieval changes
+latency optimization
+P4+
+```
+
 ### Impact on next phase
-P3 is not authorized and was not started.
+P3 is authorized only for explicit switch/correct ownership. P4 is not authorized.
 
 ### PHASE_COMMIT
 The P2 commit that contains this Results block. Its hash is not written inside itself.
@@ -1438,7 +1456,7 @@ Shadow does not prove the state machine can consume perception. A single family 
 
 ### Preconditions
 
-P0 contamination 0. P1 shadow failure-to-v4 proven. P2 pending contract recorded. The family is chosen from P0 Results and written here before implementation. Default family if P0 does not override it: explicit equipment switch / correction (`switch`, `correct`), not deixis.
+P0 contamination 0. P1 shadow failure-to-v4 proven. P2 pending contract recorded. Family from P0 and this authorization: explicit equipment switch / correction (`switch`, `correct`), not deixis.
 
 ### Exact scope
 
@@ -1510,30 +1528,30 @@ The default family might be too small to show value. That is an acceptable stop,
 No heuristic deletion. No deixis. No effective-query change.
 
 ### Results
-TBD
+Conditional mode owns only validated `switch` and `correct`. `continue`, `answer_pending`, `new`, shadow, and `always` stay on v4. A switch opens a fresh episode and does not compose the prior goal. A model value is written only when the equipment span is literal and the tenant catalog returns exactly one document whose name is also in the turn. A catalog miss writes nothing. `correct` clears the prior model and manufacturer, then the existing extractor writes only an explicit current-turn fact. `ambiguous` and `unclear` clear those facts and do not compose. Analyzer failure on an explicit equipment shift uses the same fresh episode and does not restore v4 inheritance. P0 switch rows with `equipment_inheritance=forbidden` do not keep MonoSpace. No P0 label or corpus edit.
 
 ### Unexpected findings
-TBD
+The turn now reads `ConversationalTurnAnalysis`. The P1 source lock that forbade that string in `active_episode_turn.rb` was updated. `record_user_turn!` still rejects the object as a keyword; conditional fetches perception through `observe_ownership`, which is the same one Converse call, not a second model. Catalog needs the session account, so `record_user_turn!` passes `account:`. P0 semantic p95 1737.45 ms stays a known risk. No latency change.
 
 ### Decision
-TBD
+PENDING_HUMAN
 
 ### Impact on next phase
-TBD
+P4 is not authorized.
 
 ### PHASE_COMMIT
-TBD
+The P3 commit that contains this Results block. Its hash is not written inside itself.
 
 ### PHASE_TEST_RESULT
-TBD
+Ownership, flag, analyzer, episode, pending-question, session, and query-concern tests: 340 runs, 1629 assertions, 0 failures, 0 errors, 22 skips.
 
 ### PHASE_METRICS
-TBD
+Owned relations: switch, correct. New model calls: 0 beyond the existing one perception call. No retrieval change. No heuristic deletion. Semantic p95 remains 1737.45 ms.
 
 ### EXECUTION PROMPT — PHASE P3
 
 ```text
-NOT AUTHORIZED until P2 exit is recorded and this section names the single family.
+AUTHORIZED: AUTHORIZE_P3_NARROW_SEMANTIC_OWNERSHIP. Explicit switch/correct only.
 
 Implement only that family under HAIKU_QUERY_ANALYSIS_MODE=conditional.
 Ruby and catalog remain authority. Analyzer failure does not inherit v4 semantics for this slice.

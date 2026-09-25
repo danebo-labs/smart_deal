@@ -1165,7 +1165,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
       assert_equal "switch", hostile.relation
     end
     assert_not_includes Rails.root.join("app/services/rag/query_analysis.rb").read, "ConversationalTurnAnalysis"
-    assert_not_includes Rails.root.join("app/services/rag/active_episode_turn.rb").read, "ConversationalTurnAnalysis"
+    assert_includes Rails.root.join("app/services/rag/active_episode_turn.rb").read, "ConversationalTurnAnalysis"
   end
 
   def web_episode_session(channel: "web", identifier: nil)

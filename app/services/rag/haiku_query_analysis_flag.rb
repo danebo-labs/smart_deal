@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Rag
-  # P1 local shadow switch. Default off. conditional and always parse and behave as off.
+  # P1 shadow stays observational. P3 conditional owns only switch and correct. always stays inert.
   module HaikuQueryAnalysisFlag
     MODES = %w[off shadow conditional always].freeze
     ENV_KEY = "HAIKU_QUERY_ANALYSIS_MODE"
@@ -19,6 +19,10 @@ module Rag
 
     def shadow?
       mode == "shadow"
+    end
+
+    def conditional?
+      mode == "conditional"
     end
 
     def reset_unknown_warning!

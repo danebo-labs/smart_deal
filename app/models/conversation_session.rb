@@ -106,7 +106,8 @@ class ConversationSession < ApplicationRecord
         channel: channel,
         enabled: true,
         shared: false,
-        prior_user_turns: recent_user_turns(now)
+        prior_user_turns: recent_user_turns(now),
+        account: account
       )
       history = conversation_history.last(MAX_HISTORY - 1)
       history << history_message("user", content, user_id: user_id, correlation_id: correlation_id)

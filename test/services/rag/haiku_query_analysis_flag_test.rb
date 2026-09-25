@@ -21,13 +21,15 @@ class Rag::HaikuQueryAnalysisFlagTest < ActiveSupport::TestCase
     end
   end
 
-  test "conditional and always parse and behave as off" do
+  test "conditional is the ownership mode and always stays inert" do
     with_mode("conditional") do
       assert_equal "conditional", F.mode
+      assert F.conditional?
       assert_not F.shadow?
     end
     with_mode("always") do
       assert_equal "always", F.mode
+      assert_not F.conditional?
       assert_not F.shadow?
     end
   end

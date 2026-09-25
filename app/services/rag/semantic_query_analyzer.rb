@@ -59,6 +59,13 @@ module Rag
       new(turn: turn, episode: episode, correlation_id: correlation_id, client: client).call
     end
 
+    def self.observe_ownership(turn:, episode:, correlation_id:, client: nil)
+      return nil unless HaikuQueryAnalysisFlag.conditional?
+      return nil unless gated?(episode)
+
+      new(turn: turn, episode: episode, correlation_id: correlation_id, client: client).call
+    end
+
     def self.gated?(episode)
       hash = episode.is_a?(Hash) ? episode : {}
       hash["episode_id"].present? || hash["pending_fact"].present? || hash["active_photo"].present?

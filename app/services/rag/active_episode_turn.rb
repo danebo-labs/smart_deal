@@ -40,7 +40,8 @@ module Rag
     FROM_STATE = Object.new
 
     def self.call(state:, text:, role: "user", now: Time.current, selection_turn: false, pending_fact: FROM_STATE,
-                  correlation_id: nil, channel: "web", enabled: nil, shared: nil, prior_user_turns: [])
+                  correlation_id: nil, channel: "web", enabled: nil, shared: nil, prior_user_turns: [],
+                  analysis: nil, account: nil)
       new(
         state: state,
         text: text.to_s,
@@ -52,7 +53,9 @@ module Rag
         channel: channel.to_s,
         enabled: enabled.nil? ? FieldCompanionEpisodeFlag.enabled? : enabled,
         shared: shared.nil? ? SharedSession::ENABLED : shared,
-        prior_user_turns: prior_user_turns
+        prior_user_turns: prior_user_turns,
+        analysis: analysis,
+        account: account
       ).call
     end
 
@@ -132,7 +135,7 @@ module Rag
       changed
     end
 
-    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:, prior_user_turns: [])
+    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:, prior_user_turns: [], analysis: nil, account: nil)
       @raw_state = state
       @text = text
       @role = role
@@ -144,6 +147,8 @@ module Rag
       @enabled = enabled
       @shared = shared
       @prior_user_turns = Array(prior_user_turns)
+      @analysis = analysis
+      @account = account
       @normalized = FollowupQueryRewriter.normalize_label(text)
       @words = @normalized.split
       @measurement = false
@@ -169,6 +174,9 @@ module Rag
 
         return result(:no_episode, (invalid ? "invalid_state" : nil), ActiveEpisode.new, ActiveEpisode.new)
       end
+
+      owned = apply_owned_slice(current)
+      return owned if owned
 
       known = known_manufacturer(current)
       brands = find_brands
@@ -221,6 +229,136 @@ module Rag
       return "not_user" unless @role == "user"
 
       nil
+    end
+
+    def apply_owned_slice(current)
+      return nil unless Rag::HaikuQueryAnalysisFlag.conditional?
+
+      perception = owned_perception(current)
+      applied = owned_decision(current, perception)
+      log_ownership(perception, applied)
+      applied
+    end
+
+    def owned_perception(current)
+      return @analysis if @analysis.is_a?(Rag::ConversationalTurnAnalysis)
+      return :failed if @analysis == :failed
+
+      Rag::SemanticQueryAnalyzer.observe_ownership(
+        turn: @text,
+        episode: current.to_h,
+        correlation_id: @correlation_id
+      ) || :failed
+    end
+
+    def owned_decision(current, perception)
+      return fail_closed_shift(current) if perception == :failed && explicit_equipment_shift?(current)
+      return nil unless perception.is_a?(Rag::ConversationalTurnAnalysis)
+      return fail_closed_perception(current) if perception.ambiguous || perception.relation == "unclear"
+      return nil unless %w[switch correct].include?(perception.relation)
+      return apply_switch(current, perception) if perception.relation == "switch" && literal_equipment?(perception)
+      return apply_correct(current) if perception.relation == "correct" && explicit_correction?
+
+      nil
+    end
+
+    def fail_closed_shift(current)
+      open_episode(:new_episode, current, goal: :always)
+    end
+
+    def fail_closed_perception(current)
+      episode = current.fork
+      episode.touch!(@now)
+      episode.clear_fact!("model")
+      episode.clear_fact!("manufacturer")
+      if self_contained?
+        episode.assign_goal!(@text, correlation_id: @correlation_id)
+      else
+        episode.clear_goal!
+      end
+      extract!(episode, :facts)
+      finish(:continued_self_contained, current, episode, compose: false)
+    end
+
+    def apply_switch(current, perception)
+      episode = ActiveEpisode.open(correlation_id: @correlation_id, now: @now)
+      episode.assign_goal!(@text, correlation_id: @correlation_id)
+      extract!(episode, :full)
+      write_catalog_identity!(episode, perception)
+      finish(:new_episode, current, episode, compose: false)
+    end
+
+    def apply_correct(current)
+      episode = current.fork
+      episode.touch!(@now)
+      episode.clear_fact!("model")
+      episode.clear_fact!("manufacturer")
+      extract!(episode, :full)
+      if self_contained?
+        episode.assign_goal!(@text, correlation_id: @correlation_id)
+      else
+        episode.clear_goal!
+      end
+      finish(:corrected, current, episode, compose: false)
+    end
+
+    def literal_equipment?(perception)
+      Array(perception.mentions).any? do |mention|
+        span = mention["span"].to_s
+        span.present? && mention["role"] == "equipment" && @text.downcase.include?(span.downcase)
+      end
+    end
+
+    def explicit_correction?
+      correction? || MODEL_VALUE_RE.match?(@normalized) || find_brands.any?
+    end
+
+    def explicit_equipment_shift?(episode)
+      known = known_manufacturer(episode)
+      return true if other_brand(find_brands, known, episode)
+
+      model = episode.fact("model")&.dig("value").to_s
+      return false if model.blank?
+
+      token = @text[/\b[A-Z][A-Za-z0-9-]{2,}\b/]
+      token.present? && !token.casecmp?(model)
+    end
+
+    def write_catalog_identity!(episode, perception)
+      return unless @account
+
+      Array(perception.mentions).each do |mention|
+        next unless mention["role"] == "equipment"
+
+        span = mention["span"].to_s
+        next if span.blank? || @text.downcase.exclude?(span.downcase)
+        next if episode.fact("model")&.dig("status") == "known"
+
+        docs = KbDocumentResolver.resolve(span, account: @account)
+        next unless docs.one?
+
+        name = docs.first.display_name.to_s
+        next if name.blank? || @text.downcase.exclude?(name.downcase)
+
+        episode.write_fact!(
+          "model",
+          status: "known",
+          value: span,
+          source: "catalog",
+          correlation_id: @correlation_id,
+          at: @now.iso8601
+        )
+      end
+    end
+
+    def log_ownership(perception, applied)
+      relation = perception.is_a?(Rag::ConversationalTurnAnalysis) ? perception.relation : nil
+      Rails.logger.info({
+        event: "haiku_ownership_slice",
+        ownership_slice: "switch_correct",
+        perception: applied ? "applied" : "ignored",
+        relation: relation
+      }.to_json)
     end
 
     def reset_explicit?

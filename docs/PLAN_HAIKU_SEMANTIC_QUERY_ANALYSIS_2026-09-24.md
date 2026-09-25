@@ -2057,34 +2057,38 @@ Near-always-on cost. Use P0 unit cost times observed hands-free volume. Cost sti
 Do not build the voice product in this plan. Do not enable WhatsApp.
 
 ### Results
-TBD
+`VoiceDictationsController#create` accepts an audio upload for a certification report. `TranscriptionJob` writes `VoiceDictation#transcript_raw`. Confirmation writes an inspection finding. That path does not call `RagController`, `SemanticQueryAnalyzer`, or the episode turn.
+
+`SpeechToText::Result` is text, duration, provider, model, and raw payload. It has no confidence and no alternatives. The confirm form may carry a photo for the finding. That is not the assistant photo correlation id.
+
+P6 left `total_ms` p50/p95/p99 unmeasured. Always-on perception was not wired.
 
 ### Unexpected findings
-TBD
+The certifier dictation is a separate product from the field-assistant query. It is a real ASR request path and it is not a hands-free arm of the RAG turn.
 
 ### Decision
-TBD
+channel_found_latency_unresolved
 
 ### Impact on next phase
-TBD
+No further phase is authorized. Do not wire hands-free perception until a live `total_ms` sample exists and a human says this certifier path is the hands-free channel.
 
 ### PHASE_COMMIT
-TBD
+N/A. Production code was not changed.
 
 ### PHASE_TEST_RESULT
-TBD
+No production change. No new tests.
 
 ### PHASE_METRICS
-TBD
+hands_free not set. semantic p50 1426 ms and p95 1737.45 ms remain the P0 sample. total_ms p50/p95/p99 remain NOT_MEASURED.
 
 ### EXECUTION PROMPT — PHASE P7
 
 ```text
-NOT AUTHORIZED until P6 Results are recorded and a hands-free entry point is identified in the repo.
+AUTHORIZED: AUTHORIZE_P7_RESOLUTION_ONLY. Stopped.
 
-If no entry point exists, write Decision=no_channel and stop.
-Otherwise reuse ConversationalTurnAnalysis and pending_question. Do not add a model.
-One commit.
+Decision=channel_found_latency_unresolved.
+VoiceDictationsController is the certifier ASR path. It was not wired.
+Do not invent a latency budget. Do not add a model.
 ```
 
 ---

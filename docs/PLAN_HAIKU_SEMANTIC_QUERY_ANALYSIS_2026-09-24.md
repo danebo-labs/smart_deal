@@ -2161,7 +2161,15 @@ The freeze is in `explicit_model_blocks_complement?`. A declared model does not 
 The same freeze also stops copying the multi-word complement `de la fijación de cables` onto a turn that declares a model. That follows the approved rule. It is broader than the single-token examples and it is not a new classifier.
 
 ### Decision
-PENDING_HUMAN
+APPROVED
+
+```text
+CONVERGENCE_1_HUMAN_DECISION:
+APPROVED
+
+COMMIT:
+e1d840b0b2663b8a2f98237ac5ccaf564ba0310c
+```
 
 ### Impact on next phase
 CONVERGENCE_2 is not authorized.
@@ -2182,6 +2190,127 @@ AUTHORIZED: APPROVE_CONVERGENCE_1_EXPLICIT_MODEL_COMPLEMENT_FREEZE.
 
 Implemented. Do not start CONVERGENCE_2.
 ```
+
+---
+
+## Final convergence
+
+CONVERGENCE_2_REVIEW is human-approved. No further code phase.
+
+```text
+CONVERGENCE_STATUS:
+COMPLETE
+
+NEXT_CONVERGENCE_TARGET:
+NONE
+
+OPEN_WORLD_SEMANTIC_DUPLICATION_REMAINING:
+NO
+
+HAIKU_OWNERSHIP:
+- validated switch
+- validated correct
+- only under HAIKU_QUERY_ANALYSIS_MODE=conditional
+
+RUBY_DETERMINISTIC_OWNERSHIP:
+- closed parsers
+- catalog identity validation
+- state/persistence/provenance/recency
+- pending_question
+- explicit MODEL_VALUE_RE complement freeze
+- unreaffirmed_name? orthographic safety rule
+- technical_nps closed ajust* grammar
+- ActiveEpisodeTurn continuity/state policy
+- deterministic effective query construction
+- FollowupQueryRewriter no-episode catalog-id stitch
+- retrieval authorization
+
+REMAINING_MECHANISMS_CLASSIFICATION:
+
+unreaffirmed_name?:
+KEEP_DETERMINISTIC
+Not duplicated open-world semantics.
+
+technical_nps:
+KEEP_DETERMINISTIC
+Closed grammar.
+
+ActiveEpisodeTurn first-match:
+KEEP_DETERMINISTIC
+Episode/state continuity policy.
+
+FollowupQueryRewriter:
+KEEP_DETERMINISTIC
+Mutually exclusive no-episode catalog-gated stitch.
+Not a competing semantic engine.
+
+QUERY_COMPOSER_DUPLICATION:
+PARTIAL_BUT_INTENTIONAL
+
+RATIONALE:
+Episode and no-episode composers are mutually exclusive and solve different
+contracts. Merging them is not required for semantic convergence and would
+be a separate product/refactor decision.
+
+SECOND_SEMANTIC_ENGINE:
+NO
+
+FURTHER_HEURISTIC_RETIREMENT_REQUIRED_FOR_ARCHITECTURE:
+NO
+
+FURTHER_COMPOSER_MERGE_REQUIRED_FOR_ARCHITECTURE:
+NO
+
+OPEN_OPERATIONAL_ITEMS:
+- live assistant total_ms p50/p95/p99 remain unmeasured
+- semantic p95 from P0 is 1737.45 ms
+- always remains inert
+- hands-free conversational channel does not currently exist
+
+DEPLOYMENT_POLICY:
+DIRECT_TO_PRODUCTION_AFTER_ENGINEERING_READINESS
+
+FIELD_PILOT_REQUIRED_BEFORE_DEPLOY:
+NO
+
+TECHNICIAN_VALIDATION_REQUIRED_BEFORE_DEPLOY:
+NO
+
+LIVE_LATENCY_MEASUREMENT_REQUIRED_BEFORE_DEPLOY:
+NO
+
+PRODUCTION_RUNTIME_MODE:
+HAIKU_QUERY_ANALYSIS_MODE=conditional
+
+SEMANTIC_OWNERSHIP_AT_DEPLOY:
+switch
+correct
+
+ROLLBACK:
+HAIKU_QUERY_ANALYSIS_MODE=off
+```
+
+Final architecture:
+
+```text
+USER TURN
+   ↓
+closed deterministic parsers/policy
+   ↓
+ConversationalTurnAnalysis when structurally required
+   ↓
+Ruby validation / catalog resolution
+   ↓
+ActiveEpisode deterministic state policy
+   ↓
+deterministic effective query
+   ↓
+Retrieve / RAG generation
+   ↓
+assistant answer + pending_question
+```
+
+Architecture decision remains `HYBRID_MINIMAL`. No production code changed for this record.
 
 ---
 

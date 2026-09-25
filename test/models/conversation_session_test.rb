@@ -1121,7 +1121,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_includes session.active_episode["identifiers"].pluck("value"), "CEA15"
   end
 
-  test "a hybrid spring follow-up expands only the stored referent" do
+  test "an explicit model does not import the stored spring complement" do
     session = web_episode_session
     goal = "Cómo se ajustan los resortes de la fijación de cables?"
     current = "el modelo es MonoSpace, como se ajustan los resortes?"
@@ -1135,11 +1135,11 @@ class ConversationSessionTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal :continued_elliptical, result.decision
-    assert_equal goal, result.state.dig("goal", "text")
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación"
     assert_equal "MonoSpace", result.state.dig("facts", "model", "value")
     assert_nil result.state.dig("facts", "manufacturer")
-    assert_equal "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?", result.composed
   end
 
   test "a hostile semantic analysis cannot change episode facts" do

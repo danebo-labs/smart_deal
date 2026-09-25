@@ -57,12 +57,12 @@ module Rag
     end
 
     # pending_fact from the assistant reply, using the full text before truncation.
-    def self.apply_assistant(state:, text:, now: Time.current, correlation_id: nil)
+    def self.apply_assistant(state:, text:, now: Time.current, correlation_id: nil, pending_question: nil)
       episode = coerce_episode(state, now)
       return skipped_result(episode) if episode.blank?
 
       before = episode.fork
-      reason = write_pending!(episode, text.to_s, correlation_id: correlation_id)
+      reason = write_pending!(episode, text.to_s, correlation_id: correlation_id, pending_question: pending_question)
       episode.touch!(now)
       Result.new(
         decision: :assistant,
@@ -84,9 +84,18 @@ module Rag
       Result.new(decision: :skipped, reason: episode.reason, state: episode.to_h, composed: nil, fields_changed: [])
     end
 
-    def self.write_pending!(episode, text, correlation_id:)
-      subjects = text.scan(/[^?]+\?/).filter_map { |sentence| pending_subject(FollowupQueryRewriter.normalize_label(sentence)) }
+    def self.write_pending!(episode, text, correlation_id:, pending_question: nil)
       episode.clear_pending!
+      question = PendingQuestion.coerce(pending_question)
+      if question
+        episode.pending_question = question
+        if PendingQuestion::FACT_TYPES.include?(question["type"])
+          episode.pending_fact = { "subject" => question["type"], "correlation_id" => correlation_id.to_s }
+        end
+        return nil
+      end
+
+      subjects = text.scan(/[^?]+\?/).filter_map { |sentence| pending_subject(FollowupQueryRewriter.normalize_label(sentence)) }
       return nil unless subjects.size == 1
 
       subject = subjects.first
@@ -117,6 +126,7 @@ module Rag
       end
       changed << "identifiers" if left["identifiers"] != right["identifiers"]
       changed << "pending_fact" if left["pending_fact"] != right["pending_fact"]
+      changed << "pending_question" if left["pending_question"] != right["pending_question"]
       changed << "active_photo" if left["active_photo"] != right["active_photo"]
       changed << "conflicts" if left["conflicts"] != right["conflicts"]
       changed
@@ -394,6 +404,7 @@ module Rag
     end
 
     def extract!(episode, mode)
+      apply_closed_pending!(episode)
       pending = episode.pending_fact&.dig("subject")
       wrote = {}
       wrote["manufacturer"] = write_unknown_manufacturer(episode, pending) if mode != :no_brand
@@ -406,6 +417,18 @@ module Rag
       @measurement = true if MEASUREMENT_RE.match?(@normalized)
       @deictic = true if DEICTIC_RE.match?(@normalized)
       @unbound = true if unbound_unknown?(pending, wrote)
+    end
+
+    def apply_closed_pending!(episode)
+      parsed = PendingQuestion.parse_reply(
+        @text,
+        pending_question: episode.pending_question,
+        pending_fact: episode.pending_fact
+      )
+      return unless parsed
+
+      write_unresolved(episode, "fault_code", "absent_confirmed") if parsed["status"] == "absent"
+      episode.clear_pending!
     end
 
     def write_unknown_manufacturer(episode, pending)

@@ -94,6 +94,8 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_not_includes result[:answer], "ALTIUS"
     assert_not_includes result[:answer], "\n"
     assert_equal [ 39, 93, 22 ], result[:citations].pluck(:page)
+    assert_equal "choice", result.dig(:pending_question, "type")
+    assert_equal [ "TOKIBAT — DL27", "THYSSEN — THYSSEN-E", "ORONA — MR08" ], result.dig(:pending_question, "options")
   end
 
   test "falls through when retrieval does not expose three distinct models" do

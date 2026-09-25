@@ -121,7 +121,7 @@ class ConversationSession < ApplicationRecord
   end
 
   # History stays truncated. pending_fact is calculated from the full reply.
-  def record_assistant_turn!(content, user_id:, correlation_id:)
+  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil)
     unless episode_recording?
       add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
       return nil
@@ -133,7 +133,8 @@ class ConversationSession < ApplicationRecord
         state: active_episode,
         text: content.to_s,
         now: Time.current,
-        correlation_id: correlation_id
+        correlation_id: correlation_id,
+        pending_question: pending_question
       )
       history = conversation_history.last(MAX_HISTORY - 1)
       history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id)
@@ -452,6 +453,7 @@ class ConversationSession < ApplicationRecord
       episode_id: result.state["episode_id"],
       episode_decision: result.decision.to_s,
       episode_fields_changed: result.fields_changed,
+      pending_question_type: result.state.dig("pending_question", "type"),
       composed_chars: result.composed&.length,
       original_sha256: digest,
       effective_sha256: digest

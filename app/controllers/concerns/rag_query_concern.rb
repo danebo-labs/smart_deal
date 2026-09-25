@@ -26,6 +26,7 @@ module RagQueryConcern
                          # (currently only Rag::StructuredEvidenceRoute); nil elsewhere,
                          # meaning the caller must fall back to the text-based heuristic.
                          :route_outcome,
+                         :pending_question,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -208,7 +209,8 @@ module RagQueryConcern
       retrieved_chunk_sha256s:  result[:retrieved_chunk_sha256s],
       deterministic_validation: result[:deterministic_validation],
       quick_replies:             quick_replies,
-      route_outcome:            result[:route_outcome]
+      route_outcome:            result[:route_outcome],
+      pending_question:         result[:pending_question]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

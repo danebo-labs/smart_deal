@@ -24,7 +24,7 @@ class PilotUsageLog
     section_identity attribution_identities attribution_anchors
     stage
     episode_id episode_decision episode_fields_changed composed_chars
-    original_sha256 effective_sha256
+    original_sha256 effective_sha256 pending_question_type
   ].freeze
 
   class << self

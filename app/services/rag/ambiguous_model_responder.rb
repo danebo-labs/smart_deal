@@ -91,7 +91,8 @@ module Rag
         retrieval_trace: retrieval[:retrieval_trace],
         session_id: nil,
         generation_mode: "deterministic_model_disambiguation",
-        model_invoked: false
+        model_invoked: false,
+        pending_question: { "type" => "choice", "options" => selected.pluck(:label) }
       }
     rescue BedrockRagService::BedrockServiceError => e
       Rails.logger.warn("Rag::AmbiguousModelResponder: retrieval failed — #{e.message}")

@@ -20,7 +20,7 @@ module Rag
     MAX_BYTES = 2048
 
     attr_accessor :episode_id, :status, :opened_at, :updated_at, :opened_by,
-                  :goal, :facts, :identifiers, :pending_fact, :active_photo, :conflicts
+                  :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts
     attr_reader :reason
 
     def initialize
@@ -58,6 +58,7 @@ module Rag
       episode.facts = sanitize_facts(data["facts"])
       episode.identifiers = sanitize_identifiers(data["identifiers"])
       episode.pending_fact = sanitize_pending(data["pending_fact"])
+      episode.pending_question = PendingQuestion.coerce(data["pending_question"])
       episode.active_photo = sanitize_photo(data["active_photo"])
       episode.conflicts = sanitize_conflicts(data["conflicts"])
       episode
@@ -90,6 +91,7 @@ module Rag
       copy.facts = facts.deep_dup
       copy.identifiers = identifiers.deep_dup
       copy.pending_fact = pending_fact&.deep_dup
+      copy.pending_question = pending_question&.deep_dup
       copy.active_photo = active_photo&.deep_dup
       copy.conflicts = conflicts.deep_dup
       copy
@@ -137,6 +139,7 @@ module Rag
 
     def clear_pending!
       self.pending_fact = nil
+      self.pending_question = nil
     end
 
     def clear_identifiers!
@@ -183,6 +186,7 @@ module Rag
         "facts" => facts,
         "identifiers" => identifiers,
         "pending_fact" => pending_fact,
+        "pending_question" => pending_question,
         "active_photo" => active_photo,
         "conflicts" => conflicts
       }

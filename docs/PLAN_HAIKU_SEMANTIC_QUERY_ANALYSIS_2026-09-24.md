@@ -1247,8 +1247,30 @@ P0 p95 was 1737.45 ms and the shadow client keeps the P0 read timeout of 8s with
 ### Decision
 PENDING_HUMAN
 
+```text
+P1_HUMAN_DECISION:
+AUTHORIZE_P2
+
+RATIONALE:
+P1 proved that shadow analysis is behaviorally inert and analyzer failures
+preserve v4 behavior. No semantic ownership or retrieval behavior changed.
+The absence of a new live request-path latency sample is recorded but does
+not block P2 because P2 is a deterministic pending_question contract and
+adds no semantic inference call.
+
+AUTHORIZED:
+P2 pending_question contract only
+
+NOT_AUTHORIZED:
+P3 semantic ownership
+conditional mode
+pilot rollout
+heuristic retirement
+retrieval optimization
+```
+
 ### Impact on next phase
-P2 is not authorized and was not started.
+P2 is authorized as the deterministic pending_question contract only. P3 is not authorized.
 
 ### PHASE_COMMIT
 The P1 commit that contains this Results block. Its hash is not written inside itself.
@@ -1366,30 +1388,34 @@ Two pending representations (`pending_fact` and `pending_question`) during the o
 No second LLM call to classify the assistant question. No edit to citation instructions.
 
 ### Results
-TBD
+Deterministic `pending_question` is persisted beside `pending_fact`. Types: `fault_code`, `manufacturer`, `model`, `choice`, `absent`. A structured object wins over the prose scan. The prose scan still sets `pending_fact` when no object is passed. `ninguno` on a fault-code question confirms absence. `al abrir` on choice `opening`/`closing` selects `opening`. No new model call. RetrieveAndGenerate citation code was not edited.
+
+Routes that emit the object: `AmbiguousModelResponder`, as `choice` with the board labels Ruby already asks about. StructuredEvidenceRoute, ContextEvidenceRoute, DocumentIdentityScope generation, and RetrieveAndGenerate still use the prose scan. They do not already know a single typed question in Ruby.
+
+P0 semantic p95 remains 1737.45 ms. P1 recorded no new live request-path latency sample. P2 does not change that timeout.
 
 ### Unexpected findings
-TBD
+None that change the contract. The choice answer is not a fact slot; the parser clears the question and does not invent a stored value.
 
 ### Decision
-TBD
+PENDING_HUMAN
 
 ### Impact on next phase
-TBD
+P3 is not authorized and was not started.
 
 ### PHASE_COMMIT
-TBD
+The P2 commit that contains this Results block. Its hash is not written inside itself.
 
 ### PHASE_TEST_RESULT
-TBD
+Pending-question, episode, session, ambiguous-model, and citation tests: 241 runs, 870 assertions, 0 failures, 0 errors, 0 skips. Prompt, structured-evidence, and context-evidence tests: 97 runs, 581 assertions, 0 failures, 0 errors, 0 skips.
 
 ### PHASE_METRICS
-TBD
+No new model call. No latency change. Episode budget stays 2048 bytes. The budget test keeps existing identifiers and facts after storing `pending_question`.
 
 ### EXECUTION PROMPT — PHASE P2
 
 ```text
-NOT AUTHORIZED until P1 exit criteria are written in this document.
+AUTHORIZED: AUTHORIZE_P2. Pending-question contract only. Do not start P3.
 
 Implement only the pending_question contract from section 8.
 Ruby emits it where the route already knows the question.

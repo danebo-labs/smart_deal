@@ -87,7 +87,8 @@ class RagController < ApplicationController
       conv_session.record_assistant_turn!(
         result.answer.to_s,
         user_id: current_user.id,
-        correlation_id: result.correlation_id
+        correlation_id: result.correlation_id,
+        pending_question: result.pending_question
       )
       # The photo route's images_uploaded branch terminates asynchronously in
       # FieldPhotoAnalysisJob (which emits its own interaction_completed) — the

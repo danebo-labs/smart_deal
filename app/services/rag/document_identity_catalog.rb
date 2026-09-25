@@ -54,10 +54,53 @@ module Rag
         )
         @entries[[ entry.account_id, entry.document_id ]] = entry
       end
+      index_entries!
     end
 
     def find(account_id, document_id)
       @entries[[ account_id.to_s, document_id.to_s ]]
+    end
+
+    def for_document(document)
+      key = document.respond_to?(:s3_key) ? document.s3_key : nil
+      found = for_s3_key(key)
+      return found if found
+
+      uid = document.respond_to?(:document_uid) ? document.document_uid.to_s : ""
+      found = @by_document_id[uid] if uid.present?
+      return found if found
+
+      name = document.respond_to?(:display_name) ? document.display_name.to_s : ""
+      @unique_display_names[name]
+    end
+
+    # One designator that equals the span is one model identity. Extra
+    # designators on that same entry are variant tokens, not a second model.
+    # A different designator and no match for the span is a different model.
+    def self.consensus(entries, span)
+      needle = span.to_s
+      return nil if needle.blank?
+
+      confirmed = []
+      brands = []
+      foreign = false
+      Array(entries).each do |entry|
+        designators = Array(entry.designators)
+        matched = designators.select { |item| item.casecmp?(needle) }
+        if matched.any?
+          confirmed << matched.first
+          brands.concat(Array(entry.brands))
+        elsif designators.any?
+          foreign = true
+        end
+      end
+
+      identities = confirmed.uniq { |item| item.downcase }
+      return { "ambiguous" => true } if foreign || identities.size > 1
+      return nil unless identities.one?
+
+      brand_names = brands.map(&:to_s).compact_blank.uniq { |item| item.downcase }
+      { "model" => identities.first, "manufacturer" => (brand_names.one? ? brand_names.first : nil) }
     end
 
     def entries
@@ -84,6 +127,28 @@ module Rag
     end
 
     private
+
+    def index_entries!
+      @by_document_id = {}
+      @by_s3_key = {}
+      @unique_display_names = {}
+      seen_names = Hash.new(0)
+      entries.each do |entry|
+        @by_document_id[entry.document_id] = entry if entry.document_id.present?
+        [ entry.s3_key, KbDocument.object_key_for_match(entry.s3_key) ].compact.uniq.each do |key|
+          @by_s3_key[key] = entry if key.present?
+        end
+        seen_names[entry.display_name] += 1 if entry.display_name.present?
+      end
+      entries.each do |entry|
+        @unique_display_names[entry.display_name] = entry if seen_names[entry.display_name] == 1
+      end
+    end
+
+    def for_s3_key(s3_key)
+      key = s3_key.to_s
+      @by_s3_key[key] || @by_s3_key[KbDocument.object_key_for_match(key).to_s]
+    end
 
     def evidence_page_of(value)
       return if value.nil? || value.to_s.strip.empty?

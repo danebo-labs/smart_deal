@@ -16,18 +16,20 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     end
   end
 
-  test "equipment switch writes a model only after one catalog match" do
+  test "equipment switch writes the catalog designator and keeps it after parse" do
     account = accounts(:legacy)
-    document = Struct.new(:display_name).new("Nova")
     with_mode("conditional") do
-      with_catalog([ document ]) do
+      with_identities([ identity("nova.pdf", "Nova board", %w[Nova], %w[KONE]) ]) do
         result = turn(
           "¿y en el Nova?",
           analysis: perception("switch", [ [ "Nova", "equipment" ] ]),
           account: account
         )
         assert_equal "Nova", result.state.dig("facts", "model", "value")
-        assert_equal "catalog", result.state.dig("facts", "model", "source")
+        assert_equal "user", result.state.dig("facts", "model", "source")
+        assert_equal "KONE", result.state.dig("facts", "manufacturer", "value")
+        parsed = Rag::ActiveEpisode.parse(result.state, now: NOW)
+        assert_equal "Nova", parsed.fact("model")&.dig("value")
       end
     end
   end
@@ -115,20 +117,19 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     end
   end
 
-  test "the frozen correction clears MonoSpace and writes MiniSpace only for one catalog name" do
+  test "the frozen correction persists MiniSpace when every manual shares that designator" do
     text = "No, no es MonoSpace. Es MiniSpace."
     analysis = perception("correct", [ [ "MiniSpace", "equipment" ] ])
+    rows = [
+      identity("mini-pt.pdf", "KONE MiniSpace PT", %w[MiniSpace], %w[KONE]),
+      identity("mini-15.pdf", "MiniSpace 1.5", %w[MiniSpace], %w[KONE])
+    ]
     with_mode("conditional") do
-      with_catalog([ Struct.new(:display_name).new("MiniSpace"), Struct.new(:display_name).new("MiniSpace PT") ]) do
-        missed = turn(text, analysis: analysis, account: accounts(:legacy))
-        assert_equal :corrected, missed.decision
-        assert_nil missed.state.dig("facts", "model")
-      end
-      with_catalog([ Struct.new(:display_name).new("MiniSpace") ]) do
-        matched = turn(text, analysis: analysis, account: accounts(:legacy))
-        assert_equal "MiniSpace", matched.state.dig("facts", "model", "value")
-        assert_equal "catalog", matched.state.dig("facts", "model", "source")
-        assert_not_equal "MonoSpace", matched.state.dig("facts", "model", "value")
+      with_identities(rows) do
+        result = turn(text, analysis: analysis, account: accounts(:legacy))
+        assert_equal :corrected, result.decision
+        assert_equal "MiniSpace", result.state.dig("facts", "model", "value")
+        assert_not_equal "MonoSpace", result.state.dig("facts", "model", "value")
       end
     end
   end
@@ -142,11 +143,49 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
         assert_nil missed.state.dig("facts", "model")
         assert_not_equal :new_episode, missed.decision
       end
-      with_catalog([ Struct.new(:display_name).new("MiniSpace PT"), Struct.new(:display_name).new("MiniSpace 1.5") ]) do
+      with_identities([
+        identity("mini-pt.pdf", "KONE MiniSpace PT", %w[MiniSpace], %w[KONE]),
+        identity("mini-15.pdf", "MiniSpace 1.5", %w[MiniSpace], %w[KONE])
+      ]) do
         switched = turn("cambia al MiniSpace", analysis: perception("switch", [ [ "MiniSpace", "equipment" ] ]), account: accounts(:legacy))
         assert_equal :new_episode, switched.decision
-        assert_nil switched.state.dig("facts", "model")
+        assert_equal "MiniSpace", switched.state.dig("facts", "model", "value")
       end
+    end
+  end
+
+  test "one shared designator persists and two model identities do not" do
+    with_mode("conditional") do
+      with_identities([
+        identity("mono-21.pdf", "KONE MonoSpace 2.1", %w[MonoSpace MX05], %w[KONE]),
+        identity("mono-25.pdf", "KONE MonoSpace 2.5", %w[MonoSpace], %w[KONE])
+      ]) do
+        switched = turn("cambia al MonoSpace", analysis: perception("switch", [ [ "MonoSpace", "equipment" ] ]), account: accounts(:legacy))
+        assert_equal :new_episode, switched.decision
+        assert_equal "MonoSpace", switched.state.dig("facts", "model", "value")
+        assert_equal "KONE", switched.state.dig("facts", "manufacturer", "value")
+      end
+
+      with_identities([
+        identity("a.pdf", "Shared X model A", %w[ModelA], %w[KONE]),
+        identity("b.pdf", "Shared X model B", %w[ModelB], %w[OTIS])
+      ]) do
+        ambiguous = turn("cambia al X", analysis: perception("switch", [ [ "X", "equipment" ] ]), account: accounts(:legacy))
+        assert_nil ambiguous.state.dig("facts", "model")
+        assert_not_equal :new_episode, ambiguous.decision
+      end
+    end
+  end
+
+  test "a monospace switch keeps the brake question inside that model" do
+    with_mode("conditional") do
+      episode = prior(model: "MonoSpace")
+      episode.assign_goal!("cambia al MonoSpace", correlation_id: "query:prior")
+      result = turn_from(episode, "¿Cómo se ajusta el freno?", analysis: perception("continue"))
+      assert_includes result.composed, "MonoSpace"
+      assert_includes result.composed, "¿Cómo se ajusta el freno?"
+      assert_not_includes result.composed, "MiniSpace"
+      assert_equal "MonoSpace", result.state.dig("facts", "model", "value")
     end
   end
 
@@ -283,13 +322,35 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     episode
   end
 
+  def identity(s3_key, display_name, designators, brands)
+    {
+      "s3_key" => s3_key,
+      "display_name" => display_name,
+      "designators" => designators,
+      "brands" => brands
+    }
+  end
+
+  def with_identities(rows)
+    documents = rows.map { |row| Struct.new(:s3_key, :display_name).new(row["s3_key"], row["display_name"]) }
+    catalog_rows = rows.each_with_index.map do |row, index|
+      row.merge("account_id" => "3", "document_id" => "doc-#{index}")
+    end
+    Rag::DocumentIdentityCatalog.with_catalog(Rag::DocumentIdentityCatalog.new({ "documents" => catalog_rows })) do
+      with_catalog(documents) { yield }
+    end
+  end
+
   def with_catalog(docs)
     singleton = KbDocumentResolver.singleton_class
     singleton.alias_method(:resolve_without_p3, :resolve) unless singleton.method_defined?(:resolve_without_p3)
+    singleton.alias_method(:resolve_scoped_without_p3, :resolve_scoped) unless singleton.method_defined?(:resolve_scoped_without_p3)
     singleton.define_method(:resolve) { |*_args, **_kwargs| docs }
+    singleton.define_method(:resolve_scoped) { |*_args, **_kwargs| docs }
     yield
   ensure
     singleton.alias_method(:resolve, :resolve_without_p3)
+    singleton.alias_method(:resolve_scoped, :resolve_scoped_without_p3) if singleton.method_defined?(:resolve_scoped_without_p3)
   end
 
   def ownership_log

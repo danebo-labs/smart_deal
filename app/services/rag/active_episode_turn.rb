@@ -202,7 +202,7 @@ module Rag
       return continue_with_referent(current, referent.text) if referent.resolved?
       return break_continuity(current) if referent.context_break?
       if referent.rejected?
-        return continue(current, :continued_self_contained, :facts, compose: false, replace_goal: self_contained?)
+        return continue(current, :continued_self_contained, :facts, compose: false, replace_goal: self_contained?, composed: :scope)
       end
       if elliptical?
         return continue(current, :continued_elliptical, :facts, compose: true)
@@ -283,6 +283,7 @@ module Rag
 
     def apply_switch(current, perception)
       return fail_closed_perception(current) if unrecognized_equipment?(perception)
+      return fail_closed_perception(current) if ambiguous_catalog_identity?(perception)
 
       episode = ActiveEpisode.open(correlation_id: @correlation_id, now: @now)
       episode.assign_goal!(@text, correlation_id: @correlation_id)
@@ -307,7 +308,6 @@ module Rag
     end
 
     # A switch name with no catalog row and no manufacturer is not an identity.
-    # Several rows for one name still switch; they do not pick a model.
     def unrecognized_equipment?(perception)
       return false unless @account
       return false if find_brands.any?
@@ -356,31 +356,60 @@ module Rag
       token.present? && !token.casecmp?(model)
     end
 
+    def ambiguous_catalog_identity?(perception)
+      equipment_spans(perception).any? do |span|
+        identity = catalog_identity_for(span)
+        identity.is_a?(Hash) && identity["ambiguous"] == true
+      end
+    end
+
     def write_catalog_identity!(episode, perception)
       return unless @account
 
-      Array(perception.mentions).each do |mention|
-        next unless mention["role"] == "equipment"
-
-        span = mention["span"].to_s
-        next if span.blank? || @text.downcase.exclude?(span.downcase)
+      equipment_spans(perception).each do |span|
+        identity = catalog_identity_for(span)
+        next unless identity.is_a?(Hash) && identity["model"].present?
         next if episode.fact("model")&.dig("status") == "known"
-
-        docs = KbDocumentResolver.resolve(span, account: @account)
-        next unless docs.one?
-
-        name = docs.first.display_name.to_s
-        next if name.blank? || @text.downcase.exclude?(name.downcase)
 
         episode.write_fact!(
           "model",
           status: "known",
-          value: span,
-          source: "catalog",
+          value: identity["model"],
+          source: "user",
+          correlation_id: @correlation_id,
+          at: @now.iso8601
+        )
+        manufacturer = identity["manufacturer"]
+        next if manufacturer.blank? || episode.fact("manufacturer")&.dig("status") == "known"
+
+        episode.write_fact!(
+          "manufacturer",
+          status: "known",
+          value: manufacturer,
+          source: "user",
           correlation_id: @correlation_id,
           at: @now.iso8601
         )
       end
+    end
+
+    def equipment_spans(perception)
+      Array(perception.mentions).filter_map do |mention|
+        next unless mention["role"] == "equipment"
+
+        span = mention["span"].to_s
+        span if span.present? && @text.downcase.include?(span.downcase)
+      end
+    end
+
+    def catalog_identity_for(span)
+      return nil unless @account
+
+      docs = Array(KbDocumentResolver.resolve_scoped(span, account: @account, limit: 20)).map do |item|
+        item.respond_to?(:document) ? item.document : item
+      end
+      entries = docs.filter_map { |doc| Rag::DocumentIdentityCatalog.current.for_document(doc) }
+      Rag::DocumentIdentityCatalog.consensus(entries, span)
     end
 
     def log_ownership(perception, applied)
@@ -517,12 +546,13 @@ module Rag
       finish(:corrected, current, episode, compose: true)
     end
 
-    def continue(current, decision, mode, compose:, replace_goal: false)
+    def continue(current, decision, mode, compose:, replace_goal: false, composed: nil)
       episode = current.fork
       episode.touch!(@now)
       episode.assign_goal!(@text, correlation_id: @correlation_id) if replace_goal
       extract!(episode, mode)
-      finish(decision, current, episode, compose: compose)
+      composed = identity_scope_text(episode) if composed == :scope
+      finish(decision, current, episode, compose: compose, composed: composed)
     end
 
     def finish(decision, before, episode, compose:, composed: nil)
@@ -826,6 +856,19 @@ module Rag
     def manufacturer_pattern(brand)
       parts = brand.split.map { |part| Regexp.escape(part) }
       /\b#{parts.join('\s+')}\b/i
+    end
+
+    # A follow-up that names no model still has to retrieve inside the model
+    # the catalog already confirmed. The goal itself is not pasted.
+    def identity_scope_text(episode)
+      parts = []
+      manufacturer = user_known(episode, "manufacturer")
+      model = user_known(episode, "model")
+      parts << manufacturer if manufacturer.present? && !contains?(@text, manufacturer)
+      parts << model if model.present? && !contains?(@text, model)
+      return nil if parts.empty?
+
+      "#{parts.join(" ")}\n#{@text.strip}"
     end
 
     def identity_items(episode, goal_text, visible_turn)

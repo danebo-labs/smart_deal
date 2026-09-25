@@ -55,7 +55,7 @@ class KbDocumentResolver
   # gate) can tell a specific model/part designator from a bare brand mention
   # without re-scanning the question.
   # @return [Array<MatchResult>] ranked by match score, max MAX_MATCHES rows
-  def self.resolve_scoped(question, account:)
+  def self.resolve_scoped(question, account:, limit: MAX_MATCHES)
     raise ArgumentError, "account is required" unless account
 
     scanned = scan_tokens(question)
@@ -74,7 +74,7 @@ class KbDocumentResolver
     scored
       .select { |_, matched| matched.any? }
       .sort_by { |doc, matched| [ -matched.size, -doc.created_at.to_f ] }
-      .first(MAX_MATCHES)
+      .first(limit)
       .map { |doc, matched| MatchResult.new(document: doc, score: matched.size, matched_tokens: matched.map { |t| t[:raw] }) }
   end
 

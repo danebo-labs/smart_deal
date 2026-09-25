@@ -1,8 +1,2055 @@
 # Plan — Haiku Semantic Query Analysis (2026-09-24)
 
+```text
+PLAN_VERSION: v2
+ARCHITECTURE_DECISION_DATE: 2026-09-25
+STATUS: plan_v2_corrections_applied
+CURRENT_PHASE: plan_v2_pending_commit
+LAST_CLOSED_PHASE: none
+NEXT_AUTHORIZED_PHASE: PLAN_V2_COMMIT
+BASELINE_COMMIT: PENDING_PLAN_V2_COMMIT
+RUNTIME_BEHAVIOR_BASELINE: dce25d080aaba1779898339206d7ec297bdbd3e7
+EXPERIMENT_BRANCH: experiment/haiku-semantic-query-analysis
+ARCHITECTURE_DECISION: HYBRID_MINIMAL
+```
+
+**v2 status:** living plan. Opus corrections are applied in this document. P0 is specified below and is not implemented. Runtime is unchanged by this document.
+
+`BASELINE_COMMIT` is `PENDING_PLAN_V2_COMMIT` because this plan text is not in a commit yet. After the plan-only commit, replace `BASELINE_COMMIT` with that commit hash before P0 starts. The hash cannot be known before that commit. Do not start P0 while the value is still `PENDING_PLAN_V2_COMMIT`. That one-line replacement is not a separate commit: leave it uncommitted, keep it out of Commit A, and include it in Commit B.
+
+**Historical v1** starts at the heading `HISTORICAL V1`. Do not delete it. Assumptions marked `INVALIDATED` in section 2 no longer authorize implementation.
+
+---
+
+## 0. What this revision closes
+
+Architecture is not reopened. Accepted decision: `HYBRID_MINIMAL`.
+
+```text
+Open-world semantic relation/coreference → semantic perception model
+State authority / persistence / safety / provenance /
+validation / query construction → deterministic Ruby
+```
+
+The semantic model is not an agent, a planner, a second RAG, the state owner, the retrieval owner, a technical authority, or a source of evidence.
+
+Independent reviews already accepted:
+
+```text
+RECOMMENDED_ARCHITECTURE: HYBRID_MINIMAL
+CURRENT_V4_ASSESSMENT: GOOD_BASE_NEEDS_SEMANTIC_LAYER
+HAIKU_ROLE: CONDITIONAL
+REFACTOR_REQUIRED: MODERATE
+COST_ASSESSMENT: ACCEPTABLE_FOR_CAPABILITY
+LATENCY_ASSESSMENT: NEEDS_OPTIMIZATION
+```
+
+v4 stays. `ConversationSession` and `ActiveEpisode` stay. Correlation, provenance, recency, atomic persistence, and safety guards stay. `common_noun?`, `identity_complement?`, `unreaffirmed_name?`, `technical_nps`, and `FollowupQueryRewriter` are retirement candidates, not a third permanent engine beside Haiku.
+
+## 1. Worktree fence
+
+Recorded at plan-authoring time on `experiment/haiku-semantic-query-analysis`, HEAD `04586d5`.
+
+```text
+OUT_OF_SCOPE_EXISTING_WORKTREE_CHANGES:
+ M docs/PLAN_PILOTO_ELEMONT_2026-09-24.md
+?? docs/ARCH_REVIEW_CONVERSATIONAL_VS_HAIKU_2026-09-25.md
+?? script/patch_elemont_chunk_p1_2_q123_2026-09-24.rb
+?? script/patch_elemont_chunk_p1_2_q4_2026-09-24.rb
+?? script/patch_elemont_designator_retrieval_2026-09-24.rb
+?? script/patch_elemont_random12_gaps_2026-09-24.rb
+```
+
+Do not edit, stage, revert, or include these in any phase commit. The interrupted Codex session left no diff to recover. Its confirmed notes are incorporated below as findings, not as code.
+
+Reported test run from that interrupted session, not re-executed while writing v2: 412 tests, 0 failures. The architectural review on this HEAD reports a separate relevant slice of 394 tests, 0 failures, 22 skips. P0 re-runs the focused v4 slice before any eval code is treated as green.
+
+## 2. Invalidated v1 assumptions
+
+| v1 assumption | Status | Replacement |
+|---|---|---|
+| P0 requires AWS Batch (`create_model_invocation_job`) | INVALIDATED | P0 is synchronous Converse on a small local corpus. No Batch. |
+| Create a new `Rag::QueryAnalysis` Data for the semantic contract | INVALIDATED | Existing `Rag::QueryAnalysis` stays the evidence-identifier object. Semantic perception is `Rag::ConversationalTurnAnalysis`. See section 3. |
+| Semantic schema owns `intent`, `query_kind`, equipment facts, and referent type | SUPERSEDED | Minimal perception contract in section 4. Closed grammars and the catalog own the rest. |
+| Input 600 / output 120 tokens is the cost model | INVALIDATED as fact | Assumption to measure: 1500–2500 input, 100–200 output. P0 records actual usage. |
+| Conditional gate is `identity_complement?` / `common_noun?` / `technical_nps` | INVALIDATED | Structural gate only. Section 6. A Ruby semantic classifier must not decide whether to call Haiku. |
+| After migration, analyzer failure falls through to v4 semantic heuristics | INVALIDATED after ownership transfer | Shadow may fall back to v4. After semantic ownership moves, fallback is validated facts + raw turn, or a clarification. Section 7. |
+| `generation.txt` shrinkage is P5 | SUPERSEDED | Heuristic retirement is P5. Latency work is P6. Prompt shrinkage is out of this plan unless a later measurement reopens it. |
+| Haiku may persist `equipment.model` when the string is in the turn and the extractor agrees | NARROWED | The model proposes a span and a role. Catalog/resolver validation is required before any identity mutation. Section 5. |
+
+v1 sections 4–7, 10 (batch workflow), 11 (regex gate), and 22 (P0 batch script; P1 editing `query_analysis.rb`) are historical. They do not authorize the implementer.
+
+## 3. QUERY_ANALYSIS_CONVERGENCE
+
+```text
+DECISION: B
+OBJECT: Rag::ConversationalTurnAnalysis
+EXISTING: Rag::QueryAnalysis remains, built only by Rag::QueryEntities.analyze
+MERGE: never
+```
+
+Evidence, inspected on this HEAD:
+
+- `app/services/rag/query_analysis.rb` is `Data.define(:intents, :manufacturer, :model, :board, :identifiers, :requested_relation, :confidence, :question)`. Comment: one constructor, `Rag::QueryEntities.analyze`. `Hypothesis` is explicitly not a fact.
+- `QueryEntities.analyze` fills only `identifiers`, `requested_relation`, and `question`. Manufacturer, model, board, intents, and confidence stay nil/empty.
+- Consumers of that object include evidence selection, family ambiguity, `StructuredEvidenceRoute`, resolution presentation, and `RagController`. They use identifiers and requested relations for evidence, not discourse.
+- `QueryEntities` already drops bare numerics so `24 V` is not an identifier. That closed grammar stays.
+
+Why not A: evolving `QueryAnalysis` would change the evidence-selector contract to carry discourse fields, and would give the semantic model a path onto `manufacturer` / `model` inside the object whose own comment says equipment identity is a hypothesis. P0 must not touch that file.
+
+Why not a third unnamed object: `ConversationalTurnAnalysis` is the single semantic-perception result. `QueryAnalysis` is not a second semantic engine. Routing, rewriting, and intent classification must not add another model call. A future route hint is a deterministic projection of this perception plus closed parsers, not a new classifier.
+
+Convergence path, closed now:
+
+1. P0 defines and evaluates the perception schema only in the offline harness. It does not add the class under `app/`.
+2. P1 introduces `app/services/rag/conversational_turn_analysis.rb` as an immutable `Data`. The only production producer is the shadow analyzer after Ruby span/slot validation. `QueryEntities.analyze` remains the only producer of `QueryAnalysis`.
+3. Consumers that need discourse receive `ConversationalTurnAnalysis`. Consumers that need identifiers keep calling `QueryEntities`. A caller may receive both. It must not copy semantic spans into `QueryAnalysis` manufacturer/model fields.
+4. No adapter merges the two types. "One semantic perception" means one perception object per turn, reused by state, effective-query construction, and any later route projection.
+
+## 4. Semantic contract (minimal)
+
+Ruby keeps anything a closed grammar or the catalog can decide. The model returns only fields that change a discourse decision and that Ruby cannot compute robustly.
+
+```json
+{
+  "relation": "continue|answer_pending|correct|switch|new|unclear",
+  "mentions": [
+    { "span": "MonoSpace", "role": "equipment|component|other" }
+  ],
+  "refers_to": [
+    { "span": "el otro", "slot": "obs_2" }
+  ],
+  "ambiguous": false
+}
+```
+
+`relation` is the open-world discourse label. These definitions are normative:
+
+```text
+continue
+= mismo equipo y misma tarea/problema; continúa el estado existente.
+
+answer_pending
+= el turno responde directamente a state.pending_question.
+
+correct
+= corrige un fact o identidad expresada previamente.
+  El fact corregido no se hereda.
+
+switch
+= cambia a otro equipo, pero puede conservar el marco/tarea técnica.
+
+new
+= nueva tarea/problema.
+  No se hereda contexto semántico previo.
+
+unclear
+= no existe evidencia suficiente para decidir de forma segura.
+  Se comporta fail-closed igual que ambiguous=true.
+```
+
+`ambiguous=true` implies fail-closed. `relation=unclear` also implies fail-closed. Ellipsis is represented by `relation`. `refers_to` is used only when a literal anaphoric span points at an addressable slot.
+
+`mentions` are literal spans plus a proposed role, not a persisted identity. `refers_to.slot` must be an id derived from that case's `state`. The analyzer may return only a `refers_to.slot` that exists there.
+
+Out of the semantic schema, permanently for this plan:
+
+- final effective query;
+- route hint;
+- measurement value, unit, or correctness;
+- safety judgment;
+- procedure selection;
+- technical answer text;
+- invented manufacturer, model, or component strings.
+
+Closed contracts that stay deterministic, including when a perception call also runs:
+
+```text
+pending type fault_code + "ninguno" → absent
+pending type choice(opening, closing) + "al abrir" → opening
+"24 V en X7" → value=24, unit=V, location=X7
+"modelo es MonoSpace" → candidate token for catalog validation, not a persisted model by itself
+```
+
+The model may say which observation or pending question a measurement belongs to, via `refers_to`. It does not decide the value or whether the value is expected.
+
+Span safety contract:
+
+Normalization for comparison:
+
+```text
+1. Unicode NFC
+2. Unicode lowercase/downcase
+3. collapse internal whitespace to one space
+4. trim whitespace
+5. trim punctuation only at the edges of the candidate span
+6. DO NOT fold accents
+```
+
+Every `span` must be a literal substring of the turn after that normalization. `"relé" != "rele"` when the model invents the accent. No invented strings. No paraphrases. No canonicalization that leaves the input.
+
+`refers_to.slot` must be one of the slots derived from `state` for that case. There is no second manual slot list.
+
+P0 rejects the whole object using the error map in the P0 section. An invalid output never inherits state. Catalog identity checks are not a P0 rejection path. Later phases still reject a catalog miss before any identity mutation, and they still reject a conflict with an explicit correction.
+
+Addressable slots are derived only from `state`, and only when that field is present:
+
+```text
+pending_question    iff state.pending_question is non-null
+active_referent     iff state.active_referent is non-null
+obs_1, obs_2, ...   iff that observation id is in state.observations
+```
+
+Not in this plan unless a later phase finds a current consumer: full procedure state, `active_step`, measurement history, hypothesis graph. `current_procedure` has no active runtime consumer and stays unused.
+
+## 5. Identity
+
+```text
+semantic model proposes span + role
+→ Ruby checks the span is in the turn
+→ KbDocumentResolver / display_name / aliases / existing model extractor validate identity
+→ only then may a later phase mutate state
+```
+
+Never: the model says Nova is a model, so persist model.
+
+`KbDocumentResolver` (`app/services/kb_document_resolver.rb`) matches query tokens to `KbDocument.display_name` and `aliases` for the account, whole-word, min length 3, brand-only tokens excluded. Reuse it as the catalog check for equipment-role mentions. A span that does not match the tenant catalog is not an equipment identity. It may remain a component-role candidate with no identity write.
+
+P0 does not call `KbDocumentResolver`. In P0 the mention `role` is scored against the human label. Catalog validation enters later, in runtime.
+
+`ActiveEpisodeTurn` `MODEL_VALUE_RE` remains the closed parser for an explicit "modelo es X" frame. The semantic model does not replace that frame.
+
+## 6. Structural gate
+
+No Ruby classifier that tries to decide "component vs equipment" in order to call Haiku.
+
+```text
+active_episode present?
+OR pending_question / pending_fact present?
+OR active_photo present?
+OR hands_free mode?
+→ semantic analysis candidate
+```
+
+Hands-free is expected to be near-always-on. That is a cost/latency measurement, not a reason to add a semantic pre-classifier.
+
+```text
+ASSUMPTION: invocation fraction ≈ 15% on typed RAG with the structural gate
+MEASUREMENT: TBD from P1 shadow
+DECISION: TBD
+```
+
+A first turn with no inherited episode is not a P0 runtime change. P0 includes exactly 4 controls tagged `no_inherited_state`, each with `state.equipment` null and `state.goal` null. A future phase may run raw `Retrieve` in parallel with perception only when retrieval meaning is unchanged. Never speculative `RetrieveAndGenerate`. If perception would change equipment, correction, deixis, or scope, discard the raw retrieve. Phase: not before P6, and only after P0 shows the case family is real. See P7 for hands-free; the parallel-retrieve decision stays in P6 exit criteria as a possible later experiment, default off.
+
+## 7. Fallback
+
+During shadow (P1):
+
+```text
+analyzer fails → v4 answer and v4 state, analysis=nil
+```
+
+After a phase has transferred semantic ownership for a slice (P3+):
+
+```text
+analyzer fails → explicit validated facts + current raw turn
+if the turn is not self-contained → ask clarification
+```
+
+No unsafe inheritance. v4 is not the hidden semantic engine after that transfer.
+
+## 8. Pending-question routes
+
+Common contract, machine-readable, produced beside answer text. Not a new inference by itself.
+
+```json
+{ "pending_question": { "type": "fault_code" } }
+```
+
+```json
+{ "pending_question": { "type": "choice", "options": ["opening", "closing"] } }
+```
+
+Allowed `type` values for this plan: `fault_code`, `manufacturer`, `model`, `choice`, `absent`. Anything else is no pending question.
+
+Today `ActiveEpisodeTurn.write_pending!` scans `[^?]+\?` in the assistant prose and maps a single question to `manufacturer`, `model`, or `fault_code` via `BRAND_WORD_RE` / `MODEL_WORD_RE` / `CODE_WORD_RE`. `ConversationSession#record_assistant_turn!` persists that `pending_fact` from the full reply. There is no `choice` type and no structured side channel. `pending_fact.subject` is the current stand-in for `pending_question`.
+
+SDK fact used below: `aws-sdk-bedrockruntime` 1.63.0 (`Gemfile.lock`). `BedrockClient#generate_text` calls `invoke_model` with Anthropic messages JSON and returns `content[0].text`. It does not send `output_config`. Repo grep shows `output_config` only inside this plan, not in the gem usage. v1 already recorded that the gem models `converse` and `tool_config` and does not model `output_config`. This revision did not bump the gem and did not re-fetch AWS docs beyond that recorded finding plus the current call sites. Do not claim `RetrieveAndGenerate` has a side-channel JSON field; the code reads `response` text and `response.citations` only (`BedrockRagService#query`).
+
+| ROUTE | HOW ANSWER IS GENERATED | CAN IT EMIT STRUCTURED PENDING METADATA? | IF YES: HOW / IF NO: WHY | FALLBACK OPTION | PHASE |
+|---|---|---|---|---|---|
+| RetrieveAndGenerate | `BedrockRagService#query` → `retrieve_and_generate_with_retry`. Answer is output text. Citations come from `response.citations` and `CitationProcessor`. The prompt template owns `$output_format_instructions$`. | NO on this call | The API response used in code is prose plus citations. A JSON object inside the answer breaks citation span alignment. `outputConfig` is a Converse/InvokeModel feature, not a field of this RetrieveAndGenerate call. SDK 1.63.0 is not the blocker here; the API shape is. | Keep `write_pending!` until P2. P2 may extend that same prose scan with a closed grammar for `choice` when the question text matches a known option list. No second model call. No JSON fence inside the cited answer. | P2 |
+| explicit Retrieve + generation (`DocumentIdentityScope`) | `document_identity_scope_result` retrieves, then `AiProvider` → `generate_text` (`invoke_model`) with `generation.txt` and citation instructions substituted. On generator failure, falls back to RetrieveAndGenerate. | NO without changing the citation prose contract | Current generator returns one text blob. Structured output would require `output_config` (SDK bump) or `tool_config` on this call and would replace the citation instructions. That is a generation-contract change, not a free side channel. | Same prose `write_pending!`. Do not append a machine block until citation tests prove the parser ignores it. That proof is not assumed. | P2 investigation only; implement only if a Ruby-side question is already known without reading the model |
+| StructuredEvidenceRoute | Deterministic route match, explicit Retrieve, then `AiProvider` generation over selected evidence (`execute`). | PARTIAL, without a new call, only for questions the route already knows in Ruby | The model call is free text. The route, not the model, knows when it is asking the technician for a closed fact. Emit `pending_question` from the route object in Ruby. Do not ask the generator to invent it. | Ruby field on the route result, default nil. Prose scan remains for model-authored questions this route does not already classify. | P2 |
+| ContextEvidenceRoute | `execute` → `ClosedFactGenerator` via `AiProvider` over retrieved context evidence. | PARTIAL, same as structured | Closed facts are deterministic. A follow-up the route already encodes can be a Ruby `pending_question`. The generator stays prose. | Ruby field, nil when the route does not ask a typed question. | P2 |
+| deterministic response route | Orchestrator / episode paths that return text without a generation model. | YES | The same Ruby object that builds the sentence sets `pending_question`. Zero model calls. | n/a | P2, first slice: manufacturer, model, fault_code, and explicit choice prompts the route already asks |
+
+P0 does not implement this contract. It freezes the JSON shape and uses it as fixture input when a case's label says a pending question is already known.
+
+## 9. Inference inventory
+
+| Inference | Current owner | Future owner | Status |
+|---|---|---|---|
+| semantic perception | `TechnicalReferentResolver` heuristics, `ActiveEpisodeTurn` first-match, `FollowupQueryRewriter` on the no-episode path | one `ConversationalTurnAnalysis` per gated turn | FUTURE (P0 measures, P1 shadows, P3 owns one slice) |
+| RAG generation | `BedrockRagService#query` RetrieveAndGenerate | same | KEEP |
+| query router KB/SQL/hybrid | `QueryOrchestratorService#classify_query_intent`, default off | deterministic projection of perception + closed parsers, if routing is ever enabled | DO_NOT_ENABLE as a second model |
+| hybrid synthesis | `synthesize_hybrid_answer`, only if router returns hybrid | KEEP only when both sources are required; not a semantic analyzer | KEEP |
+| reranker | Cohere path, flag off | unchanged until a recall study | DO_NOT_ENABLE in this plan |
+| vision analysis | `FieldPhotoAnalysisService`, async | same; reconcile through episode provenance | KEEP |
+| document identity generation | Retrieve + `generate_text`, fallback RetrieveAndGenerate | same | KEEP |
+| structured/context generation | route-local `AiProvider` over retrieved evidence | same generation; pending question from Ruby when the route already knows it | KEEP |
+| identifier / requested-relation extraction | `QueryEntities` → `QueryAnalysis` | same | KEEP |
+| assistant pending subject | `write_pending!` prose scan | `pending_question` contract per section 8 | MERGE into the contract in P2; REMOVE_LATER the prose-only path when every route that asks a typed question emits the contract |
+
+Steady state is one semantic perception result reused by consumers. It is not a semantic analyzer plus an intent classifier plus a routing classifier plus a query-rewriter LLM.
+
+## 10. Target flow (provisional)
+
+```text
+USER TURN
+   ↓
+closed deterministic parsers
+   ↓
+semantic perception when structurally required
+   ↓
+Ruby validation / catalog resolution
+   ↓
+ActiveEpisode mutation
+   ↓
+deterministic effective query construction
+   ↓
+Retrieve / RAG generation
+   ↓
+assistant answer + pending_question contract
+```
+
+P0 stops before mutation, effective query, and generation changes. It runs perception offline against fixtures.
+
+## 11. Cost and latency assumptions
+
+`BedrockQuery::BEDROCK_PRICING` for `global.anthropic.claude-haiku-4-5-20251001-v1:0` is USD 0.001 input and USD 0.005 output per 1,000 tokens, which is USD 1 / MTok input and USD 5 / MTok output. The P0 harness carries those two numbers as its own constants and does not load `BedrockQuery`. A Rails test asserts `pricing[:input] * 1000 == 1` and `pricing[:output] * 1000 == 5` for that model id. The script must not read `ENV` or credentials to pick a price.
+
+```text
+ASSUMPTION:
+input 1500–2500 tokens
+output 100–200 tokens
+MEASUREMENT: TBD from P0 usage
+DECISION: TBD
+```
+
+Illustrative only, using the high end (2500 in, 200 out) = USD 0.0035 per analysis. Not a gate.
+
+| queries/day/user | conditional, f unknown | hands-free near-always-on |
+|---|---|---|
+| 20 | 20 * f * measured_unit * 30 | 20 * measured_unit * 30 |
+| 50 | 50 * f * measured_unit * 30 | 50 * measured_unit * 30 |
+| 100 | 100 * f * measured_unit * 30 | 100 * measured_unit * 30 |
+
+P0 fills `measured_unit` and does not invent `f`. Cost is not the primary gate. Latency is recorded even though P0 is offline: `semantic_analysis_ms` per case. Later phases add `state_ms`, `retrieve_ms`, `generation_ms`/`rag_ms`, `total_ms`, and report p50/p95/p99 per route. Do not add percentiles across phases.
+
+## 12. Safety invariants
+
+The semantic analyzer must not:
+
+```text
+write DB
+invent manufacturer/model
+invent component names
+decide technical correctness
+decide procedure
+bypass catalog
+bypass provenance
+overwrite explicit correction
+preserve stale equipment against explicit switch
+generate technical answer
+```
+
+Ruby is authority.
+
+Operable P0 metrics, and no other primary list:
+
+```text
+unsafe_contamination
+projection_accuracy_haiku_open_world
+projection_accuracy_v4_open_world
+relation_accuracy
+slot_accuracy
+ambiguous_surfaced
+closed_relation_agreement
+invalid_schema
+hallucinated_spans
+transport_error
+input_tokens
+output_tokens
+cost_usd
+semantic_analysis_ms
+```
+
+Mention match, no partial credit:
+
+```text
+normalized output span ∈
+{ expected.span } ∪ expected.acceptable_spans
+
+AND role matches exactly
+```
+
+`unsafe_contamination` uses only the formula in the P0 section. The harness recommendation requires `unsafe_contamination == 0`. That recommendation does not authorize P1. When P0 ends, `Decision` stays `PENDING_HUMAN`.
+
+## 13. Phases
+
+The next action is the plan-only commit. P0 Commit A starts only after `BASELINE_COMMIT` is that hash. Later phases stay specified so their boundaries stay closed, and their execution prompts say they are not authorized until a human records that decision in this file.
+
+---
+
+## P0 — contract + offline evaluation
+
+### Hypothesis
+
+A minimal Haiku perception schema, validated by literal spans and existing slot ids, separates open-world relation/coreference from closed-contract turns well enough that unsafe contamination on the labeled corpus is zero, and open-world cases beat v4 heuristics without a runtime change.
+
+### Why this phase exists
+
+Reviews accepted HYBRID_MINIMAL but not a production call. P0 buys evidence before any request path, state write, or query change.
+
+### Preconditions
+
+- Branch `experiment/haiku-semantic-query-analysis`.
+- The plan-only commit exists and `BASELINE_COMMIT` in this file has been replaced with that hash. P0 does not start while it is `PENDING_PLAN_V2_COMMIT`.
+- Foreign worktree files in section 1 untouched.
+- AWS credentials available to the eval script's process for the single Converse run. The Rails request path is not invoked.
+- No Gemfile change. SDK stays `aws-sdk-bedrockruntime` 1.63.0.
+
+### Exact scope
+
+Offline harness only:
+
+- JSONL corpus. Families stay `CLOSED_CONTRACT` and `OPEN_WORLD`.
+- The harness calls Haiku for every case, including `CLOSED_CONTRACT`.
+- One synchronous Converse call per case, temperature 0, zero retries.
+- Structured output via `tool_config` with `tool_choice` forced to a single tool, because 1.63.0 models `tool_config` and does not model `output_config`. Do not bump the SDK in P0. Do not parse free prose as the primary path.
+- Ruby validation of spans and derived slots before scoring.
+- `v4_expectation` is handwritten on each fixture. A Minitest recomputes it with `Rag::ActiveEpisodeTurn.call` and fails on a discrepancy. The network script does not call `ConversationSession#record_user_turn!`.
+- Report the operable metrics in section 12.
+
+`script/AGENTS.md` asks for about 40 lines under `script/`. This offline eval harness may exceed that because it is a self-contained experimental artifact, following `script/rag_quality_benchmark.rb`. Do not move P0 logic into `app/`. Do not edit `script/AGENTS.md`. Guard the script with `HAIKU_SEMANTIC_P0_LIBRARY_ONLY=1` so tests can require it without a network call. The network path runs only when that variable is unset.
+
+### Files to CREATE
+
+- `script/fixtures/haiku_semantic_perception_p0.jsonl`
+- `script/haiku_semantic_perception_p0.rb`
+- `test/scripts/haiku_semantic_perception_p0_test.rb`
+
+### Files to MODIFY
+
+- `docs/PLAN_HAIKU_SEMANTIC_QUERY_ANALYSIS_2026-09-24.md` (Commit B only, after the run)
+
+### Files READ_ONLY
+
+- `app/services/rag/query_analysis.rb`
+- `app/services/rag/query_entities.rb`
+- `app/services/rag/active_episode.rb`
+- `app/services/rag/active_episode_turn.rb`
+- `app/services/rag/technical_referent_resolver.rb`
+- `app/services/rag/followup_query_rewriter.rb`
+- `app/services/kb_document_resolver.rb`
+- `app/services/bedrock_client.rb`
+- `app/models/conversation_session.rb`
+- `app/models/bedrock_query.rb` (Rails test reads `BEDROCK_PRICING` only)
+- `Gemfile.lock`
+
+### Files OUT_OF_SCOPE
+
+Everything under `app/`, `config/`, `db/`, prompts, and the foreign worktree list in section 1. No `Gemfile` / `Gemfile.lock`. No `bulk_chunks/`. No S3 batch job. No edit to `script/AGENTS.md`.
+
+### Fixture
+
+Each JSONL line has `state`, `expected`, `safety`, and `v4_expectation`. The illustrative object below shows the shape. It is not the gold label for that utterance when the rules assign a different label.
+
+```json
+{
+  "id": "open-001",
+  "family": "OPEN_WORLD",
+  "tags": ["safety_critical"],
+  "turn": "¿y en el Nova?",
+  "state": {
+    "equipment": { "manufacturer": null, "model": "MonoSpace" },
+    "goal": "cómo se ajustan los resortes de la fijación de cables",
+    "active_referent": null,
+    "pending_question": null,
+    "observations": [
+      { "id": "obs_1", "summary": "el operador hace ruido al abrir" }
+    ]
+  },
+  "expected": {
+    "relation": "switch",
+    "mentions": [
+      { "span": "Nova", "role": "equipment", "acceptable_spans": ["el Nova"] }
+    ],
+    "refers_to": [],
+    "ambiguous": false,
+    "closed_parse": null
+  },
+  "safety": {
+    "equipment_inheritance": "forbidden",
+    "forbidden_slots": []
+  },
+  "v4_expectation": {
+    "inherits_equipment": true,
+    "slots": []
+  }
+}
+```
+
+`equipment_inheritance` is `allowed`, `forbidden`, or `n/a`. Do not use a free-text `unsafe_if` field.
+
+There is no manual `slots` array in the JSONL. Authorized slots are derived only from `state`:
+
+```text
+pending_question   iff state.pending_question is non-null
+active_referent    iff state.active_referent is non-null
+<observation id>   iff that id is in state.observations
+```
+
+The analyzer may return a `refers_to.slot` only when that id is in this derived list.
+
+The user message sent to the model is exactly:
+
+```json
+{ "turn": "...", "state": {}, "slots": [] }
+```
+
+`slots` in that message is the derived projection. It is not stored as a second list in the JSONL.
+
+### Corpus composition
+
+```text
+CLOSED:
+5 seeds × 2 states = 10
+
+OPEN phrases:
+8 seeds × 2 minimal contrasting states = 16
+
+LEXICAL PROBES:
+11 terms × 2 contexts = 22
+
+VARIATION AXES:
+6 axes × 3 representative cases = 18
+(no Cartesian product)
+
+NO_INHERITED_STATE:
+4 controls
+```
+
+Target 60–90 cases. Hard cap 90. At least 25 cases are safety-critical: `safety.equipment_inheritance` is `forbidden` or `safety.forbidden_slots` is non-empty. Do not cross every term with every dialect, typo, or language.
+
+Closed seeds, family `CLOSED_CONTRACT`: `modelo es MonoSpace`; `código 8`; `ninguno` with `pending_question.type=fault_code`; `al abrir` with `choice` options `opening`/`closing`; `24 V en X7`. Each seed has 2 states.
+
+Open phrase seeds, family `OPEN_WORLD`: `el otro`, `ese de arriba`, `el de la izquierda`, `no, esa foto es del otro ascensor`, `ya lo cambié y sigue`, `¿y en el Nova?`, `mira este`, `es el anterior`. Each seed has 2 minimal contrasting states.
+
+Lexical probes, family `OPEN_WORLD`: `freno`, `relé`, `polea`, `eje`, `tubo`, `regulador`, `MaxPro`, `Nova`, `Delta`, `Mono`, `MiniSpace`. Each term has 2 contexts.
+
+Variation axes, applied only to representative cases: `typo`, `ASR-like`, `Chilean Spanish`, `Venezuelan Spanish`, `technical English`, `mixed-language`. Six axes, three cases each.
+
+Tag `no_inherited_state` on exactly 4 controls where `state.equipment` is null and `state.goal` is null.
+
+Human labels (`expected`, `safety`, `v4_expectation`) are written before any network call.
+
+### CLOSED_CONTRACT
+
+`needs_model=false` means the deterministic parser is sufficient for that case. It does not mean the harness skips the call. For P0 the harness calls Haiku on every case, so the future structural gate is measured.
+
+On `CLOSED_CONTRACT`:
+
+- `closed_parse` is produced only by the deterministic parser.
+- Haiku receives no capability credit for these cases.
+- Haiku output is scored only for `unsafe_contamination`, `closed_relation_agreement`, schema/errors, and latency/cost.
+
+The harness parser copies these from current code, or calls them:
+
+```text
+Rag::ActiveEpisodeTurn::MODEL_VALUE_RE
+Rag::ActiveEpisodeTurn::KNOWN_CODE_RE
+Rag::ActiveEpisodeTurn::ABSENT_CODE_RE
+Rag::FollowupQueryRewriter.normalize_label
+```
+
+`MODEL_VALUE_RE` runs on the raw turn, as v4 does. `KNOWN_CODE_RE` and `ABSENT_CODE_RE` run on `normalize_label`, as v4 does. `normalize_label` folds accents. Span comparison does not. Do not unify the two normalizations.
+
+A Rails test fails if those four copies diverge from v4. Limit the seed-only parsers (`ninguno` plus pending `fault_code`, `al abrir` plus choice, `24 V en X7`) to the P0 seeds. Do not build a new general parser. `ABSENT_CODE_RE` does not match bare `ninguno`; that seed stays a pending-question parse, not a change to the v4 regex.
+
+### Normalization
+
+Span comparison uses only the rule in section 4:
+
+```text
+Normalization for comparison:
+1. Unicode NFC
+2. Unicode lowercase/downcase
+3. collapse internal whitespace to one space
+4. trim whitespace
+5. trim punctuation only at the edges of the candidate span
+6. DO NOT fold accents
+```
+
+The span must remain a literal substring of the normalized turn. `"relé" != "rele"` when the model invents the accent.
+
+### Error map
+
+```text
+span no literal
+→ hallucinated_spans
+
+unknown slot
+→ invalid_schema
+
+unknown enum
+→ invalid_schema
+
+missing required key
+→ invalid_schema
+
+no semantic_perception tool_use block
+→ invalid_schema
+
+timeout
+→ transport_error
+
+5xx
+→ transport_error
+
+throttle
+→ transport_error
+
+network failure
+→ transport_error
+```
+
+An invalid output never inherits state.
+
+Parse the first content block whose `tool_use.name` is `semantic_perception`. `tool_use.input` must be a Hash. Also record `stop_reason`, AWS `metrics.latency_ms`, and local monotonic elapsed time. `semantic_analysis_ms` is the local monotonic elapsed time.
+
+### Projection and contamination
+
+```text
+projection(output):
+
+invalid output / transport error
+→ inherits_equipment = false
+→ slots = []
+
+ambiguous=true
+→ inherits_equipment = false
+→ slots = []
+
+relation=unclear
+→ inherits_equipment = false
+→ slots = []
+
+relation ∈ {continue, answer_pending}
+→ inherits_equipment = true
+
+relation ∈ {correct, switch, new}
+→ inherits_equipment = false
+
+slots
+→ validated refers_to slots
+```
+
+```text
+unsafe_contamination =
+(
+  safety.equipment_inheritance == forbidden
+  AND projection.inherits_equipment == true
+)
+OR
+(
+  projection.slots intersects safety.forbidden_slots
+)
+```
+
+No other interpretation. `ambiguous=true` is fail-closed. `unclear` is fail-closed.
+
+### Metrics
+
+Use the section 12 list. Definitions:
+
+```text
+gold = projection of expected
+      (expected rows are valid; they are not transport errors)
+
+projection_accuracy_haiku_open_world
+= OPEN_WORLD cases whose projection(model output)
+  equals gold {inherits_equipment, slots}
+  / OPEN_WORLD case count
+
+projection_accuracy_v4_open_world
+= OPEN_WORLD cases whose v4_expectation
+  {inherits_equipment, slots} equals that same gold
+  / OPEN_WORLD case count
+
+relation_accuracy
+= OPEN_WORLD cases with exact relation match
+  / OPEN_WORLD case count
+  invalid or transport = miss
+
+slot_accuracy
+= OPEN_WORLD cases whose validated refers_to slot set
+  equals the expected refers_to slot set
+  / OPEN_WORLD case count
+  invalid or transport = miss
+
+ambiguous_surfaced
+= cases with expected.ambiguous=true and output.ambiguous=true
+  / cases with expected.ambiguous=true
+  invalid output does not count as surfaced
+
+closed_relation_agreement
+= CLOSED_CONTRACT cases whose output.relation
+  equals expected.relation
+  / CLOSED_CONTRACT case count
+  this is agreement, not capability credit
+
+invalid_schema, hallucinated_spans, transport_error
+= counts, plus transport_error as a fraction of cases
+
+input_tokens, output_tokens, cost_usd, semantic_analysis_ms
+= per case, from the Converse response and the local clock
+```
+
+Mention match, no partial credit:
+
+```text
+normalized output span ∈
+{ expected.span } ∪ expected.acceptable_spans
+AND role matches exactly
+```
+
+### v4 baseline
+
+`ActiveEpisodeTurn.call` is pure. The class comment states that nothing there is persisted. P0 may call it. P0 must not call `ConversationSession#record_user_turn!`.
+
+```ruby
+Rag::ActiveEpisodeTurn.call(
+  state: episode_hash,
+  text: turn,
+  enabled: true,
+  shared: false,
+  now: FIXED_TIME
+)
+```
+
+`FIXED_TIME` is `Time.utc(2026, 9, 25, 15, 0, 0)`. The test adapter builds a v1 episode hash with `episode_id` `ep_p0`, `updated_at` and `opened_at` at `FIXED_TIME`, `facts.manufacturer` / `facts.model` from non-null `state.equipment` values (`status` `known`), `goal.text` from `state.goal` when present, and `pending_fact.subject` only when `state.pending_question.type` is `manufacturer`, `model`, or `fault_code`. Observations and `active_referent` are not written. v4 does not address observation slots.
+
+Recomputed expectation:
+
+```text
+slots = []
+inherits_equipment = true iff at least one of manufacturer or model
+  was non-null on the input and every such non-null value is still
+  that same known value on result.state
+```
+
+The Minitest fails if the handwritten `v4_expectation` disagrees on `inherits_equipment` or `slots`. The network script scores Haiku against the handwritten label. The test is what keeps that label equal to real v4, so the comparison does not favor Haiku by a hand-tuned baseline.
+
+### Prompt
+
+The prompt is a constant inside the harness. Freeze it before any network call. It must contain, literally:
+
+- the `relation` definitions from section 4;
+- the span normalization rule;
+- the rule that the model must not invent strings;
+- the ambiguity fail-closed rule, including `unclear`;
+- the output schema.
+
+Do not put few-shot examples taken from the corpus in the prompt.
+
+### Catalog
+
+P0 does not call `KbDocumentResolver`. Score `role` against the human label. Catalog validation is later runtime.
+
+### Model and client
+
+P0 uses this model id literally:
+
+```text
+global.anthropic.claude-haiku-4-5-20251001-v1:0
+```
+
+No `ENV` fallback. No credentials fallback. Do not change the model during the run.
+
+Create the client with:
+
+```ruby
+retry_limit: 0,
+max_attempts: 1,
+http_open_timeout: 2,
+http_read_timeout: 8
+```
+
+Zero retries must be real. Temperature 0. `maxTokens` 300. Tool name `semantic_perception`. `tool_choice` forced to that tool.
+
+Harness price constants:
+
+```text
+input_usd_per_mtoken = 1
+output_usd_per_mtoken = 5
+cost_usd = (input_tokens / 1_000_000.0) * 1 + (output_tokens / 1_000_000.0) * 5
+```
+
+The plain Ruby script must not load `BedrockQuery`. The Rails test asserts equality against `BedrockQuery::BEDROCK_PRICING` for that model id: `pricing[:input] * 1000 == 1` and `pricing[:output] * 1000 == 5`.
+
+### Recommendation rule
+
+Pre-registered rule:
+
+```text
+PROCEED_RECOMMENDED
+iff
+unsafe_contamination == 0
+AND
+projection_accuracy_haiku_open_world >
+projection_accuracy_v4_open_world
+AND
+transport_error <= 5%
+```
+
+Otherwise `STOP_RECOMMENDED`. This is a harness recommendation. It does not authorize P1. When P0 ends:
+
+```text
+Decision = PENDING_HUMAN
+Recommendation = PROCEED_RECOMMENDED | STOP_RECOMMENDED
+```
+
+A human authorizes the next phase.
+
+### Commits
+
+P0 is not one commit.
+
+Plan v2 commit, before P0, this file only. After that commit, replace `BASELINE_COMMIT` with its hash before P0 starts. Do not commit that replacement by itself.
+
+Commit A, only these paths:
+
+```text
+script/fixtures/haiku_semantic_perception_p0.jsonl
+script/haiku_semantic_perception_p0.rb
+test/scripts/haiku_semantic_perception_p0_test.rb
+```
+
+Then STOP. Before any network call, a human reviews `expected`, `safety`, `v4_expectation`, and the prompt. Record in this file:
+
+```text
+P0_CORPUS_SHA256:
+PENDING_COMMIT_A_AND_HUMAN_REVIEW
+
+P0_PROMPT_SHA256:
+PENDING_COMMIT_A_AND_HUMAN_REVIEW
+
+P0_LABEL_REVIEW:
+PENDING_HUMAN
+```
+
+Fill the two hashes from the committed corpus bytes and the frozen prompt constant, and set `P0_LABEL_REVIEW` to `APPROVED_BY_HUMAN`, only after that review. Only then run the network pass. One network run.
+
+After the first network call, do not modify the corpus, the prompt, `expected`, or safety labels. If a label is wrong, write it under Unexpected findings and stop or reclassify the experiment. Do not correct it silently.
+
+Commit B, after the run, modifies only this document, with:
+
+```text
+Results
+Metrics
+Unexpected findings
+Recommendation
+PHASE_COMMIT = Commit A
+PHASE_TEST_RESULT
+PHASE_METRICS
+Decision = PENDING_HUMAN
+```
+
+Do not try to make a commit contain its own hash. `PHASE_COMMIT` is Commit A's hash, written by Commit B.
+
+### Git safety
+
+Never use:
+
+```text
+git add -A
+git add .
+git commit -a
+git checkout
+git restore
+git stash
+git clean
+```
+
+Stage only exact paths. Before each commit, `git diff --cached --name-only` must match the authorized paths exactly. If it does not, STOP.
+
+### Exact implementation steps
+
+1. Confirm the plan-only commit is done and `BASELINE_COMMIT` is that hash.
+2. Confirm `git status --short` is the section 1 foreign files, the uncommitted `BASELINE_COMMIT` line in this document, and the new harness files only.
+3. Write the JSONL with the fixture shape, corpus composition, and derived slots above.
+4. Put the frozen prompt constant and the Converse client in the harness.
+5. Implement validation, the error map, projection, and the metrics.
+6. Copy the four closed-parser constants. Keep seed-only parsers on the five closed seeds.
+7. Add the Minitest that recomputes `v4_expectation`.
+8. Commit A. STOP for human label and prompt review. Record the SHA256 fields and `P0_LABEL_REVIEW`.
+9. Run the single network command. Write `tmp/haiku_semantic_perception_p0_report.json` (gitignored tmp). Do not write under `bulk_chunks/`.
+10. Commit B updates this document from that report. Do not start P1.
+
+### Contract after this phase
+
+The JSON schema in section 4 is the perception contract. `ConversationalTurnAnalysis` still does not exist under `app/`. No session row changes. No query text changes.
+
+### Tests to add/change
+
+`test/scripts/haiku_semantic_perception_p0_test.rb`, no network (`HAIKU_SEMANTIC_P0_LIBRARY_ONLY=1`):
+
+- JSONL line has `state`, `expected`, `safety`, `v4_expectation`, and no manual `slots` key.
+- Derived slots match `state` and reject an unknown slot as `invalid_schema`.
+- A non-literal span is `hallucinated_spans`. `"relé"` does not match `"rele"`.
+- Unknown enum and missing required key are `invalid_schema`.
+- Missing `semantic_perception` tool_use block is `invalid_schema`.
+- Invalid output projects to `inherits_equipment=false` and `slots=[]`.
+- `unsafe_contamination` matches only the formula in this section.
+- Closed parser: `modelo es MonoSpace` via `MODEL_VALUE_RE`; `código 8` via `KNOWN_CODE_RE`; `ninguno` plus `fault_code` → absent; `al abrir` plus choice → opening; `24 V en X7` → 24 / V / X7.
+- Copied `MODEL_VALUE_RE`, `KNOWN_CODE_RE`, `ABSENT_CODE_RE`, and `normalize_label` match v4.
+- Handwritten `v4_expectation` matches `ActiveEpisodeTurn.call` on `inherits_equipment` and `slots=[]`.
+- Prompt constant contains the relation definitions, span rule, no-invented-strings rule, fail-closed rule, and schema, and contains no corpus few-shot.
+- Model id constant is the literal global Haiku id.
+- Client options are `retry_limit: 0`, `max_attempts: 1`, `http_open_timeout: 2`, `http_read_timeout: 8`.
+- Price constants equal `BEDROCK_PRICING` after the ×1000 unit conversion. The script source does not reference `BedrockQuery`.
+- Script does not reference `bulk_chunks` or `KbDocumentResolver`.
+- `tool_config` payload forces a single tool.
+
+Existing v4 tests are not modified. Run them as a regression check.
+
+### Commands to run
+
+```bash
+git status --short
+env -u BUNDLE_PATH bin/rails test test/scripts/haiku_semantic_perception_p0_test.rb
+env -u BUNDLE_PATH bin/rails test \
+  test/services/rag/active_episode_turn_test.rb \
+  test/models/conversation_session_test.rb \
+  test/controllers/concerns/rag_query_concern_test.rb
+```
+
+Network run, only after Commit A, human review, and the SHA256 / `P0_LABEL_REVIEW` record:
+
+```bash
+env -u BUNDLE_PATH bundle exec ruby script/haiku_semantic_perception_p0.rb
+```
+
+That command is the only network step. If credentials are missing, stop and record that. Do not stub a fake success into Results.
+
+### Telemetry
+
+Per case: `semantic_analysis_ms` (local monotonic), AWS `metrics.latency_ms`, `stop_reason`, `input_tokens`, `output_tokens`, `cost_usd` from the harness constants, plus the error classes. Aggregate p50/p95 of `semantic_analysis_ms` on this sample only. No `retrieve_ms`. No DB log row.
+
+### Expected artifacts
+
+- Commit A: corpus, harness, tests.
+- Local report under `tmp/`, not committed if `tmp/` is ignored.
+- Commit B: metric summary, recommendation, and `Decision=PENDING_HUMAN` in this document.
+
+### Exit criteria
+
+- Harness tests green before the network run.
+- Focused v4 slice green before the network run.
+- One network run after the label freeze.
+- Results, metrics, unexpected findings, and recommendation written into this document.
+- `Decision` remains `PENDING_HUMAN`.
+
+### Rollback
+
+Delete the three Commit A files and revert the Commit B edit to this document. No runtime rollback exists because runtime did not change.
+
+### Stop conditions
+
+On the first call, STOP if any of these occur:
+
+```text
+ValidationException
+AccessDenied
+missing credentials
+tool_config/tool_choice rejection
+model/profile unavailable
+```
+
+No pivot. No model change. No SDK change. No Batch.
+
+During the run, `transport_error > 5%` means STOP and report an infrastructure failure, not a quality result.
+
+Also stop when:
+
+- `unsafe_contamination > 0` (recommendation becomes `STOP_RECOMMENDED`; decision stays `PENDING_HUMAN`).
+- Any write to `app/`, prompts, Gemfile, `script/AGENTS.md`, or the foreign worktree files.
+- A case requires an architectural choice not written in this document.
+- A label looks wrong after the first network call. Record it under Unexpected findings. Do not edit the label.
+
+### Risks
+
+Tool-call wrapping inflates output tokens versus native `output_config`. That is accepted for P0 measurement. The corpus is small and hand-labeled; it can overfit the prompt. Record that limit in Results.
+
+### Must NOT do
+
+- No state mutation, no controller edit, no orchestrator edit, no prompt edit under `app/prompts`.
+- No AWS Batch, no S3 invocation job.
+- No second semantic object besides the harness-local schema.
+- No edit to `query_analysis.rb`.
+- No `KbDocumentResolver` call.
+- No speculative RetrieveAndGenerate.
+- No commit of foreign worktree files.
+- No silent label edit after the first network call.
+- No `git add -A`, `git add .`, `git commit -a`, `git checkout`, `git restore`, `git stash`, or `git clean`.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Recommendation
+TBD
+
+### Decision
+PENDING_HUMAN after the run. Leave this block TBD until Commit B, then set `PENDING_HUMAN`. Do not set `proceed`.
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+```text
+P0_CORPUS_SHA256:
+PENDING_COMMIT_A_AND_HUMAN_REVIEW
+
+P0_PROMPT_SHA256:
+PENDING_COMMIT_A_AND_HUMAN_REVIEW
+
+P0_LABEL_REVIEW:
+PENDING_HUMAN
+```
+
+### EXECUTION PROMPT — PHASE P0
+
+```text
+Read sections 1, 4, 12 and the complete P0 section before coding.
+If summaries conflict, P0 is authoritative.
+Historical v1 is not implementation authority.
+
+You are implementing P0 of docs/PLAN_HAIKU_SEMANTIC_QUERY_ANALYSIS_2026-09-24.md only.
+
+Branch: experiment/haiku-semantic-query-analysis
+Plan baseline: BASELINE_COMMIT in that document, after the plan-only commit has replaced PENDING_PLAN_V2_COMMIT.
+Do not start if BASELINE_COMMIT is still PENDING_PLAN_V2_COMMIT.
+Architecture: HYBRID_MINIMAL (closed; do not revisit)
+Query analysis: DECISION B. Do not edit app/services/rag/query_analysis.rb.
+Do not create Rag::ConversationalTurnAnalysis under app/ in this phase.
+
+Commit A, before any network call, only:
+- script/fixtures/haiku_semantic_perception_p0.jsonl
+- script/haiku_semantic_perception_p0.rb
+- test/scripts/haiku_semantic_perception_p0_test.rb
+
+Then STOP. A human reviews expected, safety, v4_expectation, and the prompt.
+Record P0_CORPUS_SHA256, P0_PROMPT_SHA256, and P0_LABEL_REVIEW=APPROVED_BY_HUMAN.
+Only then run the single network command.
+
+Commit B, after the run, only:
+- docs/PLAN_HAIKU_SEMANTIC_QUERY_ANALYSIS_2026-09-24.md
+with Results, Metrics, Unexpected findings, Recommendation,
+PHASE_COMMIT = Commit A, PHASE_TEST_RESULT, PHASE_METRICS,
+Decision = PENDING_HUMAN.
+
+The recommendation does not authorize P1.
+
+Forbidden:
+- app/**, config/**, db/**, Gemfile, Gemfile.lock, prompts, script/AGENTS.md
+- docs/PLAN_PILOTO_ELEMONT_2026-09-24.md
+- docs/ARCH_REVIEW_CONVERSATIONAL_VS_HAIKU_2026-09-25.md
+- script/patch_elemont_*.rb
+- bulk_chunks/, AWS Batch, RetrieveAndGenerate, state mutation, KbDocumentResolver
+- git add -A, git add ., git commit -a, git checkout, git restore, git stash, git clean
+
+Before each commit, git diff --cached --name-only must match the authorized paths exactly. If it does not, STOP.
+
+Contract:
+- model id literal: global.anthropic.claude-haiku-4-5-20251001-v1:0
+- no ENV fallback, no credentials fallback
+- client: retry_limit 0, max_attempts 1, http_open_timeout 2, http_read_timeout 8
+- temperature 0, maxTokens 300, zero retries, tool semantic_perception forced
+- prompt constant frozen before the network call; no corpus few-shot
+- user message: {"turn","state","slots"} with slots derived from state
+- schema: relation, mentions[{span,role}], refers_to[{span,slot}], ambiguous
+- span normalization in section 4; do not fold accents
+- error map, projection, and unsafe_contamination formula in the P0 section
+- call Haiku for every case; needs_model=false does not skip the call
+- closed_parse only from the deterministic parser; no Haiku capability credit on CLOSED_CONTRACT
+- copy MODEL_VALUE_RE, KNOWN_CODE_RE, ABSENT_CODE_RE, normalize_label
+- v4_expectation recomputed by ActiveEpisodeTurn.call; do not call record_user_turn!
+- price constants 1 and 5 USD per MTok; Rails test checks BEDROCK_PRICING; script does not load BedrockQuery
+
+Rails tests use: env -u BUNDLE_PATH bin/rails test ...
+Network, once: env -u BUNDLE_PATH bundle exec ruby script/haiku_semantic_perception_p0.rb
+
+PROCEED_RECOMMENDED only when unsafe_contamination==0
+and projection_accuracy_haiku_open_world > projection_accuracy_v4_open_world
+and transport_error<=5%.
+Otherwise STOP_RECOMMENDED.
+Decision stays PENDING_HUMAN.
+On the first call, stop on ValidationException, AccessDenied, missing credentials,
+tool_config/tool_choice rejection, or model/profile unavailable.
+Do not pivot model, SDK, or Batch.
+If transport_error>5% during the run, stop and report infrastructure failure.
+```
+
+---
+
+## P1 — local shadow analyzer
+
+### Hypothesis
+
+The same contract can run on the live request path without changing `composed`, `active_episode`, or the RAG query, and every analyzer failure leaves v4 behavior intact.
+
+### Why this phase exists
+
+P0 does not measure request-path wiring, timeout behavior, or log shape. Shadow does, without transferring ownership.
+
+### Preconditions
+
+- A human has authorized P1 in this file after P0 `Decision=PENDING_HUMAN` was reviewed. The harness recommendation does not authorize P1.
+- This prompt's "not authorized" line has been removed in the same edit that records that human authorization.
+- P0 recorded `unsafe_contamination=0` and real token numbers.
+
+### Exact scope
+
+Shadow flag default off. When `HAIKU_QUERY_ANALYSIS_MODE=shadow`, call the analyzer before `record_user_turn!` on text turns that pass the structural gate. Pass the object through. `ActiveEpisodeTurn` ignores it. Effective query stays v4. Log one structured event. No retrieval change.
+
+### Files to CREATE
+
+- `app/services/rag/conversational_turn_analysis.rb`
+- `app/services/rag/semantic_query_analyzer.rb`
+- `app/services/rag/haiku_query_analysis_flag.rb`
+- matching tests under `test/services/rag/`
+
+### Files to MODIFY
+
+- `app/controllers/rag_controller.rb` (call site only)
+- `app/controllers/concerns/rag_query_concern.rb` (accept and ignore the object)
+- `app/services/bedrock_client.rb` (add `converse` JSON/tool method; do not change `generate_text` defaults)
+- this document
+
+### Files READ_ONLY
+
+- `app/services/rag/query_analysis.rb`
+- `app/services/rag/query_entities.rb`
+- `app/services/rag/active_episode_turn.rb` except a test seam if required to ignore the object without changing decisions
+- generation prompts
+
+### Files OUT_OF_SCOPE
+
+Foreign worktree list. `technical_referent_resolver.rb` behavior. `generation.txt`. Gemfile unless P0 Results explicitly say `tool_config` cannot encode the schema and a recorded decision authorizes an SDK bump. Orchestrator routing. Batch.
+
+### Exact implementation steps
+
+1. Flag enum `off|shadow|conditional|always`. Unknown string = `off`. P1 runtime only honors `off` and `shadow`. `conditional` and `always` are accepted by the parser and behave as `off`.
+2. Analyzer builds `ConversationalTurnAnalysis` only after span and slot validation. Invalid, timeout, 5xx, throttle → nil. Zero retries.
+3. Controller calls it only for the structural gate. Shadow does not change `record_user_turn!` arguments that affect state.
+4. Concern keeps `episode_turn.composed || raw`.
+5. Log: correlation_id, analyzer_status, relation, ambiguous, semantic_analysis_ms, input_tokens, output_tokens, cost_usd. No transcript body, no photos, no prompt text.
+
+### Contract after this phase
+
+Request-scoped `ConversationalTurnAnalysis` exists. State and query match v4 for the same turn. `QueryAnalysis` unchanged.
+
+### Tests to add/change
+
+Flag default off. Garbage flag off. Shadow with a hostile analysis does not change `composed` or episode facts versus v4. Timeout and invalid span yield nil and v4. No network in tests.
+
+### Commands to run
+
+```bash
+bin/rails test test/services/rag/semantic_query_analyzer_test.rb \
+  test/services/rag/haiku_query_analysis_flag_test.rb \
+  test/services/rag/active_episode_turn_test.rb \
+  test/models/conversation_session_test.rb \
+  test/controllers/concerns/rag_query_concern_test.rb
+```
+
+### Telemetry
+
+`semantic_analysis_ms` on the shadow log event. `state_ms` not split yet. No percentile store. Do not add a table.
+
+### Expected artifacts
+
+Shadow classes, tests, one commit, Results filled.
+
+### Exit criteria
+
+v4 slice green. 100% of injected analyzer failures stay on v4 in tests. Shadow mode does not change composed query in tests. P0 gate still the last measured contamination number; P1 does not claim a new contamination rate without a labeled sample.
+
+### Rollback
+
+Flag default `off`. Revert the commit. No data migration.
+
+### Stop conditions
+
+Any test shows composed query or episode facts changed in shadow. Any write to foreign files. Temptation to honor `conditional` early.
+
+### Risks
+
+Synchronous shadow adds latency on gated turns even though the answer is v4. Timeout must be the P0 p95 plus margin recorded in P0 Results, else 8s is too slow for a user-facing shadow and the phase stops to record a lower timeout before enabling the flag anywhere but local.
+
+### Must NOT do
+
+No episode mutation from the analysis. No retrieval change. No heuristic deletion. No `conditional` behavior.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Decision
+TBD
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+### EXECUTION PROMPT — PHASE P1
+
+```text
+NOT AUTHORIZED until a human, after P0 Decision=PENDING_HUMAN, authorizes P1 in this document. A harness recommendation does not authorize P1. P0 must have recorded unsafe_contamination=0.
+
+When authorized: implement P1 local shadow only, on experiment/haiku-semantic-query-analysis, from the P0 PHASE_COMMIT.
+Create ConversationalTurnAnalysis, SemanticQueryAnalyzer, HaikuQueryAnalysisFlag.
+Wire RagController and RagQueryConcern so shadow logs and ignores the object.
+Do not edit query_analysis.rb, query_entities.rb, generation prompts, or the foreign worktree files.
+Do not change composed queries or active_episode.
+conditional and always parse but behave as off.
+Zero retries. Failures yield nil and v4.
+Commit one logical commit. Fill P1 result blocks. Do not start P2.
+```
+
+---
+
+## P2 — pending-question contract
+
+### Hypothesis
+
+Typed pending questions can be emitted by Ruby on routes that already know the question, without a new model call and without breaking RetrieveAndGenerate citations.
+
+### Why this phase exists
+
+`write_pending!` recovers only manufacturer, model, and fault_code by scanning prose. Choice answers and explicit absence need a machine-readable question. Section 8 is the route map.
+
+### Preconditions
+
+P1 exit criteria recorded. Perception still does not own state.
+
+### Exact scope
+
+Add `pending_question` on the assistant-turn write path for deterministic routes and for Structured/Context routes only when the route already knows the question type in Ruby. RetrieveAndGenerate and document-identity generation keep the prose scan. No JSON inside cited answers.
+
+### Files to CREATE
+
+- `app/services/rag/pending_question.rb` (value object + closed parsers for `ninguno` and choice)
+- tests
+
+### Files to MODIFY
+
+- `app/services/rag/active_episode.rb` (sanitize an optional `pending_question` beside `pending_fact`, within the 2048-byte budget)
+- `app/services/rag/active_episode_turn.rb` (`write_pending!` stores the object when the caller passes one; prose scan remains the fallback)
+- `app/models/conversation_session.rb` (pass through the object on assistant record)
+- deterministic / structured / context route files that already ask a typed question
+- this document
+
+### Files READ_ONLY
+
+- `app/services/bedrock_rag_service.rb` RetrieveAndGenerate citation path
+- `generation.txt`
+- `query_analysis.rb`
+
+### Files OUT_OF_SCOPE
+
+Foreign worktree. Semantic ownership. Heuristic deletion. SDK bump. Speculative retrieve.
+
+### Exact implementation steps
+
+1. Implement the value object with types `fault_code`, `manufacturer`, `model`, `choice`, `absent`.
+2. Thread it from route result to `record_assistant_turn!` when the route set it.
+3. Leave RetrieveAndGenerate citations untouched.
+4. Closed parsers: fault_code + `ninguno` → absent; choice + option text → that option. These parsers do not call a model.
+5. Measure episode bytes. If `shrink_to_budget!` drops identifiers in existing tests, stop and drop the persisted field rather than evicting identifiers.
+
+### Contract after this phase
+
+Assistant turns from covered routes persist `pending_question`. Perception may read it in a later phase. It does not write it.
+
+### Tests to add/change
+
+Parser cases. Budget test. RetrieveAndGenerate response text unchanged when a pending question exists. Prose scan still sets manufacturer/model/fault_code when no structured object was passed.
+
+### Commands to run
+
+Focused episode, session, route, and prompt tests that already cover citations.
+
+### Telemetry
+
+Log `pending_question_type` on the episode turn log. No new table.
+
+### Expected artifacts
+
+One commit. Results note which routes emit the object and which still use prose.
+
+### Exit criteria
+
+No citation test regression. No new model call. Byte budget holds on existing episode fixtures.
+
+### Rollback
+
+Revert the commit. `pending_fact` prose path is still there.
+
+### Stop conditions
+
+Citation spans shift. Episode eviction of identifiers. A proposal to put JSON in the RetrieveAndGenerate answer.
+
+### Risks
+
+Two pending representations (`pending_fact` and `pending_question`) during the overlap. The prose path remains fallback only, and the structured object wins when both exist.
+
+### Must NOT do
+
+No second LLM call to classify the assistant question. No edit to citation instructions.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Decision
+TBD
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+### EXECUTION PROMPT — PHASE P2
+
+```text
+NOT AUTHORIZED until P1 exit criteria are written in this document.
+
+Implement only the pending_question contract from section 8.
+Ruby emits it where the route already knows the question.
+Do not add a model call. Do not modify RetrieveAndGenerate citation text.
+Do not transfer semantic ownership. Do not delete heuristics.
+One commit. Fill P2 blocks. Do not start P3.
+```
+
+---
+
+## P3 — first semantic ownership slice
+
+### Hypothesis
+
+For one open-world family only, validated perception can decide relation (`switch` / `correct` / `unclear`) without unsafe inheritance, while v4 still decides every other turn.
+
+### Why this phase exists
+
+Shadow does not prove the state machine can consume perception. A single family limits blast radius.
+
+### Preconditions
+
+P0 contamination 0. P1 shadow failure-to-v4 proven. P2 pending contract recorded. The family is chosen from P0 Results and written here before implementation. Default family if P0 does not override it: explicit equipment switch / correction (`switch`, `correct`), not deixis.
+
+### Exact scope
+
+When the flag is `conditional` and the structural gate is on and the validated relation is `switch` or `correct` or `ambiguous=true`, Ruby applies only the policies already in v4 for explicit correction and context break. `ambiguous=true` clears inheritance for that turn and does not copy a referent. No other relation changes state. Catalog validation required before any model mention becomes manufacturer or model.
+
+### Files to CREATE
+
+Tests for the slice only.
+
+### Files to MODIFY
+
+- `app/services/rag/active_episode_turn.rb`
+- `app/services/rag/haiku_query_analysis_flag.rb` (honor `conditional` for this slice only)
+- this document
+
+### Files READ_ONLY
+
+- `query_analysis.rb`, prompts, retrieval profile, foreign worktree, `technical_referent_resolver.rb` except reading its existing break/correction results
+
+### Files OUT_OF_SCOPE
+
+Deixis persistence, component slot, `FollowupQueryRewriter` deletion, retrieval parallelism, hands-free.
+
+### Exact implementation steps
+
+1. Write the chosen family into this section from P0 Results before coding.
+2. On `conditional`, apply the slice. All other relations: ignore perception and use v4.
+3. Catalog/extractor veto beats the model.
+4. Hostile tests: model says continue when the turn is an explicit correction; model says a model name not in the turn; model says ambiguous. v4 invariants in historical section 19 still hold.
+
+### Contract after this phase
+
+One slice of state listens to validated perception. Fallback for analyzer failure on that slice is validated facts + raw turn, or clarification if the turn is not self-contained. Not v4 semantic inheritance.
+
+### Tests to add/change
+
+Hostile analyzer stubs for every historical section 19 invariant that the slice could touch. Catalog miss does not persist identity.
+
+### Commands to run
+
+Episode turn tests plus the new slice tests.
+
+### Telemetry
+
+Log `ownership_slice=switch_correct` and whether perception was applied or ignored.
+
+### Expected artifacts
+
+One commit. Family name recorded.
+
+### Exit criteria
+
+`unsafe_contamination=0` on the P0 corpus replay for this slice (offline replay, not a new live gate) and v4 tests green. Any new contamination stops the phase.
+
+### Rollback
+
+Flag back to `shadow` or `off`. Revert the commit.
+
+### Stop conditions
+
+Slice needs a new state field. Slice needs a retrieval change. Contamination non-zero.
+
+### Risks
+
+The default family might be too small to show value. That is an acceptable stop, recorded as Decision, not a reason to widen the slice in the same commit.
+
+### Must NOT do
+
+No heuristic deletion. No deixis. No effective-query change.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Decision
+TBD
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+### EXECUTION PROMPT — PHASE P3
+
+```text
+NOT AUTHORIZED until P2 exit is recorded and this section names the single family.
+
+Implement only that family under HAIKU_QUERY_ANALYSIS_MODE=conditional.
+Ruby and catalog remain authority. Analyzer failure does not inherit v4 semantics for this slice.
+Do not change retrieval, prompts, QueryAnalysis, or foreign files.
+One commit. Do not start P4.
+```
+
+---
+
+## P4 — minimal state evolution
+
+### Hypothesis
+
+`active_referent` plus the existing `pending_question` and observation ids are sufficient for `refers_to` to address "el otro" / "ese" / "la anterior" without a procedure ontology.
+
+### Why this phase exists
+
+P0 can score pointers against slots derived from fixture state. Production cannot point at a slot that is not stored. This phase adds only slots a demonstrated consumer reads.
+
+### Preconditions
+
+P3 exit recorded. P0 report shows `refers_to` cases with zero hallucinated slots. A consumer is named in Results before coding (effective query or clarification). If no consumer is demonstrated, skip the phase and record Decision=skip.
+
+### Exact scope
+
+Persist `active_referent` as `{head, correlation_id}` only if a consumer in this phase reads it. Reuse observation ids that photo recording already stores. Do not add procedure, step, or measurement history.
+
+### Files to CREATE
+
+Tests only.
+
+### Files to MODIFY
+
+- `app/services/rag/active_episode.rb`
+- the single consumer named in the precondition
+- this document
+
+### Files READ_ONLY
+
+Retrieval services, prompts, QueryAnalysis, foreign worktree.
+
+### Files OUT_OF_SCOPE
+
+`current_procedure`, measurement history, hypothesis graph, hands-free ASR.
+
+### Exact implementation steps
+
+1. Name the consumer in this section.
+2. Add the smallest hash that consumer reads.
+3. Re-check 2048-byte shrink behavior.
+4. Semantic model still cannot write the slot. Ruby writes it from a validated mention.
+
+### Contract after this phase
+
+Addressable slots in production match the minimum list in section 4, or the phase is skipped.
+
+### Tests to add/change
+
+Budget, unknown slot rejected, explicit switch clears `active_referent`.
+
+### Commands to run
+
+Episode tests and the consumer's tests.
+
+### Telemetry
+
+`active_referent_present` boolean on the turn log. No raw span text if it duplicates history.
+
+### Expected artifacts
+
+One commit or an explicit skip decision.
+
+### Exit criteria
+
+Consumer test proves the slot is read. Budget holds. Contamination replay still 0.
+
+### Rollback
+
+Revert. Empty referent means previous behavior.
+
+### Stop conditions
+
+Budget eviction. No consumer. Proposal to store a procedure graph.
+
+### Risks
+
+Slot unused and still eating bytes. Prefer skip over an unread field.
+
+### Must NOT do
+
+No ontology. No unread JSON.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Decision
+TBD
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+### EXECUTION PROMPT — PHASE P4
+
+```text
+NOT AUTHORIZED until this section names one consumer or records Decision=skip.
+
+If skip: do not code. If not skip: persist only active_referent as specified, for that consumer.
+Do not add procedure state. One commit. Do not start P5.
+```
+
+---
+
+## P5 — retire duplicate semantic heuristics
+
+### Hypothesis
+
+One heuristic family can be deleted when perception plus Ruby policy covers its tests, without a second semantic engine left behind.
+
+### Why this phase exists
+
+Haiku plus `common_noun?` plus `FollowupQueryRewriter` must not remain the steady state.
+
+### Preconditions
+
+P3 ownership slice stable. The family to remove is the first row below, unless P3 Results name a different first family.
+
+Order, one family per commit, each its own future execution after the previous Results:
+
+1. `common_noun?` and `identity_complement?`
+2. `unreaffirmed_name?`
+3. `technical_nps` limited to `ajust*`
+4. duplicated continuity cues
+5. `FollowupQueryRewriter` as a semantic composer, only when episode and no-episode paths share one composer
+
+### Exact scope
+
+The first family only, in the first authorized P5 commit.
+
+### Files to CREATE
+
+None unless a test file move is required.
+
+### Files to MODIFY
+
+- `app/services/rag/technical_referent_resolver.rb`
+- its tests
+- this document
+
+### Files READ_ONLY
+
+QueryAnalysis, prompts, retrieval, foreign worktree.
+
+### Files OUT_OF_SCOPE
+
+Families 2–5 in the same commit. Latency work. Hands-free.
+
+### Exact implementation steps
+
+1. Confirm coverage exists for the family in episode tests and the P0 corpus.
+2. Delete only that family.
+3. Keep provenance, recency, atomic persist, coordination limits, and the 442-character cap.
+
+### Contract after this phase
+
+That family is gone. Perception plus Ruby policy covers it. Other heuristics remain until their own commit.
+
+### Tests to add/change
+
+Existing hostile tests updated to the new owner. No loss of contamination cases.
+
+### Commands to run
+
+Resolver and episode turn tests.
+
+### Telemetry
+
+Log `heuristic_family_retired=common_noun` once in the commit message and the plan, not per request.
+
+### Expected artifacts
+
+One commit per family.
+
+### Exit criteria
+
+Tests green. No path still calls the deleted method. Contamination replay 0.
+
+### Rollback
+
+Revert that commit only.
+
+### Stop conditions
+
+A case only the regex resolved, with no perception coverage. Stop and record it. Do not reintroduce the regex in the same commit as a silent fallback.
+
+### Risks
+
+Hidden caller of `common_noun?`. Grep before delete.
+
+### Must NOT do
+
+Do not delete all families at once. Do not keep the method as an automatic fallback.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Decision
+TBD
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+### EXECUTION PROMPT — PHASE P5
+
+```text
+NOT AUTHORIZED until P4 Decision is recorded (including skip).
+
+Remove only common_noun? and identity_complement?, unless this section was edited to name another single family.
+Grep for callers first. Do not remove FollowupQueryRewriter in this commit.
+One commit. Do not start P6.
+```
+
+---
+
+## P6 — retrieval latency optimization
+
+### Hypothesis
+
+After correctness, a gated turn can overlap perception with an explicit Retrieve of the raw turn only when a structural fingerprint says retrieval meaning did not change.
+
+### Why this phase exists
+
+Serial perception adds latency on top of RetrieveAndGenerate. Overlap is only safe for explicit Retrieve, never for speculative RetrieveAndGenerate.
+
+### Preconditions
+
+P5 first family retired or explicitly deferred with a reason. Contamination still 0. Latency numbers from P1 shadow exist.
+
+### Exact scope
+
+Measure `semantic_analysis_ms`, `state_ms`, `retrieve_ms`, `generation_ms`/`rag_ms`, `total_ms`. Optional experiment: parallel explicit Retrieve when there is no inherited state and the fingerprint matches. Default remains serial. Do not change `top_k`, filters, or reranker.
+
+### Files to CREATE
+
+A benchmark script sibling of `script/rag_quality_benchmark.rb` only if measurement cannot be done with existing logs.
+
+### Files to MODIFY
+
+Telemetry call sites already logging latency, and this document.
+
+### Files READ_ONLY
+
+Reranker, generation prompt, QueryAnalysis, foreign worktree.
+
+### Files OUT_OF_SCOPE
+
+Speculative RetrieveAndGenerate. Reranker enablement. Embedding changes.
+
+### Exact implementation steps
+
+1. Add phase timings where the route already has a clock. For RetrieveAndGenerate record `rag_ms`, not a fake split.
+2. Report p50/p95/p99 per route. Do not sum percentiles.
+3. Parallel explicit Retrieve stays behind a default-off flag and only when fingerprint fields match: equipment, component span, fault, constraints. Deixis, correction, switch, ambiguity, photo scope change: discard.
+
+### Contract after this phase
+
+Timings exist. Retrieval architecture unchanged unless the fingerprint experiment's Decision says otherwise, in a later prompt.
+
+### Tests to add/change
+
+Fingerprint mismatch discards raw retrieve. No test calls RetrieveAndGenerate speculatively.
+
+### Commands to run
+
+Route tests plus the benchmark script if created.
+
+### Telemetry
+
+The five clocks above, plus `speculative_retrieve=reused|discarded|off`.
+
+### Expected artifacts
+
+Metrics in this document. Code commit only if timings or the flag landed.
+
+### Exit criteria
+
+p50/p95/p99 recorded per route on a stated sample. No correctness regression on the v4 slice.
+
+### Rollback
+
+Flag off. Revert timing-only commit if it changes behavior.
+
+### Stop conditions
+
+Any proposal to speculative-RetrieveAndGenerate. Fingerprint undefined for a field that changes meaning.
+
+### Risks
+
+Parallel retrieve wasted spend when meaning changes. Discard default keeps that off until measured.
+
+### Must NOT do
+
+No correctness work disguised as latency work. No reranker.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Decision
+TBD
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+### EXECUTION PROMPT — PHASE P6
+
+```text
+NOT AUTHORIZED until P5 Results are recorded.
+
+Instrument phase latencies. Do not enable parallel retrieve unless this section is edited with an explicit Decision=allow_parallel_explicit_retrieve.
+Never call RetrieveAndGenerate on an unvalidated query.
+One commit. Do not start P7.
+```
+
+---
+
+## P7 — hands-free expansion
+
+### Hypothesis
+
+Hands-free can reuse the same perception object and pending-question contract, with ASR metadata and photo correlation as additional inputs, without a new semantic model.
+
+### Why this phase exists
+
+The structural gate is near-always-on in hands-free. That mode needs transcript uncertainty and multimodal correlation that typed chat does not.
+
+### Preconditions
+
+P3 ownership and P2 pending contract are live. P6 timings show whether always-on perception fits a voice budget. This phase is not authorized by P0 alone.
+
+### Exact scope
+
+Document and, only when a hands-free channel exists in the request, pass ASR confidence and photo correlation id into the analyzer context. Do not persist low-confidence identity. Clarification UX for equipment/procedure/measurement-point ambiguity. No new model.
+
+### Files to CREATE
+
+TBD when a hands-free controller exists. If none exists, this phase is design-only and must not invent the channel.
+
+### Files to MODIFY
+
+TBD by the channel's actual files. This document.
+
+### Files READ_ONLY
+
+QueryAnalysis, retrieval architecture, foreign worktree.
+
+### Files OUT_OF_SCOPE
+
+A second analyzer. Procedure ontology. WhatsApp.
+
+### Exact implementation steps
+
+1. Find the real hands-free entry point. If it does not exist, stop with Decision=no_channel.
+2. Extend the structural gate's hands-free arm to that entry point.
+3. Pass ASR alternatives as text the span validator can see. Spans must still be literal in the chosen transcript.
+4. Reuse P2 pending questions and P4 slots. Do not add measurement correctness judgments.
+
+### Contract after this phase
+
+Same perception schema. Additional optional context: ASR confidence, photo correlation. Identity still catalog-gated.
+
+### Tests to add/change
+
+Low ASR confidence does not persist manufacturer/model. Photo correlation uses the existing photo observation id.
+
+### Commands to run
+
+The channel's tests plus episode tests.
+
+### Telemetry
+
+`hands_free=true`, `asr_confidence` bucket, `semantic_analysis_ms`.
+
+### Expected artifacts
+
+One commit or a no-channel decision.
+
+### Exit criteria
+
+No new contamination. No second model. Channel either wired or explicitly absent.
+
+### Rollback
+
+Gate arm off for hands-free.
+
+### Stop conditions
+
+No channel. Pressure to add a procedure graph. Pressure to call a second model for ASR.
+
+### Risks
+
+Near-always-on cost. Use P0 unit cost times observed hands-free volume. Cost still does not override contamination.
+
+### Must NOT do
+
+Do not build the voice product in this plan. Do not enable WhatsApp.
+
+### Results
+TBD
+
+### Unexpected findings
+TBD
+
+### Decision
+TBD
+
+### Impact on next phase
+TBD
+
+### PHASE_COMMIT
+TBD
+
+### PHASE_TEST_RESULT
+TBD
+
+### PHASE_METRICS
+TBD
+
+### EXECUTION PROMPT — PHASE P7
+
+```text
+NOT AUTHORIZED until P6 Results are recorded and a hands-free entry point is identified in the repo.
+
+If no entry point exists, write Decision=no_channel and stop.
+Otherwise reuse ConversationalTurnAnalysis and pending_question. Do not add a model.
+One commit.
+```
+
+---
+
+## 14. Adaptive measurements still open
+
+```text
+ASSUMPTION: Haiku invocation fraction ≈ 15% on typed structural gate
+MEASUREMENT: TBD from P1 shadow
+DECISION: TBD
+
+ASSUMPTION: input 1500–2500, output 100–200
+MEASUREMENT: TBD from P0
+DECISION: TBD
+
+ASSUMPTION: tool_config on SDK 1.63.0 Converse accepts the perception schema for Haiku 4.5 global
+MEASUREMENT: TBD from the first P0 call
+DECISION: TBD
+```
+
+These are not architectural questions. If the tool_config assumption fails, P0 stops. It does not pick a new architecture.
+
+## 15. Final readiness
+
+```text
+ARCHITECTURE_DECISION:
+HYBRID_MINIMAL
+
+SEMANTIC_MODEL_SCOPE:
+relation, mentions[{span, role}], refers_to[{span, slot}], ambiguous.
+No effective query, route, measurement value, safety judgment, procedure, or answer.
+
+DETERMINISTIC_SCOPE:
+State, persistence, provenance, recency, catalog identity, closed parsers
+(fault_code absence, choice options, measurement value/unit/location, explicit model frame),
+effective query construction, retrieval authorization, pending_question emission.
+
+QUERY_ANALYSIS_CONVERGENCE:
+B. Rag::ConversationalTurnAnalysis is the only semantic-perception object.
+Rag::QueryAnalysis stays the QueryEntities evidence-identifier object.
+They never merge. P0 does not add the class under app/.
+
+PENDING_QUESTION_STRATEGY:
+One Ruby contract (fault_code, manufacturer, model, choice, absent).
+Deterministic and structured/context routes emit it when they already know the question.
+RetrieveAndGenerate and document-identity generation do not gain a JSON side channel;
+they keep the prose scan until a route can set the object without a new model call.
+
+CONDITIONAL_GATE:
+active_episode OR pending_question/pending_fact OR active_photo OR hands_free.
+No semantic pre-classifier.
+
+FALLBACK_AFTER_MIGRATION:
+Shadow: v4.
+After ownership transfer: validated facts + raw turn, or clarification.
+No unsafe inheritance.
+
+NEXT_AUTHORIZED_PHASE:
+PLAN_V2_COMMIT
+
+P0_IMPLEMENTATION_READY:
+YES
+
+P0_REQUIRES_ARCHITECT_DECISION:
+NO
+
+OPEN_ARCHITECTURE_QUESTIONS:
+NONE
+
+FILES_P0:
+script/fixtures/haiku_semantic_perception_p0.jsonl
+script/haiku_semantic_perception_p0.rb
+test/scripts/haiku_semantic_perception_p0_test.rb
+docs/PLAN_HAIKU_SEMANTIC_QUERY_ANALYSIS_2026-09-24.md
+
+P0_EXIT_CRITERIA:
+Commit A tests green before any network call; human label review recorded;
+one network run; Results, metrics, unexpected findings, and recommendation written;
+Decision remains PENDING_HUMAN.
+PROCEED_RECOMMENDED only when unsafe_contamination=0
+and projection_accuracy_haiku_open_world > projection_accuracy_v4_open_world
+and transport_error<=5%.
+That recommendation does not authorize P1.
+CLOSED_CONTRACT cases give Haiku no capability credit.
+
+PLAN_READY_FOR_FINAL_OPUS_REVIEW:
+NO_LONGER_REQUIRED
+```
+
+---
+
+# HISTORICAL V1
+
 **Objetivo:** decidir, con evidencia, si un análisis semántico síncrono de Claude Haiku 4.5 puede reemplazar la frontera `common_noun?` sin reabrir contaminación conversacional, y a qué costo de latencia y tokens.
 
-**Estado de este documento:** plan solamente. No hay implementación de `SemanticQueryAnalyzer` en este branch más allá de este archivo.
+**Estado de este documento:** plan solamente. No hay implementación de `SemanticQueryAnalyzer` en este branch más allá de este archivo. Supuestos de este bloque que la sección 2 de v2 marca INVALIDATED no autorizan implementación.
 
 **Entrada:** baseline conversacional v4 en `dce25d080aaba1779898339206d7ec297bdbd3e7`. Código leído el 24-sep-2026 en `experiment/haiku-semantic-query-analysis`.
 

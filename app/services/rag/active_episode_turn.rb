@@ -254,10 +254,11 @@ module Rag
     def owned_decision(current, perception)
       return fail_closed_shift(current) if perception == :failed && explicit_equipment_shift?(current)
       return nil unless perception.is_a?(Rag::ConversationalTurnAnalysis)
-      return fail_closed_perception(current) if perception.ambiguous || perception.relation == "unclear"
+      return fail_closed_perception(current) if perception.relation == "unclear" && !continuity_followup?
       return nil unless %w[switch correct].include?(perception.relation)
+      return fail_closed_perception(current) if perception.ambiguous
       return apply_switch(current, perception) if perception.relation == "switch" && literal_equipment?(perception)
-      return apply_correct(current) if perception.relation == "correct" && explicit_correction?
+      return apply_correct(current, perception) if perception.relation == "correct" && explicit_correction?
 
       nil
     end
@@ -281,6 +282,8 @@ module Rag
     end
 
     def apply_switch(current, perception)
+      return fail_closed_perception(current) if unrecognized_equipment?(perception)
+
       episode = ActiveEpisode.open(correlation_id: @correlation_id, now: @now)
       episode.assign_goal!(@text, correlation_id: @correlation_id)
       extract!(episode, :full)
@@ -288,12 +291,13 @@ module Rag
       finish(:new_episode, current, episode, compose: false)
     end
 
-    def apply_correct(current)
+    def apply_correct(current, perception)
       episode = current.fork
       episode.touch!(@now)
       episode.clear_fact!("model")
       episode.clear_fact!("manufacturer")
       extract!(episode, :full)
+      write_catalog_identity!(episode, perception)
       if self_contained?
         episode.assign_goal!(@text, correlation_id: @correlation_id)
       else
@@ -302,11 +306,39 @@ module Rag
       finish(:corrected, current, episode, compose: false)
     end
 
+    # A switch name with no catalog row and no manufacturer is not an identity.
+    # Several rows for one name still switch; they do not pick a model.
+    def unrecognized_equipment?(perception)
+      return false unless @account
+      return false if find_brands.any?
+
+      spans = Array(perception.mentions).filter_map do |mention|
+        next unless mention["role"] == "equipment"
+
+        span = mention["span"].to_s
+        span if span.present? && @text.downcase.include?(span.downcase)
+      end
+      return false if spans.empty?
+
+      spans.all? { |span| KbDocumentResolver.resolve(span, account: @account).empty? }
+    end
+
     def literal_equipment?(perception)
       Array(perception.mentions).any? do |mention|
         span = mention["span"].to_s
         span.present? && mention["role"] == "equipment" && @text.downcase.include?(span.downcase)
       end
+    end
+
+    # An elliptical next step with no named target stays on deterministic
+    # continuity. "el otro" and a different equipment token stay fail-closed.
+    def continuity_followup?
+      return false unless elliptical?
+      return false if @normalized.match?(/\botro\b/)
+      return false if names_equipment?
+      return false if @text.match?(/\b[A-Z][A-Za-z0-9-]{2,}\b/)
+
+      true
     end
 
     def explicit_correction?

@@ -74,14 +74,92 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     end
   end
 
-  test "ambiguous and unclear fail closed without copying the old model" do
+  test "unclear fails closed and a non-owned ambiguous relation does not" do
     with_mode("conditional") do
       ambiguous = turn("¿y en el Nova?", analysis: perception("continue", [], ambiguous: true))
       unclear = turn("¿y en el Nova?", analysis: perception("unclear"))
-      assert_nil ambiguous.state.dig("facts", "model")
+      assert_equal "MonoSpace", ambiguous.state.dig("facts", "model", "value")
+      assert_includes ambiguous.state.dig("goal", "text"), "fijación de cables"
       assert_nil unclear.state.dig("facts", "model")
-      assert_nil ambiguous.composed
       assert_nil unclear.composed
+    end
+  end
+
+  test "unclear does not erase a next-step follow-up and still fail-closes el otro" do
+    with_mode("conditional") do
+      episode = prior(model: "MonoSpace")
+      episode.assign_goal!("Cómo se ajustan los resortes de la fijación de cables?", correlation_id: "query:prior")
+      follow = turn_from(episode, "¿qué reviso primero?", analysis: perception("unclear", ambiguous: true))
+      assert_includes follow.state.dig("goal", "text"), "fijación de cables"
+      assert_includes follow.composed.to_s, "fijación de cables"
+      assert_equal "MonoSpace", follow.state.dig("facts", "model", "value")
+
+      closed = turn("¿y en el otro?", analysis: perception("unclear", ambiguous: true))
+      assert_nil closed.state.dig("facts", "model")
+      assert_nil closed.composed
+    end
+  end
+
+  test "the frozen continue turn keeps the cable-fixing goal when Haiku says new" do
+    with_mode("conditional") do
+      episode = prior(model: nil)
+      episode.assign_goal!("Cómo se ajustan los resortes de la fijación de cables?", correlation_id: "query:prior")
+      result = turn_from(
+        episode,
+        "¿qué reviso primero?",
+        analysis: perception("new", ambiguous: true)
+      )
+      assert_includes result.state.dig("goal", "text"), "fijación de cables"
+      assert_includes result.composed.to_s, "fijación de cables"
+      assert_not_equal :new_episode, result.decision
+    end
+  end
+
+  test "the frozen correction clears MonoSpace and writes MiniSpace only for one catalog name" do
+    text = "No, no es MonoSpace. Es MiniSpace."
+    analysis = perception("correct", [ [ "MiniSpace", "equipment" ] ])
+    with_mode("conditional") do
+      with_catalog([ Struct.new(:display_name).new("MiniSpace"), Struct.new(:display_name).new("MiniSpace PT") ]) do
+        missed = turn(text, analysis: analysis, account: accounts(:legacy))
+        assert_equal :corrected, missed.decision
+        assert_nil missed.state.dig("facts", "model")
+      end
+      with_catalog([ Struct.new(:display_name).new("MiniSpace") ]) do
+        matched = turn(text, analysis: analysis, account: accounts(:legacy))
+        assert_equal "MiniSpace", matched.state.dig("facts", "model", "value")
+        assert_equal "catalog", matched.state.dig("facts", "model", "source")
+        assert_not_equal "MonoSpace", matched.state.dig("facts", "model", "value")
+      end
+    end
+  end
+
+  test "an unknown switch target stays fail-closed and a known name still switches" do
+    text = "cambia al ZzzUnknown99"
+    analysis = perception("switch", [ [ "ZzzUnknown99", "equipment" ] ])
+    with_mode("conditional") do
+      with_catalog([]) do
+        missed = turn(text, analysis: analysis, account: accounts(:legacy))
+        assert_nil missed.state.dig("facts", "model")
+        assert_not_equal :new_episode, missed.decision
+      end
+      with_catalog([ Struct.new(:display_name).new("MiniSpace PT"), Struct.new(:display_name).new("MiniSpace 1.5") ]) do
+        switched = turn("cambia al MiniSpace", analysis: perception("switch", [ [ "MiniSpace", "equipment" ] ]), account: accounts(:legacy))
+        assert_equal :new_episode, switched.decision
+        assert_nil switched.state.dig("facts", "model")
+      end
+    end
+  end
+
+  test "cambia al MiniSpace and cambia al MonoSpace both open a new episode" do
+    with_mode("conditional") do
+      [ "cambia al MiniSpace", "cambia al MonoSpace" ].each do |text|
+        name = text.split.last
+        result = turn(text, analysis: perception("switch", [ [ name, "equipment" ] ]))
+        assert_equal :new_episode, result.decision, text
+        assert_nil result.composed, text
+        payload = ownership_log { turn(text, analysis: perception("switch", [ [ name, "equipment" ] ])) }
+        assert_equal true, payload["ownership_applied"], text
+      end
     end
   end
 
@@ -181,8 +259,12 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
   end
 
   def turn(text, analysis:, model: "MonoSpace", account: nil)
+    turn_from(prior(model: model), text, analysis: analysis, account: account)
+  end
+
+  def turn_from(episode, text, analysis:, account: nil)
     Rag::ActiveEpisodeTurn.call(
-      state: prior(model: model).to_h,
+      state: episode.to_h,
       text: text,
       now: NOW,
       enabled: true,

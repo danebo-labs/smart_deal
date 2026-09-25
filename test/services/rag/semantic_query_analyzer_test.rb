@@ -25,8 +25,37 @@ class Rag::SemanticQueryAnalyzerTest < ActiveSupport::TestCase
     end
   end
 
-  test "the shadow prompt is the frozen P0 prompt" do
-    assert_equal HaikuSemanticPerceptionP0::PROMPT, Rag::SemanticQueryAnalyzer::PROMPT
+  test "the production prompt keeps the P0 safety rules and rejects invented slots" do
+    prompt = Rag::SemanticQueryAnalyzer::PROMPT
+    assert_includes prompt, "You are not a technical authority"
+    assert_includes prompt, "DO NOT fold accents"
+    assert_includes prompt, "If slots is empty, refers_to is []"
+    assert_includes prompt, "cambia al"
+    assert_not_equal HaikuSemanticPerceptionP0::PROMPT, prompt
+  end
+
+  test "an empty slot list closes refers_to and a pending question enumerates its slot" do
+    empty = captured_schema(EPISODE)
+    assert_equal 0, empty.dig(:properties, :refers_to, :maxItems)
+
+    pending = captured_schema(EPISODE.merge("pending_fact" => { "subject" => "manufacturer" }))
+    assert_nil pending.dig(:properties, :refers_to, :maxItems)
+    assert_equal [ "pending_question" ], pending.dig(:properties, :refers_to, :items, :properties, :slot, :enum)
+  end
+
+  test "an invented slot still rejects an otherwise valid correction" do
+    analysis = Rag::SemanticQueryAnalyzer.observe(
+      turn: "No, no es MonoSpace. Es MiniSpace.",
+      episode: EPISODE,
+      correlation_id: "query:slot",
+      client: fake_client({
+        "relation" => "correct",
+        "mentions" => [ { "span" => "MiniSpace", "role" => "equipment" } ],
+        "refers_to" => [ { "span" => "MonoSpace", "slot" => "equipment.model" } ],
+        "ambiguous" => false
+      })
+    )
+    assert_nil analysis
   end
 
   test "off and an ungated episode do not call the client" do
@@ -151,6 +180,30 @@ class Rag::SemanticQueryAnalyzerTest < ActiveSupport::TestCase
     client = Object.new
     client.define_singleton_method(:converse) { |_params| response }
     client
+  end
+
+  def captured_schema(episode)
+    schema = nil
+    client = fake_client(perception("continue"))
+    client.define_singleton_method(:converse) do |params|
+      schema = params.dig(:tool_config, :tools, 0, :tool_spec, :input_schema, :json)
+      tool = Struct.new(:name, :input).new(
+        "semantic_perception",
+        { "relation" => "continue", "mentions" => [], "refers_to" => [], "ambiguous" => false }
+      )
+      block = Struct.new(:tool_use).new(tool)
+      Struct.new(:output, :usage).new(
+        Struct.new(:message).new(Struct.new(:content).new([ block ])),
+        Struct.new(:input_tokens, :output_tokens).new(1, 1)
+      )
+    end
+    Rag::SemanticQueryAnalyzer.observe(
+      turn: "el freno",
+      episode: episode,
+      correlation_id: "query:schema",
+      client: client
+    )
+    schema
   end
 
   def perception(relation, mentions: [], refers_to: [], ambiguous: false)

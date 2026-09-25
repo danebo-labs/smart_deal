@@ -46,10 +46,17 @@ module Rag
 
       Every span must be a literal substring of the turn after that normalization. No invented strings. No paraphrases. No canonicalization that leaves the input.
 
-      refers_to.slot must be one of the slots in the user message. Do not invent a slot id.
+      refers_to.slot must be copied from slots. If slots is empty, refers_to is []. Never use equipment, equipment.model, goal, or a state path as a slot.
+
+      Utterance shapes:
+      "no es" / "no era" / "en realidad" is correct. The replacement name is a mentions span with role equipment, not a refers_to.
+      "cambia al" plus one name is switch. That name is a mentions span with role equipment.
+      "ahora es un" plus a manufacturer or model other than state.equipment is switch, not correct.
+      "el modelo es" while the task stays the same is not switch and not correct.
+      A follow-up that asks the next step of state.goal and names no other equipment is continue and ambiguous false. "el otro" without a named target stays unclear.
 
       Output schema, returned only as the semantic_perception tool input:
-      {"relation":"continue|answer_pending|correct|switch|new|unclear","mentions":[{"span":"MonoSpace","role":"equipment|component|other"}],"refers_to":[{"span":"el otro","slot":"obs_2"}],"ambiguous":false}
+      {"relation":"continue|answer_pending|correct|switch|new|unclear","mentions":[{"span":"MonoSpace","role":"equipment|component|other"}],"refers_to":[],"ambiguous":false}
     PROMPT
 
     def self.observe(turn:, episode:, correlation_id:, client: nil)
@@ -187,17 +194,7 @@ module Rag
                         required: %w[span role]
                       }
                     },
-                    refers_to: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          span: { type: "string" },
-                          slot: { type: "string" }
-                        },
-                        required: %w[span slot]
-                      }
-                    },
+                    refers_to: refers_to_schema,
                     ambiguous: { type: "boolean" }
                   },
                   required: REQUIRED_KEYS
@@ -207,6 +204,23 @@ module Rag
           }
         ],
         tool_choice: { tool: { name: TOOL_NAME } }
+      }
+    end
+
+    def refers_to_schema
+      allowed = slots
+      return { type: "array", maxItems: 0 } if allowed.empty?
+
+      {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            span: { type: "string" },
+            slot: { type: "string", enum: allowed }
+          },
+          required: %w[span slot]
+        }
       }
     end
 

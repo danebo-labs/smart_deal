@@ -1,0 +1,105 @@
+{
+  "id": "PRODUCTION_CONVERSATIONAL_BASELINE_V2",
+  "flows": [
+    {
+      "id": "NORMAL_RAG",
+      "turns": [
+        "¿Cómo se ajusta el freno en el KONE MiniSpace?"
+      ]
+    },
+    {
+      "id": "CONTINUE",
+      "turns": [
+        "Cómo se ajustan los resortes de la fijación de cables?",
+        "¿qué reviso primero?"
+      ]
+    },
+    {
+      "id": "SWITCH",
+      "turns": [
+        "El modelo es MonoSpace. ¿Cómo se ajusta el freno?",
+        "cambia al MiniSpace"
+      ]
+    },
+    {
+      "id": "CORRECT",
+      "turns": [
+        "El modelo es MonoSpace. ¿Cómo se ajusta el freno?",
+        "No, no es MonoSpace. Es MiniSpace."
+      ]
+    },
+    {
+      "id": "MODEL_VALUE_FREEZE",
+      "turns": [
+        "Cómo se ajustan los resortes de la fijación de cables?",
+        "el modelo es MonoSpace, como se ajustan los resortes?"
+      ]
+    },
+    {
+      "id": "REAFFIRMATION",
+      "turns": [
+        "Cómo se ajustan los resortes de la fijación de cables?",
+        "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?"
+      ]
+    },
+    {
+      "id": "AMBIGUOUS_FAIL_CLOSED",
+      "turns": [
+        "El modelo es MonoSpace. ¿Cómo se ajusta el freno?",
+        "¿y en el otro?"
+      ]
+    },
+    {
+      "id": "CATALOG_MISS",
+      "turns": [
+        "El modelo es MonoSpace. ¿Cómo se ajusta el freno?",
+        "cambia al ZzzUnknown99"
+      ]
+    },
+    {
+      "id": "SAME_EQUIPMENT_NEW_QUESTION",
+      "turns": [
+        "¿Cómo se ajusta el freno en el KONE MiniSpace?",
+        "¿Cuál es la desviación máxima de nivelación del KONE MiniSpace?"
+      ]
+    },
+    {
+      "id": "BRAND_SWITCH_WITH_EPISODE",
+      "turns": [
+        "El modelo es MonoSpace. ¿Cómo se ajusta el freno?",
+        "Ahora es un OTIS NE-300. ¿Qué muestra el esquema 3907-ST?"
+      ]
+    },
+    {
+      "id": "CLOSED_FOLLOWUP_NO_EPISODE",
+      "turns": [
+        "¿Cómo se ajusta el freno en el KONE MiniSpace?",
+        { "clear_episode": true },
+        "MonoSpace"
+      ]
+    },
+    {
+      "id": "PENDING_QUESTION",
+      "turns": [
+        "¿Qué LED se enciende cuando falla el cerrojo?"
+      ]
+    },
+    {
+      "id": "FAILURE_PATH",
+      "turns": [
+        "El modelo es MonoSpace. ¿Cómo se ajusta el freno?",
+        "¿y en el otro?"
+      ]
+    },
+    {
+      "id": "MULTI_TURN_STALE_CONTEXT",
+      "turns": [
+        "Cómo se ajustan los resortes de la fijación de cables?",
+        "el modelo es MonoSpace, como se ajustan los resortes?",
+        "No, no es MonoSpace. Es MiniSpace.",
+        "cambia al MonoSpace",
+        "¿Cómo se ajusta el freno?"
+      ]
+    }
+  ]
+}

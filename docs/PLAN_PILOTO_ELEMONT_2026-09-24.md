@@ -146,3 +146,106 @@ Con pin, Q1 ya no es I2: la hoja 2 no entra entre los 3 chunks, y la hoja 1 no t
 | D1 parche hoja 1 | **Hecho 23-sep 21:35.** Solo T1/T2 y alias. Bornera sin tocar. Sync `F5S1ESDYNI` `COMPLETE`. SHA vivo `79300034c825` → `559e682e518c` | `script/patch_elemont_chunk_p1_2_2026-09-23.rb`; backup `tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt` |
 | D2 medición con pin | **Hecho 23-sep 21:36.** 3 llamadas, US$0,0272. Hoja 2 entra en Q3 y no en Q1 ni Q2 | `tmp/elemont_pilot_2026-09-24/premedicion/results.txt` |
 | D3 no desplegar fc/pr2 | **Vigente.** Sin deploy | — |
+
+## 9. Cierre del gate de recuperación — 24-sep
+
+### Cambio activo
+
+No se cambió `PINNED_DOCUMENT_RESULTS = 3`, no hubo deploy y el pin de la
+sesión 5 permaneció en `[213]`. La causa de las consultas cortas es que un
+designador aislado (`Q1`, `Q4`, `PET`) aparece en varios chunks; los chunks de
+diagrama/distribución con una descripción genérica pueden ganar a la tabla de
+designaciones. Subir `top_k` afectaría todos los manuales y ya tiene la
+regresión crítica documentada del 26-jul.
+
+La reparación activa queda limitada al prefijo de nueve chunks de este plano:
+
+| Objeto | Cambio | SHA anterior → activo | Sync |
+|---|---|---|---|
+| `chunk_p1_2.txt` | Copia literal desde la tabla viva de las designaciones Q1, Q2, Q3, Q4 y K6 en las viñetas que ya ganan; actualiza los `FIELD_RECORD` existentes de Q1/Q2; no toca bornera ni Q5/Q6. | `559e682e518ceb77b259b5701b5dc99c8b6a9c3f18003a536c119a1cbbfc6a6c` → `688a5d780eef8845c489af53f186d275a3a1cc7a4b35f42b38cc2d53be03776c` | `0ZD14YUMFP`, `K6TTYQFFHJ` y `QXM2UCQ3FY`, todos `COMPLETE` |
+| `chunk_p2_1.txt` | Amplía solo `SEARCH_ALIASES` con las designaciones y valores literales de las 12 preguntas adicionales; el cuerpo y los `FIELD_RECORD` no cambian. | `cb7e2348cf94529cec9534d37055060d8627ca18a68704e1ed53d9744c46b549` → `70fa1eafac8b2b2baa707d7941e7f1879f4c2e1a5c2fec081c9b262a52d543f6` | `0ZD14YUMFP`, `COMPLETE` |
+| `chunk_p4_1.txt` | Reemplaza la descripción genérica de H1/H2/H3 por la designación literal «Luces piloto, presencia de fase» y conserva la referencia a la hoja 2. | `05542e3d815c986e89080207482205669807de70e38f07aec329651110162953` → `1855de2076f1a55045a034e0051201c736a619c24590b407eb75ec47b67a6442` | `QXM2UCQ3FY`, `COMPLETE` |
+
+El primer intento Q1–Q3 (`KMKT0VHK7J`) pasó las 12 preguntas originales pero
+dio 21/24: Q4, Q6 y PET no recuperaron la tabla. Se restauró con
+`V6RJG40DFX` (`COMPLETE`). El alias dirigido corrigió Q6 y PET, pero no Q4:
+para Q4 seguían ganando `chunk_p1_2` y `chunk_p3_1`. Por eso la última
+intervención fue una sola viñeta Q4 en el chunk ganador; la verificación causal
+posterior recuperó 10 A desde `chunk_p1_2`.
+
+### Batería de 24
+
+Ejecución completa: 24 llamadas, cuenta `danebo-legacy`, usuario 6, sesión 5,
+pin único 213, `force_entity_filter: true`, mismo URI del documento. Las filas
+Q4, Q6 y PET muestran la verificación dirigida posterior a sus reparaciones;
+las demás conservan la corrida completa porque sus datos no fueron modificados
+después. Todas las citas resuelven bajo
+`bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/`.
+
+| # | correlation_id | Pregunta | Dato observado | Cita | Veredicto |
+|---|---|---|---|---|---|
+| 1 | `pilot24:retrieval:1:61a3cc` | ¿Qué es Q1? | Interruptor automático 3 polos, 25 A | `chunk_p4_1.txt` p.4 + `chunk_p1_2.txt` p.1 | Pasa |
+| 2 | `pilot24:retrieval:2:0c26f2` | ¿Qué es Q2? | Partidor de motor, 11–17 A | `chunk_p1_2.txt` p.1 | Pasa |
+| 3 | `pilot24:retrieval:3:21057f` | ¿Qué es Q3? | Diferencial, 25 A, 30 mA | `chunk_p3_1.txt` p.3 + `chunk_p1_2.txt` p.1 | Pasa |
+| 4 | `pilot24:4:c27083` | ¿Qué es K1? | Contactor 24 VAC SUBE | `chunk_p2_1.txt` p.2 + `chunk_p1_2.txt` p.1 | Pasa |
+| 5 | `pilot24:5:32c777` | ¿Qué es K7? | Contactor 220 VAC Seguridad | `chunk_p2_1.txt` p.2 | Pasa |
+| 6 | `pilot24:6:289872` | ¿Qué hace T1? | Relé temporizador, modo E, t < 3 min; no dice transformador | `chunk_p2_1.txt` p.2 | Pasa |
+| 7 | `pilot24:7:8bbde1` | ¿Qué hace T2? | Relé temporizador, modo Wu, t < 1 s | `chunk_p1_2.txt` p.1 + `chunk_p2_1.txt` p.2 | Pasa |
+| 8 | `pilot24:8:1f68c9` | ¿Qué va en el borne 12? | L electroválvula bajando | `chunk_p2_1.txt` p.2 | Pasa |
+| 9 | `pilot24:9:55f242` | ¿Qué lámpara tiene la cabina y en qué bornes va? | 40 W, K4, bornes 15/16 | `chunk_p7_1.txt` p.7 | Pasa |
+| 10 | `pilot24:10:907dc6` | ¿Qué hay en el circuito 1? | Bomba, RST, sala de máquinas, 4×2,5 mm² | `chunk_p4_1.txt` p.4 | Pasa |
+| 11 | `pilot24:11:8cb21a` | ¿Qué es lo primero después de seguridad in? | Parada de emergencia sobre cabina; mantiene advertencia sobre ramas | `chunk_p5_1.txt` p.5 | Pasa en lo preguntado |
+| 12 | `pilot24:12:49ecd0` | ¿Cómo es la iluminación del foso? | 3×20 W, bornes 10/11, paralelo | `chunk_p7_2.txt` p.7 | Pasa |
+| 13 | `pilot24:q4-final:442e5b` | ¿Qué es Q4? | Interruptor automático 1 polo, 10 A, iluminación foso | `chunk_p1_2.txt` p.1 | Pasa tras viñeta dirigida |
+| 14 | `pilot24:14:7de451` | ¿Qué es Q5? | Interruptor automático 1 polo, 16 A, iluminación cabina | `chunk_p2_1.txt` p.2 | Pasa |
+| 15 | `pilot24:retrieval:5:65bcc0` | ¿Qué es Q6? | Interruptor automático 1 polo, 6 A, control | `chunk_p2_1.txt` p.2 | Pasa tras alias dirigido |
+| 16 | `pilot24:16:a49e19` | ¿Qué es K2? | Relé 11 pines, 24 VCA, BAJA | `chunk_p2_1.txt` p.2 + `chunk_p4_1.txt` p.4 | Pasa |
+| 17 | `pilot24:17:32c291` | ¿Qué es K4? | Relé 11 pines, 24 VCA, PRESOSTATO | `chunk_p2_1.txt` p.2 + `chunk_p7_1.txt` p.7 | Pasa |
+| 18 | `pilot24:18:84b67c` | ¿Qué es K8? | Contactor 220 VAC BAJA | `chunk_p2_1.txt` p.2 | Pasa |
+| 19 | `pilot24:19:ca7b16` | ¿Qué va en el borne 10? | L iluminación foso | `chunk_p2_1.txt` p.2 | Pasa |
+| 20 | `pilot24:20:6c6132` | ¿Qué va en el borne 14? | L 220 VAC cabina; informa contradicción con hoja 1 | `chunk_p1_2.txt` p.1 + `chunk_p2_1.txt` p.2 | Pasa |
+| 21 | `pilot24:21:65407b` | ¿Qué va en el borne 23? | Seguridad OUT; advierte discrepancia interna | `chunk_p2_1.txt` p.2 + `chunk_p1_2.txt` p.1 | Pasa |
+| 22 | `pilot24:22:c6d45f` | ¿Qué calibre tienen F1, F2 y F3? | Fusible seccionador 2 A | `chunk_p2_1.txt` p.2 | Pasa |
+| 23 | `pilot24:23:8e5826` | ¿Qué bornes corresponden al presostato? | 25 OUT y 26 IN | `chunk_p2_1.txt` p.2 | Pasa |
+| 24 | `pilot24:retrieval:6:8e26dc` | ¿Qué es PET? | Parada de emergencia | `chunk_p2_1.txt` p.2 | Pasa tras alias dirigido |
+
+Resultado del gate: **24/24 con evidencia Elemont**, sin CMC3, KONE,
+Excelsior ni Thyssen; Q1/Q2/Q3 incluyen el calibre solicitado. La evidencia
+bruta queda en `tmp/elemont_patch_2026-09-24/results_24.jsonl`,
+`tmp/elemont_retrieval_patch_2026-09-24/results_6.jsonl` y
+`tmp/elemont_q4_patch_2026-09-24/result_q4.jsonl`.
+
+### Extensión aleatoria: consultas 25–36
+
+Se ejecutaron 12 preguntas adicionales con las mismas invariantes: cuenta 1,
+usuario 6, sesión 5, pin único 213 y filtro forzado por el URI del documento.
+La primera corrida pasó 10/12: K6 recuperó la tabla correcta pero la respuesta
+abstuvo, y H1/H2/H3 recuperó la descripción genérica del unilineal. Se
+repararon únicamente las viñetas ganadoras de `chunk_p1_2` y `chunk_p4_1`, se
+sincronizó con `QXM2UCQ3FY` (`COMPLETE`) y se repitieron esas dos consultas.
+
+| # | correlation_id | Pregunta | Dato observado | Cita | Veredicto |
+|---|---|---|---|---|---|
+| 25 | `pilot24:random12:1:f583f3` | ¿Qué certificación figura en el plano? | ROL 2740 | `chunk_p1_1.txt` p.1 | Pasa |
+| 26 | `pilot24:random12:2:c642d9` | ¿Qué es R1? | Relé de tensión, U=0 / U<, protección por falta o baja tensión | `chunk_p4_1.txt` p.4 | Pasa con observación: la tabla de la hoja 2 lo denomina «relé de asimetría» |
+| 27 | `pilot24:random12:3:b575dd` | ¿Qué es K3? | Relé plano 24 VDC, bloqueo presostato | `chunk_p2_1.txt` p.2 | Pasa |
+| 28 | `pilot24:random12:4:dc4da1` | ¿Qué es K5? | Relé plano 24 VDC, indicador seguridad | `chunk_p2_1.txt` p.2 | Pasa |
+| 29 | `pilot24:random12-recheck:1:63edff` | ¿Qué es K6? | Relé 11 pines, 24 VCA, INSPECCION | `chunk_p2_1.txt` p.2 + `chunk_p1_2.txt` p.1 | Pasa tras viñeta dirigida |
+| 30 | `pilot24:random12-recheck:2:0cd923` | ¿Qué indican H1, H2 y H3? | Luces piloto, presencia de fase | `chunk_p4_1.txt` p.4 | Pasa tras viñeta dirigida |
+| 31 | `pilot24:random12:7:e7cc1d` | ¿Qué indica H4? | Luz piloto, falla seguridad | `chunk_p2_1.txt` p.2 | Pasa |
+| 32 | `pilot24:random12:8:0c4011` | ¿Qué va en el borne 24? | Seguridad IN | `chunk_p2_1.txt` p.2 | Pasa |
+| 33 | `pilot24:random12:9:38c7aa` | ¿Qué va en el borne 27? | Hoja 1: límite superior; hoja 2: indicador sobre carga | `chunk_p1_2.txt` p.1 + `chunk_p2_1.txt` p.2 | Pasa: expone la discrepancia interna |
+| 34 | `pilot24:random12:10:f8183d` | ¿Cómo se alimenta la sirena? | Fuente 220 VCA/12 VCD, cable 3×0,75 mm², foso | `chunk_p4_1.txt` p.4 | Pasa |
+| 35 | `pilot24:random12:11:097483` | ¿Qué colores tienen los sensores sobre cabina? | PAS/PAD: rojo, gris y negro | `chunk_p6_1.txt` p.6 | Pasa |
+| 36 | `pilot24:random12:12:e0bf01` | ¿Cómo están conectados los indicadores de subida y bajada? | Cinco pares LFS/LFB en paralelo, PasCom 24 V | `chunk_p6_1.txt` p.6 | Pasa |
+
+Resultado consolidado: **36/36 con evidencia del manual Elemont**. Es una
+batería completa más rechecks causales de las consultas que fallaron; no se
+presenta como una única corrida ininterrumpida sobre el estado final. Las dos
+observaciones documentales que deben conservarse en campo son R1 y el borne
+27: el manual contiene nomenclaturas distintas entre hojas y no corresponde
+ocultarlas ni elegir una como verdad única.
+
+Evidencia bruta adicional:
+`tmp/elemont_random_12_2026-09-24/results_12.jsonl` y
+`tmp/elemont_random12_patch_2026-09-24/results_2.jsonl`.

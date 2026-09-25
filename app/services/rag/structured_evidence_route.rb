@@ -285,6 +285,8 @@ module Rag
         session_id: nil,
         generation_mode: GENERATION_MODE,
         model_invoked: true,
+        retrieve_ms: retrieval_ms,
+        generation_ms: generation_ms,
         # Structural ground truth (empty evidence / generation failure / bad
         # citations all short-circuit into abstained_outcome before this point) —
         # RagController must prefer this over regexing the rendered answer, since

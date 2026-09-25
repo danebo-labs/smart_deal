@@ -472,6 +472,7 @@ class BedrockRagService
         retrieved_citations: retrieved_for_extraction,
         doc_refs:            doc_refs,
         session_id:          session_id,
+        rag_ms:              bedrock_latency_ms,
         retrieval_trace: retrieval_trace(
           resolved_scope_s3_uris: entity_s3_uris,
           applied_filter_s3_uris: applied_filter_uris,

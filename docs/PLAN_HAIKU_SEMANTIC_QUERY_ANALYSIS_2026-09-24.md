@@ -1806,10 +1806,37 @@ Those turns are not `switch` or `correct`. Covering them with perception would m
 `en minispace` inside a longer complement is already blocked by `pure_complement?`, not by this family. The unique residue is a single `de`/`del` complement whose token is lowercase and has no digit.
 
 ### Decision
-PENDING_HUMAN
+DEFER_FAMILY_1
+
+```text
+P5_HUMAN_DECISION:
+DEFER_FAMILY_1
+
+FAMILY:
+common_noun? + identity_complement?
+
+REASON:
+Still required for lowercase one-word equipment complements on continue +
+explicit-model turns not owned by P3.
+
+DO_NOT_WIDEN_P3:
+YES
+
+P5_FAMILY_1_RETIRED:
+NO
+
+P6_AUTHORIZED:
+YES
+
+P5_DECISION:
+DEFER_FAMILY_1
+
+P3_WIDENING:
+NOT_AUTHORIZED
+```
 
 ### Impact on next phase
-P5 family 1 is not retired. Families 2–5 and P6 are not authorized.
+P5 family 1 stays. That deferral authorizes P6 measurement only. Families 2–5 and P7 are not authorized.
 
 ### PHASE_COMMIT
 The commit that records this stop. Its hash is not written inside itself. No production code changed.
@@ -1913,34 +1940,37 @@ Parallel retrieve wasted spend when meaning changes. Discard default keeps that 
 No correctness work disguised as latency work. No reranker.
 
 ### Results
-TBD
+MEASURE_ONLY. `interaction_completed` now records `semantic_analysis_ms`, `state_ms`, `retrieve_ms`, `generation_ms`, `rag_ms`, and `total_ms` from clocks that already exist. RetrieveAndGenerate logs `rag_ms` only. The structured route logs `retrieve_ms` and `generation_ms`. Missing clocks are omitted, not invented.
+
+No live request-path sample was taken in this phase. The only trustworthy semantic sample remains P0: p50 1426 ms, p95 1737.45 ms. P0 did not record p99. `total_ms` p50/p95/p99 are not reported.
+
+Parallel explicit Retrieve was not wired. `ExplicitRetrieveOverlap` defaults off and performs no retrieval. A fingerprint mismatch, switch, correct, ambiguity, deixis, or photo scope change discards only when the flag is on.
 
 ### Unexpected findings
-TBD
+P1 still has no live request-path timing. Instrumenting the log does not create that sample. A Bedrock load run was not started.
 
 ### Decision
-TBD
+MEASURE_ONLY
 
 ### Impact on next phase
-TBD
+P7 is not authorized. Parallel Retrieve stays off until a human records Decision=allow_parallel_explicit_retrieve after a live sample.
 
 ### PHASE_COMMIT
-TBD
+The P6 commit that contains this Results block. Its hash is not written inside itself.
 
 ### PHASE_TEST_RESULT
-TBD
+Overlap and P3 ownership tests: 19 runs, 48 assertions, 0 failures. Controller phase-timing test passed. Answers unchanged. `common_noun?` and `identity_complement?` still present.
 
 ### PHASE_METRICS
-TBD
+semantic_analysis_ms p50 1426, p95 1737.45, from the frozen P0 sample only. total_ms not measured live. speculative_retrieve=off. No top_k, filter, reranker, or prompt change.
 
 ### EXECUTION PROMPT — PHASE P6
 
 ```text
-NOT AUTHORIZED until P5 Results are recorded.
+AUTHORIZED: P6 measurement. Decision=MEASURE_ONLY.
 
-Instrument phase latencies. Do not enable parallel retrieve unless this section is edited with an explicit Decision=allow_parallel_explicit_retrieve.
-Never call RetrieveAndGenerate on an unvalidated query.
-One commit. Do not start P7.
+Phase clocks are on interaction_completed. Parallel explicit Retrieve stays default off and unwired.
+Do not speculative-call RetrieveAndGenerate. Do not start P7.
 ```
 
 ---

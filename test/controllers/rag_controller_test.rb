@@ -511,6 +511,32 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     assert_equal 'answered', payload['outcome']
   end
 
+  test 'phase timings are logged and do not change the answer' do
+    sign_in @user
+    answer = "Ajuste documentado del resorte."
+    orchestrator = Object.new
+    orchestrator.define_singleton_method(:execute) do
+      { answer: answer, citations: [], session_id: nil, rag_ms: 40 }
+    end
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    with_mock_orchestrator(orchestrator) do
+      post rag_ask_url, params: { question: '¿cómo se ajustan los resortes?' }, as: :json
+    end
+    Rails.logger.stop_broadcasting_to(logger)
+
+    assert_equal answer, response.parsed_body['answer']
+    line = output.string.lines.find { |entry| entry.include?('"interaction_completed"') }
+    payload = JSON.parse(line.split('[PILOT_USAGE] ', 2).last)
+    assert payload['total_ms'].is_a?(Integer)
+    assert payload['state_ms'].is_a?(Integer)
+    assert payload['semantic_analysis_ms'].is_a?(Integer)
+    assert_equal 40, payload['rag_ms']
+    assert_nil payload['retrieve_ms']
+    assert_nil payload['generation_ms']
+  end
+
   test 'interaction_completed reports abstained when route_outcome says abstained regardless of answer text' do
     sign_in @user
 

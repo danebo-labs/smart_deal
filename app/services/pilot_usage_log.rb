@@ -18,6 +18,7 @@ class PilotUsageLog
     expansion_mechanism rejection_reasons sources_visible
     retrieval_budget expansion_used route_taken abstention
     retrieval_ms expansion_ms local_ms generation_ms generation_chunks
+    semantic_analysis_ms state_ms retrieve_ms rag_ms total_ms
     outcome outcome_reason verbatim_directive generation_input_tokens
     generation_output_tokens generation_prompt_chars attribution_dropped
     ambiguity_detected ambiguity_identifier ambiguity_families

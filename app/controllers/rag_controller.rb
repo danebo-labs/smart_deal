@@ -27,9 +27,13 @@ class RagController < ApplicationController
       account_id:  current_account.id
     )
     episode_turn = nil
+    semantic_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     shadow_analysis = observe_semantic_shadow(question, images, documents, conv_session, correlation_id)
+    semantic_analysis_ms = elapsed_ms(semantic_started)
+    state_ms = 0
     if question.present?
       # Single UPDATE instead of refresh! + add_to_history (2 UPDATEs).
+      state_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       episode_turn = conv_session.record_user_turn!(
         question,
         user_id: current_user.id,
@@ -37,6 +41,7 @@ class RagController < ApplicationController
         selection_turn: selection_turn?(question, conv_session) ||
           Rag::ThreadMenuSelection.call(question: question, conversation_history: conv_session.conversation_history)
       )
+      state_ms = elapsed_ms(state_started)
     else
       conv_session.refresh!
     end
@@ -69,7 +74,8 @@ class RagController < ApplicationController
         stage:           result.error_type.to_s,
         error_class:     result.error_class,
         route:           interaction_route(correlation_id),
-        latency_ms:      elapsed_ms(started_at)
+        latency_ms:      elapsed_ms(started_at),
+        phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at)
       )
       render_rag_json_error(result)
       return
@@ -99,7 +105,8 @@ class RagController < ApplicationController
         question_sha256: question_sha256,
         outcome:         interaction_outcome(result),
         route:           interaction_route(correlation_id),
-        latency_ms:      elapsed_ms(started_at)
+        latency_ms:      elapsed_ms(started_at),
+        phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at)
       )
     end
 
@@ -163,7 +170,7 @@ class RagController < ApplicationController
   # observed and emitted by FieldPhotoAnalysisJob instead — see the two call
   # sites above.
   def emit_interaction_completed(correlation_id:, question_sha256:, outcome:, route:, latency_ms:,
-                                 stage: nil, error_class: nil, conv_session: nil)
+                                 stage: nil, error_class: nil, conv_session: nil, phase_ms: {})
     PilotUsageLog.log(
       "interaction_completed",
       correlation_id: correlation_id,
@@ -175,8 +182,20 @@ class RagController < ApplicationController
       stage: stage,
       error_class: error_class,
       route: route,
-      latency_ms: latency_ms
+      latency_ms: latency_ms,
+      **phase_ms
     )
+  end
+
+  def phase_ms(result, semantic_analysis_ms, state_ms, started_at)
+    {
+      semantic_analysis_ms: semantic_analysis_ms,
+      state_ms: state_ms,
+      retrieve_ms: result&.retrieve_ms,
+      generation_ms: result&.generation_ms,
+      rag_ms: result&.rag_ms,
+      total_ms: elapsed_ms(started_at)
+    }.compact
   end
 
   def interaction_route(correlation_id)

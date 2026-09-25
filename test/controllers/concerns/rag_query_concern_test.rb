@@ -2860,4 +2860,49 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     context = @controller.send(:merge_selection_intent, context, question, session)
     { uris: scope.uris, auto_scope_filter: scope.auto_scope_filter, context: context }
   end
+
+  test "a hostile semantic analysis does not change the composed query" do
+    previous = ENV["FIELD_COMPANION_TURN_ENABLED"]
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "true"
+    composed = "cómo se ajustan los resortes de la fijación de cables en MonoSpace"
+    episode_turn = Rag::ActiveEpisodeTurn::Result.new(
+      decision: :continued,
+      reason: :same_episode,
+      state: { "facts" => { "model" => { "status" => "known", "value" => "MonoSpace" } } },
+      composed: composed,
+      fields_changed: []
+    )
+    hostile = Rag::ConversationalTurnAnalysis.new(
+      relation: "switch",
+      mentions: [ { "span" => "Nova", "role" => "equipment" } ],
+      refers_to: [ { "span" => "Nova", "slot" => "invented" } ],
+      ambiguous: true
+    )
+    session = ConversationSession.create!(
+      identifier: "web:p1-shadow",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: users(:one),
+      account: accounts(:legacy)
+    )
+    captured = nil
+    original_new = QueryOrchestratorService.method(:new)
+    mock = Object.new
+    mock.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: "s" } }
+    QueryOrchestratorService.define_singleton_method(:new) do |query, **_kwargs|
+      captured = query
+      mock
+    end
+    @controller.send(
+      :execute_rag_query,
+      "y el torque?",
+      conv_session: session,
+      episode_turn: episode_turn,
+      conversational_turn_analysis: hostile
+    )
+    assert_equal composed, captured
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) } if original_new
+    previous.nil? ? ENV.delete("FIELD_COMPANION_TURN_ENABLED") : ENV["FIELD_COMPANION_TURN_ENABLED"] = previous
+  end
 end

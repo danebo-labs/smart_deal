@@ -27,6 +27,7 @@ class RagController < ApplicationController
       account_id:  current_account.id
     )
     episode_turn = nil
+    shadow_analysis = observe_semantic_shadow(question, images, documents, conv_session, correlation_id)
     if question.present?
       # Single UPDATE instead of refresh! + add_to_history (2 UPDATEs).
       episode_turn = conv_session.record_user_turn!(
@@ -55,7 +56,8 @@ class RagController < ApplicationController
       user_id:         current_user.id,
       correlation_id:  correlation_id,
       field_photo_id:  params[:field_photo_id].presence,
-      episode_turn:    episode_turn
+      episode_turn:    episode_turn,
+      conversational_turn_analysis: shadow_analysis
     )
 
     unless result.success?
@@ -277,6 +279,16 @@ class RagController < ApplicationController
   rescue StandardError => e
     Rails.logger.warn("Rag::EvidenceCandidateSelector shadow run failed: #{e.message}")
     nil
+  end
+
+  def observe_semantic_shadow(question, images, documents, conv_session, correlation_id)
+    return nil if question.blank? || images.present? || documents.present?
+
+    Rag::SemanticQueryAnalyzer.observe(
+      turn: question,
+      episode: conv_session.active_episode,
+      correlation_id: correlation_id
+    )
   end
 
   def extract_images_from_params

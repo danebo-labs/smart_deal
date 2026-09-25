@@ -57,7 +57,23 @@ class BedrockClient
     generate_text(prompt, **opts)
   end
 
+  # Shadow perception only. Zero retries and an 8s read timeout, separate from generate_text.
+  CONVERSE_CLIENT_OPTIONS = {
+    retry_limit: 0,
+    max_attempts: 1,
+    http_open_timeout: 2,
+    http_read_timeout: 8
+  }.freeze
+
+  delegate :converse, to: :converse_client
+
   private
+
+  def converse_client
+    @converse_client ||= Aws::BedrockRuntime::Client.new(
+      build_aws_client_options.merge(CONVERSE_CLIENT_OPTIONS)
+    )
+  end
 
   def track_usage(result, model_id, prompt, start_time, max_tokens: nil, tracking: nil)
     usage = result['usage'] || {}

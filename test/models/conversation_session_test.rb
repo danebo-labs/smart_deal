@@ -1142,6 +1142,32 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?", result.composed
   end
 
+  test "a hostile semantic analysis cannot change episode facts" do
+    hostile = Rag::ConversationalTurnAnalysis.new(
+      relation: "switch",
+      mentions: [ { "span" => "Nova", "role" => "equipment" } ],
+      ambiguous: false
+    )
+    text = "el modelo es MonoSpace, como se ajustan los resortes?"
+    with_episode_flag("true") do
+      session = web_episode_session
+      assert_raises(ArgumentError) do
+        session.record_user_turn!(
+          text,
+          user_id: users(:one).id,
+          correlation_id: "query:hostile",
+          conversational_turn_analysis: hostile
+        )
+      end
+      result = session.record_user_turn!(text, user_id: users(:one).id, correlation_id: "query:v4")
+      assert_equal "MonoSpace", result.state.dig("facts", "model", "value")
+      assert_nil result.state.dig("facts", "manufacturer", "value")
+      assert_equal "switch", hostile.relation
+    end
+    assert_not_includes Rails.root.join("app/services/rag/query_analysis.rb").read, "ConversationalTurnAnalysis"
+    assert_not_includes Rails.root.join("app/services/rag/active_episode_turn.rb").read, "ConversationalTurnAnalysis"
+  end
+
   def web_episode_session(channel: "web", identifier: nil)
     ConversationSession.create!(
       identifier: identifier || "web:#{SecureRandom.hex(4)}",

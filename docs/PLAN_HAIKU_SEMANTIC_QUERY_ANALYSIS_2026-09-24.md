@@ -1237,30 +1237,32 @@ Synchronous shadow adds latency on gated turns even though the answer is v4. Tim
 No episode mutation from the analysis. No retrieval change. No heuristic deletion. No `conditional` behavior.
 
 ### Results
-TBD
+Local shadow is implemented and default `off`. `HAIKU_QUERY_ANALYSIS_MODE=shadow` calls Haiku on a text turn that already has an episode, pending fact, or active photo, before `record_user_turn!`. The object is logged and ignored. `conditional` and `always` parse and do not call. Timeout, invalid schema, hallucinated span, 5xx, and throttle return nil. `composed`, episode facts, and the effective query stay on v4. No network call was made in tests. P1 does not claim a new contamination rate; the last labeled figure remains P0 `unsafe_contamination=0`.
+
+Human authorization recorded in this edit: `AUTHORIZE_P1_LOCAL_SHADOW`.
 
 ### Unexpected findings
-TBD
+P0 p95 was 1737.45 ms and the shadow client keeps the P0 read timeout of 8s with zero retries. That is too slow to enable outside local. No retrieval parallelization and no shorter timeout were introduced. There is no request-path latency sample in this phase because tests do not call Bedrock.
 
 ### Decision
-TBD
+PENDING_HUMAN
 
 ### Impact on next phase
-TBD
+P2 is not authorized and was not started.
 
 ### PHASE_COMMIT
-TBD
+The P1 commit that contains this Results block. Its hash is not written inside itself.
 
 ### PHASE_TEST_RESULT
-TBD
+`bin/rails test` on the P1 analyzer, flag, active episode, conversation session, and rag query concern files: 308 runs, 1517 assertions, 0 failures, 0 errors, 22 skips.
 
 ### PHASE_METRICS
-TBD
+No live shadow sample. `semantic_analysis_ms`, `analyzer_status`, `relation`, token counts, and `cost_usd` are on the log event only. No percentile store and no table. P0 remains the last measured latency: p50 1426 ms, p95 1737.45 ms, cost_usd 0.127424.
 
 ### EXECUTION PROMPT — PHASE P1
 
 ```text
-NOT AUTHORIZED until a human, after P0 Decision=PENDING_HUMAN, authorizes P1 in this document. A harness recommendation does not authorize P1. P0 must have recorded unsafe_contamination=0.
+AUTHORIZED: AUTHORIZE_P1_LOCAL_SHADOW. Local shadow only. Do not start P2.
 
 When authorized: implement P1 local shadow only, on experiment/haiku-semantic-query-analysis, from the P0 PHASE_COMMIT.
 Create ConversationalTurnAnalysis, SemanticQueryAnalyzer, HaikuQueryAnalysisFlag.

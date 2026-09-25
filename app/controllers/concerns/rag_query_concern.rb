@@ -35,6 +35,10 @@ module RagQueryConcern
 
   private
 
+  def ignore_shadow_analysis(_analysis)
+    nil
+  end
+
   # Executes a query through the orchestrator, which classifies intent
   # and delegates to either BedrockRagService (knowledge base) or
   # SqlGenerationService (database) as appropriate.
@@ -51,10 +55,12 @@ module RagQueryConcern
                         session_context: nil, conv_session: nil, entity_s3_uris: [],
                         output_channel: nil, force_entity_filter: nil, account: nil, user_id: nil,
                         correlation_id: nil, field_photo_id: nil, conversation_session_id: nil,
-                        episode_turn: nil)
+                        episode_turn: nil, conversational_turn_analysis: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
+    # P1 shadow perception is observational. Effective query stays v4.
+    ignore_shadow_analysis(conversational_turn_analysis)
 
     if question.blank? && images.empty? && documents.empty?
       return RagResult.new(success?: false, error_type: :blank_question)

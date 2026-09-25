@@ -1653,8 +1653,29 @@ Photo recording stores `active_photo` (`field_photo_id`, `sha256`, `correlation_
 ### Decision
 skip
 
+```text
+P4_DECISION:
+skip
+
+CONSUMER_FOUND:
+NO
+
+PRODUCTION_CODE_CHANGED:
+NO
+
+P4_HUMAN_DECISION:
+accepted skip. AUTHORIZE_P5_FAMILY_1
+
+AUTHORIZED_SCOPE:
+common_noun? and identity_complement? only
+
+NOT_AUTHORIZED:
+other P5 families
+P6
+```
+
 ### Impact on next phase
-P5 may proceed; no unread state added.
+P5 family 1 was authorized. It stopped before deletion. P6 is not authorized.
 
 ### PHASE_COMMIT
 N/A
@@ -1767,34 +1788,46 @@ Hidden caller of `common_noun?`. Grep before delete.
 Do not delete all families at once. Do not keep the method as an automatic fallback.
 
 ### Results
-TBD
+BLOCKED. `common_noun?` and `identity_complement?` were not deleted.
+
+Callers are only inside `TechnicalReferentResolver`: `contaminated?` and `expand`. No other runtime caller.
+
+The methods are still the only guard for a lowercase one-word equipment complement copied onto a new explicit model. `unreaffirmed_name?` covers mixed case and all caps. `specific_token?` covers tokens with a digit. Neither covers `minispace`, `maxpro`, or `evo`.
+
+Production cases, already asserted in `active_episode_turn_test.rb`:
+
+- `a bare de complement is not copied onto a new model` — goal `Cómo se ajustan los resortes de minispace?`, turn `el modelo es MonoSpace, como se ajustan los resortes?`
+- `determined equipment names are not copied onto a new model` — `de minispace`, `del minispace`, `de la minispace` in lowercase
+- `a short unknown equipment name is not copied onto a new model` — `maxpro`, `evo`
+
+Those turns are not `switch` or `correct`. Covering them with perception would make `continue` Haiku-owned. P3 was not widened. The methods stay in place. They are not a silent fallback.
 
 ### Unexpected findings
-TBD
+`en minispace` inside a longer complement is already blocked by `pure_complement?`, not by this family. The unique residue is a single `de`/`del` complement whose token is lowercase and has no digit.
 
 ### Decision
-TBD
+PENDING_HUMAN
 
 ### Impact on next phase
-TBD
+P5 family 1 is not retired. Families 2–5 and P6 are not authorized.
 
 ### PHASE_COMMIT
-TBD
+The commit that records this stop. Its hash is not written inside itself. No production code changed.
 
 ### PHASE_TEST_RESULT
-TBD
+No behavior change, so the resolver and episode suites were not re-run as a retirement proof. Contamination replay was not used to justify a deletion.
 
 ### PHASE_METRICS
-TBD
+heuristic_family_retired=none. Callers remaining: `TechnicalReferentResolver#contaminated?`, `TechnicalReferentResolver#expand`. unsafe_contamination not reopened.
 
 ### EXECUTION PROMPT — PHASE P5
 
 ```text
-NOT AUTHORIZED until P4 Decision is recorded (including skip).
+AUTHORIZED: AUTHORIZE_P5_FAMILY_1. Stopped. Family not deleted.
 
-Remove only common_noun? and identity_complement?, unless this section was edited to name another single family.
-Grep for callers first. Do not remove FollowupQueryRewriter in this commit.
-One commit. Do not start P6.
+The lowercase complement cases above are still resolved only by common_noun? and identity_complement?.
+Do not delete them until a human names a deterministic owner that is not continue-ownership.
+Do not start family 2. Do not start P6.
 ```
 
 ---

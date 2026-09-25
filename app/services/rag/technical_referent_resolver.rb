@@ -196,7 +196,7 @@ module Rag
         next unless KbDocumentResolver.specific_token?(token)
         return true unless @text.match?(/\b#{Regexp.escape(token)}\b/)
       end
-      unreaffirmed_name?(phrase) || identity_complement?(phrase)
+      unreaffirmed_name?(phrase) || explicit_model_blocks_complement?(phrase)
     end
 
     # Evidence that this turn breaks continuity lives in the turn itself.
@@ -208,30 +208,24 @@ module Rag
       source.present? && contaminated?(source)
     end
 
-    # With a new explicit model, a single complement token is identity unless
-    # it is a simple Spanish common noun. A function phrase has two content
-    # words and stays copyable. No character-length cutoff and no model list.
-    def identity_complement?(phrase)
+    # An explicit model declaration does not import a prior complement that
+    # the current turn does not repeat. No product-versus-component guess.
+    def explicit_model_blocks_complement?(phrase)
       return false unless @text.match?(ActiveEpisodeTurn::MODEL_VALUE_RE)
 
       _head, modifier = split_np(phrase)
-      words = content_words(modifier.presence || phrase)
-      words.one? && !common_noun?(words.first)
+      complement = modifier.presence
+      return false if complement.blank?
+
+      !complement_repeated?(complement)
     end
 
-    def content_words(text)
-      FollowupQueryRewriter.normalize_label(text).split.reject { |word|
+    def complement_repeated?(complement)
+      current = FollowupQueryRewriter.normalize_label(@text)
+      tokens = FollowupQueryRewriter.normalize_label(complement).split.reject { |word|
         LINK.include?(word) || ARTICLE_WORD.include?(word) || PREPOSITION.include?(word)
       }
-    end
-
-    def common_noun?(word)
-      return false unless word.match?(/\A[a-z]+\z/)
-      return false unless word.match?(/[aeiou]/)
-      return false if word.match?(/[kwxy]/)
-      return false unless word.match?(/[rlmn]/)
-
-      word.scan(/[aeiou]+/).size <= 2
+      tokens.any? && tokens.all? { |token| current.match?(/\b#{Regexp.escape(token)}\b/) }
     end
 
     # Mixed-case and all-caps tokens are product identity. specific_token?
@@ -248,7 +242,7 @@ module Rag
     def expand(source)
       source_head, source_modifier = split_np(source)
       return Result.rejected if source_head.blank? || source_modifier.blank? || !pure_complement?(source_modifier)
-      return Result.context_break if identity_complement?(source_modifier)
+      return Result.context_break if explicit_model_blocks_complement?(source_modifier)
 
       current_object = object_phrase(@text).presence || matching_leading_np(source_head)
       if current_object.present?

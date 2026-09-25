@@ -2057,38 +2057,130 @@ Near-always-on cost. Use P0 unit cost times observed hands-free volume. Cost sti
 Do not build the voice product in this plan. Do not enable WhatsApp.
 
 ### Results
-`VoiceDictationsController#create` accepts an audio upload for a certification report. `TranscriptionJob` writes `VoiceDictation#transcript_raw`. Confirmation writes an inspection finding. That path does not call `RagController`, `SemanticQueryAnalyzer`, or the episode turn.
+CLOSED_NO_CHANNEL. No hands-free conversational-assistant entry point exists for this RAG feature.
 
-`SpeechToText::Result` is text, duration, provider, model, and raw payload. It has no confidence and no alternatives. The confirm form may carry a photo for the finding. That is not the assistant photo correlation id.
+Danebo has `VoiceDictationsController#create` → `TranscriptionJob#transcribe` → `VoiceDictation.record_transcript`. That module is the field-certification workflow: inspectors dictate inspection findings into a certification report. It does not call `RagController`, `RagQueryConcern`, `SemanticQueryAnalyzer`, or `ConversationalTurnAnalysis`. It was not connected.
 
-P6 left `total_ms` p50/p95/p99 unmeasured. Always-on perception was not wired.
+No voice channel was created. No second model was added. Production code was not changed.
 
 ### Unexpected findings
-The certifier dictation is a separate product from the field-assistant query. It is a real ASR request path and it is not a hands-free arm of the RAG turn.
+None beyond the product boundary. The certification dictation module is real and irrelevant to this feature.
 
 ### Decision
-channel_found_latency_unresolved
+no_channel
+
+```text
+P7_HUMAN_DECISION:
+CLOSE_NO_CHANNEL
+
+P7_STATUS:
+CLOSED_NO_CHANNEL
+
+P7_DECISION:
+no_channel
+
+HANDS_FREE_ENTRY_POINT_FOUND:
+NO
+
+VOICE_DICTATION_MODULE_EXISTS:
+YES
+
+VOICE_DICTATION_MODULE_RELEVANT_TO_THIS_FEATURE:
+NO
+
+REASON:
+Danebo has an existing voice dictation module for the field-certification
+workflow, but no hands-free conversational assistant entry point currently
+exists for the RAG technical-assistant feature covered by this plan.
+
+The certification voice path is a separate product flow and does not invoke
+RagController, RagQueryConcern, SemanticQueryAnalyzer, or
+ConversationalTurnAnalysis.
+
+PRODUCTION_CODE_CHANGED:
+NO
+
+SECOND_MODEL_ADDED:
+NO
+```
 
 ### Impact on next phase
-No further phase is authorized. Do not wire hands-free perception until a live `total_ms` sample exists and a human says this certifier path is the hands-free channel.
+This plan ends at P7. No P8. The certification voice module stays untouched.
+
+Live assistant request-path total_ms p50/p95/p99 remain unmeasured. That is an open telemetry item. It does not block P7, because this feature has no hands-free conversational channel.
 
 ### PHASE_COMMIT
-N/A. Production code was not changed.
+N/A. Production code was not changed. This record replaces the earlier `channel_found_latency_unresolved` reading.
 
 ### PHASE_TEST_RESULT
 No production change. No new tests.
 
 ### PHASE_METRICS
-hands_free not set. semantic p50 1426 ms and p95 1737.45 ms remain the P0 sample. total_ms p50/p95/p99 remain NOT_MEASURED.
+hands_free not set. No new model call. Semantic p50 1426 ms and p95 1737.45 ms remain the P0 sample. total_ms p50/p95/p99 remain NOT_MEASURED and are not a P7 blocker.
 
 ### EXECUTION PROMPT — PHASE P7
 
 ```text
-AUTHORIZED: AUTHORIZE_P7_RESOLUTION_ONLY. Stopped.
+AUTHORIZED: CLOSE_NO_CHANNEL.
 
-Decision=channel_found_latency_unresolved.
-VoiceDictationsController is the certifier ASR path. It was not wired.
-Do not invent a latency budget. Do not add a model.
+The certification dictation module is a different product. Do not connect it.
+Do not create a voice channel. Do not run a latency benchmark to unblock P7.
+Do not start another architecture phase.
+```
+
+---
+
+## CONVERGENCE_1 — explicit model complement freeze
+
+### Hypothesis
+
+When the current turn matches `MODEL_VALUE_RE`, refusing every unreaffirmed prior `ajust*` complement removes the need for `common_noun?` and `identity_complement?`.
+
+### Approved finding
+
+When `MODEL_VALUE_RE` matches the current turn, `TechnicalReferentResolver` must not import an unreaffirmed prior `ajust*` complement unless that complement is explicitly repeated in the current turn.
+
+### Approved tradeoff
+
+`del freno` and `del relé` are intentionally not inherited across an explicit model declaration unless repeated. This is a false-negative continuity tradeoff accepted to eliminate the phonotactic product-versus-component semantic heuristic. Do not replace it with another heuristic.
+
+### Exact scope
+
+Delete `TechnicalReferentResolver#identity_complement?` and `#common_noun?` only. Haiku ownership stays `switch` and `correct`. Turns that do not match `MODEL_VALUE_RE` keep the previous copy behavior.
+
+### Files to MODIFY
+
+- `app/services/rag/technical_referent_resolver.rb`
+- `test/services/rag/active_episode_turn_test.rb`
+- this document
+
+### Results
+The freeze is in `explicit_model_blocks_complement?`. A declared model does not inherit `minispace`, `MiniSpace`, `MINISPACE`, `maxpro`, `evo`, `x1`, `freno`, `relé`, or `fijación de cables` unless the current turn repeats that complement. A turn that repeats `freno` keeps it. Turns without `modelo es` still expand `del freno` and the cable-fixing complement. `common_noun?` and `identity_complement?` are gone. No production caller remains.
+
+### Unexpected findings
+The same freeze also stops copying the multi-word complement `de la fijación de cables` onto a turn that declares a model. That follows the approved rule. It is broader than the single-token examples and it is not a new classifier.
+
+### Decision
+PENDING_HUMAN
+
+### Impact on next phase
+CONVERGENCE_2 is not authorized.
+
+### PHASE_COMMIT
+The commit that contains this Results block. Its hash is not written inside itself.
+
+### PHASE_TEST_RESULT
+Episode, ownership, and overlap tests: 125 runs, 582 assertions, 0 failures. Frozen P0 harness: 10 runs, 1769 assertions, 0 failures. `unsafe_contamination` formula unchanged. Corpus and labels were not edited.
+
+### PHASE_METRICS
+Retired methods: `identity_complement?`, `common_noun?`. New model calls: 0. Haiku ownership unchanged.
+
+### EXECUTION PROMPT — CONVERGENCE_1
+
+```text
+AUTHORIZED: APPROVE_CONVERGENCE_1_EXPLICIT_MODEL_COMPLEMENT_FREEZE.
+
+Implemented. Do not start CONVERGENCE_2.
 ```
 
 ---

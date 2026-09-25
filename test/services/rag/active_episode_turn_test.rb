@@ -474,7 +474,6 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
   end
 
   GOAL = "Cómo se ajustan los resortes de la fijación de cables?"
-  EXPANDED = "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?"
 
   test "hybrid model turn expands only the cable-fixing referent" do
     result = resolve(
@@ -482,23 +481,21 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       chain
     )
 
-    assert_equal :continued_elliptical, result.decision
-    assert_equal GOAL, result.state.dig("goal", "text")
+    assert_equal :continued_self_contained, result.decision
     assert_equal "MonoSpace", fact_value(result, "model")
     assert_nil fact_value(result, "manufacturer")
-    assert_equal EXPANDED, result.composed
-    assert_not_includes result.composed, "Fuji"
-    assert_not_includes result.composed, "MiniSpace"
-    assert_not_includes result.composed, "CEA15"
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación"
   end
 
-  test "two direct turns expand the same referent" do
+  test "an explicit model does not import the prior cable-fixing complement" do
     result = resolve(
       "el modelo es MonoSpace, como se ajustan los resortes?",
       [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
     )
 
-    assert_equal EXPANDED, result.composed
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación"
   end
 
   test "demonstrative plural expands the same referent" do
@@ -513,7 +510,8 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
     )
 
-    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los resortes de la fijación de cables?", result.composed
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación de cables"
   end
 
   test "a singular verb does not copy a plural object" do
@@ -532,8 +530,8 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
     )
 
-    assert_includes result.composed, "resortes de la fijación de cables"
-    assert_includes result.composed, "MonoSpace"
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación de cables"
   end
 
   test "a rejected ajust ellipsis does not fall through to whole-goal compose" do
@@ -670,18 +668,18 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       prior_turns: chain
     )
 
-    assert_equal EXPANDED, result.composed
-    assert_not_includes result.composed, "CEA15"
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "CEA15"
   end
 
-  test "an identifier restated in the current turn is kept" do
+  test "an explicit model does not paste the prior complement onto a restated identifier" do
     result = resolve(
       "el modelo es MonoSpace, placa CEA15, como se ajustan los resortes?",
       chain
     )
 
-    assert_includes result.composed, "CEA15"
-    assert_includes result.composed, "fijación de cables"
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación de cables"
   end
 
   test "a 442 character expansion is kept" do
@@ -824,8 +822,8 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       goal: goal
     )
 
-    assert_equal "el modelo es MonoSpace, como se ajustan los contactos del relé?", result.composed
-    assert_not_includes result.composed, "fijación"
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "relé"
   end
 
   test "a lowercase equipment qualifier in the antecedent is not copied" do
@@ -886,9 +884,9 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
       [ turn(GOAL, "query:prior", NOW - 5.minutes) ]
     )
 
-    assert_equal :continued_elliptical, result.decision
-    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los resortes de la fijación de cables?", result.composed
-    assert_equal GOAL, result.state.dig("goal", "text")
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_not_includes result.state.dig("goal", "text").to_s, "fijación de cables"
   end
 
   test "rejected coordination does not paste the whole goal" do
@@ -938,8 +936,19 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     spring_result = resolve("¿cómo se ajustan los resortes?", [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
 
     assert_equal "¿cómo se ajustan las bobinas del freno?", brake_result.composed
-    assert_equal "el modelo es MonoSpace, como se ajustan los contactos del relé?", contact_result.composed
+    assert_nil contact_result.composed
+    assert_not_includes contact_result.state.dig("goal", "text").to_s, "relé"
     assert_equal "¿cómo se ajustan los resortes de la fijación de cables?", spring_result.composed
+  end
+
+  test "a repeated complement stays in the current turn after an explicit model" do
+    result = resolve(
+      "el modelo es MonoSpace, ¿cómo se ajustan los resortes del freno?",
+      [ turn("Cómo se ajustan los resortes del freno?", "query:prior", NOW - 5.minutes) ],
+      goal: "Cómo se ajustan los resortes del freno?"
+    )
+
+    assert_includes result.state.dig("goal", "text").to_s, "freno"
   end
 
   test "an ambiguous single word does not bridge back to the spring goal" do
@@ -954,7 +963,8 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     [ "Fuji Yida", "placa CEA15", "código 8", "sin código", "lo medí y da 18", "el modelo es MiniSpace" ].each do |bridge|
       result = blocking_bridge(bridge)
 
-      assert_includes result.composed.to_s, "fijación de cables", bridge
+      assert_nil result.composed
+      assert_not_includes result.state.dig("goal", "text").to_s, "fijación de cables"
     end
   end
 
@@ -1106,9 +1116,12 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     )
     springs = resolve(current_for.call("los resortes"), [ turn(GOAL, "query:prior", NOW - 5.minutes) ])
 
-    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan las bobinas del freno?", brake.composed
-    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los contactos del relé?", contacts.composed
-    assert_equal "el modelo es MonoSpace, ¿cómo se ajustan los resortes de la fijación de cables?", springs.composed
+    assert_nil brake.composed
+    assert_nil contacts.composed
+    assert_nil springs.composed
+    assert_not_includes brake.state.dig("goal", "text").to_s, "freno"
+    assert_not_includes contacts.state.dig("goal", "text").to_s, "relé"
+    assert_not_includes springs.state.dig("goal", "text").to_s, "fijación"
   end
 
   test "an explicit component breaks continuity even without a valid antecedent" do

@@ -48,8 +48,8 @@ class Rag::ExplicitRetrieveOverlapTest < ActiveSupport::TestCase
 
   test "deferred P5 heuristics remain" do
     source = Rails.root.join("app/services/rag/technical_referent_resolver.rb").read
-    assert_includes source, "def common_noun?"
-    assert_includes source, "def identity_complement?"
+    assert_not_includes source, "def common_noun?"
+    assert_not_includes source, "def identity_complement?"
   end
 
   private

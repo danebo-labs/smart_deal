@@ -122,7 +122,8 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     analysis = perception("correct", [ [ "MiniSpace", "equipment" ] ])
     rows = [
       identity("mini-pt.pdf", "KONE MiniSpace PT", %w[MiniSpace], %w[KONE]),
-      identity("mini-15.pdf", "MiniSpace 1.5", %w[MiniSpace], %w[KONE])
+      identity("mini-15.pdf", "MiniSpace 1.5", %w[MiniSpace], %w[KONE]),
+      identity("polaris.pdf", "KONE Polaris Pro", %w[Polaris], %w[KONE])
     ]
     with_mode("conditional") do
       with_identities(rows) do
@@ -145,7 +146,8 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
       end
       with_identities([
         identity("mini-pt.pdf", "KONE MiniSpace PT", %w[MiniSpace], %w[KONE]),
-        identity("mini-15.pdf", "MiniSpace 1.5", %w[MiniSpace], %w[KONE])
+        identity("mini-15.pdf", "MiniSpace 1.5", %w[MiniSpace], %w[KONE]),
+        identity("polaris.pdf", "KONE Polaris Pro", %w[Polaris], %w[KONE])
       ]) do
         switched = turn("cambia al MiniSpace", analysis: perception("switch", [ [ "MiniSpace", "equipment" ] ]), account: accounts(:legacy))
         assert_equal :new_episode, switched.decision
@@ -158,7 +160,9 @@ class Rag::HaikuOwnershipSliceTest < ActiveSupport::TestCase
     with_mode("conditional") do
       with_identities([
         identity("mono-21.pdf", "KONE MonoSpace 2.1", %w[MonoSpace MX05], %w[KONE]),
-        identity("mono-25.pdf", "KONE MonoSpace 2.5", %w[MonoSpace], %w[KONE])
+        identity("mono-25.pdf", "KONE MonoSpace 2.5", %w[MonoSpace], %w[KONE]),
+        identity("ecospace.pdf", "KONE EcoSpace", %w[EcoSpace], %w[KONE]),
+        identity("kdl.pdf", "puesta en marcha", %w[KDL16], %w[KONE])
       ]) do
         switched = turn("cambia al MonoSpace", analysis: perception("switch", [ [ "MonoSpace", "equipment" ] ]), account: accounts(:legacy))
         assert_equal :new_episode, switched.decision

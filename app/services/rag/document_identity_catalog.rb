@@ -77,6 +77,8 @@ module Rag
     # One designator that equals the span is one model identity. Extra
     # designators on that same entry are variant tokens, not a second model.
     # A different designator and no match for the span is a different model.
+    # An alias-only hit whose display name does not name the span is not
+    # evidence for that identity.
     def self.consensus(entries, span)
       needle = span.to_s
       return nil if needle.blank?
@@ -84,7 +86,7 @@ module Rag
       confirmed = []
       brands = []
       foreign = false
-      Array(entries).each do |entry|
+      Array(entries).select { |entry| identifies_span?(entry, needle) }.each do |entry|
         designators = Array(entry.designators)
         matched = designators.select { |item| item.casecmp?(needle) }
         if matched.any?
@@ -102,6 +104,12 @@ module Rag
       brand_names = brands.map(&:to_s).compact_blank.uniq { |item| item.downcase }
       { "model" => identities.first, "manufacturer" => (brand_names.one? ? brand_names.first : nil) }
     end
+
+    def self.identifies_span?(entry, needle)
+      Array(entry.designators).any? { |item| item.casecmp?(needle) } ||
+        entry.display_name.to_s.match?(/\b#{Regexp.escape(needle)}\b/i)
+    end
+    private_class_method :identifies_span?
 
     def entries
       @entries.values

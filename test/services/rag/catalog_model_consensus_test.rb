@@ -13,6 +13,11 @@ class Rag::CatalogModelConsensusTest < ActiveSupport::TestCase
     mini = consensus_for(catalog, "MiniSpace")
     assert_equal "MiniSpace", mini["model"]
     assert_equal "KONE", mini["manufacturer"]
+
+    # Alias hits such as EcoSpace, KDL16, and Polaris stay in the resolver
+    # set. They are not a second identity for these spans.
+    assert_equal "MonoSpace", Rag::DocumentIdentityCatalog.consensus(catalog.entries, "MonoSpace")["model"]
+    assert_equal "MiniSpace", Rag::DocumentIdentityCatalog.consensus(catalog.entries, "MiniSpace")["model"]
   end
 
   test "two designators for one span stay ambiguous and an unknown span does not" do

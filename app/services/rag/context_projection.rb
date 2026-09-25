@@ -13,8 +13,8 @@ module Rag
       new(question).applicable?
     end
 
-    def self.search_text(question)
-      new(question).search_text
+    def self.search_text(question, short: false)
+      new(question).search_text(short: short)
     end
 
     def self.hyphenated_model(question)
@@ -33,8 +33,8 @@ module Rag
       hyphenated_model.present? || spring_adjustment?
     end
 
-    def search_text
-      return @question.strip if procedural_query?
+    def search_text(short: false)
+      return @question.strip if procedural_query? && !short
 
       parts = []
       if (model = hyphenated_model)

@@ -110,7 +110,7 @@ module Rag
 
     def retrieve_projection
       @rag_service.retrieve_chunks(
-        ContextProjection.search_text(@question),
+        ContextProjection.search_text(@question, short: @photo_evidence.present?),
         entity_s3_uris: [],
         entity_sources: @entity_sources,
         force_entity_filter: false,

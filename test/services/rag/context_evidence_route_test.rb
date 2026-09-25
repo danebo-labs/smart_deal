@@ -5,6 +5,8 @@ require "test_helper"
 class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
   THYSSEN = "En Thyssen-E, ¿qué LED señala una condición normal y cuál un fallo?"
   SPRINGS = "Cómo se ajustan los resortes de la fijación de cables ?"
+  IMAGE_SPRINGS = "¿Cómo se ajustan los resortes en la imagen?"
+  VISUAL_READING = "La imagen muestra conjuntos verticales de terminación de cable, con varillas roscadas y resortes helicoidales en paralelo."
   FUJI = "#{SPRINGS}\nes Fuji Yida"
   LCB = "Según los pasos de instalación física de la página 2 del procedimiento Otis de cambio de la placa LCB I por la LCB II, luego de colocar la LCB II alineando los orificios, ¿qué se debe usar como plantilla (gabarito) para marcar los nuevos orificios en la base?"
 
@@ -137,6 +139,37 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
   # CG-D19: a photo with a question is one answer, and the reading of the photo
   # opens its prose. This route builds its own prompt, so the Photo Evidence
   # block of the turn is the only session context it carries — never the rest.
+  test "a photo spring question retrieves the short projection and keeps the visual reading" do
+    rag = FakeRagService.new([ cable_spring_chunk ])
+    generator = FakeGenerator.new(
+      "#{VISUAL_READING} No tengo en el manual recuperado el procedimiento de ajuste de esos resortes."
+    )
+    session_context = <<~TEXT
+      ## Photo Evidence (this turn)
+      #{VISUAL_READING}
+      - Component: Terminación de cable
+    TEXT
+
+    outcome = build_route(
+      question: IMAGE_SPRINGS,
+      rag_service: rag,
+      generator: generator,
+      session_context: session_context
+    ).execute
+
+    assert_equal IMAGE_SPRINGS, Rag::ContextProjection.search_text(IMAGE_SPRINGS)
+    assert_equal "resortes ajustar", Rag::ContextProjection.search_text(IMAGE_SPRINGS, short: true)
+    assert_equal 1, rag.calls.size
+    assert_equal "resortes ajustar", rag.calls.first[:question]
+    assert_equal 1, generator.calls.size
+    assert_includes generator.calls.first[:prompt], "## Photo Evidence (this turn)"
+    assert_includes generator.calls.first[:prompt], VISUAL_READING
+    assert_equal :answered, outcome.status
+    assert_includes outcome.result[:answer], VISUAL_READING
+    assert_empty outcome.result[:citations]
+    assert_no_match(/apriete|gire el tornillo|tolerancia|\bpares\b|cota|\d+(?:[,.]\d+)?\s*mm/i, outcome.result[:answer])
+  end
+
   test "the photo evidence block of the turn reaches the generator and the rest of the context does not" do
     rag = FakeRagService.new([ note_chunk ])
     generator = FakeGenerator.new("Por la foto, esto parece un amarre de cables. La nota no documenta el ajuste. [1]")

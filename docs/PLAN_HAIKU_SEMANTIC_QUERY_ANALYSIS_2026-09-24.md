@@ -3157,3 +3157,61 @@ Ninguna de estas fases se ejecuta con este documento.
 2. Corregir el exit de la fase siguiente si la medición contradice un número marcado como propuesta.
 3. `unsafe_contamination=0` no se relaja por accuracy ni por costo.
 4. Si un hallazgo pide LangGraph, una tabla nueva, o un rewriter general, no se implementa: se anota y se escala.
+
+## Cierre de producción
+
+La tabla de Estado de arriba queda como historial del plan original. No abre otra fase.
+
+```text
+FINAL_IMPLEMENTATION_STATUS:
+COMPLETE
+
+FINAL_DEPLOYED_COMMIT:
+ab26b69a3a0d9606cd78ab8b86088dcd0dda6658
+
+PRODUCTION_MODE:
+conditional
+
+OWNERSHIP:
+switch, correct
+
+FINAL_BASELINE:
+14/14 flows PASS
+29/29 turns executed
+HTTP_5XX=0
+UNSAFE_CONTAMINATION=0
+
+ARCHITECTURE_DECISION:
+HYBRID_MINIMAL
+
+FURTHER_ARCHITECTURE_WORK_REQUIRED:
+NO
+```
+
+Comportamiento que queda en producción:
+
+```text
+- canonical switch persists catalog-consensus model identity
+- canonical correct persists catalog-consensus model identity
+- unknown identity remains fail-closed
+- genuinely ambiguous catalog identity remains fail-closed
+- continue preserves deterministic context
+- explicit MODEL_VALUE_RE freeze remains active
+- reaffirmation remains active
+- no stale context contamination in frozen production baseline
+```
+
+`HAIKU_QUERY_ANALYSIS_MODE=conditional`. La repetición es `script/production_conversational_baseline_v2.rb` sobre `script/fixtures/production_conversational_baseline_v2.json`. No es un gate de deploy: no pide aprobación de técnico ni de piloto, ni umbrales de latencia o de accuracy. El uso real es evidencia de producto.
+
+```text
+FUTURE_OPTION:
+Tenant Equipment/Entity Projection
+
+STATUS:
+NOT PLANNED
+
+TRIGGER:
+Reconsider only if production evidence shows recurring identity-resolution
+failures that cannot be handled safely by current deterministic catalog
+consensus.
+```

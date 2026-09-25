@@ -40,6 +40,14 @@ Two rules that have already caused incidents:
   answer forever and reports a frozen state. `BulkUploadStatusReport` already
   does this.
 
+## Conversational baseline replay
+
+`script/production_conversational_baseline_v2.rb` replays the frozen
+`script/fixtures/production_conversational_baseline_v2.json` (14 flows, 29
+turns) against the running web container. The header of that file is the
+command, the pass rule, and the isolated-user cleanup. It does not edit the
+P0 corpus. It is not a deploy gate.
+
 ## Bulk ingestion toolkit
 
 | Script | Effects | What it is for |

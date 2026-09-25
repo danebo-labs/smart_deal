@@ -7,7 +7,7 @@ STATUS: plan_v2_corrections_applied
 CURRENT_PHASE: plan_v2_pending_commit
 LAST_CLOSED_PHASE: none
 NEXT_AUTHORIZED_PHASE: PLAN_V2_COMMIT
-BASELINE_COMMIT: PENDING_PLAN_V2_COMMIT
+BASELINE_COMMIT: 55df6a802618fe9fb5305e6d88f363c9efb43ec8
 RUNTIME_BEHAVIOR_BASELINE: dce25d080aaba1779898339206d7ec297bdbd3e7
 EXPERIMENT_BRANCH: experiment/haiku-semantic-query-analysis
 ARCHITECTURE_DECISION: HYBRID_MINIMAL
@@ -841,13 +841,13 @@ Then STOP. Before any network call, a human reviews `expected`, `safety`, `v4_ex
 
 ```text
 P0_CORPUS_SHA256:
-PENDING_COMMIT_A_AND_HUMAN_REVIEW
+8b793b497c22b7ea6751ff9ba056e20886a9241d0c80fcf11944f37bf768140c
 
 P0_PROMPT_SHA256:
-PENDING_COMMIT_A_AND_HUMAN_REVIEW
+516c09cc841b25e4cd24edeb95cee98891ede6b24a4e9a01d33c821ea39882a0
 
 P0_LABEL_REVIEW:
-PENDING_HUMAN
+APPROVED_BY_HUMAN
 ```
 
 Fill the two hashes from the committed corpus bytes and the frozen prompt constant, and set `P0_LABEL_REVIEW` to `APPROVED_BY_HUMAN`, only after that review. Only then run the network pass. One network run.
@@ -1006,38 +1006,60 @@ Tool-call wrapping inflates output tokens versus native `output_config`. That is
 - No `git add -A`, `git add .`, `git commit -a`, `git checkout`, `git restore`, `git stash`, or `git clean`.
 
 ### Results
-TBD
+One network run, 70/70 cases scored, status `complete`. Model `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Report: `tmp/haiku_semantic_perception_p0_report.json` (not committed). Corpus and prompt SHA256 match the frozen values below. `unsafe_contamination` is 0. Open-world projection accuracy is 48/60 for Haiku and 24/60 for v4. Transport errors are 0. The pre-registered rule yields `PROCEED_RECOMMENDED`. That recommendation does not authorize P1.
+
+The corpus is a 70-case hand label. Tool-call wrapping is the measured output path. `relation_accuracy` is 31/60, below projection accuracy, because several projection matches still disagree on `relation`.
 
 ### Unexpected findings
-TBD
+No frozen label was edited after the run. No label is reclassified here.
+
+Haiku attached `pending_question` on closed answer cases whose gold `refers_to` is empty (`closed-model-1`, `closed-code-1`, `closed-choice-1`, `closed-choice-2`). On `closed-measure-2` it attached `obs_1`; the approved gold keeps `refers_to` empty and does not score that binding as capability. `invalid_schema` is 4 and `hallucinated_spans` is 7. Those outputs project to no inheritance and no slots. `ambiguous_surfaced` is 7/8.
 
 ### Recommendation
-TBD
+PROCEED_RECOMMENDED
 
 ### Decision
-PENDING_HUMAN after the run. Leave this block TBD until Commit B, then set `PENDING_HUMAN`. Do not set `proceed`.
+PENDING_HUMAN
 
 ### Impact on next phase
-TBD
+P1 is not authorized and was not started.
 
 ### PHASE_COMMIT
-TBD
+41fbb98c6e50f0860a50e477dc2d898ac9bcac40
 
 ### PHASE_TEST_RESULT
-TBD
+`env -u BUNDLE_PATH bin/rails test test/scripts/haiku_semantic_perception_p0_test.rb` before the network run: 10 runs, 1769 assertions, 0 failures, 0 errors, 0 skips.
 
 ### PHASE_METRICS
-TBD
+```text
+unsafe_contamination: 0
+projection_accuracy_haiku_open_world: 0.8 (48/60)
+projection_accuracy_v4_open_world: 0.4 (24/60)
+relation_accuracy: 0.5166666666666667 (31/60)
+slot_accuracy: 0.8 (48/60)
+ambiguous_surfaced: 0.875 (7/8)
+closed_relation_agreement: 0.5 (5/10)
+invalid_schema: 4
+hallucinated_spans: 7
+transport_error: 0
+transport_error_rate: 0.0
+input_tokens: 90814
+output_tokens: 7322
+cost_usd: 0.127424
+semantic_analysis_ms_p50: 1426
+semantic_analysis_ms_p95: 1737.45
+cases_scored: 70
+```
 
 ```text
 P0_CORPUS_SHA256:
-PENDING_COMMIT_A_AND_HUMAN_REVIEW
+8b793b497c22b7ea6751ff9ba056e20886a9241d0c80fcf11944f37bf768140c
 
 P0_PROMPT_SHA256:
-PENDING_COMMIT_A_AND_HUMAN_REVIEW
+516c09cc841b25e4cd24edeb95cee98891ede6b24a4e9a01d33c821ea39882a0
 
 P0_LABEL_REVIEW:
-PENDING_HUMAN
+APPROVED_BY_HUMAN
 ```
 
 ### EXECUTION PROMPT — PHASE P0

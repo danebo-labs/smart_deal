@@ -2448,7 +2448,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     Rag::PinnedEntityScopeResolver.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end
 
-  test "the orchestrator receives the expanded spring referent and not the stored goal" do
+  test "an explicit model does not send the prior spring complement to the orchestrator" do
     session = ConversationSession.create!(
       identifier: "ellipsis-#{SecureRandom.hex(4)}",
       channel: "web",
@@ -2458,7 +2458,6 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     )
     goal = "Cómo se ajustan los resortes de la fijación de cables?"
     current = "el modelo es MonoSpace, como se ajustan los resortes?"
-    expected = "el modelo es MonoSpace, como se ajustan los resortes de la fijación de cables?"
     result = nil
 
     isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
@@ -2473,8 +2472,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
               conv_session: session, correlation_id: "query:now", account: accounts(:legacy),
               episode_turn: turn
             )
-            assert_equal expected, captured[:question]
-            assert_not_includes captured[:question], goal
+            assert_equal current, captured[:question]
+            assert_not_includes captured[:question], "fijación"
             assert_not_includes captured[:question], "Fuji"
           end
         end

@@ -1645,25 +1645,25 @@ Slot unused and still eating bytes. Prefer skip over an unread field.
 No ontology. No unread JSON.
 
 ### Results
-TBD
+No demonstrated production consumer for `active_referent`. Effective query construction (`ActiveEpisodeTurn#compose_text`, consumed by `RagQueryConcern#execute_rag_query`) reads goal, manufacturer, model, identifiers, and fault code. Clarification (`EpisodeThreadResolver`, `AmbiguousModelResponder`, the selection gate) does not read a discourse referent. `ConversationalTurnAnalysis#refers_to` is validated and then ignored by the P3 ownership slice. `SemanticQueryAnalyzer#perception_state` always sends `active_referent: null`. `TechnicalReferentResolver` reads the goal for `ajust*` and is a later heuristic, not this consumer. Logging is not a consumer. P5–P7 are not consumers. `active_referent` was not persisted.
 
 ### Unexpected findings
-TBD
+Photo recording stores `active_photo` (`field_photo_id`, `sha256`, `correlation_id`). It does not store observation ids. That does not create a referent consumer.
 
 ### Decision
-TBD
+skip
 
 ### Impact on next phase
-TBD
+P5 may proceed; no unread state added.
 
 ### PHASE_COMMIT
-TBD
+N/A
 
 ### PHASE_TEST_RESULT
-TBD
+No production change. No new tests. Inspection only: no reader of `active_referent` under `app/`.
 
 ### PHASE_METRICS
-TBD
+Consumer found: no. Production code changed: no. New model calls: 0. State bytes added: 0.
 
 ### EXECUTION PROMPT — PHASE P4
 

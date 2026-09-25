@@ -280,18 +280,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       return photo_outcome(value[:analysis])
     end
 
-    answer_text = rag_answer.fetch(:answer).to_s
-    reading = preserved_visual_reading(rag_answer, value, locale: locale)
-    answer_text = "#{reading}\n\n#{answer_text}" if reading && !rag_answer[:failed]
     unless rag_answer[:failed]
-      session&.record_assistant_turn!(answer_text, user_id: user_id, correlation_id: correlation_id)
+      session&.record_assistant_turn!(rag_answer.fetch(:answer), user_id: user_id, correlation_id: correlation_id)
     end
     KbSyncBroadcaster.photo_question_answered(
-      answer: answer_text, citations: rag_answer[:citations],
+      answer: rag_answer.fetch(:answer), citations: rag_answer[:citations],
       account_id: account_id, correlation_id: correlation_id, response_locale: locale,
       field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
-      # The paid vision reading stays beside the message when the RAG call
-      # itself fails. An abstention keeps that reading inside the answer.
+      # The paid vision reading is not lost when the manuals could not be consulted.
       visual_summary: (value[:analysis] if rag_answer[:failed])
     )
     rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer])
@@ -347,18 +343,6 @@ class FieldPhotoAnalysisJob < ApplicationJob
     # vision reading — never the job's retry_on handler, which would replace
     # that reading with a bare error.
     { answer: I18n.with_locale(locale) { I18n.t("rag.photo_question_unavailable") }, citations: [], generation_mode: nil, failed: true }
-  end
-
-  def preserved_visual_reading(rag_answer, value, locale:)
-    reading = value[:analysis].to_s.strip
-    return nil if reading.blank?
-    return reading if rag_answer[:failed]
-
-    answer = rag_answer[:answer].to_s.strip
-    return nil unless answer == I18n.t("rag.data_not_available", locale: locale)
-    return nil if answer.include?(reading)
-
-    reading
   end
 
   def field_photo_thumbnail_url(field_photo_id)

@@ -542,9 +542,11 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     session = ConversationSession.find_or_create_for(
       identifier: @user.id.to_s, channel: "web", user_id: @user.id, account_id: @account.id
     )
-    session.update!(active_episode: { "v" => 1, "episode_id" => "ep_clock", "status" => "active", "facts" => {} })
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:clock", now: Time.current)
+    episode.assign_goal!("ajuste del freno", correlation_id: "query:clock")
+    session.update!(active_episode: episode.to_h)
     original = Rag::SemanticQueryAnalyzer.method(:observe_ownership)
-    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe_ownership) do |**|
+    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe_ownership) do |turn:, episode:, correlation_id:, client: nil|
       Thread.current[:haiku_semantic_analysis_ms] = 321
       nil
     end

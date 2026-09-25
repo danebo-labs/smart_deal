@@ -363,6 +363,47 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     BedrockRagService.define_method(:query, orig_query) if orig_query
   end
 
+  test "a spring-adjustment abstention keeps the visual reading and does not invent a procedure" do
+    binary = file_fixture("tiny.png").binread
+    sha = Digest::SHA256.hexdigest(binary)
+    token = FieldPhotoPendingImageStore.write(
+      binary: binary,
+      content_type: "image/png",
+      filename: "tiny.png",
+      account_id: accounts(:legacy).id
+    )
+    visual = "La imagen muestra varios conjuntos verticales de terminación de cable, con varillas roscadas y resortes helicoidales en paralelo."
+    set_photo_question_flag("true")
+    orig_query = BedrockRagService.instance_method(:query)
+    image_received = false
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      { answer: I18n.t("rag.data_not_available", locale: :es), citations: [], session_id: nil }
+    end
+
+    with_analysis_service(result: analysis_result.merge(analysis: visual), on_call: -> { image_received = true }) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          image_token: token,
+          image_sha256: sha,
+          filename: "tiny.png",
+          content_type: "image/png",
+          question: "¿Cómo se ajustan los resortes en la imagen?"
+        ))
+      end
+
+      answer_message = messages.last
+      assert image_received
+      assert_equal "photo_question_answered", answer_message["status"]
+      assert_not answer_message.key?("visual_summary")
+      assert_includes answer_message["answer"], visual
+      assert_includes answer_message["answer"], I18n.t("rag.data_not_available", locale: :es)
+      assert_no_match(/apriete|gire el tornillo|0[,.]05\s*mm/i, answer_message["answer"])
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    set_photo_question_flag(nil)
+  end
+
   test "an exception in the photo-question RAG delivers one failed answer that carries the paid visual reading" do
     set_photo_question_flag("true")
     orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)

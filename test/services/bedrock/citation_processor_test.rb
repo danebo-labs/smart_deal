@@ -470,4 +470,27 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     assert_equal "Codigos de Error BL6 — p. 4", references.first[:title]
     assert_equal "Er29 [1] y el mismo código [1].", answer
   end
+
+  test "collapses consecutive markers that dedupe to the same BL6 page" do
+    fixture = JSON.parse(Rails.root.join("test/fixtures/real_gonzalo/chunks/bl6_citations.json").read)
+    cited = fixture.fetch("citations")
+    pair = [ cited.find { |row| row["number"] == 1 }, cited.find { |row| row["number"] == 7 } ]
+    assert_equal pair[0]["title"], pair[1]["title"]
+    assert_equal pair[0]["page"], pair[1]["page"]
+
+    citations = pair.map do |row|
+      {
+        content: "Er29",
+        location: { key: row["filename"] },
+        metadata: { "canonical_name" => row["title"].sub(/ — p\. \d+\z/, ""), "page_number" => row["page"] }
+      }
+    end
+    answer = +"Er29 [1][2]."
+
+    references = Bedrock::CitationProcessor.new.build_numbered_references(citations, answer)
+
+    assert_equal [ 1 ], references.pluck(:number)
+    assert_equal "Codigos de Error BL6 — p. 4", references.first[:title]
+    assert_equal "Er29 [1].", answer
+  end
 end

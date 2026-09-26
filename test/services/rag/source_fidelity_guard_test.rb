@@ -23,6 +23,7 @@ class Rag::SourceFidelityGuardTest < ActiveSupport::TestCase
     assert_not_includes result[:answer], "12 V"
     assert_equal 1, result[:removed]
     assert_equal 1, result[:answer].scan(I18n.t("rag.unsupported_value_removed", locale: :es)).size
+    assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result[:answer]
   end
 
   test "keeps Fuji 5 percent and KONE 3 mm and 20 mm" do
@@ -88,6 +89,100 @@ class Rag::SourceFidelityGuardTest < ActiveSupport::TestCase
     assert_includes result[:answer], "30 V"
     assert_not_includes result[:answer], "12 V"
     assert_equal 1, result[:removed]
+  end
+
+  test "does not read a lowercase a as amperes in a side comparison" do
+    answer = "Compara los 2 a cada lado."
+
+    result = guard(answer, evidence: [ "comparar visualmente" ])
+
+    assert_equal answer, result[:answer]
+    assert_equal 0, result[:removed]
+  end
+
+  test "does not read a lowercase a as amperes in a month interval" do
+    answer = "Revisa cada 3 a 6 meses."
+
+    result = guard(answer, evidence: [ "mantenimiento periodico" ])
+
+    assert_equal answer, result[:answer]
+    assert_equal 0, result[:removed]
+  end
+
+  test "keeps an F1 fuse rating of 4 A" do
+    answer = "Verifique el fusible F1 4 A."
+
+    result = guard(answer, evidence: [ "F1 = 4A: protege la fuente." ])
+
+    assert_equal answer, result[:answer]
+    assert_equal 0, result[:removed]
+  end
+
+  test "keeps a spring comparison that states no measured specification" do
+    answer = "Revisa si un resorte está más comprimido que otro."
+
+    result = guard(answer, evidence: [ "comparar los resortes visualmente" ])
+
+    assert_equal answer, result[:answer]
+    assert_equal 0, result[:removed]
+  end
+
+  test "accepts both celsius degree signs as the same unit" do
+    answer = "La temperatura es 20 °C."
+
+    result = guard(answer, evidence: [ "temperatura 20 ºC" ])
+
+    assert_equal answer, result[:answer]
+    assert_equal 0, result[:removed]
+  end
+
+  test "keeps each end of a shared-unit range" do
+    slash = guard("La alimentación es 220 V.", evidence: [ "220/380 VAC" ])
+    words = guard("La holgura mínima es 3 mm.", evidence: [ "entre 3 y 5 mm" ])
+    dash = guard("Ajuste a 24 V.", evidence: [ "24–30 V" ])
+
+    assert_equal 0, slash[:removed]
+    assert_includes slash[:answer], "220 V"
+    assert_equal 0, words[:removed]
+    assert_includes words[:answer], "3 mm"
+    assert_equal 0, dash[:removed]
+    assert_includes dash[:answer], "24 V"
+  end
+
+  test "treats a trailing decimal zero as the same ampere value" do
+    comma = guard("El fusible es de 4 A.", evidence: [ "4,0 A" ])
+    dotted = guard("El fusible es de 4 A.", evidence: [ "4.00 A" ])
+
+    assert_equal 0, comma[:removed]
+    assert_includes comma[:answer], "4 A"
+    assert_equal 0, dotted[:removed]
+    assert_includes dotted[:answer], "4 A"
+  end
+
+  test "does not attach a later unit to an unbound step number" do
+    answer = "La holgura es 3 mm."
+
+    result = guard(answer, evidence: [ "paso 3 de 5, holgura 5 mm" ])
+
+    assert_not_includes result[:answer], "3 mm"
+    assert_equal 1, result[:removed]
+  end
+
+  test "removes the whole sentence after an abbreviation instead of splitting it" do
+    page = "Según el manual LCB II, p. 4, la alimentación es 24 V. Ajuste a 12 V. Luego energiza."
+    approx = "Deja aprox. 12 mm de holgura. Sigue con el otro lado."
+
+    kept = guard(page, evidence: [ "alimentación de 24 Vcc" ])
+    dropped = guard(approx, evidence: [ "sin esa medida" ])
+
+    assert_includes kept[:answer], "p. 4, la alimentación es 24 V."
+    assert_not_includes kept[:answer], "12 V"
+    assert_includes kept[:answer], "Luego energiza."
+    assert_no_match(/p\.\s+(?:Luego|Ajuste)/, kept[:answer])
+    assert_not_includes dropped[:answer], "aprox"
+    assert_not_includes dropped[:answer], "12 mm"
+    assert_includes dropped[:answer], "Sigue con el otro lado."
+    assert_equal 1, dropped[:removed]
   end
 
   private

@@ -149,6 +149,7 @@ class Bedrock::CitationProcessor
   end
 
   # A later [n] whose title and page already appear keeps the earlier number.
+  # Consecutive markers that land on that same number become one chip.
   def rewrite_duplicate_markers(answer_text, rewrites)
     return if rewrites.empty? || answer_text.nil? || answer_text.frozen?
 
@@ -156,7 +157,7 @@ class Bedrock::CitationProcessor
       number = Regexp.last_match(1).to_i
       "[#{rewrites.fetch(number, number)}]"
     end
-    answer_text.replace(rewritten)
+    answer_text.replace(rewritten.gsub(/(\[\d+\])\1+/, '\1'))
   end
 
   TOOLTIP_EXCERPT_MAX_CHARS = 150

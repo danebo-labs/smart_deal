@@ -762,6 +762,97 @@ Discarded: editing `FOLLOWUP_RE`, a second Retrieve, re-running `AnswerSafetyPro
 
 The Phase 3 prompt is `## PHASE_3_EXECUTION_PROMPT` in this file. No separate document: this brief and the handoff agree.
 
+## PHASE_2_SURGICAL_FIX_RESULT
+
+```text
+STATUS=PASS
+MUST_FIXES_RESOLVED=6/6
+PHASE2_BASE_COMMIT=fc1c569e03693d946640e872a722ef92f9d78ff4
+PHASE2_FINAL_STATE=the commit that contains this section
+```
+
+Six review fixes on the closed Phase 2 commit. Phase 2 was not redesigned.
+
+```text
+SOURCE_FIDELITY_A_UNIT=PASS          (?-i:A); [°º]C aliases to °C
+SOURCE_FIDELITY_RANGES=PASS          N separator N unit; trailing decimal zeros dropped
+SENTENCE_BOUNDARY=PASS               .(?=\s+[[:upper:]¿¡]|\s*\z)
+ABSTENTION_TELEMETRY=PASS            notice copy no longer matches ABSTENTION_PATTERN
+BL6_DUPLICATE_CHIPS=PASS             [1][1] collapses to [1] after the rewrite
+GROUNDED_PROMPT_CONTRADICTIONS=PASS  one opening line; note cites its own manual
+STRICT_TEMPLATE_SHA_UNCHANGED=YES
+```
+
+Commands (all exit 0):
+
+```text
+BUNDLE_PATH=vendor/bundle bin/rails test <surgical-fix files>
+115 runs, 637 assertions, 0 failures, 0 errors, 0 skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test <Phase 2 gate>
+358 runs, 1882 assertions, 0 failures, 0 errors, 22 skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test
+3450 runs, 16901 assertions, 0 failures, 0 errors, 186 skips
+
+git diff --exit-code -- script/fixtures/production_conversational_baseline_v2.json
+
+BUNDLE_PATH=vendor/bundle bin/rubocop --cache false <7 changed .rb files>
+7 files inspected, no offenses
+```
+
+Skip counts match the Phase 2 validation result (22 and 186). No new skip was added. The gate grew by the 10 new tests (348 → 358). The full suite grew by the same 10 (3440 → 3450).
+
+Files changed:
+
+```text
+modified app/services/rag/source_fidelity_guard.rb
+modified app/services/bedrock/citation_processor.rb
+modified app/prompts/bedrock/generation.txt
+modified config/locales/rag.es.yml
+modified config/locales/rag.en.yml
+modified test/services/rag/source_fidelity_guard_test.rb
+modified test/services/bedrock/citation_processor_test.rb
+modified test/prompts/bedrock_generation_prompt_test.rb
+modified test/services/rag/evidence_selection_telemetry_test.rb
+modified test/services/rag/followup_query_rewriter_test.rb
+modified docs/REAL_GONZALO_AUDIT_IMPLEMENTATION_MASTER_PLAN_2026-09-26.md
+```
+
+`generation.txt` SHA is `b609fa3f787fe0de5b243c39bd2e550afb056ee887beefc78a41a3444b2721fd`. Filtered strict SHA stays `9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8`. `ABSTENTION_PATTERN` was not edited. `rag.unsupported_value_removed` is now: es "Omití un valor que no pude confirmar en el manual de este equipo; revísalo en la placa o en el manual antes de usarlo." en "I left out a value I could not confirm in this equipment's manual; check it on the nameplate or in the manual before using it."
+
+Final invariants:
+
+```text
+ARCHITECTURE_CHANGE_REQUIRED=NO
+NEW_MODEL_CALL_TYPES=0
+ENTITY_PROJECTION_REQUIRED=NO
+HUMAN_VALIDATION_REQUIRED=NO
+ARCHITECTURE_DRIFT=NO
+HYBRID_MINIMAL unchanged
+semantic ownership unchanged
+Phase 1 unchanged
+Vision cache removal unchanged
+Sonnet 5 unchanged
+Opus 5.5 unchanged
+STRICT_TEMPLATE_SHA_UNCHANGED=YES
+BASELINE_UNCHANGED=YES
+```
+
+NICE_TO_HAVE backlog, not implemented:
+
+```text
+VAC/VDC/VCC polarity distinction
+mA/kV/m/s/kg
+orphan source cleanup
+no-page citation behavior
+catalog label containment
+ROLE rewrite
+sibling-model tone cleanup
+DATA_NOT_AVAILABLE redesign
+absolute grounded token ceiling
+```
+
 ---
 
 ## PHASE_3 — telemetry and cost
@@ -953,10 +1044,12 @@ The seed is retired. Execute this section. The `## PHASE_3` section above is the
 
 ### Current repo state
 
-Phase 1 commit `732331ef0bfb5d8a833956273de93dca1c56fe27`. Model upgrade `9c34751add7dbf45d27e23256ee733c0467af29b` (Sonnet 4.6 → Sonnet 5, Opus 4.8 → Opus 5.5). Phase 2 is the commit that contains `## PHASE_2_VALIDATION_RESULT`. Do not reopen any of them unless a regression is caused by that commit.
+Phase 1 commit `732331ef0bfb5d8a833956273de93dca1c56fe27`. Model upgrade `9c34751add7dbf45d27e23256ee733c0467af29b` (Sonnet 4.6 → Sonnet 5, Opus 4.8 → Opus 5.5). Phase 2 validation is `fc1c569e03693d946640e872a722ef92f9d78ff4` (`## PHASE_2_VALIDATION_RESULT`). Phase 2 final state is the commit that contains `## PHASE_2_SURGICAL_FIX_RESULT`. Do not reopen any of them unless a regression is caused by that commit. Do not start Phase 3 from `fc1c569` alone.
 
 ```text
 PHASE2_STATUS=PASS
+PHASE2_BASE_COMMIT=fc1c569e03693d946640e872a722ef92f9d78ff4
+PHASE2_FINAL_STATE=commit containing PHASE_2_SURGICAL_FIX_RESULT
 HUMAN_VALIDATION_REQUIRED=NO
 ```
 
@@ -986,10 +1079,10 @@ Phase 1: `Rag::PhotoIntent`, `Rag::PhotoIntentRenderer`, one vision call per pho
 Phase 2:
 
 * `ActiveEpisodeTurn#disjoint_catalog_equipment?` after the owned slice returns and before the brand rules. Owned switch/correct still return first. Do not edit `FOLLOWUP_RE`.
-* `Rag::SourceFidelityGuard` once in `RagQueryConcern#execute_rag_query`, before `sanitize_answer`. Empty evidence is a no-op. Pair occurrence keeps `24 V` when the chunk contains `24 Vcc`. Do not add a contradiction detector and do not delete that supported `24 V`.
-* Grounded lines in `generation.txt` (voice, power state, internal note, filename, tone, mechanical allow-list) and the sibling rule without a `STRICT_ONLY:` prefix. The grounded-template budget test allows strict × 1.30. Do not revert it to 8%.
-* `Bedrock::CitationProcessor#build_numbered_references` drops a later duplicate title and rewrites `[n]`.
-* `rag.data_not_available` is the new sentence in both locales. `DATA_NOT_AVAILABLE` stays the internal marker. `ABSTENTION_PATTERN` keeps the old alternatives plus `no aparece en los fragmentos` and `not in the manual excerpts`.
+* `Rag::SourceFidelityGuard` once in `RagQueryConcern#execute_rag_query`, before `sanitize_answer`. Empty evidence is a no-op. Pair occurrence keeps `24 V` when the chunk contains `24 Vcc`. Do not add a contradiction detector and do not delete that supported `24 V`. Ampere is `(?-i:A)`. A range `N separator N unit` (`- – / ± a y to and hasta`) supports every number in that expression. Trailing decimal zeros collapse (`4,0 A` and `4.00 A` are `4 A`). A sentence boundary is `\.(?=\s+[[:upper:]¿¡]|\s*\z)`. Do not widen the unit set.
+* Grounded lines in `generation.txt` (voice, power state, internal note, filename, tone, mechanical allow-list) and the sibling rule without a `STRICT_ONLY:` prefix. The grounded-template budget test allows strict × 1.30. Do not revert it to 8%. One opening line: what the technician can check or do next, anchored on this equipment's cited fact or the allowed layer-3 orientation. An internal note cites its manual and page as the note's source (`la nota interna, citando <manual> p. N`), not as this equipment's manufacturer instruction.
+* `Bedrock::CitationProcessor#build_numbered_references` drops a later duplicate title and rewrites `[n]`. Consecutive identical markers then collapse (`[1][1]` → `[1]`).
+* `rag.data_not_available` is the new sentence in both locales. `DATA_NOT_AVAILABLE` stays the internal marker. `ABSTENTION_PATTERN` keeps the old alternatives plus `no aparece en los fragmentos` and `not in the manual excerpts`. Do not edit that pattern. `rag.unsupported_value_removed` stays the surgical copy, which must not match `ABSTENTION_PATTERN`.
 
 Known limits that stay: a blank photo of a non-lexicon subject after a non-visual turn can inherit an older visual target; the renderer still appends the standalone reading; an explicit question is not lexicon-checked; prompt tests prove the text reaches the model; vision accuracy is not a gate; leftover `photo_dx` entries expire in 24 h; `PHOTO_DIAGNOSIS_CACHE_TTL_HOURS` stays for Future Phase 4.
 
@@ -1036,6 +1129,8 @@ chunk_ids, sources (title + page)
 answer_sha256
 original_query, effective_query, answer   # only when ENV["PILOT_AUDIT_CAPTURE"] == "true"
 ```
+
+`Rag::TurnEvidence` `answer_sha256` (and `answer` when `PILOT_AUDIT_CAPTURE=true`) must be computed from the delivered answer: `RagResult#answer` after `SourceFidelityGuard` and `sanitize_answer`. Photo flows use the transmitted final text. `[PILOT_AUDIT]` may contain the pre-guard answer and is not the delivered-answer authority. `outcome` must be the same outcome the controller uses. `source_fidelity_guard` telemetry is joined by `correlation_id`; do not add a duplicate cost or evidence field.
 
 No token or cost fields. Cost per turn is `BedrockQuery` rows joined by `correlation_id`. Emit from `RagController#emit_interaction_completed` (text, success and failure) and `FieldPhotoAnalysisJob#emit_interaction_completed` plus the `retry_on` failure block (photo: blank, question, expired, failed).
 

@@ -37,7 +37,7 @@ es:
     pinned_no_results: "DATA_NOT_AVAILABLE: los documentos pineados no contienen evidencia suficiente para responder esta consulta."
     generation_retry: "No pude redactar la respuesta a esta consulta. Reenviarla igual suele fallar: indica fabricante, modelo y el código exacto del display o de la placa, o adjunta una foto de la placa."
     data_not_available: "Ese dato no aparece en los fragmentos de manual recuperados para esta consulta."
-    unsupported_value_removed: "Quité un valor con unidad que no aparece en los fragmentos recuperados ni en tu consulta."
+    unsupported_value_removed: "Omití un valor que no pude confirmar en el manual de este equipo; revísalo en la placa o en el manual antes de usarlo."
     requires_field_verification: "Verificar en campo o en el esquema completo"
     absence_total_contract: "DATA_NOT_AVAILABLE, así que no te voy a inventar un valor. Confírmalo en campo o con el manual de este equipo."
     absence_partial_contract: "DATA_NOT_AVAILABLE; el manual no incluye ese estado, así que no te voy a inventar un valor. REQUIRES_FIELD_VERIFICATION."

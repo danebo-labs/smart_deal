@@ -185,6 +185,8 @@ class Rag::EvidenceSelectionTelemetryTest < ActiveSupport::TestCase
     assert_match pattern, "I did not find that in the documentation I have"
     assert_match pattern, "El documento no incluye este dato"
     assert_match pattern, "The document does not include this information"
+    assert_no_match pattern, I18n.t("rag.unsupported_value_removed", locale: :es)
+    assert_no_match pattern, I18n.t("rag.unsupported_value_removed", locale: :en)
   end
 
   test "logs the model id and attribution identities/anchors on evidence_route" do

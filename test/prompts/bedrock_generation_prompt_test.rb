@@ -139,10 +139,13 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
     assert_includes grounded, "Como verificación de campo"
     assert_includes grounded, "never placed before energizing"
     assert_includes grounded, "Copy numbers exactly"
-    assert_includes grounded, "cite that manual and page"
+    assert_includes grounded, "cite that manual and page as the note's source"
+    assert_includes grounded, "la nota interna, citando <manual> p. N"
+    assert_includes grounded, "not as this equipment's manufacturer instruction"
     assert_includes grounded, "from another manufacturer and does not transfer"
     assert_includes grounded, "it is not evidence of the page's manufacturer or model"
     [ "Según el manual", "Como verificación de campo", "never placed before energizing",
+      "cite that manual and page as the note's source",
       "from another manufacturer and does not transfer",
       "it is not evidence of the page's manufacturer or model" ].each do |line|
       assert_not_includes strict, line
@@ -152,7 +155,9 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
   test "grounded synthesis opens as a field companion and allows only observation" do
     grounded = grounded_prompt
 
-    assert_includes grounded, "what the technician can check or do next"
+    assert_includes grounded, "Open with what the technician can check or do next, anchored on this equipment's cited fact or the allowed layer-3 orientation"
+    assert_includes grounded, "name the gap when exact manufacturer guidance is unavailable"
+    assert_equal 1, grounded.scan("Open with").size
     assert_includes grounded, "what the manual states, what is inference, and what is unconfirmed"
     assert_includes grounded, "At most one next measurement or photo"
     assert_includes grounded, 'Never open with "La documentación recuperada" or "No encontré"'

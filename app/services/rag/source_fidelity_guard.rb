@@ -6,25 +6,30 @@ module Rag
   class SourceFidelityGuard
     PHOTO_EVIDENCE_HEADING = "## Photo Evidence (this turn)"
     LIST_ITEM = /\A\s*(?:[-*•]|\d{1,2}[.)])\s+\S/.freeze
-    SENTENCE_BOUNDARY = /[\n!?]|\.(?=\s|\z)/.freeze
+    # A period ends a sentence only before a new sentence or the end of the text.
+    # "p. 4" and "aprox. 12" stay inside the sentence that contains them.
+    SENTENCE_BOUNDARY = /[\n!?]|\.(?=\s+[[:upper:]¿¡]|\s*\z)/.freeze
+    NUMBER_SRC = '\d+(?:[.,]\d+)?'
+    # Ampere is only the capital A. A lowercase "a" is the Spanish preposition.
+    UNIT_SRC = '(?:V(?:AC|DC|CC|CA)?|N\u00B7M|NM|BAR|MM|CM|[°º]C|HZ|(?-i:A)|%|vueltas|turns)'
+    # Lowercase "a" is a range word ("3 a 5 mm"). Capital A stays the ampere unit.
+    RANGE_SEPARATOR_SRC = '(?:–|-|/|±|(?-i:\ba\b)|\by\b|\bto\b|\band\b|\bhasta\b)'
     PAIR_PATTERN = /
       (?<![[:alnum:].,])
-      (\d+(?:[.,]\d+)?)
+      (#{NUMBER_SRC})
       \s*
-      (
-        V(?:AC|DC|CC|CA)? |
-        N\u00B7M |
-        NM |
-        BAR |
-        MM |
-        CM |
-        °C |
-        HZ |
-        A |
-        % |
-        vueltas |
-        turns
-      )
+      (#{UNIT_SRC})
+      (?![[:alnum:]])
+    /ix.freeze
+    RANGE_PATTERN = /
+      (?<![[:alnum:].,])
+      #{NUMBER_SRC}
+      (?:
+        \s*#{RANGE_SEPARATOR_SRC}\s*
+        #{NUMBER_SRC}
+      )+
+      \s*
+      (#{UNIT_SRC})
       (?![[:alnum:]])
     /ix.freeze
     UNIT_ALIASES = {
@@ -32,7 +37,8 @@ module Rag
       "VAC" => "V",
       "VCC" => "V",
       "VCA" => "V",
-      "N\u00B7M" => "NM"
+      "N\u00B7M" => "NM",
+      "\u00BAC" => "\u00B0C"
     }.freeze
 
     def self.call(answer:, evidence_texts:, allowed_texts:, locale:, correlation_id: nil)
@@ -112,13 +118,36 @@ module Rag
     end
 
     def pairs(text)
-      text.to_s.scan(PAIR_PATTERN).map { |number, unit| normalize_pair(number, unit) }
+      source = text.to_s
+      found = source.scan(PAIR_PATTERN).map { |number, unit| normalize_pair(number, unit) }
+      found.concat(range_pairs(source))
+    end
+
+    # "220/380 VAC" and "3 y 5 mm" support every number in the expression, not only the last.
+    def range_pairs(text)
+      found = []
+      text.to_s.scan(RANGE_PATTERN) do
+        match = Regexp.last_match
+        unit = match[1]
+        match[0].scan(/\d+(?:[.,]\d+)?/).each do |number|
+          found << normalize_pair(number, unit)
+        end
+      end
+      found
     end
 
     def normalize_pair(number, unit)
-      value = number.to_s.tr(",", ".")
       key = unit.to_s.upcase
-      [ value, UNIT_ALIASES.fetch(key, key) ]
+      [ normalize_number(number), UNIT_ALIASES.fetch(key, key) ]
+    end
+
+    def normalize_number(number)
+      value = number.to_s.tr(",", ".")
+      return value unless value.include?(".")
+
+      integer, fraction = value.split(".", 2)
+      fraction = fraction.sub(/0+\z/, "")
+      fraction.empty? ? integer : "#{integer}.#{fraction}"
     end
 
     def removal_range(text, from, to)

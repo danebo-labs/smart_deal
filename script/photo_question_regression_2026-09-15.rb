@@ -5,9 +5,9 @@
 # v2 15-Sep: anchor_clean, control texto-only caso 3, costo solo bedrock_queries.
 #
 # Efectos: crea 1 ConversationSession; corre hasta 3 FieldPhotoAnalysisJob.perform_now
-# contra fotos ya persistidas de la cuenta piloto (cache miss => 3 llamadas de vision
-# ~US$0.02-0.03 c/u + 3 retrieve_and_generate + 1 consulta de control texto-only para
-# el caso 3, ~US$0.085 total); escribe PilotEvent/BedrockQuery/FieldPhotoDiagnosisCache
+# contra fotos ya persistidas de la cuenta piloto (cada caso corre vision
+# de nuevo, ~US$0.02-0.03 c/u + 3 retrieve_and_generate + 1 consulta de control texto-only para
+# el caso 3, ~US$0.085 total); escribe PilotEvent/BedrockQuery
 # y agrega turnos al historial de esa sesion.
 # NO emite broadcasts reales (los intercepta) salvo BROADCAST=true.
 #
@@ -16,13 +16,12 @@
 #   CID=$(ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@54.163.248.39 \
 #     "docker ps --filter label=service=smart-deal --filter label=role=web --filter status=running --format '{{.Names}}' | head -1")
 #   ssh -i ~/.ssh/smart-deal-deploy.pem ubuntu@54.163.248.39 \
-#     "docker exec -i -e FORCE_VISION=true $CID bin/rails runner -" \
+#     "docker exec -i $CID bin/rails runner -" \
 #     < script/photo_question_regression_2026-09-15.rb | tee tmp/regresion_foto_2026-09-15.txt
 #
 # Env vars:
 #   REGRESSION_ACCOUNT_ID (default "3"), REGRESSION_USER_ID (default "7")
 #   ONLY=<n>        limita a un solo caso (1, 2 o 3)
-#   FORCE_VISION=true  invalida FieldPhotoDiagnosisCache antes de cada caso (re-corre vision el mismo dia)
 #   BROADCAST=true  deja pasar los broadcasts reales de KbSyncBroadcaster (por defecto se capturan y no salen)
 
 require "json"
@@ -87,7 +86,7 @@ session = ConversationSession.create!(
 )
 puts "session_id=#{session.id}"
 
-# ── 2. Cambio A (sin coste): WarmBedrockKbJob se encola solo en cache miss con pregunta ─
+# ── 2. WarmBedrockKbJob se encola cuando hay pregunta y no cuando la foto va sola ─
 def stub_perform_later(klass, calls)
   original = klass.method(:perform_later)
   klass.define_singleton_method(:perform_later) do |*args, **kwargs|
@@ -108,7 +107,6 @@ if photo3
   begin
     binary = FieldPhotoStore.fetch_binary(photo3)
     image = { binary: binary, media_type: photo3.content_type, filename: File.basename(photo3.s3_key_original) }
-    FieldPhotoDiagnosisCache.invalidate(account_id: account.id, sha256: photo3.sha256, locale: "es")
     QueryOrchestratorService.new(
       CASES.find { |c| c[:n] == 3 }.fetch(:question), images: [ image ],
       account: account, user_id: user.id, conversation_session_id: session.id
@@ -119,7 +117,6 @@ if photo3
 
     calls["WarmBedrockKbJob"].clear
     calls["FieldPhotoAnalysisJob"].clear
-    FieldPhotoDiagnosisCache.invalidate(account_id: account.id, sha256: photo3.sha256, locale: "es")
     QueryOrchestratorService.new(
       "", images: [ image ], account: account, user_id: user.id, conversation_session_id: session.id
     ).execute
@@ -162,8 +159,6 @@ run_cases.each do |c|
   broadcasts.clear
   log_io.truncate(0)
   log_io.rewind
-
-  FieldPhotoDiagnosisCache.invalidate(account_id: account.id, sha256: photo.sha256, locale: "es") if ENV["FORCE_VISION"] == "true"
 
   started = Time.current
   FieldPhotoAnalysisJob.perform_now(

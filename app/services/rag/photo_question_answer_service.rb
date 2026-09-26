@@ -35,10 +35,9 @@ module Rag
     include RagQueryConcern
 
     ANCHOR_SUFFIX_MAX_CHARS = 120
-    # Fixed-size block: header, optional mismatch and screen lines, five fields.
-    # 900 fits the header that asks for the photo opening (CG-D19) plus the
-    # mismatch line without truncating the Condition field.
-    EVIDENCE_BLOCK_MAX_CHARS = 900
+    # Header, optional mismatch, hidden-target, and screen lines, then five fields.
+    # 1100 keeps the mismatch line, the hidden-target line, and Condition.
+    EVIDENCE_BLOCK_MAX_CHARS = 1100
     UNKNOWN = "UNKNOWN"
     # H9: laptop-screen capture of a sheet. Accent-folded titles; plant pattern
     # is 4+ uppercase letters + digits. No site name is hardcoded (D10).
@@ -149,6 +148,7 @@ module Rag
         "## Photo Evidence (this turn)",
         "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; UNKNOWN means the photo does not show it and is never printed. Open the answer with one or two sentences on what the photo shows, then answer the question. Procedures and values come only from the retrieved manuals."
       ]
+      lines << hidden_target_line if @photo_value[:target_visible] == false
       lines << brand_component_mismatch_line if brand_component_mismatch?
       if Rag::GroundedSynthesisFlag.enabled_for?(@account) && document_on_screen_photo?
         lines << "- This photo is a document on a screen, not the equipment. Printed titles are not the manufacturer."
@@ -163,6 +163,12 @@ module Rag
         ]
       )
       lines.join("\n").truncate(EVIDENCE_BLOCK_MAX_CHARS, omission: "")
+    end
+
+    def hidden_target_line
+      missing = @photo_value[:missing_view_or_detail].to_s.squish
+      detail = missing.present? ? " (#{missing})" : ""
+      "- Vision judged that this photo does not show what the question asks about#{detail}. Say that first, then answer; do not treat the photographed component as the asked one."
     end
 
     def brand_component_mismatch?

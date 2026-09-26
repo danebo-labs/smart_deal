@@ -201,9 +201,8 @@ plan.each_with_index do |run, index|
       meta = PHOTO_CASES.fetch(spec[:photo])
       photo = FieldPhoto.where(account_id: account.id).where("sha256 LIKE ?", "#{meta[:sha_prefix]}%").first
       abort_with("#{spec[:id]} foto #{meta[:sha_prefix]} no encontrada") unless photo
-      cached = FieldPhotoDiagnosisCache.read(account_id: account.id, sha256: photo.sha256, locale: "es")
-      photo_value = cached.presence || meta[:photo_value]
-      photo_source = cached ? "cache" : "preflight_v2"
+      photo_value = meta[:photo_value]
+      photo_source = "preflight_v2"
       svc = Rag::PhotoQuestionAnswerService.new(
         question: spec[:question], photo_value: photo_value, session: session,
         account: account, user_id: user.id, correlation_id: correlation_id, locale: :es

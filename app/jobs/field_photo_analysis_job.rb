@@ -20,7 +20,6 @@ class FieldPhotoAnalysisJob < ApplicationJob
       conversation_session_id: args[:conversation_session_id],
       correlation_id: args[:correlation_id],
       route: "visual_query",
-      cache_status: "miss",
       result: "error",
       error_class: error.class.name,
       image_digest_prefix: args[:image_sha256].to_s.first(12)
@@ -57,35 +56,6 @@ class FieldPhotoAnalysisJob < ApplicationJob
     session = conversation_session_id ? ConversationSession.find_by(id: conversation_session_id) : nil
     if session && account_id && session.account_id != account_id
       raise ArgumentError, "ConversationSession #{session.id} is not owned by account #{account_id}"
-    end
-
-    cached = FieldPhotoDiagnosisCache.read(
-      account_id: account_id,
-      sha256: image_sha256,
-      locale: locale
-    )
-    if cached
-      if field_photo_id.blank? && image_token.present?
-        pending = FieldPhotoPendingImageStore.take(token: image_token, account_id: account_id)
-        field_photo_id = persist_field_photo(
-          pending, account_id: account_id, sha256: image_sha256, filename: filename,
-          content_type: content_type, user_id: user_id, conversation_session_id: conversation_session_id
-        )
-      end
-      return deliver_cached(
-        cached,
-        session: session,
-        filename: filename,
-        account_id: account_id,
-        user_id: user_id,
-        conversation_session_id: conversation_session_id,
-        correlation_id: correlation_id,
-        image_sha256: image_sha256,
-        field_photo_id: field_photo_id,
-        delivery_latency_ms: elapsed_ms(started_at),
-        locale: locale,
-        question: question
-      )
     end
 
     image = FieldPhotoPendingImageStore.take(token: image_token, account_id: account_id)
@@ -129,18 +99,6 @@ class FieldPhotoAnalysisJob < ApplicationJob
       )
     end
 
-    PilotUsageLog.log(
-      "photo_cache_miss",
-      account_id: account_id,
-      user_id: user_id,
-      conversation_session_id: conversation_session_id,
-      correlation_id: correlation_id,
-      route: "visual_query",
-      cache_status: "miss",
-      result: "processing",
-      image_digest_prefix: image_sha256.to_s.first(12)
-    )
-
     if field_photo_id.blank?
       field_photo_id = persist_field_photo(
         image, account_id: account_id, sha256: image_sha256, filename: filename,
@@ -148,6 +106,12 @@ class FieldPhotoAnalysisJob < ApplicationJob
       )
     end
 
+    photo_intent = Rag::PhotoIntent.resolve(
+      question: question,
+      episode_state: session&.active_episode,
+      history: session&.conversation_history,
+      now: Time.current
+    )
     result = FieldPhotoAnalysisService.new(
       binary: image.fetch(:binary),
       content_type: image[:content_type].presence || content_type,
@@ -156,19 +120,13 @@ class FieldPhotoAnalysisJob < ApplicationJob
       account_id: account_id,
       user_id: user_id,
       conv_session_id: conversation_session_id,
-      correlation_id: correlation_id
+      correlation_id: correlation_id,
+      photo_intent: photo_intent
     ).call
 
-    cache_value = diagnosis_cache_value(result)
-    FieldPhotoDiagnosisCache.write(
-      account_id: account_id,
-      sha256: image_sha256,
-      locale: locale,
-      value: cache_value
-    )
-
+    value = photo_value(result)
     outcome = deliver(
-      cache_value,
+      value,
       session: session,
       filename: filename,
       account_id: account_id,
@@ -177,17 +135,17 @@ class FieldPhotoAnalysisJob < ApplicationJob
       field_photo_id: field_photo_id,
       image_sha256: image_sha256,
       locale: locale,
-      question: question
+      question: question,
+      photo_intent: photo_intent
     )
     PilotUsageLog.log(
       "photo_completed",
       **usage_fields(
-        cache_value,
+        value,
         account_id: account_id,
         user_id: user_id,
         conversation_session_id: conversation_session_id,
         correlation_id: correlation_id,
-        cache_status: "miss",
         image_sha256: image_sha256
       )
     )
@@ -205,55 +163,12 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   private
 
-  def deliver_cached(cached, session:, filename:, account_id:, user_id:,
-                     conversation_session_id:, correlation_id:, image_sha256:,
-                     delivery_latency_ms:, field_photo_id: nil, locale: nil, question: nil)
-    outcome = deliver(
-      cached,
-      session: session,
-      filename: filename,
-      account_id: account_id,
-      user_id: user_id,
-      correlation_id: correlation_id,
-      field_photo_id: field_photo_id,
-      image_sha256: image_sha256,
-      locale: locale,
-      question: question
-    )
-    fields = usage_fields(
-      cached,
-      account_id: account_id,
-      user_id: user_id,
-      conversation_session_id: conversation_session_id,
-      correlation_id: correlation_id,
-      cache_status: "hit",
-      image_sha256: image_sha256
-    ).merge(
-      latency_ms: delivery_latency_ms,
-      original_latency_ms: cached[:latency_ms]
-    )
-    PilotUsageLog.log("photo_cache_hit", **fields.merge(cost: 0))
-    PilotUsageLog.log(
-      "visual_llm_call_avoided",
-      **fields.merge(cost: 0, estimated_cost_avoided: cached[:original_cost])
-    )
-    PilotUsageLog.log("photo_completed", **fields.merge(cost: 0))
-    emit_interaction_completed(
-      account_id: account_id,
-      user_id: user_id,
-      conversation_session_id: conversation_session_id,
-      correlation_id: correlation_id,
-      outcome: outcome,
-      latency_ms: delivery_latency_ms
-    )
-  end
-
   # A photo alone publishes the vision reading. A photo with a question
   # publishes one answer (CG-D19): the reading enters the prose of that single
   # RAG answer through the Photo Evidence block, and the chat never shows a
   # separate vision card, a placeholder, or a redraw. Returns the outcome
   # String for the turn, consumed by emit_interaction_completed.
-  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil)
+  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil)
     session&.record_photo_observation!(
       photo_value: value,
       field_photo_id: field_photo_id,
@@ -270,14 +185,15 @@ class FieldPhotoAnalysisJob < ApplicationJob
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
+      summary = published_analysis(value, question: question, photo_intent: photo_intent, locale: locale)
       KbSyncBroadcaster.photo_analyzed(
-        filenames: [ filename ], analysis: value.fetch(:analysis),
+        filenames: [ filename ], analysis: summary,
         canonical_name: value[:canonical_name], aliases: value[:aliases],
         account_id: account_id, correlation_id: correlation_id,
         field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
         response_locale: locale
       )
-      return photo_outcome(value[:analysis])
+      return photo_outcome(summary)
     end
 
     unless rag_answer[:failed]
@@ -351,7 +267,15 @@ class FieldPhotoAnalysisJob < ApplicationJob
     FieldPhoto.find_by(id: field_photo_id)&.thumbnail_data_url
   end
 
-  def diagnosis_cache_value(result)
+  def published_analysis(value, question:, photo_intent:, locale:)
+    if question.blank? && photo_intent.present?
+      Rag::PhotoIntentRenderer.prose(reading: value, locale: locale)
+    else
+      value.fetch(:analysis)
+    end
+  end
+
+  def photo_value(result)
     usage = result.fetch(:usage).to_h.deep_symbolize_keys
     model_id = result.fetch(:model).to_s
     model_id = "#{model_id}-direct" unless model_id.end_with?("-direct", "-batch")
@@ -378,13 +302,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       output_tokens: output_tokens,
       original_cost: cost,
       latency_ms: result[:latency_ms],
-      created_at: Time.current.iso8601,
-      contract_version: FieldPhotoPrompt::CONTRACT_VERSION
+      target_visible: result[:target_visible],
+      relevance_to_goal: result[:relevance_to_goal],
+      missing_view_or_detail: result[:missing_view_or_detail]
     }
   end
 
   def usage_fields(value, account_id:, user_id:, conversation_session_id:, correlation_id:,
-                   cache_status:, image_sha256:)
+                   image_sha256:)
     {
       account_id: account_id,
       user_id: user_id,
@@ -396,7 +321,6 @@ class FieldPhotoAnalysisJob < ApplicationJob
       input_tokens: value[:input_tokens],
       output_tokens: value[:output_tokens],
       cost: value[:original_cost],
-      cache_status: cache_status,
       result: "ok",
       image_digest_prefix: image_sha256.to_s.first(12),
       canonical_name: value[:canonical_name],
@@ -416,7 +340,6 @@ class FieldPhotoAnalysisJob < ApplicationJob
       conversation_session_id: conversation_session_id,
       correlation_id: correlation_id,
       route: "visual_query",
-      cache_status: "miss",
       result: "expired",
       error_class: "PhotoUploadExpired",
       image_digest_prefix: image_sha256.to_s.first(12)

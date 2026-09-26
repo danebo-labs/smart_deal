@@ -1,10 +1,49 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "ostruct"
 
 class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   include ActionCable::TestHelper
   parallelize(workers: 1)
+
+  class SpyMemoryStore < ActiveSupport::Cache::MemoryStore
+    attr_reader :read_names, :write_names
+
+    def initialize(*)
+      super
+      @read_names = []
+      @write_names = []
+    end
+
+    def read(name, ...)
+      @read_names << name.to_s
+      super
+    end
+
+    def write(name, value, ...)
+      @write_names << name.to_s
+      super
+    end
+  end
+
+  class RecordingVisionClient
+    attr_reader :calls
+
+    def initialize(text)
+      @text = text
+      @calls = []
+    end
+
+    def call(**kwargs)
+      @calls << kwargs
+      {
+        text: @text,
+        usage: OpenStruct.new(input_tokens: 120, output_tokens: 80),
+        model: BatchChunkingPrompt::MODEL_TEXT
+      }
+    end
+  end
 
   class FakeS3
     attr_reader :uploads, :downloads
@@ -29,7 +68,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
   setup do
     @previous_cache = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache = SpyMemoryStore.new
     @session = ConversationSession.create!(
       identifier: "field-photo-job",
       channel: "web",
@@ -51,96 +90,76 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     S3DocumentsService.define_singleton_method(:new) { |*a, **kw| orig_s3_new.call(*a, **kw) }
   end
 
-  test "cache miss analyzes exactly once, caches, broadcasts, and never ingests" do
+  test "a fresh photo is analyzed once, broadcast, and never ingested" do
     calls = 0
-    with_analysis_service(result: analysis_result, on_call: -> { calls += 1 }) do
-      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
-        assert_no_difference("KbDocument.count") do
-          FieldPhotoAnalysisJob.perform_now(**job_args)
+    events = capture_pilot_usage_events do
+      with_analysis_service(result: analysis_result, on_call: -> { calls += 1 }) do
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          assert_no_difference("KbDocument.count") do
+            FieldPhotoAnalysisJob.perform_now(**job_args)
+          end
         end
-      end
 
-      assert_equal 1, calls
-      assert_equal "photo_analyzed", messages.last["status"]
-      assert_equal "photo:job-test", messages.last["correlation_id"]
-      assert_equal "es", messages.last["response_locale"]
-      history = @session.reload.conversation_history.last
-      assert_equal analysis_result[:compact_context], history["content"]
-      assert_equal users(:one).id, history["user_id"]
-      assert_equal "photo:job-test", history["correlation_id"]
-      assert FieldPhotoDiagnosisCache.read(account_id: accounts(:legacy).id, sha256: @sha, locale: "es")
-      assert_nil FieldPhotoPendingImageStore.take(token: @token, account_id: accounts(:legacy).id)
-      assert_no_enqueued_jobs only: [ BedrockIngestionJob, SubmitManualBatchJob ]
+        assert_equal 1, calls
+        assert_equal "photo_analyzed", messages.last["status"]
+        assert_equal "photo:job-test", messages.last["correlation_id"]
+        assert_equal "es", messages.last["response_locale"]
+        assert_equal analysis_result[:analysis], messages.last["summary"]
+        history = @session.reload.conversation_history.last
+        assert_equal analysis_result[:compact_context], history["content"]
+        assert_equal users(:one).id, history["user_id"]
+        assert_equal "photo:job-test", history["correlation_id"]
+        assert_nil FieldPhotoPendingImageStore.take(token: @token, account_id: accounts(:legacy).id)
+        assert_no_enqueued_jobs only: [ BedrockIngestionJob, SubmitManualBatchJob ]
+      end
     end
+
+    assert_no_diagnosis_cache_access
+    assert_not_includes events.pluck("event"), "photo_cache_hit"
+    completed = events.find { |event| event["event"] == "photo_completed" }
+    assert_not completed.key?("cache_status")
   end
 
-  test "cache hit broadcasts response_locale from the request locale" do
-    FieldPhotoDiagnosisCache.write(
-      account_id: accounts(:legacy).id,
-      sha256: @sha,
-      locale: "es",
-      value: cache_value
-    )
-
-    with_analysis_service(error: "must not be called") do
-      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
-        FieldPhotoAnalysisJob.perform_now(**job_args)
+  test "the same sha is read twice and the second question reaches vision" do
+    calls = 0
+    captured = []
+    events = capture_pilot_usage_events do
+      with_analysis_service(result: analysis_result, on_call: -> { calls += 1 }, captured: captured) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "cómo se ajusta el resorte"))
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(image_token: pending_token, question: "mira la polea"))
       end
-
-      assert_equal "photo_analyzed", messages.last["status"]
-      assert_equal "es", messages.last["response_locale"]
     end
+
+    assert_equal 2, calls
+    assert_equal "cómo se ajusta el resorte", captured[0].dig(:photo_intent, "text")
+    assert_equal "question", captured[0].dig(:photo_intent, "source")
+    assert_equal "mira la polea", captured[1].dig(:photo_intent, "text")
+    assert_not_includes events.pluck("event"), "photo_cache_hit"
+    assert_not_includes events.pluck("event"), "visual_llm_call_avoided"
+    assert_not_includes events.pluck("event"), "photo_cache_miss"
+    completed = events.select { |event| event["event"] == "photo_completed" }
+    assert_equal 2, completed.size
+    assert completed.none? { |event| event.key?("cache_status") }
+    assert_no_diagnosis_cache_access
   end
 
-  test "cache hit for another user avoids the visual service and attributes reuse" do
+  test "a second user still gets one fresh vision call and the history is attributed to them" do
     second_user = User.create!(email: "a2@example.com", password: "password123", account: accounts(:legacy))
-    FieldPhotoDiagnosisCache.write(
-      account_id: accounts(:legacy).id,
-      sha256: @sha,
-      locale: "es",
-      value: cache_value
-    )
-    log_output = StringIO.new
-    logger = ActiveSupport::Logger.new(log_output)
-    Rails.logger.broadcast_to(logger)
-
-    with_analysis_service(error: "must not be called") do
-      FieldPhotoAnalysisJob.perform_now(
-        **job_args.merge(image_token: nil, user_id: second_user.id, correlation_id: "photo:a2")
-      )
+    calls = 0
+    events = capture_pilot_usage_events do
+      with_analysis_service(result: analysis_result, on_call: -> { calls += 1 }) do
+        FieldPhotoAnalysisJob.perform_now(
+          **job_args.merge(user_id: second_user.id, correlation_id: "photo:a2")
+        )
+      end
     end
 
+    assert_equal 1, calls
     history = @session.reload.conversation_history.last
     assert_equal second_user.id, history["user_id"]
     assert_equal "photo:a2", history["correlation_id"]
-    events = log_output.string.lines.filter_map do |line|
-      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?("[PILOT_USAGE]")
-    end
-    assert_includes events.pluck("event"), "photo_cache_hit"
-    avoided = events.find { |event| event["event"] == "visual_llm_call_avoided" }
-    cache_hit = events.find { |event| event["event"] == "photo_cache_hit" }
-    assert_equal second_user.id, avoided["user_id"]
-    assert_equal 0, avoided["cost"]
-    assert_operator avoided["estimated_cost_avoided"], :>, 0
-    assert_equal 250, cache_hit["original_latency_ms"]
-    assert_operator cache_hit["latency_ms"], :>=, 0
-  ensure
-    Rails.logger.stop_broadcasting_to(logger) if logger
-  end
-
-  test "cache populated after enqueue is rechecked inside the job" do
-    FieldPhotoDiagnosisCache.write(
-      account_id: accounts(:legacy).id,
-      sha256: @sha,
-      locale: "es",
-      value: cache_value
-    )
-
-    with_analysis_service(error: "must not be called") do
-      FieldPhotoAnalysisJob.perform_now(**job_args)
-    end
-
-    assert_equal "photo:job-test", @session.reload.conversation_history.last["correlation_id"]
+    assert_not_includes events.pluck("event"), "photo_cache_hit"
+    assert_not_includes events.pluck("event"), "visual_llm_call_avoided"
   end
 
   test "expired temporary image broadcasts localized failure without invoking visual service" do
@@ -176,21 +195,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
   end
 
-  test "persists a FieldPhoto on cache-hit when a temporary token is present" do
-    FieldPhotoDiagnosisCache.write(
-      account_id: accounts(:legacy).id, sha256: @sha, locale: "es", value: cache_value
-    )
-
-    with_analysis_service(error: "must not be called") do
-      FieldPhotoAnalysisJob.perform_now(**job_args)
-    end
-
-    photo = FieldPhoto.find_by(account_id: accounts(:legacy).id, sha256: @sha)
-    assert photo
-    assert_equal 1, fake_s3.uploads.size
-  end
-
-  test "persists a FieldPhoto on cache-miss" do
+  test "persists a FieldPhoto on a fresh read" do
     with_analysis_service(result: analysis_result) do
       FieldPhotoAnalysisJob.perform_now(**job_args)
     end
@@ -294,31 +299,103 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     set_photo_question_flag(nil)
   end
 
-  test "cache hit with a question skips vision and still delivers one answer" do
-    FieldPhotoDiagnosisCache.write(
-      account_id: accounts(:legacy).id, sha256: @sha, locale: "es", value: cache_value
-    )
+  test "an explicit photo question reaches vision and still delivers one RAG answer" do
     set_photo_question_flag("true")
-    orig_query = BedrockRagService.instance_method(:query)
-    calls = 0
-    BedrockRagService.define_method(:query) do |_question, **_kwargs|
-      calls += 1
-      { answer: "Respuesta barata", citations: [], session_id: nil }
+    question = "Cómo se ajustan los resortes de la fijación de cables"
+    service_calls = 0
+    answer_service = Object.new
+    answer_service.define_singleton_method(:call) do
+      service_calls += 1
+      { answer: "Respuesta de manual", citations: [], generation_mode: "test" }
     end
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| answer_service }
 
-    with_analysis_service(error: "must not be called") do
+    messages = nil
+    with_vision_client(vision_json) do |client|
       messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
-        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "Que es esto?"))
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: question))
       end
 
-      assert_equal 1, calls
-      assert_equal [ "photo_question_answered" ], messages.pluck("status")
-      assert_equal "Respuesta barata", messages.last["answer"]
-      assert_equal "photo:job-test", messages.last["correlation_id"]
+      assert_equal 1, client.calls.size
+      intent = client.calls.first[:user_content].reverse.find { |block| block[:type] == "text" }[:text]
+      assert_includes intent, question
+      assert_includes intent, "target_visible"
     end
+
+    assert_equal 1, service_calls
+    assert_equal [ "photo_question_answered" ], messages.pluck("status")
+    assert_equal "Respuesta de manual", messages.last["answer"]
   ensure
-    BedrockRagService.define_method(:query, orig_query) if orig_query
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
     set_photo_question_flag(nil)
+  end
+
+  test "a blank photo with an inherited intent reaches vision and skips RAG" do
+    set_photo_question_flag("true")
+    spring = "Cómo se ajustan los resortes de la fijación de cables"
+    @session.update!(
+      active_episode: live_episode(goal: "si te doy otra imagen"),
+      conversation_history: [ user_turn(spring, 20.minutes.ago) ]
+    )
+    service_calls = 0
+    answer_service = Object.new
+    answer_service.define_singleton_method(:call) { service_calls += 1; { answer: "no", citations: [] } }
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| answer_service }
+    missing = "primer plano de los resortes"
+
+    messages = nil
+    with_vision_client(vision_json("target_visible" => false, "missing_view_or_detail" => missing)) do |client|
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+
+      assert_equal 1, client.calls.size
+      intent = client.calls.first[:user_content].reverse.find { |block| block[:type] == "text" }[:text]
+      assert_includes intent, spring
+      assert_includes intent, "fijación"
+      assert_not_includes intent, "otra imagen"
+    end
+
+    assert_equal 0, service_calls
+    assert_equal [ "photo_analyzed" ], messages.pluck("status")
+    summary = messages.last["summary"]
+    assert summary.start_with?(I18n.t("rag.photo_intent.target_hidden", missing: missing, locale: :es))
+    assert_includes summary, "primer plano"
+    assert_includes summary, "Se ve un conjunto de cabina y puerta."
+    assert_not_includes summary, "No encontré"
+  ensure
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
+  test "a blank photo with an expired episode stays a standalone reading" do
+    @session.update!(
+      active_episode: {
+        "v" => 1,
+        "episode_id" => "ep_expired",
+        "opened_at" => 6.hours.ago.iso8601,
+        "updated_at" => 5.hours.ago.iso8601,
+        "goal" => { "text" => "ajusta los resortes", "correlation_id" => "query:old", "truncated" => false }
+      },
+      conversation_history: [ user_turn("ajusta los resortes de la fijación", 6.hours.ago) ]
+    )
+
+    messages = nil
+    with_vision_client(vision_json) do |client|
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+
+      assert_equal 1, client.calls.size
+      texts = client.calls.first[:user_content].select { |block| block[:type] == "text" }.pluck(:text)
+      assert texts.none? { |text| text.include?("Photo intent") }
+    end
+
+    summary = messages.last["summary"]
+    assert summary.start_with?("Se ve un conjunto de cabina y puerta.")
+    assert_not summary.start_with?(I18n.t("rag.photo_intent.target_hidden_default", locale: :es))
   end
 
   test "blank question broadcasts once without pending_question or answer" do
@@ -584,23 +661,6 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     }
   end
 
-  def cache_value
-    result = analysis_result
-    result.slice(:analysis, :compact_context, :canonical_name, :aliases).merge(
-      manufacturer: "UNKNOWN",
-      model_visible: "P1",
-      condition: "GOOD",
-      visible_codes: [ "P1" ],
-      model_id: "#{BatchChunkingPrompt::MODEL_TEXT}-direct",
-      input_tokens: 120,
-      output_tokens: 80,
-      original_cost: 0.00156,
-      latency_ms: 250,
-      created_at: Time.current.iso8601,
-      contract_version: FieldPhotoPrompt::CONTRACT_VERSION
-    )
-  end
-
   def capture_pilot_usage_events
     log_output = StringIO.new
     logger = ActiveSupport::Logger.new(log_output)
@@ -613,9 +673,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
-  def with_analysis_service(result: nil, error: nil, on_call: nil)
+  def with_analysis_service(result: nil, error: nil, on_call: nil, captured: nil)
     original = FieldPhotoAnalysisService.method(:new)
-    FieldPhotoAnalysisService.define_singleton_method(:new) do |**_kwargs|
+    FieldPhotoAnalysisService.define_singleton_method(:new) do |**kwargs|
+      captured << kwargs if captured
       fake = Object.new
       fake.define_singleton_method(:call) do
         on_call&.call
@@ -628,5 +689,56 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     yield
   ensure
     FieldPhotoAnalysisService.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) }
+  end
+
+  def with_vision_client(text)
+    client = RecordingVisionClient.new(text)
+    original = ClaudeChunkingClient.method(:new)
+    ClaudeChunkingClient.define_singleton_method(:new) { |**_| client }
+    yield client
+  ensure
+    ClaudeChunkingClient.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) } if original
+  end
+
+  def vision_json(extra = {})
+    JSON.generate({
+      "canonical_component" => "conjunto de cabina y puerta",
+      "manufacturer" => "UNKNOWN",
+      "model" => "UNKNOWN",
+      "subsystem" => "UNKNOWN",
+      "condition" => "UNKNOWN",
+      "aliases" => [],
+      "summary" => "Se ve un conjunto de cabina y puerta.",
+      "visible_text" => [],
+      "documented_functions" => [],
+      "documented_connections" => [],
+      "documented_values" => [],
+      "documented_warnings" => [],
+      "anti_hallucination_notes" => "La lectura se limita a lo visible."
+    }.merge(extra))
+  end
+
+  def live_episode(goal:)
+    {
+      "v" => 1,
+      "episode_id" => "ep_live",
+      "status" => "active",
+      "opened_at" => 1.hour.ago.iso8601,
+      "updated_at" => 5.minutes.ago.iso8601,
+      "goal" => { "text" => goal, "correlation_id" => "query:goal", "truncated" => false }
+    }
+  end
+
+  def user_turn(content, time)
+    { "role" => "user", "content" => content, "ts" => time.iso8601 }
+  end
+
+  def diagnosis_prefix
+    %w[photo dx].join("_")
+  end
+
+  def assert_no_diagnosis_cache_access
+    assert Rails.cache.read_names.none? { |name| name.include?(diagnosis_prefix) }
+    assert Rails.cache.write_names.none? { |name| name.include?(diagnosis_prefix) }
   end
 end

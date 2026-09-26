@@ -67,6 +67,10 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     assert_equal "claude-sonnet-5", result[:model]
     assert_equal({ input_tokens: 120, output_tokens: 80 }, result[:usage])
     assert_operator result[:latency_ms], :>=, 0
+    assert_nil result[:target_visible]
+    assert_nil result[:relevance_to_goal]
+    assert_nil result[:missing_view_or_detail]
+    assert_not_includes result[:compact_context], "Objetivo visible"
   end
 
   test "omits the absent-manual warning when the session has a pinned document" do
@@ -122,9 +126,68 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end
 
+  test "intent fields are parsed only when an intent was sent" do
+    intent = { "text" => "RESORTE-UNICO-9981 cómo se ajusta", "source" => "question" }
+    payload = JSON.parse(VALID_JSON).merge(
+      "target_visible" => false,
+      "relevance_to_goal" => "unrelated",
+      "missing_view_or_detail" => "  primer plano de la fijación  "
+    )
+    client = FakeClient.new(JSON.generate(payload))
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(capture_logger)
+
+    result = build_service(client: client, photo_intent: intent).call
+
+    assert_equal false, result[:target_visible]
+    assert_equal "unrelated", result[:relevance_to_goal]
+    assert_equal "primer plano de la fijación", result[:missing_view_or_detail]
+    assert_includes result[:compact_context], "Objetivo visible: no"
+    intent_block = client.kwargs[:user_content].reverse.find { |block| block[:type] == "text" }[:text]
+    assert_includes intent_block, "RESORTE-UNICO-9981"
+    line = log_output.string.lines.find { |entry| entry.include?("[IMAGE_ANALYSIS]") }
+    assert_not_includes line, "RESORTE-UNICO-9981"
+    logged = JSON.parse(line.split("[IMAGE_ANALYSIS] ", 2).last)
+    assert_equal "question", logged["intent_source"]
+    assert_equal Digest::SHA256.hexdigest(intent["text"].squish), logged["intent_sha256"]
+    assert_equal false, logged["target_visible"]
+    assert_equal "unrelated", logged["relevance_to_goal"]
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
+  end
+
+  test "invalid or missing target fields become nil and are ignored without an intent" do
+    payload = JSON.parse(VALID_JSON).merge(
+      "target_visible" => "maybe",
+      "relevance_to_goal" => "sometimes",
+      "missing_view_or_detail" => "x" * 250
+    )
+    with_intent = build_service(client: FakeClient.new(JSON.generate(payload)), photo_intent: "mira la placa").call
+    without_intent = build_service(client: FakeClient.new(JSON.generate(payload))).call
+
+    assert_nil with_intent[:target_visible]
+    assert_nil with_intent[:relevance_to_goal]
+    assert_equal 200, with_intent[:missing_view_or_detail].length
+    assert_includes with_intent[:compact_context], "Objetivo visible: sin confirmar"
+    assert_nil without_intent[:target_visible]
+    assert_nil without_intent[:relevance_to_goal]
+    assert_nil without_intent[:missing_view_or_detail]
+    assert_not_includes without_intent[:compact_context], "Objetivo visible"
+  end
+
+  test "a true target is kept and labeled visible" do
+    payload = JSON.parse(VALID_JSON).merge("target_visible" => true, "relevance_to_goal" => "relevant")
+    result = build_service(client: FakeClient.new(JSON.generate(payload)), photo_intent: "el resorte").call
+
+    assert_equal true, result[:target_visible]
+    assert_equal "relevant", result[:relevance_to_goal]
+    assert_includes result[:compact_context], "Objetivo visible: sí"
+  end
+
   private
 
-  def build_service(client:, session: nil)
+  def build_service(client:, session: nil, photo_intent: nil)
     FieldPhotoAnalysisService.new(
       binary: "jpeg",
       content_type: "image/jpeg",
@@ -134,7 +197,8 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
       user_id: users(:one).id,
       conv_session_id: session&.id,
       correlation_id: "photo:test-123",
-      client: client
+      client: client,
+      photo_intent: photo_intent
     )
   end
 end

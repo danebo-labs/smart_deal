@@ -19,6 +19,12 @@ es:
     photo_guidance: "Usa esta lectura para identificar el equipo. Antes de intervenir o aplicar parámetros, confirma las etiquetas en campo y contrasta el dato con el manual correspondiente."
     photo_manual_absent: "No hay un manual compatible pineado en esta sesión. El análisis se limita a lo visible en la foto; sube o pinea el manual antes de pedir parámetros o procedimientos."
     photo_question_unavailable: "No pude responder tu pregunta sobre la foto en este momento. Vuelve a preguntarla en un mensaje aparte."
+    photo_intent:
+      target_hidden: "Esta foto no muestra lo que preguntas. %{missing}"
+      target_hidden_default: "Esta foto no muestra ese conjunto. Manda un primer plano de ese conjunto y de la placa de características."
+      target_visible: "Esta foto muestra lo que preguntas."
+      target_uncertain: "No puedo confirmar si esta foto muestra lo que preguntas."
+      close_up_request: "Manda un primer plano de ese conjunto y de la placa de características."
     image_summary_invite: "Cuéntame qué necesitas — estoy aquí para lo que sea, cualquier pregunta está bien."
     document_indexed_message: "El archivo %{filename} terminó de sincronizarse en la Base de Conocimiento y está listo para consultas."
     documents_indexed_message: "%{count} archivos fueron sincronizados en la Base de Conocimiento y están listos para consultas."

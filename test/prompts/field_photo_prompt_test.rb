@@ -30,8 +30,39 @@ class FieldPhotoPromptTest < ActiveSupport::TestCase
     assert_includes text, "never translate or paraphrase these"
   end
 
-  test "CONTRACT_VERSION is bumped to v2 to invalidate diagnoses cached under the weaker language hint" do
-    assert_equal "v2", FieldPhotoPrompt::CONTRACT_VERSION
+  test "live-photo contract version constant is gone and the ingestion contract is unchanged" do
+    assert_not FieldPhotoPrompt.const_defined?(:CONTRACT_VERSION)
+    assert_equal "field_photo_records_v3", FieldPhotoPrompt::INGESTION_CONTRACT_VERSION
+  end
+
+  test "prompt fingerprint stays the pre-phase-1 SYSTEM_BLOCKS digest" do
+    assert_equal "4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1",
+                 FieldPhotoPrompt.prompt_fingerprint_sha256
+  end
+
+  test "user content without an intent matches the ingestion user content" do
+    kwargs = { binary: FAKE_BINARY, content_type: FAKE_CT, filename: FAKE_NAME, locale: "es" }
+    content = FieldPhotoPrompt.user_content(**kwargs)
+    assert_equal BatchChunkingPrompt.user_content(**kwargs), content
+    texts = content.select { |block| block[:type] == "text" }.pluck(:text)
+    assert texts.none? { |text| text.include?("Photo intent") }
+  end
+
+  test "user content with an intent appends the technician words and the three keys" do
+    content = FieldPhotoPrompt.user_content(
+      binary: FAKE_BINARY,
+      content_type: FAKE_CT,
+      filename: FAKE_NAME,
+      locale: "es",
+      photo_intent: "Cómo se ajustan los resortes de la fijación de cables"
+    )
+    text = content.reverse.find { |block| block[:type] == "text" }[:text]
+    assert_includes text, "Photo intent (the technician's own words, not evidence and not a manual):"
+    assert_includes text, "Cómo se ajustan los resortes de la fijación de cables"
+    assert_includes text, '"target_visible": true | false | null'
+    assert_includes text, '"relevance_to_goal": "relevant" | "unrelated" | "uncertain"'
+    assert_includes text, '"missing_view_or_detail":'
+    assert_equal 1, content.count { |block| block[:type] == "text" && block[:text].include?("Photo intent") }
   end
 
   test "user_content returns array with image block for jpeg" do

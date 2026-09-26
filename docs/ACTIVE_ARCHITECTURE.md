@@ -90,9 +90,9 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
 - Live technician photos are diagnostic inputs only: they still do not create
   a `KbDocument` or enter the Knowledge Base, but the original bytes and a
   thumbnail are now retained durably (bounded by `FIELD_PHOTO_RETENTION_DAYS`)
-  so a technician can re-ask after the diagnosis cache expires. Their compact
-  result may provide temporary conversation context for a later explicit
-  manual question.
+  so a re-ask runs a fresh vision read from the retained bytes. There is no
+  diagnosis cache. Their compact result may provide temporary conversation
+  context for a later explicit manual question.
 - Internal `Retrieve` calls (KB retrieval used only for excerpt/context, and
   Bedrock KB warm pings) are traced through `PilotUsageLog` structured log
   lines, not `bedrock_queries` rows: `bedrock_queries.source` is a closed

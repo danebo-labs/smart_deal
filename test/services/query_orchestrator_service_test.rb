@@ -84,51 +84,40 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal "es", result[:response_locale]
   end
 
-  test "cached diagnosis with an existing durable photo enqueues without a temporary payload" do
+  test "an uploaded image with a durable photo still writes a pending token and warms the KB" do
     image = { data: Base64.strict_encode64("xx"), binary: "xx", media_type: "image/jpeg", filename: "scan.jpg" }
     sha = Digest::SHA256.hexdigest("xx")
-    FieldPhotoDiagnosisCache.write(
-      account_id: accounts(:legacy).id,
-      sha256: sha,
-      locale: "es",
-      value: diagnosis_cache_value
-    )
     existing_photo = FieldPhoto.create!(
       account_id: accounts(:legacy).id, sha256: sha, s3_key_original: "field_photos/#{accounts(:legacy).id}/#{sha}/original.jpg",
       content_type: "image/jpeg", byte_size: 2
     )
-
-    result = QueryOrchestratorService.new(
-      "What is this?",
-      images: [ image ],
-      account: accounts(:legacy),
-      response_locale: :es,
-      user_id: users(:one).id
-    ).execute
+    events = capture_pilot_usage_events do
+      QueryOrchestratorService.new(
+        "What is this?",
+        images: [ image ],
+        account: accounts(:legacy),
+        response_locale: :es,
+        user_id: users(:one).id
+      ).execute
+    end
 
     args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
-    assert_nil args["image_token"]
+    assert args["image_token"].present?
     assert_equal sha, args["image_sha256"]
     assert_equal existing_photo.id, args["field_photo_id"]
-    assert_equal result[:correlation_id], args["correlation_id"]
-    # Cache hit: RAG starts immediately, a parallel ping would compete with it
-    # for the same paused cluster (WarmBedrockKbJob IN_FLIGHT_TTL).
-    assert_no_enqueued_jobs only: WarmBedrockKbJob
+    assert_enqueued_with(job: WarmBedrockKbJob)
+    submitted = events.find { |event| event["event"] == "photo_submitted" }
+    assert submitted
+    assert_not submitted.key?("cache_status")
   end
 
-  test "cached diagnosis without a durable photo still writes the pending store so it can be persisted" do
+  test "an uploaded image writes the pending token including the thumbnail" do
     image = {
       data: Base64.strict_encode64("xx"), binary: "xx", media_type: "image/jpeg", filename: "scan.jpg",
       thumbnail_binary: "thumb-bytes", thumbnail_content_type: "image/jpeg",
       thumbnail_width: 88, thumbnail_height: 66
     }
     sha = Digest::SHA256.hexdigest("xx")
-    FieldPhotoDiagnosisCache.write(
-      account_id: accounts(:legacy).id,
-      sha256: sha,
-      locale: "es",
-      value: diagnosis_cache_value
-    )
 
     result = QueryOrchestratorService.new(
       "What is this?",
@@ -143,6 +132,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_nil args["field_photo_id"]
     assert_equal sha, args["image_sha256"]
     assert_equal result[:correlation_id], args["correlation_id"]
+    assert_enqueued_with(job: WarmBedrockKbJob)
 
     pending = FieldPhotoPendingImageStore.take(token: args["image_token"], account_id: accounts(:legacy).id)
     assert_equal "thumb-bytes", pending[:thumbnail_binary]
@@ -690,24 +680,16 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     end
   end
 
-  def diagnosis_cache_value
-    {
-      analysis: "analysis",
-      compact_context: "context",
-      canonical_name: "Panel",
-      aliases: [],
-      manufacturer: "UNKNOWN",
-      model_visible: "UNKNOWN",
-      condition: "UNKNOWN",
-      visible_codes: [],
-      model_id: "claude-sonnet-4-6-direct",
-      input_tokens: 10,
-      output_tokens: 5,
-      original_cost: 0.000105,
-      latency_ms: 100,
-      created_at: Time.current.iso8601,
-      contract_version: FieldPhotoPrompt::CONTRACT_VERSION
-    }
+  def capture_pilot_usage_events
+    log_output = StringIO.new
+    logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    log_output.string.lines.filter_map do |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?("[PILOT_USAGE]")
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   JESUS_T3 = "Elemont Montacargas Hidraulico Modelo MH"

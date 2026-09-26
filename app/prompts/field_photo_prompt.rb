@@ -4,15 +4,9 @@ require "digest"
 
 # Specialized prompt for the field photo ingestion path (cost_v2, field_photo_v1).
 # SYSTEM_BLOCKS: compact field-photo schema with explicit visual evidence.
-# user_content: delegates to BatchChunkingPrompt.user_content for the image media block.
+# user_content: image media block, plus the technician's photo intent on the
+# live Field Companion path only. Ingestion callers never pass photo_intent.
 module FieldPhotoPrompt
-  # Cache contract for live-photo diagnoses. Bump whenever the diagnostic
-  # prompt or the cached response schema changes.
-  # v2: added an absolute language directive (LANGUAGE block below) — prose
-  #     fields no longer silently default to English; bump invalidates
-  #     diagnoses cached under the old, weaker "Summary language" hint.
-  CONTRACT_VERSION = "v2"
-
   # Independent contract version for the specialized photo path (no field_records
   # schema — explicit-evidence envelope instead). Versioned separately from
   # BatchChunkingPrompt so document-contract bumps don't invalidate photo dedup
@@ -120,12 +114,29 @@ module FieldPhotoPrompt
     }
   ].freeze
 
-  def self.user_content(binary:, content_type:, filename:, locale: nil)
-    BatchChunkingPrompt.user_content(
+  def self.user_content(binary:, content_type:, filename:, locale: nil, photo_intent: nil)
+    blocks = BatchChunkingPrompt.user_content(
       binary:       binary,
       content_type: content_type,
       filename:     filename,
       locale:       locale
     )
+    text = photo_intent.to_s.squish
+    return blocks if text.blank?
+
+    blocks + [ { type: "text", text: intent_block(text) } ]
   end
+
+  def self.intent_block(text)
+    <<~TEXT.strip
+      Photo intent (the technician's own words, not evidence and not a manual):
+      #{text}
+      Add three keys to the same JSON object:
+      "target_visible": true | false | null   — does this image show the part/assembly the technician is asking about?
+      "relevance_to_goal": "relevant" | "unrelated" | "uncertain"
+      "missing_view_or_detail": "<one short sentence in the summary language naming the view or detail still needed; empty string when the target is fully visible>"
+      Never take a manufacturer, model, code, or value from the intent. Do not answer the question, give a procedure, or state torque, turns, tension, or settings.
+    TEXT
+  end
+  private_class_method :intent_block
 end

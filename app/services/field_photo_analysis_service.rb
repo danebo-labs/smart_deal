@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 # Direct, non-persistent field-photo analysis for the authenticated web chat.
 # The image is sent once to Anthropic and is never written to S3 or the KB.
 class FieldPhotoAnalysisService
@@ -7,9 +9,11 @@ class FieldPhotoAnalysisService
 
   VISIBLE_CODE_LIMIT = 8
   CHAT_CONTEXT_LIMIT = ConversationSession::MAX_MSG_LENGTH
+  RELEVANCE_VALUES = %w[relevant unrelated uncertain].freeze
+  MISSING_DETAIL_LIMIT = 200
 
   def initialize(binary:, content_type:, filename:, locale:, account_id:, user_id:,
-                 conv_session_id:, correlation_id:, client: nil)
+                 conv_session_id:, correlation_id:, client: nil, photo_intent: nil)
     @binary = binary
     @content_type = content_type
     @filename = filename
@@ -19,6 +23,7 @@ class FieldPhotoAnalysisService
     @conv_session_id = conv_session_id
     @correlation_id = correlation_id
     @client = client
+    @photo_intent = coerce_photo_intent(photo_intent)
   end
 
   def call
@@ -37,7 +42,8 @@ class FieldPhotoAnalysisService
         binary: @binary,
         content_type: @content_type,
         filename: @filename,
-        locale: @locale
+        locale: @locale,
+        photo_intent: @photo_intent&.dig(:text)
       ),
       filename: @filename,
       max_tokens: BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
@@ -54,6 +60,9 @@ class FieldPhotoAnalysisService
       compact_context: build_compact_context(parsed),
       canonical_name: value_or_unknown(parsed["canonical_component"]),
       aliases: Array(parsed["aliases"]).map(&:to_s).compact_blank.first(10),
+      target_visible: normalized_target_visible(parsed),
+      relevance_to_goal: normalized_relevance(parsed),
+      missing_view_or_detail: normalized_missing(parsed),
       parsed: parsed,
       model: model,
       usage: usage_payload(response[:usage]),
@@ -146,6 +155,7 @@ class FieldPhotoAnalysisService
       "Códigos: #{visible_codes(parsed).presence&.join(', ') || 'UNKNOWN'}",
       "Condición: #{value_or_unknown(parsed['condition'])}"
     ].join(" | ").squish
+    line = "#{line} | Objetivo visible: #{visibility_label(parsed)}" if intent_sent?
 
     line.truncate(CHAT_CONTEXT_LIMIT, omission: "...")
   end
@@ -204,6 +214,58 @@ class FieldPhotoAnalysisService
     }
   end
 
+  def intent_sent?
+    @photo_intent.present?
+  end
+
+  def coerce_photo_intent(photo_intent)
+    return nil if photo_intent.blank?
+
+    text, source = if photo_intent.is_a?(Hash)
+      [ photo_intent["text"] || photo_intent[:text], photo_intent["source"] || photo_intent[:source] ]
+    else
+      [ photo_intent, nil ]
+    end
+    text = text.to_s.squish
+    return nil if text.blank?
+
+    { text: text, source: source.to_s.presence }
+  end
+
+  def normalized_target_visible(parsed)
+    return nil unless intent_sent?
+
+    value = parsed["target_visible"]
+    value == true || value == false ? value : nil
+  end
+
+  def normalized_relevance(parsed)
+    return nil unless intent_sent?
+
+    value = parsed["relevance_to_goal"].to_s
+    RELEVANCE_VALUES.include?(value) ? value : nil
+  end
+
+  def normalized_missing(parsed)
+    return nil unless intent_sent?
+
+    parsed["missing_view_or_detail"].to_s.squish.first(MISSING_DETAIL_LIMIT).presence
+  end
+
+  def visibility_label(parsed)
+    case normalized_target_visible(parsed)
+    when true then "sí"
+    when false then "no"
+    else "sin confirmar"
+    end
+  end
+
+  def intent_digest
+    return nil unless intent_sent?
+
+    Digest::SHA256.hexdigest(@photo_intent[:text])
+  end
+
   def log_analysis(parsed:, model:, latency_ms:, usage:, result:, error_class: nil)
     payload = {
       correlation_id: @correlation_id,
@@ -219,6 +281,10 @@ class FieldPhotoAnalysisService
       visible_codes: visible_codes(parsed),
       component: parsed["canonical_component"],
       condition: parsed["condition"],
+      intent_source: @photo_intent&.dig(:source),
+      intent_sha256: intent_digest,
+      target_visible: normalized_target_visible(parsed),
+      relevance_to_goal: normalized_relevance(parsed),
       result: result,
       error_class: error_class
     }

@@ -1,0 +1,90 @@
+{
+  "episode_id": "ep_271dcb5597b17c32",
+  "photo_now": "2026-09-25T20:38:39-03:00",
+  "image_digest_prefix": "46de1a09cb75",
+  "e9cea_question": "Cómo se ajustan los resortes de la fijación de cables",
+  "active_episode": {
+    "v": 1,
+    "episode_id": "ep_271dcb5597b17c32",
+    "status": "active",
+    "opened_at": "2026-09-25T20:22:49-03:00",
+    "updated_at": "2026-09-25T20:35:32-03:00",
+    "goal": {
+      "text": "si te doy otra imagen , te ayuidaria a orientarme?",
+      "correlation_id": "query:d7d98115-9010-4f45-9b4d-cb3e8aca4969",
+      "truncated": false
+    }
+  },
+  "history": [
+    {
+      "role": "user",
+      "content": "Cómo se ajustan los resortes de la fijación de cables",
+      "ts": "2026-09-25T20:22:49-03:00",
+      "correlation_id": "photo:e9cea10e-559d-490c-bd2a-8eea8f9418c1",
+      "original_sha256": "75b795b0e045dcd6fbf1ae2909a76f11f48bc67cd3cee9aa4cf7b9c010ffccb7"
+    },
+    {
+      "role": "user",
+      "content": "Fuji Yida",
+      "ts": "2026-09-25T20:23:43-03:00",
+      "correlation_id": "query:e4d5899b-8aac-4c12-afbe-998c8d5a63da",
+      "original_sha256": "99a03d04fe6b5f0cf562f2afe772f757e8a6c5baa9f88d785140ce6d700d62b7"
+    },
+    {
+      "role": "user",
+      "content": "la verdad es que no lo se el modelo o la marca, solo la imagen",
+      "ts": "2026-09-25T20:24:40-03:00",
+      "correlation_id": "query:72eda72a-d1c9-4429-966b-1d90b306c870",
+      "original_sha256": "c7c317bf23f1783c67dda1a961d890a3ee48fcd0559853abfa164f4494ff69ee"
+    },
+    {
+      "role": "user",
+      "content": "",
+      "ts": "2026-09-25T20:25:07-03:00",
+      "correlation_id": "query:a8919734-9efd-4af2-bf94-af7a95edefdb",
+      "original_sha256": "105be5c4e29c27ffa3ae8cc45aa755684caee24370f080d7ac95c16a1d1e7b21"
+    },
+    {
+      "role": "user",
+      "content": "la poregunat que te hice , Cómo se ajustan los resortes de la fijación de cables",
+      "ts": "2026-09-25T20:25:50-03:00",
+      "correlation_id": "query:b1020088-d038-4fe2-b2c7-f90535bc3bd8",
+      "original_sha256": "9bc515a73802719229dbf2dbd11131d207542f60d6a8a05754b944de75f37aaf"
+    },
+    {
+      "role": "user",
+      "content": "pero  algun priocediemitno similiar, o que me ayude ?",
+      "ts": "2026-09-25T20:26:54-03:00",
+      "correlation_id": "query:242729f2-d30e-4b9c-850f-d6f8a1a46f73",
+      "original_sha256": "aadb0816ce9d5c44840d887da3fa7081eebb550a28dc67cf907cfaf9915c501a"
+    },
+    {
+      "role": "user",
+      "content": "ok y los componenetes de Kone y Fuji Yida con compatibles ?",
+      "ts": "2026-09-25T20:28:00-03:00",
+      "correlation_id": "query:603ced05-3eee-42e7-80d8-2debb566f940",
+      "original_sha256": "7cd73630ebef6af7aa196298ec21f75ff2171982675f4218063e9c60e67e462b"
+    },
+    {
+      "role": "user",
+      "content": "",
+      "ts": "2026-09-25T20:33:49-03:00",
+      "correlation_id": "query:2ee7b500-4ff0-4516-a841-24415bafd6dc",
+      "original_sha256": "65b090597bb35eddb2846363e83d372a0dc22a5f98b74ee7d4d7e1fe421dac36"
+    },
+    {
+      "role": "user",
+      "content": "dice algo de las medidias de seguridad ?",
+      "ts": "2026-09-25T20:34:40-03:00",
+      "correlation_id": "query:3998e3e5-4e8e-40f9-bf3f-67dbf35eeeb0",
+      "original_sha256": "fbd94bf8d9730df028db2f02c15ccc0ae5f9b603c6f32266e31ed6eb2867c161"
+    },
+    {
+      "role": "user",
+      "content": "si te doy otra imagen , te ayuidaria a orientarme?",
+      "ts": "2026-09-25T20:35:32-03:00",
+      "correlation_id": "query:d7d98115-9010-4f45-9b4d-cb3e8aca4969",
+      "original_sha256": "97314646220df729cc6e35d7d70dbffe1e1e4533e19be80475a09c76172a6534"
+    }
+  ]
+}

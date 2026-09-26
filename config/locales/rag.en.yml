@@ -19,6 +19,12 @@ en:
     photo_guidance: "Use this reading to identify the equipment. Before intervening or applying parameters, confirm the labels in the field and check the information against the corresponding manual."
     photo_manual_absent: "No compatible manual is pinned in this session. This analysis is limited to what is visible in the photo; upload or pin the manual before asking for parameters or procedures."
     photo_question_unavailable: "I couldn't answer your question about the photo right now. Please ask it again in a separate message."
+    photo_intent:
+      target_hidden: "This photo does not show what you are asking about. %{missing}"
+      target_hidden_default: "This photo does not show that assembly. Send a close-up of that assembly and its nameplate."
+      target_visible: "This photo shows what you are asking about."
+      target_uncertain: "I cannot confirm whether this photo shows what you are asking about."
+      close_up_request: "Send a close-up of that assembly and its nameplate."
     image_summary_invite: "Tell me what you need — I'm here for anything, no question is too simple."
     document_indexed_message: "The file %{filename} has been synchronized to the Knowledge Base and is ready for queries."
     documents_indexed_message: "%{count} files have been synchronized to the Knowledge Base and are ready for queries."

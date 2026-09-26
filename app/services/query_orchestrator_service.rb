@@ -83,9 +83,8 @@ class QueryOrchestratorService
     if @field_photo_id.present? && @images.empty? && @account
       photo = @account.field_photos.find_by(id: @field_photo_id) # scoping obligatorio
       if photo
-        # Reuse the stored sha256 and follow the SAME path as a fresh upload:
-        # FieldPhotoAnalysisJob decides cache-hit vs re-analysis, and rehydrates
-        # bytes from S3 when needed. Zero bytes leave the device.
+        # Reuse the stored sha256. The job rehydrates the retained bytes from
+        # S3 and runs one fresh vision read. Zero bytes leave the device.
         locale = (@response_locale || @locale || I18n.locale).to_s
         correlation_id = @correlation_id.presence || "photo:#{SecureRandom.uuid}"
         filename = File.basename(photo.s3_key_original)
@@ -124,30 +123,19 @@ class QueryOrchestratorService
       image_sha256 = Digest::SHA256.hexdigest(binary)
       locale = (@response_locale || @locale || I18n.locale).to_s
       correlation_id = @correlation_id.presence || "photo:#{SecureRandom.uuid}"
-      cached = FieldPhotoDiagnosisCache.read(
-        account_id: @account&.id,
-        sha256: image_sha256,
-        locale: locale
-      )
       existing_photo_id = @account && FieldPhoto.where(account_id: @account.id, sha256: image_sha256).pick(:id)
+      image_token = FieldPhotoPendingImageStore.write(
+        binary: binary, content_type: content_type, filename: filename,
+        account_id: @account&.id,
+        thumbnail_binary: image[:thumbnail_binary] || image["thumbnail_binary"],
+        thumbnail_content_type: image[:thumbnail_content_type] || image["thumbnail_content_type"],
+        thumbnail_width: image[:thumbnail_width] || image["thumbnail_width"],
+        thumbnail_height: image[:thumbnail_height] || image["thumbnail_height"]
+      )
 
-      # Bytes are only needed when we still have something to do with them:
-      # analyze (no cached diagnosis) or persist (no durable row yet).
-      image_token = if cached.nil? || existing_photo_id.nil?
-        FieldPhotoPendingImageStore.write(
-          binary: binary, content_type: content_type, filename: filename,
-          account_id: @account&.id,
-          thumbnail_binary: image[:thumbnail_binary] || image["thumbnail_binary"],
-          thumbnail_content_type: image[:thumbnail_content_type] || image["thumbnail_content_type"],
-          thumbnail_width: image[:thumbnail_width] || image["thumbnail_width"],
-          thumbnail_height: image[:thumbnail_height] || image["thumbnail_height"]
-        )
-      end
-
-      # Aurora resumes while vision runs (9-18 s, no KB access). Only on a cache
-      # miss: on a hit the RAG starts at once and a parallel ping would compete
-      # with it for the same paused cluster (see WarmBedrockKbJob IN_FLIGHT_TTL).
-      WarmBedrockKbJob.perform_later if @query.present? && cached.nil?
+      # Aurora resumes while vision runs (9-18 s, no KB access). A question
+      # starts RAG as soon as the reading returns, so the ping overlaps that wait.
+      WarmBedrockKbJob.perform_later if @query.present?
 
       FieldPhotoAnalysisJob.perform_later(
         image_token: image_token,
@@ -170,7 +158,6 @@ class QueryOrchestratorService
         conversation_session_id: @conversation_session_id,
         correlation_id: correlation_id,
         route: "visual_query",
-        cache_status: cached ? "hit" : "miss",
         result: "accepted",
         image_digest_prefix: image_sha256.first(12)
       )

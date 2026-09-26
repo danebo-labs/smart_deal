@@ -348,6 +348,30 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_operator block.length, :<=, Rag::PhotoQuestionAnswerService::EVIDENCE_BLOCK_MAX_CHARS
   end
 
+  test "a hidden target is stated before the answer and the condition line survives" do
+    photo_value = {
+      canonical_name: "Transformador trifásico con fusibles",
+      manufacturer: "UNKNOWN",
+      model_visible: "UNKNOWN",
+      condition: "DEGRADED",
+      visible_codes: [ "FEDEOSTRI 6N6", "000AC006T0T0" ],
+      target_visible: false,
+      missing_view_or_detail: "primer plano de las fijaciones de cables con sus resortes y de la placa"
+    }
+
+    block = build_service(
+      question: "Cómo se ajustan los resortes de la fijación de cables ? es Fuji Yida",
+      photo_value: photo_value
+    ).send(:photo_evidence_block)
+
+    assert_includes block, "Vision judged that this photo does not show what the question asks about"
+    assert_includes block, "primer plano de las fijaciones de cables con sus resortes y de la placa"
+    assert_includes block, "Say that first"
+    assert_includes block, "Say that mismatch first"
+    assert_includes block, "Condition: DEGRADED"
+    assert_operator block.length, :<=, Rag::PhotoQuestionAnswerService::EVIDENCE_BLOCK_MAX_CHARS
+  end
+
   test "an illegible label on the named component does not claim a brand mismatch" do
     photo_value = {
       canonical_name: "Fijación de cables",

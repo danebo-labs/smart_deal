@@ -664,9 +664,109 @@ bin/rubocop <changed .rb files>
 
 ---
 
+## PHASE_2_VALIDATION_RESULT
+
+```text
+STATUS=PASS
+PLAN_RECONCILIATION=MINOR_RECONCILIATION
+```
+
+The implementation matches the refined Phase 2 contract. Two reconciliations, both resolved from the chunks and the algorithm, not left open:
+
+1. The LCB II acceptance example says `24 V` is removed. The stored `query:406f82ce` chunk states both `24 Vcc` (the supply F1 protects) and `30 Vcc` (the voltage absent when F1 opens). After `VCC` → `V`, the pair `(24, V)` is supported. The guard keeps `24 V`, `30 V`, and `F1 4 A`, and removes an unsupported `12 V`. A `24 V` that exists only outside the chunk, the question, and this turn's photo block is still removed. Pair occurrence is the algorithm; a contradiction detector was not added.
+2. Sharing the sibling-model rule and adding the grounded lines put the grounded template at 3194 tokens, above the old cap of strict × 1.08 (2768). The cap is now strict × 1.30. The filtered strict template SHA is unchanged (`9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8`).
+
+`rag.unsupported_value_removed` was not specified. The notice is one sentence: es "Quité un valor con unidad que no aparece en los fragmentos recuperados ni en tu consulta." en "I removed a unit value that is not in the retrieved excerpts or in your question."
+
+Commands (all exit 0):
+
+```text
+BUNDLE_PATH=vendor/bundle bin/rails test <Phase 2 validation command list>
+348 runs, 1819 assertions, 0 failures, 0 errors, 22 skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test
+3440 runs, 16838 assertions, 0 failures, 0 errors, 186 skips
+
+git diff --exit-code -- script/fixtures/production_conversational_baseline_v2.json
+
+BUNDLE_PATH=vendor/bundle bin/rubocop --cache false <15 changed .rb files>
+15 files inspected, no offenses
+```
+
+Phase 1 commit `732331ef0bfb5d8a833956273de93dca1c56fe27` and the model upgrade `9c34751add7dbf45d27e23256ee733c0467af29b` were not reopened. Live vision stays `claude-sonnet-5`. Ingestion multimodal stays `claude-opus-5-5`. RAG generation model was not changed.
+
+Files changed:
+
+```text
+added    app/services/rag/source_fidelity_guard.rb
+added    test/services/rag/lce_scope_replay_test.rb
+added    test/services/rag/source_fidelity_guard_test.rb
+added    test/fixtures/real_gonzalo/lce_episode.json
+added    test/fixtures/real_gonzalo/chunks/lcbii.json
+added    test/fixtures/real_gonzalo/chunks/fuji_kone.json
+added    test/fixtures/real_gonzalo/chunks/bl6_citations.json
+modified app/services/rag/active_episode_turn.rb
+modified app/services/bedrock/citation_processor.rb
+modified app/controllers/concerns/rag_query_concern.rb
+modified app/services/rag/evidence_selection_telemetry.rb
+modified app/prompts/bedrock/generation.txt
+modified config/locales/rag.es.yml
+modified config/locales/rag.en.yml
+modified script/fixtures/rag_seguridades_rubric.json
+modified script/fixtures/rag_seguridades_pilot_10q.json
+modified script/fixtures/rag_seguridades_pilot_10q_v2.json
+modified test/controllers/concerns/rag_query_concern_test.rb
+modified test/prompts/bedrock_generation_prompt_test.rb
+modified test/services/bedrock/citation_processor_test.rb
+modified test/services/bedrock_rag_service_grounded_synthesis_test.rb
+modified test/services/rag/answer_safety_processor_test.rb
+modified test/services/rag/evidence_selection_telemetry_test.rb
+modified test/services/rag/followup_query_rewriter_test.rb
+modified test/services/rag/citation_attribution_contract_characterization_test.rb
+```
+
+Methods:
+
+```text
+ActiveEpisodeTurn#disjoint_catalog_equipment?
+ActiveEpisodeTurn#equipment_identity?
+ActiveEpisodeTurn#disjoint_catalog_model
+Rag::SourceFidelityGuard.call / evidence_texts / allowed_texts
+Bedrock::CitationProcessor#build_numbered_references (duplicate title dropped; [n] rewritten)
+RagQueryConcern#execute_rag_query (guard once, before sanitize_answer)
+```
+
+Six rubric checks matched the partial-absence rendering only through the old sentence. Each of those patterns now also accepts `no aparece en los fragmentos`. The old alternatives stay. `rag_seguridades_holdout_v1.json` SHA stays `34682fb13ca5acf0e635d42ad285be039749b4d07f090a728ef43371d4325309`. Raw `generation.txt` SHA is `1097664a990784ef6254a351754f427beb2fc13310171e8d50177a9e604eddf1`.
+
+Confirmed invariants:
+
+```text
+SYSTEM_BLOCKS_UNCHANGED=YES
+INGESTION_FINGERPRINT_UNCHANGED=YES
+INGESTION_CONTRACT_UNCHANGED=YES
+FOLLOWUP_RE_UNCHANGED=YES
+BASELINE_FIXTURE_UNCHANGED=YES
+STRICT_TEMPLATE_SHA_UNCHANGED=YES
+NEW_MODEL_CALL_TYPES=0
+ARCHITECTURE_DRIFT=NO
+HUMAN_VALIDATION_REQUIRED=NO
+HYBRID_MINIMAL unchanged
+semantic ownership remains switch / correct only
+EvidenceProvenance not created
+RetrievalOutcome not created
+semantic_analysis enum not added
+TrackBedrockQueryJob not enqueued from SemanticQueryAnalyzer
+```
+
+Discarded: editing `FOLLOWUP_RE`, a second Retrieve, re-running `AnswerSafetyProcessor`, a context-sensitive voltage contradiction detector, deleting a supported `24 V` because the plan's example said so, putting the sibling rule back behind `STRICT_ONLY:`.
+
+The Phase 3 prompt is `## PHASE_3_EXECUTION_PROMPT` in this file. No separate document: this brief and the handoff agree.
+
+---
+
 ## PHASE_3 — telemetry and cost
 
-Definitive prompt regenerated after Phase 2 PASS.
+The executable prompt is `## PHASE_3_EXECUTION_PROMPT` below. Do not start Phase 3 from this section alone.
 
 ### Accounting
 
@@ -847,31 +947,128 @@ HUMAN_VALIDATION_REQUIRED=NO
 
 The seed is retired. The executable prompt, written from the Phase 1 result, is `docs/PHASE_2_EXECUTION_PROMPT.md`. It records the shipped paths (`PhotoIntent`, `PhotoIntentRenderer`, the live-photo user-content block, the renderer, the removed cache), the fingerprint and ingestion-contract invariants, the rejected cache/overlap hypotheses, the residual inherited-intent limit, and the Opus-refined 2A–2E contract. Do not start Phase 2 from the Phase 2 section alone.
 
-## PHASE_3_PROMPT_SEED
+## PHASE_3_EXECUTION_PROMPT
 
-Not the execution prompt. Replaced after Phase 2 PASS.
+The seed is retired. Execute this section. The `## PHASE_3` section above is the contract. Do not write an alternate plan. Do not implement Future Phase 4.
+
+### Current repo state
+
+Phase 1 commit `732331ef0bfb5d8a833956273de93dca1c56fe27`. Model upgrade `9c34751add7dbf45d27e23256ee733c0467af29b` (Sonnet 4.6 → Sonnet 5, Opus 4.8 → Opus 5.5). Phase 2 is the commit that contains `## PHASE_2_VALIDATION_RESULT`. Do not reopen any of them unless a regression is caused by that commit.
 
 ```text
-You are implementing Phase 3 of
-docs/REAL_GONZALO_AUDIT_IMPLEMENTATION_MASTER_PLAN_2026-09-26.md.
-
-Phases 1 and 2 are done. Do not reopen photo intent, cache removal,
-LCE scope reset, SourceFidelityGuard, or prompt lines.
-
-SemanticQueryAnalyzer#call enqueues one TrackBedrockQueryJob per paid
-converse (source semantic_analysis), including hallucinated_spans and
-invalid_schema; transport errors insert nothing; enqueue failures never
-fail the turn. photo_completed.cost includes provider cache tokens.
-TurnEvidence: one [TURN_EVIDENCE] per correlation, no cost fields, text
-only when PILOT_AUDIT_CAPTURE=true. BedrockQuery is the only cost source.
-
-Aggregate fixture: 16 calls, 22896 input, 1719 output, USD 0.031491.
-No invented per-call split.
-
-Gate: the Phase 3 validation command block.
-On PASS: append PHASE_3_VALIDATION_RESULT and commit
-"Account every paid model call per turn."
+PHASE2_STATUS=PASS
+HUMAN_VALIDATION_REQUIRED=NO
 ```
+
+Live field-photo vision stays `claude-sonnet-5` (`BatchChunkingPrompt::MODEL_TEXT`). Ingestion multimodal stays `claude-opus-5-5` (`BatchChunkingPrompt::MODEL_MULTIMODAL`). RAG generation model stays unchanged. `SYSTEM_BLOCKS` fingerprint `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`. `FieldPhotoPrompt::INGESTION_CONTRACT_VERSION` is `field_photo_records_v3`. `BatchChunkingPrompt::INGESTION_CONTRACT_VERSION` is `field_records_v8`. Do not reingest.
+
+Frozen:
+
+```text
+HYBRID_MINIMAL
+HAIKU_QUERY_ANALYSIS_MODE=conditional
+semantic ownership: switch / correct only
+baseline: 14 flows, 29 turns, 14/14 PASS
+unsafe_contamination=0
+HTTP 5xx=0
+ARCHITECTURE_CHANGE_REQUIRED=NO
+ENTITY_PROJECTION_REQUIRED=NO
+FOLLOWUP_RE unchanged
+production_conversational_baseline_v2.json unchanged
+filtered strict generation template SHA 9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8
+holdout v1 SHA 34682fb13ca5acf0e635d42ad285be039749b4d07f090a728ef43371d4325309
+```
+
+### Do not reopen
+
+Phase 1: `Rag::PhotoIntent`, `Rag::PhotoIntentRenderer`, one vision call per photo, no `FieldPhotoDiagnosisCache`, no `photo_dx` reads or writes, no intent LLM, `target_visible` missing stored as nil and rendered uncertain.
+
+Phase 2:
+
+* `ActiveEpisodeTurn#disjoint_catalog_equipment?` after the owned slice returns and before the brand rules. Owned switch/correct still return first. Do not edit `FOLLOWUP_RE`.
+* `Rag::SourceFidelityGuard` once in `RagQueryConcern#execute_rag_query`, before `sanitize_answer`. Empty evidence is a no-op. Pair occurrence keeps `24 V` when the chunk contains `24 Vcc`. Do not add a contradiction detector and do not delete that supported `24 V`.
+* Grounded lines in `generation.txt` (voice, power state, internal note, filename, tone, mechanical allow-list) and the sibling rule without a `STRICT_ONLY:` prefix. The grounded-template budget test allows strict × 1.30. Do not revert it to 8%.
+* `Bedrock::CitationProcessor#build_numbered_references` drops a later duplicate title and rewrites `[n]`.
+* `rag.data_not_available` is the new sentence in both locales. `DATA_NOT_AVAILABLE` stays the internal marker. `ABSTENTION_PATTERN` keeps the old alternatives plus `no aparece en los fragmentos` and `not in the manual excerpts`.
+
+Known limits that stay: a blank photo of a non-lexicon subject after a non-visual turn can inherit an older visual target; the renderer still appends the standalone reading; an explicit question is not lexicon-checked; prompt tests prove the text reaches the model; vision accuracy is not a gate; leftover `photo_dx` entries expire in 24 h; `PHOTO_DIAGNOSIS_CACHE_TTL_HOURS` stays for Future Phase 4.
+
+### Phase 3 — implement exactly the PHASE_3 section
+
+Semantic `BedrockQuery` accounting, `photo_completed` cache-token cost, and `Rag::TurnEvidence`. No new RAG, semantic engine, Entity Projection, or extra model call. The semantic converse already exists; this phase only records it.
+
+Accounting, in `SemanticQueryAnalyzer#call` after `log_shadow`, when `input_tokens > 0`:
+
+```text
+TrackBedrockQueryJob.perform_later
+  source: "semantic_analysis"
+  route: "semantic_analysis"
+  model_id: MODEL_ID
+  token_source: "provider_usage"
+  input_tokens, output_tokens
+  cache_read_tokens / cache_creation_tokens from
+    usage.cache_read_input_tokens / usage.cache_write_input_tokens when present
+  latency_ms, correlation_id
+  user_query: @turn
+  account_id / user_id / conversation_session_id from a new attribution: argument
+```
+
+* Callers pass `attribution:`: `ActiveEpisodeTurn#owned_perception` (production, `observe_ownership`) and `RagController#observe_semantic_shadow` (shadow, `observe`).
+* `hallucinated_spans` and `invalid_schema` are paid: one row each, `analysis` stays nil.
+* Transport error / timeout (`input_tokens == 0`) inserts nothing.
+* Wrap the enqueue in `rescue StandardError` and a warn log. Tracking never fails a turn. It runs inside `record_user_turn!`'s `with_lock`; `perform_later` only enqueues.
+* `haiku_query_analysis_shadow` stays diagnostic and is never summed.
+
+`BedrockQuery` enum adds `semantic_analysis`. Today the enum is `query`, `ingestion_parse`, `ingestion_embed`. `LlmUsageChannel` maps `semantic_analysis` to `:bedrock_semantic` (the model id is `global.anthropic.claude-haiku-4-5-20251001-v1:0`, so it must not fall through `classify_direct_model`). `SimpleMetricsService` includes that channel once in the Haiku token/cost rollup. `query_count` stays `source == "query"`. `total_cost` already sums every row once.
+
+`PilotMetricsReport`: `semantic_llm_calls` = rows with `source == semantic_analysis`. `rag_llm_calls` and `visual_row?` stay as they are. Token and cost totals already sum all rows.
+
+Vision: `FieldPhotoAnalysisService#usage_payload` carries `cache_read_tokens` and `cache_creation_tokens`. `FieldPhotoAnalysisJob#photo_value` prices `photo_completed.cost` with those tokens so it equals `BedrockQuery#cost` for the same inputs (0.014085 for 1430/360/1172). Still exactly one vision row per call (`ClaudeChunkingClient#track_usage`). The cache is gone, so there is no hit-row case. Identical bytes twice means two real rows.
+
+`Rag::TurnEvidence.build` → one hash per correlation, logged as `[TURN_EVIDENCE]`:
+
+```text
+correlation_id, route, outcome
+original_query_sha256, effective_query_sha256
+semantic: { status, relation, ambiguous } | nil
+photo: { intent_source, target_visible } | nil
+chunk_ids, sources (title + page)
+answer_sha256
+original_query, effective_query, answer   # only when ENV["PILOT_AUDIT_CAPTURE"] == "true"
+```
+
+No token or cost fields. Cost per turn is `BedrockQuery` rows joined by `correlation_id`. Emit from `RagController#emit_interaction_completed` (text, success and failure) and `FieldPhotoAnalysisJob#emit_interaction_completed` plus the `retry_on` failure block (photo: blank, question, expired, failed).
+
+Fixture `test/fixtures/real_gonzalo/semantic_accounting_2026-09-25.json`: the 16 correlation ids (15 text turns + `photo:e9cea10e-…`) and the aggregate `calls: 16, input_tokens: 22896, output_tokens: 1719, cost_usd: 0.031491`. No hand-partitioned per-call split. Do not commit `tmp/pilot_exports/`.
+
+Tests named in the PHASE_3 section table. Gate:
+
+```text
+bin/rails test \
+  test/services/rag/semantic_query_analyzer_test.rb \
+  test/models/bedrock_query_test.rb \
+  test/jobs/track_bedrock_query_job_test.rb \
+  test/services/llm_usage_channel_test.rb \
+  test/services/simple_metrics_service_test.rb \
+  test/services/pilot_metrics_report_test.rb \
+  test/jobs/field_photo_analysis_job_test.rb \
+  test/services/rag/turn_evidence_test.rb \
+  test/services/rag/real_gonzalo_semantic_accounting_test.rb
+bin/rails test
+bin/rubocop <changed .rb files>
+```
+
+Use `BUNDLE_PATH=vendor/bundle` if the shell's `BUNDLE_PATH` points at an empty sandbox cache.
+
+Allowed statuses: `PASS`, `FAIL`, `PLAN_BLOCKER`. On FAIL, fix inside Phase 3 and rerun. No commit while FAIL. No Future Phase 4.
+
+On PASS: append `## PHASE_3_VALIDATION_RESULT` to this file. There is no Phase 4 seed to replace. Commit exactly once:
+
+```text
+Account every paid model call per turn.
+```
+
+Do not deploy. `HUMAN_VALIDATION_REQUIRED=NO`.
 
 ---
 

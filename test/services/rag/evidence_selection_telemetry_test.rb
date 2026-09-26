@@ -176,6 +176,17 @@ class Rag::EvidenceSelectionTelemetryTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
+  test "abstention pattern matches the scope-local sentence and the previous wording" do
+    pattern = Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN
+
+    assert_match pattern, I18n.t("rag.data_not_available", locale: :es)
+    assert_match pattern, I18n.t("rag.data_not_available", locale: :en)
+    assert_match pattern, "No encontré ese dato en la documentación que tengo"
+    assert_match pattern, "I did not find that in the documentation I have"
+    assert_match pattern, "El documento no incluye este dato"
+    assert_match pattern, "The document does not include this information"
+  end
+
   test "logs the model id and attribution identities/anchors on evidence_route" do
     output = StringIO.new
     logger = ActiveSupport::Logger.new(output)

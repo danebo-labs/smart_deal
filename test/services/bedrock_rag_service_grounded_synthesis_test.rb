@@ -81,7 +81,7 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_includes prompt, "Say a cited table's rows in sentences, not bullets, and still show the answer"
     assert_not_includes prompt, "numbered lists"
     assert_not_includes prompt, "never a menu or a list"
-    assert_not_includes prompt, "is not evidence for the model asked about"
+    assert_includes prompt, "is not evidence for the model asked about"
     assert_not_includes prompt, "ask for the missing identifier or code"
   end
 
@@ -221,15 +221,16 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_equal "#{answer}\n\n#{LEGACY_TAIL}", normalize(answer, grounded_synthesis: true)
   end
 
-  # Template GS is ~2.7k tokens; billed input is ~10.5k/call (chunks dominate).
-  # +8% of the template is ~+0.8% of billed input (~US$0.000085/query on Haiku 4.5).
-  test "variant prompt stays within 8 percent of the strict prompt" do
+  # Phase 2 shares the sibling-model rule and adds the grounded voice, power
+  # state, internal-note source, filename, tone, and observation lines.
+  # The variant is larger than the old 8% cap; 30% still rejects an unbounded prompt.
+  test "variant prompt stays within 30 percent of the strict prompt" do
     strict = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
     variant = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
     strict_tokens = AnthropicTokenCounter::LocalTokenizer.estimate(strict)
     variant_tokens = AnthropicTokenCounter::LocalTokenizer.estimate(variant)
 
-    assert_operator variant_tokens, :<=, (strict_tokens * 1.08)
+    assert_operator variant_tokens, :<=, (strict_tokens * 1.30)
   end
 
   test "initialize records enabled_for? on the instance" do

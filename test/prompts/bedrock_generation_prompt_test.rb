@@ -127,6 +127,44 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "use only evidence\n  about that model"
     assert_includes prompt, "is not evidence for the model asked about"
     assert_includes prompt, "any other retrieved chunk that names a different"
+    grounded = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
+    assert_includes grounded, "is not evidence for the model asked about"
+  end
+
+  test "grounded synthesis names the manual voice, power state, and internal-note source" do
+    grounded = grounded_prompt
+    strict = prompt
+
+    assert_includes grounded, "Según el manual"
+    assert_includes grounded, "Como verificación de campo"
+    assert_includes grounded, "never placed before energizing"
+    assert_includes grounded, "Copy numbers exactly"
+    assert_includes grounded, "cite that manual and page"
+    assert_includes grounded, "from another manufacturer and does not transfer"
+    assert_includes grounded, "it is not evidence of the page's manufacturer or model"
+    [ "Según el manual", "Como verificación de campo", "never placed before energizing",
+      "from another manufacturer and does not transfer",
+      "it is not evidence of the page's manufacturer or model" ].each do |line|
+      assert_not_includes strict, line
+    end
+  end
+
+  test "grounded synthesis opens as a field companion and allows only observation" do
+    grounded = grounded_prompt
+
+    assert_includes grounded, "what the technician can check or do next"
+    assert_includes grounded, "what the manual states, what is inference, and what is unconfirmed"
+    assert_includes grounded, "At most one next measurement or photo"
+    assert_includes grounded, 'Never open with "La documentación recuperada" or "No encontré"'
+    assert_includes grounded, "no mandatory headings"
+    assert_includes grounded, "asimetría, posición relativa, roscas, tuercas, resortes"
+    assert_includes grounded, "holgura visible, corrosión, deformación"
+    assert_includes grounded, "hardware faltante o suelto"
+    assert_includes grounded, "herramienta obvia por la forma del elemento"
+    assert_includes grounded, "Still forbidden unless the retrieved chunks contain it"
+    assert_includes grounded, "número de vueltas, tensión objetivo, tolerancias, setpoints, bypasses"
+    assert_not_includes prompt, "asimetría, posición relativa"
+    assert_not_includes prompt, "what the technician can check or do next"
   end
 
   # Fase 3 Rama Generación (holdout v1 `holdout_sibling_ne300_p36` /
@@ -174,6 +212,12 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
   end
 
   private
+
+  def grounded_prompt
+    with_partial_contract("true") do
+      BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
+    end
+  end
 
   def with_partial_contract(value)
     original = ENV.fetch("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil)

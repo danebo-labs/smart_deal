@@ -75,34 +75,26 @@ class Bedrock::CitationProcessor
   # @param question [String, nil] when present, used to derive matched_excerpt
   # @return [Array<Hash>]
   def build_numbered_references(citations, answer_text, question: nil)
-    citation_numbers = answer_text.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq.sort
+    citation_numbers = answer_text.to_s.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq.sort
+    seen_titles = {}
+    rewrites = {}
 
-    citation_numbers.filter_map do |num|
+    references = citation_numbers.filter_map do |num|
       citation = citations[num - 1]
       next unless citation
 
-      location = citation[:location]
-      metadata = citation[:metadata] || {}
+      reference = numbered_reference(citation, num, question: question)
+      earlier = seen_titles[reference[:title]]
+      if earlier
+        rewrites[num] = earlier
+        next
+      end
 
-      filename = extract_filename(location)
-      # .presence is required: the sidecar writes canonical_name.to_s, which can be
-      # "" — and "" is truthy in Ruby, so a bare `||` would never fall through.
-      base_title = metadata['canonical_name'].presence || metadata[:canonical_name].presence ||
-                   metadata['title'].presence || metadata[:title].presence || filename
-      page = extract_page_number(metadata, content: citation[:content], location: location)
-      title = page ? "#{base_title} — p. #{page}" : base_title
-
-      {
-        number: num,
-        title: title,
-        filename: filename,
-        page: page,
-        tooltip_excerpt: citation[:content].to_s.presence&.truncate(TOOLTIP_EXCERPT_MAX_CHARS),
-        location: location,
-        metadata: metadata,
-        matched_excerpt: matched_excerpt(citation[:content], question)
-      }
+      seen_titles[reference[:title]] = num
+      reference
     end
+    rewrite_duplicate_markers(answer_text, rewrites)
+    references
   end
 
   # Strips [n] markers that resolve to a real entry in `citations`, leaving
@@ -132,6 +124,40 @@ class Bedrock::CitationProcessor
   end
 
   private
+
+  def numbered_reference(citation, num, question:)
+    location = citation[:location]
+    metadata = citation[:metadata] || {}
+    filename = extract_filename(location)
+    # .presence is required: the sidecar writes canonical_name.to_s, which can be
+    # "" — and "" is truthy in Ruby, so a bare `||` would never fall through.
+    base_title = metadata['canonical_name'].presence || metadata[:canonical_name].presence ||
+                 metadata['title'].presence || metadata[:title].presence || filename
+    page = extract_page_number(metadata, content: citation[:content], location: location)
+    title = page ? "#{base_title} — p. #{page}" : base_title
+
+    {
+      number: num,
+      title: title,
+      filename: filename,
+      page: page,
+      tooltip_excerpt: citation[:content].to_s.presence&.truncate(TOOLTIP_EXCERPT_MAX_CHARS),
+      location: location,
+      metadata: metadata,
+      matched_excerpt: matched_excerpt(citation[:content], question)
+    }
+  end
+
+  # A later [n] whose title and page already appear keeps the earlier number.
+  def rewrite_duplicate_markers(answer_text, rewrites)
+    return if rewrites.empty? || answer_text.nil? || answer_text.frozen?
+
+    rewritten = answer_text.gsub(/\[(\d+)\]/) do
+      number = Regexp.last_match(1).to_i
+      "[#{rewrites.fetch(number, number)}]"
+    end
+    answer_text.replace(rewritten)
+  end
 
   TOOLTIP_EXCERPT_MAX_CHARS = 150
 

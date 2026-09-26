@@ -20,6 +20,9 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
 
     assert_no_match(/DATA_NOT_AVAILABLE|REQUIRES?_FIELD_VERIFICATION/, rendered)
     assert_includes rendered, t("data_not_available")
+    assert_equal "Ese dato no aparece en los fragmentos de manual recuperados para esta consulta.", t("data_not_available")
+    assert_equal "That information is not in the manual excerpts retrieved for this question.",
+                 I18n.t("rag.data_not_available", locale: :en)
     assert_equal 2, rendered.scan(t("requires_field_verification")).size
   end
 

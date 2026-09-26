@@ -12,7 +12,9 @@ module Rag
       El\ documento\ no\ incluye\ este\ dato |
       The\ document\ does\ not\ include\ this\ information |
       no\ encontr[eé]\ ese\ dato\ en\ la\ documentaci[oó]n |
+      no\ aparece\ en\ los\ fragmentos |
       did\ not\ find\ that\ in\ the\ documentation |
+      not\ in\ the\ manual\ excerpts |
       requiere\ verificaci[oó]n\ en\ campo |
       requires\ field\ verification
     /ix.freeze

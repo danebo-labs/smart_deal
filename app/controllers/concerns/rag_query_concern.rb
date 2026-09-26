@@ -185,8 +185,19 @@ module RagQueryConcern
     # AnswerSafetyProcessor already runs once inside BedrockRagService#query with
     # the full evidence context (native citations or the fallback_retrieve chunks).
     # Re-running it here would degrade correct answers a second time, so the
-    # concern only applies presentation sanitization.
-    sanitized_answer = sanitize_answer(result[:answer], channel: resolved_output_channel)
+    # concern only applies the unit guard and presentation sanitization.
+    guarded = Rag::SourceFidelityGuard.call(
+      answer: result[:answer],
+      evidence_texts: Rag::SourceFidelityGuard.evidence_texts(result[:retrieved_citations]),
+      allowed_texts: Rag::SourceFidelityGuard.allowed_texts(
+        question: question,
+        effective_question: effective_question,
+        session_context: merged_session_context
+      ),
+      locale: resolved_response_locale,
+      correlation_id: result[:correlation_id] || correlation_id
+    )
+    sanitized_answer = sanitize_answer(guarded[:answer], channel: resolved_output_channel)
     quick_replies    = result[:quick_replies]
 
     RagResult.new(

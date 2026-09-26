@@ -178,6 +178,10 @@ module Rag
       owned = apply_owned_slice(current)
       return owned if owned
 
+      # A self-contained question naming another catalog model leaves this episode.
+      # Owned switch/correct already returned. A short follow-up does not reach this.
+      return open_episode(:new_episode, current, goal: :always) if disjoint_catalog_equipment?(current)
+
       known = known_manufacturer(current)
       brands = find_brands
       other = other_brand(brands, known, current)
@@ -400,6 +404,60 @@ module Rag
         span = mention["span"].to_s
         span if span.present? && @text.downcase.include?(span.downcase)
       end
+    end
+
+    def disjoint_catalog_equipment?(episode)
+      return false unless FollowupQueryRewriter.explicit_question?(@text)
+      return false unless @words.size >= 6
+      return false if FOLLOWUP_START_RE.match?(@normalized) || correction?
+      return false unless equipment_identity?(episode)
+
+      disjoint_catalog_model(episode).present?
+    end
+
+    def equipment_identity?(episode)
+      model = episode.fact("model")
+      return true if model&.dig("status") == "known" && model["value"].present?
+
+      episode.identifiers.any? { |item| item["source"] == "user" && item["value"].present? }
+    end
+
+    def disjoint_catalog_model(episode)
+      @text.scan(KbDocumentResolver::TOKEN_RE).uniq.each do |token|
+        next unless KbDocumentResolver.specific_token?(token)
+
+        identity = catalog_identity_for(token)
+        next unless identity.is_a?(Hash) && identity["ambiguous"] != true
+
+        model = identity["model"].to_s
+        label = FollowupQueryRewriter.normalize_label(model)
+        next if label.blank?
+        next if label == episode_model_label(episode)
+        next if identifier_labels(episode).include?(label)
+        next if goal_contains_label?(episode, label)
+
+        return model
+      end
+      nil
+    end
+
+    def episode_model_label(episode)
+      FollowupQueryRewriter.normalize_label(episode.fact("model")&.dig("value"))
+    end
+
+    def identifier_labels(episode)
+      episode.identifiers.filter_map do |item|
+        next unless item["source"] == "user"
+
+        FollowupQueryRewriter.normalize_label(item["value"]).presence
+      end
+    end
+
+    def goal_contains_label?(episode, label)
+      goal = FollowupQueryRewriter.normalize_label(episode.goal&.dig("text"))
+      return false if goal.blank? || label.blank?
+
+      goal.match?(/\b#{Regexp.escape(label)}\b/)
     end
 
     def catalog_identity_for(span)

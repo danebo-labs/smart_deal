@@ -55,6 +55,25 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     mock
   end
 
+  def with_fidelity_guard(implementation)
+    original = Rag::SourceFidelityGuard.method(:call)
+    Rag::SourceFidelityGuard.define_singleton_method(:call) { |**kwargs| implementation.call(**kwargs) }
+    yield
+  ensure
+    Rag::SourceFidelityGuard.define_singleton_method(:call) { |**kwargs| original.call(**kwargs) }
+  end
+
+  def with_sanitize_probe(sequence)
+    original = @controller.method(:sanitize_answer)
+    @controller.define_singleton_method(:sanitize_answer) do |text, **_kwargs|
+      sequence << :sanitize
+      text.to_s
+    end
+    yield
+  ensure
+    @controller.define_singleton_method(:sanitize_answer) { |text, **kwargs| original.call(text, **kwargs) }
+  end
+
   # ============================================
   # Tests for execute_rag_query
   # ============================================
@@ -972,6 +991,56 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     with_mock_orchestrator(mock) do
       result = @controller.send(:execute_rag_query, 'q')
       assert_equal "body", result.answer
+    end
+  end
+
+  test "execute_rag_query runs the source fidelity guard once before sanitize_answer" do
+    sequence = []
+    mock = create_mock_orchestrator(answer: "## Title\n30 V")
+    with_fidelity_guard(lambda { |**kwargs|
+      sequence << :guard
+      { answer: kwargs[:answer], removed: 0 }
+    }) do
+      with_sanitize_probe(sequence) do
+        with_mock_orchestrator(mock) do
+          @controller.send(:execute_rag_query, "q")
+        end
+      end
+    end
+
+    assert_equal [ :guard, :sanitize ], sequence
+  end
+
+  test "execute_rag_query passes chunk bodies from each generation route into the guard" do
+    shapes = {
+      "retrieve_and_generate" => [ { content: "cuerpo LCB 30 Vcc", location: { key: "chunk_p4_2.txt" }, metadata: {} } ],
+      "document_identity" => [ { content: "cuerpo identidad 30 Vcc", location: nil, metadata: {} } ],
+      "structured_evidence" => [ { "content" => "cuerpo estructurado 5 %", "location" => { "type" => "s3" }, "metadata" => {} } ],
+      "deterministic" => []
+    }
+
+    shapes.each do |route, citations|
+      captured = nil
+      mock = Object.new
+      mock.define_singleton_method(:execute) do
+        { answer: "ok", citations: [], retrieved_citations: citations, session_id: "s", generation_mode: route }
+      end
+      with_fidelity_guard(lambda { |**kwargs|
+        captured = kwargs[:evidence_texts]
+        { answer: kwargs[:answer], removed: 0 }
+      }) do
+        with_mock_orchestrator(mock) do
+          @controller.send(:execute_rag_query, "que tension tiene")
+        end
+      end
+
+      expected = Rag::SourceFidelityGuard.evidence_texts(citations)
+      assert_equal expected, captured, route
+      if route == "deterministic"
+        assert_empty captured
+      else
+        assert captured.any?(&:present?), route
+      end
     end
   end
 

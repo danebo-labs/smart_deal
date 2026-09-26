@@ -1,0 +1,28 @@
+{
+  "episode_id": "ep_f25bcabc94505155",
+  "as_of_correlation_id": "query:406f82ce-5071-42cb-b740-688ed9924b68",
+  "lce_correlation_id": "query:0a790d21-2505-4b16-bc9f-fae0b2a10c87",
+  "manufacturer": null,
+  "note": "The 154-character composed query has no manufacturer line, so the known manufacturer fact is empty. Identifiers include CMC-3 and LCB II; LCB II is also inside the goal, which is why compose prints only CMC-3.",
+  "questions": {
+    "cmc3": {
+      "correlation_id": "query:40bb1a77-aa6e-4cda-bdb3-ba07d57d04f4",
+      "text": "En un CMC-3 hidráulico, ¿qué se revisa cuando el equipo no responde a la llamada?",
+      "original_sha256": "1c4ef250f5a95944325418cdd4f7f8c88dcc768ea63d132ab6093baff287ecf8"
+    },
+    "lcbii": {
+      "correlation_id": "query:406f82ce-5071-42cb-b740-688ed9924b68",
+      "text": "¿Cómo se hace la puesta en servicio de la placa LCB II y qué se verifica antes de energizar?",
+      "original_sha256": "b10f3bcd8cb3a13e61096d431974bf0d3ff7dd4589f5208a411b76107a057046"
+    },
+    "lce": {
+      "correlation_id": "query:0a790d21-2505-4b16-bc9f-fae0b2a10c87",
+      "text": "¿Qué hace la tarjeta LCE y dónde está su configuración?",
+      "original_sha256": "e53f977b46f3e48ae943d41e29c50edacee4c204477cf1edb1ac102c6cb4a72a"
+    }
+  },
+  "identifiers": [
+    "CMC-3",
+    "LCB II"
+  ]
+}

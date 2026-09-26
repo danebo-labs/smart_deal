@@ -136,7 +136,7 @@
       "source_pages": [40],
       "required": [
         {"label": "identifica DL27", "pattern": "\\bDL27\\b"},
-        {"label": "se abstiene sobre lógica", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo)"}
+        {"label": "se abstiene sobre lógica", "pattern": "(?:no (?:define|documenta|incluye|especifica|declara).{0,80}(?:l[oó]gica|encend|condiciones)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo|no aparece en los fragmentos)"}
       ],
       "optional": [
         {"label": "distingue etiqueta de estado", "pattern": "(?:identifica|etiqueta|estado)"}
@@ -152,7 +152,7 @@
       "question": "En Thyssen-E, ¿qué LED señala una condición normal y cuál un fallo?",
       "source_pages": [93],
       "required": [
-        {"label": "expone falta de lógica documentada", "pattern": "(?:no (?:define|documenta|incluye).{0,50}(?:l[oó]gica|encendido)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo)"}
+        {"label": "expone falta de lógica documentada", "pattern": "(?:no (?:define|documenta|incluye).{0,50}(?:l[oó]gica|encendido)|El documento no incluye este dato|No encontré ese dato en la documentación que tengo|no aparece en los fragmentos)"}
       ],
       "optional": [
         {"label": "identifica LEDs documentados sin asignar estado", "pattern": "\\b(?:DL|LED|L)\\s*-?\\d+\\b"}
@@ -206,7 +206,7 @@
         {"label": "mantiene referencia solicitada", "pattern": "(?:Carlos Silva|p[aá]gina\\s*8|[ií]ndice)"}
       ],
       "optional": [
-        {"label": "expone ausencia si retrieval no responde", "pattern": "(?:El documento no incluye este dato|No encontré ese dato en la documentación que tengo|no (?:se )?(?:encuentra|documenta))"}
+        {"label": "expone ausencia si retrieval no responde", "pattern": "(?:El documento no incluye este dato|No encontré ese dato en la documentación que tengo|no aparece en los fragmentos|no (?:se )?(?:encuentra|documenta))"}
       ],
       "penalized": [
         {"label": "respuesta vacía", "pattern": "\\A\\s*\\z", "severity": "technical_important"}

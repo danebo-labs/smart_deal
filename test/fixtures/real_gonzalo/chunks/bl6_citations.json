@@ -1,0 +1,77 @@
+{
+  "correlation_id": "query:628d9abd-ec76-428a-aeb5-6c3ed12e26c2",
+  "citations": [
+    {
+      "number": 1,
+      "title": "Codigos de Error BL6 — p. 4",
+      "filename": "chunk_p4_1.txt",
+      "page": 4
+    },
+    {
+      "number": 2,
+      "title": "Codigos de Error BL6 — p. 1",
+      "filename": "chunk_p1_2.txt",
+      "page": 1
+    },
+    {
+      "number": 3,
+      "title": "Codigos de Error BL6 — p. 3",
+      "filename": "chunk_p3_1.txt",
+      "page": 3
+    },
+    {
+      "number": 4,
+      "title": "Codigos de Error BL6 — p. 5",
+      "filename": "chunk_p5_1.txt",
+      "page": 5
+    },
+    {
+      "number": 5,
+      "title": "Codigos de Error BL6 — p. 7",
+      "filename": "chunk_p7_1.txt",
+      "page": 7
+    },
+    {
+      "number": 6,
+      "title": "Codigos de Error BL6 Controlador — p. 8",
+      "filename": "chunk_p8_1.txt",
+      "page": 8
+    },
+    {
+      "number": 7,
+      "title": "Codigos de Error BL6 — p. 4",
+      "filename": "chunk_p4_1.txt",
+      "page": 4
+    },
+    {
+      "number": 8,
+      "title": "Codigos de Error BL6 — p. 1",
+      "filename": "chunk_p1_2.txt",
+      "page": 1
+    },
+    {
+      "number": 9,
+      "title": "Codigos de Error BL6 — p. 3",
+      "filename": "chunk_p3_1.txt",
+      "page": 3
+    },
+    {
+      "number": 10,
+      "title": "Codigos de Error BL6 — p. 5",
+      "filename": "chunk_p5_1.txt",
+      "page": 5
+    },
+    {
+      "number": 11,
+      "title": "Codigos de Error BL6 — p. 7",
+      "filename": "chunk_p7_1.txt",
+      "page": 7
+    },
+    {
+      "number": 12,
+      "title": "Codigos de Error BL6 Controlador — p. 8",
+      "filename": "chunk_p8_1.txt",
+      "page": 8
+    }
+  ]
+}

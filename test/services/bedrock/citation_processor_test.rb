@@ -446,4 +446,28 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     assert_equal "SEGURIDADES — p. 11", reference[:title]
     assert_equal "chunk_p11_1.txt", reference[:filename]
   end
+
+  test "build_numbered_references collapses a repeated BL6 title and page" do
+    fixture = JSON.parse(Rails.root.join("test/fixtures/real_gonzalo/chunks/bl6_citations.json").read)
+    cited = fixture.fetch("citations")
+    first = cited.find { |row| row["number"] == 1 }
+    duplicate = cited.find { |row| row["number"] == 7 }
+    assert_equal first["title"], duplicate["title"]
+    assert_equal first["page"], duplicate["page"]
+
+    citations = cited.map do |row|
+      {
+        content: "Er29",
+        location: { key: row["filename"] },
+        metadata: { "canonical_name" => row["title"].sub(/ — p\. \d+\z/, ""), "page_number" => row["page"] }
+      }
+    end
+    answer = +"Er29 [1] y el mismo código [7]."
+
+    references = Bedrock::CitationProcessor.new.build_numbered_references(citations, answer)
+
+    assert_equal [ 1 ], references.pluck(:number)
+    assert_equal "Codigos de Error BL6 — p. 4", references.first[:title]
+    assert_equal "Er29 [1] y el mismo código [1].", answer
+  end
 end

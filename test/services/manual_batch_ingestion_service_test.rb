@@ -94,6 +94,7 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     )
 
     models = fake_client.submitted_requests.map { |r| r[:params][:model] }
+    assert_equal "claude-sonnet-5", BatchChunkingPrompt::MODEL_TEXT
     assert models.all? { |m| m == BatchChunkingPrompt::MODEL_TEXT },
            "expected Sonnet for all requests, got: #{models.inspect}"
   ensure
@@ -121,6 +122,7 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     )
 
     models = fake_client.submitted_requests.map { |r| r[:params][:model] }
+    assert_equal "claude-opus-5-5", BatchChunkingPrompt::MODEL_MULTIMODAL
     assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, models.first,
                  "p1 (force_opus) should use Opus"
     assert_equal BatchChunkingPrompt::MODEL_TEXT, models.last,

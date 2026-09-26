@@ -130,4 +130,32 @@ class BedrockQueryTest < ActiveSupport::TestCase
     expected = (0.005 + 0.025 + 0.5 * 0.0005 + 0.2 * 0.00625).round(6)
     assert_equal expected, q.cost
   end
+
+  test 'sonnet 5 direct pricing: $2/$10 per 1M' do
+    q = BedrockQuery.new(
+      model_id: 'claude-sonnet-5-direct',
+      input_tokens: 1000, output_tokens: 1000,
+      cache_read_tokens: 500, cache_creation_tokens: 200
+    )
+    expected = (0.002 + 0.01 + 0.5 * 0.0002 + 0.2 * 0.0025).round(6)
+    assert_equal expected, q.cost
+  end
+
+  test 'opus 5.5 direct pricing: $4/$20 per 1M' do
+    q = BedrockQuery.new(
+      model_id: 'claude-opus-5-5-direct',
+      input_tokens: 1000, output_tokens: 1000,
+      cache_read_tokens: 500, cache_creation_tokens: 200
+    )
+    expected = (0.004 + 0.02 + 0.5 * 0.0002 + 0.2 * 0.005).round(6)
+    assert_equal expected, q.cost
+  end
+
+  test 'anthropic batch pricing for upgraded models' do
+    sonnet = BedrockQuery.new(model_id: 'claude-sonnet-5-batch', input_tokens: 1000, output_tokens: 1000)
+    opus = BedrockQuery.new(model_id: 'claude-opus-5-5-batch', input_tokens: 1000, output_tokens: 1000)
+
+    assert_equal 0.006, sonnet.cost
+    assert_equal 0.012, opus.cost
+  end
 end

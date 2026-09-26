@@ -140,14 +140,14 @@ class ClaudeChunkingClientTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
 
   test "enqueues TrackBedrockQueryJob with -direct model suffix" do
-    client  = make_client(model: "claude-sonnet-4-6")
+    client  = make_client(model: "claude-sonnet-5")
 
     assert_enqueued_with(job: TrackBedrockQueryJob) do
       client.call(user_content: [], filename: "manual.pdf")
     end
 
     job_args = enqueued_jobs.last[:args].first
-    assert_equal "claude-sonnet-4-6-direct", job_args["model_id"]
+    assert_equal "claude-sonnet-5-direct", job_args["model_id"]
     assert_equal "web_parse: manual.pdf",     job_args["user_query"]
     assert_equal "ingestion_parse",           job_args["source"]
   end

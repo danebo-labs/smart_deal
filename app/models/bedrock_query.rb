@@ -80,10 +80,15 @@ class BedrockQuery < ApplicationRecord
     'claude-opus-4-7-batch'                            => { input: 0.0025,  output: 0.0125,  cache_read: 0.00025,  cache_creation: 0.003125 },
     'claude-opus-4-8-batch'                            => { input: 0.0025,  output: 0.0125,  cache_read: 0.00025,  cache_creation: 0.003125 },
     'claude-sonnet-4-6-batch'                          => { input: 0.0015,  output: 0.0075,  cache_read: 0.00015,  cache_creation: 0.001875 },
+    # Opus 5.5: $4/$20 standard; Sonnet 5: $2/$10 standard. Batch is 50% off.
+    'claude-opus-5-5-batch'                            => { input: 0.002,   output: 0.01,    cache_read: 0.0001,   cache_creation: 0.0025   },
+    'claude-sonnet-5-batch'                            => { input: 0.001,   output: 0.005,   cache_read: 0.0001,   cache_creation: 0.00125  },
     # Anthropic Direct API. Suffix -direct emitted by ClaudeChunkingClient / IngestBatchResultsJob.
     'claude-opus-4-7-direct'                           => { input: 0.005,   output: 0.025,   cache_read: 0.0005,   cache_creation: 0.00625  },
     'claude-opus-4-8-direct'                           => { input: 0.005,   output: 0.025,   cache_read: 0.0005,   cache_creation: 0.00625  },
     'claude-sonnet-4-6-direct'                         => { input: 0.003,   output: 0.015,   cache_read: 0.0003,   cache_creation: 0.00375  },
+    'claude-opus-5-5-direct'                           => { input: 0.004,   output: 0.02,    cache_read: 0.0002,   cache_creation: 0.005    },
+    'claude-sonnet-5-direct'                           => { input: 0.002,   output: 0.01,    cache_read: 0.0002,   cache_creation: 0.0025   },
     'claude-haiku-4-5-20251001-direct'                 => { input: 0.001,   output: 0.005,   cache_read: 0.0001,   cache_creation: 0.00125  },
     # Bedrock Inference Profiles (global. ~10% cheaper than us.)
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },

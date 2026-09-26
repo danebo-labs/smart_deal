@@ -1155,7 +1155,7 @@ filtered strict generation template SHA 9182ccf3ac853409bd66cbc58ba808d28d5ce192
 holdout v1 SHA 34682fb13ca5acf0e635d42ad285be039749b4d07f090a728ef43371d4325309
 blank same-episode photo can give safe best-effort guidance with the existing Vision call
 additional evidence is optional
-unrelated/target-hidden photo cannot mutate episode equipment identity
+unrelated photo, or a target-hidden photo not judged relevant, cannot mutate episode equipment identity; a relevant nameplate or other identifying photo may refine provisional photo-derived identity
 relevant new photo can refine provisional photo-derived identity
 missing exact manufacturer procedure does not suppress allowed layer-3 guidance
 ```

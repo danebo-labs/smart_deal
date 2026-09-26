@@ -1078,9 +1078,41 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_nil episode.dig("facts", "fault_code")
   end
 
-  test "an unrelated or target-hidden photo updates active_photo without replacing photo identity" do
+  test "a relevant hidden-target nameplate stores and refines provisional photo identity" do
+    session = web_episode_session
+    with_episode_flag("true") do
+      session.record_user_turn!("Cómo se ajustan los resortes?", user_id: users(:one).id, correlation_id: "query:1")
+      session.record_photo_observation!(
+        photo_value: { model_visible: "M1", target_visible: true, relevance_to_goal: "relevant" },
+        field_photo_id: 10,
+        sha256: "partial",
+        correlation_id: "photo:partial"
+      )
+      session.record_photo_observation!(
+        photo_value: {
+          manufacturer: "KONE", model_visible: "MonoSpace",
+          target_visible: false, relevance_to_goal: "relevant"
+        },
+        field_photo_id: 20,
+        sha256: "nameplate",
+        correlation_id: "photo:nameplate"
+      )
+    end
+
+    episode = session.reload.active_episode
+    assert_equal "KONE", episode.dig("facts", "manufacturer", "value")
+    assert_equal "photo", episode.dig("facts", "manufacturer", "source")
+    assert_equal "MonoSpace", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
+    assert_equal "nameplate", episode.dig("active_photo", "sha256")
+    assert_empty episode["conflicts"]
+  end
+
+  test "an unrelated or non-relevant hidden photo updates active_photo without replacing photo identity" do
     [
-      { target_visible: false, relevance_to_goal: "relevant" },
+      { target_visible: false, relevance_to_goal: "unrelated" },
+      { target_visible: false, relevance_to_goal: "uncertain" },
+      { target_visible: false, relevance_to_goal: nil },
       { target_visible: true, relevance_to_goal: "unrelated" }
     ].each_with_index do |relation, index|
       session = web_episode_session
@@ -1106,6 +1138,31 @@ class ConversationSessionTest < ActiveSupport::TestCase
       assert_equal "second-#{index}", episode.dig("active_photo", "sha256")
       assert_equal 20 + index, episode.dig("active_photo", "field_photo_id")
     end
+  end
+
+  test "a relevant hidden nameplate does not replace a technician-stated identity" do
+    session = web_episode_session
+    with_episode_flag("true") do
+      session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
+      session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+      session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
+      session.record_photo_observation!(
+        photo_value: {
+          manufacturer: "KONE", model_visible: "MonoSpace",
+          target_visible: false, relevance_to_goal: "relevant"
+        },
+        field_photo_id: 42,
+        sha256: "nameplate",
+        correlation_id: "photo:1"
+      )
+    end
+
+    episode = session.reload.active_episode
+    assert_equal "Fuji Yida", episode.dig("facts", "manufacturer", "value")
+    assert_equal "user", episode.dig("facts", "manufacturer", "source")
+    assert_equal "KONE", episode["conflicts"].first["photo"]
+    assert_equal "MonoSpace", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
   end
 
   test "a relevant new photo can refine provisional photo identity" do

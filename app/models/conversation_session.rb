@@ -414,10 +414,19 @@ class ConversationSession < ApplicationRecord
     episode.active_photo = photo
 
     readings = photo_value.to_h.stringify_keys
-    return if readings["target_visible"] == false || readings["relevance_to_goal"] == "unrelated"
+    return if photo_identity_blocked?(readings)
 
     apply_photo_fact!(episode, "manufacturer", readings["manufacturer"], correlation_id)
     apply_photo_fact!(episode, "model", readings["model_visible"] || readings["model"], correlation_id)
+  end
+
+  # A relevant nameplate can identify the equipment without showing the asked-about
+  # assembly. Unrelated photos, and hidden photos that are not relevant, cannot.
+  def photo_identity_blocked?(readings)
+    relevance = readings["relevance_to_goal"]
+    return true if relevance == "unrelated"
+
+    readings["target_visible"] == false && relevance != "relevant"
   end
 
   def apply_photo_fact!(episode, key, raw, correlation_id)

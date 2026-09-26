@@ -41,7 +41,7 @@ module Rag
 
     def self.call(state:, text:, role: "user", now: Time.current, selection_turn: false, pending_fact: FROM_STATE,
                   correlation_id: nil, channel: "web", enabled: nil, shared: nil, prior_user_turns: [],
-                  analysis: nil, account: nil)
+                  analysis: nil, account: nil, attribution: nil)
       new(
         state: state,
         text: text.to_s,
@@ -55,7 +55,8 @@ module Rag
         shared: shared.nil? ? SharedSession::ENABLED : shared,
         prior_user_turns: prior_user_turns,
         analysis: analysis,
-        account: account
+        account: account,
+        attribution: attribution
       ).call
     end
 
@@ -135,7 +136,7 @@ module Rag
       changed
     end
 
-    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:, prior_user_turns: [], analysis: nil, account: nil)
+    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:, prior_user_turns: [], analysis: nil, account: nil, attribution: nil)
       @raw_state = state
       @text = text
       @role = role
@@ -149,6 +150,7 @@ module Rag
       @prior_user_turns = Array(prior_user_turns)
       @analysis = analysis
       @account = account
+      @attribution = attribution
       @normalized = FollowupQueryRewriter.normalize_label(text)
       @words = @normalized.split
       @measurement = false
@@ -251,7 +253,8 @@ module Rag
       Rag::SemanticQueryAnalyzer.observe_ownership(
         turn: @text,
         episode: current.to_h,
-        correlation_id: @correlation_id
+        correlation_id: @correlation_id,
+        attribution: @attribution
       ) || :failed
     end
 

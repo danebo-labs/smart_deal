@@ -646,6 +646,34 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
 
   private
 
+  test "semantic and generation rows for one correlation are summed once" do
+    travel_to @now do
+      correlation_id = "query:4243acf2-0f45-474e-a293-07e5432242bb"
+      create_call(@a1, route: "rag_global", correlation_id: correlation_id)
+      BedrockQuery.create!(
+        source: "semantic_analysis",
+        route: "semantic_analysis",
+        model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        input_tokens: 22_896,
+        output_tokens: 1_719,
+        latency_ms: 40,
+        user_query: "semantic",
+        account_id: @a1.account_id,
+        user_id: @a1.id,
+        correlation_id: correlation_id,
+        token_source: "provider_usage",
+        created_at: @now
+      )
+
+      totals = PilotMetricsReport.new(date: @date).as_json.dig(:technical_and_cost, :totals)
+      rows = BedrockQuery.where(correlation_id: correlation_id)
+      assert_equal 1, totals[:semantic_llm_calls]
+      assert_equal 1, totals[:rag_llm_calls]
+      assert_equal 0, totals[:visual_llm_calls]
+      assert_equal rows.sum(&:cost).round(6), totals[:attributed_cost_usd]
+    end
+  end
+
   def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
                   created_at: @now, token_source: nil)
     BedrockQuery.create!(

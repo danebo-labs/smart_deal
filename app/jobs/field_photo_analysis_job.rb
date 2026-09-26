@@ -39,6 +39,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: error.class.name,
       route: "visual_query"
     )
+    Rag::TurnEvidence.log(
+      correlation_id: args[:correlation_id],
+      route: "visual_query",
+      outcome: "failed",
+      original_query: args[:question],
+      effective_query: args[:question],
+      answer: I18n.with_locale(locale) { I18n.t("rag.photo_analysis_failed") }
+    )
     KbSyncBroadcaster.failed(
       filenames: [ args[:filename].presence || "photo" ],
       account_id: args[:account_id],
@@ -81,7 +89,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
         user_id: user_id,
         conversation_session_id: conversation_session_id,
         correlation_id: correlation_id,
-        image_sha256: image_sha256
+        image_sha256: image_sha256,
+        question: question
       )
       return
     end
@@ -125,7 +134,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     ).call
 
     value = photo_value(result)
-    outcome = deliver(
+    delivered = deliver(
       value,
       session: session,
       filename: filename,
@@ -154,8 +163,16 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       conversation_session_id: conversation_session_id,
       correlation_id: correlation_id,
-      outcome: outcome,
-      latency_ms: elapsed_ms(started_at)
+      outcome: delivered.fetch(:outcome),
+      latency_ms: elapsed_ms(started_at),
+      original_query: question,
+      effective_query: delivered[:effective_query] || question,
+      answer: delivered[:answer],
+      citations: delivered[:citations],
+      photo: {
+        "intent_source" => photo_intent.is_a?(Hash) ? (photo_intent["source"] || photo_intent[:source]) : nil,
+        "target_visible" => value[:target_visible]
+      }
     )
   ensure
     FieldPhotoPendingImageStore.delete(token: image_token, account_id: account_id)
@@ -167,7 +184,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # publishes one answer (CG-D19): the reading enters the prose of that single
   # RAG answer through the Photo Evidence block, and the chat never shows a
   # separate vision card, a placeholder, or a redraw. Returns the outcome
-  # String for the turn, consumed by emit_interaction_completed.
+  # and the transmitted text, consumed by emit_interaction_completed.
   def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil)
     session&.record_photo_observation!(
       photo_value: value,
@@ -193,7 +210,12 @@ class FieldPhotoAnalysisJob < ApplicationJob
         field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
         response_locale: locale
       )
-      return photo_outcome(summary)
+      return {
+        outcome: photo_outcome(summary),
+        answer: summary,
+        effective_query: question,
+        citations: nil
+      }
     end
 
     unless rag_answer[:failed]
@@ -206,7 +228,12 @@ class FieldPhotoAnalysisJob < ApplicationJob
       # The paid vision reading is not lost when the manuals could not be consulted.
       visual_summary: (value[:analysis] if rag_answer[:failed])
     )
-    rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer])
+    {
+      outcome: rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer]),
+      answer: rag_answer[:answer],
+      effective_query: rag_answer[:effective_query] || question,
+      citations: rag_answer[:retrieved_citations]
+    }
   end
 
   # Runs the text-RAG turn anchored to the just-analyzed photo. Isolated in
@@ -281,10 +308,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
     model_id = "#{model_id}-direct" unless model_id.end_with?("-direct", "-batch")
     input_tokens = usage[:input_tokens].to_i
     output_tokens = usage[:output_tokens].to_i
+    cache_read_tokens = usage[:cache_read_tokens]
+    cache_creation_tokens = usage[:cache_creation_tokens]
     cost = BedrockQuery.new(
       model_id: model_id,
       input_tokens: input_tokens,
-      output_tokens: output_tokens
+      output_tokens: output_tokens,
+      cache_read_tokens: cache_read_tokens,
+      cache_creation_tokens: cache_creation_tokens
     ).cost
     parsed = result[:parsed].to_h
 
@@ -332,7 +363,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   end
 
   def broadcast_expired(filename:, locale:, account_id:, user_id:, conversation_session_id:,
-                        correlation_id:, image_sha256:)
+                        correlation_id:, image_sha256:, question: nil)
     PilotUsageLog.log(
       "photo_failed",
       account_id: account_id,
@@ -344,6 +375,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: "PhotoUploadExpired",
       image_digest_prefix: image_sha256.to_s.first(12)
     )
+    expired_answer = I18n.with_locale(locale) { I18n.t("rag.photo_upload_expired") }
     emit_interaction_completed(
       account_id: account_id,
       user_id: user_id,
@@ -352,7 +384,10 @@ class FieldPhotoAnalysisJob < ApplicationJob
       outcome: "failed",
       stage: "expired",
       error_class: "PhotoUploadExpired",
-      latency_ms: nil
+      latency_ms: nil,
+      original_query: question,
+      effective_query: question,
+      answer: expired_answer
     )
     KbSyncBroadcaster.failed(
       filenames: [ filename ],
@@ -371,7 +406,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # RagController#ask never observes this route's actual completion (it only
   # sees the "accepted" acknowledgment), so this job is the correct border.
   def emit_interaction_completed(account_id:, user_id:, conversation_session_id:, correlation_id:,
-                                 outcome:, latency_ms:, stage: nil, error_class: nil)
+                                 outcome:, latency_ms:, stage: nil, error_class: nil,
+                                 original_query: nil, effective_query: nil, answer: nil,
+                                 citations: nil, photo: nil)
     PilotUsageLog.log(
       "interaction_completed",
       account_id: account_id,
@@ -383,6 +420,18 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: error_class,
       route: "visual_query",
       latency_ms: latency_ms
+    )
+    chunk_ids, sources = Rag::TurnEvidence.evidence_from(citations)
+    Rag::TurnEvidence.log(
+      correlation_id: correlation_id,
+      route: "visual_query",
+      outcome: outcome,
+      original_query: original_query,
+      effective_query: effective_query.nil? ? original_query : effective_query,
+      answer: answer,
+      photo: photo,
+      chunk_ids: chunk_ids,
+      sources: sources
     )
   end
 

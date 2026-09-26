@@ -6,9 +6,10 @@ class BedrockQuery < ApplicationRecord
   validates :output_tokens, numericality: { greater_than_or_equal_to: 0 }
 
   enum :source, {
-    query:            "query",
-    ingestion_parse:  "ingestion_parse",
-    ingestion_embed:  "ingestion_embed"
+    query:              "query",
+    ingestion_parse:    "ingestion_parse",
+    ingestion_embed:    "ingestion_embed",
+    semantic_analysis:  "semantic_analysis"
   }, default: :query
 
   scope :estimated_tokens, -> { where(token_source: "estimated") }

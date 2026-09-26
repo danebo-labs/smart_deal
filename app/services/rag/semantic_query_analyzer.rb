@@ -59,18 +59,34 @@ module Rag
       {"relation":"continue|answer_pending|correct|switch|new|unclear","mentions":[{"span":"MonoSpace","role":"equipment|component|other"}],"refers_to":[],"ambiguous":false}
     PROMPT
 
-    def self.observe(turn:, episode:, correlation_id:, client: nil)
+    OBSERVATION_KEY = :semantic_turn_observation
+
+    def self.observe(turn:, episode:, correlation_id:, client: nil, attribution: nil)
       return nil unless HaikuQueryAnalysisFlag.shadow?
       return nil unless gated?(episode)
 
-      new(turn: turn, episode: episode, correlation_id: correlation_id, client: client).call
+      new(
+        turn: turn, episode: episode, correlation_id: correlation_id,
+        client: client, attribution: attribution
+      ).call
     end
 
-    def self.observe_ownership(turn:, episode:, correlation_id:, client: nil)
+    def self.observe_ownership(turn:, episode:, correlation_id:, client: nil, attribution: nil)
       return nil unless HaikuQueryAnalysisFlag.conditional?
       return nil unless gated?(episode)
 
-      new(turn: turn, episode: episode, correlation_id: correlation_id, client: client).call
+      new(
+        turn: turn, episode: episode, correlation_id: correlation_id,
+        client: client, attribution: attribution
+      ).call
+    end
+
+    def self.current_observation
+      Thread.current[OBSERVATION_KEY]
+    end
+
+    def self.clear_observation!
+      Thread.current[OBSERVATION_KEY] = nil
     end
 
     def self.gated?(episode)
@@ -78,11 +94,12 @@ module Rag
       hash["episode_id"].present? || hash["pending_fact"].present? || hash["active_photo"].present?
     end
 
-    def initialize(turn:, episode:, correlation_id:, client: nil)
+    def initialize(turn:, episode:, correlation_id:, client: nil, attribution: nil)
       @turn = turn.to_s
       @episode = episode.is_a?(Hash) ? episode : {}
       @correlation_id = correlation_id
       @client = client
+      @attribution = attribution
     end
 
     def call
@@ -96,24 +113,29 @@ module Rag
       tool_input = extract_tool_input(response.output&.message&.content)
       error = tool_input.nil? ? :invalid_schema : validate_output(tool_input)
       analysis = error ? nil : build_analysis(tool_input)
+      status = error ? error.to_s : "ok"
       log_shadow(
-        status: error ? error.to_s : "ok",
+        status: status,
         analysis: analysis,
         elapsed_ms: elapsed_ms,
         input_tokens: input_tokens,
         output_tokens: output_tokens
       )
+      remember_observation(status: status, analysis: analysis)
+      track_paid_call(usage: usage, elapsed_ms: elapsed_ms)
       analysis
     rescue StandardError => error
       elapsed_ms = elapsed_since(started)
       Thread.current[:haiku_semantic_analysis_ms] = elapsed_ms
+      status = transport_status(error)
       log_shadow(
-        status: transport_status(error),
+        status: status,
         analysis: nil,
         elapsed_ms: elapsed_ms,
         input_tokens: 0,
         output_tokens: 0
       )
+      remember_observation(status: status, analysis: nil)
       nil
     end
 
@@ -296,6 +318,91 @@ module Rag
       return "http_5xx" if name.include?("InternalServer") || name.include?("ServiceUnavailable")
 
       "transport_error"
+    end
+
+    def remember_observation(status:, analysis:)
+      Thread.current[OBSERVATION_KEY] = {
+        "status" => status.to_s,
+        "relation" => analysis&.relation,
+        "ambiguous" => analysis&.ambiguous
+      }
+    end
+
+    # One BedrockQuery row when the provider returned billable input. Transport
+    # failures log input_tokens 0 and insert nothing. Tracking never fails the turn.
+    def track_paid_call(usage:, elapsed_ms:)
+      input_tokens = usage_token(usage, :input_tokens).to_i
+      return if input_tokens <= 0
+
+      TrackBedrockQueryJob.perform_later(
+        source: "semantic_analysis",
+        route: "semantic_analysis",
+        model_id: MODEL_ID,
+        token_source: "provider_usage",
+        input_tokens: input_tokens,
+        output_tokens: usage_token(usage, :output_tokens).to_i,
+        cache_read_tokens: positive_token(usage, :cache_read_input_tokens),
+        cache_creation_tokens: positive_token(usage, :cache_write_input_tokens) ||
+          positive_token(usage, :cache_creation_input_tokens),
+        latency_ms: elapsed_ms,
+        correlation_id: @correlation_id,
+        user_query: @turn,
+        **attribution_attrs
+      )
+    rescue StandardError => error
+      Rails.logger.warn(
+        "SemanticQueryAnalyzer failed to enqueue usage tracking: #{error.class}: #{error.message}"
+      )
+    end
+
+    def attribution_attrs
+      hash = @attribution.to_h.symbolize_keys
+      {
+        account_id: hash[:account_id],
+        user_id: hash[:user_id],
+        conversation_session_id: hash[:conversation_session_id]
+      }
+    end
+
+    def positive_token(usage, name)
+      value = usage_token(usage, name)
+      value if value&.positive?
+    end
+
+    def usage_token(usage, name)
+      return nil if usage.nil?
+
+      if usage.is_a?(Hash)
+        return hash_token(usage, name)
+      end
+
+      if defined?(OpenStruct) && usage.is_a?(OpenStruct)
+        return hash_token(usage.to_h, name)
+      end
+
+      if usage.respond_to?(:to_h)
+        table = usage.to_h
+        if table.is_a?(Hash) && (table.key?(name) || table.key?(name.to_s))
+          return hash_token(table, name)
+        end
+      end
+
+      return nil unless usage.respond_to?(name)
+
+      raw = usage.public_send(name)
+      raw.nil? ? nil : raw.to_i
+    end
+
+    def hash_token(hash, name)
+      key = if hash.key?(name)
+        name
+      elsif hash.key?(name.to_s)
+        name.to_s
+      end
+      return nil unless key
+
+      raw = hash[key]
+      raw.nil? ? nil : raw.to_i
     end
 
     def log_shadow(status:, analysis:, elapsed_ms:, input_tokens:, output_tokens:)

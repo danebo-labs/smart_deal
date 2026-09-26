@@ -603,6 +603,186 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal @sha, episode.dig("active_photo", "sha256")
   end
 
+  test "photo_completed cost for the audited sonnet 4.6 vector is 0.014085" do
+    audited = analysis_result.merge(
+      model: "claude-sonnet-4-6",
+      usage: { input_tokens: 1430, output_tokens: 360, cache_creation_tokens: 1172 }
+    )
+    events = capture_pilot_usage_events do
+      with_analysis_service(result: audited) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+    end
+
+    completed = events.find { |event| event["event"] == "photo_completed" }
+    expected = BedrockQuery.new(
+      model_id: "claude-sonnet-4-6-direct",
+      input_tokens: 1430,
+      output_tokens: 360,
+      cache_creation_tokens: 1172
+    ).cost
+    assert_equal 0.014085, expected
+    assert_equal expected, completed["cost"]
+  end
+
+  test "a live vision call is one visual_query row and photo_completed matches that cost" do
+    events = nil
+    with_anthropic_vision(input_tokens: 1430, output_tokens: 360, cache_creation_tokens: 1172) do
+      assert_enqueued_jobs 1, only: TrackBedrockQueryJob do
+        events = capture_pilot_usage_events do
+          FieldPhotoAnalysisJob.perform_now(**job_args)
+        end
+      end
+    end
+
+    job = enqueued_jobs.find { |entry| entry[:job] == TrackBedrockQueryJob }
+    args = job.fetch(:args).last.to_h.symbolize_keys
+    assert_equal "query", args[:source]
+    assert_equal "visual_query", args[:route]
+    assert_equal 1430, args[:input_tokens]
+    assert_equal 1172, args[:cache_creation_tokens]
+    assert_equal "claude-sonnet-5-direct", args[:model_id]
+    assert_equal 1, enqueued_jobs.count { |entry| entry[:job] == TrackBedrockQueryJob }
+    assert enqueued_jobs.none? { |entry|
+      entry[:job] == TrackBedrockQueryJob && entry.fetch(:args).last.to_h.symbolize_keys[:source] == "semantic_analysis"
+    }
+
+    expected = BedrockQuery.new(
+      model_id: "claude-sonnet-5-direct",
+      input_tokens: 1430,
+      output_tokens: 360,
+      cache_creation_tokens: 1172
+    ).cost
+    completed = events.find { |event| event["event"] == "photo_completed" }
+    assert_equal expected, completed["cost"]
+  end
+
+  test "the same bytes twice enqueue two visual rows and no semantic row" do
+    with_anthropic_vision(input_tokens: 100, output_tokens: 20) do
+      FieldPhotoAnalysisJob.perform_now(**job_args)
+      FieldPhotoAnalysisJob.perform_now(**job_args.merge(image_token: pending_token))
+    end
+
+    visual = enqueued_jobs.select { |entry| entry[:job] == TrackBedrockQueryJob }
+    assert_equal 2, visual.size
+    assert visual.all? { |entry|
+      payload = entry[:args].last
+      (payload[:route] || payload["route"]) == "visual_query" &&
+        (payload[:source] || payload["source"]) == "query"
+    }
+  end
+
+  test "turn evidence uses the transmitted photo text and the same outcome" do
+    result = analysis_result.merge(target_visible: false)
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    messages = nil
+    with_analysis_service(result: result) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args)
+      end
+    end
+
+    evidence = turn_evidence_payloads(output).sole
+    completed = output.string.lines.map { |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?('"interaction_completed"')
+    }.compact.sole
+    summary = messages.last["summary"]
+    assert_equal "answered", completed["outcome"]
+    assert_equal completed["outcome"], evidence["outcome"]
+    assert_equal completed["correlation_id"], evidence["correlation_id"]
+    assert_equal Digest::SHA256.hexdigest(""), evidence["original_query_sha256"]
+    assert_equal Digest::SHA256.hexdigest(summary), evidence["answer_sha256"]
+    assert_equal false, evidence.dig("photo", "target_visible")
+    assert_not evidence.key?("answer")
+    assert_not evidence.key?("cost")
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "a photo question attributes the transmitted answer and the controller outcome" do
+    transmitted = "No encontré ese dato en la documentación."
+    set_photo_question_flag("true")
+    original = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) do |**|
+      service = Object.new
+      service.define_singleton_method(:call) do
+        {
+          answer: transmitted,
+          citations: [],
+          retrieved_citations: [
+            { chunk_sha256: "chunk-photo", metadata: { "canonical_name" => "Manual", "page_number" => 2 } }
+          ],
+          effective_query: "pregunta efectiva",
+          generation_mode: "generative"
+        }
+      end
+      service
+    end
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    with_analysis_service(result: analysis_result) do
+      FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "cómo se ajusta el resorte"))
+    end
+
+    evidence = turn_evidence_payloads(output).sole
+    completed = output.string.lines.filter_map { |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?('"interaction_completed"')
+    }.sole
+    assert_equal "abstained", completed["outcome"]
+    assert_equal "abstained", evidence["outcome"]
+    assert_equal Digest::SHA256.hexdigest(transmitted), evidence["answer_sha256"]
+    assert_not_equal Digest::SHA256.hexdigest(analysis_result[:analysis]), evidence["answer_sha256"]
+    assert_equal [ "chunk-photo" ], evidence["chunk_ids"]
+    assert_equal Digest::SHA256.hexdigest("pregunta efectiva"), evidence["effective_query_sha256"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) } if original
+    set_photo_question_flag(nil)
+  end
+
+  test "a vision failure logs turn evidence for the transmitted error text" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    with_analysis_service(error: RuntimeError.new("provider details")) do
+      perform_enqueued_jobs do
+        FieldPhotoAnalysisJob.perform_later(**job_args.merge(question: "el resorte"))
+      end
+    end
+
+    evidence = turn_evidence_payloads(output).sole
+    completed = output.string.lines.filter_map { |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?('"interaction_completed"')
+    }.sole
+    failed_text = I18n.t("rag.photo_analysis_failed", locale: :es)
+    assert_equal "failed", completed["outcome"]
+    assert_equal "failed", evidence["outcome"]
+    assert_equal Digest::SHA256.hexdigest(failed_text), evidence["answer_sha256"]
+    assert_equal Digest::SHA256.hexdigest("el resorte"), evidence["original_query_sha256"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "expired and failed photo outcomes log turn evidence for the transmitted failure text" do
+    FieldPhotoPendingImageStore.delete(token: @token, account_id: accounts(:legacy).id)
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    with_analysis_service(error: "must not be called") do
+      FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: "mira el resorte"))
+    end
+    expired = turn_evidence_payloads(output).sole
+    expired_text = I18n.t("rag.photo_upload_expired", locale: :es)
+    assert_equal "failed", expired["outcome"]
+    assert_equal Digest::SHA256.hexdigest(expired_text), expired["answer_sha256"]
+    assert_equal Digest::SHA256.hexdigest("mira el resorte"), expired["original_query_sha256"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
   private
 
   def with_episode_flag(value)
@@ -698,6 +878,36 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     yield
   ensure
     FieldPhotoAnalysisService.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) }
+  end
+
+  def turn_evidence_payloads(output)
+    output.string.lines.filter_map do |line|
+      JSON.parse(line.split("[TURN_EVIDENCE] ", 2).last) if line.include?("[TURN_EVIDENCE]")
+    end
+  end
+
+  def with_anthropic_vision(input_tokens:, output_tokens:, cache_creation_tokens: nil, text: nil)
+    original = Anthropic::Client.method(:new)
+    body = text || vision_json
+    Anthropic::Client.define_singleton_method(:new) do |**|
+      messages = Object.new
+      messages.define_singleton_method(:stream) do |_params|
+        usage = { input_tokens: input_tokens, output_tokens: output_tokens }
+        usage[:cache_creation_input_tokens] = cache_creation_tokens if cache_creation_tokens
+        OpenStruct.new(
+          accumulated_message: OpenStruct.new(
+            content: [ OpenStruct.new(type: "text", text: body) ],
+            usage: OpenStruct.new(**usage),
+            model: BatchChunkingPrompt::MODEL_TEXT,
+            stop_reason: "end_turn"
+          )
+        )
+      end
+      OpenStruct.new(messages: messages)
+    end
+    yield
+  ensure
+    Anthropic::Client.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) } if original
   end
 
   def with_vision_client(text)

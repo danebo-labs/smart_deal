@@ -3,6 +3,7 @@
 # Maps a BedrockQuery row (or equivalent hash) to a billing channel symbol.
 #
 # Channels:
+#   :bedrock_semantic         — paid Haiku semantic analysis (source=semantic_analysis)
 #   :bedrock_rag              — end-user RAG queries via Bedrock invoke (source=query, non-direct model)
 #   :anthropic_haiku_direct   — ingestion_parse, haiku, -direct
 #   :anthropic_sonnet_direct  — direct Anthropic sonnet calls, including live visual queries
@@ -27,6 +28,10 @@ class LlmUsageChannel
   end
 
   def channel
+    # Source wins before the model suffix. The live analyzer id is a global
+    # Haiku profile and must not fall through classify_direct_model.
+    return :bedrock_semantic if @source == "semantic_analysis"
+
     direct = classify_direct_model
     return direct if direct
 

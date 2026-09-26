@@ -188,6 +188,25 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     assert_includes result[:compact_context], "Objetivo visible: sí"
   end
 
+  test "usage payload keeps cache tokens beside input and output" do
+    client = FakeClient.new(VALID_JSON)
+    client.define_singleton_method(:call) do |**kwargs|
+      @kwargs = kwargs
+      {
+        text: VALID_JSON,
+        usage: OpenStruct.new(input_tokens: 1430, output_tokens: 360, cache_creation_input_tokens: 1172, cache_read_input_tokens: 8),
+        model: BatchChunkingPrompt::MODEL_TEXT
+      }
+    end
+
+    result = build_service(client: client).call
+
+    assert_equal(
+      { input_tokens: 1430, output_tokens: 360, cache_read_tokens: 8, cache_creation_tokens: 1172 },
+      result[:usage]
+    )
+  end
+
   private
 
   def build_service(client:, session: nil, photo_intent: nil)

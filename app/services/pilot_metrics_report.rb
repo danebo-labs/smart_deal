@@ -163,6 +163,7 @@ class PilotMetricsReport
     cache = cache_metrics(pilot_events)
     {
       rag_llm_calls: rows.count { |row| query_row?(row) && !visual_row?(row) },
+      semantic_llm_calls: rows.count { |row| row[:source] == "semantic_analysis" },
       visual_llm_calls: rows.count { |row| visual_row?(row) },
       photo_cache_hits: cache[:hits],
       visual_llm_calls_avoided: cache[:avoided],

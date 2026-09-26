@@ -1,0 +1,27 @@
+{
+  "calls": 16,
+  "input_tokens": 22896,
+  "output_tokens": 1719,
+  "cost_usd": 0.031491,
+  "model_id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "note": "Aggregate only. source_events.jsonl has semantic_analysis_ms and no per-call token vector. The blank photo is not one of these calls.",
+  "blank_photo_correlation_id": "photo:81515bf6-782f-4674-94a2-000dcab3720f",
+  "correlation_ids": [
+    "photo:e9cea10e-559d-490c-bd2a-8eea8f9418c1",
+    "query:e4d5899b-8aac-4c12-afbe-998c8d5a63da",
+    "query:72eda72a-d1c9-4429-966b-1d90b306c870",
+    "query:a8919734-9efd-4af2-bf94-af7a95edefdb",
+    "query:b1020088-d038-4fe2-b2c7-f90535bc3bd8",
+    "query:242729f2-d30e-4b9c-850f-d6f8a1a46f73",
+    "query:603ced05-3eee-42e7-80d8-2debb566f940",
+    "query:2ee7b500-4ff0-4516-a841-24415bafd6dc",
+    "query:3998e3e5-4e8e-40f9-bf3f-67dbf35eeeb0",
+    "query:d7d98115-9010-4f45-9b4d-cb3e8aca4969",
+    "query:4243acf2-0f45-474e-a293-07e5432242bb",
+    "query:628d9abd-ec76-428a-aeb5-6c3ed12e26c2",
+    "query:a673ccc8-a710-4088-a341-e248748f5f07",
+    "query:40bb1a77-aa6e-4cda-bdb3-ba07d57d04f4",
+    "query:406f82ce-5071-42cb-b740-688ed9924b68",
+    "query:0a790d21-2505-4b16-bc9f-fae0b2a10c87"
+  ]
+}

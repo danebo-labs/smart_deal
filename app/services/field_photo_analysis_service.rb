@@ -200,18 +200,45 @@ class FieldPhotoAnalysisService
   end
 
   def token_value(usage, name)
-    return usage.public_send(name).to_i if usage&.respond_to?(name)
-    return usage[name].to_i if usage.respond_to?(:[]) && usage[name]
-    return usage[name.to_s].to_i if usage.respond_to?(:[]) && usage[name.to_s]
+    return nil if usage.nil?
+    return hash_token(usage, name) if usage.is_a?(Hash)
+    return hash_token(usage.to_h, name) if defined?(OpenStruct) && usage.is_a?(OpenStruct)
 
-    nil
+    if usage.respond_to?(:to_h)
+      table = usage.to_h
+      if table.is_a?(Hash) && (table.key?(name) || table.key?(name.to_s))
+        return hash_token(table, name)
+      end
+    end
+
+    return nil unless usage.respond_to?(name)
+
+    raw = usage.public_send(name)
+    raw.nil? ? nil : raw.to_i
+  end
+
+  def hash_token(hash, name)
+    key = if hash.key?(name)
+      name
+    elsif hash.key?(name.to_s)
+      name.to_s
+    end
+    return nil unless key
+
+    raw = hash[key]
+    raw.nil? ? nil : raw.to_i
   end
 
   def usage_payload(usage)
-    {
+    payload = {
       input_tokens: token_value(usage, :input_tokens),
       output_tokens: token_value(usage, :output_tokens)
     }
+    cache_read = token_value(usage, :cache_read_input_tokens)
+    cache_creation = token_value(usage, :cache_creation_input_tokens)
+    payload[:cache_read_tokens] = cache_read unless cache_read.nil?
+    payload[:cache_creation_tokens] = cache_creation unless cache_creation.nil?
+    payload
   end
 
   def intent_sent?

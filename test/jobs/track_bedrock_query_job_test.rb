@@ -28,6 +28,26 @@ class TrackBedrockQueryJobTest < ActiveJob::TestCase
 
   # ── BedrockQuery creation ────────────────────────────────────────────────────
 
+  test "persists a semantic_analysis row from provider usage" do
+    with_turbo_broadcast_stubbed do
+      TrackBedrockQueryJob.perform_now(
+        **VALID_PARAMS.merge(
+          model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+          source: "semantic_analysis",
+          route: "semantic_analysis",
+          token_source: "provider_usage",
+          correlation_id: "query:semantic"
+        )
+      )
+    end
+
+    record = BedrockQuery.last
+    assert_equal "semantic_analysis", record.source
+    assert_equal "semantic_analysis", record.route
+    assert_equal "provider_usage", record.token_source
+    assert_equal "query:semantic", record.correlation_id
+  end
+
   test 'creates a BedrockQuery record with correct attributes' do
     with_turbo_broadcast_stubbed do
       assert_difference('BedrockQuery.count', 1) do

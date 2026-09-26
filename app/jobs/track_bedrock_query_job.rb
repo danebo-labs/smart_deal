@@ -20,7 +20,7 @@ class TrackBedrockQueryJob < ApplicationJob
   # @param regression_context     [Hash, nil]    RAG settings and observed chunk identity for regression analysis
   # @param user_query             [String]       Original user question (truncated to 500 chars)
   # @param latency_ms             [Integer]      End-to-end latency of the API call in ms
-  # @param source                 [String]       "query" | "ingestion_parse" | "ingestion_embed"
+  # @param source                 [String]       "query" | "ingestion_parse" | "ingestion_embed" | "semantic_analysis"
   # @param model_for_counting     [Symbol]       Tokenizer model when counting here (default :haiku)
   # @param route                  [String, nil]  Billing route ("sync"|"batch"|"bulk_retry"|"page_filter"|
   #                                              "rag_filtered"|"rag_global"|"query_direct")

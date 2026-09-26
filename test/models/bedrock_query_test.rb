@@ -151,6 +151,39 @@ class BedrockQueryTest < ActiveSupport::TestCase
     assert_equal expected, q.cost
   end
 
+  test "semantic_analysis is an accepted source" do
+    query = BedrockQuery.new(
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      input_tokens: 10,
+      output_tokens: 2,
+      source: "semantic_analysis"
+    )
+
+    assert query.valid?
+    assert_equal "semantic_analysis", query.source
+  end
+
+  test "audited semantic aggregate prices to 0.031491" do
+    query = BedrockQuery.new(
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      input_tokens: 22_896,
+      output_tokens: 1_719
+    )
+
+    assert_equal 0.031491, query.cost
+  end
+
+  test "audited sonnet 4.6 vision cache-creation vector prices to 0.014085" do
+    query = BedrockQuery.new(
+      model_id: "claude-sonnet-4-6-direct",
+      input_tokens: 1430,
+      output_tokens: 360,
+      cache_creation_tokens: 1172
+    )
+
+    assert_equal 0.014085, query.cost
+  end
+
   test 'anthropic batch pricing for upgraded models' do
     sonnet = BedrockQuery.new(model_id: 'claude-sonnet-5-batch', input_tokens: 1000, output_tokens: 1000)
     opus = BedrockQuery.new(model_id: 'claude-opus-5-5-batch', input_tokens: 1000, output_tokens: 1000)

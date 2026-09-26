@@ -251,6 +251,36 @@ class SimpleMetricsServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test "semantic_analysis rows join the haiku rollup once and leave query_count unchanged" do
+    today = Date.current
+    create_bedrock_query(
+      input_tokens: 1000, output_tokens: 200,
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      source: "query", created_at: today.beginning_of_day
+    )
+    create_bedrock_query(
+      input_tokens: 100, output_tokens: 20,
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      source: "semantic_analysis", created_at: today.beginning_of_day
+    )
+
+    SimpleMetricsService.update_database_metrics_only
+
+    assert_equal 1, CostMetric.find_by!(date: today, metric_type: :daily_queries).value.to_i
+    assert_equal 1320, CostMetric.find_by!(date: today, metric_type: :daily_tokens_haiku).value.to_i
+    assert_equal 1320, CostMetric.find_by!(date: today, metric_type: :daily_tokens).value.to_i
+    query_cost = BedrockQuery.new(
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0", input_tokens: 1000, output_tokens: 200
+    ).cost
+    semantic_cost = BedrockQuery.new(
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0", input_tokens: 100, output_tokens: 20
+    ).cost
+    assert_in_delta query_cost + semantic_cost,
+      CostMetric.find_by!(date: today, metric_type: :daily_cost_haiku).value.to_f, 0.000001
+    assert_in_delta query_cost + semantic_cost,
+      CostMetric.find_by!(date: today, metric_type: :daily_cost).value.to_f, 0.000001
+  end
+
   test 'update_database_metrics_only segregates haiku unified, opus parse, and sonnet parse' do
     today = Date.current
 

@@ -511,6 +511,68 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     assert_equal 'answered', payload['outcome']
   end
 
+  test "turn evidence hashes the delivered answer and shares the interaction outcome" do
+    sign_in @user
+    previous_capture = ENV["PILOT_AUDIT_CAPTURE"]
+    ENV["PILOT_AUDIT_CAPTURE"] = "true"
+    raw = "El fusible abre a 12 V. El resto del procedimiento sigue igual."
+    orchestrator = Object.new
+    orchestrator.define_singleton_method(:execute) do
+      {
+        answer: raw,
+        citations: [],
+        retrieved_citations: [
+          {
+            content: "El manual describe el contactor sin esa tension.",
+            chunk_sha256: "chunk-4243",
+            metadata: { "canonical_name" => "MPK 708A", "page_number" => 1 }
+          }
+        ],
+        session_id: nil
+      }
+    end
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_mock_orchestrator(orchestrator) do
+      post rag_ask_url, params: { question: "¿Qué tensión abre el fusible?" }, as: :json
+    end
+
+    assert_response :success
+    delivered = json_response["answer"]
+    assert_not_equal raw, delivered
+    assert_not_includes delivered, "12 V"
+    evidence = output.string.lines.filter_map { |line|
+      JSON.parse(line.split("[TURN_EVIDENCE] ", 2).last) if line.include?("[TURN_EVIDENCE]")
+    }.sole
+    completed = output.string.lines.filter_map { |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?('"interaction_completed"')
+    }.sole
+    guard = output.string.lines.filter_map { |line|
+      JSON.parse(line) if line.include?("source_fidelity_guard")
+    }.sole
+    assert_equal completed["outcome"], evidence["outcome"]
+    assert_equal "answered", evidence["outcome"]
+    assert_equal completed["correlation_id"], evidence["correlation_id"]
+    assert_equal guard["correlation_id"], evidence["correlation_id"]
+    assert_equal Digest::SHA256.hexdigest(delivered), evidence["answer_sha256"]
+    assert_equal delivered, evidence["answer"]
+    assert_not_equal Digest::SHA256.hexdigest(raw), evidence["answer_sha256"]
+    assert_equal [ "chunk-4243" ], evidence["chunk_ids"]
+    assert_equal "MPK 708A", evidence["sources"].first["title"]
+    assert_equal 1, evidence["sources"].first["page"]
+    assert_not evidence.key?("cost")
+    assert_not evidence.key?("removed")
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    if previous_capture.nil?
+      ENV.delete("PILOT_AUDIT_CAPTURE")
+    else
+      ENV["PILOT_AUDIT_CAPTURE"] = previous_capture
+    end
+  end
+
   test 'phase timings are logged and do not change the answer' do
     sign_in @user
     answer = "Ajuste documentado del resorte."
@@ -546,7 +608,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     episode.assign_goal!("ajuste del freno", correlation_id: "query:clock")
     session.update!(active_episode: episode.to_h)
     original = Rag::SemanticQueryAnalyzer.method(:observe_ownership)
-    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe_ownership) do |turn:, episode:, correlation_id:, client: nil|
+    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe_ownership) do |turn:, episode:, correlation_id:, client: nil, attribution: nil|
       Thread.current[:haiku_semantic_analysis_ms] = 321
       nil
     end

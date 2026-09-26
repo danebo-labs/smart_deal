@@ -17,7 +17,9 @@ class LlmUsageChannelTest < ActiveSupport::TestCase
     [ "global.anthropic.claude-opus-4-6-v1",             "ingestion_parse", "[parse] doc.pdf",       :bedrock_legacy_parse ],
     [ "global.anthropic.claude-opus-4-6-v1",             "ingestion_parse", nil,                     :bedrock_legacy_parse ],
     [ "claude-opus-4-7",                                 "ingestion_parse", nil,                     :unknown ],
-    [ "amazon.titan-embed-text-v1",                      "ingestion_embed", nil,                     :bedrock_embed ]
+    [ "amazon.titan-embed-text-v1",                      "ingestion_embed", nil,                     :bedrock_embed ],
+    [ "global.anthropic.claude-haiku-4-5-20251001-v1:0", "semantic_analysis", "el freno",            :bedrock_semantic ],
+    [ "claude-haiku-4-5-20251001-direct",                "semantic_analysis", "el freno",            :bedrock_semantic ]
   ].freeze
 
   CASES.each do |model_id, source, user_query, expected|

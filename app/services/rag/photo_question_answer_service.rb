@@ -83,6 +83,8 @@ module Rag
       {
         answer: answer,
         citations: sources_visible ? raw_citations : [],
+        retrieved_citations: result.retrieved_citations,
+        effective_query: result.effective_question,
         generation_mode: result.generation_mode
       }
     end

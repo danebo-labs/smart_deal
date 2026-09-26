@@ -28,6 +28,7 @@ module RagQueryConcern
                          :route_outcome,
                          :pending_question,
                          :semantic_analysis_ms, :state_ms, :retrieve_ms, :generation_ms, :rag_ms,
+                         :effective_question,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -155,7 +156,8 @@ module RagQueryConcern
         response_locale: resolved_response_locale.to_s,
         generation_mode: "deterministic_selection_gate",
         model_invoked:   false,
-        correlation_id:  correlation_id
+        correlation_id:  correlation_id,
+        effective_question: effective_question
       )
     end
 
@@ -225,7 +227,8 @@ module RagQueryConcern
       pending_question:         result[:pending_question],
       retrieve_ms:              result[:retrieve_ms],
       generation_ms:            result[:generation_ms],
-      rag_ms:                   result[:rag_ms]
+      rag_ms:                   result[:rag_ms],
+      effective_question:       effective_question
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

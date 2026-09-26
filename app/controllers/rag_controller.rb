@@ -28,6 +28,7 @@ class RagController < ApplicationController
     )
     episode_turn = nil
     Thread.current[:haiku_semantic_analysis_ms] = nil
+    Rag::SemanticQueryAnalyzer.clear_observation!
     semantic_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     shadow_analysis = observe_semantic_shadow(question, images, documents, conv_session, correlation_id)
     semantic_analysis_ms = elapsed_ms(semantic_started)
@@ -81,7 +82,10 @@ class RagController < ApplicationController
         error_class:     result.error_class,
         route:           interaction_route(correlation_id),
         latency_ms:      elapsed_ms(started_at),
-        phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at)
+        phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at),
+        original_query:  question,
+        effective_query: result.effective_question || question,
+        answer:          result.answer
       )
       render_rag_json_error(result)
       return
@@ -112,7 +116,11 @@ class RagController < ApplicationController
         outcome:         interaction_outcome(result),
         route:           interaction_route(correlation_id),
         latency_ms:      elapsed_ms(started_at),
-        phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at)
+        phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at),
+        original_query:  question,
+        effective_query: result.effective_question || question,
+        answer:          result.answer,
+        citations:       result.retrieved_citations
       )
     end
 
@@ -164,7 +172,9 @@ class RagController < ApplicationController
       stage:           "image_compression",
       error_class:     ImageCompressionService::CompressionError.name,
       route:           interaction_route(correlation_id),
-      latency_ms:      elapsed_ms(started_at)
+      latency_ms:      elapsed_ms(started_at),
+      original_query:  question,
+      effective_query: question
     )
     render json: { status: 'error', message: I18n.t('rag.image_compression_failed') }, status: :bad_request
   end
@@ -176,7 +186,8 @@ class RagController < ApplicationController
   # observed and emitted by FieldPhotoAnalysisJob instead — see the two call
   # sites above.
   def emit_interaction_completed(correlation_id:, question_sha256:, outcome:, route:, latency_ms:,
-                                 stage: nil, error_class: nil, conv_session: nil, phase_ms: {})
+                                 stage: nil, error_class: nil, conv_session: nil, phase_ms: {},
+                                 original_query: nil, effective_query: nil, answer: nil, citations: nil)
     PilotUsageLog.log(
       "interaction_completed",
       correlation_id: correlation_id,
@@ -190,6 +201,18 @@ class RagController < ApplicationController
       route: route,
       latency_ms: latency_ms,
       **phase_ms
+    )
+    chunk_ids, sources = Rag::TurnEvidence.evidence_from(citations)
+    Rag::TurnEvidence.log(
+      correlation_id: correlation_id,
+      route: route,
+      outcome: outcome,
+      original_query: original_query,
+      effective_query: effective_query.nil? ? original_query : effective_query,
+      answer: answer,
+      semantic: Rag::SemanticQueryAnalyzer.current_observation,
+      chunk_ids: chunk_ids,
+      sources: sources
     )
   end
 
@@ -313,7 +336,12 @@ class RagController < ApplicationController
     Rag::SemanticQueryAnalyzer.observe(
       turn: question,
       episode: conv_session.active_episode,
-      correlation_id: correlation_id
+      correlation_id: correlation_id,
+      attribution: {
+        account_id: current_account&.id,
+        user_id: current_user&.id,
+        conversation_session_id: conv_session&.id
+      }
     )
   end
 

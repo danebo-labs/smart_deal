@@ -1276,3 +1276,148 @@ UNKNOWN                 not proven either way → keep, add telemetry, re-evalua
 ```
 
 4. Remove only `DEAD_CODE`, one reviewed commit per area, with the full suite and the conversational baseline green. Never mixed with functional fixes.
+
+---
+
+## PHASE_3_VALIDATION_RESULT
+
+```text
+STATUS=PASS
+PLAN_RECONCILIATION=MINOR_RECONCILIATION
+```
+
+One reconciliation. `0.014085` is the audited `claude-sonnet-4-6-direct` price for 1,430 input / 360 output / 1,172 cache-creation tokens. Live vision is `claude-sonnet-5-direct`. `photo_completed.cost` equals `BedrockQuery#cost` for the call's own `model_id`. The historical identity still prices that vector at `0.014085`. The same vector on `claude-sonnet-5-direct` uses the existing table (`0.00939`) and is not rewritten onto the old number. No model was upgraded. No price row was added.
+
+`## FUTURE_PHASE_4 — LEGACY PATH RETIREMENT` stays the handoff. There was no Phase 4 seed to replace. Phase 4 was not implemented.
+
+Commands (all exit 0):
+
+```text
+BUNDLE_PATH=vendor/bundle bin/rails test <Phase 3 validation command list>
+142 runs, 676 assertions, 0 failures, 0 errors, 0 skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test <Phase 1 gate>
+199 runs, 1060 assertions, 0 failures, 0 errors, 2 historical skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test <Phase 2 gate + test/models/conversation_session_test.rb>
+445 runs, 2134 assertions, 0 failures, 0 errors, 22 historical skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test
+3486 runs, 17190 assertions, 0 failures, 0 errors, 186 skips
+
+git grep -nE "FieldPhotoDiagnosisCache|FieldPhotoPrompt::CONTRACT_VERSION|photo_dx" -- app lib script test config
+(no matches)
+
+git diff --exit-code -- script/fixtures/production_conversational_baseline_v2.json
+
+BUNDLE_PATH=vendor/bundle bin/rubocop --cache false <25 changed .rb files>
+25 files inspected, no offenses
+```
+
+Aggregate fixture `test/fixtures/real_gonzalo/semantic_accounting_2026-09-25.json`: 16 correlation ids, 22,896 input, 1,719 output. `BedrockQuery.new(model_id: global.anthropic.claude-haiku-4-5-20251001-v1:0, input_tokens: 22896, output_tokens: 1719).cost` = `0.031491`. No per-call token split.
+
+Cost authority:
+
+```text
+BedrockQuery is the only model-call cost source.
+TurnEvidence has no token or cost fields.
+haiku_query_analysis_shadow stays diagnostic and is not summed.
+photo_completed.cost is a log number equal to that call's BedrockQuery#cost, not a second row.
+```
+
+Accounting path:
+
+```text
+SemanticQueryAnalyzer#call
+  → TrackBedrockQueryJob source/route semantic_analysis
+  → one row when input_tokens > 0
+  → zero rows on transport failure
+  → enqueue rescue never fails the turn
+valid / invalid_schema / hallucinated_spans each produce one paid row
+attribution: ActiveEpisodeTurn#owned_perception and RagController#observe_semantic_shadow
+LlmUsageChannel source semantic_analysis → :bedrock_semantic before the -direct classifier
+SimpleMetricsService adds :bedrock_semantic once to the Haiku rollup
+query_count stays source == query
+PilotMetricsReport#semantic_llm_calls counts source == semantic_analysis
+total_cost / attributed_cost_usd already sum every row once
+```
+
+Vision path is unchanged in call count: `ClaudeChunkingClient#track_usage` still enqueues the one `visual_query` row. `usage_payload` now carries `cache_read_tokens` and `cache_creation_tokens`, and `photo_value` prices them through `BedrockQuery#cost`. Cache read and cache creation stay columns on that same row.
+
+TurnEvidence:
+
+```text
+[TURN_EVIDENCE] one hash per correlation_id
+emitted from RagController#emit_interaction_completed (text success and failure)
+and FieldPhotoAnalysisJob#emit_interaction_completed plus the retry_on failure block
+answer_sha256 is RagResult#answer after SourceFidelityGuard and sanitize_answer
+photo answer_sha256 is the transmitted text (renderer prose, photo-question answer, or the expired/failed I18n string)
+outcome is the same string as interaction_completed
+raw original_query / effective_query / answer only when ENV["PILOT_AUDIT_CAPTURE"] == "true"
+source_fidelity_guard joins by correlation_id; no removed/cost field was copied onto TurnEvidence
+```
+
+No double counting:
+
+```text
+generation stays source query (BedrockRagService, unchanged)
+vision stays one source query / route visual_query row per call
+semantic is source semantic_analysis, a different row
+shadow and conditional modes cannot both call
+identical photo bytes twice are two real vision rows, zero semantic rows on a blank photo
+cache tokens are categories on the row, not extra rows
+```
+
+Known limitations:
+
+```text
+Text hash is the post-sanitize RagResult#answer. When SHOW_RAG_SOURCES is not true, the HTTP body also strips citation markers.
+RAG error JSON (blank question, service error, image compression) has no RagResult#answer. Those hashes are SHA256 of "".
+Photo completion runs in the job. TurnEvidence.semantic is nil there. A paid semantic row from the request, when the episode path ran, shares correlation_id.
+A raise inside the ensure delete can add a second failed evidence line after a successful photo completion. That matches the pre-existing double interaction_completed on that path.
+```
+
+Confirmed invariants:
+
+```text
+NEW_MODEL_CALL_TYPES=0
+MODEL_CALL_DELTA=0
+ARCHITECTURE_DRIFT=NO
+HUMAN_VALIDATION_REQUIRED=NO
+HYBRID_MINIMAL unchanged
+semantic ownership remains switch / correct only
+generation prompt, FieldPhotoPrompt, PhotoIntent, SourceFidelityGuard decision, equipment scope, and retrieval were not changed
+baseline fixture unchanged
+no migration
+```
+
+Files changed:
+
+```text
+added    app/services/rag/turn_evidence.rb
+added    test/fixtures/real_gonzalo/semantic_accounting_2026-09-25.json
+added    test/services/rag/turn_evidence_test.rb
+added    test/services/rag/real_gonzalo_semantic_accounting_test.rb
+modified app/services/rag/semantic_query_analyzer.rb
+modified app/services/rag/active_episode_turn.rb
+modified app/models/conversation_session.rb
+modified app/controllers/rag_controller.rb
+modified app/controllers/concerns/rag_query_concern.rb
+modified app/models/bedrock_query.rb
+modified app/services/llm_usage_channel.rb
+modified app/services/simple_metrics_service.rb
+modified app/services/pilot_metrics_report.rb
+modified app/services/field_photo_analysis_service.rb
+modified app/jobs/field_photo_analysis_job.rb
+modified app/jobs/track_bedrock_query_job.rb
+modified app/services/rag/photo_question_answer_service.rb
+modified test/services/rag/semantic_query_analyzer_test.rb
+modified test/models/bedrock_query_test.rb
+modified test/jobs/track_bedrock_query_job_test.rb
+modified test/services/llm_usage_channel_test.rb
+modified test/services/simple_metrics_service_test.rb
+modified test/services/pilot_metrics_report_test.rb
+modified test/jobs/field_photo_analysis_job_test.rb
+modified test/services/field_photo_analysis_service_test.rb
+modified test/controllers/rag_controller_test.rb
+```

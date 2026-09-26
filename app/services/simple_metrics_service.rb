@@ -65,10 +65,8 @@ class SimpleMetricsService
       (m.to_s.include?("sonnet-4-6") || m.to_s.include?("sonnet-4")) && !q.to_s.start_with?("batch_parse:")
     }
 
-    haiku_unified_tokens = token_sum.call(query_rows) + token_sum.call(haiku_parse)
-    haiku_unified_cost   = cost_sum.call(query_rows)  + cost_sum.call(haiku_parse)
-
-    # Channel buckets via LlmUsageChannel classifier
+    # Channel buckets via LlmUsageChannel classifier. semantic_analysis is
+    # :bedrock_semantic and is added to the Haiku rollup once, not via query_rows.
     channels = Hash.new { |h, k| h[k] = { tokens: 0, cost: 0 } }
     all_rows.each do |src, mid, i, o, cr, cc, uq|
       ch = LlmUsageChannel.for(model_id: mid.to_s, source: src.to_s, user_query: uq.to_s)
@@ -80,6 +78,11 @@ class SimpleMetricsService
         cache_read_tokens: cr, cache_creation_tokens: cc
       ).cost
     end
+
+    haiku_unified_tokens = token_sum.call(query_rows) + token_sum.call(haiku_parse) +
+      channels[:bedrock_semantic][:tokens]
+    haiku_unified_cost   = cost_sum.call(query_rows) + cost_sum.call(haiku_parse) +
+      channels[:bedrock_semantic][:cost]
 
     # rubocop:disable Rails/SkipsModelValidations
     CostMetric.upsert_all(

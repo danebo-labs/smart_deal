@@ -65,4 +65,22 @@ class Rag::PhotoIntentRendererTest < ActiveSupport::TestCase
     assert_includes prose, I18n.t("rag.photo_intent.close_up_request", locale: :en)
     assert_includes prose, "A car and door are visible."
   end
+
+  test "default evidence requests are optional in both locales" do
+    spanish = Rag::PhotoIntentRenderer.prose(
+      reading: { target_visible: false, analysis: ANALYSIS },
+      locale: :es
+    )
+    english = Rag::PhotoIntentRenderer.prose(
+      reading: { target_visible: nil, analysis: "A car and door are visible." },
+      locale: :en
+    )
+
+    assert_includes spanish, "Si puedes"
+    assert_includes spanish, "ayudaría a afinar"
+    assert_no_match(/\bManda\b|antes de pedir|required to continue/i, spanish)
+    assert_includes english, "If you can"
+    assert_includes english, "would help refine"
+    assert_no_match(/\bSend\b|before asking|required to continue/i, english)
+  end
 end

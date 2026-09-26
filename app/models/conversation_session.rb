@@ -414,6 +414,8 @@ class ConversationSession < ApplicationRecord
     episode.active_photo = photo
 
     readings = photo_value.to_h.stringify_keys
+    return if readings["target_visible"] == false || readings["relevance_to_goal"] == "unrelated"
+
     apply_photo_fact!(episode, "manufacturer", readings["manufacturer"], correlation_id)
     apply_photo_fact!(episode, "model", readings["model_visible"] || readings["model"], correlation_id)
   end

@@ -172,6 +172,22 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
     assert_not_includes prompt, "what the technician can check or do next"
   end
 
+  test "grounded no match keeps safe layer three guidance when the exact procedure is missing" do
+    grounded = grounded_prompt
+    strict = prompt
+    line = "Missing an exact model or manufacturer procedure limits specificity"
+
+    assert_includes grounded, line
+    assert_includes grounded, "does not suppress the allowed layer-3 observations and safe component-specific checks"
+    assert_includes grounded, "Give that useful orientation before the knowledge boundary"
+    assert_includes grounded, "never invent a manufacturer value, torque, tolerance, setpoint, bypass, critical sequence"
+    assert_not_includes strict, line
+    strict_without_partial = with_partial_contract(nil) do
+      BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
+    end
+    assert_equal PRE_CHANGE_SHA256, Digest::SHA256.hexdigest(strict_without_partial)
+  end
+
   # Fase 3 Rama Generación (holdout v1 `holdout_sibling_ne300_p36` /
   # `holdout_otis_es_ambiguous`): the model ignored the top-scored, model-specific
   # chunk and answered from a differently-named chunk instead.

@@ -102,13 +102,27 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_not_includes prompt, "procedure, or safety rule"
   end
 
-  test "NO MATCH bullets are unchanged between variants" do
+  test "NO MATCH shared bullets stay shared and grounded adds layer-3 guidance" do
     off = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
     on = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
     pattern = /# NO MATCH\n.*?(?=\n# FORMAT)/m
+    off_block = off[pattern]
+    on_block = on[pattern]
+    layer3 = on_block.lines.grep(/layer-3/).join
+    shared = [
+      "State that the selected documentation does not provide the requested information.",
+      "Name the missing datum or procedure.",
+      "Do not substitute generic advice."
+    ]
 
-    assert_equal off[pattern], on[pattern]
-    assert_not_includes on[pattern], "# DISCRIMINATING QUESTION"
+    shared.each do |bullet|
+      assert_includes off_block, bullet
+      assert_includes on_block, bullet
+    end
+    assert_equal off_block, on_block.sub(layer3, "")
+    assert_includes layer3, "does not suppress the allowed layer-3 observations and safe component-specific checks"
+    assert_not_includes off_block, "layer-3"
+    assert_not_includes on_block, "# DISCRIMINATING QUESTION"
   end
 
   test "production memoizes by partial_contract and grounded_synthesis" do

@@ -56,7 +56,10 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     assert_not_includes result[:analysis], "**"
     assert_not_includes result[:analysis], "- ¿"
     assert_includes result[:analysis], I18n.t("rag.photo_guidance", locale: :es)
-    assert_includes result[:analysis], "No hay un manual compatible"
+    assert_includes result[:analysis], "Con lo visible puedo orientarte"
+    assert_includes result[:analysis], "Si puedes"
+    assert_includes result[:analysis], "ayudarían a afinar"
+    assert_not_includes result[:analysis], "antes de pedir"
     assert_includes result[:compact_context], "Fabricante: UNKNOWN"
     assert_operator result[:compact_context].length, :<=, ConversationSession::MAX_MSG_LENGTH
     assert_equal "visual_query", client.kwargs[:route]
@@ -87,7 +90,7 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
 
     result = build_service(client: FakeClient.new(VALID_JSON), session: session).call
 
-    assert_not_includes result[:analysis], "No hay un manual compatible"
+    assert_not_includes result[:analysis], "Con lo visible puedo orientarte"
   end
 
   test "invalid JSON raises ParseError and emits an error IMAGE_ANALYSIS log" do

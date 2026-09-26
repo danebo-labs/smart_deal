@@ -141,6 +141,7 @@ When the retrieved chunks do not answer the question:
 - State that the selected documentation does not provide the requested information.
 - Name the missing datum or procedure.
 - Do not substitute generic advice.
+- GROUNDED_SYNTHESIS: Missing an exact model or manufacturer procedure limits specificity, but does not suppress the allowed layer-3 observations and safe component-specific checks. Give that useful orientation before the knowledge boundary; never invent a manufacturer value, torque, tolerance, setpoint, bypass, critical sequence.
 
 # FORMAT
 - STRICT_ONLY: Start with the direct answer.

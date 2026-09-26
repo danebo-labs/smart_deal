@@ -855,6 +855,89 @@ absolute grounded token ceiling
 
 ---
 
+## FIELD_COMPANION_SURGICAL_FIX_RESULT
+
+```text
+STATUS=PASS
+MUST_FIXES_RESOLVED=4/4
+ARCHITECTURE_DRIFT=NO
+NEW_MODEL_CALL_TYPES=0
+VISION_CALLS_PER_PHOTO=1
+STRICT_TEMPLATE_SHA_UNCHANGED=YES
+GROUNDED_TEMPLATE_SHA_UPDATED_AS_EXPECTED=YES
+```
+
+Four surgical fixes. Phase 1 and Phase 2 were not redesigned. Phase 3 was not implemented.
+
+```text
+BLANK_PHOTO_BEST_EFFORT=PASS
+UNRELATED_PHOTO_IDENTITY_GUARD=PASS
+RELEVANT_PHOTO_CAN_REFINE_IDENTITY=PASS
+NO_MATCH_LAYER3_GUIDANCE=PASS
+OPTIONAL_EVIDENCE_COPY=PASS
+```
+
+The grounded-only `# NO MATCH` line keeps layer-3 guidance when the exact manufacturer procedure is missing. Strict bullets are unchanged. The redundant tail `or equipment-specific adjustment procedure` was removed so the grounded render stays inside strict × 1.30 (3331 tokens, cap 3331.9). The cap was not raised.
+
+Filtered strict SHA stays `9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8`. Raw `generation.txt` SHA is now `f863b7d82a93549ad39eb3e6afbb44649bb2fcd2e183fdb35ee26993bbe83459`. Filtered grounded SHA is `715cffec0c48cc67ca311b526cf6a0a0978dbc44e45a31f2baa3770a85b8e75e`.
+
+Commands (all exit 0):
+
+```text
+BUNDLE_PATH=vendor/bundle bin/rails test <focused surgical files>
+185 runs, 1014 assertions, 0 failures, 0 errors, 0 skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test <Phase 1 gate>
+190 runs, 1018 assertions, 0 failures, 0 errors, 2 historical skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test <Phase 2 gate>
+359 runs, 1893 assertions, 0 failures, 0 errors, 22 historical skips
+
+BUNDLE_PATH=vendor/bundle bin/rails test
+3455 runs, 16978 assertions, 0 failures, 0 errors, 186 skips
+
+git diff --exit-code -- script/fixtures/production_conversational_baseline_v2.json
+
+BUNDLE_PATH=vendor/bundle bin/rubocop --cache false <10 changed .rb files>
+10 files inspected, no offenses
+```
+
+Skip counts match the Phase 2 surgical result (2, 22, and 186). No new skip was added. The full suite grew by the 5 new tests (3450 → 3455).
+
+Files changed:
+
+```text
+modified app/models/conversation_session.rb
+modified app/prompts/bedrock/generation.txt
+modified app/prompts/field_photo_prompt.rb
+modified config/locales/rag.en.yml
+modified config/locales/rag.es.yml
+modified test/jobs/field_photo_analysis_job_test.rb
+modified test/models/conversation_session_test.rb
+modified test/prompts/bedrock_generation_prompt_test.rb
+modified test/prompts/field_photo_prompt_test.rb
+modified test/services/bedrock_rag_service_grounded_synthesis_test.rb
+modified test/services/field_photo_analysis_service_test.rb
+modified test/services/rag/followup_query_rewriter_test.rb
+modified test/services/rag/photo_intent_renderer_test.rb
+modified docs/REAL_GONZALO_AUDIT_IMPLEMENTATION_MASTER_PLAN_2026-09-26.md
+```
+
+```text
+SYSTEM_BLOCKS_UNCHANGED=YES
+INGESTION_FINGERPRINT_UNCHANGED=YES
+INGESTION_CONTRACT_UNCHANGED=YES
+BASELINE_UNCHANGED=YES
+HYBRID_MINIMAL unchanged
+semantic ownership unchanged
+Sonnet 5 unchanged
+Opus 5.5 unchanged
+RAG generation model unchanged
+Semantic analyzer unchanged
+```
+
+---
+
 ## PHASE_3 — telemetry and cost
 
 The executable prompt is `## PHASE_3_EXECUTION_PROMPT` below. Do not start Phase 3 from this section alone.
@@ -1070,6 +1153,11 @@ FOLLOWUP_RE unchanged
 production_conversational_baseline_v2.json unchanged
 filtered strict generation template SHA 9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8
 holdout v1 SHA 34682fb13ca5acf0e635d42ad285be039749b4d07f090a728ef43371d4325309
+blank same-episode photo can give safe best-effort guidance with the existing Vision call
+additional evidence is optional
+unrelated/target-hidden photo cannot mutate episode equipment identity
+relevant new photo can refine provisional photo-derived identity
+missing exact manufacturer procedure does not suppress allowed layer-3 guidance
 ```
 
 ### Do not reopen

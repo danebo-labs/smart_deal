@@ -65,6 +65,25 @@ class FieldPhotoPromptTest < ActiveSupport::TestCase
     assert_equal 1, content.count { |block| block[:type] == "text" && block[:text].include?("Photo intent") }
   end
 
+  test "live intent requests safe best effort guidance and optional evidence without a procedure" do
+    content = FieldPhotoPrompt.user_content(
+      binary: FAKE_BINARY,
+      content_type: FAKE_CT,
+      filename: FAKE_NAME,
+      locale: "es",
+      photo_intent: "Cómo se ajustan estos resortes"
+    )
+    text = content.reverse.find { |block| block[:type] == "text" }[:text]
+
+    assert_includes text, 'Use "summary" to answer the intent only as far as this image safely supports'
+    assert_includes text, "one non-invasive component-specific check"
+    assert_includes text, "Additional evidence improves accuracy"
+    assert_includes text, "starting with the equivalent of 'If you can'"
+    assert_includes text, "Do not give torque, settings, turn counts, target values"
+    assert_includes text, "equipment-specific adjustment procedures"
+    assert_not_includes text, "Do not answer the question"
+  end
+
   test "user_content returns array with image block for jpeg" do
     content = FieldPhotoPrompt.user_content(
       binary:       FAKE_BINARY,

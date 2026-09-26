@@ -134,8 +134,9 @@ module FieldPhotoPrompt
       Add three keys to the same JSON object:
       "target_visible": true | false | null   — does this image show the part/assembly the technician is asking about?
       "relevance_to_goal": "relevant" | "unrelated" | "uncertain"
-      "missing_view_or_detail": "<one short sentence in the summary language naming the view or detail still needed; empty string when the target is fully visible>"
-      Never take a manufacturer, model, code, or value from the intent. Do not answer the question, give a procedure, or state torque, turns, tension, or settings.
+      "missing_view_or_detail": "<one short optional request in the summary language, starting with the equivalent of 'If you can', naming the view or detail that would improve accuracy; empty string when no additional evidence would help>"
+      Use "summary" to answer the intent only as far as this image safely supports: say what is visible relative to the intent, state the exact knowledge boundary, and, when appropriate, give one non-invasive component-specific check limited to looking, reading, or listening. Additional evidence improves accuracy; never say another photo, a nameplate, or a manual is required before you can help.
+      Never take a manufacturer, model, code, or value from the intent. Do not give torque, settings, turn counts, target values, equipment-specific adjustment procedures, or critical manufacturer-specific instructions.
     TEXT
   end
   private_class_method :intent_block

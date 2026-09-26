@@ -331,7 +331,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     set_photo_question_flag(nil)
   end
 
-  test "a blank photo with an inherited intent reaches vision and skips RAG" do
+  test "a blank photo with inherited intent gives best effort guidance in one vision call and skips RAG" do
     set_photo_question_flag("true")
     spring = "Cómo se ajustan los resortes de la fijación de cables"
     @session.update!(
@@ -343,10 +343,16 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     answer_service.define_singleton_method(:call) { service_calls += 1; { answer: "no", citations: [] } }
     original_new = Rag::PhotoQuestionAnswerService.method(:new)
     Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| answer_service }
-    missing = "primer plano de los resortes"
+    useful_summary = "Con esta vista se ven terminales roscados con resortes. Como revisión visual, compara la compresión y la posición de las tuercas entre cables. La foto no permite confirmar un valor de ajuste."
+    missing = "Si puedes, una foto más abierta del conjunto ayudaría a afinar la identificación."
 
     messages = nil
-    with_vision_client(vision_json("target_visible" => false, "missing_view_or_detail" => missing)) do |client|
+    with_vision_client(vision_json(
+      "summary" => useful_summary,
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant",
+      "missing_view_or_detail" => missing
+    )) do |client|
       messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
         FieldPhotoAnalysisJob.perform_now(**job_args)
       end
@@ -361,10 +367,13 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal 0, service_calls
     assert_equal [ "photo_analyzed" ], messages.pluck("status")
     summary = messages.last["summary"]
-    assert summary.start_with?(I18n.t("rag.photo_intent.target_hidden", missing: missing, locale: :es))
-    assert_includes summary, "primer plano"
-    assert_includes summary, "Se ve un conjunto de cabina y puerta."
+    assert summary.start_with?(I18n.t("rag.photo_intent.target_visible", locale: :es))
+    assert_includes summary, "terminales roscados con resortes"
+    assert_includes summary, "compara la compresión"
+    assert_includes summary, "no permite confirmar un valor de ajuste"
+    assert_includes summary, "Si puedes"
     assert_not_includes summary, "No encontré"
+    assert_not_includes summary, "antes de poder ayudarte"
   ensure
     Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
     set_photo_question_flag(nil)

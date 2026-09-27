@@ -45,6 +45,7 @@ classifier maps each `bedrock_queries` row using `source` + `model_id` suffix
 
 | Channel | `source` | `model_id` pattern | `CostMetric` enum |
 |---------|----------|-------------------|-------------------|
+| `bedrock_semantic` | `semantic_analysis` | Haiku inference profile | folded once into the Haiku token/cost rollup; not `daily_queries` |
 | `bedrock_rag` | `query` | any | `daily_tokens_query` / `daily_cost_query` (existing) |
 | `anthropic_haiku_direct` | `ingestion_parse` | `*haiku*-direct` | 20/21 |
 | `anthropic_sonnet_direct` | `ingestion_parse` | `*sonnet*-direct` | 22/23 |
@@ -63,6 +64,7 @@ classifier maps each `bedrock_queries` row using `source` + `model_id` suffix
 | `source` | Meaning |
 |----------|---------|
 | `query` | End-user RAG usage and direct live field-photo diagnosis (`route: visual_query`). Twilio would use the same source if re-enabled. |
+| `semantic_analysis` | Paid Haiku semantic analysis. Call-level attribution on `BedrockQuery`. It is not reconciled invoice spend and it is not a `TurnEvidence` cost. |
 | `ingestion_parse` | Parser tokens for content that becomes indexed knowledge. `web_v1` writes real `web_parse: …` rows; `manual_batch_v1` uses batch pricing. Preserved bulk image ingestion may still emit `field_photo_v1`, but live diagnostic photos do not. |
 | `ingestion_embed` | Estimated embedding tokens for chunk text indexed by the KB (Titan Text v2). Written after chat or bulk Bedrock sync completes. |
 
@@ -224,7 +226,7 @@ For local development, run **`bin/dev`** (see `Procfile.dev`) so **web**, **CSS*
 
 ## Pilot interaction export and photo-cache telemetry
 
-`BedrockQuery` remains the source of truth for every real LLM invocation. Live
+`BedrockQuery` is the call-level attribution record for every real LLM invocation (provider usage or estimate). Reconciled Bedrock spend stays in `bedrock_daily_costs`. `[TURN_EVIDENCE]` is trace only and is not summed as cost. Live
 photo rows use `source: query`, `route: visual_query` and carry account, user,
 conversation and `photo:<uuid>` correlation attribution. A cache hit cannot be
 stored there because its real tokens and cost are zero, so photo lifecycle
@@ -432,11 +434,13 @@ every artifact to `600`, and prints a warning on stderr.
 
 These three `PilotUsageLog` events cover bare Bedrock `Retrieve` calls (no
 generation) and field-photo re-ask rehydration. They deliberately do **not**
-create `bedrock_queries` rows: that table's `source` enum is closed and its
+create `bedrock_queries` rows: that table's `source` enum is closed
+(`query`, `ingestion_parse`, `ingestion_embed`, `semantic_analysis`) and its
 `input_tokens` must be `> 0` for a real invocation, and every row drives a
 `CostMetric` upsert plus a dashboard broadcast — none of which apply to a
-bare retrieve or a zero-cost cache/S3 rehydration. **No new value was added to
-`bedrock_queries.source`**, and `technical_and_cost.per_account.total_queries`
+bare retrieve or a zero-cost cache/S3 rehydration. `semantic_analysis` is the
+paid semantic converse. These three events still add no source value.
+`technical_and_cost.per_account.total_queries`
 / `adoption_signals.rag_llm_calls` keep their existing semantics: they are
 computed strictly from `bedrock_queries` (`query_row?` / `visual_row?`) and
 are not contaminated by these structured log lines.

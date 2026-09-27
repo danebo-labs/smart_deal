@@ -8,6 +8,10 @@ class RagController < ApplicationController
 
   def ask
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    # Previous request on this Puma thread can leave semantic state behind.
+    # Reset before image compression or any other path that emits TurnEvidence.
+    Thread.current[:haiku_semantic_analysis_ms] = nil
+    Rag::SemanticQueryAnalyzer.clear_observation!
     question  = params[:question].to_s.strip
     question_sha256 = question.present? ? Digest::SHA256.hexdigest(question) : nil
     # Coined before extraction so an interaction that fails during image
@@ -27,8 +31,6 @@ class RagController < ApplicationController
       account_id:  current_account.id
     )
     episode_turn = nil
-    Thread.current[:haiku_semantic_analysis_ms] = nil
-    Rag::SemanticQueryAnalyzer.clear_observation!
     semantic_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     shadow_analysis = observe_semantic_shadow(question, images, documents, conv_session, correlation_id)
     semantic_analysis_ms = elapsed_ms(semantic_started)
@@ -99,6 +101,11 @@ class RagController < ApplicationController
       )
     end
 
+    raw_citations   = citation_processor.transport_references(result.citations)
+    sources_visible = Rag::SourcesVisibility.enabled?
+    marker_free_answer = citation_processor.strip_resolved_markers(result.answer, raw_citations)
+    answer_text = sources_visible ? result.answer : marker_free_answer
+
     if result.images_uploaded.blank?
       conv_session.record_assistant_turn!(
         result.answer.to_s,
@@ -119,15 +126,11 @@ class RagController < ApplicationController
         phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at),
         original_query:  question,
         effective_query: result.effective_question || question,
-        answer:          result.answer,
+        answer:          answer_text,
         citations:       result.retrieved_citations
       )
     end
 
-    raw_citations   = citation_processor.transport_references(result.citations)
-    sources_visible = Rag::SourcesVisibility.enabled?
-    marker_free_answer = citation_processor.strip_resolved_markers(result.answer, raw_citations)
-    answer_text = sources_visible ? result.answer : marker_free_answer
     resolution = build_resolution(
       question: question,
       answer: marker_free_answer,

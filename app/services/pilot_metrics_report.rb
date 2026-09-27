@@ -807,7 +807,10 @@ class PilotMetricsReport
     return { status: "logs_not_available" } if routes.empty? || rows.empty?
 
     cost_by_query = routes.map do |route|
-      cost_row = rows.find { |r| r[:correlation_id] == route[:correlation_id] }
+      # Legacy per-query figure: the generation/query row, not the semantic
+      # row that shares correlation_id and not the full-turn sum. Totals
+      # already include every source once.
+      cost_row = rows.find { |row| query_row?(row) && row[:correlation_id] == route[:correlation_id] }
       cost = cost_row ? row_cost(cost_row) : 0
       {
         correlation_id: route[:correlation_id],

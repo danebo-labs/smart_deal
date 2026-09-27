@@ -185,12 +185,15 @@ changes against cost per query, not only latency/quality.
 * **Context caps:** hard-cap injected session/entity context so growing
   session state can't silently inflate input tokens.
 * **Cost authority:** treat exact Bedrock billing reconciliation (S3 Model
-  Invocation Logs → daily rollups) as the source of truth over
-  estimated/token-counted rows when reporting spend.
+  Invocation Logs → `bedrock_daily_costs` daily rollups) as the source of
+  truth over estimated/token-counted `BedrockQuery` rows when reporting
+  spend. `BedrockQuery` is call-level attribution. `[TURN_EVIDENCE]` is
+  trace only and is never a cost source.
 * **Internal `Retrieve` calls stay off `bedrock_queries`:** trace pure
   `Retrieve` invocations (KB warm pings, internal re-retrieves) via
   structured log, not a `bedrock_queries` row — that table's `source` enum is
-  closed and every row assumes `input_tokens > 0` plus a `cost_metrics`
+  closed (`query`, `ingestion_parse`, `ingestion_embed`, `semantic_analysis`)
+  and every row assumes `input_tokens > 0` plus a `cost_metrics`
   upsert and a broadcast.
 * **`bulk_chunks/` is ingestion-only:** no derived artifact (manifests, new
   sidecars, caches) is ever written under `bulk_chunks/` — that prefix is

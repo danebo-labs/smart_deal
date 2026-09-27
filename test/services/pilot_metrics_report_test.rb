@@ -644,7 +644,69 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
     end
   end
 
-  private
+  test "cost_summary keeps the generation query cost when semantic shares the correlation" do
+    travel_to @now do
+      correlation_id = "query:cost-summary-semantic"
+      model_id = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+      semantic = {
+        source: "semantic_analysis",
+        route: "semantic_analysis",
+        model_id: model_id,
+        input_tokens: 1_400,
+        output_tokens: 100,
+        correlation_id: correlation_id
+      }
+      generation = semantic.merge(
+        source: "query",
+        route: "rag_global",
+        input_tokens: 9_000,
+        output_tokens: 700
+      )
+      semantic_cost = BedrockQuery.new(**semantic.slice(:model_id, :input_tokens, :output_tokens)).cost
+      generation_cost = BedrockQuery.new(**generation.slice(:model_id, :input_tokens, :output_tokens)).cost
+      assert_equal 0.0019, semantic_cost
+      assert_equal 0.0125, generation_cost
+
+      routes = [ {
+        event: "evidence_route",
+        correlation_id: correlation_id,
+        user_id: @a1.id
+      } ]
+      report = PilotMetricsReport.new(date: @date)
+      [ [ semantic, generation ], [ generation, semantic ] ].each do |ordered|
+        summary = report.send(:cost_summary, ordered, routes)
+        assert_equal generation_cost, summary[:total_usd]
+        assert_equal generation_cost, summary[:avg_cost_per_query_usd]
+        assert_not_equal semantic_cost, summary[:total_usd]
+        assert_not_equal (semantic_cost + generation_cost).round(6), summary[:total_usd]
+      end
+
+      [ semantic, generation ].each do |row|
+        BedrockQuery.create!(
+          row.merge(
+            latency_ms: 20,
+            user_query: row[:source],
+            account_id: @a1.account_id,
+            user_id: @a1.id,
+            token_source: "provider_usage",
+            created_at: @now
+          )
+        )
+      end
+
+      file = Tempfile.new("pilot-cost-summary-semantic")
+      file.puts("[PILOT_USAGE] #{JSON.generate(routes.first.merge(ts: @now.iso8601, account_id: @a1.account_id))}")
+      file.flush
+      exported = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json
+      totals = exported.dig(:technical_and_cost, :totals)
+      assert_equal generation_cost, exported.dig(:technical_and_cost, :cost_summary, :total_usd)
+      assert_equal 1, totals[:semantic_llm_calls]
+      assert_equal 1, totals[:rag_llm_calls]
+      assert_equal (semantic_cost + generation_cost).round(6), totals[:attributed_cost_usd]
+    ensure
+      file&.close!
+    end
+  end
 
   test "semantic and generation rows for one correlation are summed once" do
     travel_to @now do
@@ -673,6 +735,8 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       assert_equal rows.sum(&:cost).round(6), totals[:attributed_cost_usd]
     end
   end
+
+  private
 
   def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
                   created_at: @now, token_source: nil)

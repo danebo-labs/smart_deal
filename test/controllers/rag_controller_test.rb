@@ -1105,6 +1105,144 @@ class RagControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a later request does not inherit the previous request semantic observation" do
+    sign_in @user
+    observation_key = Rag::SemanticQueryAnalyzer::OBSERVATION_KEY
+    Thread.current[observation_key] = {
+      "status" => "ok", "relation" => "switch", "ambiguous" => true
+    }
+    Thread.current[:haiku_semantic_analysis_ms] = 99_999
+    original_observe = Rag::SemanticQueryAnalyzer.method(:observe)
+    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe) do |**|
+      Thread.current[observation_key] = {
+        "status" => "ok", "relation" => "continue", "ambiguous" => false
+      }
+      nil
+    end
+    orchestrator = Object.new
+    orchestrator.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: nil } }
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_mock_orchestrator(orchestrator) do
+      post rag_ask_url, params: { question: "¿cómo sigue el ajuste?" }, as: :json
+    end
+
+    assert_response :success
+    first = turn_evidence_payloads(output).sole
+    assert_equal "continue", first.dig("semantic", "relation")
+    assert_equal false, first.dig("semantic", "ambiguous")
+    completed = interaction_completed_payloads(output).sole
+    assert_not_equal 99_999, completed["semantic_analysis_ms"]
+
+    output.truncate(0)
+    output.rewind
+    original_compression = ImageCompressionService.method(:compress_with_thumbnail)
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) do |_base64, _media_type, **|
+      raise ImageCompressionService::CompressionError, "stale-thread"
+    end
+    post rag_ask_url,
+         params: {
+           question: "foto del contactor",
+           image: { data: Base64.strict_encode64("not-an-image"), media_type: "image/jpeg" }
+         },
+         as: :json
+
+    assert_response :bad_request
+    second = turn_evidence_payloads(output).sole
+    assert_nil second["semantic"]
+    assert_not_equal "continue", second.dig("semantic", "relation")
+    assert_not_equal "switch", second.dig("semantic", "relation")
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    Rag::SemanticQueryAnalyzer.define_singleton_method(:observe) { |*args, **kwargs| original_observe.call(*args, **kwargs) } if original_observe
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) { |*args, **kwargs| original_compression.call(*args, **kwargs) } if original_compression
+    Thread.current[Rag::SemanticQueryAnalyzer::OBSERVATION_KEY] = nil
+    Thread.current[:haiku_semantic_analysis_ms] = nil
+  end
+
+  test "early image compression does not emit a stale semantic observation" do
+    sign_in @user
+    Thread.current[Rag::SemanticQueryAnalyzer::OBSERVATION_KEY] = {
+      "status" => "ok", "relation" => "switch", "ambiguous" => false
+    }
+    Thread.current[:haiku_semantic_analysis_ms] = 99_999
+    original = ImageCompressionService.method(:compress_with_thumbnail)
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) do |_base64, _media_type, **|
+      raise ImageCompressionService::CompressionError, "boom"
+    end
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    post rag_ask_url,
+         params: {
+           question: "foto del contactor",
+           image: { data: Base64.strict_encode64("not-an-image"), media_type: "image/jpeg" }
+         },
+         as: :json
+
+    assert_response :bad_request
+    evidence = turn_evidence_payloads(output).sole
+    assert_nil evidence["semantic"]
+    assert_equal "failed", evidence["outcome"]
+    assert_equal "image_compression", interaction_completed_payloads(output).sole["stage"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) { |*args, **kwargs| original.call(*args, **kwargs) } if original
+    Thread.current[Rag::SemanticQueryAnalyzer::OBSERVATION_KEY] = nil
+    Thread.current[:haiku_semantic_analysis_ms] = nil
+  end
+
+  test "turn evidence hashes the delivered answer with citation markers when sources are visible" do
+    sign_in @user
+    marked = "Ajuste el resorte [1] y verifica el contactor."
+    citations = [ { number: 1, filename: "test.pdf", title: "Test Document" } ]
+    mock = create_mock_orchestrator(answer: marked, citations: citations, session_id: nil)
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_show_rag_sources("true") do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: "¿cómo ajusto el resorte?" }, as: :json
+      end
+    end
+
+    assert_response :success
+    delivered = json_response["answer"]
+    assert_includes delivered, "[1]"
+    assert_equal Digest::SHA256.hexdigest(delivered), turn_evidence_payloads(output).sole["answer_sha256"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "turn evidence hashes the marker-stripped delivered answer when sources are hidden" do
+    sign_in @user
+    marked = "Ajuste el resorte [1] y verifica el contactor."
+    citations = [ { number: 1, filename: "test.pdf", title: "Test Document" } ]
+    mock = create_mock_orchestrator(answer: marked, citations: citations, session_id: nil)
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_show_rag_sources("false") do
+      with_mock_orchestrator(mock) do
+        post rag_ask_url, params: { question: "¿cómo ajusto el resorte?" }, as: :json
+      end
+    end
+
+    assert_response :success
+    delivered = json_response["answer"]
+    assert_not_includes delivered, "[1]"
+    evidence = turn_evidence_payloads(output).sole
+    assert_equal Digest::SHA256.hexdigest(delivered), evidence["answer_sha256"]
+    assert_not_equal Digest::SHA256.hexdigest(marked), evidence["answer_sha256"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
   private
 
   # Bypasses Vips/libvips so we can test the controller's image upload branch
@@ -1297,6 +1435,18 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       assert_response :ok
       assert_equal :es, captured[:response_locale]
     end
+  end
+
+  def turn_evidence_payloads(output)
+    output.string.lines.filter_map { |line|
+      JSON.parse(line.split("[TURN_EVIDENCE] ", 2).last) if line.include?("[TURN_EVIDENCE]")
+    }
+  end
+
+  def interaction_completed_payloads(output)
+    output.string.lines.filter_map { |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?('"interaction_completed"')
+    }
   end
 
   def json_response

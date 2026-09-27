@@ -210,7 +210,7 @@ SEMANTIC_VISUAL_CACHE=REMOVED (after Phase 1)
 * No code path reads or writes `photo_dx/*` after Phase 1. `FieldPhotoDiagnosisCache` and `FieldPhotoPrompt::CONTRACT_VERSION` do not exist.
 * Photo intent is technician text only (explicit question, history user message, or episode goal). Never assistant prose, never `[FOTO]` compact context, never a previous vision reading.
 * `bedrock_queries.source` gains exactly one value, `semantic_analysis`. `Retrieve`, warm pings, and deterministic routes still insert no row.
-* `BedrockQuery` is the only cost authority. No log line is summed as cost.
+* Reconciled Bedrock spend is `bedrock_daily_costs` (S3 Model Invocation Logs). `BedrockQuery` is call-level attribution and estimated cost. `TurnEvidence` is trace only and is not a cost authority. No log line is summed as cost.
 * No WhatsApp branch. No new ENV flag. `script/fixtures/production_conversational_baseline_v2.json` is never edited.
 
 ---
@@ -1105,7 +1105,7 @@ CITATION_DEDUPE=PASS
 NOT_FOUND_WORDING_AND_TELEMETRY=PASS
 SEMANTIC_CALL_ACCOUNTING=PASS   (aggregate 0.031491; per-outcome rows)
 VISION_COST_WITH_CACHE_TOKENS=PASS (0.014085)
-NO_DOUBLE_COUNTING=PASS         (BedrockQuery sole cost authority)
+NO_DOUBLE_COUNTING=PASS         (each BedrockQuery row once; reconciled spend stays bedrock_daily_costs; TurnEvidence is not cost)
 TURN_EVIDENCE_EXPORT=PASS
 NEW_MODEL_CALL_TYPE=NONE
 HYBRID_MINIMAL_UNCHANGED=YES
@@ -1218,7 +1218,7 @@ answer_sha256
 original_query, effective_query, answer   # only when ENV["PILOT_AUDIT_CAPTURE"] == "true"
 ```
 
-`Rag::TurnEvidence` `answer_sha256` (and `answer` when `PILOT_AUDIT_CAPTURE=true`) must be computed from the delivered answer: `RagResult#answer` after `SourceFidelityGuard` and `sanitize_answer`. Photo flows use the transmitted final text. `[PILOT_AUDIT]` may contain the pre-guard answer and is not the delivered-answer authority. `outcome` must be the same outcome the controller uses. `source_fidelity_guard` telemetry is joined by `correlation_id`; do not add a duplicate cost or evidence field.
+`Rag::TurnEvidence` `answer_sha256` (and `answer` when `PILOT_AUDIT_CAPTURE=true`) must be computed from the delivered answer: `RagResult#answer` after `SourceFidelityGuard` and `sanitize_answer`, then the same `answer_text` the HTTP JSON sends. When `SHOW_RAG_SOURCES` is not `"true"`, that string has resolved citation markers stripped. Photo flows use the transmitted final text. `[PILOT_AUDIT]` may contain the pre-guard answer and is not the delivered-answer authority. `outcome` must be the same outcome the controller uses. `source_fidelity_guard` telemetry is joined by `correlation_id`; do not add a duplicate cost or evidence field.
 
 No token or cost fields. Cost per turn is `BedrockQuery` rows joined by `correlation_id`. Emit from `RagController#emit_interaction_completed` (text, success and failure) and `FieldPhotoAnalysisJob#emit_interaction_completed` plus the `retry_on` failure block (photo: blank, question, expired, failed).
 
@@ -1277,6 +1277,47 @@ UNKNOWN                 not proven either way → keep, add telemetry, re-evalua
 
 4. Remove only `DEAD_CODE`, one reviewed commit per area, with the full suite and the conversational baseline green. Never mixed with functional fixes.
 
+### ACTIVE_DEPENDENCIES
+
+These are reachable in production. Do not classify them `DEAD_CODE` because a comment says shadow, or because a later cleanup removes shadow mode.
+
+```text
+BedrockClient#converse
+  used by conditional SemanticQueryAnalyzer in PROD
+  not dead merely because a comment mentions shadow
+
+SemanticQueryAnalyzer.clear_observation!
+  request-local isolation at the start of RagController#ask
+  must survive shadow cleanup
+
+record_user_turn!
+  ActiveEpisodeTurn(attribution:)
+  observe_ownership
+  semantic row attribution path
+
+FieldPhotoAnalysisJob retry/expired handlers
+  emit TurnEvidence for failed and expired photo turns
+
+LlmUsageChannel :bedrock_semantic
+  must remain before direct-model classification
+```
+
+### BACKLOG
+
+Not part of the Phase 3 surgical fixes. Do not implement these inside Phase 4 retirement unless a later plan says so.
+
+```text
+semantic_llm_calls / semantic_cost_usd per interaction
+failed text-turn delivered error hash
+photo RAG failure answer + visual_summary combined hashing
+embedding semantic directly inside photo TurnEvidence
+moving track_paid_call earlier
+Gonzalo fixture redesign
+other metrics/UI cleanup
+```
+
+`PilotMetricsReport#cost_summary` stays the legacy per-evidence-route generation/query cost (`source == query`). `totals.attributed_cost_usd` already sums every `BedrockQuery` row once, including `semantic_analysis`. Do not redefine `cost_summary` as full-turn cost.
+
 ---
 
 ## PHASE_3_VALIDATION_RESULT
@@ -1319,8 +1360,9 @@ Aggregate fixture `test/fixtures/real_gonzalo/semantic_accounting_2026-09-25.jso
 Cost authority:
 
 ```text
-BedrockQuery is the only model-call cost source.
-TurnEvidence has no token or cost fields.
+bedrock_daily_costs is reconciled Bedrock spend from S3 Model Invocation Logs.
+BedrockQuery is call-level attribution and estimated cost, not the provider invoice.
+TurnEvidence has no token or cost fields and is not a cost authority.
 haiku_query_analysis_shadow stays diagnostic and is not summed.
 photo_completed.cost is a log number equal to that call's BedrockQuery#cost, not a second row.
 ```
@@ -1350,7 +1392,7 @@ TurnEvidence:
 [TURN_EVIDENCE] one hash per correlation_id
 emitted from RagController#emit_interaction_completed (text success and failure)
 and FieldPhotoAnalysisJob#emit_interaction_completed plus the retry_on failure block
-answer_sha256 is RagResult#answer after SourceFidelityGuard and sanitize_answer
+answer_sha256 is the delivered answer_text: RagResult#answer after SourceFidelityGuard and sanitize_answer, with resolved citation markers stripped when SHOW_RAG_SOURCES is not true
 photo answer_sha256 is the transmitted text (renderer prose, photo-question answer, or the expired/failed I18n string)
 outcome is the same string as interaction_completed
 raw original_query / effective_query / answer only when ENV["PILOT_AUDIT_CAPTURE"] == "true"
@@ -1371,7 +1413,7 @@ cache tokens are categories on the row, not extra rows
 Known limitations:
 
 ```text
-Text hash is the post-sanitize RagResult#answer. When SHOW_RAG_SOURCES is not true, the HTTP body also strips citation markers.
+Text hash is the delivered answer_text. SHOW_RAG_SOURCES true keeps citation markers; false strips resolved markers. Both the HTTP body and answer_sha256 use that same string.
 RAG error JSON (blank question, service error, image compression) has no RagResult#answer. Those hashes are SHA256 of "".
 Photo completion runs in the job. TurnEvidence.semantic is nil there. A paid semantic row from the request, when the episode path ran, shares correlation_id.
 A raise inside the ensure delete can add a second failed evidence line after a successful photo completion. That matches the pre-existing double interaction_completed on that path.

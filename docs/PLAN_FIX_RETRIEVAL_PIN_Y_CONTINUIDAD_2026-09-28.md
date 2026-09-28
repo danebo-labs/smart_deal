@@ -471,126 +471,155 @@ El prompt vigente de la siguiente fase es el de Execution State. Esta sección d
 
 Fase 2:
 
+La Fase 2 está COMPLETED en `d5b97bf19dfd0c139a9c333dc644bbcb782287d6`. Un chat nuevo no la vuelve a implementar: lee Execution State y el prompt de la Fase 3.
+
+Fase 3:
+
 ```
 Repo: /Users/lahirisan/smart_deal
 
 Commit de la Fase 1: 763db1d975ee53791762e0fd963c666c9662c927
 Mensaje: Hide pins from an expired session on the home checkbox.
-Ese commit ya cerró el checkbox. No lo reabras. No implementes la Fase 1 otra vez.
+
+Commit de la Fase 2: d5b97bf19dfd0c139a9c333dc644bbcb782287d6
+Mensaje: Keep a question with its own object out of the previous episode.
+La Fase 2 ya está COMPLETED. No la reabras. No implementes la Fase 1 ni la Fase 2 otra vez.
 
 El chat no es la memoria. Antes de codear:
 1. Lee docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md, incluida Execution State.
 2. git status
-3. git log -1 y el commit de la Fase 1 anotado en Execution State
+3. git log -1 y los commits de Fase 1 y Fase 2 anotados arriba. La Fase 2 es ancestro de HEAD.
 4. Lee este prompt. Si un mensaje viejo contradice el repo o el plan, ganan repo y plan.
 
-Implementa SOLO la Fase 2. No implementes la Fase 3.
+Implementa SOLO la Fase 3. No implementes la Fase 4. No deploy. No SSH. No Kamal remoto. No AWS remoto. No browser. No logs remotos.
 
-Objetivo: una pregunta con objetivo propio no hereda el episodio. La señal fuerte de seguimiento sigue ganando. No crees un subsistema de NLP. Usa señales que ya existen: FOLLOWUP_START_RE, "la misma" / "el mismo" / "lo mismo", FollowupQueryRewriter.explicit_question?, names_equipment?, el conteo de palabras, y RagRetrievalProfile#safety_critical_query? (SAFETY_CRITICAL_PATTERNS). No copies esa lista dentro de ActiveEpisodeTurn. normalize_label ya dobló "está" a "esta" y "¿Y" a un texto que empieza por "y".
+Hallazgos materiales de la Fase 2, ya en el repo:
+- self_contained? cede solo ante una pregunta explícita con designador (names_equipment?) o 6+ palabras cuando los únicos marcadores que quedan son "esta"/"este" ya normalizados (incluye "está"). No corre si el turno crudo matchea RagRetrievalProfile#safety_critical_query?. No se copió SAFETY_CRITICAL_PATTERNS dentro de ActiveEpisodeTurn.
+- FOLLOWUP_START_RE y "la misma" / "el mismo" / "lo mismo" siguen ganando. "eso" y el resto de FOLLOWUP_RE (esa, ese, esto, ahi, same, that, this, it) no se relajan. followup_marker? sigue decidiendo los turnos cortos.
+- "Tengo encendida la luz H4. ¿Qué me está indicando?" y "¿Qué temporizadores tiene este tablero y cómo están configurados?" quedan continued_self_contained, composed nil, y reemplazan el goal. El texto efectivo es el turno crudo. No arrastran HIDRA/TPR60 ni el goal del presostato.
+- "¿Y para BAJA cuál es el relé?", "la misma falla", "¿Cómo soluciono eso si ya cambié la placa?" y "¿Cómo reseteo esta falla si ya cambié el fusible?" siguen continued_elliptical y componen el goal vigente. "este defecto" también, porque defecto ya es safety_critical_query?.
+- identity_items ya no añade identifiers source=user que no estén en el texto del goal vigente. Fabricante, modelo y código de falla siguen componiéndose. Los identifiers históricos siguen guardados en el episodio; no entran al texto de retrieval.
+- "Edel-k2" después de "EDEL K2 cerrojos exteriores" sigue continued_elliptical. El composed es ese goal (K2 y cerrojos) más el turno. No añade EM2000, DL4, CTA ni ALJO.
+- Un turno elíptico todavía llega compuesto. Si @query ya es ese composed, el rescate no debe usarlo: reinyectaría el goal anterior. El segundo retrieve usa el turno crudo del técnico. Para "Edel-k2" el turno crudo no dice "cerrojos exteriores".
 
-Precedencia dentro de self_contained?:
-1) FOLLOWUP_START_RE y "la misma" / "el mismo" / "lo mismo" siguen siendo seguimiento, aunque la pregunta sea explícita y tenga 6 palabras o un designador.
-2) Sin esa señal fuerte, una pregunta explícita con designador o con 6+ palabras vence solo a los deícticos débiles "esta" y "este".
-3) El paso 2 no corre si el turno crudo matchea safety_critical_query?.
-4) El turno corto restante conserva elliptical? actual.
+Objetivo único: con un solo documento pineado, como máximo un retrieve_chunks adicional, dentro de esas mismas URI, antes de generar. Dos caminos de la misma clase. Ningún if por Seguridad, Micro, Llamada, H4 ni por número de hoja.
 
-No relajes "eso". No relajes esa/ese/esto/ahi/same/that/this/it.
+No subas PINNED_DOCUMENT_RESULTS. No reintentes en el corpus abierto. No enganches el rescate al Sorry de BedrockRagService#query: retrieve_and_generate ya generó, y una ventana incorrecta pero no vacía nunca pasa por localized_pinned_no_results.
 
-Deben seguir siendo follow-up:
-- "¿Cómo soluciono eso si ya cambié la placa?"
-- "¿Cómo reseteo esta falla si ya cambié el fusible?"
-- "¿Y para BAJA cuál es el relé?"
-- "la misma falla"
+Dueño: Rag::StructuredEvidenceRoute#execute, que ya separa retrieve_chunks de @generator.query. QueryOrchestratorService no gana una rama nueva: sigue entrando por StructuredEvidenceRoute.build. Ampliar eligible? es lo que saca estas preguntas de BedrockRagService#query. El segundo retrieve_chunks ocurre en execute, sobre el resultado del primero, y el conjunto fusionado entra a complete_from_retrieval. Ese método sigue sin recuperar: lo usan AmbiguousModelResponder y ContextEvidenceRoute, que ya gastaron su retrieve. Si RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED está apagado, no hay rescate; en config/deploy.yml ya está "true". No añadas otro flag.
 
-Deben seguir siendo self-contained, sin componer:
-- "Tengo encendida la luz H4. ¿Qué me está indicando?"
-- "¿Qué temporizadores tiene este tablero y cómo están configurados?"
+Flujo:
+pregunta
+  → retrieve inicial, mismas URI, force_entity_filter
+  → ¿el designador está en la ventana, o ya hay una fila explícita que coincide?
+  → si no, como máximo un retrieve más, mismas URI
+  → merge por chunk_sha256 (el mismo uniq que expand_dividers)
+  → select_generation_chunks
+  → generación
 
-identity_items, cuando compone, no añade identifiers históricos que no estén en el goal vigente. Fabricante, modelo y código de falla se quedan.
+Un miss del segundo retrieve no dispara un tercero ni cae a BedrockRagService#query. Si el merge viene vacío, vale la abstención que la ruta ya tiene. Si viene con chunks que no cubren, se genera sobre ese merge; no se fabrica otro Sorry.
 
-Archivos: app/services/rag/active_episode_turn.rb y su test. No toques FollowupQueryRewriter, retrieval ni generation.txt.
+Presupuesto:
+- Pregunta que ya era elegible hoy: el primer retrieve sigue en STRUCTURED_MAPPING_RESULTS (12).
+- Pregunta elegible solo por este rescate: el primer retrieve usa RagRetrievalProfile#number_of_results (3, o 5 si es safety-critical). No 12.
+- El retrieve adicional, en los dos caminos, pide PINNED_DOCUMENT_RESULTS (3), las mismas entity_s3_uris y force_entity_filter: true.
+- El pin tiene que ser uno (entity_s3_uris únicas == 1), el mismo conteo que ya usa pinned_exact_designator_lookup?. Cero pines o dos pines: sin rescate.
 
-Tests minitest, sin Bedrock:
-- H4 con "está indicando" después de HIDRA no arrastra HIDRA ni TPR60; composed nil.
-- Temporizadores con "este tablero" después de presostato no componen ese goal.
-- "¿Y para BAJA cuál es el relé?" después de SUBE sigue continued_elliptical y conserva el MH.
-- "Edel-k2" tras "EDEL K2 cerrojos exteriores" conserva K2 y cerrojos, sin EM2000 ni DL4.
-- "la misma falla" sigue componiendo.
-- "¿Cómo soluciono eso si ya cambié la placa?" sigue componiendo.
-- "¿Cómo reseteo esta falla si ya cambié el fusible?" sigue componiendo.
+QueryEntities, case-insensitive estrecho. identifier_candidate? hoy exige IDENTIFIER_SHAPE sobre el token crudo, y esa forma exige mayúsculas.
+- Un token mixto o en minúsculas entra solo si, además, tiene un dígito o un separador de los que la forma ya admite (-, ., _). Edel-k2 → EDELK2, em4000 → EM4000, t1 → T1, h4 → H4. shape_of y canonical_of se calculan sobre el fold en mayúsculas; el raw no se reescribe para mostrarlo.
+- Ese fold no convierte unidades ni ordinales en identifiers. Rechaza 24v, 220v, 10a, 1er, 2do. La forma, ya en mayúsculas, es dígitos seguidos de un sufijo corto de unidad u ordinal (V, A, ER, DO). No hace falta un diccionario de palabras. t1 y h4 siguen entrando: la letra va delante del dígito. em4000 y Edel-k2 también.
+- Un token solo alfabético conserva la regla actual: el crudo ya tiene que cumplir IDENTIFIER_SHAPE. SCI y OUT en mayúsculas siguen contando. sci, out, seguridad, falla, tabla no. Una palabra normal no se vuelve identifier por pasar a mayúsculas.
+- Un número suelto sigue fuera salvo el contexto etiquetado que ya existe (shape == :numeric && position == :bare se descarta). El dígito que autoriza el fold no salta esa regla. 24 y 41 solos no son identifiers; borne 24 sí.
+- Un alfabético puro no es designador de rescate. El designador del camino (a) es RagRetrievalProfile#designator?: shape distinto de :numeric y canonical con dígito. OUT, IN y SCI no abren ese camino y no lo bloquean. MR08 sí lo abre, y con él entra el oráculo SCI.
 
-Corre esos tests y la suite de active_episode_turn y de episodios en rag_query_concern. No deploy.
+Camino (a) — designador exacto, turno crudo + designador, primera ventana completa:
+- Entra si la pregunta tiene al menos un designador con dígito, aunque sea safety-critical. Esa es la única excepción a eligible?'s !safety_critical_query?. pinned_exact_designator_lookup? no se reescribe: otros llamadores siguen viéndolo en false cuando hay falla. Sin designador con dígito, el tope 5 actual se queda y este camino no corre.
+- Después del primer retrieve, si ningún chunk cumple QueryEntities.identifier_present? para ese designador, un solo retrieve_chunks más.
+- El texto de ese retrieve es el turno crudo del técnico más los designadores con dígito (si hay varios, unidos por espacio, añadidos cuando el turno crudo no los trae ya). Conserva la intención de este turno: "EDEL K2 cerrojos exteriores", "MR08 serie SCI", "EM4000 V1 obstáculo". No uses solo el designador. No uses el texto compuesto del episodio, ni el goal, ni identifiers históricos que el turno crudo no dice.
+- Hoy StructuredEvidenceRoute recibe @query, que puede ser ya el effective_question compuesto de un turno elíptico. Si ese string no es el turno crudo, el turno crudo entra como argumento. Eso no abre una rama nueva en QueryOrchestratorService. Si el primero ya contiene el designador, no hay segundo retrieve.
+- La generación recibe la primera ventana completa más los chunks rescatados, únicos por chunk_sha256 (el mismo uniq que expand_dividers). No recortes esa evidencia a los chunks que contienen el designador. El cover greedy de select_generation_chunks no es, en este rescate, el filtro que tira el resto de la primera ventana. MAX_GENERATION_CHUNKS (5) no autoriza a dejar fuera esa ventana: se conserva entera y se le agregan los rescatados que no estaban. Un miss del segundo retrieve no dispara un tercero.
 
-Si pasan: commit, marca Fase 2 COMPLETED en Execution State, registra findings materiales, reescribe el prompt de Fase 3 para un chat nuevo. DETENTE. No implementes la Fase 3.
+Camino (b) — mapping estrecho, sin designador con dígito:
+- Entra solo si el camino (a) no entró, el pin es un documento, y la pregunta pide conexión, localización o asignación con una señal explícita de lookup que ya existe. No añadas una clave a RELATION_TRIGGERS. requested_relation solo no alcanza, ni en :location, ni en :connection, ni en :attribution.
+- Hacen falta las dos cosas: requested_relation corta :connection, :location o :attribution, y además matchea BORNE_TERMINAL_PATTERN, label_terms? o EXACT_LOOKUP_PATTERN.
+- Una pregunta normal de manual que solo dispara "dónde" o "conector" no abre el segundo retrieve. No entra si safety_critical_query?, exhaustive_query? o COMPARATIVE_PATTERN. "¿A qué borne corresponde Seguridad OUT?" entra: borne es BORNE_TERMINAL_PATTERN y corresponde corta :attribution. "Micro nivel inferior" a secas, sin borne / label / lookup, no entra. No escribas reglas para Seguridad, Micro, Llamada ni H4.
+- Después del primer retrieve, si ningún chunk trae una fila explícita con solape léxico con la pregunta, un solo retrieve_chunks más. El texto de ese retrieve es la pregunta más una orientación fija de tabla, la misma para todas: las palabras tabla y designacion, que material_key ya trata como lenguaje de tabla. No es un mapa de etiquetas. La frase de la pregunta viaja entera, para que OUT, IN y nivel 1 no se pierdan en lexical_tokens (un token de menos de 4 letras se tira).
+- Si el primer retrieve ya trae esa fila, no hay segundo.
+- Selección, cuando no hay identifier que cubrir: hoy select_generation_chunks devuelve chunks.first(PINNED_DOCUMENT_RESULTS) en cuanto covering está vacío. En este camino eso no alcanza. Se prefiere el chunk con una fila explícita — las formas que assignment_line? ya reconoce, o una fila de tabla — y solape léxico con la pregunta. Un token de 2 o 3 letras entra en ese solape solo si va en mayúsculas o tiene dígito, para que OUT no empate con IN por la sola palabra "seguridad". Un número junto a un rótulo, sin fila, no gana por eso. Si ninguna fila explícita solapa, se conserva el fallback de los primeros 3.
+
+Fixture real de chunk_p1_2. Fuente local: tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt. No es un esquema con números sueltos junto al rótulo. La bornera está en filas explícitas, y los FIELD_RECORD las repiten:
+| 12 | SEGURIDAD IN |
+| 13 | SEGURIDAD OUT |
+| 14 | PRESOSTATO IN |
+| 15 | PRESOSTATO OUT |
+| 22 | SEGURIDAD OUT (señal de salida) |
+| 23 | SEGURIDAD IN (señal de entrada) |
+| 24 | PRESOSTATO IN |
+| 25 | PRESOSTATO OUT |
+| 26 | LIMITE INFERIOR |
+| 27 | LIMITE SUPERIOR |
+| 31 | LLAMADA NIVEL 1 |
+| 32 | LLAMADA NIVEL 2 |
+El mismo objeto dice H4 como lámpara vinculada a K5 y K7, y T1 / T2 como transformadores (220VAC/18VCD y 220VAC/24VAC), no como temporizadores. Un rescate que se salta el segundo retrieve en cuanto el token ya está en la primera ventana deja esa lectura como si cubriera el hecho. El probe de la sección 10 lo dice. No añadas un if por H4, T1 ni T2.
+
+Tests con fake de retrieve_chunks, no con un chunk bueno inyectado al selector. La pregunta es textual. No llames a Bedrock.
+
+Preguntas canónicas. La intención sale de borne y corresponde, que ya están en RELATION_TRIGGERS. Los nombres van en la pregunta del test, no en código:
+- "¿A qué borne corresponde Seguridad OUT?"
+- "¿A qué borne corresponde Seguridad IN?"
+- "¿A qué borne corresponde el micro de nivel inferior?"
+- "¿A qué borne corresponde el micro de nivel superior?"
+- "¿A qué borne corresponde la llamada de nivel 1?"
+- "¿A qué borne corresponde la llamada de nivel 2?"
+
+Seguridad OUT, Seguridad IN y presostato: el primer retorno es el extracto real de chunk_p1_2 (filas explícitas 12/13, 22/23, 14/15, 24/25), o un fixture que lo copie. El chunk ya trae fila explícita con solape (SEGURIDAD OUT, SEGURIDAD IN, PRESOSTATO). Si el rescate de mapping no dispara, afirma una sola llamada y la fila que el chunk sí publica. No cambies el primer retorno por "un número junto a un rótulo" para forzar el segundo retrieve ni para afirmar 23, 24, 25 o 26. Esos casos dependen de la Fase 5. Dos filas explícitas incompatibles no se descartan aquí; eso es la Fase 4.
+
+Micros y llamadas: el mismo archivo ya tiene | 26 | LIMITE INFERIOR |, | 27 | LIMITE SUPERIOR |, | 31 | LLAMADA NIVEL 1 |, | 32 | LLAMADA NIVEL 2 |. Si el primer retorno es ese chunk y el solape léxico ya cuenta, no fuerces el segundo retrieve y documenta la dependencia de la Fase 5. Si "micro" no solapa con LIMITE, el camino (b) sí puede pedir el segundo retrieve; el segundo retorno puede traer la tabla de la hoja 2. El primer retorno no se sustituye por un fake de proximidad.
+
+Donde el primer retorno no trae fila explícita con solape, afirma:
+1. build devuelve ruta con el flag en true y un solo pin; con el flag en false, o con cero o dos pines, devuelve nil.
+2. retrieve_chunks se llama dos veces, nunca tres.
+3. El segundo texto es la pregunta más tabla y designacion, y contiene la frase propia (nivel inferior, nivel superior, nivel 1, nivel 2 cuando esas preguntas sí reintentan). No es una lista fija de etiquetas.
+4. Las dos llamadas llevan las mismas entity_s3_uris del pin y force_entity_filter: true. number_of_results del segundo es 3.
+5. Si los dos retornos comparten un chunk_sha256, el merge lo deja una vez.
+6. Los chunks finales son la primera ventana completa más los rescatados.
+7. El hecho de la hoja 2 se afirma solo si el segundo retorno lo trajo. No se afirma 23/24/25/26 contra el extracto real de chunk_p1_2.
+
+Además:
+- Pregunta normal de manual que solo corta :location o :connection, sin BORNE_TERMINAL_PATTERN, label_terms? ni EXACT_LOOKUP_PATTERN: una llamada. "¿Qué elementos aparecen en esa línea?" sigue en una llamada.
+- Cadena de seguridad, redactada sin borne / label / lookup: una llamada. Foso, igual: una llamada.
+- Designador presente en la primera ventana ("¿Qué es H4?" y un chunk con H4): una llamada. El segundo texto, cuando sí corre, contiene el turno crudo y el designador, no solo el designador y no el goal del episodio.
+- Designador ausente (EM4000 V1 obstáculo, EDEL K2 cerrojos exteriores, MR08 serie SCI): dos llamadas como máximo. El segundo texto conserva "obstáculo", "cerrojos exteriores" o "SCI". Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
+- Mapping sin identifier: como máximo un reintento, y solo con la señal explícita de lookup. Si el segundo tampoco trae fila explícita, siguen siendo dos y no hay caída a BedrockRagService#query.
+- PINNED_DOCUMENT_RESULTS sigue en 3. El test de RagRetrievalProfile que lo fija no se toca.
+- QueryEntities: acepta Edel-k2, em4000, t1, h4. Rechaza 24v, 220v, 10a, 1er, 2do, seguridad, falla, tabla, out en minúsculas, y 24 suelto. SCI y OUT en mayúsculas siguen el criterio alfabético actual. borne 24 sigue siendo identifier etiquetado.
+
+Los oráculos 1–6, 13 y 14 de la sección 9 usan el doble fake cuando el designador no está en el primer retorno: el chunk final contiene el hecho y también el resto de la primera ventana. No se llama a Bedrock. El assert no es "el modelo redactó esta frase". Si el primer retorno ya contiene el token (H4, T1, T2 dentro de chunk_p1_2) y por eso no hay segundo retrieve, el test no inventa un primer retorno vacío para hacer pasar el hecho. El probe read-only decide si la Fase 3 queda BLOCKED.
+
+Archivos: app/services/rag/query_entities.rb, app/services/rag/structured_evidence_route.rb, test/services/rag/query_entities_test.rb, test/services/rag/structured_evidence_route_test.rb. app/services/query_orchestrator_service.rb solo si algún test con el flag en true espera build nil para una pregunta de un solo pin que ahora es elegible; el caso flag false sigue en nil. No toques el Sorry de app/services/bedrock_rag_service.rb. No toques ActiveEpisodeTurn, generation.txt, PINNED_DOCUMENT_RESULTS ni el checkbox de la Fase 1.
+
+Probe read-only, obligatorio antes de marcar la Fase 3 COMPLETED. Cuando la Fase 3 está implementada, un script en script/ — al estilo de script/rag_seguridades_recall_probe.rb, que solo llama retrieve_chunks — corre el retrieval real de estos 14 casos, con el mismo pin y la misma decisión de rescate que usaría la ruta. No es un paso opcional y no se sustituye por los fakes de minitest.
+1. EM2000 hidráulico
+2. EM4000 V1
+3. EDEL K2 cerrojos exteriores
+4. EDEL K2 dos embarques
+5. MR08 SCI
+6. H4
+7. Seguridad OUT
+8. Seguridad IN
+9. Micro nivel inferior
+10. Micro nivel superior
+11. Llamada nivel 1
+12. Llamada nivel 2
+13. T1
+14. T2
+- Read-only. Sin generación, sin escritura, sin deploy. No escribe S3, no ingesta, no toca producción, no llama a BedrockRagService#query ni a @generator.query.
+- Cada caso tiene que recuperar evidencia suficiente del hecho de la sección 9. Ver las filas explícitas de chunk_p1_2 no cuenta como evidencia suficiente de la hoja 2.
+- Sale 0 solo si los 14 recuperaron esa evidencia. Sale 1 si falta alguno. No pide interpretación y no se maquilla un caso faltante.
+- No entra en CI. Sí bloquea marcar la Fase 3 como COMPLETED. Con el probe en rojo el estado es BLOCKED. No se deploya la fase como cerrada.
+
+No marques la Fase 3 COMPLETED sin ese probe en verde. Si un caso esperado no recupera evidencia suficiente, el estado es BLOCKED. No maquilles el probe. Si los tests y el probe pasan: commit, marca Fase 3 COMPLETED en Execution State, registra findings materiales, reescribe el prompt de Fase 4 para un chat nuevo. DETENTE. No implementes la Fase 4.
 ```
-
-Fase 3:
-
-```
-Implementa solo la Fase 3 de docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md.
-Antes de codear: lee el plan, Execution State, git status, el commit de la Fase 2 y este prompt.
-
-El rescate vive en Rag::StructuredEvidenceRoute#execute, antes de
-complete_from_retrieval. No lo pongas en el Sorry de BedrockRagService#query.
-No añadas una rama nueva en QueryOrchestratorService: amplía eligible?.
-Si @query ya es el texto compuesto, pasa el turno crudo como argumento.
-Eso no es una rama nueva. complete_from_retrieval sigue sin hacer retrieve.
-Un solo documento pineado. Como máximo un retrieve_chunks adicional,
-las mismas entity_s3_uris, force_entity_filter true, number_of_results 3.
-Siempre dentro del mismo pin.
-PINNED_DOCUMENT_RESULTS permanece 3. No reintentes fuera del pin. Nunca un tercero.
-No caigas a BedrockRagService#query si el segundo retrieve tampoco cubre.
-
-Camino (a): designador con el criterio de RagRetrievalProfile#designator?
-(shape no numeric y canonical con dígito). Si el primer retrieve no lo contiene
-(QueryEntities.identifier_present?), el segundo retrieve usa el turno crudo
-más el o los designadores. No uses solo el designador. No uses el composed
-histórico del episodio. Conserva la intención actual:
-"EDEL K2 cerrojos exteriores", "MR08 serie SCI", "EM4000 V1 obstáculo".
-La generación recibe la primera ventana completa más los chunks rescatados,
-únicos por chunk_sha256. No recortes la evidencia a los chunks que contienen
-el designador. MAX_GENERATION_CHUNKS no autoriza a tirar la primera ventana.
-Una pregunta safety-critical con ese designador sí entra. Sin dígito, no.
-Un alfabético puro (OUT, IN, SCI) no abre este camino y no lo bloquea.
-
-Camino (b): sin designador con dígito. requested_relation :location,
-:connection o :attribution no alcanza solo. Hace falta además
-BORNE_TERMINAL_PATTERN, label_terms? o EXACT_LOOKUP_PATTERN.
-Eso vale también para :attribution. No entra si es safety-critical,
-exhaustive o comparativa. No añadas claves a RELATION_TRIGGERS.
-No escribas reglas para Seguridad, Micro, Llamada ni H4.
-El segundo texto es la pregunta más las palabras "tabla" y "designacion".
-La selección, si no hay identifier que cubrir, prefiere una fila explícita
-con solape léxico. Un número junto a un rótulo, sin fila, no gana por eso.
-Si el primero ya trae esa fila, no hay segundo retrieve.
-
-QueryEntities: mixto o minúsculas solo con dígito o separador - . _
-(Edel-k2, em4000, t1, h4). Rechaza unidades y ordinales: 24v, 220v, 10a,
-1er, 2do. No conviertas palabras normales en identifiers.
-Lo puramente alfabético conserva la regla en mayúsculas.
-Un número suelto sigue sin ser identifier salvo el contexto etiquetado actual.
-
-Tests con fake de retrieve_chunks, no con un chunk bueno inyectado al selector.
-Seguridad OUT, Seguridad IN y presostato: el primer retorno es el extracto
-real de tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt (filas explícitas
-12/13, 22/23, 14/15, 24/25). Si el rescate no dispara, afirma una llamada
-y documenta que el hecho de la hoja 2 depende de la Fase 5.
-No uses un fake de "número junto a rótulo" para hacer pasar 23, 24, 25 o 26.
-Micros y llamadas: el mismo chunk tiene LIMITE 26/27 y LLAMADA 31/32.
-Si ese solape ya cuenta, no fuerces el segundo retrieve.
-Donde el primero no trae fila con solape, afirma dos llamadas, el texto,
-el pin, el merge, la primera ventana completa más los rescatados, y el hecho
-solo si el segundo retorno lo trajo.
-Además: pregunta normal sin señal de lookup, cadena de seguridad y foso,
-una llamada; designador presente, una llamada; designador ausente, como
-máximo una más, con el turno crudo en el segundo texto.
-No llames a Bedrock. No empieces la Fase 4.
-No marques la Fase 3 COMPLETED sin el probe read-only obligatorio de la
-sección 10 (14 casos, sin generación, sin escritura, sin deploy).
-Si un caso esperado no recupera evidencia suficiente, el estado es BLOCKED.
-No maquilles el probe.
-```
-
 Fase 4:
 
 ```
@@ -646,72 +675,171 @@ Material findings:
 - Suite: `BUNDLE_PATH=vendor/bundle bin/rails test test/controllers/home_controller_test.rb` — 30 runs, 161 assertions, 0 failures. Sin Bedrock.
 - `chunk_p1_2_current.txt` publica filas explícitas de bornera, no números junto a un rótulo. Eso ya está escrito en las Fases 3, 4 y 5. No cambió el código de esta fase.
 Next phase impact:
-- La Fase 2 no toca el pin ni el retrieve. El prompt de abajo es el que se pega en un chat nuevo.
+- La Fase 2 no tocó el pin ni el retrieve. Ya está COMPLETED. El prompt vigente es el de Phase 2.
+Next phase prompt:
+```text
+La Fase 2 está COMPLETED en d5b97bf19dfd0c139a9c333dc644bbcb782287d6.
+No la reimplementes. El prompt vigente es Phase 2 → Next phase prompt, y el mismo texto está en la sección 15 bajo Fase 3.
+```
+
+### Phase 2
+Status: COMPLETED
+Commit: d5b97bf19dfd0c139a9c333dc644bbcb782287d6
+Tests: PASS
+Material findings:
+- `self_contained?` cede solo ante una pregunta explícita con designador o 6+ palabras cuando los únicos marcadores que quedan son `esta`/`este` ya normalizados. No corre si el turno crudo matchea `RagRetrievalProfile#safety_critical_query?`. `FOLLOWUP_START_RE` y `la misma` / `el mismo` / `lo mismo` siguen ganando. `eso` y el resto de `FOLLOWUP_RE` no se relajan. `followup_marker?` sigue en los turnos cortos. No se copió `SAFETY_CRITICAL_PATTERNS`.
+- H4 y temporizadores quedan `continued_self_contained`, `composed` nil, y reemplazan el goal. El texto efectivo es el turno crudo.
+- BAJA, `la misma falla`, `eso` y `esta falla` / `este defecto` siguen `continued_elliptical` y componen el goal vigente.
+- `identity_items` ya no añade identifiers `source=user` que no estén en el texto del goal vigente. Fabricante, modelo y código de falla siguen. Los identifiers históricos permanecen guardados. `Edel-k2` después de `EDEL K2 cerrojos exteriores` compone K2 y cerrojos, sin EM2000, DL4, CTA ni ALJO.
+- Suite: `BUNDLE_PATH=vendor/bundle bin/rails test test/services/rag/active_episode_turn_test.rb` — 114 runs, 602 assertions, 0 failures. Sin Bedrock.
+- Suite de episodios en el concern: `BUNDLE_PATH=vendor/bundle bin/rails test test/controllers/concerns/rag_query_concern_test.rb -n "/episode|composed|follow-up|followup|ActiveEpisode|field companion|turn flag/"` — 18 runs, 471 assertions, 0 failures, 1 skip. El skip es el test previo de WhatsApp `whatsapp short follow-up keeps cached locale`, que el filtro nombró por `follow-up`.
+Next phase impact:
+- Un turno self-contained llega con `composed` nil. Un turno elíptico sigue compuesto con el goal vigente, sin identifiers históricos fuera de ese goal. El rescate de la Fase 3 usa el turno crudo, no ese composed: en `Edel-k2` el turno crudo no dice `cerrojos exteriores`.
 Next phase prompt:
 ```text
 Repo: /Users/lahirisan/smart_deal
 
 Commit de la Fase 1: 763db1d975ee53791762e0fd963c666c9662c927
 Mensaje: Hide pins from an expired session on the home checkbox.
-Ese commit ya cerró el checkbox. No lo reabras. No implementes la Fase 1 otra vez.
+
+Commit de la Fase 2: d5b97bf19dfd0c139a9c333dc644bbcb782287d6
+Mensaje: Keep a question with its own object out of the previous episode.
+La Fase 2 ya está COMPLETED. No la reabras. No implementes la Fase 1 ni la Fase 2 otra vez.
 
 El chat no es la memoria. Antes de codear:
 1. Lee docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md, incluida Execution State.
 2. git status
-3. git log -1 y el commit de la Fase 1 anotado en Execution State
+3. git log -1 y los commits de Fase 1 y Fase 2 anotados arriba. La Fase 2 es ancestro de HEAD.
 4. Lee este prompt. Si un mensaje viejo contradice el repo o el plan, ganan repo y plan.
 
-Implementa SOLO la Fase 2. No implementes la Fase 3.
+Implementa SOLO la Fase 3. No implementes la Fase 4. No deploy. No SSH. No Kamal remoto. No AWS remoto. No browser. No logs remotos.
 
-Objetivo: una pregunta con objetivo propio no hereda el episodio. La señal fuerte de seguimiento sigue ganando. No crees un subsistema de NLP. Usa señales que ya existen: FOLLOWUP_START_RE, "la misma" / "el mismo" / "lo mismo", FollowupQueryRewriter.explicit_question?, names_equipment?, el conteo de palabras, y RagRetrievalProfile#safety_critical_query? (SAFETY_CRITICAL_PATTERNS). No copies esa lista dentro de ActiveEpisodeTurn. normalize_label ya dobló "está" a "esta" y "¿Y" a un texto que empieza por "y".
+Hallazgos materiales de la Fase 2, ya en el repo:
+- self_contained? cede solo ante una pregunta explícita con designador (names_equipment?) o 6+ palabras cuando los únicos marcadores que quedan son "esta"/"este" ya normalizados (incluye "está"). No corre si el turno crudo matchea RagRetrievalProfile#safety_critical_query?. No se copió SAFETY_CRITICAL_PATTERNS dentro de ActiveEpisodeTurn.
+- FOLLOWUP_START_RE y "la misma" / "el mismo" / "lo mismo" siguen ganando. "eso" y el resto de FOLLOWUP_RE (esa, ese, esto, ahi, same, that, this, it) no se relajan. followup_marker? sigue decidiendo los turnos cortos.
+- "Tengo encendida la luz H4. ¿Qué me está indicando?" y "¿Qué temporizadores tiene este tablero y cómo están configurados?" quedan continued_self_contained, composed nil, y reemplazan el goal. El texto efectivo es el turno crudo. No arrastran HIDRA/TPR60 ni el goal del presostato.
+- "¿Y para BAJA cuál es el relé?", "la misma falla", "¿Cómo soluciono eso si ya cambié la placa?" y "¿Cómo reseteo esta falla si ya cambié el fusible?" siguen continued_elliptical y componen el goal vigente. "este defecto" también, porque defecto ya es safety_critical_query?.
+- identity_items ya no añade identifiers source=user que no estén en el texto del goal vigente. Fabricante, modelo y código de falla siguen componiéndose. Los identifiers históricos siguen guardados en el episodio; no entran al texto de retrieval.
+- "Edel-k2" después de "EDEL K2 cerrojos exteriores" sigue continued_elliptical. El composed es ese goal (K2 y cerrojos) más el turno. No añade EM2000, DL4, CTA ni ALJO.
+- Un turno elíptico todavía llega compuesto. Si @query ya es ese composed, el rescate no debe usarlo: reinyectaría el goal anterior. El segundo retrieve usa el turno crudo del técnico. Para "Edel-k2" el turno crudo no dice "cerrojos exteriores".
 
-Precedencia dentro de self_contained?:
-1) FOLLOWUP_START_RE y "la misma" / "el mismo" / "lo mismo" siguen siendo seguimiento, aunque la pregunta sea explícita y tenga 6 palabras o un designador.
-2) Sin esa señal fuerte, una pregunta explícita con designador o con 6+ palabras vence solo a los deícticos débiles "esta" y "este".
-3) El paso 2 no corre si el turno crudo matchea safety_critical_query?.
-4) El turno corto restante conserva elliptical? actual.
+Objetivo único: con un solo documento pineado, como máximo un retrieve_chunks adicional, dentro de esas mismas URI, antes de generar. Dos caminos de la misma clase. Ningún if por Seguridad, Micro, Llamada, H4 ni por número de hoja.
 
-No relajes "eso". No relajes esa/ese/esto/ahi/same/that/this/it.
+No subas PINNED_DOCUMENT_RESULTS. No reintentes en el corpus abierto. No enganches el rescate al Sorry de BedrockRagService#query: retrieve_and_generate ya generó, y una ventana incorrecta pero no vacía nunca pasa por localized_pinned_no_results.
 
-Deben seguir siendo follow-up:
-- "¿Cómo soluciono eso si ya cambié la placa?"
-- "¿Cómo reseteo esta falla si ya cambié el fusible?"
-- "¿Y para BAJA cuál es el relé?"
-- "la misma falla"
+Dueño: Rag::StructuredEvidenceRoute#execute, que ya separa retrieve_chunks de @generator.query. QueryOrchestratorService no gana una rama nueva: sigue entrando por StructuredEvidenceRoute.build. Ampliar eligible? es lo que saca estas preguntas de BedrockRagService#query. El segundo retrieve_chunks ocurre en execute, sobre el resultado del primero, y el conjunto fusionado entra a complete_from_retrieval. Ese método sigue sin recuperar: lo usan AmbiguousModelResponder y ContextEvidenceRoute, que ya gastaron su retrieve. Si RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED está apagado, no hay rescate; en config/deploy.yml ya está "true". No añadas otro flag.
 
-Deben seguir siendo self-contained, sin componer:
-- "Tengo encendida la luz H4. ¿Qué me está indicando?"
-- "¿Qué temporizadores tiene este tablero y cómo están configurados?"
+Flujo:
+pregunta
+  → retrieve inicial, mismas URI, force_entity_filter
+  → ¿el designador está en la ventana, o ya hay una fila explícita que coincide?
+  → si no, como máximo un retrieve más, mismas URI
+  → merge por chunk_sha256 (el mismo uniq que expand_dividers)
+  → select_generation_chunks
+  → generación
 
-identity_items, cuando compone, no añade identifiers históricos que no estén en el goal vigente. Fabricante, modelo y código de falla se quedan.
+Un miss del segundo retrieve no dispara un tercero ni cae a BedrockRagService#query. Si el merge viene vacío, vale la abstención que la ruta ya tiene. Si viene con chunks que no cubren, se genera sobre ese merge; no se fabrica otro Sorry.
 
-Archivos: app/services/rag/active_episode_turn.rb y su test. No toques FollowupQueryRewriter, retrieval ni generation.txt.
+Presupuesto:
+- Pregunta que ya era elegible hoy: el primer retrieve sigue en STRUCTURED_MAPPING_RESULTS (12).
+- Pregunta elegible solo por este rescate: el primer retrieve usa RagRetrievalProfile#number_of_results (3, o 5 si es safety-critical). No 12.
+- El retrieve adicional, en los dos caminos, pide PINNED_DOCUMENT_RESULTS (3), las mismas entity_s3_uris y force_entity_filter: true.
+- El pin tiene que ser uno (entity_s3_uris únicas == 1), el mismo conteo que ya usa pinned_exact_designator_lookup?. Cero pines o dos pines: sin rescate.
 
-Tests minitest, sin Bedrock:
-- H4 con "está indicando" después de HIDRA no arrastra HIDRA ni TPR60; composed nil.
-- Temporizadores con "este tablero" después de presostato no componen ese goal.
-- "¿Y para BAJA cuál es el relé?" después de SUBE sigue continued_elliptical y conserva el MH.
-- "Edel-k2" tras "EDEL K2 cerrojos exteriores" conserva K2 y cerrojos, sin EM2000 ni DL4.
-- "la misma falla" sigue componiendo.
-- "¿Cómo soluciono eso si ya cambié la placa?" sigue componiendo.
-- "¿Cómo reseteo esta falla si ya cambié el fusible?" sigue componiendo.
+QueryEntities, case-insensitive estrecho. identifier_candidate? hoy exige IDENTIFIER_SHAPE sobre el token crudo, y esa forma exige mayúsculas.
+- Un token mixto o en minúsculas entra solo si, además, tiene un dígito o un separador de los que la forma ya admite (-, ., _). Edel-k2 → EDELK2, em4000 → EM4000, t1 → T1, h4 → H4. shape_of y canonical_of se calculan sobre el fold en mayúsculas; el raw no se reescribe para mostrarlo.
+- Ese fold no convierte unidades ni ordinales en identifiers. Rechaza 24v, 220v, 10a, 1er, 2do. La forma, ya en mayúsculas, es dígitos seguidos de un sufijo corto de unidad u ordinal (V, A, ER, DO). No hace falta un diccionario de palabras. t1 y h4 siguen entrando: la letra va delante del dígito. em4000 y Edel-k2 también.
+- Un token solo alfabético conserva la regla actual: el crudo ya tiene que cumplir IDENTIFIER_SHAPE. SCI y OUT en mayúsculas siguen contando. sci, out, seguridad, falla, tabla no. Una palabra normal no se vuelve identifier por pasar a mayúsculas.
+- Un número suelto sigue fuera salvo el contexto etiquetado que ya existe (shape == :numeric && position == :bare se descarta). El dígito que autoriza el fold no salta esa regla. 24 y 41 solos no son identifiers; borne 24 sí.
+- Un alfabético puro no es designador de rescate. El designador del camino (a) es RagRetrievalProfile#designator?: shape distinto de :numeric y canonical con dígito. OUT, IN y SCI no abren ese camino y no lo bloquean. MR08 sí lo abre, y con él entra el oráculo SCI.
 
-Corre esos tests y la suite de active_episode_turn y de episodios en rag_query_concern. No deploy.
+Camino (a) — designador exacto, turno crudo + designador, primera ventana completa:
+- Entra si la pregunta tiene al menos un designador con dígito, aunque sea safety-critical. Esa es la única excepción a eligible?'s !safety_critical_query?. pinned_exact_designator_lookup? no se reescribe: otros llamadores siguen viéndolo en false cuando hay falla. Sin designador con dígito, el tope 5 actual se queda y este camino no corre.
+- Después del primer retrieve, si ningún chunk cumple QueryEntities.identifier_present? para ese designador, un solo retrieve_chunks más.
+- El texto de ese retrieve es el turno crudo del técnico más los designadores con dígito (si hay varios, unidos por espacio, añadidos cuando el turno crudo no los trae ya). Conserva la intención de este turno: "EDEL K2 cerrojos exteriores", "MR08 serie SCI", "EM4000 V1 obstáculo". No uses solo el designador. No uses el texto compuesto del episodio, ni el goal, ni identifiers históricos que el turno crudo no dice.
+- Hoy StructuredEvidenceRoute recibe @query, que puede ser ya el effective_question compuesto de un turno elíptico. Si ese string no es el turno crudo, el turno crudo entra como argumento. Eso no abre una rama nueva en QueryOrchestratorService. Si el primero ya contiene el designador, no hay segundo retrieve.
+- La generación recibe la primera ventana completa más los chunks rescatados, únicos por chunk_sha256 (el mismo uniq que expand_dividers). No recortes esa evidencia a los chunks que contienen el designador. El cover greedy de select_generation_chunks no es, en este rescate, el filtro que tira el resto de la primera ventana. MAX_GENERATION_CHUNKS (5) no autoriza a dejar fuera esa ventana: se conserva entera y se le agregan los rescatados que no estaban. Un miss del segundo retrieve no dispara un tercero.
 
-Si pasan: commit, marca Fase 2 COMPLETED en Execution State, registra findings materiales, reescribe el prompt de Fase 3 para un chat nuevo. DETENTE. No implementes la Fase 3.
-```
+Camino (b) — mapping estrecho, sin designador con dígito:
+- Entra solo si el camino (a) no entró, el pin es un documento, y la pregunta pide conexión, localización o asignación con una señal explícita de lookup que ya existe. No añadas una clave a RELATION_TRIGGERS. requested_relation solo no alcanza, ni en :location, ni en :connection, ni en :attribution.
+- Hacen falta las dos cosas: requested_relation corta :connection, :location o :attribution, y además matchea BORNE_TERMINAL_PATTERN, label_terms? o EXACT_LOOKUP_PATTERN.
+- Una pregunta normal de manual que solo dispara "dónde" o "conector" no abre el segundo retrieve. No entra si safety_critical_query?, exhaustive_query? o COMPARATIVE_PATTERN. "¿A qué borne corresponde Seguridad OUT?" entra: borne es BORNE_TERMINAL_PATTERN y corresponde corta :attribution. "Micro nivel inferior" a secas, sin borne / label / lookup, no entra. No escribas reglas para Seguridad, Micro, Llamada ni H4.
+- Después del primer retrieve, si ningún chunk trae una fila explícita con solape léxico con la pregunta, un solo retrieve_chunks más. El texto de ese retrieve es la pregunta más una orientación fija de tabla, la misma para todas: las palabras tabla y designacion, que material_key ya trata como lenguaje de tabla. No es un mapa de etiquetas. La frase de la pregunta viaja entera, para que OUT, IN y nivel 1 no se pierdan en lexical_tokens (un token de menos de 4 letras se tira).
+- Si el primer retrieve ya trae esa fila, no hay segundo.
+- Selección, cuando no hay identifier que cubrir: hoy select_generation_chunks devuelve chunks.first(PINNED_DOCUMENT_RESULTS) en cuanto covering está vacío. En este camino eso no alcanza. Se prefiere el chunk con una fila explícita — las formas que assignment_line? ya reconoce, o una fila de tabla — y solape léxico con la pregunta. Un token de 2 o 3 letras entra en ese solape solo si va en mayúsculas o tiene dígito, para que OUT no empate con IN por la sola palabra "seguridad". Un número junto a un rótulo, sin fila, no gana por eso. Si ninguna fila explícita solapa, se conserva el fallback de los primeros 3.
 
-### Phase 2
-Status: PENDING
-Commit: none
-Tests: pending
-Material findings:
-- none yet
-Next phase impact:
-- La Fase 3 asume que un turno self-contained ya no llega compuesto. El segundo retrieve igual tiene que usar el turno crudo, no el composed histórico.
-Next phase prompt:
-```text
-Ver el prompt de Fase 3 en la sección 15. Se reescribe al cerrar la Fase 2.
+Fixture real de chunk_p1_2. Fuente local: tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt. No es un esquema con números sueltos junto al rótulo. La bornera está en filas explícitas, y los FIELD_RECORD las repiten:
+| 12 | SEGURIDAD IN |
+| 13 | SEGURIDAD OUT |
+| 14 | PRESOSTATO IN |
+| 15 | PRESOSTATO OUT |
+| 22 | SEGURIDAD OUT (señal de salida) |
+| 23 | SEGURIDAD IN (señal de entrada) |
+| 24 | PRESOSTATO IN |
+| 25 | PRESOSTATO OUT |
+| 26 | LIMITE INFERIOR |
+| 27 | LIMITE SUPERIOR |
+| 31 | LLAMADA NIVEL 1 |
+| 32 | LLAMADA NIVEL 2 |
+El mismo objeto dice H4 como lámpara vinculada a K5 y K7, y T1 / T2 como transformadores (220VAC/18VCD y 220VAC/24VAC), no como temporizadores. Un rescate que se salta el segundo retrieve en cuanto el token ya está en la primera ventana deja esa lectura como si cubriera el hecho. El probe de la sección 10 lo dice. No añadas un if por H4, T1 ni T2.
+
+Tests con fake de retrieve_chunks, no con un chunk bueno inyectado al selector. La pregunta es textual. No llames a Bedrock.
+
+Preguntas canónicas. La intención sale de borne y corresponde, que ya están en RELATION_TRIGGERS. Los nombres van en la pregunta del test, no en código:
+- "¿A qué borne corresponde Seguridad OUT?"
+- "¿A qué borne corresponde Seguridad IN?"
+- "¿A qué borne corresponde el micro de nivel inferior?"
+- "¿A qué borne corresponde el micro de nivel superior?"
+- "¿A qué borne corresponde la llamada de nivel 1?"
+- "¿A qué borne corresponde la llamada de nivel 2?"
+
+Seguridad OUT, Seguridad IN y presostato: el primer retorno es el extracto real de chunk_p1_2 (filas explícitas 12/13, 22/23, 14/15, 24/25), o un fixture que lo copie. El chunk ya trae fila explícita con solape (SEGURIDAD OUT, SEGURIDAD IN, PRESOSTATO). Si el rescate de mapping no dispara, afirma una sola llamada y la fila que el chunk sí publica. No cambies el primer retorno por "un número junto a un rótulo" para forzar el segundo retrieve ni para afirmar 23, 24, 25 o 26. Esos casos dependen de la Fase 5. Dos filas explícitas incompatibles no se descartan aquí; eso es la Fase 4.
+
+Micros y llamadas: el mismo archivo ya tiene | 26 | LIMITE INFERIOR |, | 27 | LIMITE SUPERIOR |, | 31 | LLAMADA NIVEL 1 |, | 32 | LLAMADA NIVEL 2 |. Si el primer retorno es ese chunk y el solape léxico ya cuenta, no fuerces el segundo retrieve y documenta la dependencia de la Fase 5. Si "micro" no solapa con LIMITE, el camino (b) sí puede pedir el segundo retrieve; el segundo retorno puede traer la tabla de la hoja 2. El primer retorno no se sustituye por un fake de proximidad.
+
+Donde el primer retorno no trae fila explícita con solape, afirma:
+1. build devuelve ruta con el flag en true y un solo pin; con el flag en false, o con cero o dos pines, devuelve nil.
+2. retrieve_chunks se llama dos veces, nunca tres.
+3. El segundo texto es la pregunta más tabla y designacion, y contiene la frase propia (nivel inferior, nivel superior, nivel 1, nivel 2 cuando esas preguntas sí reintentan). No es una lista fija de etiquetas.
+4. Las dos llamadas llevan las mismas entity_s3_uris del pin y force_entity_filter: true. number_of_results del segundo es 3.
+5. Si los dos retornos comparten un chunk_sha256, el merge lo deja una vez.
+6. Los chunks finales son la primera ventana completa más los rescatados.
+7. El hecho de la hoja 2 se afirma solo si el segundo retorno lo trajo. No se afirma 23/24/25/26 contra el extracto real de chunk_p1_2.
+
+Además:
+- Pregunta normal de manual que solo corta :location o :connection, sin BORNE_TERMINAL_PATTERN, label_terms? ni EXACT_LOOKUP_PATTERN: una llamada. "¿Qué elementos aparecen en esa línea?" sigue en una llamada.
+- Cadena de seguridad, redactada sin borne / label / lookup: una llamada. Foso, igual: una llamada.
+- Designador presente en la primera ventana ("¿Qué es H4?" y un chunk con H4): una llamada. El segundo texto, cuando sí corre, contiene el turno crudo y el designador, no solo el designador y no el goal del episodio.
+- Designador ausente (EM4000 V1 obstáculo, EDEL K2 cerrojos exteriores, MR08 serie SCI): dos llamadas como máximo. El segundo texto conserva "obstáculo", "cerrojos exteriores" o "SCI". Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
+- Mapping sin identifier: como máximo un reintento, y solo con la señal explícita de lookup. Si el segundo tampoco trae fila explícita, siguen siendo dos y no hay caída a BedrockRagService#query.
+- PINNED_DOCUMENT_RESULTS sigue en 3. El test de RagRetrievalProfile que lo fija no se toca.
+- QueryEntities: acepta Edel-k2, em4000, t1, h4. Rechaza 24v, 220v, 10a, 1er, 2do, seguridad, falla, tabla, out en minúsculas, y 24 suelto. SCI y OUT en mayúsculas siguen el criterio alfabético actual. borne 24 sigue siendo identifier etiquetado.
+
+Los oráculos 1–6, 13 y 14 de la sección 9 usan el doble fake cuando el designador no está en el primer retorno: el chunk final contiene el hecho y también el resto de la primera ventana. No se llama a Bedrock. El assert no es "el modelo redactó esta frase". Si el primer retorno ya contiene el token (H4, T1, T2 dentro de chunk_p1_2) y por eso no hay segundo retrieve, el test no inventa un primer retorno vacío para hacer pasar el hecho. El probe read-only decide si la Fase 3 queda BLOCKED.
+
+Archivos: app/services/rag/query_entities.rb, app/services/rag/structured_evidence_route.rb, test/services/rag/query_entities_test.rb, test/services/rag/structured_evidence_route_test.rb. app/services/query_orchestrator_service.rb solo si algún test con el flag en true espera build nil para una pregunta de un solo pin que ahora es elegible; el caso flag false sigue en nil. No toques el Sorry de app/services/bedrock_rag_service.rb. No toques ActiveEpisodeTurn, generation.txt, PINNED_DOCUMENT_RESULTS ni el checkbox de la Fase 1.
+
+Probe read-only, obligatorio antes de marcar la Fase 3 COMPLETED. Cuando la Fase 3 está implementada, un script en script/ — al estilo de script/rag_seguridades_recall_probe.rb, que solo llama retrieve_chunks — corre el retrieval real de estos 14 casos, con el mismo pin y la misma decisión de rescate que usaría la ruta. No es un paso opcional y no se sustituye por los fakes de minitest.
+1. EM2000 hidráulico
+2. EM4000 V1
+3. EDEL K2 cerrojos exteriores
+4. EDEL K2 dos embarques
+5. MR08 SCI
+6. H4
+7. Seguridad OUT
+8. Seguridad IN
+9. Micro nivel inferior
+10. Micro nivel superior
+11. Llamada nivel 1
+12. Llamada nivel 2
+13. T1
+14. T2
+- Read-only. Sin generación, sin escritura, sin deploy. No escribe S3, no ingesta, no toca producción, no llama a BedrockRagService#query ni a @generator.query.
+- Cada caso tiene que recuperar evidencia suficiente del hecho de la sección 9. Ver las filas explícitas de chunk_p1_2 no cuenta como evidencia suficiente de la hoja 2.
+- Sale 0 solo si los 14 recuperaron esa evidencia. Sale 1 si falta alguno. No pide interpretación y no se maquilla un caso faltante.
+- No entra en CI. Sí bloquea marcar la Fase 3 como COMPLETED. Con el probe en rojo el estado es BLOCKED. No se deploya la fase como cerrada.
+
+No marques la Fase 3 COMPLETED sin ese probe en verde. Si un caso esperado no recupera evidencia suficiente, el estado es BLOCKED. No maquilles el probe. Si los tests y el probe pasan: commit, marca Fase 3 COMPLETED en Execution State, registra findings materiales, reescribe el prompt de Fase 4 para un chat nuevo. DETENTE. No implementes la Fase 4.
 ```
 
 ### Phase 3
@@ -721,6 +849,7 @@ Tests: pending
 Material findings:
 - `tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt` trae filas explícitas de bornera. Seguridad OUT/IN y presostato no se prueban con un fake de proximidad. Si el rescate no dispara, dependen de la Fase 5.
 - El probe read-only de 14 casos es obligatorio antes de COMPLETED. Evidencia insuficiente deja la fase BLOCKED.
+- La Fase 2 ya cerró la continuidad. Un self-contained llega con `composed` nil. Un elíptico sigue compuesto con el goal vigente y sin identifiers históricos fuera de ese goal. El rescate usa el turno crudo, no ese composed.
 Next phase impact:
 - La Fase 4 juzga el presostato con esas filas explícitas, no con 14/15 como número de dibujo.
 Next phase prompt:

@@ -67,15 +67,20 @@ class HomeController < ApplicationController
 
   private
 
-  # Returns Set<String> of s3_uris currently pinned in the user's web ConversationSession.
-  # Mirrors find_or_create_for: resolves to the SharedSession row when ENABLED, so
-  # checkboxes survive a page refresh in shared-workspace mode.
-  # Empty Set when no session exists yet (first-ever visit before any interaction).
+  # Same session key as ConversationSession.find_or_create_for:
+  # account_id + identifier + channel, and the shared identifier when ENABLED.
+  # A missing or expired row paints no pins. This GET does not destroy the row;
+  # expiry replacement stays in find_or_create_for (ask and pin).
   def pinned_uris_for_current_session
     identifier = SharedSession::ENABLED ? SharedSession::IDENTIFIER : current_user.id.to_s
     channel    = SharedSession::ENABLED ? SharedSession::CHANNEL    : "web"
-    session    = ConversationSession.find_by(identifier: identifier, channel: channel)
-    return Set.new if session.nil?
+    session    = ConversationSession.find_by(
+      account_id: current_account.id,
+      identifier: identifier,
+      channel: channel
+    )
+    return Set.new if session.nil? || session.expired?
+
     Set.new(SessionContextBuilder.entity_s3_uris(session))
   end
 

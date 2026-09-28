@@ -263,7 +263,11 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     pinned_doc = KbDocument.create!(s3_key: "uploads/2026/pinned.pdf", display_name: "Pinned", aliases: [])
     KbDocument.create!(s3_key: "uploads/2026/unpinned.pdf", display_name: "Unpinned", aliases: [])
 
-    session = ConversationSession.find_or_create_for(identifier: users(:one).id.to_s, channel: "web")
+    session = ConversationSession.find_or_create_for(
+      identifier: users(:one).id.to_s,
+      channel: "web",
+      account_id: accounts(:legacy).id
+    )
     session.pin_kb_document!(pinned_doc)
 
     get root_path
@@ -281,7 +285,8 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
       shared_sess = ConversationSession.find_or_create_for(
         identifier: SharedSession::IDENTIFIER,
-        channel:    SharedSession::CHANNEL
+        channel:    SharedSession::CHANNEL,
+        account_id: accounts(:legacy).id
       )
       shared_sess.pin_kb_document!(pinned_doc)
 
@@ -289,6 +294,58 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
       assert_response :ok
       assert_match(/data-doc-id="#{pinned_doc.id}"[^>]*data-selected="true"/, response.body)
     end
+  end
+
+  test 'index does not mark a pin from an expired session and keeps the row' do
+    doc = KbDocument.create!(s3_key: "uploads/2026/seguridades.pdf", display_name: "SEGURIDADES", aliases: [])
+    session = ConversationSession.find_or_create_for(
+      identifier: users(:one).id.to_s,
+      channel: "web",
+      account_id: accounts(:legacy).id
+    )
+    session.pin_kb_document!(doc)
+    session.update!(expires_at: 1.day.ago)
+
+    get root_path
+
+    assert_response :ok
+    assert_match(/data-doc-id="#{doc.id}"[^>]*data-selected="false"/, response.body)
+    assert_no_match(/data-doc-id="#{doc.id}"[^>]*data-selected="true"/, response.body)
+    kept = ConversationSession.find(session.id)
+    assert kept.expired?
+    assert kept.active_entities.present?
+    assert_equal 1, ConversationSession.where(
+      account_id: accounts(:legacy).id,
+      identifier: users(:one).id.to_s,
+      channel: "web"
+    ).count
+  end
+
+  test 'index does not mark a pin stored on another account with the same identifier' do
+    own_doc = KbDocument.create!(s3_key: "uploads/2026/own_pin.pdf", display_name: "OwnPin", aliases: [])
+    other_doc = KbDocument.create!(s3_key: "uploads/2026/other_pin.pdf", display_name: "OtherPin", aliases: [])
+
+    own_session = ConversationSession.find_or_create_for(
+      identifier: users(:one).id.to_s,
+      channel: "web",
+      account_id: accounts(:legacy).id
+    )
+    own_session.pin_kb_document!(own_doc)
+
+    other_session = ConversationSession.find_or_create_for(
+      identifier: users(:one).id.to_s,
+      channel: "web",
+      account_id: accounts(:climb).id
+    )
+    other_session.pin_kb_document!(other_doc)
+
+    get root_path
+
+    assert_response :ok
+    assert_match(/data-doc-id="#{own_doc.id}"[^>]*data-selected="true"/, response.body)
+    assert_match(/data-doc-id="#{other_doc.id}"[^>]*data-selected="false"/, response.body)
+    assert_no_match(/data-doc-id="#{other_doc.id}"[^>]*data-selected="true"/, response.body)
+    assert ConversationSession.exists?(other_session.id)
   end
 
   test 'metrics footer hides cache savings line when no cache_hits' do

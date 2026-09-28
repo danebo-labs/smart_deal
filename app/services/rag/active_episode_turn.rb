@@ -17,6 +17,8 @@ module Rag
     SUBJECT_RE = /\b(revisando|estoy en|estoy con|tengo|equipo|ascensor|elevador|es un|es una|checking)\b/
     FOLLOWUP_RE = /\b(la misma|el mismo|lo mismo|esa|ese|eso|esta|este|esto|ahi|same|that|this|it)\b/
     FOLLOWUP_START_RE = /\A(y|and|pero|sigue|ahora|tambien|still)\b/
+    STRONG_ANAPHORA_RE = /\b(?:la misma|el mismo|lo mismo)\b/
+    WEAK_DEICTIC_RE = /\b(?:esta|este)\b/
     UNKNOWN_RE = /\bno (lo )?(se|sabemos|tengo)\b/
     BRAND_WORD_RE = /\b(marca|fabricante|brand|manufacturer)\b/
     MODEL_WORD_RE = /\b(modelo|model)\b/
@@ -547,12 +549,41 @@ module Rag
       find_brands.any? || designators.any?
     end
 
+    # A question with its own object is self-contained unless a strong
+    # follow-up wins. "esta"/"este" (including normalized "está") yield only
+    # then, and not when the raw turn is safety-critical. "eso" and the rest
+    # of FOLLOWUP_RE stay follow-ups. Short turns still use followup_marker?.
     def self_contained?
       return @self_contained if defined?(@self_contained)
 
-      @self_contained = FollowupQueryRewriter.explicit_question?(@text) &&
-                        !followup_marker? &&
-                        (names_equipment? || @words.size >= 6)
+      @self_contained = own_objective_question? && !followup_blocks_own_objective?
+    end
+
+    def own_objective_question?
+      FollowupQueryRewriter.explicit_question?(@text) &&
+        (names_equipment? || @words.size >= 6)
+    end
+
+    def followup_blocks_own_objective?
+      return true if strong_followup?
+      return false unless followup_marker?
+      return true unless weak_deictics_only?
+      return true if safety_critical_turn?
+
+      false
+    end
+
+    def strong_followup?
+      FOLLOWUP_START_RE.match?(@normalized) || STRONG_ANAPHORA_RE.match?(@normalized)
+    end
+
+    def weak_deictics_only?
+      stripped = @normalized.gsub(WEAK_DEICTIC_RE, " ")
+      !FOLLOWUP_RE.match?(stripped) && !FOLLOWUP_START_RE.match?(stripped)
+    end
+
+    def safety_critical_turn?
+      RagRetrievalProfile.new(question: @text).safety_critical_query?
     end
 
     def elliptical?
@@ -938,8 +969,12 @@ module Rag
       items << Item.new(:manufacturer, manufacturer) if manufacturer && !present_in?(goal_text, visible_turn, manufacturer)
       model = user_known(episode, "model")
       items << Item.new(:model, model) if model && !present_in?(goal_text, visible_turn, model)
+      # Historical user identifiers stay stored. Retrieval repeats one only
+      # when the current goal already states it.
+      goal_source = episode.goal&.dig("text")
       episode.identifiers.each do |identifier|
         next unless identifier["source"] == "user"
+        next unless contains?(goal_source, identifier["value"])
         next if present_in?(goal_text, visible_turn, identifier["value"])
 
         items << Item.new(:identifier, identifier["value"])

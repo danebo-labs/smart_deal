@@ -268,6 +268,110 @@ class Rag::ActiveEpisodeTurnTest < ActiveSupport::TestCase
     assert_equal "Elemont", fact_value(result, "manufacturer")
   end
 
+  test "an H4 question with esta does not inherit the HIDRA episode" do
+    text = "Tengo encendida la luz H4. ¿Qué me está indicando?"
+    prior = episode_state(goal: "41 HIDRA TPR60 MH SUBE", identifiers: %w[HIDRA TPR60 MH])
+    result = classify(text, prior: prior)
+
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_equal text, result.state.dig("goal", "text")
+    assert_not_includes result.composed.to_s, "HIDRA"
+    assert_not_includes result.composed.to_s, "TPR60"
+  end
+
+  test "a timer question with este tablero does not compose the presostato goal" do
+    text = "¿Qué temporizadores tiene este tablero y cómo están configurados?"
+    prior = episode_state(goal: "¿A qué borne corresponde el presostato?")
+    result = classify(text, prior: prior)
+
+    assert_equal :continued_self_contained, result.decision
+    assert_nil result.composed
+    assert_equal text, result.state.dig("goal", "text")
+    assert_not_includes result.composed.to_s, "presostato"
+  end
+
+  test "y para BAJA stays a follow-up and keeps the MH goal" do
+    goal = "Elemont MH, ¿cuál es el relé de SUBE?"
+    text = "¿Y para BAJA cuál es el relé?"
+    result = classify(text, prior: episode_state(goal: goal, manufacturer: "Elemont"))
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal goal, result.state.dig("goal", "text")
+    assert_includes result.composed, "MH"
+    assert_includes result.composed, "SUBE"
+    assert_includes result.composed, text
+  end
+
+  test "Edel-k2 keeps K2 and cerrojos without historical identifiers" do
+    goal = "EDEL K2 cerrojos exteriores"
+    prior = episode_state(goal: goal, identifiers: %w[EM2000 DL4 CTA ALJO K2])
+    result = classify("Edel-k2", prior: prior)
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal goal, result.state.dig("goal", "text")
+    assert_includes result.composed, "K2"
+    assert_includes result.composed, "cerrojos"
+    assert_includes result.composed, "Edel-k2"
+    %w[EM2000 DL4 CTA ALJO].each do |token|
+      assert_not_includes result.composed, token
+    end
+  end
+
+  test "la misma falla still composes onto the current goal" do
+    goal = "Elemont MH, falla en puerta 1: el imán no magnetiza"
+    short = classify("la misma falla", prior: episode_state(goal: goal))
+    long = classify(
+      "¿La misma secuencia aplica al variador del cuarto?",
+      prior: episode_state(goal: goal)
+    )
+
+    assert_equal :continued_elliptical, short.decision
+    assert_equal goal, short.state.dig("goal", "text")
+    assert_includes short.composed, "imán"
+    assert_includes short.composed, "la misma falla"
+
+    assert_equal :continued_elliptical, long.decision
+    assert_includes long.composed, "imán"
+    assert_includes long.composed, "¿La misma secuencia aplica al variador del cuarto?"
+  end
+
+  test "eso stays a follow-up even in a long explicit question" do
+    goal = "Elemont MH con placa CEA15, el imán no magnetiza"
+    text = "¿Cómo soluciono eso si ya cambié la placa?"
+    result = classify(text, prior: episode_state(goal: goal))
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal goal, result.state.dig("goal", "text")
+    assert_includes result.composed, "CEA15"
+    assert_includes result.composed, text
+  end
+
+  test "esta falla stays a follow-up when the turn is safety critical" do
+    goal = "Elemont MH con placa CEA15, el imán no magnetiza"
+    text = "¿Cómo reseteo esta falla si ya cambié el fusible?"
+    result = classify(text, prior: episode_state(goal: goal))
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal goal, result.state.dig("goal", "text")
+    assert_includes result.composed, "CEA15"
+    assert_includes result.composed, text
+
+    defecto = "¿Cómo reviso este defecto si ya cambié el contactor?"
+    defecto_result = classify(defecto, prior: episode_state(goal: goal))
+    assert_equal :continued_elliptical, defecto_result.decision
+    assert_includes defecto_result.composed, "CEA15"
+    assert_includes defecto_result.composed, defecto
+  end
+
+  test "a short este follow-up still composes" do
+    result = classify("¿y este?", prior: episode_state(goal: SPRINGS))
+
+    assert_equal :continued_elliptical, result.decision
+    assert_equal SPRINGS, result.state.dig("goal", "text")
+    assert_includes result.composed, "fijación de cables"
+  end
+
   private
 
   def replay(row)

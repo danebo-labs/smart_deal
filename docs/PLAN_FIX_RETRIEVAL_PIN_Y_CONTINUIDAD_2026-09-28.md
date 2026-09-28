@@ -873,7 +873,7 @@ No marques la Fase 3 COMPLETED sin ese probe en verde. Si un caso esperado no re
 
 ### Phase 3
 Status: COMPLETED
-Commit: see the commit that sets this status
+Commit: 68365a981dc3830237c7cc672cd5129d0081324e
 Tests: PASS
 Material findings:
 - Probe `script/rag_pinned_rescue_probe_2026-09-28.rb` contra el KB de producción, sin generación: 14 hits, 0 phase_3_miss, 0 phase_5_dependency. Rescate en 4, 6, 9, 10, 11 y 12. El resto ya traía el hecho en la primera ventana.

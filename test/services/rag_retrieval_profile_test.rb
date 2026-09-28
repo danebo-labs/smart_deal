@@ -186,10 +186,14 @@ class RagRetrievalProfileTest < ActiveSupport::TestCase
     end
   end
 
-  test "safety and photo guards keep their budgets and prevent live route eligibility" do
+  test "safety budget stays 5 and a digit designator still enters the pinned rescue" do
     safety = RagRetrievalProfile.new(
       entity_sources: [ "document" ],
       question: "Si el LED A100 falla, ¿debo detener el trabajo?"
+    )
+    plain_safety = RagRetrievalProfile.new(
+      entity_sources: [ "document" ],
+      question: "Si el freno falla, ¿debo detener el trabajo?"
     )
     photo = RagRetrievalProfile.new(
       entity_sources: [ "image_upload" ],
@@ -197,7 +201,8 @@ class RagRetrievalProfileTest < ActiveSupport::TestCase
     )
 
     assert_equal RagRetrievalProfile::SAFETY_CRITICAL_RESULTS, safety.number_of_results
-    assert_not route_eligible?(safety, entity_sources: [ "document" ])
+    assert route_eligible?(safety, entity_sources: [ "document" ])
+    assert_not route_eligible?(plain_safety, entity_sources: [ "document" ])
     assert_equal RagRetrievalProfile::PHOTO_RESULTS, photo.number_of_results
     assert_not route_eligible?(photo, entity_sources: [ "image_upload" ])
   end

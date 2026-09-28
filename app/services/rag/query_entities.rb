@@ -24,6 +24,11 @@ module Rag
     # are units, not identifiers.
     IDENTIFIER_SHAPE = /\A[A-Z0-9]+(?:[-._][A-Z0-9]+)*\z/
 
+    # Digits plus a short unit or ordinal suffix. Rejected after the uppercase
+    # fold so 24v, 220v, 10a, 1er and 2do never become identifiers. A letter
+    # before the digit (t1, h4, em4000) does not match.
+    UNIT_OR_ORDINAL = /\A\d+(?:V|A|ER|DO)\z/
+
     # Relation triggers (§4 table). Matched as accent-folded, lowercase substrings.
     RELATION_TRIGGERS = {
       attribution: [ "indica", "corresponde", "señala", "identifica", "a qué serie" ],
@@ -161,16 +166,26 @@ module Rag
     private_class_method :connector_word?
 
     def self.identifier_candidate?(core)
-      return false unless IDENTIFIER_SHAPE.match?(core)
+      folded = core.upcase
+      compact = folded.delete("-._")
+      return false if compact.match?(UNIT_OR_ORDINAL)
+      return false unless folded.match?(IDENTIFIER_SHAPE)
+      return false unless compact.length.between?(2, 12)
 
-      core.delete("-._").length.between?(2, 12)
+      # Uppercase tokens keep the existing shape rule. Mixed or lowercase
+      # tokens enter only with a digit or an admitted separator, so a normal
+      # word does not become an identifier by folding.
+      return true if IDENTIFIER_SHAPE.match?(core)
+
+      core.match?(/\d/) || core.match?(/[-._]/)
     end
     private_class_method :identifier_candidate?
 
     def self.shape_of(core)
-      return :numeric if core.match?(/\A[0-9]+\z/)
-      return :connector if core.match?(/[-._]/)
-      return :alpha if core.match?(/\A[A-Z]+\z/)
+      folded = core.upcase
+      return :numeric if folded.match?(/\A[0-9]+\z/)
+      return :connector if folded.match?(/[-._]/)
+      return :alpha if folded.match?(/\A[A-Z]+\z/)
 
       :alnum
     end

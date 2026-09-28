@@ -104,9 +104,15 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_nil build_route(output_channel: :whatsapp)
     assert_nil build_route(entity_s3_uris: [])
     assert_nil build_route(entity_sources: [ "image_upload" ])
-    assert_nil build_route(question: "¿Qué indica esta señal?")
-    assert_nil build_route(question: "Si falla el LED ABC12, ¿debo detener el trabajo?")
+    assert_nil build_route(question: "¿Dónde está el cuadro de maniobra?")
+    assert_nil build_route(question: "Si el freno falla, ¿debo detener el trabajo?")
     assert_nil build_route(question: "Enumera todas las pruebas del LED ABC12")
+    assert build_route(question: "Si falla el LED ABC12, ¿debo detener el trabajo?")
+    assert_nil build_route(
+      question: "Si falla el LED ABC12, ¿debo detener el trabajo?",
+      entity_s3_uris: [ @source_uri, "s3://test-bucket/other.pdf" ]
+    )
+    assert build_route(question: "¿A qué borne corresponde Seguridad OUT?")
 
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
     assert_nil build_route
@@ -354,7 +360,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal :abstained, outcome.status
     assert_empty outcome.result[:citations]
     assert_empty generator.calls
-    assert_equal 1, rag_service.calls.size
+    assert_equal 2, rag_service.calls.size
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, rag_service.calls.last[:number_of_results]
   end
 
   test "exact designator lookup compacts K1 conflicts without using alias lines" do
@@ -661,7 +668,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       assert_includes outcome.result[:answer], I18n.t("rag.requires_field_verification", locale: :es)
       assert_equal [ 1 ], outcome.result[:answer].scan(/\[(\d+)\]/).flatten.map(&:to_i)
       assert_equal [ 1 ], outcome.result[:citations].pluck(:number)
-      assert_equal 1, rag_service.calls.size
+      assert_equal 2, rag_service.calls.size
     end
   end
 
@@ -693,7 +700,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal raw_answer, off[:answer]
     assert_equal off[:answer].scan(/\[(\d+)\]/), on[:answer].scan(/\[(\d+)\]/)
     assert_equal off[:citations], on[:citations]
-    assert_equal 1, off_service.calls.size
+    assert_equal 2, off_service.calls.size
     assert_equal off_service.calls.size, on_service.calls.size
   end
 
@@ -1368,9 +1375,390 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     end
   end
 
+  test "pinned designator rescue merges one extra retrieve inside the same pin" do
+    assert_equal 3, RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+
+    cases = [
+      {
+        question: "EM2000 hidráulico obstáculo",
+        first: "Familia obstáculo de otra placa.",
+        rescued: "OBSTACULO CONECTORES CN7 Y CN8 EN PLACA EM2000",
+        facts: %w[CN7 CN8],
+        intent: "EM2000",
+        first_k: 3
+      },
+      {
+        question: "EM4000 V1 obstáculo",
+        first: "Obstáculo documentado en otra familia.",
+        rescued: "EM4000 V1 obstáculo conectores XC4 y XC7",
+        facts: %w[XC4 XC7],
+        intent: "EM4000",
+        first_k: 3
+      },
+      {
+        question: "EDEL K2 cerrojos exteriores",
+        first: "Cerrojos de otra placa.",
+        rescued: "EDEL K2 LED serie 40 cerrojos exteriores",
+        facts: [ "serie 40" ],
+        intent: "EDEL K2",
+        first_k: 3
+      },
+      {
+        question: "EDEL K2 dos embarques",
+        first: "Embarques de otra placa.",
+        rescued: "EDEL K2 F1 fotocélula embarque 1 y F2 embarque 2",
+        facts: %w[F1 F2],
+        intent: "EDEL K2",
+        first_k: 3
+      },
+      {
+        question: "Falla la serie SCI del MR08",
+        first: "Falla descrita sin el designador.",
+        rescued: "MR08 serie SCI conectores CN-112 y CN-109",
+        facts: %w[SCI CN-112 CN-109],
+        intent: "SCI",
+        first_k: RagRetrievalProfile::SAFETY_CRITICAL_RESULTS
+      },
+      {
+        question: "Tengo encendida la luz H4. ¿Qué me está indicando?",
+        first: "Otra lámpara del tablero.",
+        rescued: "H4 luz piloto falla de seguridad",
+        facts: [ "luz piloto", "falla de seguridad" ],
+        intent: "H4",
+        first_k: 3
+      },
+      {
+        question: "¿Qué temporizador es T1?",
+        first: "Otro componente del tablero.",
+        rescued: "T1 modo E t < 3 min",
+        facts: [ "modo E", "3 min" ],
+        intent: "T1",
+        first_k: 3
+      },
+      {
+        question: "¿Qué temporizador es T2?",
+        first: "Otro componente del tablero.",
+        rescued: "T2 modo Wu t < 1 s",
+        facts: [ "modo Wu", "1 s" ],
+        intent: "T2",
+        first_k: 3
+      }
+    ]
+
+    cases.each do |example|
+      service = SequencedRagService.new([
+        [ synthetic_chunk(example[:first], rank: 1, sha: "first-#{example[:question].hash}") ],
+        [ synthetic_chunk(example[:rescued], rank: 1, sha: "rescued-#{example[:question].hash}") ]
+      ])
+      generator = FakeGenerator.new("#{example[:rescued]}. [1] [2]")
+      route = build_route(question: example[:question], rag_service: service, generator: generator, expander: FakeExpander.new(nil))
+
+      assert route, example[:question]
+      outcome = route.execute
+      prompt = generator.calls.first[:prompt]
+
+      assert_equal :answered, outcome.status, example[:question]
+      assert_equal 2, service.calls.size, example[:question]
+      assert_equal example[:first_k], service.calls.first[:number_of_results], example[:question]
+      assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, service.calls.last[:number_of_results], example[:question]
+      assert_equal [ @source_uri ], service.calls.first[:entity_s3_uris]
+      assert_equal [ @source_uri ], service.calls.last[:entity_s3_uris]
+      assert_equal true, service.calls.first[:force_entity_filter]
+      assert_equal true, service.calls.last[:force_entity_filter]
+      assert_includes service.calls.last[:question], example[:intent], example[:question]
+      assert_includes prompt, example[:first], example[:question]
+      example[:facts].each { |fact| assert_includes prompt, fact, example[:question] }
+    end
+  end
+
+  test "an elliptical Edel-k2 rescue keeps the current goal and drops historical identifiers" do
+    episode = {
+      "goal" => { "text" => "EDEL K2 cerrojos exteriores" },
+      "identifiers" => [
+        { "value" => "EM2000", "source" => "user" },
+        { "value" => "DL4", "source" => "user" }
+      ]
+    }
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Placa distinta, sin el modelo.", rank: 1, sha: "other-board") ],
+      [ synthetic_chunk("EDEL K2 LED serie 40 cerrojos exteriores", rank: 1, sha: "edel-sheet") ]
+    ])
+    generator = FakeGenerator.new("serie 40. [1] [2]")
+    route = build_route(
+      question: "EM2000 DL4 CTA ALJO\nEDEL K2 cerrojos exteriores\nEdel-k2",
+      raw_question: "Edel-k2",
+      episode: episode,
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    assert route
+    route.execute
+    rescue_query = service.calls.last[:question]
+
+    assert_equal 2, service.calls.size
+    assert_includes rescue_query, "cerrojos exteriores"
+    assert_includes rescue_query, "Edel-k2"
+    %w[EM2000 DL4 CTA ALJO].each { |token| assert_not_includes rescue_query, token }
+    assert_includes generator.calls.first[:prompt], "Placa distinta"
+    assert_includes generator.calls.first[:prompt], "serie 40"
+  end
+
+  test "a self-contained rescue does not prepend the goal when the goal is the turn" do
+    question = "EM4000 V1 obstáculo"
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Otra familia de obstáculo.", rank: 1, sha: "other-obstacle") ],
+      [ synthetic_chunk("EM4000 V1 XC4 XC7", rank: 1, sha: "em4000-sheet") ]
+    ])
+    route = build_route(
+      question: question,
+      raw_question: question,
+      episode: { "goal" => { "text" => question } },
+      rag_service: service,
+      generator: FakeGenerator.new("XC4 XC7. [1] [2]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal "EM4000 V1", service.calls.last[:question]
+    assert_not_includes service.calls.last[:question], "EM2000"
+  end
+
+  test "a designator already in the first window does not retrieve again" do
+    service = FakeRagService.new([ synthetic_chunk("H4 es la luz piloto del tablero.", rank: 1, sha: "h4-present") ])
+    route = build_route(
+      question: "¿Qué es H4?",
+      rag_service: service,
+      generator: FakeGenerator.new("H4 es la luz piloto. [1]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 1, service.calls.size
+    assert_equal RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS, service.calls.first[:number_of_results]
+  end
+
+  test "a missed second designator retrieve does not issue a third" do
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Primera ventana sin el modelo.", rank: 1, sha: "miss-1") ],
+      [ synthetic_chunk("Segunda ventana todavía sin el modelo.", rank: 1, sha: "miss-2") ]
+    ])
+    generator = FakeGenerator.new("Sin el conector en estas páginas. [1]")
+    route = build_route(
+      question: "EM4000 V1 obstáculo",
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    outcome = route.execute
+
+    assert_equal :answered, outcome.status
+    assert_equal 2, service.calls.size
+    assert_includes generator.calls.first[:prompt], "Primera ventana"
+    assert_includes generator.calls.first[:prompt], "Segunda ventana"
+  end
+
+  test "rescue dedupes a chunk that comes back in both windows" do
+    shared = synthetic_chunk("Ventana compartida EM4000.", rank: 1, sha: "shared-sha")
+    rescued = synthetic_chunk("EM4000 V1 XC4", rank: 2, sha: "xc4-sha")
+    service = SequencedRagService.new([ [ shared ], [ shared, rescued ] ])
+    route = build_route(
+      question: "EM4000 V1 obstáculo",
+      rag_service: service,
+      generator: FakeGenerator.new("XC4. [1] [2]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    outcome = route.execute
+    shas = outcome.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+
+    assert_equal 2, service.calls.size
+    assert_equal %w[shared-sha xc4-sha], shas
+  end
+
+  test "a superior label without a borne number does not block the borne question" do
+    service = SequencedRagService.new([
+      [ synthetic_chunk("| MICRO RUEDA NIVEL SUPERIOR | Descripción |", rank: 1, sha: "rueda") ],
+      [ synthetic_chunk("| 31 | Micro nivel superior |", rank: 1, sha: "sheet-2") ]
+    ])
+    route = build_route(
+      question: "¿A qué borne corresponde el micro de nivel superior?",
+      rag_service: service,
+      generator: FakeGenerator.new("Micro nivel superior. [1] [2]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 2, service.calls.size
+    assert_equal "micro de nivel superior", service.calls.last[:question]
+  end
+
+  test "a nivel row without the asked function does not block mapping rescue" do
+    question = "¿A qué borne corresponde la llamada de nivel 1?"
+    service = SequencedRagService.new([
+      [ synthetic_chunk("| 9 | Seguridad Puerta nivel 1 |", rank: 1, sha: "puerta") ],
+      [ synthetic_chunk("| 33 | Llamada nivel 1 |", rank: 1, sha: "sheet-2") ]
+    ])
+    route = build_route(
+      question: question,
+      rag_service: service,
+      generator: FakeGenerator.new("Llamada nivel 1. [1] [2]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 2, service.calls.size
+    assert_equal "llamada de nivel 1", service.calls.last[:question]
+  end
+
+  test "seguridad IN does not cover a Seguridad OUT question" do
+    service = SequencedRagService.new([
+      [ synthetic_chunk("| 23 | SEGURIDAD IN |", rank: 1, sha: "in-row") ],
+      [ synthetic_chunk("| 23 | Seguridad OUT |", rank: 1, sha: "out-row") ]
+    ])
+    route = build_route(
+      question: "¿A qué borne corresponde Seguridad OUT?",
+      rag_service: service,
+      generator: FakeGenerator.new("Seguridad OUT. [1] [2]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 2, service.calls.size
+    assert_equal "Seguridad OUT", service.calls.last[:question]
+  end
+
+  test "mapping lookup rescues once when the first window has no explicit row" do
+    question = "¿A qué borne corresponde el micro de nivel inferior?"
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Descripción general del tablero sin filas.", rank: 1, sha: "prose") ],
+      [ synthetic_chunk("| 30 | MICRO NIVEL INFERIOR |", rank: 1, sha: "sheet-2") ]
+    ])
+    generator = FakeGenerator.new("MICRO NIVEL INFERIOR. [1] [2]")
+    route = build_route(
+      question: question,
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    assert route
+    outcome = route.execute
+    rescue_query = service.calls.last[:question]
+
+    assert_equal 2, service.calls.size
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, service.calls.first[:number_of_results]
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, service.calls.last[:number_of_results]
+    assert_equal [ @source_uri ], service.calls.last[:entity_s3_uris]
+    assert_equal true, service.calls.last[:force_entity_filter]
+    assert_equal "micro de nivel inferior", rescue_query
+    assert_not_includes rescue_query, "Seguridad"
+    assert_includes generator.calls.first[:prompt], "sin filas"
+    assert_includes generator.calls.first[:prompt], "| 30 | MICRO NIVEL INFERIOR |"
+    assert_equal :answered, outcome.status
+  end
+
+  test "chunk_p1_2 explicit rows do not open a second mapping retrieve" do
+    bornera = synthetic_chunk(
+      Rails.root.join("tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt").read,
+      rank: 1,
+      sha: "chunk-p1-2"
+    )
+    cases = {
+      "¿A qué borne corresponde Seguridad OUT?" => [ "| 13 | SEGURIDAD OUT |", "| 22 | SEGURIDAD OUT" ],
+      "¿A qué borne corresponde Seguridad IN?" => [ "| 12 | SEGURIDAD IN |", "| 23 | SEGURIDAD IN" ],
+      "¿A qué borne corresponde el presostato?" => [ "| 14 | PRESOSTATO IN |", "| 15 | PRESOSTATO OUT |", "| 24 | PRESOSTATO IN |", "| 25 | PRESOSTATO OUT |" ],
+      "¿A qué borne corresponde el micro de nivel inferior?" => [ "| 26 | LIMITE INFERIOR |" ],
+      "¿A qué borne corresponde el micro de nivel superior?" => [ "| 27 | LIMITE SUPERIOR |" ],
+      "¿A qué borne corresponde la llamada de nivel 1?" => [ "| 31 | LLAMADA NIVEL 1 |" ],
+      "¿A qué borne corresponde la llamada de nivel 2?" => [ "| 32 | LLAMADA NIVEL 2 |" ]
+    }
+
+    cases.each do |question, rows|
+      service = FakeRagService.new([ bornera ])
+      generator = FakeGenerator.new("Fila del plano. [1]")
+      route = build_route(question: question, rag_service: service, generator: generator, expander: FakeExpander.new(nil))
+
+      assert route, question
+      route.execute
+      prompt = generator.calls.first[:prompt]
+
+      assert_equal 1, service.calls.size, question
+      rows.each { |row| assert_includes prompt, row, question }
+    end
+  end
+
+  test "chunk_p1_2 already contains H4 T1 and T2 so the designator rescue does not run" do
+    bornera = synthetic_chunk(
+      Rails.root.join("tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt").read,
+      rank: 1,
+      sha: "chunk-p1-2"
+    )
+    {
+      "Tengo encendida la luz H4. ¿Qué me está indicando?" => "H4: Lámpara",
+      "¿Qué es T1?" => "T1: Transformador",
+      "¿Qué es T2?" => "T2: Transformador"
+    }.each do |question, marker|
+      service = FakeRagService.new([ bornera ])
+      route = build_route(
+        question: question,
+        rag_service: service,
+        generator: FakeGenerator.new("#{marker}. [1]"),
+        expander: FakeExpander.new(nil)
+      )
+
+      assert route, question
+      route.execute
+
+      assert_equal 1, service.calls.size, question
+    end
+  end
+
+  test "ordinary manual questions do not enter the pinned rescue" do
+    [
+      "¿Dónde está el cuadro de maniobra?",
+      "¿Qué elementos aparecen en esa línea?",
+      "¿Cómo reviso la cadena de seguridad?",
+      "¿Cómo se ilumina el foso?",
+      "Micro nivel inferior"
+    ].each do |question|
+      assert_nil build_route(question: question), question
+    end
+  end
+
+  test "a mapping question with the flag off or with two pins does not build" do
+    question = "¿A qué borne corresponde Seguridad OUT?"
+
+    assert_nil build_route(question: question, entity_s3_uris: [])
+    assert_nil build_route(question: question, entity_s3_uris: [ @source_uri, "s3://test-bucket/other.pdf" ])
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    assert_nil build_route(question: question)
+  end
+
+  class SequencedRagService
+    attr_reader :calls
+
+    def initialize(batches)
+      @batches = batches
+      @calls = []
+    end
+
+    def retrieve_chunks(question, **kwargs)
+      @calls << { question: question, **kwargs }
+      { chunks: @batches.fetch(@calls.size - 1, @batches.last), retrieval_trace: {} }
+    end
+  end
+
   def build_route(question: "¿Qué indica el LED ABC12?", entity_s3_uris: [ @source_uri ],
                   entity_sources: [ "document" ], output_channel: :web, rag_service: nil,
-                  generator: nil, expander: nil)
+                  generator: nil, expander: nil, episode: nil, raw_question: nil)
     Rag::StructuredEvidenceRoute.build(
       question: question,
       account: @account,
@@ -1381,7 +1769,9 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       output_channel: output_channel,
       rag_service: rag_service,
       generator: generator,
-      expander: expander
+      expander: expander,
+      episode: episode,
+      raw_question: raw_question
     )
   end
 
@@ -1392,7 +1782,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       .to_h
       .except(:retrieval_ms, :expansion_ms, :local_ms, :generation_ms)
 
-    result.except(:retrieval_trace, :correlation_id).merge(structured_route: timings)
+    result.except(:retrieval_trace, :correlation_id, :retrieve_ms, :generation_ms).merge(structured_route: timings)
   end
 
   def route_for_selection(question)

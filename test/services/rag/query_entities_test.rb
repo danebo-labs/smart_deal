@@ -130,6 +130,31 @@ class Rag::QueryEntitiesTest < ActiveSupport::TestCase
     assert_not Rag::QueryEntities.label_terms?("¿Qué información técnica documenta el manual?")
   end
 
+  test "mixed and lowercase designators fold without accepting units or ordinals" do
+    accepted = {
+      "Edel-k2" => [ "EDELK2", :connector ],
+      "em4000" => [ "EM4000", :alnum ],
+      "t1" => [ "T1", :alnum ],
+      "h4" => [ "H4", :alnum ]
+    }
+    accepted.each do |token, expected|
+      identifier = Rag::QueryEntities.identifiers(token).sole
+      assert_equal expected, [ identifier.canonical, identifier.shape ], token
+      assert_equal token, identifier.raw
+    end
+
+    %w[24v 220v 10a 1er 2do 24V 1ER seguridad falla tabla out sci].each do |token|
+      assert_empty Rag::QueryEntities.identifiers(token), token
+    end
+
+    assert_equal %w[SCI], Rag::QueryEntities.identifiers("SCI").map(&:canonical)
+    assert_equal %w[OUT], Rag::QueryEntities.identifiers("OUT").map(&:canonical)
+    assert_empty Rag::QueryEntities.identifiers("24")
+    labelled = Rag::QueryEntities.identifiers("borne 24").select { |identifier| identifier.shape == :numeric }
+    assert_equal [ "24" ], labelled.map(&:canonical)
+    assert labelled.all? { |identifier| identifier.position == :labelled }
+  end
+
   test "identifier adjacency semantics remain unchanged" do
     cases = {
       "LED documenta L9" => [ [ "L9", :alnum, :bare ] ],

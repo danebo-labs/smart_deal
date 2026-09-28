@@ -166,6 +166,7 @@ module RagQueryConcern
 
     result = QueryOrchestratorService.new(
       effective_question,
+      raw_question:        question,
       images:              images,
       documents:           documents,
       document_uids:       document_uids,

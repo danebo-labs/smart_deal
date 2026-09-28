@@ -1,12 +1,15 @@
 # frozen_string_literal: true
 
+require "set"
+
 module Rag
-  # Live single-retrieve path for pinned, structured mapping questions.
+  # Pinned structured mapping, plus at most one extra retrieve inside the
+  # same document pin before generation.
   #
   # Flow: one tenant/document-filtered Retrieve → local section-neighbor repair
-  # → one direct generation over the assembled evidence. Divider chunks are
-  # replaced by an authorized same-section neighbor, so the generator receives
-  # at most STRUCTURED_MAPPING_RESULTS chunks.
+  # → if the designator or the explicit mapping row is still missing, one more
+  # Retrieve on the same URIs → one direct generation over the merged evidence.
+  # Divider chunks are replaced by an authorized same-section neighbor.
   class StructuredEvidenceRoute
     GENERATION_MODE = "structured_evidence_route"
     MAX_GENERATION_CHUNKS = Rag::EvidenceCandidateSelector::MAX_CONTEXTS
@@ -21,11 +24,16 @@ module Rag
     # :unavailable — no Retrieve was consumed (ineligible, or Retrieve itself
     #                raised). The existing cascade may run.
     Outcome = Data.define(:status, :result)
+    MAPPING_FRAME = /\A¿?\s*a\s+qu[eé]\s+(?:borne|terminal)\s+corresponde(?:\s+(?:el|la|los|las))?\s+/i
+    MAPPING_ANCHORS = %w[inferior superior llamad seguridad presostat].freeze
+    MAPPING_RELATIONS = Set[:connection, :location, :attribution].freeze
+
+    attr_reader :retrieval_report
 
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale:, output_channel:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
-                   generator: nil, expander: nil, episode: nil)
+                   generator: nil, expander: nil, episode: nil, raw_question: nil)
       profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
       return nil unless eligible?(
         profile: profile,
@@ -48,22 +56,66 @@ module Rag
         rag_service: rag_service,
         generator: generator,
         expander: expander,
-        episode: episode
+        episode: episode,
+        raw_question: raw_question
       )
     end
 
     def self.eligible?(profile:, entity_s3_uris:, entity_sources:, output_channel:)
-      Rag::StructuredEvidenceRouteFlag.enabled? &&
-        output_channel.to_sym == :web &&
-        Array(entity_s3_uris).any? &&
-        Array(entity_sources).include?("document") &&
-        (profile.structured_mapping_query? || exact_designator_lookup?(profile, entity_s3_uris, output_channel)) &&
-        !profile.safety_critical_query? &&
-        !profile.exhaustive_query?
+      return false unless Rag::StructuredEvidenceRouteFlag.enabled?
+      return false unless output_channel.to_sym == :web
+      return false unless Array(entity_sources).include?("document")
+
+      uris = Array(entity_s3_uris).map(&:to_s).uniq
+      return false if uris.empty?
+      return false if profile.exhaustive_query?
+
+      legacy = !profile.safety_critical_query? &&
+        (profile.structured_mapping_query? || exact_designator_lookup?(profile, uris, output_channel))
+      legacy || single_document_rescue?(profile, uris)
     rescue NoMethodError
       false
     end
     private_class_method :eligible?
+
+    def self.single_document_rescue?(profile, uris)
+      return false unless uris.size == 1
+
+      question = profile_question(profile)
+      return false if question.match?(RagRetrievalProfile::COMPARATIVE_PATTERN)
+
+      digit_designator_question?(question) || mapping_lookup_question?(profile, question)
+    end
+    private_class_method :single_document_rescue?
+
+    def self.digit_designator_question?(question)
+      Rag::QueryEntities.analyze(question).identifiers.any? { |identifier| digit_designator?(identifier) }
+    end
+    private_class_method :digit_designator_question?
+
+    # Same criterion as RagRetrievalProfile#designator?: not numeric, canonical has a digit.
+    def self.digit_designator?(identifier)
+      identifier.shape != :numeric && identifier.canonical.match?(/\d/)
+    end
+    private_class_method :digit_designator?
+
+    def self.mapping_lookup_question?(profile, question)
+      return false if profile.safety_critical_query?
+      return false if digit_designator_question?(question)
+
+      relations = Rag::QueryEntities.requested_relation(question)
+      return false if (relations & MAPPING_RELATIONS).empty?
+
+      question.match?(RagRetrievalProfile::BORNE_TERMINAL_PATTERN) ||
+        Rag::QueryEntities.label_terms?(question) ||
+        question.match?(RagRetrievalProfile::EXACT_LOOKUP_PATTERN)
+    end
+    private_class_method :mapping_lookup_question?
+
+    def self.profile_question(profile)
+      profile.instance_variable_get(:@question).to_s
+    end
+    private_class_method :profile_question
 
     def self.exact_designator_lookup?(profile, entity_s3_uris, output_channel)
       profile.pinned_exact_designator_lookup?(
@@ -76,8 +128,10 @@ module Rag
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
-                   generator: nil, expander: nil, episode: nil, route_taken: nil)
+                   generator: nil, expander: nil, episode: nil, route_taken: nil,
+                   raw_question: nil)
       @question = question.to_s
+      @raw_question = raw_question.presence || @question
       @account = account
       @entity_s3_uris = Array(entity_s3_uris)
       @entity_sources = Array(entity_sources)
@@ -92,6 +146,8 @@ module Rag
       @expander = expander || Rag::SectionNeighborExpander.new
       @episode = episode
       @route_taken = route_taken
+      @preserve_rescue_window = false
+      @retrieval_report = { queries: [], rescued: false, retrieve_count: 0 }
       @citation_processor = Bedrock::CitationProcessor.new
       @ambiguity = nil
       @exact_lookup = false
@@ -99,26 +155,45 @@ module Rag
 
     def execute
       retrieval_started = monotonic_now
-      retrieval =
-        begin
-          @rag_service.retrieve_chunks(
-            @question,
-            entity_s3_uris: @entity_s3_uris,
-            entity_sources: @entity_sources,
-            force_entity_filter: @force_entity_filter,
-            number_of_results: RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS,
-            account_id: @account_id,
-            correlation_id: @correlation_id
-          )
-        rescue BedrockRagService::BedrockServiceError => e
-          Rails.logger.warn("Rag::StructuredEvidenceRoute: AWS path failed — #{e.message}")
-          return Outcome.new(status: :unavailable, result: nil)
-        rescue StandardError => e
-          Rails.logger.warn("Rag::StructuredEvidenceRoute: failed — #{e.class}: #{e.message}")
-          return Outcome.new(status: :unavailable, result: nil)
-        end
+      retrieval = pinned_retrieval
+      return retrieval if retrieval.is_a?(Outcome)
 
-      complete_from_retrieval(retrieval, retrieval_ms: elapsed_ms(retrieval_started))
+      complete_from_retrieval(
+        retrieval,
+        retrieval_ms: elapsed_ms(retrieval_started),
+        preexpanded: true,
+        preexpanded_expansions: @preexpanded_expansions
+      )
+    end
+
+    # Retrieval only. The probe and #execute share this path. It does not generate.
+    def pinned_retrieval
+      @retrieval_report = { queries: [], rescued: false, retrieve_count: 0, mode: nil }
+      @preserve_rescue_window = false
+      first = fetch_chunks(@question, number_of_results: initial_result_count, force: @force_entity_filter)
+      return unavailable_outcome(first) if first.is_a?(Symbol)
+
+      expanded, expansions = expand_dividers(first[:chunks])
+      mode = rescue_mode
+      @retrieval_report[:mode] = mode
+      query = rescue_query(mode)
+      if mode && query && !rescue_covered?(expanded, mode) && !same_retrieval_query?(query, @question)
+        extra = fetch_chunks(
+          query,
+          number_of_results: RagRetrievalProfile::PINNED_DOCUMENT_RESULTS,
+          force: true
+        )
+        if extra.is_a?(Hash)
+          extra_expanded, extra_expansions = expand_dividers(extra[:chunks])
+          expanded = merge_chunks(expanded, extra_expanded)
+          expansions += extra_expansions
+          @preserve_rescue_window = true
+          @retrieval_report[:rescued] = true
+        end
+      end
+
+      @preexpanded_expansions = expansions
+      first.merge(chunks: expanded)
     end
 
     # Everything after the Retrieve, so a caller that already spent the turn's
@@ -132,7 +207,7 @@ module Rag
     #
     # Never returns :unavailable: the Retrieve is already consumed by definition,
     # so every failure below abstains rather than letting a cascade re-retrieve.
-    def complete_from_retrieval(retrieval, retrieval_ms: 0)
+    def complete_from_retrieval(retrieval, retrieval_ms: 0, preexpanded: false, preexpanded_expansions: nil)
       expansion_ms = 0
       local_before_generation_ms = 0
       generation_ms = 0
@@ -144,9 +219,14 @@ module Rag
       attribution = nil
 
       expansion_started = monotonic_now
-      expanded_chunks, expansions = expand_dividers(retrieval[:chunks])
-      expanded_chunks = scope_identity(expanded_chunks)
-      expansion_ms = elapsed_ms(expansion_started)
+      if preexpanded
+        expanded_chunks = scope_identity(retrieval[:chunks])
+        expansions = Array(preexpanded_expansions)
+      else
+        expanded_chunks, expansions = expand_dividers(retrieval[:chunks])
+        expanded_chunks = scope_identity(expanded_chunks)
+        expansion_ms = elapsed_ms(expansion_started)
+      end
       if expanded_chunks.empty?
         return abstained_outcome(
           reason: :empty_evidence,
@@ -163,7 +243,9 @@ module Rag
       local_started = monotonic_now
       @ambiguity = detect_family_ambiguity(expanded_chunks)
       @exact_lookup = exact_designator_lookup?
-      chunks = if @exact_lookup
+      chunks = if @preserve_rescue_window
+        expanded_chunks
+      elsif @exact_lookup
         compact_designator_chunks(expanded_chunks).presence || begin
           @exact_lookup = false
           select_generation_chunks(expanded_chunks, ambiguity: @ambiguity)
@@ -435,6 +517,224 @@ module Rag
       @question_analysis ||= Rag::QueryEntities.analyze(@question)
     end
 
+    def unavailable_outcome(failure)
+      if failure == :aws_failure
+        Outcome.new(status: :unavailable, result: nil)
+      else
+        Outcome.new(status: :unavailable, result: nil)
+      end
+    end
+
+    def fetch_chunks(text, number_of_results:, force:)
+      @rag_service.retrieve_chunks(
+        text,
+        entity_s3_uris: @entity_s3_uris,
+        entity_sources: @entity_sources,
+        force_entity_filter: force,
+        number_of_results: number_of_results,
+        account_id: @account_id,
+        correlation_id: @correlation_id
+      ).tap do
+        @retrieval_report[:queries] << { text: text, number_of_results: number_of_results, force_entity_filter: force }
+        @retrieval_report[:retrieve_count] += 1
+      end
+    rescue BedrockRagService::BedrockServiceError => e
+      Rails.logger.warn("Rag::StructuredEvidenceRoute: AWS path failed — #{e.message}")
+      :aws_failure
+    rescue StandardError => e
+      Rails.logger.warn("Rag::StructuredEvidenceRoute: failed — #{e.class}: #{e.message}")
+      :failure
+    end
+
+    def initial_result_count
+      profile = retrieval_profile
+      legacy = !profile.safety_critical_query? &&
+        !profile.exhaustive_query? &&
+        (profile.structured_mapping_query? || exact_designator_lookup?)
+      legacy ? RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS : profile.number_of_results
+    end
+
+    def retrieval_profile
+      @retrieval_profile ||= RagRetrievalProfile.new(entity_sources: @entity_sources, question: @question)
+    end
+
+    def rescue_mode
+      return nil unless single_document_pin?
+      return nil if @question.match?(RagRetrievalProfile::COMPARATIVE_PATTERN)
+      return nil if retrieval_profile.exhaustive_query?
+
+      return :designator if self.class.send(:digit_designator_question?, rescue_base_text)
+      return :mapping if self.class.send(:mapping_lookup_question?, retrieval_profile, @raw_question)
+
+      nil
+    end
+
+    def single_document_pin?
+      @entity_s3_uris.map(&:to_s).uniq.size == 1 && @entity_sources.include?("document")
+    end
+
+    def rescue_covered?(chunks, mode)
+      case mode
+      when :designator
+        uncovered_designators(chunks).empty?
+      when :mapping
+        explicit_row_covered?(chunks)
+      else
+        true
+      end
+    end
+
+    def rescue_query(mode)
+      case mode
+      when :designator
+        designator_rescue_query
+      when :mapping
+        mapping_rescue_query
+      end
+    end
+
+    def same_retrieval_query?(left, right)
+      left.to_s.squish.casecmp?(right.to_s.squish)
+    end
+
+    # Self-contained: the raw turn. Valid elliptical follow-up: the current goal
+    # plus the raw turn. Episode identifiers and the composed string are not read.
+    def rescue_base_text
+      raw = @raw_question.to_s.strip
+      goal = current_goal_text
+      return raw if goal.blank?
+      return raw if goal.casecmp?(raw)
+      return raw if raw.downcase.include?(goal.downcase)
+
+      "#{goal}\n#{raw}"
+    end
+
+    def current_goal_text
+      episode = @episode
+      return "" if episode.nil?
+
+      goal = if episode.respond_to?(:goal) && !episode.is_a?(Hash)
+        episode.goal
+      elsif episode.is_a?(Hash)
+        episode["goal"] || episode[:goal]
+      end
+      return "" unless goal.is_a?(Hash)
+
+      (goal["text"] || goal[:text]).to_s.strip
+    end
+
+    # Elliptical: goal plus the raw turn, so the current intent stays.
+    # Self-contained: the designator span. Repeating the whole turn returns
+    # the same top-3 that already missed the designator.
+    def designator_rescue_query
+      base = rescue_base_text
+      return base if base.include?("\n")
+
+      designator_span(base).presence || base
+    end
+
+    def designator_span(text)
+      identifiers = Rag::QueryEntities.analyze(text).identifiers
+      digits = identifiers.select { |identifier| self.class.send(:digit_designator?, identifier) }
+      return nil if digits.empty?
+
+      indexed = identifiers.filter_map do |identifier|
+        index = text.index(identifier.raw)
+        [ index, identifier ] if index
+      end
+      return nil if indexed.empty?
+
+      last_digit = digits.max_by { |identifier| text.index(identifier.raw) || -1 }
+      finish = text.index(last_digit.raw) + last_digit.raw.length
+      first_index = indexed.select do |index, identifier|
+        index < finish && (digits.include?(identifier) || identifier.shape == :alpha)
+      end.map(&:first).min
+      text[first_index...finish].strip
+    end
+
+    # The asked phrase, without the interrogative frame. "tabla designacion"
+    # concatenated onto that phrase pushes the designation sheet out of k=3.
+    def mapping_rescue_query
+      phrase = rescue_base_text.sub(MAPPING_FRAME, "").strip.sub(/[?¿]+\z/, "")
+      phrase.presence || rescue_base_text
+    end
+
+    def digit_designators(text)
+      Rag::QueryEntities.analyze(text).identifiers.select { |identifier| self.class.send(:digit_designator?, identifier) }
+    end
+
+    def uncovered_designators(chunks)
+      digit_designators(rescue_base_text).reject do |identifier|
+        Array(chunks).any? { |chunk| identifier_present?(chunk[:content], identifier.canonical) }
+      end
+    end
+
+    def mapping_lookup?
+      rescue_mode == :mapping
+    end
+
+    def mapping_generation_chunks(chunks)
+      preferred = Array(chunks).select { |chunk| explicit_row_covered?([ chunk ]) }
+      (preferred.presence || Array(chunks)).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS)
+    end
+
+    def explicit_row_covered?(chunks)
+      needles = mapping_overlap_tokens(rescue_base_text)
+      return false if needles.empty?
+
+      anchors = (needles & MAPPING_ANCHORS).to_a
+      shorts = needles.select { |token| token.length <= 3 }.to_a
+      borne = rescue_base_text.match?(RagRetrievalProfile::BORNE_TERMINAL_PATTERN)
+
+      Array(chunks).any? do |chunk|
+        explicit_lines(chunk[:content]).any? do |line|
+          overlap = (mapping_overlap_tokens(line) & needles).to_a
+          next false if overlap.empty?
+          next false if borne && !line.match?(/\d/)
+          next false if anchors.any? && (anchors & overlap).empty?
+          next false if shorts.any? && (shorts & overlap).empty?
+
+          true
+        end
+      end
+    end
+
+    def explicit_lines(content)
+      content.to_s.lines.map(&:strip).select { |line| explicit_assignment_line?(line) }
+    end
+
+    def explicit_assignment_line?(line)
+      return false if line.blank?
+      return false if line.match?(/\A[\s|:\-]+\z/)
+      return false if line.match?(/\A\[(?:DOCUMENT|SOURCE_URI|SEARCH_ALIASES):/i)
+      return false if line.match?(/\A(ACTION|EVIDENCE|EXPECTED_RESULT|SOURCE_SECTION|RECORD_ID|RECORD_TYPE|FIELD_RECORD|END_FIELD_RECORD|UNCERTAINTY)\b/i)
+
+      line.match?(/\A\s*\|(?:[^|\n]*\|){2,}/) ||
+        line.match?(/\A\s*[-*]?\s*[A-Za-z0-9][A-Za-z0-9._-]{0,12}\s*\|\s*\S/)
+    end
+
+    def mapping_overlap_tokens(text)
+      I18n.transliterate(text.to_s).scan(/[[:alnum:]]+/).filter_map do |token|
+        if token.length >= 4
+          folded = token.downcase
+          folded.length > 5 ? folded.sub(/[ao]\z/, "") : folded
+        elsif token.length >= 2 && (token.match?(/\d/) || token.match?(/\A[A-Z0-9]+\z/))
+          token.downcase
+        end
+      end.to_set
+    end
+
+    def merge_chunks(first, rescued)
+      seen = {}
+      (Array(first) + Array(rescued)).each_with_object([]) do |chunk, merged|
+        key = chunk[:chunk_sha256]
+        next if key.present? && seen[key]
+
+        seen[key] = true if key.present?
+        merged << chunk
+      end
+    end
+
     # The widened budget is for recall, not for widening the generation window.
     # Greedily cover the strongest identifier signal from the question, choosing
     # the chunk with the most identifier coverage and lexical agreement.
@@ -449,7 +749,7 @@ module Rag
       # order, which would hand the generator the same top-3 the widened recall exists
       # to get past. Bare numerics never reach here (QueryEntities drops them).
       covering = labelled.presence || analysis.identifiers
-      return Array(chunks).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS) if covering.empty?
+      return mapping_generation_chunks(chunks) if covering.empty? && mapping_lookup?
 
       uncovered = covering.map(&:canonical).to_set
       selected = []

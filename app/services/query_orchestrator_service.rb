@@ -47,8 +47,9 @@ class QueryOrchestratorService
   # @param locale [String, nil] ISO 639-1 locale for image summary generation ("es", "en")
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, auto_scope_filter: false, locale: nil,
-                 user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil)
+                 user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil, raw_question: nil)
     @query = query
+    @raw_question = raw_question
     @images = images || []
     @documents = documents || []
     @document_uids = Array(document_uids)
@@ -235,7 +236,8 @@ class QueryOrchestratorService
         user_id: @user_id,
         conversation_session_id: @conversation_session_id,
         correlation_id: @correlation_id,
-        episode: episode_for_scope
+        episode: episode_for_scope,
+        raw_question: @raw_question
       )
       outcome = structured&.execute
       if outcome&.status == :answered || outcome&.status == :abstained

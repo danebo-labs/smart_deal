@@ -206,7 +206,12 @@ Un alfabético puro no es designador de rescate. El designador del camino (a) es
 
 Entra si la pregunta tiene al menos un designador con dígito, aunque sea safety-critical. Esa es la única excepción a `eligible?`'s `!safety_critical_query?`. `pinned_exact_designator_lookup?` no se reescribe: otros llamadores siguen viéndolo en false cuando hay `falla`. Sin designador con dígito, el tope 5 actual se queda y este camino no corre.
 
-Después del primer retrieve, si ningún chunk cumple `QueryEntities.identifier_present?` para ese designador, un solo `retrieve_chunks` más. El texto de ese retrieve es el turno crudo del técnico más los designadores con dígito (si hay varios, unidos por espacio, añadidos cuando el turno crudo no los trae ya). Tiene que conservar la intención de este turno: «EDEL K2 cerrojos exteriores», «MR08 serie SCI», «EM4000 V1 obstáculo». No usa solo el designador. No usa el texto compuesto del episodio, ni el goal, ni identifiers históricos que el turno crudo no dice. Hoy `StructuredEvidenceRoute` recibe `@query`, que puede ser ya el `effective_question` compuesto. Si ese string no es el turno crudo, el turno crudo entra como argumento. Eso no abre una rama nueva en `QueryOrchestratorService`. Si el primero ya contiene el designador, no hay segundo retrieve.
+Después del primer retrieve, si ningún chunk cumple `QueryEntities.identifier_present?` para ese designador, un solo `retrieve_chunks` más. El primer retrieve sigue usando la pregunta vigente. El segundo no la repite: la misma cadena devuelve el mismo top-3.
+
+- Turno self-contained: el segundo texto es el tramo de designadores, desde el primer identifier alfabético o con dígito hasta el último designador con dígito. «EDEL K2 dos embarques» reintenta «EDEL K2». «Tengo encendida la luz H4…» reintenta «H4». «Falla la serie SCI del MR08» reintenta «SCI del MR08». El probe midió que «EDEL K2» y «H4» entran en el top-3 de la página que el turno completo no alcanza.
+- Follow-up elíptico válido: el segundo texto es el goal vigente más el turno crudo. «Edel-k2» después de «EDEL K2 cerrojos exteriores» conserva «cerrojos exteriores». No se añaden identifiers históricos del episodio que no estén ya en ese goal. No se usa el `composed` como fuente directa. El goal se lee de `episode.goal`. El turno crudo entra como argumento cuando `@query` ya es el effective compuesto. Eso no abre una rama nueva en `QueryOrchestratorService`.
+
+Si el primero ya contiene el designador, no hay segundo retrieve.
 
 La generación recibe la primera ventana completa más los chunks rescatados, únicos por `chunk_sha256` (el mismo uniq que `expand_dividers`). No se recorta esa evidencia a los chunks que contienen el designador. El cover greedy de `select_generation_chunks` no es, en este rescate, el filtro que tira el resto de la primera ventana. `MAX_GENERATION_CHUNKS` (5) no autoriza a dejar fuera esa ventana: se conserva entera y se le agregan los rescatados que no estaban. Un miss del segundo retrieve no dispara un tercero.
 
@@ -221,7 +226,9 @@ Hace falta las dos cosas:
 
 Una pregunta normal de manual que solo dispara «dónde» o «conector» no abre el segundo retrieve. No entra si `safety_critical_query?`, `exhaustive_query?` o `COMPARATIVE_PATTERN`. «¿A qué borne corresponde Seguridad OUT?» entra: `borne` es `BORNE_TERMINAL_PATTERN` y `corresponde` corta `:attribution`. «Micro nivel inferior» a secas, sin borne / label / lookup, no entra: no hay regla para la palabra Micro.
 
-Después del primer retrieve, si ningún chunk trae una fila explícita con solape léxico con la pregunta, un solo `retrieve_chunks` más. El texto de ese retrieve es la pregunta más una orientación fija de tabla, la misma para todas: las palabras `tabla` y `designacion`, que `material_key` ya trata como lenguaje de tabla. No es un mapa de etiquetas. La frase de la pregunta viaja entera, para que `OUT`, `IN` y `nivel 1` no se pierdan en `lexical_tokens` (ahí un token de menos de 4 letras se tira).
+Después del primer retrieve, si ningún chunk trae una fila de tabla con solape real, un solo `retrieve_chunks` más. Una fila es `| celda | celda |` o `TOKEN | resto`. No cuenta `SOURCE_SECTION`, un margen ni una nota. El solape exige el ancla de la pregunta (`inferior`, `superior`, `llamada`, `seguridad`, `presostato`) y, si hay un token corto en mayúsculas (`OUT`, `IN`), ese token. Si la pregunta pide un borne, la fila tiene que traer un número. «nivel» o «seguridad» solos no tapan el rescate: `OUT` no empata con `IN`, una fila de «Chapa nivel» no tapa «llamada de nivel 1», y «MICRO RUEDA NIVEL SUPERIOR» sin número no tapa el borne 31.
+
+El segundo texto es la frase pedida, sin el marco «¿A qué borne corresponde…». El probe midió que concatenar `tabla designacion` a «llamada nivel 1» saca la hoja 2 del top-3, y que «micro de nivel inferior», «llamada de nivel 1» y «Seguridad OUT» sí la traen. `OUT`, `IN` y `nivel 1` siguen en esa frase.
 
 Si el primer retrieve ya trae esa fila, no hay segundo.
 
@@ -280,8 +287,8 @@ Además:
 - Pregunta normal de manual que solo corta `:location` o `:connection`, sin `BORNE_TERMINAL_PATTERN`, `label_terms?` ni `EXACT_LOOKUP_PATTERN`: una llamada. «¿Qué elementos aparecen en esa línea?» sigue en una llamada.
 - Cadena de seguridad, redactada sin `borne` / label / lookup: una llamada.
 - Foso, igual: una llamada.
-- Designador presente en la primera ventana (`¿Qué es H4?` y un chunk con `H4`): una llamada. El segundo texto, cuando sí corre, contiene el turno crudo y el designador, no solo el designador y no el goal del episodio.
-- Designador ausente (`EM4000 V1 obstáculo`, `EDEL K2 cerrojos exteriores`, `MR08 serie SCI`): dos llamadas como máximo. El segundo texto conserva «obstáculo», «cerrojos exteriores» o «SCI». Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
+- Designador presente en la primera ventana (`¿Qué es H4?` y un chunk con `H4`): una llamada. En un self-contained cuyo primer retrieve no trae el designador, el segundo texto es el tramo de designadores (`EDEL K2`, `H4`, `SCI del MR08`), no la repetición del turno. En un elíptico válido contiene el goal vigente y el turno crudo, no el composed ni identifiers históricos fuera de ese goal.
+- Designador ausente (`EM4000 V1 obstáculo`, `EDEL K2 cerrojos exteriores`, `EDEL K2 dos embarques`, `MR08 serie SCI`): dos llamadas como máximo. El segundo texto del self-contained es `EM4000 V1`, `EDEL K2` o `SCI del MR08`. Un follow-up elíptico «Edel-k2» conserva el goal vigente «cerrojos exteriores». Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
 - Mapping sin identifier: como máximo un reintento, y solo con la señal explícita de lookup. Si el segundo tampoco trae fila explícita, siguen siendo dos y no hay caída a `BedrockRagService#query`.
 - `PINNED_DOCUMENT_RESULTS` sigue en 3. El test de `RagRetrievalProfile` que lo fija no se toca.
 - `QueryEntities`: acepta `Edel-k2`, `em4000`, `t1`, `h4`. Rechaza `24v`, `220v`, `10a`, `1er`, `2do`, `seguridad`, `falla`, `tabla`, `out` en minúsculas, y `24` suelto. `SCI` y `OUT` en mayúsculas siguen el criterio alfabético actual. `borne 24` sigue siendo identifier etiquetado.
@@ -380,7 +387,7 @@ Conservar, con el mismo fixture de una sola llamada, los chunks que ya ganaron h
 - `PINNED_DOCUMENT_RESULTS` permanece 3. El test de perfil que lo fija sigue pasando.
 - Ningún turno de los casos buenos de la sección 9 pasa de una llamada a `retrieve_chunks` en el fixture.
 - El segundo retrieve aparece solo en camino (a) cuando el primero no contiene el designador, y en camino (b) cuando el primero no trae fila explícita con solape. Cero en una pregunta normal, en la cadena de seguridad y en el foso. Nunca tres. Nunca otra URI.
-- El segundo retrieve del camino (a) usa el turno crudo más el designador, dentro del mismo pin. La generación recibe la primera ventana completa y los chunks rescatados.
+- El segundo retrieve del camino (a), dentro del mismo pin, usa el turno crudo más el designador si el turno es self-contained, y el goal vigente más el turno crudo más el designador si es un elíptico válido. No reintroduce identifiers históricos ajenos a ese goal ni usa el composed como fuente. La generación recibe la primera ventana completa y los chunks rescatados.
 - Fase 3 no se marca `COMPLETED` sin el probe read-only de abajo en verde. Si un caso esperado no recupera evidencia suficiente, el estado es `BLOCKED`.
 - El prompt de la Fase 4 conserva la política de conflicto y no dice que la tabla gana siempre. El presostato se juzga con las filas explícitas reales de `chunk_p1_2`.
 
@@ -500,7 +507,7 @@ Hallazgos materiales de la Fase 2, ya en el repo:
 - "¿Y para BAJA cuál es el relé?", "la misma falla", "¿Cómo soluciono eso si ya cambié la placa?" y "¿Cómo reseteo esta falla si ya cambié el fusible?" siguen continued_elliptical y componen el goal vigente. "este defecto" también, porque defecto ya es safety_critical_query?.
 - identity_items ya no añade identifiers source=user que no estén en el texto del goal vigente. Fabricante, modelo y código de falla siguen componiéndose. Los identifiers históricos siguen guardados en el episodio; no entran al texto de retrieval.
 - "Edel-k2" después de "EDEL K2 cerrojos exteriores" sigue continued_elliptical. El composed es ese goal (K2 y cerrojos) más el turno. No añade EM2000, DL4, CTA ni ALJO.
-- Un turno elíptico todavía llega compuesto. Si @query ya es ese composed, el rescate no debe usarlo: reinyectaría el goal anterior. El segundo retrieve usa el turno crudo del técnico. Para "Edel-k2" el turno crudo no dice "cerrojos exteriores".
+- Un turno elíptico todavía llega compuesto. Ese composed no es la fuente del rescate. Si el turno es self-contained y el designador no está en la primera ventana, el segundo retrieve usa el tramo de designadores, no la repetición del turno. Si es un follow-up elíptico válido, usa el goal vigente más el turno crudo. "Edel-k2" después de "EDEL K2 cerrojos exteriores" conserva "cerrojos exteriores" y no reintroduce EM2000, DL4, CTA ni ALJO.
 
 Objetivo único: con un solo documento pineado, como máximo un retrieve_chunks adicional, dentro de esas mismas URI, antes de generar. Dos caminos de la misma clase. Ningún if por Seguridad, Micro, Llamada, H4 ni por número de hoja.
 
@@ -532,18 +539,20 @@ QueryEntities, case-insensitive estrecho. identifier_candidate? hoy exige IDENTI
 - Un número suelto sigue fuera salvo el contexto etiquetado que ya existe (shape == :numeric && position == :bare se descarta). El dígito que autoriza el fold no salta esa regla. 24 y 41 solos no son identifiers; borne 24 sí.
 - Un alfabético puro no es designador de rescate. El designador del camino (a) es RagRetrievalProfile#designator?: shape distinto de :numeric y canonical con dígito. OUT, IN y SCI no abren ese camino y no lo bloquean. MR08 sí lo abre, y con él entra el oráculo SCI.
 
-Camino (a) — designador exacto, turno crudo + designador, primera ventana completa:
+Camino (a) — designador exacto, intención vigente + designador, primera ventana completa:
 - Entra si la pregunta tiene al menos un designador con dígito, aunque sea safety-critical. Esa es la única excepción a eligible?'s !safety_critical_query?. pinned_exact_designator_lookup? no se reescribe: otros llamadores siguen viéndolo en false cuando hay falla. Sin designador con dígito, el tope 5 actual se queda y este camino no corre.
 - Después del primer retrieve, si ningún chunk cumple QueryEntities.identifier_present? para ese designador, un solo retrieve_chunks más.
-- El texto de ese retrieve es el turno crudo del técnico más los designadores con dígito (si hay varios, unidos por espacio, añadidos cuando el turno crudo no los trae ya). Conserva la intención de este turno: "EDEL K2 cerrojos exteriores", "MR08 serie SCI", "EM4000 V1 obstáculo". No uses solo el designador. No uses el texto compuesto del episodio, ni el goal, ni identifiers históricos que el turno crudo no dice.
-- Hoy StructuredEvidenceRoute recibe @query, que puede ser ya el effective_question compuesto de un turno elíptico. Si ese string no es el turno crudo, el turno crudo entra como argumento. Eso no abre una rama nueva en QueryOrchestratorService. Si el primero ya contiene el designador, no hay segundo retrieve.
+- El primer retrieve usa la pregunta vigente. El segundo no la repite. En un self-contained el segundo texto es el tramo de designadores: "EDEL K2 dos embarques" reintenta "EDEL K2"; "luz H4" reintenta "H4"; "SCI del MR08" conserva SCI. El probe midió que repetir el turno devuelve el mismo top-3.
+- Follow-up elíptico válido: el segundo texto es el goal vigente más el turno crudo. "Edel-k2" después de "EDEL K2 cerrojos exteriores" conserva "cerrojos exteriores". No añadas identifiers históricos del episodio que no estén ya en ese goal. No uses el composed del episodio como fuente directa.
+- Hoy StructuredEvidenceRoute recibe @query, que puede ser ya el effective_question compuesto. El turno crudo entra como argumento cuando @query no es ese turno. El goal se lee de episode.goal, no del composed. Eso no abre una rama nueva en QueryOrchestratorService. Si el primero ya contiene el designador, no hay segundo retrieve.
 - La generación recibe la primera ventana completa más los chunks rescatados, únicos por chunk_sha256 (el mismo uniq que expand_dividers). No recortes esa evidencia a los chunks que contienen el designador. El cover greedy de select_generation_chunks no es, en este rescate, el filtro que tira el resto de la primera ventana. MAX_GENERATION_CHUNKS (5) no autoriza a dejar fuera esa ventana: se conserva entera y se le agregan los rescatados que no estaban. Un miss del segundo retrieve no dispara un tercero.
 
 Camino (b) — mapping estrecho, sin designador con dígito:
 - Entra solo si el camino (a) no entró, el pin es un documento, y la pregunta pide conexión, localización o asignación con una señal explícita de lookup que ya existe. No añadas una clave a RELATION_TRIGGERS. requested_relation solo no alcanza, ni en :location, ni en :connection, ni en :attribution.
 - Hacen falta las dos cosas: requested_relation corta :connection, :location o :attribution, y además matchea BORNE_TERMINAL_PATTERN, label_terms? o EXACT_LOOKUP_PATTERN.
 - Una pregunta normal de manual que solo dispara "dónde" o "conector" no abre el segundo retrieve. No entra si safety_critical_query?, exhaustive_query? o COMPARATIVE_PATTERN. "¿A qué borne corresponde Seguridad OUT?" entra: borne es BORNE_TERMINAL_PATTERN y corresponde corta :attribution. "Micro nivel inferior" a secas, sin borne / label / lookup, no entra. No escribas reglas para Seguridad, Micro, Llamada ni H4.
-- Después del primer retrieve, si ningún chunk trae una fila explícita con solape léxico con la pregunta, un solo retrieve_chunks más. El texto de ese retrieve es la pregunta más una orientación fija de tabla, la misma para todas: las palabras tabla y designacion, que material_key ya trata como lenguaje de tabla. No es un mapa de etiquetas. La frase de la pregunta viaja entera, para que OUT, IN y nivel 1 no se pierdan en lexical_tokens (un token de menos de 4 letras se tira).
+- Después del primer retrieve, si ningún chunk trae una fila de tabla con solape real, un solo retrieve_chunks más. Una fila es "| celda | celda |" o "TOKEN | resto". SOURCE_SECTION, un margen y una nota no cuentan. El solape exige el ancla (inferior, superior, llamada, seguridad, presostato) y, si hay un token corto en mayúsculas (OUT, IN), ese token. Si la pregunta pide un borne, la fila tiene que traer un número. "nivel" o "seguridad" solos no tapan el rescate.
+- El segundo texto es la frase pedida, sin el marco "¿A qué borne corresponde". El probe midió que concatenar "tabla designacion" a "llamada nivel 1" saca la hoja 2 del top-3, y que "micro de nivel inferior", "llamada de nivel 1" y "Seguridad OUT" sí la traen. OUT, IN y nivel 1 siguen en esa frase.
 - Si el primer retrieve ya trae esa fila, no hay segundo.
 - Selección, cuando no hay identifier que cubrir: hoy select_generation_chunks devuelve chunks.first(PINNED_DOCUMENT_RESULTS) en cuanto covering está vacío. En este camino eso no alcanza. Se prefiere el chunk con una fila explícita — las formas que assignment_line? ya reconoce, o una fila de tabla — y solape léxico con la pregunta. Un token de 2 o 3 letras entra en ese solape solo si va en mayúsculas o tiene dígito, para que OUT no empate con IN por la sola palabra "seguridad". Un número junto a un rótulo, sin fila, no gana por eso. Si ninguna fila explícita solapa, se conserva el fallback de los primeros 3.
 
@@ -588,8 +597,8 @@ Donde el primer retorno no trae fila explícita con solape, afirma:
 Además:
 - Pregunta normal de manual que solo corta :location o :connection, sin BORNE_TERMINAL_PATTERN, label_terms? ni EXACT_LOOKUP_PATTERN: una llamada. "¿Qué elementos aparecen en esa línea?" sigue en una llamada.
 - Cadena de seguridad, redactada sin borne / label / lookup: una llamada. Foso, igual: una llamada.
-- Designador presente en la primera ventana ("¿Qué es H4?" y un chunk con H4): una llamada. El segundo texto, cuando sí corre, contiene el turno crudo y el designador, no solo el designador y no el goal del episodio.
-- Designador ausente (EM4000 V1 obstáculo, EDEL K2 cerrojos exteriores, MR08 serie SCI): dos llamadas como máximo. El segundo texto conserva "obstáculo", "cerrojos exteriores" o "SCI". Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
+- Designador presente en la primera ventana ("¿Qué es H4?" y un chunk con H4): una llamada. En un self-contained cuyo primer retrieve no trae el designador, el segundo texto es el tramo de designadores, no la repetición del turno. En un elíptico válido contiene el goal vigente y el turno crudo, no el composed ni identifiers históricos fuera de ese goal.
+- Designador ausente (EM4000 V1 obstáculo, EDEL K2 cerrojos exteriores, EDEL K2 dos embarques, MR08 serie SCI): dos llamadas como máximo. El segundo texto del self-contained es el tramo de designadores (EM4000 V1, EDEL K2, SCI del MR08, H4), no la repetición del turno. Un follow-up elíptico "Edel-k2" conserva el goal vigente "cerrojos exteriores". Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
 - Mapping sin identifier: como máximo un reintento, y solo con la señal explícita de lookup. Si el segundo tampoco trae fila explícita, siguen siendo dos y no hay caída a BedrockRagService#query.
 - PINNED_DOCUMENT_RESULTS sigue en 3. El test de RagRetrievalProfile que lo fija no se toca.
 - QueryEntities: acepta Edel-k2, em4000, t1, h4. Rechaza 24v, 220v, 10a, 1er, 2do, seguridad, falla, tabla, out en minúsculas, y 24 suelto. SCI y OUT en mayúsculas siguen el criterio alfabético actual. borne 24 sigue siendo identifier etiquetado.
@@ -625,22 +634,40 @@ Fase 4:
 ```
 Implementa solo la Fase 4 de docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md.
 Antes de codear: lee el plan, Execution State, git status, el commit de la Fase 3 y este prompt.
+La Fase 3 está COMPLETED. No la reimplementes. No deploy. No empieces la Fase 5.
+
+Probe read-only 2026-09-28, script/rag_pinned_rescue_probe_2026-09-28.rb,
+KB de producción, sin generación: 14/14 hits, 0 misses.
+Rescate (2 retrieves, k final 3): 4 EDEL K2, 6 H4, 9 micro inferior,
+10 micro superior, 11 llamada 1, 12 llamada 2.
+Sin rescate, el hecho ya estaba en la primera ventana: 1 EM2000 CN7/CN8,
+2 EM4000 XC4/XC7, 3 EDEL K2 LED 40 SERIE CERROJOS EXTERIORES,
+5 MR08 SCI, 7 borne 23 Seguridad OUT, 8 borne 24 Seguridad IN,
+13 T1 modo E < 3 min, 14 T2 modo Wu < 1 s.
+
+La ventana recuperada puede traer a la vez las filas de la hoja 1 y las de
+la hoja 2. Eso es conflicto, no una fila ganadora:
+- Seguridad: hoja 1 | 13 | SEGURIDAD OUT | y | 22 | SEGURIDAD OUT |,
+  hoja 2 | 23 | Seguridad OUT |. IN: 12/23 frente a 24.
+- Micros: hoja 1 | 26 | LIMITE INFERIOR | y | 27 | LIMITE SUPERIOR |,
+  hoja 2 | 30 | Micro nivel inferior | y | 31 | Micro nivel superior |.
+- Llamadas: hoja 1 | 31 | LLAMADA NIVEL 1 | y | 32 | LLAMADA NIVEL 2 |,
+  hoja 2 | 33 | Llamada nivel 1 | y | 34 | Llamada nivel 2 |.
+- Presostato, en el mismo plano: | 14 | PRESOSTATO IN |, | 15 | PRESOSTATO OUT |,
+  | 24 | PRESOSTATO IN |, | 25 | PRESOSTATO OUT |. No son un número junto al rótulo.
+Si el primer retorno es solo chunk_p1_2, el rescate no corre: esas filas
+ya solapan. La hoja 2 queda fuera hasta la Fase 5. No parchees ese chunk aquí.
+
 Integra la excepción en el bloque de generation.txt que ya dice
 "When two retrieved fragments conflict" y "Never choose one silently".
 No añadas una regla que diga que la tabla gana siempre.
 Un número suelto o junto a un rótulo no es una asignación explícita.
 Una fila explícita borne N → función X pesa más que esa proximidad.
-Dos filas explícitas incompatibles son conflicto real: se citan las dos
-y no se elige en silencio.
-El presostato usa el contenido REAL de chunk_p1_2:
-| 14 | PRESOSTATO IN |, | 15 | PRESOSTATO OUT |,
-| 24 | PRESOSTATO IN |, | 25 | PRESOSTATO OUT |.
-No los trates como número visual junto al rótulo.
+Dos filas explícitas incompatibles se citan las dos, con su página, y no se elige.
 No añadas un post-procesador. No reescribas el resto del prompt.
 Test sin modelo: el prompt contiene la excepción y conserva el conflicto sin
-resolver; el fixture real no queda descrito como resuelto. Si el bloque pasa
-de 1,05× el prompt actual, compacta dentro de la regla existente.
-No parchees chunks. No empieces la Fase 5.
+resolver; el fixture real de chunk_p1_2 no queda descrito como resuelto.
+Si el bloque pasa de 1,05× el prompt actual, compacta dentro de la regla existente.
 ```
 
 Fase 5:
@@ -694,7 +721,7 @@ Material findings:
 - Suite: `BUNDLE_PATH=vendor/bundle bin/rails test test/services/rag/active_episode_turn_test.rb` — 114 runs, 602 assertions, 0 failures. Sin Bedrock.
 - Suite de episodios en el concern: `BUNDLE_PATH=vendor/bundle bin/rails test test/controllers/concerns/rag_query_concern_test.rb -n "/episode|composed|follow-up|followup|ActiveEpisode|field companion|turn flag/"` — 18 runs, 471 assertions, 0 failures, 1 skip. El skip es el test previo de WhatsApp `whatsapp short follow-up keeps cached locale`, que el filtro nombró por `follow-up`.
 Next phase impact:
-- Un turno self-contained llega con `composed` nil. Un turno elíptico sigue compuesto con el goal vigente, sin identifiers históricos fuera de ese goal. El rescate de la Fase 3 usa el turno crudo, no ese composed: en `Edel-k2` el turno crudo no dice `cerrojos exteriores`.
+- Un turno self-contained llega con `composed` nil. Un turno elíptico sigue compuesto con el goal vigente, sin identifiers históricos fuera de ese goal. El rescate self-contained usa el turno crudo más el designador. El rescate elíptico usa ese goal vigente más el turno crudo más el designador, no el composed: en `Edel-k2` se conserva `cerrojos exteriores` y no entran EM2000, DL4, CTA ni ALJO.
 Next phase prompt:
 ```text
 Repo: /Users/lahirisan/smart_deal
@@ -721,7 +748,7 @@ Hallazgos materiales de la Fase 2, ya en el repo:
 - "¿Y para BAJA cuál es el relé?", "la misma falla", "¿Cómo soluciono eso si ya cambié la placa?" y "¿Cómo reseteo esta falla si ya cambié el fusible?" siguen continued_elliptical y componen el goal vigente. "este defecto" también, porque defecto ya es safety_critical_query?.
 - identity_items ya no añade identifiers source=user que no estén en el texto del goal vigente. Fabricante, modelo y código de falla siguen componiéndose. Los identifiers históricos siguen guardados en el episodio; no entran al texto de retrieval.
 - "Edel-k2" después de "EDEL K2 cerrojos exteriores" sigue continued_elliptical. El composed es ese goal (K2 y cerrojos) más el turno. No añade EM2000, DL4, CTA ni ALJO.
-- Un turno elíptico todavía llega compuesto. Si @query ya es ese composed, el rescate no debe usarlo: reinyectaría el goal anterior. El segundo retrieve usa el turno crudo del técnico. Para "Edel-k2" el turno crudo no dice "cerrojos exteriores".
+- Un turno elíptico todavía llega compuesto. Ese composed no es la fuente del rescate. Si el turno es self-contained y el designador no está en la primera ventana, el segundo retrieve usa el tramo de designadores, no la repetición del turno. Si es un follow-up elíptico válido, usa el goal vigente más el turno crudo. "Edel-k2" después de "EDEL K2 cerrojos exteriores" conserva "cerrojos exteriores" y no reintroduce EM2000, DL4, CTA ni ALJO.
 
 Objetivo único: con un solo documento pineado, como máximo un retrieve_chunks adicional, dentro de esas mismas URI, antes de generar. Dos caminos de la misma clase. Ningún if por Seguridad, Micro, Llamada, H4 ni por número de hoja.
 
@@ -753,18 +780,20 @@ QueryEntities, case-insensitive estrecho. identifier_candidate? hoy exige IDENTI
 - Un número suelto sigue fuera salvo el contexto etiquetado que ya existe (shape == :numeric && position == :bare se descarta). El dígito que autoriza el fold no salta esa regla. 24 y 41 solos no son identifiers; borne 24 sí.
 - Un alfabético puro no es designador de rescate. El designador del camino (a) es RagRetrievalProfile#designator?: shape distinto de :numeric y canonical con dígito. OUT, IN y SCI no abren ese camino y no lo bloquean. MR08 sí lo abre, y con él entra el oráculo SCI.
 
-Camino (a) — designador exacto, turno crudo + designador, primera ventana completa:
+Camino (a) — designador exacto, intención vigente + designador, primera ventana completa:
 - Entra si la pregunta tiene al menos un designador con dígito, aunque sea safety-critical. Esa es la única excepción a eligible?'s !safety_critical_query?. pinned_exact_designator_lookup? no se reescribe: otros llamadores siguen viéndolo en false cuando hay falla. Sin designador con dígito, el tope 5 actual se queda y este camino no corre.
 - Después del primer retrieve, si ningún chunk cumple QueryEntities.identifier_present? para ese designador, un solo retrieve_chunks más.
-- El texto de ese retrieve es el turno crudo del técnico más los designadores con dígito (si hay varios, unidos por espacio, añadidos cuando el turno crudo no los trae ya). Conserva la intención de este turno: "EDEL K2 cerrojos exteriores", "MR08 serie SCI", "EM4000 V1 obstáculo". No uses solo el designador. No uses el texto compuesto del episodio, ni el goal, ni identifiers históricos que el turno crudo no dice.
-- Hoy StructuredEvidenceRoute recibe @query, que puede ser ya el effective_question compuesto de un turno elíptico. Si ese string no es el turno crudo, el turno crudo entra como argumento. Eso no abre una rama nueva en QueryOrchestratorService. Si el primero ya contiene el designador, no hay segundo retrieve.
+- El primer retrieve usa la pregunta vigente. El segundo no la repite. En un self-contained el segundo texto es el tramo de designadores: "EDEL K2 dos embarques" reintenta "EDEL K2"; "luz H4" reintenta "H4"; "SCI del MR08" conserva SCI. El probe midió que repetir el turno devuelve el mismo top-3.
+- Follow-up elíptico válido: el segundo texto es el goal vigente más el turno crudo. "Edel-k2" después de "EDEL K2 cerrojos exteriores" conserva "cerrojos exteriores". No añadas identifiers históricos del episodio que no estén ya en ese goal. No uses el composed del episodio como fuente directa.
+- Hoy StructuredEvidenceRoute recibe @query, que puede ser ya el effective_question compuesto. El turno crudo entra como argumento cuando @query no es ese turno. El goal se lee de episode.goal, no del composed. Eso no abre una rama nueva en QueryOrchestratorService. Si el primero ya contiene el designador, no hay segundo retrieve.
 - La generación recibe la primera ventana completa más los chunks rescatados, únicos por chunk_sha256 (el mismo uniq que expand_dividers). No recortes esa evidencia a los chunks que contienen el designador. El cover greedy de select_generation_chunks no es, en este rescate, el filtro que tira el resto de la primera ventana. MAX_GENERATION_CHUNKS (5) no autoriza a dejar fuera esa ventana: se conserva entera y se le agregan los rescatados que no estaban. Un miss del segundo retrieve no dispara un tercero.
 
 Camino (b) — mapping estrecho, sin designador con dígito:
 - Entra solo si el camino (a) no entró, el pin es un documento, y la pregunta pide conexión, localización o asignación con una señal explícita de lookup que ya existe. No añadas una clave a RELATION_TRIGGERS. requested_relation solo no alcanza, ni en :location, ni en :connection, ni en :attribution.
 - Hacen falta las dos cosas: requested_relation corta :connection, :location o :attribution, y además matchea BORNE_TERMINAL_PATTERN, label_terms? o EXACT_LOOKUP_PATTERN.
 - Una pregunta normal de manual que solo dispara "dónde" o "conector" no abre el segundo retrieve. No entra si safety_critical_query?, exhaustive_query? o COMPARATIVE_PATTERN. "¿A qué borne corresponde Seguridad OUT?" entra: borne es BORNE_TERMINAL_PATTERN y corresponde corta :attribution. "Micro nivel inferior" a secas, sin borne / label / lookup, no entra. No escribas reglas para Seguridad, Micro, Llamada ni H4.
-- Después del primer retrieve, si ningún chunk trae una fila explícita con solape léxico con la pregunta, un solo retrieve_chunks más. El texto de ese retrieve es la pregunta más una orientación fija de tabla, la misma para todas: las palabras tabla y designacion, que material_key ya trata como lenguaje de tabla. No es un mapa de etiquetas. La frase de la pregunta viaja entera, para que OUT, IN y nivel 1 no se pierdan en lexical_tokens (un token de menos de 4 letras se tira).
+- Después del primer retrieve, si ningún chunk trae una fila de tabla con solape real, un solo retrieve_chunks más. Una fila es "| celda | celda |" o "TOKEN | resto". SOURCE_SECTION, un margen y una nota no cuentan. El solape exige el ancla (inferior, superior, llamada, seguridad, presostato) y, si hay un token corto en mayúsculas (OUT, IN), ese token. Si la pregunta pide un borne, la fila tiene que traer un número. "nivel" o "seguridad" solos no tapan el rescate.
+- El segundo texto es la frase pedida, sin el marco "¿A qué borne corresponde". El probe midió que concatenar "tabla designacion" a "llamada nivel 1" saca la hoja 2 del top-3, y que "micro de nivel inferior", "llamada de nivel 1" y "Seguridad OUT" sí la traen. OUT, IN y nivel 1 siguen en esa frase.
 - Si el primer retrieve ya trae esa fila, no hay segundo.
 - Selección, cuando no hay identifier que cubrir: hoy select_generation_chunks devuelve chunks.first(PINNED_DOCUMENT_RESULTS) en cuanto covering está vacío. En este camino eso no alcanza. Se prefiere el chunk con una fila explícita — las formas que assignment_line? ya reconoce, o una fila de tabla — y solape léxico con la pregunta. Un token de 2 o 3 letras entra en ese solape solo si va en mayúsculas o tiene dígito, para que OUT no empate con IN por la sola palabra "seguridad". Un número junto a un rótulo, sin fila, no gana por eso. Si ninguna fila explícita solapa, se conserva el fallback de los primeros 3.
 
@@ -809,8 +838,8 @@ Donde el primer retorno no trae fila explícita con solape, afirma:
 Además:
 - Pregunta normal de manual que solo corta :location o :connection, sin BORNE_TERMINAL_PATTERN, label_terms? ni EXACT_LOOKUP_PATTERN: una llamada. "¿Qué elementos aparecen en esa línea?" sigue en una llamada.
 - Cadena de seguridad, redactada sin borne / label / lookup: una llamada. Foso, igual: una llamada.
-- Designador presente en la primera ventana ("¿Qué es H4?" y un chunk con H4): una llamada. El segundo texto, cuando sí corre, contiene el turno crudo y el designador, no solo el designador y no el goal del episodio.
-- Designador ausente (EM4000 V1 obstáculo, EDEL K2 cerrojos exteriores, MR08 serie SCI): dos llamadas como máximo. El segundo texto conserva "obstáculo", "cerrojos exteriores" o "SCI". Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
+- Designador presente en la primera ventana ("¿Qué es H4?" y un chunk con H4): una llamada. En un self-contained cuyo primer retrieve no trae el designador, el segundo texto es el tramo de designadores, no la repetición del turno. En un elíptico válido contiene el goal vigente y el turno crudo, no el composed ni identifiers históricos fuera de ese goal.
+- Designador ausente (EM4000 V1 obstáculo, EDEL K2 cerrojos exteriores, EDEL K2 dos embarques, MR08 serie SCI): dos llamadas como máximo. El segundo texto del self-contained es el tramo de designadores (EM4000 V1, EDEL K2, SCI del MR08, H4), no la repetición del turno. Un follow-up elíptico "Edel-k2" conserva el goal vigente "cerrojos exteriores". Si el segundo tampoco trae el designador, siguen siendo dos. La generación ve la primera ventana completa y los chunks rescatados.
 - Mapping sin identifier: como máximo un reintento, y solo con la señal explícita de lookup. Si el segundo tampoco trae fila explícita, siguen siendo dos y no hay caída a BedrockRagService#query.
 - PINNED_DOCUMENT_RESULTS sigue en 3. El test de RagRetrievalProfile que lo fija no se toca.
 - QueryEntities: acepta Edel-k2, em4000, t1, h4. Rechaza 24v, 220v, 10a, 1er, 2do, seguridad, falla, tabla, out en minúsculas, y 24 suelto. SCI y OUT en mayúsculas siguen el criterio alfabético actual. borne 24 sigue siendo identifier etiquetado.
@@ -843,18 +872,55 @@ No marques la Fase 3 COMPLETED sin ese probe en verde. Si un caso esperado no re
 ```
 
 ### Phase 3
-Status: PENDING
-Commit: none
-Tests: pending
+Status: COMPLETED
+Commit: see the commit that sets this status
+Tests: PASS
 Material findings:
-- `tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt` trae filas explícitas de bornera. Seguridad OUT/IN y presostato no se prueban con un fake de proximidad. Si el rescate no dispara, dependen de la Fase 5.
-- El probe read-only de 14 casos es obligatorio antes de COMPLETED. Evidencia insuficiente deja la fase BLOCKED.
-- La Fase 2 ya cerró la continuidad. Un self-contained llega con `composed` nil. Un elíptico sigue compuesto con el goal vigente y sin identifiers históricos fuera de ese goal. El rescate usa el turno crudo, no ese composed.
+- Probe `script/rag_pinned_rescue_probe_2026-09-28.rb` contra el KB de producción, sin generación: 14 hits, 0 phase_3_miss, 0 phase_5_dependency. Rescate en 4, 6, 9, 10, 11 y 12. El resto ya traía el hecho en la primera ventana.
+- Self-contained cuyo designador no está en la primera ventana: el segundo texto es el tramo de designadores (`EDEL K2`, `H4`), no la repetición del turno. Elíptico: goal vigente más el turno crudo. `Edel-k2` conserva `cerrojos exteriores` y no reintroduce EM2000, DL4, CTA ni ALJO.
+- Mapping: la fila que tapa el rescate es una fila de tabla con el ancla y, si la pregunta pide un borne, un número. El segundo texto es la frase pedida (`micro de nivel inferior`, `llamada de nivel 1`), sin `tabla designacion`.
+- `chunk_p1_2` sigue publicando filas de hoja 1 que solapan. Si esa es la única ventana, no hay segundo retrieve. Cuando el rescate también trae la hoja 2, las dos filas quedan en la ventana. Elegir una es la Fase 4. Borrar la falsa es la Fase 5.
+- Tests: `BUNDLE_PATH=vendor/bundle bin/rails test test/services/rag/query_entities_test.rb test/services/rag/structured_evidence_route_test.rb test/services/rag_retrieval_profile_test.rb test/services/rag/structured_evidence_route_flag_test.rb test/services/query_orchestrator_service_test.rb` — 157 runs, 867 assertions, 0 failures.
 Next phase impact:
-- La Fase 4 juzga el presostato con esas filas explícitas, no con 14/15 como número de dibujo.
+- La Fase 4 cita el conflicto hoja 1 / hoja 2. No elige. No parchea chunks.
 Next phase prompt:
 ```text
-Ver el prompt de Fase 4 en la sección 15. Se reescribe al cerrar la Fase 3.
+Implementa solo la Fase 4 de docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md.
+Antes de codear: lee el plan, Execution State, git status, el commit de la Fase 3 y este prompt.
+La Fase 3 está COMPLETED. No la reimplementes. No deploy. No empieces la Fase 5.
+
+Probe read-only 2026-09-28, script/rag_pinned_rescue_probe_2026-09-28.rb,
+KB de producción, sin generación: 14/14 hits, 0 misses.
+Rescate (2 retrieves, k final 3): 4 EDEL K2, 6 H4, 9 micro inferior,
+10 micro superior, 11 llamada 1, 12 llamada 2.
+Sin rescate, el hecho ya estaba en la primera ventana: 1 EM2000 CN7/CN8,
+2 EM4000 XC4/XC7, 3 EDEL K2 LED 40 SERIE CERROJOS EXTERIORES,
+5 MR08 SCI, 7 borne 23 Seguridad OUT, 8 borne 24 Seguridad IN,
+13 T1 modo E < 3 min, 14 T2 modo Wu < 1 s.
+
+La ventana recuperada puede traer a la vez las filas de la hoja 1 y las de
+la hoja 2. Eso es conflicto, no una fila ganadora:
+- Seguridad: hoja 1 | 13 | SEGURIDAD OUT | y | 22 | SEGURIDAD OUT |,
+  hoja 2 | 23 | Seguridad OUT |. IN: 12/23 frente a 24.
+- Micros: hoja 1 | 26 | LIMITE INFERIOR | y | 27 | LIMITE SUPERIOR |,
+  hoja 2 | 30 | Micro nivel inferior | y | 31 | Micro nivel superior |.
+- Llamadas: hoja 1 | 31 | LLAMADA NIVEL 1 | y | 32 | LLAMADA NIVEL 2 |,
+  hoja 2 | 33 | Llamada nivel 1 | y | 34 | Llamada nivel 2 |.
+- Presostato, en el mismo plano: | 14 | PRESOSTATO IN |, | 15 | PRESOSTATO OUT |,
+  | 24 | PRESOSTATO IN |, | 25 | PRESOSTATO OUT |. No son un número junto al rótulo.
+Si el primer retorno es solo chunk_p1_2, el rescate no corre: esas filas
+ya solapan. La hoja 2 queda fuera hasta la Fase 5. No parchees ese chunk aquí.
+
+Integra la excepción en el bloque de generation.txt que ya dice
+"When two retrieved fragments conflict" y "Never choose one silently".
+No añadas una regla que diga que la tabla gana siempre.
+Un número suelto o junto a un rótulo no es una asignación explícita.
+Una fila explícita borne N → función X pesa más que esa proximidad.
+Dos filas explícitas incompatibles se citan las dos, con su página, y no se elige.
+No añadas un post-procesador. No reescribas el resto del prompt.
+Test sin modelo: el prompt contiene la excepción y conserva el conflicto sin
+resolver; el fixture real de chunk_p1_2 no queda descrito como resuelto.
+Si el bloque pasa de 1,05× el prompt actual, compacta dentro de la regla existente.
 ```
 
 ### Phase 4

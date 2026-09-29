@@ -1,6 +1,6 @@
 # Plan de precisión — wording, multi-lookup y F1/F2
 
-Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `READY` y no se ha ejecutado. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
+Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `COMPLETED`. P2 está `READY` y no se ha ejecutado. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
 
 No reescribir el RAG. No subir `PINNED_DOCUMENT_RESULTS`. No tocar el tono companion, `SourceFidelityGuard`, `SemanticQueryAnalyzer`, la política de pin, product discovery ni el auto-pin.
 
@@ -226,23 +226,36 @@ P1: un retrieve de producción por fila, más el segundo solo cuando la ruta ya 
 P1 lee esto antes de medir. El prompt de la fase siguiente, aquí, gana a un mensaje viejo.
 
 ### P1
-Status: READY
-Commit: none
-Tests: not run
-Material findings: none
-Next phase prompt: el de la sección 14, bajo P1. P2 y P3 no se ejecutan desde este estado.
+Status: COMPLETED
+Commit: this change
+Tests: `test/services/rag/wording_multilookup_cause_test.rb` — 8 runs, 34 assertions, 0 failures
+Artifact: `tmp/pilot_gate/wording_multilookup_probe_2026-09-29.json`
+SHA256: `ff0c73a0674d5581283b3130179ae69c09470ed4c251a616046bbc59de38851b`
+Probe: exit 0, unmeasured 0, 15 filas. KB `Y7RZWMFJSR`, bucket `multimodal-source-destination`. `PINNED_DOCUMENT_RESULTS` no se tocó.
+Material findings:
+- Hits, `primary_cause` `none`: micro inferior → 30, micro superior → 31, llamada 1 → 33, llamada 2 → 34, SUBE → K1, BAJA → K2. BAJA aporta `source/chunk representation` por `| K8 | Contactor 220vac BAJA |`.
+- Fotocélulas, fila 15: `none`. La página 25 en `selected_generation_chunks` tiene `| F1 | FOTOCELULA EMBARQUE 1 |` y `| F2 | FOTOCELULA EMBARQUE 2 |`, y la respuesta los dice. El primer clasificador miraba la primera aparición y marcó `synthesis`; se recomputó sobre la respuesta ya guardada, sin otro retrieve.
+- OUT+IN juntos: `evidence selection/coverage`. El primer retrieve ya traía la hoja 2 (`| 23 | Seguridad OUT |`, `| 24 | Seguridad IN |`). El selector se quedó con la página 5. `explicit_row_covered?` canceló el rescue sobre la línea de OUT. No es la fase P2.
+- Bornera, Seguridad IN: `route eligibility`. Ruta nil. `anchor_phrase` = `conectada Seguridad IN bornera tablero` metió `| 24 | Seguridad IN |` en la hoja 2. La sección 6 autoriza esa función solo para esta fila. El episodio con goal previo quedó `continued_self_contained` y no compuso la pregunta.
+- Micro inferior+superior y llamada 1+2: `retrieval/ranking`. El rescue corrió; la query solo perdió el `?` final y no trajo la hoja 2. No hay contrafactual. No se inventa otra query.
+- SUBE+BAJA juntos: `route eligibility`, pero `reles corresponden SUBE BAJA tablero` no metió K1 junto a SUBE ni K2 junto a BAJA. La función no se adopta. Se escala. No se abre esa ruta.
+- T1+T2: `rescue eligibility/query`. El rescue no corrió. `configurados T1 T2` no trajo modo E ni modo Wu. La función no se adopta. Siguen en el camino de designador.
+- F1/F2, filas 13 y 14: `retrieval/ranking`. La query inicial y el `designator_span` devolvieron 0 chunks. El rescue ya había corrido con otra query, así que la sección 6 no autorizó contrafactual.
+Next phase prompt: el de la sección 14, bajo P2.
 
 ### P2
-Status: PENDING
-Blocked by: P1
+Status: READY
+Blocked by: none
+Scope: solo `route eligibility` de la fila de bornera. El resto de los fallos de arriba no entra en este cambio.
 
 ### P3
-Status: PENDING
-May become: SKIP
+Status: BLOCKED
+May become: SKIP — no aplica. La primaria de F1/F2 no es la de P2, y no hay una función de la sección 6 que adoptar. No se implementa.
 
 ### P4
 Status: PENDING
-Blocked by: P2 and, if not SKIP, P3
+Blocked by: P2
+P3 queda fuera del gate: las filas 13 y 14 no tienen un cambio autorizado, y la fila 15 ya expresa F1 y F2.
 
 ## 14. Prompts
 
@@ -268,11 +281,52 @@ Commit de P1. Detente.
 
 ### P2
 
-Se completa al cerrar P1. Hasta entonces no se codea. Cuando exista, implementa solo el `primary_cause` que P1 haya escrito, con la cobertura de la sección 4 y, si la sección 6 la autorizó, la función de rescue query ya medida. Tests del string resultante. Commit. Reescribe P3 y P4. Detente.
+```
+Repo: /Users/lahirisan/smart_deal
+Implementa solo P2 de docs/PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md.
+P2 está READY. No implementes P3 ni P4. No deploy.
+
+primary_cause: route eligibility. Una sola fila:
+¿Dónde está conectada Seguridad IN en la bornera del tablero?
+La ruta salió nil. selected_generation_chunks no tenía | 24 | Seguridad IN |.
+Función autorizada por la sección 6: anchor_phrase.
+String medido: conectada Seguridad IN bornera tablero.
+Misma URI, force_entity_filter true, k=3. Esa query metió la fila de la hoja 2.
+Trata bornera como el stem de borne. No añadas una clave a RELATION_TRIGGERS.
+¿Dónde está el cuadro de maniobra? sigue nil.
+
+No toques las otras filas:
+- OUT+IN juntos es evidence selection/coverage. La hoja 2 ya estaba en el primer retrieve.
+  No cambies select_generation_chunks.
+- Micro inferior+superior y llamada 1+2 son retrieval/ranking. No inventes una query.
+- SUBE+BAJA juntos es route eligibility, pero reles corresponden SUBE BAJA tablero
+  no metió K1 con SUBE ni K2 con BAJA. No abras esa ruta. Escala.
+- T1+T2 es rescue eligibility/query. configurados T1 T2 no trajo modo E ni modo Wu.
+  Siguen en el camino de designador. No les apliques otra función.
+- F1/F2 no es esta fase.
+
+No toques ActiveEpisodeTurn. PINNED_DOCUMENT_RESULTS sigue en 3.
+Tests sin Bedrock, del string medido, el pin, k=3 y force_entity_filter true.
+Commit. Detente.
+```
 
 ### P3
 
-No ejecutar si P1 dice `SKIP`. Si no, solo el `primary_cause` escrito por P1.
+```
+P3 está BLOCKED. No implementes.
+
+Filas 13 y 14: primary_cause retrieval/ranking. La query inicial y el
+designator_span devolvieron 0 chunks. El rescue ya corrió con otra query,
+así que la sección 6 no autorizó un contrafactual. No hay función que adoptar.
+No inventes un span ni un retrieve.
+
+Fila 15: primary_cause none. La página 25 ya tenía
+| F1 | FOTOCELULA EMBARQUE 1 | y | F2 | FOTOCELULA EMBARQUE 2 |,
+y la respuesta guardada los dice.
+
+No es la clase de P2 y no es SKIP: no hay un cambio autorizado.
+No parchees chunks. No reabras la Fase 5. Escala y detente.
+```
 
 ### P4
 

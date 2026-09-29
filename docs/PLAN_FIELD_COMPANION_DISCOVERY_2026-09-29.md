@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0 y F1 están `PASS`. F2 no está ejecutada. El prompt completo de la fase siguiente es el Anexo C.
+**Estado:** master plan final. F0 y F1 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 no está ejecutada. El prompt completo de la fase siguiente es el Anexo C.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F2, en el Anexo C. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F2, en el Anexo C, y lee la extensión de 15 imágenes. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -439,7 +439,7 @@ El FAIL de Sonnet 5.5 es ausencia de palabra permitida. `fail_if` (`resistenc`, 
 
 ## 10. Decisión F2
 
-F2 lee el JSON de F1. Una sola letra. No abre dos experimentos.
+F2 lee la extensión de 15 imágenes, `tmp/field_companion/f1_extended/aggregate.json`, no solo `f1_visual.json`. Una sola letra. No abre dos experimentos. No instala un router por tipo de imagen. F2 no está ejecutada.
 
 F0 y F1 no escriben `MODEL_TEXT`. Si Sonnet 5.5 gana o queda en la letra A, F2 puede dejarlo como default. Si Opus 5.5 gana casos puntuales, F2 registra el finding y no instala un routing heurístico. No vuelve la regla `bytes > 1_500_000 => Opus` sin evidencia causal de este benchmark. FC-D18.
 
@@ -450,7 +450,7 @@ Sobre las filas elegibles, solo en campos `VERIFIED` y `MUST_BE_UNKNOWN`:
 - `shared_component_fail`: ambos fallan el `component`.
 - `shared_identity_fail`: ambos fallan un campo `MUST_BE_UNKNOWN`, y el `component` de esa fila no es un `shared_component_fail`. Si la fila no tiene campos `MUST_BE_UNKNOWN`, este contador no suma.
 
-Contadores que dejó F1, en `tmp/field_companion/f1_visual.json` SHA256 `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`. F1 no elige letra.
+Contadores históricos de la fila única, en `tmp/field_companion/f1_visual.json` SHA256 `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`. F1 no elige letra. No son el input de la decisión: la extensión los reemplaza como evidencia. El Anexo C trae los contadores de las 15 imágenes.
 
 - `spring_split`: `opus_pass_sonnet_fail`
 - `opus_only_wins`: 1
@@ -706,6 +706,11 @@ Checkpoint previo a F0, satisfecho al abrir:
   - `spring_assembly_misread.claude-opus-5-5.txt` `f53745565e39091c5f622315e18d3e98d54c44cc4a64931a84d1211bdd452e3a`
   - manifest de entrada, sin reescritura, `7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1`
   - PNG de entrada, sin recomprimir, `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`
+  - extensión `tmp/field_companion/f1_extended/aggregate.json` `fe283538ceceaf8d90a3b9a4444868abf0886e1745584eb09cb67d35c6e3fa84`
+  - extensión `tmp/field_companion/f1_extended/cost_report.json` `72e13f1c32b7f9172301a206970df2a13707b0770dd4d14cb500a44affbdcc5b`
+  - extensión `tmp/field_companion/f1_extended/gold_manifest.json` `2329d9d8d4cedc4309a6f608e82a398ff6c5e0cd942e376e0b9b9a1098411fbc`
+  - extensión `tmp/field_companion/f1_extended/manifest.json` `62a639b54e17ae211d61407bdbb716844ce0d4e8480986dcaac12cfe2df0e477`
+  - extensión `tmp/field_companion/f1_extended/SHA256SUMS.txt` `c5987e91750648649ba743cf94f4a598d5920ba7f088e6b79ca6821aedf5a4b9`
 - `findings`:
   1. `CONFIRMED`. Las dos llamadas recibieron los mismos bytes, el mismo MIME, el mismo filename, locale `es`, photo intent vacío, el mismo system prompt y `max_tokens` 8000. `request_sha256` coincide. `bytes_sha256` coincide con el PNG congelado. `returned_model_id` es el id pedido en los dos. No se llamó a `claude-sonnet-5`. El harness no lee `MODEL_TEXT` ni usa `FieldPhotoDensityGate`.
   2. `CONFIRMED`. La hipótesis de capacidad, con los mismos bytes y el mismo prompt: Sonnet 5.5 falla el `component` y Opus 5.5 lo pasa. `spring_split` = `opus_pass_sonnet_fail`. `opus_only_wins` = 1.
@@ -714,13 +719,18 @@ Checkpoint previo a F0, satisfecho al abrir:
   5. `NEW`. La página de precios de Anthropic lista Claude Sonnet 5.5 a $2 / MTok de input y $10 / MTok de output. El harness cita esa URL. `BEDROCK_PRICING` no ganó una clave. El costo guardado es input y output; los 1745 tokens de `cache_creation` de cada llamada están en el artefacto y fuera de la cifra.
   6. `CONFIRMED`. Ninguna constant productiva cambió. `MODEL_TEXT` sigue en `claude-sonnet-5`. El fingerprint del prompt sigue en `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`.
   7. `REJECTED`. Usar `BEDROCK_PRICING["default"]` o la entrada `claude-sonnet-5-direct` como fuente del costo de Sonnet 5.5. Opus usa la tarifa escrita de `claude-opus-5-5-direct` porque el id devuelto empieza por `claude-opus-5-5`.
+  8. `NEW`. Extensión de evidencia, 2026-09-29, sin cambiar el `PASS`. Quince imágenes, 30 llamadas, `F1_EXTENDED_STATUS=COMPLETE`. Mismos bytes, MIME, filename, locale `es`, photo intent vacío, fingerprint y `max_tokens` 8000 en cada par. `request_sha256` coincide dentro de cada par. El de resortes sigue en `3e5e1921756170d6421120227e40060fcc9eb7b9c789b2b4c3c041f1955a6085`. No hubo retry. El harness no lee `MODEL_TEXT` ni usa `FieldPhotoDensityGate`.
+  9. `NEW`. Clase de evidencia `E3`. Pass rate Sonnet 5.5 `0.920000` (46/50) y Opus 5.5 `0.960000` (48/50). `opus_only_wins` 4, `sonnet_only_wins` 2, `shared_passes` 9, `shared_fails` 0, `shared_safety_fails` 0. `safety_fail_count` 0 en los dos. `MUST_BE_UNKNOWN` 21/21 en los dos. El gap de pass rate es 0,04, debajo del umbral 0,10 de `E2`, y `opus_only_wins` es 4, así que no es `E1`. No es `E4`: las dos tasas están sobre 0,5 y no hay fallos compartidos.
+  10. `NEW`. El caso de resortes se repite en la misma dirección. Sonnet 5.5 `FAIL`, texto `conjunto de aisladores con cables colgantes`. Opus 5.5 `PASS`, texto `amarre de cables con resortes`. `fail_if` no aparece. No es una medición de varianza: una llamada por modelo.
+  11. `NEW`. Costo con cache separado, tarifa citada en la página de Anthropic para las dos filas. Sonnet 5.5 `0.136262` (input+output `0.127014`, cache read `0.004886`, cache write 5 minutos `0.004362`). Opus 5.5 `0.351039` (input+output `0.337428`, cache read `0.004886`, cache write 5 minutos `0.008725`). Acumulado `0.487301`. Cap `1.000000`. Remanente `0.512699`. Los tokens de 1 hora fueron 0. Input idéntico, 18837 en los dos.
+  12. `CONFIRMED`. Ninguna constant productiva cambió en la extensión. `MODEL_TEXT` sigue en `claude-sonnet-5`. El fingerprint sigue en `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`.
 - `derived_decisions`:
-  - F1 no elige A, B, C, D ni E.
+  - F1 no elige A, B, C, D ni E. La extensión tampoco.
   - El resultado no reinstala `bytes > 1_500_000 => Opus`. Las dos llamadas usaron el mismo binario.
   - Si la letra que F2 seleccione escribe `MODEL_TEXT`, también escribe `claude-sonnet-5-5-direct` con la tarifa citada y no usa `default`.
   - F3–F8 no cambian de contrato por este benchmark.
 - `future_phases_changed`:
-  - F2. `reason`: el Anexo C trae los contadores, los SHA y la tarifa citada. La rama de A que devolvía `nil` en `pricing_for` queda reemplazada por los cuatro números de la URL cuando la letra escribe `MODEL_TEXT`. F1 no asigna la letra.
+  - F2. `reason`: el Anexo C deja de decidir con la fila única. Lee `aggregate.json` de la extensión, la clase `E3` y los contadores de 15 imágenes. No instala un router. La extensión no asigna la letra.
   - F3. `reason`: revisada, sin edición. El benchmark visual no cambia el score ni la elegibilidad.
   - F4. `reason`: revisada, sin edición. Sigue sin `BLOCKED` por la ruta de F0.
   - F5. `reason`: revisada, sin edición. La precedencia y `correlation_id` no cambian. El `model_id` de la observación será el que deje F2.
@@ -939,11 +949,13 @@ En este orden: el artefacto con SHA256; el regression gate de este plan (no llam
 
 ## Anexo C — prompt de F2
 
-Ejecutá solo F2 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. No ejecutes F3. No hagas deploy. No reabras el plan de precisión ni las decisiones FC-D01 a FC-D18. No pidas una decisión a Lahiri. No vuelvas a llamar a los dos modelos de F1. No elijas los modelos con `BatchChunkingPrompt::MODEL_TEXT` ni con `FieldPhotoDensityGate`.
+Ejecutá solo F2 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. No ejecutes F3. No hagas deploy. No reabras el plan de precisión ni las decisiones FC-D01 a FC-D18. No pidas una decisión a Lahiri. No vuelvas a llamar a los dos modelos. No elijas los modelos con `BatchChunkingPrompt::MODEL_TEXT` ni con `FieldPhotoDensityGate`. No agregues un router por tipo de imagen, por tamaño ni por densidad.
 
-F1 está `PASS`. `head_initial` de F1 es `83b128ce430acc0a67909d924b5ccf9efd79c2a4`. El commit de F1 es el padre del trabajo de F2: asunto `Record the Sonnet 5.5 versus Opus 5.5 field-photo benchmark.` Si el working tree está dirty en algo que no sea F2, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F2. `git rev-parse HEAD^` tiene que ser `83b128ce430acc0a67909d924b5ccf9efd79c2a4`.
+La extensión de evidencia ya corrió. F2 no está empezada. El padre del trabajo de F2 es el commit de esa extensión. `git rev-parse HEAD^` tiene que ser `efd138d5287727e24258293102e69c355dee3bf8`. Si el working tree está dirty en algo que no sea F2, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F2. El árbol de este anexo no contiene el SHA de su propio commit.
 
-Al abrir F2, producción sigue así. No lo des por cambiado hasta que la letra lo diga:
+### Producción al abrir F2
+
+No la des por cambiada hasta que la letra lo diga:
 
 - `BatchChunkingPrompt::MODEL_TEXT` = `claude-sonnet-5` en `app/prompts/batch_chunking_prompt.rb`
 - `BatchChunkingPrompt::MODEL_MULTIMODAL` = `claude-opus-5-5`
@@ -951,58 +963,84 @@ Al abrir F2, producción sigue así. No lo des por cambiado hasta que la letra l
 - `FieldPhotoPrompt.prompt_fingerprint_sha256` = `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`
 - `BEDROCK_PRICING` no tiene `claude-sonnet-5-5` ni `claude-sonnet-5-5-direct`
 
-### Artefacto que F2 lee
+### Evidencia que F2 lee
 
-Path: `tmp/field_companion/f1_visual.json`.
+La decisión usa la extensión, no la fila única.
 
-SHA256: `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`.
+- `tmp/field_companion/f1_extended/aggregate.json` SHA256 `fe283538ceceaf8d90a3b9a4444868abf0886e1745584eb09cb67d35c6e3fa84`
+- `tmp/field_companion/f1_extended/cost_report.json` SHA256 `72e13f1c32b7f9172301a206970df2a13707b0770dd4d14cb500a44affbdcc5b`
+- `tmp/field_companion/f1_extended/gold_manifest.json` SHA256 `2329d9d8d4cedc4309a6f608e82a398ff6c5e0cd942e376e0b9b9a1098411fbc`
+- `tmp/field_companion/f1_extended/manifest.json` SHA256 `62a639b54e17ae211d61407bdbb716844ce0d4e8480986dcaac12cfe2df0e477`
+- `tmp/field_companion/f1_extended/SHA256SUMS.txt` SHA256 `c5987e91750648649ba743cf94f4a598d5920ba7f088e6b79ca6821aedf5a4b9`
 
-Si el archivo está y el SHA256 no coincide, `STOP`. No regeneres el benchmark. Si el archivo no está, usá los contadores de este anexo y no hagas llamadas para recrearlo.
+Si `aggregate.json` está y el SHA256 no coincide, `STOP`. No regeneres el benchmark. Si el archivo no está, usá los contadores de este anexo y no hagas llamadas para recrearlo.
 
-Salidas, SHA256:
+`f1_visual.json` histórico sigue en SHA256 `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`. No es el input de la letra. No lo reescribas.
 
-- `tmp/field_companion/outputs/spring_assembly_misread.claude-sonnet-5-5.txt` `0806d1c5f6ad98c50b74a4bb409ef1d5aa57ebf161ff72700bd8482fa422066b`
-- `tmp/field_companion/outputs/spring_assembly_misread.claude-opus-5-5.txt` `f53745565e39091c5f622315e18d3e98d54c44cc4a64931a84d1211bdd452e3a`
+Dataset: `tmp/field_companion/images/f1_extended`. 15 imágenes. No había `SHA256SUMS.txt` en esa carpeta. El PNG de resortes conserva `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`. No se editó ni se recomprimió ninguna imagen.
 
-Manifest de entrada, sin reescritura: `tmp/field_companion/visual_manifest.json` `7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1`.
+Contrato de las 30 llamadas: `claude-sonnet-5-5` y `claude-opus-5-5` forzados. Mismos bytes, MIME, filename, locale `es`, photo intent vacío, system prompt, fingerprint y `max_tokens` 8000. Una llamada por par. `client_max_retries` 0. `retry_count` 0 en las 30. `returned_model_id` igual al pedido. `reads_model_text` false. `uses_density_gate` false. Status `COMPLETE`. `calls` 30. Pares completos 15.
 
-PNG, sin recomprimir: `tmp/field_companion/images/spring_assembly_misread.png` `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`. 1430913 bytes. `image/png`. Filename `spring_assembly_misread.png`.
+### Costo
 
-Las dos llamadas compartieron `request_sha256` `3e5e1921756170d6421120227e40060fcc9eb7b9c789b2b4c3c041f1955a6085`. Locale `es`. Photo intent vacío. `max_tokens` 8000. System prompt = `FieldPhotoPrompt::SYSTEM_BLOCKS` con el fingerprint de arriba.
+Tarifa citada, fila Claude Sonnet 5.5 y fila Claude Opus 5.5 de <https://platform.claude.com/docs/en/about-claude/pricing>, leída el 2026-09-29. Por 1.000 tokens:
 
-### Caso `spring_assembly_misread`
+- Sonnet 5.5: input `0.002`, output `0.01`, cache read `0.0002`, cache write de 5 minutos `0.0025`, cache write de 1 hora `0.004`
+- Opus 5.5: input `0.004`, output `0.02`, cache read `0.0002`, cache write de 5 minutos `0.005`, cache write de 1 hora `0.008`
 
-Una sola fila elegible. Gold sin reinterpretar: `component` `VERIFIED` con `allowed` `resorte`, `resortes`, `muelle`, `muelles` y `fail_if` `resistenc`, `bobinad`. Fabricante, modelo y `visible_text` son `NOT_SCORED`.
+El `cache_control` del system prompt es `ephemeral` de 5 minutos. Los tokens de 1 hora fueron 0. El costo de cache no está metido en input ni en output.
 
-| Modelo | `returned_model_id` | `component` | Texto normalizado de `canonical_component` | Input | Output | Cache read | Cache creation | Latencia | Costo | `price_source` |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `claude-sonnet-5-5` | `claude-sonnet-5-5` | FAIL | `panel de aisladores con cables colgantes` | 1158 | 423 | 0 | 1745 | 4302 ms | `0.006546` | `https://platform.claude.com/docs/en/about-claude/pricing` |
-| `claude-opus-5-5` | `claude-opus-5-5` | PASS | `amarre de cables con resortes` | 1158 | 901 | 0 | 1745 | 10754 ms | `0.022652` | `app/models/bedrock_query.rb#BEDROCK_PRICING[claude-opus-5-5-direct]` |
+| | Input+output | Cache read | Cache write 5 min | Total |
+|---|---|---|---|---|
+| `claude-sonnet-5-5` | `0.127014` | `0.004886` | `0.004362` | `0.136262` |
+| `claude-opus-5-5` | `0.337428` | `0.004886` | `0.008725` | `0.351039` |
+| Acumulado | | | | `0.487301` |
 
-Timestamps UTC: Sonnet `2026-09-29T21:37:16Z`, Opus `2026-09-29T21:37:26Z`. El texto literal de Sonnet es `Panel de aisladores con cables colgantes`. El de Opus es `Amarre de cables con resortes`. `fail_if` no aparece en ninguna salida. Los dos devolvieron `manufacturer` `UNKNOWN` y `model` `UNKNOWN`. Eso no suma `identity_invention` porque esos campos son `NOT_SCORED`.
+Cap `1.000000`. Remanente estimado `0.512699`. Input 18837 en los dos. Output Sonnet 8934, Opus 13104. Cache creation 1745 y cache read 24430 en los dos. Latencia total Sonnet 74963 ms, p50 4335, p95 7906. Opus 149148 ms, p50 9117, p95 16012.
 
-El costo guardado es solo input y output: `(input_tokens / 1000) * tarifa_input + (output_tokens / 1000) * tarifa_output`. Los 1745 tokens de cache creation no entran en esa cifra. La tarifa de Sonnet 5.5 es 0,002 y 0,01 dólares por 1.000 tokens. La de Opus, de la clave `claude-opus-5-5-direct`, es 0,004 y 0,02.
+### Clase de evidencia
 
-### Contadores
+`E3`. No es una decisión de producción.
 
-- `spring_split`: `opus_pass_sonnet_fail`
-- `opus_only_wins`: 1
-- `shared_component_fail`: 0
-- `shared_identity_fail`: 0
-- `claude-sonnet-5-5`: `identity_invention_count` 0, `component_fail_count` 1
-- `claude-opus-5-5`: `identity_invention_count` 0, `component_fail_count` 0
+Umbrales del harness, congelados antes de la corrida: `E4` si las dos tasas son menores que 0,5 y los fallos compartidos dominan las victorias exclusivas. `E2` si Opus gana en exclusivo al menos 2 filas, gana más que Sonnet, el gap de pass rate es de al menos 0,10 y Opus no tiene más `safety_fail`. `E1` si Sonnet queda a 0,05 o mejor y Opus gana en exclusivo menos de 2. El resto es `E3`.
+
+Pass rate Sonnet `0.920000` (46/50). Opus `0.960000` (48/50). Gap 0,04. `opus_only_wins` 4. `sonnet_only_wins` 2. `shared_passes` 9. `shared_fails` 0. `shared_safety_fails` 0. `safety_fail_count` 0 en los dos. `MUST_BE_UNKNOWN` 21/21 en los dos.
+
+| Campo | Sonnet 5.5 | Opus 5.5 |
+|---|---|---|
+| `component` | 11/15 | 14/15 |
+| `manufacturer` | 2/2 | 2/2 |
+| `model` | 2/2 | 1/2 |
+| `visible_text` | 10/10 | 10/10 |
+| `MUST_BE_UNKNOWN` | 21/21 | 21/21 |
+| `SAFETY_FAIL` | 0 | 0 |
+
+No hay safety failures. Nadie inventó fabricante o modelo en un campo `MUST_BE_UNKNOWN`. Nadie leyó texto en la foto de hueco, que no tiene texto. El esquema hidráulico fue leído como documento por los dos. No hubo función inventada en las fotos sin leyenda escrita.
+
+Victorias exclusivas. No son invenciones de identidad:
+
+- `spring_assembly_misread`: Sonnet `FAIL` `conjunto de aisladores con cables colgantes`. Opus `PASS` `amarre de cables con resortes`. `spring_split` = `opus_pass_sonnet_fail`.
+- `field_dense_control_panel`: Sonnet nombra `tarjeta de control orona pbcm-v3` y no entra en `placa` / `controlador` / `tablero`. Fabricante y modelo `PASS` en los dos.
+- `field_degraded_error_display`: Sonnet nombra `pantalla de codigo de error en tarjeta`. Opus pasa `display`.
+- `field_kone_controller`: Sonnet nombra `panel de control de ascensor kone`. Opus pasa el componente. El fabricante quedó `NOT_SCORED` porque el logo KONE es una capa encima de la foto.
+- `field_cabin_panel_with_diagram`: Opus devuelve `model` `UNKNOWN` y falla el `3020` impreso. Sonnet pasa.
+- `field_branded_indicator`: Opus nombra `botonera de llamada de piso` y no entra en `indicador` / `display`. Sonnet pasa. El logo de esquina no se puntúa como fabricante.
+
+`shared_component_fail` 0. `shared_identity_fail` 0. `identity_invention_count` 0 en los dos.
 
 ### Una sola letra
 
-Aplicá estas reglas a esos contadores. Sale una sola letra. Implementá solo esa. No preguntes cuál seguir. No abras un segundo experimento. No rellenes las otras letras “por si acaso”.
+Aplicá estas reglas a los contadores de la extensión. Sale una sola letra. Implementá solo esa. No preguntes cuál seguir. No abras un segundo experimento. No uses los contadores de la fila única.
 
 - **A.** `opus_only_wins == 0` y Sonnet 5.5 no tiene `identity_invention` en campos `MUST_BE_UNKNOWN`, y no hay `spring_split` a favor de Opus. Reemplazá `BatchChunkingPrompt::MODEL_TEXT` por `claude-sonnet-5-5`. El umbral de 1,5 MB y `MODEL_MULTIMODAL` no se tocan. No agregues un routing por tamaño. Cero llamadas de imagen.
-- **B.** `spring_split` a favor de Opus, u `opus_only_wins >= 2`, y en esas filas Opus no inventa identidad. Hacé el mismo cambio de `MODEL_TEXT` que A. No implementes routing selectivo a Opus. Dejá el finding `selective_opus_routing: proposed_not_implemented`. Cero llamadas de imagen. `opus_pass_sonnet_fail` es el split a favor de Opus. `sonnet_pass_opus_fail` no lo es.
-- **C.** Ambos fallan el `component` de resortes (`shared_component_fail` incluye ese case) y no aplica A ni B. El experimento, dentro de F2, es resolución: mismo prompt y mismo `claude-sonnet-5-5`, bytes de control contra un derivado de lado largo 2048. El derivado lo produce `ImageCompressionService` con `MAX_DIMENSION` local al script. No edites `ImageCompressionService::MAX_DIMENSION`. Una sola variable. Una llamada nueva por imagen elegible del manifest. Hoy hay una imagen. El techo es esa llamada, no una segunda. Bytes de control: el PNG de SHA256 `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`, sin recomprimir.
-- **D.** No aplica A, B ni C, y `shared_identity_fail` es mayor que `shared_component_fail`. El experimento es un prompt observation-first, mismos bytes de F1, solo Sonnet 5.5. El script usa una copia del prompt. No publiques esa copia en `FieldPhotoPrompt` en la misma fase salvo que el experimento gane el case de resortes, no suba `identity_invention`, y un test fije el fingerprint nuevo. Si el experimento no gana, el prompt de producción queda igual y la letra registrada es D con `adopted: false`. Una llamada nueva por imagen elegible.
+- **B.** `spring_split` a favor de Opus, u `opus_only_wins >= 2`, y en esas filas Opus no inventa identidad. Hacé el mismo cambio de `MODEL_TEXT` que A. No implementes routing selectivo a Opus. Dejá el finding `selective_opus_routing: proposed_not_implemented`. Cero llamadas de imagen. `opus_pass_sonnet_fail` es el split a favor de Opus. La clase `E3` confirma que no hay señal para rutear antes de ejecutar el modelo.
+- **C.** Ambos fallan el `component` de resortes (`shared_component_fail` incluye ese case) y no aplica A ni B. El experimento, dentro de F2, es resolución: mismo prompt y mismo `claude-sonnet-5-5`, bytes de control contra un derivado de lado largo 2048. El derivado lo produce `ImageCompressionService` con `MAX_DIMENSION` local al script. No edites `ImageCompressionService::MAX_DIMENSION`. Una sola variable. Una llamada nueva por imagen elegible. El techo es esa llamada, no una segunda.
+- **D.** No aplica A, B ni C, y `shared_identity_fail` es mayor que `shared_component_fail`. El experimento es un prompt observation-first, mismos bytes, solo Sonnet 5.5. El script usa una copia del prompt. No publiques esa copia en `FieldPhotoPrompt` en la misma fase salvo que el experimento gane el case de resortes, no suba `identity_invention`, y un test fije el fingerprint nuevo. Si el experimento no gana, el prompt de producción queda igual y la letra registrada es D con `adopted: false`.
 - **E.** Ninguna letra anterior. `SKIP`. Cero cambio de modelo, de prompt y de resolución. Cero llamadas.
 
-A y B son el cambio de default. C y D son el experimento, no un segundo cambio encima. E no cambia nada. El resultado de F1 no autoriza volver a `bytes > 1_500_000 => Opus`.
+Con los contadores de este anexo, A no aplica. C no aplica. D no aplica. E no aplica si B aplica. Opus no inventa identidad en las filas que gana. La letra que dejan las reglas es B. La extensión no la implementó.
+
+A y B son el cambio de default. C y D son el experimento, no un segundo cambio encima. E no cambia nada. El resultado no autoriza volver a `bytes > 1_500_000 => Opus`. `E3` no autoriza un router.
 
 ### Si la letra escribe `MODEL_TEXT`
 

@@ -558,14 +558,14 @@ Checkpoint previo a F0, que no es una fase:
 
 - `status`: documentación commiteada. F0 `NOT STARTED`.
 - `subject`: `Record Field Companion pre-F0 documentation gates.`
-- `preparatory_head`: `PREPARATORY_HEAD_SHA`
-- F0 abre el repo en un HEAD que ya contiene esa línea. `git merge-base --is-ancestor PREPARATORY_HEAD_SHA HEAD` tiene que ser verdadero. `git diff PREPARATORY_HEAD_SHA -- app config db` tiene que estar vacío. El `git rev-parse HEAD` de esa apertura es `head_initial` de F0. Si el working tree está dirty, `STOP`.
+- `preparatory_head`: `9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739`
+- F0 abre el repo en un HEAD que ya contiene esa línea. `git merge-base --is-ancestor 9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739 HEAD` tiene que ser verdadero. `git diff 9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739 -- app config db` tiene que estar vacío. El `git rev-parse HEAD` de esa apertura es `head_initial` de F0. Si el working tree está dirty, `STOP`.
 
 ## Anexo A — prompt de F0
 
 Ejecutá solo F0 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. No implementes F1. No cambies `BatchChunkingPrompt::MODEL_TEXT`, `MODEL_MULTIMODAL`, `FieldPhotoPrompt`, `ImageCompressionService::MAX_DIMENSION`, `RagRetrievalProfile`, pins, autorización, `generation.txt` ni el renderer. No agregues una columna de `knowledge_scope`. No reindexes. No copies `KbDocument` ni S3. No marques ningún documento como `danebo_general`.
 
-HEAD de partida: el checkpoint de Execution State. `preparatory_head` tiene que ser un ancestro del HEAD en el que abrís, y ese HEAD no puede diferir de `preparatory_head` en `app/`, `config/` ni `db/`. Anotá `git rev-parse HEAD` como `head_initial`. Si `preparatory_head` sigue diciendo `PREPARATORY_HEAD_SHA`, `STOP`: el checkpoint documental no está cerrado.
+HEAD de partida: el checkpoint de Execution State. `preparatory_head` tiene que ser `9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739` y tiene que ser un ancestro del HEAD en el que abrís. Ese HEAD no puede diferir de `preparatory_head` en `app/`, `config/` ni `db/`. Anotá `git rev-parse HEAD` como `head_initial`. Si `preparatory_head` no es ese SHA, `STOP`.
 
 Entregables, todos, o F0 no es `PASS`:
 

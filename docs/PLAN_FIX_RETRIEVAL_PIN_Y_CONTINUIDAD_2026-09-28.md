@@ -649,6 +649,8 @@ La Fase 4 está COMPLETED en el commit cuyo mensaje es `Leave two incompatible a
 
 Fase 5:
 
+La Fase 5 está COMPLETED. Un chat nuevo no la vuelve a implementar: lee Execution State. No hay Fase 6.
+
 ```
 Repo: /Users/lahirisan/smart_deal
 
@@ -948,6 +950,7 @@ Next phase impact:
 - La Fase 5 corrige o remueve del chunk de origen las filas explícitas que contradicen la hoja 2, incluidas las que solapan bastante como para haber evitado el rescate. La Fase 4 no eligió entre ellas.
 Next phase prompt:
 ```text
+OBSOLETO. La Fase 5 está COMPLETED. No ejecutes este prompt. No hay Fase 6.
 Repo: /Users/lahirisan/smart_deal
 
 Commit de la Fase 1: 763db1d975ee53791762e0fd963c666c9662c927
@@ -997,11 +1000,16 @@ Al terminar: commit de la Fase 5, marca Fase 5 COMPLETED en Execution State, reg
 ```
 
 ### Phase 5
-Status: PENDING
-Commit: none
-Tests: pending
+Status: COMPLETED
+Commit: this commit, subject `Refer contradicted Elemont MH sheet-1 bornera rows to sheet 2.`
+Tests: PASS
 Material findings:
-- none yet
+- Objeto: `bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p1_2.txt`. SHA vivo antes de escribir: `688a5d780eef8845c489af53f186d275a3a1cc7a4b35f42b38cc2d53be03776c` (el activo registrado en `docs/PLAN_PILOTO_ELEMONT_2026-09-24.md`). Hoja 2 `chunk_p2_1.txt` SHA `70fa1eafac8b2b2baa707d7941e7f1879f4c2e1a5c2fec081c9b262a52d543f6`, con una sola fila de cada hecho autoritativo (23 Seguridad OUT, 24 Seguridad IN, 25 Presostato OUT, 26 Presostato IN, 30 Micro nivel inferior, 31 Micro nivel superior, 33 Llamada nivel 1, 34 Llamada nivel 2).
+- Backup exacto del objeto anterior: `tmp/elemont_patch_2026-09-28/chunk_p1_2_before.txt`, SHA `688a5d780eef8845c489af53f186d275a3a1cc7a4b35f42b38cc2d53be03776c`. El bucket no tiene versionado. Rollback = re-subir ese archivo por `S3DocumentsService#upload_text` a la misma clave y arrancar `BulkKbSyncService` como el script. No es un `PutObject` crudo.
+- SHA después: `aea5a4bde1a85002b772488e8ca2a1107151f0171e9481cb418274d0f15c2ee5`. Lectura posterior: el objeto ya no empareja 12 con Seguridad IN, 13 con Seguridad OUT, ni 14/15 con Presostato. La fila `| 25 | PRESOSTATO OUT |` se dejó: la hoja 2 dice lo mismo. No se copiaron a la hoja 1 los bornes 23, 24, 26, 30, 31, 33 ni 34.
+- Se reescribieron las filas que contradicen la hoja 2 (12, 13, 14, 15, 22, 23, 24, 26, 27, 31, 32) y los `FIELD_RECORD` que las repetían. El reemplazo es `ver tabla de borneras, hoja 2`. El resto del chunk no cambió.
+- Escritura por `S3DocumentsService#upload_text`, que llama `SectionNeighborExpander.invalidate!` en ese proceso (Solid Cache local). No se entró al contenedor web: la caché de producción de ese índice no se borró aquí. Sync `JUEUYVFGLN` status `COMPLETE`: scanned=14918, new=0, modified=1, deleted=0, failed=1. El fallo no es este objeto: `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt` (400, demasiados tokens para el embedding). No se lanzó otro job.
+- Test: `BUNDLE_PATH=vendor/bundle bin/rails test test/services/elemont_mh_sheet1_bornera_patch_test.rb` — 4 runs, 46 assertions, 0 failures. Sin deploy.
 Next phase impact:
 - none
 Next phase prompt:

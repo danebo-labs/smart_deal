@@ -646,12 +646,46 @@ module Rag
 
     # Elliptical: goal plus the raw turn, so the current intent stays.
     # Self-contained: the designator span. Repeating the whole turn returns
-    # the same top-3 that already missed the designator.
+    # the same top-3 that already missed the designator. A content word in
+    # that span, or a connector when the question asks for attribution,
+    # returns an empty pinned window. The rescue then names the identifiers
+    # already in the turn. Function words alone stay in the span.
     def designator_rescue_query
       base = rescue_base_text
       return base if base.include?("\n")
 
-      designator_span(base).presence || base
+      span = designator_span(base)
+      return base if span.blank?
+
+      condensed_designator_query(span, base) || span
+    end
+
+    def condensed_designator_query(span, base)
+      identifiers = Rag::QueryEntities.analyze(span).identifiers
+      return nil if identifiers.size < 2
+
+      named = identifiers.map(&:raw).join(" ")
+      return nil if named.casecmp?(span.to_s.squish)
+
+      tokens = I18n.transliterate(span).scan(/[[:alnum:]]+/)
+      extras = tokens.reject { |token| span_token_kept?(token, identifiers) }
+      return named if extras.any?
+      return named if attribution_designator_list?(base, tokens, identifiers)
+
+      nil
+    end
+
+    def span_token_kept?(token, identifiers)
+      return true if ANCHOR_FUNCTION_WORDS.include?(token.downcase)
+
+      identifiers.any? { |identifier| I18n.transliterate(identifier.raw).casecmp?(token) }
+    end
+
+    def attribution_designator_list?(base, tokens, identifiers)
+      return false unless Rag::QueryEntities.requested_relation(base).include?(:attribution)
+      return false unless identifiers.count { |identifier| self.class.send(:digit_designator?, identifier) } >= 2
+
+      tokens.any? { |token| Rag::QueryEntities::CONNECTOR_WORDS.include?(token.upcase) }
     end
 
     def designator_span(text)

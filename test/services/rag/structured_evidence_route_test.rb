@@ -1791,6 +1791,169 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal "T1 y T2", route.send(:designator_rescue_query)
   end
 
+  test "designator rescue names turn identifiers when span prose or an attribution connector empties the window" do
+    assert_equal 3, RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+
+    {
+      "En EDEL K2, ¿qué función tienen F1 y F2 en los embarques?" => "EDEL K2 F1 F2",
+      "¿qué indican F1 y F2?" => "F1 F2",
+      "En EDEL K2 con dos embarques, ¿qué fotocélulas identifica el manual para cada embarque?" => "EDEL K2",
+      "EDEL K2 cerrojos exteriores" => "EDEL K2",
+      "Falla la serie SCI del MR08" => "SCI del MR08",
+      "EM4000 V1 obstáculo" => "EM4000 V1",
+      "Tengo encendida la luz H4. ¿Qué me está indicando?" => "H4",
+      "¿Qué temporizador es T1?" => "T1",
+      "¿Qué temporizador es T2?" => "T2",
+      "¿Cómo están configurados T1 y T2?" => "T1 y T2"
+    }.each do |question, rescue_query|
+      route = build_route(
+        question: question,
+        rag_service: FakeRagService.new([]),
+        generator: FakeGenerator.new("x"),
+        expander: FakeExpander.new(nil)
+      )
+
+      assert route, question
+      assert_equal rescue_query, route.send(:designator_rescue_query), question
+    end
+  end
+
+  test "F1 and F2 function question retrieves the identifier names once inside the pin" do
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Otra placa, sin los designadores.", rank: 1, sha: "miss-funcion") ],
+      [ synthetic_chunk("| F1  | FOTOCELULA EMBARQUE 1 |\n| F2  | FOTOCELULA EMBARQUE 2 |", rank: 1, sha: "p25-funcion") ]
+    ])
+    generator = FakeGenerator.new("F1 FOTOCELULA EMBARQUE 1. F2 FOTOCELULA EMBARQUE 2. [1] [2]")
+    route = build_route(
+      question: "En EDEL K2, ¿qué función tienen F1 y F2 en los embarques?",
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    outcome = route.execute
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal :answered, outcome.status
+    assert_equal 2, service.calls.size
+    assert_equal "EDEL K2 F1 F2", service.calls.last[:question]
+    assert_pinned_designator_call(service.calls.first)
+    assert_pinned_designator_call(service.calls.last)
+    assert_includes prompt, "| F1  | FOTOCELULA EMBARQUE 1 |"
+    assert_includes prompt, "| F2  | FOTOCELULA EMBARQUE 2 |"
+  end
+
+  test "F1 and F2 attribution question retrieves the designators without the connector" do
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Otra placa, sin los designadores.", rank: 1, sha: "miss-indican") ],
+      [ synthetic_chunk("| F1  | FOTOCELULA EMBARQUE 1 |\n| F2  | FOTOCELULA EMBARQUE 2 |", rank: 1, sha: "p25-indican") ]
+    ])
+    generator = FakeGenerator.new("F1 FOTOCELULA EMBARQUE 1. F2 FOTOCELULA EMBARQUE 2. [1] [2]")
+    route = build_route(
+      question: "¿qué indican F1 y F2?",
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    outcome = route.execute
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal :answered, outcome.status
+    assert_equal 2, service.calls.size
+    assert_equal "F1 F2", service.calls.last[:question]
+    assert_pinned_designator_call(service.calls.first)
+    assert_pinned_designator_call(service.calls.last)
+    assert_includes prompt, "| F1  | FOTOCELULA EMBARQUE 1 |"
+    assert_includes prompt, "| F2  | FOTOCELULA EMBARQUE 2 |"
+  end
+
+  test "photocell landing question does not retrieve again when the first window already has the model page" do
+    page = synthetic_chunk(
+      "EDEL K2\n| F1  | FOTOCELULA EMBARQUE 1 |\n| F2  | FOTOCELULA EMBARQUE 2 |",
+      rank: 25,
+      sha: "p25-control"
+    )
+    generator = FakeGenerator.new("F1 FOTOCELULA EMBARQUE 1. F2 FOTOCELULA EMBARQUE 2. [1]")
+    service = FakeRagService.new([ page ])
+    route = build_route(
+      question: "En EDEL K2 con dos embarques, ¿qué fotocélulas identifica el manual para cada embarque?",
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    outcome = route.execute
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, service.calls.size
+    assert_equal "EDEL K2", route.send(:designator_rescue_query)
+    assert_pinned_designator_call(service.calls.first)
+    assert_includes prompt, "| F1  | FOTOCELULA EMBARQUE 1 |"
+    assert_includes prompt, "| F2  | FOTOCELULA EMBARQUE 2 |"
+  end
+
+  test "a covered F1 and F2 function question does not retrieve again" do
+    page = synthetic_chunk(
+      "EDEL K2\n| F1  | FOTOCELULA EMBARQUE 1 |\n| F2  | FOTOCELULA EMBARQUE 2 |",
+      rank: 25,
+      sha: "p25-covered-funcion"
+    )
+    service = FakeRagService.new([ page ])
+    route = build_route(
+      question: "En EDEL K2, ¿qué función tienen F1 y F2 en los embarques?",
+      rag_service: service,
+      generator: FakeGenerator.new("F1 FOTOCELULA EMBARQUE 1. F2 FOTOCELULA EMBARQUE 2. [1]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 1, service.calls.size
+    assert_pinned_designator_call(service.calls.first)
+  end
+
+  test "a covered F1 and F2 attribution question does not retrieve again" do
+    page = synthetic_chunk(
+      "| F1  | FOTOCELULA EMBARQUE 1 |\n| F2  | FOTOCELULA EMBARQUE 2 |",
+      rank: 25,
+      sha: "p25-covered-indican"
+    )
+    service = FakeRagService.new([ page ])
+    route = build_route(
+      question: "¿qué indican F1 y F2?",
+      rag_service: service,
+      generator: FakeGenerator.new("F1 FOTOCELULA EMBARQUE 1. F2 FOTOCELULA EMBARQUE 2. [1]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 1, service.calls.size
+    assert_pinned_designator_call(service.calls.first)
+  end
+
+  test "a missed F1 and F2 identifier rescue does not issue a third retrieve" do
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Primera ventana vacía.", rank: 1, sha: "empty-1") ],
+      [ synthetic_chunk("Segunda ventana vacía.", rank: 1, sha: "empty-2") ]
+    ])
+    route = build_route(
+      question: "¿qué indican F1 y F2?",
+      rag_service: service,
+      generator: FakeGenerator.new("Sin la fila en estas páginas. [1]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 2, service.calls.size
+    assert_equal "F1 F2", service.calls.last[:question]
+    assert_equal [ @source_uri ], service.calls.last[:entity_s3_uris]
+    assert_equal true, service.calls.last[:force_entity_filter]
+  end
+
   test "mapping lookup rescues once when the first window has no explicit row" do
     question = "¿A qué borne corresponde el micro de nivel inferior?"
     service = SequencedRagService.new([
@@ -1910,6 +2073,13 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       @calls << { question: question, **kwargs }
       { chunks: @batches.fetch(@calls.size - 1, @batches.last), retrieval_trace: {} }
     end
+  end
+
+  def assert_pinned_designator_call(call)
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, call[:number_of_results]
+    assert_equal [ @source_uri ], call[:entity_s3_uris]
+    assert_equal true, call[:force_entity_filter]
+    assert_equal [ "document" ], call[:entity_sources]
   end
 
   def build_route(question: "¿Qué indica el LED ABC12?", entity_s3_uris: [ @source_uri ],

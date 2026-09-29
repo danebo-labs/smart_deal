@@ -1,6 +1,6 @@
 # Plan de precisión — wording, multi-lookup y F1/F2
 
-Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `COMPLETED`. P2 está `COMPLETED`. P3 está `PENDING` y no se ha ejecutado. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
+Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `COMPLETED`. P2 está `COMPLETED`. P3 está `COMPLETED`. P4 está `PENDING`. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
 
 No reescribir el RAG. No subir `PINNED_DOCUMENT_RESULTS`. No tocar el tono companion, `SourceFidelityGuard`, `SemanticQueryAnalyzer`, la política de pin, product discovery ni el auto-pin.
 
@@ -159,7 +159,7 @@ Rollback: revertir el commit.
 
 ## 10. P3 — F1/F2
 
-`PENDING`. Arranca después de P2. No está `BLOCKED` globalmente y no es `SKIP`.
+`COMPLETED`. No está `BLOCKED` globalmente y no es `SKIP`. Las dos formulaciones quedaron `RESOLVED`. El control positivo sigue en `EDEL K2` y no ganó un retrieve.
 
 Filas:
 
@@ -175,6 +175,8 @@ Control positivo, ya cubierto en P1. No se reabre como fallo:
 Contrato: buscar una solución general de query, rescue o ranking. No hardcodear F1/F2. No parchear el chunk. No reabrir la Fase 5. No tocar el prompt si la evidencia no llega a `selected_generation_chunks`. Sin tercer retrieve, sin corpus global, sin LLM nuevo. El retrieve adicional, si cabe, es uno: k=3, misma URI, `force_entity_filter: true`. `SCI del MR08` y `cerrojos exteriores` siguen siendo el segundo query de sus tests actuales. El control positivo no gana un retrieve extra si el primer retorno ya trae la página 25.
 
 Si no hay solución dentro de esas restricciones, cada formulación fallida queda `BLOCKED` por separado, con `primary_cause`, la restricción y la condición de desbloqueo. El control positivo no se marca `BLOCKED` por eso.
+
+Cierre. La función es `condensed_designator_query`. El span con una palabra de contenido pasa a los identificadores del turno, en orden. Una pregunta de atribución cuyo único extra es una conjunción pasa a los designadores sin esa conjunción. Un span cuyos extras son solo palabras funcionales queda literal. Medido en la KB de P1, k=3, la misma URI, `force_entity_filter: true`: `EDEL K2 F1 F2` y `F1 F2` traen la página 25 con `| F1 | FOTOCELULA EMBARQUE 1 |` y `| F2 | FOTOCELULA EMBARQUE 2 |`. El span en prosa, `F1 y F2` y las dos `anchor_phrase` devolvieron 0. `SCI del MR08`, `T1 y T2`, `EDEL K2`, `EM4000 V1`, `H4`, `T1` y `T2` no cambian.
 
 Rollback: revertir el commit.
 
@@ -288,17 +290,27 @@ F1/F2 no fue esta fase. Su `primary_cause` sigue `retrieval/ranking`.
 Next phase prompt: el de la sección 14, bajo P3.
 
 ### P3
-Status: PENDING
-Ready after: P2 COMPLETED
-No está `BLOCKED` globalmente. No es `SKIP`. No reabre las filas de P2.
-Filas: F1/F2 función y F1/F2 indican, ambas `retrieval/ranking`. Control positivo: fotocélulas, página 25, F1 embarque 1, F2 embarque 2, `none`.
-`source/chunk representation` no es la hipótesis. Si no hay solución dentro de las restricciones, cada formulación fallida queda `BLOCKED` por separado.
-P2 dejó RESOLVED bornera IN y OUT+IN. Dejó BLOCKED micros, llamadas, SUBE+BAJA y T1+T2. Esas cuatro no se implementan aquí.
+Status: COMPLETED
+Commit: this change
+Tests: `test/services/rag/structured_evidence_route_test.rb` — 87 runs, 737 assertions, 0 failures. `query_entities_test.rb` — 18 runs, 79 assertions, 0 failures. `PINNED_DOCUMENT_RESULTS` sigue en 3.
+Medición, KB `Y7RZWMFJSR`, URI de SEGURIDADES, k=3, `force_entity_filter: true`. Sin generación.
+- Función. Identifiers: EDEL alpha, K2, F1, F2. `requested_relation` vacío. Query inicial: la pregunta, 0 chunks. Rescue real: `designator_span` = `EDEL K2, ¿qué función tienen F1 y F2`, 0 chunks.
+- Indican. Identifiers: F1, F2. `requested_relation`: attribution. Query inicial: la pregunta, 0 chunks. Rescue real: `F1 y F2`, 0 chunks.
+- Control. Identifiers: EDEL, K2. `requested_relation`: attribution. Query inicial: 0 chunks. Rescue `EDEL K2`: páginas 23, 25 y 26. La página 25 tiene `| F1 | FOTOCELULA EMBARQUE 1 |` y `| F2 | FOTOCELULA EMBARQUE 2 |`.
+El control llega porque el span se corta en K2 y ese string es el alias del chunk. Las otras dos no: la prosa y la conjunción `y` vacían la ventana. `anchor_phrase` también devolvió 0 (`EDEL K2 funcion tienen F1 F2 embarques`, `indican F1 F2`). Quitar `¿` y `?` a la pregunta entera también devolvió 0.
+Generalización: `condensed_designator_query`. Palabra de contenido dentro del span → los identificadores del turno, en orden. Atribución y el único extra es una conjunción → los designadores sin esa conjunción. Extras que son solo palabras funcionales → el span literal.
+Hits medidos, la misma página 25 y las dos filas: `EDEL K2 F1 F2`, `F1 F2`, y el control `EDEL K2`.
+Strings que no cambian: `EDEL K2` (cerrojos), `SCI del MR08`, `EM4000 V1`, `H4`, `T1`, `T2`, `T1 y T2`.
+1. F1/F2 función — RESOLVED. `primary_cause`: `retrieval/ranking`. Rescue: `EDEL K2 F1 F2`. Un retrieve adicional, k=3, misma URI, `force_entity_filter: true`. Si K2, F1 y F2 ya están en la primera ventana, una llamada. Nunca tres.
+2. F1/F2 indican — RESOLVED. `primary_cause`: `retrieval/ranking`. Rescue: `F1 F2`. Mismo presupuesto. Si F1 y F2 ya están en la primera ventana, una llamada.
+Control positivo — sin cambio. Rescue `EDEL K2`. Una llamada si la primera ventana ya trae K2. No es `BLOCKED`.
+P2 no se reabrió. Micros, llamadas, SUBE+BAJA y T1+T2 siguen `BLOCKED`.
+Next phase prompt: el de la sección 14, bajo P4.
 
 ### P4
 Status: PENDING
-Blocked by: P3
-P2 ya cerró. Cada fila obligatoria de la sección 11 cierra en `RESOLVED`, `BLOCKED` o `DEFERRED`. Ninguna se elimina en silencio. `DEFERRED` no cuenta como éxito. Un `BLOCKED` de P2 no se convierte en éxito.
+Ready after: P3 COMPLETED
+P2 y P3 ya cerraron. Cada fila obligatoria de la sección 11 cierra en `RESOLVED`, `BLOCKED` o `DEFERRED`. Ninguna se elimina en silencio. `DEFERRED` no cuenta como éxito. Un `BLOCKED` no se convierte en éxito.
 Disposición que P2 deja, y que este gate no reabre:
 - Bornera IN — RESOLVED
 - OUT+IN — RESOLVED
@@ -306,7 +318,7 @@ Disposición que P2 deja, y que este gate no reabre:
 - Llamadas juntas — BLOCKED, `retrieval/ranking`
 - SUBE+BAJA — BLOCKED, `route eligibility`
 - T1+T2 — BLOCKED, `rescue eligibility/query`
-F1/F2 función, F1/F2 indican y el control de fotocélulas los cierra P3. Si P3 marca una formulación `BLOCKED`, el gate la conserva.
+F1/F2 función y F1/F2 indican quedaron `RESOLVED` en P3. El control de fotocélulas sigue en `EDEL K2`, página 25. El gate no los reabre como fallo. Un `BLOCKED` de P2 no se convierte en éxito.
 
 ## 14. Prompts
 
@@ -427,10 +439,25 @@ Disposición que P2 ya cerró y este gate no reabre:
 - T1+T2 — BLOCKED. rescue eligibility/query. Conserva el camino de designador.
   configurados T1 T2 no trajo los modos.
 
-F1/F2 función, F1/F2 indican y fotocélulas entran siempre.
-Usa la disposición que P3 haya escrito. Si P3 dejó una formulación BLOCKED,
-el gate la conserva con su causa, restricción y desbloqueo.
-Fotocélulas es control positivo: página 25, F1 embarque 1, F2 embarque 2.
+F1/F2 función — RESOLVED. retrieval/ranking.
+La asociación tiene que estar en selected_generation_chunks:
+| F1 | FOTOCELULA EMBARQUE 1 | y | F2 | FOTOCELULA EMBARQUE 2 |, página 25.
+No generes. Si la primera ventana ya trae K2, F1 y F2, una llamada.
+Si no, un retrieve adicional con la query EDEL K2 F1 F2.
+k=3, misma URI, force_entity_filter true. Nunca tres.
+
+F1/F2 indican — RESOLVED. retrieval/ranking.
+Las mismas dos filas en selected_generation_chunks. No generes.
+Si la primera ventana ya trae F1 y F2, una llamada.
+Si no, un retrieve adicional con la query F1 F2.
+k=3, misma URI, force_entity_filter true. Nunca tres.
+
+Fotocélulas — control positivo, primary_cause none.
+Página 25, F1 embarque 1, F2 embarque 2.
+La rescue query sigue EDEL K2. No es un fallo.
+Si la primera ventana ya trae K2, una llamada. No gana un retrieve de más.
+
+KB de la medición de P3: Y7RZWMFJSR, el mismo documento pin de P1.
 
 Más los controles históricos de la sección 11.
 Cada fila cierra en RESOLVED, BLOCKED o DEFERRED. Ninguna se elimina.

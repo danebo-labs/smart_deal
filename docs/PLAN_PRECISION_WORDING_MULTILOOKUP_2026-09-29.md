@@ -117,51 +117,64 @@ Al cerrar, P1 reescribe el prompt de P2 con `primary_cause`, `contributing_cause
 
 ## 9. P2 — Wording y multi-lookup
 
-No empieza con el prompt de esta sección si P1 lo reescribió. Implementa únicamente el `primary_cause` demostrado de las filas A y de los multi-lookup. No toca una causa que solo esté en `contributing_causes`.
+Codex, 29-sep-2026, reestructura el cierre de P1. P2 sigue `READY`. Las seis filas permanecen. No es un solo commit para todas. Se trabaja caso por caso. Una fila `BLOCKED` no bloquea el resto de P2. F1/F2 no entra aquí. El prompt de la sección 14 es el que se ejecuta.
 
-Formas que puede usar, y solo si ese es el primario:
+Filas:
 
-- Rescue query: la función que la sección 6 haya autorizado. Tests determinísticos del string. `¿Dónde está el cuadro de maniobra?` sigue inelegible.
-- Cobertura: la sección 4. Un mapping descubierto no queda tapado por la asociación de otro. Cobertura completa de todos los mappings pedidos: una llamada. Cobertura parcial, si el primario autorizado es rescue: como máximo dos.
-- `bornera` como el mismo stem que `borne`, solo si el primario de la fila A es `route eligibility`. No se añade una clave a `RELATION_TRIGGERS`. Un `dónde` sin ese stem no entra.
-- Abrir la ruta ya existente para dos identifiers no numéricos con relación de mapping, solo si el primario de SUBE+BAJA es `route eligibility` y K1/K2 no están en `selected_generation_chunks`. La query es la función de la sección 6. Una pregunta con un solo identifier alfabético se queda como hoy.
+1. Bornera IN. `¿Dónde está conectada Seguridad IN en la bornera del tablero?` `primary_cause`: `route eligibility`.
+2. OUT+IN. `¿Cuáles son los bornes de Seguridad OUT y Seguridad IN?` `primary_cause`: `evidence selection/coverage`.
+3. Micros inferior+superior. `primary_cause`: `retrieval/ranking`.
+4. Llamadas 1+2. `primary_cause`: `retrieval/ranking`.
+5. SUBE+BAJA. `¿Qué relés corresponden a SUBE y BAJA en este tablero?` `primary_cause`: `route eligibility`.
+6. T1+T2. `¿Cómo están configurados T1 y T2?` `primary_cause`: `rescue eligibility/query`.
 
-Si el primario es `synthesis`, P2 no abre la ruta ni cambia el retrieve. La excepción, si hace falta, entra en el bloque de conflicto ya existente. Si el primario es `source/chunk representation`, P2 se escala y no parchea el chunk.
+A. Bornera IN. Fix autorizado por P1. Tratar `bornera` como stem compatible con `borne`/`terminal` si esa sigue siendo la corrección mínima. No se añade una clave a `RELATION_TRIGGERS`. Rescue query medida: `conectada Seguridad IN bornera tablero`. Misma URI, `force_entity_filter: true`, k=3, como máximo un retrieve adicional. `¿Dónde está el cuadro de maniobra?` sigue nil.
 
-`T1`+`T2` siguen en el camino de designador. `uncovered_designators` sigue exigiendo los dos. P2 no les aplica otra función de query.
+B. OUT+IN. No añadir retrieval. La hoja 2 ya estaba en el retrieve inicial (`| 23 | Seguridad OUT |`, `| 24 | Seguridad IN |`) y `selected_generation_chunks` se quedó con la página 5. Corregir selection/coverage con la sección 4: cada mapping pedido necesita su asociación explícita. Una sola asociación no puede cancelar el rescue ni la selección de todo el turno.
+
+C. Micros, llamadas, SUBE+BAJA y T1+T2. No inventar un fix particular ni una query por caso. Para cada fila: revisar la primaria de P1 y buscar una generalización determinística que quepa en las restricciones. Si se puede resolver sin hardcodes, sin LLM nuevo, sin tercer retrieve y sin abrir el corpus global, se implementa con tests. Si no, esa fila queda `BLOCKED` con `primary_cause`, la restricción que lo impide y la condición concreta de desbloqueo.
+
+La sección 6 sigue vigente. `anchor_phrase` solo está autorizada para bornera IN. SUBE+BAJA midió `reles corresponden SUBE BAJA tablero` y no metió K1 con SUBE ni K2 con BAJA: esa función no se adopta. T1+T2 midió `configurados T1 T2` y no trajo modo E ni modo Wu: no se les aplica otra función de query. Micros y llamadas corrieron el rescue con la pregunta sin el `?` final y no trajeron la hoja 2: no hay contrafactual y no se inventa otra query. `synthesis` y `source/chunk representation` no son la primaria de estas seis filas. No se toca el prompt ni se parchea el chunk. No se toca `ActiveEpisodeTurn`. `PINNED_DOCUMENT_RESULTS` sigue en 3.
+
+Al cerrar, cada una de las seis filas queda implementada o `BLOCKED` individual. Se reescribe el prompt de P3. No se implementa P3.
 
 Archivos probables: `app/services/rag/structured_evidence_route.rb` y su test. `app/services/rag_retrieval_profile.rb` solo si el stem `bornera` tiene que vivir en `BORNE_TERMINAL_PATTERN`. `app/services/query_orchestrator_service.rb` no gana una rama.
 
 Tests, sin Bedrock, con fake de `retrieve_chunks`:
 
-- La query de rescue de cada fallo cuyo primario sea rescue es el string registrado por P1, distinta de la query inicial, con la misma URI, `force_entity_filter: true` y k=3.
-- Ventana cuya texto menciona `inferior` y `superior` sin asociación a 30 y 31: esos dos mappings quedan descubiertos.
+- Bornera IN: el string medido, distinto de la query inicial, misma URI, `force_entity_filter: true`, k=3.
 - Una fila de `OUT` no cubre el mapping de `IN`.
-- N mappings cubiertos en el primer retorno: una llamada.
-- Un mapping cubierto y otro no, con rescue autorizado: dos llamadas, nunca tres.
 - `¿Cuáles son los bornes de Seguridad OUT y Seguridad IN?` con las dos asociaciones en el primer retorno: una llamada, y `selected_generation_chunks` conserva 23 y 24.
-- `¿Cómo están configurados T1 y T2?` conserva el camino de designador.
-- `¿Dónde está el cuadro de maniobra?` sigue en nil. Cadena de seguridad y foso, sin borne, label ni lookup, siguen en una llamada.
-- `¿Y para BAJA cuál es el relé?` sigue elíptica, sin tocar `ActiveEpisodeTurn` si P1 no marcó continuidad como primaria.
+- Ventana que menciona `inferior` y `superior` sin asociación a 30 y 31: esos dos mappings quedan descubiertos.
+- N mappings cubiertos en el primer retorno: una llamada. Un mapping cubierto y otro no, con rescue autorizado: dos llamadas, nunca tres.
+- Para C, tests solo de la generalización que se haya implementado. Una fila `BLOCKED` no gana un test de un fix que no existe.
+- `¿Cómo están configurados T1 y T2?` conserva el camino de designador si no hubo esa generalización.
+- `¿Dónde está el cuadro de maniobra?` sigue en nil. Cadena de seguridad y foso siguen en una llamada.
+- `¿Y para BAJA cuál es el relé?` sigue elíptica.
 - `PINNED_DOCUMENT_RESULTS` sigue en 3.
 
-Criterio: esos tests verdes, y la suite de `structured_evidence_route`, `query_entities`, `rag_retrieval_profile`, `active_episode_turn` y `rag_query_concern` sin fallos nuevos. El probe de P1, sin contrafactuales, muestra las asociaciones pedidas en `selected_generation_chunks` de las filas cuyo primario era anterior a `synthesis`. Los controles de un solo mapping no pierden la asociación ni ganan un retrieve.
+Criterio: tests verdes de lo implementado, y la suite de `structured_evidence_route`, `query_entities`, `rag_retrieval_profile`, `active_episode_turn` y `rag_query_concern` sin fallos nuevos. Cada fila de P2 tiene disposición en Execution State. Los controles de un solo mapping no pierden la asociación ni ganan un retrieve.
 
 Rollback: revertir el commit.
 
 ## 10. P3 — F1/F2
 
-Si P1 marca `SKIP`, no se implementa.
+`PENDING`. Arranca después de P2. No está `BLOCKED` globalmente y no es `SKIP`.
 
-Implementa solo el `primary_cause` de esas filas. No corrige una causa que P1 haya dejado como contribuyente.
+Filas:
 
-Si el primario es el corte de `designator_span` y P1 demostró un string de rescue que mete las asociaciones, el cambio es ese corte, en el mismo rescue. `SCI del MR08` y `cerrojos exteriores` en el elíptico siguen siendo el segundo query de sus tests actuales. La función obedece la sección 6.
+- `En EDEL K2, ¿qué función tienen F1 y F2 en los embarques?` `primary_cause`: `retrieval/ranking`.
+- `¿qué indican F1 y F2?` `primary_cause`: `retrieval/ranking`.
 
-Si el primario es `synthesis`, no se añade un retrieve. La excepción entra en el bloque grounded que ya pide decir las filas. Sin una policy nueva y sin otra llamada.
+Control positivo, ya cubierto en P1. No se reabre como fallo:
 
-Si el primario es `source/chunk representation`, queda `BLOCKED` y se escala. No se parchea el chunk. La Fase 5 del plan cerrado no se reabre.
+- `En EDEL K2 con dos embarques, ¿qué fotocélulas identifica el manual para cada embarque?` Página 25. F1 fotocélula embarque 1. F2 fotocélula embarque 2. `primary_cause`: `none`.
 
-Tests: el caso que P1 haya marcado, con el string de query que P1 haya registrado, más los oráculos 3 y 4 del probe cerrado sin un retrieve extra cuando el primer retorno ya trae el designador.
+`source/chunk representation` no es la hipótesis primaria. La evidencia existe: esa formulación ya recupera la página 25 y expresa las dos asociaciones. Las dos formulaciones fallidas devolvieron 0 chunks en la query inicial y en el `designator_span`. El rescue corrió con otra query, así que P1 no autorizó un contrafactual.
+
+Contrato: buscar una solución general de query, rescue o ranking. No hardcodear F1/F2. No parchear el chunk. No reabrir la Fase 5. No tocar el prompt si la evidencia no llega a `selected_generation_chunks`. Sin tercer retrieve, sin corpus global, sin LLM nuevo. El retrieve adicional, si cabe, es uno: k=3, misma URI, `force_entity_filter: true`. `SCI del MR08` y `cerrojos exteriores` siguen siendo el segundo query de sus tests actuales. El control positivo no gana un retrieve extra si el primer retorno ya trae la página 25.
+
+Si no hay solución dentro de esas restricciones, cada formulación fallida queda `BLOCKED` por separado, con `primary_cause`, la restricción y la condición de desbloqueo. El control positivo no se marca `BLOCKED` por eso.
 
 Rollback: revertir el commit.
 
@@ -169,7 +182,25 @@ Rollback: revertir el commit.
 
 Chat nuevo, que no implementó P2 ni P3. No entra en CI. No deploy.
 
-Dos comprobaciones. Los fallos de este plan quedan cubiertos según la sección 4. Los controles de abajo no ganan un rescue.
+Cada fila de este gate cierra en `RESOLVED`, `BLOCKED` o `DEFERRED`. Ninguna se elimina en silencio. `DEFERRED` exige justificación y no cuenta como éxito del plan.
+
+`RESOLVED`: si la causa era de retrieve o de selección, el hecho correcto está en `selected_generation_chunks` y no se genera. Si la causa era `synthesis`, una generación grounded y la respuesta expresa las asociaciones.
+
+`BLOCKED`: causa, restricción que impide resolverla, condición concreta de desbloqueo.
+
+Filas obligatorias de este plan:
+
+- Bornera IN
+- OUT+IN
+- Micros juntos
+- Llamadas juntas
+- SUBE+BAJA
+- T1+T2
+- F1/F2 función
+- F1/F2 indican
+- Fotocélulas F1/F2, control positivo: página 25, F1 embarque 1, F2 embarque 2
+
+Dos comprobaciones. Los fallos que quedaron `RESOLVED` están cubiertos según la sección 4. Los controles de abajo no ganan un rescue.
 
 `retrieve_chunks`:
 
@@ -204,7 +235,7 @@ Validación del gate, la misma frontera de la sección 5:
 - Si la causa cerrada fue de retrieve o de selección, el probe afirma `selected_generation_chunks` y no genera.
 - Si la causa cerrada fue `synthesis`, una sola generación grounded, y la respuesta expresa las asociaciones.
 
-La fila de fotocélulas afirma F1 y F2 cuando P3 no quedó en `SKIP` o `BLOCKED`.
+Fotocélulas entra siempre, como control positivo. Las dos formulaciones fallidas de F1/F2 entran siempre. Un `BLOCKED` individual no se borra ni cuenta como éxito.
 
 Rollback: no hay cambio de runtime. Si el probe falla, no se edita el umbral: se reabre la fase cuyo mapping cayó.
 
@@ -246,16 +277,26 @@ Next phase prompt: el de la sección 14, bajo P2.
 ### P2
 Status: READY
 Blocked by: none
-Scope: solo `route eligibility` de la fila de bornera. El resto de los fallos de arriba no entra en este cambio.
+Scope: seis filas, caso por caso. Codex 29-sep: no se saca ninguna del roadmap. Una fila `BLOCKED` no bloquea P2.
+1. Bornera IN — `route eligibility`. Fix autorizado: stem `bornera`, rescue `conectada Seguridad IN bornera tablero`, misma URI, `force_entity_filter: true`, k=3, un retrieve adicional.
+2. OUT+IN — `evidence selection/coverage`. Sin retrieve nuevo. La hoja 2 ya estaba. Una asociación no cancela el turno.
+3. Micros inferior+superior — `retrieval/ranking`. Generalizar o `BLOCKED` individual.
+4. Llamadas 1+2 — `retrieval/ranking`. Generalizar o `BLOCKED` individual.
+5. SUBE+BAJA — `route eligibility`. La función medida no metió K1/K2. No se adopta. Generalizar o `BLOCKED` individual.
+6. T1+T2 — `rescue eligibility/query`. La función medida no trajo los modos. No se adopta otra query. Generalizar o `BLOCKED` individual.
+F1/F2 no es esta fase.
 
 ### P3
-Status: BLOCKED
-May become: SKIP — no aplica. La primaria de F1/F2 no es la de P2, y no hay una función de la sección 6 que adoptar. No se implementa.
+Status: PENDING
+Ready after: P2
+No está `BLOCKED` globalmente. No es `SKIP`.
+Filas: F1/F2 función y F1/F2 indican, ambas `retrieval/ranking`. Control positivo: fotocélulas, página 25, F1 embarque 1, F2 embarque 2, `none`.
+`source/chunk representation` no es la hipótesis. Si no hay solución dentro de las restricciones, cada formulación fallida queda `BLOCKED` por separado.
 
 ### P4
 Status: PENDING
-Blocked by: P2
-P3 queda fuera del gate: las filas 13 y 14 no tienen un cambio autorizado, y la fila 15 ya expresa F1 y F2.
+Blocked by: P2 and P3
+Cada fila obligatoria de la sección 11 cierra en `RESOLVED`, `BLOCKED` o `DEFERRED`. Ninguna se elimina en silencio. `DEFERRED` no cuenta como éxito.
 
 ## 14. Prompts
 
@@ -284,53 +325,78 @@ Commit de P1. Detente.
 ```
 Repo: /Users/lahirisan/smart_deal
 Implementa solo P2 de docs/PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md.
-P2 está READY. No implementes P3 ni P4. No deploy.
+P2 está READY. No implementes P3 ni P4. No deploy. No toques P1 ni 81e3caf.
 
-primary_cause: route eligibility. Una sola fila:
-¿Dónde está conectada Seguridad IN en la bornera del tablero?
-La ruta salió nil. selected_generation_chunks no tenía | 24 | Seguridad IN |.
-Función autorizada por la sección 6: anchor_phrase.
-String medido: conectada Seguridad IN bornera tablero.
-Misma URI, force_entity_filter true, k=3. Esa query metió la fila de la hoja 2.
-Trata bornera como el stem de borne. No añadas una clave a RELATION_TRIGGERS.
+Seis filas, caso por caso. Una fila BLOCKED no bloquea el resto. F1/F2 no es esta fase.
+
+A. Bornera IN, route eligibility.
+Trata bornera como stem de borne/terminal si esa es la corrección mínima.
+No añadas una clave a RELATION_TRIGGERS.
+Rescue query medida: conectada Seguridad IN bornera tablero.
+Misma URI, force_entity_filter true, k=3, un retrieve adicional.
 ¿Dónde está el cuadro de maniobra? sigue nil.
 
-No toques las otras filas:
-- OUT+IN juntos es evidence selection/coverage. La hoja 2 ya estaba en el primer retrieve.
-  No cambies select_generation_chunks.
-- Micro inferior+superior y llamada 1+2 son retrieval/ranking. No inventes una query.
-- SUBE+BAJA juntos es route eligibility, pero reles corresponden SUBE BAJA tablero
-  no metió K1 con SUBE ni K2 con BAJA. No abras esa ruta. Escala.
-- T1+T2 es rescue eligibility/query. configurados T1 T2 no trajo modo E ni modo Wu.
-  Siguen en el camino de designador. No les apliques otra función.
-- F1/F2 no es esta fase.
+B. OUT+IN, evidence selection/coverage.
+No añadas retrieval. La hoja 2 ya estaba en el primer retrieve.
+Cada mapping pedido necesita su asociación explícita.
+Una sola asociación no cancela rescue ni selección de todo el turno.
+selected_generation_chunks conserva 23 y 24.
 
-No toques ActiveEpisodeTurn. PINNED_DOCUMENT_RESULTS sigue en 3.
-Tests sin Bedrock, del string medido, el pin, k=3 y force_entity_filter true.
-Commit. Detente.
+C. Micros, llamadas, SUBE+BAJA, T1+T2.
+No inventes un fix ni una query por caso.
+Busca una generalización determinística dentro de las restricciones.
+Si no cabe: marca ESA fila BLOCKED con primary_cause, la restricción
+y la condición de desbloqueo.
+No adoptes reles corresponden SUBE BAJA tablero ni configurados T1 T2:
+P1 mostró que no meten la asociación.
+PINNED_DOCUMENT_RESULTS sigue en 3. Sin tercer retrieve. Sin corpus global.
+Sin LLM nuevo. Sin hardcodes. No toques ActiveEpisodeTurn ni el prompt.
+Tests sin Bedrock de lo que implementes. Commit. Reescribe P3. Detente.
 ```
 
 ### P3
 
 ```
-P3 está BLOCKED. No implementes.
+Repo: /Users/lahirisan/smart_deal
+Implementa solo P3 de docs/PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md.
+P3 está PENDING y arranca después de P2. No está BLOCKED globalmente.
+No implementes P4. No deploy. No toques P1 ni 81e3caf.
 
-Filas 13 y 14: primary_cause retrieval/ranking. La query inicial y el
-designator_span devolvieron 0 chunks. El rescue ya corrió con otra query,
-así que la sección 6 no autorizó un contrafactual. No hay función que adoptar.
-No inventes un span ni un retrieve.
+Filas, primary_cause retrieval/ranking:
+- En EDEL K2, ¿qué función tienen F1 y F2 en los embarques?
+- ¿qué indican F1 y F2?
+Control positivo, no reabrir:
+- En EDEL K2 con dos embarques, ¿qué fotocélulas identifica el manual para cada embarque?
+  Página 25. F1 fotocélula embarque 1. F2 fotocélula embarque 2.
 
-Fila 15: primary_cause none. La página 25 ya tenía
-| F1 | FOTOCELULA EMBARQUE 1 | y | F2 | FOTOCELULA EMBARQUE 2 |,
-y la respuesta guardada los dice.
-
-No es la clase de P2 y no es SKIP: no hay un cambio autorizado.
-No parchees chunks. No reabras la Fase 5. Escala y detente.
+source/chunk representation no es la hipótesis. La evidencia existe.
+Busca una solución general de query, rescue o ranking.
+No hardcodees F1/F2. No parchees el chunk. No reabras la Fase 5.
+No toques el prompt si la evidencia no llega a selected_generation_chunks.
+Sin tercer retrieve, sin corpus global, sin LLM nuevo.
+Si no hay solución, marca cada formulación BLOCKED por separado,
+con primary_cause, restricción y condición de desbloqueo.
+El control positivo no se marca BLOCKED por eso.
+Commit. Reescribe P4. Detente.
 ```
 
 ### P4
 
-Chat que no tocó P2 ni P3. Probe read-only. Los fallos nuevos pasan. Los controles de la sección 11 no ganan un rescue. Cobertura completa: una llamada. Parcial con rescue permitido: como máximo dos. Nunca tres, nunca otra URI, nunca el corpus global. Retrieve o selección: afirmar `selected_generation_chunks`. `synthesis`: una generación grounded. Salir 0 solo con eso. No editar el umbral.
+```
+Chat que no tocó P2 ni P3. Probe read-only. No deploy.
+Filas obligatorias: Bornera IN, OUT+IN, micros juntos, llamadas juntas,
+SUBE+BAJA, T1+T2, F1/F2 función, F1/F2 indican, fotocélulas como control positivo.
+Más los controles históricos de la sección 11.
+Cada fila cierra en RESOLVED, BLOCKED o DEFERRED. Ninguna se elimina.
+DEFERRED no cuenta como éxito.
+RESOLVED de retrieve o selección: el hecho está en selected_generation_chunks, sin generar.
+RESOLVED de synthesis: una generación grounded.
+BLOCKED: causa, restricción y condición de desbloqueo.
+Cobertura completa: una llamada. Parcial con rescue permitido: como máximo dos.
+Nunca tres, nunca otra URI, nunca el corpus global.
+Los controles de la sección 11 no ganan un rescue.
+No editar el umbral.
+```
 
 ## Qué no está en este plan
 

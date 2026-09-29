@@ -1635,6 +1635,162 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal "Seguridad OUT", service.calls.last[:question]
   end
 
+  test "bornera location enters mapping rescue with the measured anchor phrase" do
+    question = "¿Dónde está conectada Seguridad IN en la bornera del tablero?"
+    service = SequencedRagService.new([
+      [ synthetic_chunk("Descripción del tablero sin la fila pedida.", rank: 1, sha: "miss") ],
+      [ synthetic_chunk("| 24 | Seguridad IN |", rank: 1, sha: "sheet-2") ]
+    ])
+    generator = FakeGenerator.new("Seguridad IN. [1] [2]")
+    route = build_route(
+      question: question,
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    assert route
+    route.execute
+    rescue_call = service.calls.last
+
+    assert_equal 2, service.calls.size
+    assert_equal question, service.calls.first[:question]
+    assert_equal "conectada Seguridad IN bornera tablero", rescue_call[:question]
+    assert_not_equal service.calls.first[:question].squish.downcase, rescue_call[:question].squish.downcase
+    assert_equal [ @source_uri ], rescue_call[:entity_s3_uris]
+    assert_equal true, rescue_call[:force_entity_filter]
+    assert_equal 3, rescue_call[:number_of_results]
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, rescue_call[:number_of_results]
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, service.calls.first[:number_of_results]
+    assert_includes generator.calls.first[:prompt], "| 24 | Seguridad IN |"
+  end
+
+  test "a location question without the bornera stem stays ineligible" do
+    assert_nil build_route(question: "¿Dónde está el cuadro de maniobra?")
+  end
+
+  test "both borne associations in the first window stay one retrieve" do
+    question = "¿Cuáles son los bornes de Seguridad OUT y Seguridad IN?"
+    sheet = synthetic_chunk("| 23 | Seguridad OUT |\n| 24 | Seguridad IN |", rank: 2, sha: "sheet-2")
+    distractor = synthetic_chunk(
+      "Cuáles son los bornes de Seguridad en el pasillo.\n| 1 | Seg In |\n| 11 | Seg Out |",
+      rank: 1,
+      sha: "page-5"
+    )
+    service = FakeRagService.new([ distractor, sheet ])
+    generator = FakeGenerator.new("Seguridad OUT y Seguridad IN. [1]")
+    route = build_route(
+      question: question,
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    assert route
+    route.execute
+
+    assert_equal 1, service.calls.size
+    assert_includes generator.calls.first[:prompt], "| 23 | Seguridad OUT |"
+    assert_includes generator.calls.first[:prompt], "| 24 | Seguridad IN |"
+  end
+
+  test "one polarity row leaves the other mapping uncovered" do
+    question = "¿Cuáles son los bornes de Seguridad OUT y Seguridad IN?"
+    route = route_for_selection(question)
+    out_only = [ synthetic_chunk("| 23 | Seguridad OUT |", rank: 1, sha: "out") ]
+    in_only = [ synthetic_chunk("| 24 | Seguridad IN |", rank: 1, sha: "in") ]
+    groups = route.send(:borne_mapping_groups, question)
+
+    assert_equal 2, groups.size
+    assert route.send(:mapping_group_covered?, out_only, groups[0])
+    assert_not route.send(:mapping_group_covered?, out_only, groups[1])
+    assert route.send(:mapping_group_covered?, in_only, groups[1])
+    assert_not route.send(:mapping_group_covered?, in_only, groups[0])
+    assert_not route.send(:explicit_row_covered?, out_only)
+    assert_not route.send(:explicit_row_covered?, in_only)
+
+    service = SequencedRagService.new([
+      out_only,
+      [ synthetic_chunk("| 24 | Seguridad IN |", rank: 1, sha: "in-rescue") ]
+    ])
+    build_route(
+      question: question,
+      rag_service: service,
+      generator: FakeGenerator.new("Fila parcial. [1] [2]"),
+      expander: FakeExpander.new(nil)
+    ).execute
+
+    assert_equal 2, service.calls.size
+  end
+
+  test "mentioning both names without an explicit assignment leaves them uncovered" do
+    out_in = "¿Cuáles son los bornes de Seguridad OUT y Seguridad IN?"
+    micros = "¿Cuáles son los bornes del micro de nivel inferior y del micro de nivel superior?"
+    route = route_for_selection(out_in)
+    mention = [ synthetic_chunk("Seguridad OUT y Seguridad IN están en la bornera.", rank: 1, sha: "mention") ]
+    micro_mention = [ synthetic_chunk("El micro inferior y el micro superior están en la bornera.", rank: 1, sha: "micros") ]
+    micro_rows = [ synthetic_chunk("| 30 | Micro nivel inferior |\n| 31 | Micro nivel superior |", rank: 1, sha: "micro-rows") ]
+
+    assert_not route.send(:explicit_row_covered?, mention)
+    assert_not route_for_selection(micros).send(:explicit_row_covered?, micro_mention)
+    assert route_for_selection(micros).send(:explicit_row_covered?, micro_rows)
+    assert_equal micros.sub(/[?¿]+\z/, ""), route_for_selection(micros).send(:mapping_rescue_query)
+  end
+
+  test "single mapping lookups keep one retrieve when their row is present" do
+    cases = {
+      "¿A qué borne corresponde el micro de nivel inferior?" => "| 30 | Micro nivel inferior |",
+      "¿A qué borne corresponde el micro de nivel superior?" => "| 31 | Micro nivel superior |",
+      "¿A qué borne corresponde la llamada de nivel 1?" => "| 33 | Llamada nivel 1 |",
+      "¿A qué borne corresponde la llamada de nivel 2?" => "| 34 | Llamada nivel 2 |",
+      "¿A qué borne corresponde Seguridad OUT?" => "| 23 | Seguridad OUT |",
+      "¿A qué borne corresponde Presostato OUT?" => "| 25 | Presostato OUT |",
+      "¿A qué borne corresponde Presostato IN?" => "| 26 | Presostato IN |"
+    }
+
+    cases.each do |question, row|
+      service = FakeRagService.new([ synthetic_chunk(row, rank: 1, sha: Digest::SHA256.hexdigest(question)) ])
+      generator = FakeGenerator.new("Fila. [1]")
+      route = build_route(
+        question: question,
+        rag_service: service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      )
+
+      assert route, question
+      route.execute
+      assert_equal 1, service.calls.size, question
+      assert_includes generator.calls.first[:prompt], row, question
+    end
+  end
+
+  test "SUBE and BAJA questions stay outside the mapping route" do
+    assert_nil build_route(question: "Elemont MH, ¿cuál es el relé de SUBE?")
+    assert_nil build_route(question: "¿Y para BAJA cuál es el relé?")
+    assert_nil build_route(question: "¿Qué relés corresponden a SUBE y BAJA en este tablero?")
+  end
+
+  test "T1 and T2 together stay on the designator span" do
+    question = "¿Cómo están configurados T1 y T2?"
+    service = FakeRagService.new([
+      synthetic_chunk("T1 temporizador\nT2 temporizador", rank: 1, sha: "timers")
+    ])
+    route = build_route(
+      question: question,
+      rag_service: service,
+      generator: FakeGenerator.new("T1 y T2. [1]"),
+      expander: FakeExpander.new(nil)
+    )
+
+    assert route
+    route.execute
+
+    assert_equal 1, service.calls.size
+    assert_equal :designator, route.retrieval_report[:mode]
+    assert_equal "T1 y T2", route.send(:designator_rescue_query)
+  end
+
   test "mapping lookup rescues once when the first window has no explicit row" do
     question = "¿A qué borne corresponde el micro de nivel inferior?"
     service = SequencedRagService.new([

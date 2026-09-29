@@ -1,6 +1,6 @@
 # Plan de precisión — wording, multi-lookup y F1/F2
 
-Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `COMPLETED`. P2 está `READY` y no se ha ejecutado. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
+Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `COMPLETED`. P2 está `COMPLETED`. P3 está `PENDING` y no se ha ejecutado. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
 
 No reescribir el RAG. No subir `PINNED_DOCUMENT_RESULTS`. No tocar el tono companion, `SourceFidelityGuard`, `SemanticQueryAnalyzer`, la política de pin, product discovery ni el auto-pin.
 
@@ -117,7 +117,7 @@ Al cerrar, P1 reescribe el prompt de P2 con `primary_cause`, `contributing_cause
 
 ## 9. P2 — Wording y multi-lookup
 
-Codex, 29-sep-2026, reestructura el cierre de P1. P2 sigue `READY`. Las seis filas permanecen. No es un solo commit para todas. Se trabaja caso por caso. Una fila `BLOCKED` no bloquea el resto de P2. F1/F2 no entra aquí. El prompt de la sección 14 es el que se ejecuta.
+Codex, 29-sep-2026, reestructura el cierre de P1. P2 quedó `COMPLETED` en Execution State. Las seis filas permanecen. No es un solo commit para todas. Se trabaja caso por caso. Una fila `BLOCKED` no bloquea el resto de P2. F1/F2 no entra aquí. El prompt de la sección 14 es el que se ejecuta.
 
 Filas:
 
@@ -275,28 +275,38 @@ Material findings:
 Next phase prompt: el de la sección 14, bajo P2.
 
 ### P2
-Status: READY
-Blocked by: none
-Scope: seis filas, caso por caso. Codex 29-sep: no se saca ninguna del roadmap. Una fila `BLOCKED` no bloquea P2.
-1. Bornera IN — `route eligibility`. Fix autorizado: stem `bornera`, rescue `conectada Seguridad IN bornera tablero`, misma URI, `force_entity_filter: true`, k=3, un retrieve adicional.
-2. OUT+IN — `evidence selection/coverage`. Sin retrieve nuevo. La hoja 2 ya estaba. Una asociación no cancela el turno.
-3. Micros inferior+superior — `retrieval/ranking`. Generalizar o `BLOCKED` individual.
-4. Llamadas 1+2 — `retrieval/ranking`. Generalizar o `BLOCKED` individual.
-5. SUBE+BAJA — `route eligibility`. La función medida no metió K1/K2. No se adopta. Generalizar o `BLOCKED` individual.
-6. T1+T2 — `rescue eligibility/query`. La función medida no trajo los modos. No se adopta otra query. Generalizar o `BLOCKED` individual.
-F1/F2 no es esta fase.
+Status: COMPLETED
+Commit: this change
+Tests: `test/services/rag/structured_evidence_route_test.rb` — 80 runs, 661 assertions, 0 failures. También verdes: `query_entities_test.rb`, `rag_retrieval_profile_test.rb`, `active_episode_turn_test.rb`, `rag_query_concern_test.rb` — 280 runs, 1544 assertions, 0 failures, 22 skips. `PINNED_DOCUMENT_RESULTS` sigue en 3.
+1. Bornera IN — RESOLVED. `primary_cause`: `route eligibility`. `bornera` entra como stem de borne/terminal solo en la elegibilidad de mapping. No hay clave nueva en `RELATION_TRIGGERS`. Rescue: `anchor_phrase` de P1, string `conectada Seguridad IN bornera tablero`. Misma URI, `force_entity_filter: true`, k=3, un retrieve adicional. `¿Dónde está el cuadro de maniobra?` sigue nil.
+2. OUT+IN — RESOLVED. `primary_cause`: `evidence selection/coverage`. Sin retrieve nuevo. Cada conjunción de borne pide su fila explícita. Las dos filas en el primer retorno: una llamada, y la selección conserva `| 23 | Seguridad OUT |` y `| 24 | Seguridad IN |`. Una fila de OUT no cubre IN, ni al revés. Mencionar las palabras no cubre.
+3. Micros inferior+superior — BLOCKED. `primary_cause`: `retrieval/ranking`. Se aplicó la misma cobertura: la prosa con `inferior` y `superior` queda descubierta, y las dos filas explícitas sí contarían. Eso no mete la hoja 2. El rescue ya corrió; la query solo perdió el `?` y devolvió páginas 6, 3 y 5. P1 no midió contrafactual, así que no hay otra query. Desbloqueo: un retrieve medido, k=3, misma URI, `force_entity_filter: true`, de una función determinística que no sea un string por caso, que deje `| 30 |` con inferior y `| 31 |` con superior en la ventana. No un tercer retrieve ni subir k.
+4. Llamadas 1+2 — BLOCKED. `primary_cause`: `retrieval/ranking`. Mismo intento y la misma restricción. El rescue devolvió páginas 5, 6 y 3, no la hoja 2. Desbloqueo: el mismo tipo de retrieve medido, con llamada nivel 1 → 33 y llamada nivel 2 → 34 en la ventana.
+5. SUBE+BAJA — BLOCKED. `primary_cause`: `route eligibility`. La ruta sigue cerrada. `reles corresponden SUBE BAJA tablero` no juntó K1 con SUBE ni K2 con BAJA. K1/K2 de la página 3 no traen la asociación. K6 no vale como asignación. No hay otra query medida. Desbloqueo: un retrieve medido, k=3, misma URI, `force_entity_filter: true`, que deje las filas explícitas K1–SUBE y K2–BAJA. No abrir la ruta con una query no medida.
+6. T1+T2 — BLOCKED. `primary_cause`: `rescue eligibility/query`. Sigue el camino de designador. La rescue query sigue `T1 y T2` y no corrió porque los dos designadores ya estaban en la ventana. `configurados T1 T2` no trajo modo E ni modo Wu. No se adopta otra función. Desbloqueo: un retrieve medido, con las mismas restricciones, que deje T1 modo E t<3 min y T2 modo Wu t<1 s, sin reemplazar el camino de designador en las formulaciones que ya devuelven esas asociaciones.
+F1/F2 no fue esta fase. Su `primary_cause` sigue `retrieval/ranking`.
+Next phase prompt: el de la sección 14, bajo P3.
 
 ### P3
 Status: PENDING
-Ready after: P2
-No está `BLOCKED` globalmente. No es `SKIP`.
+Ready after: P2 COMPLETED
+No está `BLOCKED` globalmente. No es `SKIP`. No reabre las filas de P2.
 Filas: F1/F2 función y F1/F2 indican, ambas `retrieval/ranking`. Control positivo: fotocélulas, página 25, F1 embarque 1, F2 embarque 2, `none`.
 `source/chunk representation` no es la hipótesis. Si no hay solución dentro de las restricciones, cada formulación fallida queda `BLOCKED` por separado.
+P2 dejó RESOLVED bornera IN y OUT+IN. Dejó BLOCKED micros, llamadas, SUBE+BAJA y T1+T2. Esas cuatro no se implementan aquí.
 
 ### P4
 Status: PENDING
-Blocked by: P2 and P3
-Cada fila obligatoria de la sección 11 cierra en `RESOLVED`, `BLOCKED` o `DEFERRED`. Ninguna se elimina en silencio. `DEFERRED` no cuenta como éxito.
+Blocked by: P3
+P2 ya cerró. Cada fila obligatoria de la sección 11 cierra en `RESOLVED`, `BLOCKED` o `DEFERRED`. Ninguna se elimina en silencio. `DEFERRED` no cuenta como éxito. Un `BLOCKED` de P2 no se convierte en éxito.
+Disposición que P2 deja, y que este gate no reabre:
+- Bornera IN — RESOLVED
+- OUT+IN — RESOLVED
+- Micros juntos — BLOCKED, `retrieval/ranking`
+- Llamadas juntas — BLOCKED, `retrieval/ranking`
+- SUBE+BAJA — BLOCKED, `route eligibility`
+- T1+T2 — BLOCKED, `rescue eligibility/query`
+F1/F2 función, F1/F2 indican y el control de fotocélulas los cierra P3. Si P3 marca una formulación `BLOCKED`, el gate la conserva.
 
 ## 14. Prompts
 
@@ -359,43 +369,78 @@ Tests sin Bedrock de lo que implementes. Commit. Reescribe P3. Detente.
 ```
 Repo: /Users/lahirisan/smart_deal
 Implementa solo P3 de docs/PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md.
-P3 está PENDING y arranca después de P2. No está BLOCKED globalmente.
-No implementes P4. No deploy. No toques P1 ni 81e3caf.
+P3 está PENDING. P2 está COMPLETED. No está BLOCKED globalmente.
+No implementes P4. No deploy. No reabras P1 ni P2. No toques 81e3caf.
 
-Filas, primary_cause retrieval/ranking:
+P2 dejó RESOLVED:
+- Bornera IN, route eligibility. Stem bornera y anchor_phrase.
+- OUT+IN, evidence selection/coverage. Sin retrieve nuevo.
+
+P2 dejó BLOCKED. No las implementes:
+- Micros inferior+superior, retrieval/ranking.
+- Llamadas 1+2, retrieval/ranking.
+- SUBE+BAJA, route eligibility. La ruta sigue cerrada.
+- T1+T2, rescue eligibility/query. El camino de designador sigue.
+
+Filas de esta fase, primary_cause retrieval/ranking:
 - En EDEL K2, ¿qué función tienen F1 y F2 en los embarques?
 - ¿qué indican F1 y F2?
 Control positivo, no reabrir:
 - En EDEL K2 con dos embarques, ¿qué fotocélulas identifica el manual para cada embarque?
   Página 25. F1 fotocélula embarque 1. F2 fotocélula embarque 2.
 
-source/chunk representation no es la hipótesis. La evidencia existe.
+source/chunk representation no es la hipótesis. La evidencia existe:
+la formulación de fotocélulas ya trae la página 25.
+La query inicial y el designator_span de las dos filas fallidas devolvieron 0 chunks.
+El rescue ya había corrido, así que P1 no autorizó contrafactual.
 Busca una solución general de query, rescue o ranking.
 No hardcodees F1/F2. No parchees el chunk. No reabras la Fase 5.
 No toques el prompt si la evidencia no llega a selected_generation_chunks.
 Sin tercer retrieve, sin corpus global, sin LLM nuevo.
+PINNED_DOCUMENT_RESULTS sigue en 3. El retrieve adicional, si cabe, es uno:
+k=3, misma URI, force_entity_filter true.
+SCI del MR08 y cerrojos exteriores siguen siendo el segundo query de sus tests.
+El control positivo no gana un retrieve extra si el primer retorno ya trae la página 25.
 Si no hay solución, marca cada formulación BLOCKED por separado,
 con primary_cause, restricción y condición de desbloqueo.
 El control positivo no se marca BLOCKED por eso.
-Commit. Reescribe P4. Detente.
+Commit. Reescribe P4 con el estado real. Detente.
 ```
 
 ### P4
 
 ```
-Chat que no tocó P2 ni P3. Probe read-only. No deploy.
-Filas obligatorias: Bornera IN, OUT+IN, micros juntos, llamadas juntas,
-SUBE+BAJA, T1+T2, F1/F2 función, F1/F2 indican, fotocélulas como control positivo.
+Chat que no tocó P2 ni P3. Probe read-only. No deploy. No editar el umbral.
+Lee Execution State después de P3. No conviertas un BLOCKED en éxito.
+
+Disposición que P2 ya cerró y este gate no reabre:
+- Bornera IN — RESOLVED. route eligibility. La asociación de Seguridad IN
+  tiene que estar en selected_generation_chunks. Una llamada si el primer
+  retorno ya la trae; como máximo dos si hace falta el rescue medido.
+- OUT+IN — RESOLVED. evidence selection/coverage. Las dos asociaciones en
+  selected_generation_chunks. Si el primer retorno ya trae las dos filas,
+  una llamada.
+- Micros juntos — BLOCKED. retrieval/ranking. Sin query medida que meta 30 y 31.
+- Llamadas juntas — BLOCKED. retrieval/ranking. Sin query medida que meta 33 y 34.
+- SUBE+BAJA — BLOCKED. route eligibility. La ruta sigue cerrada.
+  K6 no es la asignación. K1/K2 sin SUBE/BAJA no cuentan.
+- T1+T2 — BLOCKED. rescue eligibility/query. Conserva el camino de designador.
+  configurados T1 T2 no trajo los modos.
+
+F1/F2 función, F1/F2 indican y fotocélulas entran siempre.
+Usa la disposición que P3 haya escrito. Si P3 dejó una formulación BLOCKED,
+el gate la conserva con su causa, restricción y desbloqueo.
+Fotocélulas es control positivo: página 25, F1 embarque 1, F2 embarque 2.
+
 Más los controles históricos de la sección 11.
 Cada fila cierra en RESOLVED, BLOCKED o DEFERRED. Ninguna se elimina.
-DEFERRED no cuenta como éxito.
+DEFERRED no cuenta como éxito. BLOCKED no cuenta como éxito.
 RESOLVED de retrieve o selección: el hecho está en selected_generation_chunks, sin generar.
 RESOLVED de synthesis: una generación grounded.
-BLOCKED: causa, restricción y condición de desbloqueo.
 Cobertura completa: una llamada. Parcial con rescue permitido: como máximo dos.
 Nunca tres, nunca otra URI, nunca el corpus global.
 Los controles de la sección 11 no ganan un rescue.
-No editar el umbral.
+Los individuales ya buenos, cuando el primer retorno trae su asociación, hacen una llamada.
 ```
 
 ## Qué no está en este plan

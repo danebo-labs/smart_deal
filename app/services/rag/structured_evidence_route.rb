@@ -25,8 +25,28 @@ module Rag
     #                raised). The existing cascade may run.
     Outcome = Data.define(:status, :result)
     MAPPING_FRAME = /\A¿?\s*a\s+qu[eé]\s+(?:borne|terminal)\s+corresponde(?:\s+(?:el|la|los|las))?\s+/i
+    # List questions ("cuáles son los bornes de A y B"). Used to split conjuncts
+    # for coverage. It does not rewrite the rescue query.
+    BORNE_LIST_FRAME = /\A¿?\s*cu[aá]les\s+son\s+l[oa]s\s+(?:bornes?|borneras?|terminal(?:es)?|rel[eé]s?)\s+(?:de\s+la|de\s+los|de\s+las|del|de)\s+/i
+    # "bornera" is a borne/terminal stem only inside mapping eligibility.
+    BORNERA_STEM = /\bborneras?\b/i
     MAPPING_ANCHORS = %w[inferior superior llamad seguridad presostat].freeze
     MAPPING_RELATIONS = Set[:connection, :location, :attribution].freeze
+    # P1 counterfactual. Adopted only for a bornera-stem mapping question that
+    # does not already match MAPPING_FRAME. Not a per-case template.
+    ANCHOR_FUNCTION_WORDS = %w[
+      a al como con cual cuales de del donde el en es esta estan este
+      la las lo los o para por que se son un una y
+    ].freeze
+    # Scaffold left after the list frame is stripped. Compared after
+    # mapping_overlap_tokens stemming, so the stemmed form is what is listed.
+    MAPPING_SCAFFOLD_TOKENS = %w[
+      borne bornes borner bornera borneras
+      terminal terminales
+      corresponde corresponden
+      conectad conectada conectado
+      tabler tablero
+    ].freeze
 
     attr_reader :retrieval_report
 
@@ -107,6 +127,7 @@ module Rag
       return false if (relations & MAPPING_RELATIONS).empty?
 
       question.match?(RagRetrievalProfile::BORNE_TERMINAL_PATTERN) ||
+        question.match?(BORNERA_STEM) ||
         Rag::QueryEntities.label_terms?(question) ||
         question.match?(RagRetrievalProfile::EXACT_LOOKUP_PATTERN)
     end
@@ -655,8 +676,21 @@ module Rag
     # The asked phrase, without the interrogative frame. "tabla designacion"
     # concatenated onto that phrase pushes the designation sheet out of k=3.
     def mapping_rescue_query
-      phrase = rescue_base_text.sub(MAPPING_FRAME, "").strip.sub(/[?¿]+\z/, "")
-      phrase.presence || rescue_base_text
+      base = rescue_base_text
+      if base.match?(BORNERA_STEM) && !base.match?(MAPPING_FRAME)
+        phrase = anchor_phrase(base)
+        return phrase if phrase.present?
+      end
+
+      phrase = base.sub(MAPPING_FRAME, "").strip.sub(/[?¿]+\z/, "")
+      phrase.presence || base
+    end
+
+    # Same function P1 measured. Drops the closed function-word list and keeps
+    # every other token of this turn, in order.
+    def anchor_phrase(text)
+      tokens = I18n.transliterate(text.to_s).scan(/[[:alnum:]]+/)
+      tokens.reject { |token| ANCHOR_FUNCTION_WORDS.include?(token.downcase) }.join(" ")
     end
 
     def digit_designators(text)
@@ -679,6 +713,9 @@ module Rag
     end
 
     def explicit_row_covered?(chunks)
+      groups = borne_mapping_groups(rescue_base_text)
+      return groups.all? { |group| mapping_group_covered?(chunks, group) } if groups.size >= 2
+
       needles = mapping_overlap_tokens(rescue_base_text)
       return false if needles.empty?
 
@@ -697,6 +734,55 @@ module Rag
           true
         end
       end
+    end
+
+    # Coordinated borne/terminal entities ("A y B"). One explicit assignment
+    # line has to carry each conjunct. A line that only carries the first does
+    # not cover the second, and a prose mention of the words is not an assignment.
+    # Other mapping questions keep the single-anchor predicate.
+    def borne_mapping_groups(text)
+      return [] unless text.to_s.match?(RagRetrievalProfile::BORNE_TERMINAL_PATTERN) || text.to_s.match?(BORNERA_STEM)
+
+      groups = requested_mapping_groups(text)
+      groups.size >= 2 ? groups : []
+    end
+
+    def requested_mapping_groups(text)
+      body = text.to_s.strip.sub(MAPPING_FRAME, "").sub(BORNE_LIST_FRAME, "")
+      parts = body.split(/\s+[ye]\s+/i)
+      return [] if parts.size < 2
+
+      parts.filter_map { |part| conjunct_tokens(part).presence }
+    end
+
+    def conjunct_tokens(text)
+      mapping_overlap_tokens(text).reject { |token| MAPPING_SCAFFOLD_TOKENS.include?(token) }.to_a
+    end
+
+    def mapping_group_covered?(chunks, group)
+      return false if group.empty?
+
+      borne = rescue_base_text.match?(RagRetrievalProfile::BORNE_TERMINAL_PATTERN)
+      Array(chunks).any? do |chunk|
+        explicit_lines(chunk[:content]).any? do |line|
+          next false if borne && !line.match?(/\d/)
+
+          tokens = mapping_overlap_tokens(line)
+          group.all? { |token| tokens.include?(token) }
+        end
+      end
+    end
+
+    def multi_mapping_generation_chunks(chunks)
+      selected = []
+      requested_mapping_groups(rescue_base_text).each do |group|
+        break if selected.size >= RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+        next if selected.any? { |chunk| mapping_group_covered?([ chunk ], group) }
+
+        chunk = Array(chunks).find { |candidate| mapping_group_covered?([ candidate ], group) }
+        selected << chunk if chunk
+      end
+      selected
     end
 
     def explicit_lines(content)
@@ -740,6 +826,11 @@ module Rag
     # the chunk with the most identifier coverage and lexical agreement.
     def select_generation_chunks(chunks, ambiguity: nil)
       return board_coverage_chunks(ambiguity) if ambiguity&.ambiguous?
+
+      groups = mapping_lookup? ? borne_mapping_groups(rescue_base_text) : []
+      if groups.size >= 2 && groups.all? { |group| mapping_group_covered?(chunks, group) }
+        return multi_mapping_generation_chunks(chunks)
+      end
 
       analysis = question_analysis
       labelled = analysis.identifiers.select { |identifier| identifier.position == :labelled }

@@ -32,6 +32,10 @@ module Rag
     BORNERA_STEM = /\bborneras?\b/i
     MAPPING_ANCHORS = %w[inferior superior llamad seguridad presostat].freeze
     MAPPING_RELATIONS = Set[:connection, :location, :attribution].freeze
+    # The number's role, not the entity name. A diagram position or another
+    # functional scheme can show the same label beside a digit.
+    TERMINAL_ROLE = /\b(?:bornes?|borneras?|terminal(?:es|s)?)\b/i
+    TABLE_SEPARATOR = /\A\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\z/
     # P1 counterfactual. Adopted only for a bornera-stem mapping question that
     # does not already match MAPPING_FRAME. Not a per-case template.
     ANCHOR_FUNCTION_WORDS = %w[
@@ -746,6 +750,18 @@ module Rag
       (preferred.presence || Array(chunks)).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS)
     end
 
+    # One borne/terminal mapping. A covered chunk leads, and a row that only
+    # pairs the label with a number stays in the window as secondary evidence.
+    def single_borne_generation_chunks(chunks)
+      list = Array(chunks)
+      covered, rest = list.partition { |chunk| explicit_row_covered?([ chunk ]) }
+      (covered + rest).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS)
+    end
+
+    def single_borne_mapping?(groups)
+      mapping_lookup? && groups.empty? && rescue_base_text.match?(RagRetrievalProfile::BORNE_TERMINAL_PATTERN)
+    end
+
     def explicit_row_covered?(chunks)
       groups = borne_mapping_groups(rescue_base_text)
       return groups.all? { |group| mapping_group_covered?(chunks, group) } if groups.size >= 2
@@ -764,16 +780,82 @@ module Rag
           next false if borne && !line.match?(/\d/)
           next false if anchors.any? && (anchors & overlap).empty?
           next false if shorts.any? && (shorts & overlap).empty?
+          next false if borne && !terminal_relation?(chunk, line)
 
           true
         end
       end
     end
 
+    # The number has to occupy the borne/terminal role. The column, a nearby
+    # heading, local text, or section metadata can show it. Any one is enough.
+    def terminal_relation?(chunk, line)
+      terminal_table_relation?(chunk[:content], line) || terminal_metadata?(chunk[:metadata])
+    end
+
+    def terminal_table_relation?(content, line)
+      lines = content.to_s.lines.map(&:strip)
+      index = lines.index(line.to_s.strip)
+      return false unless index
+
+      header_index = table_header_index(lines, index)
+      if header_index
+        return true if terminal_number_column?(table_cells(lines[header_index]), table_cells(lines[index]))
+
+        prelude = [ header_index - 8, 0 ].max
+        return true if role_context?(lines[prelude...header_index])
+      end
+
+      prelude = [ index - 6, 0 ].max
+      role_context?(lines[prelude...index])
+    end
+
+    def table_header_index(lines, index)
+      cursor = index
+      cursor -= 1 while cursor.positive? && table_run?(lines[cursor - 1])
+      cursor += 1 while cursor < index && lines[cursor].blank?
+      return nil unless table_row?(lines[cursor])
+      return nil unless lines[cursor + 1].to_s.match?(TABLE_SEPARATOR)
+
+      cursor
+    end
+
+    def table_run?(line)
+      line.blank? || line.match?(TABLE_SEPARATOR) || table_row?(line)
+    end
+
+    def table_row?(line)
+      line.to_s.match?(/\A\|.+\|\z/)
+    end
+
+    def table_cells(line)
+      line.to_s.split("|").map(&:strip).reject(&:empty?)
+    end
+
+    def terminal_number_column?(header_cells, data_cells)
+      data_cells.each_with_index.any? do |cell, cell_index|
+        cell.match?(/\A\d+\z/) && header_cells[cell_index].to_s.match?(TERMINAL_ROLE)
+      end
+    end
+
+    def role_context?(lines)
+      Array(lines).any? do |text|
+        next false if text.blank? || text.start_with?("|")
+        next false if text.match?(/\A(FIELD_RECORD|RECORD_|SOURCE_|ACTION:|EVIDENCE:|EXPECTED_|END_FIELD)/i)
+
+        text.match?(TERMINAL_ROLE)
+      end
+    end
+
+    def terminal_metadata?(metadata)
+      Array(metadata).flatten.any? { |value| value.to_s.match?(TERMINAL_ROLE) }
+    end
+
     # Coordinated borne/terminal entities ("A y B"). One explicit assignment
     # line has to carry each conjunct. A line that only carries the first does
     # not cover the second, and a prose mention of the words is not an assignment.
-    # Other mapping questions keep the single-anchor predicate.
+    # A single borne/terminal question uses the same anchor, and also requires
+    # the number to occupy that role.
     def borne_mapping_groups(text)
       return [] unless text.to_s.match?(RagRetrievalProfile::BORNE_TERMINAL_PATTERN) || text.to_s.match?(BORNERA_STEM)
 
@@ -865,6 +947,7 @@ module Rag
       if groups.size >= 2 && groups.all? { |group| mapping_group_covered?(chunks, group) }
         return multi_mapping_generation_chunks(chunks)
       end
+      return single_borne_generation_chunks(chunks) if single_borne_mapping?(groups)
 
       analysis = question_analysis
       labelled = analysis.identifiers.select { |identifier| identifier.position == :labelled }

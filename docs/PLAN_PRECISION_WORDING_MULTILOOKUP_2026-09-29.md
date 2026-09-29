@@ -1,6 +1,6 @@
 # Plan de precisión — wording, multi-lookup y F1/F2
 
-Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `COMPLETED`. P2 está `COMPLETED`. P3 está `COMPLETED`. P4 está `FAIL`. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
+Fecha: 29-sep-2026. Estado: ver **Execution State**. P1 está `COMPLETED`. P2 está `COMPLETED` (reabierto y cerrado por la cobertura de un solo borne). P3 está `COMPLETED`. P4 está `PASS`. No hay sexta fase. El plan cerrado de Fases 1–5 no se modifica.
 
 No reescribir el RAG. No subir `PINNED_DOCUMENT_RESULTS`. No tocar el tono companion, `SourceFidelityGuard`, `SemanticQueryAnalyzer`, la política de pin, product discovery ni el auto-pin.
 
@@ -307,13 +307,20 @@ Control positivo — sin cambio. Rescue `EDEL K2`. Una llamada si la primera ven
 P2 no se reabrió. Micros, llamadas, SUBE+BAJA y T1+T2 siguen `BLOCKED`.
 Next phase prompt: el de la sección 14, bajo P4.
 
+### P2 reapertura
+Status: COMPLETED
+El gate anterior dejó Seguridad OUT y Seguridad IN en la página 5. La hoja 2 ya estaba en la primera ventana. La fila `| 11 | Seg Out |` no cubría sola; la selección se quedaba con el esquema porque el token `OUT` aparece ahí, y el rescue no corría porque la ventana completa sí tenía `| 23 | Seguridad OUT |`.
+Regla, solo en cobertura y selección de un mapping de un solo borne/terminal: el rótulo, un número, y evidencia de que ese número ocupa el rol de borne/terminal. Vale la columna, un encabezado cercano, el texto local o metadata de sección. Metadata no es obligatoria. Una fila con rótulo y número en otro esquema no cancela el rescue y puede seguir en la ventana como evidencia secundaria.
+No se cambió la elegibilidad de ruta, `mapping_rescue_query`, `condensed_designator_query`, k, el tope de retrieves, el pin, `QueryEntities`, `SourceFidelityGuard` ni el prompt.
+Next phase prompt: el de la sección 14, bajo P4.
+
 ### P4
-Status: FAIL
+Status: PASS
 Commit: this change
-Tests: `test/services/rag/wording_multilookup_gate_test.rb` más `wording_multilookup_cause_test.rb`, `query_entities_test.rb`, `rag_retrieval_profile_test.rb`, `active_episode_turn_test.rb`, `rag_query_concern_test.rb`, `structured_evidence_route_test.rb` — 388 runs, 2347 assertions, 0 failures, 22 skips. `PINNED_DOCUMENT_RESULTS` sigue en 3.
-Probe: `script/rag_wording_multilookup_gate_2026-09-29.rb`, exit 1. Sin contrafactual. Sin generación. KB `Y7RZWMFJSR`, bucket `multimodal-source-destination`. Artefacto `tmp/pilot_gate/wording_multilookup_gate_2026-09-29.json`. SHA256 `985de9809822584b8b595ee1639db888a10e70572b5e01bbff77206908e08a06`.
+Tests: `test/services/rag/structured_evidence_route_test.rb`, `wording_multilookup_gate_test.rb`, `wording_multilookup_cause_test.rb`, `query_entities_test.rb`, `rag_retrieval_profile_test.rb`, `active_episode_turn_test.rb`, `rag_query_concern_test.rb` — 394 runs, 2386 assertions, 0 failures, 22 skips. `PINNED_DOCUMENT_RESULTS` sigue en 3.
+Probe: `script/rag_wording_multilookup_gate_2026-09-29.rb`, exit 0. Sin contrafactual. Sin generación. KB `Y7RZWMFJSR`, bucket `multimodal-source-destination`. Artefacto `tmp/pilot_gate/wording_multilookup_gate_2026-09-29.json`. SHA256 `493f28390a316f264da3aa9436e3cfb66e90274b1a2a2397e9a9d5610ae413b6`.
 Presupuesto: máximo 2 retrieves, nunca 3, misma URI, `force_entity_filter: true`, sin corpus global. El segundo retrieve, cuando corre, pide k=3. `Falla la serie SCI del MR08` pide k=5 en la única llamada: es `SAFETY_CRITICAL_RESULTS`, que este plan no cambia.
-Filas del plan: 5 RESOLVED, 4 BLOCKED, 0 DEFERRED. Controles: 17 RESOLVED, 2 DEFERRED. El plan no queda CLOSED.
+Filas del plan: 5 RESOLVED, 4 BLOCKED, 0 DEFERRED. Controles: 19 RESOLVED, 0 DEFERRED.
 1. Bornera IN — RESOLVED. Página 2, `| 24 | Seguridad IN |`. Dos llamadas. Rescue `conectada Seguridad IN bornera tablero`.
 2. OUT+IN — RESOLVED. Página 2, `| 23 | Seguridad OUT |` y `| 24 | Seguridad IN |`. Una llamada.
 3. Micros juntos — BLOCKED. `retrieval/ranking`. Dos llamadas; la segunda solo pierde el `?`. No hay `| 30 |` con inferior ni `| 31 |` con superior.
@@ -324,10 +331,10 @@ Filas del plan: 5 RESOLVED, 4 BLOCKED, 0 DEFERRED. Controles: 17 RESOLVED, 2 DEF
 8. F1/F2 indican — RESOLVED. Las mismas dos filas, página 25. Dos llamadas. Rescue `F1 F2`.
 9. Fotocélulas — RESOLVED. Página 25, las mismas dos filas. Dos llamadas. Rescue `EDEL K2`. La primera ventana no traía K2.
 Controles que siguen: EM2000 CN7/CN8 página 32, una llamada. EM4000 V1 XC4/XC7 página 33, una llamada. MR08 SCI CN-112/CN-109 página 22, una llamada. EDEL K2 cerrojos serie 40 página 25, una llamada. Presostato OUT 25 y Presostato IN 26, página 2, una llamada cada uno. Micro inferior 30, micro superior 31, llamada 1 33 y llamada 2 34, página 2, dos llamadas porque la primera ventana no traía la fila. SUBE K1, una llamada. BAJA en seguimiento K2, `continued_elliptical`, composed con el goal de SUBE, una llamada sobre la pregunta cruda. T1 modo E t<3 min y T2 modo Wu t<1 s, una llamada cada uno. Foso: página 7, circuito #6, 10 (L) y 11 (N), 3 lámparas de 20W, una llamada. Cadena de seguridad página 5, una llamada. Temporizadores después de presostato: `continued_self_contained`, composed nil, la query no lleva presostato, una llamada.
-Controles que no sostienen el cierre. Reabrir P2. No se tocó el predicado.
-- Seguridad OUT — DEFERRED. `¿A qué borne corresponde Seguridad OUT?` Una llamada. El rescue no corrió. `selected_generation_chunks` se quedó en la página 5 con `| 11 | Seg Out |`. No está `| 23 | Seguridad OUT |`.
-- Seguridad IN — DEFERRED. `¿A qué borne corresponde Seguridad IN?` Una llamada. El rescue no corrió. La misma página 5 trae `| 1 | Seg In |`. No está `| 24 | Seguridad IN |`.
-No hay fase siguiente.
+Controles que el gate anterior dejaba abiertos:
+- Seguridad OUT — RESOLVED. Página 2, `| 23 | Seguridad OUT |`. Una llamada. La primera ventana ya traía la tabla de terminales.
+- Seguridad IN — RESOLVED. Página 2, `| 24 | Seguridad IN |`. Una llamada.
+Los cuatro `BLOCKED` no cambiaron: micros juntos, llamadas juntas, SUBE+BAJA, T1+T2. No hay fase siguiente.
 
 ## 14. Prompts
 

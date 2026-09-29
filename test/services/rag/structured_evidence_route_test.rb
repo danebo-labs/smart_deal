@@ -1744,12 +1744,15 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       "¿A qué borne corresponde la llamada de nivel 1?" => "| 33 | Llamada nivel 1 |",
       "¿A qué borne corresponde la llamada de nivel 2?" => "| 34 | Llamada nivel 2 |",
       "¿A qué borne corresponde Seguridad OUT?" => "| 23 | Seguridad OUT |",
+      "¿A qué borne corresponde Seguridad IN?" => "| 24 | Seguridad IN |",
       "¿A qué borne corresponde Presostato OUT?" => "| 25 | Presostato OUT |",
       "¿A qué borne corresponde Presostato IN?" => "| 26 | Presostato IN |"
     }
 
     cases.each do |question, row|
-      service = FakeRagService.new([ synthetic_chunk(row, rank: 1, sha: Digest::SHA256.hexdigest(question)) ])
+      service = FakeRagService.new([
+        synthetic_chunk(terminal_sheet(row), rank: 1, sha: Digest::SHA256.hexdigest(question))
+      ])
       generator = FakeGenerator.new("Fila. [1]")
       route = build_route(
         question: question,
@@ -1761,8 +1764,132 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       assert route, question
       route.execute
       assert_equal 1, service.calls.size, question
+      assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, service.calls.first[:number_of_results], question
       assert_includes generator.calls.first[:prompt], row, question
     end
+  end
+
+  test "a diagram position with the label and a number does not cover a borne mapping" do
+    diagram = <<~TEXT
+      SECCIÓN LÍNEA DE SEGURIDAD
+      | Posición | Etiqueta visible en diagrama |
+      |---|---|
+      | 11 | Seg Out |
+      | 1 | Seg In |
+      | 11 | Seguridad OUT |
+      | 1 | Seguridad IN |
+    TEXT
+    out = route_for_selection("¿A qué borne corresponde Seguridad OUT?")
+    inn = route_for_selection("¿A qué borne corresponde Seguridad IN?")
+    chunk = synthetic_chunk(diagram, rank: 5, sha: "diagram")
+
+    assert_not out.send(:explicit_row_covered?, [ chunk ])
+    assert_not inn.send(:explicit_row_covered?, [ chunk ])
+  end
+
+  test "a diagram position does not cancel borne rescue and stays in generation" do
+    diagram = <<~TEXT
+      SECCIÓN LÍNEA DE SEGURIDAD
+      | Posición | Etiqueta visible en diagrama |
+      |---|---|
+      | 11 | Seg Out |
+    TEXT
+    service = SequencedRagService.new([
+      [ synthetic_chunk(diagram, rank: 1, sha: "diagram") ],
+      [ synthetic_chunk(terminal_sheet("| 23 | Seguridad OUT |"), rank: 1, sha: "terminals") ]
+    ])
+    generator = FakeGenerator.new("Seguridad OUT. [1] [2]")
+    route = build_route(
+      question: "¿A qué borne corresponde Seguridad OUT?",
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal 2, service.calls.size
+    assert_equal "Seguridad OUT", service.calls.last[:question]
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, service.calls.first[:number_of_results]
+    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, service.calls.last[:number_of_results]
+    assert_equal [ @source_uri ], service.calls.last[:entity_s3_uris]
+    assert_equal true, service.calls.last[:force_entity_filter]
+    assert_includes prompt, "| 11 | Seg Out |"
+    assert_includes prompt, "| 23 | Seguridad OUT |"
+  end
+
+  test "a diagram position for the other polarity does not cancel borne rescue" do
+    diagram = <<~TEXT
+      SECCIÓN LÍNEA DE SEGURIDAD
+      | Posición | Etiqueta visible en diagrama |
+      |---|---|
+      | 1 | Seg In |
+    TEXT
+    service = SequencedRagService.new([
+      [ synthetic_chunk(diagram, rank: 1, sha: "diagram-in") ],
+      [ synthetic_chunk(terminal_sheet("| 24 | Seguridad IN |"), rank: 1, sha: "terminals-in") ]
+    ])
+    generator = FakeGenerator.new("Seguridad IN. [1] [2]")
+    route = build_route(
+      question: "¿A qué borne corresponde Seguridad IN?",
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+
+    assert_equal 2, service.calls.size
+    assert_equal "Seguridad IN", service.calls.last[:question]
+    assert_includes generator.calls.first[:prompt], "| 1 | Seg In |"
+    assert_includes generator.calls.first[:prompt], "| 24 | Seguridad IN |"
+  end
+
+  test "a terminal table covers a single borne mapping without section metadata" do
+    question = "¿A qué borne corresponde Seguridad OUT?"
+    sheet = synthetic_chunk(terminal_sheet("| 23 | Seguridad OUT |"), rank: 2, sha: "terminals")
+    route = route_for_selection(question)
+
+    assert_not sheet[:metadata].values.any? { |value| value.to_s.match?(/borne|terminal/i) }
+    assert route.send(:explicit_row_covered?, [ sheet ])
+  end
+
+  test "section metadata can show the terminal role without a table header" do
+    question = "¿A qué borne corresponde Seguridad OUT?"
+    labelled = synthetic_chunk("| 23 | Seguridad OUT |", rank: 2, sha: "meta").merge(
+      metadata: { "section" => "Bloque de terminales" }
+    )
+    bare = synthetic_chunk("| 23 | Seguridad OUT |", rank: 2, sha: "bare")
+    route = route_for_selection(question)
+
+    assert route.send(:explicit_row_covered?, [ labelled ])
+    assert_not route.send(:explicit_row_covered?, [ bare ])
+  end
+
+  test "an ambiguous borne row stays beside the terminal table and does not add a retrieve" do
+    diagram = synthetic_chunk(<<~TEXT, rank: 1, sha: "diagram-kept")
+      SECCIÓN LÍNEA DE SEGURIDAD
+      | Posición | Etiqueta visible en diagrama |
+      |---|---|
+      | 11 | Seguridad OUT |
+    TEXT
+    sheet = synthetic_chunk(terminal_sheet("| 23 | Seguridad OUT |"), rank: 2, sha: "terminals-kept")
+    service = FakeRagService.new([ diagram, sheet ])
+    generator = FakeGenerator.new("Seguridad OUT. [1]")
+    route = build_route(
+      question: "¿A qué borne corresponde Seguridad OUT?",
+      rag_service: service,
+      generator: generator,
+      expander: FakeExpander.new(nil)
+    )
+
+    route.execute
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal 1, service.calls.size
+    assert_includes prompt, "| 23 | Seguridad OUT |"
+    assert_includes prompt, "| 11 | Seguridad OUT |"
   end
 
   test "SUBE and BAJA questions stay outside the mapping route" do
@@ -2133,6 +2260,10 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
         "page_number" => page
       }
     )
+  end
+
+  def terminal_sheet(row)
+    "## Borneras\n| N° Terminal | Designación |\n|---|---|\n#{row}\n"
   end
 
   def synthetic_chunk(content, rank:, sha: nil)

@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0 está `PASS`. F1 no está ejecutada. El prompt completo de la fase siguiente es el Anexo B.
+**Estado:** master plan final. F0 y F1 están `PASS`. F2 no está ejecutada. El prompt completo de la fase siguiente es el Anexo C.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F1, en el Anexo B. El Anexo A es el prompt de F0 ya ejecutado.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F2, en el Anexo C. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -97,7 +97,9 @@ Tarifas ya escritas en [app/models/bedrock_query.rb](../app/models/bedrock_query
 
 - `claude-sonnet-5-direct`: input 0,002 / output 0,01.
 - `claude-opus-5-5-direct`: input 0,004 / output 0,02.
-- `claude-sonnet-5-5` y `claude-sonnet-5-5-direct`: ausentes. Costo = `UNKNOWN`. `pricing_for` de un id desconocido cae en `default` (input 0,00025 / output 0,00125). Esa caída no se usa para Sonnet 5.5.
+- `claude-sonnet-5-5` y `claude-sonnet-5-5-direct`: ausentes de `BEDROCK_PRICING`. `pricing_for` de un id desconocido cae en `default` (input 0,00025 / output 0,00125). Esa caída no se usa para Sonnet 5.5.
+
+F1 citó la fila Claude Sonnet 5.5 de <https://platform.claude.com/docs/en/about-claude/pricing>: input $2 / MTok y output $10 / MTok, esto es 0,002 y 0,01 dólares por 1.000 tokens. El harness usó esa URL como `price_source`. No escribió `BEDROCK_PRICING`. El costo registrado en `f1_visual.json` es solo input y output. Los tokens de `cache_creation` están en el artefacto y quedan fuera de esa cifra. Cache read de esa fila: $0,20 / MTok. Cache write de 5 minutos: $2,50 / MTok. La write de 1 hora ($4 / MTok) no corresponde al `cache_control` ephemeral del system prompt.
 
 ## 2. Preprocesado de imagen
 
@@ -424,6 +426,17 @@ El evaluador escribe PASS/FAIL solo en campos `VERIFIED` y `MUST_BE_UNKNOWN`. `N
 
 Hipótesis que F1 puede cerrar: si Sonnet 5.5 falla el `component` de `spring_assembly_misread` y Opus 5.5 lo pasa, con los mismos bytes y el mismo prompt, eso apoya una diferencia de capacidad del modelo. Sonnet 5 no se mide.
 
+### Resultado F1
+
+`F1_STATUS=PASS`. Dos llamadas, sin reintento, el 2026-09-29. `request_sha256` de las dos: `3e5e1921756170d6421120227e40060fcc9eb7b9c789b2b4c3c041f1955a6085`. Bytes `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`. Fingerprint `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`. Locale `es`. Photo intent vacío. `max_tokens` 8000.
+
+| Modelo | `returned_model_id` | `component` | Texto normalizado | Input | Output | Cache creation | Latencia | Costo |
+|---|---|---|---|---|---|---|---|---|
+| `claude-sonnet-5-5` | `claude-sonnet-5-5` | FAIL | `panel de aisladores con cables colgantes` | 1158 | 423 | 1745 | 4302 ms | `0.006546` |
+| `claude-opus-5-5` | `claude-opus-5-5` | PASS | `amarre de cables con resortes` | 1158 | 901 | 1745 | 10754 ms | `0.022652` |
+
+El FAIL de Sonnet 5.5 es ausencia de palabra permitida. `fail_if` (`resistenc`, `bobinad`) no aparece en ninguna de las dos salidas. Ninguna salida llama al conjunto banco de resistencias. Fabricante y modelo volvieron `UNKNOWN` en los dos modelos y no entran en PASS/FAIL. `visible_text` no se puntúa. Contadores: `spring_split` = `opus_pass_sonnet_fail`, `opus_only_wins` = 1, `shared_component_fail` = 0, `shared_identity_fail` = 0. `identity_invention_count` = 0 en los dos. `component_fail_count` = 1 en Sonnet 5.5 y 0 en Opus 5.5. F1 no elige letra. El costo de Sonnet 5.5 usa la URL citada. El de Opus usa `claude-opus-5-5-direct` porque el id devuelto empieza por `claude-opus-5-5`. Las dos cifras son input y output solamente: `(input_tokens / 1000) * tarifa_input + (output_tokens / 1000) * tarifa_output`.
+
 ## 10. Decisión F2
 
 F2 lee el JSON de F1. Una sola letra. No abre dos experimentos.
@@ -437,9 +450,18 @@ Sobre las filas elegibles, solo en campos `VERIFIED` y `MUST_BE_UNKNOWN`:
 - `shared_component_fail`: ambos fallan el `component`.
 - `shared_identity_fail`: ambos fallan un campo `MUST_BE_UNKNOWN`, y el `component` de esa fila no es un `shared_component_fail`. Si la fila no tiene campos `MUST_BE_UNKNOWN`, este contador no suma.
 
+Contadores que dejó F1, en `tmp/field_companion/f1_visual.json` SHA256 `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`. F1 no elige letra.
+
+- `spring_split`: `opus_pass_sonnet_fail`
+- `opus_only_wins`: 1
+- `shared_component_fail`: 0
+- `shared_identity_fail`: 0
+- `claude-sonnet-5-5`: `identity_invention_count` 0, `component_fail_count` 1
+- `claude-opus-5-5`: `identity_invention_count` 0, `component_fail_count` 0
+
 Letra:
 
-- **A.** `opus_only_wins == 0` y Sonnet 5.5 no tiene `identity_invention` en campos `MUST_BE_UNKNOWN`, y no hay `spring_split` a favor de Opus. F2 reemplaza `BatchChunkingPrompt::MODEL_TEXT` por `claude-sonnet-5-5`. El umbral de 1,5 MB y `MODEL_MULTIMODAL` no se tocan. No se agrega un routing por tamaño. Si no hay tarifa citada, `BedrockQuery#pricing_for` devuelve `nil` para `claude-sonnet-5-5-direct` y `#cost` devuelve `nil`. Un test afirma que no usa `default`.
+- **A.** `opus_only_wins == 0` y Sonnet 5.5 no tiene `identity_invention` en campos `MUST_BE_UNKNOWN`, y no hay `spring_split` a favor de Opus. F2 reemplaza `BatchChunkingPrompt::MODEL_TEXT` por `claude-sonnet-5-5`. El umbral de 1,5 MB y `MODEL_MULTIMODAL` no se tocan. No se agrega un routing por tamaño. Hay tarifa citada: <https://platform.claude.com/docs/en/about-claude/pricing>, fila Claude Sonnet 5.5. Input 0,002, output 0,01, cache read 0,0002 y cache write de 5 minutos 0,0025 dólares por 1.000 tokens. La write de 1 hora no se usa. Si la letra escribe `MODEL_TEXT`, F2 agrega la clave exacta `claude-sonnet-5-5-direct` con esos cuatro números. No copia la entrada `claude-sonnet-5-direct`. No usa `default`. Un test afirma los cuatro números y que `pricing_for("claude-sonnet-5-5-direct")` no es `BEDROCK_PRICING["default"]`.
 - **B.** `spring_split` a favor de Opus, u `opus_only_wins >= 2`, y en esas filas Opus no inventa identidad. F2 hace el mismo cambio de `MODEL_TEXT` que A. No implementa routing selectivo a Opus. Deja el finding `selective_opus_routing: proposed_not_implemented`.
 - **C.** Ambos fallan el `component` de resortes (`shared_component_fail` incluye ese case) y no aplica A ni B. El experimento siguiente, dentro de F2, es resolución: mismos prompt y mismo `claude-sonnet-5-5`, bytes de control contra un derivado de lado largo 2048 producido por `ImageCompressionService` con `MAX_DIMENSION` local al script (no se edita la constante de producción). Una variable.
 - **D.** No aplica A, B ni C, y `shared_identity_fail` es mayor que `shared_component_fail`. El experimento es un prompt observation-first, mismos bytes de F1, solo Sonnet 5.5. El prompt de producción `FieldPhotoPrompt` no se publica a producción en la misma fase: el script usa una copia. Si el experimento gana el case de resortes y no sube `identity_invention`, F2 igual no pega ese prompt en `FieldPhotoPrompt` sin un test que fije el fingerprint nuevo. Si el experimento no gana, el prompt de producción queda igual y la letra registrada es D con `adopted: false`.
@@ -541,7 +563,7 @@ Esos archivos distinguen el contrato (`tenant_private` + `danebo_general` explí
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0 está `PASS`. F1 sigue sin ejecutar.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0 y F1 están `PASS`. F2 sigue sin ejecutar.
 
 Contrato de cada fase, cuando corra:
 
@@ -646,6 +668,66 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: revisada, sin edición.
   - F8. `reason`: revisada, sin edición.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo B)
+
+### F1
+
+- `phase`: F1
+- `status`: `PASS`
+- `head_initial`: `83b128ce430acc0a67909d924b5ccf9efd79c2a4`
+- `head_final`: el commit de F1. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Record the Sonnet 5.5 versus Opus 5.5 field-photo benchmark.`
+- `files_changed`:
+  - `script/field_companion/visual_benchmark.rb`
+  - `test/script/field_companion_visual_benchmark_test.rb`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+  - `docs/README.md`
+- `commands_executed`:
+  - `env -u BUNDLE_PATH bin/rubocop --cache false script/field_companion/visual_benchmark.rb test/script/field_companion_visual_benchmark_test.rb`
+  - `env -u BUNDLE_PATH bin/rails runner script/field_companion/visual_benchmark.rb` (dos llamadas Anthropic, una por modelo, sin reintento)
+  - `env -u BUNDLE_PATH bin/rails test` con el regression gate más `test/script/field_companion_visual_benchmark_test.rb` y `test/script/field_companion_discovery_score_test.rb`
+  - `git diff HEAD -- app config db` vacío
+- `command_results`:
+  - RuboCop: 2 files, no offenses
+  - benchmark `F1_STATUS=PASS`, `calls=2`, `spring_split=opus_pass_sonnet_fail`, `opus_only_wins=1`, `shared_component_fail=0`, `shared_identity_fail=0`
+  - Sonnet 5.5: `component` FAIL, texto `panel de aisladores con cables colgantes`, `returned_model_id=claude-sonnet-5-5`, input 1158, output 423, cache read 0, cache creation 1745, latencia 4302 ms, costo `0.006546`, timestamp `2026-09-29T21:37:16Z`
+  - Opus 5.5: `component` PASS, texto `amarre de cables con resortes`, `returned_model_id=claude-opus-5-5`, input 1158, output 901, cache read 0, cache creation 1745, latencia 10754 ms, costo `0.022652`, timestamp `2026-09-29T21:37:26Z`
+  - `request_sha256` idéntico `3e5e1921756170d6421120227e40060fcc9eb7b9c789b2b4c3c041f1955a6085`
+  - tests: 232 runs, 1382 assertions, 0 failures, 0 errors, 1 skip
+  - diff de `app/`, `config/` y `db/` vacío
+- `tests`: regression gate de este plan, más `test/script/field_companion_visual_benchmark_test.rb` y `test/script/field_companion_discovery_score_test.rb`, en la misma invocación
+- `test_results`: 232 runs, 1382 assertions, 0 failures, 0 errors, 1 skip. El skip es el test previo `Manual integration test: Upload a large JPEG (>500KB) via UI to verify compression` en `test/services/image_compression_service_test.rb`. No es de F1.
+- `artifacts`:
+  - `tmp/field_companion/f1_visual.json`
+  - `tmp/field_companion/outputs/spring_assembly_misread.claude-sonnet-5-5.txt`
+  - `tmp/field_companion/outputs/spring_assembly_misread.claude-opus-5-5.txt`
+- `artifact_sha256`:
+  - `f1_visual.json` `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`
+  - `spring_assembly_misread.claude-sonnet-5-5.txt` `0806d1c5f6ad98c50b74a4bb409ef1d5aa57ebf161ff72700bd8482fa422066b`
+  - `spring_assembly_misread.claude-opus-5-5.txt` `f53745565e39091c5f622315e18d3e98d54c44cc4a64931a84d1211bdd452e3a`
+  - manifest de entrada, sin reescritura, `7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1`
+  - PNG de entrada, sin recomprimir, `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`
+- `findings`:
+  1. `CONFIRMED`. Las dos llamadas recibieron los mismos bytes, el mismo MIME, el mismo filename, locale `es`, photo intent vacío, el mismo system prompt y `max_tokens` 8000. `request_sha256` coincide. `bytes_sha256` coincide con el PNG congelado. `returned_model_id` es el id pedido en los dos. No se llamó a `claude-sonnet-5`. El harness no lee `MODEL_TEXT` ni usa `FieldPhotoDensityGate`.
+  2. `CONFIRMED`. La hipótesis de capacidad, con los mismos bytes y el mismo prompt: Sonnet 5.5 falla el `component` y Opus 5.5 lo pasa. `spring_split` = `opus_pass_sonnet_fail`. `opus_only_wins` = 1.
+  3. `NEW`. El FAIL no es el camino `fail_if`. Ninguna salida contiene `resistenc` ni `bobinad`. Sonnet 5.5 nombró `Panel de aisladores con cables colgantes` y por eso no aparece una palabra permitida. Opus 5.5 nombró `Amarre de cables con resortes`.
+  4. `CONFIRMED`. `identity_invention_count` = 0 en los dos. La fila no tiene campos `MUST_BE_UNKNOWN`. Fabricante y modelo volvieron `UNKNOWN` y quedan `NOT_SCORED`. `shared_identity_fail` = 0. `shared_component_fail` = 0.
+  5. `NEW`. La página de precios de Anthropic lista Claude Sonnet 5.5 a $2 / MTok de input y $10 / MTok de output. El harness cita esa URL. `BEDROCK_PRICING` no ganó una clave. El costo guardado es input y output; los 1745 tokens de `cache_creation` de cada llamada están en el artefacto y fuera de la cifra.
+  6. `CONFIRMED`. Ninguna constant productiva cambió. `MODEL_TEXT` sigue en `claude-sonnet-5`. El fingerprint del prompt sigue en `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`.
+  7. `REJECTED`. Usar `BEDROCK_PRICING["default"]` o la entrada `claude-sonnet-5-direct` como fuente del costo de Sonnet 5.5. Opus usa la tarifa escrita de `claude-opus-5-5-direct` porque el id devuelto empieza por `claude-opus-5-5`.
+- `derived_decisions`:
+  - F1 no elige A, B, C, D ni E.
+  - El resultado no reinstala `bytes > 1_500_000 => Opus`. Las dos llamadas usaron el mismo binario.
+  - Si la letra que F2 seleccione escribe `MODEL_TEXT`, también escribe `claude-sonnet-5-5-direct` con la tarifa citada y no usa `default`.
+  - F3–F8 no cambian de contrato por este benchmark.
+- `future_phases_changed`:
+  - F2. `reason`: el Anexo C trae los contadores, los SHA y la tarifa citada. La rama de A que devolvía `nil` en `pricing_for` queda reemplazada por los cuatro números de la URL cuando la letra escribe `MODEL_TEXT`. F1 no asigna la letra.
+  - F3. `reason`: revisada, sin edición. El benchmark visual no cambia el score ni la elegibilidad.
+  - F4. `reason`: revisada, sin edición. Sigue sin `BLOCKED` por la ruta de F0.
+  - F5. `reason`: revisada, sin edición. La precedencia y `correlation_id` no cambian. El `model_id` de la observación será el que deje F2.
+  - F6. `reason`: revisada, sin edición.
+  - F7. `reason`: revisada, sin edición.
+  - F8. `reason`: revisada, sin edición.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo C)
 
 ## Anexo A — prompt de F0
 
@@ -854,3 +936,102 @@ Los números de arriba son la forma, no los resultados. Rellená `result`, token
 ### Cierre de F1
 
 En este orden: el artefacto con SHA256; el regression gate de este plan (no llama Bedrock ni Anthropic); Execution State de F1; findings; revisión de F2–F8; reescritura completa del prompt de F2 en un anexo nuevo, con los contadores reales, para que F2 elija una sola letra de la sección 10 sin preguntar. No ejecutes F2 en el mismo chat. No cambies el modelo productivo.
+
+## Anexo C — prompt de F2
+
+Ejecutá solo F2 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. No ejecutes F3. No hagas deploy. No reabras el plan de precisión ni las decisiones FC-D01 a FC-D18. No pidas una decisión a Lahiri. No vuelvas a llamar a los dos modelos de F1. No elijas los modelos con `BatchChunkingPrompt::MODEL_TEXT` ni con `FieldPhotoDensityGate`.
+
+F1 está `PASS`. `head_initial` de F1 es `83b128ce430acc0a67909d924b5ccf9efd79c2a4`. El commit de F1 es el padre del trabajo de F2: asunto `Record the Sonnet 5.5 versus Opus 5.5 field-photo benchmark.` Si el working tree está dirty en algo que no sea F2, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F2. `git rev-parse HEAD^` tiene que ser `83b128ce430acc0a67909d924b5ccf9efd79c2a4`.
+
+Al abrir F2, producción sigue así. No lo des por cambiado hasta que la letra lo diga:
+
+- `BatchChunkingPrompt::MODEL_TEXT` = `claude-sonnet-5` en `app/prompts/batch_chunking_prompt.rb`
+- `BatchChunkingPrompt::MODEL_MULTIMODAL` = `claude-opus-5-5`
+- `FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD` = `1_500_000`
+- `FieldPhotoPrompt.prompt_fingerprint_sha256` = `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`
+- `BEDROCK_PRICING` no tiene `claude-sonnet-5-5` ni `claude-sonnet-5-5-direct`
+
+### Artefacto que F2 lee
+
+Path: `tmp/field_companion/f1_visual.json`.
+
+SHA256: `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`.
+
+Si el archivo está y el SHA256 no coincide, `STOP`. No regeneres el benchmark. Si el archivo no está, usá los contadores de este anexo y no hagas llamadas para recrearlo.
+
+Salidas, SHA256:
+
+- `tmp/field_companion/outputs/spring_assembly_misread.claude-sonnet-5-5.txt` `0806d1c5f6ad98c50b74a4bb409ef1d5aa57ebf161ff72700bd8482fa422066b`
+- `tmp/field_companion/outputs/spring_assembly_misread.claude-opus-5-5.txt` `f53745565e39091c5f622315e18d3e98d54c44cc4a64931a84d1211bdd452e3a`
+
+Manifest de entrada, sin reescritura: `tmp/field_companion/visual_manifest.json` `7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1`.
+
+PNG, sin recomprimir: `tmp/field_companion/images/spring_assembly_misread.png` `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`. 1430913 bytes. `image/png`. Filename `spring_assembly_misread.png`.
+
+Las dos llamadas compartieron `request_sha256` `3e5e1921756170d6421120227e40060fcc9eb7b9c789b2b4c3c041f1955a6085`. Locale `es`. Photo intent vacío. `max_tokens` 8000. System prompt = `FieldPhotoPrompt::SYSTEM_BLOCKS` con el fingerprint de arriba.
+
+### Caso `spring_assembly_misread`
+
+Una sola fila elegible. Gold sin reinterpretar: `component` `VERIFIED` con `allowed` `resorte`, `resortes`, `muelle`, `muelles` y `fail_if` `resistenc`, `bobinad`. Fabricante, modelo y `visible_text` son `NOT_SCORED`.
+
+| Modelo | `returned_model_id` | `component` | Texto normalizado de `canonical_component` | Input | Output | Cache read | Cache creation | Latencia | Costo | `price_source` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `claude-sonnet-5-5` | `claude-sonnet-5-5` | FAIL | `panel de aisladores con cables colgantes` | 1158 | 423 | 0 | 1745 | 4302 ms | `0.006546` | `https://platform.claude.com/docs/en/about-claude/pricing` |
+| `claude-opus-5-5` | `claude-opus-5-5` | PASS | `amarre de cables con resortes` | 1158 | 901 | 0 | 1745 | 10754 ms | `0.022652` | `app/models/bedrock_query.rb#BEDROCK_PRICING[claude-opus-5-5-direct]` |
+
+Timestamps UTC: Sonnet `2026-09-29T21:37:16Z`, Opus `2026-09-29T21:37:26Z`. El texto literal de Sonnet es `Panel de aisladores con cables colgantes`. El de Opus es `Amarre de cables con resortes`. `fail_if` no aparece en ninguna salida. Los dos devolvieron `manufacturer` `UNKNOWN` y `model` `UNKNOWN`. Eso no suma `identity_invention` porque esos campos son `NOT_SCORED`.
+
+El costo guardado es solo input y output: `(input_tokens / 1000) * tarifa_input + (output_tokens / 1000) * tarifa_output`. Los 1745 tokens de cache creation no entran en esa cifra. La tarifa de Sonnet 5.5 es 0,002 y 0,01 dólares por 1.000 tokens. La de Opus, de la clave `claude-opus-5-5-direct`, es 0,004 y 0,02.
+
+### Contadores
+
+- `spring_split`: `opus_pass_sonnet_fail`
+- `opus_only_wins`: 1
+- `shared_component_fail`: 0
+- `shared_identity_fail`: 0
+- `claude-sonnet-5-5`: `identity_invention_count` 0, `component_fail_count` 1
+- `claude-opus-5-5`: `identity_invention_count` 0, `component_fail_count` 0
+
+### Una sola letra
+
+Aplicá estas reglas a esos contadores. Sale una sola letra. Implementá solo esa. No preguntes cuál seguir. No abras un segundo experimento. No rellenes las otras letras “por si acaso”.
+
+- **A.** `opus_only_wins == 0` y Sonnet 5.5 no tiene `identity_invention` en campos `MUST_BE_UNKNOWN`, y no hay `spring_split` a favor de Opus. Reemplazá `BatchChunkingPrompt::MODEL_TEXT` por `claude-sonnet-5-5`. El umbral de 1,5 MB y `MODEL_MULTIMODAL` no se tocan. No agregues un routing por tamaño. Cero llamadas de imagen.
+- **B.** `spring_split` a favor de Opus, u `opus_only_wins >= 2`, y en esas filas Opus no inventa identidad. Hacé el mismo cambio de `MODEL_TEXT` que A. No implementes routing selectivo a Opus. Dejá el finding `selective_opus_routing: proposed_not_implemented`. Cero llamadas de imagen. `opus_pass_sonnet_fail` es el split a favor de Opus. `sonnet_pass_opus_fail` no lo es.
+- **C.** Ambos fallan el `component` de resortes (`shared_component_fail` incluye ese case) y no aplica A ni B. El experimento, dentro de F2, es resolución: mismo prompt y mismo `claude-sonnet-5-5`, bytes de control contra un derivado de lado largo 2048. El derivado lo produce `ImageCompressionService` con `MAX_DIMENSION` local al script. No edites `ImageCompressionService::MAX_DIMENSION`. Una sola variable. Una llamada nueva por imagen elegible del manifest. Hoy hay una imagen. El techo es esa llamada, no una segunda. Bytes de control: el PNG de SHA256 `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`, sin recomprimir.
+- **D.** No aplica A, B ni C, y `shared_identity_fail` es mayor que `shared_component_fail`. El experimento es un prompt observation-first, mismos bytes de F1, solo Sonnet 5.5. El script usa una copia del prompt. No publiques esa copia en `FieldPhotoPrompt` en la misma fase salvo que el experimento gane el case de resortes, no suba `identity_invention`, y un test fije el fingerprint nuevo. Si el experimento no gana, el prompt de producción queda igual y la letra registrada es D con `adopted: false`. Una llamada nueva por imagen elegible.
+- **E.** Ninguna letra anterior. `SKIP`. Cero cambio de modelo, de prompt y de resolución. Cero llamadas.
+
+A y B son el cambio de default. C y D son el experimento, no un segundo cambio encima. E no cambia nada. El resultado de F1 no autoriza volver a `bytes > 1_500_000 => Opus`.
+
+### Si la letra escribe `MODEL_TEXT`
+
+Agregá en `app/models/bedrock_query.rb`, dentro de `BEDROCK_PRICING`, la clave exacta `claude-sonnet-5-5-direct`:
+
+- input `0.002`
+- output `0.01`
+- cache_read `0.0002`
+- cache_creation `0.0025`
+
+Esos números son la fila Claude Sonnet 5.5 de <https://platform.claude.com/docs/en/about-claude/pricing>: $2 / $10 / $0,20 por MTok, y cache write de 5 minutos $2,50 / MTok. La write de 1 hora ($4 / MTok) no se escribe. No copies la entrada `claude-sonnet-5-direct` como alias. No uses `default`. `ClaudeChunkingClient` persiste el id con sufijo `-direct`, así que el test cubre `pricing_for("claude-sonnet-5-5-direct")`. El test afirma los cuatro números y que ese resultado no es `BEDROCK_PRICING["default"]`. `#cost` de una fila con ese `model_id` usa esa clave.
+
+`MODEL_MULTIMODAL` sigue `claude-opus-5-5`. `LARGE_PHOTO_THRESHOLD` sigue `1_500_000`. `FieldPhotoPrompt` no se edita en A ni en B. El fingerprint `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1` tiene que seguir igual si la letra no es D con adopción.
+
+### Cierre de F2
+
+En este orden: tests de la letra; el regression gate de este plan (no llama Bedrock ni Anthropic); artefacto de la letra si C o D llamaron al modelo, con SHA256; commit; Execution State de F2 con la letra y `adopted` cuando aplique; findings; revisión de F3–F8; reescritura completa del prompt de F3. No ejecutes F3. No hagas deploy.
+
+El regression gate es:
+
+```
+bin/rails test \
+  test/services/rag_retrieval_profile_test.rb \
+  test/services/rag/structured_evidence_route_test.rb \
+  test/services/field_photo_analysis_service_test.rb \
+  test/services/field_photo_density_gate_test.rb \
+  test/services/image_compression_service_test.rb \
+  test/jobs/field_photo_analysis_job_test.rb \
+  test/services/pilot_usage_log_test.rb
+```
+
+Más el test nuevo de la letra, en la misma invocación o en una seguida. Un solo commit de F2. El mensaje nombra la letra y dice que no se agregó routing por tamaño. `head_final` no puede estar escrito dentro del árbol: después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es el `head_initial` que anotaste.

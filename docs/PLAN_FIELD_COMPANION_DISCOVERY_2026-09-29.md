@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. Correcciones previas al recheck de Codex incorporadas el 29-sep-2026. F0 sigue `NOT STARTED`. Ninguna fase está implementada.
+**Estado:** master plan final. F0 está `PASS`. F1 no está ejecutada. El prompt completo de la fase siguiente es el Anexo B.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. Hoy el único prompt completo es el de F0, en el Anexo A.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F1, en el Anexo B. El Anexo A es el prompt de F0 ya ejecutado.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -37,7 +37,7 @@
 | F1 | Visual model benchmark | Ningún default. Dos modelos, mismos bytes | PASS con pares completos y evaluador mecánico. `BLOCKED` si F0 no dejó manifest con hashes |
 | F2 | Visual decision | Una sola variable, la que F1 autorice | A, B, C, D o E. E = `SKIP` |
 | F3 | Discovery A, suggest-only | Ranker en runtime, sin pin. Elegibilidad por scope, mismo score | Paridad del score con el artefacto F0. Cero candidatos `PRIVATE` o `UNCLASSIFIED` de otra cuenta |
-| F4 | Discovery B, confirmed focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | `BLOCKED` si F0 no confirmó ruta con `reindex_required = false` y `duplicate_document_required = false` |
+| F4 | Discovery B, confirmed focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | F0 confirmó `existing_document_id_session_pin` (`reindex_required = false`, `duplicate_document_required = false`). F4 no queda `BLOCKED`. La opción `new_chunk_attribute` no se elige |
 | F5 | Image continuity | Reuso de `visual_observation` | `STOP` antes de migrar si F0 marcó contradicción de retención |
 | F6 | Provenance contract | Prompt y contrato servidor | Una sugerencia no puede quedar como `MANUAL_FACT` |
 | F7 | Provenance presentation | Solo renderer | No edita el prompt. Funciona con `SHOW_RAG_SOURCES=false` |
@@ -271,6 +271,12 @@ El score de la sección 5 se calcula igual. Antes de devolver candidatos, se des
 
 FC-D15. F0 puede contar documentos y citar un costo de ingesta ya escrito en un plan histórico. No calcula un ahorro futuro.
 
+### Resultado F0
+
+La DB local se consultó. `danebo-legacy` es la cuenta `4`, con 17 `KbDocument`, todos `UNCLASSIFIED`. No existe una cuenta local `danebo-pilot-elevator`. `GENERAL_APPROVED` = 0 y `PRIVATE` = 0. `kb_documents` no tiene columna `knowledge_scope` ni `corpus_scope`. `confirmed` en `config/document_identities.yml` es evidencia de marca, no una aprobación. Los ids `"1"` y `"3"` de ese YAML son ids de índice, no `accounts.id` local. Una fila de la matriz sin `KbDocument` local lleva `physical_owner_account_id` null y `catalog_index_account_id`.
+
+Respuesta: `NEED_DOCUMENT_LEVEL_APPROVAL_SOURCE`. La opción elegida es `existing_document_id_session_pin`: el retrieve abierto usa el `document_id` ya escrito en el chunk, y el pin es `user_pin` en `active_entities` de la sesión sobre la fila `KbDocument` existente. `reindex_required = false` y `duplicate_document_required = false`. No se elige `new_chunk_attribute` (`reindex_required = true`). F0 no crea el registro de aprobación, no agrega columna y no cambia la autorización.
+
 ## 7. Observación visual
 
 Target de F5, no de F0. F0 solo confirma que cabe en el schema y en la retención.
@@ -297,6 +303,8 @@ El episodio no copia ese JSON. Sigue con `active_photo.field_photo_id` y `sha256
 
 F0 lee el schema, el job de retención y el párrafo del roadmap. Si la columna en la misma fila no contradice la retención, finding `CONFIRMED` y F5 sigue. Si hiciera falta una tabla que sobreviva al purge, F5 queda `BLOCKED` y hay `STOP` de arquitectura. F0 no migra.
 
+F0 confirmó que `FieldPhotoRetentionJob` ejecuta `photo.destroy!` (default 90 días, `FIELD_PHOTO_RETENTION_DAYS`) y que una fila citada por `InspectionFinding` no se purga. No existe la columna `visual_observation`. Una columna jsonb en la misma fila muere con la fila. F5 no queda `BLOCKED`. `Rag::ActiveEpisode.sanitize_photo` conserva `field_photo_id`, `sha256` y `correlation_id`, y descarta el resto. F5 no copia el JSON de `visual_observation` al episodio y no borra `correlation_id`. `ConversationSession#apply_photo_observation!` ya puede escribir facts `manufacturer` y `model`; F5 no los convierte en ese JSON. El cache de diagnóstico de 24 h sigue ausente en HEAD.
+
 ## 8. Continuidad — precedencia que F5 implementa
 
 F0 no asume que `ActiveEpisodeTurn::DEICTIC_RE` cubre los ejemplos. Ese regex es:
@@ -305,7 +313,7 @@ F0 no asume que `ActiveEpisodeTurn::DEICTIC_RE` cubre los ejemplos. Ese regex es
 /\b(esa|ese|eso|esta|este|esto|that|this)\s+(placa|foto|imagen|plate|photo)\b/
 ```
 
-F0 lo corre, después de `normalize_label`, contra las frases de abajo y guarda el booleano. Los cuatro positivos tienen que salir `false` en HEAD. Si alguno sale `true`, finding `NEW` y el prompt de F5 lo dice; la precedencia de F5 no se afloja.
+F0 lo corre, después de `normalize_label`, contra las frases de abajo y guarda el booleano. Los cuatro positivos tienen que salir `false` en HEAD. Si alguno sale `true`, finding `NEW` y el prompt de F5 lo dice; la precedencia de F5 no se afloja. F0 los corrió: los cuatro salieron `false`. No hay finding `NEW` de este regex. La precedencia de F5 no se afloja.
 
 Positivos de referencia visual (F5 reutiliza la observación, cero Anthropic):
 
@@ -452,7 +460,7 @@ Tests de elegibilidad, con fixtures, sin red:
 - Un `GENERAL_APPROVED` entra, con el mismo orden que le habría dado el score, y con el texto de biblioteca general.
 - Adjuntar scope no cambia los puntos de la sección 5.
 
-F4: el técnico toca una tarjeta. Esto corre solo si F0 confirmó una ruta con `reindex_required = false` y `duplicate_document_required = false`. Si no, F4 = `BLOCKED` y no hay código de pin nuevo.
+F4: el técnico toca una tarjeta. Esto corre solo si F0 confirmó una ruta con `reindex_required = false` y `duplicate_document_required = false`. Si no, F4 = `BLOCKED` y no hay código de pin nuevo. F0 confirmó `existing_document_id_session_pin`. F4 no queda `BLOCKED`. El registro de aprobación sigue sin crear y vive fuera del chunk. F3, cuando corra, reescribe el prompt de F4 con los hashes reales.
 
 - Documento `tenant_private` de la cuenta del técnico: `pin_kb_document!`, `source: "user_pin"`. Evento `manual_focus_confirmed`.
 - Documento `danebo_general`: el mismo `user_pin` sobre la fila existente, escrito solo en la sesión actual. No se crea otro `KbDocument`, no se copia S3, no se reindexa, no hay `assisted_focus`, y no hay un flag de pin en el documento.
@@ -533,7 +541,7 @@ Esos archivos distinguen el contrato (`tenant_private` + `danebo_general` explí
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0 está `NOT STARTED`.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0 está `PASS`. F1 sigue sin ejecutar.
 
 Contrato de cada fase, cuando corra:
 
@@ -554,12 +562,90 @@ Contrato de cada fase, cuando corra:
 - `future_phases_changed`, con el `reason` de cada modificación
 - `next_phase_prompt_path`
 
-Checkpoint previo a F0, que no es una fase:
+Checkpoint previo a F0, satisfecho al abrir:
 
-- `status`: documentación commiteada. F0 `NOT STARTED`.
+- `status`: documentación commiteada. El working tree estaba limpio.
 - `subject`: `Record Field Companion pre-F0 documentation gates.`
 - `preparatory_head`: `9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739`
-- F0 abre el repo en un HEAD que ya contiene esa línea. `git merge-base --is-ancestor 9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739 HEAD` tiene que ser verdadero. `git diff 9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739 -- app config db` tiene que estar vacío. El `git rev-parse HEAD` de esa apertura es `head_initial` de F0. Si el working tree está dirty, `STOP`.
+- `git merge-base --is-ancestor 9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739 HEAD` salió 0.
+- `git diff 9c4f57c7514b7b7ccfdff5c7d3ddbdeb6456d739 -- app config db` salió vacío.
+
+### F0
+
+- `phase`: F0
+- `status`: `PASS`
+- `head_initial`: `8385329ac1adfa552dbcf9101fab48709bc148fe`
+- `head_final`: el commit de F0. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Freeze Field Companion contracts for visual benchmark and discovery.`
+- `files_changed`:
+  - `script/field_companion/discovery_score.rb`
+  - `script/field_companion/f0_audit.rb`
+  - `test/script/field_companion_discovery_score_test.rb`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+  - `docs/README.md`
+- `commands_executed`:
+  - checkpoint de ancestro y diff vacío de `app/`, `config/` y `db/`
+  - SHA256 de `/Users/lahirisan/Desktop/resortes.png` y de `docs/field_companion/multimodal_availability_probe.jpg`
+  - `env -u BUNDLE_PATH bin/rails runner script/field_companion/f0_audit.rb` (una llamada Anthropic; un re-run no repite un probe con `attempted: true`)
+  - `env -u BUNDLE_PATH bin/rails test` con el regression gate más `test/script/field_companion_discovery_score_test.rb`
+  - `env -u BUNDLE_PATH bin/rubocop --cache false` sobre los tres archivos Ruby de F0
+- `command_results`:
+  - ancestro verdadero; diff de `app/`, `config/` y `db/` vacío
+  - `resortes.png` `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`, 1430913 bytes, 956×866
+  - probe JPEG `5610cba05ad3f23d2bc8fcdc4c473df0316e2d47982711d7ce6a3f880baeea3c`, 803 bytes, 4×3
+  - auditoría `F0_STATUS=PASS`, `probe_success=true`, `k_matrix_match=true`, `db_checked=true`, `general_approved_count=0`, `f4_route_confirmed=true`
+  - tests: 210 runs, 1287 assertions, 0 failures, 0 errors, 1 skip
+  - RuboCop: 3 files, no offenses
+- `tests`: regression gate de este plan, más `test/script/field_companion_discovery_score_test.rb` en la misma invocación
+- `test_results`: 210 runs, 1287 assertions, 0 failures, 0 errors, 1 skip. El skip es el test previo `Manual integration test: Upload a large JPEG (>500KB) via UI to verify compression` en `test/services/image_compression_service_test.rb`. No es de F0. El score: 10 runs dentro de ese total, 0 failures.
+- `artifacts`:
+  - `tmp/field_companion/f0_contract_audit.json`
+  - `tmp/field_companion/f0_probe.json`
+  - `tmp/field_companion/f0_general_inventory.json`
+  - `tmp/field_companion/f0_authorization_matrix.json`
+  - `tmp/field_companion/f0_discovery.json`
+  - `tmp/field_companion/f0_discovery_eligible.json`
+  - `tmp/field_companion/visual_manifest.json`
+  - `tmp/field_companion/images/spring_assembly_misread.png`
+- `artifact_sha256`:
+  - `f0_contract_audit.json` `53df02c4a5ff192e7bc1d32e62c778e7f84fbe9a4fd58f829924dd750d896322`
+  - `f0_probe.json` `4f70e4acc3543b1e6a88b575e930e141963e86268b172e8e92e3351dad37335d`
+  - `f0_general_inventory.json` `3935839a8bf734118ebc13b813265ba2a6ac788efc931d2f2741949a4228a247`
+  - `f0_authorization_matrix.json` `2c4a69f5df885833c5e686d3c4afd87ad14dcca3f3a9b4a0c3980e3fc127d904`
+  - `f0_discovery.json` `0119f27bd05a86efe5371008bd1886f9791bf5d427eea1364682adad9b9e5ee0`
+  - `f0_discovery_eligible.json` `47efb001265ee5985fd33cee156054acd81b9fad8736e111ac4291914cbeff36`
+  - `visual_manifest.json` `7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1`
+  - `spring_assembly_misread.png` `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`
+- `findings`:
+  1. `CONFIRMED`. El pipeline visual de HEAD coincide con la sección 1. `MODEL_TEXT` = `claude-sonnet-5`. `MODEL_MULTIMODAL` = `claude-opus-5-5`. Umbral `1_500_000`. Provider Anthropic Direct. `max_tokens` 8000. `white_ratio` no elige modelo. Fingerprint `FieldPhotoPrompt.prompt_fingerprint_sha256` = `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`. `claude-sonnet-5-5` no está en esas constants. Eso no bloquea. FC-D18.
+  2. `CONFIRMED`. Probe multimodal success. `requested_model_id` = `claude-sonnet-5-5`. `returned_model_id` = `claude-sonnet-5-5`. Timestamp `2026-09-29T21:20:16Z`. Cliente `Anthropic::Client`, `messages.create`, `max_tokens` 16, sin system prompt, imagen solo el JPEG de 803 bytes. No encoló `TrackBedrockQueryJob`. No se evaluó calidad.
+  3. `CONFIRMED`. Las cuatro ramas de preprocesado de la sección 2 están en el código citado. No toda foto queda en 1024.
+  4. `CONFIRMED`. `field_photos` no tiene `visual_observation`. El episodio, después de `sanitize_photo`, no guarda el JSON de visión. El historial trunca a `ConversationSession::MAX_MSG_LENGTH` = 300. Una columna jsonb en la misma fila muere con `photo.destroy!`. F5 no queda `BLOCKED`. No hay `STOP`.
+  5. `NEW`. `sanitize_photo` también conserva `correlation_id`. `apply_photo_observation!` puede escribir facts `manufacturer` y `model`. F5 no copia `visual_observation` al episodio y no borra `correlation_id`.
+  6. `CONFIRMED`. La matriz de k de la sección 3 coincide con `RagRetrievalProfile`. La tabla no se corrigió. El código del perfil no se tocó.
+  7. `CONFIRMED`. `effectively_confirmed?` exige `confirmed`, `evidence_page` entero positivo y `evidence_text`. Un YAML `confirmed: true` sin `evidence_text` no es `catalog_confirmed` y no suma 40. En el catálogo vivo, 110 entradas con `confirmed: true` también están effectively confirmed. `document_id` del YAML es `document_uid`. El fabricante sale de `MANUFACTURERS`, comparado con `Entry#brands` ya normalizado.
+  8. `CONFIRMED`. No existe fuente por documento para `GENERAL_APPROVED`. Conteos: `GENERAL_APPROVED` 0, `PRIVATE` 0, `UNCLASSIFIED` 17. CASE B no es esa aprobación. La opción elegida `existing_document_id_session_pin` tiene `reindex_required = false` y `duplicate_document_required = false`. `new_chunk_attribute` queda sin elegir, con `reindex_required = true`. F4 no queda `BLOCKED`.
+  9. `NEW`. La DB local no tiene la cuenta `danebo-pilot-elevator`. El inventario son 17 filas de `danebo-legacy` (account id `4`). 25 filas de matriz: esas 17 más los `document_uid` del ranking del fixture que no están en la DB local. Esas filas tienen `physical_owner_account_id` null y `catalog_index_account_id` `"1"` o `"3"`. No se aprobó ningún documento.
+  10. `CONFIRMED`. `DEICTIC_RE`, después de `normalize_label`, es false para `estos resortes`, `según la foto`, `la imagen que te mandé` y `lo que se ve ahí`. La precedencia de F5 no se afloja.
+  11. `CONFIRMED`. `spring_assembly_misread` es elegible. SHA256, bytes, dimensiones y MIME coinciden con el congelado. `component` es `VERIFIED`. Fabricante, modelo y `visible_text` son `NOT_SCORED`. No hay `pending`.
+  12. `CONFIRMED`. El viewer no owner es la cuenta `5` (`elevadores-climb`). `f0_discovery_eligible.json` no le entrega ningún documento del ranking. `f0_discovery.json` conserva el ranking técnico. Fixture y holdout: `precision_at_3` 1, `top1_accuracy` 1, `wrong_brand_candidate_rate` 0. El scope no entra en los puntos.
+  13. `CONFIRMED`. El roadmap nombra el cache de diagnóstico de 24 h. HEAD no tiene esa clase bajo `app/`. F0 no lo restaura.
+  14. `REJECTED`. Tratar `manual_corpus=general`, el slug Legacy/Pilot, el filename o `confirmed` del catálogo de identidad como `GENERAL_APPROVED`.
+- `derived_decisions`:
+  - F1 puede llamar modelos. El probe fue success y el manifest tiene un solo `case_id` elegible, así que son 2 llamadas, bajo el techo de 32.
+  - F4 no está `BLOCKED`. El registro de aprobación no se crea en F0 y no va al chunk.
+  - F5 no está `BLOCKED`. Conserva `correlation_id`. No copia el JSON de observación al episodio.
+  - Ninguna constant productiva cambia.
+- `future_phases_changed`:
+  - F1. `reason`: el Anexo B reemplaza el placeholder con el probe success, el fingerprint, los hashes y el formato de `f1_visual.json`.
+  - F2. `reason`: revisada, sin edición. Sigue leyendo `f1_visual.json` para elegir A, B, C, D o E.
+  - F3. `reason`: revisada, sin edición. La lista elegible vacía para un no owner coincide con la sección 6. La paridad del score usa `f0_discovery.json`.
+  - F4. `reason`: F0 confirmó `existing_document_id_session_pin`. El gate de la tabla y la sección 11 dejan de tratar F4 como `BLOCKED`. El prompt de F4 lo reescribe F3.
+  - F5. `reason`: la retención de la misma fila quedó confirmada. F5 conserva `correlation_id` y no copia `visual_observation` al episodio.
+  - F6. `reason`: revisada, sin edición.
+  - F7. `reason`: revisada, sin edición.
+  - F8. `reason`: revisada, sin edición.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo B)
 
 ## Anexo A — prompt de F0
 
@@ -604,6 +690,167 @@ No hagas deploy. No ejecutes F1 en este mismo chat. No marques ningún documento
 
 ## Anexo B — prompt de F1
 
-No ejecutar hasta que F0 reemplace este anexo.
+Ejecutá solo F1 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. No ejecutes F2. No cambies `BatchChunkingPrompt::MODEL_TEXT`, `MODEL_MULTIMODAL`, `FieldPhotoPrompt`, `ImageCompressionService::MAX_DIMENSION`, `RagRetrievalProfile`, pins, autorización, `generation.txt` ni el renderer. No agregues `claude-sonnet-5-5` a las constants. No hagas deploy. No reabras el plan de precisión ni las decisiones FC-D01 a FC-D18. No pidas una decisión a Lahiri.
 
-Cuando F0 lo reemplace, el prompt tiene que ser autocontenido y decir: el resultado del probe multimodal de `claude-sonnet-5-5`; que el harness fuerza `claude-sonnet-5-5` y `claude-opus-5-5` sin leer `MODEL_TEXT`; el fingerprint; el path del manifest y su SHA256; los `case_id` elegibles; el SHA256 de `spring_assembly_misread`; que las dos llamadas de cada fila comparten bytes, MIME, filename, locale `es`, photo intent vacío, el mismo system prompt y `max_tokens` 8000; que `claude-sonnet-5` no se llama; que `NOT_SCORED` no participa del PASS/FAIL; el evaluador; el budget de como máximo 32 llamadas; y el formato del artefacto `tmp/field_companion/f1_visual.json` que F2 va a leer para elegir A, B, C, D o E con la sección 10, sin pedir una decisión a Lahiri. Si el probe falló, el prompt ordena no llamar modelos.
+F0 está `PASS`. `head_initial` de F0 es `8385329ac1adfa552dbcf9101fab48709bc148fe`. El commit de F0 es el padre del trabajo de F1: asunto `Freeze Field Companion contracts for visual benchmark and discovery.` Si el working tree está dirty en algo que no sea F1, `STOP`.
+
+### Probe que habilita las llamadas
+
+El probe de F0 fue success. Podés llamar modelos.
+
+- `requested_model_id`: `claude-sonnet-5-5`
+- `returned_model_id`: `claude-sonnet-5-5`
+- `success`: true
+- `timestamp`: `2026-09-29T21:20:16Z`
+- Cliente: `Anthropic::Client` directo. No uses `ClaudeChunkingClient`. No encoles `TrackBedrockQueryJob`. No escribas `bedrock_queries`.
+- Credencial: `ENV["ANTHROPIC_API_KEY"]` y, si falta, `Rails.application.credentials.dig(:anthropic, :api_key)`. No imprimas la clave.
+- No repitas el probe. No uses `docs/field_companion/multimodal_availability_probe.jpg` como caso. Su SHA256 es `5610cba05ad3f23d2bc8fcdc4c473df0316e2d47982711d7ce6a3f880baeea3c` y no entra al manifest.
+
+### Harness
+
+El harness es independiente del routing productivo. Fuerza, en el código del harness, estos dos ids y ningún otro:
+
+- `claude-sonnet-5-5`
+- `claude-opus-5-5`
+
+No leas `BatchChunkingPrompt::MODEL_TEXT` ni `MODEL_MULTIMODAL` para elegir el modelo. No uses `FieldPhotoDensityGate`. No llames a `claude-sonnet-5`. No agregues un tercer modelo. No reintentes una llamada fallida.
+
+System prompt = `FieldPhotoPrompt::SYSTEM_BLOCKS`. Antes de llamar, calculá `FieldPhotoPrompt.prompt_fingerprint_sha256`. Tiene que ser `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`. Si no coincide, `STOP`: el prompt de producción cambió y este benchmark ya no es el de F0. No edites `FieldPhotoPrompt`.
+
+`max_tokens` = 8000, que es `BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS`. Locale `es`. Photo intent vacío. Sin filename hint distinto del filename de la fila.
+
+### Manifest
+
+Path: `tmp/field_companion/visual_manifest.json`.
+
+SHA256 del JSON: `7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1`.
+
+Si el archivo no está, no lo reescribas a mano. Volvé a copiar los bytes solo si hace falta, sin recomprimir:
+
+- origen: `/Users/lahirisan/Desktop/resortes.png`
+- destino: `tmp/field_companion/images/spring_assembly_misread.png`
+- SHA256 exigido: `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`
+- bytes: 1430913
+- dimensiones: 956×866
+- MIME: `image/png`
+- filename que ven los dos modelos: `spring_assembly_misread.png`
+
+Si ese SHA256 no coincide, no llames a ningún modelo. F1 = `BLOCKED`.
+
+`case_id` elegible, y el único: `spring_assembly_misread`. `categories`: `cable_fixing`, `springs`. Una categoría ausente no se inventa.
+
+Gold, sin reinterpretar:
+
+- `manufacturer`: `NOT_SCORED`
+- `model`: `NOT_SCORED`
+- `component`: `VERIFIED`, `allowed`: `resorte`, `resortes`, `muelle`, `muelles`, `fail_if`: `resistenc`, `bobinad`
+- `visible_text`: `NOT_SCORED`
+
+No hay `gold_overrides.yml`. No transcribas la placa. `NOT_SCORED` no se entrevista y no entra en PASS/FAIL.
+
+### Llamadas
+
+Como máximo 16 imágenes × 2 modelos = 32 llamadas. Con esta fila son 2, una por modelo, sin reintento. Una tercera llamada, un tercer modelo, o más de 16 imágenes es `STOP`.
+
+Para la fila elegible, las dos llamadas son idénticas salvo el model id:
+
+- los mismos bytes del PNG hasheado
+- MIME `image/png`
+- filename `spring_assembly_misread.png`
+- locale `es`
+- photo intent vacío
+- el mismo system prompt
+- `max_tokens` 8000
+
+Guardá `requested_model_id`, `returned_model_id` y el SHA256 de los bytes que esa llamada envió. Si los dos SHA256 difieren, abortá la fila y no hagas otra llamada para corregirlo. No evalúes la foto del probe.
+
+### Evaluador
+
+Normalización: minúsculas, sin acentos, espacios colapsados.
+
+- `VERIFIED`: PASS si el texto normalizado contiene al menos un valor `allowed` como palabra entera y no contiene ningún `fail_if`. FAIL si aparece un `fail_if`, o si no aparece ningún valor permitido. `fail_if` se busca como substring (`resistenc`, `bobinad`), no como palabra entera.
+- `MUST_BE_UNKNOWN`: PASS si el valor normalizado es vacío o `unknown`. Cualquier otro valor es FAIL. Esta fila no tiene campos `MUST_BE_UNKNOWN`.
+- `NOT_SCORED`: se omite. No suma PASS ni FAIL.
+
+Por modelo:
+
+- `identity_invention_count`: cantidad de FAIL en campos `MUST_BE_UNKNOWN`. En esta fila es 0.
+- `component_fail_count`: 1 si `component` `VERIFIED` es FAIL, si no 0.
+- tokens de input y output, latencia en ms, y costo.
+
+Costo de `claude-sonnet-5-5`: `UNKNOWN`, salvo que cites `price_source` con URL. No copies la tarifa de `claude-sonnet-5-direct` ni uses la clave `default` de `BedrockQuery::BEDROCK_PRICING`. Costo de Opus: usá la tarifa ya escrita de `claude-opus-5-5-direct` (input 0,004 / output 0,02 dólares por 1.000 tokens) solo si `returned_model_id` empieza por `claude-opus-5-5`. Si el id devuelto es otro, el costo es `UNKNOWN`.
+
+Contadores que F2 va a leer, calculados por el evaluador, sin elegir letra:
+
+- `spring_split`: `opus_pass_sonnet_fail` si Opus pasa el `component` y Sonnet 5.5 lo falla; `sonnet_pass_opus_fail` si es al revés; `null` si ambos pasan o ambos fallan.
+- `opus_only_wins`: filas elegibles donde Opus pasa todos los campos scored y Sonnet 5.5 falla al menos uno. `NOT_SCORED` no cuenta. Con una sola fila, 0 o 1.
+- `shared_component_fail`: 1 si ambos fallan el `component`, si no 0.
+- `shared_identity_fail`: 0 en esta fila, porque no tiene campos `MUST_BE_UNKNOWN`.
+
+No elijas A, B, C, D ni E. Eso es F2. No preguntes cuál letra seguir.
+
+### Artefacto
+
+Escribí `tmp/field_companion/f1_visual.json` con esta forma. `tmp/` no se commitea. El SHA256 del archivo entra al Execution State.
+
+```json
+{
+  "phase": "F1",
+  "manifest_path": "tmp/field_companion/visual_manifest.json",
+  "manifest_sha256": "7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1",
+  "system_prompt_fingerprint_sha256": "4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1",
+  "locale": "es",
+  "photo_intent": "",
+  "max_tokens": 8000,
+  "reads_model_text": false,
+  "uses_density_gate": false,
+  "calls": 2,
+  "call_ceiling": 32,
+  "cases": [
+    {
+      "case_id": "spring_assembly_misread",
+      "filename": "spring_assembly_misread.png",
+      "media_type": "image/png",
+      "bytes": 1430913,
+      "sha256": "202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd",
+      "models": {
+        "claude-sonnet-5-5": {
+          "requested_model_id": "claude-sonnet-5-5",
+          "returned_model_id": "",
+          "bytes_sha256": "",
+          "success": true,
+          "error_class": null,
+          "fields": {
+            "component": { "status": "VERIFIED", "result": "PASS", "normalized_text": "" },
+            "manufacturer": { "status": "NOT_SCORED" },
+            "model": { "status": "NOT_SCORED" },
+            "visible_text": { "status": "NOT_SCORED" }
+          },
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "latency_ms": 0,
+          "cost": "UNKNOWN",
+          "price_source": null
+        },
+        "claude-opus-5-5": {}
+      }
+    }
+  ],
+  "by_model": {
+    "claude-sonnet-5-5": { "identity_invention_count": 0, "component_fail_count": 0 },
+    "claude-opus-5-5": { "identity_invention_count": 0, "component_fail_count": 0 }
+  },
+  "counters": {
+    "spring_split": null,
+    "opus_only_wins": 0,
+    "shared_component_fail": 0,
+    "shared_identity_fail": 0
+  }
+}
+```
+
+Los números de arriba son la forma, no los resultados. Rellená `result`, tokens, latencia, costo y contadores con la corrida. `NOT_SCORED` no lleva `result`. El objeto de Opus tiene las mismas claves que el de Sonnet 5.5.
+
+### Cierre de F1
+
+En este orden: el artefacto con SHA256; el regression gate de este plan (no llama Bedrock ni Anthropic); Execution State de F1; findings; revisión de F2–F8; reescritura completa del prompt de F2 en un anexo nuevo, con los contadores reales, para que F2 elija una sola letra de la sección 10 sin preguntar. No ejecutes F2 en el mismo chat. No cambies el modelo productivo.

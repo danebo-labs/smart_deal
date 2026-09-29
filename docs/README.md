@@ -9,7 +9,7 @@ evidence and are not descriptions of the active product.
 | Need | Canonical document |
 |---|---|
 | Product stage, MVP boundaries, and next stage | [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) |
-| Knowledge model: `tenant_private` and `danebo_general`; pins stay on the session and are user-editable | [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026) and [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Shared visibility is not a shared pin (FC-D16). The system does not silently drop a pin set (FC-D17). Contract recorded 29-sep-2026. F0 not started. Not shipped. |
+| Knowledge model: `tenant_private` and `danebo_general`; pins stay on the session and are user-editable | [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026) and [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Shared visibility is not a shared pin (FC-D16). The system does not silently drop a pin set (FC-D17). Contract recorded 29-sep-2026. F0 PASS. Not shipped. |
 | Active architecture and engineering priorities | [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md) |
 | Local setup and configuration | [README.md](../README.md) |
 | Production deployment and AWS operations | [PRODUCTION.md](PRODUCTION.md) |
@@ -55,7 +55,7 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 
 | Document | Status |
 |---|---|
-| [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md) | **Current master plan.** Assisted document discovery, Sonnet 5.5 vs Opus 5.5 visual benchmark, image continuity, answer provenance, and the `tenant_private` / `danebo_general` knowledge model. F0 not started. Does not reopen the 29-sep wording plan. |
+| [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md) | **Current master plan.** Assisted document discovery, Sonnet 5.5 vs Opus 5.5 visual benchmark, image continuity, answer provenance, and the `tenant_private` / `danebo_general` knowledge model. F0 PASS. Does not reopen the 29-sep wording plan. Not shipped. |
 | [rag/plan_conocimiento_visual.md](rag/plan_conocimiento_visual.md) | Canonical handoff for phased visual-knowledge ingestion work. Phases 0-6 closed, Gate A-bis passed, **Gate B run: vision relations failed the bar and are switched off; vision keeps component identity** — Phase 7 now waits on human decision #6 |
 | [rag/gate_a_medicion_topologia.md](rag/gate_a_medicion_topologia.md) | Gate A measurement of the T1 topology deriver over all 98 SEGURIDADES pages, every edge vision-reviewed. Also the Phase 8 ground truth. **§2 and §3.1 predate phases 2b/3b** and are rewritten by Gate A-bis |
 | [rag/gate_b_calibracion_vision.md](rag/gate_b_calibracion_vision.md) | Gate B: 102 vision relations judged one by one against the rendered page. Precision 88.2 % (95 % lower bound 81.6 %) against an 85 % bar — 100 % on plain numbered terminal strips, 81.5 % on dense stacked-label ones. Component identity 38/38. Why `INGESTION_VISION_TIER_RELATIONS_ENABLED` ships off |

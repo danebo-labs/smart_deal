@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0 y F1 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 no está ejecutada. El prompt completo de la fase siguiente es el Anexo C.
+**Estado:** master plan final. F0, F1 y F2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. La ingesta Batch de documentos sigue en `claude-sonnet-5`. F2B no está ejecutada. F3 no está ejecutada. El prompt completo de la fase siguiente es el Anexo D.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F2, en el Anexo C, y lee la extensión de 15 imágenes. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F2B, en el Anexo D. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -36,6 +36,7 @@
 | F0 | Contract freeze / audit | Cero comportamiento de producto. Inventario Legacy/Pilot sin aprobar nada. Probe multimodal del harness, sin tocar constants | PASS solo con los entregables del Anexo A. Si el SHA256 de `resortes.png` no coincide con el congelado, o si el probe de `claude-sonnet-5-5` con imagen no queda registrado, F0 = `BLOCKED` y F1 no arranca. El inventario igual se escribe. La ausencia del id en `MODEL_TEXT` no bloquea |
 | F1 | Visual model benchmark | Ningún default. Dos modelos, mismos bytes | PASS con pares completos y evaluador mecánico. `BLOCKED` si F0 no dejó manifest con hashes |
 | F2 | Visual decision | Una sola variable, la que F1 autorice | A, B, C, D o E. E = `SKIP` |
+| F2B | Ingestion Model Refresh | Comparar `claude-sonnet-5` y `claude-sonnet-5-5` sobre el payload real de Anthropic Batch API. No toca el default de Field Photo | No empieza hasta que F2 esté `PASS`. Sin dataset con hashes, `BLOCKED` y cero llamadas. No inventa gold |
 | F3 | Discovery A, suggest-only | Ranker en runtime, sin pin. Elegibilidad por scope, mismo score | Paridad del score con el artefacto F0. Cero candidatos `PRIVATE` o `UNCLASSIFIED` de otra cuenta |
 | F4 | Discovery B, confirmed focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | F0 confirmó `existing_document_id_session_pin` (`reindex_required = false`, `duplicate_document_required = false`). F4 no queda `BLOCKED`. La opción `new_chunk_attribute` no se elige |
 | F5 | Image continuity | Reuso de `visual_observation` | `STOP` antes de migrar si F0 marcó contradicción de retención |
@@ -80,7 +81,8 @@ Ese gate no llama Bedrock ni Anthropic. No se relanza el probe vivo del plan de 
 
 - **F0:** una llamada Anthropic con imagen, `max_tokens` 16, modelo forzado `claude-sonnet-5-5`, fixture `docs/field_companion/multimodal_availability_probe.jpg`. Directo con `Anthropic::Client`, no con `ClaudeChunkingClient`, para no encolar `TrackBedrockQueryJob` ni escribir `bedrock_queries`. Credencial `ANTHROPIC_API_KEY` o el mismo fallback de `ClaudeChunkingClient#build_client`. No se imprime la API key. No se evalúa calidad. Opus no entra en este probe.
 - **F1:** como máximo 16 imágenes × 2 modelos = 32 llamadas, una por par, sin reintento, `max_tokens` = `BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS` (8000). Una tercera llamada por imagen, un tercer modelo, o más de 16 imágenes es `STOP`.
-- **F2:** el budget depende de la letra. A o B: cero llamadas de imagen; solo el cambio de constante si la letra lo dice. C: una llamada nueva por imagen del manifest, solo `claude-sonnet-5-5`, bytes de lado largo 2048. D: una llamada nueva por imagen, solo `claude-sonnet-5-5`, prompt nuevo, bytes de control de F1. E: cero llamadas.
+- **F2:** el budget depende de la letra. A o B: cero llamadas de imagen; solo el cambio de constante si la letra lo dice. C: una llamada nueva por imagen del manifest, solo `claude-sonnet-5-5`, bytes de lado largo 2048. D: una llamada nueva por imagen, solo `claude-sonnet-5-5`, prompt nuevo, bytes de control de F1. E: cero llamadas. La letra B cerrada no hizo llamadas.
+- **F2B:** cero llamadas hasta que exista un dataset de páginas reales con SHA256. La comparación no está autorizada por el cierre de F2. No se ejecuta en el commit de F2.
 - **F3–F8:** cero llamadas de modelo nuevas, salvo que un test ya mockee el cliente.
 
 ## 1. Producción visual hoy (contexto, no control de F1)
@@ -91,7 +93,7 @@ HEAD enruta la foto de chat así:
 - [app/services/field_photo_density_gate.rb](../app/services/field_photo_density_gate.rb): binario `>= 1_500_000` bytes → `BatchChunkingPrompt::MODEL_MULTIMODAL` = `claude-opus-5-5`. Si no, `MODEL_TEXT` = `claude-sonnet-5`.
 - `white_ratio` se loguea y no elige modelo.
 - El generador de texto es Haiku vía `BEDROCK_MODEL_ID`. No recibe bytes de imagen.
-- `claude-sonnet-5-5` no aparece en HEAD. Esa ausencia no bloquea el benchmark. F0 lo prueba con el harness y el JPEG de 4×3. F0 no asigna `MODEL_TEXT`.
+- `claude-sonnet-5-5` no aparece en el HEAD de F0 y F1. Esa ausencia no bloquea el benchmark. F0 lo prueba con el harness y el JPEG de 4×3. F0 no asigna `MODEL_TEXT`. Después de F2 el chat usa `FieldPhotoAnalysisService::DEFAULT_MODEL`. `MODEL_TEXT` sigue en `claude-sonnet-5`. El mapa de esta lista es el de antes de F2.
 
 Tarifas ya escritas en [app/models/bedrock_query.rb](../app/models/bedrock_query.rb), dólares por 1.000 tokens, solo como mapa de lo que el repo sí conoce:
 
@@ -439,7 +441,7 @@ El FAIL de Sonnet 5.5 es ausencia de palabra permitida. `fail_if` (`resistenc`, 
 
 ## 10. Decisión F2
 
-F2 lee la extensión de 15 imágenes, `tmp/field_companion/f1_extended/aggregate.json`, no solo `f1_visual.json`. Una sola letra. No abre dos experimentos. No instala un router por tipo de imagen. F2 no está ejecutada.
+F2 lee la extensión de 15 imágenes, `tmp/field_companion/f1_extended/aggregate.json`, no solo `f1_visual.json`. Una sola letra. No abre dos experimentos. No instala un router por tipo de imagen. F2 está `PASS`. El Resultado F2 registra la letra y la corrección de alcance.
 
 F0 y F1 no escriben `MODEL_TEXT`. Si Sonnet 5.5 gana o queda en la letra A, F2 puede dejarlo como default. Si Opus 5.5 gana casos puntuales, F2 registra el finding y no instala un routing heurístico. No vuelve la regla `bytes > 1_500_000 => Opus` sin evidencia causal de este benchmark. FC-D18.
 
@@ -468,6 +470,37 @@ Letra:
 - **E.** Ninguna letra anterior. `SKIP`. Cero cambio de modelo, de prompt y de resolución.
 
 A y B son el cambio de default. C y D son el experimento, no un segundo cambio encima. E no cambia nada.
+
+### Resultado F2
+
+`F2_STATUS=PASS`. Letra B. `adopted: true` para el default de Field Photo. Cero llamadas de imagen. `head_initial` `7f32d4837842e1e7e78ef652778a54860511b5f4`. El árbol no contiene el SHA de este commit.
+
+Evidencia leída, sin regenerar el benchmark. Clase `E3`.
+
+| Modelo | Overall | Component | Safety | p50 | Costo |
+|---|---|---|---|---|---|
+| `claude-sonnet-5-5` | 46/50 | 11/15 | 0 | 4335 ms | `0.136262` |
+| `claude-opus-5-5` | 48/50 | 14/15 | 0 | 9117 ms | `0.351039` |
+
+`spring_split` = `opus_pass_sonnet_fail`. `opus_only_wins` 4. `shared_component_fail` 0. `shared_identity_fail` 0. `identity_invention_count` 0 en los dos. Opus 5.5 identifica mejor el componente. Sonnet 5.5 es más rápido y más barato. No hay señal pre-call validada. Sonnet 5.5 queda como default de Field Photo. Opus 5.5 queda como la capacidad superior conocida, en la rama que ya existía. `selective_opus_routing: proposed_not_implemented`.
+
+Corrección de alcance. El Anexo C ordenaba reemplazar `BatchChunkingPrompt::MODEL_TEXT`. Ese constant también alimenta la ingesta Batch bulk, la ingesta Batch web y el fallback Direct/retry. F2 no migra la ingesta. El default de chat es `FieldPhotoAnalysisService::DEFAULT_MODEL` = `claude-sonnet-5-5`. `MODEL_TEXT` sigue en `claude-sonnet-5`.
+
+| Path | Modelo efectivo |
+|---|---|
+| Field Photo default | `claude-sonnet-5-5` |
+| Field Photo, binario `>= 1_500_000` | `claude-opus-5-5` |
+| Ingesta Batch de texto | `claude-sonnet-5` |
+| Ingesta Batch multimodal o `force_opus` | `claude-opus-5-5` |
+| Direct/retry de ingesta, sin modelo en la página | `claude-sonnet-5` |
+
+`LARGE_PHOTO_THRESHOLD` permanece en `1_500_000`. Es una heurística legacy. La extensión de 15 imágenes no validó el tamaño en bytes como predictor de dificultad. F2 no agregó otro umbral ni otro router. `:sonnet` es un símbolo. El chat lo resuelve con `DEFAULT_MODEL`. La ingesta lo resuelve con `MODEL_TEXT`. El log `field_photo_gate` sigue nombrando `MODEL_TEXT` en la rama chica, porque la ingesta bulk emite el mismo evento. El id real del chat queda en el resultado del servicio.
+
+Pricing de Field Photo, Anthropic Direct. Clave exacta `claude-sonnet-5-5-direct`, dólares por 1.000 tokens: input `0.002`, output `0.01`, cache read `0.0002`, cache creation `0.0025`. Fuente: fila Claude Sonnet 5.5 de <https://platform.claude.com/docs/en/about-claude/pricing>, leída el 2026-09-29. $2 / $10 / $0,20 por MTok. Cache write de 5 minutos $2,50 / MTok. No es un alias de `claude-sonnet-5-direct`. No cae en `default`. `claude-sonnet-5-5-batch` no se escribe en F2. F2B la cita antes de cualquier llamada Batch con ese id.
+
+No cambió `FieldPhotoPrompt`, el fingerprint `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`, el resize, `max_tokens`, el prompt de ingesta, `INGESTION_CONTRACT_VERSION`, RAG, embeddings, discovery, provenance, conocimiento compartido, top-k ni pins. `ContractualLimits::PHOTO[:allowed_models]` lista `DEFAULT_MODEL` y `MODEL_MULTIMODAL`. Es el techo declarativo de la foto.
+
+Los hashes del benchmark visual se reconfirmaron y no se reescribieron. Siguiente fase: F2B. F3 no arranca.
 
 ## 11. Discovery en runtime (F3 y F4)
 
@@ -563,7 +596,7 @@ Esos archivos distinguen el contrato (`tenant_private` + `danebo_general` explí
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0 y F1 están `PASS`. F2 sigue sin ejecutar.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1 y F2 están `PASS`. F2B y F3 siguen sin ejecutar.
 
 Contrato de cada fase, cuando corra:
 
@@ -674,7 +707,8 @@ Checkpoint previo a F0, satisfecho al abrir:
 - `phase`: F1
 - `status`: `PASS`
 - `head_initial`: `83b128ce430acc0a67909d924b5ccf9efd79c2a4`
-- `head_final`: el commit de F1. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `head_final`: `efd138d5287727e24258293102e69c355dee3bf8`
+- `extension_commit`: `7f32d4837842e1e7e78ef652778a54860511b5f4`. La extensión no es una fase. Su padre es `head_final`. F2 abre sobre la extensión.
 - `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Record the Sonnet 5.5 versus Opus 5.5 field-photo benchmark.`
 - `files_changed`:
   - `script/field_companion/visual_benchmark.rb`
@@ -738,6 +772,84 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: revisada, sin edición.
   - F8. `reason`: revisada, sin edición.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo C)
+
+### F2
+
+- `phase`: F2
+- `status`: `PASS`
+- `letter`: B
+- `adopted`: `true` para el default de Field Photo. La ingesta de documentos no se adopta.
+- `head_initial`: `7f32d4837842e1e7e78ef652778a54860511b5f4`
+- `head_final`: el commit de F2. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto nombra la letra B y dice que no se agregó routing por tamaño.
+- `files_changed`:
+  - `app/models/bedrock_query.rb`
+  - `app/prompts/batch_chunking_prompt.rb`
+  - `app/services/contractual_limits.rb`
+  - `app/services/field_photo_analysis_service.rb`
+  - `app/services/field_photo_density_gate.rb`
+  - `test/jobs/field_photo_analysis_job_test.rb`
+  - `test/services/bulk_cost_v2_request_builder_test.rb`
+  - `test/services/contractual_limits_test.rb`
+  - `test/services/field_companion_f2_letter_b_test.rb`
+  - `test/services/field_photo_analysis_service_test.rb`
+  - `test/services/manual_batch_ingestion_service_test.rb`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+  - `docs/README.md`
+- `commands_executed`:
+  - `env -u BUNDLE_PATH bin/rubocop --cache false` sobre los Ruby de F2
+  - `env -u BUNDLE_PATH bin/rails test` con el regression gate, el test de la letra, el techo contractual, la ingesta Batch web, el builder Batch bulk y el fingerprint de `FieldPhotoPrompt`, en la misma invocación
+  - `shasum -a 256` de los artefactos visuales ya existentes. Cero llamadas de imagen
+- `command_results`:
+  - RuboCop: 9 files, no offenses
+  - tests: 250 runs, 1526 assertions, 0 failures, 0 errors, 1 skip
+  - hashes de F1 y de la extensión, sin reescritura, los de `artifact_sha256`
+- `tests`: regression gate de este plan, más `test/services/field_companion_f2_letter_b_test.rb`, `test/services/contractual_limits_test.rb`, `test/services/manual_batch_ingestion_service_test.rb`, `test/services/bulk_cost_v2_request_builder_test.rb` y `test/prompts/field_photo_prompt_test.rb`, en la misma invocación
+- `test_results`: 250 runs, 1526 assertions, 0 failures, 0 errors, 1 skip. El skip es el test previo `Manual integration test: Upload a large JPEG (>500KB) via UI to verify compression` en `test/services/image_compression_service_test.rb`. No es de F2.
+- `artifacts`: ninguno nuevo. Se releyeron, sin reescribir:
+  - `tmp/field_companion/f1_extended/aggregate.json`
+  - `tmp/field_companion/f1_extended/cost_report.json`
+  - `tmp/field_companion/f1_extended/gold_manifest.json`
+  - `tmp/field_companion/f1_extended/manifest.json`
+  - `tmp/field_companion/f1_extended/SHA256SUMS.txt`
+  - `tmp/field_companion/f1_visual.json`
+  - `tmp/field_companion/outputs/spring_assembly_misread.claude-sonnet-5-5.txt`
+  - `tmp/field_companion/outputs/spring_assembly_misread.claude-opus-5-5.txt`
+  - `tmp/field_companion/visual_manifest.json`
+  - `tmp/field_companion/images/spring_assembly_misread.png`
+- `artifact_sha256`:
+  - `aggregate.json` `fe283538ceceaf8d90a3b9a4444868abf0886e1745584eb09cb67d35c6e3fa84`
+  - `cost_report.json` `72e13f1c32b7f9172301a206970df2a13707b0770dd4d14cb500a44affbdcc5b`
+  - `gold_manifest.json` `2329d9d8d4cedc4309a6f608e82a398ff6c5e0cd942e376e0b9b9a1098411fbc`
+  - `manifest.json` `62a639b54e17ae211d61407bdbb716844ce0d4e8480986dcaac12cfe2df0e477`
+  - `SHA256SUMS.txt` `c5987e91750648649ba743cf94f4a598d5920ba7f088e6b79ca6821aedf5a4b9`
+  - `f1_visual.json` `9244f1b5dca642ba72e45a938492a4036f548c9600047aafb0d7631a871868c4`
+  - `spring_assembly_misread.claude-sonnet-5-5.txt` `0806d1c5f6ad98c50b74a4bb409ef1d5aa57ebf161ff72700bd8482fa422066b`
+  - `spring_assembly_misread.claude-opus-5-5.txt` `f53745565e39091c5f622315e18d3e98d54c44cc4a64931a84d1211bdd452e3a`
+  - `visual_manifest.json` `7a17aad222d0be44bf961b7119226fef54632a3789aa11e4cd985b95431a05f1`
+  - `spring_assembly_misread.png` `202fbc9bee1f079914dfcb7dc5334ff1e9a776cb44b1c867c12a11ea04156ebd`
+- `findings`:
+  1. `CONFIRMED`. Letra B. `spring_split` = `opus_pass_sonnet_fail`. `opus_only_wins` 4. Opus no inventa identidad. Clase `E3`. No hay señal pre-call para un router.
+  2. `CONFIRMED`. El default de Field Photo es `FieldPhotoAnalysisService::DEFAULT_MODEL` = `claude-sonnet-5-5`. La rama `>= 1_500_000` sigue en `claude-opus-5-5`.
+  3. `CONFIRMED`. `BatchChunkingPrompt::MODEL_TEXT` sigue en `claude-sonnet-5`. La ingesta Batch de texto, bulk y web, sigue en Sonnet 5. El fallback Direct/retry sin modelo de página sigue en Sonnet 5. `force_opus` y la rama multimodal siguen en `claude-opus-5-5`.
+  4. `NEW`. El Anexo C pedía escribir `MODEL_TEXT`. Ese constant es compartido con la ingesta. F2 no lo cambia. La separación es la constante de Field Photo.
+  5. `CONFIRMED`. `claude-sonnet-5-5-direct` está en `BEDROCK_PRICING` con input `0.002`, output `0.01`, cache read `0.0002`, cache creation `0.0025`. No es la misma entrada que `claude-sonnet-5-direct`. No es `default`. `claude-sonnet-5-5-batch` no está.
+  6. `CONFIRMED`. El umbral de 1,5 MB permanece y no se validó como predictor de dificultad. F2 no agregó otro corte.
+  7. `CONFIRMED`. Fingerprint `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`. Los hashes de arriba no se reescribieron.
+  8. `REJECTED`. Migrar la ingesta documental a Sonnet 5.5 dentro de F2. Eso es F2B.
+- `derived_decisions`:
+  - Sonnet 5.5 es el default de Field Photo. Opus 5.5 es la capacidad superior conocida y no gana un router nuevo.
+  - La ingesta Batch de texto permanece en `claude-sonnet-5` hasta F2B.
+  - `INGESTION_CONTRACT_VERSION` no se toca.
+- `future_phases_changed`:
+  - F2B. `reason`: fase nueva, entre F2 y F3. Compara Sonnet 5 y Sonnet 5.5 sobre el payload real de Anthropic Batch API. No está ejecutada. El Anexo D es su prompt.
+  - F3. `reason`: revisada, sin edición de contrato. No arranca. El benchmark visual y el default de la foto no cambian el score ni la elegibilidad.
+  - F4. `reason`: revisada, sin edición.
+  - F5. `reason`: revisada, sin edición. El `model_id` de una observación nueva de chat puede ser `claude-sonnet-5-5-direct` o `claude-opus-5-5-direct`.
+  - F6. `reason`: revisada, sin edición.
+  - F7. `reason`: revisada, sin edición.
+  - F8. `reason`: revisada, sin edición.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo D)
 
 ## Anexo A — prompt de F0
 
@@ -949,6 +1061,8 @@ En este orden: el artefacto con SHA256; el regression gate de este plan (no llam
 
 ## Anexo C — prompt de F2
 
+Anexo C ya se ejecutó. La letra aplicada es B. El vehículo no es el reemplazo global de `MODEL_TEXT` que el texto de abajo ordena: ese constant también alimenta la ingesta Batch. F2 escribió `FieldPhotoAnalysisService::DEFAULT_MODEL`. `MODEL_TEXT` sigue en `claude-sonnet-5`. El padre efectivo es `7f32d4837842e1e7e78ef652778a54860511b5f4`. La precondición `HEAD^` = `efd138d5287727e24258293102e69c355dee3bf8` quedó obsoleta: ese SHA es el commit original de F1, y la extensión es el padre de F2. El cierre reescribió el prompt de F2B, Anexo D, y no el de F3. El texto que sigue es el prompt que se recibió.
+
 Ejecutá solo F2 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. No ejecutes F3. No hagas deploy. No reabras el plan de precisión ni las decisiones FC-D01 a FC-D18. No pidas una decisión a Lahiri. No vuelvas a llamar a los dos modelos. No elijas los modelos con `BatchChunkingPrompt::MODEL_TEXT` ni con `FieldPhotoDensityGate`. No agregues un router por tipo de imagen, por tamaño ni por densidad.
 
 La extensión de evidencia ya corrió. F2 no está empezada. El padre del trabajo de F2 es el commit de esa extensión. `git rev-parse HEAD^` tiene que ser `efd138d5287727e24258293102e69c355dee3bf8`. Si el working tree está dirty en algo que no sea F2, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F2. El árbol de este anexo no contiene el SHA de su propio commit.
@@ -1073,3 +1187,52 @@ bin/rails test \
 ```
 
 Más el test nuevo de la letra, en la misma invocación o en una seguida. Un solo commit de F2. El mensaje nombra la letra y dice que no se agregó routing por tamaño. `head_final` no puede estar escrito dentro del árbol: después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es el `head_initial` que anotaste.
+
+## Anexo D — prompt de F2B
+
+Ejecutá solo F2B de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F2B es Ingestion Model Refresh. El objetivo es comparar `claude-sonnet-5` y `claude-sonnet-5-5` sobre el payload real de Anthropic Batch API. No ejecutes F3. No hagas deploy. No reabras F2. No cambies Field Photo. No pidas una decisión a Lahiri.
+
+`git rev-parse HEAD^` tiene que ser `7f32d4837842e1e7e78ef652778a54860511b5f4`. Si no lo es, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F2B. Ese HEAD es el commit de F2. El árbol de este anexo no contiene el SHA de F2B.
+
+### Qué no cambia
+
+- `FieldPhotoAnalysisService::DEFAULT_MODEL` sigue `claude-sonnet-5-5`.
+- `BatchChunkingPrompt::MODEL_MULTIMODAL` sigue `claude-opus-5-5`.
+- `FieldPhotoDensityGate::LARGE_PHOTO_THRESHOLD` sigue `1_500_000`. No agregues otro corte ni un router.
+- `FieldPhotoPrompt` y su fingerprint no se editan.
+- El prompt de ingesta no se edita. `INGESTION_CONTRACT_VERSION` no se sube. La deduplicación no usa el id del modelo.
+- RAG, embeddings, discovery, provenance, conocimiento compartido, top-k y pins no se tocan.
+- No uses el harness visual de F1. No mide ingesta.
+
+### Ruta que se mide
+
+La ingesta principal es Anthropic Batch API:
+
+- Bulk: `BulkCostV2RequestBuilder` arma el request. `BatchIngestionService` lo manda. `ClaudeBatchClient#submit_batch` llama `messages.batches.create`.
+- Web, PDF largo: `ManualBatchIngestionService` arma el request y usa el mismo cliente. `CustomChunkingPipeline` manda a batch cuando `page_count` supera el umbral de páginas sync. Si no es un PDF largo, el pipeline de web levanta `PerimeterError`. No mide ese camino como si fuera `SingleFileChunkingService`.
+- El modelo de una página de texto sale de `SplitPage`, que arranca en `BatchChunkingPrompt::MODEL_TEXT`. `force_opus` pone `MODEL_MULTIMODAL`. Esas páginas Opus no son un brazo de la comparación Sonnet.
+- El resultado Batch se persiste con sufijo `-batch` y `latency_ms` 0.
+
+`ClaudeChunkingClient` no es la medición principal. `BatchPageRetryService` reintenta una página por Direct cuando el batch cortó por `max_tokens` o el JSON no parsea. Si no hay modelo en el resultado, cae en `MODEL_TEXT`. Ese costo se anota aparte. No se mezcla con el costo Batch. `SingleFileChunkingService` y los scripts `script/reparse_benchmark_corpus.rb` y `script/ingest_benchmark_corpus.rb` tampoco son la medición.
+
+### Dataset
+
+8 a 12 unidades reales de ingesta, con SHA256 del binario de cada página. Categorías a cubrir si el archivo existe: tabla, página densa, esquema eléctrico, continuación, varias marcas, códigos, valores numéricos, `UNKNOWN`, un caso problemático de `field_records`, y una unidad que se pueda puntuar como ancla y como contenido.
+
+No inventes gold. Si el archivo no está, la categoría queda `NOT_AVAILABLE`. `~/Desktop/corpus_v2_subir` no estaba al cerrar F2. `script/fixtures/rag_quality_benchmark_corpus.json` nombra un PDF de 24 páginas y un PNG hidráulico; el gold de field records que hay es `field_records_v3`, no `field_records_v8`. No los trates como casos scored de v8. Si no queda ninguna unidad con hash y con gold scored, F2B = `BLOCKED`. Cero llamadas. `MODEL_TEXT` no se toca.
+
+Cada unidad scored declara campos `PASS`, `FAIL` o `NOT_SCORED` antes de la llamada. `NOT_SCORED` no vota.
+
+### Pricing antes de llamar
+
+F2 no escribió `claude-sonnet-5-5-batch`. Antes de cualquier llamada Batch con `claude-sonnet-5-5`, leé de nuevo <https://platform.claude.com/docs/en/about-claude/pricing> y agregá la clave exacta. La lectura del 2026-09-29 daba batch $1 / $5 por MTok. La convención ya escrita para `claude-sonnet-5-batch` es cache read 0,1× y cache creation 1,25× de la tarifa de input batch. Volvé a leerla. Si la página no muestra esa fila, `STOP`. No inventes el número. No uses un alias de `claude-sonnet-5-batch`. No uses `default`. `pricing_for("claude-sonnet-5-5")` y `pricing_for("claude-sonnet-5-5-batch")` no pueden caer en `default` si vas a llamar ese id. La clave `claude-sonnet-5-5-direct` ya está y no se reescribe.
+
+### Comparación
+
+Mismos bytes, mismo `BatchChunkingPrompt::SYSTEM_BLOCKS`, mismo `page_user_content`, mismo `max_tokens` (`WEB_PAGE_MAX_TOKENS`). Dos modelos: `claude-sonnet-5` y `claude-sonnet-5-5`. El request tiene la forma que ya produce el builder: `params.model`, system y user content. Una llamada Batch por página y por modelo. Sin reintento dentro de la comparación. El retry Direct, si ocurre, se cuenta en otra línea.
+
+Regla congelada antes de mirar salidas. `MODEL_TEXT` pasa a `claude-sonnet-5-5` solo si hay al menos una unidad scored y, en todas las unidades scored, Sonnet 5.5 no tiene más `FAIL` que Sonnet 5 y no agrega una invención en un campo que el gold marca como desconocido. Una categoría `NOT_AVAILABLE` no vota y no alcanza para adoptar. Si la regla no se cumple, `adopted: false` y `MODEL_TEXT` sigue en `claude-sonnet-5`. La adopción, si corresponde, va en un commit posterior al artefacto de la medición. No se mezcla con F3.
+
+### Cierre de F2B
+
+En este orden: tests; el regression gate de este plan; artefacto con SHA256, modelos, tokens, latencia de batch si el proveedor la da, costo Batch y costo Direct por separado; Execution State; findings; revisión de F3–F8; reescritura completa del prompt de la fase siguiente. Si F2B queda `BLOCKED` por dataset, el prompt siguiente no llama modelos y no cambia `MODEL_TEXT`. No ejecutes F3 en el mismo chat. `head_final` no se escribe dentro del árbol.

@@ -11,6 +11,9 @@ class FieldPhotoAnalysisService
   CHAT_CONTEXT_LIMIT = ConversationSession::MAX_MSG_LENGTH
   RELEVANCE_VALUES = %w[relevant unrelated uncertain].freeze
   MISSING_DETAIL_LIMIT = 200
+  # Field Companion F2 letter B. Chat photos only. Document ingestion stays on
+  # BatchChunkingPrompt::MODEL_TEXT.
+  DEFAULT_MODEL = "claude-sonnet-5-5"
 
   def initialize(binary:, content_type:, filename:, locale:, account_id:, user_id:,
                  conv_session_id:, correlation_id:, client: nil, photo_intent: nil)
@@ -34,7 +37,7 @@ class FieldPhotoAnalysisService
       filename: @filename,
       correlation_id: @correlation_id
     )
-    model = route == :opus ? BatchChunkingPrompt::MODEL_MULTIMODAL : BatchChunkingPrompt::MODEL_TEXT
+    model = route == :opus ? BatchChunkingPrompt::MODEL_MULTIMODAL : DEFAULT_MODEL
     client = @client || ClaudeChunkingClient.new(model: model, system: FieldPhotoPrompt::SYSTEM_BLOCKS)
 
     response = client.call(

@@ -1,16 +1,19 @@
 # frozen_string_literal: true
 
-# Routes a field photo to :sonnet (default) or :opus (dense/large scan).
-# Decision is purely size-based: binaries >= LARGE_PHOTO_THRESHOLD bytes are likely
-# scanned documents/schematics, not typical field photos — route to Opus for fidelity.
-# Zero LLM calls in this path: deterministic, low-latency, zero cost.
+# Routes a binary to :sonnet or :opus by file size. Zero LLM calls.
+# LARGE_PHOTO_THRESHOLD is a legacy heuristic. The 15-image F1 extension did
+# not validate byte size as a predictor of visual difficulty. F2 adds no
+# threshold and no new router.
+# :sonnet is a route symbol. Chat field photos resolve it to
+# FieldPhotoAnalysisService::DEFAULT_MODEL. Document ingestion resolves it
+# to BatchChunkingPrompt::MODEL_TEXT. white_ratio is logged and does not
+# choose the route.
 #
 # Gate 9R O1′ prep: every decision emits a structured "field_photo_gate" event with
 # bytes, dimensions and format read from the image header (no decode of pixel data,
-# no LLM). The decision itself is unchanged — telemetry first, routing change later.
+# no LLM). The decision itself is the byte cut. F2 did not change it.
 class FieldPhotoDensityGate
-  # 1.5 MB — scanned TIFF/PNG exports of dense schematics commonly exceed this;
-  # typical JPEG field photos (phone camera) are 0.3–1.2 MB.
+  # Legacy 1.5 MB cut. Not a measured difficulty threshold.
   LARGE_PHOTO_THRESHOLD = 1_500_000
 
   # @param correlation_id [String, nil] join key threaded from the caller:

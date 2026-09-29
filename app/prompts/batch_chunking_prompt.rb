@@ -23,6 +23,7 @@ require "digest"
 #   → `BedrockIngestionJob` → `KbDocument`. No in-body marker parsing required.
 module BatchChunkingPrompt
   MODEL_MULTIMODAL = "claude-opus-5-5"
+  # Document ingestion text model. Field photo chat does not use this constant.
   MODEL_TEXT       = "claude-sonnet-5"
   # Legacy alias kept for callers that reference MODEL directly (bulk batch path).
   MODEL      = MODEL_MULTIMODAL

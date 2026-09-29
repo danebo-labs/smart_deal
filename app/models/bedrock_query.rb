@@ -90,6 +90,10 @@ class BedrockQuery < ApplicationRecord
     'claude-sonnet-4-6-direct'                         => { input: 0.003,   output: 0.015,   cache_read: 0.0003,   cache_creation: 0.00375  },
     'claude-opus-5-5-direct'                           => { input: 0.004,   output: 0.02,    cache_read: 0.0002,   cache_creation: 0.005    },
     'claude-sonnet-5-direct'                           => { input: 0.002,   output: 0.01,    cache_read: 0.0002,   cache_creation: 0.0025   },
+    # Sonnet 5.5 Direct. Field Companion F2 letter B. Not an alias of claude-sonnet-5-direct.
+    # https://platform.claude.com/docs/en/about-claude/pricing (2026-09-29): $2 / $10 / $0.20 per MTok.
+    # Five-minute cache write is $2.50 / MTok. The one-hour write is not stored.
+    'claude-sonnet-5-5-direct'                         => { input: 0.002,   output: 0.01,    cache_read: 0.0002,   cache_creation: 0.0025   },
     'claude-haiku-4-5-20251001-direct'                 => { input: 0.001,   output: 0.005,   cache_read: 0.0001,   cache_creation: 0.00125  },
     # Bedrock Inference Profiles (global. ~10% cheaper than us.)
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },

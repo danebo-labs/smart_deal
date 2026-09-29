@@ -641,14 +641,14 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal "visual_query", args[:route]
     assert_equal 1430, args[:input_tokens]
     assert_equal 1172, args[:cache_creation_tokens]
-    assert_equal "claude-sonnet-5-direct", args[:model_id]
+    assert_equal "claude-sonnet-5-5-direct", args[:model_id]
     assert_equal 1, enqueued_jobs.count { |entry| entry[:job] == TrackBedrockQueryJob }
     assert enqueued_jobs.none? { |entry|
       entry[:job] == TrackBedrockQueryJob && entry.fetch(:args).last.to_h.symbolize_keys[:source] == "semantic_analysis"
     }
 
     expected = BedrockQuery.new(
-      model_id: "claude-sonnet-5-direct",
+      model_id: "claude-sonnet-5-5-direct",
       input_tokens: 1430,
       output_tokens: 360,
       cache_creation_tokens: 1172

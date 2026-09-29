@@ -52,8 +52,10 @@ class ContractualLimitsTest < ActiveSupport::TestCase
   end
 
   test "photo limits only allow the two routed models" do
-    assert_equal [ BatchChunkingPrompt::MODEL_TEXT, BatchChunkingPrompt::MODEL_MULTIMODAL ],
+    assert_equal [ FieldPhotoAnalysisService::DEFAULT_MODEL, BatchChunkingPrompt::MODEL_MULTIMODAL ],
                  ContractualLimits::PHOTO[:allowed_models]
+    assert_equal "claude-sonnet-5-5", ContractualLimits::PHOTO[:allowed_models].first
+    assert_equal "claude-sonnet-5", BatchChunkingPrompt::MODEL_TEXT
   end
 
   test "manual filter limits match PageRelevanceFilter window size and bounded retry" do

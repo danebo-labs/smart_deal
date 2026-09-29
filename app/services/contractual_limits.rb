@@ -40,7 +40,7 @@ module ContractualLimits
   # ── Photos (web/chat field photo, sync direct) ────────────────────────────
   PHOTO = {
     # FieldPhotoDensityGate routes; no other models are permitted.
-    allowed_models:        [ BatchChunkingPrompt::MODEL_TEXT, BatchChunkingPrompt::MODEL_MULTIMODAL ].freeze,
+    allowed_models:        [ FieldPhotoAnalysisService::DEFAULT_MODEL, BatchChunkingPrompt::MODEL_MULTIMODAL ].freeze,
     # SingleFileChunkingService::PAGE_TOKEN_LADDER — bounded escalation.
     max_attempts:          3,
     output_token_ladder:   [ 8_000, 16_000, 32_000 ].freeze,

@@ -67,7 +67,7 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     # The anti_hallucination_notes value is shown once, as a sentence.
     assert_equal 1, result[:analysis].scan("El fabricante no es visible; requiere verificación en campo.").size
     assert_equal accounts(:legacy).id, client.kwargs.dig(:telemetry, :account_id)
-    assert_equal "claude-sonnet-5", result[:model]
+    assert_equal "claude-sonnet-5-5", result[:model]
     assert_equal({ input_tokens: 120, output_tokens: 80 }, result[:usage])
     assert_operator result[:latency_ms], :>=, 0
     assert_nil result[:target_visible]

@@ -3,12 +3,53 @@
 **Current stage:** MVP / MVO demos and pilot discovery.  
 **Primary channel:** authenticated web application.  
 **Primary field interface (from 2026-09):** voice.  
-**Updated:** 2026-09-18.
+**Updated:** 2026-09-29.
 
 This roadmap separates what Danebo demonstrates today from capabilities that
 must first be validated through sales conversations and pilot usage. It is not
 an implementation commitment or a license to introduce speculative
 architecture.
+
+## Knowledge model (29-sep-2026)
+
+Danebo is a field companion with two documentary layers. It is not only a chat
+over the manuals a customer uploaded.
+
+1. **Danebo general knowledge** (`danebo_general`). A document Danebo has
+   explicitly approved for shared use. It is ingested and embedded once. An
+   authorized tenant can list it, retrieve it, and pin it without a second
+   copy and without a per-tenant reindex. The pin is `user_pin` on that
+   tenant's session only. Account A pinning the document does not change
+   Account B's catalog or Account B's pins. Each session may pin a different
+   general document, several general documents, or general documents together
+   with its own private ones, and may change or remove those pins.
+   The system does not silently drop those pins when retrieval finds nothing.
+   Appearing in that library does not
+   mean the manual matches every unit of the same brand.
+2. **Tenant private knowledge** (`tenant_private`). Visible only to the tenant
+   that owns it. This is the default.
+
+`UNCLASSIFIED` behaves as `tenant_private`. Living in `danebo-legacy` or
+`danebo-pilot-elevator` does not make a document general. A file contributed
+by a customer or a third party stays private until Danebo marks that document.
+
+The authorization semantic is `tenant private + Danebo shared`. It is not
+cross-account access between tenants. HEAD still retrieves the legacy and
+pilot accounts through `Rag::SharedManualCorpus` and may mark their chunks
+`manual_corpus=general` when scope was omitted. That code path is not the
+approval. The minimum representation that can list, retrieve, and pin an
+explicitly approved document without reindexing or duplicating it is an open
+input of
+[PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md).
+F0 of that plan has not started. Do not treat this section as shipped behavior.
+
+UI labels, when discovery ships: `Biblioteca general de Danebo` and
+`Tu biblioteca`. Those labels are document provenance. They are not the answer
+bands `MANUAL_FACT`, `VISUAL_OBSERVATION`, and `DANEBO_GUIDANCE`.
+
+Canonical terms are `tenant_private` and `danebo_general`. Do not introduce
+“global docs”, “public docs”, “cross-account docs”, or “common account docs”
+for the same thing.
 
 Planning documents that this roadmap serves:
 [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) (strategy),
@@ -33,6 +74,9 @@ usable.**
 Consequence for this document: voice moves out of "stretch goal" and becomes
 the central deliverable of September 2026. Everything in the MVP section below
 remains valid as the retrieval and traceability substrate underneath it.
+The 29-sep-2026 knowledge model above does not reopen this channel finding.
+A curated general library shortens cold start. It does not replace voice, and
+it does not publish every legacy or pilot file.
 
 ## Current MVP: prove the operational loop
 

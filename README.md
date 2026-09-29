@@ -6,6 +6,10 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 
 - **Active MVP:** authenticated web home (RAG chat, KB list, pins,
   thumbnails, document uploads, and direct field-photo diagnosis).
+- **Knowledge model (contract, not shipped):** `danebo_general` is shared
+  document visibility. `user_pin` is focus on the current session only.
+  One account's pin does not change another account's catalog. See
+  [docs/PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
 - **Disabled for the pilot:** bulk ZIP and dashboard routes; code is preserved.
 - **Dormant:** WhatsApp / Twilio (webhook unmounted; code preserved). See
   [docs/WHATSAPP.md](docs/WHATSAPP.md).
@@ -17,7 +21,7 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 |------|---------|
 | **RAG chat** | Bedrock Knowledge Base, hybrid orchestrator (optional Text-to-SQL) |
 | **Field-photo diagnosis** | Direct visual recognition for technician photos; diagnostic output remains separate from indexed organizational knowledge |
-| **Retrieval fidelity** | Pins are authoritative, explicit source narrowing, adaptive retrieval budgets, literal-label safety for photos, and no global fallback after a pinned miss. Quality/cost baseline: [RAG benchmark 2026-06-09](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
+| **Retrieval fidelity** | Pins are the current session's evidence scope and the user can change them. A pinned miss does not silently reopen that session's unpinned corpus and does not change another account's catalog. Explicit source narrowing, adaptive retrieval budgets, and literal-label safety for photos stay as they are. Quality/cost baseline: [RAG benchmark 2026-06-09](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
 | **Chat uploads** | Field photos use direct diagnosis; documents use Claude chunking via `CustomChunkingPipeline` — text, PDF, **Word, Excel, PowerPoint** (via LibreOffice); see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
 | **Cost-optimized parse** | Per-page 8k cap with bounded 16k/32k retry, windowed Haiku filtering, Sonnet-default photo routing, automatic Batch for long manuals, and SHA dedup. Reconciled variable COGS: **~$9.54 expected / ~$13.27 conservative monthly** for 1,000 queries + 200 photos; a 200-page manual is **$5.32 one-time onboarding**. **Canonical model:** [SAAS_COST_MODEL_2026-06-12.md](docs/SAAS_COST_MODEL_2026-06-12.md). **Routing:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md) |
 | **Bulk ZIP** | Anthropic Message Batches implementation preserved; `/bulk_uploads` routes are disabled for the MVP pilot |

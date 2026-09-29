@@ -11,7 +11,7 @@ behind that flag.
 
 ## Architecture
 
-The home **responsive layout**, **unified KB card** (pagination, Turbo refresh), **thumbnails**, **S3 presigned image lightbox**, and **pinned-doc retrieval** are documented under [Web home: responsive layout, KB card, and lightbox](WEB_HOME.md) and [Web workspace: pinned KB documents & Bedrock retrieval](SESSION_AND_RETRIEVAL.md).
+The home **responsive layout**, **unified KB card** (pagination, Turbo refresh), **thumbnails**, **S3 presigned image lightbox**, and **pinned-doc retrieval** are documented under [Web home: responsive layout, KB card, and lightbox](WEB_HOME.md) and [Web workspace: pinned KB documents & Bedrock retrieval](SESSION_AND_RETRIEVAL.md). Document scopes (`tenant_private`, `danebo_general`) are in [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026). `danebo_general` is shared visibility. Pins stay on the session and the user can change them. An empty retrieve does not silently drop that pin set. The orchestrator does not choose that scope and does not publish a pin beyond the current session.
 
 ### Hybrid Query Orchestrator
 

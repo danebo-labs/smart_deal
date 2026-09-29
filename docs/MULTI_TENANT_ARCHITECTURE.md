@@ -11,6 +11,14 @@ customers on shared knowledge infrastructure.
 This document records the target invariants and implementation history. It is
 not the canonical description of the active product; see
 [README.md](README.md) and [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md).
+The knowledge-model contract (29-sep-2026) lives in
+[PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026):
+`tenant_private` plus explicit `danebo_general`. `danebo_general` is shared
+visibility. A pin stays on the pinning session and does not restrict the
+catalog for other tenants. `UNCLASSIFIED` stays private.
+Legacy and Pilot ownership is not that approval. The retrieval snippet below
+describes HEAD, including the shared-account OR, and is not the approved
+semantic.
 
 ### Delivered (account-aware MVP — partial isolation)
 
@@ -108,7 +116,9 @@ come from the user-controlled filename.
 ## Retrieval Contract
 
 Every Bedrock `Retrieve` and `RetrieveAndGenerate` call must include the account
-filter, including global-catalog searches with no pinned document:
+filter, including an unpinned retrieve for that session. A pin replaces the
+open filter for that session only. It does not rewrite `danebo_general` and
+does not change another account's catalog:
 
 ```ruby
 {
@@ -140,11 +150,30 @@ Rules:
 
 1. Missing account context raises an error before calling Bedrock.
 2. The account filter is mandatory and cannot be overridden by `custom_config`.
-3. A no-results retry may remove a document/pin filter, but never the account
-   `or_all` above.
-4. Citations from the session account, from Danebo, from the elevator pilot,
-   or from a chunk marked `manual_corpus=general` are in scope. Do not drop
-   them for belonging to another account id.
+3. Pins are editable by the user of that session. The technician may add,
+   remove, replace, or combine `danebo_general` and `tenant_private` pins,
+   including by accepting a discovery suggestion. That edit is an explicit
+   user action.
+   The system must not silently relax, drop, or ignore the current pin set
+   when a retrieve returns no evidence. A session pinned to documents X and Y
+   stays on X and Y. The product response is to say the selected documents
+   had no evidence, and to widen the corpus only after the user confirms or
+   changes the pins. An editable pin is not permission to fall through to the
+   open corpus.
+   HEAD: the web path sets `force_entity_filter: true`, so
+   `BedrockRagService` does not take `retry_without_entity_filter` for those
+   queries (`retry_without_entity_filter = apply_filter && !force_entity_filter`).
+   The unforced branch can still retry once without the document filter.
+   That branch is current code. It is not the product rule, and this
+   document does not delete it. The account `or_all` stays on every call.
+4. HEAD citations from the session account, from the legacy and pilot account
+   ids, or from a chunk marked `manual_corpus=general` are in the open
+   retrieve. That is the code path. It is not a Danebo approval, and it is not
+   permission for one customer to read another customer's private documents.
+   The approved shared class is `danebo_general` only, and HEAD does not store
+   that class yet. Do not drop a citation only because its `account_id` differs
+   when the chunk is already inside this filter. Do not treat this rule as a
+   license to add more account ids.
 5. Background jobs receive `account_id` explicitly; they do not rely on
    request-local `Current`.
 
@@ -309,8 +338,10 @@ document ownership, aliases, visibility, or source URIs across accounts.
 
 Do not enable a second customer account until all of these pass:
 
-1. Tenant A cannot retrieve Tenant B chunks with unpinned, pinned, fallback, or
-   deterministic retrieval paths.
+1. Tenant A cannot retrieve Tenant B private or unclassified chunks with
+   unpinned, pinned, fallback, or deterministic retrieval paths. A
+   `danebo_general` document is the only shared class, and only after an
+   explicit Danebo mark. Owning the legacy or pilot account is not that mark.
 2. Tenant A cannot list, resolve, pin, download, presign, update, or delete
    Tenant B documents by guessing IDs or S3 keys.
 3. Jobs, cache entries, Turbo streams, and dashboards are account-scoped.

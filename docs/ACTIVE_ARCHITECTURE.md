@@ -61,8 +61,20 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
   Fallback chunks do not become technician-visible citations.
 - Direct `Retrieve` is also used as the bounded internal fallback above and by
   deterministic renderers that build explicit references from rendered chunks.
-- Pins are the technician's explicit evidence scope. A pinned miss returns
-  `DATA_NOT_AVAILABLE`; it does not search the global catalog.
+- Pins are the technician's explicit evidence scope for the current session.
+  The technician can add, remove, or replace them. A pinned miss returns
+  `DATA_NOT_AVAILABLE` for that session. The system does not silently reopen
+  the unpinned corpus, and it does not narrow `danebo_general` for any other
+  account.
+- The authorized corpus for a tenant is that tenant's `tenant_private`
+  documents plus documents Danebo has explicitly marked `danebo_general`.
+  `danebo_general` is shared visibility. `user_pin` is focus on the current
+  session only. One account's pin does not narrow the general catalog for
+  anyone else. Another tenant's private or unclassified documents stay out. HEAD still
+  implements a broader open-retrieval OR for the legacy and pilot accounts;
+  that OR is not the product approval. See
+  [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
+  `RagRetrievalProfile` is unchanged.
 - Multiple pins may be narrowed deterministically when the question explicitly
   names one source or excludes another. Ambiguous questions retain all pins.
 - Retrieval depth is adaptive: focused document queries use a small context;

@@ -4,7 +4,33 @@ Three account-scoped layers: **`kb_documents`** catalog,
 **`technician_documents`** audit trail, and **`active_entities`** pins that scope
 retrieval.
 
-**Related:** [Web home UI](WEB_HOME.md)
+**Related:** [Web home UI](WEB_HOME.md). Knowledge model:
+[PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
+
+### Knowledge scopes
+
+Two scopes, and no synonyms:
+
+- `tenant_private` — the tenant's own manuals. `UNCLASSIFIED` behaves as this
+  scope. Default deny.
+- `danebo_general` — a document Danebo has explicitly approved for shared
+  use. Shared means eligibility and visibility, not a shared focus. One
+  physical `KbDocument`, one index. Authorized tenants can list it and
+  retrieve it. A pin is `user_pin` on that session's `active_entities` only.
+  Account A pinning it does not change Account B's catalog or pins. Each
+  session may pin a different general document, several of them, or mix them
+  with its own `tenant_private` documents, and may clear those pins.
+
+Account id, filename, manufacturer, folder, and the Legacy or Pilot slug do
+not grant `danebo_general`. HEAD does not implement that approval yet. Open
+retrieval still ORs `Rag::SharedManualCorpus` account ids and
+`manual_corpus=general` inside `BedrockRagService#account_filter`. The home
+list and `PinnedDocumentsController#create` still see only
+`current_account.kb_documents`. The Field Companion plan audits the minimum
+change that can add explicit general documents to list, retrieve, and pin
+without copying or reindexing, and without exposing another tenant's private
+documents. Until that lands, do not read the shared-account OR as an approval
+of third-party manuals.
 
 ---
 
@@ -60,8 +86,11 @@ product stage; see [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
 
 #### Session-scoped retrieval filter logic
 
-1. **No pinned S3 URIs** in the session → Bedrock runs against the **full** knowledge base (no source-uri metadata filter from pins).
-2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`; forced pinned queries never retry against the global catalog.
+1. **No pinned S3 URIs** in the session → Bedrock runs with `account_filter`
+   only (session account, plus the HEAD shared-account and `manual_corpus=general`
+   arms described above). There is no source-uri filter from pins. That open
+   set is not the approved `danebo_general` catalog.
+2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on that session's pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`. The miss does not reopen the unpinned corpus for this session, and it does not change `danebo_general` or any other session's pins. The user can still add, remove, or replace those pins. The system does not drop them because the retrieve was empty. Widening the corpus requires an explicit user action.
 3. **Multiple pins + explicit identity** → `Rag::PinnedEntityScopeResolver`
    narrows the allowed URI set only when there is one confident source match.
    It matches canonical names, filenames, aliases, and literal codes; understands
@@ -116,4 +145,6 @@ included, even if their name matches the question.
 |---|---|---|---|
 | `kb_documents` | Per account | — | Upload, ingestion, `KbDocumentEnrichmentService` |
 | `technician_documents` | Per account | FIFO max 20 | Ingestion (audit) |
-| `active_entities` | Per account/session (or explicitly shared demo session) | `MAX_ENTITIES`; row TTL `EXPIRY_DURATION` | Pins + auto-pin on indexed upload |
+| `active_entities` | Per account/session. A shared demo session is one session row, not a pin stored on the document | `MAX_ENTITIES`; row TTL `EXPIRY_DURATION` | Pins + auto-pin on indexed upload |
+
+A pin, including a future pin of a `danebo_general` document, is written only on that session. It is not a column on `kb_documents`. Account A pinning a general document does not change Account B's catalog or Account B's pins. Each session may pin a different general document, several of them, or mix them with its own private documents, and may clear those pins.

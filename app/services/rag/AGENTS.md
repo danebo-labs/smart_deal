@@ -19,21 +19,33 @@
 
 ## Manual corpus scope
 
-Danebo (`danebo-legacy`) and the elevator pilot (`danebo-pilot-elevator`) are general knowledge for every account's retrieve. Their `account_id` is already on the indexed chunks, so this does not need a reindex. Photos of those accounts stay out of other accounts' retrieval.
+Product contract, 29-sep-2026, not yet the code: a tenant retrieves its
+`tenant_private` documents plus documents explicitly marked `danebo_general`.
+`UNCLASSIFIED` stays private. Do not infer `danebo_general` from `account_id`,
+filename, manufacturer, folder, or from the `danebo-legacy` /
+`danebo-pilot-elevator` slugs. Do not copy a document or reindex it per tenant
+to make a pin work. A pin is session focus, not a property of the shared
+document. Account A pinning a `danebo_general` document does not change
+Account B's catalog or Account B's pins. Photos stay out of other accounts' retrieval.
+
+HEAD, until Field Companion F3/F4 lands and only if F0 confirms a path with
+`reindex_required = false` and `duplicate_document_required = false`:
+
+Danebo (`danebo-legacy`) and the elevator pilot (`danebo-pilot-elevator`) are included in every account's open retrieve. Their `account_id` is already on the indexed chunks. Photos of those accounts stay out of other accounts' retrieval. This OR is not an approval of those manuals for the general library.
 
 A new document chooses scope at parse time, on `BatchResultsParserService#call`:
 
-* `corpus_scope: "general"` writes `manual_corpus=general`. Every account retrieves it.
-* `corpus_scope: "account"` omits the attribute. Only that `account_id` matches.
-* omitted: manuals of the two slugs above default to general; any other account defaults to account-only.
+* `corpus_scope: "general"` writes `manual_corpus=general`. HEAD then lets every account retrieve it. That attribute, when it was written because scope was omitted on a legacy or pilot account, is not `GENERAL_APPROVED`.
+* `corpus_scope: "account"` omits the attribute. Only that `account_id` matches. That is `tenant_private`.
+* omitted: manuals of the two slugs above are tagged general by `Rag::SharedManualCorpus.tag?`; any other account stays account-only. The slug default is the inference the contract forbids. Do not add another account to that default.
 
 Photos never receive `manual_corpus`, even when `corpus_scope` is `"general"`.
 
 A question does not pin a manual or a page, and a previous turn does not either. A field technician does not remember a page number among the manuals, so a mentioned page never narrows retrieval. Auto-scope and episode document inheritance were the WhatsApp stand-in for a pin control. A catalog token stays in Query Resolution.
 
-Without a pin, retrieval is the shared document base: the session account, Danebo, the pilot, and `manual_corpus=general`. Danebo and the pilot share that base. Photos of the other account stay out.
+Without a pin, HEAD retrieval is the session account, the two slugs above, and chunks tagged `manual_corpus=general`. The product corpus, once the Field Companion route exists, is narrower: `tenant_private` for this tenant plus explicit `danebo_general`. Danebo and the pilot share the HEAD base. Photos of the other account stay out.
 
-A document the technician pinned is the whole scope of that retrieve. The filter is those URIs alone. It does not stay open over the rest of the shared base.
+A document the technician pinned is the whole scope of that session's retrieve. The filter is those URIs alone. It does not stay open over the rest of the shared base, and it does not remove those documents from any other session's catalog. The technician can change the pins. An empty result does not silently drop them.
 
 A retrieve filter must stay inside Bedrock's one embedded logical operator and five clauses per group. Do not wrap `account_filter` (its shared-account arm is already an `andAll`) in another `andAll`.
 

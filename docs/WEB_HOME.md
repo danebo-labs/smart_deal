@@ -91,12 +91,12 @@ matching threshold, it falls back to the canonical name exactly as before.
 | Piece | Role |
 |-------|------|
 | `ConversationSession` | `EXPIRY_DURATION` (30 days, sliding via `refresh!` on pin/unpin flows). `pin_kb_document!` / `unpin_kb_document!` maintain `active_entities`. No preload from `technician_documents`. |
-| `PinnedDocumentsController` | `create` / `destroy`; binds pins to the signed-in user’s web session (`identifier` = `user.id`, `channel: "web"`). |
+| `PinnedDocumentsController` | `create` / `destroy`; binds pins to the signed-in user’s web session (`identifier` = `user.id`, `channel: "web"`). Today `create` loads `current_account.kb_documents` only. A future `danebo_general` pin is the same `user_pin` on that session's `active_entities`, against the existing row. It does not copy the document and it does not change another account's catalog or pins. It is not implemented. See [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026). |
 | `HomeController#pinned_uris_for_current_session` | `Set` of `SessionContextBuilder.entity_s3_uris(session)` for row UI (`data-selected`, checkbox). |
 | `rag_chat_controller.js` | Optimistic toggle + `fetch` to `/pinned_documents` with CSRF JSON headers. |
 | `RagQueryConcern#execute_rag_query` | Pinned URIs only for the metadata filter; `force_entity_filter` defaults to **true** when any pin exists. `KbDocumentResolver` still contributes **`## Query Resolution`** text to the prompt—it does **not** merge resolver hits into filter URIs. |
 | `KbDocumentEnrichmentService` | Post-answer enrichment of **`kb_documents`** from Haiku doc refs + retrieved citations. |
 | `BedrockIngestionJob#register_entity` | Auto-`pin_kb_document!` the `KbDocument` for the session that started the upload. |
-| `BedrockRagService` | Web delivery favors concise field answers; forced pinned queries remain scoped to selected documents and return `DATA_NOT_AVAILABLE` instead of retrying globally. |
+| `BedrockRagService` | Web delivery favors concise field answers. Forced pinned queries stay on the selected documents and return `DATA_NOT_AVAILABLE` instead of silently dropping the pin. The user can still change the pins. |
 
 **Tests (non-exhaustive):** `test/models/conversation_session_test.rb` (TTL, pin/unpin), `test/controllers/pinned_documents_controller_test.rb`, `test/services/kb_document_enrichment_service_test.rb`, `test/services/session_context_builder_test.rb`, ingestion/RAG tests updated for auto-pin and `force_entity_filter`.

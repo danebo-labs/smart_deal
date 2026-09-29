@@ -7,7 +7,7 @@ require "stringio"
 class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
   parallelize(workers: 1)
 
-  STRICT_OFF_SHA256 = "9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8"
+  STRICT_OFF_SHA256 = "ba6e7e51f03c6d72e4b64b4d575baa6353be222c77845423dc79678a7ff985bc"
   LEGACY_TAIL = I18n.t("rag.absence_total_contract", locale: :es)
 
   SECTION7_FIXTURE = <<~TEXT.strip

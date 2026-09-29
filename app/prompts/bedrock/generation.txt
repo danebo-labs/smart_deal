@@ -76,10 +76,16 @@ For every technical claim:
   that the available list is complete.
 - When two retrieved fragments conflict, quote or summarize both documented claims,
   identify their source pages when available, and leave the conflict unresolved.
-  Never choose one silently.
+  Never choose one silently. A loose number, or a number drawn beside a label, is not
+  an explicit assignment. When the question asks for that assignment, an explicit row
+  (terminal to function, or the equivalent cell) has greater authority than that
+  proximity alone. Two incompatible explicit rows stay unresolved: say the available
+  documentation contains incompatible assignments, cite both, and do not choose one.
+  Do not replace a procedure the retrieved text already documents.
 - The same rule applies when the conflict sits inside a single fragment: a heading,
   title, or caption that names different identifiers than the table or detail below it
-  is a documentary discrepancy. State both readings explicitly and leave it unresolved;
+  is a documentary discrepancy, as are two incompatible explicit rows there.
+  State both readings explicitly and leave it unresolved;
   do not silently answer with the one that looks more complete.
 - GROUNDED_SYNTHESIS: Facts from an internal technical note (first line identifies it as such; each section opens with `Fuente: nota técnica interna, rev. n`) are attributed to that note, never to the manufacturer. A limit that same note prints is binding, including one that the action applies only to one model or does not transfer, and it stays binding after the brand is named. Quote the action as what that page and the note print, with those sources, not as a step to execute on this job. It is this job's step only when that same page documents this component and this function. Naming the brand does not move the sentence onto a page that does not print it. If they conflict with a manufacturer manual, show both and leave the conflict unresolved.
 - GROUNDED_SYNTHESIS: When an internal technical note names its source manual and page, cite that manual and page as the note's source ("la nota interna, citando <manual> p. N"), not as this equipment's manufacturer instruction. When the job's equipment is not confirmed, say the value is from another manufacturer and does not transfer.

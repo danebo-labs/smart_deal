@@ -297,6 +297,18 @@ Los oráculos 1–6, 13 y 14 de la sección 9 usan el doble fake cuando el desig
 
 Archivos: `app/services/rag/query_entities.rb`, `app/services/rag/structured_evidence_route.rb`, `test/services/rag/query_entities_test.rb`, `test/services/rag/structured_evidence_route_test.rb`. `app/services/query_orchestrator_service.rb` solo si algún test con el flag en true espera `build` nil para una pregunta de un solo pin que ahora es elegible; el caso flag false sigue en nil. No tocar el Sorry de `app/services/bedrock_rag_service.rb`.
 
+#### Aclaraciones fijadas antes de la Fase 4
+
+La Fase 3 queda como está. Estas cuatro lecturas cierran ambigüedades del plan. No cambian su código.
+
+**Rescate self-contained.** Donde este plan dice «turno crudo + designador», el segundo retrieve self-contained puede usar el tramo de designadores derivado del turno crudo. Ese segundo query es solo un query auxiliar de recall. La intención técnica completa permanece en la pregunta original, en la primera ventana conservada y en la generación final. No se reescribe la Fase 3 para mandar el turno crudo completo. En un follow-up elíptico válido se mantiene la regla ya implementada: goal o intención vigente más el turno crudo actual, sin identifiers históricos fuera del goal vigente y sin usar el composed contaminado como fuente directa.
+
+**Mapping y fila explícita.** Una fila explícita con suficiente solape puede dar la primera ventana por cubierta y evitar el rescate aunque después esa fila resulte falsa o contradictoria. Eso no se corrige en la Fase 3. Si dos filas explícitas incompatibles llegan a generación, la Fase 4 las trata como conflicto no resuelto y no elige una en silencio. La Fase 5 corrige o remueve las filas falsas del chunk de origen.
+
+**Ventana de rescate.** Cuando hay rescate se preserva deliberadamente la primera ventana completa más los chunks rescatados. En ese camino no se aplica `MAX_GENERATION_CHUNKS` ni el compactado normal. Es comportamiento deliberado de la Fase 3 y la Fase 4 no lo modifica.
+
+**LLM pre-retrieval.** `conversational_turn_analysis`, `SemanticQueryAnalyzer` y Haiku están en shadow u observacional para este flujo. No gobiernan la elegibilidad de `StructuredEvidenceRoute`, la cobertura, el rescate ni la construcción del segundo retrieve. La Fase 4 no añade una llamada LLM.
+
 ### Fase 4 — La fila explícita pesa más que el número del dibujo, y dos filas explícitas siguen en conflicto
 
 Objetivo único: integrar la excepción en la regla de conflicto que `generation.txt` ya tiene. No añadir otra que diga que la tabla gana siempre.
@@ -309,9 +321,9 @@ La regla viva está en el bloque que empieza por «When two retrieved fragments 
 
 Una fila explícita correcta pesa más que un número visual junto a un rótulo. Dos filas explícitas incompatibles no se resuelven eligiendo una. El presostato se prueba con el contenido real de `chunk_p1_2`, no con 14/15 dibujados al lado de un rótulo. Ese chunk publica a la vez `| 14 | PRESOSTATO IN |`, `| 15 | PRESOSTATO OUT |`, `| 24 | PRESOSTATO IN |` y `| 25 | PRESOSTATO OUT |`. Eso ya es conflicto dentro del fragmento. Si otra página trae otra fila explícita distinta, también se cita. La Fase 5 es la que deja de publicar la fila falsa; hasta entonces el conflicto se muestra.
 
-No hace falta un parser nuevo de `FIELD_RECORD`. Un post-procesador que borre bornes no está justificado.
+No hace falta un parser nuevo de `FIELD_RECORD`. Un post-procesador que borre bornes no está justificado. No se añade una llamada LLM. No se toca la ventana de rescate de la Fase 3: si hubo rescate, la primera ventana completa y los chunks rescatados siguen enteros.
 
-Test, sin modelo: el prompt renderizado contiene la excepción y conserva «leave the conflict unresolved» / «Never choose one silently». No contiene una instrucción de elegir siempre la tabla. El fixture del presostato es el extracto real de la Fase 3; el prompt no lo describe como resuelto ni trata 14/15 como proximidad gráfica. Una fila explícita sí pesa más que un número suelto junto a un rótulo cuando el otro chunk no tiene fila. Medir tokens: si el bloque pasa de 1,05× el prompt actual, se compacta dentro de la regla existente, no se añade otro. No ampliar `SourceFidelityGuard` en esta fase.
+Test, sin modelo: el prompt renderizado contiene la excepción y conserva «leave the conflict unresolved» / «Never choose one silently». No contiene una instrucción de elegir siempre la tabla. El fixture del presostato es el extracto real de la Fase 3; el prompt no lo describe como resuelto ni trata 14/15 como proximidad gráfica. Una fila explícita sí pesa más que un número suelto junto a un rótulo cuando el otro chunk no tiene fila. Dos filas explícitas incompatibles siguen sin resolverse. Un procedimiento ya citado — cadena de seguridad, foso, K1/K2 — no cambia: la regla no lo sustituye. Medir tokens: si el prompt pasa de 1,05× el actual, se compacta dentro de la regla existente, no se añade otro. No ampliar `SourceFidelityGuard` en esta fase. No se añade una llamada LLM.
 
 ### Fase 5 — Corregir la bornera de la hoja 1 del MH
 
@@ -332,7 +344,7 @@ Separada del código. El 23-sep se parchearon T1/T2 y se dejó la bornera. El ob
 | 1 | `home_controller.rb`, test del home | `find_or_create_for`, TTL, JS del checkbox |
 | 2 | `active_episode_turn.rb`, su test | `FollowupQueryRewriter`, `generation.txt` |
 | 3 | `query_entities.rb`, `structured_evidence_route.rb` (`eligible?`, `execute`, selección sin identifier), tests de esas clases | `PINNED_DOCUMENT_RESULTS`, el Sorry de `bedrock_rag_service.rb`, `account_filter`, `complete_from_retrieval` como segundo retrieve |
-| 4 | el bloque de conflicto ya existente en `generation.txt`, un test del prompt y de la selección | `SourceFidelityGuard`, renderer determinista, una regla nueva de «la tabla gana siempre» |
+| 4 | el bloque de conflicto ya existente en `generation.txt`, un test del prompt | `SourceFidelityGuard`, `StructuredEvidenceRoute`, `QueryEntities`, retrieval, `PINNED_DOCUMENT_RESULTS`, la ventana de rescate, una llamada LLM, una regla de «la tabla gana siempre» |
 | 5 | script de parche del chunk, backup del objeto | código de retrieve |
 
 `query_orchestrator_service.rb` no gana una ruta paralela. Solo se toca si un test con el flag en true deja de ser cierto.
@@ -387,7 +399,7 @@ Conservar, con el mismo fixture de una sola llamada, los chunks que ya ganaron h
 - `PINNED_DOCUMENT_RESULTS` permanece 3. El test de perfil que lo fija sigue pasando.
 - Ningún turno de los casos buenos de la sección 9 pasa de una llamada a `retrieve_chunks` en el fixture.
 - El segundo retrieve aparece solo en camino (a) cuando el primero no contiene el designador, y en camino (b) cuando el primero no trae fila explícita con solape. Cero en una pregunta normal, en la cadena de seguridad y en el foso. Nunca tres. Nunca otra URI.
-- El segundo retrieve del camino (a), dentro del mismo pin, usa el turno crudo más el designador si el turno es self-contained, y el goal vigente más el turno crudo más el designador si es un elíptico válido. No reintroduce identifiers históricos ajenos a ese goal ni usa el composed como fuente. La generación recibe la primera ventana completa y los chunks rescatados.
+- El segundo retrieve del camino (a) es solo un query auxiliar de recall. En un self-contained puede usar el tramo de designadores derivado del turno crudo; no se manda el turno crudo completo. En un elíptico válido usa el goal vigente más el turno crudo, sin identifiers históricos fuera de ese goal y sin el composed como fuente. La intención técnica completa permanece en la pregunta original, en la primera ventana conservada y en la generación. Cuando hay rescate, esa ventana completa más los chunks rescatados se conserva; ahí no corre `MAX_GENERATION_CHUNKS` ni el compactado normal.
 - Fase 3 no se marca `COMPLETED` sin el probe read-only de abajo en verde. Si un caso esperado no recupera evidencia suficiente, el estado es `BLOCKED`.
 - El prompt de la Fase 4 conserva la política de conflicto y no dice que la tabla gana siempre. El presostato se juzga con las filas explícitas reales de `chunk_p1_2`.
 
@@ -442,6 +454,8 @@ Flags nuevas: no. El rollback de 1–4 es revertir el commit. El de 5 es re-subi
 - No escribir `if pregunta incluye H4`, ni `if modelo == EDEL K2`, ni una lista Seguridad / Micro / Llamada.
 - No añadir una clave a `RELATION_TRIGGERS`.
 - No decir en el prompt que la tabla gana siempre cuando hay dos filas explícitas incompatibles.
+- No añadir una llamada LLM para decidir el conflicto, la elegibilidad o el rescate. `SemanticQueryAnalyzer` sigue en shadow.
+- No aplicar `MAX_GENERATION_CHUNKS` ni el compactado normal a la ventana que el rescate de la Fase 3 ya conservó entera.
 
 ## 13. Riesgos y rollback
 
@@ -631,60 +645,57 @@ No marques la Fase 3 COMPLETED sin ese probe en verde. Si un caso esperado no re
 ```
 Fase 4:
 
-```
-Implementa solo la Fase 4 de docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md.
-Antes de codear: lee el plan, Execution State, git status, el commit de la Fase 3 y este prompt.
-La Fase 3 está COMPLETED. No la reimplementes. No deploy. No empieces la Fase 5.
-
-Probe read-only 2026-09-28, script/rag_pinned_rescue_probe_2026-09-28.rb,
-KB de producción, sin generación: 14/14 hits, 0 misses.
-Rescate (2 retrieves, k final 3): 4 EDEL K2, 6 H4, 9 micro inferior,
-10 micro superior, 11 llamada 1, 12 llamada 2.
-Sin rescate, el hecho ya estaba en la primera ventana: 1 EM2000 CN7/CN8,
-2 EM4000 XC4/XC7, 3 EDEL K2 LED 40 SERIE CERROJOS EXTERIORES,
-5 MR08 SCI, 7 borne 23 Seguridad OUT, 8 borne 24 Seguridad IN,
-13 T1 modo E < 3 min, 14 T2 modo Wu < 1 s.
-
-La ventana recuperada puede traer a la vez las filas de la hoja 1 y las de
-la hoja 2. Eso es conflicto, no una fila ganadora:
-- Seguridad: hoja 1 | 13 | SEGURIDAD OUT | y | 22 | SEGURIDAD OUT |,
-  hoja 2 | 23 | Seguridad OUT |. IN: 12/23 frente a 24.
-- Micros: hoja 1 | 26 | LIMITE INFERIOR | y | 27 | LIMITE SUPERIOR |,
-  hoja 2 | 30 | Micro nivel inferior | y | 31 | Micro nivel superior |.
-- Llamadas: hoja 1 | 31 | LLAMADA NIVEL 1 | y | 32 | LLAMADA NIVEL 2 |,
-  hoja 2 | 33 | Llamada nivel 1 | y | 34 | Llamada nivel 2 |.
-- Presostato, en el mismo plano: | 14 | PRESOSTATO IN |, | 15 | PRESOSTATO OUT |,
-  | 24 | PRESOSTATO IN |, | 25 | PRESOSTATO OUT |. No son un número junto al rótulo.
-Si el primer retorno es solo chunk_p1_2, el rescate no corre: esas filas
-ya solapan. La hoja 2 queda fuera hasta la Fase 5. No parchees ese chunk aquí.
-
-Integra la excepción en el bloque de generation.txt que ya dice
-"When two retrieved fragments conflict" y "Never choose one silently".
-No añadas una regla que diga que la tabla gana siempre.
-Un número suelto o junto a un rótulo no es una asignación explícita.
-Una fila explícita borne N → función X pesa más que esa proximidad.
-Dos filas explícitas incompatibles se citan las dos, con su página, y no se elige.
-No añadas un post-procesador. No reescribas el resto del prompt.
-Test sin modelo: el prompt contiene la excepción y conserva el conflicto sin
-resolver; el fixture real de chunk_p1_2 no queda descrito como resuelto.
-Si el bloque pasa de 1,05× el prompt actual, compacta dentro de la regla existente.
-```
+La Fase 4 está COMPLETED en el commit cuyo mensaje es `Leave two incompatible assignment rows unresolved in generation.` Un chat nuevo no la vuelve a implementar: lee Execution State y el prompt de la Fase 5.
 
 Fase 5:
 
 ```
-Solo si las fases 1–4 están en main y la Fase 3 no está BLOCKED.
-Sigue la Fase 5 de docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md.
-Antes de codear: lee el plan, Execution State, git status y el commit anterior.
-Parchea chunk_p1_2 del plano Elemont MH. La fuente local
-tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt tiene filas explícitas,
-no números junto a rótulos: 12/13 y 22/23 de seguridad, 14/15 y 24/25 de
-presostato, más los FIELD_RECORD que las repiten. Llamadas 31/32 y límites
-26/27 se reescriben solo si contradicen la hoja 2. Lee la hoja 2 antes de
-escribir. Esas filas remiten a la hoja 2. No inventes otros bornes.
-Verifica el SHA vivo antes de subir, guarda el objeto anterior, escribe por
-S3DocumentsService. No lo hagas si el SHA no coincide.
-No cambies código de retrieve.
+Repo: /Users/lahirisan/smart_deal
+
+Commit de la Fase 1: 763db1d975ee53791762e0fd963c666c9662c927
+Mensaje: Hide pins from an expired session on the home checkbox.
+
+Commit de la Fase 2: d5b97bf19dfd0c139a9c333dc644bbcb782287d6
+Mensaje: Keep a question with its own object out of the previous episode.
+
+Commit de la Fase 3: 68365a981dc3830237c7cc672cd5129d0081324e
+Mensaje: Rescue a missed designator or borne row inside the pinned document.
+
+Commit de la Fase 4: el commit con mensaje
+"Leave two incompatible assignment rows unresolved in generation."
+Confírmalo con git log -1 --format='%H %s'. La Fase 4 es ancestro de HEAD.
+Las fases 1–4 están COMPLETED. La Fase 3 no está BLOCKED. No las reabras.
+
+El chat no es la memoria. Antes de codear:
+1. Lee docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md, incluida Execution State y las aclaraciones fijadas antes de la Fase 4.
+2. git status
+3. git log -1 y los commits de las fases 1–4.
+4. Lee este prompt. Si un mensaje viejo contradice el repo o el plan, ganan repo y plan.
+
+Implementa SOLO la Fase 5. No reimplementes la Fase 4. No cambies generation.txt, StructuredEvidenceRoute, QueryEntities, SourceFidelityGuard, retrieval ni PINNED_DOCUMENT_RESULTS. No añadas una llamada LLM. No toques la ventana de rescate: cuando hay rescate, la primera ventana completa más los chunks rescatados sigue entera.
+
+Hallazgos de la Fase 4 que no hay que deshacer:
+- El bloque de generation.txt que empieza por "When two retrieved fragments conflict" ya distingue una fila explícita de un número suelto o dibujado junto a un rótulo. La fila explícita tiene más autoridad que esa proximidad. Dos filas explícitas incompatibles siguen sin resolverse: se citan las dos y no se elige. No dice que la tabla gana siempre.
+- Esa regla no sustituye un procedimiento ya documentado. Cadena de seguridad, foso y K1/K2 no se reescribieron.
+- El prompt grounded quedó en 1,043× el anterior, bajo 1,05×.
+- Una fila explícita con solape puede haber tapado el rescate aunque la fila sea falsa. Eso no se corrigió en la Fase 3 ni en la Fase 4. Corregir o remover esas filas del chunk de origen es esta fase.
+
+Objetivo único: chunk_p1_2.txt deja de afirmar bornes que la hoja 2 desmiente.
+
+La fuente local tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt publica filas explícitas, no números junto a rótulos. El probe de la Fase 3 ya vio el conflicto hoja 1 / hoja 2:
+- Seguridad: hoja 1 | 13 | SEGURIDAD OUT | y | 22 | SEGURIDAD OUT | frente a hoja 2 | 23 | Seguridad OUT |. IN: 12/23 frente a 24.
+- Micros: hoja 1 | 26 | LIMITE INFERIOR | y | 27 | LIMITE SUPERIOR | frente a hoja 2 | 30 | Micro nivel inferior | y | 31 | Micro nivel superior |.
+- Llamadas: hoja 1 | 31 | LLAMADA NIVEL 1 | y | 32 | LLAMADA NIVEL 2 | frente a hoja 2 | 33 | Llamada nivel 1 | y | 34 | Llamada nivel 2 |.
+- Presostato, en el mismo chunk: | 14 | PRESOSTATO IN |, | 15 | PRESOSTATO OUT |, | 24 | PRESOSTATO IN |, | 25 | PRESOSTATO OUT |, más los FIELD_RECORD que las repiten.
+
+Lee la hoja 2 antes de escribir. Solo se reescriben las filas explícitas de chunk_p1_2 que contradicen esa tabla, incluidos 22/23 y 24/25, no solo 12–15. Llamadas 31/32 y límites 26/27 se reescriben solo si contradicen la hoja 2. El reemplazo es la remisión a la hoja 2, no una bornera nueva. No inventes otros bornes.
+
+- Script al estilo script/patch_elemont_chunk_p1_2_2026-09-23.rb.
+- Comprueba el SHA vivo antes de subir. Si no coincide, no subas. Guarda el objeto anterior. Rollback = re-subir ese objeto.
+- Escribe por S3DocumentsService para que SectionNeighborExpander.invalidate! corra.
+- No cambies código de retrieve. No despliegues la aplicación. No lo mezcles con las fases 1–4.
+
+Al terminar: commit de la Fase 5, marca Fase 5 COMPLETED en Execution State, registra solo findings materiales. DETENTE.
 ```
 
 ## Execution State
@@ -885,6 +896,7 @@ Next phase impact:
 - La Fase 4 cita el conflicto hoja 1 / hoja 2. No elige. No parchea chunks.
 Next phase prompt:
 ```text
+OBSOLETO. La Fase 4 está COMPLETED. No ejecutes este prompt. El vigente es Phase 4 → Next phase prompt.
 Implementa solo la Fase 4 de docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md.
 Antes de codear: lee el plan, Execution State, git status, el commit de la Fase 3 y este prompt.
 La Fase 3 está COMPLETED. No la reimplementes. No deploy. No empieces la Fase 5.
@@ -924,16 +936,64 @@ Si el bloque pasa de 1,05× el prompt actual, compacta dentro de la regla existe
 ```
 
 ### Phase 4
-Status: PENDING
-Commit: none
-Tests: pending
+Status: COMPLETED
+Commit: this commit, subject `Leave two incompatible assignment rows unresolved in generation.`
+Tests: PASS
 Material findings:
-- none yet
+- La excepción quedó en el bloque ya existente de `generation.txt`, sin un segundo policy. Un número suelto o dibujado junto a un rótulo no es una asignación explícita. Si la pregunta pide la asignación, la fila explícita tiene más autoridad que esa proximidad. Dos filas explícitas incompatibles, también dentro de un fragmento, siguen sin resolverse: se citan las dos y no se elige. El prompt no dice que la tabla gana siempre y no nombra Seguridad, Micro, Llamada, Presostato, H4, K1 ni K2.
+- La regla no sustituye un procedimiento que el texto ya documenta. El prompt grounded pasó de 11801 a 12309 caracteres (1,043×), bajo 1,05×.
+- El bloque no lleva prefijo de contrato, así que el digest estricto con el contrato parcial apagado pasó a `ba6e7e51f03c6d72e4b64b4d575baa6353be222c77845423dc79678a7ff985bc` y el del archivo a `dcd444d7c15a740e0b7dcd62998552eb9b321b19b91a294c0216cebe8a4c8359`. No se tocó `SourceFidelityGuard`, `StructuredEvidenceRoute`, `QueryEntities`, el retrieval ni la ventana de rescate. No se añadió una llamada LLM.
+- Suites: `bedrock_generation_prompt` + `bedrock_rag_service_grounded_synthesis` + `followup_query_rewriter` + `structured_evidence_route` + `rag_retrieval_profile` — 172 runs, 1221 assertions, 0 failures. `query_entities` + `active_episode_turn` + `structured_evidence_route_flag` + `query_orchestrator_service` + `rag_query_concern` — 273 runs, 1545 assertions, 0 failures, 22 skips. Sin generación Bedrock.
 Next phase impact:
-- La Fase 5 reescribe las filas explícitas que contradicen la hoja 2, incluidas 22/23 y 24/25, no solo 12–15.
+- La Fase 5 corrige o remueve del chunk de origen las filas explícitas que contradicen la hoja 2, incluidas las que solapan bastante como para haber evitado el rescate. La Fase 4 no eligió entre ellas.
 Next phase prompt:
 ```text
-Ver el prompt de Fase 5 en la sección 15. Se reescribe al cerrar la Fase 4.
+Repo: /Users/lahirisan/smart_deal
+
+Commit de la Fase 1: 763db1d975ee53791762e0fd963c666c9662c927
+Mensaje: Hide pins from an expired session on the home checkbox.
+
+Commit de la Fase 2: d5b97bf19dfd0c139a9c333dc644bbcb782287d6
+Mensaje: Keep a question with its own object out of the previous episode.
+
+Commit de la Fase 3: 68365a981dc3830237c7cc672cd5129d0081324e
+Mensaje: Rescue a missed designator or borne row inside the pinned document.
+
+Commit de la Fase 4: el commit con mensaje
+"Leave two incompatible assignment rows unresolved in generation."
+Confírmalo con git log -1 --format='%H %s'. La Fase 4 es ancestro de HEAD.
+Las fases 1–4 están COMPLETED. La Fase 3 no está BLOCKED. No las reabras.
+
+El chat no es la memoria. Antes de codear:
+1. Lee docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md, incluida Execution State y las aclaraciones fijadas antes de la Fase 4.
+2. git status
+3. git log -1 y los commits de las fases 1–4.
+4. Lee este prompt. Si un mensaje viejo contradice el repo o el plan, ganan repo y plan.
+
+Implementa SOLO la Fase 5. No reimplementes la Fase 4. No cambies generation.txt, StructuredEvidenceRoute, QueryEntities, SourceFidelityGuard, retrieval ni PINNED_DOCUMENT_RESULTS. No añadas una llamada LLM. No toques la ventana de rescate: cuando hay rescate, la primera ventana completa más los chunks rescatados sigue entera.
+
+Hallazgos de la Fase 4 que no hay que deshacer:
+- El bloque de generation.txt que empieza por "When two retrieved fragments conflict" ya distingue una fila explícita de un número suelto o dibujado junto a un rótulo. La fila explícita tiene más autoridad que esa proximidad. Dos filas explícitas incompatibles siguen sin resolverse: se citan las dos y no se elige. No dice que la tabla gana siempre.
+- Esa regla no sustituye un procedimiento ya documentado. Cadena de seguridad, foso y K1/K2 no se reescribieron.
+- El prompt grounded quedó en 1,043× el anterior, bajo 1,05×.
+- Una fila explícita con solape puede haber tapado el rescate aunque la fila sea falsa. Eso no se corrigió en la Fase 3 ni en la Fase 4. Corregir o remover esas filas del chunk de origen es esta fase.
+
+Objetivo único: chunk_p1_2.txt deja de afirmar bornes que la hoja 2 desmiente.
+
+La fuente local tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt publica filas explícitas, no números junto a rótulos. El probe de la Fase 3 ya vio el conflicto hoja 1 / hoja 2:
+- Seguridad: hoja 1 | 13 | SEGURIDAD OUT | y | 22 | SEGURIDAD OUT | frente a hoja 2 | 23 | Seguridad OUT |. IN: 12/23 frente a 24.
+- Micros: hoja 1 | 26 | LIMITE INFERIOR | y | 27 | LIMITE SUPERIOR | frente a hoja 2 | 30 | Micro nivel inferior | y | 31 | Micro nivel superior |.
+- Llamadas: hoja 1 | 31 | LLAMADA NIVEL 1 | y | 32 | LLAMADA NIVEL 2 | frente a hoja 2 | 33 | Llamada nivel 1 | y | 34 | Llamada nivel 2 |.
+- Presostato, en el mismo chunk: | 14 | PRESOSTATO IN |, | 15 | PRESOSTATO OUT |, | 24 | PRESOSTATO IN |, | 25 | PRESOSTATO OUT |, más los FIELD_RECORD que las repiten.
+
+Lee la hoja 2 antes de escribir. Solo se reescriben las filas explícitas de chunk_p1_2 que contradicen esa tabla, incluidos 22/23 y 24/25, no solo 12–15. Llamadas 31/32 y límites 26/27 se reescriben solo si contradicen la hoja 2. El reemplazo es la remisión a la hoja 2, no una bornera nueva. No inventes otros bornes.
+
+- Script al estilo script/patch_elemont_chunk_p1_2_2026-09-23.rb.
+- Comprueba el SHA vivo antes de subir. Si no coincide, no subas. Guarda el objeto anterior. Rollback = re-subir ese objeto.
+- Escribe por S3DocumentsService para que SectionNeighborExpander.invalidate! corra.
+- No cambies código de retrieve. No despliegues la aplicación. No lo mezcles con las fases 1–4.
+
+Al terminar: commit de la Fase 5, marca Fase 5 COMPLETED en Execution State, registra solo findings materiales. DETENTE.
 ```
 
 ### Phase 5

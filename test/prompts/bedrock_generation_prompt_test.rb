@@ -4,7 +4,9 @@ require "test_helper"
 require "digest"
 
 class BedrockGenerationPromptTest < ActiveSupport::TestCase
-  PRE_CHANGE_SHA256 = "9182ccf3ac853409bd66cbc58ba808d28d5ce192ce90a44593f6d51a33d74ff8"
+  PRE_CHANGE_SHA256 = "ba6e7e51f03c6d72e4b64b4d575baa6353be222c77845423dc79678a7ff985bc"
+  # Grounded prompt length before the assignment-conflict sentences, partial contract on.
+  PREVIOUS_GROUNDED_CHARS = 11_801
 
   def prompt
     @prompt ||= with_partial_contract("true") do
@@ -121,6 +123,74 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
   test "treats a heading that disagrees with its own table as a discrepancy" do
     assert_includes prompt, "when the conflict sits inside a single fragment"
     assert_includes prompt, "State both readings explicitly"
+  end
+
+  test "an explicit row outranks a loose number drawn beside a label" do
+    assert_match(
+      /A loose number, or a number drawn beside a label, is not\s+an explicit assignment/,
+      prompt
+    )
+    assert_match(
+      /an explicit row\s+\(terminal to function, or the equivalent cell\) has greater authority than that\s+proximity alone/,
+      prompt
+    )
+    assert_match(/has greater authority than that\s+proximity alone/, grounded_prompt)
+  end
+
+  test "two incompatible explicit rows stay an unresolved conflict" do
+    assert_match(
+      /Two incompatible explicit rows stay unresolved: say the available\s+documentation contains incompatible assignments, cite both, and do not choose one/,
+      prompt
+    )
+    assert_includes prompt, "leave the conflict unresolved"
+    assert_includes prompt, "Never choose one silently"
+    assert_includes prompt, "as are two incompatible explicit rows there"
+    assert_includes grounded_prompt, "contains incompatible assignments"
+  end
+
+  test "presostato extract stays explicit rows and the prompt does not resolve it" do
+    fixture = Rails.root.join("tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt").read
+    rows = [
+      "| 14 | PRESOSTATO IN |",
+      "| 15 | PRESOSTATO OUT |",
+      "| 24 | PRESOSTATO IN |",
+      "| 25 | PRESOSTATO OUT |"
+    ]
+
+    rows.each do |row|
+      assert_includes fixture, row
+      assert_match(/\A\| .+ \| .+ \|/, row)
+    end
+    assert_not_includes prompt, "PRESOSTATO"
+    assert_not_includes prompt, "| 14 |"
+    assert_not_includes prompt, "14/15"
+    assert_includes prompt, "Two incompatible explicit rows stay unresolved"
+  end
+
+  test "a documented procedure is not replaced by the assignment rule" do
+    grounded = grounded_prompt
+
+    assert_includes prompt, "Do not replace a procedure the retrieved text already documents."
+    assert_includes grounded, "Do not replace a procedure the retrieved text already documents."
+    assert_includes grounded, "Cite a procedure as this equipment's fact only when its manual documents it for this component and this function."
+    assert_includes grounded, "Do not apply one fixed sequence to every question"
+    [ "cadena de seguridad", "foso", "K1", "K2", "Seguridad", "Micro", "Llamada", "Presostato", "H4" ].each do |term|
+      assert_not_includes grounded, term, term
+    end
+  end
+
+  test "does not say the table always wins" do
+    [ prompt, grounded_prompt ].each do |rendered|
+      assert_no_match(/table always wins/i, rendered)
+      assert_no_match(/the table always wins/i, rendered)
+      assert_no_match(/always (?:choose|prefer) the table/i, rendered)
+      assert_no_match(/la tabla (?:siempre )?gana/i, rendered)
+      assert_no_match(/gana siempre/i, rendered)
+    end
+  end
+
+  test "assignment conflict wording stays within 1.05 of the previous grounded prompt" do
+    assert_operator grounded_prompt.length, :<=, (PREVIOUS_GROUNDED_CHARS * 1.05).floor
   end
 
   test "forbids transplanting a sibling board's wiring onto the model asked about" do

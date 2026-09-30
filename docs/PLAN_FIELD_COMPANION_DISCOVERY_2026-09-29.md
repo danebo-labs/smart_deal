@@ -639,7 +639,7 @@ Esos archivos describen el contrato (`tenant_private` + `danebo_general` explíc
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2 y F4 están `PASS`. F5 está `READY` y no se ejecutó.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2 y F4 están `PASS`. F4 está CLOSED. F5 está `READY` / NOT STARTED.
 
 Contrato de cada fase, cuando corra:
 
@@ -1188,10 +1188,11 @@ Checkpoint previo a F0, satisfecho al abrir:
 ### F4
 
 - `phase`: F4 — Confirmed Focus
-- `status`: `PASS`
+- `status`: `PASS`. F4 CLOSED.
 - `head_initial`: `900041984e3ddb7472afbd1e9c21685436d8202e`
-- `head_final`: el commit de F4. El árbol no puede contener su propio SHA.
-- `commit`: el único commit cuyo padre es `head_initial`. El asunto dice que el tap escribe `user_pin` solo en la sesión actual.
+- `head_final`: `e8c6f56506febe56b804f1435ec6031617b84ea3`
+- `commit`: `e8c6f56506febe56b804f1435ec6031617b84ea3`. El commit principal de F4. Su padre es `head_initial`. El asunto dice que el tap escribe `user_pin` solo en la sesión actual.
+- `corrective_commit`: `b5d69626679bf0f695fa40674eed50977f2bb6a3`. No es una fase. Su padre es el commit principal. Ya fue revisado y aprobado. F4 sigue `PASS` y CLOSED. El padre operativo de F5 es este commit. Cerró dos gaps: `PinnedDocumentsController` ya no carga globalmente una fila privada ajena antes de autorizar; el lookup inicial queda limitado a filas propias o `danebo_general` vigentes y `KnowledgeScopePolicy` sigue siendo la autoridad final. `FocusNotice` conserva un pin stale después de revocación, pero una fila ajena ya revocada no puede aportar metadata de fabricante/modelo ni generar `pin_conflict`.
 - `files_changed`:
   - `app/controllers/pinned_documents_controller.rb`
   - `app/controllers/rag_controller.rb`
@@ -1240,13 +1241,15 @@ Checkpoint previo a F0, satisfecho al abrir:
   12. `NEW`. `DocumentOverviewWarmJob` se encola también en el primer pin de tarjeta, igual que en la biblioteca. Para un general ajeno el job busca la fila en la cuenta del viewer y no la copia.
   13. `NEW`. La sesión web no es por pestaña. Es una fila por usuario, cuenta y canal `web`. El aislamiento testeado es otra fila de sesión, no otro tab del mismo usuario.
   14. `REJECTED`. Auto-focus, umbral, Mode C, token firmado obligatorio, `previous_manufacturer` sin un segundo fabricante, y un pin de cuenta. Copiar la fila, copiar S3 o reindexar para poder enfocar un general.
+  15. `CORRECTIVE`. Post-F4, commit `b5d69626679bf0f695fa40674eed50977f2bb6a3`. `PinnedDocumentsController` ya no carga globalmente una fila privada ajena antes de autorizar. El lookup inicial queda limitado a filas propias o `danebo_general` vigentes. `KnowledgeScopePolicy` sigue siendo la autoridad final.
+  16. `CORRECTIVE`. Post-F4, mismo commit. `FocusNotice` conserva un pin stale después de revocación, pero una fila ajena ya revocada no puede aportar metadata de fabricante/modelo ni generar `pin_conflict`.
 - `derived_decisions`:
   - La identidad física es `kb_documents.id`. `document_uid` no es clave de lookup.
   - El tap reautoriza. No confía en el JSON de la tarjeta.
   - `manual_focus_confirmed` distingue el pin que nació de una tarjeta. El pin de biblioteca no emite ese evento.
   - Un foco explícito válido no cae al corpus abierto. Un conjunto parcial inválido no se recorta.
 - `future_phases_changed`:
-  - F5. `reason`: `READY`. El Anexo H es el prompt completo. F4 no migró `visual_observation`. El episodio sigue sin copiar ese JSON. `correlation_id` sigue en `sanitize_photo`. No se ejecutó.
+  - F5. `reason`: `READY` / NOT STARTED. El Anexo H es el prompt completo. El padre operativo es el corrective commit `b5d69626679bf0f695fa40674eed50977f2bb6a3`. F4 no migró `visual_observation`. El episodio sigue sin copiar ese JSON. `correlation_id` sigue en `sanitize_photo`. No se ejecutó.
   - F6. `reason`: revisada, sin edición. El pin no cambia las tres bandas de procedencia.
   - F7. `reason`: revisada, sin edición.
   - F8. `reason`: revisada, sin edición.
@@ -1866,10 +1869,11 @@ Un solo commit de F4. El mensaje dice que el tap escribe `user_pin` solo en la s
 
 Ejecutá solo F5 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F5 es continuidad de imagen: persistir `visual_observation` en la misma fila `field_photos` y reutilizarla con cero Anthropic cuando la precedencia lo dice. No ejecutes F6. No hagas deploy. No reabras F4. No cambies el tap, `user_pin`, el retrieve abierto, el score, `knowledge_scope` ni `RagRetrievalProfile`. No apruebes documentos. No pidas una decisión a Lahiri.
 
-F4 está `PASS`. F5 está `READY`. El padre del trabajo es el commit de F4. `git log -1 --format='%s'` tiene que decir que el tap escribe `user_pin` solo en la sesión actual. `git status` tiene que estar limpio. Si el asunto no es ese, o el árbol está dirty en algo que no sea F5, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F5. Este anexo no contiene el SHA de F4.
+F4 está `PASS` y CLOSED. F5 está `READY` / NOT STARTED. El padre operativo de F5 es el corrective commit `b5d69626679bf0f695fa40674eed50977f2bb6a3`. El commit principal de F4 sigue siendo `e8c6f56506febe56b804f1435ec6031617b84ea3`. El preflight verifica `git rev-parse HEAD` == `b5d69626679bf0f695fa40674eed50977f2bb6a3`. `git status` tiene que estar limpio. Si HEAD no es ese SHA, o el árbol está dirty en algo que no sea F5, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F5.
 
 ### Qué dejó F4, y F5 no toca
 
+- F4 incluye el corrective commit `b5d6962` (`b5d69626679bf0f695fa40674eed50977f2bb6a3`), que endurece el lookup del tap y evita metadata de FocusNotice proveniente de un general ajeno revocado.
 - Una tarjeta confirmada escribe `user_pin` solo en la `ConversationSession` web de ese usuario y esa cuenta. El id es la fila. `document_uid` confirma. La policy corre en el tap.
 - Con foco válido no hay fallback al corpus abierto. Un miembro inválido sigue en `DENY_RETRIEVAL`.
 - `pin_conflict` se muestra y el pin queda. `identity_conflict` muestra las dos identidades. Ese conflicto lo escribe `ConversationSession#apply_photo_fact!` cuando el hecho `manufacturer` o `model` ya es `known` con `source: "user"` y la foto dice otra cosa. F5 no pisa ese hecho y no borra el conflicto.

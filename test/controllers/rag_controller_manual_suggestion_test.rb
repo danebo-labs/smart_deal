@@ -17,7 +17,7 @@ class RagControllerManualSuggestionTest < ActionDispatch::IntegrationTest
     owned = scored.candidates.first(2)
     owned.each_with_index do |candidate, index|
       KbDocument.create!(
-        s3_key: "uploads/suggestion/#{candidate.document_id}.pdf",
+        s3_key: candidate.s3_key,
         document_uid: candidate.document_id,
         display_name: "Owned #{index}",
         aliases: [],

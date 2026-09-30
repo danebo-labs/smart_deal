@@ -213,6 +213,10 @@ class QueryOrchestratorService
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
       SqlGenerationService.new(@query).execute.merge(upload_context)
     when TOOLS[:KNOWLEDGE_BASE_QUERY]
+      if (denied = denied_pin_set_result)
+        return denied.merge(upload_context)
+      end
+
       overview = Rag::DocumentOverviewResponder.build(
         question:        @query,
         account:         @account,
@@ -328,6 +332,20 @@ class QueryOrchestratorService
     return unless @conv_session.respond_to?(:active_episode)
 
     @conv_session.active_episode
+  end
+
+  def denied_pin_set_result
+    uris = Array(@entity_s3_uris).map(&:to_s).compact_blank.uniq
+    return nil if uris.empty?
+
+    decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(uris, viewer_account: @account)
+    return nil if decision.allowed?
+
+    BedrockRagService.deny_retrieval_result(
+      question: @query,
+      session_id: @session_id,
+      response_locale: @response_locale
+    )
   end
 
   def context_evidence_result

@@ -617,6 +617,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'build_complete_optimized_config adds or_all filter spanning legacy and batch metadata keys for 2+ entity_s3_uris' do
     service = BedrockRagService.new(account: @account)
     uris = [ 's3://bucket/doc1.pdf', 's3://bucket/doc2.pdf' ]
+    uris.each { |uri| own_pin_uri!(uri) }
     config = service.build_complete_optimized_config(entity_s3_uris: uris)
 
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
@@ -636,6 +637,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'build_complete_optimized_config uses or_all even for a single entity_s3_uri so batch chunks are matched' do
     service = BedrockRagService.new(account: @account)
+    own_pin_uri!('s3://bucket/only.pdf')
     config = service.build_complete_optimized_config(entity_s3_uris: [ 's3://bucket/only.pdf' ])
 
     filter = config.dig(:retrieval_configuration, :vector_search_configuration, :filter)
@@ -667,6 +669,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query sends filter params to Bedrock when entity_s3_uris provided and query is short' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/junction_box.pdf')
       service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
       filter = client.last_retrieve_and_generate_params.dig(
@@ -683,6 +686,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query omits entity filter when query is long and names a different document' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/junction_box.pdf')
       service.query('Show me information about the MotorController installation manual please',
                     entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
@@ -705,6 +709,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     # to the session document (Orona CPU board), returning wrong results.
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/Orona CPU board.pdf')
       service.query('Que es el Esquema SOPREL?',
                     entity_s3_uris: [ 's3://bucket/Orona CPU board.pdf' ])
 
@@ -729,6 +734,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     # bypass the filter and Bedrock would search the whole KB.
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/orona_arca_basico.pdf')
       service.query(
         'Describe Orona ARCA BASICO Safety Circuit Electrical Schematic',
         entity_s3_uris:      [ 's3://bucket/orona_arca_basico.pdf' ],
@@ -752,6 +758,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'auto_scope_filter does not pin a document' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/mpk_708a.pdf')
       service.query(
         'Show me information about the MotorController installation manual please',
         entity_s3_uris:    [ 's3://bucket/mpk_708a.pdf' ],
@@ -790,6 +797,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: [], session_id: 'sid')
       end
 
+      own_pin_uri!('s3://bucket/mpk_708a.pdf')
       service = BedrockRagService.new(account: @account)
       result = service.query(
         'Que significa el codigo de error de la tarjeta MPK 708A?',
@@ -805,6 +813,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query appends photo label safety override for photo-only pins' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/photo.jpg')
       service.query(
         'Que componentes aparecen?',
         entity_s3_uris: [ 's3://bucket/photo.jpg' ],
@@ -886,6 +895,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: citations, session_id: 'sid')
       end
 
+      own_pin_uri!('s3://bucket/junction_box.pdf')
       service = BedrockRagService.new(account: @account)
       result = service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
@@ -910,6 +920,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       end
 
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!("s3://bucket/manual.pdf")
       result = service.query(
         "dame el procedimiento inexistente",
         entity_s3_uris: [ "s3://bucket/manual.pdf" ],
@@ -955,6 +966,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         ::OpenStruct.new(retrieval_results: [])
       end
 
+      own_pin_uri!(elemont)
+      own_pin_uri!(cea15)
       result = BedrockRagService.new(account: @account).query(
         "Elemont Montacargas Hidraulico Modelo MH",
         entity_s3_uris: [ elemont, cea15 ],
@@ -1014,6 +1027,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         ::OpenStruct.new(retrieval_results: [])
       end
 
+      own_pin_uri!(elemont)
+      own_pin_uri!(cea15)
       BedrockRagService.new(account: @account).query(
         "Elemont Montacargas Hidraulico Modelo MH",
         entity_s3_uris: [ elemont, cea15 ],
@@ -1278,7 +1293,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query returns clean visible answer and logs DOC_REFS metadata via RAG_REGRESSION' do
     KbDocument.create!(
-      s3_key: "manual.pdf",
+      s3_key: "s3://bucket/manual.pdf",
       display_name: "Manual",
       aliases: [],
       account: @account
@@ -1344,7 +1359,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # ===== [RAG_QUALITY] evidence telemetry =====
 
   test 'RAG_QUALITY logs evidence_present true, evidence_mode bedrock_citations, and source uris when citations exist' do
-    KbDocument.create!(s3_key: "manual.pdf", display_name: "Manual", aliases: [], account: @account)
+    KbDocument.create!(s3_key: "s3://bucket/manual.pdf", display_name: "Manual", aliases: [], account: @account)
 
     raw_answer = <<~ANSWER.strip
       The documented value is 13.
@@ -1386,7 +1401,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'RAG_QUALITY separates fallback retrieval context from native attribution under a pin' do
-    KbDocument.create!(s3_key: "manual.pdf", display_name: "Manual", aliases: [], account: @account)
+    KbDocument.create!(s3_key: "s3://bucket/manual.pdf", display_name: "Manual", aliases: [], account: @account)
     doc_refs_answer = "Par de apriete: 25 Nm.\n<DOC_REFS>[{\"source_uri\":\"s3://bucket/manual.pdf\",\"canonical_name\":\"Manual\",\"aliases\":[],\"doc_type\":\"manual\"}]</DOC_REFS>"
     no_citation_response = ::OpenStruct.new(
       output: ::OpenStruct.new(text: doc_refs_answer),
@@ -1591,6 +1606,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query returns the resolved scope and filter actually applied' do
     with_mock_bedrock_client do
+      own_pin_uri!('s3://bucket/manual.pdf')
       result = BedrockRagService.new(account: @account).query(
         '¿Cómo pruebo el freno?',
         entity_s3_uris: [ 's3://bucket/manual.pdf' ],
@@ -1622,6 +1638,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         ]
       )
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/manual.pdf')
       result = service.retrieve_chunks(
         'Enumera todas las pruebas de funcionamiento',
         entity_s3_uris: [ 's3://bucket/manual.pdf' ],
@@ -1666,6 +1683,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       )
       jobs_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
       service = BedrockRagService.new(account: @account)
+      own_pin_uri!('s3://bucket/manual.pdf')
 
       service.retrieve_chunks(
         'Enumera todas las pruebas de funcionamiento',
@@ -1707,12 +1725,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'vector configuration scopes a pinned document to that document alone' do
     service = BedrockRagService.new(account: @account)
+    own_pin_uri!("s3://bucket/manual.pdf")
     config = service.build_vector_search_configuration(
       question: "What is this manual?",
       entity_s3_uris: [ "s3://bucket/manual.pdf" ]
     )
 
-    assert_filter_key config[:filter], "original_source_uri"
+    assert filter_contains?(config[:filter], "original_source_uri", "s3://bucket/manual.pdf")
     assert_not filter_contains?(config[:filter], "account_id", @account.id.to_s)
     assert_no_filter_key config[:filter], "page_number"
   end
@@ -1767,13 +1786,14 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'a pinned document stays that document when the question also names a page' do
     with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
+      own_pin_uri!('s3://bucket/manual.pdf')
       service = BedrockRagService.new(account: @account)
       config = service.build_vector_search_configuration(
         question: 'página 46',
         entity_s3_uris: [ 's3://bucket/manual.pdf' ]
       )
 
-      assert_filter_key config[:filter], 'original_source_uri'
+      assert filter_contains?(config[:filter], 'original_source_uri', 's3://bucket/manual.pdf')
       assert_no_filter_key config[:filter], 'page_number'
       assert_not filter_contains?(config[:filter], 'account_id', @account.id.to_s)
     end
@@ -1824,6 +1844,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           sorry_response
         end
 
+        own_pin_uri!('s3://bucket/manual.pdf')
         BedrockRagService.new(account: @account).query(
           'Qué dice la página 46?',
           entity_s3_uris: [ 's3://bucket/manual.pdf' ],
@@ -1832,7 +1853,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
         assert_equal 1, call_filters.size
         assert_no_filter_key call_filters.first, 'page_number'
-        assert_filter_key call_filters.first, 'original_source_uri'
+        assert filter_contains?(call_filters.first, 'original_source_uri', 's3://bucket/manual.pdf')
       end
     end
   end
@@ -1856,13 +1877,14 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         call_filters.size == 1 ? sorry_response : good_response
       end
 
+      own_pin_uri!('s3://bucket/manual.pdf')
       BedrockRagService.new(account: @account).query(
         'torque del freno',
         entity_s3_uris: [ 's3://bucket/manual.pdf' ]
       )
 
       assert_equal 2, call_filters.size
-      assert_filter_key call_filters.first, "original_source_uri"
+      assert filter_contains?(call_filters.first, "original_source_uri", "s3://bucket/manual.pdf")
       assert_not filter_contains?(call_filters.first, "account_id", @account.id.to_s)
       assert_account_filter call_filters.second
       assert_no_filter_key call_filters.second, "original_source_uri"
@@ -1911,8 +1933,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     answer = <<~ANSWER
       Answer.
       <DOC_REFS>[
-        {"source_uri":"s3://bucket/#{own_doc.s3_key}","canonical_name":"Own","aliases":[],"doc_type":"manual"},
-        {"source_uri":"s3://bucket/#{other_doc.s3_key}","canonical_name":"Other","aliases":[],"doc_type":"manual"}
+        {"source_uri":"#{own_doc.canonical_uri}","canonical_name":"Own","aliases":[],"doc_type":"manual"},
+        {"source_uri":"#{other_doc.canonical_uri}","canonical_name":"Other","aliases":[],"doc_type":"manual"}
       ]</DOC_REFS>
     ANSWER
 
@@ -1951,6 +1973,10 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_includes prompt, '# LITERAL LABEL RULES'
     assert_includes prompt, '`<IDENTIFICADOR>: identificador visible; función: DATA_NOT_AVAILABLE`'
     assert_includes prompt, 'The completeness and stop-work overrides do not remove or invalidate this safe form.'
+  end
+
+  def own_pin_uri!(uri, account: @account)
+    KbDocument.create!(account: account, s3_key: uri, display_name: File.basename(uri.to_s), aliases: [])
   end
 
   def uri_key_clauses(filter)
@@ -2124,6 +2150,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       end
 
       captured = capture_tracking_jobs do
+        own_pin_uri!('s3://bucket/manual.pdf')
         BedrockRagService.new(account: @account).query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
       end
 
@@ -2150,6 +2177,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'single filtered query leaves one rag_filtered row with attempt 1' do
     with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('Par de apriete: 25 Nm.')) do
       captured = capture_tracking_jobs do
+        own_pin_uri!('s3://bucket/manual.pdf')
         BedrockRagService.new(account: @account).query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
       end
 
@@ -2208,7 +2236,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'filtered technical answer without citations uses fallback chunks for existence validation' do
     KbDocument.create!(
-      s3_key: "manual.pdf",
+      s3_key: "s3://bucket/manual.pdf",
       display_name: "Manual",
       aliases: [],
       account: @account
@@ -2254,7 +2282,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'unfiltered query with doc_refs but no inline citations calls Retrieve API for source_uri resolution' do
     KbDocument.create!(
-      s3_key: "manual.pdf",
+      s3_key: "s3://bucket/manual.pdf",
       display_name: "Manual",
       aliases: [],
       account: @account

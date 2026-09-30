@@ -25,8 +25,12 @@ class Account < ApplicationRecord
   # rather than claimable by whoever opens it first.
   belongs_to :certifier_settings_user, class_name: "User", optional: true
 
+  # Operator mark required before one of this account's documents can become
+  # danebo_general. Slug, branded, and Legacy/Pilot membership do not set it.
+  # Tenant settings do not write it. Default false.
   validates :slug, presence: true, uniqueness: true
   validates :display_name, presence: true
+  validates :danebo_controlled, inclusion: { in: [ true, false ] }
   validate :certifier_settings_user_belongs_to_account
 
   before_validation :default_display_name

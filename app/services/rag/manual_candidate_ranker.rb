@@ -13,8 +13,8 @@ module Rag
     EMPTY_TEXT = "No encontré un manual claramente asociado a esa identidad en la biblioteca actual."
     GENERAL_PROVENANCE = "Biblioteca general de Danebo"
     PRIVATE_PROVENANCE = "Tu biblioteca"
-    GENERAL_SCOPE = "danebo_general"
-    PRIVATE_SCOPE = "tenant_private"
+    GENERAL_SCOPE = KbDocument::KNOWLEDGE_SCOPE_GENERAL
+    PRIVATE_SCOPE = KbDocument::KNOWLEDGE_SCOPE_PRIVATE
     APPROVED = "GENERAL_APPROVED"
     PRIVATE_CLASS = "PRIVATE"
     UNCLASSIFIED = "UNCLASSIFIED"
@@ -22,7 +22,7 @@ module Rag
 
     Candidate = Data.define(
       :document_id, :display_name, :score, :label, :brands,
-      :owner_account_id, :classification
+      :owner_account_id, :classification, :s3_key, :catalog_account_id
     )
     ScoreResult = Data.define(:candidates, :tie_at_top, :reason, :manufacturer, :model_tokens)
     Card = Data.define(
@@ -59,11 +59,17 @@ module Rag
         rank_unscoped(text, entries)
       end
 
-      def suggest(text, entries, viewer_account_id:, owner_lookup: nil)
+      # documents_for receives the scored candidates and returns KbDocument
+      # rows. A card exists only when the catalog entry binds to exactly one
+      # authorized physical row. document_uid alone is not that bind.
+      def suggest(text, entries, viewer_account: nil, viewer_account_id: nil, documents_for: nil)
         scored = score(text, entries)
-        owners = owners_for(scored, owner_lookup)
-        kept = scored.candidates.select { |candidate| eligible?(candidate, viewer_account_id, owners) }
-        cards = kept.map { |candidate| card_for(candidate) }
+        viewer = viewer_account || viewer_from_id(viewer_account_id)
+        rows = documents_for_candidates(scored.candidates, documents_for)
+        cards = scored.candidates.filter_map { |candidate|
+          document = Rag::KnowledgeScopePolicy.bind_catalog_candidate(candidate, rows: rows, viewer_account: viewer)
+          card_for(candidate, document, viewer) if document
+        }
         max_score = cards.first&.score
         tie = cards.count { |card| card.score == max_score } >= 2
 
@@ -81,24 +87,20 @@ module Rag
 
       private
 
-      def owners_for(scored, owner_lookup)
-        return {} if scored.candidates.empty? || owner_lookup.nil?
+      def viewer_from_id(viewer_account_id)
+        return nil if viewer_account_id.blank?
 
-        result = owner_lookup.call(scored.candidates.map(&:document_id))
-        result.is_a?(Hash) ? result : {}
+        Account.find_by(id: viewer_account_id) || Account.new.tap { |account| account.id = viewer_account_id }
       end
 
-      def eligible?(candidate, viewer_account_id, owners)
-        return true if classification_of(candidate) == APPROVED
+      def documents_for_candidates(candidates, documents_for)
+        return [] if candidates.empty? || documents_for.nil?
 
-        owner = owner_of(candidate, owners)
-        return false if owner.nil?
-
-        owner.to_s == viewer_account_id.to_s
+        Array(documents_for.call(candidates))
       end
 
-      def card_for(candidate)
-        scope = classification_of(candidate) == APPROVED ? GENERAL_SCOPE : PRIVATE_SCOPE
+      def card_for(candidate, document, viewer)
+        scope = Rag::KnowledgeScopePolicy.scope_for(document, viewer_account: viewer)
         Card.new(
           document_uid: candidate.document_id,
           display_name: candidate.display_name,
@@ -108,19 +110,6 @@ module Rag
           knowledge_scope: scope,
           provenance: scope == GENERAL_SCOPE ? GENERAL_PROVENANCE : PRIVATE_PROVENANCE
         )
-      end
-
-      def classification_of(candidate)
-        raw = candidate.classification.to_s
-        return raw if [ APPROVED, PRIVATE_CLASS, UNCLASSIFIED ].include?(raw)
-
-        UNCLASSIFIED
-      end
-
-      def owner_of(candidate, owners)
-        return candidate.owner_account_id unless candidate.owner_account_id.nil?
-
-        owners[candidate.document_id] || owners[candidate.document_id.to_s]
       end
 
       def rank_unscoped(text, entries)
@@ -194,7 +183,9 @@ module Rag
           label: exact ? EXACT_DESIGNATOR_LABEL : BRAND_ONLY_LABEL,
           brands: Array(value(entry, :brands)).map(&:to_s),
           owner_account_id: value(entry, :owner_account_id),
-          classification: classification_value(entry)
+          classification: classification_value(entry),
+          s3_key: value(entry, :s3_key).to_s,
+          catalog_account_id: value(entry, :account_id).presence || value(entry, :owner_account_id).presence
         )
       end
 

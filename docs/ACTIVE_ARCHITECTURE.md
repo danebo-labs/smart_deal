@@ -72,7 +72,10 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
   session only. One account's pin does not narrow the general catalog for
   anyone else. Another tenant's private or unclassified documents stay out. HEAD still
   implements a broader open-retrieval OR for the legacy and pilot accounts;
-  that OR is not the product approval. See
+  that OR is not the product approval.   `Rag::KnowledgeScopePolicy` authorizes
+  suggestions and pins. An explicit URI set that is not fully authorized is
+  `DENY_RETRIEVAL`: no Bedrock call and no open retry. The open retrieve, when
+  there is no pin, does not read `knowledge_scope` yet. See
   [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
   `RagRetrievalProfile` is unchanged.
 - Multiple pins may be narrowed deterministically when the question explicitly

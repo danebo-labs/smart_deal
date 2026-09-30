@@ -19,19 +19,36 @@
 
 ## Manual corpus scope
 
-Product contract, 29-sep-2026, not yet the code: a tenant retrieves its
-`tenant_private` documents plus documents explicitly marked `danebo_general`.
-`UNCLASSIFIED` stays private. Do not infer `danebo_general` from `account_id`,
-filename, manufacturer, folder, or from the `danebo-legacy` /
-`danebo-pilot-elevator` slugs. Do not copy a document or reindex it per tenant
-to make a pin work. A pin is session focus, not a property of the shared
-document. Account A pinning a `danebo_general` document does not change
-Account B's catalog or Account B's pins. Photos stay out of other accounts' retrieval.
+Product contract: a tenant may use its own `tenant_private` documents and
+documents whose `kb_documents.knowledge_scope` is `danebo_general`.
+`KbDocument::KNOWLEDGE_SCOPE_*` is the vocabulary. `Rag::KnowledgeScopePolicy`
+is the read authority. `KnowledgeScopeChange.apply!` is the only writer of
+that column, and it appends `knowledge_scope_changes`. The audit rows do not
+grant access. `accounts.danebo_controlled` is the explicit source-account
+mark required before a row can become `danebo_general`. Slug, branded,
+filename, manufacturer, `manual_corpus=general`, and Legacy/Pilot membership
+do not set that mark. Every existing row defaults to `tenant_private`.
 
-F3 suggests manuals in the authenticated web chat. That suggestion does not
-write a pin and does not change this retrieve filter. F0 confirmed
-`existing_document_id_session_pin` (`reindex_required = false`,
-`duplicate_document_required = false`). The open retrieve below is still HEAD:
+F3 suggestion eligibility and a pin URI both go through the policy before
+they become a card or a retrieval filter. A caller-supplied URI is not
+authorization. The requested set is authorized together: one denied or
+ambiguous URI is `DENY_RETRIEVAL`. That result does not call Bedrock, does
+not retry the open corpus, and does not fall through to `account_filter`.
+The session pins stay until the technician removes them. `document_uid` and
+`s3_key` are unique per account, not globally. A catalog entry binds to the
+physical row only when canonical bucket plus object key and `document_uid`
+agree on exactly one authorized row. Two rows with the same canonical
+identity deny. A different bucket is a different object.
+Do not copy a document or reindex it per tenant to make a pin work. A pin
+is session focus, not a property of the shared document. Account A pinning
+a `danebo_general` document does not change Account B's catalog or Account
+B's pins. Promotion requires a completed non-photo ingestion ledger with
+`chunks_s3_prefix`. A `KbDocument` with no ledger is not indexed. Photos
+are rejected by `KnowledgeScopeEligibility`. `knowledge_scope_changes` is
+append-only in the application: `apply!` inserts, and update or delete
+through the model is rejected. Direct SQL is outside this phase.
+
+The open retrieve below is still the historical filter. F3B2 replaces it.
 
 Danebo (`danebo-legacy`) and the elevator pilot (`danebo-pilot-elevator`) are included in every account's open retrieve. Their `account_id` is already on the indexed chunks. Photos of those accounts stay out of other accounts' retrieval. This OR is not an approval of those manuals for the general library.
 

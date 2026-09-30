@@ -259,16 +259,16 @@ class RagController < ApplicationController
   end
 
   # Suggest-only. The ranker does not retrieve and does not write active_entities.
-  # UNCLASSIFIED stays tenant_private of the physical owner. There is no
-  # document-level GENERAL_APPROVED mark, so this path does not invent one.
+  # Eligibility is the physical KbDocument through Rag::KnowledgeScopePolicy.
+  # A catalog classification is not an approval.
   def attach_manual_suggestion(json, question, correlation_id, conv_session)
     return if question.blank? || current_account.nil?
 
     payload = Rag::ManualCandidateRanker.suggest(
       question,
       Rag::DocumentIdentityCatalog.current.entries,
-      viewer_account_id: current_account.id,
-      owner_lookup: method(:manual_suggestion_owners)
+      viewer_account: current_account,
+      documents_for: method(:manual_suggestion_documents)
     ).chat_payload
     return if payload.nil?
 
@@ -284,13 +284,8 @@ class RagController < ApplicationController
     )
   end
 
-  def manual_suggestion_owners(uids)
-    viewer_id = current_account.id
-    KbDocument.where(document_uid: uids).pluck(:document_uid, :account_id).each_with_object({}) do |(uid, account_id), owners|
-      next if owners.key?(uid) && account_id != viewer_id
-
-      owners[uid] = account_id
-    end
+  def manual_suggestion_documents(candidates)
+    Rag::KnowledgeScopePolicy.rows_for_catalog_candidates(candidates)
   end
 
   def citation_processor

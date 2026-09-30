@@ -28,7 +28,20 @@ module ActiveSupport
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
 
-    # Add more helper methods to be used by all tests here...
+    # Completed non-photo ledger with a chunk prefix. Promotion to
+    # danebo_general requires this evidence. A row without it stays private.
+    def index_manual_for_retrieval!(document)
+      WebManualBatch.create!(
+        account: document.account,
+        kb_document: document,
+        s3_key: document.s3_key,
+        filename: File.basename(document.s3_key.to_s),
+        sha256: SecureRandom.hex(32),
+        ingestion_contract_version: "v1",
+        status: "complete",
+        chunks_s3_prefix: "bulk_chunks/#{document.id}"
+      )
+    end
   end
 end
 

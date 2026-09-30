@@ -3,8 +3,13 @@
 # Global catalog row per S3 object key in the KB bucket. Created once on first upload;
 # aliases can be enriched later (e.g. from entity extraction).
 class KbDocument < ApplicationRecord
+  KNOWLEDGE_SCOPE_PRIVATE = "tenant_private"
+  KNOWLEDGE_SCOPE_GENERAL = "danebo_general"
+  KNOWLEDGE_SCOPES = [ KNOWLEDGE_SCOPE_PRIVATE, KNOWLEDGE_SCOPE_GENERAL ].freeze
+
   belongs_to :account, optional: true
   has_one :thumbnail, class_name: "KbDocumentThumbnail", dependent: :destroy
+  has_many :knowledge_scope_changes, dependent: :restrict_with_exception
 
   # Centralized KB bucket constant. Single source of truth for s3_uri building
   # across the app (was duplicated in rag_query_concern + bedrock_ingestion_job).
@@ -12,6 +17,13 @@ class KbDocument < ApplicationRecord
 
   # DB: jsonb, default []. Stored as JSON array of strings; exposed as Array in Ruby.
   validates :s3_key, presence: true
+  validates :knowledge_scope, inclusion: { in: KNOWLEDGE_SCOPES }
+  validate :new_row_stays_private, on: :create
+  validate :knowledge_scope_change_is_internal, on: :update
+  before_update :protect_knowledge_scope
+
+  scope :tenant_private, -> { where(knowledge_scope: KNOWLEDGE_SCOPE_PRIVATE) }
+  scope :danebo_general, -> { where(knowledge_scope: KNOWLEDGE_SCOPE_GENERAL) }
   before_validation { self.document_uid ||= SecureRandom.uuid }
   # Test-only convenience so the ~100 specs that predate tenancy don't have to
   # name an account. Pinned to the default tenant by slug: keying off the lowest
@@ -25,6 +37,36 @@ class KbDocument < ApplicationRecord
 
     s = s3_ref.to_s.strip
     s.sub(%r{\As3://[^/]+/}, "")
+  end
+
+  # Bucket plus object key. A relative key uses the KB bucket. Two strings
+  # that share this pair are the same physical object; a different bucket is
+  # a different object even when the key text matches.
+  def self.canonical_source(s3_ref, default_bucket: KB_BUCKET)
+    raw = s3_ref.to_s.strip
+    return nil if raw.blank?
+
+    if raw.start_with?("s3://")
+      bucket, key = raw.delete_prefix("s3://").split("/", 2)
+      return nil if bucket.blank? || key.blank?
+
+      [ bucket, key ]
+    else
+      return nil if default_bucket.blank?
+
+      [ default_bucket, raw.sub(%r{\A/+}, "") ]
+    end
+  end
+
+  def canonical_source
+    self.class.canonical_source(s3_key)
+  end
+
+  def canonical_uri
+    bucket, key = canonical_source
+    return if bucket.blank? || key.blank?
+
+    "s3://#{bucket}/#{key}"
   end
 
   def display_s3_uri(bucket_name)
@@ -89,11 +131,43 @@ class KbDocument < ApplicationRecord
     record
   end
 
+  # update_columns skips validations and callbacks. The scope column does not.
+  def update_columns(attributes)
+    if attributes.stringify_keys.key?("knowledge_scope") && !KnowledgeScopeChange.applying?
+      raise ActiveRecord::ReadOnlyRecord, "knowledge_scope can only change through KnowledgeScopeChange.apply!"
+    end
+
+    super
+  end
+
   # Easiest-to-read aliases for compact UI: fewest words, then shortest string.
   def simplest_display_aliases(limit = 2)
     Array(aliases).map(&:to_s).map(&:strip).compact_blank
       .uniq
       .sort_by { |a| [ a.split(/\s+/).size, a.length ] }
       .first(limit)
+  end
+
+  private
+
+  def new_row_stays_private
+    return if knowledge_scope.blank? || knowledge_scope == KNOWLEDGE_SCOPE_PRIVATE
+
+    errors.add(:knowledge_scope, "can only change through KnowledgeScopeChange.apply!")
+  end
+
+  def knowledge_scope_change_is_internal
+    return unless will_save_change_to_knowledge_scope?
+    return if KnowledgeScopeChange.applying?
+
+    errors.add(:knowledge_scope, "can only change through KnowledgeScopeChange.apply!")
+  end
+
+  def protect_knowledge_scope
+    return unless will_save_change_to_knowledge_scope?
+    return if KnowledgeScopeChange.applying?
+
+    errors.add(:knowledge_scope, "can only change through KnowledgeScopeChange.apply!")
+    throw :abort
   end
 end

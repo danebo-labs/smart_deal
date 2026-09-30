@@ -51,6 +51,7 @@ class Rag::SharedManualCorpusTest < ActiveSupport::TestCase
   test "an explicit document pin is only those URIs even when the question names a page" do
     climb = accounts(:climb)
     uris = %w[s3://bucket/a.pdf s3://bucket/b.pdf s3://bucket/c.pdf]
+    uris.each { |uri| own_pin_uri!(uri, climb) }
     ENV["RAG_PAGE_PIN_ENABLED"] = "true"
     filter = BedrockRagService.new(account: climb).build_vector_search_configuration(
       question: "página 93 del manual",
@@ -70,6 +71,7 @@ class Rag::SharedManualCorpusTest < ActiveSupport::TestCase
   end
 
   test "a pinned photo is that file alone" do
+    own_pin_uri!("s3://bucket/photo.jpg", accounts(:climb))
     filter = BedrockRagService.new(account: accounts(:climb)).build_vector_search_configuration(
       question: "qué muestra esta foto",
       entity_s3_uris: [ "s3://bucket/photo.jpg" ],
@@ -83,6 +85,10 @@ class Rag::SharedManualCorpusTest < ActiveSupport::TestCase
   end
 
   private
+
+  def own_pin_uri!(uri, account)
+    KbDocument.create!(account: account, s3_key: uri, display_name: File.basename(uri), aliases: [])
+  end
 
   def not_equals_values(node, key)
     case node

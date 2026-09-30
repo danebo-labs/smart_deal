@@ -45,6 +45,9 @@ class BedrockRagService
   # https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-config.html
   BEDROCK_FILTER_MAX_LIST = 5
   URI_METADATA_KEYS = %w[x-amz-bedrock-kb-source-uri original_source_uri].freeze
+  # Explicit document scope was requested and is not fully authorized.
+  # No Bedrock call, no open retry, no account_filter.
+  DENY_RETRIEVAL = "DENY_RETRIEVAL"
 
   # Deterministic failure-semantics normalization (Gate B).
   # Haiku frequently states absence in prose ("la documentación no contiene…")
@@ -201,6 +204,17 @@ class BedrockRagService
     }
 
     begin
+      @retrieval_denied = false
+      explicit_uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
+      if explicit_uris.any?
+        decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(explicit_uris, viewer_account: @account)
+        if decision.denied?
+          return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
+        end
+
+        entity_s3_uris = decision.uris
+      end
+
       effective_session_context = session_context_with_entity_safety(
         session_context,
         entity_sources: entity_sources
@@ -236,7 +250,10 @@ class BedrockRagService
       # Build complete optimized configuration and merge with custom config
       base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
       config = enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
-      applied_filter_uris = filtered_uris
+      if @retrieval_denied
+        return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
+      end
+      applied_filter_uris = Array(@applied_pin_uris)
 
       params = {
         input: { text: question },
@@ -296,11 +313,14 @@ class BedrockRagService
           )
         )
         params = unfiltered_params
+        if @retrieval_denied
+          return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
+        end
         config = params.dig(
           :retrieve_and_generate_configuration,
           :knowledge_base_configuration
         ).except(:knowledge_base_id, :model_arn)
-        applied_filter_uris = unfiltered_entity_uris
+        applied_filter_uris = Array(@applied_pin_uris)
         response = retrieve_and_generate_with_retry(unfiltered_params)
       end
 
@@ -513,6 +533,18 @@ class BedrockRagService
 
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     resolved_uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
+    if resolved_uris.any?
+      decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(resolved_uris, viewer_account: @account)
+      if decision.denied?
+        return {
+          chunks: [],
+          retrieval: DENY_RETRIEVAL,
+          retrieval_trace: { retrieval: DENY_RETRIEVAL, bedrock_calls: 0 }
+        }
+      end
+
+      resolved_uris = decision.uris
+    end
     apply_filter = resolved_uris.any? &&
       (force_entity_filter || !query_names_different_document?(question, resolved_uris))
     applied_uris = apply_filter ? resolved_uris : []
@@ -566,13 +598,40 @@ class BedrockRagService
       chunks: chunks,
       retrieval_trace: retrieval_trace(
         resolved_scope_s3_uris: resolved_uris,
-        applied_filter_s3_uris: applied_uris,
+        applied_filter_s3_uris: apply_filter ? Array(@applied_pin_uris) : [],
         force_entity_filter: force_entity_filter,
         vector_search_configuration: vector_config
       )
     }
   rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
     raise BedrockServiceError, "Failed to retrieve Knowledge Base chunks: #{e.message}"
+  end
+
+  def self.deny_retrieval_result(question:, session_id: nil, response_locale: nil)
+    locale = response_locale.presence || I18n.locale
+    {
+      answer: I18n.with_locale(locale) { I18n.t("rag.pin_unavailable") },
+      citations: [],
+      retrieved_citations: [],
+      doc_refs: nil,
+      session_id: session_id,
+      rag_ms: 0,
+      retrieval: DENY_RETRIEVAL,
+      generation_mode: DENY_RETRIEVAL,
+      model_invoked: false,
+      route_outcome: "abstained",
+      retrieval_trace: {
+        retrieval: DENY_RETRIEVAL,
+        bedrock_calls: 0,
+        resolved_scope_s3_uris: [],
+        applied_filter_s3_uris: [],
+        question_sha256: Digest::SHA256.hexdigest(question.to_s)
+      }
+    }
+  end
+
+  def deny_retrieval_result(question:, session_id: nil, response_locale: nil)
+    self.class.deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
   end
 
   private
@@ -1587,12 +1646,26 @@ class BedrockRagService
   # clauses in each andAll/orAll.
   # https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-config.html
   # A question does not choose a manual or a page. Without a pin the filter is
-  # the shared document base. With a pin the filter is only those URIs.
+  # the shared document base. With a pin the filter is only the URIs that
+  # resolve to exactly one KbDocument the viewer may use. A caller-supplied
+  # URI is not authorization. An unauthorized pin does not fall through to
+  # the open corpus on this call.
   def retrieval_filter(entity_s3_uris:, entity_sources:, question:, apply_page_filter:)
     uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
-    return account_filter if uris.empty?
+    if uris.empty?
+      @applied_pin_uris = []
+      return account_filter
+    end
 
-    checked_bedrock_filter(document_pin_filter(uris))
+    decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(uris, viewer_account: @account)
+    unless decision.allowed?
+      @retrieval_denied = true
+      @applied_pin_uris = []
+      return nil
+    end
+
+    @applied_pin_uris = decision.uris
+    checked_bedrock_filter(document_pin_filter(decision.uris))
   end
 
   # The technician pinned these files. Retrieval is those files alone.
@@ -1605,6 +1678,30 @@ class BedrockRagService
       end
     end
     or_all_clause(leaves)
+  end
+
+  def extract_constrained_uris(filter)
+    found = []
+    walk = lambda do |node|
+      case node
+      when Hash
+        [ node[:equals], node["equals"], node[:in], node["in"] ].each do |clause|
+          next unless clause.is_a?(Hash)
+
+          metadata_key = (clause[:key] || clause["key"]).to_s
+          next unless URI_METADATA_KEYS.include?(metadata_key)
+
+          Array(clause[:value] || clause["value"]).each do |value|
+            found << value.to_s if value.present?
+          end
+        end
+        node.each_value { |value| walk.call(value) }
+      when Array
+        node.each { |value| walk.call(value) }
+      end
+    end
+    walk.call(filter)
+    found.uniq
   end
 
   def account_filter
@@ -1709,9 +1806,23 @@ class BedrockRagService
   end
 
   def merge_account_filter(filter)
+    return filter if @retrieval_denied
+
     filter = filter.deep_dup if filter.respond_to?(:deep_dup)
     return account_filter if filter.blank?
-    return filter if account_filter_present?(filter) || document_uri_constrained?(filter)
+    if document_uri_constrained?(filter)
+      uris = extract_constrained_uris(filter)
+      decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(uris, viewer_account: @account)
+      unless decision.allowed?
+        @retrieval_denied = true
+        @applied_pin_uris = []
+        return filter
+      end
+
+      @applied_pin_uris = decision.uris
+      return checked_bedrock_filter(document_pin_filter(decision.uris))
+    end
+    return filter if account_filter_present?(filter)
 
     # Same two-level shape as retrieval_filter. and_filter(account_filter, …)
     # would embed an orAll-of-andAll and Bedrock would reject the query.
@@ -1935,9 +2046,6 @@ class BedrockRagService
   end
 
   def source_uri_resolves_to_account_document?(source_uri)
-    key = KbDocument.object_key_for_match(source_uri)
-    return false if key.blank?
-
-    KbDocument.exists?(account_id: @account.id, s3_key: [ key, source_uri ])
+    Rag::KnowledgeScopePolicy.authorized_retrieval_uris([ source_uri ], viewer_account: @account).any?
   end
 end

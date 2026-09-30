@@ -271,6 +271,15 @@ class ConversationSession < ApplicationRecord
   # given source_uri. Used to dedup entities across aliases — two different
   # canonical_names with the same s3_uri are the same physical document.
   # @return [String, nil]
+  def find_entity_by_kb_document_id(id)
+    return nil if id.blank?
+
+    active_entities.each do |key, meta|
+      return key if meta.is_a?(Hash) && meta["kb_document_id"].to_i == id.to_i
+    end
+    nil
+  end
+
   def find_entity_by_source_uri(uri)
     return nil if uri.blank?
     active_entities.each do |key, meta|
@@ -372,13 +381,17 @@ class ConversationSession < ApplicationRecord
     true
   end
 
-  # Unpin a KbDocument from the session by source_uri match.
-  # Returns false if the doc was not pinned (no-op).
+  # Unpin this session's focus. Match the stored kb_document_id first so a
+  # revoked document can still be removed. source_uri remains the fallback
+  # for a pin written before that id was stored.
   def unpin_kb_document!(kb_doc)
-    s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
-    return false if s3_uri.blank?
+    key = find_entity_by_kb_document_id(kb_doc.id)
+    if key.nil?
+      s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+      return false if s3_uri.blank?
 
-    key = find_entity_by_source_uri(s3_uri)
+      key = find_entity_by_source_uri(s3_uri)
+    end
     return false unless key
 
     entities = active_entities.dup

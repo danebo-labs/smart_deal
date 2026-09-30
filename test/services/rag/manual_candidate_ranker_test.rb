@@ -99,15 +99,26 @@ class Rag::ManualCandidateRankerTest < ActiveSupport::TestCase
 
   test "an explicit general approval enters in score order with the general library text" do
     text = "Otis modelo ZX9"
+    viewer = accounts(:climb)
+    owner = accounts(:legacy)
+    owner.update!(danebo_controlled: true)
+    foreign_uid = SecureRandom.uuid
+    general_uid = SecureRandom.uuid
+    own_uid = SecureRandom.uuid
+    KbDocument.create!(account: owner, document_uid: foreign_uid, s3_key: "manuals/foreign-exact.pdf", display_name: "AAA", aliases: [])
+    general = KbDocument.create!(account: owner, document_uid: general_uid, s3_key: "manuals/general-brand.pdf", display_name: "BBB", aliases: [])
+    index_manual_for_retrieval!(general)
+    KnowledgeScopeChange.apply!(kb_document: general, to_scope: "danebo_general", actor: "ops", reason: "approved manual")
+    KbDocument.create!(account: viewer, document_uid: own_uid, s3_key: "manuals/own-exact.pdf", display_name: "CCC", aliases: [])
     entries = [
-      row("foreign-exact", "AAA", [ "Otis" ], designators: [ "ZX9" ], owner_account_id: "4", classification: "PRIVATE"),
-      row("general-brand", "BBB", [ "Otis" ], owner_account_id: "4", classification: "GENERAL_APPROVED"),
-      row("own-exact", "CCC", [ "Otis" ], designators: [ "ZX9" ], owner_account_id: "5", classification: "UNCLASSIFIED")
+      row(foreign_uid, "AAA", [ "Otis" ], designators: [ "ZX9" ], owner_account_id: "4", classification: "PRIVATE", s3_key: "manuals/foreign-exact.pdf"),
+      row(general_uid, "BBB", [ "Otis" ], owner_account_id: "4", classification: "GENERAL_APPROVED", s3_key: "manuals/general-brand.pdf"),
+      row(own_uid, "CCC", [ "Otis" ], designators: [ "ZX9" ], owner_account_id: "5", classification: "UNCLASSIFIED", s3_key: "manuals/own-exact.pdf")
     ]
     scored = Ranker.score(text, entries)
-    suggestion = Ranker.suggest(text, entries, viewer_account_id: "5")
+    suggestion = Ranker.suggest(text, entries, viewer_account: viewer, documents_for: method(:suggestion_documents))
 
-    assert_equal [ "own-exact", "general-brand" ], suggestion.cards.map(&:document_uid)
+    assert_equal [ own_uid, general_uid ], suggestion.cards.map(&:document_uid)
     assert_equal [ 180, 100 ], suggestion.cards.map(&:score)
     assert_equal scored.candidates.select { |candidate| suggestion.cards.map(&:document_uid).include?(candidate.document_id) }.map(&:score),
       suggestion.cards.map(&:score)
@@ -150,10 +161,13 @@ class Rag::ManualCandidateRankerTest < ActiveSupport::TestCase
   end
 
   test "tie_at_top shows up to three cards and does not choose one" do
+    viewer = accounts(:climb)
     entries = 4.times.map { |index|
-      row("id-#{index}", "Manual #{index}", [ "Otis" ], owner_account_id: "5", classification: "UNCLASSIFIED")
+      uid = SecureRandom.uuid
+      KbDocument.create!(account: viewer, document_uid: uid, s3_key: "manuals/#{uid}.pdf", display_name: "Manual #{index}", aliases: [])
+      row(uid, "Manual #{index}", [ "Otis" ], owner_account_id: viewer.id.to_s, classification: "UNCLASSIFIED", s3_key: "manuals/#{uid}.pdf")
     }
-    suggestion = Ranker.suggest("Otis", entries, viewer_account_id: "5")
+    suggestion = Ranker.suggest("Otis", entries, viewer_account: viewer, documents_for: method(:suggestion_documents))
 
     assert_equal 3, suggestion.cards.size
     assert_equal true, suggestion.tie_at_top
@@ -163,15 +177,27 @@ class Rag::ManualCandidateRankerTest < ActiveSupport::TestCase
   end
 
   test "scope does not backfill past the scored top three" do
+    viewer = accounts(:climb)
+    foreign = accounts(:legacy)
+    uids = {}
+    [
+      [ "blocked", "AAA", foreign ],
+      [ "kept-b", "BBB", viewer ],
+      [ "kept-c", "CCC", viewer ],
+      [ "not-backfilled", "ZZZ", viewer ]
+    ].each do |key, name, account|
+      uids[key] = SecureRandom.uuid
+      KbDocument.create!(account: account, document_uid: uids[key], s3_key: "manuals/#{key}.pdf", display_name: name, aliases: [])
+    end
     entries = [
-      row("blocked", "AAA", [ "Otis" ], owner_account_id: "4", classification: "PRIVATE"),
-      row("kept-b", "BBB", [ "Otis" ], owner_account_id: "5", classification: "UNCLASSIFIED"),
-      row("kept-c", "CCC", [ "Otis" ], owner_account_id: "5", classification: "UNCLASSIFIED"),
-      row("not-backfilled", "ZZZ", [ "Otis" ], owner_account_id: "5", classification: "UNCLASSIFIED")
+      row(uids["blocked"], "AAA", [ "Otis" ], owner_account_id: "4", classification: "PRIVATE", s3_key: "manuals/blocked.pdf"),
+      row(uids["kept-b"], "BBB", [ "Otis" ], owner_account_id: "5", classification: "UNCLASSIFIED", s3_key: "manuals/kept-b.pdf"),
+      row(uids["kept-c"], "CCC", [ "Otis" ], owner_account_id: "5", classification: "UNCLASSIFIED", s3_key: "manuals/kept-c.pdf"),
+      row(uids["not-backfilled"], "ZZZ", [ "Otis" ], owner_account_id: "5", classification: "UNCLASSIFIED", s3_key: "manuals/not-backfilled.pdf")
     ]
-    suggestion = Ranker.suggest("Otis", entries, viewer_account_id: "5")
+    suggestion = Ranker.suggest("Otis", entries, viewer_account: viewer, documents_for: method(:suggestion_documents))
 
-    assert_equal [ "kept-b", "kept-c" ], suggestion.cards.map(&:document_uid)
+    assert_equal [ uids["kept-b"], uids["kept-c"] ], suggestion.cards.map(&:document_uid)
   end
 
   test "a symptom without a recognized manufacturer builds no cards and does not retrieve" do
@@ -184,7 +210,7 @@ class Rag::ManualCandidateRankerTest < ActiveSupport::TestCase
         "Tengo un problema en la puerta.",
         [ row("otis", "Manual Otis", [ "Otis" ], owner_account_id: "5") ],
         viewer_account_id: "5",
-        owner_lookup: lambda { |_uids|
+        documents_for: lambda { |_uids|
           lookup_called = true
           flunk "discovery must not look up documents"
         }
@@ -219,6 +245,81 @@ class Rag::ManualCandidateRankerTest < ActiveSupport::TestCase
     assert_equal false, suggestion.tie_at_top
   end
 
+  test "the same document_uid resolves each physical catalog row" do
+    viewer = accounts(:climb)
+    owner = accounts(:legacy)
+    owner.update!(danebo_controlled: true)
+    uid = SecureRandom.uuid
+    general = KbDocument.create!(account: owner, document_uid: uid, s3_key: "manuals/a-general.pdf", display_name: "Manual A", aliases: [])
+    index_manual_for_retrieval!(general)
+    KnowledgeScopeChange.apply!(kb_document: general, to_scope: "danebo_general", actor: "ops", reason: "approved manual")
+    private_row = KbDocument.create!(account: viewer, document_uid: uid, s3_key: "manuals/b-private.pdf", display_name: "Manual B", aliases: [])
+    entries = [
+      row(uid, "Manual A", [ "Otis" ], s3_key: general.s3_key, account_id: "1"),
+      row(uid, "Manual B", [ "Otis" ], s3_key: private_row.s3_key, account_id: viewer.id.to_s)
+    ]
+
+    rows = suggestion_documents(Ranker.score("Otis", entries).candidates)
+    bound = entries.map { |entry|
+      Rag::KnowledgeScopePolicy.bind_catalog_candidate(entry, rows: rows, viewer_account: viewer)
+    }
+
+    suggestion = Ranker.suggest("Otis", entries, viewer_account: viewer, documents_for: method(:suggestion_documents))
+
+    assert_equal [ general, private_row ], bound
+    assert_equal [ [ "Manual A", "danebo_general" ], [ "Manual B", "tenant_private" ] ],
+      suggestion.cards.map { |card| [ card.display_name, card.knowledge_scope ] }.sort
+  end
+
+  test "two general rows that share a document_uid stay distinct" do
+    viewer = accounts(:climb)
+    owner = accounts(:legacy)
+    other = accounts(:pilot)
+    owner.update!(danebo_controlled: true)
+    other.update!(danebo_controlled: true)
+    uid = SecureRandom.uuid
+    first = KbDocument.create!(account: owner, document_uid: uid, s3_key: "manuals/general-a.pdf", display_name: "Manual A", aliases: [])
+    second = KbDocument.create!(account: other, document_uid: SecureRandom.uuid, s3_key: "manuals/general-b.pdf", display_name: "Manual B", aliases: [])
+    index_manual_for_retrieval!(first)
+    index_manual_for_retrieval!(second)
+    KnowledgeScopeChange.apply!(kb_document: first, to_scope: "danebo_general", actor: "ops", reason: "approved manual")
+    KnowledgeScopeChange.apply!(kb_document: second, to_scope: "danebo_general", actor: "ops", reason: "approved manual")
+    second.update!(document_uid: uid)
+    entries = [
+      row(uid, "Manual A", [ "Otis" ], s3_key: first.s3_key, account_id: "1"),
+      row(uid, "Manual B", [ "Otis" ], s3_key: second.s3_key, account_id: "3")
+    ]
+
+    rows = suggestion_documents(Ranker.score("Otis", entries).candidates)
+    bound = entries.map { |entry|
+      Rag::KnowledgeScopePolicy.bind_catalog_candidate(entry, rows: rows, viewer_account: viewer)
+    }
+
+    suggestion = Ranker.suggest("Otis", entries, viewer_account: viewer, documents_for: method(:suggestion_documents))
+
+    assert_equal [ first, second ], bound
+    assert_equal [ "Manual A", "Manual B" ], suggestion.cards.map(&:display_name).sort
+    assert suggestion.cards.all? { |card| card.knowledge_scope == "danebo_general" }
+  end
+
+  test "an ambiguous canonical object denies the catalog candidate" do
+    viewer = accounts(:climb)
+    owner = accounts(:legacy)
+    uid = SecureRandom.uuid
+    key = "manuals/ambiguous.pdf"
+    KbDocument.create!(account: viewer, document_uid: uid, s3_key: key, display_name: "Manual", aliases: [])
+    KbDocument.create!(account: owner, document_uid: SecureRandom.uuid, s3_key: "s3://#{KbDocument::KB_BUCKET}/#{key}", display_name: "Manual", aliases: [])
+
+    suggestion = Ranker.suggest(
+      "Otis",
+      [ row(uid, "Manual", [ "Otis" ], s3_key: key) ],
+      viewer_account: viewer,
+      documents_for: method(:suggestion_documents)
+    )
+
+    assert_empty suggestion.cards
+  end
+
   private
 
   def assert_optional(expected, actual, message)
@@ -235,6 +336,10 @@ class Rag::ManualCandidateRankerTest < ActiveSupport::TestCase
     digest = Digest::SHA256.file(path).hexdigest
     assert_equal expected_sha, digest, path.basename
     JSON.parse(File.read(path))
+  end
+
+  def suggestion_documents(candidates)
+    Rag::KnowledgeScopePolicy.rows_for_catalog_candidates(candidates)
   end
 
   def row(document_id, display_name, brands, designators: [], owner_account_id: nil, classification: nil, **extra)

@@ -35,6 +35,7 @@ es:
     image_indexing_stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     no_results_found: "No se encontró información sobre tu consulta. Sube un archivo para ampliar la base de conocimiento y, una vez sincronizado, podrás hacer consultas sobre ese archivo."
     pinned_no_results: "DATA_NOT_AVAILABLE: los documentos pineados no contienen evidencia suficiente para responder esta consulta."
+    pin_unavailable: "DATA_NOT_AVAILABLE: un documento seleccionado ya no está disponible. Quitalo o elegí otro para continuar."
     generation_retry: "No pude redactar la respuesta a esta consulta. Reenviarla igual suele fallar: indica fabricante, modelo y el código exacto del display o de la placa, o adjunta una foto de la placa."
     data_not_available: "Ese dato no aparece en los fragmentos de manual recuperados para esta consulta."
     unsupported_value_removed: "Omití un valor que no pude confirmar en el manual de este equipo; revísalo en la placa o en el manual antes de usarlo."

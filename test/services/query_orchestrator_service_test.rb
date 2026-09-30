@@ -472,6 +472,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     original_new = BedrockRagService.method(:new)
     BedrockRagService.define_singleton_method(:new) { |**| rag_service }
     source_uri = "s3://bucket/manual.pdf"
+    KbDocument.create!(account: accounts(:legacy), s3_key: source_uri, display_name: "Manual", aliases: [])
     session = Struct.new(:active_entities).new({
       "Manual" => {
         "source_uri" => source_uri,
@@ -571,6 +572,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     original_new = BedrockRagService.method(:new)
     BedrockRagService.define_singleton_method(:new) { |**| rag_service }
 
+    KbDocument.create!(account: accounts(:legacy), s3_key: "s3://bucket/soprel.pdf", display_name: "SOPREL", aliases: [])
     QueryOrchestratorService.new(
       "que es el Esquema SOPREL?",
       account: accounts(:legacy),
@@ -631,6 +633,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     original_new = BedrockRagService.method(:new)
     BedrockRagService.define_singleton_method(:new) { |**| rag_service }
 
+    KbDocument.create!(account: accounts(:legacy), s3_key: "s3://bucket/soprel.pdf", display_name: "SOPREL", aliases: [])
     QueryOrchestratorService.new(
       "que es el Esquema SOPREL?",
       account: accounts(:legacy),

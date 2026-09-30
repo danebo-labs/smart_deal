@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_23_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -25,6 +25,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_140000) do
     t.string "certifier_name"
     t.bigint "certifier_settings_user_id"
     t.datetime "created_at", null: false
+    t.boolean "danebo_controlled", default: false, null: false
     t.string "display_name", null: false
     t.string "slug", null: false
     t.datetime "updated_at", null: false
@@ -236,6 +237,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_140000) do
     t.datetime "created_at", null: false
     t.string "display_name"
     t.uuid "document_uid", null: false
+    t.string "knowledge_scope", default: "tenant_private", null: false
     t.string "s3_key", null: false
     t.bigint "size_bytes"
     t.datetime "updated_at", null: false
@@ -244,6 +246,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_140000) do
     t.index [ "account_id", "document_uid" ], name: "idx_kb_documents_account_document_uid", unique: true
     t.index [ "account_id", "s3_key" ], name: "idx_kb_documents_account_s3_key", unique: true
     t.index [ "account_id" ], name: "index_kb_documents_on_account_id"
+    t.index [ "document_uid" ], name: "idx_kb_documents_document_uid"
+    t.index [ "id" ], name: "idx_kb_documents_danebo_general", where: "((knowledge_scope)::text = 'danebo_general'::text)"
+    t.index [ "s3_key" ], name: "idx_kb_documents_s3_key"
+    t.check_constraint "knowledge_scope::text = ANY (ARRAY['tenant_private'::character varying, 'danebo_general'::character varying]::text[])", name: "chk_kb_documents_knowledge_scope"
+  end
+
+  create_table "knowledge_scope_changes", force: :cascade do |t|
+    t.string "actor", null: false
+    t.datetime "created_at", null: false
+    t.string "from_scope", null: false
+    t.bigint "kb_document_id", null: false
+    t.text "reason", null: false
+    t.string "to_scope", null: false
+    t.index [ "kb_document_id" ], name: "index_knowledge_scope_changes_on_kb_document_id"
+    t.check_constraint "from_scope::text = ANY (ARRAY['tenant_private'::character varying, 'danebo_general'::character varying]::text[])", name: "chk_knowledge_scope_changes_from_scope"
+    t.check_constraint "to_scope::text = ANY (ARRAY['tenant_private'::character varying, 'danebo_general'::character varying]::text[])", name: "chk_knowledge_scope_changes_to_scope"
   end
 
   create_table "pilot_events", force: :cascade do |t|
@@ -408,6 +426,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_140000) do
   add_foreign_key "inspection_findings", "field_photos"
   add_foreign_key "inspection_findings", "report_equipments"
   add_foreign_key "inspection_findings", "voice_dictations"
+  add_foreign_key "knowledge_scope_changes", "kb_documents"
   add_foreign_key "report_equipments", "accounts"
   add_foreign_key "report_equipments", "certification_reports"
   add_foreign_key "technician_documents", "accounts", name: "fk_td_account"

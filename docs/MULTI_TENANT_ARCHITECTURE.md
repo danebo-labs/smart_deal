@@ -163,16 +163,19 @@ Rules:
    HEAD: the web path sets `force_entity_filter: true`, so
    `BedrockRagService` does not take `retry_without_entity_filter` for those
    queries (`retry_without_entity_filter = apply_filter && !force_entity_filter`).
-   The unforced branch can still retry once without the document filter.
-   That branch is current code. It is not the product rule, and this
-   document does not delete it. The account `or_all` stays on every call.
+   The unforced branch can still retry once without the document filter
+   when every requested URI is authorized. A denied explicit URI returns
+   `DENY_RETRIEVAL` before that retry and before `account_filter`.
+   That open branch is current code. It is not the product rule, and this
+   document does not delete it. The account `or_all` stays on the open call.
 4. HEAD citations from the session account, from the legacy and pilot account
    ids, or from a chunk marked `manual_corpus=general` are in the open
    retrieve. That is the code path. It is not a Danebo approval, and it is not
    permission for one customer to read another customer's private documents.
-   The approved shared class is `danebo_general` only, and HEAD does not store
-   that class yet. Do not drop a citation only because its `account_id` differs
-   when the chunk is already inside this filter. Do not treat this rule as a
+   The approved shared class is `danebo_general` only. `kb_documents.knowledge_scope`
+   stores it. The open retrieve does not read that column yet. Do not drop a
+   citation only because its `account_id` differs when the chunk is already
+   inside this filter. Do not treat this rule as a
    license to add more account ids.
 5. Background jobs receive `account_id` explicitly; they do not rely on
    request-local `Current`.

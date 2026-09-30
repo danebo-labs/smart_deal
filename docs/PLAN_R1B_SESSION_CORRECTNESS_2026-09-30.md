@@ -476,9 +476,69 @@ R1B no arregla:
 - [PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md](PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md) describe `pin_kept`, `pin_extended`, `pin_overridden` e `inherit_episode_scope` como caminos de retrieve. El código actual de `resolve_retrieval_scope` sólo devuelve `open` o `pin_only`. `inherit_episode_scope` devuelve vacío.
 - El comentario de `FieldCompanionEpisodeFlag` (“nadie lee la columna”) es falso para el prompt. Sigue siendo cierto para las URIs de retrieve.
 
+# Documentation Alignment
+
+R1B define el contrato de lifecycle de `ConversationSession`, `ActiveEpisode`, el boundary de caso, los pins en `active_entities`, la ventana de razonamiento del historial, login/logout, el TTL de workspace de 30 días y la vida del caso de 4 horas.
+
+Alinear la documentación activa con ese comportamiento es parte del Definition of Done. R1B no cierra sólo porque los tests pasan. No se crea documentación paralela. No se abre R1C ni otra fase de recovery.
+
+## Documentos a revisar
+
+### `docs/SESSION_AND_RETRIEVAL.md`
+
+Queda como fuente vigente de `ConversationSession`, pins, `active_entities`, lifecycle de case/episode y el scope de retrieve que producen los pins.
+
+Tiene que distinguir la fila del caso, decir que `Case = ActiveEpisode`, separar el TTL de 30 días de las 4 horas, decir cuándo un pin pertenece al caso y cuándo se elimina, qué pasa después del expiry, que login y logout no abren caso, y el release de pin por corrección de fabricante si esa prueba sigue aprobada. Se corrige el texto que contradiga ese contrato.
+
+No se reintroduce el corpus previo a R1A. La visibilidad de retrieve se alinea con [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md) y con el código R1A vigente: cuenta del viewer, la otra cuenta de `SharedManualCorpus` y `manual_corpus=general`, con el publication gate. Un miss dentro del caso vivo sigue sin soltar el pin.
+
+### `docs/ACTIVE_ARCHITECTURE.md`
+
+Se actualizan session lifecycle, pin scope, active episode, case boundaries y el retrieve con pins. Se quitan las afirmaciones que contradigan R1B. El documento sigue siendo arquitectura vigente, no un historial.
+
+### `docs/PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md`
+
+Documento histórico del ciclo del 21-sep. No se reescribe su historia ni sus decisiones. Si puede leerse como arquitectura vigente, se agrega una nota visible al inicio: el ciclo es el del 21-sep, algunos paths quedaron superados, y la arquitectura vigente de sesiones y pins está en `SESSION_AND_RETRIEVAL.md`, `ACTIVE_ARCHITECTURE.md` y `PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md`. No se convierte en documentación viva.
+
+### `docs/PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md`
+
+Al cerrar R1B, esa fila pasa a `CLOSED — PASS`, con evidencia, commits, tests, smoke, decisiones finales y los carry-over que siguen en R2 o R3. R2 queda `NEXT`. No se abren fases nuevas.
+
+### Comentarios inline
+
+Sólo los que describen comportamiento viejo dentro del código que R1B toca o que ya se sabe falso. El comentario de [app/services/rag/field_companion_episode_flag.rb](../app/services/rag/field_companion_episode_flag.rb) dice que nadie lee `active_episode`. `SessionContextBuilder#field_problem_block` sí lo lee cuando las dos flags de companion están on. Se corrige ese comentario. No hay cleanup general del repo.
+
+### `docs/README.md`
+
+Sólo si una fila apunta a documentación que ya no es la arquitectura vigente. Hoy la fila de sesiones apunta a `SESSION_AND_RETRIEVAL.md` y la de arquitectura a `ACTIVE_ARCHITECTURE.md`; eso se mantiene. La fila de [PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md](PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md) hay que marcarla como historia del 21-sep y apuntar a las tres fuentes de abajo, sin copiar el contrato. Al cerrar R1B, la fila del recovery dice R1B `CLOSED — PASS` y R2 `NEXT`. No se duplica el contenido técnico.
+
+## Documentation source hierarchy after R1B
+
+| Rol | Documento |
+|---|---|
+| Recovery status y decisiones de fase | [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md) |
+| Arquitectura vigente de sesiones y pins | [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) |
+| Arquitectura general vigente | [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md) |
+| Historia del ciclo 21-sep | [PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md](PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md) |
+
+El documento del 21-sep no es contrato vigente cuando contradice el código o los tres documentos activos.
+
+## Documentation gate
+
+Antes de marcar R1B `CLOSED — PASS`:
+
+1. implementación PASS;
+2. tests PASS;
+3. smoke PASS;
+4. documentación alineada;
+5. `git diff --check` PASS;
+6. búsqueda en el repo de claims viejos sobre session TTL, episode, pins, `pin_kept`, `pin_extended`, `inherit_episode_scope`, login reset, y `ConversationSession` como thread o case.
+
+Una contradicción en documentación activa se corrige. Una contradicción en un plan cerrado se marca como histórica. No se borra evidencia histórica.
+
 # R1B IMPLEMENTATION PLAN
 
-Dos fases. La fase 2 no empieza si la fase 1 no cumple su gate. Sin migración. Sin UI. Sin `login => reset`.
+Tres fases. La fase 2 no empieza si la fase 1 no cumple su gate. La fase 3 no empieza si la fase 2 no cumple el suyo, y no cambia comportamiento. Sin migración. Sin UI. Sin `login => reset`. No hay R1C.
 
 ## Phase 1 — Case boundary
 
@@ -646,7 +706,57 @@ A, B, I y J pasan en el mismo archivo de test. C, D, F, G y H pasan. Un caso viv
 
 ### Explicit non-goals
 
-Igual que la lista global. Además: no retirar `R1A_PROBE`, no cambiar `FieldPhotoAnalysisJob`, no cambiar el fallback de 3 turnos con la flag de episodio apagada, no cambiar WhatsApp.
+Igual que la lista global. Además: no retirar `R1A_PROBE`, no cambiar `FieldPhotoAnalysisJob`, no cambiar el fallback de 3 turnos con la flag de episodio apagada, no cambiar WhatsApp. La alineación de documentación es la fase 3, no esta.
+
+## Phase 3 — Documentation alignment + closure
+
+### Goal
+
+Dejar la documentación activa igual al comportamiento ya validado. Esta fase no cambia runtime, tests de producto ni retrieve.
+
+### Files expected to change
+
+- [docs/SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md)
+- [docs/ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md)
+- [docs/PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md)
+- nota al inicio de [docs/PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md](PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md), sin reescribir el ciclo
+- [docs/README.md](README.md) sólo en la fila del plan del 21-sep y, al cerrar, en la fila del recovery
+- [app/services/rag/field_companion_episode_flag.rb](../app/services/rag/field_companion_episode_flag.rb), el comentario que niega lectores de `active_episode`
+- otros comentarios inline sólo si describen el lifecycle viejo en código que R1B ya tocó
+
+### Behavior before
+
+`SESSION_AND_RETRIEVAL.md` todavía mezcla el contrato de pin de 30 días con un párrafo de corpus superado por R1A. `ACTIVE_ARCHITECTURE.md` no distingue workspace de caso. El plan del 21-sep describe `pin_kept`, `pin_extended`, `pin_overridden` e `inherit_episode_scope` sin aviso de que no son el retrieve vigente. El recovery tiene R1B en `NEXT`. El comentario de `FieldCompanionEpisodeFlag` dice que nadie lee la columna.
+
+### Behavior after
+
+Las tres fuentes activas describen el contrato de este plan: fila de 30 días, caso igual al `ActiveEpisode` de 4 horas, pins del caso, release por corrección de fabricante, login y logout neutros, miss que no suelta el pin dentro del caso, y corpus R1A. El plan del 21-sep sigue siendo evidencia de ese ciclo y avisa que no es el contrato. El recovery marca R1B `CLOSED — PASS` y R2 `NEXT`, con la evidencia del cierre. No aparece un documento nuevo de arquitectura.
+
+### Implementation steps
+
+1. Cerrar fases 1 y 2, tests y smoke antes de editar docs de contrato.
+2. Actualizar `SESSION_AND_RETRIEVAL.md` y `ACTIVE_ARCHITECTURE.md` contra el código ya mergeado, no contra este plan si el código divergió.
+3. Poner la nota histórica al inicio del plan del 21-sep y ajustar las dos filas necesarias de `docs/README.md`.
+4. Corregir el comentario de `FieldCompanionEpisodeFlag` y cualquier otro comentario del mismo tipo dentro del scope.
+5. Buscar en el repo `pin_kept`, `pin_extended`, `inherit_episode_scope`, login reset y “ConversationSession” tratado como case. Corregir docs activas. Marcar históricas. No borrar evidencia.
+6. Escribir en el recovery el cierre: commits, tests, smoke, decisiones y carry-over a R2/R3.
+7. `git diff --check`.
+
+### Tests
+
+No hay tests de comportamiento nuevos. La fase no altera aserciones. Si un comentario tocado vive junto a un test que cita el texto viejo, se actualiza esa cita y nada más.
+
+### Regression protection
+
+No cambiar filtros, pins, episodios ni prompts en esta fase. Un diff de `app/` que no sea un comentario se rechaza.
+
+### Acceptance gate
+
+Tests de las fases 1 y 2 siguen PASS. Smoke PASS. `git diff --check` PASS. La búsqueda del punto 5 no deja una doc activa contradiciendo el código. R1B queda escrito como contrato vigente en `SESSION_AND_RETRIEVAL.md` y en el recovery. R2 puede arrancar desde esos documentos, sin el chat de esta sesión.
+
+### Explicit non-goals
+
+No crear R1C. No reabrir R1A. No implementar el residual MiniSpace ni la golden query en `:continued_mention`. No retirar `R1A_PROBE`. No reescribir el plan del 21-sep. No duplicar el contrato en un archivo nuevo. No hacer cleanup de comentarios fuera del lifecycle de sesión.
 
 # R1B IMPLEMENTATION CONTRACT
 

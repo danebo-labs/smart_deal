@@ -4,7 +4,13 @@ module Rag
   # First matching rule wins. New image bytes never reach the reuse rules.
   # DEICTIC_RE is not used here and is not widened for these phrases.
   class PhotoObservationContinuity
-    VISUAL_REREAD_RE = /\b(?:volve|volver|vuelve|revisa|revisar|mira|mirar|analiza|analizar)\b.{0,40}\b(?:otra vez|de nuevo|nuevamente)\b|\b(?:otra vez|de nuevo)\b.{0,40}\b(?:foto|imagen)\b/
+    # Third branch is normalize_label("volvé a mirar") and its infinitive/indicative
+    # forms. A bare mira, revisa, or analiza does not match.
+    VISUAL_REREAD_RE = Regexp.union(
+      /\b(?:volve|volver|vuelve|revisa|revisar|mira|mirar|analiza|analizar)\b.{0,40}\b(?:otra vez|de nuevo|nuevamente)\b/,
+      /\b(?:otra vez|de nuevo)\b.{0,40}\b(?:foto|imagen)\b/,
+      /\b(?:volve|volver|vuelve)\s+a\s+mirar\b/
+    )
     VISUAL_REFERENCE_RE = /\b(?:estos|estas|esos|esas)\s+(?:resortes|cables|bornes|terminales|contactos)\b|\bsegun la foto\b|\bla imagen que te mande\b|\blo que se ve ahi\b|\b(?:la|esa|esta)\s+(?:foto|imagen)\b/
     MISSING_PHOTO_MESSAGE = "No tengo una foto vigente en este caso. Seleccioná la foto anterior o volvé a enviarla."
 

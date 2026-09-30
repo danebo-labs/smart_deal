@@ -91,12 +91,94 @@ class Rag::PhotoObservationContinuityTest < ActiveSupport::TestCase
     end
   end
 
-  test "the frozen reread regex does not treat volve a mirar as a reread" do
-    normalized = normalize("volvé a mirar")
+  test "volve a mirar is an explicit reread and a bare verb is not" do
+    assert_equal "volve a mirar", normalize("volvé a mirar")
 
-    assert_equal "volve a mirar", normalized
-    assert_not Rag::PhotoObservationContinuity.visual_reread?(normalized)
-    assert Rag::PhotoObservationContinuity.visual_reread?(normalize("revisa otra vez la foto"))
+    [ "volvé a mirar", "volve a mirar", "vuelve a mirar", "volver a mirar" ].each do |phrase|
+      assert Rag::PhotoObservationContinuity.visual_reread?(normalize(phrase)), phrase
+    end
+
+    [ "revisa otra vez", "mira de nuevo", "analiza nuevamente", "otra vez la foto", "de nuevo la imagen" ].each do |phrase|
+      assert Rag::PhotoObservationContinuity.visual_reread?(normalize(phrase)), phrase
+    end
+
+    [ "mira", "mirá", "revisa", "analiza" ].each do |phrase|
+      assert_not Rag::PhotoObservationContinuity.visual_reread?(normalize(phrase)), phrase
+    end
+  end
+
+  test "field_photo_id plus volve a mirar rereads with one vision call" do
+    photo = create_photo(accounts(:legacy))
+    store_observation!(photo, manufacturer: "OTIS")
+    vision_calls = 0
+    install_vision_stub(lambda {
+      vision_calls += 1
+      reread_analysis_result
+    })
+
+    decision = Rag::PhotoObservationContinuity.decide(
+      question: "volvé a mirar",
+      images: [],
+      field_photo_id: photo.id,
+      account: accounts(:legacy),
+      session: nil
+    )
+    assert_equal :reread, decision.action
+    assert_equal photo.id, decision.photo.id
+
+    events = capture_events do
+      perform_enqueued_jobs do
+        QueryOrchestratorService.new(
+          "volvé a mirar",
+          account: accounts(:legacy),
+          field_photo_id: photo.id,
+          user_id: users(:one).id,
+          correlation_id: "photo:reread-volve"
+        ).execute
+      end
+    end
+
+    assert_equal 1, vision_calls
+    assert_equal 0, anthropic_calls
+    assert_equal "SCHINDLER", photo.reload.visual_observation["manufacturer"]
+    assert_not photo.visual_observation.key?("summary")
+    reread = events.find { |event| event["event"] == "photo_observation_reread" }
+    assert_equal "reread", reread["cache_status"]
+    assert_equal photo.sha256.first(12), reread["image_digest_prefix"]
+    assert_equal "photo:reread-volve", reread["correlation_id"]
+  end
+
+  test "field_photo_id plus mira is reuse and segun la foto does not call Anthropic" do
+    photo = create_photo(accounts(:legacy))
+    store_observation!(photo, manufacturer: "KONE")
+
+    bare = Rag::PhotoObservationContinuity.decide(
+      question: "mira",
+      images: [],
+      field_photo_id: photo.id,
+      account: accounts(:legacy),
+      session: nil
+    )
+    assert_equal :reuse, bare.action
+    assert_not Rag::PhotoObservationContinuity.visual_reread?(normalize("mira"))
+
+    events = capture_events do
+      perform_enqueued_jobs do
+        QueryOrchestratorService.new(
+          "según la foto",
+          account: accounts(:legacy),
+          field_photo_id: photo.id,
+          user_id: users(:one).id,
+          correlation_id: "photo:reuse-segun"
+        ).execute
+      end
+    end
+
+    assert_equal 0, anthropic_calls
+    assert_equal 0, fetch_calls
+    assert_equal "KONE", photo.reload.visual_observation["manufacturer"]
+    reused = events.find { |event| event["event"] == "photo_observation_reused" }
+    assert_equal "reused", reused["cache_status"]
   end
 
   test "new image bytes enqueue a fresh analysis and do not reuse the stored observation" do
@@ -390,6 +472,38 @@ class Rag::PhotoObservationContinuityTest < ActiveSupport::TestCase
 
   def photo_job_args
     enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+  end
+
+  def install_vision_stub(on_call)
+    FieldPhotoAnalysisService.define_singleton_method(:new) do |**|
+      fake = Object.new
+      fake.define_singleton_method(:call) { on_call.call }
+      fake
+    end
+    FieldPhotoStore.define_singleton_method(:fetch_binary) { |_photo| "jpeg-bytes" }
+  end
+
+  def reread_analysis_result
+    {
+      analysis: "lectura",
+      compact_context: "lectura",
+      canonical_name: "resortes",
+      aliases: [],
+      model: "claude-sonnet-5-5",
+      usage: { input_tokens: 10, output_tokens: 5 },
+      latency_ms: 1,
+      parsed: {
+        "canonical_component" => "resortes",
+        "manufacturer" => "SCHINDLER",
+        "model" => "UNKNOWN",
+        "subsystem" => "DOOR_OPERATOR",
+        "condition" => "GOOD",
+        "visible_text" => [ "R2" ],
+        "summary" => "no guardar",
+        "target_visible" => true,
+        "relevance_to_goal" => "relevant"
+      }
+    }
   end
 
   def capture_events

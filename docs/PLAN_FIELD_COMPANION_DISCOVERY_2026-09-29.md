@@ -338,10 +338,12 @@ Negativos (F5 no dispara reuso visual):
 Precedencia, la primera que aplica gana:
 
 1. Hay bytes nuevos adjuntos → análisis nuevo.
-2. Hay `field_photo_id` y la frase, ya normalizada, cumple `VISUAL_REREAD_RE` → análisis nuevo. La frase de producto es “volvé a mirar” o “revisa otra vez la foto”. El regex, sobre texto ya pasado por `normalize_label`:
+2. Hay `field_photo_id` y la frase, ya normalizada, cumple `VISUAL_REREAD_RE` → análisis nuevo. La frase de producto es “volvé a mirar” o “revisa otra vez la foto”. El regex, sobre texto ya pasado por `normalize_label`, es la unión de estos tres. El tercero es el correctivo: `volvé a mirar` queda `volve a mirar`. Un `mira`, `revisa` o `analiza` suelto no entra.
 
 ```
-/\b(?:volve|volver|vuelve|revisa|revisar|mira|mirar|analiza|analizar)\b.{0,40}\b(?:otra vez|de nuevo|nuevamente)\b|\b(?:otra vez|de nuevo)\b.{0,40}\b(?:foto|imagen)\b/
+/\b(?:volve|volver|vuelve|revisa|revisar|mira|mirar|analiza|analizar)\b.{0,40}\b(?:otra vez|de nuevo|nuevamente)\b/
+/\b(?:otra vez|de nuevo)\b.{0,40}\b(?:foto|imagen)\b/
+/\b(?:volve|volver|vuelve)\s+a\s+mirar\b/
 ```
 
 3. Hay `field_photo_id` y la pregunta no cumple el regex de releer → se reutiliza `visual_observation`. Cero Anthropic.
@@ -361,7 +363,7 @@ La observación inyectada en el paso 3 o 4 es el JSON allowlisted. El retrieve n
 
 Dos hallazgos que F6 hereda, y que no aflojan la precedencia:
 
-- `normalize_label("volvé a mirar")` es `volve a mirar`. No cumple `VISUAL_REREAD_RE`. Con `field_photo_id` esa frase es reuso. `revisa otra vez la foto` sí es reread cuando hay `field_photo_id`. Sin `field_photo_id`, esa misma frase también cumple `VISUAL_REFERENCE_RE` por `la foto`, así que gana el reuso de `active_photo`. El regex no se ensanchó.
+- Correctivo. `normalize_label("volvé a mirar")` es `volve a mirar`. Con `field_photo_id`, `volvé a mirar`, `volve a mirar`, `vuelve a mirar` y `volver a mirar` son reread. `mira`, `mirá`, `revisa` y `analiza` sueltos no lo son. `según la foto` con `field_photo_id` sigue en reuso. Sin `field_photo_id`, `revisa otra vez la foto` también cumple `VISUAL_REFERENCE_RE` por `la foto`, así que gana el reuso de `active_photo`.
 - Una fila propia con `visual_observation` nil o inválida, y sin reread, no llama a Anthropic y no emite `photo_observation_reused`. El turno sigue por texto. El reread es el que vuelve a leer esa foto.
 
 El retrieve de `PhotoQuestionAnswerService` entra con `apply_photo_continuity: false`. No abre un segundo turno visual.
@@ -1276,7 +1278,8 @@ Checkpoint previo a F0, satisfecho al abrir:
 - `status`: `PASS`. F5 CLOSED.
 - `head_initial`: `9239d45b64ad8958ea00ca13475fa6467708b213`
 - `head_final`: el commit de F5. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
-- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Persist field photo observation for zero-call visual follow-ups`
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Persist field photo observation for zero-call visual follow-ups`. SHA `00e98d1ff4f81c699bb4d7b875cc3349d239ac3e`.
+- `corrective_commit`: el commit cuyo padre es `00e98d1ff4f81c699bb4d7b875cc3349d239ac3e` y cuyo asunto es `Treat volvé a mirar as an explicit field photo reread`. No es una fase. F5 sigue `PASS` y CLOSED. El árbol no contiene el SHA de este correctivo. Cierra el gap de `VISUAL_REREAD_RE`: después de `normalize_label`, `volve a mirar`, `vuelve a mirar` y `volver a mirar` son reread cuando hay `field_photo_id`. Un verbo suelto no lo es. `según la foto` con `field_photo_id` sigue en reuso y cero Anthropic. No cambia storage, precedencia, modelos, retrieval, pins ni provenance. Tests del correctivo más el regression gate: 222 runs, 1477 assertions, 0 failures, 0 errors, 1 skip. El skip es el JPEG manual de `ImageCompressionServiceTest`. RuboCop: 2 files, no offenses.
 - `files_changed`:
   - `app/controllers/concerns/rag_query_concern.rb`
   - `app/jobs/field_photo_analysis_job.rb`
@@ -1331,13 +1334,14 @@ Checkpoint previo a F0, satisfecho al abrir:
   15. `NEW`. Una fila propia con `visual_observation` nil o inválida, y sin reread, no llama a Anthropic y no emite `photo_observation_reused`. El orquestador sigue por el camino de texto. Si el job encuentra la observación ausente o inválida, emite la frase determinística por `photo_question_answered` y tampoco llama a Anthropic.
   16. `NEW`. `PhotoQuestionAnswerService` llama a `execute_rag_query` con `apply_photo_continuity: false`. El retrieve que sigue a la decisión visual no abre otro turno visual y no reemplaza la respuesta por la frase de foto ausente.
   17. `REJECTED`. Tabla nueva, diagnostic record, copiar `visual_observation` al episodio, cache de diagnóstico de 24 h, ensanchar `DEICTIC_RE`, claves nuevas en `PilotUsageLog`, ingestar la foto a `bulk_chunks/`, volver una foto `danebo_general`, cambiar los tres constants de modelo, y cambiar la precedencia de facts de F4.
+  18. `CORRECTIVE`. `VISUAL_REREAD_RE` suma `\b(?:volve|volver|vuelve)\s+a\s+mirar\b`. Con `field_photo_id`, `volvé a mirar` encola reread, hace una llamada de visión, actualiza `visual_observation` y emite `photo_observation_reread`. `mira`, `mirá`, `revisa` y `analiza` sueltos siguen en reuso. `según la foto` con `field_photo_id` sigue en reuso y cero Anthropic. Los patrones `revisa otra vez`, `mira de nuevo`, `analiza nuevamente`, `otra vez la foto` y `de nuevo la imagen` siguen.
 - `derived_decisions`:
   - La observación vive solo en la fila `field_photos`. El episodio sigue siendo el puntero (`field_photo_id`, `sha256`, `correlation_id`).
   - Un payload que no cumple el contrato se rechaza entero. No se trunca.
   - Sin observación válida no hay llamada visual de relleno. El reread explícito es el que vuelve a analizar.
   - El retrieve posterior a la visión no reentra en la precedencia.
 - `future_phases_changed`:
-  - F6. `reason`: `READY` / NOT STARTED. El Anexo I es el prompt completo. La precondición que cambió es el lugar del JSON: `field_photos.visual_observation`, no el episodio. Una columna nil no produce banda `VISUAL_OBSERVATION`. El retrieve de la pregunta con foto no vuelve a pasar por la precedencia de F5. `volvé a mirar` no es reread y F6 no ensancha ese regex.
+  - F6. `reason`: `READY` / NOT STARTED. El Anexo I es el prompt completo. La precondición que cambió es el lugar del JSON: `field_photos.visual_observation`, no el episodio. Una columna nil no produce banda `VISUAL_OBSERVATION`. El retrieve de la pregunta con foto no vuelve a pasar por la precedencia de F5. El correctivo ya reconoce `volvé a mirar` como reread cuando hay `field_photo_id`. F6 no vuelve a editar ese regex.
   - F7. `reason`: revisada, sin edición. Sigue leyendo solo `provenance_segments`. El lugar de la columna no cambia el renderer.
   - F8. `reason`: revisada, sin edición. Sigue siendo `KEEP_B` o `PROPOSE_PLAN_C`, sin feature.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo I)
@@ -2078,7 +2082,7 @@ F5 está `PASS` y CLOSED. F6 está `READY` / NOT STARTED. El padre de F5 es `923
 - Campos persistidos: `schema_version`, `prompt_fingerprint`, `model_id`, `canonical_component`, `manufacturer`, `model`, `subsystem`, `condition`, `visible_text`, `target_visible`, `relevance_to_goal`. No están `summary`, `aliases`, `documented_functions`, `documented_connections`, `documented_values`, `documented_warnings`, `anti_hallucination_notes`, ni la prosa de `build_analysis`.
 - `Rag::ActiveEpisode.sanitize_photo` conserva `field_photo_id`, `sha256` y `correlation_id`. No copia `visual_observation`. F6 no copia el JSON al episodio.
 - Bytes nuevos analizan. `field_photo_id` más `revisa otra vez la foto` es reread. `field_photo_id` sin bytes y sin reread reusa la columna, cero Anthropic. Texto que cumple `VISUAL_REFERENCE_RE` reusa solo `active_photo` de la sesión. Sin foto vigente de esa cuenta, la respuesta determinística es `No tengo una foto vigente en este caso. Seleccioná la foto anterior o volvé a enviarla.`
-- `normalize_label("volvé a mirar")` es `volve a mirar` y no cumple `VISUAL_REREAD_RE`. Con `field_photo_id` es reuso. Sin `field_photo_id`, `revisa otra vez la foto` también cumple `VISUAL_REFERENCE_RE` por `la foto`, así que gana el reuso de `active_photo`. F6 no ensancha esos regex.
+- Con `field_photo_id`, `volvé a mirar`, `volve a mirar`, `vuelve a mirar` y `volver a mirar` son reread. `mira`, `revisa` y `analiza` sueltos no lo son. Sin `field_photo_id`, `revisa otra vez la foto` también cumple `VISUAL_REFERENCE_RE` por `la foto`, así que gana el reuso de `active_photo`. F6 no edita `VISUAL_REREAD_RE`.
 - Una fila propia con observación nil o inválida, y sin reread, no llama a Anthropic. Ese turno no tiene JSON visual. F6 no inventa un segmento `VISUAL_OBSERVATION` para ese turno.
 - `PhotoQuestionAnswerService` llama a `execute_rag_query` con `apply_photo_continuity: false`. F6 no vuelve a pasar ese retrieve por la precedencia de F5.
 - El reuso no pisa un hecho `manufacturer` o `model` con `source: user`. `identity_conflict` sigue mostrando las dos identidades. F6 no cambia esa precedencia y no etiqueta el hecho del técnico como `MANUAL_FACT`.

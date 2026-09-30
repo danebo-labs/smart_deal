@@ -1869,7 +1869,7 @@ Un solo commit de F4. El mensaje dice que el tap escribe `user_pin` solo en la s
 
 Ejecutá solo F5 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F5 es continuidad de imagen: persistir `visual_observation` en la misma fila `field_photos` y reutilizarla con cero Anthropic cuando la precedencia lo dice. No ejecutes F6. No hagas deploy. No reabras F4. No cambies el tap, `user_pin`, el retrieve abierto, el score, `knowledge_scope` ni `RagRetrievalProfile`. No apruebes documentos. No pidas una decisión a Lahiri.
 
-F4 está `PASS` y CLOSED. F5 está `READY` / NOT STARTED. El padre operativo de F5 es el corrective commit `b5d69626679bf0f695fa40674eed50977f2bb6a3`. El commit principal de F4 sigue siendo `e8c6f56506febe56b804f1435ec6031617b84ea3`. El preflight verifica `git rev-parse HEAD` == `b5d69626679bf0f695fa40674eed50977f2bb6a3`. `git status` tiene que estar limpio. Si HEAD no es ese SHA, o el árbol está dirty en algo que no sea F5, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F5.
+F4 está `PASS` y CLOSED. F5 está `READY` / NOT STARTED. El padre operativo de F5 es el corrective commit `b5d69626679bf0f695fa40674eed50977f2bb6a3`. El commit principal de F4 sigue siendo `e8c6f56506febe56b804f1435ec6031617b84ea3`. El preflight verifica `git merge-base --is-ancestor b5d69626679bf0f695fa40674eed50977f2bb6a3 HEAD`. El comando tiene que salir 0. Ese SHA sigue siendo el corrective commit de F4 y el ancestro operativo requerido. HEAD puede contener commits documentales posteriores. `git status` tiene que estar limpio. Si el ancestro no sale 0, o el árbol está dirty en algo que no sea F5, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F5.
 
 ### Qué dejó F4, y F5 no toca
 

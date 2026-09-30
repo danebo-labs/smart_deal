@@ -133,6 +133,42 @@
   margin: 0.75rem 0;
 }
 
+/* Provenance inside the answer. The words are the signal; the border only reinforces them. */
+.answer-provenance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.answer-provenance {
+  margin: 0;
+  padding: 0 0 0 0.6rem;
+  border-left: 3px solid hsl(215, 14%, 38%);
+  max-width: 100%;
+  min-width: 0;
+}
+.answer-provenance-label {
+  margin: 0 0 0.12rem 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: hsl(222, 47%, 11%);
+}
+.answer-provenance[data-provenance-band="MANUAL_FACT"] {
+  border-left-color: hsl(217, 62%, 32%);
+}
+.answer-provenance[data-provenance-band="VISUAL_OBSERVATION"] {
+  border-left-color: hsl(24, 72%, 32%);
+}
+.answer-provenance[data-provenance-band="DANEBO_GUIDANCE"] {
+  border-left-color: hsl(168, 42%, 24%);
+}
+.answer-provenance-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Citations — .chat-message is the class the controller emits; .chat-message-text is not. */
 .chat-message .citation {
   color: hsl(217, 91%, 45%);

@@ -924,7 +924,7 @@ export default class extends Controller {
       : consultedDocuments.map((name) => ({ filename: name }))
 
     const showSources = this.showSourcesValue
-    const answerHtml  = formatAnswerForWeb(data.answer, citations)
+    const answerHtml  = formatAnswerForWeb(data.answer, citations, data.provenance_segments)
     const suggestionHtml = this.renderManualSuggestion(data.manual_suggestion)
     const focusHtml = this.renderFocusNotices(data)
     const resolutionHtml = this.evidenceCardsValue
@@ -1289,7 +1289,7 @@ export default class extends Controller {
     if (data.visual_summary) {
       html += `<div data-photo-visual-summary style="line-height:1.55;margin-bottom:10px;">${formatAnswerForWeb(data.visual_summary)}</div>`
     }
-    html += `<div style="line-height:1.55;">${formatAnswerForWeb(data.answer, citations)}</div>`
+    html += `<div style="line-height:1.55;">${formatAnswerForWeb(data.answer, citations, data.provenance_segments)}</div>`
     if (this.showSourcesValue && citations.length) html += renderSources(citations, lang)
     html += renderVerificationNotice(lang)
     html += this._photoReuseRowHtml(data)

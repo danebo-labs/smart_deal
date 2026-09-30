@@ -197,13 +197,14 @@ class Rag::ProvenanceSegmenterTest < ActiveSupport::TestCase
     end
   end
 
-  test "the web answer presenter does not consume provenance bands" do
+  test "the web answer presenter displays server bands and does not read the payload key" do
     source = Rails.root.join("app/javascript/rag/answer_presenter.js").read
 
+    assert_includes source, "MANUAL_FACT"
+    assert_includes source, "VISUAL_OBSERVATION"
+    assert_includes source, "DANEBO_GUIDANCE"
+    assert_includes source, "Guía Danebo"
     assert_not_includes source, "provenance_segments"
-    assert_not_includes source, "MANUAL_FACT"
-    assert_not_includes source, "VISUAL_OBSERVATION"
-    assert_not_includes source, "DANEBO_GUIDANCE"
   end
 
   private

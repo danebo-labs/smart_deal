@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `PASS`: el tap escribe `user_pin` solo en la sesión actual. F5 está `PASS`: la observación visual vive en la misma fila `field_photos` y el follow-up que corresponde no llama a Anthropic. F6 está `PASS`: el servidor separa `MANUAL_FACT`, `VISUAL_OBSERVATION` y `DANEBO_GUIDANCE` antes de ocultar las citas. F7 no empezó. El prompt de F7 es la sección 12.
+**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `PASS`: el tap escribe `user_pin` solo en la sesión actual. F5 está `PASS`: la observación visual vive en la misma fila `field_photos` y el follow-up que corresponde no llama a Anthropic. F6 está `PASS`: el servidor separa `MANUAL_FACT`, `VISUAL_OBSERVATION` y `DANEBO_GUIDANCE` antes de ocultar las citas. F7 está `PASS`: el chat muestra `Manual`, `Foto` y `Guía Danebo` leyendo `band` y `text`. F8 no empezó. El prompt de F8 es el Anexo J.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt pendiente es el de F7, en la sección 12. No es un anexo de ejecución y F7 no empezó. El Anexo I es el prompt de F6 ya ejecutado. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. El Anexo F es el prompt de F4 ya ejecutado. El Anexo H es el prompt de F5 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt pendiente es el de F8, en el Anexo J. F8 no empezó. La sección 12 es el contrato de F7 ya ejecutado. El Anexo I es el prompt de F6 ya ejecutado. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. El Anexo F es el prompt de F4 ya ejecutado. El Anexo H es el prompt de F5 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -42,9 +42,9 @@
 | F3B2 | Retrieval Alignment | Sacar Legacy, Pilot y `manual_corpus=general` como autorización. Revocación global, post-filter, recall, backfill del ledger | PASS. F4 `READY`. El retrieve abierto es la cuenta más `danebo_general`. No hubo deploy |
 | F4 | Confirmed Focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | PASS. El técnico confirma. No hay auto-focus. El pin es de la sesión. F5 `READY`. No hubo deploy |
 | F5 | Image continuity | Reuso de `visual_observation` | PASS. La observación vive en la misma fila. El follow-up que corresponde no llama a Anthropic. F6 `READY`. No hubo deploy |
-| F6 | Provenance contract | Prompt y contrato servidor | PASS. Tres bandas, clasificadas en el servidor antes del strip. Una sugerencia no es `MANUAL_FACT`. F7 `NOT STARTED`. No hubo deploy |
-| F7 | Provenance presentation | Solo renderer | NOT STARTED. Lee `provenance_segments`. El `text` no trae `[n]` resuelto. El prefijo no decide la banda. Funciona con `SHOW_RAG_SOURCES=false` |
-| F8 | Field pilot / next decision | Sin feature | `KEEP_B` o `PROPOSE_PLAN_C` |
+| F6 | Provenance contract | Prompt y contrato servidor | PASS. Tres bandas, clasificadas en el servidor antes del strip. Una sugerencia no es `MANUAL_FACT`. F7 `PASS`. No hubo deploy |
+| F7 | Provenance presentation | Solo renderer | PASS. Lee `band` y `text`. Etiquetas `Manual`, `Foto`, `Guía Danebo`. Si el contrato falta, queda el renderer anterior. F8 `NOT STARTED`. No hubo deploy |
+| F8 | Field pilot / next decision | Sin feature | `NOT STARTED`. `KEEP_B` o `PROPOSE_PLAN_C`. El Anexo J es el prompt. No autoriza auto-focus |
 
 ## Cómo termina una fase
 
@@ -610,6 +610,8 @@ Resultado F6. `F6_STATUS=PASS`. `F7` queda `NOT STARTED`. `Rag::ProvenanceSegmen
 
 F7 solo lee `provenance_segments`. Si la clave falta, el renderer de hoy se queda, footer incluido. F7 no edita `generation.txt`. No busca `[n]` dentro de `text`: ese marker ya se usó para clasificar y no está en el segmento. No infiere la banda por `Según el manual:`, `En la foto:` o `Para revisar:`. La banda es el campo `band`. Una sugerencia sigue fuera de `answer`. `photo_analyzed` y `visual_summary` no son segmentos. Tests con el flag en `true` y en `false`.
 
+Resultado F7. `F7_STATUS=PASS`. `F8` queda `NOT STARTED`. `formatAnswerForWeb` recibe los segmentos que ya armó el servidor. `MANUAL_FACT` se lee `Manual`. `VISUAL_OBSERVATION` se lee `Foto`. `DANEBO_GUIDANCE` se lee `Guía Danebo`. El orden no se reordena. Segmentos consecutivos de la misma banda se agrupan. Una banda que no es esas tres se muestra como prosa, sin la etiqueta `Manual`. Si la clave falta, es null, es `[]` o la forma es inválida, el HTML es el de antes, aviso de verificación incluido. El prefijo que repite la etiqueta ya conocida se saca solo si está al inicio: `Según el manual:`, `En la foto:`, `Para revisar:`. Un prefijo que no coincide con la banda se queda. `photo_question_answered` usa el mismo presenter. `photo_analyzed`, `visual_summary` y el ack de “analizando” no. Las citations siguen en su footer y `SHOW_RAG_SOURCES` no cambia. No hubo deploy.
+
 ## 13. Telemetría
 
 `PilotUsageLog::ALLOWED_FIELDS` hace `slice` antes de loguear y antes de `PilotEventRecorder`. Una clave nueva no se persiste. El nombre del evento sí es libre.
@@ -658,7 +660,7 @@ Esos archivos describen el contrato (`tenant_private` + `danebo_general` explíc
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2, F4, F5 y F6 están `PASS`. F4, F5 y F6 están CLOSED. F7 está `NOT STARTED`.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2, F4, F5, F6 y F7 están `PASS`. F4, F5, F6 y F7 están CLOSED. F8 está `NOT STARTED`.
 
 Contrato de cada fase, cuando corra:
 
@@ -1417,6 +1419,59 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: la sección 12 ahora dice las precondiciones que F6 fijó. No hay anexo de ejecución nuevo. F7 no empezó. Lee `band` y `text`. El `text` no trae `[n]` resuelto. El prefijo no es la banda. La clave está en `ask` y en `photo_question_answered`. No está en `photo_analyzed`. `visual_summary` no es una banda.
   - F8. `reason`: revisada, sin edición. Sigue siendo `KEEP_B` o `PROPOSE_PLAN_C`, sin feature.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (sección 12)
+
+### F7
+
+- `phase`: F7
+- `status`: `PASS`
+- `head_initial`: `1e71d90350a12bc775c71ea70ce150aecac5086c`
+- `head_final`: el commit de F7. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Present manual, photo, and Danebo provenance in chat`
+- `files_changed`:
+  - `app/javascript/rag/answer_presenter.js`
+  - `app/javascript/controllers/rag_chat_controller.js`
+  - `app/assets/stylesheets/application.css`
+  - `test/system/rag_provenance_presentation_test.rb`
+  - `test/services/rag/provenance_segmenter_test.rb`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+- `commands_executed`:
+  - `git rev-parse HEAD`
+  - `git status --porcelain`
+  - `git merge-base --is-ancestor 1e71d90350a12bc775c71ea70ce150aecac5086c HEAD`
+  - `env -u BUNDLE_PATH bin/rails test` con los tests de F7, las regresiones de chat y el regression gate en la misma invocación
+  - `env -u BUNDLE_PATH bundle exec rubocop --cache false` sobre `test/system/rag_provenance_presentation_test.rb` y `test/services/rag/provenance_segmenter_test.rb`
+  - `git diff --check`
+- `command_results`:
+  - preflight: F6 es HEAD y es ancestro, exit 0. Working tree limpio al abrir. `head_initial` `1e71d90350a12bc775c71ea70ce150aecac5086c`
+  - tests de F7 más regresiones de chat más regression gate: 246 runs, 1701 assertions, 0 failures, 0 errors, 1 skip
+  - RuboCop: 2 files, no offenses
+  - `git diff --check`: sin conflictos de whitespace
+- `tests`: `test/system/rag_provenance_presentation_test.rb`, `test/services/rag/provenance_segmenter_test.rb`, `test/system/rag_chat_verification_notice_test.rb`, `test/system/field_companion_photo_test.rb`, `test/system/rag_chat_manual_suggestion_test.rb`, más el regression gate (`rag_retrieval_profile`, `structured_evidence_route`, `field_photo_analysis_service`, `field_photo_density_gate`, `image_compression_service`, `field_photo_analysis_job`, `pilot_usage_log`)
+- `test_results`: 246 runs, 1701 assertions, 0 failures, 0 errors, 1 skip. El skip es `ImageCompressionServiceTest`, el JPEG manual. No es de F7. Cero llamadas reales a Anthropic o Bedrock.
+- `artifacts`: ninguno
+- `artifact_sha256`: ninguno
+- `findings`:
+  1. `CONFIRMED`. El presenter lee `band` y `text`. No busca `[n]` para elegir banda. No usa `Según el manual:`, `En la foto:` ni `Para revisar:` para elegir banda.
+  2. `CONFIRMED`. `MANUAL_FACT` se muestra `Manual`. `VISUAL_OBSERVATION` se muestra `Foto`. `DANEBO_GUIDANCE` se muestra `Guía Danebo`. No hay cuarta etiqueta.
+  3. `CONFIRMED`. El orden del array se conserva. Bandas iguales no consecutivas no se fusionan. `Manual`, `Foto`, `Manual` siguen siendo tres bloques.
+  4. `CONFIRMED`. Segmentos consecutivos de la misma banda se unen con un espacio cuando ninguno de los dos lados ya trae whitespace. El texto de cada segmento se conserva.
+  5. `CONFIRMED`. Clave ausente, `null`, `[]`, ítem mal formado, ítem `null` o textos en blanco caen al renderer anterior. El aviso de verificación sigue fuera de ese HTML.
+  6. `CONFIRMED`. Una banda desconocida no desaparece y no se etiqueta `Manual`. Su HTML es el del renderer de prosa.
+  7. `CONFIRMED`. El footer de citations sigue dependiendo de `showSourcesValue`, el espejo de `SHOW_RAG_SOURCES`. Con segmentos y con el flag en falso no hay bloque `chat-sources`. Con el flag en verdadero el bloque sigue, fuera de la banda. El presenter no emite ese footer y no inventa `[n]`. Un `[1]` que ya está en el texto y resuelve sigue el span de hoy. `[24]` sin cita sigue literal.
+  8. `CONFIRMED`. `photo_question_answered` pasa `provenance_segments` al mismo presenter. Sin segmentos, el answer de la foto queda como hoy. `visual_summary` no recibe bandas. `photo_analyzed` ignora la clave aunque venga en el payload. El ack `setIndexingLoadingAcknowledgment` sigue en texto plano.
+  9. `CONFIRMED`. La tarjeta `manual_candidate` sigue después del answer. No entra en una banda. El botón de pin y `Tu biblioteca` siguen. El aviso de verificación sigue.
+  10. `CONFIRMED`. `<img` y `<script` del texto del segmento salen escapados por el mismo `escapeHtml` de antes del markdown.
+  11. `NEW`. El prefijo que coincide con la banda ya etiquetada se saca solo si abre el segmento: `Según el manual:`, `En la foto:`, `Para revisar:`. Si sacarlo deja el texto vacío, el texto original se queda. `Según el manual …`, sin dos puntos, se queda. Un prefijo que no es el de esa banda se queda: `DANEBO_GUIDANCE` que empiece con `Según el manual:` sigue mostrando esas palabras bajo `Guía Danebo`. F6 ya saca ese rótulo de las bandas que no son `MANUAL_FACT`; F7 no lo vuelve a clasificar.
+  12. `NEW`. Las etiquetas quedan en español también cuando `response_locale` es `en`. El aviso de verificación y el footer `Sources` sí siguen el locale. No hay telemetría nueva: el presenter no tiene un log de piloto.
+  13. `REJECTED`. Una cuarta banda, clasificar en el browser, reconstruir `[n]`, cambiar `SHOW_RAG_SOURCES`, cards pesadas, y editar `Rag::ProvenanceSegmenter`, prompts, pins, retrieval o F5.
+- `derived_decisions`:
+  - La banda visible es el campo `band`. El texto visible es `text`, menos el prefijo inicial que repite la etiqueta de esa misma banda.
+  - Un elemento inválido invalida el array entero y vuelve al renderer anterior.
+  - `renderAssistantAnswer` y `addPhotoQuestionAnswer` son los únicos caminos que pasan los segmentos. El resumen visual, `photo_analyzed` y el ack de análisis no.
+  - La etiqueta `Manual` no dice que el fabricante confirmó ni que el equipo es compatible. `Foto` no dice que el manual confirmó la observación. `Guía Danebo` no es instrucción del fabricante.
+- `future_phases_changed`:
+  - F8. `reason`: el Anexo J es el prompt completo. F8 sigue `NOT STARTED`, sin feature, y cierra en `KEEP_B` o `PROPOSE_PLAN_C`. La presentación de F7 queda congelada. Una etiqueta `Manual` no es un pin ni compatibilidad de equipo. `Guía Danebo` no es motivo para pinear. `PROPOSE_PLAN_C` no autoriza auto-focus ni un umbral.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo J)
 
 ## Anexo G — prompt de F3B2
 
@@ -2232,3 +2287,57 @@ bin/rails test \
 ```
 
 Un solo commit de F6. El mensaje dice que la respuesta separa dato de manual, observación visual y guía de Danebo.
+
+## Anexo J — prompt de F8
+
+Ejecutá solo F8 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F8 es la decisión de campo. No tiene feature. No ejecutes código de auto-focus. No hagas deploy. No reabras F7. No cambies `app/javascript/rag/answer_presenter.js`, `app/javascript/controllers/rag_chat_controller.js`, `Rag::ProvenanceSegmenter`, `BedrockRagService`, `CitationProcessor`, pins, retrieval, score, `knowledge_scope`, prompts ni modelos.
+
+Precheck:
+
+```
+git rev-parse HEAD
+git status --porcelain
+git merge-base --is-ancestor 1e71d90350a12bc775c71ea70ce150aecac5086c HEAD
+git log -1 --format='%s'
+```
+
+Tiene que cumplirse: el working tree está limpio; F6 `1e71d90350a12bc775c71ea70ce150aecac5086c` es ancestro; el asunto de HEAD es `Present manual, photo, and Danebo provenance in chat`. Ese HEAD es `head_initial` de F8. Si no, `STOP`.
+
+F0, F1, F2, F2B, F3, F3B1, F3B2, F4, F5, F6 y F7 están `PASS`. FC-D01 sigue vigente. Discovery es A y después B. El modo C no existe en este plan. No hay umbral que dispare auto-focus.
+
+Lo que F7 dejó, y F8 no vuelve a diseñar:
+
+- El chat lee `provenance_segments`. `MANUAL_FACT` se ve `Manual`. `VISUAL_OBSERVATION` se ve `Foto`. `DANEBO_GUIDANCE` se ve `Guía Danebo`.
+- Si la clave falta, es null, es `[]` o la forma es inválida, el renderer anterior se queda.
+- El browser no clasifica. El prefijo no elige la banda.
+- `photo_question_answered` muestra bandas. `photo_analyzed`, `visual_summary` y el ack de análisis no.
+- `Manual` no confirma compatibilidad de equipo y no es un pin. `Foto` no es un dato del manual. `Guía Danebo` no es instrucción del fabricante y no es motivo para pinear.
+- Las tarjetas de sugerencia siguen fuera del answer. El tap de F4 sigue siendo la única forma de escribir `user_pin`.
+
+F8 escribe una sola decisión en este archivo:
+
+- `KEEP_B`. El foco confirmado por tap se queda. No se propone modo C.
+- `PROPOSE_PLAN_C`. Se escribe una propuesta para un plan futuro. Esa propuesta no es código. No agrega umbral. No implementa auto-focus. No cambia el renderer ni el pin.
+
+La evidencia es Execution State de F3 a F7 y FC-D01. No hay un estudio de campo nuevo en esta fase. No hay llamadas a Bedrock ni a Anthropic. Si esa evidencia no alcanza para elegir, el status es `BLOCKED` y se nombra qué falta. No se adivina `KEEP_B`.
+
+No se toca `app/`, `config/`, `db/` ni `test/` salvo que un hallazgo del propio texto de la decisión demuestre una contradicción con FC-D01. En ese caso, `STOP`: no se corrige con código dentro de F8.
+
+### Cierre de F8
+
+En este orden: la decisión escrita; el regression gate de este plan, que no llama Bedrock ni Anthropic; Execution State de F8; findings `CONFIRMED` / `REJECTED` / `NEW`. No hay fase siguiente dentro de este plan. No hagas deploy. `head_final` no se escribe dentro del árbol.
+
+El regression gate es:
+
+```
+bin/rails test \
+  test/services/rag_retrieval_profile_test.rb \
+  test/services/rag/structured_evidence_route_test.rb \
+  test/services/field_photo_analysis_service_test.rb \
+  test/services/field_photo_density_gate_test.rb \
+  test/services/image_compression_service_test.rb \
+  test/jobs/field_photo_analysis_job_test.rb \
+  test/services/pilot_usage_log_test.rb
+```
+
+Un solo commit de F8. El mensaje dice la decisión, `KEEP_B` o `PROPOSE_PLAN_C`, y que no hubo feature.

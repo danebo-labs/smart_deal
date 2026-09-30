@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `PASS`: el tap escribe `user_pin` solo en la sesión actual. F5 está `PASS`: la observación visual vive en la misma fila `field_photos` y el follow-up que corresponde no llama a Anthropic. F6 está `PASS`: el servidor separa `MANUAL_FACT`, `VISUAL_OBSERVATION` y `DANEBO_GUIDANCE` antes de ocultar las citas. F7 está `PASS`: el chat muestra `Manual`, `Foto` y `Guía Danebo` leyendo `band` y `text`. F8 no empezó. El prompt de F8 es el Anexo J.
+**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `PASS`: el tap escribe `user_pin` solo en la sesión actual. F5 está `PASS`: la observación visual vive en la misma fila `field_photos` y el follow-up que corresponde no llama a Anthropic. F6 está `PASS`: el servidor separa `MANUAL_FACT`, `VISUAL_OBSERVATION` y `DANEBO_GUIDANCE` antes de ocultar las citas. F7 está `PASS`: el chat muestra `Manual`, `Foto` y `Guía Danebo` leyendo `band` y `text`. F8 está `PASS` y CLOSED: `KEEP_B`. No hubo feature. Suggest-only y el tap explícito se quedan. No hay Mode C ni umbral de auto-focus. El plan queda CLOSED. No hay F9.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt pendiente es el de F8, en el Anexo J. F8 no empezó. La sección 12 es el contrato de F7 ya ejecutado. El Anexo I es el prompt de F6 ya ejecutado. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. El Anexo F es el prompt de F4 ya ejecutado. El Anexo H es el prompt de F5 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. El ciclo está cerrado. No hay fase pendiente y no se reejecuta el Anexo J. F8 cerró en `KEEP_B`. El Anexo J es el prompt de F8 ya ejecutado. La sección 12 es el contrato de F7 ya ejecutado. El Anexo I es el prompt de F6 ya ejecutado. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. El Anexo F es el prompt de F4 ya ejecutado. El Anexo H es el prompt de F5 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -43,8 +43,8 @@
 | F4 | Confirmed Focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | PASS. El técnico confirma. No hay auto-focus. El pin es de la sesión. F5 `READY`. No hubo deploy |
 | F5 | Image continuity | Reuso de `visual_observation` | PASS. La observación vive en la misma fila. El follow-up que corresponde no llama a Anthropic. F6 `READY`. No hubo deploy |
 | F6 | Provenance contract | Prompt y contrato servidor | PASS. Tres bandas, clasificadas en el servidor antes del strip. Una sugerencia no es `MANUAL_FACT`. F7 `PASS`. No hubo deploy |
-| F7 | Provenance presentation | Solo renderer | PASS. Lee `band` y `text`. Etiquetas `Manual`, `Foto`, `Guía Danebo`. Si el contrato falta, queda el renderer anterior. F8 `NOT STARTED`. No hubo deploy |
-| F8 | Field pilot / next decision | Sin feature | `NOT STARTED`. `KEEP_B` o `PROPOSE_PLAN_C`. El Anexo J es el prompt. No autoriza auto-focus |
+| F7 | Provenance presentation | Solo renderer | PASS. Lee `band` y `text`. Etiquetas `Manual`, `Foto`, `Guía Danebo`. Si el contrato falta, queda el renderer anterior. F8 `PASS`. No hubo deploy |
+| F8 | Field pilot / next decision | Sin feature | PASS. `KEEP_B`. Suggest-only y tap explícito se quedan. No hay Mode C ni umbral. El plan queda CLOSED. No hubo deploy |
 
 ## Cómo termina una fase
 
@@ -658,9 +658,36 @@ Quedó alineada con FC-D09, FC-D16, FC-D17 y FC-D18 en este mismo cambio, sin to
 
 Esos archivos describen el contrato (`tenant_private` + `danebo_general` explícito). F3B2 alineó el retrieve abierto con ese contrato. Legacy, Pilot y `manual_corpus=general` siguen pudiendo estar en metadata. No autorizan.
 
+## 17. Decisión F8
+
+`F8 DECISION = KEEP_B`
+
+`FIELD COMPANION DISCOVERY PLAN CLOSED`
+
+La pregunta de F8 es si la evidencia ya producida alcanza para pilotar B antes de invertir en C. Alcanza. Esta fase no mide preferencia de campo. El Anexo J dice que no hay un estudio de campo nuevo.
+
+1. Suggest-only permanece. El ranker de F3 devuelve como máximo 3 `manual_candidate`. `tie_at_top` deja `selected_document_uid` en nil. Cero fabricantes y más de un fabricante no eligen. La sugerencia no escribe `active_entities`.
+2. `user_pin` sigue requiriendo el tap explícito del técnico. F4 reautoriza en el servidor y escribe el pin solo en la `ConversationSession` de esa cuenta y ese usuario, con `source: "user_pin"`.
+3. No existe Mode C en el MVP.
+4. No hay threshold automático de foco. El `0.5` que F6 dejó es el match de una frase contra `canonical_component`, `manufacturer`, `model` o `visible_text`. No selecciona un manual.
+5. Una evaluación futura de C necesita evidencia de piloto de que el tap impide resolver una falla. Hasta esa evidencia, C es hipótesis de backlog. F8 no abre ese plan.
+6. Auto-focus queda fuera del plan actual.
+
+FC-D01 dice que discovery en este plan es A y después B, y que el modo C no se implementa. F3, F3B1, F3B2, F4, F5, F6 y F7 confirman ese recorrido. Ningún finding de esas fases dice que el tap vuelve el flujo inutilizable.
+
+Se rechaza `PROPOSE_PLAN_C`. Esa salida exige evidencia de que B impide de forma significativa la usabilidad y una base concreta para estudiar auto-focus. Esa evidencia no está. Un score alto no es esa base. Se rechaza `BLOCKED` por falta de piloto: el Anexo J fija la evidencia en Execution State de F3 a F7 y en FC-D01, y esa evidencia muestra que B funciona, reautoriza, conserva la agencia y se puede pilotar. La preferencia del técnico sigue sin medir. Eso es incertidumbre residual, no un éxito de B.
+
+Señales del piloto, sin framework nuevo:
+
+- el técnico entiende las sugerencias;
+- elige un manual sin ayuda;
+- el contexto sigue después del pin;
+- distingue Manual, Foto y Guía Danebo;
+- avanza una falla sin intervención del founder.
+
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2, F4, F5, F6 y F7 están `PASS`. F4, F5, F6 y F7 están CLOSED. F8 está `NOT STARTED`.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2, F4, F5, F6, F7 y F8 están `PASS`. F4, F5, F6, F7 y F8 están CLOSED. El plan Field Companion Discovery está CLOSED. No hay F9.
 
 Contrato de cada fase, cuando corra:
 
@@ -1472,6 +1499,76 @@ Checkpoint previo a F0, satisfecho al abrir:
 - `future_phases_changed`:
   - F8. `reason`: el Anexo J es el prompt completo. F8 sigue `NOT STARTED`, sin feature, y cierra en `KEEP_B` o `PROPOSE_PLAN_C`. La presentación de F7 queda congelada. Una etiqueta `Manual` no es un pin ni compatibilidad de equipo. `Guía Danebo` no es motivo para pinear. `PROPOSE_PLAN_C` no autoriza auto-focus ni un umbral.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo J)
+
+### F8
+
+- `phase`: F8
+- `status`: `PASS`. F8 CLOSED.
+- `head_initial`: `ad230dfe729e36d6c39df18f00e899ab34935aab`
+- `head_final`: el commit de F8. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Close Field Companion discovery with KEEP_B`.
+- `decision`: `KEEP_B`
+- `plan_final_state`: `FIELD COMPANION DISCOVERY PLAN CLOSED`. No hay F9.
+- `files_changed`:
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+- `evidence_reviewed`:
+  - FC-D01, texto de Decisiones congeladas.
+  - Execution State de F3, F3B1, F3B2, F4, F5, F6 y F7.
+  - Sección 5: score, `BRAND_ONLY`, `EXACT_DESIGNATOR`, `tie_at_top`, cero fabricantes y más de un fabricante.
+  - Sección 11, resultados F3 y F4.
+  - Sección 12, resultados F6 y F7.
+  - Anexo J.
+- `why`: La pregunta es si B se puede pilotar antes de invertir en C. F3 muestra candidatos sin escribir foco: máximo 3, scope después del score, `tie_at_top` con `selected_document_uid` nil, y cero elección cuando no hay un fabricante o hay más de uno. F3B1 y F3B2 separan la elegibilidad: `tenant_private` y `danebo_general` autorizan; Legacy, Pilot y `manual_corpus` no. F4 demuestra el tap: el servidor reautoriza la fila y el retrieve siguiente queda en esas URIs, sin caída al corpus abierto. No elegir en silencio cubre el manual equivocado por empate, la marca tratada como compatible, la fila revocada y el privado de otra cuenta. F5 baja la fricción de la foto con cero Anthropic cuando la precedencia dice reuso, sin auto-focus documental. F6 y F7 separan `Manual`, `Foto` y `Guía Danebo` en el servidor; el browser no clasifica y la sugerencia no entra en el answer. FC-D01 ya congela A y después B. Nada de F3–F7 lo contradice. Eso es viabilidad técnica para pilotar. No es una preferencia medida de técnicos.
+- `rejected_alternative`: `PROPOSE_PLAN_C`. F3–F7 no registran que el tap vuelva el flujo inutilizable. Requerir un tap no es esa evidencia. No hay una base concreta, distinta de un score, para estudiar auto-focus. `BLOCKED` por ausencia de piloto también se rechaza: el Anexo J dice que no hay estudio de campo nuevo y que la evidencia de la fase es Execution State de F3 a F7 más FC-D01. Esa evidencia alcanza para la pregunta de piloto. No se adivina una preferencia.
+- `residual_uncertainty`:
+  - No está medido si el técnico de campo entiende las tarjetas, elige sin ayuda, o vive el tap como fricción que le impide avanzar una falla.
+  - No está medido si, en el equipo y con guantes, distingue `Manual`, `Foto` y `Guía Danebo`.
+  - F3B1 dejó 0 filas fuera de `tenant_private` y F3B2 midió `added_by_approval` 0. El pin de un `danebo_general` está testeado sobre la misma fila. El catálogo general real sigue sin documentos promovidos. Eso no cambia B.
+- `pilot_gates`:
+  - el técnico entiende las sugerencias;
+  - elige un manual sin ayuda;
+  - el contexto sigue después del pin;
+  - distingue Manual, Foto y Guía Danebo;
+  - avanza una falla sin intervención del founder.
+- `commands_executed`:
+  - `git rev-parse HEAD`
+  - `git status --porcelain`
+  - `git merge-base --is-ancestor 1e71d90350a12bc775c71ea70ce150aecac5086c HEAD`
+  - `git log -1 --format='%s'`
+  - `env -u BUNDLE_PATH bin/rails test` con el regression gate de este plan
+- `command_results`:
+  - precheck: HEAD `ad230dfe729e36d6c39df18f00e899ab34935aab`. Working tree limpio. El commit de F6 `1e71d90350a12bc775c71ea70ce150aecac5086c` es ancestro, exit 0. Asunto de HEAD: `Present manual, photo, and Danebo provenance in chat`. Padre: ese commit de F6.
+  - regression gate: 207 runs, 1324 assertions, 0 failures, 0 errors, 1 skip. Seed 14390. Finished in 26.218302s.
+  - El skip es el único `skip` de `test/services/image_compression_service_test.rb`: `Manual integration test: Upload a large JPEG (>500KB) via UI to verify compression`. No es de F8.
+  - Durante `image_compression_service_test` salieron cuatro `VIPS-WARNING: not enough data`. El exit code fue 0. No hubo llamada a Bedrock ni a Anthropic.
+- `tests`: el regression gate (`rag_retrieval_profile`, `structured_evidence_route`, `field_photo_analysis_service`, `field_photo_density_gate`, `image_compression_service`, `field_photo_analysis_job`, `pilot_usage_log`)
+- `test_results`: 207 runs, 1324 assertions, 0 failures, 0 errors, 1 skip. El skip es el JPEG manual previo. No hay skip nuevo de F8. Cero llamadas a Bedrock o Anthropic.
+- `artifacts`: ninguno
+- `artifact_sha256`: ninguno
+- `findings`:
+  1. `CONFIRMED`. FC-D01 exige A y después B. El modo C no se implementa en este plan. No existe umbral que dispare auto-focus. El texto de F3–F7 no contradice ese contrato.
+  2. `CONFIRMED`. F3 sugiere sin modificar foco. Máximo 3. El filtro de scope corre después del top 3 y no rellena. El scope no cambia los puntos. Un `PRIVATE` o un `UNCLASSIFIED` de otra cuenta no entra. `tie_at_top` no elige. `BRAND_ONLY` y `EXACT_DESIGNATOR` son etiquetas del score, no una selección. Cero fabricantes y más de un fabricante devuelven vacío.
+  3. `CONFIRMED`. F3B1 y F3B2 dejan `tenant_private` y `danebo_general` como scopes de lectura. Legacy, Pilot y `manual_corpus` no conceden acceso. Una URI no autorizada es `DENY_RETRIEVAL`. Revocar un general lo saca del retrieve siguiente de otra cuenta. El pin de esa fila no se borra solo y no recupera.
+  4. `CONFIRMED`. F4: el técnico elige. El tap manda `kb_document_id` y `document_uid`. El servidor carga por id, confirma el uid, corre `KnowledgeScopePolicy.authorized?` y recién entonces escribe `user_pin` en la sesión actual. La pregunta siguiente usa `force_entity_filter` y solo esas URIs. No hay caída al corpus abierto. `tie_at_top` sigue con cero pins hasta el tap.
+  5. `CONFIRMED`. No elegir automáticamente cubre, en el contrato ya testeado, un empate, una marca sin designador, una fila ausente o revocada, y un privado de otra cuenta. Esos caminos no escriben el pin o terminan en deny.
+  6. `CONFIRMED`. F5 reutiliza `field_photos.visual_observation` con cero Anthropic cuando la precedencia marca reuso. Esa continuidad no pide auto-focus documental.
+  7. `CONFIRMED`. F6 clasifica en el servidor antes del strip. F7 muestra `Manual`, `Foto` y `Guía Danebo` leyendo `band` y `text`. El browser no clasifica. La tarjeta queda fuera del answer. `Manual` no es un pin. `Guía Danebo` no es motivo para pinear.
+  8. `CONFIRMED`. Viabilidad técnica y preferencia de campo quedan separadas. F3–F7 muestran que B funciona, reautoriza, no abre el corpus en silencio y conserva el tap como única escritura de `user_pin`. No hay estudio de campo nuevo. Eso no se lee como prueba de que B es la UX definitiva.
+  9. `REJECTED`. `PROPOSE_PLAN_C`. No hay evidencia de que el tap impida resolver una falla. No hay base para un umbral de auto-focus.
+  10. `REJECTED`. `BLOCKED` por falta de piloto. La evidencia que el Anexo J nombra alcanza para pilotar B. La preferencia de campo queda en `residual_uncertainty`.
+  11. `NEW`. Si un piloto muestra que el técnico no puede elegir el manual, o que no avanza una falla por el tap, un plan posterior puede estudiar C. Ese plan tiene que decir qué evidencia lo habilita antes de cualquier umbral. F8 no lo abre. C queda como hipótesis de backlog.
+  12. `REJECTED`. Código de auto-focus, umbral de foco, otra llamada de modelo, y cambios de retrieval, pins, provenance, modelos o prompts. No hubo deploy.
+- `derived_decisions`:
+  - `F8 DECISION = KEEP_B`.
+  - Suggest-only permanece.
+  - `user_pin` sigue requiriendo tap explícito.
+  - No existe Mode C en el MVP.
+  - No hay threshold automático de foco.
+  - Una evaluación futura de C requiere evidencia real de piloto. Auto-focus queda fuera de este plan.
+  - El plan está CLOSED. No hay F9.
+- `future_phases_changed`:
+  - No hay fase siguiente. `reason`: F8 cierra el plan con `KEEP_B`. No se abre un plan de auto-focus.
+- `next_phase_prompt_path`: ninguno
 
 ## Anexo G — prompt de F3B2
 

@@ -51,6 +51,67 @@ class Rag::KnowledgeScopePolicyTest < ActiveSupport::TestCase
     assert_empty Rag::KnowledgeScopePolicy.authorized_retrieval_uris([ uri ], viewer_account: @viewer)
   end
 
+  test "open corpus lists a foreign general uri and omits a private legacy row" do
+    @owner.update!(danebo_controlled: true)
+    index_manual_for_retrieval!(@private_doc)
+    KnowledgeScopeChange.apply!(
+      kb_document: @private_doc, to_scope: "danebo_general", actor: "ops", reason: "approved manual"
+    )
+    legacy = KbDocument.create!(
+      account: accounts(:pilot), s3_key: "manuals/pilot-only.pdf", display_name: "Pilot", aliases: []
+    )
+
+    corpus = Rag::KnowledgeScopePolicy.open_corpus(viewer_account: @viewer)
+
+    assert_includes corpus.general_uris, @private_doc.canonical_uri
+    assert_not_includes corpus.general_uris, legacy.canonical_uri
+    assert_equal false, corpus.over_limit
+
+    owner_corpus = Rag::KnowledgeScopePolicy.open_corpus(viewer_account: @owner)
+    assert_not_includes owner_corpus.general_uris, @private_doc.canonical_uri
+  end
+
+  test "open corpus omits the general arm when the uri budget is exceeded" do
+    @owner.update!(danebo_controlled: true)
+    index_manual_for_retrieval!(@private_doc)
+    KnowledgeScopeChange.apply!(
+      kb_document: @private_doc, to_scope: "danebo_general", actor: "ops", reason: "approved manual"
+    )
+
+    corpus = Rag::KnowledgeScopePolicy.open_corpus(viewer_account: @viewer, uri_limit: 0)
+
+    assert_equal true, corpus.over_limit
+    assert_empty corpus.general_uris
+    assert_equal "general_uris_over_limit", corpus.denied_reason
+    assert_operator corpus.candidate_count, :>=, 1
+  end
+
+  test "partition_evidence keeps a general chunk and drops foreign private ambiguous and unmapped chunks" do
+    @owner.update!(danebo_controlled: true)
+    index_manual_for_retrieval!(@private_doc)
+    KnowledgeScopeChange.apply!(
+      kb_document: @private_doc, to_scope: "danebo_general", actor: "ops", reason: "approved manual"
+    )
+    foreign = KbDocument.create!(
+      account: @owner, s3_key: "manuals/other.pdf", display_name: "Other", aliases: []
+    )
+    KbDocument.create!(account: @viewer, s3_key: "s3://bucket/clash.pdf", display_name: "A", aliases: [])
+    KbDocument.create!(account: @owner, s3_key: "s3://bucket/clash.pdf", display_name: "B", aliases: [])
+
+    decisions = Rag::KnowledgeScopePolicy.partition_evidence(
+      [
+        { content: "general", metadata: { "original_source_uri" => @private_doc.canonical_uri, "document_id" => @private_doc.document_uid, "account_id" => @owner.id.to_s } },
+        { content: "private", metadata: { "original_source_uri" => foreign.canonical_uri } },
+        { content: "clash", metadata: { "original_source_uri" => "s3://bucket/clash.pdf" } },
+        { content: "missing", metadata: { "original_source_uri" => "s3://bucket/nope.pdf" } }
+      ],
+      viewer_account: @viewer
+    )
+
+    assert_equal [ :authorized, :denied, :ambiguous, :unmapped ], decisions.map(&:status)
+    assert_equal [ @private_doc.id ], decisions.select(&:authorized?).map(&:kb_document_id)
+  end
+
   test "manual_corpus and the legacy slug do not authorize another account" do
     assert_nil Rag::KnowledgeScopePolicy.scope_for(@private_doc, viewer_account: @viewer)
     assert_equal false, @owner.danebo_controlled

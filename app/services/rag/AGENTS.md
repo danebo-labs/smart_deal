@@ -48,25 +48,21 @@ are rejected by `KnowledgeScopeEligibility`. `knowledge_scope_changes` is
 append-only in the application: `apply!` inserts, and update or delete
 through the model is rejected. Direct SQL is outside this phase.
 
-The open retrieve below is still the historical filter. F3B2 replaces it.
+Open retrieval reads `knowledge_scope`. Without a pin, `BedrockRagService#account_filter` is the viewer's `account_id` plus the canonical URIs of foreign `danebo_general` rows (`original_source_uri` and `x-amz-bedrock-kb-source-uri`). Own rows are not repeated in that URI list. Legacy, Pilot, slug, filename, and `manual_corpus=general` do not add a clause. `BatchResultsParserService#sidecar_metadata` still writes `manual_corpus` through `Rag::SharedManualCorpus.tag?`. That writer is ingestion metadata, not the read authority.
 
-Danebo (`danebo-legacy`) and the elevator pilot (`danebo-pilot-elevator`) are included in every account's open retrieve. Their `account_id` is already on the indexed chunks. Photos of those accounts stay out of other accounts' retrieval. This OR is not an approval of those manuals for the general library.
+A `danebo_general` row whose canonical URI is missing, ambiguous, or over the application URI budget is omitted from the filter. The budget is `Rag::KnowledgeScopePolicy::OPEN_RETRIEVAL_MAX_GENERAL_URIS` (100) and `OPEN_RETRIEVAL_MAX_URI_BYTES` (24000). Over budget, the general arm is empty and the reason is `general_uris_over_limit`. Own `account_id` still matches. The list is not truncated. Bedrock's published limits stay one embedded logical operator, five clauses, and depth 2. The `in` operator has no published maximum in the RetrievalFilter API.
 
-A new document chooses scope at parse time, on `BatchResultsParserService#call`:
+Results that come back are partitioned by `KnowledgeScopePolicy.partition_evidence` before they are published or passed to a local generation prompt. A chunk must bind exactly one physical row. `document_id` and chunk `account_id` confirm that row. They are not a lookup. Unmapped, ambiguous, and unauthorized chunks are dropped. If every citation from `retrieve_and_generate` fails, the generated text is not published. `retrieve_and_generate` still generates inside Bedrock; the request filter is what keeps unauthorized metadata out of that prompt. There is no second model call.
 
-* `corpus_scope: "general"` writes `manual_corpus=general`. HEAD then lets every account retrieve it. That attribute, when it was written because scope was omitted on a legacy or pilot account, is not `GENERAL_APPROVED`.
-* `corpus_scope: "account"` omits the attribute. Only that `account_id` matches. That is `tenant_private`.
-* omitted: manuals of the two slugs above are tagged general by `Rag::SharedManualCorpus.tag?`; any other account stays account-only. The slug default is the inference the contract forbids. Do not add another account to that default.
+A caller filter may narrow the open corpus. `account_id` of another tenant, `account_id` inside `orAll`, and `manual_corpus` deny the request (`caller_filter_widens_scope`). A technical predicate is ANDed with the open corpus when the shape stays inside the Bedrock limits. A URI filter is still the pin path: the whole set is authorized, or the call is `DENY_RETRIEVAL`.
 
-Photos never receive `manual_corpus`, even when `corpus_scope` is `"general"`.
+An unforced pin retry that drops the URI filter stays on this open corpus. It does not restore Legacy, Pilot, or `manual_corpus`. Revoking `danebo_general` removes the URI on the next retrieve. The owner still matches `account_id`. Other sessions' pins are not deleted; a pin of the revoked row is `DENY_RETRIEVAL`.
 
-A question does not pin a manual or a page, and a previous turn does not either. A field technician does not remember a page number among the manuals, so a mentioned page never narrows retrieval. Auto-scope and episode document inheritance were the WhatsApp stand-in for a pin control. A catalog token stays in Query Resolution.
+`WarmBedrockKbJob` is an Aurora ping. It calls `Retrieve` directly, discards the response, and does not serve a tenant. WhatsApp is dormant. A dormant caller of `BedrockRagService#query` uses this same filter and the same `DENY_RETRIEVAL`.
 
-Without a pin, HEAD retrieval is the session account, the two slugs above, and chunks tagged `manual_corpus=general`. The product corpus, once the Field Companion route exists, is narrower: `tenant_private` for this tenant plus explicit `danebo_general`. Danebo and the pilot share the HEAD base. Photos of the other account stay out.
+A question does not pin a manual or a page. A mentioned page never narrows retrieval. A document the technician pinned is the whole scope of that session's retrieve. The filter is those URIs alone. The technician can change the pins. An empty result does not silently drop them.
 
-A document the technician pinned is the whole scope of that session's retrieve. The filter is those URIs alone. It does not stay open over the rest of the shared base, and it does not remove those documents from any other session's catalog. The technician can change the pins. An empty result does not silently drop them.
-
-A retrieve filter must stay inside Bedrock's one embedded logical operator and five clauses per group. Do not wrap `account_filter` (its shared-account arm is already an `andAll`) in another `andAll`.
+Do not wrap a nested `andAll` in another `andAll`. The open filter is flat so a technical AND stays at depth 2.
 
 ## Safety
 

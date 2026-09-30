@@ -327,7 +327,10 @@ class BedrockRagService
       bedrock_latency_ms = ((Time.current - bedrock_start_time) * 1000).to_i
 
       raw_citations = response.citations || []
-      total_refs = raw_citations.sum { |c| c.retrieved_references&.size.to_i }
+      citation_gate = authorize_raw_citations(raw_citations)
+      @rejected_result_count = citation_gate.rejected
+      published_citations = citation_gate.groups
+      total_refs = published_citations.sum { |c| c.retrieved_references&.size.to_i }
 
       Rails.logger.info("BedrockRagService: retrieve_and_generate #{bedrock_latency_ms}ms")
 
@@ -336,10 +339,21 @@ class BedrockRagService
       # Distinguish the Bedrock "Sorry…" guardrail from a genuine no-results:
       # if the trace shows chunks were retrieved (native citations present), the
       # canned phrase is a GENERATION/parse failure, not an empty knowledge base.
+      no_results_locale = effective_response_locale(question, response_locale: response_locale)
       canned_no_results = bedrock_no_results?(raw_answer)
+      # retrieve_and_generate already generated inside Bedrock. The request
+      # filter is the corpus the model was allowed to see. A result that does
+      # not bind an authorized row is dropped here, before it is published or
+      # reused as evidence. If every returned reference fails, the generated
+      # text is not published.
+      if citation_gate.dropped_all?
+        canned_no_results = true
+        raw_answer = localized_no_results(no_results_locale)
+        published_citations = []
+        total_refs = 0
+      end
 
       # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
-      no_results_locale = effective_response_locale(question, response_locale: response_locale)
       answer_text =
         if canned_no_results && apply_filter && force_entity_filter
           localized_pinned_no_results(no_results_locale)
@@ -349,7 +363,7 @@ class BedrockRagService
           raw_answer
         end
 
-      citations = @citation_processor.extract_citations(response.citations)
+      citations = @citation_processor.extract_citations(published_citations)
       session_id = response.session_id
 
       # Defensive cleanup only: the prompt no longer emits <DOC_REFS>, but strip a
@@ -362,7 +376,7 @@ class BedrockRagService
       # (citation.generated_response_part.text_response_part.span), not a fabricated
       # every-3-sentences distribution. Only on a genuine generated answer.
       if !canned_no_results && citations.any? && !answer_text.match?(/\[\d+\]/)
-        answer_text = @citation_processor.add_span_citations(answer_text, raw_citations)
+        answer_text = @citation_processor.add_span_citations(answer_text, published_citations)
       end
 
       # F1 — Deterministic document identity: build doc_refs from the metadata of
@@ -371,7 +385,9 @@ class BedrockRagService
       # and the entity is not already pinned. The result hash keeps the :doc_refs
       # key so KbDocumentEnrichmentService/EntityExtractorService are unchanged.
       retrieved_for_extraction, observed_chunk_basis, input_token_basis =
-        if citations.any?
+        if citation_gate.dropped_all?
+          [ [], "none", "prompt_template_plus_observed_chunks" ]
+        elsif citations.any?
           [ citations, "bedrock_citations", "prompt_template_plus_observed_chunks" ]
         else
           Rails.logger.info("BedrockRagService: post-gen citations empty; Retrieve API fallback for source_uri")
@@ -465,12 +481,14 @@ class BedrockRagService
         Rails.logger.info("  Citation [#{ref[:number]}]: #{ref[:title]} (#{ref[:filename]})")
       end
 
+      log_open_retrieval(query_correlation_id)
+
       log_quality_signal(
         question:         question,
         answer:           answer_text,
         citations:        numbered_references,
         doc_refs:         doc_refs,
-        raw_citations:    raw_citations,
+        raw_citations:    published_citations,
         latency_ms:       latency_ms,
         entity_filter:    applied_filter_uris,
         evidence_mode:    observed_chunk_basis,
@@ -578,6 +596,11 @@ class BedrockRagService
         chunk_sha256: Digest::SHA256.hexdigest(content)
       }
     end
+    partition = Rag::KnowledgeScopePolicy.partition_evidence(chunks, viewer_account: @account)
+    @rejected_result_count = partition.count { |decision| !decision.authorized? }
+    chunks = partition.select(&:authorized?).map(&:chunk).each_with_index.map do |chunk, index|
+      chunk.merge(rank: index + 1)
+    end
 
     elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     PilotUsageLog.log(
@@ -586,6 +609,9 @@ class BedrockRagService
       route: "retrieve_only", route_taken: route_taken || "retrieve_only",
       latency_ms: elapsed_ms, result: "ok",
       results_count: chunks.size, filter_applied: apply_filter,
+      rejected_result_count: @rejected_result_count.to_i,
+      authorized_general_count: open_corpus.general_count,
+      retrieval_denied_reason: @retrieval_denied_reason,
       retrieval_query_text: question.to_s,
       retrieval_query_sha: Digest::SHA256.hexdigest(question.to_s),
       requested_k: vector_config[:number_of_results],
@@ -631,6 +657,7 @@ class BedrockRagService
   end
 
   def deny_retrieval_result(question:, session_id: nil, response_locale: nil)
+    log_open_retrieval(nil)
     self.class.deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
   end
 
@@ -1127,7 +1154,13 @@ class BedrockRagService
         metadata: r.metadata || {}
       }
     end
-    Rails.logger.info("BedrockRagService: fallback Retrieve returned #{results.size} chunk(s)")
+    partition = Rag::KnowledgeScopePolicy.partition_evidence(results, viewer_account: @account)
+    rejected = partition.count { |decision| !decision.authorized? }
+    @rejected_result_count = @rejected_result_count.to_i + rejected
+    results = partition.select(&:authorized?).map(&:chunk)
+    Rails.logger.info(
+      "BedrockRagService: fallback Retrieve returned #{results.size} authorized chunk(s) rejected=#{rejected}"
+    )
     results
   rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
     Rails.logger.warn("BedrockRagService: fallback_retrieve failed — #{e.message}")
@@ -1646,10 +1679,13 @@ class BedrockRagService
   # clauses in each andAll/orAll.
   # https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-config.html
   # A question does not choose a manual or a page. Without a pin the filter is
-  # the shared document base. With a pin the filter is only the URIs that
-  # resolve to exactly one KbDocument the viewer may use. A caller-supplied
-  # URI is not authorization. An unauthorized pin does not fall through to
-  # the open corpus on this call.
+  # the viewer's own chunks (`account_id`) plus canonical URIs of foreign
+  # `danebo_general` rows. Legacy, Pilot, and `manual_corpus` are not
+  # authorization. With a pin the filter is only the URIs that resolve to
+  # exactly one KbDocument the viewer may use. A caller-supplied URI is not
+  # authorization. An unauthorized pin does not fall through to the open
+  # corpus on this call. A caller filter may narrow that corpus. It cannot
+  # widen it.
   def retrieval_filter(entity_s3_uris:, entity_sources:, question:, apply_page_filter:)
     uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
     if uris.empty?
@@ -1705,44 +1741,28 @@ class BedrockRagService
   end
 
   def account_filter
+    corpus = open_corpus
+    @retrieval_denied_reason = corpus.denied_reason if corpus.over_limit
     clauses = [ account_id_equals(@account.id) ]
-    Rag::SharedManualCorpus.account_ids.each do |id|
-      next if id == @account.id.to_s
-
-      clauses << shared_manual_clause(id)
+    uris = corpus.general_uris
+    if uris.any?
+      URI_METADATA_KEYS.each { |key| clauses << uri_match_clause(key, uris) }
     end
-    clauses << {
-      equals: {
-        key: Rag::SharedManualCorpus::ATTRIBUTE,
-        value: Rag::SharedManualCorpus::GENERAL
-      }
-    }
+    return checked_bedrock_filter(clauses.first) if clauses.one?
+
     checked_bedrock_filter(or_all_clause(clauses))
   end
 
-  # Flat shared base used only when a caller-supplied filter has neither the
-  # session account nor a pinned document URI. A technician pin does not
-  # come through here: that filter is the URIs alone.
-  def account_scope_clause
-    ids = [ @account.id.to_s ]
-    Rag::SharedManualCorpus.account_ids.each { |id| ids << id unless ids.include?(id) }
-    equals = ids.map { |id| account_id_equals(id) }
-    equals << {
-      equals: {
-        key: Rag::SharedManualCorpus::ATTRIBUTE,
-        value: Rag::SharedManualCorpus::GENERAL
-      }
-    }
-    or_all_clause(equals)
+  def open_corpus
+    @open_corpus ||= Rag::KnowledgeScopePolicy.open_corpus(viewer_account: @account)
   end
 
-  def photo_exclusion_clause
-    {
-      not_equals: {
-        key: "ingestion_path",
-        value: Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
-      }
-    }
+  def uri_match_clause(key, uris)
+    if uris.one?
+      { equals: { key: key, value: uris.first } }
+    else
+      { in: { key: key, value: uris } }
+    end
   end
 
   def or_all_clause(clauses)
@@ -1775,23 +1795,6 @@ class BedrockRagService
     node[:or_all] || node["or_all"] || node[:and_all] || node["and_all"]
   end
 
-  # Indexed manuals of Danebo and the pilot are general knowledge. Their
-  # account_id is already on the chunk. Photos of those accounts stay out:
-  # a chunk whose ingestion_path is the photo path does not match.
-  def shared_manual_clause(id)
-    {
-      and_all: [
-        account_id_equals(id),
-        {
-          not_equals: {
-            key: "ingestion_path",
-            value: Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
-          }
-        }
-      ]
-    }
-  end
-
   def account_id_equals(id)
     { equals: { key: "account_id", value: id.to_s } }
   end
@@ -1815,6 +1818,7 @@ class BedrockRagService
       decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(uris, viewer_account: @account)
       unless decision.allowed?
         @retrieval_denied = true
+        @retrieval_denied_reason = "caller_uri_denied"
         @applied_pin_uris = []
         return filter
       end
@@ -1822,11 +1826,82 @@ class BedrockRagService
       @applied_pin_uris = decision.uris
       return checked_bedrock_filter(document_pin_filter(decision.uris))
     end
-    return filter if account_filter_present?(filter)
+    return filter if same_open_filter?(filter)
+    if caller_filter_widens?(filter)
+      @retrieval_denied = true
+      @retrieval_denied_reason = "caller_filter_widens_scope"
+      return nil
+    end
 
-    # Same two-level shape as retrieval_filter. and_filter(account_filter, …)
-    # would embed an orAll-of-andAll and Bedrock would reject the query.
-    checked_bedrock_filter(and_all_clause([ account_scope_clause, filter, photo_exclusion_clause ]))
+    # The open corpus is a flat equals, or a flat orAll of account_id plus
+    # URI leaves. ANDing a technical caller filter stays at depth 2.
+    begin
+      checked_bedrock_filter(and_all_clause([ account_filter, filter ]))
+    rescue ArgumentError
+      @retrieval_denied = true
+      @retrieval_denied_reason = "caller_filter_shape"
+      nil
+    end
+  end
+
+  def same_open_filter?(filter)
+    normalize_filter(filter) == normalize_filter(account_filter)
+  end
+
+  # An account_id other than the viewer, an account_id inside orAll, or
+  # manual_corpus cannot be proved to be a subset. Those deny. A technical
+  # predicate is intersected with the open corpus by the caller.
+  def caller_filter_widens?(node, inside_or: false)
+    case node
+    when Hash
+      or_list = node[:or_all] || node["or_all"]
+      return true if or_list && or_list.any? { |child| caller_filter_widens?(child, inside_or: true) }
+
+      and_list = node[:and_all] || node["and_all"]
+      return true if and_list && and_list.any? { |child| caller_filter_widens?(child, inside_or: inside_or) }
+
+      if mentions_metadata_key?(node, "manual_corpus")
+        return true
+      end
+
+      %i[equals in not_equals not_in].each do |operator|
+        clause = node[operator] || node[operator.to_s]
+        next unless clause.is_a?(Hash)
+        next unless (clause[:key] || clause["key"]).to_s == "account_id"
+        return true if inside_or || operator != :equals
+
+        values = Array(clause[:value] || clause["value"]).map(&:to_s)
+        return true unless values == [ @account.id.to_s ]
+      end
+
+      node.any? { |key, value| !filter_operator?(key) && caller_filter_widens?(value, inside_or: inside_or) }
+    when Array
+      node.any? { |value| caller_filter_widens?(value, inside_or: inside_or) }
+    else
+      false
+    end
+  end
+
+  def filter_operator?(key)
+    %w[equals in not_equals not_in or_all and_all].include?(key.to_s)
+  end
+
+  def mentions_metadata_key?(node, metadata_key)
+    %i[equals in not_equals not_in].any? do |operator|
+      clause = node[operator] || node[operator.to_s]
+      clause.is_a?(Hash) && (clause[:key] || clause["key"]).to_s == metadata_key
+    end
+  end
+
+  def normalize_filter(node)
+    case node
+    when Hash
+      node.each_with_object({}) { |(key, value), normalized| normalized[key.to_s] = normalize_filter(value) }
+    when Array
+      node.map { |value| normalize_filter(value) }
+    else
+      node
+    end
   end
 
   def document_uri_constrained?(filter)
@@ -1840,21 +1915,6 @@ class BedrockRagService
       filter.any? { |_k, value| document_uri_constrained?(value) }
     when Array
       filter.any? { |value| document_uri_constrained?(value) }
-    else
-      false
-    end
-  end
-
-  def account_filter_present?(filter)
-    case filter
-    when Hash
-      equals = filter[:equals] || filter["equals"]
-      return true if equals && (equals[:key] || equals["key"]).to_s == "account_id" &&
-                     (equals[:value] || equals["value"]).to_s == @account.id.to_s
-
-      filter.any? { |_key, value| account_filter_present?(value) }
-    when Array
-      filter.any? { |value| account_filter_present?(value) }
     else
       false
     end
@@ -2004,6 +2064,77 @@ class BedrockRagService
     absence_fragments.any? do |fragment, _index|
       (question_relations & Rag::QueryEntities.requested_relation(fragment)).any?
     end
+  end
+
+  CitationGate = Data.define(:groups, :rejected, :seen) do
+    def dropped_all?
+      seen.positive? && groups.empty?
+    end
+  end
+  FilteredCitation = Struct.new(:generated_response_part, :retrieved_references, keyword_init: true)
+
+  def authorize_raw_citations(raw)
+    groups = []
+    rejected = 0
+    seen = 0
+    Array(raw).each do |citation|
+      refs = Array(citation.respond_to?(:retrieved_references) ? citation.retrieved_references : nil)
+      seen += refs.size
+      chunks = refs.map { |ref| reference_to_chunk(ref) }
+      decisions = Rag::KnowledgeScopePolicy.partition_evidence(chunks, viewer_account: @account)
+      kept = []
+      refs.each_with_index do |ref, index|
+        if decisions[index].authorized?
+          kept << ref
+        else
+          rejected += 1
+        end
+      end
+      next if kept.empty?
+
+      groups << FilteredCitation.new(
+        generated_response_part: citation.respond_to?(:generated_response_part) ? citation.generated_response_part : nil,
+        retrieved_references: kept
+      )
+    end
+    CitationGate.new(groups: groups, rejected: rejected, seen: seen)
+  end
+
+  def reference_to_chunk(ref)
+    metadata = ref.respond_to?(:metadata) ? ref.metadata : nil
+    metadata = metadata.to_h if metadata.respond_to?(:to_h) && !metadata.is_a?(Hash)
+    location = ref.respond_to?(:location) ? ref.location : nil
+    uri = if location.respond_to?(:s3_location)
+      location.s3_location&.uri
+    elsif location.is_a?(Hash)
+      location[:uri] || location["uri"]
+    end
+    content = ref.respond_to?(:content) ? ref.content : nil
+    {
+      content: content.respond_to?(:text) ? content.text : content,
+      metadata: metadata || {},
+      location: uri ? { uri: uri } : nil
+    }
+  end
+
+  def log_open_retrieval(correlation_id)
+    corpus = open_corpus
+    Rails.logger.info(
+      "[OPEN_RETRIEVAL] account_id=#{@account&.id} generals=#{corpus.general_count} " \
+        "candidates=#{corpus.candidate_count} excluded=#{corpus.excluded_count} " \
+        "rejected=#{@rejected_result_count.to_i} reason=#{corpus.denied_reason || @retrieval_denied_reason}"
+    )
+    PilotUsageLog.log(
+      "open_retrieval",
+      account_id: @account&.id,
+      correlation_id: correlation_id,
+      authorized_general_count: corpus.general_count,
+      rejected_result_count: @rejected_result_count.to_i,
+      retrieval_denied_reason: @retrieval_denied_reason || corpus.denied_reason,
+      result: @retrieval_denied ? "deny" : "ok"
+    )
+  rescue StandardError => e
+    Rails.logger.warn("BedrockRagService: open retrieval log failed — #{e.class}")
   end
 
   def extract_doc_refs(answer_text)

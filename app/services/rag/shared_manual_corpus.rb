@@ -1,19 +1,19 @@
 # frozen_string_literal: true
 
 module Rag
-  # Danebo (`danebo-legacy`) and the elevator pilot (`danebo-pilot-elevator`)
-  # are general RAG knowledge. Every account's retrieve ORs those account ids,
-  # already written on the indexed chunks, so no KB sync is required. It also
-  # ORs `manual_corpus=general`, the mark written on later ingests.
+  # Ingestion still writes `manual_corpus=general` from this module
+  # (`tag?` → `BatchResultsParserService#sidecar_metadata`). That attribute
+  # is historical metadata. Retrieval authorization does not read it.
+  # Open retrieval is the viewer's `account_id` plus `danebo_general` rows.
+  # Legacy and Pilot slugs are not an approval.
   #
   # Scope of a new document, passed as `corpus_scope` to
   # `BatchResultsParserService#call`:
-  # - `"general"` writes the attribute. Every account can retrieve it.
-  # - `"account"` omits the attribute. Only that account_id matches.
-  # - omitted: manuals of the two slugs above default to general; any other
-  #   account defaults to account-only.
-  # Photos never receive the attribute, and other accounts do not retrieve
-  # them through the shared account ids (`ingestion_path` is excluded).
+  # - `"general"` writes the attribute. It does not set knowledge_scope.
+  # - `"account"` omits the attribute.
+  # - omitted: manuals of the two slugs above still get the attribute; any
+  #   other account does not. That default is not an approval.
+  # Photos never receive the attribute.
   module SharedManualCorpus
     SLUGS = %w[danebo-legacy danebo-pilot-elevator].freeze
     ATTRIBUTE = "manual_corpus"

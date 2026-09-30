@@ -6,31 +6,16 @@ class Rag::SharedManualCorpusTest < ActiveSupport::TestCase
   setup { Rag::SharedManualCorpus.reset_account_ids! }
   teardown { Rag::SharedManualCorpus.reset_account_ids! }
 
-  test "legacy and pilot retrieve each other's account ids and general manuals" do
-    legacy = accounts(:legacy)
-    pilot = accounts(:pilot)
-
-    [ legacy, pilot ].each do |account|
+  test "open retrieval is only the viewer account" do
+    [ accounts(:legacy), accounts(:pilot), accounts(:climb) ].each do |account|
       filter = BedrockRagService.new(account: account).send(:account_filter)
-      ids = values_for(filter, "account_id")
+      others = [ accounts(:legacy), accounts(:pilot), accounts(:climb) ].map { |row| row.id.to_s } - [ account.id.to_s ]
 
-      assert_includes ids, legacy.id.to_s
-      assert_includes ids, pilot.id.to_s
-      assert_equal [ "general" ], values_for(filter, "manual_corpus")
-      assert filter.key?(:or_all)
+      assert_equal [ account.id.to_s ], values_for(filter, "account_id")
+      others.each { |id| assert_not_includes values_for(filter, "account_id"), id }
+      assert_empty values_for(filter, "manual_corpus")
+      assert_empty not_equals_values(filter, "ingestion_path")
     end
-  end
-
-  test "every account retrieves the danebo and pilot manuals plus general manuals" do
-    climb = accounts(:climb)
-    filter = BedrockRagService.new(account: climb).send(:account_filter)
-    ids = values_for(filter, "account_id")
-
-    assert_includes ids, climb.id.to_s
-    assert_includes ids, accounts(:legacy).id.to_s
-    assert_includes ids, accounts(:pilot).id.to_s
-    assert_equal [ "general" ], values_for(filter, "manual_corpus")
-    assert_equal [ "field_photo_v1", "field_photo_v1" ], not_equals_values(filter, "ingestion_path")
   end
 
   test "corpus_scope general tags any account and account keeps a manual private" do

@@ -115,41 +115,42 @@ come from the user-controlled filename.
 
 ## Retrieval Contract
 
-Every Bedrock `Retrieve` and `RetrieveAndGenerate` call must include the account
-filter, including an unpinned retrieve for that session. A pin replaces the
-open filter for that session only. It does not rewrite `danebo_general` and
-does not change another account's catalog:
+Every tenant-facing Bedrock `Retrieve` and `RetrieveAndGenerate` call must
+include the account filter, including an unpinned retrieve for that session.
+A pin replaces the open filter for that session only. It does not rewrite
+`danebo_general` and does not change another account's catalog.
+`WarmBedrockKbJob` is the exception: an Aurora ping that discards the
+response and does not serve a tenant.
+
+Without a pin the filter is the viewer's `account_id`, plus the canonical
+URIs of foreign `danebo_general` rows on both `original_source_uri` and
+`x-amz-bedrock-kb-source-uri`. Own rows are not repeated in that URI list.
+Zero foreign generals is a single `account_id` equals. One general uses
+`equals`. Several use `in`:
 
 ```ruby
 {
-  and_all: [
-    {
-      or_all: [
-        { equals: { key: "account_id", value: account.id.to_s } },
-        # Danebo and the elevator pilot, already indexed. Photos excluded.
-        { and_all: [
-          { equals: { key: "account_id", value: shared_account_id } },
-          { not_equals: { key: "ingestion_path", value: "field_photo_v1" } }
-        ] },
-        # Later ingests that opted into general scope.
-        { equals: { key: "manual_corpus", value: "general" } }
-      ]
-    },
-    optional_document_filter
-  ].compact
+  or_all: [
+    { equals: { key: "account_id", value: account.id.to_s } },
+    { in: { key: "original_source_uri", value: general_uris } },
+    { in: { key: "x-amz-bedrock-kb-source-uri", value: general_uris } }
+  ]
 }
 ```
 
-`BedrockRagService#account_filter` builds that `or_all`. A new document picks
-scope with `corpus_scope: "general"` or `"account"` on
-`BatchResultsParserService#call`. Omitted, Danebo and the pilot default to
-general and every other account stays account-only. See
-`Rag::SharedManualCorpus`.
+`BedrockRagService#account_filter` builds that from
+`Rag::KnowledgeScopePolicy.open_corpus`. Legacy, Pilot, and
+`manual_corpus=general` are not clauses. `Rag::SharedManualCorpus.tag?` may
+still write `manual_corpus` on a sidecar. That write is not authorization.
+Results are partitioned back to one physical `KbDocument` before they are
+published. Unmapped, ambiguous, and unauthorized chunks are dropped.
 
 Rules:
 
 1. Missing account context raises an error before calling Bedrock.
-2. The account filter is mandatory and cannot be overridden by `custom_config`.
+2. A caller filter may narrow the open corpus. It cannot add a tenant, a
+   foreign private document, Legacy, Pilot, or `manual_corpus`. If that
+   cannot be shown, the request is `DENY_RETRIEVAL` and Bedrock is not called.
 3. Pins are editable by the user of that session. The technician may add,
    remove, replace, or combine `danebo_general` and `tenant_private` pins,
    including by accepting a discovery suggestion. That edit is an explicit
@@ -160,23 +161,20 @@ Rules:
    had no evidence, and to widen the corpus only after the user confirms or
    changes the pins. An editable pin is not permission to fall through to the
    open corpus.
-   HEAD: the web path sets `force_entity_filter: true`, so
+   The web path sets `force_entity_filter: true`, so
    `BedrockRagService` does not take `retry_without_entity_filter` for those
    queries (`retry_without_entity_filter = apply_filter && !force_entity_filter`).
    The unforced branch can still retry once without the document filter
-   when every requested URI is authorized. A denied explicit URI returns
-   `DENY_RETRIEVAL` before that retry and before `account_filter`.
-   That open branch is current code. It is not the product rule, and this
-   document does not delete it. The account `or_all` stays on the open call.
-4. HEAD citations from the session account, from the legacy and pilot account
-   ids, or from a chunk marked `manual_corpus=general` are in the open
-   retrieve. That is the code path. It is not a Danebo approval, and it is not
-   permission for one customer to read another customer's private documents.
-   The approved shared class is `danebo_general` only. `kb_documents.knowledge_scope`
-   stores it. The open retrieve does not read that column yet. Do not drop a
-   citation only because its `account_id` differs when the chunk is already
-   inside this filter. Do not treat this rule as a
-   license to add more account ids.
+   when every requested URI is authorized. That retry uses the open corpus
+   above. It does not restore Legacy, Pilot, or `manual_corpus`. A denied
+   explicit URI returns `DENY_RETRIEVAL` before that retry.
+4. A returned chunk is evidence only when its URI binds exactly one
+   `KbDocument` and `Rag::KnowledgeScopePolicy.authorized?` allows that row
+   for the viewer. The owner's private rows stay available after a general
+   mark is revoked. Another account loses them on the next retrieve. Do not
+   treat a differing `account_id` on an authorized `danebo_general` chunk as
+   a reason to drop it, and do not treat Legacy, Pilot, or `manual_corpus`
+   as a reason to keep it.
 5. Background jobs receive `account_id` explicitly; they do not rely on
    request-local `Current`.
 

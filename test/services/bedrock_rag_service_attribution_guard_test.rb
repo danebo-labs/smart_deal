@@ -22,6 +22,12 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
     @account = accounts(:legacy)
     @original_flag = ENV.fetch("RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED", nil)
     ENV["RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED"] = "true"
+    KbDocument.create!(
+      account: @account,
+      s3_key: "s3://test-bucket/manual.pdf",
+      display_name: "Manual",
+      aliases: []
+    )
   end
 
   teardown do

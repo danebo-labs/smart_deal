@@ -19,6 +19,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     # Clean up BedrockQuery records between tests
     BedrockQuery.delete_all
     @account = accounts(:legacy)
+    KbDocument.create!(
+      account: @account,
+      s3_key: "s3://bucket/documents/AWS-Certified-Solutions-Architect-v4.pdf",
+      display_name: "AWS",
+      aliases: []
+    )
   end
 
   teardown do
@@ -661,8 +667,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_not_nil filter
     assert_account_filter filter
     assert filter_contains?(filter, "account_id", accounts(:legacy).id.to_s)
-    assert filter_contains?(filter, "account_id", accounts(:pilot).id.to_s)
-    assert filter_contains?(filter, "manual_corpus", "general")
+    assert_not filter_contains?(filter, "account_id", accounts(:pilot).id.to_s)
+    assert_not filter_contains?(filter, "manual_corpus", "general")
     assert_nil filter[:and_all], "no and_all wrapping needed without entity filter"
   end
 
@@ -774,7 +780,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       )
       assert_not_includes filter.to_s, 'mpk_708a.pdf'
       assert filter_contains?(filter, 'account_id', accounts(:legacy).id.to_s)
-      assert filter_contains?(filter, 'account_id', accounts(:pilot).id.to_s)
+      assert_not filter_contains?(filter, 'account_id', accounts(:pilot).id.to_s)
+      assert_not filter_contains?(filter, 'manual_corpus', 'general')
     end
   end
 
@@ -896,6 +903,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       end
 
       own_pin_uri!('s3://bucket/junction_box.pdf')
+      own_pin_uri!('s3://bucket/manual.pdf')
       service = BedrockRagService.new(account: @account)
       result = service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
@@ -1051,6 +1059,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # F2 — a canned "Sorry" response with no native citations but a successful
   # Retrieve fallback is a generation/parse failure, not an empty knowledge base.
   test 'flags a canned Sorry response when fallback retrieval found evidence' do
+    own_pin_uri!("s3://bucket/manual.pdf")
     canned_response = ::OpenStruct.new(
       output: ::OpenStruct.new(text: "Sorry, I am unable to assist you with this request."),
       citations: [],
@@ -1089,6 +1098,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test "canned-with-retrieval English copy asks for identifiers instead of a blind retry" do
+    own_pin_uri!("s3://bucket/manual.pdf")
     canned_response = ::OpenStruct.new(
       output: ::OpenStruct.new(text: "Sorry, I am unable to assist you with this request."),
       citations: [],
@@ -1143,6 +1153,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'builds deterministic doc_refs from native citation metadata' do
+    own_pin_uri!("s3://bucket/manual.pdf")
     citation = ::OpenStruct.new(
       generated_response_part: ::OpenStruct.new(
         text_response_part: ::OpenStruct.new(
@@ -1676,7 +1687,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           ::OpenStruct.new(
             content: ::OpenStruct.new(text: 'Prueba documentada'),
             score: 0.9,
-            metadata: {},
+            metadata: { 'original_source_uri' => 's3://bucket/manual.pdf' },
             location: ::OpenStruct.new(s3_location: ::OpenStruct.new(uri: 's3://bucket/chunks/manual-1.txt'))
           )
         ]
@@ -1887,14 +1898,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert filter_contains?(call_filters.first, "original_source_uri", "s3://bucket/manual.pdf")
       assert_not filter_contains?(call_filters.first, "account_id", @account.id.to_s)
       assert_account_filter call_filters.second
+      assert_not filter_contains?(call_filters.second, "account_id", accounts(:pilot).id.to_s)
+      assert_not filter_contains?(call_filters.second, "manual_corpus", "general")
       assert_no_filter_key call_filters.second, "original_source_uri"
       assert_no_filter_key call_filters.second, "x-amz-bedrock-kb-source-uri"
     end
   end
 
-  test 'custom_config cannot overwrite account filter' do
+  test 'custom_config cannot widen the account filter' do
     with_mock_bedrock_client do |client|
-      BedrockRagService.new(account: @account).query(
+      result = BedrockRagService.new(account: @account).query(
         "What is S3?",
         custom_config: {
           retrieval_configuration: {
@@ -1905,15 +1918,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         }
       )
 
-      filter = client.last_retrieve_and_generate_params.dig(
-        :retrieve_and_generate_configuration,
-        :knowledge_base_configuration,
-        :retrieval_configuration,
-        :vector_search_configuration,
-        :filter
-      )
-
-      assert_account_filter filter
+      assert_equal BedrockRagService::DENY_RETRIEVAL, result[:retrieval]
+      assert_nil client.last_retrieve_and_generate_params
     end
   end
 
@@ -2308,6 +2314,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'unfiltered query with blank-source doc_refs uses Retrieve fallback for observed chunks' do
+    own_pin_uri!("s3://bucket/manual.pdf")
     doc_refs_answer = "Answer.\n<DOC_REFS>[{\"source_uri\":\"\",\"canonical_name\":\"Manual\",\"aliases\":[\"PDCM\"],\"doc_type\":\"manual\"}]</DOC_REFS>"
     no_citation_response = ::OpenStruct.new(
       output: ::OpenStruct.new(text: doc_refs_answer),

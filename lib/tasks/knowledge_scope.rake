@@ -50,4 +50,30 @@ namespace :knowledge_scope do
     KnowledgeScopeChange.apply!(kb_document: document, to_scope: to_scope, actor: actor, reason: reason)
     puts "UPDATED kb_document=#{document.id} knowledge_scope=#{document.knowledge_scope}"
   end
+
+  desc "Print promotion blockers. ID= or SLUG=. Does not write knowledge_scope."
+  task audit: :environment do
+    documents = if (id = ENV["ID"].to_s.strip).present?
+      KbDocument.where(id: id).tap { |rows| abort "no KbDocument #{id}" if rows.empty? }
+    elsif (slug = ENV["SLUG"].to_s.strip).present?
+      account = Account.find_by(slug: slug) or abort "no Account with slug #{slug}"
+      account.kb_documents
+    else
+      abort "usage: ID= or SLUG= bin/rails knowledge_scope:audit"
+    end
+
+    documents.find_each do |document|
+      reasons = KnowledgeScopeEligibility.blocking_reasons(document)
+      ledger = reasons.include?("not_indexed") ? "missing_ledger" : "ledger_present"
+      puts [
+        "kb_document=#{document.id}",
+        "account=#{document.account&.slug}",
+        "scope=#{document.knowledge_scope}",
+        ledger,
+        (reasons.empty? ? "eligible" : "blocked: #{reasons.join(', ')}")
+      ].join(" ")
+    end
+    puts "Historical manuals without a completed non-photo WebManualBatch or BulkUploadAsset chunks_s3_prefix stay tenant_private."
+    puts "Filename, slug, manual_corpus, and the KbDocument row alone are not eligibility. Writer remains knowledge_scope:apply."
+  end
 end

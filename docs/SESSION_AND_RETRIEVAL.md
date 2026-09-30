@@ -21,16 +21,12 @@ Two scopes, and no synonyms:
   session may pin a different general document, several of them, or mix them
   with its own `tenant_private` documents, and may clear those pins.
 
-Account id, filename, manufacturer, folder, and the Legacy or Pilot slug do
-not grant `danebo_general`. HEAD does not implement that approval yet. Open
-retrieval still ORs `Rag::SharedManualCorpus` account ids and
-`manual_corpus=general` inside `BedrockRagService#account_filter`. The home
-list and `PinnedDocumentsController#create` still see only
-`current_account.kb_documents`. The Field Companion plan audits the minimum
-change that can add explicit general documents to list, retrieve, and pin
-without copying or reindexing, and without exposing another tenant's private
-documents. Until that lands, do not read the shared-account OR as an approval
-of third-party manuals.
+Account id, filename, manufacturer, folder, the Legacy or Pilot slug, and
+`manual_corpus=general` do not grant `danebo_general`. Open retrieval is the
+viewer's own documents plus rows whose `knowledge_scope` is `danebo_general`.
+`BedrockRagService#account_filter` builds that set from the database. The
+home list still shows `current_account.kb_documents`. A pin of a foreign
+`danebo_general` row uses the existing `KbDocument` and does not copy it.
 
 ---
 
@@ -87,9 +83,9 @@ product stage; see [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
 #### Session-scoped retrieval filter logic
 
 1. **No pinned S3 URIs** in the session → Bedrock runs with `account_filter`
-   only (session account, plus the HEAD shared-account and `manual_corpus=general`
-   arms described above). There is no source-uri filter from pins. That open
-   set is not the approved `danebo_general` catalog.
+   only: the session account, plus canonical URIs of foreign `danebo_general`
+   rows. There is no source-uri filter from pins. Legacy, Pilot, and
+   `manual_corpus=general` are not clauses.
 2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on that session's pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`. The miss does not reopen the unpinned corpus for this session, and it does not change `danebo_general` or any other session's pins. The user can still add, remove, or replace those pins. The system does not drop them because the retrieve was empty. Widening the corpus requires an explicit user action.
 3. **Multiple pins + explicit identity** → `Rag::PinnedEntityScopeResolver`
    narrows the allowed URI set only when there is one confident source match.

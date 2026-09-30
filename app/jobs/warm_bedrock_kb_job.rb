@@ -64,6 +64,10 @@ class WarmBedrockKbJob < ApplicationJob
     Bedrock::AuroraColdStartRetry.with_retry(
       error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
     ) do
+      # Operational ping only. The response is discarded: it is not logged,
+      # not returned to a tenant, and not passed to generation. It does not
+      # use BedrockRagService, so it is not an authorization path. F3B2 leaves
+      # it unfiltered on purpose; a metadata filter is not what wakes Aurora.
       client.retrieve(
         knowledge_base_id: knowledge_base_id,
         retrieval_query:   { text: "warm" },

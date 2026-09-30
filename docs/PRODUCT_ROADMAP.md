@@ -34,14 +34,14 @@ over the manuals a customer uploaded.
 by a customer or a third party stays private until Danebo marks that document.
 
 The authorization semantic is `tenant private + Danebo shared`. It is not
-cross-account access between tenants. HEAD still retrieves the legacy and
-pilot accounts through `Rag::SharedManualCorpus` and may mark their chunks
-`manual_corpus=general` when scope was omitted. That code path is not the
-approval. The minimum representation that can list, retrieve, and pin an
-explicitly approved document without reindexing or duplicating it is an open
-input of
+cross-account access between tenants. `kb_documents.knowledge_scope` is the
+read authority. Open retrieval uses the viewer's own rows plus
+`danebo_general`. `Rag::SharedManualCorpus` may still write
+`manual_corpus=general` at ingest. That metadata does not grant access.
+Listing, retrieving, and pinning an approved document uses the existing
+`KbDocument` and its canonical URI. It does not copy the object or reindex
+it per tenant. See
 [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md).
-F0 of that plan has not started. Do not treat this section as shipped behavior.
 
 UI labels, when discovery ships: `Biblioteca general de Danebo` and
 `Tu biblioteca`. Those labels are document provenance. They are not the answer

@@ -8,7 +8,8 @@ class PilotUsageLog
     latency_ms original_latency_ms input_tokens output_tokens cost estimated_cost_avoided
     cache_status result error_class image_digest_prefix canonical_name
     manufacturer model_visible condition visible_codes
-    results_count filter_applied
+    results_count filter_applied rejected_result_count authorized_general_count
+    retrieval_denied_reason
     retrieval_query_text retrieval_query_sha requested_k effective_k search_type
     filter_fingerprint retrieval_rank
     generation_mode resolution_mode needs_selection

@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0, F1, F2, F2B, F3 y F3B1 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 y F4 no empezaron. El prompt completo de la fase siguiente es el Anexo G.
+**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `READY` y no empezó. El prompt completo de la fase siguiente es el Anexo F.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F3B2, en el Anexo G. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo F es el prompt de F4 y no se ejecuta antes de F3B2. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F4, en el Anexo F. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -38,9 +38,9 @@
 | F2 | Visual decision | Una sola variable, la que F1 autorice | A, B, C, D o E. E = `SKIP` |
 | F2B | Ingestion Model Refresh | Comparar `claude-sonnet-5` y `claude-sonnet-5-5` sobre el payload real de Anthropic Batch API. No toca el default de Field Photo | No empieza hasta que F2 esté `PASS`. Sin dataset con hashes, `BLOCKED` y cero llamadas. No inventa gold |
 | F3 | Discovery A, suggest-only | Ranker en runtime, sin pin. Elegibilidad por scope, mismo score | Paridad del score con el artefacto F0. Cero candidatos `PRIVATE` o `UNCLASSIFIED` de otra cuenta |
-| F3B1 | Authorization Foundation | `kb_documents.knowledge_scope` es la autoridad de lectura. Audit append-only. Pin set atómico. `DENY_RETRIEVAL` no llama a Bedrock | PASS. El retrieve abierto histórico sigue. F3B2 no empezó |
-| F3B2 | Retrieval Alignment | Sacar Legacy, Pilot y `manual_corpus=general` como autorización. Revocación global, post-filter, recall, backfill del ledger | No empieza hasta que F3B1 esté `PASS`. No corre en el cierre de F3B1 |
-| F4 | Confirmed Focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | F0 confirmó `existing_document_id_session_pin` (`reindex_required = false`, `duplicate_document_required = false`). F4 no queda `BLOCKED`. No empieza hasta que F3B2 cierre |
+| F3B1 | Authorization Foundation | `kb_documents.knowledge_scope` es la autoridad de lectura. Audit append-only. Pin set atómico. `DENY_RETRIEVAL` no llama a Bedrock | PASS. Al cerrar, el retrieve abierto histórico seguía. F3B2 después lo alineó |
+| F3B2 | Retrieval Alignment | Sacar Legacy, Pilot y `manual_corpus=general` como autorización. Revocación global, post-filter, recall, backfill del ledger | PASS. F4 `READY`. El retrieve abierto es la cuenta más `danebo_general`. No hubo deploy |
+| F4 | Confirmed Focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | F0 confirmó `existing_document_id_session_pin` (`reindex_required = false`, `duplicate_document_required = false`). F3B2 está `PASS`. F4 no queda `BLOCKED`. No empezó |
 | F5 | Image continuity | Reuso de `visual_observation` | `STOP` antes de migrar si F0 marcó contradicción de retención |
 | F6 | Provenance contract | Prompt y contrato servidor | Una sugerencia no puede quedar como `MANUAL_FACT` |
 | F7 | Provenance presentation | Solo renderer | No edita el prompt. Funciona con `SHOW_RAG_SOURCES=false` |
@@ -131,7 +131,7 @@ Consecuencia: una foto que el Canvas ya dejó bajo 3,75 MB llega a Anthropic en 
 
 `StructuredEvidenceRoute#initial_result_count` puede pedir `STRUCTURED_MAPPING_RESULTS` = 12 en lugar del k del perfil cuando no es safety ni exhaustive y la pregunta es `structured_mapping_query?` o exact designator lookup. El rescue de ese camino, si corre, pide otra vez k=3 sobre la misma URI. Foto + pregunta no entra a esa ruta: `PhotoQuestionAnswerService` no pasa `conv_session`, `entity_sources` queda `[]`, y `eligible?` exige `"document"`. Si hay pin, las URIs sí viajan y el filtro de pin aplica; el k de esa llamada es el de sources vacíos (8, o 20 si es esquemático), no 3.
 
-El filtro de retrieve es independiente del k. Sin URIs: `account_filter` (cuenta de la sesión, más `Rag::SharedManualCorpus` `danebo-legacy` y `danebo-pilot-elevator`, más `manual_corpus=general`). Con URIs: solo esas URIs (`document_pin_filter`), y esas URIs salen de los pins de esa sesión. Este plan no cambia el perfil ni esa frontera. FC-D16: el filtro de pin no escribe nada sobre el documento general. La cuenta B, sin ese pin, sigue viendo el mismo `danebo_general` en su catálogo y puede pinear otro.
+El filtro de retrieve es independiente del k. `RagRetrievalProfile` no cambia. Sin URIs, `account_filter` es el `account_id` de la sesión más las URIs canónicas de filas ajenas con `knowledge_scope = danebo_general`, en `original_source_uri` y `x-amz-bedrock-kb-source-uri`. Legacy, Pilot y `manual_corpus=general` no son cláusulas. Con URIs: solo esas URIs (`document_pin_filter`), y el conjunto entero pasa por `Rag::KnowledgeScopePolicy`. F0 registró el OR histórico de cuentas compartidas. Ese OR ya no autoriza. FC-D16: el filtro de pin no escribe nada sobre el documento general. La cuenta B, sin ese pin, sigue viendo el mismo `danebo_general` en su catálogo y puede pinear otro.
 
 ## 4. Identidades
 
@@ -232,7 +232,7 @@ Hoy el acceso no es el contrato. F0 lo registra así:
 4. `Rag::SharedManualCorpus.tag?`: si `corpus_scope` viene omitido y la cuenta es uno de esos slugs, el chunk se marca general. Ese default infiere compartir por cuenta. El contrato lo prohíbe como aprobación.
 5. Con pin: `document_pin_filter` deja solo las URIs de esa sesión. No mantiene el OR de cuentas. No modifica el documento ni el catálogo de otra cuenta. FC-D17: si no hay evidencia, HEAD no debe leerse como permiso para soltar el pin. El web path ya manda `force_entity_filter: true`. La rama `retry_without_entity_filter` existe solo cuando el filtro no fue forzado. No es la regla de producto y este plan no la borra en F0.
 
-El mecanismo histórico vigente es CASE B. `manual_corpus=general` participa en el retrieve abierto y no demuestra una aprobación por documento. F0 responde `NEED_DOCUMENT_LEVEL_APPROVAL_SOURCE`: si ya existe una fuente de verdad por documento para `GENERAL_APPROVED` sin reindexar. Si existe, se reutiliza. Si no, F0 propone la representación mínima y no la crea. No es un blocker previo a F0. No se agrega columna, no se reindexa y no se copia.
+El mecanismo que F0 observó era CASE B. `manual_corpus=general` participaba en el retrieve abierto y no demostraba una aprobación por documento. F0 respondió `NEED_DOCUMENT_LEVEL_APPROVAL_SOURCE`. F3B1 puso la autoridad en `kb_documents.knowledge_scope`. F3B2 dejó de usar Legacy, Pilot y `manual_corpus` para conceder acceso. El párrafo de arriba es el registro de F0, no el filtro actual.
 
 `RagRetrievalProfile` y `StructuredEvidenceRoute` no se tocan. FC-D02 sigue igual. El corpus autorizado de un tenant, cuando la ruta exista, es sus `tenant_private` más los `danebo_general`. Los privados de otros tenants no entran.
 
@@ -577,7 +577,9 @@ F7 solo lee `provenance_segments`. Si la clave falta, el renderer de hoy se qued
 
 F3 agrega a la allowlist, y solo esto: `suggestion_document_uids` y `suggestion_scopes`. El segundo es un array de `tenant_private` o `danebo_general`, en el mismo orden que los uids. El test de campos desconocidos se extiende: una clave fuera de la lista no aparece en la línea `[PILOT_USAGE]`. Evento `manual_suggestion_shown`. También `manual_suggestion_dismissed` en F4, reusando claves ya permitidas (`document_id`, `outcome`).
 
-F4: `manual_focus_confirmed` con `document_id`, `source_uri`, `correlation_id` y `knowledge_scope` (`tenant_private` o `danebo_general`). `knowledge_scope` se agrega a la allowlist en F4, con el mismo test de clave ajena. `equipment_switch_prompted` con `manufacturer` y `outcome_reason`. Si hace falta un segundo fabricante, F4 agrega `previous_manufacturer` a la allowlist y lo testa. No se agregan claves “por si acaso”.
+F3B2 agrega a la allowlist, y solo esto: `rejected_result_count`, `authorized_general_count` y `retrieval_denied_reason`. El evento es `open_retrieval`. Los mismos tres campos viajan en `kb_retrieve`. `knowledge_scope` sigue fuera de la allowlist.
+
+F4: `manual_focus_confirmed` con `document_id`, `source_uri`, `correlation_id` y `knowledge_scope` (`tenant_private` o `danebo_general`). `knowledge_scope` se agrega a la allowlist en F4, con el mismo test de clave ajena. `equipment_switch_prompted` con `manufacturer` y `outcome_reason`. Si hace falta un segundo fabricante, F4 agrega `previous_manufacturer` a la allowlist y lo testa. No se agregan claves “por si acaso”. F4 no saca las tres claves de F3B2.
 
 F5: `photo_observation_reused` y `photo_observation_reread`. Les alcanza `cache_status` (`reused` o `reread`), `image_digest_prefix`, `correlation_id`. Cero claves nuevas. Cero broadcast nuevo.
 
@@ -609,11 +611,11 @@ Quedó alineada con FC-D09, FC-D16, FC-D17 y FC-D18 en este mismo cambio, sin to
 - [app/services/rag/AGENTS.md](../app/services/rag/AGENTS.md)
 - [docs/field_companion/multimodal_availability_probe.jpg](field_companion/multimodal_availability_probe.jpg) — solo el probe de F0. No es el benchmark.
 
-Esos archivos distinguen el contrato (`tenant_private` + `danebo_general` explícito) del OR de HEAD. F0 no los reescribe para declarar el OR como aprobación.
+Esos archivos describen el contrato (`tenant_private` + `danebo_general` explícito). F3B2 alineó el retrieve abierto con ese contrato. Legacy, Pilot y `manual_corpus=general` siguen pudiendo estar en metadata. No autorizan.
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3 y F3B1 están `PASS`. F3B2 y F4 siguen sin ejecutar.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. F4 está `READY` y no se ejecutó.
 
 Contrato de cada fase, cuando corra:
 
@@ -1083,6 +1085,81 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: revisada, sin edición.
   - F8. `reason`: revisada, sin edición.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo G)
+
+### F3B2
+
+- `phase`: F3B2 — Retrieval Alignment
+- `status`: `PASS`
+- `head_initial`: `1d5958f068ceea1aacf6639e2dca332cdf4aad8e`
+- `head_final`: el commit de F3B2. El árbol no puede contener su propio SHA.
+- `commit`: el único commit cuyo padre es `head_initial`. El asunto dice que el retrieve abierto se alinea con `knowledge_scope` y que Legacy, Pilot y `manual_corpus` dejan de conceder acceso.
+- `files_changed`:
+  - `app/jobs/warm_bedrock_kb_job.rb`
+  - `app/services/bedrock_rag_service.rb`
+  - `app/services/pilot_usage_log.rb`
+  - `app/services/rag/AGENTS.md`
+  - `app/services/rag/knowledge_scope_policy.rb`
+  - `app/services/rag/open_retrieval_recall.rb`
+  - `app/services/rag/shared_manual_corpus.rb`
+  - `docs/ACTIVE_ARCHITECTURE.md`
+  - `docs/MULTI_TENANT_ARCHITECTURE.md`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+  - `docs/PRODUCT_ROADMAP.md`
+  - `docs/SESSION_AND_RETRIEVAL.md`
+  - `lib/tasks/knowledge_scope.rake`
+  - `script/field_companion/f3b2_recall.rb`
+  - `test/services/bedrock_rag_service_attribution_guard_test.rb`
+  - `test/services/bedrock_rag_service_knowledge_scope_test.rb`
+  - `test/services/bedrock_rag_service_test.rb`
+  - `test/services/rag/knowledge_scope_policy_test.rb`
+  - `test/services/rag/open_retrieval_recall_test.rb`
+  - `test/services/rag/shared_manual_corpus_test.rb`
+- `commands_executed`:
+  - `env -u BUNDLE_PATH bin/rails test` con policy, recall, `BedrockRagService` (incluido knowledge scope, attribution, grounded synthesis, audit y absence), corpus compartido, ranker, orquestador, pins, sugerencia, `knowledge_scope_change`, eligibility y el regression gate, en la misma invocación
+  - `env -u BUNDLE_PATH bundle exec rubocop` sobre los 14 Ruby de F3B2
+  - `env -u BUNDLE_PATH bin/rails runner script/field_companion/f3b2_recall.rb`
+- `command_results`:
+  - padre `1d5958f068ceea1aacf6639e2dca332cdf4aad8e`, working tree limpio al abrir
+  - tests: 447 runs, 2735 assertions, 0 failures, 0 errors, 6 skips
+  - RuboCop: 14 files, no offenses
+  - recall: `tmp/field_companion/f3b2_recall.json`, SHA256 `74b467c0b72e7bcfd12118da6adee48038ee3ee3b7de11c590dc438c9f9bc887`. `tmp/` no se commitea
+- `tests`: `test/services/rag/knowledge_scope_policy_test.rb`, `test/services/rag/open_retrieval_recall_test.rb`, `test/services/bedrock_rag_service_knowledge_scope_test.rb`, `test/services/bedrock_rag_service_test.rb`, `test/services/bedrock_rag_service_attribution_guard_test.rb`, `test/services/bedrock_rag_service_grounded_synthesis_test.rb`, `test/services/bedrock_rag_service_audit_test.rb`, `test/services/bedrock_rag_service_absence_contract_test.rb`, `test/services/rag/shared_manual_corpus_test.rb`, `test/services/rag/manual_candidate_ranker_test.rb`, `test/services/query_orchestrator_service_test.rb`, `test/controllers/pinned_documents_controller_test.rb`, `test/controllers/rag_controller_manual_suggestion_test.rb`, `test/models/knowledge_scope_change_test.rb`, `test/services/knowledge_scope_eligibility_test.rb`, más el regression gate (`rag_retrieval_profile`, `structured_evidence_route`, `field_photo_analysis_service`, `field_photo_density_gate`, `image_compression_service`, `field_photo_analysis_job`, `pilot_usage_log`)
+- `test_results`: 447 runs, 2735 assertions, 0 failures, 0 errors, 6 skips. Los skips son cinco tests de `DELIVERY_CHANNEL` de WhatsApp, canal dormido, y `ImageCompressionServiceTest#test_integration:_compresses_a_real_large_JPEG`. Ninguno es de F3B2. No hay skip nuevo de F3B2.
+- `artifacts`: `tmp/field_companion/f3b2_recall.json`
+- `artifact_sha256`: `74b467c0b72e7bcfd12118da6adee48038ee3ee3b7de11c590dc438c9f9bc887`
+- `findings`:
+  1. `CONFIRMED`. El retrieve abierto anterior era un `orAll` de `account_id` de la sesión, los `account_id` de `Rag::SharedManualCorpus` (`danebo-legacy`, `danebo-pilot-elevator`, fotos fuera por `ingestion_path`) y `manual_corpus=general`.
+  2. `CONFIRMED`. El retrieve abierto actual es `account_id` del viewer. Si hay filas ajenas `danebo_general` con una sola URI canónica, se suma `equals` de esa URI en `original_source_uri` y en `x-amz-bedrock-kb-source-uri`. Si hay varias, `in`. Las filas propias no se repiten en esa lista. Cero generales es un `equals` de `account_id`, porque `orAll` necesita al menos dos cláusulas.
+  3. `CONFIRMED`. Legacy, Pilot, slug, filename, fabricante y `manual_corpus=general` ya no autorizan. `Rag::SharedManualCorpus.tag?` sigue escribiendo `manual_corpus` en el sidecar. `knowledge_scope:audit` solo imprime blockers. El único writer sigue siendo `knowledge_scope:apply`, dry-run salvo `APPLY=true`. No se promovió ningún documento. F3B1 dejó 0 `danebo_general`.
+  4. `CONFIRMED`. `partition_evidence` corre antes de publicar citas y antes de un prompt local de generación (`retrieve_chunks`, `fallback_retrieve`, la ruta estructurada). Estados: `authorized`, `denied`, `ambiguous`, `unmapped`. Si todas las citas de `retrieve_and_generate` fallan, el texto generado se reemplaza por el no-results localizado y no hay fallback.
+  5. `CONFIRMED`. `retrieve_and_generate` genera dentro de Bedrock. El filtro del request es lo que deja metadata fuera de ese prompt. El post-filter no puede deshacer una respuesta mixta sin una segunda llamada al modelo. Esta fase no agrega esa llamada. Si queda al menos una cita autorizada, se publican solo esas citas y el texto puede quedar.
+  6. `CONFIRMED`. Un `custom_config` que contiene el `account_id` actual no es seguro por eso. Otro `account_id`, `account_id` dentro de `orAll`, `notEquals` / `notIn` / `in` sobre `account_id`, o `manual_corpus`, es `caller_filter_widens_scope`: `DENY_RETRIEVAL` y cero llamadas. Un predicado técnico se hace `andAll` con el corpus abierto si la forma cabe. Si no, `caller_filter_shape`. Un filtro de URI sigue siendo el camino de pin: el conjunto entero o `DENY_RETRIEVAL`.
+  7. `CONFIRMED`. Contradicción con el Anexo G, punto 4: ese anexo pedía deny salvo que el filtro resultante fuera exactamente el corpus autorizado. El prompt de ejecución, posterior, permite restringir. Decisión: ampliar niega; un filtro técnico se intersecta. Sin filtro del caller, el filtro es el corpus abierto. No hay una tercera semántica.
+  8. `CONFIRMED`. El Anexo G prohibía envolver `account_filter` en otro `andAll` porque el filtro viejo ya anidaba `andAll`. El filtro nuevo es plano. Un AND técnico queda en profundidad 2, que es el límite de Bedrock. No se agregó un operador.
+  9. `CONFIRMED`. El retry no forzado de un pin suelta la URI y vuelve a preguntar sobre el corpus abierto nuevo. No restaura Legacy, Pilot ni `manual_corpus`. Un pin forzado no reintenta abierto. Un pin denegado no llama a Bedrock.
+  10. `CONFIRMED`. Revocar `danebo_general` a `tenant_private` saca esa URI del siguiente retrieve de otra cuenta. El dueño sigue por `account_id`. Los pins de otras sesiones no se borran. Un pin de la fila revocada es `DENY_RETRIEVAL`.
+  11. `CONFIRMED`. Recall sin Bedrock ni Anthropic, sobre `config/document_identities.yml`: 204 documentos, 19 con índice `1`, 185 con índice `3`, cero `knowledge_scope`. El viewer `3` retiene 185 y tiene 19 `backfill_gap`, incluido SEGURIDADES `b61f5d54-ff42-414a-97b7-01682d16f4b5`. El viewer `1` retiene 19 y tiene 185 de gap. El viewer `5` retiene 0. `added_by_approval` es 0. El holdout de SEGURIDADES no se reejecutó en vivo. El dueño de ese manual lo conserva. Para el piloto, los manuales propios quedan. El catálogo histórico compartido es gap de backfill, no una razón para devolver el OR. Alcanza para el MVP de aislamiento.
+  12. `CONFIRMED`. Presupuesto de aplicación: `OPEN_RETRIEVAL_MAX_GENERAL_URIS` 100 y `OPEN_RETRIEVAL_MAX_URI_BYTES` 24000. Si se pasa, el brazo general sale vacío, no truncado, y el motivo es `general_uris_over_limit`. El `account_id` del dueño sigue. No se niega la consulta entera. Bedrock publica un operador lógico embebido, cinco cláusulas y profundidad 2. El operador `in` no publica un máximo. Con 0 generales el filtro es un `equals`. Con generales son tres cláusulas.
+  13. `CONFIRMED`. `WarmBedrockKbJob` sigue siendo un `Retrieve` sin filtro. Descarta la respuesta. No la devuelve a un tenant y no la pasa a generación. No se refactorizó. No es un camino de autorización.
+  14. `CONFIRMED`. WhatsApp sigue dormido. Quien llame `BedrockRagService#query` hereda el filtro y `DENY_RETRIEVAL`. Los cinco skips de `DELIVERY_CHANNEL` siguen.
+  15. `CONFIRMED`. El score de F3, el top 3 y el no-refill no cambiaron. `RagRetrievalProfile` no cambió. El conjunto de pins sigue atómico.
+  16. `CONFIRMED`. Un manual histórico sin ledger completo, no foto, con `chunks_s3_prefix`, sigue `tenant_private`. Filename, slug, `manual_corpus` y la sola fila no lo hacen elegible.
+  17. `REJECTED`. Un feature flag que vuelva a Legacy, Pilot o `manual_corpus`. Eso reabriría acceso no autorizado. El rollback es revertir este commit. No hubo deploy.
+  18. `REJECTED`. Promoción masiva, copia de `KbDocument`, copia S3, reindex por tenant, una KB por tenant, y una segunda llamada al modelo para reescribir la respuesta de `retrieve_and_generate`. `document_uid` no es clave de lookup.
+  19. `NEW`. Un chunk cuya única URI es el objeto del chunk, sin `original_source_uri` y sin fila canónica, queda `unmapped` y se descarta aunque el `account_id` hubiera coincidido. Los sidecars escriben `original_source_uri`. El descarte es fail closed.
+  20. `NEW`. El Anexo G pedía fail closed si el corpus no cabe. El prompt de ejecución también pide que el dueño conserve sus documentos. Decisión: el brazo general que no cabe no se envía, ni en parte. El dueño sigue por `account_id`. No se construyó una plataforma para 100k generales.
+- `derived_decisions`:
+  - La autoridad de scope sigue siendo `kb_documents.knowledge_scope`. El filtro de Bedrock es una traducción de filas autorizadas a URI canónica. No es una segunda autoridad.
+  - Ampliar el corpus niega. Restringirlo con un predicado técnico se intersecta.
+  - La revocación es global en el siguiente retrieve. No borra pins ajenos.
+  - No hay flag de rollback hacia el OR histórico.
+- `future_phases_changed`:
+  - F4. `reason`: `READY`. El Anexo F es el prompt completo. El tap sigue sin implementar. F4 no cambia el filtro ni el score. No aprueba documentos.
+  - F5. `reason`: revisada, sin edición. Las fotos siguen fuera de `danebo_general`.
+  - F6. `reason`: revisada, sin edición. El post-filter no cambia el contrato de procedencia.
+  - F7. `reason`: revisada, sin edición.
+  - F8. `reason`: revisada, sin edición.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo F)
 
 ## Anexo G — prompt de F3B2
 
@@ -1588,9 +1665,20 @@ Commit, un solo commit de F3. El mensaje dice que la sugerencia no escribe un pi
 
 ## Anexo F — prompt de F4
 
-Ejecutá solo F4 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F4 es Discovery B, confirmed focus. El técnico toca una tarjeta y eso escribe `user_pin` en la sesión actual. No ejecutes F5. No hagas deploy. No reabras F3. No cambies el score. No llames a un modelo. No pidas una decisión a Lahiri.
+Ejecutá solo F4 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F4 es Discovery B, confirmed focus. El técnico toca una tarjeta y eso escribe `user_pin` en la sesión actual. No ejecutes F5. No hagas deploy. No reabras F3 ni F3B2. No cambies el filtro abierto, el post-filter, el score ni `RagRetrievalProfile`. No llames a un modelo. No apruebes documentos. No pidas una decisión a Lahiri.
 
-F3 está `PASS`. La sugerencia no escribe un pin. `git rev-parse HEAD^` tiene que ser `fa219c578743ccf538a425f569f2f81175048196`. Si no lo es, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F4. Ese HEAD es el commit de F3. El árbol de este anexo no contiene el SHA de F4 ni el de F3.
+F3B2 está `PASS`. F4 está `READY`. El padre del trabajo es el commit de F3B2. `git log -1 --format='%s'` tiene que decir que el retrieve abierto se alinea con `knowledge_scope` y que Legacy, Pilot y `manual_corpus` dejan de conceder acceso. `git status` tiene que estar limpio. Si el asunto no es ese, o el árbol está dirty en algo que no sea F4, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F4. Este anexo no contiene el SHA de F3B2 ni el de F4.
+
+### Qué dejó F3B2, y F4 no toca
+
+- Sin pin, el corpus es `account_id` del viewer más las URIs canónicas de filas ajenas `danebo_general` (`original_source_uri` y `x-amz-bedrock-kb-source-uri`). Cero generales es solo `account_id`. Legacy, Pilot y `manual_corpus=general` no son cláusulas.
+- `partition_evidence` descarta `denied`, `ambiguous` y `unmapped` antes de publicar y antes de un prompt local. Si todas las citas de `retrieve_and_generate` fallan, el texto no se publica. No agregues una segunda llamada al modelo para reescribir esa respuesta.
+- Un filtro del caller que amplía niega. Un predicado técnico se intersecta. Un conjunto de URIs se autoriza entero o es `DENY_RETRIEVAL`, sin llamada a Bedrock y sin retry abierto.
+- Revocar `danebo_general` saca la fila del siguiente retrieve ajeno. El dueño la conserva. Los pins de otras sesiones no se borran.
+- `WarmBedrockKbJob` sigue siendo un ping de Aurora. No lo filtres y no lo conviertas en retrieve de usuario.
+- WhatsApp sigue dormido. No lo reactives.
+- Recall medido, sin Bedrock: 204 documentos de catálogo, 19 en el índice `1` y 185 en el índice `3`. El viewer `3` retiene 185. Los 19 del índice `1`, incluido SEGURIDADES `b61f5d54-ff42-414a-97b7-01682d16f4b5`, son `backfill_gap`. Artefacto `tmp/field_companion/f3b2_recall.json`, SHA256 `74b467c0b72e7bcfd12118da6adee48038ee3ee3b7de11c590dc438c9f9bc887`. F4 no promueve ese gap. La promoción sigue siendo `knowledge_scope:apply` con `APPLY=true`, un documento, después de `knowledge_scope:audit`.
+- Telemetría ya allowlisted por F3B2, y no la saques: `rejected_result_count`, `authorized_general_count`, `retrieval_denied_reason`. `knowledge_scope` todavía no está en la allowlist.
 
 ### Qué no cambia
 
@@ -1603,9 +1691,10 @@ F3 está `PASS`. La sugerencia no escribe un pin. `git rev-parse HEAD^` tiene qu
 - `generation.txt` y el renderer de procedencia no se editan.
 - El score de `Rag::ManualCandidateRanker` no gana ni pierde puntos por scope. El filtro sigue después del top 3 y no rellena.
 - `UNCLASSIFIED` sigue siendo `tenant_private` del dueño. No apruebes ningún documento como `danebo_general`. No agregues una columna. No copies un `KbDocument`. No dupliques S3. No reindexes.
-- No uses como aprobación: `manual_corpus=general`, el `account_id` de índice del catálogo, el slug, Legacy, Pilot, el filename ni el fabricante.
+- No uses como aprobación: `manual_corpus=general`, el `account_id` de índice del catálogo, el slug, Legacy, Pilot, el filename ni el fabricante. `GENERAL_APPROVED` sintético tampoco.
 - No uses `SemanticQueryAnalyzer` para elegir el manual.
 - No hay auto-focus. `tie_at_top` no pinea solo.
+- No hay feature flag que restaure el OR histórico.
 
 ### Evidencia que F4 lee
 
@@ -1614,7 +1703,7 @@ Estos dos archivos tienen que existir y coincidir byte a byte. No los reescribas
 - `tmp/field_companion/f0_discovery.json` SHA256 `0119f27bd05a86efe5371008bd1886f9791bf5d427eea1364682adad9b9e5ee0`
 - `tmp/field_companion/f0_discovery_eligible.json` SHA256 `47efb001265ee5985fd33cee156054acd81b9fad8736e111ac4291914cbeff36`
 
-El viewer no owner de ese artefacto es la cuenta `5`, slug `elevadores-climb`. `general_approved_count` es 0. Esa lista no le entrega documentos del ranking técnico. F0 confirmó `existing_document_id_session_pin` con `reindex_required = false` y `duplicate_document_required = false`. F4 no está `BLOCKED`. La opción `new_chunk_attribute` no se elige. El registro de aprobación no existe y no se crea en F4. No va al chunk.
+El viewer no owner de ese artefacto es la cuenta `5`, slug `elevadores-climb`. En el recall de F3B2 ese viewer retiene 0 de 204. `general_approved_count` de F0 es 0 y F3B2 no sembró `danebo_general`. Esa lista no le entrega documentos del ranking técnico. F0 confirmó `existing_document_id_session_pin` con `reindex_required = false` y `duplicate_document_required = false`. F4 no está `BLOCKED`. La opción `new_chunk_attribute` no se elige. El registro de aprobación es `kb_documents.knowledge_scope`. F4 no lo escribe y no lo manda al chunk.
 
 ### Lo que F3 dejó
 
@@ -1630,14 +1719,14 @@ Payload:
 - `tie_at_top` true cuando dos o más tarjetas devueltas comparten el score máximo. No elige una.
 - Síntoma sin fabricante: no hay `manual_suggestion` y no hay retrieve extra.
 
-Telemetría ya allowlisted, y solo eso: `suggestion_document_uids` y `suggestion_scopes`. Evento `manual_suggestion_shown`. `knowledge_scope` todavía no está en la allowlist.
+Telemetría ya allowlisted por F3: `suggestion_document_uids` y `suggestion_scopes`. Evento `manual_suggestion_shown`. F3B2 sumó `rejected_result_count`, `authorized_general_count` y `retrieval_denied_reason`. `knowledge_scope` todavía no está en la allowlist.
 
 ### Tap
 
 El técnico toca una tarjeta. El servidor vuelve a correr la elegibilidad. No confíes en el JSON del browser.
 
 - Documento `tenant_private` de la cuenta del técnico: `pin_kb_document!`, `source: "user_pin"`, solo en `active_entities` de la sesión actual. Evento `manual_focus_confirmed`.
-- Documento `danebo_general`: el mismo `user_pin` sobre la fila `KbDocument` existente, escrito solo en la sesión actual. No se crea otro `KbDocument`, no se copia S3, no se reindexa, no hay `assisted_focus` y no hay un flag de pin en el documento. La carga permitida es la fila cuyo `document_uid` el ranker acaba de clasificar `GENERAL_APPROVED`. En producción ese conteo sigue en 0: el test usa una entrada con `classification: "GENERAL_APPROVED"`. No persistas esa marca.
+- Documento `danebo_general`: el mismo `user_pin` sobre la fila `KbDocument` existente, escrito solo en la sesión actual. No se crea otro `KbDocument`, no se copia S3, no se reindexa, no hay `assisted_focus` y no hay un flag de pin en el documento. La carga permitida es la fila que `Rag::KnowledgeScopePolicy` autoriza para ese viewer, atada por URI canónica y `document_uid` a una sola fila. En producción el conteo de `danebo_general` sigue en 0: el test crea una fila con `knowledge_scope` `danebo_general`. No persistas una marca `GENERAL_APPROVED`.
 - `PRIVATE` o `UNCLASSIFIED` de otra cuenta: no hay tap. El ranker no debió mostrarlos. Si el request igual trae ese uid, no pines y no lo busques con `unscoped`.
 - `tie_at_top`: una pregunta, máximo 3 chips, cero pins hasta el tap.
 - `pin_conflict`: se muestra y el pin anterior sigue.

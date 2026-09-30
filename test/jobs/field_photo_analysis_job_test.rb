@@ -783,6 +783,173 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
+  test "a fresh analysis stores the allowlisted observation and drops model prose" do
+    with_analysis_service(result: complete_observation_result) do
+      FieldPhotoAnalysisJob.perform_now(**job_args)
+    end
+
+    photo = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha)
+    observation = photo.visual_observation
+    assert_equal 1, observation["schema_version"]
+    assert_equal FieldPhotoPrompt.prompt_fingerprint_sha256, observation["prompt_fingerprint"]
+    assert_equal "claude-sonnet-5-5", observation["model_id"]
+    assert_equal "KONE", observation["manufacturer"]
+    assert_equal [ "R1" ], observation["visible_text"]
+    assert_not observation.key?("summary")
+    assert_not observation.key?("aliases")
+    assert_not observation.key?("anti_hallucination_notes")
+    assert_operator JSON.generate(observation).bytesize, :<=, 2048
+  end
+
+  test "new image bytes replace the stored observation instead of reusing it" do
+    photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: @sha,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{@sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4,
+      visual_observation: { "manufacturer" => "OTIS", "summary" => "vieja" }
+    )
+    calls = 0
+
+    with_analysis_service(result: complete_observation_result, on_call: -> { calls += 1 }) do
+      FieldPhotoAnalysisJob.perform_now(**job_args.merge(field_photo_id: photo.id))
+    end
+
+    assert_equal 1, calls
+    assert_equal "KONE", photo.reload.visual_observation["manufacturer"]
+    assert_not photo.visual_observation.key?("summary")
+  end
+
+  test "a reread analyzes the same photo again and records photo_observation_reread" do
+    photo = FieldPhoto.create!(
+      account_id: accounts(:legacy).id, sha256: @sha,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{@sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 4,
+      visual_observation: { "manufacturer" => "OTIS" }
+    )
+    FieldPhotoPendingImageStore.delete(token: @token, account_id: accounts(:legacy).id)
+    calls = 0
+
+    events = capture_pilot_usage_events do
+      with_analysis_service(result: complete_observation_result, on_call: -> { calls += 1 }) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          image_token: nil,
+          field_photo_id: photo.id,
+          continuity: "reread",
+          question: "revisa otra vez la foto"
+        ))
+      end
+    end
+
+    assert_equal 1, calls
+    assert_equal [ photo.s3_key_original ], fake_s3.downloads
+    assert_equal "KONE", photo.reload.visual_observation["manufacturer"]
+    reread = events.find { |event| event["event"] == "photo_observation_reread" }
+    assert_equal "reread", reread["cache_status"]
+    assert_equal @sha.first(12), reread["image_digest_prefix"]
+    assert_equal "photo:job-test", reread["correlation_id"]
+  end
+
+  test "reuse does not call Anthropic and keeps a technician manufacturer" do
+    photo = create_observed_photo(manufacturer: "KONE")
+    calls = 0
+    set_photo_question_flag(nil)
+
+    events = capture_pilot_usage_events do
+      with_episode_flag("true") do
+        with_analysis_service(result: complete_observation_result, on_call: -> { calls += 1 }) do
+          @session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
+          @session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+          @session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            image_token: nil,
+            field_photo_id: photo.id,
+            image_sha256: photo.sha256,
+            continuity: "reuse",
+            question: "estos resortes"
+          ))
+        end
+      end
+    end
+
+    assert_equal 0, calls
+    assert_empty fake_s3.downloads
+    episode = @session.reload.active_episode
+    assert_equal "Fuji Yida", episode.dig("facts", "manufacturer", "value")
+    assert_equal "user", episode.dig("facts", "manufacturer", "source")
+    assert_equal "KONE", episode["conflicts"].first["photo"]
+    assert_equal "Fuji Yida", episode["conflicts"].first["user"]
+    notice = Rag::FocusNotice.identity_conflict(session: @session)
+    assert_includes notice.message, "Fuji Yida"
+    assert_includes notice.message, "KONE"
+    photo_state = episode["active_photo"]
+    assert_equal photo.id, photo_state["field_photo_id"]
+    assert_equal photo.sha256, photo_state["sha256"]
+    assert_equal "photo:job-test", photo_state["correlation_id"]
+    assert_nil photo_state["visual_observation"]
+    assert_nil photo_state["summary"]
+    reused = events.find { |event| event["event"] == "photo_observation_reused" }
+    assert_equal "reused", reused["cache_status"]
+    assert_equal "KONE", photo.reload.visual_observation["manufacturer"]
+  end
+
+  test "reuse injects the stored observation into the photo question and does not call Anthropic" do
+    photo = create_observed_photo(manufacturer: "KONE")
+    set_photo_question_flag("true")
+    calls = 0
+    captured = {}
+    orig_query = BedrockRagService.instance_method(:query)
+    BedrockRagService.define_method(:query) do |_question, **kwargs|
+      captured.replace(kwargs)
+      { answer: "Respuesta de manual", citations: [], session_id: nil }
+    end
+
+    with_analysis_service(result: complete_observation_result, on_call: -> { calls += 1 }) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          image_token: nil,
+          field_photo_id: photo.id,
+          image_sha256: photo.sha256,
+          continuity: "reuse",
+          question: "estos resortes"
+        ))
+      end
+
+      assert_equal 0, calls
+      assert_equal "Respuesta de manual", messages.last["answer"]
+    end
+
+    assert_includes captured[:session_context], "Photo Evidence"
+    assert_includes captured[:session_context], "KONE"
+    assert_includes captured[:session_context], "resortes"
+    assert_not_includes captured[:session_context], "no guardar"
+    assert_equal "KONE", photo.reload.visual_observation["manufacturer"]
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    set_photo_question_flag(nil)
+  end
+
+  test "reuse of another account photo does not reveal its observation" do
+    foreign = create_observed_photo(account: accounts(:climb), manufacturer: "OTIS-SECRET")
+    calls = 0
+
+    with_analysis_service(result: complete_observation_result, on_call: -> { calls += 1 }) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          image_token: nil,
+          field_photo_id: foreign.id,
+          continuity: "reuse",
+          question: "según la foto"
+        ))
+      end
+
+      assert_equal 0, calls
+      assert_equal Rag::PhotoObservationContinuity::MISSING_PHOTO_MESSAGE, messages.last["answer"]
+      assert_not_includes messages.last["answer"], "OTIS-SECRET"
+    end
+
+    assert_equal "OTIS-SECRET", foreign.reload.visual_observation["manufacturer"]
+  end
+
   private
 
   def with_episode_flag(value)
@@ -848,6 +1015,46 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       usage: { input_tokens: 120, output_tokens: 80 },
       latency_ms: 250
     }
+  end
+
+  def complete_observation_result
+    analysis_result.merge(
+      model: "claude-sonnet-5-5",
+      canonical_name: "resortes",
+      parsed: {
+        "canonical_component" => "resortes",
+        "manufacturer" => "KONE",
+        "model" => "UNKNOWN",
+        "subsystem" => "DOOR_OPERATOR",
+        "condition" => "DEGRADED",
+        "visible_text" => [ "R1" ],
+        "summary" => "no guardar",
+        "aliases" => [ "muelle" ],
+        "documented_functions" => [],
+        "anti_hallucination_notes" => "nota",
+        "target_visible" => true,
+        "relevance_to_goal" => "relevant"
+      }
+    )
+  end
+
+  def create_observed_photo(account: accounts(:legacy), manufacturer: "KONE")
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: account,
+      sha256: sha,
+      s3_key_original: "field_photos/#{account.id}/#{sha}/original.jpg",
+      content_type: "image/jpeg",
+      byte_size: 8
+    )
+    FieldPhotoObservation.persist!(
+      photo,
+      FieldPhotoObservation.from_analysis(
+        parsed: complete_observation_result[:parsed].merge("manufacturer" => manufacturer),
+        model_id: "claude-sonnet-5-5"
+      )
+    )
+    photo.reload
   end
 
   def capture_pilot_usage_events

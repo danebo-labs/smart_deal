@@ -47,7 +47,8 @@ class QueryOrchestratorService
   # @param locale [String, nil] ISO 639-1 locale for image summary generation ("es", "en")
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, auto_scope_filter: false, locale: nil,
-                 user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil, raw_question: nil)
+                 user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil, raw_question: nil,
+                 apply_photo_continuity: true)
     @query = query
     @raw_question = raw_question
     @images = images || []
@@ -67,6 +68,7 @@ class QueryOrchestratorService
     @conversation_session_id = conversation_session_id || (conv_session.id if conv_session.respond_to?(:id))
     @correlation_id = correlation_id
     @field_photo_id = field_photo_id
+    @apply_photo_continuity = apply_photo_continuity
     @ai_provider = AiProvider.new
   end
 
@@ -81,37 +83,27 @@ class QueryOrchestratorService
   def execute
     upload_context = {}
 
-    if @field_photo_id.present? && @images.empty? && @account
-      photo = @account.field_photos.find_by(id: @field_photo_id) # scoping obligatorio
-      if photo
-        # Reuse the stored sha256. The job rehydrates the retained bytes from
-        # S3 and runs one fresh vision read. Zero bytes leave the device.
-        locale = (@response_locale || @locale || I18n.locale).to_s
-        correlation_id = @correlation_id.presence || "photo:#{SecureRandom.uuid}"
-        filename = File.basename(photo.s3_key_original)
-
-        FieldPhotoAnalysisJob.perform_later(
-          image_token: nil,
-          image_sha256: photo.sha256,
-          filename: filename,
-          content_type: photo.content_type,
-          account_id: @account&.id,
-          user_id: @user_id,
-          conversation_session_id: @conversation_session_id,
-          locale: locale,
-          correlation_id: correlation_id,
-          field_photo_id: photo.id,
-          question: @query.to_s
-        )
-
-        return {
-          answer: I18n.with_locale(locale) { I18n.t("rag.image_analyzing_message") },
-          citations: [],
-          session_id: nil,
-          images_uploaded: [ filename ],
-          correlation_id: correlation_id,
-          response_locale: locale
-        }
+    # Image continuity. The first matching rule wins. New bytes stay on the
+    # analysis path below and do not reuse a stored observation. The photo
+    # question retrieve opts out: that call already has the observation and
+    # must not start another visual turn.
+    if @apply_photo_continuity
+      decision = Rag::PhotoObservationContinuity.decide(
+        question: @query,
+        images: @images,
+        field_photo_id: @field_photo_id,
+        account: @account,
+        session: @conv_session
+      )
+      case decision.action
+      when :reread
+        return enqueue_stored_field_photo(decision.photo, continuity: "reread")
+      when :reuse
+        if FieldPhotoObservation.sanitize(decision.photo.visual_observation)
+          return enqueue_stored_field_photo(decision.photo, continuity: "reuse")
+        end
+      when :missing_photo
+        return missing_field_photo_result
       end
     end
 
@@ -327,6 +319,47 @@ class QueryOrchestratorService
   end
 
   private
+
+  def enqueue_stored_field_photo(photo, continuity:)
+    locale = (@response_locale || @locale || I18n.locale).to_s
+    correlation_id = @correlation_id.presence || "photo:#{SecureRandom.uuid}"
+    filename = File.basename(photo.s3_key_original.to_s)
+
+    FieldPhotoAnalysisJob.perform_later(
+      image_token: nil,
+      image_sha256: photo.sha256,
+      filename: filename,
+      content_type: photo.content_type,
+      account_id: @account&.id,
+      user_id: @user_id,
+      conversation_session_id: @conversation_session_id,
+      locale: locale,
+      correlation_id: correlation_id,
+      field_photo_id: photo.id,
+      question: @query.to_s,
+      continuity: continuity
+    )
+
+    {
+      answer: I18n.with_locale(locale) { I18n.t("rag.image_analyzing_message") },
+      citations: [],
+      session_id: nil,
+      images_uploaded: [ filename ],
+      correlation_id: correlation_id,
+      response_locale: locale
+    }
+  end
+
+  def missing_field_photo_result
+    locale = (@response_locale || @locale || I18n.locale).to_s
+    {
+      answer: Rag::PhotoObservationContinuity::MISSING_PHOTO_MESSAGE,
+      citations: [],
+      session_id: nil,
+      correlation_id: @correlation_id,
+      response_locale: locale
+    }
+  end
 
   def episode_for_scope
     return unless @conv_session.respond_to?(:active_episode)

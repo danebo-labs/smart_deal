@@ -57,13 +57,30 @@ class FieldPhotoAnalysisJob < ApplicationJob
   end
 
   def perform(image_token:, image_sha256:, filename:, content_type:, account_id:, user_id: nil,
-              conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil, question: nil)
+              conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil, question: nil,
+              continuity: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     locale = locale.to_s.presence || I18n.default_locale.to_s
     correlation_id ||= "photo:#{SecureRandom.uuid}"
     session = conversation_session_id ? ConversationSession.find_by(id: conversation_session_id) : nil
     if session && account_id && session.account_id != account_id
       raise ArgumentError, "ConversationSession #{session.id} is not owned by account #{account_id}"
+    end
+
+    if continuity.to_s == "reuse"
+      reuse_stored_observation(
+        field_photo_id: field_photo_id,
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        session: session,
+        filename: filename,
+        locale: locale,
+        correlation_id: correlation_id,
+        question: question,
+        started_at: started_at
+      )
+      return
     end
 
     image = FieldPhotoPendingImageStore.take(token: image_token, account_id: account_id)
@@ -133,6 +150,17 @@ class FieldPhotoAnalysisJob < ApplicationJob
       photo_intent: photo_intent
     ).call
 
+    store_visual_observation(result, field_photo_id: field_photo_id, account_id: account_id)
+    if continuity.to_s == "reread"
+      log_observation_reread(
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        correlation_id: correlation_id,
+        image_sha256: image_sha256
+      )
+    end
+
     value = photo_value(result)
     delivered = deliver(
       value,
@@ -179,6 +207,117 @@ class FieldPhotoAnalysisJob < ApplicationJob
   end
 
   private
+
+  def reuse_stored_observation(field_photo_id:, account_id:, user_id:, conversation_session_id:, session:,
+                               filename:, locale:, correlation_id:, question:, started_at:)
+    photo = account_id && FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
+    observation = photo && FieldPhotoObservation.sanitize(photo.visual_observation)
+    if observation.nil?
+      broadcast_missing_observation(
+        filename: filename,
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        correlation_id: correlation_id,
+        locale: locale,
+        question: question,
+        started_at: started_at,
+        field_photo_id: photo&.id
+      )
+      return
+    end
+
+    PilotUsageLog.log(
+      "photo_observation_reused",
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      route: "visual_query",
+      cache_status: "reused",
+      image_digest_prefix: photo.sha256.to_s.first(12)
+    )
+    value = FieldPhotoObservation.reading_value(observation)
+    delivered = deliver(
+      value,
+      session: session,
+      filename: filename,
+      account_id: account_id,
+      user_id: user_id,
+      correlation_id: correlation_id,
+      field_photo_id: photo.id,
+      image_sha256: photo.sha256,
+      locale: locale,
+      question: question,
+      photo_intent: nil
+    )
+    emit_interaction_completed(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      outcome: delivered.fetch(:outcome),
+      latency_ms: elapsed_ms(started_at),
+      original_query: question,
+      effective_query: delivered[:effective_query] || question,
+      answer: delivered[:answer],
+      citations: delivered[:citations],
+      photo: { "target_visible" => value[:target_visible] }
+    )
+  end
+
+  def broadcast_missing_observation(filename:, account_id:, user_id:, conversation_session_id:,
+                                    correlation_id:, locale:, question:, started_at:, field_photo_id:)
+    message = Rag::PhotoObservationContinuity::MISSING_PHOTO_MESSAGE
+    KbSyncBroadcaster.photo_question_answered(
+      answer: message,
+      citations: [],
+      account_id: account_id,
+      correlation_id: correlation_id,
+      response_locale: locale,
+      field_photo_id: field_photo_id
+    )
+    emit_interaction_completed(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      outcome: "answered",
+      latency_ms: elapsed_ms(started_at),
+      original_query: question,
+      effective_query: question,
+      answer: message
+    )
+  end
+
+  def log_observation_reread(account_id:, user_id:, conversation_session_id:, correlation_id:, image_sha256:)
+    PilotUsageLog.log(
+      "photo_observation_reread",
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      route: "visual_query",
+      cache_status: "reread",
+      image_digest_prefix: image_sha256.to_s.first(12)
+    )
+  end
+
+  # A failed sanitize does not replace a previous valid reading and does not
+  # block the answer that was already paid for.
+  def store_visual_observation(result, field_photo_id:, account_id:)
+    return if field_photo_id.blank? || account_id.blank?
+
+    photo = FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
+    return if photo.nil?
+
+    FieldPhotoObservation.persist!(
+      photo,
+      FieldPhotoObservation.from_analysis(parsed: result[:parsed], model_id: result[:model])
+    )
+  rescue StandardError => e
+    Rails.logger.warn("FieldPhotoAnalysisJob observation persist failed account=#{account_id} reason=#{e.class}")
+  end
 
   # A photo alone publishes the vision reading. A photo with a question
   # publishes one answer (CG-D19): the reading enters the prose of that single

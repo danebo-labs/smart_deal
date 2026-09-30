@@ -163,6 +163,29 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_equal "Fuji Yida", episode.to_h.dig("facts", "manufacturer", "value")
   end
 
+  test "sanitize_photo keeps the photo ids and drops the visual reading" do
+    episode = Rag::ActiveEpisode.parse(valid_payload(
+      "active_photo" => {
+        "field_photo_id" => 42,
+        "sha256" => "abc123",
+        "correlation_id" => "photo:1",
+        "visual_observation" => { "manufacturer" => "KONE", "summary" => "prosa" },
+        "summary" => "prosa de build_analysis",
+        "manufacturer" => "KONE",
+        "model" => "MonoSpace"
+      }
+    ), now: NOW)
+
+    photo = episode.active_photo
+    assert_equal 42, photo["field_photo_id"]
+    assert_equal "abc123", photo["sha256"]
+    assert_equal "photo:1", photo["correlation_id"]
+    assert_equal %w[correlation_id field_photo_id sha256], photo.keys.sort
+    assert_nil photo["visual_observation"]
+    assert_nil photo["summary"]
+    assert_nil photo["manufacturer"]
+  end
+
   test "field companion flags are off unless the env value is the string true" do
     with_flags(nil) do
       assert_not Rag::FieldCompanionEpisodeFlag.enabled?

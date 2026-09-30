@@ -71,7 +71,9 @@ module Rag
         user_id:         @user_id,
         response_locale: @locale,
         correlation_id:  @correlation_id,
-        conversation_session_id: @session&.id
+        conversation_session_id: @session&.id,
+        # The visual decision already ran. This retrieve must not open another one.
+        apply_photo_continuity: false
       )
       return nil unless result.success?
 

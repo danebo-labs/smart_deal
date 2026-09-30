@@ -6,6 +6,8 @@
 # and render as a data URL with zero extra round-trips. Never a KbDocument and
 # never a Knowledge Base source — see docs/PRODUCT_ROADMAP.md Field-photo contract.
 class FieldPhoto < ApplicationRecord
+  # Allowlisted reading on this row. destroy! removes it with the photo.
+  # FieldPhotoObservation is the only writer.
   belongs_to :account
   validates :sha256, :s3_key_original, :content_type, :byte_size, presence: true
 

@@ -168,6 +168,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       s3_key_original: "field_photos/#{accounts(:legacy).id}/#{'g' * 64}/original.jpg",
       content_type: "image/jpeg", byte_size: 4
     )
+    store_visual_observation!(photo)
 
     result = QueryOrchestratorService.new(
       "What does this mean?",
@@ -179,6 +180,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal [ "original.jpg" ], result[:images_uploaded]
     args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
     assert_nil args["image_token"]
+    assert_equal "reuse", args["continuity"]
     assert_equal photo.sha256, args["image_sha256"]
     assert_equal photo.id, args["field_photo_id"]
     assert_equal result[:correlation_id], args["correlation_id"]
@@ -190,6 +192,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       s3_key_original: "field_photos/#{accounts(:legacy).id}/#{'i' * 64}/original.jpg",
       content_type: "image/jpeg", byte_size: 4
     )
+    store_visual_observation!(photo)
 
     result = I18n.with_locale(:en) do
       QueryOrchestratorService.new(
@@ -223,6 +226,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       s3_key_original: "field_photos/#{accounts(:legacy).id}/#{'j' * 64}/original.jpg",
       content_type: "image/jpeg", byte_size: 4
     )
+    store_visual_observation!(photo)
 
     QueryOrchestratorService.new(
       "Que está mostrando la pantalla?",
@@ -231,6 +235,7 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     ).execute
 
     args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+    assert_equal "reuse", args["continuity"]
     assert_equal "Que está mostrando la pantalla?", args["question"]
   end
 
@@ -681,6 +686,24 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     if original_build
       Rag::ContextEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_build.call(**kwargs) }
     end
+  end
+
+  def store_visual_observation!(photo, manufacturer: "KONE")
+    FieldPhotoObservation.persist!(
+      photo,
+      FieldPhotoObservation.from_analysis(
+        parsed: {
+          "canonical_component" => "resortes",
+          "manufacturer" => manufacturer,
+          "model" => "UNKNOWN",
+          "subsystem" => "DOOR_OPERATOR",
+          "condition" => "DEGRADED",
+          "visible_text" => [ "R1" ]
+        },
+        model_id: "claude-sonnet-5-5"
+      )
+    )
+    photo.reload
   end
 
   def capture_pilot_usage_events

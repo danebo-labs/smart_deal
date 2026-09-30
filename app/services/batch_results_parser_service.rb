@@ -69,9 +69,9 @@ class BatchResultsParserService
   # @param result        [Object, nil]  Anthropic batch result (.result.type, .result.message)
   # @param raw_json      [String, nil]  pre-parsed JSON string (web path — skips result unwrap)
   # @param ingestion_path [String]      "batch_v1" | "web_v1"
-  # @param corpus_scope [String, nil] "general" (every account retrieves it),
-  #   "account" (only this account_id), or nil (Danebo and the pilot default
-  #   to general; any other account defaults to account-only). Photos ignore it.
+  # @param corpus_scope [String, nil] "general" writes manual_corpus=general
+  #   only when the account is danebo_controlled. "account", nil, or an
+  #   uncontrolled account writes manual_corpus=account. Photos ignore it.
   # @return asset with parsed fields set
   # @raise [ParseError]
   def call(asset:, result: nil, raw_json: nil, ingestion_path: "batch_v1", account_id: nil, document_uid: nil, corpus_scope: nil)
@@ -663,10 +663,10 @@ class BatchResultsParserService
   # `ingestion_path` distinguishes web_v1 (optimized) from batch_v1 (bulk) in telemetry.
   # `section_identity` is the brand/controller-family section a divider page declared
   # and ChunkMergerService carried forward (field_records_v7); absent when unknown.
-  # `account_id` scopes the chunk. `manual_corpus=general` marks a manual as
-  # general RAG knowledge (see `Rag::SharedManualCorpus`). `corpus_scope`
-  # `"general"` or `"account"` overrides the default for this document.
-  # Photos never get the attribute. `project_id` stays unused.
+  # `account_id` scopes the chunk. A new manual writes
+  # `manual_corpus=account` unless `corpus_scope` is `"general"` and the
+  # account is `danebo_controlled`. Photos never get the attribute.
+  # `project_id` stays unused.
   # `section_path` and `topology_edge_count` (Fase 4, contract v8) are gated on
   # IngestionLayoutFlag — absent whenever the flag is off, which is what keeps a
   # v7 sidecar byte-identical to what this method would have written before Fase 4.
@@ -685,9 +685,12 @@ class BatchResultsParserService
       "prompt_fingerprint_sha256"  => prompt_fingerprint,
       "aliases"             => sanitize_aliases(aliases, limit: DOCUMENT_ALIAS_LIMIT)
     }
-    if Rag::SharedManualCorpus.tag?(account_id: account_id, ingestion_path: ingestion_path, corpus_scope: corpus_scope)
-      attributes[Rag::SharedManualCorpus::ATTRIBUTE] = Rag::SharedManualCorpus::GENERAL
-    end
+    corpus_attribute = Rag::SharedManualCorpus.chunk_attribute(
+      account_id: account_id,
+      ingestion_path: ingestion_path,
+      corpus_scope: corpus_scope
+    )
+    attributes[Rag::SharedManualCorpus::ATTRIBUTE] = corpus_attribute if corpus_attribute
 
     normalized_page = Integer(page_number, exception: false)
     attributes["page_number"] = normalized_page if normalized_page&.positive?

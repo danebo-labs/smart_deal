@@ -125,13 +125,13 @@ response and does not serve a tenant.
 Without a pin the filter is the pre-F3B2 compatibility corpus.
 `BedrockRagService#account_filter` is an `orAll` of the viewer's
 `account_id`, each other `Rag::SharedManualCorpus` account as `account_id`
-AND `ingestion_path != field_photo_v1`, and `manual_corpus=general`. An
-ordinary tenant's `account_id` is not a clause. `KnowledgeScopePolicy.open_corpus`
-is not this filter. `Rag::SharedManualCorpus.tag?` still writes
-`manual_corpus` on a sidecar. A returned chunk is kept when its
-`account_id` is the viewer, a shared-corpus account and not a photo,
-`manual_corpus=general`, or blank. `document_id` is not compared with
-`KbDocument.document_uid`.
+AND `ingestion_path != field_photo_v1` AND `manual_corpus != account`,
+and `manual_corpus=general`. An ordinary tenant's `account_id` is not a
+clause. `KnowledgeScopePolicy.open_corpus` is not this filter. A new
+manual sidecar writes `manual_corpus=account` unless `corpus_scope` is
+`general` and the account is `danebo_controlled`. A returned chunk
+without a readable `account_id` is dropped. `document_id` is not compared
+with `KbDocument.document_uid`.
 
 Rules:
 

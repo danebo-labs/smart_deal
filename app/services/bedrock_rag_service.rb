@@ -580,7 +580,7 @@ class BedrockRagService
     )
 
     chunks = Array(response.retrieval_results).each_with_index.map do |result, index|
-      metadata = result.metadata.to_h
+      metadata = retrieval_chunk_metadata({ metadata: result.metadata })
       source_uri = result.location&.s3_location&.uri
       content = result.content&.text.to_s
 
@@ -588,9 +588,8 @@ class BedrockRagService
         rank: index + 1,
         content: content,
         score: result.score,
-        original_source_uri: metadata["original_source_uri"] || metadata[:original_source_uri],
-        bedrock_source_uri: metadata["x-amz-bedrock-kb-source-uri"] ||
-          metadata[:"x-amz-bedrock-kb-source-uri"],
+        original_source_uri: metadata&.[]("original_source_uri"),
+        bedrock_source_uri: metadata&.[]("x-amz-bedrock-kb-source-uri"),
         location_uri: source_uri,
         metadata: metadata,
         chunk_sha256: Digest::SHA256.hexdigest(content)
@@ -1148,7 +1147,7 @@ class BedrockRagService
       {
         content:  r.content&.text,
         location: location,
-        metadata: r.metadata || {}
+        metadata: r.metadata
       }
     end
     results, rejected = select_publishable_chunks(results)
@@ -1775,19 +1774,25 @@ class BedrockRagService
     }
   end
 
-  # Indexed manuals of Danebo and the pilot. Photos of those accounts stay
-  # out: a chunk whose ingestion_path is the photo path does not match.
+  # Historical manuals of Danebo and the pilot. Photos stay out. A new
+  # manual marked manual_corpus=account stays out. A chunk indexed before
+  # that marker has no key, and Bedrock notEquals still matches it.
   def shared_manual_clause(id)
     {
       and_all: [
         account_id_equals(id),
-        {
-          not_equals: {
-            key: "ingestion_path",
-            value: Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
-          }
-        }
+        photo_exclusion_clause,
+        private_corpus_exclusion_clause
       ]
+    }
+  end
+
+  def private_corpus_exclusion_clause
+    {
+      not_equals: {
+        key: Rag::SharedManualCorpus::ATTRIBUTE,
+        value: Rag::SharedManualCorpus::ACCOUNT
+      }
     }
   end
 
@@ -1868,7 +1873,12 @@ class BedrockRagService
     # account_scope_clause so the AND stays at depth 2. Photo exclusion
     # sits beside that clause because the flat OR does not carry it.
     begin
-      checked_bedrock_filter(and_all_clause([ account_scope_clause, filter, photo_exclusion_clause ]))
+      checked_bedrock_filter(and_all_clause([
+        account_scope_clause,
+        filter,
+        photo_exclusion_clause,
+        private_corpus_exclusion_clause
+      ]))
     rescue ArgumentError
       @retrieval_denied = true
       @retrieval_denied_reason = "caller_filter_shape"
@@ -2144,7 +2154,6 @@ class BedrockRagService
 
   def reference_to_chunk(ref)
     metadata = ref.respond_to?(:metadata) ? ref.metadata : nil
-    metadata = metadata.to_h if metadata.respond_to?(:to_h) && !metadata.is_a?(Hash)
     location = ref.respond_to?(:location) ? ref.location : nil
     uri = if location.respond_to?(:s3_location)
       location.s3_location&.uri
@@ -2154,7 +2163,7 @@ class BedrockRagService
     content = ref.respond_to?(:content) ? ref.content : nil
     {
       content: content.respond_to?(:text) ? content.text : content,
-      metadata: metadata || {},
+      metadata: metadata,
       location: uri ? { uri: uri } : nil
     }
   end
@@ -2179,17 +2188,22 @@ class BedrockRagService
   # Open-retrieval publish gate. Mirrors account_filter. It does not compare
   # chunk document_id with KbDocument.document_uid: bulk ingestion writes
   # sha256[0,36] into the sidecar and the row receives a separate UUID.
-  # Pin authorization stays on KnowledgeScopePolicy and is not this method.
+  # Missing or unreadable metadata fails closed. Pin authorization stays
+  # on KnowledgeScopePolicy and is not this method.
   def publishable_retrieved_chunk?(chunk)
     metadata = retrieval_chunk_metadata(chunk)
-    photo = metadata["ingestion_path"].to_s == Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
-    general = metadata[Rag::SharedManualCorpus::ATTRIBUTE].to_s == Rag::SharedManualCorpus::GENERAL
-    account_id = metadata["account_id"].to_s.presence
+    return false if metadata.nil?
 
-    return true if general && !photo
-    return true if account_id.blank?
+    account_id = metadata["account_id"].to_s.presence
+    return false if account_id.blank?
+
+    photo = metadata["ingestion_path"].to_s == Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
+    corpus = metadata[Rag::SharedManualCorpus::ATTRIBUTE].to_s
     return true if account_id == @account&.id.to_s
-    return true if Rag::SharedManualCorpus.member_id?(account_id) && !photo
+    return false if photo
+    return false if corpus == Rag::SharedManualCorpus::ACCOUNT
+    return true if corpus == Rag::SharedManualCorpus::GENERAL
+    return true if Rag::SharedManualCorpus.member_id?(account_id)
 
     false
   end
@@ -2208,11 +2222,17 @@ class BedrockRagService
   end
 
   def retrieval_chunk_metadata(chunk)
-    raw = chunk[:metadata] || chunk["metadata"]
-    raw = raw.to_h if raw.respond_to?(:to_h) && !raw.is_a?(Hash)
-    raw.to_h.stringify_keys
+    return nil unless chunk.is_a?(Hash)
+
+    raw = chunk.key?(:metadata) ? chunk[:metadata] : chunk["metadata"]
+    return nil if raw.nil?
+
+    raw = raw.to_h if !raw.is_a?(Hash) && raw.respond_to?(:to_h)
+    return nil unless raw.is_a?(Hash)
+
+    raw.stringify_keys
   rescue StandardError
-    {}
+    nil
   end
 
   def extract_doc_refs(answer_text)

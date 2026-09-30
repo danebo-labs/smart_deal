@@ -498,6 +498,68 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     assert_nil client.filter
   end
 
+  test "citations retrieve and fallback drop metadata without a readable account_id" do
+    sha36 = "121bfffe0827f6bc681ba9bdc91050390055"
+    legacy_id = accounts(:legacy).id.to_s
+    cases = {
+      "blank account_id" => [ { "document_id" => sha36 }, false ],
+      "nil metadata" => [ nil, false ],
+      "unreadable metadata" => [ unreadable_metadata, false ],
+      "general without account_id" => [ { "manual_corpus" => "general", "document_id" => sha36 }, false ],
+      "own bulk sha36" => [ { "account_id" => legacy_id, "document_id" => sha36 }, true ]
+    }
+
+    cases.each do |name, (metadata, kept)|
+      assert_equal kept, published_on?(:citations, metadata), name
+      assert_equal kept, published_on?(:retrieve, metadata), name
+      assert_equal kept, published_on?(:fallback, metadata), name
+    end
+  end
+
+  test "historical shared manuals stay readable and a new account-scoped upload does not" do
+    legacy = accounts(:legacy)
+    pilot = accounts(:pilot)
+    climb = accounts(:climb)
+    other = client_account
+    sha36 = "121bfffe0827f6bc681ba9bdc91050390055"
+
+    assert published_for?(legacy, "account_id" => pilot.id.to_s, "document_id" => sha36)
+    assert published_for?(pilot, "account_id" => legacy.id.to_s, "document_id" => sha36)
+    assert published_for?(climb, "account_id" => legacy.id.to_s, "document_id" => sha36)
+    assert published_for?(climb, "account_id" => pilot.id.to_s, "document_id" => sha36)
+    assert_not published_for?(legacy, "account_id" => climb.id.to_s, "document_id" => sha36)
+    assert_not published_for?(legacy, "account_id" => other.id.to_s, "document_id" => sha36)
+    assert_not published_for?(
+      climb,
+      "account_id" => other.id.to_s,
+      "document_id" => sha36
+    )
+    assert_not published_for?(
+      legacy,
+      "account_id" => pilot.id.to_s,
+      "document_id" => sha36,
+      "manual_corpus" => "account"
+    )
+    assert published_for?(
+      pilot,
+      "account_id" => pilot.id.to_s,
+      "document_id" => sha36,
+      "manual_corpus" => "account"
+    )
+    assert published_for?(
+      legacy,
+      "account_id" => legacy.id.to_s,
+      "document_id" => sha36,
+      "ingestion_path" => "field_photo_v1"
+    )
+    assert_not published_for?(
+      legacy,
+      "account_id" => pilot.id.to_s,
+      "document_id" => sha36,
+      "ingestion_path" => "field_photo_v1"
+    )
+  end
+
   test "extract_doc_refs keeps an authorized general uri and drops a foreign private uri" do
     @owner.update!(danebo_controlled: true)
     shared = KbDocument.create!(account: @owner, s3_key: "shared.pdf", display_name: "Shared", aliases: [])
@@ -555,6 +617,92 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     yield
   ensure
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
+  end
+
+  def unreadable_metadata
+    Object.new.tap { |object| object.define_singleton_method(:to_h) { raise StandardError, "unreadable" } }
+  end
+
+  def published_on?(path, metadata)
+    body = "BODY-#{path}"
+    viewer = accounts(:legacy)
+    case path
+    when :citations
+      result = query_with_citations(viewer, body, metadata)
+      Array(result[:retrieved_citations]).any? { |chunk| chunk[:content].to_s == body }
+    when :retrieve
+      chunks = retrieve_with_metadata(viewer, body, metadata)
+      chunks.any? { |chunk| chunk[:content].to_s == body }
+    when :fallback
+      result = query_with_fallback(viewer, body, metadata)
+      Array(result[:retrieved_citations]).any? { |chunk| chunk_text(chunk) == body }
+    else
+      raise ArgumentError, path.inspect
+    end
+  end
+
+  def published_for?(viewer, metadata)
+    result = query_with_citations(viewer, "SHARED", metadata)
+    Array(result[:retrieved_citations]).any? { |chunk| chunk[:content].to_s == "SHARED" }
+  end
+
+  def chunk_text(chunk)
+    chunk.respond_to?(:[]) ? chunk[:content].to_s : chunk.content.to_s
+  end
+
+  def query_with_citations(viewer, body, metadata)
+    response = OpenStruct.new(
+      output: OpenStruct.new(text: "Answer"),
+      session_id: "sid",
+      citations: [
+        OpenStruct.new(
+          retrieved_references: [
+            OpenStruct.new(
+              content: OpenStruct.new(text: body),
+              location: OpenStruct.new(s3_location: OpenStruct.new(uri: "s3://bucket/chunks/x.txt")),
+              metadata: metadata
+            )
+          ]
+        )
+      ]
+    )
+    client = FakeClient.new
+    client.generate_response = response
+    with_client(client) { BedrockRagService.new(account: viewer).query("What is S3?") }
+  end
+
+  def retrieve_with_metadata(viewer, body, metadata)
+    client = FakeClient.new
+    client.retrieve_results = [
+      OpenStruct.new(
+        content: OpenStruct.new(text: body),
+        score: 0.9,
+        metadata: metadata,
+        location: OpenStruct.new(s3_location: OpenStruct.new(uri: "s3://bucket/chunks/x.txt"))
+      )
+    ]
+    with_client(client) do
+      BedrockRagService.new(account: viewer).retrieve_chunks("torque").fetch(:chunks)
+    end
+  end
+
+  def query_with_fallback(viewer, body, metadata)
+    response = OpenStruct.new(
+      output: OpenStruct.new(text: "Answer without citations"),
+      session_id: "sid",
+      citations: []
+    )
+    client = FakeClient.new
+    client.generate_response = response
+    client.retrieve_results = [
+      OpenStruct.new(
+        content: OpenStruct.new(text: body),
+        score: 0.9,
+        metadata: metadata,
+        location: OpenStruct.new(s3_location: OpenStruct.new(uri: "s3://bucket/chunks/x.txt"))
+      )
+    ]
+    with_client(client) { BedrockRagService.new(account: viewer).query("What is S3?") }
   end
 
   def client_account

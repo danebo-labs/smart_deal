@@ -192,7 +192,8 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
             "canonical_name" => "Manual SEGURIDADES",
             "original_source_uri" => "s3://test-bucket/manual.pdf",
             "section_identity" => identity,
-            "page_number" => identity == "THYSSEN" ? 93 : 67
+            "page_number" => identity == "THYSSEN" ? 93 : 67,
+            "account_id" => @account.id.to_s
           }
         )
       ]

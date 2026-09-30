@@ -1,19 +1,14 @@
 # frozen_string_literal: true
 
 module Rag
-  # Open retrieval includes the viewer's account_id, the other account in
-  # SLUGS with photos excluded, and chunks tagged manual_corpus=general.
-  # That filter is the pre-F3B2 compatibility path. It is not pin
-  # authorization: KnowledgeScopePolicy still decides whether a URI may be
-  # pinned, and a slug does not make a foreign tenant_private row pinnable.
-  #
-  # Scope of a new document, passed as `corpus_scope` to
-  # `BatchResultsParserService#call`:
-  # - `"general"` writes the attribute. It does not set knowledge_scope.
-  # - `"account"` omits the attribute.
-  # - omitted: manuals of the two slugs above still get the attribute; any
-  #   other account does not. That default is not an approval.
-  # Photos never receive the attribute.
+  # Open retrieval still reads the historical Legacy/Pilot manuals. A new
+  # manual is not shared just because the uploader's account is one of
+  # those slugs. `chunk_attribute` writes `manual_corpus=account` unless
+  # the caller passes `corpus_scope: "general"` and that account has
+  # `danebo_controlled`. The shared filter excludes `manual_corpus=account`.
+  # Chunks indexed before that marker have no key; Bedrock `notEquals`
+  # still matches a missing key, so the historical corpus stays readable.
+  # Photos never receive the attribute. This is not pin authorization.
   module SharedManualCorpus
     SLUGS = %w[danebo-legacy danebo-pilot-elevator].freeze
     ATTRIBUTE = "manual_corpus"
@@ -42,15 +37,31 @@ module Rag
         raise ArgumentError, "corpus_scope must be \"general\" or \"account\""
       end
 
-      def tag?(account_id:, ingestion_path:, corpus_scope: nil)
-        return false if ingestion_path.to_s == PHOTO_INGESTION_PATH
+      # "general", "account", or nil for a photo. Slug membership is not a
+      # share. An explicit general still requires accounts.danebo_controlled.
+      def chunk_attribute(account_id:, ingestion_path:, corpus_scope: nil)
+        return nil if ingestion_path.to_s == PHOTO_INGESTION_PATH
 
         validate_scope!(corpus_scope)
-        case corpus_scope.to_s
-        when GENERAL then true
-        when ACCOUNT then false
-        else member_id?(account_id)
+        if corpus_scope.to_s == GENERAL && controlled_account?(account_id)
+          GENERAL
+        else
+          ACCOUNT
         end
+      end
+
+      def tag?(account_id:, ingestion_path:, corpus_scope: nil)
+        chunk_attribute(
+          account_id: account_id,
+          ingestion_path: ingestion_path,
+          corpus_scope: corpus_scope
+        ) == GENERAL
+      end
+
+      def controlled_account?(account_id)
+        return false if account_id.blank?
+
+        Account.exists?(id: account_id, danebo_controlled: true)
       end
     end
   end

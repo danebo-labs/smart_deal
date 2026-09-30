@@ -31,6 +31,7 @@ class Rag::SharedManualCorpusTest < ActiveSupport::TestCase
     assert_includes ids, accounts(:pilot).id.to_s
     assert_equal [ "general" ], values_for(filter, "manual_corpus")
     assert_equal [ "field_photo_v1", "field_photo_v1" ], not_equals_values(filter, "ingestion_path")
+    assert_equal [ "account", "account" ], not_equals_values(filter, "manual_corpus")
   end
 
   test "an ordinary tenant account id is not an open-retrieval clause" do
@@ -39,13 +40,31 @@ class Rag::SharedManualCorpusTest < ActiveSupport::TestCase
     assert_not_includes values_for(filter, "account_id"), accounts(:climb).id.to_s
   end
 
-  test "corpus_scope general tags any account and account keeps a manual private" do
-    climb = accounts(:climb)
+  test "a slug does not tag a new manual general" do
     pilot = accounts(:pilot)
 
-    assert Rag::SharedManualCorpus.tag?(account_id: climb.id, ingestion_path: "manual_batch_v1", corpus_scope: "general")
-    assert_not Rag::SharedManualCorpus.tag?(account_id: pilot.id, ingestion_path: "manual_batch_v1", corpus_scope: "account")
-    assert_not Rag::SharedManualCorpus.tag?(account_id: pilot.id, ingestion_path: "field_photo_v1", corpus_scope: "general")
+    assert_equal "account", Rag::SharedManualCorpus.chunk_attribute(
+      account_id: pilot.id, ingestion_path: "manual_batch_v1"
+    )
+    assert_not Rag::SharedManualCorpus.tag?(account_id: pilot.id, ingestion_path: "manual_batch_v1")
+    assert_nil Rag::SharedManualCorpus.chunk_attribute(
+      account_id: pilot.id, ingestion_path: "field_photo_v1", corpus_scope: "general"
+    )
+  end
+
+  test "corpus_scope general requires danebo_controlled" do
+    climb = accounts(:climb)
+    climb.update!(danebo_controlled: true)
+
+    assert_equal "account", Rag::SharedManualCorpus.chunk_attribute(
+      account_id: accounts(:pilot).id, ingestion_path: "manual_batch_v1", corpus_scope: "general"
+    )
+    assert_equal "general", Rag::SharedManualCorpus.chunk_attribute(
+      account_id: climb.id, ingestion_path: "manual_batch_v1", corpus_scope: "general"
+    )
+    assert Rag::SharedManualCorpus.tag?(
+      account_id: climb.id, ingestion_path: "manual_batch_v1", corpus_scope: "general"
+    )
   end
 
   test "an unknown corpus_scope is rejected before a sidecar is written" do

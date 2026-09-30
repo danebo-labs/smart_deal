@@ -82,7 +82,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
                     uri: 's3://bucket/documents/AWS-Certified-Solutions-Architect-v4.pdf'
                   )
                 ),
-                metadata: {}
+                metadata: { "account_id" => Account.find_by!(slug: "danebo-legacy").id.to_s }
               )
             ]
           )
@@ -868,6 +868,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     call_count = 0
     no_results_text = "I'm sorry, I couldn't find relevant information."
     real_answer     = "Here are the torque values: 10 Nm."
+    viewer_account_id = @account.id.to_s
 
     with_mock_bedrock_client do |client|
       client.define_singleton_method(:retrieve_and_generate) do |params|
@@ -893,7 +894,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
                     location: ::OpenStruct.new(
                       s3_location: ::OpenStruct.new(uri: "s3://bucket/manual.pdf")
                     ),
-                    metadata: {}
+                    metadata: { "account_id" => viewer_account_id }
                   )
                 ]
               )
@@ -1070,7 +1071,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       location: ::OpenStruct.new(
         s3_location: ::OpenStruct.new(uri: "s3://bucket/manual.pdf")
       ),
-      metadata: { "canonical_name" => "Manual" }
+      metadata: { "canonical_name" => "Manual", "account_id" => @account.id.to_s }
     )
 
     with_captured_quality_log do
@@ -1109,7 +1110,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       location: ::OpenStruct.new(
         s3_location: ::OpenStruct.new(uri: "s3://bucket/manual.pdf")
       ),
-      metadata: { "canonical_name" => "Manual" }
+      metadata: { "canonical_name" => "Manual", "account_id" => @account.id.to_s }
     )
 
     with_mock_bedrock_client(mock_retrieve_and_generate_response: canned_response) do |client|
@@ -1170,7 +1171,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
             "canonical_name" => "Manual SEGURIDADES",
             "aliases" => [ "SEGURIDADES", "Manual 1.1-1" ],
             "original_source_uri" => "s3://bucket/manual.pdf",
-            "doc_type" => "manual"
+            "doc_type" => "manual",
+            "account_id" => @account.id.to_s
           }
         )
       ]
@@ -1325,7 +1327,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
             "canonical_name" => "Manual",
             "doc_sha256" => "sha-manual",
             "ingestion_path" => "manual_batch_v1",
-            "original_source_uri" => "s3://bucket/manual.pdf"
+            "original_source_uri" => "s3://bucket/manual.pdf",
+            "account_id" => @account.id.to_s
           }
         )
       ]
@@ -1387,7 +1390,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
             "canonical_name" => "Manual",
             "doc_sha256" => "sha-manual",
             "ingestion_path" => "manual_batch_v1",
-            "original_source_uri" => "s3://bucket/manual.pdf"
+            "original_source_uri" => "s3://bucket/manual.pdf",
+            "account_id" => @account.id.to_s
           }
         )
       ]
@@ -1426,7 +1430,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       ),
       metadata: {
         "canonical_name" => "Manual",
-        "original_source_uri" => "s3://bucket/manual.pdf"
+        "original_source_uri" => "s3://bucket/manual.pdf",
+        "account_id" => @account.id.to_s
       }
     )
 
@@ -1641,7 +1646,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           ::OpenStruct.new(
             content: ::OpenStruct.new(text: 'Prueba documentada'),
             score: 0.9,
-            metadata: { 'original_source_uri' => 's3://bucket/manual.pdf' },
+            metadata: { 'original_source_uri' => 's3://bucket/manual.pdf', 'account_id' => @account.id.to_s },
             location: ::OpenStruct.new(
               s3_location: ::OpenStruct.new(uri: 's3://bucket/chunks/manual-1.txt')
             )
@@ -1687,7 +1692,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           ::OpenStruct.new(
             content: ::OpenStruct.new(text: 'Prueba documentada'),
             score: 0.9,
-            metadata: { 'original_source_uri' => 's3://bucket/manual.pdf' },
+            metadata: { 'original_source_uri' => 's3://bucket/manual.pdf', 'account_id' => @account.id.to_s },
             location: ::OpenStruct.new(s3_location: ::OpenStruct.new(uri: 's3://bucket/chunks/manual-1.txt'))
           )
         ]
@@ -2260,7 +2265,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       ),
       metadata: {
         "canonical_name" => "Manual",
-        "original_source_uri" => "s3://bucket/manual.pdf"
+        "original_source_uri" => "s3://bucket/manual.pdf",
+        "account_id" => @account.id.to_s
       }
     )
 

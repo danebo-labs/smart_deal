@@ -74,12 +74,15 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
   Pins and suggestions read `kb_documents.knowledge_scope`. Without a pin,
   `BedrockRagService#account_filter` is the pre-F3B2 compatibility filter:
   the viewer's `account_id`, the other `SharedManualCorpus` account with
-  photos excluded, and `manual_corpus=general`. An ordinary tenant is not in
-  that OR. `Rag::KnowledgeScopePolicy` still authorizes suggestions and
-  pins. An explicit URI set that is not fully authorized is
-  `DENY_RETRIEVAL`: no Bedrock call and no open retry. A returned chunk is
-  dropped when its `account_id` is outside that corpus. `document_id` is
-  not compared with `document_uid`. See
+  photos and `manual_corpus=account` excluded, and `manual_corpus=general`.
+  An ordinary tenant is not in that OR. A new manual is
+  `manual_corpus=account` unless the account is `danebo_controlled` and
+  the ingest passes `corpus_scope: "general"`. Chunks already indexed
+  without that key stay in the historical corpus. A returned chunk without
+  a readable `account_id` is dropped. `document_id` is not compared with
+  `document_uid`. `Rag::KnowledgeScopePolicy` still authorizes suggestions
+  and pins. An explicit URI set that is not fully authorized is
+  `DENY_RETRIEVAL`: no Bedrock call and no open retry. See
   [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
   `RagRetrievalProfile` is unchanged.
 - Multiple pins may be narrowed deterministically when the question explicitly

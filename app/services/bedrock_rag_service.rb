@@ -251,6 +251,7 @@ class BedrockRagService
       base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
       config = enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
       if @retrieval_denied
+        r1a_probe_filter(correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
         return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
       end
       applied_filter_uris = Array(@applied_pin_uris)
@@ -275,6 +276,7 @@ class BedrockRagService
       # method still shares the same id its BedrockQuery rows would carry.
       query_correlation_id = correlation_id.presence || "query:#{SecureRandom.uuid}"
       generation_attempt   = 1
+      r1a_probe_filter(query_correlation_id, question, params)
 
       # Use retrieve_and_generate API - combines retrieval and generation in one call
       # Wraps call with retry logic for Aurora Serverless auto-pause cold-start.
@@ -314,8 +316,10 @@ class BedrockRagService
         )
         params = unfiltered_params
         if @retrieval_denied
+          r1a_probe_filter(query_correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
           return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
         end
+        r1a_probe_filter(query_correlation_id, question, unfiltered_params, attempt: generation_attempt)
         config = params.dig(
           :retrieve_and_generate_configuration,
           :knowledge_base_configuration
@@ -327,7 +331,7 @@ class BedrockRagService
       bedrock_latency_ms = ((Time.current - bedrock_start_time) * 1000).to_i
 
       raw_citations = response.citations || []
-      citation_gate = authorize_raw_citations(raw_citations)
+      citation_gate = authorize_raw_citations(raw_citations, correlation_id: query_correlation_id, query: question)
       @rejected_result_count = citation_gate.rejected
       published_citations = citation_gate.groups
       total_refs = published_citations.sum { |c| c.retrieved_references&.size.to_i }
@@ -391,7 +395,7 @@ class BedrockRagService
           [ citations, "bedrock_citations", "prompt_template_plus_observed_chunks" ]
         else
           Rails.logger.info("BedrockRagService: post-gen citations empty; Retrieve API fallback for source_uri")
-          chunks = fallback_retrieve(question, entity_s3_uris: filtered_uris)
+          chunks = fallback_retrieve(question, entity_s3_uris: filtered_uris, correlation_id: query_correlation_id)
           basis = chunks.any? ? "fallback_retrieve_top3" : "none"
           [ chunks, basis, "prompt_template_plus_observed_chunks" ]
         end
@@ -476,6 +480,8 @@ class BedrockRagService
       # Build numbered references from the KB response — no S3 listing required.
       numbered_references = @citation_processor.build_numbered_references(citations, answer_text, question: question)
 
+      r1a_probe_evidence(query_correlation_id, question, citations, stage: "citation_publish")
+      r1a_probe_evidence(query_correlation_id, question, retrieved_for_extraction, stage: "final_evidence", basis: observed_chunk_basis)
       Rails.logger.info("Found #{citations.length} citation(s)")
       numbered_references.each do |ref|
         Rails.logger.info("  Citation [#{ref[:number]}]: #{ref[:title]} (#{ref[:filename]})")
@@ -554,6 +560,7 @@ class BedrockRagService
     if resolved_uris.any?
       decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(resolved_uris, viewer_account: @account)
       if decision.denied?
+        r1a_probe_filter(correlation_id, question, nil, reason: "DENY_RETRIEVAL")
         return {
           chunks: [],
           retrieval: DENY_RETRIEVAL,
@@ -573,6 +580,7 @@ class BedrockRagService
       entity_sources: entity_sources,
       number_of_results: number_of_results
     )
+    r1a_probe_filter(correlation_id, question, { retrieval_configuration: { vector_search_configuration: vector_config } })
     response = retrieve_with_retry(
       knowledge_base_id: @knowledge_base_id,
       retrieval_query: { text: question },
@@ -595,7 +603,10 @@ class BedrockRagService
         chunk_sha256: Digest::SHA256.hexdigest(content)
       }
     end
-    kept, rejected = select_publishable_chunks(chunks)
+    kept, rejected = select_publishable_chunks(
+      chunks,
+      probe: { correlation_id: correlation_id, query: question, stage: "publication_gate" }
+    )
     @rejected_result_count = rejected
     chunks = kept.each_with_index.map { |chunk, index| chunk.merge(rank: index + 1) }
 
@@ -1127,7 +1138,7 @@ class BedrockRagService
   # row. The billable invocations of a turn are the retrieve_and_generate calls.
   #
   # Output shape matches CitationProcessor#extract_citations for drop-in use.
-  def fallback_retrieve(question, entity_s3_uris: [])
+  def fallback_retrieve(question, entity_s3_uris: [], correlation_id: nil)
     vector_cfg = build_vector_search_configuration(
       question: question,
       entity_s3_uris: entity_s3_uris,
@@ -1140,6 +1151,7 @@ class BedrockRagService
       retrieval_query: { text: question },
       retrieval_configuration: { vector_search_configuration: vector_cfg }
     }
+    r1a_probe_filter(correlation_id, question, params)
     resp = retrieve_with_retry(params)
     results = Array(resp.retrieval_results).map do |r|
       uri = r.location&.s3_location&.uri
@@ -1147,10 +1159,14 @@ class BedrockRagService
       {
         content:  r.content&.text,
         location: location,
-        metadata: r.metadata
+        metadata: r.metadata,
+        score: r.score
       }
     end
-    results, rejected = select_publishable_chunks(results)
+    results, rejected = select_publishable_chunks(
+      results,
+      probe: { correlation_id: correlation_id, query: question, stage: "fallback_retrieve" }
+    )
     @rejected_result_count = @rejected_result_count.to_i + rejected
     Rails.logger.info(
       "BedrockRagService: fallback Retrieve returned #{results.size} authorized chunk(s) rejected=#{rejected}"
@@ -2127,16 +2143,22 @@ class BedrockRagService
   end
   FilteredCitation = Struct.new(:generated_response_part, :retrieved_references, keyword_init: true)
 
-  def authorize_raw_citations(raw)
+  def authorize_raw_citations(raw, correlation_id: nil, query: nil)
     groups = []
     rejected = 0
     seen = 0
+    rank = 0
     Array(raw).each do |citation|
       refs = Array(citation.respond_to?(:retrieved_references) ? citation.retrieved_references : nil)
       seen += refs.size
       kept = []
       refs.each do |ref|
-        if publishable_retrieved_chunk?(reference_to_chunk(ref))
+        rank += 1
+        chunk = reference_to_chunk(ref)
+        publishable = publishable_retrieved_chunk?(chunk)
+        r1a_probe_chunk(correlation_id, query, chunk, publishable, rank, "bedrock_raw_result")
+        r1a_probe_chunk(correlation_id, query, chunk, publishable, rank, "publication_gate")
+        if publishable
           kept << ref
         else
           rejected += 1
@@ -2208,17 +2230,97 @@ class BedrockRagService
     false
   end
 
-  def select_publishable_chunks(chunks)
+  def select_publishable_chunks(chunks, probe: nil)
     kept = []
     rejected = 0
-    Array(chunks).each do |chunk|
-      if publishable_retrieved_chunk?(chunk)
+    Array(chunks).each_with_index do |chunk, index|
+      publishable = publishable_retrieved_chunk?(chunk)
+      if probe
+        score = chunk.is_a?(Hash) ? (chunk[:score] || chunk["score"]) : nil
+        %w[bedrock_raw_result publication_gate].each do |stage|
+          r1a_probe_chunk(probe[:correlation_id], probe[:query], chunk, publishable, index + 1, stage, score: score)
+        end
+        extra = probe[:stage].to_s
+        if extra.present? && %w[bedrock_raw_result publication_gate].exclude?(extra)
+          r1a_probe_chunk(probe[:correlation_id], probe[:query], chunk, publishable, index + 1, extra, score: score)
+        end
+      end
+      if publishable
         kept << chunk
       else
         rejected += 1
       end
     end
     [ kept, rejected ]
+  end
+
+  def r1a_probe_filter(correlation_id, question, params, reason: nil, attempt: nil)
+    filter = bedrock_filter_from(params)
+    Rag::R1aRetrievalProbe.emit(
+      correlation_id: correlation_id,
+      stage: "bedrock_request_filter",
+      query: question,
+      rank: attempt,
+      decision: reason ? "DROP" : nil,
+      reason: reason,
+      filter: filter
+    )
+  rescue StandardError
+    nil
+  end
+
+  def r1a_probe_chunk(correlation_id, query, chunk, publishable, rank, stage, score: nil)
+    Rag::R1aRetrievalProbe.observe_chunk(
+      correlation_id: correlation_id,
+      stage: stage,
+      chunk: chunk,
+      kept: publishable,
+      viewer_account_id: @account&.id,
+      query: query,
+      rank: rank,
+      score: score
+    )
+  rescue StandardError
+    nil
+  end
+
+  def r1a_probe_evidence(correlation_id, question, chunks, stage:, basis: nil)
+    rows = Array(chunks)
+    if rows.empty?
+      Rag::R1aRetrievalProbe.emit(
+        correlation_id: correlation_id,
+        stage: stage,
+        query: question,
+        rank: 0,
+        decision: "DROP",
+        reason: basis.presence || "empty"
+      )
+      return
+    end
+
+    rows.each_with_index do |chunk, index|
+      r1a_probe_chunk(correlation_id, question, chunk, true, index + 1, stage)
+    end
+  rescue StandardError
+    nil
+  end
+
+  def bedrock_filter_from(params)
+    return nil unless params.is_a?(Hash)
+
+    filter = params.dig(
+      :retrieve_and_generate_configuration,
+      :knowledge_base_configuration,
+      :retrieval_configuration,
+      :vector_search_configuration,
+      :filter
+    )
+    filter ||= params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+    return nil if filter.nil?
+
+    JSON.parse(JSON.generate(filter))
+  rescue StandardError
+    nil
   end
 
   def retrieval_chunk_metadata(chunk)

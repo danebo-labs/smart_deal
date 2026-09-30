@@ -516,6 +516,25 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     end
   end
 
+  test "r1a probe records the filter and publication decision without changing the chunk" do
+    sha36 = "121bfffe0827f6bc681ba9bdc91050390055"
+    legacy = accounts(:legacy)
+    metadata = { "account_id" => legacy.id.to_s, "document_id" => sha36, "original_source_uri" => "s3://bucket/elemont.pdf" }
+    result = nil
+    lines = capture_probe_lines { result = query_with_citations(legacy, "BODY-PROBE", metadata) }
+
+    assert lines.any? { |row| row["stage"] == "bedrock_request_filter" && row["filter"].present? }
+    gate = lines.find { |row| row["stage"] == "publication_gate" && row["document_id"] == sha36 }
+    assert_equal "KEEP", gate["decision"]
+    assert_equal "owner", gate["reason"]
+    assert_equal [ "BODY-PROBE" ], Array(result[:retrieved_citations]).map { |chunk| chunk[:content].to_s }
+
+    dropped = capture_probe_lines { query_with_citations(legacy, "BODY-DROP", { "document_id" => sha36 }) }
+    drop = dropped.find { |row| row["stage"] == "publication_gate" && row["document_id"] == sha36 }
+    assert_equal "DROP", drop["decision"]
+    assert_equal "account_id_blank", drop["reason"]
+  end
+
   test "historical shared manuals stay readable and a new account-scoped upload does not" do
     legacy = accounts(:legacy)
     pilot = accounts(:pilot)
@@ -617,6 +636,20 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     yield
   ensure
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
+  end
+
+  def capture_probe_lines
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    output.string.lines.filter_map do |line|
+      next unless line.include?("R1A_PROBE ")
+
+      JSON.parse(line.split("R1A_PROBE ", 2).last)
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   def unreadable_metadata

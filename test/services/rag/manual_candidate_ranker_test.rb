@@ -269,6 +269,10 @@ class Rag::ManualCandidateRankerTest < ActiveSupport::TestCase
     assert_equal [ general, private_row ], bound
     assert_equal [ [ "Manual A", "danebo_general" ], [ "Manual B", "tenant_private" ] ],
       suggestion.cards.map { |card| [ card.display_name, card.knowledge_scope ] }.sort
+    by_name = suggestion.chat_payload[:cards].index_by { |card| card[:display_name] }
+    assert_equal general.id, by_name["Manual A"][:kb_document_id]
+    assert_equal private_row.id, by_name["Manual B"][:kb_document_id]
+    assert_nil suggestion.chat_payload[:selected_document_uid]
   end
 
   test "two general rows that share a document_uid stay distinct" do

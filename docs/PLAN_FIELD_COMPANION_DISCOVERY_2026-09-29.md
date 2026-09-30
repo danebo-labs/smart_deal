@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `READY` y no empezó. El prompt completo de la fase siguiente es el Anexo F.
+**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `PASS`: el tap escribe `user_pin` solo en la sesión actual. F5 está `READY` y no empezó. El prompt completo de la fase siguiente es el Anexo H.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F4, en el Anexo F. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F5, en el Anexo H. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. El Anexo F es el prompt de F4 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -40,7 +40,7 @@
 | F3 | Discovery A, suggest-only | Ranker en runtime, sin pin. Elegibilidad por scope, mismo score | Paridad del score con el artefacto F0. Cero candidatos `PRIVATE` o `UNCLASSIFIED` de otra cuenta |
 | F3B1 | Authorization Foundation | `kb_documents.knowledge_scope` es la autoridad de lectura. Audit append-only. Pin set atómico. `DENY_RETRIEVAL` no llama a Bedrock | PASS. Al cerrar, el retrieve abierto histórico seguía. F3B2 después lo alineó |
 | F3B2 | Retrieval Alignment | Sacar Legacy, Pilot y `manual_corpus=general` como autorización. Revocación global, post-filter, recall, backfill del ledger | PASS. F4 `READY`. El retrieve abierto es la cuenta más `danebo_general`. No hubo deploy |
-| F4 | Confirmed Focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | F0 confirmó `existing_document_id_session_pin` (`reindex_required = false`, `duplicate_document_required = false`). F3B2 está `PASS`. F4 no queda `BLOCKED`. No empezó |
+| F4 | Confirmed Focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | PASS. El técnico confirma. No hay auto-focus. El pin es de la sesión. F5 `READY`. No hubo deploy |
 | F5 | Image continuity | Reuso de `visual_observation` | `STOP` antes de migrar si F0 marcó contradicción de retención |
 | F6 | Provenance contract | Prompt y contrato servidor | Una sugerencia no puede quedar como `MANUAL_FACT` |
 | F7 | Provenance presentation | Solo renderer | No edita el prompt. Funciona con `SHOW_RAG_SOURCES=false` |
@@ -549,6 +549,28 @@ Tests de foco, sin red:
 - La cuenta B pinea otro general, o dos generales, o un general y un privado suyo. Los pins de A siguen iguales.
 - A quita su pin. El documento sigue en el catálogo general y en los pins de B.
 
+### Resultado F4
+
+`F4_STATUS=PASS`. `F5` queda `READY` y no se ejecutó. El técnico elige el manual. Ningún score escribe un pin.
+
+El tap es `POST /pinned_documents` con `kb_document_id`, `document_uid` y, si ya existe, `correlation_id`. El servidor carga `KbDocument.find_by(id:)`. No hay `find_by(document_uid:)`. El uid solo confirma esa fila. Después corre `Rag::KnowledgeScopePolicy.authorized?`. Recién entonces `ConversationSession#pin_kb_document!` con `source: "user_pin"`. El browser no decide `knowledge_scope`, `tenant_private`, `danebo_general` ni `authorized`.
+
+Una fila ausente, revocada o privada de otra cuenta responde `Este manual ya no está disponible.` y no crea la sesión. Un uid que no es el de esa fila responde `No pude seleccionar este manual.` Un pin anterior queda. Un segundo tap de la misma fila responde `Este manual ya está enfocado.` y no repite `manual_focus_confirmed`.
+
+El Anexo F pide reautorizar en el tap, no un token de sugerencia. La biblioteca ya podía pinear una fila autorizada por id, sin `document_uid`, y sigue devolviendo 204 sin ese evento. La tarjeta exige el uid. `manual_focus_confirmed` sale solo cuando el uid coincidió y el pin es nuevo. El scope del evento lo escribe `KnowledgeScopePolicy.scope_for`.
+
+La sesión web es una fila por `account_id`, `identifier` igual al id del usuario, y `channel=web`. El pin vive en `active_entities` de esa fila. Otra sesión de la misma cuenta no lo hereda. Otra cuenta tampoco. Sumar un pin no borra los demás. Quitar foco es `unpin_kb_document_id!`: no exige que la fila siga existiendo ni que siga autorizada, y no concede lectura.
+
+Con un foco válido, la pregunta siguiente manda `force_entity_filter` y solo las URIs canónicas de ese conjunto. No hay caída silenciosa al corpus abierto. X+Y manda las dos. Un miembro inválido sigue en `DENY_RETRIEVAL`: cero generate, cero retrieve, los pins quedan.
+
+La tarjeta muestra `Usar este manual`. Después del tap, ese botón pasa a `Quitar foco`. `data-selected` sigue `none`. `focused: true` en una tarjeta posterior solo refleja un pin ya escrito. `tie_at_top` no elige. La procedencia sigue siendo `Tu biblioteca` o `Biblioteca general de Danebo`.
+
+`pin_conflict` se muestra y el pin queda. `equipment_switch_prompted` usa `manufacturer` y `outcome_reason=pin_conflict`. No hizo falta `previous_manufacturer`. `identity_conflict` lee el conflicto que `apply_photo_observation!` ya guardó en el episodio y no pisa el hecho del técnico.
+
+Un `danebo_general` de la cuenta A se pinea en la sesión de B sobre la misma fila. No hay `KbDocument` nuevo, no hay copia S3, no hay `BedrockIngestionJob`. `DocumentOverviewWarmJob` se encola igual que en el pin de biblioteca. Busca la fila en `kb_documents` del viewer, así que no copia el general ajeno.
+
+No se tocó el retrieve abierto, el score, el top 3, el no-refill ni el writer de `knowledge_scope`. No hubo deploy.
+
 ## 12. Procedencia de la respuesta
 
 Tres bandas, no cinco. Esto no es la procedencia documental de FC-D14.
@@ -580,6 +602,8 @@ F3 agrega a la allowlist, y solo esto: `suggestion_document_uids` y `suggestion_
 F3B2 agrega a la allowlist, y solo esto: `rejected_result_count`, `authorized_general_count` y `retrieval_denied_reason`. El evento es `open_retrieval`. Los mismos tres campos viajan en `kb_retrieve`. `knowledge_scope` sigue fuera de la allowlist.
 
 F4: `manual_focus_confirmed` con `document_id`, `source_uri`, `correlation_id` y `knowledge_scope` (`tenant_private` o `danebo_general`). `knowledge_scope` se agrega a la allowlist en F4, con el mismo test de clave ajena. `equipment_switch_prompted` con `manufacturer` y `outcome_reason`. Si hace falta un segundo fabricante, F4 agrega `previous_manufacturer` a la allowlist y lo testa. No se agregan claves “por si acaso”. F4 no saca las tres claves de F3B2.
+
+Resultado F4: `knowledge_scope` está en la allowlist. El valor lo escribe el servidor. No se agregó `previous_manufacturer`. `manual_focus_denied` reusa `outcome_reason` (`unavailable` o `invalid`). `manual_suggestion_dismissed` reusa `document_id` y `outcome` (`unpinned`).
 
 F5: `photo_observation_reused` y `photo_observation_reread`. Les alcanza `cache_status` (`reused` o `reread`), `image_digest_prefix`, `correlation_id`. Cero claves nuevas. Cero broadcast nuevo.
 
@@ -615,7 +639,7 @@ Esos archivos describen el contrato (`tenant_private` + `danebo_general` explíc
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. F4 está `READY` y no se ejecutó.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2 y F4 están `PASS`. F5 está `READY` y no se ejecutó.
 
 Contrato de cada fase, cuando corra:
 
@@ -1160,6 +1184,73 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: revisada, sin edición.
   - F8. `reason`: revisada, sin edición.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo F)
+
+### F4
+
+- `phase`: F4 — Confirmed Focus
+- `status`: `PASS`
+- `head_initial`: `900041984e3ddb7472afbd1e9c21685436d8202e`
+- `head_final`: el commit de F4. El árbol no puede contener su propio SHA.
+- `commit`: el único commit cuyo padre es `head_initial`. El asunto dice que el tap escribe `user_pin` solo en la sesión actual.
+- `files_changed`:
+  - `app/controllers/pinned_documents_controller.rb`
+  - `app/controllers/rag_controller.rb`
+  - `app/javascript/controllers/rag_chat_controller.js`
+  - `app/models/conversation_session.rb`
+  - `app/services/pilot_usage_log.rb`
+  - `app/services/rag/AGENTS.md`
+  - `app/services/rag/focus_notice.rb`
+  - `app/services/rag/manual_candidate_ranker.rb`
+  - `config/locales/rag.en.yml`
+  - `config/locales/rag.es.yml`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+  - `docs/SESSION_AND_RETRIEVAL.md`
+  - `docs/WEB_HOME.md`
+  - `test/controllers/manual_focus_confirmation_test.rb`
+  - `test/controllers/rag_controller_manual_suggestion_test.rb`
+  - `test/services/pilot_usage_log_test.rb`
+  - `test/services/rag/focus_notice_test.rb`
+  - `test/services/rag/manual_candidate_ranker_test.rb`
+  - `test/system/rag_chat_manual_suggestion_test.rb`
+- `commands_executed`:
+  - `env -u BUNDLE_PATH bin/rails test` con policy, recall, `BedrockRagService` (knowledge scope, attribution, grounded synthesis, audit, absence y el servicio), corpus compartido, ranker, orquestador, pins, sugerencia, foco, `FocusNotice`, `knowledge_scope_change`, eligibility y el regression gate, en la misma invocación
+  - `env -u BUNDLE_PATH bin/rails test test/system/rag_chat_manual_suggestion_test.rb`
+  - `env -u BUNDLE_PATH bundle exec rubocop` sobre los 12 Ruby de F4
+- `command_results`:
+  - padre `900041984e3ddb7472afbd1e9c21685436d8202e`, working tree limpio al abrir
+  - tests: 471 runs, 2901 assertions, 0 failures, 0 errors, 6 skips
+  - system: 3 runs, 85 assertions, 0 failures, 0 errors, 0 skips
+  - RuboCop: 12 files, no offenses
+- `tests`: `test/controllers/manual_focus_confirmation_test.rb`, `test/services/rag/focus_notice_test.rb`, `test/system/rag_chat_manual_suggestion_test.rb`, `test/controllers/pinned_documents_controller_test.rb`, `test/controllers/rag_controller_manual_suggestion_test.rb`, `test/services/rag/manual_candidate_ranker_test.rb`, `test/services/rag/knowledge_scope_policy_test.rb`, `test/services/bedrock_rag_service_knowledge_scope_test.rb`, `test/services/bedrock_rag_service_test.rb`, `test/services/bedrock_rag_service_attribution_guard_test.rb`, `test/services/bedrock_rag_service_grounded_synthesis_test.rb`, `test/services/bedrock_rag_service_audit_test.rb`, `test/services/bedrock_rag_service_absence_contract_test.rb`, `test/services/rag/open_retrieval_recall_test.rb`, `test/services/rag/shared_manual_corpus_test.rb`, `test/services/query_orchestrator_service_test.rb`, `test/models/knowledge_scope_change_test.rb`, `test/services/knowledge_scope_eligibility_test.rb`, `test/services/pilot_usage_log_test.rb`, más el regression gate (`rag_retrieval_profile`, `structured_evidence_route`, `field_photo_analysis_service`, `field_photo_density_gate`, `image_compression_service`, `field_photo_analysis_job`)
+- `test_results`: 471 runs, 2901 assertions, 0 failures, 0 errors, 6 skips. Los skips son cinco tests de `DELIVERY_CHANNEL` de WhatsApp, canal dormido, y `ImageCompressionServiceTest#test_integration:_compresses_a_real_large_JPEG`. Ninguno es de F4. El system test suma 3 runs y 85 assertions, 0 skips. No hay skip nuevo de F4.
+- `artifacts`: ninguno
+- `artifact_sha256`: ninguno
+- `findings`:
+  1. `CONFIRMED`. La tarjeta de F3 no era un botón. El tap nuevo manda `kb_document_id` y `document_uid`. El id es la fila. El uid confirma esa fila. No hay lookup global por uid.
+  2. `CONFIRMED`. La autorización se evalúa en el tap con `Rag::KnowledgeScopePolicy`. Una fila revocada, ausente o privada de otra cuenta no se pinea y no expone contenido. Un pin previo no se borra.
+  3. `CONFIRMED`. Un `danebo_general` de otra cuenta se pinea sobre la misma fila. No hay `KbDocument` nuevo, no hay copia S3 y no hay `BedrockIngestionJob`.
+  4. `CONFIRMED`. El pin vive en `active_entities` de la `ConversationSession` web de ese usuario y esa cuenta. Otra sesión de la misma cuenta no lo hereda. Otra cuenta tampoco. Sumar un foco no borra los demás.
+  5. `CONFIRMED`. Con foco válido, la pregunta siguiente usa `force_entity_filter` y solo esas URIs canónicas. No hay fallback al corpus abierto. X+Y manda las dos. Un miembro inválido sigue en `DENY_RETRIEVAL`.
+  6. `CONFIRMED`. Quitar foco funciona con la fila autorizada, revocada o ya borrada. No concede lectura.
+  7. `CONFIRMED`. `tie_at_top` sigue con `data-selected=none` y cero pins hasta el tap. Cada botón pinea solo su fila. No hay auto-focus ni Mode C.
+  8. `CONFIRMED`. `pin_conflict` se muestra y el pin queda. `identity_conflict` muestra las dos identidades y no pisa el hecho del técnico. Ese conflicto ya lo escribía `apply_photo_observation!` cuando el episodio está activo.
+  9. `CONFIRMED`. `knowledge_scope` entró en `PilotUsageLog::ALLOWED_FIELDS`. `manual_focus_confirmed` solo sale en un pin nuevo de tarjeta. El scope del evento es `scope_for` del servidor. No se agregó `previous_manufacturer`. Las tres claves de F3B2 siguen.
+  10. `CONFIRMED`. El score de F3, el top 3 y el no-refill no cambiaron. El retrieve abierto no cambió. `RagRetrievalProfile` no cambió.
+  11. `NEW`. El Anexo F pide reautorizar, no un token que ate el tap a la tarjeta renderizada. La biblioteca ya pinea por id. La tarjeta suma la confirmación de uid. No se construyó un token de propósito.
+  12. `NEW`. `DocumentOverviewWarmJob` se encola también en el primer pin de tarjeta, igual que en la biblioteca. Para un general ajeno el job busca la fila en la cuenta del viewer y no la copia.
+  13. `NEW`. La sesión web no es por pestaña. Es una fila por usuario, cuenta y canal `web`. El aislamiento testeado es otra fila de sesión, no otro tab del mismo usuario.
+  14. `REJECTED`. Auto-focus, umbral, Mode C, token firmado obligatorio, `previous_manufacturer` sin un segundo fabricante, y un pin de cuenta. Copiar la fila, copiar S3 o reindexar para poder enfocar un general.
+- `derived_decisions`:
+  - La identidad física es `kb_documents.id`. `document_uid` no es clave de lookup.
+  - El tap reautoriza. No confía en el JSON de la tarjeta.
+  - `manual_focus_confirmed` distingue el pin que nació de una tarjeta. El pin de biblioteca no emite ese evento.
+  - Un foco explícito válido no cae al corpus abierto. Un conjunto parcial inválido no se recorta.
+- `future_phases_changed`:
+  - F5. `reason`: `READY`. El Anexo H es el prompt completo. F4 no migró `visual_observation`. El episodio sigue sin copiar ese JSON. `correlation_id` sigue en `sanitize_photo`. No se ejecutó.
+  - F6. `reason`: revisada, sin edición. El pin no cambia las tres bandas de procedencia.
+  - F7. `reason`: revisada, sin edición.
+  - F8. `reason`: revisada, sin edición.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo H)
 
 ## Anexo G — prompt de F3B2
 
@@ -1770,3 +1861,116 @@ bin/rails test \
 ```
 
 Un solo commit de F4. El mensaje dice que el tap escribe `user_pin` solo en la sesión actual.
+
+## Anexo H — prompt de F5
+
+Ejecutá solo F5 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F5 es continuidad de imagen: persistir `visual_observation` en la misma fila `field_photos` y reutilizarla con cero Anthropic cuando la precedencia lo dice. No ejecutes F6. No hagas deploy. No reabras F4. No cambies el tap, `user_pin`, el retrieve abierto, el score, `knowledge_scope` ni `RagRetrievalProfile`. No apruebes documentos. No pidas una decisión a Lahiri.
+
+F4 está `PASS`. F5 está `READY`. El padre del trabajo es el commit de F4. `git log -1 --format='%s'` tiene que decir que el tap escribe `user_pin` solo en la sesión actual. `git status` tiene que estar limpio. Si el asunto no es ese, o el árbol está dirty en algo que no sea F5, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F5. Este anexo no contiene el SHA de F4.
+
+### Qué dejó F4, y F5 no toca
+
+- Una tarjeta confirmada escribe `user_pin` solo en la `ConversationSession` web de ese usuario y esa cuenta. El id es la fila. `document_uid` confirma. La policy corre en el tap.
+- Con foco válido no hay fallback al corpus abierto. Un miembro inválido sigue en `DENY_RETRIEVAL`.
+- `pin_conflict` se muestra y el pin queda. `identity_conflict` muestra las dos identidades. Ese conflicto lo escribe `ConversationSession#apply_photo_fact!` cuando el hecho `manufacturer` o `model` ya es `known` con `source: "user"` y la foto dice otra cosa. F5 no pisa ese hecho y no borra el conflicto.
+- `Rag::ActiveEpisode.sanitize_photo` conserva `field_photo_id`, `sha256` y `correlation_id`, y descarta el resto. F5 no copia el JSON de `visual_observation` al episodio y no borra `correlation_id`.
+- `apply_photo_observation!` ya puede escribir facts `manufacturer` y `model`. F5 no convierte esos facts en el JSON de la columna.
+- `FIELD_COMPANION_EPISODE_ENABLED` sigue apagado por default. F5 no lo enciende.
+- El cache de diagnóstico de 24 h sigue ausente. No lo restaures.
+- Las fotos no pueden pasar a `danebo_general`.
+- `DEICTIC_RE` es `/\b(esa|ese|eso|esta|este|esto|that|this)\s+(placa|foto|imagen|plate|photo)\b/`. F0 lo corrió después de `normalize_label` y estos cuatro salieron `false`: `estos resortes`, `según la foto`, `la imagen que te mandé`, `lo que se ve ahí`. No hay finding `NEW` de ese regex. La precedencia de F5 no se afloja para que `DEICTIC_RE` los cubra.
+
+### Qué no cambia
+
+- `BatchChunkingPrompt::MODEL_TEXT` sigue `claude-sonnet-5-5`.
+- `BatchChunkingPrompt::MODEL_MULTIMODAL` sigue `claude-opus-5-5`.
+- `FieldPhotoAnalysisService::DEFAULT_MODEL` sigue `claude-sonnet-5-5`.
+- `FieldPhotoPrompt` no se edita.
+- `BatchChunkingPrompt::INGESTION_CONTRACT_VERSION` sigue `field_records_v8`.
+- `RagRetrievalProfile` no se toca. No subas top-k.
+- `generation.txt` y el renderer de procedencia no se editan. Eso es F6 y F7.
+- No hay voz, galería, tabla de historial de diagnóstico, ni ingesta de la foto a `bulk_chunks/`.
+- No hay auto-focus. No hay Mode C.
+
+### Columna
+
+Una migración. `field_photos.visual_observation`, `jsonb`, nullable. Misma fila, mismo `account_id`, mismo borrado que `FieldPhotoRetentionJob` (`photo.destroy!`, default 90 días, `FIELD_PHOTO_RETENTION_DAYS`). Una foto citada por `InspectionFinding` no se purga; la observación se va con la fila el día que la fila se vaya. No hay tabla nueva. No es un diagnostic record.
+
+Allowlist, `schema_version: 1`, JSON `<= 2048` bytes. Fuera de la lista no se persiste:
+
+- `schema_version` (entero)
+- `prompt_fingerprint` (64 hex)
+- `model_id` (string, máximo 80)
+- `canonical_component` (máximo 80)
+- `manufacturer` (máximo 80, o `UNKNOWN`)
+- `model` (máximo 80, o `UNKNOWN`)
+- `subsystem` (el enum del prompt, o `UNKNOWN`)
+- `condition` (`GOOD`, `DEGRADED`, `DAMAGED`, `UNKNOWN`)
+- `visible_text` (máximo 8 strings, cada uno máximo 80)
+- `target_visible` (`true`, `false`, o `null`)
+- `relevance_to_goal` (`relevant`, `unrelated`, `uncertain`, o `null`)
+
+Fuera, y por lo tanto no se persisten: `summary`, `aliases`, `documented_functions`, `documented_connections`, `documented_values`, `documented_warnings`, `anti_hallucination_notes`, y la prosa de `build_analysis`.
+
+### Precedencia
+
+La primera que aplica gana. No la aflojes para que `DEICTIC_RE` cubra los positivos.
+
+1. Hay bytes nuevos adjuntos → análisis nuevo.
+2. Hay `field_photo_id` y la frase, ya normalizada, cumple `VISUAL_REREAD_RE` → análisis nuevo. La frase de producto es “volvé a mirar” o “revisa otra vez la foto”. El regex, sobre texto ya pasado por `normalize_label`:
+
+```
+/\b(?:volve|volver|vuelve|revisa|revisar|mira|mirar|analiza|analizar)\b.{0,40}\b(?:otra vez|de nuevo|nuevamente)\b|\b(?:otra vez|de nuevo)\b.{0,40}\b(?:foto|imagen)\b/
+```
+
+3. Hay `field_photo_id` y la pregunta no cumple el regex de releer → se reutiliza `visual_observation`. Cero Anthropic.
+4. Texto solo, y la frase cumple `VISUAL_REFERENCE_RE` → se usa únicamente `active_photo` de la sesión. Regex sobre texto normalizado:
+
+```
+/\b(?:estos|estas|esos|esas)\s+(?:resortes|cables|bornes|terminales|contactos)\b|\bsegun la foto\b|\bla imagen que te mande\b|\blo que se ve ahi\b|\b(?:la|esa|esta)\s+(?:foto|imagen)\b/
+```
+
+5. Referencia visual y no hay `FieldPhoto` de esa cuenta para el `active_photo` → respuesta determinística, cero Anthropic: `No tengo una foto vigente en este caso. Seleccioná la foto anterior o volvé a enviarla.`
+
+Positivos de referencia visual, que el paso 4 tiene que reconocer y que `DEICTIC_RE` no reconoce: `estos resortes`, `según la foto`, `la imagen que te mandé`, `lo que se ve ahí`.
+
+Negativos, que no disparan reuso visual: `según el manual`, `el borne 24`, `fotocélula del embarque`, `mandame el procedimiento`.
+
+La observación inyectada en el paso 3 o 4 es el JSON allowlisted. El retrieve no lo reescribe. Si el manual dice otra cosa, eso lo separa F6. F5 no edita `generation.txt`.
+
+### Telemetría
+
+`photo_observation_reused` y `photo_observation_reread`. Les alcanza `cache_status` (`reused` o `reread`), `image_digest_prefix` y `correlation_id`. Esas claves ya están permitidas o F5 demuestra que ya lo están antes de agregar alguna. Cero claves nuevas si ya alcanzan. Cero broadcast nuevo. No agregues `knowledge_scope` de nuevo: F4 ya lo puso en la allowlist.
+
+### Tests, sin red de modelo
+
+- La columna nace nullable. `photo.destroy!` se lleva la observación. No hace falta una tabla que sobreviva al purge.
+- Un JSON fuera de la allowlist, o de más de 2048 bytes, no se persiste.
+- `sanitize_photo` sigue guardando `field_photo_id`, `sha256` y `correlation_id`, y sigue sin copiar `visual_observation`.
+- Bytes nuevos disparan análisis. No reusan la columna.
+- Una frase de releer dispara análisis y `photo_observation_reread`.
+- Sin bytes nuevos y sin releer, se reutiliza la columna y `photo_observation_reused`. Cero llamada a Anthropic.
+- Texto solo con referencia visual usa `active_photo`. Sin foto de esa cuenta, el mensaje determinístico, cero Anthropic.
+- Los cuatro positivos no pasan a `true` en `DEICTIC_RE`. Los cuatro negativos no reusan la observación.
+- Reusar la observación no pisa un hecho `manufacturer` que el técnico ya dijo. El conflicto de F4 sigue mostrando las dos identidades.
+- Una foto no puede quedar `danebo_general` por esta fase.
+- El regression gate de este plan, sin Bedrock ni Anthropic.
+
+### Cierre de F5
+
+En este orden: tests de continuidad; el regression gate; Execution State; findings; revisión de F6–F8; reescritura completa del prompt de F6. No ejecutes F6. No hagas deploy. `head_final` no se escribe dentro del árbol.
+
+El regression gate es:
+
+```
+bin/rails test \
+  test/services/rag_retrieval_profile_test.rb \
+  test/services/rag/structured_evidence_route_test.rb \
+  test/services/field_photo_analysis_service_test.rb \
+  test/services/field_photo_density_gate_test.rb \
+  test/services/image_compression_service_test.rb \
+  test/jobs/field_photo_analysis_job_test.rb \
+  test/services/pilot_usage_log_test.rb
+```
+
+Un solo commit de F5. El mensaje dice que la observación visual vive en la fila de la foto y no se copia al episodio.

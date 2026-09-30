@@ -27,7 +27,7 @@ module Rag
     ScoreResult = Data.define(:candidates, :tie_at_top, :reason, :manufacturer, :model_tokens)
     Card = Data.define(
       :document_uid, :display_name, :score, :label, :text,
-      :knowledge_scope, :provenance
+      :knowledge_scope, :provenance, :kb_document_id
     )
     Suggestion = Data.define(
       :cards, :tie_at_top, :reason, :manufacturer, :model_tokens,
@@ -40,6 +40,7 @@ module Rag
           cards: cards.map { |card|
             {
               document_uid: card.document_uid,
+              kb_document_id: card.kb_document_id,
               display_name: card.display_name,
               label: card.label,
               text: card.text,
@@ -108,7 +109,8 @@ module Rag
           label: candidate.label,
           text: candidate.label == EXACT_DESIGNATOR_LABEL ? EXACT_DESIGNATOR_TEXT : BRAND_ONLY_TEXT,
           knowledge_scope: scope,
-          provenance: scope == GENERAL_SCOPE ? GENERAL_PROVENANCE : PRIVATE_PROVENANCE
+          provenance: scope == GENERAL_SCOPE ? GENERAL_PROVENANCE : PRIVATE_PROVENANCE,
+          kb_document_id: document.id
         )
       end
 

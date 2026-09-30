@@ -926,6 +926,7 @@ export default class extends Controller {
     const showSources = this.showSourcesValue
     const answerHtml  = formatAnswerForWeb(data.answer, citations)
     const suggestionHtml = this.renderManualSuggestion(data.manual_suggestion)
+    const focusHtml = this.renderFocusNotices(data)
     const resolutionHtml = this.evidenceCardsValue
       ? renderEvidenceResolution(data.resolution, this.resolutionCopyValue)
       : ""
@@ -935,7 +936,7 @@ export default class extends Controller {
     // concatena al string `answer` del JSON, sólo al host del mensaje.
     const noticeHtml = renderVerificationNotice(lang)
 
-    const answerRow = this.addMessageHtml(answerHtml + suggestionHtml + resolutionHtml + sourcesHtml + noticeHtml, "assistant")
+    const answerRow = this.addMessageHtml(answerHtml + suggestionHtml + focusHtml + resolutionHtml + sourcesHtml + noticeHtml, "assistant")
     const cardsOwnSelection = this.evidenceCardsValue && hasSelectableEvidenceCards(data.resolution)
     if (!cardsOwnSelection && Array.isArray(data.quick_replies) && data.quick_replies.length) {
       this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")
@@ -943,7 +944,8 @@ export default class extends Controller {
     this.scrollToMessageTop(answerRow)
   }
 
-  // Display only. F3 does not pin and does not choose among a tie.
+  // The card does not choose a tie and does not pin by itself.
+  // A button confirms the exact row the server already bound.
   renderManualSuggestion(suggestion) {
     if (!suggestion || typeof suggestion !== "object") return ""
 
@@ -953,18 +955,123 @@ export default class extends Controller {
       return `<p class="manual-suggestion-empty mt-3 text-sm leading-5 text-[hsl(215,16%,35%)]" role="status">${this.escapeHtml(suggestion.message)}</p>`
     }
 
-    const articles = cards.map((card) => {
-      const name = this.escapeHtml(card.display_name || "")
-      const text = this.escapeHtml(card.text || "")
-      const provenance = this.escapeHtml(card.provenance || "")
-      return `<article class="rounded-xl border border-[hsl(215,20%,88%)] bg-[hsl(215,20%,97%)] px-4 py-3" data-suggestion-label="${this.escapeAttribute(card.label || "")}" data-suggestion-scope="${this.escapeAttribute(card.knowledge_scope || "")}">
+    const actionLabel = suggestion.focus_action || "Usar este manual"
+    const clearLabel = suggestion.focus_clear || "Quitar foco"
+    const focusedStatus = suggestion.focus_status || "Manual enfocado"
+    const invalidStatus = suggestion.focus_invalid || "No pude seleccionar este manual."
+    const articles = cards.map((card) => this.renderManualCard(card, suggestion.correlation_id, actionLabel, clearLabel, focusedStatus)).join("")
+    const tie = suggestion.tie_at_top === true ? "true" : "false"
+    return `<section class="manual-suggestion mt-3 flex flex-col gap-2" aria-label="Sugerencias de manual" data-tie-at-top="${tie}" data-selected="none" data-focus-action="${this.escapeAttribute(actionLabel)}" data-focus-clear="${this.escapeAttribute(clearLabel)}" data-focus-status="${this.escapeAttribute(focusedStatus)}" data-focus-invalid="${this.escapeAttribute(invalidStatus)}">${articles}</section>`
+  }
+
+  renderManualCard(card, correlationId, actionLabel, clearLabel, focusedStatus) {
+    const name = this.escapeHtml(card.display_name || "")
+    const text = this.escapeHtml(card.text || "")
+    const provenance = this.escapeHtml(card.provenance || "")
+    const actionable = card.kb_document_id != null && card.kb_document_id !== "" && card.document_uid
+    const focused = card.focused === true
+    const action = actionable ? this.renderManualFocusButton(card, correlationId, focused, actionLabel, clearLabel, focusedStatus) : ""
+    return `<article class="rounded-xl border border-[hsl(215,20%,88%)] bg-[hsl(215,20%,97%)] px-4 py-3" data-suggestion-label="${this.escapeAttribute(card.label || "")}" data-suggestion-scope="${this.escapeAttribute(card.knowledge_scope || "")}" data-focused="${focused ? "true" : "false"}">
         <p class="text-sm font-medium leading-5 text-[hsl(215,25%,16%)]">${name}</p>
         <p class="mt-1 text-sm leading-5 text-[hsl(215,16%,32%)]">${text}</p>
         <p class="mt-1 text-xs leading-4 text-[hsl(215,12%,42%)]">${provenance}</p>
+        ${action}
       </article>`
-    }).join("")
-    const tie = suggestion.tie_at_top === true ? "true" : "false"
-    return `<section class="manual-suggestion mt-3 flex flex-col gap-2" aria-label="Sugerencias de manual" data-tie-at-top="${tie}" data-selected="none">${articles}</section>`
+  }
+
+  renderManualFocusButton(card, correlationId, focused, actionLabel, clearLabel, focusedStatus) {
+    const label = focused ? clearLabel : actionLabel
+    const status = focused ? focusedStatus : ""
+    return `<button type="button"
+        class="manual-focus-action mt-3 min-h-11 w-full rounded-xl border border-[hsl(217,91%,50%)] bg-white px-4 py-2.5 text-left text-sm font-medium text-[hsl(217,91%,42%)] active:bg-[hsl(217,91%,95%)]"
+        data-action="click->rag-chat#confirmManualFocus"
+        data-kb-document-id="${this.escapeAttribute(String(card.kb_document_id))}"
+        data-document-uid="${this.escapeAttribute(card.document_uid || "")}"
+        data-correlation-id="${this.escapeAttribute(correlationId || "")}"
+        data-focused="${focused ? "true" : "false"}"
+        aria-pressed="${focused ? "true" : "false"}">${this.escapeHtml(label)}</button>
+      <p class="manual-focus-status mt-2 text-sm leading-5 text-[hsl(215,16%,32%)]" role="status">${this.escapeHtml(status)}</p>`
+  }
+
+  renderFocusNotices(data) {
+    if (!data || typeof data !== "object") return ""
+
+    const parts = []
+    const pin = data.pin_conflict && data.pin_conflict.message
+    const identity = data.identity_conflict && data.identity_conflict.message
+    if (pin) {
+      parts.push(`<p class="pin-conflict mt-3 text-sm leading-5 text-[hsl(215,16%,32%)]" role="status">${this.escapeHtml(pin)}</p>`)
+    }
+    if (identity) {
+      parts.push(`<p class="identity-conflict mt-3 text-sm leading-5 text-[hsl(215,16%,32%)]" role="status">${this.escapeHtml(identity)}</p>`)
+    }
+    return parts.join("")
+  }
+
+  async confirmManualFocus(event) {
+    const button = event.currentTarget
+    const article = button.closest("article")
+    const section = button.closest("section")
+    const docId = button.dataset.kbDocumentId
+    const uid = button.dataset.documentUid
+    if (!docId || !uid || button.disabled) return
+
+    const focused = button.dataset.focused === "true"
+    button.disabled = true
+    try {
+      const correlation = button.dataset.correlationId
+      const response = focused
+        ? await this.unpinManualFocus(docId, uid, correlation)
+        : await this.pinManualFocus(docId, uid, correlation)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        this.setManualFocusStatus(article, payload.error || section?.dataset.focusInvalid || "No pude seleccionar este manual.")
+        return
+      }
+      this.setManualFocusState(button, article, section, !focused, payload.message)
+    } catch (_error) {
+      this.setManualFocusStatus(article, section?.dataset.focusInvalid || "No pude seleccionar este manual.")
+    } finally {
+      button.disabled = false
+    }
+  }
+
+  pinManualFocus(docId, uid, correlationId) {
+    const body = { kb_document_id: docId, document_uid: uid }
+    if (correlationId) body.correlation_id = correlationId
+    return fetch("/pinned_documents", {
+      method: "POST",
+      headers: this._jsonHeaders(),
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    })
+  }
+
+  unpinManualFocus(docId, uid, correlationId) {
+    const params = new URLSearchParams({ document_uid: uid })
+    if (correlationId) params.set("correlation_id", correlationId)
+    return fetch(`/pinned_documents/${encodeURIComponent(docId)}?${params}`, {
+      method: "DELETE",
+      headers: this._jsonHeaders(),
+      credentials: "same-origin"
+    })
+  }
+
+  setManualFocusState(button, article, section, focused, message) {
+    const action = focused
+      ? (section?.dataset.focusClear || "Quitar foco")
+      : (section?.dataset.focusAction || "Usar este manual")
+    const status = message || (focused ? (section?.dataset.focusStatus || "Manual enfocado") : "")
+    button.dataset.focused = focused ? "true" : "false"
+    button.setAttribute("aria-pressed", focused ? "true" : "false")
+    button.textContent = action
+    if (article) article.dataset.focused = focused ? "true" : "false"
+    this.setManualFocusStatus(article, status)
+  }
+
+  setManualFocusStatus(article, message) {
+    const status = article?.querySelector(".manual-focus-status")
+    if (status) status.textContent = message || ""
   }
 
   renderQuickReplies(replies, ariaLabel = "Opciones de placa") {

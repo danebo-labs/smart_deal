@@ -400,6 +400,18 @@ class ConversationSession < ApplicationRecord
     true
   end
 
+  # Removes this session's focus by the stored id. The row does not have to
+  # still exist or still be readable. This does not grant a read.
+  def unpin_kb_document_id!(kb_document_id)
+    key = find_entity_by_kb_document_id(kb_document_id)
+    return false unless key
+
+    entities = active_entities.dup
+    entities.delete(key)
+    update!(active_entities: entities)
+    true
+  end
+
   private
 
   def parse_history_ts(value)

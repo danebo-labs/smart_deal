@@ -3,58 +3,151 @@
 # Pin/unpin KbDocuments into the active ConversationSession.
 # Pins drive the entity_s3_uris filter (force_entity_filter: true) for RAG retrieval.
 # Sessions persist 30 days sliding; pins survive across days for the same user.
+#
+# A suggestion card sends kb_document_id and document_uid. The id is the row.
+# The uid only confirms that row. knowledge_scope from the browser is ignored.
+# A library pin omits document_uid and keeps the previous contract.
 class PinnedDocumentsController < ApplicationController
   include AuthenticationConcern
 
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
   def create
-    kb_doc  = authorized_kb_document!(create_params[:kb_document_id])
+    kb_doc = focus_document
+    return if performed?
+
     session = current_conv_session
-    if session.pin_kb_document!(kb_doc)
-      DocumentOverviewWarmJob.perform_later(account_id: current_account.id, kb_document_id: kb_doc.id)
-      head :no_content
-    else
+    return render_existing_focus(kb_doc) if card_confirmation? && already_focused?(session, kb_doc)
+
+    unless session.pin_kb_document!(kb_doc)
+      return render_focus_failure(:invalid) if card_confirmation?
+
       render json: { error: "Could not pin document" }, status: :unprocessable_entity
+      return
     end
+
+    DocumentOverviewWarmJob.perform_later(account_id: current_account.id, kb_document_id: kb_doc.id)
+    record_focus_confirmed(session, kb_doc) if card_confirmation?
+    render_focus_result(kb_doc)
   end
 
   def destroy
-    kb_doc = session_pin_document
-    return head :not_found unless kb_doc
+    id = params[:id].to_i
+    session = current_conv_session
+    return head :not_found if id.zero? || session.find_entity_by_kb_document_id(id).nil?
 
-    current_conv_session.unpin_kb_document!(kb_doc)
-    head :no_content
+    kb_doc = KbDocument.find_by(id: id)
+    return head :not_found unless session.unpin_kb_document_id!(id)
+
+    return head :no_content unless card_confirmation?
+
+    record_focus_dismissed(session, kb_doc)
+    render json: {
+      status: "unfocused",
+      message: I18n.t("rag.manual_focus_removed"),
+      kb_document_id: id
+    }
   end
 
   private
 
   def create_params
-    params.permit(:kb_document_id)
+    params.permit(:kb_document_id, :document_uid, :correlation_id)
   end
 
-  # The id is not authority. A foreign tenant_private row stays a 404.
-  # A danebo_general row is the same physical document, pinnable here.
-  # Removing focus does not grant a read. The pin is identified by this
-  # session's kb_document_id, including after the document was revoked.
-  def session_pin_document
-    id = params[:id].to_i
-    return if id.zero?
-
-    session = current_conv_session
-    pinned = session.active_entities.any? { |_key, meta|
-      meta.is_a?(Hash) && meta["kb_document_id"].to_i == id
-    }
-    return unless pinned
-
-    KbDocument.find_by(id: id)
+  def card_confirmation?
+    params[:document_uid].present?
   end
 
-  def authorized_kb_document!(id)
-    kb_doc = KbDocument.find(id)
-    return kb_doc if Rag::KnowledgeScopePolicy.authorized?(kb_doc, viewer_account: current_account)
+  # The id is the physical row. document_uid is a confirmation, not a lookup.
+  # A foreign tenant_private row stays unavailable. A danebo_general row is
+  # the same physical document. Removing focus does not grant a read.
+  def focus_document
+    kb_doc = KbDocument.find_by(id: create_params[:kb_document_id])
+    unless kb_doc && Rag::KnowledgeScopePolicy.authorized?(kb_doc, viewer_account: current_account)
+      render_focus_failure(:unavailable)
+      return
+    end
+    if card_confirmation? && kb_doc.document_uid.to_s != create_params[:document_uid].to_s
+      render_focus_failure(:invalid)
+      return
+    end
 
-    raise ActiveRecord::RecordNotFound
+    kb_doc
+  end
+
+  def already_focused?(session, kb_doc)
+    session.find_entity_by_kb_document_id(kb_doc.id).present?
+  end
+
+  def render_existing_focus(kb_doc)
+    render json: focus_body("already_focused", I18n.t("rag.manual_focus_already"), kb_doc)
+  end
+
+  def render_focus_result(kb_doc)
+    return head :no_content unless card_confirmation?
+
+    render json: focus_body("focused", I18n.t("rag.manual_focus_confirmed"), kb_doc)
+  end
+
+  def focus_body(status, message, kb_doc)
+    { status: status, message: message, kb_document_id: kb_doc.id }
+  end
+
+  def render_focus_failure(code)
+    record_focus_denied(code) if card_confirmation?
+    if card_confirmation? && code == :invalid
+      render json: { error: I18n.t("rag.manual_focus_invalid") }, status: :unprocessable_entity
+    elsif card_confirmation?
+      render json: { error: I18n.t("rag.manual_focus_unavailable") }, status: :not_found
+    else
+      render json: { error: "Document not found" }, status: :not_found
+    end
+  end
+
+  def record_focus_confirmed(session, kb_doc)
+    PilotUsageLog.log(
+      "manual_focus_confirmed",
+      account_id: current_account.id,
+      user_id: current_user.id,
+      conversation_session_id: session.id,
+      correlation_id: create_params[:correlation_id].presence,
+      document_id: kb_doc.document_uid,
+      source_uri: kb_doc.display_s3_uri(KbDocument::KB_BUCKET),
+      knowledge_scope: Rag::KnowledgeScopePolicy.scope_for(kb_doc, viewer_account: current_account)
+    )
+  end
+
+  def record_focus_denied(code)
+    PilotUsageLog.log(
+      "manual_focus_denied",
+      account_id: current_account.id,
+      user_id: current_user.id,
+      conversation_session_id: existing_session_id,
+      correlation_id: create_params[:correlation_id].presence,
+      outcome_reason: code.to_s
+    )
+  end
+
+  def record_focus_dismissed(session, kb_doc)
+    document_id = kb_doc&.document_uid.presence || params[:document_uid].to_s
+    PilotUsageLog.log(
+      "manual_suggestion_dismissed",
+      account_id: current_account.id,
+      user_id: current_user.id,
+      conversation_session_id: session.id,
+      correlation_id: params[:correlation_id].presence,
+      document_id: document_id,
+      outcome: "unpinned"
+    )
+  end
+
+  def existing_session_id
+    ConversationSession.find_by(
+      identifier: current_user.id.to_s,
+      channel: "web",
+      account_id: current_account.id
+    )&.id
   end
 
   def current_conv_session

@@ -59,7 +59,7 @@ class PilotUsageLogTest < ActiveSupport::TestCase
     assert_equal "manual_suggestion_shown", payload["event"]
     assert_equal [ "uid-a", "uid-b" ], payload["suggestion_document_uids"]
     assert_equal [ "tenant_private", "danebo_general" ], payload["suggestion_scopes"]
-    assert_nil payload["knowledge_scope"]
+    assert_equal "danebo_general", payload["knowledge_scope"]
     assert_nil payload["manual_suggestion_dismissed"]
     assert_nil payload["not_a_field"]
     assert_not_includes line, "manual_suggestion_dismissed"

@@ -260,28 +260,72 @@ class RagController < ApplicationController
 
   # Suggest-only. The ranker does not retrieve and does not write active_entities.
   # Eligibility is the physical KbDocument through Rag::KnowledgeScopePolicy.
-  # A catalog classification is not an approval.
+  # A catalog classification is not an approval. A card tap is a later request.
   def attach_manual_suggestion(json, question, correlation_id, conv_session)
     return if question.blank? || current_account.nil?
 
-    payload = Rag::ManualCandidateRanker.suggest(
+    suggestion = Rag::ManualCandidateRanker.suggest(
       question,
       Rag::DocumentIdentityCatalog.current.entries,
       viewer_account: current_account,
       documents_for: method(:manual_suggestion_documents)
-    ).chat_payload
-    return if payload.nil?
-
-    json[:manual_suggestion] = payload
-    PilotUsageLog.log(
-      "manual_suggestion_shown",
-      account_id: current_account.id,
-      user_id: current_user&.id,
-      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
-      correlation_id: correlation_id,
-      suggestion_document_uids: payload[:cards].pluck(:document_uid),
-      suggestion_scopes: payload[:cards].pluck(:knowledge_scope)
     )
+    payload = suggestion.chat_payload
+    if payload
+      mark_focused_cards!(payload, conv_session)
+      payload[:correlation_id] = correlation_id
+      payload[:focus_action] = I18n.t("rag.manual_focus_action")
+      payload[:focus_clear] = I18n.t("rag.manual_focus_clear")
+      payload[:focus_status] = I18n.t("rag.manual_focus_confirmed")
+      payload[:focus_invalid] = I18n.t("rag.manual_focus_invalid")
+      json[:manual_suggestion] = payload
+      PilotUsageLog.log(
+        "manual_suggestion_shown",
+        account_id: current_account.id,
+        user_id: current_user&.id,
+        conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+        correlation_id: correlation_id,
+        suggestion_document_uids: payload[:cards].pluck(:document_uid),
+        suggestion_scopes: payload[:cards].pluck(:knowledge_scope)
+      )
+    end
+    attach_focus_notices(json, conv_session, suggestion, correlation_id)
+  end
+
+  def mark_focused_cards!(payload, conv_session)
+    ids = focused_kb_document_ids(conv_session)
+    payload[:cards].each do |card|
+      card[:focused] = ids.include?(card[:kb_document_id].to_i)
+    end
+  end
+
+  def focused_kb_document_ids(conv_session)
+    return [] unless conv_session.respond_to?(:active_entities)
+
+    conv_session.active_entities.values.filter_map { |meta|
+      next unless meta.is_a?(Hash) && meta["source"] == "user_pin"
+
+      meta["kb_document_id"].presence && meta["kb_document_id"].to_i
+    }
+  end
+
+  def attach_focus_notices(json, conv_session, suggestion, correlation_id)
+    pin = Rag::FocusNotice.pin_conflict(session: conv_session, suggestion: suggestion)
+    if pin
+      json[:pin_conflict] = { message: pin.message }
+      PilotUsageLog.log(
+        "equipment_switch_prompted",
+        account_id: current_account.id,
+        user_id: current_user&.id,
+        conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+        correlation_id: correlation_id,
+        manufacturer: pin.manufacturer,
+        outcome_reason: "pin_conflict"
+      )
+    end
+
+    identity = Rag::FocusNotice.identity_conflict(session: conv_session)
+    json[:identity_conflict] = { message: identity.message } if identity
   end
 
   def manual_suggestion_documents(candidates)

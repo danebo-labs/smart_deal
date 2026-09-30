@@ -60,7 +60,7 @@ An unforced pin retry that drops the URI filter stays on this open corpus. It do
 
 `WarmBedrockKbJob` is an Aurora ping. It calls `Retrieve` directly, discards the response, and does not serve a tenant. WhatsApp is dormant. A dormant caller of `BedrockRagService#query` uses this same filter and the same `DENY_RETRIEVAL`.
 
-A question does not pin a manual or a page. A mentioned page never narrows retrieval. A document the technician pinned is the whole scope of that session's retrieve. The filter is those URIs alone. The technician can change the pins. An empty result does not silently drop them.
+A question does not pin a manual or a page, and neither does a suggestion card. The technician's tap on that card reauthorizes the exact `KbDocument` row (`kb_document_id`, confirmed by `document_uid`) and writes `user_pin` on the current session only. The browser does not send `knowledge_scope`. A pin conflict or an identity conflict is shown and does not remove the pin or replace the technician's fact. A mentioned page never narrows retrieval. A document the technician pinned is the whole scope of that session's retrieve. The filter is those URIs alone. The technician can change the pins. An empty result does not silently drop them.
 
 Do not wrap a nested `andAll` in another `andAll`. The open filter is flat so a technical AND stays at depth 2.
 

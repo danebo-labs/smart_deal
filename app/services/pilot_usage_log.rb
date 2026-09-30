@@ -25,7 +25,7 @@ class PilotUsageLog
     ambiguity_detected ambiguity_identifier ambiguity_families
     section_identity attribution_identities attribution_anchors
     stage
-    suggestion_document_uids suggestion_scopes
+    suggestion_document_uids suggestion_scopes knowledge_scope
     episode_id episode_decision episode_fields_changed composed_chars
     original_sha256 effective_sha256 pending_question_type
   ].freeze

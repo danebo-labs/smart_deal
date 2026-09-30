@@ -42,6 +42,10 @@ class RagControllerManualSuggestionTest < ActionDispatch::IntegrationTest
     assert cards.all? { |card| card["text"] == Rag::ManualCandidateRanker::BRAND_ONLY_TEXT }
     assert_equal true, body.dig("manual_suggestion", "tie_at_top")
     assert_nil body.dig("manual_suggestion", "selected_document_uid")
+    rows = KbDocument.where(account: @account, document_uid: owned.map(&:document_id)).index_by(&:document_uid)
+    assert_equal owned.map { |candidate| rows[candidate.document_id].id }, cards.pluck("kb_document_id")
+    assert_equal [ false, false ], cards.pluck("focused")
+    assert_equal "Usar este manual", body.dig("manual_suggestion", "focus_action")
     assert_not_includes body["answer"], Rag::ManualCandidateRanker::BRAND_ONLY_TEXT
     assert_equal({}, session.active_entities)
     assert_suggestion_telemetry(owned.map(&:document_id), [ "tenant_private", "tenant_private" ])

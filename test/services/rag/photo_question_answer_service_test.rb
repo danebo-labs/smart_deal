@@ -223,6 +223,65 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_equal :en, captured[:response_locale]
   end
 
+  test "provenance segments do not depend on SHOW_RAG_SOURCES" do
+    citations = [ { number: 1, title: "Manual", content: "chunk body that must not travel" } ]
+    answer = "El procedimiento indica desconectar la alimentación [1]. Podés empezar revisando la alimentación."
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      { answer: answer, citations: citations, session_id: nil }
+    end
+
+    ENV["SHOW_RAG_SOURCES"] = "true"
+    visible = build_service(question: "cómo sigo?").call
+    ENV["SHOW_RAG_SOURCES"] = "false"
+    hidden = build_service(question: "cómo sigo?").call
+
+    assert_equal 1, visible[:citations].size
+    assert_not visible[:citations].first.key?(:content)
+    assert_equal [], hidden[:citations]
+    assert_equal visible[:provenance_segments], hidden[:provenance_segments]
+    assert_equal %w[MANUAL_FACT DANEBO_GUIDANCE], visible[:provenance_segments].pluck("band")
+    assert_includes visible[:answer], "[1]"
+    assert_not_includes hidden[:answer], "[1]"
+    assert_not_includes visible[:provenance_segments].first["text"], "[1]"
+  end
+
+  test "photo question provenance reads the stored observation and ignores photo_value" do
+    photo = persist_observed_photo(account: @account, manufacturer: "KONE", component: "conjunto de resortes")
+    foreign = persist_observed_photo(account: accounts(:climb), manufacturer: "OTIS-SECRET", component: "tablero secreto")
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      { answer: "Fabricante KONE. En la foto: se observa SCHINDLER.", citations: [], session_id: nil }
+    end
+
+    result = build_service(
+      question: "qué marca se ve?",
+      photo_value: @photo_value.merge(manufacturer: "SCHINDLER", canonical_name: "tablero secreto"),
+      field_photo_id: photo.id
+    ).call
+
+    assert_equal [ "VISUAL_OBSERVATION", "DANEBO_GUIDANCE" ], result[:provenance_segments].pluck("band")
+    assert_includes result[:provenance_segments].first["text"], "KONE"
+    assert result[:provenance_segments].none? { |segment| segment["band"] == "MANUAL_FACT" }
+
+    ignored = build_service(
+      question: "qué marca se ve?",
+      photo_value: @photo_value.merge(manufacturer: "OTIS-SECRET"),
+      field_photo_id: foreign.id
+    ).call
+
+    assert_equal [ "DANEBO_GUIDANCE", "DANEBO_GUIDANCE" ], ignored[:provenance_segments].pluck("band")
+    assert_not_includes ignored[:provenance_segments].to_json, "OTIS-SECRET"
+  end
+
+  test "a photo question without a stored observation does not invent a visual band" do
+    BedrockRagService.define_method(:query) do |_question, **_kwargs|
+      { answer: "En la foto: se observa KONE.", citations: [], session_id: nil }
+    end
+
+    result = build_service(question: "qué se ve?").call
+
+    assert_equal [ "DANEBO_GUIDANCE" ], result[:provenance_segments].pluck("band")
+  end
+
   test "citations are normalized through Bedrock::CitationProcessor" do
     BedrockRagService.define_method(:query) do |_question, **_kwargs|
       {
@@ -405,7 +464,7 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
 
   private
 
-  def build_service(question:, locale: "es", photo_value: @photo_value)
+  def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil)
     Rag::PhotoQuestionAnswerService.new(
       question: question,
       photo_value: photo_value,
@@ -413,7 +472,36 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       account: @account,
       user_id: users(:one).id,
       correlation_id: "photo:test",
-      locale: locale
+      locale: locale,
+      field_photo_id: field_photo_id
     )
+  end
+
+  def persist_observed_photo(account:, manufacturer:, component:)
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: account,
+      sha256: sha,
+      s3_key_original: "field_photos/#{account.id}/#{sha}/original.jpg",
+      content_type: "image/jpeg",
+      byte_size: 8
+    )
+    FieldPhotoObservation.persist!(
+      photo,
+      FieldPhotoObservation.from_analysis(
+        parsed: {
+          "canonical_component" => component,
+          "manufacturer" => manufacturer,
+          "model" => "MX20",
+          "subsystem" => "DOOR_OPERATOR",
+          "condition" => "DEGRADED",
+          "visible_text" => [ "708A" ],
+          "target_visible" => true,
+          "relevance_to_goal" => "relevant"
+        },
+        model_id: "claude-sonnet-5-5"
+      )
+    )
+    photo
   end
 end

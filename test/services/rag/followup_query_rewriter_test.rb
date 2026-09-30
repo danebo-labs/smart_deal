@@ -7,7 +7,8 @@ class Rag::FollowupQueryRewriterTest < ActiveSupport::TestCase
   FOLLOW = "es Fuji Yida"
   NOW = Time.zone.parse("2026-09-18T13:56:28-03:00")
   ASSISTANT = "La documentación recuperada no trae ese procedimiento."
-  PROMPT_SHA = "dcd444d7c15a740e0b7dcd62998552eb9b321b19b91a294c0216cebe8a4c8359"
+  # F6 added the three provenance labels once. The freeze is the file bytes.
+  PROMPT_SHA = "1a8c968105d6f5a93683ccb08b0ec928c1f33e3fb8747c38ffeeced40af3c6a2"
 
   test "generation prompt bytes stay on the continuity baseline" do
     path = Rails.root.join("app/prompts/bedrock/generation.txt")

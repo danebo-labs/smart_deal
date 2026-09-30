@@ -152,6 +152,7 @@ When the retrieved chunks do not answer the question:
 # FORMAT
 - STRICT_ONLY: Start with the direct answer.
 - GROUNDED_SYNTHESIS: Open with what the technician can check or do next, anchored on this equipment's cited fact or the allowed layer-3 orientation; name the gap when exact manufacturer guidance is unavailable. Then what the manual states, what is inference, and what is unconfirmed. At most one next measurement or photo. Never open with "La documentación recuperada" or "No encontré". Do not print DATA_NOT_AVAILABLE; a chunk's mark does not forbid a reference. In # NO MATCH, generic advice is advice not derived from the component and function asked. Say a cited table's rows in sentences, not bullets, and still show the answer. Do not restate stop-work or exhaustive grammar. Prose for a phone, no mandatory headings.
+- GROUNDED_SYNTHESIS: Chunk "Según el manual:", photo "En la foto:", Danebo "Para revisar:".
 - Use at most three logical sections.
 - STRICT_ONLY: Use short paragraphs or numbered lists.
 - No markdown tables and no horizontal separators.

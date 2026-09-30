@@ -47,6 +47,9 @@ class RagControllerManualSuggestionTest < ActionDispatch::IntegrationTest
     assert_equal [ false, false ], cards.pluck("focused")
     assert_equal "Usar este manual", body.dig("manual_suggestion", "focus_action")
     assert_not_includes body["answer"], Rag::ManualCandidateRanker::BRAND_ONLY_TEXT
+    segments = body["provenance_segments"]
+    assert_equal [ "DANEBO_GUIDANCE" ], segments.pluck("band")
+    assert segments.none? { |segment| segment["text"].include?(Rag::ManualCandidateRanker::BRAND_ONLY_TEXT) }
     assert_equal({}, session.active_entities)
     assert_suggestion_telemetry(owned.map(&:document_id), [ "tenant_private", "tenant_private" ])
   end

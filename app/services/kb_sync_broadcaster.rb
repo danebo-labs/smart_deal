@@ -60,7 +60,8 @@ class KbSyncBroadcaster
   # reading is already inside `answer`; `visual_summary` travels only when the
   # manuals could not be consulted, so the paid reading is still shown.
   def self.photo_question_answered(answer:, citations:, account_id: nil, correlation_id: nil, response_locale: nil,
-                                   field_photo_id: nil, thumbnail_url: nil, visual_summary: nil)
+                                   field_photo_id: nil, thumbnail_url: nil, visual_summary: nil,
+                                   provenance_segments: nil)
     payload = {
       status: "photo_question_answered",
       correlation_id: correlation_id,
@@ -71,6 +72,7 @@ class KbSyncBroadcaster
       response_locale: response_locale
     }
     payload[:visual_summary] = visual_summary if visual_summary.present?
+    payload[:provenance_segments] = provenance_segments unless provenance_segments.nil?
     ActionCable.server.broadcast(channel_for(account_id), payload)
   end
 end

@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `PASS`: el tap escribe `user_pin` solo en la sesión actual. F5 está `PASS`: la observación visual vive en la misma fila `field_photos` y el follow-up que corresponde no llama a Anthropic. F6 está `READY` y no empezó. El prompt completo de la fase siguiente es el Anexo I.
+**Estado:** master plan final. F0, F1, F2, F2B, F3, F3B1 y F3B2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. F3B1 es la autoridad de `knowledge_scope`. F3B2 alineó el retrieve abierto con esa autoridad. F4 está `PASS`: el tap escribe `user_pin` solo en la sesión actual. F5 está `PASS`: la observación visual vive en la misma fila `field_photos` y el follow-up que corresponde no llama a Anthropic. F6 está `PASS`: el servidor separa `MANUAL_FACT`, `VISUAL_OBSERVATION` y `DANEBO_GUIDANCE` antes de ocultar las citas. F7 no empezó. El prompt de F7 es la sección 12.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F6, en el Anexo I. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. El Anexo F es el prompt de F4 ya ejecutado. El Anexo H es el prompt de F5 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt pendiente es el de F7, en la sección 12. No es un anexo de ejecución y F7 no empezó. El Anexo I es el prompt de F6 ya ejecutado. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. El Anexo G es el prompt de F3B2 ya ejecutado. El Anexo F es el prompt de F4 ya ejecutado. El Anexo H es el prompt de F5 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -42,8 +42,8 @@
 | F3B2 | Retrieval Alignment | Sacar Legacy, Pilot y `manual_corpus=general` como autorización. Revocación global, post-filter, recall, backfill del ledger | PASS. F4 `READY`. El retrieve abierto es la cuenta más `danebo_general`. No hubo deploy |
 | F4 | Confirmed Focus | Tap → `user_pin` para privado del tenant y para `danebo_general` | PASS. El técnico confirma. No hay auto-focus. El pin es de la sesión. F5 `READY`. No hubo deploy |
 | F5 | Image continuity | Reuso de `visual_observation` | PASS. La observación vive en la misma fila. El follow-up que corresponde no llama a Anthropic. F6 `READY`. No hubo deploy |
-| F6 | Provenance contract | Prompt y contrato servidor | READY / NOT STARTED. Una sugerencia no puede quedar como `MANUAL_FACT`. El JSON visual está en `field_photos.visual_observation`, no en el episodio |
-| F7 | Provenance presentation | Solo renderer | No edita el prompt. Funciona con `SHOW_RAG_SOURCES=false` |
+| F6 | Provenance contract | Prompt y contrato servidor | PASS. Tres bandas, clasificadas en el servidor antes del strip. Una sugerencia no es `MANUAL_FACT`. F7 `NOT STARTED`. No hubo deploy |
+| F7 | Provenance presentation | Solo renderer | NOT STARTED. Lee `provenance_segments`. El `text` no trae `[n]` resuelto. El prefijo no decide la banda. Funciona con `SHOW_RAG_SOURCES=false` |
 | F8 | Field pilot / next decision | Sin feature | `KEEP_B` o `PROPOSE_PLAN_C` |
 
 ## Cómo termina una fase
@@ -606,7 +606,9 @@ Regla mecánica: frase con un `[n]` que existe en las citas del servidor → `MA
 
 Resultado F5, precondición de F6. Esa frase visual sale de `field_photos.visual_observation` saneada por `FieldPhotoObservation`. No sale de `active_photo`, de `summary`, ni de la prosa del modelo. Si esa columna no tiene un JSON válido en el turno, no hay segmento `VISUAL_OBSERVATION`. El retrieve que sigue a la decisión visual no se vuelve a pasar por la precedencia de F5.
 
-F7 solo lee `provenance_segments`. Si la clave falta, el renderer de hoy se queda, footer incluido. F7 no edita `generation.txt`. Tests con el flag en `true` y en `false`.
+Resultado F6. `F6_STATUS=PASS`. `F7` queda `NOT STARTED`. `Rag::ProvenanceSegmenter` corre antes de `strip_resolved_markers`, en `RagController#ask` y en `Rag::PhotoQuestionAnswerService`. La primera regla que aplica gana. Un `[n]` que existe en las citas de ese turno es `MANUAL_FACT`. Una frase tomada de `canonical_component`, `manufacturer`, `model` o `visible_text` de la columna saneada es `VISUAL_OBSERVATION`. El resto es `DANEBO_GUIDANCE`. El `text` emitido no lleva el `[n]` que sí resolvió. Un corchete que no es cita, como `[24]` o `[99]`, se queda. Una banda que no es `MANUAL_FACT` no lleva el rótulo `Según el manual:`. El prefijo dentro del texto no decide la banda. `SHOW_RAG_SOURCES=true` y `false` producen los mismos segmentos. Con falso, `citations` puede ir `[]`. La clave viaja en el JSON de `ask` y en `photo_question_answered`, también en el mensaje de foto ausente y en el texto de fallo del RAG de la foto. No viaja en `photo_analyzed`. `visual_summary` no es una banda. El ack con `images_uploaded` no toma la observación: las bandas de esa foto salen cuando el job lee la columna. El reuso de F5 clasifica esa columna aunque Anthropic no haya corrido. `photo_value` y la prosa del análisis no son autoridad. `answer_presenter.js` no cambió. No hubo deploy.
+
+F7 solo lee `provenance_segments`. Si la clave falta, el renderer de hoy se queda, footer incluido. F7 no edita `generation.txt`. No busca `[n]` dentro de `text`: ese marker ya se usó para clasificar y no está en el segmento. No infiere la banda por `Según el manual:`, `En la foto:` o `Para revisar:`. La banda es el campo `band`. Una sugerencia sigue fuera de `answer`. `photo_analyzed` y `visual_summary` no son segmentos. Tests con el flag en `true` y en `false`.
 
 ## 13. Telemetría
 
@@ -656,7 +658,7 @@ Esos archivos describen el contrato (`tenant_private` + `danebo_general` explíc
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2, F4 y F5 están `PASS`. F4 y F5 están CLOSED. F6 está `READY` / NOT STARTED.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B, F3, F3B1, F3B2, F4, F5 y F6 están `PASS`. F4, F5 y F6 están CLOSED. F7 está `NOT STARTED`.
 
 Contrato de cada fase, cuando corra:
 
@@ -1345,6 +1347,76 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: revisada, sin edición. Sigue leyendo solo `provenance_segments`. El lugar de la columna no cambia el renderer.
   - F8. `reason`: revisada, sin edición. Sigue siendo `KEEP_B` o `PROPOSE_PLAN_C`, sin feature.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo I)
+
+### F6
+
+- `phase`: F6
+- `status`: `PASS`
+- `head_initial`: `955b43254f77c38f09909354173054af7074c193`
+- `head_final`: el commit de F6. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto es `Separate manual facts, visual observations, and Danebo guidance`.
+- `files_changed`:
+  - `app/controllers/rag_controller.rb`
+  - `app/jobs/field_photo_analysis_job.rb`
+  - `app/prompts/bedrock/generation.txt`
+  - `app/services/kb_sync_broadcaster.rb`
+  - `app/services/rag/photo_question_answer_service.rb`
+  - `app/services/rag/provenance_segmenter.rb`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+  - `test/controllers/rag_controller_manual_suggestion_test.rb`
+  - `test/controllers/rag_controller_test.rb`
+  - `test/jobs/field_photo_analysis_job_test.rb`
+  - `test/services/kb_sync_broadcaster_test.rb`
+  - `test/services/rag/followup_query_rewriter_test.rb`
+  - `test/services/rag/photo_question_answer_service_test.rb`
+  - `test/services/rag/provenance_segmenter_test.rb`
+- `commands_executed`:
+  - `git rev-parse HEAD`
+  - `git status --porcelain`
+  - `git merge-base --is-ancestor 955b43254f77c38f09909354173054af7074c193 HEAD`
+  - `git merge-base --is-ancestor 9239d45b64ad8958ea00ca13475fa6467708b213 HEAD`
+  - `git log --format='%H %s' 9239d45b64ad8958ea00ca13475fa6467708b213..HEAD`
+  - `env -u BUNDLE_PATH bin/rails test` con los tests de F6 y el regression gate en la misma invocación
+  - `env -u BUNDLE_PATH bin/rails test`
+  - `env -u BUNDLE_PATH bundle exec rubocop --cache false` sobre los 12 Ruby de F6
+  - `git diff --check`
+- `command_results`:
+  - preflight: el correctivo de F5 es HEAD y es ancestro, exit 0. El padre de F5 `9239d45b64ad8958ea00ca13475fa6467708b213` también es ancestro. El asunto `Persist field photo observation for zero-call visual follow-ups` está en ese rango. Working tree limpio al abrir. `head_initial` `955b43254f77c38f09909354173054af7074c193`
+  - tests de F6 más regression gate: 384 runs, 2179 assertions, 0 failures, 0 errors, 1 skip
+  - suite completa: 3786 runs, 19476 assertions, 0 failures, 0 errors, 186 skips
+  - RuboCop: 12 files, no offenses
+  - `git diff --check`: sin conflictos de whitespace
+- `tests`: `test/services/rag/provenance_segmenter_test.rb`, `test/services/rag/photo_question_answer_service_test.rb`, `test/controllers/rag_controller_test.rb`, `test/controllers/rag_controller_manual_suggestion_test.rb`, `test/jobs/field_photo_analysis_job_test.rb`, `test/services/kb_sync_broadcaster_test.rb`, `test/prompts/bedrock_generation_prompt_test.rb`, `test/services/rag/followup_query_rewriter_test.rb`, más el regression gate (`rag_retrieval_profile`, `structured_evidence_route`, `field_photo_analysis_service`, `field_photo_density_gate`, `image_compression_service`, `field_photo_analysis_job`, `pilot_usage_log`)
+- `test_results`: 384 runs, 2179 assertions, 0 failures, 0 errors, 1 skip. El skip es `ImageCompressionServiceTest`, el JPEG manual. No es de F6. La suite completa suma 3786 runs, 19476 assertions, 0 failures, 0 errors, 186 skips. No hay skip nuevo de F6. Cero llamadas reales a Anthropic o Bedrock.
+- `artifacts`: ninguno
+- `artifact_sha256`: ninguno
+- `findings`:
+  1. `CONFIRMED`. Solo hay tres bandas: `MANUAL_FACT`, `VISUAL_OBSERVATION`, `DANEBO_GUIDANCE`. No hay cuarta taxonomía.
+  2. `CONFIRMED`. Un `[n]` es `MANUAL_FACT` solo si ese número está en las citas del turno. `[99]` con citas 1 y 2 no lo es. El número puede llegar como string.
+  3. `CONFIRMED`. `Según el manual:` sin cita válida es `DANEBO_GUIDANCE` y el rótulo se saca del `text`. Una frase citada conserva el rótulo y pierde el `[n]` resuelto.
+  4. `CONFIRMED`. La observación visual sale de `canonical_component`, `manufacturer`, `model` y `visible_text` después de `FieldPhotoObservation.sanitize`. `summary`, `aliases`, `documented_*`, `condition` y la línea mecánica `[FOTO]` no son `MANUAL_FACT`. Esa línea empaquetada queda `DANEBO_GUIDANCE`: nombra todos los campos a la vez, ningún campo domina, y no tiene marco de foto.
+  5. `CONFIRMED`. Sin observación válida hay cero segmentos `VISUAL_OBSERVATION`. Un payload inválido no alcanza. Una foto de otra cuenta no alcanza. `active_photo` no se lee.
+  6. `CONFIRMED`. `SHOW_RAG_SOURCES=true` y `false` dejan los mismos `provenance_segments`. Con falso, `citations` puede ir `[]`.
+  7. `CONFIRMED`. El reuso de F5, con cero Anthropic, clasifica `field_photos.visual_observation`. `photo_value` y la prosa del análisis no son autoridad. `SCHINDLER` en `photo_value` no se vuelve visual si la columna dice `KONE`.
+  8. `CONFIRMED`. `El fabricante es Fuji Yida.` sigue siendo ese texto y no es `MANUAL_FACT`. `En la foto: se observa KONE.` puede ser `VISUAL_OBSERVATION`. La precedencia de facts de F5 no se editó.
+  9. `CONFIRMED`. La tarjeta `manual_candidate` no entra en `answer`. Los segmentos de esa respuesta son `DANEBO_GUIDANCE`. El texto de la tarjeta no es `MANUAL_FACT`.
+  10. `CONFIRMED`. `Según el manual:`, `En la foto:` y `Para revisar:` aparecen una vez en `generation.txt`, una vez en el template grounded y cero veces en el estricto. La línea previa `Según el manual …`, con puntos suspensivos y sin dos puntos, sigue en el contrato de evidencia. `answer_presenter.js` no cambió.
+  11. `CONFIRMED`. `apply_photo_continuity: false` en el retrieve de la pregunta con foto no cambió. No se editaron pins, retrieval, score, `knowledge_scope`, `RagRetrievalProfile`, `FieldPhotoPrompt`, los tres constants de modelo, `DEICTIC_RE`, `VISUAL_REREAD_RE` ni `VISUAL_REFERENCE_RE`.
+  12. `NEW`. El `text` del segmento no incluye el `[n]` resuelto. La clasificación igual ocurre antes del strip que ve el browser. `[24]` y `[99]`, que no son citas, se quedan.
+  13. `NEW`. El match visual es conservador. Hace falta un marco (`En la foto`, `se observa`, `se ve`, y las variantes de imagen) más el campo allowlisted, o que los tokens significativos de ese campo sean al menos la mitad de la frase. `El procedimiento KONE recomienda revisar el freno del equipo.` es `DANEBO_GUIDANCE` aunque la observación diga `KONE`. El umbral es `0.5`. No hay clasificador semántico.
+  14. `NEW`. El JSON síncrono de `ask` no adjunta la observación cuando hay `images_uploaded`: ese texto es el ack. Las bandas de la foto van en `photo_question_answered`, cuando el job lee la columna. `photo_analyzed` y `visual_summary` no son segmentos.
+  15. `NEW`. El prompt grounded ya estaba contra su tope de caracteres (`12391`) y contra el tope de tokens del 30 %. La línea nueva es una sola oración `GROUNDED_SYNTHESIS` corta para que los dos topes sigan pasando. El freeze de bytes de `generation.txt` pasó a `1a8c968105d6f5a93683ccb08b0ec928c1f33e3fb8747c38ffeeced40af3c6a2`.
+  16. `REJECTED`. Una cuarta banda, un modelo extra para clasificar, editar `answer_presenter.js`, copiar `visual_observation` al episodio, y tratar una sugerencia de manual como `MANUAL_FACT`.
+- `derived_decisions`:
+  - La primera regla que aplica gana: cita válida, después observación allowlisted de ese turno, después guía.
+  - El `text` emitido no contiene el `[n]` resuelto. Los dos estados de `SHOW_RAG_SOURCES` quedan iguales.
+  - El rótulo `Según el manual:` se saca de toda banda que no sea `MANUAL_FACT`. El Anexo I es más estricto que el mínimo de “no etiquetar `MANUAL_FACT`”. Se siguió el anexo.
+  - La banda es el campo `band`. Un prefijo dentro del texto no la decide.
+  - La fuente visual es la columna saneada de `field_photo_id` de esa cuenta. El reuso no exige otra llamada de visión.
+- `future_phases_changed`:
+  - F7. `reason`: la sección 12 ahora dice las precondiciones que F6 fijó. No hay anexo de ejecución nuevo. F7 no empezó. Lee `band` y `text`. El `text` no trae `[n]` resuelto. El prefijo no es la banda. La clave está en `ask` y en `photo_question_answered`. No está en `photo_analyzed`. `visual_summary` no es una banda.
+  - F8. `reason`: revisada, sin edición. Sigue siendo `KEEP_B` o `PROPOSE_PLAN_C`, sin feature.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (sección 12)
 
 ## Anexo G — prompt de F3B2
 

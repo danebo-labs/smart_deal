@@ -47,7 +47,7 @@ module Rag
     ].freeze
     PLANT_IDENTIFIER_PATTERN = /\b[A-Z]{4,}\s+\d{2,}\b/
 
-    def initialize(question:, photo_value:, session:, account:, user_id:, correlation_id:, locale:)
+    def initialize(question:, photo_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil)
       @question = question.to_s.strip
       @photo_value = photo_value.to_h.deep_symbolize_keys
       @session = session
@@ -55,6 +55,7 @@ module Rag
       @user_id = user_id
       @correlation_id = correlation_id
       @locale = locale.to_s.presence&.to_sym
+      @field_photo_id = field_photo_id
     end
 
     # @return [Hash, nil] { answer:, citations:, generation_mode: } or nil when
@@ -77,14 +78,22 @@ module Rag
       )
       return nil unless result.success?
 
-      processor        = Bedrock::CitationProcessor.new
-      raw_citations    = processor.transport_references(result.citations)
-      sources_visible  = Rag::SourcesVisibility.enabled?
-      answer           = sources_visible ? result.answer : processor.strip_resolved_markers(result.answer, raw_citations)
+      processor       = Bedrock::CitationProcessor.new
+      raw_citations   = processor.transport_references(result.citations)
+      # Same rule as RagController#ask: bands are fixed before sources are hidden.
+      # The observation is the stored column for this field_photo_id, not photo_value.
+      segments        = Rag::ProvenanceSegmenter.call(
+        answer: result.answer,
+        citations: raw_citations,
+        visual_observation: turn_visual_observation
+      )
+      sources_visible = Rag::SourcesVisibility.enabled?
+      answer          = sources_visible ? result.answer : processor.strip_resolved_markers(result.answer, raw_citations)
 
       {
         answer: answer,
         citations: sources_visible ? raw_citations : [],
+        provenance_segments: segments,
         retrieved_citations: result.retrieved_citations,
         effective_query: result.effective_question,
         generation_mode: result.generation_mode
@@ -92,6 +101,13 @@ module Rag
     end
 
     private
+
+    def turn_visual_observation
+      return nil if @field_photo_id.blank? || @account.nil?
+
+      photo = FieldPhoto.where(account_id: @account.id).find_by(id: @field_photo_id)
+      photo&.visual_observation
+    end
 
     # "Que equipo es y que está mostrando la pantalla ? (GECB System=1 Tools=2)"
     def anchored_question

@@ -916,6 +916,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
       assert_equal 0, calls
       assert_equal "Respuesta de manual", messages.last["answer"]
+      assert_equal [ "DANEBO_GUIDANCE" ], messages.last["provenance_segments"].pluck("band")
+      assert_not_includes messages.last["provenance_segments"].to_json, "KONE"
     end
 
     assert_includes captured[:session_context], "Photo Evidence"
@@ -945,6 +947,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert_equal 0, calls
       assert_equal Rag::PhotoObservationContinuity::MISSING_PHOTO_MESSAGE, messages.last["answer"]
       assert_not_includes messages.last["answer"], "OTIS-SECRET"
+      assert messages.last["provenance_segments"].all? { |segment| segment["band"] == "DANEBO_GUIDANCE" }
+      assert_not_includes messages.last["provenance_segments"].to_json, "OTIS-SECRET"
     end
 
     assert_equal "OTIS-SECRET", foreign.reload.visual_observation["manufacturer"]

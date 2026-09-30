@@ -686,6 +686,63 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
   # ─── SHOW_RAG_SOURCES transport gate (§3.2/§3.3) ────────────────────────────
 
+  test "provenance segments match with sources shown or hidden" do
+    sign_in @user
+    citations = [ { number: 1, title: "Manual de freno" } ]
+    answer = "El procedimiento indica desconectar la alimentación [1]. Podés empezar revisando la alimentación."
+
+    bodies = [ "true", "false" ].map do |flag|
+      mock = create_mock_orchestrator(answer: answer, citations: citations)
+      with_show_rag_sources(flag) do
+        with_mock_orchestrator(mock) do
+          post rag_ask_url, params: { question: TEST_QUESTION }, as: :json
+          assert_response :success
+          json_response
+        end
+      end
+    end
+
+    visible, hidden = bodies
+    assert_equal 1, visible["citations"].size
+    assert_equal [], hidden["citations"]
+    assert_equal visible["provenance_segments"], hidden["provenance_segments"]
+    assert_equal "MANUAL_FACT", visible["provenance_segments"].first["band"]
+    assert_equal "DANEBO_GUIDANCE", visible["provenance_segments"].last["band"]
+    assert_not_includes visible["provenance_segments"].first["text"], "[1]"
+    assert_includes visible["answer"], "[1]"
+    assert_not_includes hidden["answer"], "[1]"
+  end
+
+  test "ask classifies this account's field photo and ignores another account's observation" do
+    sign_in @user
+    photo = observed_field_photo(@account, manufacturer: "KONE", component: "conjunto de resortes")
+    foreign = observed_field_photo(accounts(:climb), manufacturer: "OTIS-SECRET", component: "tablero secreto")
+    answer = "En la foto: se observan resortes en el conjunto."
+
+    own = ask_observed(answer, photo.id)
+    other = ask_observed(answer, foreign.id)
+
+    assert_equal [ "VISUAL_OBSERVATION" ], own["provenance_segments"].pluck("band")
+    assert_equal [ "DANEBO_GUIDANCE" ], other["provenance_segments"].pluck("band")
+    assert_not_includes other.to_json, "OTIS-SECRET"
+  end
+
+  test "the photo acknowledgment does not borrow the stored observation" do
+    sign_in @user
+    photo = observed_field_photo(@account, manufacturer: "KONE", component: "conjunto de resortes")
+    mock = create_mock_orchestrator(
+      answer: "En la foto: se observan resortes en el conjunto.",
+      images_uploaded: [ "panel.jpg" ]
+    )
+
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: "estos resortes", field_photo_id: photo.id }, as: :json
+      assert_response :success
+    end
+
+    assert_equal [ "DANEBO_GUIDANCE" ], json_response["provenance_segments"].pluck("band")
+  end
+
   test 'with sources hidden, citations are not transported and content never appears' do
     sign_in @user
 
@@ -1273,6 +1330,43 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   ensure
     SharedSession.send(:remove_const, :ENABLED)
     SharedSession.const_set(:ENABLED, orig)
+  end
+
+  def ask_observed(answer, field_photo_id)
+    mock = create_mock_orchestrator(answer: answer, citations: [])
+    with_mock_orchestrator(mock) do
+      post rag_ask_url, params: { question: "qué se ve?", field_photo_id: field_photo_id }, as: :json
+      assert_response :success
+      json_response
+    end
+  end
+
+  def observed_field_photo(account, manufacturer:, component:)
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: account,
+      sha256: sha,
+      s3_key_original: "field_photos/#{account.id}/#{sha}/original.jpg",
+      content_type: "image/jpeg",
+      byte_size: 8
+    )
+    FieldPhotoObservation.persist!(
+      photo,
+      FieldPhotoObservation.from_analysis(
+        parsed: {
+          "canonical_component" => component,
+          "manufacturer" => manufacturer,
+          "model" => "MX20",
+          "subsystem" => "DOOR_OPERATOR",
+          "condition" => "DEGRADED",
+          "visible_text" => [ "708A" ],
+          "target_visible" => true,
+          "relevance_to_goal" => "relevant"
+        },
+        model_id: "claude-sonnet-5-5"
+      )
+    )
+    photo
   end
 
   def with_show_rag_sources(value)

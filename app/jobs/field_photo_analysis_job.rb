@@ -272,6 +272,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     KbSyncBroadcaster.photo_question_answered(
       answer: message,
       citations: [],
+      provenance_segments: Rag::ProvenanceSegmenter.call(answer: message, citations: []),
       account_id: account_id,
       correlation_id: correlation_id,
       response_locale: locale,
@@ -337,7 +338,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
     rag_answer = if Rag::PhotoQuestionFlag.enabled? && question.present?
       answer_photo_question(question: question, photo_value: value, session: session,
                             account_id: account_id, user_id: user_id,
-                            correlation_id: correlation_id, locale: locale)
+                            correlation_id: correlation_id, locale: locale,
+                            field_photo_id: field_photo_id)
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
@@ -362,6 +364,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     end
     KbSyncBroadcaster.photo_question_answered(
       answer: rag_answer.fetch(:answer), citations: rag_answer[:citations],
+      provenance_segments: rag_answer[:provenance_segments],
       account_id: account_id, correlation_id: correlation_id, response_locale: locale,
       field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
       # The paid vision reading is not lost when the manuals could not be consulted.
@@ -379,7 +382,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # its own rescue: a failure here must never cost the technician the vision
   # analysis that was already paid for and delivered above — see plan
   # foto_mas_pregunta_rag "Aislamiento de fallo obligatorio".
-  def answer_photo_question(question:, photo_value:, session:, account_id:, user_id:, correlation_id:, locale:)
+  def answer_photo_question(question:, photo_value:, session:, account_id:, user_id:, correlation_id:, locale:,
+                             field_photo_id: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     account = session&.account || (account_id && Account.find_by(id: account_id))
 
@@ -390,7 +394,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       account: account,
       user_id: user_id,
       correlation_id: correlation_id,
-      locale: locale
+      locale: locale,
+      field_photo_id: field_photo_id
     ).call
     return nil unless result
 
@@ -424,7 +429,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
     # This text is the single answer the technician sees, next to the paid
     # vision reading — never the job's retry_on handler, which would replace
     # that reading with a bare error.
-    { answer: I18n.with_locale(locale) { I18n.t("rag.photo_question_unavailable") }, citations: [], generation_mode: nil, failed: true }
+    unavailable = I18n.with_locale(locale) { I18n.t("rag.photo_question_unavailable") }
+    {
+      answer: unavailable,
+      citations: [],
+      provenance_segments: Rag::ProvenanceSegmenter.call(answer: unavailable, citations: []),
+      generation_mode: nil,
+      failed: true
+    }
   end
 
   def field_photo_thumbnail_url(field_photo_id)

@@ -222,5 +222,22 @@ class KbSyncBroadcasterTest < ActiveSupport::TestCase
     assert_equal 42, messages.first["field_photo_id"]
     assert_equal "data:image/gif;base64,R0lGOD", messages.first["thumbnail_url"]
     assert_not messages.first.key?("visual_summary")
+    assert_not messages.first.key?("provenance_segments")
+  end
+
+  test ".photo_question_answered carries provenance segments when the server built them" do
+    channel = KbSyncBroadcaster.channel_for(accounts(:legacy).id)
+    segments = [ { "band" => "DANEBO_GUIDANCE", "text" => "Revisá la alimentación." } ]
+    messages = capture_broadcasts(channel) do
+      KbSyncBroadcaster.photo_question_answered(
+        answer: "Revisá la alimentación.",
+        citations: [],
+        account_id: accounts(:legacy).id,
+        correlation_id: "photo:abc",
+        provenance_segments: segments
+      )
+    end
+
+    assert_equal segments, messages.first["provenance_segments"]
   end
 end

@@ -103,6 +103,9 @@ class RagController < ApplicationController
 
     raw_citations   = citation_processor.transport_references(result.citations)
     sources_visible = Rag::SourcesVisibility.enabled?
+    # Classify while [n] still resolves against this turn's citations. The
+    # segments travel even when the browser receives citations: [].
+    provenance_segments = provenance_segments_for(result, raw_citations)
     marker_free_answer = citation_processor.strip_resolved_markers(result.answer, raw_citations)
     answer_text = sources_visible ? result.answer : marker_free_answer
 
@@ -148,6 +151,7 @@ class RagController < ApplicationController
       resolution:     resolution,
       response_locale: result.response_locale
     }
+    json[:provenance_segments] = provenance_segments
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
     json[:correlation_id]     = result.correlation_id     if result.correlation_id.present?
@@ -334,6 +338,28 @@ class RagController < ApplicationController
 
   def citation_processor
     @citation_processor ||= Bedrock::CitationProcessor.new
+  end
+
+  def provenance_segments_for(result, citations)
+    Rag::ProvenanceSegmenter.call(
+      answer: result.answer,
+      citations: citations,
+      visual_observation: turn_visual_observation(result)
+    )
+  end
+
+  # The ack that only says the photo is being read is not this turn's answer.
+  # A valid observation on an owned photo is classified later, from the column,
+  # when PhotoQuestionAnswerService builds the answer. active_photo is not read.
+  def turn_visual_observation(result)
+    return nil if result.images_uploaded.present?
+    return nil if current_account.nil?
+
+    photo_id = params[:field_photo_id].presence
+    return nil if photo_id.blank?
+
+    photo = FieldPhoto.where(account_id: current_account.id).find_by(id: photo_id)
+    photo&.visual_observation
   end
 
   # docs/RAG_RESOLUTION_MODE_CONTRACT_FASE3_2026-07-29.md §2.1/§2.3.

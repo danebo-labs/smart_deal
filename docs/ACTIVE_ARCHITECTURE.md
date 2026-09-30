@@ -71,14 +71,15 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
   `danebo_general` is shared visibility. `user_pin` is focus on the current
   session only. One account's pin does not narrow the general catalog for
   anyone else. Another tenant's private or unclassified documents stay out.
-  Open retrieval reads `kb_documents.knowledge_scope`. Without a pin,
-  `BedrockRagService#account_filter` is the viewer's `account_id` plus the
-  canonical URIs of foreign `danebo_general` rows. Legacy, Pilot, and
-  `manual_corpus=general` do not grant access. `Rag::KnowledgeScopePolicy`
-  authorizes suggestions, pins, and the chunks that come back. An explicit
-  URI set that is not fully authorized is `DENY_RETRIEVAL`: no Bedrock call
-  and no open retry. A chunk that does not bind one authorized row is
-  dropped before it is published. See
+  Pins and suggestions read `kb_documents.knowledge_scope`. Without a pin,
+  `BedrockRagService#account_filter` is the pre-F3B2 compatibility filter:
+  the viewer's `account_id`, the other `SharedManualCorpus` account with
+  photos excluded, and `manual_corpus=general`. An ordinary tenant is not in
+  that OR. `Rag::KnowledgeScopePolicy` still authorizes suggestions and
+  pins. An explicit URI set that is not fully authorized is
+  `DENY_RETRIEVAL`: no Bedrock call and no open retry. A returned chunk is
+  dropped when its `account_id` is outside that corpus. `document_id` is
+  not compared with `document_uid`. See
   [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
   `RagRetrievalProfile` is unchanged.
 - Multiple pins may be narrowed deterministically when the question explicitly

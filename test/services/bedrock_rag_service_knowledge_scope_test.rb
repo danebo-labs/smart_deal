@@ -16,59 +16,38 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     ENV.delete("AWS_REGION")
   end
 
-  test "open retrieval is the viewer account and not legacy pilot or manual_corpus" do
+  test "open retrieval includes shared corpus accounts and manual_corpus" do
     filter = @service.build_vector_search_configuration(question: "What is S3?")[:filter]
+    ids = account_ids(filter)
 
-    assert_equal [ @viewer.id.to_s ], account_ids(filter)
-    assert_not_includes account_ids(filter), accounts(:legacy).id.to_s
-    assert_not_includes account_ids(filter), accounts(:pilot).id.to_s
-    assert_empty values_for(filter, "manual_corpus")
+    assert_includes ids, @viewer.id.to_s
+    assert_includes ids, accounts(:legacy).id.to_s
+    assert_includes ids, accounts(:pilot).id.to_s
+    assert_equal [ "general" ], values_for(filter, "manual_corpus")
+    assert_not_includes ids, client_account.id.to_s
   end
 
-  test "open retrieval includes an explicit general and excludes private legacy pilot and manual_corpus rows" do
-    own = KbDocument.create!(account: @viewer, s3_key: "manuals/own-open.pdf", display_name: "Own", aliases: [])
-    legacy = KbDocument.create!(account: accounts(:legacy), s3_key: "manuals/legacy-private.pdf", display_name: "Legacy", aliases: [])
-    pilot = KbDocument.create!(account: accounts(:pilot), s3_key: "manuals/pilot-private.pdf", display_name: "Pilot", aliases: [])
-    tagged = KbDocument.create!(account: @owner, s3_key: "manuals/tagged-private.pdf", display_name: "Tagged", aliases: [])
+  test "promoting or revoking danebo_general does not add a uri clause to open retrieval" do
     @owner.update!(danebo_controlled: true)
     shared = KbDocument.create!(account: @owner, s3_key: "manuals/approved.pdf", display_name: "Approved", aliases: [])
     index_manual_for_retrieval!(shared)
     KnowledgeScopeChange.apply!(kb_document: shared, to_scope: "danebo_general", actor: "ops", reason: "approved manual")
 
-    filter = @service.build_vector_search_configuration(question: "What is S3?")[:filter]
-
-    assert_includes account_ids(filter), @viewer.id.to_s
-    assert_not_includes account_ids(filter), accounts(:legacy).id.to_s
-    assert_not_includes account_ids(filter), accounts(:pilot).id.to_s
-    assert_empty values_for(filter, "manual_corpus")
-    assert_includes values_for(filter, "original_source_uri"), shared.canonical_uri
-    assert_includes values_for(filter, "x-amz-bedrock-kb-source-uri"), shared.canonical_uri
-    [ own, legacy, pilot, tagged ].each do |document|
-      assert_not_includes values_for(filter, "original_source_uri"), document.canonical_uri
-    end
-  end
-
-  test "revoking a general removes it from the next open retrieve and the owner keeps it" do
-    @owner.update!(danebo_controlled: true)
-    shared = KbDocument.create!(account: @owner, s3_key: "manuals/revocable.pdf", display_name: "Revocable", aliases: [])
-    index_manual_for_retrieval!(shared)
-    KnowledgeScopeChange.apply!(kb_document: shared, to_scope: "danebo_general", actor: "ops", reason: "approved manual")
-
     before = @service.build_vector_search_configuration(question: "What is S3?")[:filter]
-    assert_includes values_for(before, "original_source_uri"), shared.canonical_uri
+    assert_not_includes values_for(before, "original_source_uri"), shared.canonical_uri
+    assert_includes account_ids(before), @owner.id.to_s
 
     KnowledgeScopeChange.apply!(kb_document: shared, to_scope: "tenant_private", actor: "ops", reason: "withdrawn")
     after = BedrockRagService.new(account: @viewer).build_vector_search_configuration(question: "What is S3?")[:filter]
-    owner = BedrockRagService.new(account: @owner).build_vector_search_configuration(question: "What is S3?")[:filter]
 
+    assert_includes account_ids(after), @owner.id.to_s
+    assert_includes account_ids(after), accounts(:pilot).id.to_s
     assert_not_includes values_for(after, "original_source_uri"), shared.canonical_uri
-    assert_equal [ @viewer.id.to_s ], account_ids(after)
-    assert_includes account_ids(owner), @owner.id.to_s
-    assert_not_includes values_for(owner, "original_source_uri"), shared.canonical_uri
+    assert_not_includes account_ids(after), client_account.id.to_s
   end
 
-  test "a mocked foreign private citation is dropped before it is published" do
-    foreign = KbDocument.create!(account: @owner, s3_key: "manuals/leaked.pdf", display_name: "Leaked", aliases: [])
+  test "a mocked ordinary-tenant citation is dropped before it is published" do
+    foreign = KbDocument.create!(account: client_account, s3_key: "manuals/leaked.pdf", display_name: "Leaked", aliases: [])
     response = cited_response(
       "FOREIGN_PRIVATE_BODY should not ship",
       foreign,
@@ -88,31 +67,101 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     assert_equal 0, client.retrieve_calls
   end
 
-  test "an authorized general citation is kept and a foreign private citation is not evidence" do
-    @owner.update!(danebo_controlled: true)
-    shared = KbDocument.create!(account: @owner, s3_key: "manuals/kept-general.pdf", display_name: "Kept", aliases: [])
-    foreign = KbDocument.create!(account: @owner, s3_key: "manuals/dropped-private.pdf", display_name: "Dropped", aliases: [])
-    index_manual_for_retrieval!(shared)
-    KnowledgeScopeChange.apply!(kb_document: shared, to_scope: "danebo_general", actor: "ops", reason: "approved manual")
+  test "a shared-corpus bulk citation is kept when document_id is sha36" do
+    shared = KbDocument.create!(
+      account: accounts(:pilot),
+      s3_key: "manuals/kone.pdf",
+      display_name: "KONE",
+      aliases: [],
+      document_uid: "78600a13-fae5-4232-87ce-28b48302771e"
+    )
+    sha36 = "121bfffe0827f6bc681ba9bdc91050390055"
+    assert_not_equal sha36, shared.document_uid
+    client_doc = KbDocument.create!(account: client_account, s3_key: "manuals/cliente.pdf", display_name: "Cliente", aliases: [])
     response = OpenStruct.new(
       output: OpenStruct.new(text: "Authorized answer."),
       session_id: "sid",
       citations: [
-        citation_for(shared, "GENERAL_BODY"),
-        citation_for(foreign, "FOREIGN_PRIVATE_BODY")
+        citation_for(shared, "KONE_DOOR", document_id: sha36),
+        citation_for(client_doc, "CLIENT_PRIVATE_BODY")
       ]
     )
     client = FakeClient.new
     client.generate_response = response
     result = nil
     with_client(client) do
-      result = BedrockRagService.new(account: @viewer).query("What is S3?")
+      result = BedrockRagService.new(account: accounts(:legacy)).query("What is S3?")
     end
 
     bodies = Array(result[:retrieved_citations]).map { |chunk| chunk[:content].to_s }
-    assert_includes bodies, "GENERAL_BODY"
-    assert_not_includes bodies.join, "FOREIGN_PRIVATE_BODY"
-    assert_not_includes result[:answer].to_s, "FOREIGN_PRIVATE_BODY"
+    assert_includes bodies, "KONE_DOOR"
+    assert_not_includes bodies.join, "CLIENT_PRIVATE_BODY"
+    assert_not_includes result[:answer].to_s, "CLIENT_PRIVATE_BODY"
+  end
+
+  test "an own bulk citation is kept when document_id is sha36" do
+    document = KbDocument.create!(
+      account: accounts(:legacy),
+      s3_key: "bulk_uploads/1/elemont.pdf",
+      display_name: "Elemont",
+      aliases: [],
+      document_uid: "dcc8e046-037d-48a6-8913-1992aed28507"
+    )
+    sha36 = "121bfffe0827f6bc681ba9bdc91050390055"
+    assert_not_equal sha36, document.document_uid
+    response = cited_response("Elemont answer.", document, "ELEMONT_BORNE", document_id: sha36)
+    client = FakeClient.new
+    client.generate_response = response
+    result = nil
+    with_client(client) do
+      result = BedrockRagService.new(account: accounts(:legacy)).query(
+        "borne 12",
+        entity_s3_uris: [ document.canonical_uri ],
+        force_entity_filter: true
+      )
+    end
+
+    bodies = Array(result[:retrieved_citations]).map { |chunk| chunk[:content].to_s }
+    assert_includes bodies, "ELEMONT_BORNE"
+    assert_equal 1, result[:citations].size
+  end
+
+  test "pilot keeps a legacy sha36 manual and drops that account photo and a client manual" do
+    legacy = accounts(:legacy)
+    manual = KbDocument.create!(
+      account: legacy,
+      s3_key: "manuals/legacy-shared.pdf",
+      display_name: "Legacy shared",
+      aliases: [],
+      document_uid: "11111111-2222-4333-8444-555555555555"
+    )
+    photo = KbDocument.create!(account: legacy, s3_key: "photos/legacy.jpg", display_name: "Photo", aliases: [])
+    client_doc = KbDocument.create!(account: client_account, s3_key: "manuals/norte.pdf", display_name: "Norte", aliases: [])
+    general = KbDocument.create!(account: client_account, s3_key: "manuals/tagged-general.pdf", display_name: "Tagged", aliases: [])
+    sha36 = "abcdef0123456789abcdef0123456789abcd"
+    assert_not_equal sha36, manual.document_uid
+    response = OpenStruct.new(
+      output: OpenStruct.new(text: "Answer."),
+      session_id: "sid",
+      citations: [
+        citation_for(manual, "LEGACY_MANUAL", document_id: sha36),
+        citation_for(photo, "LEGACY_PHOTO", ingestion_path: "field_photo_v1"),
+        citation_for(client_doc, "CLIENT_PRIVATE"),
+        citation_for(general, "TAGGED_GENERAL", manual_corpus: "general")
+      ]
+    )
+    client = FakeClient.new
+    client.generate_response = response
+    result = nil
+    with_client(client) do
+      result = BedrockRagService.new(account: accounts(:pilot)).query("What is S3?")
+    end
+
+    bodies = Array(result[:retrieved_citations]).map { |chunk| chunk[:content].to_s }
+    assert_includes bodies, "LEGACY_MANUAL"
+    assert_includes bodies, "TAGGED_GENERAL"
+    assert_not_includes bodies, "LEGACY_PHOTO"
+    assert_not_includes bodies, "CLIENT_PRIVATE"
   end
 
   test "an ambiguous or unmapped result is not evidence" do
@@ -129,12 +178,18 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     assert decisions.none?(&:authorized?)
   end
 
-  test "generation context receives only the authorized retrieve chunks" do
-    own = KbDocument.create!(account: @viewer, s3_key: "manuals/prompt-own.pdf", display_name: "Own", aliases: [])
-    foreign = KbDocument.create!(account: @owner, s3_key: "manuals/prompt-foreign.pdf", display_name: "Foreign", aliases: [])
+  test "generation context keeps an own sha36 chunk and drops an ordinary tenant chunk" do
+    own = KbDocument.create!(
+      account: @viewer,
+      s3_key: "manuals/prompt-own.pdf",
+      display_name: "Own",
+      aliases: [],
+      document_uid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    )
+    foreign = KbDocument.create!(account: client_account, s3_key: "manuals/prompt-foreign.pdf", display_name: "Foreign", aliases: [])
     client = FakeClient.new
     client.retrieve_results = [
-      retrieve_result(own, "OWN_BODY"),
+      retrieve_result(own, "OWN_BODY", document_id: "121bfffe0827f6bc681ba9bdc91050390055"),
       retrieve_result(foreign, "FOREIGN_PRIVATE_BODY")
     ]
     chunks = nil
@@ -222,8 +277,10 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
 
     assert_equal 1, client.generate_calls
     assert_includes account_ids(client.filter), @viewer.id.to_s
-    assert_not_includes account_ids(client.filter), @owner.id.to_s
-    assert_empty values_for(client.filter, "manual_corpus")
+    assert_includes account_ids(client.filter), accounts(:legacy).id.to_s
+    assert_includes account_ids(client.filter), accounts(:pilot).id.to_s
+    assert_not_includes account_ids(client.filter), client_account.id.to_s
+    assert_equal [ "general" ], values_for(client.filter, "manual_corpus")
     assert_includes values_for(client.filter, "page_number"), "12"
   end
 
@@ -241,10 +298,11 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
 
     assert_equal 2, client.filters.size
     assert_includes values_for(client.filters.first, "original_source_uri"), own.canonical_uri
-    assert_equal [ @viewer.id.to_s ], account_ids(client.filters.second)
-    assert_empty values_for(client.filters.second, "manual_corpus")
-    assert_not_includes account_ids(client.filters.second), accounts(:legacy).id.to_s
-    assert_not_includes account_ids(client.filters.second), accounts(:pilot).id.to_s
+    assert_includes account_ids(client.filters.second), @viewer.id.to_s
+    assert_includes account_ids(client.filters.second), accounts(:legacy).id.to_s
+    assert_includes account_ids(client.filters.second), accounts(:pilot).id.to_s
+    assert_equal [ "general" ], values_for(client.filters.second, "manual_corpus")
+    assert_not_includes account_ids(client.filters.second), client_account.id.to_s
   end
 
   test "an owned pin is that canonical uri and a denied uri never calls Bedrock" do
@@ -499,38 +557,45 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
   end
 
-  def citation_for(document, body)
+  def client_account
+    @client_account ||= Account.create!(slug: "cliente-norte", display_name: "Cliente Norte")
+  end
+
+  def citation_for(document, body, document_id: nil, ingestion_path: nil, manual_corpus: nil)
+    metadata = {
+      "original_source_uri" => document.canonical_uri,
+      "account_id" => document.account_id.to_s,
+      "document_id" => document_id || document.document_uid
+    }
+    metadata["ingestion_path"] = ingestion_path if ingestion_path
+    metadata["manual_corpus"] = manual_corpus if manual_corpus
     OpenStruct.new(
       retrieved_references: [
         OpenStruct.new(
           content: OpenStruct.new(text: body),
           location: OpenStruct.new(s3_location: OpenStruct.new(uri: "s3://bucket/chunks/#{document.id}.txt")),
-          metadata: {
-            "original_source_uri" => document.canonical_uri,
-            "account_id" => document.account_id.to_s,
-            "document_id" => document.document_uid
-          }
+          metadata: metadata
         )
       ]
     )
   end
 
-  def cited_response(answer, document, body)
+  def cited_response(answer, document, body, document_id: nil)
     OpenStruct.new(
       output: OpenStruct.new(text: answer),
       session_id: "sid",
-      citations: [ citation_for(document, body) ]
+      citations: [ citation_for(document, body, document_id: document_id) ]
     )
   end
 
-  def retrieve_result(document, body)
+  def retrieve_result(document, body, document_id: nil)
     OpenStruct.new(
       content: OpenStruct.new(text: body),
       score: 0.9,
       metadata: {
         "original_source_uri" => document.canonical_uri,
         "account_id" => document.account_id.to_s,
-        "document_id" => document.document_uid
+        "document_id" => document_id || document.document_uid
       },
       location: OpenStruct.new(s3_location: OpenStruct.new(uri: "s3://bucket/chunks/#{document.id}.txt"))
     )

@@ -667,8 +667,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_not_nil filter
     assert_account_filter filter
     assert filter_contains?(filter, "account_id", accounts(:legacy).id.to_s)
-    assert_not filter_contains?(filter, "account_id", accounts(:pilot).id.to_s)
-    assert_not filter_contains?(filter, "manual_corpus", "general")
+    assert filter_contains?(filter, "account_id", accounts(:pilot).id.to_s)
+    assert filter_contains?(filter, "manual_corpus", "general")
+    assert_not filter_contains?(filter, "account_id", accounts(:climb).id.to_s)
     assert_nil filter[:and_all], "no and_all wrapping needed without entity filter"
   end
 
@@ -780,8 +781,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       )
       assert_not_includes filter.to_s, 'mpk_708a.pdf'
       assert filter_contains?(filter, 'account_id', accounts(:legacy).id.to_s)
-      assert_not filter_contains?(filter, 'account_id', accounts(:pilot).id.to_s)
-      assert_not filter_contains?(filter, 'manual_corpus', 'general')
+      assert filter_contains?(filter, 'account_id', accounts(:pilot).id.to_s)
     end
   end
 
@@ -1898,8 +1898,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert filter_contains?(call_filters.first, "original_source_uri", "s3://bucket/manual.pdf")
       assert_not filter_contains?(call_filters.first, "account_id", @account.id.to_s)
       assert_account_filter call_filters.second
-      assert_not filter_contains?(call_filters.second, "account_id", accounts(:pilot).id.to_s)
-      assert_not filter_contains?(call_filters.second, "manual_corpus", "general")
+      assert filter_contains?(call_filters.second, "account_id", accounts(:pilot).id.to_s)
+      assert filter_contains?(call_filters.second, "manual_corpus", "general")
       assert_no_filter_key call_filters.second, "original_source_uri"
       assert_no_filter_key call_filters.second, "x-amz-bedrock-kb-source-uri"
     end

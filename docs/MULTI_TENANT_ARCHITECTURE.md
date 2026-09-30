@@ -122,28 +122,16 @@ A pin replaces the open filter for that session only. It does not rewrite
 `WarmBedrockKbJob` is the exception: an Aurora ping that discards the
 response and does not serve a tenant.
 
-Without a pin the filter is the viewer's `account_id`, plus the canonical
-URIs of foreign `danebo_general` rows on both `original_source_uri` and
-`x-amz-bedrock-kb-source-uri`. Own rows are not repeated in that URI list.
-Zero foreign generals is a single `account_id` equals. One general uses
-`equals`. Several use `in`:
-
-```ruby
-{
-  or_all: [
-    { equals: { key: "account_id", value: account.id.to_s } },
-    { in: { key: "original_source_uri", value: general_uris } },
-    { in: { key: "x-amz-bedrock-kb-source-uri", value: general_uris } }
-  ]
-}
-```
-
-`BedrockRagService#account_filter` builds that from
-`Rag::KnowledgeScopePolicy.open_corpus`. Legacy, Pilot, and
-`manual_corpus=general` are not clauses. `Rag::SharedManualCorpus.tag?` may
-still write `manual_corpus` on a sidecar. That write is not authorization.
-Results are partitioned back to one physical `KbDocument` before they are
-published. Unmapped, ambiguous, and unauthorized chunks are dropped.
+Without a pin the filter is the pre-F3B2 compatibility corpus.
+`BedrockRagService#account_filter` is an `orAll` of the viewer's
+`account_id`, each other `Rag::SharedManualCorpus` account as `account_id`
+AND `ingestion_path != field_photo_v1`, and `manual_corpus=general`. An
+ordinary tenant's `account_id` is not a clause. `KnowledgeScopePolicy.open_corpus`
+is not this filter. `Rag::SharedManualCorpus.tag?` still writes
+`manual_corpus` on a sidecar. A returned chunk is kept when its
+`account_id` is the viewer, a shared-corpus account and not a photo,
+`manual_corpus=general`, or blank. `document_id` is not compared with
+`KbDocument.document_uid`.
 
 Rules:
 
@@ -166,15 +154,14 @@ Rules:
    queries (`retry_without_entity_filter = apply_filter && !force_entity_filter`).
    The unforced branch can still retry once without the document filter
    when every requested URI is authorized. That retry uses the open corpus
-   above. It does not restore Legacy, Pilot, or `manual_corpus`. A denied
+   above, including Legacy, Pilot, and `manual_corpus`. A denied
    explicit URI returns `DENY_RETRIEVAL` before that retry.
-4. A returned chunk is evidence only when its URI binds exactly one
-   `KbDocument` and `Rag::KnowledgeScopePolicy.authorized?` allows that row
-   for the viewer. The owner's private rows stay available after a general
-   mark is revoked. Another account loses them on the next retrieve. Do not
-   treat a differing `account_id` on an authorized `danebo_general` chunk as
-   a reason to drop it, and do not treat Legacy, Pilot, or `manual_corpus`
-   as a reason to keep it.
+4. A pin is evidence only when its URI binds exactly one `KbDocument` and
+   `Rag::KnowledgeScopePolicy.authorized?` allows that row for the viewer.
+   The owner's private rows stay pinnable after a general mark is revoked.
+   Another account cannot pin them. Open retrieval of the shared corpus
+   does not make a foreign `tenant_private` row pinnable. Do not compare
+   chunk `document_id` with `document_uid` on the open publish path.
 5. Background jobs receive `account_id` explicitly; they do not rely on
    request-local `Current`.
 

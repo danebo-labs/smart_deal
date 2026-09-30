@@ -342,10 +342,10 @@ class BedrockRagService
       no_results_locale = effective_response_locale(question, response_locale: response_locale)
       canned_no_results = bedrock_no_results?(raw_answer)
       # retrieve_and_generate already generated inside Bedrock. The request
-      # filter is the corpus the model was allowed to see. A result that does
-      # not bind an authorized row is dropped here, before it is published or
-      # reused as evidence. If every returned reference fails, the generated
-      # text is not published.
+      # filter is the corpus the model was allowed to see. A chunk whose
+      # account_id is outside that corpus is dropped before it is published.
+      # document_id is not compared with KbDocument.document_uid. If every
+      # returned reference fails, the generated text is not published.
       if citation_gate.dropped_all?
         canned_no_results = true
         raw_answer = localized_no_results(no_results_locale)
@@ -596,11 +596,9 @@ class BedrockRagService
         chunk_sha256: Digest::SHA256.hexdigest(content)
       }
     end
-    partition = Rag::KnowledgeScopePolicy.partition_evidence(chunks, viewer_account: @account)
-    @rejected_result_count = partition.count { |decision| !decision.authorized? }
-    chunks = partition.select(&:authorized?).map(&:chunk).each_with_index.map do |chunk, index|
-      chunk.merge(rank: index + 1)
-    end
+    kept, rejected = select_publishable_chunks(chunks)
+    @rejected_result_count = rejected
+    chunks = kept.each_with_index.map { |chunk, index| chunk.merge(rank: index + 1) }
 
     elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     PilotUsageLog.log(
@@ -610,7 +608,6 @@ class BedrockRagService
       latency_ms: elapsed_ms, result: "ok",
       results_count: chunks.size, filter_applied: apply_filter,
       rejected_result_count: @rejected_result_count.to_i,
-      authorized_general_count: open_corpus.general_count,
       retrieval_denied_reason: @retrieval_denied_reason,
       retrieval_query_text: question.to_s,
       retrieval_query_sha: Digest::SHA256.hexdigest(question.to_s),
@@ -1154,10 +1151,8 @@ class BedrockRagService
         metadata: r.metadata || {}
       }
     end
-    partition = Rag::KnowledgeScopePolicy.partition_evidence(results, viewer_account: @account)
-    rejected = partition.count { |decision| !decision.authorized? }
+    results, rejected = select_publishable_chunks(results)
     @rejected_result_count = @rejected_result_count.to_i + rejected
-    results = partition.select(&:authorized?).map(&:chunk)
     Rails.logger.info(
       "BedrockRagService: fallback Retrieve returned #{results.size} authorized chunk(s) rejected=#{rejected}"
     )
@@ -1679,13 +1674,12 @@ class BedrockRagService
   # clauses in each andAll/orAll.
   # https://docs.aws.amazon.com/bedrock/latest/userguide/kb-test-config.html
   # A question does not choose a manual or a page. Without a pin the filter is
-  # the viewer's own chunks (`account_id`) plus canonical URIs of foreign
-  # `danebo_general` rows. Legacy, Pilot, and `manual_corpus` are not
-  # authorization. With a pin the filter is only the URIs that resolve to
-  # exactly one KbDocument the viewer may use. A caller-supplied URI is not
-  # authorization. An unauthorized pin does not fall through to the open
-  # corpus on this call. A caller filter may narrow that corpus. It cannot
-  # widen it.
+  # the viewer's own chunks, the other SharedManualCorpus account's manuals
+  # (photos excluded), and chunks tagged manual_corpus=general. With a pin
+  # the filter is only the URIs that resolve to exactly one KbDocument the
+  # viewer may use. A caller-supplied URI is not authorization. An
+  # unauthorized pin does not fall through to the open corpus on this call.
+  # A caller filter may narrow that corpus. It cannot widen it.
   def retrieval_filter(entity_s3_uris:, entity_sources:, question:, apply_page_filter:)
     uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
     if uris.empty?
@@ -1741,28 +1735,60 @@ class BedrockRagService
   end
 
   def account_filter
-    corpus = open_corpus
-    @retrieval_denied_reason = corpus.denied_reason if corpus.over_limit
     clauses = [ account_id_equals(@account.id) ]
-    uris = corpus.general_uris
-    if uris.any?
-      URI_METADATA_KEYS.each { |key| clauses << uri_match_clause(key, uris) }
-    end
-    return checked_bedrock_filter(clauses.first) if clauses.one?
+    Rag::SharedManualCorpus.account_ids.each do |id|
+      next if id == @account.id.to_s
 
+      clauses << shared_manual_clause(id)
+    end
+    clauses << {
+      equals: {
+        key: Rag::SharedManualCorpus::ATTRIBUTE,
+        value: Rag::SharedManualCorpus::GENERAL
+      }
+    }
     checked_bedrock_filter(or_all_clause(clauses))
   end
 
-  def open_corpus
-    @open_corpus ||= Rag::KnowledgeScopePolicy.open_corpus(viewer_account: @account)
+  # Flat shared base used when a technical caller filter is ANDed on.
+  # account_filter already nests andAll for the other shared account, so
+  # wrapping that filter again would exceed Bedrock's depth of 2.
+  def account_scope_clause
+    ids = [ @account.id.to_s ]
+    Rag::SharedManualCorpus.account_ids.each { |id| ids << id unless ids.include?(id) }
+    equals = ids.map { |id| account_id_equals(id) }
+    equals << {
+      equals: {
+        key: Rag::SharedManualCorpus::ATTRIBUTE,
+        value: Rag::SharedManualCorpus::GENERAL
+      }
+    }
+    or_all_clause(equals)
   end
 
-  def uri_match_clause(key, uris)
-    if uris.one?
-      { equals: { key: key, value: uris.first } }
-    else
-      { in: { key: key, value: uris } }
-    end
+  def photo_exclusion_clause
+    {
+      not_equals: {
+        key: "ingestion_path",
+        value: Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
+      }
+    }
+  end
+
+  # Indexed manuals of Danebo and the pilot. Photos of those accounts stay
+  # out: a chunk whose ingestion_path is the photo path does not match.
+  def shared_manual_clause(id)
+    {
+      and_all: [
+        account_id_equals(id),
+        {
+          not_equals: {
+            key: "ingestion_path",
+            value: Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
+          }
+        }
+      ]
+    }
   end
 
   def or_all_clause(clauses)
@@ -1827,16 +1853,22 @@ class BedrockRagService
       return checked_bedrock_filter(document_pin_filter(decision.uris))
     end
     return filter if same_open_filter?(filter)
+    # build_complete_optimized_config already installed account_filter.
+    # A technical custom_config is deep-merged beside that orAll. Peel the
+    # open list off before the widen check so our own shared-account clauses
+    # are not read as a caller trying to add another tenant.
+    filter = detach_open_corpus(filter)
     if caller_filter_widens?(filter)
       @retrieval_denied = true
       @retrieval_denied_reason = "caller_filter_widens_scope"
       return nil
     end
 
-    # The open corpus is a flat equals, or a flat orAll of account_id plus
-    # URI leaves. ANDing a technical caller filter stays at depth 2.
+    # account_filter nests andAll. A technical predicate uses the flat
+    # account_scope_clause so the AND stays at depth 2. Photo exclusion
+    # sits beside that clause because the flat OR does not carry it.
     begin
-      checked_bedrock_filter(and_all_clause([ account_filter, filter ]))
+      checked_bedrock_filter(and_all_clause([ account_scope_clause, filter, photo_exclusion_clause ]))
     rescue ArgumentError
       @retrieval_denied = true
       @retrieval_denied_reason = "caller_filter_shape"
@@ -1846,6 +1878,18 @@ class BedrockRagService
 
   def same_open_filter?(filter)
     normalize_filter(filter) == normalize_filter(account_filter)
+  end
+
+  def detach_open_corpus(filter)
+    return filter unless filter.is_a?(Hash)
+
+    open_list = bedrock_filter_list(account_filter)
+    own_list = filter[:or_all] || filter["or_all"]
+    return filter if own_list.nil? || open_list.nil?
+    return filter unless normalize_filter(own_list) == normalize_filter(open_list)
+
+    rest = filter.except(:or_all, "or_all")
+    rest.empty? ? filter : rest
   end
 
   # An account_id other than the viewer, an account_id inside orAll, or
@@ -2080,11 +2124,9 @@ class BedrockRagService
     Array(raw).each do |citation|
       refs = Array(citation.respond_to?(:retrieved_references) ? citation.retrieved_references : nil)
       seen += refs.size
-      chunks = refs.map { |ref| reference_to_chunk(ref) }
-      decisions = Rag::KnowledgeScopePolicy.partition_evidence(chunks, viewer_account: @account)
       kept = []
-      refs.each_with_index do |ref, index|
-        if decisions[index].authorized?
+      refs.each do |ref|
+        if publishable_retrieved_chunk?(reference_to_chunk(ref))
           kept << ref
         else
           rejected += 1
@@ -2118,23 +2160,59 @@ class BedrockRagService
   end
 
   def log_open_retrieval(correlation_id)
-    corpus = open_corpus
     Rails.logger.info(
-      "[OPEN_RETRIEVAL] account_id=#{@account&.id} generals=#{corpus.general_count} " \
-        "candidates=#{corpus.candidate_count} excluded=#{corpus.excluded_count} " \
-        "rejected=#{@rejected_result_count.to_i} reason=#{corpus.denied_reason || @retrieval_denied_reason}"
+      "[OPEN_RETRIEVAL] account_id=#{@account&.id} " \
+        "rejected=#{@rejected_result_count.to_i} reason=#{@retrieval_denied_reason}"
     )
     PilotUsageLog.log(
       "open_retrieval",
       account_id: @account&.id,
       correlation_id: correlation_id,
-      authorized_general_count: corpus.general_count,
       rejected_result_count: @rejected_result_count.to_i,
-      retrieval_denied_reason: @retrieval_denied_reason || corpus.denied_reason,
+      retrieval_denied_reason: @retrieval_denied_reason,
       result: @retrieval_denied ? "deny" : "ok"
     )
   rescue StandardError => e
     Rails.logger.warn("BedrockRagService: open retrieval log failed — #{e.class}")
+  end
+
+  # Open-retrieval publish gate. Mirrors account_filter. It does not compare
+  # chunk document_id with KbDocument.document_uid: bulk ingestion writes
+  # sha256[0,36] into the sidecar and the row receives a separate UUID.
+  # Pin authorization stays on KnowledgeScopePolicy and is not this method.
+  def publishable_retrieved_chunk?(chunk)
+    metadata = retrieval_chunk_metadata(chunk)
+    photo = metadata["ingestion_path"].to_s == Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
+    general = metadata[Rag::SharedManualCorpus::ATTRIBUTE].to_s == Rag::SharedManualCorpus::GENERAL
+    account_id = metadata["account_id"].to_s.presence
+
+    return true if general && !photo
+    return true if account_id.blank?
+    return true if account_id == @account&.id.to_s
+    return true if Rag::SharedManualCorpus.member_id?(account_id) && !photo
+
+    false
+  end
+
+  def select_publishable_chunks(chunks)
+    kept = []
+    rejected = 0
+    Array(chunks).each do |chunk|
+      if publishable_retrieved_chunk?(chunk)
+        kept << chunk
+      else
+        rejected += 1
+      end
+    end
+    [ kept, rejected ]
+  end
+
+  def retrieval_chunk_metadata(chunk)
+    raw = chunk[:metadata] || chunk["metadata"]
+    raw = raw.to_h if raw.respond_to?(:to_h) && !raw.is_a?(Hash)
+    raw.to_h.stringify_keys
+  rescue StandardError
+    {}
   end
 
   def extract_doc_refs(answer_text)

@@ -27,7 +27,9 @@ that column, and it appends `knowledge_scope_changes`. The audit rows do not
 grant access. `accounts.danebo_controlled` is the explicit source-account
 mark required before a row can become `danebo_general`. Slug, branded,
 filename, manufacturer, `manual_corpus=general`, and Legacy/Pilot membership
-do not set that mark. Every existing row defaults to `tenant_private`.
+do not set that mark and do not authorize a pin. Every existing row defaults
+to `tenant_private`. Open retrieval is the compatibility filter in the next
+section: it is not this pin rule.
 
 F3 suggestion eligibility and a pin URI both go through the policy before
 they become a card or a retrieval filter. A caller-supplied URI is not
@@ -48,21 +50,21 @@ are rejected by `KnowledgeScopeEligibility`. `knowledge_scope_changes` is
 append-only in the application: `apply!` inserts, and update or delete
 through the model is rejected. Direct SQL is outside this phase.
 
-Open retrieval reads `knowledge_scope`. Without a pin, `BedrockRagService#account_filter` is the viewer's `account_id` plus the canonical URIs of foreign `danebo_general` rows (`original_source_uri` and `x-amz-bedrock-kb-source-uri`). Own rows are not repeated in that URI list. Legacy, Pilot, slug, filename, and `manual_corpus=general` do not add a clause. `BatchResultsParserService#sidecar_metadata` still writes `manual_corpus` through `Rag::SharedManualCorpus.tag?`. That writer is ingestion metadata, not the read authority.
+Open retrieval is the pre-F3B2 compatibility filter, not the `danebo_general` URI list. Without a pin, `BedrockRagService#account_filter` is an `orAll` of the viewer's `account_id`, each other `Rag::SharedManualCorpus` account as `account_id` AND `ingestion_path != field_photo_v1`, and `manual_corpus=general`. An ordinary tenant's `account_id` is not in that OR. `knowledge_scope` does not add or remove a clause. `BatchResultsParserService#sidecar_metadata` still writes `manual_corpus` through `Rag::SharedManualCorpus.tag?`.
 
-A `danebo_general` row whose canonical URI is missing, ambiguous, or over the application URI budget is omitted from the filter. The budget is `Rag::KnowledgeScopePolicy::OPEN_RETRIEVAL_MAX_GENERAL_URIS` (100) and `OPEN_RETRIEVAL_MAX_URI_BYTES` (24000). Over budget, the general arm is empty and the reason is `general_uris_over_limit`. Own `account_id` still matches. The list is not truncated. Bedrock's published limits stay one embedded logical operator, five clauses, and depth 2. The `in` operator has no published maximum in the RetrievalFilter API.
+`KnowledgeScopePolicy.open_corpus` and its 100-URI budget remain on the policy. Open retrieval does not call them. Bedrock's published limits stay one embedded logical operator, five clauses, and depth 2.
 
-Results that come back are partitioned by `KnowledgeScopePolicy.partition_evidence` before they are published or passed to a local generation prompt. A chunk must bind exactly one physical row. `document_id` and chunk `account_id` confirm that row. They are not a lookup. Unmapped, ambiguous, and unauthorized chunks are dropped. If every citation from `retrieve_and_generate` fails, the generated text is not published. `retrieve_and_generate` still generates inside Bedrock; the request filter is what keeps unauthorized metadata out of that prompt. There is no second model call.
+Chunks that come back are kept when `account_id` is the viewer, when `account_id` is a shared-corpus account and the chunk is not a photo, when `manual_corpus=general`, or when `account_id` is absent. A present `account_id` outside that set is dropped, including a photo of the other shared account. `document_id` is not compared with `KbDocument.document_uid`. `partition_evidence` is not on this path. If every citation from `retrieve_and_generate` fails that check, the generated text is not published. There is no second model call.
 
-A caller filter may narrow the open corpus. `account_id` of another tenant, `account_id` inside `orAll`, and `manual_corpus` deny the request (`caller_filter_widens_scope`). A technical predicate is ANDed with the open corpus when the shape stays inside the Bedrock limits. A URI filter is still the pin path: the whole set is authorized, or the call is `DENY_RETRIEVAL`.
+A caller filter may narrow the open corpus. `account_id` of another tenant, `account_id` inside `orAll`, and a caller-supplied `manual_corpus` deny the request (`caller_filter_widens_scope`). A technical predicate is ANDed with the flat `account_scope_clause` plus photo exclusion, not with `account_filter`, so the nested shared-account `andAll` stays at depth 2. A URI filter is still the pin path: the whole set is authorized by `KnowledgeScopePolicy`, or the call is `DENY_RETRIEVAL`.
 
-An unforced pin retry that drops the URI filter stays on this open corpus. It does not restore Legacy, Pilot, or `manual_corpus`. Revoking `danebo_general` removes the URI on the next retrieve. The owner still matches `account_id`. Other sessions' pins are not deleted; a pin of the revoked row is `DENY_RETRIEVAL`.
+An unforced pin retry that drops the URI filter returns to this open corpus, including Legacy, Pilot, and `manual_corpus`. Revoking `danebo_general` does not remove the shared-account clause. A pin of a foreign `tenant_private` row stays `DENY_RETRIEVAL`. Other sessions' pins are not deleted.
 
 `WarmBedrockKbJob` is an Aurora ping. It calls `Retrieve` directly, discards the response, and does not serve a tenant. WhatsApp is dormant. A dormant caller of `BedrockRagService#query` uses this same filter and the same `DENY_RETRIEVAL`.
 
 A question does not pin a manual or a page, and neither does a suggestion card. The technician's tap on that card reauthorizes the exact `KbDocument` row (`kb_document_id`, confirmed by `document_uid`) and writes `user_pin` on the current session only. The browser does not send `knowledge_scope`. A pin conflict or an identity conflict is shown and does not remove the pin or replace the technician's fact. A mentioned page never narrows retrieval. A document the technician pinned is the whole scope of that session's retrieve. The filter is those URIs alone. The technician can change the pins. An empty result does not silently drop them.
 
-Do not wrap a nested `andAll` in another `andAll`. The open filter is flat so a technical AND stays at depth 2.
+Do not wrap `account_filter` in another `andAll`. Its shared-account arm is already an `andAll`. A technical caller filter uses `account_scope_clause` instead.
 
 ## Safety
 

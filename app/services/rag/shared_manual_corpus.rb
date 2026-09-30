@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
 module Rag
-  # Ingestion still writes `manual_corpus=general` from this module
-  # (`tag?` → `BatchResultsParserService#sidecar_metadata`). That attribute
-  # is historical metadata. Retrieval authorization does not read it.
-  # Open retrieval is the viewer's `account_id` plus `danebo_general` rows.
-  # Legacy and Pilot slugs are not an approval.
+  # Open retrieval includes the viewer's account_id, the other account in
+  # SLUGS with photos excluded, and chunks tagged manual_corpus=general.
+  # That filter is the pre-F3B2 compatibility path. It is not pin
+  # authorization: KnowledgeScopePolicy still decides whether a URI may be
+  # pinned, and a slug does not make a foreign tenant_private row pinnable.
   #
   # Scope of a new document, passed as `corpus_scope` to
   # `BatchResultsParserService#call`:

@@ -33,6 +33,20 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, session.active_entities.size
   end
 
+  test "create renews added_at when the checkbox pins the same document again" do
+    first_at = Time.zone.parse("2026-09-30 09:00:00")
+    second_at = first_at + 1.hour
+
+    travel_to(first_at) { post pinned_documents_path, params: { kb_document_id: @kb_doc.id } }
+    travel_to(second_at) { post pinned_documents_path, params: { kb_document_id: @kb_doc.id } }
+
+    session = ConversationSession.find_by!(identifier: @user.id.to_s, channel: "web")
+    entity = session.active_entities.values.first
+    assert_equal 1, session.active_entities.size
+    assert_equal second_at.to_i, Time.zone.parse(entity["added_at"]).to_i
+    assert_equal @kb_doc.display_s3_uri(KbDocument::KB_BUCKET), entity["source_uri"]
+  end
+
   test "destroy unpins the document" do
     post pinned_documents_path, params: { kb_document_id: @kb_doc.id }
     delete pinned_document_path(@kb_doc.id)

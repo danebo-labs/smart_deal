@@ -736,17 +736,42 @@ class ConversationSessionTest < ActiveSupport::TestCase
       aliases: [ "Original Alias" ]
     )
 
-    session.pin_kb_document!(kb_doc)
+    first_at = Time.zone.parse("2026-09-30 10:00:00")
+    second_at = first_at + 2.hours
+    travel_to(first_at) { session.pin_kb_document!(kb_doc) }
     original_added_at = session.reload.active_entities.fetch("Refresh Manual").fetch("added_at")
     kb_doc.update!(aliases: [ "Updated Alias" ])
-    session.pin_kb_document!(kb_doc)
+    travel_to(second_at) { session.pin_kb_document!(kb_doc) }
     session.reload
 
     entity = session.active_entities.fetch("Refresh Manual")
     assert_equal 1, session.entity_count
-    assert_equal original_added_at, entity["added_at"]
+    assert_equal second_at, Time.zone.parse(entity["added_at"])
+    assert_not_equal original_added_at, entity["added_at"]
+    assert_equal kb_doc.id, entity["kb_document_id"]
+    assert_equal kb_doc.display_s3_uri(KbDocument::KB_BUCKET), entity["source_uri"]
     assert_includes entity["aliases"], "Original Alias"
     assert_includes entity["aliases"], "Updated Alias"
+  end
+
+  test "pin_kb_document! renews added_at when the pinned document is unchanged" do
+    session = ConversationSession.find_or_create_for(identifier: "pin-user-same-hash", channel: "web")
+    kb_doc = KbDocument.create!(
+      s3_key: "uploads/2026/same-hash.pdf",
+      display_name: "Same Hash Manual",
+      aliases: [ "Alias" ]
+    )
+    first_at = Time.zone.parse("2026-09-30 11:00:00")
+    second_at = first_at + 90.minutes
+
+    travel_to(first_at) { assert session.pin_kb_document!(kb_doc) }
+    travel_to(second_at) { assert session.pin_kb_document!(kb_doc) }
+
+    entity = session.reload.active_entities.fetch("Same Hash Manual")
+    assert_equal second_at.to_i, Time.zone.parse(entity["added_at"]).to_i
+    assert_equal kb_doc.id, entity["kb_document_id"]
+    assert_equal kb_doc.display_s3_uri(KbDocument::KB_BUCKET), entity["source_uri"]
+    assert_equal [ "Alias" ], entity["aliases"]
   end
 
   test 'pin_kb_document! stamps source: user_pin when merging into an auto-extracted entity' do

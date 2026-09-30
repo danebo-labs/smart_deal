@@ -17,12 +17,17 @@ class PinnedDocumentsController < ApplicationController
     return if performed?
 
     session = current_conv_session
-    return render_existing_focus(kb_doc) if card_confirmation? && already_focused?(session, kb_doc)
+    already = card_confirmation? && already_focused?(session, kb_doc)
 
     unless session.pin_kb_document!(kb_doc)
       return render_focus_failure(:invalid) if card_confirmation?
 
       render json: { error: "Could not pin document" }, status: :unprocessable_entity
+      return
+    end
+
+    if already
+      render_existing_focus(kb_doc)
       return
     end
 

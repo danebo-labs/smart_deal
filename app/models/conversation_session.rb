@@ -96,8 +96,9 @@ class ConversationSession < ApplicationRecord
 
     result = nil
     with_lock do
+      stored_episode = active_episode
       result = Rag::ActiveEpisodeTurn.call(
-        state: active_episode,
+        state: stored_episode,
         text: content.to_s,
         role: "user",
         now: now,
@@ -116,11 +117,14 @@ class ConversationSession < ApplicationRecord
       )
       history = conversation_history.last(MAX_HISTORY - 1)
       history << history_message("user", content, user_id: user_id, correlation_id: correlation_id)
-      update!(
+      attrs = {
         conversation_history: history,
         active_episode: result.state,
         expires_at: EXPIRY_DURATION.from_now
-      )
+      }
+      boundary = case_boundary_changes(stored_episode, result, now)
+      attrs.merge!(boundary) if boundary
+      update!(attrs)
     end
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id)
     result
@@ -166,6 +170,27 @@ class ConversationSession < ApplicationRecord
 
   def reset_active_episode!
     with_lock { update!(active_episode: {}) }
+  end
+
+  # Future explicit "new case" control. Not wired to a route. One UPDATE:
+  # a fresh episode, no pins, no procedure. History and FieldPhoto rows stay.
+  def start_new_case!(now: Time.current, reason:, correlation_id:)
+    raise ArgumentError, "reason is required" if reason.blank?
+
+    with_lock do
+      episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
+      update!(
+        active_episode: episode.to_h,
+        active_entities: {},
+        current_procedure: {}
+      )
+      episode.episode_id
+    end
+  end
+
+  def live_episode_id(now = Time.current)
+    episode = Rag::ActiveEpisode.parse(active_episode, now: now)
+    episode.blank? ? nil : episode.episode_id
   end
 
   def history_for_prompt
@@ -327,30 +352,154 @@ class ConversationSession < ApplicationRecord
     s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
     return false if s3_uri.blank?
 
-    entities     = active_entities.dup
+    with_lock { write_pinned_document!(kb_doc, s3_uri) }
+  end
+
+  # Unpin this session's focus. Match the stored kb_document_id first so a
+  # revoked document can still be removed. source_uri remains the fallback
+  # for a pin written before that id was stored.
+  def unpin_kb_document!(kb_doc)
+    with_lock do
+      key = find_entity_by_kb_document_id(kb_doc.id)
+      if key.nil?
+        s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+        next false if s3_uri.blank?
+
+        key = find_entity_by_source_uri(s3_uri)
+      end
+      next false unless key
+
+      delete_pinned_key!(key)
+    end
+  end
+
+  # Removes this session's focus by the stored id. The row does not have to
+  # still exist or still be readable. This does not grant a read.
+  def unpin_kb_document_id!(kb_document_id)
+    with_lock do
+      key = find_entity_by_kb_document_id(kb_document_id)
+      next false unless key
+
+      delete_pinned_key!(key)
+    end
+  end
+
+  private
+
+  # Expiry is a property of the stored JSON, not of the classifier decision.
+  # A live :new_episode drops every pin. :corrected drops only a pin whose
+  # labels name the previous manufacturer and not the new one.
+  def case_boundary_changes(stored_episode, result, now)
+    if stored_episode_expired?(stored_episode, now)
+      return {
+        active_entities: pins_after_expiry(active_entities, stored_episode),
+        current_procedure: {}
+      }
+    end
+
+    if result.decision == :new_episode
+      return { active_entities: {}, current_procedure: {} }
+    end
+
+    return unless result.decision == :corrected
+
+    entities = pins_after_manufacturer_correction(active_entities, stored_episode, result.state)
+    { active_entities: entities } if entities
+  end
+
+  def stored_episode_expired?(raw, now)
+    Rag::ActiveEpisode.parse(raw, now: now).reason == "expired"
+  end
+
+  def pins_after_expiry(entities, stored_episode)
+    cutoff = expiry_pin_cutoff(stored_episode)
+    entities.each_with_object({}) do |(key, meta), kept|
+      added = parse_history_ts(meta.is_a?(Hash) ? meta["added_at"] : nil)
+      next if added.nil? || cutoff.nil? || added <= cutoff
+
+      kept[key] = meta
+    end
+  end
+
+  def expiry_pin_cutoff(stored_episode)
+    data = stored_episode.is_a?(Hash) ? stored_episode : {}
+    updated = parse_history_ts(data["updated_at"])
+    return nil if updated.nil?
+
+    updated + EPISODE_WINDOW
+  end
+
+  def pins_after_manufacturer_correction(entities, stored_episode, new_state)
+    old_value = manufacturer_fact_value(stored_episode)
+    new_value = manufacturer_fact_value(new_state)
+    return nil if old_value.blank? || new_value.blank?
+
+    old_label = Rag::FollowupQueryRewriter.normalize_label(old_value)
+    new_label = Rag::FollowupQueryRewriter.normalize_label(new_value)
+    return nil if old_label.blank? || new_label.blank? || old_label == new_label
+
+    removed = false
+    kept = entities.each_with_object({}) do |(key, meta), acc|
+      if incompatible_manufacturer_pin?(key, meta, old_label, new_label)
+        removed = true
+        next
+      end
+
+      acc[key] = meta
+    end
+    removed ? kept : nil
+  end
+
+  def manufacturer_fact_value(raw)
+    data = raw.is_a?(Hash) ? raw : {}
+    facts = data["facts"]
+    return nil unless facts.is_a?(Hash)
+
+    fact = facts["manufacturer"]
+    return nil unless fact.is_a?(Hash)
+
+    fact["value"].presence
+  end
+
+  def incompatible_manufacturer_pin?(key, meta, old_label, new_label)
+    meta = meta.is_a?(Hash) ? meta : {}
+    labels = [ key, meta["canonical_name"], *Array(meta["aliases"]) ]
+    old_hit = labels.any? { |label| label_contains_word?(label, old_label) }
+    new_hit = labels.any? { |label| label_contains_word?(label, new_label) }
+    old_hit && !new_hit
+  end
+
+  def label_contains_word?(label, word)
+    normalized = Rag::FollowupQueryRewriter.normalize_label(label)
+    return false if normalized.blank? || word.blank?
+
+    normalized.match?(/\b#{Regexp.escape(word)}\b/)
+  end
+
+  def write_pinned_document!(kb_doc, s3_uri)
+    entities = active_entities.dup
     existing_key = find_entity_by_source_uri(s3_uri)
     if existing_key.nil? && kb_doc.id.present?
-      existing_key = entities.find { |_, meta| meta["kb_document_id"].to_s == kb_doc.id.to_s }&.first
+      existing_key = entities.find { |_, meta| meta.is_a?(Hash) && meta["kb_document_id"].to_s == kb_doc.id.to_s }&.first
     end
     canonical = kb_doc.display_name.presence || File.basename(kb_doc.s3_key.to_s, ".*")
     entity_type = pinned_entity_type(kb_doc)
+    added_at = Time.current.iso8601
 
     if existing_key
       existing = entities[existing_key].dup
       merged_aliases = sanitize_aliases(
         (Array(existing["aliases"]) + Array(kb_doc.aliases)).map(&:to_s)
       )
-      refreshed = existing.merge(
+      entities[existing_key] = existing.merge(
         "kb_document_id" => kb_doc.id,
         "source_uri"     => s3_uri,
         "wa_filename"    => File.basename(kb_doc.s3_key.to_s),
         "entity_type"    => entity_type,
         "source"         => "user_pin",
-        "aliases"        => merged_aliases
+        "aliases"        => merged_aliases,
+        "added_at"       => added_at
       )
-      return true if refreshed == existing
-
-      entities[existing_key] = refreshed
     else
       key = canonical
       if entities.key?(key)
@@ -372,7 +521,7 @@ class ConversationSession < ApplicationRecord
         "wa_filename"       => File.basename(kb_doc.s3_key.to_s),
         "extraction_method" => "user_pin",
         "aliases"           => sanitize_aliases(Array(kb_doc.aliases).map(&:to_s)),
-        "added_at"          => Time.current.iso8601
+        "added_at"          => added_at
       }
       evict_oldest!(entities)
     end
@@ -381,38 +530,12 @@ class ConversationSession < ApplicationRecord
     true
   end
 
-  # Unpin this session's focus. Match the stored kb_document_id first so a
-  # revoked document can still be removed. source_uri remains the fallback
-  # for a pin written before that id was stored.
-  def unpin_kb_document!(kb_doc)
-    key = find_entity_by_kb_document_id(kb_doc.id)
-    if key.nil?
-      s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
-      return false if s3_uri.blank?
-
-      key = find_entity_by_source_uri(s3_uri)
-    end
-    return false unless key
-
+  def delete_pinned_key!(key)
     entities = active_entities.dup
     entities.delete(key)
     update!(active_entities: entities)
     true
   end
-
-  # Removes this session's focus by the stored id. The row does not have to
-  # still exist or still be readable. This does not grant a read.
-  def unpin_kb_document_id!(kb_document_id)
-    key = find_entity_by_kb_document_id(kb_document_id)
-    return false unless key
-
-    entities = active_entities.dup
-    entities.delete(key)
-    update!(active_entities: entities)
-    true
-  end
-
-  private
 
   def parse_history_ts(value)
     return nil if value.blank?

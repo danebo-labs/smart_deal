@@ -47,6 +47,33 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_equal 1, web_session.active_entities.size
   end
 
+  test "a suggestion-card re-pin renews added_at and still answers already focused" do
+    document = own_manual("renew-focus.pdf", "Renew focus")
+    other = own_manual("renew-other.pdf", "Renew other")
+    first_at = Time.zone.parse("2026-09-30 09:00:00")
+    second_at = first_at + 3.hours
+
+    travel_to(first_at) do
+      confirm(document)
+      confirm(other)
+    end
+
+    travel_to(second_at) do
+      assert_no_enqueued_jobs only: DocumentOverviewWarmJob do
+        assert_no_difference -> { PilotEvent.where(event: "manual_focus_confirmed").count } do
+          confirm(document)
+        end
+      end
+    end
+
+    assert_response :ok
+    assert_equal "already_focused", response.parsed_body["status"]
+    session = web_session
+    assert_equal 2, session.active_entities.size
+    assert_equal second_at.to_i, Time.zone.parse(pinned_meta(session, document)["added_at"]).to_i
+    assert_equal first_at.to_i, Time.zone.parse(pinned_meta(session, other)["added_at"]).to_i
+  end
+
   test "an authorized general card pins the existing row without a copy" do
     shared = general_manual("shared-card.pdf")
     owner_session = ConversationSession.create!(

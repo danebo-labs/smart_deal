@@ -151,6 +151,7 @@ class RagController < ApplicationController
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
     json[:correlation_id]     = result.correlation_id     if result.correlation_id.present?
+    attach_manual_suggestion(json, question, correlation_id, conv_session)
     json[:quick_replies]      = result.quick_replies      if result.quick_replies.present?
     if json[:quick_replies].blank? && resolution[:needs_selection]
       json[:quick_replies] = resolution[:evidence_cards].first(3).filter_map do |card|
@@ -255,6 +256,41 @@ class RagController < ApplicationController
   # telemetry (restriction 2) — no new regex.
   def abstained_answer?(answer)
     answer.to_s.match?(Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN)
+  end
+
+  # Suggest-only. The ranker does not retrieve and does not write active_entities.
+  # UNCLASSIFIED stays tenant_private of the physical owner. There is no
+  # document-level GENERAL_APPROVED mark, so this path does not invent one.
+  def attach_manual_suggestion(json, question, correlation_id, conv_session)
+    return if question.blank? || current_account.nil?
+
+    payload = Rag::ManualCandidateRanker.suggest(
+      question,
+      Rag::DocumentIdentityCatalog.current.entries,
+      viewer_account_id: current_account.id,
+      owner_lookup: method(:manual_suggestion_owners)
+    ).chat_payload
+    return if payload.nil?
+
+    json[:manual_suggestion] = payload
+    PilotUsageLog.log(
+      "manual_suggestion_shown",
+      account_id: current_account.id,
+      user_id: current_user&.id,
+      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      correlation_id: correlation_id,
+      suggestion_document_uids: payload[:cards].pluck(:document_uid),
+      suggestion_scopes: payload[:cards].pluck(:knowledge_scope)
+    )
+  end
+
+  def manual_suggestion_owners(uids)
+    viewer_id = current_account.id
+    KbDocument.where(document_uid: uids).pluck(:document_uid, :account_id).each_with_object({}) do |(uid, account_id), owners|
+      next if owners.key?(uid) && account_id != viewer_id
+
+      owners[uid] = account_id
+    end
   end
 
   def citation_processor

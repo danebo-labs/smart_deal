@@ -925,6 +925,7 @@ export default class extends Controller {
 
     const showSources = this.showSourcesValue
     const answerHtml  = formatAnswerForWeb(data.answer, citations)
+    const suggestionHtml = this.renderManualSuggestion(data.manual_suggestion)
     const resolutionHtml = this.evidenceCardsValue
       ? renderEvidenceResolution(data.resolution, this.resolutionCopyValue)
       : ""
@@ -934,12 +935,36 @@ export default class extends Controller {
     // concatena al string `answer` del JSON, sólo al host del mensaje.
     const noticeHtml = renderVerificationNotice(lang)
 
-    const answerRow = this.addMessageHtml(answerHtml + resolutionHtml + sourcesHtml + noticeHtml, "assistant")
+    const answerRow = this.addMessageHtml(answerHtml + suggestionHtml + resolutionHtml + sourcesHtml + noticeHtml, "assistant")
     const cardsOwnSelection = this.evidenceCardsValue && hasSelectableEvidenceCards(data.resolution)
     if (!cardsOwnSelection && Array.isArray(data.quick_replies) && data.quick_replies.length) {
       this.addMessageHtml(this.renderQuickReplies(data.quick_replies), "assistant")
     }
     this.scrollToMessageTop(answerRow)
+  }
+
+  // Display only. F3 does not pin and does not choose among a tie.
+  renderManualSuggestion(suggestion) {
+    if (!suggestion || typeof suggestion !== "object") return ""
+
+    const cards = Array.isArray(suggestion.cards) ? suggestion.cards.slice(0, 3) : []
+    if (!cards.length) {
+      if (!suggestion.message) return ""
+      return `<p class="manual-suggestion-empty mt-3 text-sm leading-5 text-[hsl(215,16%,35%)]" role="status">${this.escapeHtml(suggestion.message)}</p>`
+    }
+
+    const articles = cards.map((card) => {
+      const name = this.escapeHtml(card.display_name || "")
+      const text = this.escapeHtml(card.text || "")
+      const provenance = this.escapeHtml(card.provenance || "")
+      return `<article class="rounded-xl border border-[hsl(215,20%,88%)] bg-[hsl(215,20%,97%)] px-4 py-3" data-suggestion-label="${this.escapeAttribute(card.label || "")}" data-suggestion-scope="${this.escapeAttribute(card.knowledge_scope || "")}">
+        <p class="text-sm font-medium leading-5 text-[hsl(215,25%,16%)]">${name}</p>
+        <p class="mt-1 text-sm leading-5 text-[hsl(215,16%,32%)]">${text}</p>
+        <p class="mt-1 text-xs leading-4 text-[hsl(215,12%,42%)]">${provenance}</p>
+      </article>`
+    }).join("")
+    const tie = suggestion.tie_at_top === true ? "true" : "false"
+    return `<section class="manual-suggestion mt-3 flex flex-col gap-2" aria-label="Sugerencias de manual" data-tie-at-top="${tie}" data-selected="none">${articles}</section>`
   }
 
   renderQuickReplies(replies, ariaLabel = "Opciones de placa") {

@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0, F1, F2 y F2B están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 no está ejecutada. El prompt completo de la fase siguiente es el Anexo E.
+**Estado:** master plan final. F0, F1, F2, F2B y F3 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 es suggest-only: el ranker no escribe un pin. El prompt completo de la fase siguiente es el Anexo F.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F3, en el Anexo E. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F4, en el Anexo F. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. El Anexo E es el prompt de F3 ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -526,6 +526,10 @@ Tests de elegibilidad, con fixtures, sin red:
 - Un `GENERAL_APPROVED` entra, con el mismo orden que le habría dado el score, y con el texto de biblioteca general.
 - Adjuntar scope no cambia los puntos de la sección 5.
 
+### Resultado F3
+
+`F3_STATUS=PASS`. `Rag::ManualCandidateRanker` copia el score de la sección 5. El filtro de scope corre después del top 3 y no rellena. `tie_at_top` muestra hasta 3 tarjetas y `selected_document_uid` queda nil. La sugerencia no escribe `active_entities`. El síntoma sin fabricante no arma tarjetas y no llama a retrieve. La telemetría nueva es `manual_suggestion_shown` con `suggestion_document_uids` y `suggestion_scopes`. No se aprobó ningún documento. Los hashes de `f0_discovery.json` y `f0_discovery_eligible.json` no se reescribieron.
+
 F4: el técnico toca una tarjeta. Esto corre solo si F0 confirmó una ruta con `reindex_required = false` y `duplicate_document_required = false`. Si no, F4 = `BLOCKED` y no hay código de pin nuevo. F0 confirmó `existing_document_id_session_pin`. F4 no queda `BLOCKED`. El registro de aprobación sigue sin crear y vive fuera del chunk. F3, cuando corra, reescribe el prompt de F4 con los hashes reales.
 
 - Documento `tenant_private` de la cuenta del técnico: `pin_kb_document!`, `source: "user_pin"`. Evento `manual_focus_confirmed`.
@@ -607,7 +611,7 @@ Esos archivos distinguen el contrato (`tenant_private` + `danebo_general` explí
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2 y F2B están `PASS`. F3 sigue sin ejecutar.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2, F2B y F3 están `PASS`. F4 sigue sin ejecutar.
 
 Contrato de cada fase, cuando corra:
 
@@ -934,6 +938,68 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: revisada, sin edición.
   - F8. `reason`: revisada, sin edición.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo E)
+
+### F3
+
+- `phase`: F3
+- `status`: `PASS`
+- `head_initial`: `fa219c578743ccf538a425f569f2f81175048196`
+- `head_final`: el commit de F3. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto dice que la sugerencia no escribe un pin.
+- `files_changed`:
+  - `app/controllers/rag_controller.rb`
+  - `app/javascript/controllers/rag_chat_controller.js`
+  - `app/services/pilot_usage_log.rb`
+  - `app/services/rag/AGENTS.md`
+  - `app/services/rag/manual_candidate_ranker.rb`
+  - `script/field_companion/discovery_score.rb`
+  - `test/controllers/rag_controller_manual_suggestion_test.rb`
+  - `test/services/pilot_usage_log_test.rb`
+  - `test/services/rag/manual_candidate_ranker_test.rb`
+  - `test/system/rag_chat_manual_suggestion_test.rb`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+- `commands_executed`:
+  - precheck `git rev-parse HEAD`, `git rev-parse HEAD^`, `git status --porcelain`, SHA256 de los dos artefactos F0
+  - `env -u BUNDLE_PATH bin/rubocop --cache false` sobre los Ruby de F3
+  - `env -u BUNDLE_PATH bin/rails test` con el regression gate, el ranker, la sugerencia del controller, el controller de Field Companion y el score de F0, en la misma invocación
+  - `env -u BUNDLE_PATH bin/rails test test/system/rag_chat_manual_suggestion_test.rb`
+- `command_results`:
+  - HEAD `fa219c578743ccf538a425f569f2f81175048196`. HEAD^ `c4f5f2deea7357741dfff463896747178dde5d24`. Working tree limpio al abrir.
+  - `f0_discovery.json` `0119f27bd05a86efe5371008bd1886f9791bf5d427eea1364682adad9b9e5ee0`
+  - `f0_discovery_eligible.json` `47efb001265ee5985fd33cee156054acd81b9fad8736e111ac4291914cbeff36`
+  - RuboCop: los Ruby de F3, no offenses
+  - tests: 229 runs, 1745 assertions, 0 failures, 0 errors, 1 skip
+  - system: 2 runs, 51 assertions, 0 failures, 0 errors, 0 skips. Desktop 1400×1400 y mobile 390×844.
+- `tests`: regression gate de este plan, más `test/services/rag/manual_candidate_ranker_test.rb`, `test/controllers/rag_controller_manual_suggestion_test.rb`, `test/controllers/rag_controller_field_companion_test.rb` y `test/script/field_companion_discovery_score_test.rb`, en la misma invocación. El system test de las tarjetas corrió aparte.
+- `test_results`: 229 runs, 1745 assertions, 0 failures, 0 errors, 1 skip. El skip es el test previo `Manual integration test: Upload a large JPEG (>500KB) via UI to verify compression` en `test/services/image_compression_service_test.rb`. No es de F3. El system test: 2 runs, 51 assertions, 0 failures, 0 errors, 0 skips.
+- `artifacts`: ninguno nuevo. Se releyeron, sin reescribir:
+  - `tmp/field_companion/f0_discovery.json`
+  - `tmp/field_companion/f0_discovery_eligible.json`
+- `artifact_sha256`:
+  - `f0_discovery.json` `0119f27bd05a86efe5371008bd1886f9791bf5d427eea1364682adad9b9e5ee0`
+  - `f0_discovery_eligible.json` `47efb001265ee5985fd33cee156054acd81b9fad8736e111ac4291914cbeff36`
+- `findings`:
+  1. `CONFIRMED`. El ranking previo al filtro de scope coincide con `f0_discovery.json` en fixture y holdout: `document_ids`, etiquetas, puntos, `tie_at_top`, `reason`, fabricante y `model_tokens`. El hash no cambió. `precision_at_3`, `top1_accuracy` y `wrong_brand_candidate_rate` no se recalcularon para cambiar la función.
+  2. `CONFIRMED`. El viewer no owner es la cuenta `5`, slug `elevadores-climb`. `general_approved_count` 0. `f0_discovery_eligible.json` no le entrega documentos del ranking técnico. El hash no cambió.
+  3. `CONFIRMED`. El scope no cambia los puntos. `UNCLASSIFIED` es `tenant_private` del dueño. Un `PRIVATE` o un `UNCLASSIFIED` de otra cuenta, de Legacy o de Pilot, no entra. Un `GENERAL_APPROVED` entra en el orden del score, con `Biblioteca general de Danebo`. El filtro no rellena por detrás del top 3.
+  4. `CONFIRMED`. `tie_at_top` muestra hasta 3 tarjetas y `selected_document_uid` es nil. La sugerencia no llama `pin_kb_document!` y no escribe `active_entities`.
+  5. `CONFIRMED`. El síntoma sin fabricante reconocido devuelve cero tarjetas, no busca dueños y no llama a retrieve. Más de un fabricante usa el texto fijo de cero candidatos y tampoco elige.
+  6. `CONFIRMED`. La allowlist ganó solo `suggestion_document_uids` y `suggestion_scopes`, en el mismo orden. El evento es `manual_suggestion_shown`. `knowledge_scope` no está en la allowlist.
+  7. `CONFIRMED`. No se aprobó ningún documento como `danebo_general`. No se copió un `KbDocument`, no se duplicó S3 y no se reindexó. `manual_corpus=general`, el `account_id` de índice del catálogo, el slug, el filename y un `knowledge_scope` suelto no son esa aprobación.
+  8. `REJECTED`. Escribir un pin desde la sugerencia, o meter el texto de la tarjeta dentro de `answer`.
+  9. `NEW`. El test de paridad carga los JSON de `tmp/field_companion/`. `tmp/` no se commitea. Si el archivo no está, el test hace skip. En esta corrida los dos archivos estaban y el skip no se tomó. El único skip del gate es el JPEG manual previo.
+- `derived_decisions`:
+  - La sugerencia no escribe un pin.
+  - F4 no está `BLOCKED`. El tap sigue sin implementar.
+  - No hay marca `GENERAL_APPROVED` nueva. El conteo sigue en 0.
+  - `INGESTION_CONTRACT_VERSION`, `MODEL_TEXT`, `MODEL_MULTIMODAL`, `DEFAULT_MODEL`, `FieldPhotoPrompt`, `RagRetrievalProfile`, autorización, `generation.txt` y el renderer de procedencia no se tocaron.
+- `future_phases_changed`:
+  - F4. `reason`: el Anexo F es el prompt completo, con los hashes reales. F3 no implementa el tap. F4 sigue sin `BLOCKED`.
+  - F5. `reason`: revisada, sin edición. F3 no toca fotos, retención ni `correlation_id`.
+  - F6. `reason`: revisada, sin edición. La sugerencia no entra en `answer`, así que esas tarjetas no son una frase para marcar como `MANUAL_FACT`.
+  - F7. `reason`: revisada, sin edición.
+  - F8. `reason`: revisada, sin edición.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo F)
 
 ## Anexo A — prompt de F0
 
@@ -1325,6 +1391,8 @@ En este orden: tests; el regression gate de este plan; artefacto con SHA256, mod
 
 ## Anexo E — prompt de F3
 
+Anexo E ya se ejecutó. F3 quedó `PASS`. La sugerencia no escribe un pin. El padre efectivo es `fa219c578743ccf538a425f569f2f81175048196`. El texto que sigue es el prompt que se recibió.
+
 Ejecutá solo F3 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F3 es Discovery A, suggest-only. No ejecutes F4. No hagas deploy. No reabras F2 ni F2B. No cambies `BatchChunkingPrompt::MODEL_TEXT`, `MODEL_MULTIMODAL`, `FieldPhotoAnalysisService::DEFAULT_MODEL`, `FieldPhotoPrompt`, `INGESTION_CONTRACT_VERSION`, `RagRetrievalProfile`, pins, autorización, `generation.txt` ni el renderer de procedencia. No llames a un modelo. No pidas una decisión a Lahiri.
 
 F2B está `PASS` con gate `I1`. `MODEL_TEXT` ya es `claude-sonnet-5-5`. El padre del commit de F2B es `c4f5f2deea7357741dfff463896747178dde5d24`. `git rev-parse HEAD^` tiene que ser ese SHA. Si no lo es, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F3. Ese HEAD es el commit de F2B. El árbol de este anexo no contiene el SHA de F3 ni el de F2B.
@@ -1395,3 +1463,99 @@ Agregá a `PilotUsageLog::ALLOWED_FIELDS`, y solo esto: `suggestion_document_uid
 En este orden: tests del ranker y de la elegibilidad; el regression gate de este plan; Execution State; findings; revisión de F4–F8; reescritura completa del prompt de F4 con los hashes reales de `f0_discovery.json` y `f0_discovery_eligible.json`. No ejecutes F4. No hagas deploy. `head_final` no se escribe dentro del árbol.
 
 Commit, un solo commit de F3. El mensaje dice que la sugerencia no escribe un pin.
+
+## Anexo F — prompt de F4
+
+Ejecutá solo F4 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F4 es Discovery B, confirmed focus. El técnico toca una tarjeta y eso escribe `user_pin` en la sesión actual. No ejecutes F5. No hagas deploy. No reabras F3. No cambies el score. No llames a un modelo. No pidas una decisión a Lahiri.
+
+F3 está `PASS`. La sugerencia no escribe un pin. `git rev-parse HEAD^` tiene que ser `fa219c578743ccf538a425f569f2f81175048196`. Si no lo es, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F4. Ese HEAD es el commit de F3. El árbol de este anexo no contiene el SHA de F4 ni el de F3.
+
+### Qué no cambia
+
+- `BatchChunkingPrompt::MODEL_TEXT` sigue `claude-sonnet-5-5`.
+- `BatchChunkingPrompt::MODEL_MULTIMODAL` sigue `claude-opus-5-5`.
+- `FieldPhotoAnalysisService::DEFAULT_MODEL` sigue `claude-sonnet-5-5`.
+- `FieldPhotoPrompt` no se edita.
+- `BatchChunkingPrompt::INGESTION_CONTRACT_VERSION` sigue `field_records_v8`.
+- `RagRetrievalProfile` no se toca. No subas top-k. No filtres Bedrock por fabricante.
+- `generation.txt` y el renderer de procedencia no se editan.
+- El score de `Rag::ManualCandidateRanker` no gana ni pierde puntos por scope. El filtro sigue después del top 3 y no rellena.
+- `UNCLASSIFIED` sigue siendo `tenant_private` del dueño. No apruebes ningún documento como `danebo_general`. No agregues una columna. No copies un `KbDocument`. No dupliques S3. No reindexes.
+- No uses como aprobación: `manual_corpus=general`, el `account_id` de índice del catálogo, el slug, Legacy, Pilot, el filename ni el fabricante.
+- No uses `SemanticQueryAnalyzer` para elegir el manual.
+- No hay auto-focus. `tie_at_top` no pinea solo.
+
+### Evidencia que F4 lee
+
+Estos dos archivos tienen que existir y coincidir byte a byte. No los reescribas. No recalcules `precision_at_3`, `top1_accuracy` ni `wrong_brand_candidate_rate` para cambiar el score.
+
+- `tmp/field_companion/f0_discovery.json` SHA256 `0119f27bd05a86efe5371008bd1886f9791bf5d427eea1364682adad9b9e5ee0`
+- `tmp/field_companion/f0_discovery_eligible.json` SHA256 `47efb001265ee5985fd33cee156054acd81b9fad8736e111ac4291914cbeff36`
+
+El viewer no owner de ese artefacto es la cuenta `5`, slug `elevadores-climb`. `general_approved_count` es 0. Esa lista no le entrega documentos del ranking técnico. F0 confirmó `existing_document_id_session_pin` con `reindex_required = false` y `duplicate_document_required = false`. F4 no está `BLOCKED`. La opción `new_chunk_attribute` no se elige. El registro de aprobación no existe y no se crea en F4. No va al chunk.
+
+### Lo que F3 dejó
+
+`Rag::ManualCandidateRanker` rankea sin red. `RagController#ask` adjunta `manual_suggestion` en la misma respuesta JSON cuando hay fabricante reconocido. No está dentro de `answer`. Las tarjetas de `renderManualSuggestion` no son botones y no tienen `data-action`. `selected_document_uid` es nil. `data-selected` es `none`.
+
+Payload:
+
+- `cards`: como máximo 3. Cada una tiene `document_uid`, `display_name`, `label` (`BRAND_ONLY` o `EXACT_DESIGNATOR`), `text` fijo, `knowledge_scope` (`tenant_private` o `danebo_general`) y `provenance`.
+- Texto solo marca: `manual de la misma marca; compatibilidad con este equipo no confirmada`.
+- Texto designador exacto: `el documento coincide con el modelo/designador indicado`.
+- Cero candidatos con fabricante, o más de un fabricante: `No encontré un manual claramente asociado a esa identidad en la biblioteca actual.`
+- Procedencia: `Biblioteca general de Danebo` o `Tu biblioteca`.
+- `tie_at_top` true cuando dos o más tarjetas devueltas comparten el score máximo. No elige una.
+- Síntoma sin fabricante: no hay `manual_suggestion` y no hay retrieve extra.
+
+Telemetría ya allowlisted, y solo eso: `suggestion_document_uids` y `suggestion_scopes`. Evento `manual_suggestion_shown`. `knowledge_scope` todavía no está en la allowlist.
+
+### Tap
+
+El técnico toca una tarjeta. El servidor vuelve a correr la elegibilidad. No confíes en el JSON del browser.
+
+- Documento `tenant_private` de la cuenta del técnico: `pin_kb_document!`, `source: "user_pin"`, solo en `active_entities` de la sesión actual. Evento `manual_focus_confirmed`.
+- Documento `danebo_general`: el mismo `user_pin` sobre la fila `KbDocument` existente, escrito solo en la sesión actual. No se crea otro `KbDocument`, no se copia S3, no se reindexa, no hay `assisted_focus` y no hay un flag de pin en el documento. La carga permitida es la fila cuyo `document_uid` el ranker acaba de clasificar `GENERAL_APPROVED`. En producción ese conteo sigue en 0: el test usa una entrada con `classification: "GENERAL_APPROVED"`. No persistas esa marca.
+- `PRIVATE` o `UNCLASSIFIED` de otra cuenta: no hay tap. El ranker no debió mostrarlos. Si el request igual trae ese uid, no pines y no lo busques con `unscoped`.
+- `tie_at_top`: una pregunta, máximo 3 chips, cero pins hasta el tap.
+- `pin_conflict`: se muestra y el pin anterior sigue.
+- `identity_conflict`: se muestran las dos identidades y no se sobreescribe el hecho del técnico.
+
+Prohibido: `unscoped`, `find_by` de un privado ajeno, desactivar autorización, copiar la fila, duplicar el objeto S3, reindexar por tenant, y guardar el pin como estado del `KbDocument` o de cualquier estructura visible para otras cuentas.
+
+### Tests de foco, sin red
+
+- La cuenta A pinea un `danebo_general`. `active_entities` de la cuenta B no cambia. El documento sigue elegible para B.
+- La cuenta B pinea otro general, o dos generales, o un general y un privado suyo. Los pins de A siguen iguales.
+- A quita su pin. El documento sigue en el catálogo general y en los pins de B.
+- Un `PRIVATE` o `UNCLASSIFIED` de otra cuenta no se puede pinear por esta vía.
+- `tie_at_top` no escribe un pin hasta el tap.
+- `pin_conflict` deja el pin anterior.
+- `identity_conflict` no pisa el hecho del técnico.
+
+### Telemetría
+
+`manual_focus_confirmed` con `document_id`, `source_uri`, `correlation_id` y `knowledge_scope` (`tenant_private` o `danebo_general`). `knowledge_scope` se agrega a `PilotUsageLog::ALLOWED_FIELDS` en F4, con el mismo test de clave ajena: una clave fuera de la lista no aparece en la línea `[PILOT_USAGE]`.
+
+`manual_suggestion_dismissed` reusa `document_id` y `outcome`. No agregues esas claves de nuevo.
+
+`equipment_switch_prompted` con `manufacturer` y `outcome_reason`. Si hace falta un segundo fabricante, agregá `previous_manufacturer` a la allowlist y testalo. No agregues claves por si acaso.
+
+### Cierre de F4
+
+En este orden: tests de foco; el regression gate de este plan (no llama Bedrock ni Anthropic); Execution State; findings; revisión de F5–F8; reescritura completa del prompt de F5. No ejecutes F5. No hagas deploy. `head_final` no se escribe dentro del árbol.
+
+El regression gate es:
+
+```
+bin/rails test \
+  test/services/rag_retrieval_profile_test.rb \
+  test/services/rag/structured_evidence_route_test.rb \
+  test/services/field_photo_analysis_service_test.rb \
+  test/services/field_photo_density_gate_test.rb \
+  test/services/image_compression_service_test.rb \
+  test/jobs/field_photo_analysis_job_test.rb \
+  test/services/pilot_usage_log_test.rb
+```
+
+Un solo commit de F4. El mensaje dice que el tap escribe `user_pin` solo en la sesión actual.

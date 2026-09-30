@@ -28,8 +28,10 @@ to make a pin work. A pin is session focus, not a property of the shared
 document. Account A pinning a `danebo_general` document does not change
 Account B's catalog or Account B's pins. Photos stay out of other accounts' retrieval.
 
-HEAD, until Field Companion F3/F4 lands and only if F0 confirms a path with
-`reindex_required = false` and `duplicate_document_required = false`:
+F3 suggests manuals in the authenticated web chat. That suggestion does not
+write a pin and does not change this retrieve filter. F0 confirmed
+`existing_document_id_session_pin` (`reindex_required = false`,
+`duplicate_document_required = false`). The open retrieve below is still HEAD:
 
 Danebo (`danebo-legacy`) and the elevator pilot (`danebo-pilot-elevator`) are included in every account's open retrieve. Their `account_id` is already on the indexed chunks. Photos of those accounts stay out of other accounts' retrieval. This OR is not an approval of those manuals for the general library.
 

@@ -39,6 +39,35 @@ class PilotUsageLogTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
+  test "suggestion fields stay on the line and unknown keys stay off it" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    assert PilotUsageLog.log(
+      "manual_suggestion_shown",
+      account_id: 5,
+      suggestion_document_uids: [ "uid-a", "uid-b" ],
+      suggestion_scopes: [ "tenant_private", "danebo_general" ],
+      knowledge_scope: "danebo_general",
+      manual_suggestion_dismissed: true,
+      not_a_field: "nope"
+    )
+
+    line = output.string.lines.find { |entry| entry.include?("[PILOT_USAGE]") }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+    assert_equal "manual_suggestion_shown", payload["event"]
+    assert_equal [ "uid-a", "uid-b" ], payload["suggestion_document_uids"]
+    assert_equal [ "tenant_private", "danebo_general" ], payload["suggestion_scopes"]
+    assert_nil payload["knowledge_scope"]
+    assert_nil payload["manual_suggestion_dismissed"]
+    assert_nil payload["not_a_field"]
+    assert_not_includes line, "manual_suggestion_dismissed"
+    assert_not_includes line, "not_a_field"
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
   test "telemetry failure never raises into the product flow" do
     failing_logger = Object.new
     failing_logger.define_singleton_method(:info) { |_message| raise "logger down" }

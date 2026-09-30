@@ -2,7 +2,8 @@
 
 # Pure discovery score from PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29 section 5.
 # No network. knowledge_scope is ignored: it filters eligibility elsewhere and
-# does not add points. F3 copies this function; it does not live in app/.
+# does not add points. Rag::ManualCandidateRanker is the runtime copy. This
+# file stays the F0 original.
 module FieldCompanion
   module DiscoveryScore
     Candidate = Data.define(:document_id, :display_name, :score, :label, :brands)

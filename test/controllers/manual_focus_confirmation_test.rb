@@ -92,6 +92,34 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_equal "unavailable", focus_event("manual_focus_denied").payload["outcome_reason"]
   end
 
+  test "a foreign private row is excluded by the initial lookup before final authorization" do
+    foreign = KbDocument.create!(
+      account: accounts(:legacy), s3_key: "manuals/foreign-private-lookup.pdf",
+      display_name: "Foreign private lookup", document_uid: SecureRandom.uuid, aliases: []
+    )
+    authorization_calls = 0
+    allow_everything = lambda do |*_args, **_kwargs|
+      authorization_calls += 1
+      true
+    end
+
+    original = Rag::KnowledgeScopePolicy.method(:authorized?)
+    begin
+      Rag::KnowledgeScopePolicy.define_singleton_method(:authorized?, allow_everything)
+      confirm(foreign)
+    ensure
+      Rag::KnowledgeScopePolicy.define_singleton_method(:authorized?) { |*args, **kwargs|
+        original.call(*args, **kwargs)
+      }
+    end
+
+    assert_response :not_found
+    assert_equal 0, authorization_calls
+    assert_equal "Este manual ya no está disponible.", response.parsed_body["error"]
+    assert_nil web_session_if_any
+    assert_nil focus_event("manual_focus_confirmed")
+  end
+
   test "a revoked card cannot be pinned" do
     shared = general_manual("revoked-card.pdf")
     KnowledgeScopeChange.apply!(
@@ -278,6 +306,41 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_equal both.sort, SessionContextBuilder.entity_s3_uris(web_session.reload).sort
   end
 
+  test "a revoked foreign pin denies retrieval and contributes no metadata to a later question" do
+    shared = general_manual("revoked-focus-notice.pdf")
+    confirm(shared)
+    KnowledgeScopeChange.apply!(
+      kb_document: shared, to_scope: "tenant_private", actor: "ops", reason: "withdrawn"
+    )
+
+    uris = SessionContextBuilder.entity_s3_uris(web_session)
+    client = FakeClient.new
+    result = nil
+    with_bedrock do
+      with_client(client) do
+        result = BedrockRagService.new(account: @account).query(
+          "Estoy en un OTIS Y9 y la puerta no cierra.",
+          entity_s3_uris: uris,
+          force_entity_filter: true
+        )
+      end
+    end
+
+    assert_equal BedrockRagService::DENY_RETRIEVAL, result[:retrieval]
+    assert_equal 0, client.generate_calls
+    assert_equal 0, client.retrieve_calls
+
+    body = nil
+    with_identity(shared, brands: [ "Schindler" ], designators: [ "X1" ]) do
+      body, = ask("Estoy en un OTIS Y9 y la puerta no cierra.")
+    end
+
+    assert_nil body["pin_conflict"]
+    assert_nil focus_event("equipment_switch_prompted")
+    assert_equal [ shared.display_s3_uri(KbDocument::KB_BUCKET) ],
+      SessionContextBuilder.entity_s3_uris(web_session.reload)
+  end
+
   test "two authorized pins do not fall back to the open corpus" do
     first = own_manual("both-x.pdf", "Both X")
     second = own_manual("both-y.pdf", "Both Y")
@@ -437,7 +500,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     [ response.parsed_body, calls ]
   end
 
-  def with_identity(document, brands:)
+  def with_identity(document, brands:, designators: [])
     catalog = Rag::DocumentIdentityCatalog.new({
       "documents" => [
         {
@@ -446,7 +509,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
           "s3_key" => document.s3_key,
           "display_name" => document.display_name,
           "brands" => brands,
-          "designators" => [],
+          "designators" => designators,
           "confirmed" => false
         }
       ]

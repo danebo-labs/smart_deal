@@ -53,7 +53,14 @@ module Rag
         }
         return [] if ids.empty?
 
-        KbDocument.where(id: ids).to_a
+        viewer_account = session.respond_to?(:account) ? session.account : nil
+        return [] unless viewer_account
+
+        # Stale pins stay in the session, but revoked rows cannot feed identity metadata.
+        candidates = KbDocument.where(account_id: viewer_account.id).or(KbDocument.danebo_general)
+        candidates.where(id: ids).select { |document|
+          Rag::KnowledgeScopePolicy.authorized?(document, viewer_account: viewer_account)
+        }
       end
 
       def conflicts?(entry, manufacturer, model_tokens)

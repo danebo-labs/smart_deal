@@ -63,7 +63,8 @@ class PinnedDocumentsController < ApplicationController
   # A foreign tenant_private row stays unavailable. A danebo_general row is
   # the same physical document. Removing focus does not grant a read.
   def focus_document
-    kb_doc = KbDocument.find_by(id: create_params[:kb_document_id])
+    candidates = KbDocument.where(account_id: current_account.id).or(KbDocument.danebo_general)
+    kb_doc = candidates.find_by(id: create_params[:kb_document_id])
     unless kb_doc && Rag::KnowledgeScopePolicy.authorized?(kb_doc, viewer_account: current_account)
       render_focus_failure(:unavailable)
       return

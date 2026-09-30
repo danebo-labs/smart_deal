@@ -11,8 +11,8 @@ class FieldPhotoAnalysisService
   CHAT_CONTEXT_LIMIT = ConversationSession::MAX_MSG_LENGTH
   RELEVANCE_VALUES = %w[relevant unrelated uncertain].freeze
   MISSING_DETAIL_LIMIT = 200
-  # Field Companion F2 letter B. Chat photos only. Document ingestion stays on
-  # BatchChunkingPrompt::MODEL_TEXT.
+  # Field Companion F2 letter B. Chat photos only. This constant is not
+  # BatchChunkingPrompt::MODEL_TEXT, even when both strings match.
   DEFAULT_MODEL = "claude-sonnet-5-5"
 
   def initialize(binary:, content_type:, filename:, locale:, account_id:, user_id:,

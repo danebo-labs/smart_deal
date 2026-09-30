@@ -195,7 +195,7 @@ class BulkCostV2RequestBuilderTest < ActiveSupport::TestCase
     requests, _meta = builder.build_all!([ asset ])
 
     assert_equal 2, requests.size
-    assert_equal "claude-sonnet-5", requests[0][:params][:model]
+    assert_equal "claude-sonnet-5-5", requests[0][:params][:model]
     assert_equal BatchChunkingPrompt::MODEL_TEXT, requests[0][:params][:model]
     assert_equal "claude-opus-5-5", requests[1][:params][:model]
     assert_equal BatchChunkingPrompt::MODEL_MULTIMODAL, requests[1][:params][:model]

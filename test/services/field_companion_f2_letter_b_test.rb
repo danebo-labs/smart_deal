@@ -46,8 +46,10 @@ class FieldCompanionF2LetterBTest < ActiveSupport::TestCase
 
     assert_equal "claude-sonnet-5-5", FieldPhotoAnalysisService::DEFAULT_MODEL
     assert_equal "claude-sonnet-5-5", result[:model]
-    assert_equal "claude-sonnet-5", BatchChunkingPrompt::MODEL_TEXT
-    assert_not_equal BatchChunkingPrompt::MODEL_TEXT, result[:model]
+    assert_equal FieldPhotoAnalysisService::DEFAULT_MODEL, result[:model]
+    model_line = Rails.root.join("app/services/field_photo_analysis_service.rb").each_line.grep(/model = route/).first.to_s
+    assert_includes model_line, "DEFAULT_MODEL"
+    assert_not_includes model_line, "MODEL_TEXT"
     assert_equal :sonnet, FieldPhotoDensityGate.decide(binary: "jpeg", content_type: "image/jpeg", filename: "door.jpg")
   end
 
@@ -77,11 +79,14 @@ class FieldCompanionF2LetterBTest < ActiveSupport::TestCase
     assert_equal 0.0147, query.cost
     assert_equal SONNET_55_DIRECT, BedrockQuery::BEDROCK_PRICING.fetch("claude-sonnet-5-direct")
     assert_not_same rates, BedrockQuery::BEDROCK_PRICING.fetch("claude-sonnet-5-direct")
-    assert_not BedrockQuery::BEDROCK_PRICING.key?("claude-sonnet-5-5-batch")
+    batch = BedrockQuery::BEDROCK_PRICING.fetch("claude-sonnet-5-5-batch")
+    assert_equal({ input: 0.001, output: 0.005, cache_read: 0.0001, cache_creation: 0.00125 }, batch)
+    assert_not_equal BedrockQuery::BEDROCK_PRICING.fetch("default"), batch
+    assert_not_same rates, batch
   end
 
-  test "document ingestion text model stays claude-sonnet-5" do
-    assert_equal "claude-sonnet-5", BatchChunkingPrompt::MODEL_TEXT
+  test "document ingestion text model and direct retry use claude-sonnet-5-5" do
+    assert_equal "claude-sonnet-5-5", BatchChunkingPrompt::MODEL_TEXT
     assert_equal "claude-opus-5-5", BatchChunkingPrompt::MODEL_MULTIMODAL
 
     captured = []
@@ -108,7 +113,7 @@ class FieldCompanionF2LetterBTest < ActiveSupport::TestCase
       anchor_page_number: nil
     )
 
-    assert_equal [ "claude-sonnet-5" ], captured.uniq
+    assert_equal [ "claude-sonnet-5-5" ], captured.uniq
     assert_predicate captured, :any?
   ensure
     ClaudeChunkingClient.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) } if original

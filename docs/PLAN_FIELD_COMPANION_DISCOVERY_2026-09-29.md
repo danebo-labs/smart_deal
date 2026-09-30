@@ -1,10 +1,10 @@
 # Plan Field Companion — Assisted Document Discovery (29-sep-2026)
 
-**Estado:** master plan final. F0, F1 y F2 están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. La ingesta Batch de documentos sigue en `claude-sonnet-5`. F2B no está ejecutada. F3 no está ejecutada. El prompt completo de la fase siguiente es el Anexo D.
+**Estado:** master plan final. F0, F1, F2 y F2B están `PASS`. La evidencia visual de F1 quedó extendida a 15 imágenes (`E3`). F2 adoptó la letra B solo para Field Photo: default `claude-sonnet-5-5`, rama de 1,5 MB `claude-opus-5-5`. F2B adoptó `claude-sonnet-5-5` como `BatchChunkingPrompt::MODEL_TEXT` para la ingesta Batch de texto y para el retry Direct. Field Photo no se recableó. F3 no está ejecutada. El prompt completo de la fase siguiente es el Anexo E.
 
 **Objetivo:** el técnico dice marca y falla, con foto opcional. Danebo muestra `manual_candidate` de su biblioteca privada y de la biblioteca general de Danebo, y el técnico puede fijar ambos cuando el scope lo permite, sobre el mismo documento ya indexado. La foto se recuerda sin volver a pagarla. Una sugerencia no se presenta como dato del manual.
 
-**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F2B, en el Anexo D. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. La extensión no es una fase nueva y no cambia el `PASS` de F1.
+**Este archivo es la única fuente de verdad del ciclo.** Un chat nuevo no hereda memoria. Ejecuta la fase cuyo prompt está completo al final de Execution State. El prompt completo pendiente es el de F3, en el Anexo E. El Anexo A es el prompt de F0 ya ejecutado. El Anexo B es el prompt de F1 ya ejecutado. El Anexo C es el prompt de F2 ya ejecutado; el Resultado F2 corrige el alcance de `MODEL_TEXT`. El Anexo D es el prompt de F2B ya ejecutado. La extensión no es una fase nueva y no cambia el `PASS` de F1.
 
 **No reabrir:** [PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md](PLAN_PRECISION_WORDING_MULTILOOKUP_2026-09-29.md). P4 quedó `PASS`. Los cuatro casos `BLOCKED` de ese plan siguen fuera: micros 30/31, llamadas 33/34, relés K1/K2 juntos, T1/T2 juntos. Los casos individuales que ya pasan no se tocan.
 
@@ -500,7 +500,18 @@ Pricing de Field Photo, Anthropic Direct. Clave exacta `claude-sonnet-5-5-direct
 
 No cambió `FieldPhotoPrompt`, el fingerprint `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`, el resize, `max_tokens`, el prompt de ingesta, `INGESTION_CONTRACT_VERSION`, RAG, embeddings, discovery, provenance, conocimiento compartido, top-k ni pins. `ContractualLimits::PHOTO[:allowed_models]` lista `DEFAULT_MODEL` y `MODEL_MULTIMODAL`. Es el techo declarativo de la foto.
 
-Los hashes del benchmark visual se reconfirmaron y no se reescribieron. Siguiente fase: F2B. F3 no arranca.
+Los hashes del benchmark visual se reconfirmaron y no se reescribieron. Siguiente fase después de F2: F2B, ya cerrada. F3 no arranca hasta el Anexo E.
+
+### Resultado F2B
+
+`F2B_STATUS=PASS`. Gate `I1`. `adopted: true` para la ingesta de texto. El contrato completo está en Execution State. Desde este cierre, la tabla de F2 queda histórica y el modelo efectivo es:
+
+- Ingesta Batch de texto, bulk y web: `claude-sonnet-5-5` vía `MODEL_TEXT`.
+- Direct/retry de ingesta sin modelo en la página: `claude-sonnet-5-5` vía `MODEL_TEXT`.
+- Field Photo default: `claude-sonnet-5-5` vía `DEFAULT_MODEL`. No lee `MODEL_TEXT`.
+- Field Photo de 1,5 MB y `MODEL_MULTIMODAL`: `claude-opus-5-5`.
+
+`claude-sonnet-5-5-batch` está en `BEDROCK_PRICING` con input `0.001`, output `0.005`, cache read `0.0001`, cache creation `0.00125`. No es `default` y no es el mismo objeto que `claude-sonnet-5-batch`. `claude-sonnet-5-5-direct` no se reescribió. `INGESTION_CONTRACT_VERSION` sigue `field_records_v8`. El fingerprint de ingesta sigue `e5b574784ff78547886919fe388edd51decbc13b0a37cfbd11bc041ff4ac1172`.
 
 ## 11. Discovery en runtime (F3 y F4)
 
@@ -596,7 +607,7 @@ Esos archivos distinguen el contrato (`tenant_private` + `danebo_general` explí
 
 ## Execution State
 
-Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1 y F2 están `PASS`. F2B y F3 siguen sin ejecutar.
+Una fase no queda `COMPLETED` hasta registrar los campos que le aplican. Las fases no ejecutadas no se rellenan. F0, F1, F2 y F2B están `PASS`. F3 sigue sin ejecutar.
 
 Contrato de cada fase, cuando corra:
 
@@ -850,6 +861,79 @@ Checkpoint previo a F0, satisfecho al abrir:
   - F7. `reason`: revisada, sin edición.
   - F8. `reason`: revisada, sin edición.
 - `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo D)
+
+### F2B
+
+- `phase`: F2B
+- `status`: `PASS`
+- `gate`: `I1`
+- `adopted`: `true` para `BatchChunkingPrompt::MODEL_TEXT` y para el retry Direct que cae en esa constante. Field Photo no se adopta por esta fase: ya tenía su propia constante.
+- `head_initial`: `c4f5f2deea7357741dfff463896747178dde5d24`
+- `head_final`: el commit de F2B. El árbol no puede contener su propio SHA. Después del commit, `git rev-parse HEAD` es `head_final` y `git rev-parse HEAD^` es `head_initial`.
+- `commit`: el único commit cuyo padre es `head_initial` y cuyo asunto dice que la ingesta de texto pasa a Sonnet 5.5.
+- `files_changed`:
+  - `app/models/bedrock_query.rb`
+  - `app/prompts/batch_chunking_prompt.rb`
+  - `app/services/field_photo_analysis_service.rb`
+  - `script/field_companion/ingestion_model_refresh.rb`
+  - `test/jobs/ingest_batch_results_job_test.rb`
+  - `test/models/bedrock_query_test.rb`
+  - `test/script/field_companion_ingestion_model_refresh_test.rb`
+  - `test/services/bulk_cost_v2_request_builder_test.rb`
+  - `test/services/contractual_limits_test.rb`
+  - `test/services/field_companion_f2_letter_b_test.rb`
+  - `test/services/manual_batch_ingestion_service_test.rb`
+  - `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`
+- `commands_executed`:
+  - `env -u BUNDLE_PATH F2B_MODE=control_only bin/rails runner script/field_companion/ingestion_model_refresh.rb`
+  - `env -u BUNDLE_PATH bin/rubocop --cache false` sobre los Ruby de F2B
+  - `env -u BUNDLE_PATH bin/rails test` con el regression gate, la letra B, el techo contractual, la ingesta Batch web, el builder Batch bulk, el fingerprint de `FieldPhotoPrompt`, el harness de F2B, el pricing y el parser de resultados Batch, en la misma invocación
+- `command_results`:
+  - Control Sonnet 5: `msgbatch_01DUg2djyq7RUkoUz9wY4oHD`, creado `2026-09-30T01:00:20Z`, cerrado `2026-09-30T05:16:02Z`, 5 succeeded. El reloj de Batch no es latencia Direct.
+  - Sonnet 5.5 reutilizado: `msgbatch_012f2XnkwfTma8UpS1FTShyS`, cerrado `2026-09-30T00:10:15Z`, 5 succeeded. No se reenvió.
+  - Batch cancelado y no usado como resultado: `msgbatch_018dHEzmkEqpD8dgQJQpqUBu`, 5 canceled, 0 succeeded.
+  - RuboCop: 11 files, no offenses
+  - tests: 289 runs, 1644 assertions, 0 failures, 0 errors, 1 skip
+- `tests`: regression gate de este plan, más `test/services/field_companion_f2_letter_b_test.rb`, `test/services/contractual_limits_test.rb`, `test/services/manual_batch_ingestion_service_test.rb`, `test/services/bulk_cost_v2_request_builder_test.rb`, `test/prompts/field_photo_prompt_test.rb`, `test/script/field_companion_ingestion_model_refresh_test.rb`, `test/models/bedrock_query_test.rb` y `test/jobs/ingest_batch_results_job_test.rb`, en la misma invocación
+- `test_results`: 289 runs, 1644 assertions, 0 failures, 0 errors, 1 skip. El skip es el test previo `Manual integration test: Upload a large JPEG (>500KB) via UI to verify compression` en `test/services/image_compression_service_test.rb`. No es de F2B.
+- `artifacts`: no se commitean. Viven en `tmp/field_companion/ingestion_model_refresh/`.
+  - `aggregate.json`
+  - `cost_report.json`
+  - `dataset_manifest.json`
+  - `gold_manifest.json`
+  - `preflight.json`
+  - `SHA256SUMS.txt`
+- `artifact_sha256`:
+  - `aggregate.json` `e9241dcc5032dc33796ea4306800dec3b4b41e80d7862b4a064730000df3b0ef`
+  - `cost_report.json` `45587e6470a1bb2b8842c44fa4440830aa4a0848000f77874b3c4076c57bc4d0`
+  - `dataset_manifest.json` `2087858483d37ddd43c9a7df51e197dd5ec47bf371c9240644e8178ef4868d20`
+  - `gold_manifest.json` `0c847bfffb973e1bfb48a49acb8a11cf01d6a387f6e3fa29c2e5d5c874636e67`
+  - `preflight.json` `dbbdbc78d7945dfb4763252ac4002c526824f16ff169958c5aa11d5b193203ed`
+  - `SHA256SUMS.txt` `8f93c9d0637e8800f988b7bfa6b26447a9e7b7bc055f7846f8c72cb6003fb7e4`
+- `comparison`: cinco unidades scored, mismos bytes y mismo payload salvo `model`. `tijera_p01`, `tijera_p18`, `tijera_p09`, `cert_p01` empatan en los campos votados. `tijera_p08` trunca en Sonnet 5 (`stop_reason=max_tokens`, JSON no parseable, `would_retry=true`) y Sonnet 5.5 cierra `end_turn` con JSON parseable. No hay `SAFETY_FAIL` nuevo. El costo Batch medido con usage de Anthropic es USD `0.211086` para Sonnet 5 y USD `0.159355` para Sonnet 5.5. Direct USD `0`. No se reintentó `tijera_p08` por Direct.
+- `not_scored`: `tijera_p16` enruta a `MODEL_MULTIMODAL`. El compendio Gonzalo queda `NOT_AVAILABLE` porque la página muestreada es `scanned_dense`. `orona_p01`, `orona_p06` y `montacargas_p01` se prepararon y no se enviaron. No votan.
+- `findings`:
+  1. `CONFIRMED`. I1. En las cinco unidades scored, Sonnet 5.5 no agrega un `FAIL` donde Sonnet 5 tenía `PASS`, no agrega `SAFETY_FAIL` y no falla el contrato estructural.
+  2. `CONFIRMED`. `MODEL_TEXT` es `claude-sonnet-5-5`. El builder bulk y el batch web de texto lo usan. El retry Direct sin modelo de página también.
+  3. `CONFIRMED`. Field Photo sigue eligiendo `DEFAULT_MODEL` o `MODEL_MULTIMODAL`. La línea de modelo del servicio no lee `MODEL_TEXT`.
+  4. `CONFIRMED`. `claude-sonnet-5-5-batch` tiene input `0.001`, output `0.005`, cache read `0.0001`, cache creation `0.00125`. `pricing_for` no cae en `default`. `claude-sonnet-5-5-direct` sigue en `0.002` / `0.01` / `0.0002` / `0.0025` y tampoco cae en `default`.
+  5. `CONFIRMED`. `INGESTION_CONTRACT_VERSION` sigue `field_records_v8`. El fingerprint de `BatchChunkingPrompt` sigue `e5b574784ff78547886919fe388edd51decbc13b0a37cfbd11bc041ff4ac1172`. El de Field Photo sigue `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`.
+  6. `CONFIRMED`. El primer batch de Sonnet 5, `msgbatch_018dHEzmkEqpD8dgQJQpqUBu`, quedó cancelado con 0 succeeded y no entra en el score. El control válido es `msgbatch_01DUg2djyq7RUkoUz9wY4oHD`.
+  7. `NEW`. Sonnet 5 y Sonnet 5.5 devolvieron un bloque `thinking` delante del texto. El parser de ingesta se queda con el primer bloque `text`. Un test lo fija. No se cambió el prompt para apagar thinking.
+  8. `REJECTED`. Correr un segundo benchmark Direct sobre `tijera_p08`. El retry no se pagó. La compatibilidad del fallback queda en el test que captura `MODEL_TEXT`.
+- `derived_decisions`:
+  - La ingesta Batch de texto y el retry Direct sin modelo de página usan `claude-sonnet-5-5`.
+  - Field Photo no se recablea a `MODEL_TEXT`.
+  - `INGESTION_CONTRACT_VERSION` no se sube. El id del modelo no invalida la deduplicación.
+  - El precio Batch publicado es el mismo. En estas cinco páginas Sonnet 5.5 costó menos por menos tokens de salida. Eso no es el gate.
+- `future_phases_changed`:
+  - F3. `reason`: revisada, sin edición de contrato. No arranca. El modelo de ingesta no cambia el score ni la elegibilidad. El prompt completo es el Anexo E.
+  - F4. `reason`: revisada, sin edición. Sigue sin `BLOCKED`. El prompt de F4 lo reescribe F3, no F2B.
+  - F5. `reason`: revisada, sin edición. Una observación nueva de chat sigue pudiendo persistir `claude-sonnet-5-5-direct` o `claude-opus-5-5-direct`.
+  - F6. `reason`: revisada, sin edición.
+  - F7. `reason`: revisada, sin edición.
+  - F8. `reason`: revisada, sin edición.
+- `next_phase_prompt_path`: `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md` (Anexo E)
 
 ## Anexo A — prompt de F0
 
@@ -1190,6 +1274,8 @@ Más el test nuevo de la letra, en la misma invocación o en una seguida. Un sol
 
 ## Anexo D — prompt de F2B
 
+Anexo D ya se ejecutó. La decisión fue I1. `MODEL_TEXT` pasó a `claude-sonnet-5-5`. El padre efectivo es `c4f5f2deea7357741dfff463896747178dde5d24`. El texto que sigue es el prompt que se recibió.
+
 Ejecutá solo F2B de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F2B es Ingestion Model Refresh. El objetivo es comparar `claude-sonnet-5` y `claude-sonnet-5-5` sobre el payload real de Anthropic Batch API. No ejecutes F3. No hagas deploy. No reabras F2. No cambies Field Photo. No pidas una decisión a Lahiri.
 
 `git rev-parse HEAD^` tiene que ser `7f32d4837842e1e7e78ef652778a54860511b5f4`. Si no lo es, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F2B. Ese HEAD es el commit de F2. El árbol de este anexo no contiene el SHA de F2B.
@@ -1236,3 +1322,76 @@ Regla congelada antes de mirar salidas. `MODEL_TEXT` pasa a `claude-sonnet-5-5` 
 ### Cierre de F2B
 
 En este orden: tests; el regression gate de este plan; artefacto con SHA256, modelos, tokens, latencia de batch si el proveedor la da, costo Batch y costo Direct por separado; Execution State; findings; revisión de F3–F8; reescritura completa del prompt de la fase siguiente. Si F2B queda `BLOCKED` por dataset, el prompt siguiente no llama modelos y no cambia `MODEL_TEXT`. No ejecutes F3 en el mismo chat. `head_final` no se escribe dentro del árbol.
+
+## Anexo E — prompt de F3
+
+Ejecutá solo F3 de `docs/PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md`. F3 es Discovery A, suggest-only. No ejecutes F4. No hagas deploy. No reabras F2 ni F2B. No cambies `BatchChunkingPrompt::MODEL_TEXT`, `MODEL_MULTIMODAL`, `FieldPhotoAnalysisService::DEFAULT_MODEL`, `FieldPhotoPrompt`, `INGESTION_CONTRACT_VERSION`, `RagRetrievalProfile`, pins, autorización, `generation.txt` ni el renderer de procedencia. No llames a un modelo. No pidas una decisión a Lahiri.
+
+F2B está `PASS` con gate `I1`. `MODEL_TEXT` ya es `claude-sonnet-5-5`. El padre del commit de F2B es `c4f5f2deea7357741dfff463896747178dde5d24`. `git rev-parse HEAD^` tiene que ser ese SHA. Si no lo es, `STOP`. Anotá `git rev-parse HEAD` como `head_initial` de F3. Ese HEAD es el commit de F2B. El árbol de este anexo no contiene el SHA de F3 ni el de F2B.
+
+### Qué no cambia
+
+- El score de la sección 5 no gana ni pierde puntos por `knowledge_scope`.
+- `tie_at_top` no elige un manual y no escribe un pin.
+- El síntoma no dispara retrieve.
+- F3 no escribe `active_entities`.
+- F3 no llama a Bedrock ni a Anthropic para rankear.
+- Como máximo 3 tarjetas.
+- Un `PRIVATE` o `UNCLASSIFIED` de otra cuenta no se muestra.
+- No se aprueba ningún documento como `danebo_general`.
+- No se copia un `KbDocument`, no se copia S3 y no se reindexa.
+
+### Score
+
+Copiá `FieldCompanion::DiscoveryScore` a `app/services/rag/manual_candidate_ranker.rb` sin alterar puntos, desempate ni textos fijos de la sección 5. La función de F0 en `script/field_companion/discovery_score.rb` sigue siendo el original. El servicio de runtime no puede divergir.
+
+Textos fijos, una sola vez:
+
+- Solo marca: `manual de la misma marca; compatibilidad con este equipo no confirmada`. Etiqueta `BRAND_ONLY`.
+- Designador exacto: `el documento coincide con el modelo/designador indicado`. Etiqueta `EXACT_DESIGNATOR`.
+- Cero candidatos, o más de un fabricante: `No encontré un manual claramente asociado a esa identidad en la biblioteca actual.`
+
+Procedencia documental de la tarjeta, que no es la procedencia de la respuesta:
+
+- `danebo_general`: `Biblioteca general de Danebo`
+- `tenant_private` de la cuenta del técnico: `Tu biblioteca`
+
+### Paridad
+
+Estos dos archivos tienen que existir y coincidir byte a byte. Si falta el de score, F3 = `BLOCKED` y no hay tarjetas.
+
+- `tmp/field_companion/f0_discovery.json` SHA256 `0119f27bd05a86efe5371008bd1886f9791bf5d427eea1364682adad9b9e5ee0`
+- `tmp/field_companion/f0_discovery_eligible.json` SHA256 `47efb001265ee5985fd33cee156054acd81b9fad8736e111ac4291914cbeff36`
+
+Un test carga `f0_discovery.json` y exige, por cada frase de `fixture` y de `holdout`, la misma lista ordenada de `document_ids` que devuelve el ranker antes del filtro de scope. Otro test carga `f0_discovery_eligible.json`. El viewer no owner es la cuenta `5`, slug `elevadores-climb`. Con `general_approved_count` 0, esa lista no le entrega documentos del ranking técnico. `precision_at_3`, `top1_accuracy` y `wrong_brand_candidate_rate` del artefacto de F0 no se recalculan para cambiar la función.
+
+F0 confirmó `existing_document_id_session_pin` con `reindex_required = false` y `duplicate_document_required = false`. F4 no queda `BLOCKED` por eso. F3 igual no implementa el tap.
+
+### Elegibilidad
+
+Antes de devolver candidatos, descartá los que el tenant no puede usar. El orden que sobrevive es el orden del score.
+
+Tests con fixtures, sin red:
+
+- Un `PRIVATE` de otra cuenta no entra.
+- Un `UNCLASSIFIED` de Legacy o Pilot no entra para otro tenant.
+- Un `GENERAL_APPROVED` entra, con el mismo orden que le habría dado el score, y con el texto de biblioteca general.
+- Adjuntar scope no cambia los puntos de la sección 5.
+- `tie_at_top` muestra hasta 3 tarjetas y no elige una.
+- El síntoma, sin fabricante reconocido, no arma tarjetas y no llama a retrieve.
+
+Si el archivo de elegibilidad falta pero el de score está, F3 puede sugerir solo los `tenant_private` de la cuenta del técnico. No sugiere `UNCLASSIFIED` ni `PRIVATE` ajenos. No inventes un `GENERAL_APPROVED`.
+
+### Superficie
+
+La sugerencia vive en el chat web autenticado, en la misma respuesta donde el técnico nombró marca o designador. No es un pin. No es un mensaje de manual. No uses `SemanticQueryAnalyzer` para elegir el manual. No subas top-k. No filtres Bedrock por fabricante.
+
+### Telemetría
+
+Agregá a `PilotUsageLog::ALLOWED_FIELDS`, y solo esto: `suggestion_document_uids` y `suggestion_scopes`. El segundo es un array de `tenant_private` o `danebo_general`, en el mismo orden que los uids. Extendé el test de campos desconocidos: una clave fuera de la lista no aparece en la línea `[PILOT_USAGE]`. Evento `manual_suggestion_shown`. No agregues `manual_suggestion_dismissed` ni `knowledge_scope`: eso es F4.
+
+### Cierre de F3
+
+En este orden: tests del ranker y de la elegibilidad; el regression gate de este plan; Execution State; findings; revisión de F4–F8; reescritura completa del prompt de F4 con los hashes reales de `f0_discovery.json` y `f0_discovery_eligible.json`. No ejecutes F4. No hagas deploy. `head_final` no se escribe dentro del árbol.
+
+Commit, un solo commit de F3. El mensaje dice que la sugerencia no escribe un pin.

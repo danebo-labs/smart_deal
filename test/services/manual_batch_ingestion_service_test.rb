@@ -94,9 +94,9 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
     )
 
     models = fake_client.submitted_requests.map { |r| r[:params][:model] }
-    assert_equal "claude-sonnet-5", BatchChunkingPrompt::MODEL_TEXT
-    assert models.all? { |m| m == "claude-sonnet-5" },
-           "expected Sonnet 5 for batch text ingestion, got: #{models.inspect}"
+    assert_equal "claude-sonnet-5-5", BatchChunkingPrompt::MODEL_TEXT
+    assert models.all? { |m| m == "claude-sonnet-5-5" },
+           "expected Sonnet 5.5 for batch text ingestion, got: #{models.inspect}"
   ensure
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)

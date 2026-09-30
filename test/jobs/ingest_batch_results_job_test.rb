@@ -31,6 +31,20 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
     end
   end
 
+  test "extract_text skips a leading thinking block and parses the text json" do
+    message = {
+      "content" => [
+        { "type" => "thinking", "thinking" => "hidden" },
+        { "type" => "text", "text" => '{"document_name":"manual"}' }
+      ]
+    }
+
+    text = IngestBatchResultsJob.new.send(:extract_text, message)
+
+    assert_equal '{"document_name":"manual"}', text
+    assert LlmJsonParser.parseable?(text)
+  end
+
   # ── Constants ─────────────────────────────────────────────────────────────────
 
   PHOTO_JSON = JSON.generate({

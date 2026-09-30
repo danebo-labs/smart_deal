@@ -55,7 +55,7 @@ class ContractualLimitsTest < ActiveSupport::TestCase
     assert_equal [ FieldPhotoAnalysisService::DEFAULT_MODEL, BatchChunkingPrompt::MODEL_MULTIMODAL ],
                  ContractualLimits::PHOTO[:allowed_models]
     assert_equal "claude-sonnet-5-5", ContractualLimits::PHOTO[:allowed_models].first
-    assert_equal "claude-sonnet-5", BatchChunkingPrompt::MODEL_TEXT
+    assert_equal "claude-sonnet-5-5", BatchChunkingPrompt::MODEL_TEXT
   end
 
   test "manual filter limits match PageRelevanceFilter window size and bounded retry" do

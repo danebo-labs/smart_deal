@@ -84,6 +84,11 @@ class BedrockQuery < ApplicationRecord
     # Opus 5.5: $4/$20 standard; Sonnet 5: $2/$10 standard. Batch is 50% off.
     'claude-opus-5-5-batch'                            => { input: 0.002,   output: 0.01,    cache_read: 0.0001,   cache_creation: 0.0025   },
     'claude-sonnet-5-batch'                            => { input: 0.001,   output: 0.005,   cache_read: 0.0001,   cache_creation: 0.00125  },
+    # Sonnet 5.5 Batch. Field Companion F2B. Same published Batch rates as Sonnet 5.
+    # Not an alias of claude-sonnet-5-batch and not default.
+    # https://platform.claude.com/docs/en/about-claude/pricing (2026-09-29): Batch $1 / $5 per MTok.
+    # Five-minute cache write stacks at 1.25x. Cache read is 0.1x.
+    'claude-sonnet-5-5-batch'                          => { input: 0.001,   output: 0.005,   cache_read: 0.0001,   cache_creation: 0.00125  },
     # Anthropic Direct API. Suffix -direct emitted by ClaudeChunkingClient / IngestBatchResultsJob.
     'claude-opus-4-7-direct'                           => { input: 0.005,   output: 0.025,   cache_read: 0.0005,   cache_creation: 0.00625  },
     'claude-opus-4-8-direct'                           => { input: 0.005,   output: 0.025,   cache_read: 0.0005,   cache_creation: 0.00625  },

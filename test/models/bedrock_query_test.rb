@@ -186,9 +186,20 @@ class BedrockQueryTest < ActiveSupport::TestCase
 
   test 'anthropic batch pricing for upgraded models' do
     sonnet = BedrockQuery.new(model_id: 'claude-sonnet-5-batch', input_tokens: 1000, output_tokens: 1000)
+    sonnet55 = BedrockQuery.new(
+      model_id: 'claude-sonnet-5-5-batch',
+      input_tokens: 1000,
+      output_tokens: 1000,
+      cache_read_tokens: 1000,
+      cache_creation_tokens: 1000
+    )
     opus = BedrockQuery.new(model_id: 'claude-opus-5-5-batch', input_tokens: 1000, output_tokens: 1000)
 
     assert_equal 0.006, sonnet.cost
+    assert_equal 0.00735, sonnet55.cost
+    assert_same BedrockQuery::BEDROCK_PRICING.fetch('claude-sonnet-5-5-batch'), sonnet55.pricing_for
+    assert_not_equal BedrockQuery::BEDROCK_PRICING.fetch('default'), sonnet55.pricing_for
+    assert_not_same sonnet.pricing_for, sonnet55.pricing_for
     assert_equal 0.012, opus.cost
   end
 end

@@ -686,31 +686,45 @@ Si coinciden, escribe como hoy. Si no coinciden, no modifica `active_episode`, p
 
 #### Foto
 
-En el enqueue, después del turno de ese request:
+La pertenencia de una foto NO se infiere por proximidad temporal. Un `anchor_at` por sí solo no demuestra que un Case abierto segundos después sea el mismo trabajo físico.
 
-```text
-parsed = ActiveEpisode.parse(session.active_episode, now: now)
-expected_episode_id = nil si parsed.blank?, si no parsed.episode_id
-anchor_at = now
-```
+Antes de encolar `FieldPhotoAnalysisJob`, con `FIELD_COMPANION_EPISODE_ENABLED=true`, el request obtiene un Case owner de forma síncrona:
 
-Esos dos valores viajan como argumentos del job. No hay columna nueva.
+1. si ya hay un `ActiveEpisode` vivo, usa su `episode_id`;
+2. si el JSON guardado está expirado, aplica primero el cleanup de expiry y abre un `ActiveEpisode` nuevo para esta foto;
+3. si no hay episodio vivo ni expirado, abre un `ActiveEpisode` nuevo para esta foto;
+4. persiste ese episodio antes del enqueue y pasa siempre su id como `expected_episode_id`.
 
-`photo_write_owned?`, dentro del lock, después del cleanup de expiry si el JSON guardado está vencido:
+Esta operación debe ser atómica bajo el lock de `ConversationSession`. Puede implementarse como una primitive pequeña, por ejemplo `ensure_case_for_photo_submission!`, que devuelve el `episode_id` owner. No crea fila, tabla ni columna.
 
-1. `expected_episode_id` presente y `current_episode_id == expected_episode_id`; o
-2. `expected_episode_id` nil y no hay episodio vivo: este write puede abrir el Case, ya con los pins viejos limpiados; o
-3. `expected_episode_id` nil, hay episodio vivo, `opened_at >= anchor_at` y `opened_at <= anchor_at + EPISODE_WINDOW`.
+Con la flag de episodio apagada no cambia el comportamiento legacy y no se exige ownership.
 
-Si no es owned: no mutar `active_episode`, `active_photo`, manufacturer, model, facts, conflicts, pending, pins ni `current_procedure`, y no agregar historial assistant. El broadcast de UI sigue. Orden y display de un resultado tardío quedan en R3. Log `stale_case_write_dropped` con `writer=photo_observation` o `writer=photo_assistant`.
+`record_photo_observation!` compara dentro del lock el `expected_episode_id` del job con el episodio vivo actual:
 
-La regla 3 cubre la foto enviada sin Case cuyo análisis termina después de que un texto abrió el episodio X a los pocos segundos. No cubre un episodio abierto más de 4 horas después de `anchor_at`.
+- MATCH: puede escribir como hoy;
+- MISMATCH o ausencia inesperada de owner con la flag encendida: no muta `active_episode`, `active_photo`, manufacturer, model, facts, conflicts, pending, pins ni `current_procedure`, y no agrega historial assistant.
+
+Los dos `record_assistant_turn!` del flujo de foto usan el mismo `expected_episode_id`.
+
+El broadcast de UI puede seguir. Orden y display de un resultado tardío quedan en R3. Log `stale_case_write_dropped` con `writer=photo_observation` o `writer=photo_assistant`.
+
+Consecuencia: una foto enviada sin Case **inicia el Case en el momento de la submission**, antes del trabajo async. Si luego el usuario realmente abre otro Case mientras visión procesa, el `episode_id` cambia y la foto vieja ya no puede mutar el Case nuevo.
 
 #### Auto-pin
 
+`KbDocument.created_at` NO es un ownership anchor válido: el row se crea dentro de `UploadAndSyncAttachmentsJob`, que ya es async y puede comenzar después de que el usuario haya cambiado de Case. `WebManualBatch.created_at` tampoco prueba la submission original porque esa fila se crea aún más tarde, dentro de la cadena batch.
+
+Por tanto R1B no usa timestamps de filas creadas por el pipeline para inferir ownership.
+
 Con `FIELD_COMPANION_EPISODE_ENABLED` distinto de `"true"`, `register_entity` sigue pineando como hoy.
 
-Con la flag en `"true"`, auto-pinea sólo si hay episodio vivo y `kb_document.created_at >= opened_at` de ese episodio. Si no puede probarlo, no llama a `pin_kb_document!`. El documento queda indexado y se puede pinear a mano. Un upload que crea la fila antes de que exista episodio no auto-pinea: es el fail-open aceptado, y evita pinear el manual de A dentro de B.
+Con la flag en `"true"`, un auto-pin async sólo puede ejecutarse si la cadena conserva un `expected_episode_id` explícito capturado en la submission y éste coincide con el Case vivo al terminar.
+
+- Para una ruta async corta donde ese id pueda viajar por los argumentos hasta `BedrockIngestionJob`, comparar bajo lock y auto-pinnear sólo con MATCH.
+- La ruta long-manual pasa por `WebManualBatch` y el poll posterior rehidrata contexto desde esa fila; hoy no existe un campo durable de episode ownership. R1B NO agrega columna ni migration. Por lo tanto, si esa cadena no puede demostrar el `expected_episode_id` original al llegar a `register_entity`, **no auto-pinea**.
+- El manual igualmente queda indexado, visible y disponible para pin manual. Éste es el fail-open de seguridad elegido para MVP.
+
+No usar `KbDocument.created_at`, `WebManualBatch.created_at`, `submitted_at` ni otro timestamp tardío como sustituto de ownership.
 
 #### Historial
 
@@ -727,9 +741,9 @@ El cleanup y el release de pin quedan persistidos antes de `entity_s3_uris`. En 
 ### Implementation steps
 
 1. Argumento `expected_episode_id:` en `record_assistant_turn!`. Mismatch: return sin `update!` de estado ni de historial, con el log.
-2. `record_photo_observation!` aplica el cleanup de expiry de la fase 1 antes de abrir, y exige `photo_write_owned?`.
-3. Encolar la foto con `expected_episode_id` y `anchor_at` en los dos `perform_later`.
-4. `register_entity` aplica el predicado de `created_at` contra `opened_at`.
+2. Agregar una primitive atómica de submission de foto (por ejemplo `ensure_case_for_photo_submission!`): limpia expiry si corresponde, reutiliza el Case vivo o abre uno nuevo, persiste y devuelve `expected_episode_id`.
+3. Encolar la foto y los paths reuse/reread con ese `expected_episode_id`. El job y sus dos assistant writes deben conservar el mismo owner.
+4. Propagar `expected_episode_id` por cualquier ruta de upload async corta que pueda preservarlo hasta `BedrockIngestionJob`. En la ruta long-manual, si el ownership se pierde al rehidratar desde `WebManualBatch`, desactivar sólo el auto-pin; no inferirlo por timestamps.
 5. Piso `opened_at` en los cuatro lectores. `prior_user_turns` del turno en curso se calcula antes de abrir el episodio nuevo.
 6. Probe: además de `R1B_CASE_PROBE` (`conversation_session_id`, `episode_before`, `episode_after`, `case_boundary_reason`, `pin_release_reason`, `pins_before`, `pins_after`, `active_photo_before`, `active_photo_after`), el drop emite `stale_case_write_dropped` con writer, expected, current y `dropped=true`. Sin contenido sensible.
 
@@ -739,13 +753,13 @@ Flags encendidas. Reloj virtual. Orchestrator stubbeado. Sin Bedrock real. Sin `
 
 1. Late text writer. Episodio A. Otro request abre B. `record_assistant_turn!(expected_episode_id: A)` deja B intacto, no mete pending de A ni la respuesta en `conversation_history`. La telemetría puede emitirse.
 2. Late photo writer. Foto con expected A y B ya abierto. B no recibe `active_photo`, manufacturer ni model de A. Los assistant writes de esa foto no entran al state ni al historial.
-3. Foto sin Case. `expected_episode_id` nil, `anchor_at = T0`. Durante el análisis un texto abre X con `opened_at` dentro de la ventana. Al terminar, la foto puede escribir en X. Si X abre después de `anchor_at + EPISODE_WINDOW`, no escribe.
+3. Foto sin Case. La submission abre/persiste síncronamente episode X y encola el job con `expected_episode_id=X`. Si un texto continúa X mientras visión procesa, la foto puede escribir. Si otro turno abre B antes de terminar, la foto de X no muta B. No existe autorización por mera proximidad temporal.
 4. Expiry + `hola` queda cubierto en la fase 1. Aquí la query KONE siguiente no ve la URI Elemont.
 5. Expiry + foto como primera acción. Los pins del Case viejo se limpian antes de escribir el estado de la foto nueva.
 6. Pin a T0+20 s se limpia en el expiry. Pin posterior a `T0 + EPISODE_WINDOW` se conserva. Cubierto en la fase 1 y reafirmado en el scope.
 7. Re-pin explícito post-expiry renueva `added_at`. Fase 1.
 8. Carrera de pin. Fase 1.
-9. Auto-pin. Upload de A, B ya vigente al terminar: no hay pin. A sigue vigente: sí hay pin. Flag de episodio apagada: el comportamiento legacy se conserva.
+9. Auto-pin. Ruta con ownership explícito A: si A sigue vigente al terminar, auto-pin; si B ya está vigente, no hay pin. Ruta long-manual que perdió el ownership al rehidratar desde `WebManualBatch`: no auto-pin con la flag encendida. Flag de episodio apagada: comportamiento legacy preservado.
 10. Corrección Elemont → KONE y un `record_assistant_turn!` del mismo `episode_id` que termina después. El pin incompatible no reaparece. El writer no escribe `active_entities`.
 11. Siguen pasando: `K1`, follow-up corto, foto del mismo Case, assistant del mismo Case, miss con pin que no abre el corpus, corrección sólo de modelo que conserva el pin, `:continued_mention`, y varias preguntas sobre el mismo manual pineado.
 
@@ -858,13 +872,13 @@ Nada sobre `ConversationSession`. Volver a entrar a los 5 minutos conserva el ca
 
 ### What owns an async/synchronous write?
 
-El `episode_id` capturado cuando el trabajo empieza, después de `record_user_turn!` si ese request escribió episodio. La foto también lleva `anchor_at` del enqueue. No hay versión de estado nueva ni columna nueva. El writer compara ese id con el episodio vivo dentro del lock.
+El `episode_id` capturado cuando el trabajo empieza, después de `record_user_turn!` si ese request escribió episodio. Una submission de foto sin Case abre/persiste síncronamente su propio `ActiveEpisode` antes del enqueue y usa ese id. No hay versión de estado nueva ni columna nueva. El writer compara ese id con el episodio vivo dentro del lock.
 
 ### What happens when expected_episode_id != current_episode_id?
 
 No se modifica el Case actual: ni episodio, ni pending, ni facts, ni identifiers, ni conflicts, ni foto, ni procedimiento, ni pins. Se emite `stale_case_write_dropped`. La telemetría y el `correlation_id` siguen. La UI de la foto puede mostrar el resultado; el orden en el browser es de R3.
 
-Excepción de la foto: `expected_episode_id` nil y el Case vivo cumple `opened_at >= anchor_at` y `opened_at <= anchor_at + EPISODE_WINDOW`, o no hay Case vivo y este write es el que lo abre después del cleanup de expiry. Eso es owned.
+No hay excepción temporal para la foto. Con la flag de episodio encendida, toda foto encolada debe tener un `expected_episode_id` owner. Si no coincide con el Case vivo cuando termina, el write se descarta del state/history.
 
 ### What happens to conversation_history for a stale writer?
 
@@ -884,7 +898,7 @@ El usuario volvió a elegir ese documento. `pin_kb_document!` escribe `added_at 
 
 ### How does auto-pin prove ownership?
 
-Con la flag de episodio apagada, no tiene que probarlo: sigue el comportamiento actual. Con la flag encendida, sólo pinea si hay episodio vivo y `KbDocument.created_at >= opened_at`. Si no, el manual queda indexado y sin pin automático.
+Con la flag de episodio apagada, sigue el comportamiento actual. Con la flag encendida, el auto-pin requiere un `expected_episode_id` explícito de la submission y MATCH con el Case vivo. Si una cadena async no conserva ese owner —hoy, en particular, la ruta long-manual que rehidrata desde `WebManualBatch`— no auto-pinea. El manual queda indexado y disponible para pin manual. No se infiere ownership desde `KbDocument.created_at` ni desde timestamps del batch.
 
 ### Is a migration required?
 
@@ -913,7 +927,7 @@ Pilot readiness sigue `NOT YET`. R1B no cierra la golden query en `:continued_me
 
 `READY_FOR_FINAL_PLAN_REVIEW`
 
-La arquitectura base del red-team se mantiene. Los cinco required edits están en este documento: ownership de texto, ownership de foto con `anchor_at`, expiry independiente de `:opened`, corte `added_at <= updated_at + EPISODE_WINDOW`, y re-pin que renueva `added_at` bajo lock. El auto-pin es el late writer de ingestión. No hay R1C. Este documento no autoriza código.
+La arquitectura base del red-team se mantiene. Los cinco required edits están en este documento: ownership de texto, ownership explícito de foto mediante Case creado/capturado antes del enqueue, expiry independiente de `:opened`, corte `added_at <= updated_at + EPISODE_WINDOW`, y re-pin que renueva `added_at` bajo lock. El auto-pin es el late writer de ingestión y nunca infiere ownership desde timestamps tardíos. No hay R1C. Este documento no autoriza código.
 
 ## Residuals
 

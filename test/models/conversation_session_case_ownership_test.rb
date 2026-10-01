@@ -174,7 +174,7 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
     assert_equal({}, session.reload.active_episode)
   end
 
-  test "an expired photo submission clears the previous case before the new photo state" do
+  test "an expired photo submission opens a new case and keeps the selected manual" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-photo.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -204,10 +204,11 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
         session.reload
         assert_not_equal "ep_old", owner
         assert_equal owner, session.live_episode_id
-        assert_empty session.active_entities
+        assert session.find_entity_by_kb_document_id(elemont.id)
+        assert_equal 1, session.active_entities.size
         assert_equal({}, session.current_procedure)
         assert_nil session.active_episode["active_photo"]
-        assert_empty SessionContextBuilder.entity_s3_uris(session)
+        assert_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
 
         session.record_photo_observation!(
           photo_value: photo_reading("KONE", "MonoSpace"),
@@ -219,12 +220,16 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
         episode = session.reload.active_episode
         assert_equal owner, episode["episode_id"]
         assert_equal "new-photo", episode.dig("active_photo", "sha256")
-        assert_empty session.active_entities
+        assert_equal "KONE", episode.dig("facts", "manufacturer", "value")
+        assert_equal "photo", episode.dig("facts", "manufacturer", "source")
+        assert_equal "MonoSpace", episode.dig("facts", "model", "value")
+        assert session.find_entity_by_kb_document_id(elemont.id)
+        assert_equal 1, session.active_entities.size
       end
     end
   end
 
-  test "a same-episode assistant turn does not restore a pin released by manufacturer correction" do
+  test "a same-episode assistant turn keeps the pin after a manufacturer correction" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-assist.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -238,7 +243,8 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
         session.pin_kb_document!(elemont)
         result = session.record_user_turn!(CORRECTION, user_id: users(:one).id, correlation_id: "query:correct")
         assert_equal :corrected, result.decision
-        assert_nil session.reload.find_entity_by_kb_document_id(elemont.id)
+        assert_equal "KONE", session.reload.active_episode.dig("facts", "manufacturer", "value")
+        assert session.find_entity_by_kb_document_id(elemont.id)
 
         session.record_assistant_turn!(
           "Reviso el manual KONE. ¿Sabes el modelo?",
@@ -249,8 +255,9 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
 
         session.reload
         assert_equal "ep_elemont", session.active_episode["episode_id"]
-        assert_nil session.find_entity_by_kb_document_id(elemont.id)
-        assert_empty SessionContextBuilder.entity_s3_uris(session)
+        assert session.find_entity_by_kb_document_id(elemont.id)
+        assert_equal 1, session.active_entities.size
+        assert_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
         assert_equal "model", session.active_episode.dig("pending_fact", "subject")
       end
     end
@@ -349,23 +356,26 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
           )
         )
         session.pin_kb_document!(elemont)
+        episode_id = session.reload.active_episode["episode_id"]
         events = capture_case_logs do
           session.record_user_turn!(CORRECTION, user_id: users(:one).id, correlation_id: "query:correct")
         end
-        probe = events.find { |event| event["event"] == "R1B_CASE_PROBE" }
-        assert_nil probe["case_boundary_reason"]
-        assert_equal "corrected_manufacturer_mismatch", probe["pin_release_reason"]
-        assert_equal probe["episode_before"], probe["episode_after"]
-        assert_includes probe["pins_before"], elemont.id
-        assert_empty probe["pins_after"]
-        assert_not_includes JSON.generate(probe), CORRECTION
+        assert events.none? { |event| event["event"] == "R1B_CASE_PROBE" }
+        session.reload
+        assert_equal "KONE", session.active_episode.dig("facts", "manufacturer", "value")
+        assert_equal episode_id, session.active_episode["episode_id"]
+        assert session.find_entity_by_kb_document_id(elemont.id)
 
         events = capture_case_logs do
           session.record_user_turn!(NEW_CASE, user_id: users(:one).id, correlation_id: "query:new")
         end
         opened = events.find { |event| event["event"] == "R1B_CASE_PROBE" }
         assert_equal "new_episode", opened["case_boundary_reason"]
+        assert_nil opened["pin_release_reason"]
         assert_not_equal opened["episode_before"], opened["episode_after"]
+        assert_includes opened["pins_before"], elemont.id
+        assert_includes opened["pins_after"], elemont.id
+        assert session.reload.find_entity_by_kb_document_id(elemont.id)
       end
     end
   end

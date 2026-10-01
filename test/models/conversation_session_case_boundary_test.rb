@@ -10,7 +10,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
   OPENING_PHRASE = "Cómo se ajustan los resortes de la fijación de cables ?"
   GOLDEN_PHRASE = "En las instrucciones de instalación del KONE MonoSpace Special para máquinas MX05, MX06 y MX10 con variadores V3F18, ¿cuál es la referencia del documento, la revisión y la fecha?"
 
-  test "a new episode on a live case clears pins and procedure and keeps history" do
+  test "a new episode on a live case keeps pins, clears procedure, and keeps history" do
     session = web_session
     original_expires = session.expires_at
     elemont = manual("elemont-live.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -31,22 +31,24 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       session.reload
       assert_equal :new_episode, result.decision
       assert_not_equal previous_id, session.active_episode["episode_id"]
-      assert_empty session.active_entities
+      assert session.find_entity_by_kb_document_id(elemont.id)
+      assert_equal 1, session.active_entities.size
       assert_equal({}, session.current_procedure)
       assert_nil session.active_episode["active_photo"]
       assert_nil session.active_episode["pending_fact"]
       assert_equal [ OPENING_PHRASE, NEW_CASE_PHRASE ], session.conversation_history.pluck("content")
       assert_operator session.expires_at, :>=, original_expires
-      assert_empty SessionContextBuilder.entity_s3_uris(session)
-      assert_equal "open", retrieval_scope([]).reason
+      uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
+      assert_includes SessionContextBuilder.entity_s3_uris(session), uri
+      assert_equal "pin_only", retrieval_scope([ uri ]).reason
     end
   end
 
-  test "an Elemont to KONE correction releases only the incompatible pin" do
+  test "an Elemont to KONE correction changes the manufacturer and keeps every pin" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-correct.pdf", "Elemont Montacargas Hidraulico Modelo MH")
-    generic = manual("generic-correct.pdf", "Procedimiento de engrase")
+    vf5 = manual("vf5-correct.pdf", "VF5 Fermator")
     both = manual("both-correct.pdf", "Elemont KONE referencia")
     procedure = { "step" => 2 }
 
@@ -54,24 +56,29 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       with_case_flags do
         seed_episode(session, episode_id: "ep_elemont", at: at, facts: { "manufacturer" => manufacturer_fact("Elemont", at) }, procedure: procedure)
         session.pin_kb_document!(elemont)
-        session.pin_kb_document!(generic)
+        session.pin_kb_document!(vf5)
         session.pin_kb_document!(both)
         result = session.record_user_turn!(CORRECTION_PHRASE, user_id: users(:one).id, correlation_id: "query:correct")
 
         session.reload
         assert_equal :corrected, result.decision
         assert_equal "ep_elemont", session.active_episode["episode_id"]
-        assert_nil session.find_entity_by_kb_document_id(elemont.id)
-        assert session.find_entity_by_kb_document_id(generic.id)
+        assert_equal "KONE", session.active_episode.dig("facts", "manufacturer", "value")
+        assert_equal "user", session.active_episode.dig("facts", "manufacturer", "source")
+        assert session.find_entity_by_kb_document_id(elemont.id)
+        assert session.find_entity_by_kb_document_id(vf5.id)
         assert session.find_entity_by_kb_document_id(both.id)
+        assert_equal 3, session.active_entities.size
         assert_equal procedure, session.current_procedure
-        assert_not_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
-        assert_equal "pin_only", retrieval_scope(SessionContextBuilder.entity_s3_uris(session)).reason
+        uris = SessionContextBuilder.entity_s3_uris(session)
+        assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
+        assert_includes uris, vf5.display_s3_uri(KbDocument::KB_BUCKET)
+        assert_equal "pin_only", retrieval_scope(uris).reason
       end
     end
   end
 
-  test "an Elemont-only pin becomes an open retrieve after the manufacturer correction" do
+  test "an Elemont-only pin stays selected after the manufacturer correction" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-only.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -85,11 +92,14 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         session.reload
         assert_equal :corrected, result.decision
         assert_equal "ep_only", session.active_episode["episode_id"]
-        assert_empty session.active_entities
-        assert_empty SessionContextBuilder.entity_s3_uris(session)
-        scope = retrieval_scope([])
-        assert_equal "open", scope.reason
-        assert_equal false, scope.force_entity_filter
+        assert_equal "KONE", session.active_episode.dig("facts", "manufacturer", "value")
+        assert session.find_entity_by_kb_document_id(elemont.id)
+        assert_equal 1, session.active_entities.size
+        uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
+        assert_equal [ uri ], SessionContextBuilder.entity_s3_uris(session)
+        scope = retrieval_scope([ uri ])
+        assert_equal "pin_only", scope.reason
+        assert_equal true, scope.force_entity_filter
       end
     end
   end
@@ -190,7 +200,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
     end
   end
 
-  test "hola after expiry clears the old pin and a later query sees no entity uri" do
+  test "hola after expiry keeps the old pin and clears the expired case" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-hola.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -207,19 +217,22 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         result = session.record_user_turn!("hola", user_id: users(:one).id, correlation_id: "query:hola", now: Time.current)
         session.reload
         assert_equal :no_episode, result.decision
-        assert_empty session.active_entities
+        assert session.find_entity_by_kb_document_id(elemont.id)
+        assert_equal 1, session.active_entities.size
         assert_equal({}, session.current_procedure)
         assert_equal({}, session.active_episode)
-        assert_empty SessionContextBuilder.entity_s3_uris(session)
-        assert_equal "open", retrieval_scope([]).reason
-        assert_equal false, retrieval_scope([]).force_entity_filter
+        uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
+        assert_equal [ uri ], SessionContextBuilder.entity_s3_uris(session)
+        scope = retrieval_scope([ uri ])
+        assert_equal "pin_only", scope.reason
+        assert_equal true, scope.force_entity_filter
         assert_operator session.expires_at, :>=, original_expires
         assert_equal session.id, ConversationSession.find(session.id).id
       end
     end
   end
 
-  test "an opening question after expiry clears the old pin and opens a new case" do
+  test "an opening question after expiry keeps the old pin and opens a new case" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-open.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -235,14 +248,14 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         assert_equal :opened, result.decision
         assert_not_equal "ep_before_open", session.active_episode["episode_id"]
         assert session.active_episode["episode_id"].present?
-        assert_empty session.active_entities
+        assert session.find_entity_by_kb_document_id(elemont.id)
         assert_equal({}, session.current_procedure)
-        assert_empty SessionContextBuilder.entity_s3_uris(session)
+        assert_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
       end
     end
   end
 
-  test "a reset phrase on an expired case uses the expiry cutoff instead of wiping every pin" do
+  test "a reset phrase on an expired case keeps pins from before and after the window" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     during = manual("reset-during.pdf", "Elemont durante el caso")
@@ -265,13 +278,14 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         session.reload
         assert_equal :new_episode, result.decision
         assert_not_equal "ep_reset_expired", session.active_episode["episode_id"]
-        assert_nil session.find_entity_by_kb_document_id(during.id)
+        assert session.find_entity_by_kb_document_id(during.id)
         assert session.find_entity_by_kb_document_id(after.id)
+        assert_equal 2, session.active_entities.size
       end
     end
   end
 
-  test "a skipped turn after expiry also clears pins of the expired case" do
+  test "a skipped turn after expiry keeps pins of the expired case" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-skip.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -291,13 +305,13 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         )
         session.reload
         assert_equal :skipped, result.decision
-        assert_empty session.active_entities
+        assert session.find_entity_by_kb_document_id(elemont.id)
         assert_equal({}, session.current_procedure)
       end
     end
   end
 
-  test "expiry keeps only a pin added after the case window" do
+  test "expiry keeps pins from inside the window, after it, and with a bad timestamp" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     during = manual("during.pdf", "Elemont durante")
@@ -322,16 +336,20 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       end
 
       session.reload
-      assert_nil session.find_entity_by_kb_document_id(during.id)
-      assert_nil session.find_entity_by_kb_document_id(missing.id)
-      assert_nil session.find_entity_by_kb_document_id(invalid.id)
+      assert session.find_entity_by_kb_document_id(during.id)
+      assert session.find_entity_by_kb_document_id(missing.id)
+      assert session.find_entity_by_kb_document_id(invalid.id)
       assert session.find_entity_by_kb_document_id(after.id)
-      assert_equal [ after.display_s3_uri(KbDocument::KB_BUCKET) ], SessionContextBuilder.entity_s3_uris(session)
+      assert_equal 4, session.active_entities.size
+      uris = SessionContextBuilder.entity_s3_uris(session)
+      [ during, missing, invalid, after ].each do |doc|
+        assert_includes uris, doc.display_s3_uri(KbDocument::KB_BUCKET)
+      end
       assert_equal({}, session.current_procedure)
     end
   end
 
-  test "an explicit re-pin after expiry renews added_at and survives the cleanup" do
+  test "an explicit re-pin after expiry renews added_at and keeps the other pin" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     renewed = manual("renewed.pdf", "Elemont renovado")
@@ -350,7 +368,8 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       end
 
       session.reload
-      assert_nil session.find_entity_by_kb_document_id(stale.id)
+      assert session.find_entity_by_kb_document_id(stale.id)
+      assert_equal 2, session.active_entities.size
       kept = session.active_entities.values.find { |meta| meta["kb_document_id"] == renewed.id }
       assert kept
       assert_equal expiry.to_i, Time.zone.parse(kept["added_at"]).to_i
@@ -374,35 +393,35 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
     end
   end
 
-  test "a stale in-memory pin set cannot resurrect pins cleared by expiry" do
+  test "expiry keeps both pins and a later explicit re-pin does not drop the other" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     kept = manual("race-kept.pdf", "Manual que se vuelve a pinear")
-    cleared = manual("race-cleared.pdf", "Manual que no debe volver")
+    other = manual("race-other.pdf", "Manual que sigue seleccionado")
 
     with_case_flags do
       travel_to(at) do
         seed_episode(session, episode_id: "ep_race", at: at)
         session.pin_kb_document!(kept)
-        session.pin_kb_document!(cleared)
+        session.pin_kb_document!(other)
       end
       stale = ConversationSession.find(session.id)
       assert_equal 2, stale.active_entities.size
 
       travel_to(at + ConversationSession::EPISODE_WINDOW + 1.second) do
         session.record_user_turn!("hola", user_id: users(:one).id, correlation_id: "query:race", now: Time.current)
-        assert_empty session.reload.active_entities
+        assert_equal 2, session.reload.entity_count
         assert stale.pin_kb_document!(kept)
       end
 
       reloaded = ConversationSession.find(session.id)
-      assert_equal 1, reloaded.entity_count
+      assert_equal 2, reloaded.entity_count
       assert reloaded.find_entity_by_kb_document_id(kept.id)
-      assert_nil reloaded.find_entity_by_kb_document_id(cleared.id)
+      assert reloaded.find_entity_by_kb_document_id(other.id)
     end
   end
 
-  test "an invalid episode drops its pins when the next substantive turn starts a case" do
+  test "an invalid episode keeps its pins when the next substantive turn starts a case" do
     session = web_session
     elemont = manual("elemont-invalid.pdf", "Elemont Montacargas Hidraulico Modelo MH")
     session.update!(
@@ -420,16 +439,17 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       assert_nil session.active_episode["active_photo"]
       assert_nil session.active_episode["pending_fact"]
       assert_nil session.active_episode.dig("facts", "manufacturer")
-      assert_empty session.active_entities
+      assert session.find_entity_by_kb_document_id(elemont.id)
       assert_equal({}, session.current_procedure)
-      assert_empty SessionContextBuilder.entity_s3_uris(session)
-      scope = retrieval_scope([])
-      assert_equal "open", scope.reason
-      assert_equal false, scope.force_entity_filter
+      uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
+      assert_includes SessionContextBuilder.entity_s3_uris(session), uri
+      scope = retrieval_scope([ uri ])
+      assert_equal "pin_only", scope.reason
+      assert_equal true, scope.force_entity_filter
     end
   end
 
-  test "an invalid episode drops its pins when the turn does not open a case" do
+  test "an invalid episode keeps its pins when the turn does not open a case" do
     session = web_session
     elemont = manual("elemont-invalid-hola.pdf", "Elemont Montacargas Hidraulico Modelo MH")
     session.update!(active_episode: invalid_episode, current_procedure: { "step" => 2 })
@@ -440,10 +460,11 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       session.reload
       assert_equal :no_episode, result.decision
       assert_equal({}, session.active_episode)
-      assert_empty session.active_entities
+      assert session.find_entity_by_kb_document_id(elemont.id)
       assert_equal({}, session.current_procedure)
-      assert_empty SessionContextBuilder.entity_s3_uris(session)
-      assert_equal "open", retrieval_scope([]).reason
+      uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
+      assert_equal [ uri ], SessionContextBuilder.entity_s3_uris(session)
+      assert_equal "pin_only", retrieval_scope([ uri ]).reason
     end
   end
 
@@ -474,9 +495,9 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       assert_equal owner, args["expected_episode_id"]
       assert_nil session.active_episode["active_photo"]
       assert_nil session.active_episode.dig("facts", "manufacturer")
-      assert_empty session.active_entities
+      assert session.find_entity_by_kb_document_id(elemont.id)
       assert_equal({}, session.current_procedure)
-      assert_empty SessionContextBuilder.entity_s3_uris(session)
+      assert_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
     end
   ensure
     Rails.cache = previous_cache if previous_cache
@@ -509,7 +530,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
     end
   end
 
-  test "start_new_case! clears pins and procedure without touching history or the row" do
+  test "start_new_case! keeps pins and clears procedure without touching history or the row" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     doc = manual("explicit.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -526,7 +547,8 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       session.reload
       assert_equal new_id, session.active_episode["episode_id"]
       assert_not_equal "ep_explicit", new_id
-      assert_empty session.active_entities
+      assert session.find_entity_by_kb_document_id(doc.id)
+      assert_equal 1, session.active_entities.size
       assert_equal({}, session.current_procedure)
       assert_equal [ "antes" ], session.conversation_history.pluck("content")
       assert_equal expires.to_i, session.expires_at.to_i

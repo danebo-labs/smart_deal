@@ -9,7 +9,7 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
   SINGLE_BRAND = "En realidad es KONE"
   GOAL = "ajuste de resortes"
 
-  test "conditional Elemont to KONE correction writes KONE and releases only the Elemont pin" do
+  test "conditional Elemont to KONE correction writes KONE and keeps every pin" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-conditional.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -42,12 +42,13 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
           assert_nil session.active_episode["goal"]
           assert_equal [ "CEA15" ], session.active_episode["identifiers"].pluck("value")
           assert_equal [ "manufacturer" ], session.active_episode["conflicts"].pluck("fact")
-          assert_nil session.find_entity_by_kb_document_id(elemont.id)
+          assert session.find_entity_by_kb_document_id(elemont.id)
           assert session.find_entity_by_kb_document_id(neutral.id)
+          assert_equal 2, session.active_entities.size
           uris = SessionContextBuilder.entity_s3_uris(session)
-          assert_not_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
+          assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
           assert_includes uris, neutral.display_s3_uri(KbDocument::KB_BUCKET)
-          assert_mismatch_probe(events, elemont, neutral)
+          refute_mismatch_release(events)
           slice = events.find { |event| event["event"] == "haiku_ownership_slice" }
           assert_equal "correct", slice["relation"]
           assert_equal true, slice["ownership_applied"]
@@ -56,7 +57,7 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
     end
   end
 
-  test "haiku off Elemont to KONE correction matches the conditional pin contract" do
+  test "haiku off Elemont to KONE correction writes KONE and keeps every pin" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-off.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -87,12 +88,13 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
           assert_equal GOAL, session.active_episode.dig("goal", "text")
           assert_equal [], session.active_episode["identifiers"]
           assert_equal [], session.active_episode["conflicts"]
-          assert_nil session.find_entity_by_kb_document_id(elemont.id)
+          assert session.find_entity_by_kb_document_id(elemont.id)
           assert session.find_entity_by_kb_document_id(neutral.id)
+          assert_equal 2, session.active_entities.size
           uris = SessionContextBuilder.entity_s3_uris(session)
-          assert_not_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
+          assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
           assert_includes uris, neutral.display_s3_uri(KbDocument::KB_BUCKET)
-          assert_mismatch_probe(events, elemont, neutral)
+          refute_mismatch_release(events)
           assert events.none? { |event| event["event"] == "haiku_ownership_slice" }
         end
       end
@@ -200,7 +202,7 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
     end
   end
 
-  test "a conditional correction keeps the neutral pin and the KONE pin" do
+  test "a conditional correction keeps the Elemont pin, the neutral pin, and the KONE pin" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
     elemont = manual("elemont-multi.pdf", "Elemont Montacargas Hidraulico Modelo MH")
@@ -226,25 +228,21 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
           assert_equal :corrected, last_decision(events)
           assert_equal "ep_elemont", session.active_episode["episode_id"]
           assert_equal "KONE", session.active_episode.dig("facts", "manufacturer", "value")
-          assert_nil session.find_entity_by_kb_document_id(elemont.id)
+          assert session.find_entity_by_kb_document_id(elemont.id)
           assert session.find_entity_by_kb_document_id(neutral.id)
           assert session.find_entity_by_kb_document_id(kone.id)
+          assert_equal 3, session.active_entities.size
           uris = SessionContextBuilder.entity_s3_uris(session)
-          assert_not_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
+          assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
           assert_includes uris, neutral.display_s3_uri(KbDocument::KB_BUCKET)
           assert_includes uris, kone.display_s3_uri(KbDocument::KB_BUCKET)
-          probe = events.find { |event| event["event"] == "R1B_CASE_PROBE" }
-          assert_equal "corrected_manufacturer_mismatch", probe["pin_release_reason"]
-          assert_includes probe["pins_before"], elemont.id
-          assert_not_includes probe["pins_after"], elemont.id
-          assert_includes probe["pins_after"], neutral.id
-          assert_includes probe["pins_after"], kone.id
+          refute_mismatch_release(events)
         end
       end
     end
   end
 
-  test "a single-brand conditional correction writes KONE and releases the Elemont pin" do
+  test "a single-brand conditional correction writes KONE and keeps the Elemont pin" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     analysis = correction_analysis([ "KONE", "equipment" ])
 
@@ -289,28 +287,15 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
     assert_equal "ep_elemont", session.active_episode["episode_id"]
     assert_equal "user", session.active_episode.dig("facts", "manufacturer", "source")
     assert_nil session.active_episode.dig("facts", "model")
-    assert_nil session.find_entity_by_kb_document_id(elemont.id)
-    assert_not_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
-    probe = events.find { |event| event["event"] == "R1B_CASE_PROBE" }
-    assert_equal "corrected_manufacturer_mismatch", probe["pin_release_reason"]
+    assert session.find_entity_by_kb_document_id(elemont.id)
+    assert_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
+    refute_mismatch_release(events)
     session
   end
 
   def assert_kone_correction(session, session_result:)
     assert_equal :corrected, last_decision(session_result)
     assert_equal "ep_elemont", session.active_episode["episode_id"]
-  end
-
-  def assert_mismatch_probe(events, elemont, neutral)
-    probe = events.find { |event| event["event"] == "R1B_CASE_PROBE" }
-    assert probe
-    assert_nil probe["case_boundary_reason"]
-    assert_equal "corrected_manufacturer_mismatch", probe["pin_release_reason"]
-    assert_equal "ep_elemont", probe["episode_before"]
-    assert_equal probe["episode_before"], probe["episode_after"]
-    assert_includes probe["pins_before"], elemont.id
-    assert_not_includes probe["pins_after"], elemont.id
-    assert_includes probe["pins_after"], neutral.id
   end
 
   def refute_mismatch_release(events)

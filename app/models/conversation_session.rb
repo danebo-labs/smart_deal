@@ -208,8 +208,8 @@ class ConversationSession < ApplicationRecord
   end
 
   # Synchronous case owner for a photo submission. Reuses a live case.
-  # Expired JSON keeps only a pin newer than the case window. Invalid JSON
-  # drops every pin. A blank episode keeps an explicit pin.
+  # Expired or invalid JSON opens a new episode and clears current_procedure.
+  # The technician's document selection is not part of that write.
   def ensure_case_for_photo_submission!(correlation_id:, now: Time.current)
     return nil unless episode_recording?
 
@@ -217,12 +217,11 @@ class ConversationSession < ApplicationRecord
       stored = active_episode
       parsed = Rag::ActiveEpisode.parse(stored, now: now)
       if parsed.reason == "invalid_state"
-        pins_before = pin_document_ids(active_entities)
+        pins = pin_document_ids(active_entities)
         photo_before = photo_marker(stored)
         episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
         update!(
           active_episode: episode.to_h,
-          active_entities: {},
           current_procedure: {}
         )
         log_case_probe(
@@ -230,20 +229,18 @@ class ConversationSession < ApplicationRecord
           episode_after: episode.episode_id,
           case_boundary_reason: "invalid_state",
           pin_release_reason: nil,
-          pins_before: pins_before,
-          pins_after: [],
+          pins_before: pins,
+          pins_after: pins,
           active_photo_before: photo_before,
           active_photo_after: nil
         )
         episode.episode_id
       elsif parsed.reason == "expired"
-        pins_before = pin_document_ids(active_entities)
+        pins = pin_document_ids(active_entities)
         photo_before = photo_marker(stored)
         episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
-        entities = pins_after_expiry(active_entities, stored)
         update!(
           active_episode: episode.to_h,
-          active_entities: entities,
           current_procedure: {}
         )
         log_case_probe(
@@ -251,8 +248,8 @@ class ConversationSession < ApplicationRecord
           episode_after: episode.episode_id,
           case_boundary_reason: "episode_expired",
           pin_release_reason: nil,
-          pins_before: pins_before,
-          pins_after: pin_document_ids(entities),
+          pins_before: pins,
+          pins_after: pins,
           active_photo_before: photo_before,
           active_photo_after: nil
         )
@@ -272,18 +269,17 @@ class ConversationSession < ApplicationRecord
   end
 
   # Future explicit "new case" control. Not wired to a route. One UPDATE:
-  # a fresh episode, no pins, no procedure. History and FieldPhoto rows stay.
+  # a fresh episode and no procedure. Pins, history, and FieldPhoto rows stay.
   def start_new_case!(now: Time.current, reason:, correlation_id:)
     raise ArgumentError, "reason is required" if reason.blank?
 
     with_lock do
-      pins_before = pin_document_ids(active_entities)
+      pins = pin_document_ids(active_entities)
       photo_before = photo_marker(active_episode)
       episode_before = raw_episode_id(active_episode)
       episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
       update!(
         active_episode: episode.to_h,
-        active_entities: {},
         current_procedure: {}
       )
       log_case_probe(
@@ -291,8 +287,8 @@ class ConversationSession < ApplicationRecord
         episode_after: episode.episode_id,
         case_boundary_reason: reason.to_s,
         pin_release_reason: nil,
-        pins_before: pins_before,
-        pins_after: [],
+        pins_before: pins,
+        pins_after: pins,
         active_photo_before: photo_before,
         active_photo_after: nil
       )
@@ -532,14 +528,13 @@ class ConversationSession < ApplicationRecord
 
   private
 
-  # Expiry is a property of the stored JSON, not of the classifier decision.
-  # A live :new_episode drops every pin. :corrected drops only a pin whose
-  # labels name the previous manufacturer and not the new one.
-  # invalid_state has no trustworthy case clock, so the write drops every pin.
+  # A case boundary may clear current_procedure. It does not read or write
+  # the technician's document selection. Expiry is a property of the stored
+  # JSON, not of the classifier decision.
   def case_boundary_changes(stored_episode, result, now)
     if stored_episode_invalid?(stored_episode, now)
       return CaseBoundary.new(
-        attributes: { active_entities: {}, current_procedure: {} },
+        attributes: { current_procedure: {} },
         case_boundary_reason: "invalid_state",
         pin_release_reason: nil
       )
@@ -547,32 +542,18 @@ class ConversationSession < ApplicationRecord
 
     if stored_episode_expired?(stored_episode, now)
       return CaseBoundary.new(
-        attributes: {
-          active_entities: pins_after_expiry(active_entities, stored_episode),
-          current_procedure: {}
-        },
+        attributes: { current_procedure: {} },
         case_boundary_reason: "episode_expired",
         pin_release_reason: nil
       )
     end
 
-    if result.decision == :new_episode
-      return CaseBoundary.new(
-        attributes: { active_entities: {}, current_procedure: {} },
-        case_boundary_reason: "new_episode",
-        pin_release_reason: nil
-      )
-    end
-
-    return unless result.decision == :corrected
-
-    entities = pins_after_manufacturer_correction(active_entities, stored_episode, result.state)
-    return unless entities
+    return unless result.decision == :new_episode
 
     CaseBoundary.new(
-      attributes: { active_entities: entities },
-      case_boundary_reason: nil,
-      pin_release_reason: "corrected_manufacturer_mismatch"
+      attributes: { current_procedure: {} },
+      case_boundary_reason: "new_episode",
+      pin_release_reason: nil
     )
   end
 
@@ -652,6 +633,7 @@ class ConversationSession < ApplicationRecord
     Rag::ActiveEpisode.parse(raw, now: now).reason == "expired"
   end
 
+  # No caller after F1. The case no longer filters pins. F9 deletes this cluster.
   def pins_after_expiry(entities, stored_episode)
     cutoff = expiry_pin_cutoff(stored_episode)
     entities.each_with_object({}) do |(key, meta), kept|

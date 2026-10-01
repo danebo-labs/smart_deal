@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** FINAL CONSOLIDATED PLAN — READY FOR IMPLEMENTATION
+**Estado:** F1 HECHA — G1 ESPERA DEPLOY Y SMOKE HUMANO
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** no empezada.
+**Implementación:** F1 cerrada en el repo. G2–G5 no empezadas. El handoff de F1 está en la sección 13.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -199,7 +199,7 @@ Lo que se conserva:
 | Caso nuevo explícito | `start_new_case!` | Vacía pins. No tiene ruta de UI |
 | WhatsApp | `SendWhatsappReplyJob` → `EntityExtractorService` | El web no llama a ese servicio |
 
-`case_boundary_changes` en `app/models/conversation_session.rb` vacía o filtra `active_entities` en episodio nuevo, expirado, estado inválido y corrección de fabricante. Elemont cae en la corrección. VF5 no.
+`case_boundary_changes` en `app/models/conversation_session.rb` vaciaba o filtraba `active_entities` en episodio nuevo, expirado, estado inválido y corrección de fabricante. Elemont caía en la corrección. VF5 no. F1 cortó esos writes. La tabla queda como diagnóstico del incidente.
 
 ### Lectores web de `active_entities` que F2 tiene que mover
 
@@ -364,6 +364,7 @@ No es: entender con un LLM, reescribir con otro, decidir con otro, rerankear con
 
 - Persistencia: columna jsonb `conversation_sessions.document_focus`, `NOT NULL DEFAULT '[]'`.
 - Cada elemento: `{ kb_document_id, source_uri, display_name, added_at }`. URI y nombre salen del `KbDocument` autorizado, no del request.
+- No se copian `aliases` ni `entity_type`. `aliases` ya es columna de `KbDocument`. `entity_type` no es columna: el pin actual lo deriva de la extensión del `s3_key` en `pinned_entity_type`. F2 resuelve alias e imagen/documento desde el `KbDocument`, con esa misma regla. Hoy los leen `SessionContextBuilder`, `DocumentOverviewResponder`, `QueryOrchestratorService#entity_sources`, `FieldPhotoAnalysisService`, `selection_turn?` y `PinnedEntityScopeResolver`.
 - Tope: `ConversationSession::MAX_ENTITIES` (default 10). Dedupe por `kb_document_id`.
 - JSON malformado se lee como focus vacío. No rompe el request.
 - Writers: pin, unpin, aceptar card (ampliar o cambiar), auto-pin del upload de este técnico.
@@ -391,10 +392,11 @@ Contrato:
 - No agrega otra burbuja del técnico.
 - No vuelve a interpretar new, correct ni switch.
 - No llama `SemanticQueryAnalyzer`. No apareció lenguaje nuevo del técnico.
-- Reconstruye en Ruby la query técnica de ese turno con el Document Focus ya persistido.
+- No vuelve a ejecutar `record_user_turn!` sobre el episodio ya modificado. No llama a Haiku.
+- La query del replay la elige F7 y la deja escrita en su handoff. Dos opciones, una sola: conservar la effective retrieval query del turno original, o reconstruirla en Ruby sin `record_user_turn!`. F1 no elige. El historial guarda el texto crudo y `correlation_id`; no guarda esa query. `RagQueryConcern` la arma por request y no la escribe en el mensaje.
 - Ejecuta retrieval y generación otra vez.
 - Agrega una respuesta del asistente. La pregunta del técnico sigue apareciendo una sola vez.
-- Idempotente: la misma pareja `replay_correlation_id` + ids de `document_focus` no llama otra vez a Bedrock ni a Haiku. Devuelve la respuesta que ya se generó para esa pareja.
+- Idempotente: la misma pareja `correlation_id` original + ids de `document_focus` no llama otra vez a Bedrock ni a Haiku. Devuelve la respuesta que ya se generó para esa pareja. El turno ya persiste `correlation_id` en `conversation_history` y `/rag/ask` ya lo devuelve en el JSON; la card de sugerencia ya lo recibe. F7 define el lookup. Sin tabla nueva. Si encaja, metadata del historial. F1 no diseña ese lookup.
 - Si la mutación de focus no quedó confirmada, no hay replay. El servidor rechaza un replay cuyos ids no coinciden con el focus persistido.
 
 ### Upload y ownership temporal
@@ -748,11 +750,12 @@ Lo hace quien despliega, no Lahiri.
 1. Ventana en la que nadie está pinchando manuales ni subiendo archivos. No hay un upload a medio indexar.
 2. No usar el handoff rolling normal de `kamal deploy` para G2.
 3. Parar el tráfico web y parar el worker, para que ni el web viejo ni el worker viejo puedan pin, unpin o auto-pin.
-4. Arrancar la imagen nueva. `db:prepare` crea `document_focus` y hace el backfill mientras nadie escribe.
-5. Arrancar el worker nuevo con esa misma imagen.
-6. Parar del todo los contenedores viejos.
-7. Recién ahí volver a abrir el proxy.
-8. Recién ahí el smoke humano de G2.
+4. Arrancar sólo el web nuevo. `bin/docker-entrypoint` corre `./bin/rails db:prepare` antes de servir. Eso crea `document_focus` y hace el backfill.
+5. Confirmar que la migración terminó. Recién entonces arrancar el worker nuevo con esa misma imagen.
+6. No levantar el web nuevo y el worker nuevo a la vez antes de que la migración haya terminado.
+7. Parar del todo los contenedores viejos.
+8. Recién ahí volver a abrir el proxy.
+9. Recién ahí el smoke humano de G2.
 
 La columna es aditiva. La imagen de F1 la ignora. Por eso la migración puede existir antes del corte; lo que no puede coexistir son los writers.
 
@@ -763,7 +766,9 @@ Si el día del deploy esa pausa no se puede hacer, se para. Es una decisión mat
 1. Volver primero al código anterior, con la misma pausa de tráfico para que no queden las dos imágenes escribiendo.
 2. No correr `down` en ese momento.
 3. Dejar `document_focus` durante la estabilización.
-4. Los pins creados sólo después de G2 viven en esa columna. La imagen vieja no los muestra. Si se vuelve a desplegar G2, siguen ahí, porque la columna no se borró.
+4. El rollback se ve en los dos sentidos. No es motivo para dual-write.
+   - Un pin creado sólo después de G2 vive en `document_focus`. La imagen vieja no lo lee y desaparece de la pantalla. Si se vuelve a desplegar G2, sigue ahí, porque la columna no se borró.
+   - Un pin que el técnico quitó después de G2 puede reaparecer. La imagen nueva ya no escribe `active_entities`, así que el estado viejo sigue en esa columna y la imagen vieja lo vuelve a leer.
 5. `down` / drop es un cleanup posterior, sólo si de verdad se quiere, y sólo cuando ninguna imagen en ejecución lee o escribe la columna.
 
 G1 no tiene migración. G3, G4 y G5 se revierten por código. G5 no borra APIs que la imagen de G4 o WhatsApp todavía necesiten. Agregar claves al JSON del episodio es compatible porque el parser viejo ignora lo que no conoce; `source=catalog` en una imagen vieja se descarta, no rompe el episodio.
@@ -894,6 +899,31 @@ Cada fase: tests, `git diff --check`, un commit. Al cerrar la compuerta, deploy 
 
 **Commit.** `fix: keep document pins when the field case changes`
 
+**Handoff F1.** Hecho. Los boundaries de episodio, la foto y `start_new_case!` siguen escribiendo el episodio y pueden limpiar `current_procedure`. Ya no asignan `active_entities`. Pin, unpin y el auto-pin de upload no se movieron. WhatsApp no se tocó.
+
+```text
+Gap encontrado:
+La corrección de fabricante ya no tiene boundary. El único motivo del CaseBoundary
+en :corrected era soltar pines, así que ese turno ya no emite R1B_CASE_PROBE.
+El effective retrieval query no está en conversation_history: el mensaje guarda
+el texto crudo y correlation_id. aliases es columna de KbDocument; entity_type
+no lo es y hoy sale de la extensión del s3_key.
+
+Decisión tomada:
+Se dejaron los helpers de release sin caller para que F9 los borre después de
+ver el repo. No se eligió la query del replay ni el lookup de idempotencia.
+
+Razón:
+F1 sólo quita el ownership automático de los pines. Esas dos decisiones de F7
+cambian el contrato del replay y se cierran cuando exista el código del replay.
+
+Impacto sobre siguientes fases:
+F2 no copia aliases ni entity_type. F7 escribe la elección de query y el lookup.
+F9 borra los seis helpers y no documenta corrected_manufacturer_mismatch como
+vigente. G2 despliega el web, confirma la migración y después levanta el worker.
+El rollback de G2 puede ocultar pines nuevos y reaparecer pines quitados.
+```
+
 ### F2 — Columna `document_focus` y lectores web
 
 **Compuerta:** G2, junto con F3 y F4. No se despliega al cerrar F2.
@@ -902,9 +932,9 @@ Cada fase: tests, `git diff --check`, un commit. Al cerrar la compuerta, deploy 
 
 **Archivos.** Migración, `ConversationSession`, `PinnedDocumentsController`, `HomeController`, `SessionContextBuilder`, `BedrockIngestionJob`, lectores de URIs del concern, `QueryOrchestratorService#entity_sources`, `RagController#focused_kb_document_ids`, `Rag::DocumentOverviewResponder`, `Rag::FocusNotice`, `FieldPhotoAnalysisService#pinned_manual_available?`.
 
-**Cambios.** jsonb `document_focus`, default `[]`, null false. Backfill como en la sección 7. Pin, unpin y upload escriben sólo esa columna en el web. Los lectores de arriba leen esa columna. `active_entities` queda para WhatsApp. `expected_episode_id` sigue condicionando el auto-pin. Parser tolerante a JSON malformado.
+**Cambios.** jsonb `document_focus`, default `[]`, null false. Backfill como en la sección 7. Pin, unpin y upload escriben sólo esa columna en el web. Los lectores de arriba leen esa columna y resuelven `aliases` e imagen/documento desde `KbDocument`, como dice la sección 4. El elemento no guarda `aliases` ni `entity_type`. `active_entities` queda para WhatsApp. `expected_episode_id` sigue condicionando el auto-pin. Parser tolerante a JSON malformado.
 
-**Tests.** Backfill, incluidos pins sin id que se omiten. Pin no cambia `active_episode`. La corrección de F1 no cambia la columna. Upload con el episodio vivo escribe `document_focus`. Upload con otro `expected_episode_id` no lo escribe. Cada lector web listado deja de leer `active_entities` para el focus.
+**Tests.** Backfill, incluidos pins sin id que se omiten. Pin no cambia `active_episode`. La corrección de F1 no cambia la columna. Upload con el episodio vivo escribe `document_focus`. Upload con otro `expected_episode_id` no lo escribe. Cada lector web listado deja de leer `active_entities` para el focus. Un elemento guardado tiene sólo `kb_document_id`, `source_uri`, `display_name` y `added_at`. Un lector que necesita alias o tipo de archivo lo saca del `KbDocument`.
 
 **Ingeniería.** Tests de F2. Confirmar que los readers de WhatsApp no se movieron. No desplegar.
 
@@ -986,7 +1016,12 @@ El repo ya tiene system tests con Chrome headless en `test/system`. F3 agrega un
 
 **Cambios.** “Ampliar” agrega. “Cambiar” reemplaza en una sola escritura, con lock, autorizando antes. Si la autorización o la escritura fallan, no hay replay y el badge no cambia. Si salen bien, el cliente refresca checks y badge y manda `replay_correlation_id`. El servidor sigue el contrato de Replay de la sección 4. El system test existente puede cubrir que no aparece una segunda burbuja del técnico; el test de controller cubre que no hay segundo `record_user_turn!` ni segunda llamada al analyzer.
 
-**Tests.** Ampliar agrega un id. Cambiar deja sólo ese id. Fallo de mutación no busca. Replay no crea turno de usuario, no abre episodio y no llama a Haiku. El mismo replay con el mismo focus no llama otra vez a Bedrock. La card en el JSON de la primera respuesta no deja el documento seleccionado.
+F7, al implementarse, cierra y escribe en este archivo las dos decisiones que F1 dejó abiertas:
+
+- Cómo se reconoce una respuesta ya generada para el `correlation_id` original más los ids del Document Focus, usando el historial si encaja. Sin tabla nueva. Repetir esa pareja no llama a Bedrock.
+- Cuál de las dos fuentes de query usa el replay: la effective retrieval query del turno original, o una reconstrucción determinista que no ejecuta `record_user_turn!`. El historial hoy no tiene esa query. El replay no llama a Haiku.
+
+**Tests.** Ampliar agrega un id. Cambiar deja sólo ese id. Fallo de mutación no busca. Replay no crea turno de usuario, no abre episodio y no llama a Haiku. El mismo replay con el mismo focus no llama otra vez a Bedrock. La card en el JSON de la primera respuesta no deja el documento seleccionado. El test de replay que agregue F7 entra en la suite de cierre de G5.
 
 **Humano.** Smoke G4.
 
@@ -1027,6 +1062,8 @@ El repo ya tiene system tests con Chrome headless en `test/system`. F3 agrega un
 **Archivos.** Métodos muertos de release en `ConversationSession`. `docs/ACTIVE_ARCHITECTURE.md`, `docs/SESSION_AND_RETRIEVAL.md`, una nota al frente de `docs/PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md` y de `docs/PLAN_R1B_SESSION_CORRECTNESS_2026-09-30.md`, `docs/README.md`.
 
 **Cambios.** No borrar `active_entities`. No borrar la API que WhatsApp usa. No correr `down` de `document_focus`. Documentar `DocumentIdentityScope` con el contrato real, incluido lo que F5 y F8 dejaron. La nota de R1B dice que la parte de soltar pines quedó superada por este plan; el resto de R1B sigue. No se reescribe la historia.
+
+Desde F1 no tienen caller, y F9 los borra: `pins_after_expiry`, `expiry_pin_cutoff`, `pins_after_manufacturer_correction`, `manufacturer_fact_value`, `incompatible_manufacturer_pin?`, `label_contains_word?`. La corrección de fabricante ya no emite `R1B_CASE_PROBE`. Los boundaries que siguen registran `pins_before` igual a `pins_after` y `pin_release_reason` vacío. Los docs no describen `corrected_manufacturer_mismatch` como comportamiento vigente.
 
 **Tests.** El test de arquitectura de “el episodio no escribe el focus” sigue verde. La suite de sesión no referencia métodos borrados. Un grep de lectores web de pins sobre `active_entities` queda vacío.
 
@@ -1069,9 +1106,11 @@ Estos tienen que existir y estar verdes antes de desplegar G5. Varios nacen en l
 Comando de cierre de compuerta, más los archivos que cada fase haya agregado:
 
 ```text
-bin/rails test test/models/conversation_session_case_boundary_test.rb test/models/conversation_session_case_ownership_test.rb test/controllers/pinned_documents_controller_test.rb test/controllers/concerns/rag_query_concern_test.rb test/services/rag/manual_candidate_ranker_test.rb test/services/session_context_builder_test.rb test/architecture/no_hardcoded_equipment_test.rb
+bin/rails test test/models/conversation_session_case_boundary_test.rb test/models/conversation_session_case_ownership_test.rb test/controllers/pinned_documents_controller_test.rb test/controllers/concerns/rag_query_concern_test.rb test/controllers/rag_controller_test.rb test/services/rag/manual_candidate_ranker_test.rb test/services/rag/document_identity_scope_test.rb test/services/bedrock_rag_service_test.rb test/services/session_context_builder_test.rb test/architecture/no_hardcoded_equipment_test.rb
 git diff --check
 ```
+
+Esa suite incluye, además de la lista anterior, los tests relevantes de `DocumentIdentityScope`, `BedrockRagService` y el controller de `/rag/ask`. El test de replay que agregue F7 entra en el mismo comando antes de cerrar G5.
 
 ---
 
@@ -1190,4 +1229,7 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 
 ## Implementation
 
-NOT STARTED.
+| Fase | Estado |
+|---|---|
+| F1 | Hecha. G1 espera deploy y smoke humano |
+| F2–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |

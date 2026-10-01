@@ -16,7 +16,7 @@ class RagCaseSameRequestTest < ActionDispatch::IntegrationTest
     @user.update!(account: @account)
   end
 
-  test "the request that crosses expiry does not send the old pin to retrieval" do
+  test "the request that crosses expiry still sends the selected manual" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     doc = manual("elemont-expiry.pdf")
     session = user_session
@@ -34,13 +34,14 @@ class RagCaseSameRequestTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_empty captured[:entity_s3_uris]
-    assert_equal false, captured[:force_entity_filter]
-    assert_empty SessionContextBuilder.entity_s3_uris(session.reload)
-    assert_equal "open", retrieval_scope([]).reason
+    uri = doc.display_s3_uri(KbDocument::KB_BUCKET)
+    assert_includes Array(captured[:entity_s3_uris]), uri
+    assert_equal true, captured[:force_entity_filter]
+    assert_includes SessionContextBuilder.entity_s3_uris(session.reload), uri
+    assert_equal "pin_only", retrieval_scope([ uri ]).reason
   end
 
-  test "hola after expiry leaves the next KONE query without the old pin" do
+  test "hola after expiry leaves the next KONE query on the selected manual" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     doc = manual("elemont-hola.pdf")
     session = user_session
@@ -59,12 +60,12 @@ class RagCaseSameRequestTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_empty captured[:entity_s3_uris]
-    assert_not_includes Array(captured[:entity_s3_uris]), doc.display_s3_uri(KbDocument::KB_BUCKET)
-    assert_empty SessionContextBuilder.entity_s3_uris(session.reload)
+    uri = doc.display_s3_uri(KbDocument::KB_BUCKET)
+    assert_includes Array(captured[:entity_s3_uris]), uri
+    assert_includes SessionContextBuilder.entity_s3_uris(session.reload), uri
   end
 
-  test "the request that corrects the manufacturer does not send the incompatible pin" do
+  test "the request that corrects the manufacturer still sends the selected manual" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     doc = manual("elemont-correct-request.pdf")
     session = user_session
@@ -86,12 +87,13 @@ class RagCaseSameRequestTest < ActionDispatch::IntegrationTest
     end
 
     uri = doc.display_s3_uri(KbDocument::KB_BUCKET)
-    assert_not_includes Array(captured[:entity_s3_uris]), uri
-    assert_equal false, captured[:force_entity_filter]
-    assert_nil session.reload.find_entity_by_kb_document_id(doc.id)
+    assert_includes Array(captured[:entity_s3_uris]), uri
+    assert_equal true, captured[:force_entity_filter]
+    assert session.reload.find_entity_by_kb_document_id(doc.id)
+    assert_equal "KONE", session.active_episode.dig("facts", "manufacturer", "value")
   end
 
-  test "the request that opens a new episode does not send the previous pin" do
+  test "the request that opens a new episode still sends the previous pin" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     doc = manual("elemont-new-request.pdf")
     session = user_session
@@ -109,9 +111,11 @@ class RagCaseSameRequestTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_empty captured[:entity_s3_uris]
-    assert_equal false, captured[:force_entity_filter]
-    assert_empty session.reload.active_entities
+    uri = doc.display_s3_uri(KbDocument::KB_BUCKET)
+    assert_includes Array(captured[:entity_s3_uris]), uri
+    assert_equal true, captured[:force_entity_filter]
+    assert session.reload.find_entity_by_kb_document_id(doc.id)
+    assert_not_equal "ep_live", session.active_episode["episode_id"]
   end
 
   private

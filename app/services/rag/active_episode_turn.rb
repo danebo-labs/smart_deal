@@ -302,11 +302,16 @@ module Rag
     end
 
     def apply_correct(current, perception)
+      # extract! stores a sole brand and leaves two brands empty. The unique
+      # brand that is not the previous manufacturer is written after that, so
+      # catalog identity cannot replace the literal.
+      replacement = replacement_manufacturer(current)
       episode = current.fork
       episode.touch!(@now)
       episode.clear_fact!("model")
       episode.clear_fact!("manufacturer")
       extract!(episode, :full)
+      write_replacement_manufacturer!(episode, replacement)
       write_catalog_identity!(episode, perception)
       if self_contained?
         episode.assign_goal!(@text, correlation_id: @correlation_id)
@@ -314,6 +319,27 @@ module Rag
         episode.clear_goal!
       end
       finish(:corrected, current, episode, compose: false)
+    end
+
+    # find_brands is the literal evidence. Haiku only chose relation=correct.
+    # The previous manufacturer is excluded. Zero or several replacements stay unset.
+    def replacement_manufacturer(episode)
+      known = known_manufacturer(episode)
+      candidates = find_brands.reject { |brand| brand == known }
+      candidates.one? ? candidates.first : nil
+    end
+
+    def write_replacement_manufacturer!(episode, replacement)
+      return if replacement.blank?
+
+      episode.write_fact!(
+        "manufacturer",
+        status: "known",
+        value: literal_phrase(replacement),
+        source: "user",
+        correlation_id: @correlation_id,
+        at: @now.iso8601
+      )
     end
 
     # A switch name with no catalog row and no manufacturer is not an identity.

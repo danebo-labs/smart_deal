@@ -308,13 +308,10 @@ class RagController < ApplicationController
   end
 
   def focused_kb_document_ids(conv_session)
-    return [] unless conv_session.respond_to?(:active_entities)
+    return [] unless conv_session.respond_to?(:document_focus_entries)
+    return [] if conv_session.respond_to?(:uses_document_focus?) && !conv_session.uses_document_focus?
 
-    conv_session.active_entities.values.filter_map { |meta|
-      next unless meta.is_a?(Hash) && meta["source"] == "user_pin"
-
-      meta["kb_document_id"].presence && meta["kb_document_id"].to_i
-    }
+    conv_session.document_focus_entries.map { |entry| entry["kb_document_id"].to_i }
   end
 
   def attach_focus_notices(json, conv_session, suggestion, correlation_id)

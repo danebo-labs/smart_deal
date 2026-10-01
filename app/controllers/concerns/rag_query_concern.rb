@@ -537,16 +537,27 @@ module RagQueryConcern
   end
 
   def selection_turn?(question, conv_session)
-    return false unless conv_session.respond_to?(:active_entities)
+    entities = focus_entities(conv_session)
+    return false if entities.blank?
 
     normalized = normalize_entity_label(question)
     return false if normalized.blank?
 
-    conv_session.active_entities.any? do |key, meta|
+    entities.any? do |key, meta|
       [ key, meta["canonical_name"], *Array(meta["aliases"]) ]
         .compact
         .any? { |label| normalize_entity_label(label) == normalized }
     end
+  end
+
+  def focus_entities(conv_session)
+    return {} unless conv_session
+    if conv_session.respond_to?(:uses_document_focus?) && conv_session.uses_document_focus?
+      return conv_session.document_focus_scope_index
+    end
+    return {} unless conv_session.respond_to?(:active_entities)
+
+    conv_session.active_entities
   end
 
   # Misma normalización que Rag::PinnedEntityScopeResolver#normalize.
@@ -561,11 +572,13 @@ module RagQueryConcern
 
   def resolve_pinned_scope(question, conv_session, pinned_uris)
     return pinned_uris unless pinned_uris.many?
-    return pinned_uris unless conv_session.respond_to?(:active_entities)
+
+    entities = focus_entities(conv_session)
+    return pinned_uris if entities.blank?
 
     result = Rag::PinnedEntityScopeResolver.new(
       question: question,
-      active_entities: conv_session.active_entities,
+      active_entities: entities,
       allowed_uris: pinned_uris
     ).resolve
 

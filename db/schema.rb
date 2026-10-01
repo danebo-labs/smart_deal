@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_01_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -154,6 +154,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
     t.jsonb "conversation_history", default: [], null: false
     t.datetime "created_at", null: false
     t.jsonb "current_procedure", default: {}, null: false
+    t.jsonb "document_focus", default: [], null: false
     t.datetime "expires_at", null: false
     t.string "identifier", null: false
     t.string "session_status", default: "active", null: false

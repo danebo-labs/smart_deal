@@ -15,22 +15,38 @@ module Rag
     MAX_MANIFEST_FETCHES = 2
 
     def self.build(question:, account:, conv_session:, response_locale: nil)
-      pins = Array(conv_session&.active_entities.to_h.values)
-               .select { |entity| entity["source"] == "user_pin" }
-               .sort_by { |entity| entity["added_at"].to_s }
-               .last(MAX_OVERVIEW_DOCUMENTS)
+      pins = focus_pins(conv_session)
       return nil if pins.empty?
 
-      pinned_names = pins.flat_map { |entity| [ entity["canonical_name"], *Array(entity["aliases"]) ] }
+      documents = visible_documents(account, pins.pluck("kb_document_id"))
+      pinned_names = pins.flat_map { |entry|
+        document = documents[entry["kb_document_id"]]
+        [ entry["display_name"], *(document ? Array(document.aliases) : []) ]
+      }
       return nil unless Rag::DeterministicIntent.document_overview_query?(question, pinned_names)
 
-      kb_document_ids = pins.filter_map { |entity| entity["kb_document_id"] }
-      kb_documents_by_id = account&.kb_documents&.where(id: kb_document_ids)&.index_by(&:id) || {}
-      ordered_docs = kb_document_ids.filter_map { |id| kb_documents_by_id[id] }
+      ordered_docs = pins.filter_map { |entry| documents[entry["kb_document_id"]] }
       return nil if ordered_docs.empty?
 
       new(account: account, kb_documents: ordered_docs, response_locale: response_locale)
     end
+
+    def self.focus_pins(conv_session)
+      return [] unless conv_session.respond_to?(:uses_document_focus?) && conv_session.uses_document_focus?
+      return [] unless conv_session.respond_to?(:document_focus_entries)
+
+      conv_session.document_focus_entries
+                  .sort_by { |entry| entry["added_at"].to_s }
+                  .last(MAX_OVERVIEW_DOCUMENTS)
+    end
+    private_class_method :focus_pins
+
+    def self.visible_documents(account, ids)
+      return {} unless account
+
+      KbDocument.where(account_id: account.id).or(KbDocument.danebo_general).where(id: ids).index_by(&:id)
+    end
+    private_class_method :visible_documents
 
     def initialize(account:, kb_documents:, response_locale: nil)
       @account      = account

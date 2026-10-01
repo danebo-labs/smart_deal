@@ -2,9 +2,8 @@
 
 # Pin/unpin KbDocuments on the ConversationSession workspace.
 # Pins drive the entity_s3_uris filter (force_entity_filter: true) for RAG retrieval.
-# The workspace row lasts 30 sliding days. Pins are case state: they stay with
-# the current ActiveEpisode and are released at a case boundary. A blank
-# episode keeps an explicit pin. Re-pin renews added_at.
+# The workspace row lasts 30 sliding days. Web pins live in document_focus.
+# A case boundary does not write that column. Re-pin renews added_at.
 #
 # A suggestion card sends kb_document_id and document_uid. The id is the row.
 # The uid only confirms that row. knowledge_scope from the browser is ignored.

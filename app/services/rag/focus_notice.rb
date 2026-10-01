@@ -44,13 +44,7 @@ module Rag
       end
 
       def pinned_documents(session)
-        return [] unless session.respond_to?(:active_entities)
-
-        ids = session.active_entities.values.filter_map { |meta|
-          next unless meta.is_a?(Hash) && meta["source"] == "user_pin"
-
-          meta["kb_document_id"].presence
-        }
+        ids = focus_document_ids(session)
         return [] if ids.empty?
 
         viewer_account = session.respond_to?(:account) ? session.account : nil
@@ -60,6 +54,19 @@ module Rag
         candidates = KbDocument.where(account_id: viewer_account.id).or(KbDocument.danebo_general)
         candidates.where(id: ids).select { |document|
           Rag::KnowledgeScopePolicy.authorized?(document, viewer_account: viewer_account)
+        }
+      end
+
+      def focus_document_ids(session)
+        if session.respond_to?(:uses_document_focus?) && session.uses_document_focus?
+          return session.document_focus_entries.pluck("kb_document_id")
+        end
+        return [] unless session.respond_to?(:active_entities)
+
+        session.active_entities.values.filter_map { |meta|
+          next unless meta.is_a?(Hash) && meta["source"] == "user_pin"
+
+          meta["kb_document_id"].presence
         }
       end
 

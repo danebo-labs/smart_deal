@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** F1 HECHA — G1 ESPERA DEPLOY Y SMOKE HUMANO
+**Estado:** G1 PASS — F2 HECHA — F3 SIGUE
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** F1 cerrada en el repo. G2–G5 no empezadas. El handoff de F1 está en la sección 13.
+**Implementación:** G1 PASS en producción. F2 cerrada en el repo. F3–F4 siguen en este archivo. El handoff de F2 está en la sección 13.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -940,6 +940,16 @@ El rollback de G2 puede ocultar pines nuevos y reaparecer pines quitados.
 
 **Commit.** `feat: store document focus apart from the field episode`
 
+**Handoff F2.** G1 PASS. Work Context pasó de Elemont a KONE, los dos manuales siguieron seleccionados, el retrieve usó ambos y el reload conservó la selección.
+
+Gap de G1, no bloquea G2. El focus real era VF5 + Elemont y el retrieve pidió ambos, pero una respuesta visible dijo que VF5 no estaba seleccionado. Es coherencia de Document Focus con el contexto de generación. Se revisa en F5/F8. Si esas fases lo cierran, agregan la regresión. No se adelanta a G2.
+
+Nombres visibles. `WebManualBatch.filename` y `BulkUploadAsset.filename` ya guardan el archivo original. `KbDocument.display_name` sigue siendo la identidad técnica. Mostrar los dos en la lista no entra en G2: haría falta un join de presentación en varios partials y no cambia el contrato del focus. La UI de G2 sigue con `display_name`. El filename original no se borra. Follow-up post-estabilización.
+
+Decisiones. `channel != "whatsapp"` lee y escribe `document_focus`. WhatsApp sigue en `active_entities`, incluido el auto-pin de su job. El backfill es `ConversationSession.document_focus_from_legacy` y la migración lo ejecuta sólo para filas que no son WhatsApp. Copia URI y nombre desde el `KbDocument` autorizado. Omite pins sin id, deduplica por id y se queda con los 10 más nuevos. Aliases y tipo de archivo se resuelven al leer. `expected_episode_id` sigue siendo sólo la guarda del auto-pin. El gate del textarea sigue hasta F3, pero ya compara contra el focus.
+
+F3 y F4 no cambian de contrato. F5 recibe el focus separado del episodio. El estrechamiento N→1 sigue en el camino principal, alimentado por `document_focus_scope_index`, y F5 lo quita.
+
 ### F3 — Pin, unpin y upload antes de la pregunta
 
 **Compuerta:** G2.
@@ -984,7 +994,7 @@ El repo ya tiene system tests con Chrome headless en `test/system`. F3 agrega un
 
 **Cambios.** `resolve_retrieval_scope` lee `document_focus` y no el texto de la pregunta. Se quita el estrechamiento anterior. Cada retrieve que alimenta la respuesta recibe ese conjunto y `force_entity_filter: true` cuando N es mayor que 0. Discovery no usa ese camino para citar. `DocumentIdentityScope` aplica la tabla de la sección 4 para focus `0`, focus `N`, facts de usuario, facts de foto y corrección. Los facts `catalog` todavía no existen: el hueco se cierra en F8, y F5 deja el punto de extensión para que una fuente que no sea `user` ni `photo` no se convierta en aguja. No se cambia el top-k. No se prende el reranker.
 
-**Tests.** 0 pins → abierto, aunque la pregunta diga `NICE3000`. 2 pins y una pregunta que nombra sólo uno → las dos URIs. 1 pin Elemont y una pregunta que dice KONE → la URI de Elemont. Conjunto mixto no autorizado → denegación y cero Bedrock. Focus Elemont y manufacturer KONE de usuario → los chunks de Elemont conservan el cuerpo procedural. Corrección de marca → la marca vieja no es aguja. Los routes directos de evidencia reciben el mismo conjunto.
+**Tests.** 0 pins → abierto, aunque la pregunta diga `NICE3000`. 2 pins y una pregunta que nombra sólo uno → las dos URIs. 1 pin Elemont y una pregunta que dice KONE → la URI de Elemont. Conjunto mixto no autorizado → denegación y cero Bedrock. Focus Elemont y manufacturer KONE de usuario → los chunks de Elemont conservan el cuerpo procedural. Corrección de marca → la marca vieja no es aguja. Los routes directos de evidencia reciben el mismo conjunto. Regresión del gap de G1 si esta fase lo cierra: focus VF5 + Elemont y trabajo KONE no puede afirmar que VF5 no está seleccionado.
 
 **Ingeniería.** Esos tests. G3 se despliega al cerrarlos.
 
@@ -1049,7 +1059,7 @@ F7, al implementarse, cierra y escribe en este archivo las dos decisiones que F1
 - `FollowupQueryRewriter` no pisa la query compuesta.
 - Cero inferencias nuevas. El analyzer existente sólo cuando su gate ya lo llama.
 
-**Tests.** Los de la sección 14 que corresponden a identidad, decisiones, “no sé”, corrección, ventana, prefijo y agujas de catálogo. “NICE3000 E51” con flag `off`: query con `NICE3000` y `E51`, manufacturer Monarch con source catalog, controller NICE3000, focus intacto, sin URIs si el badge es 0. El techo de literales de equipo en código no sube.
+**Tests.** Los de la sección 14 que corresponden a identidad, decisiones, “no sé”, corrección, ventana, prefijo y agujas de catálogo. “NICE3000 E51” con flag `off`: query con `NICE3000` y `E51`, manufacturer Monarch con source catalog, controller NICE3000, focus intacto, sin URIs si el badge es 0. El techo de literales de equipo en código no sube. Si el gap de G1 sigue después de F5, esta fase agrega la regresión: con VF5 y Elemont seleccionados, la respuesta no dice que VF5 no está seleccionado.
 
 **Commit.** `feat: build the retrieval query from catalog-grounded technical understanding`
 
@@ -1201,6 +1211,7 @@ En el teléfono, el número de los pasos 12 y 13 tiene que coincidir con desktop
 - Varias queries fusionadas, reranker siempre activo, filtros de metadata por campo técnico, o un mapa de typos.
 - Medir en producción la calidad de la string HYBRID. Eso es un follow-up, después de cerrar los journeys.
 - Auditar si `DocumentIdentityScope` sigue haciendo falta cuando los facts de catálogo ya no son agujas. No se apaga en este plan.
+- Mostrar el filename original junto a `KbDocument.display_name` en la lista de Archivos. El dato ya está en `WebManualBatch.filename` y `BulkUploadAsset.filename`. No entra en G2.
 
 ---
 
@@ -1231,5 +1242,6 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 
 | Fase | Estado |
 |---|---|
-| F1 | Hecha. G1 espera deploy y smoke humano |
-| F2–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |
+| F1 | Hecha. G1 PASS |
+| F2 | Hecha. Columna `document_focus` y lectores web. No desplegada |
+| F3–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |

@@ -30,7 +30,7 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
   test "create is idempotent" do
     2.times { post pinned_documents_path, params: { kb_document_id: @kb_doc.id } }
     session = ConversationSession.find_by(identifier: @user.id.to_s, channel: "web")
-    assert_equal 1, session.active_entities.size
+    assert_equal 1, session.document_focus_entries.size
   end
 
   test "create renews added_at when the checkbox pins the same document again" do
@@ -41,8 +41,8 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
     travel_to(second_at) { post pinned_documents_path, params: { kb_document_id: @kb_doc.id } }
 
     session = ConversationSession.find_by!(identifier: @user.id.to_s, channel: "web")
-    entity = session.active_entities.values.first
-    assert_equal 1, session.active_entities.size
+    entity = session.document_focus_entries.sole
+    assert_equal 1, session.document_focus_entries.size
     assert_equal second_at.to_i, Time.zone.parse(entity["added_at"]).to_i
     assert_equal @kb_doc.display_s3_uri(KbDocument::KB_BUCKET), entity["source_uri"]
   end
@@ -53,7 +53,7 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
 
     session = ConversationSession.find_by(identifier: @user.id.to_s, channel: "web")
-    assert_empty session.active_entities
+    assert_empty session.document_focus_entries
   end
 
   test "create returns 404 for unknown document" do
@@ -137,7 +137,7 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :no_content
     session = ConversationSession.find_by!(identifier: viewer.id.to_s, channel: "web", account_id: viewer.account_id)
-    assert_empty session.active_entities
+    assert_empty session.document_focus_entries
   end
 
   test "a revoked general pin can be removed and then cannot be retrieved" do
@@ -166,7 +166,7 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :no_content
     session = ConversationSession.find_by!(identifier: viewer.id.to_s, channel: "web", account_id: viewer.account_id)
-    assert_empty session.active_entities
+    assert_empty session.document_focus_entries
     decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(
       [ shared.canonical_uri ], viewer_account: viewer.account
     )

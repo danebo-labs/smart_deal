@@ -7,8 +7,8 @@
 # When both field-companion flags are on, a current web episode is prepended as
 # technician-stated job state. That block is not documentary evidence.
 #
-# active_entities now contains ONLY user-pinned documents (UI checkbox or
-# upload auto-pin). Haiku citations never register here.
+# Web focus is conversation_sessions.document_focus. WhatsApp still reads
+# active_entities. Aliases and image/document come from KbDocument on web.
 class SessionContextBuilder
   # Hard cap on session context injected into the generation prompt.
   # Prevents runaway entity lists + long histories from blowing the input budget.
@@ -36,20 +36,8 @@ class SessionContextBuilder
 
     parts = []
 
-    if session.has_active_entities?
-      ordered_entities = entities_sorted_by_recency(session)
-      lines            = []
-
-      ordered_entities.each do |key, meta|
-        entity_type = meta["entity_type"].presence || meta["source"]
-        type    = entity_type == "image_upload" ? "image" : "document"
-        aliases = Array(meta["aliases"]).compact_blank.first(MAX_ALIASES_PER_ENTITY)
-        summary = meta["first_answer_summary"]
-
-        alias_note   = aliases.any? ? "  (also: #{aliases.join(', ')})" : ""
-        summary_note = summary.present? ? "\n    Summary: #{summary}" : ""
-        lines << "- [#{type}] #{key}#{alias_note}#{summary_note}"
-      end
+    if focused_for_prompt?(session)
+      lines = focus_prompt_lines(session)
 
       parts << <<~BLOCK.strip
         ## Session Focus
@@ -74,7 +62,7 @@ class SessionContextBuilder
       BLOCK
     end
 
-    if session.has_active_entities? && history.any?
+    if focused_for_prompt?(session) && history.any?
       parts << <<~BLOCK.strip
         ## Session Discipline
         If documents mentioned in 'Recent Conversation' are NOT listed in 'Session Focus' above, the user has unpinned them — treat those documents as out of scope for the current question. Resolve pronouns and topical references using ONLY documents in Session Focus. If the current question is asking specifically about an out-of-scope document, say so plainly and offer to re-pin it.
@@ -109,12 +97,62 @@ class SessionContextBuilder
   def self.entity_s3_uris(session)
     return [] if session.nil?
 
-    session.active_entities.values
-      .filter_map { |meta| meta["source_uri"] }
+    raw = if session.uses_document_focus?
+      session.document_focus_entries.pluck("source_uri")
+    else
+      session.active_entities.values.filter_map { |meta| meta["source_uri"] if meta.is_a?(Hash) }
+    end
+    filter_focus_uris(raw)
+  end
+
+  def self.filter_focus_uris(uris)
+    Array(uris).map(&:to_s)
       .select { |uri| uri.start_with?("s3://") }
       .reject { |uri| uri.match?(FABRICATED_URI_PATTERN) }
       .reject { |uri| uri.include?("PIPELINE_INJECTED") }
       .uniq
+  end
+
+  def self.focused_for_prompt?(session)
+    if session.uses_document_focus?
+      session.document_focus_entries.any?
+    else
+      session.has_active_entities?
+    end
+  end
+
+  def self.focus_prompt_lines(session)
+    if session.uses_document_focus?
+      web_focus_prompt_lines(session)
+    else
+      entities_sorted_by_recency(session).map { |key, meta| legacy_focus_line(key, meta) }
+    end
+  end
+
+  def self.legacy_focus_line(key, meta)
+    entity_type = meta["entity_type"].presence || meta["source"]
+    type = entity_type == "image_upload" ? "image" : "document"
+    aliases = Array(meta["aliases"]).compact_blank.first(MAX_ALIASES_PER_ENTITY)
+    summary = meta["first_answer_summary"]
+    alias_note = aliases.any? ? "  (also: #{aliases.join(', ')})" : ""
+    summary_note = summary.present? ? "\n    Summary: #{summary}" : ""
+    "- [#{type}] #{key}#{alias_note}#{summary_note}"
+  end
+
+  def self.web_focus_prompt_lines(session)
+    entries = session.document_focus_entries.sort_by { |entry|
+      [ -(parse_added_at(entry["added_at"])&.to_i || 0) ]
+    }
+    documents = KbDocument.where(id: entries.pluck("kb_document_id")).index_by(&:id)
+    entries.map do |entry|
+      document = documents[entry["kb_document_id"]]
+      type = ConversationSession.media_type_for(document || entry["source_uri"])
+      label = type == "image_upload" ? "image" : "document"
+      aliases = document ? Array(document.aliases).compact_blank.first(MAX_ALIASES_PER_ENTITY) : []
+      name = entry["display_name"].presence || document&.display_name || "document"
+      alias_note = aliases.any? ? "  (also: #{aliases.join(', ')})" : ""
+      "- [#{label}] #{name}#{alias_note}"
+    end
   end
 
   # Active entities sorted by `added_at` desc (most-recent first). Falls back

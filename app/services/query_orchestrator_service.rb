@@ -573,6 +573,11 @@ class QueryOrchestratorService
   # Derives media types from pinned session entities for RagRetrievalProfile.
   # Legacy image_upload rows remain images; other legacy rows default to documents.
   def entity_sources
+    return [] unless @conv_session
+
+    if @conv_session.respond_to?(:uses_document_focus?) && @conv_session.uses_document_focus?
+      return document_focus_entity_sources
+    end
     return [] unless @conv_session.respond_to?(:active_entities)
 
     entities = @conv_session.active_entities.values
@@ -585,5 +590,17 @@ class QueryOrchestratorService
       entity_type = meta["entity_type"].presence || meta["source"]
       entity_type == "image_upload" ? "image_upload" : "document"
     end
+  end
+
+  def document_focus_entity_sources
+    entries = @conv_session.document_focus_entries
+    if @entity_s3_uris.any?
+      allowed_uris = @entity_s3_uris.to_set
+      entries = entries.select { |entry| allowed_uris.include?(entry["source_uri"].to_s) }
+    end
+    documents = KbDocument.where(id: entries.pluck("kb_document_id")).index_by(&:id)
+    entries.map { |entry|
+      ConversationSession.media_type_for(documents[entry["kb_document_id"]] || entry["source_uri"])
+    }
   end
 end

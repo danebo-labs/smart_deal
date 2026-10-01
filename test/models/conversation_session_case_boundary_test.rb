@@ -32,7 +32,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       assert_equal :new_episode, result.decision
       assert_not_equal previous_id, session.active_episode["episode_id"]
       assert session.find_entity_by_kb_document_id(elemont.id)
-      assert_equal 1, session.active_entities.size
+      assert_equal 1, session.document_focus_entries.size
       assert_equal({}, session.current_procedure)
       assert_nil session.active_episode["active_photo"]
       assert_nil session.active_episode["pending_fact"]
@@ -68,7 +68,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         assert session.find_entity_by_kb_document_id(elemont.id)
         assert session.find_entity_by_kb_document_id(vf5.id)
         assert session.find_entity_by_kb_document_id(both.id)
-        assert_equal 3, session.active_entities.size
+        assert_equal 3, session.document_focus_entries.size
         assert_equal procedure, session.current_procedure
         uris = SessionContextBuilder.entity_s3_uris(session)
         assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
@@ -94,7 +94,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         assert_equal "ep_only", session.active_episode["episode_id"]
         assert_equal "KONE", session.active_episode.dig("facts", "manufacturer", "value")
         assert session.find_entity_by_kb_document_id(elemont.id)
-        assert_equal 1, session.active_entities.size
+        assert_equal 1, session.document_focus_entries.size
         uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
         assert_equal [ uri ], SessionContextBuilder.entity_s3_uris(session)
         scope = retrieval_scope([ uri ])
@@ -218,7 +218,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         session.reload
         assert_equal :no_episode, result.decision
         assert session.find_entity_by_kb_document_id(elemont.id)
-        assert_equal 1, session.active_entities.size
+        assert_equal 1, session.document_focus_entries.size
         assert_equal({}, session.current_procedure)
         assert_equal({}, session.active_episode)
         uri = elemont.display_s3_uri(KbDocument::KB_BUCKET)
@@ -264,10 +264,10 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
 
     with_case_flags do
       travel_to(at) { seed_episode(session, episode_id: "ep_reset_expired", at: at) }
-      session.update!(active_entities: {
-        during.display_name => pin_entity(during, at + 20.seconds),
-        after.display_name => pin_entity(after, cutoff + 5.seconds)
-      })
+      session.update!(document_focus: [
+        focus_entry(during, at + 20.seconds),
+        focus_entry(after, cutoff + 5.seconds)
+      ])
       travel_to(cutoff + 1.second) do
         result = session.record_user_turn!(
           "otra falla en el tablero principal",
@@ -280,7 +280,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         assert_not_equal "ep_reset_expired", session.active_episode["episode_id"]
         assert session.find_entity_by_kb_document_id(during.id)
         assert session.find_entity_by_kb_document_id(after.id)
-        assert_equal 2, session.active_entities.size
+        assert_equal 2, session.document_focus_entries.size
       end
     end
   end
@@ -324,12 +324,12 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       travel_to(at) do
         seed_episode(session, episode_id: "ep_cut", at: at, procedure: { "step" => 8 })
       end
-      session.update!(active_entities: {
-        during.display_name => pin_entity(during, at + 20.seconds),
-        after.display_name => pin_entity(after, cutoff + 5.seconds),
-        missing.display_name => pin_entity(missing, nil),
-        invalid.display_name => pin_entity(invalid, nil).merge("added_at" => "not-a-timestamp")
-      })
+      session.update!(document_focus: [
+        focus_entry(during, at + 20.seconds),
+        focus_entry(after, cutoff + 5.seconds),
+        focus_entry(missing, nil),
+        focus_entry(invalid, nil).merge("added_at" => "not-a-timestamp")
+      ])
 
       travel_to(cutoff + 1.second) do
         session.record_user_turn!("hola", user_id: users(:one).id, correlation_id: "query:cut", now: Time.current)
@@ -340,7 +340,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       assert session.find_entity_by_kb_document_id(missing.id)
       assert session.find_entity_by_kb_document_id(invalid.id)
       assert session.find_entity_by_kb_document_id(after.id)
-      assert_equal 4, session.active_entities.size
+      assert_equal 4, session.document_focus_entries.size
       uris = SessionContextBuilder.entity_s3_uris(session)
       [ during, missing, invalid, after ].each do |doc|
         assert_includes uris, doc.display_s3_uri(KbDocument::KB_BUCKET)
@@ -369,8 +369,8 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
 
       session.reload
       assert session.find_entity_by_kb_document_id(stale.id)
-      assert_equal 2, session.active_entities.size
-      kept = session.active_entities.values.find { |meta| meta["kb_document_id"] == renewed.id }
+      assert_equal 2, session.document_focus_entries.size
+      kept = session.document_focus_entries.find { |meta| meta["kb_document_id"] == renewed.id }
       assert kept
       assert_equal expiry.to_i, Time.zone.parse(kept["added_at"]).to_i
       assert_equal renewed.display_s3_uri(KbDocument::KB_BUCKET), kept["source_uri"]
@@ -406,16 +406,16 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
         session.pin_kb_document!(other)
       end
       stale = ConversationSession.find(session.id)
-      assert_equal 2, stale.active_entities.size
+      assert_equal 2, stale.document_focus_entries.size
 
       travel_to(at + ConversationSession::EPISODE_WINDOW + 1.second) do
         session.record_user_turn!("hola", user_id: users(:one).id, correlation_id: "query:race", now: Time.current)
-        assert_equal 2, session.reload.entity_count
+        assert_equal 2, session.reload.document_focus_entries.size
         assert stale.pin_kb_document!(kept)
       end
 
       reloaded = ConversationSession.find(session.id)
-      assert_equal 2, reloaded.entity_count
+      assert_equal 2, reloaded.document_focus_entries.size
       assert reloaded.find_entity_by_kb_document_id(kept.id)
       assert reloaded.find_entity_by_kb_document_id(other.id)
     end
@@ -548,7 +548,7 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
       assert_equal new_id, session.active_episode["episode_id"]
       assert_not_equal "ep_explicit", new_id
       assert session.find_entity_by_kb_document_id(doc.id)
-      assert_equal 1, session.active_entities.size
+      assert_equal 1, session.document_focus_entries.size
       assert_equal({}, session.current_procedure)
       assert_equal [ "antes" ], session.conversation_history.pluck("content")
       assert_equal expires.to_i, session.expires_at.to_i
@@ -609,16 +609,14 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
     )
   end
 
-  def pin_entity(doc, added_at)
-    entity = {
-      "canonical_name" => doc.display_name,
+  def focus_entry(doc, added_at)
+    entry = {
       "kb_document_id" => doc.id,
-      "source" => "user_pin",
       "source_uri" => doc.display_s3_uri(KbDocument::KB_BUCKET),
-      "aliases" => []
+      "display_name" => doc.display_name
     }
-    entity["added_at"] = added_at.iso8601 if added_at
-    entity
+    entry["added_at"] = added_at.iso8601 if added_at
+    entry
   end
 
   def with_case_flags

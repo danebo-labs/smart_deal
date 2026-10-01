@@ -18,7 +18,7 @@ class Rag::FocusNoticeTest < ActiveSupport::TestCase
 
   test "a different brand is shown and the pin stays" do
     document = pinned_manual("schindler.pdf", "Manual Schindler")
-    before = @session.active_entities.deep_dup
+    before = @session.document_focus.deep_dup
 
     notice = with_catalog(document, brands: [ "Schindler" ]) do
       Rag::FocusNotice.pin_conflict(session: @session, suggestion: Suggestion.new("otis", []))
@@ -26,7 +26,7 @@ class Rag::FocusNoticeTest < ActiveSupport::TestCase
 
     assert_equal "Indicaste Otis. El manual enfocado es de Schindler y sigue enfocado.", notice.message
     assert_equal "otis", notice.manufacturer
-    assert_equal before, @session.reload.active_entities
+    assert_equal before, @session.reload.document_focus
   end
 
   test "the same brand is not a pin conflict" do
@@ -47,7 +47,7 @@ class Rag::FocusNoticeTest < ActiveSupport::TestCase
     end
 
     assert_nil notice
-    assert_equal 1, @session.reload.active_entities.size
+    assert_equal 1, @session.reload.document_focus_entries.size
   end
 
   test "a different model is shown when both sides name one and the pin stays" do
@@ -58,7 +58,7 @@ class Rag::FocusNoticeTest < ActiveSupport::TestCase
     end
 
     assert_equal "Indicaste Otis Y9. El manual enfocado no coincide con ese modelo y sigue enfocado.", notice.message
-    assert_equal 1, @session.reload.active_entities.size
+    assert_equal 1, @session.reload.document_focus_entries.size
   end
 
   test "a model on only one side does not conflict" do
@@ -77,7 +77,7 @@ class Rag::FocusNoticeTest < ActiveSupport::TestCase
       "facts" => { "manufacturer" => { "status" => "known", "value" => "OTIS", "source" => "user" } },
       "conflicts" => [ { "fact" => "manufacturer", "user" => "OTIS", "photo" => "KONE" } ]
     })
-    before = @session.active_entities.deep_dup
+    before = @session.document_focus.deep_dup
 
     notice = Rag::FocusNotice.identity_conflict(session: @session)
 
@@ -85,7 +85,7 @@ class Rag::FocusNoticeTest < ActiveSupport::TestCase
     assert_includes notice.message, "KONE"
     assert_equal "OTIS", @session.reload.active_episode.dig("facts", "manufacturer", "value")
     assert_equal "user", @session.active_episode.dig("facts", "manufacturer", "source")
-    assert_equal before, @session.active_entities
+    assert_equal before, @session.document_focus
     assert document.persisted?
   end
 

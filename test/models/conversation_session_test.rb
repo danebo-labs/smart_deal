@@ -655,21 +655,25 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
   # ─── Pin / Unpin ────────────────────────────────────────────────────────────
 
-  test 'pin_kb_document! adds entity with source: user_pin and source_uri' do
+  test 'pin_kb_document! stores only the focus identity and leaves the episode alone' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-1", channel: "web")
+    episode = { "episode_id" => "ep_pin", "status" => "active" }
+    session.update!(active_episode: episode)
     kb_doc  = KbDocument.create!(s3_key: "uploads/2026/test_pin.pdf", display_name: "Test Pin", aliases: [ "TP" ])
 
     assert session.pin_kb_document!(kb_doc)
     session.reload
 
-    entity = session.active_entities["Test Pin"]
-    assert_equal "user_pin", entity["source"]
-    assert_equal "document", entity["entity_type"]
-    assert_equal "s3://#{KbDocument::KB_BUCKET}/uploads/2026/test_pin.pdf", entity["source_uri"]
-    assert_includes entity["aliases"], "TP"
+    entry = session.document_focus_entries.sole
+    assert_equal ConversationSession::DOCUMENT_FOCUS_KEYS, entry.keys.sort
+    assert_equal kb_doc.id, entry["kb_document_id"]
+    assert_equal "Test Pin", entry["display_name"]
+    assert_equal "s3://#{KbDocument::KB_BUCKET}/uploads/2026/test_pin.pdf", entry["source_uri"]
+    assert_equal({}, session.active_entities)
+    assert_equal episode, session.active_episode
   end
 
-  test 'pin_kb_document! is idempotent by source_uri' do
+  test 'pin_kb_document! is idempotent by kb_document_id' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-2", channel: "web")
     kb_doc  = KbDocument.create!(s3_key: "uploads/2026/idem.pdf", display_name: "Idem", aliases: [])
 
@@ -677,10 +681,10 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.pin_kb_document!(kb_doc)
     session.reload
 
-    assert_equal 1, session.active_entities.size
+    assert_equal 1, session.document_focus_entries.size
   end
 
-  test 'pin_kb_document! keeps documents with a shared alias as separate entities' do
+  test 'pin_kb_document! keeps documents with a shared alias as separate focus entries' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-shared-alias", channel: "web")
     image = KbDocument.create!(
       s3_key: "uploads/2026/hydraulic.jpg",
@@ -697,16 +701,17 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.pin_kb_document!(manual)
     session.reload
 
-    assert_equal 2, session.entity_count
-    assert_equal "image_upload", session.active_entities["Hydraulic Board"]["entity_type"]
-    assert_equal "document", session.active_entities["Platform Manual"]["entity_type"]
+    assert_equal 2, session.document_focus_entries.size
+    assert_equal "image_upload", ConversationSession.media_type_for(image)
+    assert_equal "document", ConversationSession.media_type_for(manual)
+    assert_equal [ "kb_document_id", "source_uri", "display_name", "added_at" ].sort, session.document_focus_entries.first.keys.sort
     assert_equal(
       [ image, manual ].map { |doc| doc.display_s3_uri(KbDocument::KB_BUCKET) }.sort,
       SessionContextBuilder.entity_s3_uris(session).sort
     )
   end
 
-  test 'pin_kb_document! suffixes the key when different documents share a canonical name' do
+  test 'pin_kb_document! keeps two documents that share a display name' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-shared-name", channel: "web")
     first = KbDocument.create!(
       s3_key: "uploads/2026/controller-a.pdf",
@@ -723,12 +728,12 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.pin_kb_document!(second)
     session.reload
 
-    assert_equal 2, session.entity_count
-    assert session.active_entities.key?("Controller Manual")
-    assert session.active_entities.key?("Controller Manual (kb##{second.id})")
+    ids = session.document_focus_entries.pluck("kb_document_id")
+    assert_equal [ first.id, second.id ].sort, ids.sort
+    assert_equal [ "Controller Manual", "Controller Manual" ], session.document_focus_entries.pluck("display_name")
   end
 
-  test 'pin_kb_document! merges new aliases when re-pinning the same document' do
+  test 'pin_kb_document! refreshes the stored name and uri from the document' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-refresh", channel: "web")
     kb_doc = KbDocument.create!(
       s3_key: "uploads/2026/refresh.pdf",
@@ -739,19 +744,17 @@ class ConversationSessionTest < ActiveSupport::TestCase
     first_at = Time.zone.parse("2026-09-30 10:00:00")
     second_at = first_at + 2.hours
     travel_to(first_at) { session.pin_kb_document!(kb_doc) }
-    original_added_at = session.reload.active_entities.fetch("Refresh Manual").fetch("added_at")
-    kb_doc.update!(aliases: [ "Updated Alias" ])
+    original_added_at = session.reload.document_focus_entries.sole.fetch("added_at")
+    kb_doc.update!(display_name: "Refresh Manual v2", aliases: [ "Updated Alias" ])
     travel_to(second_at) { session.pin_kb_document!(kb_doc) }
     session.reload
 
-    entity = session.active_entities.fetch("Refresh Manual")
-    assert_equal 1, session.entity_count
+    entity = session.document_focus_entries.sole
     assert_equal second_at, Time.zone.parse(entity["added_at"])
     assert_not_equal original_added_at, entity["added_at"]
-    assert_equal kb_doc.id, entity["kb_document_id"]
+    assert_equal "Refresh Manual v2", entity["display_name"]
     assert_equal kb_doc.display_s3_uri(KbDocument::KB_BUCKET), entity["source_uri"]
-    assert_includes entity["aliases"], "Original Alias"
-    assert_includes entity["aliases"], "Updated Alias"
+    assert_equal ConversationSession::DOCUMENT_FOCUS_KEYS, entity.keys.sort
   end
 
   test "pin_kb_document! renews added_at when the pinned document is unchanged" do
@@ -767,14 +770,13 @@ class ConversationSessionTest < ActiveSupport::TestCase
     travel_to(first_at) { assert session.pin_kb_document!(kb_doc) }
     travel_to(second_at) { assert session.pin_kb_document!(kb_doc) }
 
-    entity = session.reload.active_entities.fetch("Same Hash Manual")
+    entity = session.reload.document_focus_entries.sole
     assert_equal second_at.to_i, Time.zone.parse(entity["added_at"]).to_i
     assert_equal kb_doc.id, entity["kb_document_id"]
     assert_equal kb_doc.display_s3_uri(KbDocument::KB_BUCKET), entity["source_uri"]
-    assert_equal [ "Alias" ], entity["aliases"]
   end
 
-  test 'pin_kb_document! stamps source: user_pin when merging into an auto-extracted entity' do
+  test 'pin_kb_document! does not copy a legacy hash into document focus' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-auto-extracted", channel: "web")
     kb_doc = KbDocument.create!(
       s3_key: "uploads/2026/auto-extracted.pdf",
@@ -796,7 +798,9 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert session.pin_kb_document!(kb_doc)
     session.reload
 
-    assert_equal "user_pin", session.active_entities.fetch("Auto Extracted Manual").fetch("source")
+    assert_equal "doc_refs_rule8", session.active_entities.fetch("Auto Extracted Manual").fetch("source")
+    assert_equal [ kb_doc.id ], session.document_focus_entries.pluck("kb_document_id")
+    assert_equal uri, session.document_focus_entries.sole["source_uri"]
   end
 
   test 'pin_kb_document! updates source_uri when the same kb_document_id is re-pinned' do
@@ -812,15 +816,15 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.pin_kb_document!(kb_doc)
     session.reload
 
-    assert_equal 1, session.entity_count
+    assert_equal 1, session.document_focus_entries.size
     assert_equal(
       [ kb_doc.display_s3_uri(KbDocument::KB_BUCKET) ],
       SessionContextBuilder.entity_s3_uris(session)
     )
-    assert_equal "document", session.active_entities.fetch("Movable Manual").fetch("entity_type")
+    assert_equal "document", ConversationSession.media_type_for(kb_doc)
   end
 
-  test 'pin_kb_document! refreshes entity_type when the physical file extension changes' do
+  test 'a re-pin copies the new file location and the image type comes from the document' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-type-refresh", channel: "web")
     kb_doc = KbDocument.create!(
       s3_key: "uploads/2026/inspection.pdf",
@@ -832,8 +836,10 @@ class ConversationSessionTest < ActiveSupport::TestCase
     kb_doc.update!(s3_key: "uploads/2026/inspection.jpg")
     session.pin_kb_document!(kb_doc)
 
-    entity = session.reload.active_entities.fetch("Inspection")
-    assert_equal "image_upload", entity["entity_type"]
+    entity = session.reload.document_focus_entries.sole
+    assert_equal kb_doc.display_s3_uri(KbDocument::KB_BUCKET), entity["source_uri"]
+    assert_equal "image_upload", ConversationSession.media_type_for(kb_doc)
+    assert_not entity.key?("entity_type")
   end
 
   test 'unpin_kb_document! removes only the matching uri when aliases overlap' do
@@ -854,7 +860,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session.unpin_kb_document!(first)
     session.reload
 
-    assert_equal 1, session.entity_count
+    assert_equal 1, session.document_focus_entries.size
     assert_equal(
       [ second.display_s3_uri(KbDocument::KB_BUCKET) ],
       SessionContextBuilder.entity_s3_uris(session)
@@ -863,28 +869,30 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
   test 'pin_kb_document! preserves FIFO eviction at MAX_ENTITIES' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-fifo", channel: "web")
-    base_time = 1.hour.ago
-    prefilled = {}
+    base_time = Time.zone.parse("2026-09-30 08:00:00")
+    oldest = nil
     ConversationSession::MAX_ENTITIES.times do |i|
-      prefilled["pinned_#{i}"] = {
-        "source"     => "user_pin",
-        "source_uri" => "s3://bucket/pinned_#{i}.pdf",
-        "added_at"   => (base_time + i.seconds).iso8601
-      }
+      document = KbDocument.create!(
+        s3_key: "uploads/2026/pinned-#{i}-#{SecureRandom.hex(2)}.pdf",
+        display_name: "Pinned #{i}",
+        aliases: []
+      )
+      oldest ||= document
+      travel_to(base_time + i.seconds) { session.pin_kb_document!(document) }
     end
-    session.update!(active_entities: prefilled)
     newest = KbDocument.create!(
       s3_key: "uploads/2026/newest-pin.pdf",
       display_name: "Newest Pin",
       aliases: []
     )
 
-    session.pin_kb_document!(newest)
+    travel_to(base_time + 1.hour) { session.pin_kb_document!(newest) }
     session.reload
 
-    assert_equal ConversationSession::MAX_ENTITIES, session.entity_count
-    assert_not session.active_entities.key?("pinned_0")
-    assert session.active_entities.key?("Newest Pin")
+    ids = session.document_focus_entries.pluck("kb_document_id")
+    assert_equal ConversationSession::MAX_ENTITIES, ids.size
+    assert_not_includes ids, oldest.id
+    assert_includes ids, newest.id
   end
 
   test 'shared session keeps distinct pinned documents in the same row' do
@@ -911,11 +919,11 @@ class ConversationSessionTest < ActiveSupport::TestCase
       session_a.reload
 
       assert_equal session_a.id, session_b.id
-      assert_equal 2, session_a.entity_count
+      assert_equal 2, session_a.document_focus_entries.size
     end
   end
 
-  test 'unpin_kb_document! removes the entity' do
+  test 'unpin_kb_document! removes the focus entry' do
     session = ConversationSession.find_or_create_for(identifier: "pin-user-3", channel: "web")
     kb_doc  = KbDocument.create!(s3_key: "uploads/2026/unpin.pdf", display_name: "Unpin", aliases: [])
 
@@ -923,6 +931,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert session.unpin_kb_document!(kb_doc)
     session.reload
 
+    assert_empty session.document_focus_entries
     assert_empty session.active_entities
   end
 

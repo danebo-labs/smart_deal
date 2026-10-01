@@ -307,7 +307,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
 
     session.reload
     kb_doc.reload
-    assert_empty session.active_entities
+    assert_empty session.document_focus_entries
     assert_equal "Stale Manual", kb_doc.display_name
     assert TechnicianDocument.find_by(identifier: session.identifier, channel: session.channel, canonical_name: "Stale Manual")
     dropped = events.find { |event| event["event"] == "stale_case_write_dropped" }
@@ -331,7 +331,7 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
             kb_id: "kb-test", conv_session_id: session.id, kb_document_ids: [ kb_doc.id ]
           )
         end
-        assert_empty session.reload.active_entities
+        assert_empty session.reload.document_focus_entries
         assert KbDocument.exists?(kb_doc.id)
       end
     end

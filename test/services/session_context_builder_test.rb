@@ -36,7 +36,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'includes Session Focus block when active_entities present' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('manual.pdf', { 'source' => 'retrieve_result' })
 
     context = SessionContextBuilder.build(session)
@@ -46,7 +46,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'labels image_upload entities as [image]' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('wa_photo.jpg', { 'source' => 'image_upload' })
 
     context = SessionContextBuilder.build(session)
@@ -55,7 +55,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'prefers entity_type over pin provenance when labeling session focus' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('field_photo.jpg', {
       'source' => 'user_pin',
       'entity_type' => 'image_upload'
@@ -72,7 +72,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'includes both retrieve_result and image_upload entities' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('doc.pdf',    { 'source' => 'retrieve_result' })
     session.add_entity('photo.jpg',  { 'source' => 'image_upload' })
 
@@ -83,7 +83,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'caps aliases per entity in prompt context' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('manual.pdf', {
       'source' => 'retrieve_result',
       'aliases' => %w[one two three four five six seven]
@@ -119,7 +119,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'includes both blocks when session has entities and history' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('doc.pdf', { 'source' => 'retrieve_result' })
     session.add_to_history('user', 'What is this?')
 
@@ -138,14 +138,14 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'entity_s3_uris returns empty array when no entities have source_uri' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('doc.pdf', { 'source' => 'retrieve_result' })
 
     assert_equal [], SessionContextBuilder.entity_s3_uris(session)
   end
 
   test 'entity_s3_uris extracts s3:// URIs from active entities' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('Junction Box Car Top', {
       'source'     => 'doc_refs_rule8',
       'source_uri' => 's3://my-bucket/junction_box.pdf'
@@ -163,7 +163,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'entity_s3_uris ignores non-s3 URIs' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('doc.pdf', {
       'source'     => 'doc_refs_rule8',
       'source_uri' => 'https://example.com/doc.pdf'
@@ -173,7 +173,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'entity_s3_uris rejects fabricated unknown-bucket URIs' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('Junction Box', {
       'source'     => 'doc_refs_rule8',
       'source_uri' => 's3://unknown-bucket/unknown-path/junction_box.pdf'
@@ -183,7 +183,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'entity_s3_uris rejects placeholder-bucket URIs' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('Doc', {
       'source'     => 'doc_refs_rule8',
       'source_uri' => 's3://placeholder/doc.pdf'
@@ -193,7 +193,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'entity_s3_uris keeps real URIs alongside fabricated ones' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('Real Doc', {
       'source'     => 'doc_refs_rule8',
       'source_uri' => 's3://multimodal-source-destination/uploads/2026-03-27/wa_file.jpeg'
@@ -209,7 +209,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'entity_s3_uris deduplicates identical URIs' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('Doc A', { 'source' => 'doc_refs_rule8', 'source_uri' => 's3://bucket/same.pdf' })
     session.add_entity_with_aliases('Doc A alias', [], { 'source' => 'doc_refs_rule8', 'source_uri' => 's3://bucket/same.pdf' })
 
@@ -223,7 +223,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   # ============================================
 
   test 'includes summary note when entity has first_answer_summary' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('Junction Box Car Top', {
       'source'               => 'doc_refs_rule8',
       'first_answer_summary' => 'Contains safety chain relay and door zone contacts.'
@@ -235,7 +235,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   end
 
   test 'omits summary note when entity has no first_answer_summary' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity('manual.pdf', { 'source' => 'retrieve_result' })
 
     context = SessionContextBuilder.build(session)
@@ -296,7 +296,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
       channel:        "whatsapp"
     )
 
-    session = build_session
+    session = build_session(channel: "whatsapp")
     session.add_entity("Shared Doc", {
       "source"     => "doc_refs_rule8",
       "source_uri" => "s3://bucket/shared.pdf"
@@ -312,7 +312,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   # ============================================
 
   test 'Session Focus orders entities most-recent first by added_at' do
-    session = build_session
+    session = build_session(channel: "whatsapp")
     older = (10.minutes.ago).iso8601
     newer = Time.current.iso8601
     session.update!(active_entities: {
@@ -389,19 +389,21 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
   test 'episode history plus a 15-alias pin stays within the context cap with intact Session Discipline' do
     now = Time.zone.parse("2026-09-16T10:51:54-03:00")
     aliases = 15.times.map { |i| "Alias #{i} del montacargas Elemont MH" }
+    document = KbDocument.create!(
+      s3_key: "uploads/scb-cap-#{SecureRandom.hex(4)}.pdf",
+      display_name: "Elemont Montacargas Hidraulico Modelo MH",
+      aliases: aliases
+    )
     session = ConversationSession.create!(
       identifier: "web:scb_cap_#{SecureRandom.hex(4)}",
       channel: "web",
       expires_at: 30.days.from_now,
-      active_entities: {
-        "Elemont Montacargas Hidraulico Modelo MH" => {
-          "source" => "user_pin",
-          "entity_type" => "document",
-          "canonical_name" => "Elemont Montacargas Hidraulico Modelo MH",
-          "aliases" => aliases,
-          "added_at" => "2026-09-16T10:51:51-03:00"
-        }
-      },
+      document_focus: [ {
+        "kb_document_id" => document.id,
+        "source_uri" => document.display_s3_uri(KbDocument::KB_BUCKET),
+        "display_name" => document.display_name,
+        "added_at" => "2026-09-16T10:51:51-03:00"
+      } ],
       conversation_history: [
         { "role" => "user", "content" => "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15", "ts" => "2026-09-16T10:49:41-03:00" },
         { "role" => "assistant", "content" => "La documentación disponible del Elemont Montacargas Hidráulico Modelo MH no contiene información específica sobre la tarjeta CEA15.", "ts" => "2026-09-16T10:49:47-03:00" },
@@ -613,12 +615,12 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
       goal: "Resortes",
       facts: { "manufacturer" => known_fact("Fuji Yida") }
     )
-    session.add_entity("DOC_ONLY_SENTINEL_MANUAL", {
-      "source" => "user_pin",
-      "entity_type" => "document",
-      "source_uri" => "s3://manuals/sentinel.pdf",
-      "first_answer_summary" => "DOCUMENTARY_TERMINAL_VALUE_99"
-    })
+    document = KbDocument.create!(
+      s3_key: "uploads/sentinel-#{SecureRandom.hex(4)}.pdf",
+      display_name: "DOC_ONLY_SENTINEL_MANUAL",
+      aliases: [ "DOCUMENTARY_TERMINAL_VALUE_99" ]
+    )
+    session.pin_kb_document!(document)
 
     travel_to FIELD_PROBLEM_NOW do
       with_companion_flags do
@@ -629,7 +631,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
         assert_not_includes block, "DOC_ONLY_SENTINEL_MANUAL"
         assert_not_includes block, "DOCUMENTARY_TERMINAL_VALUE_99"
-        assert_not_includes block, "s3://manuals/sentinel.pdf"
+        assert_not_includes block, document.display_s3_uri(KbDocument::KB_BUCKET)
         assert_equal block, rendered
         assert_includes context, "DOC_ONLY_SENTINEL_MANUAL"
         assert_includes context, "DOCUMENTARY_TERMINAL_VALUE_99"
@@ -639,18 +641,6 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
   test "active field problem keeps its own budget when pins and history fill the context" do
     aliases = 5.times.map { |index| "Alias #{index} " + ("A" * 40) }
-    entities = 6.times.to_h do |index|
-      [
-        "Pinned manual #{index} " + ("N" * 60),
-        {
-          "source" => "user_pin",
-          "entity_type" => "document",
-          "aliases" => aliases,
-          "first_answer_summary" => "S" * 240,
-          "added_at" => FIELD_PROBLEM_NOW.iso8601
-        }
-      ]
-    end
     session = episode_session(
       goal: "G" * 300,
       facts: {
@@ -658,8 +648,22 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
         "model" => confirmed_fact("unknown_confirmed")
       }
     )
+    documents = 6.times.map { |index|
+      KbDocument.create!(
+        s3_key: "uploads/budget-#{index}-#{SecureRandom.hex(3)}.pdf",
+        display_name: "Pinned manual #{index} " + ("N" * 60),
+        aliases: aliases
+      )
+    }
     session.update!(
-      active_entities: entities,
+      document_focus: documents.map { |document|
+        {
+          "kb_document_id" => document.id,
+          "source_uri" => document.display_s3_uri(KbDocument::KB_BUCKET),
+          "display_name" => document.display_name,
+          "added_at" => FIELD_PROBLEM_NOW.iso8601
+        }
+      },
       conversation_history: 3.times.map { |index|
         { "role" => "user", "content" => "H" * 280, "ts" => (FIELD_PROBLEM_NOW - index.minutes).iso8601 }
       }

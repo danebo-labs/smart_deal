@@ -174,15 +174,18 @@ class FieldPhotoAnalysisService
   def pinned_manual_available?
     return false unless @conv_session_id
 
-    session = ConversationSession.select(:account_id, :active_entities).find_by(id: @conv_session_id)
+    session = ConversationSession.select(:account_id, :channel, :document_focus).find_by(id: @conv_session_id)
     return false unless session
     return false if @account_id && session.account_id != @account_id
+    return false unless session.uses_document_focus?
 
-    session.active_entities.any? do |_name, metadata|
-      type = metadata["entity_type"].to_s
-      source_uri = metadata["source_uri"].to_s
-      type == "document" || (type.blank? && source_uri.present? && source_uri !~ /\.(gif|jpe?g|png|webp)\z/i)
-    end
+    entries = session.document_focus_entries
+    return false if entries.empty?
+
+    documents = KbDocument.where(id: entries.pluck("kb_document_id")).index_by(&:id)
+    entries.any? { |entry|
+      ConversationSession.media_type_for(documents[entry["kb_document_id"]] || entry["source_uri"]) == "document"
+    }
   end
 
   def telemetry

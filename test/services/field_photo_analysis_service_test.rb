@@ -77,16 +77,20 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
   end
 
   test "omits the absent-manual warning when the session has a pinned document" do
+    document = KbDocument.create!(
+      account: accounts(:legacy),
+      s3_key: "uploads/door-manual.pdf",
+      display_name: "Door manual",
+      aliases: []
+    )
     session = ConversationSession.create!(
       identifier: "photo-manual",
       channel: "web",
       account: accounts(:legacy),
       user: users(:one),
-      expires_at: 1.day.from_now,
-      active_entities: {
-        "Door manual" => { "entity_type" => "document", "source_uri" => "s3://bucket/door.pdf" }
-      }
+      expires_at: 1.day.from_now
     )
+    session.pin_kb_document!(document)
 
     result = build_service(client: FakeClient.new(VALID_JSON), session: session).call
 

@@ -23,8 +23,10 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_equal "Manual enfocado", response.parsed_body["message"]
     assert_equal document.id, response.parsed_body["kb_document_id"]
-    assert_equal "user_pin", pinned_meta(web_session, document)["source"]
-    assert_equal document.display_s3_uri(KbDocument::KB_BUCKET), pinned_meta(web_session, document)["source_uri"]
+    meta = pinned_meta(web_session, document)
+    assert_equal ConversationSession::DOCUMENT_FOCUS_KEYS, meta.keys.sort
+    assert_equal document.display_name, meta["display_name"]
+    assert_equal document.display_s3_uri(KbDocument::KB_BUCKET), meta["source_uri"]
     event = focus_event("manual_focus_confirmed")
     assert_equal document.document_uid, event.payload["document_id"]
     assert_equal document.display_s3_uri(KbDocument::KB_BUCKET), event.payload["source_uri"]
@@ -44,7 +46,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_equal "already_focused", response.parsed_body["status"]
     assert_equal "Este manual ya está enfocado.", response.parsed_body["message"]
-    assert_equal 1, web_session.active_entities.size
+    assert_equal 1, web_session.document_focus_entries.size
   end
 
   test "a suggestion-card re-pin renews added_at and still answers already focused" do
@@ -69,7 +71,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_equal "already_focused", response.parsed_body["status"]
     session = web_session
-    assert_equal 2, session.active_entities.size
+    assert_equal 2, session.document_focus_entries.size
     assert_equal second_at.to_i, Time.zone.parse(pinned_meta(session, document)["added_at"]).to_i
     assert_equal first_at.to_i, Time.zone.parse(pinned_meta(session, other)["added_at"]).to_i
   end
@@ -93,7 +95,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_equal "danebo_general", shared.reload.knowledge_scope
     assert_equal accounts(:legacy).id, shared.account_id
     assert_equal before_batches, WebManualBatch.count
-    assert_empty owner_session.reload.active_entities
+    assert_empty owner_session.reload.document_focus_entries
     assert_equal "danebo_general", focus_event("manual_focus_confirmed").payload["knowledge_scope"]
     assert Rag::KnowledgeScopePolicy.authorized?(shared, viewer_account: @account)
   end
@@ -190,7 +192,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_equal own.id, pinned_meta(web_session, own)["kb_document_id"]
     assert_equal own.display_s3_uri(KbDocument::KB_BUCKET), pinned_meta(web_session, own)["source_uri"]
     assert_nil web_session.find_entity_by_kb_document_id(other.id)
-    assert_equal 1, web_session.active_entities.size
+    assert_equal 1, web_session.document_focus_entries.size
   end
 
   test "a failed tap leaves the previous pin in place" do
@@ -201,7 +203,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     confirm(other, uid: "not-the-row")
 
     assert_response :unprocessable_entity
-    assert_equal [ kept.id ], web_session.reload.active_entities.values.map { |meta| meta.fetch("kb_document_id") }
+    assert_equal [ kept.id ], web_session.reload.document_focus_entries.map { |meta| meta.fetch("kb_document_id") }
   end
 
   test "the pin is stored only on the session that confirmed it" do
@@ -223,9 +225,9 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     confirm(document)
 
     assert_equal document.id, pinned_meta(web_session, document)["kb_document_id"]
-    assert_empty peer_session.reload.active_entities
-    assert_empty other_session.reload.active_entities
-    assert_empty foreign_session.reload.active_entities
+    assert_empty peer_session.reload.document_focus_entries
+    assert_empty other_session.reload.document_focus_entries
+    assert_empty foreign_session.reload.document_focus_entries
   end
 
   test "removing focus works for a live pin, a revoked pin, and a deleted row" do
@@ -234,7 +236,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     delete pinned_document_path(live.id), params: { document_uid: live.document_uid }, as: :json
     assert_response :ok
     assert_equal "Listo. Esta consulta ya no usa ese manual.", response.parsed_body["message"]
-    assert_empty web_session.reload.active_entities
+    assert_empty web_session.reload.document_focus_entries
     assert_equal "unpinned", focus_event("manual_suggestion_dismissed").payload["outcome"]
     assert_equal live.document_uid, focus_event("manual_suggestion_dismissed").payload["document_id"]
 
@@ -245,7 +247,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     )
     delete pinned_document_path(revoked.id), params: { document_uid: revoked.document_uid }, as: :json
     assert_response :ok
-    assert_empty web_session.reload.active_entities
+    assert_empty web_session.reload.document_focus_entries
     assert revoked.reload.persisted?
 
     stale = own_manual("stale-unpin.pdf", "Stale")
@@ -255,7 +257,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     stale.delete
     delete pinned_document_path(stale_id), params: { document_uid: stale_uid }, as: :json
     assert_response :ok
-    assert_empty web_session.reload.active_entities
+    assert_empty web_session.reload.document_focus_entries
   end
 
   test "a missing row cannot be pinned from a card" do
@@ -277,7 +279,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_equal document.document_uid, card["document_uid"]
     assert_equal false, card["focused"]
     assert_nil body.dig("manual_suggestion", "selected_document_uid")
-    assert_nil web_session.active_entities.presence
+    assert_nil web_session.document_focus_entries.presence
     confirm(document, uid: card["document_uid"])
     _body, calls = ask("qué mantenimiento corresponde")
     scope = calls.last[:kwargs]
@@ -398,11 +400,11 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     Array(body.dig("manual_suggestion", "cards")).each do |card|
       assert_equal false, card["focused"]
     end
-    assert_nil web_session_if_any&.active_entities&.presence
+    assert_nil web_session_if_any&.document_focus_entries&.presence
 
     symptom, = ask("Tengo un problema en la puerta.")
     assert_nil symptom["manual_suggestion"]
-    assert_nil web_session_if_any&.active_entities&.presence
+    assert_nil web_session_if_any&.document_focus_entries&.presence
   end
 
   test "a pin conflict is shown and the previous pin stays" do
@@ -450,7 +452,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_includes body.dig("identity_conflict", "message"), "KONE"
     assert_equal "OTIS", session.reload.active_episode.dig("facts", "manufacturer", "value")
     assert_equal "user", session.active_episode.dig("facts", "manufacturer", "source")
-    assert_empty session.active_entities
+    assert_empty session.document_focus_entries
   end
 
   test "a photo observation does not replace the technician manufacturer" do
@@ -570,8 +572,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
   end
 
   def pinned_meta(session, document)
-    _key, meta = session.active_entities.find { |_name, row| row["kb_document_id"] == document.id }
-    meta
+    session.document_focus_entries.find { |row| row["kb_document_id"] == document.id }
   end
 
   def focus_event(name)

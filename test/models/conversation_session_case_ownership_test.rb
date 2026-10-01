@@ -182,16 +182,12 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
       seed_episode(session, "ep_old", at)
       session.update!(
         current_procedure: { "step" => 4 },
-        active_entities: {
-          "Elemont" => {
-            "canonical_name" => elemont.display_name,
-            "kb_document_id" => elemont.id,
-            "source" => "user_pin",
-            "source_uri" => elemont.display_s3_uri(KbDocument::KB_BUCKET),
-            "aliases" => [],
-            "added_at" => at.iso8601
-          }
-        },
+        document_focus: [ {
+          "kb_document_id" => elemont.id,
+          "source_uri" => elemont.display_s3_uri(KbDocument::KB_BUCKET),
+          "display_name" => elemont.display_name,
+          "added_at" => at.iso8601
+        } ],
         active_episode: session.active_episode.merge(
           "active_photo" => { "field_photo_id" => 3, "sha256" => "old-photo" }
         )
@@ -205,7 +201,7 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
         assert_not_equal "ep_old", owner
         assert_equal owner, session.live_episode_id
         assert session.find_entity_by_kb_document_id(elemont.id)
-        assert_equal 1, session.active_entities.size
+        assert_equal 1, session.document_focus_entries.size
         assert_equal({}, session.current_procedure)
         assert_nil session.active_episode["active_photo"]
         assert_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
@@ -224,7 +220,7 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
         assert_equal "photo", episode.dig("facts", "manufacturer", "source")
         assert_equal "MonoSpace", episode.dig("facts", "model", "value")
         assert session.find_entity_by_kb_document_id(elemont.id)
-        assert_equal 1, session.active_entities.size
+        assert_equal 1, session.document_focus_entries.size
       end
     end
   end
@@ -256,7 +252,7 @@ class ConversationSessionCaseOwnershipTest < ActiveSupport::TestCase
         session.reload
         assert_equal "ep_elemont", session.active_episode["episode_id"]
         assert session.find_entity_by_kb_document_id(elemont.id)
-        assert_equal 1, session.active_entities.size
+        assert_equal 1, session.document_focus_entries.size
         assert_includes SessionContextBuilder.entity_s3_uris(session), elemont.display_s3_uri(KbDocument::KB_BUCKET)
         assert_equal "model", session.active_episode.dig("pending_fact", "subject")
       end

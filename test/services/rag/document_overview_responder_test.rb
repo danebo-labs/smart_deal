@@ -23,7 +23,29 @@ module Rag
     end
 
     def session_with(entities)
-      Struct.new(:active_entities).new(entities)
+      entities.each_value do |meta|
+        next if meta["kb_document_id"].blank? || Array(meta["aliases"]).empty?
+
+        document = KbDocument.find(meta["kb_document_id"])
+        document.update!(aliases: (Array(document.aliases) + Array(meta["aliases"])).uniq)
+      end
+      entries = entities.values.filter_map { |meta|
+        next unless meta["source"] == "user_pin" && meta["kb_document_id"].present?
+
+        document = KbDocument.find(meta["kb_document_id"])
+        {
+          "kb_document_id" => document.id,
+          "source_uri" => document.display_s3_uri(KbDocument::KB_BUCKET),
+          "display_name" => meta["canonical_name"].presence || document.display_name,
+          "added_at" => meta["added_at"].to_s
+        }
+      }
+      ConversationSession.create!(
+        identifier: "overview-#{SecureRandom.hex(4)}",
+        channel: "web",
+        expires_at: 1.hour.from_now,
+        document_focus: entries
+      )
     end
 
     def entity_for(kb_document, aliases: [], source: "user_pin", added_at: Time.current.iso8601)

@@ -9,6 +9,63 @@ class ConversationSession < ApplicationRecord
   EPISODE_MAX_USER_MESSAGES = 3
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
   PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
+  DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
+
+  def self.media_type_for(document_or_uri)
+    source = document_or_uri.respond_to?(:s3_key) ? document_or_uri.s3_key : document_or_uri
+    extension = File.extname(source.to_s).downcase
+    PINNED_IMAGE_EXTENSIONS.include?(extension) ? "image_upload" : "document"
+  end
+
+  # Copies authorized user_pin rows into the web focus. A pin without
+  # kb_document_id is omitted. URI and name come from the KbDocument.
+  def self.document_focus_from_legacy(entities, account:)
+    return [] unless entities.is_a?(Hash) && account
+
+    pins = entities.values.filter_map { |meta| legacy_pin_candidate(meta) }
+    pins = newest_legacy_pins(pins)
+    return [] if pins.empty?
+
+    documents = KbDocument.where(id: pins.pluck(:id)).index_by(&:id)
+    entries = pins.filter_map { |pin| legacy_focus_entry(documents[pin[:id]], pin, account) }
+    entries.uniq { |entry| entry["kb_document_id"] }
+           .sort_by { |entry| entry["added_at"].to_s }
+           .last(MAX_ENTITIES)
+  end
+
+  def self.newest_legacy_pins(pins)
+    pins.each_with_object({}) { |pin, best|
+      current = best[pin[:id]]
+      best[pin[:id]] = pin if current.nil? || pin[:added_at] > current[:added_at]
+    }.values
+  end
+  private_class_method :newest_legacy_pins
+
+  def self.legacy_pin_candidate(meta)
+    return nil unless meta.is_a?(Hash) && meta["source"] == "user_pin"
+
+    id = meta["kb_document_id"]
+    return nil if id.blank?
+
+    { id: id.to_i, added_at: meta["added_at"].to_s }
+  end
+  private_class_method :legacy_pin_candidate
+
+  def self.legacy_focus_entry(document, pin, account)
+    return nil unless document
+    return nil unless Rag::KnowledgeScopePolicy.authorized?(document, viewer_account: account)
+
+    uri = document.display_s3_uri(KbDocument::KB_BUCKET)
+    return nil if uri.blank?
+
+    {
+      "kb_document_id" => document.id,
+      "source_uri" => uri,
+      "display_name" => document.display_name.presence || File.basename(document.s3_key.to_s, ".*"),
+      "added_at" => pin[:added_at].presence || Time.current.iso8601
+    }
+  end
+  private_class_method :legacy_focus_entry
 
   # WA channel disabled for MVP. "whatsapp" kept in CHANNELS so legacy rows (if any) remain valid.
   CHANNELS = %w[web shared whatsapp].freeze
@@ -123,7 +180,7 @@ class ConversationSession < ApplicationRecord
         active_episode: result.state,
         expires_at: EXPIRY_DURATION.from_now
       }
-      pins_before = pin_document_ids(active_entities)
+      pins_before = focus_document_ids
       photo_before = photo_marker(stored_episode)
       episode_before = raw_episode_id(stored_episode)
       boundary = case_boundary_changes(stored_episode, result, now)
@@ -217,7 +274,7 @@ class ConversationSession < ApplicationRecord
       stored = active_episode
       parsed = Rag::ActiveEpisode.parse(stored, now: now)
       if parsed.reason == "invalid_state"
-        pins = pin_document_ids(active_entities)
+        pins = focus_document_ids
         photo_before = photo_marker(stored)
         episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
         update!(
@@ -236,7 +293,7 @@ class ConversationSession < ApplicationRecord
         )
         episode.episode_id
       elsif parsed.reason == "expired"
-        pins = pin_document_ids(active_entities)
+        pins = focus_document_ids
         photo_before = photo_marker(stored)
         episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
         update!(
@@ -274,7 +331,7 @@ class ConversationSession < ApplicationRecord
     raise ArgumentError, "reason is required" if reason.blank?
 
     with_lock do
-      pins = pin_document_ids(active_entities)
+      pins = focus_document_ids
       photo_before = photo_marker(active_episode)
       episode_before = raw_episode_id(active_episode)
       episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
@@ -411,17 +468,63 @@ class ConversationSession < ApplicationRecord
     true
   end
 
-  # Physical-identity lookup: returns the canonical key whose entity has the
-  # given source_uri. Used to dedup entities across aliases — two different
-  # canonical_names with the same s3_uri are the same physical document.
-  # @return [String, nil]
+  # Web returns the focus entry. WhatsApp returns the legacy hash key.
   def find_entity_by_kb_document_id(id)
     return nil if id.blank?
+
+    if uses_document_focus?
+      return document_focus_entries.find { |entry| entry["kb_document_id"] == id.to_i }
+    end
 
     active_entities.each do |key, meta|
       return key if meta.is_a?(Hash) && meta["kb_document_id"].to_i == id.to_i
     end
     nil
+  end
+
+  # Web focus is not the WhatsApp entity hash. Shared sessions use this column too.
+  def uses_document_focus?
+    channel != "whatsapp"
+  end
+
+  # Tolerant reader. A hash, a string, or a row without an id is an empty focus.
+  def document_focus_entries
+    raw = self[:document_focus]
+    return [] unless raw.is_a?(Array)
+
+    entries = raw.filter_map { |item| coerce_focus_entry(item) }
+    entries = entries.reverse.uniq { |entry| entry["kb_document_id"] }.reverse
+    return entries if entries.size <= MAX_ENTITIES
+
+    kept_ids = entries.sort_by { |entry| entry["added_at"].to_s }.last(MAX_ENTITIES)
+                      .pluck("kb_document_id")
+    entries.select { |entry| kept_ids.include?(entry["kb_document_id"]) }
+  rescue StandardError
+    []
+  end
+
+  def focus_document_ids
+    document_focus_entries.pluck("kb_document_id")
+  end
+
+  # Transient index for the selection gate and the N→1 resolver. Aliases are
+  # read from KbDocument and are not stored on the focus.
+  def document_focus_scope_index
+    entries = document_focus_entries
+    return {} if entries.empty?
+
+    documents = KbDocument.where(id: entries.pluck("kb_document_id")).index_by(&:id)
+    entries.each_with_object({}) do |entry, index|
+      document = documents[entry["kb_document_id"]]
+      key = entry["display_name"].presence || "doc-#{entry["kb_document_id"]}"
+      key = "#{key} (kb##{entry["kb_document_id"]})" while index.key?(key)
+      index[key] = {
+        "canonical_name" => entry["display_name"],
+        "source_uri" => entry["source_uri"],
+        "aliases" => document ? Array(document.aliases) : [],
+        "kb_document_id" => entry["kb_document_id"]
+      }
+    end
   end
 
   def find_entity_by_source_uri(uri)
@@ -462,16 +565,15 @@ class ConversationSession < ApplicationRecord
 
   # ─── Pinned KB documents (UI checkbox) ─────────────────────────────────────
 
-  # Pin a KbDocument into the session: registers it as a user-driven entity.
-  # Physical identity is source_uri, with kb_document_id as a stable fallback.
-  # Names and aliases are descriptive only and never collapse distinct files.
+  # Pin a KbDocument. Web writes document_focus. WhatsApp keeps active_entities.
+  # URI and display name are copied from the KbDocument, never from the client.
   # @param kb_doc [KbDocument]
   # @return [Boolean] true on success/idempotent re-pin, false if URI cannot be resolved
   def pin_kb_document!(kb_doc)
     s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
     return false if s3_uri.blank?
 
-    with_lock { write_pinned_document!(kb_doc, s3_uri) }
+    with_lock { write_focus!(kb_doc, s3_uri) }
   end
 
   # One lock: reload, compare the submission's episode id, then pin.
@@ -493,7 +595,7 @@ class ConversationSession < ApplicationRecord
         next false
       end
 
-      write_pinned_document!(kb_doc, s3_uri)
+      write_focus!(kb_doc, s3_uri)
     end
   end
 
@@ -502,6 +604,15 @@ class ConversationSession < ApplicationRecord
   # for a pin written before that id was stored.
   def unpin_kb_document!(kb_doc)
     with_lock do
+      if uses_document_focus?
+        next true if remove_document_focus_id!(kb_doc.id)
+
+        s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+        next false if s3_uri.blank?
+
+        next remove_document_focus_uri!(s3_uri)
+      end
+
       key = find_entity_by_kb_document_id(kb_doc.id)
       if key.nil?
         s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
@@ -519,6 +630,10 @@ class ConversationSession < ApplicationRecord
   # still exist or still be readable. This does not grant a read.
   def unpin_kb_document_id!(kb_document_id)
     with_lock do
+      if uses_document_focus?
+        next remove_document_focus_id!(kb_document_id)
+      end
+
       key = find_entity_by_kb_document_id(kb_document_id)
       next false unless key
 
@@ -697,6 +812,76 @@ class ConversationSession < ApplicationRecord
     return false if normalized.blank? || word.blank?
 
     normalized.match?(/\b#{Regexp.escape(word)}\b/)
+  end
+
+  def write_focus!(kb_doc, s3_uri)
+    if uses_document_focus?
+      write_document_focus!(kb_doc, s3_uri)
+    else
+      write_pinned_document!(kb_doc, s3_uri)
+    end
+  end
+
+  def write_document_focus!(kb_doc, s3_uri)
+    entries = document_focus_entries
+    added_at = Time.current.iso8601
+    entry = {
+      "kb_document_id" => kb_doc.id,
+      "source_uri" => s3_uri,
+      "display_name" => kb_doc.display_name.presence || File.basename(kb_doc.s3_key.to_s, ".*"),
+      "added_at" => added_at
+    }
+    index = entries.index { |existing| existing["kb_document_id"] == kb_doc.id }
+    if index
+      entries[index] = entry
+    else
+      entries << entry
+      evict_oldest_focus!(entries)
+    end
+
+    update!(document_focus: entries)
+    true
+  end
+
+  def remove_document_focus_id!(kb_document_id)
+    entries = document_focus_entries
+    kept = entries.reject { |entry| entry["kb_document_id"] == kb_document_id.to_i }
+    return false if kept.size == entries.size
+
+    update!(document_focus: kept)
+    true
+  end
+
+  def remove_document_focus_uri!(uri)
+    entries = document_focus_entries
+    kept = entries.reject { |entry| entry["source_uri"] == uri.to_s }
+    return false if kept.size == entries.size
+
+    update!(document_focus: kept)
+    true
+  end
+
+  def evict_oldest_focus!(entries)
+    return unless entries.size > MAX_ENTITIES
+
+    oldest = entries.min_by { |entry| entry["added_at"].to_s }
+    entries.delete(oldest)
+  end
+
+  def coerce_focus_entry(item)
+    return nil unless item.is_a?(Hash)
+
+    data = item.stringify_keys
+    id = data["kb_document_id"]
+    uri = data["source_uri"]
+    return nil if id.blank? || uri.blank?
+
+    {
+      "kb_document_id" => id.to_i,
+      "source_uri" => uri.to_s,
+      "display_name" => data["display_name"].to_s,
+      "added_at" => data["added_at"].to_s
+    }
   end
 
   def write_pinned_document!(kb_doc, s3_uri)

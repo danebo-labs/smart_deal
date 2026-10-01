@@ -313,7 +313,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/data-doc-id="#{doc.id}"[^>]*data-selected="true"/, response.body)
     kept = ConversationSession.find(session.id)
     assert kept.expired?
-    assert kept.active_entities.present?
+    assert kept.document_focus_entries.any?
     assert_equal 1, ConversationSession.where(
       account_id: accounts(:legacy).id,
       identifier: users(:one).id.to_s,

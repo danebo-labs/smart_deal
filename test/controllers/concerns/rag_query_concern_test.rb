@@ -1333,17 +1333,12 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       channel: "web",
       account: @controller.current_account,
       expires_at: 30.days.from_now,
-      active_entities: {
-        elemont.display_name => {
-          "source" => "user_pin",
-          "kb_document_id" => elemont.id,
-          "source_uri" => elemont.display_s3_uri(KbDocument::KB_BUCKET),
-          "entity_type" => "document",
-          "canonical_name" => elemont.display_name,
-          "aliases" => elemont.aliases,
-          "added_at" => "2026-09-16T10:51:51-03:00"
-        }
-      },
+      document_focus: [ {
+        "kb_document_id" => elemont.id,
+        "source_uri" => elemont.display_s3_uri(KbDocument::KB_BUCKET),
+        "display_name" => elemont.display_name,
+        "added_at" => "2026-09-16T10:51:51-03:00"
+      } ],
       conversation_history: (AUGUST_TURNS + JESUS_TURNS.first(history_size)).map(&:stringify_keys)
     )
   end
@@ -2013,13 +2008,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
   test "a pin label keeps the selection gate on the original text when the rewrite applies" do
     create_followup_guide(display_name: "Panel Alfa manual", aliases: [ "Panel Alfa" ])
     session = build_followup_session(follow_up: "Panel Alfa")
-    session.update!(active_entities: {
-      "Panel Alfa" => {
-        "canonical_name" => "Panel Alfa",
-        "aliases" => [ "Panel Alfa" ],
-        "source_uri" => "s3://bucket/panel-alfa.pdf"
-      }
-    })
+    focus_document!(session, "Panel Alfa", "s3://bucket/panel-alfa.pdf")
     excludes = []
     wrap_episode_exclude(session, excludes, [])
 
@@ -2309,13 +2298,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
   test "a pin label keeps the selection path ahead of the thread menu" do
     session = build_two_thread_session(follow: "Panel Alfa", correlation_id: "query:pin")
-    session.update!(active_entities: {
-      "Panel Alfa" => {
-        "canonical_name" => "Panel Alfa",
-        "aliases" => [ "Panel Alfa" ],
-        "source_uri" => "s3://bucket/panel-alfa.pdf"
-      }
-    })
+    focus_document!(session, "Panel Alfa", "s3://bucket/panel-alfa.pdf")
 
     result = nil
     with_followup_orchestrator do |captured|
@@ -2554,13 +2537,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
   test "a selection label still gates before the composed question is searched" do
     session = build_two_thread_session(follow: "Manual KONE", correlation_id: "query:pin")
-    session.update!(active_entities: {
-      "Manual KONE" => {
-        "canonical_name" => "Manual KONE",
-        "aliases" => [ "Manual KONE" ],
-        "source_uri" => "s3://bucket/manual-kone.pdf"
-      }
-    })
+    focus_document!(session, "Manual KONE", "s3://bucket/manual-kone.pdf")
     episode_turn = episode_result(
       decision: :continued_elliptical,
       composed: "#{SPRING_QUESTION}\nManual KONE"
@@ -2854,8 +2831,28 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       account: accounts(:legacy),
       expires_at: 30.days.from_now,
       conversation_history: history,
-      active_entities: entities
+      document_focus: entities.map { |key, meta| focus_entry_for(key, meta) }
     )
+  end
+
+  def focus_document!(session, name, uri)
+    session.update!(document_focus: session.document_focus_entries + [ focus_entry_for(name, { "canonical_name" => name, "source_uri" => uri, "aliases" => [ name ] }) ])
+  end
+
+  def focus_entry_for(key, meta)
+    name = meta["canonical_name"].presence || key.to_s
+    document = KbDocument.create!(
+      account: accounts(:legacy),
+      s3_key: "uploads/focus-#{SecureRandom.hex(4)}.pdf",
+      display_name: name,
+      aliases: Array(meta["aliases"])
+    )
+    {
+      "kb_document_id" => document.id,
+      "source_uri" => meta["source_uri"].presence || document.display_s3_uri(KbDocument::KB_BUCKET),
+      "display_name" => name,
+      "added_at" => Time.current.iso8601
+    }
   end
 
   def field_history_row(role, content, index)

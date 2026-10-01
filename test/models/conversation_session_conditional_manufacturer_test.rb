@@ -44,7 +44,7 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
           assert_equal [ "manufacturer" ], session.active_episode["conflicts"].pluck("fact")
           assert session.find_entity_by_kb_document_id(elemont.id)
           assert session.find_entity_by_kb_document_id(neutral.id)
-          assert_equal 2, session.active_entities.size
+          assert_equal 2, session.document_focus_entries.size
           uris = SessionContextBuilder.entity_s3_uris(session)
           assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
           assert_includes uris, neutral.display_s3_uri(KbDocument::KB_BUCKET)
@@ -90,7 +90,7 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
           assert_equal [], session.active_episode["conflicts"]
           assert session.find_entity_by_kb_document_id(elemont.id)
           assert session.find_entity_by_kb_document_id(neutral.id)
-          assert_equal 2, session.active_entities.size
+          assert_equal 2, session.document_focus_entries.size
           uris = SessionContextBuilder.entity_s3_uris(session)
           assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
           assert_includes uris, neutral.display_s3_uri(KbDocument::KB_BUCKET)
@@ -231,7 +231,7 @@ class ConversationSessionConditionalManufacturerTest < ActiveSupport::TestCase
           assert session.find_entity_by_kb_document_id(elemont.id)
           assert session.find_entity_by_kb_document_id(neutral.id)
           assert session.find_entity_by_kb_document_id(kone.id)
-          assert_equal 3, session.active_entities.size
+          assert_equal 3, session.document_focus_entries.size
           uris = SessionContextBuilder.entity_s3_uris(session)
           assert_includes uris, elemont.display_s3_uri(KbDocument::KB_BUCKET)
           assert_includes uris, neutral.display_s3_uri(KbDocument::KB_BUCKET)

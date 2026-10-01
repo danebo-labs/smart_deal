@@ -116,14 +116,11 @@ module RagQueryConcern
     else
       KbDocumentResolver.resolve_scoped(effective_question, account: resolved_account)
     end
-    pinned_uris            = Array(entity_s3_uris).compact
-    pinned_uris            = resolve_pinned_scope(question, conv_session, pinned_uris)
+    pinned_uris = Array(entity_s3_uris).compact
 
-    # A question does not pin a document, and neither does a previous turn.
-    # Auto-scope and episode inheritance were the WhatsApp stand-in for a pin
-    # control and for carrying that pin across the chat. Catalog matches of
-    # this question stay in Query Resolution. Only a technician pin narrows
-    # retrieval.
+    # A question does not pin a document, and it does not drop one the
+    # technician already selected. Catalog matches stay in Query Resolution.
+    # The selected set is the retrieval scope.
     scope = resolve_retrieval_scope(pinned_uris: pinned_uris)
     merged_session_context = merge_resolver_context(
       session_context, Array(resolver_matches), in_scope_uris: scope.uris
@@ -139,7 +136,13 @@ module RagQueryConcern
       )
     end
 
-    resolved_force_filter   = force_entity_filter.nil? ? scope.force_entity_filter : force_entity_filter
+    resolved_force_filter = if scope.uris.any?
+      true
+    elsif force_entity_filter.nil?
+      scope.force_entity_filter
+    else
+      force_entity_filter
+    end
     document_uids           = documents.map { SecureRandom.uuid }
 
     result = QueryOrchestratorService.new(
@@ -539,6 +542,7 @@ module RagQueryConcern
          .squish
   end
 
+  # The ask path does not call this. A question no longer drops a selected document.
   def resolve_pinned_scope(question, conv_session, pinned_uris)
     return pinned_uris unless pinned_uris.many?
 

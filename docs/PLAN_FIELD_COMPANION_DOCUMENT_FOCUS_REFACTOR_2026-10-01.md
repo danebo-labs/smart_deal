@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** G1 PASS — F2 HECHA — F3 HECHA — F4 HECHA — G2 LISTO PARA DEPLOY
+**Estado:** G1 PASS — G2 PASS — F5 HECHA — G3 LISTO PARA DEPLOY
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** G1 PASS en producción. F2, F3 y F4 cerradas en el repo. G2 no está desplegado: el corte controlado de la sección 8 sigue pendiente. El handoff de F4 está en la sección 13.
+**Implementación:** G1 PASS y G2 PASS en producción (2026-10-01). F5 cerrada en el repo. G3 no está desplegado. El handoff de F5 está en la sección 13.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -1016,6 +1016,16 @@ F5 sigue quitando el estrechamiento N→1. El gap de G1 sigue en F5/F8. Los dos 
 
 **Commit.** `fix: retrieve only the documents selected on screen`
 
+**Handoff F5.** El ask ya no llama a `PinnedEntityScopeResolver`. Cero URIs siguen abiertas. N URIs van todas al orquestador con `force_entity_filter: true`, aunque la pregunta nombre una sola o diga otra marca. Un conjunto con una URI no autorizada niega el retrieve y no llama a Bedrock.
+
+`DocumentIdentityScope` no vacía un chunk cuya URI está en el focus. Un chunk con otra URI no se promueve a cita. Una aguja sale sólo de `source=user` o `source=photo` en manufacturer, model o identifiers. `catalog` y `controller` no son agujas. Con focus VF5 + Elemont y trabajo KONE, los dos cuerpos quedan y el contexto no los marca como otro equipo. Eso cierra el recorte que en G1 podía dejar a VF5 sin procedimiento. No cambia el texto que el modelo elige escribir si la evidencia no alcanza.
+
+No se reparte el top-k por documento. Fuentes sigue siendo lo citado, no el badge.
+
+Observación para F8, sin tocar Document Focus: en el smoke de G2 la query efectiva todavía llevaba `KONE` del Work Context mientras el focus era Elemont + Monarch. F5 no compone la query y no borra esa palabra. F8 la trata al armar la string de retrieve.
+
+F6 no cambia de contrato. Sigue sugiriendo fuera del focus y sin citar ese manual mientras no esté seleccionado.
+
 ### F6 — Discovery fuera del focus
 
 **Compuerta:** G4, junto con F7. No se despliega sola.
@@ -1073,7 +1083,7 @@ F7, al implementarse, cierra y escribe en este archivo las dos decisiones que F1
 - `FollowupQueryRewriter` no pisa la query compuesta.
 - Cero inferencias nuevas. El analyzer existente sólo cuando su gate ya lo llama.
 
-**Tests.** Los de la sección 14 que corresponden a identidad, decisiones, “no sé”, corrección, ventana, prefijo y agujas de catálogo. “NICE3000 E51” con flag `off`: query con `NICE3000` y `E51`, manufacturer Monarch con source catalog, controller NICE3000, focus intacto, sin URIs si el badge es 0. El techo de literales de equipo en código no sube. Si el gap de G1 sigue después de F5, esta fase agrega la regresión: con VF5 y Elemont seleccionados, la respuesta no dice que VF5 no está seleccionado.
+**Tests.** Los de la sección 14 que corresponden a identidad, decisiones, “no sé”, corrección, ventana, prefijo y agujas de catálogo. “NICE3000 E51” con flag `off`: query con `NICE3000` y `E51`, manufacturer Monarch con source catalog, controller NICE3000, focus intacto, sin URIs si el badge es 0. El techo de literales de equipo en código no sube. El gap de G1 quedó cerrado en el safeguard: un chunk del focus no se vacía ni se etiqueta como otro equipo. Si una respuesta futura igual dice que un manual seleccionado no lo está, esta fase agrega esa regresión sobre el texto generado. La query efectiva del smoke de G2 llevó `KONE` del Work Context con focus Elemont + Monarch. Esta fase arma esa string. No se corrige moviendo el focus.
 
 **Commit.** `feat: build the retrieval query from catalog-grounded technical understanding`
 
@@ -1155,6 +1165,12 @@ Preparación: en Archivos, dejar marcados dos manuales. Uno cuyo nombre visible 
 5. Recarga la página.
 6. PASS si los mismos dos siguen marcados.
 
+### G2 — PASS el 2026-10-01
+
+En producción: badge, checks y persistencia. La traza de la pregunta con Elemont y Monarch marcados fue `pinned=2`, `retrieval=2`. Que Fuentes mostrara sólo Monarch es correcto: los tres chunks de mayor score eran de ese manual. Document Focus define los documentos elegibles. No obliga a que cada uno aporte un chunk o una cita. No se implementa diversidad forzada por documento.
+
+Ajuste de UX, no bloquea G3 ni G5: el rótulo “Fuentes” puede aclararse después como “Fuentes citadas/usadas en la respuesta”, para separarlo del badge de documentos seleccionados. No se cambia en F5.
+
 ### G2 — después del corte de F2+F3+F4
 
 Hacerlo en el teléfono y, si hay pantalla ancha, mirar también el número de desktop.
@@ -1226,6 +1242,8 @@ En el teléfono, el número de los pasos 12 y 13 tiene que coincidir con desktop
 - Medir en producción la calidad de la string HYBRID. Eso es un follow-up, después de cerrar los journeys.
 - Auditar si `DocumentIdentityScope` sigue haciendo falta cuando los facts de catálogo ya no son agujas. No se apaga en este plan.
 - Mostrar el filename original junto a `KbDocument.display_name` en la lista de Archivos. El dato ya está en `WebManualBatch.filename` y `BulkUploadAsset.filename`. No entra en G2.
+- Renombrar “Fuentes” a “Fuentes citadas/usadas en la respuesta”. Quedó anotado en el PASS de G2. No bloquea G3.
+- Obligar a que cada documento seleccionado aporte al menos un chunk. El top-k puede llenarse con un solo manual del focus.
 
 ---
 
@@ -1257,7 +1275,8 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 | Fase | Estado |
 |---|---|
 | F1 | Hecha. G1 PASS |
-| F2 | Hecha. Columna `document_focus` y lectores web. No desplegada |
-| F3 | Hecha. Cola de pin, textarea sin el nombre, gate de selección fuera. No desplegada |
-| F4 | Hecha. Badge 0/1/N en mobile y desktop. No desplegada |
-| F5–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |
+| F2 | Hecha. G2 PASS |
+| F3 | Hecha. G2 PASS |
+| F4 | Hecha. G2 PASS el 2026-10-01 |
+| F5 | Hecha. Scope exacto y safeguard de focus. G3 listo para deploy |
+| F6–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |

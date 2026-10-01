@@ -688,7 +688,7 @@ class BedrockRagService
       correlation_id: correlation_id
     )
     original = Array(retrieval[:chunks])
-    applied = Rag::DocumentIdentityScope.apply(original, episode)
+    applied = Rag::DocumentIdentityScope.apply(original, episode, focus_uris: entity_s3_uris)
     labeled = applied.labels.any?(&:present?)
     record_document_identity_scope(
       original, applied,

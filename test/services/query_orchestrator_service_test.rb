@@ -339,10 +339,16 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
       value: { sections: [ { label: "S1", first_page: 1, last_page: 2, chunk_count: 1 } ],
                chunk_count: 1, source: "manifest" }
     )
-    session = Struct.new(:active_entities).new({
-      "SEGURIDADES 1.1-1" => { "canonical_name" => "SEGURIDADES 1.1-1", "kb_document_id" => doc.id,
-                                "aliases" => [], "source" => "user_pin", "added_at" => Time.current.iso8601 }
-    })
+    session = Object.new
+    session.define_singleton_method(:uses_document_focus?) { true }
+    session.define_singleton_method(:document_focus_entries) do
+      [ {
+        "kb_document_id" => doc.id,
+        "display_name" => "SEGURIDADES 1.1-1",
+        "source_uri" => doc.canonical_uri,
+        "added_at" => Time.current.iso8601
+      } ]
+    end
     # "SEGURIDADES" alone matches AmbiguousModelResponder's generic-hardware pattern
     # (and would proceed, since it does not also match an explicit equipment code
     # separated only by a space) — confirming the overview branch runs first.
@@ -539,6 +545,35 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     service = QueryOrchestratorService.new("Question", conv_session: session)
 
     assert_equal [ "image_upload", "document" ], service.send(:entity_sources)
+  end
+
+  test "a mixed unauthorized focus denies retrieval and does not call Bedrock" do
+    own = KbDocument.create!(
+      account: accounts(:legacy), s3_key: "manuals/own-f5.pdf", display_name: "Own", aliases: []
+    )
+    foreign = KbDocument.create!(
+      account: accounts(:climb), s3_key: "manuals/foreign-f5.pdf", display_name: "Foreign", aliases: []
+    )
+    calls = 0
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) do |**kwargs|
+      calls += 1
+      original_new.call(**kwargs)
+    end
+
+    result = QueryOrchestratorService.new(
+      "¿Qué reviso si no nivela?",
+      account: accounts(:legacy),
+      entity_s3_uris: [ own.canonical_uri, foreign.canonical_uri ],
+      force_entity_filter: true
+    ).execute
+
+    assert_equal BedrockRagService::DENY_RETRIEVAL, result[:retrieval]
+    assert_equal false, result[:model_invoked]
+    assert_equal 0, result.dig(:retrieval_trace, :bedrock_calls)
+    assert_equal 0, calls
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
   end
 
   test "entity_sources aligns with the narrowed URI subset" do

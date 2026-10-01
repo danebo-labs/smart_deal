@@ -11,6 +11,9 @@ module Rag
                "was removed and cannot support an instruction for this job."
     OTHER_EQUIPMENT_PREFIX = "REFERENCE ONLY — OTHER EQUIPMENT:"
     IDENTITY_FIELDS = %w[canonical_name original_filename section_identity].freeze
+    # A catalog fact is a query signal. It is not a needle. Controller is the
+    # same: F8 may store it, and this list stays user and photo.
+    NEEDLE_SOURCES = %w[user photo].freeze
 
     def self.applicable?(episode)
       return false unless DocumentIdentityScopeFlag.enabled?
@@ -23,20 +26,24 @@ module Rag
       match_needles(episode)
     end
 
-    def self.apply(chunks, episode)
+    def self.apply(chunks, episode, focus_uris: [])
+      uris = Array(focus_uris).map { |uri| uri.to_s.strip }.compact_blank.to_set
       needles = match_needles(episode)
-      return unchanged(chunks) if needles.empty?
+      return unchanged(chunks) if needles.empty? && uris.empty?
 
       labels = []
       scoped_chunks = Array(chunks).map do |chunk|
-        if identity_matches?(chunk, needles)
-          labels << this_job_line(document_name(chunk))
+        membership = focus_membership(chunk, uris)
+        if membership == :in || (membership.nil? && (needles.empty? || identity_matches?(chunk, needles)))
+          labels << (membership == :in || needles.any? ? this_job_line(document_name(chunk)) : nil)
           chunk
         else
           labels << other_equipment_line(document_name(chunk))
           chunk.merge(content: reference_identity(chunk))
         end
       end
+      return unchanged(chunks) if labels.all?(&:blank?)
+
       Result.new(
         chunks: scoped_chunks,
         labels: labels,
@@ -123,8 +130,8 @@ module Rag
     def self.match_needles(episode)
       parsed = parsed_episode(episode)
       values = []
-      manufacturer = known_fact(parsed, "manufacturer")
-      model = known_fact(parsed, "model")
+      manufacturer = needle_fact(parsed, "manufacturer")
+      model = needle_fact(parsed, "model")
       if model
         values << model["value"]
         # A model declared on a later turn supersedes an inherited
@@ -134,6 +141,7 @@ module Rag
         values << manufacturer["value"]
       end
       parsed.identifiers.each do |item|
+        next unless needle_source?(item)
         # Same rule as an inherited manufacturer: once this turn has a model,
         # an identifier from an earlier turn is not current equipment unless
         # that turn restated it and stamped the same correlation_id.
@@ -144,6 +152,43 @@ module Rag
       values.map { |value| value.to_s.strip }.compact_blank.uniq
     end
     private_class_method :match_needles
+
+    def self.needle_fact(parsed, key)
+      fact = known_fact(parsed, key)
+      return nil unless needle_source?(fact)
+
+      fact
+    end
+    private_class_method :needle_fact
+
+    def self.needle_source?(fact)
+      NEEDLE_SOURCES.include?(fact.to_h["source"].to_s)
+    end
+    private_class_method :needle_source?
+
+    def self.focus_membership(chunk, uris)
+      return nil if uris.empty?
+
+      found = chunk_uris(chunk)
+      return nil if found.empty?
+
+      found.any? { |uri| uris.include?(uri) } ? :in : :out
+    end
+    private_class_method :focus_membership
+
+    def self.chunk_uris(chunk)
+      metadata = metadata_of(chunk)
+      location = (chunk[:location] || chunk["location"] || {}).to_h
+      [
+        chunk[:location_uri], chunk["location_uri"],
+        chunk[:original_source_uri], chunk["original_source_uri"],
+        chunk[:bedrock_source_uri], chunk["bedrock_source_uri"],
+        metadata["original_source_uri"],
+        metadata["x-amz-bedrock-kb-source-uri"],
+        location[:uri] || location["uri"]
+      ].map { |value| value.to_s.strip }.compact_blank.uniq
+    end
+    private_class_method :chunk_uris
 
     def self.known_fact(parsed, key)
       fact = parsed.fact(key)

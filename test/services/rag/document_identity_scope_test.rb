@@ -379,6 +379,81 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal true, Thread.current[:document_identity_scope]["fallback"]
   end
 
+  test "focus keeps the selected Elemont procedure when the work says KONE" do
+    uri = "s3://bucket/elemont.pdf"
+    body = "En Elemont revisar el contacto de nivelación BM/B1."
+    selected = chunk("elemont", body, canonical_name: "Elemont montacargas")
+    selected[:metadata]["original_source_uri"] = uri
+    kone = episode(identifiers: [])
+    kone["facts"]["manufacturer"]["value"] = "KONE"
+
+    result = Rag::DocumentIdentityScope.apply([ selected ], kone, focus_uris: [ uri ])
+
+    assert_equal body, result.chunks[0][:content]
+    assert_equal "THIS JOB'S EQUIPMENT: Elemont montacargas", result.labels[0]
+  end
+
+  test "a selected VF5 chunk is not described as unselected when the work says KONE" do
+    vf5_uri = "s3://bucket/vf5.pdf"
+    elemont_uri = "s3://bucket/elemont.pdf"
+    vf5 = chunk("vf5", "Procedimiento VF5 de puertas.", canonical_name: "Fermator VF5")
+    elemont = chunk("elemont", "Procedimiento Elemont de nivelación.", canonical_name: "Elemont")
+    vf5[:metadata]["original_source_uri"] = vf5_uri
+    elemont[:metadata]["original_source_uri"] = elemont_uri
+    kone = episode(identifiers: [])
+    kone["facts"]["manufacturer"]["value"] = "KONE"
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ vf5, elemont ], kone, focus_uris: [ vf5_uri, elemont_uri ]
+    )
+    context = Rag::DocumentIdentityScope.generation_context(result.chunks, result.labels)
+
+    assert_includes result.chunks[0][:content], "Procedimiento VF5"
+    assert_includes result.chunks[1][:content], "Procedimiento Elemont"
+    assert_includes context, "THIS JOB'S EQUIPMENT: Fermator VF5"
+    assert_includes context, "THIS JOB'S EQUIPMENT: Elemont"
+    assert result.labels.none? { |line| line.to_s.start_with?("REFERENCE ONLY — OTHER EQUIPMENT") }
+    assert_not_includes context, "no está seleccionado"
+  end
+
+  test "a chunk outside the selected documents is not promoted" do
+    selected_uri = "s3://bucket/elemont.pdf"
+    outside = chunk("kone", "Procedimiento KONE secreto BM/B1.", canonical_name: "Manual KONE")
+    outside[:metadata]["original_source_uri"] = "s3://bucket/kone.pdf"
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ outside ],
+      episode(identifiers: []),
+      focus_uris: [ selected_uri ]
+    )
+
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Manual KONE", result.labels[0]
+    assert_not_includes result.chunks[0][:content], "BM/B1"
+  end
+
+  test "a corrected brand is not a needle and a catalog fact is not a needle" do
+    corrected = episode(identifiers: [])
+    corrected["episode_id"] = "ep-corrected"
+    corrected["facts"]["manufacturer"]["value"] = "KONE"
+    corrected["facts"]["manufacturer"]["correlation_id"] = "q2"
+    catalog = {
+      "v" => 1,
+      "facts" => {
+        "manufacturer" => {
+          "value" => "Monarch", "status" => "known", "source" => "catalog", "correlation_id" => "q"
+        }
+      },
+      "identifiers" => []
+    }
+    photo = episode(identifiers: [])
+    photo["facts"]["manufacturer"]["source"] = "photo"
+
+    assert_equal [ "KONE" ], Rag::DocumentIdentityScope.needles(corrected)
+    assert_not_includes Rag::DocumentIdentityScope.needles(corrected), "Elemont"
+    assert_empty Rag::DocumentIdentityScope.needles(catalog)
+    assert_equal [ "Elemont" ], Rag::DocumentIdentityScope.needles(photo)
+  end
+
   private
 
   def strip_scope(prompt, labels)

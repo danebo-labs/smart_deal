@@ -1159,9 +1159,9 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     spt_body = "Procedimiento del manual SPT: comprimir el resorte del paracaídas."
     chunks = [
       identity_chunk("KONE MonoSpace", mono_body, page: 12),
-      identity_chunk("Fuji Yida", yida_body, page: 53),
-      identity_chunk("Fuji Yida", paso_body, page: 58),
-      identity_chunk("Manual chino", spt_body, page: 78, section_identity: "SPT")
+      identity_chunk("Fuji Yida", yida_body, page: 53, source_uri: "s3://test-bucket/yida.pdf"),
+      identity_chunk("Fuji Yida", paso_body, page: 58, source_uri: "s3://test-bucket/yida.pdf"),
+      identity_chunk("Manual chino", spt_body, page: 78, section_identity: "SPT", source_uri: "s3://test-bucket/spt.pdf")
     ]
     rag_service = FakeRagService.new(chunks)
     generator = FakeGenerator.new("El manual MonoSpace no detalla el ajuste en este fragmento. [1]")
@@ -1217,7 +1217,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     foreign = "Paso 11 del resorte del paracaídas en CEA15. Suplemento de 2,5 mm."
     chunks = [
       identity_chunk("KONE MonoSpace", "MonoSpace: tensión de resortes de fijación.", page: 4),
-      identity_chunk("Manual CEA15", foreign, page: 12)
+      identity_chunk("Manual CEA15", foreign, page: 12, source_uri: "s3://test-bucket/cea15.pdf")
     ]
     rag_service = FakeRagService.new(chunks)
     generator = FakeGenerator.new("No hay procedimiento MonoSpace en el fragmento. [1]")
@@ -1263,9 +1263,9 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     paso_body = "Paso 11 del resorte del paracaídas. Colocar un suplemento de 2,5 mm."
     chunks = [
       identity_chunk("KONE MonoSpace", "MonoSpace: tensión de resortes de fijación.", page: 4),
-      identity_chunk("Fuji Yida", "Aflojar el resorte del paracaídas.", page: 53),
-      identity_chunk("Fuji Yida", paso_body, page: 58),
-      identity_chunk("Manual chino", "Procedimiento SPT del resorte.", page: 78, section_identity: "SPT")
+      identity_chunk("Fuji Yida", "Aflojar el resorte del paracaídas.", page: 53, source_uri: "s3://test-bucket/yida.pdf"),
+      identity_chunk("Fuji Yida", paso_body, page: 58, source_uri: "s3://test-bucket/yida.pdf"),
+      identity_chunk("Manual chino", "Procedimiento SPT del resorte.", page: 78, section_identity: "SPT", source_uri: "s3://test-bucket/spt.pdf")
     ]
     rag_service = FakeRagService.new(chunks)
     generator = FakeGenerator.new("No hay un procedimiento MonoSpace en el fragmento citado. [1]")
@@ -1353,10 +1353,10 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     }
   end
 
-  def identity_chunk(name, content, page:, section_identity: nil)
+  def identity_chunk(name, content, page:, section_identity: nil, source_uri: @source_uri)
     metadata = {
       "canonical_name" => name,
-      "original_source_uri" => @source_uri,
+      "original_source_uri" => source_uri,
       "page_number" => page
     }
     metadata["section_identity"] = section_identity if section_identity

@@ -593,7 +593,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
-  test 'execute_rag_query narrows multiple pins when the question names one pinned document' do
+  test "execute_rag_query keeps every selected document when the question names one" do
     manual_uri = "s3://bucket/manual.pdf"
     image_uri = "s3://bucket/photo.jpg"
     session = Struct.new(:active_entities, :conversation_history).new(
@@ -628,7 +628,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         entity_s3_uris: [ manual_uri, image_uri ]
       )
 
-      assert_equal [ manual_uri ], captured.dig(:kwargs, :entity_s3_uris)
+      assert_equal [ manual_uri, image_uri ], captured.dig(:kwargs, :entity_s3_uris)
       assert_equal true, captured.dig(:kwargs, :force_entity_filter)
     ensure
       QueryOrchestratorService.define_singleton_method(:new) { |*a, **k| original_new.call(*a, **k) }
@@ -1548,11 +1548,11 @@ class RagQueryConcernTest < ActiveSupport::TestCase
 
       assert_equal JESUS_TURNS[4][:content], captured[:question]
       assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
     end
   end
 
-  test "jesus turn 1 caller force_entity_filter false keeps pin_extended precedence" do
+  test "jesus turn 1 a selected document cannot opt out of force_entity_filter" do
     elemont, cea15, _forklift = build_jesus_catalog
     uris = jesus_uris(elemont, cea15)
     session = build_jesus_session(elemont, turn: 1)
@@ -1568,7 +1568,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       end
 
       assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
-      assert_equal false, captured[:kwargs][:force_entity_filter]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
     end
   end
 
@@ -1688,7 +1688,51 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       end
 
       assert_equal [ uris[:e] ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "zero selected documents stay open when the question names NICE3000" do
+    with_captured_orchestrator do |captured|
+      @controller.send(
+        :execute_rag_query, "NICE3000",
+        account: accounts(:legacy),
+        entity_s3_uris: []
+      )
+
+      assert_equal [], captured[:kwargs][:entity_s3_uris]
       assert_equal false, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "two selected documents stay in scope when the question names one" do
+    elemont = "s3://bucket/elemont.pdf"
+    monarch = "s3://bucket/monarch.pdf"
+
+    with_captured_orchestrator do |captured|
+      @controller.send(
+        :execute_rag_query, "según el manual Monarch, qué reviso si no nivela?",
+        account: accounts(:legacy),
+        entity_s3_uris: [ elemont, monarch ]
+      )
+
+      assert_equal [ elemont, monarch ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
+    end
+  end
+
+  test "one selected Elemont document stays in scope when the question says KONE" do
+    elemont = "s3://bucket/elemont.pdf"
+
+    with_captured_orchestrator do |captured|
+      @controller.send(
+        :execute_rag_query, "Es KONE, qué reviso?",
+        account: accounts(:legacy),
+        entity_s3_uris: [ elemont ]
+      )
+
+      assert_equal [ elemont ], captured[:kwargs][:entity_s3_uris]
+      assert_equal true, captured[:kwargs][:force_entity_filter]
     end
   end
 
@@ -2460,11 +2504,12 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         end
         assert_includes captured[:question], "Elemont"
         assert_equal [ door_uri, kone_uri ], captured[:kwargs][:entity_s3_uris]
+        assert_equal true, captured[:kwargs][:force_entity_filter]
         assert_equal :es, captured[:kwargs][:response_locale]
       end
     end
 
-    assert_equal [ question ], seen_questions
+    assert_empty seen_questions
   ensure
     Rag::PinnedEntityScopeResolver.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) }
   end

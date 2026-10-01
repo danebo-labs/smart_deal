@@ -458,7 +458,7 @@ module Rag
       @identity_scoped = false
       return Array(chunks) unless DocumentIdentityScope.applicable?(@episode)
 
-      applied = DocumentIdentityScope.apply(chunks, @episode)
+      applied = DocumentIdentityScope.apply(chunks, @episode, focus_uris: @entity_s3_uris)
       @identity_scoped = applied.labels.any?(&:present?)
       other = applied.labels.count { |line| line.to_s.start_with?(DocumentIdentityScope::OTHER_EQUIPMENT_PREFIX) }
       Rails.logger.info(

@@ -400,8 +400,7 @@ class RagQualityBenchmark
   end
 
   def scoped_entity_uris(question)
-    all_uris = SessionContextBuilder.entity_s3_uris(@session)
-    executor.send(:resolve_pinned_scope, question, @session, all_uris)
+    SessionContextBuilder.entity_s3_uris(@session)
   end
 
   def retrieval_profile(question, entity_uris)

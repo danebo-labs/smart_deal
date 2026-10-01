@@ -1,8 +1,9 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** plan. Implementación no empezada.
+**Estado:** plan refinado. Implementación no empezada.
 **Canal:** web autenticado. WhatsApp sigue dormido.
 **No reabre:** R1A (`CLOSED — PASS`).
+**Refinamiento:** comprensión técnica pre-retrieval. No abre otra compuerta humana.
 
 Este plan separa tres cosas que hoy comparten estado:
 
@@ -10,7 +11,17 @@ Este plan separa tres cosas que hoy comparten estado:
 Work Context  ≠  Document Focus  ≠  Document Discovery
 ```
 
-El técnico pregunta, ve cuántos manuales tiene seleccionados, y decide él si esa selección cambia. Danebo puede sugerir. No puede cambiar la selección en silencio.
+Y, dentro de la búsqueda:
+
+```text
+retrieval query  ≠  retrieval scope
+```
+
+La query dice qué se está buscando. El scope dice dónde está permitido buscar para esa respuesta. Entender el equipo no cambia los manuales checkeados.
+
+Danebo se comporta como el equipo de ingeniería al que llama un técnico: primero entiende qué equipo y qué problema tiene delante, usando la consulta, lo ya dicho, la foto, los códigos, los designators y el catálogo; después busca en la documentación que corresponde; y sólo pregunta cuando falta un dato que cambiaría la búsqueda o el procedimiento. No le pide al técnico una marca, un modelo o un controlador que ya puede resolver.
+
+El técnico pregunta, ve cuántos manuales tiene seleccionados, y decide él si esa selección cambia. Danebo puede sugerir. No puede cambiar la selección en silencio. La comprensión previa al retrieve puede actualizar el trabajo. No puede pinear, despinear ni reemplazar el focus.
 
 ## Cómo se ejecuta
 
@@ -23,8 +34,8 @@ Hay cinco compuertas. Cada una es un deploy chico y un smoke que una persona hac
 | G1 | F1 | Corregir el equipo no cambia los manuales seleccionados | Revertir ese deploy. No se despliega G2 |
 | G2 | F2 + F3 + F4 | El número visible es la selección real, y pin/unpin llegan antes de la pregunta | Revertir ese deploy. G1 tiene que seguir pasando |
 | G3 | F5 | La respuesta usa exactamente los manuales de ese número | Revertir ese deploy. G1 y G2 siguen pasando |
-| G4 | F6 + F7 | Un manual de afuera se ofrece y no se usa hasta que el técnico lo acepta; al aceptar, la misma pregunta se vuelve a hacer | Revertir ese deploy |
-| G5 | F8 + F9 + F10 | Monarch / NICE3000 se reconoce desde el catálogo, y el smoke completo sigue pasando | Revertir ese deploy |
+| G4 | F6 + F7 | Un manual de afuera se ofrece y no se usa hasta que el técnico lo acepta; con badge 0, el manual que ya sostuvo la respuesta se puede ofrecer para seguir | Revertir ese deploy |
+| G5 | F8 + F9 + F10 | `NICE3000 E51` busca sin pedir la marca; badge 0 no se mueve solo; el smoke completo sigue pasando | Revertir ese deploy |
 
 Reglas de ejecución:
 
@@ -32,9 +43,24 @@ Reglas de ejecución:
 2. Al cerrar la compuerta, se despliega sólo ese corte. No se adelantan fases de la compuerta siguiente en la imagen de producción.
 3. Grok se detiene. Una persona hace el smoke de esa compuerta y responde sólo `PASS` o `FAIL`, más lo que vio en pantalla.
 4. `FAIL` no abre la compuerta siguiente. Se corrige ese corte o se revierte.
-5. Dentro de una fase no hay review de diff como paso rutinario. La revisión humana es el smoke de producto.
+5. Dentro de una fase no hay review de diff como paso rutinario. La revisión humana es el smoke de producto, no el diff.
 
-F2, F3 y F4 viajan juntas porque la columna nueva no se ve sola. F6 y F7 viajan juntas porque una sugerencia que no se puede aceptar no se puede juzgar. F8 viaja con el cierre porque G4 ya tiene que mostrar el manual Monarch; G5 comprueba que eso no dependió de agregar la marca a una lista de código.
+F2, F3 y F4 viajan juntas porque la columna nueva no se ve sola. F6 y F7 viajan juntas porque una sugerencia que no se puede aceptar no se puede juzgar. La comprensión técnica no es una fase nueva: entra en F8, sobre la llamada Haiku que ya existe y sobre un compositor determinista que corre aunque esa llamada no esté. G4 ya puede ofrecer el manual Monarch desde el catálogo y desde los hits del retrieve. G5 comprueba que la pregunta que llega a buscar ya trae esa identidad, sin pedir la marca y sin mover el badge.
+
+### Handoff de fase
+
+F1–F10 no son recetas congeladas. Al cerrar cada fase, antes de empezar la siguiente:
+
+1. Anotar hallazgos materiales de implementación, tests, producción y del repo real.
+2. Compararlos con los supuestos de todas las fases que faltan.
+3. Si un supuesto material cambió, actualizar este plan y las fases afectadas. No abrir un plan paralelo.
+4. Si ya existe un prompt de ejecución de la fase siguiente, reescribirlo con esos hallazgos.
+5. La fase siguiente se ejecuta contra el repo, los commits ya aplicados y los hallazgos. No contra el texto de este archivo tal como estaba antes de F1.
+6. No pedir revisión humana por un detalle técnico menor.
+7. Parar y pedir revisión sólo si un hallazgo cambia de forma material el comportamiento visible, el ownership de estado, Document Focus, el retrieval scope, la persistencia, el aislamiento de tenant, permisos, el costo o la latencia de forma material, o invalida una fase futura entera.
+8. Un ajuste local que conserva estos invariantes se documenta en el plan, se prueba y sigue.
+
+Las compuertas G1–G5 siguen siendo el único stop humano rutinario. El handoff no agrega otra. Un `PASS` de compuerta no se sustituye por este handoff, y un ajuste interno de fase no espera un `PASS` nuevo.
 
 ---
 
@@ -53,6 +79,8 @@ Eso produjo el incidente de producción. El técnico tenía Elemont y VF5 selecc
 El fix cumplió el contrato de R1B. El técnico no había pedido soltar Elemont ni quedarse sólo con VF5.
 
 El segundo fallo es de identidad. `config/document_identities.yml` ya tiene el manual Monarch con designators `NICE3000` y `NICE3000new`, confirmado. El ranker de sugerencias sólo arranca si el texto contiene una marca de `ActiveEpisodeTurn::MANUFACTURERS`. Monarch no está en esa lista. La sugerencia no nace. El técnico escribe el controlador que ve en el manual y Danebo no lo conecta con el archivo que ya está en la biblioteca.
+
+El tercer fallo es de comprensión, no de focus. Hay una llamada Haiku antes del retrieve, `Rag::SemanticQueryAnalyzer`, pero no interpreta el problema técnico. Clasifica continuidad (`continue`, `correct`, `switch`, `new`, `unclear`) y devuelve menciones literales. No arma la consulta que Bedrock busca. Con badge `0` el corpus es el correcto y la query puede seguir siendo la frase cruda del técnico. Scope abierto no es lo mismo que query genérica.
 
 Lo que sí está bien y no se tira:
 
@@ -161,15 +189,52 @@ Antes de eso, `resolve_pinned_scope` puede dejar una sola URI si `PinnedEntitySc
 - `ActiveEpisode` guarda `manufacturer`, `model`, `fault_code`. No hay hecho `controller`.
 - `NoHardcodedEquipmentTest` congela los literales. Este plan no agrega Monarch a una lista de código.
 
+### Llamada LLM pre-retrieval (la que ya existe)
+
+No se inventa un servicio nuevo. La llamada es `Rag::SemanticQueryAnalyzer`.
+
+| | Hoy |
+|---|---|
+| Clase | `Rag::SemanticQueryAnalyzer` |
+| Modelo | `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperature 0, `max_tokens` 300 |
+| Prompt | Percepción semántica de un turno. Dice explícitamente que no es autoridad técnica, no responde el procedimiento y no inventa strings |
+| Tool | `semantic_perception` |
+| Output | `Rag::ConversationalTurnAnalysis`: `relation` (`continue`, `answer_pending`, `correct`, `switch`, `new`, `unclear`), `mentions` (`span` + `role` `equipment` / `component` / `other`), `refers_to`, `ambiguous` |
+| Validación | Cada `span` tiene que ser substring literal del turno. Una paráfrasis o un “Monarch” que el técnico no dijo es `hallucinated_spans` y el análisis se tira |
+| Flag | `HAIKU_QUERY_ANALYSIS_MODE`. Default del código: `off`. `shadow` observa y no escribe. `conditional` sí puede decidir `switch` y `correct`. `always` parsea y no llama. El valor de producción no está en `config/deploy.yml` |
+| Gate | `gated?` exige `episode_id`, `pending_fact` o `active_photo`. El primer mensaje de un chat vacío no llama a Haiku |
+| Consumidores | `shadow`: `RagController#observe_semantic_shadow` arma el objeto y `RagQueryConcern#ignore_shadow_analysis` lo descarta. `conditional`: `ActiveEpisodeTurn#apply_owned_slice` vía `observe_ownership`. Sólo aplica `switch` y `correct`. No compone la query |
+| Relación con el episodio | El estado que ve el modelo es manufacturer, model, goal y pending. No ve controller, pins ni catálogo |
+| Relación con el rewrite | Ninguna. `FollowupQueryRewriter` y `compose_text` no leen este objeto |
+| Qué no devuelve | fabricante resuelto, modelo, controlador, código, síntoma, query normalizada, ambigüedad de procedimiento, ni `ready` / `clarify` |
+
+`Rag::QueryEntities.analyze` es otro extractor, determinista, para el selector de evidencia en sombra. Deja `manufacturer`, `model` y `board` en nil. No es la query que va a Bedrock.
+
+### Qué texto llega hoy al retrieve
+
+1. El texto del técnico se queda en `question` para locale, labels de pin y el exclude del episodio.
+2. `effective_question`, en `RagQueryConcern`, es lo que siguen el orquestador y `BedrockRagService`.
+3. Si el turno del episodio manda (`FieldCompanionTurnFlag` y la decisión no es `:no_episode` ni `:skipped`), `effective_question` es `ActiveEpisodeTurn::Result#composed`, o el texto crudo si `composed` viene vacío.
+4. `composed` lo arma Ruby: goal vigente, manufacturer y model ya persistidos, y el turno visible. En una corrección, la frase que niega la marca vieja no se manda. Tope 442 caracteres.
+5. Si el episodio no manda, `FollowupQueryRewriter` sólo reescribe un follow-up corto que sea un identificador de catálogo: pega la pregunta anterior y el identificador. Si no, el texto es el del técnico. El menú de hilo puede sustituirlo cuando su flag está on; el chat no publica ese menú.
+6. `BedrockRagService#query` manda ese string en `input.text` y en `retrieval_query.text`. El filtro de URIs viaja aparte (`entity_s3_uris`, `force_entity_filter`).
+7. `SessionContextBuilder` no es la query. Es un bloque del prompt de generación: problema del episodio, pins y historial. No agrega ni quita URIs.
+
+Partes literales del técnico: el turno, y el goal cuando el turno anterior se guardó como goal. Partes compuestas: manufacturer/model ya escritos en el episodio, y el identificador de un follow-up corto. No hay una query técnica estructurada. Una query enriquecida que diga `KONE` mientras el focus sigue siendo Elemont es válida como texto de búsqueda dentro de Elemont. No puede convertirse en filtro de manuales KONE.
+
 ## 3. Product contract
 
 El técnico no tiene que entender sesiones, episodios, scopes ni flags.
 
-**Work Context** es lo que Danebo entendió del trabajo: fabricante, modelo, controlador, código, componente, mediciones, observaciones, foto, problema actual. Cambia cuando el técnico habla o manda una foto. Sirve para “¿y después?”, “K1”, “esa placa”. No modifica Document Focus.
+**Work Context** es lo que conviene recordar para el próximo turno: fabricante, modelo, controlador, código de falla del trabajo, objetivo, foto. No es un volcado de la consulta. Un síntoma (“no nivela”), un tema (“calibración del encoder”) o la query armada para este retrieve viven sólo en el turno. Cambia cuando el técnico habla o manda una foto, y cuando el catálogo confirma una identidad a partir de un designator que él dijo. Sirve para “¿y después?”, “K1”, “esa placa”. No modifica Document Focus.
 
-**Document Focus** es exactamente los documentos con check en la lista. Cero documentos: la búsqueda principal va a todo el KB autorizado. Uno: sólo ese. N: sólo esos N. Pin y unpin son clicks visibles. No hay pin oculto. Ni un episodio nuevo, ni una corrección, ni un expiry, ni un `invalid_state` cambian el focus.
+**Document Focus** es exactamente los documentos con check en la lista. Cero documentos no significa búsqueda sin contexto. Significa que el técnico no impuso un manual. El scope es todo el KB autorizado. La query puede ser precisa: identidad, código, síntoma, aliases. Uno: sólo ese. N: sólo esos N. Pin y unpin son clicks visibles. No hay pin oculto. Ni un episodio nuevo, ni una corrección, ni un expiry, ni un `invalid_state`, ni la llamada pre-retrieval cambian el focus.
 
-**Document Discovery** puede encontrar manuales fuera del focus. No los usa como evidencia de la respuesta. Los ofrece. Si el técnico acepta, el check aparece, el número cambia, y Danebo repite sola la misma pregunta con el focus nuevo.
+**Document Discovery** ofrece manuales. Con focus `0`, los hits del retrieve principal sí son evidencia, porque ese es el scope, y después pueden ofrecerse para quedar seleccionados. Con focus `N`, un manual de afuera se ofrece y no se cita hasta que el técnico acepta. Si acepta, el check aparece, el número cambia, y Danebo repite sola la misma pregunta con el focus nuevo.
+
+**Technical understanding** es de este turno. Separa identidad (“¿de qué equipo o documentación hablamos?”) y problema (“¿qué pasa o qué quiere hacer?”). Identidad: fabricante, modelo, controlador, familia, alias, designator. Problema: código, síntoma, componente, medición, procedimiento, objetivo. Las dos alimentan el Work Context sólo cuando el dato sirve al turno siguiente, la query, y el discovery. Ninguna escribe el focus.
+
+No es un formulario. No se piden siempre marca, modelo, controlador y falla. Se extrae primero lo que ya está en la frase, el episodio, la foto o el catálogo. Se pregunta sólo el discriminator que cambiaría el procedimiento. `NICE3000 E51` no pregunta la marca si el catálogo resuelve Monarch. `No funciona` puede preguntar. Si la foto ya leyó `KONE / LCE / 0026`, no se vuelve a pedir.
 
 Subir un archivo propio es un acto del técnico. Cuando termina de indexarse puede quedar seleccionado, porque él lo mandó, y el check tiene que verse antes de la siguiente pregunta. Si el refresh de la lista falla, esa pregunta no sale hasta que la selección en pantalla coincida con el server.
 
@@ -179,8 +244,8 @@ Subir un archivo propio es un acto del técnico. Cuando termina de indexarse pue
 
 - Responsabilidad: continuidad del trabajo.
 - Autoridad: lo que el técnico dijo y lo que se leyó en la foto, con la misma distinción de fuente que ya tiene el episodio.
-- Quién lo modifica: `ActiveEpisodeTurn` en el turno web, la observación de foto, el turno del asistente. Los dos últimos siguen exigiendo `expected_episode_id`.
-- Persistencia: `conversation_sessions.active_episode`. Se agrega el hecho `controller` en ese JSON. No hay tabla nueva.
+- Quién lo modifica: `ActiveEpisodeTurn` en el turno web, la observación de foto, el turno del asistente, y el compositor técnico cuando el catálogo confirma un hecho persistible. Los writes tardíos de foto y asistente siguen exigiendo `expected_episode_id`.
+- Persistencia: `conversation_sessions.active_episode`. Hechos que se guardan: `manufacturer`, `model`, `controller`, `fault_code`, `goal`, identificadores de catálogo, foto y conflictos. No se guardan síntomas, la query de este turno, ni la lista de discriminators que faltan.
 - No puede modificar: `document_focus`, los checks, ni el badge.
 
 ### Document Focus
@@ -189,7 +254,7 @@ Subir un archivo propio es un acto del técnico. Cuando termina de indexarse pue
 - Autoridad: la pantalla. El server persiste lo que el click ya confirmó.
 - Quién lo modifica: `PinnedDocumentsController` (lista y card), y el auto-pin de un upload de este técnico, seguido del refresh de la lista.
 - Persistencia: columna jsonb nueva `conversation_sessions.document_focus`. Un array de `{ kb_document_id, source_uri, display_name, added_at }`. Tope: el mismo `MAX_ENTITIES` (10).
-- No puede modificarlo: `record_user_turn!`, `case_boundary_changes`, expiry, corrección, `start_new_case!`, `ensure_case_for_photo_submission!`, `EntityExtractorService`.
+- No puede modificarlo: `record_user_turn!`, `case_boundary_changes`, expiry, corrección, `start_new_case!`, `ensure_case_for_photo_submission!`, `EntityExtractorService`, `SemanticQueryAnalyzer`, ni el compositor de la query.
 
 ### Document Discovery
 
@@ -197,26 +262,67 @@ Subir un archivo propio es un acto del técnico. Cuando termina de indexarse pue
 - Autoridad: nadie, hasta el click. El click entra por Document Focus.
 - Quién lo modifica: nadie lo persiste como selección. El payload de la respuesta trae las cards. Aceptar llama al pin.
 - Persistencia: ninguna columna. El episodio no guarda “sugeridos” como si estuvieran seleccionados.
-- No puede modificar: la evidencia citada, el prompt de generación, ni el focus.
+- No puede modificar: la evidencia citada cuando el focus es `N`. Con focus `0` no hay “afuera”: los hits del retrieve principal pueden citarse y, además, ofrecerse como futuro focus.
+- No escribe el focus hasta el click.
+
+### Technical understanding
+
+No es un cuarto almacén. Es el paso que ya existe, ampliado, más un compositor en Ruby.
+
+- Responsabilidad: leer el turno y dejar una query técnica y una decisión de si buscar, buscar y preguntar, o preguntar primero.
+- Autoridad del lenguaje: `SemanticQueryAnalyzer`. Sigue sin inventar strings. Un span que no está en el turno se descarta.
+- Autoridad de la identidad: `DocumentIdentityCatalog` y aliases de `KbDocument`. El modelo no es quien sabe que NICE3000 es Monarch.
+- Autoridad del scope: `document_focus`. Este paso no lo lee para escribirlo. Puede leerlo sólo para no contradecir el filtro.
+- Quién lo ejecuta: el mismo turno que hoy llama al analyzer, dentro de `record_user_turn!` / `ActiveEpisodeTurn`, antes de armar `composed`. Si el flag está `off`, el gate no deja pasar, o Haiku devuelve nil, el compositor determinista igual corre. `NICE3000 E51` no depende de que el modo Haiku esté encendido.
+- Persistencia: ninguna estructura nueva en la base. Los hechos persistibles se escriben en `active_episode` con las reglas de arriba. El resto viaja en el resultado del turno, igual que `composed` hoy, y muere con el request.
+- No puede modificar: `document_focus`.
+
+Contrato del turno, un value object de ese request. No hace falta que el JSON sea éste; los campos sí:
+
+```text
+identity:        manufacturer, model, controller, designators, aliases
+                 cada valor trae source: user | photo | catalog | episode
+problem:         fault_code, symptoms, component, procedure
+goal:            texto corto del trabajo, el mismo concepto que active_episode.goal
+retrieval_query: string que Bedrock recibe en retrieval_query.text
+missing:         como mucho un discriminator, o ninguno
+decision:        ready | search_and_clarify | clarify_first
+```
+
+`source=catalog` sólo aparece si una entrada confirmada del YAML (o un alias unívoco) ata el designator que el técnico dijo. Si hay empate, `manufacturer` queda vacío y `missing` no se rellena con una marca adivinada: se ofrecen hasta 2 manuales.
+
+Decisiones, evaluadas en Ruby después del catálogo, no delegadas al modelo:
+
+- **ready.** Hay señal fuerte para buscar: designator de catálogo, identidad ya guardada en el episodio o en la foto, o código más componente. `NICE3000 E51, ¿qué reviso?` es ready. No se pregunta la marca. Flujo: comprensión, enriquecimiento de catálogo, retrieve. El scope no cambia.
+- **search_and_clarify.** Hay un síntoma o un procedimiento con el que el corpus puede ayudar, y falta un discriminator. `No nivela al llegar al piso.` busca en el scope actual, responde sólo con lo encontrado, y cierra con una pregunta corta: “Para llevarte al procedimiento exacto, ¿sabes qué controlador o modelo tiene?”. La pregunta no bloquea la respuesta. No se pide la marca si el controlador ya se resolvió.
+- **clarify_first.** No hay parámetro, código, componente, designator, foto, episodio ni manual seleccionado. `¿Cómo ajusto este parámetro?` en frío, con badge `0`. Se pregunta “¿Qué parámetro estás viendo y en qué controlador o equipo?” y no se llama a `RetrieveAndGenerate`. Si en el mismo turno aparece un designator de catálogo, o el badge es mayor que 0, esta decisión no puede ganar: el manual checkeado ya es contexto, y se busca ahí.
+
+La pregunta de clarify usa prosa. Si el hueco es `manufacturer`, `model`, `controller` o `fault_code`, se puede guardar en el `pending_question` que ya existe, ampliado con `controller`. No se abre un formulario de cuatro campos.
 
 ```mermaid
 flowchart LR
   tech[Tecnico]
   ui[Checks_y_badge]
   focus[document_focus]
+  understand[TechnicalUnderstanding]
+  catalog[DocumentIdentityCatalog]
   work[active_episode]
   ask[Retrieve_principal]
   disc[Cards]
+  tech --> understand
+  understand --> catalog
+  catalog --> work
+  understand --> ask
   tech --> ui
   ui --> focus
-  tech --> work
   focus --> ask
   work --> ask
+  ask --> disc
   disc -.->|aceptar_pinea| ui
-  work -.->|no_escribe| focus
+  understand -.->|no_escribe| focus
 ```
 
-El episodio puede componer la pregunta de follow-up, como hoy. Esa composición no agrega URIs.
+`composed` sigue siendo el string de retrieve. Pasa a salir de `retrieval_query`, no de una concatenación ciega de goal + marca. Esa string no agrega URIs.
 
 ## 5. State ownership matrix
 
@@ -232,6 +338,9 @@ El episodio puede componer la pregunta de follow-up, como hoy. Esa composición 
 | suggested documents | Payload de esa respuesta. No se guardan como pins | Ranker / discovery | La burbuja | Cards con nombre del manual |
 | recent conversation | `conversation_history` con piso del episodio | Turnos | Prompt | El chat |
 | selected count | `document_focus.length` | El mismo writer del focus | Badge desktop y mobile | El número, siempre, incluido 0 |
+| retrieval query | Resultado del turno. No se persiste | Compositor técnico | `effective_question` → `retrieval_query.text` | No. El técnico ve la respuesta, no la query |
+| decision ready / search_and_clarify / clarify_first | Resultado del turno. No se persiste | Compositor, después del catálogo | Concern: llama o no a Bedrock, y si agrega una pregunta | La pregunta corta, cuando existe. La etiqueta no |
+| symptoms, procedure, aliases de este turno | Resultado del turno. No se persiste | Analyzer, sólo spans literales, más términos del catálogo | Query y discovery de este turno | No como estado |
 
 `active_entities` deja de ser el focus del web. La columna puede quedar hasta F9 para no romper el job de WhatsApp dormido. El web no la lee para retrieval ni para pintar checks.
 
@@ -299,6 +408,36 @@ El número de cada paso es el badge. El texto de Danebo es el copy objetivo, no 
 
 El mismo pin y unpin, en el tab Archivos. El badge del tab es el mismo número que desktop para la misma sesión. Un pin hecho en el teléfono se ve al recargar en desktop, y al revés.
 
+### Journey I — identidad fuerte, sin pregunta de más
+
+1. Badge `0`. No hay episodio previo.
+2. Escribe: “NICE3000 E51, ¿qué reviso?”
+3. Danebo no pregunta “¿cuál es la marca?”. El catálogo ata `NICE3000` a Monarch. La query de retrieve lleva ese controlador, el código y el verbo de diagnóstico. El scope sigue siendo todo el KB autorizado.
+4. Responde con fuentes. Badge `0`.
+5. Si ofrece un manual, es el de NICE3000 / Monarch. Sigue sin check hasta el click.
+
+### Journey J — identidad débil, evidencia global útil
+
+1. Badge `0`. Escribe: “No nivela al llegar al piso.”
+2. No inventa un equipo. Busca en el KB autorizado.
+3. Responde sólo con lo que encontró. Badge `0`.
+4. Puede cerrar con una sola pregunta: “Para llevarte al procedimiento exacto, ¿sabes qué controlador o modelo tiene?”
+5. Esa pregunta no reemplaza la respuesta. Si no hay evidencia, lo dice y pregunta. No fabrica un procedimiento.
+
+### Journey K — consulta insuficiente
+
+1. Badge `0`. Chat sin foto, sin equipo y sin parámetro nombrado.
+2. Escribe: “¿Cómo ajusto este parámetro?”
+3. Danebo pregunta: “¿Qué parámetro estás viendo y en qué controlador o equipo?”
+4. No llama al retrieve generativo. Badge `0`. No ofrece un manual adivinado.
+
+### Journey L — la foto ya dio la identidad
+
+1. La foto quedó leída como KONE / LCE. Eso está en el trabajo, no en los checks. Badge `0`.
+2. Escribe: “¿Qué reviso ahora?”
+3. Danebo no vuelve a pedir marca ni modelo. La query usa KONE y LCE más el problema ya dicho. El scope sigue global si el badge es `0`.
+4. Si el técnico tenía Elemont checkeado, el scope sigue siendo Elemont. La query puede nombrar KONE para buscar dentro de ese manual y concluir que ahí no está. Los checks no se mueven.
+
 ## 7. Architecture options and chosen approach
 
 ### Opción A — seguir en `active_entities` y quitarle el caso
@@ -335,20 +474,23 @@ F1 igual se hace primero sobre el hash actual, y se despliega sola (G1). Así el
 | Archivo | Hoy | Objetivo | Acción |
 |---|---|---|---|
 | `ConversationSession` | Pins y episodio en el mismo update | `document_focus` sólo por pin/unpin/upload | Cambiar en F1 y F2 |
-| `ActiveEpisode` / `ActiveEpisodeTurn` | Hechos manufacturer/model/fault_code; marcas en constante; `:new_episode` y `:corrected` disparan release | Sigue clasificando el trabajo. `controller` en F8. No toca focus | Conservar, cambiar identidad en F8 |
+| `ActiveEpisode` / `ActiveEpisodeTurn` | Hechos manufacturer/model/fault_code; `composed` es goal + marca + turno; `:new_episode` y `:corrected` disparan release | Sigue clasificando continuidad. `composed` pasa a ser `retrieval_query`. `controller` y decisión ready/clarify en F8. No toca focus | Conservar, cambiar en F1 el release y en F8 la query |
 | `SessionContextBuilder` | Focus de prompt y URIs desde `active_entities` | URIs y bloque “manuales seleccionados” desde `document_focus`. El bloque de problema sigue saliendo del episodio y no lista pines | Cambiar en F2 y F5 |
-| `RagQueryConcern` | `pin_only`, estrechamiento N→1, `selection_gate` | Filtro igual al focus. Sin gate de “seleccionaste ese documento” | Cambiar en F3 y F5 |
+| `RagQueryConcern` | `pin_only`, estrechamiento N→1, `selection_gate`; descarta el análisis shadow | Filtro igual al focus. `effective_question` es la retrieval query y no aporta URIs. `clarify_first` no llama a Bedrock | Cambiar en F3, F5 y F8 |
 | `RagController` | Arma sugerencia y `pin_conflict` | Sugerencia fuera del focus; copy de ampliar o cambiar; no cita al candidato | Cambiar en F6 y F7 |
 | `PinnedDocumentsController` | Escribe `active_entities` | Escribe `document_focus`. Misma autorización | Cambiar en F2 |
 | `rag_chat_controller.js` | Optimistic, textarea, badge oculto en 0, card sin retry | Espera al pin, no toca el textarea, badge siempre, retry al aceptar | Cambiar en F3, F4, F7 |
 | `home/_chat_box.html.erb`, `_documents_summary_box.html.erb`, filas de docs | Check desde URIs; badge sólo mobile | Mismo número en los dos layouts | Cambiar en F4 |
 | `HomeController#pinned_uris_for_current_session` | URIs de `active_entities` | Ids/URIs de `document_focus` | Cambiar en F2 |
-| `ManualCandidateRanker` | Exige `MANUFACTURERS` | Marcas y designators del catálogo, más display_name/aliases | Cambiar en F6 |
+| `SemanticQueryAnalyzer` | Tool de relación y spans literales. No arma la query. El primer turno con episodio vacío no llama | Misma llamada y el mismo tope de tokens. El tool puede marcar rol de la mención y un síntoma literal. Sigue sin canonizar marcas. Si el flag está off, no es obligatorio para NICE3000 | Cambiar en F8. No es una segunda llamada |
+| `ManualCandidateRanker` | Exige `MANUFACTURERS` | Marcas y designators del catálogo, aliases, y con badge 0 los documentos ya citados en el retrieve principal | Cambiar en F6 |
 | `DocumentIdentityCatalog` | Identidad versionada, fuera del filtro | Sigue siendo la fuente de brand/designator. No se duplica en código | Conservar, consultar en F6 y F8 |
 | `FocusNotice` | Avisa y no suelta el pin | El aviso ofrece cambiar o ampliar, con el manual encontrado | Cambiar copy en F6 |
 | `BedrockIngestionJob` | Auto-pin al episodio | Auto-pin al `document_focus` del upload de este técnico, y la UI lo muestra | Cambiar en F2 |
 | `EntityExtractorService`, `SendWhatsappReplyJob` | Escriben `active_entities` | Intactos. El web no los lee | Conservar |
-| `QueryOrchestratorService` / `BedrockRagService` | Filtro por URIs que le pasan | Sin cambio de embeddings ni de Bedrock. Siguen recibiendo las URIs del focus | Conservar contrato, no rehacer |
+| `QueryOrchestratorService` / `BedrockRagService` | `retrieval_query.text` es el string que les pasan; el filtro de URIs va aparte | Igual. No se les enseña a mezclar query y scope. `clarify_first` no llega a `query` | Conservar contrato, no rehacer |
+| `QueryEntities` | Extractor determinista del selector en sombra. No alimenta el retrieve vivo | Sigue en la sombra. No es el contrato de understanding | Conservar |
+| `FollowupQueryRewriter` | Follow-up corto de identificador | Sigue para ese shape. No pisa una `retrieval_query` ya armada por el compositor | Conservar, ajustar el orden en F8 |
 | Tests de caso, pin, concern, ranker, controller, JS si existen | Varios fijan el release de pins | Fijan el contrato nuevo | Cambiar en la fase que toca el comportamiento |
 | `R1B_CASE_PROBE` | Loguea `pins_before` / `pins_after` | Sigue. `pin_release_reason` deja de ocurrir por corrección o boundary | Conservar el log |
 
@@ -376,18 +518,19 @@ F1 igual se hace primero sobre el hash actual, y se despliega sola (G1). Así el
 
 ## 10. Discovery design
 
-El retrieve principal obedece al focus.
+El retrieve principal obedece al focus. La query puede ir enriquecida en los dos casos. Enriquecer no agrega URIs.
 
-- Badge `0`: corpus autorizado de hoy (`account_filter` / R1A). Las citas de esa respuesta pueden ser de cualquier manual autorizado. Eso no es contaminación: no hay focus.
-- Badge `N`: sólo las URIs de `document_focus`. Un miss sigue siendo ausencia en esos manuales. No se reabre el corpus dentro de la misma generación.
+- Badge `0`: corpus autorizado de hoy (`account_filter` / R1A). Las citas de esa respuesta pueden ser de cualquier manual autorizado. Eso no es contaminación: no hay focus. La query no es genérica por eso. “No me nivela y marca E51” con `controller=NICE3000` ya en el trabajo busca algo como “Monarch NICE3000 E51 nivelación”, en todo el KB autorizado.
+- Badge `N`: sólo las URIs de `document_focus`. Un miss sigue siendo ausencia en esos manuales. No se reabre el corpus dentro de la misma generación. Si el trabajo dice KONE y el check es Elemont, la query puede nombrar KONE para buscar dentro de Elemont. El filtro sigue siendo Elemont.
 
-Discovery no mete texto de chunks en el prompt ni en las citas.
+De dónde salen las cards:
 
-Cuándo corre:
+- Badge `0` y la respuesta citó documentos: los `kb_document_id` de esas citas, autorizados, son la primera señal. No hace falta un segundo `Retrieve`. Copy: “La evidencia más relevante apareció en este manual. ¿Quieres dejarlo seleccionado para seguir trabajando sobre él?” Un caso como “Falla 37, cierra puerta y vuelve a abrir”, sin fabricante, puede ofrecer el manual de fault codes que el propio retrieve trajo, si ese hit es claro. Si los hits se reparten entre manuales distintos sin uno dominante, no se ofrece nada.
+- Badge `0` y además el catálogo reconoce un designator en la query: se puede ofrecer ese manual aunque el hit ranking esté empatado, con el mismo tope de 2 cards.
+- Badge `N` y la respuesta encontró algo dentro del focus: ranking de catálogo, sin segundo `Retrieve`. Ofrece ampliar sólo si el candidato no está en el focus y el match es designator exacto, o la identidad del trabajo contradice los manuales seleccionados. Esos candidatos no entran a `citations`.
+- Badge `N` y la respuesta primaria se abstiene: un `Retrieve` directo, no `RetrieveAndGenerate`, `top_k` 3, filtro de cuenta, excluyendo las URIs del focus. Los hits se traducen a `KbDocument` autorizados y se muestran como cards. Sus chunks no entran al prompt ni a las citas de la respuesta que ya dijo que no alcanzó. Si no hay candidato, se dice que no alcanzó y no se inventa un manual.
 
-- Con badge `0`, después de una respuesta que sí encontró evidencia: ranking de catálogo, sin segundo `Retrieve`. Ofrece dejar seleccionados sólo si hay un designator exacto o una sola marca clara. Si no, calla.
-- Con badge `N` y respuesta útil: ranking de catálogo, sin segundo `Retrieve`. Ofrece ampliar sólo si el candidato no está en el focus y el match es designator exacto, o la marca del trabajo contradice los manuales seleccionados.
-- Con badge `N` y la respuesta primaria se abstiene (el mismo criterio de abstención que ya usa el controller): un `Retrieve` directo, no `RetrieveAndGenerate`, `top_k` 3, filtro de cuenta, excluyendo las URIs del focus. Los hits se traducen a `KbDocument` autorizados. Si no hay candidato, se dice que no alcanzó y no se inventa un manual.
+`clarify_first` no corre discovery: no hubo retrieve que rankear, y no se inventa un manual para disimular la pregunta.
 
 Cuántos: máximo 2 cards. Un empate muestra las dos y no elige. No hay retry hasta que el técnico toca una.
 
@@ -405,19 +548,29 @@ Costo: el `Retrieve` extra existe sólo en la abstención con focus no vacío. E
 
 ## 11. Identity / catalog strategy
 
+Tres pasos, y no se mezclan:
+
+```text
+SemanticQueryAnalyzer  → spans literales y el tipo de problema
+DocumentIdentityCatalog, aliases, metadata  → identidad
+Retrieve  → evidencia
+```
+
+El modelo puede decir que en “Tengo un NICE3000 con E51” hay un designator `NICE3000` y un código `E51`, porque esas cadenas están en la frase. No escribe `manufacturer=MONARCH`. Eso lo escribe el catálogo si la entrada confirmada tiene una sola brand. Si Haiku está apagado o el turno es el primero y el gate viejo no llamaría, el mismo orden lo hace el compositor con el designator en el texto. `NICE3000` no espera a que alguien prenda el flag.
+
 No se amplía `MANUFACTURERS` para Monarch.
 
-Orden de reconocimiento, determinista, sin llamada de modelo:
+Orden de grounding, determinista:
 
-1. Designators del `DocumentIdentityCatalog` contra el texto (`NICE3000` matchea la entrada Monarch).
-2. Brands de ese mismo YAML (`MONARCH`).
+1. Designators del `DocumentIdentityCatalog` contra el texto y contra los spans aceptados (`NICE3000` matchea la entrada Monarch).
+2. Brands de ese mismo YAML (`MONARCH`), sólo si el técnico las dijo o ya estaban en el episodio o en la foto.
 3. `display_name` y `aliases` de `KbDocument` autorizados, vía el resolver que ya existe.
 
-Si un designator apunta a una sola entrada confirmada, eso es controlador o modelo según el designator, y la brand de esa entrada es el fabricante. `NICE3000` escribe `controller`. `MONARCH` escribe `manufacturer`. Los dos pueden coexistir.
+Si un designator apunta a una sola entrada confirmada, eso es controlador o modelo según el designator, y la brand de esa entrada es el fabricante. `NICE3000` escribe `controller` en el episodio. `MONARCH` escribe `manufacturer`. Los dos pueden coexistir. Ninguno escribe `document_focus`.
 
-Si varias entradas empatan, no se elige una identidad. Se muestran hasta 2 manuales.
+Si varias entradas empatan, no se elige una identidad. Se muestran hasta 2 manuales. La decisión no pasa a `clarify_first` sólo por ese empate: se puede buscar con el designator y ofrecer las dos cards.
 
-`find_brands` del episodio, en F8, usa las brands del catálogo además de la constante actual. Así “es Monarch” puede corregir el hecho `manufacturer` sin estar en la lista. La constante no crece. `NoHardcodedEquipmentTest` no gana filas.
+`find_brands` del episodio, en F8, usa las brands del catálogo además de la constante actual. Así “es Monarch” puede corregir el hecho `manufacturer` sin estar en la lista. La constante no crece. `NoHardcodedEquipmentTest` no gana filas. El tool de Haiku tampoco gana literales de marca: el prompt sigue prohibiendo strings que no estén en el turno.
 
 Un manual nuevo con metadata de ingesta (display_name, aliases, y una fila de catálogo cuando el documento es del corpus general) se reconoce sin un deploy de código. Una fila de catálogo sigue siendo necesaria para una brand que no aparece en el nombre ni en los aliases. Eso es dato, no Ruby.
 
@@ -447,6 +600,18 @@ Cada regla tiene un test o un paso de smoke. El smoke está en la sección 15.
 18. Un pin de otro tenant `tenant_private` sigue rechazado.
 19. `danebo_general` pineado por la cuenta A no aparece seleccionado en la cuenta B.
 20. WhatsApp no se vuelve a cablear al focus web.
+21. `NICE3000 E51` produce retrieve sin pedir fabricante cuando el catálogo resuelve esa identidad. El badge no cambia.
+22. La identidad que pone el catálogo no escribe `document_focus`.
+23. Un código de falla entra en `retrieval_query` aunque este turno no lo persista como hecho.
+24. “¿Cómo ajusto este parámetro?” con badge `0`, sin episodio y sin foto, es `clarify_first`: hay pregunta y no hay `RetrieveAndGenerate`. Con un manual seleccionado, esa frase sí busca en ese manual.
+25. “No nivela al llegar al piso.” es `search_and_clarify`: hay retrieve y, si falta identidad, una sola pregunta después de la respuesta.
+26. Si la foto ya dejó manufacturer o model, el turno siguiente no pide ese dato.
+27. Armar `retrieval_query` no agrega URIs ni cambia `force_entity_filter`.
+28. Con badge `0`, la query puede nombrar Monarch y NICE3000 mientras el scope sigue sin filtro de documento.
+29. Con badge `N`, la query puede nombrar otro equipo y el scope sigue siendo esos N.
+30. Con badge `0`, los documentos citados en el retrieve principal pueden salir como cards. Siguen sin quedar checkeados hasta el click.
+31. Con badge `N`, un hit de fuera del focus no entra en `citations`.
+32. No hay una segunda llamada Haiku para understanding. Si el modo es `off`, el compositor determinista cubre el designator de catálogo.
 
 ## 13. Phased implementation plan
 
@@ -528,13 +693,13 @@ Cada fase: tests, `git diff --check`, un commit, rollback = revert de ese commit
 
 **Compuerta:** G3. Deploy propio.
 
-**Objective.** Cero URIs: abierto. N URIs: esas N. Sin recorte silencioso.
+**Objective.** Cero URIs: abierto. N URIs: esas N. Sin recorte silencioso. La query, aunque nombre otro equipo, no es un filtro.
 
 **Files.** `RagQueryConcern`, `PinnedEntityScopeResolver` (deja de ser llamado por el camino principal; el archivo se queda hasta que no tenga callers), tests del concern.
 
-**Changes.** `resolve_retrieval_scope` lee `document_focus`. Se quita la llamada a `resolve_pinned_scope` antes del scope. El prompt de “manuales seleccionados” lista los mismos nombres que el filtro.
+**Changes.** `resolve_retrieval_scope` lee `document_focus` y no el texto de la pregunta. Se quita la llamada a `resolve_pinned_scope` antes del scope. El prompt de “manuales seleccionados” lista los mismos nombres que el filtro. F5 no implementa el compositor: G3 tiene que juzgar el scope solo. El test deja escrito el invariante que F8 no puede romper.
 
-**Tests.** 0 pins → `reason: open` y URIs vacías. 2 pins y una pregunta que nombra sólo uno → las dos URIs y `force_entity_filter: true`. 1 pin → esa URI.
+**Tests.** 0 pins → `reason: open` y URIs vacías, aunque la pregunta diga `NICE3000`. 2 pins y una pregunta que nombra sólo uno → las dos URIs y `force_entity_filter: true`. 1 pin Elemont y una pregunta que dice KONE → la URI de Elemont, no una URI KONE.
 
 **Production-safe verification.** G3.
 
@@ -546,13 +711,13 @@ Cada fase: tests, `git diff --check`, un commit, rollback = revert de ese commit
 
 **Compuerta:** G4, junto con F7.
 
-**Objective.** Sugerir manuales que no están seleccionados, sin citarlos. Monarch / NICE3000 sale del YAML.
+**Objective.** Sugerir manuales que no están seleccionados. Con badge `0`, la sugerencia sale de los documentos que el retrieve principal ya citó. Con badge `N`, un manual de afuera no se cita. Monarch / NICE3000 sale del YAML. Esta fase no cambia la query ni llama a Haiku.
 
 **Files.** `ManualCandidateRanker`, `RagController#attach_manual_suggestion`, `FocusNotice`, locales `rag.es.yml` / `rag.en.yml`, un servicio chico de discovery si el `Retrieve` de abstención no cabe en el controller. El controller sigue delgado.
 
-**Changes.** El ranker matchea brands y designators del catálogo y, si no hay marca de lista, igual puede puntuar un designator único. Cards sólo si el documento no está en el focus. Copy de ampliar, y de cambiar cuando el trabajo contradice los checks. Abstención con focus: un `Retrieve` acotado, resultados como cards, chunks fuera del prompt. Tope 2.
+**Changes.** El ranker matchea brands y designators del catálogo y, si no hay marca de lista, igual puede puntuar un designator único. Con badge `0`, después del retrieve, rankea los `kb_document_id` citados y ofrece dejar seleccionado el dominante. No hay segundo `Retrieve` en ese camino. Con badge `N`, cards sólo si el documento no está en el focus, y esas cards no se agregan a `citations`. Copy de ampliar, y de cambiar cuando el trabajo contradice los checks. Abstención con focus: un `Retrieve` acotado, resultados como cards, chunks fuera del prompt. Tope 2.
 
-**Tests.** Texto “Monarch NICE3000” con el YAML actual produce la card de ese `document_id`, sin modificar `MANUFACTURERS`. Una card no aparece en las citas del doble de respuesta de test. Elemont pineado + texto KONE no vacía el focus y sí puede ofrecer un manual KONE del catálogo de test.
+**Tests.** Texto “Monarch NICE3000” con el YAML actual produce la card de ese `document_id`, sin modificar `MANUFACTURERS`. Una respuesta con badge `0` y una cita de ese documento ofrece la card y no lo deja pineado. Una card de afuera no aparece en las citas cuando el focus tiene otro id. Elemont pineado + texto KONE no vacía el focus y sí puede ofrecer un manual KONE del catálogo de test.
 
 **Production-safe verification.** Se juzga en G4, no en un deploy de F6 solo.
 
@@ -578,23 +743,30 @@ Cada fase: tests, `git diff --check`, un commit, rollback = revert de ese commit
 
 **Commit.** `feat: retry the question after the technician adds a manual`
 
-### F8 — Identidad de catálogo en el trabajo
+### F8 — Comprensión técnica sobre la llamada que ya existe
 
-**Compuerta:** G5, junto con F9 y F10.
+**Compuerta:** G5, junto con F9 y F10. No es una fase aparte: el cambio vive en `SemanticQueryAnalyzer` y en el `composed` que el concern ya usa como `effective_question`. Una fase nueva sería un segundo Haiku.
 
-**Objective.** Fabricante y controlador se pueden guardar desde el catálogo, sin una marca nueva en código.
+**Objective.** Antes del retrieve, el turno separa identidad y problema, arma `retrieval_query`, y decide `ready`, `search_and_clarify` o `clarify_first`. El catálogo pone la marca. El focus no se toca. Funciona con el flag Haiku en `off`.
 
-**Files.** `ActiveEpisode` (`FACT_KEYS` incluye `controller`), `ActiveEpisodeTurn#find_brands` y el extract de hechos, `SessionContextBuilder` (una línea Controller si el hecho existe), tests de episodio y de `no_hardcoded_equipment_test.rb` (el techo no sube).
+**Files.** `SemanticQueryAnalyzer` (mismo tool, mismos 300 tokens; spans siguen siendo literales), `ActiveEpisodeTurn` (`composed` sale del compositor; `FACT_KEYS` suma `controller`), `PendingQuestion` (suma `controller` si hace falta guardar el hueco), `RagQueryConcern` (`clarify_first` vuelve sin Bedrock; si hay `retrieval_query`, no la pisa el rewriter), `SessionContextBuilder` (una línea Controller si el hecho existe), `no_hardcoded_equipment_test.rb` (el techo no sube).
 
-**Changes.** Un designator único confirmado escribe `controller`. La brand de esa entrada escribe `manufacturer` si el turno la nombra o si el designator la implica con una sola brand. `MANUFACTURERS` sigue existiendo y no gana elementos.
+**Changes.**
 
-**Tests.** “Es Monarch / NICE3000” con el catálogo de test deja `manufacturer=MONARCH` y `controller=NICE3000`, y no modifica `document_focus`.
+- Compositor determinista en el turno de texto, también cuando el episodio está vacío y cuando Haiku no corre. Designator único confirmado escribe `controller`. La brand única de esa entrada escribe `manufacturer`. Lo que no es hecho persistible no entra al JSON del episodio.
+- Si el modo es `conditional`, el tool puede agregar el rol del span y un síntoma que sea substring del turno. Un “Monarch” que el técnico no dijo sigue siendo inválido. El compositor ignora ese output si el schema falla, igual que hoy devuelve nil.
+- `ready` llama al retrieve con la query armada y las URIs del focus, que pueden ser vacías.
+- `search_and_clarify` llama igual y agrega una pregunta corta al final de la respuesta. No pide un dato que la foto, el episodio o el catálogo ya tengan.
+- `clarify_first` no llama a `RetrieveAndGenerate`. No corre discovery.
+- “No, no es Elemont. Es KONE.” actualiza `manufacturer` y no `document_focus`.
 
-**Production-safe verification.** G5 incluye el paso Monarch. G4 ya exigió la card; G5 exige que el trabajo quede entendido y que los pines sigan quietos.
+**Tests.** “NICE3000 E51, ¿qué reviso?” con el YAML actual, flag `off`, episodio vacío: decisión `ready`, query contiene `NICE3000` y `E51`, `manufacturer` persistido `MONARCH`, `document_focus` intacto, scope sin URIs si el badge es 0. “¿Cómo ajusto este parámetro?” sin episodio, sin foto y sin focus: `clarify_first` y el orquestador no se instancia. La misma frase con un pin: no es `clarify_first`; el scope es ese pin. “No nivela al llegar al piso.”: retrieve permitido y como máximo una pregunta. Foto con manufacturer KONE: el turno “¿Qué reviso ahora?” no pide la marca. Focus Elemont + trabajo KONE: la query puede contener KONE y las URIs siguen siendo las de Elemont. El techo de literales no sube.
+
+**Production-safe verification.** G5, pasos de `NICE3000 E51` y de “No nivela”. G4 ya exigió la card; G5 exige que la búsqueda no pida la marca y que el badge quede en 0 hasta un click.
 
 **Exit.** Tests verdes. Sin deploy propio.
 
-**Commit.** `feat: resolve controller identity from the document catalog`
+**Commit.** `feat: build the retrieval query from catalog-grounded technical understanding`
 
 ### F9 — Quitar lo muerto y alinear docs de arquitectura
 
@@ -614,7 +786,7 @@ Cada fase: tests, `git diff --check`, un commit, rollback = revert de ese commit
 
 **Compuerta:** G5. Deploy de F8+F9+F10.
 
-**Objective.** Un test de integración por journey A–H en lo que el server puede fijar, más el smoke humano.
+**Objective.** Un test de integración por journey A–L en lo que el server puede fijar, más el smoke humano. Al empezar F10, releer el handoff de F8 y F9 y corregir este plan si el compositor real no coincide con el contrato.
 
 **Files.** `test/controllers` o `test/integration` nuevo, mínimo, sin fixtures enormes. Dobles de Bedrock donde el proyecto ya los use.
 
@@ -646,6 +818,10 @@ F10 agrega los journeys de servidor:
 - E: texto Monarch / NICE3000, card del document_id del YAML, focus de Elemont sigue.
 - F y G: el scope que el controller calcularía después de pin y después de unpin.
 - H: el HTML trae el mismo número en los dos nodos.
+- I: `NICE3000 E51` es `ready`, query con designator y código, focus vacío, sin pregunta de marca.
+- J: “No nivela al llegar al piso.” no es `clarify_first`.
+- K: “¿Cómo ajusto este parámetro?” en frío es `clarify_first`.
+- L: un hecho `manufacturer` con `source=photo` no genera una pregunta de marca en el turno siguiente.
 
 No se exige system test de browser en CI. La carrera y el retry se ven en G2 y G4.
 
@@ -690,6 +866,7 @@ Hacerlo en el teléfono y, si hay una pantalla ancha, repetir el badge en deskto
 2. PASS si Elemont sigue checkeado y aparece una card con el manual Monarch NICE3000 (el nombre que se ve en la lista, aunque el archivo se llame `Manual_monarch_...`). FAIL si no hay card, o si esa respuesta ya cita ese manual.
 3. Elegir ampliar. PASS si el badge pasa a `2`, los dos checks están, y Danebo hace sola la misma pregunta. La respuesta nueva puede citar el manual Monarch.
 4. Si se ofrece cambiar, probarlo en otra pasada: el badge queda en `1` y el check de Elemont se va sólo porque se tocó Cambiar.
+5. Volver a badge `0`. Escribir: `Falla 37, cierra puerta y vuelve a abrir.` PASS si la respuesta puede citar un manual y, si ofrece dejar uno seleccionado, el badge sigue `0` hasta el click. FAIL si el badge cambia solo o si inventa un equipo que la respuesta no cita. Si no hay un manual dominante, no ofrecer card también es PASS.
 
 ### G5 — después de desplegar F8+F9+F10
 
@@ -710,7 +887,12 @@ Smoke corto, en orden. Es el guion que tiene que poder hacer alguien sin acceso 
 
 Repetir 3 y 5 en el teléfono (Journey H). El número tiene que ser el mismo al recargar en desktop.
 
-Monarch, si G4 ya pasó en esta misma cuenta, no hace falta repetir el catálogo salvo que G5 haya desplegado F8: una frase `Es Monarch / NICE3000` con Elemont pineado no mueve el check, y la card sigue apareciendo.
+Monarch, si G4 ya pasó en esta misma cuenta, no hace falta repetir el catálogo con Elemont pineado: `Es Monarch / NICE3000` no mueve el check, y la card sigue apareciendo.
+
+Dos pasos más, en badge `0`, para ver que la búsqueda entendió la identidad y no sólo la card:
+
+13. Badge `0`. Escribir: `NICE3000 E51, ¿qué reviso?` PASS si no pregunta la marca, responde con algo citado o dice que no está en los manuales, y el badge sigue `0`. Si ofrece un manual, el nombre es el de NICE3000 / Monarch. FAIL si pregunta “¿cuál es la marca?” o si el badge pasa a `1` solo.
+14. Badge `0`, chat nuevo o sin equipo dicho. Escribir: `No nivela`. PASS si da ayuda citada o dice que no encontró un procedimiento único, y si pregunta, pregunta una sola cosa útil (controlador o modelo), sin inventar un equipo. FAIL si nombra un fabricante que el técnico no dijo y que la respuesta no cita.
 
 ## 16. Rollback strategy
 
@@ -734,6 +916,8 @@ No hay feature flag nuevo. El corte de deploy es la compuerta. Un flag escondido
 - **El `Retrieve` de abstención** agrega latencia sólo en el caso “no está en lo seleccionado”. Si se dispara de más, G4 se siente lento y se baja a catálogo-only en un commit de corrección de G4, sin tocar G3.
 - **Catálogo YAML incompleto** para una marca que no está ni en el nombre. El plan no promete adivinarla. Promete usar la metadata que ya existe, Monarch incluido.
 - **Follow-up compuesto** puede meter “KONE” en la pregunta de retrieval aunque el focus siga siendo Elemont. Eso es Work Context ayudando a buscar dentro de los manuales seleccionados, no un cambio de filtro. Si en G1 la respuesta ignora los manuales checkeados por culpa del texto compuesto, es `FAIL` de producto y se ajusta la composición en un fix de G1, sin adelantar F5.
+- **Haiku puede no estar prendido**, y el primer turno ni siquiera pasa el gate actual. El plan no asume lo contrario. F8 tiene que cumplir `NICE3000 E51` con el flag en `off`. Si alguien “arregla” el journey I prendiendo el flag o dejando que el modelo escriba Monarch sin el YAML, es un fallo del contrato, no un atajo.
+- **`clarify_first` de más** dejaría al técnico sin respuesta en una pregunta que sí se podía buscar. G5 paso 14 lo ve. Si “No nivela” no busca, es `FAIL` y se corrige el umbral en F8, sin nueva compuerta.
 - **Upload auto-pin** puede seleccionar un archivo que el técnico ya no quiere. Sigue siendo visible. G2 no lo exige; si molesta, se anota y no se esconde.
 
 ## 18. Explicit non-goals
@@ -745,6 +929,8 @@ No hay feature flag nuevo. El corte de deploy es la compuerta. Un flag escondido
 - Migrar WhatsApp.
 - Borrar `active_entities` o `MANUFACTURERS` en este plan.
 - Agregar fabricantes al código para pasar un caso.
+- Una segunda llamada LLM de understanding, un modo Haiku nuevo, o un JSON de episodio con síntomas y query persistidos.
+- Convertir `clarify_first` en un formulario de marca, modelo, controlador y falla.
 
 ## 19. Definition of Done
 
@@ -755,6 +941,7 @@ Hecho cuando:
 3. `ACTIVE_ARCHITECTURE.md`, `SESSION_AND_RETRIEVAL.md` y `docs/README.md` describen `document_focus` como la selección visible, y dicen que el episodio no la escribe.
 4. R1B y el recovery siguen en el repo como historia. Su sección de pins apunta a este plan en una nota al frente, sin reescribir el resto.
 5. Ningún path web escribe el focus salvo pin, unpin, aceptar card, y auto-pin de upload.
+6. `NICE3000 E51` con badge `0` busca sin pedir la marca, y el badge sigue `0` hasta un click. La query y el scope quedan separados en un test.
 
 Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el de R1B. Este archivo no cambia producción por el hecho de estar mergeado.
 

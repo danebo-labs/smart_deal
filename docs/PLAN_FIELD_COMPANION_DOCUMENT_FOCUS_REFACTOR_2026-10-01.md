@@ -3,7 +3,7 @@
 **Estado:** plan refinado. Implementación no empezada.
 **Canal:** web autenticado. WhatsApp sigue dormido.
 **No reabre:** R1A (`CLOSED — PASS`).
-**Refinamiento:** comprensión técnica pre-retrieval. No abre otra compuerta humana.
+**Refinamiento:** copiloto de campo. Empieza a ayudar con lo que hay. No abre otra compuerta humana.
 
 Este plan separa tres cosas que hoy comparten estado:
 
@@ -19,7 +19,7 @@ retrieval query  ≠  retrieval scope
 
 La query dice qué se está buscando. El scope dice dónde está permitido buscar para esa respuesta. Entender el equipo no cambia los manuales checkeados.
 
-Danebo se comporta como el equipo de ingeniería al que llama un técnico: primero entiende qué equipo y qué problema tiene delante, usando la consulta, lo ya dicho, la foto, los códigos, los designators y el catálogo; después busca en la documentación que corresponde; y sólo pregunta cuando falta un dato que cambiaría la búsqueda o el procedimiento. No le pide al técnico una marca, un modelo o un controlador que ya puede resolver.
+Danebo se comporta como el equipo de ingeniería al que llama un técnico de campo: empieza a ayudar con la información disponible, mantiene hipótesis abiertas, busca evidencia, pide sólo el dato que más reduciría la incertidumbre y se vuelve más preciso a medida que el técnico aporta observaciones. El técnico no necesita armar una consulta perfecta para recibir ayuda. Danebo no espera fabricante, modelo, controlador y código para empezar. “Tengo un elevador Elemont, las puertas no cierran” ya se busca. No se detiene en “¿cuál es el modelo y el controlador?”.
 
 El técnico pregunta, ve cuántos manuales tiene seleccionados, y decide él si esa selección cambia. Danebo puede sugerir. No puede cambiar la selección en silencio. La comprensión previa al retrieve puede actualizar el trabajo. No puede pinear, despinear ni reemplazar el focus.
 
@@ -35,7 +35,7 @@ Hay cinco compuertas. Cada una es un deploy chico y un smoke que una persona hac
 | G2 | F2 + F3 + F4 | El número visible es la selección real, y pin/unpin llegan antes de la pregunta | Revertir ese deploy. G1 tiene que seguir pasando |
 | G3 | F5 | La respuesta usa exactamente los manuales de ese número | Revertir ese deploy. G1 y G2 siguen pasando |
 | G4 | F6 + F7 | Un manual de afuera se ofrece y no se usa hasta que el técnico lo acepta; con badge 0, el manual que ya sostuvo la respuesta se puede ofrecer para seguir | Revertir ese deploy |
-| G5 | F8 + F9 + F10 | `NICE3000 E51` busca sin pedir la marca; badge 0 no se mueve solo; el smoke completo sigue pasando | Revertir ese deploy |
+| G5 | F8 + F9 + F10 | `NICE3000 E51` y “Elemont, las puertas no cierran” buscan sin formulario; “no sé” no entra en bucle; el badge no se mueve solo | Revertir ese deploy |
 
 Reglas de ejecución:
 
@@ -269,7 +269,7 @@ Subir un archivo propio es un acto del técnico. Cuando termina de indexarse pue
 
 No es un cuarto almacén. Es el paso que ya existe, ampliado, más un compositor en Ruby.
 
-- Responsabilidad: leer el turno y dejar una query técnica y una decisión de si buscar, buscar y preguntar, o preguntar primero.
+- Responsabilidad: leer el turno, dejar señales de búsqueda y decidir si la respuesta de este turno puede salir ya, si conviene una pregunta después, si el técnico pidió seguir con lo que hay, o si casi no hay contenido técnico.
 - Autoridad del lenguaje: `SemanticQueryAnalyzer`. Sigue sin inventar strings. Un span que no está en el turno se descarta.
 - Autoridad de la identidad: `DocumentIdentityCatalog` y aliases de `KbDocument`. El modelo no es quien sabe que NICE3000 es Monarch.
 - Autoridad del scope: `document_focus`. Este paso no lo lee para escribirlo. Puede leerlo sólo para no contradecir el filtro.
@@ -284,18 +284,26 @@ identity:        manufacturer, model, controller, designators, aliases
                  cada valor trae source: user | photo | catalog | episode
 problem:         fault_code, symptoms, component, procedure
 goal:            texto corto del trabajo, el mismo concepto que active_episode.goal
-retrieval_query: string que Bedrock recibe en retrieval_query.text
-missing:         como mucho un discriminator, o ninguno
-decision:        ready | search_and_clarify | clarify_first
+retrieval_query: string que el pipeline actual manda en retrieval_query.text
+                 No es un AND de campos. Es la representación de hoy, no el único diseño posible
+missing:         como mucho un discriminator, o ninguno. Nunca un campo ya unknown_confirmed
+decision:        ready | search_and_clarify | best_effort | clarify_first
 ```
 
 `source=catalog` sólo aparece si una entrada confirmada del YAML (o un alias unívoco) ata el designator que el técnico dijo. Si hay empate, `manufacturer` queda vacío y `missing` no se rellena con una marca adivinada: se ofrecen hasta 2 manuales.
 
 Decisiones, evaluadas en Ruby después del catálogo, no delegadas al modelo:
 
-- **ready.** Hay señal fuerte para buscar: designator de catálogo, identidad ya guardada en el episodio o en la foto, o código más componente. `NICE3000 E51, ¿qué reviso?` es ready. No se pregunta la marca. Flujo: comprensión, enriquecimiento de catálogo, retrieve. El scope no cambia.
-- **search_and_clarify.** Hay un síntoma o un procedimiento con el que el corpus puede ayudar, y falta un discriminator. `No nivela al llegar al piso.` busca en el scope actual, responde sólo con lo encontrado, y cierra con una pregunta corta: “Para llevarte al procedimiento exacto, ¿sabes qué controlador o modelo tiene?”. La pregunta no bloquea la respuesta. No se pide la marca si el controlador ya se resolvió.
-- **clarify_first.** No hay parámetro, código, componente, designator, foto, episodio ni manual seleccionado. `¿Cómo ajusto este parámetro?` en frío, con badge `0`. Se pregunta “¿Qué parámetro estás viendo y en qué controlador o equipo?” y no se llama a `RetrieveAndGenerate`. Si en el mismo turno aparece un designator de catálogo, o el badge es mayor que 0, esta decisión no puede ganar: el manual checkeado ya es contexto, y se busca ahí.
+- **ready.** Hay señal suficiente y ninguna pregunta extra cambiaría de forma material esta respuesta. No significa que todos los campos estén llenos. `NICE3000 E51, ¿qué reviso?` es ready: el catálogo cierra la identidad y el código ya está. Flujo: comprensión, catálogo, retrieve. El scope no cambia.
+- **search_and_clarify.** Es el caso normal cuando la consulta ya se puede buscar y un dato más afinará el turno siguiente. “Elemont, las puertas no cierran”, “No nivela”, “La puerta cierra y vuelve a abrir”, “K1 no entra”, “Me muestra E51” no se bloquean. Flujo: retrieve, respuesta grounded con la evidencia que haya (puede ser general; general no es mala), y después un solo discriminator de alto valor. Faltar fabricante, modelo o controlador no basta para caer en `clarify_first`.
+- **best_effort.** El técnico dijo que no sabe, que no puede verlo, o que busquemos con eso (“Busca con eso”, “Eso es todo lo que tengo”, “No sé el controlador”). No se bloquea, no se repite la misma pregunta, se busca con las señales que hay, no se inventa identidad, la incertidumbre se dice breve, y el focus no se abre ni se cierra. Badge `0` sigue siendo el KB autorizado. Badge `N` sigue siendo esos N.
+- **clarify_first.** Excepcional. Casi no hay contenido técnico: sin foto, sin episodio, sin componente, sin parámetro, sin manual seleccionado, sin equipo y sin observación. “¿Cómo ajusto esto?”. Se pregunta qué está mirando o qué ve en pantalla, y no se llama a `RetrieveAndGenerate`. Un designator de catálogo, un síntoma concreto o un badge mayor que 0 impiden esta decisión.
+
+La aclaración puede durar más de un turno. Cada turno tiene que cerrar una ambigüedad o cambiar de estrategia. “¿Qué parámetro estás viendo?” → “P13” → “¿Sabes el controlador? Si no, una foto de la pantalla también sirve” → “NICE3000” pasa a ready y ahí sí busca. No es “preguntar controlador, no sé, preguntar controlador otra vez”.
+
+“No sé”, “No aparece”, “No puedo verlo” y “No tengo acceso” marcan el dato pendiente como desconocido para el técnico. Eso ya tiene forma en el episodio: `unknown_confirmed` para manufacturer/model, y `absent_confirmed` para un código que no está. F8 extiende el mismo estado a `controller` y reconoce esas frases, no sólo `no lo sé`. El hecho queda en `active_episode`. La frase queda en el historial. La decisión `best_effort` no se persiste: el turno la calcula y el hecho `unknown_confirmed` evita repreguntar. Si todavía hay otro dato de más valor (código, texto en pantalla, foto), se puede pedir ese, una vez. Si el técnico dice que busquemos igual, no se pide nada en ese turno.
+
+Si hace falta preguntar, se pregunta el dato que más separa las explicaciones o los manuales todavía plausibles, con el menor esfuerzo. No es un motor probabilístico. Heurística, en orden: no pedir un slot `known`, `unknown_confirmed` o `absent_confirmed`; si los hits o el catálogo se parten en dos equipos distintos, pedir el designator o el código que los separa; si el síntoma es amplio y no hay código, pedir el código o una foto de la pantalla, en una frase, no las dos como lista; si nada de eso cambia la respuesta, no preguntar. Una foto que puede mostrar controlador y código juntos vale más que preguntar la marca.
 
 La pregunta de clarify usa prosa. Si el hueco es `manufacturer`, `model`, `controller` o `fault_code`, se puede guardar en el `pending_question` que ya existe, ampliado con `controller`. No se abre un formulario de cuatro campos.
 
@@ -339,7 +347,8 @@ flowchart LR
 | recent conversation | `conversation_history` con piso del episodio | Turnos | Prompt | El chat |
 | selected count | `document_focus.length` | El mismo writer del focus | Badge desktop y mobile | El número, siempre, incluido 0 |
 | retrieval query | Resultado del turno. No se persiste | Compositor técnico | `effective_question` → `retrieval_query.text` | No. El técnico ve la respuesta, no la query |
-| decision ready / search_and_clarify / clarify_first | Resultado del turno. No se persiste | Compositor, después del catálogo | Concern: llama o no a Bedrock, y si agrega una pregunta | La pregunta corta, cuando existe. La etiqueta no |
+| decision ready / search_and_clarify / best_effort / clarify_first | Resultado del turno. No se persiste | Compositor, después del catálogo | Concern: llama o no a Bedrock, y si agrega una pregunta | La pregunta corta, cuando existe. La etiqueta no |
+| unknown al técnico | `active_episode.facts.*.status` `unknown_confirmed` o `absent_confirmed` | Turno que responde “no sé” o “busca con eso” sobre el dato pendiente | El compositor, para no repreguntar ese dato | No como estado. Se nota porque Danebo no insiste |
 | symptoms, procedure, aliases de este turno | Resultado del turno. No se persiste | Analyzer, sólo spans literales, más términos del catálogo | Query y discovery de este turno | No como estado |
 
 `active_entities` deja de ser el focus del web. La columna puede quedar hasta F9 para no romper el job de WhatsApp dormido. El web no la lee para retrieval ni para pintar checks.
@@ -437,6 +446,34 @@ El mismo pin y unpin, en el tab Archivos. El badge del tab es el mismo número q
 2. Escribe: “¿Qué reviso ahora?”
 3. Danebo no vuelve a pedir marca ni modelo. La query usa KONE y LCE más el problema ya dicho. El scope sigue global si el badge es `0`.
 4. Si el técnico tenía Elemont checkeado, el scope sigue siendo Elemont. La query puede nombrar KONE para buscar dentro de ese manual y concluir que ahí no está. Los checks no se mueven.
+
+### Journey S — ayuda progresiva con poco dato
+
+1. Badge `0`. No hay controlador, modelo ni código.
+2. Escribe: “Tengo un elevador Elemont, las puertas no cierran.”
+3. El trabajo queda con fabricante Elemont y el síntoma de este turno. La decisión es `search_and_clarify`, no `clarify_first`.
+4. Danebo busca enseguida con Elemont y el problema de cierre. Responde con lo que la documentación sostiene. Si esa evidencia es general, la respuesta puede ser general. No inventa controlador ni modelo. No da un procedimiento fino que las fuentes no traen.
+5. Después, como máximo, pide el dato que más separaría el siguiente paso (código, texto de pantalla o foto). No abre con “¿cuál es el modelo y el controlador?”.
+6. Si el técnico sigue (“Es VF5”, “Intenta cerrar tres veces y vuelve a abrir”, “Marca E03”), cada turno enriquece el trabajo o la observación y la búsqueda siguiente es más específica. La primera respuesta general no es un fallo. Fallo es no haber buscado, inventar el equipo, o un procedimiento específico sin fuente.
+
+### Journey T — “no sé”
+
+1. Danebo preguntó: “¿Ves qué controlador tiene?”
+2. El técnico: “No sé.”
+3. Ese slot queda `unknown_confirmed`. Danebo no lo vuelve a preguntar en este trabajo.
+4. Puede pedir otra cosa de más valor (código, texto en pantalla, foto) o pasar a buscar con lo que ya hay. No repite el controlador.
+
+### Journey U — seguir con lo que hay
+
+1. El técnico: “No sé el modelo. Busca con eso a ver qué encuentras.”
+2. Decisión `best_effort`. Hay retrieve. No se inventa modelo ni controlador. La respuesta dice la incertidumbre en una frase. Badge y checks no cambian. No hay otro “¿y el modelo?” en ese turno.
+
+### Journey V — typo y corrección
+
+1. Badge `0`. Escribe: “monar nice300 e51”.
+2. Si el catálogo tiene un solo designator confirmado que cubre ese token (NICE3000) y una sola brand (MONARCH), Danebo normaliza, busca, y puede decir “Estoy tomando NICE300 como NICE3000”. No abre un formulario. No hay una tabla `nice300 → nice3000` en el código: el match sale del catálogo.
+3. Si dos designators confirmados siguen siendo plausibles y llevan a procedimientos distintos, pregunta cuál es. No elige en silencio.
+4. Si Danebo dijo “Tomando que es NICE3000” y el técnico dice “No, era NICE1000”, el trabajo pasa al designator corregido, el focus no se toca, y la siguiente búsqueda usa la corrección.
 
 ## 7. Architecture options and chosen approach
 
@@ -546,6 +583,53 @@ Conflicto entre el trabajo y los checks: el texto ofrece cambiar o ampliar. Camb
 
 Costo: el `Retrieve` extra existe sólo en la abstención con focus no vacío. El resto es el ranker que ya corre, sin Bedrock.
 
+### Hard constraints y señales blandas
+
+Lo que restringe el corpus, hoy y después de F8:
+
+- `KnowledgeScopePolicy` y el filtro de cuenta (`account_filter`: la cuenta del técnico, el corpus compartido y `manual_corpus=general`).
+- Document Focus: con pins, `document_pin_filter` es `equals`/`in` sobre la URI. Un pin no autorizado es `DENY_RETRIEVAL`, sin caer al corpus abierto.
+
+Eso es el scope. Fabricante, modelo, controlador, código, componente, síntoma, parámetro, alias, typo normalizado y lo leído en la foto no se convierten en filtros `andAll` de metadata. Bedrock admite un solo operador lógico embebido, cinco cláusulas y profundidad 2. El filtro de pin ya ocupa ese presupuesto. No hay metadata de fabricante en el chunk para filtrar, y no se va a inventar.
+
+Esas señales entran en la string de la query. `search_type` default es `HYBRID`: Bedrock mezcla vector y léxico sobre esa string, en una sola llamada `RetrieveAndGenerate`. No es un `OR` SQL que escriba la app. Meter “Elemont AND VF5 AND E03 AND puertas no cierran” como condición obligatoria es el fallo a evitar: un chunk puede decir sólo `E03 — door closing sequence` o sólo `VF5 — door operator troubleshooting` y seguir siendo relevante. F8 arma la string para que los tokens importen, sin exigir que un chunk los traiga todos. No sube `top_k` para compensar. No prende el reranker.
+
+El ciclo que el técnico siente, con lo que el pipeline ya puede hacer:
+
+```text
+turno
+→ comprensión
+→ trabajo persistido + señales de este turno
+→ una query hybrid dentro del scope
+→ evidencia (fuertes, en competencia, o ausencia)
+→ respuesta grounded + como máximo una pregunta
+→ turno siguiente, más específico
+```
+
+No es query → respuesta → fin. La respuesta, cuando la evidencia lo permite, dice qué se entendió, qué se encontró, qué revisar, qué observar y de qué manual salió. No es una plantilla fija en toda burbuja. Pedir “¿qué observas?” después de un chequeo, y usar esa observación en el retrieve siguiente, es parte del acompañamiento.
+
+Normalización de typos, antes de escribir un hecho:
+
+- pliegue de mayúsculas y acentos, el que ya hace `FollowupQueryRewriter.normalize_label`;
+- designator exacto del catálogo;
+- si no hay exacto, el token es prefijo de un solo designator confirmado: confianza media, se dice la suposición, se puede buscar;
+- si es prefijo de dos designators confirmados, o dos equipos reales, no se elige. Se pregunta. La query puede llevar el token crudo para no vaciar el recall. No se escribe fabricante.
+- prohibido un mapa `nice300 → nice3000` en Ruby. `KbDocumentResolver` hace `ILIKE` y después exige límite de palabra: `nice300` no matchea `nice3000` por esa regla. El prefijo único es el hueco que F8 puede cerrar contra el YAML, no contra una lista nueva.
+
+Confianza por consecuencia, no por distancia de edición sola. Una letra de diferencia entre dos controladores reales pregunta. Un único candidato fuerte puede seguir, y decir la lectura si ayuda. Corregir (“No, era NICE1000”) es un turno normal: actualiza el trabajo, no el focus, y la búsqueda siguiente usa la corrección.
+
+### Fuera de F8, a propósito
+
+No está en el path principal y este plan no lo construye:
+
+- varias queries por turno y fusión de candidatos (el route estructurado de bornes sí puede hacer un segundo `Retrieve`; no es el camino de una falla de puertas);
+- reranker Cohere en toda pregunta (`BEDROCK_RERANKER_ENABLED` default off, y sólo en preguntas exhaustivas);
+- filtros de metadata por fabricante, modelo o código;
+- subir el top-k (abierto 8, pineado 3, tope 20) para cazar recall;
+- re-embeddings o re-chunking.
+
+Si F5 o F6 muestran que una sola string hybrid no alcanza, se anota como follow-up. No se esconde un motor nuevo dentro de F8.
+
 ## 11. Identity / catalog strategy
 
 Tres pasos, y no se mezclan:
@@ -612,6 +696,28 @@ Cada regla tiene un test o un paso de smoke. El smoke está en la sección 15.
 30. Con badge `0`, los documentos citados en el retrieve principal pueden salir como cards. Siguen sin quedar checkeados hasta el click.
 31. Con badge `N`, un hit de fuera del focus no entra en `citations`.
 32. No hay una segunda llamada Haiku para understanding. Si el modo es `off`, el compositor determinista cubre el designator de catálogo.
+33. “Elemont, las puertas no cierran” busca antes de pedir modelo o controlador.
+34. “Las puertas no cierran”, sin marca, puede buscar en el scope abierto y no inventa fabricante.
+35. Una consulta técnica recuperable es `search_and_clarify` o `ready`, no `clarify_first`.
+36. `clarify_first` queda para el caso casi vacío. Faltar fabricante, modelo o controlador no alcanza.
+37. “No sé” no repite la misma pregunta.
+38. “Busca con eso” busca con lo que hay.
+39. `best_effort` no inventa hechos.
+40. `best_effort` no cambia Document Focus.
+41. Un código, un texto o una foto pueden cerrar un discriminator que el técnico no sabía decir.
+42. La pregunta única es la de más valor, no la lista de campos vacíos.
+43. Las señales técnicas no se vuelven filtros `andAll` de metadata.
+44. Una query sin fabricante, modelo y controlador sigue siendo válida.
+45. Un chunk puede ser evidencia aunque no repita todos los hechos conocidos.
+46. Focus y autorización siguen siendo los únicos hard constraints del corpus.
+47. Más contexto afina la query y la respuesta. No recorta el corpus con un filtro nuevo.
+48. Un typo o una señal débil no puede vaciar el corpus con un hard filter.
+49. Un typo con un solo designator confirmado se normaliza y se puede decir la suposición.
+50. Un typo compatible con dos equipos reales pregunta, y no elige.
+51. “No, era NICE1000” recompone el trabajo y la búsqueda siguiente, sin tocar el focus.
+52. `unknown_confirmed` / `absent_confirmed` impiden repreguntar ese dato.
+53. La conversación puede ir de una respuesta general a una observación y después a un procedimiento más fino, si la evidencia aparece.
+54. El recall no se compra exigiendo que el chunk contenga todos los campos. La precisión viene del hybrid actual, del ranking que Bedrock ya hace, y de la aclaración. No de un AND de aplicación.
 
 ## 13. Phased implementation plan
 
@@ -747,22 +853,35 @@ Cada fase: tests, `git diff --check`, un commit, rollback = revert de ese commit
 
 **Compuerta:** G5, junto con F9 y F10. No es una fase aparte: el cambio vive en `SemanticQueryAnalyzer` y en el `composed` que el concern ya usa como `effective_question`. Una fase nueva sería un segundo Haiku.
 
-**Objective.** Antes del retrieve, el turno separa identidad y problema, arma `retrieval_query`, y decide `ready`, `search_and_clarify` o `clarify_first`. El catálogo pone la marca. El focus no se toca. Funciona con el flag Haiku en `off`.
+**Objective.** El turno ayuda con lo que hay. Arma una string de retrieve, no un filtro AND. Decide `ready`, `search_and_clarify`, `best_effort` o `clarify_first`. El catálogo pone la marca. El focus no se toca. Funciona con Haiku en `off`. Al empezar F8, releer lo que F5 y F6 hayan mostrado del retrieve real. No implementar F8 contra este texto si el repo ya contradice una premisa.
 
-**Files.** `SemanticQueryAnalyzer` (mismo tool, mismos 300 tokens; spans siguen siendo literales), `ActiveEpisodeTurn` (`composed` sale del compositor; `FACT_KEYS` suma `controller`), `PendingQuestion` (suma `controller` si hace falta guardar el hueco), `RagQueryConcern` (`clarify_first` vuelve sin Bedrock; si hay `retrieval_query`, no la pisa el rewriter), `SessionContextBuilder` (una línea Controller si el hecho existe), `no_hardcoded_equipment_test.rb` (el techo no sube).
+**Qué hay hoy, y F8 no lo reemplaza.**
 
-**Changes.**
+- Una llamada `RetrieveAndGenerate`. `retrieval_query.text` es una string. `search_type` default `HYBRID` (vector + léxico dentro de Bedrock, no un OR escrito por la app).
+- Scope: sin pins, `account_filter`. Con pins, URI `equals`/`in`, o `DENY_RETRIEVAL`.
+- Top-k: 8 abierto, 3 con manual pineado, 15 sólo si la pregunta es exhaustiva. Reranker Cohere sólo si el env está on y la pregunta es exhaustiva. El sample lo deja off.
+- No hay expansión de query ni fusión multi-query en el camino de una consulta normal. El route de bornes puede hacer un segundo `Retrieve`. No se generaliza en F8.
+- `KbDocumentResolver` matchea tokens con `ILIKE` y luego límite de palabra. No hay fuzzy de edición.
+- `unknown_confirmed` ya existe para manufacturer/model cuando el texto es “no lo sé” y ese dato estaba pendiente. F8 ensancha las frases y el slot `controller`. No inventa otro almacén.
 
-- Compositor determinista en el turno de texto, también cuando el episodio está vacío y cuando Haiku no corre. Designator único confirmado escribe `controller`. La brand única de esa entrada escribe `manufacturer`. Lo que no es hecho persistible no entra al JSON del episodio.
-- Si el modo es `conditional`, el tool puede agregar el rol del span y un síntoma que sea substring del turno. Un “Monarch” que el técnico no dijo sigue siendo inválido. El compositor ignora ese output si el schema falla, igual que hoy devuelve nil.
-- `ready` llama al retrieve con la query armada y las URIs del focus, que pueden ser vacías.
-- `search_and_clarify` llama igual y agrega una pregunta corta al final de la respuesta. No pide un dato que la foto, el episodio o el catálogo ya tengan.
-- `clarify_first` no llama a `RetrieveAndGenerate`. No corre discovery.
-- “No, no es Elemont. Es KONE.” actualiza `manufacturer` y no `document_focus`.
+**Qué cambia F8.**
 
-**Tests.** “NICE3000 E51, ¿qué reviso?” con el YAML actual, flag `off`, episodio vacío: decisión `ready`, query contiene `NICE3000` y `E51`, `manufacturer` persistido `MONARCH`, `document_focus` intacto, scope sin URIs si el badge es 0. “¿Cómo ajusto este parámetro?” sin episodio, sin foto y sin focus: `clarify_first` y el orquestador no se instancia. La misma frase con un pin: no es `clarify_first`; el scope es ese pin. “No nivela al llegar al piso.”: retrieve permitido y como máximo una pregunta. Foto con manufacturer KONE: el turno “¿Qué reviso ahora?” no pide la marca. Focus Elemont + trabajo KONE: la query puede contener KONE y las URIs siguen siendo las de Elemont. El techo de literales no sube.
+- Compositor determinista aunque el episodio esté vacío y Haiku no corra. Designator único confirmado escribe `controller`. Brand única escribe `manufacturer`. Síntomas no entran al JSON.
+- La string de retrieve lleva las señales (Elemont, puertas, código si lo hay). No se agregan filtros de metadata por esos campos. El scope sigue siendo sólo focus + autorización.
+- `search_and_clarify` es el default de una falla contada con poca identidad. Busca y después una pregunta, elegida por la heurística de information gain. No pregunta modelo y controlador juntos.
+- `best_effort` busca y no repregunta el slot `unknown_confirmed`. “Busca con eso” no altera el badge.
+- `clarify_first` sólo en el caso casi vacío. No llama a Bedrock.
+- Prefijo único contra el catálogo, con la suposición dicha. Dos candidatos reales: pregunta, sin mapa hardcodeado y sin escribir fabricante.
+- Corrección de designator actualiza el trabajo y la próxima query, no el focus.
+- Si `conditional` está on, el tool puede marcar un síntoma que sea substring. “Monarch” no dicho sigue inválido. Schema malo: se ignora, como hoy.
 
-**Production-safe verification.** G5, pasos de `NICE3000 E51` y de “No nivela”. G4 ya exigió la card; G5 exige que la búsqueda no pida la marca y que el badge quede en 0 hasta un click.
+**Qué queda fuera.** Varias queries fusionadas, reranker siempre activo, filtros por fabricante o código, top-k más alto, embeddings nuevos. Follow-up, no F8.
+
+**Files.** `SemanticQueryAnalyzer`, `ActiveEpisodeTurn` (`composed` = string de señales; `FACT_KEYS` suma `controller`; `unknown_confirmed` también para controller), `PendingQuestion`, `RagQueryConcern` (`clarify_first` no llama; la string no pisa el scope), `SessionContextBuilder`, `no_hardcoded_equipment_test.rb`.
+
+**Tests.** “NICE3000 E51” con flag `off`: `ready`, query con `NICE3000` y `E51`, `manufacturer=MONARCH`, focus intacto, sin URIs si el badge es 0. “Elemont, las puertas no cierran”: no es `clarify_first`; el orquestador se llama; la query no es un filtro de metadata; no se persiste un controlador inventado. “¿Cómo ajusto este parámetro?” sin nada: `clarify_first`. La misma frase con un pin: sí busca en ese pin. “No sé” después de una pregunta de controlador: el hecho queda `unknown_confirmed` y el turno siguiente no lo pide. “Busca con eso”: hay retrieve y el focus no cambia. “monar nice300 e51” contra un catálogo con un solo NICE3000: la query usa ese designator y no hay un literal `nice3000` agregado a `MANUFACTURERS`. Dos designators que comparten el prefijo: no se escribe manufacturer. “No, era NICE1000”: el hecho cambia y el focus no. Focus Elemont + trabajo KONE: la query puede decir KONE y las URIs siguen siendo Elemont. El techo de literales no sube.
+
+**Production-safe verification.** G5, incluidos Elemont puertas, “no sé / busca con eso”, y el typo. G4 ya exigió la card.
 
 **Exit.** Tests verdes. Sin deploy propio.
 
@@ -786,7 +905,7 @@ Cada fase: tests, `git diff --check`, un commit, rollback = revert de ese commit
 
 **Compuerta:** G5. Deploy de F8+F9+F10.
 
-**Objective.** Un test de integración por journey A–L en lo que el server puede fijar, más el smoke humano. Al empezar F10, releer el handoff de F8 y F9 y corregir este plan si el compositor real no coincide con el contrato.
+**Objective.** Un test de comportamiento por journey A–V, no sólo `decision == search_and_clarify`. Con doubles del orquestador: información parcial llama al retrieve, no inventa identidad, y el turno “no sé” no reabre la misma pregunta. Al empezar F10, releer el handoff de F5, F6 y F8.
 
 **Files.** `test/controllers` o `test/integration` nuevo, mínimo, sin fixtures enormes. Dobles de Bedrock donde el proyecto ya los use.
 
@@ -822,6 +941,10 @@ F10 agrega los journeys de servidor:
 - J: “No nivela al llegar al piso.” no es `clarify_first`.
 - K: “¿Cómo ajusto este parámetro?” en frío es `clarify_first`.
 - L: un hecho `manufacturer` con `source=photo` no genera una pregunta de marca en el turno siguiente.
+- S: “Elemont, las puertas no cierran” llama al retrieve y no exige modelo antes.
+- T: “No sé” deja `unknown_confirmed` y la pregunta siguiente no es el mismo slot.
+- U: “Busca con eso” llama al retrieve y no escribe un modelo.
+- V: un prefijo con un solo designator confirmado entra en la query; dos designators no escriben fabricante.
 
 No se exige system test de browser en CI. La carrera y el retry se ven en G2 y G4.
 
@@ -892,7 +1015,10 @@ Monarch, si G4 ya pasó en esta misma cuenta, no hace falta repetir el catálogo
 Dos pasos más, en badge `0`, para ver que la búsqueda entendió la identidad y no sólo la card:
 
 13. Badge `0`. Escribir: `NICE3000 E51, ¿qué reviso?` PASS si no pregunta la marca, responde con algo citado o dice que no está en los manuales, y el badge sigue `0`. Si ofrece un manual, el nombre es el de NICE3000 / Monarch. FAIL si pregunta “¿cuál es la marca?” o si el badge pasa a `1` solo.
-14. Badge `0`, chat nuevo o sin equipo dicho. Escribir: `No nivela`. PASS si da ayuda citada o dice que no encontró un procedimiento único, y si pregunta, pregunta una sola cosa útil (controlador o modelo), sin inventar un equipo. FAIL si nombra un fabricante que el técnico no dijo y que la respuesta no cita.
+14. Badge `0`, chat nuevo o sin equipo dicho. Escribir: `No nivela`. PASS si da ayuda citada o dice que no encontró un procedimiento único, y si pregunta, pregunta una sola cosa útil, sin inventar un equipo. FAIL si nombra un fabricante que el técnico no dijo y que la respuesta no cita.
+15. Badge `0`. Escribir: `Tengo un elevador Elemont, las puertas no cierran.` PASS si responde con evidencia o dice que en los manuales no hay un procedimiento único, y no exige modelo ni controlador antes de esa respuesta. Puede pedir un solo dato después. FAIL si sólo pregunta, si inventa un controlador, o si da un procedimiento fino sin fuente.
+16. Si preguntó el controlador, escribir: `No sé. Busca con eso.` PASS si sigue, no repite la pregunta y el badge sigue `0`.
+17. Probar un typo corto de un designator que esté en el catálogo (por ejemplo una cifra de menos en NICE3000, si ese manual es el único). PASS si lo toma y lo dice, o si pregunta porque hay dos candidatos reales. FAIL si inventa una marca que el catálogo no tiene, o si el badge cambia solo.
 
 ## 16. Rollback strategy
 
@@ -931,17 +1057,21 @@ No hay feature flag nuevo. El corte de deploy es la compuerta. Un flag escondido
 - Agregar fabricantes al código para pasar un caso.
 - Una segunda llamada LLM de understanding, un modo Haiku nuevo, o un JSON de episodio con síntomas y query persistidos.
 - Convertir `clarify_first` en un formulario de marca, modelo, controlador y falla.
+- Varias queries fusionadas, reranker siempre activo, filtros de metadata por campo técnico, un motor de information gain, o un mapa de typos hardcodeado.
 
 ## 19. Definition of Done
 
 Hecho cuando:
 
 1. G1–G5 están en `PASS`, anotados con fecha y con lo que se vio en pantalla.
-2. Las 20 reglas de la sección 12 tienen test o paso de smoke que las cubre.
+2. Las reglas de la sección 12 tienen test o paso de smoke que las cubre.
 3. `ACTIVE_ARCHITECTURE.md`, `SESSION_AND_RETRIEVAL.md` y `docs/README.md` describen `document_focus` como la selección visible, y dicen que el episodio no la escribe.
 4. R1B y el recovery siguen en el repo como historia. Su sección de pins apunta a este plan en una nota al frente, sin reescribir el resto.
 5. Ningún path web escribe el focus salvo pin, unpin, aceptar card, y auto-pin de upload.
 6. `NICE3000 E51` con badge `0` busca sin pedir la marca, y el badge sigue `0` hasta un click. La query y el scope quedan separados en un test.
+7. “Elemont, las puertas no cierran” recibe ayuda grounded antes de cualquier formulario. “No sé” no entra en bucle. El focus no se mueve solo.
+
+Danebo funciona como Field Companion cuando un técnico puede empezar incompleto — “Elemont, las puertas no cierran” — y notar que el sistema entendió lo que sabe, no inventó lo que no sabe, buscó enseguida, mostró evidencia, dijo qué revisar, pidió sólo el siguiente dato útil, recordó la respuesta, afinó la búsqueda, aceptó una corrección y dejó ver de dónde salió la información. Eso vale más que tener todos los campos internos llenos.
 
 Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el de R1B. Este archivo no cambia producción por el hecho de estar mergeado.
 

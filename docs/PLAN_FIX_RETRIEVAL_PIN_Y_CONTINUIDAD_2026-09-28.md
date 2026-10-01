@@ -1,3 +1,5 @@
+> **Nota histórica (30-sep-2026).** Describe el código del 28-sep. No es el contrato vigente. El re-pin ahora renueva `added_at`. Los pins siguen el Case (4 horas), no el TTL de 30 días de la fila. `inherit_episode_scope` sigue devolviendo vacío. Arquitectura vigente: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md), [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md) y [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md). El texto de abajo no se reescribe.
+
 # Plan quirúrgico: pin vencido, continuidad y autoridad de evidencia
 
 Fecha: 28-sep-2026. Estado: ver **Execution State**. Las enmiendas de Codex y las finales de Opus del mismo día están incorporadas en las fases de abajo. No hay plan paralelo. Imagen de las pruebas: `bfcd112c4962c8aae9e35524e28646206f2cfc96`.

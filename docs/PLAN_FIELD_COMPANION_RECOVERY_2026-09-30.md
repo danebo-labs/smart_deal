@@ -12,6 +12,7 @@ Etiquetas usadas abajo:
 | `DECIDED` | Decisión cerrada. No se rediseña en R1B, R2 ni R3. |
 | `PENDING` | Fase siguiente, sin implementación. |
 | `CARRY-OVER` | Hallazgo real que no pertenece a R1A y tiene dueño en una fase posterior. |
+| `IMPLEMENTED — AWAITING PRODUCTION SMOKE` | El código y la suite citada pasan. No hubo smoke de producción. No es `CLOSED — PASS`. |
 
 ## Mapa operativo
 
@@ -20,8 +21,8 @@ Etiquetas usadas abajo:
 | Field Companion F0–F8 | `CLOSED` (`KEEP_B`) |
 | Product smoke original, post Field Companion | `FAILED` |
 | R1A — corpus / retrieval correctness | `CLOSED — PASS` |
-| R1B — session correctness | `NEXT` |
-| R2 — conversational continuity + retrieval targeting | `PENDING` |
+| R1B — session correctness | `IMPLEMENTED — AWAITING PRODUCTION SMOKE` |
+| R2 — conversational continuity + retrieval targeting | `NEXT` después del smoke de R1B |
 | R3 — UX + provenance consistency | `PENDING` |
 | Pilot readiness | `NOT YET` |
 
@@ -73,15 +74,18 @@ Hipótesis que abrieron el recovery. La verificación de producción las confirm
 - UX de pin y manual, y el selection flow → R3;
 - photo lifecycle → R2, sin fixture de aceptación todavía.
 
-Hechos de sesión y de producto que Opus registró y que siguen abiertos:
+Hechos de sesión que Opus registró. El código de R1B ya los cierra; el smoke de producción no corrió:
 
 - una sesión podía conservar pins durante días;
-- login no reseteaba la sesión;
+- login no escribía la sesión;
 - la ventana de episodio es 4 h;
-- los pins no expiran con el episodio;
-- un turno meta como “sí, consulta anterior” podía reemplazar el goal;
-- el selection flow mezcla biblioteca, pin, mensaje y turno;
-- un fallo de foto por billing debe separarse del lifecycle de `FieldPhoto`.
+- los pins no expiraban con el episodio.
+
+Siguen abiertos, fuera de R1B:
+
+- un turno meta como “sí, consulta anterior” podía reemplazar el goal → R2;
+- el selection flow mezcla biblioteca, pin, mensaje y turno → R3;
+- un fallo de foto por billing debe separarse del lifecycle de `FieldPhoto` → R2.
 
 ## Fuente 2 — Verificación read-only
 
@@ -270,11 +274,11 @@ Estado inicial: pin `Elemont Montacargas Hidraulico Modelo MH`.
 
 Query nueva: la golden query KONE.
 
-Fallo actual: el retrieval queda limitado en silencio a Elemont y el turno abstiene.
+Código de R1B: un caso nuevo, un JSON expirado o un episodio inválido suelta el pin viejo antes del retrieve. Smoke de producción pendiente. La sesión 128 no se limpió y no es fixture mutable.
 
-Owner: R1B.
+Owner: R1B, `IMPLEMENTED — AWAITING PRODUCTION SMOKE`.
 
-Comportamiento futuro: un caso nuevo no puede quedar condicionado en silencio por un pin viejo.
+Comportamiento esperado en el smoke: un caso nuevo no queda condicionado en silencio por un pin viejo.
 
 ### FIXTURE B — identificador exacto
 
@@ -296,29 +300,44 @@ Regla: si hay citations válidas, ese aviso no se muestra.
 
 ## R1B — Session correctness
 
-`NEXT`. `PENDING` de implementación.
+`IMPLEMENTED — AWAITING PRODUCTION SMOKE`.
+
+R1A usó `CLOSED — PASS` después del deploy y de la traza en vivo. R1B no tuvo ese smoke. Esta etiqueta no lo sustituye.
 
 Objetivo: un caso anterior nunca contamina en silencio un caso nuevo.
 
-Fixture principal: A.
+Fixture principal: A. La sesión 128 sigue siendo evidencia. No se limpió.
 
-Investigar y diseñar, sin implementación fijada:
+Plan: `e477611d33f9cef6c07c3c298cae699b75f4ae26`.
 
-- límite de caso nuevo;
-- login, que hoy no resetea la sesión;
-- `active_episode`;
-- `active_entities` y pins, que pueden durar días y no expiran con el episodio;
-- `active_photo`;
-- `current_procedure`;
-- follow-up refs;
-- `EPISODE_WINDOW` de 4 h;
-- pin visible mientras esté activo.
+Commits de código:
 
-La sesión 128 es la evidencia. No se limpia como parte de R1A.
+- Phase 1, boundary de pins: `597874890e69c60908dcb61f3d4ea25e9da8adfe`
+- Phase 2, ownership de writers: `e3aca3897a604c03e655cf6f1a492549e563debf`
+- `invalid_state` suelta los pins: `343f5795a423d6dc4c208cf56e7d3c772a74966f`
+
+Contrato que el código ya sostiene, en suite local, sin Bedrock real y sin `sleep`:
+
+- Invariante 1: un Case nuevo no hereda pins, `current_procedure`, foto, pending ni facts del Case anterior.
+- Invariante 2: un assistant, una foto o un auto-pin con `expected_episode_id` de un Case anterior no escribe el Case posterior. El drop es `stale_case_write_dropped`. Telemetría y `correlation_id` siguen.
+- `ConversationSession` es el workspace: una fila por `(account_id, identifier, channel)`, TTL deslizante de 30 días. `Case = ActiveEpisode`, ventana de 4 horas.
+- Login y logout no escriben la fila.
+- Expiry es `reason == expired` del JSON guardado. Limpia los pins de ese Case, también en `:no_episode`, `:skipped` y foto. Un pin posterior a `updated_at + EPISODE_WINDOW` se conserva. `added_at` ausente o ilegible no se conserva.
+- `invalid_state` limpia todos los pins y `current_procedure`, sin corte temporal. `{}` conserva un pin explícito.
+- `:new_episode` sobre un Case vivo limpia los pins. Una corrección de fabricante se queda en el mismo `episode_id` y suelta sólo el pin cuya etiqueta contiene el fabricante anterior como palabra completa y no contiene el nuevo.
+- El re-pin explícito, incluida la suggestion card que responde `already_focused`, renueva `added_at`.
+- Una foto sin Case abre y persiste el owner antes del enqueue. Los paths normal, reuse y reread conservan ese id.
+- Auto-pin con la flag de episodio apagada sigue el camino anterior. Con la flag encendida sólo pinea si el `expected_episode_id` de la submission sigue vigente. El long-manual que rehidrata desde `WebManualBatch` no tiene owner durable y no auto-pinea. El documento queda indexado y se puede pinear a mano. No se infiere ownership desde timestamps tardíos.
+- El mismo request que abre Case, cruza expiry, corrige fabricante o reemplaza un episodio inválido persiste esa limpieza antes de `entity_s3_uris`.
+- Un miss dentro del Case no suelta el pin. El corpus abierto sigue siendo el de R1A.
+
+Suite local citada después de `343f579`: los archivos de boundary, ownership, sesión, same-request, foto, ingestión, episodio, follow-up, orquestador, controllers de RAG y pin, y login. 494 runs, 2502 assertions, 0 failures, 4 skips preexistentes. No es smoke de producción.
+
+`R1A_PROBE` sigue. El retiro de sondas es de R3.
 
 ## R2 — Conversational continuity + retrieval targeting
 
-`PENDING`.
+`NEXT` después del smoke de R1B. No empieza antes de esa compuerta. El scope no se movió.
 
 Objetivo: continuidad natural y targeting exacto.
 
@@ -326,19 +345,23 @@ Fixture obligatorio: B.
 
 Incluye los hallazgos que ya están medidos o que Opus dejó en este grupo:
 
+- la golden query KONE sobre un episodio Elemont vivo sigue en `:continued_mention`;
+- MonoSpace → MiniSpace no suelta el pin;
+- orden dentro del mismo Case;
+- follow-up y semántica de continuación;
 - un meta-turno no reemplaza el goal;
 - `pending_question`;
 - follow-up anafórico;
-- corrección y cambio de equipo;
+- corrección y cambio de equipo que R1B no clasifica como frontera;
 - identificadores exactos de documento;
 - `AM-01.01.046` devuelve 515;
 - un episode goal que quedó null después de una corrección;
 - los flows históricos del baseline;
-- `CARRY-OVER` de photo lifecycle: separar un fallo de billing del lifecycle de `FieldPhoto`. R1A no lo tocó. No es el fixture de aceptación de R2.
+- `CARRY-OVER` de photo lifecycle: separar un fallo de billing del lifecycle de `FieldPhoto`. R1A no lo tocó. R1B tampoco. No es el fixture de aceptación de R2.
 
 ## R3 — UX + provenance consistency
 
-`PENDING`.
+`PENDING`. El scope no se movió.
 
 Objetivo: ocultar la mecánica interna del RAG y eliminar mensajes contradictorios.
 
@@ -346,13 +369,16 @@ Fixture obligatorio: C. El hallazgo E entra en la misma fase.
 
 Incluye:
 
+- orden y display de un resultado tardío;
+- chip o checkbox stale hasta el próximo render;
 - citation junto a `EMPTY_TEXT`;
 - clasificación Manual / Foto / Guía Danebo;
 - simplificación de focus y pin;
+- UX de sugerencia;
 - el selection flow, que hoy mezcla biblioteca, pin, mensaje y turno;
 - chip único y estado visible del pin;
 - consistencia de la sugerencia con lo que el turno ya citó;
-- retiro de la sonda `04513a4` al cierre del recovery, si ya no hace falta.
+- retiro de `R1A_PROBE` y de `R1B_CASE_PROBE` al cierre del recovery, si ya no hacen falta. La sonda `04513a4` entra en ese retiro.
 
 ## Qué no reabre R1A
 
@@ -364,7 +390,7 @@ Incluye:
 - el histórico sigue compartido y el upload nuevo no se marca `general` por slug;
 - el baseline de la cuenta 3 quedó restaurado.
 
-El pin viejo, el ranking de `AM-01.01.046`, el `EMPTY_TEXT` y el rótulo `Guía Danebo` tienen dueño en R1B, R2 y R3.
+El pin viejo tiene código en R1B y espera smoke. El ranking de `AM-01.01.046` sigue en R2. El `EMPTY_TEXT` y el rótulo `Guía Danebo` siguen en R3.
 
 ## Sonda
 

@@ -1,3 +1,5 @@
+> **Nota histórica (30-sep-2026).** Plan cerrado. `pin_extended` y `pin_overridden` no son caminos del retrieve vigente. El retrieve devuelve `open` o `pin_only`. Arquitectura vigente: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) y [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md). El texto de abajo no se reescribe.
+
 # Plan quirúrgico: consultas de Jesús en producción
 
 Fecha: 16-sep-2026. Estado: **cerrado.** Diagnóstico validado contra código (v2, 11:30). P0/P1 ya están en `main` (`4f883e0`, `332ac23`, `75dc8ff`, `474352c`). No reabrir ni re-correr la batería de sonda.

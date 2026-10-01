@@ -1,3 +1,5 @@
+> **Nota histórica (30-sep-2026).** Este plan no es el contrato vigente de sesión ni de retrieve. La mención de `inherit_episode_scope` quedó superada: ese método devuelve vacío. Arquitectura vigente: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md), [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md) y [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md). El texto de abajo no se reescribe.
+
 # Plan hilo de consulta — Cierre de precisión RAG (2026-09-21)
 
 > **Validado contra el código el 21-sep-2026, noche.** Los hallazgos de esa

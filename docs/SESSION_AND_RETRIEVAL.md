@@ -37,7 +37,7 @@ Three layers describe the **catalog**, an **ingestion audit trail**, and what ac
 ```
 kb_documents         → "What exists in S3?"              (account catalog; home list)
 technician_documents → "Ingestion / usage audit rows"  (still written from jobs; not preloaded into pins)
-active_entities      → "Pinned KB docs for this session" (UI + auto-pin after indexed upload)
+active_entities      → "Pins for the current case" (stored on the workspace row)
 ```
 
 **`kb_documents`** — Account-scoped S3 catalog. One row per account and S3
@@ -54,7 +54,38 @@ add session pins.
 
 **`technician_documents`** — Still populated from ingestion (`BedrockIngestionJob` and related paths) for **audit / future ranking** (`interaction_count`, FIFO cap). It is **not** used to seed `active_entities` when a new `ConversationSession` is created (`preload_recent_entities` was removed).
 
-**`conversation_sessions.active_entities`** — JSONB, capped at **`ConversationSession::MAX_ENTITIES`** (default **10**, overridable with `SESSION_MAX_ENTITIES`). **Sources of truth:** (1) user pins from the KB list or from a suggestion-card tap (`PinnedDocumentsController` → `pin_kb_document!` / `unpin_kb_document!`), and (2) **auto-pin** when a chat upload finishes indexing (`BedrockIngestionJob#register_entity` → `pin_kb_document!`). A suggestion does not pin until the technician taps. The tap checks the exact row again and writes `user_pin` only on that session. **`SessionContextBuilder.entity_s3_uris`** turns these entries into Bedrock **`x-amz-bedrock-kb-source-uri`** filters. Session rows use **`EXPIRY_DURATION`** (default **30 days**, sliding `expires_at` on `refresh!`), not the older short TTL.
+**`conversation_sessions.active_entities`** — JSONB, capped at **`ConversationSession::MAX_ENTITIES`** (default **10**, overridable with `SESSION_MAX_ENTITIES`). The hash is where pins are stored. The pin contract is the current case, described below. **Sources of truth:** (1) user pins from the KB list or from a suggestion-card tap (`PinnedDocumentsController` → `pin_kb_document!` / `unpin_kb_document!`), and (2) **auto-pin** when indexing finishes and episode ownership matches. A suggestion does not pin until the technician taps. The tap checks the exact row again and writes `user_pin` only on that workspace row. **`SessionContextBuilder.entity_s3_uris`** turns these entries into Bedrock **`x-amz-bedrock-kb-source-uri`** filters. It reads `active_entities`. It does not read `active_episode`.
+
+### Workspace and case
+
+`ConversationSession` is the persistent workspace. It is not a case and it is not a thread. One row per `(account_id, identifier, channel)`. On the web, `identifier` is the user id. The row uses a sliding TTL of **30 days** (`EXPIRY_DURATION`, refreshed on a turn). Login and logout do not write the row and are not a case boundary.
+
+A **case** is the current `ActiveEpisode`: an `episode_id` whose stored `updated_at` is inside `ConversationSession::EPISODE_WINDOW` (**4 hours**). Several cases follow one another on the same row. `conversation_history` and `FieldPhoto` rows stay on the workspace. Prompt readers (`recent_user_turns`, `episode_user_messages`, `last_assistant_message`, `FollowupQueryRewriter#episode_rows`) use `max(now - 4 hours, episode.opened_at)` once a case is live. That floor does not replace writer ownership.
+
+The request that opens a case, crosses expiry, corrects the manufacturer, or replaces an invalid stored episode persists that cleanup before `SessionContextBuilder.entity_s3_uris` is read. The old URI is not sent on that request.
+
+### Pins
+
+Pins are case state. They remain physically in `active_entities`. There is no `episode_id` on the pin and no extra column.
+
+- Same case: the pin stays, including across a retrieve miss. A miss does not reopen the unpinned corpus and does not drop the pin.
+- `:new_episode` while the stored case is still live: pins from the previous case are cleared.
+- Expiry (`ActiveEpisode.parse` reason `expired` on the stored JSON): pins that belong to the expired case are cleared. A pin is cleared when `added_at` is missing, unparseable, or `added_at <= updated_at + EPISODE_WINDOW`. A pin strictly after that cutoff stays. This does not depend on the turn decision being `:opened`.
+- Invalid stored episode (`reason == "invalid_state"`): every case-scoped pin is cleared. There is no time cutoff. A normal blank episode (`active_episode == {}`) does not clear an explicit pin.
+- Explicit re-pin, including a suggestion card that still answers `already_focused`, renews `added_at`.
+- Manufacturer correction stays on the same `episode_id` and removes only a pin whose labels contain the old manufacturer as a whole word and contain none of the new. Pins that name neither, or both, stay. A model-only correction does not use this release.
+
+`current_procedure` is cleared on a case boundary, on expiry, and on `invalid_state`. It stays on a blank episode's first turn.
+
+### Late writers
+
+`expected_episode_id` is the ownership guard when episode recording is on: `FIELD_COMPANION_EPISODE_ENABLED=true`, channel `web`, and not a shared session. It is captured when the work starts. A photo with no live case opens and persists its case before the analysis job is enqueued, and that id is the owner. Inside the session lock, a later assistant reply, photo observation, or auto-pin writes only when that id is still the live case. For an assistant reply, a blank expected id matches a blank live id. A photo observation requires a present id. A mismatch does not change episode state, pending, facts, identifiers, conflicts, `active_photo`, `current_procedure`, pins, or `conversation_history`. Telemetry and `correlation_id` continue. The drop is `stale_case_write_dropped`. With the episode flag off, the assistant path writes history without that check, and the photo case opener does not run.
+
+### Auto-pin
+
+With `FIELD_COMPANION_EPISODE_ENABLED` off, indexing still pins as before.
+
+With the flag on, auto-pin runs only when the submission captured an `expected_episode_id` and that id still matches the live case under the lock. A long manual rehydrated from `WebManualBatch` has no durable episode owner, so it does not auto-pin. The document stays indexed, visible, and available for a manual pin. Ownership is not inferred from `KbDocument.created_at`, `WebManualBatch.created_at`, `submitted_at`, or other late timestamps.
 
 #### Data flow: upload completes → pin + catalog
 
@@ -65,7 +96,7 @@ Upload (web chat; same job shape for other channels)
   └─ BedrockIngestionJob (polls until COMPLETE)
        ├─ kb_documents           ← display_name + aliases (web_v1_metadata or chunk pipeline)
        ├─ technician_documents   ← persist_to_technician_documents (audit)
-       ├─ active_entities        ← pin_kb_document!(kb_doc) when session present
+       ├─ active_entities        ← auto-pin only with a matching episode owner when the episode flag is on; legacy pin when it is off
        └─ KbSyncBroadcaster → Turbo (indexing / retrying / indexed / failed)
 
 Follow-up RAG (web)
@@ -86,7 +117,7 @@ product stage; see [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
    only: the session account, plus canonical URIs of foreign `danebo_general`
    rows. There is no source-uri filter from pins. Legacy, Pilot, and
    `manual_corpus=general` are not clauses.
-2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on that session's pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`. The miss does not reopen the unpinned corpus for this session, and it does not change `danebo_general` or any other session's pins. The user can still add, remove, or replace those pins. The system does not drop them because the retrieve was empty. Widening the corpus requires an explicit user action.
+2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on that case's pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`. The miss does not reopen the unpinned corpus for this case, and it does not change `danebo_general` or any other workspace's pins. The user can still add, remove, or replace those pins. The system does not drop them because the retrieve was empty. Widening the corpus inside the case requires an explicit user action. A new case, an expired stored episode, or an invalid stored episode releases pins by the case rules above, before this filter is built.
 3. **Multiple pins + explicit identity** → `Rag::PinnedEntityScopeResolver`
    narrows the allowed URI set only when there is one confident source match.
    It matches canonical names, filenames, aliases, and literal codes; understands
@@ -141,6 +172,6 @@ included, even if their name matches the question.
 |---|---|---|---|
 | `kb_documents` | Per account | — | Upload, ingestion, `KbDocumentEnrichmentService` |
 | `technician_documents` | Per account | FIFO max 20 | Ingestion (audit) |
-| `active_entities` | Per account/session. A shared demo session is one session row, not a pin stored on the document | `MAX_ENTITIES`; row TTL `EXPIRY_DURATION` | Pins + auto-pin on indexed upload |
+| `active_entities` | Case state on the workspace row. A shared demo session is one workspace row, not a pin stored on the document | `MAX_ENTITIES`. The workspace row TTL is 30 days. Pins follow the case, not that TTL | User pin, re-pin, and auto-pin when episode ownership matches |
 
 A pin, including a future pin of a `danebo_general` document, is written only on that session. It is not a column on `kb_documents`. Account A pinning a general document does not change Account B's catalog or Account B's pins. Each session may pin a different general document, several of them, or mix them with its own private documents, and may clear those pins.

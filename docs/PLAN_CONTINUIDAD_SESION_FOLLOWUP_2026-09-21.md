@@ -1,3 +1,5 @@
+> **Nota histórica (30-sep-2026).** Este documento es evidencia de ese ciclo. No es el contrato vigente. Paths descritos aquí —`pin_kept`, `pin_extended`, `pin_overridden`, `inherit_episode_scope`— fueron superados. El retrieve vigente devuelve `open` o `pin_only`. La arquitectura vigente está en [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md), [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md) y [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md). El texto de abajo no se reescribe.
+
 # Plan de continuidad de sesión y follow-up — Cierre de precisión RAG (2026-09-21)
 
 **Objetivo:** cerrar la pérdida de continuidad foto → respuesta corta a una pregunta discriminante, preservando evidencia, costo y la primera respuesta útil.

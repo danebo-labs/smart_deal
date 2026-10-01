@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 module Rag
-  # Shadow switch for writing conversation_sessions.active_episode.
-  # Default OFF. Nothing reads the column for context or retrieval.
+  # Switch for writing conversation_sessions.active_episode. Default OFF:
+  # ENV must be "true".
+  # Session context reads the column for the field-problem prompt when this
+  # flag and FieldCompanionTurnFlag are both on. Retrieval URIs come from
+  # active_entities, not from the episode.
   module FieldCompanionEpisodeFlag
     module_function
 

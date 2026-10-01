@@ -182,4 +182,24 @@ class CustomChunkingPipelineTest < ActiveSupport::TestCase
   ensure
     SubmitManualBatchJob.define_singleton_method(:perform_later, orig)
   end
+
+  test "a long manual does not carry episode ownership into the batch" do
+    stub_long_pdf
+    enqueued = []
+    orig = SubmitManualBatchJob.method(:perform_later)
+    SubmitManualBatchJob.define_singleton_method(:perform_later) { |**kwargs| enqueued << kwargs }
+
+    CustomChunkingPipeline.new(
+      images: [],
+      documents: [ long_pdf_doc ],
+      account_id: @account.id,
+      document_uid: @document_uid,
+      expected_episode_id: "ep_submission"
+    ).run!
+
+    assert_equal 1, enqueued.size
+    assert_nil enqueued.first[:expected_episode_id]
+  ensure
+    SubmitManualBatchJob.define_singleton_method(:perform_later, orig)
+  end
 end

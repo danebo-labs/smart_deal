@@ -195,6 +195,8 @@ class IngestManualBatchResultsJob < ApplicationJob
 
     web_manual_batch&.update!(status: "syncing")
 
+    # WebManualBatch has no durable episode owner. Leaving expected_episode_id
+    # unset makes auto-pin fail closed while the manual stays indexed.
     BedrockIngestionJob.perform_later(
       sync_result[:job_id],
       uploaded_filenames,

@@ -265,6 +265,94 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
     assert td.source_uri.include?(filename)
   end
 
+  test "auto-pin with a matching episode owner pins the document" do
+    filename = "owned.pdf"
+    kb_doc = KbDocument.create!(s3_key: "uploads/2026/#{filename}", display_name: "Owned manual", aliases: [])
+    session = web_ingestion_session
+    travel_to Time.zone.parse("2026-09-30 12:00:00") do
+      isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
+        seed_live_episode(session, "ep_owner")
+        with_mock_ingestion_service(%w[COMPLETE]) do
+          BedrockIngestionJob.perform_now(
+            "job-owner", [ filename ],
+            kb_id: "kb-test", conv_session_id: session.id, kb_document_ids: [ kb_doc.id ],
+            expected_episode_id: "ep_owner"
+          )
+        end
+        assert_includes SessionContextBuilder.entity_s3_uris(session.reload), kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+      end
+    end
+  end
+
+  test "auto-pin with a mismatched episode owner does not pin and still keeps the document" do
+    filename = "stale.pdf"
+    kb_doc = KbDocument.create!(s3_key: "uploads/2026/#{filename}", display_name: "Stale manual", aliases: [])
+    session = web_ingestion_session
+    events = []
+    travel_to Time.zone.parse("2026-09-30 12:00:00") do
+      isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
+        seed_live_episode(session, "ep_later")
+        events = capture_ingestion_logs do
+          with_mock_ingestion_service(%w[COMPLETE]) do
+            BedrockIngestionJob.perform_now(
+              "job-stale", [ filename ],
+              kb_id: "kb-test", conv_session_id: session.id, kb_document_ids: [ kb_doc.id ],
+              web_v1_metadata: [ { "filename" => filename, "canonical_name" => "Stale Manual", "aliases" => [] } ],
+              expected_episode_id: "ep_owner"
+            )
+          end
+        end
+      end
+    end
+
+    session.reload
+    kb_doc.reload
+    assert_empty session.active_entities
+    assert_equal "Stale Manual", kb_doc.display_name
+    assert TechnicianDocument.find_by(identifier: session.identifier, channel: session.channel, canonical_name: "Stale Manual")
+    dropped = events.find { |event| event["event"] == "stale_case_write_dropped" }
+    assert_equal "auto_pin", dropped["writer"]
+    assert_equal "ep_owner", dropped["expected_episode_id"]
+    assert_equal "ep_later", dropped["current_episode_id"]
+    assert_equal true, dropped["dropped"]
+    assert_not_includes JSON.generate(dropped), "Stale Manual"
+  end
+
+  test "a long-manual completion without a durable owner does not auto-pin" do
+    filename = "long.pdf"
+    kb_doc = KbDocument.create!(s3_key: "uploads/2026/#{filename}", display_name: "Long manual", aliases: [])
+    session = web_ingestion_session
+    travel_to Time.zone.parse("2026-09-30 12:00:00") do
+      isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
+        seed_live_episode(session, "ep_live")
+        with_mock_ingestion_service(%w[COMPLETE]) do
+          BedrockIngestionJob.perform_now(
+            "job-long", [ filename ],
+            kb_id: "kb-test", conv_session_id: session.id, kb_document_ids: [ kb_doc.id ]
+          )
+        end
+        assert_empty session.reload.active_entities
+        assert KbDocument.exists?(kb_doc.id)
+      end
+    end
+  end
+
+  test "auto-pin stays legacy when the episode flag is off" do
+    filename = "legacy.pdf"
+    kb_doc = KbDocument.create!(s3_key: "uploads/2026/#{filename}", display_name: "Legacy manual", aliases: [])
+    session = web_ingestion_session
+    isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "false") do
+      with_mock_ingestion_service(%w[COMPLETE]) do
+        BedrockIngestionJob.perform_now(
+          "job-legacy", [ filename ],
+          kb_id: "kb-test", conv_session_id: session.id, kb_document_ids: [ kb_doc.id ]
+        )
+      end
+    end
+
+    assert_includes SessionContextBuilder.entity_s3_uris(session.reload), kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+  end
+
   test "notify_indexed auto-pins kb_doc into session" do
     session = ConversationSession.find_or_create_for(identifier: "ing-user", channel: "web")
     kb_doc  = KbDocument.create!(s3_key: "uploads/2026/ing.jpg", display_name: "Ing", aliases: [])
@@ -462,13 +550,17 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
       with_mock_ingestion_service(%w[IN_PROGRESS]) do
         assert_no_broadcasts("kb_sync") do
           assert_enqueued_with(job: BedrockIngestionJob) do
-            BedrockIngestionJob.perform_now("job-123", [ "doc.txt" ], kb_id: "kb-x", conv_session_id: nil, kb_document_ids: nil)
+            BedrockIngestionJob.perform_now(
+            "job-123", [ "doc.txt" ],
+            kb_id: "kb-x", conv_session_id: nil, kb_document_ids: nil, expected_episode_id: "ep_owner"
+          )
           end
         end
         enq = ActiveJob::Base.queue_adapter.enqueued_jobs.last
         kwargs = enq[:args].last
         assert_kind_of Hash, kwargs
         assert_kind_of String, kwargs["started_at_iso"], "must propagate started_at_iso so TIMEOUT spans re-enqueues"
+        assert_equal "ep_owner", kwargs["expected_episode_id"]
       end
     end
   end
@@ -560,6 +652,50 @@ class BedrockIngestionJobTest < ActiveJob::TestCase
   end
 
   private
+
+  def web_ingestion_session
+    ConversationSession.create!(
+      identifier: "web:ingest:#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      user: users(:one),
+      account: accounts(:legacy)
+    )
+  end
+
+  def seed_live_episode(session, episode_id)
+    at = Time.current
+    session.update!(
+      active_episode: {
+        "v" => 1,
+        "episode_id" => episode_id,
+        "status" => "active",
+        "opened_at" => at.iso8601,
+        "updated_at" => at.iso8601,
+        "facts" => {},
+        "identifiers" => [],
+        "conflicts" => []
+      }
+    )
+  end
+
+  def capture_ingestion_logs
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    output.string.lines.filter_map do |line|
+      start = line.index("{")
+      next unless start
+
+      parsed = JSON.parse(line[start..])
+      parsed if parsed.is_a?(Hash) && parsed["event"].present?
+    rescue JSON::ParserError
+      nil
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
 
   def with_env(vars)
     original = {}

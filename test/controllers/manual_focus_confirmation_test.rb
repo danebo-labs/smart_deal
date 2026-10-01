@@ -465,14 +465,17 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     session.pin_kb_document!(document)
     ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
     session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
-    session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+    owner = session.live_episode_id
+    session.record_assistant_turn!(
+      "… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
+    )
     session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
     session.record_photo_observation!(
       photo_value: {
         manufacturer: "KONE", model_visible: "UNKNOWN",
         target_visible: true, relevance_to_goal: "relevant"
       },
-      field_photo_id: 42, sha256: "abc123", correlation_id: "photo:1"
+      field_photo_id: 42, sha256: "abc123", correlation_id: "photo:1", expected_episode_id: owner
     )
 
     session.reload

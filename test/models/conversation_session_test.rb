@@ -1067,7 +1067,9 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
     with_episode_flag("true") do
       session.record_user_turn!(question, user_id: users(:one).id, correlation_id: "query:1")
-      session.record_assistant_turn!(reply, user_id: users(:one).id, correlation_id: "query:2")
+      session.record_assistant_turn!(
+        reply, user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: session.live_episode_id
+      )
     end
 
     session.reload
@@ -1080,7 +1082,10 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session = web_episode_session
     with_episode_flag("true") do
       session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
-      session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+      owner = session.live_episode_id
+      session.record_assistant_turn!(
+        "… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
+      )
       session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
       session.record_photo_observation!(
         photo_value: {
@@ -1089,7 +1094,8 @@ class ConversationSessionTest < ActiveSupport::TestCase
         },
         field_photo_id: 42,
         sha256: "abc123",
-        correlation_id: "photo:1"
+        correlation_id: "photo:1",
+        expected_episode_id: owner
       )
     end
 
@@ -1107,11 +1113,13 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session = web_episode_session
     with_episode_flag("true") do
       session.record_user_turn!("Cómo se ajustan los resortes?", user_id: users(:one).id, correlation_id: "query:1")
+      owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:partial")
       session.record_photo_observation!(
         photo_value: { model_visible: "M1", target_visible: true, relevance_to_goal: "relevant" },
         field_photo_id: 10,
         sha256: "partial",
-        correlation_id: "photo:partial"
+        correlation_id: "photo:partial",
+        expected_episode_id: owner
       )
       session.record_photo_observation!(
         photo_value: {
@@ -1120,7 +1128,8 @@ class ConversationSessionTest < ActiveSupport::TestCase
         },
         field_photo_id: 20,
         sha256: "nameplate",
-        correlation_id: "photo:nameplate"
+        correlation_id: "photo:nameplate",
+        expected_episode_id: owner
       )
     end
 
@@ -1143,17 +1152,20 @@ class ConversationSessionTest < ActiveSupport::TestCase
       session = web_episode_session
       with_episode_flag("true") do
         session.record_user_turn!("Cómo se ajustan los resortes?", user_id: users(:one).id, correlation_id: "query:#{index}")
+        owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:first")
         session.record_photo_observation!(
           photo_value: { manufacturer: "KONE", model_visible: "M1", target_visible: true, relevance_to_goal: "relevant" },
           field_photo_id: 10,
           sha256: "first",
-          correlation_id: "photo:first"
+          correlation_id: "photo:first",
+          expected_episode_id: owner
         )
         session.record_photo_observation!(
           photo_value: { manufacturer: "OTIS", model_visible: "M2", **relation },
           field_photo_id: 20 + index,
           sha256: "second-#{index}",
-          correlation_id: "photo:second-#{index}"
+          correlation_id: "photo:second-#{index}",
+          expected_episode_id: owner
         )
       end
 
@@ -1169,7 +1181,10 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session = web_episode_session
     with_episode_flag("true") do
       session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
-      session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+      owner = session.live_episode_id
+      session.record_assistant_turn!(
+        "… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
+      )
       session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
       session.record_photo_observation!(
         photo_value: {
@@ -1178,7 +1193,8 @@ class ConversationSessionTest < ActiveSupport::TestCase
         },
         field_photo_id: 42,
         sha256: "nameplate",
-        correlation_id: "photo:1"
+        correlation_id: "photo:1",
+        expected_episode_id: owner
       )
     end
 
@@ -1194,17 +1210,20 @@ class ConversationSessionTest < ActiveSupport::TestCase
     session = web_episode_session
     with_episode_flag("true") do
       session.record_user_turn!("Cómo se ajustan los resortes?", user_id: users(:one).id, correlation_id: "query:1")
+      owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:first")
       session.record_photo_observation!(
         photo_value: { manufacturer: "KONE", model_visible: "M1", target_visible: true, relevance_to_goal: "relevant" },
         field_photo_id: 10,
         sha256: "first",
-        correlation_id: "photo:first"
+        correlation_id: "photo:first",
+        expected_episode_id: owner
       )
       session.record_photo_observation!(
         photo_value: { manufacturer: "KONE", model_visible: "M2", target_visible: true, relevance_to_goal: "relevant" },
         field_photo_id: 20,
         sha256: "second",
-        correlation_id: "photo:second"
+        correlation_id: "photo:second",
+        expected_episode_id: owner
       )
     end
 
@@ -1248,10 +1267,16 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
     with_episode_flag("true") do
       session.record_user_turn!(opening, user_id: users(:one).id, correlation_id: "query:1")
+      owner = session.live_episode_id
       stale = ConversationSession.find(session.id)
       fresh = ConversationSession.find(session.id)
       fresh.record_user_turn!("código 8", user_id: users(:one).id, correlation_id: "query:2")
-      stale.record_assistant_turn!("En el manual KONE, página 12, …", user_id: users(:one).id, correlation_id: "query:3")
+      stale.record_assistant_turn!(
+        "En el manual KONE, página 12, …",
+        user_id: users(:one).id,
+        correlation_id: "query:3",
+        expected_episode_id: owner
+      )
     end
 
     session.reload

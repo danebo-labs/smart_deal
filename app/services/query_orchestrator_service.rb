@@ -48,7 +48,7 @@ class QueryOrchestratorService
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, auto_scope_filter: false, locale: nil,
                  user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil, raw_question: nil,
-                 apply_photo_continuity: true)
+                 apply_photo_continuity: true, expected_episode_id: nil)
     @query = query
     @raw_question = raw_question
     @images = images || []
@@ -69,6 +69,7 @@ class QueryOrchestratorService
     @correlation_id = correlation_id
     @field_photo_id = field_photo_id
     @apply_photo_continuity = apply_photo_continuity
+    @expected_episode_id = expected_episode_id
     @ai_provider = AiProvider.new
   end
 
@@ -141,7 +142,8 @@ class QueryOrchestratorService
         locale: locale,
         correlation_id: correlation_id,
         field_photo_id: existing_photo_id,
-        question: @query.to_s
+        question: @query.to_s,
+        expected_episode_id: photo_owner_episode_id(correlation_id)
       )
 
       PilotUsageLog.log(
@@ -180,7 +182,8 @@ class QueryOrchestratorService
         account_id:        @account&.id,
         document_uid:      @document_uids.first,
         locale:            I18n.locale.to_s,
-        query:             @query.to_s
+        query:             @query.to_s,
+        expected_episode_id: upload_owner_episode_id
       )
 
       if @query.blank?
@@ -337,7 +340,8 @@ class QueryOrchestratorService
       correlation_id: correlation_id,
       field_photo_id: photo.id,
       question: @query.to_s,
-      continuity: continuity
+      continuity: continuity,
+      expected_episode_id: photo_owner_episode_id(correlation_id)
     )
 
     {
@@ -425,8 +429,24 @@ class QueryOrchestratorService
       document_uid: @document_uids.first || SecureRandom.uuid,
       locale:       @locale,
       urgent:       true,
-      query:        @query
+      query:        @query,
+      expected_episode_id: @expected_episode_id
     ).run!
+  end
+
+  # Captured on the request, before enqueue. A later case must not become the owner.
+  def upload_owner_episode_id
+    return @expected_episode_id if @expected_episode_id.present?
+    return nil unless Rag::FieldCompanionEpisodeFlag.enabled?
+    return nil unless @conv_session.respond_to?(:live_episode_id)
+
+    @conv_session.live_episode_id
+  end
+
+  def photo_owner_episode_id(correlation_id)
+    return nil unless @conv_session.respond_to?(:ensure_case_for_photo_submission!)
+
+    @conv_session.ensure_case_for_photo_submission!(correlation_id: correlation_id)
   end
 
   # Executes both DATABASE_QUERY and KNOWLEDGE_BASE_QUERY in parallel using threads,

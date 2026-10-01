@@ -32,7 +32,7 @@ class CustomChunkingPipeline
   #                     routing is automatic; emergency triage is handled separately.
   # @param query        [String, nil] original text question; enables automatic
   #                     urgent-page triage for long PDFs while Batch runs.
-  def initialize(images:, documents:, conv_session: nil, account_id: nil, document_uid: nil, locale: nil, urgent: false, query: nil)
+  def initialize(images:, documents:, conv_session: nil, account_id: nil, document_uid: nil, locale: nil, urgent: false, query: nil, expected_episode_id: nil)
     @images         = Array(images)
     @documents      = Array(documents)
     @conv_session   = conv_session
@@ -41,6 +41,7 @@ class CustomChunkingPipeline
     @locale         = locale
     @urgent         = urgent
     @query          = query.to_s
+    @expected_episode_id = expected_episode_id.presence
     @uploaded_filenames   = []
     @ready_filenames      = []
     @ready_kb_document_ids = []
@@ -67,7 +68,8 @@ class CustomChunkingPipeline
         conv_session_id: @conv_session&.id,
         kb_document_ids: @ready_kb_document_ids,
         web_v1_metadata: @ready_web_v1_metadata,
-        locale:          @locale
+        locale:          @locale,
+        expected_episode_id: @expected_episode_id
       )
     end
 
@@ -130,6 +132,8 @@ class CustomChunkingPipeline
     @uploaded_filenames << filename
 
     if long_pdf_for_batch?(content_type: content_type, filename: filename, binary: binary)
+      # Long manuals rehydrate from WebManualBatch, which has no episode owner.
+      # Do not pass expected_episode_id and do not infer one from batch timestamps.
       SubmitManualBatchJob.perform_later(
         s3_key:          s3_key,
         filename:        filename,

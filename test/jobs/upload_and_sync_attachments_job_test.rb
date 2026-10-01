@@ -70,6 +70,24 @@ class UploadAndSyncAttachmentsJobTest < ActiveJob::TestCase
     QueryOrchestratorService.define_method(:upload_and_sync_attachments, orig_method)
   end
 
+  test "perform keeps the submission episode id for the upload pipeline" do
+    captured = nil
+    orig_method = QueryOrchestratorService.instance_method(:upload_and_sync_attachments)
+    QueryOrchestratorService.define_method(:upload_and_sync_attachments) do
+      captured = instance_variable_get(:@expected_episode_id)
+      []
+    end
+
+    UploadAndSyncAttachmentsJob.perform_now(
+      images_payload: [], documents_payload: [], conv_session_id: nil,
+      account_id: @account.id, document_uid: @document_uid, expected_episode_id: "ep_submission"
+    )
+
+    assert_equal "ep_submission", captured
+  ensure
+    QueryOrchestratorService.define_method(:upload_and_sync_attachments, orig_method)
+  end
+
   test "broadcasts failed when upload raises and re-raises for retry" do
     orig_method = QueryOrchestratorService.instance_method(:upload_and_sync_attachments)
     QueryOrchestratorService.define_method(:upload_and_sync_attachments) do

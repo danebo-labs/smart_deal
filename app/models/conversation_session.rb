@@ -7,6 +7,7 @@ class ConversationSession < ApplicationRecord
   MAX_MSG_LENGTH = 300
   EPISODE_WINDOW = 4.hours
   EPISODE_MAX_USER_MESSAGES = 3
+  CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
   PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
 
   # WA channel disabled for MVP. "whatsapp" kept in CHANNELS so legacy rows (if any) remain valid.
@@ -122,23 +123,48 @@ class ConversationSession < ApplicationRecord
         active_episode: result.state,
         expires_at: EXPIRY_DURATION.from_now
       }
+      pins_before = pin_document_ids(active_entities)
+      photo_before = photo_marker(stored_episode)
+      episode_before = raw_episode_id(stored_episode)
       boundary = case_boundary_changes(stored_episode, result, now)
-      attrs.merge!(boundary) if boundary
+      attrs.merge!(boundary.attributes) if boundary
       update!(attrs)
+      log_case_boundary!(
+        episode_before: episode_before,
+        episode_after: raw_episode_id(result.state),
+        boundary: boundary,
+        pins_before: pins_before,
+        photo_before: photo_before,
+        photo_after: photo_marker(result.state)
+      )
     end
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id)
     result
   end
 
   # History stays truncated. pending_fact is calculated from the full reply.
-  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil)
+  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant")
     unless episode_recording?
       add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
       return nil
     end
 
     result = nil
+    dropped = false
     with_lock do
+      current_id = live_episode_id
+      expected = expected_episode_id.presence
+      if expected != current_id
+        log_stale_case_write_dropped(
+          writer: writer,
+          expected_episode_id: expected,
+          current_episode_id: current_id,
+          correlation_id: correlation_id
+        )
+        dropped = true
+        next
+      end
+
       result = Rag::ActiveEpisodeTurn.apply_assistant(
         state: active_episode,
         text: content.to_s,
@@ -152,19 +178,71 @@ class ConversationSession < ApplicationRecord
       attrs[:active_episode] = result.state if result.decision == :assistant
       update!(attrs)
     end
+    return nil if dropped
+
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result.decision == :assistant
     result
   end
 
-  def record_photo_observation!(photo_value:, field_photo_id:, sha256:, correlation_id:)
+  def record_photo_observation!(photo_value:, field_photo_id:, sha256:, correlation_id:, expected_episode_id: nil)
     return nil unless episode_recording?
 
     with_lock do
+      current_id = live_episode_id
+      expected = expected_episode_id.presence
+      if expected.blank? || expected != current_id
+        log_stale_case_write_dropped(
+          writer: "photo_observation",
+          expected_episode_id: expected,
+          current_episode_id: current_id,
+          correlation_id: correlation_id
+        )
+        next nil
+      end
+
       episode = Rag::ActiveEpisode.parse(active_episode, now: Time.current)
-      episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: Time.current) if episode.blank?
       apply_photo_observation!(episode, photo_value, field_photo_id, sha256, correlation_id)
       episode.touch!(Time.current)
       update!(active_episode: episode.to_h)
+    end
+  end
+
+  # Synchronous case owner for a photo submission. Reuses a live case, or
+  # applies expiry cleanup and opens one, before the analysis job is enqueued.
+  def ensure_case_for_photo_submission!(correlation_id:, now: Time.current)
+    return nil unless episode_recording?
+
+    with_lock do
+      stored = active_episode
+      parsed = Rag::ActiveEpisode.parse(stored, now: now)
+      if parsed.reason == "expired"
+        pins_before = pin_document_ids(active_entities)
+        photo_before = photo_marker(stored)
+        episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
+        entities = pins_after_expiry(active_entities, stored)
+        update!(
+          active_episode: episode.to_h,
+          active_entities: entities,
+          current_procedure: {}
+        )
+        log_case_probe(
+          episode_before: raw_episode_id(stored),
+          episode_after: episode.episode_id,
+          case_boundary_reason: "episode_expired",
+          pin_release_reason: nil,
+          pins_before: pins_before,
+          pins_after: pin_document_ids(entities),
+          active_photo_before: photo_before,
+          active_photo_after: nil
+        )
+        episode.episode_id
+      elsif parsed.blank?
+        episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
+        update!(active_episode: episode.to_h)
+        episode.episode_id
+      else
+        parsed.episode_id
+      end
     end
   end
 
@@ -178,11 +256,24 @@ class ConversationSession < ApplicationRecord
     raise ArgumentError, "reason is required" if reason.blank?
 
     with_lock do
+      pins_before = pin_document_ids(active_entities)
+      photo_before = photo_marker(active_episode)
+      episode_before = raw_episode_id(active_episode)
       episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
       update!(
         active_episode: episode.to_h,
         active_entities: {},
         current_procedure: {}
+      )
+      log_case_probe(
+        episode_before: episode_before,
+        episode_after: episode.episode_id,
+        case_boundary_reason: reason.to_s,
+        pin_release_reason: nil,
+        pins_before: pins_before,
+        pins_after: [],
+        active_photo_before: photo_before,
+        active_photo_after: nil
       )
       episode.episode_id
     end
@@ -203,8 +294,19 @@ class ConversationSession < ApplicationRecord
 
   # Mensajes del usuario dentro de la ventana del episodio, en orden cronológico.
   # Un mensaje sin `ts` parseable queda fuera. `exclude` descarta la pregunta actual.
+  def episode_history_cutoff(now = Time.current)
+    window_start = now - EPISODE_WINDOW
+    episode = Rag::ActiveEpisode.parse(active_episode, now: now)
+    return window_start if episode.blank?
+
+    opened = parse_history_ts(episode.opened_at)
+    return window_start if opened.nil?
+
+    [ window_start, opened ].max
+  end
+
   def recent_user_turns(now)
-    cutoff = now - EPISODE_WINDOW
+    cutoff = episode_history_cutoff(now)
     conversation_history.select { |message| message["role"] == "user" }.filter_map { |message|
       ts = parse_history_ts(message["ts"])
       next if ts.nil? || ts < cutoff || ts > now
@@ -218,7 +320,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def episode_user_messages(now: Time.current, exclude: nil)
-    cutoff   = now - EPISODE_WINDOW
+    cutoff   = episode_history_cutoff(now)
     excluded = exclude.to_s.strip
 
     conversation_history
@@ -236,7 +338,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def last_assistant_message(now: Time.current)
-    cutoff = now - EPISODE_WINDOW
+    cutoff = episode_history_cutoff(now)
     conversation_history.reverse_each do |message|
       next unless message["role"] == "assistant"
 
@@ -391,20 +493,102 @@ class ConversationSession < ApplicationRecord
   # labels name the previous manufacturer and not the new one.
   def case_boundary_changes(stored_episode, result, now)
     if stored_episode_expired?(stored_episode, now)
-      return {
-        active_entities: pins_after_expiry(active_entities, stored_episode),
-        current_procedure: {}
-      }
+      return CaseBoundary.new(
+        attributes: {
+          active_entities: pins_after_expiry(active_entities, stored_episode),
+          current_procedure: {}
+        },
+        case_boundary_reason: "episode_expired",
+        pin_release_reason: nil
+      )
     end
 
     if result.decision == :new_episode
-      return { active_entities: {}, current_procedure: {} }
+      return CaseBoundary.new(
+        attributes: { active_entities: {}, current_procedure: {} },
+        case_boundary_reason: "new_episode",
+        pin_release_reason: nil
+      )
     end
 
     return unless result.decision == :corrected
 
     entities = pins_after_manufacturer_correction(active_entities, stored_episode, result.state)
-    { active_entities: entities } if entities
+    return unless entities
+
+    CaseBoundary.new(
+      attributes: { active_entities: entities },
+      case_boundary_reason: nil,
+      pin_release_reason: "corrected_manufacturer_mismatch"
+    )
+  end
+
+  def log_case_boundary!(episode_before:, episode_after:, boundary:, pins_before:, photo_before:, photo_after:)
+    return if boundary.nil?
+
+    pins_after = if boundary.attributes.key?(:active_entities)
+      pin_document_ids(boundary.attributes[:active_entities])
+    else
+      pins_before
+    end
+    log_case_probe(
+      episode_before: episode_before,
+      episode_after: episode_after,
+      case_boundary_reason: boundary.case_boundary_reason,
+      pin_release_reason: boundary.pin_release_reason,
+      pins_before: pins_before,
+      pins_after: pins_after,
+      active_photo_before: photo_before,
+      active_photo_after: photo_after
+    )
+  end
+
+  def log_case_probe(episode_before:, episode_after:, case_boundary_reason:, pin_release_reason:, pins_before:, pins_after:, active_photo_before:, active_photo_after:)
+    return if case_boundary_reason.blank? && pin_release_reason.blank?
+
+    Rails.logger.info({
+      event: "R1B_CASE_PROBE",
+      conversation_session_id: id,
+      episode_before: episode_before,
+      episode_after: episode_after,
+      case_boundary_reason: case_boundary_reason,
+      pin_release_reason: pin_release_reason,
+      pins_before: pins_before,
+      pins_after: pins_after,
+      active_photo_before: active_photo_before,
+      active_photo_after: active_photo_after
+    }.to_json)
+  end
+
+  def log_stale_case_write_dropped(writer:, expected_episode_id:, current_episode_id:, correlation_id:)
+    Rails.logger.info({
+      event: "stale_case_write_dropped",
+      conversation_session_id: id,
+      writer: writer,
+      expected_episode_id: expected_episode_id,
+      current_episode_id: current_episode_id,
+      correlation_id: correlation_id,
+      dropped: true
+    }.to_json)
+  end
+
+  def pin_document_ids(entities)
+    return [] unless entities.is_a?(Hash)
+
+    entities.filter_map { |_key, meta| meta["kb_document_id"] if meta.is_a?(Hash) && meta["kb_document_id"].present? }
+  end
+
+  def photo_marker(raw)
+    photo = raw.is_a?(Hash) ? raw["active_photo"] : nil
+    return nil unless photo.is_a?(Hash)
+
+    photo["field_photo_id"]
+  end
+
+  def raw_episode_id(raw)
+    return nil unless raw.is_a?(Hash)
+
+    raw["episode_id"].presence
   end
 
   def stored_episode_expired?(raw, now)

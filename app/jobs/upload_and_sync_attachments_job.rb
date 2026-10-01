@@ -33,7 +33,7 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
   # @param document_uid      [String] UUID assigned by the request before enqueue
   # @param locale            [String, nil] ISO 639-1 locale — forwarded to QOS for image summary
   # @param query             [String, nil] original question, used for long-manual urgent triage
-  def perform(images_payload:, documents_payload:, conv_session_id: nil, account_id:, document_uid:, locale: nil, query: nil)
+  def perform(images_payload:, documents_payload:, conv_session_id: nil, account_id:, document_uid:, locale: nil, query: nil, expected_episode_id: nil)
     images    = restore_images(Array(images_payload))
     documents = Array(documents_payload).map { |d| d.transform_keys(&:to_sym) }
     account   = Account.find(account_id)
@@ -43,7 +43,8 @@ class UploadAndSyncAttachmentsJob < ApplicationJob
     I18n.with_locale(locale || :es) do
       QueryOrchestratorService
         .new(query.to_s, images: images, documents: documents, document_uids: [ document_uid ],
-             account: account, conv_session: session, locale: locale)
+             account: account, conv_session: session, locale: locale,
+             expected_episode_id: expected_episode_id)
         .send(:upload_and_sync_attachments)
     end
   rescue AccountOwnershipError => e

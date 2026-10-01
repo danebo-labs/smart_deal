@@ -31,6 +31,7 @@ class RagController < ApplicationController
       account_id:  current_account.id
     )
     episode_turn = nil
+    expected_episode_id = nil
     semantic_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     shadow_analysis = observe_semantic_shadow(question, images, documents, conv_session, correlation_id)
     semantic_analysis_ms = elapsed_ms(semantic_started)
@@ -45,9 +46,11 @@ class RagController < ApplicationController
         selection_turn: selection_turn?(question, conv_session) ||
           Rag::ThreadMenuSelection.call(question: question, conversation_history: conv_session.conversation_history)
       )
+      expected_episode_id = conv_session.live_episode_id
       state_ms = elapsed_ms(state_started)
     else
       conv_session.refresh!
+      expected_episode_id = conv_session.live_episode_id
     end
     haiku_ms = Thread.current[:haiku_semantic_analysis_ms]
     unless haiku_ms.nil?
@@ -114,7 +117,8 @@ class RagController < ApplicationController
         result.answer.to_s,
         user_id: current_user.id,
         correlation_id: result.correlation_id,
-        pending_question: result.pending_question
+        pending_question: result.pending_question,
+        expected_episode_id: expected_episode_id
       )
       # The photo route's images_uploaded branch terminates asynchronously in
       # FieldPhotoAnalysisJob (which emits its own interaction_completed) — the

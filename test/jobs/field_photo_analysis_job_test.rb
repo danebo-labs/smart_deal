@@ -565,9 +565,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
   test "P1 a photo without a question writes active_photo and keeps the card" do
     with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
       with_analysis_service(result: analysis_result) do
         messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
-          FieldPhotoAnalysisJob.perform_now(**job_args)
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
         end
         assert_equal "photo_analyzed", messages.last["status"]
       end
@@ -584,15 +585,20 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     opening = "Cómo se ajustan los resortes de la fijación de cables ?"
     with_episode_flag("true") do
       @session.record_user_turn!(opening, user_id: users(:one).id, correlation_id: "query:1")
-      @session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+      owner = @session.live_episode_id
+      @session.record_assistant_turn!(
+        "… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
+      )
       @session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
-      @session.record_assistant_turn!("… ¿Sabes el modelo?", user_id: users(:one).id, correlation_id: "query:4")
+      @session.record_assistant_turn!(
+        "… ¿Sabes el modelo?", user_id: users(:one).id, correlation_id: "query:4", expected_episode_id: owner
+      )
       @session.record_user_turn!("el modelo no lo sé", user_id: users(:one).id, correlation_id: "query:5")
 
       kone = analysis_result
       kone[:parsed] = kone[:parsed].merge("manufacturer" => "KONE", "model" => "UNKNOWN")
       with_analysis_service(result: kone) do
-        FieldPhotoAnalysisJob.perform_now(**job_args)
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
       end
     end
 
@@ -858,14 +864,18 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       with_episode_flag("true") do
         with_analysis_service(result: complete_observation_result, on_call: -> { calls += 1 }) do
           @session.record_user_turn!("Cómo se ajustan los resortes de la fijación de cables ?", user_id: users(:one).id, correlation_id: "query:1")
-          @session.record_assistant_turn!("… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2")
+          owner = @session.live_episode_id
+          @session.record_assistant_turn!(
+            "… ¿Qué marca y modelo es el equipo?", user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
+          )
           @session.record_user_turn!("Fuji Yida", user_id: users(:one).id, correlation_id: "query:3")
           FieldPhotoAnalysisJob.perform_now(**job_args.merge(
             image_token: nil,
             field_photo_id: photo.id,
             image_sha256: photo.sha256,
             continuity: "reuse",
-            question: "estos resortes"
+            question: "estos resortes",
+            expected_episode_id: owner
           ))
         end
       end
@@ -952,6 +962,40 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
 
     assert_equal "OTIS-SECRET", foreign.reload.visual_observation["manufacturer"]
+  end
+
+  test "a photo owned by case A does not write case B and still broadcasts" do
+    opening = "Cómo se ajustan los resortes de la fijación de cables ?"
+    reply = analysis_result[:compact_context]
+    with_episode_flag("true") do
+      @session.record_user_turn!(opening, user_id: users(:one).id, correlation_id: "query:1")
+      owner = @session.live_episode_id
+      @session.record_user_turn!(
+        "Ahora estoy revisando un KONE que no nivela en planta 3",
+        user_id: users(:one).id,
+        correlation_id: "query:2"
+      )
+      later = @session.live_episode_id
+      assert_not_equal owner, later
+
+      events = capture_pilot_usage_events do
+        with_analysis_service(result: analysis_result) do
+          messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+            FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+          end
+          assert_equal "photo_analyzed", messages.last["status"]
+        end
+      end
+
+      episode = @session.reload.active_episode
+      assert_equal later, episode["episode_id"]
+      assert_nil episode["active_photo"]
+      assert_equal "KONE", episode.dig("facts", "manufacturer", "value")
+      assert_equal "user", episode.dig("facts", "manufacturer", "source")
+      assert_nil episode.dig("facts", "model")
+      assert_not_includes @session.conversation_history.pluck("content"), reply
+      assert events.any? { |event| event["event"] == "photo_completed" }
+    end
   end
 
   private

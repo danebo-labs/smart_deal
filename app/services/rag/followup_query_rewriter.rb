@@ -189,7 +189,11 @@ module Rag
     def episode_rows
       return [] unless @conversation_session.respond_to?(:conversation_history)
 
-      cutoff = @now - ConversationSession::EPISODE_WINDOW
+      cutoff = if @conversation_session.respond_to?(:episode_history_cutoff)
+        @conversation_session.episode_history_cutoff(@now)
+      else
+        @now - ConversationSession::EPISODE_WINDOW
+      end
       rows = []
       Array(@conversation_session.conversation_history).each_with_index do |message, index|
         row = stringify_message(message)

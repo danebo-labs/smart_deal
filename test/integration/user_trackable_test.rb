@@ -61,6 +61,41 @@ class UserTrackableTest < ActionDispatch::IntegrationTest
   # by the time Users::SessionsController#create rejects the host mismatch. A
   # sign_in_count of N is "credentials accepted N times", which is not the same
   # as N sessions on this host.
+  test "login and logout leave the conversation session row unchanged" do
+    session = ConversationSession.find_or_create_for(
+      identifier: @user.id.to_s, channel: "web", user_id: @user.id, account_id: @user.account_id
+    )
+    original = session.attributes.slice("expires_at", "current_procedure", "active_entities", "active_episode")
+    at = Time.zone.parse("2026-09-30 12:00:00")
+    travel_to(at) do
+      session.update!(
+        expires_at: 20.days.from_now,
+        current_procedure: { "step" => 2 },
+        active_entities: { "Manual" => { "kb_document_id" => 7, "source" => "user_pin" } },
+        active_episode: {
+          "v" => 1, "episode_id" => "ep_login", "status" => "active",
+          "opened_at" => at.iso8601, "updated_at" => at.iso8601,
+          "facts" => {}, "identifiers" => [], "conflicts" => []
+        }
+      )
+    end
+    before = session.reload.attributes.slice(
+      "id", "active_entities", "active_episode", "current_procedure", "expires_at", "updated_at"
+    )
+
+    post_login(@user)
+    delete destroy_user_session_path
+    post_login(@user)
+    get root_path
+
+    after = session.reload.attributes.slice(
+      "id", "active_entities", "active_episode", "current_procedure", "expires_at", "updated_at"
+    )
+    assert_equal before, after
+  ensure
+    session&.update!(original) if original
+  end
+
   test "a login rejected by host mismatch still counts as a sign-in" do
     other_account_user = users(:two)
 

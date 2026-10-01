@@ -38,9 +38,10 @@ class BedrockIngestionJob < ApplicationJob
   # in Solid Queue before this deploy; they are silently ignored.
   def perform(ingestion_job_id, uploaded_filenames, kb_id: nil, data_source_id: nil,
               conv_session_id: nil, kb_document_ids: nil, started_at_iso: nil,
-              web_v1_metadata: nil, locale: nil, account_id: nil, **_legacy_kwargs)
+              web_v1_metadata: nil, locale: nil, account_id: nil, expected_episode_id: nil, **_legacy_kwargs)
     @locale     = locale&.to_sym || :es
     @account_id = account_id
+    @expected_episode_id = expected_episode_id.presence
     return if ingestion_job_id.blank?
 
     I18n.with_locale(@locale) do
@@ -93,7 +94,8 @@ class BedrockIngestionJob < ApplicationJob
         started_at_iso:   started_at.iso8601,
         web_v1_metadata:  web_v1_metadata,
         locale:           @locale&.to_s,
-        account_id:       @account_id
+        account_id:       @account_id,
+        expected_episode_id: @expected_episode_id
       )
     end
   end
@@ -258,13 +260,38 @@ class BedrockIngestionJob < ApplicationJob
     Rails.logger.warn("BedrockIngestionJob: failed to mark WebManualBatch complete — #{e.message}")
   end
 
+  # Flag off keeps the legacy pin. Flag on pins only when the submission's
+  # episode id still owns the live case. A missing owner does not pin.
+  def auto_pin_document!(session, kb_doc)
+    return session.pin_kb_document!(kb_doc) unless Rag::FieldCompanionEpisodeFlag.enabled?
+
+    expected = @expected_episode_id
+    session.with_lock do
+      current = session.live_episode_id
+      if expected.blank? || expected != current
+        Rails.logger.info({
+          event: "stale_case_write_dropped",
+          conversation_session_id: session.id,
+          writer: "auto_pin",
+          expected_episode_id: expected,
+          current_episode_id: current,
+          correlation_id: nil,
+          dropped: true
+        }.to_json)
+        next false
+      end
+
+      session.pin_kb_document!(kb_doc)
+    end
+  end
+
   def register_entity(session, filename, result, kb_doc:)
     if kb_doc.nil?
       Rails.logger.warn("BedrockIngestionJob: register_entity skipped — no KbDocument for #{filename}")
       return
     end
 
-    if session.pin_kb_document!(kb_doc)
+    if auto_pin_document!(session, kb_doc)
       Rails.logger.info("BedrockIngestionJob: auto-pinned KbDocument #{kb_doc.id} (#{filename}) to session #{session.id}")
     end
 

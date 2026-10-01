@@ -58,7 +58,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   def perform(image_token:, image_sha256:, filename:, content_type:, account_id:, user_id: nil,
               conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil, question: nil,
-              continuity: nil)
+              continuity: nil, expected_episode_id: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     locale = locale.to_s.presence || I18n.default_locale.to_s
     correlation_id ||= "photo:#{SecureRandom.uuid}"
@@ -78,7 +78,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
         locale: locale,
         correlation_id: correlation_id,
         question: question,
-        started_at: started_at
+        started_at: started_at,
+        expected_episode_id: expected_episode_id
       )
       return
     end
@@ -173,7 +174,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       image_sha256: image_sha256,
       locale: locale,
       question: question,
-      photo_intent: photo_intent
+      photo_intent: photo_intent,
+      expected_episode_id: expected_episode_id
     )
     PilotUsageLog.log(
       "photo_completed",
@@ -209,7 +211,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   private
 
   def reuse_stored_observation(field_photo_id:, account_id:, user_id:, conversation_session_id:, session:,
-                               filename:, locale:, correlation_id:, question:, started_at:)
+                               filename:, locale:, correlation_id:, question:, started_at:, expected_episode_id: nil)
     photo = account_id && FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
     observation = photo && FieldPhotoObservation.sanitize(photo.visual_observation)
     if observation.nil?
@@ -249,7 +251,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       image_sha256: photo.sha256,
       locale: locale,
       question: question,
-      photo_intent: nil
+      photo_intent: nil,
+      expected_episode_id: expected_episode_id
     )
     emit_interaction_completed(
       account_id: account_id,
@@ -325,14 +328,21 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # RAG answer through the Photo Evidence block, and the chat never shows a
   # separate vision card, a placeholder, or a redraw. Returns the outcome
   # and the transmitted text, consumed by emit_interaction_completed.
-  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil)
+  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil, expected_episode_id: nil)
     session&.record_photo_observation!(
       photo_value: value,
       field_photo_id: field_photo_id,
       sha256: image_sha256,
-      correlation_id: correlation_id
+      correlation_id: correlation_id,
+      expected_episode_id: expected_episode_id
     )
-    session&.record_assistant_turn!(value.fetch(:compact_context), user_id: user_id, correlation_id: correlation_id)
+    session&.record_assistant_turn!(
+      value.fetch(:compact_context),
+      user_id: user_id,
+      correlation_id: correlation_id,
+      expected_episode_id: expected_episode_id,
+      writer: "photo_assistant"
+    )
 
     thumbnail_url = field_photo_thumbnail_url(field_photo_id)
     rag_answer = if Rag::PhotoQuestionFlag.enabled? && question.present?
@@ -360,7 +370,13 @@ class FieldPhotoAnalysisJob < ApplicationJob
     end
 
     unless rag_answer[:failed]
-      session&.record_assistant_turn!(rag_answer.fetch(:answer), user_id: user_id, correlation_id: correlation_id)
+      session&.record_assistant_turn!(
+        rag_answer.fetch(:answer),
+        user_id: user_id,
+        correlation_id: correlation_id,
+        expected_episode_id: expected_episode_id,
+        writer: "photo_assistant"
+      )
     end
     KbSyncBroadcaster.photo_question_answered(
       answer: rag_answer.fetch(:answer), citations: rag_answer[:citations],

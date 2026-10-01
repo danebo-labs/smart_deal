@@ -207,15 +207,36 @@ class ConversationSession < ApplicationRecord
     end
   end
 
-  # Synchronous case owner for a photo submission. Reuses a live case, or
-  # applies expiry cleanup and opens one, before the analysis job is enqueued.
+  # Synchronous case owner for a photo submission. Reuses a live case.
+  # Expired JSON keeps only a pin newer than the case window. Invalid JSON
+  # drops every pin. A blank episode keeps an explicit pin.
   def ensure_case_for_photo_submission!(correlation_id:, now: Time.current)
     return nil unless episode_recording?
 
     with_lock do
       stored = active_episode
       parsed = Rag::ActiveEpisode.parse(stored, now: now)
-      if parsed.reason == "expired"
+      if parsed.reason == "invalid_state"
+        pins_before = pin_document_ids(active_entities)
+        photo_before = photo_marker(stored)
+        episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
+        update!(
+          active_episode: episode.to_h,
+          active_entities: {},
+          current_procedure: {}
+        )
+        log_case_probe(
+          episode_before: raw_episode_id(stored),
+          episode_after: episode.episode_id,
+          case_boundary_reason: "invalid_state",
+          pin_release_reason: nil,
+          pins_before: pins_before,
+          pins_after: [],
+          active_photo_before: photo_before,
+          active_photo_after: nil
+        )
+        episode.episode_id
+      elsif parsed.reason == "expired"
         pins_before = pin_document_ids(active_entities)
         photo_before = photo_marker(stored)
         episode = Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
@@ -457,6 +478,29 @@ class ConversationSession < ApplicationRecord
     with_lock { write_pinned_document!(kb_doc, s3_uri) }
   end
 
+  # One lock: reload, compare the submission's episode id, then pin.
+  # A missing or mismatched owner does not pin.
+  def pin_kb_document_if_episode_owner!(kb_doc, expected_episode_id:, correlation_id: nil)
+    s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+    return false if s3_uri.blank?
+
+    with_lock do
+      expected = expected_episode_id.presence
+      current = live_episode_id
+      if expected.blank? || expected != current
+        log_stale_case_write_dropped(
+          writer: "auto_pin",
+          expected_episode_id: expected,
+          current_episode_id: current,
+          correlation_id: correlation_id
+        )
+        next false
+      end
+
+      write_pinned_document!(kb_doc, s3_uri)
+    end
+  end
+
   # Unpin this session's focus. Match the stored kb_document_id first so a
   # revoked document can still be removed. source_uri remains the fallback
   # for a pin written before that id was stored.
@@ -491,7 +535,16 @@ class ConversationSession < ApplicationRecord
   # Expiry is a property of the stored JSON, not of the classifier decision.
   # A live :new_episode drops every pin. :corrected drops only a pin whose
   # labels name the previous manufacturer and not the new one.
+  # invalid_state has no trustworthy case clock, so the write drops every pin.
   def case_boundary_changes(stored_episode, result, now)
+    if stored_episode_invalid?(stored_episode, now)
+      return CaseBoundary.new(
+        attributes: { active_entities: {}, current_procedure: {} },
+        case_boundary_reason: "invalid_state",
+        pin_release_reason: nil
+      )
+    end
+
     if stored_episode_expired?(stored_episode, now)
       return CaseBoundary.new(
         attributes: {
@@ -589,6 +642,10 @@ class ConversationSession < ApplicationRecord
     return nil unless raw.is_a?(Hash)
 
     raw["episode_id"].presence
+  end
+
+  def stored_episode_invalid?(raw, now)
+    Rag::ActiveEpisode.parse(raw, now: now).reason == "invalid_state"
   end
 
   def stored_episode_expired?(raw, now)

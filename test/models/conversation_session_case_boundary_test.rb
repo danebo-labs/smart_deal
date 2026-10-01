@@ -3,6 +3,8 @@
 require "test_helper"
 
 class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   NEW_CASE_PHRASE = "Ahora estoy revisando un KONE que no nivela en planta 3"
   CORRECTION_PHRASE = "No, no es Elemont. Es KONE"
   OPENING_PHRASE = "Cómo se ajustan los resortes de la fijación de cables ?"
@@ -400,6 +402,113 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "an invalid episode drops its pins when the next substantive turn starts a case" do
+    session = web_session
+    elemont = manual("elemont-invalid.pdf", "Elemont Montacargas Hidraulico Modelo MH")
+    session.update!(
+      active_episode: invalid_episode,
+      current_procedure: { "step" => 4 }
+    )
+    session.pin_kb_document!(elemont)
+
+    with_case_flags do
+      result = session.record_user_turn!(OPENING_PHRASE, user_id: users(:one).id, correlation_id: "query:invalid")
+      session.reload
+      assert_equal :opened, result.decision
+      assert session.active_episode["episode_id"].present?
+      assert_not_equal "ep_corrupt", session.active_episode["episode_id"]
+      assert_nil session.active_episode["active_photo"]
+      assert_nil session.active_episode["pending_fact"]
+      assert_nil session.active_episode.dig("facts", "manufacturer")
+      assert_empty session.active_entities
+      assert_equal({}, session.current_procedure)
+      assert_empty SessionContextBuilder.entity_s3_uris(session)
+      scope = retrieval_scope([])
+      assert_equal "open", scope.reason
+      assert_equal false, scope.force_entity_filter
+    end
+  end
+
+  test "an invalid episode drops its pins when the turn does not open a case" do
+    session = web_session
+    elemont = manual("elemont-invalid-hola.pdf", "Elemont Montacargas Hidraulico Modelo MH")
+    session.update!(active_episode: invalid_episode, current_procedure: { "step" => 2 })
+    session.pin_kb_document!(elemont)
+
+    with_case_flags do
+      result = session.record_user_turn!("hola", user_id: users(:one).id, correlation_id: "query:invalid-hola")
+      session.reload
+      assert_equal :no_episode, result.decision
+      assert_equal({}, session.active_episode)
+      assert_empty session.active_entities
+      assert_equal({}, session.current_procedure)
+      assert_empty SessionContextBuilder.entity_s3_uris(session)
+      assert_equal "open", retrieval_scope([]).reason
+    end
+  end
+
+  test "a photo submission replaces an invalid episode and enqueues that owner" do
+    session = web_session
+    elemont = manual("elemont-invalid-photo.pdf", "Elemont Montacargas Hidraulico Modelo MH")
+    session.update!(active_episode: invalid_episode, current_procedure: { "step" => 6 })
+    session.pin_kb_document!(elemont)
+    image = { data: Base64.strict_encode64("jpeg-bytes"), media_type: "image/jpeg", filename: "panel.jpg" }
+    previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+
+    with_case_flags do
+      clear_enqueued_jobs
+      QueryOrchestratorService.new(
+        "",
+        images: [ image ],
+        account: accounts(:legacy),
+        conv_session: session,
+        user_id: users(:one).id
+      ).execute
+
+      session.reload
+      owner = session.live_episode_id
+      args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+      assert owner.present?
+      assert_not_equal "ep_corrupt", owner
+      assert_equal owner, args["expected_episode_id"]
+      assert_nil session.active_episode["active_photo"]
+      assert_nil session.active_episode.dig("facts", "manufacturer")
+      assert_empty session.active_entities
+      assert_equal({}, session.current_procedure)
+      assert_empty SessionContextBuilder.entity_s3_uris(session)
+    end
+  ensure
+    Rails.cache = previous_cache if previous_cache
+  end
+
+  test "a blank episode keeps an explicit pin on the first turn and on a photo submission" do
+    session = web_session
+    pinned = manual("blank-explicit.pdf", "Procedimiento de engrase")
+    session.update!(active_episode: {}, current_procedure: { "step" => 2 })
+    session.pin_kb_document!(pinned)
+
+    with_case_flags do
+      result = session.record_user_turn!(OPENING_PHRASE, user_id: users(:one).id, correlation_id: "query:blank")
+      session.reload
+      assert_equal :opened, result.decision
+      assert session.find_entity_by_kb_document_id(pinned.id)
+      assert_equal({ "step" => 2 }, session.current_procedure)
+      assert_includes SessionContextBuilder.entity_s3_uris(session), pinned.display_s3_uri(KbDocument::KB_BUCKET)
+      assert_equal "pin_only", retrieval_scope(SessionContextBuilder.entity_s3_uris(session)).reason
+
+      photo_session = web_session
+      photo_session.update!(active_episode: {}, current_procedure: { "step" => 3 })
+      photo_session.pin_kb_document!(pinned)
+      owner = photo_session.ensure_case_for_photo_submission!(correlation_id: "photo:blank")
+      photo_session.reload
+      assert owner.present?
+      assert_equal owner, photo_session.live_episode_id
+      assert photo_session.find_entity_by_kb_document_id(pinned.id)
+      assert_equal({ "step" => 3 }, photo_session.current_procedure)
+    end
+  end
+
   test "start_new_case! clears pins and procedure without touching history or the row" do
     at = Time.zone.parse("2026-09-30 10:00:00")
     session = web_session
@@ -448,6 +557,18 @@ class ConversationSessionCaseBoundaryTest < ActiveSupport::TestCase
 
   def manufacturer_fact(value, at)
     { "status" => "known", "value" => value, "source" => "user", "correlation_id" => "seed", "at" => at.iso8601 }
+  end
+
+  def invalid_episode
+    {
+      "v" => 0,
+      "episode_id" => "ep_corrupt",
+      "facts" => {
+        "manufacturer" => { "status" => "known", "value" => "Elemont", "source" => "user" }
+      },
+      "active_photo" => { "field_photo_id" => 9, "sha256" => "stale" },
+      "pending_fact" => { "subject" => "model" }
+    }
   end
 
   def seed_episode(session, episode_id:, at:, facts: {}, procedure: {})

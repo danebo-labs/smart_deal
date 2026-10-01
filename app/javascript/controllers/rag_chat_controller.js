@@ -70,6 +70,11 @@ export default class extends Controller {
     this.queryStallTimer = null
     this.queryStallNoticeId = null
     this._activeMobileTab = "chat"
+    this._focusQueue = Promise.resolve()
+    this._focusBusy = 0
+    this._focusSawFailure = false
+    this._documentPinWait = null
+    this._resolveDocumentPinWait = null
     this.subscribeToKbSync()
     this.setupMobileTabs()
     this.setupKeyboardLift()
@@ -198,10 +203,55 @@ export default class extends Controller {
             controller.addMessage(data.message, "error")
           }
 
+          controller.releaseDocumentPinWait()
           controller.pendingUploadType = null
         }
       }
     })
+  }
+
+  // Serial pin/unpin. A rejected request does not stop the next one.
+  enqueueFocusMutation(task) {
+    this._focusBusy += 1
+    const run = this._focusQueue.then(() => task(), () => task())
+    this._focusQueue = run.catch(() => {})
+    return run.finally(() => {
+      this._focusBusy -= 1
+    })
+  }
+
+  beginDocumentPinWait() {
+    if (this._documentPinWait) return
+
+    this._documentPinWait = new Promise((resolve) => {
+      this._resolveDocumentPinWait = resolve
+    })
+  }
+
+  releaseDocumentPinWait() {
+    const resolve = this._resolveDocumentPinWait
+    this._documentPinWait = null
+    this._resolveDocumentPinWait = null
+    resolve?.()
+  }
+
+  // Ask waits for the pin the technician just made, and for their own upload
+  // to finish selecting. A failed pin keeps the typed question. A failed or
+  // stalled upload releases the wait and the question can go out.
+  async awaitDocumentFocus() {
+    if (this._focusBusy > 0) {
+      this._focusSawFailure = false
+      let guard = 0
+      while (this._focusBusy > 0 && guard < 30) {
+        const queue = this._focusQueue
+        await queue
+        guard += 1
+      }
+      if (this._focusSawFailure) return false
+    }
+
+    if (this._documentPinWait) await this._documentPinWait
+    return true
   }
 
   clickAttach() {
@@ -358,6 +408,7 @@ export default class extends Controller {
     const hasFile = this.pendingFile !== null
 
     if (!question && !hasFile) return
+    if (!await this.awaitDocumentFocus()) return
 
     this.switchToChatTab()
     this.disableForm()
@@ -406,6 +457,7 @@ export default class extends Controller {
         this.indexingLoadingId = loadingId
         this.kbSyncInProgress = true
         this.pendingUploadType = "document"
+        this.beginDocumentPinWait()
         const uploadAck = question ? this._indexingWarmCopy("ack") : (data.answer || this._indexingWarmCopy("ack"))
         this.setIndexingLoadingAcknowledgment(uploadAck)
         this.startIndexingNudgeTimer()
@@ -812,56 +864,36 @@ export default class extends Controller {
     }
   }
 
-  // Click on a KB doc card → toggle pin via POST/DELETE /pinned_documents.
-  // Optimistic UI flip + textarea append/remove with revert on server failure.
-  async toggleDocSelection(event) {
+  // Click on a KB doc card. The check moves immediately. The textarea stays
+  // exactly as the technician typed it. A failed request restores the check.
+  toggleDocSelection(event) {
     const btn = event.currentTarget
     const docId = btn.dataset.docId
     if (!docId) return
 
     const wasSelected = btn.dataset.selected === "true"
-    const docName = btn.dataset.docName || ""
-
     this._setSelectedUI(docId, !wasSelected)
-    this._updateTextareaWithDocName(docName, !wasSelected)
 
-    try {
-      const url = wasSelected ? `/pinned_documents/${docId}` : `/pinned_documents`
-      const method = wasSelected ? "DELETE" : "POST"
-      const body = wasSelected ? null : JSON.stringify({ kb_document_id: docId })
-      const res = await fetch(url, {
-        method,
-        headers: this._jsonHeaders(),
-        credentials: "same-origin",
-        body
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    } catch (err) {
-      this._setSelectedUI(docId, wasSelected)
-      this._updateTextareaWithDocName(docName, wasSelected)
-      console.error("toggleDocSelection failed:", err)
-    }
-  }
-
-  // Append doc name to textarea on check; remove it on uncheck.
-  // Preserves any existing user-typed text around the inserted names.
-  _updateTextareaWithDocName(name, add) {
-    if (!name || !this.hasInputTarget) return
-    const ta = this.inputTarget
-
-    if (add) {
-      if (!ta.value.includes(name)) {
-        ta.value = ta.value ? `${ta.value.trimEnd()} ${name}` : name
+    this.enqueueFocusMutation(async () => {
+      try {
+        const url = wasSelected ? `/pinned_documents/${docId}` : `/pinned_documents`
+        const method = wasSelected ? "DELETE" : "POST"
+        const body = wasSelected ? null : JSON.stringify({ kb_document_id: docId })
+        const res = await fetch(url, {
+          method,
+          headers: this._jsonHeaders(),
+          credentials: "same-origin",
+          body
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      } catch (err) {
+        this._setSelectedUI(docId, wasSelected)
+        this.refreshDocuments()
+        this._focusSawFailure = true
+        console.error("toggleDocSelection failed:", err)
+        throw err
       }
-    } else {
-      ta.value = ta.value
-        .replace(new RegExp(`\\s*${this._escapeRegex(name)}`, "g"), "")
-        .trim()
-    }
-  }
-
-  _escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    }).catch(() => {})
   }
 
   // Syncs selection state for ALL buttons with the given docId (mobile + desktop panels).
@@ -1018,22 +1050,30 @@ export default class extends Controller {
 
     const focused = button.dataset.focused === "true"
     button.disabled = true
-    try {
-      const correlation = button.dataset.correlationId
-      const response = focused
-        ? await this.unpinManualFocus(docId, uid, correlation)
-        : await this.pinManualFocus(docId, uid, correlation)
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        this.setManualFocusStatus(article, payload.error || section?.dataset.focusInvalid || "No pude seleccionar este manual.")
-        return
+    this.enqueueFocusMutation(async () => {
+      try {
+        const correlation = button.dataset.correlationId
+        const response = focused
+          ? await this.unpinManualFocus(docId, uid, correlation)
+          : await this.pinManualFocus(docId, uid, correlation)
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          this.setManualFocusStatus(article, payload.error || section?.dataset.focusInvalid || "No pude seleccionar este manual.")
+          this._focusSawFailure = true
+          throw new Error("focus failed")
+        }
+        this.setManualFocusState(button, article, section, !focused, payload.message)
+        this._setSelectedUI(docId, !focused)
+      } catch (error) {
+        if (error?.message !== "focus failed") {
+          this.setManualFocusStatus(article, section?.dataset.focusInvalid || "No pude seleccionar este manual.")
+          this._focusSawFailure = true
+        }
+        throw error
+      } finally {
+        button.disabled = false
       }
-      this.setManualFocusState(button, article, section, !focused, payload.message)
-    } catch (_error) {
-      this.setManualFocusStatus(article, section?.dataset.focusInvalid || "No pude seleccionar este manual.")
-    } finally {
-      button.disabled = false
-    }
+    }).catch(() => {})
   }
 
   pinManualFocus(docId, uid, correlationId) {
@@ -1146,6 +1186,7 @@ export default class extends Controller {
   startIndexingStallTimer() {
     this.clearIndexingStallTimer()
     this.indexingStallTimer = setTimeout(() => {
+      if (this.pendingUploadType === "document") this.releaseDocumentPinWait()
       this.indexingStallNoticeId = this.addMessage(
         this._indexingWarmCopy("stall"),
         "assistant",

@@ -78,7 +78,12 @@ module RagQueryConcern
     # Only retrieval/generation sees `effective_question`.
     followup = nil
     effective_question = question
-    if images.empty? && documents.empty? && conv_session
+    # A message that is only a selected manual's name is the technician's
+    # question. Document Focus already holds the scope, so this turn is not
+    # rewritten into the previous problem and it is not answered with a canned
+    # confirmation.
+    pin_label_turn = images.empty? && documents.empty? && selection_turn?(question, conv_session)
+    if images.empty? && documents.empty? && conv_session && !pin_label_turn
       if episode_turn_owns_thread?(episode_turn)
         # `question` stays the raw turn. Composition never reassigns it.
         effective_question = episode_turn.composed.presence || question
@@ -131,34 +136,6 @@ module RagQueryConcern
       Rails.logger.info(
         "RagQueryConcern: scope reason=#{scope.reason} pinned=#{pinned_uris.size} " \
         "retrieval=#{scope.uris.size}"
-      )
-    end
-
-    # Turno de selección puro: el texto es el nombre del pin que el toggle de
-    # documentos autocompleta (rag_chat_controller#_updateTextareaWithDocName),
-    # así que no lleva intención escrita. Con top_k 3 sobre documentos pinneados
-    # la ventana de generación sería la identidad del documento y Bedrock
-    # devolvería el resumen que nadie pidió (corrida 20260916T170508Z). Se
-    # pregunta en vez de adivinar, sin llamar al modelo.
-    # selection_gate? encapsula flag de episodio, selection_turn? y mensaje
-    # previo presente. CG-D19 #G: la pregunta va en prosa, sin chips.
-    gate = resolved_output_channel == :web && images.empty? && documents.empty? &&
-      selection_gate?(question, conv_session)
-
-    if gate
-      Rails.logger.info(
-        "RagQueryConcern: selection_gate uris=#{scope.uris.size} bedrock=0"
-      )
-      return RagResult.new(
-        success?:        true,
-        answer:          I18n.t("rag.selection_turn_prompt", locale: resolved_response_locale),
-        citations:       [],
-        session_id:      nil,
-        response_locale: resolved_response_locale.to_s,
-        generation_mode: "deterministic_selection_gate",
-        model_invoked:   false,
-        correlation_id:  correlation_id,
-        effective_question: effective_question
       )
     end
 
@@ -526,14 +503,6 @@ module RagQueryConcern
     BLOCK
 
     [ session_context.presence, block ].compact.join("\n\n")
-  end
-
-  def selection_gate?(question, conv_session)
-    return false unless Rag::EpisodeScopeFlag.enabled?
-    return false unless selection_turn?(question, conv_session)
-    return false unless conv_session.respond_to?(:episode_user_messages)
-
-    conv_session.episode_user_messages(exclude: question).last.present?
   end
 
   def selection_turn?(question, conv_session)

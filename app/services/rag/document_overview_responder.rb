@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
 module Rag
-  # Deterministic answer for "what is this document about" — the question
-  # rag_chat_controller#_updateTextareaWithDocName autofills when a technician
-  # pins one or more documents. Mirrors the Rag::AmbiguousModelResponder
+  # Deterministic answer when the question is only a pinned document's name.
+  # Mirrors the Rag::AmbiguousModelResponder
   # contract: self.build returns nil or an instance, #execute returns the
   # answer Hash or nil.
   class DocumentOverviewResponder

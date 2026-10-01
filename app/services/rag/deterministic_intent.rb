@@ -78,9 +78,7 @@ module Rag
         !text.match?(PAGE_REFERENCE_PATTERN)
     end
 
-    # True when the technician pinned exactly one document and did not write a
-    # real question: the textarea is empty or holds only the autofilled document
-    # name (rag_chat_controller#_updateTextareaWithDocName).
+    # True when the question is empty or is only the pinned document's name.
     # @param question [String, nil]
     # @param pinned_names [Array<String>] canonical_name + aliases of the single pin
     # @return [Boolean]

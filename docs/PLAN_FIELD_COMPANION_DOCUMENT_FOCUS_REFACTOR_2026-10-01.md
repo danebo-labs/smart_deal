@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** G1 PASS — F2 HECHA — F3 SIGUE
+**Estado:** G1 PASS — F2 HECHA — F3 HECHA — F4 SIGUE
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** G1 PASS en producción. F2 cerrada en el repo. F3–F4 siguen en este archivo. El handoff de F2 está en la sección 13.
+**Implementación:** G1 PASS en producción. F2 y F3 cerradas en el repo. F4 sigue en este archivo. El handoff de F3 está en la sección 13.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -966,6 +966,14 @@ El repo ya tiene system tests con Chrome headless en `test/system`. F3 agrega un
 
 **Commit.** `fix: apply document pin before the next question`
 
+**Handoff F3.** La cola serial vive en el controlador de chat. Una mutación que falla no corta la siguiente. La pregunta espera sólo las mutaciones que todavía están en curso: un fallo ya terminado no bloquea la pregunta de después. Si el pin falla, el check vuelve al estado anterior y la lista se refresca desde el servidor. El textarea no recibe el nombre del manual, ni en el éxito ni en el fallo, y `params[:question]` tampoco.
+
+`selection_gate?` ya no existe. Una pregunta que es sólo el nombre de un manual seleccionado llama al orquestador con ese texto, sin reescribirla como la consulta anterior. `selection_turn?` sigue para clasificar el turno y para la instrucción `Selection Turn`. No hay una llamada LLM nueva: el resumen determinista de un nombre suelto, si aplica, sigue dentro del orquestador.
+
+El upload de un documento propio abre la espera del ask. Se suelta cuando el cable dice `indexed` o `failed`, y también cuando aparece el aviso de stall que ya existía. Una foto no abre esa espera. No hay un test de browser del cable; el contrato del pin sí está en `test/system/rag_chat_document_focus_test.rb`.
+
+F4 no cambia de contrato: el badge sigue oculto en 0 hasta esa fase. F5 sigue quitando el estrechamiento N→1. El gap de G1 (la respuesta dijo que VF5 no estaba seleccionado) sigue en F5/F8.
+
 ### F4 — Badge único
 
 **Compuerta:** G2. Este deploy es el de G2, con el corte controlado de la sección 8.
@@ -1244,4 +1252,5 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 |---|---|
 | F1 | Hecha. G1 PASS |
 | F2 | Hecha. Columna `document_focus` y lectores web. No desplegada |
-| F3–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |
+| F3 | Hecha. Cola de pin, textarea sin el nombre, gate de selección fuera. No desplegada |
+| F4–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |

@@ -1005,7 +1005,10 @@ export default class extends Controller {
     const clearLabel = suggestion.focus_clear || "Quitar foco"
     const focusedStatus = suggestion.focus_status || "Manual enfocado"
     const invalidStatus = suggestion.focus_invalid || "No pude seleccionar este manual."
-    const articles = cards.map((card) => this.renderManualCard(card, suggestion.correlation_id, actionLabel, clearLabel, focusedStatus)).join("")
+    const articles = cards.map((card) => {
+      const label = card.action_label || actionLabel
+      return this.renderManualCard(card, suggestion.correlation_id, label, clearLabel, focusedStatus)
+    }).join("")
     const tie = suggestion.tie_at_top === true ? "true" : "false"
     return `<section class="manual-suggestion mt-3 flex flex-col gap-2" aria-label="Sugerencias de manual" data-tie-at-top="${tie}" data-selected="none" data-focus-action="${this.escapeAttribute(actionLabel)}" data-focus-clear="${this.escapeAttribute(clearLabel)}" data-focus-status="${this.escapeAttribute(focusedStatus)}" data-focus-invalid="${this.escapeAttribute(invalidStatus)}">${articles}</section>`
   }
@@ -1034,6 +1037,7 @@ export default class extends Controller {
         data-kb-document-id="${this.escapeAttribute(String(card.kb_document_id))}"
         data-document-uid="${this.escapeAttribute(card.document_uid || "")}"
         data-correlation-id="${this.escapeAttribute(correlationId || "")}"
+        data-focus-mode="${this.escapeAttribute(card.action || "add")}"
         data-focused="${focused ? "true" : "false"}"
         aria-pressed="${focused ? "true" : "false"}">${this.escapeHtml(label)}</button>
       <p class="manual-focus-status mt-2 text-sm leading-5 text-[hsl(215,16%,32%)]" role="status">${this.escapeHtml(status)}</p>`

@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** G1 PASS — G2 PASS — F5 HECHA — G3 LISTO PARA DEPLOY
+**Estado:** G1 PASS — G2 PASS — G3 PASS — F6 HECHA — G4 en curso
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** G1 PASS y G2 PASS en producción (2026-10-01). F5 cerrada en el repo. G3 no está desplegado. El handoff de F5 está en la sección 13.
+**Implementación:** G1, G2 y G3 PASS en producción (2026-10-01). F6 cerrada en el repo. F7 sigue en la misma compuerta. El handoff de F6 está en la sección 13. El caso `¿Qué es Q2?` con badge 0 queda como regresión de F8, sin implementarse en F6 ni en F7.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -320,7 +320,7 @@ Se evalúan en Ruby, después del catálogo. No las decide el modelo. No se pers
 - **ready.** Hay señal suficiente y otra pregunta no cambiaría de forma material esta respuesta. `NICE3000 E51, ¿qué reviso?` es ready cuando el catálogo cierra esa identidad y el código ya está. Flujo: comprensión, catálogo, retrieve. El scope no cambia.
 - **search_and_clarify.** Es el caso normal. La consulta ya se puede buscar y un dato más afinará el turno siguiente. “Elemont, las puertas no cierran”, “No nivela”, “La puerta cierra y vuelve a abrir”, “K1 no entra”, “Me muestra E51” no se bloquean. Flujo: un retrieve, respuesta grounded con citas, y después como máximo un discriminator. Faltar fabricante, modelo o controlador no basta para `clarify_first`.
 - **best_effort.** El técnico dijo que no sabe, que no puede verlo, que no aparece, que no tiene acceso, o que busquemos con eso. No se bloquea, no se repite la misma pregunta, no se inventa identidad, la incertidumbre se dice en una frase, y el focus no se abre ni se cierra.
-- **clarify_first.** Excepcional. Casi no hay contenido técnico: sin foto, sin episodio, sin componente, sin parámetro, sin manual seleccionado, sin equipo y sin observación. “¿Cómo ajusto esto?”. Se pregunta qué está mirando. No se llama a `RetrieveAndGenerate`. Un designator de catálogo, un síntoma concreto o un badge mayor que 0 impiden esta decisión.
+- **clarify_first.** Excepcional. Casi no hay contenido técnico: sin foto, sin episodio, sin componente, sin parámetro, sin manual seleccionado, sin equipo y sin observación. “¿Cómo ajusto esto?”. Se pregunta qué está mirando. No se llama a `RetrieveAndGenerate`. Un designator de catálogo con tipo, un síntoma concreto o un badge mayor que 0 impiden esta decisión. F8 agrega el identificador técnico corto y ambiguo (`Q2`, `K1`, `X3`, `E03`, `CN5`) cuando el badge es 0 y no hay manufacturer, model ni controller confiables de `user` o `photo`: también es `clarify_first`, con cero retrieve y cero generación.
 
 La pregunta de seguimiento, cuando existe, va en prosa. Si el hueco es `manufacturer`, `model`, `controller` o `fault_code`, se guarda en el `pending_question` que ya existe, ampliado con `controller`. No hay formulario de cuatro campos.
 
@@ -1040,6 +1040,10 @@ F6 no cambia de contrato. Sigue sugiriendo fuera del focus y sin citar ese manua
 
 **Commit.** `feat: suggest manuals outside the selected set`
 
+**Handoff F6.** `DocumentDiscovery` arma como máximo 2 cards y no escribe `document_focus`. Badge 0: un designador exacto del catálogo, o el único documento citado que supera al resto. Un empate de citas no ofrece nada. Badge N: la card sale sólo si el candidato no está seleccionado. Un designador exacto, o una marca que contradice los checks, se ofrece; la contradicción pide “Usar sólo este manual” y el resto pide “Agregar este manual” o “Dejar este manual seleccionado”. La card no entra en citas ni en el prompt. Abstención con focus: un `Retrieve` directo, `top_k` 3, filtro de cuenta, y se descartan las URIs ya seleccionadas. Esos chunks no vuelven a la respuesta. `ManualCandidateRanker.score` no cambió: el tope 3 del artefacto F0 sigue ahí, y el tope 2 es de discovery.
+
+No se implementa `clarify_first` para `Q2`. Eso es F8.
+
 ### F7 — Aceptar y replay
 
 **Compuerta:** G4. Deploy de F6+F7.
@@ -1084,6 +1088,10 @@ F7, al implementarse, cierra y escribe en este archivo las dos decisiones que F1
 - Cero inferencias nuevas. El analyzer existente sólo cuando su gate ya lo llama.
 
 **Tests.** Los de la sección 14 que corresponden a identidad, decisiones, “no sé”, corrección, ventana, prefijo y agujas de catálogo. “NICE3000 E51” con flag `off`: query con `NICE3000` y `E51`, manufacturer Monarch con source catalog, controller NICE3000, focus intacto, sin URIs si el badge es 0. El techo de literales de equipo en código no sube. El gap de G1 quedó cerrado en el safeguard: un chunk del focus no se vacía ni se etiqueta como otro equipo. Si una respuesta futura igual dice que un manual seleccionado no lo está, esta fase agrega esa regresión sobre el texto generado. La query efectiva del smoke de G2 llevó `KONE` del Work Context con focus Elemont + Monarch. Esta fase arma esa string. No se corrige moviendo el focus.
+
+**Regresión obligatoria, del smoke de G3.** Badge 0, Work Context sin manufacturer, model ni controller confiables de `user` o `photo`, pregunta `¿Qué es Q2?`. Decisión `clarify_first`. Cero retrieve. Cero generación RAG. Una sola pregunta: equipo, marca, controlador o modelo, con la foto como alternativa. La respuesta no puede adoptar un significado Thyssen, Elemont, Monarch ni de otro manual. El turno siguiente `Es Monarch NICE3000` sigue el mismo trabajo, recién ahí hay retrieve, la query lleva ese contexto y no repite la misma aclaración. `No sé, busca con eso` es `best_effort`: búsqueda global, el hallazgo se dice como candidato de un manual concreto, y no como definición universal. No se vuelve a preguntar de inmediato el mismo dato. No se diseña un retrieve para traer un Q2 de cada manual.
+
+Con manufacturer y controller ya confiables, `¿Qué es Q2?` busca y no repregunta lo que ya está. Con Document Focus mayor que 0, esta regla no corre: se busca dentro del focus y, si ese manual no define el identificador, se abstiene o se pide el discriminador que corresponda.
 
 **Commit.** `feat: build the retrieval query from catalog-grounded technical understanding`
 
@@ -1182,6 +1190,12 @@ Hacerlo en el teléfono y, si hay pantalla ancha, mirar también el número de d
 5. Vuelve a marcar los dos manuales de G1 y escribe otra vez `No, no es Elemont. Es KONE.` PASS si los dos checks siguen.
 6. Si subís un archivo propio, esperá a que aparezca marcado antes de preguntar. PASS si no podés enviar la pregunta mientras sigue procesándose, y si al terminar el check y el número coinciden. FAIL si la pregunta sale con el archivo marcado en pantalla pero la respuesta lo ignora, o si un fallo de la subida lo deja marcado. Un archivo que hayas subido en un intento anterior no tiene que marcarse solo en este momento.
 
+### G3 — PASS el 2026-10-01
+
+Imagen `0f2f2c9`. Dos pasadas de `¿Qué es Q2?`. Badge 0 buscó en el corpus abierto. Un manual seleccionado dejó el filtro en esa URI y no citó otro. Dos manuales quedaron los dos en el filtro aunque la pregunta nombrara a uno. Una marca del Work Context no movió el focus. No hay diversidad forzada. Fuentes sigue siendo lo citado.
+
+Hallazgo para F8, sin reabrir F5: con badge 0 y sin equipo confiable, el tope fue el esquema Thyssen CMC-3 página 29, donde `Q2 / Q3` es un terminal real. El grounding era correcto. Adoptar ese significado como si fuera el del trabajo es el caso de `clarify_first` que F8 tiene que cerrar.
+
 ### G3 — después de desplegar F5
 
 1. Deja `0` manuales. Pregunta algo que sepas que está en un manual concreto de la biblioteca. PASS si puede citar ese manual. El número sigue `0`.
@@ -1278,5 +1292,6 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 | F2 | Hecha. G2 PASS |
 | F3 | Hecha. G2 PASS |
 | F4 | Hecha. G2 PASS el 2026-10-01 |
-| F5 | Hecha. Scope exacto y safeguard de focus. G3 listo para deploy |
-| F6–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |
+| F5 | Hecha. G3 PASS el 2026-10-01 |
+| F6 | Hecha. Sugerencias fuera del focus. G4 espera a F7 |
+| F7–F10 | F7 en curso. F8–F10 no empezadas. El caso Q2 de G3 es regresión de F8 |

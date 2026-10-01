@@ -86,6 +86,24 @@ module Rag
         )
       end
 
+      # Binds catalog rows to cards without scoring the question. Discovery
+      # decides which entries are worth offering. This does not retrieve and
+      # does not write a pin.
+      def offer_entries(entries, viewer_account:, documents_for: nil, label: EXACT_DESIGNATOR_LABEL, text: nil)
+        candidates = Array(entries).filter_map { |entry| candidate_from_entry(entry, label) }
+        return [] if candidates.empty? || viewer_account.nil?
+
+        rows = documents_for_candidates(candidates, documents_for)
+        rows = Rag::KnowledgeScopePolicy.rows_for_catalog_candidates(candidates) if rows.empty? && documents_for.nil?
+        candidates.filter_map { |candidate|
+          document = Rag::KnowledgeScopePolicy.bind_catalog_candidate(candidate, rows: rows, viewer_account: viewer_account)
+          next unless document
+
+          card = card_for(candidate, document, viewer_account)
+          text.present? ? card.with(text: text) : card
+        }
+      end
+
       private
 
       def viewer_from_id(viewer_account_id)
@@ -168,6 +186,23 @@ module Rag
           tokens << word
         end
         tokens.uniq
+      end
+
+      def candidate_from_entry(entry, label)
+        document_id = value(entry, :document_id).to_s
+        return nil if document_id.blank?
+
+        Candidate.new(
+          document_id: document_id,
+          display_name: value(entry, :display_name).to_s,
+          score: 0,
+          label: label,
+          brands: Array(value(entry, :brands)).map(&:to_s),
+          owner_account_id: value(entry, :owner_account_id),
+          classification: classification_value(entry),
+          s3_key: value(entry, :s3_key).to_s,
+          catalog_account_id: value(entry, :account_id).presence || value(entry, :owner_account_id).presence
+        )
       end
 
       def score_entry(entry, manufacturer, tokens)

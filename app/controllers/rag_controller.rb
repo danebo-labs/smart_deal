@@ -159,7 +159,7 @@ class RagController < ApplicationController
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
     json[:correlation_id]     = result.correlation_id     if result.correlation_id.present?
-    attach_manual_suggestion(json, question, correlation_id, conv_session)
+    attach_manual_suggestion(json, question, correlation_id, conv_session, result)
     json[:quick_replies]      = result.quick_replies      if result.quick_replies.present?
     if json[:quick_replies].blank? && resolution[:needs_selection]
       json[:quick_replies] = resolution[:evidence_cards].first(3).filter_map do |card|
@@ -269,20 +269,30 @@ class RagController < ApplicationController
   # Suggest-only. The ranker does not retrieve and does not write active_entities.
   # Eligibility is the physical KbDocument through Rag::KnowledgeScopePolicy.
   # A catalog classification is not an approval. A card tap is a later request.
-  def attach_manual_suggestion(json, question, correlation_id, conv_session)
+  def attach_manual_suggestion(json, question, correlation_id, conv_session, result)
     return if question.blank? || current_account.nil?
 
-    suggestion = Rag::ManualCandidateRanker.suggest(
-      question,
-      Rag::DocumentIdentityCatalog.current.entries,
+    discovery = Rag::DocumentDiscovery.call(
+      question: question,
       viewer_account: current_account,
-      documents_for: method(:manual_suggestion_documents)
+      session: conv_session,
+      doc_refs: result&.doc_refs,
+      abstained: result.present? && interaction_outcome(result) == "abstained",
+      retriever: lambda { |text, top_k|
+        BedrockRagService.new(account: current_account).retrieve_chunks(
+          text,
+          number_of_results: top_k,
+          account_id: current_account.id,
+          correlation_id: correlation_id,
+          route_taken: "document_discovery"
+        )
+      }
     )
-    payload = suggestion.chat_payload
+    payload = discovery.payload
     if payload
       mark_focused_cards!(payload, conv_session)
       payload[:correlation_id] = correlation_id
-      payload[:focus_action] = I18n.t("rag.manual_focus_action")
+      payload[:focus_action] ||= I18n.t("rag.manual_focus_action")
       payload[:focus_clear] = I18n.t("rag.manual_focus_clear")
       payload[:focus_status] = I18n.t("rag.manual_focus_confirmed")
       payload[:focus_invalid] = I18n.t("rag.manual_focus_invalid")
@@ -297,7 +307,7 @@ class RagController < ApplicationController
         suggestion_scopes: payload[:cards].pluck(:knowledge_scope)
       )
     end
-    attach_focus_notices(json, conv_session, suggestion, correlation_id)
+    attach_focus_notices(json, conv_session, discovery, correlation_id)
   end
 
   def mark_focused_cards!(payload, conv_session)
@@ -314,7 +324,8 @@ class RagController < ApplicationController
     conv_session.document_focus_entries.map { |entry| entry["kb_document_id"].to_i }
   end
 
-  def attach_focus_notices(json, conv_session, suggestion, correlation_id)
+  def attach_focus_notices(json, conv_session, discovery, correlation_id)
+    suggestion = Struct.new(:manufacturer, :model_tokens).new(discovery.manufacturer, [])
     pin = Rag::FocusNotice.pin_conflict(session: conv_session, suggestion: suggestion)
     if pin
       json[:pin_conflict] = { message: pin.message }
@@ -331,10 +342,6 @@ class RagController < ApplicationController
 
     identity = Rag::FocusNotice.identity_conflict(session: conv_session)
     json[:identity_conflict] = { message: identity.message } if identity
-  end
-
-  def manual_suggestion_documents(candidates)
-    Rag::KnowledgeScopePolicy.rows_for_catalog_candidates(candidates)
   end
 
   def citation_processor

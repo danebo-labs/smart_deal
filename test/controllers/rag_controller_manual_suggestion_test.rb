@@ -11,70 +11,68 @@ class RagControllerManualSuggestionTest < ActionDispatch::IntegrationTest
     host! "ascensoresclimb.localhost"
   end
 
-  test "owned unclassified manuals are suggested without writing a pin" do
-    question = "Estoy en un OTIS y tengo este problema."
-    scored = Rag::ManualCandidateRanker.score(question, Rag::DocumentIdentityCatalog.current.entries)
-    owned = scored.candidates.first(2)
-    owned.each_with_index do |candidate, index|
-      KbDocument.create!(
-        s3_key: candidate.s3_key,
-        document_uid: candidate.document_id,
-        display_name: "Owned #{index}",
-        aliases: [],
-        account: @account
-      )
-    end
+  test "a brand without a designator or a dominant citation is not a card" do
     body = nil
-    session = nil
     with_pin_tracker do |pin_calls|
-      body = ask(question)
-      session = web_session
-
+      body = ask("Estoy en un OTIS y tengo este problema.")
       assert_equal 0, pin_calls[:n]
     end
 
-    cards = body.dig("manual_suggestion", "cards")
-    assert_equal owned.map(&:document_id), cards.pluck("document_uid")
-    assert_equal [ "tenant_private", "tenant_private" ], cards.pluck("knowledge_scope")
-    assert_equal [ Rag::ManualCandidateRanker::PRIVATE_PROVENANCE, Rag::ManualCandidateRanker::PRIVATE_PROVENANCE ],
-      cards.pluck("provenance")
-    assert_equal [ "BRAND_ONLY", "BRAND_ONLY" ], cards.pluck("label")
-    assert cards.all? { |card| card["text"] == Rag::ManualCandidateRanker::BRAND_ONLY_TEXT }
-    assert_equal true, body.dig("manual_suggestion", "tie_at_top")
-    assert_nil body.dig("manual_suggestion", "selected_document_uid")
-    rows = KbDocument.where(account: @account, document_uid: owned.map(&:document_id)).index_by(&:document_uid)
-    assert_equal owned.map { |candidate| rows[candidate.document_id].id }, cards.pluck("kb_document_id")
-    assert_equal [ false, false ], cards.pluck("focused")
-    assert_equal "Usar este manual", body.dig("manual_suggestion", "focus_action")
-    assert_not_includes body["answer"], Rag::ManualCandidateRanker::BRAND_ONLY_TEXT
-    segments = body["provenance_segments"]
-    assert_equal [ "DANEBO_GUIDANCE" ], segments.pluck("band")
-    assert segments.none? { |segment| segment["text"].include?(Rag::ManualCandidateRanker::BRAND_ONLY_TEXT) }
-    assert_equal({}, session.active_entities)
-    assert_suggestion_telemetry(owned.map(&:document_id), [ "tenant_private", "tenant_private" ])
+    assert_nil body["manual_suggestion"]
+    assert_empty web_session.document_focus_entries
   end
 
-  test "an unclassified document owned by another account is not suggested" do
-    question = "Estoy en un OTIS y tengo este problema."
-    candidate = Rag::ManualCandidateRanker.score(question, Rag::DocumentIdentityCatalog.current.entries).candidates.first
-    KbDocument.create!(
-      s3_key: "uploads/suggestion/foreign-#{candidate.document_id}.pdf",
-      document_uid: candidate.document_id,
-      display_name: "Foreign",
+  test "Monarch NICE3000 offers that manual without selecting it" do
+    entry = Rag::DocumentIdentityCatalog.current.entries.find { |row| Array(row.designators).include?("NICE3000") }
+    document = KbDocument.create!(
+      s3_key: entry.s3_key,
+      document_uid: entry.document_id,
+      display_name: entry.display_name,
       aliases: [],
-      account: accounts(:legacy)
+      account: @account
     )
     body = nil
     with_pin_tracker do |pin_calls|
-      body = ask(question)
+      body = ask("Es Monarch / NICE3000.")
       assert_equal 0, pin_calls[:n]
     end
 
-    assert_empty body.dig("manual_suggestion", "cards")
-    assert_equal Rag::ManualCandidateRanker::EMPTY_TEXT, body.dig("manual_suggestion", "message")
-    assert_nil body.dig("manual_suggestion", "selected_document_uid")
-    assert_not_includes body["answer"], Rag::ManualCandidateRanker::EMPTY_TEXT
-    assert_equal({}, web_session.active_entities)
+    card = body.dig("manual_suggestion", "cards").sole
+    assert_equal document.document_uid, card["document_uid"]
+    assert_equal document.id, card["kb_document_id"]
+    assert_equal false, card["focused"]
+    assert_equal "add", card["action"]
+    assert_equal "Dejar este manual seleccionado", body.dig("manual_suggestion", "focus_action")
+    assert_not_includes body["answer"], card["display_name"]
+    assert_empty web_session.document_focus_entries
+    assert_suggestion_telemetry([ document.document_uid ], [ "tenant_private" ])
+  end
+
+  test "an outside card is not a citation while another manual stays selected" do
+    monarch = catalog_row("NICE3000")
+    elemont = catalog_row("MH")
+    sign_in @user
+    ConversationSession.find_or_create_for(
+      identifier: @user.id.to_s,
+      channel: "web",
+      user_id: @user.id,
+      account_id: @account.id
+    ).pin_kb_document!(elemont)
+    body = ask(
+      "Es Monarch / NICE3000.",
+      orchestrator: {
+        answer: "En Elemont no está.",
+        citations: [ { "title" => elemont.display_name, "filename" => "elemont.pdf" } ],
+        doc_refs: [ { "source_uri" => elemont.display_s3_uri(KbDocument::KB_BUCKET) } ],
+        session_id: "suggestion"
+      }
+    )
+
+    titles = Array(body["citations"]).pluck("title")
+    assert_not_includes titles, monarch.display_name
+    assert_not_includes body["answer"], monarch.display_name
+    assert_equal [ monarch.document_uid ], body.dig("manual_suggestion", "cards").pluck("document_uid")
+    assert_equal [ elemont.id ], web_session.reload.document_focus_entries.pluck("kb_document_id")
   end
 
   test "a symptom without a manufacturer returns no cards and does not add a retrieve" do
@@ -92,25 +90,37 @@ class RagControllerManualSuggestionTest < ActionDispatch::IntegrationTest
 
   private
 
-  def ask(question, queries: [])
+  def ask(question, queries: [], orchestrator: nil)
     sign_in @user
-    with_orchestrator(queries) do
+    with_orchestrator(queries, orchestrator) do
       post rag_ask_path, params: { question: question }, as: :json
     end
     assert_response :success
     response.parsed_body
   end
 
+  def catalog_row(designator)
+    entry = Rag::DocumentIdentityCatalog.current.entries.find { |row| Array(row.designators).include?(designator) }
+    KbDocument.create!(
+      s3_key: entry.s3_key,
+      document_uid: entry.document_id,
+      display_name: entry.display_name,
+      aliases: [],
+      account: @account
+    )
+  end
+
   def web_session
     ConversationSession.find_by!(identifier: @user.id.to_s, channel: "web", account_id: @account.id)
   end
 
-  def with_orchestrator(queries)
+  def with_orchestrator(queries, orchestrator = nil)
     original = QueryOrchestratorService.method(:new)
+    payload = orchestrator || { answer: "Respuesta de prueba.", citations: [], session_id: "suggestion" }
     QueryOrchestratorService.define_singleton_method(:new) do |query, **_kwargs|
       queries << query
       service = Object.new
-      service.define_singleton_method(:execute) { { answer: "Respuesta de prueba.", citations: [], session_id: "suggestion" } }
+      service.define_singleton_method(:execute) { payload }
       service
     end
     yield

@@ -60,13 +60,17 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     source = File.read(File.join(output_dir, "source_events.jsonl"))
     assert_includes source, '"role":"web"'
     assert_includes source, '"role":"worker"'
-    assert_not_includes source, "[PILOT_AUDIT]"
+    assert_includes source, "[PILOT_AUDIT]"
+    assert_includes source, "[TURN_EVIDENCE]"
+    assert_includes source, "R1A_PROBE"
     assert_equal source, File.read(@source_capture)
+    assert_match(/full RAG trace/, stderr)
+    assert_equal 0o700, File.stat(output_dir).mode & 0o777
 
     ssh_calls = File.readlines(@ssh_log, chomp: true).map { |line| JSON.parse(line) }
     assert ssh_calls.none? { |args| args.include?("-t") || args.include?("-it") }
     assert ssh_calls.any? { |args| args.last.include?("label=service=test-service") && args.last.include?("label=role=web") }
-    assert ssh_calls.any? { |args| args.last.include?("docker exec -i") && args.last.include?("pilot_metrics_export.rb") }
+    assert ssh_calls.any? { |args| args.last.include?("docker exec -i") && args.last.include?("pilot_metrics_export.rb") && args.last.include?("--with-questions") }
     verify_hashes
   end
 
@@ -83,7 +87,7 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     _stdout, stderr, status = run_command("--with-questions", "--format", "raw")
 
     assert status.success?, stderr
-    assert_match(/artifacts contain raw technician questions/, stderr)
+    assert_match(/full RAG trace/, stderr)
     expected_files.each do |name|
       assert_equal 0o600, File.stat(File.join(output_dir, name)).mode & 0o777
     end
@@ -321,6 +325,8 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
           unless ENV["FAKE_EMPTY_ROLE"] == "web"
             puts %(2026-07-22T00:00:00-04:00 [PILOT_USAGE] {"event":"interaction_completed","ts":"2026-07-22T00:00:00-04:00","correlation_id":"query:web"})
             puts %(2026-07-22T12:00:00-04:00 [PILOT_AUDIT] {"ts":"2026-07-22T12:00:00-04:00","user_id":11,"correlation_id":"query:web","type":"interaction","question":"question","answer":"answer"})
+            puts %(2026-07-22T12:00:01-04:00 [TURN_EVIDENCE] {"correlation_id":"query:web","original_query":"pregunta","sources":[{"title":"Monarch","page":18}]})
+            puts %(2026-07-22T12:00:02-04:00 R1A_PROBE {"correlation_id":"query:web","stage":"bedrock_request_filter"})
           end
         when "bbb222"
           unless ENV["FAKE_EMPTY_ROLE"] == "web"

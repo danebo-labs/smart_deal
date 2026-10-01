@@ -261,16 +261,16 @@ bin/pilot_metrics \
 | `--to DATE` | Yes | `YYYY-MM-DD`, `>= --from` | End of the range (inclusive). |
 | `--account SLUG` | Yes | account slug (e.g. `danebo-legacy`) | Resolves the account and its user cohort in production via `rails runner`; every downstream section is filtered to those `user_id`s. Slug must match `^[A-Za-z0-9][A-Za-z0-9_-]*$`. |
 | `--format raw\|human\|both` | No (default `both`) | `raw`, `human`, `both` | Only controls **stdout**: `report.json` raw, `report.txt` human, or both. Never changes which files are written to disk — the full package (`report.json`, `report.txt`, `valor.json`, `dossier.html`, `interactions.csv`, `source_events.jsonl`, `manifest.json`, `SHA256SUMS`) is always generated. |
-| `--with-questions` | No | flag | Copies `[PILOT_AUDIT]` lines into `source_events.jsonl` and fills `interactions.by_correlation.audit` (full question/answer/citations/chunks), which is what `dossier.html` and `interactions.csv` render. Without it those fields are absent, not redacted-in-place. Also restricts the package to `chmod 700`/`600` and prints a stderr warning, because the package now carries real technician text. |
+| `--with-questions` | No | flag | Accepted and no longer a filter. Every export copies the RAG trace (`PILOT_USAGE`, `RAG_QUALITY`, `PILOT_AUDIT`, `TURN_EVIDENCE`, `DOCUMENT_IDENTITY`, `RAG_REGRESSION`, `R1A_PROBE`) into `source_events.jsonl` and fills the question, answer, filter and consulted chunks in `dossier.html` and `interactions.csv`. The package is always `chmod 700`/`600` and prints a stderr warning, because it carries technician text. |
 | `--manual-outcomes CSV` | No | path to a CSV (`correlation_id,correct_answer,resolved,helpfulness`) | Merges human review into `interactions.by_correlation` and into `valor.json.precision_and_safety` before packaging. Unmatched interactions keep `nil`. |
 | `--strict` | No | flag | Validates a non-empty cohort, both roles' logs present, valid report JSON, and no stale pending cost reconciliation. Never destroys the package: everything is generated first, the result is recorded in `manifest.json.strict_validation`, and only then does the command exit non-zero if a check failed. |
 | `--help` / `-h` | No | — | Prints usage and exits. |
 
-`PILOT_AUDIT_CAPTURE=true` is a separate, deploy-time environment variable
-(set in `config/deploy.yml`, not a CLI flag) that gates whether `[PILOT_AUDIT]`
-lines exist in production logs at all. `--with-questions` only controls
-whether an export that already has them surfaces them — see "Full audit
-capture and opt-in export" below for the full boundary between the two.
+`PILOT_AUDIT_CAPTURE=true` is a deploy-time environment variable (set in
+`config/deploy.yml`, not a CLI flag) that gates whether production writes
+`[PILOT_AUDIT]` and the raw question on `[TURN_EVIDENCE]`. It is already
+`true`. The export does not drop those lines, and it does not drop the rest
+of the RAG trace when a turn never wrote `[PILOT_AUDIT]`.
 
 `manifest.json.image_version` records the exact deployed image tag
 (`docker.io/lahirisan80/smart-deal:<git sha>`) the report was generated
@@ -377,8 +377,7 @@ bin/pilot_metrics \
   --account pilot-account --format human
 ```
 
-**Full audit capture and opt-in export:** these are two separate gates with a
-deliberate privacy boundary:
+**Full audit capture:** production logging and the export are separate.
 
 - `PILOT_AUDIT_CAPTURE=true` controls production log capture. When enabled,
   each text/RAG interaction emits one `[PILOT_AUDIT]` line with the complete
@@ -397,24 +396,26 @@ deliberate privacy boundary:
   route and rendered as `Pregunta: n/a` in `dossier.html`. Both routes now
   emit through the same class, including on `abstained` outcomes, so an
   abstention with no evidence still captures the question that was asked.
-- `--with-questions` controls transport and package exposure. Without it,
-  `[PILOT_AUDIT]` lines are not copied into `source_events.jsonl` and the audit
-  block is absent from `interactions.by_correlation`. With it, the complete
-  audit block is included and feeds `dossier.html` and `interactions.csv`.
+- The export always copies `[PILOT_AUDIT]`, `[TURN_EVIDENCE]`,
+  `[DOCUMENT_IDENTITY]`, `[RAG_REGRESSION]` and `R1A_PROBE` next to
+  `[PILOT_USAGE]` and `[RAG_QUALITY]`. `dossier.html` and `interactions.csv`
+  show the question, the answer, the manuals in the retrieval filter and the
+  consulted chunks from whichever of those lines the turn wrote.
+  `--with-questions` remains accepted and does not add or remove lines.
 
 The pre-existing logging paths retain their different privacy postures:
 
 - `interaction_completed` (source of `interactions` / `repeat_usage`) hashes
   the question **before** it is ever logged — `RagController#ask` computes
   `question_sha256 = Digest::SHA256.hexdigest(question)` and only the hash
-  reaches `PilotUsageLog`. This flag does **not** change that; `interactions`
+  reaches `PilotUsageLog`. The export does not change that; `interactions`
   and `repeat_usage` never carry raw text.
 - `[RAG_QUALITY]` lines (`BedrockRagService#log_quality_signal`) retain their
   existing truncated question/answer snippets and remain unchanged for
   `script/export_rag_trace.rb` compatibility.
 
-Pass `--with-questions` only when the resulting package is authorized to carry
-raw technician text. `evidence_quality.recent_questions` continues to expose
+Every package carries technician text and is written `chmod 700`/`600`.
+`evidence_quality.recent_questions` continues to expose
 the last 50 truncated `[RAG_QUALITY]` questions, while
 `interactions.by_correlation.audit` carries the complete `[PILOT_AUDIT]`
 question, answer, citations and chunks for text/RAG interactions. Photo/visual

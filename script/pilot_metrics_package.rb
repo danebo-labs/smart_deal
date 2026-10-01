@@ -13,7 +13,7 @@ class PilotMetricsPackage
   CSV_HEADERS = %w[
     correlation_id occurred_at outcome route question answer documents pages citations
     chunks input_tokens output_tokens attributed_cost_usd correct_answer resolved
-    technician_helpfulness
+    technician_helpfulness retrieval_scope consulted_sources
   ].freeze
   # HTML dossier is the demo-facing artifact. Prep Gonzalo §8 pilar 6 / §11:
   # show usage and trace, never COGS or tokens. JSON/CSV/report.txt keep cost.
@@ -30,7 +30,8 @@ class PilotMetricsPackage
     FileUtils.mkdir_p(output_dir)
     report = JSON.parse(File.read(report_path))
     merge_manual_outcomes!(report) if outcomes_path
-    File.write(report_path, JSON.generate(report)) if outcomes_path
+    PilotExportTrace.apply!(report, File.join(output_dir, "source_events.jsonl"))
+    File.write(report_path, JSON.generate(report))
 
     value = PilotValueReport.new(report).as_json
     File.write(File.join(output_dir, "report.txt"), "#{PilotMetricsHumanFormatter.new(report.deep_symbolize_keys)}\n")
@@ -164,6 +165,8 @@ class PilotMetricsPackage
           <strong>Fuentes</strong>
           #{sources.any? ? %(<ul class="sources">#{sources.map { |source| "<li>#{escape(source)}</li>" }.join}</ul>) : %(<p class="muted">Sin fuente registrada.</p>)}
         </section>
+        #{trace_list_html("Manuales en el filtro", interaction["retrieval_scope"])}
+        #{trace_list_html("Chunks consultados", interaction["consulted_sources"])}
         #{chunks_html(chunks)}
         <div class="trace">
           <span>correlation_id: #{escape(interaction["correlation_id"] || "n/a")}</span>
@@ -178,6 +181,13 @@ class PilotMetricsPackage
 
     "<span>tokens: #{escape(interaction["input_tokens"] || 0)} in / #{escape(interaction["output_tokens"] || 0)} out</span>" \
       "<span>costo: #{escape(metric(interaction["attributed_cost_usd"], money: true))}</span>"
+  end
+
+  def trace_list_html(title, values)
+    rows = Array(values).compact_blank
+    return "" if rows.empty?
+
+    %(<section><strong>#{escape(title)}</strong><ul class="sources">#{rows.map { |row| "<li>#{escape(row)}</li>" }.join}</ul></section>)
   end
 
   def chunks_html(chunks)
@@ -211,7 +221,9 @@ class PilotMetricsPackage
           audit["question"] || interaction["question"], audit["answer"] || interaction["answer_snippet"],
           documents.join(" | "), pages.join(" | "), interaction["citations_count"], chunks.size,
           interaction["input_tokens"], interaction["output_tokens"], interaction["attributed_cost_usd"],
-          interaction["correct_answer"], interaction["resolved"], interaction["technician_helpfulness"]
+          interaction["correct_answer"], interaction["resolved"], interaction["technician_helpfulness"],
+          Array(interaction["retrieval_scope"]).join(" | "),
+          Array(interaction["consulted_sources"]).join(" | ")
         ]
       end
     end

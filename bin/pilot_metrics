@@ -8,7 +8,7 @@ Usage: bin/pilot_metrics --from YYYY-MM-DD --to YYYY-MM-DD --account SLUG [optio
 
 Options:
   --format raw|human|both  Output written to stdout (default: both)
-  --with-questions        Include raw question/answer fields in report output
+  --with-questions        Accepted. The package always copies the full RAG trace
   --manual-outcomes CSV   Merge manual outcomes by correlation_id
   --strict                Fail on incomplete telemetry or stale reconciliation
   --help                  Show this help
@@ -24,7 +24,7 @@ FROM=""
 TO=""
 ACCOUNT=""
 FORMAT="both"
-WITH_QUESTIONS=false
+WITH_QUESTIONS=true
 MANUAL_OUTCOMES=""
 STRICT=false
 
@@ -249,8 +249,7 @@ fetch_role_logs() {
     return
   fi
 
-  local markers='\[PILOT_USAGE\]|\[RAG_QUALITY\]'
-  [[ "$WITH_QUESTIONS" == false ]] || markers+='|\[PILOT_AUDIT\]'
+  local markers='\[PILOT_USAGE\]|\[RAG_QUALITY\]|\[PILOT_AUDIT\]|\[TURN_EVIDENCE\]|\[DOCUMENT_IDENTITY\]|\[RAG_REGRESSION\]|R1A_PROBE'
 
   local downloaded=false
   local matched=false
@@ -271,7 +270,9 @@ fetch_role_logs() {
     [[ -s "$filtered_file" ]] || continue
 
     matched=true
-    sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+    sed -E \
+      -e "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT|TURN_EVIDENCE|DOCUMENT_IDENTITY|RAG_REGRESSION)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+      -e "s/(R1A_PROBE[[:space:]]+)\{/\1{\"role\":\"${role}\",/" \
       "$filtered_file" >> "$SOURCE_EVENTS"
   done
 
@@ -375,13 +376,11 @@ printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
     source_events.jsonl manifest.json > SHA256SUMS
 )
 
-if [[ "$WITH_QUESTIONS" == true ]]; then
-  chmod 700 "$OUTPUT_DIR"
-  chmod 600 "${OUTPUT_DIR}/report.json" "${OUTPUT_DIR}/report.txt" "${OUTPUT_DIR}/valor.json" \
-    "${OUTPUT_DIR}/dossier.html" "${OUTPUT_DIR}/interactions.csv" "${OUTPUT_DIR}/source_events.jsonl" \
-    "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/SHA256SUMS"
-  echo "pilot_metrics: warning: artifacts contain raw technician questions; permissions set to 600" >&2
-fi
+chmod 700 "$OUTPUT_DIR"
+chmod 600 "${OUTPUT_DIR}/report.json" "${OUTPUT_DIR}/report.txt" "${OUTPUT_DIR}/valor.json" \
+  "${OUTPUT_DIR}/dossier.html" "${OUTPUT_DIR}/interactions.csv" "${OUTPUT_DIR}/source_events.jsonl" \
+  "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/SHA256SUMS"
+echo "pilot_metrics: warning: artifacts contain the full RAG trace, including technician questions; permissions set to 600" >&2
 
 echo "Artifacts: ${OUTPUT_DIR}" >&2
 case "$FORMAT" in

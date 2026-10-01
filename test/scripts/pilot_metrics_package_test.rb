@@ -87,6 +87,29 @@ class PilotMetricsPackageTest < ActiveSupport::TestCase
     FileUtils.remove_entry(tmpdir) if tmpdir && File.exist?(tmpdir)
   end
 
+  test "csv and dossier show the retrieval filter when the report has no audit" do
+    tmpdir = Dir.mktmpdir("pilot-metrics-package-trace")
+    report_path = File.join(tmpdir, "report.json")
+    File.write(report_path, Rails.root.join("test/fixtures/files/pilot_metrics_11_interactions.json").read)
+    File.write(File.join(tmpdir, "source_events.jsonl"), <<~LOG)
+      [TURN_EVIDENCE] {"correlation_id":"query:aa0fce1b-7849-4a47-b09a-377d6c07419f","original_query":"Que reviso si no nivela ?","answer":"Solo Monarch.","sources":[{"title":"Monarch nice 3000 fallas-1","page":18}]}
+      R1A_PROBE {"correlation_id":"query:aa0fce1b-7849-4a47-b09a-377d6c07419f","stage":"bedrock_request_filter","filter":{"orAll":[{"in":{"value":["s3://bucket/Monarch.pdf","s3://bucket/Elemont.pdf"]}}]}}
+    LOG
+    previous_argv = ARGV.dup
+    ARGV.replace([ report_path, tmpdir ])
+
+    capture_io { load Rails.root.join("script/pilot_metrics_package.rb") }
+
+    row = CSV.read(File.join(tmpdir, "interactions.csv"), headers: true)
+      .find { |candidate| candidate["correlation_id"] == "query:aa0fce1b-7849-4a47-b09a-377d6c07419f" }
+    assert_equal "Que reviso si no nivela ?", row["question"]
+    assert_equal "s3://bucket/Monarch.pdf | s3://bucket/Elemont.pdf", row["retrieval_scope"]
+    assert_includes File.read(File.join(tmpdir, "dossier.html")), "Elemont.pdf"
+  ensure
+    ARGV.replace(previous_argv) if previous_argv
+    FileUtils.remove_entry(tmpdir) if tmpdir && File.exist?(tmpdir)
+  end
+
   test "HTML dossier restores cost and tokens when PILOT_DOSSIER_SHOW_COST is true" do
     tmpdir = Dir.mktmpdir("pilot-metrics-package-cost")
     report_path = File.join(tmpdir, "report.json")

@@ -57,7 +57,7 @@ append_role_logs() {
   local role="$1"
   local out="$2"
   shift 2
-  local markers='\[PILOT_USAGE\]|\[RAG_QUALITY\]|\[PILOT_AUDIT\]'
+  local markers='\[PILOT_USAGE\]|\[RAG_QUALITY\]|\[PILOT_AUDIT\]|\[TURN_EVIDENCE\]|\[DOCUMENT_IDENTITY\]|\[RAG_REGRESSION\]|R1A_PROBE'
   local container raw
   for container in "$@"; do
     [[ -n "$container" ]] || continue
@@ -68,7 +68,9 @@ append_role_logs() {
       continue
     fi
     grep -E "$markers" "$raw" |
-      sed -E "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+      sed -E \
+        -e "s/(\[(PILOT_USAGE|RAG_QUALITY|PILOT_AUDIT|TURN_EVIDENCE|DOCUMENT_IDENTITY|RAG_REGRESSION)\][[:space:]]*)\{/\1{\"role\":\"${role}\",/" \
+        -e "s/(R1A_PROBE[[:space:]]+)\{/\1{\"role\":\"${role}\",/" \
       >>"$out" || true
     rm -f "$raw"
   done

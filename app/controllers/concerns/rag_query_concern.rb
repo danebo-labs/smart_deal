@@ -59,7 +59,7 @@ module RagQueryConcern
                         output_channel: nil, force_entity_filter: nil, account: nil, user_id: nil,
                         correlation_id: nil, field_photo_id: nil, conversation_session_id: nil,
                         episode_turn: nil, conversational_turn_analysis: nil,
-                        apply_photo_continuity: true)
+                        apply_photo_continuity: true, retrieval_question: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -83,7 +83,9 @@ module RagQueryConcern
     # rewritten into the previous problem and it is not answered with a canned
     # confirmation.
     pin_label_turn = images.empty? && documents.empty? && selection_turn?(question, conv_session)
-    if images.empty? && documents.empty? && conv_session && !pin_label_turn
+    if retrieval_question.present?
+      effective_question = retrieval_question.to_s
+    elsif images.empty? && documents.empty? && conv_session && !pin_label_turn
       if episode_turn_owns_thread?(episode_turn)
         # `question` stays the raw turn. Composition never reassigns it.
         effective_question = episode_turn.composed.presence || question

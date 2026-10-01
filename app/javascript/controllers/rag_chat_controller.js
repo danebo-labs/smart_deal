@@ -1010,7 +1010,9 @@ export default class extends Controller {
       return this.renderManualCard(card, suggestion.correlation_id, label, clearLabel, focusedStatus)
     }).join("")
     const tie = suggestion.tie_at_top === true ? "true" : "false"
-    return `<section class="manual-suggestion mt-3 flex flex-col gap-2" aria-label="Sugerencias de manual" data-tie-at-top="${tie}" data-selected="none" data-focus-action="${this.escapeAttribute(actionLabel)}" data-focus-clear="${this.escapeAttribute(clearLabel)}" data-focus-status="${this.escapeAttribute(focusedStatus)}" data-focus-invalid="${this.escapeAttribute(invalidStatus)}">${articles}</section>`
+    const replayFailed = suggestion.replay_failed || "El manual quedó seleccionado. No pude volver a consultar. Podés reintentar."
+    const replayReused = suggestion.replay_reused || "Esa consulta ya se respondió con estos manuales."
+    return `<section class="manual-suggestion mt-3 flex flex-col gap-2" aria-label="Sugerencias de manual" data-tie-at-top="${tie}" data-selected="none" data-focus-action="${this.escapeAttribute(actionLabel)}" data-focus-clear="${this.escapeAttribute(clearLabel)}" data-focus-status="${this.escapeAttribute(focusedStatus)}" data-focus-invalid="${this.escapeAttribute(invalidStatus)}" data-replay-failed="${this.escapeAttribute(replayFailed)}" data-replay-reused="${this.escapeAttribute(replayReused)}">${articles}</section>`
   }
 
   renderManualCard(card, correlationId, actionLabel, clearLabel, focusedStatus) {
@@ -1067,21 +1069,31 @@ export default class extends Controller {
     if (!docId || !uid || button.disabled) return
 
     const focused = button.dataset.focused === "true"
+    const replayOnly = button.dataset.replayOnly === "true"
     button.disabled = true
     this.enqueueFocusMutation(async () => {
       try {
         const correlation = button.dataset.correlationId
+        if (replayOnly) {
+          await this.replayFocusedQuestion(button, article, section, correlation)
+          return
+        }
         const response = focused
           ? await this.unpinManualFocus(docId, uid, correlation)
-          : await this.pinManualFocus(docId, uid, correlation)
+          : await this.pinManualFocus(docId, uid, correlation, button.dataset.focusMode || "add")
         const payload = await response.json().catch(() => ({}))
         if (!response.ok) {
           this.setManualFocusStatus(article, payload.error || section?.dataset.focusInvalid || "No pude seleccionar este manual.")
           this._focusSawFailure = true
           throw new Error("focus failed")
         }
-        this.setManualFocusState(button, article, section, !focused, payload.message)
-        this._setSelectedUI(docId, !focused)
+        if (Array.isArray(payload.focus_ids)) this.applyServerFocus(payload.focus_ids)
+        else this._setSelectedUI(docId, !focused)
+        if (!focused && payload.replay && correlation) {
+          await this.replayFocusedQuestion(button, article, section, correlation)
+          return
+        }
+        this.setManualFocusState(button, article, section, focused ? false : true, payload.message)
       } catch (error) {
         if (error?.message !== "focus failed") {
           this.setManualFocusStatus(article, section?.dataset.focusInvalid || "No pude seleccionar este manual.")
@@ -1089,13 +1101,60 @@ export default class extends Controller {
         }
         throw error
       } finally {
-        button.disabled = false
+        if (button.dataset.replayOnly !== "true" && button.dataset.replayDone !== "true") button.disabled = false
       }
     }).catch(() => {})
   }
 
-  pinManualFocus(docId, uid, correlationId) {
-    const body = { kb_document_id: docId, document_uid: uid }
+  applyServerFocus(ids) {
+    this._focusIds = new Set(ids.map(String))
+    this.element.querySelectorAll("[data-doc-id]").forEach((el) => {
+      const selected = this._focusIds.has(String(el.dataset.docId))
+      if ((el.dataset.selected === "true") !== selected) this._setSelectedUI(el.dataset.docId, selected)
+    })
+    this._focusIds = new Set(ids.map(String))
+    this.paintFocusBadge()
+  }
+
+  paintFocusBadge() {
+    if (!this.hasSourcesBadgeTarget) return
+    const count = String(this._focusIds ? this._focusIds.size : 0)
+    this.sourcesBadgeTargets.forEach((badge) => {
+      badge.textContent = count
+      badge.style.display = "inline-flex"
+      badge.setAttribute("aria-label", `${count} seleccionados`)
+    })
+  }
+
+  async replayFocusedQuestion(button, article, section, correlation) {
+    const response = await fetch("/rag/ask", {
+      method: "POST",
+      headers: this._jsonHeaders(),
+      credentials: "same-origin",
+      body: JSON.stringify({ replay_correlation_id: correlation })
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      this.setManualFocusStatus(article, data.message || section?.dataset.replayFailed)
+      button.dataset.replayOnly = "true"
+      button.textContent = "Reintentar"
+      button.disabled = false
+      return
+    }
+    if (data.reused) {
+      this.setManualFocusStatus(article, data.message || section?.dataset.replayReused)
+      button.dataset.replayDone = "true"
+      button.disabled = true
+      return
+    }
+    this.renderAssistantAnswer(data)
+    this.setManualFocusStatus(article, section?.dataset.focusStatus || "")
+    button.dataset.replayDone = "true"
+    button.disabled = true
+  }
+
+  pinManualFocus(docId, uid, correlationId, focusMode) {
+    const body = { kb_document_id: docId, document_uid: uid, focus_mode: focusMode || "add" }
     if (correlationId) body.correlation_id = correlationId
     return fetch("/pinned_documents", {
       method: "POST",

@@ -271,16 +271,7 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
   test "a follow-up after the tap retrieves only the pinned document" do
     document = own_manual("follow-up.pdf", "Follow up")
     open_general = general_manual("open-not-used.pdf")
-    body = nil
-    with_identity(document, brands: [ "Otis" ]) do
-      body, = ask("Estoy en un OTIS y tengo este problema.")
-    end
-    card = body.dig("manual_suggestion", "cards").find { |item| item["kb_document_id"] == document.id }
-    assert_equal document.document_uid, card["document_uid"]
-    assert_equal false, card["focused"]
-    assert_nil body.dig("manual_suggestion", "selected_document_uid")
-    assert_nil web_session.document_focus_entries.presence
-    confirm(document, uid: card["document_uid"])
+    confirm(document)
     _body, calls = ask("qué mantenimiento corresponde")
     scope = calls.last[:kwargs]
 

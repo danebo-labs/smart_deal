@@ -61,6 +61,51 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a card adds the manual and keeps the ones already selected" do
+    first = focused_card("uploads/2026/focus-add-a.pdf", "Manual A")
+    second = focused_card("uploads/2026/focus-add-b.pdf", "Manual B")
+    post pinned_documents_path, params: card_params(first, "query:add"), as: :json
+    post pinned_documents_path, params: card_params(second, "query:add", focus_mode: "add"), as: :json
+
+    assert_response :success
+    body = response.parsed_body
+    assert_equal true, body["replay"]
+    assert_equal [ first.id, second.id ].sort, body["focus_ids"].sort
+    session = web_focus_session
+    assert_equal [ first.id, second.id ].sort, session.focus_document_ids.sort
+  end
+
+  test "replace keeps only the accepted manual" do
+    first = focused_card("uploads/2026/focus-replace-a.pdf", "Manual A")
+    second = focused_card("uploads/2026/focus-replace-b.pdf", "Manual B")
+    post pinned_documents_path, params: card_params(first, "query:replace"), as: :json
+    post pinned_documents_path, params: card_params(second, "query:replace", focus_mode: "replace"), as: :json
+
+    assert_response :success
+    body = response.parsed_body
+    assert_equal true, body["replay"]
+    assert_equal [ second.id ], body["focus_ids"]
+    assert_equal [ second.id ], web_focus_session.focus_document_ids
+  end
+
+  test "an unauthorized card does not change focus and does not ask for a replay" do
+    selected = focused_card("uploads/2026/focus-keep.pdf", "Selected")
+    post pinned_documents_path, params: card_params(selected, "query:deny"), as: :json
+    foreign = KbDocument.create!(
+      s3_key: "uploads/2026/focus-foreign.pdf",
+      display_name: "Foreign",
+      document_uid: SecureRandom.uuid,
+      aliases: [],
+      account: accounts(:climb)
+    )
+
+    post pinned_documents_path, params: card_params(foreign, "query:deny"), as: :json
+
+    assert_response :not_found
+    assert_equal [ selected.id ], web_focus_session.focus_document_ids
+    assert_equal false, response.parsed_body.key?("replay")
+  end
+
   test "create returns 404 for another account document" do
     other_doc = KbDocument.create!(
       s3_key: "uploads/2026/other_account_pin_ctl.pdf",
@@ -172,5 +217,30 @@ class PinnedDocumentsControllerTest < ActionDispatch::IntegrationTest
     )
     assert decision.denied?
     assert_not Rag::KnowledgeScopePolicy.authorized?(shared.reload, viewer_account: viewer.account)
+  end
+
+  private
+
+  def focused_card(key, name)
+    KbDocument.create!(
+      s3_key: key,
+      display_name: name,
+      document_uid: SecureRandom.uuid,
+      aliases: [],
+      account: @user.account
+    )
+  end
+
+  def card_params(document, correlation_id, focus_mode: "add")
+    {
+      kb_document_id: document.id,
+      document_uid: document.document_uid,
+      correlation_id: correlation_id,
+      focus_mode: focus_mode
+    }
+  end
+
+  def web_focus_session
+    ConversationSession.find_by!(identifier: @user.id.to_s, channel: "web", account_id: @user.account_id)
   end
 end

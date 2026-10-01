@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** G1 PASS — G2 PASS — G3 PASS — F6 HECHA — G4 en curso
+**Estado:** G1 PASS — G2 PASS — G3 PASS — F6 HECHA — F7 HECHA — G4 listo para deploy
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** G1, G2 y G3 PASS en producción (2026-10-01). F6 cerrada en el repo. F7 sigue en la misma compuerta. El handoff de F6 está en la sección 13. El caso `¿Qué es Q2?` con badge 0 queda como regresión de F8, sin implementarse en F6 ni en F7.
+**Implementación:** G1, G2 y G3 PASS en producción (2026-10-01). F6 y F7 cerradas en el repo. G4 no está desplegada ni smokeada. El handoff de F6 y el de F7 están en la sección 13. El caso `¿Qué es Q2?` con badge 0 queda como regresión de F8, sin implementarse en F6 ni en F7.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -393,10 +393,10 @@ Contrato:
 - No vuelve a interpretar new, correct ni switch.
 - No llama `SemanticQueryAnalyzer`. No apareció lenguaje nuevo del técnico.
 - No vuelve a ejecutar `record_user_turn!` sobre el episodio ya modificado. No llama a Haiku.
-- La query del replay la elige F7 y la deja escrita en su handoff. Dos opciones, una sola: conservar la effective retrieval query del turno original, o reconstruirla en Ruby sin `record_user_turn!`. F1 no elige. El historial guarda el texto crudo y `correlation_id`; no guarda esa query. `RagQueryConcern` la arma por request y no la escribe en el mensaje.
+- La query del replay quedó cerrada en F7: se guarda la effective retrieval query del turno y el replay la reutiliza. El detalle está en el handoff de F7.
 - Ejecuta retrieval y generación otra vez.
 - Agrega una respuesta del asistente. La pregunta del técnico sigue apareciendo una sola vez.
-- Idempotente: la misma pareja `correlation_id` original + ids de `document_focus` no llama otra vez a Bedrock ni a Haiku. Devuelve la respuesta que ya se generó para esa pareja. El turno ya persiste `correlation_id` en `conversation_history` y `/rag/ask` ya lo devuelve en el JSON; la card de sugerencia ya lo recibe. F7 define el lookup. Sin tabla nueva. Si encaja, metadata del historial. F1 no diseña ese lookup.
+- Idempotente: la misma pareja `correlation_id` original + ids de `document_focus`, comparados ordenados, no llama otra vez a Bedrock ni a Haiku. F7 guarda `focus_ids` en el mensaje del asistente. Sin tabla nueva.
 - Si la mutación de focus no quedó confirmada, no hay replay. El servidor rechaza un replay cuyos ids no coinciden con el focus persistido.
 
 ### Upload y ownership temporal
@@ -1050,18 +1050,23 @@ No se implementa `clarify_first` para `Q2`. Eso es F8.
 
 **Objetivo.** Aceptar actualiza check y badge, y vuelve a consultar la pregunta ya registrada.
 
-**Archivos.** `rag_chat_controller.js`, `PinnedDocumentsController`, `RagController#create`.
+**Archivos.** `rag_chat_controller.js`, `PinnedDocumentsController`, `RagController#ask`.
 
 **Cambios.** “Ampliar” agrega. “Cambiar” reemplaza en una sola escritura, con lock, autorizando antes. Si la autorización o la escritura fallan, no hay replay y el badge no cambia. Si salen bien, el cliente refresca checks y badge y manda `replay_correlation_id`. El servidor sigue el contrato de Replay de la sección 4. El system test existente puede cubrir que no aparece una segunda burbuja del técnico; el test de controller cubre que no hay segundo `record_user_turn!` ni segunda llamada al analyzer.
 
-F7, al implementarse, cierra y escribe en este archivo las dos decisiones que F1 dejó abiertas:
+F7 cierra las dos decisiones que F1 dejó abiertas.
 
-- Cómo se reconoce una respuesta ya generada para el `correlation_id` original más los ids del Document Focus, usando el historial si encaja. Sin tabla nueva. Repetir esa pareja no llama a Bedrock.
-- Cuál de las dos fuentes de query usa el replay: la effective retrieval query del turno original, o una reconstrucción determinista que no ejecuta `record_user_turn!`. El historial hoy no tiene esa query. El replay no llama a Haiku.
+**Query del replay.** Opción A. Al terminar una consulta normal, el mensaje de usuario de ese `correlation_id` guarda `retrieval_query`: la effective retrieval query de ese turno. El replay lee esa string y la pasa como `retrieval_question`. `RagQueryConcern` la usa tal cual y no vuelve a componer el episodio ni a pasar por `FollowupQueryRewriter`. Si esa clave no está, el replay usa el texto crudo del turno, también sin componer y sin `record_user_turn!`. No se reinterpreta el episodio. No se llama a Haiku.
 
-**Tests.** Ampliar agrega un id. Cambiar deja sólo ese id. Fallo de mutación no busca. Replay no crea turno de usuario, no abre episodio y no llama a Haiku. El mismo replay con el mismo focus no llama otra vez a Bedrock. La card en el JSON de la primera respuesta no deja el documento seleccionado. El test de replay que agregue F7 entra en la suite de cierre de G5.
+**Idempotencia.** Sin tabla nueva. La respuesta del asistente guarda `focus_ids`, enteros ordenados, en el mismo mensaje de `conversation_history`, con el `correlation_id` original. La clave es ese id más los ids del focus persistido, comparados ordenados: el orden visual no genera otro replay. Focus vacío es `[]`. Si la pareja ya tiene respuesta, se devuelve esa respuesta y no hay Bedrock ni Haiku. El cliente no manda los ids. El servidor usa el focus ya escrito. Un focus distinto es un replay nuevo.
 
-**Humano.** Smoke G4.
+**Fallo.** Si la mutación no queda escrita, el JSON no pide replay y el cliente no consulta. Un documento no autorizado no cambia el focus y no hay replay. Si el replay falla después de mutar, la selección queda. El botón pasa a reintentar. Un éxito previo de la misma pareja no se vuelve a generar.
+
+**Ampliar y cambiar.** `focus_mode=add` conserva los manuales ya seleccionados y agrega el candidato. `focus_mode=replace` deja sólo ese manual. La card trae una sola de las dos acciones. “Agregar este manual” no reemplaza. “Usar sólo este manual” no agrega.
+
+**Tests.** Ampliar agrega un id. Cambiar deja sólo ese id. Un documento de otra cuenta no muta el focus y no pide replay. El replay usa la query guardada, no crea turno de usuario, no abre episodio y no llama a Haiku ni a `record_user_turn!`. La misma pareja no llama otra vez a Bedrock. Los mismos ids al revés son la misma pareja. Un focus distinto sí busca. `retrieval_query` y `focus_ids` siguen después de recargar.
+
+**Humano.** Smoke G4. El botón de una card exitosa queda deshabilitado. Si el replay falló, Reintentar no duplica la pregunta del técnico.
 
 **Commit.** `feat: retry the question after the technician adds a manual`
 
@@ -1202,6 +1207,10 @@ Hallazgo para F8, sin reabrir F5: con badge 0 y sin equipo confiable, el tope fu
 2. Marca un manual distinto, que no sea ese. Número `1`. Haz la misma pregunta. PASS si dice que en el manual marcado no está, y no cita el otro. FAIL si la respuesta trae como fuente el manual que no marcaste.
 3. Marca un segundo manual. Número `2`. Pregunta usando el nombre de uno solo. PASS si el número sigue `2` y los dos checks siguen. FAIL si uno se apaga solo o si entra un tercero como fuente.
 
+### G4 — listo para deploy, sin smoke
+
+F6 y F7 están en el repo. No hay migración nueva. El deploy es el de código, el mismo camino que G3. G4 no está PASS hasta el smoke de abajo.
+
 ### G4 — después de desplegar F6+F7
 
 1. Deja sólo Elemont marcado. Número `1`. Escribe: `Es Monarch / NICE3000.`
@@ -1293,5 +1302,6 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 | F3 | Hecha. G2 PASS |
 | F4 | Hecha. G2 PASS el 2026-10-01 |
 | F5 | Hecha. G3 PASS el 2026-10-01 |
-| F6 | Hecha. Sugerencias fuera del focus. G4 espera a F7 |
-| F7–F10 | F7 en curso. F8–F10 no empezadas. El caso Q2 de G3 es regresión de F8 |
+| F6 | Hecha. Sugerencias fuera del focus |
+| F7 | Hecha. Replay con la query guardada. G4 listo para deploy, sin smoke |
+| F8–F10 | No empezadas. El caso `¿Qué es Q2?` de G3 es regresión obligatoria de `clarify_first` |

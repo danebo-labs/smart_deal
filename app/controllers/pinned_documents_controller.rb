@@ -18,23 +18,25 @@ class PinnedDocumentsController < ApplicationController
     return if performed?
 
     session = current_conv_session
-    already = card_confirmation? && already_focused?(session, kb_doc)
+    before_ids = session.focus_document_ids.sort
+    already = already_focused?(session, kb_doc)
 
-    unless session.pin_kb_document!(kb_doc)
+    unless write_focus!(session, kb_doc)
       return render_focus_failure(:invalid) if card_confirmation?
 
       render json: { error: "Could not pin document" }, status: :unprocessable_entity
       return
     end
 
-    if already
-      render_existing_focus(kb_doc)
+    changed = session.reload.focus_document_ids.sort != before_ids
+    if card_confirmation? && !changed
+      render_existing_focus(kb_doc, session)
       return
     end
 
-    DocumentOverviewWarmJob.perform_later(account_id: current_account.id, kb_document_id: kb_doc.id)
-    record_focus_confirmed(session, kb_doc) if card_confirmation?
-    render_focus_result(kb_doc)
+    DocumentOverviewWarmJob.perform_later(account_id: current_account.id, kb_document_id: kb_doc.id) unless already
+    record_focus_confirmed(session, kb_doc) if card_confirmation? && changed
+    render_focus_result(kb_doc, session, changed)
   end
 
   def destroy
@@ -58,7 +60,19 @@ class PinnedDocumentsController < ApplicationController
   private
 
   def create_params
-    params.permit(:kb_document_id, :document_uid, :correlation_id)
+    params.permit(:kb_document_id, :document_uid, :correlation_id, :focus_mode)
+  end
+
+  def replace_focus?
+    create_params[:focus_mode].to_s == "replace"
+  end
+
+  def write_focus!(session, kb_doc)
+    if replace_focus?
+      session.replace_document_focus!(kb_doc)
+    else
+      session.pin_kb_document!(kb_doc)
+    end
   end
 
   def card_confirmation?
@@ -87,18 +101,24 @@ class PinnedDocumentsController < ApplicationController
     session.find_entity_by_kb_document_id(kb_doc.id).present?
   end
 
-  def render_existing_focus(kb_doc)
-    render json: focus_body("already_focused", I18n.t("rag.manual_focus_already"), kb_doc)
+  def render_existing_focus(kb_doc, session)
+    render json: focus_body("already_focused", I18n.t("rag.manual_focus_already"), kb_doc, session, false)
   end
 
-  def render_focus_result(kb_doc)
+  def render_focus_result(kb_doc, session, changed)
     return head :no_content unless card_confirmation?
 
-    render json: focus_body("focused", I18n.t("rag.manual_focus_confirmed"), kb_doc)
+    render json: focus_body("focused", I18n.t("rag.manual_focus_confirmed"), kb_doc, session, changed)
   end
 
-  def focus_body(status, message, kb_doc)
-    { status: status, message: message, kb_document_id: kb_doc.id }
+  def focus_body(status, message, kb_doc, session, changed)
+    {
+      status: status,
+      message: message,
+      kb_document_id: kb_doc.id,
+      focus_ids: session.focus_document_ids,
+      replay: changed && create_params[:correlation_id].present?
+    }
   end
 
   def render_focus_failure(code)

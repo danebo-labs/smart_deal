@@ -122,10 +122,10 @@ class ConversationSession < ApplicationRecord
 
   # ─── History ────────────────────────────────────────────────────────────────
 
-  def add_to_history(role, content, user_id: nil, correlation_id: nil)
+  def add_to_history(role, content, user_id: nil, correlation_id: nil, focus_ids: nil)
     with_lock do
       history = conversation_history.last(MAX_HISTORY - 1)
-      history << history_message(role, content, user_id: user_id, correlation_id: correlation_id)
+      history << history_message(role, content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
       update!(conversation_history: history)
     end
   end
@@ -200,9 +200,9 @@ class ConversationSession < ApplicationRecord
   end
 
   # History stays truncated. pending_fact is calculated from the full reply.
-  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant")
+  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant", focus_ids: nil)
     unless episode_recording?
-      add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
+      add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
       return nil
     end
 
@@ -230,7 +230,7 @@ class ConversationSession < ApplicationRecord
         pending_question: pending_question
       )
       history = conversation_history.last(MAX_HISTORY - 1)
-      history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id)
+      history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
       attrs = { conversation_history: history }
       attrs[:active_episode] = result.state if result.decision == :assistant
       update!(attrs)
@@ -561,6 +561,52 @@ class ConversationSession < ApplicationRecord
 
   def entity_count
     active_entities.size
+  end
+
+  def stamp_user_retrieval_query!(correlation_id, retrieval_query)
+    return false if correlation_id.blank? || retrieval_query.blank?
+
+    with_lock do
+      history = conversation_history
+      message = history.reverse.find { |row| row["role"] == "user" && row["correlation_id"] == correlation_id }
+      next false unless message
+
+      message["retrieval_query"] = retrieval_query.to_s.truncate(MAX_MSG_LENGTH)
+      update!(conversation_history: history)
+      true
+    end
+  end
+
+  def user_message_for(correlation_id)
+    conversation_history.reverse.find { |row| row["role"] == "user" && row["correlation_id"] == correlation_id }
+  end
+
+  def assistant_for_focus(correlation_id, focus_ids)
+    key = Array(focus_ids).map(&:to_i).uniq.sort
+    conversation_history.reverse.find do |row|
+      row["role"] == "assistant" &&
+        row["correlation_id"] == correlation_id &&
+        Array(row["focus_ids"]).map(&:to_i).uniq.sort == key
+    end
+  end
+
+  # One write. The selected set becomes this document.
+  def replace_document_focus!(kb_doc)
+    return false unless uses_document_focus?
+
+    s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
+    return false if s3_uri.blank?
+
+    entry = {
+      "kb_document_id" => kb_doc.id,
+      "source_uri" => s3_uri,
+      "display_name" => kb_doc.display_name.presence || File.basename(kb_doc.s3_key.to_s, ".*"),
+      "added_at" => Time.current.iso8601
+    }
+    with_lock do
+      update!(document_focus: [ entry ])
+      true
+    end
   end
 
   # ─── Pinned KB documents (UI checkbox) ─────────────────────────────────────
@@ -953,7 +999,7 @@ class ConversationSession < ApplicationRecord
     nil
   end
 
-  def history_message(role, content, user_id:, correlation_id:)
+  def history_message(role, content, user_id:, correlation_id:, focus_ids: nil)
     message = {
       "role" => role,
       "content" => content.to_s.truncate(MAX_MSG_LENGTH),
@@ -961,6 +1007,7 @@ class ConversationSession < ApplicationRecord
     }
     message["user_id"] = user_id if user_id.present?
     message["correlation_id"] = correlation_id if correlation_id.present?
+    message["focus_ids"] = Array(focus_ids).map(&:to_i).uniq.sort unless focus_ids.nil?
     message
   end
 

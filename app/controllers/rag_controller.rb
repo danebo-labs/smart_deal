@@ -30,6 +30,10 @@ class RagController < ApplicationController
       user_id:     effective_user_id,
       account_id:  current_account.id
     )
+    if params[:replay_correlation_id].present?
+      replay_focused_question(started_at, conv_session)
+      return
+    end
     episode_turn = nil
     expected_episode_id = nil
     semantic_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -113,12 +117,14 @@ class RagController < ApplicationController
     answer_text = sources_visible ? result.answer : marker_free_answer
 
     if result.images_uploaded.blank?
+      conv_session.stamp_user_retrieval_query!(correlation_id, result.effective_question || question)
       conv_session.record_assistant_turn!(
         result.answer.to_s,
         user_id: current_user.id,
         correlation_id: result.correlation_id,
         pending_question: result.pending_question,
-        expected_episode_id: expected_episode_id
+        expected_episode_id: expected_episode_id,
+        focus_ids: conv_session.focus_document_ids
       )
       # The photo route's images_uploaded branch terminates asynchronously in
       # FieldPhotoAnalysisJob (which emits its own interaction_completed) — the
@@ -192,6 +198,86 @@ class RagController < ApplicationController
   end
 
   private
+
+  # The technician already asked this. The stored retrieval string is reused.
+  # The episode is not reinterpreted and Haiku is not called.
+  def replay_focused_question(started_at, conv_session)
+    replay_id = params[:replay_correlation_id].to_s
+    turn = conv_session.user_message_for(replay_id)
+    unless turn
+      render json: { status: "error", message: I18n.t("rag.manual_replay_failed") }, status: :unprocessable_entity
+      return
+    end
+
+    focus_ids = conv_session.focus_document_ids
+    cached = conv_session.assistant_for_focus(replay_id, focus_ids)
+    if cached
+      render json: {
+        status: "success",
+        reused: true,
+        replayed: true,
+        answer: cached["content"],
+        citations: [],
+        correlation_id: replay_id,
+        message: I18n.t("rag.manual_replay_reused")
+      }
+      return
+    end
+
+    question = turn["content"].to_s
+    retrieval_question = turn["retrieval_query"].presence || question
+    result = execute_rag_query(
+      question,
+      session_context: SessionContextBuilder.build(conv_session),
+      conv_session: conv_session,
+      entity_s3_uris: SessionContextBuilder.entity_s3_uris(conv_session),
+      account: current_account,
+      user_id: current_user.id,
+      correlation_id: replay_id,
+      retrieval_question: retrieval_question
+    )
+    unless result.success?
+      render json: { status: "error", message: I18n.t("rag.manual_replay_failed") }, status: :unprocessable_entity
+      return
+    end
+
+    conv_session.record_assistant_turn!(
+      result.answer.to_s,
+      user_id: current_user.id,
+      correlation_id: replay_id,
+      pending_question: result.pending_question,
+      expected_episode_id: conv_session.live_episode_id,
+      focus_ids: focus_ids
+    )
+    raw_citations = citation_processor.transport_references(result.citations)
+    sources_visible = Rag::SourcesVisibility.enabled?
+    marker_free_answer = citation_processor.strip_resolved_markers(result.answer, raw_citations)
+    answer_text = sources_visible ? result.answer : marker_free_answer
+    json = {
+      answer: answer_text,
+      citations: sources_visible ? raw_citations : [],
+      session_id: result.session_id,
+      status: "success",
+      replayed: true,
+      reused: false,
+      correlation_id: replay_id,
+      response_locale: result.response_locale
+    }
+    attach_manual_suggestion(json, question, replay_id, conv_session, result)
+    emit_interaction_completed(
+      correlation_id: replay_id,
+      conv_session: conv_session,
+      question_sha256: Digest::SHA256.hexdigest(question),
+      outcome: interaction_outcome(result),
+      route: "text",
+      latency_ms: elapsed_ms(started_at),
+      original_query: question,
+      effective_query: result.effective_question || retrieval_question,
+      answer: answer_text,
+      citations: result.retrieved_citations
+    )
+    render json: json
+  end
 
   # Single point of emission for the terminal state of a text/photo-submission
   # interaction (restriction 1). The async photo route's actual completion is
@@ -296,6 +382,8 @@ class RagController < ApplicationController
       payload[:focus_clear] = I18n.t("rag.manual_focus_clear")
       payload[:focus_status] = I18n.t("rag.manual_focus_confirmed")
       payload[:focus_invalid] = I18n.t("rag.manual_focus_invalid")
+      payload[:replay_failed] = I18n.t("rag.manual_replay_failed")
+      payload[:replay_reused] = I18n.t("rag.manual_replay_reused")
       json[:manual_suggestion] = payload
       PilotUsageLog.log(
         "manual_suggestion_shown",

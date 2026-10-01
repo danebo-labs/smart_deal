@@ -34,9 +34,12 @@ module Rag
       @current = previous
     end
 
+    Resolution = Data.define(:status, :value, :type, :manufacturer, :candidates)
+
     def initialize(raw, loaded: true)
       @loaded = loaded
       @entries = {}
+      @designator_types = {}
       Array(raw["documents"]).each do |row|
         row = row.to_h.stringify_keys
         entry = Entry.new(
@@ -45,7 +48,7 @@ module Rag
           s3_key: row["s3_key"].to_s,
           display_name: row["display_name"].to_s,
           brands: Array(row["brands"]).map(&:to_s),
-          designators: Array(row["designators"]).map(&:to_s),
+          designators: designator_values(row),
           generic: row["generic"] == true,
           confirmed: row["confirmed"] == true,
           evidence_page: evidence_page_of(row["evidence_page"]),
@@ -53,8 +56,29 @@ module Rag
           role: row["role"].to_s.presence
         )
         @entries[[ entry.account_id, entry.document_id ]] = entry
+        remember_designator_types(entry, row["designators"])
       end
       index_entries!
+    end
+
+    # Exact canonical wins over a longer prefix. A prefix expands only when
+    # one canonical remains. A collision asks; it does not pick.
+    def resolve_designator(token)
+      norm = FollowupQueryRewriter.normalize_label(token)
+      return unresolved if norm.blank?
+
+      exact = designator_rows.select { |row| row[:norm] == norm }
+      return designator_resolution(exact, :exact) if exact.any?
+      return unresolved if norm.length < 6 || !norm.match?(/\d/)
+
+      prefixed = designator_rows.select { |row|
+        row[:norm].start_with?(norm) && (row[:norm].length - norm.length) <= 4
+      }
+      canons = prefixed.uniq { |row| row[:norm] }
+      return unresolved if canons.empty?
+      return ambiguous_resolution(canons) if canons.size > 1
+
+      designator_resolution(prefixed.select { |row| row[:norm] == canons.first[:norm] }, :prefix)
     end
 
     def find(account_id, document_id)
@@ -151,6 +175,70 @@ module Rag
       entries.each do |entry|
         @unique_display_names[entry.display_name] = entry if seen_names[entry.display_name] == 1
       end
+      @designator_rows = entries.flat_map { |entry|
+        Array(entry.designators).filter_map { |value|
+          norm = FollowupQueryRewriter.normalize_label(value)
+          next if norm.blank?
+
+          {
+            value: value,
+            norm: norm,
+            type: @designator_types[[ entry.account_id, entry.document_id, norm ]],
+            entry: entry
+          }
+        }
+      }
+    end
+
+    def designator_rows
+      @designator_rows || []
+    end
+
+    def designator_values(row)
+      Array(row["designators"]).filter_map { |item|
+        text = item.is_a?(Hash) ? item["value"] : item
+        text.to_s.strip.presence
+      }
+    end
+
+    def remember_designator_types(entry, raw)
+      Array(raw).each do |item|
+        next unless item.is_a?(Hash)
+
+        value = item["value"].to_s.strip
+        type = item["type"].to_s
+        next if value.blank? || %w[controller model family].exclude?(type)
+
+        norm = FollowupQueryRewriter.normalize_label(value)
+        @designator_types[[ entry.account_id, entry.document_id, norm ]] = type
+      end
+    end
+
+    def unresolved
+      Resolution.new(status: :none, value: nil, type: nil, manufacturer: nil, candidates: [])
+    end
+
+    def ambiguous_resolution(rows)
+      Resolution.new(
+        status: :ambiguous,
+        value: nil,
+        type: nil,
+        manufacturer: nil,
+        candidates: rows.pluck(:value).uniq
+      )
+    end
+
+    def designator_resolution(rows, status)
+      values = rows.map { |row| row[:value] }.uniq { |value| FollowupQueryRewriter.normalize_label(value) }
+      return ambiguous_resolution(rows) if values.size > 1
+
+      types = rows.filter_map { |row| row[:type] }.uniq
+      type = types.one? ? types.first : nil
+      brands = rows.flat_map { |row| Array(row[:entry].brands) }.compact_blank.uniq { |brand| brand.downcase }
+      confirmed = rows.all? { |row| row[:entry].confirmed }
+      manufacturer = confirmed && type && brands.one? ? brands.first : nil
+      type = nil unless confirmed && manufacturer
+      Resolution.new(status: status, value: values.first, type: type, manufacturer: manufacturer, candidates: [])
     end
 
     def for_s3_key(s3_key)

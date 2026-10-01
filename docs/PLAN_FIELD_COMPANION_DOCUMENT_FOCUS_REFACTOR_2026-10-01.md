@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** G1 PASS — G2 PASS — G3 PASS — F6 HECHA — F7 HECHA — G4 listo para deploy
+**Estado:** G1 PASS — G2 PASS — G3 PASS — G4 PASS — F6 HECHA — F7 HECHA — F8 HECHA
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** G1, G2 y G3 PASS en producción (2026-10-01). F6 y F7 cerradas en el repo. G4 no está desplegada ni smokeada. El handoff de F6 y el de F7 están en la sección 13. El caso `¿Qué es Q2?` con badge 0 queda como regresión de F8, sin implementarse en F6 ni en F7.
+**Implementación:** G1, G2, G3 y G4 PASS en producción (2026-10-01). F6, F7 y F8 cerradas en el repo. F8 no está desplegada. G5 espera F9 y F10. El handoff de F8 está en la sección 13.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -1100,6 +1100,33 @@ Con manufacturer y controller ya confiables, `¿Qué es Q2?` busca y no repregun
 
 **Commit.** `feat: build the retrieval query from catalog-grounded technical understanding`
 
+**Handoff F8.** `Rag::TechnicalUnderstanding` arma la query y elige `ready`, `search_and_clarify`, `best_effort` o `clarify_first`. No llama a un modelo y no escribe `document_focus`. El analyzer existente sigue en su gate. `clarify_first` vuelve antes del orquestador, con `model_invoked=false` y sin Document Discovery. Un identificador corto (`Q2`, `ROS`, `K2`, `E03`, `CN5`) sin focus y sin identidad confiable es ese caso. Con un manual seleccionado se busca dentro de ese manual; si la respuesta se abstiene, se pide un discriminador y no se hace el retrieve global del token crudo.
+
+Cuando la decisión sí autoriza discovery externo, `DocumentDiscovery` recibe la query técnica (`discovery_query`) y no necesariamente la pregunta cruda. `allow_outside: false` no borra la card de un designator exacto: VF5 con Elemont marcado sigue ofreciéndose. `source=catalog` no es aguja de `DocumentIdentityScope`. Sólo `user` y `photo` lo son.
+
+`NICE3000` y `NICE3000new` quedaron `type: controller` en la fila Monarch ya confirmada. Un string sin tipo, como `VF5+`, no persiste controller ni model. `nice300` lista los dos candidatos y no elige. Una corrección saca el controller viejo y, si el manufacturer vino del catálogo con ese controller, también lo saca. El focus no se mueve.
+
+Gaps que no cambian el contrato:
+
+```text
+Gap encontrado:
+El identificador ambiguo se acotó a 2–4 caracteres. MPK418 y una marca ya
+conocida por el episodio (Fuji) siguen buscando. "ok" no abre un episodio.
+
+Decisión tomada:
+clarify_first no cubre todo token con dígito. Cubre el identificador corto
+que no es marca conocida ni designator de catálogo con tipo.
+
+Razón:
+Si no, el happy path de "MPK418" y "Fuji" dejaba de retrievear.
+
+Impacto sobre siguientes fases:
+F9 y F10 no reabren el umbral. G5 paso 2 sigue siendo el control de que un
+síntoma con marca busca antes de preguntar.
+```
+
+La presentación de la respuesta (encabezados, footer, botones) no se tocó. Quedó en la sección 17 como Post-G5.
+
 ### F9 — Limpieza después del estado real
 
 **Compuerta:** G5.
@@ -1207,9 +1234,11 @@ Hallazgo para F8, sin reabrir F5: con badge 0 y sin equipo confiable, el tope fu
 2. Marca un manual distinto, que no sea ese. Número `1`. Haz la misma pregunta. PASS si dice que en el manual marcado no está, y no cita el otro. FAIL si la respuesta trae como fuente el manual que no marcaste.
 3. Marca un segundo manual. Número `2`. Pregunta usando el nombre de uno solo. PASS si el número sigue `2` y los dos checks siguen. FAIL si uno se apaga solo o si entra un tercero como fuente.
 
-### G4 — listo para deploy, sin smoke
+### G4 — PASS el 2026-10-01
 
-F6 y F7 están en el repo. No hay migración nueva. El deploy es el de código, el mismo camino que G3. G4 no está PASS hasta el smoke de abajo.
+Imagen `4e359f53165a6b7639d948da4e3622e5c94d0afc`. Con Elemont marcado, `¿Cómo uso el módulo electrónico VF5?` respondió sólo con ese manual, ofreció el VF5 de Fermator, el técnico lo aceptó, el focus pasó a Elemont + VF5, la misma pregunta se ejecutó de nuevo y la segunda respuesta usó VF5. No apareció otra burbuja del técnico.
+
+Hallazgo para F8, sin reabrir F6 ni F7: `Q2` y `ROS` con un manual que no los define no pedían contexto, y una abstención hacía discovery con la pregunta cruda. El primer hit (Crown, Thyssen) no es el equipo del técnico. F8 corta ese retrieve cuando falta identidad y, cuando el discovery sí corre, usa la query técnica.
 
 ### G4 — después de desplegar F6+F7
 
@@ -1266,6 +1295,7 @@ En el teléfono, el número de los pasos 12 y 13 tiene que coincidir con desktop
 - Auditar si `DocumentIdentityScope` sigue haciendo falta cuando los facts de catálogo ya no son agujas. No se apaga en este plan.
 - Mostrar el filename original junto a `KbDocument.display_name` en la lista de Archivos. El dato ya está en `WebManualBatch.filename` y `BulkUploadAsset.filename`. No entra en G2.
 - Renombrar “Fuentes” a “Fuentes citadas/usadas en la respuesta”. Quedó anotado en el PASS de G2. No bloquea G3.
+- **Post-G5 — Conversational Presentation Cleanup.** Las respuestas siguen viéndose como reporte: “Guía Danebo”, otra “Guía”, “Manual”, footer repetido y varios bloques o botones. Después de cerrar G5, evaluar quitar encabezados redundantes, dejar las fuentes visualmente secundarias, reducir botones y revisar el footer, sin soltar el grounding ni la seguridad. Una acción se conserva sólo cuando el técnico tiene que decidir algo. No bloquea F8, F9, F10 ni G5. F8 no lo mezcló, salvo el texto de `clarify_first`.
 - Obligar a que cada documento seleccionado aporte al menos un chunk. El top-k puede llenarse con un solo manual del focus.
 
 ---
@@ -1302,6 +1332,8 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 | F3 | Hecha. G2 PASS |
 | F4 | Hecha. G2 PASS el 2026-10-01 |
 | F5 | Hecha. G3 PASS el 2026-10-01 |
-| F6 | Hecha. Sugerencias fuera del focus |
-| F7 | Hecha. Replay con la query guardada. G4 listo para deploy, sin smoke |
-| F8–F10 | No empezadas. El caso `¿Qué es Q2?` de G3 es regresión obligatoria de `clarify_first` |
+| F6 | Hecha. Sugerencias fuera del focus. G4 PASS |
+| F7 | Hecha. Replay con la query guardada. G4 PASS el 2026-10-01 |
+| F8 | Hecha. Query técnica, cuatro decisiones, discovery con esa query. Sin deploy |
+| F9 | No empezada. Borrar helpers de release sin caller y alinear docs |
+| F10 | No empezada. Confirmar la sección 14. G5 despliega F8+F9+F10 juntas |

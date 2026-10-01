@@ -20,12 +20,14 @@ class SessionContextBuilder
   PROBLEM_FOOTER = "These facts identify the job. Procedures, values, terminals and code meanings still come only from retrieved evidence. If the current question names different equipment, ignore this block."
   UNKNOWN_FACT_LINE = {
     "manufacturer" => "Manufacturer: technician confirmed it is unknown; do not ask for it again.",
-    "model" => "Model: technician confirmed it is unknown; do not ask for it again."
+    "model" => "Model: technician confirmed it is unknown; do not ask for it again.",
+    "controller" => "Controller: technician confirmed it is unknown; do not ask for it again."
   }.freeze
   ABSENT_FAULT_LINE = "Fault code: technician confirmed no code is shown; do not ask for it again."
   FACT_LABEL = {
     "manufacturer" => "Manufacturer",
     "model" => "Model",
+    "controller" => "Controller",
     "fault_code" => "Fault code"
   }.freeze
 
@@ -194,7 +196,7 @@ class SessionContextBuilder
 
   def self.render_field_problem(episode)
     lines = []
-    %w[manufacturer model fault_code].each { |key| append_user_fact(lines, episode, key) }
+    %w[manufacturer model controller fault_code].each { |key| append_user_fact(lines, episode, key) }
     identifiers = identifier_line(episode)
     lines << { rank: 1, text: identifiers } if identifiers
     photo = photo_line(episode)
@@ -215,12 +217,14 @@ class SessionContextBuilder
     when "absent_confirmed"
       lines << { rank: nil, text: ABSENT_FAULT_LINE } if key == "fault_code"
     when "known"
-      return unless fact["source"] == "user"
+      source = fact["source"].to_s
+      return unless %w[user catalog].include?(source)
 
       value = fact["value"].to_s.squish
       return if value.empty?
 
-      lines << { rank: 4, text: "#{FACT_LABEL[key]}: #{value} (technician)" }
+      marker = source == "catalog" ? "catalog" : "technician"
+      lines << { rank: 4, text: "#{FACT_LABEL[key]}: #{value} (#{marker})" }
     end
   end
   private_class_method :append_user_fact

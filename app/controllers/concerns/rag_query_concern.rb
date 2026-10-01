@@ -27,8 +27,9 @@ module RagQueryConcern
                          # meaning the caller must fall back to the text-based heuristic.
                          :route_outcome,
                          :pending_question,
-                         :semantic_analysis_ms, :state_ms, :retrieve_ms, :generation_ms, :rag_ms,
+                         :semantic_analysis_ms, :state_ms,                          :retrieve_ms, :generation_ms, :rag_ms,
                          :effective_question,
+                         :turn_understanding,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -37,6 +38,63 @@ module RagQueryConcern
   RetrievalScope = Struct.new(:uris, :auto_scope_filter, :force_entity_filter, :reason, keyword_init: true)
 
   private
+
+  def turn_understanding_for(question, conv_session, episode_turn, retrieval_question, images, documents, pin_label_turn)
+    return nil if retrieval_question.present? || images.any? || documents.any? || pin_label_turn
+    return episode_turn.understanding if episode_turn.respond_to?(:understanding) && episode_turn.understanding
+
+    episode = if conv_session.respond_to?(:active_episode)
+      Rag::ActiveEpisode.parse(conv_session.active_episode)
+    else
+      Rag::ActiveEpisode.new
+    end
+    Rag::TechnicalUnderstanding.call(
+      text: question,
+      episode: episode,
+      focus_count: conv_session.respond_to?(:focus_document_ids) ? conv_session.focus_document_ids.size : 0,
+      prior_turns: conv_session.respond_to?(:recent_user_turns) ? conv_session.recent_user_turns(Time.current) : [],
+      locale: resolve_response_locale(question, conv_session)
+    )
+  end
+
+  def clarify_first_result(question, understanding, correlation_id, locale)
+    RagResult.new(
+      success?: true,
+      answer: understanding.clarification,
+      citations: [],
+      retrieved_citations: [],
+      doc_refs: [],
+      correlation_id: correlation_id,
+      response_locale: locale.to_s,
+      generation_mode: "clarify_first",
+      model_invoked: false,
+      pending_question: pending_from(understanding),
+      effective_question: question,
+      turn_understanding: understanding
+    )
+  end
+
+  def append_turn_clarification(answer, pending_question, understanding, result)
+    return [ answer, pending_question ] if understanding.nil? || understanding.clarification.blank?
+    return [ answer, pending_question ] if understanding.clarify_first?
+    return [ answer, pending_question ] if understanding.ask_when == :absence && !absence_answer?(answer, result)
+
+    text = "#{answer.to_s.rstrip}\n\n#{understanding.clarification}"
+    [ text, pending_from(understanding) || pending_question ]
+  end
+
+  def absence_answer?(answer, result)
+    return true if result[:route_outcome].to_s == "abstained"
+    return true if result[:abstention] == true
+
+    answer.to_s.match?(/no (contiene|aparece|est[aá]|define|hay una definici[oó]n)|no information|does not define/i)
+  end
+
+  def pending_from(understanding)
+    return nil if understanding.pending_subject.blank?
+
+    { "type" => understanding.pending_subject }
+  end
 
   def ignore_shadow_analysis(_analysis)
     nil
@@ -83,8 +141,14 @@ module RagQueryConcern
     # rewritten into the previous problem and it is not answered with a canned
     # confirmation.
     pin_label_turn = images.empty? && documents.empty? && selection_turn?(question, conv_session)
+    understanding = turn_understanding_for(question, conv_session, episode_turn, retrieval_question, images, documents, pin_label_turn)
+    if understanding&.clarify_first?
+      return clarify_first_result(question, understanding, correlation_id, resolved_response_locale)
+    end
     if retrieval_question.present?
       effective_question = retrieval_question.to_s
+    elsif understanding&.owns_query && understanding.retrieval_query.present?
+      effective_question = understanding.retrieval_query
     elsif images.empty? && documents.empty? && conv_session && !pin_label_turn
       if episode_turn_owns_thread?(episode_turn)
         # `question` stays the raw turn. Composition never reassigns it.
@@ -186,6 +250,10 @@ module RagQueryConcern
     )
     sanitized_answer = sanitize_answer(guarded[:answer], channel: resolved_output_channel)
     quick_replies    = result[:quick_replies]
+    pending_question = result[:pending_question]
+    sanitized_answer, pending_question = append_turn_clarification(
+      sanitized_answer, pending_question, understanding, result
+    )
 
     RagResult.new(
       success?:            true,
@@ -209,11 +277,12 @@ module RagQueryConcern
       deterministic_validation: result[:deterministic_validation],
       quick_replies:             quick_replies,
       route_outcome:            result[:route_outcome],
-      pending_question:         result[:pending_question],
+      pending_question:         pending_question,
       retrieve_ms:              result[:retrieve_ms],
       generation_ms:            result[:generation_ms],
       rag_ms:                   result[:rag_ms],
-      effective_question:       effective_question
+      effective_question:       effective_question,
+      turn_understanding:       understanding
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

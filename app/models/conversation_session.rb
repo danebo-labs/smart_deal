@@ -166,6 +166,7 @@ class ConversationSession < ApplicationRecord
         enabled: true,
         shared: false,
         prior_user_turns: recent_user_turns(now),
+        focus_count: focus_document_ids.size,
         account: account,
         attribution: {
           account_id: account_id,

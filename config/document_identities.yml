@@ -148,8 +148,10 @@ documents:
   brands:
   - MONARCH
   designators:
-  - NICE3000
-  - NICE3000new
+  - value: NICE3000
+    type: controller
+  - value: NICE3000new
+    type: controller
   generic: false
   confirmed: true
   role: component

@@ -3,8 +3,8 @@
 module Rag
   # Machine-readable question Ruby already knows it asked. No model call.
   module PendingQuestion
-    TYPES = %w[fault_code manufacturer model choice absent].freeze
-    FACT_TYPES = %w[fault_code manufacturer model].freeze
+    TYPES = %w[fault_code manufacturer model controller choice absent].freeze
+    FACT_TYPES = %w[fault_code manufacturer model controller].freeze
     CHOICE_OPENING = %w[opening closing].freeze
 
     module_function

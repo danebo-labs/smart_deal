@@ -7,7 +7,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
   TEST_SESSION_ID = 'test-session-123'
-  TEST_QUESTION = 'What is S3?'
+  TEST_QUESTION = 'How do I adjust the brake?'
   TEST_ANSWER = 'This is a test answer about S3'
 
   setup do
@@ -1010,7 +1010,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
     with_mock_orchestrator(mock) do
       post rag_ask_url,
-           params: { question: '¿Qué es EC2?' },
+           params: { question: '¿Qué reviso si este variador no arranca?' },
            headers: { "HTTP_ACCEPT_LANGUAGE" => "es" },
            as: :json
       assert_response :success
@@ -1031,7 +1031,7 @@ class RagControllerTest < ActionDispatch::IntegrationTest
 
     with_mock_orchestrator(mock) do
       post rag_ask_url,
-           params: { question: "What is EC2?" },
+           params: { question: "Adjust the brake?" },
            headers: { "HTTP_ACCEPT_LANGUAGE" => "en" },
            as: :json
       assert_response :success

@@ -357,13 +357,17 @@ class RagController < ApplicationController
   # A catalog classification is not an approval. A card tap is a later request.
   def attach_manual_suggestion(json, question, correlation_id, conv_session, result)
     return if question.blank? || current_account.nil?
+    return if result&.generation_mode.to_s == "clarify_first"
 
+    understanding = result.respond_to?(:turn_understanding) ? result.turn_understanding : nil
     discovery = Rag::DocumentDiscovery.call(
       question: question,
       viewer_account: current_account,
       session: conv_session,
       doc_refs: result&.doc_refs,
       abstained: result.present? && interaction_outcome(result) == "abstained",
+      discovery_query: understanding&.retrieval_query.presence || result&.effective_question.presence || question,
+      allow_outside: understanding.nil? || understanding.outside_discovery,
       retriever: lambda { |text, top_k|
         BedrockRagService.new(account: current_account).retrieve_chunks(
           text,

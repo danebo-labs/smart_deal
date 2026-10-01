@@ -7,6 +7,24 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   CEA15_BODY = "En la placa CEA15 el código 8 es alta temperatura en el motor.".freeze
   PREAMBLE = Rag::DocumentIdentityScope::PREAMBLE
 
+  test "a catalog manufacturer is not a needle and keeps the procedure" do
+    body = "Ajuste el freno antes de energizar."
+    manual = chunk("manual", body, canonical_name: "Manual seleccionado")
+    state = {
+      "v" => 1,
+      "episode_id" => "ep-catalog",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => { "value" => "MONARCH", "status" => "known", "source" => "catalog" },
+        "controller" => { "value" => "NICE3000", "status" => "known", "source" => "catalog" }
+      }
+    }
+
+    assert_empty Rag::DocumentIdentityScope.needles(state)
+    result = Rag::DocumentIdentityScope.apply([ manual ], state, focus_uris: [])
+    assert_equal body, result.chunks.sole[:content]
+  end
+
   test "labels by canonical name and by section identity" do
     by_name = chunk("manual", CEA15_BODY, canonical_name: "Manual CEA15")
     by_section = chunk(

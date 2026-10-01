@@ -129,6 +129,46 @@ class Rag::DocumentDiscoveryTest < ActiveSupport::TestCase
     assert_equal [ @elemont.id ], @session.reload.document_focus_entries.pluck("kb_document_id")
   end
 
+  test "an authorized outside search retrieves the technical query" do
+    assert @session.pin_kb_document!(@elemont)
+    seen = nil
+    Rag::DocumentDiscovery.call(
+      question: "¿Qué es ROS?",
+      viewer_account: @account,
+      session: @session,
+      abstained: true,
+      discovery_query: "ROS Excelsior controlador puertas automáticas",
+      allow_outside: true,
+      retriever: lambda { |question, top_k|
+        seen = [ question, top_k ]
+        { chunks: [] }
+      }
+    )
+
+    assert_equal [ "ROS Excelsior controlador puertas automáticas", Rag::DocumentDiscovery::ABSTENTION_TOP_K ], seen
+  end
+
+  test "a blocked outside search still offers an exact designator without retrieving" do
+    assert @session.pin_kb_document!(@elemont)
+    vf5 = catalog_document("VF5+")
+    calls = 0
+    result = Rag::DocumentDiscovery.call(
+      question: "¿Cómo uso el módulo electrónico VF5?",
+      viewer_account: @account,
+      session: @session,
+      abstained: true,
+      allow_outside: false,
+      retriever: lambda { |*|
+        calls += 1
+        { chunks: [] }
+      }
+    )
+
+    assert_equal 0, calls
+    assert_equal [ vf5.id ], result.cards.map(&:kb_document_id)
+    assert_equal [ @elemont.id ], @session.reload.document_focus_entries.pluck("kb_document_id")
+  end
+
   private
 
   def catalog_document(designator)

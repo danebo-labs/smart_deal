@@ -705,6 +705,23 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
   private
 
+  test "a catalog controller is recognized identity and not a technician statement" do
+    session = episode_session(
+      goal: "Q2",
+      facts: {
+        "controller" => known_fact("NICE3000", source: "catalog")
+      }
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+        assert_includes block, "Controller: NICE3000 (catalog)"
+        assert_not_includes block, "Controller: NICE3000 (technician)"
+      end
+    end
+  end
+
   def episode_session(goal: "Resortes", facts: {}, identifiers: [], conflicts: [], updated_at: nil, channel: "web")
     ConversationSession.create!(
       identifier: "#{channel}:field_problem_#{SecureRandom.hex(4)}",

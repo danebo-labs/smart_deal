@@ -44,7 +44,8 @@ module Rag
     end
 
     class << self
-      def call(question:, viewer_account:, session: nil, doc_refs: [], abstained: false, retriever: nil, entries: nil)
+      def call(question:, viewer_account:, session: nil, doc_refs: [], abstained: false, retriever: nil, entries: nil,
+               discovery_query: nil, allow_outside: true)
         new(
           question: question,
           viewer_account: viewer_account,
@@ -52,13 +53,17 @@ module Rag
           doc_refs: doc_refs,
           abstained: abstained,
           retriever: retriever,
-          entries: entries
+          entries: entries,
+          discovery_query: discovery_query,
+          allow_outside: allow_outside
         ).call
       end
     end
 
-    def initialize(question:, viewer_account:, session:, doc_refs:, abstained:, retriever:, entries:)
+    def initialize(question:, viewer_account:, session:, doc_refs:, abstained:, retriever:, entries:, discovery_query: nil, allow_outside: true)
       @question = question.to_s
+      @discovery_query = discovery_query.presence || @question
+      @allow_outside = allow_outside
       @viewer_account = viewer_account
       @session = session
       @doc_refs = Array(doc_refs)
@@ -143,9 +148,9 @@ module Rag
     end
 
     def outside_cards(focus_ids)
-      return [] unless @retriever
+      return [] unless @allow_outside && @retriever
 
-      result = @retriever.call(@question, ABSTENTION_TOP_K)
+      result = @retriever.call(@discovery_query, ABSTENTION_TOP_K)
       chunks = result.is_a?(Hash) ? (result[:chunks] || result["chunks"]) : result
       uris = focus_uris
       Array(chunks).filter_map { |chunk|

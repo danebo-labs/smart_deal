@@ -4,11 +4,11 @@ module Rag
   # Parsed, bounded view of conversation_sessions.active_episode.
   # A blank episode is {}. Invalid or expired payloads become blank and never raise.
   class ActiveEpisode
-    FACT_KEYS = %w[manufacturer model fault_code].freeze
+    FACT_KEYS = %w[manufacturer model controller fault_code].freeze
     STATUSES = %w[known unknown_confirmed absent_confirmed].freeze
-    SOURCES = %w[user photo].freeze
-    PENDING_SUBJECTS = %w[manufacturer model fault_code].freeze
-    UNKNOWN_CONFIRMED_KEYS = %w[manufacturer model].freeze
+    SOURCES = %w[user photo catalog].freeze
+    PENDING_SUBJECTS = %w[manufacturer model controller fault_code].freeze
+    UNKNOWN_CONFIRMED_KEYS = %w[manufacturer model controller].freeze
     ABSENT_CONFIRMED_KEYS = %w[fault_code].freeze
     PHOTO_FACT_KEYS = %w[manufacturer model].freeze
 

@@ -4,7 +4,7 @@ module Rag
   # One classification of a technician turn against the active episode.
   # Rules run in Anexo B order. The first match wins. Nothing here is persisted.
   class ActiveEpisodeTurn
-    Result = Data.define(:decision, :reason, :state, :composed, :fields_changed)
+    Result = Data.define(:decision, :reason, :state, :composed, :fields_changed, :understanding)
 
     MANUFACTURERS = [
       "fuji yida", "thyssenkrupp", "thyssen", "tke", "otis", "kone", "schindler",
@@ -20,6 +20,7 @@ module Rag
     STRONG_ANAPHORA_RE = /\b(?:la misma|el mismo|lo mismo)\b/
     WEAK_DEICTIC_RE = /\b(?:esta|este)\b/
     UNKNOWN_RE = /\bno (lo )?(se|sabemos|tengo)\b/
+    SEEK_RE = /\bbusca con eso\b|\bbusca igual\b/
     BRAND_WORD_RE = /\b(marca|fabricante|brand|manufacturer)\b/
     MODEL_WORD_RE = /\b(modelo|model)\b/
     MODEL_VALUE_RE = /\b(?:modelo|model)\s*(?:es\s*)?:?\s*([A-Za-z0-9][A-Za-z0-9\-]{1,20})\b/
@@ -43,7 +44,7 @@ module Rag
 
     def self.call(state:, text:, role: "user", now: Time.current, selection_turn: false, pending_fact: FROM_STATE,
                   correlation_id: nil, channel: "web", enabled: nil, shared: nil, prior_user_turns: [],
-                  analysis: nil, account: nil, attribution: nil)
+                  analysis: nil, account: nil, attribution: nil, focus_count: 0)
       new(
         state: state,
         text: text.to_s,
@@ -58,7 +59,8 @@ module Rag
         prior_user_turns: prior_user_turns,
         analysis: analysis,
         account: account,
-        attribution: attribution
+        attribution: attribution,
+        focus_count: focus_count
       ).call
     end
 
@@ -75,7 +77,8 @@ module Rag
         reason: reason,
         state: episode.to_h,
         composed: nil,
-        fields_changed: changed_fields(before, episode)
+        fields_changed: changed_fields(before, episode),
+        understanding: nil
       )
     end
 
@@ -87,7 +90,7 @@ module Rag
     end
 
     def self.skipped_result(episode)
-      Result.new(decision: :skipped, reason: episode.reason, state: episode.to_h, composed: nil, fields_changed: [])
+      Result.new(decision: :skipped, reason: episode.reason, state: episode.to_h, composed: nil, fields_changed: [], understanding: nil)
     end
 
     def self.write_pending!(episode, text, correlation_id:, pending_question: nil)
@@ -116,6 +119,7 @@ module Rag
     def self.pending_subject(normalized)
       return "manufacturer" if BRAND_WORD_RE.match?(normalized)
       return "model" if MODEL_WORD_RE.match?(normalized)
+      return "controller" if normalized.match?(/\b(controlador|controller)\b/)
       return "fault_code" if CODE_WORD_RE.match?(normalized)
 
       nil
@@ -138,7 +142,7 @@ module Rag
       changed
     end
 
-    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:, prior_user_turns: [], analysis: nil, account: nil, attribution: nil)
+    def initialize(state:, text:, role:, now:, selection_turn:, pending_fact:, correlation_id:, channel:, enabled:, shared:, prior_user_turns: [], analysis: nil, account: nil, attribution: nil, focus_count: 0)
       @raw_state = state
       @text = text
       @role = role
@@ -153,6 +157,7 @@ module Rag
       @analysis = analysis
       @account = account
       @attribution = attribution
+      @focus_count = focus_count.to_i
       @normalized = FollowupQueryRewriter.normalize_label(text)
       @words = @normalized.split
       @measurement = false
@@ -172,7 +177,7 @@ module Rag
       return open_episode(:new_episode, current, goal: :when_substantive) if reset_explicit?
 
       if current.blank?
-        if substantive? || (names_equipment? && @words.size >= 6)
+        if substantive? || (names_equipment? && @words.size >= 6) || typed_catalog_designator? || bare_field_identifier?
           return open_episode(:opened, current, goal: :always)
         end
 
@@ -575,6 +580,16 @@ module Rag
       find_brands.any? || designators.any?
     end
 
+    def typed_catalog_designator?
+      @text.scan(/[A-Za-z0-9][A-Za-z0-9-]{1,29}/).any? { |token|
+        Rag::DocumentIdentityCatalog.current.resolve_designator(token).type.present?
+      }
+    end
+
+    def bare_field_identifier?
+      Rag::TechnicalUnderstanding.call(text: @text, episode: ActiveEpisode.new, focus_count: @focus_count).bare_identifier.present?
+    end
+
     # A question with its own object is self-contained unless a strong
     # follow-up wins. "esta"/"este" (including normalized "está") yield only
     # then, and not when the raw turn is safety-critical. "eso" and the rest
@@ -676,7 +691,15 @@ module Rag
     def finish(decision, before, episode, compose:, composed: nil)
       episode.clear_pending!
       composed = compose_text(episode) if composed.nil? && compose
-      result(decision, outcome_reason(decision), before, episode, composed: composed)
+      understanding = Rag::TechnicalUnderstanding.call(
+        text: @text,
+        episode: episode,
+        focus_count: @focus_count,
+        prior_turns: @prior_user_turns
+      )
+      Rag::TechnicalUnderstanding.apply!(episode, understanding)
+      composed = understanding.retrieval_query if understanding.owns_query && understanding.retrieval_query.present?
+      result(decision, outcome_reason(decision), before, episode, composed: composed, understanding: understanding)
     end
 
     def technical_referent(episode)
@@ -720,13 +743,14 @@ module Rag
       nil
     end
 
-    def result(decision, reason, before, episode, composed: nil)
+    def result(decision, reason, before, episode, composed: nil, understanding: nil)
       Result.new(
         decision: decision,
         reason: reason,
         state: episode.to_h,
         composed: composed,
-        fields_changed: decision == :skipped || decision == :no_episode ? [] : self.class.changed_fields(before, episode)
+        fields_changed: decision == :skipped || decision == :no_episode ? [] : self.class.changed_fields(before, episode),
+        understanding: understanding
       )
     end
 
@@ -737,6 +761,7 @@ module Rag
       wrote["manufacturer"] = write_unknown_manufacturer(episode, pending) if mode != :no_brand
       wrote["model"] = write_unknown_model(episode, pending)
       wrote["fault_code"] = write_absent_code(episode)
+      wrote["controller"] = write_unknown_controller(episode, pending)
       wrote["manufacturer"] ||= write_known_manufacturer(episode, pending) if mode != :no_brand
       wrote["model"] ||= write_known_model(episode, pending)
       wrote["fault_code"] ||= write_known_code(episode)
@@ -763,6 +788,15 @@ module Rag
       return nil unless BRAND_WORD_RE.match?(@normalized) || pending == "manufacturer"
 
       write_unresolved(episode, "manufacturer", "unknown_confirmed")
+    end
+
+    def write_unknown_controller(episode, pending)
+      return nil unless UNKNOWN_RE.match?(@normalized) || SEEK_RE.match?(@normalized)
+
+      subject = pending.presence || episode.pending_question&.dig("type")
+      return nil unless subject == "controller" || @normalized.match?(/\b(controlador|controller)\b/)
+
+      write_unresolved(episode, "controller", "unknown_confirmed")
     end
 
     def write_unknown_model(episode, pending)

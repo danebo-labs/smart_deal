@@ -135,7 +135,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     )
 
     with_mock_orchestrator(mock) do
-      result = @controller.send(:execute_rag_query, 'What is S3?')
+      result = @controller.send(:execute_rag_query, 'How do I adjust the brake?')
 
       assert result.success?
       assert_equal 'Test answer', result.answer
@@ -2738,7 +2738,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       reason: reason,
       state: {},
       composed: composed,
-      fields_changed: []
+      fields_changed: [],
+      understanding: nil
     )
   end
 
@@ -2947,7 +2948,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
       reason: :same_episode,
       state: { "facts" => { "model" => { "status" => "known", "value" => "MonoSpace" } } },
       composed: composed,
-      fields_changed: []
+      fields_changed: [],
+      understanding: nil
     )
     hostile = Rag::ConversationalTurnAnalysis.new(
       relation: "switch",

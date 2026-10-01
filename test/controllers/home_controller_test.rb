@@ -259,6 +259,32 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_match(/6,000|6000/,        response.body)
   end
 
+  test 'home shows zero selected documents on mobile and desktop' do
+    get root_path
+
+    assert_response :success
+    assert_select '[data-focus-count="mobile"]', text: /\A0\z/
+    assert_select '[data-focus-count="desktop"]', text: /\A0\z/
+  end
+
+  test 'home shows the selected document count on mobile and desktop' do
+    first = KbDocument.create!(s3_key: "uploads/2026/focus-one.pdf", display_name: "Focus One", aliases: [])
+    second = KbDocument.create!(s3_key: "uploads/2026/focus-two.pdf", display_name: "Focus Two", aliases: [])
+    session = ConversationSession.find_or_create_for(
+      identifier: users(:one).id.to_s,
+      channel: "web",
+      account_id: accounts(:legacy).id
+    )
+    session.pin_kb_document!(first)
+    session.pin_kb_document!(second)
+
+    get root_path
+
+    assert_response :success
+    assert_select '[data-focus-count="mobile"]', text: /\A2\z/
+    assert_select '[data-focus-count="desktop"]', text: /\A2\z/
+  end
+
   test 'index passes pinned_uris and marks pinned cards with data-selected=true' do
     pinned_doc = KbDocument.create!(s3_key: "uploads/2026/pinned.pdf", display_name: "Pinned", aliases: [])
     KbDocument.create!(s3_key: "uploads/2026/unpinned.pdf", display_name: "Unpinned", aliases: [])

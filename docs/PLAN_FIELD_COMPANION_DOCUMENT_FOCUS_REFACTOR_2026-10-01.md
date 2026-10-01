@@ -1,10 +1,10 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
-**Estado:** G1 PASS — F2 HECHA — F3 HECHA — F4 SIGUE
+**Estado:** G1 PASS — F2 HECHA — F3 HECHA — F4 HECHA — G2 LISTO PARA DEPLOY
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
 
-**Implementación:** G1 PASS en producción. F2 y F3 cerradas en el repo. F4 sigue en este archivo. El handoff de F3 está en la sección 13.
+**Implementación:** G1 PASS en producción. F2, F3 y F4 cerradas en el repo. G2 no está desplegado: el corte controlado de la sección 8 sigue pendiente. El handoff de F4 está en la sección 13.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -992,6 +992,12 @@ F4 no cambia de contrato: el badge sigue oculto en 0 hasta esa fase. F5 sigue qu
 
 **Commit.** `feat: show the selected document count on desktop and mobile`
 
+**Handoff F4.** Mobile y desktop muestran el mismo entero, incluido 0. El HTML lo pinta desde `pinned_uris` de la sesión. El JS actualiza los dos nodos `sourcesBadge` con los ids seleccionados, sin ocultar el cero. El conteo del system test lee `textContent` porque el tab mobile está oculto en desktop y Selenium no devuelve su texto visible.
+
+Hallazgo al probar el composer. `addMessage` y el indicador de espera usaban `Date.now()` en el mismo milisegundo. `removeMessage` borraba la burbuja del técnico y dejaba los puntos. El id ahora lleva una secuencia. No cambia F5.
+
+F5 sigue quitando el estrechamiento N→1. El gap de G1 sigue en F5/F8. Los dos nombres del documento siguen post-G2.
+
 ### F5 — Scope exacto y contrato de DocumentIdentityScope
 
 **Compuerta:** G3. Deploy propio.
@@ -1253,4 +1259,5 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 | F1 | Hecha. G1 PASS |
 | F2 | Hecha. Columna `document_focus` y lectores web. No desplegada |
 | F3 | Hecha. Cola de pin, textarea sin el nombre, gate de selección fuera. No desplegada |
-| F4–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |
+| F4 | Hecha. Badge 0/1/N en mobile y desktop. No desplegada |
+| F5–F10 | No empezadas. Ejecutar contra este archivo ya actualizado |

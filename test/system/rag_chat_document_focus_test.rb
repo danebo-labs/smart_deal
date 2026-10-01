@@ -27,7 +27,9 @@ class RagChatDocumentFocusTest < ApplicationSystemTestCase
     install_focus_fetch(mode: "hold")
     fill_question
 
+    assert_equal %w[0 0], focus_counts
     click_document
+    assert_equal %w[1 1], focus_counts
     assert_equal QUESTION, question_text
     assert_not_includes question_text, @document.display_name
 
@@ -35,7 +37,7 @@ class RagChatDocumentFocusTest < ApplicationSystemTestCase
     assert_equal 0, ask_count
 
     release_pin(ok: true)
-    assert_selector ".chat-row-user .chat-message", text: QUESTION, visible: :all
+    assert_user_question
     assert_equal "", question_text
     assert_equal [ QUESTION ], ask_questions
   end
@@ -47,7 +49,7 @@ class RagChatDocumentFocusTest < ApplicationSystemTestCase
     click_send
 
     release_pin(ok: false)
-    wait_until { document_selected == "false" && focus_busy.zero? }
+    wait_until { document_selected == "false" && focus_busy.zero? && focus_counts == %w[0 0] }
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 0.6
     while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
@@ -64,7 +66,7 @@ class RagChatDocumentFocusTest < ApplicationSystemTestCase
 
     fill_question
     click_send
-    assert_selector ".chat-row-user .chat-message", text: QUESTION, visible: :all
+    assert_user_question
     assert_equal [ QUESTION ], ask_questions
   end
 
@@ -100,6 +102,23 @@ class RagChatDocumentFocusTest < ApplicationSystemTestCase
 
   def ask_questions
     JSON.parse(evaluate_script("JSON.stringify(window.focusAsks)"))
+  end
+
+  def assert_user_question
+    html = nil
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Capybara.default_max_wait_time
+    until html.to_s.include?(QUESTION)
+      html = evaluate_script("document.querySelector('[data-rag-chat-target=messages]')?.innerHTML")
+      break if html.to_s.include?(QUESTION)
+      flunk "user question missing: #{html}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.05
+    end
+  end
+
+  def focus_counts
+    JSON.parse(evaluate_script(<<~JS))
+      JSON.stringify([...document.querySelectorAll("[data-focus-count]")].map((node) => node.textContent.trim()))
+    JS
   end
 
   def focus_busy

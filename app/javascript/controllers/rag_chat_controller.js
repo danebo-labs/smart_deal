@@ -625,15 +625,12 @@ export default class extends Controller {
     this.element.querySelectorAll('[data-selected="true"][data-doc-id]').forEach(el => {
       selectedIds.add(el.dataset.docId)
     })
-    const count = selectedIds.size
-    const badge = this.sourcesBadgeTarget
-    if (count > 0) {
+    const count = String(selectedIds.size)
+    this.sourcesBadgeTargets.forEach((badge) => {
       badge.textContent = count
       badge.style.display = "inline-flex"
-    } else {
-      badge.textContent = ""
-      badge.style.display = "none"
-    }
+      badge.setAttribute("aria-label", `${count} seleccionados`)
+    })
   }
 
   // ── Keyboard lift (mobile only) ───────────────────────────────────────────
@@ -698,8 +695,13 @@ export default class extends Controller {
     return row
   }
 
+  nextMessageId() {
+    this._messageSeq = (this._messageSeq || 0) + 1
+    return `msg-${Date.now()}-${this._messageSeq}`
+  }
+
   addLoadingMessage() {
-    const id  = `msg-${Date.now()}`
+    const id  = this.nextMessageId()
     const row = this._buildMessageRow("assistant", id, true)
     row.querySelector(".chat-message").innerHTML =
       `<div style="display:flex;flex-direction:column;gap:6px;" role="status" aria-live="polite">` +
@@ -711,7 +713,7 @@ export default class extends Controller {
   }
 
   addMessage(text, type, temporary = false) {
-    const id  = `msg-${Date.now()}`
+    const id  = this.nextMessageId()
     const row = this._buildMessageRow(type, id, temporary)
     row.querySelector(".chat-message").textContent = text
     this.messagesTarget.appendChild(row)
@@ -835,7 +837,7 @@ export default class extends Controller {
       const bubble = document.getElementById(this.retryNoticeId)?.querySelector(".chat-message")
       if (bubble) bubble.innerHTML = retryInnerHtml
     } else {
-      const id  = `msg-${Date.now()}`
+      const id  = this.nextMessageId()
       const row = this._buildMessageRow("assistant", id, false)
       row.querySelector(".chat-message").innerHTML = retryInnerHtml
       this.messagesTarget.appendChild(row)

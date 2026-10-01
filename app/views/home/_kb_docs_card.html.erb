@@ -22,7 +22,13 @@
             <span class="brand-suffix text-[15px] font-light text-[hsl(222,47%,10%)] opacity-[0.72]">.ai</span>
           </div>
         <% end %>
-        <h3 class="text-xs font-medium text-[hsl(215,20%,52%)]">Archivos Disponibles</h3>
+        <div class="flex items-center gap-2">
+          <h3 class="text-xs font-medium text-[hsl(215,20%,52%)]">Archivos Disponibles</h3>
+          <span data-rag-chat-target="sourcesBadge"
+                data-focus-count="desktop"
+                aria-label="<%= pinned_uris.size %> seleccionados"
+                class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[hsl(217,91%,50%)] px-1.5 text-[11px] font-bold leading-none text-white"><%= pinned_uris.size %></span>
+        </div>
       </div>
     </div>
     <div class="overflow-y-auto max-h-[calc(100vh-300px)] pr-1">

@@ -49,9 +49,10 @@
           </svg>
           Archivos
           <span data-rag-chat-target="sourcesBadge"
+                data-focus-count="mobile"
+                aria-label="<%= (@pinned_uris || Set.new).size %> seleccionados"
                 class="mobile-tab-badge inline-flex h-[18px] min-w-[18px] items-center justify-center
-                       rounded-full bg-[hsl(217,91%,50%)] px-1 text-[10px] font-bold leading-none text-white"
-                style="display:none"></span>
+                       rounded-full bg-[hsl(217,91%,50%)] px-1 text-[10px] font-bold leading-none text-white"><%= (@pinned_uris || Set.new).size %></span>
         </button>
         <button type="button"
                 role="tab"

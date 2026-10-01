@@ -11,7 +11,8 @@ class HomeController < ApplicationController
     WarmBedrockKbJob.perform_later
     @current_metrics   = current_metrics
     @kb_documents, @kb_docs_has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE, account: current_account)
-    @pinned_uris       = pinned_uris_for_current_session
+    @pinned_uris         = pinned_uris_for_current_session
+    @focus_document_ids  = focus_document_ids_for_current_session
     @image_url_service = KbDocumentImageUrlService.new(account: current_account)
   end
 
@@ -72,6 +73,22 @@ class HomeController < ApplicationController
   # A missing or expired row paints no pins. This GET does not destroy the row;
   # expiry replacement stays in find_or_create_for (ask and pin).
   def pinned_uris_for_current_session
+    session = current_focus_session
+    return Set.new if session.nil?
+
+    Set.new(SessionContextBuilder.entity_s3_uris(session))
+  end
+
+  def focus_document_ids_for_current_session
+    session = current_focus_session
+    return [] if session.nil?
+
+    session.focus_document_ids
+  end
+
+  def current_focus_session
+    return @current_focus_session if defined?(@current_focus_session)
+
     identifier = SharedSession::ENABLED ? SharedSession::IDENTIFIER : current_user.id.to_s
     channel    = SharedSession::ENABLED ? SharedSession::CHANNEL    : "web"
     session    = ConversationSession.find_by(
@@ -79,9 +96,7 @@ class HomeController < ApplicationController
       identifier: identifier,
       channel: channel
     )
-    return Set.new if session.nil? || session.expired?
-
-    Set.new(SessionContextBuilder.entity_s3_uris(session))
+    @current_focus_session = session.nil? || session.expired? ? nil : session
   end
 
   # Replaces the old sentinel with a fresh one bumped to the next page,

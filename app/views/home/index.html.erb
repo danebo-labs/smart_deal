@@ -33,7 +33,8 @@
        data-controller="rag-chat"
        data-rag-chat-show-sources-value="<%= Rag::SourcesVisibility.enabled? %>"
        data-rag-chat-evidence-cards-value="<%= Rag::EvidenceCardsFlag.enabled? %>"
-       data-rag-chat-resolution-copy-value="<%= resolution_copy.to_json %>">
+       data-rag-chat-resolution-copy-value="<%= resolution_copy.to_json %>"
+       data-focus-ids="<%= (@focus_document_ids || []).to_json %>">
     <%= render partial: "home/chat_box" %>
     <%# Sidebar — desktop only: SOLO Base de Conocimiento (overview cards eliminadas) %>
     <div class="hidden lg:flex flex-col gap-6">

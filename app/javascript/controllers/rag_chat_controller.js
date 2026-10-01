@@ -620,12 +620,24 @@ export default class extends Controller {
 
   updateSourcesBadge() {
     if (!this.hasSourcesBadgeTarget) return
-    // Deduplicate by doc-id: each doc appears in both mobile + desktop panels.
-    const selectedIds = new Set()
-    this.element.querySelectorAll('[data-selected="true"][data-doc-id]').forEach(el => {
-      selectedIds.add(el.dataset.docId)
+    if (!this._focusIds) {
+      const raw = this.element.dataset.focusIds
+      const ids = raw ? JSON.parse(raw) : []
+      this._focusIds = new Set(ids.map(String))
+    }
+
+    // A rendered row is the check the technician can see. A selected manual
+    // that is not on this page stays in the count.
+    const rendered = new Map()
+    this.element.querySelectorAll("[data-doc-id]").forEach((el) => {
+      rendered.set(String(el.dataset.docId), el.dataset.selected === "true")
     })
-    const count = String(selectedIds.size)
+    rendered.forEach((selected, id) => {
+      if (selected) this._focusIds.add(id)
+      else this._focusIds.delete(id)
+    })
+
+    const count = String(this._focusIds.size)
     this.sourcesBadgeTargets.forEach((badge) => {
       badge.textContent = count
       badge.style.display = "inline-flex"

@@ -285,6 +285,26 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_select '[data-focus-count="desktop"]', text: /\A2\z/
   end
 
+  test 'home keeps the selected count when the pinned manual is off the first page' do
+    pinned = KbDocument.create!(s3_key: "uploads/2026/off-page.pdf", display_name: "Off Page Manual", aliases: [])
+    pinned.update_column(:created_at, 1.year.ago) # rubocop:disable Rails/SkipsModelValidations
+    20.times { |i| KbDocument.create!(s3_key: "uploads/2026/newer-#{i}.pdf", display_name: "Newer #{i}", aliases: []) }
+    session = ConversationSession.find_or_create_for(
+      identifier: users(:one).id.to_s,
+      channel: "web",
+      account_id: accounts(:legacy).id
+    )
+    session.pin_kb_document!(pinned)
+
+    get root_path
+
+    assert_response :success
+    assert_select "#kb-docs-desktop-items [data-doc-id='#{pinned.id}']", count: 0
+    assert_select '[data-focus-count="mobile"]', text: /\A1\z/
+    assert_select '[data-focus-count="desktop"]', text: /\A1\z/
+    assert_includes response.body, %(data-focus-ids="[#{pinned.id}]")
+  end
+
   test 'index passes pinned_uris and marks pinned cards with data-selected=true' do
     pinned_doc = KbDocument.create!(s3_key: "uploads/2026/pinned.pdf", display_name: "Pinned", aliases: [])
     KbDocument.create!(s3_key: "uploads/2026/unpinned.pdf", display_name: "Unpinned", aliases: [])

@@ -992,7 +992,7 @@ F4 no cambia de contrato: el badge sigue oculto en 0 hasta esa fase. F5 sigue qu
 
 **Commit.** `feat: show the selected document count on desktop and mobile`
 
-**Handoff F4.** Mobile y desktop muestran el mismo entero, incluido 0. El HTML lo pinta desde `pinned_uris` de la sesión. El JS actualiza los dos nodos `sourcesBadge` con los ids seleccionados, sin ocultar el cero. El conteo del system test lee `textContent` porque el tab mobile está oculto en desktop y Selenium no devuelve su texto visible.
+**Handoff F4.** Mobile y desktop muestran el mismo entero, incluido 0. El HTML lo pinta desde `pinned_uris` de la sesión. El JS parte de `data-focus-ids` y sólo corrige los ids que están pintados en la página, así un pin fuera de las primeras 20 filas sigue en el conteo. No oculta el cero. El conteo del system test lee `textContent` porque el tab mobile está oculto en desktop y Selenium no devuelve su texto visible.
 
 Hallazgo al probar el composer. `addMessage` y el indicador de espera usaban `Date.now()` en el mismo milisegundo. `removeMessage` borraba la burbuja del técnico y dejaba los puntos. El id ahora lleva una secuencia. No cambia F5.
 

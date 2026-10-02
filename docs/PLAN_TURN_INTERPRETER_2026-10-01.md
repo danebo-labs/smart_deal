@@ -2,6 +2,8 @@
 
 **Estado:** `OWNER LIVE — PHOTO CONTEXT BLOCKED`. T0, T1, T1.1, el hardening y el microfix de negate están en producción con `HAIKU_QUERY_ANALYSIS_MODE=owner`. El smoke de texto pasó. La foto relevante escribió la identidad y no dejó `Photo Evidence` porque la observación no se persistió. No hubo rollback. T3 no empieza.
 
+El cierre de ese blocker está en [PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md](PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md). Este master no absorbe ese plan.
+
 **HEAD revisado para T1.1:** `9784c3d8d6523d5c1f9409e893d2db7a257a2866`.
 
 **Baseline de implementación:** `20e562059d45e7fefaeafb4563f14b08cc9a0135`.

@@ -705,6 +705,94 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes result.chunks[1][:content], "Procedimiento de la placa Orona."
   end
 
+  test "a recorded user manufacturer conflict is not resolved by the later photo model" do
+    session = ConversationSession.create!(
+      identifier: "web:#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: users(:one),
+      account: accounts(:legacy)
+    )
+    previous = ENV.fetch("FIELD_COMPANION_EPISODE_ENABLED", nil)
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    session.record_user_turn!(
+      "Cómo se ajustan los resortes de la fijación de cables ?",
+      user_id: users(:one).id, correlation_id: "query:1"
+    )
+    owner = session.live_episode_id
+    session.record_assistant_turn!(
+      "… ¿Qué marca y modelo es el equipo?",
+      user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
+    )
+    session.record_user_turn!("KONE", user_id: users(:one).id, correlation_id: "query:123")
+    applied = session.record_photo_observation!(
+      photo_value: {
+        manufacturer: "Orona", model_visible: "PBCM-V3",
+        target_visible: true, relevance_to_goal: "relevant"
+      },
+      field_photo_id: 42,
+      sha256: "plate",
+      correlation_id: "photo:456",
+      expected_episode_id: owner
+    )
+
+    assert_equal :applied, applied
+    stored = session.reload.active_episode
+    episode = Rag::ActiveEpisode.parse(stored)
+    assert_equal "KONE", episode.fact("manufacturer")["value"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
+    assert_equal "query:123", episode.fact("manufacturer")["correlation_id"]
+    assert_equal "PBCM-V3", episode.fact("model")["value"]
+    assert_equal "photo", episode.fact("model")["source"]
+    assert_equal "photo:456", episode.fact("model")["correlation_id"]
+    recorded = episode.conflicts.find { |row| row["fact"] == "manufacturer" }
+    assert_equal "KONE", recorded["user"]
+    assert_equal "Orona", recorded["photo"]
+    assert_equal "photo:456", recorded["correlation_id"]
+
+    before = episode.to_h
+    snapshot = Rag::PhotoRetrievalSnapshot.capture(
+      episode: episode,
+      question: "qué reviso en esta placa",
+      observation: {
+        "manufacturer" => "Orona",
+        "model_visible" => "PBCM-V3",
+        "relevance_to_goal" => "relevant"
+      },
+      correlation_id: "photo:456"
+    )
+    assert_equal before, episode.to_h
+
+    kone = chunk("kone", "Procedimiento KONE de nivelación.", canonical_name: "Manual KONE")
+    orona = chunk(
+      "orona",
+      "Procedimiento de la placa Orona PBCM-V3.",
+      canonical_name: "Manual Orona PBCM-V3"
+    )
+    [ snapshot.equipment_identity, Rag::EquipmentIdentity.from_episode(episode) ].each do |identity|
+      assert_equal "KONE", identity.conflicts.sole["user"]
+      assert_equal "Orona", identity.conflicts.sole["photo"]
+      assert_equal "photo:456", identity.conflicts.sole["correlation_id"]
+      assert_empty Rag::DocumentIdentityScope.needles(identity)
+      result = Rag::DocumentIdentityScope.apply([ kone, orona ], identity)
+
+      assert_equal :no_compatible, result.status
+      assert_equal :conflicting_current_identity, result.reason
+      assert_equal [ "KONE", "Orona" ], result.excluded_labels
+      assert_equal "reference_only", result.chunks[0][:identity_applicability]
+      assert_equal "reference_only", result.chunks[1][:identity_applicability]
+      assert result.labels.all? { |label| label.start_with?("REFERENCE ONLY") }
+      assert_not_includes result.chunks[0][:content], "Procedimiento KONE"
+      assert_not_includes result.chunks[1][:content], "Procedimiento de la placa"
+    end
+  ensure
+    if previous.nil?
+      ENV.delete("FIELD_COMPANION_EPISODE_ENABLED")
+    else
+      ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous
+    end
+  end
+
   test "a disabled scope with known identity is unavailable and still falls open" do
     question = "no nivela"
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")

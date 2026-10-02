@@ -44,7 +44,8 @@ module Rag
       EquipmentIdentity.new(
         manufacturer: rows.find { |row| row["slot"] == "manufacturer" }&.dig("value"),
         needles: rows.pluck("value").uniq,
-        facts: rows
+        facts: rows,
+        conflicts: EquipmentIdentity.conflicts_from(episode)
       )
     end
     private_class_method :build_identity

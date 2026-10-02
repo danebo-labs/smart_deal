@@ -5,7 +5,7 @@ module Rag
   # snapshot. Text turns derive one from the live episode. The object is
   # not a compatibility decision and it is not a catalog.
   class EquipmentIdentity
-    attr_reader :manufacturer, :needles, :facts
+    attr_reader :manufacturer, :needles, :facts, :conflicts
 
     def self.from_episode(episode)
       return nil if episode.nil?
@@ -35,8 +35,34 @@ module Rag
       new(
         manufacturer: facts.find { |fact| fact["slot"] == "manufacturer" }&.dig("value"),
         needles: facts.pluck("value").uniq,
-        facts: facts
+        facts: facts,
+        conflicts: conflicts_from(parsed)
       )
+    end
+
+    # Explicit F3 rows only. A later photo model is not a conflict by itself.
+    def self.conflicts_from(episode)
+      return [] if episode.nil?
+
+      parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+      Array(parsed.conflicts).filter_map { |row|
+        next unless row.is_a?(Hash)
+
+        item = row.stringify_keys
+        next unless item["fact"] == "manufacturer"
+
+        user = item["user"].to_s.squish
+        photo = item["photo"].to_s.squish
+        next if user.blank? || photo.blank?
+        next if FollowupQueryRewriter.normalize_label(user) == FollowupQueryRewriter.normalize_label(photo)
+
+        {
+          "fact" => "manufacturer",
+          "user" => user,
+          "photo" => photo,
+          "correlation_id" => item["correlation_id"].to_s
+        }
+      }
     end
 
     def self.known_needle_fact?(fact)
@@ -58,10 +84,13 @@ module Rag
     end
     private_class_method :fact_row
 
-    def initialize(manufacturer:, needles:, facts:)
+    def initialize(manufacturer:, needles:, facts:, conflicts: [])
       @manufacturer = manufacturer
       @needles = Array(needles).map(&:to_s).freeze
       @facts = Array(facts).map { |fact| fact.to_h.stringify_keys.freeze }.freeze
+      @conflicts = Array(conflicts).map { |row|
+        row.to_h.stringify_keys.slice("fact", "user", "photo", "correlation_id").freeze
+      }.freeze
       freeze
     end
 

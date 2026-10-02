@@ -183,6 +183,7 @@ module Rag
       return :reference_only if membership == :out
       return :compatible if needles.any? && identity_matches?(chunk, needles)
       return conflicting_or_neutral(chunk, identity, resolution) if membership == :in
+      return :reference_only if resolution.conflict
       return nil if needles.empty?
 
       :reference_only
@@ -237,7 +238,14 @@ module Rag
     # Same-correlation facts travel together. Two current trusted
     # manufacturers are not a compatibility union: neither label makes a
     # body applicable. The current model, when there is one, stays a needle.
+    #
+    # An explicit manufacturer conflict recorded by F3 is different from a
+    # stale inherited manufacturer. Neither side is applicable, and a model
+    # from that photo does not make either manual a procedure for this job.
     def self.resolve_needles(identity)
+      explicit = explicit_manufacturer_conflict(identity)
+      return unresolved_manufacturer_conflict(identity, explicit) if explicit
+
       facts = identity.facts
       models = slot_facts(facts, "model")
       manufacturers = slot_facts(facts, "manufacturer")
@@ -276,6 +284,43 @@ module Rag
       Resolution.new(values: [], conflict: false, manufacturer_labels: [], excluded_labels: [])
     end
     private_class_method :empty_resolution
+
+    def self.explicit_manufacturer_conflict(identity)
+      Array(identity.conflicts).find { |row|
+        row["fact"] == "manufacturer" && row["user"].present? && row["photo"].present? &&
+          normalize_label(row["user"]) != normalize_label(row["photo"])
+      }
+    end
+    private_class_method :explicit_manufacturer_conflict
+
+    def self.unresolved_manufacturer_conflict(identity, conflict)
+      turn = conflict["correlation_id"].to_s
+      excluded = [ conflict["user"], conflict["photo"] ]
+      values = []
+      slot_facts(identity.facts, "model").each do |fact|
+        next if conflicting_observation?(fact, turn)
+
+        values << fact["value"]
+      end
+      slot_facts(identity.facts, "identifier").each do |fact|
+        next if conflicting_observation?(fact, turn)
+        next if excluded.any? { |label| normalize_label(label) == normalize_label(fact["value"]) }
+
+        values << fact["value"]
+      end
+      Resolution.new(
+        values: values.map { |value| value.to_s.strip }.compact_blank.uniq,
+        conflict: true,
+        manufacturer_labels: [],
+        excluded_labels: excluded.map { |value| value.to_s.strip }.uniq
+      )
+    end
+    private_class_method :unresolved_manufacturer_conflict
+
+    def self.conflicting_observation?(fact, turn)
+      turn.present? && fact["correlation_id"].to_s == turn
+    end
+    private_class_method :conflicting_observation?
 
     def self.slot_facts(facts, slot)
       Array(facts).select do |fact|

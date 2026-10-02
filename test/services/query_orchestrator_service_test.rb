@@ -207,6 +207,47 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal "es", result[:response_locale]
   end
 
+  test "same-turn photo question keeps the literal question until after vision" do
+    session = ConversationSession.create!(
+      identifier: "n0-same-turn",
+      channel: "web",
+      account: accounts(:legacy),
+      user: users(:one),
+      expires_at: 1.day.from_now
+    )
+    question = "¿Qué ves y qué debería revisar primero?"
+    interpreter_calls = 0
+    original = Rag::TurnInterpreter.method(:call)
+    Rag::TurnInterpreter.define_singleton_method(:call) do |**kwargs|
+      interpreter_calls += 1
+      original.call(**kwargs)
+    end
+
+    isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
+      session.ensure_case_for_photo_submission!(correlation_id: "query:goal")
+      episode = Rag::ActiveEpisode.parse(session.reload.active_episode)
+      episode.assign_goal!("no nivela en planta 3", correlation_id: "query:goal")
+      session.update!(active_episode: episode.to_h)
+      image = { data: Base64.strict_encode64("xx"), media_type: "image/jpeg", filename: "placa.jpg" }
+
+      QueryOrchestratorService.new(
+        question,
+        images: [ image ],
+        account: accounts(:legacy),
+        conv_session: session,
+        user_id: users(:one).id,
+        correlation_id: "photo:n0-same-turn"
+      ).execute
+    end
+
+    args = enqueued_jobs.find { |job| job[:job] == FieldPhotoAnalysisJob }[:args].first
+    assert_equal question, args["question"]
+    assert_not_includes args["question"], "no nivela en planta 3"
+    assert_equal 0, interpreter_calls
+  ensure
+    Rag::TurnInterpreter.define_singleton_method(:call) { |**kwargs| original.call(**kwargs) } if original
+  end
+
   test "fresh image upload enqueues the job with the literal question" do
     image = { data: Base64.strict_encode64("xx"), media_type: "image/jpeg", filename: "photo.jpg" }
 

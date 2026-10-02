@@ -1,6 +1,8 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Estado:** `APPROVED ARCHITECTURE — IMPLEMENTATION NOT STARTED`
+**Estado:** `APPROVED ARCHITECTURE — N1–N6 NOT STARTED`
+
+**N0:** `N0 IMPLEMENTED — RED CONTRACT HARNESS`
 
 Source of truth de este bloque. Reconcilia el diagnóstico read-only del flow real Orona PBCM-V3, la surgical review de Codex y la revisión final de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica o completa a Codex, manda Opus. Baseline de código: `d3909808a3508e83851f5475368fbd52d74c0e2a`.
 
@@ -773,7 +775,26 @@ Un solo release. No hay código funcional antes del harness.
 
 ### N0 — Production-flow regression harness
 
-Congelar el flow Orona PBCM-V3, goal "no nivela en planta 3", reuse, legacy `relevance_to_goal=nil`, y el caso same-turn foto+pregunta. Los tests nacen rojos contra el código de `d390980`. No código funcional primero.
+```text
+N0 IMPLEMENTED — RED CONTRACT HARNESS
+```
+
+Sin código de producto. Los contratos futuros viven en la suite y quedan en skip salvo `N0_CONTRACTS=1`, que los ejecuta contra el código actual. El mensaje de skip es `N0 contract — expected to become green in N<fase>`. Cada test skipped contiene los asserts del contrato, no un placeholder.
+
+Invariantes que quedan verdes en la suite:
+
+- `legacy nil photo reuse keeps the stored relevance and does not call vision`: reuse, 0 Vision, `relevance_to_goal` sigue nil, no hay facts `source=photo`.
+- `unrelated accepted photo does not constrain retrieval identity`: la foto no promueve facts y no aporta identidad de retrieval. La búsqueda abierta sigue siendo legítima.
+- `same-turn photo question keeps the literal question until after vision`: el enqueue lleva la pregunta literal y 0 TurnInterpreter. La composición no ocurre antes de Vision.
+- Siguen verdes los invariantes ya cubiertos: observación aceptada persistida, reuse sin Vision, write stale, scope de tenant, y `unrelated` que no promueve facts.
+
+Contratos rojos con `N0_CONTRACTS=1`. Ninguno pasó por accidente:
+
+- `legacy photo reuse carries accepted equipment identity into retrieval` — N2. La identidad efímera Orona/PBCM-V3 no llega al retrieval, y la pregunta no incluye el goal.
+- `same-turn photo question composes retrieval after accepted visual identity` — N2. 1 Vision y 0 TurnInterpreter ya se cumplen; la query anidada sigue siendo sólo el texto literal.
+- `uncertain accepted photo may constrain photo-question retrieval without promoting facts` — N2. No promueve facts, y tampoco aporta identidad efímera.
+- `foreign manufacturer chunks are reference-only for known equipment` — N3. El procedimiento Yida llega a la respuesta por `retrieve_and_generate` abierto.
+- `foreign manufacturer chunks cannot create manual fact` — N4. El cuerpo ajeno ya se oculta en el prompt de scope, pero el chunk Yida/BLT sigue siendo citable.
 
 ### N1 — F4 VisualTaskContext
 
@@ -964,9 +985,10 @@ Queda registrado para no reabrir la versión anterior de la propuesta.
 ## Handoff
 
 ```text
-APPROVED ARCHITECTURE — IMPLEMENTATION NOT STARTED
+N0 IMPLEMENTED — RED CONTRACT HARNESS
+N1–N6 NOT STARTED
 ```
 
-F1–F3 están cerrados en el plan anterior. F4 se implementa aquí, dentro de N0–N6. F5 no entra.
+F1–F3 están cerrados en el plan anterior. F4 se implementa aquí, dentro de N1–N6. F5 no entra.
 
-Siguiente paso: review de este plan y, recién entonces, implementación. No deploy parcial.
+Siguiente paso: review de N0. No deploy. No implementar N1 todavía.

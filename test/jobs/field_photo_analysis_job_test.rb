@@ -7,6 +7,11 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   include ActionCable::TestHelper
   parallelize(workers: 1)
 
+  LEGACY_PHOTO_FOLLOW_UP = "la consulta anterioir , de eso estoy hablando y por eso te comparti la foto"
+  SAME_TURN_PHOTO_QUESTION = "¿Qué ves y qué debería revisar primero?"
+  YIDA_PROCEDURE = "Paso 11. Ajusta el interruptor de zona de nivelación Yida a 2,5 mm."
+  BLT_PROCEDURE = "E18 fallo de nivelación. Compruebe el encoder BLT."
+
   class SpyMemoryStore < ActiveSupport::Cache::MemoryStore
     attr_reader :read_names, :write_names
 
@@ -1623,6 +1628,157 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     )
   end
 
+  test "legacy nil photo reuse keeps the stored relevance and does not call vision" do
+    photo = create_orona_photo(relevance: nil)
+    calls = 0
+
+    with_leveling_episode do |owner|
+      with_analysis_service(on_call: -> { calls += 1 }) do
+        FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+      end
+    end
+
+    assert_equal 0, calls
+    assert_nil photo.reload.visual_observation["relevance_to_goal"]
+    assert_equal "Orona", photo.visual_observation["manufacturer"]
+    assert_equal "PBCM-V3", photo.visual_observation["model"]
+    episode = @session.reload.active_episode
+    assert_equal photo.id, episode.dig("active_photo", "field_photo_id")
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    assert_equal "no nivela en planta 3", episode.dig("goal", "text")
+  end
+
+  test "legacy photo reuse carries accepted equipment identity into retrieval" do
+    n0_contract!("N2")
+    photo = create_orona_photo(relevance: nil)
+    calls = 0
+    captured = {}
+
+    with_leveling_episode do |owner|
+      with_analysis_service(on_call: -> { calls += 1 }) do
+        capture_photo_retrieval(captured) do
+          FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+        end
+      end
+    end
+
+    assert_equal 0, calls
+    assert_nil photo.reload.visual_observation["relevance_to_goal"]
+    assert_nil @session.reload.active_episode.dig("facts", "manufacturer")
+    assert_nil @session.active_episode.dig("facts", "model")
+    assert_ephemeral_orona_identity(captured)
+    assert_retrieval_question_carries_leveling_identity(captured)
+  end
+
+  test "same-turn photo question composes retrieval after accepted visual identity" do
+    n0_contract!("N2")
+    calls = 0
+    interpreter_calls = { n: 0 }
+    captured = {}
+
+    with_leveling_episode do |owner|
+      counting_turn_interpreter(interpreter_calls) do
+        with_analysis_service(result: orona_plate_result(relevance: "relevant"), on_call: -> { calls += 1 }) do
+          capture_photo_retrieval(captured) do
+            FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+              question: SAME_TURN_PHOTO_QUESTION,
+              expected_episode_id: owner,
+              correlation_id: "photo:n0-same-turn"
+            ))
+          end
+        end
+      end
+    end
+
+    photo = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha)
+    assert_equal 1, calls
+    assert_equal 0, interpreter_calls[:n]
+    assert photo.visual_observation.present?
+    assert_equal "relevant", photo.visual_observation["relevance_to_goal"]
+    assert_equal "Orona", photo.visual_observation["manufacturer"]
+    assert_equal "PBCM-V3", photo.visual_observation["model"]
+    assert_includes captured[:question].to_s, SAME_TURN_PHOTO_QUESTION
+    assert_retrieval_question_carries_leveling_identity(captured)
+    assert_ephemeral_orona_identity(captured)
+  end
+
+  test "unrelated accepted photo does not constrain retrieval identity" do
+    photo = create_orona_photo(relevance: "unrelated")
+    calls = 0
+    captured = {}
+
+    isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "true") do
+      with_leveling_episode do |owner|
+        with_analysis_service(on_call: -> { calls += 1 }) do
+          capture_photo_retrieval(captured) do
+            FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "según la foto"))
+          end
+        end
+      end
+    end
+
+    assert_equal 0, calls
+    assert_equal "unrelated", photo.reload.visual_observation["relevance_to_goal"]
+    episode = @session.reload.active_episode
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    assert_nil identity_manufacturer(captured.dig(:service, :equipment_identity))
+    assert_empty identity_needles(captured.dig(:service, :equipment_identity))
+    assert_equal false, Rag::DocumentIdentityScope.applicable?(captured[:episode])
+    assert_not_includes captured[:question].to_s, "Orona"
+    assert_not_includes captured[:question].to_s, "PBCM-V3"
+  end
+
+  test "uncertain accepted photo may constrain photo-question retrieval without promoting facts" do
+    n0_contract!("N2")
+    photo = create_orona_photo(relevance: "uncertain")
+    captured = {}
+
+    with_leveling_episode do |owner|
+      capture_photo_retrieval(captured) do
+        FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "de la foto, qué reviso primero"))
+      end
+    end
+
+    assert_equal "uncertain", photo.reload.visual_observation["relevance_to_goal"]
+    episode = @session.reload.active_episode
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    assert_equal photo.id, episode.dig("active_photo", "field_photo_id")
+    assert_ephemeral_orona_identity(captured)
+    assert_includes captured[:question].to_s, "no nivela en planta 3"
+    assert_includes captured[:question].to_s, "Orona"
+    assert_includes captured[:question].to_s, "PBCM-V3"
+  end
+
+  test "foreign manufacturer chunks are reference-only for known equipment" do
+    n0_contract!("N3")
+    photo = create_orona_photo(relevance: nil)
+    probe = { open_calls: 0, prompts: [] }
+
+    isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "true") do
+      with_leveling_episode do |owner|
+        with_foreign_retrieval_probe(probe) do
+          messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+            FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+          end
+          answer = messages.last["answer"].to_s
+          assert_not_includes answer, YIDA_PROCEDURE
+          assert_not_includes answer, BLT_PROCEDURE
+        end
+      end
+    end
+
+    assert_equal 0, probe[:open_calls]
+    assert probe[:prompts].any?, "identity scope must see the Yida and BLT chunks"
+    probe[:prompts].each do |prompt|
+      assert_not_includes prompt, YIDA_PROCEDURE
+      assert_not_includes prompt, BLT_PROCEDURE
+    end
+    assert_nil photo.reload.visual_observation["relevance_to_goal"]
+  end
+
   def with_episode_flag(value)
     previous = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
     ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value
@@ -1727,6 +1883,212 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         "relevance_to_goal" => "relevant"
       }
     )
+  end
+
+  def with_leveling_episode
+    with_episode_flag("true") do
+      isolate_env("PHOTO_QUESTION_RAG_ENABLED", "true") do
+        owner = @session.ensure_case_for_photo_submission!(correlation_id: "query:goal")
+        episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+        episode.assign_goal!("no nivela en planta 3", correlation_id: "query:goal")
+        @session.update!(active_episode: episode.to_h)
+        yield owner
+      end
+    end
+  end
+
+  def reuse_job_args(photo, owner, question)
+    job_args.merge(
+      image_token: nil,
+      field_photo_id: photo.id,
+      image_sha256: photo.sha256,
+      continuity: "reuse",
+      question: question,
+      expected_episode_id: owner,
+      correlation_id: "photo:n0-reuse"
+    )
+  end
+
+  def create_orona_photo(relevance:)
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: accounts(:legacy),
+      sha256: sha,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{sha}/original.jpg",
+      content_type: "image/jpeg",
+      byte_size: 8
+    )
+    payload = FieldPhotoObservation.from_analysis(
+      parsed: orona_plate_result(relevance: relevance)[:parsed],
+      model_id: "claude-sonnet-5-5",
+      target_visible: nil,
+      relevance_to_goal: relevance
+    )
+    assert FieldPhotoObservation.persist!(photo, payload)
+    photo.reload
+  end
+
+  def orona_plate_result(relevance:)
+    analysis_result.merge(
+      model: "claude-sonnet-5-5",
+      canonical_name: "Placa controladora",
+      analysis: "Placa controladora Orona PBCM-V3",
+      compact_context: "[FOTO] Componente: Placa controladora | Fabricante: Orona | Modelo: PBCM-V3",
+      relevance_to_goal: relevance,
+      target_visible: nil,
+      parsed: {
+        "canonical_component" => "Placa controladora",
+        "manufacturer" => "Orona",
+        "model" => "PBCM-V3",
+        "subsystem" => "CONTROLLER_LOGIC",
+        "condition" => "GOOD",
+        "visible_text" => [ "PBCM-V3" ],
+        "relevance_to_goal" => relevance
+      }
+    )
+  end
+
+  def capture_photo_retrieval(captured)
+    original_query = BedrockRagService.instance_method(:query)
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    BedrockRagService.define_method(:query) do |question, **kwargs|
+      captured[:question] = question
+      captured[:episode] = kwargs[:episode]
+      { answer: "Sin procedimiento de otro fabricante.", citations: [], session_id: nil }
+    end
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) do |**kwargs|
+      captured[:service] = kwargs
+      original_new.call(**kwargs)
+    end
+    yield
+  ensure
+    BedrockRagService.define_method(:query, original_query) if original_query
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+  end
+
+  def counting_turn_interpreter(counter)
+    original = Rag::TurnInterpreter.method(:call)
+    Rag::TurnInterpreter.define_singleton_method(:call) do |**kwargs|
+      counter[:n] += 1
+      original.call(**kwargs)
+    end
+    yield
+  ensure
+    Rag::TurnInterpreter.define_singleton_method(:call) { |**kwargs| original.call(**kwargs) } if original
+  end
+
+  def assert_ephemeral_orona_identity(captured)
+    identity = captured.dig(:service, :equipment_identity)
+    assert_equal "Orona", identity_manufacturer(identity)
+    assert_includes identity_needles(identity), "PBCM-V3"
+  end
+
+  def assert_retrieval_question_carries_leveling_identity(captured)
+    question = captured[:question].to_s
+    composed = captured.dig(:service, :retrieval_question).to_s
+    [ question, composed ].each do |text|
+      assert_includes text, "no nivela en planta 3"
+      assert_includes text, "Orona"
+      assert_includes text, "PBCM-V3"
+    end
+  end
+
+  def identity_manufacturer(identity)
+    return if identity.nil?
+    return identity.manufacturer if identity.respond_to?(:manufacturer)
+
+    identity[:manufacturer] || identity["manufacturer"] if identity.respond_to?(:[])
+  end
+
+  def identity_needles(identity)
+    return [] if identity.nil?
+
+    raw = if identity.respond_to?(:needles)
+      identity.needles
+    elsif identity.respond_to?(:[])
+      identity[:needles] || identity["needles"]
+    end
+    Array(raw).map(&:to_s)
+  end
+
+  def with_foreign_retrieval_probe(probe)
+    original_new = BedrockRagService.method(:new)
+    yida = yida_procedure
+    blt = blt_procedure
+    citation = foreign_yida_citation
+    BedrockRagService.define_singleton_method(:new) do |**kwargs|
+      service = original_new.call(**kwargs, knowledge_base_id: "test-kb")
+      service.define_singleton_method(:retrieve_chunks) do |*_args, **_kwargs|
+        { chunks: [ yida, blt ], retrieval_trace: {} }
+      end
+      service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+      service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+        probe[:open_calls] += 1
+        output = Struct.new(:text).new("#{YIDA_PROCEDURE} [1]")
+        Struct.new(:output, :citations, :session_id).new(output, [ citation ], nil)
+      end
+      generator = Object.new
+      generator.define_singleton_method(:query) do |prompt, **|
+        probe[:prompts] << prompt
+        "La foto muestra una placa Orona PBCM-V3. No tengo manual compatible."
+      end
+      service.instance_variable_set(:@document_identity_generator, generator)
+      service
+    end
+    yield
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+  end
+
+  def foreign_yida_citation
+    OpenStruct.new(
+      generated_response_part: OpenStruct.new(
+        text_response_part: OpenStruct.new(
+          span: OpenStruct.new(start: 0, end: YIDA_PROCEDURE.length),
+          text: YIDA_PROCEDURE
+        )
+      ),
+      retrieved_references: [
+        OpenStruct.new(
+          content: OpenStruct.new(text: YIDA_PROCEDURE),
+          location: OpenStruct.new(s3_location: OpenStruct.new(uri: "s3://bucket/chunks/yida.txt")),
+          metadata: {
+            "canonical_name" => "Fuji Yida Guía del Usuario Ascensor",
+            "original_source_uri" => "s3://bucket/yida.pdf",
+            "account_id" => accounts(:legacy).id.to_s,
+            "page_number" => 97
+          }
+        )
+      ]
+    )
+  end
+
+  def yida_procedure
+    {
+      rank: 1,
+      content: YIDA_PROCEDURE,
+      metadata: {
+        "account_id" => accounts(:legacy).id.to_s,
+        "document_id" => "yida",
+        "canonical_name" => "Fuji Yida Guía del Usuario Ascensor",
+        "page_number" => 97
+      },
+      chunk_sha256: Digest::SHA256.hexdigest(YIDA_PROCEDURE)
+    }
+  end
+
+  def blt_procedure
+    {
+      rank: 2,
+      content: BLT_PROCEDURE,
+      metadata: {
+        "account_id" => accounts(:legacy).id.to_s,
+        "document_id" => "blt",
+        "canonical_name" => "Código de Avería BLT Ascensor",
+        "page_number" => 4
+      },
+      chunk_sha256: Digest::SHA256.hexdigest(BLT_PROCEDURE)
+    }
   end
 
   def create_observed_photo(account: accounts(:legacy), manufacturer: "KONE")

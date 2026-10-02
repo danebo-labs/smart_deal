@@ -86,3 +86,17 @@ end
 ActiveSupport.on_load(:active_support_test_case) do
   include EnvIsolation
 end
+
+# N0 multimodal contracts stay in the suite as skipped examples.
+# N0_CONTRACTS=1 runs the asserts against current code.
+module N0Contract
+  def n0_contract!(phase)
+    return if ENV["N0_CONTRACTS"] == "1"
+
+    skip "N0 contract — expected to become green in #{phase}"
+  end
+end
+
+ActiveSupport.on_load(:active_support_test_case) do
+  include N0Contract
+end

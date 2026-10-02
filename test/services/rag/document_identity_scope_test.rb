@@ -449,6 +449,56 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes result.chunks[0][:content], "BM/B1"
   end
 
+  test "foreign manufacturer chunks cannot create manual fact" do
+    n0_contract!("N4")
+    yida_body = "Paso 11. Ajusta el interruptor de zona de nivelación Yida a 2,5 mm."
+    blt_body = "E18 fallo de nivelación. Compruebe el encoder BLT."
+    chunks = [
+      chunk("yida", yida_body, canonical_name: "Fuji Yida Guía del Usuario Ascensor", page: 97),
+      chunk("blt", blt_body, canonical_name: "Código de Avería BLT Ascensor", page: 4)
+    ]
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: chunks, retrieval_trace: {} } }
+    prompts = []
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      "Según Fuji Yida ajusta la zona a 2,5 mm [1]. El código E18 de BLT indica encoder [2]."
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+
+    result = nil
+    with_flag("true") do
+      result = service.send(
+        :document_identity_scope_result,
+        "no nivela en planta 3",
+        episode: orona_known_episode,
+        response_locale: :es,
+        entity_s3_uris: [],
+        entity_sources: [],
+        force_entity_filter: false,
+        account_id: accounts(:legacy).id,
+        user_id: nil,
+        conversation_session_id: nil,
+        correlation_id: "n0-foreign-citation"
+      )
+    end
+
+    prompts.each do |prompt|
+      assert_not_includes prompt, yida_body
+      assert_not_includes prompt, blt_body
+    end
+    cited = [ result[:citations], result[:retrieved_citations] ].flatten.compact.map { |item| JSON.generate(item.as_json) }
+    assert cited.none? { |blob| blob.include?("Fuji Yida") }, "reference-only Yida chunk is still citable"
+    assert cited.none? { |blob| blob.include?("BLT") }, "reference-only BLT chunk is still citable"
+    segments = Rag::ProvenanceSegmenter.call(
+      answer: result[:answer],
+      citations: result[:citations],
+      visual_observation: nil
+    )
+    assert segments.none? { |segment| segment["band"] == "MANUAL_FACT" }
+  end
+
   test "a corrected brand is not a needle and a catalog fact is not a needle" do
     corrected = episode(identifiers: [])
     corrected["episode_id"] = "ep-corrected"
@@ -502,6 +552,29 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       "updated_at" => Time.current.iso8601,
       "facts" => facts,
       "identifiers" => identifiers
+    }
+  end
+
+  def orona_known_episode
+    {
+      "v" => 1,
+      "episode_id" => "ep-orona",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => {
+          "value" => "Orona",
+          "status" => "known",
+          "source" => "photo",
+          "correlation_id" => "photo:orona"
+        },
+        "model" => {
+          "value" => "PBCM-V3",
+          "status" => "known",
+          "source" => "photo",
+          "correlation_id" => "photo:orona"
+        }
+      },
+      "identifiers" => []
     }
   end
 

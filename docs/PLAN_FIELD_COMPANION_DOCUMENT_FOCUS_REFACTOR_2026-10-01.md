@@ -2,7 +2,7 @@
 
 **Estado:** G1 PASS — G2 PASS — G3 PASS — G4 PASS — F6 HECHA — F7 HECHA — F8 HECHA
 
-**Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo.
+**Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo del focus.
 
 **Implementación:** G1, G2, G3 y G4 PASS en producción (2026-10-01). F6, F7 y F8 cerradas en el repo. F8 no está desplegada. G5 espera F9 y F10. El handoff de F8 está en la sección 13.
 
@@ -10,7 +10,9 @@
 
 **No reabre:** R1A (`CLOSED — PASS`).
 
-Este texto, después de la consolidación, es el baseline. Cada fase se ejecuta contra el repo, los commits ya hechos y los hallazgos de las fases anteriores. Si el repo contradice una premisa, se actualiza este archivo. No se abre un plan paralelo.
+Este texto, después de la consolidación, es el baseline del focus. Cada fase se ejecuta contra el repo, los commits ya hechos y los hallazgos de las fases anteriores. Si el repo contradice una premisa, se actualiza este archivo. No se abre un plan paralelo de focus.
+
+La evolución post-F8 de `SemanticQueryAnalyzer` hacia `TurnInterpreter` vive en [PLAN_TURN_INTERPRETER_2026-10-01.md](PLAN_TURN_INTERPRETER_2026-10-01.md). Este archivo no absorbe esas fases. F9 y F10 siguen siendo el cierre de G5.
 
 ---
 
@@ -1297,6 +1299,7 @@ En el teléfono, el número de los pasos 12 y 13 tiene que coincidir con desktop
 - Renombrar “Fuentes” a “Fuentes citadas/usadas en la respuesta”. Quedó anotado en el PASS de G2. No bloquea G3.
 - **Post-G5 — Conversational Presentation Cleanup.** Las respuestas siguen viéndose como reporte: “Guía Danebo”, otra “Guía”, “Manual”, footer repetido y varios bloques o botones. Después de cerrar G5, evaluar quitar encabezados redundantes, dejar las fuentes visualmente secundarias, reducir botones y revisar el footer, sin soltar el grounding ni la seguridad. Una acción se conserva sólo cuando el técnico tiene que decidir algo. No bloquea F8, F9, F10 ni G5. F8 no lo mezcló, salvo el texto de `clarify_first`.
 - Obligar a que cada documento seleccionado aporte al menos un chunk. El top-k puede llenarse con un solo manual del focus.
+- TurnInterpreter (T0–T6). La interpretación lingüística posterior a F8 está en [PLAN_TURN_INTERPRETER_2026-10-01.md](PLAN_TURN_INTERPRETER_2026-10-01.md). F9 y F10 no la absorben.
 
 ---
 
@@ -1317,6 +1320,7 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 | Documento | Rol |
 |---|---|
 | Este archivo | Única fuente viva del focus. El estado de cada compuerta se anota al hacer el smoke |
+| `PLAN_TURN_INTERPRETER_2026-10-01.md` | Interpreter post-F8. No forma parte de G5 |
 | `ACTIVE_ARCHITECTURE.md`, `SESSION_AND_RETRIEVAL.md`, `docs/README.md` | Siguen vigentes hasta F9. F9 reemplaza los párrafos que dicen que el pin pertenece al caso |
 | `PLAN_R1B_SESSION_CORRECTNESS_2026-09-30.md` | Histórico en lo que dice de soltar pines. Sigue vigente en episodio, `expected_episode_id`, piso de historial, foto y observabilidad. Nota al frente en F9 |
 | `PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md` | Sigue siendo el mapa del recovery. La premisa de pins de R1B queda apuntando aquí en F9 |
@@ -1337,3 +1341,4 @@ Hasta que G1 exista en producción, el contrato vigente de pins sigue siendo el 
 | F8 | Hecha. Query técnica, cuatro decisiones, discovery con esa query. Sin deploy |
 | F9 | No empezada. Borrar helpers de release sin caller y alinear docs |
 | F10 | No empezada. Confirmar la sección 14. G5 despliega F8+F9+F10 juntas |
+| TurnInterpreter | Fuera de G5. Ver `PLAN_TURN_INTERPRETER_2026-10-01.md`. F9 y F10 siguen |

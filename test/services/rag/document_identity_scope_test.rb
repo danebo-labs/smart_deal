@@ -706,73 +706,14 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   end
 
   test "a recorded user manufacturer conflict is not resolved by the later photo model" do
-    session = ConversationSession.create!(
-      identifier: "web:#{SecureRandom.hex(4)}",
-      channel: "web",
-      expires_at: 1.hour.from_now,
-      user: users(:one),
-      account: accounts(:legacy)
-    )
-    previous = ENV.fetch("FIELD_COMPANION_EPISODE_ENABLED", nil)
-    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
-    session.record_user_turn!(
-      "Cómo se ajustan los resortes de la fijación de cables ?",
-      user_id: users(:one).id, correlation_id: "query:1"
-    )
-    owner = session.live_episode_id
-    session.record_assistant_turn!(
-      "… ¿Qué marca y modelo es el equipo?",
-      user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
-    )
-    session.record_user_turn!("KONE", user_id: users(:one).id, correlation_id: "query:123")
-    applied = session.record_photo_observation!(
-      photo_value: {
-        manufacturer: "Orona", model_visible: "PBCM-V3",
-        target_visible: true, relevance_to_goal: "relevant"
-      },
-      field_photo_id: 42,
-      sha256: "plate",
-      correlation_id: "photo:456",
-      expected_episode_id: owner
-    )
-
-    assert_equal :applied, applied
-    stored = session.reload.active_episode
-    episode = Rag::ActiveEpisode.parse(stored)
-    assert_equal "KONE", episode.fact("manufacturer")["value"]
-    assert_equal "user", episode.fact("manufacturer")["source"]
-    assert_equal "query:123", episode.fact("manufacturer")["correlation_id"]
-    assert_equal "PBCM-V3", episode.fact("model")["value"]
-    assert_equal "photo", episode.fact("model")["source"]
-    assert_equal "photo:456", episode.fact("model")["correlation_id"]
-    recorded = episode.conflicts.find { |row| row["fact"] == "manufacturer" }
-    assert_equal "KONE", recorded["user"]
-    assert_equal "Orona", recorded["photo"]
-    assert_equal "photo:456", recorded["correlation_id"]
-
-    before = episode.to_h
-    snapshot = Rag::PhotoRetrievalSnapshot.capture(
-      episode: episode,
-      question: "qué reviso en esta placa",
-      observation: {
-        "manufacturer" => "Orona",
-        "model_visible" => "PBCM-V3",
-        "relevance_to_goal" => "relevant"
-      },
-      correlation_id: "photo:456"
-    )
-    assert_equal before, episode.to_h
-
+    _episode, identities = recorded_kone_orona_conflict
     kone = chunk("kone", "Procedimiento KONE de nivelación.", canonical_name: "Manual KONE")
     orona = chunk(
       "orona",
       "Procedimiento de la placa Orona PBCM-V3.",
       canonical_name: "Manual Orona PBCM-V3"
     )
-    [ snapshot.equipment_identity, Rag::EquipmentIdentity.from_episode(episode) ].each do |identity|
-      assert_equal "KONE", identity.conflicts.sole["user"]
-      assert_equal "Orona", identity.conflicts.sole["photo"]
-      assert_equal "photo:456", identity.conflicts.sole["correlation_id"]
+    identities.each do |identity|
       assert_empty Rag::DocumentIdentityScope.needles(identity)
       result = Rag::DocumentIdentityScope.apply([ kone, orona ], identity)
 
@@ -785,11 +726,28 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       assert_not_includes result.chunks[0][:content], "Procedimiento KONE"
       assert_not_includes result.chunks[1][:content], "Procedimiento de la placa"
     end
-  ensure
-    if previous.nil?
-      ENV.delete("FIELD_COMPANION_EPISODE_ENABLED")
-    else
-      ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous
+  end
+
+  test "an explicit manufacturer conflict keeps a selected model-only manual reference-only" do
+    _episode, identities = recorded_kone_orona_conflict
+    uri = "s3://bucket/pbcm-v3.pdf"
+    body = "Paso 4. Ajuste el contacto de la placa a 2 mm."
+    selected = chunk("pbcm", body, canonical_name: "Manual PBCM-V3")
+    selected[:metadata]["original_source_uri"] = uri
+    focus = [ uri ]
+
+    identities.each do |identity|
+      result = Rag::DocumentIdentityScope.apply([ selected ], identity, focus_uris: focus)
+
+      assert_equal [ uri ], focus
+      assert_equal :no_compatible, result.status
+      assert_equal :conflicting_current_identity, result.reason
+      assert_equal [ "reference_only" ], result.applicability
+      assert result.labels[0].start_with?("REFERENCE ONLY")
+      assert_not_includes result.labels[0], "THIS JOB"
+      assert_not_includes result.chunks[0][:content], "Paso 4"
+      assert_not_includes result.chunks[0][:metadata].values.join(" "), "Orona"
+      assert_not_includes result.chunks[0][:metadata].values.join(" "), "KONE"
     end
   end
 
@@ -988,6 +946,77 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       },
       "identifiers" => identifiers.map { |value| { "value" => value, "source" => "user" } }
     }
+  end
+
+  def recorded_kone_orona_conflict
+    previous = ENV.fetch("FIELD_COMPANION_EPISODE_ENABLED", nil)
+    session = ConversationSession.create!(
+      identifier: "web:#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: users(:one),
+      account: accounts(:legacy)
+    )
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    session.record_user_turn!(
+      "Cómo se ajustan los resortes de la fijación de cables ?",
+      user_id: users(:one).id, correlation_id: "query:1"
+    )
+    owner = session.live_episode_id
+    session.record_assistant_turn!(
+      "… ¿Qué marca y modelo es el equipo?",
+      user_id: users(:one).id, correlation_id: "query:2", expected_episode_id: owner
+    )
+    session.record_user_turn!("KONE", user_id: users(:one).id, correlation_id: "query:123")
+    applied = session.record_photo_observation!(
+      photo_value: {
+        manufacturer: "Orona", model_visible: "PBCM-V3",
+        target_visible: true, relevance_to_goal: "relevant"
+      },
+      field_photo_id: 42,
+      sha256: "plate",
+      correlation_id: "photo:456",
+      expected_episode_id: owner
+    )
+
+    assert_equal :applied, applied
+    episode = Rag::ActiveEpisode.parse(session.reload.active_episode)
+    assert_equal "KONE", episode.fact("manufacturer")["value"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
+    assert_equal "query:123", episode.fact("manufacturer")["correlation_id"]
+    assert_equal "PBCM-V3", episode.fact("model")["value"]
+    assert_equal "photo", episode.fact("model")["source"]
+    assert_equal "photo:456", episode.fact("model")["correlation_id"]
+    recorded = episode.conflicts.find { |row| row["fact"] == "manufacturer" }
+    assert_equal "KONE", recorded["user"]
+    assert_equal "Orona", recorded["photo"]
+    assert_equal "photo:456", recorded["correlation_id"]
+
+    before = episode.to_h
+    snapshot = Rag::PhotoRetrievalSnapshot.capture(
+      episode: episode,
+      question: "qué reviso en esta placa",
+      observation: {
+        "manufacturer" => "Orona",
+        "model_visible" => "PBCM-V3",
+        "relevance_to_goal" => "relevant"
+      },
+      correlation_id: "photo:456"
+    )
+    assert_equal before, episode.to_h
+    identities = [ snapshot.equipment_identity, Rag::EquipmentIdentity.from_episode(episode) ]
+    identities.each do |identity|
+      assert_equal "KONE", identity.conflicts.sole["user"]
+      assert_equal "Orona", identity.conflicts.sole["photo"]
+      assert_equal "photo:456", identity.conflicts.sole["correlation_id"]
+    end
+    [ episode, identities ]
+  ensure
+    if previous.nil?
+      ENV.delete("FIELD_COMPANION_EPISODE_ENABLED")
+    else
+      ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous
+    end
   end
 
   def chunk(document_id, content, account_id: "1", canonical_name: document_id, page: 1,

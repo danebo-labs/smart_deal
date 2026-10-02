@@ -175,15 +175,17 @@ module Rag
     private_class_method :blank_labels
 
     # :out stays reference-only so a pin is not widened.
-    # A needle match is this job's equipment.
+    # An explicit manufacturer conflict is reference-only before a selected
+    # document can be accepted as neutral. A needle match is this job only
+    # when that conflict is absent.
     # A selected document that names a different KbDocumentResolver brand is
     # reference-only. A selected document that does not name one stays
     # THIS JOB: the pin compensates for incomplete metadata.
     def self.chunk_applicability(chunk, needles, membership, identity, resolution)
       return :reference_only if membership == :out
+      return :reference_only if resolution.conflict
       return :compatible if needles.any? && identity_matches?(chunk, needles)
       return conflicting_or_neutral(chunk, identity, resolution) if membership == :in
-      return :reference_only if resolution.conflict
       return nil if needles.empty?
 
       :reference_only

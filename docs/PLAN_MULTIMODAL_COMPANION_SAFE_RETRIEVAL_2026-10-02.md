@@ -898,6 +898,7 @@ Precedencia, la misma de `match_needles`:
 - KONE heredado (`query:prior`) + foto actual Orona/PBCM-V3 no es una unión. KONE no aplica. Orona y PBCM-V3 sí.
 - KONE y Orona los dos con el `correlation_id` del turno actual son conflicto. `reason: :conflicting_current_identity`. Ninguno de los dos labels vuelve aplicable un body. El model no conflictivo (PBCM-V3) puede seguir siendo needle. No hay llamada a un modelo para resolverlo.
 - Un conflicto explícito de F3 no es un manufacturer heredado. Si el técnico dijo KONE (`query:123`) y una foto posterior dice Orona / PBCM-V3 (`photo:456`), el episodio conserva KONE y graba `conflicts` user=KONE / photo=Orona. `EquipmentIdentity` copia esa fila, en el snapshot y en `from_episode`. La policy no elige Orona porque el model es posterior, y PBCM-V3 de esa foto no vuelve aplicable el manual Orona. Los dos bodies quedan reference-only. `status: :no_compatible`, `reason: :conflicting_current_identity`. Sin esa fila, la precedencia por correlación sigue igual.
+- Ese conflicto explícito también gana al pin neutral. Un documento seleccionado que sólo nombra el model (`Manual PBCM-V3`) y no nombra KONE ni Orona queda reference-only mientras el conflicto siga sin resolver. El Focus no se toca. Sin conflicto, el pin neutral sigue `THIS JOB` (Elemont con trabajo KONE).
 
 N3 no cierra el fallback. `:no_compatible` y `:unavailable` siguen cayendo en `retrieve_and_generate` abierto. Las citas reference-only siguen pudiendo producir `MANUAL_FACT`. Eso es N4.
 

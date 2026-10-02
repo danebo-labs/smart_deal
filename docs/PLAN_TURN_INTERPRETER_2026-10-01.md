@@ -1,8 +1,8 @@
 # Turn Interpreter V2 (2026-10-01)
 
-**Estado:** `PRE-CANARY DELTA REQUIRED`. T0 y T1 están implementados. El eval real inicial de T2 pasó, pero el owner canary queda bloqueado hasta implementar y volver a evaluar T1.1 (foto activa + aclaración conversacional).
+**Estado:** `READY FOR GROK T1.1 IMPLEMENTATION`. T0 y T1 están implementados. La revisión final de Opus fue `APPROVE WITH REQUIRED CHANGES` / `PLAN MUST BE PATCHED FIRST`; esos cambios ya están incorporados como contrato en este master plan. El owner canary sigue bloqueado hasta implementar y volver a evaluar T1.1.
 
-**HEAD revisado para T1.1:** `d42c9dcb78f47b6c39396b2b6aa17a93f515f520`.
+**HEAD revisado para T1.1:** `9784c3d8d6523d5c1f9409e893d2db7a257a2866`.
 
 **Baseline de implementación:** `20e562059d45e7fefaeafb4563f14b08cc9a0135`.
 
@@ -28,15 +28,19 @@ T3 retira la semántica duplicada de F8/F8.1. No retira el state model que el re
 - Haiku interpreta el lenguaje. Ruby valida consecuencias y ejecuta.
 - Todo turno conversacional escrito pasa por `TurnInterpreter`. No hay atajo de texto.
 - Un request no corre F8 y TurnInterpreter a la vez.
-- No hay shadow de producción: ni job, ni dry-run, ni segunda llamada.
+- No hay shadow de producción: ni job, ni dry-run, ni segunda llamada de interpretación.
 - Desde el primer uso real el modo es `owner` y always-on para typed turns. El default del código sigue el camino viejo hasta el canary.
-- Modelo único: `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Una llamada por typed turn. `temperature` 0. `max_tokens` 512. Tool choice forzado. Sin retry semántico.
+- Modelo único del interpreter: `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Una llamada de interpretación por typed turn. `temperature` 0. `max_tokens` 512. Tool choice forzado. Sin retry semántico.
+- Se mantiene la separación de dos llamadas cuando hay respuesta documental: una llamada Haiku de `TurnInterpreter` y la llamada RAG/generation existente. No se fusionan y T1.1 no agrega una tercera llamada.
 - El LLM no escribe la query, no elige la ruta, no conoce la concurrencia y no toca Document Focus.
 - `TurnPerception` no recibe Document Focus ni `focus_count`.
 - `switch` no existe. Un cambio de equipo que sigue el mismo trabajo es `correct`. Una tarea nueva es `new_work` y abre episodio.
 - No hay `dialogue_acts`. No hay referents de respuesta. No hay `focus_labels` ni `evidence_hint`.
 - `clarification_target` no es un referent ni una pregunta generada por el modelo. Es un enum cerrado que permite a Ruby/I18n formular una aclaración conversacional.
 - La observación visual de la foto activa se lee desde el `FieldPhoto` autorizado. No se copia dentro de `active_episode`, no se reejecuta vision y no se transforma en `source=user`.
+- La foto es evidencia multimodal opcional. Su ausencia conserva el comportamiento textual normal; nunca se espera, exige ni solicita una foto sólo porque no exista, y retrieval no se degrada por no tenerla.
+- La mera existencia de una foto activa no autoriza contaminar query o generación. La relevancia sanitizada gobierna cada proyección visual.
+- En `owner`, `writer="photo_assistant"` preserva pending por defecto. Sólo `record_photo_observation!` puede cerrarlo cuando acaba de escribir exactamente el mismo slot de fact como `known/source=photo`.
 - `slot_hint` no crea un fact de manufacturer, model ni controller.
 - Document Focus sigue user-owned. Badge `0` es el corpus autorizado. Badge `N` son exactamente esos documentos.
 - Work Context, Document Focus y Document Discovery son tres cosas distintas.
@@ -107,8 +111,11 @@ En `owner`:
 - Foto sola o documento solo: sin interpreter. El pipeline actual abre o reutiliza el episodio.
 - Foto o documento con texto: el texto sí pasa por TurnInterpreter, fuera del lock, y el reducer corre antes de capturar `expected_episode_id`. No corre el regex de `ActiveEpisodeTurn` en ese mismo request. El job de foto sigue siendo el único writer de facts `source=photo`. Este request no hace `RetrieveAndGenerate`.
 - El interpreter no lee la imagen ni el PDF.
+- Si ese texto produjo `clarify_first`, el `deliver` posterior no puede borrar ni reemplazar el pending de policy por el solo hecho de publicar prosa de la foto. Se conserva salvo la resolución estructural exacta de manufacturer/model descrita en la sección 8.
 
 En el turno escrito posterior a una foto ya analizada, el interpreter sí puede leer una proyección pequeña de `FieldPhoto.visual_observation`. Lee datos persistidos, nunca bytes de imagen. Sólo cuenta la foto de `active_episode.active_photo`; no hay historial de fotos.
+
+Sin foto, toda esta rama es un no-op: el turno textual, policy, composer y generación siguen el contrato normal. Una foto puede ser consulta visual, foto + pregunta, evidencia de follow-up o respuesta a un pending sólo cuando el pipeline estructurado realmente escribió ese slot; ninguna de esas funciones es obligatoria por defecto.
 
 ---
 
@@ -131,6 +138,7 @@ Una sola JSON. El turno es dato. El system prompt dice que las instrucciones den
     "pending": {"slot": "controller", "carry": ["Q2"]},
     "active_photo_context": {
       "source": "photo",
+      "relevance_to_goal": "relevant",
       "component": "controlador de ascensor",
       "manufacturer": "NICE",
       "model": "NICE3000",
@@ -155,20 +163,24 @@ No entra: chat crudo, últimos N mensajes, chunks, PDF, URI, filenames, bytes o 
 
 ### Resolución mínima de foto activa
 
-Un PORO read-only, `Rag::ActivePhotoContext`, centraliza la carga y el recorte:
+Un PORO read-only, `Rag::ActivePhotoContext`, centraliza la carga, el recorte y tres proyecciones separadas:
 
 ```text
 episode.active_photo.field_photo_id
 → FieldPhoto.where(account_id: viewer_account.id).find_by(id: ...)
 → FieldPhotoObservation.sanitize(photo.visual_observation)
-→ bounded prompt/query/generation projection
+→ to_prompt / query_terms / generation_block
 ```
 
 La proyección se resuelve sobre el mismo snapshot que ve Haiku y se transporta durante ese request a `TurnInterpreter`, `QueryComposer` y `SessionContextBuilder`. No consulta S3, no llama a `FieldPhotoAnalysisService`, no encola `FieldPhotoAnalysisJob` y no toca `PhotoQuestionAnswerService`. Si el snapshot cambia durante la llamada, se aplica el fallback de concurrencia ya existente y se descarta la proyección vieja.
 
+`to_prompt` puede exponer siempre la proyección autorizada y sanitizada al `TurnInterpreter`, incluida `relevance_to_goal`. Esto permite interpretar una referencia a la foto activa sin convertir sus valores en afirmaciones del técnico. `query_terms` devuelve términos sólo con `relevance_to_goal=relevant`. `generation_block` devuelve Photo Evidence sólo con `relevance_to_goal=relevant`.
+
+Para T1.1 se elige la regla conservadora: `uncertain`, nil y `unrelated` no se inyectan automáticamente ni en query ni en generación. No se construye un relevance engine. Si una foto marcada `unrelated` respecto del goal anterior es mencionada explícitamente después, el interpreter puede verla y entender la relación conversacional, pero el MVP no dispone de una señal validada adicional para promoverla a evidencia de retrieval/generation. Sin agregar estado o schema nuevo, Ruby no debe adivinar esa promoción; puede continuar el flujo de foto existente o pedir aclaración. Éste es un límite explícito de T1.1.
+
 Persistir un resumen en `active_episode` se rechaza para T1.1. Ahorraría una lectura indexada, pero duplicaría una columna ya durable, competiría con el presupuesto de 4096 bytes, podría quedar obsoleto ante una reparación de `visual_observation` y debilitaría la única fuente de provenance. El código actual además sanitiza deliberadamente `active_photo` a ids/correlation/sha y tiene un test que elimina `visual_observation`; no se revierte ese contrato.
 
-`SessionContextBuilder` recibe la misma proyección acotada y la marca explícitamente como `Photo Evidence for the active episode`, separada de `technician-stated job state` y de evidencia documental. Conserva el tope global `MAX_CONTEXT_CHARS=2000`; no aumenta el contexto máximo. Los conflicts siguen expresándose como `technician said X; the photo shows Y; do not resolve it`. La observación visual nunca se rotula como dicho por el técnico.
+`SessionContextBuilder` recibe la misma proyección acotada. Sólo `generation_block` relevante se marca explícitamente como `Photo Evidence for the active episode`, separada de `technician-stated job state` y de evidencia documental. Conserva el tope global `MAX_CONTEXT_CHARS=2000`; no aumenta el contexto máximo. `uncertain`, nil y `unrelated` no generan bloque automático en T1.1. Los conflicts siguen expresándose como `technician said X; the photo shows Y; do not resolve it`. La observación visual nunca se rotula como dicho por el técnico.
 
 ---
 
@@ -273,10 +285,21 @@ Rechazo de campo, con `field` + `reason` en telemetría:
 - `answer_pending` sin pending, o resolución cuyo valor no corresponde al slot pendiente: el move baja a `report` si quedan assertions u observations, si no a `follow_up`. No se aplica `pending_resolution`
 - `correct` sin un `negate` cuyo valor normalizado está en un fact o identifier activo: baja a `unclear`, cero mutaciones
 - `correct` que Ruby baja a `unclear` recibe `correction_target`; no sale a retrieval
-- `new_work` sin assertions ni observations, habiendo Work Context previo: baja a `follow_up` y no abre episodio, salvo que exista `pending_question.type=work_relation`. Esa excepción permite que una respuesta como `Es otro ascensor` cierre la aclaración sin regex y abra el episodio nuevo
+- `new_work` sin payload técnico, habiendo Work Context previo y sin `pending_question.type=work_relation`: baja a `follow_up` y no abre episodio. Con ese pending conversacional, `new_work` es válido aunque sea thin para poder cerrar la aclaración sin regex; la policy decide después si recupera o sólo abre el nuevo episodio y pide el primer contexto técnico
 - `slot_hint` fuera de enum: se descarta el hint, se conserva el span
 
 `unclear` es válido sólo con `clarification_target`. No muta estado técnico y la policy lo corta antes de retrieval.
+
+### Payload técnico de `new_work`
+
+Ruby considera que un `new_work` trae payload técnico suficiente para retrieval sólo si el perception validado contiene al menos uno de estos elementos:
+
+- una observation válida;
+- una brand o designator tipado por catálogo autorizado;
+- un `fault_code` aceptado por las reglas anteriores;
+- un `assert` literal que el interpreter emitió como contenido técnico del nuevo trabajo.
+
+El prompt exige que una respuesta puramente relacional a `work_relation`, como `Es otro ascensor`, no emita assertions ni observations. No se agrega regex de frase, nuevo move ni clasificador Ruby de lenguaje. Si el `new_work` válido no trae ninguno de los cuatro elementos, es `thin new_work`: abre el nuevo episodio, pero no autoriza retrieval ni discovery independientemente de `focus_count`. `Ahora tengo otro KONE que no nivela` sí trae brand y observation y sigue el camino técnico normal.
 
 ### Catálogo, tenant-safe
 
@@ -374,6 +397,10 @@ Cuando `RoutePolicy` devuelve `clarify_first`, puede guardar junto al pending:
 
 Así `¿Qué es Q2?` → clarify → `Monarch NICE3000` busca Q2 con NICE3000 y Monarch. `no sé, busca con eso` es `best_effort`, Q2 sobrevive y no repite la aclaración. `otra falla: puertas no cierran` tira el carry viejo.
 
+Excepción acotada para aclaración conversacional: si un `unclear` reemplaza un pending técnico que tenía carry, el nuevo pending conversacional conserva sólo ese carry bounded; no conserva ni anida el slot técnico anterior y limpia `pending_fact`. Si la respuesta definitiva es `new_work`, el carry se descarta con el episodio viejo. Si la respuesta mantiene el mismo episodio (`follow_up` o `correct`), el carry se promueve una sola vez a `identifiers` mediante el mecanismo existente y luego se limpia el pending conversacional. No hay stack, pending nesting ni carry eterno.
+
+Ejemplo: `¿Qué es Q2?` → pending controller + carry Q2 → `No, ese era el otro` → pending `work_relation` + carry Q2 → `Sí, este mismo` → mismo episodio, Q2 vuelve como identifier para contexto/query. Si la última respuesta abre otro trabajo, Q2 no cruza el boundary.
+
 ### Tamaño
 
 Medido en T0 con un payload al tope de los caps actuales más 4 rejected y un carry de 2: saturado 4218 bytes, núcleo 2167. El núcleo cabe en 4096. El saturado no, así que el shrink de T1 tiene que soltar conflicts, observations e identifiers antes de persistir.
@@ -405,8 +432,19 @@ Corre sólo dentro del lock, con el episodio que sigue igual al snapshot, y desp
 - `follow_up`: no reemplaza un goal presente. Si `goal` está vacío y la decisión hace retrieval, el reducer asigna el goal desde el turno truncado. No aplica a `meta`, `clarify_first`, texto de `answer_pending` `unknown`, ni prosa que no es el trabajo.
 - `answer_pending`: no cambia el goal. `unknown` en manufacturer, model o controller: `unknown_confirmed`. `absent` en fault_code: `absent_confirmed`. `value`: write del fact, con la excepción de slot ya conocido si el catálogo no tipó. `seek`: el fact no cambia. Carry previo pasa a identifiers. En todos, `clear_pending!`.
 - `correct`: cada negate hace `clear_fact!` o saca el identifier, entra en `rejected` (si hay 4, sale el más viejo) y se borra ese valor del goal y de las observations. Si se niega un controller cuyo manufacturer es `source=catalog`, ese manufacturer también se limpia. El assert nuevo se escribe `source=user`, salvo que el catálogo lo haya tipado. El slot del reemplazo no catalogado es el slot del fact negado, no el `slot_hint`.
-- `new_work`: `ActiveEpisode.open`. El episodio viejo no se fusiona. Goal, facts, observations y carry salen sólo de este turno. `rejected` viejo muere con el episodio viejo. `result.decision` es `:new_episode` para el boundary.
-- `unclear`: la rama `clarify_first` escribe sólo el `pending_question` conversacional y hace `touch!`; no escribe goal, facts, identifiers, observations, rejected, conflicts ni active photo. El historial igual se agrega. En este documento, “0 mutation” para los journeys AMB significa cero mutación de estado técnico; el pending estructurado es la única escritura de control necesaria para interpretar la respuesta siguiente.
+- `new_work`: `ActiveEpisode.open`. El episodio viejo no se fusiona. Goal, facts, observations y carry salen sólo de este turno. `rejected` viejo muere con el episodio viejo. `result.decision` es `:new_episode` para el boundary. Si la policy marcó `thin new_work` como `clarify_first`, primero abre el episodio vacío, limpia `current_procedure`, descarta foto/carry/estado viejos y luego deja goal nil, sin pending técnico nuevo; la respuesta es la pregunta I18n de primer contexto. No compone query.
+- `unclear`: la rama `clarify_first` escribe sólo el `pending_question` conversacional y hace `touch!`; no escribe goal, facts, identifiers, observations, rejected, conflicts ni active photo. Puede copiar el carry bounded del pending anterior al pending conversacional, pero no su slot ni `pending_fact`. El historial igual se agrega. En este documento, “0 mutation” para los journeys AMB significa cero mutación de estado técnico; el pending estructurado es la única escritura de control necesaria para interpretar la respuesta siguiente.
+- resolución de pending conversacional: `new_work` descarta su carry; `follow_up` o `correct` que conservan episodio promueven ese carry una vez a identifiers antes de limpiar el pending.
+
+### Writes del pipeline de foto en `owner`
+
+`record_photo_observation!` y `record_assistant_turn!(writer="photo_assistant")` tienen un contrato distinto del writer lingüístico:
+
+1. `apply_photo_observation!` informa los slots que realmente escribió en esa llamada. Para T1.1 sólo pueden ser `manufacturer` y `model`; `visible_text` no resuelve pending.
+2. Dentro del mismo write protegido, `record_photo_observation!` puede cerrar pending sólo si su subject/type pertenece a `FACT_TYPES`, coincide exactamente con uno de esos slots escritos y el fact final quedó `status=known, source=photo`.
+3. `record_assistant_turn!(writer="photo_assistant")` agrega la historia, pero en `owner` no ejecuta el clear/reemplazo genérico de pending. Preserva `pending_fact`, `pending_question`, carry, `work_relation`, `referent` y `correction_target`.
+4. Una foto `unrelated`, bloqueada o sin valor estructurado no escribe el fact y por tanto no cierra nada. Resolver model nunca cierra controller. No se convierte la foto en turno textual artificial.
+5. `conditional` no cambia.
 
 ---
 
@@ -418,15 +456,16 @@ Corre dentro del lock. `focus_count`, los ids y los URIs salen de la lectura fre
 
 `previous` es el episodio del snapshot ya comparado. Si el move efectivo es `new_work`, la policy trata `previous` como episodio vacío.
 
-El primero que matchea gana.
+El primero que matchea gana. La precedencia es contractual:
 
 1. `move=meta`. Salida `meta`. Cero retrieve, cero discovery, cero mutación. El pending que ya existe se queda, carry incluido. `model_invoked=false`. Frase corta de i18n. `RagQueryConcern` corta antes del orquestador.
 2. `move=unclear` con `clarification_target`. Salida `clarify_first`, independientemente de `focus_count` o de que el episodio sea thin. Cero retrieve, cero discovery, `owns_query=false`, `model_invoked=false`. Ruby/I18n elige una pregunta fija por target y guarda el mismo type en `pending_question`.
-3. `clarify_first` técnico cuando `focus_count == 0`, `previous` no tiene identity conocida, fault, observation, goal ni foto, este perception no tiene observation válida, ni assertion resuelta a brand, designator tipado o fault_code aceptado, ni un `assert` literal, y el move no es `answer_pending`, `correct` ni `new_work`. Un `assert` literal cuenta como contexto técnico aunque siga siendo identifier. Un `mention` no. Cero retrieve, cero discovery. El reducer no escribe el goal. Puede escribir pending con carry.
-4. `best_effort` cuando `pending_resolution` es `unknown` o `seek`, o el fact ya está `unknown_confirmed` y el move es `answer_pending`. Hay retrieve. No se vuelve a preguntar ese slot. `outside_discovery=true`.
-5. `search_and_clarify` cuando hay resolution `:ambiguous` entre entradas visibles, o hay manufacturer conocido (previous o brand de este turno) y faltan model y controller, controller no está `unknown_confirmed`, y hay goal, observation o fault en previous o en este perception. Hay retrieve. `pending_subject=controller`. La pregunta no entra en la query.
-6. `search_and_clarify` con `ask_when=:absence` cuando `focus_count > 0` y el único token técnico es un mention de 2–4 caracteres sin designator exacto tipado. Se busca dentro del focus. La pregunta sale sólo si la respuesta se abstiene. Q2 con focus mayor que 0 entra aquí, y sigue siendo mention, no `fault_code`.
-7. El resto es `ready`. Incluye NICE3000 con tipo y manufacturer, un `assert` literal no catalogado, y un `follow_up` cuando previous ya tiene identity, fault, goal u observation.
+3. `thin new_work`: `move=new_work` válido sin payload técnico. Salida `clarify_first` con boundary `:new_episode`, cero retrieve, cero discovery, `owns_query=false` y pregunta I18n `¿Qué equipo o qué falla estás revisando?`. Aplica con focus 0 o mayor que 0. No crea otro pending type, no usa los pins para recuperar el texto relacional y no cambia Document Focus.
+4. `clarify_first` técnico cuando `focus_count == 0`, `previous` no tiene identity conocida, fault, observation, goal ni foto relevante, este perception no tiene observation válida, ni assertion resuelta a brand, designator tipado o fault_code aceptado, ni un `assert` literal técnico, y el move no es `answer_pending`, `correct` ni `new_work`. Un `assert` literal técnico cuenta como contexto aunque siga siendo identifier. Un `mention` no. Cero retrieve, cero discovery. El reducer no escribe el goal. Puede escribir pending con carry.
+5. `best_effort` cuando `pending_resolution` es `unknown` o `seek`, o el fact ya está `unknown_confirmed` y el move es `answer_pending`. Hay retrieve. No se vuelve a preguntar ese slot. `outside_discovery=true`.
+6. `search_and_clarify` cuando hay resolution `:ambiguous` entre entradas visibles, o hay manufacturer conocido (previous o brand de este turno) y faltan model y controller, controller no está `unknown_confirmed`, y hay goal, observation o fault en previous o en este perception. Hay retrieve. `pending_subject=controller`. La pregunta no entra en la query.
+7. `search_and_clarify` con `ask_when=:absence` cuando `focus_count > 0` y el único token técnico es un mention de 2–4 caracteres sin designator exacto tipado. Se busca dentro del focus. La pregunta sale sólo si la respuesta se abstiene. Q2 con focus mayor que 0 entra aquí, y sigue siendo mention, no `fault_code`.
+8. El resto es `ready`. Incluye NICE3000 con tipo y manufacturer, un `assert` literal técnico no catalogado, un `new_work` con payload técnico y un `follow_up` cuando previous ya tiene identity, fault, goal u observation.
 
 Preguntas controladas por I18n:
 
@@ -434,13 +473,15 @@ Preguntas controladas por I18n:
 - `referent`: `¿A qué equipo o elemento te refieres?`
 - `correction_target`: `¿Qué dato del equipo quieres corregir?`
 
-`outside_discovery` es false en `meta`, `clarify_first` y fallback. False en el caso 6. True en `best_effort`. True en el resto. DocumentDiscovery no escribe focus.
+`outside_discovery` es false en `meta`, `clarify_first` y fallback. False en el caso 7 de short mention/focus. True en `best_effort`. True en las demás rutas que recuperan. DocumentDiscovery no escribe focus.
 
-`¿Que es Q2?`, focus 0, sin identity: mention `Q2`, sin observation, previous vacío. No es fault. La regla 2 devuelve `clarify_first` y guarda carry `["Q2"]`. Cero retrieve y cero discovery.
+`¿Que es Q2?`, focus 0, sin identity: mention `Q2`, sin observation, previous vacío. No es fault. La regla 4 devuelve `clarify_first` y guarda carry `["Q2"]`. Cero retrieve y cero discovery.
 
-`¿Que es Q2?` con focus mayor que 0 no entra en la regla 2. La perception sigue siendo mention. La regla 5 busca dentro de esos ids.
+`¿Que es Q2?` con focus mayor que 0 no entra en la regla 4. La perception sigue siendo mention. La regla 7 busca dentro de esos ids.
 
-`El controlador es ABC900` es un assert. No entra en la regla 2. No pregunta de inmediato qué controlador tiene.
+`El controlador es ABC900` es un assert literal técnico. No entra en la regla 4 y llega a la regla 8; no pregunta de inmediato qué controlador tiene.
+
+`Es otro ascensor` después de pending `work_relation` llega a la regla 3: episodio nuevo vacío, `current_procedure` limpio, foto/goal/facts/observations/rejected/carry viejos fuera, cero retrieval/discovery aun con focus. `Ahora tengo otro KONE que no nivela` trae payload técnico y llega a la regla 8.
 
 La policy no lee prosa del assistant. El pending estructurado que ella escribe es lo que `record_assistant_turn!` persiste. En `owner`, `write_pending!` no escanea los `?` del texto generado.
 
@@ -459,12 +500,12 @@ Orden, que es el inverso del recorte:
 3. Controller, model e identifiers activos, en forma canónica si el catálogo los resolvió, sin rejected. Los spans promovidos desde `carry` entran aquí como identifiers.
 4. Manufacturer activo. Si era `catalog` y este turno negó el controller que lo trajo, no entra.
 5. Hasta 3 observations persistidas, de la más nueva a la más vieja, saltando las que contienen un rejected.
-6. Términos visuales compactos de la foto activa (`component`, manufacturer, model y `visible_text`), sólo si el contexto sigue apuntando al `state.active_photo.field_photo_id` y la decisión hace retrieval.
+6. `active_photo_context.query_terms`: términos visuales compactos (`component`, manufacturer, model y `visible_text`) sólo si el contexto sigue apuntando al `state.active_photo.field_photo_id`, la decisión hace retrieval y `relevance_to_goal=relevant`.
 7. Goal, si no contiene un rejected.
 
 No se leen los últimos N mensajes. `meta` y `clarify_first` no tienen query. Si no queda nada en un `ready`, la query es el turno actual.
 
-Los términos visuales son read-only y no se escriben como assertions, facts u observations. `new_work` crea un state sin `active_photo`, por lo que la foto anterior no puede entrar a la query. El contexto visual que ya no coincide con el state se descarta.
+Los términos visuales son read-only y no se escriben como assertions, facts u observations. `uncertain`, nil y `unrelated` devuelven cero `query_terms`. `new_work` crea un state sin `active_photo`, por lo que la foto anterior no puede entrar a la query. El contexto visual que ya no coincide con el state se descarta.
 
 La string no agrega URIs ni cambia `force_entity_filter`. El filtro de retrieval es el snapshot de URIs que viajó en el `Decision`.
 
@@ -495,7 +536,7 @@ Comparar el JSON del episodio, no un `state_version` nuevo. Un write de assistan
 
 Los ids que usó la policy viajan en el resultado hasta `entity_s3_uris`. No se hace un read independiente que pueda ver otro Focus.
 
-Writers que siguen con `expected_episode_id`: `record_assistant_turn!`, `record_photo_observation!`, auto-pin de upload. Este plan no les agrega locking nuevo.
+Writers que siguen con `expected_episode_id`: `record_assistant_turn!`, `record_photo_observation!`, auto-pin de upload. Este plan no les agrega locking nuevo. Sí agrega la guarda de pending por `writer` y el cierre exacto de pending dentro del write de `record_photo_observation!`; ambos reutilizan el lock existente.
 
 `correlation_id` lo genera el server por request. La idempotencia cubre el retry del mismo request: no se aplica dos veces y el replay no duplica la burbuja. No cubre dos HTTP distintos con el mismo texto, porque llevan correlation ids distintos.
 
@@ -517,7 +558,7 @@ Replay sigue siendo `replay_correlation_id`: no entra a `record_user_turn!`, no 
 
 El camino `owner` no se salta `case_boundary_changes` ni `log_case_boundary!`. Comparte esa primitiva con el camino viejo.
 
-`move=new_work` se comporta como `:new_episode`: limpia `current_procedure` y emite la telemetría de boundary. Expiry e `invalid_state` siguen saliendo del JSON guardado, como hoy. Los pins no se tocan.
+`move=new_work` se comporta como `:new_episode`: limpia `current_procedure` y emite la telemetría de boundary. En `thin new_work` sucede igual aunque la route sea `clarify_first`; no hay query ni discovery. Expiry e `invalid_state` siguen saliendo del JSON guardado, como hoy. Los pins no se tocan ni se usan para recuperar una respuesta relacional sin payload técnico.
 
 ---
 
@@ -612,7 +653,7 @@ CI no llama a Bedrock. Los tests pasan perceptions ya construidas a policy, redu
 - `No, no es NICE3000. Es ABC900.`
 - un `new_work` tomado de R-A (`Otra falla: Elemont MH…`), marcado real porque esa frase está en el replay
 - aislamiento de catálogo: `PRIVATE900` visto por un tenant sin acceso
-- VIS-1/2/3 y AMB-1/2/3 de T1.1, con observación visual sintetizada y marcada `reconstructed`
+- VIS-1/2/3/4 y AMB-1/2/2b/3 de T1.1, con observación visual sintetizada y marcada `reconstructed`
 
 No hay transcripción de Hangcha, Crown FC4000/4500, SEGURIDADES 1.1-1, ni de un journey focus 0 → manual A → manual B. No se inventa. El replay de card sigue cubierto por el test de F7.
 
@@ -701,17 +742,20 @@ Fase obligatoria antes del owner canary. No cambia el número de llamadas LLM: u
 
 Implementar:
 
-- `Rag::ActivePhotoContext` autorizado por `account_id`, sanitizado y bounded; sólo la foto activa
-- transporte read-only del contexto a interpreter, composer y generación, sin persistirlo en el episode
+- `Rag::ActivePhotoContext` autorizado por `account_id`, sanitizado y bounded; sólo la foto activa; responsabilidades separadas `to_prompt`, `query_terms` y `generation_block`
+- transporte read-only de `to_prompt` al interpreter para toda relevancia sanitizada; `query_terms` y `generation_block` automáticos sólo para `relevant`, sin persistir contexto visual en el episode
 - corte automático del contexto al abrir `new_work` o si el photo id ya no coincide
+- guarda de `photo_assistant` en `owner`: la prosa nunca limpia/reemplaza pending; sólo el write estructurado exacto de manufacturer/model puede cerrar su mismo pending fact
 - prompt compacto de ambigüedad material versus insuficiencia técnica
 - `clarification_target` cerrado: `work_relation | referent | correction_target | null`
 - `PendingQuestion` estructural para esos tres targets; sin `choice`, sin options y sin regex de respuestas
-- `RoutePolicy`: `unclear` antes de las ramas que recuperan; 0 retrieval, 0 discovery y una pregunta I18n
-- excepción validada para `new_work` sin assertion después de pending `work_relation`
+- carry bounded preservado al reemplazar un pending técnico por uno conversacional; se recupera sólo si continúa el episodio y se descarta en `new_work`
+- `RoutePolicy`: `meta`, luego `unclear`, luego `thin new_work`, antes de las ramas técnicas que recuperan
+- `thin new_work` después de pending `work_relation`: nuevo episodio y procedure limpio, pero 0 retrieval/discovery y pregunta I18n de primer contexto, aun con Focus
+- `new_work` con payload técnico: nuevo episodio y `ready`
 - bloque de generación con provenance visual explícita y sin aumentar `MAX_CONTEXT_CHARS`
 - telemetría: `clarification_target`, presence/absence de active photo context y motivo de descarte; nunca valores visuales crudos
-- los seis journeys VIS/AMB y los tests unitarios de tenant, bounds, no-vision, no-contamination y pending lifecycle
+- los ocho journeys VIS/AMB y los tests unitarios de tenant, bounds, no-vision, relevance, no-contamination, photo pending y conversational carry lifecycle
 
 Commit esperado: `feat: carry active photo context through turn interpretation`
 
@@ -719,7 +763,7 @@ Rollback antes del canary: revert de T1.1; el env permanece `conditional` durant
 
 ### T2 — Re-eval con Haiku real y canary
 
-Después de T1.1 y antes de cualquier deploy, quien implementa vuelve a correr `bin/rails turn_interpreter:eval` con credenciales Bedrock sobre los 13 casos existentes más VIS-1/2/3 y AMB-1/2/3. El reporte se pega aquí: passes, mismatches, fallbacks, field rejection, clarification-target accuracy, photo-context accuracy, p50, p95, tokens y cost. Los invariantes de la sección 14 tienen que estar en cero. Si el eval no puede correr por credenciales, se para.
+Después de T1.1 y antes de cualquier deploy, quien implementa vuelve a correr `bin/rails turn_interpreter:eval` con credenciales Bedrock sobre los 13 casos existentes más VIS-1/2/3/4 y AMB-1/2/2b/3: 21 journeys. El reporte se pega aquí: passes, mismatches, fallbacks, field rejection, clarification-target accuracy, photo-context accuracy, p50, p95, tokens y cost. Los invariantes de la sección 14 tienen que estar en cero. Si el eval no puede correr por credenciales, se para.
 
 No se cambia `deploy.yml` en el commit de código. Si el eval pasa, la ejecución autónoma se detiene. Una persona pone `HAIKU_QUERY_ANALYSIS_MODE=owner` y despliega en el host de los pilotos. Ahí todo typed turn usa el interpreter. No hay arbitraje con F8 dentro del request.
 
@@ -783,11 +827,21 @@ Commit: `refactor: remove the duplicate turn classifiers`
 18. VIS-1: foto activa autorizada con NICE3000 + E51; `¿Qué reviso ahora?` → `follow_up`, `ready`, query con NICE3000/E51, contexto visual en generación y cero llamadas vision.
 19. VIS-2: foto activa con un único código visual saliente; `¿Y eso qué significa?` → usa el referente visual y nunca abre `new_work`. El fixture fija `follow_up`; un test contrastivo con dos referentes materiales acepta sólo `unclear/referent` y 0 retrieval.
 20. VIS-3: foto del episodio A y un turno explícito de `new_work` → episodio B sin active photo, sin términos visuales A en query o generación.
-21. AMB-1: con Work Context activo, `No, ese era el otro` → `unclear/work_relation`, `clarify_first`, 0 retrieval, 0 discovery y cero mutación técnica; sólo pending estructurado.
-22. AMB-2: después de AMB-1, `Es otro ascensor` → `new_work` sin regex phrase-specific; pending viejo y foto vieja no pasan al episodio nuevo.
-23. AMB-3: con foto activa, `Me refería al de la foto` → relación visual entendida, conserva active photo y clasifica definitivamente; sólo `unclear/referent` si el contexto visual deja dos referentes materialmente distintos.
-24. Una foto ajena por `field_photo_id` no entra al prompt, query, generación ni telemetría; no se busca otra foto como fallback.
-25. `VF5 / E03 / puerta intenta cerrar y vuelve a abrir` sigue en `ready` y recupera: la falta de más datos técnicos no dispara aclaración conversacional.
+21. VIS-4: Work Context NICE3000/E51 + foto activa de otro modelo con `relevance=unrelated` + `¿Qué reviso ahora?` → el interpreter puede ver la foto, pero query y generación no contienen ni presentan sus términos como evidencia del trabajo.
+22. `ActivePhotoContext`, `QueryComposer` y `SessionContextBuilder` cubren `relevant`, `uncertain` y `unrelated`: sólo `relevant` produce query terms y generation block; las tres relevancias sanitizadas pueden llegar a `to_prompt`.
+23. AMB-1: con Work Context activo, `No, ese era el otro` → `unclear/work_relation`, `clarify_first`, 0 retrieval, 0 discovery y cero mutación técnica; sólo pending estructurado.
+24. AMB-2: después de AMB-1, `Es otro ascensor` → `new_work` thin sin regex phrase-specific; episodio nuevo con goal nil, procedure/foto/facts/observations/rejected/carry viejos fuera, 0 retrieve, 0 discovery y pregunta I18n de primer contexto. Repetir con `focus_count > 0`; Focus queda seleccionado pero no se usa para recuperar esa frase.
+25. AMB-2b: `Ahora tengo otro KONE que no nivela` → `new_work`, episodio nuevo, `ready` y query técnica con el nuevo contenido.
+26. AMB-3: con foto activa, `Me refería al de la foto` → relación visual entendida, conserva active photo y clasifica definitivamente; sólo `unclear/referent` si el contexto visual deja dos referentes materialmente distintos. Una foto `unrelated` no se promueve automáticamente a evidencia en este flujo MVP.
+27. Una foto ajena por `field_photo_id` no entra al prompt, query, generación ni telemetría; no se busca otra foto como fallback.
+28. `VF5 / E03 / puerta intenta cerrar y vuelve a abrir` sigue en `ready` y recupera: la falta de más datos técnicos no dispara aclaración conversacional.
+29. Pending `work_relation` + foto → pending intacto después de `deliver`.
+30. Pending controller + carry Q2 + foto con model → model `known/source=photo`; controller y carry intactos.
+31. Pending manufacturer + foto relevante con manufacturer → fact `known/source=photo` y ese pending cerrado.
+32. El mismo pending manufacturer + foto `unrelated` → sin fact y pending intacto.
+33. Foto + texto en `owner` cuyo texto produjo `clarify_first` → el pending de policy sobrevive a `deliver`, salvo la excepción exacta del slot estructural recién escrito.
+34. Pending controller + carry Q2 → `unclear/work_relation` conserva sólo carry en pending conversacional; resolución al mismo episodio promueve Q2 una vez, mientras `new_work` lo descarta.
+35. Sin foto → comportamiento textual normal, sin petición de foto ni cambios de routing/retrieval.
 
 ---
 
@@ -805,7 +859,7 @@ Lahiri actúa como técnico. PASS o `FAIL: hizo X`. No se le pide correlation id
 6. `No, no es NICE3000. Es NICE1000.` PASS si a partir de ahí habla de NICE1000. El badge no se mueve solo.
 7. Con un manual marcado, acepta una card. PASS si el badge cambia al tocarlo y la pregunta no aparece dos veces.
 8. Envía una foto que muestre NICE3000 y E51; luego escribe `¿Qué reviso ahora?`. PASS si continúa con esa foto sin volver a analizarla ni pedir que la adjunte otra vez.
-9. Con un trabajo activo escribe `No, ese era el otro`; responde a la aclaración `Es otro ascensor`. PASS si el primer turno no recupera manuales y el segundo abre el trabajo nuevo.
+9. Con un trabajo activo escribe `No, ese era el otro`; responde a la aclaración `Es otro ascensor`. PASS si el primer turno no recupera manuales y el segundo abre el trabajo nuevo, limpia la procedure y pide qué equipo o falla revisa sin recuperar esa frase, aunque haya Focus.
 
 Preparación de un paso con badge 0: Archivos, desmarcar todo, recargar, el número dice 0.
 
@@ -815,12 +869,12 @@ Después del PASS, el implementador corre `turn_interpreter:smoke_check`. Si el 
 
 ## 18. Ejecución autónoma
 
-Aprobado para ejecutar T1.1. T0 y T1 ya están completos. El flip humano sigue bloqueado.
+Plan parcheado y listo para ejecutar T1.1. T0 y T1 ya están completos. El flip humano sigue bloqueado.
 
-1. Actualizar este archivo con los required changes.
-2. T0, tests, commit, anotar aquí.
-3. T1, tests, commit, anotar aquí.
-4. T1.1 implementa active photo context y aclaración conversacional, corre tests y se anota aquí.
+1. Plan: required changes incorporados en este único master.
+2. T0: completo y anotado.
+3. T1: completo y anotado.
+4. Único delta pre-canary: T1.1 implementa los contratos de foto/pending, relevancia, aclaración conversacional y `thin new_work`; corre tests y se anota aquí.
 5. T2 vuelve a correr el eval real ampliado. Si pasa, se anotan los números y se para: el deploy y el flip a `owner` los hace una persona.
 6. Después del PASS humano y del rake, T3 se implementa y se commitea.
 7. No se abre otro documento ni T4–T8.
@@ -865,6 +919,7 @@ FAIL arquitectónico: en un request `owner` siguen vivos el interpreter y las re
 - No hay gate por cuenta. El canary es el env del host.
 - Foto con caption entra a `record_user_turn!`. V2 interpreta el caption y deja el retrieve de ese request en el pipeline de upload.
 - `FieldPhotoAnalysisJob` persiste `visual_observation` antes de `deliver`; después `record_photo_observation!` guarda en el episode sólo `field_photo_id`, sha y correlation, y aplica únicamente manufacturer/model como facts `source=photo`.
+- `FieldPhotoAnalysisJob#deliver` llama primero `record_photo_observation!` y después `record_assistant_turn!(writer="photo_assistant")`; hoy el segundo camino llega a `ActiveEpisodeTurn.write_pending!`, cuyo primer paso es `clear_pending!`. Sin la guarda de writer puede borrar un pending que la foto no resolvió.
 - `ActiveEpisode.sanitize_photo` elimina deliberadamente `visual_observation`, summary, manufacturer y model embebidos. El test existente fija ese contrato.
 - `TurnInterpreter#work_context` envía goal, facts, identifiers, observations, rejected y pending, pero no resuelve `active_photo.field_photo_id` ni lee `FieldPhoto.visual_observation`.
 - `SessionContextBuilder` sólo reconstruye manufacturer/model de facts `source=photo` y conflicts. No expone component, visible text/codes, subsystem o condition de la observación durable.
@@ -873,7 +928,8 @@ FAIL arquitectónico: en un request `owner` siguen vivos el interpreter y las re
 - `RoutePolicy` no tiene rama para `move=unclear`. Con un episodio no-thin, `clarify_first?` devuelve false y el final es `ready`; por eso hoy puede haber retrieval arbitrario.
 - `WorkContextReducer` ya preserva el estado para `unclear`, pero su rama previa de `clarify_first` permite guardar exactamente un pending estructurado sin mutar facts/goal/observations.
 - `PendingQuestion` sólo conoce slots técnicos, `choice` y `absent`; `choice` exige options y su parser tiene respuestas cerradas específicas. No es reutilizable para relación de trabajo.
-- `TurnPerception` hoy degrada `new_work` sin assertions/observations a `follow_up`. Sin una excepción condicionada por pending `work_relation`, `Es otro ascensor` no puede cerrar AMB-2.
+- `TurnPerception` hoy degrada `new_work` sin assertions/observations a `follow_up`. La excepción condicionada por pending `work_relation` debe conservar el move para cerrar AMB-2, pero `RoutePolicy` debe cortar el `thin new_work` antes de cualquier retrieval.
+- El carry actual vive en un solo `pending_question`; copiar únicamente ese array bounded al pending conversacional permite preservarlo sin stack ni otra state machine.
 
 No queda un blocker de diseño para T1.1. Sí queda un blocker de rollout: no hacer el flip hasta implementar el delta y repetir el eval real.
 
@@ -924,11 +980,11 @@ Los 13 journeys del fixture pasan. Cero fallback. Cero field rejection. `tenant_
 
 El catálogo real de esta base no ata `NICE3000` a un `KbDocument` que la cuenta pueda leer, así que el follow-up conserva el literal `Nice300 e51`. El tipado de catálogo autorizado queda cubierto por los tests de T0/T1, no por este eval.
 
-Parado aquí. Antes del flip se implementa T1.1 y se repite T2 con los 19 journeys. El flip a `owner` y el deploy siguen siendo humanos. Después del smoke de UI, el implementador corre `bin/rails turn_interpreter:smoke_check`. Rollback antes de T3: `owner` → `conditional`. T3 no empieza hasta ese PASS.
+Parado aquí. Antes del flip se implementa T1.1 y se repite T2 con los 21 journeys. El flip a `owner` y el deploy siguen siendo humanos. Después del smoke de UI, el implementador corre `bin/rails turn_interpreter:smoke_check`. Rollback antes de T3: `owner` → `conditional`. T3 no empieza hasta ese PASS.
 
 ### T1.1 — pendiente pre-canary
 
-Revisión focalizada sobre HEAD `d42c9dcb78f47b6c39396b2b6aa17a93f515f520`. Veredicto: `PRE-CANARY DELTA REQUIRED`. Esta entrada documenta diseño solamente; no hay implementación T1.1 en este commit.
+Revisión final de Opus sobre HEAD `9784c3d8d6523d5c1f9409e893d2db7a257a2866`. Veredicto recibido: `APPROVE WITH REQUIRED CHANGES` y `PLAN MUST BE PATCHED FIRST`. Este master incorpora los required changes; esta entrada documenta diseño solamente y no implementa T1.1.
 
 ---
 
@@ -942,20 +998,21 @@ Revisión focalizada sobre HEAD `d42c9dcb78f47b6c39396b2b6aa17a93f515f520`. Vere
 - Sólo los turnos con foto activa agregan la proyección visual, con hard cap de 640 bytes (aproximadamente 80–180 tokens según valores). Los turnos sin foto no cargan ese costo.
 - `QueryComposer` conserva el máximo de 442 caracteres y `SessionContextBuilder` conserva 2000. El contexto visual desplaza contenido de menor prioridad si alcanza el cap; no lo expande.
 - Un `unclear` material evita por completo retrieval/generation en ese turno, de modo que esa ruta reduce costo y latencia respecto del comportamiento `ready` actual.
-- El baseline de 13 casos (`p50=1457 ms`, `p95=1762 ms`, 21775 input, 2047 output, USD 0.032010) no se extrapola como resultado final. T2 debe volver a medir los 19 journeys.
+- El baseline de 13 casos (`p50=1457 ms`, `p95=1762 ms`, 21775 input, 2047 output, USD 0.032010) no se extrapola como resultado final. T2 debe volver a medir los 21 journeys.
 
 ### Handoff para implementación Grok
 
 Orden de cambio, sin rediseñar la cadena:
 
-1. Crear `Rag::ActivePhotoContext` con lookup tenant-safe, sanitize, bounds, `to_prompt`, `query_terms` y match estricto contra el photo id del state.
-2. En `ConversationSession#record_owner_turn!`, resolverlo desde el snapshot antes de Haiku; pasarlo como keyword opcional a `TurnInterpreter`, `RoutePolicy::Decision`, `QueryComposer` y luego a `SessionContextBuilder`. `RoutePolicy` sólo lo transporta; no lo interpreta. En snapshot mismatch/fallback, nunca reutilizar el contexto viejo.
-3. Extender el input de `TurnInterpreter`, el prompt compacto y el schema/result de `TurnPerception` con `clarification_target`. Mantener literal validation de assertions/observations sin intentar convertir valores de foto en spans del turno.
-4. Extender `PendingQuestion::TYPES` con los tres targets conversacionales, no `FACT_TYPES`. Hacer que `pending_payload` envíe `clarification_target`; no tocar `parse_reply` con frases nuevas.
-5. Poner la rama `unclear` al inicio de `RoutePolicy#call`, después de `meta` y antes del clarify técnico/best-effort. Mapear target a I18n y devolver `clarify_first`, `owns_query=false`, `outside_discovery=false`.
-6. Permitir el `new_work` sin assertion sólo cuando el episode trae pending `work_relation`. Mantener el guard actual para todos los demás casos.
-7. Agregar términos visuales read-only al composer sólo si el photo id todavía coincide. Renderizar el bloque visual de generación con provenance `photo`; conservar conflicts sin resolver.
-8. Agregar tests focalizados en `active_photo_context_test`, `turn_interpreter_test`, `turn_perception_test`, `route_policy_test`, `query_composer_test`, `session_context_builder_test` y `conversation_session_turn_interpreter_test`. Espiar `FieldPhotoAnalysisService`/jobs para probar cero vision.
-9. Añadir VIS-1/2/3 y AMB-1/2/3 al YAML/eval, mantener los 13 casos anteriores verdes y ejecutar el eval real. No tocar `config/deploy.yml`.
+1. Fijar primero los tests de pending del pipeline de foto. En `owner`, hacer que `apply_photo_observation!` reporte sólo manufacturer/model realmente escritos, cerrar únicamente el pending fact del mismo slot y hacer que `photo_assistant` preserve cualquier otro pending. No cambiar `conditional`.
+2. Crear `Rag::ActivePhotoContext` con lookup tenant-safe, sanitize, bounds, match estricto contra el photo id y las tres salidas: `to_prompt`, `query_terms`, `generation_block`. Sólo `relevant` alimenta las dos últimas.
+3. En `ConversationSession#record_owner_turn!`, resolver el contexto visual desde el snapshot antes de Haiku; pasarlo como keyword opcional a `TurnInterpreter`, `QueryComposer` y `SessionContextBuilder`. En snapshot mismatch/fallback, nunca reutilizarlo.
+4. Extender input/prompt/schema/result con `clarification_target`; extender `PendingQuestion::TYPES` con los tres targets conversacionales, no `FACT_TYPES`. No agregar frases a `parse_reply` ni convertir valores de foto en spans del turno.
+5. Implementar el carry conversacional acotado: al escribir el pending de `unclear`, copiar sólo carry y limpiar el slot técnico; promoverlo una vez si continúa el episodio y descartarlo si la resolución es `new_work`.
+6. Ordenar `RoutePolicy`: `meta` → `unclear` → `thin new_work` → clarify técnico → best effort/search → ready. El thin case abre episodio y procedure, responde con I18n, y hace 0 retrieve/discovery con cualquier Focus. El `new_work` con payload técnico sigue `ready`.
+7. Ajustar reducer/boundary para que `thin new_work + clarify_first` cree efectivamente el episodio vacío con goal nil y sin estado viejo, sin crear otro pending type. Mantener Document Focus intacto.
+8. Conectar `query_terms` relevantes al composer y `generation_block` relevante a `SessionContextBuilder`; probar que `uncertain` y `unrelated` quedan fuera de ambos, aunque `to_prompt` pueda llegar al interpreter.
+9. Agregar los tests de la sección 16 en `active_photo_context_test`, `turn_interpreter_test`, `turn_perception_test`, `route_policy_test`, `query_composer_test`, `session_context_builder_test`, `conversation_session_turn_interpreter_test`, `conversation_session_test` y `field_photo_analysis_job_test`. Espiar servicios/jobs para probar cero vision y cero LLM adicional.
+10. Añadir VIS-1/2/3/4 y AMB-1/2/2b/3 al YAML/eval, mantener los 13 casos anteriores verdes y ejecutar los 21 journeys reales. No tocar `config/deploy.yml`, no hacer deploy y no iniciar T3–T8.
 
 Condición de salida: tests verdes, `git diff --check`, eval real ampliado sin mismatches/fallbacks/field rejections y métricas anotadas aquí. Recién entonces se entrega el flip humano a `owner`.

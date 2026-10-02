@@ -474,7 +474,7 @@ Agregar sólo:
 
 - `turn_interpreter_status`
 - `turn_interpreter_fallback`
-- `prompt_version` (`2026-10-01.2`)
+- `prompt_version` (`2026-10-02.1`)
 - `schema_version` (`turn_perception.2`)
 - `catalog_fingerprint` (SHA256 de `config/document_identities.yml`, 12 hex, memoizado por proceso)
 - `interpreter_move`
@@ -784,3 +784,21 @@ No queda un blocker de diseño.
 - Tests dirigidos de T1: 41 runs, 224 assertions, 0 failures (owner, percepción, replay). Rubocop limpio en los archivos de la fase. `git diff --check` limpio.
 - Desvío: dos tests de boundary del camino viejo (`hola` tras expiry, episodio inválido) ya fallan en `b1a4b42`. Con un manual pinneado, `TechnicalUnderstanding` trata `hola` como bare identifier y abre episodio. T1 no cambia ese clasificador. El camino `owner` no lo usa.
 - Siguiente: `bin/rails turn_interpreter:eval` contra Haiku real. Si pasa, parar para el flip humano. `config/deploy.yml` sigue en `conditional`.
+
+### T2 — eval real, sin deploy
+
+Commit del ajuste que el eval pidió: `d2bc021f962ddb914feb73443f8325be23bd2cfb`.
+
+`bin/rails turn_interpreter:eval` contra Haiku, 2026-10-02:
+
+```text
+passes=13 mismatches=0 fallbacks=0 field_rejections=0
+p50_ms=1457 p95_ms=1762
+input_tokens=21775 output_tokens=2047 estimated_usd=0.032010
+```
+
+Los 13 journeys del fixture pasan. Cero fallback. Cero field rejection. `tenant_private_designator` no tipa ni filtra fabricante. `config/deploy.yml` no se tocó: sigue `conditional`.
+
+El catálogo real de esta base no ata `NICE3000` a un `KbDocument` que la cuenta pueda leer, así que el follow-up conserva el literal `Nice300 e51`. El tipado de catálogo autorizado queda cubierto por los tests de T0/T1, no por este eval.
+
+Parado aquí. El flip a `owner` y el deploy los hace una persona. Después del smoke de UI, el implementador corre `bin/rails turn_interpreter:smoke_check`. Rollback antes de T3: `owner` → `conditional`. T3 no empieza hasta ese PASS.

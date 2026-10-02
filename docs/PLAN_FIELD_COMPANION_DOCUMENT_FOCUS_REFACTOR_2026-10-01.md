@@ -1299,7 +1299,7 @@ En el teléfono, el número de los pasos 12 y 13 tiene que coincidir con desktop
 - Renombrar “Fuentes” a “Fuentes citadas/usadas en la respuesta”. Quedó anotado en el PASS de G2. No bloquea G3.
 - **Post-G5 — Conversational Presentation Cleanup.** Las respuestas siguen viéndose como reporte: “Guía Danebo”, otra “Guía”, “Manual”, footer repetido y varios bloques o botones. Después de cerrar G5, evaluar quitar encabezados redundantes, dejar las fuentes visualmente secundarias, reducir botones y revisar el footer, sin soltar el grounding ni la seguridad. Una acción se conserva sólo cuando el técnico tiene que decidir algo. No bloquea F8, F9, F10 ni G5. F8 no lo mezcló, salvo el texto de `clarify_first`.
 - Obligar a que cada documento seleccionado aporte al menos un chunk. El top-k puede llenarse con un solo manual del focus.
-- TurnInterpreter (T0–T6). La interpretación lingüística posterior a F8 está en [PLAN_TURN_INTERPRETER_2026-10-01.md](PLAN_TURN_INTERPRETER_2026-10-01.md). F9 y F10 no la absorben.
+- TurnInterpreter V2 (T0–T3). La interpretación lingüística posterior a F8 está en [PLAN_TURN_INTERPRETER_2026-10-01.md](PLAN_TURN_INTERPRETER_2026-10-01.md). F9 y F10 no la absorben. No hay shadow de producción.
 
 ---
 

@@ -1,6 +1,6 @@
 # Turn Interpreter V2 (2026-10-01)
 
-**Estado:** `T1.1 COMPLETED`. T0, T1 y T1.1 están implementados. El eval real de 21 journeys pasó. El owner canary sigue bloqueado: no hay deploy y `config/deploy.yml` sigue en `conditional`. El siguiente paso es humano.
+**Estado:** `READY FOR HUMAN OWNER CANARY`. T0, T1, T1.1 y el hardening pre-canary están implementados. El eval de 21 journeys y el holdout pasan con mismatches=0, fallbacks=0 y field_rejections=0. No hubo deploy. `config/deploy.yml` sigue en `conditional`. El owner canary no empezó. El flip es humano.
 
 **HEAD revisado para T1.1:** `9784c3d8d6523d5c1f9409e893d2db7a257a2866`.
 
@@ -1015,6 +1015,52 @@ input_tokens=45757 output_tokens=3422 estimated_usd=0.062867
 Invariantes de la sección 14 en cero: sin ampliación cross-tenant (`tenant_private_designator` no tipa ni filtra fabricante), sin mutación de Document Focus, sin span no literal aplicado, sin estado inválido persistido, sin valor rejected en la query efectiva y sin mutación persistente incorrecta en los casos de la sección 16.
 
 Siguiente paso humano: deploy y `HAIKU_QUERY_ANALYSIS_MODE=owner` en el host de pilotos. Después, smoke de la sección 17 y `bin/rails turn_interpreter:smoke_check`. T3 no empieza.
+
+### T1.1 pre-canary hardening
+
+`fix: close the T1.1 pre-canary fallback, symptom, and photo gates`
+
+SHA: `b8056ea3d5e737dee6b46c8a75c91d26bc57b74a`
+
+`config/deploy.yml` no se modificó. `HAIKU_QUERY_ANALYSIS_MODE` sigue `conditional`. No hubo deploy. El owner canary no empezó.
+
+Bugs que la revisión encontró sobre T1.1:
+
+- `RoutePolicy#fallback` repetía `clarify_controller` y componía query si había cualquier pending, también `work_relation`, `referent` y `correction_target`.
+- `literal_observations` descartaba todo literal de menos de 13 caracteres. `vis_3` quedó en `field_rejections=1` (`not_symptom`).
+- `turn_interpreter:eval` abortaba sólo si había mismatches, así que ese `field_rejections=1` salía con exit 0.
+- `apply_photo_observation!` escribía manufacturer/model `source=photo` con relevancia `nil` o `uncertain`. La observación guardada conservaba el `relevant` crudo del modelo aunque `PhotoIntent` no existiera. `QueryComposer` y `SessionContextBuilder` podían usar esa identidad.
+- Una foto sin caption no declara relevancia por sí sola. Si el episodio ya tiene un objetivo visual, `PhotoIntent` sí puede derivarla.
+
+Solución, sin rediseño y sin otra llamada LLM ni vision:
+
+- Pending conversacional en fallback: `clarify_first`, 0 retrieval, 0 discovery, `owns_query=false`, el mismo pending y su carry, y el I18n de ese target. No se interpreta la respuesta.
+- Una frase literal de más de una palabra puede ser un síntoma corto. Un token solo no es observación si es código de falla, token de 2–4 caracteres, o tiene menos de 13.
+- `turn_interpreter:eval` y `turn_interpreter:holdout` abortan si mismatches, fallbacks o field_rejections es mayor que 0.
+- `photo_identity_blocked?` salvo `relevance_to_goal == relevant`. La observación persiste la relevancia ya normalizada. Una identificación relevante sigue siendo `source=photo` y se puede recordar. Una foto `uncertain`, `nil` o `unrelated` no crea esos facts ni entra en query terms ni en Photo Evidence.
+- Foto sola: con objetivo o historia visual, la relevancia es la que vision devuelve contra ese intent. Sin intent, la relevancia queda `nil`. El técnico sigue viendo la lectura en la burbuja. El interpreter puede ver la proyección. Retrieval y generación no la tratan como evidencia relevante.
+- `PROMPT_VERSION` `2026-10-02.4`. Reglas generales: volver al trabajo abierto es `follow_up`; apuntar a la única foto es `follow_up` con assertions y observations vacías; `correct` exige el negate del valor guardado y el assert del reemplazo. Si el modelo manda sólo el reemplazo y hay exactamente un valor conocido literal en el turno, Ruby recupera ese negate. Dos valores no se adivinan. Las frases del holdout no están en el prompt.
+
+Tests funcionales, no de integración: `route_policy`, `turn_perception`, `query_composer`, `photo_intent`, `field_photo_analysis_service`, `session_context_builder`, `conversation_session`, `field_photo_analysis_job` y `conversation_session_turn_interpreter`. `git diff --check` limpio.
+
+`bin/rails turn_interpreter:eval`, 21 journeys, 2026-10-02, prompt `2026-10-02.4`:
+
+```text
+passes=21 mismatches=0 fallbacks=0 field_rejections=0
+clarification_target_accuracy=8/8 photo_context_accuracy=7/7
+p50_ms=1703 p95_ms=3412
+input_tokens=48331 output_tokens=3430 estimated_usd=0.065481
+```
+
+`bin/rails turn_interpreter:holdout`, 10 casos nuevos, mismas condiciones:
+
+```text
+holdout_passes=10 holdout_mismatches=0 holdout_fallbacks=0 holdout_field_rejections=0
+p50_ms=1823 p95_ms=2063
+input_tokens=18629 output_tokens=1137 estimated_usd=0.024314
+```
+
+El p95 del eval de 21 subió respecto de 2795 ms. No se optimizó. La corrección del episodio tiene prioridad. T3 no empieza.
 
 ---
 

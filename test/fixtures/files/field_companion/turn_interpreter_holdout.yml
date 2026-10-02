@@ -1,0 +1,150 @@
+# Holdout for bin/rails turn_interpreter:holdout. Separate from the 21 journeys.
+# These sentences are not examples in TurnInterpreter::PROMPT.
+- id: hold_other_equipment
+  origin: holdout
+  turn: "Eso era del otro equipo"
+  focus_count: 0
+  goal: "el freno no suelta"
+  facts:
+    controller: { value: OTIS2000, source: user }
+  expected:
+    move: unclear
+    clarification_target: work_relation
+    decision: clarify_first
+    retrieval: false
+    pending_type: work_relation
+    goal_text: "el freno no suelta"
+    fact: { slot: controller, value: OTIS2000, source: user }
+- id: hold_not_same
+  origin: holdout
+  turn: "Este no es el mismo"
+  focus_count: 0
+  goal: "la cabina no abre"
+  facts:
+    model: { value: Gen2, source: user }
+  expected:
+    move: unclear
+    clarification_target: work_relation
+    decision: clarify_first
+    retrieval: false
+    pending_type: work_relation
+    goal_text: "la cabina no abre"
+    fact: { slot: model, value: Gen2, source: user }
+- id: hold_other_elevator
+  origin: holdout
+  turn: "Este es otro elevador"
+  focus_count: 0
+  pending_slot: work_relation
+  pending_carry: ["E03"]
+  goal: "el freno no suelta"
+  facts:
+    controller: { value: OTIS2000, source: user }
+  expected:
+    move: new_work
+    clarification_target: null
+    decision: clarify_first
+    retrieval: false
+    goal_nil: true
+    facts_empty: true
+    carry_discarded: true
+- id: hold_back_to_first
+  origin: holdout
+  turn: "Volvamos al primero"
+  focus_count: 0
+  pending_slot: work_relation
+  goal: "el freno no suelta"
+  facts:
+    controller: { value: OTIS2000, source: user }
+  expected:
+    move: follow_up
+    clarification_target: null
+    retrieval: true
+    goal_text: "el freno no suelta"
+    fact: { slot: controller, value: OTIS2000, source: user }
+- id: hold_same_job
+  origin: holdout
+  turn: "Sigo en este equipo"
+  focus_count: 0
+  goal: "el freno no suelta"
+  facts:
+    controller: { value: OTIS2000, source: user }
+  expected:
+    move: follow_up
+    clarification_target: null
+    retrieval: true
+    goal_text: "el freno no suelta"
+    fact: { slot: controller, value: OTIS2000, source: user }
+- id: hold_that_code
+  origin: holdout
+  turn: "¿Y ese código?"
+  focus_count: 0
+  goal: "el freno no suelta"
+  active_photo:
+    component: "display del freno"
+    manufacturer: MITSUBISHI
+    model: NEXWAY
+    visible_text: ["B4"]
+    condition: DEGRADED
+    subsystem: CONTROLLER_LOGIC
+    relevance_to_goal: relevant
+  expected:
+    move: follow_up
+    clarification_target: null
+    retrieval: true
+    photo_kept: true
+    photo_in_prompt: true
+    photo_in_query: true
+    photo_in_generation: true
+    query_contains: [NEXWAY, B4]
+- id: hold_photo_visible
+  origin: holdout
+  turn: "Lo que se ve en la foto"
+  focus_count: 0
+  goal: "el freno no suelta"
+  active_photo:
+    component: "placa de control"
+    manufacturer: SCHINDLER
+    model: "3300"
+    visible_text: ["A7"]
+    condition: GOOD
+    subsystem: CONTROLLER_LOGIC
+    relevance_to_goal: relevant
+  expected:
+    move: follow_up
+    clarification_target: null
+    retrieval: true
+    photo_kept: true
+    photo_in_query: true
+    photo_in_generation: true
+    query_contains: ["3300", A7]
+- id: hold_pending_vf7
+  origin: holdout
+  turn: "Es el VF7"
+  focus_count: 0
+  pending_slot: controller
+  expected:
+    move: answer_pending
+    clarification_target: null
+    decision: ready
+    fact: { slot: controller, value: VF7 }
+- id: hold_model_correction
+  origin: holdout
+  turn: "El modelo no es OTIS2000, es Gen2"
+  focus_count: 0
+  facts:
+    model: { value: OTIS2000, source: user }
+  expected:
+    move: correct
+    clarification_target: null
+    retrieval: true
+    rejected: [OTIS2000]
+    active: [Gen2]
+- id: hold_short_symptom
+  origin: holdout
+  turn: "El motor no abre"
+  focus_count: 0
+  expected:
+    decision: ready
+    retrieval: true
+    clarification_target: null
+    query_contains: [motor, abre]

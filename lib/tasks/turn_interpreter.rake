@@ -10,8 +10,9 @@ module TurnInterpreterEval
 
   module_function
 
-  def run
-    path = Rails.root.join("test/fixtures/files/field_companion/turn_interpreter_eval.yml")
+  def run(fixture = "test/fixtures/files/field_companion/turn_interpreter_eval.yml")
+    path = Rails.root.join(fixture)
+    label = fixture.include?("holdout") ? "turn_interpreter:holdout" : "turn_interpreter:eval"
     cases = YAML.safe_load_file(path)
     account = Account.order(:id).first || abort("turn_interpreter:eval needs an account")
     catalog = Rag::DocumentIdentityCatalog.current
@@ -67,12 +68,13 @@ module TurnInterpreterEval
 
     rates = BedrockQuery::BEDROCK_PRICING[Rag::TurnInterpreter::MODEL_ID] || { input: 0, output: 0 }
     cost = (input_tokens / 1000.0 * rates[:input].to_f) + (output_tokens / 1000.0 * rates[:output].to_f)
-    puts "passes=#{cases.size - mismatches.size} mismatches=#{mismatches.size} fallbacks=#{fallbacks} field_rejections=#{field_rejections}"
+    prefix = label == "turn_interpreter:holdout" ? "holdout_" : ""
+    puts "#{prefix}passes=#{cases.size - mismatches.size} #{prefix}mismatches=#{mismatches.size} #{prefix}fallbacks=#{fallbacks} #{prefix}field_rejections=#{field_rejections}"
     puts "clarification_target_accuracy=#{accuracy(clarification_hits, clarification_total)} photo_context_accuracy=#{accuracy(photo_hits, photo_total)}"
     puts "p50_ms=#{percentile(latencies, 50)} p95_ms=#{percentile(latencies, 95)}"
     puts "input_tokens=#{input_tokens} output_tokens=#{output_tokens} estimated_usd=#{format("%.6f", cost)}"
     mismatches.each { |line| puts "mismatch #{line}" }
-    abort "turn_interpreter:eval failed" if mismatches.any?
+    abort "#{label} failed" if mismatches.any? || fallbacks.positive? || field_rejections.positive?
   ensure
     created_photos.each { |photo| photo.destroy if photo&.persisted? }
   end
@@ -104,8 +106,11 @@ module TurnInterpreterEval
       episode.append_rejected!(item["slot"], item["value"])
     end
     if row["pending_slot"].present?
-      episode.pending_question = { "type" => row["pending_slot"].to_s }
-      episode.pending_fact = { "subject" => row["pending_slot"].to_s, "correlation_id" => "eval-seed" }
+      slot = row["pending_slot"].to_s
+      episode.pending_question = { "type" => slot }
+      if Rag::PendingQuestion::FACT_TYPES.include?(slot)
+        episode.pending_fact = { "subject" => slot, "correlation_id" => "eval-seed" }
+      end
       carry = Array(row["pending_carry"])
       episode.pending_question["carry"] = carry if carry.any?
     end
@@ -310,6 +315,11 @@ namespace :turn_interpreter do
   desc "Run the TurnInterpreter fixture against Haiku. CI must not call this."
   task eval: :environment do
     TurnInterpreterEval.run
+  end
+
+  desc "Run the TurnInterpreter holdout against Haiku. CI must not call this."
+  task holdout: :environment do
+    TurnInterpreterEval.run("test/fixtures/files/field_companion/turn_interpreter_holdout.yml")
   end
 
   desc "Read recent turn_interpreter events after the owner canary"

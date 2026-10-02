@@ -52,6 +52,66 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
     assert decision.performs_retrieval?
   end
 
+  test "fallback on a work relation pending repeats that question and keeps its carry" do
+    episode = open_episode
+    episode.assign_goal!("la puerta no cierra", correlation_id: "seed")
+    episode.write_fact!("controller", status: "known", value: "NICE3000", source: "user", correlation_id: "seed", at: @now.iso8601)
+    episode.pending_question = { "type" => "work_relation", "carry" => [ "Q2" ] }
+
+    decision = fallback_for(episode, "Es otro ascensor")
+
+    assert_equal "clarify_first", decision.decision
+    assert_equal false, decision.outside_discovery
+    assert_equal false, decision.owns_query
+    assert_nil decision.retrieval_query
+    assert_equal "¿Esto sigue siendo el mismo equipo o estás hablando de otro?", decision.clarification
+    assert_equal "work_relation", decision.pending_question["type"]
+    assert_equal [ "Q2" ], decision.pending_question["carry"]
+    assert_equal true, decision.fallback
+  end
+
+  test "fallback on a referent pending repeats that question without retrieval" do
+    episode = open_episode
+    episode.assign_goal!("la puerta no cierra", correlation_id: "seed")
+    episode.pending_question = { "type" => "referent" }
+
+    decision = fallback_for(episode, "el de arriba", focus_count: 2)
+
+    assert_equal "clarify_first", decision.decision
+    assert_equal false, decision.outside_discovery
+    assert_equal false, decision.owns_query
+    assert_nil decision.retrieval_query
+    assert_equal "¿A qué equipo o elemento te refieres?", decision.clarification
+    assert_equal "referent", decision.pending_question["type"]
+    assert_equal [ 4 ], decision.focus_document_ids
+  end
+
+  test "fallback on a correction target repeats that question and keeps carry" do
+    episode = open_episode
+    episode.assign_goal!("la puerta no cierra", correlation_id: "seed")
+    episode.pending_question = { "type" => "correction_target", "carry" => [ "Q2" ] }
+
+    decision = fallback_for(episode, "no era ese")
+
+    assert_equal "clarify_first", decision.decision
+    assert_equal false, decision.owns_query
+    assert_nil decision.retrieval_query
+    assert_equal "¿Qué dato del equipo quieres corregir?", decision.clarification
+    assert_equal [ "Q2" ], decision.pending_question["carry"]
+  end
+
+  test "fallback with a controller pending still composes the turn" do
+    episode = open_episode
+    episode.assign_goal!("la puerta no cierra", correlation_id: "seed")
+    episode.pending_question = { "type" => "controller" }
+
+    decision = fallback_for(episode, "sigue igual")
+
+    assert_equal "ready", decision.decision
+    assert_includes decision.retrieval_query, "sigue igual"
+    assert_equal I18n.t("rag.clarify_controller", locale: :es), decision.clarification
+  end
+
   test "meta still wins over unclear" do
     decision = Rag::RoutePolicy.call(
       previous: open_episode,
@@ -66,6 +126,18 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
 
   def open_episode
     Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+  end
+
+  def fallback_for(episode, turn, focus_count: 0)
+    Rag::RoutePolicy.fallback(
+      episode: episode,
+      turn: turn,
+      focus_count: focus_count,
+      focus_document_ids: [ 4 ],
+      focus_uris: [ "s3://bucket/manual.pdf" ],
+      catalog: nil,
+      viewer_account: nil
+    )
   end
 
   def perception(move, target: nil, observations: [])

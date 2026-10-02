@@ -595,8 +595,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       )
       @session.record_user_turn!("el modelo no lo sé", user_id: users(:one).id, correlation_id: "query:5")
 
-      kone = analysis_result
-      kone[:parsed] = kone[:parsed].merge("manufacturer" => "KONE", "model" => "UNKNOWN")
+      kone = analysis_result.merge(relevance_to_goal: "relevant", target_visible: true)
+      kone[:parsed] = kone[:parsed].merge("manufacturer" => "KONE", "model" => "UNKNOWN", "relevance_to_goal" => "relevant", "target_visible" => true)
       with_analysis_service(result: kone) do
         FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
       end
@@ -1007,7 +1007,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         episode.pending_fact = { "subject" => "controller", "correlation_id" => "seed" }
         @session.update!(active_episode: episode.to_h)
 
-        with_analysis_service(result: analysis_result) do
+        with_analysis_service(result: analysis_result.merge(relevance_to_goal: "relevant", target_visible: true)) do
           FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
         end
         kept = @session.reload.active_episode
@@ -1025,7 +1025,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         brand.pending_question = { "type" => "manufacturer" }
         brand.pending_fact = { "subject" => "manufacturer", "correlation_id" => "seed" }
         manufacturer.update!(active_episode: brand.to_h)
-        nice = analysis_result
+        nice = analysis_result.merge(relevance_to_goal: "relevant", target_visible: true)
         nice[:parsed] = nice[:parsed].merge("manufacturer" => "NICE", "model" => "UNKNOWN", "relevance_to_goal" => "relevant", "target_visible" => true)
         with_analysis_service(result: nice) do
           FieldPhotoAnalysisJob.perform_now(**job_args.merge(
@@ -1041,7 +1041,109 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
   end
 
+  test "a captionless photo with a visual goal keeps a relevant reading for the follow-up" do
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:alone-door")
+      episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+      episode.assign_goal!("la puerta no cierra", correlation_id: "seed")
+      @session.update!(active_episode: episode.to_h)
+      intent = Rag::PhotoIntent.resolve(
+        question: nil, episode_state: @session.active_episode, history: @session.conversation_history, now: Time.current
+      )
+      assert_equal "goal", intent["source"]
+
+      with_vision_client(display_vision_json) do |client|
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+        assert_equal 1, client.calls.size
+      end
+
+      stored = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation
+      assert_equal "relevant", stored["relevance_to_goal"]
+      kept = @session.reload.active_episode
+      assert_equal "NICE", kept.dig("facts", "manufacturer", "value")
+      assert_equal "photo", kept.dig("facts", "manufacturer", "source")
+      assert_equal "NICE3000", kept.dig("facts", "model", "value")
+      assert_equal "photo", kept.dig("facts", "model", "source")
+
+      context, query, generation = captionless_follow_up
+      assert context.relevant?
+      assert_includes context.query_terms, "E51"
+      assert_includes query, "NICE3000"
+      assert_includes query, "E51"
+      assert_includes generation, "Photo Evidence for the active episode"
+      assert_includes generation, "E51"
+    end
+  end
+
+  test "a captionless photo without visual intent does not enter retrieval or generation" do
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:alone-board")
+      episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+      episode.assign_goal!("revisar el tablero", correlation_id: "seed")
+      @session.update!(active_episode: episode.to_h)
+      assert_nil Rag::PhotoIntent.resolve(
+        question: nil, episode_state: @session.active_episode, history: [], now: Time.current
+      )
+
+      with_vision_client(display_vision_json) do |client|
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+        assert_equal 1, client.calls.size
+      end
+
+      stored = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation
+      assert_nil stored["relevance_to_goal"]
+      assert_equal "NICE3000", stored["model"]
+      kept = @session.reload.active_episode
+      assert_nil kept.dig("facts", "model")
+      assert_nil kept.dig("facts", "manufacturer")
+      assert kept["active_photo"].present?
+
+      context, query, generation = captionless_follow_up
+      assert_not context.relevant?
+      assert_empty context.query_terms
+      assert_nil context.generation_block
+      assert_equal "NICE3000", context.to_prompt["model"]
+      assert_not_includes query.to_s, "NICE3000"
+      assert_not_includes query.to_s, "E51"
+      assert_not_includes generation, "Photo Evidence"
+      assert_not_includes generation, "Read from the photo"
+      assert_not_includes SessionContextBuilder.field_problem_block(@session), "NICE3000"
+    end
+  end
+
   private
+
+  def captionless_follow_up
+    episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+    context = Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: accounts(:legacy))
+    perception = Rag::TurnPerception::Result.new(
+      valid: true, move: "follow_up", observations: [], pending_resolution: nil, clarification_target: nil,
+      identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+    )
+    decision = Rag::RoutePolicy.call(
+      previous: episode, perception: perception, focus_count: 0, relevant_photo: context.relevant?
+    )
+    query = Rag::QueryComposer.call(
+      state: episode, turn: "¿Qué reviso ahora?", perception: perception, decision: decision,
+      active_photo_context: context
+    )
+    generation = SessionContextBuilder.build(@session, active_photo_context: context)
+    [ context, query, generation ]
+  end
+
+  def display_vision_json
+    vision_json(
+      "canonical_component" => "display de puerta",
+      "manufacturer" => "NICE",
+      "model" => "NICE3000",
+      "subsystem" => "DOOR_OPERATOR",
+      "condition" => "DEGRADED",
+      "visible_text" => [ "E51" ],
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant",
+      "summary" => "Se ve un display."
+    )
+  end
 
   def with_episode_flag(value)
     previous = ENV["FIELD_COMPANION_EPISODE_ENABLED"]

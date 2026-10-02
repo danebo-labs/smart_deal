@@ -1156,7 +1156,9 @@ class ConversationSessionTest < ActiveSupport::TestCase
       { target_visible: false, relevance_to_goal: "unrelated" },
       { target_visible: false, relevance_to_goal: "uncertain" },
       { target_visible: false, relevance_to_goal: nil },
-      { target_visible: true, relevance_to_goal: "unrelated" }
+      { target_visible: true, relevance_to_goal: "unrelated" },
+      { target_visible: true, relevance_to_goal: "uncertain" },
+      { target_visible: true, relevance_to_goal: nil }
     ].each_with_index do |relation, index|
       session = web_episode_session
       with_episode_flag("true") do
@@ -1183,6 +1185,34 @@ class ConversationSessionTest < ActiveSupport::TestCase
       assert_equal "M1", episode.dig("facts", "model", "value")
       assert_equal "second-#{index}", episode.dig("active_photo", "sha256")
       assert_equal 20 + index, episode.dig("active_photo", "field_photo_id")
+    end
+  end
+
+  test "an uncertain or unscoped photo sets the pointer and does not become identity" do
+    [
+      { target_visible: true, relevance_to_goal: "uncertain", model_visible: "OTIS2000" },
+      { target_visible: true, relevance_to_goal: nil, model_visible: "HIDDEN3000" }
+    ].each_with_index do |relation, index|
+      session = web_episode_session
+      with_episode_flag("true") do
+        session.record_user_turn!("Cómo se ajustan los resortes?", user_id: users(:one).id, correlation_id: "query:plain-#{index}")
+        owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:plain-#{index}")
+        session.record_photo_observation!(
+          photo_value: { manufacturer: "NICE", **relation },
+          field_photo_id: 30 + index,
+          sha256: "plain-#{index}",
+          correlation_id: "photo:plain-#{index}",
+          expected_episode_id: owner
+        )
+      end
+
+      episode = session.reload.active_episode
+      assert_nil episode.dig("facts", "manufacturer")
+      assert_nil episode.dig("facts", "model")
+      assert_equal 30 + index, episode.dig("active_photo", "field_photo_id")
+      context = SessionContextBuilder.build(session)
+      assert_not_includes context, relation[:model_visible]
+      assert_not_includes context, "Read from the photo"
     end
   end
 

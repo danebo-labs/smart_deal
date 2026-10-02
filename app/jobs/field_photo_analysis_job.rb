@@ -308,16 +308,20 @@ class FieldPhotoAnalysisJob < ApplicationJob
   end
 
   # A failed sanitize does not replace a previous valid reading and does not
-  # block the answer that was already paid for.
+  # block the answer that was already paid for. The stored relevance is the
+  # normalized one: a model claim without photo intent stays nil.
   def store_visual_observation(result, field_photo_id:, account_id:)
     return if field_photo_id.blank? || account_id.blank?
 
     photo = FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
     return if photo.nil?
 
+    parsed = result[:parsed].to_h.stringify_keys
+    parsed["relevance_to_goal"] = result[:relevance_to_goal]
+    parsed["target_visible"] = result[:target_visible]
     FieldPhotoObservation.persist!(
       photo,
-      FieldPhotoObservation.from_analysis(parsed: result[:parsed], model_id: result[:model])
+      FieldPhotoObservation.from_analysis(parsed: parsed, model_id: result[:model])
     )
   rescue StandardError => e
     Rails.logger.warn("FieldPhotoAnalysisJob observation persist failed account=#{account_id} reason=#{e.class}")

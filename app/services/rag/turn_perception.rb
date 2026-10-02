@@ -17,7 +17,7 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
-    PROMPT_VERSION = "2026-10-02.3"
+    PROMPT_VERSION = "2026-10-02.4"
     SCHEMA_VERSION = "turn_perception.3"
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
@@ -98,6 +98,7 @@ module Rag
       return invalid("over_length") if over_length?(data)
 
       assertions = literal_assertions(data["assertions"])
+      assertions = supply_omitted_negate(data["move"], assertions)
       observations = literal_observations(data["observations"])
       identities, ambiguities = resolve_assertions(assertions, observations)
       move = data["move"]
@@ -191,18 +192,61 @@ module Rag
       end
     end
 
+    # correct requires a negate of the stored value. When the model sends only
+    # the replacement, recover that negate if exactly one known value is literal
+    # in the turn. Two stored values stay unresolved.
+    def supply_omitted_negate(move, assertions)
+      return assertions unless move == "correct"
+      return assertions if assertions.any? { |item| item["act"] == "negate" }
+
+      asserted = assertions.select { |item| item["act"] == "assert" }.map { |item| normalize_span(item["span"]) }
+      values = literal_fact_values.reject { |value| asserted.include?(normalize_span(value)) }
+      return assertions unless values.one?
+
+      assertions + [ { "span" => values.first, "act" => "negate", "slot_hint" => nil } ]
+    end
+
+    def literal_fact_values
+      return [] unless @episode.respond_to?(:fact)
+
+      ActiveEpisode::FACT_KEYS.filter_map { |key|
+        fact = @episode.fact(key)
+        next unless fact.is_a?(Hash) && fact["status"] == "known"
+
+        value = fact["value"].to_s
+        next if value.blank? || !literal_span?(value)
+
+        value
+      }
+    end
+
     def literal_observations(observations)
       observations.filter_map.with_index do |text, index|
-        if !literal_span?(text)
+        phrase = text.to_s.strip
+        if !literal_span?(phrase)
           reject_field("observations[#{index}]", "not_literal")
           nil
-        elsif text.strip.length < MIN_OBSERVATION_CHARS || short_token?(text)
+        elsif symptom_observation?(phrase)
+          phrase
+        else
           reject_field("observations[#{index}]", "not_symptom")
           nil
-        else
-          text.strip
         end
       end
+    end
+
+    # A literal multi-word phrase can be a short field symptom. A single token
+    # is not an observation when it is a code, a short token, or under the floor.
+    def symptom_observation?(text)
+      tokens = text.to_s.squish.split(/\s+/)
+      return false if tokens.empty?
+      return true if tokens.many?
+
+      !lone_technical_token?(tokens.first)
+    end
+
+    def lone_technical_token?(token)
+      token.match?(FAULT_RE) || short_token?(token) || token.length < MIN_OBSERVATION_CHARS
     end
 
     def literal_span?(span)

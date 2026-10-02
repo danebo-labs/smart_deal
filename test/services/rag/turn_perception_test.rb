@@ -165,6 +165,85 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_empty result.observations
   end
 
+  test "a correct assert recovers the one stored value that is literal in the turn" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.write_fact!(
+      "model", status: "known", value: "KONE", source: "user",
+      correlation_id: "seed", at: Time.current.iso8601
+    )
+    result = perceive(
+      {
+        "move" => "correct",
+        "assertions" => [ assert_span("OTIS") ],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      "No es KONE, es OTIS",
+      episode: episode
+    )
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    negate = result.identities.find { |item| item.kind == "negate" }
+    assert_equal "model", negate.slot
+    assert_equal "KONE", negate.span
+  end
+
+  test "a correct assert does not choose between two stored values in the turn" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.write_fact!(
+      "manufacturer", status: "known", value: "KONE", source: "user",
+      correlation_id: "seed", at: Time.current.iso8601
+    )
+    episode.write_fact!(
+      "controller", status: "known", value: "NICE3000", source: "user",
+      correlation_id: "seed", at: Time.current.iso8601
+    )
+    result = perceive(
+      {
+        "move" => "correct",
+        "assertions" => [ assert_span("OTIS") ],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      "No es KONE ni NICE3000, es OTIS",
+      episode: episode
+    )
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+    assert_empty result.identities
+  end
+
+  test "a short multi-word symptom is kept and a lone technical token is not" do
+    symptoms = perceive(
+      observation_report([ "no abre", "no frena", "se traba" ]),
+      "el freno no abre, no frena y se traba"
+    )
+    more = perceive(
+      observation_report([ "no parte", "no nivela", "no arranca" ]),
+      "el equipo no parte, no nivela y no arranca"
+    )
+    tokens = perceive(
+      observation_report([ "E51", "NICE3000", "Elemont" ]),
+      "veo E51 NICE3000 y Elemont"
+    )
+    code = perceive(observation_report([ "Q2" ]), "¿Qué es Q2?")
+    missing = perceive(observation_report([ "no cierra" ]), "el freno falla")
+
+    assert_equal [ "no abre", "no frena", "se traba" ], symptoms.observations
+    assert_empty symptoms.field_rejections
+    assert_equal [ "no parte", "no nivela", "no arranca" ], more.observations
+    assert_empty tokens.observations
+    assert_equal %w[not_symptom not_symptom not_symptom], tokens.field_rejections.pluck("reason")
+    assert_empty code.observations
+    assert_equal [ "not_symptom" ], code.field_rejections.pluck("reason")
+    assert_empty missing.observations
+    assert_equal [ "not_literal" ], missing.field_rejections.pluck("reason")
+  end
+
   test "span validation uses the same truncated turn history persists" do
     body = "#{'A' * 280} KEEP #{'B' * 40} ABC900"
     truncated = Rag::TurnText.truncate(body)
@@ -257,6 +336,10 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     Rag::TurnPerception.build(
       raw, turn: turn, episode: episode, catalog: @catalog, viewer_account: viewer
     )
+  end
+
+  def observation_report(observations)
+    { "move" => "report", "assertions" => [], "observations" => observations, "pending_resolution" => nil, "clarification_target" => nil }
   end
 
   def report(assertions)

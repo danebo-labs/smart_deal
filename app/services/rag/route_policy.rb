@@ -135,6 +135,9 @@ module Rag
     end
 
     def fallback(turn, catalog, viewer_account)
+      repeated = conversational_fallback
+      return repeated if repeated
+
       if thin?(@previous) && @focus_count.zero?
         return finish(
           "clarify_first",
@@ -167,6 +170,24 @@ module Rag
 
     def thin_new_work?
       @perception.move == "new_work" && !@perception.technical_payload?
+    end
+
+    # A failed interpretation does not guess the reply. The open conversational
+    # question is repeated and the pending, including its carry, stays put.
+    def conversational_fallback
+      question = @previous.pending_question
+      type = question.is_a?(Hash) ? question["type"].to_s : ""
+      return nil unless PendingQuestion::CONVERSATIONAL_TYPES.include?(type)
+
+      finish(
+        "clarify_first",
+        outside_discovery: false,
+        owns_query: false,
+        clarification: I18n.t("rag.clarify_#{type}", locale: @locale),
+        pending_subject: type,
+        pending_question: question,
+        fallback: true
+      )
     end
 
     def conversational_pending(target)

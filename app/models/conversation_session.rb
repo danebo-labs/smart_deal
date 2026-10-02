@@ -1272,13 +1272,11 @@ class ConversationSession < ApplicationRecord
     close_photo_pending!(episode, written) if Rag::HaikuQueryAnalysisFlag.owner?
   end
 
-  # A relevant nameplate can identify the equipment without showing the asked-about
-  # assembly. Unrelated photos, and hidden photos that are not relevant, cannot.
+  # Only a reading the pipeline marked relevant becomes equipment identity.
+  # A relevant nameplate can do that without showing the asked-about assembly.
+  # uncertain, nil, and unrelated stay on the photo and do not become source=photo.
   def photo_identity_blocked?(readings)
-    relevance = readings["relevance_to_goal"]
-    return true if relevance == "unrelated"
-
-    readings["target_visible"] == false && relevance != "relevant"
+    readings["relevance_to_goal"] != "relevant"
   end
 
   def apply_photo_fact!(episode, key, raw, correlation_id)

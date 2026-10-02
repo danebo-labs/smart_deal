@@ -88,6 +88,19 @@ class Rag::PhotoIntentTest < ActiveSupport::TestCase
     assert_not_includes intent["text"], "resortes"
   end
 
+  test "a captionless photo uses a visual goal and ignores a goal with no visual target" do
+    door = Rag::PhotoIntent.resolve(
+      question: nil, episode_state: episode(goal: "la puerta no cierra"), history: [], now: NOW
+    )
+    board = Rag::PhotoIntent.resolve(
+      question: nil, episode_state: episode(goal: "revisar el tablero"), history: [], now: NOW
+    )
+
+    assert_equal "goal", door["source"]
+    assert_includes door["text"], "puerta"
+    assert_nil board
+  end
+
   test "a visual goal is the fallback when history has no visual target" do
     intent = Rag::PhotoIntent.resolve(
       question: nil,

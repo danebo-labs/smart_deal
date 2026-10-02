@@ -703,6 +703,28 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     end
   end
 
+  test "an uncertain photo stays out of generation and a remembered photo fact stays in" do
+    uncertain = photo_context("uncertain", "OTIS2000")
+    session = episode_session(
+      goal: "el freno no suelta",
+      facts: { "model" => known_fact("NICE3000", source: "photo") }
+    )
+    session.update!(active_episode: session.active_episode.merge(
+      "active_photo" => { "field_photo_id" => uncertain.field_photo_id, "sha256" => "ab", "correlation_id" => "photo" }
+    ))
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        problem = SessionContextBuilder.field_problem_block(session)
+        text = SessionContextBuilder.build(session, active_photo_context: uncertain)
+        assert_includes problem, "Read from the photo, not stated by the technician: model NICE3000"
+        assert_includes text, "model NICE3000"
+        assert_not_includes text, "Photo Evidence"
+        assert_not_includes text, "OTIS2000"
+      end
+    end
+  end
+
   test "only a relevant active photo is photo evidence and it stays inside the context cap" do
     session = episode_session(goal: "Nice300 e51")
     relevant = photo_context("relevant", "NICE3000")
@@ -725,6 +747,14 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
       ))
       assert_not_includes SessionContextBuilder.build(uncertain_session, active_photo_context: uncertain), "Photo Evidence"
       assert_not_includes SessionContextBuilder.build(session, active_photo_context: unrelated), "ZZ9MODEL"
+      blank = photo_context(nil, "HIDDEN3000")
+      blank_session = episode_session(goal: "Nice300 e51")
+      blank_session.update!(active_episode: blank_session.active_episode.merge(
+        "active_photo" => { "field_photo_id" => blank.field_photo_id, "sha256" => "ab", "correlation_id" => "photo" }
+      ))
+      blank_text = SessionContextBuilder.build(blank_session, active_photo_context: blank)
+      assert_not_includes blank_text, "Photo Evidence"
+      assert_not_includes blank_text, "HIDDEN3000"
       other = photo_context("relevant", "OTHER999")
       assert_not_includes SessionContextBuilder.build(session, active_photo_context: other), "OTHER999"
 

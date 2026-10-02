@@ -9,7 +9,7 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
   end
 
   test "relevant photo terms are composed and the other relevances are not" do
-    %w[relevant uncertain unrelated].each do |relevance|
+    [ "relevant", "uncertain", "unrelated", nil ].each do |relevance|
       photo = create_photo(relevance)
       episode = episode_for(photo)
       context = Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: @account)
@@ -28,6 +28,24 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
       end
       assert_operator query.to_s.length, :<=, Rag::FollowupQueryRewriter::MAX_COMPOSED_CHARS
     end
+  end
+
+  test "a remembered photo identity stays in the query when the active photo is not relevant" do
+    photo = create_photo("uncertain")
+    episode = episode_for(photo)
+    episode.write_fact!(
+      "model", status: "known", value: "NICE3000", source: "photo",
+      correlation_id: "seed", at: @now.iso8601
+    )
+    context = Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: @account)
+    query = Rag::QueryComposer.call(
+      state: episode, turn: "¿Qué reviso ahora?", perception: report, decision: decision_for("ready"),
+      active_photo_context: context
+    )
+
+    assert_includes query, "NICE3000"
+    assert_not_includes query, "OTIS2000"
+    assert_not_includes query, "ZZ9"
   end
 
   test "photo terms are dropped when the photo id no longer matches or the route does not retrieve" do

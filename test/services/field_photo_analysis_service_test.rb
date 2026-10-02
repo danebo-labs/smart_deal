@@ -183,6 +183,20 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     assert_not_includes without_intent[:compact_context], "Objetivo visible"
   end
 
+  test "a model claim of relevant is dropped when no intent was sent" do
+    payload = JSON.generate(JSON.parse(VALID_JSON).merge("target_visible" => true, "relevance_to_goal" => "relevant"))
+    kept = build_service(
+      client: FakeClient.new(payload),
+      photo_intent: { "text" => "la puerta no cierra", "source" => "goal" }
+    ).call
+    dropped = build_service(client: FakeClient.new(payload)).call
+
+    assert_equal "relevant", kept[:relevance_to_goal]
+    assert_equal true, kept[:target_visible]
+    assert_nil dropped[:relevance_to_goal]
+    assert_nil dropped[:target_visible]
+  end
+
   test "a true target is kept and labeled visible" do
     payload = JSON.parse(VALID_JSON).merge("target_visible" => true, "relevance_to_goal" => "relevant")
     result = build_service(client: FakeClient.new(JSON.generate(payload)), photo_intent: "el resorte").call

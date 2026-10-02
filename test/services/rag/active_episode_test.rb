@@ -132,16 +132,16 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_operator saturated, :>, 4096
   end
 
-  test "serialization over 2048 bytes drops conflicts and then the oldest identifiers" do
+  test "serialization over the byte budget drops conflicts and keeps identifiers that still fit" do
     episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: NOW)
     episode.assign_goal!("Cómo se ajustan los resortes?", correlation_id: "query:1")
-    episode.add_conflict!(fact: "manufacturer", user: "Fuji Yida", photo: "K" * 3000, correlation_id: "photo:1")
+    episode.add_conflict!(fact: "manufacturer", user: "Fuji Yida", photo: "K" * 5000, correlation_id: "photo:1")
     5.times { |index| episode.append_identifier!("ID#{index}X", correlation_id: "c" * 500) }
 
     payload = episode.to_h
     assert_empty payload["conflicts"]
+    assert_equal 5, payload["identifiers"].size
     assert_operator JSON.generate(payload).bytesize, :<=, Rag::ActiveEpisode::MAX_BYTES
-    assert_operator payload["identifiers"].size, :<, 5
   end
 
   test "X-11 a foreign version or a string is an empty episode and does not raise" do

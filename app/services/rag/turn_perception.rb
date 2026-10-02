@@ -60,7 +60,7 @@ module Rag
               properties: {
                 span: { type: "string", maxLength: ActiveEpisode::MAX_VALUE_CHARS },
                 act: { type: "string", enum: ACTS },
-                slot_hint: { type: %w[string null], enum: HINTS }
+                slot_hint: { type: %w[string null] }
               }
             }
           },
@@ -69,7 +69,7 @@ module Rag
             maxItems: ActiveEpisode::MAX_OBSERVATIONS,
             items: { type: "string", maxLength: ActiveEpisode::MAX_OBSERVATION_CHARS }
           },
-          pending_resolution: { type: %w[string null], enum: RESOLUTIONS }
+          pending_resolution: { type: %w[string null] }
         }
       }
     end
@@ -358,9 +358,8 @@ module Rag
     end
 
     def value_matches?(identities, slot)
-      asserts = identities.select { |item| item.act == "assert" || (item.kind == "fact" && item.act != "negate") }
+      asserts = identities.select { |item| item.act == "assert" }
       return false if asserts.empty?
-      return false if asserts.any? { |item| item.kind == "fact" && item.slot != slot }
 
       asserts.any? { |item| item.kind == "identifier" || (item.kind == "fact" && item.slot == slot) }
     end
@@ -385,9 +384,13 @@ module Rag
 
     def type_pending_value(identities)
       slot = pending_slot
-      identities.map { |item|
-        next item unless item.kind == "identifier" && item.act == "assert"
+      return identities if identities.any? { |item| item.kind == "fact" && item.slot == slot }
 
+      typed = false
+      identities.map { |item|
+        next item if typed || item.kind != "identifier" || item.act != "assert"
+
+        typed = true
         fact(item.span, "assert", slot, item.span, "user", nil)
       }
     end

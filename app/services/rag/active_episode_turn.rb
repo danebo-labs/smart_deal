@@ -104,6 +104,8 @@ module Rag
         return nil
       end
 
+      return nil if HaikuQueryAnalysisFlag.owner?
+
       subjects = text.scan(/[^?]+\?/).filter_map { |sentence| pending_subject(FollowupQueryRewriter.normalize_label(sentence)) }
       return nil unless subjects.size == 1
 

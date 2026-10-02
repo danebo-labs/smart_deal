@@ -57,6 +57,22 @@ module RagQueryConcern
     )
   end
 
+  def meta_result(question, understanding, correlation_id, locale)
+    RagResult.new(
+      success?: true,
+      answer: understanding.clarification,
+      citations: [],
+      retrieved_citations: [],
+      doc_refs: [],
+      correlation_id: correlation_id,
+      response_locale: locale.to_s,
+      generation_mode: "meta",
+      model_invoked: false,
+      effective_question: question,
+      turn_understanding: understanding
+    )
+  end
+
   def clarify_first_result(question, understanding, correlation_id, locale)
     RagResult.new(
       success?: true,
@@ -142,6 +158,9 @@ module RagQueryConcern
     # confirmation.
     pin_label_turn = images.empty? && documents.empty? && selection_turn?(question, conv_session)
     understanding = turn_understanding_for(question, conv_session, episode_turn, retrieval_question, images, documents, pin_label_turn)
+    if understanding.respond_to?(:meta?) && understanding.meta?
+      return meta_result(question, understanding, correlation_id, resolved_response_locale)
+    end
     if understanding&.clarify_first?
       return clarify_first_result(question, understanding, correlation_id, resolved_response_locale)
     end

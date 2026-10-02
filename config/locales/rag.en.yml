@@ -79,6 +79,7 @@ en:
     manual_discovery_outside: "This may help with this question. It is not part of the answer until you add it."
     manual_replay_failed: "The manual stayed selected. I could not ask the question again. You can retry."
     manual_replay_reused: "This question was already answered with these manuals."
+    meta_continue: "You can continue with what you already told me."
     clarify_identifier: "%{token} can mean different things depending on the equipment. Which elevator or controller are you working on? If you do not know the brand or model, send a photo of the nameplate or the controller."
     clarify_identifier_focus: "This manual does not define %{token}. Does %{token} belong to this same equipment, or are you looking at another controller or drawing? A brand, a model, or a photo is enough to narrow it."
     clarify_ambiguous_designator: "%{token} matches more than one controller. Which one are you looking at?"

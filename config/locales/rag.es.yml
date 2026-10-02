@@ -79,6 +79,7 @@ es:
     manual_discovery_outside: "Puede servir para esta consulta. No entra en la respuesta hasta que lo agregues."
     manual_replay_failed: "El manual quedó seleccionado. No pude volver a consultar. Podés reintentar."
     manual_replay_reused: "Esa consulta ya se respondió con estos manuales."
+    meta_continue: "Puedes seguir con lo que ya me contaste."
     clarify_identifier: "%{token} puede significar cosas distintas según el equipo. ¿Qué ascensor o controlador estás revisando? Si no sabes la marca o el modelo, puedes mandarme una foto de la placa o del controlador."
     clarify_identifier_focus: "En este manual no encuentro una definición de %{token}. ¿%{token} corresponde a este mismo equipo o estás viendo otro controlador o plano? Si tienes la marca, el modelo o una foto, con eso lo puedo acotar."
     clarify_ambiguous_designator: "%{token} coincide con más de un controlador. ¿Cuál estás viendo?"

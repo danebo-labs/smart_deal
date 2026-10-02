@@ -4,6 +4,7 @@ module Rag
   # Machine-readable question Ruby already knows it asked. No model call.
   module PendingQuestion
     TYPES = %w[fault_code manufacturer model controller choice absent].freeze
+    MAX_CARRY = 2
     FACT_TYPES = %w[fault_code manufacturer model controller].freeze
     CHOICE_OPENING = %w[opening closing].freeze
 
@@ -16,6 +17,8 @@ module Rag
       return nil unless TYPES.include?(type)
 
       question = { "type" => type }
+      carry = sanitize_carry(raw["carry"])
+      question["carry"] = carry if carry.any?
       return question unless type == "choice"
 
       options = Array(raw["options"]).map { |option| option.to_s.strip }.reject(&:empty?)
@@ -38,6 +41,17 @@ module Rag
       end
 
       nil
+    end
+
+    def sanitize_carry(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |item|
+        text = item.to_s.strip
+        next if text.blank? || text.length > ActiveEpisode::MAX_VALUE_CHARS
+
+        text
+      }.uniq.first(MAX_CARRY)
     end
   end
 end

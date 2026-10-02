@@ -1,0 +1,310 @@
+# frozen_string_literal: true
+
+module Rag
+  # What to do with a validated perception, given the episode and the fresh
+  # Document Focus. It does not call a model and it does not write state.
+  class RoutePolicy
+    Decision = Data.define(
+      :decision, :retrieval_query, :clarification, :pending_subject,
+      :outside_discovery, :owns_query, :bare_identifier, :ask_when, :mutations,
+      :dialogue_function, :context_carry, :focus_uris, :focus_document_ids,
+      :pending_question, :fallback
+    ) do
+      def clarify_first?
+        decision == "clarify_first"
+      end
+
+      def search_and_clarify?
+        decision == "search_and_clarify"
+      end
+
+      def best_effort?
+        decision == "best_effort"
+      end
+
+      def meta?
+        decision == "meta"
+      end
+
+      def performs_retrieval?
+        %w[ready search_and_clarify best_effort].include?(decision)
+      end
+    end
+
+    def self.call(previous:, perception:, focus_count:, focus_document_ids: [], focus_uris: [], locale: :es)
+      new(
+        previous: previous, perception: perception, focus_count: focus_count,
+        focus_document_ids: focus_document_ids, focus_uris: focus_uris, locale: locale
+      ).call
+    end
+
+    def self.fallback(episode:, turn:, focus_count:, focus_document_ids:, focus_uris:, catalog:, viewer_account:, locale: :es)
+      new(
+        previous: episode, perception: nil, focus_count: focus_count,
+        focus_document_ids: focus_document_ids, focus_uris: focus_uris, locale: locale
+      ).fallback(turn, catalog, viewer_account)
+    end
+
+    def initialize(previous:, perception:, focus_count:, focus_document_ids:, focus_uris:, locale:)
+      @previous = previous || ActiveEpisode.new
+      @perception = perception
+      @focus_count = focus_count.to_i
+      @focus_document_ids = Array(focus_document_ids)
+      @focus_uris = Array(focus_uris)
+      @locale = locale.to_sym
+    end
+
+    def call
+      previous = @perception.move == "new_work" ? ActiveEpisode.new : @previous
+      if @perception.move == "meta"
+        return finish("meta", outside_discovery: false, owns_query: false, clarification: I18n.t("rag.meta_continue", locale: @locale))
+      end
+      if clarify_first?(previous)
+        return finish(
+          "clarify_first",
+          outside_discovery: false,
+          owns_query: false,
+          clarification: clarify_text,
+          pending_subject: "controller",
+          ask_when: :instead,
+          pending_question: pending_with_carry("controller")
+        )
+      end
+      if best_effort?
+        return finish("best_effort", outside_discovery: true, owns_query: true)
+      end
+      ambiguous = @perception.ambiguities.first
+      if ambiguous
+        return finish(
+          "search_and_clarify",
+          outside_discovery: true,
+          owns_query: true,
+          clarification: I18n.t("rag.clarify_ambiguous_designator", token: ambiguous.candidates.join(" / "), locale: @locale),
+          pending_subject: "controller",
+          ask_when: :always,
+          pending_question: { "type" => "controller" }
+        )
+      end
+      if ask_controller?(previous)
+        return finish(
+          "search_and_clarify",
+          outside_discovery: true,
+          owns_query: true,
+          clarification: I18n.t("rag.clarify_controller", locale: @locale),
+          pending_subject: "controller",
+          ask_when: :always,
+          pending_question: { "type" => "controller" }
+        )
+      end
+      if focus_mention?
+        token = short_mention.span
+        return finish(
+          "search_and_clarify",
+          outside_discovery: false,
+          owns_query: true,
+          clarification: I18n.t("rag.clarify_identifier_focus", token: token, locale: @locale),
+          pending_subject: "controller",
+          ask_when: :absence,
+          bare_identifier: token,
+          pending_question: { "type" => "controller" }
+        )
+      end
+
+      finish("ready", outside_discovery: true, owns_query: true)
+    end
+
+    def fallback(turn, catalog, viewer_account)
+      if thin?(@previous) && @focus_count.zero?
+        return finish(
+          "clarify_first",
+          outside_discovery: false,
+          owns_query: false,
+          clarification: I18n.t("rag.clarify_controller", locale: @locale),
+          pending_subject: "controller",
+          ask_when: :instead,
+          pending_question: { "type" => "controller" },
+          fallback: true
+        )
+      end
+
+      query = fallback_query(turn, catalog, viewer_account)
+      pending = @previous.pending_question || pending_from_fact
+      finish(
+        "ready",
+        outside_discovery: false,
+        owns_query: query.present?,
+        retrieval_query: query,
+        clarification: pending ? I18n.t("rag.clarify_controller", locale: @locale) : nil,
+        pending_subject: pending && pending["type"],
+        ask_when: pending ? :always : nil,
+        pending_question: pending,
+        fallback: true
+      )
+    end
+
+    private
+
+    def clarify_first?(previous)
+      return false if @focus_count.positive?
+      return false if %w[answer_pending correct new_work].include?(@perception.move)
+      return false if @perception.ambiguities.any?
+      return false unless thin?(previous)
+      return false if @perception.observations.any?
+      return false if @perception.facts.any?
+      return false if @perception.identities.any? { |item| item.act == "assert" && item.kind == "identifier" }
+
+      true
+    end
+
+    def thin?(episode)
+      return true if episode.nil? || episode.blank?
+
+      !known_identity?(episode) && episode.fact("fault_code").nil? &&
+        episode.observations.empty? && episode.goal.blank? && episode.active_photo.blank?
+    end
+
+    def known_identity?(episode)
+      %w[manufacturer model controller].any? { |key| known_fact?(episode, key) }
+    end
+
+    def known_fact?(episode, key)
+      fact = episode.fact(key)
+      fact.is_a?(Hash) && fact["status"] == "known" && fact["value"].present?
+    end
+
+    def best_effort?
+      resolution = @perception.pending_resolution
+      return true if %w[unknown seek].include?(resolution)
+      return false unless @perception.move == "answer_pending"
+
+      slot = pending_slot(@previous)
+      fact = slot && @previous.fact(slot)
+      fact.is_a?(Hash) && fact["status"] == "unknown_confirmed"
+    end
+
+    def ask_controller?(previous)
+      manufacturer = known_fact?(previous, "manufacturer") || @perception.facts.any? { |item| item.slot == "manufacturer" }
+      return false unless manufacturer
+      return false if known_fact?(previous, "model") || known_fact?(previous, "controller")
+      return false if @perception.facts.any? { |item| %w[model controller].include?(item.slot) }
+      return false if previous.fact("controller")&.dig("status") == "unknown_confirmed"
+
+      symptom?(previous)
+    end
+
+    def symptom?(previous)
+      previous.goal.present? || previous.observations.any? || previous.fact("fault_code").present? ||
+        @perception.observations.any? || @perception.facts.any? { |item| item.slot == "fault_code" }
+    end
+
+    def focus_mention?
+      return false unless @focus_count.positive?
+      return false if @perception.facts.any?
+      return false if @perception.identifiers.any?
+
+      mention = short_mention
+      mention && @perception.mentions.one? && @perception.identities.all? { |item| item.kind == "mention" || item.kind == "negate" }
+    end
+
+    def short_mention
+      @perception.mentions.find { |item| item.span.match?(/\A[\p{L}\d]{2,4}\z/) }
+    end
+
+    def clarify_text
+      token = carry_spans.first
+      if token.present?
+        I18n.t("rag.clarify_identifier", token: token, locale: @locale)
+      else
+        I18n.t("rag.clarify_controller", locale: @locale)
+      end
+    end
+
+    def carry_spans
+      @perception.identities.filter_map { |item|
+        next unless %w[mention identifier].include?(item.kind)
+        next if item.span.length > ActiveEpisode::MAX_VALUE_CHARS
+
+        item.span
+      }.uniq.first(PendingQuestion::MAX_CARRY)
+    end
+
+    def pending_with_carry(type)
+      question = { "type" => type }
+      spans = carry_spans
+      question["carry"] = spans if spans.any?
+      question
+    end
+
+    def pending_slot(episode)
+      type = episode.pending_question&.dig("type")
+      return type if ActiveEpisode::PENDING_SUBJECTS.include?(type.to_s)
+
+      subject = episode.pending_fact&.dig("subject")
+      subject if ActiveEpisode::PENDING_SUBJECTS.include?(subject.to_s)
+    end
+
+    def pending_from_fact
+      slot = pending_slot(@previous)
+      return nil if slot.blank?
+
+      question = { "type" => slot }
+      carry = @previous.pending_question&.dig("carry")
+      question["carry"] = carry if carry.is_a?(Array) && carry.any?
+      question
+    end
+
+    def fallback_query(turn, catalog, viewer_account)
+      state_query = QueryComposer.call(
+        state: @previous,
+        turn: turn,
+        perception: fallback_perception,
+        decision: finish("ready", outside_discovery: false, owns_query: true)
+      )
+      extra = catalog_tokens(turn, catalog, viewer_account)
+      [ state_query, extra ].compact_blank.uniq { |item| FollowupQueryRewriter.normalize_label(item) }.join(" ").truncate(FollowupQueryRewriter::MAX_COMPOSED_CHARS)
+    end
+
+    def fallback_perception
+      TurnPerception::Result.new(
+        valid: true, move: "report", observations: [], pending_resolution: nil,
+        identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+      )
+    end
+
+    def catalog_tokens(turn, catalog, viewer_account)
+      return nil if catalog.nil? || viewer_account.nil?
+
+      tokens = turn.to_s.scan(/[\p{L}\d][\p{L}\d-]{1,29}/)
+      found = tokens.filter_map { |token|
+        designator = catalog.resolve_designator(token, viewer_account: viewer_account)
+        if (designator.status == :exact || designator.status == :prefix) && designator.type.present?
+          next designator.value
+        end
+
+        brand = catalog.resolve_brand(token, viewer_account: viewer_account)
+        brand.manufacturer if brand.status == :exact
+      }
+      found.presence&.join(" ")
+    end
+
+    def finish(name, outside_discovery:, owns_query:, clarification: nil, pending_subject: nil, ask_when: nil, pending_question: nil, retrieval_query: nil, bare_identifier: nil, fallback: false)
+      Decision.new(
+        decision: name,
+        retrieval_query: retrieval_query,
+        clarification: clarification,
+        pending_subject: pending_subject,
+        outside_discovery: outside_discovery,
+        owns_query: owns_query,
+        bare_identifier: bare_identifier,
+        ask_when: ask_when,
+        mutations: [],
+        dialogue_function: @perception&.move,
+        context_carry: false,
+        focus_uris: @focus_uris,
+        focus_document_ids: @focus_document_ids,
+        pending_question: pending_question,
+        fallback: fallback
+      )
+    end
+  end
+end

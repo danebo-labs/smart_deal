@@ -3,7 +3,7 @@
 module Rag
   # P1 shadow stays observational. P3 conditional owns only switch and correct. always stays inert.
   module HaikuQueryAnalysisFlag
-    MODES = %w[off shadow conditional always].freeze
+    MODES = %w[off shadow conditional always owner].freeze
     ENV_KEY = "HAIKU_QUERY_ANALYSIS_MODE"
 
     module_function
@@ -23,6 +23,10 @@ module Rag
 
     def conditional?
       mode == "conditional"
+    end
+
+    def owner?
+      mode == "owner"
     end
 
     def reset_unknown_warning!

@@ -146,12 +146,22 @@ class ConversationSession < ApplicationRecord
   # Flag off: the same single UPDATE as add_to_history_and_refresh, and nil.
   # Flag on: history and active_episode in one UPDATE. The caller does not
   # read the Result while the episode flag is the only one enabled.
-  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current)
+  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil)
     unless episode_recording?
       add_to_history_and_refresh("user", content, user_id: user_id, correlation_id: correlation_id)
       return nil
     end
+    if owner_typed_turn?(selection_turn)
+      return record_owner_turn!(
+        content, user_id: user_id, correlation_id: correlation_id, now: now,
+        locale: locale, interpreter_client: interpreter_client
+      )
+    end
 
+    record_legacy_user_turn!(content, user_id: user_id, correlation_id: correlation_id, selection_turn: selection_turn, now: now)
+  end
+
+  def record_legacy_user_turn!(content, user_id:, correlation_id:, selection_turn:, now:)
     result = nil
     with_lock do
       stored_episode = active_episode
@@ -174,27 +184,7 @@ class ConversationSession < ApplicationRecord
           conversation_session_id: id
         }
       )
-      history = conversation_history.last(MAX_HISTORY - 1)
-      history << history_message("user", content, user_id: user_id, correlation_id: correlation_id)
-      attrs = {
-        conversation_history: history,
-        active_episode: result.state,
-        expires_at: EXPIRY_DURATION.from_now
-      }
-      pins_before = focus_document_ids
-      photo_before = photo_marker(stored_episode)
-      episode_before = raw_episode_id(stored_episode)
-      boundary = case_boundary_changes(stored_episode, result, now)
-      attrs.merge!(boundary.attributes) if boundary
-      update!(attrs)
-      log_case_boundary!(
-        episode_before: episode_before,
-        episode_after: raw_episode_id(result.state),
-        boundary: boundary,
-        pins_before: pins_before,
-        photo_before: photo_before,
-        photo_after: photo_marker(result.state)
-      )
+      persist_user_turn!(stored_episode, result, content, user_id, correlation_id, now)
     end
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id)
     result
@@ -689,6 +679,233 @@ class ConversationSession < ApplicationRecord
   end
 
   private
+
+  def owner_typed_turn?(selection_turn)
+    Rag::HaikuQueryAnalysisFlag.owner? && !selection_turn
+  end
+
+  def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:)
+    turn = Rag::TurnText.truncate(content)
+    if duplicate_user_correlation?(correlation_id)
+      return duplicate_owner_result(turn)
+    end
+
+    snapshot = active_episode
+    parsed = Rag::ActiveEpisode.parse(snapshot, now: now)
+    context_episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    interpreted = Rag::TurnInterpreter.call(
+      turn: turn,
+      episode: context_episode,
+      viewer_account: account,
+      correlation_id: correlation_id,
+      attribution: { account_id: account_id, user_id: user_id, conversation_session_id: id },
+      client: interpreter_client
+    )
+
+    result = nil
+    with_lock do
+      if duplicate_user_correlation?(correlation_id)
+        result = duplicate_owner_result(turn)
+        next
+      end
+
+      focus = fresh_focus_snapshot
+      if same_episode?(snapshot, active_episode)
+        result = apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus)
+      else
+        result = apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, "snapshot_changed")
+      end
+    end
+    log_turn_interpreter(interpreted, result, correlation_id, user_id)
+    log_field_companion_turn(result, turn, correlation_id: correlation_id, user_id: user_id) if result&.state.is_a?(Hash)
+    result
+  end
+
+  def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus)
+    perception = interpreted.perception
+    if interpreted.fallback || perception.nil? || !perception.valid
+      return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, interpreted.status)
+    end
+
+    stored = active_episode
+    parsed = Rag::ActiveEpisode.parse(stored, now: now)
+    base = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    policy_previous = perception.move == "new_work" ? Rag::ActiveEpisode.new : base
+    decision = Rag::RoutePolicy.call(
+      previous: policy_previous,
+      perception: perception,
+      focus_count: focus[:ids].size,
+      focus_document_ids: focus[:ids],
+      focus_uris: focus[:uris],
+      locale: locale
+    )
+    working = if perception.move == "new_work" || base.blank?
+      Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
+    else
+      base
+    end
+    unless perception.move == "unclear"
+      Rag::WorkContextReducer.apply!(
+        episode: working, perception: perception, decision: decision,
+        turn: turn, correlation_id: correlation_id, now: now
+      )
+    end
+    payload = working.to_h
+    if Rag::ActiveEpisode.budget_refused?(payload)
+      Rails.logger.info({ event: "episode_budget_refused", conversation_session_id: id, correlation_id: correlation_id }.to_json)
+      return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, "episode_budget_refused")
+    end
+
+    query = Rag::QueryComposer.call(state: working, turn: turn, perception: perception, decision: decision)
+    decision = decision.with(retrieval_query: query, owns_query: query.present? && decision.performs_retrieval?)
+    episode_decision = owner_episode_decision(perception, base)
+    result = Rag::ActiveEpisodeTurn::Result.new(
+      decision: episode_decision,
+      reason: perception.move,
+      state: payload,
+      composed: query,
+      fields_changed: [],
+      understanding: decision
+    )
+    persist_user_turn!(stored, result, turn, user_id, correlation_id, now)
+    result
+  end
+
+  def apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, status)
+    stored = active_episode
+    parsed = Rag::ActiveEpisode.parse(stored, now: now)
+    episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    decision = Rag::RoutePolicy.fallback(
+      episode: episode,
+      turn: turn,
+      focus_count: focus[:ids].size,
+      focus_document_ids: focus[:ids],
+      focus_uris: focus[:uris],
+      catalog: Rag::DocumentIdentityCatalog.current,
+      viewer_account: account,
+      locale: locale
+    )
+    decision = decision.with(fallback: true)
+    result = Rag::ActiveEpisodeTurn::Result.new(
+      decision: :continued,
+      reason: status.to_s,
+      state: stored.is_a?(Hash) ? stored : {},
+      composed: decision.retrieval_query,
+      fields_changed: [],
+      understanding: decision
+    )
+    persist_user_turn!(stored, result, turn, user_id, correlation_id, now, keep_episode: true)
+    result
+  end
+
+  def duplicate_owner_result(turn)
+    Rag::ActiveEpisodeTurn::Result.new(
+      decision: :continued,
+      reason: "duplicate_correlation",
+      state: active_episode,
+      composed: turn,
+      fields_changed: [],
+      understanding: nil
+    )
+  end
+
+  def owner_episode_decision(perception, base)
+    return :new_episode if perception.move == "new_work"
+    return :opened if base.blank?
+
+    :continued
+  end
+
+  def stale_episode?(parsed)
+    parsed.nil? || parsed.blank? || %w[expired invalid_state].include?(parsed.reason)
+  end
+
+  def persist_user_turn!(stored_episode, result, content, user_id, correlation_id, now, keep_episode: false)
+    history = conversation_history.last(MAX_HISTORY - 1)
+    history << history_message("user", content, user_id: user_id, correlation_id: correlation_id)
+    attrs = {
+      conversation_history: history,
+      expires_at: EXPIRY_DURATION.from_now
+    }
+    attrs[:active_episode] = result.state unless keep_episode
+    pins_before = focus_document_ids
+    photo_before = photo_marker(stored_episode)
+    episode_before = raw_episode_id(stored_episode)
+    boundary = case_boundary_changes(stored_episode, result, now)
+    attrs.merge!(boundary.attributes) if boundary
+    update!(attrs)
+    log_case_boundary!(
+      episode_before: episode_before,
+      episode_after: raw_episode_id(keep_episode ? stored_episode : result.state),
+      boundary: boundary,
+      pins_before: pins_before,
+      photo_before: photo_before,
+      photo_after: photo_marker(keep_episode ? stored_episode : result.state)
+    )
+  end
+
+  def duplicate_user_correlation?(correlation_id)
+    conversation_history.any? { |message|
+      message["role"] == "user" && message["correlation_id"].to_s == correlation_id.to_s
+    }
+  end
+
+  def same_episode?(left, right)
+    canonicalize_episode(left) == canonicalize_episode(right)
+  end
+
+  def canonicalize_episode(raw)
+    case raw
+    when Hash
+      raw.each_with_object({}) { |(key, value), copy| copy[key.to_s] = canonicalize_episode(value) }
+    when Array
+      raw.map { |item| canonicalize_episode(item) }
+    else
+      raw
+    end
+  end
+
+  def fresh_focus_snapshot
+    if uses_document_focus?
+      entries = document_focus_entries
+      ids = entries.filter_map { |entry| entry["kb_document_id"] }
+      uris = SessionContextBuilder.filter_focus_uris(entries.filter_map { |entry| entry["source_uri"] })
+    else
+      ids = []
+      uris = SessionContextBuilder.entity_s3_uris(self)
+    end
+    { ids: ids, uris: uris }
+  end
+
+  def log_turn_interpreter(interpreted, result, correlation_id, user_id)
+    perception = interpreted.perception
+    before_state = result&.state
+    PilotUsageLog.log(
+      :turn_interpreter,
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: id,
+      correlation_id: correlation_id,
+      model: interpreted.model_id,
+      latency_ms: interpreted.latency_ms,
+      input_tokens: interpreted.input_tokens,
+      output_tokens: interpreted.output_tokens,
+      episode_id: before_state.is_a?(Hash) ? before_state["episode_id"] : nil,
+      route: result&.understanding&.decision,
+      turn_interpreter_status: interpreted.status,
+      turn_interpreter_fallback: interpreted.fallback || result&.understanding&.fallback || false,
+      prompt_version: Rag::TurnPerception::PROMPT_VERSION,
+      schema_version: Rag::TurnPerception::SCHEMA_VERSION,
+      catalog_fingerprint: Rag::TurnInterpreter.catalog_fingerprint,
+      interpreter_move: perception&.move,
+      field_rejections: perception&.field_rejections,
+      catalog_disagreement: perception&.catalog_disagreements,
+      pending_question_type: result&.understanding&.pending_subject,
+      pending_outcome: perception&.pending_resolution
+    )
+  rescue StandardError => error
+    Rails.logger.warn("turn_interpreter telemetry failed #{error.class}")
+  end
 
   # A case boundary may clear current_procedure. It does not read or write
   # the technician's document selection. Expiry is a property of the stored

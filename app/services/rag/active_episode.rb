@@ -19,11 +19,13 @@ module Rag
     MAX_CONFLICTS = 3
     MAX_OBSERVATIONS = 3
     MAX_OBSERVATION_CHARS = 180
-    MAX_BYTES = 2048
+    MAX_REJECTED = 4
+    REJECTED_SLOTS = %w[manufacturer model controller fault_code identifier].freeze
+    MAX_BYTES = 4096
 
     attr_accessor :episode_id, :status, :opened_at, :updated_at, :opened_by,
                   :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts,
-                  :observations
+                  :observations, :rejected
     attr_reader :reason
 
     def initialize
@@ -31,6 +33,7 @@ module Rag
       @identifiers = []
       @conflicts = []
       @observations = []
+      @rejected = []
       @status = "active"
     end
 
@@ -66,6 +69,7 @@ module Rag
       episode.active_photo = sanitize_photo(data["active_photo"])
       episode.conflicts = sanitize_conflicts(data["conflicts"])
       episode.observations = sanitize_observations(data["observations"])
+      episode.rejected = sanitize_rejected(data["rejected"])
       episode
     end
 
@@ -100,6 +104,7 @@ module Rag
       copy.active_photo = active_photo&.deep_dup
       copy.conflicts = conflicts.deep_dup
       copy.observations = observations.deep_dup
+      copy.rejected = rejected.deep_dup
       copy
     end
 
@@ -182,6 +187,24 @@ module Rag
       self.observations = []
     end
 
+    def append_rejected!(slot, value)
+      key = slot.to_s
+      literal = value.to_s.squish.first(MAX_VALUE_CHARS)
+      return if literal.blank? || REJECTED_SLOTS.exclude?(key)
+
+      label = FollowupQueryRewriter.normalize_label(literal)
+      rejected.reject! { |item| item["slot"] == key && FollowupQueryRewriter.normalize_label(item["value"]) == label }
+      rejected << { "slot" => key, "value" => literal }
+      rejected.shift while rejected.size > MAX_REJECTED
+    end
+
+    def delete_rejected!(slot, value)
+      label = FollowupQueryRewriter.normalize_label(value)
+      rejected.reject! { |item|
+        item["slot"] == slot.to_s && FollowupQueryRewriter.normalize_label(item["value"]) == label
+      }
+    end
+
     def add_conflict!(fact:, user:, photo:, correlation_id:)
       conflicts.reject! { |row| row["fact"] == fact.to_s }
       conflicts << {
@@ -210,7 +233,8 @@ module Rag
         "pending_question" => pending_question,
         "active_photo" => active_photo,
         "conflicts" => conflicts,
-        "observations" => observations.presence
+        "observations" => observations.presence,
+        "rejected" => rejected.presence
       }
       payload.compact!
       shrink_to_budget!(payload)
@@ -348,6 +372,26 @@ module Rag
       }.last(MAX_OBSERVATIONS)
     end
     private_class_method :sanitize_observations
+
+    def self.sanitize_rejected(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |item|
+        next unless item.is_a?(Hash)
+
+        item = item.stringify_keys
+        slot = item["slot"].to_s
+        value = item["value"].to_s.squish.first(MAX_VALUE_CHARS)
+        next if value.blank? || REJECTED_SLOTS.exclude?(slot)
+
+        { "slot" => slot, "value" => value }
+      }.last(MAX_REJECTED)
+    end
+    private_class_method :sanitize_rejected
+
+    def self.budget_refused?(payload, limit: MAX_BYTES)
+      JSON.generate(payload).bytesize > limit
+    end
 
     def self.sanitize_conflicts(raw)
       return [] unless raw.is_a?(Array)

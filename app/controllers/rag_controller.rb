@@ -47,6 +47,7 @@ class RagController < ApplicationController
         question,
         user_id: current_user.id,
         correlation_id: correlation_id,
+        locale: resolve_response_locale(question, conv_session),
         selection_turn: selection_turn?(question, conv_session) ||
           Rag::ThreadMenuSelection.call(question: question, conversation_history: conv_session.conversation_history)
       )
@@ -63,7 +64,7 @@ class RagController < ApplicationController
     end
 
     session_context  = SessionContextBuilder.build(conv_session)
-    entity_s3_uris   = SessionContextBuilder.entity_s3_uris(conv_session)
+    entity_s3_uris   = locked_focus_uris(episode_turn) || SessionContextBuilder.entity_s3_uris(conv_session)
 
     result = execute_rag_query(
       question,
@@ -198,6 +199,16 @@ class RagController < ApplicationController
   end
 
   private
+
+  # Focus ids captured under the episode lock. A later reread can see a
+  # different selection than the one RoutePolicy used.
+  def locked_focus_uris(episode_turn)
+    understanding = episode_turn.respond_to?(:understanding) ? episode_turn.understanding : nil
+    return nil unless understanding.respond_to?(:focus_uris)
+    return nil if understanding.focus_uris.nil?
+
+    understanding.focus_uris
+  end
 
   # The technician already asked this. The stored retrieval string is reused.
   # The episode is not reinterpreted and Haiku is not called.

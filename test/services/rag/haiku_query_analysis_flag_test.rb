@@ -32,6 +32,11 @@ class Rag::HaikuQueryAnalysisFlagTest < ActiveSupport::TestCase
       assert_not F.conditional?
       assert_not F.shadow?
     end
+    with_mode("owner") do
+      assert F.owner?
+      assert_not F.conditional?
+      assert_not F.shadow?
+    end
   end
 
   test "shadow is the only mode that calls" do

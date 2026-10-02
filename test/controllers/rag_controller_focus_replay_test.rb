@@ -86,6 +86,29 @@ class RagControllerFocusReplayTest < ActionDispatch::IntegrationTest
     assert_equal [ @second.id ], assistant_messages.last["focus_ids"]
   end
 
+  test "owner mode replay does not call the turn interpreter or add a bubble" do
+    calls = []
+    original = Rag::TurnInterpreter.method(:call)
+    Rag::TurnInterpreter.define_singleton_method(:call) do |**kwargs|
+      calls << kwargs
+      original.call(**kwargs)
+    end
+    isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+      queries = []
+      haiku = []
+      user_turns = []
+      with_counters(queries, haiku, user_turns) do
+        post rag_ask_path, params: { replay_correlation_id: @correlation }, as: :json
+      end
+      assert_response :success
+      assert_empty calls
+      assert_empty user_turns
+      assert_equal 1, user_messages.size
+    end
+  ensure
+    Rag::TurnInterpreter.define_singleton_method(:call) { |**kwargs| original.call(**kwargs) }
+  end
+
   test "a missing turn does not retrieve" do
     queries = []
     with_orchestrator(queries) do

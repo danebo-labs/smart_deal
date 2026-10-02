@@ -65,7 +65,7 @@
   focus_count: 0
   expected:
     decision: ready
-    query_contains: [NICE3000, E51]
+    query_contains: [Nice300, E51]
 - id: pending_unknown
   origin: reconstructed
   turn: "Volviendo a eso, no lo sé"

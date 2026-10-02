@@ -744,12 +744,10 @@ class ConversationSession < ApplicationRecord
     else
       base
     end
-    unless perception.move == "unclear"
-      Rag::WorkContextReducer.apply!(
-        episode: working, perception: perception, decision: decision,
-        turn: turn, correlation_id: correlation_id, now: now
-      )
-    end
+    Rag::WorkContextReducer.apply!(
+      episode: working, perception: perception, decision: decision,
+      turn: turn, correlation_id: correlation_id, now: now
+    )
     payload = working.to_h
     if Rag::ActiveEpisode.budget_refused?(payload)
       Rails.logger.info({ event: "episode_budget_refused", conversation_session_id: id, correlation_id: correlation_id }.to_json)

@@ -173,9 +173,10 @@ module Rag
     end
 
     def best_effort?
+      return false unless @perception.move == "answer_pending"
+
       resolution = @perception.pending_resolution
       return true if %w[unknown seek].include?(resolution)
-      return false unless @perception.move == "answer_pending"
 
       slot = pending_slot(@previous)
       fact = slot && @previous.fact(slot)

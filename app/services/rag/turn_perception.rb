@@ -16,7 +16,7 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
-    PROMPT_VERSION = "2026-10-01.2"
+    PROMPT_VERSION = "2026-10-02.1"
     SCHEMA_VERSION = "turn_perception.2"
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
@@ -95,6 +95,7 @@ module Rag
       move = data["move"]
       resolution = data["pending_resolution"]
       move, resolution, identities, observations = adjust_move(move, resolution, identities, observations, ambiguities)
+      resolution = nil unless move == "answer_pending"
       identities = apply_structured_slots(move, resolution, identities)
 
       Result.new(

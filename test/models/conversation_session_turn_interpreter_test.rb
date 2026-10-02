@@ -9,6 +9,31 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     @account = accounts(:legacy)
   end
 
+  test "a report does not become best effort because the model filled pending_resolution" do
+    session = web_session
+    result = with_owner do
+      ask(session, "la puerta no cierra del todo", client(perception(
+        "report",
+        observations: [ "la puerta no cierra" ],
+        pending_resolution: "unknown"
+      )))
+    end
+
+    assert_equal "ready", result.understanding.decision
+    assert_not result.understanding.best_effort?
+    assert_includes result.composed, "la puerta no cierra"
+  end
+
+  test "an unclear mention of Q2 still stores the carry" do
+    session = web_session
+    result = with_owner do
+      ask(session, "¿Que es Q2?", client(perception("unclear", assertions: [ assertion("Q2", "mention") ])))
+    end
+
+    assert result.understanding.clarify_first?
+    assert_equal [ "Q2" ], session.reload.active_episode.dig("pending_question", "carry")
+  end
+
   test "Q2 with no focus asks for the equipment and does not retrieve or store a fault" do
     session = web_session
     result = with_owner do

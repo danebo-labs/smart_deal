@@ -21,13 +21,15 @@ module Rag
     end
 
     def apply!
-      return @episode if @perception.nil? || @perception.move == "unclear"
+      return @episode if @perception.nil?
       return @episode if @decision&.decision == "meta"
 
       if @decision&.decision == "clarify_first"
         write_pending(@decision.pending_question)
+        @episode.touch!(@now)
         return @episode
       end
+      return @episode if @perception.move == "unclear"
 
       promote_carry if answer_promotes_carry?
       apply_negations

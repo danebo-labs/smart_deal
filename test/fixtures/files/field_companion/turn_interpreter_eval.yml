@@ -104,3 +104,174 @@
   expected:
     catalog_typed: false
     manufacturer_leaked: false
+- id: vis_1
+  origin: reconstructed
+  turn: "¿Qué reviso ahora?"
+  focus_count: 0
+  active_photo:
+    component: "controlador de ascensor"
+    manufacturer: NICE
+    model: NICE3000
+    visible_text: ["E51"]
+    condition: DEGRADED
+    subsystem: CONTROLLER_LOGIC
+    relevance_to_goal: relevant
+  expected:
+    move: follow_up
+    decision: ready
+    clarification_target: null
+    query_contains: [NICE3000, E51]
+    photo_in_prompt: true
+    photo_in_query: true
+    photo_in_generation: true
+- id: vis_2
+  origin: reconstructed
+  turn: "¿Y eso qué significa?"
+  focus_count: 0
+  active_photo:
+    component: "controlador de ascensor"
+    manufacturer: NICE
+    model: NICE3000
+    visible_text: ["E51"]
+    condition: GOOD
+    subsystem: CONTROLLER_LOGIC
+    relevance_to_goal: relevant
+  expected:
+    move: follow_up
+    decision: ready
+    clarification_target: null
+    query_contains: [E51, NICE3000]
+    photo_in_query: true
+    photo_in_generation: true
+- id: vis_3
+  origin: reconstructed
+  turn: "Otra falla: Elemont MH no arranca"
+  focus_count: 0
+  goal: "Nice300 e51"
+  facts:
+    controller: { value: NICE3000, source: user }
+    fault_code: { value: E51, source: user }
+  active_photo:
+    component: "controlador de ascensor"
+    manufacturer: NICE
+    model: NICE3000
+    visible_text: ["E51"]
+    condition: DEGRADED
+    subsystem: CONTROLLER_LOGIC
+    relevance_to_goal: relevant
+  expected:
+    move: new_work
+    decision: ready
+    clarification_target: null
+    photo_absent: true
+    photo_in_query: false
+    photo_in_generation: false
+    query_excludes: [NICE3000, E51]
+    query_contains: [Elemont]
+- id: vis_4
+  origin: reconstructed
+  turn: "¿Qué reviso ahora?"
+  focus_count: 0
+  goal: "Nice300 e51"
+  facts:
+    controller: { value: NICE3000, source: user }
+    fault_code: { value: E51, source: user }
+  active_photo:
+    component: "puerta"
+    manufacturer: OTIS
+    model: OTIS2000
+    visible_text: ["ZZ9"]
+    condition: GOOD
+    subsystem: DOOR_OPERATOR
+    relevance_to_goal: unrelated
+  expected:
+    move: follow_up
+    decision: ready
+    clarification_target: null
+    photo_in_prompt: true
+    photo_in_query: false
+    photo_in_generation: false
+    query_contains: [NICE3000, E51]
+    query_excludes: [OTIS2000, OTIS, ZZ9, puerta]
+- id: amb_1
+  origin: reconstructed
+  turn: "No, ese era el otro"
+  focus_count: 0
+  goal: "la puerta no cierra"
+  facts:
+    controller: { value: NICE3000, source: user }
+  expected:
+    move: unclear
+    clarification_target: work_relation
+    decision: clarify_first
+    retrieval: false
+    pending_type: work_relation
+    goal_text: "la puerta no cierra"
+    fact: { slot: controller, value: NICE3000, source: user }
+- id: amb_2
+  origin: reconstructed
+  turns:
+    - "No, ese era el otro"
+    - "Es otro ascensor"
+  focus_count: 0
+  goal: "la puerta no cierra"
+  facts:
+    controller: { value: NICE3000, source: user }
+  observations: ["la puerta no cierra bien"]
+  pending_carry: ["Q2"]
+  pending_slot: controller
+  active_photo:
+    component: "controlador de ascensor"
+    manufacturer: NICE
+    model: NICE3000
+    visible_text: ["E51"]
+    condition: GOOD
+    subsystem: CONTROLLER_LOGIC
+    relevance_to_goal: relevant
+  rejected:
+    - { slot: controller, value: OLD900 }
+  expected:
+    move: new_work
+    decision: clarify_first
+    clarification_target: null
+    retrieval: false
+    goal_nil: true
+    photo_absent: true
+    facts_empty: true
+    observations_empty: true
+    rejected_empty: true
+    carry_discarded: true
+    query_excludes: [NICE3000, E51, Q2]
+- id: amb_2b
+  origin: reconstructed
+  turn: "Ahora tengo otro KONE que no nivela"
+  focus_count: 0
+  goal: "la puerta no cierra"
+  facts:
+    controller: { value: NICE3000, source: user }
+  expected:
+    move: new_work
+    decision: ready
+    clarification_target: null
+    retrieval: true
+    photo_absent: true
+    query_contains: [KONE, nivela]
+    query_excludes: [NICE3000]
+- id: amb_3
+  origin: reconstructed
+  turn: "Me refería al de la foto"
+  focus_count: 0
+  goal: "la puerta no cierra"
+  active_photo:
+    component: "controlador de ascensor"
+    manufacturer: NICE
+    model: NICE3000
+    visible_text: ["E51"]
+    condition: DEGRADED
+    subsystem: CONTROLLER_LOGIC
+    relevance_to_goal: relevant
+  expected:
+    clarification_target: null
+    not_move: new_work
+    photo_kept: true
+    retrieval: true

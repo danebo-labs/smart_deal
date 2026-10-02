@@ -10,20 +10,21 @@ module Rag
     RESOLUTIONS = %w[unknown absent value seek].freeze
     FACT_SLOTS = %w[manufacturer model controller fault_code].freeze
     IDENTITY_HINTS = %w[manufacturer model controller].freeze
-    ROOT_KEYS = %w[move assertions observations pending_resolution].freeze
+    CLARIFICATION_TARGETS = %w[work_relation referent correction_target].freeze
+    ROOT_KEYS = %w[move assertions observations pending_resolution clarification_target].freeze
     ASSERTION_KEYS = %w[span act slot_hint].freeze
     MAX_ASSERTIONS = 8
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
-    PROMPT_VERSION = "2026-10-02.1"
-    SCHEMA_VERSION = "turn_perception.2"
+    PROMPT_VERSION = "2026-10-02.3"
+    SCHEMA_VERSION = "turn_perception.3"
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
     Ambiguity = Data.define(:span, :candidates)
 
     Result = Data.define(
-      :valid, :move, :observations, :pending_resolution,
+      :valid, :move, :observations, :pending_resolution, :clarification_target,
       :identities, :ambiguities, :field_rejections, :catalog_disagreements, :invalid_reason
     ) do
       def facts
@@ -36,6 +37,12 @@ module Rag
 
       def mentions
         identities.select { |item| item.kind == "mention" }
+      end
+
+      def technical_payload?
+        observations.any? || ambiguities.any? || identities.any? { |item|
+          item.kind == "fact" || (item.act == "assert" && item.kind == "identifier")
+        }
       end
     end
 
@@ -69,7 +76,8 @@ module Rag
             maxItems: ActiveEpisode::MAX_OBSERVATIONS,
             items: { type: "string", maxLength: ActiveEpisode::MAX_OBSERVATION_CHARS }
           },
-          pending_resolution: { type: %w[string null] }
+          pending_resolution: { type: %w[string null] },
+          clarification_target: { type: %w[string null] }
         }
       }
     end
@@ -94,7 +102,9 @@ module Rag
       identities, ambiguities = resolve_assertions(assertions, observations)
       move = data["move"]
       resolution = data["pending_resolution"]
-      move, resolution, identities, observations = adjust_move(move, resolution, identities, observations, ambiguities)
+      move, resolution, identities, observations, target = adjust_move(
+        move, resolution, identities, observations, ambiguities, data["clarification_target"]
+      )
       resolution = nil unless move == "answer_pending"
       identities = apply_structured_slots(move, resolution, identities)
 
@@ -103,6 +113,7 @@ module Rag
         move: move,
         observations: observations,
         pending_resolution: resolution,
+        clarification_target: target,
         identities: identities,
         ambiguities: ambiguities,
         field_rejections: @field_rejections,
@@ -123,12 +134,24 @@ module Rag
       return nil if data["assertions"].size > MAX_ASSERTIONS
       return nil if data["observations"].size > ActiveEpisode::MAX_OBSERVATIONS
       return nil unless data["pending_resolution"].nil? || RESOLUTIONS.include?(data["pending_resolution"])
+      return nil unless clarification_target_ok?(data)
       return nil unless data["assertions"].all? { |item| assertion_shape?(item) }
       return nil unless data["observations"].all? { |item| item.is_a?(String) }
       return nil if JSON.generate(data).bytesize > MAX_TOOL_BYTES
 
       data["assertions"] = data["assertions"].map { |item| normalize_assertion(item.deep_stringify_keys) }
       data
+    end
+
+    def clarification_target_ok?(data)
+      return false unless data.key?("clarification_target")
+
+      target = data["clarification_target"]
+      return false unless target.nil? || CLARIFICATION_TARGETS.include?(target)
+      return false if data["move"] == "unclear" && target.nil?
+      return false if data["move"] != "unclear" && !target.nil?
+
+      true
     end
 
     def assertion_shape?(item)
@@ -333,19 +356,31 @@ module Rag
       nil
     end
 
-    def adjust_move(move, resolution, identities, observations, ambiguities)
+    def adjust_move(move, resolution, identities, observations, ambiguities, target)
       if move == "answer_pending" && !pending_answer?(resolution, identities)
         move = identities.any? || observations.any? || ambiguities.any? ? "report" : "follow_up"
         resolution = nil
       elsif move == "correct" && identities.none? { |item| item.kind == "negate" && item.slot.present? }
         move = "unclear"
+        target = "correction_target"
         resolution = nil
         identities = []
         observations = []
-      elsif move == "new_work" && identities.empty? && observations.empty? && ambiguities.empty? && prior_context?
+      elsif move == "new_work" && !self.class.technical_payload?(identities, observations, ambiguities) && prior_context? && !work_relation_pending?
         move = "follow_up"
       end
-      [ move, resolution, identities, observations ]
+      target = nil unless move == "unclear"
+      [ move, resolution, identities, observations, target ]
+    end
+
+    def self.technical_payload?(identities, observations, ambiguities)
+      observations.any? || ambiguities.any? || identities.any? { |item|
+        item.kind == "fact" || (item.act == "assert" && item.kind == "identifier")
+      }
+    end
+
+    def work_relation_pending?
+      @episode.respond_to?(:pending_question) && @episode.pending_question&.dig("type") == "work_relation"
     end
 
     def pending_answer?(resolution, identities)
@@ -422,7 +457,7 @@ module Rag
 
     def invalid(reason)
       Result.new(
-        valid: false, move: nil, observations: [], pending_resolution: nil,
+        valid: false, move: nil, observations: [], pending_resolution: nil, clarification_target: nil,
         identities: [], ambiguities: [], field_rejections: @field_rejections,
         catalog_disagreements: [], invalid_reason: reason
       )

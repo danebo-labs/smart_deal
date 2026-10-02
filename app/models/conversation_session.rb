@@ -10,6 +10,9 @@ class ConversationSession < ApplicationRecord
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
   PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
   DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
+  PHOTO_PENDING_SLOTS = %w[manufacturer model].freeze
+
+  attr_accessor :turn_active_photo_context
 
   def self.media_type_for(document_or_uri)
     source = document_or_uri.respond_to?(:s3_key) ? document_or_uri.s3_key : document_or_uri
@@ -213,6 +216,13 @@ class ConversationSession < ApplicationRecord
         next
       end
 
+      if writer == "photo_assistant" && Rag::HaikuQueryAnalysisFlag.owner?
+        history = conversation_history.last(MAX_HISTORY - 1)
+        history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
+        update!(conversation_history: history)
+        next
+      end
+
       result = Rag::ActiveEpisodeTurn.apply_assistant(
         state: active_episode,
         text: content.to_s,
@@ -226,7 +236,7 @@ class ConversationSession < ApplicationRecord
       attrs[:active_episode] = result.state if result.decision == :assistant
       update!(attrs)
     end
-    return nil if dropped
+    return nil if dropped || (writer == "photo_assistant" && Rag::HaikuQueryAnalysisFlag.owner? && result.nil?)
 
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result.decision == :assistant
     result
@@ -693,13 +703,16 @@ class ConversationSession < ApplicationRecord
     snapshot = active_episode
     parsed = Rag::ActiveEpisode.parse(snapshot, now: now)
     context_episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    photo_context = Rag::ActivePhotoContext.resolve(episode: context_episode, viewer_account: account)
+    photo_status = photo_context.status
     interpreted = Rag::TurnInterpreter.call(
       turn: turn,
       episode: context_episode,
       viewer_account: account,
       correlation_id: correlation_id,
       attribution: { account_id: account_id, user_id: user_id, conversation_session_id: id },
-      client: interpreter_client
+      client: interpreter_client,
+      active_photo_context: photo_context
     )
 
     result = nil
@@ -711,19 +724,22 @@ class ConversationSession < ApplicationRecord
 
       focus = fresh_focus_snapshot
       if same_episode?(snapshot, active_episode)
-        result = apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus)
+        result = apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
       else
+        photo_status = photo_context.status == "absent" ? "absent" : "stale"
+        self.turn_active_photo_context = nil
         result = apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, "snapshot_changed")
       end
     end
-    log_turn_interpreter(interpreted, result, correlation_id, user_id)
+    log_turn_interpreter(interpreted, result, correlation_id, user_id, photo_status)
     log_field_companion_turn(result, turn, correlation_id: correlation_id, user_id: user_id) if result&.state.is_a?(Hash)
     result
   end
 
-  def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus)
+  def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
     perception = interpreted.perception
     if interpreted.fallback || perception.nil? || !perception.valid
+      self.turn_active_photo_context = nil
       return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, interpreted.status)
     end
 
@@ -737,7 +753,8 @@ class ConversationSession < ApplicationRecord
       focus_count: focus[:ids].size,
       focus_document_ids: focus[:ids],
       focus_uris: focus[:uris],
-      locale: locale
+      locale: locale,
+      relevant_photo: photo_context.relevant?
     )
     working = if perception.move == "new_work" || base.blank?
       Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
@@ -751,11 +768,18 @@ class ConversationSession < ApplicationRecord
     payload = working.to_h
     if Rag::ActiveEpisode.budget_refused?(payload)
       Rails.logger.info({ event: "episode_budget_refused", conversation_session_id: id, correlation_id: correlation_id }.to_json)
+      self.turn_active_photo_context = nil
       return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, "episode_budget_refused")
     end
 
-    query = Rag::QueryComposer.call(state: working, turn: turn, perception: perception, decision: decision)
+    query = Rag::QueryComposer.call(
+      state: working, turn: turn, perception: perception, decision: decision,
+      active_photo_context: photo_context
+    )
     decision = decision.with(retrieval_query: query, owns_query: query.present? && decision.performs_retrieval?)
+    self.turn_active_photo_context = if photo_context.matches?(working.active_photo&.dig("field_photo_id"))
+      photo_context
+    end
     episode_decision = owner_episode_decision(perception, base)
     result = Rag::ActiveEpisodeTurn::Result.new(
       decision: episode_decision,
@@ -875,7 +899,7 @@ class ConversationSession < ApplicationRecord
     { ids: ids, uris: uris }
   end
 
-  def log_turn_interpreter(interpreted, result, correlation_id, user_id)
+  def log_turn_interpreter(interpreted, result, correlation_id, user_id, photo_status)
     perception = interpreted.perception
     before_state = result&.state
     PilotUsageLog.log(
@@ -899,7 +923,9 @@ class ConversationSession < ApplicationRecord
       field_rejections: perception&.field_rejections,
       catalog_disagreement: perception&.catalog_disagreements,
       pending_question_type: result&.understanding&.pending_subject,
-      pending_outcome: perception&.pending_resolution
+      pending_outcome: perception&.pending_resolution,
+      clarification_target: perception&.clarification_target,
+      active_photo_context_status: photo_status
     )
   rescue StandardError => error
     Rails.logger.warn("turn_interpreter telemetry failed #{error.class}")
@@ -1240,8 +1266,10 @@ class ConversationSession < ApplicationRecord
     readings = photo_value.to_h.stringify_keys
     return if photo_identity_blocked?(readings)
 
-    apply_photo_fact!(episode, "manufacturer", readings["manufacturer"], correlation_id)
-    apply_photo_fact!(episode, "model", readings["model_visible"] || readings["model"], correlation_id)
+    written = []
+    written << "manufacturer" if apply_photo_fact!(episode, "manufacturer", readings["manufacturer"], correlation_id)
+    written << "model" if apply_photo_fact!(episode, "model", readings["model_visible"] || readings["model"], correlation_id)
+    close_photo_pending!(episode, written) if Rag::HaikuQueryAnalysisFlag.owner?
   end
 
   # A relevant nameplate can identify the equipment without showing the asked-about
@@ -1255,7 +1283,7 @@ class ConversationSession < ApplicationRecord
 
   def apply_photo_fact!(episode, key, raw, correlation_id)
     text = raw.to_s.squish
-    return if text.blank? || text.casecmp?("unknown")
+    return false if text.blank? || text.casecmp?("unknown")
 
     existing = episode.fact(key)
     same = existing && Rag::FollowupQueryRewriter.normalize_label(existing["value"]) == Rag::FollowupQueryRewriter.normalize_label(text)
@@ -1268,9 +1296,31 @@ class ConversationSession < ApplicationRecord
         correlation_id: correlation_id,
         at: Time.current.iso8601
       )
+      true
     elsif existing["status"] == "known" && existing["source"] == "user" && !same
       episode.add_conflict!(fact: key, user: existing["value"], photo: text, correlation_id: correlation_id)
+      false
+    else
+      false
     end
+  end
+
+  def close_photo_pending!(episode, written)
+    question_type = episode.pending_question&.dig("type").to_s
+    return if Rag::PendingQuestion::CONVERSATIONAL_TYPES.include?(question_type)
+
+    fact_subject = episode.pending_fact&.dig("subject").to_s
+    slot = if Rag::PendingQuestion::FACT_TYPES.include?(question_type)
+      question_type
+    elsif Rag::PendingQuestion::FACT_TYPES.include?(fact_subject)
+      fact_subject
+    end
+    return unless PHOTO_PENDING_SLOTS.include?(slot) && written.include?(slot)
+
+    fact = episode.fact(slot)
+    return unless fact.is_a?(Hash) && fact["status"] == "known" && fact["source"] == "photo"
+
+    episode.clear_pending!
   end
 
   # Shadow does not change the text sent to the orchestrator, so both digests

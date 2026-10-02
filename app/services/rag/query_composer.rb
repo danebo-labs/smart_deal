@@ -3,15 +3,19 @@
 module Rag
   # Retrieval string from the episode after the reducer. The model does not write it.
   class QueryComposer
-    def self.call(state:, turn:, perception:, decision:)
-      new(state: state, turn: turn, perception: perception, decision: decision).call
+    def self.call(state:, turn:, perception:, decision:, active_photo_context: nil)
+      new(
+        state: state, turn: turn, perception: perception, decision: decision,
+        active_photo_context: active_photo_context
+      ).call
     end
 
-    def initialize(state:, turn:, perception:, decision:)
+    def initialize(state:, turn:, perception:, decision:, active_photo_context: nil)
       @state = state
       @turn = turn.to_s
       @perception = perception
       @decision = decision
+      @active_photo_context = active_photo_context
     end
 
     def call
@@ -25,6 +29,7 @@ module Rag
       identifier_values.each { |value| push(parts, value) }
       push(parts, fact_value("manufacturer"))
       observations.each { |text| push(parts, text) }
+      photo_terms.each { |term| push(parts, term) }
       push(parts, goal_text)
       fit(parts)
     end
@@ -70,6 +75,14 @@ module Rag
 
         text
       }.first(ActiveEpisode::MAX_OBSERVATIONS)
+    end
+
+    def photo_terms
+      context = @active_photo_context
+      return [] if context.nil? || !@decision&.performs_retrieval?
+      return [] unless context.matches?(@state.active_photo&.dig("field_photo_id"))
+
+      context.query_terms
     end
 
     def goal_text

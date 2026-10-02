@@ -4,6 +4,7 @@ module TurnInterpreterEval
   Outcome = Struct.new(
     :episode, :decision, :query, :perception, :fallback,
     :latency_ms, :input_tokens, :output_tokens, :field_rejections,
+    :photo_in_prompt, :photo_in_query, :photo_in_generation,
     keyword_init: true
   )
 
@@ -21,20 +22,41 @@ module TurnInterpreterEval
     fallbacks = 0
     field_rejections = 0
     mismatches = []
+    clarification_hits = 0
+    clarification_total = 0
+    photo_hits = 0
+    photo_total = 0
+    created_photos = []
 
     cases.each do |row|
-      episode = seed(row, now)
+      episode, photos = seed(row, now, account)
+      created_photos.concat(photos)
       outcome = nil
       Array(row["turns"] || [ row["turn"] ]).each do |turn|
-        outcome = play(turn: turn, episode: episode, account: account, catalog: catalog, focus_count: row["focus_count"].to_i, now: now)
+        outcome = play(
+          turn: turn, episode: episode, account: account, catalog: catalog,
+          focus_count: row["focus_count"].to_i, now: now
+        )
         episode = outcome.episode
         latencies << outcome.latency_ms
         input_tokens += outcome.input_tokens
         output_tokens += outcome.output_tokens
         fallbacks += 1 if outcome.fallback
         field_rejections += outcome.field_rejections
+        if outcome.field_rejections.positive?
+          puts "field_rejection #{row["id"]} #{outcome.perception&.field_rejections.inspect}"
+        end
       end
       problems = problems_for(row, outcome)
+      score_accuracy(row, outcome, problems) do |kind, hit|
+        if kind == :clarification
+          clarification_total += 1
+          clarification_hits += 1 if hit
+        else
+          photo_total += 1
+          photo_hits += 1 if hit
+        end
+      end
       if problems.empty?
         puts "PASS #{row["id"]}"
       else
@@ -46,33 +68,93 @@ module TurnInterpreterEval
     rates = BedrockQuery::BEDROCK_PRICING[Rag::TurnInterpreter::MODEL_ID] || { input: 0, output: 0 }
     cost = (input_tokens / 1000.0 * rates[:input].to_f) + (output_tokens / 1000.0 * rates[:output].to_f)
     puts "passes=#{cases.size - mismatches.size} mismatches=#{mismatches.size} fallbacks=#{fallbacks} field_rejections=#{field_rejections}"
+    puts "clarification_target_accuracy=#{accuracy(clarification_hits, clarification_total)} photo_context_accuracy=#{accuracy(photo_hits, photo_total)}"
     puts "p50_ms=#{percentile(latencies, 50)} p95_ms=#{percentile(latencies, 95)}"
     puts "input_tokens=#{input_tokens} output_tokens=#{output_tokens} estimated_usd=#{format("%.6f", cost)}"
     mismatches.each { |line| puts "mismatch #{line}" }
     abort "turn_interpreter:eval failed" if mismatches.any?
+  ensure
+    created_photos.each { |photo| photo.destroy if photo&.persisted? }
   end
 
-  def seed(row, now)
-    if row["pending_slot"].present?
-      episode = Rag::ActiveEpisode.open(correlation_id: "eval-seed", now: now)
-      episode.pending_question = { "type" => row["pending_slot"] }
-      episode.pending_fact = { "subject" => row["pending_slot"], "correlation_id" => "eval-seed" }
-      return episode
+  def seed(row, now, account)
+    episode = if row["goal"].present? || row["facts"].present? || row["active_photo"].present? || row["observations"].present? || row["pending_slot"].present?
+      Rag::ActiveEpisode.open(correlation_id: "eval-seed", now: now)
+    elsif row["id"].to_s.start_with?("correction")
+      opened = Rag::ActiveEpisode.open(correlation_id: "eval-seed", now: now)
+      opened.write_fact!(
+        "controller", status: "known", value: "NICE3000", source: "user",
+        correlation_id: "eval-seed", at: now.iso8601
+      )
+      opened
+    else
+      Rag::ActiveEpisode.new
     end
-    return Rag::ActiveEpisode.new unless row["id"].to_s.start_with?("correction")
+    episode.assign_goal!(row["goal"], correlation_id: "eval-seed") if row["goal"].present? && episode.respond_to?(:assign_goal!)
+    (row["facts"] || {}).each do |slot, spec|
+      spec = spec.stringify_keys
+      episode.write_fact!(
+        slot.to_s, status: spec["status"].presence || "known", value: spec["value"],
+        source: spec["source"].presence || "user", correlation_id: "eval-seed", at: now.iso8601
+      )
+    end
+    Array(row["observations"]).each { |text| episode.append_observation!(text, correlation_id: "eval-seed") }
+    Array(row["rejected"]).each do |item|
+      item = item.stringify_keys
+      episode.append_rejected!(item["slot"], item["value"])
+    end
+    if row["pending_slot"].present?
+      episode.pending_question = { "type" => row["pending_slot"].to_s }
+      episode.pending_fact = { "subject" => row["pending_slot"].to_s, "correlation_id" => "eval-seed" }
+      carry = Array(row["pending_carry"])
+      episode.pending_question["carry"] = carry if carry.any?
+    end
+    photos = []
+    if row["active_photo"].is_a?(Hash)
+      photo = create_photo(account, row["active_photo"])
+      photos << photo
+      episode.active_photo = {
+        "field_photo_id" => photo.id,
+        "sha256" => photo.sha256,
+        "correlation_id" => "eval-photo"
+      }
+    end
+    [ episode, photos ]
+  end
 
-    episode = Rag::ActiveEpisode.open(correlation_id: "eval-seed", now: now)
-    episode.write_fact!(
-      "controller", status: "known", value: "NICE3000", source: "user",
-      correlation_id: "eval-seed", at: now.iso8601
+  def create_photo(account, spec)
+    spec = spec.stringify_keys
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: account,
+      sha256: sha,
+      s3_key_original: "field_photos/#{account.id}/#{sha}/original.jpg",
+      content_type: "image/jpeg",
+      byte_size: 32
     )
-    episode
+    stored = FieldPhotoObservation.persist!(photo, {
+      "schema_version" => 1,
+      "prompt_fingerprint" => "ab" * 32,
+      "model_id" => "eval-turn-interpreter",
+      "canonical_component" => spec["component"].presence || "controlador",
+      "manufacturer" => spec["manufacturer"].presence || "UNKNOWN",
+      "model" => spec["model"].presence || "UNKNOWN",
+      "subsystem" => spec["subsystem"].presence || "UNKNOWN",
+      "condition" => spec["condition"].presence || "UNKNOWN",
+      "visible_text" => Array(spec["visible_text"]),
+      "target_visible" => spec.fetch("target_visible", true),
+      "relevance_to_goal" => spec["relevance_to_goal"]
+    })
+    abort "turn_interpreter:eval could not store the synthetic photo" if stored.nil?
+
+    photo
   end
 
   def play(turn:, episode:, account:, catalog:, focus_count:, now:)
+    photo_context = Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: account)
     interpreted = Rag::TurnInterpreter.call(
       turn: turn, episode: episode, viewer_account: account, catalog: catalog,
-      correlation_id: "eval:#{SecureRandom.hex(4)}"
+      correlation_id: "eval:#{SecureRandom.hex(4)}", active_photo_context: photo_context
     )
     perception = interpreted.perception
     if interpreted.fallback || perception.nil? || !perception.valid
@@ -80,13 +162,13 @@ module TurnInterpreterEval
         episode: episode, turn: turn, focus_count: focus_count, focus_document_ids: [],
         focus_uris: [], catalog: catalog, viewer_account: account
       )
-      return outcome(episode, decision, interpreted, perception, decision.retrieval_query)
+      return outcome(episode, decision, interpreted, perception, decision.retrieval_query, photo_context, false, false)
     end
 
     policy_previous = perception.move == "new_work" ? Rag::ActiveEpisode.new : episode
     decision = Rag::RoutePolicy.call(
       previous: policy_previous, perception: perception, focus_count: focus_count,
-      focus_document_ids: [], focus_uris: []
+      focus_document_ids: [], focus_uris: [], relevant_photo: photo_context.relevant?
     )
     working = if perception.move == "new_work" || episode.blank?
       Rag::ActiveEpisode.open(correlation_id: "eval", now: now)
@@ -97,17 +179,26 @@ module TurnInterpreterEval
       episode: working, perception: perception, decision: decision,
       turn: turn, correlation_id: "eval", now: now
     )
-    query = Rag::QueryComposer.call(state: working, turn: turn, perception: perception, decision: decision)
+    query = Rag::QueryComposer.call(
+      state: working, turn: turn, perception: perception, decision: decision,
+      active_photo_context: photo_context
+    )
     decision = decision.with(retrieval_query: query, owns_query: query.present?)
-    outcome(working, decision, interpreted, perception, query)
+    photo_id = working.active_photo&.dig("field_photo_id")
+    in_query = photo_context.query_terms.any? { |term| query.to_s.match?(/#{Regexp.escape(term)}/i) }
+    in_generation = photo_context.matches?(photo_id) && photo_context.generation_block.present?
+    outcome(working, decision, interpreted, perception, query, photo_context, in_query, in_generation)
   end
 
-  def outcome(episode, decision, interpreted, perception, query)
+  def outcome(episode, decision, interpreted, perception, query, photo_context, in_query, in_generation)
     Outcome.new(
       episode: episode, decision: decision.decision, query: query, perception: perception,
       fallback: interpreted.fallback, latency_ms: interpreted.latency_ms.to_i,
       input_tokens: interpreted.input_tokens.to_i, output_tokens: interpreted.output_tokens.to_i,
-      field_rejections: Array(perception&.field_rejections).size
+      field_rejections: Array(perception&.field_rejections).size,
+      photo_in_prompt: photo_context.to_prompt.present?,
+      photo_in_query: in_query,
+      photo_in_generation: in_generation
     )
   end
 
@@ -115,6 +206,17 @@ module TurnInterpreterEval
     expected = row["expected"] || {}
     problems = []
     problems << "decision #{outcome.decision}" if expected["decision"] && outcome.decision != expected["decision"]
+    problems << "move #{outcome.perception&.move}" if expected["move"] && outcome.perception&.move != expected["move"]
+    if expected["not_move"] && outcome.perception&.move == expected["not_move"]
+      problems << "move #{expected["not_move"]}"
+    end
+    if expected.key?("clarification_target") && outcome.perception&.clarification_target != expected["clarification_target"]
+      problems << "clarification_target #{outcome.perception&.clarification_target.inspect}"
+    end
+    if expected.key?("retrieval")
+      retrieves = %w[ready search_and_clarify best_effort].include?(outcome.decision)
+      problems << "retrieval #{retrieves}" if retrieves != expected["retrieval"]
+    end
     query = outcome.query.to_s
     Array(expected["query_contains"]).each do |token|
       problems << "missing #{token}" unless query.match?(/#{Regexp.escape(token.to_s)}/i)
@@ -123,6 +225,7 @@ module TurnInterpreterEval
       problems << "includes #{token}" if query.match?(/#{Regexp.escape(token.to_s)}/i)
     end
     problems.concat(fact_problems(expected, outcome))
+    problems.concat(state_problems(expected, outcome))
     problems << "fault stored" if expected["fault_code"] == false && outcome.episode.fact("fault_code").present?
     problems << "expected a mention" if expected["perception"] == "mention" && outcome.perception&.mentions.blank?
     problems << "observation" if expected["observations"] == [] && outcome.perception&.observations&.any?
@@ -137,6 +240,40 @@ module TurnInterpreterEval
     problems << "controller was required" if expected["requires_controller"] == false && outcome.decision == "search_and_clarify"
     problems << "fallback" if outcome.fallback
     problems
+  end
+
+  def state_problems(expected, outcome)
+    problems = []
+    episode = outcome.episode
+    problems << "goal present" if expected["goal_nil"] && episode.goal.present?
+    problems << "goal #{episode.goal&.dig("text")}" if expected["goal_text"] && episode.goal&.dig("text") != expected["goal_text"]
+    problems << "facts kept" if expected["facts_empty"] && episode.facts.any?
+    problems << "observations kept" if expected["observations_empty"] && episode.observations.any?
+    problems << "rejected kept" if expected["rejected_empty"] && episode.rejected.any?
+    problems << "photo kept" if expected["photo_absent"] && episode.active_photo.present?
+    problems << "photo dropped" if expected["photo_kept"] && episode.active_photo.blank?
+    problems << "pending #{episode.pending_question&.dig("type")}" if expected["pending_type"] && episode.pending_question&.dig("type") != expected["pending_type"]
+    problems << "photo prompt" if expected.key?("photo_in_prompt") && outcome.photo_in_prompt != expected["photo_in_prompt"]
+    problems << "photo query" if expected.key?("photo_in_query") && outcome.photo_in_query != expected["photo_in_query"]
+    problems << "photo generation" if expected.key?("photo_in_generation") && outcome.photo_in_generation != expected["photo_in_generation"]
+    problems
+  end
+
+  def score_accuracy(row, outcome, problems)
+    expected = row["expected"] || {}
+    if expected.key?("clarification_target")
+      yield :clarification, problems.none? { |item| item.start_with?("clarification_target") }
+    end
+    photo_keys = %w[photo_in_prompt photo_in_query photo_in_generation photo_absent photo_kept]
+    return unless photo_keys.any? { |key| expected.key?(key) }
+
+    yield :photo, problems.none? { |item| item.start_with?("photo") }
+  end
+
+  def accuracy(hits, total)
+    return "n/a" if total.zero?
+
+    "#{hits}/#{total}"
   end
 
   def fact_problems(expected, outcome)

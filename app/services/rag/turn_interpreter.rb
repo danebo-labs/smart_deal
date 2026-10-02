@@ -16,15 +16,23 @@ module Rag
       report = the technician states a job, a fault, or a value. Use this unless a rule below fits.
       follow_up = asks the next step of the job already open, such as "¿Qué reviso?". It does not replace that job.
       answer_pending = the turn answers work_context.pending. A name, a code, or "no sé" while a pending slot is open is answer_pending, not unclear.
-      correct = denies an active value and may state the replacement. Same job. One negate span and one assert span.
+      correct = denies one stored value that appears in the turn. Same job. One negate span of that value and one assert span of the replacement. clarification_target stays null. "No, no es NICE3000. Es NICE1000." negates NICE3000 and asserts NICE1000. "No, ese era el otro" is not correct.
       new_work = a new task. Do not carry the previous job.
       meta = asks what Danebo needs from the technician. A question about the equipment is not meta.
-      unclear = the turn has no name, no code, and no symptom. A name or a code is never unclear.
+      unclear = two plausible readings would change the episode, the stored state, or the route, and neither is dominant. A stated name or code is report, not unclear. Missing technical detail is not unclear.
 
-      act: assert states a value, negate denies one, mention names something without stating it as the equipment.
-      A question like "¿Qué es Q2?" is a mention of the short token, not a fault code.
+      clarification_target is required. It is null on report, follow_up, answer_pending, correct, new_work, and meta.
+      work_relation = this same job or a different one. "No, ese era el otro" is unclear/work_relation, not correct and not correction_target.
+      referent = two equipment referents are both plausible. One relevant photo with one component or code is one referent, so "¿Y eso qué significa?" and "Me refería al de la foto" are follow_up with clarification_target null.
+      correction_target = the technician rejects a stored value but the turn does not contain that value.
+
+      Interpret the turn against the active job and active_photo_context. If one reading is dominant, choose it. If two plausible readings would change the episode, the state, or the route, return unclear and a clarification_target. Do not write the question.
+      When pending.clarification_target is set, answer with new_work, follow_up, or correct. A reply that only says this is another elevator is new_work with empty assertions and empty observations. A reply that names equipment or a fault includes those spans.
+      active_photo_context was read from the active photo. It is not the technician's words. Do not copy it into spans unless the turn contains that text.
+
+      act: assert states a value as the equipment or the fault. "Nice300 e51" and "PRIVATE900" are assert spans, not mentions and not unclear. negate denies a value that appears in the turn. mention names a token the technician asks about without adopting it. "¿Qué es Q2?" is a mention of Q2, not a fault code.
       slot_hint may only be manufacturer, model, controller, fault_code, or designator. Omit it when unsure.
-      pending_resolution is null unless move is answer_pending. value needs an assert span of that value. seek means search with what is already known. unknown means the technician does not know the pending slot.
+      pending_resolution is null unless move is answer_pending. Then it is only unknown, absent, value, or seek. Never referent. value needs an assert span of that value. seek means search with what is already known. unknown means the technician does not know the pending slot.
 
       Every span is the shortest literal substring of turn, not the sentence. Observations are copied symptom phrases or empty. Do not paraphrase. Do not invent an observation.
     PROMPT
@@ -33,10 +41,11 @@ module Rag
       :perception, :fallback, :status, :latency_ms, :input_tokens, :output_tokens, :model_id
     )
 
-    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil)
+    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil)
       new(
         turn: turn, episode: episode, viewer_account: viewer_account,
-        correlation_id: correlation_id, attribution: attribution, client: client, catalog: catalog
+        correlation_id: correlation_id, attribution: attribution, client: client, catalog: catalog,
+        active_photo_context: active_photo_context
       ).call
     end
 
@@ -46,7 +55,7 @@ module Rag
       "unreadable"
     end
 
-    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:)
+    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil)
       @turn = TurnText.truncate(turn)
       @episode = episode || ActiveEpisode.new
       @viewer_account = viewer_account
@@ -54,6 +63,7 @@ module Rag
       @attribution = attribution
       @client = client
       @catalog = catalog || DocumentIdentityCatalog.current
+      @active_photo_context = active_photo_context
     end
 
     def call
@@ -119,19 +129,24 @@ module Rag
     def work_context
       return {} if @episode.blank?
 
-      pending = pending_payload
       {
         "goal" => @episode.goal&.dig("text"),
         "facts" => @episode.facts.presence,
         "identifiers" => @episode.identifiers.pluck("value").presence,
         "observations" => @episode.observations.pluck("text").presence,
         "rejected" => @episode.rejected.presence,
-        "pending" => pending
+        "pending" => pending_payload,
+        "active_photo_context" => @active_photo_context&.to_prompt
       }.compact
     end
 
     def pending_payload
-      slot = @episode.pending_question&.dig("type") || @episode.pending_fact&.dig("subject")
+      type = @episode.pending_question&.dig("type")
+      if PendingQuestion::CONVERSATIONAL_TYPES.include?(type)
+        return { "clarification_target" => type }
+      end
+
+      slot = type || @episode.pending_fact&.dig("subject")
       return nil if slot.blank?
 
       payload = { "slot" => slot }

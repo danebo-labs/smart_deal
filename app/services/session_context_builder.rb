@@ -33,7 +33,7 @@ class SessionContextBuilder
 
   # @param session [ConversationSession, nil]
   # @return [String] context block to append to generation prompt (empty string when nothing)
-  def self.build(session)
+  def self.build(session, active_photo_context: nil)
     return "" if session.nil?
 
     parts = []
@@ -73,10 +73,15 @@ class SessionContextBuilder
 
     result = parts.join("\n\n")
     problem = field_problem_block(session)
-    if problem.empty?
-      result.length > MAX_CONTEXT_CHARS ? result[0, MAX_CONTEXT_CHARS] : result
+    photo = active_photo_block(session, active_photo_context)
+    if photo.empty?
+      if problem.empty?
+        result.length > MAX_CONTEXT_CHARS ? result[0, MAX_CONTEXT_CHARS] : result
+      else
+        compose_with_problem(problem, result)
+      end
     else
-      compose_with_problem(problem, result)
+      compose_with_photo(problem, photo, result)
     end
   end
 
@@ -184,6 +189,33 @@ class SessionContextBuilder
       Rag::FieldCompanionTurnFlag.enabled?
   end
   private_class_method :field_problem_readable?
+
+  def self.active_photo_block(session, explicit)
+    context = explicit
+    context = session.turn_active_photo_context if context.nil? && session.respond_to?(:turn_active_photo_context)
+    return "" if context.nil? || !context.respond_to?(:generation_block)
+
+    block = context.generation_block.to_s
+    return "" if block.empty?
+
+    episode = Rag::ActiveEpisode.parse(session.active_episode)
+    return "" unless context.matches?(episode.active_photo&.dig("field_photo_id"))
+
+    block
+  end
+  private_class_method :active_photo_block
+
+  def self.compose_with_photo(problem, photo, rest)
+    head = [ problem, photo ].compact_blank.join("\n\n")
+    return head[0, MAX_CONTEXT_CHARS] if rest.empty?
+
+    budget = MAX_CONTEXT_CHARS - head.length - 2
+    return head[0, MAX_CONTEXT_CHARS] if budget <= 0
+
+    trimmed = rest.length > budget ? rest[0, budget] : rest
+    trimmed.empty? ? head : "#{head}\n\n#{trimmed}"
+  end
+  private_class_method :compose_with_photo
 
   def self.compose_with_problem(problem, rest)
     return problem if rest.empty?

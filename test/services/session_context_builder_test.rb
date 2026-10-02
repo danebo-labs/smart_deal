@@ -703,6 +703,40 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     end
   end
 
+  test "only a relevant active photo is photo evidence and it stays inside the context cap" do
+    session = episode_session(goal: "Nice300 e51")
+    relevant = photo_context("relevant", "NICE3000")
+    uncertain = photo_context("uncertain", "OTIS2000")
+    unrelated = photo_context("unrelated", "ZZ9MODEL")
+    session.update!(active_episode: session.active_episode.merge(
+      "active_photo" => { "field_photo_id" => relevant.field_photo_id, "sha256" => "ab", "correlation_id" => "photo" }
+    ))
+
+    travel_to FIELD_PROBLEM_NOW do
+      relevant_text = SessionContextBuilder.build(session, active_photo_context: relevant)
+      assert_includes relevant_text, "Photo Evidence for the active episode"
+      assert_includes relevant_text, "NICE3000"
+      assert_includes relevant_text, "Not stated by the technician."
+      assert_not_includes relevant_text, "technician said NICE3000"
+
+      uncertain_session = episode_session(goal: "Nice300 e51")
+      uncertain_session.update!(active_episode: uncertain_session.active_episode.merge(
+        "active_photo" => { "field_photo_id" => uncertain.field_photo_id, "sha256" => "ab", "correlation_id" => "photo" }
+      ))
+      assert_not_includes SessionContextBuilder.build(uncertain_session, active_photo_context: uncertain), "Photo Evidence"
+      assert_not_includes SessionContextBuilder.build(session, active_photo_context: unrelated), "ZZ9MODEL"
+      other = photo_context("relevant", "OTHER999")
+      assert_not_includes SessionContextBuilder.build(session, active_photo_context: other), "OTHER999"
+
+      long = Object.new
+      long.define_singleton_method(:generation_block) { "Photo Evidence for the active episode\n#{"x" * 2500}" }
+      long.define_singleton_method(:matches?) { |photo_id| photo_id.to_i == relevant.field_photo_id.to_i }
+      capped = SessionContextBuilder.build(session, active_photo_context: long)
+      assert_operator capped.length, :<=, SessionContextBuilder::MAX_CONTEXT_CHARS
+      assert_includes capped, "Photo Evidence for the active episode"
+    end
+  end
+
   private
 
   test "a catalog controller is recognized identity and not a technician statement" do
@@ -720,6 +754,24 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
         assert_not_includes block, "Controller: NICE3000 (technician)"
       end
     end
+  end
+
+  def photo_context(relevance, model)
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: accounts(:legacy), sha256: sha,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 8
+    )
+    FieldPhotoObservation.persist!(photo, {
+      "schema_version" => 1, "prompt_fingerprint" => "ef" * 32, "model_id" => "claude-sonnet-5-5",
+      "canonical_component" => "controlador", "manufacturer" => "NICE", "model" => model,
+      "subsystem" => "CONTROLLER_LOGIC", "condition" => "GOOD", "visible_text" => [ "E51" ],
+      "target_visible" => true, "relevance_to_goal" => relevance
+    })
+    episode = Rag::ActiveEpisode.open(correlation_id: "photo", now: FIELD_PROBLEM_NOW)
+    episode.active_photo = { "field_photo_id" => photo.id }
+    Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: accounts(:legacy))
   end
 
   def episode_session(goal: "Resortes", facts: {}, identifiers: [], conflicts: [], updated_at: nil, channel: "web")

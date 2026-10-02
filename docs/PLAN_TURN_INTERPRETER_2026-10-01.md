@@ -1,6 +1,6 @@
 # Turn Interpreter V2 (2026-10-01)
 
-**Estado:** `READY FOR GROK T1.1 IMPLEMENTATION`. T0 y T1 están implementados. La revisión final de Opus fue `APPROVE WITH REQUIRED CHANGES` / `PLAN MUST BE PATCHED FIRST`; esos cambios ya están incorporados como contrato en este master plan. El owner canary sigue bloqueado hasta implementar y volver a evaluar T1.1.
+**Estado:** `T1.1 COMPLETED`. T0, T1 y T1.1 están implementados. El eval real de 21 journeys pasó. El owner canary sigue bloqueado: no hay deploy y `config/deploy.yml` sigue en `conditional`. El siguiente paso es humano.
 
 **HEAD revisado para T1.1:** `9784c3d8d6523d5c1f9409e893d2db7a257a2866`.
 
@@ -982,9 +982,39 @@ El catálogo real de esta base no ata `NICE3000` a un `KbDocument` que la cuenta
 
 Parado aquí. Antes del flip se implementa T1.1 y se repite T2 con los 21 journeys. El flip a `owner` y el deploy siguen siendo humanos. Después del smoke de UI, el implementador corre `bin/rails turn_interpreter:smoke_check`. Rollback antes de T3: `owner` → `conditional`. T3 no empieza hasta ese PASS.
 
-### T1.1 — pendiente pre-canary
+### T1.1 — COMPLETED
 
-Revisión final de Opus sobre HEAD `9784c3d8d6523d5c1f9409e893d2db7a257a2866`. Veredicto recibido: `APPROVE WITH REQUIRED CHANGES` y `PLAN MUST BE PATCHED FIRST`. Este master incorpora los required changes; esta entrada documenta diseño solamente y no implementa T1.1.
+`feat: carry active photo context through turn interpretation`
+
+SHA de implementación: se anota en el commit de docs inmediato posterior, porque el SHA no existe antes de ese commit.
+
+`config/deploy.yml` no se modificó. `HAIKU_QUERY_ANALYSIS_MODE` sigue `conditional`. No hubo deploy. El owner canary no empezó.
+
+Tests, 2026-10-02, `BUNDLE_PATH=vendor/bundle bin/rails test` sobre percepción, `ActivePhotoContext`, `RoutePolicy`, `QueryComposer`, `PendingQuestion`, `SessionContextBuilder` y `ConversationSessionTurnInterpreter`: 116 runs, 658 assertions, 0 failures. El test nuevo de `FieldPhotoAnalysisJob` en owner: 1 run, 7 assertions, 0 failures. Episodio, ownership, manufacturer conditional y case boundary: 167 runs, 1010 assertions, 2 failures. Esos dos son los de `hola` ya registrados en T1 sobre `b1a4b42`; este delta no toca ese clasificador. `git diff --check` limpio.
+
+Ajuste que pidió el primer eval real, antes de este PASS. Haiku devolvía payloads válidos en forma pero fuera del contrato, y el schema los rechazaba o la policy tomaba otra rama:
+
+- `Nice300 e51` y `PRIVATE900` salían como mention o `unclear` sin target. El prompt ahora los fija como `assert` de report.
+- `correct` venía con `clarification_target=correction_target`, o sin el span negate. El prompt deja el target en null y exige negate + assert.
+- `No, ese era el otro` salía como `correct` y Ruby lo bajaba a `unclear/correction_target`. El prompt lo fija como `unclear/work_relation`. `Es otro ascensor` ya venía `new_work` vacío; al quedar el pending `work_relation`, el thin path abre el episodio vacío.
+- `¿Y eso qué significa?` y `Me refería al de la foto` con una sola foto relevante salían `unclear/referent` o `answer_pending` con `pending_resolution=referent`. El prompt los fija como `follow_up` y prohíbe `referent` como resolution.
+
+No cambió el schema ni el número de llamadas. `PROMPT_VERSION` pasó de `2026-10-02.2` a `2026-10-02.3`. `SCHEMA_VERSION` sigue `turn_perception.3`.
+
+`bin/rails turn_interpreter:eval` contra Haiku, 21 journeys, 2026-10-02, después de ese ajuste:
+
+```text
+passes=21 mismatches=0 fallbacks=0 field_rejections=1
+clarification_target_accuracy=8/8 photo_context_accuracy=7/7
+p50_ms=1746 p95_ms=2795
+input_tokens=45757 output_tokens=3422 estimated_usd=0.062867
+```
+
+`field_rejections=1` es `vis_3`: `observations[0]` con `not_symptom`. La frase corta no se aplicó. El journey igual cumple `new_work` / `ready`, foto ausente y query con Elemont. No es un span no literal aplicado.
+
+Invariantes de la sección 14 en cero: sin ampliación cross-tenant (`tenant_private_designator` no tipa ni filtra fabricante), sin mutación de Document Focus, sin span no literal aplicado, sin estado inválido persistido, sin valor rejected en la query efectiva y sin mutación persistente incorrecta en los casos de la sección 16.
+
+Siguiente paso humano: deploy y `HAIKU_QUERY_ANALYSIS_MODE=owner` en el host de pilotos. Después, smoke de la sección 17 y `bin/rails turn_interpreter:smoke_check`. T3 no empieza.
 
 ---
 

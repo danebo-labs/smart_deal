@@ -107,6 +107,8 @@ module RagQueryConcern
   end
 
   def pending_from(understanding)
+    question = understanding.pending_question if understanding.respond_to?(:pending_question)
+    return question if question.is_a?(Hash)
     return nil if understanding.pending_subject.blank?
 
     { "type" => understanding.pending_subject }

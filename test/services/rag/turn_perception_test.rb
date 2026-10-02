@@ -96,7 +96,8 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
         "move" => "correct",
         "assertions" => [ negate_span("NICE3000"), assert_span("ABC900", "model") ],
         "observations" => [],
-        "pending_resolution" => nil
+        "pending_resolution" => nil,
+        "clarification_target" => nil
       },
       "No, no es NICE3000. Es ABC900.",
       episode: episode
@@ -152,12 +153,14 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
         "move" => "correct",
         "assertions" => [ negate_span("NICE3000"), assert_span("ABC900") ],
         "observations" => [ "intenta cerrar de nuevo" ],
-        "pending_resolution" => nil
+        "pending_resolution" => nil,
+        "clarification_target" => nil
       },
       "No, no es NICE3000. Es ABC900. intenta cerrar de nuevo"
     )
 
     assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
     assert_empty result.identities
     assert_empty result.observations
   end
@@ -187,6 +190,10 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes ids, "q2_carry_identity"
     assert_includes ids, "pending_custom_identity"
     assert_includes ids, "tenant_private_designator"
+    %w[vis_1 vis_2 vis_3 vis_4 amb_1 amb_2 amb_2b amb_3].each do |id|
+      assert_includes ids, id
+    end
+    assert_equal 21, cases.size
     assert cases.all? { |row| row["origin"].present? && row["expected"].is_a?(Hash) }
     assert cases.all? { |row| row["turn"].present? || row["turns"].present? }
   end
@@ -200,6 +207,50 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not_includes Rails.root.join("config/deploy.yml").read, "HAIKU_QUERY_ANALYSIS_MODE: owner"
   end
 
+  test "a missing clarification target invalidates the perception" do
+    result = perceive(
+      { "move" => "report", "assertions" => [], "observations" => [], "pending_resolution" => nil },
+      "hola"
+    )
+
+    assert_not result.valid
+    assert_equal "invalid_schema", result.invalid_reason
+  end
+
+  test "unclear without a target is invalid and a target on another move is invalid" do
+    missing = perceive(
+      { "move" => "unclear", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => nil },
+      "No, ese era el otro"
+    )
+    extra = perceive(
+      { "move" => "report", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => "work_relation" },
+      "No, ese era el otro"
+    )
+
+    assert_not missing.valid
+    assert_not extra.valid
+  end
+
+  test "a thin new work stays new work only while a work relation question is open" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: Time.current)
+    episode.assign_goal!("la puerta no cierra", correlation_id: "query:1")
+    raw = {
+      "move" => "new_work",
+      "assertions" => [],
+      "observations" => [],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+
+    downgraded = perceive(raw, "Es otro ascensor", episode: episode)
+    assert_equal "follow_up", downgraded.move
+
+    episode.pending_question = { "type" => "work_relation" }
+    kept = perceive(raw, "Es otro ascensor", episode: episode)
+    assert_equal "new_work", kept.move
+    assert_not kept.technical_payload?
+  end
+
   private
 
   def perceive(raw, turn, episode: Rag::ActiveEpisode.new, viewer: @owner)
@@ -209,11 +260,11 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
   end
 
   def report(assertions)
-    { "move" => "report", "assertions" => assertions, "observations" => [], "pending_resolution" => nil }
+    { "move" => "report", "assertions" => assertions, "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
   end
 
   def answer(resolution, assertions)
-    { "move" => "answer_pending", "assertions" => assertions, "observations" => [], "pending_resolution" => resolution }
+    { "move" => "answer_pending", "assertions" => assertions, "observations" => [], "pending_resolution" => resolution, "clarification_target" => nil }
   end
 
   def assert_span(span, hint = nil)

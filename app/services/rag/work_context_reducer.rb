@@ -24,14 +24,17 @@ module Rag
       return @episode if @perception.nil?
       return @episode if @decision&.decision == "meta"
 
+      promote_carry if promote_existing_carry?
+
       if @decision&.decision == "clarify_first"
-        write_pending(@decision.pending_question)
         @episode.touch!(@now)
+        return @episode if @perception.move == "new_work"
+
+        write_pending(@decision.pending_question)
         return @episode
       end
       return @episode if @perception.move == "unclear"
 
-      promote_carry if answer_promotes_carry?
       apply_negations
       write_assertions
       write_observations unless @decision&.decision == "clarify_first"
@@ -45,6 +48,17 @@ module Rag
 
     def answer_promotes_carry?
       @perception.move == "answer_pending" && %w[value unknown seek].include?(@perception.pending_resolution)
+    end
+
+    def promote_existing_carry?
+      return true if answer_promotes_carry?
+      return false unless %w[follow_up correct].include?(@perception.move)
+
+      conversational_pending?
+    end
+
+    def conversational_pending?
+      PendingQuestion::CONVERSATIONAL_TYPES.include?(@episode.pending_question&.dig("type"))
     end
 
     def promote_carry

@@ -58,6 +58,19 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     assert_nil answered.state["pending_question"]
   end
 
+  test "a conversational target is stored without a fact and is not parsed from prose" do
+    question = { "type" => "work_relation", "carry" => [ "Q2" ] }
+    state = Rag::ActiveEpisodeTurn.apply_assistant(
+      state: episode_state, text: "¿Esto sigue siendo el mismo equipo?", now: NOW, correlation_id: "query:rel",
+      pending_question: question
+    ).state
+
+    assert_equal question, state["pending_question"]
+    assert_nil state["pending_fact"]
+    assert_nil Rag::PendingQuestion.parse_reply("Es otro ascensor", pending_question: question)
+    assert_nil Rag::PendingQuestion.coerce("type" => "work_relation", "options" => [ "same" ])["options"]
+  end
+
   test "prose fallback still sets the subject when no structured object is passed" do
     result = Rag::ActiveEpisodeTurn.apply_assistant(
       state: episode_state, text: "¿Sabes el modelo del equipo?", now: NOW, correlation_id: "query:prose"

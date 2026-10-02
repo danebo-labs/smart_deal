@@ -94,6 +94,18 @@ module Rag
     end
 
     def self.write_pending!(episode, text, correlation_id:, pending_question: nil)
+      if HaikuQueryAnalysisFlag.owner?
+        question = PendingQuestion.coerce(pending_question)
+        return nil if question.nil?
+
+        episode.clear_pending!
+        episode.pending_question = question
+        if PendingQuestion::FACT_TYPES.include?(question["type"])
+          episode.pending_fact = { "subject" => question["type"], "correlation_id" => correlation_id.to_s }
+        end
+        return nil
+      end
+
       episode.clear_pending!
       question = PendingQuestion.coerce(pending_question)
       if question
@@ -103,8 +115,6 @@ module Rag
         end
         return nil
       end
-
-      return nil if HaikuQueryAnalysisFlag.owner?
 
       subjects = text.scan(/[^?]+\?/).filter_map { |sentence| pending_subject(FollowupQueryRewriter.normalize_label(sentence)) }
       return nil unless subjects.size == 1

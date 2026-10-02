@@ -998,6 +998,49 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
   end
 
+  test "owner delivery keeps an unresolved controller pending and closes a written manufacturer" do
+    with_episode_flag("true") do
+      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+        owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
+        episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+        episode.pending_question = { "type" => "controller", "carry" => [ "Q2" ] }
+        episode.pending_fact = { "subject" => "controller", "correlation_id" => "seed" }
+        @session.update!(active_episode: episode.to_h)
+
+        with_analysis_service(result: analysis_result) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+        end
+        kept = @session.reload.active_episode
+        assert_equal "controller", kept.dig("pending_question", "type")
+        assert_equal [ "Q2" ], kept.dig("pending_question", "carry")
+        assert_equal "P1", kept.dig("facts", "model", "value")
+        assert_equal "photo", kept.dig("facts", "model", "source")
+
+        manufacturer = ConversationSession.create!(
+          identifier: "field-photo-manufacturer", channel: "web", account: accounts(:legacy),
+          user: users(:one), expires_at: 1.day.from_now
+        )
+        brand_owner = manufacturer.ensure_case_for_photo_submission!(correlation_id: "photo:brand")
+        brand = Rag::ActiveEpisode.parse(manufacturer.reload.active_episode)
+        brand.pending_question = { "type" => "manufacturer" }
+        brand.pending_fact = { "subject" => "manufacturer", "correlation_id" => "seed" }
+        manufacturer.update!(active_episode: brand.to_h)
+        nice = analysis_result
+        nice[:parsed] = nice[:parsed].merge("manufacturer" => "NICE", "model" => "UNKNOWN", "relevance_to_goal" => "relevant", "target_visible" => true)
+        with_analysis_service(result: nice) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            conversation_session_id: manufacturer.id, expected_episode_id: brand_owner, correlation_id: "photo:brand",
+            image_sha256: Digest::SHA256.hexdigest("nice-jpeg"), image_token: pending_token
+          ))
+        end
+        closed = manufacturer.reload.active_episode
+        assert_equal "NICE", closed.dig("facts", "manufacturer", "value")
+        assert_equal "photo", closed.dig("facts", "manufacturer", "source")
+        assert_nil closed["pending_question"]
+      end
+    end
+  end
+
   private
 
   def with_episode_flag(value)

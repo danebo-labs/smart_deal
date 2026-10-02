@@ -31,10 +31,11 @@ module Rag
       end
     end
 
-    def self.call(previous:, perception:, focus_count:, focus_document_ids: [], focus_uris: [], locale: :es)
+    def self.call(previous:, perception:, focus_count:, focus_document_ids: [], focus_uris: [], locale: :es, relevant_photo: nil)
       new(
         previous: previous, perception: perception, focus_count: focus_count,
-        focus_document_ids: focus_document_ids, focus_uris: focus_uris, locale: locale
+        focus_document_ids: focus_document_ids, focus_uris: focus_uris, locale: locale,
+        relevant_photo: relevant_photo
       ).call
     end
 
@@ -45,19 +46,39 @@ module Rag
       ).fallback(turn, catalog, viewer_account)
     end
 
-    def initialize(previous:, perception:, focus_count:, focus_document_ids:, focus_uris:, locale:)
+    def initialize(previous:, perception:, focus_count:, focus_document_ids:, focus_uris:, locale:, relevant_photo: nil)
       @previous = previous || ActiveEpisode.new
       @perception = perception
       @focus_count = focus_count.to_i
       @focus_document_ids = Array(focus_document_ids)
       @focus_uris = Array(focus_uris)
       @locale = locale.to_sym
+      @relevant_photo = relevant_photo
     end
 
     def call
       previous = @perception.move == "new_work" ? ActiveEpisode.new : @previous
       if @perception.move == "meta"
         return finish("meta", outside_discovery: false, owns_query: false, clarification: I18n.t("rag.meta_continue", locale: @locale))
+      end
+      if @perception.move == "unclear" && @perception.clarification_target.present?
+        target = @perception.clarification_target
+        return finish(
+          "clarify_first",
+          outside_discovery: false,
+          owns_query: false,
+          clarification: I18n.t("rag.clarify_#{target}", locale: @locale),
+          pending_subject: target,
+          pending_question: conversational_pending(target)
+        )
+      end
+      if thin_new_work?
+        return finish(
+          "clarify_first",
+          outside_discovery: false,
+          owns_query: false,
+          clarification: I18n.t("rag.clarify_new_work", locale: @locale)
+        )
       end
       if clarify_first?(previous)
         return finish(
@@ -144,9 +165,27 @@ module Rag
 
     private
 
+    def thin_new_work?
+      @perception.move == "new_work" && !@perception.technical_payload?
+    end
+
+    def conversational_pending(target)
+      question = { "type" => target }
+      carry = conversational_carry
+      question["carry"] = carry if carry.any?
+      question
+    end
+
+    def conversational_carry
+      existing = PendingQuestion.sanitize_carry(@previous.pending_question&.dig("carry"))
+      return existing if existing.any?
+
+      carry_spans
+    end
+
     def clarify_first?(previous)
       return false if @focus_count.positive?
-      return false if %w[answer_pending correct new_work].include?(@perception.move)
+      return false if %w[answer_pending correct new_work unclear].include?(@perception.move)
       return false if @perception.ambiguities.any?
       return false unless thin?(previous)
       return false if @perception.observations.any?
@@ -160,7 +199,14 @@ module Rag
       return true if episode.nil? || episode.blank?
 
       !known_identity?(episode) && episode.fact("fault_code").nil? &&
-        episode.observations.empty? && episode.goal.blank? && episode.active_photo.blank?
+        episode.observations.empty? && episode.goal.blank? && !photo_counts?(episode)
+    end
+
+    def photo_counts?(episode)
+      return false if episode.active_photo.blank?
+      return true if @relevant_photo.nil?
+
+      @relevant_photo == true
     end
 
     def known_identity?(episode)
@@ -267,7 +313,7 @@ module Rag
 
     def fallback_perception
       TurnPerception::Result.new(
-        valid: true, move: "report", observations: [], pending_resolution: nil,
+        valid: true, move: "report", observations: [], pending_resolution: nil, clarification_target: nil,
         identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
       )
     end

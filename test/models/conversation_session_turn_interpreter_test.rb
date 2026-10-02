@@ -27,7 +27,11 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
   test "an unclear mention of Q2 still stores the carry" do
     session = web_session
     result = with_owner do
-      ask(session, "¿Que es Q2?", client(perception("unclear", assertions: [ assertion("Q2", "mention") ])))
+      ask(session, "¿Que es Q2?", client(perception(
+        "unclear",
+        assertions: [ assertion("Q2", "mention") ],
+        clarification_target: "referent"
+      )))
     end
 
     assert result.understanding.clarify_first?
@@ -387,6 +391,329 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_equal 1, session.reload.conversation_history.count { |row| row["role"] == "user" }
   end
 
+  test "a relevant photo follows the open job without another vision or model call" do
+    session = web_session
+    photo = observed_photo
+    seed_episode(session, active_photo: photo_ref(photo))
+    interpreter = client(perception("follow_up"))
+    vision = vision_calls do
+      with_owner { ask(session, "¿Qué reviso ahora?", interpreter) }
+    end
+
+    assert_equal 1, interpreter.payloads.size
+    assert_equal 0, vision
+    sent = JSON.parse(interpreter.payloads.first[:messages].first[:content].first[:text])
+    assert_equal "relevant", sent.dig("work_context", "active_photo_context", "relevance_to_goal")
+    assert_includes session.turn_active_photo_context.generation_block, "Photo Evidence for the active episode"
+    context = SessionContextBuilder.build(session)
+    assert_includes context, "NICE3000"
+    assert_includes context, "Not stated by the technician."
+    result = session.reload
+    assert_includes result.active_episode.fetch("goal", {}) .fetch("text"), "reviso"
+  end
+
+  test "one visual referent is a follow up and two referents stay unclear without retrieval" do
+    session = web_session
+    photo = observed_photo(visible_text: [ "E51" ])
+    seed_episode(session, active_photo: photo_ref(photo), goal: "revisar el controlador")
+    followed = with_owner { ask(session, "¿Y eso qué significa?", client(perception("follow_up"))) }
+    assert_equal "ready", followed.understanding.decision
+    assert_includes followed.composed, "E51"
+
+    contrast = web_session
+    seed_episode(contrast, active_photo: photo_ref(photo), goal: "revisar el controlador")
+    unclear = with_owner do
+      ask(contrast, "¿Y eso qué significa?", client(perception("unclear", clarification_target: "referent")))
+    end
+    assert unclear.understanding.clarify_first?
+    assert_nil unclear.composed
+    assert_equal "referent", contrast.reload.active_episode.dig("pending_question", "type")
+  end
+
+  test "new work drops the previous photo from the query and the generation block" do
+    session = web_session
+    photo = observed_photo
+    seed_episode(
+      session,
+      goal: "Nice300 e51",
+      facts: { "controller" => known("NICE3000"), "fault_code" => known("E51") },
+      active_photo: photo_ref(photo)
+    )
+    result = with_owner do
+      ask(session, "Otra falla: Elemont MH no arranca", client(perception(
+        "new_work",
+        assertions: [ assertion("Elemont", "assert") ],
+        observations: [ "Elemont MH no arranca" ]
+      )))
+    end
+
+    assert_equal "ready", result.understanding.decision
+    assert_nil session.reload.active_episode["active_photo"]
+    assert_not_includes result.composed.to_s, "NICE3000"
+    assert_nil session.turn_active_photo_context
+  end
+
+  test "an unrelated photo is visible to the interpreter and absent from query and generation" do
+    session = web_session
+    photo = observed_photo(relevance_to_goal: "unrelated", manufacturer: "OTIS", model: "OTIS2000", visible_text: [ "ZZ9" ], canonical_component: "puerta")
+    seed_episode(
+      session,
+      goal: "Nice300 e51",
+      facts: { "controller" => known("NICE3000"), "fault_code" => known("E51") },
+      active_photo: photo_ref(photo)
+    )
+    interpreter = client(perception("follow_up"))
+    result = with_owner { ask(session, "¿Qué reviso ahora?", interpreter) }
+    sent = JSON.parse(interpreter.payloads.first[:messages].first[:content].first[:text])
+
+    assert_equal "unrelated", sent.dig("work_context", "active_photo_context", "relevance_to_goal")
+    assert_includes result.composed, "NICE3000"
+    assert_not_includes result.composed, "OTIS2000"
+    assert_not_includes result.composed, "ZZ9"
+    assert_nil session.turn_active_photo_context&.generation_block
+    assert_not_includes SessionContextBuilder.build(session), "OTIS2000"
+  end
+
+  test "a material work-relation ambiguity does not retrieve or mutate the job" do
+    session = web_session
+    seed_episode(session, goal: "la puerta no cierra", facts: { "controller" => known("NICE3000") })
+    opened = session.live_episode_id
+    result = with_owner do
+      ask(session, "No, ese era el otro", client(perception("unclear", clarification_target: "work_relation")))
+    end
+
+    episode = session.reload.active_episode
+    assert result.understanding.clarify_first?
+    assert_nil result.composed
+    assert_equal false, result.understanding.outside_discovery
+    assert_equal opened, session.live_episode_id
+    assert_equal "la puerta no cierra", episode.dig("goal", "text")
+    assert_equal "NICE3000", episode.dig("facts", "controller", "value")
+    assert_equal "work_relation", episode.dig("pending_question", "type")
+    assert_nil episode["pending_fact"]
+    assert_equal "¿Esto sigue siendo el mismo equipo o estás hablando de otro?", result.understanding.clarification
+  end
+
+  test "a thin new work opens an empty episode and does not retrieve even with focus" do
+    [ 0, 1 ].each do |focus|
+      session = web_session
+      photo = observed_photo
+      doc = manual("focus-#{focus}.pdf")
+      session.update!(document_focus: [ focus_entry(doc) ]) if focus.positive?
+      seed_episode(
+        session,
+        goal: "la puerta no cierra",
+        facts: { "controller" => known("NICE3000") },
+        observations: [ { "text" => "la puerta no cierra bien", "correlation_id" => "seed" } ],
+        pending_question: { "type" => "work_relation", "carry" => [ "Q2" ] },
+        active_photo: photo_ref(photo),
+        rejected: [ { "slot" => "controller", "value" => "OLD900" } ],
+        procedure: { "step" => 4 }
+      )
+      previous = session.live_episode_id
+      result = with_owner do
+        ask(session, "Es otro ascensor", client(perception("new_work")))
+      end
+
+      episode = session.reload.active_episode
+      assert_equal "clarify_first", result.understanding.decision
+      assert_nil result.composed
+      assert_equal false, result.understanding.outside_discovery
+      assert_not_equal previous, session.live_episode_id
+      assert_nil episode["goal"]
+      assert_nil episode["active_photo"]
+      assert_empty episode["facts"]
+      assert_nil episode["observations"]
+      assert_nil episode["rejected"]
+      assert_not_includes Array(episode["identifiers"]).pluck("value"), "Q2"
+      assert_equal({}, session.current_procedure)
+      assert_equal "¿Qué equipo o qué falla estás revisando?", result.understanding.clarification
+      if focus.positive?
+        assert_equal [ doc.id ], session.focus_document_ids
+      end
+    end
+  end
+
+  test "a new work that names the equipment retrieves that job" do
+    session = web_session
+    seed_episode(session, goal: "la puerta no cierra", facts: { "controller" => known("NICE3000") })
+    result = with_owner do
+      ask(session, "Ahora tengo otro KONE que no nivela", client(perception(
+        "new_work",
+        assertions: [ assertion("KONE", "assert") ],
+        observations: [ "otro KONE que no nivela" ]
+      )))
+    end
+
+    assert_equal "ready", result.understanding.decision
+    assert_includes result.composed, "KONE"
+    assert_includes result.composed, "nivela"
+    assert_not_includes result.composed, "NICE3000"
+    assert_nil session.reload.active_episode["active_photo"]
+  end
+
+  test "a photo reference keeps the active photo when one referent is dominant" do
+    session = web_session
+    photo = observed_photo
+    seed_episode(session, goal: "la puerta no cierra", active_photo: photo_ref(photo))
+    result = with_owner { ask(session, "Me refería al de la foto", client(perception("follow_up"))) }
+
+    assert_equal "ready", result.understanding.decision
+    assert_equal photo.id, session.reload.active_episode.dig("active_photo", "field_photo_id")
+    assert_includes result.composed, "NICE3000"
+  end
+
+  test "conversational carry is promoted once on the same episode and dropped for new work" do
+    session = web_session
+    with_owner do
+      ask(session, "¿Qué es Q2?", client(mention("Q2")), correlation: "query:q2")
+      ask(session, "No, ese era el otro", client(perception("unclear", clarification_target: "work_relation")), correlation: "query:other")
+    end
+    episode = session.reload.active_episode
+    assert_equal "work_relation", episode.dig("pending_question", "type")
+    assert_equal [ "Q2" ], episode.dig("pending_question", "carry")
+    assert_nil episode["pending_fact"]
+
+    continued = with_owner do
+      ask(session, "Sí, este mismo", client(perception("follow_up")), correlation: "query:same-job")
+    end
+    kept = session.reload.active_episode
+    assert_includes Array(kept["identifiers"]).pluck("value"), "Q2"
+    assert_not_equal "work_relation", kept.dig("pending_question", "type")
+    assert_includes continued.composed.to_s, "Q2" if continued.understanding.performs_retrieval?
+
+    other = web_session
+    with_owner do
+      ask(other, "¿Qué es Q2?", client(mention("Q2")), correlation: "query:q2b")
+      ask(other, "No, ese era el otro", client(perception("unclear", clarification_target: "work_relation")), correlation: "query:otherb")
+      opened = ask(other, "Es otro ascensor", client(perception("new_work")), correlation: "query:new")
+      assert_nil opened.composed
+    end
+    assert_not_includes Array(other.reload.active_episode["identifiers"]).pluck("value"), "Q2"
+  end
+
+  test "a typed turn without a photo does not ask for one or change the route" do
+    session = web_session
+    seed_episode(session, goal: "Nice300 e51", facts: { "controller" => known("NICE3000"), "fault_code" => known("E51") })
+    interpreter = client(perception("follow_up"))
+    result = with_owner { ask(session, "¿Qué reviso?", interpreter) }
+    sent = JSON.parse(interpreter.payloads.first[:messages].first[:content].first[:text])
+
+    assert_equal "ready", result.understanding.decision
+    assert_nil sent.dig("work_context", "active_photo_context")
+    assert_not_includes result.understanding.clarification.to_s, "foto"
+    assert_includes result.composed, "NICE3000"
+  end
+
+  test "a changed episode discards the photo context with the perception" do
+    session = web_session
+    photo = observed_photo(model: "NICE3000")
+    seed_episode(session, active_photo: photo_ref(photo), goal: "el controlador")
+    interpreter = SnapshotMutatingClient.new(session, perception("follow_up"))
+    result = with_owner { ask(session, "¿Qué reviso ahora?", interpreter) }
+
+    assert result.understanding.fallback
+    assert_nil session.turn_active_photo_context
+    assert_not_includes result.composed.to_s, "NICE3000"
+    assert_not_includes SessionContextBuilder.build(session), "Photo Evidence for the active episode"
+  end
+
+  test "owner photo writes close only the manufacturer slot they just stored" do
+    session = web_session
+    with_owner do
+      seed_episode(
+        session,
+        pending_question: { "type" => "manufacturer" },
+        pending_fact: { "subject" => "manufacturer", "correlation_id" => "seed" }
+      )
+      session.record_photo_observation!(
+        photo_value: { manufacturer: "NICE", model_visible: "UNKNOWN", relevance_to_goal: "relevant", target_visible: true },
+        field_photo_id: 11, sha256: "mfr", correlation_id: "photo:mfr", expected_episode_id: session.live_episode_id
+      )
+    end
+    closed = session.reload.active_episode
+    assert_equal "NICE", closed.dig("facts", "manufacturer", "value")
+    assert_equal "photo", closed.dig("facts", "manufacturer", "source")
+    assert_nil closed["pending_question"]
+
+    unrelated = web_session
+    with_owner do
+      seed_episode(
+        unrelated,
+        pending_question: { "type" => "manufacturer" },
+        pending_fact: { "subject" => "manufacturer", "correlation_id" => "seed" }
+      )
+      unrelated.record_photo_observation!(
+        photo_value: { manufacturer: "OTIS", model_visible: "OTIS2000", relevance_to_goal: "unrelated" },
+        field_photo_id: 12, sha256: "unrelated", correlation_id: "photo:unrelated", expected_episode_id: unrelated.live_episode_id
+      )
+    end
+    kept = unrelated.reload.active_episode
+    assert_nil kept.dig("facts", "manufacturer")
+    assert_equal "manufacturer", kept.dig("pending_question", "type")
+  end
+
+  test "a photo model does not clear a controller carry or a work relation question" do
+    session = web_session
+    with_owner do
+      seed_episode(
+        session,
+        pending_question: { "type" => "controller", "carry" => [ "Q2" ] },
+        pending_fact: { "subject" => "controller", "correlation_id" => "seed" }
+      )
+      session.record_photo_observation!(
+        photo_value: { manufacturer: "UNKNOWN", model_visible: "NICE3000", relevance_to_goal: "relevant", target_visible: true },
+        field_photo_id: 13, sha256: "model", correlation_id: "photo:model", expected_episode_id: session.live_episode_id
+      )
+      session.record_assistant_turn!(
+        "¿Qué controlador es? El modelo parece NICE3000.",
+        user_id: @user.id, correlation_id: "photo:model", expected_episode_id: session.live_episode_id, writer: "photo_assistant"
+      )
+    end
+    episode = session.reload.active_episode
+    assert_equal "NICE3000", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
+    assert_equal "controller", episode.dig("pending_question", "type")
+    assert_equal [ "Q2" ], episode.dig("pending_question", "carry")
+    assert_equal "controller", episode.dig("pending_fact", "subject")
+
+    relation = web_session
+    with_owner do
+      seed_episode(relation, pending_question: { "type" => "work_relation", "carry" => [ "Q2" ] })
+      relation.record_photo_observation!(
+        photo_value: { manufacturer: "NICE", model_visible: "NICE3000", relevance_to_goal: "relevant", target_visible: true },
+        field_photo_id: 14, sha256: "relation", correlation_id: "photo:relation", expected_episode_id: relation.live_episode_id
+      )
+      relation.record_assistant_turn!(
+        "Veo un NICE3000.",
+        user_id: @user.id, correlation_id: "photo:relation", expected_episode_id: relation.live_episode_id, writer: "photo_assistant"
+      )
+    end
+    kept = relation.reload.active_episode
+    assert_equal "work_relation", kept.dig("pending_question", "type")
+    assert_equal [ "Q2" ], kept.dig("pending_question", "carry")
+    assert_nil kept["pending_fact"]
+  end
+
+  test "a clarify-first text turn keeps its pending after the photo assistant delivers" do
+    session = web_session
+    with_owner do
+      ask(session, "¿Qué es Q2?", client(mention("Q2")), correlation: "query:q2")
+      session.record_photo_observation!(
+        photo_value: { manufacturer: "UNKNOWN", model_visible: "P1", relevance_to_goal: "relevant", target_visible: true },
+        field_photo_id: 15, sha256: "after-text", correlation_id: "photo:after", expected_episode_id: session.live_episode_id
+      )
+      session.record_assistant_turn!(
+        "¿Qué controlador estás revisando?",
+        user_id: @user.id, correlation_id: "photo:after", expected_episode_id: session.live_episode_id, writer: "photo_assistant"
+      )
+    end
+
+    episode = session.reload.active_episode
+    assert_equal "controller", episode.dig("pending_question", "type")
+    assert_equal [ "Q2" ], episode.dig("pending_question", "carry")
+  end
+
   test "the default mode does not call the owner interpreter" do
     session = web_session
     interpreter = client(perception("report"))
@@ -466,7 +793,7 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     }
   end
 
-  def seed_episode(session, facts: {}, goal: nil, observations: [], pending_question: nil, pending_fact: nil, procedure: {}, at: @now)
+  def seed_episode(session, facts: {}, goal: nil, observations: [], pending_question: nil, pending_fact: nil, procedure: {}, at: @now, active_photo: nil, rejected: [])
     payload = {
       "v" => 1,
       "episode_id" => "ep_seed",
@@ -481,7 +808,60 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     payload["goal"] = { "text" => goal, "correlation_id" => "seed", "truncated" => false } if goal
     payload["pending_question"] = pending_question if pending_question
     payload["pending_fact"] = pending_fact if pending_fact
+    payload["active_photo"] = active_photo if active_photo
+    payload["rejected"] = rejected if rejected.any?
     session.update!(active_episode: payload, current_procedure: procedure)
+  end
+
+  def observed_photo(account: @account, **overrides)
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: account, sha256: sha, s3_key_original: "field_photos/#{account.id}/#{sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 8
+    )
+    raw = {
+      "schema_version" => 1,
+      "prompt_fingerprint" => "cd" * 32,
+      "model_id" => "claude-sonnet-5-5",
+      "canonical_component" => "controlador de ascensor",
+      "manufacturer" => "NICE",
+      "model" => "NICE3000",
+      "subsystem" => "CONTROLLER_LOGIC",
+      "condition" => "DEGRADED",
+      "visible_text" => [ "E51" ],
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant"
+    }.merge(overrides.stringify_keys)
+    stored = FieldPhotoObservation.persist!(photo, raw)
+    raise "observation rejected" if stored.nil?
+
+    photo
+  end
+
+  def photo_ref(photo)
+    { "field_photo_id" => photo.id, "sha256" => photo.sha256, "correlation_id" => "photo:seed" }
+  end
+
+  def focus_entry(doc)
+    {
+      "kb_document_id" => doc.id,
+      "source_uri" => "s3://test-bucket/manuals/#{doc.id}.pdf",
+      "display_name" => doc.display_name,
+      "added_at" => @now.iso8601
+    }
+  end
+
+  def vision_calls
+    count = 0
+    original = FieldPhotoAnalysisService.method(:new)
+    FieldPhotoAnalysisService.define_singleton_method(:new) do |**kwargs|
+      count += 1
+      original.call(**kwargs)
+    end
+    yield
+    count
+  ensure
+    FieldPhotoAnalysisService.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) } if original
   end
 
   def known(value, source: "user")
@@ -492,12 +872,13 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     perception("report", assertions: [ assertion(span, "mention") ])
   end
 
-  def perception(move, assertions: [], observations: [], pending_resolution: nil)
+  def perception(move, assertions: [], observations: [], pending_resolution: nil, clarification_target: nil)
     {
       "move" => move,
       "assertions" => assertions,
       "observations" => observations,
-      "pending_resolution" => pending_resolution
+      "pending_resolution" => pending_resolution,
+      "clarification_target" => clarification_target
     }
   end
 

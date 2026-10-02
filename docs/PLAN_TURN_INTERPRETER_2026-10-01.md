@@ -758,4 +758,29 @@ No queda un blocker de diseño.
 
 ## 21. Bitácora de ejecución
 
-Se completa al cerrar cada fase.
+### T0 — `b1a4b423df1a54ac5f825b470f553d4a78fb5e00`
+
+`test: add the tenant-safe turn perception contract`
+
+- `TurnPerception`, `TurnText.truncate`, `resolve_designator` / `resolve_brand` con `viewer_account`.
+- Sin `viewer_account` el catálogo sigue sin filtrar, para no cambiar el ask de F8. V2 no usa ese camino: sin viewer la resolución es unresolved.
+- Ruby 3.4 trata un hash literal como keywords si `initialize` tiene `loaded:`. Los tests construyen el catálogo con un hash objeto.
+- Tamaño medido: saturado 4218, núcleo 2167. El núcleo cabe en 4096.
+- Tests de esa fase: percepción, aislamiento de catálogo, episodio y `TechnicalUnderstanding`. 0 failures.
+
+### T1 — `849df427a3dcf2a369fece8f5abf80ff062b3d65`
+
+`feat: run the turn interpreter when owner mode is on`
+
+- Default sigue el camino viejo. `owner` corre un Haiku fuera del lock, compara el snapshot, lee el Focus fresco y persiste con la misma primitiva de boundary.
+- Los focus ids viajan en `RoutePolicy::Decision`. Retrieval no relee el Focus.
+- `pending_question.carry` (máximo 2). Un `answer_pending` value/unknown/seek los promueve a identifiers.
+- Un identifier se tipa al slot pendiente o al slot negado sólo en esos dos contextos. Si el slot ya tiene un fact de catálogo, el identifier extra no se reescribe.
+- Goal vacío se asigna en `report`, `follow_up` y `new_work` cuando la decisión busca. `clarify_first` y `meta` no.
+- `new_work` abre episodio y el boundary es `:new_episode`.
+- Idempotencia: el mismo `correlation_id` no vuelve a llamar a Haiku ni agrega otra burbuja. Dos HTTP distintos no se deduplican.
+- Fallback no reemplaza `active_episode`.
+- `MAX_BYTES` 4096. El shrink suelta conflicts antes que identifiers.
+- Tests dirigidos de T1: 41 runs, 224 assertions, 0 failures (owner, percepción, replay). Rubocop limpio en los archivos de la fase. `git diff --check` limpio.
+- Desvío: dos tests de boundary del camino viejo (`hola` tras expiry, episodio inválido) ya fallan en `b1a4b42`. Con un manual pinneado, `TechnicalUnderstanding` trata `hola` como bare identifier y abre episodio. T1 no cambia ese clasificador. El camino `owner` no lo usa.
+- Siguiente: `bin/rails turn_interpreter:eval` contra Haiku real. Si pasa, parar para el flip humano. `config/deploy.yml` sigue en `conditional`.

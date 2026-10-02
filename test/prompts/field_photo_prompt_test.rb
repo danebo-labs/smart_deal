@@ -48,30 +48,49 @@ class FieldPhotoPromptTest < ActiveSupport::TestCase
     assert texts.none? { |text| text.include?("Photo intent") }
   end
 
-  test "user content with an intent appends the technician words and the three keys" do
+  test "user content without active work matches the ingestion user content" do
+    kwargs = { binary: FAKE_BINARY, content_type: FAKE_CT, filename: FAKE_NAME, locale: "es" }
+    context = { "schema_version" => 1, "mode" => "standalone" }
+    content = FieldPhotoPrompt.user_content(**kwargs, visual_task_context: context)
+    assert_equal BatchChunkingPrompt.user_content(**kwargs), content
+  end
+
+  test "user content with a visual task appends the task and the three keys" do
+    task = "Cómo se ajustan los resortes de la fijación de cables"
     content = FieldPhotoPrompt.user_content(
       binary: FAKE_BINARY,
       content_type: FAKE_CT,
       filename: FAKE_NAME,
       locale: "es",
-      photo_intent: "Cómo se ajustan los resortes de la fijación de cables"
+      visual_task_context: {
+        "schema_version" => 1,
+        "mode" => "standalone",
+        "visual_task" => { "text" => task, "source" => "question" }
+      }
     )
     text = content.reverse.find { |block| block[:type] == "text" }[:text]
-    assert_includes text, "Photo intent (the technician's own words, not evidence and not a manual):"
-    assert_includes text, "Cómo se ajustan los resortes de la fijación de cables"
+    assert_includes text, "CONTEXT IS NOT EVIDENCE"
+    assert_includes text, task
     assert_includes text, '"target_visible": true | false | null'
     assert_includes text, '"relevance_to_goal": "relevant" | "unrelated" | "uncertain"'
     assert_includes text, '"missing_view_or_detail":'
-    assert_equal 1, content.count { |block| block[:type] == "text" && block[:text].include?("Photo intent") }
+    assert_includes text, "primary relevance anchor is visual_task"
+    assert_equal 1, content.count { |block| block[:type] == "text" && block[:text].include?("CONTEXT IS NOT EVIDENCE") }
+    assert_equal "4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1",
+                 FieldPhotoPrompt.prompt_fingerprint_sha256
   end
 
-  test "live intent requests safe best effort guidance and optional evidence without a procedure" do
+  test "live visual task requests safe best effort guidance and optional evidence without a procedure" do
     content = FieldPhotoPrompt.user_content(
       binary: FAKE_BINARY,
       content_type: FAKE_CT,
       filename: FAKE_NAME,
       locale: "es",
-      photo_intent: "Cómo se ajustan estos resortes"
+      visual_task_context: {
+        "schema_version" => 1,
+        "mode" => "standalone",
+        "visual_task" => { "text" => "Cómo se ajustan estos resortes", "source" => "question" }
+      }
     )
     text = content.reverse.find { |block| block[:type] == "text" }[:text]
 
@@ -82,6 +101,29 @@ class FieldPhotoPromptTest < ActiveSupport::TestCase
     assert_includes text, "Do not give torque, settings, turn counts, target values"
     assert_includes text, "equipment-specific adjustment procedures"
     assert_not_includes text, "Do not answer the question"
+  end
+
+  test "active work without a visual task asks for relevance and leaves the target unset" do
+    content = FieldPhotoPrompt.user_content(
+      binary: FAKE_BINARY,
+      content_type: FAKE_CT,
+      filename: FAKE_NAME,
+      locale: "es",
+      visual_task_context: {
+        "schema_version" => 1,
+        "mode" => "ongoing_episode",
+        "goal" => "no nivela en planta 3"
+      }
+    )
+    text = content.reverse.find { |block| block[:type] == "text" }[:text]
+
+    assert_includes text, "no nivela en planta 3"
+    assert_includes text, "CONTEXT IS NOT EVIDENCE"
+    assert_includes text, "There is no visual task"
+    assert_includes text, "even if the fault itself is not in frame"
+    assert_includes text, '"target_visible": null'
+    assert_not_includes text, "visual_task"
+    assert_not_includes text, "primary relevance anchor"
   end
 
   test "user_content returns array with image block for jpeg" do

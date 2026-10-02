@@ -4,8 +4,10 @@ require "digest"
 
 # Specialized prompt for the field photo ingestion path (cost_v2, field_photo_v1).
 # SYSTEM_BLOCKS: compact field-photo schema with explicit visual evidence.
-# user_content: image media block, plus the technician's photo intent on the
-# live Field Companion path only. Ingestion callers never pass photo_intent.
+# user_content: image media block, plus bounded VisualTaskContext on the
+# live Field Companion path only. Ingestion callers omit that argument.
+# SYSTEM_BLOCKS stay the ingestion contract. Context in the user block is
+# not evidence and is never copied into manufacturer, model, or visible text.
 module FieldPhotoPrompt
   # Independent contract version for the specialized photo path (no field_records
   # schema — explicit-evidence envelope instead). Versioned separately from
@@ -114,30 +116,60 @@ module FieldPhotoPrompt
     }
   ].freeze
 
-  def self.user_content(binary:, content_type:, filename:, locale: nil, photo_intent: nil)
+  def self.user_content(binary:, content_type:, filename:, locale: nil, visual_task_context: nil)
     blocks = BatchChunkingPrompt.user_content(
       binary:       binary,
       content_type: content_type,
       filename:     filename,
       locale:       locale
     )
-    text = photo_intent.to_s.squish
-    return blocks if text.blank?
+    context = Rag::VisualTaskContext.coerce(visual_task_context)
+    return blocks unless context&.relevance_anchor?
 
-    blocks + [ { type: "text", text: intent_block(text) } ]
+    blocks + [ { type: "text", text: context_block(context) } ]
   end
 
-  def self.intent_block(text)
+  def self.context_block(context)
+    json = JSON.generate(context.to_h)
+    if context.visual_task?
+      visual_task_block(json)
+    else
+      active_work_block(json)
+    end
+  end
+  private_class_method :context_block
+
+  def self.visual_task_block(json)
     <<~TEXT.strip
-      Photo intent (the technician's own words, not evidence and not a manual):
-      #{text}
+      Active work context (not evidence and not a manual):
+      #{json}
+      CONTEXT IS NOT EVIDENCE. Never copy a manufacturer, model, code, condition, or printed value from this context. Read them only from what is explicitly visible in the image.
+      The primary relevance anchor is visual_task.
       Add three keys to the same JSON object:
-      "target_visible": true | false | null   — does this image show the part/assembly the technician is asking about?
+      "target_visible": true | false | null   — does this image show the part or assembly named by visual_task?
       "relevance_to_goal": "relevant" | "unrelated" | "uncertain"
       "missing_view_or_detail": "<one short optional request in the summary language, starting with the equivalent of 'If you can', naming the view or detail that would improve accuracy; empty string when no additional evidence would help>"
-      Use "summary" to answer the intent only as far as this image safely supports: say what is visible relative to the intent, state the exact knowledge boundary, and, when appropriate, give one non-invasive component-specific check limited to looking, reading, or listening. Additional evidence improves accuracy; never say another photo, a nameplate, or a manual is required before you can help.
-      Never take a manufacturer, model, code, or value from the intent. Do not give torque, settings, turn counts, target values, equipment-specific adjustment procedures, or critical manufacturer-specific instructions.
+      Use "summary" to answer the intent only as far as this image safely supports: say what is visible relative to visual_task, state the exact knowledge boundary, and, when appropriate, give one non-invasive component-specific check limited to looking, reading, or listening. Additional evidence improves accuracy; never say another photo, a nameplate, or a manual is required before you can help.
+      Never take a manufacturer, model, code, or value from the context. Do not give torque, settings, turn counts, target values, equipment-specific adjustment procedures, or critical manufacturer-specific instructions.
     TEXT
   end
-  private_class_method :intent_block
+  private_class_method :visual_task_block
+
+  def self.active_work_block(json)
+    <<~TEXT.strip
+      Active work context (not evidence and not a manual):
+      #{json}
+      CONTEXT IS NOT EVIDENCE. Never copy a manufacturer, model, code, condition, or printed value from this context. Read them only from what is explicitly visible in the image.
+      There is no visual task. Judge whether this image belongs to the active work (goal, equipment_context, pending). A photo can belong to that work without showing a specifically requested part.
+      Add these keys to the same JSON object:
+      "relevance_to_goal": "relevant" | "unrelated" | "uncertain"
+      — relevant when the image shows a part, nameplate, display, or assembly of that work, even if the fault itself is not in frame
+      — uncertain when it is not clear that the image belongs to that work
+      — unrelated when the image is a different job
+      "target_visible": null
+      "missing_view_or_detail": ""
+      Do not give torque, settings, turn counts, target values, equipment-specific adjustment procedures, or critical manufacturer-specific instructions.
+    TEXT
+  end
+  private_class_method :active_work_block
 end

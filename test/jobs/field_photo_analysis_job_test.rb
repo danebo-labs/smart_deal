@@ -137,9 +137,9 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
 
     assert_equal 2, calls
-    assert_equal "cómo se ajusta el resorte", captured[0].dig(:photo_intent, "text")
-    assert_equal "question", captured[0].dig(:photo_intent, "source")
-    assert_equal "mira la polea", captured[1].dig(:photo_intent, "text")
+    assert_equal "cómo se ajusta el resorte", captured[0].dig(:visual_task_context, "visual_task", "text")
+    assert_equal "question", captured[0].dig(:visual_task_context, "visual_task", "source")
+    assert_equal "mira la polea", captured[1].dig(:visual_task_context, "visual_task", "text")
     assert_not_includes events.pluck("event"), "photo_cache_hit"
     assert_not_includes events.pluck("event"), "visual_llm_call_avoided"
     assert_not_includes events.pluck("event"), "photo_cache_miss"
@@ -368,7 +368,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       intent = client.calls.first[:user_content].reverse.find { |block| block[:type] == "text" }[:text]
       assert_includes intent, spring
       assert_includes intent, "fijación"
-      assert_not_includes intent, "otra imagen"
+      assert_includes intent, "recent_user_target"
+      assert_not_includes intent, '"source":"goal"'
     end
 
     assert_equal 0, service_calls
@@ -1056,10 +1057,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
       episode.assign_goal!("la puerta no cierra", correlation_id: "seed")
       @session.update!(active_episode: episode.to_h)
-      intent = Rag::PhotoIntent.resolve(
+      context = Rag::VisualTaskContext.build(
         question: nil, episode_state: @session.active_episode, history: @session.conversation_history, now: Time.current
       )
-      assert_equal "goal", intent["source"]
+      assert_equal "goal", context.visual_task["source"]
 
       with_vision_client(display_vision_json) do |client|
         FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
@@ -1084,39 +1085,229 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
   end
 
-  test "a captionless photo without visual intent does not enter retrieval or generation" do
+  test "a captionless photo with an active goal and no visual task can still be relevant" do
     with_episode_flag("true") do
       owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:alone-board")
       episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
       episode.assign_goal!("revisar el tablero", correlation_id: "seed")
       @session.update!(active_episode: episode.to_h)
-      assert_nil Rag::PhotoIntent.resolve(
+      task_context = Rag::VisualTaskContext.build(
         question: nil, episode_state: @session.active_episode, history: [], now: Time.current
       )
+      assert_nil task_context.visual_task
+      assert task_context.relevance_anchor?
+
+      messages = nil
+      with_vision_client(display_vision_json) do |client|
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+        end
+        assert_equal 1, client.calls.size
+        block = client.calls.first[:user_content].reverse.find { |item| item[:type] == "text" }[:text]
+        assert_includes block, "revisar el tablero"
+        assert_includes block, "There is no visual task"
+      end
+
+      stored = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation
+      assert_equal "relevant", stored["relevance_to_goal"]
+      assert_nil stored["target_visible"]
+      assert_equal "NICE3000", stored["model"]
+      kept = @session.reload.active_episode
+      assert_equal "NICE", kept.dig("facts", "manufacturer", "value")
+      assert_equal "photo", kept.dig("facts", "manufacturer", "source")
+      assert_equal "NICE3000", kept.dig("facts", "model", "value")
+      assert_equal "photo", kept.dig("facts", "model", "source")
+      summary = messages.last["summary"]
+      assert_not summary.start_with?(I18n.t("rag.photo_intent.target_uncertain", locale: :es))
+      assert_not summary.start_with?(I18n.t("rag.photo_intent.close_up_request", locale: :es))
+
+      context, query, generation = captionless_follow_up
+      assert context.relevant?
+      assert_includes context.query_terms, "E51"
+      assert_includes query, "NICE3000"
+      assert_includes query, "E51"
+      assert_includes generation, "Photo Evidence for the active episode"
+    end
+  end
+
+  test "a captionless photo with no active work does not score relevance" do
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:alone-empty")
+      task_context = Rag::VisualTaskContext.build(
+        question: nil, episode_state: @session.active_episode, history: [], now: Time.current
+      )
+      assert_equal "standalone", task_context.mode
+      assert_not task_context.relevance_anchor?
 
       with_vision_client(display_vision_json) do |client|
         FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
-        assert_equal 1, client.calls.size
+        texts = client.calls.first[:user_content].select { |block| block[:type] == "text" }.pluck(:text)
+        assert texts.none? { |text| text.include?("CONTEXT IS NOT EVIDENCE") }
       end
 
       stored = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation
       assert_nil stored["relevance_to_goal"]
-      assert_equal "NICE3000", stored["model"]
+      assert_nil stored["target_visible"]
       kept = @session.reload.active_episode
-      assert_nil kept.dig("facts", "model")
       assert_nil kept.dig("facts", "manufacturer")
-      assert kept["active_photo"].present?
+      assert_nil kept.dig("facts", "model")
 
       context, query, generation = captionless_follow_up
       assert_not context.relevant?
       assert_empty context.query_terms
-      assert_nil context.generation_block
-      assert_equal "NICE3000", context.to_prompt["model"]
-      assert_not_includes query.to_s, "NICE3000"
-      assert_not_includes query.to_s, "E51"
       assert_not_includes generation, "Photo Evidence"
-      assert_not_includes generation, "Read from the photo"
-      assert_not_includes SessionContextBuilder.field_problem_block(@session), "NICE3000"
+    end
+  end
+
+  test "a leveling goal without a visual stem keeps a relevant plate and an unset target" do
+    with_leveling_episode do |owner|
+      messages = nil
+      with_vision_client(orona_vision_json) do |client|
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+        end
+        block = client.calls.first[:user_content].reverse.find { |item| item[:type] == "text" }[:text]
+        assert_includes block, "no nivela en planta 3"
+        assert_includes block, "CONTEXT IS NOT EVIDENCE"
+        assert_includes block, "There is no visual task"
+        assert_not_includes block, "Orona"
+        assert_not_includes block, "PBCM-V3"
+        assert_not_includes block, "visual_task"
+      end
+
+      stored = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation
+      assert_equal "relevant", stored["relevance_to_goal"]
+      assert_nil stored["target_visible"]
+      assert_equal "Orona", stored["manufacturer"]
+      assert_equal "PBCM-V3", stored["model"]
+      kept = @session.reload.active_episode
+      assert_equal "Orona", kept.dig("facts", "manufacturer", "value")
+      assert_equal "photo", kept.dig("facts", "manufacturer", "source")
+      assert_equal "PBCM-V3", kept.dig("facts", "model", "value")
+      assert_equal "photo", kept.dig("facts", "model", "source")
+      summary = messages.last["summary"]
+      assert_not summary.start_with?(I18n.t("rag.photo_intent.target_uncertain", locale: :es))
+      assert_not summary.start_with?(I18n.t("rag.photo_intent.target_hidden_default", locale: :es))
+    end
+  end
+
+  test "pending controller is not a visual task and a relevant plate does not close that slot" do
+    with_episode_flag("true") do
+      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+        owner = seed_pending!(type: "controller", carry: [ "Q2" ])
+        with_vision_client(vision_json(
+          "manufacturer" => "UNKNOWN",
+          "model" => "MX-20",
+          "subsystem" => "CONTROLLER_LOGIC",
+          "relevance_to_goal" => "relevant",
+          "target_visible" => true,
+          "summary" => "Se ve una placa con el modelo MX-20."
+        )) do |client|
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+          block = client.calls.first[:user_content].reverse.find { |item| item[:type] == "text" }[:text]
+          assert_includes block, '"type":"controller"'
+          assert_not_includes block, "visual_task"
+          assert_not_includes block, "Q2"
+        end
+
+        stored = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation
+        kept = @session.reload.active_episode
+        assert_equal "relevant", stored["relevance_to_goal"]
+        assert_nil stored["target_visible"]
+        assert_equal "MX-20", kept.dig("facts", "model", "value")
+        assert_equal "photo", kept.dig("facts", "model", "source")
+        assert_nil kept.dig("facts", "controller")
+        assert_equal "controller", kept.dig("pending_question", "type")
+        assert_equal [ "Q2" ], kept.dig("pending_question", "carry")
+      end
+    end
+  end
+
+  test "a relevant plate closes only a pending manufacturer slot" do
+    with_episode_flag("true") do
+      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+        owner = seed_pending!(type: "manufacturer")
+        with_vision_client(vision_json(
+          "manufacturer" => "NICE",
+          "model" => "UNKNOWN",
+          "subsystem" => "CONTROLLER_LOGIC",
+          "relevance_to_goal" => "relevant",
+          "target_visible" => true,
+          "summary" => "Se ve la marca NICE."
+        )) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            expected_episode_id: owner, correlation_id: "photo:pending-brand"
+          ))
+        end
+
+        kept = @session.reload.active_episode
+        assert_equal "NICE", kept.dig("facts", "manufacturer", "value")
+        assert_equal "photo", kept.dig("facts", "manufacturer", "source")
+        assert_nil kept["pending_question"]
+        assert_nil kept["pending_fact"]
+      end
+    end
+  end
+
+  test "an unrelated plate does not close a pending manufacturer slot" do
+    with_episode_flag("true") do
+      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+        owner = seed_pending!(type: "manufacturer")
+        with_vision_client(vision_json(
+          "manufacturer" => "Orona",
+          "model" => "PBCM-V3",
+          "subsystem" => "CONTROLLER_LOGIC",
+          "relevance_to_goal" => "unrelated",
+          "target_visible" => true,
+          "summary" => "Se ve una placa que no corresponde a este trabajo."
+        )) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            expected_episode_id: owner, correlation_id: "photo:pending-unrelated"
+          ))
+        end
+
+        stored = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation
+        kept = @session.reload.active_episode
+        assert_equal "unrelated", stored["relevance_to_goal"]
+        assert_nil stored["target_visible"]
+        assert_nil kept.dig("facts", "manufacturer")
+        assert_nil kept.dig("facts", "model")
+        assert_equal "manufacturer", kept.dig("pending_question", "type")
+      end
+    end
+  end
+
+  test "a spring photo with a pending controller is described and does not close that slot" do
+    with_episode_flag("true") do
+      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+        owner = seed_pending!(type: "controller", carry: [ "Q2" ])
+        summary = "Se ve un conjunto de resortes de fijación."
+        messages = nil
+        with_vision_client(vision_json(
+          "canonical_component" => "resortes de fijación",
+          "manufacturer" => "UNKNOWN",
+          "model" => "UNKNOWN",
+          "summary" => summary,
+          "relevance_to_goal" => "uncertain",
+          "target_visible" => true
+        )) do |client|
+          messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+            FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+          end
+          block = client.calls.first[:user_content].reverse.find { |item| item[:type] == "text" }[:text]
+          assert_includes block, '"type":"controller"'
+          assert_not_includes block, "visual_task"
+        end
+
+        kept = @session.reload.active_episode
+        assert_includes messages.last["summary"], "resortes"
+        assert_not messages.last["summary"].start_with?(I18n.t("rag.photo_intent.target_uncertain", locale: :es))
+        assert_nil kept.dig("facts", "controller")
+        assert_nil kept.dig("facts", "manufacturer")
+        assert_equal "controller", kept.dig("pending_question", "type")
+        assert_equal [ "Q2" ], kept.dig("pending_question", "carry")
+        assert_equal "uncertain", FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha).visual_observation["relevance_to_goal"]
+      end
     end
   end
 
@@ -1890,6 +2081,31 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         "target_visible" => true,
         "relevance_to_goal" => "relevant"
       }
+    )
+  end
+
+  def seed_pending!(type:, carry: nil)
+    owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:pending")
+    episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+    question = { "type" => type }
+    question["carry"] = carry if carry
+    episode.pending_question = question
+    episode.pending_fact = { "subject" => type, "correlation_id" => "seed" }
+    @session.update!(active_episode: episode.to_h)
+    owner
+  end
+
+  def orona_vision_json
+    vision_json(
+      "canonical_component" => "placa controladora",
+      "manufacturer" => "Orona",
+      "model" => "PBCM-V3",
+      "subsystem" => "CONTROLLER_LOGIC",
+      "condition" => "GOOD",
+      "visible_text" => [ "ORONA", "PBCM-V3" ],
+      "summary" => "Se ve una placa controladora.",
+      "relevance_to_goal" => "relevant",
+      "target_visible" => true
     )
   end
 

@@ -223,8 +223,7 @@ module FieldCompanion
               binary: binary,
               content_type: media_type,
               filename: filename,
-              locale: LOCALE,
-              photo_intent: nil
+              locale: LOCALE
             )
           }
         ]

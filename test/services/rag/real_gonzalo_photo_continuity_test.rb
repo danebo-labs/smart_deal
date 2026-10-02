@@ -96,10 +96,13 @@ class Rag::RealGonzaloPhotoContinuityTest < ActiveJob::TestCase
 
       assert_equal 1, client.calls.size
       intent = intent_text(client.calls.first)
-      assert_includes intent, "resortes"
-      assert_includes intent, "fijación"
+      task = context_payload(intent).fetch("visual_task")
+      assert_equal "recent_user_target", task["source"]
+      assert_includes task["text"], "resortes"
+      assert_includes task["text"], "fijación"
+      assert_not_includes task["text"], "otra imagen"
       assert_not_includes intent, "transformador"
-      assert_not_includes intent, "otra imagen"
+      assert_includes context_payload(intent).fetch("goal"), "otra imagen"
     end
 
     assert_equal 0, service_calls
@@ -136,8 +139,10 @@ class Rag::RealGonzaloPhotoContinuityTest < ActiveJob::TestCase
       assert_equal 2, client.calls.size
       client.calls.each do |call|
         intent = intent_text(call)
-        assert_includes intent, question
-        assert_not_includes intent, "otra imagen"
+        task = context_payload(intent).fetch("visual_task")
+        assert_equal "question", task["source"]
+        assert_equal question, task["text"]
+        assert_not_includes task["text"], "otra imagen"
         assert_not_includes intent, "poregunat"
         assert_not_includes intent, "transformador"
       end
@@ -162,6 +167,10 @@ class Rag::RealGonzaloPhotoContinuityTest < ActiveJob::TestCase
 
   def intent_text(call)
     call[:user_content].reverse.find { |block| block[:type] == "text" }[:text]
+  end
+
+  def context_payload(text)
+    JSON.parse(text.lines.find { |line| line.start_with?("{") })
   end
 
   def spring_sha

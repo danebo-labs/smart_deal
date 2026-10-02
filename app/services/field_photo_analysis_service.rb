@@ -16,7 +16,7 @@ class FieldPhotoAnalysisService
   DEFAULT_MODEL = "claude-sonnet-5-5"
 
   def initialize(binary:, content_type:, filename:, locale:, account_id:, user_id:,
-                 conv_session_id:, correlation_id:, client: nil, photo_intent: nil)
+                 conv_session_id:, correlation_id:, client: nil, visual_task_context: nil)
     @binary = binary
     @content_type = content_type
     @filename = filename
@@ -26,7 +26,7 @@ class FieldPhotoAnalysisService
     @conv_session_id = conv_session_id
     @correlation_id = correlation_id
     @client = client
-    @photo_intent = coerce_photo_intent(photo_intent)
+    @context = Rag::VisualTaskContext.coerce(visual_task_context)
   end
 
   def call
@@ -46,7 +46,7 @@ class FieldPhotoAnalysisService
         content_type: @content_type,
         filename: @filename,
         locale: @locale,
-        photo_intent: @photo_intent&.dig(:text)
+        visual_task_context: @context
       ),
       filename: @filename,
       max_tokens: BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS,
@@ -158,7 +158,7 @@ class FieldPhotoAnalysisService
       "Códigos: #{visible_codes(parsed).presence&.join(', ') || 'UNKNOWN'}",
       "Condición: #{value_or_unknown(parsed['condition'])}"
     ].join(" | ").squish
-    line = "#{line} | Objetivo visible: #{visibility_label(parsed)}" if intent_sent?
+    line = "#{line} | Objetivo visible: #{visibility_label(parsed)}" if visual_task?
 
     line.truncate(CHAT_CONTEXT_LIMIT, omission: "...")
   end
@@ -247,40 +247,30 @@ class FieldPhotoAnalysisService
     payload
   end
 
-  def intent_sent?
-    @photo_intent.present?
+  def visual_task?
+    @context&.visual_task? || false
   end
 
-  def coerce_photo_intent(photo_intent)
-    return nil if photo_intent.blank?
-
-    text, source = if photo_intent.is_a?(Hash)
-      [ photo_intent["text"] || photo_intent[:text], photo_intent["source"] || photo_intent[:source] ]
-    else
-      [ photo_intent, nil ]
-    end
-    text = text.to_s.squish
-    return nil if text.blank?
-
-    { text: text, source: source.to_s.presence }
+  def relevance_anchor?
+    @context&.relevance_anchor? || false
   end
 
   def normalized_target_visible(parsed)
-    return nil unless intent_sent?
+    return nil unless visual_task?
 
     value = parsed["target_visible"]
     value == true || value == false ? value : nil
   end
 
   def normalized_relevance(parsed)
-    return nil unless intent_sent?
+    return nil unless relevance_anchor?
 
     value = parsed["relevance_to_goal"].to_s
     RELEVANCE_VALUES.include?(value) ? value : nil
   end
 
   def normalized_missing(parsed)
-    return nil unless intent_sent?
+    return nil unless visual_task?
 
     parsed["missing_view_or_detail"].to_s.squish.first(MISSING_DETAIL_LIMIT).presence
   end
@@ -293,10 +283,11 @@ class FieldPhotoAnalysisService
     end
   end
 
-  def intent_digest
-    return nil unless intent_sent?
+  def visual_task_digest
+    text = @context&.visual_task&.dig("text")
+    return nil if text.blank?
 
-    Digest::SHA256.hexdigest(@photo_intent[:text])
+    Digest::SHA256.hexdigest(text)
   end
 
   def log_analysis(parsed:, model:, latency_ms:, usage:, result:, error_class: nil)
@@ -314,8 +305,10 @@ class FieldPhotoAnalysisService
       visible_codes: visible_codes(parsed),
       component: parsed["canonical_component"],
       condition: parsed["condition"],
-      intent_source: @photo_intent&.dig(:source),
-      intent_sha256: intent_digest,
+      intent_source: @context&.visual_task&.dig("source"),
+      intent_sha256: visual_task_digest,
+      context_mode: @context&.mode,
+      relevance_anchor: relevance_anchor?,
       target_visible: normalized_target_visible(parsed),
       relevance_to_goal: normalized_relevance(parsed),
       result: result,

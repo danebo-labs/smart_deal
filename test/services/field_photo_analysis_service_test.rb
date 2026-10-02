@@ -133,8 +133,8 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end
 
-  test "intent fields are parsed only when an intent was sent" do
-    intent = { "text" => "RESORTE-UNICO-9981 cómo se ajusta", "source" => "question" }
+  test "visual task fields are parsed only when a visual task was sent" do
+    task = "RESORTE-UNICO-9981 cómo se ajusta"
     payload = JSON.parse(VALID_JSON).merge(
       "target_visible" => false,
       "relevance_to_goal" => "unrelated",
@@ -145,61 +145,110 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
     capture_logger = ActiveSupport::Logger.new(log_output)
     Rails.logger.broadcast_to(capture_logger)
 
-    result = build_service(client: client, photo_intent: intent).call
+    result = build_service(client: client, visual_task_context: {
+      "schema_version" => 1,
+      "mode" => "ongoing_episode",
+      "equipment_context" => { "manufacturer" => "NOT-IN-PIXELS" },
+      "visual_task" => { "text" => task, "source" => "question" }
+    }).call
 
     assert_equal false, result[:target_visible]
     assert_equal "unrelated", result[:relevance_to_goal]
     assert_equal "primer plano de la fijación", result[:missing_view_or_detail]
     assert_includes result[:compact_context], "Objetivo visible: no"
+    assert_equal "UNKNOWN", result[:parsed]["manufacturer"]
+    assert_not_includes result[:analysis], "NOT-IN-PIXELS"
+    assert_not_includes result[:compact_context], "NOT-IN-PIXELS"
     intent_block = client.kwargs[:user_content].reverse.find { |block| block[:type] == "text" }[:text]
     assert_includes intent_block, "RESORTE-UNICO-9981"
+    assert_includes intent_block, "NOT-IN-PIXELS"
+    assert_includes intent_block, "CONTEXT IS NOT EVIDENCE"
     line = log_output.string.lines.find { |entry| entry.include?("[IMAGE_ANALYSIS]") }
     assert_not_includes line, "RESORTE-UNICO-9981"
+    assert_not_includes line, "NOT-IN-PIXELS"
     logged = JSON.parse(line.split("[IMAGE_ANALYSIS] ", 2).last)
     assert_equal "question", logged["intent_source"]
-    assert_equal Digest::SHA256.hexdigest(intent["text"].squish), logged["intent_sha256"]
+    assert_equal Digest::SHA256.hexdigest(task), logged["intent_sha256"]
+    assert_equal "ongoing_episode", logged["context_mode"]
+    assert_equal true, logged["relevance_anchor"]
     assert_equal false, logged["target_visible"]
     assert_equal "unrelated", logged["relevance_to_goal"]
   ensure
     Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end
 
-  test "invalid or missing target fields become nil and are ignored without an intent" do
+  test "invalid or missing target fields become nil and are ignored without an anchor" do
     payload = JSON.parse(VALID_JSON).merge(
       "target_visible" => "maybe",
       "relevance_to_goal" => "sometimes",
       "missing_view_or_detail" => "x" * 250
     )
-    with_intent = build_service(client: FakeClient.new(JSON.generate(payload)), photo_intent: "mira la placa").call
-    without_intent = build_service(client: FakeClient.new(JSON.generate(payload))).call
+    with_task = build_service(
+      client: FakeClient.new(JSON.generate(payload)),
+      visual_task_context: {
+        "schema_version" => 1,
+        "mode" => "standalone",
+        "visual_task" => { "text" => "mira la placa", "source" => "question" }
+      }
+    ).call
+    without_anchor = build_service(client: FakeClient.new(JSON.generate(payload))).call
 
-    assert_nil with_intent[:target_visible]
-    assert_nil with_intent[:relevance_to_goal]
-    assert_equal 200, with_intent[:missing_view_or_detail].length
-    assert_includes with_intent[:compact_context], "Objetivo visible: sin confirmar"
-    assert_nil without_intent[:target_visible]
-    assert_nil without_intent[:relevance_to_goal]
-    assert_nil without_intent[:missing_view_or_detail]
-    assert_not_includes without_intent[:compact_context], "Objetivo visible"
+    assert_nil with_task[:target_visible]
+    assert_nil with_task[:relevance_to_goal]
+    assert_equal 200, with_task[:missing_view_or_detail].length
+    assert_includes with_task[:compact_context], "Objetivo visible: sin confirmar"
+    assert_nil without_anchor[:target_visible]
+    assert_nil without_anchor[:relevance_to_goal]
+    assert_nil without_anchor[:missing_view_or_detail]
+    assert_not_includes without_anchor[:compact_context], "Objetivo visible"
   end
 
-  test "a model claim of relevant is dropped when no intent was sent" do
-    payload = JSON.generate(JSON.parse(VALID_JSON).merge("target_visible" => true, "relevance_to_goal" => "relevant"))
-    kept = build_service(
+  test "relevance follows the anchor and target visibility follows the visual task" do
+    payload = JSON.generate(JSON.parse(VALID_JSON).merge(
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant",
+      "missing_view_or_detail" => "acércate a la placa"
+    ))
+    with_task = build_service(
       client: FakeClient.new(payload),
-      photo_intent: { "text" => "la puerta no cierra", "source" => "goal" }
+      visual_task_context: {
+        "schema_version" => 1,
+        "mode" => "ongoing_episode",
+        "goal" => "la puerta no cierra",
+        "visual_task" => { "text" => "la puerta no cierra", "source" => "goal" }
+      }
+    ).call
+    active_work = build_service(
+      client: FakeClient.new(payload),
+      visual_task_context: {
+        "schema_version" => 1,
+        "mode" => "ongoing_episode",
+        "goal" => "no nivela en planta 3"
+      }
     ).call
     dropped = build_service(client: FakeClient.new(payload)).call
 
-    assert_equal "relevant", kept[:relevance_to_goal]
-    assert_equal true, kept[:target_visible]
+    assert_equal "relevant", with_task[:relevance_to_goal]
+    assert_equal true, with_task[:target_visible]
+    assert_equal "acércate a la placa", with_task[:missing_view_or_detail]
+    assert_equal "relevant", active_work[:relevance_to_goal]
+    assert_nil active_work[:target_visible]
+    assert_nil active_work[:missing_view_or_detail]
+    assert_not_includes active_work[:compact_context], "Objetivo visible"
     assert_nil dropped[:relevance_to_goal]
     assert_nil dropped[:target_visible]
   end
 
   test "a true target is kept and labeled visible" do
     payload = JSON.parse(VALID_JSON).merge("target_visible" => true, "relevance_to_goal" => "relevant")
-    result = build_service(client: FakeClient.new(JSON.generate(payload)), photo_intent: "el resorte").call
+    result = build_service(
+      client: FakeClient.new(JSON.generate(payload)),
+      visual_task_context: {
+        "schema_version" => 1,
+        "mode" => "standalone",
+        "visual_task" => { "text" => "el resorte", "source" => "question" }
+      }
+    ).call
 
     assert_equal true, result[:target_visible]
     assert_equal "relevant", result[:relevance_to_goal]
@@ -227,7 +276,7 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
 
   private
 
-  def build_service(client:, session: nil, photo_intent: nil)
+  def build_service(client:, session: nil, visual_task_context: nil)
     FieldPhotoAnalysisService.new(
       binary: "jpeg",
       content_type: "image/jpeg",
@@ -238,7 +287,7 @@ class FieldPhotoAnalysisServiceTest < ActiveSupport::TestCase
       conv_session_id: session&.id,
       correlation_id: "photo:test-123",
       client: client,
-      photo_intent: photo_intent
+      visual_task_context: visual_task_context
     )
   end
 end

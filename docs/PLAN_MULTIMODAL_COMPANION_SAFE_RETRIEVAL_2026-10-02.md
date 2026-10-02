@@ -1,8 +1,10 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Estado:** `APPROVED ARCHITECTURE — N1–N6 NOT STARTED`
+**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2–N6 NOT STARTED`
 
-**N0:** `N0 IMPLEMENTED — RED CONTRACT HARNESS`
+**N0:** `N0 COMPLETE`
+
+**N1:** `N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 Source of truth de este bloque. Reconcilia el diagnóstico read-only del flow real Orona PBCM-V3, la surgical review de Codex y la revisión final de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica o completa a Codex, manda Opus. Baseline de código: `d3909808a3508e83851f5475368fbd52d74c0e2a`.
 
@@ -776,10 +778,10 @@ Un solo release. No hay código funcional antes del harness.
 ### N0 — Production-flow regression harness
 
 ```text
-N0 IMPLEMENTED — RED CONTRACT HARNESS
+N0 COMPLETE
 ```
 
-Sin código de producto. Los contratos futuros viven en la suite y quedan en skip salvo `N0_CONTRACTS=1`, que los ejecuta contra el código actual. El mensaje de skip es `N0 contract — expected to become green in N<fase>`. Cada test skipped contiene los asserts del contrato, no un placeholder.
+El harness sigue en la suite. Los contratos futuros viven ahí y quedan en skip salvo `N0_CONTRACTS=1`. El mensaje de skip es `N0 contract — expected to become green in N<fase>`. Cada test skipped contiene los asserts del contrato, no un placeholder. Después de N1, `N0_CONTRACTS=1` sigue rojo en N2, N3 y N4 por las razones de abajo. N1 no los cierra.
 
 Invariantes que quedan verdes en la suite:
 
@@ -799,7 +801,34 @@ Contratos rojos con `N0_CONTRACTS=1`. Ninguno pasó por accidente:
 
 ### N1 — F4 VisualTaskContext
 
-Implementar F4 as-designed. Eval obligatorio: goal sin stem visual + placa Orona → `relevant`, más #30, #31 y #32. Fingerprint unchanged. Agregar `app/services/rag/visual_task_context.rb`. Retirar `app/services/rag/photo_intent.rb` y `test/services/rag/photo_intent_test.rb`. `PhotoIntentRenderer` permanece.
+```text
+N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+```
+
+F4 quedó implementado en local sobre `c5eea86`. No es verificación de producción y no se despliega solo.
+
+- `Rag::VisualTaskContext` reemplaza `Rag::PhotoIntent`. Es determinístico: sin LLM, sin writes y sin retrieval. `previous_visual_evidence` no se emite.
+- Tope serializado: 1600 bytes. `goal` 240. `equipment_context` manufacturer/model/controller/fault_code, 60 cada uno, sólo facts `known`. Observaciones: las últimas 2, 120 cada una. `pending` es sólo `type` de un fact técnico. `visual_task.text` 240. Orden de recorte: observaciones (la más vieja primero), luego `fault_code`, `controller`, `model`, `manufacturer`, luego `pending`, luego `goal`, luego el texto de `visual_task`. `schema_version` y `mode` no se recortan. El modo se decide antes del recorte y no se recalcula.
+- `standalone` cuando el episodio no tiene goal, facts conocidos, observaciones ni pending técnico. Un `visual_task` solo no vuelve el episodio ongoing. `ongoing_episode` cuando hay alguno de esos cuatro.
+- Precedencia de `visual_task`: pregunta o caption actual, sin filtro de léxico; si no, el mensaje de usuario más nuevo dentro de la ventana del episodio que tenga un stem visual (`recent_user_target`); si no, el goal si tiene stem (`goal`). `pending` no crea `visual_task`.
+- `visual_task?` controla `target_visible`, `missing_view_or_detail`, "Objetivo visible" y `PhotoIntentRenderer`. `relevance_anchor?` (`visual_task?` o `ongoing_episode?`) controla `relevance_to_goal`. Sin visual task y con trabajo activo, la foto puede ser `relevant`, `uncertain` o `unrelated`, y `target_visible` queda nil. Sin trabajo activo, `relevance_to_goal` queda nil.
+- El bloque de `user_content` para trabajo activo dice que una pieza, placa, display o conjunto de ese trabajo es `relevant` aunque la falla no esté en cuadro. `CONTEXT != EVIDENCE`: Ruby no copia manufacturer, model, código, condición ni texto visible desde el contexto.
+- `PhotoIntentRenderer` permanece. No quedan referencias de producción a `Rag::PhotoIntent`. Se retiraron `app/services/rag/photo_intent.rb` y `test/services/rag/photo_intent_test.rb`.
+- `FieldPhotoPrompt::SYSTEM_BLOCKS` no cambió. Fingerprint `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`. El contexto entra sólo en `user_content`. `user_content` sin ancla sigue igual que la ingesta.
+- TurnInterpreter, TurnPerception, RoutePolicy, WorkContextReducer y QueryComposer no se tocaron. No hizo falta adaptar firmas: el job ya tenía la pregunta, el episodio y el historial. DocumentIdentityScope, EquipmentIdentity, PhotoQuestionAnswerService y el retrieval de foto no se tocaron.
+
+Eval real, modelo `claude-sonnet-5-5`, servicio sin sesión (0 writes). La pasada que valida el rubric de `user_content` fueron 4 llamadas, costo aproximado USD 0.041. Una pasada anterior, antes de ese rubric, también fueron 4 llamadas (~USD 0.040) y devolvió `uncertain` en Orona; no es el resultado que cuenta.
+
+| caso | visual_task | relevance | target_visible | manufacturer | model |
+| --- | --- | --- | --- | --- | --- |
+| goal `no nivela en planta 3`, placa Orona | nil | relevant | nil | Orona | PBCM-V3 |
+| #30 pending controller, misma placa | nil | relevant | nil | Orona | PBCM-V3 |
+| #31 pending manufacturer, misma placa | nil | relevant | nil | Orona | PBCM-V3 |
+| #32 resorte, pending manufacturer | nil | uncertain | nil | UNKNOWN | UNKNOWN |
+
+La promoción al episodio no corrió en ese eval. Con `relevant` y facts distintos de `UNKNOWN`, el camino F3 existente los escribiría `source=photo`; el test del job lo cubre. #32 `uncertain` no escribe facts y no cierra el pending. El test stubbeado de #32 sigue exigiendo `unrelated` y pending intacto.
+
+`N0_CONTRACTS=1` después de N1: 6 runs, 6 failures, 0 errors. Siguen rojos por las razones de N2/N3/N4 (identidad efímera ausente, query anidada literal, `DocumentIdentityScope` sin identidad, `retrieve_and_generate` abierto, chunk Yida citable). No se adelantó ese comportamiento.
 
 ### N2 — Post-photo retrieval snapshot
 
@@ -986,10 +1015,11 @@ Queda registrado para no reabrir la versión anterior de la propuesta.
 ## Handoff
 
 ```text
-N0 IMPLEMENTED — RED CONTRACT HARNESS
-N1–N6 NOT STARTED
+N0 COMPLETE
+N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+N2–N6 NOT STARTED
 ```
 
-F1–F3 están cerrados en el plan anterior. F4 se implementa aquí, dentro de N1–N6. F5 no entra.
+F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1 no está verificado en producción.
 
-Siguiente paso: review de N0. No deploy. No implementar N1 todavía.
+Siguiente paso: review de N1. No deploy. No implementar N2 todavía.

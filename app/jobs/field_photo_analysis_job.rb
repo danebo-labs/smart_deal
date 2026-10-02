@@ -133,7 +133,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       )
     end
 
-    photo_intent = Rag::PhotoIntent.resolve(
+    visual_context = Rag::VisualTaskContext.build(
       question: question,
       episode_state: session&.active_episode,
       history: session&.conversation_history,
@@ -148,7 +148,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       conv_session_id: conversation_session_id,
       correlation_id: correlation_id,
-      photo_intent: photo_intent
+      visual_task_context: visual_context.to_h
     ).call
 
     acceptance = store_visual_observation(
@@ -179,7 +179,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       image_sha256: image_sha256,
       locale: locale,
       question: question,
-      photo_intent: photo_intent,
+      visual_task: visual_context.visual_task,
       expected_episode_id: expected_episode_id
     )
     PilotUsageLog.log(
@@ -205,7 +205,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       answer: delivered[:answer],
       citations: delivered[:citations],
       photo: {
-        "intent_source" => photo_intent.is_a?(Hash) ? (photo_intent["source"] || photo_intent[:source]) : nil,
+        "intent_source" => visual_context.visual_task&.dig("source"),
         "target_visible" => display_value[:target_visible]
       }
     )
@@ -258,7 +258,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       image_sha256: photo.sha256,
       locale: locale,
       question: question,
-      photo_intent: nil,
+      visual_task: nil,
       expected_episode_id: expected_episode_id
     )
     emit_interaction_completed(
@@ -372,7 +372,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     target_visible: nil
   }.freeze
 
-  def deliver(display_value, evidence_value:, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil, expected_episode_id: nil, accepted_observation: nil)
+  def deliver(display_value, evidence_value:, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, visual_task: nil, expected_episode_id: nil, accepted_observation: nil)
     write_state = session&.record_photo_observation!(
       photo_value: evidence_value || BLANK_PHOTO_READING,
       field_photo_id: field_photo_id,
@@ -406,7 +406,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
-      summary = published_analysis(display_value, question: question, photo_intent: photo_intent, locale: locale)
+      summary = published_analysis(display_value, question: question, visual_task: visual_task, locale: locale)
       KbSyncBroadcaster.photo_analyzed(
         filenames: [ filename ], analysis: summary,
         canonical_name: display_value[:canonical_name], aliases: display_value[:aliases],
@@ -518,8 +518,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
     FieldPhoto.find_by(id: field_photo_id)&.thumbnail_data_url
   end
 
-  def published_analysis(value, question:, photo_intent:, locale:)
-    if question.blank? && photo_intent.present?
+  def published_analysis(value, question:, visual_task:, locale:)
+    if question.blank? && visual_task.present?
       Rag::PhotoIntentRenderer.prose(reading: value, locale: locale)
     else
       value.fetch(:analysis)

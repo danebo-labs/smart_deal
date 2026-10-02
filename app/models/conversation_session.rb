@@ -8,6 +8,7 @@ class ConversationSession < ApplicationRecord
   EPISODE_WINDOW = 4.hours
   EPISODE_MAX_USER_MESSAGES = 3
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
+  PhotoTurnContext = Data.define(:status, :session_context, :entity_s3_uris)
   PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
   DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
   PHOTO_PENDING_SLOTS = %w[manufacturer model].freeze
@@ -248,6 +249,61 @@ class ConversationSession < ApplicationRecord
 
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result.decision == :assistant
     result
+  end
+
+  # Photo [FOTO] line plus the generation context of that same case.
+  # The context string and the pinned-document URI list are read inside the
+  # ownership lock, after the history write. Document Focus rules stay as they
+  # are; this only freezes the list SessionContextBuilder already computes.
+  # :not_recording has no episode to protect, so the capture follows the
+  # history write without treating that path as stale.
+  def record_photo_assistant_context!(content, user_id:, correlation_id:, expected_episode_id: nil)
+    unless episode_recording?
+      add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
+      return capture_photo_turn_context(:not_recording)
+    end
+
+    result = nil
+    dropped = false
+    snapshot = nil
+    with_lock do
+      current_id = live_episode_id
+      expected = expected_episode_id.presence
+      if expected != current_id
+        log_stale_case_write_dropped(
+          writer: "photo_assistant",
+          expected_episode_id: expected,
+          current_episode_id: current_id,
+          correlation_id: correlation_id
+        )
+        dropped = true
+        next
+      end
+
+      if Rag::HaikuQueryAnalysisFlag.owner?
+        history = conversation_history.last(MAX_HISTORY - 1)
+        history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id)
+        update!(conversation_history: history)
+      else
+        result = Rag::ActiveEpisodeTurn.apply_assistant(
+          state: active_episode,
+          text: content.to_s,
+          now: Time.current,
+          correlation_id: correlation_id
+        )
+        history = conversation_history.last(MAX_HISTORY - 1)
+        history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id)
+        attrs = { conversation_history: history }
+        attrs[:active_episode] = result.state if result.decision == :assistant
+        update!(attrs)
+      end
+
+      snapshot = capture_photo_turn_context(:applied)
+    end
+    return capture_photo_turn_context(:stale) if dropped
+
+    log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result&.decision == :assistant
+    snapshot
   end
 
   def record_photo_observation!(photo_value:, field_photo_id:, sha256:, correlation_id:, expected_episode_id: nil)
@@ -698,6 +754,18 @@ class ConversationSession < ApplicationRecord
   end
 
   private
+
+  def capture_photo_turn_context(status)
+    if status == :stale
+      return PhotoTurnContext.new(status: status, session_context: nil, entity_s3_uris: nil)
+    end
+
+    PhotoTurnContext.new(
+      status: status,
+      session_context: SessionContextBuilder.build(self).to_s,
+      entity_s3_uris: SessionContextBuilder.entity_s3_uris(self)
+    )
+  end
 
   def owner_typed_turn?(selection_turn)
     Rag::HaikuQueryAnalysisFlag.owner? && !selection_turn

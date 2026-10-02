@@ -381,18 +381,18 @@ class FieldPhotoAnalysisJob < ApplicationJob
       expected_episode_id: expected_episode_id
     )
     consequences = evidence_value.present? && write_state != :stale
-    history_state = if consequences
-      session&.record_assistant_turn!(
+    turn_context = if consequences
+      session&.record_photo_assistant_context!(
         evidence_value.fetch(:compact_context),
         user_id: user_id,
         correlation_id: correlation_id,
-        expected_episode_id: expected_episode_id,
-        writer: "photo_assistant"
+        expected_episode_id: expected_episode_id
       )
     end
+    history_state = turn_context&.status
     # :stale is the only photo-history result that stops the question path.
-    # :not_recording still continues. The history write is the ownership gate;
-    # Bedrock runs only after that lock is released.
+    # :not_recording still continues. The history write captures the generation
+    # context before the lock is released. Bedrock uses that snapshot.
     photo_question = consequences && history_state != :stale && Rag::PhotoQuestionFlag.enabled? && question.present?
 
     thumbnail_url = field_photo_thumbnail_url(field_photo_id)
@@ -400,7 +400,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
       answer_photo_question(question: question, evidence_value: evidence_value, session: session,
                             account_id: account_id, user_id: user_id,
                             correlation_id: correlation_id, locale: locale,
-                            field_photo_id: field_photo_id, accepted_observation: accepted_observation)
+                            field_photo_id: field_photo_id, accepted_observation: accepted_observation,
+                            session_context_snapshot: turn_context&.session_context,
+                            entity_s3_uris_snapshot: turn_context&.entity_s3_uris)
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
@@ -450,7 +452,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # analysis that was already paid for and delivered above — see plan
   # foto_mas_pregunta_rag "Aislamiento de fallo obligatorio".
   def answer_photo_question(question:, evidence_value:, session:, account_id:, user_id:, correlation_id:, locale:,
-                             field_photo_id: nil, accepted_observation: nil)
+                             field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil,
+                             entity_s3_uris_snapshot: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     account = session&.account || (account_id && Account.find_by(id: account_id))
 
@@ -463,7 +466,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: correlation_id,
       locale: locale,
       field_photo_id: field_photo_id,
-      accepted_observation: accepted_observation
+      accepted_observation: accepted_observation,
+      session_context_snapshot: session_context_snapshot,
+      entity_s3_uris_snapshot: entity_s3_uris_snapshot
     ).call
     return nil unless result
 

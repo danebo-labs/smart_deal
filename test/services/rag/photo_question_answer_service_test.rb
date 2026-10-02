@@ -303,6 +303,34 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_equal "KONE", snapshot["manufacturer"]
   end
 
+  test "a supplied session snapshot stays in generation after the live episode changes" do
+    captured = nil
+    BedrockRagService.define_method(:query) do |_question, **kwargs|
+      captured = kwargs
+      { answer: "En la foto: se observa KONE.", citations: [], session_id: nil }
+    end
+    @session.update!(active_episode: {
+      "episode_id" => "case-b",
+      "goal" => { "text" => "no nivela", "correlation_id" => "case:b" },
+      "facts" => { "manufacturer" => { "status" => "known", "value" => "OTIS", "source" => "user" } }
+    })
+
+    build_service(
+      question: "qué marca se ve?",
+      photo_value: @photo_value.merge(manufacturer: "KONE", canonical_name: "puerta"),
+      session_context_snapshot: "Goal: puerta no cierra\nManufacturer: KONE (technician)",
+      entity_s3_uris_snapshot: []
+    ).call
+
+    context = captured[:session_context].to_s
+    assert_includes context, "puerta no cierra"
+    assert_includes context, "Photo Evidence"
+    assert_includes context, "Manufacturer: KONE"
+    assert_not_includes context, "OTIS"
+    assert_not_includes context, "no nivela"
+    assert_equal [], captured[:entity_s3_uris]
+  end
+
   test "a photo question without a stored observation does not invent a visual band" do
     BedrockRagService.define_method(:query) do |_question, **_kwargs|
       { answer: "En la foto: se observa KONE.", citations: [], session_id: nil }
@@ -513,7 +541,7 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_includes captured[:kwargs][:session_context], "GECB"
   end
 
-  def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil, accepted_observation: nil)
+  def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil)
     Rag::PhotoQuestionAnswerService.new(
       question: question,
       evidence_value: photo_value,
@@ -523,7 +551,9 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       correlation_id: "photo:test",
       locale: locale,
       field_photo_id: field_photo_id,
-      accepted_observation: accepted_observation
+      accepted_observation: accepted_observation,
+      session_context_snapshot: session_context_snapshot,
+      entity_s3_uris_snapshot: entity_s3_uris_snapshot
     )
   end
 

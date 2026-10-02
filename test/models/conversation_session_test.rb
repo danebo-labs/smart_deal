@@ -1348,6 +1348,63 @@ class ConversationSessionTest < ActiveSupport::TestCase
     end
   end
 
+  test "photo assistant context snapshot stays on the case that accepted the history" do
+    session = web_episode_session
+    with_episode_flag("true") do
+      isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+        isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+          owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:1")
+          episode = Rag::ActiveEpisode.parse(session.reload.active_episode)
+          episode.assign_goal!("puerta no cierra", correlation_id: "photo:1")
+          episode.write_fact!(
+            "manufacturer", status: "known", value: "KONE", source: "user",
+            correlation_id: "photo:1", at: Time.current.iso8601
+          )
+          session.update!(active_episode: episode.to_h)
+
+          turn = session.record_photo_assistant_context!(
+            "[FOTO] Fabricante: KONE",
+            user_id: users(:one).id, correlation_id: "photo:2", expected_episode_id: owner
+          )
+          session.start_new_case!(reason: "technician_new_case", correlation_id: "case:b")
+          later = Rag::ActiveEpisode.parse(session.reload.active_episode)
+          later.assign_goal!("no nivela", correlation_id: "case:b")
+          later.write_fact!(
+            "manufacturer", status: "known", value: "OTIS", source: "user",
+            correlation_id: "case:b", at: Time.current.iso8601
+          )
+          session.update!(active_episode: later.to_h)
+
+          assert_equal :applied, turn.status
+          assert_includes turn.session_context, "puerta no cierra"
+          assert_includes turn.session_context, "KONE"
+          assert_not_includes turn.session_context, "OTIS"
+          assert_not_includes turn.session_context, "no nivela"
+          live = SessionContextBuilder.build(session)
+          assert_includes live, "no nivela"
+          assert_includes live, "OTIS"
+          stale = session.record_photo_assistant_context!(
+            "[FOTO] stale",
+            user_id: users(:one).id, correlation_id: "photo:3", expected_episode_id: owner
+          )
+          assert_equal :stale, stale.status
+          assert_nil stale.session_context
+          assert_not_includes session.reload.conversation_history.pluck("content"), "[FOTO] stale"
+        end
+      end
+    end
+
+    quiet = web_episode_session(identifier: "web:photo-context-quiet")
+    with_episode_flag(nil) do
+      turn = quiet.record_photo_assistant_context!(
+        "[FOTO] quiet", user_id: users(:one).id, correlation_id: "photo:quiet"
+      )
+      assert_equal :not_recording, turn.status
+      assert_includes turn.session_context, "[FOTO] quiet"
+      assert_equal [], turn.entity_s3_uris
+    end
+  end
+
   test "reset_active_episode! clears the column" do
     session = web_episode_session
     with_episode_flag("true") do

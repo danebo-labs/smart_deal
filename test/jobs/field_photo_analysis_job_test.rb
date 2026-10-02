@@ -1494,6 +1494,91 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     set_photo_question_flag(nil)
   end
 
+  test "a case change after the photo-history snapshot does not enter generation" do
+    set_photo_question_flag("true")
+    captured = {}
+    original_execute = Rag::PhotoQuestionAnswerService.instance_method(:execute_rag_query)
+    Rag::PhotoQuestionAnswerService.define_method(:execute_rag_query) do |_question, **kwargs|
+      captured.replace(kwargs)
+      RagQueryConcern::RagResult.new(
+        true, "Respuesta congelada de la puerta", [], [], [], nil, nil, nil, nil, nil,
+        nil, nil, nil, "test"
+      )
+    end
+    original_context = ConversationSession.instance_method(:record_photo_assistant_context!)
+    ConversationSession.define_method(:record_photo_assistant_context!) do |content, **kwargs|
+      turn = original_context.bind_call(self, content, **kwargs)
+      if turn.status == :applied
+        start_new_case!(reason: "technician_new_case", correlation_id: "case:b")
+        episode = Rag::ActiveEpisode.parse(reload.active_episode)
+        episode.assign_goal!("no nivela", correlation_id: "case:b")
+        episode.write_fact!(
+          "manufacturer", status: "known", value: "OTIS", source: "user",
+          correlation_id: "case:b", at: Time.current.iso8601
+        )
+        update!(active_episode: episode.to_h)
+      end
+      turn
+    end
+
+    with_episode_flag("true") do
+      isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+        isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+          owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
+          episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+          episode.assign_goal!("puerta no cierra", correlation_id: "photo:job-test")
+          episode.write_fact!(
+            "manufacturer", status: "known", value: "KONE", source: "user",
+            correlation_id: "photo:job-test", at: Time.current.iso8601
+          )
+          @session.update!(active_episode: episode.to_h)
+          reading = analysis_result.merge(
+            analysis: "Lectura KONE", relevance_to_goal: "relevant", target_visible: true
+          )
+          reading[:parsed] = reading[:parsed].merge(
+            "canonical_component" => "puerta",
+            "manufacturer" => "KONE",
+            "model" => "UNKNOWN",
+            "subsystem" => "DOOR_OPERATOR",
+            "condition" => "GOOD"
+          )
+
+          messages = nil
+          with_analysis_service(result: reading) do
+            messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+              FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+                question: "Cómo se ajustan los resortes de la fijación de cables?",
+                expected_episode_id: owner
+              ))
+            end
+          end
+
+          context = captured[:session_context].to_s
+          kept = @session.reload.active_episode
+          history = @session.conversation_history.pluck("content")
+          assert_includes context, "puerta no cierra"
+          assert_includes context, "KONE"
+          assert_includes context, "Photo Evidence"
+          assert_not_includes context, "OTIS"
+          assert_not_includes context, "no nivela"
+          assert_not_equal owner, kept["episode_id"]
+          assert_equal "no nivela", kept.dig("goal", "text")
+          assert_equal "OTIS", kept.dig("facts", "manufacturer", "value")
+          assert_equal "user", kept.dig("facts", "manufacturer", "source")
+          assert_nil kept["active_photo"]
+          assert kept["facts"].to_h.values.none? { |fact| fact["source"] == "photo" }
+          assert history.any? { |line| line.to_s.include?("[FOTO]") }
+          assert_not_includes history, messages.last["answer"]
+          assert_equal "photo_question_answered", messages.last["status"]
+        end
+      end
+    end
+  ensure
+    ConversationSession.define_method(:record_photo_assistant_context!, original_context) if original_context
+    Rag::PhotoQuestionAnswerService.define_method(:execute_rag_query, original_execute) if original_execute
+    set_photo_question_flag(nil)
+  end
+
   private
 
   def accepted_compact_context(result)

@@ -598,9 +598,12 @@ Pre-deploy review found and closed:
 ```text
 1. same-turn provenance snapshot race
 2. mid-delivery episode transition before photo-question RAG
+3. episode context snapshot race after successful photo-history ownership gate
 ```
 
-Commit: `fix: close photo evidence delivery races`.
+Commit: `fix: close photo evidence delivery races`. El punto 3 queda en `fix: snapshot photo turn context before rag`.
+
+El write `[FOTO]` y la salida de `SessionContextBuilder` se capturan en el mismo lock. `PhotoQuestionAnswerService` usa ese string más Photo Evidence de `evidence_value`. `entity_s3_uris` es la lista de documentos pineados que el builder ya calcula, congelada en ese mismo instante. Document Focus no cambia de arquitectura. Si el caso cambia después, la generación sigue con el snapshot y el write de la respuesta RAG sigue descartándose cuando `expected_episode_id` ya no coincide.
 
 Provenance of a photo question uses the accepted observation captured for that turn. It does not re-read `FieldPhoto.visual_observation` after generation. The `[FOTO]` history write is the ownership gate: `:stale` stops PhotoQuestionAnswerService; `:not_recording` still continues when the evidence was accepted.
 

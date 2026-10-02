@@ -47,7 +47,7 @@ module Rag
     ].freeze
     PLANT_IDENTIFIER_PATTERN = /\b[A-Z]{4,}\s+\d{2,}\b/
 
-    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil)
+    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil)
       @question = question.to_s.strip
       @evidence = evidence_value.to_h.deep_symbolize_keys
       @session = session
@@ -57,6 +57,8 @@ module Rag
       @locale = locale.to_s.presence&.to_sym
       @field_photo_id = field_photo_id
       @accepted_observation = accepted_observation
+      @session_context_snapshot = session_context_snapshot
+      @entity_s3_uris_snapshot = entity_s3_uris_snapshot
     end
 
     # @return [Hash, nil] { answer:, citations:, generation_mode: } or nil when
@@ -68,7 +70,7 @@ module Rag
       result = execute_rag_query(
         anchored_question,
         session_context: merged_session_context,
-        entity_s3_uris:  SessionContextBuilder.entity_s3_uris(@session),
+        entity_s3_uris:  turn_entity_s3_uris,
         account:         @account,
         user_id:         @user_id,
         response_locale: @locale,
@@ -153,9 +155,21 @@ module Rag
       text
     end
 
+    # A caller-supplied snapshot is the work context captured with the [FOTO]
+    # ownership write. nil means this call is outside that gate and may read
+    # the session, which direct script callers still do.
     def merged_session_context
-      base = SessionContextBuilder.build(@session)
+      base = @session_context_snapshot.nil? ? SessionContextBuilder.build(@session) : @session_context_snapshot.to_s
       [ base.presence, photo_evidence_block ].compact.join("\n\n")
+    end
+
+    # Pinned-document URIs from the same capture. nil keeps the live Focus
+    # read for callers that did not pass a snapshot. An empty list is a
+    # captured "no pins" result and is not replaced by a later read.
+    def turn_entity_s3_uris
+      return SessionContextBuilder.entity_s3_uris(@session) if @entity_s3_uris_snapshot.nil?
+
+      @entity_s3_uris_snapshot
     end
 
     def photo_evidence_block

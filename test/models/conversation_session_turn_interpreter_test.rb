@@ -4,7 +4,7 @@ require "test_helper"
 
 class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
   setup do
-    @now = Time.zone.parse("2026-10-02 12:00:00")
+    @now = Time.current
     @user = users(:one)
     @account = accounts(:legacy)
   end

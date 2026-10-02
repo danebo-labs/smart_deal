@@ -986,7 +986,7 @@ Parado aquí. Antes del flip se implementa T1.1 y se repite T2 con los 21 journe
 
 `feat: carry active photo context through turn interpretation`
 
-SHA de implementación: se anota en el commit de docs inmediato posterior, porque el SHA no existe antes de ese commit.
+SHA de implementación: `fc66d23872d550639f01e8c1cc1b23784ffc68ee`
 
 `config/deploy.yml` no se modificó. `HAIKU_QUERY_ANALYSIS_MODE` sigue `conditional`. No hubo deploy. El owner canary no empezó.
 

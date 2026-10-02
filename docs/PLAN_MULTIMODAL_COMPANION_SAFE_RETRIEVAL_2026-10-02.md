@@ -793,8 +793,9 @@ Contratos rojos con `N0_CONTRACTS=1`. Ninguno pasó por accidente:
 - `legacy photo reuse carries accepted equipment identity into retrieval` — N2. La identidad efímera Orona/PBCM-V3 no llega al retrieval, y la pregunta no incluye el goal.
 - `same-turn photo question composes retrieval after accepted visual identity` — N2. 1 Vision y 0 TurnInterpreter ya se cumplen; la query anidada sigue siendo sólo el texto literal.
 - `uncertain accepted photo may constrain photo-question retrieval without promoting facts` — N2. No promueve facts, y tampoco aporta identidad efímera.
-- `foreign manufacturer chunks are reference-only for known equipment` — N3. El procedimiento Yida llega a la respuesta por `retrieve_and_generate` abierto.
-- `foreign manufacturer chunks cannot create manual fact` — N4. El cuerpo ajeno ya se oculta en el prompt de scope, pero el chunk Yida/BLT sigue siendo citable.
+- `foreign manufacturer chunks are reference-only for known equipment` — N3. La identidad Orona/PBCM-V3 no llega a `DocumentIdentityScope`, así que Yida/BLT no quedan clasificados reference-only ni pierden el cuerpo en el prompt de scope. No exige cerrar el fallback abierto ni la respuesta final.
+- `known equipment photo retrieval does not fall open onto a foreign procedure` — N4. Con identidad conocida, el camino sigue en `retrieve_and_generate` abierto y el procedimiento Yida llega a la respuesta.
+- `foreign manufacturer chunks cannot create manual fact` — N4. Aunque el scope ya quite el cuerpo, el chunk Yida/BLT sigue siendo citable y puede producir `MANUAL_FACT`.
 
 ### N1 — F4 VisualTaskContext
 

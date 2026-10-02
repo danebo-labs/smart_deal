@@ -1754,29 +1754,37 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
   test "foreign manufacturer chunks are reference-only for known equipment" do
     n0_contract!("N3")
-    photo = create_orona_photo(relevance: nil)
-    probe = { open_calls: 0, prompts: [] }
+    probe = run_foreign_equipment_retrieval
+    scope = probe[:scopes].last
 
-    isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "true") do
-      with_leveling_episode do |owner|
-        with_foreign_retrieval_probe(probe) do
-          messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
-            FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
-          end
-          answer = messages.last["answer"].to_s
-          assert_not_includes answer, YIDA_PROCEDURE
-          assert_not_includes answer, BLT_PROCEDURE
-        end
-      end
+    assert scope, "known Orona/PBCM-V3 identity must reach DocumentIdentityScope"
+    values = scope_identity_values(scope[:identity])
+    assert_includes values, "Orona"
+    assert_includes values, "PBCM-V3"
+    labels = Array(scope[:labels]).map(&:to_s)
+    assert_equal 2, labels.size
+    assert labels.all? { |label| label.start_with?("REFERENCE ONLY") }, labels.inspect
+    assert labels.any? { |label| label.include?("Yida") }
+    assert labels.any? { |label| label.include?("BLT") }
+    assert labels.none? { |label| label.include?("THIS JOB") }
+    Array(scope[:chunks]).each do |chunk|
+      assert_not_includes chunk[:content].to_s, YIDA_PROCEDURE
+      assert_not_includes chunk[:content].to_s, BLT_PROCEDURE
     end
-
-    assert_equal 0, probe[:open_calls]
-    assert probe[:prompts].any?, "identity scope must see the Yida and BLT chunks"
     probe[:prompts].each do |prompt|
       assert_not_includes prompt, YIDA_PROCEDURE
       assert_not_includes prompt, BLT_PROCEDURE
     end
-    assert_nil photo.reload.visual_observation["relevance_to_goal"]
+    assert_nil probe[:photo].reload.visual_observation["relevance_to_goal"]
+  end
+
+  test "known equipment photo retrieval does not fall open onto a foreign procedure" do
+    n0_contract!("N4")
+    probe = run_foreign_equipment_retrieval
+
+    assert_equal 0, probe[:open_calls], "known equipment must not fall through to open retrieve_and_generate"
+    assert_not_includes probe[:answer], YIDA_PROCEDURE
+    assert_not_includes probe[:answer], BLT_PROCEDURE
   end
 
   def with_episode_flag(value)
@@ -2011,8 +2019,32 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     Array(raw).map(&:to_s)
   end
 
+  def run_foreign_equipment_retrieval
+    photo = create_orona_photo(relevance: nil)
+    probe = { open_calls: 0, prompts: [], scopes: [], answer: "", photo: photo }
+    isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "true") do
+      with_leveling_episode do |owner|
+        with_foreign_retrieval_probe(probe) do
+          messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+            FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+          end
+          probe[:answer] = messages.last.to_h["answer"].to_s
+        end
+      end
+    end
+    probe
+  end
+
   def with_foreign_retrieval_probe(probe)
+    original_apply = Rag::DocumentIdentityScope.method(:apply)
     original_new = BedrockRagService.method(:new)
+    Rag::DocumentIdentityScope.define_singleton_method(:apply) do |chunks, identity, focus_uris: []|
+      result = original_apply.call(chunks, identity, focus_uris: focus_uris)
+      prompt = Rag::DocumentIdentityScope.generation_context(result.chunks, result.labels)
+      probe[:scopes] << { identity: identity, labels: result.labels, chunks: result.chunks }
+      probe[:prompts] << prompt
+      result
+    end
     yida = yida_procedure
     blt = blt_procedure
     citation = foreign_yida_citation
@@ -2037,7 +2069,21 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
     yield
   ensure
+    Rag::DocumentIdentityScope.define_singleton_method(:apply) { |*args, **kwargs| original_apply.call(*args, **kwargs) } if original_apply
     BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+  end
+
+  def scope_identity_values(identity)
+    values = [ identity_manufacturer(identity), *identity_needles(identity) ]
+    raw = identity.respond_to?(:to_h) ? identity.to_h : identity
+    facts = raw.is_a?(Hash) ? (raw["facts"] || raw[:facts]) : nil
+    if facts.is_a?(Hash)
+      facts.each_value do |fact|
+        value = fact.is_a?(Hash) ? (fact["value"] || fact[:value]) : fact
+        values << value
+      end
+    end
+    values.compact.map(&:to_s)
   end
 
   def foreign_yida_citation

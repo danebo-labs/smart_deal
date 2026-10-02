@@ -1,6 +1,6 @@
 # Turn Interpreter V2 (2026-10-01)
 
-**Estado:** `READY FOR HUMAN OWNER CANARY`. T0, T1, T1.1 y el hardening pre-canary están implementados. El eval de 21 journeys y el holdout pasan con mismatches=0, fallbacks=0 y field_rejections=0. No hubo deploy. `config/deploy.yml` sigue en `conditional`. El owner canary no empezó. El flip es humano.
+**Estado:** `OWNER LIVE — PHOTO CONTEXT BLOCKED`. T0, T1, T1.1, el hardening y el microfix de negate están en producción con `HAIKU_QUERY_ANALYSIS_MODE=owner`. El smoke de texto pasó. La foto relevante escribió la identidad y no dejó `Photo Evidence` porque la observación no se persistió. No hubo rollback. T3 no empieza.
 
 **HEAD revisado para T1.1:** `9784c3d8d6523d5c1f9409e893d2db7a257a2866`.
 
@@ -1090,6 +1090,31 @@ holdout_passes=10 holdout_mismatches=0 holdout_fallbacks=0 holdout_field_rejecti
 p50_ms=1570 p95_ms=2801
 input_tokens=19699 output_tokens=1182 estimated_usd=0.025609
 ```
+
+### Production owner rollout / smoke
+
+Fecha: 2026-10-02.
+
+`config/deploy.yml` está en `.gitignore`. No hay commit de configuración: el flip es el env que Kamal inyecta al arrancar el contenedor. `HAIKU_QUERY_ANALYSIS_MODE` pasó de `conditional` a `owner`. `FIELD_COMPANION_EPISODE_ENABLED` sigue `true`. Ningún otro flag cambió.
+
+Versión desplegada: `0a1b9de8ac525c8a634314b0416395e66efa77e5`. `kamal app version` coincide. En runtime, `Rag::HaikuQueryAnalysisFlag.mode` es `owner`. Prompt `2026-10-02.5`. Schema `turn_perception.3`.
+
+Health: `/up` y el login responden 200 en el host de piloto. DB `SELECT 1`. Solid Queue con heartbeat. Sin error de boot en el contenedor nuevo. Bedrock respondió en los turnos owner y en las lecturas de foto.
+
+Rollback, no ejecutado:
+
+```text
+# en config/deploy.yml local
+HAIKU_QUERY_ANALYSIS_MODE: conditional
+BUNDLE_PATH=vendor/bundle bundle exec kamal deploy
+BUNDLE_PATH=vendor/bundle bundle exec kamal app exec --roles=web --primary "bin/rails runner 'puts Rag::HaikuQueryAnalysisFlag.mode'"
+```
+
+Smoke automatizado sobre la cuenta piloto, por `record_user_turn!` y `FieldPhotoAnalysisJob.perform_now`. Q2, pending, follow-up, work_relation, thin new_work, rich new_work, corrección explícita, guard de negate, foto sin intent y Document Focus: PASS. El rich new_work recuperó con ruta `search_and_clarify` porque había fabricante y síntoma sin controlador; la query llevó KONE y nivela, el episodio era nuevo y el Focus no se movió.
+
+Foto: la de resortes quedó `unrelated` y no escribió facts ni query terms. La placa de prueba fue `relevant` para vision y escribió manufacturer/model `source=photo`; el follow-up siguió el mismo episodio y la query llevó esos valores. `visual_observation` de esa foto quedó vacío, `ActivePhotoContext` salió `invalid` y no hubo `Photo Evidence`. La foto sin intent quedó `relevance=nil`, sin facts y sin bloque de generación.
+
+`turn_interpreter:smoke_check`: events=13, fallbacks=0. Un `field_rejection` `unknown_hint` en el turno de preparación "el resorte de la puerta no cierra"; Ruby descartó el hint y no mutó un slot. No hubo fallback inesperado. No hubo rollback. T3 no empieza.
 
 ---
 

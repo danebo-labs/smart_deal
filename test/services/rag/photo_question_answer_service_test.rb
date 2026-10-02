@@ -386,6 +386,46 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     build_service(question: "Que es esto?").call
 
     assert_equal @session.id, captured_kwargs[:conversation_session_id]
+    assert_nil captured_kwargs[:conv_session]
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |question, **kwargs| original_new.call(question, **kwargs) } if original_new
+  end
+
+  test "a post-photo retrieval question is the nested query and does not pass the session" do
+    captured = nil
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |question, **kwargs|
+      captured = { question: question, kwargs: kwargs }
+      original_new.call(question, **kwargs)
+    end
+    BedrockRagService.define_method(:query) do |question, **kwargs|
+      captured[:bedrock] = { question: question, episode: kwargs[:episode] }
+      { answer: "ok", citations: [], session_id: nil }
+    end
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "PBCM-V3" ],
+      facts: [ { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:1" } ]
+    )
+    composed = "¿Qué ves y qué debería revisar primero? no nivela en planta 3 Orona PBCM-V3"
+
+    service = build_service(
+      question: "¿Qué ves y qué debería revisar primero?",
+      photo_value: {
+        canonical_name: "UNKNOWN", manufacturer: "UNKNOWN", model_visible: "UNKNOWN",
+        condition: "GOOD", visible_codes: []
+      },
+      retrieval_question: composed,
+      equipment_identity: identity
+    )
+    service.call
+
+    assert_equal composed, captured[:question]
+    assert_equal composed, captured[:bedrock][:question]
+    assert_nil captured[:kwargs][:conv_session]
+    assert_nil captured[:kwargs][:equipment_identity]
+    assert_nil captured[:bedrock][:episode]
+    assert_equal identity, service.equipment_identity
   ensure
     QueryOrchestratorService.define_singleton_method(:new) { |question, **kwargs| original_new.call(question, **kwargs) } if original_new
   end
@@ -541,7 +581,7 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_includes captured[:kwargs][:session_context], "GECB"
   end
 
-  def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil)
+  def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil)
     Rag::PhotoQuestionAnswerService.new(
       question: question,
       evidence_value: photo_value,
@@ -553,7 +593,9 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       field_photo_id: field_photo_id,
       accepted_observation: accepted_observation,
       session_context_snapshot: session_context_snapshot,
-      entity_s3_uris_snapshot: entity_s3_uris_snapshot
+      entity_s3_uris_snapshot: entity_s3_uris_snapshot,
+      retrieval_question: retrieval_question,
+      equipment_identity: equipment_identity
     )
   end
 

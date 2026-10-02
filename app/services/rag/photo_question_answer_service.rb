@@ -47,7 +47,7 @@ module Rag
     ].freeze
     PLANT_IDENTIFIER_PATTERN = /\b[A-Z]{4,}\s+\d{2,}\b/
 
-    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil)
+    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil)
       @question = question.to_s.strip
       @evidence = evidence_value.to_h.deep_symbolize_keys
       @session = session
@@ -59,7 +59,11 @@ module Rag
       @accepted_observation = accepted_observation
       @session_context_snapshot = session_context_snapshot
       @entity_s3_uris_snapshot = entity_s3_uris_snapshot
+      @retrieval_question = retrieval_question.to_s.strip.presence
+      @equipment_identity = equipment_identity
     end
+
+    attr_reader :equipment_identity, :retrieval_question
 
     # @return [Hash, nil] { answer:, citations:, generation_mode: } or nil when
     #   the flag is off, the question is blank, or the RAG call did not succeed.
@@ -67,8 +71,10 @@ module Rag
       return nil unless Rag::PhotoQuestionFlag.enabled?
       return nil if @question.blank?
 
+      input = retrieval_input
       result = execute_rag_query(
-        anchored_question,
+        input,
+        retrieval_question: (@retrieval_question.present? ? input : nil),
         session_context: merged_session_context,
         entity_s3_uris:  turn_entity_s3_uris,
         account:         @account,
@@ -77,6 +83,7 @@ module Rag
         correlation_id:  @correlation_id,
         conversation_session_id: @session&.id,
         # The visual decision already ran. This retrieve must not open another one.
+        # equipment_identity stays on this object. Document compatibility is not N2.
         apply_photo_continuity: false
       )
       return nil unless result.success?
@@ -105,6 +112,15 @@ module Rag
     end
 
     private
+
+    # Snapshot text when the turn already composed one. The catalog suffix
+    # still appends, the same way it does for a literal photo question.
+    def retrieval_input
+      return anchored_question if @retrieval_question.blank?
+
+      suffix = anchor_suffix
+      suffix.present? ? "#{@retrieval_question} (#{suffix})" : @retrieval_question
+    end
 
     # "Que equipo es y que está mostrando la pantalla ? (GECB System=1 Tools=2)"
     def anchored_question

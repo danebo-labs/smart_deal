@@ -1364,7 +1364,11 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
           turn = session.record_photo_assistant_context!(
             "[FOTO] Fabricante: KONE",
-            user_id: users(:one).id, correlation_id: "photo:2", expected_episode_id: owner
+            user_id: users(:one).id, correlation_id: "photo:2", expected_episode_id: owner,
+            question: "cómo sigo con esta puerta",
+            accepted_observation: {
+              "manufacturer" => "SCHINDLER", "model" => "X1", "relevance_to_goal" => "unrelated"
+            }
           )
           session.start_new_case!(reason: "technician_new_case", correlation_id: "case:b")
           later = Rag::ActiveEpisode.parse(session.reload.active_episode)
@@ -1380,6 +1384,14 @@ class ConversationSessionTest < ActiveSupport::TestCase
           assert_includes turn.session_context, "KONE"
           assert_not_includes turn.session_context, "OTIS"
           assert_not_includes turn.session_context, "no nivela"
+          assert_equal "KONE", turn.equipment_identity.manufacturer
+          assert_not_includes turn.equipment_identity.needles, "SCHINDLER"
+          assert_includes turn.retrieval_question, "cómo sigo con esta puerta"
+          assert_includes turn.retrieval_question, "puerta no cierra"
+          assert_includes turn.retrieval_question, "KONE"
+          assert_not_includes turn.retrieval_question, "OTIS"
+          assert_not_includes turn.retrieval_question, "no nivela"
+          assert_not_includes turn.retrieval_question, "SCHINDLER"
           live = SessionContextBuilder.build(session)
           assert_includes live, "no nivela"
           assert_includes live, "OTIS"
@@ -1389,6 +1401,8 @@ class ConversationSessionTest < ActiveSupport::TestCase
           )
           assert_equal :stale, stale.status
           assert_nil stale.session_context
+          assert_nil stale.equipment_identity
+          assert_nil stale.retrieval_question
           assert_not_includes session.reload.conversation_history.pluck("content"), "[FOTO] stale"
         end
       end

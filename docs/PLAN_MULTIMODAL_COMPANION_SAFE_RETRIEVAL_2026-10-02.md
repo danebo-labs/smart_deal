@@ -1,10 +1,12 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2–N6 NOT STARTED`
+**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3–N6 NOT STARTED`
 
 **N0:** `N0 COMPLETE`
 
 **N1:** `N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
+
+**N2:** `N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 Source of truth de este bloque. Reconcilia el diagnóstico read-only del flow real Orona PBCM-V3, la surgical review de Codex y la revisión final de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica o completa a Codex, manda Opus. Baseline de código: `d3909808a3508e83851f5475368fbd52d74c0e2a`.
 
@@ -781,7 +783,7 @@ Un solo release. No hay código funcional antes del harness.
 N0 COMPLETE
 ```
 
-El harness sigue en la suite. Los contratos futuros viven ahí y quedan en skip salvo `N0_CONTRACTS=1`. El mensaje de skip es `N0 contract — expected to become green in N<fase>`. Cada test skipped contiene los asserts del contrato, no un placeholder. Después de N1, `N0_CONTRACTS=1` sigue rojo en N2, N3 y N4 por las razones de abajo. N1 no los cierra.
+El harness sigue en la suite. Los contratos futuros viven ahí y quedan en skip salvo `N0_CONTRACTS=1`. El mensaje de skip es `N0 contract — expected to become green in N<fase>`. Cada test skipped contiene los asserts del contrato, no un placeholder. Después de N2, los tres contratos N2 pasan con `N0_CONTRACTS=1`. N3 y N4 siguen rojos.
 
 Invariantes que quedan verdes en la suite:
 
@@ -790,11 +792,14 @@ Invariantes que quedan verdes en la suite:
 - `same-turn photo question keeps the literal question until after vision`: el enqueue lleva la pregunta literal y 0 TurnInterpreter. La composición no ocurre antes de Vision.
 - Siguen verdes los invariantes ya cubiertos: observación aceptada persistida, reuse sin Vision, write stale, scope de tenant, y `unrelated` que no promueve facts.
 
-Contratos rojos con `N0_CONTRACTS=1`. Ninguno pasó por accidente:
+Contratos N2, verdes con `N0_CONTRACTS=1` después de este snapshot:
 
-- `legacy photo reuse carries accepted equipment identity into retrieval` — N2. La identidad efímera Orona/PBCM-V3 no llega al retrieval, y la pregunta no incluye el goal.
-- `same-turn photo question composes retrieval after accepted visual identity` — N2. 1 Vision y 0 TurnInterpreter ya se cumplen; la query anidada sigue siendo sólo el texto literal.
-- `uncertain accepted photo may constrain photo-question retrieval without promoting facts` — N2. No promueve facts, y tampoco aporta identidad efímera.
+- `legacy photo reuse carries accepted equipment identity into retrieval` — identidad efímera Orona/PBCM-V3 y `retrieval_question` con el goal. 0 Vision. `relevance_to_goal` sigue nil. No hay facts nuevos.
+- `same-turn photo question composes retrieval after accepted visual identity` — la query anidada lleva la pregunta literal, el goal y Orona/PBCM-V3. 1 Vision. 0 TurnInterpreter extra.
+- `uncertain accepted photo may constrain photo-question retrieval without promoting facts` — no promueve facts y sí aporta identidad efímera.
+
+Contratos que siguen rojos. Ninguno pasó por accidente:
+
 - `foreign manufacturer chunks are reference-only for known equipment` — N3. La identidad Orona/PBCM-V3 no llega a `DocumentIdentityScope`, así que Yida/BLT no quedan clasificados reference-only ni pierden el cuerpo en el prompt de scope. No exige cerrar el fallback abierto ni la respuesta final.
 - `known equipment photo retrieval does not fall open onto a foreign procedure` — N4. Con identidad conocida, el camino sigue en `retrieve_and_generate` abierto y el procedimiento Yida llega a la respuesta.
 - `foreign manufacturer chunks cannot create manual fact` — N4. Aunque el scope ya quite el cuerpo, el chunk Yida/BLT sigue siendo citable y puede producir `MANUAL_FACT`.
@@ -832,7 +837,30 @@ La promoción al episodio no corrió en ese eval. Con `relevant` y facts distint
 
 ### N2 — Post-photo retrieval snapshot
 
-Extender `PhotoTurnContext` con `equipment_identity` y `retrieval_question`, capturados bajo el lock después de la observación aceptada. No episodio completo.
+```text
+N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+```
+
+`PhotoTurnContext` sigue siendo el snapshot del turno. Campos previos: `status`, `session_context`, `entity_s3_uris`. Campos nuevos: `equipment_identity`, `retrieval_question`. No guarda episodio, historial, Vision crudo, pending, `FieldPhoto`, chunks ni focus objects. Document Focus sigue congelado en el mismo lock, dentro de `session_context` y `entity_s3_uris`.
+
+La captura ocurre en `record_photo_assistant_context!`, después de `record_photo_observation!`, bajo `with_lock`, cuando el `expected_episode_id` coincide. Un episodio stale devuelve los cinco campos de retrieval en nil y no escribe `[FOTO]`. Después del unlock el job no relee el episodio para estos dos campos. No se pasa `conv_session` al RAG anidado.
+
+`Rag::EquipmentIdentity` es el valor transportable: `manufacturer`, `needles`, `facts` con `source` y `correlation_id`. No es policy. `DocumentIdentityScope` no lo consume.
+
+Identidad:
+
+- facts del episodio `known` con source `user` o `photo`, slots `manufacturer` y `model`, salvo rechazados
+- observación aceptada de esta foto, sólo si la pregunta va con esa foto: `relevant`, nil y `uncertain` sí; `unrelated` no
+- un fact de episodio de otra fuente sigue aunque la foto sea `unrelated`
+- nil y `uncertain` no reescriben relevancia ni promueven facts. El snapshot no muta el episodio
+
+`retrieval_question` se compone una vez, sin LLM. Orden estable: pregunta literal, goal, `fault_code`, `controller`, observaciones ya acotadas del episodio, identidad aceptada. Tope `FollowupQueryRewriter::MAX_COMPOSED_CHARS` (442). Si no cabe, caen primero las observaciones, luego `controller` y `fault_code`, luego se acorta la pregunta literal. Goal e identidad se conservan hasta ese corte. El suffix de catálogo de `anchor_suffix` sigue igual y se agrega después, en `PhotoQuestionAnswerService`; no recomponer el episodio encima.
+
+Antes de Vision la pregunta encolada sigue literal. La composición es posterior a la observación aceptada. Reuse de `relevance=nil` no llama Vision.
+
+`N0_CONTRACTS=1` después de N2: los tres contratos N2 pasan. Siguen rojos N3 (`DocumentIdentityScope` no recibe la identidad) y N4 (`retrieve_and_generate` abierto actual 1; el chunk Yida sigue citable). No hubo llamadas reales a Vision. N2 no está verificado en producción.
+
+Archivos fuera del trío principal, y por qué: `app/services/rag/equipment_identity.rb` y `app/services/rag/photo_retrieval_snapshot.rb` son el value object y la composición determinística. El modelo sólo los llama dentro del lock. No se tocó `rag_query_concern.rb`, `query_orchestrator_service.rb`, `document_identity_scope.rb` ni `bedrock_rag_service.rb`. `retrieval_question:` ya existía en el concern. `equipment_identity` se queda en `PhotoQuestionAnswerService` y no se reenvía.
 
 ### N3 — Common EquipmentIdentity policy
 
@@ -1017,9 +1045,10 @@ Queda registrado para no reabrir la versión anterior de la propuesta.
 ```text
 N0 COMPLETE
 N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
-N2–N6 NOT STARTED
+N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+N3–N6 NOT STARTED
 ```
 
-F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1 no está verificado en producción.
+F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1 y N2 no están verificados en producción.
 
-Siguiente paso: review de N1. No deploy. No implementar N2 todavía.
+Siguiente paso: review de N2. No deploy. No implementar N3 todavía.

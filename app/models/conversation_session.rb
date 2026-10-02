@@ -8,7 +8,9 @@ class ConversationSession < ApplicationRecord
   EPISODE_WINDOW = 4.hours
   EPISODE_MAX_USER_MESSAGES = 3
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
-  PhotoTurnContext = Data.define(:status, :session_context, :entity_s3_uris)
+  PhotoTurnContext = Data.define(
+    :status, :session_context, :entity_s3_uris, :equipment_identity, :retrieval_question
+  )
   PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
   DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
   PHOTO_PENDING_SLOTS = %w[manufacturer model].freeze
@@ -257,10 +259,12 @@ class ConversationSession < ApplicationRecord
   # are; this only freezes the list SessionContextBuilder already computes.
   # :not_recording has no episode to protect, so the capture follows the
   # history write without treating that path as stale.
-  def record_photo_assistant_context!(content, user_id:, correlation_id:, expected_episode_id: nil)
+  def record_photo_assistant_context!(content, user_id:, correlation_id:, expected_episode_id: nil, question: nil, accepted_observation: nil)
     unless episode_recording?
       add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
-      return capture_photo_turn_context(:not_recording)
+      return capture_photo_turn_context(
+        :not_recording, question: question, accepted_observation: accepted_observation, correlation_id: correlation_id
+      )
     end
 
     result = nil
@@ -298,7 +302,9 @@ class ConversationSession < ApplicationRecord
         update!(attrs)
       end
 
-      snapshot = capture_photo_turn_context(:applied)
+      snapshot = capture_photo_turn_context(
+        :applied, question: question, accepted_observation: accepted_observation, correlation_id: correlation_id
+      )
     end
     return capture_photo_turn_context(:stale) if dropped
 
@@ -755,15 +761,28 @@ class ConversationSession < ApplicationRecord
 
   private
 
-  def capture_photo_turn_context(status)
+  def capture_photo_turn_context(status, question: nil, accepted_observation: nil, correlation_id: nil)
     if status == :stale
-      return PhotoTurnContext.new(status: status, session_context: nil, entity_s3_uris: nil)
+      return PhotoTurnContext.new(
+        status: status, session_context: nil, entity_s3_uris: nil,
+        equipment_identity: nil, retrieval_question: nil
+      )
     end
 
+    episode = Rag::ActiveEpisode.parse(active_episode, now: Time.current)
+    episode = nil if episode.blank?
+    derived = Rag::PhotoRetrievalSnapshot.capture(
+      episode: episode,
+      question: question,
+      observation: accepted_observation,
+      correlation_id: correlation_id
+    )
     PhotoTurnContext.new(
       status: status,
       session_context: SessionContextBuilder.build(self).to_s,
-      entity_s3_uris: SessionContextBuilder.entity_s3_uris(self)
+      entity_s3_uris: SessionContextBuilder.entity_s3_uris(self),
+      equipment_identity: derived.equipment_identity,
+      retrieval_question: derived.retrieval_question
     )
   end
 

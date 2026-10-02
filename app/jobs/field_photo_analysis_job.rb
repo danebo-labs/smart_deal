@@ -386,7 +386,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
         evidence_value.fetch(:compact_context),
         user_id: user_id,
         correlation_id: correlation_id,
-        expected_episode_id: expected_episode_id
+        expected_episode_id: expected_episode_id,
+        question: question,
+        accepted_observation: accepted_observation
       )
     end
     history_state = turn_context&.status
@@ -402,7 +404,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
                             correlation_id: correlation_id, locale: locale,
                             field_photo_id: field_photo_id, accepted_observation: accepted_observation,
                             session_context_snapshot: turn_context&.session_context,
-                            entity_s3_uris_snapshot: turn_context&.entity_s3_uris)
+                            entity_s3_uris_snapshot: turn_context&.entity_s3_uris,
+                            retrieval_question: turn_context&.retrieval_question,
+                            equipment_identity: turn_context&.equipment_identity)
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
@@ -453,7 +457,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # foto_mas_pregunta_rag "Aislamiento de fallo obligatorio".
   def answer_photo_question(question:, evidence_value:, session:, account_id:, user_id:, correlation_id:, locale:,
                              field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil,
-                             entity_s3_uris_snapshot: nil)
+                             entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     account = session&.account || (account_id && Account.find_by(id: account_id))
 
@@ -468,7 +472,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
       field_photo_id: field_photo_id,
       accepted_observation: accepted_observation,
       session_context_snapshot: session_context_snapshot,
-      entity_s3_uris_snapshot: entity_s3_uris_snapshot
+      entity_s3_uris_snapshot: entity_s3_uris_snapshot,
+      retrieval_question: retrieval_question,
+      equipment_identity: equipment_identity
     ).call
     return nil unless result
 

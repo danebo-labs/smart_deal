@@ -1750,6 +1750,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
           end
 
           context = captured[:session_context].to_s
+          composed = captured[:retrieval_question].to_s
           kept = @session.reload.active_episode
           history = @session.conversation_history.pluck("content")
           assert_includes context, "puerta no cierra"
@@ -1757,6 +1758,11 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
           assert_includes context, "Photo Evidence"
           assert_not_includes context, "OTIS"
           assert_not_includes context, "no nivela"
+          assert_includes composed, "puerta no cierra"
+          assert_includes composed, "KONE"
+          assert_not_includes composed, "OTIS"
+          assert_not_includes composed, "no nivela"
+          assert_nil captured[:conv_session]
           assert_not_equal owner, kept["episode_id"]
           assert_equal "no nivela", kept.dig("goal", "text")
           assert_equal "OTIS", kept.dig("facts", "manufacturer", "value")

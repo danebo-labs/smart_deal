@@ -2985,4 +2985,29 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) } if original_new
     previous.nil? ? ENV.delete("FIELD_COMPANION_TURN_ENABLED") : ENV["FIELD_COMPANION_TURN_ENABLED"] = previous
   end
+
+  test "equipment identity is transport only and a text turn omits it" do
+    captured = []
+    original_new = QueryOrchestratorService.method(:new)
+    QueryOrchestratorService.define_singleton_method(:new) do |_question, **kwargs|
+      captured << kwargs
+      orchestrator = Object.new
+      orchestrator.define_singleton_method(:execute) { { answer: "ok", citations: [], session_id: nil } }
+      orchestrator
+    end
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "PBCM-V3" ],
+      facts: [ { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:1" } ]
+    )
+
+    @controller.send(:execute_rag_query, "qué reviso", equipment_identity: identity, conv_session: nil)
+    @controller.send(:execute_rag_query, "qué reviso")
+
+    assert_equal identity, captured[0][:equipment_identity]
+    assert_nil captured[0][:conv_session]
+    assert_not captured[1].key?(:equipment_identity)
+  ensure
+    QueryOrchestratorService.define_singleton_method(:new) { |*args, **kwargs| original_new.call(*args, **kwargs) } if original_new
+  end
 end

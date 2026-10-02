@@ -57,7 +57,8 @@ module Rag
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale:, output_channel:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
-                   generator: nil, expander: nil, episode: nil, raw_question: nil)
+                   generator: nil, expander: nil, episode: nil, raw_question: nil,
+                   equipment_identity: :omit)
       profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
       return nil unless eligible?(
         profile: profile,
@@ -81,7 +82,8 @@ module Rag
         generator: generator,
         expander: expander,
         episode: episode,
-        raw_question: raw_question
+        raw_question: raw_question,
+        equipment_identity: equipment_identity
       )
     end
 
@@ -154,7 +156,7 @@ module Rag
                    response_locale:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
                    generator: nil, expander: nil, episode: nil, route_taken: nil,
-                   raw_question: nil)
+                   raw_question: nil, equipment_identity: :omit)
       @question = question.to_s
       @raw_question = raw_question.presence || @question
       @account = account
@@ -170,6 +172,8 @@ module Rag
       @generator = generator || AiProvider.new
       @expander = expander || Rag::SectionNeighborExpander.new
       @episode = episode
+      @equipment_identity = equipment_identity
+      @equipment_identity_supplied = !equipment_identity.equal?(:omit)
       @route_taken = route_taken
       @preserve_rescue_window = false
       @retrieval_report = { queries: [], rescued: false, retrieve_count: 0 }
@@ -456,15 +460,24 @@ module Rag
     # route already retrieved. No second Retrieve.
     def scope_identity(chunks)
       @identity_scoped = false
-      return Array(chunks) unless DocumentIdentityScope.applicable?(@episode)
+      identity = policy_identity
+      if identity&.known? && !DocumentIdentityScopeFlag.enabled?
+        Rails.logger.info(
+          "[DOCUMENT_IDENTITY] #{ { status: "unavailable", reason: "scope_disabled", path: "structured_evidence_route" }.to_json }"
+        )
+        return Array(chunks)
+      end
+      return Array(chunks) unless identity&.known? && DocumentIdentityScopeFlag.enabled?
 
-      applied = DocumentIdentityScope.apply(chunks, @episode, focus_uris: @entity_s3_uris)
+      applied = DocumentIdentityScope.apply(chunks, identity, focus_uris: @entity_s3_uris)
       @identity_scoped = applied.labels.any?(&:present?)
       other = applied.labels.count { |line| line.to_s.start_with?(DocumentIdentityScope::OTHER_EQUIPMENT_PREFIX) }
       Rails.logger.info(
         "[DOCUMENT_IDENTITY] #{ {
           identity_scope_applied: true,
-          identity_needles: DocumentIdentityScope.needles(@episode),
+          status: applied.status.to_s,
+          reason: applied.reason&.to_s,
+          identity_needles: DocumentIdentityScope.needles(identity),
           other_equipment_chunks: other,
           path: "structured_evidence_route"
         }.to_json }"
@@ -475,6 +488,16 @@ module Rag
 
         chunk.merge(content: "#{label}\n#{chunk[:content]}")
       end
+    end
+
+    def policy_identity
+      if @equipment_identity_supplied
+        return @equipment_identity if @equipment_identity.is_a?(EquipmentIdentity)
+
+        return nil
+      end
+
+      EquipmentIdentity.from_episode(@episode)
     end
 
     def expand_dividers(retrieved_chunks)

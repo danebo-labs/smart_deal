@@ -8,7 +8,7 @@ module Rag
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, response_locale:,
                    output_channel:, account_id: nil, user_id: nil, conversation_session_id: nil,
                    correlation_id: nil, episode: nil, session_context: nil, rag_service: nil,
-                   generator: nil, expander: nil)
+                   generator: nil, expander: nil, equipment_identity: :omit)
       return nil unless output_channel.to_s == "web"
       return nil if Array(entity_s3_uris).any?
       return nil unless ContextProjection.applicable?(question)
@@ -26,7 +26,8 @@ module Rag
         session_context: session_context,
         rag_service: rag_service,
         generator: generator,
-        expander: expander
+        expander: expander,
+        equipment_identity: equipment_identity
       )
     end
 
@@ -47,7 +48,8 @@ module Rag
 
     def initialize(question:, account:, entity_sources:, response_locale:, account_id: nil,
                    user_id: nil, conversation_session_id: nil, correlation_id: nil,
-                   episode: nil, session_context: nil, rag_service: nil, generator: nil, expander: nil)
+                   episode: nil, session_context: nil, rag_service: nil, generator: nil, expander: nil,
+                   equipment_identity: :omit)
       @question = question.to_s
       @account = account
       @entity_sources = Array(entity_sources)
@@ -57,6 +59,7 @@ module Rag
       @conversation_session_id = conversation_session_id
       @correlation_id = correlation_id
       @episode = ActiveEpisode.parse(episode)
+      @equipment_identity = equipment_identity
       @photo_evidence = self.class.photo_evidence_block(session_context)
       @rag_service = rag_service || BedrockRagService.new(account: account)
       @generator = generator
@@ -91,6 +94,7 @@ module Rag
         generator: episode_aware_generator,
         expander: @expander,
         episode: @episode,
+        equipment_identity: @equipment_identity,
         route_taken: "context_evidence_route"
       )
     end

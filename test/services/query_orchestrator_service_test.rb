@@ -900,4 +900,42 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     S3DocumentsService.define_method(:download, orig_download) if orig_download
     BedrockRagService.define_method(:query, orig_query) if orig_query
   end
+
+  test "explicit equipment identity is kept when the live episode changes" do
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:a" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:a" }
+      ]
+    )
+    session = live_otis_session
+    explicit = QueryOrchestratorService.new("pregunta", conv_session: session, equipment_identity: identity)
+    supplied_nil = QueryOrchestratorService.new("pregunta", conv_session: session, equipment_identity: nil)
+    derived = QueryOrchestratorService.new("pregunta", conv_session: session)
+
+    assert_equal identity, explicit.send(:resolved_equipment_identity)
+    assert_nil supplied_nil.send(:resolved_equipment_identity)
+    assert_equal "OTIS", derived.send(:resolved_equipment_identity).manufacturer
+  end
+
+  def live_otis_session
+    Object.new.tap do |session|
+      session.define_singleton_method(:active_episode) do
+        {
+          "v" => 1,
+          "episode_id" => "ep-b",
+          "updated_at" => Time.current.iso8601,
+          "facts" => {
+            "manufacturer" => {
+              "value" => "OTIS", "status" => "known", "source" => "user", "correlation_id" => "case:b"
+            }
+          },
+          "identifiers" => []
+        }
+      end
+      session.define_singleton_method(:id) { nil }
+    end
+  end
 end

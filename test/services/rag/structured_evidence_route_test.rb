@@ -1151,6 +1151,35 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     end
   end
 
+  test "explicit equipment identity overrides the episode" do
+    body = "Igualar tensión MonoSpace."
+    chunk = identity_chunk("KONE MonoSpace", body, page: 4)
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:1" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:1" }
+      ]
+    )
+    route = Rag::StructuredEvidenceRoute.new(
+      question: "ajuste",
+      account: @account,
+      entity_s3_uris: [],
+      entity_sources: [],
+      force_entity_filter: false,
+      response_locale: :es,
+      episode: mono_episode,
+      equipment_identity: identity
+    )
+
+    scoped = nil
+    with_identity_scope("true") { scoped = route.send(:scope_identity, [ chunk ]) }
+
+    assert_includes scoped.first[:content], "REFERENCE ONLY — OTHER EQUIPMENT:"
+    assert_not_includes scoped.first[:content], body
+  end
+
   test "identity scope strips other equipment before generation without a second retrieve" do
     question = "el modelo es MonoSpace, como se ajustan los resortes?"
     mono_body = "En MonoSpace igualar la tensión de los resortes de fijación de cables."

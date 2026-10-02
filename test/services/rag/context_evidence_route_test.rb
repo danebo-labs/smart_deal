@@ -301,10 +301,45 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
     assert_empty generator.calls
   end
 
+  test "context evidence applies the supplied equipment identity" do
+    body = "Igualar la tensión MonoSpace en la página 78."
+    evidence = {
+      content: body,
+      metadata: { "canonical_name" => "KONE MonoSpace", "page_number" => 78 },
+      chunk_sha256: "mono-78"
+    }
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona" ],
+      facts: [ { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:1" } ]
+    )
+    route = build_route(
+      question: SPRINGS,
+      episode: {
+        "v" => 1,
+        "episode_id" => "ep-mono",
+        "updated_at" => Time.current.iso8601,
+        "facts" => {
+          "model" => { "status" => "known", "value" => "MonoSpace", "source" => "user", "correlation_id" => "query:turn" }
+        },
+        "identifiers" => []
+      },
+      equipment_identity: identity
+    )
+
+    scoped = nil
+    with_env("DOCUMENT_IDENTITY_SCOPE_ENABLED" => "true") do
+      scoped = route.send(:stack).send(:scope_identity, [ evidence ])
+    end
+
+    assert_includes scoped.first[:content], "REFERENCE ONLY — OTHER EQUIPMENT:"
+    assert_not_includes scoped.first[:content], body
+  end
+
   private
 
   def build_route(question: THYSSEN, output_channel: :web, entity_s3_uris: [], episode: nil,
-                  rag_service: nil, generator: nil, session_context: nil)
+                  rag_service: nil, generator: nil, session_context: nil, equipment_identity: :omit)
     Rag::ContextEvidenceRoute.build(
       question: question,
       account: @account,
@@ -313,6 +348,7 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
       response_locale: :es,
       output_channel: output_channel,
       episode: episode,
+      equipment_identity: equipment_identity,
       session_context: session_context,
       rag_service: rag_service || FakeRagService.new([]),
       generator: generator || FakeGenerator.new("sin usar"),

@@ -420,18 +420,20 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     elemont[:metadata]["original_source_uri"] = elemont_uri
     kone = episode(identifiers: [])
     kone["facts"]["manufacturer"]["value"] = "KONE"
+    focus = [ vf5_uri, elemont_uri ]
 
-    result = Rag::DocumentIdentityScope.apply(
-      [ vf5, elemont ], kone, focus_uris: [ vf5_uri, elemont_uri ]
-    )
+    result = Rag::DocumentIdentityScope.apply([ vf5, elemont ], kone, focus_uris: focus)
     context = Rag::DocumentIdentityScope.generation_context(result.chunks, result.labels)
 
-    assert_includes result.chunks[0][:content], "Procedimiento VF5"
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Fermator VF5", result.labels[0]
+    assert_equal "reference_only", result.applicability[0]
+    assert_not_includes result.chunks[0][:content], "Procedimiento VF5"
     assert_includes result.chunks[1][:content], "Procedimiento Elemont"
-    assert_includes context, "THIS JOB'S EQUIPMENT: Fermator VF5"
-    assert_includes context, "THIS JOB'S EQUIPMENT: Elemont"
-    assert result.labels.none? { |line| line.to_s.start_with?("REFERENCE ONLY — OTHER EQUIPMENT") }
+    assert_equal "THIS JOB'S EQUIPMENT: Elemont", result.labels[1]
+    assert_equal "neutral", result.applicability[1]
+    assert_equal focus, [ vf5_uri, elemont_uri ]
     assert_not_includes context, "no está seleccionado"
+    assert_not_includes context, "Procedimiento VF5"
   end
 
   test "a chunk outside the selected documents is not promoted" do
@@ -493,6 +495,307 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert segments.none? { |segment| segment["band"] == "MANUAL_FACT" }
   end
 
+  test "photo equipment identity makes a foreign manual reference-only" do
+    identity = orona_identity
+    yida = chunk("yida", "Paso 11. Ajusta el interruptor Yida a 2,5 mm.", canonical_name: "Fuji Yida Guía del Usuario Ascensor", page: 97)
+    blt = chunk("blt", "E18 fallo de nivelación. Compruebe el encoder BLT.", canonical_name: "Código de Avería BLT Ascensor", page: 4)
+
+    result = Rag::DocumentIdentityScope.apply([ yida, blt ], identity)
+    context = Rag::DocumentIdentityScope.generation_context(result.chunks, result.labels)
+
+    assert_equal :no_compatible, result.status
+    assert result.labels.all? { |label| label.start_with?("REFERENCE ONLY — OTHER EQUIPMENT:") }
+    assert_equal [ "reference_only", "reference_only" ], result.applicability
+    [ yida, blt ].each_with_index do |source, index|
+      assert_not_includes result.chunks[index][:content], source[:content]
+    end
+    assert_not_includes context, "2,5 mm"
+    assert_not_includes context, "encoder BLT"
+    assert_includes context, "Manual: Fuji Yida"
+    assert_includes context, "Manual: Código de Avería BLT Ascensor"
+  end
+
+  test "a compatible Orona manual keeps its body" do
+    body = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona."
+    manual = chunk("orona", body, canonical_name: "Manual Orona PBCM-V3")
+
+    result = Rag::DocumentIdentityScope.apply([ manual ], orona_identity)
+
+    assert_equal :scoped, result.status
+    assert_equal "THIS JOB'S EQUIPMENT: Manual Orona PBCM-V3", result.labels[0]
+    assert_equal "compatible", result.applicability[0]
+    assert_equal body, result.chunks[0][:content]
+  end
+
+  test "unknown identity keeps the open body" do
+    body = "Procedimiento genérico de nivelación."
+    manual = chunk("manual", body, canonical_name: "Manual seleccionado")
+    state = {
+      "v" => 1,
+      "episode_id" => "ep-open",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "fault_code" => { "value" => "E18", "status" => "known", "source" => "user" }
+      },
+      "identifiers" => []
+    }
+
+    assert_nil Rag::EquipmentIdentity.from_episode(state)
+    assert_not Rag::DocumentIdentityScope.applicable?(state)
+    result = Rag::DocumentIdentityScope.apply([ manual ], state, focus_uris: [])
+
+    assert_nil result.status
+    assert_equal :not_required, result.reason
+    assert_equal body, result.chunks.sole[:content]
+  end
+
+  test "an unrelated photo identity does not require the policy" do
+    body = "Procedimiento de otro manual."
+    manual = chunk("manual", body, canonical_name: "Fuji Yida")
+
+    assert_not Rag::DocumentIdentityScope.applicable?(nil)
+    result = Rag::DocumentIdentityScope.apply([ manual ], nil)
+
+    assert_nil result.status
+    assert_equal body, result.chunks.sole[:content]
+  end
+
+  test "a pinned Fuji manual is reference-only for Orona and focus stays put" do
+    fuji_uri = "s3://bucket/fuji.pdf"
+    outside_uri = "s3://bucket/orona.pdf"
+    body = "Paso 11. Suplemento Yida de 2,5 mm."
+    fuji = chunk("fuji", body, canonical_name: "Fuji Yida Guía del Usuario Ascensor")
+    outside = chunk("orona", "Procedimiento Orona PBCM-V3 secreto.", canonical_name: "Manual Orona PBCM-V3")
+    fuji[:metadata]["original_source_uri"] = fuji_uri
+    outside[:metadata]["original_source_uri"] = outside_uri
+    focus = [ fuji_uri ]
+
+    result = Rag::DocumentIdentityScope.apply([ fuji, outside ], orona_identity, focus_uris: focus)
+
+    assert_equal [ fuji_uri ], focus
+    assert_equal :no_compatible, result.status
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Fuji Yida Guía del Usuario Ascensor", result.labels[0]
+    assert_not_includes result.chunks[0][:content], "2,5 mm"
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Manual Orona PBCM-V3", result.labels[1]
+    assert_not_includes result.chunks[1][:content], "secreto"
+  end
+
+  test "a selected neutral document stays this job" do
+    uri = "s3://bucket/elemont.pdf"
+    body = "En Elemont revisar el contacto de nivelación BM/B1."
+    selected = chunk("elemont", body, canonical_name: "Elemont montacargas")
+    selected[:metadata]["original_source_uri"] = uri
+    kone = episode(identifiers: [])
+    kone["facts"]["manufacturer"]["value"] = "KONE"
+
+    result = Rag::DocumentIdentityScope.apply([ selected ], kone, focus_uris: [ uri ])
+
+    assert_equal :scoped, result.status
+    assert_equal "neutral", result.applicability[0]
+    assert_equal body, result.chunks[0][:content]
+    assert_equal "THIS JOB'S EQUIPMENT: Elemont montacargas", result.labels[0]
+  end
+
+  test "text path derives the same policy needles from the live episode" do
+    state = orona_known_episode
+    identity = Rag::EquipmentIdentity.from_episode(state)
+
+    assert identity.known?
+    assert_equal "Orona", identity.manufacturer
+    assert_equal Rag::DocumentIdentityScope.needles(state), Rag::DocumentIdentityScope.needles(identity)
+    assert_includes identity.facts.pluck("source"), "photo"
+
+    body = "Revisar PBCM-V3 en la placa Orona."
+    manual = chunk("orona", body, canonical_name: "Manual Orona PBCM-V3")
+    from_episode = Rag::DocumentIdentityScope.apply([ manual ], state)
+    from_identity = Rag::DocumentIdentityScope.apply([ manual ], identity)
+
+    assert_equal from_episode.status, from_identity.status
+    assert_equal from_episode.labels, from_identity.labels
+    assert_equal body, from_identity.chunks[0][:content]
+  end
+
+  test "controller and catalog facts do not make identity known" do
+    catalog = {
+      "v" => 1,
+      "episode_id" => "ep-catalog-only",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => { "value" => "MONARCH", "status" => "known", "source" => "catalog" },
+        "controller" => { "value" => "NICE3000", "status" => "known", "source" => "user" }
+      },
+      "identifiers" => [ { "value" => "CEA15", "source" => "catalog" } ]
+    }
+    identity = Rag::EquipmentIdentity.from_episode(catalog)
+
+    assert_nil identity
+    assert_empty Rag::DocumentIdentityScope.needles(catalog)
+    with_flag("true") do
+      assert_not Rag::DocumentIdentityScope.applicable?(catalog)
+    end
+  end
+
+  test "an old manufacturer is not a needle beside the current photo model" do
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Fuji",
+      needles: [ "Fuji", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Fuji", "source" => "user", "correlation_id" => "query:prior" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:1" }
+      ]
+    )
+    fuji = chunk("fuji", "Paso 11. Suplemento de 2,5 mm.", canonical_name: "Fuji Yida")
+
+    assert_equal [ "PBCM-V3" ], Rag::DocumentIdentityScope.needles(identity)
+    result = Rag::DocumentIdentityScope.apply([ fuji ], identity)
+
+    assert_equal :no_compatible, result.status
+    assert_nil result.reason
+    assert_not_includes result.chunks[0][:content], "2,5 mm"
+  end
+
+  test "inherited KONE is not united with the current Orona photo" do
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "KONE",
+      needles: [ "KONE", "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "KONE", "source" => "user", "correlation_id" => "query:prior" },
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:1" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:1" }
+      ]
+    )
+    kone = chunk("kone", "Procedimiento KONE de nivelación.", canonical_name: "Manual KONE")
+    orona = chunk("orona", "Procedimiento de la placa Orona.", canonical_name: "Manual Orona")
+
+    needles = Rag::DocumentIdentityScope.needles(identity)
+    assert_includes needles, "Orona"
+    assert_includes needles, "PBCM-V3"
+    assert_not_includes needles, "KONE"
+    result = Rag::DocumentIdentityScope.apply([ kone, orona ], identity)
+
+    assert_nil result.reason
+    assert_equal "REFERENCE ONLY — OTHER EQUIPMENT: Manual KONE", result.labels[0]
+    assert_equal "THIS JOB'S EQUIPMENT: Manual Orona", result.labels[1]
+    assert_not_includes result.chunks[0][:content], "Procedimiento KONE"
+    assert_includes result.chunks[1][:content], "Procedimiento de la placa Orona."
+  end
+
+  test "current KONE and Orona are not a compatibility union" do
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "KONE",
+      needles: [ "KONE", "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "KONE", "source" => "user", "correlation_id" => "turn:current" },
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "turn:current" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "turn:current" }
+      ]
+    )
+    kone = chunk("kone", "Procedimiento KONE de nivelación.", canonical_name: "Manual KONE")
+    orona = chunk("orona", "Procedimiento de la placa Orona.", canonical_name: "Manual Orona")
+
+    needles = Rag::DocumentIdentityScope.needles(identity)
+    assert_equal [ "PBCM-V3" ], needles
+    result = Rag::DocumentIdentityScope.apply([ kone, orona ], identity)
+
+    assert_equal :conflicting_current_identity, result.reason
+    assert_equal [ "KONE", "Orona" ], result.excluded_labels
+    assert_equal :no_compatible, result.status
+    assert result.labels.all? { |label| label.start_with?("REFERENCE ONLY") }
+    assert_not_includes result.chunks[0][:content], "Procedimiento KONE"
+    assert_not_includes result.chunks[1][:content], "Procedimiento de la placa Orona."
+  end
+
+  test "a disabled scope with known identity is unavailable and still falls open" do
+    question = "no nivela"
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) { flunk "retrieve_chunks" }
+    rag_calls = 0
+    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+      rag_calls += 1
+      output = Struct.new(:text).new("Respuesta del camino abierto.")
+      Struct.new(:output, :citations, :session_id).new(output, [], nil)
+    end
+
+    result = nil
+    with_flag(nil) do
+      result = service.query(question, episode: orona_known_episode, output_channel: :web)
+    end
+
+    assert_equal "unavailable", Thread.current[:document_identity_scope]["status"]
+    assert_equal "scope_disabled", Thread.current[:document_identity_scope]["reason"]
+    assert_equal 1, rag_calls
+    assert_includes result[:answer], "Respuesta del camino abierto."
+  end
+
+  test "no compatible classification still falls through to open retrieve_and_generate" do
+    question = "no nivela"
+    yida_body = "Paso 11. Ajusta el interruptor Yida a 2,5 mm."
+    chunks = [ chunk("yida", yida_body, canonical_name: "Fuji Yida Guía del Usuario Ascensor", page: 97) ]
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: chunks, retrieval_trace: {} } }
+    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+      rag_calls += 1
+      output = Struct.new(:text).new("Respuesta del camino abierto.")
+      Struct.new(:output, :citations, :session_id).new(output, [], nil)
+    end
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "Sin manual compatible. [1]" }
+    service.define_singleton_method(:document_identity_generator) { generator }
+
+    result = nil
+    with_flag("true") do
+      result = service.query(
+        question,
+        equipment_identity: orona_identity,
+        episode: episode(identifiers: []),
+        output_channel: :web
+      )
+    end
+
+    assert_equal "no_compatible", Thread.current[:document_identity_scope]["status"]
+    assert_equal true, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal 1, rag_calls
+    assert_includes result[:answer], "Respuesta del camino abierto."
+  end
+
+  test "a supplied identity is used after the episode changes" do
+    episode_b = episode(identifiers: [])
+    episode_b["facts"]["manufacturer"]["value"] = "OTIS"
+    episode_b["facts"]["manufacturer"]["source"] = "user"
+    seen = nil
+    yida = chunk("yida", "Paso Yida.", canonical_name: "Fuji Yida")
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) do |*, **|
+      { chunks: [ yida ], retrieval_trace: {} }
+    end
+    original_apply = Rag::DocumentIdentityScope.method(:apply)
+    Rag::DocumentIdentityScope.define_singleton_method(:apply) do |chunks, identity, focus_uris: []|
+      seen = identity
+      original_apply.call(chunks, identity, focus_uris: focus_uris)
+    end
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "clasificado [1]" }
+    service.define_singleton_method(:document_identity_generator) { generator }
+    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+      output = Struct.new(:text).new("abierto")
+      Struct.new(:output, :citations, :session_id).new(output, [], nil)
+    end
+
+    with_flag("true") do
+      service.query("no nivela", equipment_identity: orona_identity, episode: episode_b, output_channel: :web)
+    end
+
+    assert_equal "Orona", seen.manufacturer
+    assert_includes seen.needles, "PBCM-V3"
+    assert_not_includes Rag::DocumentIdentityScope.needles(seen), "OTIS"
+  ensure
+    Rag::DocumentIdentityScope.define_singleton_method(:apply) { |*args, **kwargs| original_apply.call(*args, **kwargs) } if original_apply
+  end
+
   test "a corrected brand is not a needle and a catalog fact is not a needle" do
     corrected = episode(identifiers: [])
     corrected["episode_id"] = "ep-corrected"
@@ -547,6 +850,17 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       "facts" => facts,
       "identifiers" => identifiers
     }
+  end
+
+  def orona_identity
+    Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:orona" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:orona" }
+      ]
+    )
   end
 
   def orona_known_episode

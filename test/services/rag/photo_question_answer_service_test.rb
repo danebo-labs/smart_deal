@@ -399,7 +399,11 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       original_new.call(question, **kwargs)
     end
     BedrockRagService.define_method(:query) do |question, **kwargs|
-      captured[:bedrock] = { question: question, episode: kwargs[:episode] }
+      captured[:bedrock] = {
+        question: question,
+        episode: kwargs[:episode],
+        equipment_identity: kwargs[:equipment_identity]
+      }
       { answer: "ok", citations: [], session_id: nil }
     end
     identity = Rag::EquipmentIdentity.new(
@@ -423,7 +427,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_equal composed, captured[:question]
     assert_equal composed, captured[:bedrock][:question]
     assert_nil captured[:kwargs][:conv_session]
-    assert_nil captured[:kwargs][:equipment_identity]
+    assert_equal identity, captured[:kwargs][:equipment_identity]
+    assert_equal identity, captured[:bedrock][:equipment_identity]
     assert_nil captured[:bedrock][:episode]
     assert_equal identity, service.equipment_identity
   ensure

@@ -135,7 +135,8 @@ module RagQueryConcern
                         output_channel: nil, force_entity_filter: nil, account: nil, user_id: nil,
                         correlation_id: nil, field_photo_id: nil, conversation_session_id: nil,
                         episode_turn: nil, conversational_turn_analysis: nil,
-                        apply_photo_continuity: true, retrieval_question: nil)
+                        apply_photo_continuity: true, retrieval_question: nil,
+                        equipment_identity: :omit)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -231,6 +232,7 @@ module RagQueryConcern
       force_entity_filter
     end
     document_uids           = documents.map { SecureRandom.uuid }
+    identity_kwargs = equipment_identity.equal?(:omit) ? {} : { equipment_identity: equipment_identity }
 
     result = QueryOrchestratorService.new(
       effective_question,
@@ -251,7 +253,8 @@ module RagQueryConcern
       conversation_session_id: conversation_session_id || (conv_session.id if conv_session.respond_to?(:id)),
       correlation_id:      correlation_id,
       field_photo_id:      field_photo_id,
-      apply_photo_continuity: apply_photo_continuity
+      apply_photo_continuity: apply_photo_continuity,
+      **identity_kwargs
     ).execute
 
     # AnswerSafetyProcessor already runs once inside BedrockRagService#query with

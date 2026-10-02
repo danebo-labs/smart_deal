@@ -187,7 +187,7 @@ class BedrockRagService
   def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
             auto_scope_filter: false, account_id: nil, user_id: nil, conversation_session_id: nil,
-            correlation_id: nil, include_diagnostics: false, episode: nil)
+            correlation_id: nil, include_diagnostics: false, episode: nil, equipment_identity: :omit)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -222,6 +222,7 @@ class BedrockRagService
       if (scoped = document_identity_scope_result(
         question,
         episode: episode,
+        equipment_identity: equipment_identity,
         response_locale: response_locale,
         session_context: effective_session_context,
         output_channel: output_channel,
@@ -233,7 +234,12 @@ class BedrockRagService
         conversation_session_id: conversation_session_id,
         correlation_id: correlation_id
       ))
-        return scoped
+        # Classification is done. N4 is what stops this open fallback.
+        if scoped[:equipment_identity_status].to_s == "no_compatible"
+          leave_identity_fallback_open
+        else
+          return scoped
+        end
       end
 
       # Apply the technician pin when the caller forced it, or when the query
@@ -672,9 +678,15 @@ class BedrockRagService
 
   def document_identity_scope_result(question, episode:, response_locale:, entity_s3_uris:, entity_sources:,
                                      force_entity_filter:, account_id:, user_id:, conversation_session_id:,
-                                     correlation_id:, session_context: nil, output_channel: nil)
+                                     correlation_id:, session_context: nil, output_channel: nil,
+                                     equipment_identity: :omit)
     Thread.current[:document_identity_scope] = nil
-    return nil unless Rag::DocumentIdentityScope.applicable?(episode)
+    identity = resolved_equipment_identity(episode, equipment_identity)
+    if identity == :malformed || (identity&.known? && !Rag::DocumentIdentityScopeFlag.enabled?)
+      record_identity_outcome(status: "unavailable", reason: identity == :malformed ? "malformed_identity" : "scope_disabled")
+      return nil
+    end
+    return nil unless identity&.known? && Rag::DocumentIdentityScopeFlag.enabled?
 
     profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
     number_of_results = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
@@ -688,7 +700,11 @@ class BedrockRagService
       correlation_id: correlation_id
     )
     original = Array(retrieval[:chunks])
-    applied = Rag::DocumentIdentityScope.apply(original, episode, focus_uris: entity_s3_uris)
+    applied = Rag::DocumentIdentityScope.apply(original, identity, focus_uris: entity_s3_uris)
+    if applied.status == :unavailable
+      record_document_identity_scope(original, applied, path: "retrieve_and_generate", fallback: true)
+      return nil
+    end
     labeled = applied.labels.any?(&:present?)
     record_document_identity_scope(
       original, applied,
@@ -728,13 +744,16 @@ class BedrockRagService
       return nil
     end
 
-    finish_document_identity_generation(
+    result = finish_document_identity_generation(
       question: question,
       raw_answer: raw_answer,
       chunks: applied.chunks,
       response_locale: response_locale,
       retrieval: retrieval
     )
+    result[:equipment_identity_status] = applied.status.to_s
+    result[:equipment_identity_reason] = applied.reason&.to_s
+    result
   rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
     document_identity_technical_failure(e)
   rescue StandardError => e
@@ -771,9 +790,42 @@ class BedrockRagService
       "this_job" => labels.count { |line| line.to_s.start_with?("THIS JOB'S EQUIPMENT:") },
       "unconfirmed_general" => applied.unconfirmed_general,
       "undeclared_private" => applied.undeclared_private,
+      "status" => applied.status&.to_s,
+      "reason" => applied.reason&.to_s,
+      "reference_only" => applied.reference_only?,
       "path" => path,
       "fallback" => fallback,
       "label_lines" => labels.compact
+    }
+    Thread.current[:document_identity_scope] = stats
+    Rails.logger.info("[DOCUMENT_IDENTITY] #{stats.to_json}")
+  end
+
+  def resolved_equipment_identity(episode, equipment_identity)
+    if equipment_identity != :omit
+      return nil if equipment_identity.nil?
+      return equipment_identity if equipment_identity.is_a?(Rag::EquipmentIdentity)
+
+      return :malformed
+    end
+
+    Rag::EquipmentIdentity.from_episode(episode)
+  end
+
+  def leave_identity_fallback_open
+    stats = Thread.current[:document_identity_scope]
+    return unless stats
+
+    stats["fallback"] = true
+    stats["path"] = "retrieve_and_generate"
+  end
+
+  def record_identity_outcome(status:, reason:)
+    stats = {
+      "status" => status,
+      "reason" => reason,
+      "path" => "retrieve_and_generate",
+      "fallback" => true
     }
     Thread.current[:document_identity_scope] = stats
     Rails.logger.info("[DOCUMENT_IDENTITY] #{stats.to_json}")

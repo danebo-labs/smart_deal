@@ -1,12 +1,14 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3–N6 NOT STARTED`
+**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4–N6 NOT STARTED`
 
 **N0:** `N0 COMPLETE`
 
 **N1:** `N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 **N2:** `N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
+
+**N3:** `N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 Source of truth de este bloque. Reconcilia el diagnóstico read-only del flow real Orona PBCM-V3, la surgical review de Codex y la revisión final de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica o completa a Codex, manda Opus. Baseline de código: `d3909808a3508e83851f5475368fbd52d74c0e2a`.
 
@@ -783,7 +785,7 @@ Un solo release. No hay código funcional antes del harness.
 N0 COMPLETE
 ```
 
-El harness sigue en la suite. Los contratos futuros viven ahí y quedan en skip salvo `N0_CONTRACTS=1`. El mensaje de skip es `N0 contract — expected to become green in N<fase>`. Cada test skipped contiene los asserts del contrato, no un placeholder. Después de N2, los tres contratos N2 pasan con `N0_CONTRACTS=1`. N3 y N4 siguen rojos.
+El harness sigue en la suite. Los contratos futuros viven ahí y quedan en skip salvo `N0_CONTRACTS=1`. El mensaje de skip es `N0 contract — expected to become green in N<fase>`. Cada test skipped contiene los asserts del contrato, no un placeholder. Después de N3, los tres contratos N2 y el de N3 pasan con `N0_CONTRACTS=1`. Los dos de N4 siguen rojos.
 
 Invariantes que quedan verdes en la suite:
 
@@ -798,10 +800,13 @@ Contratos N2, verdes con `N0_CONTRACTS=1` después de este snapshot:
 - `same-turn photo question composes retrieval after accepted visual identity` — la query anidada lleva la pregunta literal, el goal y Orona/PBCM-V3. 1 Vision. 0 TurnInterpreter extra.
 - `uncertain accepted photo may constrain photo-question retrieval without promoting facts` — no promueve facts y sí aporta identidad efímera.
 
+Contrato N3, verde con `N0_CONTRACTS=1` después de esta policy:
+
+- `foreign manufacturer chunks are reference-only for known equipment` — la identidad Orona/PBCM-V3 llega a `DocumentIdentityScope`. Yida/BLT quedan reference-only y pierden el cuerpo en el prompt de scope. No cierra el fallback abierto ni la respuesta final.
+
 Contratos que siguen rojos. Ninguno pasó por accidente:
 
-- `foreign manufacturer chunks are reference-only for known equipment` — N3. La identidad Orona/PBCM-V3 no llega a `DocumentIdentityScope`, así que Yida/BLT no quedan clasificados reference-only ni pierden el cuerpo en el prompt de scope. No exige cerrar el fallback abierto ni la respuesta final.
-- `known equipment photo retrieval does not fall open onto a foreign procedure` — N4. Con identidad conocida, el camino sigue en `retrieve_and_generate` abierto y el procedimiento Yida llega a la respuesta.
+- `known equipment photo retrieval does not fall open onto a foreign procedure` — N4. Con identidad conocida, el camino sigue en `retrieve_and_generate` abierto (`open_calls` 1).
 - `foreign manufacturer chunks cannot create manual fact` — N4. Aunque el scope ya quite el cuerpo, el chunk Yida/BLT sigue siendo citable y puede producir `MANUAL_FACT`.
 
 ### N1 — F4 VisualTaskContext
@@ -864,7 +869,47 @@ Archivos fuera del trío principal, y por qué: `app/services/rag/equipment_iden
 
 ### N3 — Common EquipmentIdentity policy
 
-`DocumentIdentityScope` acepta `EquipmentIdentity`, devuelve `:scoped` / `:no_compatible` / `:unavailable`, y es la misma policy para texto y foto. El caller de texto la deriva del episodio vivo. El de foto la toma del snapshot.
+```text
+N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+```
+
+Una sola policy: `Rag::DocumentIdentityScope`. No hay scope de foto ni de texto aparte. El caller de texto deriva `Rag::EquipmentIdentity.from_episode` del episodio vivo. El de foto reenvía el snapshot de N2. `execute_rag_query(..., equipment_identity:)` y `QueryOrchestratorService` sólo transportan. Si el keyword viene explícito, gana el snapshot, aunque el episodio vivo ya sea otro. `nil` explícito no relee el episodio. El RAG anidado no recibe `conv_session`.
+
+Identidad conocida para la policy: un fact `manufacturer` o `model` con source `user` o `photo`. No alcanzan `controller`, `fault_code`, un fact de catálogo ni un identifier suelto. En ese caso la búsqueda sigue abierta.
+
+Outcomes de `DocumentIdentityScope::Result`:
+
+- `:scoped` — hay al menos un body aplicable (`compatible` o pin neutral).
+- `:no_compatible` — la policy corrió y ningún body aplica. Incluye retrieval vacío y el caso en que todo chunk queda reference-only.
+- `:unavailable` — la policy no pudo correr. En N3: flag apagada con identidad conocida, o identidad requerida mal formada.
+
+`status` nil y `reason: :not_required` significan que la policy no era requerida (identidad desconocida). No es `:unavailable`.
+
+Compatible: `canonical_name`, `original_filename` o `section_identity` contiene un needle vigente. El body queda y el label es `THIS JOB'S EQUIPMENT`.
+
+Reference-only: el chunk no contiene un needle, o está fuera del Focus, o el documento seleccionado nombra una marca de `KbDocumentResolver::BRANDS` distinta del manufacturer vigente. El body de procedimiento sale del contexto de generación. Queda la identificación del manual. `identity_applicability: "reference_only"` marca el chunk para N4. Las citas todavía lo incluyen.
+
+Pin neutral: el documento seleccionado no nombra una marca de `BRANDS`. Sigue `THIS JOB` (`applicability: "neutral"`). Elemont con trabajo KONE se mantiene. Fermator sí es marca y queda reference-only. No hay auto-unpin ni se amplía la búsqueda fuera del Focus. Un chunk Orona fuera de un pin Fuji no se promueve.
+
+Precedencia, la misma de `match_needles`:
+
+- Un model de otro `correlation_id` deja fuera al manufacturer heredado. Fuji heredado + `PBCM-V3` de la foto actual no usa Fuji como needle.
+- Facts del mismo `correlation_id` viajan juntos. Orona + PBCM-V3 de la misma foto son los dos needles.
+- KONE heredado (`query:prior`) + foto actual Orona/PBCM-V3 no es una unión. KONE no aplica. Orona y PBCM-V3 sí.
+- KONE y Orona los dos con el `correlation_id` del turno actual son conflicto. `reason: :conflicting_current_identity`. Ninguno de los dos labels vuelve aplicable un body. El model no conflictivo (PBCM-V3) puede seguir siendo needle. No hay llamada a un modelo para resolverlo.
+
+N3 no cierra el fallback. `:no_compatible` y `:unavailable` siguen cayendo en `retrieve_and_generate` abierto. Las citas reference-only siguen pudiendo producir `MANUAL_FACT`. Eso es N4.
+
+`N0_CONTRACTS=1` después de N3: 4 PASS / 2 FAIL.
+
+- N2 legacy reuse PASS
+- N2 same-turn PASS
+- N2 uncertain PASS
+- N3 identity scope PASS
+- N4 open fallback FAIL (`open_calls` 1)
+- N4 citations FAIL (el chunk Yida sigue siendo citable)
+
+No hubo llamadas reales a Vision ni a Bedrock. N3 no está verificado en producción. N4–N6 no empezaron. `AGENTS.md` no se tocó: el cambio doctrinal queda con N4/N5.
 
 ### N4 — Fail-closed retrieval + citation safety
 
@@ -1046,9 +1091,10 @@ Queda registrado para no reabrir la versión anterior de la propuesta.
 N0 COMPLETE
 N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
-N3–N6 NOT STARTED
+N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+N4–N6 NOT STARTED
 ```
 
-F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1 y N2 no están verificados en producción.
+F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1, N2 y N3 no están verificados en producción.
 
-Siguiente paso: review de N2. No deploy. No implementar N3 todavía.
+Siguiente paso: review de N3. No deploy. No implementar N4 todavía.

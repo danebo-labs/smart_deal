@@ -48,7 +48,7 @@ class QueryOrchestratorService
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, auto_scope_filter: false, locale: nil,
                  user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil, raw_question: nil,
-                 apply_photo_continuity: true, expected_episode_id: nil)
+                 apply_photo_continuity: true, expected_episode_id: nil, equipment_identity: :omit)
     @query = query
     @raw_question = raw_question
     @images = images || []
@@ -70,6 +70,8 @@ class QueryOrchestratorService
     @field_photo_id = field_photo_id
     @apply_photo_continuity = apply_photo_continuity
     @expected_episode_id = expected_episode_id
+    @equipment_identity = equipment_identity
+    @equipment_identity_supplied = equipment_identity != :omit
     @ai_provider = AiProvider.new
   end
 
@@ -236,6 +238,7 @@ class QueryOrchestratorService
         conversation_session_id: @conversation_session_id,
         correlation_id: @correlation_id,
         episode: episode_for_scope,
+        equipment_identity: resolved_equipment_identity,
         raw_question: @raw_question
       )
       outcome = structured&.execute
@@ -291,6 +294,7 @@ class QueryOrchestratorService
         force_entity_filter: @force_entity_filter,
         auto_scope_filter: @auto_scope_filter,
         episode: episode_for_scope,
+        equipment_identity: resolved_equipment_identity,
         **rag_telemetry
       ).merge(upload_context)
     when TOOLS[:HYBRID_QUERY]
@@ -316,6 +320,7 @@ class QueryOrchestratorService
         force_entity_filter: @force_entity_filter,
         auto_scope_filter: @auto_scope_filter,
         episode: episode_for_scope,
+        equipment_identity: resolved_equipment_identity,
         **rag_telemetry
       ).merge(upload_context)
     end
@@ -371,6 +376,18 @@ class QueryOrchestratorService
     @conv_session.active_episode
   end
 
+  # Explicit snapshot wins. Otherwise the text path derives one identity
+  # from the live episode. Supplied nil stays unknown and does not re-read.
+  def resolved_equipment_identity
+    return @resolved_equipment_identity if defined?(@resolved_equipment_identity)
+
+    @resolved_equipment_identity = if @equipment_identity_supplied
+      @equipment_identity.is_a?(Rag::EquipmentIdentity) ? @equipment_identity : nil
+    else
+      Rag::EquipmentIdentity.from_episode(episode_for_scope)
+    end
+  end
+
   def denied_pin_set_result
     uris = Array(@entity_s3_uris).map(&:to_s).compact_blank.uniq
     return nil if uris.empty?
@@ -398,6 +415,7 @@ class QueryOrchestratorService
       conversation_session_id: @conversation_session_id,
       correlation_id: @correlation_id,
       episode: episode_for_scope,
+      equipment_identity: resolved_equipment_identity,
       session_context: @session_context
     )
     outcome = route&.execute
@@ -475,6 +493,8 @@ class QueryOrchestratorService
         output_channel: @output_channel,
         force_entity_filter: @force_entity_filter,
         auto_scope_filter: @auto_scope_filter,
+        episode: episode_for_scope,
+        equipment_identity: resolved_equipment_identity,
         **rag_telemetry
       )
     rescue StandardError => e

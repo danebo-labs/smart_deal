@@ -83,8 +83,9 @@ module Rag
         correlation_id:  @correlation_id,
         conversation_session_id: @session&.id,
         # The visual decision already ran. This retrieve must not open another one.
-        # equipment_identity stays on this object. Document compatibility is not N2.
-        apply_photo_continuity: false
+        # The N2 snapshot is the identity for this turn. Do not pass conv_session.
+        apply_photo_continuity: false,
+        equipment_identity: @equipment_identity
       )
       return nil unless result.success?
 

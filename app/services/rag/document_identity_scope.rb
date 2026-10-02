@@ -1,11 +1,27 @@
 # frozen_string_literal: true
 
 module Rag
-  # The label is computed from the retrieved chunk; the catalog is not
-  # consulted. Matching chunks keep their body. Other-equipment chunks keep
-  # only their source identity so their procedures cannot be transplanted.
+  # One compatibility policy for typed turns and photo turns.
+  # Callers pass a Rag::EquipmentIdentity. An episode is accepted only so
+  # the text path can be derived through EquipmentIdentity.from_episode.
+  #
+  # Outcomes when the policy is required (identity known):
+  #   :scoped         — at least one chunk body applies to this equipment
+  #   :no_compatible  — the policy ran and no body applies
+  #   :unavailable    — the policy could not run reliably
+  #
+  # N3 classifies and strips foreign procedural bodies from the generation
+  # context. It does not close the caller's open retrieve_and_generate
+  # fallback and it does not drop reference-only citations. That is N4.
   class DocumentIdentityScope
-    Result = Data.define(:chunks, :labels, :blocked, :undeclared_private, :unconfirmed_general)
+    Result = Data.define(
+      :chunks, :labels, :blocked, :undeclared_private, :unconfirmed_general,
+      :status, :reason, :applicability, :excluded_labels
+    ) do
+      def reference_only?
+        Array(applicability).any? { |item| item == "reference_only" }
+      end
+    end
     PREAMBLE = "Only evidence marked THIS JOB'S EQUIPMENT can support a step, terminal, code, or value for this job. " \
                "Evidence marked REFERENCE ONLY — OTHER EQUIPMENT contains source identity only; its procedural body " \
                "was removed and cannot support an instruction for this job."
@@ -14,42 +30,73 @@ module Rag
     # A catalog fact is a query signal. It is not a needle. Controller is the
     # same: F8 may store it, and this list stays user and photo.
     NEEDLE_SOURCES = %w[user photo].freeze
+    Resolution = Data.define(:values, :conflict, :manufacturer_labels, :excluded_labels)
 
-    def self.applicable?(episode)
+    def self.applicable?(identity_or_episode)
       return false unless DocumentIdentityScopeFlag.enabled?
 
-      parsed = parsed_episode(episode)
-      known_value(parsed, "manufacturer").present? || known_value(parsed, "model").present?
+      identity = coerce_identity(identity_or_episode)
+      identity.is_a?(EquipmentIdentity) && identity.known?
     end
 
-    def self.needles(episode)
-      match_needles(episode)
+    def self.needles(identity_or_episode)
+      identity = coerce_identity(identity_or_episode)
+      return [] unless identity.is_a?(EquipmentIdentity)
+
+      resolve_needles(identity).values
     end
 
-    def self.apply(chunks, episode, focus_uris: [])
+    def self.apply(chunks, identity_or_episode, focus_uris: [])
+      identity = coerce_identity(identity_or_episode)
+      if identity == :malformed
+        return build_result(
+          chunks: Array(chunks),
+          labels: blank_labels(chunks),
+          status: :unavailable,
+          reason: :malformed_identity
+        )
+      end
+
       uris = Array(focus_uris).map { |uri| uri.to_s.strip }.compact_blank.to_set
-      needles = match_needles(episode)
-      return unchanged(chunks) if needles.empty? && uris.empty?
+      resolution = identity.is_a?(EquipmentIdentity) ? resolve_needles(identity) : empty_resolution
+      needles = resolution.values
+      return not_required(chunks) if !identity&.known? && needles.empty? && uris.empty?
 
       labels = []
+      applicability = []
       scoped_chunks = Array(chunks).map do |chunk|
-        membership = focus_membership(chunk, uris)
-        if membership == :in || (membership.nil? && (needles.empty? || identity_matches?(chunk, needles)))
-          labels << (membership == :in || needles.any? ? this_job_line(document_name(chunk)) : nil)
-          chunk
-        else
+        kind = chunk_applicability(chunk, needles, focus_membership(chunk, uris), identity, resolution)
+        case kind
+        when :compatible, :neutral
+          labels << this_job_line(document_name(chunk))
+          applicability << kind.to_s
+          chunk.merge(identity_applicability: kind.to_s)
+        when :reference_only
           labels << other_equipment_line(document_name(chunk))
-          chunk.merge(content: reference_identity(chunk))
+          applicability << "reference_only"
+          chunk.merge(content: reference_identity(chunk), identity_applicability: "reference_only")
+        else
+          labels << nil
+          applicability << nil
+          chunk
         end
       end
-      return unchanged(chunks) if labels.all?(&:blank?)
+      return not_required(chunks) if labels.all?(&:blank?) && !identity&.known?
 
-      Result.new(
+      status = if applicability.any? { |item| item == "compatible" || item == "neutral" }
+        :scoped
+      elsif identity&.known?
+        :no_compatible
+      else
+        :scoped
+      end
+      build_result(
         chunks: scoped_chunks,
         labels: labels,
-        blocked: false,
-        undeclared_private: 0,
-        unconfirmed_general: 0
+        status: status,
+        reason: resolution.conflict ? :conflicting_current_identity : nil,
+        applicability: applicability,
+        excluded_labels: resolution.excluded_labels
       )
     end
 
@@ -102,13 +149,72 @@ module Rag
     end
     private_class_method :document_name
 
-    def self.unchanged(chunks)
+    def self.not_required(chunks)
+      build_result(chunks: Array(chunks), labels: blank_labels(chunks), status: nil, reason: :not_required)
+    end
+    private_class_method :not_required
+
+    def self.build_result(chunks:, labels:, status:, reason: nil, applicability: nil, excluded_labels: [])
       Result.new(
-        chunks: Array(chunks), labels: Array.new(Array(chunks).size),
-        blocked: false, undeclared_private: 0, unconfirmed_general: 0
+        chunks: chunks,
+        labels: labels,
+        blocked: false,
+        undeclared_private: 0,
+        unconfirmed_general: 0,
+        status: status,
+        reason: reason,
+        applicability: applicability || Array.new(Array(chunks).size),
+        excluded_labels: Array(excluded_labels)
       )
     end
-    private_class_method :unchanged
+    private_class_method :build_result
+
+    def self.blank_labels(chunks)
+      Array.new(Array(chunks).size)
+    end
+    private_class_method :blank_labels
+
+    # :out stays reference-only so a pin is not widened.
+    # A needle match is this job's equipment.
+    # A selected document that names a different KbDocumentResolver brand is
+    # reference-only. A selected document that does not name one stays
+    # THIS JOB: the pin compensates for incomplete metadata.
+    def self.chunk_applicability(chunk, needles, membership, identity, resolution)
+      return :reference_only if membership == :out
+      return :compatible if needles.any? && identity_matches?(chunk, needles)
+      return conflicting_or_neutral(chunk, identity, resolution) if membership == :in
+      return nil if needles.empty?
+
+      :reference_only
+    end
+    private_class_method :chunk_applicability
+
+    def self.conflicting_or_neutral(chunk, identity, resolution)
+      return :neutral unless identity&.known?
+      return :reference_only if conflicting_brand?(chunk, resolution)
+
+      :neutral
+    end
+    private_class_method :conflicting_or_neutral
+
+    def self.conflicting_brand?(chunk, resolution)
+      brands = brands_in_identity(chunk)
+      return false if brands.empty?
+
+      known = resolution.manufacturer_labels
+      brands.any? { |brand| known.none? { |label| label == brand || contains_word?(label, brand) } }
+    end
+    private_class_method :conflicting_brand?
+
+    def self.brands_in_identity(chunk)
+      metadata = metadata_of(chunk)
+      text = IDENTITY_FIELDS.filter_map { |field| metadata[field].presence }.join(" ")
+      normalized = FollowupQueryRewriter.normalize_label(text)
+      return [] if normalized.blank?
+
+      KbDocumentResolver::BRANDS.select { |brand| normalized.match?(/\b#{Regexp.escape(brand)}\b/) }
+    end
+    private_class_method :brands_in_identity
 
     def self.identity_matches?(chunk, needles)
       metadata = metadata_of(chunk)
@@ -127,39 +233,56 @@ module Rag
     end
     private_class_method :contains_word?
 
-    def self.match_needles(episode)
-      parsed = parsed_episode(episode)
-      values = []
-      manufacturer = needle_fact(parsed, "manufacturer")
-      model = needle_fact(parsed, "model")
-      if model
-        values << model["value"]
-        # A model declared on a later turn supersedes an inherited
-        # manufacturer. Same-turn facts share correlation_id and both match.
-        values << manufacturer["value"] if manufacturer && same_correlation?(manufacturer, model)
-      elsif manufacturer
-        values << manufacturer["value"]
+    # A current model is more specific than an inherited manufacturer.
+    # Same-correlation facts travel together. Two current trusted
+    # manufacturers are not a compatibility union: neither label makes a
+    # body applicable. The current model, when there is one, stays a needle.
+    def self.resolve_needles(identity)
+      facts = identity.facts
+      models = slot_facts(facts, "model")
+      manufacturers = slot_facts(facts, "manufacturer")
+      identifiers = slot_facts(facts, "identifier")
+      current_model = models.last
+      if current_model
+        current_manufacturers = manufacturers.select { |fact| same_correlation?(fact, current_model) }
+        current_identifiers = identifiers.select { |fact| same_correlation?(fact, current_model) }
+        current_models = models.select { |fact| fact.equal?(current_model) || same_correlation?(fact, current_model) }
+      else
+        current_manufacturers = manufacturers
+        current_identifiers = identifiers
+        current_models = []
       end
-      parsed.identifiers.each do |item|
-        next unless needle_source?(item)
-        # Same rule as an inherited manufacturer: once this turn has a model,
-        # an identifier from an earlier turn is not current equipment unless
-        # that turn restated it and stamped the same correlation_id.
-        next if model && !same_correlation?(item, model)
 
-        values << item["value"]
+      distinct = current_manufacturers.map { |fact| normalize_label(fact["value"]) }.uniq
+      conflict = distinct.size > 1
+      values = current_models.pluck("value")
+      excluded = conflict ? current_manufacturers.pluck("value") : []
+      current_manufacturers.each { |fact| values << fact["value"] } unless conflict
+      current_identifiers.each do |fact|
+        next if conflict && excluded.any? { |label| normalize_label(label) == normalize_label(fact["value"]) }
+
+        values << fact["value"]
       end
-      values.map { |value| value.to_s.strip }.compact_blank.uniq
+      Resolution.new(
+        values: values.map { |value| value.to_s.strip }.compact_blank.uniq,
+        conflict: conflict,
+        manufacturer_labels: conflict ? [] : current_manufacturers.map { |fact| normalize_label(fact["value"]) }.uniq,
+        excluded_labels: excluded.map { |value| value.to_s.strip }.uniq
+      )
     end
-    private_class_method :match_needles
+    private_class_method :resolve_needles
 
-    def self.needle_fact(parsed, key)
-      fact = known_fact(parsed, key)
-      return nil unless needle_source?(fact)
-
-      fact
+    def self.empty_resolution
+      Resolution.new(values: [], conflict: false, manufacturer_labels: [], excluded_labels: [])
     end
-    private_class_method :needle_fact
+    private_class_method :empty_resolution
+
+    def self.slot_facts(facts, slot)
+      Array(facts).select do |fact|
+        fact["slot"] == slot && needle_source?(fact) && fact["value"].present?
+      end
+    end
+    private_class_method :slot_facts
 
     def self.needle_source?(fact)
       NEEDLE_SOURCES.include?(fact.to_h["source"].to_s)
@@ -190,29 +313,25 @@ module Rag
     end
     private_class_method :chunk_uris
 
-    def self.known_fact(parsed, key)
-      fact = parsed.fact(key)
-      return nil unless fact&.dig("status") == "known" && fact["value"].present?
-
-      fact
-    end
-    private_class_method :known_fact
-
-    def self.known_value(parsed, key)
-      known_fact(parsed, key)&.dig("value")
-    end
-    private_class_method :known_value
-
     def self.same_correlation?(earlier, current)
       turn = current["correlation_id"].to_s
       turn.present? && turn == earlier["correlation_id"].to_s
     end
     private_class_method :same_correlation?
 
-    def self.parsed_episode(episode)
-      episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+    def self.normalize_label(value)
+      FollowupQueryRewriter.normalize_label(value)
     end
-    private_class_method :parsed_episode
+    private_class_method :normalize_label
+
+    def self.coerce_identity(input)
+      return nil if input.nil?
+      return input if input.is_a?(EquipmentIdentity)
+      return EquipmentIdentity.from_episode(input) if input.is_a?(ActiveEpisode) || input.is_a?(Hash)
+
+      :malformed
+    end
+    private_class_method :coerce_identity
 
     def self.metadata_of(chunk)
       chunk[:metadata].to_h.stringify_keys

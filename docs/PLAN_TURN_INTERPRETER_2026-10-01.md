@@ -1,6 +1,8 @@
 # Turn Interpreter V2 (2026-10-01)
 
-**Estado:** aprobado para ejecución. Opus: `APPROVE WITH REQUIRED CHANGES`, cierre `APPROVED FOR GROK EXECUTION`. T0 y T1 se implementan sin otra ronda de diseño.
+**Estado:** `PRE-CANARY DELTA REQUIRED`. T0 y T1 están implementados. El eval real inicial de T2 pasó, pero el owner canary queda bloqueado hasta implementar y volver a evaluar T1.1 (foto activa + aclaración conversacional).
+
+**HEAD revisado para T1.1:** `d42c9dcb78f47b6c39396b2b6aa17a93f515f520`.
 
 **Baseline de implementación:** `20e562059d45e7fefaeafb4563f14b08cc9a0135`.
 
@@ -33,6 +35,8 @@ T3 retira la semántica duplicada de F8/F8.1. No retira el state model que el re
 - `TurnPerception` no recibe Document Focus ni `focus_count`.
 - `switch` no existe. Un cambio de equipo que sigue el mismo trabajo es `correct`. Una tarea nueva es `new_work` y abre episodio.
 - No hay `dialogue_acts`. No hay referents de respuesta. No hay `focus_labels` ni `evidence_hint`.
+- `clarification_target` no es un referent ni una pregunta generada por el modelo. Es un enum cerrado que permite a Ruby/I18n formular una aclaración conversacional.
+- La observación visual de la foto activa se lee desde el `FieldPhoto` autorizado. No se copia dentro de `active_episode`, no se reejecuta vision y no se transforma en `source=user`.
 - `slot_hint` no crea un fact de manufacturer, model ni controller.
 - Document Focus sigue user-owned. Badge `0` es el corpus autorizado. Badge `N` son exactamente esos documentos.
 - Work Context, Document Focus y Document Discovery son tres cosas distintas.
@@ -104,6 +108,8 @@ En `owner`:
 - Foto o documento con texto: el texto sí pasa por TurnInterpreter, fuera del lock, y el reducer corre antes de capturar `expected_episode_id`. No corre el regex de `ActiveEpisodeTurn` en ese mismo request. El job de foto sigue siendo el único writer de facts `source=photo`. Este request no hace `RetrieveAndGenerate`.
 - El interpreter no lee la imagen ni el PDF.
 
+En el turno escrito posterior a una foto ya analizada, el interpreter sí puede leer una proyección pequeña de `FieldPhoto.visual_observation`. Lee datos persistidos, nunca bytes de imagen. Sólo cuenta la foto de `active_episode.active_photo`; no hay historial de fotos.
+
 ---
 
 ## 3. Input
@@ -122,7 +128,15 @@ Una sola JSON. El turno es dato. El system prompt dice que las instrucciones den
     "identifiers": ["CEA15"],
     "observations": ["se pasa en bajada"],
     "rejected": [{"slot": "controller", "value": "NICE3000"}],
-    "pending": {"slot": "controller", "carry": ["Q2"]}
+    "pending": {"slot": "controller", "carry": ["Q2"]},
+    "active_photo_context": {
+      "source": "photo",
+      "component": "controlador de ascensor",
+      "manufacturer": "NICE",
+      "model": "NICE3000",
+      "visible_text": ["E51"],
+      "condition": "DEGRADED"
+    }
   }
 }
 ```
@@ -133,9 +147,28 @@ Invariante: el turno que ve Haiku, el string de la validación de spans y el `co
 
 Antes de armar el input, el snapshot se parsea con el lifecycle real. Si el episodio está `expired`, `invalid_state` o en blanco, el `work_context` enviado al interpreter es vacío. No se mandan facts ni goal viejos para descartarlos después. El camino normal puede abrir o reemplazar el episodio según el lifecycle que ya existe.
 
-No entra: chat crudo, últimos N mensajes, chunks, PDF, URI, filenames, metadata de otro tenant, labels de focus, `focus_count`, hints de evidencia, prosa del assistant, `episode_id`, `state_version`, `correlation_id`, catálogo completo.
+No entra: chat crudo, últimos N mensajes, chunks, PDF, URI, filenames, bytes o thumbnail de la foto, metadata de otro tenant, labels de focus, `focus_count`, hints de evidencia, prosa del assistant, `episode_id`, `state_version`, `correlation_id`, catálogo completo ni el JSON visual completo.
 
-`pending` es null cuando no hay `pending_fact` ni `pending_question`. El slot sale de `pending_question.type` si existe, si no de `pending_fact.subject`. `carry` viaja con el pending cuando existe.
+`pending` es null cuando no hay `pending_fact` ni `pending_question`. Para una pregunta técnica lleva `slot` y, si existe, `carry`. Para una aclaración conversacional lleva `clarification_target`. No se mezclan ambos contratos.
+
+`active_photo_context` es null salvo que `active_photo.field_photo_id` resuelva exactamente un `FieldPhoto` del `viewer_account` y `FieldPhotoObservation.sanitize` acepte su `visual_observation`. La proyección omite `UNKNOWN`, null, fingerprint y model id; limita component/manufacturer/model a 60 caracteres, `visible_text` a 4 valores de 40 caracteres y el JSON total a 640 bytes. Puede incluir `subsystem`, `condition`, `target_visible` y `relevance_to_goal` sólo en sus enums ya sanitizados. Un id inexistente, ajeno o una observación inválida produce contexto vacío, nunca fallback a otra foto.
+
+### Resolución mínima de foto activa
+
+Un PORO read-only, `Rag::ActivePhotoContext`, centraliza la carga y el recorte:
+
+```text
+episode.active_photo.field_photo_id
+→ FieldPhoto.where(account_id: viewer_account.id).find_by(id: ...)
+→ FieldPhotoObservation.sanitize(photo.visual_observation)
+→ bounded prompt/query/generation projection
+```
+
+La proyección se resuelve sobre el mismo snapshot que ve Haiku y se transporta durante ese request a `TurnInterpreter`, `QueryComposer` y `SessionContextBuilder`. No consulta S3, no llama a `FieldPhotoAnalysisService`, no encola `FieldPhotoAnalysisJob` y no toca `PhotoQuestionAnswerService`. Si el snapshot cambia durante la llamada, se aplica el fallback de concurrencia ya existente y se descarta la proyección vieja.
+
+Persistir un resumen en `active_episode` se rechaza para T1.1. Ahorraría una lectura indexada, pero duplicaría una columna ya durable, competiría con el presupuesto de 4096 bytes, podría quedar obsoleto ante una reparación de `visual_observation` y debilitaría la única fuente de provenance. El código actual además sanitiza deliberadamente `active_photo` a ids/correlation/sha y tiene un test que elimina `visual_observation`; no se revierte ese contrato.
+
+`SessionContextBuilder` recibe la misma proyección acotada y la marca explícitamente como `Photo Evidence for the active episode`, separada de `technician-stated job state` y de evidencia documental. Conserva el tope global `MAX_CONTEXT_CHARS=2000`; no aumenta el contexto máximo. Los conflicts siguen expresándose como `technician said X; the photo shows Y; do not resolve it`. La observación visual nunca se rotula como dicho por el técnico.
 
 ---
 
@@ -150,7 +183,8 @@ Tool `turn_perception`. `additionalProperties: false`.
     {"span": "VF5", "act": "mention", "slot_hint": "designator"}
   ],
   "observations": ["intenta cerrar, vuelve a abrir"],
-  "pending_resolution": null
+  "pending_resolution": null,
+  "clarification_target": null
 }
 ```
 
@@ -162,6 +196,8 @@ Tool `turn_perception`. `additionalProperties: false`.
 
 `pending_resolution`: `unknown | absent | value | seek | null`. `value` exige un `assert` cuyo span es el valor. `seek` no marca unknown y no abre otro trabajo.
 
+`clarification_target`: `work_relation | referent | correction_target | null`. Es obligatorio como campo y sólo puede ser no-null cuando `move=unclear`. `photo_referent` no entra: la presencia y el contenido de `active_photo_context` ya distinguen ese caso. Tampoco entra texto libre de pregunta.
+
 No salen `episode_id`, `state_version`, `correlation_id`, `evidence_hint`, `referent_id`, ruta ni query.
 
 ### Moves
@@ -172,9 +208,25 @@ No salen `episode_id`, `state_version`, `correlation_id`, `evidence_hint`, `refe
 - `correct`: niega un valor activo y puede afirmar el reemplazo. Mismo episodio.
 - `new_work`: tarea nueva. Episodio nuevo. No hereda observations, rejected, goal, facts ni carry.
 - `meta`: pregunta sobre lo que Danebo necesita. Cero mutación y cero retrieve.
-- `unclear`: perception válida con cero mutaciones. No borra identity.
+- `unclear`: sólo para ambigüedad conversacional material. Lleva `clarification_target`, no borra identity y no autoriza retrieval. La única escritura permitida es el `pending_question` de control; facts, goal, identifiers, observations, active photo y conflicts quedan iguales.
 
 “No es Elemont, es KONE” es `correct`. “Otra falla: Elemont MH…” es `new_work`. No hay `switch`.
+
+`¿Qué es Q2?` no es `unclear`: la relación con el trabajo se entiende y la insuficiencia es técnica. `No, ese era el otro` puede ser `unclear/work_relation` cuando follow-up, correction y new work sigan siendo plausibles con consecuencias distintas.
+
+### Delta compacto del prompt
+
+Agregar esta regla, sin ejemplos largos ni una taxonomía nueva:
+
+```text
+Interpret the current turn in relation to the active technical work and active photo.
+If one interpretation is clearly dominant, choose it.
+If two plausible interpretations would cause materially different episode, state,
+or routing consequences, do not guess. Return unclear with a clarification_target.
+Missing technical information alone is not unclear.
+```
+
+Cuando `work_context.pending.clarification_target` existe, el prompt pide clasificar la respuesta con el move definitivo. El modelo no genera la pregunta de control. Se incrementan `PROMPT_VERSION` y `SCHEMA_VERSION` en T1.1.
 
 ---
 
@@ -191,6 +243,7 @@ Coinciden con topes que el runtime ya aplica.
 | observation | 180 | `MAX_OBSERVATION_CHARS` |
 | carry | 2 spans | literales, no facts |
 | rejected | 4 | cada item `{slot, value}`, value 60 |
+| active_photo_context | 640 bytes | proyección read-only; no entra a `active_episode` |
 | tool JSON | 4096 bytes | si se pasa, perception inválida |
 
 `additionalProperties: false` en el tool y en cada assertion. Pasarse de cardinalidad o de largo invalida el perception completo y dispara fallback. Un span que no es literal se rechaza como campo; si después de eso `correct` se queda sin negate activo, el move baja a `unclear` y no hay mutación.
@@ -211,6 +264,7 @@ Rechazo del perception completo:
 - falta `move` o no está en el enum
 - assertions u observations por encima del tope
 - tool JSON por encima de 4096 bytes
+- `clarification_target` ausente, fuera del enum o inconsistente con `move` (`unclear` exige target; los demás exigen null)
 
 Rechazo de campo, con `field` + `reason` en telemetría:
 
@@ -218,10 +272,11 @@ Rechazo de campo, con `field` + `reason` en telemetría:
 - observation que no es substring, que tiene menos de 13 caracteres, o que es un solo token de 2–4 caracteres
 - `answer_pending` sin pending, o resolución cuyo valor no corresponde al slot pendiente: el move baja a `report` si quedan assertions u observations, si no a `follow_up`. No se aplica `pending_resolution`
 - `correct` sin un `negate` cuyo valor normalizado está en un fact o identifier activo: baja a `unclear`, cero mutaciones
-- `new_work` sin assertions ni observations, habiendo Work Context previo: baja a `follow_up` y no abre episodio
+- `correct` que Ruby baja a `unclear` recibe `correction_target`; no sale a retrieval
+- `new_work` sin assertions ni observations, habiendo Work Context previo: baja a `follow_up` y no abre episodio, salvo que exista `pending_question.type=work_relation`. Esa excepción permite que una respuesta como `Es otro ascensor` cierre la aclaración sin regex y abra el episodio nuevo
 - `slot_hint` fuera de enum: se descarta el hint, se conserva el span
 
-`unclear` es válido y no muta.
+`unclear` es válido sólo con `clarification_target`. No muta estado técnico y la policy lo corta antes de retrieval.
 
 ### Catálogo, tenant-safe
 
@@ -268,7 +323,7 @@ Fuera de esos dos contextos, un literal no catalogado es identifier.
 
 ## 7. Work Context
 
-`conversation_sessions.active_episode`, `v: 1`. Clave nueva única: `rejected`.
+`conversation_sessions.active_episode`, `v: 1`. T1.1 no sube versión ni agrega el resumen visual al JSON.
 
 ```text
 goal
@@ -283,6 +338,16 @@ conflicts
 ```
 
 No se crean `component`, `measurement`, `action_taken`, `result`, `dialogue_acts`, `referents`, `state_version`, `last_applied_correlation_id`.
+
+`PendingQuestion::TYPES` agrega `work_relation`, `referent` y `correction_target`. Ninguno entra en `FACT_TYPES`, ninguno crea `pending_fact`, y ninguno usa `options`. Reutilizar `choice` sería incorrecto: sus opciones pertenecen a selecciones cerradas y `parse_reply` ya contiene semántica específica de otro flujo. No se crea otra máquina de estados.
+
+En el input del turno siguiente:
+
+```json
+{"pending": {"clarification_target": "work_relation"}}
+```
+
+Haiku clasifica la respuesta con un move definitivo (`new_work`, `follow_up` o `correct`). `answer_pending` sigue reservado a slots técnicos. `PendingQuestion.parse_reply` no gana frases como `es otro ascensor`; no hay regex phrase-specific.
 
 `unknown_confirmed` y `absent_confirmed` siguen siendo status del fact.
 
@@ -341,7 +406,7 @@ Corre sólo dentro del lock, con el episodio que sigue igual al snapshot, y desp
 - `answer_pending`: no cambia el goal. `unknown` en manufacturer, model o controller: `unknown_confirmed`. `absent` en fault_code: `absent_confirmed`. `value`: write del fact, con la excepción de slot ya conocido si el catálogo no tipó. `seek`: el fact no cambia. Carry previo pasa a identifiers. En todos, `clear_pending!`.
 - `correct`: cada negate hace `clear_fact!` o saca el identifier, entra en `rejected` (si hay 4, sale el más viejo) y se borra ese valor del goal y de las observations. Si se niega un controller cuyo manufacturer es `source=catalog`, ese manufacturer también se limpia. El assert nuevo se escribe `source=user`, salvo que el catálogo lo haya tipado. El slot del reemplazo no catalogado es el slot del fact negado, no el `slot_hint`.
 - `new_work`: `ActiveEpisode.open`. El episodio viejo no se fusiona. Goal, facts, observations y carry salen sólo de este turno. `rejected` viejo muere con el episodio viejo. `result.decision` es `:new_episode` para el boundary.
-- `unclear`: no se llama al reducer para mutar lenguaje. El historial igual se agrega.
+- `unclear`: la rama `clarify_first` escribe sólo el `pending_question` conversacional y hace `touch!`; no escribe goal, facts, identifiers, observations, rejected, conflicts ni active photo. El historial igual se agrega. En este documento, “0 mutation” para los journeys AMB significa cero mutación de estado técnico; el pending estructurado es la única escritura de control necesaria para interpretar la respuesta siguiente.
 
 ---
 
@@ -356,13 +421,20 @@ Corre dentro del lock. `focus_count`, los ids y los URIs salen de la lectura fre
 El primero que matchea gana.
 
 1. `move=meta`. Salida `meta`. Cero retrieve, cero discovery, cero mutación. El pending que ya existe se queda, carry incluido. `model_invoked=false`. Frase corta de i18n. `RagQueryConcern` corta antes del orquestador.
-2. `clarify_first` cuando `focus_count == 0`, `previous` no tiene identity conocida, fault, observation, goal ni foto, este perception no tiene observation válida, ni assertion resuelta a brand, designator tipado o fault_code aceptado, ni un `assert` literal, y el move no es `answer_pending`, `correct` ni `new_work`. Un `assert` literal cuenta como contexto técnico aunque siga siendo identifier. Un `mention` no. Cero retrieve, cero discovery. El reducer no escribe el goal. Puede escribir pending con carry.
-3. `best_effort` cuando `pending_resolution` es `unknown` o `seek`, o el fact ya está `unknown_confirmed` y el move es `answer_pending`. Hay retrieve. No se vuelve a preguntar ese slot. `outside_discovery=true`.
-4. `search_and_clarify` cuando hay resolution `:ambiguous` entre entradas visibles, o hay manufacturer conocido (previous o brand de este turno) y faltan model y controller, controller no está `unknown_confirmed`, y hay goal, observation o fault en previous o en este perception. Hay retrieve. `pending_subject=controller`. La pregunta no entra en la query.
-5. `search_and_clarify` con `ask_when=:absence` cuando `focus_count > 0` y el único token técnico es un mention de 2–4 caracteres sin designator exacto tipado. Se busca dentro del focus. La pregunta sale sólo si la respuesta se abstiene. Q2 con focus mayor que 0 entra aquí, y sigue siendo mention, no `fault_code`.
-6. El resto es `ready`. Incluye NICE3000 con tipo y manufacturer, un `assert` literal no catalogado, y un `follow_up` cuando previous ya tiene identity, fault, goal u observation.
+2. `move=unclear` con `clarification_target`. Salida `clarify_first`, independientemente de `focus_count` o de que el episodio sea thin. Cero retrieve, cero discovery, `owns_query=false`, `model_invoked=false`. Ruby/I18n elige una pregunta fija por target y guarda el mismo type en `pending_question`.
+3. `clarify_first` técnico cuando `focus_count == 0`, `previous` no tiene identity conocida, fault, observation, goal ni foto, este perception no tiene observation válida, ni assertion resuelta a brand, designator tipado o fault_code aceptado, ni un `assert` literal, y el move no es `answer_pending`, `correct` ni `new_work`. Un `assert` literal cuenta como contexto técnico aunque siga siendo identifier. Un `mention` no. Cero retrieve, cero discovery. El reducer no escribe el goal. Puede escribir pending con carry.
+4. `best_effort` cuando `pending_resolution` es `unknown` o `seek`, o el fact ya está `unknown_confirmed` y el move es `answer_pending`. Hay retrieve. No se vuelve a preguntar ese slot. `outside_discovery=true`.
+5. `search_and_clarify` cuando hay resolution `:ambiguous` entre entradas visibles, o hay manufacturer conocido (previous o brand de este turno) y faltan model y controller, controller no está `unknown_confirmed`, y hay goal, observation o fault en previous o en este perception. Hay retrieve. `pending_subject=controller`. La pregunta no entra en la query.
+6. `search_and_clarify` con `ask_when=:absence` cuando `focus_count > 0` y el único token técnico es un mention de 2–4 caracteres sin designator exacto tipado. Se busca dentro del focus. La pregunta sale sólo si la respuesta se abstiene. Q2 con focus mayor que 0 entra aquí, y sigue siendo mention, no `fault_code`.
+7. El resto es `ready`. Incluye NICE3000 con tipo y manufacturer, un `assert` literal no catalogado, y un `follow_up` cuando previous ya tiene identity, fault, goal u observation.
 
-`outside_discovery` es false en `meta`, `clarify_first` y fallback. False en el caso 5. True en `best_effort`. True en el resto. DocumentDiscovery no escribe focus.
+Preguntas controladas por I18n:
+
+- `work_relation`: `¿Esto sigue siendo el mismo equipo o estás hablando de otro?`
+- `referent`: `¿A qué equipo o elemento te refieres?`
+- `correction_target`: `¿Qué dato del equipo quieres corregir?`
+
+`outside_discovery` es false en `meta`, `clarify_first` y fallback. False en el caso 6. True en `best_effort`. True en el resto. DocumentDiscovery no escribe focus.
 
 `¿Que es Q2?`, focus 0, sin identity: mention `Q2`, sin observation, previous vacío. No es fault. La regla 2 devuelve `clarify_first` y guarda carry `["Q2"]`. Cero retrieve y cero discovery.
 
@@ -376,7 +448,7 @@ La policy no lee prosa del assistant. El pending estructurado que ella escribe e
 
 ## 10. Query composer
 
-`Rag::QueryComposer.call(state:, turn:, perception:, decision:)`.
+`Rag::QueryComposer.call(state:, turn:, perception:, decision:, active_photo_context: nil)`.
 
 `state` es el episodio después del reducer. Tope `FollowupQueryRewriter::MAX_COMPOSED_CHARS` (442). Dedupe por `normalize_label`.
 
@@ -387,9 +459,12 @@ Orden, que es el inverso del recorte:
 3. Controller, model e identifiers activos, en forma canónica si el catálogo los resolvió, sin rejected. Los spans promovidos desde `carry` entran aquí como identifiers.
 4. Manufacturer activo. Si era `catalog` y este turno negó el controller que lo trajo, no entra.
 5. Hasta 3 observations persistidas, de la más nueva a la más vieja, saltando las que contienen un rejected.
-6. Goal, si no contiene un rejected.
+6. Términos visuales compactos de la foto activa (`component`, manufacturer, model y `visible_text`), sólo si el contexto sigue apuntando al `state.active_photo.field_photo_id` y la decisión hace retrieval.
+7. Goal, si no contiene un rejected.
 
 No se leen los últimos N mensajes. `meta` y `clarify_first` no tienen query. Si no queda nada en un `ready`, la query es el turno actual.
+
+Los términos visuales son read-only y no se escriben como assertions, facts u observations. `new_work` crea un state sin `active_photo`, por lo que la foto anterior no puede entrar a la query. El contexto visual que ya no coincide con el state se descarta.
 
 La string no agrega URIs ni cambia `force_entity_filter`. El filtro de retrieval es el snapshot de URIs que viajó en el `Decision`.
 
@@ -400,6 +475,7 @@ La string no agrega URIs ni cambia `force_entity_filter`. El filtro de retrieval
 ```text
 snapshot = active_episode JSON
 si el snapshot está expired, invalid o blank: work_context vacío
+resolver active_photo_context autorizado para ese snapshot
 truncar el turno con TurnText.truncate
 Haiku, fuera del lock
 TurnPerception.build
@@ -412,9 +488,10 @@ with_lock
     WorkContextReducer
     un solo update de episodio + history
 QueryComposer y retrieval usan los focus ids/URIs de ese Decision
+QueryComposer y SessionContextBuilder reciben la misma proyección visual read-only
 ```
 
-Comparar el JSON del episodio, no un `state_version` nuevo. Un write de assistant o de foto entre el snapshot y el lock cambia el JSON: se descarta la perception. No hay segunda llamada Haiku. Un cambio de Focus no cambia el JSON del episodio y no dispara fallback.
+Comparar el JSON del episodio, no un `state_version` nuevo. Un write de assistant o de foto entre el snapshot y el lock cambia el JSON: se descartan la perception y el active photo context. No hay segunda llamada Haiku. Un cambio de Focus no cambia el JSON del episodio y no dispara fallback.
 
 Los ids que usó la policy viajan en el resultado hasta `entity_s3_uris`. No se hace un read independiente que pueda ver otro Focus.
 
@@ -458,7 +535,7 @@ Precedencia mientras existan los tres:
 
 `FIELD_COMPANION_EPISODE_ENABLED` y `FIELD_COMPANION_TURN_ENABLED` no son el gate del interpreter. Siguen: el primero escribe el episodio, el segundo lo lee en `SessionContextBuilder`. T3 no los borra.
 
-T1 no cambia `deploy.yml`. El flip a `owner` es el paso de canary, después del eval real.
+T1 y T1.1 no cambian `deploy.yml`. El flip a `owner` es el paso de canary, después del eval real ampliado.
 
 Después de T3 el camino web de typed turns es el interpreter siempre que `episode_recording?`. `HAIKU_QUERY_ANALYSIS_MODE` se quita de `deploy.yml` y el código deja de leerlo. Rollback de ese release: revert, no un modo.
 
@@ -474,8 +551,8 @@ Agregar sólo:
 
 - `turn_interpreter_status`
 - `turn_interpreter_fallback`
-- `prompt_version` (`2026-10-02.1`)
-- `schema_version` (`turn_perception.2`)
+- `prompt_version` (`2026-10-02.2` desde T1.1)
+- `schema_version` (`turn_perception.3` desde T1.1)
 - `catalog_fingerprint` (SHA256 de `config/document_identities.yml`, 12 hex, memoizado por proceso)
 - `interpreter_move`
 - `interpreter_assertions`
@@ -483,6 +560,8 @@ Agregar sólo:
 - `field_rejections`
 - `mutations_applied`
 - `pending_outcome`
+- `clarification_target`
+- `active_photo_context_status` (`absent | loaded | unavailable | invalid | stale`). `unavailable` agrupa id inexistente o no autorizado; no se hace un lookup sin scope para distinguirlos.
 - `state_before_sha256`
 - `state_after_sha256`
 
@@ -502,7 +581,7 @@ Después del rollout: evidencia acotada al tenant → agregación offline de can
 
 No se agregan excepciones Ruby del tipo `if VF5`. No hay fuzzy runtime.
 
-Deícticos no tienen referents en este MVP. No se emite `unresolved_deictic` en T0–T3.
+No se agregan `referent_id`, listas de episodios previos ni resolución libre de deícticos. T1.1 sólo permite usar la foto activa cuando es un referente dominante; si no, `unclear/referent` produce una pregunta I18n. No se emite `unresolved_deictic`.
 
 ---
 
@@ -533,12 +612,13 @@ CI no llama a Bedrock. Los tests pasan perceptions ya construidas a policy, redu
 - `No, no es NICE3000. Es ABC900.`
 - un `new_work` tomado de R-A (`Otra falla: Elemont MH…`), marcado real porque esa frase está en el replay
 - aislamiento de catálogo: `PRIVATE900` visto por un tenant sin acceso
+- VIS-1/2/3 y AMB-1/2/3 de T1.1, con observación visual sintetizada y marcada `reconstructed`
 
 No hay transcripción de Hangcha, Crown FC4000/4500, SEGURIDADES 1.1-1, ni de un journey focus 0 → manual A → manual B. No se inventa. El replay de card sigue cubierto por el test de F7.
 
 Cada caso del YAML trae el perception esperado y las invariantes finales. Un fallo de producción puede entrar como `origin: candidate`. No es ground truth hasta una revisión humana que lo pase a `reconstructed` o `real`.
 
-`bin/rails turn_interpreter:eval` llama Haiku real, corre build, reducer en copia, policy y composer, e imprime: cases, passes, move mismatch, field rejection, fallback, unsafe mutation, pending accuracy, correction accuracy, query invariant failures, p50, p95, tokens, cost. No corre en CI. No es una plataforma de experimentos.
+`bin/rails turn_interpreter:eval` llama Haiku real, corre build, reducer en copia, policy y composer, e imprime: cases, passes, move mismatch, field rejection, fallback, unsafe mutation, pending accuracy, correction accuracy, photo-context accuracy, clarification-target accuracy, query invariant failures, p50, p95, tokens, cost. No corre en CI. No es una plataforma de experimentos.
 
 Invariantes en cero antes del canary: ampliación de scope cross-tenant, mutación de Document Focus, span no literal aplicado, estado inválido persistido, valor rejected dentro de la query efectiva, mutación persistente incorrecta en los casos críticos de la sección 16.
 
@@ -615,9 +695,31 @@ Commit: `feat: run the turn interpreter when owner mode is on`
 
 Rollback del canary: env `conditional`. Las claves `rejected` las ignora una imagen vieja hasta que se leen; una imagen vieja no las escribe.
 
-### T2 — Eval con Haiku real y canary
+### T1.1 — Active photo context + conversational clarification
 
-Antes de cualquier deploy, quien implementa corre `bin/rails turn_interpreter:eval` con credenciales Bedrock. El reporte se pega aquí: passes, mismatches, fallbacks, field rejection, p50, p95, tokens, cost. Los invariantes de la sección 14 tienen que estar en cero. Si el eval no puede correr por credenciales, se para.
+Fase obligatoria antes del owner canary. No cambia el número de llamadas LLM: una llamada Haiku para interpretar y la etapa RAG/generation existente. No fusiona ambas.
+
+Implementar:
+
+- `Rag::ActivePhotoContext` autorizado por `account_id`, sanitizado y bounded; sólo la foto activa
+- transporte read-only del contexto a interpreter, composer y generación, sin persistirlo en el episode
+- corte automático del contexto al abrir `new_work` o si el photo id ya no coincide
+- prompt compacto de ambigüedad material versus insuficiencia técnica
+- `clarification_target` cerrado: `work_relation | referent | correction_target | null`
+- `PendingQuestion` estructural para esos tres targets; sin `choice`, sin options y sin regex de respuestas
+- `RoutePolicy`: `unclear` antes de las ramas que recuperan; 0 retrieval, 0 discovery y una pregunta I18n
+- excepción validada para `new_work` sin assertion después de pending `work_relation`
+- bloque de generación con provenance visual explícita y sin aumentar `MAX_CONTEXT_CHARS`
+- telemetría: `clarification_target`, presence/absence de active photo context y motivo de descarte; nunca valores visuales crudos
+- los seis journeys VIS/AMB y los tests unitarios de tenant, bounds, no-vision, no-contamination y pending lifecycle
+
+Commit esperado: `feat: carry active photo context through turn interpretation`
+
+Rollback antes del canary: revert de T1.1; el env permanece `conditional` durante toda la fase.
+
+### T2 — Re-eval con Haiku real y canary
+
+Después de T1.1 y antes de cualquier deploy, quien implementa vuelve a correr `bin/rails turn_interpreter:eval` con credenciales Bedrock sobre los 13 casos existentes más VIS-1/2/3 y AMB-1/2/3. El reporte se pega aquí: passes, mismatches, fallbacks, field rejection, clarification-target accuracy, photo-context accuracy, p50, p95, tokens y cost. Los invariantes de la sección 14 tienen que estar en cero. Si el eval no puede correr por credenciales, se para.
 
 No se cambia `deploy.yml` en el commit de código. Si el eval pasa, la ejecución autónoma se detiene. Una persona pone `HAIKU_QUERY_ANALYSIS_MODE=owner` y despliega en el host de los pilotos. Ahí todo typed turn usa el interpreter. No hay arbitraje con F8 dentro del request.
 
@@ -678,6 +780,14 @@ Commit: `refactor: remove the duplicate turn classifiers`
 15. Foto con caption: el interpreter lee el texto. El pipeline de foto sigue dueño de los facts visuales. Ese request no agrega `RetrieveAndGenerate`.
 16. Replay: no llama a Haiku y no duplica la burbuja.
 17. Ningún move cambia Document Focus.
+18. VIS-1: foto activa autorizada con NICE3000 + E51; `¿Qué reviso ahora?` → `follow_up`, `ready`, query con NICE3000/E51, contexto visual en generación y cero llamadas vision.
+19. VIS-2: foto activa con un único código visual saliente; `¿Y eso qué significa?` → usa el referente visual y nunca abre `new_work`. El fixture fija `follow_up`; un test contrastivo con dos referentes materiales acepta sólo `unclear/referent` y 0 retrieval.
+20. VIS-3: foto del episodio A y un turno explícito de `new_work` → episodio B sin active photo, sin términos visuales A en query o generación.
+21. AMB-1: con Work Context activo, `No, ese era el otro` → `unclear/work_relation`, `clarify_first`, 0 retrieval, 0 discovery y cero mutación técnica; sólo pending estructurado.
+22. AMB-2: después de AMB-1, `Es otro ascensor` → `new_work` sin regex phrase-specific; pending viejo y foto vieja no pasan al episodio nuevo.
+23. AMB-3: con foto activa, `Me refería al de la foto` → relación visual entendida, conserva active photo y clasifica definitivamente; sólo `unclear/referent` si el contexto visual deja dos referentes materialmente distintos.
+24. Una foto ajena por `field_photo_id` no entra al prompt, query, generación ni telemetría; no se busca otra foto como fallback.
+25. `VF5 / E03 / puerta intenta cerrar y vuelve a abrir` sigue en `ready` y recupera: la falta de más datos técnicos no dispara aclaración conversacional.
 
 ---
 
@@ -694,6 +804,8 @@ Lahiri actúa como técnico. PASS o `FAIL: hizo X`. No se le pide correlation id
 5. `¿Necesitas controlador?` y después un síntoma corto del mismo equipo. PASS si la segunda respuesta no usa esa pregunta como la falla.
 6. `No, no es NICE3000. Es NICE1000.` PASS si a partir de ahí habla de NICE1000. El badge no se mueve solo.
 7. Con un manual marcado, acepta una card. PASS si el badge cambia al tocarlo y la pregunta no aparece dos veces.
+8. Envía una foto que muestre NICE3000 y E51; luego escribe `¿Qué reviso ahora?`. PASS si continúa con esa foto sin volver a analizarla ni pedir que la adjunte otra vez.
+9. Con un trabajo activo escribe `No, ese era el otro`; responde a la aclaración `Es otro ascensor`. PASS si el primer turno no recupera manuales y el segundo abre el trabajo nuevo.
 
 Preparación de un paso con badge 0: Archivos, desmarcar todo, recargar, el número dice 0.
 
@@ -703,14 +815,15 @@ Después del PASS, el implementador corre `turn_interpreter:smoke_check`. Si el 
 
 ## 18. Ejecución autónoma
 
-Aprobado para ejecución. No se pide otra aprobación antes de T0 o T1.
+Aprobado para ejecutar T1.1. T0 y T1 ya están completos. El flip humano sigue bloqueado.
 
 1. Actualizar este archivo con los required changes.
 2. T0, tests, commit, anotar aquí.
 3. T1, tests, commit, anotar aquí.
-4. T2 corre el eval real. Si pasa, se anotan los números y se para: el deploy y el flip a `owner` los hace una persona.
-5. Después del PASS humano y del rake, T3 se implementa y se commitea.
-6. No se abre otro documento.
+4. T1.1 implementa active photo context y aclaración conversacional, corre tests y se anota aquí.
+5. T2 vuelve a correr el eval real ampliado. Si pasa, se anotan los números y se para: el deploy y el flip a `owner` los hace una persona.
+6. Después del PASS humano y del rake, T3 se implementa y se commitea.
+7. No se abre otro documento ni T4–T8.
 
 ---
 
@@ -751,8 +864,18 @@ FAIL arquitectónico: en un request `owner` siguen vivos el interpreter y las re
 - Un episodio al tope de los caps más `rejected` tiene que caber en 4096 después del shrink, o no se persiste. El núcleo no se recorta.
 - No hay gate por cuenta. El canary es el env del host.
 - Foto con caption entra a `record_user_turn!`. V2 interpreta el caption y deja el retrieve de ese request en el pipeline de upload.
+- `FieldPhotoAnalysisJob` persiste `visual_observation` antes de `deliver`; después `record_photo_observation!` guarda en el episode sólo `field_photo_id`, sha y correlation, y aplica únicamente manufacturer/model como facts `source=photo`.
+- `ActiveEpisode.sanitize_photo` elimina deliberadamente `visual_observation`, summary, manufacturer y model embebidos. El test existente fija ese contrato.
+- `TurnInterpreter#work_context` envía goal, facts, identifiers, observations, rejected y pending, pero no resuelve `active_photo.field_photo_id` ni lee `FieldPhoto.visual_observation`.
+- `SessionContextBuilder` sólo reconstruye manufacturer/model de facts `source=photo` y conflicts. No expone component, visible text/codes, subsystem o condition de la observación durable.
+- `PhotoQuestionAnswerService` ya demuestra el borde correcto para la foto del mismo turno: lookup por `account_id`, observación sanitizada y bloque visual separado. No cubre el typed turn posterior.
+- El prompt actual define `unclear` como ausencia de nombre/código/síntoma. No modela ambigüedad de relación con el episodio y puede confundirla con insuficiencia técnica.
+- `RoutePolicy` no tiene rama para `move=unclear`. Con un episodio no-thin, `clarify_first?` devuelve false y el final es `ready`; por eso hoy puede haber retrieval arbitrario.
+- `WorkContextReducer` ya preserva el estado para `unclear`, pero su rama previa de `clarify_first` permite guardar exactamente un pending estructurado sin mutar facts/goal/observations.
+- `PendingQuestion` sólo conoce slots técnicos, `choice` y `absent`; `choice` exige options y su parser tiene respuestas cerradas específicas. No es reutilizable para relación de trabajo.
+- `TurnPerception` hoy degrada `new_work` sin assertions/observations a `follow_up`. Sin una excepción condicionada por pending `work_relation`, `Es otro ascensor` no puede cerrar AMB-2.
 
-No queda un blocker de diseño.
+No queda un blocker de diseño para T1.1. Sí queda un blocker de rollout: no hacer el flip hasta implementar el delta y repetir el eval real.
 
 ---
 
@@ -785,7 +908,7 @@ No queda un blocker de diseño.
 - Desvío: dos tests de boundary del camino viejo (`hola` tras expiry, episodio inválido) ya fallan en `b1a4b42`. Con un manual pinneado, `TechnicalUnderstanding` trata `hola` como bare identifier y abre episodio. T1 no cambia ese clasificador. El camino `owner` no lo usa.
 - Siguiente: `bin/rails turn_interpreter:eval` contra Haiku real. Si pasa, parar para el flip humano. `config/deploy.yml` sigue en `conditional`.
 
-### T2 — eval real, sin deploy
+### T2 — eval real inicial, sin deploy
 
 Commit del ajuste que el eval pidió: `d2bc021f962ddb914feb73443f8325be23bd2cfb`.
 
@@ -797,8 +920,42 @@ p50_ms=1457 p95_ms=1762
 input_tokens=21775 output_tokens=2047 estimated_usd=0.032010
 ```
 
-Los 13 journeys del fixture pasan. Cero fallback. Cero field rejection. `tenant_private_designator` no tipa ni filtra fabricante. `config/deploy.yml` no se tocó: sigue `conditional`.
+Los 13 journeys del fixture pasan. Cero fallback. Cero field rejection. `tenant_private_designator` no tipa ni filtra fabricante. `config/deploy.yml` no se tocó: sigue `conditional`. Este reporte queda como baseline pre-T1.1 y no habilita el canary ampliado.
 
 El catálogo real de esta base no ata `NICE3000` a un `KbDocument` que la cuenta pueda leer, así que el follow-up conserva el literal `Nice300 e51`. El tipado de catálogo autorizado queda cubierto por los tests de T0/T1, no por este eval.
 
-Parado aquí. El flip a `owner` y el deploy los hace una persona. Después del smoke de UI, el implementador corre `bin/rails turn_interpreter:smoke_check`. Rollback antes de T3: `owner` → `conditional`. T3 no empieza hasta ese PASS.
+Parado aquí. Antes del flip se implementa T1.1 y se repite T2 con los 19 journeys. El flip a `owner` y el deploy siguen siendo humanos. Después del smoke de UI, el implementador corre `bin/rails turn_interpreter:smoke_check`. Rollback antes de T3: `owner` → `conditional`. T3 no empieza hasta ese PASS.
+
+### T1.1 — pendiente pre-canary
+
+Revisión focalizada sobre HEAD `d42c9dcb78f47b6c39396b2b6aa17a93f515f520`. Veredicto: `PRE-CANARY DELTA REQUIRED`. Esta entrada documenta diseño solamente; no hay implementación T1.1 en este commit.
+
+---
+
+## 22. Impacto y handoff de T1.1
+
+### Latencia y tokens
+
+- Cero llamadas vision nuevas, cero reenvío de imagen y cero llamadas LLM adicionales.
+- Una lectura PostgreSQL indexada por `(account_id, id)` sólo cuando el snapshot tiene `active_photo.field_photo_id`. Seleccionar únicamente `visual_observation`; no instanciar blobs ni tocar S3.
+- El prompt compacto agrega aproximadamente 45–65 input tokens a todo typed turn. `clarification_target` agrega un campo pequeño de output; `max_tokens=512` no cambia.
+- Sólo los turnos con foto activa agregan la proyección visual, con hard cap de 640 bytes (aproximadamente 80–180 tokens según valores). Los turnos sin foto no cargan ese costo.
+- `QueryComposer` conserva el máximo de 442 caracteres y `SessionContextBuilder` conserva 2000. El contexto visual desplaza contenido de menor prioridad si alcanza el cap; no lo expande.
+- Un `unclear` material evita por completo retrieval/generation en ese turno, de modo que esa ruta reduce costo y latencia respecto del comportamiento `ready` actual.
+- El baseline de 13 casos (`p50=1457 ms`, `p95=1762 ms`, 21775 input, 2047 output, USD 0.032010) no se extrapola como resultado final. T2 debe volver a medir los 19 journeys.
+
+### Handoff para implementación Grok
+
+Orden de cambio, sin rediseñar la cadena:
+
+1. Crear `Rag::ActivePhotoContext` con lookup tenant-safe, sanitize, bounds, `to_prompt`, `query_terms` y match estricto contra el photo id del state.
+2. En `ConversationSession#record_owner_turn!`, resolverlo desde el snapshot antes de Haiku; pasarlo como keyword opcional a `TurnInterpreter`, `RoutePolicy::Decision`, `QueryComposer` y luego a `SessionContextBuilder`. `RoutePolicy` sólo lo transporta; no lo interpreta. En snapshot mismatch/fallback, nunca reutilizar el contexto viejo.
+3. Extender el input de `TurnInterpreter`, el prompt compacto y el schema/result de `TurnPerception` con `clarification_target`. Mantener literal validation de assertions/observations sin intentar convertir valores de foto en spans del turno.
+4. Extender `PendingQuestion::TYPES` con los tres targets conversacionales, no `FACT_TYPES`. Hacer que `pending_payload` envíe `clarification_target`; no tocar `parse_reply` con frases nuevas.
+5. Poner la rama `unclear` al inicio de `RoutePolicy#call`, después de `meta` y antes del clarify técnico/best-effort. Mapear target a I18n y devolver `clarify_first`, `owns_query=false`, `outside_discovery=false`.
+6. Permitir el `new_work` sin assertion sólo cuando el episode trae pending `work_relation`. Mantener el guard actual para todos los demás casos.
+7. Agregar términos visuales read-only al composer sólo si el photo id todavía coincide. Renderizar el bloque visual de generación con provenance `photo`; conservar conflicts sin resolver.
+8. Agregar tests focalizados en `active_photo_context_test`, `turn_interpreter_test`, `turn_perception_test`, `route_policy_test`, `query_composer_test`, `session_context_builder_test` y `conversation_session_turn_interpreter_test`. Espiar `FieldPhotoAnalysisService`/jobs para probar cero vision.
+9. Añadir VIS-1/2/3 y AMB-1/2/3 al YAML/eval, mantener los 13 casos anteriores verdes y ejecutar el eval real. No tocar `config/deploy.yml`.
+
+Condición de salida: tests verdes, `git diff --check`, eval real ampliado sin mismatches/fallbacks/field rejections y métricas anotadas aquí. Recién entonces se entrega el flip humano a `owner`.

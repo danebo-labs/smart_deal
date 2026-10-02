@@ -165,56 +165,59 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_empty result.observations
   end
 
-  test "a correct assert recovers the one stored value that is literal in the turn" do
-    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
-    episode.write_fact!(
-      "model", status: "known", value: "KONE", source: "user",
-      correlation_id: "seed", at: Time.current.iso8601
-    )
-    result = perceive(
-      {
-        "move" => "correct",
-        "assertions" => [ assert_span("OTIS") ],
-        "observations" => [],
-        "pending_resolution" => nil,
-        "clarification_target" => nil
-      },
-      "No es KONE, es OTIS",
-      episode: episode
-    )
+  test "a correct perception with both spans rejects the old value and stores the replacement" do
+    episode = fact_episode("model", "KONE")
+    turn = "No es KONE, es OTIS"
+    result = perceive(correct_payload([ negate_span("KONE"), assert_span("OTIS") ]), turn, episode: episode)
+    decision = settle(episode, result, turn)
 
     assert_equal "correct", result.move
     assert_nil result.clarification_target
-    negate = result.identities.find { |item| item.kind == "negate" }
-    assert_equal "model", negate.slot
-    assert_equal "KONE", negate.span
+    assert_includes episode.rejected.pluck("value"), "KONE"
+    assert_includes active_values(episode), "OTIS"
+    assert decision.performs_retrieval?
   end
 
-  test "a correct assert does not choose between two stored values in the turn" do
-    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
-    episode.write_fact!(
-      "manufacturer", status: "known", value: "KONE", source: "user",
-      correlation_id: "seed", at: Time.current.iso8601
-    )
-    episode.write_fact!(
-      "controller", status: "known", value: "NICE3000", source: "user",
-      correlation_id: "seed", at: Time.current.iso8601
-    )
-    result = perceive(
-      {
-        "move" => "correct",
-        "assertions" => [ assert_span("OTIS") ],
-        "observations" => [],
-        "pending_resolution" => nil,
-        "clarification_target" => nil
-      },
-      "No es KONE ni NICE3000, es OTIS",
-      episode: episode
-    )
+  test "a correct assert without a negate downgrades and mutates nothing" do
+    episode = fact_episode("model", "KONE")
+    turn = "No es KONE, es OTIS"
+    result = perceive(correct_payload([ assert_span("OTIS") ]), turn, episode: episode)
+    decision = settle(episode, result, turn)
 
     assert_equal "unclear", result.move
     assert_equal "correction_target", result.clarification_target
     assert_empty result.identities
+    assert_equal "KONE", episode.fact("model")["value"]
+    assert_empty episode.rejected
+    assert_not decision.performs_retrieval?
+  end
+
+  test "a correct assert does not treat a stored prefix inside the replacement as a negate" do
+    episode = fact_episode("controller", "VF5")
+    turn = "Creo que es VF50"
+    result = perceive(correct_payload([ assert_span("VF50") ]), turn, episode: episode)
+    decision = settle(episode, result, turn)
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+    assert_empty result.identities
+    assert_equal "VF5", episode.fact("controller")["value"]
+    assert_empty episode.rejected
+    assert_not decision.performs_retrieval?
+  end
+
+  test "a correct assert does not negate a stored designator that is a prefix of the new one" do
+    episode = fact_episode("controller", "NICE300")
+    turn = "Es NICE3000"
+    result = perceive(correct_payload([ assert_span("NICE3000") ]), turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+    assert_empty result.identities
+    assert_equal "NICE300", episode.fact("controller")["value"]
+    assert_empty episode.rejected
+    assert_nil episode.fact("model")
   end
 
   test "a short multi-word symptom is kept and a lone technical token is not" do
@@ -331,6 +334,33 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
   end
 
   private
+
+  def correct_payload(assertions)
+    { "move" => "correct", "assertions" => assertions, "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
+  end
+
+  def fact_episode(slot, value)
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.write_fact!(
+      slot, status: "known", value: value, source: "user",
+      correlation_id: "seed", at: Time.current.iso8601
+    )
+    episode
+  end
+
+  def settle(episode, result, turn)
+    decision = Rag::RoutePolicy.call(previous: episode, perception: result, focus_count: 0)
+    Rag::WorkContextReducer.apply!(
+      episode: episode, perception: result, decision: decision,
+      turn: turn, correlation_id: "seed", now: Time.current
+    )
+    decision
+  end
+
+  def active_values(episode)
+    episode.facts.values.filter_map { |fact| fact["value"] if fact.is_a?(Hash) && fact["status"] == "known" } +
+      Array(episode.identifiers).pluck("value")
+  end
 
   def perceive(raw, turn, episode: Rag::ActiveEpisode.new, viewer: @owner)
     Rag::TurnPerception.build(

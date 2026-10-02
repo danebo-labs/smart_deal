@@ -16,7 +16,7 @@ module Rag
       report = the technician states a job, a fault, or a value. Use this unless a rule below fits.
       follow_up = asks the next step of the job already open, such as "¿Qué reviso?", or stays on that job, or goes back to it. It does not replace that job.
       answer_pending = the turn answers work_context.pending. A name, a code, or "no sé" while a pending slot is open is answer_pending, not unclear.
-      correct = denies one stored value that appears in the turn. Same job. One negate span of that exact stored value and one assert span of the replacement. Both spans are required. clarification_target stays null. "No, no es NICE3000. Es NICE1000." negates NICE3000 and asserts NICE1000. Do not send only the replacement. "No, ese era el otro" is not correct.
+      correct = denies one stored value that appears in the turn. Same job. One negate span of that exact stored value and one assert span of the replacement. Both spans are required for manufacturer, model, and controller. A turn shaped like "no es OLD, es NEW" still needs negate OLD and assert NEW. slot_hint on the new value does not replace the negate span. Sending only the replacement is not correct. clarification_target stays null. "No, no es NICE3000. Es NICE1000." and "El controlador no es NICE3000, es NICE1000." both negate NICE3000 and assert NICE1000. "No, ese era el otro" is not correct.
       new_work = a different task from the open job. Do not carry the previous job. Going back to the open job is follow_up, not new_work.
       meta = asks what Danebo needs from the technician. A question about the equipment is not meta.
       unclear = two plausible readings would change the episode, the stored state, or the route, and neither is dominant. A stated name or code is report, not unclear. Missing technical detail is not unclear.
@@ -30,11 +30,11 @@ module Rag
       When pending.clarification_target is set, answer with new_work, follow_up, or correct. A reply that keeps or returns to the open job is follow_up. A reply that only says this is another elevator is new_work with empty assertions and empty observations. A reply that names equipment or a fault includes those spans.
       active_photo_context was read from the active photo. It is not the technician's words. Do not copy it into spans or observations unless the turn contains that text. A turn that only points at that one photo is follow_up with empty assertions and empty observations. Do not describe the photo.
 
-      act: assert states a value as the equipment or the fault. "Nice300 e51" and "PRIVATE900" are assert spans, not mentions and not unclear. negate denies a value that appears in the turn. mention names a token the technician asks about without adopting it. "¿Qué es Q2?" is a mention of Q2, not a fault code.
+      act: assert states a value as the equipment or the fault. "Nice300 e51" and "PRIVATE900" are assert spans, not mentions and not unclear. negate denies a value that appears in the turn. mention names a token the technician asks about without adopting it. "¿Qué es Q2?" is a mention of Q2 on move report, clarification_target null. It is not unclear and not referent. One unknown token is not two referents.
       slot_hint may only be manufacturer, model, controller, fault_code, or designator. Omit it when unsure.
       pending_resolution is null unless move is answer_pending. Then it is only unknown, absent, value, or seek. Never referent. value needs an assert span of that value. seek means search with what is already known. unknown means the technician does not know the pending slot.
 
-      Every span is the shortest literal substring of turn, not the sentence. Observations are copied symptom phrases from the turn, or empty. Do not paraphrase. Do not invent an observation. Do not describe the photo.
+      Every span is the shortest literal substring of turn, not the sentence. An observation is one contiguous symptom phrase copied from the turn, or empty. Keep every word between its ends. Do not drop words. Do not paraphrase. Do not invent an observation. Do not describe the photo. A correction has empty observations.
     PROMPT
 
     Result = Data.define(

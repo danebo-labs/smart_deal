@@ -1062,6 +1062,35 @@ input_tokens=18629 output_tokens=1137 estimated_usd=0.024314
 
 El p95 del eval de 21 subió respecto de 2795 ms. No se optimizó. La corrección del episodio tiene prioridad. T3 no empieza.
 
+Microfix posterior, mismo hardening. Commit: `fix: require explicit negate for turn corrections`.
+
+Removed Ruby synthetic negate recovery.
+Corrections now require an explicit validated negate from TurnInterpreter;
+otherwise the move downgrades to unclear/correction_target.
+
+`supply_omitted_negate` y `literal_fact_values` salen. La frase de arriba que recuperaba el negate cuando había un solo valor literal ya no aplica. Ruby no infiere el negate. `adjust_move` sigue igual: `correct` sin un negate con slot pasa a `unclear` / `correction_target`, identities vacías, 0 mutación técnica y 0 retrieval en ese turno.
+
+Tests en `turn_perception`: corrección válida KONE→OTIS con ambos spans; assert sin negate; prefijo VF5 dentro de VF50; prefijo NICE300 dentro de NICE3000. Suites `turn_perception`, `route_policy`, `query_composer`, `session_context_builder` y `conversation_session_turn_interpreter`: 114 runs, 661 assertions, 0 failures. `git diff --check` limpio.
+
+`PROMPT_VERSION` `2026-10-02.5`. El prompt sigue exigiendo ambos spans, con la forma general "no es OLD, es NEW" y el ejemplo ya existente NICE3000/NICE1000. No se copió el caso del holdout. Schema sin cambio. `config/deploy.yml` sigue `conditional`. No hubo deploy. El owner canary no empezó.
+
+`bin/rails turn_interpreter:eval`, 21 journeys, 2026-10-02, prompt `2026-10-02.5`:
+
+```text
+passes=21 mismatches=0 fallbacks=0 field_rejections=0
+clarification_target_accuracy=8/8 photo_context_accuracy=7/7
+p50_ms=1605 p95_ms=2524
+input_tokens=51113 output_tokens=3391 estimated_usd=0.068068
+```
+
+`bin/rails turn_interpreter:holdout`, 10 casos, mismas condiciones:
+
+```text
+holdout_passes=10 holdout_mismatches=0 holdout_fallbacks=0 holdout_field_rejections=0
+p50_ms=1570 p95_ms=2801
+input_tokens=19699 output_tokens=1182 estimated_usd=0.025609
+```
+
 ---
 
 ## 22. Impacto y handoff de T1.1

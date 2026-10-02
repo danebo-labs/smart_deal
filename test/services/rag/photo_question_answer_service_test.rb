@@ -245,9 +245,10 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_not_includes visible[:provenance_segments].first["text"], "[1]"
   end
 
-  test "photo question provenance reads the stored observation and ignores photo_value" do
+  test "photo question provenance uses the accepted snapshot and ignores the evidence projection" do
     photo = persist_observed_photo(account: @account, manufacturer: "KONE", component: "conjunto de resortes")
     foreign = persist_observed_photo(account: accounts(:climb), manufacturer: "OTIS-SECRET", component: "tablero secreto")
+    snapshot = photo.visual_observation.deep_dup
     BedrockRagService.define_method(:query) do |_question, **_kwargs|
       { answer: "Fabricante KONE. En la foto: se observa SCHINDLER.", citations: [], session_id: nil }
     end
@@ -255,7 +256,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     result = build_service(
       question: "qué marca se ve?",
       photo_value: @photo_value.merge(manufacturer: "SCHINDLER", canonical_name: "tablero secreto"),
-      field_photo_id: photo.id
+      field_photo_id: photo.id,
+      accepted_observation: snapshot
     ).call
 
     assert_equal [ "VISUAL_OBSERVATION", "DANEBO_GUIDANCE" ], result[:provenance_segments].pluck("band")
@@ -270,6 +272,35 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
 
     assert_equal [ "DANEBO_GUIDANCE", "DANEBO_GUIDANCE" ], ignored[:provenance_segments].pluck("band")
     assert_not_includes ignored[:provenance_segments].to_json, "OTIS-SECRET"
+  end
+
+  test "provenance keeps this turn's accepted snapshot when the row changes during generation" do
+    photo = persist_observed_photo(account: @account, manufacturer: "KONE", component: "conjunto de resortes")
+    snapshot = photo.visual_observation.deep_dup
+    evidence = FieldPhotoObservation.reading_value(snapshot)
+    replacement = snapshot.deep_dup
+    replacement["manufacturer"] = "OTIS"
+    captured = nil
+    BedrockRagService.define_method(:query) do |_question, **kwargs|
+      captured = kwargs
+      photo.update!(visual_observation: replacement)
+      { answer: "En la foto: se observa KONE.", citations: [], session_id: nil }
+    end
+
+    result = build_service(
+      question: "qué marca se ve?",
+      photo_value: evidence,
+      field_photo_id: photo.id,
+      accepted_observation: snapshot
+    ).call
+
+    assert_includes captured[:session_context], "Manufacturer: KONE"
+    assert_not_includes captured[:session_context], "OTIS"
+    assert_equal [ "VISUAL_OBSERVATION" ], result[:provenance_segments].pluck("band")
+    assert_includes result[:provenance_segments].first["text"], "KONE"
+    assert_not_includes result[:provenance_segments].to_json, "OTIS"
+    assert_equal "OTIS", photo.reload.visual_observation["manufacturer"]
+    assert_equal "KONE", snapshot["manufacturer"]
   end
 
   test "a photo question without a stored observation does not invent a visual band" do
@@ -482,7 +513,7 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_includes captured[:kwargs][:session_context], "GECB"
   end
 
-  def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil)
+  def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil, accepted_observation: nil)
     Rag::PhotoQuestionAnswerService.new(
       question: question,
       evidence_value: photo_value,
@@ -491,7 +522,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       user_id: users(:one).id,
       correlation_id: "photo:test",
       locale: locale,
-      field_photo_id: field_photo_id
+      field_photo_id: field_photo_id,
+      accepted_observation: accepted_observation
     )
   end
 

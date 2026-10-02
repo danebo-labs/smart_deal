@@ -1348,6 +1348,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert_not_includes @session.conversation_history.pluck("content"), replacement[:compact_context]
       assert_equal "KONE", captured[:evidence_value][:manufacturer]
       assert_equal "MX20", captured[:evidence_value][:model_visible]
+      assert_equal "KONE", captured[:accepted_observation]["manufacturer"]
+      assert_equal "MX20", captured[:accepted_observation]["model"]
       assert_equal stored["manufacturer"], captured[:evidence_value][:manufacturer]
       assert_not_includes captured[:evidence_value][:compact_context], "OTIS-OLD"
       assert_includes queried[:session_context], "Manufacturer: KONE"
@@ -1405,6 +1407,88 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert_equal "photo_analyzed", messages.last["status"]
       assert_includes messages.last["summary"], "Lectura tardía"
     end
+  ensure
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
+  test "a case change after the photo write stops the photo-question path" do
+    set_photo_question_flag("true")
+    service_calls = 0
+    original_write = ConversationSession.instance_method(:record_photo_observation!)
+    ConversationSession.define_method(:record_photo_observation!) do |**kwargs|
+      state = original_write.bind_call(self, **kwargs)
+      start_new_case!(reason: "technician_new_case", correlation_id: "case:b") if state == :applied
+      state
+    end
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| service_calls += 1 }
+
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
+      messages = nil
+      with_analysis_service(result: analysis_result) do
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            question: "Cómo se ajustan los resortes de la fijación de cables?",
+            expected_episode_id: owner
+          ))
+        end
+      end
+
+      photo = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha)
+      episode = @session.reload.active_episode
+      assert photo.visual_observation.present?
+      assert_equal "Panel", photo.visual_observation["canonical_component"]
+      assert_not_equal owner, episode["episode_id"]
+      assert_nil episode["active_photo"]
+      assert episode["facts"].to_h.values.none? { |fact| fact["source"] == "photo" }
+      assert @session.conversation_history.none? { |message| message["content"].to_s.include?("[FOTO]") }
+      assert_equal 0, service_calls
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_equal "Visible analysis", messages.last["summary"]
+      assert messages.none? { |message| message["status"] == "photo_question_answered" }
+    end
+  ensure
+    ConversationSession.define_method(:record_photo_observation!, original_write) if original_write
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
+  test "not_recording still answers a photo question from the accepted observation" do
+    set_photo_question_flag("true")
+    service_calls = 0
+    seen = nil
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) do |**kwargs|
+      service_calls += 1
+      seen = kwargs
+      service = Object.new
+      service.define_singleton_method(:call) do
+        { answer: "Respuesta aceptada", citations: [], provenance_segments: [], generation_mode: "test" }
+      end
+      service
+    end
+
+    messages = nil
+    with_episode_flag(nil) do
+      with_analysis_service(result: analysis_result) do
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            question: "Cómo se ajustan los resortes de la fijación de cables?"
+          ))
+        end
+      end
+    end
+
+    photo = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha)
+    assert_equal 1, service_calls
+    assert_equal "Panel", seen[:accepted_observation]["canonical_component"]
+    assert_equal photo.visual_observation["manufacturer"], seen[:accepted_observation]["manufacturer"]
+    assert_equal "UNKNOWN", seen[:evidence_value][:manufacturer]
+    assert_equal [ "photo_question_answered" ], messages.pluck("status")
+    assert_equal "Respuesta aceptada", messages.last["answer"]
+    assert @session.reload.conversation_history.any? { |message| message["content"].to_s.start_with?("[FOTO]") }
   ensure
     Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
     set_photo_question_flag(nil)

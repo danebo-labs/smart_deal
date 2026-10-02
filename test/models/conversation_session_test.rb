@@ -1316,6 +1316,38 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal({}, other.reload.active_episode)
   end
 
+  test "photo_assistant history write returns applied, stale, or not_recording" do
+    session = web_episode_session
+
+    with_episode_flag(nil) do
+      assert_equal :not_recording, session.record_assistant_turn!(
+        "[FOTO] display", user_id: users(:one).id, correlation_id: "photo:1", writer: "photo_assistant"
+      )
+    end
+    assert_equal "[FOTO] display", session.reload.conversation_history.last["content"]
+
+    with_episode_flag("true") do
+      owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:1")
+      assert_equal :applied, session.record_assistant_turn!(
+        "[FOTO] applied", user_id: users(:one).id, correlation_id: "photo:2",
+        expected_episode_id: owner, writer: "photo_assistant"
+      )
+      assert_equal :stale, session.record_assistant_turn!(
+        "[FOTO] stale", user_id: users(:one).id, correlation_id: "photo:3",
+        expected_episode_id: "ep_other", writer: "photo_assistant"
+      )
+    end
+
+    contents = session.reload.conversation_history.pluck("content")
+    assert_includes contents, "[FOTO] applied"
+    assert_not_includes contents, "[FOTO] stale"
+
+    plain = web_episode_session(identifier: "web:plain-assistant-return")
+    with_episode_flag(nil) do
+      assert_nil plain.record_assistant_turn!("hola", user_id: users(:one).id, correlation_id: "assistant:1")
+    end
+  end
+
   test "reset_active_episode! clears the column" do
     session = web_episode_session
     with_episode_flag("true") do

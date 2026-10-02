@@ -593,6 +593,19 @@ Cuando el write está stale, la observación aceptada queda con la relevancia ca
 
 ---
 
+Pre-deploy review found and closed:
+
+```text
+1. same-turn provenance snapshot race
+2. mid-delivery episode transition before photo-question RAG
+```
+
+Commit: `fix: close photo evidence delivery races`.
+
+Provenance of a photo question uses the accepted observation captured for that turn. It does not re-read `FieldPhoto.visual_observation` after generation. The `[FOTO]` history write is the ownership gate: `:stale` stops PhotoQuestionAnswerService; `:not_recording` still continues when the evidence was accepted.
+
+---
+
 ## Handoff
 
 ```text

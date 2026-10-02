@@ -197,6 +197,8 @@ class ConversationSession < ApplicationRecord
   def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant", focus_ids: nil)
     unless episode_recording?
       add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
+      return :not_recording if writer == "photo_assistant"
+
       return nil
     end
 
@@ -236,7 +238,13 @@ class ConversationSession < ApplicationRecord
       attrs[:active_episode] = result.state if result.decision == :assistant
       update!(attrs)
     end
-    return nil if dropped || (writer == "photo_assistant" && Rag::HaikuQueryAnalysisFlag.owner? && result.nil?)
+    if writer == "photo_assistant"
+      return :stale if dropped
+
+      log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result&.decision == :assistant
+      return :applied
+    end
+    return nil if dropped
 
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result.decision == :assistant
     result

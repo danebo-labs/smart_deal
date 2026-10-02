@@ -169,6 +169,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     delivered = deliver(
       display_value,
       evidence_value: evidence_value,
+      accepted_observation: acceptance.status == "stored" ? acceptance.observation : nil,
       session: session,
       filename: filename,
       account_id: account_id,
@@ -247,6 +248,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     delivered = deliver(
       value,
       evidence_value: value,
+      accepted_observation: observation,
       session: session,
       filename: filename,
       account_id: account_id,
@@ -370,7 +372,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     target_visible: nil
   }.freeze
 
-  def deliver(display_value, evidence_value:, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil, expected_episode_id: nil)
+  def deliver(display_value, evidence_value:, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil, expected_episode_id: nil, accepted_observation: nil)
     write_state = session&.record_photo_observation!(
       photo_value: evidence_value || BLANK_PHOTO_READING,
       field_photo_id: field_photo_id,
@@ -379,7 +381,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       expected_episode_id: expected_episode_id
     )
     consequences = evidence_value.present? && write_state != :stale
-    if consequences
+    history_state = if consequences
       session&.record_assistant_turn!(
         evidence_value.fetch(:compact_context),
         user_id: user_id,
@@ -388,13 +390,17 @@ class FieldPhotoAnalysisJob < ApplicationJob
         writer: "photo_assistant"
       )
     end
+    # :stale is the only photo-history result that stops the question path.
+    # :not_recording still continues. The history write is the ownership gate;
+    # Bedrock runs only after that lock is released.
+    photo_question = consequences && history_state != :stale && Rag::PhotoQuestionFlag.enabled? && question.present?
 
     thumbnail_url = field_photo_thumbnail_url(field_photo_id)
-    rag_answer = if consequences && Rag::PhotoQuestionFlag.enabled? && question.present?
+    rag_answer = if photo_question
       answer_photo_question(question: question, evidence_value: evidence_value, session: session,
                             account_id: account_id, user_id: user_id,
                             correlation_id: correlation_id, locale: locale,
-                            field_photo_id: field_photo_id)
+                            field_photo_id: field_photo_id, accepted_observation: accepted_observation)
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
@@ -444,7 +450,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # analysis that was already paid for and delivered above — see plan
   # foto_mas_pregunta_rag "Aislamiento de fallo obligatorio".
   def answer_photo_question(question:, evidence_value:, session:, account_id:, user_id:, correlation_id:, locale:,
-                             field_photo_id: nil)
+                             field_photo_id: nil, accepted_observation: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     account = session&.account || (account_id && Account.find_by(id: account_id))
 
@@ -456,7 +462,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       user_id: user_id,
       correlation_id: correlation_id,
       locale: locale,
-      field_photo_id: field_photo_id
+      field_photo_id: field_photo_id,
+      accepted_observation: accepted_observation
     ).call
     return nil unless result
 

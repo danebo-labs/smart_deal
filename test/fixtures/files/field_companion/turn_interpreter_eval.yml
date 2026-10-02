@@ -1,0 +1,106 @@
+# Verbatim turns for bin/rails turn_interpreter:eval. CI does not call Bedrock.
+# origin real: text already in the repo. origin reconstructed: journeys this plan names.
+- id: jesus_elemont
+  origin: real
+  turn: "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15"
+  focus_count: 0
+  expected:
+    decision: ready
+    query_contains: [Elemont, CEA15]
+    query_excludes: []
+- id: q2_basic
+  origin: reconstructed
+  turn: "¿Que es Q2?"
+  focus_count: 0
+  expected:
+    perception: mention
+    decision: clarify_first
+    fault_code: false
+    query_contains: []
+    query_excludes: [Q2]
+- id: q2_carry_identity
+  origin: reconstructed
+  turns:
+    - "¿Qué es Q2?"
+    - "Monarch NICE3000"
+  focus_count: 0
+  expected:
+    decision: ready
+    query_contains: [Q2, NICE3000, Monarch]
+    query_excludes: []
+- id: q2_seek
+  origin: reconstructed
+  turns:
+    - "¿Qué es Q2?"
+    - "No sé, busca con eso"
+  focus_count: 0
+  expected:
+    decision: best_effort
+    query_contains: [Q2]
+    repeated_clarification: false
+- id: q2_new_work
+  origin: reconstructed
+  turns:
+    - "¿Qué es Q2?"
+    - "otra falla: puertas no cierran"
+  focus_count: 0
+  expected:
+    decision: ready
+    carry_discarded: true
+    query_excludes: [Q2]
+    query_contains: [puertas]
+- id: vf5_doors
+  origin: reconstructed
+  turn: "Es VF5, intenta cerrar, vuelve a abrir y marca E03."
+  focus_count: 0
+  expected:
+    decision: ready
+    requires_controller: false
+    query_contains: [VF5, E03]
+- id: nice300_follow_up
+  origin: reconstructed
+  turns:
+    - "Nice300 e51"
+    - "¿Qué reviso?"
+  focus_count: 0
+  expected:
+    decision: ready
+    query_contains: [NICE3000, E51]
+- id: pending_unknown
+  origin: reconstructed
+  turn: "Volviendo a eso, no lo sé"
+  pending_slot: controller
+  expected:
+    decision: best_effort
+    fact: { slot: controller, status: unknown_confirmed }
+    query_excludes: [controlador]
+- id: pending_custom_identity
+  origin: reconstructed
+  turn: "ABC900"
+  pending_slot: controller
+  expected:
+    fact: { slot: controller, value: ABC900, source: user }
+- id: meta_controller
+  origin: reconstructed
+  turn: "¿Necesitas controlador?"
+  expected:
+    decision: meta
+    observations: []
+- id: correction_known
+  origin: reconstructed
+  turn: "No, no es NICE3000. Es NICE1000."
+  expected:
+    rejected: [NICE3000]
+    active: [NICE1000]
+- id: correction_uncatalogued
+  origin: reconstructed
+  turn: "No, no es NICE3000. Es ABC900."
+  expected:
+    fact: { slot: controller, value: ABC900, source: user }
+    rejected: [NICE3000]
+- id: tenant_private_designator
+  origin: reconstructed
+  turn: "PRIVATE900"
+  expected:
+    catalog_typed: false
+    manufacturer_leaked: false

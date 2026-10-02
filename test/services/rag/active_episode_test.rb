@@ -43,17 +43,21 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_nil kept.facts["fault_code"]["value"]
   end
 
-  test "source is user or photo, and photo only on manufacturer and model" do
+  test "catalog source is kept and photo is only manufacturer or model" do
     episode = Rag::ActiveEpisode.parse(valid_payload(
       "facts" => {
         "manufacturer" => known_fact("KONE", source: "photo"),
         "model" => known_fact("MH", source: "catalog"),
+        "controller" => known_fact("NICE3000", source: "catalog"),
         "fault_code" => known_fact("8", source: "photo")
       }
     ), now: NOW)
 
-    assert_equal [ "manufacturer" ], episode.facts.keys
+    assert_equal %w[controller manufacturer model], episode.facts.keys.sort
     assert_equal "photo", episode.facts["manufacturer"]["source"]
+    assert_equal "catalog", episode.facts["model"]["source"]
+    assert_equal "catalog", episode.facts["controller"]["source"]
+    assert_nil episode.facts["fault_code"]
   end
 
   test "goal text keeps the first 300 characters and marks truncated" do
@@ -114,6 +118,18 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
       "pending_fact" => { "subject" => "model", "correlation_id" => "query:1" }
     ), now: NOW)
     assert_equal "model", kept.pending_fact["subject"]
+  end
+
+  test "a capped episode plus rejected facts has a fixed byte size and a smaller core" do
+    payload = capped_episode_payload
+    saturated = JSON.generate(payload).bytesize
+    core = payload.except("conflicts", "observations", "identifiers")
+    nucleus = JSON.generate(core).bytesize
+
+    assert_equal 4218, saturated
+    assert_equal 2167, nucleus
+    assert_operator nucleus, :<=, 4096
+    assert_operator saturated, :>, 4096
   end
 
   test "serialization over 2048 bytes drops conflicts and then the oldest identifiers" do
@@ -219,6 +235,48 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
       "active_photo" => nil,
       "conflicts" => []
     }.merge(overrides)
+  end
+
+  def capped_episode_payload
+    stamp = NOW.iso8601
+    correlation = "query:#{'a' * 32}"
+    fact = {
+      "status" => "known",
+      "value" => "V" * Rag::ActiveEpisode::MAX_VALUE_CHARS,
+      "source" => "catalog",
+      "correlation_id" => correlation,
+      "at" => stamp
+    }
+    {
+      "v" => 1,
+      "episode_id" => "ep_#{'b' * 16}",
+      "status" => "active",
+      "opened_at" => stamp,
+      "updated_at" => stamp,
+      "opened_by" => correlation,
+      "goal" => { "text" => "G" * Rag::ActiveEpisode::MAX_GOAL_CHARS, "correlation_id" => correlation, "truncated" => true },
+      "facts" => Rag::ActiveEpisode::FACT_KEYS.index_with { fact },
+      "identifiers" => Array.new(Rag::ActiveEpisode::MAX_IDENTIFIERS) { |index|
+        { "value" => format("I%02d%s", index, "x" * 27), "source" => "user", "correlation_id" => correlation }
+      },
+      "observations" => Array.new(Rag::ActiveEpisode::MAX_OBSERVATIONS) { |index|
+        { "text" => "O" * Rag::ActiveEpisode::MAX_OBSERVATION_CHARS, "correlation_id" => correlation }
+      },
+      "pending_fact" => { "subject" => "controller", "correlation_id" => correlation },
+      "pending_question" => { "type" => "controller", "carry" => %w[Q2 E03] },
+      "rejected" => Array.new(4) { |index|
+        { "slot" => "controller", "value" => format("R%d%s", index, "y" * 58) }
+      },
+      "active_photo" => { "field_photo_id" => 999_999, "sha256" => "ab" * 32, "correlation_id" => correlation },
+      "conflicts" => Array.new(Rag::ActiveEpisode::MAX_CONFLICTS) {
+        {
+          "fact" => "manufacturer",
+          "user" => "U" * Rag::ActiveEpisode::MAX_VALUE_CHARS,
+          "photo" => "P" * Rag::ActiveEpisode::MAX_VALUE_CHARS,
+          "correlation_id" => correlation
+        }
+      }
+    }
   end
 
   def known_fact(value, source: "user")

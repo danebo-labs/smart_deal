@@ -1003,7 +1003,7 @@ class ConversationSession < ApplicationRecord
   def history_message(role, content, user_id:, correlation_id:, focus_ids: nil)
     message = {
       "role" => role,
-      "content" => content.to_s.truncate(MAX_MSG_LENGTH),
+      "content" => Rag::TurnText.truncate(content),
       "ts" => Time.current.iso8601
     }
     message["user_id"] = user_id if user_id.present?

@@ -63,22 +63,54 @@ module Rag
 
     # Exact canonical wins over a longer prefix. A prefix expands only when
     # one canonical remains. A collision asks; it does not pick.
-    def resolve_designator(token)
+    #
+    # viewer_account nil keeps the unscoped YAML lookup used by F8.
+    # A viewer only sees entries KnowledgeScopePolicy authorizes. A YAML row
+    # is not authorization. Unauthorized matches contribute nothing: no
+    # canonical value, manufacturer, candidates, or alias.
+    def resolve_designator(token, viewer_account: nil)
       norm = FollowupQueryRewriter.normalize_label(token)
       return unresolved if norm.blank?
 
-      exact = designator_rows.select { |row| row[:norm] == norm }
+      exact = visible_rows(designator_rows.select { |row| row[:norm] == norm }, viewer_account)
       return designator_resolution(exact, :exact) if exact.any?
       return unresolved if norm.length < 6 || !norm.match?(/\d/)
 
       prefixed = designator_rows.select { |row|
         row[:norm].start_with?(norm) && (row[:norm].length - norm.length) <= 4
       }
+      prefixed = visible_rows(prefixed, viewer_account)
       canons = prefixed.uniq { |row| row[:norm] }
       return unresolved if canons.empty?
       return ambiguous_resolution(canons) if canons.size > 1
 
       designator_resolution(prefixed.select { |row| row[:norm] == canons.first[:norm] }, :prefix)
+    end
+
+    # Exact brand only. No prefix and no fuzzy match. One canonical brand
+    # (downcase) is one manufacturer. Two canonical strings are ambiguous.
+    def resolve_brand(token, viewer_account: nil)
+      norm = FollowupQueryRewriter.normalize_label(token)
+      return unresolved if norm.blank?
+
+      matches = entries.filter_map { |entry|
+        brand = Array(entry.brands).find { |item| FollowupQueryRewriter.normalize_label(item) == norm }
+        next if brand.blank?
+
+        { entry: entry, brand: brand }
+      }
+      matches = visible_entry_matches(matches, viewer_account)
+      return unresolved if matches.empty?
+
+      canonicals = matches.map { |row| row[:brand] }.uniq { |brand| brand.downcase }
+      if canonicals.size > 1
+        return Resolution.new(
+          status: :ambiguous, value: nil, type: nil, manufacturer: nil, candidates: canonicals
+        )
+      end
+
+      brand = canonicals.first
+      Resolution.new(status: :exact, value: brand, type: "manufacturer", manufacturer: brand, candidates: [])
     end
 
     def find(account_id, document_id)
@@ -216,6 +248,42 @@ module Rag
 
     def unresolved
       Resolution.new(status: :none, value: nil, type: nil, manufacturer: nil, candidates: [])
+    end
+
+    def visible_rows(rows, viewer_account)
+      return rows if viewer_account.nil?
+      return [] if rows.empty?
+
+      allowed = authorized_entry_keys(rows.pluck(:entry), viewer_account)
+      rows.select { |row| allowed.include?(entry_key(row[:entry])) }
+    end
+
+    def visible_entry_matches(matches, viewer_account)
+      return matches if viewer_account.nil?
+      return [] if matches.empty?
+
+      allowed = authorized_entry_keys(matches.pluck(:entry), viewer_account)
+      matches.select { |row| allowed.include?(entry_key(row[:entry])) }
+    end
+
+    def authorized_entry_keys(catalog_entries, viewer_account)
+      list = Array(catalog_entries).uniq { |entry| entry_key(entry) }
+      candidates = list.map { |entry|
+        { document_id: entry.document_id, s3_key: entry.s3_key, catalog_account_id: entry.account_id }
+      }
+      db_rows = KnowledgeScopePolicy.rows_for_catalog_candidates(candidates)
+      list.filter_map { |entry|
+        bound = KnowledgeScopePolicy.bind_catalog_candidate(
+          { document_id: entry.document_id, s3_key: entry.s3_key, catalog_account_id: entry.account_id },
+          rows: db_rows,
+          viewer_account: viewer_account
+        )
+        entry_key(entry) if bound
+      }
+    end
+
+    def entry_key(entry)
+      [ entry.account_id.to_s, entry.document_id.to_s, entry.s3_key.to_s ]
     end
 
     def ambiguous_resolution(rows)

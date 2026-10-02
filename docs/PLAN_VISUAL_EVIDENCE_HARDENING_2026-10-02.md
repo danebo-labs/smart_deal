@@ -1,14 +1,34 @@
 # Visual Evidence Hardening (2026-10-02)
 
-**Estado:** `F1–F3 IMPLEMENTED LOCALLY — PRODUCTION PHOTO RESMOKE PENDING`
+**Estado:** `F1–F3 PRODUCTION VERIFIED — CLOSED`
 
-Source of truth de este cierre. Reconcilia el plan de Codex revisado sobre `25fcb0ab9abd6ad2b5992054df5ff26a6cf300c0` con la revisión de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica a Codex, manda Opus. La arquitectura de este documento no se reabre.
+```text
+F1–F3 PRODUCTION VERIFIED — CLOSED
+F4 MOVED TO: PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md
+F5 DEFERRED
+```
+
+Registro histórico de F1–F3. Reconcilia el plan de Codex revisado sobre `25fcb0ab9abd6ad2b5992054df5ff26a6cf300c0` con la revisión de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica a Codex, manda Opus. La arquitectura de F1–F3 no se reabre.
+
+El resmoke de producción cerró el blocker de Accepted Visual Observation: `photo_observation_acceptance=stored`, `FieldPhoto.visual_observation` presente, `ActivePhotoContext` loaded, reuse sin Vision nueva, raw Vision fuera de facts, history y RAG.
+
+Ese mismo flow expuso huecos posteriores, fuera de F1–F3:
+
+```text
+VisualTaskContext missing
+photo-question identity-scope bypass
+cross-manufacturer procedural contamination
+```
+
+F4 y ese retrieval se especifican en [PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md](PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md). F5 queda deferred. Este documento no los implementa.
 
 Master de Turn Interpreter, sin cambios de alcance: [PLAN_TURN_INTERPRETER_2026-10-01.md](PLAN_TURN_INTERPRETER_2026-10-01.md).
 
 ---
 
 ## Producción
+
+Lo que sigue es el estado al escribir F1–F3, antes del resmoke. El cierre está en el encabezado.
 
 Desplegado: `0a1b9de8ac525c8a634314b0416395e66efa77e5`.
 
@@ -461,6 +481,8 @@ F4 NOT STARTED
 F5 NOT STARTED
 ```
 
+Ese bloque es el estado de la ejecución local. El cierre de producción está en el encabezado.
+
 Commit: `fix: gate photo consequences on accepted visual evidence`.
 
 Archivos de producto: `FieldPhotoObservation` (`from_analysis` acotado, `accept!` con `stored` / `invalid` / `unavailable`), `FieldPhotoAnalysisJob` (`display_value` vs `evidence_value`), `ConversationSession#record_photo_observation!` (`:applied` / `:stale` / `:not_recording`), `PhotoQuestionAnswerService` (sólo `evidence_value`; ancla vacía si `unrelated`), `PilotUsageLog` (`field_photo_id` en el allowlist del evento `photo_observation_acceptance`). Los scripts de batería sólo cambian el keyword del servicio. `SessionContextBuilder`, `QueryComposer` y `FieldPhotoPrompt` no cambian.
@@ -490,6 +512,8 @@ rag_controller foto observada: 2 runs, 8 assertions
 ---
 
 ## F4 — VisualTaskContext reemplaza a PhotoIntent
+
+Spec histórica. La implementación está en [PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md](PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md). No implementar desde este archivo.
 
 Documentado. No implementar ahora.
 
@@ -612,11 +636,9 @@ Provenance of a photo question uses the accepted observation captured for that t
 ## Handoff
 
 ```text
-F1–F3 IMPLEMENTED LOCALLY — PRODUCTION PHOTO RESMOKE PENDING
-F4 NOT STARTED
-F5 NOT STARTED
+F1–F3 PRODUCTION VERIFIED — CLOSED
+F4 MOVED TO: PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md
+F5 DEFERRED
 ```
 
-F1–F3 se pueden desplegar solos, después de review, para cerrar el blocker. F4 y F5 no.
-
-Siguiente paso: review y resmoke de producción acotado a foto relevante. Parar antes de F4.
+El resmoke cerró el blocker de Accepted Visual Observation. F4 no se implementa desde este archivo. F5 no entra.

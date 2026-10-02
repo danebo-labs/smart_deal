@@ -106,7 +106,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         assert_equal "es", messages.last["response_locale"]
         assert_equal analysis_result[:analysis], messages.last["summary"]
         history = @session.reload.conversation_history.last
-        assert_equal analysis_result[:compact_context], history["content"]
+        assert_equal accepted_compact_context(analysis_result), history["content"]
+        assert_not_equal analysis_result[:compact_context], history["content"]
         assert_equal users(:one).id, history["user_id"]
         assert_equal "photo:job-test", history["correlation_id"]
         assert_nil FieldPhotoPendingImageStore.take(token: @token, account_id: accounts(:legacy).id)
@@ -270,9 +271,9 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   # placeholder, one broadcast; both turns still land in the history.
   test "flag on with a question delivers one answer broadcast and both turns land in history" do
     set_photo_question_flag("true")
-    orig_query = BedrockRagService.instance_method(:query)
-    BedrockRagService.define_method(:query) do |_question, **_kwargs|
-      { answer: "Es un panel de control", citations: [], session_id: nil }
+    orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)
+    Rag::PhotoQuestionAnswerService.define_method(:call) do
+      { answer: "Es un panel de control", citations: [], provenance_segments: [], generation_mode: "test" }
     end
 
     with_analysis_service(result: analysis_result) do
@@ -290,12 +291,13 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert_not answer_message.key?("presentation")
 
       history = @session.reload.conversation_history
-      assert_equal analysis_result[:compact_context], history[-2]["content"]
+      assert_equal accepted_compact_context(analysis_result), history[-2]["content"]
+      assert_not_equal analysis_result[:compact_context], history[-2]["content"]
       assert_equal "Es un panel de control", history[-1]["content"]
       assert_equal 1, history.count { |turn| turn["content"] == "Es un panel de control" }
     end
   ensure
-    BedrockRagService.define_method(:query, orig_query) if orig_query
+    Rag::PhotoQuestionAnswerService.define_method(:call, orig_call) if orig_call
     set_photo_question_flag(nil)
   end
 
@@ -474,11 +476,11 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
   test "interaction_completed outcome reflects the RAG answer, not the vision text" do
     set_photo_question_flag("true")
-    orig_query = BedrockRagService.instance_method(:query)
+    orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)
 
     # RAG abstains, vision answered normally -> outcome must be abstained.
-    BedrockRagService.define_method(:query) do |_question, **_kwargs|
-      { answer: "DATA_NOT_AVAILABLE", citations: [], session_id: nil }
+    Rag::PhotoQuestionAnswerService.define_method(:call) do
+      { answer: "DATA_NOT_AVAILABLE", citations: [], provenance_segments: [], generation_mode: "test" }
     end
     with_analysis_service(result: analysis_result) do
       events = capture_pilot_usage_events do
@@ -490,8 +492,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
     # RAG answers normally, vision text happens to contain the abstention
     # marker -> outcome must still be answered (computed on the RAG answer).
-    BedrockRagService.define_method(:query) do |_question, **_kwargs|
-      { answer: "Es un panel de control", citations: [], session_id: nil }
+    Rag::PhotoQuestionAnswerService.define_method(:call) do
+      { answer: "Es un panel de control", citations: [], provenance_segments: [], generation_mode: "test" }
     end
     vision_with_marker = analysis_result.merge(analysis: "DATA_NOT_AVAILABLE")
     with_analysis_service(result: vision_with_marker) do
@@ -504,12 +506,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       completed = events.find { |e| e["event"] == "interaction_completed" }
       assert_equal "answered", completed["outcome"]
     end
-    BedrockRagService.define_method(:query, orig_query)
 
     # The photo-question RAG call raises past its own isolation (see the
     # dedicated exception test above) -> outcome must be failed, not derived
     # from the vision text.
-    orig_call = Rag::PhotoQuestionAnswerService.instance_method(:call)
     Rag::PhotoQuestionAnswerService.define_method(:call) { raise RuntimeError, "boom" }
     with_analysis_service(result: analysis_result) do
       events = capture_pilot_usage_events do
@@ -521,9 +521,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       completed = events.find { |e| e["event"] == "interaction_completed" }
       assert_equal "failed", completed["outcome"]
     end
-    Rag::PhotoQuestionAnswerService.define_method(:call, orig_call)
   ensure
-    BedrockRagService.define_method(:query, orig_query) if orig_query
+    Rag::PhotoQuestionAnswerService.define_method(:call, orig_call) if orig_call
     set_photo_question_flag(nil)
   end
 
@@ -546,7 +545,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
     gecb_result = analysis_result.merge(
       canonical_name: "GECB",
-      parsed: analysis_result[:parsed].merge("visible_text" => [ "System=1", "Tools=2" ])
+      parsed: analysis_result[:parsed].merge(
+        "canonical_component" => "GECB",
+        "visible_text" => [ "System=1", "Tools=2" ]
+      )
     )
 
     with_analysis_service(result: gecb_result) do
@@ -578,7 +580,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal @sha, episode.dig("active_photo", "sha256")
     assert episode.dig("active_photo", "field_photo_id").present?
     assert_nil episode.dig("facts", "fault_code")
-    assert_equal analysis_result[:compact_context], @session.conversation_history.last["content"]
+    assert_equal accepted_compact_context(analysis_result), @session.conversation_history.last["content"]
+    assert_not_equal analysis_result[:compact_context], @session.conversation_history.last["content"]
   end
 
   test "P5 a photo brand that disagrees with the technician is stored as a conflict" do
@@ -994,6 +997,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert_equal "user", episode.dig("facts", "manufacturer", "source")
       assert_nil episode.dig("facts", "model")
       assert_not_includes @session.conversation_history.pluck("content"), reply
+      assert_not_includes @session.conversation_history.pluck("content"), accepted_compact_context(analysis_result)
       assert events.any? { |event| event["event"] == "photo_completed" }
     end
   end
@@ -1111,7 +1115,312 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     end
   end
 
+  test "a rejected observation is display-only and has no technical consequences" do
+    set_photo_question_flag("true")
+    service_calls = 0
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| service_calls += 1 }
+    rejected = rejected_result
+
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
+      episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+      episode.pending_question = { "type" => "manufacturer" }
+      episode.pending_fact = { "subject" => "manufacturer", "correlation_id" => "seed" }
+      @session.update!(active_episode: episode.to_h)
+
+      events = nil
+      messages = nil
+      with_analysis_service(result: rejected) do
+        events = capture_pilot_usage_events do
+          messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+            FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+              question: "qué marca es",
+              expected_episode_id: owner
+            ))
+          end
+        end
+      end
+
+      photo = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha)
+      kept = @session.reload.active_episode
+      context = Rag::ActivePhotoContext.resolve(
+        episode: Rag::ActiveEpisode.parse(kept), viewer_account: accounts(:legacy)
+      )
+      built = SessionContextBuilder.build(@session, active_photo_context: context)
+      acceptance = events.find { |event| event["event"] == "photo_observation_acceptance" }
+
+      assert_equal 0, service_calls
+      assert_nil photo.visual_observation
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_includes messages.last["summary"], "Lectura pagada SECRET-MFR"
+      assert_equal "invalid", acceptance["result"]
+      assert_equal "invalid_enum", acceptance["outcome_reason"]
+      assert_equal photo.id, acceptance["field_photo_id"]
+      assert_not acceptance.key?("manufacturer")
+      assert_not acceptance.key?("visible_codes")
+      assert kept["facts"].to_h.values.none? { |fact| fact["source"] == "photo" }
+      assert_empty Array(kept["conflicts"])
+      assert_equal "manufacturer", kept.dig("pending_question", "type")
+      assert_equal "manufacturer", kept.dig("pending_fact", "subject")
+      assert @session.conversation_history.none? { |message| message["content"].to_s.include?("[FOTO]") }
+      assert @session.conversation_history.none? { |message| message["content"].to_s.include?("SECRET-MFR") }
+      assert_equal "invalid", context.status
+      assert_not_includes built, "SECRET-MFR"
+      assert_not_includes built, "CODE-NEW"
+    end
+  ensure
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
+  test "an invalid new photo moves the pointer without keeping the previous photo active" do
+    set_photo_question_flag("true")
+    service_calls = 0
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| service_calls += 1 }
+    first = analysis_result.merge(relevance_to_goal: "relevant", target_visible: true)
+    first[:parsed] = first[:parsed].merge("manufacturer" => "KONE", "model" => "M1")
+
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
+      with_analysis_service(result: first) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(expected_episode_id: owner))
+      end
+      episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+      episode.pending_question = { "type" => "controller", "carry" => [ "Q2" ] }
+      episode.pending_fact = { "subject" => "controller", "correlation_id" => "seed" }
+      @session.update!(active_episode: episode.to_h)
+      foto_lines = @session.conversation_history.count { |message| message["content"].to_s.start_with?("[FOTO]") }
+
+      messages = nil
+      with_analysis_service(result: rejected_result) do
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            image_token: pending_token,
+            image_sha256: Digest::SHA256.hexdigest("jpeg-2"),
+            question: "qué marca es esta placa",
+            expected_episode_id: owner
+          ))
+        end
+      end
+
+      kept = @session.reload.active_episode
+      new_photo = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: Digest::SHA256.hexdigest("jpeg-2"))
+      context = Rag::ActivePhotoContext.resolve(
+        episode: Rag::ActiveEpisode.parse(kept), viewer_account: accounts(:legacy)
+      )
+      perception = Rag::TurnPerception::Result.new(
+        valid: true, move: "follow_up", observations: [], pending_resolution: nil, clarification_target: nil,
+        identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+      )
+      decision = Rag::RoutePolicy.call(
+        previous: Rag::ActiveEpisode.parse(kept), perception: perception, focus_count: 0, relevant_photo: context.relevant?
+      )
+      query = Rag::QueryComposer.call(
+        state: Rag::ActiveEpisode.parse(kept), turn: "¿Qué reviso ahora?", perception: perception, decision: decision,
+        active_photo_context: context
+      )
+      built = SessionContextBuilder.build(@session, active_photo_context: context)
+
+      assert_equal 0, service_calls
+      assert_nil new_photo.visual_observation
+      assert_equal new_photo.id, kept.dig("active_photo", "field_photo_id")
+      assert_equal "KONE", kept.dig("facts", "manufacturer", "value")
+      assert_equal "M1", kept.dig("facts", "model", "value")
+      assert_empty Array(kept["conflicts"])
+      assert_equal "controller", kept.dig("pending_question", "type")
+      assert_equal [ "Q2" ], kept.dig("pending_question", "carry")
+      assert_equal "invalid", context.status
+      assert_equal foto_lines, @session.conversation_history.count { |message| message["content"].to_s.start_with?("[FOTO]") }
+      assert_includes messages.last["summary"], "Lectura pagada SECRET-MFR"
+      assert_not_includes built, "SECRET-MFR"
+      assert_not_includes built, "CODE-NEW"
+      assert_not_includes query.to_s, "SECRET-MFR"
+      assert_not_includes query.to_s, "CODE-NEW"
+    end
+  ensure
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
+  test "an invalid reread stays display-only and does not reuse the stored observation" do
+    photo = create_observed_photo(manufacturer: "KONE")
+    set_photo_question_flag("true")
+    service_calls = 0
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| service_calls += 1 }
+    FieldPhotoPendingImageStore.delete(token: @token, account_id: accounts(:legacy).id)
+
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
+      @session.record_photo_observation!(
+        photo_value: {
+          manufacturer: "KONE", model_visible: "MX-A", relevance_to_goal: "relevant", target_visible: true
+        },
+        field_photo_id: photo.id, sha256: photo.sha256, correlation_id: "photo:stored",
+        expected_episode_id: owner
+      )
+      @session.update!(conversation_history: @session.conversation_history + [ {
+        "role" => "assistant",
+        "content" => "[FOTO] Componente: resortes | Fabricante: KONE",
+        "ts" => Time.current.iso8601,
+        "correlation_id" => "photo:stored"
+      } ])
+      before = @session.conversation_history.size
+
+      messages = nil
+      with_analysis_service(result: rejected_result.merge(analysis: "Lectura nueva B")) do
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            image_token: nil,
+            field_photo_id: photo.id,
+            image_sha256: photo.sha256,
+            continuity: "reread",
+            question: "volvé a leer la placa",
+            expected_episode_id: owner
+          ))
+        end
+      end
+
+      kept = @session.reload.active_episode
+      assert_equal 0, service_calls
+      assert_equal "KONE", photo.reload.visual_observation["manufacturer"]
+      assert_equal [ "R1" ], photo.visual_observation["visible_text"]
+      assert_equal "KONE", kept.dig("facts", "manufacturer", "value")
+      assert_equal "MX-A", kept.dig("facts", "model", "value")
+      assert_equal before, @session.conversation_history.size
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_includes messages.last["summary"], "Lectura nueva B"
+      assert messages.none? { |message| message["status"] == "photo_question_answered" }
+      assert_not_includes messages.to_json, "provenance_segments"
+    end
+  ensure
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
+  test "a valid reread replaces the observation and downstream uses only the new reading" do
+    photo = create_observed_photo(manufacturer: "OTIS")
+    FieldPhotoPendingImageStore.delete(token: @token, account_id: accounts(:legacy).id)
+    replacement = complete_observation_result.merge(
+      analysis: "Lectura nueva KONE",
+      compact_context: "[FOTO] RAW OTIS-OLD",
+      relevance_to_goal: "relevant",
+      target_visible: true
+    )
+    replacement[:parsed] = replacement[:parsed].merge("manufacturer" => "KONE", "model" => "MX20")
+    captured = nil
+    queried = nil
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) do |**kwargs|
+      captured = kwargs
+      original_new.call(**kwargs)
+    end
+    orig_query = BedrockRagService.instance_method(:query)
+    BedrockRagService.define_method(:query) do |_question, **kwargs|
+      queried = kwargs
+      { answer: "En la foto: se observa KONE.", citations: [], session_id: nil }
+    end
+    set_photo_question_flag("true")
+
+    with_episode_flag("true") do
+      owner = @session.ensure_case_for_photo_submission!(correlation_id: "photo:job-test")
+      with_analysis_service(result: replacement) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          image_token: nil,
+          field_photo_id: photo.id,
+          image_sha256: photo.sha256,
+          continuity: "reread",
+          question: "qué marca es",
+          expected_episode_id: owner
+        ))
+      end
+
+      stored = photo.reload.visual_observation
+      kept = @session.reload.active_episode
+      assert_equal "KONE", stored["manufacturer"]
+      assert_equal "MX20", stored["model"]
+      assert_equal "KONE", kept.dig("facts", "manufacturer", "value")
+      assert_equal "MX20", kept.dig("facts", "model", "value")
+      assert_equal "photo", kept.dig("facts", "manufacturer", "source")
+      assert_equal accepted_compact_context(replacement), @session.conversation_history.first["content"]
+      assert_not_includes @session.conversation_history.pluck("content"), replacement[:compact_context]
+      assert_equal "KONE", captured[:evidence_value][:manufacturer]
+      assert_equal "MX20", captured[:evidence_value][:model_visible]
+      assert_equal stored["manufacturer"], captured[:evidence_value][:manufacturer]
+      assert_not_includes captured[:evidence_value][:compact_context], "OTIS-OLD"
+      assert_includes queried[:session_context], "Manufacturer: KONE"
+      assert_includes queried[:session_context], "Model: MX20"
+      assert_not_includes queried[:session_context], "OTIS"
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
+  test "a stale writer keeps the accepted observation and skips history retrieval and generation" do
+    set_photo_question_flag("true")
+    service_calls = 0
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| service_calls += 1 }
+    reading = complete_observation_result.merge(
+      analysis: "Lectura tardía",
+      relevance_to_goal: "relevant",
+      target_visible: true
+    )
+    reading[:parsed] = reading[:parsed].merge("manufacturer" => "SCHINDLER", "model" => "S3300")
+
+    with_episode_flag("true") do
+      @session.record_user_turn!("Cómo se ajustan los resortes?", user_id: users(:one).id, correlation_id: "query:1")
+      owner = @session.live_episode_id
+      @session.record_user_turn!(
+        "Ahora estoy revisando un KONE que no nivela en planta 3",
+        user_id: users(:one).id, correlation_id: "query:2"
+      )
+      later = @session.live_episode_id
+      assert_not_equal owner, later
+
+      messages = nil
+      with_analysis_service(result: reading) do
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+          FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+            question: "qué marca es",
+            expected_episode_id: owner
+          ))
+        end
+      end
+
+      photo = FieldPhoto.find_by!(account_id: accounts(:legacy).id, sha256: @sha)
+      kept = @session.reload.active_episode
+      assert_equal 0, service_calls
+      assert_equal "SCHINDLER", photo.visual_observation["manufacturer"]
+      assert_equal later, kept["episode_id"]
+      assert_nil kept["active_photo"]
+      assert_nil kept.dig("facts", "model")
+      assert_equal "KONE", kept.dig("facts", "manufacturer", "value")
+      assert_equal "user", kept.dig("facts", "manufacturer", "source")
+      assert_not_includes @session.conversation_history.pluck("content"), accepted_compact_context(reading)
+      assert_equal "photo_analyzed", messages.last["status"]
+      assert_includes messages.last["summary"], "Lectura tardía"
+    end
+  ensure
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    set_photo_question_flag(nil)
+  end
+
   private
+
+  def accepted_compact_context(result)
+    observation = FieldPhotoObservation.from_analysis(
+      parsed: result.fetch(:parsed),
+      model_id: result.fetch(:model),
+      target_visible: result[:target_visible],
+      relevance_to_goal: result[:relevance_to_goal]
+    )
+    FieldPhotoObservation.reading_value(observation).fetch(:compact_context)
+  end
 
   def captionless_follow_up
     episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
@@ -1192,15 +1501,35 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     }
   end
 
+  def rejected_result
+    analysis_result.merge(
+      analysis: "Lectura pagada SECRET-MFR",
+      compact_context: "[FOTO] RAW SECRET-MFR SECRET-MODEL CODE-NEW",
+      canonical_name: "placa nueva",
+      relevance_to_goal: "relevant",
+      target_visible: true,
+      parsed: analysis_result[:parsed].merge(
+        "canonical_component" => "placa nueva",
+        "manufacturer" => "SECRET-MFR",
+        "model" => "SECRET-MODEL",
+        "subsystem" => "ELEVATOR",
+        "condition" => "GOOD",
+        "visible_text" => [ "CODE-NEW" ]
+      )
+    )
+  end
+
   def analysis_result
     {
       analysis: "Visible analysis",
-      compact_context: "[FOTO] Componente: Panel | Fabricante: UNKNOWN",
+      compact_context: "[FOTO] RAW Componente: Panel | Fabricante: UNKNOWN",
       canonical_name: "Panel",
       aliases: [ "P1" ],
       parsed: {
+        "canonical_component" => "Panel",
         "manufacturer" => "UNKNOWN",
         "model" => "P1",
+        "subsystem" => "UNKNOWN",
         "condition" => "GOOD",
         "visible_text" => [ "P1" ]
       },
@@ -1240,11 +1569,14 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       content_type: "image/jpeg",
       byte_size: 8
     )
+    parsed = complete_observation_result[:parsed].merge("manufacturer" => manufacturer)
     FieldPhotoObservation.persist!(
       photo,
       FieldPhotoObservation.from_analysis(
-        parsed: complete_observation_result[:parsed].merge("manufacturer" => manufacturer),
-        model_id: "claude-sonnet-5-5"
+        parsed: parsed,
+        model_id: "claude-sonnet-5-5",
+        target_visible: parsed["target_visible"],
+        relevance_to_goal: parsed["relevance_to_goal"]
       )
     )
     photo.reload

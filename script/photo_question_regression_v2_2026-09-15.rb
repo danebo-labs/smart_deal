@@ -108,7 +108,7 @@ puts "INFO catalogo GECB=#{gecb_docs.inspect}"
 expected = { 1 => (gecb_docs.any? ? [ "GECB" ] : [ "" ]), 2 => (gecb_docs.any? ? [ "GECB" ] : [ "" ]), 3 => [ "" ] }
 PREFLIGHT_PHOTO_VALUES.each do |n, pv|
   suffix = Rag::PhotoQuestionAnswerService.new(
-    question: CASES.find { |c| c[:n] == n }[:question], photo_value: pv, session: nil,
+    question: CASES.find { |c| c[:n] == n }[:question], evidence_value: pv, session: nil,
     account: account, user_id: user.id, correlation_id: "regresion-foto:#{run_id}:preflight:#{n}", locale: "es"
   ).send(:anchor_suffix)
   ok = expected[n].include?(suffix)

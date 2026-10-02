@@ -1273,6 +1273,49 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal "second", episode.dig("active_photo", "sha256")
   end
 
+  test "record_photo_observation! returns applied, stale, or not_recording" do
+    session = web_episode_session
+    reading = { manufacturer: "KONE", model_visible: "M1", relevance_to_goal: "relevant", target_visible: true }
+    args = { photo_value: reading, field_photo_id: 1, sha256: "abc", correlation_id: "photo:1", expected_episode_id: "ep" }
+
+    with_episode_flag(nil) do
+      assert_equal :not_recording, session.record_photo_observation!(**args)
+    end
+    assert_equal({}, session.reload.active_episode)
+
+    with_episode_flag("true") do
+      owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:1")
+      assert_equal :applied, session.record_photo_observation!(**args.merge(expected_episode_id: owner))
+      assert_equal "KONE", session.reload.active_episode.dig("facts", "manufacturer", "value")
+      assert_equal "photo", session.active_episode.dig("facts", "manufacturer", "source")
+
+      stale = session.record_photo_observation!(
+        photo_value: { manufacturer: "OTIS", model_visible: "M9", relevance_to_goal: "relevant", target_visible: true },
+        field_photo_id: 2, sha256: "late", correlation_id: "photo:late", expected_episode_id: "ep_other"
+      )
+      assert_equal :stale, stale
+      kept = session.reload.active_episode
+      assert_equal "KONE", kept.dig("facts", "manufacturer", "value")
+      assert_equal "M1", kept.dig("facts", "model", "value")
+      assert_equal 1, kept.dig("active_photo", "field_photo_id")
+
+      blank_expected = session.record_photo_observation!(**args.merge(expected_episode_id: nil, field_photo_id: 9))
+      assert_equal :stale, blank_expected
+      assert_equal 1, session.reload.active_episode.dig("active_photo", "field_photo_id")
+    end
+
+    shared = web_episode_session(identifier: "web:shared-photo")
+    other = web_episode_session(channel: "whatsapp", identifier: "whatsapp:+15550001122")
+    with_episode_flag("true") do
+      stub_shared_enabled(true) do
+        assert_equal :not_recording, shared.record_photo_observation!(**args)
+      end
+      assert_equal :not_recording, other.record_photo_observation!(**args)
+    end
+    assert_equal({}, shared.reload.active_episode)
+    assert_equal({}, other.reload.active_episode)
+  end
+
   test "reset_active_episode! clears the column" do
     session = web_episode_session
     with_episode_flag("true") do

@@ -47,9 +47,9 @@ module Rag
     ].freeze
     PLANT_IDENTIFIER_PATTERN = /\b[A-Z]{4,}\s+\d{2,}\b/
 
-    def initialize(question:, photo_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil)
+    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil)
       @question = question.to_s.strip
-      @photo_value = photo_value.to_h.deep_symbolize_keys
+      @evidence = evidence_value.to_h.deep_symbolize_keys
       @session = session
       @account = account
       @user_id = user_id
@@ -81,7 +81,8 @@ module Rag
       processor       = Bedrock::CitationProcessor.new
       raw_citations   = processor.transport_references(result.citations)
       # Same rule as RagController#ask: bands are fixed before sources are hidden.
-      # The observation is the stored column for this field_photo_id, not photo_value.
+      # The observation is the stored column for this field_photo_id, the same
+      # accepted reading this turn passed as evidence_value.
       segments        = Rag::ProvenanceSegmenter.call(
         answer: result.answer,
         citations: raw_citations,
@@ -126,9 +127,10 @@ module Rag
     # digit-bearing designators (708A, MX10). Uppercase UI words (MODULE,
     # FUNCTION, SET) pass specific_token? but name no document.
     def anchor_suffix
+      return "" if @evidence[:relevance_to_goal].to_s == "unrelated"
       return "" unless @account
 
-      identity = [ known(@photo_value[:canonical_name]), known(@photo_value[:model_visible]) ].compact.join(" ")
+      identity = [ known(@evidence[:canonical_name]), known(@evidence[:model_visible]) ].compact.join(" ")
       identity_tokens = raw_tokens(identity).select { |raw| KbDocumentResolver.specific_token?(raw) }
       code_tokens     = raw_tokens(visible_code_parts.join(" ")).select { |raw| raw.match?(/\d/) }
       candidate = (identity_tokens + code_tokens).uniq { |raw| raw.downcase }.join(" ")
@@ -147,7 +149,7 @@ module Rag
     end
 
     def visible_code_parts
-      Array(@photo_value[:visible_codes]).map { |code| known(code) }.compact
+      Array(@evidence[:visible_codes]).map { |code| known(code) }.compact
     end
 
     def known(value)
@@ -163,30 +165,30 @@ module Rag
     end
 
     def photo_evidence_block
-      visible_codes = Array(@photo_value[:visible_codes]).presence&.join(", ") || UNKNOWN
+      visible_codes = Array(@evidence[:visible_codes]).presence&.join(", ") || UNKNOWN
       lines = [
         "## Photo Evidence (this turn)",
         "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; UNKNOWN means the photo does not show it and is never printed. Open the answer with one or two sentences on what the photo shows, then answer the question. Procedures and values come only from the retrieved manuals."
       ]
-      lines << hidden_target_line if @photo_value[:target_visible] == false
+      lines << hidden_target_line if @evidence[:target_visible] == false
       lines << brand_component_mismatch_line if brand_component_mismatch?
       if Rag::GroundedSynthesisFlag.enabled_for?(@account) && document_on_screen_photo?
         lines << "- This photo is a document on a screen, not the equipment. Printed titles are not the manufacturer."
       end
       lines.concat(
         [
-          "- Component: #{@photo_value[:canonical_name] || UNKNOWN}",
-          "- Manufacturer: #{@photo_value[:manufacturer] || UNKNOWN}",
-          "- Model: #{@photo_value[:model_visible] || UNKNOWN}",
+          "- Component: #{@evidence[:canonical_name] || UNKNOWN}",
+          "- Manufacturer: #{@evidence[:manufacturer] || UNKNOWN}",
+          "- Model: #{@evidence[:model_visible] || UNKNOWN}",
           "- Visible text/codes: #{visible_codes}",
-          "- Condition: #{@photo_value[:condition] || UNKNOWN}"
+          "- Condition: #{@evidence[:condition] || UNKNOWN}"
         ]
       )
       lines.join("\n").truncate(EVIDENCE_BLOCK_MAX_CHARS, omission: "")
     end
 
     def hidden_target_line
-      missing = @photo_value[:missing_view_or_detail].to_s.squish
+      missing = @evidence[:missing_view_or_detail].to_s.squish
       detail = missing.present? ? " (#{missing})" : ""
       "- Vision judged that this photo does not show what the question asks about#{detail}. Say that first, then answer; do not treat the photographed component as the asked one."
     end
@@ -194,9 +196,9 @@ module Rag
     def brand_component_mismatch?
       asked = brands_in(@question)
       return false if asked.empty?
-      return false if (asked & brands_in(known(@photo_value[:manufacturer]).to_s)).any?
+      return false if (asked & brands_in(known(@evidence[:manufacturer]).to_s)).any?
 
-      component = known(@photo_value[:canonical_name])
+      component = known(@evidence[:canonical_name])
       return false if component.blank?
 
       (content_tokens(component) & (content_tokens(@question) - asked)).empty?

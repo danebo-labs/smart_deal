@@ -767,6 +767,34 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     end
   end
 
+  test "an invalid active photo does not enter generation context" do
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: accounts(:legacy), sha256: sha,
+      s3_key_original: "field_photos/#{accounts(:legacy).id}/#{sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 8,
+      visual_observation: { "manufacturer" => "REJECTED-MFR", "model" => "SECRETMODEL" }
+    )
+    session = episode_session
+    session.update!(active_episode: session.active_episode.merge(
+      "active_photo" => { "field_photo_id" => photo.id, "sha256" => sha, "correlation_id" => "photo" }
+    ))
+    session.add_to_history("user", "qué reviso ahora", correlation_id: "query:1")
+
+    travel_to FIELD_PROBLEM_NOW do
+      context = Rag::ActivePhotoContext.resolve(
+        episode: Rag::ActiveEpisode.parse(session.active_episode, now: FIELD_PROBLEM_NOW),
+        viewer_account: accounts(:legacy)
+      )
+      text = SessionContextBuilder.build(session, active_photo_context: context)
+
+      assert_equal "invalid", context.status
+      assert_not_includes text, "REJECTED-MFR"
+      assert_not_includes text, "SECRETMODEL"
+      assert_not_includes text, "[FOTO]"
+    end
+  end
+
   private
 
   test "a catalog controller is recognized identity and not a technician statement" do

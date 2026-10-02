@@ -126,6 +126,167 @@ class FieldPhotoObservationTest < ActiveSupport::TestCase
     assert_equal "claude-sonnet-5-5", FieldPhotoAnalysisService::DEFAULT_MODEL
   end
 
+  test "from_analysis bounds identifiers and visible text without truncating them" do
+    payload = FieldPhotoObservation.from_analysis(
+      parsed: {
+        "canonical_component" => "   ",
+        "manufacturer" => "m" * 81,
+        "model" => "  MX 20  ",
+        "subsystem" => "DOOR_OPERATOR",
+        "condition" => "GOOD",
+        "visible_text" => [ "  R1  ", "", "R1", "v" * 81, "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9" ],
+        "summary" => "no guardar",
+        "target_visible" => true,
+        "relevance_to_goal" => "relevant"
+      },
+      model_id: "  claude-sonnet-5-5  ",
+      target_visible: false,
+      relevance_to_goal: "unrelated"
+    )
+
+    assert_equal "UNKNOWN", payload["canonical_component"]
+    assert_equal "UNKNOWN", payload["manufacturer"]
+    assert_equal "MX 20", payload["model"]
+    assert_equal [ "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8" ], payload["visible_text"]
+    assert_equal "claude-sonnet-5-5", payload["model_id"]
+    assert_equal false, payload["target_visible"]
+    assert_equal "unrelated", payload["relevance_to_goal"]
+    assert_not payload.key?("summary")
+    assert FieldPhotoObservation.sanitize(payload)
+  end
+
+  test "from_analysis does not read target or relevance from the raw json" do
+    payload = FieldPhotoObservation.from_analysis(
+      parsed: {
+        "canonical_component" => "resortes",
+        "manufacturer" => "KONE",
+        "model" => "UNKNOWN",
+        "subsystem" => "DOOR_OPERATOR",
+        "condition" => "GOOD",
+        "visible_text" => [],
+        "target_visible" => true,
+        "relevance_to_goal" => "relevant"
+      },
+      model_id: "claude-sonnet-5-5"
+    )
+
+    assert_nil payload["target_visible"]
+    assert_nil payload["relevance_to_goal"]
+  end
+
+  test "from_analysis drops visible text from the end until the envelope fits" do
+    payload = FieldPhotoObservation.from_analysis(
+      parsed: {
+        "canonical_component" => "resortes",
+        "manufacturer" => "KONE",
+        "model" => "UNKNOWN",
+        "subsystem" => "DOOR_OPERATOR",
+        "condition" => "GOOD",
+        "visible_text" => Array.new(8) { "😀" * 80 }
+      },
+      model_id: "claude-sonnet-5-5",
+      target_visible: true,
+      relevance_to_goal: "relevant"
+    )
+
+    assert payload["visible_text"].size < 8
+    assert payload["visible_text"].all? { |item| item == "😀" * 80 }
+    assert_operator JSON.generate(payload).bytesize, :<=, FieldPhotoObservation::MAX_BYTES
+    assert FieldPhotoObservation.sanitize(payload)
+  end
+
+  test "accept! stores a bounded candidate and reports stored" do
+    photo = create_photo
+    acceptance = FieldPhotoObservation.accept!(
+      photo: photo,
+      parsed: component_parsed,
+      model_id: "claude-sonnet-5-5",
+      target_visible: true,
+      relevance_to_goal: "relevant"
+    )
+
+    assert_equal "stored", acceptance.status
+    assert_nil acceptance.reason
+    assert_equal acceptance.observation, photo.reload.visual_observation
+    assert_equal "KONE", acceptance.observation["manufacturer"]
+  end
+
+  test "accept! rejects an invalid enum without replacing a stored observation" do
+    photo = create_photo
+    FieldPhotoObservation.persist!(photo, valid_raw)
+    original = photo.reload.visual_observation
+
+    acceptance = FieldPhotoObservation.accept!(
+      photo: photo,
+      parsed: component_parsed("condition" => "good", "subsystem" => "ELEVATOR"),
+      model_id: "m" * 3000,
+      target_visible: "true",
+      relevance_to_goal: "sometimes"
+    )
+
+    assert_equal "invalid", acceptance.status
+    assert_equal "invalid_enum", acceptance.reason
+    assert_nil acceptance.observation
+    assert_equal original, photo.reload.visual_observation
+    assert_equal "good", FieldPhotoObservation.from_analysis(
+      parsed: component_parsed("condition" => "good"),
+      model_id: "claude-sonnet-5-5"
+    )["condition"]
+  end
+
+  test "accept! reports over_budget when emptying visible text is not enough" do
+    photo = create_photo
+    FieldPhotoObservation.persist!(photo, valid_raw)
+    original = photo.reload.visual_observation
+
+    acceptance = FieldPhotoObservation.accept!(
+      photo: photo,
+      parsed: component_parsed("visible_text" => []),
+      model_id: "m" * 3000,
+      target_visible: true,
+      relevance_to_goal: "relevant"
+    )
+
+    assert_equal "invalid", acceptance.status
+    assert_equal "over_budget", acceptance.reason
+    assert_equal original, photo.reload.visual_observation
+  end
+
+  test "accept! reports invalid_shape and unavailable without writing" do
+    photo = create_photo
+    FieldPhotoObservation.persist!(photo, valid_raw)
+    original = photo.reload.visual_observation
+
+    shape = FieldPhotoObservation.accept!(
+      photo: photo,
+      parsed: component_parsed("visible_text" => "R1"),
+      model_id: "m" * 81,
+      target_visible: true,
+      relevance_to_goal: "relevant"
+    )
+    missing = FieldPhotoObservation.accept!(
+      photo: nil,
+      parsed: component_parsed,
+      model_id: "claude-sonnet-5-5"
+    )
+    photo.define_singleton_method(:update!) { |*, **| raise ActiveRecord::ActiveRecordError, "locked" }
+    failed = FieldPhotoObservation.accept!(
+      photo: photo,
+      parsed: component_parsed,
+      model_id: "claude-sonnet-5-5",
+      target_visible: true,
+      relevance_to_goal: "relevant"
+    )
+
+    assert_equal "invalid", shape.status
+    assert_equal "invalid_shape", shape.reason
+    assert_equal "unavailable", missing.status
+    assert_equal "persistence_failure", missing.reason
+    assert_equal "unavailable", failed.status
+    assert_equal "persistence_failure", failed.reason
+    assert_equal original, photo.reload.visual_observation
+  end
+
   test "persisting an observation does not create a document or a knowledge scope" do
     photo = create_photo
 
@@ -148,6 +309,17 @@ class FieldPhotoObservationTest < ActiveSupport::TestCase
       content_type: "image/jpeg",
       byte_size: 12
     )
+  end
+
+  def component_parsed(overrides = {})
+    {
+      "canonical_component" => "resortes",
+      "manufacturer" => "KONE",
+      "model" => "UNKNOWN",
+      "subsystem" => "DOOR_OPERATOR",
+      "condition" => "GOOD",
+      "visible_text" => [ "R1" ]
+    }.merge(overrides)
   end
 
   def valid_raw(overrides = {})

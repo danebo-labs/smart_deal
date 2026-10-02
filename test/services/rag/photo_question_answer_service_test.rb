@@ -179,7 +179,7 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
 
     service = Rag::PhotoQuestionAnswerService.new(
       question: "Que equipo es y que está mostrando la pantalla?",
-      photo_value: @photo_value,
+      evidence_value: @photo_value,
       session: @session,
       account: nil,
       user_id: users(:one).id,
@@ -464,10 +464,28 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
 
   private
 
+  test "an unrelated accepted observation contributes an empty retrieval anchor" do
+    captured = nil
+    BedrockRagService.define_method(:query) do |question, **kwargs|
+      captured = { question: question, kwargs: kwargs }
+      { answer: "ok", citations: [], session_id: nil }
+    end
+
+    build_service(
+      question: "Que equipo es?",
+      photo_value: @photo_value.merge(relevance_to_goal: "unrelated")
+    ).call
+
+    assert_equal "Que equipo es?", captured[:question]
+    assert_not_includes captured[:question], "GECB"
+    assert_includes captured[:kwargs][:session_context], "Photo Evidence"
+    assert_includes captured[:kwargs][:session_context], "GECB"
+  end
+
   def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil)
     Rag::PhotoQuestionAnswerService.new(
       question: question,
-      photo_value: photo_value,
+      evidence_value: photo_value,
       session: @session,
       account: @account,
       user_id: users(:one).id,
@@ -486,20 +504,23 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       content_type: "image/jpeg",
       byte_size: 8
     )
+    parsed = {
+      "canonical_component" => component,
+      "manufacturer" => manufacturer,
+      "model" => "MX20",
+      "subsystem" => "DOOR_OPERATOR",
+      "condition" => "DEGRADED",
+      "visible_text" => [ "708A" ],
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant"
+    }
     FieldPhotoObservation.persist!(
       photo,
       FieldPhotoObservation.from_analysis(
-        parsed: {
-          "canonical_component" => component,
-          "manufacturer" => manufacturer,
-          "model" => "MX20",
-          "subsystem" => "DOOR_OPERATOR",
-          "condition" => "DEGRADED",
-          "visible_text" => [ "708A" ],
-          "target_visible" => true,
-          "relevance_to_goal" => "relevant"
-        },
-        model_id: "claude-sonnet-5-5"
+        parsed: parsed,
+        model_id: "claude-sonnet-5-5",
+        target_visible: parsed["target_visible"],
+        relevance_to_goal: parsed["relevance_to_goal"]
       )
     )
     photo

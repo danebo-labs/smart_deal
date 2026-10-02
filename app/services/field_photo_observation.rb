@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # Allowlisted visual reading stored on the same field_photos row.
-# Invalid payloads are rejected whole. Strings are not truncated.
+# from_analysis projects a bounded candidate. sanitize rejects the envelope
+# whole. Strings are not truncated.
 class FieldPhotoObservation
   SCHEMA_VERSION = 1
   MAX_BYTES = 2048
@@ -10,6 +11,7 @@ class FieldPhotoObservation
   FINGERPRINT_RE = /\A[0-9a-f]{64}\z/
   CONDITIONS = %w[GOOD DEGRADED DAMAGED UNKNOWN].freeze
   RELEVANCE = %w[relevant unrelated uncertain].freeze
+  Acceptance = Struct.new(:status, :observation, :reason, keyword_init: true)
   # Locked to FieldPhotoPrompt's subsystem enum. Do not widen it here.
   SUBSYSTEMS = %w[
     SAFETY_CHAIN
@@ -58,21 +60,48 @@ class FieldPhotoObservation
       sanitized
     end
 
-    def from_analysis(parsed:, model_id:)
+    # Bounded projection. target_visible and relevance_to_goal are the values
+    # FieldPhotoAnalysisService already normalized. They are not read from parsed.
+    def from_analysis(parsed:, model_id:, target_visible: nil, relevance_to_goal: nil)
       data = parsed.to_h.stringify_keys
-      {
+      payload = {
         "schema_version" => SCHEMA_VERSION,
         "prompt_fingerprint" => FieldPhotoPrompt.prompt_fingerprint_sha256,
-        "model_id" => model_id,
-        "canonical_component" => data["canonical_component"],
-        "manufacturer" => data["manufacturer"],
-        "model" => data["model"],
+        "model_id" => squish_string(model_id),
+        "canonical_component" => identifier(data["canonical_component"]),
+        "manufacturer" => identifier(data["manufacturer"]),
+        "model" => identifier(data["model"]),
         "subsystem" => data["subsystem"],
         "condition" => data["condition"],
-        "visible_text" => data["visible_text"],
-        "target_visible" => data.key?("target_visible") ? data["target_visible"] : nil,
-        "relevance_to_goal" => data.key?("relevance_to_goal") ? data["relevance_to_goal"] : nil
+        "visible_text" => project_visible_text(data["visible_text"]),
+        "target_visible" => target_visible,
+        "relevance_to_goal" => relevance_to_goal
       }
+      trim_visible_text_to_budget!(payload)
+      payload
+    end
+
+    # Job gate. persist! stays for a caller that already holds a known payload.
+    # A previous observation on this row is left in place unless status is stored.
+    def accept!(photo:, parsed:, model_id:, target_visible: nil, relevance_to_goal: nil)
+      if photo.nil?
+        return Acceptance.new(status: "unavailable", observation: nil, reason: "persistence_failure")
+      end
+
+      candidate = from_analysis(
+        parsed: parsed, model_id: model_id,
+        target_visible: target_visible, relevance_to_goal: relevance_to_goal
+      )
+      reason = rejection_reason(candidate)
+      return Acceptance.new(status: "invalid", observation: nil, reason: reason) if reason
+
+      sanitized = sanitize(candidate)
+      return Acceptance.new(status: "invalid", observation: nil, reason: "invalid_shape") if sanitized.nil?
+
+      photo.update!(visual_observation: sanitized)
+      Acceptance.new(status: "stored", observation: sanitized, reason: nil)
+    rescue StandardError
+      Acceptance.new(status: "unavailable", observation: nil, reason: "persistence_failure")
     end
 
     # Shape the existing photo-answer path already reads. No model prose.
@@ -105,6 +134,65 @@ class FieldPhotoObservation
     end
 
     private
+
+    def squish_string(value)
+      return nil unless value.is_a?(String)
+
+      value.squish
+    end
+
+    def identifier(value)
+      text = squish_string(value)
+      return "UNKNOWN" if text.blank? || text.length > MAX_CHARS
+
+      text
+    end
+
+    def project_visible_text(value)
+      return value unless value.is_a?(Array)
+
+      seen = {}
+      items = []
+      value.each do |item|
+        text = squish_string(item)
+        next if text.blank? || text.length > MAX_CHARS || seen[text]
+
+        seen[text] = true
+        items << text
+        break if items.size >= MAX_VISIBLE_TEXT
+      end
+      items
+    end
+
+    def trim_visible_text_to_budget!(payload)
+      list = payload["visible_text"]
+      return unless list.is_a?(Array)
+
+      list.pop while list.any? && JSON.generate(payload).bytesize > MAX_BYTES
+    end
+
+    def rejection_reason(candidate)
+      return "invalid_enum" if invalid_enum?(candidate)
+      return "over_budget" if JSON.generate(candidate).bytesize > MAX_BYTES
+      return "invalid_shape" if sanitize(candidate).nil?
+
+      nil
+    end
+
+    def invalid_enum?(candidate)
+      return true unless candidate.is_a?(Hash)
+
+      SUBSYSTEMS.exclude?(candidate["subsystem"]) ||
+        CONDITIONS.exclude?(candidate["condition"]) ||
+        invalid_relevance?(candidate["relevance_to_goal"])
+    end
+
+    def invalid_relevance?(value)
+      return false if value.nil?
+      return true unless value.is_a?(String)
+
+      RELEVANCE.exclude?(value)
+    end
 
     def build_payload(raw)
       return nil unless raw.is_a?(Hash)

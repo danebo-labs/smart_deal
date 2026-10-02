@@ -7,7 +7,7 @@ class PilotUsageLog
     account_id user_id conversation_session_id correlation_id route model
     latency_ms original_latency_ms input_tokens output_tokens cost estimated_cost_avoided
     cache_status result error_class image_digest_prefix canonical_name
-    manufacturer model_visible condition visible_codes
+    manufacturer model_visible condition visible_codes field_photo_id
     results_count filter_applied rejected_result_count authorized_general_count
     retrieval_denied_reason
     retrieval_query_text retrieval_query_sha requested_k effective_k search_type

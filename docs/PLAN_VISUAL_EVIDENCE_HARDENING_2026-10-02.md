@@ -1,6 +1,6 @@
 # Visual Evidence Hardening (2026-10-02)
 
-**Estado:** `APPROVED PLAN — IMPLEMENTATION NOT STARTED`
+**Estado:** `F1–F3 IMPLEMENTED LOCALLY — PRODUCTION PHOTO RESMOKE PENDING`
 
 Source of truth de este cierre. Reconcilia el plan de Codex revisado sobre `25fcb0ab9abd6ad2b5992054df5ff26a6cf300c0` con la revisión de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica a Codex, manda Opus. La arquitectura de este documento no se reabre.
 
@@ -14,7 +14,9 @@ Desplegado: `0a1b9de8ac525c8a634314b0416395e66efa77e5`.
 
 Commit que documenta el owner rollout: `25fcb0ab9abd6ad2b5992054df5ff26a6cf300c0`.
 
-`HAIKU_QUERY_ANALYSIS_MODE=owner` está LIVE. No cambia. No hay deploy, rollback, smoke de producción ni T3 en este plan.
+`HAIKU_QUERY_ANALYSIS_MODE=owner` está LIVE. No cambia.
+
+No hay deploy ni smoke durante la ejecución local de F1–F3. Después del review, F1–F3 tienen un deploy y un resmoke de producción acotado a foto relevante. T3 sigue fuera de scope. No hay rollback en esta ejecución.
 
 El blocker de foto relevante sigue abierto hasta un resmoke posterior a F1–F3. El smoke de texto pasó. La placa de prueba salió `relevant` en Vision y escribió manufacturer/model `source=photo`, pero `FieldPhoto.visual_observation` quedó vacío, `ActivePhotoContext` salió `invalid` y no hubo `Photo Evidence`.
 
@@ -435,9 +437,9 @@ Otro archivo sólo si hace falta para cerrar un bypass de raw que estos cuatro n
 
 ---
 
-## Verificación prevista, cuando se implemente
+## Verificación de esta ejecución
 
-Tests focalizados de esos archivos, después la suite que comparten. Luego:
+Tests focalizados y la suite que comparten, después:
 
 ```text
 bin/rails turn_interpreter:eval
@@ -445,17 +447,45 @@ bin/rails turn_interpreter:holdout
 git diff --check
 ```
 
-Esperado en eval y holdout: `mismatches=0`, `fallbacks=0`, `field_rejections=0`.
+Eval: `passes=21 mismatches=0 fallbacks=0 field_rejections=0`.
 
-No forman parte de esta implementación: `kamal deploy`, cambio de owner, smoke de producción, rollback, T3, F4, F5.
+Holdout: `passes=10 mismatches=0 fallbacks=0 field_rejections=0`.
 
-Al cerrar F1–F3, este documento pasa a:
+`git diff --check` PASS. `FieldPhotoPrompt::SYSTEM_BLOCKS` no se tocó. Fingerprint sigue `4f62491874c8fea82d78632657e9adc93da80c69e40157eee98b5cfe972715d1`.
+
+Esta ejecución local no incluye `kamal deploy`, cambio de owner, smoke de producción ni rollback. T3 sigue fuera. F4 y F5 siguen `NOT STARTED`. Después del review, F1–F3 tienen un deploy y un resmoke de producción acotado a foto relevante.
 
 ```text
 F1–F3 IMPLEMENTED LOCALLY — PRODUCTION PHOTO RESMOKE PENDING
+F4 NOT STARTED
+F5 NOT STARTED
 ```
 
-y anota archivos, tests, eval, holdout, commit, y que F4/F5 siguen sin empezar.
+Commit: `fix: gate photo consequences on accepted visual evidence`.
+
+Archivos de producto: `FieldPhotoObservation` (`from_analysis` acotado, `accept!` con `stored` / `invalid` / `unavailable`), `FieldPhotoAnalysisJob` (`display_value` vs `evidence_value`), `ConversationSession#record_photo_observation!` (`:applied` / `:stale` / `:not_recording`), `PhotoQuestionAnswerService` (sólo `evidence_value`; ancla vacía si `unrelated`), `PilotUsageLog` (`field_photo_id` en el allowlist del evento `photo_observation_acceptance`). Los scripts de batería sólo cambian el keyword del servicio. `SessionContextBuilder`, `QueryComposer` y `FieldPhotoPrompt` no cambian.
+
+Hallazgo de tests: dos tests del job stubbeaban `BedrockRagService#query` y no llegaban a ese stub (`Que es esto?` es `clarify_first`; una respuesta sin citas se reescribe a `rag.data_not_available`). Esos tests ahora stubbean `PhotoQuestionAnswerService#call` y afirman el contrato del job (historial `[FOTO]` aceptado y outcome sobre la respuesta del servicio, no sobre el texto de Vision).
+
+Tests de esta ejecución, 0 failures:
+
+```text
+field_photo_observation_test: 16 runs, 98 assertions
+field_photo_analysis_job_test: 43 runs, 406 assertions
+conversation_session_test: 89 runs, 291 assertions
+photo_question_answer_service_test: 26 runs, 102 assertions
+active_photo_context_test: 7 runs, 69 assertions
+session_context_builder_test: 44 runs, 214 assertions
+query_composer_test: 4 runs, 40 assertions
+conversation_session_turn_interpreter_test: 38 runs, 238 assertions
+provenance_segmenter_test: 26 runs, 76 assertions
+photo_observation_continuity_test: 15 runs, 159 assertions
+field_photo_analysis_service_test: 9 runs, 91 assertions
+field_photo_prompt_test: 10 runs, 59 assertions
+real_gonzalo_photo_continuity_test: 2 runs, 43 assertions
+conversation_session_case_ownership_test: 10 runs, 82 assertions
+rag_controller foto observada: 2 runs, 8 assertions
+```
 
 ---
 
@@ -565,8 +595,12 @@ Cuando el write está stale, la observación aceptada queda con la relevancia ca
 
 ## Handoff
 
-Este documento es el plan aprobado. La implementación no empezó.
+```text
+F1–F3 IMPLEMENTED LOCALLY — PRODUCTION PHOTO RESMOKE PENDING
+F4 NOT STARTED
+F5 NOT STARTED
+```
 
 F1–F3 se pueden desplegar solos, después de review, para cerrar el blocker. F4 y F5 no.
 
-Siguiente paso, cuando se autorice implementación: F1, después F2, después F3. Parar antes de F4.
+Siguiente paso: review y resmoke de producción acotado a foto relevante. Parar antes de F4.

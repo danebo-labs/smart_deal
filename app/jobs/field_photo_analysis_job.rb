@@ -151,7 +151,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
       photo_intent: photo_intent
     ).call
 
-    store_visual_observation(result, field_photo_id: field_photo_id, account_id: account_id)
+    acceptance = store_visual_observation(
+      result, field_photo_id: field_photo_id, account_id: account_id, correlation_id: correlation_id
+    )
     if continuity.to_s == "reread"
       log_observation_reread(
         account_id: account_id,
@@ -162,9 +164,11 @@ class FieldPhotoAnalysisJob < ApplicationJob
       )
     end
 
-    value = photo_value(result)
+    display_value = photo_value(result)
+    evidence_value = evidence_from(acceptance)
     delivered = deliver(
-      value,
+      display_value,
+      evidence_value: evidence_value,
       session: session,
       filename: filename,
       account_id: account_id,
@@ -180,7 +184,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     PilotUsageLog.log(
       "photo_completed",
       **usage_fields(
-        value,
+        display_value,
         account_id: account_id,
         user_id: user_id,
         conversation_session_id: conversation_session_id,
@@ -201,7 +205,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       citations: delivered[:citations],
       photo: {
         "intent_source" => photo_intent.is_a?(Hash) ? (photo_intent["source"] || photo_intent[:source]) : nil,
-        "target_visible" => value[:target_visible]
+        "target_visible" => display_value[:target_visible]
       }
     )
   ensure
@@ -242,6 +246,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     value = FieldPhotoObservation.reading_value(observation)
     delivered = deliver(
       value,
+      evidence_value: value,
       session: session,
       filename: filename,
       account_id: account_id,
@@ -307,24 +312,48 @@ class FieldPhotoAnalysisJob < ApplicationJob
     )
   end
 
-  # A failed sanitize does not replace a previous valid reading and does not
-  # block the answer that was already paid for. The stored relevance is the
-  # normalized one: a model claim without photo intent stays nil.
-  def store_visual_observation(result, field_photo_id:, account_id:)
-    return if field_photo_id.blank? || account_id.blank?
-
-    photo = FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
-    return if photo.nil?
-
-    parsed = result[:parsed].to_h.stringify_keys
-    parsed["relevance_to_goal"] = result[:relevance_to_goal]
-    parsed["target_visible"] = result[:target_visible]
-    FieldPhotoObservation.persist!(
-      photo,
-      FieldPhotoObservation.from_analysis(parsed: parsed, model_id: result[:model])
+  # Display of the paid reading continues when acceptance is not stored.
+  # A failed accept does not replace a previous valid reading. Relevance and
+  # target_visible are the values the analysis service already normalized.
+  def store_visual_observation(result, field_photo_id:, account_id:, correlation_id:)
+    photo = if field_photo_id.present? && account_id.present?
+      FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
+    end
+    acceptance = FieldPhotoObservation.accept!(
+      photo: photo,
+      parsed: result[:parsed],
+      model_id: result[:model],
+      target_visible: result[:target_visible],
+      relevance_to_goal: result[:relevance_to_goal]
     )
+    log_photo_observation_acceptance(
+      acceptance, field_photo_id: field_photo_id, account_id: account_id, correlation_id: correlation_id
+    )
+    acceptance
   rescue StandardError => e
     Rails.logger.warn("FieldPhotoAnalysisJob observation persist failed account=#{account_id} reason=#{e.class}")
+    acceptance = FieldPhotoObservation::Acceptance.new(status: "unavailable", observation: nil, reason: "persistence_failure")
+    log_photo_observation_acceptance(
+      acceptance, field_photo_id: field_photo_id, account_id: account_id, correlation_id: correlation_id
+    )
+    acceptance
+  end
+
+  def evidence_from(acceptance)
+    return nil unless acceptance&.status == "stored"
+
+    FieldPhotoObservation.reading_value(acceptance.observation)
+  end
+
+  def log_photo_observation_acceptance(acceptance, field_photo_id:, account_id:, correlation_id:)
+    PilotUsageLog.log(
+      "photo_observation_acceptance",
+      result: acceptance.status,
+      outcome_reason: acceptance.reason,
+      field_photo_id: field_photo_id,
+      account_id: account_id,
+      correlation_id: correlation_id
+    )
   end
 
   # A photo alone publishes the vision reading. A photo with a question
@@ -332,35 +361,47 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # RAG answer through the Photo Evidence block, and the chat never shows a
   # separate vision card, a placeholder, or a redraw. Returns the outcome
   # and the transmitted text, consumed by emit_interaction_completed.
-  def deliver(value, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil, expected_episode_id: nil)
-    session&.record_photo_observation!(
-      photo_value: value,
+  # Empty reading moves the active-photo pointer without copying another
+  # photo's evidence or the rejected raw fields.
+  BLANK_PHOTO_READING = {
+    manufacturer: nil,
+    model_visible: nil,
+    relevance_to_goal: nil,
+    target_visible: nil
+  }.freeze
+
+  def deliver(display_value, evidence_value:, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, photo_intent: nil, expected_episode_id: nil)
+    write_state = session&.record_photo_observation!(
+      photo_value: evidence_value || BLANK_PHOTO_READING,
       field_photo_id: field_photo_id,
       sha256: image_sha256,
       correlation_id: correlation_id,
       expected_episode_id: expected_episode_id
     )
-    session&.record_assistant_turn!(
-      value.fetch(:compact_context),
-      user_id: user_id,
-      correlation_id: correlation_id,
-      expected_episode_id: expected_episode_id,
-      writer: "photo_assistant"
-    )
+    consequences = evidence_value.present? && write_state != :stale
+    if consequences
+      session&.record_assistant_turn!(
+        evidence_value.fetch(:compact_context),
+        user_id: user_id,
+        correlation_id: correlation_id,
+        expected_episode_id: expected_episode_id,
+        writer: "photo_assistant"
+      )
+    end
 
     thumbnail_url = field_photo_thumbnail_url(field_photo_id)
-    rag_answer = if Rag::PhotoQuestionFlag.enabled? && question.present?
-      answer_photo_question(question: question, photo_value: value, session: session,
+    rag_answer = if consequences && Rag::PhotoQuestionFlag.enabled? && question.present?
+      answer_photo_question(question: question, evidence_value: evidence_value, session: session,
                             account_id: account_id, user_id: user_id,
                             correlation_id: correlation_id, locale: locale,
                             field_photo_id: field_photo_id)
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
-      summary = published_analysis(value, question: question, photo_intent: photo_intent, locale: locale)
+      summary = published_analysis(display_value, question: question, photo_intent: photo_intent, locale: locale)
       KbSyncBroadcaster.photo_analyzed(
         filenames: [ filename ], analysis: summary,
-        canonical_name: value[:canonical_name], aliases: value[:aliases],
+        canonical_name: display_value[:canonical_name], aliases: display_value[:aliases],
         account_id: account_id, correlation_id: correlation_id,
         field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
         response_locale: locale
@@ -388,7 +429,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       account_id: account_id, correlation_id: correlation_id, response_locale: locale,
       field_photo_id: field_photo_id, thumbnail_url: thumbnail_url,
       # The paid vision reading is not lost when the manuals could not be consulted.
-      visual_summary: (value[:analysis] if rag_answer[:failed])
+      visual_summary: (display_value[:analysis] if rag_answer[:failed])
     )
     {
       outcome: rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer]),
@@ -402,14 +443,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # its own rescue: a failure here must never cost the technician the vision
   # analysis that was already paid for and delivered above — see plan
   # foto_mas_pregunta_rag "Aislamiento de fallo obligatorio".
-  def answer_photo_question(question:, photo_value:, session:, account_id:, user_id:, correlation_id:, locale:,
+  def answer_photo_question(question:, evidence_value:, session:, account_id:, user_id:, correlation_id:, locale:,
                              field_photo_id: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     account = session&.account || (account_id && Account.find_by(id: account_id))
 
     result = Rag::PhotoQuestionAnswerService.new(
       question: question,
-      photo_value: photo_value,
+      evidence_value: evidence_value,
       session: session,
       account: account,
       user_id: user_id,

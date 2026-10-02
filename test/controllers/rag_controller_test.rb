@@ -1350,20 +1350,23 @@ class RagControllerTest < ActionDispatch::IntegrationTest
       content_type: "image/jpeg",
       byte_size: 8
     )
+    parsed = {
+      "canonical_component" => component,
+      "manufacturer" => manufacturer,
+      "model" => "MX20",
+      "subsystem" => "DOOR_OPERATOR",
+      "condition" => "DEGRADED",
+      "visible_text" => [ "708A" ],
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant"
+    }
     FieldPhotoObservation.persist!(
       photo,
       FieldPhotoObservation.from_analysis(
-        parsed: {
-          "canonical_component" => component,
-          "manufacturer" => manufacturer,
-          "model" => "MX20",
-          "subsystem" => "DOOR_OPERATOR",
-          "condition" => "DEGRADED",
-          "visible_text" => [ "708A" ],
-          "target_visible" => true,
-          "relevance_to_goal" => "relevant"
-        },
-        model_id: "claude-sonnet-5-5"
+        parsed: parsed,
+        model_id: "claude-sonnet-5-5",
+        target_visible: parsed["target_visible"],
+        relevance_to_goal: parsed["relevance_to_goal"]
       )
     )
     photo

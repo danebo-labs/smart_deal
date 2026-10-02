@@ -48,6 +48,26 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
     assert_not_includes query, "ZZ9"
   end
 
+  test "an invalid active photo adds no retrieval terms" do
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: @account, sha256: sha, s3_key_original: "field_photos/#{@account.id}/#{sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 8,
+      visual_observation: { "manufacturer" => "REJECTED-MFR", "model" => "SECRETMODEL", "visible_text" => [ "CODE-NEW" ] }
+    )
+    episode = episode_for(photo)
+    context = Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: @account)
+    query = Rag::QueryComposer.call(
+      state: episode, turn: "¿Qué reviso ahora?", perception: report, decision: decision_for("ready"),
+      active_photo_context: context
+    )
+
+    assert_equal "invalid", context.status
+    assert_not_includes query.to_s, "REJECTED-MFR"
+    assert_not_includes query.to_s, "SECRETMODEL"
+    assert_not_includes query.to_s, "CODE-NEW"
+  end
+
   test "photo terms are dropped when the photo id no longer matches or the route does not retrieve" do
     photo = create_photo("relevant")
     episode = episode_for(photo)

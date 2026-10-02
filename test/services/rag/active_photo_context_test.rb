@@ -61,6 +61,18 @@ class Rag::ActivePhotoContextTest < ActiveSupport::TestCase
     end
   end
 
+  test "a photo without an accepted observation is invalid and does not fall back" do
+    create_photo(@account, observation(model: "OTHER"))
+    photo = create_photo(@account, { "manufacturer" => "REJECTED-MFR" })
+    context = Rag::ActivePhotoContext.resolve(episode: episode_with(photo.id), viewer_account: @account)
+
+    assert_nil photo.visual_observation
+    assert_equal "invalid", context.status
+    assert_nil context.to_prompt
+    assert_not_includes context.inspect, "OTHER"
+    assert_not_includes context.inspect, "REJECTED-MFR"
+  end
+
   test "nil relevance stays visible to the interpreter and out of retrieval" do
     photo = create_photo(@account, observation(relevance: nil, model: "NICE3000"))
     context = Rag::ActivePhotoContext.resolve(episode: episode_with(photo.id), viewer_account: @account)

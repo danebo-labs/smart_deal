@@ -204,7 +204,7 @@ plan.each_with_index do |run, index|
       photo_value = meta[:photo_value]
       photo_source = "preflight_v2"
       svc = Rag::PhotoQuestionAnswerService.new(
-        question: spec[:question], photo_value: photo_value, session: session,
+        question: spec[:question], evidence_value: photo_value, session: session,
         account: account, user_id: user.id, correlation_id: correlation_id, locale: :es
       )
       question = svc.send(:anchored_question)

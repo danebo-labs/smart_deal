@@ -218,18 +218,21 @@ class Rag::ProvenanceSegmenterTest < ActiveSupport::TestCase
   end
 
   def observation(overrides = {})
+    parsed = {
+      "canonical_component" => "conjunto de resortes",
+      "manufacturer" => "KONE",
+      "model" => "MX20",
+      "subsystem" => "DOOR_OPERATOR",
+      "condition" => "DEGRADED",
+      "visible_text" => [ "708A" ],
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant"
+    }.merge(overrides)
     FieldPhotoObservation.from_analysis(
-      parsed: {
-        "canonical_component" => "conjunto de resortes",
-        "manufacturer" => "KONE",
-        "model" => "MX20",
-        "subsystem" => "DOOR_OPERATOR",
-        "condition" => "DEGRADED",
-        "visible_text" => [ "708A" ],
-        "target_visible" => true,
-        "relevance_to_goal" => "relevant"
-      }.merge(overrides),
-      model_id: "claude-sonnet-5-5"
+      parsed: parsed,
+      model_id: "claude-sonnet-5-5",
+      target_visible: parsed["target_visible"],
+      relevance_to_goal: parsed["relevance_to_goal"]
     )
   end
 end

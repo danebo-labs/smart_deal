@@ -433,21 +433,24 @@ class Rag::PhotoObservationContinuityTest < ActiveSupport::TestCase
   end
 
   def store_observation!(photo, manufacturer: "KONE")
+    parsed = {
+      "canonical_component" => "resortes",
+      "manufacturer" => manufacturer,
+      "model" => "UNKNOWN",
+      "subsystem" => "DOOR_OPERATOR",
+      "condition" => "DEGRADED",
+      "visible_text" => [ "R1" ],
+      "summary" => "no guardar",
+      "target_visible" => true,
+      "relevance_to_goal" => "relevant"
+    }
     FieldPhotoObservation.persist!(
       photo,
       FieldPhotoObservation.from_analysis(
-        parsed: {
-          "canonical_component" => "resortes",
-          "manufacturer" => manufacturer,
-          "model" => "UNKNOWN",
-          "subsystem" => "DOOR_OPERATOR",
-          "condition" => "DEGRADED",
-          "visible_text" => [ "R1" ],
-          "summary" => "no guardar",
-          "target_visible" => true,
-          "relevance_to_goal" => "relevant"
-        },
-        model_id: "claude-sonnet-5-5"
+        parsed: parsed,
+        model_id: "claude-sonnet-5-5",
+        target_visible: parsed["target_visible"],
+        relevance_to_goal: parsed["relevance_to_goal"]
       )
     )
     photo.reload

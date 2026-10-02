@@ -243,7 +243,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def record_photo_observation!(photo_value:, field_photo_id:, sha256:, correlation_id:, expected_episode_id: nil)
-    return nil unless episode_recording?
+    return :not_recording unless episode_recording?
 
     with_lock do
       current_id = live_episode_id
@@ -255,13 +255,14 @@ class ConversationSession < ApplicationRecord
           current_episode_id: current_id,
           correlation_id: correlation_id
         )
-        next nil
+        next :stale
       end
 
       episode = Rag::ActiveEpisode.parse(active_episode, now: Time.current)
       apply_photo_observation!(episode, photo_value, field_photo_id, sha256, correlation_id)
       episode.touch!(Time.current)
       update!(active_episode: episode.to_h)
+      :applied
     end
   end
 

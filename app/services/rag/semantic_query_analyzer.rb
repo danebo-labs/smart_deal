@@ -5,7 +5,9 @@ module Rag
   class SemanticQueryAnalyzer
     MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     TOOL_NAME = "semantic_perception"
-    MAX_TOKENS = 300
+    MAX_TOKENS = 420
+    DIALOGUE_FUNCTIONS = %w[technical_report follow_up answer_pending correction meta_question new_problem].freeze
+    FACT_SLOTS = %w[manufacturer controller model fault_code designator].freeze
     RELATIONS = %w[continue answer_pending correct switch new unclear].freeze
     ROLES = %w[equipment component other].freeze
     REQUIRED_KEYS = %w[relation mentions refers_to ambiguous].freeze
@@ -56,7 +58,9 @@ module Rag
       A follow-up that asks the next step of state.goal and names no other equipment is continue and ambiguous false. "el otro" without a named target stays unclear.
 
       Output schema, returned only as the semantic_perception tool input:
-      {"relation":"continue|answer_pending|correct|switch|new|unclear","mentions":[{"span":"MonoSpace","role":"equipment|component|other"}],"refers_to":[],"ambiguous":false}
+      {"relation":"continue|answer_pending|correct|switch|new|unclear","mentions":[{"span":"MonoSpace","role":"equipment|component|other"}],"refers_to":[],"ambiguous":false,"dialogue_function":"technical_report|follow_up|answer_pending|correction|meta_question|new_problem","technical_facts":[{"slot":"fault_code","span":"E51"}],"technical_observations":["se pasa en bajada"],"pending_answer":null}
+
+      dialogue_function classifies the turn. technical_facts and technical_observations are optional. Every span must be a literal substring of the turn. A question about what Danebo needs is meta_question, not an observation. "no lo sé" answering a pending identity is answer_pending. Do not invent a symptom.
     PROMPT
 
     OBSERVATION_KEY = :semantic_turn_observation
@@ -167,7 +171,9 @@ module Rag
         "goal" => @episode.dig("goal", "text"),
         "active_referent" => nil,
         "pending_question" => pending_question,
-        "observations" => []
+        "observations" => Array(@episode["observations"]).filter_map { |row|
+          row.is_a?(Hash) ? row["text"] : row
+        }.last(3)
       }
     end
 
@@ -217,7 +223,21 @@ module Rag
                       }
                     },
                     refers_to: refers_to_schema,
-                    ambiguous: { type: "boolean" }
+                    ambiguous: { type: "boolean" },
+                    dialogue_function: { type: "string", enum: DIALOGUE_FUNCTIONS },
+                    technical_facts: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          slot: { type: "string", enum: FACT_SLOTS },
+                          span: { type: "string" }
+                        },
+                        required: %w[slot span]
+                      }
+                    },
+                    technical_observations: { type: "array", items: { type: "string" } },
+                    pending_answer: { type: %w[string null] }
                   },
                   required: REQUIRED_KEYS
                 }
@@ -304,8 +324,38 @@ module Rag
         relation: output["relation"],
         mentions: output["mentions"],
         refers_to: output["refers_to"],
-        ambiguous: output["ambiguous"]
+        ambiguous: output["ambiguous"],
+        dialogue_function: DIALOGUE_FUNCTIONS.include?(output["dialogue_function"]) ? output["dialogue_function"] : nil,
+        technical_facts: literal_facts(output["technical_facts"]),
+        technical_observations: literal_list(output["technical_observations"]),
+        pending_answer: literal_optional(output["pending_answer"])
       )
+    end
+
+    def literal_facts(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |item|
+        next unless item.is_a?(Hash)
+
+        item = item.transform_keys(&:to_s)
+        next unless FACT_SLOTS.include?(item["slot"]) && literal_span?(item["span"])
+
+        item.slice("slot", "span")
+      }
+    end
+
+    def literal_list(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |span| span.to_s if literal_span?(span) }
+    end
+
+    def literal_optional(raw)
+      return nil if raw.nil?
+      return nil unless raw.is_a?(String) && literal_span?(raw)
+
+      raw
     end
 
     def transport_status(error)

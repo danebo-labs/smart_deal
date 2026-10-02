@@ -17,16 +17,20 @@ module Rag
     MAX_IDENTIFIERS = 5
     MAX_IDENTIFIER_CHARS = 30
     MAX_CONFLICTS = 3
+    MAX_OBSERVATIONS = 3
+    MAX_OBSERVATION_CHARS = 180
     MAX_BYTES = 2048
 
     attr_accessor :episode_id, :status, :opened_at, :updated_at, :opened_by,
-                  :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts
+                  :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts,
+                  :observations
     attr_reader :reason
 
     def initialize
       @facts = {}
       @identifiers = []
       @conflicts = []
+      @observations = []
       @status = "active"
     end
 
@@ -61,6 +65,7 @@ module Rag
       episode.pending_question = PendingQuestion.coerce(data["pending_question"])
       episode.active_photo = sanitize_photo(data["active_photo"])
       episode.conflicts = sanitize_conflicts(data["conflicts"])
+      episode.observations = sanitize_observations(data["observations"])
       episode
     end
 
@@ -94,6 +99,7 @@ module Rag
       copy.pending_question = pending_question&.deep_dup
       copy.active_photo = active_photo&.deep_dup
       copy.conflicts = conflicts.deep_dup
+      copy.observations = observations.deep_dup
       copy
     end
 
@@ -161,6 +167,21 @@ module Rag
       identifiers.shift while identifiers.size > MAX_IDENTIFIERS
     end
 
+    def append_observation!(text, correlation_id:)
+      literal = text.to_s.squish.first(MAX_OBSERVATION_CHARS)
+      return if literal.blank?
+
+      label = FollowupQueryRewriter.normalize_label(literal)
+      return if observations.any? { |item| FollowupQueryRewriter.normalize_label(item["text"]) == label }
+
+      observations << { "text" => literal, "correlation_id" => correlation_id.to_s }
+      observations.shift while observations.size > MAX_OBSERVATIONS
+    end
+
+    def clear_observations!
+      self.observations = []
+    end
+
     def add_conflict!(fact:, user:, photo:, correlation_id:)
       conflicts.reject! { |row| row["fact"] == fact.to_s }
       conflicts << {
@@ -188,7 +209,8 @@ module Rag
         "pending_fact" => pending_fact,
         "pending_question" => pending_question,
         "active_photo" => active_photo,
-        "conflicts" => conflicts
+        "conflicts" => conflicts,
+        "observations" => observations.presence
       }
       payload.compact!
       shrink_to_budget!(payload)
@@ -313,6 +335,20 @@ module Rag
     end
     private_class_method :sanitize_photo
 
+    def self.sanitize_observations(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |item|
+        next unless item.is_a?(Hash)
+
+        text = item["text"].to_s.squish.first(MAX_OBSERVATION_CHARS)
+        next if text.blank?
+
+        { "text" => text, "correlation_id" => item["correlation_id"].to_s }
+      }.last(MAX_OBSERVATIONS)
+    end
+    private_class_method :sanitize_observations
+
     def self.sanitize_conflicts(raw)
       return [] unless raw.is_a?(Array)
 
@@ -342,6 +378,13 @@ module Rag
 
       payload["conflicts"] = []
       return if json_bytes(payload) <= MAX_BYTES
+
+      observations = payload["observations"]
+      if observations.is_a?(Array)
+        observations.shift while observations.any? && json_bytes(payload) > MAX_BYTES
+        payload.delete("observations") if observations.empty?
+        return if json_bytes(payload) <= MAX_BYTES
+      end
 
       identifiers = payload["identifiers"]
       return unless identifiers.is_a?(Array)

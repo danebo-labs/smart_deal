@@ -2459,9 +2459,8 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     end
   end
 
-  test "the turn flag off ignores a composed episode turn" do
+  test "the turn flag off keeps a short follow-up on the technical job" do
     session, question, result = field_session_at("T-C")
-    legacy = legacy_orchestrator_text(session, question)
 
     isolate_env("FIELD_COMPANION_TURN_ENABLED", "false") do
       with_followup_orchestrator do |captured|
@@ -2472,8 +2471,10 @@ class RagQueryConcernTest < ActiveSupport::TestCase
             episode_turn: result
           )
         end
-        assert_equal legacy, captured[:question]
-        assert_not_equal result.composed, captured[:question]
+        assert_includes captured[:question], "LED 7"
+        assert_includes captured[:question], "CEA15"
+        assert_includes captured[:question], "puerta 1"
+        assert_equal result.understanding.retrieval_query, captured[:question]
       end
     end
   end
@@ -2787,7 +2788,7 @@ class RagQueryConcernTest < ActiveSupport::TestCase
             if result.decision == :corrected
               assert_not_includes expected, turn["content"], "#{case_id} turn #{index} sent the negation"
             else
-              assert expected.end_with?(turn["content"]), "#{case_id} turn #{index} trimmed the turn"
+              assert_includes expected, turn["content"], "#{case_id} turn #{index} trimmed the turn"
             end
             assert_equal [], captured[:kwargs][:entity_s3_uris]
             assert_equal false, captured[:kwargs][:force_entity_filter]

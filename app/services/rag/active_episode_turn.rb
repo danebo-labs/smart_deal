@@ -139,6 +139,7 @@ module Rag
       changed << "pending_question" if left["pending_question"] != right["pending_question"]
       changed << "active_photo" if left["active_photo"] != right["active_photo"]
       changed << "conflicts" if left["conflicts"] != right["conflicts"]
+      changed << "observations" if left["observations"] != right["observations"]
       changed
     end
 
@@ -257,7 +258,7 @@ module Rag
       return @analysis if @analysis.is_a?(Rag::ConversationalTurnAnalysis)
       return :failed if @analysis == :failed
 
-      Rag::SemanticQueryAnalyzer.observe_ownership(
+      @analysis = Rag::SemanticQueryAnalyzer.observe_ownership(
         turn: @text,
         episode: current.to_h,
         correlation_id: @correlation_id,
@@ -695,7 +696,8 @@ module Rag
         text: @text,
         episode: episode,
         focus_count: @focus_count,
-        prior_turns: @prior_user_turns
+        prior_turns: @prior_user_turns,
+        analysis: @analysis.is_a?(Rag::ConversationalTurnAnalysis) ? @analysis : nil
       )
       Rag::TechnicalUnderstanding.apply!(episode, understanding)
       composed = understanding.retrieval_query if understanding.owns_query && understanding.retrieval_query.present?

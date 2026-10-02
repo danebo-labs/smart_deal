@@ -4,7 +4,7 @@
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo del focus.
 
-**Implementación:** G1, G2, G3 y G4 PASS en producción (2026-10-01). F6, F7 y F8 cerradas en el repo. F8 no está desplegada. G5 espera F9 y F10. El handoff de F8 está en la sección 13.
+**Implementación:** G1, G2, G3 y G4 PASS en producción (2026-10-01). F6, F7 y F8 cerradas. F8 se fumó en la imagen `afdb1cf`. F8.1 corrige la ventana de retrieve después de ese smoke. G5 no está PASS. El handoff de F8 y F8.1 está en la sección 13.
 
 **Canal:** web autenticado. WhatsApp sigue dormido.
 
@@ -1126,6 +1126,12 @@ Impacto sobre siguientes fases:
 F9 y F10 no reabren el umbral. G5 paso 2 sigue siendo el control de que un
 síntoma con marca busca antes de preguntar.
 ```
+
+**F8.1.** El smoke de F8 (`afdb1cf`, cuenta legacy, 2026-10-01 21:08–21:25) mostró que la ventana pegaba los últimos mensajes crudos. `¿Qué reviso?` perdió Nice300 y E51. `¿Necesitas controlador?` se buscó como síntoma. `Volviendo a la pregunta del controlador, no lo sé` abrió una búsqueda de la palabra controlador.
+
+La ventana pasa a ser el turno actual, el código, el controller/model/designator, el fabricante, las observaciones técnicas recientes y el goal vigente. Una frase meta no se guarda como observación. Un follow-up corto conserva el trabajo. `No lo sé` con el controller pendiente queda `unknown_confirmed` y la query sigue el mismo trabajo. No hay una llamada LLM nueva: `SemanticQueryAnalyzer` puede devolver facts y observations, y Ruby persiste sólo el span literal. Si el gate no corre, la misma decisión sale de Ruby.
+
+El journey real no es Excelsior con imanes. Jesús, usuario 6, el 2026-09-28 15:55–15:57 escribió la falla de un Excelsior de 10 niveles que se pasa en alta velocidad en el piso inferior a 1.5 m/s, después nombró el plano S1000 y `sg_lm2a`, y cerró con `Se pasa en bajada en alta velocidad`. Los imanes y CEA15 son el trabajo del 16 de septiembre, otro equipo. No hay transcripción de 6 a 10 turnos de una sola llamada. El journey de test usa esos tres turnos textuales y marca como reconstrucción la frase meta y el `no lo sé`.
 
 La presentación de la respuesta (encabezados, footer, botones) no se tocó. Quedó en la sección 17 como Post-G5.
 

@@ -61,7 +61,7 @@
       content: "¿y el LED 7?"
       expect:
         decision: continued_elliptical
-        composed_parts: [goal, turn]
+        composed_parts: [turn, goal]
 - id: T-D
   group: text
   turns:

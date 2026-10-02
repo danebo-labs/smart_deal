@@ -7,7 +7,8 @@ module Rag
   class TechnicalUnderstanding
     Decision = Data.define(
       :decision, :retrieval_query, :clarification, :pending_subject,
-      :outside_discovery, :owns_query, :bare_identifier, :ask_when, :mutations
+      :outside_discovery, :owns_query, :bare_identifier, :ask_when, :mutations,
+      :dialogue_function, :context_carry
     ) do
       def clarify_first?
         decision == "clarify_first"
@@ -33,17 +34,28 @@ module Rag
     MAX_PRIOR = 6
     MAX_OBSERVATIONS = 3
 
-    def self.call(text:, episode:, focus_count: 0, prior_turns: [], locale: :es)
-      new(text: text, episode: episode, focus_count: focus_count, prior_turns: prior_turns, locale: locale).call
+    FOLLOW_UP_RE = /\A(?:que reviso|y ahora|eso puede causar|como lo soluciono|que hago ahora)\b/
+    META_RE = /\b(?:necesitas|necesita)\b.{0,40}\b(?:controlador|controller|modelo|marca|fabricante)\b|\Avolviendo a lo anterior\b/
+    NEW_PROBLEM_RE = /\Anueva falla\b|\Aotra falla\b|\Aotro equipo\b/
+    SIGNAL_RE = /\d|\b(?:pas[ae]|magnetiza\w*|cierr\w*|abr\w*|velocidad|fall\w*|puert\w*|iman\w*|codig\w*|error)\b/
+    DIALOGUE_FUNCTIONS = %w[technical_report follow_up answer_pending correction meta_question new_problem].freeze
+
+    def self.call(text:, episode:, focus_count: 0, prior_turns: [], locale: :es, analysis: nil)
+      new(
+        text: text, episode: episode, focus_count: focus_count,
+        prior_turns: prior_turns, locale: locale, analysis: analysis
+      ).call
     end
 
-    def initialize(text:, episode:, focus_count:, prior_turns:, locale:)
+    def initialize(text:, episode:, focus_count:, prior_turns:, locale:, analysis: nil)
       @text = text.to_s.strip
       @normalized = FollowupQueryRewriter.normalize_label(@text)
+      @words = @normalized.split
       @episode = episode
       @focus_count = focus_count.to_i
       @prior_turns = Array(prior_turns)
       @locale = locale.to_sym
+      @analysis = analysis
     end
 
     def call
@@ -53,6 +65,8 @@ module Rag
       bare = bare_identifier
       identity = known_identity(negated)
       decision = choose(bare, resolutions, identity)
+      carried = carry_context?(resolutions)
+      owned = owns?(decision, resolutions, bare, negated, carried)
       query = retrieval_query(resolutions, negated, replacement)
       clarification, subject, ask_when = clarification_for(decision, bare, resolutions)
       Decision.new(
@@ -61,17 +75,20 @@ module Rag
         clarification: clarification,
         pending_subject: subject,
         outside_discovery: outside?(decision, bare, identity),
-        owns_query: owns?(decision, resolutions, bare, negated),
+        owns_query: owned,
         bare_identifier: bare,
         ask_when: ask_when,
-        mutations: mutations(resolutions, negated, replacement)
+        mutations: mutations(resolutions, negated, replacement),
+        dialogue_function: dialogue,
+        context_carry: carried && !base_owns?(decision, resolutions, bare, negated)
       )
     end
 
     def self.apply!(episode, decision)
       return if episode.nil? || episode.blank? || decision.nil?
 
-      new(text: "", episode: episode, focus_count: 0, prior_turns: [], locale: :es).apply_mutations!(episode, decision)
+      new(text: "", episode: episode, focus_count: 0, prior_turns: [], locale: :es, analysis: nil)
+        .apply_mutations!(episode, decision)
     end
 
     def apply_mutations!(episode, decision)
@@ -82,6 +99,7 @@ module Rag
         when :clear
           episode.clear_fact!(mutation[:key])
           strip_goal(episode, mutation[:value])
+          strip_observations(episode, mutation[:value])
         when :write
           episode.write_fact!(
             mutation[:key],
@@ -91,6 +109,10 @@ module Rag
             correlation_id: mutation[:correlation_id].to_s,
             at: Time.current.iso8601
           )
+        when :observe
+          episode.append_observation!(mutation[:value], correlation_id: mutation[:correlation_id])
+        when :clear_observations
+          episode.clear_observations!
         end
       end
     end
@@ -100,6 +122,7 @@ module Rag
     def choose(bare, resolutions, identity)
       return "ready" if resolutions.any? { |item| item.type.present? && item.manufacturer.present? && item.status != :ambiguous }
       return "best_effort" if search_request?
+      return "best_effort" if controller_unknown_answer?
       return "best_effort" if identity_unknown? && (bare || short_unknown?)
       return "search_and_clarify" if resolutions.any? { |item| item.status == :ambiguous }
       return "clarify_first" if bare && @focus_count.zero? && identity.empty? && resolutions.none? { |item| item.status == :exact }
@@ -117,8 +140,12 @@ module Rag
       true
     end
 
-    def owns?(decision, resolutions, bare, negated)
-      decision == "clarify_first" || (decision == "best_effort" && (bare.present? || search_request? || short_unknown?)) || bare.present? ||
+    def owns?(decision, resolutions, bare, negated, carried)
+      base_owns?(decision, resolutions, bare, negated) || carried
+    end
+
+    def base_owns?(decision, resolutions, bare, negated)
+      decision == "clarify_first" || (decision == "best_effort" && (bare.present? || search_request? || short_unknown? || controller_unknown_answer?)) || bare.present? ||
         resolutions.any? { |item| item.type.present? || item.status == :ambiguous } ||
         controller_negated?(negated)
     end
@@ -141,7 +168,7 @@ module Rag
         text = I18n.t("rag.clarify_ambiguous_designator", token: ambiguous.candidates.join(" / "), locale: @locale)
         return [ text, "controller", :always ]
       end
-      if decision == "best_effort" && (bare || search_request? || short_unknown?)
+      if decision == "best_effort" && (bare || search_request? || short_unknown? || controller_unknown_answer?)
         return [ I18n.t("rag.best_effort_candidate", locale: @locale), nil, :always ]
       end
       if decision == "search_and_clarify" && bare.nil? && known_identity([]).include?("manufacturer") &&
@@ -190,10 +217,15 @@ module Rag
       end
       text = parts.join(" ")
       text = text.first(FollowupQueryRewriter::MAX_COMPOSED_CHARS) if text.length > FollowupQueryRewriter::MAX_COMPOSED_CHARS
-      text.presence || @text
+      return text if text.present?
+      return nil if omit_current_turn?
+
+      @text
     end
 
     def current_turn(negated, replacement)
+      return "" if omit_current_turn?
+
       turn = @text.dup
       negated.each { |token| turn = turn.gsub(/\b#{Regexp.escape(token)}\b/i, " ") }
       turn = "#{turn} #{replacement}" if replacement.present? && turn.downcase.exclude?(replacement.downcase)
@@ -303,6 +335,10 @@ module Rag
           list << { op: :write, key: "controller", value: replacement, source: "user", correlation_id: nil }
         end
       end
+      observation_spans.each do |span|
+        list << { op: :observe, value: span, correlation_id: nil }
+      end
+      list << { op: :clear_observations } if dialogue == "new_problem"
       resolutions.each do |item|
         next unless item.type && item.manufacturer && item.status != :ambiguous
         next if negated.any? { |token| same?(item.value, token) }
@@ -327,18 +363,61 @@ module Rag
     end
 
     def observations
-      texts = @prior_turns.filter_map { |turn|
-        body = turn.is_a?(Hash) ? turn["content"] : turn
-        body.to_s.squish.presence
+      return [] if dialogue == "new_problem" || dialogue == "correction"
+
+      stored = Array(@episode&.observations).filter_map { |row|
+        without_replaced_brands(row["text"].to_s).squish.presence
       }
-      texts = texts.reject { |line| FollowupQueryRewriter.normalize_label(line) == @normalized }
-      texts.last(MAX_PRIOR).last(MAX_OBSERVATIONS).reverse
+      return stored.last(MAX_OBSERVATIONS) if stored.any?
+      return [] unless carry_context?(token_resolutions)
+
+      filtered_prior_turns.last(MAX_PRIOR).last(MAX_OBSERVATIONS)
+    end
+
+    def filtered_prior_turns
+      @prior_turns.filter_map { |turn|
+        body = turn.is_a?(Hash) ? turn["content"] : turn
+        line = body.to_s.squish.presence
+        next if line.blank?
+        next if FollowupQueryRewriter.normalize_label(line) == @normalized
+        next unless technical_line?(line)
+
+        line
+      }
     end
 
     def goal_text(negated)
       text = @episode&.goal&.dig("text").to_s
+      return nil if conversational_line?(text)
+
+      text = without_replaced_brands(text)
       negated.each { |token| text = text.gsub(/\b#{Regexp.escape(token)}\b/i, " ") }
       text.squish.presence
+    end
+
+    def without_replaced_brands(text)
+      current = FollowupQueryRewriter.normalize_label(known_value("manufacturer", []))
+      return text if current.blank?
+
+      ActiveEpisodeTurn::MANUFACTURERS.sort_by { |brand| -brand.length }.each do |brand|
+        next if current == brand || current.start_with?("#{brand} ") || brand.start_with?("#{current} ")
+
+        text = text.to_s.gsub(/\b#{Regexp.escape(brand)}\b/i, " ")
+      end
+      text.to_s.squish
+    end
+
+    def strip_observations(episode, value)
+      token = value.to_s
+      return if token.blank?
+
+      episode.observations.map! do |row|
+        text = row["text"].to_s.gsub(/\b#{Regexp.escape(token)}\b/i, " ").squish
+        next if text.blank?
+
+        row.merge("text" => text)
+      end
+      episode.observations.compact!
     end
 
     def strip_goal(episode, value)
@@ -355,6 +434,115 @@ module Rag
 
     def same?(left, right)
       FollowupQueryRewriter.normalize_label(left) == FollowupQueryRewriter.normalize_label(right)
+    end
+
+    def dialogue
+      return @dialogue if defined?(@dialogue)
+
+      function = if controller_unknown_answer? || model_unknown_answer? || (short_unknown? && !search_request?)
+        "answer_pending"
+      elsif meta?
+        "meta_question"
+      elsif follow_up?
+        "follow_up"
+      elsif correction?
+        "correction"
+      elsif new_problem?
+        "new_problem"
+      else
+        "technical_report"
+      end
+      @dialogue = DIALOGUE_FUNCTIONS.include?(function) ? function : "technical_report"
+    end
+
+    def meta?
+      META_RE.match?(@normalized)
+    end
+
+    def follow_up?
+      FOLLOW_UP_RE.match?(@normalized)
+    end
+
+    def correction?
+      NEGATED_RE.match?(@normalized) || @normalized.match?(/\bno (?:es|era)\b/)
+    end
+
+    def new_problem?
+      NEW_PROBLEM_RE.match?(@normalized)
+    end
+
+    def controller_unknown_answer?
+      return false unless @normalized.match?(/\bno (?:lo )?se\b/)
+      return false if search_request?
+
+      pending = @episode&.pending_fact&.dig("subject") || @episode&.pending_question&.dig("type")
+      pending == "controller" || @normalized.match?(/\b(?:controlador|controller)\b/)
+    end
+
+    def model_unknown_answer?
+      @normalized.match?(/\bno (?:lo )?se\b/) && @normalized.match?(/\bmodelo\b/) &&
+        !@normalized.match?(/\b(?:controlador|controller)\b/)
+    end
+
+    def omit_current_turn?
+      dialogue == "meta_question" || controller_unknown_answer? || (short_unknown? && !search_request?)
+    end
+
+    def carry_context?(resolutions)
+      return false if dialogue == "correction" || dialogue == "new_problem"
+      return false unless technical_substance? || filtered_prior_turns.any?
+      return true if dialogue == "follow_up" || dialogue == "meta_question" || controller_unknown_answer?
+      return true if search_request?
+      return false if model_unknown_answer?
+      return false if dialogue == "technical_report" && !technical_line?(@text)
+      return false if @words.size >= 8
+      return false if @words.size >= 6 && resolutions.any? { |item| item.status == :exact || item.status == :prefix }
+
+      dialogue == "technical_report"
+    end
+
+    def technical_substance?
+      return true if known_identity([]).any? || identity_unknown?
+      return true if Array(@episode&.observations).any?
+
+      goal = @episode&.goal&.dig("text").to_s
+      normalized_goal = FollowupQueryRewriter.normalize_label(goal)
+      return false if normalized_goal.blank? || normalized_goal == @normalized
+
+      technical_line?(goal)
+    end
+
+    def technical_line?(text)
+      normalized = FollowupQueryRewriter.normalize_label(text)
+      return false if normalized.blank? || conversational_line?(normalized)
+
+      SIGNAL_RE.match?(normalized)
+    end
+
+    def conversational_line?(text)
+      normalized = FollowupQueryRewriter.normalize_label(text)
+      normalized.match?(META_RE) || normalized.match?(FOLLOW_UP_RE) || normalized.match?(SHORT_UNKNOWN_RE) ||
+        (normalized.match?(/\bno (?:lo )?se\b/) && normalized.match?(/\b(?:controlador|controller)\b/) && !normalized.match?(SIGNAL_RE))
+    end
+
+    def observation_spans
+      return [] unless dialogue == "technical_report" && technical_line?(@text)
+
+      spans = literal_analysis_observations
+      spans = [ @text.squish ] if spans.empty?
+      spans.map { |span| span.first(ActiveEpisode::MAX_OBSERVATION_CHARS) }.uniq
+    end
+
+    def literal_analysis_observations
+      return [] unless @analysis.respond_to?(:technical_observations)
+
+      Array(@analysis.technical_observations).filter_map { |span|
+        text = span.to_s.squish
+        next if text.blank?
+        next unless @normalized.include?(FollowupQueryRewriter.normalize_label(text))
+
+        text
+      }
     end
   end
 end

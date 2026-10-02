@@ -1,8 +1,8 @@
 # Turn Interpreter V2 (2026-10-01)
 
-**Estado:** `OWNER LIVE — PHOTO CONTEXT BLOCKED`. T0, T1, T1.1, el hardening y el microfix de negate están en producción con `HAIKU_QUERY_ANALYSIS_MODE=owner`. El smoke de texto pasó. La foto relevante escribió la identidad y no dejó `Photo Evidence` porque la observación no se persistió. No hubo rollback. T3 no empieza.
+**Estado:** `OWNER LIVE — MULTIMODAL SAFE RETRIEVAL PENDING`. T0, T1 y T1.1 siguen en producción con `HAIKU_QUERY_ANALYSIS_MODE=owner`. F1–F3 están `PRODUCTION VERIFIED — CLOSED`. El blocker de Accepted Visual Observation quedó cerrado. T3 sigue sin empezar.
 
-El cierre de ese blocker está en [PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md](PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md). El resmoke posterior cerró F1–F3. El retrieval que sigue a la observación aceptada está en [PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md](PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md). Este master no absorbe esos planes.
+El flow Orona expuso gaps posteriores a esa observación: VisualTaskContext, equipment-aware retrieval y cross-manufacturer procedural safety. La continuación está en [PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md](PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md). El registro de F1–F3 está en [PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md](PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md). Este master no absorbe esos planes.
 
 **HEAD revisado para T1.1:** `9784c3d8d6523d5c1f9409e893d2db7a257a2866`.
 

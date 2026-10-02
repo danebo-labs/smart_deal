@@ -337,13 +337,31 @@ user
 photo
 ```
 
-Para una pregunta ligada a foto también puede usarse la identidad de la Accepted Visual Observation de esa foto:
+Promoción al episodio y identidad efímera de una photo-question son dos cosas distintas.
+
+A. Promoción al episodio. Sólo `relevant` puede escribir manufacturer/model `source=photo`.
 
 ```text
-unless relevance_to_goal == unrelated
+relevant  → puede promover manufacturer/model source=photo
+nil       → no promueve
+uncertain → no promueve
+unrelated → no promueve
 ```
 
-Eso cubre observaciones legacy con `relevance_to_goal=nil`, como el flow Orona. No se reescribe la observación ni se finge que era `relevant`. Esa identidad es efímera: no se escribe al episodio.
+B. `EquipmentIdentity` efímera para una pregunta ligada a esa foto. La identidad aceptada de la foto entra a la policy salvo `unrelated`.
+
+```text
+relevant  → sí
+nil       → sí, si la pregunta está ligada a esa foto
+uncertain → sí, si la pregunta está ligada a esa foto
+unrelated → no
+```
+
+El flow legacy Orona, `relevance_to_goal=nil`, es caso obligatorio de B: aporta identidad efímera y no se reescribe como `relevant`.
+
+```text
+Ephemeral EquipmentIdentity is a retrieval-safety input only. It does not rewrite relevance, does not promote facts, and does not mutate the episode.
+```
 
 No es identidad suficiente, y no vuelve restrictivo el retrieval:
 
@@ -668,7 +686,7 @@ unless unrelated
 
 sin reescribir la observación. Obligatorio en tests: el mismo resultado de seguridad que el flow con `relevant`.
 
-Foto `uncertain` o `unrelated`: no promueve identidad al episodio y no cierra el corpus por esa foto. `unrelated` no aporta identidad efímera. Sin identidad conocida por otra fuente, la búsqueda abierta permanece.
+`nil` y `uncertain` no promueven facts. Si la pregunta está ligada a esa foto, los dos sí aportan `EquipmentIdentity` efímera y la policy fail-closed corre igual. `unrelated` no aporta esa identidad. Sin manufacturer/model conocido por el usuario, por el episodio o por esa foto ligada, la búsqueda abierta permanece.
 
 ---
 
@@ -817,7 +835,7 @@ Bloquean el deploy.
 14. Autorización de tenant sin cambios. El scoping no se amplía.
 15. Eval F4: #30, #31, #32 y el flow Orona (goal sin stem + placa) → `relevant`. Fingerprint sin cambios.
 
-El "empty" del ítem 6 es generación vacía o fallo del camino de identidad. El retrieval que termina sin chunks compatibles es el ítem 5. `uncertain` no promueve identidad al episodio; si no hay otra identidad conocida, la búsqueda abierta permanece. Reuse del ítem 1 sigue en 0 llamadas Vision. `turn_interpreter:eval` y holdout entran en N6 y no pueden regresionar.
+El "empty" del ítem 6 es generación vacía o fallo del camino de identidad. El retrieval que termina sin chunks compatibles es el ítem 5. `uncertain` no promueve facts al episodio; si la pregunta está ligada a esa foto, sí entra como `EquipmentIdentity` efímera. `unrelated` no. Reuse del ítem 1 sigue en 0 llamadas Vision. `turn_interpreter:eval` y holdout entran en N6 y no pueden regresionar.
 
 ---
 

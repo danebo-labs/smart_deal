@@ -1518,6 +1518,75 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_includes Rails.root.join("app/services/rag/active_episode_turn.rb").read, "ConversationalTurnAnalysis"
   end
 
+  test "a relevant photo without visual identity keeps the photo and skips identity_promotion" do
+    session = web_episode_session
+    events = nil
+
+    with_episode_flag("true") do
+      owner = session.ensure_case_for_photo_submission!(correlation_id: "photo:sensor")
+      events = capture_pilot_events do
+        assert_equal :applied, session.record_photo_observation!(
+          photo_value: {
+            manufacturer: nil, model: nil, model_visible: nil,
+            relevance_to_goal: "relevant", target_visible: true
+          },
+          field_photo_id: 11,
+          sha256: "sensor",
+          correlation_id: "photo:sensor",
+          expected_episode_id: owner
+        )
+      end
+    end
+
+    episode = session.reload.active_episode
+    assert_equal 11, episode.dig("active_photo", "field_photo_id")
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    assert events.none? { |event| event["event"] == "identity_promotion" }
+  end
+
+  test "reusing a photo without visual identity does not emit already_known" do
+    session = web_episode_session
+    events = nil
+
+    with_episode_flag("true") do
+      owner = session.ensure_case_for_photo_submission!(correlation_id: "query:goal")
+      episode = Rag::ActiveEpisode.parse(session.reload.active_episode)
+      episode.write_fact!(
+        "manufacturer", status: "known", value: "KONE", source: "user",
+        correlation_id: "query:kone", at: Time.current.iso8601
+      )
+      episode.write_fact!(
+        "model", status: "known", value: "MonoSpace", source: "user",
+        correlation_id: "query:kone", at: Time.current.iso8601
+      )
+      session.update!(active_episode: episode.to_h)
+      events = capture_pilot_events do
+        session.record_photo_assistant_context!(
+          "[FOTO] sensor de puerta",
+          user_id: users(:one).id,
+          correlation_id: "photo:reuse-sensor",
+          expected_episode_id: owner,
+          question: "según la foto",
+          accepted_observation: {
+            "manufacturer" => nil,
+            "model" => nil,
+            "model_visible" => "unknown",
+            "relevance_to_goal" => "uncertain"
+          },
+          confirm_identity: true
+        )
+      end
+    end
+
+    kept = session.reload.active_episode
+    assert_equal "KONE", kept.dig("facts", "manufacturer", "value")
+    assert_equal "user", kept.dig("facts", "manufacturer", "source")
+    assert_equal "MonoSpace", kept.dig("facts", "model", "value")
+    assert_equal "user", kept.dig("facts", "model", "source")
+    assert events.none? { |event| event["event"] == "identity_promotion" }
+  end
+
   def web_episode_session(channel: "web", identifier: nil)
     ConversationSession.create!(
       identifier: identifier || "web:#{SecureRandom.hex(4)}",

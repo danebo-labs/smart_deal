@@ -24,6 +24,8 @@ module Rag
         result: result,
         outcome_reason: reason&.to_s.presence
       )
+    rescue StandardError => error
+      Rails.logger.warn("document_identity_scope telemetry failed #{error.class}")
     end
 
     def self.episode_identifier(episode)

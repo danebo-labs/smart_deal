@@ -1433,6 +1433,7 @@ class ConversationSession < ApplicationRecord
     return nil if episode.blank?
 
     observation = accepted_observation.to_h.stringify_keys
+    candidate = visual_identity_candidate?(observation)
     before_compact = compact_known_identity(episode)
     preview = Rag::PhotoRetrievalSnapshot.capture(
       episode: episode,
@@ -1442,7 +1443,8 @@ class ConversationSession < ApplicationRecord
     )
     identity = preview.equipment_identity
     if identity.nil?
-      return identity_promotion_fields(
+      return traced_identity_promotion(
+        candidate,
         result: "blocked",
         outcome_reason: "snapshot_excluded",
         relevance_to_goal: observation["relevance_to_goal"],
@@ -1465,7 +1467,8 @@ class ConversationSession < ApplicationRecord
     end
     close_photo_pending!(episode, written) if Rag::HaikuQueryAnalysisFlag.owner? && written.any?
     if episode.to_h == before
-      return identity_promotion_fields(
+      return traced_identity_promotion(
+        candidate,
         result: "unchanged",
         outcome_reason: "already_known",
         relevance_to_goal: observation["relevance_to_goal"],
@@ -1480,7 +1483,8 @@ class ConversationSession < ApplicationRecord
     update!(active_episode: episode.to_h)
     conflicts_grew = episode.conflicts.size > conflict_count
     if written.empty?
-      return identity_promotion_fields(
+      return traced_identity_promotion(
+        candidate,
         result: "conflict",
         outcome_reason: "user_photo_conflict",
         identity_conflict: true,
@@ -1492,7 +1496,8 @@ class ConversationSession < ApplicationRecord
       )
     end
 
-    identity_promotion_fields(
+    traced_identity_promotion(
+      candidate,
       result: "promoted",
       outcome_reason: "explicit_reuse",
       identity_conflict: conflicts_grew,
@@ -1508,6 +1513,8 @@ class ConversationSession < ApplicationRecord
     return nil if before_episode.blank? || after_episode.blank?
 
     readings = photo_value.to_h.stringify_keys
+    return nil unless visual_identity_candidate?(readings)
+
     before_compact = compact_known_identity(before_episode)
     fields = {
       correlation_id: correlation_id,
@@ -1539,6 +1546,21 @@ class ConversationSession < ApplicationRecord
     else
       fields.merge(result: "unchanged", outcome_reason: "already_known", identity_after: before_compact)
     end
+  end
+
+  def traced_identity_promotion(candidate, **fields)
+    return nil unless candidate
+
+    identity_promotion_fields(**fields)
+  end
+
+  def visual_identity_candidate?(readings)
+    %w[manufacturer model model_visible].any? { |key| usable_identity_value?(readings[key]) }
+  end
+
+  def usable_identity_value?(raw)
+    text = raw.to_s.squish
+    text.present? && !text.casecmp?("unknown")
   end
 
   def identity_promotion_fields(result:, outcome_reason:, identity_before:, identity_after:, correlation_id:, episode_id:, relevance_to_goal: nil, identity_conflict: false)

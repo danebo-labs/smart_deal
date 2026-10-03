@@ -1266,6 +1266,32 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert events.none? { |event| event["event"] == "document_identity_scope" }
   end
 
+  test "document identity scope telemetry failure stays inside the recorder" do
+    identity = orona_identity
+    original = Rag::DocumentIdentityScope.method(:needles)
+    Rag::DocumentIdentityScope.define_singleton_method(:needles) { |*| raise "needles down" }
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    continued = false
+
+    assert_nothing_raised do
+      Rag::DocumentIdentityScopeEvent.record(
+        identity: identity,
+        correlation_id: "query:scope-down",
+        status: :scoped
+      )
+      continued = true
+    end
+
+    assert continued
+    assert_includes output.string, "document_identity_scope telemetry failed RuntimeError"
+    assert_not_includes output.string, "needles down"
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    Rag::DocumentIdentityScope.define_singleton_method(:needles, original) if original
+  end
+
   test "pin denial keeps correlation and does not claim identity_unknown" do
     service = BedrockRagService.allocate
     service.instance_variable_set(:@account, accounts(:legacy))

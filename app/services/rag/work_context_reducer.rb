@@ -136,7 +136,39 @@ module Rag
       return unless @decision&.performs_retrieval?
       return unless %w[report follow_up new_work].include?(@perception.move)
 
-      @episode.assign_goal!(@turn, correlation_id: @correlation_id)
+      @episode.assign_goal!(durable_goal_text, correlation_id: @correlation_id)
+    end
+
+    # A validated symptom from this turn is the durable problem. The raw turn
+    # stays the fallback when the interpreter returned no symptom.
+    def durable_goal_text
+      phrases = goal_observations
+      return @turn if phrases.empty?
+
+      phrases.join(" ")
+    end
+
+    def goal_observations
+      seen = {}
+      phrases = Array(@perception.observations).filter_map { |text|
+        phrase = text.to_s.squish
+        next if phrase.blank?
+
+        label = FollowupQueryRewriter.normalize_label(phrase)
+        next if label.blank? || seen[label]
+
+        seen[label] = true
+        phrase
+      }
+
+      kept = []
+      phrases.each do |phrase|
+        candidate = (kept + [ phrase ]).join(" ")
+        break if kept.any? && candidate.length > ActiveEpisode::MAX_GOAL_CHARS
+
+        kept << phrase
+      end
+      kept
     end
 
     def clear_pending_unless_meta

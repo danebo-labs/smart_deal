@@ -91,6 +91,8 @@ module Rag
     # code belongs to (e.g. "41 (SERIE CERROJOS CABINA)") — it is a label, not a
     # wired component, so it must not be scanned for connector-claim components.
     SERIES_LABEL_PATTERN = /\(\s*SERIE\b[^)]*\)/i.freeze
+    CODE_MEANING_PATTERN = /\b(?:indica|signific\w*|means|corresponde)\b/i
+    FAULT_CODE_PATTERN = /\b[A-Z]{1,3}\d{2,4}\b/
 
     def initialize(locale: nil)
       @locale = normalize_locale(locale)
@@ -121,10 +123,13 @@ module Rag
       requires_evidence?(answer)
     end
 
-    def call(answer, evidence:, require_cited_evidence: false)
+    def call(answer, evidence:, require_cited_evidence: false, companion_guidance: false)
       return "" if answer.blank?
 
       source = evidence_text(evidence)
+      if companion_guidance
+        return render_internal_markers(filter_companion_fragments(answer.to_s, source))
+      end
       if require_cited_evidence && source.blank? && self.class.requires_citation?(answer)
         return I18n.t("rag.uncited_technical_answer", locale: @locale)
       end
@@ -138,6 +143,88 @@ module Rag
     end
 
     private
+
+    # Companion answers may continue without a manual citation. A sentence
+    # that states a terminal, measured value, or fault-code meaning absent
+    # from the accepted visual observation is removed. The remaining
+    # guidance stays.
+    def filter_companion_fragments(answer, evidence)
+      fragments = self.class.fragments(answer)
+      kept = []
+      rejected_claim = false
+      fragments.each do |fragment|
+        next if fragment.match?(INTERNAL_MARKER_PATTERN)
+        if companion_claim_rejected?(fragment, evidence)
+          rejected_claim = true
+          next
+        end
+
+        kept << fragment
+      end
+      return answer if kept.size == fragments.size
+      return I18n.t("rag.unsupported_identifier", locale: @locale) if kept.empty? && rejected_claim
+      return "" if kept.empty?
+
+      kept.join("\n")
+    end
+
+    def companion_claim_rejected?(fragment, evidence)
+      unsupported_identifiers?(fragment, evidence) ||
+        unsupported_measured_value?(fragment, evidence) ||
+        unsupported_code_meaning?(fragment, evidence) ||
+        unsupported_connection?(fragment, evidence) ||
+        unsupported_led?(fragment, evidence) ||
+        unsupported_device_function?(fragment, evidence)
+    end
+
+    def unsupported_identifiers?(fragment, evidence)
+      ids = identifiers_in(fragment)
+      return false if ids.empty?
+
+      evidence_ids = identifiers_in(evidence).map { |identifier| canonical(identifier) }.to_set
+      ids.any? { |identifier| evidence_ids.exclude?(canonical(identifier)) }
+    end
+
+    def unsupported_measured_value?(fragment, evidence)
+      compact = evidence.to_s.upcase.gsub(/[[:space:]]/, "")
+      fragment.to_enum(:scan, EVIDENCE_SENSITIVE_VALUE_PATTERN).any? do
+        token = Regexp.last_match(0).upcase.gsub(/[[:space:]]/, "")
+        compact.exclude?(token)
+      end
+    end
+
+    def unsupported_code_meaning?(fragment, evidence)
+      return false unless fragment.match?(CODE_MEANING_PATTERN)
+
+      codes = fragment.scan(FAULT_CODE_PATTERN)
+      return false if codes.empty?
+
+      known = evidence.to_s.upcase.scan(FAULT_CODE_PATTERN).to_set
+      codes.any? { |code| known.exclude?(code.upcase) }
+    end
+
+    def unsupported_connection?(fragment, evidence)
+      return false unless fragment.match?(CONNECTION_CLAIM_PATTERN)
+
+      identifier_pair_supported?(fragment, evidence) == false
+    end
+
+    def unsupported_led?(fragment, evidence)
+      led_ids = identifiers_in(fragment).select { |identifier| led_identifier?(identifier) }
+      return false if led_ids.empty? || !led_state_claim?(fragment)
+
+      led_ids.any? do |identifier|
+        evidence_fragments(evidence).none? do |piece|
+          piece.match?(/\b#{Regexp.escape(identifier)}\b/i) && led_state_claim?(piece)
+        end
+      end
+    end
+
+    def unsupported_device_function?(fragment, evidence)
+      return false unless fragment.match?(DEVICE_FUNCTION_CLAIM_PATTERN)
+
+      evidence_fragments(evidence).none? { |piece| piece.match?(DEVICE_FUNCTION_CLAIM_PATTERN) }
+    end
 
     def reject_unsupported_identifiers(answer, evidence)
       answer_ids = identifiers_in(answer)

@@ -1,6 +1,6 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4 IMPLEMENTED LOCALLY — N5–N6 NOT STARTED`
+**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4 IMPLEMENTED LOCALLY — N5 IMPLEMENTED LOCALLY — N6 NOT STARTED`
 
 **N0:** `N0 COMPLETE`
 
@@ -11,6 +11,8 @@
 **N3:** `N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 **N4:** `N4 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
+
+**N5:** `N5 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 Source of truth de este bloque. Reconcilia el diagnóstico read-only del flow real Orona PBCM-V3, la surgical review de Codex y la revisión final de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica o completa a Codex, manda Opus. Baseline de código: `d3909808a3508e83851f5475368fbd52d74c0e2a`.
 
@@ -942,11 +944,32 @@ En modo requerido el orchestrator no entra a `DocumentOverviewResponder`, `Ambig
 - N4 open fallback PASS (`open_calls` 0; el cuerpo Yida/BLT no está en la respuesta)
 - N4 citations PASS (Yida/BLT fuera de citas; 0 `MANUAL_FACT`)
 
-No hubo llamadas reales a Vision ni a Bedrock. N4 no está verificado en producción. N5–N6 no empezaron. `AGENTS.md` distingue identidad conocida (el manual ajeno se puede nombrar; su procedimiento no se usa) de identidad desconocida (la analogía con disclaimer sigue). `FieldPhotoPrompt::SYSTEM_BLOCKS` no cambió.
+No hubo llamadas reales a Vision ni a Bedrock. N4 no está verificado en producción. En este cierre N5 todavía no había empezado. `AGENTS.md` distingue identidad conocida (el manual ajeno se puede nombrar; su procedimiento no se usa) de identidad desconocida (la analogía con disclaimer sigue). `FieldPhotoPrompt::SYSTEM_BLOCKS` no cambió.
 
 ### N5 — Companion no-compatible generation
 
-Soportar Visual Observation + Danebo Guidance + "no tengo manual compatible", sin procedimiento extranjero y sin convertir la respuesta en `uncited_technical_answer`. Bloque de usuario; no tocar `SYSTEM_BLOCKS`.
+```text
+N5 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+```
+
+`:no_compatible` deja de cerrar en ausencia. Una sola generación, la que ya corre en `document_identity_scope`, recibe `Rag::CompanionGuidanceContext`: pregunta, problema activo, identidad conocida, observación visual aceptada (campos presentes del bloque de foto), observaciones recientes del técnico y el hecho de que no hay manual compatible. Los manuales reference-only entran sólo por nombre. El cuerpo de procedimiento no entra. `:scoped` sigue con el prompt documental. `:unavailable` no entra a este prompt.
+
+La respuesta puede decir que no hay un procedimiento de fabricante y seguir con guía. `AnswerSafetyProcessor` en modo companion no la convierte en `uncited_technical_answer`. Una frase con terminal, valor o significado de código ausente de la observación visual aceptada se elimina. Un identificador que sí está en esa observación se conserva sin cita de manual. `ProvenanceSegmenter` no cambia de dueño: observación visual y guía Danebo salen de las frases, sin fabricar `MANUAL_FACT`.
+
+Una pregunta principal. El modelo decide cuál. No hay un segundo LLM ni un selector de preguntas. Un follow-up se marca si el contexto ya tiene un turno del asistente; no hay otra máquina de estado para el saludo.
+
+Conflicto explícito de fabricante: el prompt nombra las dos lecturas y pide resolverlas antes de un paso de fabricante. No elige KONE ni Orona. Identidad desconocida sigue en retrieve abierto. Una generación vacía o que sólo emite `DATA_NOT_AVAILABLE` queda `:unavailable`, no se reetiqueta como companion.
+
+`N0_CONTRACTS=1` después de N5: 6 PASS / 0 FAIL.
+
+- N2 legacy reuse PASS
+- N2 same-turn PASS
+- N2 uncertain PASS
+- N3 identity scope PASS
+- N4 open fallback PASS
+- N4 citations PASS
+
+No hubo llamadas reales a Vision ni a Bedrock. N5 no está verificado en producción. N6 no empezó. `AGENTS.md` añade que, sin manual compatible, se sigue como guía Danebo. `FieldPhotoPrompt::SYSTEM_BLOCKS` no cambió.
 
 ### N6 — Integrated regression / eval
 
@@ -1122,9 +1145,10 @@ N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N4 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
-N5–N6 NOT STARTED
+N5 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+N6 NOT STARTED
 ```
 
-F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1, N2, N3 y N4 no están verificados en producción.
+F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1, N2, N3, N4 y N5 no están verificados en producción.
 
-Siguiente paso: review de N4. No deploy. No implementar N5 todavía.
+Siguiente paso: review de N5. No deploy. No implementar N6 todavía.

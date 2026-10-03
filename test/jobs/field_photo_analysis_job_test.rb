@@ -1984,6 +1984,62 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_not_includes probe[:answer], BLT_PROCEDURE
   end
 
+  test "no compatible photo continues the active problem as companion guidance" do
+    vision_calls = 0
+    interpreter_calls = { n: 0 }
+    probe = nil
+    counting_turn_interpreter(interpreter_calls) do
+      with_analysis_service(on_call: -> { vision_calls += 1 }) do
+        probe = run_foreign_equipment_retrieval
+      end
+    end
+
+    prompt = probe[:prompts].find { |text| text.include?("# FIELD COMPANION") }
+    assert prompt, "companion generation prompt missing"
+    assert_includes prompt, "no nivela en planta 3"
+    assert_includes prompt, "Orona"
+    assert_includes prompt, "PBCM-V3"
+    assert_includes prompt, "CONTROLLER_LOGIC"
+    assert_includes prompt, "No compatible manufacturer manual was found."
+    assert_not_includes prompt, YIDA_PROCEDURE
+    assert_not_includes prompt, BLT_PROCEDURE
+    assert_equal 0, probe[:open_calls]
+    assert_equal 0, vision_calls
+    assert_equal 0, interpreter_calls[:n]
+    assert_includes probe[:answer], "Orona PBCM-V3"
+    assert_includes probe[:answer], "pasada o corta"
+    assert_includes probe[:answer], "planta 3"
+    assert_not_includes probe[:answer], YIDA_PROCEDURE
+    assert_not_includes probe[:answer], BLT_PROCEDURE
+    assert_not_includes probe[:answer], "select a manual"
+    bands = probe[:segments].pluck("band")
+    assert_includes bands, "VISUAL_OBSERVATION"
+    assert_includes bands, "DANEBO_GUIDANCE"
+    assert_not_includes bands, "MANUAL_FACT"
+    assert_equal [], probe[:citations]
+    assert_nil probe[:photo].reload.visual_observation["relevance_to_goal"]
+    episode = @session.reload.active_episode
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    assert_equal "no nivela en planta 3", episode.dig("goal", "text")
+  end
+
+  test "uncertain accepted photo keeps ephemeral identity and a safe companion answer" do
+    probe = run_foreign_equipment_retrieval(relevance: "uncertain")
+
+    assert_equal "uncertain", probe[:photo].reload.visual_observation["relevance_to_goal"]
+    episode = @session.reload.active_episode
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    prompt = probe[:prompts].find { |text| text.include?("# FIELD COMPANION") }
+    assert_includes prompt, "Orona"
+    assert_includes prompt, "PBCM-V3"
+    assert_not_includes prompt, YIDA_PROCEDURE
+    assert_includes probe[:answer], "pasada o corta"
+    assert_not_includes probe[:segments].pluck("band"), "MANUAL_FACT"
+    assert_equal [], probe[:citations]
+  end
+
   test "a known photo with a missing identity snapshot keeps the paid visual reading" do
     set_photo_question_flag("true")
     photo = create_orona_photo(relevance: "relevant")
@@ -2283,16 +2339,19 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     Array(raw).map(&:to_s)
   end
 
-  def run_foreign_equipment_retrieval
-    photo = create_orona_photo(relevance: nil)
-    probe = { open_calls: 0, prompts: [], scopes: [], answer: "", photo: photo }
+  def run_foreign_equipment_retrieval(relevance: nil)
+    photo = create_orona_photo(relevance: relevance)
+    probe = { open_calls: 0, prompts: [], scopes: [], answer: "", citations: [], segments: [], photo: photo }
     isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "true") do
       with_leveling_episode do |owner|
         with_foreign_retrieval_probe(probe) do
           messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
             FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
           end
-          probe[:answer] = messages.last.to_h["answer"].to_s
+          message = messages.last.to_h
+          probe[:answer] = message["answer"].to_s
+          probe[:citations] = Array(message["citations"])
+          probe[:segments] = Array(message["provenance_segments"])
         end
       end
     end
@@ -2326,7 +2385,12 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       generator = Object.new
       generator.define_singleton_method(:query) do |prompt, **|
         probe[:prompts] << prompt
-        "La foto muestra una placa Orona PBCM-V3. No tengo manual compatible."
+        <<~ANSWER.strip
+          En la foto se identifica Orona PBCM-V3.
+          No tengo un manual compatible para darte un procedimiento del fabricante.
+          Para acotar la nivelación quiero separar si la cabina queda pasada o corta de nivel, o si no llega a hacer la parada.
+          ¿Qué hace la cabina al llegar a planta 3?
+        ANSWER
       end
       service.instance_variable_set(:@document_identity_generator, generator)
       service

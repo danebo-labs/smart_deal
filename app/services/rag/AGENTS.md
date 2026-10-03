@@ -76,6 +76,9 @@ Do not wrap `account_filter` in another `andAll`. Its shared-account arm is alre
 * Surface uncertainty explicitly.
 * Missing data must return `DATA_NOT_AVAILABLE`.
 * Ambiguous data must return `REQUIRE_FIELD_VERIFICATION`.
+* Known equipment with no compatible manual continues as Danebo guidance
+  from the accepted visual observation and the active problem. That turn
+  does not teach a foreign procedure and does not end as `DATA_NOT_AVAILABLE`.
 
 ## Chunk Repair Cache Invalidation (mandatory)
 

@@ -714,23 +714,27 @@ class BedrockRagService
         retrieval: retrieval
       )
     end
-    if applied.status == :no_compatible && applied.labels.none?(&:present?)
-      return identity_closed_result(
-        status: :no_compatible,
-        reason: applied.reason || :no_compatible_evidence,
+    companion = applied.status == :no_compatible
+    guidance = if companion
+      Rag::CompanionGuidanceContext.build(
         question: question,
-        response_locale: response_locale,
-        retrieval: retrieval
+        identity: identity,
+        session_context: session_context,
+        labels: applied.labels,
+        locale: effective_response_locale(question, response_locale: response_locale)
       )
     end
-
-    prompt = document_identity_generation_prompt(
-      question, applied.chunks,
-      labels: applied.labels,
-      response_locale: response_locale,
-      session_context: session_context,
-      output_channel: output_channel
-    )
+    prompt = if companion
+      guidance.to_s
+    else
+      document_identity_generation_prompt(
+        question, applied.chunks,
+        labels: applied.labels,
+        response_locale: response_locale,
+        session_context: session_context,
+        output_channel: output_channel
+      )
+    end
     raw_answer = begin
       document_identity_generator.query(
         prompt,
@@ -781,8 +785,20 @@ class BedrockRagService
       raw_answer: raw_answer,
       chunks: applied.chunks,
       response_locale: response_locale,
-      retrieval: retrieval
+      retrieval: retrieval,
+      companion: companion,
+      safety_evidence: guidance&.safety_evidence
     )
+    if companion && result[:answer].blank?
+      return identity_closed_result(
+        status: :unavailable,
+        reason: :generation_blank,
+        question: question,
+        response_locale: response_locale,
+        retrieval: retrieval,
+        model_invoked: true
+      )
+    end
     result[:equipment_identity_status] = applied.status.to_s
     result[:equipment_identity_reason] = applied.reason&.to_s
     result
@@ -893,27 +909,36 @@ class BedrockRagService
     end
   end
 
-  def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:)
+  def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
+                                           companion: false, safety_evidence: nil)
     no_results_locale = effective_response_locale(question, response_locale: response_locale)
     answer_text = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     canned_no_results = bedrock_no_results?(answer_text)
     answer_text = localized_no_results(no_results_locale) if canned_no_results
+    answer_text = answer_text.gsub(/[ \t]*\[\d+\]/, "") if companion
 
     citations = document_identity_citation_records(chunks)
-    answer_text = normalize_absence_semantics(
-      answer_text,
-      question: question,
-      locale: no_results_locale,
-      grounded_synthesis: @grounded_synthesis
-    )
+    unless companion
+      answer_text = normalize_absence_semantics(
+        answer_text,
+        question: question,
+        locale: no_results_locale,
+        grounded_synthesis: @grounded_synthesis
+      )
+    end
+    evidence = citations
+    if companion && safety_evidence.present?
+      evidence = citations + [ { content: safety_evidence } ]
+    end
     answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale).call(
       answer_text,
-      evidence: citations,
-      require_cited_evidence: !canned_no_results
+      evidence: evidence,
+      require_cited_evidence: !companion && !canned_no_results,
+      companion_guidance: companion
     )
     attribution = Rag::CitationAttributionGuard.new(question: question, citations: citations).call(answer_text)
     answer_text = attribution.answer
-    if attribution.dropped_any? && !attribution.attributed_claims? &&
+    if !companion && attribution.dropped_any? && !attribution.attributed_claims? &&
        Rag::AnswerSafetyProcessor.requires_evidence?(answer_text)
       answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale)
         .call("DATA_NOT_AVAILABLE", evidence: [])

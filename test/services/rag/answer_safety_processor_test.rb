@@ -449,6 +449,39 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     END_FIELD_RECORD
   TEXT
 
+  test "companion guidance drops an invented terminal value and code and keeps the diagnosis" do
+    answer = <<~TEXT
+      Para acotar la nivelación quiero separar si queda pasada o corta.
+      El terminal X19 va a 24 V y el código E18 indica encoder.
+    TEXT
+
+    rendered = processor.call(answer, evidence: [], companion_guidance: true)
+
+    assert_includes rendered, "pasada o corta"
+    assert_not_includes rendered, "X19"
+    assert_not_includes rendered, "24 V"
+    assert_not_includes rendered, "E18"
+    assert_not_equal t("uncited_technical_answer"), rendered
+    assert_not_includes rendered, "DATA_NOT_AVAILABLE"
+  end
+
+  test "companion guidance keeps a visual identifier that is in the accepted observation" do
+    answer = "En la foto se ve X17.\nPara acotar, ¿queda pasada o corta de nivel?"
+    evidence = [ { content: "Orona\nPBCM-V3\nX17" } ]
+
+    rendered = processor.call(answer, evidence: evidence, companion_guidance: true)
+
+    assert_equal answer, rendered
+  end
+
+  test "companion guidance does not turn a plain diagnostic answer into an uncited refusal" do
+    answer = "Quiero separar si la hoja intenta moverse.\n¿La hoja se mueve cuando llamas?"
+
+    rendered = processor.call(answer, evidence: [], require_cited_evidence: true, companion_guidance: true)
+
+    assert_equal answer, rendered
+  end
+
   def processor
     @processor ||= Rag::AnswerSafetyProcessor.new(locale: :es)
   end

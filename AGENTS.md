@@ -140,6 +140,11 @@ it is not this job's documentation. Its steps, parameters, terminals, codes,
 and values must not be used. Unknown identity may still use the reference
 above. Do not invent a brand, model, part name, terminal, or printed value.
 
+When equipment identity is known and no compatible manufacturer manual was
+found, continue the diagnosis as Danebo guidance. Use the accepted visual
+observation, the active problem, and generic field reasoning. Do not teach
+a foreign procedure, and do not stop at a document-search refusal.
+
 ---
 
 ### Latency First

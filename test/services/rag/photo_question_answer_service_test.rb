@@ -310,9 +310,32 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_includes context, "## Photo Evidence (this turn)"
     assert_includes context, "Component: GECB"
     assert_includes context, "Visible text/codes: System=1, Tools=2, UNKNOWN"
+    assert_not_includes context, "- Subsystem:"
     assert_not_includes context, "substituting"
     assert_not_includes context, "Never infer"
     assert_operator context.length, :<=, 2600
+  end
+
+  test "accepted observation subsystem is part of the photo evidence block" do
+    observation = FieldPhotoObservation.from_analysis(
+      parsed: {
+        "canonical_component" => "Placa controladora",
+        "manufacturer" => "Orona",
+        "model" => "PBCM-V3",
+        "subsystem" => "CONTROLLER_LOGIC",
+        "condition" => "GOOD",
+        "visible_text" => [ "PBCM-V3" ]
+      },
+      model_id: "claude-sonnet-5-5",
+      target_visible: true,
+      relevance_to_goal: nil
+    )
+    block = build_service(
+      question: "no nivela en planta 3",
+      accepted_observation: observation
+    ).send(:photo_evidence_block)
+
+    assert_includes block, "- Subsystem: CONTROLLER_LOGIC"
   end
 
   test "forced response_locale overrides text-based detection" do

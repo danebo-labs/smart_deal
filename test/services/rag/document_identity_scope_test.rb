@@ -96,7 +96,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes plus.chunks[0][:content], "texto CEA15P"
   end
 
-  test "no match still uses the scoped path with identity only" do
+  test "no compatible manual generates companion guidance without the foreign procedure" do
     question = "pregunta"
     chunks = [
       chunk(
@@ -132,13 +132,15 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
 
     assert_equal "document_identity_scope", result[:generation_mode]
+    assert_equal "no_compatible", result[:equipment_identity_status]
     assert_equal 1, Thread.current[:document_identity_scope]["labels"]
     assert_equal 1, Thread.current[:document_identity_scope]["other_equipment"]
     assert_equal "document_identity", Thread.current[:document_identity_scope]["path"]
-    assert_includes calls.first, "Manual: Monarch"
-    assert_includes calls.first, "Page: 84"
-    assert_includes calls.first, "Section: Door commissioning"
+    assert_includes calls.first, "# FIELD COMPANION"
+    assert_includes calls.first, "Monarch"
     assert_not_includes calls.first, "Cortocircuitar BM/B1"
+    assert_not_includes calls.first, "Page: 84"
+    assert_equal [], result[:citations]
   end
 
   test "a known model matches that manual and strips other equipment" do
@@ -866,8 +868,12 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       rag_calls += 1
       flunk "open retrieve_and_generate"
     end
+    seen_prompt = nil
     generator = Object.new
-    generator.define_singleton_method(:query) { |_prompt, **| "Revisar el sensor de la placa. [1]" }
+    generator.define_singleton_method(:query) do |prompt, **|
+      seen_prompt = prompt
+      "Revisar el sensor de la placa. [1]"
+    end
     service.define_singleton_method(:document_identity_generator) { generator }
 
     result = nil
@@ -877,6 +883,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
     assert_equal 0, rag_calls
     assert_equal "scoped", result[:equipment_identity_status]
+    assert_includes seen_prompt, body
+    assert_not_includes seen_prompt, "# FIELD COMPANION"
     assert_includes result[:answer], "Revisar el sensor"
     cited = [ result[:citations], result[:retrieved_citations] ].flatten.compact.map { |item| JSON.generate(item.as_json) }
     assert cited.any? { |blob| blob.include?("Manual Orona PBCM-V3") }
@@ -886,17 +894,28 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   test "known identity and an empty retrieval is no_compatible without an open fallback" do
     service = closed_identity_service(chunks: [])
     rag_calls = 0
+    seen_prompt = nil
     service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
-    service.define_singleton_method(:document_identity_generator) { flunk "generator" }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      seen_prompt = prompt
+      "Quiero separar si la cabina queda pasada o corta.\n¿Qué hace al llegar a planta 3?"
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
 
     result = nil
     with_flag("true") do
-      result = service.query("no nivela", equipment_identity: orona_identity, output_channel: :web)
+      result = service.query("no nivela en planta 3", equipment_identity: orona_identity, output_channel: :web)
     end
 
     assert_equal 0, rag_calls
     assert_equal "no_compatible", result[:equipment_identity_status]
     assert_equal false, Thread.current[:document_identity_scope]["fallback"]
+    assert_includes seen_prompt, "# FIELD COMPANION"
+    assert_includes seen_prompt, "No compatible manufacturer manual was found."
+    assert_includes result[:answer], "pasada o corta"
+    assert_not_includes result[:answer], I18n.t("rag.data_not_available", locale: :es)
+    assert_not_includes result[:answer], I18n.t("rag.uncited_technical_answer", locale: :es)
     assert_equal [], result[:citations]
     assert_equal [], result[:retrieved_citations]
   end
@@ -988,8 +1007,12 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     service = closed_identity_service(chunks: chunks)
     rag_calls = 0
     service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    seen_prompt = nil
     generator = Object.new
-    generator.define_singleton_method(:query) { |_prompt, **| "Sin procedimiento aplicable." }
+    generator.define_singleton_method(:query) do |prompt, **|
+      seen_prompt = prompt
+      "Hay una inconsistencia entre el fabricante indicado y el leído en la foto. ¿Puedes mostrarme la placa del controlador?"
+    end
     service.define_singleton_method(:document_identity_generator) { generator }
 
     result = nil
@@ -1000,6 +1023,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal 0, rag_calls
     assert_equal "no_compatible", result[:equipment_identity_status]
     assert_equal "conflicting_current_identity", result[:equipment_identity_reason]
+    assert_includes seen_prompt, "technician said KONE"
+    assert_includes seen_prompt, "the photo shows Orona"
+    assert_includes seen_prompt, "do not choose a manufacturer"
+    assert_includes result[:answer], "inconsistencia"
     assert_not_includes result[:answer], "Procedimiento KONE"
     assert_not_includes result[:answer], "Procedimiento de la placa"
     assert_equal [], result[:citations]
@@ -1026,6 +1053,151 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes Rag::DocumentIdentityScope.needles(corrected), "Elemont"
     assert_empty Rag::DocumentIdentityScope.needles(catalog)
     assert_equal [ "Elemont" ], Rag::DocumentIdentityScope.needles(photo)
+  end
+
+  test "text-only known equipment without a compatible manual continues with guidance" do
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "KONE",
+      needles: [ "KONE" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "KONE", "source" => "user", "correlation_id" => "query:door" }
+      ]
+    )
+    session_context = <<~TEXT
+      ## Active Field Problem
+      Goal: la puerta no cierra
+      ## Recent Conversation
+      User: la puerta no cierra
+      Assistant: Hola. ¿Qué está pasando con el equipo?
+    TEXT
+    service = closed_identity_service(chunks: [])
+    seen_prompt = nil
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      seen_prompt = prompt
+      "No tengo un manual KONE compatible para un procedimiento del fabricante.\nQuiero separar si el operador recibe la orden de cierre o si la hoja ni intenta moverse.\n¿La hoja se mueve cuando llamas?"
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| flunk "open retrieve_and_generate" }
+
+    result = nil
+    with_flag("true") do
+      result = service.query(
+        "la puerta no cierra",
+        equipment_identity: identity,
+        session_context: session_context,
+        output_channel: :web
+      )
+    end
+
+    assert_equal "no_compatible", result[:equipment_identity_status]
+    assert_includes seen_prompt, "la puerta no cierra"
+    assert_includes seen_prompt, "KONE"
+    assert_includes seen_prompt, "Follow-up: yes."
+    assert_includes seen_prompt, "One main question"
+    assert_not_includes seen_prompt, "Accepted visual observation:"
+    assert_includes result[:answer], "Quiero separar"
+    assert_includes result[:answer], "¿La hoja se mueve"
+    assert_not_includes result[:answer], "X17"
+    assert_not_includes result[:answer], I18n.t("rag.data_not_available", locale: :es)
+    assert_equal [], result[:citations]
+  end
+
+  test "no compatible guidance keeps a visual identifier and drops an invented value" do
+    yida_body = "Paso 11. Ajusta el interruptor Yida a 2,5 mm."
+    session_context = <<~TEXT
+      ## Active Field Problem
+      Goal: no nivela en planta 3
+      ## Photo Evidence (this turn)
+      - Manufacturer: Orona
+      - Model: PBCM-V3
+      - Subsystem: CONTROLLER_LOGIC
+      - Visible text/codes: X17
+      - Condition: GOOD
+    TEXT
+    service = closed_identity_service(chunks: [
+      chunk("yida", yida_body, canonical_name: "Fuji Yida Guía del Usuario Ascensor", page: 97)
+    ])
+    seen_prompt = nil
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      seen_prompt = prompt
+      <<~ANSWER
+        En la foto se identifica Orona PBCM-V3.
+        En la foto se ve X17.
+        Para acotar la nivelación quiero separar si queda pasada o corta.
+        El terminal X19 va a 24 V y el código E18 indica encoder.
+      ANSWER
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| flunk "open retrieve_and_generate" }
+
+    result = nil
+    with_flag("true") do
+      result = service.query(
+        "no nivela en planta 3",
+        equipment_identity: orona_identity,
+        session_context: session_context,
+        response_locale: :es,
+        output_channel: :web
+      )
+    end
+
+    assert_equal "no_compatible", result[:equipment_identity_status]
+    assert_includes seen_prompt, "Orona"
+    assert_includes seen_prompt, "PBCM-V3"
+    assert_includes seen_prompt, "CONTROLLER_LOGIC"
+    assert_includes seen_prompt, "X17"
+    assert_includes seen_prompt, "no nivela en planta 3"
+    assert_not_includes seen_prompt, yida_body
+    assert_includes result[:answer], "Orona PBCM-V3"
+    assert_includes result[:answer], "X17"
+    assert_includes result[:answer], "pasada o corta"
+    assert_not_includes result[:answer], "X19"
+    assert_not_includes result[:answer], "24 V"
+    assert_not_includes result[:answer], "E18"
+    assert_not_includes result[:answer], yida_body
+    assert_not_includes result[:answer], I18n.t("rag.uncited_technical_answer", locale: :es)
+    assert_not_includes result[:answer], I18n.t("rag.data_not_available", locale: :es)
+    assert_equal [], result[:citations]
+    observation = FieldPhotoObservation.from_analysis(
+      parsed: {
+        "canonical_component" => "Placa controladora",
+        "manufacturer" => "Orona",
+        "model" => "PBCM-V3",
+        "subsystem" => "CONTROLLER_LOGIC",
+        "condition" => "GOOD",
+        "visible_text" => [ "X17" ]
+      },
+      model_id: "claude-sonnet-5-5",
+      target_visible: true,
+      relevance_to_goal: "relevant"
+    )
+    segments = Rag::ProvenanceSegmenter.call(
+      answer: result[:answer],
+      citations: result[:citations],
+      visual_observation: observation
+    )
+    assert_includes segments.pluck("band"), "VISUAL_OBSERVATION"
+    assert_includes segments.pluck("band"), "DANEBO_GUIDANCE"
+    assert segments.none? { |segment| segment["band"] == "MANUAL_FACT" }
+  end
+
+  test "a companion answer that is only an absence marker stays unavailable" do
+    service = closed_identity_service(chunks: [])
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "DATA_NOT_AVAILABLE" }
+    service.define_singleton_method(:document_identity_generator) { generator }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| flunk "open retrieve_and_generate" }
+
+    result = nil
+    with_flag("true") do
+      result = service.query("no nivela", equipment_identity: orona_identity, output_channel: :web)
+    end
+
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal "generation_blank", result[:equipment_identity_reason]
+    assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
   end
 
   private

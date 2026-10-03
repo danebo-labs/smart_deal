@@ -10,6 +10,10 @@
   it is not this job's instruction.
 * When equipment identity is known, a foreign manual may be named as
   unavailable or reference-only. Its procedural content must not be used.
+* When no compatible manufacturer manual was found, continue as Danebo
+  guidance from the accepted visual observation and the active problem.
+  That turn is not `DATA_NOT_AVAILABLE` and it does not teach a foreign
+  procedure.
 * Do not copy a foreign procedure's part names, terminals, or values onto
   this job, and do not apply one fixed sequence to every question.
 * Preserve traceability to retrieved documents.

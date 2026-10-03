@@ -210,6 +210,12 @@ module Rag
       text
     end
 
+    def accepted_label(key)
+      return nil if @accepted_observation.blank?
+
+      known(@accepted_observation.to_h.deep_stringify_keys[key])
+    end
+
     # A caller-supplied snapshot is the work context captured with the [FOTO]
     # ownership write. nil means this call is outside that gate and may read
     # the session, which direct script callers still do.
@@ -242,7 +248,13 @@ module Rag
         [
           "- Component: #{@evidence[:canonical_name] || UNKNOWN}",
           "- Manufacturer: #{@evidence[:manufacturer] || UNKNOWN}",
-          "- Model: #{@evidence[:model_visible] || UNKNOWN}",
+          "- Model: #{@evidence[:model_visible] || UNKNOWN}"
+        ]
+      )
+      subsystem = accepted_label("subsystem")
+      lines << "- Subsystem: #{subsystem}" if subsystem
+      lines.concat(
+        [
           "- Visible text/codes: #{visible_codes}",
           "- Condition: #{@evidence[:condition] || UNKNOWN}"
         ]

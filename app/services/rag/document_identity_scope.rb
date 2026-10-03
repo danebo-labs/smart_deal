@@ -10,9 +10,10 @@ module Rag
   #   :no_compatible  — the policy ran and no body applies
   #   :unavailable    — the policy could not run reliably
   #
-  # N3 classifies and strips foreign procedural bodies from the generation
-  # context. It does not close the caller's open retrieve_and_generate
-  # fallback and it does not drop reference-only citations. That is N4.
+  # Required mode (identity known) is fail-closed. :scoped may generate from
+  # applicable bodies. :no_compatible and :unavailable do not fall through to
+  # an open retrieve_and_generate. A reference-only chunk may stay in the
+  # generation context as source identity. It is not citable evidence.
   class DocumentIdentityScope
     Result = Data.define(
       :chunks, :labels, :blocked, :undeclared_private, :unconfirmed_general,
@@ -129,6 +130,19 @@ module Rag
 
     def self.other_equipment_line(name)
       "#{OTHER_EQUIPMENT_PREFIX} #{name}"
+    end
+
+    def self.reference_only_chunk?(chunk)
+      return false unless chunk.respond_to?(:[])
+
+      value = chunk[:identity_applicability] || chunk["identity_applicability"]
+      value.to_s == "reference_only"
+    end
+
+    # Same order as the generation context. A reference-only slot is nil so a
+    # later [n] cannot bind to a different chunk and cannot support a fact.
+    def self.citable_evidence(records)
+      Array(records).map { |record| reference_only_chunk?(record) ? nil : record }
     end
 
     def self.reference_identity(chunk)

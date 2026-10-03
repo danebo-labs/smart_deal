@@ -88,6 +88,7 @@ module Rag
         equipment_identity: @equipment_identity
       )
       return nil unless result.success?
+      return unavailable_photo_lookup(result) if result.equipment_identity_status.to_s == "unavailable"
 
       processor       = Bedrock::CitationProcessor.new
       raw_citations   = processor.transport_references(result.citations)
@@ -113,6 +114,22 @@ module Rag
     end
 
     private
+
+    # Retrieval could not run. The paid vision reading stays on the job's
+    # failed path. The copy is the existing photo-question failure, not a
+    # companion answer.
+    def unavailable_photo_lookup(result)
+      unavailable = I18n.with_locale(@locale) { I18n.t("rag.photo_question_unavailable") }
+      {
+        answer: unavailable,
+        citations: [],
+        provenance_segments: Rag::ProvenanceSegmenter.call(answer: unavailable, citations: []),
+        retrieved_citations: [],
+        generation_mode: result.generation_mode,
+        failed: true,
+        equipment_identity_status: "unavailable"
+      }
+    end
 
     # Snapshot text when the turn already composed one. The catalog suffix
     # still appends, the same way it does for a literal photo question.

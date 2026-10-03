@@ -920,6 +920,45 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal "OTIS", derived.send(:resolved_equipment_identity).manufacturer
   end
 
+  test "known equipment skips terminals that do not apply the compatibility policy" do
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:a" }
+      ]
+    )
+    original_overview = Rag::DocumentOverviewResponder.method(:build)
+    original_ambiguous = Rag::AmbiguousModelResponder.method(:build)
+    original_deterministic = Rag::DeterministicRenderer.method(:build)
+    original_query = BedrockRagService.instance_method(:query)
+    Rag::DocumentOverviewResponder.define_singleton_method(:build) { |**| flunk "overview" }
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**| flunk "ambiguous" }
+    Rag::DeterministicRenderer.define_singleton_method(:build) { |**| flunk "deterministic" }
+    BedrockRagService.define_method(:query) do |_question, **|
+      { answer: "cerrado", citations: [], equipment_identity_status: "no_compatible" }
+    end
+    service = QueryOrchestratorService.new(
+      "pregunta",
+      account: accounts(:legacy),
+      equipment_identity: identity,
+      output_channel: :web
+    )
+    service.define_singleton_method(:skip_routing?) { false }
+    service.define_singleton_method(:classify_query_intent) { QueryOrchestratorService::TOOLS[:HYBRID_QUERY] }
+    service.define_singleton_method(:execute_hybrid_query) { flunk "hybrid" }
+
+    result = service.execute
+
+    assert_equal "cerrado", result[:answer]
+    assert_equal "no_compatible", result[:equipment_identity_status]
+  ensure
+    Rag::DocumentOverviewResponder.define_singleton_method(:build) { |**kwargs| original_overview.call(**kwargs) } if original_overview
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| original_ambiguous.call(**kwargs) } if original_ambiguous
+    Rag::DeterministicRenderer.define_singleton_method(:build) { |**kwargs| original_deterministic.call(**kwargs) } if original_deterministic
+    BedrockRagService.define_method(:query, original_query) if original_query
+  end
+
   def live_otis_session
     Object.new.tap do |session|
       session.define_singleton_method(:active_episode) do

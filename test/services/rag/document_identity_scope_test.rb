@@ -242,7 +242,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       assert_not Rag::DocumentIdentityScope.applicable?(episode)
       service = BedrockRagService.allocate
       service.define_singleton_method(:retrieve_chunks) { flunk "retrieve_chunks" }
-      assert_nil service.send(
+      result = service.send(
         :document_identity_scope_result,
         "pregunta",
         episode: episode,
@@ -255,6 +255,9 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
         conversation_session_id: nil,
         correlation_id: "c"
       )
+      assert_equal "unavailable", result[:equipment_identity_status]
+      assert_equal "scope_disabled", result[:equipment_identity_reason]
+      assert_equal false, Thread.current[:document_identity_scope]["fallback"]
     end
   end
 
@@ -334,7 +337,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal %w[Monarch KONE BLT], applied.chunks.first(3).map { |chunk| chunk[:content][/Manual: (.+)/, 1] }
   end
 
-  test "scope on retrieves the same result count and a technical failure uses retrieve_and_generate" do
+  test "scope on retrieves the same result count and a technical failure stays closed" do
     question = "pregunta"
     retrieved = {
       chunks: [ chunk("mh", "Procedimiento Elemont MH.", canonical_name: "Elemont MH") ],
@@ -357,19 +360,23 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     raiser.define_singleton_method(:query) { |_prompt, **_kwargs| raise Timeout::Error, "read timeout" }
     service.instance_variable_set(:@document_identity_generator, raiser)
 
+    result = nil
     with_flag("true") do
       result = service.query(question, episode: episode(identifiers: %w[MH]), output_channel: :web)
-      assert_includes result[:answer], "Respuesta del camino de hoy."
     end
 
-    assert_equal 1, rag_calls
+    assert_equal 0, rag_calls
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal "generation_timeout", result[:equipment_identity_reason]
+    assert_not_includes result[:answer], "Respuesta del camino de hoy."
+    assert_not_includes result[:answer], "Procedimiento Elemont"
     assert_equal RagRetrievalProfile.new(entity_sources: [], question: question).number_of_results, seen[:number_of_results]
     assert_equal 8, seen[:number_of_results]
-    assert_equal true, Thread.current[:document_identity_scope]["fallback"]
-    assert_equal "retrieve_and_generate", Thread.current[:document_identity_scope]["path"]
+    assert_equal false, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal "document_identity", Thread.current[:document_identity_scope]["path"]
   end
 
-  test "a blank generation falls back to retrieve_and_generate" do
+  test "a blank generation stays closed" do
     question = "pregunta"
     retrieved = {
       chunks: [ chunk("mh", "Procedimiento Elemont MH.", canonical_name: "Elemont MH") ],
@@ -388,13 +395,17 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     blank.define_singleton_method(:query) { |_prompt, **_kwargs| "" }
     service.instance_variable_set(:@document_identity_generator, blank)
 
+    result = nil
     with_flag("true") do
       result = service.query(question, episode: episode(identifiers: %w[MH]), output_channel: :web)
-      assert_includes result[:answer], "Respuesta del camino de hoy."
     end
 
-    assert_equal 1, rag_calls
-    assert_equal true, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal 0, rag_calls
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal "generation_blank", result[:equipment_identity_reason]
+    assert_equal false, Thread.current[:document_identity_scope]["fallback"]
+    assert_not_includes result[:answer], "Respuesta del camino de hoy."
+    assert_not_includes result[:answer], "Procedimiento Elemont"
   end
 
   test "focus keeps the selected Elemont procedure when the work says KONE" do
@@ -751,7 +762,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
   end
 
-  test "a disabled scope with known identity is unavailable and still falls open" do
+  test "a disabled scope with known identity is unavailable and does not fall open" do
     question = "no nivela"
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     service.define_singleton_method(:retrieve_chunks) { flunk "retrieve_chunks" }
@@ -768,13 +779,14 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       result = service.query(question, episode: orona_known_episode, output_channel: :web)
     end
 
-    assert_equal "unavailable", Thread.current[:document_identity_scope]["status"]
-    assert_equal "scope_disabled", Thread.current[:document_identity_scope]["reason"]
-    assert_equal 1, rag_calls
-    assert_includes result[:answer], "Respuesta del camino abierto."
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal "scope_disabled", result[:equipment_identity_reason]
+    assert_equal false, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal 0, rag_calls
+    assert_not_includes result[:answer], "Respuesta del camino abierto."
   end
 
-  test "no compatible classification still falls through to open retrieve_and_generate" do
+  test "no compatible classification does not fall through to open retrieve_and_generate" do
     question = "no nivela"
     yida_body = "Paso 11. Ajusta el interruptor Yida a 2,5 mm."
     chunks = [ chunk("yida", yida_body, canonical_name: "Fuji Yida Guía del Usuario Ascensor", page: 97) ]
@@ -801,10 +813,13 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       )
     end
 
-    assert_equal "no_compatible", Thread.current[:document_identity_scope]["status"]
-    assert_equal true, Thread.current[:document_identity_scope]["fallback"]
-    assert_equal 1, rag_calls
-    assert_includes result[:answer], "Respuesta del camino abierto."
+    assert_equal "no_compatible", result[:equipment_identity_status]
+    assert_equal false, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal 0, rag_calls
+    assert_not_includes result[:answer], "Respuesta del camino abierto."
+    assert_not_includes result[:answer], yida_body
+    cited = [ result[:citations], result[:retrieved_citations] ].flatten.compact
+    assert cited.none? { |item| JSON.generate(item.as_json).include?("Fuji Yida") }
   end
 
   test "a supplied identity is used after the episode changes" do
@@ -842,6 +857,154 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     Rag::DocumentIdentityScope.define_singleton_method(:apply) { |*args, **kwargs| original_apply.call(*args, **kwargs) } if original_apply
   end
 
+  test "a compatible Orona manual stays scoped and citable" do
+    body = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona."
+    manual = chunk("orona", body, canonical_name: "Manual Orona PBCM-V3")
+    service = closed_identity_service(chunks: [ manual ])
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+      rag_calls += 1
+      flunk "open retrieve_and_generate"
+    end
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "Revisar el sensor de la placa. [1]" }
+    service.define_singleton_method(:document_identity_generator) { generator }
+
+    result = nil
+    with_flag("true") do
+      result = service.query("no nivela", equipment_identity: orona_identity, output_channel: :web)
+    end
+
+    assert_equal 0, rag_calls
+    assert_equal "scoped", result[:equipment_identity_status]
+    assert_includes result[:answer], "Revisar el sensor"
+    cited = [ result[:citations], result[:retrieved_citations] ].flatten.compact.map { |item| JSON.generate(item.as_json) }
+    assert cited.any? { |blob| blob.include?("Manual Orona PBCM-V3") }
+    assert cited.any? { |blob| blob.include?(body) }
+  end
+
+  test "known identity and an empty retrieval is no_compatible without an open fallback" do
+    service = closed_identity_service(chunks: [])
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    service.define_singleton_method(:document_identity_generator) { flunk "generator" }
+
+    result = nil
+    with_flag("true") do
+      result = service.query("no nivela", equipment_identity: orona_identity, output_channel: :web)
+    end
+
+    assert_equal 0, rag_calls
+    assert_equal "no_compatible", result[:equipment_identity_status]
+    assert_equal false, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal [], result[:citations]
+    assert_equal [], result[:retrieved_citations]
+  end
+
+  test "known identity and a retrieval timeout is unavailable without an open fallback" do
+    assert_identity_retrieval_failure(Timeout::Error.new("read timeout"), "retrieval_timeout")
+  end
+
+  test "known identity and a Bedrock retrieval error is unavailable without an open fallback" do
+    error = BedrockRagService::BedrockServiceError.new("Failed to retrieve Knowledge Base chunks: boom")
+    assert_identity_retrieval_failure(error, "retrieval_error")
+  end
+
+  test "unknown identity still allows open retrieve_and_generate" do
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) { flunk "retrieve_chunks" }
+    rag_calls = 0
+    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+      rag_calls += 1
+      output = Struct.new(:text).new("Procedimiento del camino abierto.")
+      Struct.new(:output, :citations, :session_id).new(output, [], nil)
+    end
+
+    result = nil
+    with_flag("true") do
+      result = service.query("no nivela", episode: { "v" => 1, "facts" => {}, "identifiers" => [] }, output_channel: :web)
+    end
+
+    assert_equal 1, rag_calls
+    assert_includes result[:answer], "Procedimiento del camino abierto."
+    assert_nil result[:equipment_identity_status]
+  end
+
+  test "a pinned foreign manual stays selected and is not a citation" do
+    original_authorize = nil
+    fuji_uri = "s3://bucket/fuji.pdf"
+    focus = [ fuji_uri ]
+    body = "Paso 11. Suplemento Yida de 2,5 mm."
+    fuji = chunk("fuji", body, canonical_name: "Fuji Yida Guía del Usuario Ascensor")
+    fuji[:metadata]["original_source_uri"] = fuji_uri
+    service = closed_identity_service(chunks: [ fuji ])
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "Según Yida el suplemento es 2,5 mm [1]." }
+    service.define_singleton_method(:document_identity_generator) { generator }
+    original_authorize = Rag::KnowledgeScopePolicy.method(:authorize_retrieval_set)
+    allowed_set = Data.define(:status, :uris) do
+      def denied? = false
+    end
+    Rag::KnowledgeScopePolicy.define_singleton_method(:authorize_retrieval_set) do |uris, **|
+      allowed_set.new(status: :allow, uris: Array(uris))
+    end
+
+    result = nil
+    with_flag("true") do
+      result = service.query(
+        "no nivela",
+        equipment_identity: orona_identity,
+        entity_s3_uris: focus,
+        force_entity_filter: true,
+        output_channel: :web
+      )
+    end
+
+    assert_equal [ fuji_uri ], focus
+    assert_equal 0, rag_calls
+    assert_equal "no_compatible", result[:equipment_identity_status]
+    assert_not_includes result[:answer], body
+    cited = [ result[:citations], result[:retrieved_citations], result[:doc_refs] ].flatten.compact
+    assert cited.none? { |item| JSON.generate(item.as_json).include?("Fuji Yida") }
+    segments = Rag::ProvenanceSegmenter.call(answer: result[:answer], citations: result[:citations])
+    assert segments.none? { |segment| segment["band"] == "MANUAL_FACT" }
+  ensure
+    if original_authorize
+      Rag::KnowledgeScopePolicy.define_singleton_method(:authorize_retrieval_set) do |*args, **kwargs|
+        original_authorize.call(*args, **kwargs)
+      end
+    end
+  end
+
+  test "an explicit manufacturer conflict does not fall open" do
+    _episode, identities = recorded_kone_orona_conflict
+    chunks = [
+      chunk("kone", "Procedimiento KONE de nivelación.", canonical_name: "Manual KONE"),
+      chunk("orona", "Procedimiento de la placa Orona.", canonical_name: "Manual Orona")
+    ]
+    service = closed_identity_service(chunks: chunks)
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "Sin procedimiento aplicable." }
+    service.define_singleton_method(:document_identity_generator) { generator }
+
+    result = nil
+    with_flag("true") do
+      result = service.query("qué reviso", equipment_identity: identities.first, output_channel: :web)
+    end
+
+    assert_equal 0, rag_calls
+    assert_equal "no_compatible", result[:equipment_identity_status]
+    assert_equal "conflicting_current_identity", result[:equipment_identity_reason]
+    assert_not_includes result[:answer], "Procedimiento KONE"
+    assert_not_includes result[:answer], "Procedimiento de la placa"
+    assert_equal [], result[:citations]
+  end
+
   test "a corrected brand is not a needle and a catalog fact is not a needle" do
     corrected = episode(identifiers: [])
     corrected["episode_id"] = "ep-corrected"
@@ -866,6 +1029,32 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   end
 
   private
+
+  def closed_identity_service(chunks:)
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: chunks, retrieval_trace: {} } }
+    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+    service
+  end
+
+  def assert_identity_retrieval_failure(error, reason)
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) { |*, **| raise error }
+    service.define_singleton_method(:document_identity_generator) { flunk "generator" }
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+
+    result = nil
+    with_flag("true") do
+      result = service.query("no nivela", equipment_identity: orona_identity, output_channel: :web)
+    end
+
+    assert_equal 0, rag_calls
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal reason, result[:equipment_identity_reason]
+    assert_equal false, Thread.current[:document_identity_scope]["fallback"]
+    assert_equal [], result[:citations]
+  end
 
   def strip_scope(prompt, labels)
     text = prompt.sub("#{PREAMBLE}\n", "")

@@ -234,12 +234,7 @@ class BedrockRagService
         conversation_session_id: conversation_session_id,
         correlation_id: correlation_id
       ))
-        # Classification is done. N4 is what stops this open fallback.
-        if scoped[:equipment_identity_status].to_s == "no_compatible"
-          leave_identity_fallback_open
-        else
-          return scoped
-        end
+        return scoped
       end
 
       # Apply the technician pin when the caller forced it, or when the query
@@ -682,11 +677,15 @@ class BedrockRagService
                                      equipment_identity: :omit)
     Thread.current[:document_identity_scope] = nil
     identity = resolved_equipment_identity(episode, equipment_identity)
-    if identity == :malformed || (identity&.known? && !Rag::DocumentIdentityScopeFlag.enabled?)
-      record_identity_outcome(status: "unavailable", reason: identity == :malformed ? "malformed_identity" : "scope_disabled")
-      return nil
+    return nil unless identity&.known? || identity == :malformed
+    if identity == :malformed || !Rag::DocumentIdentityScopeFlag.enabled?
+      return identity_closed_result(
+        status: :unavailable,
+        reason: identity == :malformed ? :malformed_identity : :scope_disabled,
+        question: question,
+        response_locale: response_locale
+      )
     end
-    return nil unless identity&.known? && Rag::DocumentIdentityScopeFlag.enabled?
 
     profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
     number_of_results = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
@@ -699,18 +698,31 @@ class BedrockRagService
       account_id: account_id,
       correlation_id: correlation_id
     )
+    if retrieval[:retrieval].to_s == DENY_RETRIEVAL
+      return deny_retrieval_result(question: question, response_locale: response_locale)
+    end
+
     original = Array(retrieval[:chunks])
     applied = Rag::DocumentIdentityScope.apply(original, identity, focus_uris: entity_s3_uris)
+    record_document_identity_scope(original, applied, path: "document_identity")
     if applied.status == :unavailable
-      record_document_identity_scope(original, applied, path: "retrieve_and_generate", fallback: true)
-      return nil
+      return identity_closed_result(
+        status: :unavailable,
+        reason: applied.reason || :identity_unavailable,
+        question: question,
+        response_locale: response_locale,
+        retrieval: retrieval
+      )
     end
-    labeled = applied.labels.any?(&:present?)
-    record_document_identity_scope(
-      original, applied,
-      path: labeled ? "document_identity" : "retrieve_and_generate"
-    )
-    return nil unless labeled
+    if applied.status == :no_compatible && applied.labels.none?(&:present?)
+      return identity_closed_result(
+        status: :no_compatible,
+        reason: applied.reason || :no_compatible_evidence,
+        question: question,
+        response_locale: response_locale,
+        retrieval: retrieval
+      )
+    end
 
     prompt = document_identity_generation_prompt(
       question, applied.chunks,
@@ -732,16 +744,36 @@ class BedrockRagService
         }
       )
     rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
-      return document_identity_technical_failure(e)
+      return identity_closed_result(
+        status: :unavailable,
+        reason: identity_failure_reason(e, stage: :generation),
+        question: question,
+        response_locale: response_locale,
+        retrieval: retrieval,
+        model_invoked: true
+      )
     rescue StandardError => e
       raise unless e.class.name.start_with?("Aws::", "Seahorse::")
 
-      return document_identity_technical_failure(e)
+      return identity_closed_result(
+        status: :unavailable,
+        reason: :generation_error,
+        question: question,
+        response_locale: response_locale,
+        retrieval: retrieval,
+        model_invoked: true
+      )
     end
     if raw_answer.blank?
-      Rails.logger.warn("[DOCUMENT_IDENTITY] generation_blank; retrieve_and_generate unchanged")
-      record_document_identity_scope(original, applied, path: "retrieve_and_generate", fallback: true)
-      return nil
+      Rails.logger.warn("[DOCUMENT_IDENTITY] generation_blank; required identity stays closed")
+      return identity_closed_result(
+        status: :unavailable,
+        reason: :generation_blank,
+        question: question,
+        response_locale: response_locale,
+        retrieval: retrieval,
+        model_invoked: true
+      )
     end
 
     result = finish_document_identity_generation(
@@ -755,11 +787,21 @@ class BedrockRagService
     result[:equipment_identity_reason] = applied.reason&.to_s
     result
   rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
-    document_identity_technical_failure(e)
+    identity_closed_result(
+      status: :unavailable,
+      reason: identity_failure_reason(e, stage: :retrieval),
+      question: question,
+      response_locale: response_locale
+    )
   rescue StandardError => e
     raise unless e.class.name.start_with?("Aws::", "Seahorse::")
 
-    document_identity_technical_failure(e)
+    identity_closed_result(
+      status: :unavailable,
+      reason: :retrieval_error,
+      question: question,
+      response_locale: response_locale
+    )
   end
 
   def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:,
@@ -812,35 +854,43 @@ class BedrockRagService
     Rag::EquipmentIdentity.from_episode(episode)
   end
 
-  def leave_identity_fallback_open
-    stats = Thread.current[:document_identity_scope]
-    return unless stats
-
-    stats["fallback"] = true
-    stats["path"] = "retrieve_and_generate"
+  def identity_closed_result(status:, reason:, question:, response_locale:, retrieval: nil, model_invoked: false)
+    seal_identity_outcome(status: status, reason: reason, fallback: false)
+    locale = effective_response_locale(question, response_locale: response_locale)
+    answer = Rag::AnswerSafetyProcessor.new(locale: locale).call("DATA_NOT_AVAILABLE", evidence: [])
+    {
+      answer: answer,
+      citations: [],
+      retrieved_citations: [],
+      doc_refs: nil,
+      session_id: nil,
+      retrieval_trace: retrieval.is_a?(Hash) ? retrieval[:retrieval_trace] : {},
+      generation_mode: "document_identity_scope",
+      model_invoked: model_invoked,
+      route_outcome: :abstained,
+      equipment_identity_status: status.to_s,
+      equipment_identity_reason: reason&.to_s,
+      document_identity: Thread.current[:document_identity_scope]
+    }
   end
 
-  def record_identity_outcome(status:, reason:)
-    stats = {
-      "status" => status,
-      "reason" => reason,
-      "path" => "retrieve_and_generate",
-      "fallback" => true
-    }
+  def seal_identity_outcome(status:, reason:, fallback:)
+    stats = Thread.current[:document_identity_scope] || {}
+    stats["status"] = status.to_s
+    stats["reason"] = reason.to_s if reason
+    stats["fallback"] = fallback
+    stats["path"] = "document_identity"
     Thread.current[:document_identity_scope] = stats
     Rails.logger.info("[DOCUMENT_IDENTITY] #{stats.to_json}")
   end
 
-  def document_identity_technical_failure(error)
-    Rails.logger.warn(
-      "[DOCUMENT_IDENTITY] technical_failure #{error.class}; retrieve_and_generate unchanged"
-    )
-    stats = Thread.current[:document_identity_scope]
-    if stats
-      stats["path"] = "retrieve_and_generate"
-      stats["fallback"] = true
+  def identity_failure_reason(error, stage:)
+    timeout = error.is_a?(Timeout::Error) || error.is_a?(Net::ReadTimeout) || error.is_a?(Net::OpenTimeout)
+    if stage == :generation
+      timeout ? :generation_timeout : :generation_error
+    else
+      timeout ? :retrieval_timeout : :retrieval_error
     end
-    nil
   end
 
   def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:)
@@ -880,8 +930,8 @@ class BedrockRagService
     {
       answer: answer_text,
       citations: @citation_processor.build_numbered_references(citations, answer_text, question: question),
-      retrieved_citations: citations,
-      doc_refs: build_doc_refs(chunks),
+      retrieved_citations: citations.compact,
+      doc_refs: build_doc_refs(chunks.reject { |chunk| Rag::DocumentIdentityScope.reference_only_chunk?(chunk) }),
       session_id: nil,
       retrieval_trace: retrieval[:retrieval_trace],
       generation_mode: "document_identity_scope",
@@ -892,7 +942,7 @@ class BedrockRagService
   end
 
   def document_identity_citation_records(chunks)
-    chunks.map do |chunk|
+    records = Array(chunks).map do |chunk|
       metadata = chunk[:metadata].to_h.stringify_keys
       uri = chunk[:location_uri].to_s
       location = nil
@@ -900,8 +950,14 @@ class BedrockRagService
         bucket, key = uri.delete_prefix("s3://").split("/", 2)
         location = { bucket: bucket, key: key, uri: uri, type: "s3" }
       end
-      { content: chunk[:content], location: location, metadata: metadata }
+      {
+        content: chunk[:content],
+        location: location,
+        metadata: metadata,
+        identity_applicability: chunk[:identity_applicability]
+      }
     end
+    Rag::DocumentIdentityScope.citable_evidence(records)
   end
 
   private

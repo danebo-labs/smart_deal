@@ -1180,6 +1180,82 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_not_includes scoped.first[:content], body
   end
 
+  test "known equipment with only foreign chunks does not generate a documentary answer" do
+    body = "Paso 11. Ajusta el interruptor Yida a 2,5 mm."
+    chunk = identity_chunk("Fuji Yida Guía del Usuario Ascensor", body, page: 97)
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:1" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:1" }
+      ]
+    )
+    generator = FakeGenerator.new("Según Yida ajusta a 2,5 mm. [1]")
+    route = Rag::StructuredEvidenceRoute.new(
+      question: "no nivela",
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: FakeRagService.new([ chunk ]),
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      equipment_identity: identity
+    )
+
+    outcome = nil
+    with_identity_scope("true") { outcome = route.execute }
+
+    assert_equal 0, generator.calls.size
+    assert_equal :abstained, outcome.status
+    assert_equal "no_compatible", outcome.result[:equipment_identity_status]
+    assert_not_includes outcome.result[:answer], body
+    assert_equal [], outcome.result[:citations]
+    assert_nil outcome.result[:doc_refs]
+  end
+
+  test "a disabled identity scope with known equipment does not generate" do
+    chunk = identity_chunk("Fuji Yida", "Paso secreto Yida.", page: 4)
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "user", "correlation_id" => "query:1" }
+      ]
+    )
+    generator = FakeGenerator.new("Procedimiento Yida. [1]")
+    route = Rag::StructuredEvidenceRoute.new(
+      question: "no nivela",
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: FakeRagService.new([ chunk ]),
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      equipment_identity: identity
+    )
+
+    outcome = nil
+    previous_scope = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
+    ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    outcome = route.execute
+
+    assert_equal 0, generator.calls.size
+    assert_equal "unavailable", outcome.result[:equipment_identity_status]
+    assert_equal "scope_disabled", outcome.result[:equipment_identity_reason]
+    assert_not_includes outcome.result[:answer], "Paso secreto"
+  ensure
+    if previous_scope.nil?
+      ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    else
+      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = previous_scope
+    end
+  end
+
   test "identity scope strips other equipment before generation without a second retrieve" do
     question = "el modelo es MonoSpace, como se ajustan los resortes?"
     mono_body = "En MonoSpace igualar la tensión de los resortes de fijación de cables."

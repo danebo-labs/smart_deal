@@ -256,6 +256,14 @@ module Rag
         expanded_chunks = scope_identity(expanded_chunks)
         expansion_ms = elapsed_ms(expansion_started)
       end
+      if @identity_closure
+        return identity_closed_outcome(
+          retrieval: retrieval,
+          retrieval_ms: retrieval_ms,
+          expansion_ms: expansion_ms,
+          expansions: expansions
+        )
+      end
       if expanded_chunks.empty?
         return abstained_outcome(
           reason: :empty_evidence,
@@ -460,16 +468,22 @@ module Rag
     # route already retrieved. No second Retrieve.
     def scope_identity(chunks)
       @identity_scoped = false
+      @identity_closure = nil
       identity = policy_identity
-      if identity&.known? && !DocumentIdentityScopeFlag.enabled?
+      if identity == :malformed || (identity&.known? && !DocumentIdentityScopeFlag.enabled?)
+        reason = identity == :malformed ? :malformed_identity : :scope_disabled
+        @identity_closure = { status: :unavailable, reason: reason }
         Rails.logger.info(
-          "[DOCUMENT_IDENTITY] #{ { status: "unavailable", reason: "scope_disabled", path: "structured_evidence_route" }.to_json }"
+          "[DOCUMENT_IDENTITY] #{ { status: "unavailable", reason: reason.to_s, path: "structured_evidence_route", fallback: false }.to_json }"
         )
-        return Array(chunks)
+        return []
       end
       return Array(chunks) unless identity&.known? && DocumentIdentityScopeFlag.enabled?
 
       applied = DocumentIdentityScope.apply(chunks, identity, focus_uris: @entity_s3_uris)
+      if applied.status == :no_compatible || applied.status == :unavailable
+        @identity_closure = { status: applied.status, reason: applied.reason }
+      end
       @identity_scoped = applied.labels.any?(&:present?)
       other = applied.labels.count { |line| line.to_s.start_with?(DocumentIdentityScope::OTHER_EQUIPMENT_PREFIX) }
       Rails.logger.info(
@@ -493,11 +507,30 @@ module Rag
     def policy_identity
       if @equipment_identity_supplied
         return @equipment_identity if @equipment_identity.is_a?(EquipmentIdentity)
+        return nil if @equipment_identity.nil?
 
-        return nil
+        return :malformed
       end
 
       EquipmentIdentity.from_episode(@episode)
+    end
+
+    # :no_compatible and :unavailable are terminal. The cascade must not
+    # publish a documentary answer from chunks this policy rejected.
+    def identity_closed_outcome(retrieval:, retrieval_ms:, expansion_ms:, expansions:)
+      outcome = abstained_outcome(
+        reason: @identity_closure[:reason] || @identity_closure[:status],
+        retrieval: retrieval,
+        retrieval_ms: retrieval_ms,
+        expansion_ms: expansion_ms,
+        expanded_chunks: [],
+        chunks: [],
+        expansions: expansions
+      )
+      outcome.result[:equipment_identity_status] = @identity_closure[:status].to_s
+      outcome.result[:equipment_identity_reason] = @identity_closure[:reason]&.to_s
+      outcome.result[:doc_refs] = nil
+      outcome
     end
 
     def expand_dividers(retrieved_chunks)
@@ -1312,13 +1345,16 @@ module Rag
     end
 
     def citation_shaped(chunks)
-      chunks.map do |chunk|
-        {
-          content: chunk[:content],
-          location: citation_location(chunk[:location_uri]),
-          metadata: chunk[:metadata] || {}
-        }
-      end
+      DocumentIdentityScope.citable_evidence(
+        chunks.map do |chunk|
+          {
+            content: chunk[:content],
+            location: citation_location(chunk[:location_uri]),
+            metadata: chunk[:metadata] || {},
+            identity_applicability: chunk[:identity_applicability]
+          }
+        end
+      )
     end
 
     def citation_location(uri)
@@ -1331,6 +1367,8 @@ module Rag
 
     def doc_refs(chunks)
       chunks.filter_map do |chunk|
+        next if DocumentIdentityScope.reference_only_chunk?(chunk)
+
         metadata = chunk[:metadata].to_h.stringify_keys
         source_uri = metadata["original_source_uri"].presence ||
           chunk[:original_source_uri].presence ||

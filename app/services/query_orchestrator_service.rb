@@ -209,120 +209,21 @@ class QueryOrchestratorService
     when TOOLS[:DATABASE_QUERY]
       Rails.logger.info("QueryOrchestrator: Routing to DATABASE_QUERY for: '#{@query}'")
       SqlGenerationService.new(@query).execute.merge(upload_context)
-    when TOOLS[:KNOWLEDGE_BASE_QUERY]
-      if (denied = denied_pin_set_result)
-        return denied.merge(upload_context)
-      end
-
-      overview = Rag::DocumentOverviewResponder.build(
-        question:        @query,
-        account:         @account,
-        conv_session:    @conv_session,
-        response_locale: @response_locale
-      )
-      if overview && (rendered_overview = overview.execute)
-        Rails.logger.info("QueryOrchestrator: Routing to deterministic_document_overview for: '#{@query}'")
-        return rendered_overview.merge(upload_context)
-      end
-
-      structured = Rag::StructuredEvidenceRoute.build(
-        question: @query,
-        account: @account,
-        entity_s3_uris: @entity_s3_uris,
-        entity_sources: entity_sources,
-        force_entity_filter: @force_entity_filter,
-        response_locale: @response_locale,
-        output_channel: @output_channel,
-        account_id: @account&.id,
-        user_id: @user_id,
-        conversation_session_id: @conversation_session_id,
-        correlation_id: @correlation_id,
-        episode: episode_for_scope,
-        equipment_identity: resolved_equipment_identity,
-        raw_question: @raw_question
-      )
-      outcome = structured&.execute
-      if outcome&.status == :answered || outcome&.status == :abstained
-        Rails.logger.info("QueryOrchestrator: structured_evidence_route outcome=#{outcome.status}")
-        return outcome.result.merge(upload_context)
-      end
-
-      disambiguation = Rag::AmbiguousModelResponder.build(
-        question:            @query,
-        account:             @account,
-        entity_s3_uris:      @entity_s3_uris,
-        entity_sources:      entity_sources,
-        force_entity_filter: @force_entity_filter,
-        response_locale:     @response_locale,
-        # Carried so the turns this responder now answers through the structured
-        # route keep the same attribution as the ones the route answers directly.
-        user_id:                 @user_id,
-        conversation_session_id: @conversation_session_id,
-        correlation_id:          @correlation_id
-      )
-      if disambiguation && (disambiguated = disambiguation.execute)
-        Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")
-        return disambiguated.merge(upload_context)
-      end
-
-      deterministic = Rag::DeterministicRenderer.build(
-        question:            @query,
-        entity_s3_uris:      @entity_s3_uris,
-        entity_sources:      entity_sources,
-        force_entity_filter: @force_entity_filter,
-        response_locale:     @response_locale,
-        account:             @account
-      )
-      if deterministic
-        Rails.logger.info("QueryOrchestrator: Routing to #{deterministic.generation_mode} for: '#{@query}'")
-        return deterministic.execute.merge(upload_context)
-      end
-
-      Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
-      if (context_result = context_evidence_result)
-        return context_result.merge(upload_context)
-      end
-
-      BedrockRagService.new(account: @account).query(
-        @query,
-        session_id: @session_id,
-        response_locale: @response_locale,
-        session_context: @session_context,
-        entity_s3_uris: @entity_s3_uris,
-        entity_sources: entity_sources,
-        output_channel: @output_channel,
-        force_entity_filter: @force_entity_filter,
-        auto_scope_filter: @auto_scope_filter,
-        episode: episode_for_scope,
-        equipment_identity: resolved_equipment_identity,
-        **rag_telemetry
-      ).merge(upload_context)
     when TOOLS[:HYBRID_QUERY]
-      Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
-      execute_hybrid_query.merge(upload_context)
-    else
-      Rails.logger.warn(
-        "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
-        "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
-      )
-      if (context_result = context_evidence_result)
-        return context_result.merge(upload_context)
+      if equipment_identity_required?
+        execute_knowledge_base_query.merge(upload_context)
+      else
+        Rails.logger.info("QueryOrchestrator: Routing to HYBRID_QUERY for: '#{@query}'")
+        execute_hybrid_query.merge(upload_context)
       end
-
-      BedrockRagService.new(account: @account).query(
-        @query,
-        session_id: @session_id,
-        response_locale: @response_locale,
-        session_context: @session_context,
-        entity_s3_uris: @entity_s3_uris,
-        entity_sources: entity_sources,
-        output_channel: @output_channel,
-        force_entity_filter: @force_entity_filter,
-        auto_scope_filter: @auto_scope_filter,
-        episode: episode_for_scope,
-        equipment_identity: resolved_equipment_identity,
-        **rag_telemetry
-      ).merge(upload_context)
+    else
+      unless tool_to_use == TOOLS[:KNOWLEDGE_BASE_QUERY]
+        Rails.logger.warn(
+          "QueryOrchestrator: Could not clearly classify intent for: '#{@query}'. " \
+          "LLM returned: '#{tool_to_use}'. Defaulting to KNOWLEDGE_BASE_QUERY."
+        )
+      end
+      execute_knowledge_base_query.merge(upload_context)
     end
   end
 
@@ -368,6 +269,108 @@ class QueryOrchestratorService
       correlation_id: @correlation_id,
       response_locale: locale
     }
+  end
+
+  def execute_knowledge_base_query
+    if (denied = denied_pin_set_result)
+      return denied
+    end
+
+    unless equipment_identity_required?
+      overview = Rag::DocumentOverviewResponder.build(
+        question:        @query,
+        account:         @account,
+        conv_session:    @conv_session,
+        response_locale: @response_locale
+      )
+      if overview && (rendered_overview = overview.execute)
+        Rails.logger.info("QueryOrchestrator: Routing to deterministic_document_overview for: '#{@query}'")
+        return rendered_overview
+      end
+    end
+
+    structured = Rag::StructuredEvidenceRoute.build(
+      question: @query,
+      account: @account,
+      entity_s3_uris: @entity_s3_uris,
+      entity_sources: entity_sources,
+      force_entity_filter: @force_entity_filter,
+      response_locale: @response_locale,
+      output_channel: @output_channel,
+      account_id: @account&.id,
+      user_id: @user_id,
+      conversation_session_id: @conversation_session_id,
+      correlation_id: @correlation_id,
+      episode: episode_for_scope,
+      equipment_identity: resolved_equipment_identity,
+      raw_question: @raw_question
+    )
+    outcome = structured&.execute
+    if outcome&.status == :answered || outcome&.status == :abstained
+      Rails.logger.info("QueryOrchestrator: structured_evidence_route outcome=#{outcome.status}")
+      return outcome.result
+    end
+
+    unless equipment_identity_required?
+      disambiguation = Rag::AmbiguousModelResponder.build(
+        question:            @query,
+        account:             @account,
+        entity_s3_uris:      @entity_s3_uris,
+        entity_sources:      entity_sources,
+        force_entity_filter: @force_entity_filter,
+        response_locale:     @response_locale,
+        # Carried so the turns this responder now answers through the structured
+        # route keep the same attribution as the ones the route answers directly.
+        user_id:                 @user_id,
+        conversation_session_id: @conversation_session_id,
+        correlation_id:          @correlation_id
+      )
+      if disambiguation && (disambiguated = disambiguation.execute)
+        Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")
+        return disambiguated
+      end
+
+      deterministic = Rag::DeterministicRenderer.build(
+        question:            @query,
+        entity_s3_uris:      @entity_s3_uris,
+        entity_sources:      entity_sources,
+        force_entity_filter: @force_entity_filter,
+        response_locale:     @response_locale,
+        account:             @account
+      )
+      if deterministic
+        Rails.logger.info("QueryOrchestrator: Routing to #{deterministic.generation_mode} for: '#{@query}'")
+        return deterministic.execute
+      end
+    end
+
+    Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
+    if (context_result = context_evidence_result)
+      return context_result
+    end
+
+    BedrockRagService.new(account: @account).query(
+      @query,
+      session_id: @session_id,
+      response_locale: @response_locale,
+      session_context: @session_context,
+      entity_s3_uris: @entity_s3_uris,
+      entity_sources: entity_sources,
+      output_channel: @output_channel,
+      force_entity_filter: @force_entity_filter,
+      auto_scope_filter: @auto_scope_filter,
+      episode: episode_for_scope,
+      equipment_identity: resolved_equipment_identity,
+      **rag_telemetry
+    )
+  end
+
+  # Known equipment makes compatibility required. Terminals that do not apply
+  # DocumentIdentityScope stay off that path: overview, model disambiguation,
+  # deterministic renderers, and hybrid synthesis.
+  def equipment_identity_required?
+    identity = resolved_equipment_identity
+    identity.is_a?(Rag::EquipmentIdentity) && identity.known?
   end
 
   def episode_for_scope

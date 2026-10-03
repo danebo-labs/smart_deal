@@ -118,16 +118,19 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   test "closed episode facts are not requested again on this route" do
-    rag = FakeRagService.new([ note_chunk ])
+    rag = FakeRagService.new([ fuji_note_chunk ])
     generator = FakeGenerator.new(
       "La nota no documenta el ajuste solicitado. [1]\n\n¿Cuál es la marca y el modelo del equipo?"
     )
-    outcome = build_route(
-      question: FUJI,
-      rag_service: rag,
-      generator: generator,
-      episode: closed_model_episode
-    ).execute
+    outcome = nil
+    with_env("DOCUMENT_IDENTITY_SCOPE_ENABLED" => "true") do
+      outcome = build_route(
+        question: FUJI,
+        rag_service: rag,
+        generator: generator,
+        episode: closed_model_episode
+      ).execute
+    end
 
     assert_equal :answered, outcome.status
     assert_includes outcome.result[:answer], "no documenta el ajuste"
@@ -203,13 +206,15 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   test "the photo block and the closed facts travel together" do
-    rag = FakeRagService.new([ note_chunk ])
+    rag = FakeRagService.new([ fuji_note_chunk ])
     generator = FakeGenerator.new("Por la foto, esto parece un amarre. La nota no documenta el ajuste. [1]")
 
-    build_route(
-      question: FUJI, rag_service: rag, generator: generator, episode: closed_model_episode,
-      session_context: "## Photo Evidence (this turn)\n- Component: Amarre"
-    ).execute
+    with_env("DOCUMENT_IDENTITY_SCOPE_ENABLED" => "true") do
+      build_route(
+        question: FUJI, rag_service: rag, generator: generator, episode: closed_model_episode,
+        session_context: "## Photo Evidence (this turn)\n- Component: Amarre"
+      ).execute
+    end
 
     prompt = generator.calls.first[:prompt]
     assert prompt.start_with?("## Photo Evidence (this turn)")
@@ -426,6 +431,12 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
       page: 32,
       sha: "serie-f"
     )
+  end
+
+  def fuji_note_chunk
+    note = note_chunk
+    note[:metadata] = note[:metadata].merge("canonical_name" => "Fuji Yida nota técnica")
+    note
   end
 
   def note_chunk

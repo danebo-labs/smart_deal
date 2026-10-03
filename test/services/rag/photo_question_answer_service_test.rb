@@ -45,6 +45,29 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test "an unavailable manual lookup returns the existing failed photo path" do
+    service = build_service(
+      question: "no nivela en planta 3",
+      accepted_observation: { "manufacturer" => "Orona", "model" => "PBCM-V3" }
+    )
+    service.define_singleton_method(:execute_rag_query) do |*|
+      RagQueryConcern::RagResult.new(
+        success?: true,
+        answer: "Paso 11. Ajusta el interruptor Yida a 2,5 mm.",
+        citations: [],
+        equipment_identity_status: "unavailable",
+        generation_mode: "document_identity_scope"
+      )
+    end
+
+    result = service.call
+
+    assert result[:failed]
+    assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), result[:answer]
+    assert_not_includes result[:answer], "Yida"
+    assert_equal [], result[:citations]
+  end
+
   test "anchors the question only with catalog-resolved tokens, omitting unresolved OCR text" do
     captured = nil
     BedrockRagService.define_method(:query) do |question, **kwargs|

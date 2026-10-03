@@ -1,6 +1,6 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4–N6 NOT STARTED`
+**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4 IMPLEMENTED LOCALLY — N5–N6 NOT STARTED`
 
 **N0:** `N0 COMPLETE`
 
@@ -9,6 +9,8 @@
 **N2:** `N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 **N3:** `N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
+
+**N4:** `N4 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 Source of truth de este bloque. Reconcilia el diagnóstico read-only del flow real Orona PBCM-V3, la surgical review de Codex y la revisión final de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica o completa a Codex, manda Opus. Baseline de código: `d3909808a3508e83851f5475368fbd52d74c0e2a`.
 
@@ -915,7 +917,30 @@ No hubo llamadas reales a Vision ni a Bedrock. N3 no está verificado en producc
 
 ### N4 — Fail-closed retrieval + citation safety
 
-Cerrar fallback de resultado vacío, timeout, error, generación vacía y scope disabled. Excluir chunks reference-only de las citas. En modo requerido, no entran las terminales que no aplican la policy.
+```text
+N4 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+```
+
+Con identidad conocida la policy es obligatoria. No hay fallback abierto. Identidad desconocida sigue el retrieve_and_generate de hoy.
+
+- `:scoped` — generación documental con evidencia aplicable. Un chunk `reference_only` puede quedar en el contexto como identidad del manual. No entra a citas, `doc_refs`, `CitationAttributionGuard`, `AnswerSafetyProcessor` ni `require_cited_evidence`.
+- `:no_compatible` — el retrieval terminó y ningún body aplica, incluido retrieval vacío y conflicto explícito de fabricante. No se llama `retrieve_and_generate`. Si hay identidad de manual ajeno, la generación de ese camino sigue; sus citas salen vacías. N5 escribe el tono.
+- `:unavailable` — la policy no pudo correr: flag apagada, identidad mal formada, timeout, error de retrieval o generación vacía/rota. No se llama `retrieve_and_generate`. En foto, `PhotoQuestionAnswerService` devuelve `failed: true` con el texto ya existente de `rag.photo_question_unavailable`, así la lectura visual pagada sigue en el camino `rag_answer[:failed]`.
+
+`identity_applicability == "reference_only"` se anula en `DocumentIdentityScope.citable_evidence` antes de los procesadores de cita. Un `[n]` hacia ese slot no es cita final y no produce `MANUAL_FACT`.
+
+En modo requerido el orchestrator no entra a `DocumentOverviewResponder`, `AmbiguousModelResponder`, `DeterministicRenderer` ni a la síntesis HYBRID. `StructuredEvidenceRoute` y `ContextEvidenceRoute` siguen la misma policy: `:no_compatible` y `:unavailable` abstienen sin publicar un procedimiento.
+
+`N0_CONTRACTS=1` después de N4: 6 PASS / 0 FAIL.
+
+- N2 legacy reuse PASS
+- N2 same-turn PASS
+- N2 uncertain PASS
+- N3 identity scope PASS
+- N4 open fallback PASS (`open_calls` 0; el cuerpo Yida/BLT no está en la respuesta)
+- N4 citations PASS (Yida/BLT fuera de citas; 0 `MANUAL_FACT`)
+
+No hubo llamadas reales a Vision ni a Bedrock. N4 no está verificado en producción. N5–N6 no empezaron. `AGENTS.md` distingue identidad conocida (el manual ajeno se puede nombrar; su procedimiento no se usa) de identidad desconocida (la analogía con disclaimer sigue). `FieldPhotoPrompt::SYSTEM_BLOCKS` no cambió.
 
 ### N5 — Companion no-compatible generation
 
@@ -1094,9 +1119,10 @@ N0 COMPLETE
 N1 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
-N4–N6 NOT STARTED
+N4 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+N5–N6 NOT STARTED
 ```
 
-F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1, N2 y N3 no están verificados en producción.
+F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1, N2, N3 y N4 no están verificados en producción.
 
-Siguiente paso: review de N3. No deploy. No implementar N4 todavía.
+Siguiente paso: review de N4. No deploy. No implementar N5 todavía.

@@ -30,6 +30,8 @@ module RagQueryConcern
                          :semantic_analysis_ms, :state_ms,                          :retrieve_ms, :generation_ms, :rag_ms,
                          :effective_question,
                          :turn_understanding,
+                         :equipment_identity_status,
+                         :equipment_identity_reason,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -306,7 +308,9 @@ module RagQueryConcern
       generation_ms:            result[:generation_ms],
       rag_ms:                   result[:rag_ms],
       effective_question:       effective_question,
-      turn_understanding:       understanding
+      turn_understanding:       understanding,
+      equipment_identity_status: result[:equipment_identity_status],
+      equipment_identity_reason: result[:equipment_identity_reason]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

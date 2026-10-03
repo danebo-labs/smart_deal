@@ -105,6 +105,8 @@ module Rag
 
     def build_identity_index
       @citations.each_with_index.each_with_object({}) do |(citation, index), resolved|
+        next if citation.nil? || Rag::DocumentIdentityScope.reference_only_chunk?(citation)
+
         metadata = (citation[:metadata] || citation["metadata"] || {}).to_h.stringify_keys
         identity = metadata["section_identity"].presence
         resolved[index + 1] = identity if identity

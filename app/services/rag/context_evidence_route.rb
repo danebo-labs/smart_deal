@@ -4,6 +4,10 @@ module Rag
   # One Retrieve on the short projection, a body filter, then one generation
   # on the original question. retrieve_and_generate cannot do that split: it
   # generates before the references are visible.
+  #
+  # Required equipment identity uses the same closure as StructuredEvidenceRoute.
+  # :no_compatible and :unavailable stop here and do not fall through to an
+  # open retrieve_and_generate.
   class ContextEvidenceRoute
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, response_locale:,
                    output_channel:, account_id: nil, user_id: nil, conversation_session_id: nil,

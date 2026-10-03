@@ -273,10 +273,13 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes ids, "pending_custom_identity"
     assert_includes ids, "tenant_private_designator"
     assert_includes ids, "meta_photo_offer"
+    assert_includes ids, "meta_greeting"
+    assert_includes ids, "report_door"
+    assert_includes ids, "new_work_drive"
     %w[vis_1 vis_2 vis_3 vis_4 amb_1 amb_2 amb_2b amb_3].each do |id|
       assert_includes ids, id
     end
-    assert_equal 22, cases.size
+    assert_equal 29, cases.size
     assert cases.all? { |row| row["origin"].present? && row["expected"].is_a?(Hash) }
     assert cases.all? { |row| row["turn"].present? || row["turns"].present? }
   end
@@ -335,33 +338,18 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not kept.technical_payload?
   end
 
-  test "a bare greeting stays meta and does not become the active problem" do
-    episode = Rag::ActiveEpisode.open(correlation_id: "query:hi", now: Time.current)
-    episode.assign_goal!("no nivela en planta 3", correlation_id: "query:hi")
-    result = perceive(
-      {
-        "move" => "new_work",
-        "assertions" => [],
-        "observations" => [ "hola" ],
-        "pending_resolution" => nil,
-        "clarification_target" => nil
-      },
-      "¡Hola!",
-      episode: episode
-    )
-    decision = settle(episode, result, "¡Hola!")
+  test "ruby does not reclassify a photo offer or a greeting" do
+    source = Rails.root.join("app/services/rag/turn_perception.rb").read
+    assert_not_includes source, "EQUIPMENT_SYMPTOM_RE"
+    assert_not_includes source, "ASSISTANT_NEED_RE"
+    assert_not_includes source, "GREETING_RE"
+    assert_not_includes source, "def greeting_turn?"
+    assert_not_includes source, "def assistant_need_turn?"
 
-    assert_equal "meta", result.move
-    assert_empty result.observations
-    assert_equal "meta", decision.decision
-    assert_equal "no nivela en planta 3", episode.goal["text"]
-  end
-
-  test "an offer to send another photo stays meta and keeps the active goal" do
     episode = Rag::ActiveEpisode.open(correlation_id: "query:photo", now: Time.current)
     episode.assign_goal!("no nivela en planta 3", correlation_id: "query:photo")
     turn = "¿te sirve si te mando otra foto?"
-    result = perceive(
+    offered = perceive(
       {
         "move" => "new_work",
         "assertions" => [],
@@ -372,13 +360,31 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
       turn,
       episode: episode
     )
-    decision = settle(episode, result, turn)
+    assert_equal "new_work", offered.move
+    assert_equal [ turn ], offered.observations
 
-    assert_equal "meta", result.move
-    assert_empty result.observations
-    assert_not result.technical_payload?
+    meta = perceive(
+      {
+        "move" => "meta",
+        "assertions" => [],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    decision = settle(episode, meta, turn)
+    assert_equal "meta", meta.move
     assert_equal "meta", decision.decision
     assert_equal "no nivela en planta 3", episode.goal["text"]
+  end
+
+  test "a technical report payload stays a report" do
+    result = perceive(observation_report([ "la puerta no cierra" ]), "la puerta no cierra")
+
+    assert_equal "report", result.move
+    assert_equal [ "la puerta no cierra" ], result.observations
   end
 
   private

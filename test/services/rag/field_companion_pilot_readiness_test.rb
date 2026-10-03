@@ -66,7 +66,7 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
           episode_id = session.reload.live_episode_id
           assert_match(/no nivela en planta 3/i, goal_text(session))
 
-          ask(session, T2, client(new_work_observation(T2)))
+          ask(session, T2, client(meta_turn))
           session.reload
           assert_equal episode_id, session.live_episode_id
           assert_match(/no nivela en planta 3/i, goal_text(session))
@@ -170,7 +170,7 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
       ask(session, T1, client(report_observation("No nivela en planta 3")))
       before = goal_text(session)
       episode_id = session.reload.live_episode_id
-      result = ask(session, PHOTO_OFFER, client(new_work_observation(PHOTO_OFFER)))
+      result = ask(session, PHOTO_OFFER, client(meta_turn))
       session.reload
 
       assert_equal before, goal_text(session)
@@ -179,6 +179,27 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
       assert_equal "meta", result.understanding.decision
       assert_not_equal :new_episode, result.decision
       assert_no_match(/foto/i, goal_text(session))
+    end
+  end
+
+  test "a technical report stays technical and real new work still opens a case" do
+    session = web_session
+    with_pilot_flags do
+      report = ask(session, "la puerta no cierra", client(report_observation("la puerta no cierra")))
+      assert_equal "ready", report.understanding.decision
+      assert_match(/la puerta no cierra/i, goal_text(session))
+      episode_id = session.reload.live_episode_id
+
+      opened = ask(
+        session,
+        "Ahora el variador no arranca en otro equipo",
+        client(new_work_observation("el variador no arranca"))
+      )
+      session.reload
+      assert_equal :new_episode, opened.decision
+      assert_not_equal episode_id, session.live_episode_id
+      assert_match(/variador no arranca/i, goal_text(session))
+      assert_no_match(/puerta no cierra/i, goal_text(session))
     end
   end
 
@@ -201,6 +222,7 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
         output = Struct.new(:text).new("La parada puede depender de cómo llega la cabina.")
         Struct.new(:output, :citations, :session_id).new(output, [], "sid")
       end
+      service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
       result = service.query(LEVELING, episode: episode, output_channel: :web, correlation_id: "pilot:open")
     end
 
@@ -391,7 +413,7 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
     with_pilot_flags do
       ask(owned, T1, client(report_observation("No nivela en planta 3")))
       owned.pin_kb_document!(document)
-      result = ask(owned, "hola", client(new_work_observation("hola")))
+      result = ask(owned, "hola", client(meta_turn))
       owned.reload
       assert_equal "meta", result.understanding.decision
       assert_match(/no nivela en planta 3/i, goal_text(owned))
@@ -701,6 +723,10 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
 
   def conflict_answer
     "Hay una inconsistencia entre el fabricante indicado y el leído en la foto. ¿Puedes mostrarme la placa del controlador?"
+  end
+
+  def meta_turn
+    { "move" => "meta", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
   end
 
   def report_observation(text)

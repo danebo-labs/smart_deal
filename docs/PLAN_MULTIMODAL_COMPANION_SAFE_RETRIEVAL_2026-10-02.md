@@ -979,29 +979,31 @@ No hubo llamadas reales a Vision ni a Bedrock. N5 no está verificado en producc
 N6 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 ```
 
-Certifica la composición real: TurnInterpreter → Work Context → continuidad de foto → EquipmentIdentity → DocumentIdentityScope → Document Focus → retrieval safety → generación companion. Objetos y servicios reales, providers stub. La suite determinista no llama AWS, Bedrock, Vision ni navegador, y no agrega pruebas de system test.
+Certifica la composición real: TurnInterpreter → Work Context → continuidad de foto → EquipmentIdentity → DocumentIdentityScope → Document Focus → retrieval safety → generación companion. Objetos y servicios reales, providers stub. La suite determinista no llama AWS, Bedrock, Vision ni navegador.
 
-El único cambio de producto está en `TurnPerception#adjust_move`. Un turno que pregunta qué necesita Danebo, sin síntoma de equipo y con un problema activo, queda `meta`: no abre un caso ni reemplaza el goal. Un saludo solo (`hola`, `hey`, `bye`, `chau`) también queda `meta`. No es un regex de una frase.
+`TurnInterpreter` clasifica el move. `TurnPerception` valida el payload y las consecuencias: `correct` sin negate válido, `answer_pending` inválido, `new_work` sin payload técnico, writer tardío, identidad conocida fail-closed. No hay un clasificador Ruby por frases para `meta`, ofertas de foto o saludos. Una oferta de foto o un saludo queda `meta` porque el modelo lo entiende. El prompt `2026-10-02.6` lo dice en una regla corta. No reemplaza el goal activo.
+
+El release gate de Field Companion es la suite funcional determinista, los service tests, `turn_interpreter:eval` / holdout, los contratos N0, y security/lint. Los system tests de navegador son legacy y no forman parte de ese gate. No se modificó GitHub Actions para ocultarlos.
 
 Evidencia funcional en `test/services/rag/field_companion_pilot_readiness_test.rb`:
 
 - F1 replay Orona. El goal conserva "no nivela en planta 3". La foto aceptada deja Orona/PBCM-V3. Una Vision; cero en el reuse. Yida y BLT quedan reference-only. Cero fallback abierto. La respuesta es guía Danebo, con el problema y una pregunta de diagnóstico. El terminal y el significado de código inventados no salen.
 - F2 mismo turno, foto y pregunta. La identidad llega al retrieval. El goal se conserva. El job de foto no llama TurnInterpreter. Sin manual compatible sigue la guía. Con manual Orona el resultado es `:scoped`.
-- F3 "¿te sirve si te mando otra foto?" no es `new_work` y no reemplaza el goal.
+- F3 "¿te sirve si te mando otra foto?" queda `meta` y no reemplaza el goal.
 - F4 manual compatible: `:scoped`, cuerpo retenido, cita presente, `MANUAL_FACT` presente. El prompt companion no se usa.
-- F5 identidad desconocida: retrieve abierto. No `:unavailable`. No `:no_compatible` falso.
+- F5 identidad desconocida: retrieve abierto. No `:unavailable`. No `:no_compatible` falso. `fallback_retrieve` está stubbeado. Cero llamadas AWS.
 - F6 el técnico dijo KONE y la foto aceptada dice Orona. El conflicto queda. Ningún body es `THIS JOB`. Cero fallback. No hay procedimiento KONE ni Orona. El prompt pide evidencia para resolver la identidad.
 - F7 Focus 0 deja el corpus autorizado como alcance primario. Focus N usa sólo los documentos elegidos. El manual compatible elegido es citable. El manual extranjero elegido sigue elegido, reference-only, no citable y no puede ser `MANUAL_FACT`. Discovery no escribe Focus. La precedencia es tenant, luego compatibilidad, luego Focus.
 - F8 un caso nuevo no hereda manufacturer, model, goal, foto ni procedimiento. Un writer tardío del caso anterior no muta el nuevo. `hola` no es un identificador de campo. Un saludo sobre un episodio vencido no abre trabajo técnico. Focus sigue siendo del técnico.
 - F9 el tenant A no recupera, no cita y no puede enfocar un `tenant_private` de B. `danebo_general` sigue autorizado.
 
-`turn_interpreter:eval` 22/22, incluido `meta_photo_offer`. Holdout 10/10. Esa eval usa Haiku y queda separada de la suite determinista. Costo estimado 0.070531 USD + 0.025609 USD. Los tests de placa relevante e irrelevante siguen verdes.
+`turn_interpreter:eval` 29/29, 0 mismatches, 0 fallbacks, 0 field rejections. Incluye `meta_photo_offer`, `meta_greeting`, las ofertas de foto, `report_door` y `new_work_drive`. Holdout 10/10. Esa eval usa Haiku y queda separada de la suite determinista. Costo estimado 0.090338 USD + 0.026299 USD. Los tests de placa relevante e irrelevante siguen verdes.
 
 `N0_CONTRACTS=1`: 6 PASS / 0 FAIL. N2 legacy reuse, N2 same-turn, N2 uncertain, N3 identity scope, N4 open fallback, N4 citations.
 
 Harness: `test/fixtures/files/elemont/chunk_p1_2_current.txt` reemplaza el tmp no versionado. `DocumentIdentityScopeTest` construye el servicio con `knowledge_base_id: "test-kb"`.
 
-`bin/rails test`: 4132 corridas, 22418 aserciones, 0 fallos, 0 errores, 192 skips. Brakeman 0 warnings. bundler-audit limpio. `git diff --check` limpio.
+`bin/rails test`: 4133 corridas, 22439 aserciones, 0 fallos, 0 errores, 192 skips, sin credenciales AWS. Brakeman 0 warnings. bundler-audit limpio. `git diff --check` limpio.
 
 No verificado en producción. No desplegado.
 
@@ -1183,4 +1185,4 @@ F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5
 
 Los cinco errores de hermeticidad que quedaban en CI (tmp de Elemont y Knowledge Base real en dos tests de identidad) se cerraron en N6 sin cambiar el comportamiento de producción. La suite local queda en 0 fallos y 0 errores.
 
-Siguiente paso: review final del commit. No deploy.
+Siguiente paso: review del microfix. No deploy. El gate de Field Companion no usa los system tests de navegador.

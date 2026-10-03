@@ -287,3 +287,81 @@
     retrieval: false
     observations: []
     goal_text: "no nivela en planta 3"
+- id: meta_greeting
+  origin: reconstructed
+  turn: "hola"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: meta
+    decision: meta
+    clarification_target: null
+    retrieval: false
+    observations: []
+    goal_text: "no nivela en planta 3"
+- id: meta_photo_can_send
+  origin: reconstructed
+  turn: "¿puedo mandarte una foto?"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: meta
+    decision: meta
+    clarification_target: null
+    retrieval: false
+    observations: []
+    goal_text: "no nivela en planta 3"
+- id: meta_photo_helps
+  origin: reconstructed
+  turn: "tengo otra imagen, ¿te ayuda?"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: meta
+    decision: meta
+    clarification_target: null
+    retrieval: false
+    observations: []
+    goal_text: "no nivela en planta 3"
+- id: meta_photo_display
+  origin: reconstructed
+  turn: "¿quieres que te pase una foto del display?"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: meta
+    decision: meta
+    clarification_target: null
+    retrieval: false
+    observations: []
+    goal_text: "no nivela en planta 3"
+- id: meta_photo_plate
+  origin: reconstructed
+  turn: "te puedo mostrar la placa"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: meta
+    decision: meta
+    clarification_target: null
+    retrieval: false
+    observations: []
+    goal_text: "no nivela en planta 3"
+- id: report_door
+  origin: reconstructed
+  turn: "la puerta no cierra"
+  focus_count: 0
+  expected:
+    move: report
+    decision: ready
+    retrieval: true
+- id: new_work_drive
+  origin: reconstructed
+  turn: "Ahora el variador no arranca en otro equipo"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: new_work
+    decision: ready
+    retrieval: true
+    goal_text: "Ahora el variador no arranca en otro equipo"

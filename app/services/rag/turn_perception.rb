@@ -17,19 +17,7 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
-    # A question about what Danebo needs is meta. Equipment behavior stays a symptom.
-    EQUIPMENT_SYMPTOM_RE = /
-      \b(?:no|sin|se)\b |
-      \b(?:fall\w*|error|ruido|vibr\w*|parad\w*|nivel\w*|pasad\w*|cort\w*|cierr\w*|abr\w*|fren\w*|trab\w*|arranc\w*|magnetiz\w*|puert\w*|iman\w*|codig\w*|velocidad)\b |
-      \d
-    /x
-    ASSISTANT_NEED_RE = /
-      \b(?:te|le)\s+(?:sirve|serviria|ayud\w*|mando|envio|paso|doy|enviare|mandare)\b |
-      \b(?:necesitas|necesita|quieres|quiere)\b |
-      \b(?:puedo|podria)\s+(?:enviarte|mandarte|pasarte|darte)\b
-    /x
-    GREETING_RE = /\A(?:hola|hey|bye|chau)\z/
-    PROMPT_VERSION = "2026-10-02.5"
+    PROMPT_VERSION = "2026-10-02.6"
     SCHEMA_VERSION = "turn_perception.3"
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
@@ -384,13 +372,7 @@ module Rag
     end
 
     def adjust_move(move, resolution, identities, observations, ambiguities, target)
-      if greeting_turn?
-        move = "meta"
-        resolution = nil
-        identities = []
-        observations = []
-        ambiguities = []
-      elsif move == "answer_pending" && !pending_answer?(resolution, identities)
+      if move == "answer_pending" && !pending_answer?(resolution, identities)
         move = identities.any? || observations.any? || ambiguities.any? ? "report" : "follow_up"
         resolution = nil
       elsif move == "correct" && identities.none? { |item| item.kind == "negate" && item.slot.present? }
@@ -399,12 +381,6 @@ module Rag
         resolution = nil
         identities = []
         observations = []
-      elsif assistant_need_turn? && prior_context? && !work_relation_pending? && %w[report follow_up new_work meta].include?(move)
-        move = "meta"
-        resolution = nil
-        identities = []
-        observations = []
-        ambiguities = []
       elsif move == "new_work" && !self.class.technical_payload?(identities, observations, ambiguities) && prior_context? && !work_relation_pending?
         move = "follow_up"
       end
@@ -416,19 +392,6 @@ module Rag
       observations.any? || ambiguities.any? || identities.any? { |item|
         item.kind == "fact" || (item.act == "assert" && item.kind == "identifier")
       }
-    end
-
-    # Asks what Danebo needs, and does not state equipment behavior.
-    # The model's move and a copied question are not a new job.
-    def greeting_turn?
-      FollowupQueryRewriter.normalize_label(@turn).match?(GREETING_RE)
-    end
-
-    def assistant_need_turn?
-      normalized = FollowupQueryRewriter.normalize_label(@turn)
-      return false if normalized.blank? || normalized.match?(EQUIPMENT_SYMPTOM_RE)
-
-      normalized.match?(ASSISTANT_NEED_RE)
     end
 
     def work_relation_pending?

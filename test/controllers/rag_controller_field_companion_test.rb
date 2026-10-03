@@ -14,15 +14,21 @@ class RagControllerFieldCompanionTest < ActionDispatch::IntegrationTest
     @cases = YAML.load_file(Rails.root.join("test/fixtures/files/field_companion/cases.yml")).index_by { |row| row["id"] }
   end
 
-  test "shadow on and off send the same text to the orchestrator for T-A through T-H" do
+  test "episode recording keeps the legacy question except the T-E follow-up" do
     CASE_IDS.each do |case_id|
       row = @cases.fetch(case_id)
       off_queries, off_episode = play(row, flag: nil)
       on_queries, on_episode = play(row, flag: "true")
 
-      assert_equal off_queries, on_queries, "#{case_id} changed the orchestrator text"
       assert_equal({}, off_episode)
       assert on_episode["episode_id"].present?, "#{case_id} did not write an episode"
+      if case_id == "T-E"
+        assert_equal off_queries[0..-2], on_queries[0..-2], case_id
+        assert_equal "¿qué reviso primero?", off_queries.last
+        assert_equal "¿qué reviso primero? Fuji Yida Cómo se ajustan los resortes de la fijación de cables ?", on_queries.last
+      else
+        assert_equal off_queries, on_queries, "#{case_id} changed the orchestrator text"
+      end
     end
   end
 

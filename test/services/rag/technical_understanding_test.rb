@@ -182,6 +182,26 @@ class Rag::TechnicalUnderstandingTest < ActiveSupport::TestCase
     end
   end
 
+  test "a greeting is not a field identifier and a short code still is" do
+    assert_nil understand("hola").bare_identifier
+    assert_equal "ros", understand("ROS").bare_identifier
+  end
+
+  test "a follow-up does not repeat a manufacturer the goal already names" do
+    episode = opened
+    episode.write_fact!("manufacturer", status: "known", value: "Elemont", source: "user", correlation_id: "c", at: now)
+    episode.assign_goal!(
+      "Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?",
+      correlation_id: "c"
+    )
+    decision = understand("código 8", episode: episode)
+
+    assert_equal(
+      "código 8 Elemont MH con placa CEA15, falla en puerta 1: el imán no magnetiza. ¿Qué reviso?",
+      decision.retrieval_query
+    )
+  end
+
   test "NICE3000 E51 is ready and the query carries the code and the catalog identity" do
     decision = understand("NICE3000 E51, ¿qué reviso?")
 

@@ -1151,4 +1151,13 @@ N6 NOT STARTED
 
 F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1, N2, N3, N4 y N5 no están verificados en producción.
 
+Suite local `bin/rails test` en `a3b977b`: 4118 corridas, 22104 aserciones, 5 fallos, 0 errores, 192 skips. No corregidos. Ninguno sale de N5. `scan_ruby` (Brakeman, exit 5) sigue aceptado y ya fallaba antes de N0.
+
+El último CI verde de `main` es `2d456f865b` (2026-09-23, Field Companion Phase 1 shadow). Desde `fd333627ee` (2026-09-24, arranque de Phase 2) el job `test` está rojo. N0–N5 no lo abrieron.
+
+- `ConversationSessionCaseBoundaryTest` (`hola` tras expiry, episodio inválido): escritos en R1B, `5978748` (2026-09-30). Ya fallan en Turn Interpreter T0 `b1a4b42`. `TechnicalUnderstanding` trata `hola` como identificador y abre episodio. T1 no toca ese clasificador.
+- `RagControllerFieldCompanionTest` T-A..T-H: escrito en Phase 1 shadow, `05c2462` (2026-09-23), dentro del último CI verde. Hoy el flag on compone `Elemont` dos veces en T-B. La composición posterior lo rompió. No es N5.
+- `FieldPhotoRetentionJobTest` FK de evidencia: escrito en certificador Fase 0, `b115d80` (2026-09-08). El job no cambió después del último CI verde. Falla ahora. El commit exacto no está bisectado.
+- `Rag::TurnPerceptionTest` `deploy.yml`: escrito en Turn Interpreter T0, `b1a4b42` (2026-10-02). Falla en local porque `config/deploy.yml` está en `.gitignore` y tiene `HAIKU_QUERY_ANALYSIS_MODE: owner`. No es un archivo de N5.
+
 Siguiente paso: review de N5. No deploy. No implementar N6 todavía.

@@ -31,6 +31,7 @@ module Rag
     SEARCH_RE = /\bbusca con eso\b|\bbusca igual\b/
     SHORT_UNKNOWN_RE = /\Ano (?:lo )?se\z/
     FILLERS = %w[que es significa quiere decir what is el la un una componente component de del].freeze
+    GREETINGS = %w[hola hey bye chau].freeze
     MAX_PRIOR = 6
     MAX_OBSERVATIONS = 3
 
@@ -208,7 +209,30 @@ module Rag
       folded = FollowupQueryRewriter.normalize_label(value)
       return if parts.any? { |part| FollowupQueryRewriter.normalize_label(part).include?(folded) }
 
+      parts.reject! { |part| redundant_fact?(part, folded) }
       parts << value
+    end
+
+    def redundant_fact?(part, haystack)
+      folded = FollowupQueryRewriter.normalize_label(part)
+      return false unless fact_value?(folded)
+
+      covers?(haystack, folded)
+    end
+
+    def fact_value?(folded)
+      return false if folded.blank?
+
+      %w[manufacturer model controller fault_code].any? { |key|
+        fact = @episode&.fact(key)
+        fact && FollowupQueryRewriter.normalize_label(fact["value"]) == folded
+      }
+    end
+
+    def covers?(haystack, needle)
+      return false if needle.blank?
+
+      /(?:\A| )#{Regexp.escape(needle)}(?: |\z)/.match?(haystack)
     end
 
     def trim(parts)
@@ -249,7 +273,7 @@ module Rag
       token = words.first
       return nil unless token.match?(/\A[a-z0-9]{2,4}\z/)
       return nil unless token.match?(/\d/) || token.match?(/\A[a-z]{3,4}\z/)
-      return nil if known_brand?(token)
+      return nil if known_brand?(token) || GREETINGS.include?(token)
 
       token
     end

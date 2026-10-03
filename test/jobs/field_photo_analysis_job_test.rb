@@ -1825,7 +1825,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     )
   end
 
-  test "legacy nil photo reuse keeps the stored relevance and does not call vision" do
+  test "legacy nil photo reuse keeps the stored relevance, skips vision, and promotes identity" do
     photo = create_orona_photo(relevance: nil)
     calls = 0
 
@@ -1841,8 +1841,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal "PBCM-V3", photo.visual_observation["model"]
     episode = @session.reload.active_episode
     assert_equal photo.id, episode.dig("active_photo", "field_photo_id")
-    assert_nil episode.dig("facts", "manufacturer")
-    assert_nil episode.dig("facts", "model")
+    assert_equal "Orona", episode.dig("facts", "manufacturer", "value")
+    assert_equal "photo", episode.dig("facts", "manufacturer", "source")
+    assert_equal "PBCM-V3", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
     assert_equal "no nivela en planta 3", episode.dig("goal", "text")
   end
 
@@ -1862,8 +1864,11 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
     assert_equal 0, calls
     assert_nil photo.reload.visual_observation["relevance_to_goal"]
-    assert_nil @session.reload.active_episode.dig("facts", "manufacturer")
-    assert_nil @session.active_episode.dig("facts", "model")
+    episode = @session.reload.active_episode
+    assert_equal "Orona", episode.dig("facts", "manufacturer", "value")
+    assert_equal "photo", episode.dig("facts", "manufacturer", "source")
+    assert_equal "PBCM-V3", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
     assert_ephemeral_orona_identity(captured)
     assert_retrieval_question_carries_leveling_identity(captured)
   end
@@ -1927,7 +1932,96 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_not_includes captured[:question].to_s, "PBCM-V3"
   end
 
-  test "uncertain accepted photo may constrain photo-question retrieval without promoting facts" do
+  test "reused photo identity conflicts with a stated manufacturer and does not replace it" do
+    photo = create_orona_photo(relevance: nil)
+
+    with_leveling_episode do |owner|
+      episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+      episode.write_fact!(
+        "manufacturer", status: "known", value: "KONE", source: "user",
+        correlation_id: "query:kone", at: Time.current.iso8601
+      )
+      @session.update!(active_episode: episode.to_h)
+      FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+    end
+
+    episode = @session.reload.active_episode
+    assert_equal "KONE", episode.dig("facts", "manufacturer", "value")
+    assert_equal "user", episode.dig("facts", "manufacturer", "source")
+    conflict = Array(episode["conflicts"]).find { |row| row["fact"] == "manufacturer" }
+    assert_equal "KONE", conflict["user"]
+    assert_equal "Orona", conflict["photo"]
+    assert_equal "PBCM-V3", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
+  end
+
+  test "a late photo reuse does not promote identity onto the new episode" do
+    photo = create_orona_photo(relevance: nil)
+    service_calls = 0
+    original_new = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**_| service_calls += 1 }
+    original_write = ConversationSession.instance_method(:record_photo_observation!)
+    ConversationSession.define_method(:record_photo_observation!) do |**kwargs|
+      state = original_write.bind_call(self, **kwargs)
+      if state == :applied
+        start_new_case!(reason: "technician_new_case", correlation_id: "case:b")
+        opened = Rag::ActiveEpisode.parse(reload.active_episode)
+        opened.assign_goal!("el variador no arranca", correlation_id: "case:b")
+        update!(active_episode: opened.to_h)
+      end
+      state
+    end
+    owner_id = nil
+    events = []
+
+    with_leveling_episode do |owner|
+      owner_id = owner
+      episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
+      episode.active_photo = {
+        "field_photo_id" => photo.id,
+        "sha256" => photo.sha256,
+        "correlation_id" => "photo:a"
+      }
+      @session.update!(active_episode: episode.to_h)
+      output = StringIO.new
+      logger = ActiveSupport::Logger.new(output)
+      Rails.logger.broadcast_to(logger)
+      begin
+        FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+      ensure
+        Rails.logger.stop_broadcasting_to(logger)
+      end
+      events = output.string.lines.filter_map do |line|
+        start = line.index("{")
+        next unless start
+
+        parsed = JSON.parse(line[start..])
+        parsed if parsed.is_a?(Hash) && parsed["event"].present?
+      rescue JSON::ParserError
+        nil
+      end
+    end
+
+    kept = @session.reload.active_episode
+    assert_not_equal owner_id, kept["episode_id"]
+    assert_equal "el variador no arranca", kept.dig("goal", "text")
+    assert_nil kept["active_photo"]
+    assert_nil kept.dig("facts", "manufacturer")
+    assert_nil kept.dig("facts", "model")
+    assert kept["facts"].to_h.values.none? { |fact| fact.is_a?(Hash) && fact["source"] == "photo" }
+    assert_not_includes @session.conversation_history.pluck("content").join("\n"), "Orona"
+    assert_not_includes @session.conversation_history.pluck("content").join("\n"), "PBCM-V3"
+    assert_equal 0, service_calls
+    dropped = events.find { |event| event["event"] == "stale_case_write_dropped" && event["writer"] == "photo_assistant" }
+    assert_equal true, dropped["dropped"]
+    assert_equal owner_id, dropped["expected_episode_id"]
+    assert_equal kept["episode_id"], dropped["current_episode_id"]
+  ensure
+    ConversationSession.define_method(:record_photo_observation!, original_write) if original_write
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+  end
+
+  test "uncertain accepted photo constrains retrieval and promotes identity on reuse" do
     n0_contract!("N2")
     photo = create_orona_photo(relevance: "uncertain")
     captured = {}
@@ -1940,8 +2034,10 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
 
     assert_equal "uncertain", photo.reload.visual_observation["relevance_to_goal"]
     episode = @session.reload.active_episode
-    assert_nil episode.dig("facts", "manufacturer")
-    assert_nil episode.dig("facts", "model")
+    assert_equal "Orona", episode.dig("facts", "manufacturer", "value")
+    assert_equal "photo", episode.dig("facts", "manufacturer", "source")
+    assert_equal "PBCM-V3", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
     assert_equal photo.id, episode.dig("active_photo", "field_photo_id")
     assert_ephemeral_orona_identity(captured)
     assert_includes captured[:question].to_s, "no nivela en planta 3"
@@ -2019,18 +2115,22 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal [], probe[:citations]
     assert_nil probe[:photo].reload.visual_observation["relevance_to_goal"]
     episode = @session.reload.active_episode
-    assert_nil episode.dig("facts", "manufacturer")
-    assert_nil episode.dig("facts", "model")
+    assert_equal "Orona", episode.dig("facts", "manufacturer", "value")
+    assert_equal "photo", episode.dig("facts", "manufacturer", "source")
+    assert_equal "PBCM-V3", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
     assert_equal "no nivela en planta 3", episode.dig("goal", "text")
   end
 
-  test "uncertain accepted photo keeps ephemeral identity and a safe companion answer" do
+  test "uncertain accepted photo promotes identity and keeps a safe companion answer" do
     probe = run_foreign_equipment_retrieval(relevance: "uncertain")
 
     assert_equal "uncertain", probe[:photo].reload.visual_observation["relevance_to_goal"]
     episode = @session.reload.active_episode
-    assert_nil episode.dig("facts", "manufacturer")
-    assert_nil episode.dig("facts", "model")
+    assert_equal "Orona", episode.dig("facts", "manufacturer", "value")
+    assert_equal "photo", episode.dig("facts", "manufacturer", "source")
+    assert_equal "PBCM-V3", episode.dig("facts", "model", "value")
+    assert_equal "photo", episode.dig("facts", "model", "source")
     prompt = probe[:prompts].find { |text| text.include?("# FIELD COMPANION") }
     assert_includes prompt, "Orona"
     assert_includes prompt, "PBCM-V3"

@@ -259,7 +259,7 @@ class ConversationSession < ApplicationRecord
   # are; this only freezes the list SessionContextBuilder already computes.
   # :not_recording has no episode to protect, so the capture follows the
   # history write without treating that path as stale.
-  def record_photo_assistant_context!(content, user_id:, correlation_id:, expected_episode_id: nil, question: nil, accepted_observation: nil)
+  def record_photo_assistant_context!(content, user_id:, correlation_id:, expected_episode_id: nil, question: nil, accepted_observation: nil, confirm_identity: false)
     unless episode_recording?
       add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
       return capture_photo_turn_context(
@@ -300,6 +300,14 @@ class ConversationSession < ApplicationRecord
         attrs = { conversation_history: history }
         attrs[:active_episode] = result.state if result.decision == :assistant
         update!(attrs)
+      end
+
+      if confirm_identity
+        promote_reused_photo_identity!(
+          correlation_id: correlation_id,
+          question: question,
+          accepted_observation: accepted_observation
+        )
       end
 
       snapshot = capture_photo_turn_context(
@@ -1368,11 +1376,43 @@ class ConversationSession < ApplicationRecord
     close_photo_pending!(episode, written) if Rag::HaikuQueryAnalysisFlag.owner?
   end
 
-  # Only a reading the pipeline marked relevant becomes equipment identity.
-  # A relevant nameplate can do that without showing the asked-about assembly.
-  # uncertain, nil, and unrelated stay on the photo and do not become source=photo.
+  # The first observation write promotes equipment identity only when Vision
+  # marked the photo relevant. nil and uncertain stay on the photo until a
+  # later reuse confirms them. unrelated never becomes a fact.
   def photo_identity_blocked?(readings)
     readings["relevance_to_goal"] != "relevant"
+  end
+
+  # A reuse turn already decided, through PhotoRetrievalSnapshot, that this
+  # observation contributes identity. Persist only those photo rows for this
+  # correlation. apply_photo_fact! keeps the user-versus-photo conflict rule.
+  def promote_reused_photo_identity!(correlation_id:, question:, accepted_observation:)
+    episode = Rag::ActiveEpisode.parse(active_episode, now: Time.current)
+    return if episode.blank?
+
+    preview = Rag::PhotoRetrievalSnapshot.capture(
+      episode: episode,
+      question: question,
+      observation: accepted_observation,
+      correlation_id: correlation_id
+    )
+    identity = preview.equipment_identity
+    return if identity.nil?
+
+    before = episode.to_h.deep_dup
+    written = []
+    Array(identity.facts).each do |fact|
+      next unless fact["source"] == "photo"
+      next unless fact["correlation_id"].to_s == correlation_id.to_s
+      next unless Rag::PhotoRetrievalSnapshot::IDENTITY_SLOTS.include?(fact["slot"])
+
+      written << fact["slot"] if apply_photo_fact!(episode, fact["slot"], fact["value"], correlation_id)
+    end
+    close_photo_pending!(episode, written) if Rag::HaikuQueryAnalysisFlag.owner? && written.any?
+    return if episode.to_h == before
+
+    episode.touch!(Time.current)
+    update!(active_episode: episode.to_h)
   end
 
   def apply_photo_fact!(episode, key, raw, correlation_id)

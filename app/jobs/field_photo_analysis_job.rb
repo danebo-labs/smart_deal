@@ -259,7 +259,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       locale: locale,
       question: question,
       visual_task: nil,
-      expected_episode_id: expected_episode_id
+      expected_episode_id: expected_episode_id,
+      confirm_identity: true
     )
     emit_interaction_completed(
       account_id: account_id,
@@ -372,7 +373,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
     target_visible: nil
   }.freeze
 
-  def deliver(display_value, evidence_value:, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, visual_task: nil, expected_episode_id: nil, accepted_observation: nil)
+  def deliver(display_value, evidence_value:, session:, filename:, account_id:, user_id:, correlation_id:, field_photo_id: nil, locale: nil, question: nil, image_sha256: nil, visual_task: nil, expected_episode_id: nil, accepted_observation: nil, confirm_identity: false)
     write_state = session&.record_photo_observation!(
       photo_value: evidence_value || BLANK_PHOTO_READING,
       field_photo_id: field_photo_id,
@@ -388,7 +389,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
         correlation_id: correlation_id,
         expected_episode_id: expected_episode_id,
         question: question,
-        accepted_observation: accepted_observation
+        accepted_observation: accepted_observation,
+        confirm_identity: confirm_identity
       )
     end
     history_state = turn_context&.status

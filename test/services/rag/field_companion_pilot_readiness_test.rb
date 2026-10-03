@@ -19,6 +19,17 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
   BLT_PROCEDURE = "E18 fallo de nivelación. Compruebe el encoder BLT."
   KONE_PROCEDURE = "Procedimiento KONE de nivelación. Ajusta el encoder KONE."
   ORONA_PROCEDURE = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona"
+  REUSE_TURN = "la consulta anterior, de eso estoy hablando y por eso te compartí la foto"
+  PASSED_LEVEL = "queda un poco pasada de nivel"
+  FLOOR_ONLY = "pasa solo en planta 3"
+  NEW_EQUIPMENT = "Ahora estoy en otro equipo. El variador no arranca."
+  MONARCH_PROCEDURE = "Monarch: ajuste de nivelación del variador en el parámetro F07."
+  SAFE_GUIDANCE = <<~ANSWER.strip
+    En la foto se identifica Orona PBCM-V3.
+    No tengo un manual compatible para darte un procedimiento del fabricante.
+    Para acotar la nivelación quiero separar si la cabina queda pasada o corta de nivel, o si no llega a hacer la parada.
+    ¿Qué hace la cabina al llegar a planta 3?
+  ANSWER
   GUIDANCE_ANSWER = <<~ANSWER.strip
     En la foto se identifica Orona PBCM-V3.
     No tengo un manual compatible para darte un procedimiento del fabricante.
@@ -98,6 +109,98 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
     assert_equal 0, probe[:open_calls]
     assert_equal "Orona", session.reload.active_episode.dig("facts", "manufacturer", "value")
     assert_equal "PBCM-V3", session.active_episode.dig("facts", "model", "value")
+  end
+
+  test "reused photo identity is durable before the next text turns and a new job starts clean" do
+    session = web_session
+    vision = { n: 0 }
+    probe = empty_probe
+    episode_id = nil
+    passed = nil
+    floor = nil
+
+    with_pilot_flags do
+      with_vision(orona_reading_unconfirmed, vision) do
+        with_retrieval_probe(probe, chunks: [ yida_chunk, blt_chunk, monarch_chunk ], answer: SAFE_GUIDANCE) do
+          ask(session, "No nivela en planta 3. Todavía no sé fabricante ni modelo.", client(report_observation(LEVELING)))
+          episode_id = session.reload.live_episode_id
+          assert_match(/no nivela en planta 3/i, goal_text(session))
+          assert_nil session.active_episode.dig("facts", "manufacturer")
+
+          run_photo(session, question: "", image: jpeg_image("plate-unconfirmed"))
+          session.reload
+          assert_equal episode_id, session.live_episode_id
+          assert_equal 1, vision[:n]
+          assert_nil session.active_episode.dig("facts", "manufacturer")
+          assert_nil session.active_episode.dig("facts", "model")
+          assert session.active_episode.dig("active_photo", "field_photo_id")
+
+          run_photo(session, question: REUSE_TURN, image: nil)
+          session.reload
+          assert_equal episode_id, session.live_episode_id
+          assert_equal 1, vision[:n]
+          assert_equal "Orona", session.active_episode.dig("facts", "manufacturer", "value")
+          assert_equal "photo", session.active_episode.dig("facts", "manufacturer", "source")
+          assert_equal "PBCM-V3", session.active_episode.dig("facts", "model", "value")
+          assert_equal "photo", session.active_episode.dig("facts", "model", "source")
+          assert_match(/no nivela en planta 3/i, goal_text(session))
+          assert Rag::EquipmentIdentity.from_episode(session.active_episode).known?
+          assert_equal 0, probe[:open_calls]
+
+          passed = retrieve_text(session, PASSED_LEVEL, client(follow_up_observation(PASSED_LEVEL)))
+          session.reload
+          assert_equal episode_id, session.live_episode_id
+          assert_equal "Orona", session.active_episode.dig("facts", "manufacturer", "value")
+          assert Rag::EquipmentIdentity.from_episode(session.active_episode).known?
+          assert_scoped_guidance(session, probe[:scopes].last, passed, probe[:prompts].last)
+
+          floor = retrieve_text(session, FLOOR_ONLY, client(follow_up_observation(FLOOR_ONLY)))
+          session.reload
+          assert_equal episode_id, session.live_episode_id
+          assert_match(/no nivela en planta 3/i, goal_text(session))
+          assert Rag::EquipmentIdentity.from_episode(session.active_episode).known?
+          assert_scoped_guidance(session, probe[:scopes].last, floor, probe[:prompts].last)
+          assert_equal 0, probe[:open_calls]
+          assert_equal 1, vision[:n]
+
+          opened = ask(session, NEW_EQUIPMENT, client(new_work_observation("el variador no arranca")))
+          session.reload
+          assert_equal :new_episode, opened.decision
+          assert_not_equal episode_id, session.live_episode_id
+        end
+      end
+    end
+
+    fresh = session.reload.active_episode
+    blob = fresh.to_json
+    assert_no_match(/orona/i, blob)
+    assert_no_match(/pbcm/i, blob)
+    assert_no_match(/planta 3/i, blob)
+    assert_no_match(/nivel/i, blob)
+    assert_nil fresh["active_photo"]
+    assert_nil fresh.dig("facts", "manufacturer")
+    assert_nil fresh.dig("facts", "model")
+    assert_nil Rag::EquipmentIdentity.from_episode(fresh)
+    assert_match(/variador no arranca/i, goal_text(session))
+  end
+
+  test "a later text turn does not promote an unconfirmed photo" do
+    session = web_session
+    vision = { n: 0 }
+
+    with_pilot_flags do
+      with_vision(orona_reading_unconfirmed, vision) do
+        ask(session, "No nivela en planta 3. Todavía no sé fabricante ni modelo.", client(report_observation(LEVELING)))
+        run_photo(session, question: "", image: jpeg_image("unconfirmed"))
+        ask(session, "el desnivel es de unos centimetros", client(follow_up_observation("el desnivel es de unos centimetros")))
+        episode = session.reload.active_episode
+        assert_equal 1, vision[:n]
+        assert_nil episode.dig("facts", "manufacturer")
+        assert_nil episode.dig("facts", "model")
+        assert_nil Rag::EquipmentIdentity.from_episode(episode)
+        assert_not Rag::DocumentIdentityScope.applicable?(episode)
+      end
+    end
   end
 
   test "F2 same-turn photo keeps the problem and guides when no manual is compatible" do
@@ -514,6 +617,49 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
     }
   end
 
+  def retrieve_text(session, text, interpreter)
+    turn = ask(session, text, interpreter)
+    session.reload
+    query = turn.composed.presence || text
+    QueryOrchestratorService.new(
+      query,
+      raw_question: text,
+      account: @account,
+      user_id: @user.id,
+      conv_session: session,
+      conversation_session_id: session.id,
+      response_locale: :es,
+      correlation_id: "query:#{SecureRandom.hex(4)}",
+      output_channel: :web,
+      session_context: SessionContextBuilder.build(session)
+    ).execute
+  end
+
+  def assert_scoped_guidance(session, scope, result, prompt)
+    assert scope
+    assert_equal :no_compatible, scope_status(scope)
+    assert_includes scope_values(scope[:identity]), "Orona"
+    assert_includes scope_values(scope[:identity]), "PBCM-V3"
+    assert_equal "no_compatible", result[:equipment_identity_status]
+    assert_equal "document_identity_scope", result[:generation_mode]
+    assert_empty Array(result[:citations])
+    [ result[:answer], prompt ].each do |text|
+      assert_not_includes text.to_s, YIDA_PROCEDURE
+      assert_not_includes text.to_s, BLT_PROCEDURE
+      assert_not_includes text.to_s, MONARCH_PROCEDURE
+    end
+    photo = FieldPhoto.find_by(id: session.active_episode.dig("active_photo", "field_photo_id"))
+    segments = Rag::ProvenanceSegmenter.call(
+      answer: result[:answer],
+      citations: result[:citations],
+      visual_observation: photo&.visual_observation
+    )
+    bands = segments.pluck("band")
+    assert_includes bands, "DANEBO_GUIDANCE"
+    assert_not_includes bands, "MANUAL_FACT"
+    assert_includes result[:answer], "pasada o corta"
+  end
+
   def ask(session, text, interpreter)
     session.record_user_turn!(
       text,
@@ -646,6 +792,10 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
     { binary: "jpeg-#{label}-#{SecureRandom.hex(4)}", media_type: "image/jpeg", filename: "#{label}.jpg" }
   end
 
+  def orona_reading_unconfirmed
+    orona_reading.merge(relevance_to_goal: nil)
+  end
+
   def orona_reading
     {
       analysis: "Placa controladora Orona PBCM-V3",
@@ -721,6 +871,10 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
     procedure_chunk("Manual KONE", KONE_PROCEDURE, "kone")
   end
 
+  def monarch_chunk
+    procedure_chunk("Manual Monarch", MONARCH_PROCEDURE, "monarch")
+  end
+
   def conflict_answer
     "Hay una inconsistencia entre el fabricante indicado y el leído en la foto. ¿Puedes mostrarme la placa del controlador?"
   end
@@ -739,6 +893,10 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
 
   def follow_up
     { "move" => "follow_up", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
+  end
+
+  def follow_up_observation(text)
+    { "move" => "follow_up", "assertions" => [], "observations" => [ text ], "pending_resolution" => nil, "clarification_target" => nil }
   end
 
   def client(response)

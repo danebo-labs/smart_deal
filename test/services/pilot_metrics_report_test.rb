@@ -596,6 +596,8 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       assert_equal "complete raw answer", raw_row.dig(:audit, :answer)
       assert_equal 12, raw_row.dig(:audit, :citations, 0, :page)
       assert_equal "complete chunk", raw_row.dig(:audit, :chunks, 0, :text)
+      assert_not private_row[:field_companion].key?(:open_retrieval)
+      assert_not_includes JSON.generate(private_row[:field_companion]), "complete chunk"
 
       file.close!
     end
@@ -733,6 +735,51 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
       assert_equal 1, totals[:rag_llm_calls]
       assert_equal 0, totals[:visual_llm_calls]
       assert_equal rows.sum(&:cost).round(6), totals[:attributed_cost_usd]
+    end
+  end
+
+  test "field companion card follows real event order and leaves missing events absent" do
+    travel_to @now do
+      secret = "Cortocircuitar BM/B1 secreto"
+      file = Tempfile.new("pilot-companion")
+      events = [
+        [ "turn_interpreter", { episode_id: "ep-1", interpreter_move: "new_work", goal_text: "No nivela en planta 3", goal_source_correlation_id: "query:card" } ],
+        [ "photo_continuity", { continuity_action: "reuse", field_photo_id: 4, active_photo_id: 4 } ],
+        [ "photo_observation_reused", { relevance_to_goal: "uncertain", manufacturer: "Orona", model: "PBCM-V3", field_photo_id: 4 } ],
+        [ "identity_promotion", { result: "blocked", outcome_reason: "relevance_blocked", relevance_to_goal: "uncertain", identity_before: "none", identity_after: "none" } ],
+        [ "identity_promotion", { result: "promoted", outcome_reason: "explicit_reuse", identity_before: "none", identity_after: "manufacturer:Orona:photo|model:PBCM-V3:photo", identity_conflict: false } ],
+        [ "document_identity_scope", { result: "no_compatible", outcome_reason: nil, scope_needles: [ "Orona", "PBCM-V3" ], identity_after: "manufacturer:Orona:photo|model:PBCM-V3:photo", manufacturer: "Orona", model: "PBCM-V3", identity_conflict: true } ],
+        [ "kb_retrieve", { results_count: 3, rejected_result_count: 1 } ],
+        [ "interaction_completed", { outcome: "answered", route: "text", question_sha256: "abc" } ]
+      ]
+      events.each_with_index do |(name, fields), index|
+        file.puts("[PILOT_USAGE] #{JSON.generate({
+          event: name, ts: (@now + index).iso8601, correlation_id: "query:card",
+          account_id: @a1.account_id, user_id: @a1.id, conversation_session_id: 9
+        }.merge(fields.compact))}")
+      end
+      file.puts("[PILOT_AUDIT] #{JSON.generate({
+        ts: @now.iso8601, correlation_id: "query:card", type: "chunk", text: secret
+      })}")
+      file.flush
+
+      row = PilotMetricsReport.new(date: @date, usage_log_path: file.path)
+        .as_json.dig(:interactions, :by_correlation).sole
+      trace = row[:field_companion]
+      assert_equal events.map(&:first), trace[:execution_path]
+      assert_not_includes trace[:execution_path], "query_composer"
+      assert_equal "No nivela en planta 3", trace.dig(:goal, :text)
+      assert_equal "query:card", trace.dig(:goal, :source_correlation_id)
+      assert_equal "reuse", trace.dig(:photo, :continuity_action)
+      assert_equal "reused", trace.dig(:photo, :vision)
+      assert_equal "observation", trace.dig(:visual_identity, :persistence)
+      assert_equal %w[blocked promoted], trace[:identity_promotions].pluck(:result)
+      assert_equal "no_compatible", trace.dig(:document_identity_scope, :result)
+      assert_equal "manufacturer:Orona:photo|model:PBCM-V3:photo", trace.dig(:retrieval_identity, :identity_after)
+      assert_equal 3, trace.dig(:retrieval, :results_count)
+      assert_not trace.key?(:open_retrieval)
+      assert_not_includes JSON.generate(trace), secret
+      file.close!
     end
   end
 

@@ -603,6 +603,8 @@ class PilotMetricsReport
         resolved: nil,
         technician_helpfulness: nil
       }
+      companion = field_companion_trace(correlation_id, pilot_events)
+      result[:field_companion] = companion if companion
       if @include_raw_questions
         result[:question] = quality_record[:question]
         result[:answer_snippet] = quality_record[:answer_snippet]
@@ -621,6 +623,134 @@ class PilotMetricsReport
       end
       result
     end.sort_by { |row| row[:correlation_id] }
+  end
+
+  def field_companion_trace(correlation_id, pilot_events)
+    indexed = []
+    pilot_events.each_with_index do |event, index|
+      next unless event[:correlation_id].presence == correlation_id
+
+      indexed << [ event, index ]
+    end
+    ordered = indexed.sort_by { |event, index| [ event[:ts].to_s, index ] }.map(&:first)
+    return nil if ordered.empty?
+
+    trace = { execution_path: ordered.filter_map { |event| event[:event].presence } }
+    interpreter = ordered.find { |event| event[:event] == "turn_interpreter" }
+    if interpreter
+      trace[:episode_id] = interpreter[:episode_id] if interpreter[:episode_id].present?
+      trace[:interpreter_move] = interpreter[:interpreter_move] if interpreter[:interpreter_move].present?
+      if interpreter[:goal_text].present?
+        goal = { text: interpreter[:goal_text] }
+        goal[:source_correlation_id] = interpreter[:goal_source_correlation_id] if interpreter[:goal_source_correlation_id].present?
+        trace[:goal] = goal
+      end
+    end
+    trace[:episode_id] ||= ordered.filter_map { |event| event[:episode_id].presence }.last
+
+    photo = field_companion_photo(ordered)
+    trace[:photo] = photo if photo
+    visual = field_companion_visual(ordered)
+    trace[:visual_identity] = visual if visual
+    promotions = ordered.select { |event| event[:event] == "identity_promotion" }
+    if promotions.any?
+      trace[:identity_promotions] = promotions.map { |event| field_companion_promotion(event) }
+    end
+    scope = ordered.reverse.find { |event| event[:event] == "document_identity_scope" }
+    trace[:document_identity_scope] = field_companion_scope(scope) if scope
+    retrieval = field_companion_retrieval(scope)
+    trace[:retrieval_identity] = retrieval if retrieval
+    open = ordered.reverse.find { |event| event[:event] == "open_retrieval" }
+    if open
+      open_trace = { result: open[:result] }
+      open_trace[:outcome_reason] = open[:outcome_reason] if open[:outcome_reason].present?
+      trace[:open_retrieval] = open_trace
+    end
+    retrieve = ordered.reverse.find { |event| event[:event] == "kb_retrieve" }
+    if retrieve
+      trace[:retrieval] = {
+        results_count: retrieve[:results_count],
+        rejected_result_count: retrieve[:rejected_result_count]
+      }
+    end
+    stale = ordered.select { |event| event[:event] == "stale_case_write_dropped" }
+    if stale.any?
+      trace[:stale_case_writes] = stale.map { |event|
+        {
+          writer: event[:writer],
+          expected_episode_id: event[:expected_episode_id],
+          episode_id: event[:episode_id].presence || event[:current_episode_id]
+        }
+      }
+    end
+    trace
+  end
+
+  def field_companion_photo(ordered)
+    continuity = ordered.find { |event| event[:event] == "photo_continuity" }
+    reused = ordered.find { |event| event[:event] == "photo_observation_reused" }
+    reread = ordered.find { |event| event[:event] == "photo_observation_reread" }
+    acceptance = ordered.reverse.find { |event| event[:event] == "photo_observation_acceptance" }
+    return nil unless continuity || reused || reread || acceptance
+
+    photo = {}
+    photo[:field_photo_id] = (reused || acceptance || continuity)&.dig(:field_photo_id)
+    photo[:active_photo_id] = continuity&.dig(:active_photo_id)
+    photo[:relevance_to_goal] = (reused || acceptance)&.dig(:relevance_to_goal)
+    photo[:continuity_action] = continuity&.dig(:continuity_action)
+    photo[:vision] = if reused && reread.nil?
+      "reused"
+    elsif reread || acceptance
+      "called"
+    end
+    photo.compact.presence
+  end
+
+  def field_companion_visual(ordered)
+    source = ordered.reverse.find { |event|
+      %w[photo_observation_reused photo_observation_acceptance].include?(event[:event]) &&
+        (event[:manufacturer].present? || event[:model].present?)
+    }
+    return nil unless source
+
+    {
+      manufacturer: source[:manufacturer],
+      model: source[:model],
+      persistence: "observation"
+    }.compact
+  end
+
+  def field_companion_promotion(event)
+    {
+      result: event[:result],
+      outcome_reason: event[:outcome_reason],
+      relevance_to_goal: event[:relevance_to_goal],
+      identity_before: event[:identity_before],
+      identity_after: event[:identity_after],
+      identity_conflict: event[:identity_conflict]
+    }.compact
+  end
+
+  def field_companion_scope(event)
+    {
+      result: event[:result],
+      outcome_reason: event[:outcome_reason],
+      scope_needles: event[:scope_needles],
+      identity_conflict: event[:identity_conflict],
+      manufacturer: event[:manufacturer],
+      model: event[:model],
+      identity_after: event[:identity_after]
+    }.compact
+  end
+
+  def field_companion_retrieval(scope)
+    return nil if scope.nil? || scope[:identity_after].blank? || scope[:identity_after] == "none"
+
+    {
+      identity_after: scope[:identity_after],
+      manufacturer: scope[:manufacturer],
+      model: scope[:model]
+    }.compact
   end
 
   def interaction_returning_users(representative_events)

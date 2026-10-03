@@ -224,22 +224,18 @@ For local development, run **`bin/dev`** (see `Procfile.dev`) so **web**, **CSS*
 
 ---
 
-## Pilot interaction export and photo-cache telemetry
+## Pilot interaction export
+
+The living contract for events, the allowlist, the turn card, and the split
+between engineering traceability and a maintenance case is
+[PILOT_TRACEABILITY.md](PILOT_TRACEABILITY.md). `photo_cache_hit`,
+`photo_cache_miss`, and `visual_llm_call_avoided` are not current events.
 
 `BedrockQuery` is the call-level attribution record for every real LLM invocation (provider usage or estimate). Reconciled Bedrock spend stays in `bedrock_daily_costs`. `[TURN_EVIDENCE]` is trace only and is not summed as cost. Live
 photo rows use `source: query`, `route: visual_query` and carry account, user,
-conversation and `photo:<uuid>` correlation attribution. A cache hit cannot be
-stored there because its real tokens and cost are zero, so photo lifecycle
-events use a safe structured line:
-
-```text
-[PILOT_USAGE] {"event":"photo_cache_hit","ts":"...","account_id":1,"user_id":2,...}
-```
-
-Emitted events are `photo_submitted`, `photo_cache_miss`, `photo_cache_hit`,
-`visual_llm_call_avoided`, `photo_completed` and `photo_failed`. They contain no
-raw image, Base64, temporary token, prompt or credentials. The only image join
-field is the first 12 characters of the normalized SHA-256.
+conversation and `photo:<uuid>` correlation attribution. Zero-cost reuse is a
+`[PILOT_USAGE]` line, not a `BedrockQuery` row. The only image join field is
+the first 12 characters of the normalized SHA-256.
 
 Run the unified export from the laptop with the named account cohort. This is
 the only supported command: it resolves and prints the account ID, slug, user
@@ -297,7 +293,7 @@ The package is written to
 `tmp/pilot_exports/<from>_<to>_<slug>/` with:
 
 - `report.json`: the complete technical report;
-- `report.txt`: its existing human-readable rendering;
+- `report.txt`: the human rendering, including one `TURN` card per `correlation_id` when field-companion events exist;
 - `valor.json`: auditability, safety, value capture, knowledge gaps and
   adoption derived from `report.json` without changing cost or precision
   formulas;

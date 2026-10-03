@@ -32,6 +32,10 @@ class PilotUsageLog
     catalog_fingerprint interpreter_move interpreter_assertions catalog_disagreement
     field_rejections mutations_applied pending_outcome clarification_target
     active_photo_context_status state_before_sha256 state_after_sha256
+    relevance_to_goal continuity_action active_photo_id
+    writer expected_episode_id current_episode_id dropped
+    identity_before identity_after scope_needles identity_conflict
+    goal_text goal_source_correlation_id
   ].freeze
 
   class << self

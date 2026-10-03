@@ -98,6 +98,7 @@ class QueryOrchestratorService
         account: @account,
         session: @conv_session
       )
+      log_photo_continuity(decision)
       case decision.action
       when :reread
         return enqueue_stored_field_photo(decision.photo, continuity: "reread")
@@ -228,6 +229,37 @@ class QueryOrchestratorService
   end
 
   private
+
+  def log_photo_continuity(decision)
+    episode = photo_continuity_episode
+    PilotUsageLog.log(
+      "photo_continuity",
+      account_id: @account&.id,
+      user_id: @user_id,
+      conversation_session_id: @conversation_session_id,
+      correlation_id: photo_continuity_correlation_id(decision),
+      episode_id: episode&.episode_id,
+      continuity_action: decision.action.to_s,
+      field_photo_id: decision.photo&.id || @field_photo_id.presence,
+      active_photo_id: episode&.active_photo&.dig("field_photo_id")
+    )
+  end
+
+  # Reuse, reread, fresh bytes, and a missing photo own the correlation of
+  # the job that follows. Passthrough keeps the caller's id.
+  def photo_continuity_correlation_id(decision)
+    return @correlation_id if @correlation_id.present?
+    return nil if decision.action == :passthrough
+
+    @correlation_id = "photo:#{SecureRandom.uuid}"
+  end
+
+  def photo_continuity_episode
+    return nil unless @conv_session.respond_to?(:active_episode)
+
+    episode = Rag::ActiveEpisode.parse(@conv_session.active_episode, now: Time.current)
+    episode.presence
+  end
 
   def enqueue_stored_field_photo(photo, continuity:)
     locale = (@response_locale || @locale || I18n.locale).to_s

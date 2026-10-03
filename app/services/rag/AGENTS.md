@@ -56,7 +56,7 @@ Open retrieval is the pre-F3B2 compatibility filter, not the `danebo_general` UR
 
 Chunks that come back are kept when `account_id` is present and is the viewer, when `account_id` is a shared-corpus account and the chunk is not a photo and is not `manual_corpus=account`, or when `manual_corpus=general` and `account_id` is present. Missing, blank, or unreadable metadata is dropped. A photo of the other shared account is dropped. The viewer's own photo is kept. `document_id` is not compared with `KbDocument.document_uid`. `partition_evidence` is not on this path. If every citation from `retrieve_and_generate` fails that check, the generated text is not published. There is no second model call.
 
-`R1A_PROBE` (`Rag::R1aRetrievalProbe`) is a temporary diagnostic log. It records the filter and each chunk decision already computed by the gate. It does not change retrieval. Remove it after the R1A production smoke.
+`R1A_PROBE` (`Rag::R1aRetrievalProbe`) is a temporary diagnostic log. It records the filter and each chunk decision already computed by the gate. It does not change retrieval. Remove it after the R1A production smoke. That temporary mode is documented in [docs/PILOT_TRACEABILITY.md](../../../docs/PILOT_TRACEABILITY.md).
 
 A new manual writes `manual_corpus=account`. The shared-account arm excludes that value. Chunks already indexed without the key still match, because Bedrock `notEquals` matches a missing key. `corpus_scope: "general"` writes `manual_corpus=general` only when `accounts.danebo_controlled` is true. The Legacy/Pilot slug is not that mark.
 

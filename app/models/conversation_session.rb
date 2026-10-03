@@ -207,11 +207,12 @@ class ConversationSession < ApplicationRecord
 
     result = nil
     dropped = false
+    stale_event = nil
     with_lock do
       current_id = live_episode_id
       expected = expected_episode_id.presence
       if expected != current_id
-        log_stale_case_write_dropped(
+        stale_event = stale_case_payload(
           writer: writer,
           expected_episode_id: expected,
           current_episode_id: current_id,
@@ -241,6 +242,7 @@ class ConversationSession < ApplicationRecord
       attrs[:active_episode] = result.state if result.decision == :assistant
       update!(attrs)
     end
+    emit_stale_case_write(stale_event)
     if writer == "photo_assistant"
       return :stale if dropped
 
@@ -270,11 +272,13 @@ class ConversationSession < ApplicationRecord
     result = nil
     dropped = false
     snapshot = nil
+    stale_event = nil
+    promotion = nil
     with_lock do
       current_id = live_episode_id
       expected = expected_episode_id.presence
       if expected != current_id
-        log_stale_case_write_dropped(
+        stale_event = stale_case_payload(
           writer: "photo_assistant",
           expected_episode_id: expected,
           current_episode_id: current_id,
@@ -303,7 +307,7 @@ class ConversationSession < ApplicationRecord
       end
 
       if confirm_identity
-        promote_reused_photo_identity!(
+        promotion = promote_reused_photo_identity!(
           correlation_id: correlation_id,
           question: question,
           accepted_observation: accepted_observation
@@ -314,6 +318,8 @@ class ConversationSession < ApplicationRecord
         :applied, question: question, accepted_observation: accepted_observation, correlation_id: correlation_id
       )
     end
+    emit_stale_case_write(stale_event)
+    emit_identity_promotion(promotion, user_id: user_id)
     return capture_photo_turn_context(:stale) if dropped
 
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result&.decision == :assistant
@@ -323,11 +329,13 @@ class ConversationSession < ApplicationRecord
   def record_photo_observation!(photo_value:, field_photo_id:, sha256:, correlation_id:, expected_episode_id: nil)
     return :not_recording unless episode_recording?
 
-    with_lock do
+    stale_event = nil
+    promotion = nil
+    outcome = with_lock do
       current_id = live_episode_id
       expected = expected_episode_id.presence
       if expected.blank? || expected != current_id
-        log_stale_case_write_dropped(
+        stale_event = stale_case_payload(
           writer: "photo_observation",
           expected_episode_id: expected,
           current_episode_id: current_id,
@@ -337,11 +345,16 @@ class ConversationSession < ApplicationRecord
       end
 
       episode = Rag::ActiveEpisode.parse(active_episode, now: Time.current)
+      before = episode.blank? ? nil : episode.fork
       apply_photo_observation!(episode, photo_value, field_photo_id, sha256, correlation_id)
+      promotion = first_photo_identity_promotion(before, episode, photo_value, correlation_id) if before
       episode.touch!(Time.current)
       update!(active_episode: episode.to_h)
       :applied
     end
+    emit_stale_case_write(stale_event)
+    emit_identity_promotion(promotion) if outcome == :applied
+    outcome
   end
 
   # Synchronous case owner for a photo submission. Reuses a live case.
@@ -708,11 +721,12 @@ class ConversationSession < ApplicationRecord
     s3_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
     return false if s3_uri.blank?
 
-    with_lock do
+    stale_event = nil
+    pinned = with_lock do
       expected = expected_episode_id.presence
       current = live_episode_id
       if expected.blank? || expected != current
-        log_stale_case_write_dropped(
+        stale_event = stale_case_payload(
           writer: "auto_pin",
           expected_episode_id: expected,
           current_episode_id: current,
@@ -723,6 +737,8 @@ class ConversationSession < ApplicationRecord
 
       write_focus!(kb_doc, s3_uri)
     end
+    emit_stale_case_write(stale_event)
+    pinned
   end
 
   # Unpin this session's focus. Match the stored kb_document_id first so a
@@ -1006,6 +1022,8 @@ class ConversationSession < ApplicationRecord
   def log_turn_interpreter(interpreted, result, correlation_id, user_id, photo_status)
     perception = interpreted.perception
     before_state = result&.state
+    goal = before_state.is_a?(Hash) ? before_state["goal"] : nil
+    goal = goal.is_a?(Hash) ? goal : {}
     PilotUsageLog.log(
       :turn_interpreter,
       account_id: account_id,
@@ -1017,6 +1035,8 @@ class ConversationSession < ApplicationRecord
       input_tokens: interpreted.input_tokens,
       output_tokens: interpreted.output_tokens,
       episode_id: before_state.is_a?(Hash) ? before_state["episode_id"] : nil,
+      goal_text: goal["text"].to_s.strip.first(120).presence,
+      goal_source_correlation_id: goal["correlation_id"].to_s.presence,
       route: result&.understanding&.decision,
       turn_interpreter_status: interpreted.status,
       turn_interpreter_fallback: interpreted.fallback || result&.understanding&.fallback || false,
@@ -1101,16 +1121,38 @@ class ConversationSession < ApplicationRecord
     }.to_json)
   end
 
-  def log_stale_case_write_dropped(writer:, expected_episode_id:, current_episode_id:, correlation_id:)
-    Rails.logger.info({
-      event: "stale_case_write_dropped",
-      conversation_session_id: id,
+  def stale_case_payload(writer:, expected_episode_id:, current_episode_id:, correlation_id:)
+    {
       writer: writer,
       expected_episode_id: expected_episode_id,
       current_episode_id: current_episode_id,
+      episode_id: current_episode_id,
       correlation_id: correlation_id,
       dropped: true
-    }.to_json)
+    }
+  end
+
+  def emit_stale_case_write(payload)
+    return if payload.blank?
+
+    PilotUsageLog.log(
+      "stale_case_write_dropped",
+      account_id: account_id,
+      conversation_session_id: id,
+      **payload
+    )
+  end
+
+  def emit_identity_promotion(payload, user_id: nil)
+    return if payload.blank?
+
+    PilotUsageLog.log(
+      "identity_promotion",
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: id,
+      **payload
+    )
   end
 
   def pin_document_ids(entities)
@@ -1388,8 +1430,10 @@ class ConversationSession < ApplicationRecord
   # correlation. apply_photo_fact! keeps the user-versus-photo conflict rule.
   def promote_reused_photo_identity!(correlation_id:, question:, accepted_observation:)
     episode = Rag::ActiveEpisode.parse(active_episode, now: Time.current)
-    return if episode.blank?
+    return nil if episode.blank?
 
+    observation = accepted_observation.to_h.stringify_keys
+    before_compact = compact_known_identity(episode)
     preview = Rag::PhotoRetrievalSnapshot.capture(
       episode: episode,
       question: question,
@@ -1397,9 +1441,20 @@ class ConversationSession < ApplicationRecord
       correlation_id: correlation_id
     )
     identity = preview.equipment_identity
-    return if identity.nil?
+    if identity.nil?
+      return identity_promotion_fields(
+        result: "blocked",
+        outcome_reason: "snapshot_excluded",
+        relevance_to_goal: observation["relevance_to_goal"],
+        identity_before: before_compact,
+        identity_after: before_compact,
+        correlation_id: correlation_id,
+        episode_id: episode.episode_id
+      )
+    end
 
     before = episode.to_h.deep_dup
+    conflict_count = episode.conflicts.size
     written = []
     Array(identity.facts).each do |fact|
       next unless fact["source"] == "photo"
@@ -1409,10 +1464,106 @@ class ConversationSession < ApplicationRecord
       written << fact["slot"] if apply_photo_fact!(episode, fact["slot"], fact["value"], correlation_id)
     end
     close_photo_pending!(episode, written) if Rag::HaikuQueryAnalysisFlag.owner? && written.any?
-    return if episode.to_h == before
+    if episode.to_h == before
+      return identity_promotion_fields(
+        result: "unchanged",
+        outcome_reason: "already_known",
+        relevance_to_goal: observation["relevance_to_goal"],
+        identity_before: before_compact,
+        identity_after: before_compact,
+        correlation_id: correlation_id,
+        episode_id: episode.episode_id
+      )
+    end
 
     episode.touch!(Time.current)
     update!(active_episode: episode.to_h)
+    conflicts_grew = episode.conflicts.size > conflict_count
+    if written.empty?
+      return identity_promotion_fields(
+        result: "conflict",
+        outcome_reason: "user_photo_conflict",
+        identity_conflict: true,
+        relevance_to_goal: observation["relevance_to_goal"],
+        identity_before: before_compact,
+        identity_after: compact_known_identity(episode),
+        correlation_id: correlation_id,
+        episode_id: episode.episode_id
+      )
+    end
+
+    identity_promotion_fields(
+      result: "promoted",
+      outcome_reason: "explicit_reuse",
+      identity_conflict: conflicts_grew,
+      relevance_to_goal: observation["relevance_to_goal"],
+      identity_before: before_compact,
+      identity_after: compact_known_identity(episode),
+      correlation_id: correlation_id,
+      episode_id: episode.episode_id
+    )
+  end
+
+  def first_photo_identity_promotion(before_episode, after_episode, photo_value, correlation_id)
+    return nil if before_episode.blank? || after_episode.blank?
+
+    readings = photo_value.to_h.stringify_keys
+    before_compact = compact_known_identity(before_episode)
+    fields = {
+      correlation_id: correlation_id,
+      episode_id: after_episode.episode_id,
+      relevance_to_goal: readings["relevance_to_goal"],
+      identity_before: before_compact
+    }
+    if photo_identity_blocked?(readings)
+      return fields.merge(result: "blocked", outcome_reason: "relevance_blocked", identity_after: before_compact)
+    end
+
+    conflicts_grew = after_episode.conflicts.size > before_episode.conflicts.size
+    slots_changed = %w[manufacturer model].any? { |slot| before_episode.fact(slot) != after_episode.fact(slot) }
+    after_compact = compact_known_identity(after_episode)
+    if slots_changed
+      fields.merge(
+        result: "promoted",
+        outcome_reason: "relevant_observation",
+        identity_conflict: conflicts_grew,
+        identity_after: after_compact
+      )
+    elsif conflicts_grew
+      fields.merge(
+        result: "conflict",
+        outcome_reason: "user_photo_conflict",
+        identity_conflict: true,
+        identity_after: after_compact
+      )
+    else
+      fields.merge(result: "unchanged", outcome_reason: "already_known", identity_after: before_compact)
+    end
+  end
+
+  def identity_promotion_fields(result:, outcome_reason:, identity_before:, identity_after:, correlation_id:, episode_id:, relevance_to_goal: nil, identity_conflict: false)
+    {
+      result: result,
+      outcome_reason: outcome_reason,
+      identity_before: identity_before,
+      identity_after: identity_after,
+      correlation_id: correlation_id,
+      episode_id: episode_id,
+      relevance_to_goal: relevance_to_goal,
+      identity_conflict: identity_conflict
+    }
+  end
+
+  def compact_known_identity(episode)
+    return "none" if episode.blank?
+
+    parts = %w[manufacturer model].filter_map do |slot|
+      fact = episode.fact(slot)
+      next unless fact.is_a?(Hash) && fact["status"] == "known" && fact["value"].present?
+
+      "#{slot}:#{fact['value']}:#{fact['source']}"
+    end
+    parts.presence&.join("|") || "none"
   end
 
   def apply_photo_fact!(episode, key, raw, correlation_id)

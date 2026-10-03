@@ -1,5 +1,7 @@
 # Plan tracking del piloto — Reconstrucción de interacciones humanas (2026-08-04)
 
+> **Historical implementation plan.** Current pilot traceability contract: [PILOT_TRACEABILITY.md](../PILOT_TRACEABILITY.md).
+
 **Objetivo:** que el reporte del piloto reconstruya interacciones humanas por usuario,
 unifique la evidencia de las dos rutas, mida repetición multidiaria y registre errores,
 sin confundir una interacción con una llamada LLM.

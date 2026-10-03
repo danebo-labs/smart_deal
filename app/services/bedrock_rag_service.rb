@@ -205,11 +205,12 @@ class BedrockRagService
 
     begin
       @retrieval_denied = false
+      @open_retrieval_outcome_reason = nil
       explicit_uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
       if explicit_uris.any?
         decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(explicit_uris, viewer_account: @account)
         if decision.denied?
-          return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
+          return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale, correlation_id: correlation_id)
         end
 
         entity_s3_uris = decision.uris
@@ -236,6 +237,7 @@ class BedrockRagService
       ))
         return scoped
       end
+      @open_retrieval_outcome_reason = "identity_unknown"
 
       # Apply the technician pin when the caller forced it, or when the query
       # does not name a different document. auto_scope_filter is ignored: a
@@ -253,7 +255,7 @@ class BedrockRagService
       config = enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
       if @retrieval_denied
         r1a_probe_filter(correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
-        return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
+        return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale, correlation_id: correlation_id)
       end
       applied_filter_uris = Array(@applied_pin_uris)
 
@@ -318,7 +320,7 @@ class BedrockRagService
         params = unfiltered_params
         if @retrieval_denied
           r1a_probe_filter(query_correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
-          return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
+          return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale, correlation_id: query_correlation_id)
         end
         r1a_probe_filter(query_correlation_id, question, unfiltered_params, attempt: generation_attempt)
         config = params.dig(
@@ -488,7 +490,7 @@ class BedrockRagService
         Rails.logger.info("  Citation [#{ref[:number]}]: #{ref[:title]} (#{ref[:filename]})")
       end
 
-      log_open_retrieval(query_correlation_id)
+      log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
 
       log_quality_signal(
         question:         question,
@@ -664,8 +666,8 @@ class BedrockRagService
     }
   end
 
-  def deny_retrieval_result(question:, session_id: nil, response_locale: nil)
-    log_open_retrieval(nil)
+  def deny_retrieval_result(question:, session_id: nil, response_locale: nil, correlation_id: nil)
+    log_open_retrieval(correlation_id)
     self.class.deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale)
   end
 
@@ -679,6 +681,16 @@ class BedrockRagService
     identity = resolved_equipment_identity(episode, equipment_identity)
     return nil unless identity == :malformed || (identity.respond_to?(:known?) && identity.known?)
     if identity == :malformed || !Rag::DocumentIdentityScopeFlag.enabled?
+      Rag::DocumentIdentityScopeEvent.record(
+        identity: identity.is_a?(Rag::EquipmentIdentity) ? identity : nil,
+        status: :unavailable,
+        reason: identity == :malformed ? :malformed_identity : :scope_disabled,
+        correlation_id: correlation_id,
+        account_id: account_id,
+        user_id: user_id,
+        conversation_session_id: conversation_session_id,
+        episode: episode
+      )
       return identity_closed_result(
         status: :unavailable,
         reason: identity == :malformed ? :malformed_identity : :scope_disabled,
@@ -699,12 +711,21 @@ class BedrockRagService
       correlation_id: correlation_id
     )
     if retrieval[:retrieval].to_s == DENY_RETRIEVAL
-      return deny_retrieval_result(question: question, response_locale: response_locale)
+      return deny_retrieval_result(question: question, response_locale: response_locale, correlation_id: correlation_id)
     end
 
     original = Array(retrieval[:chunks])
     applied = Rag::DocumentIdentityScope.apply(original, identity, focus_uris: entity_s3_uris)
     record_document_identity_scope(original, applied, path: "document_identity")
+    Rag::DocumentIdentityScopeEvent.record(
+      identity: identity,
+      applied: applied,
+      correlation_id: correlation_id,
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      episode: episode
+    )
     if applied.status == :unavailable
       return identity_closed_result(
         status: :unavailable,
@@ -2323,7 +2344,7 @@ class BedrockRagService
     }
   end
 
-  def log_open_retrieval(correlation_id)
+  def log_open_retrieval(correlation_id, outcome_reason: nil)
     Rails.logger.info(
       "[OPEN_RETRIEVAL] account_id=#{@account&.id} " \
         "rejected=#{@rejected_result_count.to_i} reason=#{@retrieval_denied_reason}"
@@ -2334,7 +2355,8 @@ class BedrockRagService
       correlation_id: correlation_id,
       rejected_result_count: @rejected_result_count.to_i,
       retrieval_denied_reason: @retrieval_denied_reason,
-      result: @retrieval_denied ? "deny" : "ok"
+      result: @retrieval_denied ? "deny" : "ok",
+      outcome_reason: outcome_reason
     )
   rescue StandardError => e
     Rails.logger.warn("BedrockRagService: open retrieval log failed — #{e.class}")

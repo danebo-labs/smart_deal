@@ -179,6 +179,12 @@ class Rag::PhotoObservationContinuityTest < ActiveSupport::TestCase
     assert_equal "KONE", photo.reload.visual_observation["manufacturer"]
     reused = events.find { |event| event["event"] == "photo_observation_reused" }
     assert_equal "reused", reused["cache_status"]
+    assert_equal "KONE", reused["manufacturer"]
+    assert_equal "relevant", reused["relevance_to_goal"]
+    continuity = events.find { |event| event["event"] == "photo_continuity" }
+    assert_equal "reuse", continuity["continuity_action"]
+    assert_equal "photo:reuse-segun", continuity["correlation_id"]
+    assert_equal photo.id, continuity["field_photo_id"]
   end
 
   test "new image bytes enqueue a fresh analysis and do not reuse the stored observation" do
@@ -186,14 +192,20 @@ class Rag::PhotoObservationContinuityTest < ActiveSupport::TestCase
     store_observation!(photo, manufacturer: "OTIS")
     image = { data: Base64.strict_encode64("new-bytes"), binary: "new-bytes", media_type: "image/jpeg", filename: "new.jpg" }
 
-    QueryOrchestratorService.new(
-      "según la foto",
-      images: [ image ],
-      account: accounts(:legacy),
-      field_photo_id: photo.id
-    ).execute
+    events = capture_events do
+      QueryOrchestratorService.new(
+        "según la foto",
+        images: [ image ],
+        account: accounts(:legacy),
+        field_photo_id: photo.id,
+        correlation_id: "photo:fresh"
+      ).execute
+    end
 
     args = photo_job_args
+    continuity = events.find { |event| event["event"] == "photo_continuity" }
+    assert_equal "fresh_bytes", continuity["continuity_action"]
+    assert_equal "photo:fresh", continuity["correlation_id"]
     assert args["image_token"].present?
     assert_nil args["continuity"]
     assert_not_equal photo.sha256, args["image_sha256"]
@@ -204,17 +216,58 @@ class Rag::PhotoObservationContinuityTest < ActiveSupport::TestCase
     photo = create_photo(accounts(:legacy))
     store_observation!(photo)
 
-    QueryOrchestratorService.new(
-      "revisa otra vez la foto",
-      account: accounts(:legacy),
-      field_photo_id: photo.id
-    ).execute
+    events = capture_events do
+      QueryOrchestratorService.new(
+        "revisa otra vez la foto",
+        account: accounts(:legacy),
+        field_photo_id: photo.id,
+        correlation_id: "photo:reread"
+      ).execute
+    end
 
     args = photo_job_args
+    continuity = events.find { |event| event["event"] == "photo_continuity" }
+    assert_equal "reread", continuity["continuity_action"]
+    assert_equal "photo:reread", continuity["correlation_id"]
+    assert_equal photo.id, continuity["field_photo_id"]
     assert_nil args["image_token"]
     assert_equal "reread", args["continuity"]
     assert_equal photo.id, args["field_photo_id"]
     assert_equal 0, anthropic_calls
+  end
+
+  test "a visual reference without a photo records missing_photo" do
+    events = capture_events do
+      result = QueryOrchestratorService.new(
+        "según la foto",
+        account: accounts(:legacy),
+        user_id: users(:one).id,
+        correlation_id: "photo:missing"
+      ).execute
+      assert_equal Rag::PhotoObservationContinuity::MISSING_PHOTO_MESSAGE, result[:answer]
+    end
+
+    continuity = events.find { |event| event["event"] == "photo_continuity" }
+    assert_equal "missing_photo", continuity["continuity_action"]
+    assert_equal "photo:missing", continuity["correlation_id"]
+    assert_nil continuity["field_photo_id"]
+  end
+
+  test "a non visual turn records passthrough and keeps the caller correlation" do
+    events = capture_events do
+      service = QueryOrchestratorService.new(
+        "hola",
+        account: accounts(:legacy),
+        user_id: users(:one).id,
+        correlation_id: "query:pass"
+      )
+      service.define_singleton_method(:execute_knowledge_base_query) { { answer: "ok", citations: [] } }
+      service.execute
+    end
+
+    continuity = events.find { |event| event["event"] == "photo_continuity" }
+    assert_equal "passthrough", continuity["continuity_action"]
+    assert_equal "query:pass", continuity["correlation_id"]
   end
 
   test "an explicit photo without a reread reuses the observation and does not call Anthropic" do

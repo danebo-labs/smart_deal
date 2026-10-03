@@ -1204,6 +1204,86 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
   end
 
+  test "known identity scope is durable and does not copy chunk text" do
+    secret = "Cortocircuitar BM/B1 secreto"
+    chunks = [ chunk("mono", secret, canonical_name: "Monarch") ]
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: chunks, retrieval_trace: {} } }
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "Sin procedimiento de este equipo." }
+    service.define_singleton_method(:document_identity_generator) { generator }
+    events = []
+
+    with_flag("true") do
+      events = capture_pilot_events do
+        service.send(
+          :document_identity_scope_result,
+          "no nivela en planta 3",
+          episode: orona_known_episode,
+          response_locale: :es,
+          entity_s3_uris: [],
+          entity_sources: [],
+          force_entity_filter: false,
+          account_id: accounts(:legacy).id,
+          user_id: nil,
+          conversation_session_id: nil,
+          correlation_id: "query:scope"
+        )
+      end
+    end
+
+    scope = events.find { |event| event["event"] == "document_identity_scope" }
+    assert_equal "no_compatible", scope["result"]
+    assert_includes scope["scope_needles"], "Orona"
+    assert_includes scope["scope_needles"], "PBCM-V3"
+    assert_includes scope["identity_after"], "manufacturer:Orona:photo"
+    assert_includes scope["identity_after"], "model:PBCM-V3:photo"
+    assert_equal "ep-orona", scope["episode_id"]
+    assert_equal "query:scope", scope["correlation_id"]
+    assert_not_includes JSON.generate(scope), secret
+  end
+
+  test "unknown identity open retrieval records identity_unknown and skips a required scope" do
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+      output = Struct.new(:text).new("respuesta abierta")
+      Struct.new(:output, :citations, :session_id).new(output, [], "sid")
+    end
+    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+    events = capture_pilot_events do
+      service.query(
+        "no nivela",
+        equipment_identity: nil,
+        correlation_id: "query:open",
+        output_channel: :web
+      )
+    end
+
+    open = events.find { |event| event["event"] == "open_retrieval" }
+    assert_equal "identity_unknown", open["outcome_reason"]
+    assert_equal "query:open", open["correlation_id"]
+    assert_equal "ok", open["result"]
+    assert events.none? { |event| event["event"] == "document_identity_scope" }
+  end
+
+  test "pin denial keeps correlation and does not claim identity_unknown" do
+    service = BedrockRagService.allocate
+    service.instance_variable_set(:@account, accounts(:legacy))
+    service.instance_variable_set(:@retrieval_denied, true)
+    service.instance_variable_set(:@retrieval_denied_reason, "caller_uri_denied")
+    service.instance_variable_set(:@rejected_result_count, 2)
+    events = capture_pilot_events do
+      result = service.deny_retrieval_result(question: "pregunta", correlation_id: "query:pin")
+      assert_equal "DENY_RETRIEVAL", result[:retrieval]
+    end
+
+    open = events.find { |event| event["event"] == "open_retrieval" }
+    assert_equal "query:pin", open["correlation_id"]
+    assert_equal "deny", open["result"]
+    assert_equal "caller_uri_denied", open["retrieval_denied_reason"]
+    assert_nil open["outcome_reason"]
+  end
+
   private
 
   def closed_identity_service(chunks:)
@@ -1401,6 +1481,18 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       metadata: metadata,
       chunk_sha256: Digest::SHA256.hexdigest(content)
     }
+  end
+
+  def capture_pilot_events
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    output.string.lines.filter_map do |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?("[PILOT_USAGE]")
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   def with_flag(value)

@@ -85,6 +85,10 @@ Para las 2–3 búsquedas típicas en papel / catálogos:
 
 ## Anexo: Métricas automáticas
 
+El contrato vigente de eventos, modos, artefactos y ficha por turno es
+[PILOT_TRACEABILITY.md](PILOT_TRACEABILITY.md). Este anexo es solo la guía
+de captura y revisión de la sesión.
+
 `bin/pilot_metrics` ya no depende del contenedor vivo para la serie de
 eventos: `pilot_events` es la fuente durable y el extracto de Docker es
 respaldo (`data_quality.usage_log_source` declara `db` / `log` / `db+log`).

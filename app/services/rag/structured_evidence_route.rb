@@ -476,9 +476,13 @@ module Rag
         Rails.logger.info(
           "[DOCUMENT_IDENTITY] #{ { status: "unavailable", reason: reason.to_s, path: "structured_evidence_route", fallback: false }.to_json }"
         )
+        log_document_identity_scope(identity, status: :unavailable, reason: reason)
         return []
       end
-      return Array(chunks) unless identity&.known? && DocumentIdentityScopeFlag.enabled?
+      unless identity&.known? && DocumentIdentityScopeFlag.enabled?
+        log_document_identity_scope(identity, reason: :not_required)
+        return Array(chunks)
+      end
 
       applied = DocumentIdentityScope.apply(chunks, identity, focus_uris: @entity_s3_uris)
       if applied.status == :no_compatible || applied.status == :unavailable
@@ -496,12 +500,27 @@ module Rag
           path: "structured_evidence_route"
         }.to_json }"
       )
+      log_document_identity_scope(identity, applied: applied)
       applied.chunks.each_with_index.map do |chunk, index|
         label = applied.labels[index]
         next chunk if label.blank?
 
         chunk.merge(content: "#{label}\n#{chunk[:content]}")
       end
+    end
+
+    def log_document_identity_scope(identity, applied: nil, status: nil, reason: nil)
+      DocumentIdentityScopeEvent.record(
+        identity: identity.is_a?(EquipmentIdentity) ? identity : nil,
+        applied: applied,
+        status: status,
+        reason: reason,
+        correlation_id: @correlation_id,
+        account_id: @account_id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
+        episode: @episode
+      )
     end
 
     def policy_identity

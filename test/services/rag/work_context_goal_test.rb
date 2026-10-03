@@ -222,6 +222,31 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
     assert_equal SYMPTOM, session.reload.active_episode.dig("goal", "text")
   end
 
+  test "turn telemetry keeps the durable symptom and its birth correlation" do
+    long = ("No nivela en planta 3 " + ("sigue " * 22)).squish.first(150)
+    assert_operator long.length, :>, 120
+    assert_operator long.length, :<=, Rag::ActiveEpisode::MAX_OBSERVATION_CHARS
+    session = web_session
+    events = nil
+
+    with_owner do
+      events = capture_usage do
+        ask(session, long, client(perception("new_work", observations: [ long ])), correlation: "query:new")
+        ask(session, FOLLOW, client(perception("follow_up", observations: [ FOLLOW ])), correlation: "query:follow")
+      end
+    end
+
+    opened = events.find { |event| event["event"] == "turn_interpreter" && event["correlation_id"] == "query:new" }
+    followed = events.find { |event| event["event"] == "turn_interpreter" && event["correlation_id"] == "query:follow" }
+    stored = session.reload.active_episode.dig("goal", "text")
+    assert_equal long, stored
+    assert_equal stored.first(120), opened["goal_text"]
+    assert_equal "query:new", opened["goal_source_correlation_id"]
+    assert_equal stored.first(120), followed["goal_text"]
+    assert_equal "query:new", followed["goal_source_correlation_id"]
+    assert_not_equal "query:follow", followed["goal_source_correlation_id"]
+  end
+
   private
 
   def settle(previous, raw, turn)
@@ -254,6 +279,18 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
         isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner", &block)
       end
     end
+  end
+
+  def capture_usage
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    output.string.lines.filter_map do |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?("[PILOT_USAGE]")
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   def ask(session, text, interpreter, correlation:)

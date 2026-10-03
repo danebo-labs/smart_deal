@@ -73,6 +73,39 @@ class PilotMetricsHumanFormatterTest < ActiveSupport::TestCase
     assert_equal frozen_copy, report
   end
 
+  test "prints a turn card with the goal birth correlation" do
+    report = full_report
+    report[:interactions][:by_correlation] = [
+      {
+        correlation_id: "query:follow",
+        conversation_session_id: 9,
+        citations_count: 2,
+        generation_mode: "document_identity_scope",
+        field_companion: {
+          episode_id: "ep-1",
+          interpreter_move: "follow_up",
+          goal: { text: "No nivela en planta 3", source_correlation_id: "query:new" },
+          photo: { field_photo_id: 4, continuity_action: "reuse", vision: "reused", relevance_to_goal: "uncertain" },
+          visual_identity: { manufacturer: "Orona", model: "PBCM-V3", persistence: "observation" },
+          identity_promotions: [
+            { result: "promoted", outcome_reason: "explicit_reuse", identity_before: "none", identity_after: "manufacturer:Orona:photo", identity_conflict: false }
+          ],
+          document_identity_scope: { result: "no_compatible", scope_needles: [ "Orona" ], identity_conflict: false },
+          retrieval_identity: { manufacturer: "Orona", model: "PBCM-V3", identity_after: "manufacturer:Orona:photo" },
+          retrieval: { results_count: 3, rejected_result_count: 1 },
+          execution_path: %w[turn_interpreter photo_continuity identity_promotion document_identity_scope interaction_completed]
+        }
+      }
+    ]
+
+    output = PilotMetricsHumanFormatter.new(report).to_s
+
+    assert_match(/TURN query:follow/, output)
+    assert_match(/goal:\n  text: No nivela en planta 3\n  source_correlation_id: query:new/, output)
+    assert_match(/execution_path: turn_interpreter -> photo_continuity -> identity_promotion -> document_identity_scope -> interaction_completed/, output)
+    assert_no_match(/open_retrieval/, output)
+  end
+
   private
 
   def full_report

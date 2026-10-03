@@ -15,6 +15,7 @@ class PilotMetricsHumanFormatter
       totals_section,
       adoption_section,
       interactions_section,
+      turns_section,
       repeat_usage_section,
       evidence_route_section,
       evidence_quality_section,
@@ -89,6 +90,83 @@ class PilotMetricsHumanFormatter
     failures.first(5).each do |failure|
       lines << "  #{failure[:correlation_id]} · route #{failure[:route]} · stage #{failure[:stage]} · error #{failure[:error_class]}"
     end
+    lines.join("\n")
+  end
+
+  def turns_section
+    rows = Array(report.dig(:interactions, :by_correlation))
+    cards = rows.filter_map { |row| row if row[:field_companion].present? }
+    return nil if cards.empty?
+
+    lines = [ "== Turns ==" ]
+    cards.each { |row| lines << turn_card(row) }
+    lines.join("\n\n")
+  end
+
+  def turn_card(row)
+    trace = row[:field_companion]
+    lines = [ "TURN #{row[:correlation_id]}" ]
+    lines << "session=#{row[:conversation_session_id]}" if row[:conversation_session_id]
+    lines << "episode=#{trace[:episode_id]}" if trace[:episode_id]
+    lines << "turn=#{trace[:interpreter_move]}" if trace[:interpreter_move]
+    if trace[:goal]
+      lines << "goal:"
+      lines << "  text: #{trace[:goal][:text]}"
+      lines << "  source_correlation_id: #{trace[:goal][:source_correlation_id]}" if trace[:goal][:source_correlation_id]
+    end
+    if trace[:photo]
+      photo = trace[:photo]
+      lines << "photo:"
+      lines << "  field_photo_id=#{photo[:field_photo_id]}" if photo[:field_photo_id]
+      lines << "  active=#{photo[:active_photo_id]}" if photo[:active_photo_id]
+      lines << "  relevance=#{photo[:relevance_to_goal]}" if photo[:relevance_to_goal]
+      lines << "  continuity=#{photo[:continuity_action]}" if photo[:continuity_action]
+      lines << "  vision=#{photo[:vision]}" if photo[:vision]
+    end
+    if trace[:visual_identity]
+      visual = trace[:visual_identity]
+      lines << "visual_identity:"
+      lines << "  #{visual[:manufacturer]} / #{visual[:model]}"
+      lines << "  persistence=#{visual[:persistence]}"
+    end
+    Array(trace[:identity_promotions]).each do |promotion|
+      lines << "identity_promotion:"
+      lines << "  result=#{promotion[:result]}"
+      lines << "  reason=#{promotion[:outcome_reason]}" if promotion[:outcome_reason]
+      lines << "  relevance=#{promotion[:relevance_to_goal]}" if promotion[:relevance_to_goal]
+      lines << "  before=#{promotion[:identity_before]}" if promotion[:identity_before]
+      lines << "  after=#{promotion[:identity_after]}" if promotion[:identity_after]
+      lines << "  conflict=#{promotion[:identity_conflict]}" unless promotion[:identity_conflict].nil?
+    end
+    if trace[:retrieval_identity]
+      retrieval = trace[:retrieval_identity]
+      lines << "retrieval_identity:"
+      lines << "  #{retrieval[:manufacturer]} / #{retrieval[:model]}"
+      lines << "  facts=#{retrieval[:identity_after]}" if retrieval[:identity_after]
+    end
+    if trace[:document_identity_scope]
+      scope = trace[:document_identity_scope]
+      lines << "document_identity_scope:"
+      lines << "  status=#{scope[:result]}" if scope[:result]
+      lines << "  reason=#{scope[:outcome_reason]}" if scope[:outcome_reason]
+      lines << "  needles=#{Array(scope[:scope_needles]).join(',')}" if scope[:scope_needles]
+      lines << "  conflict=#{scope[:identity_conflict]}" unless scope[:identity_conflict].nil?
+    end
+    if trace[:open_retrieval]
+      open = trace[:open_retrieval]
+      line = "open_retrieval=#{open[:result]}"
+      line = "#{line} reason=#{open[:outcome_reason]}" if open[:outcome_reason]
+      lines << line
+    end
+    if trace[:retrieval]
+      lines << "chunks: kept=#{trace[:retrieval][:results_count]} rejected=#{trace[:retrieval][:rejected_result_count]}"
+    end
+    Array(trace[:stale_case_writes]).each do |stale|
+      lines << "stale_case_write: writer=#{stale[:writer]} expected=#{stale[:expected_episode_id]} live=#{stale[:episode_id]}"
+    end
+    lines << "execution_path: #{Array(trace[:execution_path]).join(' -> ')}" if trace[:execution_path].present?
+    lines << "citations=#{row[:citations_count]}" unless row[:citations_count].nil?
+    lines << "generation_mode=#{row[:generation_mode]}" if row[:generation_mode]
     lines.join("\n")
   end
 

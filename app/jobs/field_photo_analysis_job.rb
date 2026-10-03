@@ -242,7 +242,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: correlation_id,
       route: "visual_query",
       cache_status: "reused",
-      image_digest_prefix: photo.sha256.to_s.first(12)
+      image_digest_prefix: photo.sha256.to_s.first(12),
+      field_photo_id: photo.id,
+      **photo_observation_fields(observation)
     )
     value = FieldPhotoObservation.reading_value(observation)
     delivered = deliver(
@@ -355,8 +357,18 @@ class FieldPhotoAnalysisJob < ApplicationJob
       outcome_reason: acceptance.reason,
       field_photo_id: field_photo_id,
       account_id: account_id,
-      correlation_id: correlation_id
+      correlation_id: correlation_id,
+      **photo_observation_fields(acceptance.observation)
     )
+  end
+
+  def photo_observation_fields(observation)
+    reading = observation.to_h.stringify_keys
+    {
+      relevance_to_goal: reading["relevance_to_goal"],
+      manufacturer: reading["manufacturer"],
+      model: reading["model"].presence || reading["model_visible"].presence
+    }
   end
 
   # A photo alone publishes the vision reading. A photo with a question

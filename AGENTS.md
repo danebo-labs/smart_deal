@@ -192,7 +192,8 @@ changes against cost per query, not only latency/quality.
   Invocation Logs → `bedrock_daily_costs` daily rollups) as the source of
   truth over estimated/token-counted `BedrockQuery` rows when reporting
   spend. `BedrockQuery` is call-level attribution. `[TURN_EVIDENCE]` is
-  trace only and is never a cost source.
+  trace only and is never a cost source. Event names and the turn card live
+  in [docs/PILOT_TRACEABILITY.md](docs/PILOT_TRACEABILITY.md).
 * **Internal `Retrieve` calls stay off `bedrock_queries`:** trace pure
   `Retrieve` invocations (KB warm pings, internal re-retrieves) via
   structured log, not a `bedrock_queries` row — that table's `source` enum is

@@ -18,6 +18,7 @@ architecture priorities and retrieval contract.
 | Bedrock KB, models, env vars | [BEDROCK_SETUP.md](../BEDROCK_SETUP.md) |
 | Deploy / Kamal / EC2 / RDS | [PRODUCTION.md](PRODUCTION.md) |
 | Current RAG closure evidence | [GATE9R_STATUS.md](GATE9R_STATUS.md) |
+| Pilot traceability (engineering) | [PILOT_TRACEABILITY.md](PILOT_TRACEABILITY.md) |
 
 ## Priorities (current build)
 

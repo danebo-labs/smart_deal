@@ -68,6 +68,35 @@ class PilotUsageLogTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
+  test "field companion keys stay on the line and unknown keys stay off it" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    goal = "No nivela en planta 3"
+
+    assert PilotUsageLog.log(
+      "turn_interpreter",
+      goal_text: goal,
+      goal_source_correlation_id: "query:new",
+      continuity_action: "reuse",
+      identity_conflict: false,
+      scope_needles: [ "Orona", "PBCM-V3" ],
+      chunk_text: "Cortocircuitar BM/B1 secreto"
+    )
+
+    line = output.string.lines.find { |entry| entry.include?("[PILOT_USAGE]") }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+    assert_equal goal, payload["goal_text"]
+    assert_equal "query:new", payload["goal_source_correlation_id"]
+    assert_equal "reuse", payload["continuity_action"]
+    assert_equal false, payload["identity_conflict"]
+    assert_equal [ "Orona", "PBCM-V3" ], payload["scope_needles"]
+    assert_nil payload["chunk_text"]
+    assert_not_includes line, "Cortocircuitar"
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
   test "telemetry failure never raises into the product flow" do
     failing_logger = Object.new
     failing_logger.define_singleton_method(:info) { |_message| raise "logger down" }

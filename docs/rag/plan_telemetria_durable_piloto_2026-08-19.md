@@ -1,5 +1,7 @@
 # Plan telemetría durable del piloto — Que un log rotado no vuelva a borrar un día del piloto (2026-08-19)
 
+> **Historical implementation plan.** Current pilot traceability contract: [PILOT_TRACEABILITY.md](../PILOT_TRACEABILITY.md).
+
 **Objetivo:** que ninguna interacción del piloto sea irrecuperable por rotación del log
 de Docker: (A) el pipeline de export debe poder reconstruir pregunta y respuesta
 completas desde los S3 Model Invocation Logs que ya existen y ya se pagan, y (B) la

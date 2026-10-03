@@ -1909,12 +1909,15 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     photo = create_orona_photo(relevance: "unrelated")
     calls = 0
     captured = {}
+    events = nil
 
     isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "true") do
       with_leveling_episode do |owner|
         with_analysis_service(on_call: -> { calls += 1 }) do
           capture_photo_retrieval(captured) do
-            FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "según la foto"))
+            events = capture_pilot_usage_events do
+              FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "según la foto"))
+            end
           end
         end
       end
@@ -1930,11 +1933,17 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal false, Rag::DocumentIdentityScope.applicable?(captured[:episode])
     assert_not_includes captured[:question].to_s, "Orona"
     assert_not_includes captured[:question].to_s, "PBCM-V3"
+    promoted = events.select { |event| event["event"] == "identity_promotion" && event["result"] == "promoted" }
+    assert_empty promoted
+    blocked = events.select { |event| event["event"] == "identity_promotion" && event["result"] == "blocked" }
+    assert blocked.any? { |event| event["outcome_reason"] == "relevance_blocked" }
+    assert blocked.any? { |event| event["outcome_reason"] == "snapshot_excluded" }
   end
 
   test "reused photo identity conflicts with a stated manufacturer and does not replace it" do
     photo = create_orona_photo(relevance: nil)
 
+    events = nil
     with_leveling_episode do |owner|
       episode = Rag::ActiveEpisode.parse(@session.reload.active_episode)
       episode.write_fact!(
@@ -1942,7 +1951,12 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
         correlation_id: "query:kone", at: Time.current.iso8601
       )
       @session.update!(active_episode: episode.to_h)
-      FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+      captured = {}
+      capture_photo_retrieval(captured) do
+        events = capture_pilot_usage_events do
+          FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, LEGACY_PHOTO_FOLLOW_UP))
+        end
+      end
     end
 
     episode = @session.reload.active_episode
@@ -1953,6 +1967,11 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal "Orona", conflict["photo"]
     assert_equal "PBCM-V3", episode.dig("facts", "model", "value")
     assert_equal "photo", episode.dig("facts", "model", "source")
+    promoted = events.find { |event| event["event"] == "identity_promotion" && event["result"] == "promoted" }
+    assert_equal "explicit_reuse", promoted["outcome_reason"]
+    assert_equal true, promoted["identity_conflict"]
+    assert_includes promoted["identity_after"], "manufacturer:KONE:user"
+    assert_includes promoted["identity_after"], "model:PBCM-V3:photo"
   end
 
   test "a late photo reuse does not promote identity onto the new episode" do
@@ -2016,6 +2035,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_equal true, dropped["dropped"]
     assert_equal owner_id, dropped["expected_episode_id"]
     assert_equal kept["episode_id"], dropped["current_episode_id"]
+    assert events.none? { |event| event["event"] == "identity_promotion" && event["result"] == "promoted" }
   ensure
     ConversationSession.define_method(:record_photo_observation!, original_write) if original_write
     Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
@@ -2025,10 +2045,13 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     n0_contract!("N2")
     photo = create_orona_photo(relevance: "uncertain")
     captured = {}
+    events = nil
 
     with_leveling_episode do |owner|
       capture_photo_retrieval(captured) do
-        FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "de la foto, qué reviso primero"))
+        events = capture_pilot_usage_events do
+          FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "de la foto, qué reviso primero"))
+        end
       end
     end
 
@@ -2043,6 +2066,59 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_includes captured[:question].to_s, "no nivela en planta 3"
     assert_includes captured[:question].to_s, "Orona"
     assert_includes captured[:question].to_s, "PBCM-V3"
+    reused = events.find { |event| event["event"] == "photo_observation_reused" }
+    assert_equal "uncertain", reused["relevance_to_goal"]
+    assert_equal "Orona", reused["manufacturer"]
+    assert_equal "PBCM-V3", reused["model"]
+    promotions = events.select { |event| event["event"] == "identity_promotion" }
+    assert_equal "blocked", promotions.first["result"]
+    assert_equal "relevance_blocked", promotions.first["outcome_reason"]
+    promoted = promotions.find { |event| event["result"] == "promoted" }
+    assert_equal "explicit_reuse", promoted["outcome_reason"]
+    assert_includes promoted["identity_after"], "manufacturer:Orona:photo"
+    assert_includes promoted["identity_after"], "model:PBCM-V3:photo"
+  end
+
+  test "a second reuse of the same photo identity stays unchanged" do
+    photo = create_orona_photo(relevance: "uncertain")
+    events = nil
+    captured = {}
+
+    with_leveling_episode do |owner|
+      capture_photo_retrieval(captured) do
+        FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "de la foto, qué reviso primero"))
+        events = capture_pilot_usage_events do
+          FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "de la foto otra vez"))
+        end
+      end
+    end
+
+    again = events.find { |event| event["event"] == "identity_promotion" && event["outcome_reason"] == "already_known" }
+    assert_equal "unchanged", again["result"]
+    assert_equal "Orona", @session.reload.active_episode.dig("facts", "manufacturer", "value")
+  end
+
+  test "a pilot event insert failure does not undo a reused photo promotion" do
+    photo = create_orona_photo(relevance: "uncertain")
+    original = PilotEvent.method(:insert!)
+    raised = 0
+    PilotEvent.define_singleton_method(:insert!) do |*_args, **_kwargs|
+      raised += 1
+      raise ActiveRecord::StatementInvalid, "telemetry down"
+    end
+    captured = {}
+
+    with_leveling_episode do |owner|
+      capture_photo_retrieval(captured) do
+        FieldPhotoAnalysisJob.perform_now(**reuse_job_args(photo, owner, "de la foto, qué reviso primero"))
+      end
+    end
+
+    assert_operator raised, :>, 0
+    assert_equal "Orona", @session.reload.active_episode.dig("facts", "manufacturer", "value")
+    assert_equal "PBCM-V3", @session.reload.active_episode.dig("facts", "model", "value")
+  ensure
+    PilotEvent.define_singleton_method(:insert!) { |*args, **kwargs| original.call(*args, **kwargs) } if original
   end
 
   test "foreign manufacturer chunks are reference-only for known equipment" do

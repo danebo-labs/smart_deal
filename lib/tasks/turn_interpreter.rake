@@ -252,6 +252,15 @@ module TurnInterpreterEval
     episode = outcome.episode
     problems << "goal present" if expected["goal_nil"] && episode.goal.present?
     problems << "goal #{episode.goal&.dig("text")}" if expected["goal_text"] && episode.goal&.dig("text") != expected["goal_text"]
+    stored_observations = Array(episode.observations).map { |item| item["text"].to_s }
+    Array(expected["observation_contains"]).each do |text|
+      problems << "observation missing #{text}" unless stored_observations.any? { |item| item.downcase.include?(text.to_s.downcase) }
+    end
+    Array(expected["preserved"]).each do |value|
+      kept = episode.facts.values.any? { |item| item.is_a?(Hash) && item["value"].to_s.casecmp?(value.to_s) } ||
+        Array(episode.identifiers).any? { |item| item["value"].to_s.casecmp?(value.to_s) }
+      problems << "preserved #{value}" unless kept
+    end
     problems << "facts kept" if expected["facts_empty"] && episode.facts.any?
     problems << "observations kept" if expected["observations_empty"] && episode.observations.any?
     problems << "rejected kept" if expected["rejected_empty"] && episode.rejected.any?

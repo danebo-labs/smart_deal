@@ -365,3 +365,27 @@
     decision: ready
     retrieval: true
     goal_text: "Ahora el variador no arranca en otro equipo"
+- id: mixed_photo_symptom
+  origin: reconstructed
+  turn: "Te mando una foto, ahora la puerta tampoco cierra"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: report
+    decision: ready
+    clarification_target: null
+    retrieval: true
+    goal_text: "no nivela en planta 3"
+    observation_contains: ["la puerta tampoco cierra"]
+- id: mixed_display_code
+  origin: reconstructed
+  turn: "Te puedo mostrar el display, ahora aparece E51"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: report
+    decision: ready
+    clarification_target: null
+    retrieval: true
+    goal_text: "no nivela en planta 3"
+    preserved: [E51]

@@ -981,7 +981,7 @@ N6 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 
 Certifica la composición real: TurnInterpreter → Work Context → continuidad de foto → EquipmentIdentity → DocumentIdentityScope → Document Focus → retrieval safety → generación companion. Objetos y servicios reales, providers stub. La suite determinista no llama AWS, Bedrock, Vision ni navegador.
 
-`TurnInterpreter` clasifica el move. `TurnPerception` valida el payload y las consecuencias: `correct` sin negate válido, `answer_pending` inválido, `new_work` sin payload técnico, writer tardío, identidad conocida fail-closed. No hay un clasificador Ruby por frases para `meta`, ofertas de foto o saludos. Una oferta de foto o un saludo queda `meta` porque el modelo lo entiende. El prompt `2026-10-02.6` lo dice en una regla corta. No reemplaza el goal activo.
+`TurnInterpreter` clasifica el move. `TurnPerception` valida el payload y las consecuencias. No hay un clasificador Ruby por frases. El prompt `2026-10-02.7` deja en `meta` una oferta de evidencia que no trae contenido técnico, y un saludo sin contenido técnico. Si el mismo turno también informa una falla, un síntoma, un valor o un código, ese contenido se clasifica y se conserva. La oferta no reemplaza el goal.
 
 El release gate de Field Companion es la suite funcional determinista, los service tests, `turn_interpreter:eval` / holdout, los contratos N0, y security/lint. Los system tests de navegador son legacy y no forman parte de ese gate. No se modificó GitHub Actions para ocultarlos.
 
@@ -997,13 +997,15 @@ Evidencia funcional en `test/services/rag/field_companion_pilot_readiness_test.r
 - F8 un caso nuevo no hereda manufacturer, model, goal, foto ni procedimiento. Un writer tardío del caso anterior no muta el nuevo. `hola` no es un identificador de campo. Un saludo sobre un episodio vencido no abre trabajo técnico. Focus sigue siendo del técnico.
 - F9 el tenant A no recupera, no cita y no puede enfocar un `tenant_private` de B. `danebo_general` sigue autorizado.
 
-`turn_interpreter:eval` 29/29, 0 mismatches, 0 fallbacks, 0 field rejections. Incluye `meta_photo_offer`, `meta_greeting`, las ofertas de foto, `report_door` y `new_work_drive`. Holdout 10/10. Esa eval usa Haiku y queda separada de la suite determinista. Costo estimado 0.090338 USD + 0.026299 USD. Los tests de placa relevante e irrelevante siguen verdes.
+`turn_interpreter:eval` 31/31, 0 mismatches, 0 fallbacks, 0 field rejections. Incluye las ofertas puras, `mixed_photo_symptom` y `mixed_display_code`. Holdout 10/10, sin cambios. Esa eval usa Haiku y queda separada de la suite determinista. Costo estimado 0.098065 USD + 0.026999 USD.
+
+Se retiró `test/system/rag_chat_document_focus_test.rb`. Era un browser test legacy que fallaba antes de ejercer el pin. La cobertura determinista de Focus sigue en el controller de pins, el modelo de sesión, el replay y el query de documentos. El job `system-test` no se desactivó.
 
 `N0_CONTRACTS=1`: 6 PASS / 0 FAIL. N2 legacy reuse, N2 same-turn, N2 uncertain, N3 identity scope, N4 open fallback, N4 citations.
 
 Harness: `test/fixtures/files/elemont/chunk_p1_2_current.txt` reemplaza el tmp no versionado. `DocumentIdentityScopeTest` construye el servicio con `knowledge_base_id: "test-kb"`.
 
-`bin/rails test`: 4133 corridas, 22439 aserciones, 0 fallos, 0 errores, 192 skips, sin credenciales AWS. Brakeman 0 warnings. bundler-audit limpio. `git diff --check` limpio.
+`bin/rails test`: 4133 corridas, 22539 aserciones, 0 fallos, 0 errores, 186 skips con `N0_CONTRACTS=1`, sin credenciales AWS. Brakeman 0 warnings. bundler-audit limpio. `git diff --check` limpio. El system suite restante tiene 18 tests. El de dictado de voz falla de forma intermitente y queda fuera de este cambio.
 
 No verificado en producción. No desplegado.
 

@@ -17,7 +17,7 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
-    PROMPT_VERSION = "2026-10-02.6"
+    PROMPT_VERSION = "2026-10-02.7"
     SCHEMA_VERSION = "turn_perception.3"
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)

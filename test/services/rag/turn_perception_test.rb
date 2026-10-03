@@ -276,10 +276,12 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes ids, "meta_greeting"
     assert_includes ids, "report_door"
     assert_includes ids, "new_work_drive"
+    assert_includes ids, "mixed_photo_symptom"
+    assert_includes ids, "mixed_display_code"
     %w[vis_1 vis_2 vis_3 vis_4 amb_1 amb_2 amb_2b amb_3].each do |id|
       assert_includes ids, id
     end
-    assert_equal 29, cases.size
+    assert_equal 31, cases.size
     assert cases.all? { |row| row["origin"].present? && row["expected"].is_a?(Hash) }
     assert cases.all? { |row| row["turn"].present? || row["turns"].present? }
   end

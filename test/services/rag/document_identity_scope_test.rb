@@ -860,7 +860,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   end
 
   test "a compatible Orona manual stays scoped and citable" do
-    body = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona."
+    body = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona. X17 es la entrada de nivelación."
     manual = chunk("orona", body, canonical_name: "Manual Orona PBCM-V3")
     service = closed_identity_service(chunks: [ manual ])
     rag_calls = 0
@@ -872,7 +872,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     generator = Object.new
     generator.define_singleton_method(:query) do |prompt, **|
       seen_prompt = prompt
-      "Revisar el sensor de la placa. [1]"
+      "Revisar el sensor de la placa. X17 es la entrada de nivelación. [1]"
     end
     service.define_singleton_method(:document_identity_generator) { generator }
 
@@ -886,6 +886,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_includes seen_prompt, body
     assert_not_includes seen_prompt, "# FIELD COMPANION"
     assert_includes result[:answer], "Revisar el sensor"
+    assert_includes result[:answer], "X17 es la entrada de nivelación"
     cited = [ result[:citations], result[:retrieved_citations] ].flatten.compact.map { |item| JSON.generate(item.as_json) }
     assert cited.any? { |blob| blob.include?("Manual Orona PBCM-V3") }
     assert cited.any? { |blob| blob.include?(body) }
@@ -1123,10 +1124,11 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     generator.define_singleton_method(:query) do |prompt, **|
       seen_prompt = prompt
       <<~ANSWER
-        En la foto se identifica Orona PBCM-V3.
-        En la foto se ve X17.
+        En la foto se identifica Orona PBCM-V3 y se ve X17.
+        X17 es la entrada de nivelación.
         Para acotar la nivelación quiero separar si queda pasada o corta.
         El terminal X19 va a 24 V y el código E18 indica encoder.
+        ¿Qué hace la cabina al llegar a planta 3?
       ANSWER
     end
     service.define_singleton_method(:document_identity_generator) { generator }
@@ -1153,6 +1155,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_includes result[:answer], "Orona PBCM-V3"
     assert_includes result[:answer], "X17"
     assert_includes result[:answer], "pasada o corta"
+    assert_includes result[:answer], "planta 3"
+    assert_not_includes result[:answer], "entrada de nivelación"
     assert_not_includes result[:answer], "X19"
     assert_not_includes result[:answer], "24 V"
     assert_not_includes result[:answer], "E18"

@@ -93,6 +93,22 @@ module Rag
     SERIES_LABEL_PATTERN = /\(\s*SERIE\b[^)]*\)/i.freeze
     CODE_MEANING_PATTERN = /\b(?:indica|signific\w*|means|corresponde)\b/i
     FAULT_CODE_PATTERN = /\b[A-Z]{1,3}\d{2,4}\b/
+    # Same-sentence attribution of a function to a visible identifier.
+    # Observational mention and "does it change?" do not match.
+    COMPANION_FUNCTION_ATTRIBUTION_PATTERN = /
+      \bes\s+(?:el|la)\b |
+      \bsirve\s+para\b |
+      \bcontrola(?:n)?\b |
+      \bcontrols\b |
+      \bactiva(?:n)?\b |
+      \bactivates?\b |
+      \bentrada\s+de\b |
+      \bsalida\s+de\b |
+      \bfunci[oó]n\s+de\b |
+      \binput\s+for\b |
+      \boutput\s+for\b |
+      \bcorresponds?\s+to\b
+    /ix.freeze
 
     def initialize(locale: nil)
       @locale = normalize_locale(locale)
@@ -144,10 +160,10 @@ module Rag
 
     private
 
-    # Companion answers may continue without a manual citation. A sentence
-    # that states a terminal, measured value, or fault-code meaning absent
-    # from the accepted visual observation is removed. The remaining
-    # guidance stays.
+    # Companion answers may name an identifier present in the accepted
+    # visual observation. That presence does not authorize a fault-code
+    # meaning or a terminal function. Those sentences are removed. The
+    # remaining guidance stays.
     def filter_companion_fragments(answer, evidence)
       fragments = self.class.fragments(answer)
       kept = []
@@ -172,6 +188,7 @@ module Rag
       unsupported_identifiers?(fragment, evidence) ||
         unsupported_measured_value?(fragment, evidence) ||
         unsupported_code_meaning?(fragment, evidence) ||
+        unsupported_visual_function?(fragment) ||
         unsupported_connection?(fragment, evidence) ||
         unsupported_led?(fragment, evidence) ||
         unsupported_device_function?(fragment, evidence)
@@ -193,14 +210,17 @@ module Rag
       end
     end
 
-    def unsupported_code_meaning?(fragment, evidence)
+    # A code printed on the photo is visible. It is not a definition.
+    def unsupported_code_meaning?(fragment, _evidence)
       return false unless fragment.match?(CODE_MEANING_PATTERN)
 
-      codes = fragment.scan(FAULT_CODE_PATTERN)
-      return false if codes.empty?
+      fragment.match?(FAULT_CODE_PATTERN)
+    end
 
-      known = evidence.to_s.upcase.scan(FAULT_CODE_PATTERN).to_set
-      codes.any? { |code| known.exclude?(code.upcase) }
+    def unsupported_visual_function?(fragment)
+      return false unless fragment.match?(COMPANION_FUNCTION_ATTRIBUTION_PATTERN)
+
+      identifiers_in(fragment).any? || fragment.match?(FAULT_CODE_PATTERN)
     end
 
     def unsupported_connection?(fragment, evidence)

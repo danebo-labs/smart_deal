@@ -474,6 +474,83 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     assert_equal answer, rendered
   end
 
+  test "companion guidance keeps a visible fault code named as an observation" do
+    answer = "En la foto aparece E18."
+
+    rendered = processor.call(answer, evidence: [ { content: "E18" } ], companion_guidance: true)
+
+    assert_equal answer, rendered
+  end
+
+  test "companion guidance drops the invented meaning of a visible fault code" do
+    answer = "E18 significa fallo de encoder."
+
+    rendered = processor.call(answer, evidence: [ { content: "E18" } ], companion_guidance: true)
+
+    assert_not_includes rendered, "significa"
+    assert_not_includes rendered, "encoder"
+  end
+
+  test "companion guidance keeps a visible terminal named as an observation" do
+    answer = "En la foto se ve X17."
+
+    rendered = processor.call(answer, evidence: [ { content: "X17" } ], companion_guidance: true)
+
+    assert_equal answer, rendered
+  end
+
+  test "companion guidance drops the invented function of a visible terminal" do
+    evidence = [ { content: "X17" } ]
+    [
+      "X17 es la entrada de nivelación.",
+      "X17 corresponde al sensor de nivel.",
+      "El terminal X17 controla la nivelación.",
+      "X17 sirve para la parada."
+    ].each do |answer|
+      rendered = processor.call(answer, evidence: evidence, companion_guidance: true)
+
+      assert_not_includes rendered, "nivelación"
+      assert_not_includes rendered, "sensor"
+      assert_not_includes rendered, "parada"
+    end
+  end
+
+  test "companion guidance keeps a question about a visible terminal changing" do
+    evidence = [ { content: "X17" } ]
+    [
+      "En la foto se ve X17. ¿Cambia su estado cuando ocurre la falla?",
+      "¿X17 cambia de estado cuando ocurre la falla?",
+      "Observa X17 y dime si cambia."
+    ].each do |answer|
+      rendered = processor.call(answer, evidence: evidence, companion_guidance: true)
+
+      assert_equal answer, rendered
+    end
+  end
+
+  test "companion guidance keeps the diagnosis when a visible terminal function is removed" do
+    answer = <<~TEXT
+      Quiero separar si queda pasada o corta.
+      X17 es la entrada de nivelación.
+      ¿Qué hace la cabina al llegar?
+    TEXT
+
+    rendered = processor.call(answer, evidence: [ { content: "X17" } ], companion_guidance: true)
+
+    assert_includes rendered, "pasada o corta"
+    assert_includes rendered, "Qué hace la cabina"
+    assert_not_includes rendered, "entrada de nivelación"
+  end
+
+  test "a documented terminal function stays on the normal safety path" do
+    answer = "X17 es la entrada de nivelación."
+    evidence = [ { content: "X17 es la entrada de nivelación." } ]
+
+    rendered = processor.call(answer, evidence: evidence)
+
+    assert_equal answer, rendered
+  end
+
   test "companion guidance does not turn a plain diagnostic answer into an uncited refusal" do
     answer = "Quiero separar si la hoja intenta moverse.\n¿La hoja se mueve cuando llamas?"
 

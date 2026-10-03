@@ -272,10 +272,11 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes ids, "q2_carry_identity"
     assert_includes ids, "pending_custom_identity"
     assert_includes ids, "tenant_private_designator"
+    assert_includes ids, "meta_photo_offer"
     %w[vis_1 vis_2 vis_3 vis_4 amb_1 amb_2 amb_2b amb_3].each do |id|
       assert_includes ids, id
     end
-    assert_equal 21, cases.size
+    assert_equal 22, cases.size
     assert cases.all? { |row| row["origin"].present? && row["expected"].is_a?(Hash) }
     assert cases.all? { |row| row["turn"].present? || row["turns"].present? }
   end
@@ -332,6 +333,52 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     kept = perceive(raw, "Es otro ascensor", episode: episode)
     assert_equal "new_work", kept.move
     assert_not kept.technical_payload?
+  end
+
+  test "a bare greeting stays meta and does not become the active problem" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:hi", now: Time.current)
+    episode.assign_goal!("no nivela en planta 3", correlation_id: "query:hi")
+    result = perceive(
+      {
+        "move" => "new_work",
+        "assertions" => [],
+        "observations" => [ "hola" ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      "¡Hola!",
+      episode: episode
+    )
+    decision = settle(episode, result, "¡Hola!")
+
+    assert_equal "meta", result.move
+    assert_empty result.observations
+    assert_equal "meta", decision.decision
+    assert_equal "no nivela en planta 3", episode.goal["text"]
+  end
+
+  test "an offer to send another photo stays meta and keeps the active goal" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:photo", now: Time.current)
+    episode.assign_goal!("no nivela en planta 3", correlation_id: "query:photo")
+    turn = "¿te sirve si te mando otra foto?"
+    result = perceive(
+      {
+        "move" => "new_work",
+        "assertions" => [],
+        "observations" => [ turn ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    decision = settle(episode, result, turn)
+
+    assert_equal "meta", result.move
+    assert_empty result.observations
+    assert_not result.technical_payload?
+    assert_equal "meta", decision.decision
+    assert_equal "no nivela en planta 3", episode.goal["text"]
   end
 
   private

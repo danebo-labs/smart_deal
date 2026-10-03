@@ -2218,7 +2218,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   test "chunk_p1_2 explicit rows do not open a second mapping retrieve" do
     bornera = synthetic_chunk(
-      Rails.root.join("tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt").read,
+      Rails.root.join("test/fixtures/files/elemont/chunk_p1_2_current.txt").read,
       rank: 1,
       sha: "chunk-p1-2"
     )
@@ -2248,7 +2248,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   test "chunk_p1_2 already contains H4 T1 and T2 so the designator rescue does not run" do
     bornera = synthetic_chunk(
-      Rails.root.join("tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt").read,
+      Rails.root.join("test/fixtures/files/elemont/chunk_p1_2_current.txt").read,
       rank: 1,
       sha: "chunk-p1-2"
     )

@@ -149,7 +149,7 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
   end
 
   test "presostato extract stays explicit rows and the prompt does not resolve it" do
-    fixture = Rails.root.join("tmp/elemont_patch_2026-09-23/chunk_p1_2_current.txt").read
+    fixture = Rails.root.join("test/fixtures/files/elemont/chunk_p1_2_current.txt").read
     rows = [
       "| 14 | PRESOSTATO IN |",
       "| 15 | PRESOSTATO OUT |",

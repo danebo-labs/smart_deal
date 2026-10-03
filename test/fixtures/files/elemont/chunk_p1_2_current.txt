@@ -1,0 +1,19 @@
+## Borneras
+| Terminal | Designación |
+|---|---|
+| 12 | SEGURIDAD IN |
+| 13 | SEGURIDAD OUT |
+| 14 | PRESOSTATO IN |
+| 15 | PRESOSTATO OUT |
+| 22 | SEGURIDAD OUT |
+| 23 | SEGURIDAD IN |
+| 24 | PRESOSTATO IN |
+| 25 | PRESOSTATO OUT |
+| 26 | LIMITE INFERIOR |
+| 27 | LIMITE SUPERIOR |
+| 31 | LLAMADA NIVEL 1 |
+| 32 | LLAMADA NIVEL 2 |
+
+- H4: Lámpara de señalización
+- T1: Transformador 220VAC/18VCD
+- T2: Transformador 220VAC/24VAC

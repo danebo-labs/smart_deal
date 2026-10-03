@@ -275,3 +275,15 @@
     not_move: new_work
     photo_kept: true
     retrieval: true
+- id: meta_photo_offer
+  origin: reconstructed
+  turn: "¿te sirve si te mando otra foto?"
+  focus_count: 0
+  goal: "no nivela en planta 3"
+  expected:
+    move: meta
+    decision: meta
+    clarification_target: null
+    retrieval: false
+    observations: []
+    goal_text: "no nivela en planta 3"

@@ -1,6 +1,6 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4 IMPLEMENTED LOCALLY — N5 IMPLEMENTED LOCALLY — N6 NOT STARTED`
+**Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4 IMPLEMENTED LOCALLY — N5 IMPLEMENTED LOCALLY — N6 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 **N0:** `N0 COMPLETE`
 
@@ -13,6 +13,8 @@
 **N4:** `N4 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 **N5:** `N5 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
+
+**N6:** `N6 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 
 Source of truth de este bloque. Reconcilia el diagnóstico read-only del flow real Orona PBCM-V3, la surgical review de Codex y la revisión final de Opus (`PASS WITH REQUIRED CHANGES`). Donde Opus modifica o completa a Codex, manda Opus. Baseline de código: `d3909808a3508e83851f5475368fbd52d74c0e2a`.
 
@@ -969,11 +971,39 @@ Conflicto explícito de fabricante: el prompt nombra las dos lecturas y pide res
 - N4 open fallback PASS
 - N4 citations PASS
 
-No hubo llamadas reales a Vision ni a Bedrock. N5 no está verificado en producción. N6 no empezó. `AGENTS.md` añade que, sin manual compatible, se sigue como guía Danebo. `FieldPhotoPrompt::SYSTEM_BLOCKS` no cambió.
+No hubo llamadas reales a Vision ni a Bedrock. N5 no está verificado en producción. En ese cierre N6 no había empezado. `AGENTS.md` añade que, sin manual compatible, se sigue como guía Danebo. `FieldPhotoPrompt::SYSTEM_BLOCKS` no cambió.
 
-### N6 — Integrated regression / eval
+### N6 — Functional pilot-readiness certification
 
-Flow real, same-turn, identidad desconocida, manual compatible, pins, episodio stale, tenant scoping, `turn_interpreter:eval` y holdout.
+```text
+N6 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
+```
+
+Certifica la composición real: TurnInterpreter → Work Context → continuidad de foto → EquipmentIdentity → DocumentIdentityScope → Document Focus → retrieval safety → generación companion. Objetos y servicios reales, providers stub. La suite determinista no llama AWS, Bedrock, Vision ni navegador, y no agrega pruebas de system test.
+
+El único cambio de producto está en `TurnPerception#adjust_move`. Un turno que pregunta qué necesita Danebo, sin síntoma de equipo y con un problema activo, queda `meta`: no abre un caso ni reemplaza el goal. Un saludo solo (`hola`, `hey`, `bye`, `chau`) también queda `meta`. No es un regex de una frase.
+
+Evidencia funcional en `test/services/rag/field_companion_pilot_readiness_test.rb`:
+
+- F1 replay Orona. El goal conserva "no nivela en planta 3". La foto aceptada deja Orona/PBCM-V3. Una Vision; cero en el reuse. Yida y BLT quedan reference-only. Cero fallback abierto. La respuesta es guía Danebo, con el problema y una pregunta de diagnóstico. El terminal y el significado de código inventados no salen.
+- F2 mismo turno, foto y pregunta. La identidad llega al retrieval. El goal se conserva. El job de foto no llama TurnInterpreter. Sin manual compatible sigue la guía. Con manual Orona el resultado es `:scoped`.
+- F3 "¿te sirve si te mando otra foto?" no es `new_work` y no reemplaza el goal.
+- F4 manual compatible: `:scoped`, cuerpo retenido, cita presente, `MANUAL_FACT` presente. El prompt companion no se usa.
+- F5 identidad desconocida: retrieve abierto. No `:unavailable`. No `:no_compatible` falso.
+- F6 el técnico dijo KONE y la foto aceptada dice Orona. El conflicto queda. Ningún body es `THIS JOB`. Cero fallback. No hay procedimiento KONE ni Orona. El prompt pide evidencia para resolver la identidad.
+- F7 Focus 0 deja el corpus autorizado como alcance primario. Focus N usa sólo los documentos elegidos. El manual compatible elegido es citable. El manual extranjero elegido sigue elegido, reference-only, no citable y no puede ser `MANUAL_FACT`. Discovery no escribe Focus. La precedencia es tenant, luego compatibilidad, luego Focus.
+- F8 un caso nuevo no hereda manufacturer, model, goal, foto ni procedimiento. Un writer tardío del caso anterior no muta el nuevo. `hola` no es un identificador de campo. Un saludo sobre un episodio vencido no abre trabajo técnico. Focus sigue siendo del técnico.
+- F9 el tenant A no recupera, no cita y no puede enfocar un `tenant_private` de B. `danebo_general` sigue autorizado.
+
+`turn_interpreter:eval` 22/22, incluido `meta_photo_offer`. Holdout 10/10. Esa eval usa Haiku y queda separada de la suite determinista. Costo estimado 0.070531 USD + 0.025609 USD. Los tests de placa relevante e irrelevante siguen verdes.
+
+`N0_CONTRACTS=1`: 6 PASS / 0 FAIL. N2 legacy reuse, N2 same-turn, N2 uncertain, N3 identity scope, N4 open fallback, N4 citations.
+
+Harness: `test/fixtures/files/elemont/chunk_p1_2_current.txt` reemplaza el tmp no versionado. `DocumentIdentityScopeTest` construye el servicio con `knowledge_base_id: "test-kb"`.
+
+`bin/rails test`: 4132 corridas, 22418 aserciones, 0 fallos, 0 errores, 192 skips. Brakeman 0 warnings. bundler-audit limpio. `git diff --check` limpio.
+
+No verificado en producción. No desplegado.
 
 ---
 
@@ -1146,18 +1176,11 @@ N2 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N3 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N4 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 N5 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
-N6 NOT STARTED
+N6 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED
 ```
 
-F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1, N2, N3, N4 y N5 no están verificados en producción.
+F1–F3 están cerrados en el plan anterior. F4 quedó en local dentro de N1. F5 no entra. N1–N6 no están verificados en producción.
 
-Suite local `bin/rails test` en `a3b977b`: 4118 corridas, 22104 aserciones, 5 fallos, 0 errores, 192 skips. No corregidos. Ninguno sale de N5. `scan_ruby` (Brakeman, exit 5) sigue aceptado y ya fallaba antes de N0.
+Los cinco errores de hermeticidad que quedaban en CI (tmp de Elemont y Knowledge Base real en dos tests de identidad) se cerraron en N6 sin cambiar el comportamiento de producción. La suite local queda en 0 fallos y 0 errores.
 
-El último CI verde de `main` es `2d456f865b` (2026-09-23, Field Companion Phase 1 shadow). Desde `fd333627ee` (2026-09-24, arranque de Phase 2) el job `test` está rojo. N0–N5 no lo abrieron.
-
-- `ConversationSessionCaseBoundaryTest` (`hola` tras expiry, episodio inválido): escritos en R1B, `5978748` (2026-09-30). Ya fallan en Turn Interpreter T0 `b1a4b42`. `TechnicalUnderstanding` trata `hola` como identificador y abre episodio. T1 no toca ese clasificador.
-- `RagControllerFieldCompanionTest` T-A..T-H: escrito en Phase 1 shadow, `05c2462` (2026-09-23), dentro del último CI verde. Hoy el flag on compone `Elemont` dos veces en T-B. La composición posterior lo rompió. No es N5.
-- `FieldPhotoRetentionJobTest` FK de evidencia: escrito en certificador Fase 0, `b115d80` (2026-09-08). El job no cambió después del último CI verde. Falla ahora. El commit exacto no está bisectado.
-- `Rag::TurnPerceptionTest` `deploy.yml`: escrito en Turn Interpreter T0, `b1a4b42` (2026-10-02). Falla en local porque `config/deploy.yml` está en `.gitignore` y tiene `HAIKU_QUERY_ANALYSIS_MODE: owner`. No es un archivo de N5.
-
-Siguiente paso: review de N5. No deploy. No implementar N6 todavía.
+Siguiente paso: review final del commit. No deploy.

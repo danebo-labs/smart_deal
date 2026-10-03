@@ -104,7 +104,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
         canonical_name: "Monarch", page: 84, section_identity: "Door commissioning"
       )
     ]
-    service = BedrockRagService.new(account: accounts(:legacy))
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: chunks, retrieval_trace: {} } }
     generator = Object.new
     calls = []
@@ -288,7 +288,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       chunk("cea", CEA15_BODY, canonical_name: "Manual CEA15")
     ]
     question = "¿Qué reviso?"
-    service = BedrockRagService.new(account: accounts(:legacy))
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     applied = Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[CEA15]))
     on = service.send(
       :document_identity_generation_prompt, question, applied.chunks, labels: applied.labels,
@@ -321,7 +321,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     ]
     chunks = names.zip(bodies).map { |name, body| chunk(name, body, canonical_name: name) }
     question = "Elemont MH con placa CEA15, falla en puerta 1."
-    service = BedrockRagService.new(account: accounts(:legacy))
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     applied = Rag::DocumentIdentityScope.apply(chunks, episode(identifiers: %w[MH CEA15]))
     prompt = service.send(
       :document_identity_generation_prompt, question, applied.chunks, labels: applied.labels,
@@ -345,7 +345,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       chunks: [ chunk("mh", "Procedimiento Elemont MH.", canonical_name: "Elemont MH") ],
       retrieval_trace: { "ok" => true }
     }
-    service = BedrockRagService.new(account: accounts(:legacy))
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     seen = {}
     service.define_singleton_method(:retrieve_chunks) do |_question, **kwargs|
       seen.replace(kwargs)
@@ -384,7 +384,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       chunks: [ chunk("mh", "Procedimiento Elemont MH.", canonical_name: "Elemont MH") ],
       retrieval_trace: { "ok" => true }
     }
-    service = BedrockRagService.new(account: accounts(:legacy))
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     service.define_singleton_method(:retrieve_chunks) { |*, **| retrieved }
     rag_calls = 0
     service.define_singleton_method(:fallback_retrieve) { |*, **| [] }

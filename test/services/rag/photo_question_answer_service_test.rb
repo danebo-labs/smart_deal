@@ -46,9 +46,18 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
   end
 
   test "an unavailable manual lookup returns the existing failed photo path" do
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:a" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:a" }
+      ]
+    )
     service = build_service(
       question: "no nivela en planta 3",
-      accepted_observation: { "manufacturer" => "Orona", "model" => "PBCM-V3" }
+      accepted_observation: { "manufacturer" => "Orona", "model" => "PBCM-V3", "relevance_to_goal" => "relevant" },
+      equipment_identity: identity
     )
     service.define_singleton_method(:execute_rag_query) do |*|
       RagQueryConcern::RagResult.new(
@@ -63,9 +72,81 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     result = service.call
 
     assert result[:failed]
+    assert_equal "unavailable", result[:equipment_identity_status]
     assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), result[:answer]
     assert_not_includes result[:answer], "Yida"
     assert_equal [], result[:citations]
+  end
+
+  test "a known photo without an identity snapshot fails closed before retrieval" do
+    called = false
+    service = build_service(
+      question: "no nivela en planta 3",
+      accepted_observation: {
+        "manufacturer" => "Orona",
+        "model" => "PBCM-V3",
+        "relevance_to_goal" => "relevant"
+      },
+      equipment_identity: nil
+    )
+    service.define_singleton_method(:execute_rag_query) do |*|
+      called = true
+      flunk "open retrieval"
+    end
+
+    result = service.call
+
+    assert_not called
+    assert result[:failed]
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal "missing_identity_snapshot", result[:equipment_identity_reason]
+    assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), result[:answer]
+    assert_not_includes result[:answer], "Yida"
+    assert_equal [], result[:citations]
+  end
+
+  test "a photo with no manufacturer and no model stays open" do
+    called = false
+    BedrockRagService.define_method(:query) do |*|
+      called = true
+      { answer: "búsqueda abierta", citations: [], session_id: nil }
+    end
+
+    result = build_service(
+      question: "qué es esto?",
+      accepted_observation: {
+        "manufacturer" => nil,
+        "model" => nil,
+        "relevance_to_goal" => "relevant"
+      },
+      equipment_identity: nil
+    ).call
+
+    assert called
+    assert_not result[:failed]
+    assert_equal "búsqueda abierta", result[:answer]
+  end
+
+  test "an unrelated photo does not constrain identity when the snapshot is absent" do
+    captured = nil
+    BedrockRagService.define_method(:query) do |_question, **kwargs|
+      captured = kwargs
+      { answer: "búsqueda abierta", citations: [], session_id: nil }
+    end
+
+    result = build_service(
+      question: "qué es esto?",
+      accepted_observation: {
+        "manufacturer" => "Orona",
+        "model" => "PBCM-V3",
+        "relevance_to_goal" => "unrelated"
+      },
+      equipment_identity: nil
+    ).call
+
+    assert_not result[:failed]
+    assert_nil captured[:equipment_identity]
+    assert_equal "búsqueda abierta", result[:answer]
   end
 
   test "anchors the question only with catalog-resolved tokens, omitting unresolved OCR text" do
@@ -280,7 +361,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       question: "qué marca se ve?",
       photo_value: @photo_value.merge(manufacturer: "SCHINDLER", canonical_name: "tablero secreto"),
       field_photo_id: photo.id,
-      accepted_observation: snapshot
+      accepted_observation: snapshot,
+      equipment_identity: snapshot_identity(snapshot)
     ).call
 
     assert_equal [ "VISUAL_OBSERVATION", "DANEBO_GUIDANCE" ], result[:provenance_segments].pluck("band")
@@ -314,7 +396,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
       question: "qué marca se ve?",
       photo_value: evidence,
       field_photo_id: photo.id,
-      accepted_observation: snapshot
+      accepted_observation: snapshot,
+      equipment_identity: snapshot_identity(snapshot)
     ).call
 
     assert_includes captured[:session_context], "Manufacturer: KONE"
@@ -607,6 +690,21 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     assert_not_includes captured[:question], "GECB"
     assert_includes captured[:kwargs][:session_context], "Photo Evidence"
     assert_includes captured[:kwargs][:session_context], "GECB"
+  end
+
+  def snapshot_identity(observation)
+    observation = observation.to_h.stringify_keys
+    facts = %w[manufacturer model].filter_map do |slot|
+      value = observation[slot].to_s.squish
+      next if value.blank? || value.casecmp("unknown").zero?
+
+      { "slot" => slot, "value" => value, "source" => "photo", "correlation_id" => "photo:test" }
+    end
+    Rag::EquipmentIdentity.new(
+      manufacturer: facts.find { |fact| fact["slot"] == "manufacturer" }&.dig("value"),
+      needles: facts.pluck("value"),
+      facts: facts
+    )
   end
 
   def build_service(question:, locale: "es", photo_value: @photo_value, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil)

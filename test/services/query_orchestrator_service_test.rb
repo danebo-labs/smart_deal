@@ -920,6 +920,48 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     assert_equal "OTIS", derived.send(:resolved_equipment_identity).manufacturer
   end
 
+  test "a malformed explicit identity stays required and does not fall open" do
+    open_calls = 0
+    rag = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    rag.define_singleton_method(:retrieve_and_generate_with_retry) do |*|
+      open_calls += 1
+      flunk "open retrieve_and_generate"
+    end
+    rag.define_singleton_method(:retrieve_chunks) { |*| flunk "retrieve" }
+    original_new = BedrockRagService.method(:new)
+    original_overview = Rag::DocumentOverviewResponder.method(:build)
+    original_ambiguous = Rag::AmbiguousModelResponder.method(:build)
+    original_deterministic = Rag::DeterministicRenderer.method(:build)
+    BedrockRagService.define_singleton_method(:new) { |**| rag }
+    Rag::DocumentOverviewResponder.define_singleton_method(:build) { |**| flunk "overview" }
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**| flunk "ambiguous" }
+    Rag::DeterministicRenderer.define_singleton_method(:build) { |**| flunk "deterministic" }
+    service = QueryOrchestratorService.new(
+      "pregunta",
+      account: accounts(:legacy),
+      conv_session: live_otis_session,
+      equipment_identity: { "manufacturer" => "Orona" },
+      output_channel: :web
+    )
+    service.define_singleton_method(:skip_routing?) { false }
+    service.define_singleton_method(:classify_query_intent) { QueryOrchestratorService::TOOLS[:HYBRID_QUERY] }
+    service.define_singleton_method(:execute_hybrid_query) { flunk "hybrid" }
+
+    assert service.send(:equipment_identity_required?)
+    assert_equal :malformed, service.send(:resolved_equipment_identity)
+    result = service.execute
+
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal "malformed_identity", result[:equipment_identity_reason]
+    assert_equal 0, open_calls
+    assert_not_equal "OTIS", result[:answer]
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    Rag::DocumentOverviewResponder.define_singleton_method(:build) { |**kwargs| original_overview.call(**kwargs) } if original_overview
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| original_ambiguous.call(**kwargs) } if original_ambiguous
+    Rag::DeterministicRenderer.define_singleton_method(:build) { |**kwargs| original_deterministic.call(**kwargs) } if original_deterministic
+  end
+
   test "known equipment skips terminals that do not apply the compatibility policy" do
     identity = Rag::EquipmentIdentity.new(
       manufacturer: "Orona",

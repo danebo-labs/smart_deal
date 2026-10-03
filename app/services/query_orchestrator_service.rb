@@ -365,12 +365,14 @@ class QueryOrchestratorService
     )
   end
 
-  # Known equipment makes compatibility required. Terminals that do not apply
+  # Known equipment makes compatibility required. A supplied value that is
+  # not an EquipmentIdentity is the same required state: Bedrock treats it
+  # as malformed and stays closed. Terminals that do not apply
   # DocumentIdentityScope stay off that path: overview, model disambiguation,
   # deterministic renderers, and hybrid synthesis.
   def equipment_identity_required?
     identity = resolved_equipment_identity
-    identity.is_a?(Rag::EquipmentIdentity) && identity.known?
+    identity == :malformed || (identity.is_a?(Rag::EquipmentIdentity) && identity.known?)
   end
 
   def episode_for_scope
@@ -381,11 +383,19 @@ class QueryOrchestratorService
 
   # Explicit snapshot wins. Otherwise the text path derives one identity
   # from the live episode. Supplied nil stays unknown and does not re-read.
+  # A non-nil value that is not an EquipmentIdentity stays malformed. The
+  # episode is not used to repair that transport.
   def resolved_equipment_identity
     return @resolved_equipment_identity if defined?(@resolved_equipment_identity)
 
     @resolved_equipment_identity = if @equipment_identity_supplied
-      @equipment_identity.is_a?(Rag::EquipmentIdentity) ? @equipment_identity : nil
+      if @equipment_identity.nil?
+        nil
+      elsif @equipment_identity.is_a?(Rag::EquipmentIdentity)
+        @equipment_identity
+      else
+        :malformed
+      end
     else
       Rag::EquipmentIdentity.from_episode(episode_for_scope)
     end

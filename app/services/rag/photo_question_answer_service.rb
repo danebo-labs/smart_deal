@@ -70,6 +70,7 @@ module Rag
     def call
       return nil unless Rag::PhotoQuestionFlag.enabled?
       return nil if @question.blank?
+      return unavailable_photo_lookup(reason: :missing_identity_snapshot) if missing_required_identity_snapshot?
 
       input = retrieval_input
       result = execute_rag_query(
@@ -118,17 +119,37 @@ module Rag
     # Retrieval could not run. The paid vision reading stays on the job's
     # failed path. The copy is the existing photo-question failure, not a
     # companion answer.
-    def unavailable_photo_lookup(result)
+    def unavailable_photo_lookup(result = nil, reason: nil)
       unavailable = I18n.with_locale(@locale) { I18n.t("rag.photo_question_unavailable") }
+      resolved_reason = reason || result&.equipment_identity_reason
       {
         answer: unavailable,
         citations: [],
         provenance_segments: Rag::ProvenanceSegmenter.call(answer: unavailable, citations: []),
         retrieved_citations: [],
-        generation_mode: result.generation_mode,
+        generation_mode: result&.generation_mode,
         failed: true,
-        equipment_identity_status: "unavailable"
+        equipment_identity_status: "unavailable",
+        equipment_identity_reason: resolved_reason&.to_s
       }
+    end
+
+    # The accepted photo already named equipment, and this question is tied
+    # to that photo. A missing N2 snapshot is not "unknown": unknown is an
+    # observation with no manufacturer and no model, or relevance unrelated.
+    def missing_required_identity_snapshot?
+      return false unless @equipment_identity.nil?
+      return false if @accepted_observation.blank?
+
+      observation = @accepted_observation.to_h.stringify_keys
+      return false unless PhotoRetrievalSnapshot::EPHEMERAL_RELEVANCE.include?(observation["relevance_to_goal"])
+
+      %w[manufacturer model].any? { |slot| known_visual_label?(observation[slot]) }
+    end
+
+    def known_visual_label?(value)
+      text = value.to_s.squish
+      text.present? && !text.casecmp("unknown").zero?
     end
 
     # Snapshot text when the turn already composed one. The catalog suffix

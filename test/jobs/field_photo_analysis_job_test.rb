@@ -1984,6 +1984,48 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     assert_not_includes probe[:answer], BLT_PROCEDURE
   end
 
+  test "a known photo with a missing identity snapshot keeps the paid visual reading" do
+    set_photo_question_flag("true")
+    photo = create_orona_photo(relevance: "relevant")
+    vision_calls = 0
+    open_calls = 0
+    orig_query = BedrockRagService.instance_method(:query)
+    orig_capture = Rag::PhotoRetrievalSnapshot.method(:capture)
+    BedrockRagService.define_method(:query) do |*|
+      open_calls += 1
+      { answer: YIDA_PROCEDURE, citations: [], session_id: nil }
+    end
+    Rag::PhotoRetrievalSnapshot.define_singleton_method(:capture) do |**kwargs|
+      derived = orig_capture.call(**kwargs)
+      Rag::PhotoRetrievalSnapshot::Result.new(
+        equipment_identity: nil,
+        retrieval_question: derived.retrieval_question
+      )
+    end
+
+    with_analysis_service(result: orona_plate_result(relevance: "relevant"), on_call: -> { vision_calls += 1 }) do
+      messages = capture_broadcasts(KbSyncBroadcaster.channel_for(accounts(:legacy).id)) do
+        FieldPhotoAnalysisJob.perform_now(**job_args.merge(
+          field_photo_id: photo.id,
+          question: "no nivela en planta 3"
+        ))
+      end
+
+      answer_message = messages.last
+      assert_equal 1, vision_calls
+      assert_equal 0, open_calls
+      assert_equal "photo_question_answered", answer_message["status"]
+      assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), answer_message["answer"]
+      assert_equal "Placa controladora Orona PBCM-V3", answer_message["visual_summary"]
+      assert_not_includes answer_message["answer"], YIDA_PROCEDURE
+      assert_equal [], answer_message["citations"]
+    end
+  ensure
+    BedrockRagService.define_method(:query, orig_query) if orig_query
+    Rag::PhotoRetrievalSnapshot.define_singleton_method(:capture) { |**kwargs| orig_capture.call(**kwargs) } if orig_capture
+    set_photo_question_flag(nil)
+  end
+
   def with_episode_flag(value)
     previous = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
     ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value

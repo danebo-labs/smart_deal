@@ -677,7 +677,7 @@ class BedrockRagService
                                      equipment_identity: :omit)
     Thread.current[:document_identity_scope] = nil
     identity = resolved_equipment_identity(episode, equipment_identity)
-    return nil unless identity&.known? || identity == :malformed
+    return nil unless identity == :malformed || (identity.respond_to?(:known?) && identity.known?)
     if identity == :malformed || !Rag::DocumentIdentityScopeFlag.enabled?
       return identity_closed_result(
         status: :unavailable,

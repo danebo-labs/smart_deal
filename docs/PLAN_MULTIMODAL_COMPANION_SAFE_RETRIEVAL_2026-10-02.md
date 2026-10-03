@@ -926,6 +926,8 @@ Con identidad conocida la policy es obligatoria. No hay fallback abierto. Identi
 - `:scoped` — generación documental con evidencia aplicable. Un chunk `reference_only` puede quedar en el contexto como identidad del manual. No entra a citas, `doc_refs`, `CitationAttributionGuard`, `AnswerSafetyProcessor` ni `require_cited_evidence`.
 - `:no_compatible` — el retrieval terminó y ningún body aplica, incluido retrieval vacío y conflicto explícito de fabricante. No se llama `retrieve_and_generate`. Si hay identidad de manual ajeno, la generación de ese camino sigue; sus citas salen vacías. N5 escribe el tono.
 - `:unavailable` — la policy no pudo correr: flag apagada, identidad mal formada, timeout, error de retrieval o generación vacía/rota. No se llama `retrieve_and_generate`. En foto, `PhotoQuestionAnswerService` devuelve `failed: true` con el texto ya existente de `rag.photo_question_unavailable`, así la lectura visual pagada sigue en el camino `rag_answer[:failed]`.
+- Un `equipment_identity` explícito que no es un `EquipmentIdentity` queda `:malformed` y `:unavailable`. No se normaliza a `nil` y el episodio vivo no lo repara.
+- Una foto aceptada con manufacturer o model conocido, salvo `unrelated`, exige el `EquipmentIdentity` congelado. Si ese snapshot llega `nil`, el lookup es `:unavailable` (`missing_identity_snapshot`) antes de `retrieve_and_generate`. Identidad realmente desconocida, y una foto `unrelated` sin otra identidad, siguen abiertas.
 
 `identity_applicability == "reference_only"` se anula en `DocumentIdentityScope.citable_evidence` antes de los procesadores de cita. Un `[n]` hacia ese slot no es cita final y no produce `MANUAL_FACT`.
 

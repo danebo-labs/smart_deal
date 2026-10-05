@@ -512,6 +512,70 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
   end
 
+  test "an elliptical raw turn reaches structured rescue without the composed history" do
+    composed = "EM2000 DL4 CTA ALJO\nEDEL K2 cerrojos exteriores\nEdel-k2"
+    raw = "Edel-k2"
+    episode = {
+      "goal" => { "text" => "EDEL K2 cerrojos exteriores" },
+      "identifiers" => [
+        { "value" => "EM2000", "source" => "user" },
+        { "value" => "DL4", "source" => "user" }
+      ]
+    }
+    source_uri = "s3://bucket/edel-k2.pdf"
+    KbDocument.create!(account: accounts(:legacy), s3_key: source_uri, display_name: "EDEL K2", aliases: [])
+    session = Struct.new(:active_episode, :active_entities, :id).new(
+      episode,
+      { "edel" => { "source_uri" => source_uri, "entity_type" => "document" } },
+      42
+    )
+    captured = nil
+    built = nil
+    original_structured_build = Rag::StructuredEvidenceRoute.method(:build)
+    original_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) do |**kwargs|
+      captured = kwargs
+      route = original_structured_build.call(**kwargs)
+      built = route
+      if route
+        route.define_singleton_method(:execute) do
+          Rag::StructuredEvidenceRoute::Outcome.new(status: :unavailable, result: nil)
+        end
+      end
+      route
+    end
+    rag_service = Object.new
+    rag_service.define_singleton_method(:query) { |*| { answer: "ok", citations: [], session_id: "s" } }
+    rag_service.define_singleton_method(:retrieve_chunks) { |*| { chunks: [], retrieval_trace: {} } }
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| rag_service }
+
+    QueryOrchestratorService.new(
+      composed,
+      raw_question: raw,
+      account: accounts(:legacy),
+      conv_session: session,
+      entity_s3_uris: [ source_uri ],
+      output_channel: :web,
+      response_locale: :es
+    ).execute
+
+    assert_equal composed, captured[:question]
+    assert_equal raw, captured[:raw_question]
+    assert built, "the composed pin question must still open the structured route"
+    rescue_text = built.send(:rescue_base_text)
+    assert_includes rescue_text, "cerrojos exteriores"
+    assert_includes rescue_text, raw
+    %w[EM2000 DL4 CTA ALJO].each { |token| assert_not_includes rescue_text, token }
+  ensure
+    if original_structured_build
+      Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_structured_build.call(**kwargs) }
+    end
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) } if original_new
+    original_flag.nil? ? ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED") : ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = original_flag
+  end
+
   test "flag off preserves the existing generative path" do
     original_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"

@@ -7,8 +7,10 @@
 #     bin/rails runner script/field_companion/f1_calibration_runner.rb
 #
 # F1CAL_VERSION, F1CAL_OUT, F1CAL_IDS, F1CAL_LANES, F1CAL_UNKNOWN_ONLY,
-# F1CAL_SPEND_CAP (default 1.0 for this invocation's new spend).
-# A block-file override is refused: A′ does not change the prompt.
+# F1CAL_SPEND_CAP (default 1.0 for this invocation's new spend),
+# F1CAL_LEDGER (default tmp/f1cal/aprime_ledger.json).
+# F1CAL_GROK=1 with BEDROCK_MODEL_ID=global.xai.grok-4.7 installs the
+# benchmark Converse adapter. A block-file override is refused.
 
 STDOUT.sync = true
 
@@ -18,7 +20,16 @@ Corpus = FieldCompanion::F1CalibrationCorpus
 Score = FieldCompanion::F1CalibrationScore
 
 abort "refusing F1CAL_BLOCK_FILE: the applicability block is frozen" if ENV["F1CAL_BLOCK_FILE"].present?
-abort "refusing non-Haiku model #{BedrockClient::QUERY_MODEL_ID}" unless BedrockClient::QUERY_MODEL_ID.to_s.include?("claude-haiku-4-5")
+
+grok_requested = ENV["F1CAL_GROK"] == "1"
+model_id = BedrockClient::QUERY_MODEL_ID.to_s
+if grok_requested
+  require_relative "f1_grok_generation"
+  abort "BEDROCK_MODEL_ID must be #{FieldCompanion::F1GrokGeneration::MODEL_ID}" unless model_id == FieldCompanion::F1GrokGeneration::MODEL_ID
+  FieldCompanion::F1GrokGeneration.install!
+else
+  abort "refusing non-Haiku model #{model_id}" unless model_id.include?("claude-haiku-4-5")
+end
 
 account = Account.find(4)
 ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "true"
@@ -124,13 +135,19 @@ def bucket(rows, ids, lane: nil)
 end
 
 cap = ENV.fetch("F1CAL_SPEND_CAP", "1.0").to_f
-ledger_path = Rails.root.join("tmp/f1cal/aprime_ledger.json")
+ledger_path = Rails.root.join(ENV.fetch("F1CAL_LEDGER", "tmp/f1cal/aprime_ledger.json"))
+FileUtils.mkdir_p(ledger_path.dirname)
 ledger = File.exist?(ledger_path) ? JSON.parse(File.read(ledger_path)) : { "usd" => 0.0, "runs" => [] }
 spent = ledger["usd"].to_f
-rates = BedrockQuery::BEDROCK_PRICING[BedrockClient::QUERY_MODEL_ID] || { input: 0.0, output: 0.0 }
-projected = cases.size * 0.006
+rates = if grok_requested
+  FieldCompanion::F1GrokGeneration::PRICING
+else
+  BedrockQuery::BEDROCK_PRICING[model_id] || { input: 0.0, output: 0.0 }
+end
+abort "refusing zero input price for #{model_id}" if rates[:input].to_f <= 0
+projected = cases.size * (grok_requested ? 0.05 : 0.006)
 if spent + projected > cap
-  abort "projected A′ spend #{format('%.3f', spent + projected)} exceeds cap #{cap}; not calling Bedrock"
+  abort "projected spend #{format('%.3f', spent + projected)} exceeds cap #{cap}; not calling Bedrock"
 end
 
 rows = []
@@ -148,6 +165,7 @@ cases.each do |row|
   before_prompt = F1CAL_PROMPTS.size
   before_model = F1CAL_MODEL.size
   before_job = jobs.size
+  before_grok = Array(Thread.current[:f1_grok_calls]).size
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   result = if row[:lane] == :managed
     BedrockRagService.new(account: account).query(
@@ -201,7 +219,11 @@ cases.each do |row|
   useful = outcome == "publish" && unknown && scored[:useful]
   input_tokens = case_jobs.sum { |job| job[:input_tokens].to_i }
   output_tokens = case_jobs.sum { |job| job[:output_tokens].to_i }
-  usd = (input_tokens / 1000.0 * rates[:input].to_f) + (output_tokens / 1000.0 * rates[:output].to_f)
+  cache_read_tokens = case_jobs.sum { |job| job[:cache_read_tokens].to_i }
+  grok_meta = Array(Thread.current[:f1_grok_calls])[before_grok..]
+  usd = (input_tokens / 1000.0 * rates[:input].to_f) +
+    (output_tokens / 1000.0 * rates[:output].to_f) +
+    (cache_read_tokens / 1000.0 * rates[:cache_read].to_f)
   spent += usd
   sent_prompt = F1CAL_PROMPTS[before_prompt..]&.last.to_s
   record = {
@@ -216,6 +238,9 @@ cases.each do |row|
     generic_withheld: withheld, identity_status: identity_status&.to_s,
     retrieves: retrieve_calls.size - before_retrieve, rag: rag_calls.size - before_rag,
     generation_count: case_jobs.size, input_tokens: input_tokens, output_tokens: output_tokens,
+    cache_read_tokens: cache_read_tokens,
+    reasoning_tokens: grok_meta.filter_map { |meta| meta[:reasoning_tokens] }.presence&.sum,
+    reasoning_chars: grok_meta.sum { |meta| meta[:reasoning_chars].to_i },
     latency_ms: elapsed, usd: usd.round(6),
     routes: case_jobs.map { |job| job[:route] },
     outcome_reason: result.dig(:diagnostics, :outcome_reason) || result[:equipment_identity_reason],
@@ -235,6 +260,10 @@ summary = {
   block_chars: block_text.length,
   head: `git rev-parse HEAD`.strip,
   model: BedrockClient::QUERY_MODEL_ID,
+  reasoning_effort: grok_requested ? FieldCompanion::F1GrokGeneration::REASONING_EFFORT : nil,
+  input_usd_per_1k: rates[:input],
+  output_usd_per_1k: rates[:output],
+  cache_read_usd_per_1k: rates[:cache_read],
   stopped: stopped,
   executions: rows.size,
   retrieves: retrieve_calls.size,
@@ -242,9 +271,14 @@ summary = {
   generations: jobs.size,
   input_tokens: rows.sum { |row| row[:input_tokens] },
   output_tokens: rows.sum { |row| row[:output_tokens] },
+  cache_read_tokens: rows.sum { |row| row[:cache_read_tokens].to_i },
+  reasoning_tokens: rows.filter_map { |row| row[:reasoning_tokens] }.presence&.sum,
+  reasoning_chars: rows.sum { |row| row[:reasoning_chars].to_i },
   usd: rows.sum { |row| row[:usd] }.round(6),
   p50_ms: percentile(latencies, 50),
   p95_ms: percentile(latencies, 95),
+  min_ms: latencies.min,
+  max_ms: latencies.max,
   s1: bucket(rows, Corpus::S1),
   s2: bucket(rows, Corpus::S2),
   s3: bucket(rows, unknown_ids - Corpus::S1 - Corpus::S2),

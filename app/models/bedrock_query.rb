@@ -18,7 +18,7 @@ class BedrockQuery < ApplicationRecord
   # suffixes are Anthropic Direct/Batch API spend and must NOT be reconciled
   # against the AWS bill. Native Bedrock model/profile ids are the billable set.
   AWS_BEDROCK_MODEL_PREFIXES = %w[
-    global.anthropic us.anthropic eu.anthropic apac.anthropic amazon.
+    global.anthropic us.anthropic eu.anthropic apac.anthropic amazon. global.xai
   ].freeze
 
   scope :aws_bedrock_billable, lambda {
@@ -104,6 +104,10 @@ class BedrockQuery < ApplicationRecord
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },
     'global.anthropic.claude-haiku-4-5-20251001-v1:0'  => { input: 0.001,  output: 0.005  },
     'us.anthropic.claude-haiku-4-5-20251001-v1:0'      => { input: 0.0011, output: 0.0055 },
+    # Grok 4.7 Global CRIS, Standard tier. Not the Field Companion query default.
+    # Input $2 / output $6 / cache read $0.50 per 1M tokens.
+    # https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-xai-grok-4-7.html
+    'global.xai.grok-4.7'                              => { input: 0.002,  output: 0.006, cache_read: 0.0005 },
     # Embeddings
     'amazon.titan-embed-text-v2:0'                     => { input: 0.00002, output: 0.0    },
     'amazon.nova-2-multimodal-embeddings-v1:0'         => { input: 0.0006,  output: 0.0    },

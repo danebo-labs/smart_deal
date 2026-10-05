@@ -202,4 +202,20 @@ class BedrockQueryTest < ActiveSupport::TestCase
     assert_not_same sonnet.pricing_for, sonnet55.pricing_for
     assert_equal 0.012, opus.cost
   end
+
+  test "grok 4.7 global standard does not fall through to the default rate" do
+    query = BedrockQuery.new(
+      model_id: "global.xai.grok-4.7",
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+      cache_read_tokens: 1_000_000
+    )
+    fallback = BedrockQuery.new(model_id: "global.xai.grok-4.7", input_tokens: 1000, output_tokens: 1000)
+    default_rate = BedrockQuery.new(model_id: "unknown-model", input_tokens: 1000, output_tokens: 1000)
+
+    assert_equal 8.5, query.cost
+    assert_equal 0.008, fallback.cost
+    assert_not_equal default_rate.cost, fallback.cost
+    assert_includes BedrockQuery::AWS_BEDROCK_MODEL_PREFIXES, "global.xai"
+  end
 end

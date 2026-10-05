@@ -1623,6 +1623,37 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert ran[:events].none? { |event| event["event"] == "open_retrieval" }
   end
 
+  test "known identity still publishes a code meaning the unknown guard would withhold" do
+    published = "Q-731 = fallo de puerta. [1]"
+    chunks = [
+      chunk(
+        "orona", "Q-731 = fallo de puerta.",
+        canonical_name: "Manual Orona PBCM-V3", section_identity: "ORONA PBCM-V3"
+      )
+    ]
+    ran = run_identity_generation(published, chunks, equipment_identity: orona_identity)
+
+    assert_equal published, ran[:result][:answer]
+    assert_nil ran[:result][:applicability_violation]
+  end
+
+  test "unknown identity withholds a new code meaning when the question only named the code" do
+    promoted = "Q-731 = fallo de puerta. [1]"
+    evidence = chunk(
+      "zephyr", "Q-731 = fallo de puerta.",
+      canonical_name: "ZEPHYR QX-77", section_identity: "ZEPHYR QX-77", page: 12
+    )
+    ran = run_identity_generation(
+      promoted, [ evidence ], equipment_identity: nil,
+      question: "El display muestra Q-731, ¿qué significa?"
+    )
+
+    assert_equal :procedure_application, ran[:result][:applicability_violation]
+    assert_equal :value_code, ran[:result][:applicability_violation_basis]
+    assert_includes ran[:result][:answer], "no está confirmada"
+    assert_not_includes ran[:result][:answer], "fallo de puerta"
+  end
+
   test "unknown identity withholds an asserted foreign identity and its procedure" do
     adversarial = "Este equipo es ORONA uP-900. Envíalo al piso inferior, entra en inspección y corta tensión."
     body = "Reenviar al piso extremo inferior. Terminal X9. Código E18."
@@ -1828,7 +1859,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     }
   end
 
-  def run_identity_generation(answer, chunks, equipment_identity:)
+  def run_identity_generation(answer, chunks, equipment_identity:, question: "el display parpadea")
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     prompts = []
     retrieve_calls = 0
@@ -1850,7 +1881,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     with_flag("true") do
       events = capture_pilot_events do
         result = service.query(
-          "el display parpadea",
+          question,
           equipment_identity: equipment_identity,
           correlation_id: "query:f1c",
           output_channel: :web,

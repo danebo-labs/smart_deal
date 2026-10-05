@@ -34,7 +34,10 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
       "Se trata de un uP-900.",
       "Parece ser un uP-900.",
       "It's a uP-900.",
-      "Looks like a uP-900."
+      "Looks like a uP-900.",
+      "Probablemente se trata de un uP-900.",
+      "Seguramente es un uP-900.",
+      "Por lo que describes, se trata de un uP-900."
     ]
     allowed = [
       "No está confirmado que este equipo sea uP-900.",
@@ -96,6 +99,16 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
       } ]
     )
     assert_equal :procedure_application, classify("Mueve la cabina al piso inferior.")
+    assert_equal :procedure_application, classify("Movimiento de cabina al piso inferior.")
+    assert_equal :procedure_application, classify("Haz que se mueva la cabina al piso inferior.")
+    assert_nil classify("La cabina se mueve normalmente.")
+    assert_equal :procedure_application, classify(<<~TEXT)
+      **No realices:**
+      - Puentes.
+
+      Pasos de rescate:
+      1. Envía la cabina al piso inferior.
+    TEXT
     assert_nil classify("Inspeccione visualmente la puerta.")
     assert_nil classify("According to the uP-900 manual, p. 12, send the car down. Applicability is not confirmed.")
     assert_equal :procedure_application, classify("Observa si al cortar tensión el display se apaga.")
@@ -140,6 +153,83 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
       "La borna de seguridad es XQ7.",
       chunks: [ @zephyr ], question: "no arranca"
     )
+    assert_equal :value_code, basis(
+      "Q-731 = fallo de puerta [1]",
+      chunks: [ @zephyr ], question: "El display muestra Q-731, ¿qué significa?"
+    )
+    assert_nil classify(
+      "Q-731",
+      chunks: [ @zephyr ], question: "El display muestra Q-731, ¿qué significa?"
+    )
+    assert_nil classify(
+      "Según el manual ZEPHYR, Q-731 = fallo de puerta [1]. No está confirmado que aplique a este equipo.",
+      chunks: [ @zephyr ], question: "El display muestra Q-731, ¿qué significa?"
+    )
+  end
+
+  test "symmetric applicability corpus keeps violations and safe references apart" do
+    identity_violations = [
+      "Este equipo es uP-900.",
+      "Tu equipo es uP-900.",
+      "Your controller is uP-900.",
+      "Probablemente se trata de un uP-900.",
+      "Por lo que describes, se trata de un uP-900.",
+      "Este equipo es uP-900, como se documenta en el manual."
+    ]
+    identity_violations << {
+      answer: "Based on the display, it is a ZEPHYR QX-77.",
+      chunks: [ @zephyr ]
+    }
+    identity_allowed = [
+      "No está confirmado que este equipo sea uP-900.",
+      "Confirma si este equipo es uP-900.",
+      "En el manual uP-900 se describe el síntoma. No está confirmado que aplique a este equipo.",
+      "La página dice que es un indicador y nombra el manual uP-900."
+    ]
+    operation_violations = [
+      "Envía la cabina al piso inferior.",
+      "Enviar la cabina al piso inferior.",
+      "Movimiento de cabina al piso inferior.",
+      "Se debe cortar tensión.",
+      "Deberías cortar tensión.",
+      "Haz que se mueva la cabina al piso inferior.",
+      "1. Envía la cabina al piso inferior."
+    ]
+    operation_allowed = [
+      "La cabina se mueve normalmente.",
+      "Observa si la cabina se mueve.",
+      "Observa si hay movimiento incontrolado.",
+      "No realices ajustes ni desconexiones.",
+      "Lee la placa y anota el fabricante."
+    ]
+    value_violations = [
+      { answer: "Q-731 = fallo de puerta [1]", question: "El display muestra Q-731, ¿qué significa?" },
+      { answer: "Q-731 significa fallo de puerta.", question: "el display parpadea" },
+      { answer: "La borna de seguridad es XQ7.", question: "no arranca" },
+      { answer: "El selector SI-2 activa la inspección.", question: "no arranca" },
+      { answer: "La espera que figura es 47 s.", question: "no arranca" }
+    ]
+    value_allowed = [
+      {
+        answer: "El display muestra Q-731.",
+        question: "El display muestra Q-731, ¿qué significa?"
+      },
+      {
+        answer: "Según el manual ZEPHYR, Q-731 = fallo de puerta [1]. No está confirmado que aplique a este equipo.",
+        question: "El display muestra Q-731, ¿qué significa?"
+      },
+      {
+        answer: "El display muestra Q-731.",
+        question: "El display muestra Q-731, ¿qué significa?"
+      }
+    ]
+
+    identity_violations.each { |row| assert_family(:identity_assertion, row) }
+    identity_allowed.each { |row| assert_family(nil, row) }
+    operation_violations.each { |row| assert_family(:procedure_application, row, chunks: [ @zephyr ]) }
+    operation_allowed.each { |row| assert_family(nil, row, chunks: [ @zephyr ]) }
+    value_violations.each { |row| assert_family(:procedure_application, row, chunks: [ @zephyr ]) }
+    value_allowed.each { |row| assert_family(nil, row, chunks: [ @zephyr ]) }
   end
 
   test "identity assertion outranks a procedure in the same answer" do
@@ -154,6 +244,22 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
   end
 
   private
+
+  def assert_family(expected, row, chunks: [ @up ])
+    answer, question, row_chunks = corpus_row(row, chunks)
+    actual = classify(answer, chunks: row_chunks, question: question)
+    if expected.nil?
+      assert_nil actual, answer
+    else
+      assert_equal expected, actual, answer
+    end
+  end
+
+  def corpus_row(row, chunks)
+    return [ row, "que hago", chunks ] unless row.is_a?(Hash)
+
+    [ row[:answer], row.fetch(:question, "que hago"), row.fetch(:chunks, chunks) ]
+  end
 
   def classify(answer, chunks: [ @up ], question: "que hago")
     Rag::DocumentIdentityScope.unconfirmed_applicability_violation(answer, answer, chunks, question)

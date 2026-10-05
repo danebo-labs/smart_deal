@@ -125,9 +125,15 @@ module Rag
       \b#{ES_IDENTITY_SUBJECT}\s+#{ES_IDENTITY_EQUIPMENT}#{ES_IDENTITY_GAP}\s+#{ES_IDENTITY_COPULA}\b |
       \b#{EN_IDENTITY_SUBJECT}\s+#{EN_IDENTITY_EQUIPMENT}\s+#{EN_IDENTITY_COPULA}\b |
       \b(?:he|hemos|i\s+have|i)\s+identific(?:ado|ada|o|ed)\b |
-      \bse\s+ha\s+identific(?:ado|ada)\b |
-      \A(?:se\s+trata\s+de|parece\s+ser|looks\s+like(?:\s+a)?|es\s+un|it\s+s\s+a|it\s+is\s+a)\b
+      \bse\s+ha\s+identific(?:ado|ada)\b
     /ix
+    # Subjectless copulas are assertions at the start of the unit, or after one
+    # closed hedge and/or one context clause. A hedge does not make the
+    # assignment a safe reference. Prose before that prefix is not an assertion:
+    # that is the mid-sentence false positive closed in 30a34e2.
+    SUBJECTLESS_IDENTITY_COPULA = /\b(?:se trata de|parece ser|looks like(?: a)?|es un|it s a|it is a)\b/
+    IDENTITY_HEDGE_PATTERN = /\A(?:probablemente|seguramente|posiblemente|quizas|quiza|tal vez|aparentemente|parece que|probably|possibly|likely|apparently|surely|maybe|it seems(?: that)?|it appears(?: that)?)\b\s*/
+    IDENTITY_CONTEXT_PATTERN = /\A(?:por lo que|segun lo que|based on|from what|judging by|a partir de lo que)\b(?:\s+\p{L}+){1,4}\s*/
     DEICTIC_EQUIPMENT_PATTERN = /
       \b(?:este|esta|estos|estas|tu|tus|su|mi|nuestro|nuestra|nuestros|nuestras|this|your|my|our)
       \s+(?:equipo|ascensor|elevador|controlador|maniobra|unidad|placa|cuadro|instalacion|
@@ -156,7 +162,9 @@ module Rag
       \benvi(?:ar|a|e|o|alo|ala|ad|ando|ado)\b |
       \bmov(?:er|iendo|ido)(?:lo|la)?\b |
       \bmovimiento\s+de\s+la\s+cabina\b |
+      \bmovimiento\s+de\s+cabina\s+(?:al|hacia|hasta|a)\b |
       (?<!se[[:space:]])\bmuev(?:e|a|an|as|elo|ela)\b |
+      \b(?:haz|haga|hagan|haced|hacer)\s+que\s+(?:la\s+cabina\s+)?se\s+mueva\b |
       \bllev(?:ar|a|e|ando|arlo|arla)\s+(?:la\s+|el\s+)?cabina\b |
       \b(?:send|move|bring)(?:s|ing)?\b(?:\s+\w+){0,3}\s+(?:car|cab|it)\b |
       \b(?:entrar|entra|entre|pasar|pasa|pase|paso)\s+(?:a|en|al)\s+inspeccion\b |
@@ -218,6 +226,11 @@ module Rag
           according\s+to|the\s+manual)\b
     /ix
     CHUNK_DESIGNATOR_PATTERN = /\b[A-Z]{1,4}-?\d{1,4}\b/
+    # "=" promotes a code the way "significa" does. The code itself is not hardcoded.
+    EQUALITY_CODE_MEANING_PATTERN = /
+      (?:#{CHUNK_DESIGNATOR_PATTERN}|#{AnswerSafetyProcessor::FAULT_CODE_PATTERN})
+      \s*=\s*\p{L}
+    /ix
     CHUNK_TIME_PATTERN = /\b\d+(?:[.,]\d+)?\s*(?:s|seg|segs|segundos?|seconds?)\b/i
     ApplicabilityUnit = Struct.new(:text, :paragraph_id, :index, :intro, :heading, :question, keyword_init: true)
 
@@ -427,7 +440,7 @@ module Rag
     def self.identity_unit?(normalized, patterns)
       return false if normalized.blank? || patterns.empty?
       return false unless patterns.any? { |pattern| normalized.match?(pattern) }
-      return false unless normalized.match?(IDENTITY_ASSERTION_PATTERN)
+      return false unless normalized.match?(IDENTITY_ASSERTION_PATTERN) || subjectless_identity_assertion?(normalized)
       return false if normalized.match?(IDENTITY_NON_CONFIRMATION_PATTERN)
       return false if normalized.match?(IDENTITY_CONFIRMATION_REQUEST_PATTERN)
       return false if normalized.match?(IDENTITY_DOCUMENTARY_PATTERN) && !normalized.match?(DEICTIC_EQUIPMENT_PATTERN)
@@ -435,6 +448,49 @@ module Rag
       true
     end
     private_class_method :identity_unit?
+
+    def self.subjectless_identity_assertion?(normalized)
+      match = normalized.match(SUBJECTLESS_IDENTITY_COPULA)
+      return false unless match
+
+      identity_prefix?(normalized[0...match.begin(0)].squish)
+    end
+    private_class_method :subjectless_identity_assertion?
+
+    # The text before a subjectless copula may be empty, up to two hedges,
+    # and one context clause of at most four words. Anything else is prose.
+    def self.identity_prefix?(prefix)
+      return true if prefix.blank?
+
+      rest = strip_identity_hedges(prefix, 2)
+      return true if rest.blank?
+
+      context = strip_identity_context(rest)
+      return false if context.nil?
+
+      strip_identity_hedges(context, 2).blank?
+    end
+    private_class_method :identity_prefix?
+
+    def self.strip_identity_hedges(text, limit)
+      rest = text
+      limit.times do
+        stripped = rest.sub(IDENTITY_HEDGE_PATTERN, "")
+        break if stripped == rest
+
+        rest = stripped
+      end
+      rest
+    end
+    private_class_method :strip_identity_hedges
+
+    def self.strip_identity_context(text)
+      match = text.match(IDENTITY_CONTEXT_PATTERN)
+      return nil unless match
+
+      text[match.end(0)..].to_s
+    end
+    private_class_method :strip_identity_context
 
     def self.operation_unit?(normalized)
       return false if normalized.blank?
@@ -544,7 +600,8 @@ module Rag
     private_class_method :number_unit_spans
 
     def self.promoted_code_meaning?(original, body, _question)
-      return false unless original.match?(AnswerSafetyProcessor::CODE_MEANING_PATTERN)
+      return false unless original.match?(AnswerSafetyProcessor::CODE_MEANING_PATTERN) ||
+        original.match?(EQUALITY_CODE_MEANING_PATTERN)
 
       fault_tokens(original).any? { |token| body.include?(token) }
     end
@@ -580,16 +637,20 @@ module Rag
 
     def self.applicability_units(text)
       units = []
-      heading = nil
+      pending_heading = nil
       paragraph_id = 0
       text.to_s.split(/\n[ \t]*\n/).each do |block|
         lines = block.split("\n")
         next if lines.all? { |line| line.strip.empty? }
         if lines.one? && heading_line?(lines.first)
-          heading = lines.first.strip
+          pending_heading = lines.first.strip
           next
         end
 
+        content = lines.map(&:strip).reject(&:empty?)
+        list_paragraph = content.all? { |line| line.match?(SourceFidelityGuard::LIST_ITEM) }
+        heading = heading_for_paragraph(pending_heading, list_paragraph)
+        pending_heading = nil
         intro = nil
         paragraph_units = []
         lines.each do |line|
@@ -597,15 +658,18 @@ module Rag
           next if stripped.empty?
           if heading_line?(stripped)
             heading = stripped
+            intro = nil
             next
           end
           if intro_line?(stripped)
+            heading = nil if negated_heading_ends?(heading, stripped)
             intro = stripped
             paragraph_units << unit_for(stripped, paragraph_id, intro: nil, heading: heading)
             next
           end
 
           list = stripped.match?(SourceFidelityGuard::LIST_ITEM)
+          heading = nil if heading && !list && negated_intro?(heading)
           body = list ? strip_list_marker(stripped) : stripped
           split_applicability_sentences(body).each do |sentence|
             paragraph_units << unit_for(
@@ -621,6 +685,24 @@ module Rag
       units
     end
     private_class_method :applicability_units
+
+    # A heading owns the list in its paragraph, or the next paragraph when that
+    # paragraph is only the list. It does not negate a later section. A
+    # non-negated heading still labels the immediately following paragraph so
+    # a qualification there can see it.
+    def self.heading_for_paragraph(pending, list_paragraph)
+      return nil if pending.blank?
+      return pending if list_paragraph
+      return nil if negated_intro?(pending)
+
+      pending
+    end
+    private_class_method :heading_for_paragraph
+
+    def self.negated_heading_ends?(heading, intro)
+      heading.present? && negated_intro?(heading) && !negated_intro?(intro)
+    end
+    private_class_method :negated_heading_ends?
 
     def self.unit_for(text, paragraph_id, intro:, heading:)
       ApplicabilityUnit.new(

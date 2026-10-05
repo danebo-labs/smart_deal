@@ -1470,6 +1470,29 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert outcome.result[:retrieved_citations].any?
   end
 
+  test "structured diagnostics basis uses the triggering answer and not the withheld template" do
+    procedure = "Envíalo al piso inferior."
+    chunk = identity_chunk(
+      "ZEPHYR QX-77",
+      "ZEPHYR QX-77. Enviar la cabina al piso inferior.",
+      page: 12,
+      section_identity: "ZEPHYR QX-77"
+    )
+    rag_service = FakeRagService.new([ chunk ])
+    generator = FakeGenerator.new(procedure)
+    route = unknown_identity_route("se quedó entre pisos", rag_service, generator)
+
+    outcome = nil
+    with_identity_scope("true") { outcome = route.execute }
+
+    assert_equal :procedure_application, outcome.result[:applicability_violation]
+    assert_equal :operation, outcome.result[:applicability_violation_basis]
+    assert_equal :operation, outcome.result.dig(:diagnostics, :applicability_violation_basis)
+    assert_includes outcome.result[:answer], "no está confirmada"
+    assert_not_includes outcome.result[:answer], "Envíalo"
+    assert_equal [], outcome.result[:citations]
+  end
+
   test "a pinned manual does not confirm identity on the structured route" do
     body = "Paso 11. Ajusta el interruptor Yida a 2,5 mm."
     chunk = identity_chunk("Fuji Yida", body, page: 11)

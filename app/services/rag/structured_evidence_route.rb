@@ -364,7 +364,8 @@ module Rag
           internal_answer: internal_answer,
           citation_evidence: citation_evidence,
           attribution: attribution,
-          kind: applicability_kind
+          kind: applicability_kind,
+          processed_answer: answer
         )
       end
       citations = @citation_processor.build_numbered_references(
@@ -1504,11 +1505,11 @@ module Rag
     def withhold_unconfirmed_identity_outcome(retrieval:, retrieval_ms:, expansion_ms:, local_ms:,
                                               generation_ms:, expanded_chunks:, chunks:, expansions:,
                                               prompt:, raw_answer:, generated_answer:, internal_answer:,
-                                              citation_evidence:, attribution:, kind:)
-      answer = DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
+                                              citation_evidence:, attribution:, kind:, processed_answer:)
       basis = if kind == :procedure_application
-        DocumentIdentityScope.unconfirmed_applicability_basis(answer, raw_answer, chunks, @question)
+        DocumentIdentityScope.unconfirmed_applicability_basis(processed_answer, raw_answer, chunks, @question)
       end
+      answer = DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
       DocumentIdentityScope.log_applicability_violation(kind, basis: basis)
       trace = structured_trace(
         retrieval: retrieval,

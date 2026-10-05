@@ -410,6 +410,9 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes result[:answer], "Procedimiento Elemont"
   end
 
+  # The title states no model designator. The pin compensates for that missing
+  # identity. It does not stay neutral because the word is absent from
+  # KbDocumentResolver::BRANDS.
   test "focus keeps the selected Elemont procedure when the work says KONE" do
     uri = "s3://bucket/elemont.pdf"
     body = "En Elemont revisar el contacto de nivelación BM/B1."
@@ -424,6 +427,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal "THIS JOB'S EQUIPMENT: Elemont montacargas", result.labels[0]
   end
 
+  # Fermator is reference-only because the metadata names a different known brand.
+  # Elemont stays this job because that title has no model designator.
   test "a selected VF5 chunk is not described as unselected when the work says KONE" do
     vf5_uri = "s3://bucket/vf5.pdf"
     elemont_uri = "s3://bucket/elemont.pdf"
@@ -573,6 +578,126 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal body, result.chunks.sole[:content]
   end
 
+  test "a pinned explicit ZEPHYR manual is not this job for known ORBITA" do
+    uri = "s3://bucket/zephyr.pdf"
+    body = "Enviar la cabina al piso inferior. Q-731 = fallo de puerta."
+    selected = pinned_manual("ZEPHYR QX-77", body, uri)
+    focus = [ uri ]
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], job_identity("ORBITA", "LM-5"), focus_uris: focus
+    )
+    context = Rag::DocumentIdentityScope.generation_context(result.chunks, result.labels)
+
+    assert_equal [ uri ], focus
+    assert_equal :no_compatible, result.status
+    assert_equal [ "reference_only" ], result.applicability
+    assert result.labels[0].start_with?("REFERENCE ONLY — OTHER EQUIPMENT:")
+    assert_not_includes result.labels[0], "THIS JOB"
+    assert_not_includes result.chunks[0][:content], "Enviar la cabina"
+    assert_not_includes result.chunks[0][:content], "Q-731"
+    assert_not_includes context, "THIS JOB'S EQUIPMENT:"
+    assert_not_includes context, body
+  end
+
+  test "a pinned explicit ZEPHYR manual is not this job for known Orona" do
+    uri = "s3://bucket/zephyr.pdf"
+    body = "Enviar la cabina al piso inferior."
+    selected = pinned_manual("ZEPHYR QX-77", body, uri)
+
+    result = Rag::DocumentIdentityScope.apply([ selected ], orona_identity, focus_uris: [ uri ])
+
+    assert_equal :no_compatible, result.status
+    assert_equal [ "reference_only" ], result.applicability
+    assert_not_includes result.labels[0], "THIS JOB"
+    assert_not_includes result.chunks[0][:content], "Enviar la cabina"
+  end
+
+  test "a pinned manual without an equipment designator stays neutral" do
+    uri = "s3://bucket/nivelacion.pdf"
+    body = "Revisar el contacto de nivelación."
+    selected = pinned_manual("Manual de nivelación", body, uri)
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], job_identity("ORBITA", "LM-5"), focus_uris: [ uri ]
+    )
+
+    assert_equal :scoped, result.status
+    assert_equal [ "neutral" ], result.applicability
+    assert_equal "THIS JOB'S EQUIPMENT: Manual de nivelación", result.labels[0]
+    assert_equal body, result.chunks[0][:content]
+  end
+
+  test "a pinned manual whose designator matches the known model stays applicable" do
+    uri = "s3://bucket/orbita.pdf"
+    body = "Procedimiento de rescate ORBITA LM-5."
+    selected = pinned_manual("ORBITA LM-5", body, uri)
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], job_identity("ORBITA", "LM-5"), focus_uris: [ uri ]
+    )
+
+    assert_equal :scoped, result.status
+    assert_equal [ "compatible" ], result.applicability
+    assert_equal "THIS JOB'S EQUIPMENT: ORBITA LM-5", result.labels[0]
+    assert_equal body, result.chunks[0][:content]
+  end
+
+  test "an unpinned explicit ZEPHYR manual stays reference-only for known ORBITA" do
+    body = "Enviar la cabina al piso inferior."
+    selected = chunk("zephyr", body, canonical_name: "ZEPHYR QX-77", section_identity: "ZEPHYR QX-77")
+
+    result = Rag::DocumentIdentityScope.apply([ selected ], job_identity("ORBITA", "LM-5"))
+
+    assert_equal :no_compatible, result.status
+    assert_equal [ "reference_only" ], result.applicability
+    assert_not_includes result.chunks[0][:content], "Enviar la cabina"
+  end
+
+  test "unknown identity does not treat a pinned designator as a known-identity rejection" do
+    uri = "s3://bucket/zephyr.pdf"
+    body = "Enviar la cabina al piso inferior."
+    selected = pinned_manual("ZEPHYR QX-77", body, uri)
+    unknown = {
+      "v" => 1,
+      "episode_id" => "ep-unknown",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "fault_code" => { "value" => "E18", "status" => "known", "source" => "user" }
+      },
+      "identifiers" => []
+    }
+
+    [ nil, unknown ].each do |identity|
+      result = Rag::DocumentIdentityScope.apply([ selected ], identity, focus_uris: [ uri ])
+
+      assert_equal :scoped, result.status
+      assert_equal [ "neutral" ], result.applicability
+      assert_equal body, result.chunks[0][:content]
+      assert_equal "1", result.chunks[0][:metadata]["account_id"]
+    end
+  end
+
+  test "pin applicability keeps chunk order and does not rewrite account metadata" do
+    zephyr_uri = "s3://bucket/zephyr.pdf"
+    body = "Enviar la cabina al piso inferior."
+    orbita_uri = "s3://bucket/orbita.pdf"
+    zephyr = pinned_manual("ZEPHYR QX-77", body, zephyr_uri)
+    orbita = pinned_manual("ORBITA LM-5", "Procedimiento ORBITA.", orbita_uri)
+    focus = [ zephyr_uri, orbita_uri ]
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ zephyr, orbita ], job_identity("ORBITA", "LM-5"), focus_uris: focus
+    )
+
+    assert_equal [ zephyr_uri, orbita_uri ], focus
+    assert_equal [ "reference_only", "compatible" ], result.applicability
+    assert_equal "1", result.chunks[0][:metadata]["account_id"]
+    assert_equal "1", result.chunks[1][:metadata]["account_id"]
+    assert_not_includes result.chunks[0][:content], "Enviar la cabina"
+    assert_equal "Procedimiento ORBITA.", result.chunks[1][:content]
+  end
+
   test "a pinned Fuji manual is reference-only for Orona and focus stays put" do
     fuji_uri = "s3://bucket/fuji.pdf"
     outside_uri = "s3://bucket/orona.pdf"
@@ -593,6 +718,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes result.chunks[1][:content], "secreto"
   end
 
+  # Same missing-designator case as the Elemont pin above. Fermator VF5 in the
+  # sibling test is reference-only because its metadata names another brand.
   test "a selected neutral document stays this job" do
     uri = "s3://bucket/elemont.pdf"
     body = "En Elemont revisar el contacto de nivelación BM/B1."
@@ -2012,6 +2139,24 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     else
       ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous
     end
+  end
+
+  def job_identity(manufacturer, model)
+    turn = "pin:#{model}"
+    Rag::EquipmentIdentity.new(
+      manufacturer: manufacturer,
+      needles: [ manufacturer, model ],
+      facts: [
+        { "slot" => "manufacturer", "value" => manufacturer, "source" => "user", "correlation_id" => turn },
+        { "slot" => "model", "value" => model, "source" => "user", "correlation_id" => turn }
+      ]
+    )
+  end
+
+  def pinned_manual(name, body, uri)
+    selected = chunk(name.parameterize, body, canonical_name: name, section_identity: name)
+    selected[:metadata]["original_source_uri"] = uri
+    selected
   end
 
   def chunk(document_id, content, account_id: "1", canonical_name: document_id, page: 1,

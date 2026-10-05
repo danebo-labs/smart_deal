@@ -870,9 +870,12 @@ module Rag
     # An explicit manufacturer conflict is reference-only before a selected
     # document can be accepted as neutral. A needle match is this job only
     # when that conflict is absent.
-    # A selected document that names a different KbDocumentResolver brand is
-    # reference-only. A selected document that does not name one stays
-    # THIS JOB: the pin compensates for incomplete metadata.
+    # A pin is retrieval focus. It compensates for missing identity metadata.
+    # It does not override identity metadata that is present and does not match.
+    # A different KbDocumentResolver brand is that conflict. So is an equipment
+    # designator in the identity fields, whether or not its manufacturer is in
+    # that brand list. A title with no designator, such as "Elemont montacargas",
+    # stays neutral: the pin is covering metadata that does not identify a model.
     def self.chunk_applicability(chunk, needles, membership, identity, resolution)
       return :reference_only if membership == :out
       return :reference_only if resolution.conflict
@@ -887,10 +890,22 @@ module Rag
     def self.conflicting_or_neutral(chunk, identity, resolution)
       return :neutral unless identity&.known?
       return :reference_only if conflicting_brand?(chunk, resolution)
+      return :reference_only if explicit_unmatched_identity?(chunk)
 
       :neutral
     end
     private_class_method :conflicting_or_neutral
+
+    # A model-shaped token in the identity fields is equipment identity.
+    # Absence from KbDocumentResolver::BRANDS does not make it missing.
+    # Caller already rejected a needle match, so the designator is not this job.
+    def self.explicit_unmatched_identity?(chunk)
+      text = IDENTITY_FIELDS.filter_map { |field| metadata_of(chunk)[field].presence }.join("\n")
+      return false if text.blank?
+
+      text.upcase.match?(CHUNK_DESIGNATOR_PATTERN)
+    end
+    private_class_method :explicit_unmatched_identity?
 
     def self.conflicting_brand?(chunk, resolution)
       brands = brands_in_identity(chunk)

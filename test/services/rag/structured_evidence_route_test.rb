@@ -1359,6 +1359,98 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert outcome.result[:generation_context].none? { |token| token.include?("applicability") }
   end
 
+  test "unknown identity withholds an asserted foreign identity before publication" do
+    adversarial = "Este equipo es ORONA uP-900. Envíalo al piso inferior, entra en inspección y corta tensión."
+    body = "Reenviar al piso extremo inferior. Terminal X9. Código E18."
+    chunk = identity_chunk(
+      "Listado de Averías Orona uP-900", body, page: 4, section_identity: "MANIOBRA UNIVERSAL uP-900"
+    )
+    rag_service = FakeRagService.new([ chunk ])
+    generator = FakeGenerator.new(adversarial)
+    route = unknown_identity_route("el display parpadea", rag_service, generator)
+
+    outcome = nil
+    with_identity_scope("true") { outcome = route.execute }
+    answer = outcome.result[:answer]
+
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, generator.calls.size
+    assert_includes generator.calls.first[:prompt], "UNCONFIRMED REFERENCE"
+    assert_equal :answered, outcome.status
+    assert_equal :answered, outcome.result[:route_outcome]
+    assert_equal :identity_assertion, outcome.result[:applicability_violation]
+    assert_equal :applicability_violation, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal adversarial, outcome.result.dig(:diagnostics, :raw_answer)
+    assert_includes answer, "La identidad de este equipo no está confirmada."
+    assert_includes answer, "Listado de Averías Orona uP-900, p. 4"
+    assert_not_includes answer, "Este equipo es ORONA uP-900"
+    assert_not_includes answer, "Envíalo al piso inferior"
+    assert_not_includes answer, "X9"
+    assert_not_includes answer, body
+    assert_equal [], outcome.result[:citations]
+    assert outcome.result[:retrieved_citations].any?
+    assert_equal "Listado de Averías Orona uP-900", outcome.result[:doc_refs].sole["canonical_name"]
+  end
+
+  test "known identity structured generation is not replaced by the unconfirmed withhold" do
+    published = "Este equipo es ORONA uP-900. [1]"
+    chunk = identity_chunk(
+      "Manual Orona PBCM-V3", "En PBCM-V3 el controlador es ORONA uP-900.", page: 3, section_identity: "ORONA uP-900"
+    )
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Orona",
+      needles: [ "Orona", "PBCM-V3" ],
+      facts: [
+        { "slot" => "manufacturer", "value" => "Orona", "source" => "photo", "correlation_id" => "photo:orona" },
+        { "slot" => "model", "value" => "PBCM-V3", "source" => "photo", "correlation_id" => "photo:orona" }
+      ]
+    )
+    rag_service = FakeRagService.new([ chunk ])
+    generator = FakeGenerator.new(published)
+    route = Rag::StructuredEvidenceRoute.new(
+      question: "el display parpadea",
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      equipment_identity: identity
+    )
+
+    outcome = nil
+    with_identity_scope("true") { outcome = route.execute }
+
+    assert_equal 1, generator.calls.size
+    assert_equal published, outcome.result[:answer]
+    assert_nil outcome.result[:applicability_violation]
+    assert_not_includes generator.calls.first[:prompt], "UNCONFIRMED REFERENCE"
+  end
+
+  test "unknown identity residual procedure without an identity assertion is not withheld" do
+    procedure = "Envíalo al piso inferior, entra en inspección y corta tensión."
+    chunk = identity_chunk(
+      "Listado de Averías Orona uP-900", "Reenviar al piso extremo inferior.", page: 4,
+      section_identity: "MANIOBRA UNIVERSAL uP-900"
+    )
+    assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(procedure, [ chunk ])
+
+    rag_service = FakeRagService.new([ chunk ])
+    generator = FakeGenerator.new(procedure)
+    route = unknown_identity_route("el display parpadea", rag_service, generator)
+    outcome = nil
+    with_identity_scope("true") { outcome = route.execute }
+
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, generator.calls.size
+    assert_nil outcome.result[:applicability_violation]
+    assert_not_includes outcome.result[:answer], procedure
+    assert_equal :abstained, outcome.status
+    assert_equal :citation_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+  end
+
   test "a pinned manual does not confirm identity on the structured route" do
     body = "Paso 11. Ajusta el interruptor Yida a 2,5 mm."
     chunk = identity_chunk("Fuji Yida", body, page: 11)
@@ -1547,6 +1639,21 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       },
       "identifiers" => []
     }
+  end
+
+  def unknown_identity_route(question, rag_service, generator)
+    Rag::StructuredEvidenceRoute.new(
+      question: question,
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      equipment_identity: nil
+    )
   end
 
   def identity_chunk(name, content, page:, section_identity: nil, source_uri: @source_uri)

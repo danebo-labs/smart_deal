@@ -1477,6 +1477,94 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes result[:answer], "terminal"
   end
 
+  test "unconfirmed identity assertion is read from chunk metadata" do
+    orona = chunk(
+      "up900",
+      "Reenviar al piso extremo inferior. Terminal X9. Código E18.",
+      canonical_name: "Listado de Averías Orona uP-900",
+      section_identity: "MANIOBRA UNIVERSAL uP-900",
+      page: 4
+    )
+    acme = chunk("acme", "Procedimiento secreto del terminal Z9.", canonical_name: "ACME ZX-42", page: 2)
+    tijera = chunk("tijera", "Descenso de emergencia.", canonical_name: "Manual Plataforma Tijera", page: 8)
+
+    [
+      "Este equipo es ORONA uP-900.",
+      "He identificado el controlador de este ascensor: MANIOBRA UNIVERSAL uP-900.",
+      "Según la documentación recuperada, el equipo dispone de un controlador MANIOBRA UNIVERSAL uP-900.",
+      "Este equipo es ORONA uP-900. Envíalo al piso inferior, entra en inspección y corta tensión."
+    ].each do |answer|
+      assert Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(answer, [ orona ]), answer
+    end
+
+    [
+      "No está confirmado que este ascensor sea Orona uP-900.",
+      "Confirma si este equipo es uP-900.",
+      "Confirma que el ascensor es efectivamente una Maniobra Universal uP-900.",
+      "En el manual Orona uP-900 se documenta el síntoma.",
+      "Envíalo al piso inferior, entra en inspección y corta tensión."
+    ].each do |answer|
+      assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(answer, [ orona ]), answer
+    end
+
+    assert Rag::DocumentIdentityScope.unconfirmed_identity_assertion?("Este equipo es ACME ZX-42.", [ acme ])
+    assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(
+      "En el manual ACME ZX-42 se documenta el síntoma.",
+      [ acme ]
+    )
+    assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(
+      "La documentación recuperada corresponde a una plataforma tijera.",
+      [ tijera ]
+    )
+    assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(
+      "Este equipo no es una plataforma tijera.",
+      [ tijera ]
+    )
+    assert Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(
+      "Este equipo es una plataforma tijera.",
+      [ tijera ]
+    )
+
+    aliased = chunk("fault", "Cuerpo que no debe copiarse.", canonical_name: "Fault Code List Document", page: 1)
+    aliased[:metadata]["aliases"] = [ "Listado de Averías", "Norma de Montaje 0426049", "Instrucciones Generales uP-900" ]
+    generic = chunk("fault", "Cuerpo que no debe copiarse.", canonical_name: "Fault Code List Document", page: 1)
+    display = "Según la documentación recuperada, el equipo dispone de un controlador **MANIOBRA UNIVERSAL uP-900** [1], fabricado por ORONA."
+    assert Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(display, [ aliased ])
+    assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(display, [ generic ])
+    assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(
+      "En el manual uP-900 se documenta el síntoma.",
+      [ aliased ]
+    )
+  end
+
+  test "unconfirmed reference withheld names manuals and drops the foreign procedure" do
+    body = "Reenviar al piso extremo inferior. Terminal X9. Código E18."
+    chunks = [
+      chunk("a", body, canonical_name: "Listado de Averías Orona uP-900", page: 4),
+      chunk("b", "otro cuerpo", canonical_name: "Manual Plataforma Tijera", page: 8),
+      chunk("c", "otro cuerpo", canonical_name: "Tercero", page: 1),
+      chunk("d", "otro cuerpo", canonical_name: "Cuarto", page: 2)
+    ]
+
+    spanish = Rag::DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: :es)
+    english = Rag::DocumentIdentityScope.unconfirmed_reference_withheld([ chunks.first ], locale: :en)
+
+    assert_includes spanish, "La identidad de este equipo no está confirmada."
+    assert_includes spanish, "Listado de Averías Orona uP-900, p. 4"
+    assert_includes spanish, "Manual Plataforma Tijera, p. 8"
+    assert_includes spanish, "Tercero, p. 1"
+    assert_not_includes spanish, "Cuarto"
+    assert_includes spanish, "no se aplica como procedimiento de este trabajo"
+    assert_includes spanish, "placa del cuadro o del controlador"
+    [ "piso extremo", "X9", "E18", "otro cuerpo" ].each do |foreign|
+      assert_not_includes spanish, foreign
+    end
+    assert_includes english, "This equipment identity is not confirmed."
+    assert_includes english, "Listado de Averías Orona uP-900, p. 4"
+    assert_includes english, "nameplate"
+    assert_not_includes english, "piso extremo"
+  end
+
   test "known identity generation does not receive the unknown applicability block" do
     body = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona."
     chunks = [ chunk("orona", body, canonical_name: "Manual Orona PBCM-V3") ]
@@ -1520,6 +1608,72 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_nil scope["evidence_applicability"]
     assert events.none? { |event| event["event"] == "open_retrieval" }
     assert_includes prompts.first, body
+  end
+
+  test "known identity publishes an identity sentence the unknown guard would withhold" do
+    published = "Este equipo es ORONA uP-900. [1]"
+    chunks = [ chunk("orona", "Este equipo es ORONA uP-900.", canonical_name: "Manual Orona PBCM-V3", section_identity: "ORONA uP-900") ]
+    ran = run_identity_generation(published, chunks, equipment_identity: orona_identity)
+
+    assert_equal 1, ran[:retrieve_calls]
+    assert_equal 1, ran[:prompts].size
+    assert_equal 0, ran[:rag_calls]
+    assert_equal published, ran[:result][:answer]
+    assert_nil ran[:result][:applicability_violation]
+    assert ran[:events].none? { |event| event["event"] == "open_retrieval" }
+  end
+
+  test "unknown identity withholds an asserted foreign identity and its procedure" do
+    adversarial = "Este equipo es ORONA uP-900. Envíalo al piso inferior, entra en inspección y corta tensión."
+    body = "Reenviar al piso extremo inferior. Terminal X9. Código E18."
+    evidence = chunk(
+      "up900", body,
+      canonical_name: "Listado de Averías Orona uP-900",
+      section_identity: "MANIOBRA UNIVERSAL uP-900",
+      page: 4
+    )
+    evidence[:metadata]["original_source_uri"] = "s3://bucket/up900.pdf"
+    ran = run_identity_generation(adversarial, [ evidence ], equipment_identity: nil)
+
+    open = ran[:events].find { |event| event["event"] == "open_retrieval" }
+    answer = ran[:result][:answer]
+
+    assert_equal 1, ran[:retrieve_calls]
+    assert_equal 1, ran[:prompts].size
+    assert_equal 0, ran[:rag_calls]
+    assert_includes ran[:prompts].first, "UNCONFIRMED REFERENCE"
+    assert_equal "identity_unknown", open["outcome_reason"]
+    assert_equal :identity_assertion, ran[:result][:applicability_violation]
+    assert_equal adversarial, ran[:result].dig(:diagnostics, :raw_answer)
+    assert_equal :identity_assertion, ran[:result].dig(:diagnostics, :applicability_violation)
+    assert_includes answer, "La identidad de este equipo no está confirmada."
+    assert_includes answer, "Listado de Averías Orona uP-900, p. 4"
+    assert_not_includes answer, "Este equipo es ORONA uP-900"
+    assert_not_includes answer, "Envíalo al piso inferior"
+    assert_not_includes answer, "X9"
+    assert_not_includes answer, "E18"
+    assert_equal [], ran[:result][:citations]
+    assert ran[:result][:retrieved_citations].any?
+    assert_equal "Listado de Averías Orona uP-900", ran[:result][:doc_refs].sole["canonical_name"]
+  end
+
+  test "unknown identity residual procedure without an identity assertion is not an F1c violation" do
+    procedure = "Envíalo al piso inferior, entra en inspección y corta tensión."
+    evidence = chunk(
+      "up900", "Reenviar al piso extremo inferior.",
+      canonical_name: "Listado de Averías Orona uP-900",
+      section_identity: "MANIOBRA UNIVERSAL uP-900",
+      page: 4
+    )
+    assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(procedure, [ evidence ])
+
+    ran = run_identity_generation(procedure, [ evidence ], equipment_identity: nil)
+
+    assert_equal 1, ran[:retrieve_calls]
+    assert_equal 1, ran[:prompts].size
+    assert_nil ran[:result][:applicability_violation]
+    assert_includes ran[:result][:answer], procedure
+    assert_equal "identity_unknown", ran[:events].find { |event| event["event"] == "open_retrieval" }["outcome_reason"]
   end
 
   test "a pin without confirmed identity does not suppress the applicability contract" do
@@ -1664,6 +1818,40 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       "facts" => facts,
       "identifiers" => identifiers
     }
+  end
+
+  def run_identity_generation(answer, chunks, equipment_identity:)
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    prompts = []
+    retrieve_calls = 0
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_chunks) do |*, **|
+      retrieve_calls += 1
+      { chunks: chunks, retrieval_trace: {} }
+    end
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      answer
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+
+    result = nil
+    events = []
+    with_flag("true") do
+      events = capture_pilot_events do
+        result = service.query(
+          "el display parpadea",
+          equipment_identity: equipment_identity,
+          correlation_id: "query:f1c",
+          output_channel: :web,
+          response_locale: :es,
+          include_diagnostics: true
+        )
+      end
+    end
+    { result: result, events: events, prompts: prompts, retrieve_calls: retrieve_calls, rag_calls: rag_calls }
   end
 
   def orona_identity

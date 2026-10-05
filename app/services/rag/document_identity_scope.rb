@@ -105,6 +105,68 @@ module Rag
       ].join("\n")
     end
 
+    # Post-generation check for identity_unknown_reference. Tokens come from
+    # the chunk identity fields already retrieved. A sentence is a violation
+    # only when it assigns one of those identities to the current equipment.
+    # Naming the manual, denying confirmation, or asking the technician to
+    # confirm is not an assignment.
+    ASSERTION_PATTERN = /
+      \b(?:
+        (?:este|el|la|su|mi)\s+(?:equipo|ascensor|elevador|controlador|maniobra)\s+
+          (?:es|sea|son|tiene|dispone|usa|utiliza|cuenta) |
+        (?:he|hemos)\s+identific(?:ado|ada|o) |
+        se\s+ha\s+identific(?:ado|ada) |
+        controlador\s+de\s+este\s+(?:ascensor|equipo|elevador) |
+        (?:this|the)\s+(?:equipment|elevator|lift|controller)\s+(?:is|has) |
+        i\s+have\s+identified
+      )\b
+    /ix
+    NON_ASSERTION_PATTERN = /
+      \bno\s+esta\s+confirmad |
+      \bno\s+se\s+ha\s+confirmad |
+      \bno\s+confirmad |
+      \bsin\s+confirmar |
+      \bnot\s+confirmed |
+      \bconfirm(?:a|e|ar|en|ais)?\s+(?:si|que|whether|if)\b |
+      \ben\s+el\s+manual\b |
+      \bin\s+the\s+(?:manual|document)\b |
+      \bse\s+documenta\b |
+      \b(?:the\s+manual\s+documents|is\s+documented\s+in)\b
+    /ix
+    IDENTITY_STOPWORDS = %w[
+      de la el los las un una y o en del al para por con sin sobre
+      the and of for a an to from
+      manual documento listado averias averia norma montaje pagina page
+      codigo codigos pdf png jpg jpeg
+    ].freeze
+
+    def self.unconfirmed_identity_assertion?(answer, chunks)
+      phrases = identity_phrases(chunks)
+      return false if phrases.blank? || answer.blank?
+
+      patterns = phrases.map { |phrase| /\b#{Regexp.escape(phrase)}\b/ }
+      AnswerSafetyProcessor.fragments(answer).any? do |fragment|
+        sentence = normalize_label(fragment)
+        next false if sentence.blank?
+        next false unless patterns.any? { |pattern| sentence.match?(pattern) }
+        next false if sentence.match?(NON_ASSERTION_PATTERN)
+
+        sentence.match?(ASSERTION_PATTERN)
+      end
+    end
+
+    def self.unconfirmed_reference_withheld(chunks, locale:)
+      I18n.t(
+        "rag.unconfirmed_reference_withheld",
+        locale: locale,
+        references: unconfirmed_reference_clause(chunks, locale)
+      )
+    end
+
+    def self.log_applicability_violation
+      Rails.logger.info("[APPLICABILITY_VIOLATION] identity_assertion")
+    end
+
     def self.needles(identity_or_episode)
       identity = coerce_identity(identity_or_episode)
       return [] unless identity.is_a?(EquipmentIdentity)
@@ -219,6 +281,70 @@ module Rag
       ].join("\n")
     end
     private_class_method :reference_identity
+
+    def self.identity_phrases(chunks)
+      phrases = []
+      Array(chunks).each do |chunk|
+        metadata = metadata_of(chunk)
+        phrases.concat(brands_in_identity(chunk))
+        IDENTITY_FIELDS.each do |field|
+          phrases.concat(phrases_from_identity_text(normalize_label(metadata[field])))
+        end
+        Array(metadata["aliases"]).each do |label|
+          phrases.concat(phrases_from_identity_text(normalize_label(label)))
+          phrases.concat(brands_in_label(label))
+        end
+      end
+      phrases.map { |phrase| phrase.to_s.squish }.uniq.select { |phrase| phrase.length >= 3 }
+    end
+    private_class_method :identity_phrases
+
+    def self.phrases_from_identity_text(normalized)
+      return [] if normalized.blank?
+
+      content = normalized.split.reject { |token| IDENTITY_STOPWORDS.include?(token) || token.length < 2 }
+      phrases = []
+      content.each_cons(2) { |left, right| phrases << "#{left} #{right}" }
+      content.each_with_index do |token, index|
+        phrases << "#{content[index - 1]} #{token}" if index.positive? && token.match?(/\d/)
+        phrases << token if token.match?(/\d/) && token.match?(/\p{L}/)
+      end
+      phrases.concat(content.select { |token| specific_identity_token?(token) }) if content.size <= 2
+      phrases
+    end
+    private_class_method :phrases_from_identity_text
+
+    def self.specific_identity_token?(token)
+      token.length >= 3 && !token.match?(/\A\d+\z/)
+    end
+    private_class_method :specific_identity_token?
+
+    def self.brands_in_label(label)
+      normalized = normalize_label(label)
+      return [] if normalized.blank?
+
+      KbDocumentResolver::BRANDS.select { |brand| normalized.match?(/\b#{Regexp.escape(brand)}\b/) }
+    end
+    private_class_method :brands_in_label
+
+    def self.unconfirmed_reference_clause(chunks, locale)
+      names = unconfirmed_reference_labels(chunks)
+      return I18n.t("rag.unconfirmed_reference_unnamed", locale: locale) if names.empty?
+
+      I18n.t("rag.unconfirmed_reference_clause", locale: locale, names: names.join("; "))
+    end
+    private_class_method :unconfirmed_reference_clause
+
+    def self.unconfirmed_reference_labels(chunks)
+      Array(chunks).filter_map { |chunk|
+        name = document_name(chunk)
+        next if name.blank? || name == "DATA_NOT_AVAILABLE"
+
+        page = metadata_of(chunk)["page_number"].presence
+        page.present? ? "#{name}, p. #{page}" : name
+      }.uniq.first(3)
+    end
+    private_class_method :unconfirmed_reference_labels
 
     def self.document_name(chunk)
       metadata = metadata_of(chunk)

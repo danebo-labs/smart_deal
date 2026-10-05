@@ -784,6 +784,13 @@ class BedrockRagService
     result.delete(:model_invoked)
     result[:session_id] = session_id
     result[:rag_ms] = ((Time.current - start_time) * 1000).to_i
+    withhold_unconfirmed_identity!(
+      result,
+      raw_answer: raw_answer,
+      chunks: Array(retrieval[:chunks]),
+      question: question,
+      response_locale: response_locale
+    )
     log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
     attach_generation_trace!(
       observe_unknown_reference!(
@@ -844,6 +851,9 @@ class BedrockRagService
         raw_cited_references: 0,
         attribution_dropped: guard.dropped_segments
       }
+      if result[:applicability_violation]
+        result[:diagnostics][:applicability_violation] = result[:applicability_violation]
+      end
     end
     result
   end
@@ -1045,6 +1055,17 @@ class BedrockRagService
   end
 
   private
+
+  def withhold_unconfirmed_identity!(result, raw_answer:, chunks:, question:, response_locale:)
+    return unless Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(result[:answer], chunks) ||
+                  Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(raw_answer, chunks)
+
+    locale = effective_response_locale(question, response_locale: response_locale)
+    result[:answer] = Rag::DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
+    result[:citations] = []
+    result[:applicability_violation] = :identity_assertion
+    Rag::DocumentIdentityScope.log_applicability_violation
+  end
 
   def retrieval_trace(resolved_scope_s3_uris:, applied_filter_s3_uris:,
                       force_entity_filter:, vector_search_configuration:)

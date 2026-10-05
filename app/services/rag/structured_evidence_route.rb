@@ -347,6 +347,24 @@ module Rag
         question: @question, citations: citation_evidence
       ).call(answer)
       answer = attribution.answer
+      if unconfirmed_identity_violation?(raw_answer, answer, chunks)
+        return withhold_unconfirmed_identity_outcome(
+          retrieval: retrieval,
+          retrieval_ms: retrieval_ms,
+          expansion_ms: expansion_ms,
+          local_ms: local_before_generation_ms + elapsed_ms(local_after_generation_started),
+          generation_ms: generation_ms,
+          expanded_chunks: expanded_chunks,
+          chunks: chunks,
+          expansions: expansions,
+          prompt: prompt,
+          raw_answer: raw_answer,
+          generated_answer: generated_answer,
+          internal_answer: internal_answer,
+          citation_evidence: citation_evidence,
+          attribution: attribution
+        )
+      end
       citations = @citation_processor.build_numbered_references(
         citation_evidence,
         answer,
@@ -1473,6 +1491,72 @@ module Rag
       return false unless markers.all? { |number| number.between?(1, chunk_count) }
 
       citations.pluck(:number).sort == markers.uniq.sort
+    end
+
+    def unconfirmed_identity_violation?(raw_answer, answer, chunks)
+      return false unless @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+
+      DocumentIdentityScope.unconfirmed_identity_assertion?(answer, chunks) ||
+        DocumentIdentityScope.unconfirmed_identity_assertion?(raw_answer, chunks)
+    end
+
+    def withhold_unconfirmed_identity_outcome(retrieval:, retrieval_ms:, expansion_ms:, local_ms:,
+                                              generation_ms:, expanded_chunks:, chunks:, expansions:,
+                                              prompt:, raw_answer:, generated_answer:, internal_answer:,
+                                              citation_evidence:, attribution:)
+      answer = DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
+      DocumentIdentityScope.log_applicability_violation
+      trace = structured_trace(
+        retrieval: retrieval,
+        retrieval_ms: retrieval_ms,
+        expansion_ms: expansion_ms,
+        local_ms: local_ms,
+        generation_ms: generation_ms,
+        chunks: chunks,
+        expansions: expansions
+      )
+      log_route(
+        expansions: expansions,
+        timings: trace[:structured_route],
+        answer: answer,
+        outcome: :answered,
+        reason: :applicability_violation,
+        prompt: prompt,
+        raw_answer: raw_answer,
+        attribution_dropped: attribution&.dropped_segments&.size.to_i,
+        chunks: chunks,
+        citations: [],
+        attribution: attribution
+      )
+      result = {
+        answer: answer,
+        citations: [],
+        retrieved_citations: citation_evidence,
+        doc_refs: doc_refs(chunks),
+        retrieval_trace: trace,
+        session_id: nil,
+        generation_mode: GENERATION_MODE,
+        model_invoked: true,
+        retrieve_ms: retrieval_ms,
+        generation_ms: generation_ms,
+        route_outcome: :answered,
+        applicability_violation: :identity_assertion,
+        retrieved_chunk_sha256s: chunks.pluck(:chunk_sha256),
+        correlation_id: @correlation_id,
+        diagnostics: {
+          raw_answer: raw_answer,
+          normalized_answer: generated_answer,
+          internal_answer: internal_answer,
+          retrieved_chunks: expanded_chunks,
+          generation_chunks: chunks,
+          safety_evidence_chunks: citation_evidence,
+          expansions: expansions,
+          outcome_reason: :applicability_violation,
+          applicability_violation: :identity_assertion
+        }
+      }
+      attach_generation_trace!(result, prompt)
+      Outcome.new(status: :answered, result: result)
     end
 
     def abstained_outcome(reason:, retrieval:, retrieval_ms:, expansion_ms:, expanded_chunks:,

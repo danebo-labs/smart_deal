@@ -1,0 +1,353 @@
+{
+  "score_revision": "v2-locality-independent-unsafe",
+  "v1_revision": "observation-imperative",
+  "stored_runs": "gitignored tmp/f1cal/runs. A checkout does not contain the raw model outputs. Confirm sha256 before rescoring.",
+  "replay": "bin/rails runner script/field_companion/f1_calibration_replay.rb",
+  "runner": "DOCUMENT_IDENTITY_SCOPE_ENABLED=true BEDROCK_RERANKER_ENABLED=false bin/rails runner script/field_companion/f1_calibration_runner.rb",
+  "corpus": "script/field_companion/f1_calibration_corpus.rb",
+  "scorer": "script/field_companion/f1_calibration_score.rb",
+  "fixture_pin": "s3://smart-deal-dev-kb/uploads/2026-06-10/manual_plataforma_tijera_24_paginas.pdf",
+  "unexpected_v2_changes": [],
+  "runs": [
+    {
+      "file": "f1cal.r0.baseline.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r0.baseline.json",
+      "bytes": 101188,
+      "sha256": "c6465a616eb4a11878479e512710b1f65c29ad798c12ec804808d5f23f1c8401",
+      "prompt_version": "f1cal.r0.baseline",
+      "block_sha256": "9d48eecf7e03904fffec9bbf4b63d01ffb126085fd290fa928b5239de7eeac4c",
+      "executions": 40,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 28,
+        "useful": 2,
+        "qualified_reference": 2,
+        "step_list": 1,
+        "abstain": 3,
+        "withheld": 28,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 2,
+        "guard": 28,
+        "unsafe": 0,
+        "qualified_reference": 2,
+        "step_list": 1,
+        "formulaic": 0
+      },
+      "v2_groups_useful": {
+        "unknown": 2,
+        "s1": 2,
+        "s2": 0,
+        "s3": 0
+      },
+      "v2_change_count": 0
+    },
+    {
+      "file": "f1cal.r1.a.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r1.a.json",
+      "bytes": 81358,
+      "sha256": "f4b881b7879c7700be8c0841057e0d40e273b4e227f78542cacbbda2cf3f05f5",
+      "prompt_version": "f1cal.r1.a",
+      "block_sha256": "5cd65bbf894f5c306b077351248a23d6a6fa8bfb0581412434eb2c0a0d14c8a0",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 15,
+        "useful": 15,
+        "qualified_reference": 5,
+        "step_list": 1,
+        "abstain": 0,
+        "withheld": 15,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 7,
+        "guard": 15,
+        "unsafe": 1,
+        "qualified_reference": 5,
+        "step_list": 1,
+        "formulaic": 1
+      },
+      "v2_groups_useful": {
+        "unknown": 7,
+        "s1": 3,
+        "s2": 1,
+        "s3": 3
+      },
+      "v2_change_count": 8
+    },
+    {
+      "file": "f1cal.r1.b.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r1.b.json",
+      "bytes": 85178,
+      "sha256": "4784e9ec405b0e630786d615070e713be1325a90566e1e5832588c27a1c0f4ae",
+      "prompt_version": "f1cal.r1.b",
+      "block_sha256": "69a6c30861046716a4b0da0dd1a5cf28139cd7d91ce16c724a38478a653f7352",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 27,
+        "useful": 7,
+        "qualified_reference": 3,
+        "step_list": 0,
+        "abstain": 0,
+        "withheld": 27,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 5,
+        "guard": 27,
+        "unsafe": 0,
+        "qualified_reference": 3,
+        "step_list": 0,
+        "formulaic": 0
+      },
+      "v2_groups_useful": {
+        "unknown": 5,
+        "s1": 1,
+        "s2": 2,
+        "s3": 2
+      },
+      "v2_change_count": 2
+    },
+    {
+      "file": "f1cal.r1.c.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r1.c.json",
+      "bytes": 84401,
+      "sha256": "0dad8059a2bdbc6f3aa2675c143f629a705eb5e0aab9e13308a9cf1a56984454",
+      "prompt_version": "f1cal.r1.c",
+      "block_sha256": "a3f1f7fa2e981b1351cf0b3ce58e011181001eb0cd2dd8f22e992b4ccac6add9",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 22,
+        "useful": 7,
+        "qualified_reference": 5,
+        "step_list": 4,
+        "abstain": 1,
+        "withheld": 22,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 6,
+        "guard": 22,
+        "unsafe": 2,
+        "qualified_reference": 5,
+        "step_list": 4,
+        "formulaic": 1
+      },
+      "v2_groups_useful": {
+        "unknown": 6,
+        "s1": 1,
+        "s2": 2,
+        "s3": 3
+      },
+      "v2_change_count": 3
+    },
+    {
+      "file": "f1cal.r2.a1.confirm.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r2.a1.confirm.json",
+      "bytes": 83442,
+      "sha256": "4b4fac9f4318345d69931c99b3de4d29dc858b51882abb7c61489b6be9c6ab69",
+      "prompt_version": "f1cal.r2.a1.confirm",
+      "block_sha256": "b1cc6b5b81f9f4ee93c8e97ddc1d9ea798ba5ea6592239ecca5ab599cb898fd4",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 12,
+        "useful": 18,
+        "qualified_reference": 7,
+        "step_list": 2,
+        "abstain": 0,
+        "withheld": 12,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 18,
+        "guard": 12,
+        "unsafe": 0,
+        "qualified_reference": 7,
+        "step_list": 2,
+        "formulaic": 14
+      },
+      "v2_groups_useful": {
+        "unknown": 18,
+        "s1": 5,
+        "s2": 3,
+        "s3": 10
+      },
+      "v2_change_count": 0
+    },
+    {
+      "file": "f1cal.r2.a1.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r2.a1.json",
+      "bytes": 83851,
+      "sha256": "7da986fbe6cfb4842096f4a28ae592cfa002a0a6259e4e42766b599a5435d184",
+      "prompt_version": "f1cal.r2.a1",
+      "block_sha256": "b1cc6b5b81f9f4ee93c8e97ddc1d9ea798ba5ea6592239ecca5ab599cb898fd4",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 9,
+        "useful": 22,
+        "qualified_reference": 9,
+        "step_list": 1,
+        "abstain": 0,
+        "withheld": 9,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 22,
+        "guard": 9,
+        "unsafe": 0,
+        "qualified_reference": 9,
+        "step_list": 1,
+        "formulaic": 15
+      },
+      "v2_groups_useful": {
+        "unknown": 22,
+        "s1": 4,
+        "s2": 4,
+        "s3": 14
+      },
+      "v2_change_count": 0
+    },
+    {
+      "file": "f1cal.r2.a1.known.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r2.a1.known.json",
+      "bytes": 16686,
+      "sha256": "87dbeb570a75b496972c09e6f7a41d8ad2199d0d438d6266c728563d7abd2a24",
+      "prompt_version": "f1cal.r2.a1.known",
+      "block_sha256": "b1cc6b5b81f9f4ee93c8e97ddc1d9ea798ba5ea6592239ecca5ab599cb898fd4",
+      "executions": 6,
+      "v1_unknown": {
+        "n": 0,
+        "guard": 0,
+        "useful": 0,
+        "qualified_reference": 0,
+        "step_list": 0,
+        "abstain": 0,
+        "withheld": 0,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 0,
+        "guard": 0,
+        "unsafe": 0,
+        "qualified_reference": 0,
+        "step_list": 0,
+        "formulaic": 0
+      },
+      "v2_groups_useful": {
+        "unknown": 0,
+        "s1": 0,
+        "s2": 0,
+        "s3": 0
+      },
+      "v2_change_count": 0
+    },
+    {
+      "file": "f1cal.r2.a2.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r2.a2.json",
+      "bytes": 79529,
+      "sha256": "39f130b1b506ad39ab379850b58fcd9c371c6936e0a246c105afa0cc8405294f",
+      "prompt_version": "f1cal.r2.a2",
+      "block_sha256": "c7139b59d82822a1be7e24052f0763281c4f2ed3305b9c740a729ee446f15131",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 18,
+        "useful": 9,
+        "qualified_reference": 2,
+        "step_list": 0,
+        "abstain": 4,
+        "withheld": 18,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 2,
+        "guard": 18,
+        "unsafe": 0,
+        "qualified_reference": 2,
+        "step_list": 0,
+        "formulaic": 0
+      },
+      "v2_groups_useful": {
+        "unknown": 2,
+        "s1": 0,
+        "s2": 0,
+        "s3": 2
+      },
+      "v2_change_count": 7
+    },
+    {
+      "file": "f1cal.r3.a1a.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r3.a1a.json",
+      "bytes": 71107,
+      "sha256": "6a256dd0b0de2b4a0dc4cff8095ecc8caab5f84e173da4e49c2611d944f1665b",
+      "prompt_version": "f1cal.r3.a1a",
+      "block_sha256": "7370fb2d77319d0827852fe48fabfb7a887fbb6e29e19fbccf4defafdb16cfd3",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 0,
+        "useful": 28,
+        "qualified_reference": 2,
+        "step_list": 0,
+        "abstain": 0,
+        "withheld": 0,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 22,
+        "guard": 0,
+        "unsafe": 0,
+        "qualified_reference": 2,
+        "step_list": 0,
+        "formulaic": 24
+      },
+      "v2_groups_useful": {
+        "unknown": 22,
+        "s1": 3,
+        "s2": 2,
+        "s3": 17
+      },
+      "v2_change_count": 6
+    },
+    {
+      "file": "f1cal.r3.a1b.json",
+      "local_path": "tmp/f1cal/runs/f1cal.r3.a1b.json",
+      "bytes": 70428,
+      "sha256": "3dc7b8a14be77e89e6a05d1f1ece8191fe495474ce5e874e55d22f75215036c8",
+      "prompt_version": "f1cal.r3.a1b",
+      "block_sha256": "89d938fa7a66fd12bf71a9429a448c721cf30b239c221d9285ea165380d08c46",
+      "executions": 34,
+      "v1_unknown": {
+        "n": 34,
+        "guard": 3,
+        "useful": 25,
+        "qualified_reference": 2,
+        "step_list": 0,
+        "abstain": 0,
+        "withheld": 3,
+        "unsafe": 0
+      },
+      "v2_unknown": {
+        "useful": 16,
+        "guard": 3,
+        "unsafe": 0,
+        "qualified_reference": 2,
+        "step_list": 0,
+        "formulaic": 12
+      },
+      "v2_groups_useful": {
+        "unknown": 16,
+        "s1": 2,
+        "s2": 2,
+        "s3": 12
+      },
+      "v2_change_count": 9
+    }
+  ]
+}

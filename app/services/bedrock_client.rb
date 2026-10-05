@@ -67,6 +67,12 @@ class BedrockClient
 
   delegate :converse, to: :converse_client
 
+  # Tool use on the primary runtime client. #converse stays the 8-second
+  # shadow client used by perception. generate_text cannot send a tool schema.
+  def converse_message(params)
+    @client.converse(params)
+  end
+
   private
 
   def converse_client

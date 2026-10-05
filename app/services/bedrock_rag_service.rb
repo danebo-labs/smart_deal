@@ -625,6 +625,7 @@ class BedrockRagService
                                         include_diagnostics:, raw_question:, context_truncated:,
                                         start_time:, filtered_uris:, apply_filter:)
     @last_citation_attribution = nil
+    @unknown_identity_publication = nil
     query_correlation_id = correlation_id.presence || "query:#{SecureRandom.uuid}"
     config = unknown_identity_retrieval_config(
       question: question,
@@ -718,17 +719,11 @@ class BedrockRagService
       end
 
       marked = Rag::DocumentIdentityScope.mark_unconfirmed_reference(chunks)
-      prompt = document_identity_generation_prompt(
-        question, marked,
-        response_locale: response_locale,
-        session_context: session_context,
-        output_channel: output_channel
-      )
-      # The fence is generation input. Citation records stay the retrieved bodies.
-      raw_answer = document_identity_generator.query(
-        prompt,
-        max_tokens: @rag_config[:generation_max_tokens],
-        temperature: @rag_config[:generation_temperature],
+      publication = Rag::UnknownIdentityPublication.attempt(
+        client: document_identity_generator,
+        question: question,
+        chunks: chunks,
+        locale: effective_response_locale(question, response_locale: response_locale),
         tracking: {
           account_id: attribution[:account_id],
           user_id: attribution[:user_id],
@@ -738,6 +733,32 @@ class BedrockRagService
           attempt: index + 1
         }
       )
+      @unknown_identity_publication = publication
+      if publication.accepted?
+        prompt = publication.prompt
+        raw_answer = publication.answer
+      else
+        prompt = document_identity_generation_prompt(
+          question, marked,
+          response_locale: response_locale,
+          session_context: session_context,
+          output_channel: output_channel
+        )
+        # The fence is generation input. Citation records stay the retrieved bodies.
+        raw_answer = document_identity_generator.query(
+          prompt,
+          max_tokens: @rag_config[:generation_max_tokens],
+          temperature: @rag_config[:generation_temperature],
+          tracking: {
+            account_id: attribution[:account_id],
+            user_id: attribution[:user_id],
+            conversation_session_id: attribution[:conversation_session_id],
+            correlation_id: query_correlation_id,
+            route: Array(@applied_pin_uris).any? ? "rag_filtered" : "rag_global",
+            attempt: index + 1
+          }
+        )
+      end
       break unless retry_open && index.zero? && (raw_answer.blank? || bedrock_no_results?(raw_answer))
     end
 
@@ -784,12 +805,14 @@ class BedrockRagService
     result.delete(:model_invoked)
     result[:session_id] = session_id
     result[:rag_ms] = ((Time.current - start_time) * 1000).to_i
+    stamp_unknown_identity_publication!(result)
     withhold_unconfirmed_identity!(
       result,
       raw_answer: raw_answer,
       chunks: Array(retrieval[:chunks]),
       question: question,
-      response_locale: response_locale
+      response_locale: response_locale,
+      check_raw: !@unknown_identity_publication&.accepted?
     )
     log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
     attach_generation_trace!(
@@ -856,6 +879,9 @@ class BedrockRagService
         if result[:applicability_violation_basis]
           result[:diagnostics][:applicability_violation_basis] = result[:applicability_violation_basis]
         end
+      end
+      %i[publication_mode publication_reference publication_rejected_fields publication_fallback_reason].each do |key|
+        result[:diagnostics][key] = result[key] if result.key?(key)
       end
     end
     result
@@ -1059,14 +1085,26 @@ class BedrockRagService
 
   private
 
-  def withhold_unconfirmed_identity!(result, raw_answer:, chunks:, question:, response_locale:)
+  def stamp_unknown_identity_publication!(result)
+    publication = @unknown_identity_publication
+    return result unless publication
+
+    result[:publication_mode] = publication.mode
+    result[:publication_reference] = publication.reference_status
+    result[:publication_rejected_fields] = publication.rejected_fields
+    result[:publication_fallback_reason] = publication.fallback_reason
+    result
+  end
+
+  def withhold_unconfirmed_identity!(result, raw_answer:, chunks:, question:, response_locale:, check_raw: true)
+    checked_raw = check_raw ? raw_answer : nil
     kind = Rag::DocumentIdentityScope.unconfirmed_applicability_violation(
-      result[:answer], raw_answer, chunks, question
+      result[:answer], checked_raw, chunks, question
     )
     return if kind.nil?
 
     basis = if kind == :procedure_application
-      Rag::DocumentIdentityScope.unconfirmed_applicability_basis(result[:answer], raw_answer, chunks, question)
+      Rag::DocumentIdentityScope.unconfirmed_applicability_basis(result[:answer], checked_raw, chunks, question)
     end
     locale = effective_response_locale(question, response_locale: response_locale)
     result[:answer] = Rag::DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)

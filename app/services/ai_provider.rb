@@ -18,4 +18,12 @@ class AiProvider
     Rails.logger.error("AiProvider error with #{@provider}: #{e.message}")
     raise e
   end
+
+  # Structured tool call. #query is text generation and cannot carry a tool schema.
+  def converse(params)
+    @client.converse_message(params)
+  rescue StandardError => e
+    Rails.logger.error("AiProvider converse error with #{@provider}: #{e.message}")
+    raise e
+  end
 end

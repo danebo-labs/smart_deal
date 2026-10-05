@@ -241,6 +241,7 @@ module Rag
       expansion_ms = 0
       local_before_generation_ms = 0
       generation_ms = 0
+      @publication = nil
       expanded_chunks = []
       expansions = []
       chunks = []
@@ -292,21 +293,28 @@ module Rag
         select_generation_chunks(expanded_chunks, ambiguity: @ambiguity)
       end
       citation_evidence = citation_shaped(chunks)
-      prompt = generation_prompt(chunks, ambiguity: @ambiguity)
       local_before_generation_ms = elapsed_ms(local_started)
 
       generation_started = monotonic_now
-      raw_answer = @generator.query(
-        prompt,
-        max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
-        temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
-        tracking: {
-          account_id: @account_id,
-          user_id: @user_id,
-          conversation_session_id: @conversation_session_id,
-          correlation_id: @correlation_id
-        }
-      ).to_s.strip
+      publication = unknown_identity_publication(chunks)
+      @publication = publication
+      if publication&.accepted?
+        prompt = publication.prompt
+        raw_answer = publication.answer
+      else
+        prompt = generation_prompt(chunks, ambiguity: @ambiguity)
+        raw_answer = @generator.query(
+          prompt,
+          max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
+          temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
+          tracking: {
+            account_id: @account_id,
+            user_id: @user_id,
+            conversation_session_id: @conversation_session_id,
+            correlation_id: @correlation_id
+          }
+        ).to_s.strip
+      end
       generation_ms = elapsed_ms(generation_started)
       if raw_answer.blank?
         return abstained_outcome(
@@ -447,6 +455,7 @@ module Rag
           outcome_reason: (:uncited_prose if uncited_prose)
         }.compact
       }
+      apply_publication_fields!(result)
       attach_generation_trace!(result, prompt)
       Outcome.new(status: :answered, result: result)
     rescue BedrockRagService::BedrockServiceError => e
@@ -1514,7 +1523,47 @@ module Rag
     def unconfirmed_applicability_kind(raw_answer, answer, chunks)
       return nil unless @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
 
-      DocumentIdentityScope.unconfirmed_applicability_violation(answer, raw_answer, chunks, @question)
+      DocumentIdentityScope.unconfirmed_applicability_violation(answer, publication_raw(raw_answer), chunks, @question)
+    end
+
+    # A valid rendered contract is checked on its own. The model's envelope
+    # must not withhold that publication. The prose fallback still checks raw.
+    def publication_raw(raw_answer)
+      @publication&.accepted? ? nil : raw_answer
+    end
+
+    def unknown_identity_publication(chunks)
+      return nil unless @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+
+      UnknownIdentityPublication.attempt(
+        client: @generator,
+        question: @question,
+        chunks: chunks,
+        locale: locale,
+        tracking: {
+          account_id: @account_id,
+          user_id: @user_id,
+          conversation_session_id: @conversation_session_id,
+          correlation_id: @correlation_id,
+          route: "structured_evidence_route"
+        }
+      )
+    end
+
+    def apply_publication_fields!(result)
+      return result unless @publication
+
+      result[:publication_mode] = @publication.mode
+      result[:publication_reference] = @publication.reference_status
+      result[:publication_rejected_fields] = @publication.rejected_fields
+      result[:publication_fallback_reason] = @publication.fallback_reason
+      if result[:diagnostics].is_a?(Hash)
+        result[:diagnostics][:publication_mode] = @publication.mode
+        result[:diagnostics][:publication_reference] = @publication.reference_status
+        result[:diagnostics][:publication_rejected_fields] = @publication.rejected_fields
+        result[:diagnostics][:publication_fallback_reason] = @publication.fallback_reason
+      end
+      result
     end
 
     def withhold_unconfirmed_identity_outcome(retrieval:, retrieval_ms:, expansion_ms:, local_ms:,
@@ -1522,7 +1571,9 @@ module Rag
                                               prompt:, raw_answer:, generated_answer:, internal_answer:,
                                               citation_evidence:, attribution:, kind:, processed_answer:)
       basis = if kind == :procedure_application
-        DocumentIdentityScope.unconfirmed_applicability_basis(processed_answer, raw_answer, chunks, @question)
+        DocumentIdentityScope.unconfirmed_applicability_basis(
+          processed_answer, publication_raw(raw_answer), chunks, @question
+        )
       end
       answer = DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
       DocumentIdentityScope.log_applicability_violation(kind, basis: basis)
@@ -1578,6 +1629,7 @@ module Rag
           applicability_violation_basis: basis
         }.compact
       }
+      apply_publication_fields!(result)
       attach_generation_trace!(result, prompt)
       Outcome.new(status: :answered, result: result)
     end
@@ -1632,6 +1684,7 @@ module Rag
           outcome_reason: reason
         }
       }
+      apply_publication_fields!(result)
       attach_generation_trace!(result, prompt)
       Outcome.new(status: :abstained, result: result)
     end

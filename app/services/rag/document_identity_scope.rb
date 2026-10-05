@@ -245,6 +245,13 @@ module Rag
       applicability_hit(answer, raw, chunks, question)&.fetch(:kind)
     end
 
+    # Closed operation lexicon, without the qualified-reference exemption.
+    # Unknown-identity publication uses this so a procedure cannot hide inside
+    # an envelope field that the prose guard would have excused.
+    def self.unconfirmed_operation?(text, question = nil)
+      operation_unit?(applicability_normalize(text), question, text)
+    end
+
     def self.unconfirmed_applicability_basis(answer, raw, chunks, question)
       applicability_hit(answer, raw, chunks, question)&.fetch(:basis)
     end
